@@ -14,8 +14,8 @@ namespace Meitou.Game;
 /// </summary>
 sealed class MetalPostChain : IWorldPostChain, IDisposable
 {
-    /// <summary>Diagnostic A/B for the temporal reactive path: MEITOU_METAL_NO_PARTICLE_COVERAGE=1 leaves the particle
-    /// color draw in place but stops it invalidating the temporal history.</summary>
+    /// <summary>Diagnostic A/B for TAA's particle coverage: MEITOU_METAL_NO_PARTICLE_COVERAGE=1 leaves the particle
+    /// colour draw in place but stops it invalidating TAA's motion alpha. MetalFX never receives particle coverage.</summary>
     static readonly bool ParticleCoverageEnabled =
         Environment.GetEnvironmentVariable("MEITOU_METAL_NO_PARTICLE_COVERAGE") is not ("1" or "true");
 
@@ -245,11 +245,9 @@ sealed class MetalPostChain : IWorldPostChain, IDisposable
     }
 
     /// <summary>
-    /// The full-size particle quads into the temporal reactive mask, plus the low-resolution accumulations for TAA's
-    /// motion alpha. <see cref="PostTaa"/> calls this after its velocity and object-motion passes; the target is the
-    /// motion image's alpha for TAA or the R32F reactive image for MetalFX, and <paramref name="clear"/> removes the
-    /// previous value when there is no water reactive term to keep. MetalFX deliberately gets only the full-size
-    /// particles: its reactive mask cannot absorb the low-resolution dust path's LOD-edge instability.
+    /// TAA's particle coverage: the full-size quads into the motion alpha, plus the low-resolution accumulations.
+    /// <see cref="PostTaa"/> calls this after its velocity and object-motion passes; the target is the motion image's
+    /// alpha. MetalFX gets no particle coverage: the reactive-mask history rejection made distant objects shimmer.
     /// </summary>
     void DrawParticleCoverage(IGpuCommandList cmd, GpuTexture target, ColorMask mask, bool clear)
     {
@@ -263,10 +261,8 @@ sealed class MetalPostChain : IWorldPostChain, IDisposable
         cmd.EndRendering();
         ctx.EndHostPass(cmd);
         cmd.Order();
-        // The large soft particles' low-resolution coverage is not stable enough for MetalFX's reactive mask: the
-        // half/quarter-size depth-aware upsample makes distant dust flicker at terrain and LOD edges. MetalFX gets
-        // the full-size particle coverage only; TAA keeps the low-resolution share in its motion alpha.
-        if (mask == ColorMask.R) return;
+        // The low-resolution accumulations go to TAA's motion alpha. This path is never used for MetalFX, whose
+        // reactive mask deliberately has no particle coverage.
         foreach (var low in lowTargets)
         {
             if (!low.Drawn || low.Accum is null || low.Depth is null) continue;

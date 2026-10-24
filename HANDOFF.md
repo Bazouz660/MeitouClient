@@ -60,7 +60,7 @@ Metal-specific fallbacks or absent paths:
 | Debris | Atmosphere-lit + hazed | **atmosphere-lit and hazed** through the bindless native path (MEP-3 accepted) |
 | Particles | Near-plane close pass for large sprites crossing the camera | **disabled** on Metal; normal-depth and low-resolution particles work |
 | Foliage | Generated rock levels + GPU mesh/rock cull | **CPU cull**; generated levels are tied to the GPU path, so the Metal rock LOD detail/perf differs |
-| Post | SMAA, FogRate/VRS, particle coverage in the upscaler's reactive mask, sun-motion reprojection | **SMAA, sun-motion reprojection and full-size particle coverage present**; FogRate/VRS is absent (performance-only); low-resolution dust remains TAA-only; TAA is experimental |
+| Post | SMAA, FogRate/VRS, particle coverage in the upscaler's reactive mask, sun-motion reprojection | **SMAA and sun-motion reprojection present**; FogRate/VRS is absent (performance-only); MetalFX gets no particle coverage (far-object shimmer), TAA keeps full- and low-resolution particles; TAA is experimental |
 | GI | `GiScene`/`GiProbes` when Vulkan ray queries exist | **no default path**; `MetalProbeGi` is experimental and opt-in; macOS Vulkan reports no ray queries, so local no-GI parity holds |
 | Temporal | Full TAA including character/grass motion and far-slice velocity | MetalFX is the default; TAA is exposed as experimental and still ghosts; no far slice |
 | Occlusion | Hi-Z foliage occlusion culling | **not implemented**; CPU cull remains correct but slower |
@@ -105,11 +105,10 @@ samplers. Reflection/refraction and the MEP-2 MSAA decision are unchanged. The u
 desert water; screenshot runs compiled and rendered both Metal views without a shader or GPU error. The 30-minute
 post-merge soak remains a separate gate.
 
-**MEP-1 is accepted:** particle coverage in the temporal reactive mask, the shared sun-motion tracker, the Metal
-0..1 velocity-depth fix, the MetalFX y-down motion convention, camera-cut resets and SMAA in `PostComposite`. The
-MetalFX reactive mask now gets full-size particle coverage only; low-resolution dust coverage remains TAA-only
-because it was unstable at distant terrain/LOD edges. FogRate remains a documented performance-only difference
-(Metal has no VRS attachment).
+**MEP-1 is accepted:** particle coverage in TAA's motion alpha, the shared sun-motion tracker, the Metal 0..1
+velocity-depth fix, the MetalFX y-down motion convention, camera-cut resets and SMAA in `PostComposite`. MetalFX
+gets **no particle coverage**: full-size rain/dust made distant objects shimmer, so both full- and low-resolution
+coverage now stay TAA-only. FogRate remains a documented performance-only difference (Metal has no VRS attachment).
 
 **MEP-2 reflection quality is accepted.** `IGpuContext.MaxSampleCount` supplies the device's sample-count capability
 (Vulkan limits / Metal `supportsTextureSampleCount`); `ReflectionPass` builds multisampled colour+depth targets on

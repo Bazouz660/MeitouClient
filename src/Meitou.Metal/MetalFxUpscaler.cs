@@ -11,8 +11,8 @@ namespace Meitou.Metal;
 /// Apple's temporal upscaler, on the Metal path. It is deliberately small: <see cref="PostTaa"/> already runs the
 /// velocity pass and owns the jitter, so this receives the same colour, depth and motion targets the TAA does and
 /// encodes MetalFX into the frame's open command buffer. TAA remains the fallback when the framework, the scaler or
-/// the encode is unavailable. The normal presets stay at 0.50 and above; <see cref="AllowLowScale"/> exists only for
-/// the labelled 0.40 comparison preset.
+/// the encode is unavailable. Temporal is offered at every MetalFX preset scale down to 0.40; 0.33 crashed before
+/// the first frame on this device.
 /// </summary>
 public sealed class MetalFxUpscaler : IUpscaler
 {
@@ -25,9 +25,6 @@ public sealed class MetalFxUpscaler : IUpscaler
 
     public UpscalerKind Kind => UpscalerKind.MetalFx;
     public string Name => inputWidth == 0 ? "metalfx" : $"metalfx {inputWidth}x{inputHeight} -> {outputWidth}x{outputHeight}";
-
-    /// <summary>The explicit 0.40 comparison preset bypasses the known 2.5x darkening guard; experimental.</summary>
-    public bool AllowLowScale { get; set; }
 
     /// <summary>Whether MetalFX can be loaded and created on this machine. The real scaler is made on the first dispatch,
     /// when the render and display sizes are known.</summary>
@@ -77,11 +74,11 @@ public sealed class MetalFxUpscaler : IUpscaler
 
     bool EnsureScaler(int width, int height, int displayWidth, int displayHeight)
     {
-        // The temporal path is reliable at the 2x default; the 2.5x/3x modes darken or hang on this device.
-        // The explicit 0.40 comparison preset opts into that range so it can be measured or rejected.
-        if (!AllowLowScale && (displayWidth > 2 * width || displayHeight > 2 * height))
+        // 0.40 (2.5x) is the lowest stable tier on this device; 0.33 (3x) crashed before the first frame.
+        // The GameHost clamps saved/CLI MetalFX scales, so this is a last-resort guard for a hand-edited config.
+        if (displayWidth * 10L > width * 26L || displayHeight * 10L > height * 26L)
         {
-            Console.WriteLine($"metal     MetalFX needs at least a 0.50 render scale ({width}x{height} -> {displayWidth}x{displayHeight}); using TAA");
+            Console.WriteLine($"metal     MetalFX refuses {width}x{height} -> {displayWidth}x{displayHeight} (below 0.40); using TAA");
             failed = true;
             return false;
         }
@@ -131,7 +128,7 @@ public sealed class MetalFxUpscaler : IUpscaler
         inputHeight = height;
         outputWidth = displayWidth;
         outputHeight = displayHeight;
-        Console.WriteLine($"metal     MetalFX temporal {width}x{height} -> {displayWidth}x{displayHeight}{(AllowLowScale && displayWidth > 2 * width ? " (experimental low scale)" : "")}");
+        Console.WriteLine($"metal     MetalFX temporal {width}x{height} -> {displayWidth}x{displayHeight}{(displayWidth > 2 * width || displayHeight > 2 * height ? " (below 0.50)" : "")}");
         return true;
     }
 

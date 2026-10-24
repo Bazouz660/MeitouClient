@@ -39,8 +39,8 @@ sealed class PostTaa : IDisposable
     /// <summary>
     /// Draws the frame's particle coverage into <c>target</c>, whose mask is <c>mask</c>; <c>clear</c> zeroes the
     /// target first (the reactive mask when there is no water value to keep). <see cref="MetalPostChain"/> supplies
-    /// this, because it owns the particle renderer and the low-resolution targets; the MetalFX reactive channel gets
-    /// the full-size particles only, while TAA's motion alpha also gets the low-resolution accumulations.
+    /// this, because it owns the particle renderer and the low-resolution targets. It is used by TAA only: MetalFX
+    /// deliberately gets no particle coverage because the reactive history rejection made distant objects shimmer.
     /// </summary>
     public Action<IGpuCommandList, GpuTexture, ColorMask, bool>? ParticleCoverage { get; set; }
 
@@ -176,12 +176,11 @@ sealed class PostTaa : IDisposable
             cmd.Order();
         }
 
-        // Weather particles are thin and fast: without their own coverage in the reactive mask the temporal
-        // history keeps about 90% of what was behind them and rain/dust almost disappears. The full-size quads
-        // write themselves; the low-resolution accumulations are upsampled by PostComposite, as on Vulkan.
+        // Weather particles are thin and fast: without their own coverage in the motion alpha the TAA history keeps
+        // about 90% of what was behind them and rain/dust almost disappears. The full-size quads write themselves;
+        // the low-resolution accumulations are upsampled by PostComposite, as on Vulkan. MetalFX gets no particle
+        // coverage: its reactive-mask history rejection made distant objects shimmer around rain/dust.
         bool covered = Particles is { HasCoverage: true } && ParticleCoverage is not null;
-        if (covered && External is not null)
-            ParticleCoverage!(cmd, reactive!, ColorMask.R, waterHeight is null);
 
         if (External is { } upscaler && externalOutput is { } externalTarget)
         {

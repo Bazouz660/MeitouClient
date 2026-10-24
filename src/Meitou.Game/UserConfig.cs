@@ -7,9 +7,9 @@ namespace Meitou.Game;
 /// <summary>The unit the run speed is shown in.</summary>
 enum SpeedUnit { Mph, Kmh }
 
-/// <summary>The Metal display path: native at full size, MetalFX temporal (ultra/quality/balanced), MetalFX spatial
-/// (performance and the 0.50 comparison), the experimental temporal 0.40 test, or TAA.</summary>
-enum MetalUpscalerMode { Native, Temporal, Spatial, Taa, TemporalLow }
+/// <summary>The Metal display path: native at full size, MetalFX temporal at any preset scale, MetalFX spatial as an
+/// alternative, or TAA.</summary>
+enum MetalUpscalerMode { Native, Temporal, Spatial, Taa }
 
 /// <summary>
 /// The player's settings, kept in <c>meitou.user.json</c> (git-ignored) in the working directory, else next to the executable:
@@ -250,6 +250,7 @@ sealed class UserConfig
         if (!float.IsFinite(MetalRenderScale)) MetalRenderScale = 0.5f;
         MetalRenderScale = Math.Clamp(MetalRenderScale, 0.33f, 1f);
         if (!Enum.IsDefined(MetalUpscaler)) MetalUpscaler = MetalUpscalerMode.Temporal;
+        if (MetalUpscaler is MetalUpscalerMode.Temporal or MetalUpscalerMode.Spatial) MetalRenderScale = Math.Clamp(MetalRenderScale, 0.4f, 1f);
     }
 
     public void Save()

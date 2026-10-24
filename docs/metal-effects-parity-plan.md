@@ -11,13 +11,11 @@ effect-parity audit `84193e4a` and the upstream `57a7968a` merge. Read
 
 The code is implemented and the MetalFX path is accepted in game (desert/dust/LOD views, 2026-10-24).
 
-- **Particle coverage** is now passed through `IWorldPostChain.Particles`: full-size quads write their coverage in
-  `ParticleRenderer.DrawCoverage`, and `PostComposite.ParticleCoverage` upsamples the half/quarter-size accumulations
-  (including their depth-aware upsampling). The low-res upsample now uses the backend's depth convention, fixing
-  Metal's 0..1 depth weights. `PostTaa` feeds MetalFX's R32F reactive mask with the full-size particles and TAA's
-  motion-alpha channel with both full- and low-resolution particles; the low-resolution dust share is not fed to
-  MetalFX because its depth-aware upsample is unstable at distant terrain/LOD edges (the MetalFX spatial path is
-  unaffected).
+- **Particle coverage** is passed through `IWorldPostChain.Particles`: full-size quads write coverage, and
+  `PostComposite.ParticleCoverage` upsamples the half/quarter-size accumulations. The low-res upsample uses the
+  backend's depth convention, fixing Metal's 0..1 depth weights. **TAA only:** MetalFX gets no particle coverage at
+  all. Full-size rain/dust in its reactive mask made distant objects shimmer, so both full- and low-resolution
+  coverage stay in TAA's motion alpha (the MetalFX spatial path has no temporal mask and is unaffected).
 - **Sun motion** moved into the shared `SunMotionTracker`, used by both `PostProcess` (Vulkan) and `PostTaa` (Metal),
   so Metal no longer passes zero sun uniforms.
 - **TAA velocity depth** now follows the backend's clip convention (`uClipDepthZeroToOne`): Metal's depth buffer is
@@ -34,9 +32,9 @@ The code is implemented and the MetalFX path is accepted in game (desert/dust/LO
   renders fog/shafts at full rate. No no-op toggle was added.
 
 **Acceptance:** the MetalFX temporal path was validated in the desert with distant terrain, dust and LOD transitions;
-the visible corruption was traced to the MetalFX motion-vector Y convention and to particle reactive coverage, and
-is fixed. MetalFX spatial 0.4 was already clean. TAA remains labelled experimental until it gets a dedicated
-validation pass, and SMAA remains opt-in/no-temporal.
+the visible corruption was traced to the MetalFX motion-vector Y convention. A later far-object shimmer was traced
+to full-size particle coverage, so MetalFX no longer receives any particle mask; TAA keeps it. MetalFX spatial 0.4 is
+clean. TAA remains labelled experimental until it gets a dedicated validation pass, and SMAA remains opt-in/no-temporal.
 
 **Goal:** close the remaining visual effect gaps between the Vulkan reference and Metal so Metal can move from an
 opt-in preview to a parity/default candidate. This iteration is about **visual effects**, not GPU culling, Hi-Z,

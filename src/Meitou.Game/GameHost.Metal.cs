@@ -117,8 +117,7 @@ sealed partial class GameHost
         var composite = new PostComposite(ctx, flipY: true);
         composite.LoadHeatHaze(assets);
         var taa = new PostTaa(ctx);
-        // MetalFX temporal is the default; spatial covers the performance tier, and the explicit temporal 0.40
-        // preset is a labelled experiment for the 2.5x mode that has darkened or hung on this device.
+        // MetalFX temporal is the default at every preset scale; spatial is an explicit alternative.
         var metalFx = MetalFxUpscaler.TryCreate(ctx);
         var metalFxSpatial = MetalFxSpatialUpscaler.TryCreate(ctx);
         MetalUpscalerMode mode = config.MetalUpscaler;
@@ -142,7 +141,7 @@ sealed partial class GameHost
         else if (o.Post.Upscale.Explicit)
             scale = o.Post.Upscale.EffectiveScale;
 
-        if (mode is MetalUpscalerMode.Temporal or MetalUpscalerMode.TemporalLow && metalFx is null)
+        if (mode == MetalUpscalerMode.Temporal && metalFx is null)
         {
             Console.WriteLine("metal     MetalFX temporal unavailable; using Native");
             mode = MetalUpscalerMode.Native;
@@ -152,13 +151,13 @@ sealed partial class GameHost
         {
             Console.WriteLine("metal     MetalFX spatial unavailable; using " + (metalFx is null ? "Native" : "MetalFX temporal"));
             mode = metalFx is null ? MetalUpscalerMode.Native : MetalUpscalerMode.Temporal;
-            scale = mode == MetalUpscalerMode.Native ? 1f : Math.Clamp(scale, 0.5f, 1f);
+            scale = mode == MetalUpscalerMode.Native ? 1f : scale;
         }
-        if (mode == MetalUpscalerMode.Temporal && scale < 0.5f && metalFxSpatial is not null)
-            mode = MetalUpscalerMode.Spatial;   // the temporal scaler's reliable range is 0.50 and up
-        if (mode == MetalUpscalerMode.Spatial && scale > 0.5f && metalFx is not null)
-            mode = MetalUpscalerMode.Temporal;   // 0.50 spatial is the explicit comparison preset and stays selected
-        scale = Math.Clamp(scale, 0.33f, 1f);
+        if (mode == MetalUpscalerMode.Native) scale = 1f;
+        // 0.33 is below what MetalFX temporal can run reliably on this device (it crashed before the first frame);
+        // the lowest shipped MetalFX tier is 0.40.
+        if (mode is MetalUpscalerMode.Temporal or MetalUpscalerMode.Spatial) scale = Math.Clamp(scale, 0.4f, 1f);
+        else scale = Math.Clamp(scale, 0.33f, 1f);
         ctx.RenderScale = scale;
 
         void ApplyMode(MetalUpscalerMode next)
@@ -168,11 +167,10 @@ sealed partial class GameHost
             spatial = mode == MetalUpscalerMode.Spatial;
             taa.External = mode switch
             {
-                MetalUpscalerMode.Temporal or MetalUpscalerMode.TemporalLow => metalFx,
+                MetalUpscalerMode.Temporal => metalFx,
                 MetalUpscalerMode.Spatial => metalFxSpatial,
                 _ => null,
             };
-            if (metalFx is not null) metalFx.AllowLowScale = mode == MetalUpscalerMode.TemporalLow;
             config.MetalUpscaler = mode;
         }
         ApplyMode(mode);
@@ -181,56 +179,50 @@ sealed partial class GameHost
         // loop used, with the jitter and temporal choice decided live as the settings change them.
         var postChain = new MetalPostChain(ctx, composite, taa, o.Post,
             noTaa: () => noTaa,
-            temporal: () => mode is MetalUpscalerMode.Temporal or MetalUpscalerMode.TemporalLow or MetalUpscalerMode.Taa,
+            temporal: () => mode is MetalUpscalerMode.Temporal or MetalUpscalerMode.Taa,
             jitter: (frame, sceneWidth, displayWidth) => noTaa || spatial ? Vector2.Zero : PostTaa.Offset(frame, sceneWidth, displayWidth));
 
         int CurrentPresetIndex()
         {
             if (mode == MetalUpscalerMode.Native) return 0;
-            if (mode == MetalUpscalerMode.Temporal && MathF.Abs(ctx.RenderScale - 0.80f) < 0.005f) return 1;
+            if (mode == MetalUpscalerMode.Temporal && MathF.Abs(ctx.RenderScale - 0.77f) < 0.005f) return 1;
             if (mode == MetalUpscalerMode.Temporal && MathF.Abs(ctx.RenderScale - 0.67f) < 0.005f) return 2;
-            if (mode == MetalUpscalerMode.Temporal && MathF.Abs(ctx.RenderScale - 0.50f) < 0.005f) return 3;
-            if (mode == MetalUpscalerMode.Spatial && MathF.Abs(ctx.RenderScale - 0.40f) < 0.005f) return 4;
-            if (mode == MetalUpscalerMode.Spatial && MathF.Abs(ctx.RenderScale - 0.50f) < 0.005f) return 5;
-            if (mode == MetalUpscalerMode.TemporalLow && MathF.Abs(ctx.RenderScale - 0.40f) < 0.005f) return 6;
-            if (mode == MetalUpscalerMode.Taa) return 7;
-            return 8;   // a custom scale/upscaler combination
-        }
-        void SetRenderScale(float value)
-        {
-            value = Math.Clamp(value, 0.33f, 1f);
-            ctx.RenderScale = value;
-            config.MetalRenderScale = value;
-            // Native means full size; moving the scale engages the MetalFX tier that supports it. TAA keeps its own scale.
-            if (mode == MetalUpscalerMode.Native && value < 1f)
-            {
-                if (value >= 0.5f && metalFx is not null) ApplyMode(MetalUpscalerMode.Temporal);
-                else if (metalFxSpatial is not null) ApplyMode(MetalUpscalerMode.Spatial);
-            }
-            else if (mode == MetalUpscalerMode.Temporal && value < 0.5f && metalFxSpatial is not null)
-                ApplyMode(MetalUpscalerMode.Spatial);
-            else if (mode == MetalUpscalerMode.TemporalLow && value >= 0.5f && metalFx is not null)
-                ApplyMode(MetalUpscalerMode.Temporal);
-            else if (mode == MetalUpscalerMode.Spatial && value >= 0.5f && metalFx is not null)
-                ApplyMode(MetalUpscalerMode.Temporal);
+            if (mode == MetalUpscalerMode.Temporal && MathF.Abs(ctx.RenderScale - 0.59f) < 0.005f) return 3;
+            if (mode == MetalUpscalerMode.Temporal && MathF.Abs(ctx.RenderScale - 0.50f) < 0.005f) return 4;
+            if (mode == MetalUpscalerMode.Temporal && MathF.Abs(ctx.RenderScale - 0.40f) < 0.005f) return 5;
+            if (mode == MetalUpscalerMode.Spatial && MathF.Abs(ctx.RenderScale - 0.50f) < 0.005f) return 6;
+            if (mode == MetalUpscalerMode.Spatial && MathF.Abs(ctx.RenderScale - 0.40f) < 0.005f) return 7;
+            if (mode == MetalUpscalerMode.Taa) return 8;
+            return 9;   // a legacy/custom scale; the preset row is the only way to change a MetalFX scale
         }
         void SetPreset(int index)
         {
             MetalUpscalerMode next = index switch
             {
                 0 => MetalUpscalerMode.Native,
-                1 or 2 or 3 => MetalUpscalerMode.Temporal,
-                4 or 5 => MetalUpscalerMode.Spatial,
-                6 => MetalUpscalerMode.TemporalLow,
-                7 => MetalUpscalerMode.Taa,
+                1 or 2 or 3 or 4 or 5 => MetalUpscalerMode.Temporal,
+                6 or 7 => MetalUpscalerMode.Spatial,
+                8 => MetalUpscalerMode.Taa,
                 _ => mode,
             };
-            float nextScale = index switch { 0 => 1f, 1 => 0.80f, 2 => 0.67f, 3 => 0.50f, 4 => 0.40f, 5 => 0.50f, 6 => 0.40f, 7 => 0.50f, _ => ctx.RenderScale };
+            float nextScale = index switch
+            {
+                0 => 1f,
+                1 => 0.77f,
+                2 => 0.67f,
+                3 => 0.59f,
+                4 => 0.50f,
+                5 => 0.40f,
+                6 => 0.50f,
+                7 => 0.40f,
+                8 => 0.50f,
+                _ => ctx.RenderScale,
+            };
             SetRenderScaleForPreset(next, nextScale);
         }
         void SetRenderScaleForPreset(MetalUpscalerMode next, float nextScale)
         {
-            if (next is MetalUpscalerMode.Temporal or MetalUpscalerMode.TemporalLow && metalFx is null)
+            if (next == MetalUpscalerMode.Temporal && metalFx is null)
             {
                 Console.WriteLine("metal     MetalFX temporal is unavailable on this device");
                 next = MetalUpscalerMode.Native;
@@ -240,10 +232,10 @@ sealed partial class GameHost
             {
                 Console.WriteLine("metal     MetalFX spatial is unavailable on this device");
                 next = metalFx is null ? MetalUpscalerMode.Native : MetalUpscalerMode.Temporal;
-                nextScale = next == MetalUpscalerMode.Native ? 1f : Math.Clamp(nextScale, 0.5f, 1f);
+                nextScale = next == MetalUpscalerMode.Native ? 1f : nextScale;
             }
             ApplyMode(next);
-            ctx.RenderScale = Math.Clamp(nextScale, 0.33f, 1f);
+            ctx.RenderScale = Math.Clamp(nextScale, next is MetalUpscalerMode.Temporal or MetalUpscalerMode.Spatial ? 0.4f : 0.33f, 1f);
             config.MetalRenderScale = ctx.RenderScale;
         }
         string UpscalerStatusText() => mode switch
@@ -251,13 +243,10 @@ sealed partial class GameHost
             MetalUpscalerMode.Native => "Native",
             MetalUpscalerMode.Temporal => $"MetalFX temporal {ctx.RenderScale:0.00}",
             MetalUpscalerMode.Spatial => $"MetalFX spatial {ctx.RenderScale:0.00}",
-            MetalUpscalerMode.TemporalLow => $"MetalFX temporal {ctx.RenderScale:0.00} (experimental)",
             _ => $"TAA {ctx.RenderScale:0.00} (experimental)",
         };
         bool openSettingsForStill = Environment.GetEnvironmentVariable("MEITOU_METAL_SETTINGS") is "1" or "true";
-        Console.WriteLine(mode == MetalUpscalerMode.TemporalLow
-            ? $"metal     upscaler MetalFX temporal at {ctx.RenderScale:0.00} (experimental low scale)"
-            : $"metal     upscaler {mode.ToString().ToLowerInvariant()} at {ctx.RenderScale:0.00}");
+        Console.WriteLine($"metal     upscaler {mode.ToString().ToLowerInvariant()} at {ctx.RenderScale:0.00}");
         // The text/quad painter, shared by the HUD and the optional frame-stats lines. It is created even for a screenshot:
         // the game's HUD is part of the picture. MEITOU_METAL_OVERLAY=1 adds the stats lines to a still.
         var overlay = DebugOverlay.TryCreate(ctx);
@@ -602,20 +591,18 @@ sealed partial class GameHost
         {
             var sliders = new List<Slider>();
             var toggles = new List<Toggle>();
-            // Display: the same labels the shared settings menu knows (VSync, Full screen, render scale and filtering), plus
-            // the Metal preset. The frame limit is added by SettingsMenu itself.
+            // Display: VSync, full screen, the MetalFX scale preset and filtering. MetalFX presets own the render scale,
+            // so there is no separate scale slider. The frame limit is added by SettingsMenu itself.
             sliders.Add(new Slider("VSync", 0, 1, () => display.VSync ? 1 : 0, v => display.VSync = v >= 0.5f,
                 Text: v => v >= 0.5f ? "on" : "off (uncapped)"));
             sliders.Add(new Slider("Full screen", 0, 1, () => BorderlessFullScreen.IsOn(window) ? 1 : 0,
                 v => { if (v >= 0.5f != BorderlessFullScreen.IsOn(window)) ToggleFullScreen(); },
                 Text: v => v >= 0.5f ? "borderless" : "window"));
-            sliders.Add(new Slider(SettingsMenu.MetalPresetSlider, 0, 8, () => CurrentPresetIndex(), v =>
+            sliders.Add(new Slider(SettingsMenu.MetalPresetSlider, 0, 9, () => CurrentPresetIndex(), v =>
             {
                 int index = (int)MathF.Round(v);
-                if (index is >= 0 and <= 7) SetPreset(index);
+                if (index is >= 0 and <= 8) SetPreset(index);
             }, "0"));
-            sliders.Add(new Slider(WorldFrame.UpscalerSliders[1], 0.33f, 1, () => ctx.RenderScale, SetRenderScale, "0.00",
-                Text: v => v.ToString("0.00", CultureInfo.InvariantCulture)));
             sliders.Add(new Slider(WorldFrame.FilteringSlider, 0, 4, () => MathF.Log2(ctx.Samplers.MaxAnisotropy),
                 v => ctx.Samplers.MaxAnisotropy = 1 << (int)MathF.Round(v), "0",
                 Text: v => (1 << (int)MathF.Round(v)) + "x"));
