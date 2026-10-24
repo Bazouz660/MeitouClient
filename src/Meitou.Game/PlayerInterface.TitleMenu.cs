@@ -42,8 +42,8 @@ sealed partial class PlayerInterface
     ];
     static readonly (string Widget, string Caption, UiRect Icon)[] MenuButtons =
     [
-        ("NewGameButton", "NEW GAME", new(108, 90, 31, 32)), ("LoadGameButton", "LOAD GAME", new(222, 90, 32, 34)),
-        ("OptionsButton", "OPTIONS", new(146, 90, 32, 32)), ("CreditsButton", "CREDITS", new(49, 0, 44, 36)), ("ExitButton", "EXIT", new(202, 126, 30, 35)),
+        ("NewGameButton", "NEW GAME", new(108, 88, 33, 37)), ("LoadGameButton", "LOAD GAME", new(222, 90, 32, 23)),
+        ("OptionsButton", "OPTIONS", new(146, 88, 34, 37)), ("CreditsButton", "CREDITS", new(49, 0, 44, 36)), ("ExitButton", "EXIT", new(202, 126, 30, 36)),
     ];
     static Vector4 Hex(int r, int g, int b, float a = 1) => new(r / 255f, g / 255f, b / 255f, a);
     static readonly Vector4 InkMain = Hex(175, 166, 139), InkLight = Hex(217, 206, 184), InkPaper = Hex(20, 8, 6), InkDanger = Hex(191, 72, 52);
@@ -60,6 +60,7 @@ sealed partial class PlayerInterface
         catch (Exception e) when (e is IOException or InvalidDataException or NotSupportedException) { return null; }
     }
     Dictionary<string, (float Progress, long At)>? menuHover;
+    readonly Dictionary<UiRect, UiRect> menuIconBounds = [];
     (string Folder, DateTime Modified, SaveSlotInfo? Info) continueInfo;
 
     /// <summary>The kit's scale for this frame: 1 at 900 pixels high.</summary>
@@ -137,11 +138,14 @@ sealed partial class PlayerInterface
             art.Add(Image("MeitouMenuPlate" + index, b, MenuPlate, colour: c.Enabled ? null : "0.7 0.7 0.7 1"));
             if (hoverAmount > 0) art.Add(Image("MeitouMenuPlateHover" + index, b, MenuPlateHover,
                 colour: FormattableString.Invariant($"1 1 1 {hoverAmount}")));
-            // The icon in a 24-wide column 12 in from the edge, fitted inside 24×20 (kit .mt-icon), dimmed until hovered.
-            float fit = Math.Min(24 / icon.Width, 20 / icon.Height) * s;
-            float iconX = b.X + 12 * s + (24 * s - icon.Width * fit) / 2, iconY = b.Y + (b.Height - icon.Height * fit) / 2;
-            art.Add(Image("MeitouMenuIcon" + index, new(iconX, iconY, icon.Width * fit, icon.Height * fit), "Kenshi_UI.png",
-                FormattableString.Invariant($"{icon.X} {icon.Y} {icon.Width} {icon.Height}"), FormattableString.Invariant($"1 1 1 {0.8f + 0.2f * hoverAmount}")));
+            // Use the sprite's tight visible box (stray pixels from neighbouring sprites dropped), fit it into the shared 24×20 slot
+            // without upscaling, and centre it on the slot.
+            var tight = menuIconBounds.TryGetValue(icon, out var cached) ? cached : menuIconBounds[icon] = VisibleBounds(UiAtlas(), icon);
+            float fit = Math.Min(1f, Math.Min(24 / tight.Width, 20 / tight.Height)) * s;
+            float iconX = b.X + 24 * s - tight.Width * fit / 2;
+            float iconY = b.Y + b.Height / 2 - tight.Height * fit / 2 + 1.0f * s;
+            art.Add(Image("MeitouMenuIcon" + index, new(iconX, iconY, tight.Width * fit, tight.Height * fit), "Kenshi_UI.png",
+                FormattableString.Invariant($"{tight.X} {tight.Y} {tight.Width} {tight.Height}"), FormattableString.Invariant($"1 1 1 {0.8f + 0.2f * hoverAmount}")));
             var ink = !c.Enabled ? Hex(119, 119, 119) : Vector4.Lerp(InkMain, c.Name == "ExitButton" ? InkDanger : InkLight, hoverAmount);
             art.Add(Text("MeitouMenuLabel" + index, new(b.X + 48 * s, b.Y, b.Width - 60 * s, b.Height), UpperTr(caption), 14, ink));
             controls[i] = Hollow(c);
@@ -152,6 +156,52 @@ sealed partial class PlayerInterface
 
     /// <summary>A title button with nothing drawn: no skin, caption or background, the same bounds and action.</summary>
     static UiControl Hollow(UiControl c) => c with { Skin = "", Caption = "", Background = Vector4.Zero };
+
+    /// <summary>
+    /// The tight box around an atlas crop's visible sprite: pixels with alpha ≥ 40 grouped into 8-connected blobs, blobs smaller than a tenth of the
+    /// biggest dropped (stray pixels from neighbouring sprites), the rest unioned. Falls back to the crop itself.
+    /// </summary>
+    static UiRect VisibleBounds(RgbaImage? atlas, UiRect crop)
+    {
+        if (atlas is null) return crop;
+        int left = Math.Max(0, (int)MathF.Floor(crop.X)), top = Math.Max(0, (int)MathF.Floor(crop.Y));
+        int right = Math.Min(atlas.Width, (int)MathF.Ceiling(crop.X + crop.Width)), bottom = Math.Min(atlas.Height, (int)MathF.Ceiling(crop.Y + crop.Height));
+        int w = right - left, h = bottom - top;
+        if (w <= 0 || h <= 0) return crop;
+        bool Solid(int x, int y) => atlas.Pixels[((top + y) * atlas.Width + left + x) * 4 + 3] >= 40;
+
+        var seen = new bool[w * h];
+        var blobs = new List<(int Count, int X0, int Y0, int X1, int Y1)>();
+        var stack = new Stack<(int X, int Y)>();
+        for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++)
+            {
+                if (seen[y * w + x] || !Solid(x, y)) continue;
+                int count = 0, x0 = x, y0 = y, x1 = x, y1 = y;
+                seen[y * w + x] = true;
+                stack.Push((x, y));
+                while (stack.Count > 0)
+                {
+                    var (cx, cy) = stack.Pop();
+                    count++;
+                    x0 = Math.Min(x0, cx); y0 = Math.Min(y0, cy); x1 = Math.Max(x1, cx); y1 = Math.Max(y1, cy);
+                    for (int dy = -1; dy <= 1; dy++)
+                        for (int dx = -1; dx <= 1; dx++)
+                        {
+                            int nx = cx + dx, ny = cy + dy;
+                            if (nx < 0 || ny < 0 || nx >= w || ny >= h || seen[ny * w + nx] || !Solid(nx, ny)) continue;
+                            seen[ny * w + nx] = true;
+                            stack.Push((nx, ny));
+                        }
+                }
+                blobs.Add((count, x0, y0, x1, y1));
+            }
+        if (blobs.Count == 0) return crop;
+        int biggest = blobs.Max(b => b.Count);
+        var kept = blobs.Where(b => b.Count * 10 >= biggest).ToList();
+        int minX = kept.Min(b => b.X0), minY = kept.Min(b => b.Y0), maxX = kept.Max(b => b.X1), maxY = kept.Max(b => b.Y1);
+        return new(left + minX, top + minY, maxX - minX + 1, maxY - minY + 1);
+    }
 
     /// <summary>The save card's lines, from the newest save: the squad, "Squad · Day N · Place" and "c.N · M members".</summary>
     (string Squad, string Line, string Meta) ContinueText()
