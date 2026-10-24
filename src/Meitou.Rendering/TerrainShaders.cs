@@ -1294,7 +1294,24 @@ static partial class TerrainShaders
     public static string PatchVertexTessNative() => Native(PatchVertexTess);
     public static string PatchControlNative() => Native(PatchControl);
     public static string PatchEvaluationNative() => Native(PatchEvaluation);
-    public static string FragmentNative(bool interiorCut = false) => Gi.GiResolveShaders.WithAlbedo(Native(interiorCut ? InteriorMaskRenderer.WithCut(Fragment) : Fragment));
+    public static string FragmentNative(bool interiorCut = false, bool march = true) =>
+        Gi.GiResolveShaders.WithAlbedo(Native(interiorCut ? InteriorMaskRenderer.WithCut(Marched(Fragment, march)) : Marched(Fragment, march)));
+
+    /// <summary>
+    /// <paramref name="fragment"/> with the ground parallax's march (march false: left out). Off it never runs (uParallax 0), but its registers were the
+    /// shader's: about 220 a thread, which held the terrain colour pass to a tenth of the warps; without it the pass took 2.4 ms instead of 3.4
+    /// (docs/render-terrain.md "Cost"). TerrainRenderer keeps a set of each and draws with the one the setting asks for.
+    /// </summary>
+    static string Marched(string fragment, bool march)
+    {
+        if (march) return fragment;
+        const string start = "if (uParallax > 0.0 && distance < uParallaxEnd && biomeShare > 0.1)";
+        const string end = "Surface s;";
+        int a = fragment.IndexOf(start, StringComparison.Ordinal);
+        int b = a < 0 ? -1 : fragment.IndexOf(end, a, StringComparison.Ordinal);
+        if (b < 0) throw new InvalidOperationException("the terrain fragment's parallax block was not found");
+        return fragment[..a] + fragment[b..];
+    }
     /// <summary>The terrain colour pass's depth-only twin: the same vertex stage (so the depths are the same), a fragment stage that writes nothing (<see cref="TerrainLateColour"/>).</summary>
     public static string PrepassFragmentNative(bool interiorCut = false)
     {
@@ -1303,8 +1320,8 @@ static partial class TerrainShaders
     }
     public static string MeshVertexNative() => Native(MeshVertex);
     /// <summary>The TERRAIN-mode meshes' colour program, with the interior cut (on per draw: <see cref="TerrainConstants.InteriorCut"/>; the cross-fade already discards).</summary>
-    public static string MeshFragmentNative() => Gi.GiResolveShaders.WithAlbedo(Native(InteriorMaskRenderer.WithCut(MeshFragment)));
-    public static string MeshFragmentSolidNative() => Gi.GiResolveShaders.WithAlbedo(Native(MeshFragmentSolid));
+    public static string MeshFragmentNative(bool march = true) => Gi.GiResolveShaders.WithAlbedo(Native(InteriorMaskRenderer.WithCut(Marched(MeshFragment, march))));
+    public static string MeshFragmentSolidNative(bool march = true) => Gi.GiResolveShaders.WithAlbedo(Native(Marched(MeshFragmentSolid, march)));
     public static string MeshInstancedDepthVertexNative() => Native(MeshInstancedDepthVertex);
     /// <summary>The rocks' smoothing (RockSmoothing): <see cref="MeshVertexTess"/>, <see cref="MeshControl"/>, <see cref="MeshEvaluation"/> and its casters' twin.</summary>
     public static string MeshVertexTessNative() => Native(MeshVertexTess);

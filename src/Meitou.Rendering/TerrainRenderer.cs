@@ -104,34 +104,24 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
             [new Silk.NET.Vulkan.DescriptorSetLayoutBinding(0, Silk.NET.Vulkan.DescriptorType.UniformBufferDynamic, 1,
                 gpu.Shaders.GraphicsStages)], 0);
         Silk.NET.Vulkan.DescriptorSetLayout[] sets = [nativeFrame.SetLayout, gpu.Bindless.Layout, constantsLayout];
-        patchColour = new TerrainProgram(gpu, sets, TerrainShaders.PatchVertexNative(), TerrainShaders.FragmentNative(), "terrain");
+        this.sets = sets;
+        UseColour(GroundRelief.ParallaxActive);
         patchDepth = new TerrainProgram(gpu, sets, TerrainShaders.PatchVertexNative(), TerrainShaders.DepthFragmentNative(), "terrain depth");
         patchPrepass = new TerrainProgram(gpu, sets, TerrainShaders.PatchVertexNative(), TerrainShaders.PrepassFragmentNative(), "terrain prepass");
-        patchColourCut = new TerrainProgram(gpu, sets, TerrainShaders.PatchVertexNative(), TerrainShaders.FragmentNative(interiorCut: true), "terrain interior cut");
         patchPrepassCut = new TerrainProgram(gpu, sets, TerrainShaders.PatchVertexNative(), TerrainShaders.PrepassFragmentNative(interiorCut: true), "terrain prepass interior cut");
         // The ground displacement (GroundRelief): the colour and prepass programs tessellated, for the patches near the eye (the same stages in both, so the
         // late colour's depth test meets the prepass's depths).
         if (gpu.Device.HasTessellation)
         {
-            patchColourTess = new TerrainProgram(gpu, sets, TerrainShaders.PatchVertexTessNative(), TerrainShaders.FragmentNative(), "terrain relief",
-                TerrainShaders.PatchControlNative(), TerrainShaders.PatchEvaluationNative());
             patchPrepassTess = new TerrainProgram(gpu, sets, TerrainShaders.PatchVertexTessNative(), TerrainShaders.PrepassFragmentNative(), "terrain relief prepass",
-                TerrainShaders.PatchControlNative(), TerrainShaders.PatchEvaluationNative());
-            patchColourCutTess = new TerrainProgram(gpu, sets, TerrainShaders.PatchVertexTessNative(), TerrainShaders.FragmentNative(interiorCut: true), "terrain relief interior cut",
                 TerrainShaders.PatchControlNative(), TerrainShaders.PatchEvaluationNative());
             patchPrepassCutTess = new TerrainProgram(gpu, sets, TerrainShaders.PatchVertexTessNative(), TerrainShaders.PrepassFragmentNative(interiorCut: true), "terrain relief prepass interior cut",
                 TerrainShaders.PatchControlNative(), TerrainShaders.PatchEvaluationNative());
         }
-        meshColour = new TerrainProgram(gpu, sets, TerrainShaders.MeshVertexNative(), TerrainShaders.MeshFragmentNative(), "terrain meshes");
-        meshSolid = new TerrainProgram(gpu, sets, TerrainShaders.MeshVertexNative(), TerrainShaders.MeshFragmentSolidNative(), "terrain meshes solid");
         meshDepth = new TerrainProgram(gpu, sets, TerrainShaders.MeshInstancedDepthVertexNative(), TerrainShaders.DepthFragmentNative(), "terrain mesh depth");
         // The rocks' smoothing (RockSmoothing): the mesh programs tessellated, the casters with the same curve.
         if (gpu.Device.HasTessellation)
         {
-            meshColourTess = new TerrainProgram(gpu, sets, TerrainShaders.MeshVertexTessNative(), TerrainShaders.MeshFragmentNative(), "terrain meshes smoothed",
-                TerrainShaders.MeshControlNative(), TerrainShaders.MeshEvaluationNative());
-            meshSolidTess = new TerrainProgram(gpu, sets, TerrainShaders.MeshVertexTessNative(), TerrainShaders.MeshFragmentSolidNative(), "terrain meshes solid smoothed",
-                TerrainShaders.MeshControlNative(), TerrainShaders.MeshEvaluationNative());
             meshDepthTess = new TerrainProgram(gpu, sets, TerrainShaders.MeshVertexTessNative(), TerrainShaders.DepthFragmentNative(), "terrain mesh depth smoothed",
                 TerrainShaders.MeshControlNative(), TerrainShaders.MeshEvaluationDepthNative());
         }
@@ -281,6 +271,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
     /// <summary>Draws the terrain; nodes whose highest point is under <paramref name="cullBelow"/> are skipped (the reflection pass clips everything below the water). <paramref name="secondary"/>: the reflection's call, with its own quadtree for its own LOD distance.</summary>
     public void Draw(Matrix4x4 viewProjection, Vector3 eye, Vector4[] frustum, WorldRenderOptions options, WorldLighting light, float cullBelow = float.NegativeInfinity, bool secondary = false, bool defer = false)
     {
+        UseColour(GroundRelief.ParallaxActive);
         current = secondary ? spare : quadtree;
         current.SetRanges(options.TerrainLod);
         frame = new Frame(viewProjection, eye, options, light);
@@ -472,8 +463,56 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
 
     readonly NativeFrame nativeFrame;
     readonly Silk.NET.Vulkan.DescriptorSetLayout constantsLayout;
-    readonly TerrainProgram patchColour, patchDepth, patchPrepass, patchColourCut, patchPrepassCut, meshColour, meshSolid, meshDepth;   // meshSolid: meshColour without the cross-fade discard (EarlyDepth)
-    readonly TerrainProgram? patchColourTess, patchPrepassTess, patchColourCutTess, patchPrepassCutTess, meshColourTess, meshSolidTess, meshDepthTess;   // null without tessellation shaders
+    readonly TerrainProgram patchDepth, patchPrepass, patchPrepassCut, meshDepth;
+    readonly TerrainProgram? patchPrepassTess, patchPrepassCutTess, meshDepthTess;   // null without tessellation shaders
+    // The colour programs, from the set the parallax setting asks for (UseColour): meshSolid is meshColour without the cross-fade discard (EarlyDepth).
+    TerrainProgram patchColour, patchColourCut, meshColour, meshSolid;
+    TerrainProgram? patchColourTess, patchColourCutTess, meshColourTess, meshSolidTess;
+    readonly Silk.NET.Vulkan.DescriptorSetLayout[] sets;
+
+    /// <summary>The colour programs, with the parallax's march (<see cref="GroundRelief.ParallaxActive"/>) or without it (<see cref="TerrainShaders.FragmentNative"/>).</summary>
+    sealed record ColourSet(bool March, TerrainProgram Patch, TerrainProgram PatchCut, TerrainProgram Mesh, TerrainProgram MeshSolid,
+        TerrainProgram? PatchTess, TerrainProgram? PatchCutTess, TerrainProgram? MeshTess, TerrainProgram? MeshSolidTess) : IDisposable
+    {
+        public void Dispose()
+        {
+            foreach (var p in new[] { Patch, PatchCut, Mesh, MeshSolid, PatchTess, PatchCutTess, MeshTess, MeshSolidTess }) p?.Dispose();
+        }
+    }
+
+    readonly ColourSet?[] colourSets = new ColourSet?[2];
+
+    /// <summary>
+    /// Draws with the colour set of <paramref name="march"/>, made the first time it is asked for (at load the setting's; a toggle in play makes the other once, and
+    /// keeps both: switching back costs nothing).
+    /// </summary>
+    [System.Diagnostics.CodeAnalysis.MemberNotNull(nameof(patchColour), nameof(patchColourCut), nameof(meshColour), nameof(meshSolid))]
+    void UseColour(bool march)
+    {
+        var set = colourSets[march ? 1 : 0] ??= MakeColour(march);
+        (patchColour, patchColourCut, meshColour, meshSolid) = (set.Patch, set.PatchCut, set.Mesh, set.MeshSolid);
+        (patchColourTess, patchColourCutTess, meshColourTess, meshSolidTess) = (set.PatchTess, set.PatchCutTess, set.MeshTess, set.MeshSolidTess);
+    }
+
+    ColourSet MakeColour(bool march)
+    {
+        bool tess = gpu.Device.HasTessellation;
+        TerrainProgram Patch(string fragment, string name) => new(gpu, sets, TerrainShaders.PatchVertexNative(), fragment, name);
+        TerrainProgram? PatchTess(string fragment, string name) => tess
+            ? new(gpu, sets, TerrainShaders.PatchVertexTessNative(), fragment, name, TerrainShaders.PatchControlNative(), TerrainShaders.PatchEvaluationNative()) : null;
+        TerrainProgram Mesh(string fragment, string name) => new(gpu, sets, TerrainShaders.MeshVertexNative(), fragment, name);
+        TerrainProgram? MeshTess(string fragment, string name) => tess
+            ? new(gpu, sets, TerrainShaders.MeshVertexTessNative(), fragment, name, TerrainShaders.MeshControlNative(), TerrainShaders.MeshEvaluationNative()) : null;
+        return new ColourSet(march,
+            Patch(TerrainShaders.FragmentNative(march: march), "terrain"),
+            Patch(TerrainShaders.FragmentNative(interiorCut: true, march: march), "terrain interior cut"),
+            Mesh(TerrainShaders.MeshFragmentNative(march), "terrain meshes"),
+            Mesh(TerrainShaders.MeshFragmentSolidNative(march), "terrain meshes solid"),
+            PatchTess(TerrainShaders.FragmentNative(march: march), "terrain relief"),
+            PatchTess(TerrainShaders.FragmentNative(interiorCut: true, march: march), "terrain relief interior cut"),
+            MeshTess(TerrainShaders.MeshFragmentNative(march), "terrain meshes smoothed"),
+            MeshTess(TerrainShaders.MeshFragmentSolidNative(march), "terrain meshes solid smoothed"));
+    }
 
     /// <summary>A mesh program, or its tessellated twin while the rocks are smoothed (<see cref="RockSmoothing.TessellateActive"/>).</summary>
     TerrainProgram Smoothed(TerrainProgram p, TerrainProgram? tessellated) => RockSmoothing.TessellateActive && tessellated is not null ? tessellated : p;
@@ -1274,13 +1313,10 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         fineTexture.Dispose();
         foreach (var r in retired) r.Texture.Dispose();
         if (ownsTextures) textures?.Dispose();
-        foreach (var p in new[] { patchColour, patchDepth, patchPrepass, patchColourCut, patchPrepassCut, meshColour, meshSolid, meshDepth }) p.Dispose();
-        patchColourTess?.Dispose();
+        foreach (var p in new[] { patchDepth, patchPrepass, patchPrepassCut, meshDepth }) p.Dispose();
+        foreach (var set in colourSets) set?.Dispose();
         patchPrepassTess?.Dispose();
-        patchColourCutTess?.Dispose();
         patchPrepassCutTess?.Dispose();
-        meshColourTess?.Dispose();
-        meshSolidTess?.Dispose();
         meshDepthTess?.Dispose();
         rockBake?.Dispose();
         gpu.Bindless.Free(BindlessKind.Texture2D, standIn2D);

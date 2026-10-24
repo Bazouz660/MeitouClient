@@ -123,6 +123,7 @@ post 0.9, objects 0.7, particles 0.5, shadows 0.45); render thread ~3 ms; world 
 | overview panel 440 ms | world map (8192², BC1) decoded to RGBA8 and uploaded in the frame | read ahead, uploaded as BC1 (`UiPainter.Prefetch`) |
 | 150 ms as a town fills | up to four new character appearances built in one frame | `CharacterRenderer.BuildBudgetMs` |
 | ~35 ms on the first cloudy weather | volumetric cloud renderer made on demand | made with the first frame |
+| fps: terrain 3.4 of 7 ms with the parallax off | the march's registers allocated anyway (a tenth of the warps) | colour programs without the march when it is off ([terrain](render-terrain.md) "Registers"): 2.4 ms, frame -0.9 ms |
 | 0.7-3.8 s in the reflection stage, once per session | pipelines first made in play (the reflection's scene when water first comes into view; the clouds; a camera cut drew without the fog shading rate attachment, a second pipeline of everything); seconds each with a cold driver cache (the first run after a shader or driver change), 0.16 ms median with a warm one | `ReflectionPass.Warm` and `SkyRenderer.Warm` during the loading warm-up; a cut draws with a neutral rate image |
 | 20-80 ms on first use (AI, dialogue, screens) | JIT: each method compiled on its first call (no tiering) | `JitWarmup`: the Meitou assemblies compiled ahead on a background thread (~38000 methods, 7 s, during loading; `--no-precompile`) |
 

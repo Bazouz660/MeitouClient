@@ -93,6 +93,12 @@ compact `Relief`) (segments grow with distance, each
 ring adds about the same); refinement +0.38 ms at error 16, +0.24 at 32 (crests as smooth as error 4, which costs +0.48), so error
 32 with it costs less than error 16 without. Drawing the tessellated patches' colour at once instead of prepass then late colour
 cost more (the bumps overdraw themselves).
+**Registers** (**Observed**, Nsight GPU Trace, 2560x1440 at render scale 1): with the march in the fragment stage the colour pass held about 220
+registers a thread and a tenth of the pixel warps (SM throughput 20%, texture 22%: latency-bound), whether the parallax ran or not (a uniform branch
+does not lower the allocation). With the parallax off the colour programs are built without the march (`TerrainShaders.FragmentNative(march: false)`,
+`TerrainRenderer.UseColour`; a toggle builds the other set once): the terrain stage 3.37 -> 2.42 ms and the frame 7.0 -> 6.1 ms at a save's view,
+the picture unchanged. Still open there: the interior-cut colour patches (19 draws, 1.4 ms) stall on 8 wait-for-idles, the SMs idle a third of it
+(cause **Unknown**).
 
 **Texture field** (the game's and the viewer's `--terrain-sandbox [cliffs] [x,z]`, `GroundRelief.FieldCentre`): the empty world
 (no population, foliage or objects) round a spot, default (38376, -8280), the flattest 2000-unit square of the heightmap found
