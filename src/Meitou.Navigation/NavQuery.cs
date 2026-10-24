@@ -94,7 +94,7 @@ public sealed class NavQuery(NavWorld world, NavDoors? doors = null)
     }
 
     /// <summary>
-    /// A path to <paramref name="to"/>, or, when the goal cannot be reached (or is off the mesh), to the reachable point nearest it on the X/Z plane: the
+    /// A path to <paramref name="to"/>, or, when the goal cannot be reached (or is off the mesh), to the reachable point nearest it: the
     /// first part of a long route, whose end is then left to the next query (docs/game/pathfinding.md, "Long routes").
     /// </summary>
     public PathResult FindPathToward(Vector3 from, Vector3 to, NavAgent? agent = null)
@@ -137,7 +137,8 @@ public sealed class NavQuery(NavWorld world, NavDoors? doors = null)
 
             var mesh = World.Mesh(node.Ref.Zone);
             int p = node.Ref.Polygon;
-            if (partial && mesh.DistanceXZ(p, goalPoint.X, goalPoint.Z) is var d && d < nearestDistance) (nearest, nearestDistance) = (node, d);
+            // Nearest in 3D, not on the X/Z plane: for a goal on a wall top the ground beside the wall is nearer on the plane than the walkway it lies on.
+            if (partial && Vector3.Distance(NavWorld.ClosestPoint(mesh, p, goalPoint), goalPoint) is var d && d < nearestDistance) (nearest, nearestDistance) = (node, d);
             float factor = Factor(mesh.Areas[p], agent);
             var poly = mesh.Polygons[p];
             for (int e = 0; e < poly.Length; e++)
