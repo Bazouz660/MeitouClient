@@ -13,7 +13,10 @@ The code is implemented; the user still has to validate the temporal and anti-al
 - **Particle coverage** is now passed through `IWorldPostChain.Particles`: full-size quads write their coverage in
   `ParticleRenderer.DrawCoverage`, and `PostComposite.ParticleCoverage` upsamples the half/quarter-size accumulations
   (including their depth-aware upsampling). The low-res upsample now uses the backend's depth convention, fixing
-  Metal's 0..1 depth weights. `PostTaa` feeds both MetalFX's R32F reactive mask and TAA's motion-alpha reactive channel.
+  Metal's 0..1 depth weights. `PostTaa` feeds MetalFX's R32F reactive mask with the full-size particles and TAA's
+  motion-alpha channel with both full- and low-resolution particles; the low-resolution dust share is not fed to
+  MetalFX because its depth-aware upsample is unstable at distant terrain/LOD edges (the MetalFX spatial path is
+  unaffected).
 - **Sun motion** moved into the shared `SunMotionTracker`, used by both `PostProcess` (Vulkan) and `PostTaa` (Metal),
   so Metal no longer passes zero sun uniforms.
 - **TAA velocity depth** now follows the backend's clip convention (`uClipDepthZeroToOne`): Metal's depth buffer is

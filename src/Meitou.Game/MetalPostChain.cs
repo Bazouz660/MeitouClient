@@ -18,10 +18,6 @@ sealed class MetalPostChain : IWorldPostChain, IDisposable
     /// color draw in place but stops it invalidating the temporal history.</summary>
     static readonly bool ParticleCoverageEnabled =
         Environment.GetEnvironmentVariable("MEITOU_METAL_NO_PARTICLE_COVERAGE") is not ("1" or "true");
-    /// <summary>Diagnostic A/B for the low-resolution particle share of the MetalFX reactive mask: the large soft
-    /// sprites (dust) are the ones that overlap LOD boundaries most.</summary>
-    static readonly bool LowResParticleCoverageEnabled =
-        Environment.GetEnvironmentVariable("MEITOU_METAL_NO_LOWRES_PARTICLE_COVERAGE") is not ("1" or "true");
 
     readonly MetalContext ctx;
     readonly PostComposite composite;
@@ -249,10 +245,11 @@ sealed class MetalPostChain : IWorldPostChain, IDisposable
     }
 
     /// <summary>
-    /// The full-size particle quads and the low-resolution accumulations into the temporal reactive mask. <see cref="PostTaa"/>
-    /// calls this after its velocity and object-motion passes; the target is the motion image's alpha for TAA or the R32F
-    /// reactive image for MetalFX, and <paramref name="clear"/> removes the previous value when there is no water reactive
-    /// term to keep.
+    /// The full-size particle quads into the temporal reactive mask, plus the low-resolution accumulations for TAA's
+    /// motion alpha. <see cref="PostTaa"/> calls this after its velocity and object-motion passes; the target is the
+    /// motion image's alpha for TAA or the R32F reactive image for MetalFX, and <paramref name="clear"/> removes the
+    /// previous value when there is no water reactive term to keep. MetalFX deliberately gets only the full-size
+    /// particles: its reactive mask cannot absorb the low-resolution dust path's LOD-edge instability.
     /// </summary>
     void DrawParticleCoverage(IGpuCommandList cmd, GpuTexture target, ColorMask mask, bool clear)
     {
@@ -266,9 +263,10 @@ sealed class MetalPostChain : IWorldPostChain, IDisposable
         cmd.EndRendering();
         ctx.EndHostPass(cmd);
         cmd.Order();
-        // A MetalFX reactive-mask diagnostic: the large soft particles (dust) can be left out of history rejection
-        // while TAA keeps them in its motion alpha.
-        if (!LowResParticleCoverageEnabled && mask == ColorMask.R) return;
+        // The large soft particles' low-resolution coverage is not stable enough for MetalFX's reactive mask: the
+        // half/quarter-size depth-aware upsample makes distant dust flicker at terrain and LOD edges. MetalFX gets
+        // the full-size particle coverage only; TAA keeps the low-resolution share in its motion alpha.
+        if (mask == ColorMask.R) return;
         foreach (var low in lowTargets)
         {
             if (!low.Drawn || low.Accum is null || low.Depth is null) continue;

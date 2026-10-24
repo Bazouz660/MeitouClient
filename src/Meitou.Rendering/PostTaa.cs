@@ -37,9 +37,10 @@ sealed class PostTaa : IDisposable
     public ParticleRenderer? Particles { get; set; }
 
     /// <summary>
-    /// Draws the frame's full-size particles and then the low-resolution accumulations into <c>target</c>, whose mask is
-    /// <c>mask</c>; <c>clear</c> zeroes the target first (the reactive mask when there is no water value to keep).
-    /// <see cref="MetalPostChain"/> supplies this, because it owns the particle renderer and the low-resolution targets.
+    /// Draws the frame's particle coverage into <c>target</c>, whose mask is <c>mask</c>; <c>clear</c> zeroes the
+    /// target first (the reactive mask when there is no water value to keep). <see cref="MetalPostChain"/> supplies
+    /// this, because it owns the particle renderer and the low-resolution targets; the MetalFX reactive channel gets
+    /// the full-size particles only, while TAA's motion alpha also gets the low-resolution accumulations.
     /// </summary>
     public Action<IGpuCommandList, GpuTexture, ColorMask, bool>? ParticleCoverage { get; set; }
 

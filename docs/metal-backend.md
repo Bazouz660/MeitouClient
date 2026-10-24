@@ -601,9 +601,11 @@ Keep `RecordsSecondaries` false: Metal records inline into one list.
    spatial at the 0.40 performance tier (`--upscaler metalfx`; temporal below 0.50 falls back to TAA); the saved Metal
    settings choose it, balanced by default. Object motion (grass and characters) is shared through the post-chain
    seam. MetalFX gets a reactive mask from the water's analytic coverage; MEP-1 added the weather particles' full-
-   and low-resolution coverage on both temporal paths, the shared sun-motion term and the Metal 0..1 depth convention
-   in the velocity shader. TAA also resets on a camera cut. Still to do: the remaining `PostProcess` passes (FogRate,
-   GI resolve); FogRate is a performance-only difference on Metal (no VRS attachment).
+   size coverage to MetalFX and both full- and low-resolution coverage to TAA, the shared sun-motion term and the
+   Metal 0..1 depth convention in the velocity shader. The low-resolution dust share stays out of MetalFX's
+   reactive mask: its depth-aware upsample is unstable at distant terrain/LOD edges. TAA also resets on a camera
+   cut. Still to do: the remaining `PostProcess` passes (FogRate, GI resolve); FogRate is a performance-only
+   difference on Metal (no VRS attachment).
 2. **Fog volumes and light shafts.** The **fog volumes are now drawn on Metal** by `PostComposite` over the scene
    (`uFogVolumeData`, `uFogVolumeEye` and `uFogVolumeInfo` are published by `FogVolumes`). SSAO, FXAA, the heat haze
    and the light shafts (`LightShaftShaders` inject/integrate/scatter/apply) run there too. The shafts use the
@@ -826,9 +828,10 @@ default.
   | Sampled`. TAA resets on the first frame, a resize and a camera cut (>5000 units), and MetalFX resets on the same
   cut. The velocity pass's far-slice inputs are disabled; it reads the shared `SunMotionTracker`, accounts for
   Metal's 0..1 depth (`uClipDepthZeroToOne`) and flips the depth lookup for top-down targets (`uFlipDepthY`).
-  Weather-particle coverage is written into the reactive mask (MetalFX)
-  or the motion alpha (TAA), including the low-resolution accumulations. The grass and characters write their own
-  motion through `IWorldPostChain.ObjectMotion`.
+  Weather-particle coverage is written into the reactive mask (MetalFX, full-size particles only) or the motion
+  alpha (TAA, full- and low-resolution particles). The low-resolution dust share is excluded from MetalFX because
+  its depth-aware upsample flickers at distant terrain/LOD edges. The grass and characters write their own motion
+  through `IWorldPostChain.ObjectMotion`.
 - `IGpuContext` facts: `FramesInFlight`, `VideoMemoryBudget`, `DeferDelete`, `Finish`, `CreateReadback` +
   `FrameCompleted`, `ConstantVertexAttributes`/`DummyVertexArray`, `EnsureFrame`, `HasRayQuery`,
   `RenderTargetsBottomUp`.
