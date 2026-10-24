@@ -43,9 +43,14 @@ Today's Metal optimizations are now **off by default on Metal**, restoring the p
 The CPU cull is the default reference again. Ground relief remains off on Metal (`GroundRelief.Enabled =
 ParallaxActive = false` before `WorldFrame.CreateGpu`); `MEITOU_METAL_GROUND_RELIEF=1` opts back in. The Metal settings
 hide the ground-relief controls while it is off. The 7168 MB override warns: use the 5120 MB default for normal testing.
-The next isolated run is full shutdown, then windowed 800x600 at 5120 MB with all three optimizations off and **no
-full-screen toggle**; if stable, re-enable MetalFX temporal first (unchanged saved config), then the three optimization
-flags one at a time. Do not use Xcode replay.
+
+**2026-10-24 13:14, after a full shutdown:** the safe path ran at **3024x1712 full-size**, MetalFX temporal 0.67 and
+the 5120 MB budget with ground relief, GPU cull, state cache and compression off: 5039 frames in 175.8 s, 29 fps, no
+watchdog or zombie process. That rules out MetalFX temporal 0.67 and the final resolution on their own; it leaves the
+optimization set or the stale GPU/WindowServer state from the first crash as the cause. The next A/B is windowed
+800x600, then full size: `MEITOU_METAL_GPU_CULL=1` first (the only new GPU workload), then
+`MEITOU_METAL_FAST_STATE=1`, then `MEITOU_METAL_COMPRESSION=1`, one at a time and with a full shutdown after any
+failure. Do not use Xcode replay.
 
 Matched profiling (2026-10-23, 800x600 points = 1600x1200 pixels, native/no AA, same view): Metal with the GPU
 mesh/rock cull ~46 fps steady (command-buffer GPU 21.7 ms, record 4.8 ms); the CPU cull is ~44 fps and 22.6 ms.
