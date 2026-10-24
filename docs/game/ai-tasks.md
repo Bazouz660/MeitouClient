@@ -886,7 +886,18 @@ A character's job list (the Orders menu's "Perma-Jobs"; class `OrdersReceiver`, 
 - Nearness = 1 - d² / 3397386.5 (about 1843 units), clamped to at most 1, and at least 0.4 when both stand in the same building.
 - Score = need × nearness. The same faction always counts; another faction only when the score is at least 0.1 **and** the medic is not of the
   player's faction or Heal Allies is on. A patient in the give-up list scores × 0.05; ≥ 0.001 and on the planner's target list is taken at once.
-  The medic itself scores its plain need. The highest wins; with none, an NPC whose package says `heals strangers` looks again more widely.
+  The medic itself scores its plain need. The highest wins; with none, a second pass looks again more widely.
+- **Second pass** (**Observed**, same function): sensed (0x420a, 0x14), not of a robot race (job 58), no vfunc 0x248, not `not real`. An
+  imprisoned candidate (+0x2f8 == 2) counts when its cage passes `FUN_14032eb40` (false) and an ownership test against the medic
+  (cage +0x58 vfunc 8), and it is not an obedient slave (state 1); any other candidate needs the medic's faction to say `heals strangers` and
+  vfunc 0x30. Both then need equal vfunc 0x118 and a different platoon (+0x1d8 vfunc 0x10 false); scored as the first pass. So NPC
+  guards patch up their prisoners, without a kit ([first aid update](character-stats.md#first-aid-update)).
+- **NPCs run it as a goal**: the `Medic` AI_TASK (enum 58) is in the goal lists of most AI packages (Squad, Squad2 and Leader roles; e.g.
+  `Guard building, residents`, `Guard town`, `Shop`, `Wandering from town to town`, the slaver packages; **Verified** by a data survey of the
+  full load order, 2026-10-24).
+- Meitou: an idle NPC first tries the squad-mate rule (`FirstAidSystem.TreatSomeone`, engine stand-in for the first pass), then
+  `TreatPrisoner`: an occupied cage owned by its faction within sight (the ownership test read as owner faction = medic's), not its squad;
+  the `heals strangers` branch, vfunc 0x118 and the package's goal list are not modelled (every NPC runs it).
 
 ## Squad AI options
 

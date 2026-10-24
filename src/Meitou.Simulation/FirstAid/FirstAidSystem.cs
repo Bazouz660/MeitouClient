@@ -5,6 +5,7 @@ using Meitou.Data.Gameplay.Ai;
 using Meitou.Data.Gameplay.Bodies;
 using Meitou.Simulation.Bodies;
 using Meitou.Simulation.Items;
+using Meitou.Simulation.Locks;
 
 namespace Meitou.Simulation.FirstAid;
 
@@ -411,7 +412,7 @@ public sealed class FirstAidSystem(GameConstants constants, BodyOptions options,
             if (!Settings.AutoNpcs) continue;
             // Idle: no task, following, wandering or an implicit job.
             bool idle = next[i].Task is (byte)CharacterTask.Idle or (byte)CharacterTask.Wander or (byte)CharacterTask.Follow || cold.Implicit is not null;
-            if (idle) TreatSomeone(world, i, taken);
+            if (idle && !TreatSomeone(world, i, taken)) TreatPrisoner(world, i, taken);
         }
     }
 
@@ -573,6 +574,37 @@ public sealed class FirstAidSystem(GameConstants constants, BodyOptions options,
         var resume = cold.Implicit is not null || cold.JobIndex >= 0 ? cold.ResumeTask : next[i].Task is (byte)CharacterTask.Wander or (byte)CharacterTask.Follow ? (CharacterTask)next[i].Task : CharacterTask.Idle;
         Begin(world, i, new CharacterId(best, next[best].Generation), resume);
         return true;
+    }
+
+    /// <summary>
+    /// The Medic goal's second pass for an NPC that found no patient (<c>FUN_14099f690</c>, docs/game/ai-tasks.md "Medic jobs"): a prisoner in a cage its faction owns, within its sight,
+    /// not of a robot race, not an obedient slave, not of its squad and not treated by another, scored by need x relation factor x nearness; the highest is treated, without a kit
+    /// (<see cref="Apply"/>). Need counts both kinds of damage, kit or not (<c>FUN_140998200</c>). True when it started.
+    /// </summary>
+    bool TreatPrisoner(World world, int i, HashSet<int> taken)
+    {
+        var table = world.Characters;
+        var next = table.Next;
+        var cold = table.Cold(i)!;
+        if (cold.Medical is not { Incapacitated: false } || cold.Stats is null || cold.InCombat) return false;
+        if (cold.SquadId >= 0 && world.Squads.Find(cold.SquadId) is { } squad && Fighting(table, squad)) return false;
+        float range = AggroSystem.RangeOf(cold, AggroSystem.OutdoorSight);
+        int best = -1;
+        float bestScore = 0;
+        foreach (var f in world.Fixtures.All)
+        {
+            if (f.Kind != FixtureKind.Cage || f.Owner != cold.Faction || FixtureRegistry.IsFree(table, f) || !table.TryResolveNext(f.Occupant, out int s)) continue;
+            if (s == i || taken.Contains(s) || table.Cold(s) is not { IsImprisoned: true, Medical: { Dead: false } med, Race: { IsRobot: false } race } other) continue;
+            if (other.SlaveState == 1 || other.SquadId >= 0 && other.SquadId == cold.SquadId) continue;
+            float dx = next[s].Position.X - next[i].Position.X, dz = next[s].Position.Z - next[i].Position.Z, d2 = dx * dx + dz * dz;
+            if (d2 > range * range) continue;
+            float relation = other.Faction == cold.Faction || Relations is null || !Relations.Contains(cold.Faction) || !Relations.Contains(other.Faction) ? 1 : MathF.Max(Relations.Get(cold.Faction, other.Faction) * 0.01f, 0.05f);
+            float score = Need(med, race, true, true) * relation * Nearness(d2);
+            if (score <= bestScore) continue;
+            best = s;
+            bestScore = score;
+        }
+        return best >= 0 && StartJob(world, i, best, taken, splint: false);
     }
 
     /// <summary>A fight is on in the squad: a member in combat or with an attack order.</summary>
