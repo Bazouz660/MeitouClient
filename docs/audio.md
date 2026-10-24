@@ -266,7 +266,8 @@ through one helper (`FUN_1405c9a70(char, event, maxSqDist)`): **dropped when the
   `Sabres`, `Hackers`, `Heavy_Weapons` and so on, so **Observed (names compared, not heard):** the exe's `Blunt`, `Heavy`, `Bow` select nothing and those weapons' swings are silent in the original; Meitou keeps that.
   Animals set `Weapons` to their creature name and `Creature_VO` to it too.
 - **Impacts** (`Impact` event on the defender, after setting `Impacts`): a blow that lands: `Light_Hit` or `Heavy_Hit` (heavy = it staggers), `HtH_Impacts` or `HtH_Impacts_Robot` when the attacker fights
-  unarmed (robot race); blocked: `Parry` (`HtH_Impacts` for an unarmed non-robot attacker); a bolt into a body: `Deflection` after `Armor_Worn` when armour covers the spot, else `Impact`. A bolt in the ground:
+  unarmed (robot race); blocked: `Parry` (`HtH_Impacts` for an unarmed non-robot attacker), nothing when the block is a dodge technique (the base game's `Dodge back` rows are flagged
+  `is block` and `is dodge`; **engine choice**, what the exe posts there is **Unknown**); dodged: nothing; a bolt into a body: `Deflection` after `Armor_Worn` when armour covers the spot, else `Impact`. A bolt in the ground:
   `Impact` on a pooled object at the spot, `Impacts` = the ground's name (Stone for anything unnamed). `Attack` on a shooter.
 - **Voices** (`VO_Bank`, loaded explicitly). A person's `VO_Races` = RACE `sounds` (0..3: Human, Shek, Hive, Robot; other: Human) plus `_Male` / `_Female` unless single-gender; an animal's `Creature_VO` = RACE
   `sounds` less 4 indexing Beak, Bull, Cage, Dog, Duck, Gar, Goat, Gorillo, IronSpider, Leviathan, Pack, Spider, Turtle (below 4: Dog). A landed hit: **50 %** (`random & 8`) `VO_Get_Hit` (animals `VO_Creature_Take_Damage`).

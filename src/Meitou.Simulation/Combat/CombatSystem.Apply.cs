@@ -52,7 +52,8 @@ public sealed partial class CombatSystem
                 A.Parried++;
                 D.Blocks++;
                 GainCombatXp(ac, dc, XpEvent.GlancingHit, XpEvent.Defended);
-                Sound(world, SoundKind.Blocked, d, a, prev[d].Position, unarmed: ac.Fighter.Unarmed, robot: ac.Race.IsRobot);
+                // A dodge technique that counts as a block (the base game's "Dodge back" rows are flagged both) is silent: it looks like a dodge, and the block impact sounds like a hit.
+                if (!techniques[D.ReactTech].IsDodge) Sound(world, SoundKind.Blocked, d, a, prev[d].Position, unarmed: ac.Fighter.Unarmed, robot: ac.Race.IsRobot);
                 Stop(ref A, tech, blow);
                 Record(now, a, d, blow, outcome, -1, default, false, false);
                 return;
