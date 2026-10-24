@@ -810,7 +810,7 @@ that damages a complete building. Production, power and research: [Production](#
 - `Meitou.Data/Gameplay/Construction/BuildingBuildData.cs`: `BuildingBuildData.From/LoadAll` (build fields, material
   entries), `MaterialCost`, `Target` (sum of required), `Rate` (`build speed mult` / (1200/11)), `EstimatedHours(buildSpeed)`
   (the build window's estimate, **Verified** algebra: materials / (`build speed mult` x CONSTANTS `build speed` x option)).
-- `.../ResearchGate.cs`: `StartResearch(db, start)` (the default start research, then the start-off's `research`),
+- `.../ResearchGate.cs`: `StartResearch(db, start)` (the start-off's `research`, or the default start research when it lists none),
   `Unlocked(db, completed)` (union of `enable buildings`, BUILDING targets only), `DefaultStartId`.
 - `.../PlacementRules.cs`: `PlacementFailure` (one value per original message), `PlacementTown`,
   `TownBlock(BuildingBuildData, Vector2 at, IReadOnlyList<PlacementTown>, string playerFactionId)`, `Message(PlacementFailure)`
@@ -831,8 +831,8 @@ placements are not in it. Ids `<n>-zone<X>.<Y>-INGAME`, n from a per-zone counte
 in the loaded save (generated interiors share the pattern; `Reserve(id)`). The 106 `-zoneX.Y-INGAME` ids of the level data
 are not reserved by the simulation (**engine gap**, the host may call `World.Buildings.Reserve`); a collision with a base
 placement is the host's to avoid. `World.Research` (`Construction.ResearchState`): completed RESEARCH ids and the
-`Unlocked` set (replaced, never changed in place). A new game completes the default start research
-(`ResearchGate.DefaultStartId`, [build menu](game/buildings-production.md#build-menu)) and the start-off's `research`
+`Unlocked` set (replaced, never changed in place). A new game completes the start-off's `research`, or the default start research
+(`ResearchGate.DefaultStartId`, [build menu](game/buildings-production.md#build-menu)) when it lists none
 (`PopulationSystem.StartPlayer`); a load takes the save's. Research benches change it ([Production](#production), which says when it is hashed).
 
 **Outposts.** `World.Buildings.Towns` (`PlayerTown`: `Number` 1.., `Name`, `Position`, `Owner`; never removed) and
