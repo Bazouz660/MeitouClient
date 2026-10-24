@@ -169,6 +169,7 @@ public sealed class RagdollSystem : ITickSystem, IStateHashed, IRagdollState, IR
         for (int i = 0; i < next.Length; i++)
         {
             if (!next[i].Alive || table.Cold(i) is not { } cold) continue;
+            cold.CarryAttach = cold.CarriedBy.IsNone ? null : AttachOf(table, cold);
             var id = table.IdOf(i);
             ragdolls.TryGetValue(id, out var r);
             var wanted = cold.Appearance is null || !HasRagdoll(cold) ? RagdollPart.None : Wanted(cold);
@@ -257,11 +258,37 @@ public sealed class RagdollSystem : ITickSystem, IStateHashed, IRagdollState, IR
         world.Profile.Part("rag sweep");
     }
 
-    /// <summary>The character's drawn placement: position (a carried body's at <see cref="CarryPose"/> from its carrier), facing, size; the renderer's world matrix.</summary>
+    /// <summary>The character's drawn placement: position, facing (a carried body's on its carrier's shoulder: <see cref="CarryPose"/>), size; the renderer's world matrix.</summary>
     static Matrix4x4 Placement(Ragdoll r, CharacterCold cold, in CharacterHot hot)
     {
-        var at = hot.Position + (cold.CarriedBy.IsNone ? Vector3.Zero : CarryPose.Offset(hot.Yaw));
-        return CharacterRigs.Placement(r.Setup, at, hot.Yaw, r.Scale);
+        if (cold.CarriedBy.IsNone) return CharacterRigs.Placement(r.Setup, hot.Position, hot.Yaw, r.Scale);
+        var (at, rotation) = (cold.CarryAttach ?? CarryPose.Fallback).World(hot.Position, hot.Yaw);
+        return CharacterRigs.Placement(r.Setup, at, rotation, r.Scale);
+    }
+
+    /// <summary>Where a carried body hangs: on its carrier's attach bone as the carrier's animation poses it now; null without the carrier's skeleton or that bone.</summary>
+    CarryAttach? AttachOf(CharacterTable table, CharacterCold cold)
+    {
+        if (!table.TryResolveNext(cold.CarriedBy, out int slot) || table.Cold(slot) is not { Appearance: { } look } carrier || rigs.For(look) is not { } setup) return null;
+        if (setup.Rig.Handle(CarrySystem.AttachBone) is not int bone) return null;
+        var scratch = setup.Rig.Rent();
+        try
+        {
+            PoseDerived(scratch, setup, carrier);
+            return CarryPose.Attach(scratch.DerivedPosition[bone] - new Vector3(0, setup.GroundOffset, 0), scratch.DerivedRotation[bone], CarryPose.Height01(cold.Appearance));
+        }
+        finally { setup.Rig.Return(scratch); }
+    }
+
+    /// <summary>Poses <paramref name="scratch"/> as the character's animation and its fixed posture layers do now (model space).</summary>
+    void PoseDerived(PoseScratch scratch, CharacterPoseSetup setup, CharacterCold cold)
+    {
+        var layers = new List<ActiveLayer>();
+        if (cold.Animation is { } animation && animations is not null)
+            foreach (var layer in animations.Publish(animation))
+                if (setup.Rig.Layer(rigs.Database, layer.Name, setup.Animal) is { } def) layers.Add(new ActiveLayer(def, MathF.Max(layer.Time, 0), layer.Weight));
+        foreach (var (def, time) in setup.Fixed) layers.Add(new ActiveLayer(def, time, 1));
+        scratch.PoseDerived(setup.Shape, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(layers));
     }
 
     /// <summary>Whether a saved ragdoll belongs to this one: a pose for each body, its root where the character stands (a platoon that travelled since moves its characters).</summary>
@@ -282,15 +309,10 @@ public sealed class RagdollSystem : ITickSystem, IStateHashed, IRagdollState, IR
     RigidTransform[] Animated(Ragdoll r, CharacterCold cold, Matrix4x4 placement)
     {
         var rig = r.Setup.Rig;
-        var layers = new List<ActiveLayer>();
-        if (cold.Animation is { } animation && animations is not null)
-            foreach (var layer in animations.Publish(animation))
-                if (rig.Layer(rigs.Database, layer.Name, r.Setup.Animal) is { } def) layers.Add(new ActiveLayer(def, MathF.Max(layer.Time, 0), layer.Weight));
-        foreach (var (def, time) in r.Setup.Fixed) layers.Add(new ActiveLayer(def, time, 1));
         var scratch = rig.Rent();
         try
         {
-            scratch.PoseDerived(r.Setup.Shape, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(layers));
+            PoseDerived(scratch, r.Setup, cold);
             var turn = Quaternion.CreateFromRotationMatrix(placement with { M41 = 0, M42 = 0, M43 = 0 });
             turn = Quaternion.Normalize(turn);
             var bodies = r.Definition.Bodies;

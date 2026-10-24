@@ -129,4 +129,11 @@ public sealed class CharacterRigs(GameDatabase db, Func<string, string?> findMes
         var world = Matrix4x4.CreateRotationY(yaw) * Matrix4x4.CreateTranslation(position - new Vector3(0, setup.GroundOffset, 0));
         return scale != 1 && scale > 0 ? Matrix4x4.CreateScale(scale) * world : world;
     }
+
+    /// <summary>The same for a node turned by <paramref name="rotation"/> (a carried body's): lowered by the ground offset in its own frame, then turned and moved.</summary>
+    public static Matrix4x4 Placement(CharacterPoseSetup setup, Vector3 position, Quaternion rotation, float scale)
+    {
+        var world = Matrix4x4.CreateTranslation(0, -setup.GroundOffset, 0) * Matrix4x4.CreateFromQuaternion(rotation) * Matrix4x4.CreateTranslation(position);
+        return scale != 1 && scale > 0 ? Matrix4x4.CreateScale(scale) * world : world;
+    }
 }

@@ -115,12 +115,12 @@ public sealed record CharacterSnapshot(CharacterId Id, CharacterAppearance? Appe
     public HudView? Hud { get; init; }
     public InventoryView? ItemGrid { get; init; }
     /// <summary>
-    /// The character carrying this one (none when not carried). A carried body has its carrier's position and facing; the renderer should hang it from the carrier's
-    /// <see cref="AttachBone"/> (the original attaches it there) with the <c>carry me</c> pose.
+    /// The character carrying this one (none when not carried). A carried body has its carrier's position and facing; it is drawn at <see cref="Carry"/> from them,
+    /// with the <c>carry me</c> pose.
     /// </summary>
     public CharacterId CarriedBy { get; init; } = CharacterId.None;
-    /// <summary>The carrier's bone a carried body hangs from (<c>Bip01 L UpperArm</c>), null when not carried.</summary>
-    public string? AttachBone { get; init; }
+    /// <summary>Where a carried body hangs, in its carrier's frame (on the carrier's <c>Bip01 L UpperArm</c>); null when not carried.</summary>
+    public Carrying.CarryAttach? Carry { get; init; }
     /// <summary>The ITEM (string id) held in the <c>hands</c> point while operating: the functionality's <c>special tool</c> (docs/game/buildings-production.md "Production"); null for none.</summary>
     public string? HeldTool { get; init; }
     /// <summary>The size the body is drawn at: an animal's lerp(age, <c>scale min</c>, <c>scale max</c>) (its <c>MedicalState.ScaleK</c>), 1 for people.</summary>
@@ -176,7 +176,7 @@ public sealed record CharacterSnapshot(CharacterId Id, CharacterAppearance? Appe
     public IReadOnlyList<WatcherView> Watchers { get; init; } = [];
     /// <summary>
     /// The bones the character's ragdoll sets (<see cref="Ragdolls.RagdollSystem"/>), in the model space of its drawn placement (position, minus the shape's ground offset, a
-    /// carried body's <see cref="Carrying.CarryPose"/> offset, facing, size: <see cref="CharacterRigs.Placement"/>), to pose over the animation; null without a ragdoll. Immutable.
+    /// carried body's <see cref="Carry"/>, facing, size: <see cref="CharacterRigs.Placement"/>), to pose over the animation; null without a ragdoll. Immutable.
     /// </summary>
     public BonePose? Ragdoll { get; init; }
 }

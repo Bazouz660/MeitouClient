@@ -10,7 +10,15 @@ Crime prices/ledger: [economy](economy.md); body/load: [stats](character-stats.m
 Bip01 L UpperArm attachment. A collapsed, missing or crushed left arm prevents carrying ([arms](combat.md#arms)); right arm irrelevant.
 **Observed** target must resolve character and differ from carrier; already-carried targets
 require permitted snatch/partner check. AI down-state gate and player context-menu eligibility
-are different. Race carry-bone affects attachment; exact transform/secondary character type unknown.
+are different. Race carry-bone affects attachment; secondary character type unknown.
+
+**Observed** placement each frame (`CharacterAnimal::vfunc_77` `FUN_1405cda20`, `FUN_1405b5980`, `FUN_1405b1a30`): the body's
+*node* (not its root bone) gets position `carrierPos + carrierRot·boneModelPos + boneWorldRot·O` and rotation
+`boneWorldRot · q(w .70710677, x .70710677) · q(w .99254614, z .121869296)` (90° about x, ~14° about z); the `carry me` clip plays inside
+it. Bone = `AnimationClass+0x1b0` (`attachRootToMastersBone`, KenshiLib 1ce4a16), set by the attach `FUN_1405ced90`. `O` lerps by
+`t = 2·characterHeight_0to1` from (-1.4,0,1) to (-1.9,-1,2.6) (t<1), then to (-3,-0.4,5); `characterHeight_0to1 = (Height − 80)·0.025`,
+0.5 by default (Appearance+0x18c, `FUN_1405334d0`). Gated by `Character+0x1a9`, `AnimationClass+0x1c0` and vfunc 0x248 = 0 (meaning
+**Unknown**); otherwise the body is just put at the carrier's position.
 
 Lift sequence/clip/approach, reciprocal partner handles, weapon/ragdoll/state changes and unlink
 must stay ordered. **Verified** carry load is CONSTANTS30, not target's weight/race/inventory;

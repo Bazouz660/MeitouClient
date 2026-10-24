@@ -198,6 +198,8 @@ public sealed class CharacterCold
     public CharacterId Carrying { get; set; } = CharacterId.None;
     /// <summary>The character carrying this one (none: not carried); the original's <c>isBeingCarried</c> with the partner handle.</summary>
     public CharacterId CarriedBy { get; set; } = CharacterId.None;
+    /// <summary>While carried: where the body hangs on its carrier's shoulder, from the carrier's pose (<see cref="Ragdolls.RagdollSystem"/>, each tick); null without the carrier's skeleton.</summary>
+    public Carrying.CarryAttach? CarryAttach { get; set; }
     /// <summary>Whom the <see cref="CharacterTask.PickUp"/>, <see cref="CharacterTask.Loot"/> or <see cref="CharacterTask.StealthKo"/> task is for; meaningful only while one of those tasks is set.</summary>
     public CharacterId CarryTarget { get; set; } = CharacterId.None;
     /// <summary>Seconds into the <c>shoulder lift left</c> clip of a pick-up or put-down, or the <c>knockout</c> swing of a stealth KO, in progress (-1: not yet; the animation system plays the clip at this time).</summary>

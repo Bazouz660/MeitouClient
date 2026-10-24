@@ -81,13 +81,47 @@ public sealed class CarrySettings
 public readonly record struct LootEntry(long Tick, CharacterId Looter, CharacterId Victim, int Taken, int Left, bool Witnessed);
 
 /// <summary>
-/// Where a carried body is drawn and posed: it has its carrier's position and facing, and hangs this far from it, up to the shoulder and to the left (engine stand-in: the
-/// original hangs it from the carrier's attach bone; the numbers are a guess). The host draws it there and the ragdoll's pinned bones follow it there.
+/// A carried body's placement (its node: position and rotation) in its carrier's frame: relative to the carrier's position, before its facing. The body keeps its carrier's
+/// position and facing; the host draws it at <see cref="World"/> and the ragdoll's pinned bones follow it there.
+/// </summary>
+public readonly record struct CarryAttach(System.Numerics.Vector3 Offset, System.Numerics.Quaternion Rotation)
+{
+    /// <summary>The body's node in the world for a carrier at <paramref name="position"/> facing <paramref name="yaw"/>.</summary>
+    public (System.Numerics.Vector3 Position, System.Numerics.Quaternion Rotation) World(System.Numerics.Vector3 position, float yaw)
+    {
+        var turn = System.Numerics.Quaternion.CreateFromAxisAngle(System.Numerics.Vector3.UnitY, yaw);
+        return (position + System.Numerics.Vector3.Transform(Offset, turn), System.Numerics.Quaternion.Normalize(turn * Rotation));
+    }
+}
+
+/// <summary>
+/// Where a carried body hangs (docs/game/carry-loot.md "Carry and release", <b>Observed</b> <c>CharacterAnimal::vfunc_77</c>, <c>FUN_1405b5980</c>): its node sits on the
+/// carrier's <see cref="CarrySystem.AttachBone"/>, moved by an offset in the bone's frame that grows with the body's <c>Height</c>, and turned by the bone's rotation
+/// then <see cref="Twist"/>.
 /// </summary>
 public static class CarryPose
 {
-    public const float Height = 14, Side = 2;
+    // The offsets at height 0, 0.5 and 1 (units, the bone's frame).
+    static readonly System.Numerics.Vector3 Short = new(-1.4f, 0, 1), Middle = new(-1.9f, -1, 2.6f), Tall = new(-3, -0.4f, 5);
 
-    /// <summary>The offset from the carrier's position for a body facing <paramref name="yaw"/>.</summary>
-    public static System.Numerics.Vector3 Offset(float yaw) => new(MathF.Cos(yaw) * Side, Height, -MathF.Sin(yaw) * Side);
+    /// <summary>90 degrees about x, then about 14 degrees about z (the original's two fixed quaternions).</summary>
+    public static readonly System.Numerics.Quaternion Twist = new System.Numerics.Quaternion(0.70710677f, 0, 0, 0.70710677f) * new System.Numerics.Quaternion(0, 0, 0.121869296f, 0.99254614f);
+
+    /// <summary>Without the carrier's skeleton: on its left shoulder, upright (engine stand-in).</summary>
+    public static readonly CarryAttach Fallback = new(new(2, 14, 0), System.Numerics.Quaternion.Identity);
+
+    /// <summary>The body's height as 0..1: (<c>Height</c> slider - 80) / 40, 0.5 without a body file (the original's <c>characterHeight_0to1</c>, a 30-bone skeleton's).</summary>
+    public static float Height01(Meitou.Data.Characters.CharacterAppearance? look) =>
+        look?.Body?.Floats.TryGetValue("Height", out var h) == true ? (h - 80) * 0.025f : 0.5f;
+
+    /// <summary>The offset from the bone for a body of <paramref name="height01"/>: a lerp short to middle below 0.5, middle to tall above.</summary>
+    public static System.Numerics.Vector3 Offset(float height01)
+    {
+        float t = height01 * 2;
+        return t < 1 ? System.Numerics.Vector3.Lerp(Short, Middle, t) : System.Numerics.Vector3.Lerp(Middle, Tall, t - 1);
+    }
+
+    /// <summary>The placement for the carrier's attach bone at <paramref name="bone"/> / <paramref name="rotation"/> in its frame (model space, lowered by its ground offset).</summary>
+    public static CarryAttach Attach(System.Numerics.Vector3 bone, System.Numerics.Quaternion rotation, float height01) =>
+        new(bone + System.Numerics.Vector3.Transform(Offset(height01), rotation), System.Numerics.Quaternion.Normalize(rotation * Twist));
 }
