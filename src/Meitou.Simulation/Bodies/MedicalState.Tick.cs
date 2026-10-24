@@ -33,15 +33,15 @@ public sealed partial class MedicalState
     public float Treat(float dt, float skill, float kitQuality, bool robotKit, in MedicalContext ctx, out int touched) =>
         Bandage(TreatmentRate(ctx.Constants, skill, kitQuality, robotKit) * dt, robotKit, ctx.Race, out touched);
 
-    /// <summary>Gives <paramref name="amount"/> to the bandaged pool of the first part with room that the kit type treats, moving on only when a part fills (see <see cref="Treat"/>). A dead patient takes nothing.</summary>
-    public float Bandage(float amount, bool robotKit, RaceData race, out int touched)
+    /// <summary>Gives <paramref name="amount"/> to the bandaged pool of the first part with room that the kit type treats (null: no kit, any part), moving on only when a part fills (see <see cref="Treat"/>). A dead patient takes nothing.</summary>
+    public float Bandage(float amount, bool? robotKit, RaceData race, out int touched)
     {
         touched = 0;
         if (Dead || amount <= 0) return 0;
         float total = 0;
         foreach (var p in parts)
         {
-            if (p.IsRobotic(race) != robotKit) continue;
+            if (robotKit is { } robot && p.IsRobotic(race) != robot) continue;
             float room = p.MaxHp - p.Flesh - p.Bandage;
             if (room <= 0) continue;
             float add = MathF.Min(amount, room);

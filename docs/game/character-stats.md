@@ -139,8 +139,12 @@ skill x 0.8 when treating oneself and q = min(skill, kit quality):
 - **Drain** = lerp(`medkit drain 99`, `medkit drain 1`, (100 - skill) / 100) x dt (skill, not q), x `robot medic speed mult` for a
   robot kit (function 12).
 - **Player only.** The bandaging step drains only when the medic's faction is the player's (Faction +0x250); NPC medics use up kits
-  only on wounds. The same test lets a non-player medic treat without a kit (rate 1, quality 5 for wounds; `Task_FirstAid`
-  `FUN_1403563a0`); Meitou's NPC rule still needs a kit.
+  only on wounds.
+- **Kitless.** `Task_FirstAid` (`FUN_1403563a0`) skips the kit search when the medic is not the player's and the patient is
+  imprisoned (+0x2f8 == 2) or a chained slave of the medic's faction (`FUN_14032e2a0`: +0x320 chained, +0x330 != 11, slave owner
+  +0x1a0 → +0xe0). Without a kit, wounds close with quality 5, every part (organic or robotic) takes 1 HP a second (no `medic speed
+  mult`, no skill), nothing drains. Other NPCs still need a kit. Meitou: the imprisoned case (`FirstAidSystem.Apply`); chained
+  slaves are not modelled. **Unknown**: whether a kit stored on the task earlier is still used then; what +0x330 code 11 is.
 - **Skill.** `Task_FirstAid` (`FUN_1403563a0`) runs a first aid kit phase, then (none left) a robot repair kit phase; the skill is
   CharStats +0x98 (`medic`) in the first, +0xdc (`robotics`) in the second, and the trained stat 9 or 6 likewise; the race's `heal
   stat` is not read here.

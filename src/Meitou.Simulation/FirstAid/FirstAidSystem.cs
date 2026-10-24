@@ -32,6 +32,8 @@ public sealed class FirstAidSystem(GameConstants constants, BodyOptions options,
     public const int EffectTreat = 1;
     /// <summary>Untreated damage (HP) under which a treatment in progress counts as finished.</summary>
     const float Done = 1e-3f;
+    /// <summary>The kit quality closing a wound without a kit (<c>FUN_14064d800</c>).</summary>
+    const float KitlessQuality = 5;
 
     public FirstAidSettings Settings { get; } = settings ?? new FirstAidSettings();
     public GameConstants Constants { get; } = constants;
@@ -253,19 +255,37 @@ public sealed class FirstAidSystem(GameConstants constants, BodyOptions options,
         // The skill and trained stat: medic with a first aid kit, robotics with a robot repair kit; treating oneself x0.8 (FUN_14033c5a0, Task_FirstAid's kit phase).
         StatsEnumerated StatOf(bool robotKit) => robotKit ? StatsEnumerated.Robotics : StatsEnumerated.Medic;
         float SkillOf(bool robotKit) => stats[StatOf(robotKit)] * medical.StatMultiplier(StatOf(robotKit)) * (m == p ? 0.8f : 1);
-        // Open wounds are closed first, newest first, with a kit matching the patient's race; nothing is bandaged meanwhile (FUN_14064d800). This drain is not gated.
+        // A medic not of the player's treats an imprisoned patient without a kit (Task_FirstAid FUN_1403563a0 skips the kit search; the chained-slave case is not modelled).
+        bool kitless = !medicCold.IsPlayer && patientCold.IsImprisoned;
+        var ctx = new MedicalContext(Constants, bodyOptions, race);
+        // Open wounds are closed first, newest first, with a kit matching the patient's race (none: quality 5); nothing is bandaged meanwhile (FUN_14064d800). This drain is not gated.
         if (body.Wounds.Count > 0)
         {
-            if (FindKit(world, m, medicCold, FunctionOf(race.IsRobot)) is not { } woundKit)
+            var woundKit = kitless ? null : FindKit(world, m, medicCold, FunctionOf(race.IsRobot));
+            if (woundKit is null && !kitless)
             {
                 Say(world, m, medicCold.TreatTarget, KitEmpty);
                 End(table, m);
                 return;
             }
-            float woundSkill = SkillOf(race.IsRobot);
-            body.CloseWound(dt, woundSkill, Items.Info(woundKit.Item.Record)?.Quality ?? 0, Constants);
-            Drain(woundKit, woundSkill, dt, race.IsRobot, 1);
-            xp.Medic(stats, race, medicRace, dt, StatOf(race.IsRobot));
+            float woundSkill = SkillOf(race.IsRobot && !kitless);
+            body.CloseWound(dt, woundSkill, woundKit is { } wk ? Items.Info(wk.Item.Record)?.Quality ?? 0 : KitlessQuality, Constants);
+            if (woundKit is { } used) Drain(used, woundSkill, dt, race.IsRobot, 1);
+            xp.Medic(stats, race, medicRace, dt, StatOf(race.IsRobot && !kitless));
+            return;
+        }
+        if (kitless)
+        {
+            // Without a kit every part takes 1 HP a second, organic or robotic alike, and nothing drains (FUN_140649a00).
+            if (body.Bandage(dt, null, race, out _) <= 0)
+            {
+                Say(world, m, medicCold.TreatTarget, HealingOtherFinished, BeingHealedFinished);
+                patientCold.StuckBolts = null;
+                End(table, m);
+                return;
+            }
+            xp.Medic(stats, race, medicRace, dt, StatsEnumerated.Medic);
+            Deeds?.FirstAid(world, m, p, dt);
             return;
         }
         // Ordinary kits first; a robotic part is treated once the organic ones are done. Treatment runs until the last bit is bandaged (the start threshold is MedicalState.FirstAidThreshold).
@@ -285,7 +305,6 @@ public sealed class FirstAidSystem(GameConstants constants, BodyOptions options,
         }
         float skill = SkillOf(robot);
         float quality = Items.Info(kit.Item.Record)?.Quality ?? 0;
-        var ctx = new MedicalContext(Constants, bodyOptions, race);
         float bandaged = body.Treat(dt, skill, quality, robot, ctx, out int touched);
         if (bandaged <= 0)
         {
