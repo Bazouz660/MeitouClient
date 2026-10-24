@@ -623,8 +623,10 @@ sealed partial class PlayerInterface
         {
             // A finished plain building's quick right click is a move to the point under the cursor (the original: order 29 MOVE_CUS_ORDERED). The original's target is the building
             // hit's x, z at the terrain height, which the path's goal snap puts on the floor inside or the ground outside; a pick that went on through the roof or wall to the
-            // terrain beyond (a site has no room pick) takes that point instead, so the character goes in rather than to the ground behind.
-            if (PickSiteAt(pending.At) is { } at && at.Site.Id == pending.Site.Id && at.T + 1 < Vector3.Distance(ray.Origin, hit))
+            // terrain beyond takes that point instead, so the character goes in rather than to the ground behind. A building floor the pick found (a site with an interior,
+            // the hidden roof above it nearer) stays: the terrain under the roof hit lay below the floor.
+            float distance = Vector3.Distance(ray.Origin, hit);
+            if (BuildingMoveHit?.Invoke(ray.Origin, ray.Direction, distance + 1) is null && PickSiteAt(pending.At) is { } at && at.Site.Id == pending.Site.Id && at.T + 1 < distance)
             {
                 var p = ray.Origin + ray.Direction * at.T;
                 hit = new Vector3(p.X, ground(p.X, p.Z), p.Z);
