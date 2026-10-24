@@ -289,11 +289,12 @@ public sealed unsafe partial class PostProcess : IDisposable, IWorldPostChain
     sealed class ParticleCompositePass : FullscreenProgram
     {
         public readonly SamplerSlot Accum, LowDepth, Depth;
-        public readonly UniformHandle LowSize, NearPlanes, Div;
+        public readonly UniformHandle LowSize, NearPlanes, Div, ClipDepthZeroToOne;
         public ParticleCompositePass(GpuContext gpu) : base(gpu, PostProcessShaders.ParticleComposite, "post particle composite")
         {
             (Accum, LowDepth, Depth) = (P.Sampler("uAccum"), P.Sampler("uLowDepth"), P.Sampler("uDepth"));
             (LowSize, NearPlanes, Div) = (P.Uniform("uLowSize"), P.Uniform("uNearPlanes"), P.Uniform("uDiv"));
+            ClipDepthZeroToOne = P.Uniform("uClipDepthZeroToOne");
         }
     }
 
@@ -301,11 +302,12 @@ public sealed unsafe partial class PostProcess : IDisposable, IWorldPostChain
     sealed class ParticleCoveragePass : FullscreenProgram
     {
         public readonly SamplerSlot Accum, LowDepth, Depth;
-        public readonly UniformHandle LowSize, NearPlanes, Div, FullSize, Limit;
+        public readonly UniformHandle LowSize, NearPlanes, Div, FullSize, ClipDepthZeroToOne, Limit;
         public ParticleCoveragePass(GpuContext gpu) : base(gpu, PostProcessShaders.ParticleCoverage, "post particle coverage")
         {
             (Accum, LowDepth, Depth) = (P.Sampler("uAccum"), P.Sampler("uLowDepth"), P.Sampler("uDepth"));
             (LowSize, NearPlanes, Div, FullSize, Limit) = (P.Uniform("uLowSize"), P.Uniform("uNearPlanes"), P.Uniform("uDiv"), P.Uniform("uFullSize"), P.Uniform("uLimit"));
+            ClipDepthZeroToOne = P.Uniform("uClipDepthZeroToOne");
         }
     }
 
@@ -1029,6 +1031,7 @@ public sealed unsafe partial class PostProcess : IDisposable, IWorldPostChain
         c.P.Set(c.LowSize, (float)low.Accum!.Width, (float)low.Accum.Height);
         c.P.Set(c.NearPlanes, nearPlanes.X, nearPlanes.Y);
         c.P.Set(c.Div, (float)low.Divisor);
+        c.P.Set(c.ClipDepthZeroToOne, Gpu.ClipDepthZeroToOne ? 1 : 0);
         Draw(c.P, sceneColour!.Attachment, sceneColour.Format, width, height, width, height, ParticleLowState);
         CloseSegment();
         low.Drawn = true;
@@ -1200,6 +1203,7 @@ public sealed unsafe partial class PostProcess : IDisposable, IWorldPostChain
             c.P.Set(c.NearPlanes, nearPlanes.X, nearPlanes.Y);
             c.P.Set(c.Div, (float)low.Divisor);
             c.P.Set(c.FullSize, (float)width, (float)height);
+            c.P.Set(c.ClipDepthZeroToOne, Gpu.ClipDepthZeroToOne ? 1 : 0);
             c.P.Set(c.Limit, mask == ColorMask.A ? 2f : 1f);   // the TAA takes half the motion target's alpha, so 2 is "all current frame"
             Draw(c.P, target.Attachment, target.Format, target.Width, target.Height, target.Width, target.Height,
                 PassState with { Blend = new BlendState(true, BlendingFactor.One, BlendingFactor.One), ColourMask = mask });

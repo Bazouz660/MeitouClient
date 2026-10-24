@@ -514,7 +514,8 @@ static class PostProcessShaders
         uniform vec2 uLowSize;
         uniform vec2 uNearPlanes;   // near, far of the depth slice the particles were tested against
         uniform float uDiv;
-        float linearZ(float d) { float zd = 2.0 * d - 1.0; return uNearPlanes.x * uNearPlanes.y / (uNearPlanes.y - zd * (uNearPlanes.y - uNearPlanes.x)); }
+        uniform int uClipDepthZeroToOne;   // Metal's depth is 0..1; Vulkan's is recovered with 2d - 1
+        float linearZ(float d) { float zd = uClipDepthZeroToOne != 0 ? d : 2.0 * d - 1.0; return uNearPlanes.x * uNearPlanes.y / (uNearPlanes.y - zd * (uNearPlanes.y - uNearPlanes.x)); }
         vec4 particlesAt(vec2 fc)
         {
             vec2 lp = fc / uDiv - 0.5;

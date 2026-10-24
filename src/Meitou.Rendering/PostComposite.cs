@@ -266,6 +266,7 @@ sealed class PostComposite : IDisposable
         c.P.Set(c.NearPlanes, near, far);
         c.P.Set(c.Div, (float)divisor);
         c.P.Set(c.FullSize, (float)target.Desc.Width, (float)target.Desc.Height);
+        c.P.Set(c.ClipDepthZeroToOne, ctx.ClipDepthZeroToOne ? 1 : 0);
         c.P.Set(c.Limit, mask == ColorMask.A ? 2f : 1f);   // the TAA takes half the motion target's alpha, so 2 is "all current frame"
         var formats = new AttachmentFormats(target.Desc.Format, InternalFormat.None);
         var state = DrawState.For(formats, false) with
@@ -575,6 +576,7 @@ sealed class PostComposite : IDisposable
         c.P.Set(c.LowSize, (float)accum.Desc.Width, (float)accum.Desc.Height);
         c.P.Set(c.NearPlanes, near, far);
         c.P.Set(c.Div, (float)divisor);
+        c.P.Set(c.ClipDepthZeroToOne, ctx.ClipDepthZeroToOne ? 1 : 0);
         var formats = new AttachmentFormats(scene.Desc.Format, InternalFormat.None);
         var state = DrawState.For(formats, false) with
         {
@@ -782,23 +784,25 @@ sealed class PostComposite : IDisposable
     sealed class ParticleCompositePass : Pass
     {
         public readonly SamplerSlot Accum, LowDepth, Depth;
-        public readonly UniformHandle LowSize, NearPlanes, Div;
+        public readonly UniformHandle LowSize, NearPlanes, Div, ClipDepthZeroToOne;
         public ParticleCompositePass(IGpuContext ctx, string vertex) : base(ctx, vertex, PostProcessShaders.ParticleComposite, "post particle composite")
         {
             (Accum, LowDepth, Depth) = (P.Sampler("uAccum"), P.Sampler("uLowDepth"), P.Sampler("uDepth"));
             (LowSize, NearPlanes, Div) = (P.Uniform("uLowSize"), P.Uniform("uNearPlanes"), P.Uniform("uDiv"));
+            ClipDepthZeroToOne = P.Uniform("uClipDepthZeroToOne");
         }
     }
 
     sealed class ParticleCoveragePass : Pass
     {
         public readonly SamplerSlot Accum, LowDepth, Depth;
-        public readonly UniformHandle LowSize, NearPlanes, Div, FullSize, Limit;
+        public readonly UniformHandle LowSize, NearPlanes, Div, FullSize, ClipDepthZeroToOne, Limit;
         public ParticleCoveragePass(IGpuContext ctx, string vertex) : base(ctx, vertex, PostProcessShaders.ParticleCoverage, "post particle coverage")
         {
             (Accum, LowDepth, Depth) = (P.Sampler("uAccum"), P.Sampler("uLowDepth"), P.Sampler("uDepth"));
             (LowSize, NearPlanes, Div, FullSize, Limit) = (P.Uniform("uLowSize"), P.Uniform("uNearPlanes"), P.Uniform("uDiv"),
                 P.Uniform("uFullSize"), P.Uniform("uLimit"));
+            ClipDepthZeroToOne = P.Uniform("uClipDepthZeroToOne");
         }
     }
 }
