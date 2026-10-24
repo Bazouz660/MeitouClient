@@ -176,6 +176,46 @@ Data (**Verified**, the base ANIMATION records through `AnimationLibrary`): with
 
 **Unknown**: the extra offset the steering adds while leading in a non-zero steering mode (`FUN_1402e9420` at radius + 40, `FUN_1402e9530`) and the side terms of `FUN_1402e93c0`; whether the original also holds a chaser from swinging while behind; the steering's radii (`+0xe0` and `FUN_14065dc30`) and mode 6 (possibly a ranged closer; Meitou uses 90 for every fighter); what makes the AI conditions `iAmBeingMeleeAttacked immediate` / `general` (ids 158 and 159, registered in `FUN_140610250`) true (they read a flag byte at `+0x2b0` of the object at Character `+0x2f8` and an int at `+0x58` of the object that object's vtable slot `0x68` returns; no writer found), and so when a player's character that is idle starts its fight task when attacked. Meitou: `RetaliationSystem` engages it at once, and `PursuitSystem` keeps the running flag by the rule above ([simulation](../simulation.md#animation)).
 
+## Leaving a fight
+
+How an attacker stops when its target runs. **Observed** (static reading of `Task_MeleeAttack` update `14034ca40`
+(thunk `14001681f`), `ChaseMode` vfuncs 0/1 via thunks `140016243`/`140020d1a`, `CombatClassAI::vfunc_9`); literals
+**Verified** (decompile). There is no distance leash: the exits are the target going down, nothing left to fight,
+and the give-up test of a path chase. Ending the task means `FUN_1400522c0`: it sets the AI task system's `+0x26c`,
+which its next update (`FUN_14050d920` → `FUN_14050d7d0`) consumes by dropping the current task and clearing its targets.
+
+- **Target down or held**: each tick, a fight target that is down or dead (`FUN_1407d1440`) or imprisoned (`+0x2f8` 2)
+  is dropped and the fight goes to state 4 (re-decide); when it was also the task's target the task ends.
+- **Nothing left** (`Task_MeleeAttack` update): the task ends when the fight task stopped (`FUN_1405c9750`), or when all hold:
+  the senses object's (Character vfunc `0x68`) int `+0x94` is 0 and float `+0x8c` ≤ 0 (meanings **Unknown**; the
+  `+0x94`/`+0x98` enemy counters of `Task_GetUp` look alike), nobody is engaged on the character (engaged list + overflow 0),
+  the fight has no target (`+0x2a0` none), and the task's own target is gone or fails its vfunc `0x30` test.
+- **Path chase give-up** (`ChaseMode`, a base of `Task_MeleeAttack` at task `+0x78`): checked only while the fight is in
+  state 11, the path chase that `CombatClassAI::vfunc_9` enters from state 10 when the navmesh line to the target is
+  blocked, the two are in different places, or the 2 s chase timer runs ([Combat stance](#combat-stance)). Any other
+  state clears the test's cached gate, so it restarts with each path chase. The gate (`vfunc_0`, computed once on entry,
+  which also stamps the start time) passes when the chaser's faction is **not the player's** (Faction `+0x250` null),
+  the target is alive (vfunc `0x30`), not in a bed or cage (`+0x2f8` 0), the chaser's Dialogue passes `FUN_140671c60`
+  (**Unknown**), and either the target flees (its current task is 35 Running away or 127 Retreating fast, or 29 Move order
+  to a point farther from the chaser than the target is: `FUN_140331ee0`), or the chaser counts it an enemy (Character
+  slot 125), or two floats of the chaser's status object (`+0x1a0`: `+0xa0` + `+0xac` > 0) or the target's `+0x148` are set.
+  Then each tick (`vfunc_1`, never when Character slot 126 calls the target friendly):
+  - nothing before 5 game minutes since the chase began; after 1.1 game hours (sense-age unit > 60, below) the AI's plan is
+    reset (`FUN_1405074a0`) each tick, the chase continues;
+  - the chaser has no sense entry for the target → give up;
+  - the target is neither seen nor heard (entry `+0x38`/`+0x39`) and its last sighting is older than 12 units, or the chaser
+    stands within 60 of where it was last sensed (squared 3600) → give up.
+  - Giving up ends the task, fires dialogue event 60 GIVE_UP_CHASE from the chaser at the target and resets the AI's plan.
+- Time: the world clock is in game hours; the sense-age unit is hours × 3600 / 33 × 0.5 (`FUN_140852150`, `FUN_14033a170`),
+  so 12 = 13.2 game minutes, about 24 s real at 1x ([game loop](game-loop.md#the-three-time-values)).
+- So a player's character never gives up a path chase by this rule, and an NPC on open ground (no path chase) keeps
+  running at the target with the footwork lead while it has a fight target. When that pick (`FUN_140666ee0`) and the attack
+  goal's finder (seen/heard only, [Combat goals](ai-tasks.md#combat-goals)) let go of a runner on open ground is **Unknown**:
+  how long a lost sense entry keeps counting as a candidate was not traced. The runner's side: [perception](perception.md#retreat-and-memory).
+
+Meitou: `AggroSettings.LeashRange` (3000 from where the fight began, then 20 s calm) is an **engine choice** standing in for
+these rules; the path chase give-up is not modelled.
+
 ## Armour and medical hit
 
 Coverage rolls, slot order, armour class/material quality and cut/blunt resist/efficiency affect

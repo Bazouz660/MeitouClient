@@ -104,7 +104,8 @@ is not the looker's ally becomes a target only when both tests pass:
   byte +299 and not a slave) that is not `FUN_1407f2840` (a ranged-weapon test): a target slower than 2 (movement
   +0xb8), or in its own state > 1, must be within 40 of the looker; a target more than 80 from the post's point
   (+0x130; 140 when the target is fighting and faces the post) must be within 60 of the looker.
-- So there is no give-up distance measured from where a fight began: the leash is the AI's area. Meitou's
+- So there is no give-up distance measured from where a fight began: an attack starts inside the AI's area, and a
+  chase ends by time and lost senses ([Leaving a fight](combat.md#leaving-a-fight)). Meitou's
   `AggroSettings.LeashRange` (3000 from the fight's start) stays an **engine choice**.
 
 
