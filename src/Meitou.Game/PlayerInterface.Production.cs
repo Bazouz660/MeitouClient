@@ -24,6 +24,9 @@ sealed partial class PlayerInterface
 {
     /// <summary>The site whose machine window is shown (null: none), and a site whose window the player closed (not reopened until the selection changes).</summary>
     string? shownMachine, closedMachine;
+
+    /// <summary>The machine window placed beside the inventory by an order (a right click) and where it stood before; it goes back there when the inventory closes, as the original's does.</summary>
+    (string Screen, Vector2 Offset)? machineHome;
     string? researchCategory, researchFocus;
 
     MachineSnapshot? Machine(string? site) => site is null ? null : session.CurrentSnapshot.Machines.FirstOrDefault(m => m.Site == site);
@@ -51,12 +54,20 @@ sealed partial class PlayerInterface
             faithfulScreens.Close("storage");
             shownMachine = null;
             storageWithInventory = null;
+            machineHome = null;
+        }
+        if (machineHome is { } home && !faithfulScreens.IsOpen("inventory"))
+        {
+            if (faithfulScreens.IsOpen(home.Screen)) faithfulScreens.SetOffset(home.Screen, home.Offset);
+            machineHome = null;
         }
         if (shownMachine is not null && Machine(shownMachine) is { } shown && !faithfulScreens.IsOpen(MachineScreen(shown)))
         {
             if (shown.IsContainer) Say(new Meitou.Simulation.Items.CloseContainer { Tick = session.World.Tick });
             closedMachine = shownMachine;
             shownMachine = null;
+            storageWithInventory = null;
+            machineHome = null;
             return;
         }
         if (m is null || shownMachine == m.Site || closedMachine == m.Site) return;
@@ -64,10 +75,11 @@ sealed partial class PlayerInterface
         string screen = MachineScreen(m);
         inventoryScroll.Remove(screen);
         // The character's inventory opens with an order-driven container window (the original's order 26 opens the looter's own window and the target's together) and with a machine's; selecting
-        // a storage or a mined rock shows its window alone (the original's Storage window of a selected ore storage has no inventory beside it).
-        bool alone = !m.IsContainer && (m.IsStorage || ProductionSystem.IsNatural(m.Site)) && storageWithInventory != m.Site;
+        // a selected machine, storage, bench or mined rock shows its window alone (the original's windows of a selected ore storage and electrical workbench have no inventory beside them).
+        bool alone = !m.IsContainer && storageWithInventory != m.Site;
         if (!alone && Selected().Count > 0 && !faithfulScreens.IsOpen("inventory")) faithfulScreens.Open("inventory");
         faithfulScreens.Open(screen);
+        if (!alone) machineHome = (screen, faithfulScreens.GetOffset(screen));
         PlaceInventoryBeside(screen, left: false);
     }
 

@@ -674,6 +674,14 @@ sealed partial class PlayerInterface
             storageOpening = null;
             storageWithInventory = pending.Site.Id;
             SetBuilding(SiteBuilding(pending.Site));
+            // Its window is already open (a left click): the inventory joins it now, with the window placed beside it, as when the order opens both.
+            if (faithfulScreens is not null && shownMachine == pending.Site.Id && Machine(shownMachine) is { } shown && faithfulScreens.IsOpen(MachineScreen(shown)))
+            {
+                string screen = MachineScreen(shown);
+                if (!faithfulScreens.IsOpen("inventory") && Selected().Count > 0) faithfulScreens.Open("inventory");
+                machineHome ??= (screen, faithfulScreens.GetOffset(screen));
+                PlaceInventoryBeside(screen, left: false);
+            }
         }
         else if (waited > 2 && selected.All(c => c.Task != Meitou.Simulation.CharacterTask.GoTo)) storageOpening = null;   // they stopped short: another order was given
     }
