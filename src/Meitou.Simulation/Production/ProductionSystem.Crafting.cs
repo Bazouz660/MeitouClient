@@ -145,7 +145,7 @@ public sealed partial class ProductionSystem
         switch (option.Kind)
         {
             case CraftKind.Armour:
-                made = items.Create(option.Item, 1, Math.Min(CraftBench.ArmourQuality(skill, critical), bench.TechLevel));
+                made = items.Create(option.Item, 1, Math.Min(CraftBench.ArmourQuality(skill, critical), bench.TechLevel));   // the factory gives an armour piece its level from that quality
                 break;
             case CraftKind.Robotics or CraftKind.Crossbow:
                 made = items.Create(option.Item, 1);

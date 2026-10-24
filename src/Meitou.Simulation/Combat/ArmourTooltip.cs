@@ -44,7 +44,7 @@ public static class ArmourTooltip
     /// </summary>
     public static IReadOnlyList<Line> Head(ArmourData a, float quality)
     {
-        var piece = ArmourPiece.Create(a, Math.Clamp(quality, 0, 100) * 0.01f);   // level x 0.01 in single precision, as the original (80 x 0.01 is just below 0.8: 71 pts, not 72)
+        var piece = ArmourPiece.Create(a, quality <= 0 ? 1f : Math.Clamp(quality, 0, 100) * 0.01f);   // level x 0.01 in single precision, as the original (80 x 0.01 is just below 0.8: 71 pts, not 72)
         int grade = GradeOf(quality);
         string material = a.Material == ArmourType.MetalPlate ? "Metal Plate" : a.Material.ToString();
         var lines = new List<Line>
@@ -68,7 +68,7 @@ public static class ArmourTooltip
     /// </summary>
     public static IReadOnlyList<Line> Tail(ArmourData a, Func<string, string?> partName, float quality)
     {
-        float t = Math.Clamp(quality, 0, 100) * 0.01f + a.LevelBonus * 0.01f;
+        float t = (quality <= 0 ? 1f : Math.Clamp(quality, 0, 100) * 0.01f) + a.LevelBonus * 0.01f;   // level 0: full strength, t = 1 (Observed)
         var lines = new List<Line>();
         var parts = a.Coverage.Select(c => (Name: partName(c.PartStringId) ?? c.PartStringId, c.Percent)).ToList();
         if (parts.Count > 0)

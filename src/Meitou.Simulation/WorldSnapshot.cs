@@ -51,6 +51,8 @@ public sealed record InventoryItemView(int Index, string Record, string Name, st
     public float? Charge { get; init; }
     /// <summary>The item's manufacturer record (<c>company sid</c>; "" none), its model level and its charges (what the tooltip shows).</summary>
     public string Company { get; init; } = "";
+    /// <summary>The smith who crafted the item (<see cref="Items.ItemInstance.Crafter"/>; "" none).</summary>
+    public string Crafter { get; init; } = "";
     public int Level { get; init; }
     public float Charges { get; init; }
     public float MaxCharges { get; init; }
