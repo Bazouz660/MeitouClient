@@ -207,11 +207,14 @@ public class AiTests(ITestOutputHelper output)
         foreach (var squad in squads)
         {
             var beds = squad.Ai!.Home!.Of(HomeSpotKind.Bed).Select(b => b.Position).ToList();
-            foreach (var m in squad.Members.Where(m => m != squad.Leader))
+            var sleepers = squad.Members.Where(m => m != squad.Leader).ToList();
+            foreach (var m in sleepers)
             {
-                Assert.Equal(CharacterTask.Rest, (CharacterTask)world.Characters.Previous[m.Slot].Task);
+                Assert.Contains((CharacterTask)world.Characters.Previous[m.Slot].Task, new[] { CharacterTask.Sleep, CharacterTask.Rest });
                 Assert.InRange(beds.Min(b => Off(world, m, b)), 0, 13);
             }
+            // Every bed is taken (lain in, task Sleep); the sleepers left over rest beside them.
+            Assert.Equal(Math.Min(beds.Count, sleepers.Count), sleepers.Count(m => world.Characters.Cold(m.Slot)!.InSomething == Meitou.Simulation.Locks.HeldState.Bed));
         }
     }
 
@@ -273,7 +276,7 @@ public class AiTests(ITestOutputHelper output)
             var sleepers = world.Squads.All.Where(s => s.TemplateId == "10-t")
                 .SelectMany(s => s.Members.Where(m => m != s.Leader).Select(m => (m, Beds: s.Ai!.Home!.Of(HomeSpotKind.Bed).Select(b => b.Position).ToList()))).ToList();
             Assert.NotEmpty(sleepers);
-            bool InBed((CharacterId M, List<Vector3> Beds) x) => (CharacterTask)world.Characters.Previous[x.M.Slot].Task == CharacterTask.Rest && x.Beds.Min(b => Off(world, x.M, b)) <= 13;
+            bool InBed((CharacterId M, List<Vector3> Beds) x) => (CharacterTask)world.Characters.Previous[x.M.Slot].Task is CharacterTask.Sleep or CharacterTask.Rest && x.Beds.Min(b => Off(world, x.M, b)) <= 13;
             // With the switch they are in bed within a second of the town coming back; without it some are still on their way from where the town unloaded.
             if (schedule) Assert.All(sleepers, x => Assert.True(InBed(x)));
             else Assert.Contains(sleepers, x => !InBed(x));
