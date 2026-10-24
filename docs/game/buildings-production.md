@@ -589,6 +589,15 @@ storage` (function 2); Large Barrels also hold Water.
 - **Unknown:** how the original picks the storage (nearest, same town, a range), when an operator leaves a
   machine to haul, and where a 124 job takes its items from.
 
+## House sales
+
+Rules of `For sale:` and the price: [selected building](ui-screens.md#selected-building). **Verified** on the base game
+(`HousePurchaseTests.The_Hub_has_a_ruined_Storm_House_for_4800_in_the_original_data`): The Hub's ruined Storm Houses have
+interior meshes but no functionality record, their level states lack `sell home` while their resident templates
+(`44421-rebirth.mod`, `44426-rebirth.mod`) set it; target 16, owner's `building cost mult` 2: 0.375 × 16 × 2 × 400 = 4,800.
+Meitou reads `sell home` from the saved state, else the level state, else the resident template; **Unknown** whether the
+original falls back to the template.
+
 ## Unknowns
 
 - How often Building slot 28 resets the builder counter, the work distance of builders, which HUD orders set the AI
@@ -596,15 +605,3 @@ storage` (function 2); Large Barrels also hold Water.
 - Event types of the queue at `DAT_1421346d8` other than 8 (research progress) and 11 (build work).
 - The wind generator's animation value (its output share). `vfunc_0x520` (a consumer counted as active): 1 for every class but `LightBuilding`, whose answer is in [lights](../formats/lights.md#when-a-light-is-on).
 - Option slider defaults; the third value of reference triples; the record field of `BuildingClassType`.
-
-
-## House sales: level-data inputs
-
-**Verified** against base-game The Hub placements and referenced records by
-`HousePurchaseTests.The_Hub_has_a_ruined_Storm_House_for_4800_in_the_original_data`:
-ruined Storm Houses have interior meshes but no functionality record; their level states omit
-`sell home`, while resident templates `44421-rebirth.mod` and `44426-rebirth.mod` enable it.
-Their target is 16, owner faction's `building cost mult` is 2, and the documented ruined-house
-formula yields 0.375 × 16 × 2 × 400 = 4,800. Explicit saved/level sale flags take precedence
-in Meitou; absent flags fall back to the resident template. This fallback is an engine reading
-of the data, not verification of the original callback. See [selected-building rules](ui-screens.md#selected-building).

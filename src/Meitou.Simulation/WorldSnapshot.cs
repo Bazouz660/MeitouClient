@@ -268,9 +268,9 @@ public sealed record WorldSnapshot(long Tick, IReadOnlyList<CharacterSnapshot> C
     /// <summary>The doors of the player's buildings and the others that are open, moving, locked or set to lock, by (building instance, index in its <c>doors</c> list); any other door is closed and unlocked (docs/simulation.md "Cages, beds and locks").</summary>
     public IReadOnlyDictionary<(string Building, int Door), Locks.DoorView> Doors { get; init; } = NoDoors;
 
+    /// <summary>The town houses the player owns (bought ones too, with or without doors); indoor placement checks them.</summary>
+    public IReadOnlySet<string> OwnedTownBuildings { get; init; } = EmptySet;
     /// <summary>The doors of the building the HUD shows (<see cref="InspectBuildingCommand"/>); null when none is shown or it has no fixtures.</summary>
-    /// <summary>Registered town houses owned by the player, including those without doors; used by indoor placement.</summary>
-    public IReadOnlySet<string> OwnedTownBuildings { get; init; } = new HashSet<string>();
     public Locks.BuildingDetail? InspectedBuilding { get; init; }
     /// <summary>The resource richness of the building the HUD shows (a mine or rock); null for others.</summary>
     public Production.RichnessView? InspectedRichness { get; init; }
