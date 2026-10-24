@@ -3,10 +3,10 @@
 Repository: `/Users/daniilmiroshnykov/code/dotnet/MeitouClient`  
 Branch: `metal-spike`  
 Last code/plan commit: `30ff1694 polish: cache the reflection sample-count decision`  
-State: functional opt-in Metal preview; **not 100% Vulkan effect parity**. **MEP-1 is accepted** (2026-10-24:
-MetalFX temporal dust/desert/LOD flicker fixed) and **MEP-2 reflection quality is implemented, awaiting in-game
-validation**; [MEP-I](docs/metal-effects-parity-plan.md) then continues with debris lighting -> tessellation/terrain
-relief -> water lighting. Vulkan remains the reference/default and the GPU cull stays off.
+State: functional opt-in Metal preview; **not 100% Vulkan effect parity**. **MEP-1 and MEP-2 are accepted** (2026-10-24:
+MetalFX temporal dust/desert/LOD flicker fixed; reflection MSAA/characters validated) and **MEP-3 debris lighting is
+implemented, awaiting in-game validation**; [MEP-I](docs/metal-effects-parity-plan.md) then continues with
+tessellation/terrain relief -> water lighting. Vulkan remains the reference/default and the GPU cull stays off.
 
 Build: Release 0 warnings / 0 errors. Quick tests: 543 passed, 24 skipped (one known upstream item-icon failure);
 the 11 Metal upload tests currently fail before touching the engine: the host's `MTLCompilerService` XPC is still
@@ -56,7 +56,7 @@ Metal-specific fallbacks or absent paths:
 |---|---|---|
 | Terrain | Ground displacement, rock smoothing, terrain-outline refinement (tessellation) | **absent**; `HasTessellation == false`, so only flat patches + parallax |
 | Water | Full Meitou lighting: GI, lamps, dust, environment specular, material lighting, foam sun shadow | **simplified** by `METAL_WATER`; waves, foam, caustics, reflection and refraction are present; reflection now uses the shared 4x MSAA/resolve path |
-| Debris | Atmosphere-lit + hazed | **simple sun/ambient light**, no atmosphere or haze (16-sampler limit) |
+| Debris | Atmosphere-lit + hazed | **atmosphere-lit and hazed** through the bindless native path (MEP-3, awaiting visual validation) |
 | Particles | Near-plane close pass for large sprites crossing the camera | **disabled** on Metal; normal-depth and low-resolution particles work |
 | Foliage | Generated rock levels + GPU mesh/rock cull | **CPU cull**; generated levels are tied to the GPU path, so the Metal rock LOD detail/perf differs |
 | Post | SMAA, FogRate/VRS, particle coverage in the upscaler's reactive mask, sun-motion reprojection | **not present**; FogRate is a performance/quality path, not a missing pass; particle/sun terms affect temporal stability |
@@ -71,9 +71,9 @@ falls under the first row.
 
 **Ship decision:** suitable for an **opt-in Metal test/preview** now (Vulkan remains the default and reference), but
 not for a “Metal is at 100% parity” or default-release claim. Before a public test, the visible blockers are water
-lighting/foam shadows, near-camera particles, debris haze and tessellated terrain; GI/temporal/FogRate/Hi-Z are
-quality/performance follow-ups unless the test explicitly requires them. Keep the Metal UI hiding the tessellation
-toggles and the experimental GPU cull, and label TAA experimental.
+lighting/foam shadows, near-camera particles and tessellated terrain; debris lighting/haze is implemented and awaiting
+validation. GI/temporal/FogRate/Hi-Z are quality/performance follow-ups unless the test explicitly requires them. Keep
+the Metal UI hiding the tessellation toggles and the experimental GPU cull, and label TAA experimental.
 
 Post-merge smoke: 120 s `--new-game Wanderer` at 800x600, 8120 MB budget, GPU cull off: 6,693 frames / 56 fps, no
 GPU timeout. This is not a substitute for the 30-minute acceptance soak; the full Metal test suite is still blocked by
@@ -92,12 +92,19 @@ MetalFX reactive mask now gets full-size particle coverage only; low-resolution 
 because it was unstable at distant terrain/LOD edges. FogRate remains a documented performance-only difference
 (Metal has no VRS attachment).
 
-**MEP-2 reflection quality is implemented, awaiting manual validation.** `IGpuContext.MaxSampleCount` supplies the
-device's sample-count capability (Vulkan limits / Metal `supportsTextureSampleCount`); `ReflectionPass` now builds
-multisampled colour+depth targets on Metal too, uses private storage for them and resolves colour before the water
-samples it. The reflection fog reads sample 0 of the multisample depth. Level 2 now reflects characters on both
-backends (previously the shared pass drew only terrain/objects/foliage); levels 1-4 are terrain, characters, placed
-objects and foliage. `--reflection-samples <n>` selects the count (1 disables MSAA for the A/B).
+**MEP-2 reflection quality is accepted.** `IGpuContext.MaxSampleCount` supplies the device's sample-count capability
+(Vulkan limits / Metal `supportsTextureSampleCount`); `ReflectionPass` builds multisampled colour+depth targets on
+Metal too, uses private storage for them and resolves colour before the water samples it. The reflection fog reads
+sample 0 of the multisample depth. Level 2 reflects characters on both backends (previously the shared pass drew only
+terrain/objects/foliage); levels 1-4 are terrain, characters, placed objects and foliage. `--reflection-samples <n>`
+selects the count (1 disables MSAA for the A/B).
+
+**MEP-3 debris lighting is implemented, awaiting manual validation.** `DebrisRenderer` is now a native bindless
+program on both backends: the full `kenshiLight`/`atmoApply` fragment reads frame, shadow, GI, lamp and debris textures
+from the bindless table, while a 128-byte push block carries the camera-relative model, simple-sky fallback light and
+per-part diffuse/cut-out state. Metal's old simple sun/ambient debris fragment is gone. `SamplerBudget` reports/checks
+the direct fragment-sampler count (debris has 0) and is the hook for MEP-5 water. Validate luckyren Mode, combat,
+normal play, sun/shade/night/haze against Vulkan before the preview gate.
 
 ## Upstream sync (2026-10-23)
 
@@ -278,9 +285,9 @@ HUD, discovery messages and camera follow.
   same `ShowUiPanel` calls on Metal. Unsupported `trade`/`talk` panels are skipped when the shared
   showcase cannot open them.
 - The first Metal run crashed compiling debris: the full atmosphere lighting plus its diffuse map
-  is 17 direct fragment samplers (Metal allows 16). Metal now uses the debris renderer's simple
-  sun/ambient fragment; Vulkan keeps the full `kenshiLight`/`atmoApply` version. This is a
-  documented Metal-only lighting fallback until the diffuse map moves into a bindless/atlas path.
+  is 17 direct fragment samplers (Metal allows 16). The temporary simple sun/ambient Metal fragment
+  was superseded by MEP-3's native bindless debris path; the full `kenshiLight`/`atmoApply` fragment
+  now runs on both backends.
 
 Build after B-C: Release 0 warnings / 0 errors; quick suite 476 passed / 2 skipped. Manual Metal
 validation: blood decals were confirmed by the user on 2026-10-22; debris/luckyren and the
@@ -353,9 +360,9 @@ Verified clean:
 
 ## Next work
 
-1. Validate **MEP-2 reflection quality** in game (water edges/horizon, level-2 characters at the Hub, levels 1-4 at
-   sea/river, resize/alt-tab, night/rain, and `--reflection-samples 1` for the MSAA A/B), then start MEP-3 debris
-   lighting. Do not start GPU culling or default-switch work until the MEP-I preview gate is accepted.
+1. Validate **MEP-3 debris lighting** in game (luckyren Mode, combat, normal play; sun/shade/night/weather haze against
+   Vulkan), then run the MEP-3 preview gate and start MEP-4 tessellation/terrain relief. Do not start GPU culling or
+   default-switch work until the MEP-I preview gate is accepted.
 2. Finish the GPU draw path on Metal: `FoliageGpuCull` is live for meshes/rocks, but `FoliageGrassGpu` and
    `HizPyramid` are still Vulkan-only (grass uses the CPU). The plan, constraints and validation gates are in
    [docs/metal-gpu-cull-plan.md](docs/metal-gpu-cull-plan.md). Port grass next; verify `baseInstance` in Metal

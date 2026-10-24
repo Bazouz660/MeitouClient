@@ -1,6 +1,6 @@
 # Metal Effects Parity I (MEP-I)
 
-Status: **MEP-1 accepted (2026-10-24); MEP-2 implemented, awaiting in-game validation; MEP-3..MEP-5 not started.**
+Status: **MEP-1 and MEP-2 accepted (2026-10-24); MEP-3 implemented, awaiting in-game validation; MEP-4..MEP-5 not started.**
 
 Starting point: `metal-spike` at `7eb04a96` (`docs: plan Metal Effects Parity I (MEP-I) milestones`), after the
 effect-parity audit `84193e4a` and the upstream `57a7968a` merge. Read
@@ -126,8 +126,8 @@ Work items:
 - **Checked in code: memory/lifetime.** Targets are re-made when the size or requested sample count changes; the
   Metal backend defers their release through the frames in flight. Four-sample reflection colour+depth is a small
   fraction of the 8120 MB High budget at typical Retina sizes.
-- **Manual validation still needed:** water edge/horizon/shoreline, level 2 characters at the Hub, levels 1-4 at sea
-  and river views, a resize/alt-tab, night and rain, and an A/B against `--reflection-samples 1`.
+- **Accepted in game (2026-10-24):** water edges/horizons, level-2 characters, levels 1-4, resize/alt-tab and the
+  MSAA A/B passed the user's visual check.
 
 Likely files:
 
@@ -147,31 +147,19 @@ Acceptance:
 
 **Purpose:** replace Metal's simple debris lighting with Vulkan's atmosphere-lit and hazed path.
 
-Current gap: `DebrisRenderer.MetalFragment` uses simple sun/ambient light because the full atmosphere declarations
-plus the diffuse map exceed Metal's 16 fragment samplers. Vulkan uses `kenshiLight`/`atmoApply` and the haze.
+**Implemented, awaiting in-game validation.** `DebrisRenderer` is now a native-model program on both backends: the
+same `kenshiLight`/`atmoApply` fragment Vulkan used, with every frame and material texture read through the bindless
+table. The debris diffuse map gets a stable bindless index per loaded texture; the model matrix, simple-sky fallback
+lighting and per-part cut-out state travel in one 128-byte push block. Metal no longer has a debris-specific lighting
+approximation.
 
-Work items:
+The sampler-budget helper is `src/Meitou.Rendering/Gpu/Shaders/SamplerBudget.cs`: it counts a stage's direct samplers
+outside the native bindless set and fails with the shader's name instead of an opaque Metal pipeline error. Debris uses
+it at program creation (0 direct fragment samplers after the move); MEP-5 can use it to keep water within 16.
 
-- Move the debris diffuse texture into the bindless table (or an atlas/packed route) so the full atmosphere shader fits
-  in Metal's 16-sampler limit.
-- Use the shared atmosphere lighting and haze path on Metal; no Metal-specific lighting approximation.
-- Validate debris in normal play, luckyren Mode, combat and stills; preserve the existing depth/alpha behavior.
-- Build the sampler-budget helper so MEP-5 can reuse it for water.
-
-Likely files:
-
-- `src/Meitou.Rendering/DebrisRenderer.cs`
-- `src/Meitou.Rendering/AtmosphereShaders.cs`
-- `src/Meitou.Rendering/Gpu/BindlessTable.cs` / bindless registration
-- `src/Meitou.Game/GameHost.Debris.cs`
-
-Acceptance:
-
-- Debris matches Vulkan under sun, shade, night and weather haze.
-- No new sampler-limit compile failure; Metal validation clean.
-- Fixed-scene debris stills and a live combat/luckyren pass.
-- **MEP-3 is the preview gate:** after this milestone a public test may ship as an explicitly labelled Metal preview,
-  with MEP-4/MEP-5 listed as known limitations.
+Validation still needed: normal play, luckyren Mode, combat and stills, under sun, shade, night and weather haze; the
+existing depth/alpha behaviour must stay. **MEP-3 is the preview gate:** after this milestone a public test may ship as
+an explicitly labelled Metal preview, with MEP-4/MEP-5 listed as known limitations.
 
 ### MEP-4: Tessellation & Terrain Relief
 
@@ -289,7 +277,8 @@ not performance numbers.
 
 ## Risks and blockers
 
-- **Metal sampler limit:** debris and water both need a bindless/atlas design; do it once in MEP-3.
+- **Metal sampler limit:** debris now uses the native bindless table; water still has an exactly-16 `METAL_WATER`
+  direct-sampler path and should reuse `SamplerBudget` during MEP-5 if its declarations change.
 - **Tessellation:** the largest engineering risk; isolate it and stop the milestone if the Metal pipeline path cannot be
   made stable.
 - **TAA/MetalFX:** temporal artifacts are hard to compare; use native/no-temporal baselines first.
@@ -302,10 +291,6 @@ not performance numbers.
 
 ## Immediate next action
 
-Start MEP-1 with the two smallest correctness gaps:
-
-1. Port the particle coverage pass into `MetalPostChain`/`PostTaa` and feed it to both MetalFX and TAA.
-2. Move the sun-motion data from `PostProcess.PrepareSunMotion` into a shared helper used by `PostTaa`.
-
-Then decide SMAA (port or document as Vulkan-only) and FogRate (document as performance-only unless a non-VRS fallback
-is chosen). Do not start MEP-4 before MEP-1 through MEP-3 are stable.
+Validate MEP-3 in game (luckyren Mode, combat, normal play; sun/shade/night/weather haze; the same views on Vulkan), then
+run the **MEP-3 preview gate** and start MEP-4 tessellation/terrain relief. Do not start MEP-5 before MEP-4's
+tessellation decision is made.

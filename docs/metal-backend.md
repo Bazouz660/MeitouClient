@@ -808,9 +808,11 @@ default.
   parameter maps share one two-layer array, the displacement and slope cascades share one six-layer array, and all
   samplers have explicit bindings 0..15 so a removed declaration cannot leave a hole. Reflection and refraction run
   on Metal. Any further water sampler needs an atlas or a bindless path.
-- The full atmosphere lighting (`kenshiLight`/`atmoApply`) plus a material's diffuse map needs 17 direct samplers in
-  a legacy fragment. Debris therefore uses its simple sun/ambient light path on Metal; Vulkan keeps the
-  atmosphere-lit and hazed version. Full debris haze parity needs a bindless or atlas path for the diffuse map.
+- Debris now uses the native bindless model on both backends: the shared `kenshiLight`/`atmoApply` fragment reads the
+  atmosphere, shadows, GI, lamps and its diffuse map through the bindless set, with the model matrix, fallback light and
+  per-part diffuse/cut-out values in one 128-byte push block. That removes the old Metal-only simple sun/ambient path
+  and leaves **0 direct fragment samplers** for the debris program. `Gpu.Shaders.SamplerBudget` checks the direct count
+  at program creation and is the budget hook for MEP-5's water work.
 - UI shots: the Metal HUD is part of every screenshot. `--new-game --ui-panel inventory|stats|overview|menu`
   opens a panel; `MEITOU_METAL_OVERLAY=1` adds the frame-stats lines at the top-left. The Vulkan HUD/panel still
   renders (verified with `--ui-panel inventory` after the shared changes).

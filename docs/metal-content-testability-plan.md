@@ -21,7 +21,7 @@ visual checks. This plan does not include GI work, and it does not change `--ren
 | 2 | F10 debug menu | P0 | Yes |
 | 3 | Camera follow, tours and character flights | P0 | Yes |
 | 4 | World event feedback | P0 | Yes |
-| 5 | Blood, debris and luckyren Mode | P1 | Partly |
+| 5 | Blood, debris and luckyren Mode | P1 | Done; visual validation pending |
 | 6 | Deterministic stills and UI showcase | P1 | Yes for repeatable checks |
 | 7 | Metal settings parity and no-op controls | P1 | Partly |
 | 8 | Renderer-only content-check gaps | P2 | No |
@@ -223,8 +223,8 @@ miss town discovery, knockouts, fights and wild-squad activity even though the s
 
 ### Why
 
-Combat currently runs, but Metal shows none of its physical aftermath. Blood decals and debris are
-also part of the `luckyren Mode` and blood settings, so those menu entries are currently no-ops.
+Combat runs and blood decals/debris are now wired on Metal, including luckyren Mode. Debris uses the shared
+atmosphere-lit native path (MEP-3); the remaining work in this item is visual validation, not missing plumbing.
 
 ### Changes
 
