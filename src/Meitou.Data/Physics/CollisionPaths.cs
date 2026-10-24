@@ -5,11 +5,37 @@ namespace Meitou.Data.Physics;
 /// <summary>Finds the collision (and other asset) files that records name by install-relative paths.</summary>
 public static class CollisionPaths
 {
-    static readonly System.Collections.Concurrent.ConcurrentDictionary<string, Dictionary<string, string>> modFolders = new();
+    static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (DateTime Stamp, Dictionary<string, string> Mods)> mods = new();
 
-    /// <summary>Each mod's name to its folder (local mods over Workshop ones, as <see cref="ModList"/> finds them), once per install.</summary>
-    static Dictionary<string, string> ModFolders(GameInstall install) =>
-        modFolders.GetOrAdd(install.Root, _ => ModList.FindMods(install).ToDictionary(m => m.Key, m => Path.GetDirectoryName(m.Value)!, StringComparer.OrdinalIgnoreCase));
+    /// <summary>
+    /// <see cref="ModList.FindMods"/> of an install (local mods over Workshop ones), rescanned when its <c>mods</c> or Workshop folder changes,
+    /// since a mod can be subscribed or added while the process runs.
+    /// </summary>
+    static Dictionary<string, string> Mods(GameInstall install)
+    {
+        var stamp = Directory.GetLastWriteTimeUtc(install.ModsDirectory);
+        if (install.WorkshopDirectory is { } workshop && Directory.GetLastWriteTimeUtc(workshop) is var w && w > stamp) stamp = w;
+        if (mods.TryGetValue(install.Root, out var cached) && cached.Stamp == stamp) return cached.Mods;
+        var found = ModList.FindMods(install);
+        mods[install.Root] = (stamp, found);
+        return found;
+    }
+
+    /// <summary>
+    /// The folder of the mod a record path names: the exact name as the game matches mods, else the one mod that matches ignoring case
+    /// (paths are case-insensitive on Windows); null when none or several do.
+    /// </summary>
+    static string? ModFolder(GameInstall install, string name)
+    {
+        var all = Mods(install);
+        if (!all.TryGetValue(name, out var file))
+        {
+            var matches = all.Where(m => string.Equals(m.Key, name, StringComparison.OrdinalIgnoreCase)).Take(2).ToList();
+            if (matches.Count != 1) return null;
+            file = matches[0].Value;
+        }
+        return Path.GetDirectoryName(file);
+    }
 
     /// <summary>
     /// The file a record's path field names (<c>.\data\buildings\x.xml</c>, backslashes, optionally without the leading <c>.\</c>) under the install,
@@ -23,7 +49,7 @@ public static class CollisionPaths
         if (File.Exists(full)) return full;
         // A mod's own files: <c>.\mods\Mod Name\x</c> is the folder of that mod, which for a Workshop mod is its Workshop folder, not a folder under the install.
         if (rel.StartsWith("mods/", StringComparison.OrdinalIgnoreCase) && rel.IndexOf('/', 5) is var slash and > 5
-            && ModFolders(install).TryGetValue(rel[5..slash], out var folder))
+            && ModFolder(install, rel[5..slash]) is { } folder)
         {
             full = GameFiles.Resolve(Path.Combine(folder, rel[(slash + 1)..]));
             if (File.Exists(full)) return full;

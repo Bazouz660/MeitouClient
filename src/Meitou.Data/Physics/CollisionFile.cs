@@ -96,9 +96,9 @@ public sealed partial class CollisionFile
         var convex = new Dictionary<string, CookedMesh>(StringComparer.Ordinal);
         var triangle = new Dictionary<string, CookedMesh>(StringComparer.Ordinal);
         foreach (var e in collection.Elements("NxConvexMeshDesc"))
-            convex[(string?)e.Attribute("id") ?? ""] = e.Element("NxSimpleTriangleMesh") is { } plainHull ? Plain(plainHull, hull: true) : CookedMeshReader.ReadConvex(Cooked(e));
+            convex[(string?)e.Attribute("id") ?? ""] = Mesh(e, hull: true);
         foreach (var e in collection.Elements("NxTriangleMeshDesc"))
-            triangle[(string?)e.Attribute("id") ?? ""] = e.Element("NxSimpleTriangleMesh") is { } plain ? Plain(plain, hull: false) : CookedMeshReader.ReadTriangleMesh(Cooked(e));
+            triangle[(string?)e.Attribute("id") ?? ""] = Mesh(e, hull: false);
         file.ConvexMeshCount = convex.Count;
         file.TriangleMeshCount = triangle.Count;
 
@@ -160,6 +160,16 @@ public sealed partial class CollisionFile
     }
 
     /// <summary>
+    /// A mesh description's mesh: its cooked data, or when that is empty its plain <c>NxSimpleTriangleMesh</c> lists. Cooked descriptions carry an
+    /// empty <c>NxSimpleTriangleMesh</c> too, so its presence alone does not make a plain mesh.
+    /// </summary>
+    static CookedMesh Mesh(XElement desc, bool hull)
+    {
+        if (string.IsNullOrWhiteSpace(desc.Element("cookedData")?.Value) && desc.Element("NxSimpleTriangleMesh") is { } plain) return Plain(plain, hull);
+        return hull ? CookedMeshReader.ReadConvex(Cooked(desc)) : CookedMeshReader.ReadTriangleMesh(Cooked(desc));
+    }
+
+    /// <summary>
     /// A mesh given as plain <c>points</c> (x y z each) and <c>triangles</c> (three indices each) in an <c>NxSimpleTriangleMesh</c> instead of cooked data, as the files of some mods
     /// are (Building Collision Fix: the Longhouse); the game cooks it itself when it loads. A convex hull keeps the points only.
     /// </summary>
@@ -168,12 +178,19 @@ public sealed partial class CollisionFile
         static string[] Words(string? text) => (text ?? "").Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
         var numbers = Words(simple.Element("points")?.Value);
         if (numbers.Length % 3 != 0) throw new InvalidDataException($"points: {numbers.Length} numbers, not a multiple of 3");
+        if (numbers.Length == 0) throw new InvalidDataException("Mesh has neither cooked data nor points");
+        // The cooked readers' limits.
+        if (numbers.Length / 3 > (hull ? 1 << 16 : 1 << 20)) throw new InvalidDataException("Implausible mesh vertex count");
         var vertices = new Vector3[numbers.Length / 3];
         for (int i = 0; i < vertices.Length; i++)
-            vertices[i] = new(float.Parse(numbers[3 * i], CultureInfo.InvariantCulture), float.Parse(numbers[3 * i + 1], CultureInfo.InvariantCulture), float.Parse(numbers[3 * i + 2], CultureInfo.InvariantCulture));
+        {
+            var v = vertices[i] = new(float.Parse(numbers[3 * i], CultureInfo.InvariantCulture), float.Parse(numbers[3 * i + 1], CultureInfo.InvariantCulture), float.Parse(numbers[3 * i + 2], CultureInfo.InvariantCulture));
+            if (!float.IsFinite(v.X) || !float.IsFinite(v.Y) || !float.IsFinite(v.Z)) throw new InvalidDataException("Non-finite mesh vertex");
+        }
         if (hull) return new CookedMesh(vertices, []);
         var corners = Words(simple.Element("triangles")?.Value);
         if (corners.Length % 3 != 0) throw new InvalidDataException($"triangles: {corners.Length} indices, not a multiple of 3");
+        if (corners.Length / 3 > 1 << 20) throw new InvalidDataException("Implausible mesh triangle count");
         var indices = new int[corners.Length];
         for (int i = 0; i < indices.Length; i++)
         {
