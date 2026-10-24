@@ -66,6 +66,7 @@ public sealed class ItemFactory(GameDatabase db, GameConstants constants, Func<M
                 : null,
             Quantity = Math.Max(quantity, 1),
             Quality = quality,
+            Level = info.Type == FcsRecordType.ARMOUR ? (int)quality : 0,   // an armour piece's stats follow its level, which a made piece takes from its grade quality
             ItemFunction = info.Function,
             Charges = info.IsFood ? info.Charges * Constants.FoodQualityMult : info.Charges,
             MaxCharges = info.IsFood ? info.Charges * Constants.FoodQualityMult : info.Charges,

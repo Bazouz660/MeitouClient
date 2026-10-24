@@ -386,9 +386,11 @@ sealed partial class PlayerInterface
         public bool Brief { get; init; }
         /// <summary>The customer's own item while trading (its Sell value is the transfer's price); otherwise a stock item's Value is.</summary>
         public bool Goods { get; init; }
+        /// <summary>The smith who crafted the item ("" none); its tooltip ends with the crafted-by block.</summary>
+        public string Crafter { get; init; } = "";
         public static ItemTip NameOnly(string record, string material, string name, int quantity) => new(record, material, name, quantity, 0, 0, "", 0, 0, 0, -1, null, null) { Brief = true };
         public static ItemTip Of(InventoryItemView v, TradeItemView? trade = null, string? mapNote = null) =>
-            new(v.Record, v.Material, v.Name, v.Quantity, v.Weight, v.Quality, v.Company, v.Level, v.Charges, v.MaxCharges, v.StolenFrom, trade, mapNote) { Goods = trade is not null };
+            new(v.Record, v.Material, v.Name, v.Quantity, v.Weight, v.Quality, v.Company, v.Level, v.Charges, v.MaxCharges, v.StolenFrom, trade, mapNote) { Goods = trade is not null, Crafter = v.Crafter };
         public static ItemTip Of(TradeItemView v) =>
             new(v.Record, v.Material, v.Name, v.Quantity, v.Weight, v.Quality, v.Company, v.Level, v.Charges, v.MaxCharges, v.StolenFrom, v, null);
     }
@@ -514,7 +516,21 @@ sealed partial class PlayerInterface
             lines.Add(new("-Sell value", "c." + Money(gear.Sell), TooltipTone.Ink, TooltipTone.Ink));
         }
         if (armour is not null)
+        {
             lines.AddRange(ArmourTooltip.Tail(armour, id => RecordName?.Invoke(id), t.Level).Select(ArmourRow));
+            // Then a blank row and the record's description; for a piece with a crafter's name another blank row, the heading and a paragraph naming the smith and the player's faction
+            // (FUN_1407a33a0, Observed: docs/original-armour-tooltip.md). Paragraphs wrap at the tooltip's width without widening it.
+            if (lines.Count > 0 && lines[^1].Key == "[Skills]") lines.RemoveAt(lines.Count - 1);
+            lines.Add(new(" "));
+            lines.Add(new(record?.GetString("description") ?? "", "", TooltipTone.Title, Paragraph: true));
+            if (t.Crafter.Length > 0)
+            {
+                string faction = PlayerFactionName?.Invoke() ?? "";
+                lines.Add(new(" "));
+                lines.Add(new($"[Crafted by {t.Crafter}]", "", TooltipTone.Title));
+                lines.Add(new(t.Level >= 70 ? $"High quality armour crafted by the renowned smith {t.Crafter} of {faction}." : $"Crafted by the smith {t.Crafter} of {faction}.", "", TooltipTone.Title, Paragraph: true));
+            }
+        }
         if (type == Meitou.Data.Fcs.FcsRecordType.ITEM && function is not (3 or 16))
         {
             if (t.MaxCharges > 1) lines.Add(Row("Charges", $"{Number(t.Charges)}/{Number(t.MaxCharges)}"));
