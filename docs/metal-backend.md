@@ -688,7 +688,7 @@ keys and pointer hover/clicks/scroll work, and camera movement, selection and or
 (weather and map placers) is wired, and the half/quarter-size particle targets are shared by both backends. Metal
 still skips the near-plane close pass because a large dust sprite crossing it produced a black frame and a GPU
 reset. `WorldLamps`,
-`HoverOutlineRenderer`, `MoveMarkerRenderer` and `NavmeshOverlayRenderer` are wired; `InteriorMaskRenderer` is
+`HoverOutlineRenderer`, `MarkerRenderer` (the movement marker and stealth arrows) and `NavmeshOverlayRenderer` are wired; `InteriorMaskRenderer` is
 wired (section 4b). The faithful sky path the parity shots use already works. Decide the default between the
 faithful and Meitou look.
 
