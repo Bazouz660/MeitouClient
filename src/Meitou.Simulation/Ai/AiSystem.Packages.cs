@@ -346,6 +346,29 @@ public sealed partial class AiSystem
         return null;
     }
 
+    /// <summary>
+    /// The bed an occupier with no home sleeps in (153 Go home go to bed): the original's NPC bed search falls back to the nearest beds of allies, and its allies test
+    /// passes the occupied town's buildings (<c>canIUseThisBuilding</c>, docs/game/locks.md "Beds", <b>Verified</b> by decompile). Meitou takes the
+    /// <see cref="AiMind.MemberIndex"/>-th (round robin) complete BF_BED of the occupied town that is reachable for it and not held by someone outside its squad, so the
+    /// members spread over the beds and keep theirs as the others lie down (<b>engine choice</b>); null without one.
+    /// </summary>
+    static Locks.Fixture? OccupiedBed(World world, Blackboard board, AiMind mind, int slot)
+    {
+        if (board.CurrentClass != PackageClass.OccupyTown || board.Destination.PlayerTown <= 0 || world.Characters.Cold(slot) is not { } self) return null;
+        var table = world.Characters;
+        bool Takes(Locks.Fixture f) =>
+            f.Kind == Locks.FixtureKind.Bed && f.Bed.Function == Meitou.Data.World.TownBuildings.BedFunction && world.Buildings.Find(f.Building) is { Complete: true } site
+            && site.Town == board.Destination.PlayerTown && world.Fixtures.Reachable(world, f, self.Faction)
+            && (Locks.FixtureRegistry.IsFree(table, f) || table.TryResolveNext(f.Occupant, out int o) && table.Cold(o)?.SquadId == mind.Squad.Id);
+        int count = 0;
+        foreach (var f in world.Fixtures.All) if (Takes(f)) count++;
+        if (count == 0) return null;
+        int want = mind.MemberIndex % count;
+        foreach (var f in world.Fixtures.All)
+            if (Takes(f) && want-- == 0) return f;
+        return null;
+    }
+
     /// <summary>Whether a package is an occupation (<c>Package_OccupyTown</c>, 30), whose platoon the original keeps while it lasts (persistent); false for null or an unknown id.</summary>
     public static bool Occupies(AiDatabase ai, string? package) =>
         package is not null && ai.Package(package) is { } p && PackageClasses.Of(p.Signal) == PackageClass.OccupyTown;

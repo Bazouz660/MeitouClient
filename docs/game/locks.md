@@ -251,6 +251,9 @@ Same targets as picking; Task_CutLock / Task_BruteForceLock share the shackle ta
   not the building the character is in (+0x128 hand compare, **Unknown**) and the bed's field behind vfunc 0x228 +0x28 is above 1 (**Unknown**, read as a price). The order inside a list is
   that of a set of pointers (steps 1 to 3), so it is not reproducible. Meitou: `FixtureRegistry.FindBedNpc` takes the first free bed of the squad's home building, else the nearest free bed of its
   town (engine choices for steps 2 to 4 and the order); nothing in Meitou calls it for an NPC yet (NPC sleepers go to the home spot of their mind).
+  The finders' allies test (`FUN_1408ca5d0`, **Verified** by decompile) passes a building of the finder's faction or one `canIUseThisBuilding` accepts, which
+  includes the town the squad occupies ([economy](economy.md)), so a homeless occupier sleeps in the occupied town's beds. Meitou: `AiSystem.OccupiedBed`, the
+  member index's (round robin) complete BF_BED of the occupied town not held outside the squad (engine choice for the order).
 - **UI**: a quick right click on a bed (function 6 or 25) gives 258 (UseableStuff slot 131 `FUN_140299230`); the held menu (`FUN_1407a6bc0`) offers
   99 "Put in Bed" when the last selected player character carries someone, else 258 "Sleep" (verb names `FUN_14079b2d0`).
 - Meitou: [simulation](../simulation.md#cages-beds-and-locks).

@@ -505,12 +505,14 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             case AiBehaviour.Post:
             case AiBehaviour.Sleep:
             case AiBehaviour.GoHome:
-                var (target, home, floor, facing) = SpotFor(mind, board, behaviour, type);
+                // An occupier without a home sleeps in a bed of the town it holds.
+                var occupied = behaviour == AiBehaviour.Sleep && board.Home is null && !mind.HomeUnreachable ? OccupiedBed(world, board, mind, slot) : null;
+                var (target, home, floor, facing) = occupied is not null ? (Flat(occupied.Position), true, occupied.Position.Y, (float?)null) : SpotFor(mind, board, behaviour, type);
                 if (GoToSpot(world.Walkability, table, slot, mind, target, home ? GiveUp.Home : GiveUp.Post, type is TaskType.RUN_AWAY_HOMETOWN or TaskType.TRAVEL_TO_TARGET_TOWN_FAST ? SpeedMode.Run : SpeedMode.Walk, height: floor))
                 {
                     Become(table, slot, behaviour == AiBehaviour.Sleep ? CharacterTask.Rest : CharacterTask.Idle);
                     // At its home's bed: the serial step lies it in (Task_UseBed via 98 Sleeping); resting on the floor stays the fallback when no bed is free.
-                    if (behaviour == AiBehaviour.Sleep && home && floor is not null && BedSpotOf(board, mind) is { } bed)
+                    if (behaviour == AiBehaviour.Sleep && home && floor is not null && (occupied?.Id ?? BedSpotOf(board, mind)) is { } bed)
                     {
                         mind.BedAt = bed;
                         Interlocked.Exchange(ref bedding, 1);
