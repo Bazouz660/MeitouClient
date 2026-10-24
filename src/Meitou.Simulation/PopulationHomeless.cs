@@ -10,7 +10,7 @@ namespace Meitou.Simulation;
 /// <list type="bullet">
 /// <item><b>Patrols</b> (<c>Task_Patrol</c>, <c>FUN_1408fc730</c>): a squad whose leader acts out a PATROL goal outside a patrol-class package walks from sector to
 /// sector of its biome group: a neighbouring sector (the four diagonal or the four straight ones, a coin flip), a random point in it, or with <c>patrol approaches
-/// towns</c> sometimes a town of it; within 500 of the point it picks the next. The neighbours' weights are <b>Unknown</b> (equal here); the walk is the squad's
+/// towns</c> sometimes a town of it; within 500 of the point it picks the next. Neighbours are weighted by how crowded they are (<see cref="SectorWeight"/>); the walk is the squad's
 /// wander round the point (<see cref="Squad.HomeCentre"/>, <see cref="PopulationSettings.HomelessHomeRadius"/>).</item>
 /// <item><b>Refill</b> (area tick <c>FUN_1408f9240</c>): while the loaded sectors hold fewer squads than the sum of P × <c>homeless spawn amount</c>, one sector
 /// below its own share makes one squad. Engine choice: the loaded sectors are one island.</item>
@@ -25,6 +25,8 @@ public sealed partial class PopulationSystem
     readonly Dictionary<int, (Vector2 Point, int Picks)> homelessPatrols = [];
     readonly Dictionary<string, bool> approachesTowns = new(StringComparer.Ordinal);
     readonly HashSet<int> patrolSeen = [];
+    /// <summary>The homeless squads standing in each zone (living leader), counted at the start of each patrol pass for <see cref="SectorWeight"/>.</summary>
+    readonly Dictionary<ZoneCoordinate, int> patrolStanding = [];
 
     /// <summary>The distance to its point at which a patrol picks the next (<c>FUN_1407ee790</c>, the off-screen step; the loaded rule is taken to match).</summary>
     const float PatrolArrive = 500;
@@ -42,6 +44,17 @@ public sealed partial class PopulationSystem
         patrolSeen.Clear();
         sectorSeen.Clear();
         refiles.Clear();
+        patrolStanding.Clear();
+        foreach (int i in wildLoaded)
+        {
+            if (wildSites![i].Kind != WildKind.Sector || wildStates[i].Status != SiteStatus.Loaded) continue;
+            foreach (int id in wildStates[i].Squads)
+            {
+                if (world.Squads.Find(id) is not { } squad || !table.TryResolveNext(squad.Leader, out int slot) || !table.IsAlive(squad.Leader)) continue;
+                var zone = WorldLayout.ZoneOf(table.Previous[slot].Position.X, table.Previous[slot].Position.Z);
+                patrolStanding[zone] = patrolStanding.GetValueOrDefault(zone) + 1;
+            }
+        }
         foreach (int i in wildLoaded)
         {
             var site = wildSites![i];
@@ -141,7 +154,7 @@ public sealed partial class PopulationSystem
     }
 
     /// <summary>
-    /// The next point of a patrol from <paramref name="at"/> (<c>FUN_1408fc730</c>): a neighbouring sector of the group, then in it a town (a player's at even odds with
+    /// The next point of a patrol from <paramref name="at"/> (<c>FUN_1408fc730</c>): a neighbouring sector of the group by <see cref="SectorWeight"/>, then in it a town (a player's at even odds with
     /// weight 1, another's at 1 in 4 with weight 0.2) when the template approaches towns, else a placed spot (<c>FUN_1408f50d0</c>); null when none is found.
     /// </summary>
     Vector2? PatrolPoint(World world, Squad squad, int group, Vector2 at, int picks)
@@ -152,15 +165,22 @@ public sealed partial class PopulationSystem
         ulong Roll() => Rng.Hash(world.Seed, key, RngPurpose.Wander, n++);
         var (cx, cz) = WeatherAreas.CellOf(at.X, at.Y);
         Span<(int X, int Z)> near = stackalloc (int, int)[4];
+        Span<float> weight = stackalloc float[4];
         bool diagonal = Rng.Float(Roll()) < 0.5f;
         int count = 0;
+        float sum = 0;
         for (int k = 0; k < 4; k++)
         {
             (int X, int Z) cell = diagonal ? (cx + ((k & 1) == 0 ? 1 : -1), cz + (k < 2 ? 1 : -1)) : k switch { 0 => (cx + 1, cz), 1 => (cx, cz + 1), 2 => (cx - 1, cz), _ => (cx, cz - 1) };
-            if (biomes.GroupOf(cell.X, cell.Z) == group) near[count++] = cell;
+            if (biomes.GroupOf(cell.X, cell.Z) != group) continue;
+            weight[count] = SectorWeight(new ZoneCoordinate(cell.X, cell.Z));
+            sum += weight[count];
+            near[count++] = cell;
         }
+        int drawn = 0;
+        for (float r = Rng.Float(Roll()) * sum; drawn < count - 1 && r >= weight[drawn]; drawn++) r -= weight[drawn];
         // No neighbour of the group: a point of its own sector (the original's fallback, FUN_1408fc1a0, picks another sector of the group; Unknown which).
-        var (tx, tz) = count == 0 ? (cx, cz) : near[Rng.Int(Roll(), count)];
+        var (tx, tz) = count == 0 ? (cx, cz) : near[drawn];
         if (ApproachesTowns(squad.TemplateId))
         {
             var zone = new ZoneCoordinate(tx, tz);
@@ -180,6 +200,12 @@ public sealed partial class PopulationSystem
         var (minX, minZ, maxX, maxZ) = WeatherAreas.CellRect(tx, tz);
         return PlaceInSector(minX, minZ, maxX, maxZ, squad.Faction, world.Seed, key, world.Walkability, []);
     }
+
+    /// <summary>
+    /// A neighbour's weight in a patrol's pick (<c>FUN_1408f5ad0</c>): 1 when its zone is not active; active, by the homeless squads standing in it, 10 when none,
+    /// 5 for one, 1 for more. The original divides 10 by 0 for an empty one, an infinite weight its pick does not handle; 10 is an engine choice.
+    /// </summary>
+    float SectorWeight(ZoneCoordinate zone) => !active.Contains(zone) ? 1 : patrolStanding.GetValueOrDefault(zone) switch { 0 => 10, 1 => 5, _ => 1 };
 
     bool ApproachesTowns(string templateId)
     {
