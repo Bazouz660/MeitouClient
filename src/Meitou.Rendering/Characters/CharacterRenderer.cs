@@ -190,6 +190,8 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
     /// <see cref="CharacterInstance.FullRateAnimation"/> (the player's first characters and the selected one) keeps the full rate.
     /// </summary>
     public float[] PoseRangeSteps { get; set; } = [120, 300, 600];
+    /// <summary>With fewer characters than this drawn in the world, none is thinned: every one is posed every frame.</summary>
+    const int ThinFromCharacters = 50;
     /// <summary>The pose rate inside the first step's distance, halved past each step (in poses per second, a frame rate above it poses every frame).</summary>
     const double PoseRateHz = 60;
     /// <summary>The seconds the pose rates count in (the game's animation clock, which a recorded flight steps by its frame time, so a take poses the same however slowly
@@ -420,6 +422,10 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
             foreach (var (def, time) in asset.Fixed) AddLayer(new ActiveLayer(def, time, 1));
             l.LayerCount = layerCount - l.LayerStart;
         }
+        int inWorld = 0;
+        for (int i = 0; i < liveCount; i++) if (!live[i].PortraitOnly) inWorld++;
+        if (inWorld < ThinFromCharacters)
+            for (int i = 0; i < liveCount; i++) live[i].Repose = true;
         Posed = 0;
         for (int i = 0; i < liveCount; i++) if (live[i].Repose) Posed++;
         if (updateStamp % 120 == 0) EvictStates();
