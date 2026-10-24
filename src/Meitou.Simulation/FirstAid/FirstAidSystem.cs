@@ -16,7 +16,7 @@ namespace Meitou.Simulation.FirstAid;
 /// is in reach, awake, not fighting and still, and the patient is still or down; <c>Apply</c> (serial commit, in target / source order) picks the kit, bandages the patient, drains the kit
 /// and trains the medic. So nothing on another character is written in a parallel phase.</item>
 /// <item><b>Rate</b> (<b>Observed</b>, character-stats.md): <c>lerp(1, 15, min(skill, kit quality) x 0.01) x medic speed mult</c> (x <c>robot medic speed mult</c> for a robot kit) per unit of <c>dt</c> on the first part with room (the next only once it fills), after any open wound is closed;
-/// the kit's <c>charges</c> fall by <c>lerp(medkit drain 99, medkit drain 1, (100 - skill) / 100) x dt</c> per wound step or part bandaged (character-stats.md "First aid update"). The skill is the patient race's <c>heal stat</c> of the medic times
+/// the kit's <c>charges</c> fall by <c>lerp(medkit drain 99, medkit drain 1, (100 - skill) / 100) x dt</c> per wound step or part bandaged (bandaging drains only the player's kits; character-stats.md "First aid update"). The skill is the medic's <c>medic</c> (first aid kit) or <c>robotics</c> (robot kit) times
 /// the stat multiplier of injuries and hunger. <c>dt</c> is <b>game seconds</b> (<b>engine choice</b>, the unit is <b>Unknown</b>).</item>
 /// <item><b>Auto</b> (<c>SlowWorld</c>, every <see cref="FirstAidSettings.AutoEveryTicks"/> ticks, serial in slot order): an idle, wandering or following character with a kit treats the most
 /// hurt squad mate within reach (knocked-out ones first), when no one in its squad is fighting: NPCs (engine stand-in until stage 9). The player's characters run their medic, robotics and
@@ -250,9 +250,10 @@ public sealed class FirstAidSystem(GameConstants constants, BodyOptions options,
             return;
         }
         float dt = world.TickSeconds;
-        var stat = race.HealStat;
-        float skill = stats[stat] * medical.StatMultiplier(stat) * (m == p ? 0.8f : 1);   // treating oneself: x0.8 (FUN_14033c5a0)
-        // Open wounds are closed first, newest first, with a kit matching the patient's race; nothing is bandaged meanwhile (FUN_14064d800).
+        // The skill and trained stat: medic with a first aid kit, robotics with a robot repair kit; treating oneself x0.8 (FUN_14033c5a0, Task_FirstAid's kit phase).
+        StatsEnumerated StatOf(bool robotKit) => robotKit ? StatsEnumerated.Robotics : StatsEnumerated.Medic;
+        float SkillOf(bool robotKit) => stats[StatOf(robotKit)] * medical.StatMultiplier(StatOf(robotKit)) * (m == p ? 0.8f : 1);
+        // Open wounds are closed first, newest first, with a kit matching the patient's race; nothing is bandaged meanwhile (FUN_14064d800). This drain is not gated.
         if (body.Wounds.Count > 0)
         {
             if (FindKit(world, m, medicCold, FunctionOf(race.IsRobot)) is not { } woundKit)
@@ -261,9 +262,10 @@ public sealed class FirstAidSystem(GameConstants constants, BodyOptions options,
                 End(table, m);
                 return;
             }
-            body.CloseWound(dt, skill, Items.Info(woundKit.Item.Record)?.Quality ?? 0, Constants);
-            Drain(woundKit, skill, dt, race.IsRobot, 1);
-            xp.Medic(stats, race, medicRace, dt);
+            float woundSkill = SkillOf(race.IsRobot);
+            body.CloseWound(dt, woundSkill, Items.Info(woundKit.Item.Record)?.Quality ?? 0, Constants);
+            Drain(woundKit, woundSkill, dt, race.IsRobot, 1);
+            xp.Medic(stats, race, medicRace, dt, StatOf(race.IsRobot));
             return;
         }
         // Ordinary kits first; a robotic part is treated once the organic ones are done. Treatment runs until the last bit is bandaged (the start threshold is MedicalState.FirstAidThreshold).
@@ -281,6 +283,7 @@ public sealed class FirstAidSystem(GameConstants constants, BodyOptions options,
             End(table, m);   // no kit of the right kind within reach
             return;
         }
+        float skill = SkillOf(robot);
         float quality = Items.Info(kit.Item.Record)?.Quality ?? 0;
         var ctx = new MedicalContext(Constants, bodyOptions, race);
         float bandaged = body.Treat(dt, skill, quality, robot, ctx, out int touched);
@@ -289,8 +292,8 @@ public sealed class FirstAidSystem(GameConstants constants, BodyOptions options,
             End(table, m);
             return;
         }
-        Drain(kit, skill, dt, robot, touched);   // once per part bandaged this update
-        xp.Medic(stats, race, medicRace, dt);
+        if (medicCold.IsPlayer) Drain(kit, skill, dt, robot, touched);   // once per part bandaged; only the player's medics use up kits here (FUN_140649a00: faction +0x250)
+        xp.Medic(stats, race, medicRace, dt, StatOf(robot));
         // An unconscious patient's faction is grateful to the medic's (engine choice: every update that bandages; the original's update fires it only when its loop got past the wounds).
         Deeds?.FirstAid(world, m, p, dt);
     }

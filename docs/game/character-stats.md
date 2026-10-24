@@ -138,10 +138,14 @@ skill x 0.8 when treating oneself and q = min(skill, kit quality):
   parts takes about n times as long, and n times the charges, as one with a single part of the same damage.
 - **Drain** = lerp(`medkit drain 99`, `medkit drain 1`, (100 - skill) / 100) x dt (skill, not q), x `robot medic speed mult` for a
   robot kit (function 12).
-- **Unknown**: the drain in the bandaging step is skipped unless the medic's `vfunc 0x58` object has a non-null +0x250 (also the
-  gate for kitless treatment); Meitou always drains. While no wound is open but bleeding (medical +0x78) is positive, `FUN_14064d800`
-  bandages an extra time and lowers it by q x 0.01 x dt; it is recomputed every medical tick, so Meitou leaves it out. The task picks
-  CharStats +0x98 or +0xdc (robot repair) as the skill; Meitou uses the patient race's `heal stat`.
+- **Player only.** The bandaging step drains only when the medic's faction is the player's (Faction +0x250); NPC medics use up kits
+  only on wounds. The same test lets a non-player medic treat without a kit (rate 1, quality 5 for wounds; `Task_FirstAid`
+  `FUN_1403563a0`); Meitou's NPC rule still needs a kit.
+- **Skill.** `Task_FirstAid` (`FUN_1403563a0`) runs a first aid kit phase, then (none left) a robot repair kit phase; the skill is
+  CharStats +0x98 (`medic`) in the first, +0xdc (`robotics`) in the second, and the trained stat 9 or 6 likewise; the race's `heal
+  stat` is not read here.
+- **Unknown**: while no wound is open but bleeding (medical +0x78) is positive, `FUN_14064d800` bandages an extra time and lowers it
+  by q x 0.01 x dt; it is recomputed every medical tick, so Meitou leaves it out.
 - Meitou: `FirstAidSystem.Apply`, `MedicalState.CloseWound` / `Treat`; dt in game seconds (unit **Unknown**).
 
 **Observed** (`wade`, player Metaru's MEDICAL_STATE): injured parts have flesh + bandage ≈100,
