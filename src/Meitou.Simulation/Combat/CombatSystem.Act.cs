@@ -363,7 +363,7 @@ public sealed partial class CombatSystem
             if (o.TargetGeneration != generation || o.Down || o.Ranged) continue;
             if (o.AttackTech >= 0 && o.NextBlow > 0)
             {
-                holders++;
+                if (++holders + ahead >= slots) return false;
                 continue;
             }
             if (other > i || now < o.StunUntil || !o.Engaged && !MayJoin(world, other, t)) continue;
@@ -385,7 +385,7 @@ public sealed partial class CombatSystem
             // Its reach is known from its last ask (StartAttack); one that has never asked counts.
             var c = table.Cold(other);
             if (c is null || o.Reach > 0 && CombatTuning.Gap(prev[other].Position, at, c, tc) > o.Reach) continue;
-            ahead++;
+            if (holders + ++ahead >= slots) return false;
         }
         return holders + ahead < slots;
     }
@@ -409,7 +409,7 @@ public sealed partial class CombatSystem
             if (other == i || !range.Holds((x, z))) continue;
             ref readonly var o = ref read[other];
             if (o.TargetGeneration != generation || o.Down || o.Ranged) continue;
-            if (o.Engaged || other < i) count++;
+            if ((o.Engaged || other < i) && ++count >= MaxEngaged) return false;
         }
         return count < MaxEngaged;
     }
@@ -423,10 +423,19 @@ public sealed partial class CombatSystem
     public void IndexAttackers(World world)
     {
         index.Build(read, world.Characters, world.Grid);
+        // FightersAt's counts, once per target: asked per attacker, a crowd round one target would walk its list once per member.
+        int n = world.Characters.HighWater;
+        if (fightersAt.Length < n) fightersAt = new int[Math.Max(n, fightersAt.Length * 2)];
+        for (int t = 0; t < n; t++) fightersAt[t] = index.AttackersOf(t).IsEmpty ? 0 : CountFightersAt(world, t);
     }
 
-    /// <summary>The melee fighters (engaged or circling) at <paramref name="t"/>, as of the last tick: the original's engaged count plus the askers it turned away (<c>FUN_140666e20</c>).</summary>
-    public int FightersAt(World world, int t)
+    int[] fightersAt = [];
+
+    /// <summary>The melee fighters (engaged or circling) at <paramref name="t"/>, as of the last tick: the original's engaged count plus the askers it turned away (<c>FUN_140666e20</c>).
+    /// After <see cref="IndexAttackers"/>.</summary>
+    public int FightersAt(World world, int t) => (uint)t < (uint)world.Characters.HighWater && t < fightersAt.Length ? fightersAt[t] : 0;
+
+    int CountFightersAt(World world, int t)
     {
         var prev = world.Characters.Previous;
         var range = world.Grid.Range(prev[t].Position.X, prev[t].Position.Z, CombatTuning.EngageScanRadius);

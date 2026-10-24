@@ -67,15 +67,6 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
             ? (1 - combat.AttackRate(cold)) * CombatTuning.LeadSlope + CombatTuning.LeadBase : 0;
         var level = next[t].Position + tv * MathF.Min(lead, CombatTuning.AimLeadSeconds) - n.Position;
         bool behind = lead > 0 && tv.X * level.X + tv.Z * level.Z > 0;
-        if (behind)
-        {
-            var heading = Vector2.Normalize(new Vector2(tv.X, tv.Z));
-            var across = new Vector2(-heading.Y, heading.X);
-            float side = across.X * -d.X + across.Y * -d.Z;
-            float pass = CombatTuning.PassWidth * (CombatTuning.Footprint(cold) + CombatTuning.Footprint(tc));
-            var ahead = goal + new Vector2(tv.X, tv.Z) * (lead + RepathSeconds) + across * (side > 0 || side == 0 && (i & 1) == 0 ? pass : -pass);
-            if (world.Walkability.IsWalkable(ahead.X, ahead.Y, next[t].Position.Y)) goal = ahead;   // off the navmesh (a wall, a cliff) it goes for the target itself
-        }
         // A crossbowman walks only while closing in (out of range or the line of fire blocked); aiming and reloading it stands.
         bool shooting = st.Ranged && st.RangedState != (byte)RangedStates.Closing;
         bool holding = Orders.Has(cold, CharacterOrders.Hold);
@@ -98,9 +89,19 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
             }
             return;
         }
-        bool asking = (n.Flags & (ushort)(MoveFlags.NeedPath | MoveFlags.Pending)) != 0;
+        if ((n.Flags & (ushort)(MoveFlags.NeedPath | MoveFlags.Pending)) != 0 || n.TaskTime > 0) return;
+        // The point past the runner only now, at most once per RepathSeconds: the navmesh test is a point query per chaser.
+        if (behind)
+        {
+            var heading = Vector2.Normalize(new Vector2(tv.X, tv.Z));
+            var across = new Vector2(-heading.Y, heading.X);
+            float side = across.X * -d.X + across.Y * -d.Z;
+            float pass = CombatTuning.PassWidth * (CombatTuning.Footprint(cold) + CombatTuning.Footprint(tc));
+            var ahead = goal + new Vector2(tv.X, tv.Z) * (lead + RepathSeconds) + across * (side > 0 || side == 0 && (i & 1) == 0 ? pass : -pass);
+            if (world.Walkability.IsWalkable(ahead.X, ahead.Y, next[t].Position.Y)) goal = ahead;   // off the navmesh (a wall, a cliff) it goes for the target itself
+        }
         bool stale = (n.Flags & (ushort)MoveFlags.HasPath) == 0 || Vector2.DistanceSquared(goal, n.Goal) > RepathDistance * RepathDistance;
-        if (asking || !stale || n.TaskTime > 0) return;
+        if (!stale) return;
         n.Goal = goal;
         n.Mode = SpeedMode.Free;
         n.Flags |= (ushort)MoveFlags.NeedPath;
