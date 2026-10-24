@@ -1090,10 +1090,18 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             saved.Apply(squad.Ai, data.Ai, rules);
             squad.SavedAi = null;
         }
+        // An occupation it left the world in goes on in the player town it comes back in (the original keeps the occupier's platoon and package, docs/game/ai.md).
+        if (squad.LeftPackage is { } left && data.Ai.Package(left) is { } package && PackageClasses.Of(package.Signal) == PackageClass.OccupyTown && squad.Ai.Contract is null
+            && squad.Ai.InTown.PlayerTown > 0 && squad.Ai.Resume(package))
+            OccupyResumed(world, squad, squad.Ai);
+        squad.LeftPackage = null;
     }
 
-    /// <summary>The AI runs a squad that is not the player's, not a roaming platoon's active half (a town's own saved squad, pinned, is run like the town's), and whose template lists AI packages.</summary>
-    bool Runs(World world, Squad squad) => (squad.PlatoonId < 0 || squad.Pinned) && !IsPlayers(world, squad) && TemplateOf(squad.TemplateId).Packages.Count > 0;
+    /// <summary>
+    /// The AI runs a squad that is not the player's, not a roaming platoon's active half (a town's own saved squad, pinned, is run like the town's, a save's wild one like the wild
+    /// sites' squads), and whose template lists AI packages.
+    /// </summary>
+    bool Runs(World world, Squad squad) => (squad.PlatoonId < 0 || squad.Pinned || squad.Wild) && !IsPlayers(world, squad) && TemplateOf(squad.TemplateId).Packages.Count > 0;
 
     bool IsPlayers(World world, Squad squad)
     {

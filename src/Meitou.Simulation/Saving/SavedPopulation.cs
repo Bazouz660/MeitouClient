@@ -335,6 +335,8 @@ internal static class SavedCharacters
             Town = platoon.Origin,
             PlatoonId = platoon.Id,
             Pinned = sp.Pinned,
+            Wild = sp.Wild is not null,
+            LeftPackage = platoon.Package,
             Position = new Vector3(platoon.Position.X, walk.GroundHeight(platoon.Position.X, platoon.Position.Y), platoon.Position.Y),
             HomeCentre = homeCentre,
             HomeRadius = homeRadius,

@@ -144,17 +144,14 @@ public sealed partial class PopulationSystem
         }
         var one = new SiteState();
         one.Squads.Add(id);
-        // Kept only up to the sector's own count, so sectors round where the player goes do not pile them up (engine choice).
-        if (!KeepWild || KeptWildOf(to).Count >= HomelessCount(data.Biomes!.Groups[wildSites![to].Group], settings.PopulationMultiplier))
+        // Kept only up to the sector's own count, so sectors round where the player goes do not pile them up (engine choice); an occupier always, as the original's persistent one.
+        bool occupier = world.Squads.Find(id) is { } squad && Occupying(squad);
+        if (!occupier && (!KeepWild || KeptWildOf(to).Count >= HomelessCount(data.Biomes!.Groups[wildSites![to].Group], settings.PopulationMultiplier)))
         {
             Drop(world, one);
             return;
         }
-        keptWild.Remove(to, out var before);
-        KeepWildSquads(world, to, one);
-        if (before is null) return;
-        if (keptWild.TryGetValue(to, out var now)) before.AddRange(now);
-        keptWild[to] = before;
+        KeepAlso(world, to, one);
     }
 
     /// <summary>

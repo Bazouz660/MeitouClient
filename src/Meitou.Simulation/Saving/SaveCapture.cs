@@ -465,6 +465,12 @@ public static partial class SaveCapture
             if (p is not null) platoon.Money = (int)Math.Clamp(squad?.Money ?? p.Money, int.MinValue, int.MaxValue);
             ShopSave.Write(platoon.Record, squad is not null ? squad.Shop : sp.Shop, world);
             AiSave.Write(platoon.Record, squad is not null ? AiSave.Of(squad.Ai) ?? squad.SavedAi : sp.Ai);
+            // A wild one the AI ran: its package, persistent while it occupies a town (as the original's occupation).
+            if (sp.Wild is not null && p is not null && (squad?.Ai?.Current?.Id ?? p.Package) is { } package)
+            {
+                platoon.Record.Strings["currentPackage"] = package;
+                platoon.Record.Bools["persistent"] = Ai.AiSystem.Occupies(data.Ai, package);
+            }
             if (squad is not null) NoteMemory(platoon.Record, MemoryOf(world)?.Snapshot(squad.Id));
             else if (sp.MemorySet) NoteMemory(platoon.Record, sp.Memory);
             foreach (var m in sp.Members)
@@ -554,8 +560,9 @@ public static partial class SaveCapture
             int siteFaction = data.SiteFactions.Count > town ? data.SiteFactions[town] : -1;
             // `sqt` is the town pool it counts against: 1 residents (and bar squads), 2 roaming (docs/formats/save.md "NPC platoons").
             record.Ints["sqt"] = roaming ? 2 : 1;
-            // Residents and bar squads are persistent (the original keeps them off screen, docs/game/factions-squads-towns.md "Persistent platoons"), roaming ones not.
-            record.Bools["persistent"] = !roaming;
+            // Residents and bar squads are persistent (the original keeps them off screen, docs/game/factions-squads-towns.md "Persistent platoons"), roaming ones not but
+            // while they occupy a town.
+            record.Bools["persistent"] = !roaming || Ai.AiSystem.Occupies(data.Ai, package);
             // A squad with a home is a resident (every platoon of the samples with a `homebuilding` has `is resident`, and only those): a default resident too.
             record.Bools["is resident"] = !roaming && (homeBuilding is not null
                 || PopulationSystem.ResidentEntries(site.Town, siteFaction >= 0 ? data.Factions[siteFaction] : null).Any(e => e.Id == templateId));

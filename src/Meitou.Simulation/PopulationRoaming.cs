@@ -90,6 +90,12 @@ public sealed partial class PopulationSystem
     /// <summary>The original's orphan timer: a platoon it does not keep is activated, and so despawned, after this many seconds unloaded.</summary>
     const float OrphanLimitSeconds = 60;
 
+    /// <summary>
+    /// Whether a platoon out of the world keeps its characters: by the Meitou switches (<see cref="KeepWild"/> for a save's wild one, else <see cref="KeepRoamers"/>), and always
+    /// while it occupies a town, as the original makes an occupier persistent (docs/game/ai.md "Package classes").
+    /// </summary>
+    bool Kept(Platoon p) => (p.Wild ? KeepWild : KeepRoamers) || Ai.AiSystem.Occupies(data.Ai, p.Package);
+
     readonly List<Platoon> movers = [];
     /// <summary>Stand-ins one worker job steps (engine choice: a job costs more than a few stand-ins).</summary>
     const int MoversPerJob = 64;
@@ -100,7 +106,7 @@ public sealed partial class PopulationSystem
     /// </summary>
     void StepOffscreen(World world, Platoon p, float dt)
     {
-        if (!(p.Wild ? KeepWild : KeepRoamers) && !Wanted(p)) p.OrphanSeconds += dt;
+        if (!Kept(p) && !Wanted(p)) p.OrphanSeconds += dt;
         else p.OrphanSeconds = 0;
         if (p.OrphanSeconds <= OrphanLimitSeconds) StandIn(world, p, dt);
     }
@@ -299,8 +305,9 @@ public sealed partial class PopulationSystem
         else if (p.UnloadAtTick < 0) p.UnloadAtTick = world.Tick + (long)Math.Ceiling((p.Pinned ? settings.UnloadGraceSeconds : settings.RoamUnloadGraceSeconds) / world.TickSeconds);
         else if (world.Tick >= p.UnloadAtTick)
         {
-            // Faithful: a platoon the original does not keep (not a town's own, not in a campaign) is despawned as it leaves; a save's wild one by the wild switch.
-            if (!(p.Wild ? KeepWild : KeepRoamers) && !p.Pinned && p.Campaign is null)
+            if (squad.Ai?.Current is { } running) p.Package = running.Id;
+            // Faithful: a platoon the original does not keep (not a town's own, not in a campaign, not occupying) is despawned as it leaves; a save's wild one by the wild switch.
+            if (!Kept(p) && !p.Pinned && p.Campaign is null)
             {
                 Despawn(world, p);
                 return;

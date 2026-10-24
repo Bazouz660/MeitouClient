@@ -290,17 +290,26 @@ public sealed partial class AiSystem
 
     /// <summary>
     /// The occupation's start (vtable +0x30, <c>FUN_140288fe0</c>): the town its leader is in is its mission town and that town's faction its enemy; every member says
-    /// TAKEN_OVER_PLAYER_TOWN (73). The original also makes the platoon persistent while it lasts (Meitou keeps a wild squad only with <c>KeepWild</c>) and lists it among the
-    /// town's hostile occupiers (Town +0x118, its count +0x128, which the campaigns read: <see cref="Occupied"/>). The posts move into the town (<see cref="PostsInto"/>).
+    /// TAKEN_OVER_PLAYER_TOWN (73). The original also makes the platoon persistent while it lasts (the population keeps an occupier out of the world, <see cref="Occupies"/>) and
+    /// lists it among the town's hostile occupiers (Town +0x118, its count +0x128, which the campaigns read: <see cref="Occupied"/>). The posts move into the town (<see cref="PostsInto"/>).
     /// </summary>
-    void OccupyStarted(World world, Squad squad, Blackboard board)
+    void OccupyStarted(World world, Squad squad, Blackboard board) => Occupy(world, squad, board, TakenOverPlayerTown);
+
+    /// <summary>An occupier come back into the world (<see cref="Blackboard.Resume"/>): the occupation's state again from the town it is in, without the members' line.</summary>
+    void OccupyResumed(World world, Squad squad, Blackboard board) => Occupy(world, squad, board, null);
+
+    void Occupy(World world, Squad squad, Blackboard board, int? say)
     {
         board.OccupyAway = 0;
         if (board.InTown.PlayerTown <= 0 || world.Buildings.FindTown(board.InTown.PlayerTown) is not { } town) return;
         board.Destination = board.InTown;
         board.AssaultEnemy = town.Owner;
-        PostsInto(world, squad, Flat(town.Position), TakenOverPlayerTown);
+        PostsInto(world, squad, Flat(town.Position), say);
     }
+
+    /// <summary>Whether a package is an occupation (<c>Package_OccupyTown</c>, 30), whose platoon the original keeps while it lasts (persistent); false for null or an unknown id.</summary>
+    public static bool Occupies(AiDatabase ai, string? package) =>
+        package is not null && ai.Package(package) is { } p && PackageClasses.Of(p.Signal) == PackageClass.OccupyTown;
 
     /// <summary>
     /// Whether the occupation is over (vtable +0x68, <c>FUN_140289290</c>): the town gone; or no member alive and up in it (<c>FUN_140289180</c>) for more than 4 game seconds in

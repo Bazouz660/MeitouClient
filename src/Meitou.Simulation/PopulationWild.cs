@@ -316,7 +316,11 @@ public sealed partial class PopulationSystem
             else if (world.Tick >= state.UnloadAtTick)
             {
                 if (KeepWild) KeepWildSquads(world, i, state);
-                else PayNestDespawn(world, wildSites[i], state);
+                else
+                {
+                    KeepOccupiers(world, i, state);
+                    PayNestDespawn(world, wildSites[i], state);
+                }
                 Drop(world, state);
                 wildLoaded.Remove(i);
             }
@@ -340,6 +344,30 @@ public sealed partial class PopulationSystem
             (kept ??= []).Add(new KeptWild(stored, squad.TemplateId, squad.Faction, squad.Money, squad.SpawnSize, squad.HomeCentre, squad.HomeRadius));
         }
         if (kept is not null) keptWild[site] = kept;
+    }
+
+    /// <summary>A squad running an occupation, whose platoon the original makes persistent while it lasts (docs/game/ai.md "Package classes"): kept out of the world by every switch.</summary>
+    static bool Occupying(Squad squad) => squad.Ai is { CurrentClass: Ai.PackageClass.OccupyTown };
+
+    /// <summary>The Faithful unload's exception: the site's occupiers are kept as with <see cref="KeepWild"/> (taken out of <paramref name="state"/>), the rest left to be dropped.</summary>
+    void KeepOccupiers(World world, int site, SiteState state)
+    {
+        SiteState? occupiers = null;
+        foreach (int id in state.Squads)
+            if (world.Squads.Find(id) is { } squad && Occupying(squad)) (occupiers ??= new SiteState()).Squads.Add(id);
+        if (occupiers is null) return;
+        foreach (int id in occupiers.Squads) state.Squads.Remove(id);
+        KeepAlso(world, site, occupiers);
+    }
+
+    /// <summary>Keeps the squads of <paramref name="state"/> (<see cref="KeepWildSquads"/>) after the ones <paramref name="site"/> keeps already.</summary>
+    void KeepAlso(World world, int site, SiteState state)
+    {
+        keptWild.Remove(site, out var before);
+        KeepWildSquads(world, site, state);
+        if (before is null) return;
+        if (keptWild.TryGetValue(site, out var now)) before.AddRange(now);
+        keptWild[site] = before;
     }
 
     /// <summary>The site's kept squads into the world (serial, as it loads), counted as its own.</summary>

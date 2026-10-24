@@ -299,8 +299,8 @@ PLATOON keys (**Verified**):
   and 3+ into 2, default 2): 1 residents (and bar squads), 2 roaming; every wild platoon of the samples has 2 (nests have only pool 2).
 - `persistent` (platoon +0x115, [persistent platoons](../game/factions-squads-towns.md#1-object-model)) is true on every `sqt` 1 platoon (census of saves
   1, 2, 3, wade, new, quicksave and three autosaves: residents, bar squads and the player's, 0 exceptions) and false on most `sqt` 2 ones (some `sqt` 2
-  town platoons are persistent, why **Unknown**). Meitou writes true with `sqt` 1 and false with 2; written false, the original would delete a resident
-  squad when it leaves the loaded area.
+  town platoons are persistent, why **Unknown**; an occupation sets it, [ai.md](../game/ai.md#package-classes)). Meitou writes true with `sqt` 1 and false
+  with 2 but while the platoon's package is an occupation; written false, the original would delete a resident squad when it leaves the loaded area.
 - `is resident` is set exactly on the platoons with a `homebuilding` (census of saves 1, 2, 3, wade: 0 exceptions); Meitou writes both for a squad with a home.
 - `hometown` (handle) puts the platoon into that town's or nest's pool at load (`FUN_1407ec8d0`; the platoon's faction and player status must match the town's);
   the pool counts living characters, `char count` while the platoon is not active (`FUN_1408f6a40`). `basetown` is only kept as a TOWN record pointer.
