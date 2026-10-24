@@ -11,7 +11,7 @@ namespace Meitou.Game;
 /// </summary>
 sealed partial class GameHost
 {
-    /// <summary>The two fronts start this far apart along Z, each block in ranks of up to <see cref="BattleRankWidth"/> fighters <see cref="BattleSpacing"/> apart.</summary>
+    /// <summary>The two fronts start this far apart along Z, each block in ranks of up to <see cref="BattleRankWidth"/> fighters <see cref="BattleSpacing"/> apart (more for bigger races).</summary>
     const float BattleGap = 40, BattleSpacing = 6;
     const int BattleRankWidth = 25;
     /// <summary>No orders before this tick: the blocks stand a moment before they charge.</summary>
@@ -63,6 +63,11 @@ sealed partial class GameHost
             var fighters = battleFighters[side];
             fighters.Clear();
             float sign = side == 0 ? -1 : 1;
+            // Bigger bodies stand further apart: BattleSpacing is a human's (footprint 4), scaled by the race's footprint, never closer; the front rank at least that far off the middle.
+            var db = scene.Database!;
+            var race = db.Find(record)?.GetReferences("race").FirstOrDefault(r => r.Values.Value0 > 0) is { } raceRef ? db.Find(raceRef.TargetStringId) : null;
+            float footprint = race?.GetFloat("pathfind footprint radius", CombatTuning.DefaultFootprint) ?? CombatTuning.DefaultFootprint;
+            float spacing = Math.Max(BattleSpacing, BattleSpacing * footprint / CombatTuning.DefaultFootprint), front = Math.Max(BattleGap / 2, spacing);
             // --battle's rows: that many rows of count / rows, the back row also taking the rest; otherwise rows of BattleRankWidth.
             int rows = g.BattleRows is { } r ? Math.Min(r, count) : 0, width = rows > 0 ? count / rows : BattleRankWidth;
             var offsets = new Vector2[count];
@@ -70,7 +75,7 @@ sealed partial class GameHost
             {
                 int rank = rows > 0 ? Math.Min(i / width, rows - 1) : i / width;
                 int first = rank * width, inRank = rows > 0 && rank == rows - 1 ? count - first : Math.Min(width, count - first);
-                offsets[i] = new Vector2((i - first - (inRank - 1) / 2f) * BattleSpacing, sign * (BattleGap / 2 + rank * BattleSpacing));
+                offsets[i] = new Vector2((i - first - (inRank - 1) / 2f) * spacing, sign * (front + rank * spacing));
             }
             // Facing +Z is yaw 0; a look of its own per fighter.
             fighters.AddRange(population.SpawnSandboxSquad(world, record, new Vector2(battleSpot.X, battleSpot.Z), offsets, side == 0 ? 0 : MathF.PI, side * 1000 + 1, faction));

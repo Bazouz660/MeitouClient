@@ -44,6 +44,8 @@ sealed class GameOptions
     public bool BattleFlat;
     /// <summary><c>--battle-map x,z</c>: where on the map the battle is fought (null: the plateau, <see cref="GameHost.BattleSpot"/>).</summary>
     public (float X, float Z)? BattleAt;
+    /// <summary><c>--battle-no-fear</c>: nobody runs away, every fighter fights until it is down (no flee system).</summary>
+    public bool BattleNoFear;
     /// <summary>The start to play (null = the default); with <c>--move-to</c> the picture shows a selected squad walking.</summary>
     public string? NewGameName;
     public (float X, float Z)? MoveTo;
@@ -81,9 +83,10 @@ sealed class GameOptions
           --duel [x,z]               trailer scene: two helmeted Samurai duel at sunset in the desert dunes (or at x,z), on rails: every lap is the same fight, the clock, weather and clouds start again with it,
                                      and it restarts when a cinema flight is played or recorded (Backspace restarts it); the time of day is held (22:00, or --time) and the weather clear (or --weather)
           --battle <n> <unit> <m> <unit> [rows]  n NPCs of one CHARACTER or ANIMAL_CHARACTER record (name or id) fight m of another (at least 1 each), in two blocks facing each other
-                                     (rows of 25, or each block in that many rows, the back row taking the rest);
+                                     (rows of 25, or each block in that many rows, the back row taking the rest; bigger races stand further apart);
                                      no towns, no aggro: a standing fighter without a target goes for the nearest standing enemy; Backspace starts the same fight again
           --battle-map <map>         where the battle is fought: plateau (default), mesa (the --duel spot in the dunes), sandbox (the flat floor) or x,z on the map (no building collision there)
+          --battle-no-fear           nobody in the battle runs away: every fighter fights until it is down
           --move-to <x> <z>        with --new-game: select the squad and order it to walk (for screenshots; the picture is taken where the leader got to)
           --ticks <n>                with --screenshot: run n control ticks (and the same real time of the simulation, at speed 1) before the picture
           --quit-after <s>           close after s seconds and print the frame rate (smoke test)
@@ -176,6 +179,7 @@ sealed class GameOptions
                         default: throw new ArgumentException("--battle-map must be plateau, mesa, sandbox or x,z");
                     }
                     break;
+                case "--battle-no-fear": g.BattleNoFear = true; break;
                 case "--move-to": g.MoveTo = (float.Parse(Next(), CultureInfo.InvariantCulture), float.Parse(Next(), CultureInfo.InvariantCulture)); break;
                 case "--quit-after": g.QuitAfter = double.Parse(Next(), CultureInfo.InvariantCulture); break;
                 case "--load": g.Load = Next(); break;
