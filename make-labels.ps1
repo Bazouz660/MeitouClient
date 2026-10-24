@@ -32,9 +32,27 @@ if ($Style -eq 'Modern') {
   }
   $size = 32.3; $cx = 24; $cy = 966; $ch = 90; $baseline = 1024
   $ascent = $size * $family.GetCellAscent(0) / $family.GetEmHeight(0)
+  # **text** is set in Exo 2 Bold, on the same baseline.
+  $boldFonts = New-Object System.Drawing.Text.PrivateFontCollection
+  $boldFonts.AddFontFile("$Game\fonts\Exo2-Bold.ttf")
+  $bold = $boldFonts.Families[0]
+  $boldStyle = if ($bold.IsStyleAvailable([System.Drawing.FontStyle]::Regular)) { 0 } else { [int][System.Drawing.FontStyle]::Bold }
+  $boldShift = $ascent - $size * $bold.GetCellAscent($boldStyle) / $bold.GetEmHeight($boldStyle)
+  $measure = [System.Drawing.Graphics]::FromImage($atlas)
+  $typographic = [System.Drawing.StringFormat]::GenericTypographic.Clone()
+  $typographic.FormatFlags = $typographic.FormatFlags -bor [System.Drawing.StringFormatFlags]::MeasureTrailingSpaces
   foreach ($label in $Labels) {
     $text = New-Object System.Drawing.Drawing2D.GraphicsPath
-    $text.AddString($label, $family, 0, [single]$size, (New-Object System.Drawing.PointF(0, 0)), [System.Drawing.StringFormat]::GenericTypographic)
+    $x = 0; $isBold = $false
+    foreach ($part in $label -split '\*\*') {
+      if ($part) {
+        $fam = if ($isBold) { $bold } else { $family }; $st = if ($isBold) { $boldStyle } else { 0 }
+        $text.AddString($part, $fam, $st, [single]$size, (New-Object System.Drawing.PointF([single]$x, [single]$(if ($isBold) { $boldShift } else { 0 }))), $typographic)
+        $font = New-Object System.Drawing.Font($fam, [single]$size, [System.Drawing.FontStyle]$st, [System.Drawing.GraphicsUnit]::Pixel)
+        $x += $measure.MeasureString($part, $font, [System.Drawing.PointF]::Empty, $typographic).Width; $font.Dispose()
+      }
+      $isBold = -not $isBold
+    }
     $ink = $text.GetBounds()
     $cw = [math]::Round($ink.Width) + 80
     if ($Center) { $cx = [math]::Round((1920 - $cw) / 2) }
