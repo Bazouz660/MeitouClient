@@ -606,6 +606,8 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         }
         if (s.Sensed || (world.Tick - s.ChaseStart) * world.TickSeconds < GiveUpGateSeconds) return;
         var here = new Vector2(next[i].Position.X, next[i].Position.Z);
+        // Engine choice: a target within GiveUpReach of the chaser itself has not got away, though a look missed it (a chaser running past its runner has it at its back).
+        if (Vector2.DistanceSquared(here, target) < GiveUpReach * GiveUpReach) return;
         if ((world.Tick - s.SensedTick) * world.TickSeconds <= GiveUpSenseSeconds && Vector2.DistanceSquared(here, s.SensedAt) >= GiveUpReach * GiveUpReach) return;
         s.ChaseStart = -1;
         world.Defer(new StopCommand([table.IdOf(i)]) { Tick = world.Tick + 1 });

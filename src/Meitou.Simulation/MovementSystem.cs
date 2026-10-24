@@ -484,6 +484,7 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
                     }
                     else n.Task = (byte)CharacterTask.Idle;
                 }
+                else if (!replaced && n.Task == (byte)CharacterTask.Attack) n.TaskTime = 0;   // a fighter at the end of its path to a moving target asks for the next one at once (PursuitSystem)
                 else if (!replaced)
                 {
                     ulong roll = Rng.Hash(world.Seed, Rng.Key(table.IdOf(i)), RngPurpose.Think, (ulong)world.Tick);

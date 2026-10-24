@@ -51,15 +51,29 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
         bool fleeing = cold.TargetFleeingTime >= CombatTuning.FleeingSeconds;
         if (fleeing) cold.CombatRunning = true;
         n.TaskTime -= dt;
+        // Its swings are measured to where a target that is not fighting will be (CombatSystem.StartAttack's aim, AimLeadSeconds ahead), so standing and the run past are too:
+        // stood within reach of the target itself, a runner's aim point would be out of reach and the chaser would stand there idle while the runner got away.
+        var aim = tc is { InCombat: false } ? next[t].Position + tv * CombatTuning.AimLeadSeconds : next[t].Position;
+        var da = aim - n.Position;
+        float aimGap = MathF.Sqrt(da.X * da.X + da.Z * da.Z) - CombatTuning.Footprint(cold) - CombatTuning.Footprint(tc);
         // After a fleeing target it aims ahead of it (CombatTuning.LeadBase), so a faster chaser runs past; the lead follows the target's velocity, so it swings round
-        // when the target turns. An engine rule: the lead and the run past hold only while the chaser is behind the target; once level or ahead it turns on the target
-        // and stops within reach, so the runner comes into it.
+        // when the target turns. Engine rules: the lead and the run past hold only while the chaser is behind the nearer of the lead and aim points; once level with it
+        // it turns on the target and stops with the aim point within reach, so the runner comes into its swing. A path's goal is reached and stopped at, and a
+        // fighter's speed ramps up again slowly, so the goal is put RepathSeconds of the runner's way past the lead (the lead moves that far before the next path).
+        // Bodies are solid here (the original's chaser runs through its runner), so the goal is also put PassWidth beside the runner's track, on the chaser's side
+        // (by slot when dead behind), for the chaser to pass the runner rather than push it along.
         var goal = new Vector2(next[t].Position.X, next[t].Position.Z);
-        bool behind = fleeing && tv.X * d.X + tv.Z * d.Z > 0 && cold.Fighter is not null && cold.Stats is not null && cold.Medical is not null;
+        float lead = fleeing && cold.Fighter is not null && cold.Stats is not null && cold.Medical is not null
+            ? (1 - combat.AttackRate(cold)) * CombatTuning.LeadSlope + CombatTuning.LeadBase : 0;
+        var level = next[t].Position + tv * MathF.Min(lead, CombatTuning.AimLeadSeconds) - n.Position;
+        bool behind = lead > 0 && tv.X * level.X + tv.Z * level.Z > 0;
         if (behind)
         {
-            float lead = (1 - combat.AttackRate(cold)) * CombatTuning.LeadSlope + CombatTuning.LeadBase;
-            var ahead = goal + new Vector2(tv.X, tv.Z) * lead;
+            var heading = Vector2.Normalize(new Vector2(tv.X, tv.Z));
+            var across = new Vector2(-heading.Y, heading.X);
+            float side = across.X * -d.X + across.Y * -d.Z;
+            float pass = CombatTuning.PassWidth * (CombatTuning.Footprint(cold) + CombatTuning.Footprint(tc));
+            var ahead = goal + new Vector2(tv.X, tv.Z) * (lead + RepathSeconds) + across * (side > 0 || side == 0 && (i & 1) == 0 ? pass : -pass);
             if (world.Walkability.IsWalkable(ahead.X, ahead.Y, next[t].Position.Y)) goal = ahead;   // off the navmesh (a wall, a cliff) it goes for the target itself
         }
         // A crossbowman walks only while closing in (out of range or the line of fire blocked); aiming and reloading it stands.
@@ -73,7 +87,7 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
             return;
         }
         float stand = CombatTuning.StandGap(st.Reach, cold.Fighter?.WeaponLength ?? 0);
-        if (st.Down || st.AttackTech >= 0 || st.ReactTech >= 0 || world.Tick < st.StunUntil || shooting || !st.Ranged && !behind && gap <= stand || holding)
+        if (st.Down || st.AttackTech >= 0 || st.ReactTech >= 0 || world.Tick < st.StunUntil || shooting || !st.Ranged && !behind && aimGap <= stand || holding)
         {
             // In reach, mid-swing or staggered (the hit reaction carries it), or holding position: stand and fight.
             if ((n.Flags & Path) != 0)
