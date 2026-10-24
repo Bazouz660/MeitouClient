@@ -302,12 +302,12 @@ sealed partial class PlayerInterface
         else if (action == "squad") Select(ActiveSquadMembers(), false);
         else if (action == "member")
         {
-            // A portrait click selects, a double click centres and follows (docs/game/ui-input.md section 7).
+            // A portrait click selects (Shift: adds), a double click centres and follows (docs/game/ui-input.md section 7).
             int index = int.Parse(argument, CultureInfo.InvariantCulture);
             long now = System.Diagnostics.Stopwatch.GetTimestamp();
             bool doubleClick = index == lastMemberClick && System.Diagnostics.Stopwatch.GetElapsedTime(lastMemberClickAt, now).TotalSeconds <= DoubleTapSeconds;
             (lastMemberClick, lastMemberClickAt) = (doubleClick ? -1 : index, now);
-            SelectMember(index, false, doubleClick);
+            SelectMember(index, pressShift, doubleClick);
         }
         else if (action == "stop") Say(new StopCommand(SelectedIds()) { Tick = session.World.Tick });
         else if (action == "medic") Say(new Meitou.Simulation.FirstAid.MedicJobCommand(SelectedIds(), SlowModifier) { Tick = session.World.Tick });
