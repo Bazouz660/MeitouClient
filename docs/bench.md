@@ -136,6 +136,10 @@ framework generics over the game's types (sorts, LINQ).
 Commands are given on wall time, so two runs' simulations part after a few minutes (from "paths" the squad stands elsewhere): compare segments before that.
 Precompiled code is slower and, without tiering, never replaced (**Observed**, self-contained publishes, render thread per frame): JIT 3.05 ms,
 ReadyToRun 5.17, composite ReadyToRun 3.96; launch to play 21.7, 25.5, 20.0 s. The release stays JIT with `JitWarmup`.
+Tried, not kept (**Observed**, Nsight GPU Trace and the bench at a save's view, 2560x1440, render scale 1): the SMs idle 29% of the frame over ~350
+wait-for-idles, but leaving out the native segments' seam barriers saved only 0.13 ms (the passes mostly read what the previous wrote). The GPU
+"objects" stage is stage-switch timestamps: the object draws themselves take ~0.06 ms. Terrain's remaining 2.4 ms is its materials: GI, haze or the
+shadow filter off change it by 0.1 ms at most, anisotropy off by 0.12.
 
 Detailed logs/screenshots belong outside the repository. Evidence for original-game claims
 belongs with the corresponding research and its Verified/Observed/Unknown label.
