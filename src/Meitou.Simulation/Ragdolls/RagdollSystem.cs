@@ -137,6 +137,8 @@ public sealed class RagdollSystem : ITickSystem, IStateHashed, IRagdollState, IR
     /// <summary>The parts that should be a ragdoll now (docs/game/ragdolls.md "Triggers").</summary>
     static RagdollPart Wanted(CharacterCold cold)
     {
+        // In a bed or a cage: no ragdoll ("on" requests are refused in furniture, and using it releases all).
+        if (cold.InSomething != Locks.HeldState.None) return RagdollPart.None;
         bool carried = !cold.CarriedBy.IsNone;
         if (cold.Medical is { Incapacitated: true }) return carried ? RagdollPart.CarryMode : RagdollPart.Whole;
         if (carried) return RagdollPart.CarryMode;
@@ -194,8 +196,9 @@ public sealed class RagdollSystem : ITickSystem, IStateHashed, IRagdollState, IR
             RigidTransform[]? animated = null;
             if (wanted != r.Mask)
             {
-                // Getting up: the whole body leaves the ragdoll and blends back into the animation, facing from the root to the head.
-                if ((r.Mask & RagdollPart.Whole) != 0 && (wanted & RagdollPart.Whole) == 0 && (wanted & RagdollPart.CarryMode) == 0)
+                // Getting up: the whole body leaves the ragdoll and blends back into the animation, facing from the root to the head (not when it is
+                // laid in a bed or a cage, which places it).
+                if ((r.Mask & RagdollPart.Whole) != 0 && (wanted & RagdollPart.Whole) == 0 && (wanted & RagdollPart.CarryMode) == 0 && cold.InSomething == Locks.HeldState.None)
                     StartGetUp(world, r, ref next[i]);
                 animated = Animated(r, cold, placement);
                 bool restored = restore is not null && Fits(r, restore, next[i].Position);
