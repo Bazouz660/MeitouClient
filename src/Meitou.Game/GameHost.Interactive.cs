@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Globalization;
 using System.Numerics;
 using Meitou.Content;
@@ -193,105 +193,28 @@ sealed partial class GameHost
         Vector2 Pixels(Vector2 p) => p * new Vector2(window.FramebufferSize.X / (float)Math.Max(window.Size.X, 1), window.FramebufferSize.Y / (float)Math.Max(window.Size.Y, 1));
         // The settings panel takes the mouse only while it is drawn (F7 and the cinema's clean picture hide it).
         bool PanelLive() => !interfaceHidden && !cinema.Clean;
+        // Silk raises KeyDown once per press (no OS key repeat), so a held erase or caret key in a text field repeats here: after 0.5 s, then
+        // 30 times a second (the Windows defaults). Typed characters already repeat through KeyChar.
+        (Silk.NET.Input.IKeyboard Keyboard, SilkKey Key, long Next)? heldEditKey = null;
+        bool TextFieldFocused() => panel?.Visible == true || debugMenuOpen || player.UiEditing;
+        void RepeatEditKey()
+        {
+            if (heldEditKey is not { } held || Stopwatch.GetTimestamp() < held.Next) return;
+            if (!held.Keyboard.IsKeyPressed(held.Key) || !TextFieldFocused()) { heldEditKey = null; return; }
+            heldEditKey = held with { Next = Stopwatch.GetTimestamp() + Stopwatch.Frequency / 30 };
+            OnKeyDown(held.Keyboard, held.Key);
+        }
         foreach (var kb in silkInput.Keyboards)
         {
             kb.KeyDown += (keyboard, k, _) =>
             {
-                if (k is SilkKey.ShiftLeft or SilkKey.ShiftRight) { shiftDown = true; player.SlowModifier = true; }
-                if (k == SilkKey.Enter && (keyboard.IsKeyPressed(SilkKey.AltLeft) || keyboard.IsKeyPressed(SilkKey.AltRight))) { BorderlessFullScreen.Toggle(window); return; }
-                if (Covered)
-                {
-                    if (k is SilkKey.Escape or SilkKey.Space) skyArrival?.Skip();
-                    loading?.SkipSplash();
-                    return;
-                }
-                player.UiVisible = PanelLive() && !g.NoPopulation;
-                if (panel?.Visible == true)
-                {
-                    if ((k == SilkKey.KeypadEnter ? EngineKey.Enter : KeyMap.Map(k)) is { } settingsKey)
-                    {
-                        if (settingsKey is EngineKey.F8 or EngineKey.PrintScreen) screenshotRequested = true;
-                        else panel.KeyDown(settingsKey, shiftDown, keyboard.IsKeyPressed(SilkKey.ControlLeft) || keyboard.IsKeyPressed(SilkKey.ControlRight));
-                    }
-                    return;
-                }
-                // F10 (rebindable) opens the debug menu, which then takes every key until it closes.
-                if (KeyMap.Map(k) is { } mapped && session.Bindings.Get(InputAction.ToggleDebugMenu).Contains(Binding.Of(mapped))) { debugMenuOpen = !debugMenuOpen; return; }
-                if (debugMenuOpen)
-                {
-                    if ((k == SilkKey.KeypadEnter ? EngineKey.Enter : KeyMap.Map(k)) is { } menuKey) DebugMenuKey(menuKey);
-                    return;
-                }
-                // toggle_bar (F7, rebindable) hides the game's interface; F6 is the cinema's, and so is the numpad except the keys bound to the game's hotkeys
-                // (Space, Delete and the lens keys too while its editor is open).
-                if (KeyMap.Map(k) is { } hideKey && !player.UiEditing && session.Bindings.Get(InputAction.ToggleInterface).Contains(Binding.Of(hideKey)))
-                { interfaceHidden = !interfaceHidden; Console.WriteLine(interfaceHidden ? "interface hidden (F7 shows it)" : "interface shown"); return; }
-                // Ctrl+C copies the free camera's position as a viewer camera code, Ctrl+V flies the free camera to the code in the clipboard.
-                // Only in the free camera: elsewhere Ctrl+C and Ctrl+V keep their own meaning, and so do they in a focused edit box.
-                if (k is SilkKey.C or SilkKey.V && session.Camera.IsFree && !player.UiEditing && (keyboard.IsKeyPressed(SilkKey.ControlLeft) || keyboard.IsKeyPressed(SilkKey.ControlRight)))
-                {
-                    if (k == SilkKey.C)
-                    {
-                        string code = WorldCameraCode.Encode(camera);
-                        keyboard.ClipboardText = code;
-                        Console.WriteLine($"camera    copied {code} ({WorldCameraCode.Describe(camera)})");
-                    }
-                    else if (WorldCameraCode.Decode(keyboard.ClipboardText) is { } pose)
-                    {
-                        // The code's orbit (target, yaw, pitch, distance) as the free camera's eye and look direction.
-                        Vector3 back = new(MathF.Cos(pose.Pitch) * MathF.Sin(pose.Yaw), MathF.Sin(pose.Pitch), MathF.Cos(pose.Pitch) * MathF.Cos(pose.Yaw));
-                        session.Camera.TakeOver(new CameraState(pose.Target + back * pose.Distance, -back, Vector3.UnitY, pose.Target, pose.Yaw, pose.Pitch, pose.Distance, true), strategy: false);
-                        player.Follow = null;
-                        Console.WriteLine("camera    moved to the clipboard's camera code");
-                    }
-                    else Console.WriteLine("camera    the clipboard holds no camera code (Ctrl+C in a viewer copies one)");
-                    return;
-                }
-                if (panel is not null && KeyMap.Map(k) is { } settingsToggle && session.Bindings.Get(InputAction.ToggleSettings).Contains(Binding.Of(settingsToggle)))
-                { panel.Visible = true; return; }
-                // Esc is the game menu's, never Quit's while there is a game: with the interface hidden (F7) it comes back with the menu open,
-                // under the cinema's clean picture it does nothing.
-                if (k == SilkKey.Escape && !g.NoPopulation && !player.UiVisible)
-                {
-                    if (interfaceHidden && !cinema.Clean) { interfaceHidden = false; player.UiVisible = true; player.UiKey(EngineKey.Escape); }
-                    return;
-                }
-                if (KeyMap.Map(k) is { } uiKey && player.UiKey(uiKey, keyboard.IsKeyPressed(SilkKey.ControlLeft) || keyboard.IsKeyPressed(SilkKey.ControlRight), shiftDown)) return;
-                bool ctrl = keyboard.IsKeyPressed(SilkKey.ControlLeft) || keyboard.IsKeyPressed(SilkKey.ControlRight);
-                if (k == SilkKey.KeypadDivide && !IsDuel)
-                {
-                    if (tour.Active) EndTour();
-                    else if (!cinema.Playing && !cinema.Recording)
-                    {
-                        player.Follow = null;
-                        tour.HopSeconds = config.CharacterFlightSeconds;
-                        tourFollows = false;
-                        tour.Start(camera, [.. player.SquadBarMembers().Select(c => c.Id)], TourPosition);
-                        if (tour.Active) cinemaHolds = true;
-                        else Console.WriteLine("squad tour: nobody else in the squad to fly to");
-                    }
-                    return;
-                }
-                // A numpad key bound to a game hotkey (the orders, NUM0..NUM8 by default) is the game's, except with Ctrl (saving a shot) or the cinema's editor open (F6).
-                bool hotkey = !IsDuel && !ctrl && !cinema.EditorVisible && KeyMap.Map(k) is { } gameKey && player.IsHotkey(gameKey);
-                if (!hotkey && Enum.TryParse(k.ToString(), out CinemaKey cinemaKey) && cinema.OnKey(cinemaKey, ctrl, shiftDown)) return;
-                // F9 is the game's quickload; the fps counter is on Ctrl+F9 (a modifier, so the key never reaches the input bindings).
-                if (k == SilkKey.F9 && ctrl) { fpsVisible = !fpsVisible; return; }
-                if (KeyMap.Map(k) is { } key)
-                {
-                    if (shiftDown && key == EngineKey.F1) { Console.WriteLine(meitou.Toggle()); return; }
-                    if (shiftDown && key == EngineKey.F11) { ToggleNavOverlay(); return; }
-                    if (shiftDown && key == EngineKey.F12) { if (profiler is not null) profiler.ShowVram = !profiler.ShowVram; return; }   // the VRAM pie (F12 alone cycles the profiler)
-                    if (player.BuildKey(key, shiftDown)) return;
-                    session.Input.SetKey(key, true);
-                    player.Key(key, shiftDown);
-                    SandboxKey(key);
-                    if (IsDuel && key == EngineKey.Backspace) duelRestartRequested = true;
-                    if (IsBattle && key == EngineKey.Backspace) battleRestartRequested = true;
-                }
+                heldEditKey = k is SilkKey.Backspace or SilkKey.Delete or SilkKey.Left or SilkKey.Right or SilkKey.Up or SilkKey.Down && TextFieldFocused()
+                    ? (keyboard, k, Stopwatch.GetTimestamp() + Stopwatch.Frequency / 2) : null;
+                OnKeyDown(keyboard, k);
             };
             kb.KeyUp += (_, k, _) =>
             {
+                if (heldEditKey?.Key == k) heldEditKey = null;
                 if (k is SilkKey.ShiftLeft or SilkKey.ShiftRight) { shiftDown = false; player.SlowModifier = false; }
                 if (KeyMap.Map(k) is { } key) { session.Input.SetKey(key, false); player.BuildKeyUp(key); }
             };
@@ -302,6 +225,101 @@ sealed partial class GameHost
                 else if (debugMenuOpen) DebugMenuText(value);
                 else player.UiText(value);
             };
+        }
+        void OnKeyDown(Silk.NET.Input.IKeyboard keyboard, SilkKey k)
+        {
+            if (k is SilkKey.ShiftLeft or SilkKey.ShiftRight) { shiftDown = true; player.SlowModifier = true; }
+            if (k == SilkKey.Enter && (keyboard.IsKeyPressed(SilkKey.AltLeft) || keyboard.IsKeyPressed(SilkKey.AltRight))) { BorderlessFullScreen.Toggle(window); return; }
+            if (Covered)
+            {
+                if (k is SilkKey.Escape or SilkKey.Space) skyArrival?.Skip();
+                loading?.SkipSplash();
+                return;
+            }
+            player.UiVisible = PanelLive() && !g.NoPopulation;
+            if (panel?.Visible == true)
+            {
+                if ((k == SilkKey.KeypadEnter ? EngineKey.Enter : KeyMap.Map(k)) is { } settingsKey)
+                {
+                    if (settingsKey is EngineKey.F8 or EngineKey.PrintScreen) screenshotRequested = true;
+                    else panel.KeyDown(settingsKey, shiftDown, keyboard.IsKeyPressed(SilkKey.ControlLeft) || keyboard.IsKeyPressed(SilkKey.ControlRight));
+                }
+                return;
+            }
+            // F10 (rebindable) opens the debug menu, which then takes every key until it closes.
+            if (KeyMap.Map(k) is { } mapped && session.Bindings.Get(InputAction.ToggleDebugMenu).Contains(Binding.Of(mapped))) { debugMenuOpen = !debugMenuOpen; return; }
+            if (debugMenuOpen)
+            {
+                if ((k == SilkKey.KeypadEnter ? EngineKey.Enter : KeyMap.Map(k)) is { } menuKey) DebugMenuKey(menuKey);
+                return;
+            }
+            // toggle_bar (F7, rebindable) hides the game's interface; F6 is the cinema's, and so is the numpad except the keys bound to the game's hotkeys
+            // (Space, Delete and the lens keys too while its editor is open).
+            if (KeyMap.Map(k) is { } hideKey && !player.UiEditing && session.Bindings.Get(InputAction.ToggleInterface).Contains(Binding.Of(hideKey)))
+            { interfaceHidden = !interfaceHidden; Console.WriteLine(interfaceHidden ? "interface hidden (F7 shows it)" : "interface shown"); return; }
+            // Ctrl+C copies the free camera's position as a viewer camera code, Ctrl+V flies the free camera to the code in the clipboard.
+            // Only in the free camera: elsewhere Ctrl+C and Ctrl+V keep their own meaning, and so do they in a focused edit box.
+            if (k is SilkKey.C or SilkKey.V && session.Camera.IsFree && !player.UiEditing && (keyboard.IsKeyPressed(SilkKey.ControlLeft) || keyboard.IsKeyPressed(SilkKey.ControlRight)))
+            {
+                if (k == SilkKey.C)
+                {
+                    string code = WorldCameraCode.Encode(camera);
+                    keyboard.ClipboardText = code;
+                    Console.WriteLine($"camera    copied {code} ({WorldCameraCode.Describe(camera)})");
+                }
+                else if (WorldCameraCode.Decode(keyboard.ClipboardText) is { } pose)
+                {
+                    // The code's orbit (target, yaw, pitch, distance) as the free camera's eye and look direction.
+                    Vector3 back = new(MathF.Cos(pose.Pitch) * MathF.Sin(pose.Yaw), MathF.Sin(pose.Pitch), MathF.Cos(pose.Pitch) * MathF.Cos(pose.Yaw));
+                    session.Camera.TakeOver(new CameraState(pose.Target + back * pose.Distance, -back, Vector3.UnitY, pose.Target, pose.Yaw, pose.Pitch, pose.Distance, true), strategy: false);
+                    player.Follow = null;
+                    Console.WriteLine("camera    moved to the clipboard's camera code");
+                }
+                else Console.WriteLine("camera    the clipboard holds no camera code (Ctrl+C in a viewer copies one)");
+                return;
+            }
+            if (panel is not null && KeyMap.Map(k) is { } settingsToggle && session.Bindings.Get(InputAction.ToggleSettings).Contains(Binding.Of(settingsToggle)))
+            { panel.Visible = true; return; }
+            // Esc is the game menu's, never Quit's while there is a game: with the interface hidden (F7) it comes back with the menu open,
+            // under the cinema's clean picture it does nothing.
+            if (k == SilkKey.Escape && !g.NoPopulation && !player.UiVisible)
+            {
+                if (interfaceHidden && !cinema.Clean) { interfaceHidden = false; player.UiVisible = true; player.UiKey(EngineKey.Escape); }
+                return;
+            }
+            if (KeyMap.Map(k) is { } uiKey && player.UiKey(uiKey, keyboard.IsKeyPressed(SilkKey.ControlLeft) || keyboard.IsKeyPressed(SilkKey.ControlRight), shiftDown)) return;
+            bool ctrl = keyboard.IsKeyPressed(SilkKey.ControlLeft) || keyboard.IsKeyPressed(SilkKey.ControlRight);
+            if (k == SilkKey.KeypadDivide && !IsDuel)
+            {
+                if (tour.Active) EndTour();
+                else if (!cinema.Playing && !cinema.Recording)
+                {
+                    player.Follow = null;
+                    tour.HopSeconds = config.CharacterFlightSeconds;
+                    tourFollows = false;
+                    tour.Start(camera, [.. player.SquadBarMembers().Select(c => c.Id)], TourPosition);
+                    if (tour.Active) cinemaHolds = true;
+                    else Console.WriteLine("squad tour: nobody else in the squad to fly to");
+                }
+                return;
+            }
+            // A numpad key bound to a game hotkey (the orders, NUM0..NUM8 by default) is the game's, except with Ctrl (saving a shot) or the cinema's editor open (F6).
+            bool hotkey = !IsDuel && !ctrl && !cinema.EditorVisible && KeyMap.Map(k) is { } gameKey && player.IsHotkey(gameKey);
+            if (!hotkey && Enum.TryParse(k.ToString(), out CinemaKey cinemaKey) && cinema.OnKey(cinemaKey, ctrl, shiftDown)) return;
+            // F9 is the game's quickload; the fps counter is on Ctrl+F9 (a modifier, so the key never reaches the input bindings).
+            if (k == SilkKey.F9 && ctrl) { fpsVisible = !fpsVisible; return; }
+            if (KeyMap.Map(k) is { } key)
+            {
+                if (shiftDown && key == EngineKey.F1) { Console.WriteLine(meitou.Toggle()); return; }
+                if (shiftDown && key == EngineKey.F11) { ToggleNavOverlay(); return; }
+                if (shiftDown && key == EngineKey.F12) { if (profiler is not null) profiler.ShowVram = !profiler.ShowVram; return; }   // the VRAM pie (F12 alone cycles the profiler)
+                if (player.BuildKey(key, shiftDown)) return;
+                session.Input.SetKey(key, true);
+                player.Key(key, shiftDown);
+                SandboxKey(key);
+                if (IsDuel && key == EngineKey.Backspace) duelRestartRequested = true;
+                if (IsBattle && key == EngineKey.Backspace) battleRestartRequested = true;
+            }
         }
         foreach (var mouse in silkInput.Mice)
         {
@@ -411,6 +429,7 @@ sealed partial class GameHost
         {
             window.DoEvents();
             if (window.IsClosing) break;
+            RepeatEditKey();
             double now = frame.Elapsed.TotalSeconds, dt = now - last;
             last = now;
             // The last frame was drawn under the loading screen: a scene load's next stage may run, the warm-up counts it.
