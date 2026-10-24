@@ -191,7 +191,7 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
     /// </summary>
     public float[] PoseRangeSteps { get; set; } = [120, 300, 600];
     /// <summary>With fewer characters than this drawn in the world, none is thinned: every one is posed every frame.</summary>
-    const int ThinFromCharacters = 50;
+    const int ThinFromCharacters = 100;
     /// <summary>The pose rate inside the first step's distance, halved past each step (in poses per second, a frame rate above it poses every frame).</summary>
     const double PoseRateHz = 60;
     /// <summary>The seconds the pose rates count in (the game's animation clock, which a recorded flight steps by its frame time, so a take poses the same however slowly
