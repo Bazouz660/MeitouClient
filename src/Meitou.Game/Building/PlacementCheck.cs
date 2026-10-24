@@ -39,8 +39,8 @@ public sealed class PlacementServices
     public Func<string, BuildingFootprint?> Plot { get; init; } = _ => null;
     /// <summary>Where a ray (origin, direction, length) first meets a loaded building's floor at or below the viewed floor, and that floor; null for none.</summary>
     public Func<Vector3, Vector3, float, (Vector3 Position, GhostFloor Floor)?> FloorAlong { get; init; } = (_, _, _) => null;
-    /// <summary>The resource row for a BUILDING at a position (<see cref="PlacementRules.ResourceBlock"/>); None without the world's resources.</summary>
-    public Func<string, Vector3, PlacementFailure> Resources { get; init; } = (_, _) => PlacementFailure.None;
+    /// <summary>What a BUILDING's ghost reads of the world's resources at a position (<see cref="PlacementRules.Readout"/>); null without them.</summary>
+    public Func<string, Vector3, PlacementReadout?> Readout { get; init; } = (_, _) => null;
 }
 
 /// <summary>Everything one evaluation reads (the query is pure over it and the services).</summary>
@@ -84,7 +84,7 @@ public static class PlacementCheck
         if (q.On is { Level: not null, Owned: false }) return PlacementFailure.NotOwnedBuilding;
         if (q.On is { Level: null } && q.Sites.FirstOrDefault(s => s.Id == parent) is null) return PlacementFailure.NotOwnedBuilding;
         // The resource row comes after the first row's "don't own" text and before "incomplete".
-        var resources = q.Services.Resources(b.Id, q.Position);
+        var resources = PlacementRules.ResourceBlock(q.Services.Readout(b.Id, q.Position));
         if (resources != PlacementFailure.None) return resources;
         if (q.On is { Level: null } && q.Sites.FirstOrDefault(s => s.Id == parent) is { Complete: false }) return PlacementFailure.InsideIncomplete;
         // A building under the ghost's centre (the one it stands in aside): another town's or the level's (not ours), or an unfinished site of ours.

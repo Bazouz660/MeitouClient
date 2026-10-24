@@ -203,6 +203,14 @@ shows the first failing message in this order (**Verified** unless marked):
   need the biome's `resources` and a resource node within 1500, falling off from the node radius (>= 25) to 1500.
   Farms: fertility `1 - (1 - v) x fertility effect` (0 at or below `minimum fertility`), yield = biome
   dry/green/swamp weights x the farm's factors x fertility.
+- **Resource popup** (**Observed**, `FUN_1404d9ea0`, each frame for a ghost with a `world resource mining`): a
+  DatapanelGUI on the `Popup` layer above the ghost (its bounding-box corners projected, the highest y, kept on the
+  screen). Rows (key, value): `<name>:` (`FUN_140a0c300`: Iron, Stone, Copper, Carbon, Water, Fertility) and
+  `{1,num}%` of int(v x 100), v the value clamped to 0..1 (a farm: its fertility factor); a farm adds `Crop yield:`
+  and `Environment:`. Values are coloured (1 - c, c, 0), c clamped to 0..1. Environment: `-` when `fertility effect`
+  is 0, else of the coverages Green, Arid, Swamp (keys 1, 2, 3) the first largest, `, ` and the next equal one, or
+  `Dead` when the largest is below 0.1, in the crop yield's colour. The ghost is valid only while v and the crop yield
+  are >= 0.01.
 - **Controls** (bindings `FUN_1403636c0`, applied in `FUN_1404d5420` x frame time): rotate +-80 deg/s, move up/down
   +-60 units/s (6 with the slow modifier, capped by the margins; offset reset above 1000), tilt factor +-1/s in 0..1,
   default 0.2.

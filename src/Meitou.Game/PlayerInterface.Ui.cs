@@ -252,6 +252,7 @@ sealed partial class PlayerInterface
         AddTaskBars(nameTags);
         controls.InsertRange(0, nameTags);
         AddSpeech(controls);
+        AddBuildReadout(controls);
         AddContextMenu(controls);
         pointerOverUi = faithfulScreens.Contains(mouse) || MyGuiPresentation.HitTest(controls, mouse.X, mouse.Y) is not null;
         AddHoverLabel(controls);

@@ -144,7 +144,8 @@ sealed partial class PlayerInterface
         string whole = Loc.Tr(text);
         return whole != text || text.Length <= 2 || text[0] != '[' || text[^1] != ']' ? whole : "[" + Loc.Tr(text[1..^1]) + "]";
     }
-    void PlaceTooltip(List<UiControl> controls, UiPainter painter, IReadOnlyList<TooltipLine> lines, TooltipKind kind, UiRect? given)
+    void PlaceTooltip(List<UiControl> controls, UiPainter painter, IReadOnlyList<TooltipLine> lines, TooltipKind kind, UiRect? given, string prefix = "tooltip", Vector2? point = null,
+        IReadOnlyList<string?>? valueColours = null)
     {
         float minimum = TitleOpen ? 0 : StandardPixels;
         Vector2 Measure(string text, float wrap)
@@ -156,7 +157,7 @@ sealed partial class PlayerInterface
         // The tooltip texts the code sets are messages of the game's catalog: shown in the active language (a row's "-" mark of an indented key stays).
         if (Loc.Translating)
             lines = [.. lines.Select(l => l with { Key = l.Key.StartsWith('-') ? "-" + TipTr(l.Key[1..]) : TipTr(l.Key), Value = TipTr(l.Value) })];
-        var layout = UiTooltips.Arrange(lines, kind, Width, Height, mouse, anchor, Measure);
+        var layout = UiTooltips.Arrange(lines, kind, Width, Height, point ?? mouse, anchor, Measure);
         var panel = layout.Panel;
         float scale = Height / 1080f;
         bool meitou = kind != TooltipKind.Static && UiMode == UiMode.Meitou && TooltipPlateReady(painter);
@@ -165,34 +166,34 @@ sealed partial class PlayerInterface
         else if (meitou)
         {
             float margin = TipPlateMargin * scale;
-            controls.Add(new("tooltip-plate", "ImageBox", new(panel.X - margin, panel.Y - margin, panel.Width + 2 * margin, panel.Height + 2 * margin), "", "", "", true,
+            controls.Add(new($"{prefix}-plate", "ImageBox", new(panel.X - margin, panel.Y - margin, panel.Width + 2 * margin, panel.Height + 2 * margin), "", "", "", true,
                 new Dictionary<string, string> { ["ImageTexture"] = TipPlate, ["ImageBorder"] = (TipPlateMargin + TipPlateRadius).ToString(CultureInfo.InvariantCulture),
                     ["ImageBorderScale"] = scale.ToString(CultureInfo.InvariantCulture) }, none, Pickable: false));
         }
         else if (kind == TooltipKind.Floating)
-            controls.Add(new("tooltip-panel", "Widget", panel, "", "", "Kenshi_GenericTextBoxSkin", true, new Dictionary<string, string>(), none, Pickable: false));
+            controls.Add(new($"{prefix}-panel", "Widget", panel, "", "", "Kenshi_GenericTextBoxSkin", true, new Dictionary<string, string>(), none, Pickable: false));
         else
         {
             // Kenshi_FloatingPanelLight: the floating panel skin with the parchment box in it (inset 5 for the inventory's; the HUD's own panel keeps 97.2 % of its height).
-            controls.Add(new("tooltip-panel", "Widget", panel, "", "", "Kenshi_FloatingPanelSkin", true, new Dictionary<string, string>(), none, Pickable: false));
+            controls.Add(new($"{prefix}-panel", "Widget", panel, "", "", "Kenshi_FloatingPanelSkin", true, new Dictionary<string, string>(), none, Pickable: false));
             var inner = kind == TooltipKind.Fixed ? panel with { Height = panel.Height * UiTooltips.FixedBoxFraction }
                 : new UiRect(panel.X + 5 * scale, panel.Y + 5 * scale, Math.Max(0, panel.Width - 10 * scale), Math.Max(0, panel.Height - 10 * scale));
-            controls.Add(new("tooltip-box", "Widget", inner, "", "", "Kenshi_GenericTextBoxSkin", true, new Dictionary<string, string>(), none, Pickable: false));
+            controls.Add(new($"{prefix}-box", "Widget", inner, "", "", "Kenshi_GenericTextBoxSkin", true, new Dictionary<string, string>(), none, Pickable: false));
         }
         for (int i = 0; i < lines.Count; i++)
         {
             var line = lines[i];
             var area = layout.Rows[i].Area;
-            void Text(string part, UiRect at, string text, string align, TooltipTone tone)
+            void Text(string part, UiRect at, string text, string align, TooltipTone tone, string? colour = null)
             {
                 if (text.Length == 0) return;
-                controls.Add(new($"tooltip-{part}-{i}", "TextBox", at, text, "", "", true,
-                    new Dictionary<string, string> { ["FontName"] = TooltipFont, ["TextAlign"] = align, ["WordWrap"] = "true", ["TextColour"] = TipColour(tone, meitou) },
+                controls.Add(new($"{prefix}-{part}-{i}", "TextBox", at, text, "", "", true,
+                    new Dictionary<string, string> { ["FontName"] = TooltipFont, ["TextAlign"] = align, ["WordWrap"] = "true", ["TextColour"] = colour ?? TipColour(tone, meitou) },
                     none, Pickable: false));
             }
             Text("key", area, line.Key, "Left Top", line.KeyTone);
             float suffixWidth = line.Suffix.Length > 0 ? painter.MeasureText(TooltipFont, line.Suffix, Height, 0, minimum).Width : 0;
-            Text("value", area with { Width = Math.Max(0, area.Width - suffixWidth) }, line.Value, "Right Top", line.ValueTone);
+            Text("value", area with { Width = Math.Max(0, area.Width - suffixWidth) }, line.Value, "Right Top", line.ValueTone, valueColours is not null && i < valueColours.Count ? valueColours[i] : null);
             Text("suffix", area, line.Suffix, "Right Top", line.SuffixTone);
         }
     }

@@ -903,9 +903,10 @@ pure over the query (build data, transform, floor, queued ghosts, snapshot chara
 (heightmap, collision cache, water level). It calls `PlacementRules.TownBlock` first and returns the first failure in
 the original's order. The geometric half depends on asynchronously loaded collision, so the simulation trusts it and
 re-checks only the town block. Ghost controls, tilt and the unconfirmed ghost queue (Undo) are host UI state.
-Implemented host-side, in the original's order: town block, resource row (`PlacementRules.ResourceBlock`: a farm's
-fertility factor x crop match, or a `world resource mining` building's `ResourceField.Yield`, below 0.01; skipped without an
-areas map, and for iron/copper/carbon without known rocks), site under the ghost, static building under it, interior
+Implemented host-side, in the original's order: town block, resource row (`PlacementRules.Readout` /
+`ResourceBlock`: a farm's fertility factor or crop yield (x crop match), or a `world resource mining` building's
+`ResourceField.Yield`, below 0.01; no readout without an areas map, or for iron/copper/carbon without known rocks; the
+readout is also the ghost's popup, `PlayerInterface.BuildReadout`, a floating tooltip centred over the collision box's top), site under the ghost, static building under it, interior
 rule, footprint overlap with static buildings, sites and queued ghosts (convex hulls of the collision shape, SAT),
 characters within 2.5 of the hull, LAND parts below the water level 98, slope (four rotated bounding-box corners, `max slope`,
 `match slope` tilts fully) and normal.y < 0.2. **Indoors:** the ghost (not walls) stands on the first building floor the
