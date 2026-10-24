@@ -419,7 +419,7 @@ martial-arts category 5. [animals.md](game/animals.md), [characters.md](characte
 ### Hostility and relations
 
 `AggroSystem`, `RetaliationSystem`, `FleeSystem`: previous-position sight/hearing, faction
-relations, shared targets, idle-player self-defence, pursuit leash and return to routine.
+relations, shared targets, idle-player self-defence, chase give-up and return to routine.
 Orders defer to the next tick. Relations are live state and deed/witness effects have distinct
 paths; preserve current ordering.
 Relation events (`FactionDeeds`, built with the aggro part; [factions 3.5](game/factions-squads-towns.md#35-what-fires-relation-changes-observed-decompile)):
@@ -1033,7 +1033,7 @@ crafting benches, generators and batteries. Facts: [production](game/buildings-p
     - 148 rescue: the carry pass (its own faction; with Rescue Allies also allied factions, `CarrySystem.Rescues`).
     - 238 Foraging animals (`CarrySystem.Forage`): the nearest downed, uncarried animal within sight holding items, not of its own faction
       (engine choice), is looted (take-all and butchering).
-    - 16 Attacking enemies: `AggroSystem` looks for the character as for an NPC (`HuntsEnemies`, not in non-combat mode); no leash; after the
+    - 16 Attacking enemies: `AggroSystem` looks for the character as for an NPC (`HuntsEnemies`, not in non-combat mode); never gives up a chase; after the
       fight it goes back to following or stands idle.
   - Engine choices: the check period; kind-2 (turret)
     jobs do not run before urgent tasks; the injury test, the ranges, a bed's clip (`sleeponfloor`) and a seat's facing (its own, not the table it faces).

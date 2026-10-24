@@ -213,8 +213,8 @@ which its next update (`FUN_14050d920` → `FUN_14050d7d0`) consumes by dropping
   goal's finder (seen/heard only, [Combat goals](ai-tasks.md#combat-goals)) let go of a runner on open ground is **Unknown**:
   how long a lost sense entry keeps counting as a candidate was not traced. The runner's side: [perception](perception.md#retreat-and-memory).
 
-Meitou: `AggroSettings.LeashRange` (3000 from where the fight began, then 20 s calm) is an **engine choice** standing in for
-these rules; the path chase give-up is not modelled.
+Meitou (`AggroSystem.Chase` / `SenseQuarry`): this give-up (9.1 s gate, 24 s unsensed, 60 units; NPCs only, event 60), tested in every
+running chase, not only a path chase (engine choice); the chaser senses only its own target, a sneaker by sight without the spot meter.
 
 ## Armour and medical hit
 
