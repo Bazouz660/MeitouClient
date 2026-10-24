@@ -318,8 +318,8 @@ sealed partial class GameHost
             bool gpuCullWanted = Environment.GetEnvironmentVariable("MEITOU_METAL_GPU_CULL") is "1" or "true";
             foliage.GpuCull = gpuCullWanted && Environment.GetEnvironmentVariable("MEITOU_METAL_CPU_CULL") != "1";
             Console.WriteLine(foliage.GpuCull
-                ? "metal     foliage GPU cull on (MEITOU_METAL_GPU_CULL=1)"
-                : "metal     foliage CPU cull (GPU cull off by default; MEITOU_METAL_GPU_CULL=1 enables it)");
+                ? "warning   metal foliage GPU cull is experimental (MEITOU_METAL_GPU_CULL=1): it has produced GPU progress timeouts after a few minutes"
+                : "metal     foliage CPU cull (GPU cull off by default; MEITOU_METAL_GPU_CULL=1 enables the experimental path)");
         }
         // The buildings' interior masks (docs/render-interior-cut.md): the depth range the terrain, foliage and map features are cut by
         // while a viewed building is open. The renderer is backend-neutral; Metal draws it into its own target before the scene.

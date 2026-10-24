@@ -47,10 +47,16 @@ hide the ground-relief controls while it is off. The 7168 MB override warns: use
 **2026-10-24 13:14, after a full shutdown:** the safe path ran at **3024x1712 full-size**, MetalFX temporal 0.67 and
 the 5120 MB budget with ground relief, GPU cull, state cache and compression off: 5039 frames in 175.8 s, 29 fps, no
 watchdog or zombie process. That rules out MetalFX temporal 0.67 and the final resolution on their own; it leaves the
-optimization set or the stale GPU/WindowServer state from the first crash as the cause. The next A/B is windowed
-800x600, then full size: `MEITOU_METAL_GPU_CULL=1` first (the only new GPU workload), then
-`MEITOU_METAL_FAST_STATE=1`, then `MEITOU_METAL_COMPRESSION=1`, one at a time and with a full shutdown after any
-failure. Do not use Xcode replay.
+optimization set or the stale GPU/WindowServer state from the first crash as the cause.
+
+**2026-10-24 13:26:** the first A/B, `MEITOU_METAL_GPU_CULL=1` only, reproduced the crash after about two minutes
+(WindowServer watchdog, `MeitouClient` left `?E`). The shell's `tee` log had only the "no such file" line because it was
+run from the wrong directory, so the last pass is unknown, but the A/B is decisive: the GPU cull (or its separate
+pre-frame command buffer) is the trigger. The cull path is now opt-in and prints a warning; the CPU cull is the
+default. The next debugging step is Metal's indirect draw: the cull writes `MTLDrawIndexedPrimitivesIndirectArguments`
+with a non-zero `baseInstance`, while the stable CPU path uses direct `DrawIndexed` with `firstInstance`. Verify that
+Apple silicon supports that indirect field (or replace it with per-draw vertex-buffer offsets/CPU compacted draws)
+before enabling the cull again. Do not use Xcode replay.
 
 Matched profiling (2026-10-23, 800x600 points = 1600x1200 pixels, native/no AA, same view): Metal with the GPU
 mesh/rock cull ~46 fps steady (command-buffer GPU 21.7 ms, record 4.8 ms); the CPU cull is ~44 fps and 22.6 ms.
