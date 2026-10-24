@@ -171,7 +171,10 @@ Meitou (`CombatSystem.HasSlot` / `MayJoin`, `PursuitSystem.Circle`):
   order never sticks). How the original keeps an ordered target against `FUN_140665650` is **Unknown**.
 - **Engaged list**: removal after a blocked or dodged blow is not modelled.
 - **Approach**: an engaged fighter walks in to body gap max(6, reach − L/4) and stands.
-- **Circling**: only fighters left out when more than 5 attack one target circle. They path to a point on the ring at least 1 s of
+- **Joining**: a lower table slot asks first; one not yet in is counted ahead only when it may decide this tick (not staggered,
+  defending, or swinging past its abort point), so nobody is left out for a fighter that does not ask (engine choice).
+- **Circling**: only fighters left out when more than 5 attack one target circle, and not while their own swing plays (the
+  place drops at the blow, the ask comes at the next decision). They path to a point on the ring at least 1 s of
   side-stepping ahead (and beyond the walker's arrival radius plus one repath step, so a slow side-step does not creep), pushed out so the
   straight walk keeps to the ring, and face their path; the original faces the target.
 - The crowd test, the hold-stance timer and the +12 while running are not modelled.

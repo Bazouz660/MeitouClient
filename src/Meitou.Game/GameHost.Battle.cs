@@ -139,7 +139,7 @@ sealed partial class GameHost
             foreach (var id in standing[side])
             {
                 var st = combat.StateOf(id);
-                if (st.TargetSlot < 0 || st.Engaged || st.Ranged || at.GetValueOrDefault(st.TargetSlot) <= CombatSystem.MaxEngaged) continue;
+                if (st.TargetSlot < 0 || st.Engaged || st.Ranged || st.AttackTech >= 0 ||at.GetValueOrDefault(st.TargetSlot) <= CombatSystem.MaxEngaged) continue;
                 var here = Ground(id);
                 CharacterId? best = null;
                 float bestDistance = float.MaxValue;

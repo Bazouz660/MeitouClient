@@ -210,7 +210,7 @@ public sealed partial class CombatSystem
             if (s.ReactTech < 0 && s.AttackTech < 0)
             {
                 // Deciding, it first asks to be one of the fighters its target lets close in (FUN_140666e20); a fighter left out circles (PursuitSystem) and asks again each tick.
-                if (fighting && !s.Engaged) s.Engaged = MayJoin(world, i, s.TargetSlot);
+                if (fighting && !s.Engaged) s.Engaged = MayJoin(world, i, s.TargetSlot, now);
                 bool yielded = fighting && read[s.TargetSlot].YieldTo == i && now < read[s.TargetSlot].YieldUntil;
                 if (!aborted && fighting && (now >= s.ReadyTick || incoming >= 0 || yielded)) StartAttack(world, i, ref s, cold, key, now, dt);
                 if (s.AttackTech < 0 && now >= s.DefendReadyTick) React(world, i, ref s, cold, key, now, dt);
@@ -374,7 +374,7 @@ public sealed partial class CombatSystem
                 if (++holders + ahead >= slots) return false;
                 continue;
             }
-            if (other > i || now < o.StunUntil || !o.Engaged && !MayJoin(world, other, t)) continue;
+            if (other > i || now < o.StunUntil || !o.Engaged && !MayJoin(world, other, t, now)) continue;
             // It decides this tick when its swing or reaction ends now (Act's steps 4 and 5): a block's end and a swing's end start a pause (cut short by a blow at it).
             int ready = o.ReadyTick;
             if (o.AttackTech >= 0)
@@ -405,9 +405,10 @@ public sealed partial class CombatSystem
 
     /// <summary>
     /// Whether <paramref name="i"/> may join the fighters its target lets close in (<see cref="MaxEngaged"/>, <c>FUN_140666e20</c>): it joins while fewer are in. The ones that are
-    /// not in yet ask on every tick; those with a lower slot ask first (engine choice for the original's update order).
+    /// not in yet ask whenever they decide; those with a lower slot ask first (engine choice for the original's update order), counted only when they may decide this tick
+    /// (not staggered, blocking or dodging, or swinging past the point where it could still give the swing up), so a fighter is not left out for one that does not ask.
     /// </summary>
-    bool MayJoin(World world, int i, int t)
+    bool MayJoin(World world, int i, int t, int now)
     {
         var prev = world.Characters.Previous;
         var range = world.Grid.Range(prev[t].Position.X, prev[t].Position.Z, CombatTuning.EngageScanRadius);
@@ -417,10 +418,16 @@ public sealed partial class CombatSystem
             if (other == i || !range.Holds((x, z))) continue;
             ref readonly var o = ref read[other];
             if (o.TargetGeneration != generation || o.Down || o.Ranged) continue;
-            if ((o.Engaged || other < i) && ++count >= MaxEngaged) return false;
+            if (!o.Engaged && (other > i || !MayDecide(in o, now))) continue;
+            if (++count >= MaxEngaged) return false;
         }
         return count < MaxEngaged;
     }
+
+    /// <summary>Whether a fighter whose last tick's state is <paramref name="o"/> may reach Act's deciding step this tick (its swing or defence ends now, or a blow at it may cut a swing short).</summary>
+    static bool MayDecide(in CombatSlot o, int now) =>
+        now >= o.StunUntil && (o.ReactTech < 0 || now >= o.ReactStart + o.ReactTicks)
+        && (o.AttackTech < 0 || now >= o.AttackEnd || now - o.AttackStart < CombatTuning.AbortOwnProgress * o.AttackTicks);
 
     readonly AttackerIndex index = new();
 

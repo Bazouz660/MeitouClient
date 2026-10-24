@@ -70,8 +70,9 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
         // A crossbowman walks only while closing in (out of range or the line of fire blocked); aiming and reloading it stands.
         bool shooting = st.Ranged && st.RangedState != (byte)RangedStates.Closing;
         bool holding = Orders.Has(cold, CharacterOrders.Hold);
-        // One of more than MaxEngaged fighters that its target has not let close in circles it (WaitingStateAI, docs/game/combat.md "Attack slots and circling").
-        int around = !st.Ranged && !st.Engaged && !behind ? combat.FightersAt(world, t) : 0;
+        // One of more than MaxEngaged fighters that its target has not let close in circles it (WaitingStateAI, docs/game/combat.md "Attack slots and circling"); not while its
+        // swing plays (a blow that is not a hit gives up the place at once, but the fighter asks again only when it next decides).
+        int around = !st.Ranged && !st.Engaged && !behind && st.AttackTech < 0 ? combat.FightersAt(world, t) : 0;
         if (around > CombatSystem.MaxEngaged && !st.Down && world.Tick >= st.StunUntil && st.ReactTech < 0 && !holding)
         {
             Circle(world, i, ref n, cold, tc, t, d, gap, around);
