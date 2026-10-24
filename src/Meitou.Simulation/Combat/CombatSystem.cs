@@ -136,8 +136,7 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
                 {
                     // The order itself changes no relation (the original's relation events come from the blows, Deeds); an attack that is not self-defence is an assault.
                     foreach (var id in order.Attackers)
-                        if (Engage(world, table, id, order.Target, now) && table.Cold(id.Slot)!.IsPlayer
-                            && !order.Defensive && Crimes is { } crimes && table.TryResolveNext(order.Target, out int victimSlot))
+                        if (Engage(world, table, id, order.Target, now) && !order.Defensive && Crimes is { } crimes && table.TryResolveNext(order.Target, out int victimSlot))
                             crimes.Assault(world, id.Slot, victimSlot);
                     break;
                 }

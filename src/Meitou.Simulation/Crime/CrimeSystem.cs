@@ -17,7 +17,8 @@ namespace Meitou.Simulation.Crime;
 /// their faction (<see cref="ArrestSystem"/>).</item>
 /// <item><b>Expiry</b>: an entry lasts 0.04 hours per cat since its last raise, for ever from 10000 (<see cref="CrimeTable.LifetimeHours"/>).</item>
 /// </list>
-/// Only the player's characters are culprits (engine choice: the simulation's NPCs fight only enemies or in defence, loot nothing and carry only their own).
+/// An NPC is a culprit only of an Assault, never booked (engine choice: NPCs loot nothing and carry only their own; their attacks on characters not hostile to them, such as hungry
+/// bandits on a town's visitors, are witnessed so the town's police step in).
 /// </summary>
 public sealed class CrimeSystem(FactionRelations relations, CrimeSettings? settings = null) : ITickSystem
 {
@@ -71,7 +72,7 @@ public sealed class CrimeSystem(FactionRelations relations, CrimeSettings? setti
     public bool SetPending(World world, int culprit, CrimeCode code, int victimFaction, CharacterId victim, float timer)
     {
         var c = world.Characters.Cold(culprit);
-        if (c is null || !c.IsPlayer || IsPoliceLike(world, c) || victimFaction == c.Faction || Factions.Lawless(victimFaction)) return false;
+        if (c is null || !c.IsPlayer && code != CrimeCode.Assault || IsPoliceLike(world, c) || victimFaction == c.Faction || Factions.Lawless(victimFaction)) return false;
         timer = MathF.Max(timer, MinTimer);
         if (c.Pending is { } p && p.Code != code && code == CrimeCode.Assault)
         {
@@ -93,12 +94,12 @@ public sealed class CrimeSystem(FactionRelations relations, CrimeSettings? setti
     /// <summary>
     /// An attack order on <paramref name="victim"/> (not a defensive one): an Assault (the game's <c>FUN_140334070</c>, <b>Observed</b>, run when an attack task starts) unless the victim is
     /// wanted by the attacker's faction, is a bandit (<c>NPC class</c> 8), has a pending crime of its own, or its faction is hostile to the attacker's (engine reading of the game's victim test
-    /// <c>FUN_140436610</c>, not decoded).
+    /// <c>FUN_140436610</c>, not decoded). An NPC attacker counts too, but not an animal (engine choice), and the victim may be one of the player's characters.
     /// </summary>
     public void Assault(World world, int attacker, int victim)
     {
         var table = world.Characters;
-        if (table.Cold(attacker) is not { IsPlayer: true } a || table.Cold(victim) is not { IsPlayer: false } v) return;
+        if (table.Cold(attacker) is not { } a || a.Fighter?.IsAnimal == true || table.Cold(victim) is not { } v || a.IsPlayer && v.IsPlayer) return;
         if (IsWantedBy(v, a.Faction) || v.NpcClass == FundamentalType.Bandit || v.Pending is not null || AggroSystem.IsEnemy(Relations, v.Faction, a.Faction)) return;
         SetPending(world, attacker, CrimeCode.Assault, v.Faction, table.IdOf(victim), MinTimer);
     }
@@ -133,6 +134,8 @@ public sealed class CrimeSystem(FactionRelations relations, CrimeSettings? setti
     {
         var table = world.Characters;
         if (table.Cold(attacker) is not { } a || table.Cold(defender) is not { } d) return;
+        // Engine choice: an NPC's landed blow renews its Assault, which its attack order set with 3 s that often run out before the attacker reaches its victim.
+        if (!a.IsPlayer) Assault(world, attacker, defender);
         bool pa = IsPoliceLike(world, a), pd = IsPoliceLike(world, d);
         if (pa == pd) return;
         int culprit = pd ? attacker : defender, police = pd ? defender : attacker;
@@ -196,7 +199,12 @@ public sealed class CrimeSystem(FactionRelations relations, CrimeSettings? setti
                 p.Timer -= seconds;
                 if (p.Timer <= 0) c.Pending = null;
             }
-            if (!c.IsPlayer || !c.CarriedBy.IsNone) continue;   // a carried suspect is not looked at (the game's witness function)
+            if (!c.CarriedBy.IsNone) continue;   // a carried suspect is not looked at (the game's witness function)
+            if (!c.IsPlayer)
+            {
+                if (c.Pending is not null) Witnesses(world, s, c, false, null, seconds);
+                continue;
+            }
             bool kidnapping = !c.Carrying.IsNone && table.TryResolveNext(c.Carrying, out int body) && Innocent(c, table.Cold(body)!);
             var premises = PremisesOf(world, s);
             if (c.Pending is null && !kidnapping && premises is null) continue;
@@ -272,13 +280,18 @@ public sealed class CrimeSystem(FactionRelations relations, CrimeSettings? setti
             p.Timer = WitnessTimer;
             c.RecentlyWanted = RecentlyWantedSeconds;
             var witness = table.IdOf(w);
-            if (!p.Witnessed)
+            bool first = !p.Witnessed;
+            if (first)
             {
                 p.Witnessed = true;
                 Note(world, CrimeEventKind.Witnessed, culprit, p.Code, wf, 0, witness);
-                world.Defer(new Dialogue.DialogueEvent(witness, table.IdOf(culprit), WitnessEvent(world, wc, p)) { Tick = world.Tick + 1 });
-                if (p.Code != CrimeCode.Looting) world.Post($"{c.Name} has been caught committing {CrimeTable.Name(p.Code)}!");   // the loot already says "was seen looting"
+                if (c.IsPlayer && p.Code != CrimeCode.Looting) world.Post($"{c.Name} has been caught committing {CrimeTable.Name(p.Code)}!");   // the loot already says "was seen looting"
             }
+            // The original fires the event on every reacting run (docs/game/dialogue.md "Witnesses"). Meitou fires it once at the player's characters; at an NPC culprit again on every
+            // sweep from a police-like witness not yet fighting, as the guards' lines want a culprit within talking range that does not run (engine choice: lines' repetition limits are not kept).
+            if (first || !c.IsPlayer && !wc.InCombat && IsPoliceLike(world, wc))
+                world.Defer(new Dialogue.DialogueEvent(witness, table.IdOf(culprit), WitnessEvent(world, wc, p)) { Tick = world.Tick + 1 });
+            if (!c.IsPlayer) continue;   // an NPC culprit is never booked (engine choice)
             if (!p.Booked && IsPoliceLike(world, wc) && Factions.Books(wf)) Book(world, culprit, wf, witness);
             if (p.Booked) return;
         }

@@ -487,6 +487,10 @@ remaining uncertainties: [economy.md](game/economy.md). Expiry is paused while i
 Witness sight: the original's sight test with places and light ([perception](game/perception.md#sight), `SightMap`); a
 sneaking culprit is seen only once the witness's spot meter is full ([perception](game/perception.md#spotting-a-sneaker);
 meters kept by `CrimeSystem`, not saved).
+NPC culprits (engine choices): an NPC's non-defensive attack order, and each of its landed blows, sets a pending Assault (not an
+animal's; the victim may be a player character), never booked. A police-like witness not fighting re-fires event 41 at it every
+sweep, since the guards' lines (e.g. "Shek guard witness crime": DA 29, 33, 6) need it within 260 and not running. So a town's
+guards turn on hungry bandits (Starving Bandits, -10 to all: not hostile, so no aggro target) attacking someone there.
 Trespassing (`Trespasses`, [economy 11.2](game/economy.md#112-how-a-bounty-is-gained)): a player character inside
 (`SightMap.BuildingOf`, not on the roof) a town building that a squad lives in is a suspect each sweep; a witness that sees it and
 regards its faction as neither ally nor enemy sets the pending crime when it lives there, its squad has locked up
