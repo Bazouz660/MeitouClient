@@ -62,12 +62,59 @@ about 12 above the origin (`swim2` +2 over the 9.99 binding height), so a swimme
 Disabled legs,
 body states and stealth modify distinct branches. Movement modes0 walk,1 cap55,2/3 cap999;
 mode3 follows group's slowest. The HUD sets them as character orders 2/1/0/0x10 → modes 0/1/2/3
-(Walk/Jog/Run/Group; **Verified**, character vtable slot 0x308 FUN_1405caa50, [ui-screens.md](ui-screens.md)). Whether
-"group" is the squad or the selection is **Unknown** (the Group choice also calls a selection-wide FUN_1407faa70); Meitou
+(Walk/Jog/Run/Group; **Verified**, character vtable slot 0x308 FUN_1405caa50, [ui-screens.md](ui-screens.md)). "Group"
+is the selection, not the squad: [speed groups](#squads-travelling-together); Meitou
 uses the squad members walking in mode3. FCS force-speed3 means NO_SPEED_CHANGE and remaps to4, not runtime
 mode3. FCS `MoveSpeed` (editor enum, **Verified**): WALK 0, JOG 1, RUN 2, GROUPED 3, NO_SPEED_CHANGE 4. Follow/avoidance/formation use character footprint and previous neighbour state.
-Original formation details and off-screen arrival remain partly unknown. Whether living characters block each other beyond the
+Squad formations: [squads travelling together](#squads-travelling-together). Off-screen arrival remains unknown. Whether living characters block each other beyond the
 separation steering is **Unknown**; sitting characters are never pushed (**Observed** in play) (Meitou adds solid body contact: [simulation](../simulation.md#movement-and-paths)).
+
+## Squads travelling together
+
+Source: kenshi_x64.exe 1.0.68; names from KenshiLib 1ce4a16. Constants are **Verified** (bytes at the loads in the cited functions);
+the control flow is read from decompiles (**Observed**). The leader is never slowed for its squad; cohesion comes from the followers
+aiming ahead of it.
+
+**Slots** (`Blackboard::buildFormation` `14026db30`). Each platoon's blackboard keeps a map character → slot offset (+0x268) and a
+rebuild flag (+0x260). `getFormationPositionOffset` (`1402703f0`) rebuilds when the flag is set; a character missing from the map gets
+(0,0,0) and sets the flag. `Character::checkPlayerOrderForProblems` sets it when a follow order targets a squad mate. The head is the
+squad leader, or, when the leader is on task 31 (player Follow) behind a member of the same platoon, that member. Every member except
+role SQUAD_SLAVE (`AITaskSystem` +0x25c, enum SQUAD_1 0, SQUAD_2 1, SQUAD_LEADER 2, SIGNALS 3, SLAVE 4) gets a record: radius
+r = 1.5 × movement radius, animal flag, and the slaves whose `slaveOwner` is that member. Offsets are in a frame where the head
+faces −X, so +X is behind. The layout is FACTION `squad formation` (`fcs_enums.def`: RANDOM 0, CARAVAN 1, MILITARY 2; the file
+literally reads `CARAVAN. MILITARY`). Random draws are uniform (`rand()`).
+
+- MILITARY: humans and animals are split; per row c = ceil(n / round(√n)) with n = max(2, humans). Blocks in order: all slaves,
+  animals with r < 10, animals with r ≥ 10, humans. Each block is rows of c, centred across, column and row step 2R + 10
+  (R = largest r in the block), short last row centred; the first block's first row at x = 25 + R, each next block's at its R + the
+  previous block's last row + 20 (`FUN_140269960`).
+- CARAVAN: a single file behind the head. Each entry sits at x = previous edge + gap + r (edge = x + r): the head's slaves, then each
+  SQUAD_1 member (gap 10..20, also after the head) followed by its own slaves (gap 5..10). If any member is SQUAD_2, the other
+  non-animals take a random x near the front (head r + 5..10 up to 20..40) and step out to one random side by 10..50 until they
+  touch nobody; the other animals start diagonally beside column entry i (± the radius sum) and step 2..5 outward until free.
+- RANDOM: everyone at angle 2πu, distance u × 10√n (n = records), then pushed out of earlier circles with a 5 gap (`FUN_140268b70`);
+  slaves (k) the same within √(50k) around (front-most x + √(50k), 0); then up to ceil(n/5) non-animals from the end of the list
+  move to x = front-most x + 25 + r as a rear guard.
+
+**Following** (`Task_Follow` update `14033b350`, shared by 141 Task_FollowLeader, 31 and the other follow tasks). Task 141 follows
+the slave owner if the character has one, else its squad leader. Formation mode applies when the target is the follower's slave
+owner or in its platoon (`14033b160`); otherwise the aim is target + normalise(me − target) × D, D = 20..40 drawn when the task is made
+(`14032ebd0`). Formation aim (`1403335c0`): heading H (task +0xa0) eases toward the leader's XZ direction (−X if zero) while the leader
+moves, H += (dir − H) × 0.5 × dt (`GameLoop_DtScaled`), aim = leader position + H × leader speed + slot rotated from −X onto H, so
+followers aim one second ahead of the leader. When the leader is inside a building the follower cannot enter, aim = A + (A − B) × 1.1 +
+rotated slot × 0.2 (A, B: building door data +0x3bc / +0x3c8, meaning **Unknown**).
+
+Each update, with d the XZ distance to the aim: under 1 the desired speed (movement +0xbc) is 0. While the leader moves it is
+d × max(0.1, 0.5 + 0.5 × dot(leader direction, own direction)): a follower that lags runs to catch up, one facing away slows. With the
+leader standing: under 20 → 0, 20-50 → 10-20, 50-200 → 20-30, 200-500 → 30-999 (each linear in d², clamped). Speed 0 stops. Under 50
+it steers straight (movement mode 2 MOVE_DIRECTION, desired motion toward the aim, move limit √d); from 50 to 100 it keeps that only
+while it moved more than its speed² since the last update; otherwise it paths to the aim. Followers copy an allied leader's sneaking.
+
+**Speed groups** (Group speed, mode 3). `PlayerInterface::assignSpeedGroup` / `useSpeedGroup` give the selected characters one shared
+`SpeedGroup`; nothing else creates one (**Observed**: no other callers), so NPC squads never use it. `SpeedGroup::getSpeed` (`1407f5740`),
+once per frame: speed = the lowest max speed of members not down and not carried, centre = their mean position, direction = the sum
+of their velocities. A member ahead of the centre (positive dot with the direction) gets speed × max(0.8, 1 − 0.001 × XZ distance to
+the centre); others the plain group speed.
 
 ## Own builder
 
@@ -374,8 +421,7 @@ cuts follow the blocky 36-unit terrain grid (generator inputs, terrain). The ori
   building flag at +0x1f0 → +0x2c that gates carvers and part of the WALKABLE rule; the global seed list DAT_14212f470;
   the ray-hit kind that still allows a ground seed; whether OverrideSettings material −1 means "any material".
 - Whether the path request converts the footprint radius to Havok units.
-- Steering rules for formation slots (Meitou's engine choice: [simulation](../simulation.md#movement-and-paths)) and the full avoidance parameters
-  (the repulsion's absolute magnitude).
+- The full avoidance parameters (the repulsion's absolute magnitude); how movement caps a follower's desired speed by its speed mode.
 - Whether face data values other than 3, 4, 5 and the gate nibble exist; how building construction and destruction
   update faces (path mode switches at runtime).
 - Havok tagfile field layouts for the face/edge arrays beyond sizes (16 / 20 bytes).

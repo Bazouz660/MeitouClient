@@ -149,7 +149,7 @@ package loaders (**Observed**).
 No goal makes an owned animal follow anyone (above). The player orders it like a person: the context menu offers "Follow" (verb 31,
 STAY_CLOSE_TO_TARGET) on one of the player's own characters who is up, uncaged and not selected (`FUN_1407a6bc0`, beside "Inventory" 26 and
 "Bodyguard" 45, **Observed**). The order giver (`FUN_1405c8da0`) then drops one follow order closing a circle back to the ordered character
-(`FUN_1405c8c10`, for orders 31 and 45). How the original follower moves (distance, speed) is **Unknown**.
+(`FUN_1405c8c10`, for orders 31 and 45). The follower moves as in [squads travelling together](pathfinding.md#squads-travelling-together) (a squad mate takes its formation slot, anyone else is kept 20..40 away).
 
 Meitou: `FollowOrder` (`MovementSystem.Follow`) sets `CharacterCold.FollowOrder` and the follow task (the squad formation slot behind that character); a move or stop
 order clears it; when the followed one is gone the follower stands (engine choice).
