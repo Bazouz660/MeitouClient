@@ -184,9 +184,6 @@ public sealed class CharacterCold
     public long StealthExposureTick { get; set; } = long.MinValue;
     /// <summary>The hostile NPCs noticing or detecting this sneaker lately (<see cref="AggroSystem"/>, serial commit; display only: not hashed, not saved).</summary>
     public List<StealthWatcher>? Watchers { get; set; }
-    /// <summary>How much of <see cref="Bodies.MedicalState.Healed"/> the heal floaters have shown, and the tick of the last one (display only: not hashed, not saved).</summary>
-    public float HealShown { get; set; }
-    public long HealTick { get; set; }
     /// <summary>Weapon and worn armour (track F, docs/simulation.md "Combat").</summary>
     public Meitou.Simulation.Combat.Fighter? Fighter { get; set; }
     /// <summary>The patient of the <see cref="CharacterTask.Treat"/> task (itself for self-treatment); meaningful only while the task is set (<see cref="FirstAid.FirstAidSystem"/>).</summary>

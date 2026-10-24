@@ -183,7 +183,6 @@ public sealed partial class MedicalState
                 float heal = MathF.Min(p.Bandage, dtb * 0.05f * c.HealRateMult * r * (isRobotic ? 250 : 1));
                 p.Bandage -= heal;
                 p.Flesh = MathF.Min(p.Flesh + heal, m);
-                Healed += heal;
             }
             // Wear repair in a repair bed: wear moves into the treated pool, which stays within the part's HP.
             if (p.Wear > 0 && ctx.RepairRate > 0)
@@ -252,7 +251,6 @@ public sealed partial class MedicalState
             float heal = MathF.Min(p.Bandage, seconds * 0.05f * c.HealRateMult * r * (robotic ? 250 : 1));
             p.Bandage -= heal;
             p.Flesh = MathF.Min(p.Flesh + heal, m);
-            Healed += heal;
             p.Stun = 0;
             p.Rig = 0;
             p.HitMult = 1;

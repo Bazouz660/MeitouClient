@@ -32,8 +32,6 @@ public sealed partial class MedicalState
 
     /// <summary>Save key <c>bleeding</c>: the current bleed rate (blood per game hour), recomputed each tick.</summary>
     public float Bleeding { get; private set; }
-    /// <summary>All the flesh healing has restored since this body was made (display only: the heal floaters read it; not saved or hashed).</summary>
-    public float Healed { get; private set; }
 
     /// <summary>Save key <c>hung</c>: the hunger level 0 to 3 (3 full; 2 and above well fed, below 1 starving).</summary>
     public float Hunger { get; set; } = MaxHunger;

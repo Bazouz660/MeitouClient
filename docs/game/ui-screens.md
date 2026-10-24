@@ -854,8 +854,7 @@ Full info "separate numbers for each damage type". Built at the end of `MedicalS
   callers of `FUN_14073faf0` (**Observed**).
 
 Meitou: the Simple/Full text and the gate follow the above; floaters rise 30 px and fade over 1.4 s (engine choice). Colour: red
-when a player's character is hit, green when one lands the blow, else grey. Healing is a Meitou addition: a green `+N` over a
-player character each time about a second of treated damage has healed (any non-Off setting).
+when a player's character is hit, green when one lands the blow, else grey. No healing floater, as in the original.
 
 ### Tooltips
 
