@@ -405,7 +405,7 @@ public sealed partial class MyGuiScreenHost
             if (action.Contains("Bottom")) scale += new Vector4(0, 0, 0, 1);
         }
         bool resizes = scale.Z != 0 || scale.W != 0;
-        if (!resizes && (!s.Movable || s.Pinned)) return true;
+        if (!resizes && !s.Movable) return true;
         if (scale == default) return true;
         if (!resizes) { drag = (id, p, s.Offset); return true; }
         windowGrab = new(id, p, new(s.Placed.X, s.Placed.Y, s.PlacedSize.X, s.PlacedSize.Y), scale);

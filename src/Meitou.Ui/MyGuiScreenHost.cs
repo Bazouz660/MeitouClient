@@ -176,7 +176,7 @@ public sealed partial class MyGuiScreenHost(MyGuiResources resources)
         focus = null; edit = null;
         if (c.Type == "Button") { Activated?.Invoke(new(id, c.Name, c.Action)); return true; }
         var root = frame.First(f => f.Id == id).Controls.FirstOrDefault(n => n.Type == "Window");
-        if (root is not null && p.Y < root.Bounds.Y + 38 && !s.Pinned && root.Properties.GetValueOrDefault("Movable") != "false")
+        if (root is not null && p.Y < root.Bounds.Y + 38 && root.Properties.GetValueOrDefault("Movable") != "false")
             drag = leaders.TryGetValue(id, out var leader) && open.Contains(leader) ? (leader, p, screens[leader].Offset) : (id, p, s.Offset);
         return true;
     }
