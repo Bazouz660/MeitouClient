@@ -155,7 +155,9 @@ secondary jobs. [Native API](renderer-native.md).
 
 Single-sample jittered HDR reconstruction, separate near/far depth, unjittered reflection/shadows.
 FSR Vulkan SDK1.1.4 runtime DLL; Streamline2.14.16 manual hook, initialize before Vulkan, request
-features and proxy present. Bottom-up images require matching clip matrices/presentation.
+features and proxy present; when it reports DLSS unsupported (any non-NVIDIA GPU) it is shut down at
+once. **Observed** (#55, RX 6600): on AMD `slInit` still loads `sl.common`, whose Vulkan hooks warn
+"NOT supported". Bottom-up images require matching clip matrices/presentation.
 Vendor DLLs are not committed; paths/packaging/licensing: [notices](../THIRD_PARTY_NOTICES.md).
 Mip biases and temporal/GI contracts: [post](render-post.md). GI requested by default unless
 --no-gi, unsupported ray queries fall back to flat ambient; gi Enhancement chooses output.
