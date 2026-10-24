@@ -163,6 +163,12 @@ public class JailSaveTests
                 Assert.Equal(Keys(states[k]).Where(e => e.Key.StartsWith("meitou ") || e.Key is "sentence" or "psts" or "bountyfac0" or "amount0"),
                     Keys(again[k]).Where(e => e.Key.StartsWith("meitou ") || e.Key is "sentence" or "psts" or "bountyfac0" or "amount0"));
             Assert.Equal(Keys(house), Keys(HeldSave.BuildingStates(second)[HouseKey]));
+
+            // A later capture, its clock floored to the minute as the host's is, keeps the bounty's raise hour (each load used to cost an hour).
+            b.World.RunTicks(1000);
+            double hours = BountySave.HoursOf(loaded.Clock) + b.World.Tick * b.World.TickSeconds / SimWorld.SecondsPerGameHour;
+            var later = SaveCapture.Capture(b.World, data, new SaveClock((int)(hours / 24), (int)(hours % 24), (int)(hours % 1 * 60)), loaded, Options);
+            Assert.Equal(states[0].Ints["bountyexp0"], later.Platoons.Single(p => p.FactionId == later.PlayerFaction!.Id).Characters[0].GameState!.Ints["bountyexp0"]);
         }
         finally { Directory.Delete(Path.GetDirectoryName(folder)!, recursive: true); }
 
