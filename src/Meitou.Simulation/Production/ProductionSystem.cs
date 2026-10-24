@@ -938,7 +938,7 @@ public sealed partial class ProductionSystem : ITickSystem
         var item = storage.Items[take.Index];
         int mark = item.StolenFrom;
         if (container.Owner >= 0 && container.Owner != cold.Faction) item.StolenFrom = container.Owner;
-        int moved = InventoryCommands.MoveInto(storage, item, take.Count, cold.Inventory!, take.BagFirst, out bool worn);
+        int moved = InventoryCommands.MoveInto(storage, item, take.Count, cold.Inventory!, take.BagFirst, out bool worn, cold.Race?.StringId);
         if (storage.Items.Contains(item)) item.StolenFrom = mark;   // what stayed keeps its mark
         if (worn) Assembly?.RefreshEquipment(cold);
         if (moved > 0) world.Machines.Touch();
@@ -1022,7 +1022,7 @@ public sealed partial class ProductionSystem : ITickSystem
         {
             if (m.Storage is not { } storage || take.Index < 0 || take.Index >= storage.Items.Count) return;
             // What does not fit stays in the storage.
-            if (InventoryCommands.MoveInto(storage, storage.Items[take.Index], take.Count, root, take.BagFirst, out bool worn) > 0) world.Machines.Touch();
+            if (InventoryCommands.MoveInto(storage, storage.Items[take.Index], take.Count, root, take.BagFirst, out bool worn, cold.Race?.StringId) > 0) world.Machines.Touch();
             if (worn) Assembly?.RefreshEquipment(cold);
             return;
         }

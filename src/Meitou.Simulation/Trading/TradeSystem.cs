@@ -398,13 +398,13 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
         if (item.Contents is not null)
         {
             // An empty bag moves itself (a copy would have no contents inventory); its receipt is replaced (none: this undid a sale).
-            placed = TransferContainer(shop.Stock, buy.Item, cold.Inventory!, buy.Section, buy.X, buy.Y, buy.Equip);
+            placed = TransferContainer(shop.Stock, buy.Item, cold.Inventory!, buy.Section, buy.X, buy.Y, buy.Equip, cold.Race?.StringId);
             if (placed > 0) item.Buyback = receipt;
             if (placed > 0 && InventoryCommands.IsEquipmentSection(item.Section)) assembly.RefreshEquipment(cold);
         }
         else if (buy.Section == "backpack_attach") placed = 0;
         else if (buy.Section is { } section) placed = PlaceAt(cold.Inventory!, bought, units, section, buy.X, buy.Y);
-        else if (buy.Equip && InventoryCommands.TryEquip(cold.Inventory!, bought.WithQuantity(1)))
+        else if (buy.Equip && InventoryCommands.TryEquip(cold.Inventory!, bought.WithQuantity(1), cold.Race?.StringId))
         {
             // One unit is worn; the rest of a stack goes where it fits.
             assembly.RefreshEquipment(cold);
@@ -458,7 +458,7 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
         long price = Price(m, item, units, true, shop.Terms, cold.Faction);
         bool equipped = InventoryCommands.IsEquipmentSection(item.Section);
         int placed = item.Contents is not null
-            ? TransferContainer(cold.Inventory!, sell.Item, shop.Stock, sell.X is not null ? "main" : null, sell.X ?? 0, sell.Y, false)
+            ? TransferContainer(cold.Inventory!, sell.Item, shop.Stock, sell.X is not null ? "main" : null, sell.X ?? 0, sell.Y, false, null)
             : sell.X is { } sx ? PlaceAt(shop.Stock, sold, units, "main", sx, sell.Y) : Place(shop.Stock, sold, units);
         if (placed == 0)
         {
@@ -501,11 +501,11 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
     }
 
     // Containers move whole: stack copies intentionally omit Contents. Transfer validates the destination before changing either inventory.
-    static int TransferContainer(Inventory from, InventoryItemToken token, Inventory into, string? section, int x, int y, bool equip)
+    static int TransferContainer(Inventory from, InventoryItemToken token, Inventory into, string? section, int x, int y, bool equip, string? wearer)
     {
         if (section is not (null or "main" or "backpack_attach")) return 0;
-        if (section == "backpack_attach") return InventoryCommands.Transfer(from, token, into, section, 0, 0) ? 1 : 0;
-        if (equip && InventoryCommands.Transfer(from, token, into, "backpack_attach", 0, 0)) return 1;
+        if (section == "backpack_attach") return InventoryCommands.Transfer(from, token, into, section, 0, 0, wearer: wearer) ? 1 : 0;
+        if (equip && InventoryCommands.Transfer(from, token, into, "backpack_attach", 0, 0, wearer: wearer)) return 1;
         if (section == "main" && InventoryCommands.Transfer(from, token, into, section, x, y)) return 1;
         var item = Find(from, token);
         return item is not null && into.FindCell("main", item.Width, item.Height, out int cx, out int cy)

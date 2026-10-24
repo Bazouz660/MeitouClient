@@ -18,6 +18,12 @@ public sealed class ItemInstance
     public string EquipmentSection { get; init; } = "";
     /// <summary>ARMOUR <c>is locked</c> (the original makes it a <c>LockedArmour</c>: shackles); worn, it shows the portrait's <c>Slave</c> overlay (docs/game/ui-screens.md "Portrait cells").</summary>
     public bool IsLocked { get; init; }
+    /// <summary>The record's race limits (<see cref="ItemInfo.WornOnlyBy"/>, <see cref="ItemInfo.WornNeverBy"/>): who may put it in an equipment section.</summary>
+    public string[] WornOnlyBy { get; init; } = [];
+    public string[] WornNeverBy { get; init; } = [];
+    /// <summary>Whether a character of the RACE <paramref name="race"/> may wear it (null: no wearer, no limit).</summary>
+    public bool WearableBy(string? race) => Wearable(WornOnlyBy, WornNeverBy, race);
+    internal static bool Wearable(string[] only, string[] never, string? race) => race is null || (only.Length == 0 ? !never.Contains(race) : only.Contains(race));
     /// <summary>Shackles' lock (level = ARMOUR <c>lock level</c> clamped 0..100, its <c>hardness</c>, locked when made: <c>FUN_14089a440</c>); null for other items.</summary>
     public Locks.LockState? Lock { get; set; }
     /// <summary>Worn and effectively locked: the item cannot be taken off, sold or moved (LockedArmour's tooltip: "locked in place and cannot be removed").</summary>
@@ -104,7 +110,7 @@ public sealed class ItemInstance
     /// <summary>A copy of this item with another quantity (a stack split off; never used for a backpack, whose contents are not copied).</summary>
     public ItemInstance WithQuantity(int quantity) => new()
     {
-        Record = Record, Name = Name, Type = Type, EquipmentSection = EquipmentSection, IsLocked = IsLocked, MaterialId = MaterialId, CompanyId = CompanyId, Section = Section, X = X, Y = Y, Quantity = quantity, Level = Level, Crafter = Crafter,
+        Record = Record, Name = Name, Type = Type, EquipmentSection = EquipmentSection, IsLocked = IsLocked, WornOnlyBy = WornOnlyBy, WornNeverBy = WornNeverBy, MaterialId = MaterialId, CompanyId = CompanyId, Section = Section, X = X, Y = Y, Quantity = quantity, Level = Level, Crafter = Crafter,
         ItemFunction = ItemFunction, Quality = Quality, Charges = Charges, MaxCharges = MaxCharges, Width = Width, Height = Height, UnitWeight = baseWeight, DynamicWeight = DynamicWeight, StackLimit = StackLimit,
         IsFood = IsFood, ContentsFactor = ContentsFactor, StolenFrom = StolenFrom, Death = Death, Buyback = Buyback?.Take(quantity),
     };

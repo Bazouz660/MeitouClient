@@ -285,7 +285,8 @@ sealed partial class PlayerInterface
     {
         var b = slot.Bounds;
         var (columns, rows) = GridOf(window, section);
-        bool takes = InventoryCommands.SlotRefusal(section, h.Type, h.EquipmentSection, h.BagItems) is null;
+        string? wearer = window.Holder == ItemHolder.Character ? session.CurrentSnapshot.Characters.FirstOrDefault(c => c.Id == window.Character)?.Appearance?.Race.StringId : null;
+        bool takes = InventoryCommands.SlotRefusal(section, h.Type, h.EquipmentSection, h.BagItems, h.WearableBy(wearer)) is null;
         if (section is "in1" or "in2" or "out")
             takes = section != "out" && Machine(window.Site) is { } m && int.Parse(section.AsSpan(2), CultureInfo.InvariantCulture) - 1 is var k && k < m.Inputs.Count && m.Inputs[k].Item == h.Record;
         if (columns == 0) return new(DropKind.Section, window, section, 0, 0, b, slot.Clip, takes);

@@ -41,6 +41,12 @@ public sealed record ItemInfo(string Id, string Name, FcsRecordType Type)
     public int StorageHeight { get; init; }
     /// <summary>A CONTAINER's <c>encumbrance effect</c>: the factor on the weight of its contents (1 for other items).</summary>
     public float EncumbranceEffect { get; init; } = 1;
+    /// <summary>
+    /// Who may wear it (the original's <c>RaceLimiter</c>, <c>FUN_140763150</c>, <b>Verified</b> by decompile): a non-empty <c>races</c> list names the only races, and then <c>races exclude</c>
+    /// is not read; otherwise <c>races exclude</c> names the races that may not. RACE string ids; empty: anyone.
+    /// </summary>
+    public string[] WornOnlyBy { get; init; } = [];
+    public string[] WornNeverBy { get; init; } = [];
 
     /// <summary>
     /// A food item: an ITEM with <c>item function</c> 3 (rice, bread, fish, dried meat...). Raw meat (15) is not eaten by people by this rule (race <c>special food</c> would say,
@@ -72,6 +78,8 @@ public sealed record ItemInfo(string Id, string Name, FcsRecordType Type)
         EncumbranceEffect = r.Type == FcsRecordType.CONTAINER ? r.GetFloat("encumbrance effect", 1) : 1,
         StackBonusMinimum = r.Type == FcsRecordType.CONTAINER ? r.GetInt("stackable bonus minimum", 1) : 1,
         StackBonusMult = r.Type == FcsRecordType.CONTAINER ? r.GetFloat("stackable bonus mult", 1) : 1,
+        WornOnlyBy = [.. r.GetReferences("races").Select(x => x.TargetStringId)],
+        WornNeverBy = r.GetReferences("races").Count > 0 ? [] : [.. r.GetReferences("races exclude").Select(x => x.TargetStringId)],
     };
 
     /// <summary>The stack limit of an item record (<see cref="StackLimit"/>): 1 for the types that never stack, else the record's <c>stackable</c> (at least 1).</summary>

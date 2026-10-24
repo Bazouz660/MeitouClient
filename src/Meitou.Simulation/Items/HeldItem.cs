@@ -39,7 +39,13 @@ public sealed record HeldItemView(string Record, string Name, string Material, M
     float? Charge, ItemOwner From, int BagItems)
 {
     public static HeldItemView Of(HeldItem held) => new(held.Item.Record, held.Item.Name, held.Item.MaterialId, held.Item.Type, held.Item.EquipmentSection, held.Item.Quantity,
-        held.Item.Width, held.Item.Height, held.Item.ChargeFraction, held.From, held.Item.Contents?.Items.Count ?? -1);
+        held.Item.Width, held.Item.Height, held.Item.ChargeFraction, held.From, held.Item.Contents?.Items.Count ?? -1) { WornOnlyBy = held.Item.WornOnlyBy, WornNeverBy = held.Item.WornNeverBy };
+
+    /// <summary>The held item's race limits (<see cref="ItemInstance.WornOnlyBy"/>, <see cref="ItemInstance.WornNeverBy"/>).</summary>
+    public string[] WornOnlyBy { get; init; } = [];
+    public string[] WornNeverBy { get; init; } = [];
+    /// <summary>Whether a character of the RACE <paramref name="race"/> may wear it (null: no wearer).</summary>
+    public bool WearableBy(string? race) => ItemInstance.Wearable(WornOnlyBy, WornNeverBy, race);
 }
 
 /// <summary>
