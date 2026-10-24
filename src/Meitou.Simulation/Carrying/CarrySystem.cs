@@ -126,16 +126,18 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
                     break;
                 case LootOrder loot:
                     if (!table.TryResolveNext(loot.Target, out int victim) || !CanBeLooted(table.Cold(victim)!)) break;
-                    if (Nearest(table, Who(world, loot.Looters), victim, s => s != victim && table.Cold(s) is { Medical.Incapacitated: false, Inventory: not null, InCombat: false } c && c.CarriedBy.IsNone) is int looter)
+                    if (Nearest(table, Who(world, loot.Looters), victim, s => s != victim && table.Cold(s) is { Medical.Incapacitated: false, Inventory: not null } c && c.CarriedBy.IsNone) is int looter)
                     {
                         if (world.Player.LootWalker == table.IdOf(looter)) world.Player.OpeningLoot = CharacterId.None;
+                        LeaveFight(world, looter);
                         Begin(table, looter, loot.Target, CharacterTask.Loot, CharacterTask.Idle);
                     }
                     break;
                 case OpenLootOrder open:
                     if (!table.TryResolveNext(open.Target, out int body2) || !CanBeOpened(table.Cold(body2)!)) break;
-                    if (Nearest(table, Who(world, open.Looters), body2, s => s != body2 && table.Cold(s) is { Medical.Incapacitated: false, Inventory: not null, InCombat: false } c && c.CarriedBy.IsNone) is int opener)
+                    if (Nearest(table, Who(world, open.Looters), body2, s => s != body2 && table.Cold(s) is { Medical.Incapacitated: false, Inventory: not null } c && c.CarriedBy.IsNone) is int opener)
                     {
+                        LeaveFight(world, opener);
                         Begin(table, opener, open.Target, CharacterTask.Loot, CharacterTask.Idle);
                         (world.Player.OpenLoot, world.Player.OpeningLoot, world.Player.LootWalker) = (CharacterId.None, open.Target, table.IdOf(opener));
                     }
@@ -207,6 +209,15 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         if (table.Cold(carrier) is not { Carrying.IsNone: false } c || !table.TryResolveNext(c.Carrying, out int b)) return false;
         Unlink(world, carrier, b, drop: true);
         return true;
+    }
+
+    /// <summary>
+    /// A looter ordered mid-fight leaves it (engine choice, as a move order does): once its target drops the battle keeps a fighter in combat on the next enemy, and a player
+    /// character on a task is not pulled back in by itself (<see cref="RetaliationSystem"/> answers only idle ones).
+    /// </summary>
+    static void LeaveFight(World world, int slot)
+    {
+        if (world.Characters.Cold(slot)!.InCombat) world.SystemOf<Combat.CombatSystem>()?.Disengage(world.Characters, world.Characters.IdOf(slot));
     }
 
     /// <summary>The slot among <paramref name="ids"/> that <paramref name="accept"/> takes and is nearest the target (ties: the first listed).</summary>

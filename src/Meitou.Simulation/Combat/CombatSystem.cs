@@ -175,7 +175,7 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
         return true;
     }
 
-    void Disengage(CharacterTable table, CharacterId id)
+    internal void Disengage(CharacterTable table, CharacterId id)
     {
         if (!table.TryResolveNext(id, out int slot)) return;
         ref var s = ref read[slot];
