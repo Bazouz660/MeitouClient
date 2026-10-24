@@ -1090,10 +1090,14 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             saved.Apply(squad.Ai, data.Ai, rules);
             squad.SavedAi = null;
         }
-        // An occupation it left the world in goes on in the player town it comes back in (the original keeps the occupier's platoon and package, docs/game/ai.md).
+        // An occupation it left the world in goes on in the player town it comes back in (the original keeps the occupier's platoon and package, docs/game/ai.md); the town
+        // is the one it was made in, as a squad made this tick has no positions yet.
         if (squad.LeftPackage is { } left && data.Ai.Package(left) is { } package && PackageClasses.Of(package.Signal) == PackageClass.OccupyTown && squad.Ai.Contract is null
-            && squad.Ai.InTown.PlayerTown > 0 && squad.Ai.Resume(package))
+            && CurrentTown(world, squad.Position) is { PlayerTown: > 0 } there && squad.Ai.Resume(package))
+        {
+            squad.Ai.InTown = there;
             OccupyResumed(world, squad, squad.Ai);
+        }
         squad.LeftPackage = null;
     }
 
