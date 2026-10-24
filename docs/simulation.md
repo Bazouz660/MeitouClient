@@ -1380,3 +1380,18 @@ Smuggling and stealing: [trade](#trade). UI: [faithful-ui-parity](faithful-ui-pa
 - `CharacterHot.Animation`/`AnimationTime` (the old movement layers) and the name length are still hashed; removing them moves every hash.
 - `HoursPerTick` is a constant of its own, not derived from `WorldSettings.TickSeconds`.
 - Navmesh: the cache key does not see a changed collision file; a running build is not stopped on unload (it finishes into the cache).
+
+
+## Town house purchases
+
+`BuyBuilding` rechecks the registered shell house's sale flag, town kind, owner/alliance, quoted
+price and funds before deducting money once. The HUD shows the localized `For sale:` price and
+original confirmation text in both UI modes; the [original rules](game/ui-screens.md#selected-building)
+are recorded separately. Destroyed houses register even without fixtures. Purchased ownership
+is independent of doors, reaches fixtures, loose-item slots and the indoor build permission,
+stops former NPC lock rounds, and is saved in `owner faction ID` with `sell home` false. Loaded ownership is applied before fixtures
+are created. **Engine choice:** purchase makes the house private; the original callback's remaining
+side effects are unresolved. Eligibility recognizes function 19 or no-function buildings with interior meshes, excludes walls/gates and rejects
+`is inside building`; the original's class and parent-pointer tests are not fully decoded.
+`HousePurchaseTests` covers pricing, revalidation, ownership and saved-state reload;
+`HousePurchaseUiTests` covers the price, confirmation/cancel and ownership panel in both modes.

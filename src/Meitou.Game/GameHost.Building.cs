@@ -260,7 +260,7 @@ sealed partial class GameHost
         }
         string player = popData is { } p && p.PlayerFaction is >= 0 and var mine && mine < p.Factions.Count ? p.Factions[mine].Id : "";
         return levelOwners?.TryGetValue(room.PlacementId, out var level) == true
-            ? new(room.PlacementId, room.Footprint, floor, level.Instance, player.Length > 0 && level.Owner == player)
+            ? new(room.PlacementId, room.Footprint, floor, level.Instance, session.CurrentSnapshot.OwnedTownBuildings.Contains(room.PlacementId) || player.Length > 0 && level.Owner == player)
             : new(room.PlacementId, room.Footprint, floor, room.PlacementId);
     }
 }

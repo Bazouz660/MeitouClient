@@ -14,13 +14,13 @@ namespace Meitou.Game;
 sealed partial class PlayerInterface
 {
     /// <summary>A building selected by a click: what it is, where it stands (hull in the world, for the outline) and what the panels say of it.</summary>
-    sealed record SelectedBuilding(string Name, string? Type, string? Owner, string? Town, string? SiteId, string Instance, Vector3 Position, Vector2[]? Hull,
+    internal sealed record SelectedBuilding(string Name, string? Type, string? Owner, string? Town, string? SiteId, string Instance, Vector3 Position, Vector2[]? Hull,
         bool PublicDay = false, bool PublicNight = false, string? Record = null);
 
     SelectedBuilding? selectedBuilding;
 
     /// <summary>Makes <paramref name="building"/> the selected one (null: none) and tells the simulation, which then publishes its doors.</summary>
-    void SetBuilding(SelectedBuilding? building)
+    internal void SetBuilding(SelectedBuilding? building)
     {
         if (ReferenceEquals(selectedBuilding, building)) return;
         selectedBuilding = building;
@@ -81,7 +81,7 @@ sealed partial class PlayerInterface
     /// Dismantle and PAUSE CONSTRUCTION buttons), the stats lines (the first door's Open/Close and Security, buttons on the player's own building; Open to public for another
     /// faction's) and the status word of the medical header. A house speaks through its first door as the original selects it as that door: the door's lines come first.
     /// </summary>
-    (HudLine Name, HudLine[] State, HudLine[] Stats, string Status, bool Bad) BuildingLines(SelectedBuilding focus)
+    internal (HudLine Name, HudLine[] State, HudLine[] Stats, string Status, bool Bad) BuildingLines(SelectedBuilding focus)
     {
         var state = new List<HudLine>();
         var stats = new List<HudLine>();
@@ -137,7 +137,9 @@ sealed partial class PlayerInterface
                 stats.Add(new("Open to public:", open ? "Public" : "Private", MainColour, open ? GoodColour : BadColour));
             }
         }
-        return (new(focus.Name, focus.Owner ?? "", TitleColour, TitleColour), [.. state], [.. stats], status, bad);
+        if (detail?.SalePrice is { } price)
+            stats.Add(new("For sale:", Loc.Tr("c.{1,num}", price), GoodColour, GoodColour, Action: "meitou:building-buy", ButtonWidth: 0.4f));
+        return (new(focus.Name, mine ? FactionName?.Invoke(session.World.Player.Faction) ?? "" : focus.Owner ?? "", TitleColour, TitleColour), [.. state], [.. stats], status, bad);
     }
 
     /// <summary>The upgrade chain of a BUILDING record and its build data (the panel's [UPGRADE] / [DOWNGRADE] and their tooltips); the host sets them.</summary>
@@ -227,10 +229,18 @@ sealed partial class PlayerInterface
         site?.Public ?? detail?.Public ?? focus.PublicDay;
 
     /// <summary>The panel's own buttons on a selected building of the player's: Dismantle (after the original's "Are you sure?"), pause, upgrade, downgrade, the doors, their locks and Open to public.</summary>
-    void BuildingAction(string action)
+    internal void BuildingAction(string action)
     {
         if (BuildingFocus() is not { } focus) return;
         var detail = session.CurrentSnapshot.InspectedBuilding is { } d && d.Instance == focus.Instance ? d : null;
+        if (action == "building-buy" && detail?.SalePrice is { } price)
+        {
+            string instance = focus.Instance;
+            Sound("General_Click");
+            Confirm(focus.Name, Loc.Tr("Do you want to buy this building for c.{1,num}?", price),
+                () => Say(new Meitou.Simulation.Locks.BuyBuilding(instance, price) { Tick = session.World.Tick }), yes: "Yes", cancel: "No");
+            return;
+        }
         if (focus.SiteId is null && detail is { Owned: true })
         {
             // A town building the player owns: its doors and the public toggle.
