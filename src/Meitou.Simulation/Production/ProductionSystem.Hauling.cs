@@ -130,12 +130,13 @@ public sealed partial class ProductionSystem
 
     /// <summary>
     /// Where an input's item is fetched from: the player's nearest complete storage holding it in its main grid, or machine whose output holds it (a well's water), within
-    /// <see cref="ProductionSettings.HaulRange"/> of the machine (ties: the lower site id).
+    /// <see cref="ProductionSettings.HaulRange"/> of the machine (ties: the lower site id). A producer <paramref name="by"/> operates counts once its output is full, so it fills
+    /// the well before it leaves with the water.
     /// </summary>
-    string? NearestSource(World world, BuildSite from, string record) =>
+    string? NearestSource(World world, BuildSite from, string record, CharacterCold? by = null) =>
         NearestSite(world, from.Position, Settings.HaulRange, (s, m) => s.Id != from.Id && (m.Data.IsStorage
             ? m.Storage is { } st && st.Items.Any(i => i.Record == record && i.Quantity > 0 && i.Section == "main")
-            : m.Output is { Count: > 0 } o && o.Recipe.Item == record));
+            : m.Output is { Count: > 0 } o && o.Recipe.Item == record && (o.Full || by?.OperateSite != s.Id)));
 
     /// <summary>The player's nearest complete storage within <see cref="ProductionSettings.HaulRange"/> of a machine that passes <paramref name="ok"/> (ties: the lower site id).</summary>
     string? NearestStorage(World world, BuildSite from, Func<Machine, bool> ok)

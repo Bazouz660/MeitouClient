@@ -337,7 +337,7 @@ public sealed partial class ProductionSystem
         {
             if (input.Rate <= 0 || input.Level + input.Count > 0) continue;
             if (cold.Inventory is { } inv && Carried(inv, input.Item).Any()) continue;
-            if (Settings.AutoHaul && NearestSource(world, site, input.Item) is not null) continue;
+            if (Settings.AutoHaul && NearestSource(world, site, input.Item, cold) is not null) continue;
             return false;
         }
         return true;
@@ -355,7 +355,7 @@ public sealed partial class ProductionSystem
         {
             if (input.Rate <= 0) continue;
             if (input.Count < input.Recipe.Capacity && Carried(inv, input.Item).Any()) return true;
-            if (fetch && input.Count == 0 && NearestSource(world, site, input.Item) is not null) return true;
+            if (fetch && input.Count == 0 && NearestSource(world, site, input.Item, cold) is not null) return true;
         }
         if (!fetch || m.Output is not { } output || items.Create(output.Recipe.Item, 1) is not { } one) return false;
         if (!output.Full && !Carried(inv, one.Record).Any()) return false;
