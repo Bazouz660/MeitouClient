@@ -114,9 +114,9 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
     readonly MTLCommandQueue queue;
     readonly MTLPixelFormat presentFormat;
     readonly bool waitForSlot, waitOneFrame;
-    // Lossless target compression / base-view reuse is opt-in after the 2026-10-23 Metal progress timeouts;
-    // MEITOU_METAL_COMPRESSION=1 restores it.
-    static readonly bool LosslessCompression = Environment.GetEnvironmentVariable("MEITOU_METAL_COMPRESSION") is "1" or "true";
+    // Lossless target compression / base-view reuse is on by default (validated in the 2026-10-24 Metal run);
+    // MEITOU_METAL_NO_COMPRESSION=1 disables it for an A/B. It is independent of the experimental GPU cull.
+    static readonly bool LosslessCompression = Environment.GetEnvironmentVariable("MEITOU_METAL_NO_COMPRESSION") != "1";
     readonly MetalFrame[] frames;
     readonly MetalTimestamps timestamps = new();
     readonly MetalBindlessTable bindless;

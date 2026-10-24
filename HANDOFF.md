@@ -34,15 +34,17 @@ WindowServer watchdog at 21:48:46. Its log shows the window growing to 3024x1712
 MetalFX temporal 0.67, and two ANE inference timeouts immediately before the watchdog. The date/conditions changed
 from the first run, so this does not exonerate the 21:32 optimization set on its own.
 
-Today's Metal optimizations are now **off by default on Metal**, restoring the pre-optimization path, with opt-ins:
+The Metal defaults were then narrowed to the stable set:
 
-- GPU foliage cull and its separate pre-frame command buffer: off; `MEITOU_METAL_GPU_CULL=1` enables both.
-- Encoder bind/state caching: off; `MEITOU_METAL_FAST_STATE=1` enables it.
-- Lossless target compression / base-view reuse: off; `MEITOU_METAL_COMPRESSION=1` enables it.
+- GPU foliage cull and its separate pre-frame command buffer: **off and not user-selectable**; `MEITOU_METAL_GPU_CULL=1`
+  remains a diagnostic and prints a warning. The launcher clears any inherited switch.
+- Encoder bind/state caching: **on** (`MEITOU_METAL_NO_STATE_CACHE=1` for an A/B).
+- Lossless target compression / base-view reuse: **on** (`MEITOU_METAL_NO_COMPRESSION=1` for an A/B).
+- Ground relief / parallax: **on** (`MEITOU_METAL_GROUND_RELIEF=0` for an A/B).
 
-The CPU cull is the default reference again. Ground relief remains off on Metal (`GroundRelief.Enabled =
-ParallaxActive = false` before `WorldFrame.CreateGpu`); `MEITOU_METAL_GROUND_RELIEF=1` opts back in. The Metal settings
-hide the ground-relief controls while it is off. The 7168 MB override warns: use the 5120 MB default for normal testing.
+The CPU cull is the default reference. The launcher exposes a soft Metal memory budget in Settings: Safe 5120 MB (default),
+Balanced 6144 MB, High 8120 MB only on 16 GB-or-larger Macs. It passes `MEITOU_METAL_GPU_BUDGET_MB` only for Metal and
+does not expose the cull. The game warns above 5120 MB; the 8120 MB preset was stable in the 30-minute acceptance run.
 
 **2026-10-24 13:14, after a full shutdown:** the safe path ran at **3024x1712 full-size**, MetalFX temporal 0.67 and
 the 5120 MB budget with ground relief, GPU cull, state cache and compression off: 5039 frames in 175.8 s, 29 fps, no
@@ -57,6 +59,11 @@ default. The next debugging step is Metal's indirect draw: the cull writes `MTLD
 with a non-zero `baseInstance`, while the stable CPU path uses direct `DrawIndexed` with `firstInstance`. Verify that
 Apple silicon supports that indirect field (or replace it with per-draw vertex-buffer offsets/CPU compacted draws)
 before enabling the cull again. Do not use Xcode replay.
+
+**2026-10-24 13:52, 30-minute acceptance:** `MEITOU_METAL_FAST_STATE=1`, `MEITOU_METAL_COMPRESSION=1`,
+`MEITOU_METAL_GROUND_RELIEF=1`, budget 8120 MB, **GPU cull off**: stable for half an hour, including full-size use. This
+is the first-iteration baseline: state cache, compression and ground relief on; CPU cull; a user-selectable soft budget;
+no cull switch exposed. MetalFX temporal 0.67 was in use and stable, so it is not part of the regression.
 
 Matched profiling (2026-10-23, 800x600 points = 1600x1200 pixels, native/no AA, same view): Metal with the GPU
 mesh/rock cull ~46 fps steady (command-buffer GPU 21.7 ms, record 4.8 ms); the CPU cull is ~44 fps and 22.6 ms.
@@ -100,10 +107,10 @@ MEITOU_METAL_NO_TERRAIN_TEXTURES=1
 MEITOU_METAL_NO_IMPOSTORS=1
 MEITOU_METAL_CPU_CULL=1
 MEITOU_TERRAIN_NO_NORMAL=1
-MEITOU_METAL_GROUND_RELIEF=1   (upstream parallax; off by default after the 21:32 GPU timeout)
-MEITOU_METAL_GPU_CULL=1        (GPU foliage cull + separate pre-frame; off by default)
-MEITOU_METAL_FAST_STATE=1      (encoder bind/state cache; off by default)
-MEITOU_METAL_COMPRESSION=1     (lossless target compression/base views; off by default)
+MEITOU_METAL_GROUND_RELIEF=0   (disables the default upstream parallax)
+MEITOU_METAL_GPU_CULL=1        (experimental GPU cull + separate pre-frame; unsafe on Metal, not exposed)
+MEITOU_METAL_NO_STATE_CACHE=1  (the default encoder bind/state cache off)
+MEITOU_METAL_NO_COMPRESSION=1  (the default lossless target compression/base views off)
 ```
 
 The terrain no-normal switch selects the compile-time variant (the viewer's `N`/`normal-maps` toggle does the same).

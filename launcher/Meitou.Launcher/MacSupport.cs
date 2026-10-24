@@ -12,6 +12,26 @@ static class MacSupport
     public static bool MetalAvailable =>
         OperatingSystem.IsMacOS() && RuntimeInformation.ProcessArchitecture == Architecture.Arm64;
 
+    [DllImport("libc", SetLastError = true)]
+    static extern int sysctlbyname(string name, out ulong oldp, ref ulong oldlenp, IntPtr newp, ulong newlen);
+
+    /// <summary>The Mac's physical memory in bytes, or 0 when it cannot be read.</summary>
+    public static ulong PhysicalMemoryBytes
+    {
+        get
+        {
+            try
+            {
+                ulong value = 0, length = sizeof(ulong);
+                return sysctlbyname("hw.memsize", out value, ref length, IntPtr.Zero, 0) == 0 ? value : 0;
+            }
+            catch (Exception e) when (e is DllNotFoundException or EntryPointNotFoundException) { return 0; }
+        }
+    }
+
+    /// <summary>The 8 GB Metal budget preset is offered on 16 GB machines and larger; an unknown size stays conservative.</summary>
+    public static bool CanUseHighBudget => PhysicalMemoryBytes is 0 or >= 16UL << 30;
+
     /// <summary>The folder holding <c>libvulkan.1.dylib</c>, or null when Vulkan is not installed.</summary>
     public static string? VulkanLoaderDirectory()
     {

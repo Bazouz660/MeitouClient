@@ -56,6 +56,12 @@ public sealed partial class MainWindow : Window
         RendererBox.SelectedIndex = config.Renderer switch { "metal" => 1, "vulkan" => 2, _ => 0 };
         RendererBox.SelectionChanged += Renderer_Changed;
         UpdateRendererHint();
+        MetalBudgetRow.IsVisible = OperatingSystem.IsMacOS() && MacSupport.MetalAvailable;
+        MetalBudgetHighItem.IsVisible = MacSupport.CanUseHighBudget;
+        if (!MacSupport.CanUseHighBudget && config.MetalMemoryBudget == 8120) config.MetalMemoryBudget = 5120;
+        MetalBudgetBox.SelectedIndex = config.MetalMemoryBudget switch { 8120 => 2, 6144 => 1, _ => 0 };
+        MetalBudgetBox.SelectionChanged += MetalBudget_Changed;
+        UpdateMetalBudgetHint();
         NightlyBox.IsChecked = config.IncludePrereleases;
         AutoUpdateBox.IsChecked = config.AutoUpdateLauncher;
         AutoUpdateBox.IsEnabled = updater.IsInstalled;
@@ -184,6 +190,26 @@ public sealed partial class MainWindow : Window
             "auto" => $"Auto: {effective}" + (vulkan ? " (Vulkan loader found)." : MacSupport.MetalAvailable ? " (no Vulkan loader)." : "."),
             "metal" => MacSupport.MetalAvailable ? "Metal (native)." : "Metal is not available on this Mac; Auto uses Vulkan.",
             _ => vulkan ? "Vulkan (MoltenVK loader found)." : "Vulkan loader not found. Use Auto/Metal or install it with Setup.",
+        };
+    }
+
+    void MetalBudget_Changed(object? sender, SelectionChangedEventArgs e)
+    {
+        if (MetalBudgetBox.SelectedItem is ComboBoxItem { Tag: string tag } && int.TryParse(tag, out int mb))
+        {
+            config.MetalMemoryBudget = mb;
+            UpdateMetalBudgetHint();
+            Status($"Metal memory budget: {config.MetalMemoryBudget} MB.");
+        }
+    }
+
+    void UpdateMetalBudgetHint()
+    {
+        MetalBudgetHint.Text = config.MetalMemoryBudget switch
+        {
+            8120 => "High: keeps the most textures, terrain and objects resident. Best on a 16 GB-or-larger Mac with other memory-heavy apps closed.",
+            6144 => "Balanced: more resident detail than Safe, with some headroom for macOS and other apps.",
+            _ => "Safe: the conservative default; the guard shortens ranges and evicts caches sooner.",
         };
     }
 
@@ -907,6 +933,9 @@ public sealed partial class MainWindow : Window
             UseShellExecute = false,
         };
         start.Environment[GameInstall.EnvironmentVariable] = install.Root;
+        // The Metal GPU cull is experimental and has caused GPU progress timeouts; it is not a user setting.
+        start.Environment.Remove("MEITOU_METAL_GPU_CULL");
+        start.Environment.Remove("MEITOU_METAL_GPU_BUDGET_MB");
         string? renderer = null;
         bool metalFallback = false;
         if (OperatingSystem.IsMacOS())
@@ -933,7 +962,10 @@ public sealed partial class MainWindow : Window
             }
             metalFallback = requested == "vulkan" && renderer == "metal";
             if (renderer == "metal")
+            {
                 start.Environment.Remove("DYLD_LIBRARY_PATH");
+                start.Environment["MEITOU_METAL_GPU_BUDGET_MB"] = config.MetalMemoryBudget.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            }
             else if (!MacSupport.AddVulkanEnvironment(start.Environment))
             {
                 Status(MacSupport.MetalAvailable && !metalSupported

@@ -14,6 +14,9 @@ Released with tags `launcher-v<version>` by `.github/workflows/launcher-release.
   CrossOver and Whisky locations.
 - The launcher reads the release's `settings-schema.json` `renderers` list, so a Vulkan-only release does not claim Metal
   support.
+- macOS Metal has a **memory budget** in Settings: Safe 5120 MB, Balanced 6144 MB, High 8120 MB on 16 GB-or-larger Macs.
+  It is passed to the game as a soft allocation guard; the launcher also clears the experimental GPU-cull environment
+  switch so users cannot turn on the path that caused GPU progress timeouts.
 
 ## v1.1.2
 

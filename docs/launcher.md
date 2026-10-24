@@ -102,7 +102,7 @@ Native dependencies off Windows:
 
 The launcher's data folder (its program, once installed, is Velopack's, e.g. `%LocalAppData%/MeitouLauncher`) is `%LocalAppData%/Meitou`, `~/.local/share/Meitou` or `~/Library/Application Support/Meitou`, the same
 folder as the game's caches (shader cache, LODs, navmesh). Beside them it holds
-`launcher.json` (Kenshi folder, install folder, channel, chosen version, launch arguments, renderer, presets) and is the game's working directory.
+`launcher.json` (Kenshi folder, install folder, channel, chosen version, launch arguments, renderer, Metal memory budget, presets) and is the game's working directory.
 The game runs from that folder, so its `meitou.user.json` (and anything else it writes to the working directory) is shared by all
 versions. The game gets the Kenshi folder through `KENSHI_PATH`. On macOS, **Vulkan** gets `DYLD_LIBRARY_PATH` pointing at the
 launcher's `vulkan/` folder (symlinks to `libvulkan.1.dylib` and `libMoltenVK.dylib`, with the sources found under Homebrew) plus the
@@ -123,6 +123,12 @@ Vulkan is the reference path and stays selectable; its **Setup** button copies `
 brew.sh, and **Check** re-detects the loader. Metal starts without the Vulkan loader and without Homebrew on
 `DYLD_LIBRARY_PATH`. The launcher reads the release's `settings-schema.json` `renderers` list, so a Vulkan-only release does not
 silently claim Metal support. The launcher runs installed GitHub releases, not local checkouts.
+
+On Apple silicon, Settings also has a **Metal memory budget**: Safe 5120 MB (default), Balanced 6144 MB and, on 16 GB-or-larger
+Macs, High 8120 MB. It is the game's soft `VramGuard` ceiling, not a hard VRAM reservation; Apple silicon uses unified memory
+shared with macOS and other apps. The launcher passes it as `MEITOU_METAL_GPU_BUDGET_MB` only when it starts Metal. The
+experimental GPU foliage cull is deliberately not exposed here or in the game: it has caused GPU progress timeouts, so the
+launcher clears any inherited `MEITOU_METAL_GPU_CULL` before Play.
 
 ### Kenshi data
 

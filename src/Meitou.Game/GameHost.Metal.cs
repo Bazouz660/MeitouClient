@@ -264,15 +264,15 @@ sealed partial class GameHost
         bool terrainTexturesOff = Environment.GetEnvironmentVariable("MEITOU_METAL_NO_TERRAIN_TEXTURES") == "1";
         if (terrainTexturesOff) Console.WriteLine("metal     terrain textures disabled (MEITOU_METAL_NO_TERRAIN_TEXTURES=1)");
         bool metalParticles = Environment.GetEnvironmentVariable("MEITOU_METAL_NO_PARTICLES") != "1";
-        // Upstream's ground relief is off on Metal until its height-array sampling is validated on the
-        // M1 Pro: the full-screen/parallax path caused a GPU progress timeout on 2026-10-23. The
-        // Vulkan reference keeps it on. Set MEITOU_METAL_GROUND_RELIEF=1 to opt in for a test.
-        bool metalGroundRelief = Environment.GetEnvironmentVariable("MEITOU_METAL_GROUND_RELIEF") is "1" or "true";
+        // Upstream ground relief is on by default on Metal (validated with the 2026-10-24 run); the
+        // experimental GPU cull, not the relief, caused the earlier progress timeouts.
+        // MEITOU_METAL_GROUND_RELIEF=0 disables it for an A/B.
+        bool metalGroundRelief = Environment.GetEnvironmentVariable("MEITOU_METAL_GROUND_RELIEF") is not ("0" or "false");
         GroundRelief.Enabled = metalGroundRelief;
         GroundRelief.ParallaxActive = metalGroundRelief;
         Console.WriteLine(metalGroundRelief
-            ? "metal     ground relief on (MEITOU_METAL_GROUND_RELIEF=1)"
-            : "metal     ground relief off (MEITOU_METAL_GROUND_RELIEF=1 enables the upstream parallax path)");
+            ? "metal     ground relief on (MEITOU_METAL_GROUND_RELIEF=0 disables it)"
+            : "metal     ground relief off (MEITOU_METAL_GROUND_RELIEF=0)");
         var worldGpu = WorldFrame.CreateGpu(ctx, install, scene, assets, o, interactive: true,
             terrainTextures: !terrainTexturesOff, particlesEnabled: metalParticles, objectLoadBudget: 0,
             vramSample: guardEnabled ? () => ((ulong)ctx.Device.CurrentAllocatedSize, memoryBudget) : null);

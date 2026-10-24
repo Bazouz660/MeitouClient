@@ -35,9 +35,9 @@ public sealed class MetalCommandList : IGpuCommandList
     bool depthStateKnown, depthTest, depthWrite;
     DepthFunction depthOp;
     long epoch;
-    // The 2026-10-23 redundancy filters are opt-in after the Metal GPU progress timeouts: the plain path
-    // reissues the state, as it did before the optimization. MEITOU_METAL_FAST_STATE=1 restores the cache.
-    static readonly bool CacheEncoderState = Environment.GetEnvironmentVariable("MEITOU_METAL_FAST_STATE") is "1" or "true";
+    // The redundancy filters are on by default (validated in the 2026-10-24 Metal run); MEITOU_METAL_NO_STATE_CACHE=1
+    // reissues every state for an A/B. They are independent of the experimental GPU cull.
+    static readonly bool CacheEncoderState = Environment.GetEnvironmentVariable("MEITOU_METAL_NO_STATE_CACHE") != "1";
     // Metal keeps these bound for the encoder's lifetime. Skip a bind that would write the same buffer and offset
     // again; Xcode's API insights otherwise report dozens of redundant binds in a busy scene encoder.
     readonly MTLBuffer[] vertexBufferState = new MTLBuffer[64];
