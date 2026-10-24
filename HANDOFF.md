@@ -2,7 +2,7 @@
 
 Repository: `/Users/daniilmiroshnykov/code/dotnet/MeitouClient`  
 Branch: `metal-spike`  
-Last code commit: `dd740827 feat: run water through the native bindless atmosphere`
+Last code commit: `ed46a09b feat: make MetalFX scales preset-only`
 
 State: functional opt-in Metal preview; **not 100% Vulkan effect parity**. **MEP-1, MEP-2, MEP-3 and MEP-5 are accepted**
 (2026-10-24: MetalFX temporal stability; reflection MSAA/characters; native bindless atmosphere-lit debris; native
