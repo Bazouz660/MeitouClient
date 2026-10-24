@@ -26,6 +26,7 @@ sealed partial class GameHost
             if (nav is not null) population!.ZoneGate = zone => nav.Walkability.World.Contains(zone);
             loadedSave = null; preparedBase = null; worldEpoch++;
             SettleNewWorld();
+            DisposeTitleScene(); // re-read the latest Continue save after the campaign or its character appearances changed
             player.ShowMainMenu();
             AudioMainMenu();
             return null;

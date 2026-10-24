@@ -68,7 +68,7 @@ sealed class TitleComposition
     /// <summary>The staged ridge (<see cref="WorldObjectRenderer.Staged"/>), empty when the cliff feature or the outcrop mesh is missing.</summary>
     public IReadOnlyList<PlacedMesh> Staged { get; }
 
-    public TitleComposition(GameInstall install, GameDatabase database, Func<float, float, float> ground, string character)
+    public TitleComposition(GameInstall install, GameDatabase database, Func<float, float, float> ground, string character, CharacterAppearance? savedCharacter = null)
     {
         var view = new WorldCamera();
         Place(view);
@@ -83,14 +83,17 @@ sealed class TitleComposition
         Ruins = new(RuinCentre, RuinRadius, left * RuinMove, name => name.StartsWith("Ghost", StringComparison.Ordinal), ground);
         var gear = new[] { "Iron Hat", "Dustcoat", "Drifter's Leather Pants", "Drifter's Boots", "Katana", "Small Backpack" }
             .Where(n => database.Records.Values.Any(r => r.Name == n)).ToArray();
-        Appearance = CharacterAppearance.Build(database, install.Root, character, new CharacterOptions { Female = false, Naked = true, Equip = gear });
+        Appearance = savedCharacter ?? CharacterAppearance.Build(database, install.Root, character, new CharacterOptions { Female = false, Naked = true, Equip = gear });
         // A strongish build that reads from behind: more muscle, broader shoulders and back, thicker arms and neck.
-        var shape = CharacterShape.InputFor(database, Appearance);
-        var sliders = new Dictionary<string, float>(shape.Sliders, StringComparer.Ordinal)
+        if (savedCharacter is null)
         {
-            ["Shoulders"] = 111, ["Frame"] = 105, ["Chest"] = 106, ["Arm bulk"] = 110, ["Neck width"] = 106, ["Waist"] = 99,
-        };
-        Appearance.Shape = shape with { Muscle = 0.6f, Sliders = sliders };
+            var shape = CharacterShape.InputFor(database, Appearance);
+            var sliders = new Dictionary<string, float>(shape.Sliders, StringComparer.Ordinal)
+            {
+                ["Shoulders"] = 111, ["Frame"] = 105, ["Chest"] = 106, ["Arm bulk"] = 110, ["Neck width"] = 106, ["Waist"] = 99,
+            };
+            Appearance.Shape = shape with { Muscle = 0.6f, Sliders = sliders };
+        }
     }
 
     /// <summary>
