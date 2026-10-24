@@ -55,9 +55,13 @@ and stealth x 5). Each looker keeps a meter per target (`SensoryData::SpottingPe
 - Seen (result 1) when the meter was above 1 before this check; else result 2 (noticing). No line of sight: result 0.
 - Not in view: the meter empties by dt / 260 (`FUN_140853aa0`) and is dropped at 0.
 - The target keeps a watcher list (+0x1f0, `FUN_140855f30`): level and time per looker; level 0 removes it.
-  `FUN_1408586d0` draws, for entries younger than 4 s, a short pointer at the sneaker (12 up, length
-  min(d - 7, 15) towards the looker): red 0xdd0000 detected, yellow 0xffdd00 noticing, green 0x00ff00 when a
-  looker test (vtable +0x3f0, **Unknown**) passes. The sneaker's state +0xe8 becomes 1 (any red) or 2 (any yellow).
+  `FUN_1408586d0` shows, for entries younger than 4 s, an `arrow.mesh` entity per looker (`FUN_1405dc7d0`, pooled, render
+  queue 0x57): dir = looker - sneaker (3D), tail at sneaker + (0, 12, 0) + dir x min(|dir| - 7, 15) (no skip when negative),
+  turned from -X onto dir, unscaled. The mesh runs from its origin (shaft radius 0.5) to the tip at -X 10, head ±1.2
+  (**Verified**, read with `OgreMeshReader`). Colour red 0xdd0000 detected, yellow 0xffdd00 noticing, green 0x00ff00 when a
+  looker test (vtable +0x3f0, **Unknown**) passes. Material (`FUN_1409b7830`): `debug_marker` cloned as `debug_#rrggbb`,
+  pass 0 `colour` = (rgb, 1); with its last argument set (this call) pass 1 is kept as (rgb, 0.2), else removed. The
+  sneaker's state +0xe8 becomes 1 (any red) or 2 (any yellow).
 - Name tag (`FUN_1406e8100`, colours loaded in `FUN_1406eb3a0`): shown within 10954 of the camera (1.2e8
   squared). Tag state 1/2/3 tints a stealth icon with the GUI colours `NameTagStealthHidden` / `AlmostSeen` / `Seen`,
   fallbacks (0.25, 0.521, 0.745), (0.745, 0.721, 0.25), (0.745, 0.25, 0.29) (**Verified** literals; the GUI XML may
@@ -70,7 +74,7 @@ and stealth x 5). Each looker keeps a meter per target (`SensoryData::SpottingPe
 Meitou: meters only for hostile/police lookers the aggro scan runs, no line-of-sight ray, f = 0.5, dt = the scan interval,
 a meter decays also when the target is out of range (the original's rule there is **Unknown**). Crime witnesses keep the
 same meters on a sneaking culprit in `CrimeSystem` (any faction, not just hostile lookers). A sneaking player
-character gets the pointers (from 0.35 of their length to the tip, with a head) and the original's stealth icon left of its name in the tag
+character gets the arrows (`MarkerRenderer`, both passes like the movement marker, lit by the sun; no green) and the original's stealth icon left of its name in the tag
 colours: seen if any watcher detects, almost seen if any notices, else hidden, and the light-level icon from its `SightMap` light.
 Every player character within the 1.2e8 range gets the `Kenshi_CharacterNamePanel` over its head (name in `Kenshi_StandardFont_Large` with shadow, selected: white in [brackets], else #b3b3b3 (**Observed**); the icon only while sneaking); NPCs get none
 (**Observed** in the original, not verified against `FUN_1406e8100`).

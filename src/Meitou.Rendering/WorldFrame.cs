@@ -616,7 +616,7 @@ static class WorldFrame
         /// <summary>The weather's particle effects (null while there are none: a clear weather, or <c>--no-particles</c>); <see cref="EnsureParticles"/> makes it.</summary>
         public ParticleRenderer? Particles;
         /// <summary>The movement marker the game interface shows after a ground move order (null in the viewer, or without <c>position.mesh</c>).</summary>
-        public MoveMarkerRenderer? MoveMarker;
+        public MarkerRenderer? Markers;
         /// <summary>The blood decals on the ground (null in the viewer, or with the game's <c>Blood</c> setting off) and the host's decals they draw (docs/game/blood-decals.md).</summary>
         public TerrainDecalRenderer? Decals;
         public TerrainDecalStore? DecalStore;
@@ -688,7 +688,7 @@ static class WorldFrame
             Characters?.Dispose();
             Objects?.Dispose();
             Particles?.Dispose();
-            MoveMarker?.Dispose();
+            Markers?.Dispose();
             Decals?.Dispose();
             Debris?.Dispose();
             InteriorMask?.Dispose();
@@ -1516,8 +1516,8 @@ static class WorldFrame
         post.MarkParticles();
         if (gpu.Post is { } coverageTarget) coverageTarget.Particles = gpu.Particles;
         gpu.Post?.End(); // SSAO, upscaler, exposure, tone map, FXAA into gpu.Post.Target
-        // The movement marker over the finished picture, in the material's own colours, sorted against the near slice's depth like the game's debug_marker.
-        if (gpu.MoveMarker is { Strength: > 0 } marker && particleNear > 0 && gpu.Post is { Target: { } picture } markerPost)
+        // The movement marker and stealth arrows over the finished picture, in their materials' colours, sorted against the near slice's depth like the game's debug_marker.
+        if (gpu.Markers is { Active: true } marker && particleNear > 0 && gpu.Post is { Target: { } picture } markerPost)
         {
             var (markerNear, markerFar) = camera.Slices().Last();
             marker.Record(picture, width, height, markerPost.SceneDepth, markerPost.RenderWidth, markerPost.RenderHeight, view * camera.Projection(aspect, markerNear, markerFar), eye, sun);

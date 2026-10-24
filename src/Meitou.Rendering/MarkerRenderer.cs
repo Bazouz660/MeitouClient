@@ -6,28 +6,36 @@ using Meitou.Rendering.Gpu;
 namespace Meitou.Rendering;
 
 /// <summary>
-/// The movement marker (docs/game/ui-input.md "Movement marker"): <c>position.mesh</c> scaled 8 at <see cref="At"/>, in the two passes of the
-/// game's <c>debug_marker</c> material: the visible part lit as <c>Basic_Lit_VP</c> lights it (contrast 0.5) and alpha blended, then the part
-/// behind the scene darker and fainter. The game interface sets <see cref="At"/> and <see cref="Strength"/>; nothing is drawn at strength 0.
+/// The game's <c>debug_marker</c> entities, in the material's two passes: the visible part lit as <c>Basic_Lit_VP</c> lights it (contrast 0.5)
+/// and alpha blended, then the part behind the scene in the pass's own colour. Two kinds: the movement marker (docs/game/ui-input.md "Movement
+/// marker"), <c>position.mesh</c> scaled 8 at <see cref="At"/>, nothing drawn at <see cref="Strength"/> 0; and the stealth arrows
+/// (docs/game/perception.md "Spotting a sneaker"), one <c>arrow.mesh</c> per entry of <see cref="Arrows"/>. The game interface sets both.
 /// </summary>
-public sealed unsafe class MoveMarkerRenderer : IDisposable
+public sealed unsafe class MarkerRenderer : IDisposable
 {
-    const float Scale = 8, Contrast = 0.5f;
+    const float MarkerScale = 8, Contrast = 0.5f;
     static readonly Vector4 Visible = new(0.612f, 0.694f, 0.529f, 1), Hidden = new(0.306f, 0.347f, 0.2645f, 0.6f);
+    /// <summary>The alpha of an arrow's part behind the scene (the stealth call's second pass, <c>FUN_1409b7830</c>).</summary>
+    const float ArrowHiddenAlpha = 0.2f;
+
+    /// <summary>A stealth arrow: its tail at <see cref="At"/>, pointing along the unit <see cref="Direction"/>, in <see cref="Colour"/>.</summary>
+    public readonly record struct Arrow(Vector3 At, Vector3 Direction, Vector3 Colour);
 
     const string Vertex = """
         #version 330 core
         layout(location = 0) in vec3 aPos;
         layout(location = 1) in vec3 aNormal;
         uniform mat4 uViewProjection;   // world-from-camera-relative included: the offset is relative to the eye
+        uniform mat4 uRotation;
         uniform vec3 uOffset;
         uniform vec3 uSun;
         uniform vec4 uColour;
         out vec4 vColour;
         void main()
         {
-            gl_Position = uViewProjection * vec4(uOffset + aPos, 1.0);
-            vColour = vec4(uColour.rgb * (clamp(dot(aNormal, uSun), 0.0, 1.0) * 0.5 + 0.5), uColour.a);
+            gl_Position = uViewProjection * vec4(uOffset + (uRotation * vec4(aPos, 0.0)).xyz, 1.0);
+            vec3 normal = (uRotation * vec4(aNormal, 0.0)).xyz;
+            vColour = vec4(uColour.rgb * (clamp(dot(normal, uSun), 0.0, 1.0) * 0.5 + 0.5), uColour.a);
         }
         """;
 
@@ -47,7 +55,7 @@ public sealed unsafe class MoveMarkerRenderer : IDisposable
         }
         """;
 
-    // The resolved marker over the picture (a full-screen triangle).
+    // The resolved markers over the picture (a full-screen triangle).
     const string CompositeVertex = """
         #version 330 core
         void main() { gl_Position = vec4(vec2((gl_VertexID << 1) & 2, gl_VertexID & 2) * 2.0 - 1.0, 0.0, 1.0); }
@@ -60,7 +68,7 @@ public sealed unsafe class MoveMarkerRenderer : IDisposable
         void main() { fragColour = texelFetch(uMarker, ivec2(gl_FragCoord.xy), 0); }
         """;
 
-    /// <summary>Samples per pixel of the marker (anti-aliasing: the mesh has many triangles under a pixel; at most what the device allows).</summary>
+    /// <summary>Samples per pixel of the markers (anti-aliasing: the meshes have many triangles under a pixel; at most what the device allows).</summary>
     const int WantedSamples = 8;
 
     readonly GpuContext gpu;
@@ -69,42 +77,47 @@ public sealed unsafe class MoveMarkerRenderer : IDisposable
     readonly DeviceBuffer vertices;
     readonly VertexArrayBindings vertexSource;
     readonly BufferBinding[] bindings = new BufferBinding[2];
-    readonly UniformHandle viewProjection, offset, sun, colour, depthScale, hiddenPass;
+    readonly UniformHandle viewProjection, rotation, offset, sun, colour, depthScale, hiddenPass;
     readonly SamplerSlot sceneDepth;
     readonly LegacyProgram composite;
     readonly NativeSegment compositeSegment;
     readonly SamplerSlot markerImage;
-    // The marker drawn multisampled with a depth of its own, at the picture's size, and resolved.
+    // The markers drawn multisampled with a depth of their own, at the picture's size, and resolved.
     Texture? msColour, msDepth, resolved;
     int samples;
-    readonly int count;
+    // The vertex ranges of the two meshes in the buffer (count 0: the mesh is missing).
+    readonly (int First, int Count) marker, arrow;
 
-    /// <summary>Where the marker stands (the ground point of the move order).</summary>
+    /// <summary>Where the movement marker stands (the ground point of the move order).</summary>
     public Vector3 At { get; set; }
     /// <summary>1 when the order is given, down to 0 (gone).</summary>
     public float Strength { get; set; }
+    /// <summary>This frame's stealth arrows, replaced whole each frame (empty: none; ignored without <c>arrow.mesh</c>).</summary>
+    public Arrow[] Arrows { get; set; } = [];
 
-    MoveMarkerRenderer(GpuContext gpu, float[] data)
+    MarkerRenderer(GpuContext gpu, float[] data, (int, int) marker, (int, int) arrow)
     {
         this.gpu = gpu;
-        count = data.Length / 6;
-        program = LegacyProgram.Create(gpu, Vertex, Fragment, "move marker");
-        segment = new NativeSegment(gpu, program, Silk.NET.Vulkan.PrimitiveTopology.TriangleList, "move marker");
+        this.marker = marker;
+        this.arrow = arrow;
+        program = LegacyProgram.Create(gpu, Vertex, Fragment, "markers");
+        segment = new NativeSegment(gpu, program, Silk.NET.Vulkan.PrimitiveTopology.TriangleList, "markers");
         viewProjection = program.Uniform("uViewProjection");
+        rotation = program.Uniform("uRotation");
         offset = program.Uniform("uOffset");
         sun = program.Uniform("uSun");
         colour = program.Uniform("uColour");
         depthScale = program.Uniform("uDepthScale");
         hiddenPass = program.Uniform("uHidden");
         sceneDepth = program.Sampler("uSceneDepth");
-        composite = LegacyProgram.Create(gpu, CompositeVertex, CompositeFragment, "move marker composite");
-        compositeSegment = new NativeSegment(gpu, composite, Silk.NET.Vulkan.PrimitiveTopology.TriangleList, "move marker composite");
+        composite = LegacyProgram.Create(gpu, CompositeVertex, CompositeFragment, "markers composite");
+        compositeSegment = new NativeSegment(gpu, composite, Silk.NET.Vulkan.PrimitiveTopology.TriangleList, "markers composite");
         markerImage = composite.Sampler("uMarker");
         var l = gpu.Device.Limits;
         uint both = (uint)(l.FramebufferColorSampleCounts & l.FramebufferDepthSampleCounts);
         samples = 1;
         while (samples < WantedSamples && (both & (uint)(samples * 2)) != 0) samples *= 2;
-        vertices = DeviceBuffer.Create(gpu, sizeof(float) * (ulong)data.Length, BufferUse.Vertex, "move marker");
+        vertices = DeviceBuffer.Create(gpu, sizeof(float) * (ulong)data.Length, BufferUse.Vertex, "markers");
         using (var batch = gpu.Uploads.Begin()) batch.Write(vertices, 0, MemoryMarshal.AsBytes(data.AsSpan()));
         vertexSource = new VertexArrayBindings(
         [
@@ -113,14 +126,23 @@ public sealed unsafe class MoveMarkerRenderer : IDisposable
         ], default);
     }
 
-    /// <summary>The marker from <c>position.mesh</c> (null when the file is missing or unreadable).</summary>
-    public static MoveMarkerRenderer? Create(GpuContext gpu, Func<string, string?> find)
+    /// <summary>The markers from <c>position.mesh</c> and <c>arrow.mesh</c> (null when neither is readable; a missing one is not drawn).</summary>
+    public static MarkerRenderer? Create(GpuContext gpu, Func<string, string?> find)
     {
-        if (find("position.mesh") is not { } path) return null;
+        var data = new List<float>();
+        var marker = Append(data, find, "position.mesh", MarkerScale);
+        var arrow = Append(data, find, "arrow.mesh", 1);
+        return data.Count == 0 ? null : new MarkerRenderer(gpu, [.. data], marker, arrow);
+    }
+
+    /// <summary>Appends a mesh's triangles (position and normal, scaled) to <paramref name="data"/>: its vertex range there.</summary>
+    static (int First, int Count) Append(List<float> data, Func<string, string?> find, string name, float scale)
+    {
+        int first = data.Count / 6;
+        if (find(name) is not { } path) return (first, 0);
         try
         {
             var mesh = OgreMeshReader.ReadFile(path);
-            var data = new List<float>();
             foreach (var sub in mesh.SubMeshes)
             {
                 if (sub.Operation != OgreOperationType.TriangleList || (sub.VertexData ?? mesh.SharedVertexData) is not { } v || v.ReadPositions() is not { } positions) continue;
@@ -133,39 +155,43 @@ public sealed unsafe class MoveMarkerRenderer : IDisposable
                     for (int k = 0; k < 3; k++)
                     {
                         uint i = indices[t + k];
-                        var p = positions[i] * Scale;
+                        var p = positions[i] * scale;
                         var normal = normals is null ? face : Vector3.Normalize(new Vector3(normals[i * 3], normals[i * 3 + 1], normals[i * 3 + 2]));
                         data.AddRange([p.X, p.Y, p.Z, normal.X, normal.Y, normal.Z]);
                     }
                 }
             }
-            return data.Count == 0 ? null : new MoveMarkerRenderer(gpu, [.. data]);
         }
         catch (Exception e) when (e is IOException or InvalidDataException)
         {
-            Console.Error.WriteLine($"move marker skipped: {e.Message}");
-            return null;
+            Console.Error.WriteLine($"{name} skipped: {e.Message}");
+            data.RemoveRange(first * 6, data.Count - first * 6);
         }
+        return (first, data.Count / 6 - first);
     }
+
+    /// <summary>Whether anything is to be drawn this frame.</summary>
+    public bool Active => Strength > 0 && marker.Count > 0 || Arrows.Length > 0 && arrow.Count > 0;
 
     /// <summary>
     /// Draws over the finished <paramref name="picture"/> (after the tone map, so the colours come out as the material gives them, whatever the
-    /// exposure): the visible part, then the part behind the scene, each fragment sorted by the near slice's <paramref name="nearDepth"/>
-    /// (<paramref name="renderWidth"/> × <paramref name="renderHeight"/> of it used). The marker is drawn multisampled into targets of its own (its
-    /// own depth hides its far side), resolved, and blended over the picture. Depth is clamped, so a marker beyond the near slice is drawn whole.
+    /// exposure): the visible parts, then the parts behind the scene, each fragment sorted by the near slice's <paramref name="nearDepth"/>
+    /// (<paramref name="renderWidth"/> × <paramref name="renderHeight"/> of it used). The markers are drawn multisampled into targets of their own
+    /// (their own depth hides their far sides), resolved, and blended over the picture. Depth is clamped, so a marker beyond the near slice is drawn whole.
     /// </summary>
     public void Record(Texture picture, int width, int height, Texture nearDepth, int renderWidth, int renderHeight, Matrix4x4 nearViewProjection, Vector3 eye, Vector3 sunDirection)
     {
-        if (Strength <= 0 || width <= 0 || height <= 0) return;
+        if (!Active || width <= 0 || height <= 0) return;
         if (msColour is null || msColour.Desc.Width != width || msColour.Desc.Height != height)
         {
             msColour?.Dispose(); msDepth?.Dispose(); resolved?.Dispose();
             var sampled = samples > 1 ? TextureUse.TransferSrc : TextureUse.Sampled;
-            msColour = Texture.Create(gpu, new TextureDesc(Silk.NET.Vulkan.Format.R8G8B8A8Unorm, width, height, Samples: samples, Use: TextureUse.ColourTarget | sampled, Name: "move marker colour"));
-            msDepth = Texture.Create(gpu, new TextureDesc(Silk.NET.Vulkan.Format.D32Sfloat, width, height, Samples: samples, Use: TextureUse.DepthTarget, Name: "move marker depth"));
-            resolved = samples > 1 ? Texture.Create(gpu, new TextureDesc(Silk.NET.Vulkan.Format.R8G8B8A8Unorm, width, height, Use: TextureUse.Sampled | TextureUse.TransferDst, Name: "move marker resolved")) : msColour;
+            msColour = Texture.Create(gpu, new TextureDesc(Silk.NET.Vulkan.Format.R8G8B8A8Unorm, width, height, Samples: samples, Use: TextureUse.ColourTarget | sampled, Name: "markers colour"));
+            msDepth = Texture.Create(gpu, new TextureDesc(Silk.NET.Vulkan.Format.D32Sfloat, width, height, Samples: samples, Use: TextureUse.DepthTarget, Name: "markers depth"));
+            resolved = samples > 1 ? Texture.Create(gpu, new TextureDesc(Silk.NET.Vulkan.Format.R8G8B8A8Unorm, width, height, Use: TextureUse.Sampled | TextureUse.TransferDst, Name: "markers resolved")) : msColour;
         }
-        var cmd = gpu.BeginNative("move marker");
+        var arrows = Arrows;
+        var cmd = gpu.BeginNative("markers");
         var viewport = new Silk.NET.Vulkan.Viewport(0, 0, width, height, 0, 1);
         var t = PassTargets.Of(msColour, msDepth).At(viewport);
         t = t with
@@ -176,7 +202,6 @@ public sealed unsafe class MoveMarkerRenderer : IDisposable
         cmd.BeginRendering(t.Rendering);
         var vp = Matrix4x4.CreateTranslation(eye) * nearViewProjection;
         program.Set(viewProjection, in vp);
-        program.Set(offset, At - eye);
         program.Set(sun, sunDirection);
         program.Set(depthScale, renderWidth / (float)width, renderHeight / (float)height);
         program.Bind(sceneDepth, new SampledTexture(Nearest(), nearDepth.View(), nearDepth.Image));
@@ -186,16 +211,20 @@ public sealed unsafe class MoveMarkerRenderer : IDisposable
             bool hidden = pass == 1;
             var state = DrawState.For(t.Formats, gpu.Device.DepthClamp, cull: Silk.NET.Vulkan.CullModeFlags.BackBit, depthTest: true, depthWrite: !hidden,
                 compare: Silk.NET.Vulkan.CompareOp.LessOrEqual, blend: premultiplied, depthClamp: gpu.Device.DepthClamp, front: GlConventions.FrontFace(FrontFaceDirection.Ccw));
-            var c = hidden ? Hidden : Visible;
-            program.Set(colour, c.X, c.Y, c.Z, c.W * Strength);
             program.Set(hiddenPass, hidden ? 1 : 0);
             state.Record(cmd, t);
             cmd.BindPipeline(segment.Get(state, t.Formats, vertexSource));
             bindings[0] = new BufferBinding(vertices.Handle, 0);
             bindings[1] = new BufferBinding(vertices.Handle, 12);
             cmd.BindVertexBuffers(0, bindings);
-            program.Flush(cmd);
-            cmd.Draw((uint)count, 1, 0, 0);
+            if (Strength > 0 && marker.Count > 0)
+            {
+                var c = hidden ? Hidden : Visible;
+                Draw(cmd, marker, At - eye, Matrix4x4.Identity, new Vector4(c.X, c.Y, c.Z, c.W * Strength));
+            }
+            if (arrow.Count > 0)
+                foreach (var a in arrows)
+                    Draw(cmd, arrow, a.At - eye, PointAlong(a.Direction), new Vector4(a.Colour, hidden ? ArrowHiddenAlpha : 1));
         }
         cmd.EndRendering();
         cmd.Barrier(BarrierBatch.Full);
@@ -214,6 +243,25 @@ public sealed unsafe class MoveMarkerRenderer : IDisposable
         cmd.Draw(3);
         cmd.EndRendering();
         gpu.EndNative(cmd);
+    }
+
+    void Draw(CommandList cmd, (int First, int Count) mesh, Vector3 relative, Matrix4x4 turn, Vector4 c)
+    {
+        program.Set(offset, relative);
+        program.Set(rotation, in turn);
+        program.Set(colour, c);
+        program.Flush(cmd);
+        cmd.Draw((uint)mesh.Count, 1, (uint)mesh.First, 0);
+    }
+
+    /// <summary>The turn taking the arrow mesh's −X (its tip) onto <paramref name="direction"/> (Ogre's <c>getRotationTo</c>; opposite: half a turn about Y).</summary>
+    static Matrix4x4 PointAlong(Vector3 direction)
+    {
+        var from = -Vector3.UnitX;
+        float dot = Vector3.Dot(from, direction);
+        if (dot >= 1 - 1e-6f) return Matrix4x4.Identity;
+        if (dot <= -1 + 1e-6f) return Matrix4x4.CreateRotationY(MathF.PI);
+        return Matrix4x4.CreateFromQuaternion(Quaternion.Normalize(new Quaternion(Vector3.Cross(from, direction), 1 + dot)));
     }
 
     Silk.NET.Vulkan.Sampler Nearest() => gpu.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Nearest, TextureMagFilter.Nearest, TextureWrapMode.ClampToEdge,

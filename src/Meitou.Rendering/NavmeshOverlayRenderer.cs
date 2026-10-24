@@ -6,7 +6,7 @@ namespace Meitou.Rendering;
 
 /// <summary>
 /// A debug view of the navigation mesh (Meitou only, docs/game/pathfinding.md "Meitou debug view"): translucent polygons and their edges over the finished picture,
-/// fainter where the scene hides them (sorted against the near slice's depth like <see cref="MoveMarkerRenderer"/>). The host hands it the geometry with
+/// fainter where the scene hides them (sorted against the near slice's depth like <see cref="MarkerRenderer"/>). The host hands it the geometry with
 /// <see cref="SetMesh"/>, camera-independent, relative to an origin; nothing is drawn until then or while <see cref="Visible"/> is false.
 /// </summary>
 public sealed unsafe class NavmeshOverlayRenderer : IDisposable

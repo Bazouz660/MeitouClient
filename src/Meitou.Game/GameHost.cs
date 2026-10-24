@@ -214,7 +214,7 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
         // The region (BIOME_GROUP) under a point and the wind at the camera, for the biome banner and the prospecting window.
         player.RegionAt = (x, z) => gpu.Weather?.World.RegionAt(x, z).Def is { } def ? (def.StringId, def.Name) : null;
         player.WindSpeed = () => gpu.Weather?.State.WindSpeed ?? 0;
-        player.MoveMarker = gpu.MoveMarker ??= MoveMarkerRenderer.Create(context, assets.Find);
+        player.Markers = gpu.Markers ??= MarkerRenderer.Create(context, assets.Find);
         SetUpBlood(context);
         gpu.HoverOutline ??= new HoverOutlineRenderer(context);
         gpu.NavmeshOverlay ??= new NavmeshOverlayRenderer(context);

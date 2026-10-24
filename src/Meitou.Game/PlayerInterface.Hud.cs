@@ -147,7 +147,7 @@ sealed partial class PlayerInterface
             }
         }
 
-        DrawStealth(o);
+        UpdateStealthArrows();
         DrawFloaters(o);
         FadeMarker();
 

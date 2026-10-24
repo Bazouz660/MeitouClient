@@ -248,8 +248,8 @@ short; a piece runs from its position along its own +Z for `link length` x `scal
   for a single only when snapped (unsnapped singles and selected subsections place as one ordinary ghost). The second
   click queues every piece and, unless the end snapped or the wall is a single, a new line starts at the far end (clicks
   chain a polyline). Right click drops the line. The first click posts "Blue arrows point outwards, towards enemy.";
-  arrows (`arrow.mesh`, "bluebuilding", at rot x (0, 30, len/2), turned 180 deg, scale 2) mark each piece, which way the
-  mesh points is **Unknown**. A global flag `DAT_1421337b8` can block the first click (**Unknown**).
+  arrows (`arrow.mesh`, "bluebuilding", at rot x (0, 30, len/2), turned 180 deg, scale 2) mark each piece; the mesh's tip is at -X (see
+  [perception](perception.md#spotting-a-sneaker)), which way it ends up facing is **Unknown**. A global flag `DAT_1421337b8` can block the first click (**Unknown**).
 - **Pieces** (`FUN_14042b660`): the wall and its `wall subsections`; connector and lower wedge kept apart, the rest with a
   length sorted longest first. A single is used once per line.
 - **Straight run** (`FUN_14042a4b0`): along the horizontal start->end, capped at 10000. Terrain profile every 0.5 x the
