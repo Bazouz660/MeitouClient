@@ -222,8 +222,10 @@ Same targets as picking; Task_CutLock / Task_BruteForceLock share the shackle ta
 - **Rent cost** (UseableStuff slot 152 `FUN_140330ab0(bed, character)`): 0 with no bed faction, when the faction's flag +0x1d0 is set (**Unknown**),
   when ally(bed faction, character's) ([factions](factions-squads-towns.md) 3.3), for a `fundamental type` 8 (bandit) owner, or when the parent
   building's town is missing or of type 0, 4 or 9 (**Unknown** meaning); -1 when a further test `FUN_140621230` fails (**Unknown**) or the house has no
-  resident squad, or its template's `public beds` is false (unless the building's +0xc4 is 3, **Unknown**); else the template's `bed usage cost`,
-  x4 for a BF_SKELETON_BED (25), negative read as 0. Data (**Verified**): 928 templates `public beds` false, 31 true (bars and shops, 0 to 750 cats).
+  resident squad, or its template's `public beds` is false, unless the building's designation (+0xc4, set from the `building designation` of the
+  first squad to take it as home: `FUN_140553210`, `FUN_14057f1f0`) is 3 BD_BAR; else the template's `bed usage cost`,
+  x4 for a BF_SKELETON_BED (25), negative read as 0. Data (**Verified**): 928 templates `public beds` false, 31 true (bars and shops, 0 to 750 cats);
+  40 have designation 3, 20 of them with `public beds` false (Shop bar holy / old / black desert, Smugglers Bar, bakeries, bounty hunters, 100 cats).
 - **Payment** (`FUN_1403576c0`, player faction only): -1 → the character says "This isn't mine", refused; > 0 → free when this bed was paid less than
   24 (game hours, **Observed**) ago (a global map keyed by the name string at `+0x58` of the third argument, the empty string when null, storing the game time as a float; never saved, **Verified** by references, [save](../formats/save.md#faction-trust-war-flags-bed-rent-and-turrets)), else "Can't afford c.{1} for bed rental." and refused, or paid with
   "Paid c.{1} for bed rental.".
