@@ -47,22 +47,23 @@ public static class ArmourTooltip
         var piece = ArmourPiece.Create(a, Math.Clamp(quality, 0, 100) / 100f);
         int grade = GradeOf(quality);
         string material = a.Material == ArmourType.MetalPlate ? "Metal Plate" : a.Material.ToString();
-        return
-        [
+        var lines = new List<Line>
+        {
             new("[" + Loc.Tr("{1} Grade", Loc.Tr(GradeNames[grade])) + "]", "", LineKind.Grade, grade),
             new($"[{a.Class} Armour Class]", $"[{material}]"),
             new("-Blunt resistance", Percent(piece.BluntDefence), LineKind.Stat),
             new("-Cut resistance", Percent(piece.CutDefence), LineKind.Stat),
-            new("-Cut resistance efficiency", Percent(1 - piece.CutIntoStun), LineKind.Stat),
             new("-Harpoon resistance", ((int)(piece.PierceDefence + 0.001f)).ToString(CultureInfo.InvariantCulture) + " pts", LineKind.Stat),
-        ];
+        };
+        // The efficiency line only appears below 100 per cent (<b>Observed</b>: the wiki's vanilla Legplates print 90 %, the same item with cut into stun 0 prints none).
+        if (piece.CutIntoStun > 0) lines.Insert(4, new("-Cut resistance efficiency", Percent(1 - piece.CutIntoStun), LineKind.Stat));
+        return lines;
     }
 
     /// <summary>
     /// The lines below the price: the coverage by part and the skill effects that differ from none (<b>Observed</b> on the Samurai Armour at six grades and the Samurai Legplates). The
     /// Stealth effect is the piece's stealth factor (<see cref="ArmourPiece.StealthOf"/>); the Combat speed effect of a heavy piece is its <c>combat speed mult</c> x lerp(t, 0.9, 1)
-    /// (fits all six grades of the Samurai Armour and the Legplates; other classes are <b>Unknown</b>, so they show none). The athletics effect (0.94x on the Legplates at 0.95 whose record says
-    /// 1) and the dexterity, defence, perception and ranged bonus lines are not shown: their formulas and labels are <b>Unknown</b>.
+    /// (fits all six grades of the Samurai Armour and the Legplates; other classes are <b>Unknown</b>, so they show none). The Athletics effect of a heavy piece is its <c>athletics mult</c> x lerp(t, 0.8, 0.95) (the wiki's six grades of the Samurai Legplates, 0.8075 to 0.9425x, and the 0.94x the original printed). The dexterity, defence, perception and ranged bonus lines are not shown: their formulas and labels are <b>Unknown</b>.
     /// </summary>
     public static IReadOnlyList<Line> Tail(ArmourData a, Func<string, string?> partName, float quality)
     {
@@ -83,6 +84,7 @@ public static class ArmourTooltip
         Multiplier("Precision shooting effect", a.RangedSkillMult);
         Multiplier("Stealth effect", ArmourPiece.StealthOf(a, t));
         Multiplier("Dodge skill effect", a.DodgeMult);
+        if (a.Class == ArmourClass.Heavy) Multiplier("Athletics effect", a.AthleticsMult * WeaponStats.Lerp(t, 0.8f, 0.95f));
         if (a.Class == ArmourClass.Heavy) Multiplier("Combat speed effect", a.CombatSpeedMult * WeaponStats.Lerp(t, 0.9f, 1f));
         Multiplier("Attack damage effect", a.DamageOutputMult);
         Multiplier("Assassination skill", a.AssassinationMult);
