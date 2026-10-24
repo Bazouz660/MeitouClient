@@ -31,11 +31,12 @@ when count1, finally trader factor. Stack total: p*n-trunc(p-p*charges/maxCharge
 uses unit directly. The trade-window's split of exchanged-stock units remains **Observed/Unknown**.
 
 **Observed** trader T=buyMult*culturePrice, halved for the decoded stolen-to-player-faction case.
-**Verified** buyMult comes from trader squad template and applies both directions. Town culture
-wins over faction, default1; duplicate culture entries last-win. Trade-price percentage=v0/100,
-zero means100%. Culture also defines illegal/forbidden goods and buildings.
-**Verified** (probe of the merged base data, 2026-10-24): no UC town has a culture, so UC traders use FACTION United Cities' `empire`
-(also Traders Guild, Empire Peasants): Hashish 1200%, Bloodrum/Hemp 400%, Sake 150%, the first three illegal. Hashish elsewhere:
+**Verified** buyMult comes from trader squad template and applies both directions. **Observed** (`FUN_14079e6d0` -> `FUN_14092bec0`): the culture comes from the
+trader's town (its `isTown`, vtable 0x268): the town's culture (`Town+0x4a8`) if it names the item, else the culture of the
+**town's** faction (`getFaction`, vtable 0x58; `Faction+0x90`), never the trader's own faction; no town: 1. Duplicate culture entries
+last-win. Trade-price percentage=v0/100, zero means100%. Culture also defines illegal/forbidden goods and buildings.
+**Verified** (probe of the merged base data, 2026-10-24): no UC town has a culture, so UC towns price by FACTION United Cities'
+`empire` (also the culture of Traders Guild, Empire Peasants), for every trader there, thieves included: Hashish 1200%, Bloodrum/Hemp 400%, Sake 150%, the first three illegal. Hashish elsewhere:
 holy 400, slavers 600, shek 350, `empire SW override` towns 500, swamper 100.
 **Observed** town market factor starts uniform[1-m,1+m), m0.3, then clamps against global-town
 factors/default1 within distance/1e6*m*10. Actual setup-list membership/order remains unknown;

@@ -89,12 +89,14 @@ public sealed class Market
     public int? AveragePrice(ItemInstance item) => item.Type == FcsRecordType.ITEM && Items.Info(item.Record) is { TradeItem: true } ? BaseValue(item) : null;
 
     /// <summary>
-    /// The culture price of an item record for a trader (section 6, <c>FUN_14092bec0</c>): the trader's town culture if it has one and names the item, else the faction's, else 1.
+    /// The culture price of an item record for a trader (section 6, <c>FUN_14092bec0</c>, <b>Observed</b>): the trader's town's culture if it has one and names the item, else the
+    /// culture of the town's faction (the town's <c>getFaction</c>, not the trader's: a Shinobi thief in Sho-Battai prices by United Cities), else 1; 1 with no town.
     /// </summary>
     public float CulturePrice(string record, Trader trader)
     {
+        if ((uint)trader.Site >= (uint)data.Sites.Count) return 1;
         if (SiteCulture(trader.Site) is { } town && town.TryPrice(record, out float f)) return f;
-        return FactionCulture(trader.Faction) is { } own && own.TryPrice(record, out f) ? f : 1;
+        return FactionCulture(data.SiteFactions[trader.Site]) is { } owner && owner.TryPrice(record, out f) ? f : 1;
     }
 
     /// <summary>
