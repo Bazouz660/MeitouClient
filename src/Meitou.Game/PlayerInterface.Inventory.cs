@@ -323,6 +323,13 @@ sealed partial class PlayerInterface
         if (held is not { } h) return;
         ArrangeUi();
         var spot = DropAt(p);
+        // Meitou: let go over a squad bar portrait, it is given to that character as one in the world would be.
+        if (spot.Kind == DropKind.World && SquadBarMemberAt(p) is { } member)
+        {
+            if (h.From == ItemOwner.Of(member)) ReturnHeldItem();
+            else { SayHeld(new GiveHeld(member) { Tick = session.World.Tick }); held = null; }
+            return;
+        }
         if (spot.Kind == DropKind.World && OverHud(p)) spot = spot with { Kind = DropKind.Window };
         switch (spot.Kind)
         {
