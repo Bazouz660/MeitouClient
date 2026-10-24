@@ -710,9 +710,9 @@ Arrests, the recognition meter and the marker are hashed only while set. What a 
 - **Victim** (`IsVictim`): the nearest within sight (`RangeOf`, the rescue range; the sensed list's size is **Unknown**) that is alive, down, of a carriable race, not carried, caged or in a bed,
   not an animal, not already someone's pick, and not of the kidnapper's faction or an ally (engine reading of the **Unknown** class bits). Player characters included; sleepers in beds are not taken.
 - **Lift**: the free member (awake, not fighting, fleeing or held, able to carry, not a player character) lifts it with `CarrySystem.BeginPickUp`, then goes back to following its leader.
-  An AI squad's member starts only when a free cage of its faction is in range (the original's "all cages full" stops the goal); a campaign member always does.
+  An AI squad's member starts only when a free cage it may use is in range (the original's "all cages full" stops the goal); a campaign member always does.
 - **Carry**: a campaign carrier marches home with its squad (a retreating squad mills round its own town again, not the raid target, engine choice). Within 1.5 x the radius of a town of its faction it registers the town's fixtures (`RegisterSite`, no spawn needed) and
-  takes the best free cage of its faction in range (`FindCage`, the original's weights; other carriers' cages reserved), walks there and within `use range` + 15 lets go and imprisons
+  takes the best free cage of its faction or an ally in range (`FindCage`, the original's weights, own x100; other carriers' cages reserved; engine reading: the original takes another faction's cage when "usable", [economy 11.7](game/economy.md), and an ally's is, so Stoat's slavers use its slave shop's United Cities cages), walks there and within `use range` + 15 lets go and imprisons
   the victim (`Imprison`, `CharacterCold.Kidnapped`). Home with no free cage, three failed walks, or an AI carrier waiting 60 s: it drops the victim, who is then left alone for 2 game hours
   (engine choices; the original's give-up rule is **Unknown**). A carrier that goes down drops its load (Carry). Zones follow a carried player character, so its platoon stays loaded all the way.
 - **Prisoner**: `Kidnapped` = held without a sentence: it is never served (no release round), no bail is offered, and getting out is no escape crime. The cage is locked; rescue is the usual
@@ -759,9 +759,9 @@ failed walks mark the cage unreachable for the faction; its own faction's shut d
 - **Capture** (167, `CaptiveSystem.Capture.cs`; facts: [slave work, shout and capture](game/ai-tasks.md#slave-work-shout-and-capture)): the nearest downed, uncarried, uncaged character in sight that is
   not of the capturer's side (engine reading of the sensed-class masks), no slave (state 1), not law enforcement, trader or diplomat and not shackled. The capturer walks to it, strips the `hip` and
   `back` items into its inventory (0.8 s of `medic`), cuffs it (10 s, engine choice; locked stock `SHACKLES` put on, what it wore in that slot goes to its inventory; event 37) and has `KidnapSystem.Carry` lift
-  it to a cage of its faction in range (goal 112 in the original), where it is held as kidnapped and then enslaved by the processing jobs. **Carry** (168): the same for a downed slave of the
+  it to a cage of its faction or an ally in range (goal 112 in the original; a capture starts only with one free, so no one is cuffed and left), where it is held as kidnapped and then enslaved by the processing jobs. **Carry** (168): the same for a downed slave of the
   carrier's faction, without strip or cuff. A target a job gave up on is left alone for an hour (engine give-up list). **Observed** (probe, Rebirth, real data): a downed character of the player's faction
-  beside the garrison leader is stripped, shackled, carried to a cage and enslaved by the Cage Wardens in about 1250 ticks; its squad then remembers the capturer as captor.
+  beside the garrison leader is stripped, shackled, carried to a cage and enslaved by the Cage Wardens in about 1250 ticks; its squad then remembers the capturer as captor. **Observed** (probe, Stoat, real data): the Slave Traders cuff a downed player character, cage it in a United Cities cage of the slave shop and enslave it in about 500 ticks.
 - **Shout** (188): a worker with slaves of its squad up and uncaged says event 38 at a random one and walks towards it for up to 8 s (or within 40); the same worker again after 0.5 to 1.5 x 120 game
   seconds (engine pacing).
 - **Work** (189, 190; `AiBehaviour.Work` in the AI, not a job: it competes by score like any goal): a worker of a town with a mine, research bench, refinery or crafting bench (BuildingFunction 1, 3, 4,
