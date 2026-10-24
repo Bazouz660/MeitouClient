@@ -940,8 +940,8 @@ public sealed partial class ProductionSystem : ITickSystem
     /// </summary>
     void TakeFromContainer(World world, Locks.Fixture container, CharacterCold cold, TakeFromMachine take)
     {
-        var storage = PlayerSystem.GridOf(world, container);
-        if (take.Index < 0 || take.Index >= storage.Items.Count) return;
+        var storage = PlayerSystem.GridOf(world, container, out var region);
+        if (take.Index < 0 || take.Index >= storage.Items.Count || !region.Holds(storage.Items[take.Index])) return;
         var item = storage.Items[take.Index];
         int mark = item.StolenFrom;
         if (container.Owner >= 0 && container.Owner != cold.Faction) item.StolenFrom = container.Owner;

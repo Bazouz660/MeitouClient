@@ -100,8 +100,8 @@ character: within `PlayerSystem.GiveRange` 1000 of its window's owner, `StealRan
   -0.4 x `vendor money` (the upper bound is not shown by the decompile).
 - **Wealth** = clamp(faction wealth, 0.2, 1), but the faction wealth function (`FUN_1402dd530`) is a stub returning 1.0, so wealth is always 1
   (**Verified**, kenshi_x64.exe decompile: 9-byte function, constant return). It scales only shop stock count, purse and nest spawn weight; no price reads it.
-- Meitou (`Shop.ForBuilding`, engine choices): the merged stock is the shop's one inventory (no per-container inventories yet), the money stack goes to the purse, r is symmetric,
-  stock is saved on the platoon as squad shops' ([save keys](../formats/save.md#npc-platoons-meitou-mapping); the original keeps it in the containers, zone file). Observed with real data: Squin's armour shop (Bughouse) 18 x 287, Stack's bars (Storm House) 18 x 88.
+- Meitou (`Shop.ForBuilding`, engine choices): the stock is the shop's one inventory in which each stock container's grid is a rectangle of its own (`Inventory.Regions`, put onto shelves tallest first; an item never spans two), the trade window shows them all, a container's window only its own. The money stack goes to the purse, r is symmetric,
+  stock is saved on the platoon as squad shops' ([save keys](../formats/save.md#npc-platoons-meitou-mapping); the original keeps it in the containers, zone file). Observed with real data (Squin, 2026-10-24): 3 to 13 rows more than the packed size, e.g. the Bughouse armour shop 18 x 280 for 271.
 
 ## Crimes, bounties and prisoners
 

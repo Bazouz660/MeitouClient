@@ -17,7 +17,7 @@ namespace Meitou.Simulation
     /// <summary>
     /// Opening a container of a building's interior (docs/game/locks.md "Containers"): a character walks up to it, its inventory shows in a window beside the character's, and items are
     /// moved with <see cref="Production.PutInMachine"/> / <see cref="Production.TakeFromMachine"/> addressed by the fixture id. <b>Engine choices</b>: the reach, a locked one refusing, a shop's
-    /// containers staying the shop's (its stock is one merged inventory, <see cref="Trading.Shop.ForBuilding"/>), what is taken from another faction's marked stolen with no witness test.
+    /// containers staying the shop's (each its own rectangle of the shop's stock, <see cref="Trading.Shop.ForBuilding"/>), what is taken from another faction's marked stolen with no witness test.
     /// </summary>
     public sealed partial class PlayerSystem
     {
@@ -64,7 +64,7 @@ namespace Meitou.Simulation
             }
             if (ShopOf(world, fixture) is not null && !order.Alt && theirs)
             {
-                // A shop's stock without Alt: the original's hint and a move; with Alt (the menu's Loot) the walker steals from it (the stock window shows the shop's merged stock).
+                // A shop's stock without Alt: the original's hint and a move; with Alt (the menu's Loot) the walker steals from it (the window shows that container's part of the shop's stock).
                 world.Post("Hold down the ALT key to steal items");
                 MovementSystem.GoToFloor(world, best, fixture.Position, walker.RunSpeed);
                 return;
@@ -107,14 +107,23 @@ namespace Meitou.Simulation
             }
         }
 
-        /// <summary>The building shop whose stock lies in <paramref name="container"/>'s building, if any.</summary>
-        internal static Trading.Shop? ShopOf(World world, Locks.Fixture container) => world.Squads.All.Select(s => s.Shop).FirstOrDefault(s => s?.Building == container.Building);
+        /// <summary>The building shop <paramref name="container"/> is a stock container of, if any.</summary>
+        internal static Trading.Shop? ShopOf(World world, Locks.Fixture container) =>
+            world.Squads.All.Select(s => s.Shop).FirstOrDefault(s => s?.Building == container.Building && s.RegionOf(container.Id, out _));
 
         /// <summary>
-        /// The grid a container window works on: the container's own, but in a building shop the shop's one merged stock (<see cref="Trading.Shop.ForBuilding"/>), so every stock container of
-        /// the shop shows the whole stock and taking from it is the theft of the original's shop container (<b>engine choice</b>: the original keeps the stock in the containers themselves).
+        /// The grid a container window works on: the container's own, but for a building shop's stock container the shop's stock (<see cref="Trading.Shop.ForBuilding"/>), of which the
+        /// container's grid is <paramref name="region"/>: the window shows and takes only the items there (at cells relative to its corner), taking them is theft.
         /// </summary>
-        internal static Items.Inventory GridOf(World world, Locks.Fixture container) => ShopOf(world, container)?.Stock ?? container.Contents!;
+        internal static Items.Inventory GridOf(World world, Locks.Fixture container, out Items.GridRegion region)
+        {
+            if (ShopOf(world, container) is { } shop && shop.RegionOf(container.Id, out region)) return shop.Stock;
+            region = new(0, 0, container.Contents!.Width, container.Contents.Height);
+            return container.Contents;
+        }
+
+        internal static Items.Inventory GridOf(World world, Locks.Fixture container) => GridOf(world, container, out _);
+
 
         static bool SameFloor(Vector3 a, Vector3 b) => MathF.Abs(a.Y - b.Y) <= ContainerFloorSlack;
 

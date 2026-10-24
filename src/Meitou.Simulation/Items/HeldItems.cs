@@ -128,9 +128,9 @@ public sealed partial class PlayerSystem
         if (ContainerFor(world, site, lift.Actor, out var opener) is { } container)
         {
             if (opener is null || world.Player.OpenContainer != site) return;
-            var grid = PlayerSystem.GridOf(world, container);
+            var grid = PlayerSystem.GridOf(world, container, out var region);
             var item = grid.Items.ElementAtOrDefault(t.Index);
-            if (!Matches(item, t, section: false)) return;
+            if (!Matches(item, t with { X = t.X + region.X, Y = t.Y + region.Y }, section: false) || !region.Holds(item!)) return;   // the window shows cells from the container's corner
             Hold(world, lift, Split(grid, item!, lift.Whole), grid, "main", item!.X, item.Y);
             world.Machines.Touch();
             return;
@@ -278,6 +278,7 @@ public sealed partial class PlayerSystem
             if (item.Width > target.Columns || item.Height > target.Rows) { ReturnHeldItem(world); return; }
             x = Math.Clamp(place.X, 0, target.Columns - item.Width);
             y = Math.Clamp(place.Y, 0, target.Rows - item.Height);
+            if (!target.Grid.InRegion(x, y, item.Width, item.Height)) { ReturnHeldItem(world); return; }   // across two of a shop's containers
             under = target.Grid.Items.Where(i => i.Section == target.Section && x < i.X + i.Width && i.X < x + item.Width && y < i.Y + i.Height && i.Y < y + item.Height).ToList();
         }
         if (under.Count >= 2) { ReturnHeldItem(world); return; }

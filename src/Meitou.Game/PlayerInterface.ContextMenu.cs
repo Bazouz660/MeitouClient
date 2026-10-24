@@ -221,7 +221,7 @@ sealed partial class PlayerInterface
 
     /// <summary>
     /// A container (the original's building branch for a storage with an inventory): unlocked, Inventory (the player's) or Loot (26); another faction's locked one, Pick Lock (76). The
-    /// menu's orders skip the quick click's Alt test (<c>FUN_1407fa650</c>), so Loot on another faction's container takes from it at once (a shop's merged stock is stolen from);
+    /// menu's orders skip the quick click's Alt test (<c>FUN_1407fa650</c>), so Loot on another faction's container takes from it at once (a shop container's stock is stolen from);
     /// a locked one also has Use Tools and Use Strength (285, 286). Not built: Auto-Haul (124) on an interior container.
     /// </summary>
     List<(string Caption, Action Give)> ContainerVerbs(Meitou.Simulation.Locks.ContainerSpot container)
