@@ -43,11 +43,11 @@ sealed unsafe class SteamSession : IDisposable
             if (NativeLibrary.TryGetExport(library, "SteamAPI_InitFlat", out nint initFlatAddress))
             {
                 byte* error = stackalloc byte[1024];
-                for (int i = 0; i < 1024; i++) error[i] = 0;
                 int result = ((delegate* unmanaged[Cdecl]<byte*, int>)initFlatAddress)(error);
                 if (result != 0)
                 {
-                    string reason = Marshal.PtrToStringUTF8((nint)error) ?? $"SteamAPI_InitFlat returned {result}";
+                    string? message = Marshal.PtrToStringUTF8((nint)error);
+                    string reason = string.IsNullOrEmpty(message) ? $"SteamAPI_InitFlat returned {result}" : message;
                     NativeLibrary.Free(library);
                     Console.WriteLine($"Steamworks: {reason}");
                     return null;
@@ -55,8 +55,9 @@ sealed unsafe class SteamSession : IDisposable
             }
             else
             {
-                var init = (delegate* unmanaged[Cdecl]<bool>)NativeLibrary.GetExport(library, "SteamAPI_Init");
-                if (!init())
+                // A C++ bool: one byte in AL, so not marshalled as a 4-byte BOOL.
+                var init = (delegate* unmanaged[Cdecl]<byte>)NativeLibrary.GetExport(library, "SteamAPI_Init");
+                if (init() == 0)
                 {
                     NativeLibrary.Free(library);
                     Console.WriteLine("Steamworks: SteamAPI_Init failed (this Kenshi Steam API has no detailed init error).");

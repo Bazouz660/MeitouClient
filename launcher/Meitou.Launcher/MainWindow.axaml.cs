@@ -865,41 +865,41 @@ public sealed partial class MainWindow : Window
 #endif
         };
         start.Environment[GameInstall.EnvironmentVariable] = install.Root;
-#if DEBUG
-        start.Environment["MEITOU_CAPTURE_OUTPUT"] = "1";
-#endif
         // Steamworks reads this file from the working directory when the game is started outside Steam.
-        // Keep it only for the lifetime of this launch; never ship it or overwrite a user's file.
-        var steamAppIdFilesToRemove = new List<string>();
-        bool steamworksAvailable = OperatingSystem.IsWindows() && File.Exists(Path.Combine(install.Root, "steam_api64.dll"));
-        if (steamworksAvailable)
+        // Keep it only for the lifetime of this launch; never ship it or overwrite a user's file. A file that already holds Kenshi's
+        // ID is one an earlier launch left (the launcher closed before the game did), so this launch takes it over and removes it.
+        var steamAppIdFiles = new List<string>();
+        void RemoveSteamAppIds() { foreach (string file in steamAppIdFiles) TryDeleteSteamAppId(file); }
+        if (OperatingSystem.IsWindows() && File.Exists(Path.Combine(install.Root, "steam_api64.dll")))
         {
-            string[] steamAppIdFiles = [Path.Combine(start.WorkingDirectory, "steam_appid.txt"), Path.Combine(Path.GetDirectoryName(exe)!, "steam_appid.txt")];
+            string[] files = [.. new[] { Path.Combine(start.WorkingDirectory, "steam_appid.txt"), Path.Combine(Path.GetDirectoryName(exe)!, "steam_appid.txt") }
+                .Distinct(StringComparer.OrdinalIgnoreCase)];
+            // Any other ID in either place is the user's: write nothing then, so both places keep agreeing.
             bool appIdConflict = false;
-            foreach (string file in steamAppIdFiles.Distinct(StringComparer.OrdinalIgnoreCase))
+            foreach (string file in files)
             {
-                try
-                {
-                    if (File.Exists(file))
-                    {
-                        if (!string.Equals(File.ReadAllText(file).Trim(), "233860", StringComparison.Ordinal)) appIdConflict = true;
-                        continue;
-                    }
-                    Directory.CreateDirectory(Path.GetDirectoryName(file)!);
-                    File.WriteAllText(file, "233860");
-                    steamAppIdFilesToRemove.Add(file);
-                }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+                try { if (File.Exists(file) && File.ReadAllText(file).Trim() != KenshiAppId) appIdConflict = true; }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { appIdConflict = true; }
             }
             if (!appIdConflict)
             {
-                start.Environment["SteamAppId"] = "233860";
-                start.Environment["SteamGameId"] = "233860";
+                foreach (string file in files)
+                {
+                    try
+                    {
+                        Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+                        File.WriteAllText(file, KenshiAppId);
+                        steamAppIdFiles.Add(file);
+                    }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+                }
+                start.Environment["SteamAppId"] = KenshiAppId;
+                start.Environment["SteamGameId"] = KenshiAppId;
             }
         }
         if (OperatingSystem.IsMacOS() && !AddMacVulkanEnvironment(start.Environment))
         {
-            foreach (string file in steamAppIdFilesToRemove) TryDeleteSteamAppId(file);
+            RemoveSteamAppIds();
             Status("The Vulkan loader is not installed: run 'brew install molten-vk vulkan-loader' in a terminal, then Play again.");
             return;
         }
@@ -909,7 +909,7 @@ public sealed partial class MainWindow : Window
             var game = Process.Start(start);
             running = game;
             Status($"Meitou {version} started.");
-            if (game is null) { foreach (string file in steamAppIdFilesToRemove) TryDeleteSteamAppId(file); return; }
+            if (game is null) { RemoveSteamAppIds(); return; }
             // The game's window is all a player sees of it, so a crash (above all one before the window opens) is reported here.
             var log = Path.Combine(Path.GetDirectoryName(exe)!, "log.txt");
 #if DEBUG
@@ -921,17 +921,23 @@ public sealed partial class MainWindow : Window
             game.EnableRaisingEvents = true;
             game.Exited += (_, _) =>
             {
-                foreach (string file in steamAppIdFilesToRemove) TryDeleteSteamAppId(file);
                 int code = game.ExitCode;
-                if (code != 0) Dispatcher.UIThread.Post(() => Status($"Meitou {version} stopped with an error (exit code {code}); its log is {log}"));
+                Dispatcher.UIThread.Post(() =>
+                {
+                    // On the UI thread, as Play: a game started since then has taken these files over and removes them itself.
+                    if (running == game) RemoveSteamAppIds();
+                    if (code != 0) Status($"Meitou {version} stopped with an error (exit code {code}); its log is {log}");
+                });
             };
         }
         catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or IOException)
         {
-            foreach (string file in steamAppIdFilesToRemove) TryDeleteSteamAppId(file);
+            RemoveSteamAppIds();
             Status($"Could not start Meitou {version}: {ex.Message}");
         }
     }
+
+    const string KenshiAppId = "233860";
 
     static void TryDeleteSteamAppId(string path)
     {
