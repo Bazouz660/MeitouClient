@@ -21,6 +21,9 @@ The code is implemented; the user still has to validate the temporal and anti-al
   (`uFlipDepthY`) while keeping the projection NDC for the motion vector. This also makes the motion vectors and
   water reactivity use the correct view depth on Metal.
 - **TAA reset** now includes a camera cut (>5000 units), and MetalFX gets the same reset.
+- **MetalFX motion convention:** the scaler takes render-pixel motion in its y-down framebuffer convention. The
+  velocity shader's NDC is y-up, so MetalFX's Y scale is now positive (X stays negative); the old negative Y scale
+  mirrored temporal history vertically.
 - **SMAA** was ported into `PostComposite` (edges, weights, blend; heat-haze and final-target ordering match Vulkan).
   Metal still has no separate anti-aliasing slider, so SMAA is reachable through `--smaa`/the saved options.
 - **FogRate** is documented as a performance-only difference: Metal has no fragment-shading-rate attachment and
