@@ -1,9 +1,10 @@
 ﻿# Renders Kenshi message-banner labels (MessageSkin from Kenshi_UI.png, Exo 2 SemiBold) as transparent PNGs.
 # -Style Modern: a dark rounded chip in the bottom-left corner of a transparent 1920x1080 frame, for video overlays.
-# Usage: .\make-labels.ps1 [-Labels "Vanilla","Faithful","Meitou"] [-Style Modern] [-Scale 1.5] [-Width 480] [-Align Left] [-Padding 40] [-HeightScale 1] [-Cap 1] [-Out .\labels]
+# Usage: .\make-labels.ps1 [-Labels "Vanilla","Faithful","Meitou"] [-Style Modern [-Center]] [-Scale 1.5] [-Width 480] [-Align Left] [-Padding 40] [-HeightScale 1] [-Cap 1] [-Out .\labels]
 param(
   [string[]]$Labels = @('Vanilla', 'Faithful', 'Meitou'),
   [ValidateSet('Classic', 'Modern')][string]$Style = 'Classic',
+  [switch]$Center,           # Modern: chip at the bottom centre instead of the bottom left
   [double]$Scale = 1.5,
   [int]$Width = 480,
   [string]$Out = (Join-Path $PSScriptRoot 'labels'),
@@ -35,8 +36,9 @@ if ($Style -eq 'Modern') {
     $text = New-Object System.Drawing.Drawing2D.GraphicsPath
     $text.AddString($label, $family, 0, [single]$size, (New-Object System.Drawing.PointF(0, 0)), [System.Drawing.StringFormat]::GenericTypographic)
     $ink = $text.GetBounds()
-    $m = New-Object System.Drawing.Drawing2D.Matrix; $m.Translate([single]($cx + 40 - $ink.X), [single]($baseline - $ascent)); $text.Transform($m)
     $cw = [math]::Round($ink.Width) + 80
+    if ($Center) { $cx = [math]::Round((1920 - $cw) / 2) }
+    $m = New-Object System.Drawing.Drawing2D.Matrix; $m.Translate([single]($cx + 40 - $ink.X), [single]($baseline - $ascent)); $text.Transform($m)
     $bmp = New-Object System.Drawing.Bitmap(1920, 1080, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
     $g = [System.Drawing.Graphics]::FromImage($bmp)
     $g.Clear([System.Drawing.Color]::Transparent); $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
