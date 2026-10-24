@@ -40,6 +40,38 @@ written at 1600x1200. The frame rate in these runs was below the earlier clean-m
 after a reboot and with the launcher's 8120 MB preset. Visual acceptance of the new arrows, blood decals, icons,
 building effects and construction panels is still manual.
 
+## Effect parity audit (2026-10-24)
+
+This is **not 100% Vulkan effect parity**. The shared frame covers most effects, but the following are still
+Metal-specific fallbacks or absent paths:
+
+| Area | Vulkan effect | Metal status |
+|---|---|---|
+| Terrain | Ground displacement, rock smoothing, terrain-outline refinement (tessellation) | **absent**; `HasTessellation == false`, so only flat patches + parallax |
+| Water | Full Meitou lighting: GI, lamps, dust, environment specular, material lighting, foam sun shadow | **simplified** by `METAL_WATER`; waves, foam, caustics, reflection and refraction are present; reflection is single-sample |
+| Debris | Atmosphere-lit + hazed | **simple sun/ambient light**, no atmosphere or haze (16-sampler limit) |
+| Particles | Near-plane close pass for large sprites crossing the camera | **disabled** on Metal; normal-depth and low-resolution particles work |
+| Foliage | Generated rock levels + GPU mesh/rock cull | **CPU cull**; generated levels are tied to the GPU path, so the Metal rock LOD detail/perf differs |
+| Post | SMAA, FogRate/VRS, particle coverage in the upscaler's reactive mask, sun-motion reprojection | **not present**; FogRate is a performance/quality path, not a missing pass; particle/sun terms affect temporal stability |
+| GI | `GiScene`/`GiProbes` when Vulkan ray queries exist | **no default path**; `MetalProbeGi` is experimental and opt-in; macOS Vulkan reports no ray queries, so local no-GI parity holds |
+| Temporal | Full TAA including character/grass motion and far-slice velocity | MetalFX is the default; TAA is exposed as experimental and still ghosts; no far slice |
+| Occlusion | Hi-Z foliage occlusion culling | **not implemented**; CPU cull remains correct but slower |
+
+The **new upstream effects are wired**: building effects (campfires, torches, furnace smoke), blood decals, item
+icons, construction/interior UI, patrols and audio voices use the shared simulation/render/UI paths. The new
+`MarkerRenderer` movement marker and stealth arrows work on both. Terrain cut relief is tessellation-only and therefore
+falls under the first row.
+
+**Ship decision:** suitable for an **opt-in Metal test/preview** now (Vulkan remains the default and reference), but
+not for a “Metal is at 100% parity” or default-release claim. Before a public test, the visible blockers are water
+lighting/foam shadows, near-camera particles, debris haze and tessellated terrain; GI/temporal/FogRate/Hi-Z are
+quality/performance follow-ups unless the test explicitly requires them. Keep the Metal UI hiding the tessellation
+toggles and the experimental GPU cull, and label TAA experimental.
+
+Post-merge smoke: 120 s `--new-game Wanderer` at 800x600, 8120 MB budget, GPU cull off: 6,693 frames / 56 fps, no
+GPU timeout. This is not a substitute for the 30-minute acceptance soak; the full Metal test suite is still blocked by
+the host's `MTLCompilerService` XPC.
+
 ## Upstream sync (2026-10-23)
 
 `963c611b` merges upstream `a9970dbc` (177 commits, including the gameplay/UI/audio work) into the Metal branch. The
