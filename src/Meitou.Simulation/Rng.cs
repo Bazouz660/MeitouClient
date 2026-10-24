@@ -47,6 +47,8 @@ public enum RngPurpose : uint
     Malnourished = 23,
     /// <summary>A chaser's hearing roll on its fleeing target (<see cref="AggroSystem"/>, the chase give-up).</summary>
     ChaseSense = 24,
+    /// <summary>Squad formations: a layout's draws (keyed by the squad) and a plain follower's distance (keyed by the follower) (<see cref="MovementSystem"/>).</summary>
+    Formation = 25,
 }
 
 /// <summary>

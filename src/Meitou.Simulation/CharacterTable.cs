@@ -54,6 +54,10 @@ public sealed class CharacterCold
     public int Role { get; set; }
     /// <summary>Seconds left that a follower blocked on its way straight to its slot takes paths (<see cref="MovementSystem.FollowPathSeconds"/>).</summary>
     public float FollowPathTime { get; set; }
+    /// <summary>A formation follower's heading (unit X/Z; zero until it starts), eased toward its leader's (<see cref="MovementSystem.HeadingEase"/>). Not saved; hashed while following.</summary>
+    public System.Numerics.Vector2 FollowHeading { get; set; }
+    /// <summary>The speed a follower wants this tick (<see cref="MovementSystem"/>, the original's desired speed). Not saved; hashed while following.</summary>
+    public float FollowSpeed { get; set; }
     /// <summary>Whom a <see cref="FollowOrder"/> told it to follow while its task is <see cref="CharacterTask.Follow"/> (None: its squad's leader). Not saved; hashed only while set.</summary>
     public CharacterId FollowOrder { get; set; } = CharacterId.None;
     /// <summary>Whether the <see cref="FollowOrder"/> is a Bodyguard order (45): the follower also defends its target (<see cref="RetaliationSystem"/>). Not saved; hashed with <see cref="FollowOrder"/>.</summary>
@@ -501,6 +505,7 @@ public sealed class CharacterTable
             hasher.Add(k.SquadId);
             hasher.Add(k.Role);
             hasher.Add(k.FollowPathTime);
+            if (c.Task == (byte)CharacterTask.Follow) { hasher.Add(k.FollowHeading); hasher.Add(k.FollowSpeed); }
             hasher.Add(k.Path.Length);
             hasher.Add(k.PathRequest);
             hasher.Add(k.IsPlayer);

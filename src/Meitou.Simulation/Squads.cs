@@ -63,6 +63,12 @@ public sealed class Squad
     public bool Wild { get; init; }
     /// <summary>Whom a campaign squad in its assault also treats as enemies (<see cref="WarTargets"/>; written by the population's serial look, read by the aggro).</summary>
     public WarTargets War { get; set; } = WarTargets.None;
+    /// <summary>
+    /// Each member's formation slot (<see cref="Formation.Layout"/>), rebuilt by the movement's serial step when <see cref="FormationKey"/> (formation, head, members and roles)
+    /// changes. Derived state: not saved or hashed.
+    /// </summary>
+    public Dictionary<CharacterId, Vector2> FormationSlots { get; set; } = [];
+    public ulong FormationKey { get; set; }
 }
 
 /// <summary>
