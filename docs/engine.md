@@ -39,7 +39,7 @@ The Meitou title waits for terrain, scenery, character assets and used textures 
 one full second of <40ms frames (max5s of ready content for frame pacing, so slow GPUs reach the menu). Its menu artwork/fonts/pipelines warm under the opaque cover too;
 streaming uploads retire and a compacting GC completes before that final smooth run.
 **GC:** the stock runtime (server GC, four heaps, gen0 budget at most 16 MB: `System.GC.Gen0MaxBudget`) in builds and release zips alike; the startup `gc` line names the collector (`GcName`).
-**Observed** (play benchmark, 5 min, ~160 MB/s allocated, RTX 4090): the default budget let ~1 GB build up between collections, 27 gen0/gen1 collections paused
+**Observed** (2026-10-24, play benchmark, 5 min, ~160 MB/s allocated, RTX 4090): the default budget let ~1 GB build up between collections, 27 gen0/gen1 collections paused
 20-190 ms (median ~26); at 16 MB, 330 collections paused 2.5 ms median and 31 ms at most, total pause about the same. 64 MB: max 122 ms; workstation concurrent GC: max 25 ms
 but 3.6 s of pauses in all; DATAS (`DynamicAdaptationMode=1`): max 66 ms. `System.GC.Gen0MaxBudget` is read from runtimeconfig (**Verified**: collection counts with
 and without it); `GCgen0MaxBudget` there is ignored and `DOTNET_GCgen0size` changed nothing. The

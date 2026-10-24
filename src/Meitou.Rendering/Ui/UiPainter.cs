@@ -631,7 +631,7 @@ public sealed partial class UiPainter : IDisposable
                 stored[name] = Task.Run(() =>
                 {
                     try { return DdsReader.ReadFile(path) is { Format: DdsFormat.Bc1 or DdsFormat.Bc2 or DdsFormat.Bc3, IsCubemap: false, IsVolume: false, ImageCount: 1, Width: > 0, Height: > 0 } dds ? dds : null; }
-                    catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException) { return null; }
+                    catch (Exception) { return null; }   // a file the reader cannot take is loaded as before, at first use (where its error shows)
                 });
     }
 

@@ -18,7 +18,15 @@ static class JitWarmup
         thread.Start();
     }
 
+    // Nothing may leave this thread: an exception unhandled on it would end the game. A method that cannot be compiled ahead (an assembly its signature needs is
+    // missing on this platform, say) is counted and left to compile on its first call, if it ever has one.
     static void Run()
+    {
+        try { Compile(); }
+        catch (Exception e) { Console.Error.WriteLine($"warning   the jit warm-up stopped: {e.GetType().Name}: {e.Message}"); }
+    }
+
+    static void Compile()
     {
         var watch = Stopwatch.StartNew();
         int compiled = 0, failed = 0;
@@ -35,7 +43,10 @@ static class JitWarmup
             foreach (var type in types)
             {
                 if (type.ContainsGenericParameters) continue;
-                foreach (var method in type.GetMethods(all).Cast<MethodBase>().Concat(type.GetConstructors(all)))
+                MethodBase[] methods;
+                try { methods = [.. type.GetMethods(all), .. type.GetConstructors(all)]; }
+                catch (Exception) { failed++; continue; }
+                foreach (var method in methods)
                 {
                     if (method.IsAbstract || method.ContainsGenericParameters || (method.MethodImplementationFlags & (MethodImplAttributes.InternalCall | MethodImplAttributes.Runtime)) != 0
                         || (method.Attributes & MethodAttributes.PinvokeImpl) != 0)
@@ -45,7 +56,7 @@ static class JitWarmup
                         RuntimeHelpers.PrepareMethod(method.MethodHandle);
                         compiled++;
                     }
-                    catch (Exception e) when (e is ArgumentException or InvalidOperationException or NotSupportedException or TypeLoadException or BadImageFormatException or MissingMethodException)
+                    catch (Exception)
                     {
                         failed++;
                     }
@@ -58,6 +69,6 @@ static class JitWarmup
     static Assembly? TryLoad(AssemblyName name)
     {
         try { return Assembly.Load(name); }
-        catch (Exception e) when (e is FileNotFoundException or FileLoadException or BadImageFormatException) { return null; }
+        catch (Exception) { return null; }
     }
 }

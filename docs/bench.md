@@ -126,16 +126,13 @@ post 0.9, objects 0.7, particles 0.5, shadows 0.45); render thread ~3 ms; world 
 | 0.7-3.8 s in the reflection stage, once per session | pipelines first made in play (the reflection's scene when water first comes into view; the clouds; a camera cut drew without the fog shading rate attachment, a second pipeline of everything); seconds each with a cold driver cache (the first run after a shader or driver change), 0.16 ms median with a warm one | `ReflectionPass.Warm` and `SkyRenderer.Warm` during the loading warm-up; a cut draws with a neutral rate image |
 | 20-80 ms on first use (AI, dialogue, screens) | JIT: each method compiled on its first call (no tiering) | `JitWarmup`: the Meitou assemblies compiled ahead on a background thread (~38000 methods, 7 s, during loading; `--no-precompile`) |
 
-Allocation (~160 MB/s): the A* search's table and nodes were 10% (now reused per thread); per-frame strings, closures and boxed
-enumerators in the HUD and object streaming a few % each (fixed). Open: the UI rebuilds its controls and their property dictionaries
-every frame (`MyGuiPresentation.Arrange`, ~6%), snapshot records per character (~2% before only a frame's last two ticks published), particle affector delegates (~1%).
+Largest remaining allocation (shares of the ~160 MB/s before the fixes): the UI rebuilds its controls and their property dictionaries every frame (`MyGuiPresentation.Arrange`, ~6%),
+snapshot records per character (~2%), particle affector delegates (~1%).
 Pipelines are made on first use (`PipelineLibrary.Prepare` has no caller): the loading warm-up's frames make what they draw. Still made in play: the blood
 decals', a portrait's, the hover outline's and the build menu's icon pipelines (one each per session). Every frame's count is in `frames.csv` (`late_pipelines`).
-ReadyToRun (`-p:PublishReadyToRun=true`) cut the session's JIT from 6.0 to 2.4 s (loading) but not Bepu's generic instantiations. With `JitWarmup` the
-game thread's JIT fell from 4.5 to 3.1 s, the rest in loading and in framework generics (sorts, LINQ over the game's types).
-Result (two A/B pairs, same commit with and without these changes, DLSS on both): frames over 25 ms 42-53 -> 2-8, over 100 ms 9-12 -> 1,
-p99.9 25 ms -> 12-13 ms, GC pauses 1.5-2.2 s -> 0.3-0.4 s, allocation -34%; median unchanged (GPU-bound). Commands are given on wall time, so
-two runs' simulations part after a few minutes (from "paths" the squad stands elsewhere): compare segments before that.
+ReadyToRun does not compile Bepu's generic instantiations ahead, so it does not replace `RagdollPhysics.WarmUpOnce`; what the game thread still compiles is
+framework generics over the game's types (sorts, LINQ).
+Commands are given on wall time, so two runs' simulations part after a few minutes (from "paths" the squad stands elsewhere): compare segments before that.
 
 Detailed logs/screenshots belong outside the repository. Evidence for original-game claims
 belongs with the corresponding research and its Verified/Observed/Unknown label.

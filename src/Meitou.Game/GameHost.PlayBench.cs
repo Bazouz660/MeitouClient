@@ -94,6 +94,7 @@ sealed partial class GameHost
             {
                 var keep = only.Split(',');
                 benchScript = [.. benchScript.Where(s => keep.Contains(s.Name))];
+                if (benchScript.Length == 0) { Console.WriteLine($"bench     no segment named {only}: nothing to run"); return false; }
             }
             benchGc = new BenchGcListener();
             benchGcStart = benchGc.NowMs;
