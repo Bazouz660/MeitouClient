@@ -17,8 +17,9 @@ The code is implemented; the user still has to validate the temporal and anti-al
 - **Sun motion** moved into the shared `SunMotionTracker`, used by both `PostProcess` (Vulkan) and `PostTaa` (Metal),
   so Metal no longer passes zero sun uniforms.
 - **TAA velocity depth** now follows the backend's clip convention (`uClipDepthZeroToOne`): Metal's depth buffer is
-  0..1, while Vulkan's is recovered with `2d - 1`. This also makes the motion vectors and water reactivity use the
-  correct view depth on Metal.
+  0..1, while Vulkan's is recovered with `2d - 1`. It also flips the depth sample for Metal's top-down targets
+  (`uFlipDepthY`) while keeping the projection NDC for the motion vector. This also makes the motion vectors and
+  water reactivity use the correct view depth on Metal.
 - **TAA reset** now includes a camera cut (>5000 units), and MetalFX gets the same reset.
 - **SMAA** was ported into `PostComposite` (edges, weights, blend; heat-haze and final-target ordering match Vulkan).
   Metal still has no separate anti-aliasing slider, so SMAA is reachable through `--smaa`/the saved options.

@@ -194,12 +194,13 @@ public sealed unsafe partial class PostProcess : IDisposable, IWorldPostChain
     sealed class VelocityPass : FullscreenProgram
     {
         public readonly SamplerSlot NearDepth, FarDepth;
-        public readonly UniformHandle NearToPrev, FarToPrev, NearPlanes, FarPlanes, FullPlanes, JitterNdc, HasFar, Mode, ClipDepthZeroToOne, Tan, Right, Up, Back, EyeY, WaterY, WaterReactive;
+        public readonly UniformHandle NearToPrev, FarToPrev, NearPlanes, FarPlanes, FullPlanes, JitterNdc, HasFar, Mode, ClipDepthZeroToOne, FlipDepthY, Tan, Right, Up, Back, EyeY, WaterY, WaterReactive;
         public readonly UniformHandle Sun, SunMotionUniform;
         public VelocityPass(GpuContext gpu) : base(gpu, UpscaleShaders.Velocity, "post velocity")
         {
             (Sun, SunMotionUniform) = (P.Uniform("uSun"), P.Uniform("uSunMotion"));
             ClipDepthZeroToOne = P.Uniform("uClipDepthZeroToOne");
+            FlipDepthY = P.Uniform("uFlipDepthY");
             (NearDepth, FarDepth) = (P.Sampler("uNearDepth"), P.Sampler("uFarDepth"));
             (NearToPrev, FarToPrev, NearPlanes, FarPlanes, FullPlanes) = (P.Uniform("uNearToPrev"), P.Uniform("uFarToPrev"), P.Uniform("uNearPlanes"),
                 P.Uniform("uFarPlanes"), P.Uniform("uFullPlanes"));
@@ -1156,6 +1157,7 @@ public sealed unsafe partial class PostProcess : IDisposable, IWorldPostChain
         v.P.Set(v.HasFar, farSliceDrawn ? 1 : 0);
         v.P.Set(v.Mode, mode);
         v.P.Set(v.ClipDepthZeroToOne, Gpu.ClipDepthZeroToOne ? 1 : 0);
+        v.P.Set(v.FlipDepthY, Gpu.RenderTargetsBottomUp ? 0 : 1);
         float tanY = MathF.Tan(fovNow * 0.5f);
         v.P.Set(v.Tan, tanY * aspectNow, tanY);
         var r = viewRotation;

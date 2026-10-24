@@ -21,6 +21,7 @@ static class UpscaleShaders
         uniform vec2 uJitterNdc;
         uniform int uHasFar, uMode;            // 0: motion, depth, reactive; 1: depth alone; 2: reactive alone
         uniform int uClipDepthZeroToOne;       // Metal's NDC depth is 0..1; Vulkan's is -1..1 (stored as 0..1)
+        uniform int uFlipDepthY;               // Metal's top-down targets: a standard fullscreen vUv reads the depth bottom-up
         uniform vec2 uTan;                     // tan(fov / 2) * aspect, tan(fov / 2)
         uniform vec3 uRight, uUp, uBack;       // the view axes in the world
         uniform float uEyeY, uWaterY, uWaterReactive;
@@ -33,12 +34,15 @@ static class UpscaleShaders
 
         void main()
         {
-            float d = textureLod(uNearDepth, vUv, 0.0).r;
+            // The NDC below is the projection's (the vertex shader's vUv); the depth image can have the other row
+            // order (Metal's targets are top-down, so its standard vUv reads the depth bottom-up).
+            vec2 depthUv = uFlipDepthY != 0 ? vec2(vUv.x, 1.0 - vUv.y) : vUv;
+            float d = textureLod(uNearDepth, depthUv, 0.0).r;
             mat4 toPrev = uNearToPrev;
             vec2 planes = uNearPlanes;
             if (d >= 1.0 && uHasFar != 0)
             {
-                d = textureLod(uFarDepth, vUv, 0.0).r;
+                d = textureLod(uFarDepth, depthUv, 0.0).r;
                 toPrev = uFarToPrev;
                 planes = uFarPlanes;
             }

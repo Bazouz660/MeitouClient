@@ -824,8 +824,9 @@ default.
   `UpscaleShaders.Taa` (into a display-size RGBA16F history pair); the scene projection is jittered with
   `Jitter.Apply` and `PostTaa.Offset` (the phase count follows render/display scale), the depth target is `DepthTarget
   | Sampled`. TAA resets on the first frame, a resize and a camera cut (>5000 units), and MetalFX resets on the same
-  cut. The velocity pass's far-slice inputs are disabled; it reads the shared `SunMotionTracker` and accounts for
-  Metal's 0..1 depth (`uClipDepthZeroToOne`). Weather-particle coverage is written into the reactive mask (MetalFX)
+  cut. The velocity pass's far-slice inputs are disabled; it reads the shared `SunMotionTracker`, accounts for
+  Metal's 0..1 depth (`uClipDepthZeroToOne`) and flips the depth lookup for top-down targets (`uFlipDepthY`).
+  Weather-particle coverage is written into the reactive mask (MetalFX)
   or the motion alpha (TAA), including the low-resolution accumulations. The grass and characters write their own
   motion through `IWorldPostChain.ObjectMotion`.
 - `IGpuContext` facts: `FramesInFlight`, `VideoMemoryBudget`, `DeferDelete`, `Finish`, `CreateReadback` +

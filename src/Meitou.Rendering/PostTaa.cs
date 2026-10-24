@@ -17,7 +17,7 @@ sealed class PostTaa : IDisposable
     readonly IGpuContext ctx;
     readonly LegacyProgram velocity, taa;
     readonly UniformHandle nearToPrevious, farToPrevious, nearPlanes, farPlanes, fullPlanes, jitterNdc, hasFar, mode,
-        clipDepthZeroToOne, tan, right, up, back, eyeY, waterY, waterReactive, sun, sunMotion;
+        clipDepthZeroToOne, flipDepthY, tan, right, up, back, eyeY, waterY, waterReactive, sun, sunMotion;
     readonly SamplerSlot nearDepth, farDepth;
     readonly UniformHandle renderSize, displaySize, jitter, blend, reset;
     readonly SamplerSlot colour, motionSlot, history;
@@ -80,6 +80,7 @@ sealed class PostTaa : IDisposable
         hasFar = v.Uniform("uHasFar");
         mode = v.Uniform("uMode");
         clipDepthZeroToOne = v.Uniform("uClipDepthZeroToOne");
+        flipDepthY = v.Uniform("uFlipDepthY");
         tan = v.Uniform("uTan");
         right = v.Uniform("uRight");
         up = v.Uniform("uUp");
@@ -142,6 +143,7 @@ sealed class PostTaa : IDisposable
         v.Set(hasFar, 0);
         v.Set(mode, 0);
         v.Set(clipDepthZeroToOne, ctx.ClipDepthZeroToOne ? 1 : 0);
+        v.Set(flipDepthY, ctx.RenderTargetsBottomUp ? 0 : 1);
         float tanY = MathF.Tan(fov * 0.5f);
         v.Set(tan, tanY * aspect, tanY);
         v.Set(right, rotation.M11, rotation.M21, rotation.M31);
