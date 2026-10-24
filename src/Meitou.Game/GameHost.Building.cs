@@ -181,6 +181,9 @@ sealed partial class GameHost
                 CollisionMesh = footprints.Mesh,
                 StaticAround = footprints.StaticAround,
                 StaticAlong = (origin, direction, length) => footprints.Along(origin, direction, length).Where(b => Pickable(b.Placement.BuildingId)),
+                // The movement pick's floors up to the viewed one: the build window's floor arrows choose the floor the ghost stands on.
+                FloorAlong = (origin, direction, length) => gpu.Objects?.FloorHit(origin, direction, viewedFloor, length) is { } hit
+                    ? (hit.Position, new Building.GhostFloor(hit.Room.PlacementId, hit.Room.Footprint, hit.Room.FloorAt(hit.Position))) : null,
             },
             WorldInfo = placement =>
             {

@@ -696,15 +696,18 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
     public IReadOnlyDictionary<string, int> InteriorView { get; set; } = new Dictionary<string, int>();
 
     /// <summary>The nearest loaded building's movement destination, using collision up to the viewed floor, before the terrain.</summary>
-    public Vector3? MoveHit(Vector3 origin, Vector3 direction, int floor, float maxDistance)
+    public Vector3? MoveHit(Vector3 origin, Vector3 direction, int floor, float maxDistance) => FloorHit(origin, direction, floor, maxDistance)?.Position;
+
+    /// <summary><see cref="MoveHit"/> with the building whose collision was hit.</summary>
+    public (Vector3 Position, InteriorVolume Room)? FloorHit(Vector3 origin, Vector3 direction, int floor, float maxDistance)
     {
-        Vector3? best = null;
+        (Vector3, InteriorVolume)? best = null;
         foreach (var zone in streamer.AllZones)
             foreach (var room in zone.Interiors)
                 if (room.MoveHit(origin, direction, floor, maxDistance) is { } hit)
                 {
                     maxDistance = hit.Distance;
-                    best = hit.Position;
+                    best = (hit.Position, room);
                 }
         return best;
     }

@@ -34,8 +34,8 @@ sealed partial class PlayerInterface
     BuildingBuildData? buildMember;
     readonly List<QueuedGhost> buildQueue = [];
     float ghostYaw, ghostLift, ghostTilt = DefaultTilt;
-    // The ghost now: where the cursor meets the ground, its rotation (tilt included), the first failure.
-    (Vector3 Position, Quaternion Rotation, PlacementFailure Failure, BuildingBuildData Building, Vector2[]? Hull)? ghost;
+    // The ghost now: where the cursor meets the ground or a building's floor (On), its rotation (tilt included), the first failure.
+    (Vector3 Position, Quaternion Rotation, PlacementFailure Failure, BuildingBuildData Building, Vector2[]? Hull, GhostFloor? On)? ghost;
     readonly HashSet<Key> buildHeld = [];
     long buildClock;
     bool ghostsDrawn;
@@ -172,14 +172,18 @@ sealed partial class PlayerInterface
         if (wallLine is { } line && line.Master != CurrentBuilding()) wallLine = null;
         if (wallLine is { } active && !pointerOverUi && Ray(mouse) is { } lineRay && GroundHit(lineRay.Origin, lineRay.Direction) is { } lineEnd)
             LayWall(host, active, lineEnd);
-        else if (wallLine is null && CurrentBuilding() is { } building && !pointerOverUi && Ray(mouse) is { } ray && GroundHit(ray.Origin, ray.Direction) is { } hit)
+        else if (wallLine is null && CurrentBuilding() is { } building && !pointerOverUi && Ray(mouse) is { } ray && GroundHit(ray.Origin, ray.Direction) is { } terrainHit)
         {
+            // A building's floor before the terrain: the ghost stands on it, level.
+            var floorHit = building.LinksTogether ? null : host.Placement.FloorAlong(ray.Origin, ray.Direction, Vector3.Distance(ray.Origin, terrainHit));
+            var on = floorHit?.Floor;
+            var hit = floorHit?.Position ?? terrainHit;
             var parts = host.Parts(building.Id);
             var footprint = host.Placement.Footprint(building.Id);
             var at = new Vector2(hit.X, hit.Z);
             var box = footprint?.Bounds ?? (new Vector2(-4), new Vector2(4));
             // The ghost tilts to the ground: all the way for a building that matches the slope, else by the player's tilt factor, never more than its slope limit.
-            var normal = PlacementCheck.GroundNormal(host.Placement.Ground, at, ghostYaw, box);
+            var normal = on is not null ? Vector3.UnitY : PlacementCheck.GroundNormal(host.Placement.Ground, at, ghostYaw, box);
             float angle = MathF.Acos(Math.Clamp(normal.Y, -1, 1)) * (building.MatchSlope ? 1 : ghostTilt);
             if (building.MaxSlope > 0) angle = MathF.Min(angle, building.MaxSlope * MathF.PI / 180);
             var axis = Vector3.Cross(Vector3.UnitY, normal);
@@ -198,9 +202,9 @@ sealed partial class PlayerInterface
                 ignore = WallIgnore(new WallPiece(building, position, rotation), [snap.Point]);
             }
             var snapshot = session.CurrentSnapshot;
-            var failure = !Unlocked().Contains(building.Id) ? PlacementFailure.NotAvailable : PlacementCheck.Evaluate(new PlacementQuery(building, position, rotation, yaw, 0, parts, buildQueue,
-                snapshot.Characters, snapshot.Buildings, host.Towns(), host.PlayerFactionId(), host.Placement) { Ignore = ignore });
-            ghost = (position, rotation, failure, building, footprint?.Place(position, Quaternion.CreateFromAxisAngle(Vector3.UnitY, yaw)));
+            var failure = !Unlocked().Contains(building.Id) ? PlacementFailure.NotAvailable : PlacementCheck.Evaluate(new PlacementQuery(building, position, rotation, yaw, on?.Floor ?? 0, parts,
+                buildQueue, snapshot.Characters, snapshot.Buildings, host.Towns(), host.PlayerFactionId(), host.Placement) { Ignore = ignore, On = on });
+            ghost = (position, rotation, failure, building, footprint?.Place(position, Quaternion.CreateFromAxisAngle(Vector3.UnitY, yaw)), on);
         }
         buildMessage = ghost is { Failure: not PlacementFailure.None } g ? PlacementCheck.Message(g.Failure)
             : wallPieces.FirstOrDefault(p => p.Failure != PlacementFailure.None) is { Piece.Data: not null } bad ? PlacementCheck.Message(bad.Failure) : null;
@@ -348,8 +352,8 @@ sealed partial class PlayerInterface
     {
         if (WallClick()) return;
         if (ghost is not { Failure: PlacementFailure.None } g) return;
-        buildQueue.Add(new QueuedGhost(g.Building, g.Position, g.Rotation, 0, g.Hull));
-        Sound("Building_Place", "Building_Place", "Outdoors");   // Indoors for a ghost with a parent building: Unknown here, see docs/audio.md "Interface"
+        buildQueue.Add(new QueuedGhost(g.Building, g.Position, g.Rotation, g.On?.Floor ?? 0, g.Hull, g.On?.Building));
+        Sound("Building_Place", "Building_Place", g.On is null ? "Outdoors" : "Indoors");
         ghostLift = 0;
     }
 
@@ -363,7 +367,7 @@ sealed partial class PlayerInterface
     {
         if (buildQueue.Count == 0) return;
         Sound("Building_Confirm");
-        Say(new PlaceBuildings([.. buildQueue.Select(q => new PlannedBuilding(q.Building.Id, q.Position, q.Rotation, q.Floor, null))]) { Tick = session.World.Tick });
+        Say(new PlaceBuildings([.. buildQueue.Select(q => new PlannedBuilding(q.Building.Id, q.Position, q.Rotation, q.Floor, q.Parent))]) { Tick = session.World.Tick });
         buildQueue.Clear();
     }
 
