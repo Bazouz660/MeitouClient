@@ -838,8 +838,19 @@ public sealed partial class MainWindow : Window
         // As the update button: install the latest, or cancel its download.
         if (PlayButton.Classes.Contains("pending")) { InstallLatest_Click(sender, e); return; }
         if (install is null) { Status("Set the Kenshi folder first (Settings)."); return; }
-        if (PlayVersion is not { } version) { Status("Install a version first (Versions)."); return; }
-        if (Releases.FindGame(Releases.VersionDirectory(version)) is not { } exe) { Status($"Meitou {version} is not installed any more."); return; }
+        string version;
+        string? exe = null;
+#if DEBUG
+        exe = FindDevelopmentGame();
+#endif
+        if (exe is null)
+        {
+            if (PlayVersion is not { } selected) { Status("Install a version first (Versions)."); return; }
+            version = selected;
+            exe = Releases.FindGame(Releases.VersionDirectory(version));
+            if (exe is null) { Status($"Meitou {version} is not installed any more."); return; }
+        }
+        else version = "Debug build";
         // A second game would share meitou.user.json and the mod list with the first; whichever closes last overwrites the other's.
         if (running is { HasExited: false }) { Status("Meitou is already running: close it before starting it again."); return; }
         if (!SaveMods()) return;
@@ -848,10 +859,47 @@ public sealed partial class MainWindow : Window
         {
             WorkingDirectory = LauncherConfig.DataDirectory,
             UseShellExecute = false,
+#if DEBUG
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+#endif
         };
         start.Environment[GameInstall.EnvironmentVariable] = install.Root;
+        // Steamworks reads this file from the working directory when the game is started outside Steam.
+        // Keep it only for the lifetime of this launch; never ship it or overwrite a user's file. A file that already holds Kenshi's
+        // ID is one an earlier launch left (the launcher closed before the game did), so this launch takes it over and removes it.
+        var steamAppIdFiles = new List<string>();
+        void RemoveSteamAppIds() { foreach (string file in steamAppIdFiles) TryDeleteSteamAppId(file); }
+        if (OperatingSystem.IsWindows() && File.Exists(Path.Combine(install.Root, "steam_api64.dll")))
+        {
+            string[] files = [.. new[] { Path.Combine(start.WorkingDirectory, "steam_appid.txt"), Path.Combine(Path.GetDirectoryName(exe)!, "steam_appid.txt") }
+                .Distinct(StringComparer.OrdinalIgnoreCase)];
+            // Any other ID in either place is the user's: write nothing then, so both places keep agreeing.
+            bool appIdConflict = false;
+            foreach (string file in files)
+            {
+                try { if (File.Exists(file) && File.ReadAllText(file).Trim() != KenshiAppId) appIdConflict = true; }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { appIdConflict = true; }
+            }
+            if (!appIdConflict)
+            {
+                foreach (string file in files)
+                {
+                    try
+                    {
+                        Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+                        File.WriteAllText(file, KenshiAppId);
+                        steamAppIdFiles.Add(file);
+                    }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+                }
+                start.Environment["SteamAppId"] = KenshiAppId;
+                start.Environment["SteamGameId"] = KenshiAppId;
+            }
+        }
         if (OperatingSystem.IsMacOS() && !AddMacVulkanEnvironment(start.Environment))
         {
+            RemoveSteamAppIds();
             Status("The Vulkan loader is not installed: run 'brew install molten-vk vulkan-loader' in a terminal, then Play again.");
             return;
         }
@@ -861,21 +909,57 @@ public sealed partial class MainWindow : Window
             var game = Process.Start(start);
             running = game;
             Status($"Meitou {version} started.");
-            if (game is null) return;
+            if (game is null) { RemoveSteamAppIds(); return; }
             // The game's window is all a player sees of it, so a crash (above all one before the window opens) is reported here.
             var log = Path.Combine(Path.GetDirectoryName(exe)!, "log.txt");
+#if DEBUG
+            game.OutputDataReceived += (_, data) => { if (data.Data is { } line) { Console.WriteLine($"[Meitou] {line}"); System.Diagnostics.Debug.WriteLine($"[Meitou] {line}"); } };
+            game.ErrorDataReceived += (_, data) => { if (data.Data is { } line) { Console.Error.WriteLine($"[Meitou] {line}"); System.Diagnostics.Debug.WriteLine($"[Meitou] {line}"); } };
+            game.BeginOutputReadLine();
+            game.BeginErrorReadLine();
+#endif
             game.EnableRaisingEvents = true;
             game.Exited += (_, _) =>
             {
                 int code = game.ExitCode;
-                if (code != 0) Dispatcher.UIThread.Post(() => Status($"Meitou {version} stopped with an error (exit code {code}); its log is {log}"));
+                Dispatcher.UIThread.Post(() =>
+                {
+                    // On the UI thread, as Play: a game started since then has taken these files over and removes them itself.
+                    if (running == game) RemoveSteamAppIds();
+                    if (code != 0) Status($"Meitou {version} stopped with an error (exit code {code}); its log is {log}");
+                });
             };
         }
         catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or IOException)
         {
+            RemoveSteamAppIds();
             Status($"Could not start Meitou {version}: {ex.Message}");
         }
     }
+
+    const string KenshiAppId = "233860";
+
+    static void TryDeleteSteamAppId(string path)
+    {
+        try { File.Delete(path); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+    }
+
+#if DEBUG
+    static string? FindDevelopmentGame()
+    {
+        foreach (string start in new[] { Directory.GetCurrentDirectory(), AppContext.BaseDirectory })
+        {
+            var directory = new DirectoryInfo(Path.GetFullPath(start));
+            for (; directory is not null; directory = directory.Parent)
+            {
+                string candidate = Path.Combine(directory.FullName, "src", "Meitou.Game", "bin", "Debug", "net10.0", "MeitouClient.exe");
+                if (File.Exists(candidate)) return candidate;
+            }
+        }
+        return null;
+    }
+#endif
 
     // dlopen's default path lacks Homebrew's lib dir, and a launcher started from Finder has no DYLD_LIBRARY_PATH, so the game
     // would not find the Vulkan loader (#20); MoltenVK also needs argument buffers (docs/macos-port.md). Values already set win.
