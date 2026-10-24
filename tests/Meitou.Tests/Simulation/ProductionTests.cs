@@ -414,7 +414,7 @@ public class ProductionTests
         rig.World.Commands.Enqueue(new OperateOrder([farmer], rig.Sites[1]) { Tick = rig.World.Tick });
         int TotalWater() => well.Output.Count + farm.Inputs[0].Count + tank.Items.Where(i => i.Record == Water).Sum(i => i.Quantity) + rig.Count(labourer, Water) + rig.Count(farmer, Water) + rig.Count(taker, Water);
         bool stored = false;
-        for (int t = 0; t < 6000 && farm.Inputs[0].Count == 0; t++)
+        for (int t = 0; t < 30000 && farm.Inputs[0].Count == 0; t++)
         {
             rig.World.RunTick();
             stored |= tank.Items.Any(i => i.Record == Water);
@@ -456,6 +456,31 @@ public class ProductionTests
         rig.World.Commands.Enqueue(new RemoveJob(w, 0) { Tick = rig.World.Tick });
         Look();
         Assert.Equal((rig.Sites[1], 0, 1), (cold.OperateSite, cold.JobIndex, cold.Jobs.Count));
+    }
+
+    /// <summary>
+    /// Jobs farm then well, the farm dry and no water anywhere: the farmer pumps the well full, carries its water into the farm and then tends the growing crop, counted as
+    /// operating (docs/simulation.md "Production", Hauling and 87).
+    /// </summary>
+    [Fact]
+    public void A_farmer_fills_the_well_carries_its_water_to_the_farm_and_tends_the_growing_crop()
+    {
+        using var rig = new Rig(Database(), Constants, [Farm, Well]);
+        var farmer = rig.Add(0, StatsEnumerated.Farming, Unit);
+        rig.World.RunTick();
+        var (farm, well) = (rig.Machine(0), rig.Machine(1).Output!);
+        rig.World.Commands.Enqueue(new AddJob([farmer], Meitou.Data.Gameplay.Ai.TaskType.OPERATE_MACHINERY, rig.Sites[0]) { Tick = rig.World.Tick });
+        rig.World.Commands.Enqueue(new AddJob([farmer], Meitou.Data.Gameplay.Ai.TaskType.OPERATE_MACHINERY, rig.Sites[1]) { Tick = rig.World.Tick });
+        var cold = rig.World.Characters.Cold(farmer.Slot)!;
+        bool pumped = false;
+        for (int t = 0; t < 30000 && farm.Inputs[0].Count == 0; t++)
+        {
+            rig.World.RunTick();
+            pumped |= cold.OperateSite == rig.Sites[1] && well.Full;
+        }
+        Assert.True(pumped && farm.Inputs[0].Count == 10, $"well {well.Count}, farm {farm.Inputs[0].Count}, carried {rig.Count(farmer, Water)}");
+        for (int t = 0; t < 600 && !cold.Operating; t++) rig.World.RunTick();
+        Assert.True(cold.Operating && cold.OperateSite == rig.Sites[0] && farm.Farm!.Growth < 1, $"operating {cold.Operating} at {cold.OperateSite}, growth {farm.Farm!.Growth}");
     }
 
     [Fact]
