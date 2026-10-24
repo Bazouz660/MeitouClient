@@ -3,10 +3,10 @@
 Repository: `/Users/daniilmiroshnykov/code/dotnet/MeitouClient`  
 Branch: `metal-spike`  
 Last code/plan commit: `416d3dfb fix: keep low-res dust out of the MetalFX reactive mask`  
-State: functional opt-in Metal preview; **not 100% Vulkan effect parity**. **MEP-1 is accepted** (2026-10-24,
-MetalFX temporal: dust/desert/LOD flicker fixed); [MEP-I](docs/metal-effects-parity-plan.md) continues with
-**MEP-2 reflection quality**, then debris lighting -> tessellation/terrain relief -> water lighting. Vulkan remains
-the reference/default and the GPU cull stays off.
+State: functional opt-in Metal preview; **not 100% Vulkan effect parity**. **MEP-1 is accepted** (2026-10-24:
+MetalFX temporal dust/desert/LOD flicker fixed) and **MEP-2 reflection quality is implemented, awaiting in-game
+validation**; [MEP-I](docs/metal-effects-parity-plan.md) then continues with debris lighting -> tessellation/terrain
+relief -> water lighting. Vulkan remains the reference/default and the GPU cull stays off.
 
 Build: Release 0 warnings / 0 errors. Quick tests: 543 passed, 24 skipped (one known upstream item-icon failure);
 the 11 Metal upload tests currently fail before touching the engine: the host's `MTLCompilerService` XPC is still
@@ -55,7 +55,7 @@ Metal-specific fallbacks or absent paths:
 | Area | Vulkan effect | Metal status |
 |---|---|---|
 | Terrain | Ground displacement, rock smoothing, terrain-outline refinement (tessellation) | **absent**; `HasTessellation == false`, so only flat patches + parallax |
-| Water | Full Meitou lighting: GI, lamps, dust, environment specular, material lighting, foam sun shadow | **simplified** by `METAL_WATER`; waves, foam, caustics, reflection and refraction are present; reflection is single-sample |
+| Water | Full Meitou lighting: GI, lamps, dust, environment specular, material lighting, foam sun shadow | **simplified** by `METAL_WATER`; waves, foam, caustics, reflection and refraction are present; reflection now uses the shared 4x MSAA/resolve path |
 | Debris | Atmosphere-lit + hazed | **simple sun/ambient light**, no atmosphere or haze (16-sampler limit) |
 | Particles | Near-plane close pass for large sprites crossing the camera | **disabled** on Metal; normal-depth and low-resolution particles work |
 | Foliage | Generated rock levels + GPU mesh/rock cull | **CPU cull**; generated levels are tied to the GPU path, so the Metal rock LOD detail/perf differs |
@@ -90,7 +90,14 @@ the GPU cull stays off, and MEP-I covers visual effects only.
 0..1 velocity-depth fix, the MetalFX y-down motion convention, camera-cut resets and SMAA in `PostComposite`. The
 MetalFX reactive mask now gets full-size particle coverage only; low-resolution dust coverage remains TAA-only
 because it was unstable at distant terrain/LOD edges. FogRate remains a documented performance-only difference
-(Metal has no VRS attachment). **MEP-2 is next.**
+(Metal has no VRS attachment).
+
+**MEP-2 reflection quality is implemented, awaiting manual validation.** `IGpuContext.MaxSampleCount` supplies the
+device's sample-count capability (Vulkan limits / Metal `supportsTextureSampleCount`); `ReflectionPass` now builds
+multisampled colour+depth targets on Metal too, uses private storage for them and resolves colour before the water
+samples it. The reflection fog reads sample 0 of the multisample depth. Level 2 now reflects characters on both
+backends (previously the shared pass drew only terrain/objects/foliage); levels 1-4 are terrain, characters, placed
+objects and foliage. `--reflection-samples <n>` selects the count (1 disables MSAA for the A/B).
 
 ## Upstream sync (2026-10-23)
 
@@ -346,9 +353,9 @@ Verified clean:
 
 ## Next work
 
-1. Start **MEP-2 reflection quality** (details in [docs/metal-effects-parity-plan.md](docs/metal-effects-parity-plan.md)),
-   then debris lighting, tessellation/terrain relief and water lighting. Do not start GPU culling or default-switch
-   work until the MEP-I preview gate is accepted.
+1. Validate **MEP-2 reflection quality** in game (water edges/horizon, level-2 characters at the Hub, levels 1-4 at
+   sea/river, resize/alt-tab, night/rain, and `--reflection-samples 1` for the MSAA A/B), then start MEP-3 debris
+   lighting. Do not start GPU culling or default-switch work until the MEP-I preview gate is accepted.
 2. Finish the GPU draw path on Metal: `FoliageGpuCull` is live for meshes/rocks, but `FoliageGrassGpu` and
    `HizPyramid` are still Vulkan-only (grass uses the CPU). The plan, constraints and validation gates are in
    [docs/metal-gpu-cull-plan.md](docs/metal-gpu-cull-plan.md). Port grass next; verify `baseInstance` in Metal

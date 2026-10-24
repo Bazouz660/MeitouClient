@@ -1,6 +1,6 @@
 # Metal Effects Parity I (MEP-I)
 
-Status: **MEP-1 accepted (2026-10-24); MEP-2..MEP-5 not started.**
+Status: **MEP-1 accepted (2026-10-24); MEP-2 implemented, awaiting in-game validation; MEP-3..MEP-5 not started.**
 
 Starting point: `metal-spike` at `7eb04a96` (`docs: plan Metal Effects Parity I (MEP-I) milestones`), after the
 effect-parity audit `84193e4a` and the upstream `57a7968a` merge. Read
@@ -112,17 +112,29 @@ Acceptance:
 
 Work items:
 
-- Metal's reflection is currently **single-sample**; Vulkan resolves MSAA. Add the Metal MSAA/resolve path where the
-  Vulkan path uses it, or document and measure why single-sample is visually equivalent.
-- Check reflection sampling at the water edge, horizon, shoreline, objects and characters at levels 1-4.
-- Verify reflection memory/lifetime under resize and the 8120 MB budget; keep the shared `ReflectionPass` semantics.
-- Keep the existing water reflection settings visible only because they work; fix or hide any that do not.
+- **Done: MSAA/resolve.** `IGpuContext.MaxSampleCount` is the shared device capability; Vulkan keeps its
+  colour+depth sample-count intersection and Metal asks `supportsTextureSampleCount` (2x/4x, 8x where available).
+  `ReflectionPass` builds the same multisampled colour and depth targets on both backends, resolves colour into the
+  sampled texture the water reads, and leaves the existing backend-deferred release on resize. The Metal MSAA targets
+  use private storage; the reflection fog reads sample 0 of the multisample depth.
+- **Done: level 2 characters.** The reflection's level 2 now draws `CharacterRenderer` (the game's queue 50) on both
+  backends, after objects/foliage as in the main view. Levels 1-4 now mean terrain, characters, placed objects and
+  foliage respectively; level 4 also contains characters and objects.
+- **Done: settings and diagnostics.** `--reflection-samples <n>` selects the target sample count (1 disables MSAA;
+  the device may cap it). The level and range sliders remain visible because both work. The reflection stats line
+  reports single-sample versus the actual MSAA count.
+- **Checked in code: memory/lifetime.** Targets are re-made when the size or requested sample count changes; the
+  Metal backend defers their release through the frames in flight. Four-sample reflection colour+depth is a small
+  fraction of the 8120 MB High budget at typical Retina sizes.
+- **Manual validation still needed:** water edge/horizon/shoreline, level 2 characters at the Hub, levels 1-4 at sea
+  and river views, a resize/alt-tab, night and rain, and an A/B against `--reflection-samples 1`.
 
 Likely files:
 
 - `src/Meitou.Rendering/ReflectionPass.cs`
-- `src/Meitou.Rendering/WaterRenderer.cs`
-- `src/Meitou.Game/GameHost.Metal.cs` (settings exposure)
+- `src/Meitou.Rendering/WorldFrame.cs`
+- `src/Meitou.Metal/MetalContext.cs` and `src/Meitou.Rendering/Gpu/{IGpuContext,GpuContext}.cs`
+- `src/Meitou.Rendering/Characters/CharacterRenderer*.cs`
 
 Acceptance:
 

@@ -113,6 +113,7 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
     readonly MTLDevice device;
     readonly MTLCommandQueue queue;
     readonly MTLPixelFormat presentFormat;
+    readonly int maxSampleCount;
     readonly bool waitForSlot, waitOneFrame;
     // Lossless target compression / base-view reuse is on by default (validated in the 2026-10-24 Metal run);
     // MEITOU_METAL_NO_COMPRESSION=1 disables it for an A/B. It is independent of the experimental GPU cull.
@@ -152,6 +153,11 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
         this.device = device;
         this.queue = queue;
         this.presentFormat = presentFormat;
+        // Metal supports 2x/4x (and 8x on some discrete Macs) for the colour and depth targets the reflection uses. Ask the
+        // device rather than assuming 4: the same reflection pass must fall back cleanly on a Mac without MSAA support.
+        for (int count = 8; count >= 2; count /= 2)
+            if (device.SupportsTextureSampleCount((ulong)count)) { maxSampleCount = count; break; }
+        maxSampleCount = Math.Max(maxSampleCount, 1);
         string slotWait = Environment.GetEnvironmentVariable("MEITOU_METAL_SLOT_WAIT") ?? "";
         // Vulkan waits for the slot's fence before reusing it. That rule is now the Metal default; "0"/"false" restores
         // the old frame-number-only behavior for A/B diagnostics, and "serial" waits for the immediately previous frame.
@@ -338,9 +344,10 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
         var layerRange = new NSRange { location = (ulong)baseLayer, length = (ulong)layers };
         // A full-range identity view is the texture itself. Keeping the base image here is what lets a plain render
         // target omit PixelFormatView and stay eligible for Metal's lossless compression; only a real sub-range or
-        // swizzled view creates a child texture.
+        // swizzled view creates a child texture. A multisampled texture always keeps its own image: its base type is
+        // Type2DMultisample, and a child Type2D view would lose the samples (the reflection's MSAA targets depend on this).
         int totalLayers = of.Desc.Kind == TextureKind.Cube ? 6 * Math.Max(of.Desc.Layers, 1) : of.Desc.Layers;
-        bool baseView = LosslessCompression && baseLevel == 0 && levels == of.Desc.Levels && baseLayer == 0 && layers == totalLayers &&
+        bool baseView = (LosslessCompression || of.Desc.Samples > 1) && baseLevel == 0 && levels == of.Desc.Levels && baseLayer == 0 && layers == totalLayers &&
             swizzle.Equals(GpuSwizzle.Identity) &&
             viewType == (of.Desc.Kind switch { TextureKind.Cube => MTLTextureType.Cube, TextureKind.Texture2DArray => MTLTextureType.Type2DArray, _ => MTLTextureType.Type2D });
         var view = new MetalTextureView
@@ -893,6 +900,7 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
     /// <inheritdoc/>
     public bool HasRayQuery => false;
     public bool HasTessellation => false;
+    public int MaxSampleCount => maxSampleCount;
 
     /// <inheritdoc/>
     public bool ConstantVertexAttributes => false;

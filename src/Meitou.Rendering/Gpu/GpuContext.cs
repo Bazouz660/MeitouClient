@@ -216,6 +216,19 @@ public sealed unsafe partial class GpuContext : IDisposable, IGpuContext
     public bool HasTessellation => Device.HasTessellation;
 
     /// <inheritdoc/>
+    public int MaxSampleCount
+    {
+        get
+        {
+            var l = Device.Limits;
+            uint both = (uint)(l.FramebufferColorSampleCounts & l.FramebufferDepthSampleCounts);
+            int max = 1;
+            while (max < 64 && (both & (uint)(max * 2)) != 0) max *= 2;
+            return max;
+        }
+    }
+
+    /// <inheritdoc/>
     public bool ConstantVertexAttributes => true;
     public bool RenderTargetsBottomUp => true;
 

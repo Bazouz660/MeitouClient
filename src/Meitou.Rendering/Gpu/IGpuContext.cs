@@ -82,6 +82,9 @@ public interface IGpuContext
     /// <summary>The device has tessellation shaders (the ground relief and the smoothed rocks use them where they do).</summary>
     bool HasTessellation { get; }
 
+    /// <summary>The largest multisample count a colour and depth target may use together (1: no MSAA).</summary>
+    int MaxSampleCount { get; }
+
     /// <summary>A frame is open for recording (the upload paths write into it; Metal's batches need nothing).</summary>
     void EnsureFrame();
 

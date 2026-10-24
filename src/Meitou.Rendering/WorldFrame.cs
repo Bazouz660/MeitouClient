@@ -57,6 +57,8 @@ sealed class WorldOptions
     // The viewer starts at full quality (the old look); the game's missing-key defaults are TextureQuality.Default (1) and
     // ReflectionPass.DefaultLevel (2): --texture-quality 1 --water-reflection 2.
     public int TextureQuality = 0, WaterReflection = 4;
+    /// <summary>Samples per texel of the reflection target (<c>--reflection-samples</c>; 1 disables the MSAA/resolve path).</summary>
+    public int ReflectionSamples = ReflectionPass.DefaultSamples;
     /// <summary>Sun shadows (docs/formats/shadows.md): the game's <c>shadow quality</c> index, <c>Shadow Range</c>, the debug view.</summary>
     public int ShadowQuality = 2, DebugShadows, ShadowFilter = 2;
     /// <summary>The ray-traced global illumination's debug view (0 off; docs/render-gi.md).</summary>
@@ -214,7 +216,8 @@ sealed class WorldOptions
           --no-water               leave out the water
           --water-grid <n>         the Meitou water grid's segments round the eye (default 256; 128 lower detail, 512 finer)
           --water-ocean <n>        the Meitou water's FFT size per cascade: 64, 128 or 256 (default 256; 128 for integrated GPUs, a quarter of the work)
-          --water-reflection <0..4> the game's `water reflection`: what the water mirrors: 0 nothing (sky colour; R toggles), 1 sky and terrain, 2 the same (the characters' level; none yet), 3 + buildings and features, 4 + trees, bushes and rocks (default 4; the game's own default is 2; Tab slider)
+          --water-reflection <0..4> the game's `water reflection`: what the water mirrors: 0 nothing (sky colour; R toggles), 1 sky and terrain, 2 + characters, 3 + buildings and features, 4 + trees, bushes and rocks (default 4; the game's own default is 2; Tab slider)
+          --reflection-samples <n> samples per texel of the half-resolution reflection target (default 4; 1 disables MSAA; the device may cap it)
           --texture-quality <0..4> the game's `texture resolution gimping`: 0 Maximum, 1 High, 2 Medium, 3 Low, 4 Fugly; each step drops the top mip of compressed textures as they load (default 0, full size; the game's own default is 1)
           --shadow-quality <0|1|2> map side 1024/2048/4096 (default 2)   --shadow-range <u> (1000..9000, default 5000; with the Meitou shadows 1000..15000, default 10000)
           --shadow-range 0         shadows start off (the Tab slider turns them on)
@@ -341,6 +344,12 @@ sealed class WorldOptions
                 case "--water-grid": o.WaterGrid = Math.Clamp(int.Parse(Next(), CultureInfo.InvariantCulture), 64, 1024); break;
                 case "--water-ocean": o.WaterOcean = int.Parse(Next(), CultureInfo.InvariantCulture) switch { <= 64 => 64, <= 128 => 128, _ => 256 }; break;
                 case "--water-reflection": o.WaterReflection = Math.Clamp(int.Parse(Next(), CultureInfo.InvariantCulture), 0, 4); break;
+                case "--reflection-samples":
+                {
+                    int samples = int.Parse(Next(), CultureInfo.InvariantCulture);
+                    o.ReflectionSamples = samples <= 1 ? 1 : samples;
+                    break;
+                }
                 case "--texture-quality": o.TextureQuality = Math.Clamp(int.Parse(Next(), CultureInfo.InvariantCulture), 0, Meitou.Data.Textures.TextureQuality.Maximum); break;
                 case "--shadow-quality": o.ShadowQuality = int.Parse(Next(), CultureInfo.InvariantCulture); break;
                 case "--shadow-filter": o.ShadowFilter = Math.Clamp(int.Parse(Next(), CultureInfo.InvariantCulture), 0, 2); break;
@@ -870,7 +879,7 @@ static class WorldFrame
                 Ready(waterSource!), meitouWaves: meitouWater, shoreField: meitouWater);
             gpu.Water.Meitou = meitouWater;
             step?.Invoke("reflections");
-            gpu.Reflection = new ReflectionPass(context) { Level = o.WaterReflection, Range = ReflectionRange };
+            gpu.Reflection = new ReflectionPass(context) { Level = o.WaterReflection, Range = ReflectionRange, Samples = o.ReflectionSamples };
             foreach (var m in messages) Console.WriteLine($"warning   {m}");
             Console.WriteLine($"water     at height {WorldWater.Height} ({watch.ElapsedMilliseconds} ms)");
         }
@@ -1405,12 +1414,13 @@ static class WorldFrame
         // The mirrored scene keeps the flat ambient: the probes' light is not worth a second view's reads in a blurred reflection (docs/render-gi.md).
         if (gpu.Probes is { } reflectedProbes) reflectedProbes.InReflection = reflecting && !reflectedProbes.Reflected;
         if (reflecting)
-            gpu.Reflection!.Render(camera, rw, rh, gpu.Sky, colours, light, gpu.Terrain, render, gpu.Objects is null ? null : (vp, e, frustum) =>
+            gpu.Reflection!.Render(camera, rw, rh, gpu.Sky, colours, light, gpu.Terrain, render,
+                gpu.Objects is null && gpu.Characters is null && gpu.Foliage is null ? null : (vp, e, frustum) =>
             {
                 var reflection = gpu.Reflection;
-                var objects = gpu.Objects;
-                // The level (docs/formats/settings.md): 3 adds buildings (and the map features, which are not told apart), 4 everything else (foliage).
-                if (reflection.Level >= 3)
+                // The level (docs/formats/settings.md): 2 characters, 3 buildings (and the map features, which are not told
+                // apart), 4 everything else (foliage). Characters still reflect when the debug object switch is off.
+                if (reflection.Level >= 3 && render.Objects && gpu.Objects is { } objects)
                 {
                     float distance = objects.ObjectDistance, landmarks = objects.LandmarkDistance;
                     float bias = objects.LodBias;
@@ -1428,10 +1438,23 @@ static class WorldFrame
                     objects.LandmarkDistance = landmarks;
                     objects.LodBias = bias;
                 }
-                if (reflection.Level >= 4) gpu.Foliage?.Draw(vp, e, frustum, render, light.SunDirection, light.FogColour, light.FogDistance, gpu.Terrain, grass: false, maxRange: reflection.FoliageReach);
+                if (reflection.Level >= 4 && render.Objects) gpu.Foliage?.Draw(vp, e, frustum, render, light.SunDirection, light.FogColour, light.FogDistance, gpu.Terrain, grass: false, maxRange: reflection.FoliageReach);
                 reflection.Lap(3);
                 StageClock.Sub("refl foliage");
-                reflection.SceneStats = reflection.Level < 3 ? "no objects (level < 3)" : $"{objects.DrawnInstances} objects ({objects.DrawnTriangles:N0} triangles, {objects.DrawCalls} calls), {(reflection.Level >= 4 ? gpu.Foliage?.DrawnInstances ?? 0 : 0)} foliage meshes ({(reflection.Level >= 4 ? gpu.Foliage?.DrawCalls ?? 0 : 0)} calls)";
+                // Level 2 is the game's characters layer. They are drawn after the opaque objects and foliage as in the
+                // main view, and without the main view's fog cull (the reflection's own range/HideDistance handles that).
+                if (reflection.Level >= 2 && gpu.Characters is { } reflectedCharacters)
+                {
+                    reflectedCharacters.FogCull = null;
+                    reflectedCharacters.InteriorObjects = null;
+                    reflectedCharacters.Draw(vp, e, frustum, light.SunDirection, light.FogColour, light.FogDistance);
+                    reflection.Lap(2);
+                    StageClock.Sub("refl characters");
+                }
+                var reflectedObjects = reflection.Level >= 3 && render.Objects ? $"{gpu.Objects?.DrawnInstances ?? 0} objects ({gpu.Objects?.DrawnTriangles ?? 0:N0} triangles, {gpu.Objects?.DrawCalls ?? 0} calls)" : "no objects (level < 3)";
+                var reflectedFoliage = reflection.Level >= 4 && render.Objects ? $"{gpu.Foliage?.DrawnInstances ?? 0} foliage meshes ({gpu.Foliage?.DrawCalls ?? 0} calls)" : "";
+                var reflectedPeople = reflection.Level >= 2 ? $"{gpu.Characters?.DrawnCharacters ?? 0} characters" : "no characters (level < 2)";
+                reflection.SceneStats = $"{reflectedPeople}, {reflectedObjects}{(reflectedFoliage.Length > 0 ? $", {reflectedFoliage}" : "")}";
             });
         if (gpu.Probes is not null) gpu.Probes.InReflection = false;
         // What the reflection's rect learnt for the water pass: the nearest water in view, or NaN when no pass ran to find out.

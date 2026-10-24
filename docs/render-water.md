@@ -30,8 +30,9 @@ caustics, crest light/glitter and persistent foam. Surface colour/clarity depend
 settings. Foam uses diffuse sun/ambient/weather lighting and dims at night, not emissive white.
 The reflected scene remains mirrored around Y100 despite waves. Reflect level/range, frustum,
 clip plane, water coverage and reuse age determine work; use original rules in Faithful.
-Meitou reflection skips unnecessary casters/shadows, shortens object/foliage reaches and has
-separate sample/quality settings. Fog in reflection must evaluate reflected world geometry
+Meitou reflection skips unnecessary casters/shadows and shortens object/foliage reaches. The half-resolution
+target uses 4x MSAA by default on both backends (`--reflection-samples 1` disables it); level 2 reflects
+characters, level 3 placed objects and level 4 foliage. Fog in reflection must evaluate reflected world geometry
 against the appropriate air/water bounds; ordinary camera fog cannot be applied indiscriminately.
 
 ## Safe work skips

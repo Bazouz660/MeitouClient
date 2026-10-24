@@ -624,8 +624,9 @@ Keep `RecordsSecondaries` false: Metal records inline into one list.
 `ReflectionPass` are seam-neutral. Metal draws the Meitou waves, shore and foam with the `METAL_WATER` fragment:
 the atmosphere's GI, lamp, dust, specular and material-lighting declarations are compiled out, foam uses no sun
 shadow, and the two RGBA32F biome parameter maps are packed into one two-layer array. That leaves exactly Metal's
-16 fragment samplers. The reflection pass draws the mirrored sky, terrain, objects and foliage (single-sample on
-Metal; Vulkan keeps its MSAA resolve). Refraction uses the shared half-res scene copy into a colour+sampled target;
+16 fragment samplers. The reflection pass draws the mirrored sky, terrain, characters, objects and foliage with the
+same 4x (device-capped) MSAA colour+depth targets and colour resolve as Vulkan; `--reflection-samples 1` disables
+the path for an A/B. Refraction uses the shared half-res scene copy into a colour+sampled target;
 the faithful surface remains the fallback when the Meitou switch is off. The sea, Hub and river views still need a
 visual pass against Vulkan.
 
@@ -790,6 +791,8 @@ default.
 - MSAA: `TextureDesc.Samples > 1` is `Type2DMultisample` (`Type2DMultisampleArray` for arrays), one mip level;
   `Resolve` is a render pass with the source as its colour attachment, `ResolveTexture` the target, and
   `StoreAction = MultisampleResolve`. A clear pipeline must name every attachment of the pass (the GI mask is slot 1).
+  The reflection uses this path at 4x by default (`--reflection-samples 1` disables it), with private MSAA colour/depth
+  and the multisample depth read at sample 0 by the reflection fog.
 - Texture views: the textures carry `PixelFormatView`; a non-identity `GpuSwizzle` is
   `newTextureViewWithPixelFormat:textureType:levels:slices:swizzle:` (the BC4 masks' `RrrOne`). Metal's blit cannot
   scale: `BlitLevel` copies equal-sized levels and renders a sampling pass over level views when they differ.

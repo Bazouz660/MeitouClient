@@ -197,7 +197,7 @@ the game calls `Root::restoreConfig` / `saveConfig` (**Verified**), which use th
 | --- | --- | --- |
 | 0 | no pass; water shaders built with `NO_REFLECTION` | no pass; the water's `uReflect = 0` path: the sky colour is reflected unattenuated (**Observed** to be the counterpart of the game's reflection factor 1; the viewer's shader is not the game's, so the look is not compared) |
 | 1 | queues 5-8, 25 | sky and terrain |
-| 2 | + queue 50 | the same: queue 50 is the characters (**Observed** from the label), none exist in the viewer yet |
+| 2 | + queue 50 | + characters (**Observed** from the label) |
 | 3 | + queue 20 | + every placed object (buildings and map features are not told apart: **Unknown** which queue the features use) |
 | 4 | no list: everything | + foliage (trees, bushes, rocks; no grass, as before). Which queue the game's foliage is in is **Unknown**; "everything" is assumed to be the only level that includes it |
 
