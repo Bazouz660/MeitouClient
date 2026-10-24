@@ -30,7 +30,7 @@ public sealed partial class MedicalState
     /// <summary>Save key <c>blood</c>. Current blood; a character has capacity <see cref="BloodCapacity(RaceData, float, bool, float, float)"/>.</summary>
     public float Blood { get; set; }
 
-    /// <summary>Save key <c>bleeding</c>: the current bleed rate (blood per game hour), recomputed each tick.</summary>
+    /// <summary>Save key <c>bleeding</c>: the current bleed rate (blood per second of character time), recomputed each tick.</summary>
     public float Bleeding { get; private set; }
 
     /// <summary>Save key <c>hung</c>: the hunger level 0 to 3 (3 full; 2 and above well fed, below 1 starving).</summary>

@@ -113,8 +113,10 @@ Meitou: `BodySystem.BedOf`, the bed fixture a character is held in (`BedSystem`)
 
 **Verified** (decompile): wounds lose `bleeding clot rate` x0.1 a second (`FUN_140646140`); a hit opens one of strength
 max(cut, pierce) x `bleed rate` x0.1 x scale (`FUN_1406508d0`). Bleeding = (`extra blood loss from bodyparts` x stumps
-(-(h+b) 0.002 each) + wounds) x ChanceOfDeath x 1.2 x race `bleed rate`; blood falls by it a second and, with no bleeding,
-recovers `blood recovery rate` x0.1 x race `heal rate` a second. The KO timer +0xa0 falls by dt.
+(-(h+b) 0.002 each) + wounds) x ChanceOfDeath x 1.2 x race `bleed rate`, floored at 0; blood falls by it a second, then is
+clamped to capacity every tick, and with no bleeding recovers `blood recovery rate` x0.1 x race `heal rate` a second
+(`FUN_140652000`). The wound is opened whatever the race's `bleed rate` (no race read in `FUN_1406508d0`; a bloodless race
+gets wounds that drain nothing). The KO timer +0xa0 falls by dt.
 
 **Verified** coma point=-lerp(10,85,toughness/100). **Observed** KO duration combines base20,
 vital/negative-part and missing-blood terms; leg loss adds a separate random KO, arm loss does
