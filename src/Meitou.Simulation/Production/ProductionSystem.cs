@@ -579,7 +579,8 @@ public sealed partial class ProductionSystem : ITickSystem
             bool worked;
             if (m.Data.IsResearch) worked = ResearchStep(world, m, s, dt, ref contributions);
             else if (m.Data.IsCrafting) worked = CraftStep(world, m, skill, s, dt);
-            else if (m.Farm is not null) worked = HarvestStep(world, m, skill, s, dt);
+            // A growing crop with water is tended: the operator plays the farm's clip (engine reading of task 87's start conditions, docs/game/buildings-production.md "Farming").
+            else if (m.Farm is not null) worked = HarvestStep(world, m, skill, s, dt) || Tended(m);
             else worked = ProduceStep(world, m, s, dt);
             cold.Operating = worked;
             // Operating trains the stat (Observed, FUN_1408c7250: 0.5, farming x1.5, through the continuous entry), every frame at the machine.
@@ -774,6 +775,10 @@ public sealed partial class ProductionSystem : ITickSystem
         }
         return false;
     }
+
+    /// <summary>A farm whose crop is still growing and whose every input holds water.</summary>
+    static bool Tended(Machine m) =>
+        m.Farm is { Growth: < 1 } f && f.Death < m.Data.Farm!.DeathThreshold && m.Inputs.All(i => i.Rate <= 0 || i.Level + i.Count > 0);
 
     /// <summary>A plant is done (<b>Observed</b>, <c>FUN_1400e4800</c>): its growth -10, one more harvested.</summary>
     static void NextPlant(FarmState f)

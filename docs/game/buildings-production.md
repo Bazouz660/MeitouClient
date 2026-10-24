@@ -399,6 +399,11 @@ not a natural site, has a functionality and passes the owner test of [resources]
 skipped when a virtual test on the character (`+0x30`) fails (**Unknown** what it tests; Meitou skips animals). Meitou
 shows it for the whole operate task, the walk there included, and drops it when the task ends (the original's removal
 was not traced, **Unknown**).
+Operator animation: the functionality's `animation` reference (**Verified**, probe of vanilla BUILDING_FUNCTIONALITY). No
+farming clip exists: cactus, cotton, potato, rice and veg farms use `stonemine` (the mining swing, with the Hoe); `farming
+wheat` and `farming hemp` have none (what the original plays then is **Unknown**; Meitou falls back to `stonemine`). Whether
+the original plays it while the crop grows is **Unknown**; task 87's start conditions (inputs not empty, output not full) let
+an operator stay at a growing farm with water, and Meitou plays the clip there.
 
 | function | examples (production mult) |
 |---|---|

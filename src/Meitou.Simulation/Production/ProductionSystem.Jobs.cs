@@ -313,8 +313,8 @@ public sealed partial class ProductionSystem
 
     /// <summary>
     /// A machine an operator can work (the original's start conditions of task 87: output not full, inputs not empty, power; docs/game/ai-tasks.md): it has power, and a bench a queued
-    /// research or craft; a farm a dead crop to clear or a ripe one to harvest; inputs that hold something or that the operator can fill (it carries the item or, with
-    /// <see cref="ProductionSettings.AutoHaul"/>, a storage holds it); and room in the output or, with AutoHaul, a storage that takes it.
+    /// research or craft; a farm a dead crop to clear, a ripe one to harvest or a growing one with water (tended); inputs that hold something or that the operator can fill
+    /// (it carries the item or, with <see cref="ProductionSettings.AutoHaul"/>, <see cref="NearestSource"/> finds it); and room in the output or, with AutoHaul, a storage that takes it.
     /// </summary>
     bool HasWork(World world, BuildSite site, Machine m, CharacterCold cold)
     {
@@ -323,17 +323,24 @@ public sealed partial class ProductionSystem
         if (m.Farm is { } f)
         {
             if (f.Death >= m.Data.Farm!.DeathThreshold) return true;
-            return f.Growth >= 1 && f.Harvested < f.Plants.Length && Room(world, site, m);
+            if (f.Growth >= 1) return f.Harvested < f.Plants.Length && Room(world, site, m);
+            return Supplied(world, site, m, cold);
         }
         if (m.Craft is { Queue.Count: 0 }) return false;
+        return Supplied(world, site, m, cold) && (m.Craft is not null || Room(world, site, m));
+    }
+
+    /// <summary>Every input holds something or the operator can fill it: it carries the item or, with AutoHaul, <see cref="NearestSource"/> finds it.</summary>
+    bool Supplied(World world, BuildSite site, Machine m, CharacterCold cold)
+    {
         foreach (var input in m.Inputs)
         {
             if (input.Rate <= 0 || input.Level + input.Count > 0) continue;
             if (cold.Inventory is { } inv && Carried(inv, input.Item).Any()) continue;
-            if (Settings.AutoHaul && NearestStorage(world, site, s => s.Storage!.Items.Any(i => i.Record == input.Item && i.Quantity > 0 && i.Section == "main")) is not null) continue;
+            if (Settings.AutoHaul && NearestSource(world, site, input.Item) is not null) continue;
             return false;
         }
-        return m.Craft is not null || Room(world, site, m);
+        return true;
     }
 
     /// <summary>
@@ -348,7 +355,7 @@ public sealed partial class ProductionSystem
         {
             if (input.Rate <= 0) continue;
             if (input.Count < input.Recipe.Capacity && Carried(inv, input.Item).Any()) return true;
-            if (fetch && input.Count == 0 && NearestStorage(world, site, s => s.Storage!.Items.Any(i => i.Record == input.Item && i.Quantity > 0 && i.Section == "main")) is not null) return true;
+            if (fetch && input.Count == 0 && NearestSource(world, site, input.Item) is not null) return true;
         }
         if (!fetch || m.Output is not { } output || items.Create(output.Recipe.Item, 1) is not { } one) return false;
         if (!output.Full && !Carried(inv, one.Record).Any()) return false;
