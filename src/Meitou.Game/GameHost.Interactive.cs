@@ -312,6 +312,8 @@ sealed partial class GameHost
             if (KeyMap.Map(k) is { } key)
             {
                 if (shiftDown && key == EngineKey.F1) { Console.WriteLine(meitou.Toggle()); return; }
+                if (shiftDown && key == EngineKey.F2 && switches.FirstOrDefault(e => e.Id == "skin") is { } skin)   // the skin switch alone, to compare faces
+                { skin.IsMeitou = !skin.IsMeitou; Console.WriteLine($"skin      {skin.State}"); return; }
                 if (shiftDown && key == EngineKey.F11) { ToggleNavOverlay(); return; }
                 if (shiftDown && key == EngineKey.F12) { if (profiler is not null) profiler.ShowVram = !profiler.ShowVram; return; }   // the VRAM pie (F12 alone cycles the profiler)
                 if (player.BuildKey(key, shiftDown)) return;
