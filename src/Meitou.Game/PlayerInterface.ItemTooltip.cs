@@ -14,11 +14,12 @@ sealed partial class PlayerInterface
     /// <summary>The tone of a grade's name (<c>ItemGrade0</c> to <c>ItemGrade4</c> of kenshi_colours.xml; Specialist and Masterwork share the last).</summary>
     static TooltipTone GradeTone(int grade) => grade switch { 0 => TooltipTone.Grade0, 1 => TooltipTone.Grade1, 2 => TooltipTone.Grade2, 3 => TooltipTone.Grade3, _ => TooltipTone.Grade4 };
 
-    /// <summary>An armour line (<see cref="ArmourTooltip"/>, docs/game/ui-screens.md "Item tooltip") as a tooltip row: a statistic's label in the title colour, a grade in its grade's colour.</summary>
+    /// <summary>An armour line (<see cref="ArmourTooltip"/>, docs/game/ui-screens.md "Item tooltip") as a tooltip row: a statistic's or effect's label in the title colour, a grade in its grade's colour, an effect's value in the bad colour below neutral and the good colour above.</summary>
     static TooltipLine ArmourRow(ArmourTooltip.Line line) => line.Kind switch
     {
         ArmourTooltip.LineKind.Grade => new(line.Label, "", GradeTone(line.Grade)),
         ArmourTooltip.LineKind.Stat => new(line.Label, line.Value, TooltipTone.Title, TooltipTone.Ink),
+        ArmourTooltip.LineKind.Effect => new(line.Label, line.Value, TooltipTone.Title, line.Grade < 0 ? TooltipTone.Bad : TooltipTone.Good),
         _ => new(line.Label, line.Value, TooltipTone.Main, TooltipTone.Main),
     };
 }

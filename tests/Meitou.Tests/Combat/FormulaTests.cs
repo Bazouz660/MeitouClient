@@ -34,6 +34,37 @@ public class FormulaTests
         Assert.Equal(expected, DefenceFormulas.BlockChance(defence, attack, Constants), 3);
     }
 
+    [Theory]
+    [InlineData(5, "0.00", "0.85")]
+    [InlineData(20, "0.02", "0.86")]
+    [InlineData(40, "0.06", "0.88")]
+    [InlineData(60, "0.12", "0.90")]
+    [InlineData(80, "0.21", "0.92")]
+    [InlineData(95, "0.29", "0.94")]
+    public void Heavy_metal_plate_tooltip_effects_follow_the_observed_samurai_armour_grades(int level, string stealth, string combatSpeed)
+    {
+        // The Samurai Armour at its six grades (docs/game/ui-screens.md "Item tooltip"): stealth mult 1, combat speed mult 0.94, metal plate, heavy.
+        var armour = BodyPlate with { Class = ArmourClass.Heavy, Material = ArmourType.MetalPlate, StealthMult = 1, CombatSpeedMult = 0.94f, LevelBonus = 0 };
+        var lines = ArmourTooltip.Tail(armour, id => id, level);
+        string Value(string label) => lines.First(l => l.Label == label).Value;
+        Assert.Equal(stealth + "x", Value("-Stealth effect"));
+        Assert.Equal(combatSpeed + "x", Value("-Combat speed effect"));
+    }
+
+    [Fact]
+    public void Samurai_legplates_tooltip_at_level_95_matches_the_original()
+    {
+        // The Legplates as the game's modded data have them (stealth 0.5, combat speed 0.98, dodge 0.6, unarmed -10, blunt +0.05, cut -0.081): the original shows 61 % / 73 % / 85 pts, 0.15x, 0.98x.
+        var legplates = BodyPlate with { Class = ArmourClass.Heavy, Material = ArmourType.MetalPlate, StealthMult = 0.5f, CombatSpeedMult = 0.98f, DodgeMult = 0.6f, UnarmedBonus = -10, BluntDefBonus = 0.05f, CutDefBonus = -0.081f, CutIntoStun = 0, LevelBonus = 0 };
+        var head = ArmourTooltip.Head(legplates, 95);
+        Assert.Equal("61%", head.First(l => l.Label == "-Blunt resistance").Value.Split('.')[0] + "%");
+        Assert.Equal("73%", head.First(l => l.Label == "-Cut resistance").Value.Split('.')[0] + "%");
+        Assert.Equal("85pts", head.First(l => l.Label == "-Harpoon resistance").Value.Split('.')[0] + "pts");
+        var tail = ArmourTooltip.Tail(legplates, id => id, 95);
+        Assert.Equal("0.15x", tail.First(l => l.Label == "-Stealth effect").Value);
+        Assert.Equal("0.98x", tail.First(l => l.Label == "-Combat speed effect").Value);
+    }
+
     [Fact]
     public void Armour_stacks_multiplicatively_and_penetration_scales_the_reduction()
     {
