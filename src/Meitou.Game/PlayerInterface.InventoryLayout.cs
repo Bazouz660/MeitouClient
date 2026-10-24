@@ -26,7 +26,31 @@ sealed partial class PlayerInterface
         if (id == "trader") BindTraderGeometry(b);
     }
 
-    void PlaceBagWindow() => PlaceInventoryBeside("bag", left: true);
+    void PlaceBagWindow()
+    {
+        if (faithfulScreens.IsOpen("loot")) PlaceWindowRow(); else PlaceInventoryBeside("bag", left: true);
+    }
+
+    /// <summary>
+    /// Lays the open character, loot and bag windows out in one row, left to right: the character's bag, the character, the looted or traded character, its bag. The row is centred
+    /// (at the left edge when it is wider than the screen) with the character's top, so no window slides over another when the row is wider than the pair that placed them.
+    /// </summary>
+    void PlaceWindowRow()
+    {
+        var frames = faithfulScreens.Arrange(Width, Height, BindFaithfulScreen, AddFaithfulContent);
+        UiRect? Root(string screen) => faithfulScreens.IsOpen(screen) ? frames.FirstOrDefault(f => f.Id == screen)?.Controls.FirstOrDefault(c => c.Type == "Window")?.Bounds : null;
+        var row = new[] { "bag", "inventory", "loot", "loot-bag" }.Where(s => Root(s) is not null).ToArray();
+        if (row.Length < 2) return;
+        float gap = 6 * InventoryScale;
+        float total = row.Sum(s => Root(s)!.Value.Width) + gap * (row.Length - 1);
+        float x = total <= Width ? (Width - total) / 2 : 0, y = (Root("inventory") ?? Root(row[0]))!.Value.Y;
+        foreach (string screen in row)
+        {
+            var r = Root(screen)!.Value;
+            faithfulScreens.SetOffset(screen, faithfulScreens.GetOffset(screen) + new Vector2(x - r.X, y - r.Y));
+            x += r.Width + gap;
+        }
+    }
 
     /// <summary>
     /// The limbs window's place (<c>FUN_1406e4960</c>, <b>Verified</b>): its right edge on the left edge of the inventory (of its bag window when that is open), its top at the margin

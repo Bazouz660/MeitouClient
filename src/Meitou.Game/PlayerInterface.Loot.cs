@@ -67,6 +67,8 @@ sealed partial class PlayerInterface
             {
                 if (Selected().Count > 0 && !faithfulScreens.IsOpen("inventory")) faithfulScreens.Open("inventory");
                 faithfulScreens.Open("loot");
+                // The original opens both characters' bags with the window (the looted one's is open by default); OPEN BAG still toggles them afterwards.
+                if (InventoryOwner() is { } mine) bagOpen.Add(mine.Id);
                 PlaceInventoryBeside("loot", left: false);
                 inventoryScroll.Remove("loot-bag");
             }
@@ -75,7 +77,7 @@ sealed partial class PlayerInterface
         if (want == faithfulScreens.IsOpen("loot-bag")) return;
         if (!want) { faithfulScreens.Close("loot-bag"); return; }
         faithfulScreens.Open("loot-bag");
-        PlaceInventoryBeside("loot-bag", left: false, anchor: "loot");
+        PlaceWindowRow();
     }
 
     void BindLootScreen(string id, UiBindings b)
