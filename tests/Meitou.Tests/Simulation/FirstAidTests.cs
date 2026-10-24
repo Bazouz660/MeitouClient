@@ -241,6 +241,57 @@ public class FirstAidTests
         Assert.True(done.Players > 100 && done.Npcs > 100, $"the script treats: {done}");
         return hashes;
     }
+
+    /// <summary>docs/game/ai-tasks.md "Medic jobs" (second pass) and character-stats.md "First aid update" (kitless): a guard with no kit walks to its town's caged prisoner and bandages it at 1 HP a second.</summary>
+    [Fact]
+    public void An_npc_guard_without_a_kit_treats_a_hurt_prisoner_in_its_factions_cage()
+    {
+        var data = ArrestTests.Town();
+        int city = data.FactionIndex("50-a"), stranger = data.FactionIndex("204-gamedata.base");
+        var walk = new OpenGroundWalkability((_, _) => 150);
+        var items = new ItemFactory(KitDatabase(), BaseGame);
+        var systems = new List<ITickSystem>
+        {
+            new PlayerSystem(), new MovementSystem(new PathService(walk, true)), new FirstAidSystem(BaseGame, BodyOptions.Default, items) { Relations = data.Relations },
+            new BodySystem(BaseGame, BodyOptions.Default),
+        };
+        using var world = new SimWorld(new WorldSettings { Seed = 7, PublishSnapshots = false, MinPartitionSize = 1 }, walk, systems);
+        world.Fixtures.RegisterSite(world, data, 0);
+        var cage = world.Fixtures.Find("0.0:cageA")!;
+        Assert.Equal(city, cage.Owner);
+        CharacterId Spawn(Vector3 at, int faction, int squad)
+        {
+            var stats = new CharacterStats();
+            stats[StatsEnumerated.Medic] = 50;
+            stats[StatsEnumerated.Strength] = 50;
+            var cold = new CharacterCold { Name = "C" + squad, Race = Human, Stats = stats, Medical = MedicalState.Create(Human, 50), Inventory = new Inventory(), Faction = faction, SquadId = squad };
+            var id = world.Characters.Spawn(new CharacterHot { Position = at, MaxSpeed = 40, WalkSpeed = 15, Task = (byte)CharacterTask.Idle }, cold, 0);
+            world.Squads.Add(new Squad { Id = squad, TemplateId = "t", Faction = faction, Members = { id } });
+            return id;
+        }
+        var guard = Spawn(cage.Position + new Vector3(0, 0, 300), city, 1);
+        var prisoner = Spawn(cage.Position, stranger, 2);
+        Assert.True(world.Fixtures.Imprison(world, prisoner, cage));
+        var body = world.Characters.Cold(prisoner.Slot)!.Medical!;
+        body.Parts[RLeg].Flesh = body.Parts[RLeg].MaxHp * 0.4f;   // 60% to bandage
+        long started = -1;
+        for (int t = 0; t < 600 && started < 0; t++)
+        {
+            world.RunTick();
+            if (Bandage(body) > 0) started = world.Tick;
+        }
+        Assert.True(started > 0, "the guard reached the prisoner and began");
+        Assert.Equal(CharacterTask.Treat, (CharacterTask)world.Characters.Previous[guard.Slot].Task);
+        // Without a kit: 1 HP a game second, 1/30 s a tick.
+        float before = Bandage(body);
+        world.RunTicks(30);
+        Assert.Equal(1f, Bandage(body) - before, 0.05);
+        for (int t = 0; t < 3000 && (CharacterTask)world.Characters.Previous[guard.Slot].Task == CharacterTask.Treat; t++) world.RunTick();
+        Assert.Equal(CharacterTask.Idle, (CharacterTask)world.Characters.Previous[guard.Slot].Task);
+        Assert.False(body.NeedsAid(Human, false));
+        Assert.True(body.Parts[RLeg].Flesh + body.Parts[RLeg].Bandage >= body.Parts[RLeg].MaxHp - 0.01f, "the leg is bandaged up to its maximum");
+        Assert.True(world.Characters.Cold(prisoner.Slot)!.IsImprisoned, "the prisoner stays in its cage");
+    }
 }
 
 /// <summary>The kits of the installed game: a CHARACTER that lists one is given it by the usual loadout rules.</summary>
