@@ -128,16 +128,17 @@ not. Death: vital h-s<-M, blood<=-capacity or hunger<=0. Preserve KO/coma/death 
   restarts the KO timer `+0xa0` (`startKnockoutTimer` overwrites it, it does not take the longer) and sets unconscious
   `+0x161`, on every such blow. Damage through the same function with its 4th argument set (load, weather) skips it for a
   conscious character. A part going under 0 in the tick starts nothing.
-- `reassessCollapseMode` (`140649320`) rebuilds `+0x161` each update: set by a hunger KO, blood (under 0, or under -25 once
-  `+0x163`), a KO timer > 0, or a vital part at collapse stage 2. So a character wakes once all of those are clear.
+- `reassessCollapseMode` (`140649320`) rebuilds `+0x161` each update: set by a hunger KO, a KO timer > 0, a vital part at
+  collapse stage 2, or blood: for a character unconscious before the update, blood < 0 (and it sets `+0x163`); for a
+  conscious one (or on the update after a fresh limb loss, `hasFreshlySeveredALimb`), blood < 0, or < -25 once `+0x163`.
+  `+0x163` clears when blood is above 25 (`medicalUpdate`). So a character wakes once all of those are clear.
 - Stage of a torso/head part, v = h - s + rig: 0 when v >= 0; under the KO point 2, and a vital part sets the coma flag
   `+0x162`; between the KO point and 0, 2 for a non-vital part, and for a vital one 2 only while `+0x162` is set. `+0x162`
   clears on an update where no vital part is at stage 2. So a vital part between the KO point and 0 does not keep a
   character down; one under it does ("Recovery coma") until every vital part is back to 0. Legs use h - s + bandage
   against the KO point ([ragdolls](ragdolls.md)).
 - Save keys: `coma` = `+0x162`, `unconcious` = `+0x161`, `incapacitated` = `+0x160` (a leg-collapse part at stage > 0).
-- Meitou: `MedicalState.VitalPartsKeepDown`, `RestartKo`. Not yet matched: blood keeps an unconscious character out while
-  blood < 0 (Meitou: until the blood-KO flag clears above 25).
+- Meitou: `MedicalState.VitalPartsKeepDown`, `RestartKo`, the wake test `Blood >= 0`. The fresh-limb-loss case is not modelled.
 
 ## Aid, limbs and load
 

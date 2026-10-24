@@ -222,7 +222,8 @@ public sealed partial class MedicalState
         if (Unconscious)
         {
             KoTimer -= dt;
-            if (KoTimer <= 0 && !vitalDown && !BloodKo)
+            // Blood under 0 keeps an unconscious character out (reassessCollapseMode); the blood-KO flag only lowers the conscious threshold to -25 (CheckBlood).
+            if (KoTimer <= 0 && !vitalDown && Blood >= 0)
             {
                 Unconscious = false;
                 KoTimer = 0;
@@ -263,7 +264,7 @@ public sealed partial class MedicalState
         Bleeding = 0;
         Blood = MathF.Min(Capacity(ctx), Blood + c.BloodRecoveryRate * seconds * ctx.Race.HealRate * c.RestingHealRateMult);
         if (Blood > 25) BloodKo = false;
-        if (Unconscious && !VitalPartsKeepDown(KoPoint(c, ctx.Toughness)) && !BloodKo)
+        if (Unconscious && !VitalPartsKeepDown(KoPoint(c, ctx.Toughness)) && Blood >= 0)
         {
             Unconscious = false;
             KoTimer = 0;

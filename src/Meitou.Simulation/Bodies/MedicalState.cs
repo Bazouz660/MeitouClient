@@ -50,7 +50,7 @@ public sealed partial class MedicalState
 
     public DeathCause Cause { get; private set; }
 
-    /// <summary>Set when blood reached 0 (<c>+0x163</c>, "unconscious from blood loss"); clears above 25.</summary>
+    /// <summary>Set when blood reached 0 (<c>+0x163</c>, "unconscious from blood loss"); clears above 25. While set, a conscious character goes down only under -25.</summary>
     public bool BloodKo { get; private set; }
 
     /// <summary>
