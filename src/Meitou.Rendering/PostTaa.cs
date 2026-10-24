@@ -16,12 +16,14 @@ sealed class PostTaa : IDisposable
 
     readonly IGpuContext ctx;
     readonly LegacyProgram velocity, taa;
-    readonly UniformHandle nearToPrevious, farToPrevious, nearPlanes, farPlanes, fullPlanes, jitterNdc, hasFar, mode, tan, right, up, back, eyeY, waterY, waterReactive, sun, sunMotion;
+    readonly UniformHandle nearToPrevious, farToPrevious, nearPlanes, farPlanes, fullPlanes, jitterNdc, hasFar, mode,
+        clipDepthZeroToOne, tan, right, up, back, eyeY, waterY, waterReactive, sun, sunMotion;
     readonly SamplerSlot nearDepth, farDepth;
     readonly UniformHandle renderSize, displaySize, jitter, blend, reset;
     readonly SamplerSlot colour, motionSlot, history;
     readonly Dictionary<(GpuProgram Program, InternalFormat Format), GraphicsPipelineDesc> pipelines = [];
     readonly SampledTexture pointSampler, linearSampler;
+    readonly SunMotionTracker sunTracker = new();
 
     GpuTexture? motion, reactive, historyA, historyB, externalOutput;
     int width, height, displayWidth, displayHeight;
@@ -30,6 +32,16 @@ sealed class PostTaa : IDisposable
     Vector3 previousEye;
     Matrix4x4 previousRotation;
     float previousFov, previousAspect;
+
+    /// <summary>The frame's particles, whose coverage is added to the upscalers' reactive mask (see <see cref="ParticleCoverage"/>).</summary>
+    public ParticleRenderer? Particles { get; set; }
+
+    /// <summary>
+    /// Draws the frame's full-size particles and then the low-resolution accumulations into <c>target</c>, whose mask is
+    /// <c>mask</c>; <c>clear</c> zeroes the target first (the reactive mask when there is no water value to keep).
+    /// <see cref="MetalPostChain"/> supplies this, because it owns the particle renderer and the low-resolution targets.
+    /// </summary>
+    public Action<IGpuCommandList, GpuTexture, ColorMask, bool>? ParticleCoverage { get; set; }
 
     /// <summary>
     /// An upscaler outside the TAA (the Metal host's MetalFX): when set, the velocity pass still runs and the external
@@ -67,6 +79,7 @@ sealed class PostTaa : IDisposable
         jitterNdc = v.Uniform("uJitterNdc");
         hasFar = v.Uniform("uHasFar");
         mode = v.Uniform("uMode");
+        clipDepthZeroToOne = v.Uniform("uClipDepthZeroToOne");
         tan = v.Uniform("uTan");
         right = v.Uniform("uRight");
         up = v.Uniform("uUp");
@@ -108,6 +121,8 @@ sealed class PostTaa : IDisposable
         Ensure(scene.Desc.Width, scene.Desc.Height, outputWidth, outputHeight);
         EnsureExternalOutput();
         var rotation = view with { M41 = 0, M42 = 0, M43 = 0 };
+        bool cut = previousValid && Vector3.Distance(eye, previousEye) > 5000;
+        if (cut) sunTracker.Reset();
         var projection = Jitter.Apply(Matrix4x4.CreatePerspectiveFieldOfView(fov, aspect, near, far), jitterPixels, width, height);
         var previousProjection = previousValid ? Matrix4x4.CreatePerspectiveFieldOfView(previousFov, previousAspect, near, far) : projection;
         var toPrevious = previousValid
@@ -126,6 +141,7 @@ sealed class PostTaa : IDisposable
         v.Set(jitterNdc, 2 * jitterPixels.X / width, 2 * jitterPixels.Y / height);
         v.Set(hasFar, 0);
         v.Set(mode, 0);
+        v.Set(clipDepthZeroToOne, ctx.ClipDepthZeroToOne ? 1 : 0);
         float tanY = MathF.Tan(fov * 0.5f);
         v.Set(tan, tanY * aspect, tanY);
         v.Set(right, rotation.M11, rotation.M21, rotation.M31);
@@ -134,8 +150,9 @@ sealed class PostTaa : IDisposable
         v.Set(eyeY, eye.Y);
         v.Set(waterY, waterHeight ?? float.MinValue);
         v.Set(waterReactive, 0.5f);
-        v.Set(sun, 0f, 0f, 0f, 0f);       // the sky's sun motion is off in this slice
-        v.Set(sunMotion, 0f, 0f, 0f, 0f);
+        var sunData = sunTracker.Prepare(ctx.Globals, true, previousValid && !cut, rotation, fov, aspect);
+        v.Set(sun, sunData.Sun);
+        v.Set(sunMotion, sunData.Motion);
         Fullscreen(cmd, velocity, motion!, width, height);
         if (External is not null && reactive is not null)
         {
@@ -156,13 +173,20 @@ sealed class PostTaa : IDisposable
             cmd.Order();
         }
 
+        // Weather particles are thin and fast: without their own coverage in the reactive mask the temporal
+        // history keeps about 90% of what was behind them and rain/dust almost disappears. The full-size quads
+        // write themselves; the low-resolution accumulations are upsampled by PostComposite, as on Vulkan.
+        bool covered = Particles is { HasCoverage: true } && ParticleCoverage is not null;
+        if (covered && External is not null)
+            ParticleCoverage!(cmd, reactive!, ColorMask.R, waterHeight is null);
+
         if (External is { } upscaler && externalOutput is { } externalTarget)
         {
             var fullProjection = Matrix4x4.CreatePerspectiveFieldOfView(fov, aspect, near, far);
             var previousFullProjection = previousValid
                 ? Matrix4x4.CreatePerspectiveFieldOfView(previousFov, previousAspect, near, far)
                 : fullProjection;
-            bool resetExternal = !externalValid || !previousValid;
+            bool resetExternal = cut || !externalValid || !previousValid;
             bool done = upscaler.Dispatch(new UpscaleInputs
             {
                 Colour = scene, Depth = depth, Motion = motion!, Output = externalTarget,
@@ -195,6 +219,8 @@ sealed class PostTaa : IDisposable
         }
 
         // The TAA: this frame's scene and motion against the previous history, into the other history target.
+        if (covered)
+            ParticleCoverage!(cmd, motion!, ColorMask.A, false);   // the TAA reads the motion target's alpha
         var previous = historyA!;
         var output = historyB!;
         var t = taa;
@@ -205,7 +231,7 @@ sealed class PostTaa : IDisposable
         t.Set(displaySize, (float)displayWidth, (float)displayHeight);
         t.Set(jitter, jitterPixels.X, jitterPixels.Y);
         t.Set(blend, Blend);
-        t.Set(reset, historyValid && previousValid ? 0 : 1);
+        t.Set(reset, cut || !historyValid || !previousValid ? 1 : 0);
         Fullscreen(cmd, taa, output, displayWidth, displayHeight);
 
         historyA = output;
@@ -238,6 +264,7 @@ sealed class PostTaa : IDisposable
         historyValid = false;
         externalValid = false;
         previousValid = false;
+        sunTracker.Reset();
     }
 
     void EnsureExternalOutput()

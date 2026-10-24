@@ -600,8 +600,10 @@ Keep `RecordsSecondaries` false: Metal records inline into one list.
    the TAA output; the scene depth carries `Sampled`. MetalFX is now behind `IUpscaler`: temporal at 0.50/0.67, and
    spatial at the 0.40 performance tier (`--upscaler metalfx`; temporal below 0.50 falls back to TAA); the saved Metal
    settings choose it, balanced by default. Object motion (grass and characters) is shared through the post-chain
-   seam. MetalFX gets a reactive mask from the water's analytic coverage. Still to do: the TAA motion-reprojection
-   ghosting, particle coverage, the sun-motion term and the remaining `PostProcess` passes (FogRate, GI resolve).
+   seam. MetalFX gets a reactive mask from the water's analytic coverage; MEP-1 added the weather particles' full-
+   and low-resolution coverage on both temporal paths, the shared sun-motion term and the Metal 0..1 depth convention
+   in the velocity shader. TAA also resets on a camera cut. Still to do: the remaining `PostProcess` passes (FogRate,
+   GI resolve); FogRate is a performance-only difference on Metal (no VRS attachment).
 2. **Fog volumes and light shafts.** The **fog volumes are now drawn on Metal** by `PostComposite` over the scene
    (`uFogVolumeData`, `uFogVolumeEye` and `uFogVolumeInfo` are published by `FogVolumes`). SSAO, FXAA, the heat haze
    and the light shafts (`LightShaftShaders` inject/integrate/scatter/apply) run there too. The shafts use the
@@ -719,8 +721,9 @@ default.
 - **Volumetric clouds and fog**: parity shots use `--faithful clouds,cloudshadows`; the Meitou cloud/fog path is
   step 6.
 - **Upscaler**: MetalFX Balanced at render scale 0.50 is the Metal default, with Native as the fallback when
-  MetalFX is unavailable; the choice is saved in `meitou.user.json`. TAA remains available for comparison but its
-  motion reprojection still ghosts when the camera moves (known; fix pending). The **F10 settings panel** exposes
+  MetalFX is unavailable; the choice is saved in `meitou.user.json`. TAA remains available for comparison; MEP-1
+  fixed its Metal depth convention, sun-motion term and particle coverage, but it is still labelled experimental
+  until the user validates long camera moves. The **F10 settings panel** exposes
   Native 1.00 / MetalFX Quality 0.67 / MetalFX Balanced 0.50 / MetalFX Performance 0.40 (spatial) / TAA 0.50 and a
   custom render scale, along with VSync, frame limit, borderless full screen and the live Metal graphics controls.
   The performance tier uses MetalFX Spatial because temporal 2.5x/3x darkens on this device.
@@ -820,9 +823,11 @@ default.
 - TAA (Metal-host slice): `PostTaa` runs the game's `UpscaleShaders.Velocity` (fragment, into RGBA16F) and
   `UpscaleShaders.Taa` (into a display-size RGBA16F history pair); the scene projection is jittered with
   `Jitter.Apply` and `PostTaa.Offset` (the phase count follows render/display scale), the depth target is `DepthTarget
-  | Sampled`. TAA resets on the first frame, a resize and a camera cut (>5000 units). The velocity pass's far-slice
-  inputs are disabled; the sun-motion term is zero (the sky's sun compensation comes with the full chain). The
-  grass and characters write their own motion through `IWorldPostChain.ObjectMotion`.
+  | Sampled`. TAA resets on the first frame, a resize and a camera cut (>5000 units), and MetalFX resets on the same
+  cut. The velocity pass's far-slice inputs are disabled; it reads the shared `SunMotionTracker` and accounts for
+  Metal's 0..1 depth (`uClipDepthZeroToOne`). Weather-particle coverage is written into the reactive mask (MetalFX)
+  or the motion alpha (TAA), including the low-resolution accumulations. The grass and characters write their own
+  motion through `IWorldPostChain.ObjectMotion`.
 - `IGpuContext` facts: `FramesInFlight`, `VideoMemoryBudget`, `DeferDelete`, `Finish`, `CreateReadback` +
   `FrameCompleted`, `ConstantVertexAttributes`/`DummyVertexArray`, `EnsureFrame`, `HasRayQuery`,
   `RenderTargetsBottomUp`.

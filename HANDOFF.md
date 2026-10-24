@@ -81,11 +81,15 @@ the host's `MTLCompilerService` XPC.
 
 ## Next iteration: Metal Effects Parity I (MEP-I)
 
-The next work is planned in [docs/metal-effects-parity-plan.md](docs/metal-effects-parity-plan.md): post effects
-(MEP-1), reflection quality (MEP-2), debris lighting (MEP-3), tessellation/terrain relief (MEP-4), then water lighting
-(MEP-5). MEP-3 is the preview-test gate; MEP-5 is the full effects-parity gate. Vulkan stays the default/reference, the
-GPU cull stays off, and MEP-I covers visual effects only. The immediate first tasks are particle coverage in the
-temporal reactive mask and the sun-motion term in `PostTaa`.
+The plan is in [docs/metal-effects-parity-plan.md](docs/metal-effects-parity-plan.md): post effects (MEP-1),
+reflection quality (MEP-2), debris lighting (MEP-3), tessellation/terrain relief (MEP-4), then water lighting
+(MEP-5). MEP-3 is the preview-test gate; MEP-5 is the full effects-parity gate. Vulkan stays the default/reference,
+the GPU cull stays off, and MEP-I covers visual effects only.
+
+**MEP-1 code is implemented and awaiting the user's in-game visual validation:** particle coverage in the temporal
+reactive mask, the shared sun-motion tracker, the Metal 0..1 velocity-depth fix, a camera-cut reset, and SMAA in
+`PostComposite`. FogRate remains a documented performance-only difference (Metal has no VRS attachment). Do not start
+MEP-2 until the user accepts the temporal/SMAA result.
 
 ## Upstream sync (2026-10-23)
 
@@ -341,8 +345,9 @@ Verified clean:
 
 ## Next work
 
-1. Complete MEP-I (see the plan above): post effects, reflection quality, debris lighting, tessellation/terrain
-   relief and water lighting. Do not start GPU culling or default-switch work until the MEP-I preview gate is accepted.
+1. Validate the implemented MEP-1 in game, then continue MEP-I (reflection quality, debris lighting,
+   tessellation/terrain relief and water lighting). Do not start GPU culling or default-switch work until the MEP-I
+   preview gate is accepted.
 2. Finish the GPU draw path on Metal: `FoliageGpuCull` is live for meshes/rocks, but `FoliageGrassGpu` and
    `HizPyramid` are still Vulkan-only (grass uses the CPU). The plan, constraints and validation gates are in
    [docs/metal-gpu-cull-plan.md](docs/metal-gpu-cull-plan.md). Port grass next; verify `baseInstance` in Metal

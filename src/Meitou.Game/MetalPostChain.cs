@@ -34,6 +34,7 @@ sealed class MetalPostChain : IWorldPostChain, IDisposable
         public readonly int Divisor = divisor;
         public GpuTexture? Accum, Depth;
         public PassTargets Targets = null!;
+        public bool Drawn;
     }
 
     LowTarget LowFor(int divisor) => divisor >= 4 ? lowTargets[1] : lowTargets[0];
@@ -53,6 +54,7 @@ sealed class MetalPostChain : IWorldPostChain, IDisposable
 
     public IGpuContext Context => ctx;
     public PostOptions Options => options;
+    public ParticleRenderer? Particles { get; set; }
     public GpuTexture? Target { get; set; }
     public PassTargets SceneTargets { get; private set; } = null!;
     public PassTargets SceneTargetsForParticles { get; private set; } = null!;
@@ -109,6 +111,7 @@ sealed class MetalPostChain : IWorldPostChain, IDisposable
         // The full-size particles draw after the GI resolve and were built without the albedo attachment on Metal.
         SceneTargetsForParticles = PassTargets.Of(sceneColour, ctx.Depth);
         Target = ctx.Backbuffer;
+        foreach (var low in lowTargets) low.Drawn = false;
         frame++;
         JitterPixels = jitter(frame, sceneWidth, displayWidth);
         // As the old Metal loop: mip bias only while a temporal reconstruction runs; spatial and native sample at full detail.
@@ -162,6 +165,8 @@ sealed class MetalPostChain : IWorldPostChain, IDisposable
 
     public void RunFogVolumes(bool volumes) => volumesPending = volumes;
 
+    /// <summary>Vulkan's fog shading-rate image has no Metal equivalent: fog, shafts and the scene render at full rate. This is a
+    /// performance difference, not a missing visual pass (MEP-1 decided not to expose a no-op FogRate setting on Metal).</summary>
     public void BuildShadingRate(Vector3 eye) { }
 
     public void ApplySsao()
@@ -197,6 +202,7 @@ sealed class MetalPostChain : IWorldPostChain, IDisposable
         var depthCmd = (MetalCommandList)ctx.BeginNative("post particle depth");
         composite.ParticleDepth(depthCmd, ctx.Depth, low.Depth!, sceneColour.Desc.Width, sceneColour.Desc.Height, div, low.Accum);
         ctx.EndNative(depthCmd);
+        low.Drawn = false;
         var targets = PassTargets.Of(low.Accum, low.Depth);
         low.Targets = targets with { Colour = targets.Colour with { Load = LoadOp.Clear, Clear = default } };
     }
@@ -208,6 +214,7 @@ sealed class MetalPostChain : IWorldPostChain, IDisposable
         var cmd = (MetalCommandList)ctx.BeginNative("post particle composite");
         composite.ParticleComposite(cmd, low.Accum!, low.Depth!, ctx.Depth, sceneColour, low.Divisor, nearPlane, farPlane);
         ctx.EndNative(cmd);
+        low.Drawn = true;
     }
 
     public void MarkParticleDraws() { }
@@ -220,6 +227,8 @@ sealed class MetalPostChain : IWorldPostChain, IDisposable
         GpuTexture resolved = sceneColour;
         if (!noTaa())
         {
+            taa.Particles = Particles;
+            taa.ParticleCoverage = DrawParticleCoverage;
             var taaCmd = (MetalCommandList)ctx.BeginNative("post taa");
             resolved = taa.Draw(taaCmd, sceneColour, ctx.Depth, eye, view, fov, aspect, nearPlane, farPlane, JitterPixels,
                 displayWidth, displayHeight, DeltaSeconds(), WaterHeight);
@@ -228,6 +237,30 @@ sealed class MetalPostChain : IWorldPostChain, IDisposable
         var cmd = (MetalCommandList)ctx.BeginNative("post composite");
         composite.Draw(cmd, resolved, ctx.Depth, target, Options, AutoExposure ?? (0f, 0f), Inputs, temporal: !noTaa());
         ctx.EndNative(cmd);
+    }
+
+    /// <summary>
+    /// The full-size particle quads and the low-resolution accumulations into the temporal reactive mask. <see cref="PostTaa"/>
+    /// calls this after its velocity and object-motion passes; the target is the motion image's alpha for TAA or the R32F
+    /// reactive image for MetalFX, and <paramref name="clear"/> removes the previous value when there is no water reactive
+    /// term to keep.
+    /// </summary>
+    void DrawParticleCoverage(IGpuCommandList cmd, GpuTexture target, ColorMask mask, bool clear)
+    {
+        if (Particles is not { } particles) return;
+        var targets = PassTargets.Of(target, null);
+        if (clear) targets = targets with { Colour = targets.Colour with { Load = LoadOp.Clear, Clear = default } };
+        cmd.BeginRendering(targets.Rendering);
+        ctx.BeginHostPass((MetalCommandList)cmd, targets, DrawState.For(targets.Formats, ctx.DepthClamp, mask: mask));
+        particles.DrawCoverage(mask);
+        cmd.EndRendering();
+        ctx.EndHostPass(cmd);
+        cmd.Order();
+        foreach (var low in lowTargets)
+        {
+            if (!low.Drawn || low.Accum is null || low.Depth is null) continue;
+            composite.ParticleCoverage(cmd, low.Accum, low.Depth, ctx.Depth, target, low.Divisor, nearPlane, farPlane, mask);
+        }
     }
 
     PostComposite.SceneInputs Inputs => new(eye, view, fov, aspect, nearPlane, farPlane, CharactersDrawn, WaterHeight);

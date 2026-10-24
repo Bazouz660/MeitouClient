@@ -1240,14 +1240,14 @@ static class WorldFrame
         host.Close();
         // Motion and particle callbacks belong to the world that is being replaced.
         var motion = gpu.PostChain?.ObjectMotion;
-        var particles = gpu.Post?.Particles;
+        var particles = post.Particles;
         gpu.PostChain?.ObjectMotion = null;
-        if (gpu.Post is { } postProcess) postProcess.Particles = null;
+        post.Particles = null;
         try { post.End(); }
         finally
         {
             gpu.PostChain?.ObjectMotion = motion;
-            if (gpu.Post is { } restorePost) restorePost.Particles = particles;
+            post.Particles = particles;
         }
     }
 
@@ -1583,7 +1583,7 @@ static class WorldFrame
             StageClock.Lap(13);
         }
         post.MarkParticles();
-        if (gpu.Post is { } coverageTarget) coverageTarget.Particles = gpu.Particles;
+        post.Particles = gpu.Particles;
         post.End(); // SSAO, upscaler, exposure, tone map, FXAA into the chain's target
         var slices = SceneSlices(post, camera).ToList();
         // The movement marker and stealth arrows over the finished picture, in their materials' colours, sorted against the near slice's depth like the game's debug_marker.

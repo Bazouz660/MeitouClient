@@ -70,6 +70,9 @@ interface IWorldPostChain
     /// <summary>Whether the chain draws big weather particles into low-resolution targets (Vulkan's Meitou path).</summary>
     bool LowResParticles { get; }
 
+    /// <summary>The frame's particles, whose coverage feeds the temporal upscaler's reactive mask. Set before <see cref="End"/>.</summary>
+    ParticleRenderer? Particles { get; set; }
+
     /// <summary>Begins a frame at the display size; the scene size comes from the chain's render scale.</summary>
     void Begin(int width, int height);
 

@@ -31,14 +31,16 @@ sealed class PostComposite : IDisposable
     readonly ShaftScatterPass shaftScatterP;
     readonly ShaftApplyPass shaftApplyP;
     readonly FxaaPass fxaa;
+    readonly SmaaPasses smaa;
     readonly HeatHazePass haze;
     readonly ParticleDepthPass particleDepthP;
     readonly ParticleCompositePass particleCompositeP;
+    readonly ParticleCoveragePass particleCoverageP;
     readonly Dictionary<(GpuProgram Program, InternalFormat Format, DrawState State), GraphicsPipelineDesc> pipelines = [];
     readonly SampledTexture sceneSampler, luminanceSampler, plainSampler, pointSampler, linearMipSampler;
 
     GpuTexture? luminanceTarget, adaptA, adaptB;
-    GpuTexture? ldr, ldrFxaa;
+    GpuTexture? ldr, ldrFxaa, smaaEdges, smaaWeights;
     GpuTexture? aoA, aoB;
     GpuTexture? shaftInjected, shaftLight, shaftScatter;
     GpuTexture? flowTexture, perturbationTexture;
@@ -72,9 +74,11 @@ sealed class PostComposite : IDisposable
         shaftScatterP = new ShaftScatterPass(ctx, vertex);
         shaftApplyP = new ShaftApplyPass(ctx, vertex);
         fxaa = new FxaaPass(ctx, vertex);
+        smaa = new SmaaPasses(ctx, vertex);
         haze = new HeatHazePass(ctx, vertex);
         particleDepthP = new ParticleDepthPass(ctx, vertex);
         particleCompositeP = new ParticleCompositePass(ctx, vertex);
+        particleCoverageP = new ParticleCoveragePass(ctx, vertex);
         var c = composite;
         exposure = c.Uniform("uExposure");
         useAo = c.Uniform("uUseAo");
@@ -175,9 +179,10 @@ sealed class PostComposite : IDisposable
         adaptedFrames = Math.Min(adaptedFrames + 1, 2);
 
         // The composite: auto exposure (0.55 / adapted), the game's tone map, grade and dither.
-        bool fxaaOn = o.Fxaa && !o.Smaa && !temporal && ldr is not null;
+        bool smaaOn = o.Smaa && !temporal && ldr is not null;
+        bool fxaaOn = o.Fxaa && !smaaOn && !temporal && ldr is not null;
         bool hazeOn = o.HeatHaze && HasHeatHaze && HeatHazeAmount * o.HeatHazeStrength > 0 && ldr is not null;
-        var compositeTarget = fxaaOn || hazeOn ? ldr! : target;
+        var compositeTarget = fxaaOn || smaaOn || hazeOn ? ldr! : target;
         var p = composite;
         p.Bind(sceneSlot, sceneSampler with { View = scene.View() });
         p.Bind(aoSlot, ctx.Dummy(p.SamplerInfo(aoSlot)));
@@ -206,6 +211,11 @@ sealed class PostComposite : IDisposable
             Fullscreen(cmd, f.P, output, output.Desc.Width, output.Desc.Height);
             picture = output;
         }
+        if (smaaOn)
+        {
+            RunSmaa(cmd, target, hazeOn);
+            picture = hazeOn ? ldrFxaa! : target;
+        }
         if (hazeOn)
         {
             var h = haze;
@@ -223,6 +233,47 @@ sealed class PostComposite : IDisposable
             h.P.Set(h.HasDepth, 1f);
             Fullscreen(cmd, h.P, target, target.Desc.Width, target.Desc.Height);
         }
+    }
+
+    /// <summary>SMAA on the composite's LDR picture: edges, blending weights, then the blend into the heat haze's input or the target.</summary>
+    void RunSmaa(IGpuCommandList cmd, GpuTexture target, bool haze)
+    {
+        var s = smaa;
+        s.Edges.Bind(s.EdgesImage, plainSampler with { View = ldr!.View() });
+        Fullscreen(cmd, s.Edges, smaaEdges!, displayWidth, displayHeight);
+        s.Weights.Bind(s.WeightsEdges, pointSampler with { View = smaaEdges!.View() });
+        Fullscreen(cmd, s.Weights, smaaWeights!, displayWidth, displayHeight);
+        s.Blend.Bind(s.BlendImage, plainSampler with { View = ldr!.View() });
+        s.Blend.Bind(s.BlendWeights, pointSampler with { View = smaaWeights!.View() });
+        var output = haze ? ldrFxaa! : target;
+        Fullscreen(cmd, s.Blend, output, target.Desc.Width, target.Desc.Height);
+    }
+
+    /// <summary>
+    /// The low-resolution particles' coverage into <paramref name="target"/>'s <paramref name="mask"/> channels: the
+    /// accumulation's opacity or brightest channel, 30 times, saturating, upsampled by depth so a near edge does not mark
+    /// itself reactive. The full-size particles write their own coverage; <see cref="PostTaa"/> calls this for the
+    /// low-resolution accumulations after that pass.
+    /// </summary>
+    public void ParticleCoverage(IGpuCommandList cmd, GpuTexture accum, GpuTexture lowDepth, GpuTexture sceneDepth, GpuTexture target,
+        int divisor, float near, float far, ColorMask mask)
+    {
+        var c = particleCoverageP;
+        c.P.Bind(c.Accum, plainSampler with { View = accum.View() });
+        c.P.Bind(c.LowDepth, pointSampler with { View = lowDepth.View() });
+        c.P.Bind(c.Depth, pointSampler with { View = sceneDepth.View() });
+        c.P.Set(c.LowSize, (float)accum.Desc.Width, (float)accum.Desc.Height);
+        c.P.Set(c.NearPlanes, near, far);
+        c.P.Set(c.Div, (float)divisor);
+        c.P.Set(c.FullSize, (float)target.Desc.Width, (float)target.Desc.Height);
+        c.P.Set(c.Limit, mask == ColorMask.A ? 2f : 1f);   // the TAA takes half the motion target's alpha, so 2 is "all current frame"
+        var formats = new AttachmentFormats(target.Desc.Format, InternalFormat.None);
+        var state = DrawState.For(formats, false) with
+        {
+            Blend = new BlendState(true, BlendingFactor.One, BlendingFactor.One),
+            ColourMask = mask,
+        };
+        Fullscreen(cmd, c.P, target, target.Desc.Width, target.Desc.Height, state, LoadOp.Load);
     }
 
     /// <summary>
@@ -426,7 +477,9 @@ sealed class PostComposite : IDisposable
         displayHeight = h;
         ldr?.Dispose();
         ldrFxaa?.Dispose();
-        ldr = ldrFxaa = null;
+        smaaEdges?.Dispose();
+        smaaWeights?.Dispose();
+        ldr = ldrFxaa = smaaEdges = smaaWeights = null;
     }
 
     void MakeTargets()
@@ -445,6 +498,10 @@ sealed class PostComposite : IDisposable
                 Use: TextureUse.ColourTarget | TextureUse.Sampled, Name: "post ldr"));
             ldrFxaa = ctx.CreateTexture(new TextureDesc(InternalFormat.Rgba8, displayWidth, displayHeight,
                 Use: TextureUse.ColourTarget | TextureUse.Sampled, Name: "post ldr fxaa"));
+            smaaEdges = ctx.CreateTexture(new TextureDesc(InternalFormat.Rgba8, displayWidth, displayHeight,
+                Use: TextureUse.ColourTarget | TextureUse.Sampled, Name: "post smaa edges"));
+            smaaWeights = ctx.CreateTexture(new TextureDesc(InternalFormat.Rgba8, displayWidth, displayHeight,
+                Use: TextureUse.ColourTarget | TextureUse.Sampled, Name: "post smaa weights"));
         }
     }
 
@@ -556,6 +613,8 @@ sealed class PostComposite : IDisposable
         adaptB?.Dispose();
         ldr?.Dispose();
         ldrFxaa?.Dispose();
+        smaaEdges?.Dispose();
+        smaaWeights?.Dispose();
         aoA?.Dispose();
         aoB?.Dispose();
         shaftInjected?.Dispose();
@@ -575,9 +634,11 @@ sealed class PostComposite : IDisposable
         shaftScatterP.P.Dispose();
         shaftApplyP.P.Dispose();
         fxaa.P.Dispose();
+        smaa.Dispose();
         haze.P.Dispose();
         particleDepthP.P.Dispose();
         particleCompositeP.P.Dispose();
+        particleCoverageP.P.Dispose();
     }
 
     abstract class Pass(IGpuContext ctx, string vertex, string fragment, string name)
@@ -682,6 +743,22 @@ sealed class PostComposite : IDisposable
             (Image, Texel) = (P.Sampler("uImage"), P.Uniform("uTexel"));
     }
 
+    /// <summary>SMAA's three passes, with the seam's flipped vertex shader on Metal.</summary>
+    sealed class SmaaPasses
+    {
+        public readonly LegacyProgram Edges, Weights, Blend;
+        public readonly SamplerSlot EdgesImage, WeightsEdges, BlendImage, BlendWeights;
+        public SmaaPasses(IGpuContext ctx, string vertex)
+        {
+            Edges = LegacyProgram.Create(ctx, vertex, PostProcessShaders.SmaaEdges, "post smaa edges");
+            Weights = LegacyProgram.Create(ctx, vertex, PostProcessShaders.SmaaWeights, "post smaa weights");
+            Blend = LegacyProgram.Create(ctx, vertex, PostProcessShaders.SmaaBlend, "post smaa blend");
+            (EdgesImage, WeightsEdges) = (Edges.Sampler("uImage"), Weights.Sampler("uEdges"));
+            (BlendImage, BlendWeights) = (Blend.Sampler("uImage"), Blend.Sampler("uWeights"));
+        }
+        public void Dispose() { Edges.Dispose(); Weights.Dispose(); Blend.Dispose(); }
+    }
+
     sealed class HeatHazePass : Pass
     {
         public readonly SamplerSlot Flow, Perturbation, Depth, Image;
@@ -710,6 +787,18 @@ sealed class PostComposite : IDisposable
         {
             (Accum, LowDepth, Depth) = (P.Sampler("uAccum"), P.Sampler("uLowDepth"), P.Sampler("uDepth"));
             (LowSize, NearPlanes, Div) = (P.Uniform("uLowSize"), P.Uniform("uNearPlanes"), P.Uniform("uDiv"));
+        }
+    }
+
+    sealed class ParticleCoveragePass : Pass
+    {
+        public readonly SamplerSlot Accum, LowDepth, Depth;
+        public readonly UniformHandle LowSize, NearPlanes, Div, FullSize, Limit;
+        public ParticleCoveragePass(IGpuContext ctx, string vertex) : base(ctx, vertex, PostProcessShaders.ParticleCoverage, "post particle coverage")
+        {
+            (Accum, LowDepth, Depth) = (P.Sampler("uAccum"), P.Sampler("uLowDepth"), P.Sampler("uDepth"));
+            (LowSize, NearPlanes, Div, FullSize, Limit) = (P.Uniform("uLowSize"), P.Uniform("uNearPlanes"), P.Uniform("uDiv"),
+                P.Uniform("uFullSize"), P.Uniform("uLimit"));
         }
     }
 }

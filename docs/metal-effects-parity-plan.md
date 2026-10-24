@@ -1,10 +1,32 @@
 # Metal Effects Parity I (MEP-I)
 
-Status: **planned, not started** (2026-10-24).
+Status: **MEP-1 implemented, awaiting visual validation** (2026-10-24); MEP-2..MEP-5 not started.
 
 Starting point: `metal-spike` at `7eb04a96` (`docs: plan Metal Effects Parity I (MEP-I) milestones`), after the
 effect-parity audit `84193e4a` and the upstream `57a7968a` merge. Read
 [the effect-parity audit](../HANDOFF.md#effect-parity-audit-2026-10-24) for the measured/known gaps.
+
+## MEP-1 implementation (2026-10-24)
+
+The code is implemented; the user still has to validate the temporal and anti-aliasing behaviour in game.
+
+- **Particle coverage** is now passed through `IWorldPostChain.Particles`: full-size quads write their coverage in
+  `ParticleRenderer.DrawCoverage`, and `PostComposite.ParticleCoverage` upsamples the half/quarter-size accumulations
+  (including their depth-aware upsampling). `PostTaa` feeds both MetalFX's R32F reactive mask and TAA's motion-alpha
+  reactive channel.
+- **Sun motion** moved into the shared `SunMotionTracker`, used by both `PostProcess` (Vulkan) and `PostTaa` (Metal),
+  so Metal no longer passes zero sun uniforms.
+- **TAA velocity depth** now follows the backend's clip convention (`uClipDepthZeroToOne`): Metal's depth buffer is
+  0..1, while Vulkan's is recovered with `2d - 1`. This also makes the motion vectors and water reactivity use the
+  correct view depth on Metal.
+- **TAA reset** now includes a camera cut (>5000 units), and MetalFX gets the same reset.
+- **SMAA** was ported into `PostComposite` (edges, weights, blend; heat-haze and final-target ordering match Vulkan).
+  Metal still has no separate anti-aliasing slider, so SMAA is reachable through `--smaa`/the saved options.
+- **FogRate** is documented as a performance-only difference: Metal has no fragment-shading-rate attachment and
+  renders fog/shafts at full rate. No no-op toggle was added.
+
+Validation still needs: a still camera with moving sun/clouds, rain and dust with camera motion, MetalFX temporal and
+TAA (including a long turn/teleport), and SMAA with no temporal upscaler.
 
 **Goal:** close the remaining visual effect gaps between the Vulkan reference and Metal so Metal can move from an
 opt-in preview to a parity/default candidate. This iteration is about **visual effects**, not GPU culling, Hi-Z,
