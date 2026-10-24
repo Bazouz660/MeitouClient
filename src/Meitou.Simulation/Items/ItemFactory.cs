@@ -38,7 +38,7 @@ public sealed class ItemFactory(GameDatabase db, GameConstants constants, Func<M
     }
 
     /// <summary>
-    /// The weight function of a melee weapon (<b>Observed</b>, docs/original-carry-weight.md): its level, manufacturer and material give the larger of <c>weight kg</c> x the manufacturer's weight
+    /// The weight function of a melee weapon (<b>Observed</b>, docs/game/ui-screens.md "Total Weight"): its level, manufacturer and material give the larger of <c>weight kg</c> x the manufacturer's weight
     /// mod and 40 x blunt multiplier x <c>weight mult</c> x <c>weapon inventory weight mult</c> (<see cref="Combat.WeaponStats"/>); without combat data the record's weight x the multiplier.
     /// </summary>
     Func<ItemInstance, float>? WeaponWeight(string recordId) => combat is null ? null : item =>

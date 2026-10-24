@@ -519,16 +519,19 @@ sealed partial class PlayerInterface
         {
             lines.AddRange(ArmourTooltip.Tail(armour, id => RecordName?.Invoke(id), t.Level).Select(ArmourRow));
             // Then a blank row and the record's description; for a piece with a crafter's name another blank row, the heading and a paragraph naming the smith and the player's faction
-            // (FUN_1407a33a0, Observed: docs/original-armour-tooltip.md). Paragraphs wrap at the tooltip's width without widening it.
-            if (lines.Count > 0 && lines[^1].Key == "[Skills]") lines.RemoveAt(lines.Count - 1);
-            lines.Add(new(" "));
-            lines.Add(new(record?.GetString("description") ?? "", "", TooltipTone.Title, Paragraph: true));
+            // (FUN_1407a33a0, Observed: docs/game/ui-screens.md "Item tooltip"). Paragraphs wrap at the tooltip's width without widening it.
+            if (record?.GetString("description") is { Length: > 0 } description)
+            {
+                lines.Add(new(" "));
+                lines.Add(new(description, "", TooltipTone.Title, Paragraph: true));
+            }
             if (t.Crafter.Length > 0)
             {
                 string faction = PlayerFactionName?.Invoke() ?? "";
                 lines.Add(new(" "));
-                lines.Add(new($"[Crafted by {t.Crafter}]", "", TooltipTone.Title));
-                lines.Add(new(t.Level >= 70 ? $"High quality armour crafted by the renowned smith {t.Crafter} of {faction}." : $"Crafted by the smith {t.Crafter} of {faction}.", "", TooltipTone.Title, Paragraph: true));
+                lines.Add(new(Loc.Tr("[Crafted by {1}]", t.Crafter), "", TooltipTone.Title));
+                lines.Add(new(t.Level >= 70 ? Loc.Tr("High quality armour crafted by the renowned smith {1} of {2}.", t.Crafter, faction)
+                    : Loc.Tr("Crafted by the smith {1} of {2}.", t.Crafter, faction), "", TooltipTone.Title, Paragraph: true));
             }
         }
         if (type == Meitou.Data.Fcs.FcsRecordType.ITEM && function is not (3 or 16))

@@ -51,7 +51,9 @@ public static class SavedKit
         item.Section = s.Section;
         item.X = s.X;
         item.Y = s.Y;
-        item.Level = s.Level;
+        // Meitou saves from before armour took its level from its quality have level 0 and a grade quality below 100: that quality. The original saves some armour
+        // at level 0 and quality 100 (Observed, docs/game/ui-screens.md "Item tooltip"), which stays level 0.
+        item.Level = s.Level == 0 && item.Type == FcsRecordType.ARMOUR && s.Quality is > 0 and < 100 ? (int)s.Quality : s.Level;
         item.MaterialId = s.MaterialId;
         item.CompanyId = s.CompanyId;
         item.Crafter = s.Crafter;

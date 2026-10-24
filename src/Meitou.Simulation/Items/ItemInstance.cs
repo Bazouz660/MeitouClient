@@ -62,8 +62,18 @@ public sealed class ItemInstance
     public int Width { get; init; } = 1;
     public int Height { get; init; } = 1;
     /// <summary>Weight of one unit in kg as it counts in the inventory total (weapons already scaled by <c>weapon inventory weight mult</c>).</summary>
-    public float UnitWeight { get => DynamicWeight is { } weigh ? weigh(this) : baseWeight; init => baseWeight = value; }
+    public float UnitWeight { get => DynamicWeight is null ? baseWeight : WorkedWeight(); init => baseWeight = value; }
     float baseWeight;
+    /// <summary><see cref="DynamicWeight"/>'s answer for the inputs it was asked with (the inventory total reads it every tick); one object, so a reader on another thread sees a whole one.</summary>
+    sealed record WeightMemo(int Level, string Material, string Company, float Weight);
+    WeightMemo? weightMemo;
+    float WorkedWeight()
+    {
+        if (weightMemo is { } m && m.Level == Level && m.Material == MaterialId && m.Company == CompanyId) return m.Weight;
+        float weight = DynamicWeight!(this);
+        weightMemo = new(Level, MaterialId, CompanyId, weight);
+        return weight;
+    }
     /// <summary>The record weight (<see cref="UnitWeight"/> when nothing replaces it).</summary>
     public float RecordWeight => baseWeight;
     /// <summary>

@@ -54,7 +54,7 @@ public sealed record ArmourData
     public const string ChestPartId = "101-gamedata.quack";
 
     /// <summary>
-    /// The weight of the piece at <paramref name="level"/> (<b>Observed</b>, docs/original-armour-tooltip.md): when the level is above 0 and the record lists part coverage, the sum of the coverage
+    /// The weight of the piece at <paramref name="level"/> (<b>Observed</b>, docs/game/ui-screens.md "Item tooltip"): when the level is above 0 and the record lists part coverage, the sum of the coverage
     /// percentages (the Chest entry x1.5, truncated; 100 when the sum is 0) x 0.05 x the material's factor (cloth 0.1, leather 0.25, chain 0.9, metal plate 1), x1.25 for a hat (slot 3), x0.5 for
     /// slot 8, at least 1; null otherwise, and the record's <c>weight kg</c> stands.
     /// </summary>

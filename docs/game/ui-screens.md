@@ -691,6 +691,11 @@ unless marked; Meitou: `PlayerInterface.Squads.cs`, commands in `SquadManagement
   Esc while trading closes the trader and the character's windows in one press, whichever was clicked last (engine choice, as for loot).
   The character parchment has separate label/value rows: Total Weight, a burden description, Disguise, Slave of, Looks like slave. **Unknown**: exact runtime sizing/rounding,
   burden description thresholds, and race/mod overrides of the pocket dimensions. Meitou uses 8 by 10 for new pockets and retains taller loaded inventories when saved items require it.
+  Total Weight `W/M` (**Observed** in the exe, checked on three characters of the owner's save against the original): both truncated; M = strength × its injury multiplier +
+  `encumbrance base`, without `carry weight mult` (that only enters the encumbrance factor, [character-stats](character-stats.md)). A melee weapon weighs by its level, manufacturer and
+  material (`WeaponStats`: the larger of `weight kg` × the maker's weight mod and 40 × blunt × `weight mult` × `weapon inventory weight mult`; a Falling Sun 30 kg), armour by its
+  coverage ([Item tooltip](#6-inventory-trade-dialogue-build)). **Unknown**: +30 while carrying a person and the backpack factor outside the backpack slot (not built); one character
+  reads 124 where the original reads 126, cause not found.
 - **Trader window** (code `PlayerInterface.Trade.cs`):
   - Layout: `Kenshi_InventoryTraderWindow` (**Verified**: `FUN_140155ee0`, class `TraderInventoryLayout`, names the file; created by `FUN_1406e6af0` for a trading character or building).
   - Size (**Verified**, `FUN_140150570`): the grid is the trader's `backpack_content` section at the `Kenshi_InventorySlotSkin` size (25 x 25 px, read once from the skin). The grid is
@@ -746,16 +751,30 @@ unless marked; Meitou: `PlayerInterface.Squads.cs`, commands in `SquadManagement
     lines; the portraits are drawn into atlas cells after the squad bar's (and the conversation's two while no conversation is open); rows past the last cell show none.
 - **Item tooltip** ([Tooltips](#tooltips); **Observed**, decompile): name, then `Value` (`c.{1,num}` with ` (+N%)`/` (-N%)` when the price factor is not 1) and `Sell value` (`FUN_14079e7a0`; one unit's price, slot 81 with `sell` 0 and 1, **Verified** in the decompile, not the stack's); weight `{1,num} kg`,
   quality, charges, damage, nutrition and kind lines (`FUN_1407ae130`); armour classes and resistances (`FUN_1407a1650`); `Stolen` / `Stolen from:` (`FUN_1407a0ea0`); `Buyback` (`FUN_1407a13a0`).
-  Meitou: the rows listed under Tooltips ("Meitou item rows"); armour also gets (`ArmourTooltip`): the grade name in its `ItemGrade` colour (a crossbow only that, from its `level`),
-  `[Heavy Armour Class]` / `[Metal Plate]`, Blunt resistance, Cut resistance, Cut resistance efficiency (1 - cut into stun), Harpoon resistance (flat pierce, `85 pts`), `-Weight` (two decimals), a
-  `[Coverage]` list (percentages, highest first, equal ones as Head, Chest, Stomach, Right Arm, Left Arm, Right Leg, Left Leg: **Observed** on the Samurai Armour and Legplates) and a `[Skills]` list of the effects that are not neutral, the value in the bad colour below 1 (or a negative bonus) and the good colour above:
-  Stealth (the piece's stealth factor, `ArmourPiece.StealthOf`), Crossbows and Precision shooting (both the record's `ranged skill mult`), Dodge skill, Combat speed, Attack damage (`damage output mult`), Assassination skill, Melee attack bonus
-  (`combat attk bonus`), Martial arts bonus (`unarmed bonus`). The stats are those of the item's `level` (the grade's quality, 95 for Masterwork), not its saved `quality`, which is 100 for the saved armour of the player's characters
-  (**Observed** 2026-10-24: the Samurai Legplates, level 95, quality 100, shown by the original as 61 % blunt, 73 % cut, 85 pts, which are the 0.95 values 61.75 %, 73.56 %, 85.5 pts cut to whole numbers; the 1.0 values are 65 %, 76.9 %, 90 pts). Resistances are printed truncated to whole numbers.
-  **Observed** on a screenshot of the Samurai Armour at all six grades (5, 20, 40, 60, 80, 95): the resistances equal `ArmourPiece.Create` to the printed digit at every grade, the Stealth effect is the stealth factor
-  (0.00, 0.02, 0.06, 0.12, 0.21, 0.29x with `stealth mult` 1), and the Combat speed effect is `combat speed mult` x lerp(t, 0.9, 1) (0.85, 0.86, 0.88, 0.90, 0.92, 0.94x with the record's 0.94); the Samurai Legplates (stealth mult 0.5,
-  combat speed mult 0.98, level 95) print 0.15x and 0.98x. The Athletics effect of a heavy piece is `athletics mult` x lerp(t, 0.8, 0.95) (the wiki's six grades of the vanilla Samurai Legplates: 0.8075, 0.83, 0.86, 0.89, 0.92, 0.9425x; the original printed 0.94x). The Cut resistance efficiency line shows only below 100 % (the wiki's vanilla Legplates print 90 %; with cut into stun 0 the original printed none). The scalings per class and slot, the weight rule (part coverage, not `weight kg`; whole kg printed for armour) and the description and `[Crafted by ...]` tail (Observed in the exe: the class table's athletics column medium 0.85 to 1 and heavy 0.8 to 0.95, combat speed heavy 0.9 to 1, the rest 1; athletics forced to 1 for slots 3, 5 and 8 and combat speed for slot 3; the weight is the part coverage summed with the Chest x1.5, x 0.05, x the material factor cloth 0.1, leather 0.25, chain 0.9, plate 1, x1.25 for a hat, x0.5 for slot 8, at least 1, for an item with a level above 0; the description row follows the skills after a blank row, then `[Crafted by X]` for an item with a crafter name and a paragraph naming the player's faction) are the original's; Meitou has the class table and slot overrides for the effects and the weight rule (`ArmourData.WeightAt`); the description tail is not drawn yet. **Unknown**, so not shown: the labels and rules for dexterity, defence, perception and ranged bonuses, the cut-offs between grades for other qualities, the weight (the Legplates weigh 20 kg in the record and print 12 kg at level 95; Meitou
-  prints the record's), and weapons, food and tools (no stat lines yet).
+  Meitou: the rows listed under Tooltips ("Meitou item rows"), and:
+  - **Armour** (`ArmourTooltip`; rules **Observed** in the exe, `FUN_1407a1650` and `FUN_1407a33a0`, numbers checked against the owner's screenshots of the original
+    (2026-10-24: Samurai Armour at grades 5, 20, 40, 60, 80, 95; modded Samurai Legplates at levels 80 and 95) and the wiki's six-grade Legplates table):
+    - Stats come from the item's `level` (the grade's quality, 95 for Masterwork), not `quality`, which is 100 on the player's saved armour; t = level × 0.01 in single
+      precision, level 0 counting as 1. The original's saves also hold armour at level 0 and quality 100 (**Observed**: about 50 pieces in each of the owner's saves).
+    - `[<Grade> Grade]` in its `ItemGrade` colour (a crossbow only that, from its `level`); `[Heavy Armour Class]` / `[Metal Plate]`; Blunt and Cut resistance, then
+      Cut resistance efficiency (1 - cut into stun) only below 100 %, as whole percent truncated (61.75 % reads 61 %); Harpoon resistance `85 pts`, truncated (level 80:
+      71, not 72).
+    - Weight: the part coverage summed (the Chest × 1.5, truncated; 100 when 0) × 0.05 × the material factor (cloth 0.1, leather 0.25, chain 0.9, plate 1), × 1.25 for a
+      hat (slot 3), × 0.5 for slot 8, at least 1, when the level is above 0 and the record lists coverage (else `weight kg`); printed as whole kg, truncated. The Legplates
+      (20 kg in the record) read 12 kg; the wiki's five Samurai weights come out.
+    - Outside a trade, Value and Sell value at the item's level with no trader (Sell = Value × `loot price mult GEAR`, truncated; Masterwork Legplates c.16,262 and
+      c.4,065). Meitou prints them for armour, weapons and crossbows.
+    - `[Coverage]`: highest percentage first, equal ones in the order Head, Chest, Stomach, Right Arm, Left Arm, Right Leg, Left Leg.
+    - `[Skills]`, the rows that are not neutral, the value red below neutral and green above: Stealth effect (the stealth factor, `ArmourPiece.StealthOf`), Crossbows and
+      Precision shooting (`ranged skill mult`), Dodge skill, Athletics effect (`athletics mult` × the class column: medium lerp(t, 0.85, 1), heavy lerp(t, 0.8, 0.95);
+      1 for slots 3, 5 and 8; hidden between 0.97 and 1), Combat speed effect (`combat speed mult` × heavy lerp(t, 0.9, 1); 1 for a hat), Attack damage
+      (`damage output mult`), Assassination skill, Melee attack bonus (`combat attk bonus`), Martial arts bonus (`unarmed bonus`).
+    - Then a blank row and the record's `description`; for an item with a `crafter` (save key, written only when set) a blank row, `[Crafted by X]` and "High quality
+      armour crafted by the renowned smith X of <player faction>." from level 70, else "Crafted by the smith X of <player faction>.". Paragraph rows wrap without
+      widening the tooltip.
+    - **Unknown**: the labels and rules of the dexterity, defence, perception and ranged bonus rows; grade cut-offs for other qualities; the light, medium and cloth
+      tables were read from the exe but not compared in game; the grade line at level 100. Meitou: armour crafted here gets no crafter name; combat
+      (`CharacterAssembly.MakeFighter`) and trade prices (`Market`) still read armour's `quality`, not its `level`. Weapons, food and tools have no stat lines yet.
 - **Fencing prompt** (**Observed**, `FUN_140712920`), shown for a stolen item over the trader: stolen from the trader's own faction, `Fencing chance:` and `N%` (`FUN_140793490`) in Bad;
   stolen from others and the trader buys stolen goods, `Stolen goods?` / `No problem!` in Good; otherwise nothing. Stealing from a stock shows `Stealing chance:`; illegal goods
   `Illegal goods?` / `ILLEGAL GOODS!` (smuggling, not built).

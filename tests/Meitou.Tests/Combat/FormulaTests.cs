@@ -83,7 +83,7 @@ public class FormulaTests
     [Fact]
     public void Armour_weight_follows_the_part_coverage_as_the_original_prints_it()
     {
-        // The wiki's weights of the Samurai pieces (12.5, 6.25, 20.25, 4 kg), all metal plate, from the coverage lists of the load order (docs/original-armour-tooltip.md).
+        // The wiki's weights of the Samurai pieces (12.5, 6.25, 20.25, 4 kg), all metal plate, from the coverage lists of the load order (docs/game/ui-screens.md "Item tooltip").
         PartCoverage[] Coverage(params (string Part, int Percent)[] parts) => [.. parts.Select(p => new PartCoverage(p.Part, p.Percent))];
         var plate = BodyPlate with { Class = ArmourClass.Heavy, Material = ArmourType.MetalPlate };
         Assert.Equal(12.5f, (plate with { Slot = 6, Coverage = Coverage(("rl", 100), ("ll", 100), ("st", 50)) }).WeightAt(95));

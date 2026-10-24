@@ -135,7 +135,9 @@ static int Armour(GameInstall install, string name)
         foreach (var f in r.Ints.OrderBy(f => f.Key)) Console.WriteLine($"  {f.Key} = {f.Value}");
         foreach (var f in r.Strings.OrderBy(f => f.Key)) Console.WriteLine($"  {f.Key} = {f.Value}");
         foreach (string list in r.ReferenceLists) Console.WriteLine($"  LIST {list}: " + string.Join(", ", r.GetReferences(list).Select(x => $"{db.Find(x.TargetStringId)?.Name ?? x.TargetStringId}={x.Values.Value0}")));
-        foreach (string file in Directory.EnumerateFiles(Path.Combine(install.Root, "save", "quicksave", "platoon"), "*.platoon"))
+        string platoons = Path.Combine(install.Root, "save", "quicksave", "platoon");
+        if (!Directory.Exists(platoons)) continue;
+        foreach (string file in Directory.EnumerateFiles(platoons, "*.platoon"))
             foreach (var s in Meitou.Data.Save.SaveFile.ReadFile(file).Records.Where(x => x.RecordType == FcsRecordType.INVENTORY_ITEM_STATE && x.Strings.GetValueOrDefault("base data sid") == r.StringId))
                 Console.WriteLine($"  SAVED {Path.GetFileName(file)} quality {s.Floats.GetValueOrDefault("quality")} level {s.Ints.GetValueOrDefault("level")} section {s.Strings.GetValueOrDefault("section")} material {s.Strings.GetValueOrDefault("material sid")}");
     }
