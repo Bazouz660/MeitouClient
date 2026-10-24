@@ -341,9 +341,15 @@ research `14213358c`) default **Unknown**; 1 below.
 **Per operator and frame** (**Observed**, `ProductionBuilding::vfunc_150` `FUN_140298700`, called by
 `Task_OperateMachine` `FUN_14035bc90` with the operator's skill factor s):
 `amount = yield x outputRate x upgrade x dt x P x health x powerSat x s x option`. Several operators add up.
-Nothing else calls slot 150 (**Observed**: the only decompiled caller of vtable +0x4b0 that also tests the building), and neither it
-nor the output add (`vfunc_184` `FUN_1402984b0`) tests the owner: any building, the player's, an NPC town's or a rock, makes output
-only while someone operates it.
+Neither it nor the output add (`vfunc_184` `FUN_1402984b0`) tests the owner. An operated building (the player's, an NPC town's or a
+rock) makes output only while someone operates it.
+- **Automatic machines** (**Verified**, decompile): +0x3ac (`numOperatorsMax`, KenshiLib 1ce4a16) is the BUILDING's `max operators`
+  unless below 0, then the functionality's (`FUN_1402a3750`); +0x3a9 "has operators" = that value is neither 0 nor from two negatives.
+  With +0x3a9 clear, `ProductionBuilding::vfunc_28` (each frame) calls slot 150 itself with no operator and s = 1, so the machine
+  works unattended (`ResearchBuilding::vfunc_28` does the same). +0x3ac = 0 gives the menu order 152 Auto-Haul instead of 87
+  ([ui-input](ui-input.md#context-menu-verbs)). Base game (**Verified** data): Iron Refinery III / IV, Cotton and Hemp Auto-Loom,
+  Automatic Grain Silo, Hybrid Stone Mine II (building 0); Campfire, Camp Fish Pile, Bread Oven, wind generators, Rain Collector,
+  Battery Bank, storages and lights (functionality 0).
 - s = `lerp(stat/100, 0.5, 1.4)` of the effective stat `stat used` (`FUN_1408852a0`; 1 without an operator; the lerp
   helper `FUN_140015b63` is `a + (b - a) t`).
 - outputRate = BUILDING `output rate` x functionality `production mult`; with `output per day`, / (2G) (loader
@@ -604,7 +610,8 @@ storage` (function 2); Large Barrels also hold Water.
   character's list that can run wins; operating is skipped while the machine's output is full or its inputs are empty (task 87's start
   conditions), so a character moves down its list and returns when the machine can work again.
 - **Unknown:** how the original picks the storage (nearest, same town, a range), when an operator leaves a
-  machine to haul, and where a 124 job takes its items from.
+  machine to haul, where a 124 job takes its items from, and whether 152 / 124 on an automatic machine ever empty its output
+  (152's goal is only "no empty inputs", !62).
 
 ## House sales
 

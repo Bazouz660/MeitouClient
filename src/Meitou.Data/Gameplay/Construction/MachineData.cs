@@ -67,6 +67,11 @@ public sealed record MachineData
     public float PowerCapacity { get; init; }
     /// <summary>The raw <c>max operators</c> (building, else functionality; 0 none): a consumer's draw is x operators / this when it is above 0 (<b>Observed</b>, <c>vfunc_163</c>).</summary>
     public int PowerOperators { get; init; }
+    /// <summary>
+    /// An automatic machine: the raw <c>max operators</c> is 0 (<b>Verified</b>, <c>FUN_1402a3750</c>). It works with nobody at it (<c>ProductionBuilding::vfunc_28</c>), and its menu
+    /// order is 152 "Operating automatic machine" (Auto-Haul) instead of 87.
+    /// </summary>
+    public bool IsAutomatic { get; init; }
     /// <summary>A wind generator: function 5 without <c>consumes</c> (<b>Observed</b>, the factory <c>FUN_14057cc70</c>).</summary>
     public bool IsWind { get; init; }
     /// <summary>The BUILDING's raw <c>output rate</c> (the exe's <c>+0x1a8</c>), a factor of the efficiency its sound emitter is told (docs/audio.md "Point emitters"); 1 without one.</summary>
@@ -125,7 +130,8 @@ public sealed record MachineData
             if (function.GetReferences("produces") is [var p, ..] && db.Find(p.TargetStringId) is not null) output = new RecipeOutput(p.TargetStringId, p.Values.Value0);
         }
         int maxOperators = building.GetInt("max operators", -1);
-        int powerOperators = maxOperators > 0 ? maxOperators : Math.Max(0, function?.GetInt("max operators") ?? 0);
+        // The exe's +0x3ac (Verified, FUN_1402a3750): the BUILDING's value unless below 0, then the functionality's.
+        int rawOperators = maxOperators >= 0 ? maxOperators : function?.GetInt("max operators", -1) ?? -1;
         bool wind = fn == GeneratorFunction && inputs.Count == 0;
         if (maxOperators <= 0) maxOperators = Math.Max(1, function?.GetInt("max operators", 1) ?? 1);
         var craft = function is not null ? CraftBench.From(db, function) : null;
@@ -166,7 +172,8 @@ public sealed record MachineData
             StackBonusMult = building.GetFloat("stackable bonus mult", 1),
             PowerOutput = building.GetInt("power output"),
             PowerCapacity = building.GetInt("power capacity"),
-            PowerOperators = powerOperators,
+            PowerOperators = Math.Max(0, rawOperators),
+            IsAutomatic = rawOperators == 0,
             IsWind = wind,
             OutputRate = building.GetFloat("output rate", 1),
         };

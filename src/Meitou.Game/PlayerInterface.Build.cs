@@ -551,8 +551,8 @@ sealed partial class PlayerInterface
 
     /// <summary>
     /// The verbs the selection has for a site (the original's building branch, docs/game/ui-input.md "Context menu verbs"): Build (2) for an unfinished one (the quick order); finished, a
-    /// machine's Use (87), a storage's Auto-Haul (124, the "Hauling to" job) and Inventory (26), a furnace's Inventory, a turret's Man Turret (146); Dismantle (96); Meitou's Cancel for a
-    /// site nothing has been delivered to and the building panel's door buttons. Not built: Repair (95; Meitou buildings take no damage) and Auto-Haul (152) of automatic machines.
+    /// machine's Use (87) or an automatic machine's Auto-Haul (152), a storage's Auto-Haul (124, the "Hauling to" job) and Inventory (26), a furnace's Inventory, a turret's Man Turret (146);
+    /// Dismantle (96); Meitou's Cancel for a site nothing has been delivered to and the building panel's door buttons. Not built: Repair (95; Meitou buildings take no damage).
     /// </summary>
     List<(string Caption, Action Give)> SiteVerbs(BuildingSnapshot site)
     {
@@ -614,7 +614,8 @@ sealed partial class PlayerInterface
             // A turret: 146 USE_TURRET, which becomes the job 234 Turret guard (PermaJobs).
             var type = job.Function == Meitou.Data.World.ObjectRanges.TurretFunction ? Meitou.Data.Gameplay.Ai.TaskType.USE_TURRET
                 : job.Function == MachineData.TrainingFunction ? Meitou.Data.Gameplay.Ai.TaskType.USE_TRAINING_DUMMY
-                : job.Operable ? Meitou.Data.Gameplay.Ai.TaskType.OPERATE_MACHINERY : Meitou.Data.Gameplay.Ai.TaskType.OPERATE_STORAGE;
+                : job.Operable ? (job.IsAutomatic ? Meitou.Data.Gameplay.Ai.TaskType.OPERATE_AUTOMATIC_MACHINERY : Meitou.Data.Gameplay.Ai.TaskType.OPERATE_MACHINERY)
+                : Meitou.Data.Gameplay.Ai.TaskType.OPERATE_STORAGE;
             Say(new Meitou.Simulation.Production.AddJob(SelectedIds(), type, pending.Site.Id) { Tick = session.World.Tick });
             return;
         }

@@ -221,7 +221,12 @@ sealed partial class PlayerInterface
     /// </summary>
     void AddMachineVerb(List<(string Caption, Action Give)> verbs, Meitou.Simulation.Construction.BuildingSnapshot site, IReadOnlyList<CharacterId> selection)
     {
-        if (site.Complete && Machine(site.Id) is { Operable: true })
+        // An automatic machine: Auto-Haul (152) in place of Use; with Shift the 152 job (its companion 124 follows), else a one-shot haul round (the operator only hauls there).
+        if (site.Complete && Machine(site.Id) is { Operable: true, IsAutomatic: true })
+            verbs.Add(("Auto-Haul", () => Say(SlowModifier
+                ? (Meitou.Simulation.SimCommand)new AddJob(selection, Meitou.Data.Gameplay.Ai.TaskType.OPERATE_AUTOMATIC_MACHINERY, site.Id) { Tick = session.World.Tick }
+                : new OperateOrder(selection, site.Id) { Tick = session.World.Tick })));
+        else if (site.Complete && Machine(site.Id) is { Operable: true })
             verbs.Add(("Use", () => Say(SlowModifier
                 ? (Meitou.Simulation.SimCommand)new AddJob(selection, Meitou.Data.Gameplay.Ai.TaskType.OPERATE_MACHINERY, site.Id) { Tick = session.World.Tick }
                 : new OperateOrder(selection, site.Id) { Tick = session.World.Tick })));

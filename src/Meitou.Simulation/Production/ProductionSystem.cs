@@ -501,6 +501,9 @@ public sealed partial class ProductionSystem : ITickSystem
         float dt = world.TickSeconds;
         foreach (var m in world.Machines.All)
             if (m.Farm is not null && Site(world, m.Site) is { Complete: true }) FarmTick(world, m, dt);
+        // An automatic machine works with nobody at it, at skill factor 1 (Verified, ProductionBuilding::vfunc_28 calls slot 150 with no operator when +0x3a9 is clear).
+        foreach (var m in world.Machines.All)
+            if (m.Data.IsAutomatic && m.Data.IsProducer && Site(world, m.Site) is { Complete: true }) ProduceStep(world, m, 1, dt);
 
         var table = world.Characters;
         int contributions = 0;
@@ -535,6 +538,12 @@ public sealed partial class ProductionSystem : ITickSystem
             if (m.Data.IsTraining) { Train(ref n, cold, site, m, dt); continue; }
             // A chair (an implicit job): sat on, no work.
             if (!m.Data.Operable) { Settle(ref n, cold, site, m); continue; }
+            // An automatic machine (the 152 job): its hauler fills its inputs and carries its output away; the machine works by itself.
+            if (m.Data.IsAutomatic)
+            {
+                if (!StartHaul(world, cold, site, m) && n.Velocity.X == 0 && n.Velocity.Z == 0) n.Yaw = MathF.Atan2(site.Position.X - n.Position.X, site.Position.Z - n.Position.Z);
+                continue;
+            }
             if (Settings.AutoHaul && StartHaul(world, cold, site, m)) continue;
             if (n.Velocity.X == 0 && n.Velocity.Z == 0) n.Yaw = MathF.Atan2(site.Position.X - n.Position.X, site.Position.Z - n.Position.Z);
             m.Operators++;

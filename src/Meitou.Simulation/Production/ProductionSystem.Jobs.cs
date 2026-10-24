@@ -7,8 +7,8 @@ using Meitou.Simulation.Construction;
 namespace Meitou.Simulation.Production;
 
 // Job lists (Perma-Jobs; docs/simulation.md "Production", the original's rules in docs/game/ai-tasks.md "Perma-jobs"): a player character whose task is idle or came from its list takes the
-// first job of its list that is not blocked, so a higher job takes over as soon as it can run and a blocked one passes to the next. Meitou runs three types: Operating machine (87, the
-// operator below), Hauling to (124: a machine's output carried to the job's storage, CharacterTask.Haul) and Engineer (125: ConstructionSystem builds the site its finder picks) and Turret guard (234: manning the job's turret as an operator). Blocked
+// first job of its list that is not blocked, so a higher job takes over as soon as it can run and a blocked one passes to the next. Meitou runs Operating machine (87, the
+// operator below), Operating automatic machine (152: an operator that only hauls for it), Hauling to (124: a machine's output carried to the job's storage, CharacterTask.Haul; on an automatic machine, carried inputs into it), Engineer (125: ConstructionSystem builds the site its finder picks) and Turret guard (234: manning the job's turret as an operator). Blocked
 // uses one test for starting and for going on.
 public sealed partial class ProductionSystem
 {
@@ -279,7 +279,7 @@ public sealed partial class ProductionSystem
     /// <summary>
     /// Whether a job cannot run (the original skips such a job: an unmet start condition the planner cannot meet, or the target finder found nothing; docs/game/ai-tasks.md "Perma-jobs").
     /// Operating: the building is gone or not an operable machine, its operator places are taken by others, or it has no work (<see cref="HasWork"/>). Hauling to: the storage is gone, and
-    /// the character carries nothing it takes and no machine within <see cref="ProductionSettings.HaulRange"/> has an output it takes.
+    /// the character carries nothing it takes and no machine within <see cref="ProductionSettings.HaulRange"/> has an output it takes. Automatic machines (152, and 124 on one): <see cref="AutoWork"/>.
     /// </summary>
     bool Blocked(World world, CharacterCold cold, PermaJob job)
     {
@@ -298,7 +298,11 @@ public sealed partial class ProductionSystem
                 // Training (97): a dummy with a place free for a character with an arm that works (the row's state 38; the rest of its conditions, 73, is Unknown). It goes on at the cap, as the original's has no end.
                 if (!m.Data.IsTraining || OperatorsOf(world, id) - (cold.OperateSite == id ? 1 : 0) >= m.Data.MaxOperators) return true;
                 return cold.Medical is null || !(cold.Medical.ArmWorks(left: true) || cold.Medical.ArmWorks(left: false));
+            case TaskType.OPERATE_AUTOMATIC_MACHINERY:
+                return !m.Data.IsAutomatic || !m.Data.IsProducer || !AutoWork(world, site, m, cold, fetch: true);
             case TaskType.OPERATE_STORAGE:
+                // On an automatic machine (152's companion, the original's Task_FillMachine into it): what the character carries for its inputs.
+                if (m.Data.IsAutomatic && m.Data.IsProducer) return !AutoWork(world, site, m, cold, fetch: false);
                 if (!m.Data.IsStorage || m.Storage is null) return true;
                 if (cold.Inventory is { } inv && inv.All().Any(i => Takes(world, m, i))) return false;
                 return HaulSource(world, site, m) is null;
@@ -330,6 +334,25 @@ public sealed partial class ProductionSystem
             return false;
         }
         return m.Craft is not null || Room(world, site, m);
+    }
+
+    /// <summary>
+    /// Haul work at an automatic machine (engine reading of 152, whose goal is "no empty inputs", and of 124 on it): the character is on a trip for it, or carries an item an input has room for;
+    /// with <paramref name="fetch"/> also an empty input a storage holds the item of, a full output a storage takes, or the machine's output carried that a storage takes.
+    /// </summary>
+    bool AutoWork(World world, BuildSite site, Machine m, CharacterCold cold, bool fetch)
+    {
+        if (cold.Inventory is not { } inv) return false;
+        if (fetch && cold.HaulSite is not null && cold.OperateSite == site.Id) return true;
+        foreach (var input in m.Inputs)
+        {
+            if (input.Rate <= 0) continue;
+            if (input.Count < input.Recipe.Capacity && Carried(inv, input.Item).Any()) return true;
+            if (fetch && input.Count == 0 && NearestStorage(world, site, s => s.Storage!.Items.Any(i => i.Record == input.Item && i.Quantity > 0 && i.Section == "main")) is not null) return true;
+        }
+        if (!fetch || m.Output is not { } output || items.Create(output.Recipe.Item, 1) is not { } one) return false;
+        if (!output.Full && !Carried(inv, one.Record).Any()) return false;
+        return NearestStorage(world, site, s => s.Data.Accepts(one.Record, one.Type) && Fits(s.Storage!, one)) is not null;
     }
 
     /// <summary>The output has room, or with AutoHaul a storage takes it.</summary>
@@ -386,7 +409,7 @@ public sealed partial class ProductionSystem
         }
         var site = Site(world, job.Site!)!;
         var m = Ensure(world, site)!;
-        if (job.Type is TaskType.OPERATE_MACHINERY or TaskType.MAN_A_TURRET_PLAYER_JOB or TaskType.USE_TRAINING_DUMMY)
+        if (job.Type is TaskType.OPERATE_MACHINERY or TaskType.MAN_A_TURRET_PLAYER_JOB or TaskType.USE_TRAINING_DUMMY or TaskType.OPERATE_AUTOMATIC_MACHINERY || !m.Data.IsStorage)
         {
             if (cold.OperateSite != site.Id) Begin(world, slot, site, m);
         }

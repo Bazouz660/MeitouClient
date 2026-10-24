@@ -184,8 +184,8 @@ power, `FUN_140258260` destroys), the building set-up `FUN_14055c240`, its loade
 each frame (`GameHost.UpdateEmitters`, key = the building's instance id). **Engine choices** are marked.
 
 - **Per-frame classes** (`MachineData.PowersEmitterEachFrame`: function 1 without a farm, 4, 5, 14, 23, 26, 27): `Sound` = (efficiency, has power and efficiency above 0), computed as the exe's chain above from the sim's values: operators
-  ÷ `PowerOperators` (the sim's operator count, like its power demand; an automated drill with `max operators` 0 on the building and 3 on its functionality is counted as 3, **engine choice**: the sim needs its operators too, so the
-  machine is silent while nobody works it), × the consumer's granted share (a battery's as above), × `Machine.Yield` × the raw `output rate` (`MachineData.OutputRate`) × the research production multiplier. Health is 1.
+  ÷ `PowerOperators` (the raw +0x3ac, like its power demand; an automatic machine, 0, counts as 1 and works unattended,
+  [production](game/buildings-production.md#production)), × the consumer's granted share (a battery's as above), × `Machine.Yield` × the raw `output rate` (`MachineData.OutputRate`) × the research production multiplier. Health is 1.
   Has power follows `FUN_140299370` with the sim's town grid (generators' output above 0, or batteries while the town is in battery mode) and `power on`. A wind generator's efficiency is `ProductionSystem.WindFraction` (**engine choice**,
   the turbine value is Unknown). Result: a Generator hums whenever built; a well, mine or still sounds while worked and powered, at `Intensity` 100 × the factors where its record has an `efficiency multiplier` (`Stone_Processor` 0.75 ×).
   A battery bank (constant `Intensity` 100) plays while it is full or charging, not while it drains or is empty.
