@@ -162,7 +162,9 @@ Stationhouse `Storm_House_08_BASE_COL.xml` / `_Exterior_COL_Steps.xml`) rays cli
 (Y −60 / −74, floor top 15.5); triangle-mesh faces keep the file's winding (unknown, 82 of 435 building collision files), so either side counts there. Clicks, queued moves and held-button steering share this destination and marker.
 Buildings without a readable interior mask/floor collision still use terrain; the original's pick filters: [building picking](#building-picking-and-selection).
 Outside the rooms, the ray's first descent onto a kept navmesh surface more than 5 units above the terrain (a wall top, ramp, deck) wins
-over the terrain, and its height is the goal's floor (engine choice). **Observed** (JC2, zone 20.29, scratch probe): a ray onto Defensive
+over the terrain, and its height is the goal's floor (engine choice). "Outside the rooms" means not under the building's collision
+(`InteriorVolume.Covered`): an open deck or roof walk within a hull's height is picked too, except in an opened building where its floor is above the viewed one (hidden).
+**Observed** (user, screenshots of the original): a click on the Longhouse's roof end at viewed floor 0 or 3, the character outside, walks onto it (floor 1). **Observed** (JC2, zone 20.29, scratch probe): a ray onto Defensive
 Wall II `16-Newwworld-INGAME` gave Y 1218 (terrain 1103); before, the goal resolved to the blocked ground under the wall.
 
 **Observed** (decompile): a ground move order shows an entity of `position.mesh` (a downward cone over a flat ring, 0.29 × 1.56 units)

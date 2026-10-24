@@ -106,7 +106,7 @@ sealed partial class GameHost
     /// <summary>
     /// Where a click ray first comes down onto a walkable navmesh surface clear of the terrain (a wall top, a ramp, a deck) within <paramref name="distance"/>;
     /// the terrain and room picks do not see those, so a click there went to the blocked ground under it. A surface inside a building's rooms and under its ceiling is left to the
-    /// room pick (it honours the viewed floor); an open deck or roof walk, though within the interior's height, is not. Null when there is none.
+    /// room pick (it honours the viewed floor); an open deck or roof walk, though within the interior's height, is not, unless the building is opened and that floor hidden. Null when there is none.
     /// </summary>
     System.Numerics.Vector3? SurfaceMoveHit(System.Numerics.Vector3 origin, System.Numerics.Vector3 direction, float distance)
     {
@@ -123,7 +123,9 @@ sealed partial class GameHost
             {
                 if (h > previousY + 0.5f || h < p.Y - 0.5f || h - nav.Walkability.TerrainHeight(p.X, p.Z) <= 5) continue;
                 var at = new System.Numerics.Vector3(p.X, h, p.Z);
-                if (gpu.Objects?.InteriorAt(at, InsideMargin) is not { } room || !room.Covered(at)) return at;   // inside the rooms only under a ceiling: an open deck or roof walk is picked here
+                // Inside the rooms only under a ceiling: an open deck or roof walk is picked here, unless its building is opened with that floor hidden above the viewed one.
+                if (gpu.Objects?.InteriorAt(at, InsideMargin) is not { } room
+                    || !room.Covered(at) && !(interiorView.ContainsKey(room.PlacementId) && room.FloorAt(at) > viewedFloor)) return at;
             }
             previousY = p.Y;
         }
