@@ -120,11 +120,11 @@ viewer never does. Parts that are not joints (the six-barrel add-on, the lamp) r
 - **Unknown:** what makes the doorway black. There is no occluder object; the mask is destroyed on close.
 
 **Meitou:**
-- Opening is `GameHost.UpdateInteriorView`, which holds a left building open with all floors for 10 s of simulation time.
+- Opening is `GameHost.UpdateInteriorView`, which holds a left building open with all floors for 10 s of simulation time, or until it is unloaded, removed or destroyed.
 - An interior layout's object is hidden while its building is closed unless its `interiors.level` state has the outside flag (`LayoutItem.Outside`). The flag set at the editor is taken as the runtime setters' result (**Observed**).
   - In the install's interior layouts, 10 170 objects without the flag are `is exterior furniture` (barrels, cages, camp beds, Stack's rooftop awnings); these are now hidden while closed.
   - 1 820 objects with the flag (yard tents, torches) stay.
-- A building inside another (`PlacedMesh.Contained`) is hidden while the building whose hull holds it is closed (`ClosedAround`). These are player sites with a parent (saved with `flags` 0), and zone states with `is inside building` and no outside flag.
+- A building inside another (`PlacedMesh.Contained`) is hidden while the building whose hull holds it is closed (`ClosedAround`); a player site takes its parent's hull over a neighbour's within the 2-unit margin (`PlacedMesh.ContainerId`). These are player sites with a parent (saved with `flags` 0), and zone states with `is inside building` and no outside flag.
 - **Not done:** interior lamps still light a closed interior.
 
 ## Validation

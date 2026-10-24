@@ -19,9 +19,9 @@ sealed partial class GameHost
     int viewedFloor;
     readonly Dictionary<string, int> interiorView = new(StringComparer.Ordinal);
     readonly List<InteriorVolume> viewed = [];
-    // Buildings a player character was in lately and the game time (seconds) they stay open until: left, a building shows every floor until then, then closes
+    // Buildings a player character was in lately and the game time (seconds) one was last inside: left, a building shows every floor for 10 s after, then closes
     // (game: the interior's keep-open timer, 10 s of game time set each frame while occupied, FUN_1407f7230 / FUN_14054a790; left buildings get floor 4, all).
-    readonly Dictionary<string, (InteriorVolume Room, double Until)> keepOpen = new(StringComparer.Ordinal);
+    readonly Dictionary<string, (InteriorVolume Room, double Occupied)> keepOpen = new(StringComparer.Ordinal);
     readonly List<InteriorVolume> held = [];
     readonly List<string> expired = [];
     const double KeepOpenSeconds = 10;
@@ -54,7 +54,7 @@ sealed partial class GameHost
         foreach (var c in characters)
             if (c.IsPlayer && objects.InteriorAt(DrawnPosition(c), InsideMargin) is { } building && interiorView.TryAdd(building.PlacementId, viewedFloor))
                 viewed.Add(building);
-        HoldLeftOpen();
+        HoldLeftOpen(objects);
         objects.InteriorView = interiorView;
         session.Camera.Floors ??= CameraFloor;
         foreach (var c in characters)
@@ -88,21 +88,26 @@ sealed partial class GameHost
     }
 
     /// <summary>
-    /// The keep-open time: the occupied buildings' is set to 10 s of game time from now; a building left within it is put in the interior view with every floor shown
-    /// (<see cref="held"/>), and one past it closes. Game time is the simulation's (it stops while paused and runs faster at higher speeds); a time far ahead
-    /// (a loaded save's clock went back) closes at once.
+    /// The keep-open time: the occupied buildings' last occupied time is now; a building left within 10 s of game time of it is put in the interior view with every
+    /// floor shown (<see cref="held"/>), and one past it, or no longer loaded (unloaded, removed, destroyed), closes. Game time is the simulation's (it stops while
+    /// paused and runs faster at higher speeds); a time ahead of now (a loaded save's clock went back) closes at once.
     /// </summary>
-    void HoldLeftOpen()
+    void HoldLeftOpen(Meitou.Rendering.WorldObjectRenderer objects)
     {
         held.Clear();
         expired.Clear();
         var world = session.World;
         double now = world.Tick * (double)world.TickSeconds;
-        foreach (var b in viewed) keepOpen[b.PlacementId] = (b, now + KeepOpenSeconds);
+        foreach (var b in viewed) keepOpen[b.PlacementId] = (b, now);
         foreach (var (id, open) in keepOpen)
         {
-            if (open.Until < now || open.Until - now > KeepOpenSeconds) expired.Add(id);
-            else if (interiorView.TryAdd(id, 3)) held.Add(open.Room);
+            if (interiorView.ContainsKey(id)) continue;   // occupied: in the view already
+            if (now - open.Occupied > KeepOpenSeconds || open.Occupied > now || objects.LoadedInterior(open.Room) is not { } room) expired.Add(id);
+            else
+            {
+                interiorView.Add(id, 3);
+                held.Add(room);
+            }
         }
         foreach (var id in expired) keepOpen.Remove(id);
     }

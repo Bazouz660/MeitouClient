@@ -576,7 +576,6 @@ static class PostProcessShaders
         }
         """;
 
-    /// <summary>Depth-aware blur (7 taps) of the occlusion, one direction per pass.</summary>
     /// <summary>
     /// The characters' mask at the occlusion's half size (<see cref="Ssao"/>'s <c>uMask</c>): the scene colour's alpha, which only the characters write, read once
     /// per pixel into R8. The occlusion's twelve taps read the scene colour itself before, at scattered places: 0.2 ms of L2 traffic at 2560 x 1440 (docs/render-post.md).
@@ -589,6 +588,7 @@ static class PostProcessShaders
         void main() { fragColour = vec4(textureLod(uScene, vUv, 0.0).a, 0.0, 0.0, 1.0); }
         """;
 
+    /// <summary>Depth-aware blur (7 taps) of the occlusion, one direction per pass.</summary>
     public const string SsaoBlur = """
         #version 330 core
         in vec2 vUv;

@@ -265,7 +265,7 @@ sealed class WorldObjects : IDisposable
                 else if (parts.Count == 0) Interlocked.Increment(ref empty);
                 // Inside another building and not outside: hidden while that one is closed (a player's own building says so; a zone's by its state).
                 if (b.Contained || state is not null && state.GetBool("is inside building") && !BuildingLayouts.IsOutside(state))
-                    for (int k = 0; k < parts.Count; k++) parts[k] = parts[k] with { Contained = true };
+                    for (int k = 0; k < parts.Count; k++) parts[k] = parts[k] with { Contained = true, ContainerId = b.ContainerId };
                 result.Items.AddRange(parts);
                 Interlocked.Increment(ref buildings);
                 // The state's exterior layout (signs and banners) and interior layout (furniture), placed relative to the building, each object on its

@@ -44,6 +44,9 @@ public sealed record PlacedMesh(string MeshPath, Matrix4x4 Transform, GameRecord
     /// outside: hidden while the building whose hull holds it shows its outside (game: an interior's contained objects; docs/render-objects.md "Closed interiors").
     /// </summary>
     public bool Contained { get; init; }
+
+    /// <summary>For a <see cref="Contained"/> player building: the building it was placed in (its parent, a site's id or a level building's instance id); null when unknown.</summary>
+    public string? ContainerId { get; init; }
 }
 
 /// <summary>

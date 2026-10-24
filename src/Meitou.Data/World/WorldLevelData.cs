@@ -190,6 +190,8 @@ public sealed record BuildingPlacement(ZoneCoordinate Zone, string InstanceId, s
     public bool TargetsZoneRecord { get; init; }
     /// <summary>Placed inside another building and not outside (<see cref="PlacedMesh.Contained"/>); a zone's own buildings take it from their state instead.</summary>
     public bool Contained { get; init; }
+    /// <summary>The building it was placed in (<see cref="PlacedMesh.ContainerId"/>), when known.</summary>
+    public string? ContainerId { get; init; }
 }
 
 /// <param name="TownId">String id of the placed <see cref="FcsRecordType.TOWN"/> record.</param>

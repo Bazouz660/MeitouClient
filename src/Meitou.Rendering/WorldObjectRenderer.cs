@@ -748,8 +748,9 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
         var at = inst.Transform.Translation;
         if (inst.Interior is { } known && known.Version == streamer.InteriorVersion && known.At == at) return known;
         bool inside = InteriorAt(at) is not null;
-        // Engine choice: the 2-unit margin the host gives characters, so an object standing on the hull's top floor counts as on it.
-        var holder = InteriorAt(at, 2);
+        // Engine choice: the 2-unit margin the host gives characters, so an object standing on the hull's top floor counts as on it. A building placed inside
+        // another takes that one's hull where it reaches it (a neighbour's within the margin is not its holder).
+        var holder = InteriorAt(at, 2, inst.Placed.ContainerId);
         return inst.Interior = new(streamer.InteriorVersion, at, inside, holder?.PlacementId, holder?.FloorAt(at) ?? 0);
     }
 
@@ -776,8 +777,15 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
     }
 
     /// <summary>The indoor volume of a loaded building that contains <paramref name="p"/> (widened by <paramref name="margin"/>), or null.</summary>
-    public InteriorVolume? InteriorAt(Vector3 p, float margin = 0)
+    public InteriorVolume? InteriorAt(Vector3 p, float margin = 0) => InteriorAt(p, margin, null);
+
+    /// <summary>
+    /// <see cref="InteriorAt(Vector3, float)"/>, preferring the building <paramref name="prefer"/> names (a site's id or a level building's instance id,
+    /// <see cref="PlacedMesh.ContainerId"/>) when its volume is one of those containing the point.
+    /// </summary>
+    InteriorVolume? InteriorAt(Vector3 p, float margin, string? prefer)
     {
+        InteriorVolume? first = null;
         // The zones within 200 units of the point (a building may stand over its zone's edge): the one it is in and at most three beside it.
         var (lo, hi) = (WorldLayout.ZoneOf(p.X - InteriorOver, p.Z - InteriorOver), WorldLayout.ZoneOf(p.X + InteriorOver, p.Z + InteriorOver));
         for (int x = lo.X; x <= hi.X; x++)
@@ -785,8 +793,30 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
             {
                 if (streamer.ZoneAt(new ZoneCoordinate(x, y)) is not { Interiors.Count: > 0 } zone || ObjectStreamer.ZoneDistance(zone.X0, zone.Z0, p) > InteriorOver) continue;
                 foreach (var v in zone.Interiors)
-                    if (v.Contains(p, margin)) return v;
+                    if (v.Contains(p, margin))
+                    {
+                        if (prefer is null || IsKeyOf(v.PlacementId, prefer)) return v;
+                        first ??= v;
+                    }
             }
+        return first;
+    }
+
+    /// <summary>Whether placement key <paramref name="key"/> is building <paramref name="id"/>'s: a site's key is its id, a level building's ends in ":" and its instance id (<see cref="BuildingKey"/>).</summary>
+    static bool IsKeyOf(string key, string id) =>
+        key == id || key.Length > id.Length && key[key.Length - id.Length - 1] == ':' && key.EndsWith(id, StringComparison.Ordinal);
+
+    /// <summary>The loaded volume of <paramref name="volume"/>'s building (the same, or its zone's re-laid one), or null once its zone is unloaded or the building removed or destroyed.</summary>
+    public InteriorVolume? LoadedInterior(InteriorVolume volume)
+    {
+        if (volume.Footprint.Length == 0) return null;
+        var at = volume.Footprint[0];
+        var (lo, hi) = (WorldLayout.ZoneOf(at.X - InteriorOver, at.Y - InteriorOver), WorldLayout.ZoneOf(at.X + InteriorOver, at.Y + InteriorOver));
+        for (int x = lo.X; x <= hi.X; x++)
+            for (int y = lo.Y; y <= hi.Y; y++)
+                if (streamer.ZoneAt(new ZoneCoordinate(x, y)) is { Interiors.Count: > 0 } zone)
+                    foreach (var v in zone.Interiors)
+                        if (ReferenceEquals(v, volume) || v.PlacementId == volume.PlacementId) return v;
         return null;
     }
 
