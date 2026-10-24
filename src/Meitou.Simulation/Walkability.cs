@@ -66,7 +66,7 @@ public interface IWalkability
     }
 
     /// <summary>How far (units) <see cref="FloorNear"/> looks round a spot (engine choice: more than a table's half width).</summary>
-    const float FloorSearch = 12;
+    public const float FloorSearch = 12;
 }
 
 /// <summary>

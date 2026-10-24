@@ -133,10 +133,26 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
                     cold.OrderQueue.Add(target);   // after the order in hand (shift + right click)
                     continue;
                 }
-                GoTo(table, slot, target, cold.RunSpeed);
-                (cold.GoalHeight, cold.GoalHeightAt) = (order.Target.Y, target);
+                GoToFloor(world, slot, new Vector3(target.X, order.Target.Y, target.Y), cold.RunSpeed);
             }
         }
+    }
+
+    /// <summary>How far above or below the given height the floor <see cref="GoToFloor"/> walks onto may be (engine choice: a storey is about 66).</summary>
+    public const float FloorSlack = 20;
+
+    /// <summary>
+    /// <see cref="GoTo"/> onto the floor at <paramref name="at"/>'s height (serial phases only). Furniture cuts holes in a building's floor mesh and a goal there resolves to the
+    /// storey above or the ground below, so the goal moves to the nearest floor point (<see cref="IWalkability.FloorNear"/>) and keeps its height. Returns the X/Z goal.
+    /// </summary>
+    public static Vector2 GoToFloor(World world, int slot, Vector3 at, byte mode)
+    {
+        var floor = world.Walkability.FloorNear(at.X, at.Z, at.Y, FloorSlack) ?? at;
+        var flat = new Vector2(floor.X, floor.Z);
+        GoTo(world.Characters, slot, flat, mode);
+        var cold = world.Characters.Cold(slot)!;
+        (cold.GoalHeight, cold.GoalHeightAt) = (floor.Y, flat);
+        return flat;
     }
 
     /// <summary>

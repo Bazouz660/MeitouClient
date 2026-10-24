@@ -560,8 +560,9 @@ unload, hashed only once non-empty. Facts: [locks](game/locks.md), [economy 11.5
   [ui-input](game/ui-input.md)) walks the nearest selected to the leaf's near side (12 out, reach 20) and opens or closes it, or picks another
   faction's locked lock (`PickingLock` on the door; a door is worked from that spot). `WorldSnapshot.DoorPicks` lists every door's leaf for picking
   (rebuilt when buildings register or go); `WorldSnapshot.Doors` publishes the player's doors and every door that is not closed and unlocked; the object renderer slides door parts by `DoorLeaf.LocalOffset` ([render-objects](render-objects.md)).
-- **Containers** (`OpenContainerOrder`, [locks](game/locks.md) "Containers"): the opener walks onto the container's own floor (`FloorNear` its origin, the goal height set) and
-  opens it only within 20 of that height (engine); without the height a ground-floor chest over a furniture hole was walked to on the storey above.
+- **Containers** (`OpenContainerOrder`, [locks](game/locks.md) "Containers"): the opener opens it only within 20 of its height (engine).
+- **Object walks** (`MovementSystem.GoToFloor`): move orders and the player's walks to a container, ground item, door, cage, forced lock or operated machine go onto the
+  object's own floor (`FloorNear` its height within 20, the goal height set); without it a goal over a furniture hole resolved to the storey above.
 - **Cages/beds**: `FindCage` (original weights; engine: skips a cage the carrier can't reach, `Reachable`: its building
   shut by another faction's doors, or a walk of that faction there failed in the last 24 game hours, `MarkUnreachable`;
   no path query runs in a tick), `Imprison` (state 2, `CharacterTable.Place` at the item's origin, cage

@@ -60,7 +60,7 @@ public sealed partial class LockSystem
         if (world.Player.DoorWalker == table.IdOf(best)) world.Player.DoorTarget = null;
         if (order.Force == LockForce.Smash) (walker.Bashing, walker.BashOrdered, walker.BashTime) = (fixture.Id, true, 0);
         else (walker.ForcingLock, walker.Force) = (fixture.Id, order.Force);
-        MovementSystem.GoTo(table, best, at, walker.RunSpeed);
+        MovementSystem.GoToFloor(world, best, new Vector3(at.X, fixture.Position.Y, at.Y), walker.RunSpeed);
     }
 
     /// <summary>Each tick: a character in reach of the lock it was ordered to force cuts or breaks it; one given another order, downed or gone gives up.</summary>
@@ -80,7 +80,7 @@ public sealed partial class LockSystem
             if (Vector2.Distance(Flat(next[s].Position), at) > reach)
             {
                 // Still walking; another order (a new goal) or a failed path ends it.
-                if (next[s].Task != (byte)CharacterTask.GoTo || Vector2.Distance(next[s].Goal, at) > (f.Kind == FixtureKind.Door ? reach : 1)) c.ForcingLock = null;
+                if (Redirected(next[s], at, reach)) c.ForcingLock = null;
                 continue;
             }
             if (next[s].Task == (byte)CharacterTask.GoTo) MovementSystem.Stop(table, s);

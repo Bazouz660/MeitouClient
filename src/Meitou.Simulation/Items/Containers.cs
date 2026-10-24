@@ -24,7 +24,7 @@ namespace Meitou.Simulation
         /// <summary>A character opens or uses a container within this distance of it (an engine choice).</summary>
         public const float ContainerReach = 20;
 
-        /// <summary>How far above or below a container a character may stand to open or use it, and how near its origin's height the floor walked to must be (engine choices: a storey is about 66).</summary>
+        /// <summary>How far above or below a container a character may stand to open or use it (engine choice: a storey is about 66).</summary>
         public const float ContainerFloorSlack = 20;
 
         /// <summary>
@@ -59,14 +59,14 @@ namespace Meitou.Simulation
                 walker.Shackles = null;
                 walker.PickingLock = order.Alt ? fixture.Id : null;
                 if (!order.Alt) world.Post("Hold down the ALT key to pick the lock.");
-                MovementSystem.GoTo(table, best, Flat(fixture.Position), walker.RunSpeed);
+                MovementSystem.GoToFloor(world, best, fixture.Position, walker.RunSpeed);
                 return;
             }
             if (ShopOf(world, fixture) is not null && !order.Alt && theirs)
             {
                 // A shop's stock without Alt: the original's hint and a move; with Alt (the menu's Loot) the walker steals from it (the stock window shows the shop's merged stock).
                 world.Post("Hold down the ALT key to steal items");
-                MovementSystem.GoTo(table, best, Flat(fixture.Position), walker.RunSpeed);
+                MovementSystem.GoToFloor(world, best, fixture.Position, walker.RunSpeed);
                 return;
             }
             var player = world.Player;
@@ -76,13 +76,7 @@ namespace Meitou.Simulation
             player.OpenContainer = null;
             player.OpeningContainer = order.Fixture;
             player.ContainerWalker = table.IdOf(best);
-            if (bestDistance > ContainerReach || !SameFloor(table.Next[best].Position, fixture.Position))
-            {
-                // Onto the container's own floor: furniture cuts a hole in the floor's navmesh, and a goal without a height resolves to the storey above or the ground below.
-                var at = world.Walkability.FloorNear(fixture.Position.X, fixture.Position.Z, fixture.Position.Y, ContainerFloorSlack) is { } onFloor ? onFloor : fixture.Position;
-                MovementSystem.GoTo(table, best, Flat(at), walker.RunSpeed);
-                (walker.GoalHeight, walker.GoalHeightAt) = (at.Y, Flat(at));
-            }
+            if (bestDistance > ContainerReach || !SameFloor(table.Next[best].Position, fixture.Position)) MovementSystem.GoToFloor(world, best, fixture.Position, walker.RunSpeed);
         }
 
         /// <summary>Each tick: the walker in reach opens its container; one given another order, downed or gone gives up. An open window stays until the player closes it; it closes when its opener is down or gone.</summary>

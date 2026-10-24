@@ -33,7 +33,7 @@ namespace Meitou.Simulation
             walker.PickingLock = null;
             walker.Shackles = null;
             walker.PickingUpItem = order.Item;
-            if (bestDistance > PickUpReach) MovementSystem.GoTo(table, best, Flat(item.Position), walker.RunSpeed);
+            if (bestDistance > PickUpReach) MovementSystem.GoToFloor(world, best, item.Position, walker.RunSpeed);
         }
 
         /// <summary>Each tick: a walker in reach takes its item; one whose item is gone, who was given another goal or stopped, or who is down gives up.</summary>

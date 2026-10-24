@@ -27,7 +27,7 @@ public sealed partial class LockSystem
         var walker = table.Cold(best)!;
         ClearWork(walker);
         walker.Freeing = order.Prisoner;
-        MovementSystem.GoTo(table, best, Flat(cage.Position), walker.RunSpeed);
+        MovementSystem.GoToFloor(world, best, cage.Position, walker.RunSpeed);
     }
 
     void GetInInput(World world, GetInCageOrder order)
@@ -40,7 +40,7 @@ public sealed partial class LockSystem
         if (!walker.Carrying.IsNone) return;
         ClearWork(walker);
         walker.EnteringCage = cage.Id;
-        MovementSystem.GoTo(table, best, Flat(cage.Position), walker.RunSpeed);
+        MovementSystem.GoToFloor(world, best, cage.Position, walker.RunSpeed);
     }
 
     /// <summary>The slot of the player's free, awake, uncarried character nearest <paramref name="where"/> among <paramref name="who"/> (the selection when empty); -1 when none.</summary>
@@ -57,6 +57,13 @@ public sealed partial class LockSystem
         }
         return best;
     }
+
+    /// <summary>
+    /// Whether a character walking to a fixture's spot <paramref name="at"/> was given another order (a new goal) or its path failed. Its goal may lie off the spot by the
+    /// floor search of <see cref="MovementSystem.GoToFloor"/>.
+    /// </summary>
+    static bool Redirected(in CharacterHot n, Vector2 at, float reach) =>
+        n.Task != (byte)CharacterTask.GoTo || Vector2.Distance(n.Goal, at) > MathF.Max(reach, IWalkability.FloorSearch);
 
     static void ClearWork(CharacterCold c)
     {
@@ -90,7 +97,7 @@ public sealed partial class LockSystem
             if (Vector2.Distance(Flat(next[s].Position), at) > reach)
             {
                 // Still walking; another order (a new goal) or a failed path ends it.
-                if (next[s].Task != (byte)CharacterTask.GoTo || Vector2.Distance(next[s].Goal, at) > 1) { c.Freeing = CharacterId.None; c.EnteringCage = null; }
+                if (Redirected(next[s], at, reach)) { c.Freeing = CharacterId.None; c.EnteringCage = null; }
                 continue;
             }
             if (next[s].Task == (byte)CharacterTask.GoTo) MovementSystem.Stop(table, s);
