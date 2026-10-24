@@ -112,6 +112,12 @@ internal sealed class RagdollPhysics : IDisposable
     public static CollidableDescription Collidable(TypedIndex shape) => new(shape, SpeculativeMargin);
     /// <summary>Solver substeps per tick and velocity iterations per substep: 4 substeps at 30 Hz is 120 Hz, finer than PhysX's 1/60 s maximum step (engine choice).</summary>
     const int Substeps = 4, Iterations = 2;
+    /// <summary>
+    /// Constraint batches before Bepu puts a body's further constraints in its sequential fallback batch (its default is 64). Bepu 2.4.0 throws in the narrow phase's flush
+    /// when the fallback's last constraint on a dynamic body goes in the same flush as one on a kinematic body (it empties its count table, then looks the kinematic up in it),
+    /// which a corpse heap of a big battle reaches; no body gets this many constraints, so the fallback is never used. Only lists of this length are allocated for it.
+    /// </summary>
+    const int FallbackBatches = 1024;
 
     public readonly BufferPool Pool = new();
     public readonly BepuPhysics.Simulation Simulation;
@@ -120,7 +126,7 @@ internal sealed class RagdollPhysics : IDisposable
     public RagdollPhysics()
     {
         tags = new CollidableProperty<BodyTag>(Pool);
-        Simulation = BepuPhysics.Simulation.Create(Pool, new ContactRules { Tags = tags }, new Integration(), new SolveDescription(Iterations, Substeps));
+        Simulation = BepuPhysics.Simulation.Create(Pool, new ContactRules { Tags = tags }, new Integration(), new SolveDescription(Iterations, Substeps, FallbackBatches));
         Simulation.Deterministic = true;
     }
 

@@ -448,7 +448,8 @@ main grid, weight and burden only, grid size from its `inventory w` / `inventory
 `Ragdolls/RagdollSystem` (game behaviour: [ragdolls](game/ragdolls.md)) runs serially after animation
 when the host passes `CharacterRigs` (the game does; tests and goldens do not). Engine choices:
 - **Physics**: BepuPhysics2, one scene stepped on the calling thread (deterministic, 2 solver
-  iterations, 4 substeps per tick). Bodies and joints come from the race's ragdoll `.phs`
+  iterations, 4 substeps per tick, fallback batch threshold 1024: Bepu 2.4.0's fallback batch throws
+  when its last contact on a dynamic body is removed with one on a kinematic body, which big battles hit at the default 64). Bodies and joints come from the race's ragdoll `.phs`
   (`RagdollDefinition`, scaled by the animal size); revolute → hinge + twist limit, spherical →
   ball socket + swing + twist limits, fixed → weld. Joined pairs do not collide.
 - **Parts**: `Whole` when incapacitated, `CarryMode` when carried, a human's downed limbs by their
