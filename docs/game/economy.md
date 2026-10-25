@@ -320,7 +320,9 @@ money, mark the entry claimed (it never pays twice) and show "Received c.{1} rew
   seen character when the update says it is newly seen (either of two flag arguments), or while it has a pending crime whose timer
   (`+0x180`) is above 5; every run that reacts sets that timer back to 20 (`FUN_140851f40`), so a watched crime stays fresh. A witness
   that regards the culprit as friendly and sees it wrong the witness's own faction costs the culprit's faction 20 relation each time
-  ([factions 3.5](factions-squads-towns.md#35-what-fires-relation-changes-observed-decompile)).
+  ([factions 3.5](factions-squads-towns.md#35-what-fires-relation-changes-observed-decompile)). A reacting witness that is the crime's
+  victim (for a trespass, the witness itself) goes for the culprit, which its whole squad then takes for an enemy
+  ([squad memory](dialogue.md#squad-memory)).
 - `FUN_140673a20` in the trespass path is the squad-memory tag MY_INTRUDER, not a witness function (factions 3.5).
 
 ### 11.7 Arrest

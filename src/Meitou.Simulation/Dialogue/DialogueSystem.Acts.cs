@@ -23,14 +23,15 @@ public sealed partial class DialogueSystem
     }
 
     /// <summary>
-    /// <c>AI::underMeleeAttack</c> / <c>underRangedAttack</c> and the blow paths (<c>Character::hitByMeleeAttack</c>, <c>iShotYou</c>): the attacked character's squad tags its attacker
-    /// TEMP_ENEMY, so every mate takes it for an enemy whatever the relations say (docs/game/dialogue.md "Squad memory").
+    /// <paramref name="by"/>'s squad tags <paramref name="who"/> TEMP_ENEMY, so every mate takes it for an enemy whatever the relations say (docs/game/dialogue.md "Squad memory"): an
+    /// attacked character on its attacker (<c>AI::underMeleeAttack</c> / <c>underRangedAttack</c>, <c>Character::hitByMeleeAttack</c>, <c>iShotYou</c>), and a character that
+    /// <c>Character::attackTarget</c> sends at someone on its target.
     /// </summary>
-    internal void RememberAttacker(World world, int victim, int attacker)
+    internal void TagEnemy(World world, int by, int who)
     {
         var table = world.Characters;
-        if (table.Cold(victim) is not { SquadId: >= 0 } vc || table.Cold(attacker) is not { } ac) return;
-        FlagFrom(world, vc, table.IdOf(victim), table.IdOf(attacker), ac, MemoryTag.TempEnemy);
+        if (table.Cold(by) is not { SquadId: >= 0 } bc || table.Cold(who) is not { } wc) return;
+        FlagFrom(world, bc, table.IdOf(by), table.IdOf(who), wc, MemoryTag.TempEnemy);
     }
 
     /// <summary>
@@ -186,7 +187,7 @@ public sealed partial class DialogueSystem
 
     /// <summary>
     /// DA_MASSIVE_ALARM (56): when the speaker is in a town, every member of its faction's squads tags the target TEMP_ENEMY, fires event 66 at it and goes for it (task 29 to its
-    /// position; Meitou: an attack, as its aggro does not read the tag). Engine: only loaded squads.
+    /// position; Meitou: an attack order). Engine: only loaded squads.
     /// </summary>
     void MassiveAlarm(World world, CharacterId me, CharacterCold mc, CharacterId target, CharacterCold tc)
     {

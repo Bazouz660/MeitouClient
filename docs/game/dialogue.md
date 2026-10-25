@@ -298,10 +298,16 @@ me, 5 captor, 6 friendly, 7 defeated my squad, 8 I beat his squad, 9 killed my f
   through the wrapper in `AI::underMeleeAttack` (also reached from being targeted, [combat](combat.md#fight-lifecycle-and-orders)),
   `AI::underRangedAttack`, `Character::hitByMeleeAttack`, `CombatClass::_iHitYouAreYouHit` and `Character::iShotYou`. So an assault on one
   member makes the attacker an enemy of the whole squad (slot 125 below) at any relation, and its attack-on-sight members (goal 16) join.
-  `Character::attackTarget` tags the other way (the attacker's squad on its target), but only task code calls it (stealth KO, kidnapping,
-  investigating alarms, dialogue actions, crime assessment), not the player's attack orders. Nothing times the tag out: the perception
-  update (`SensoryData::add`) clears it only once the tagged enemy is a slave of the looker's faction (or its state +0x2f8 is 2, **Unknown**).
-  Meitou: the alert in `RetaliationSystem` (`DialogueSystem.RememberAttacker`); `attackTarget`'s tag is not written.
+  `Character::attackTarget(self, target)` (gives the AI the target, perceives it, tags it 4 on self's squad, replans) is called only by:
+  a missed stealth KO (`Task_StealthKO`: both squads tag each other 4, then the victim goes for the attacker), a failed kidnap
+  (`Task_Kidnapping`: the victim tags the kidnapper 4 and long-term 1, then goes for it), alarm investigators (`Task_InvestigateAlarms`:
+  sensed characters of a faction hostile to theirs), DA 56 MASSIVE_ALARM, and the witness function `SensoryData::assessCrimes`: every
+  reacting crime case ends by tagging the culprit short-term 7 criminal, setting its crime timer to 20 and, when the witness is the crime's
+  victim (a trespass's victim is the witness that called it), `attackTarget` on the culprit. The player's attack orders do not call it.
+  Nothing times the tag out: the perception update (`SensoryData::add`) clears it only once the tagged enemy is a slave of the looker's
+  faction (or its state +0x2f8 is 2, **Unknown**). Meitou (`DialogueSystem.TagEnemy`): the alert in `RetaliationSystem`, the stealth-KO
+  miss, the crime victim (`CrimeSystem.Witnesses`, an attack order unless it already fights the culprit) and DA 56; Meitou has no kidnap
+  order or alarm investigation yet, and the criminal tag 7 is not written (nothing reads it).
 - **Readers**: DC 18 (`FUN_140673290`: hours since the time, **9999.99** when never noted), DC 20 (an entry exists), DC 23, DC 52
   (long & 0xc), DC 53 (long & 0x2b0), "regards as friendly" (`FUN_1407923d0`, Character slot 126: same faction; not with TEMP ENEMY;
   yes with TEMP ALLY or love; else faction ally) and "regards as enemy" (`FUN_14079c950`, slot 125): TEMP ENEMY makes, and TEMP ALLY

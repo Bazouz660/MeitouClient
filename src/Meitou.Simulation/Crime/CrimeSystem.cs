@@ -280,6 +280,13 @@ public sealed class CrimeSystem(FactionRelations relations, CrimeSettings? setti
             p.Timer = WitnessTimer;
             c.RecentlyWanted = RecentlyWantedSeconds;
             var witness = table.IdOf(w);
+            // A witness that is the crime's own victim (a trespass's is the witness that called it) goes for the culprit (Character::attackTarget: its squad tags the culprit TEMP_ENEMY).
+            if (p.Victim == witness && wc.Fighter?.CanAttack == true
+                && !(world.SystemOf<Combat.CombatSystem>()?.StateOf(witness) is { } fight && fight.TargetSlot == culprit && fight.TargetGeneration == culpritId.Generation))
+            {
+                world.SystemOf<Dialogue.DialogueSystem>()?.TagEnemy(world, w, culprit);
+                world.Defer(new Combat.AttackOrder([witness], culpritId) { Tick = world.Tick + 1 });
+            }
             bool first = !p.Witnessed;
             if (first)
             {

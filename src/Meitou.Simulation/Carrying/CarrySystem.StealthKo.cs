@@ -193,7 +193,16 @@ public sealed partial class CarrySystem
                 table.Next[t].Velocity = Vector3.Zero;
             }
         }
-        else world.Defer(new Combat.AttackOrder([targetId], attackerId) { Tick = world.Tick + 1 });
+        else
+        {
+            // A miss: each side's squad tags the other TEMP_ENEMY and the victim goes for the attacker (Task_StealthKO, then Character::attackTarget).
+            if (world.SystemOf<Dialogue.DialogueSystem>() is { } talk)
+            {
+                talk.TagEnemy(world, t, i);
+                talk.TagEnemy(world, i, t);
+            }
+            world.Defer(new Combat.AttackOrder([targetId], attackerId) { Tick = world.Tick + 1 });
+        }
         // Hit or miss, the swing is an assault on the victim's faction if someone sees it (engine choice: the original's crime call for this task is not traced).
         Crimes?.Assault(world, i, t);
         knockouts.Add(new StealthKoEntry(world.Tick, attackerId, targetId, chance, success, noXp));
