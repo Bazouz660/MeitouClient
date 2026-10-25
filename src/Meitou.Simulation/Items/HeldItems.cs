@@ -594,7 +594,7 @@ public sealed partial class PlayerSystem
         if (item.Type == FcsRecordType.BLUEPRINT && cold.Faction == world.Player.Faction)
         {
             // One read whatever Shift says: a second unit would only say "Research already known".
-            if (data?.Items.ResearchOf(item) is { } research && world.SystemOf<Production.ProductionSystem>()?.Learn(world, research.StringId) == true) root.RemoveOne(item);
+            if (world.SystemOf<Production.ProductionSystem>()?.Learn(world, item) == true) root.RemoveOne(item);
             return;
         }
         var bag = quick.BagOpen ? root.Backpack?.Contents : null;

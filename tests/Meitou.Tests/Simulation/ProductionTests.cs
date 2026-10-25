@@ -611,6 +611,50 @@ public class ProductionTests
     }
 
     /// <summary>
+    /// Blueprints (docs/game/buildings-production.md "Blueprints"): every base-game armour, backpack and crossbow gets a priced <c>.TECH.1</c> research, armour enabling its own
+    /// craft; a right click on a blueprint whose requirements are unmet keeps it, one with no requirements completes its research and is used up.
+    /// </summary>
+    [Fact, Slow]
+    public void Gear_blueprints_are_made_at_load_and_a_right_click_learns_one()
+    {
+        var db = InstallData.BaseGame;
+        Assert.SkipWhen(db is null, "Kenshi install not found");
+        var tech = db!.Records.Values.Where(r => r.StringId.EndsWith(".TECH.1", StringComparison.Ordinal)).ToList();
+        Assert.Equal(GearCount, tech.Count);
+        // Priced from the item: only the shackles, worth nothing, give a free blueprint.
+        Assert.All(tech, r => Assert.True(r.Type == FcsRecordType.RESEARCH && r.GetBool("blueprint only") && (r.GetInt("money") > 0 || db.Find(r.StringId[..^7])!.GetBool("is locked")), r.StringId));
+        var armour = db.OfType(FcsRecordType.ARMOUR).First();
+        Assert.Contains(db.Find(armour.StringId + ".TECH.1")!.GetReferences("enable armour"), e => e.TargetStringId == armour.StringId);
+
+        var locked = db.OfType(FcsRecordType.RESEARCH).First(r => r.GetBool("blueprint only") && r.GetReferences("requirements").Any(q => db.Find(q.TargetStringId)?.Type == FcsRecordType.RESEARCH));
+        var gear = db.Find(armour.StringId + ".TECH.1")!;
+        using var rig = new Rig(db, GameConstants.FromDatabase(db), []);
+        var who = rig.World.Characters.Spawn(new CharacterHot { Position = At, Task = (byte)CharacterTask.Idle },
+            new CharacterCold { Name = "reader", Race = Human, Medical = MedicalState.Create(Human, 50), Inventory = new Inventory(), IsPlayer = true, Faction = PlayerFaction }, 0);
+        var inventory = rig.Carried(who);
+        inventory.Add(rig.Items.Create(locked.StringId)!);
+        inventory.Add(rig.Items.Create(gear.StringId)!);
+        void Read(GameRecord research)
+        {
+            var all = inventory.All().ToList();
+            int index = all.FindIndex(i => i.CompanyId == research.StringId);
+            var it = all[index];
+            rig.World.Commands.Enqueue(new QuickMoveItem(who, new InventoryItemToken(index, it.Record, it.Section, it.X, it.Y, it.Quantity, it.Quality), false, false) { Tick = rig.World.Tick });
+            rig.World.RunTick();
+        }
+        Read(locked);
+        Assert.False(rig.World.Research.IsDone(locked.StringId));
+        Assert.Contains(inventory.All(), i => i.CompanyId == locked.StringId);
+        Read(gear);
+        Assert.True(rig.World.Research.IsDone(gear.StringId));
+        Assert.DoesNotContain(inventory.All(), i => i.CompanyId == gear.StringId);
+        Assert.Contains(rig.World.TakeMessages(), m => m == "Research complete: " + gear.Name);
+    }
+
+    /// <summary>The base game's ARMOUR, CONTAINER and CROSSBOW records (one <c>.TECH.1</c> research each).</summary>
+    const int GearCount = 165;
+
+    /// <summary>
     /// The installed Small Generator (1976, 40) with Upgraded Small Generators gives 55; the Battery Bank (1855, rate 40, store 60) with Battery Power, Advanced Battery Power,
     /// Battery Capacity and Advanced Battery Capacity charges at 60 into 180; the Wind Generator (1999, 50, no fuel) gives its output x its blades' wind share (wind 10 to 50: half at 30)
     /// (docs/game/buildings-production.md "Power"). The resource storages take only their resource.

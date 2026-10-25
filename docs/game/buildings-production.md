@@ -617,7 +617,7 @@ to `FUN_140836b70`: contribution k of the frame is x 0.6^k (counter `+0x174`, cl
 - **Gear research** (**Verified**, `Research::_setup` `FUN_140834b70` -> `_createBlueprintsFor` `FUN_1408324f0`): at start every ARMOUR, CONTAINER and CROSSBOW
   gets a RESEARCH `<item id>.TECH.1`: a copy of `RESEARCH_TEMPLATE` (base data: level 1, time 12, Smithing, `blueprint only`), named as the item, `blueprint only`
   true, `money` = trunc(ItemValue(item, quality 40, no category row) x `blueprint price mult`), `enable armour` / `enable backpack` / `enable crossbow` = the item,
-  `blueprint item` = `BLUEPRINT_ITEM_ARMOUR` (armour) or `BLUEPRINT_ITEM_GEAR`. Base data: 165 such records. What happens when the id already exists is **Unknown**
+  `blueprint item` = `BLUEPRINT_ITEM_ARMOUR` (armour) or `BLUEPRINT_ITEM_GEAR`. Base data: 165 such records, `money` 0 only for the three shackles (**Verified**, test). What happens when the id already exists is **Unknown**
   (Meitou keeps the existing record).
 - **Learning** (**Verified**, `BlueprintItem::learnResearch` `FUN_1402b65d0`): right click in an own window ([ui-screens](ui-screens.md#6-inventory-trade-dialogue-build)).
   Requirements unmet (`checkRequirements` `FUN_140832fa0` with no level or cost test: each `requirements` RESEARCH finished, each BUILDING unlocked) posts

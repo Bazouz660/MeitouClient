@@ -842,6 +842,9 @@ public sealed partial class ProductionSystem : ITickSystem
         return true;
     }
 
+    /// <summary><see cref="Learn(World, string)"/> for a blueprint item (false for any other item).</summary>
+    public bool Learn(World world, ItemInstance blueprint) => items.ResearchOf(blueprint) is { } research && Learn(world, research.StringId);
+
     /// <summary>The research the player may queue now (<b>Observed</b>, <c>FUN_1408333b0</c>): not blueprint-only, not exhausted (every repetition done) or queued, <c>level</c> within the tech level, requirements met.</summary>
     public bool Available(World world, ResearchData r) =>
         !r.BlueprintOnly && !world.Research.Exhausted(db, r.Id) && !world.Research.IsQueued(r.Id) && r.Level <= world.Research.TechLevel && Met(world, r);
