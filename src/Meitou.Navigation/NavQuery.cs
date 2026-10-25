@@ -9,10 +9,10 @@ public sealed record NavAgent
     /// <summary>RACE <c>pathfind footprint radius</c> × the size factor (humans 4, Garru 7, Leviathan 40).</summary>
     public float Radius { get; init; } = 4;
     /// <summary>
-    /// Cost multiplier of water polygons: a + 1 for RACE <c>water avoidance</c> a ≥ 0, 1 / (1 − a) below, halved for the player's faction
-    /// (docs/game/pathfinding.md, "Filters and costs"). 7 is a Greenlander (a = 6).
+    /// Cost multipliers of the water polygons by depth (<see cref="NavArea.WetState"/>): at least a + 1 for RACE <c>water avoidance</c> a ≥ 0, 1 / (1 − a) below, halved for the
+    /// player's faction, and more where the agent is that much slower than on land (docs/game/pathfinding.md, "Water costs"). 7 is a Greenlander (a = 6).
     /// </summary>
-    public float WaterFactor { get; init; } = 7;
+    public WaterCost Water { get; init; } = WaterCost.Uniform(7);
     /// <summary>FACTION <c>road preference</c>: a long route takes the roads by the original's rule (<see cref="RoadNetwork.Route"/>); 0 never.</summary>
     public float RoadPreference { get; init; }
     /// <summary>Doors are blocked (closed, face data 5) when this is true; open doors cost <see cref="OpenDoorCost"/> extra.</summary>
@@ -55,18 +55,51 @@ public sealed class NavQuery(NavWorld world, NavDoors? doors = null)
         public bool Closed;
     }
 
-    public PathResult FindPath(Vector3 from, Vector3 to, NavAgent? agent = null)
+    /// <summary>A thread's A* state, reused by every search on it.</summary>
+    sealed class SearchScratch
     {
-        agent ??= NavAgent.Human;
-        if (!World.TryFindPolygon(from, StartSnap, out var start, out var startPoint) || !World.TryFindPolygon(to, GoalSnap, out var goal, out var goalPoint))
-            return PathResult.NotFound;
+        public readonly Dictionary<long, Node> Nodes = [];
+        public readonly PriorityQueue<Node, float> Open = new();
+        readonly List<Node> made = [];
+        int used;
+
+        public void Reset()
+        {
+            // A search that grew the table far (a long route) does not keep it.
+            if (Nodes.Count > 65536) { Nodes.Clear(); Nodes.TrimExcess(); made.Clear(); made.TrimExcess(); }
+            Nodes.Clear();
+            Open.Clear();
+            used = 0;
+        }
+
+        public Node Take(NavRef at, Vector3 position, float g, float f)
+        {
+            if (used == made.Count) made.Add(new Node());
+            var node = made[used++];
+            (node.Ref, node.Position, node.G, node.F, node.Parent, node.Closed) = (at, position, g, f, -1, false);
+            return node;
+        }
+    }
+
+    [ThreadStatic] static SearchScratch? searchScratch;
+
+    public PathResult FindPath(Vector3 from, Vector3 to, NavAgent? agent = null) => FindPath(from, to, agent ?? NavAgent.Human, null, out _);
+
+    /// <summary>
+    /// As <see cref="FindPath(Vector3, Vector3, NavAgent?)"/>, from the nearest start polygon <paramref name="skipStart"/> does not rule out; <paramref name="start"/> is the
+    /// one taken (Zone −1 when none was found).
+    /// </summary>
+    public PathResult FindPath(Vector3 from, Vector3 to, NavAgent agent, Func<NavRef, bool>? skipStart, out NavRef start)
+    {
+        if (!World.TryFindPolygon(from, StartSnap, out start, out var startPoint, skipStart)) { start = new NavRef(-1, -1); return PathResult.NotFound; }
+        if (!World.TryFindPolygon(to, GoalSnap, out var goal, out var goalPoint)) return PathResult.NotFound;
         var corridor = FindCorridor(start, startPoint, goal, goalPoint, agent);
         if (corridor is null) return PathResult.NotFound;
         return new PathResult(Pull(corridor, agent));
     }
 
     /// <summary>
-    /// A path to <paramref name="to"/>, or, when the goal cannot be reached (or is off the mesh), to the reachable point nearest it on the X/Z plane: the
+    /// A path to <paramref name="to"/>, or, when the goal cannot be reached (or is off the mesh), to the reachable point nearest it: the
     /// first part of a long route, whose end is then left to the next query (docs/game/pathfinding.md, "Long routes").
     /// </summary>
     public PathResult FindPathToward(Vector3 from, Vector3 to, NavAgent? agent = null)
@@ -84,15 +117,18 @@ public sealed class NavQuery(NavWorld world, NavDoors? doors = null)
     /// </summary>
     public Corridor? FindCorridor(NavRef start, Vector3 startPoint, NavRef goal, Vector3 goalPoint, NavAgent agent, bool partial = false)
     {
-        var nodes = new Dictionary<long, Node>();
-        var open = new PriorityQueue<Node, float>();
-        var first = new Node { Ref = start, Position = startPoint, G = 0, F = Vector3.Distance(startPoint, goalPoint) };
+        // The search's table, queue and nodes are the thread's, kept between searches: a fresh set per search was a tenth of the game's garbage (docs/bench.md "Play benchmark").
+        var scratch = searchScratch ??= new SearchScratch();
+        scratch.Reset();
+        var nodes = scratch.Nodes;
+        var open = scratch.Open;
+        var first = scratch.Take(start, startPoint, 0, Vector3.Distance(startPoint, goalPoint));
         nodes[start.Key] = first;
         open.Enqueue(first, first.F);
         int iterations = 0;
         Node? last = null, nearest = first;
         float nearestDistance = float.MaxValue;
-        float minFactor = Math.Min(1f, agent.WaterFactor);
+        float minFactor = Math.Min(1f, agent.Water.Min);
         // A start polygon none of whose exits leaves the radius clear (a sliver by a stair or a wall the walker was pushed into) is left through the narrow ones:
         // the walker stands in it already (docs/game/pathfinding.md, "Own builder").
         bool squeezeOut = false;
@@ -106,7 +142,8 @@ public sealed class NavQuery(NavWorld world, NavDoors? doors = null)
 
             var mesh = World.Mesh(node.Ref.Zone);
             int p = node.Ref.Polygon;
-            if (partial && mesh.DistanceXZ(p, goalPoint.X, goalPoint.Z) is var d && d < nearestDistance) (nearest, nearestDistance) = (node, d);
+            // Nearest in 3D, not on the X/Z plane: for a goal on a wall top the ground beside the wall is nearer on the plane than the walkway it lies on.
+            if (partial && Vector3.Distance(NavWorld.ClosestPoint(mesh, p, goalPoint), goalPoint) is var d && d < nearestDistance) (nearest, nearestDistance) = (node, d);
             float factor = Factor(mesh.Areas[p], agent);
             var poly = mesh.Polygons[p];
             for (int e = 0; e < poly.Length; e++)
@@ -156,7 +193,7 @@ public sealed class NavQuery(NavWorld world, NavDoors? doors = null)
             if (area == NavArea.Door) g += OpenDoorCost;
             if (!nodes.TryGetValue(to.Key, out var node))
             {
-                node = new Node { Ref = to, Position = mid, G = float.MaxValue };
+                node = scratch.Take(to, mid, float.MaxValue, 0);
                 nodes[to.Key] = node;
             }
             if (node.Closed || g >= node.G) return;
@@ -182,7 +219,7 @@ public sealed class NavQuery(NavWorld world, NavDoors? doors = null)
 
     static float Detour(Vector3 a, Vector3 p, Vector3 b) => Vector3.Distance(a, p) + Vector3.Distance(p, b);
 
-    static float Factor(byte area, NavAgent agent) => area == NavArea.Water ? agent.WaterFactor : 1;
+    static float Factor(byte area, NavAgent agent) => NavArea.WetState(area) is var state and > 0 ? agent.Water[state] : 1;
 
     /// <summary>
     /// The shared segment between a polygon's edge and the polygon behind it: the overlap of the two collinear edges. Left and right are as seen when

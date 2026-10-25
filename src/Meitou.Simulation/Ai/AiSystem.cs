@@ -229,7 +229,7 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             AiBehaviour.GoHome => AtHomeTown(world, squad, board, self) ? 0 : 0.5f,
             // A turret is only wanted by a member its squad gave one (the nearest free one in <see cref="ClaimTurrets"/>).
             AiBehaviour.Turret => board.TurretClaims.ContainsKey(self.Slot) ? 1 : 0,
-            AiBehaviour.TownNode => WanderIn(board.Town, world.Characters.Previous[self.Slot].Position).Count > 0 ? 1 : 0,
+            AiBehaviour.TownNode => WanderIn(board.Town, world.Characters.Previous[self.Slot].Position).Count > 0 || OccupiedBuildings(world, board) > 0 ? 1 : 0,
             AiBehaviour.Shop => Places(board.Town).Shops.Count > 0 ? 1 : 0,
             // A worker needs a mine, bench or refinery in its town (the finders return 0 without one).
             AiBehaviour.Work => Places(board.Town).Workplaces.Count > 0 ? 1 : 0,
@@ -505,12 +505,14 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             case AiBehaviour.Post:
             case AiBehaviour.Sleep:
             case AiBehaviour.GoHome:
-                var (target, home, floor, facing) = SpotFor(mind, board, behaviour, type);
+                // An occupier without a home sleeps in a bed of the town it holds.
+                var occupied = behaviour == AiBehaviour.Sleep && board.Home is null && !mind.HomeUnreachable ? OccupiedBed(world, board, mind, slot) : null;
+                var (target, home, floor, facing) = occupied is not null ? (Flat(occupied.Position), true, occupied.Position.Y, (float?)null) : SpotFor(mind, board, behaviour, type);
                 if (GoToSpot(world.Walkability, table, slot, mind, target, home ? GiveUp.Home : GiveUp.Post, type is TaskType.RUN_AWAY_HOMETOWN or TaskType.TRAVEL_TO_TARGET_TOWN_FAST ? SpeedMode.Run : SpeedMode.Walk, height: floor))
                 {
                     Become(table, slot, behaviour == AiBehaviour.Sleep ? CharacterTask.Rest : CharacterTask.Idle);
                     // At its home's bed: the serial step lies it in (Task_UseBed via 98 Sleeping); resting on the floor stays the fallback when no bed is free.
-                    if (behaviour == AiBehaviour.Sleep && home && floor is not null && BedSpotOf(board, mind) is { } bed)
+                    if (behaviour == AiBehaviour.Sleep && home && floor is not null && (occupied?.Id ?? BedSpotOf(board, mind)) is { } bed)
                     {
                         mind.BedAt = bed;
                         Interlocked.Exchange(ref bedding, 1);
@@ -522,7 +524,7 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             case AiBehaviour.TownNode:
             case AiBehaviour.Shop:
             case AiBehaviour.ToTown:
-                mind.Target ??= TargetFor(world, table.IdOf(slot), behaviour, board.Town);
+                mind.Target ??= TargetFor(world, table.IdOf(slot), behaviour, board.Town) ?? (behaviour == AiBehaviour.TownNode ? OccupiedSpot(world, board, table.IdOf(slot)) : null);
                 if (mind.Target is not { } goTo) Become(table, slot, CharacterTask.Idle);
                 else if (GoToSpot(world.Walkability, table, slot, mind, Flat(goTo), GiveUp.Target, SpeedMode.Walk, height: behaviour == AiBehaviour.ToTown ? null : goTo.Y))
                     Become(table, slot, CharacterTask.Idle);
@@ -858,7 +860,7 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
                     var p = table.Next[s].Position;
                     cold.Ai = new AiMind
                     {
-                        Squad = squad, MemberIndex = k, Post = new Vector2(p.X, p.Z), RaceGoals = cold.Race is { } race ? data.Ai.RaceGoals(race.StringId) : [], Resume = squad.Resume,
+                        Squad = squad, MemberIndex = k, Post = OccupierPost(world, board, k) ?? new Vector2(p.X, p.Z), RaceGoals = cold.Race is { } race ? data.Ai.RaceGoals(race.StringId) : [], Resume = squad.Resume,
                     };
                 }
                 if (cold.Ai.Goal is { } g) board.Crowd[g.Task.Type] = board.Crowd.GetValueOrDefault(g.Task.Type) + 1;
@@ -1090,10 +1092,22 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             saved.Apply(squad.Ai, data.Ai, rules);
             squad.SavedAi = null;
         }
+        // An occupation it left the world in goes on in the player town it comes back in (the original keeps the occupier's platoon and package, docs/game/ai.md); the town
+        // is the one it was made in, as a squad made this tick has no positions yet.
+        if (squad.LeftPackage is { } left && data.Ai.Package(left) is { } package && PackageClasses.Of(package.Signal) == PackageClass.OccupyTown && squad.Ai.Contract is null
+            && CurrentTown(world, squad.Position) is { PlayerTown: > 0 } there && squad.Ai.Resume(package))
+        {
+            squad.Ai.InTown = there;
+            OccupyResumed(world, squad, squad.Ai);
+        }
+        squad.LeftPackage = null;
     }
 
-    /// <summary>The AI runs a squad that is not the player's, not a roaming platoon's active half (a town's own saved squad, pinned, is run like the town's), and whose template lists AI packages.</summary>
-    bool Runs(World world, Squad squad) => (squad.PlatoonId < 0 || squad.Pinned) && !IsPlayers(world, squad) && TemplateOf(squad.TemplateId).Packages.Count > 0;
+    /// <summary>
+    /// The AI runs a squad that is not the player's, not a roaming platoon's active half (a town's own saved squad, pinned, is run like the town's, a save's wild one like the wild
+    /// sites' squads), and whose template lists AI packages.
+    /// </summary>
+    bool Runs(World world, Squad squad) => (squad.PlatoonId < 0 || squad.Pinned || squad.Wild) && !IsPlayers(world, squad) && TemplateOf(squad.TemplateId).Packages.Count > 0;
 
     bool IsPlayers(World world, Squad squad)
     {

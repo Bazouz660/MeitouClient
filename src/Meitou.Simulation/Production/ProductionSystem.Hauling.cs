@@ -5,14 +5,14 @@ namespace Meitou.Simulation.Production;
 
 // Hauling (docs/simulation.md "Production"; the original's Task_EmptyMachine / Task_FillMachine in docs/game/buildings-production.md "Hauling"): with Settings.AutoHaul an operator at its
 // machine fills empty inputs with what it carries, takes a full output, carries the output to the nearest storage that takes it and fetches an empty input's item from the nearest storage
-// holding it. The trip is CharacterCold.HaulSite / HaulFetch; Schedule walks there, and the operator walks back to its machine once the items have moved.
+// or producer output holding it (NearestSource). The trip is CharacterCold.HaulSite / HaulFetch; Schedule walks there, and the operator walks back to its machine once the items have moved.
 public sealed partial class ProductionSystem
 {
-    /// <summary>The storage a hauling operator walks to; a storage that is gone ends the trip.</summary>
+    /// <summary>The storage (or, fetching, the producer) a hauling operator walks to; one that is gone ends the trip.</summary>
     (BuildSite Site, Machine Machine)? Hauling(World world, CharacterCold cold)
     {
         if (cold.HaulSite is not { } id) return null;
-        if (Site(world, id) is { Complete: true } site && world.Machines.Find(id) is { Storage: not null } m) return (site, m);
+        if (Site(world, id) is { Complete: true } site && world.Machines.Find(id) is { } m && (m.Storage is not null || cold.HaulFetch is not null && m.Output is not null)) return (site, m);
         cold.HaulSite = null;
         cold.HaulFetch = null;
         return null;
@@ -51,7 +51,7 @@ public sealed partial class ProductionSystem
             return Go(cold, into, null);
         if (m.Craft is { Queue.Count: 0 }) return false;
         foreach (var input in m.Inputs)
-            if (input.Rate > 0 && input.Count == 0 && NearestStorage(world, site, s => s.Storage!.Items.Any(i => i.Record == input.Item && i.Quantity > 0 && i.Section == "main")) is { } from)
+            if (input.Rate > 0 && input.Count == 0 && NearestSource(world, site, input.Item) is { } from)
                 return Go(cold, from, input.Item);
         return false;
     }
@@ -63,16 +63,21 @@ public sealed partial class ProductionSystem
         return true;
     }
 
-    /// <summary>At the storage: puts the carried output in, or takes what the machine's empty inputs hold room for; then the trip ends.</summary>
+    /// <summary>At the storage: puts the carried output in, or takes what the machine's empty inputs hold room for (from a producer, out of its output); then the trip ends.</summary>
     void HaulAt(World world, CharacterCold cold, Machine machine, Machine store)
     {
         var inv = cold.Inventory;
-        var storage = store.Storage!;
         if (inv is not null && cold.HaulFetch is { } want)
         {
             int room = 0;
             foreach (var input in machine.Inputs) if (input.Item == want) room += Math.Max(0, input.Recipe.Capacity - input.Count);
-            foreach (var item in storage.Items.Where(i => i.Record == want && i.Section == "main").ToList())
+            // A producer (a well): out of its output.
+            if (!store.Data.IsStorage)
+            {
+                if (store.Output is { } from && from.Recipe.Item == want && Math.Min(room, from.Count) is > 0 and var take && items.Create(want, take) is { } made)
+                    from.Count -= Placed(inv, made);
+            }
+            else if (store.Storage is { } storage) foreach (var item in storage.Items.Where(i => i.Record == want && i.Section == "main").ToList())
             {
                 if (room <= 0) break;
                 int n = Math.Min(room, item.Quantity);
@@ -86,13 +91,13 @@ public sealed partial class ProductionSystem
                 if (placed == 0) break;
             }
         }
-        else if (inv is not null && machine.Output is { } output)
+        else if (inv is not null && machine.Output is { } output && store.Storage is { } into)
         {
             foreach (var item in Carried(inv, output.Recipe.Item).ToList())
             {
                 if (!store.Data.Accepts(item.Record, item.Type)) break;
                 inv.Remove(item);
-                if (storage.Add(item)) continue;
+                if (into.Add(item)) continue;
                 // What the storage has no room for stays with the character.
                 if (!inv.Add(item)) world.GroundItems.Drop(item, store.Position, 0);
                 break;
@@ -122,6 +127,16 @@ public sealed partial class ProductionSystem
             if (other.Record == item.Record && other.Quality == item.Quality && other.StolenFrom == item.StolenFrom && other.Section == "main" && other.Quantity < limit) return true;
         return storage.FindCell("main", item.Width, item.Height, out _, out _);
     }
+
+    /// <summary>
+    /// Where an input's item is fetched from: the player's nearest complete storage holding it in its main grid, or machine whose output holds it (a well's water), within
+    /// <see cref="ProductionSettings.HaulRange"/> of the machine (ties: the lower site id). A producer <paramref name="by"/> operates counts once its output is full, so it fills
+    /// the well before it leaves with the water.
+    /// </summary>
+    string? NearestSource(World world, BuildSite from, string record, CharacterCold? by = null) =>
+        NearestSite(world, from.Position, Settings.HaulRange, (s, m) => s.Id != from.Id && (m.Data.IsStorage
+            ? m.Storage is { } st && st.Items.Any(i => i.Record == record && i.Quantity > 0 && i.Section == "main")
+            : m.Output is { Count: > 0 } o && o.Recipe.Item == record && (o.Full || by?.OperateSite != s.Id)));
 
     /// <summary>The player's nearest complete storage within <see cref="ProductionSettings.HaulRange"/> of a machine that passes <paramref name="ok"/> (ties: the lower site id).</summary>
     string? NearestStorage(World world, BuildSite from, Func<Machine, bool> ok)

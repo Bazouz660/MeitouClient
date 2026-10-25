@@ -40,9 +40,14 @@ public sealed class FleeSystem(FactionRelations relations, CombatSystem combat, 
     readonly HashSet<int> attacked = [];
     readonly HashSet<int> seen = [];
     readonly List<int> standing = [];
-    // The factions standing this check and, per faction asked, whether any of them is its enemy (a battle of one faction, or of factions at peace, needs no scans).
-    readonly HashSet<int> standingFactions = [];
-    readonly Dictionary<int, bool> enemyMemo = [];
+    // The characters standing this check by faction (in slot order) and, per faction asked, the standing enemies of it: a battle of one faction, or of
+    // factions at peace, needs no scans, and a few enemies in a big crowd are checked directly rather than by a grid scan over the whole crowd.
+    readonly Dictionary<int, List<int>> standingBy = [];
+    readonly List<int> standingFactions = [];
+    readonly Dictionary<int, List<int>> enemiesOf = [];
+    readonly Stack<List<int>> spare = [];
+    /// <summary>Up to this many enemies standing, a scan tests each of them instead of querying the grid.</summary>
+    const int DirectEnemies = 256;
 
     public void SlowWorld(World world)
     {
@@ -152,7 +157,9 @@ public sealed class FleeSystem(FactionRelations relations, CombatSystem combat, 
             Table = table, Relations = Relations, Self = s, Faction = cold.Faction, Eye = table.Next[s].Position,
             Range = AggroSystem.RangeOf(cold, SightRange), Limit = limit, Into = into, Each = each,
         };
-        world.Grid.Query(scan.Eye.X, scan.Eye.Z, scan.Range, ref scan, Visit);
+        var enemies = EnemiesOf(cold.Faction);
+        if (enemies.Count <= DirectEnemies) foreach (int e in enemies) Visit(e, ref scan);
+        else world.Grid.Query(scan.Eye.X, scan.Eye.Z, scan.Range, ref scan, Visit);
         return scan.Any;
     }
 
@@ -169,23 +176,38 @@ public sealed class FleeSystem(FactionRelations relations, CombatSystem combat, 
 
     bool Safe(World world, CharacterTable table, int s) => !attacked.Contains(s) && (!AnyEnemy(table.Cold(s)!.Faction) || !Enemies(world, table, s, null, null));
 
-    /// <summary>Whether a faction standing anywhere this check (<see cref="StandingFactions"/>) is an enemy of <paramref name="faction"/>: when none is, no scan can find one.</summary>
-    bool AnyEnemy(int faction)
+    /// <summary>Whether a character standing anywhere this check (<see cref="StandingFactions"/>) is an enemy of <paramref name="faction"/>: when none is, no scan can find one.</summary>
+    bool AnyEnemy(int faction) => EnemiesOf(faction).Count > 0;
+
+    /// <summary>The characters standing this check whose faction is an enemy of <paramref name="faction"/>, by faction in order of first appearance, then slot.</summary>
+    List<int> EnemiesOf(int faction)
     {
-        if (enemyMemo.TryGetValue(faction, out bool any)) return any;
-        any = false;
-        foreach (int other in standingFactions) if (AggroSystem.IsEnemy(Relations, faction, other)) { any = true; break; }
-        enemyMemo[faction] = any;
-        return any;
+        if (enemiesOf.TryGetValue(faction, out var list)) return list;
+        list = spare.Count > 0 ? spare.Pop() : [];
+        foreach (int other in standingFactions)
+            if (AggroSystem.IsEnemy(Relations, faction, other)) list.AddRange(standingBy[other]);
+        enemiesOf[faction] = list;
+        return list;
     }
 
-    /// <summary>The factions with a character standing (alive, not down), for <see cref="AnyEnemy"/>; once per check.</summary>
+    /// <summary>The characters standing (alive, not down) by faction, for <see cref="EnemiesOf"/>; once per check.</summary>
     void StandingFactions(CharacterTable table)
     {
+        foreach (var l in standingBy.Values) { l.Clear(); spare.Push(l); }
+        foreach (var l in enemiesOf.Values) { l.Clear(); spare.Push(l); }
+        standingBy.Clear();
+        enemiesOf.Clear();
         standingFactions.Clear();
-        enemyMemo.Clear();
         for (int i = 0; i < table.HighWater; i++)
-            if (table.Next[i].Alive && table.Cold(i) is { Medical.Incapacitated: false } c) standingFactions.Add(c.Faction);
+        {
+            if (!table.Next[i].Alive || table.Cold(i) is not { Medical.Incapacitated: false } c) continue;
+            if (!standingBy.TryGetValue(c.Faction, out var l))
+            {
+                standingBy[c.Faction] = l = spare.Count > 0 ? spare.Pop() : [];
+                standingFactions.Add(c.Faction);
+            }
+            l.Add(i);
+        }
     }
 
     /// <summary>The slots some living character is fighting (the combat state as of this tick).</summary>

@@ -24,6 +24,9 @@ sealed partial class PlayerInterface
 {
     /// <summary>The site whose machine window is shown (null: none), and a site whose window the player closed (not reopened until the selection changes).</summary>
     string? shownMachine, closedMachine;
+
+    /// <summary>The machine window placed beside the inventory by an order (a right click) and where it stood before; it goes back there when the inventory closes, as the original's does.</summary>
+    (string Screen, Vector2 Offset)? machineHome;
     string? researchCategory, researchFocus;
 
     MachineSnapshot? Machine(string? site) => site is null ? null : session.CurrentSnapshot.Machines.FirstOrDefault(m => m.Site == site);
@@ -51,12 +54,20 @@ sealed partial class PlayerInterface
             faithfulScreens.Close("storage");
             shownMachine = null;
             storageWithInventory = null;
+            machineHome = null;
+        }
+        if (machineHome is { } home && !faithfulScreens.IsOpen("inventory"))
+        {
+            if (faithfulScreens.IsOpen(home.Screen)) faithfulScreens.SetOffset(home.Screen, home.Offset);
+            machineHome = null;
         }
         if (shownMachine is not null && Machine(shownMachine) is { } shown && !faithfulScreens.IsOpen(MachineScreen(shown)))
         {
             if (shown.IsContainer) Say(new Meitou.Simulation.Items.CloseContainer { Tick = session.World.Tick });
             closedMachine = shownMachine;
             shownMachine = null;
+            storageWithInventory = null;
+            machineHome = null;
             return;
         }
         if (m is null || shownMachine == m.Site || closedMachine == m.Site) return;
@@ -64,10 +75,11 @@ sealed partial class PlayerInterface
         string screen = MachineScreen(m);
         inventoryScroll.Remove(screen);
         // The character's inventory opens with an order-driven container window (the original's order 26 opens the looter's own window and the target's together) and with a machine's; selecting
-        // a storage or a mined rock shows its window alone (the original's Storage window of a selected ore storage has no inventory beside it).
-        bool alone = !m.IsContainer && (m.IsStorage || ProductionSystem.IsNatural(m.Site)) && storageWithInventory != m.Site;
+        // a selected machine, storage, bench or mined rock shows its window alone (the original's windows of a selected ore storage and electrical workbench have no inventory beside them).
+        bool alone = !m.IsContainer && storageWithInventory != m.Site;
         if (!alone && Selected().Count > 0 && !faithfulScreens.IsOpen("inventory")) faithfulScreens.Open("inventory");
         faithfulScreens.Open(screen);
+        if (!alone) machineHome = (screen, faithfulScreens.GetOffset(screen));
         PlaceInventoryBeside(screen, left: false);
     }
 
@@ -163,9 +175,14 @@ sealed partial class PlayerInterface
         {
             int index = controls.FindIndex(c => c.Name == name);
             if (index < 0) return;
-            // The original makes the section the recipe item's footprint (a box of building material is 6 x 3 cells); the grid keeps the layout's top left.
+            // The original makes the section the recipe item's footprint (a box of building material is 6 x 3 cells); the grid keeps the layout's top and takes the progress bar's horizontal centre (the layout slot is not centred in its column), so it stays under its label and bar.
+            // A grid wider than the bar keeps the slot's left edge, so it overflows only to the right as before rather than into the column on its left.
             var slot = controls[index];
-            var b = slot.Bounds with { Width = view.Width * InventoryCell, Height = view.Height * InventoryCell };
+            var barRoot = controls.FirstOrDefault(c => c.Name == bar);
+            float width = view.Width * InventoryCell;
+            var column = barRoot?.Bounds ?? slot.Bounds;
+            float x = width <= column.Width ? column.X + (column.Width - width) / 2 : slot.Bounds.X;
+            var b = slot.Bounds with { X = x, Width = width, Height = view.Height * InventoryCell };
             // The grid and a moved bar may leave their content panel, so they clip to the window instead.
             var clip = controls.FirstOrDefault(c => c.Type == "Window")?.Bounds ?? slot.Clip;
             controls[index] = slot with
@@ -175,7 +192,7 @@ sealed partial class PlayerInterface
                 Properties = new Dictionary<string, string>(slot.Properties) { ["TileSize"] = FormattableString.Invariant($"{InventoryCell} {InventoryCell}"), ["State"] = "normal" },
             };
             // Engine choice: a grid taller than the room above the progress bar pushes the bar down under it.
-            if (controls.FirstOrDefault(c => c.Name == bar) is { } root && b.Y + b.Height + 4 * InventoryScale - root.Bounds.Y is var dy and > 0)
+            if (barRoot is { } root && b.Y + b.Height + 4 * InventoryScale - root.Bounds.Y is var dy and > 0)
                 for (int i = 0; i < controls.Count; i++)
                     if (controls[i].Name == bar || controls[i].Name == bar + "@track" || controls[i].Properties.GetValueOrDefault("TemplateOwner") == bar)
                         controls[i] = controls[i] with { Bounds = controls[i].Bounds with { Y = controls[i].Bounds.Y + dy }, Clip = clip };
@@ -204,7 +221,12 @@ sealed partial class PlayerInterface
     /// </summary>
     void AddMachineVerb(List<(string Caption, Action Give)> verbs, Meitou.Simulation.Construction.BuildingSnapshot site, IReadOnlyList<CharacterId> selection)
     {
-        if (site.Complete && Machine(site.Id) is { Operable: true })
+        // An automatic machine: Auto-Haul (152) in place of Use; with Shift the 152 job (its companion 124 follows), else a one-shot haul round (the operator only hauls there).
+        if (site.Complete && Machine(site.Id) is { Operable: true, IsAutomatic: true })
+            verbs.Add(("Auto-Haul", () => Say(SlowModifier
+                ? (Meitou.Simulation.SimCommand)new AddJob(selection, Meitou.Data.Gameplay.Ai.TaskType.OPERATE_AUTOMATIC_MACHINERY, site.Id) { Tick = session.World.Tick }
+                : new OperateOrder(selection, site.Id) { Tick = session.World.Tick })));
+        else if (site.Complete && Machine(site.Id) is { Operable: true })
             verbs.Add(("Use", () => Say(SlowModifier
                 ? (Meitou.Simulation.SimCommand)new AddJob(selection, Meitou.Data.Gameplay.Ai.TaskType.OPERATE_MACHINERY, site.Id) { Tick = session.World.Tick }
                 : new OperateOrder(selection, site.Id) { Tick = session.World.Tick })));
@@ -231,6 +253,9 @@ sealed partial class PlayerInterface
         stats.Add(new(Label, ((int)(rich.Yield * 100)).ToString(CultureInfo.InvariantCulture), MainColour, colour,
             Loc.Tr("The richness of natural {1} present in this location. Anything over 50% is considered good.", Loc.Tr(Name).ToLower(CultureInfo.CurrentCulture))));
     }
+
+    /// <summary>Miles per hour per world unit per second (the original's 0.22369362: a unit is a metre).</summary>
+    const float MphPerUnit = 0.22369362f;
 
     /// <summary>The stats lines of a selected machine: the farm's crop and growth, the output's progress, workers and the bench's tech level.</summary>
     void AddMachineLines(MachineSnapshot m, List<HudLine> stats, ref string status, ref bool bad)
@@ -261,6 +286,13 @@ sealed partial class PlayerInterface
                 bad = pw.Charge <= 0;
                 stats.Add(new("Charge:", P(pw.Store > 0 ? pw.Charge / pw.Store : 0), MainColour));
             }
+            else if (m.Wind is { } wind)
+            {
+                // WindGeneratorBuilding::getGUIState: the production state, then "No Wind" while the share is 0; getGUIPower section 6: the wind speed at the building.
+                status = wind.Share <= 0 ? "No Wind" : "Running";
+                bad = wind.Share <= 0;
+                stats.Add(new("Wind Speed", Loc.Tr("{1,num=fix,p=1} mph", wind.Speed * MphPerUnit), MainColour, Tooltip: "The current wind speed"));
+            }
             else if (pw.Kind == PowerKind.Generator)
             {
                 status = pw.Fueled ? "Running" : "Out of fuel";
@@ -275,7 +307,9 @@ sealed partial class PlayerInterface
             }
         }
         if (m.TechLevel > 0) stats.Add(new("Tech level:", N(m.TechLevel), MainColour));
-        if (m.MaxOperators > 0) stats.Add(new("Workers:", $"{N(m.Operators)}/{N(m.MaxOperators)}", MainColour));
+        // FUN_1403075b0: an automatic machine (raw max operators 0) reads "-".
+        if (m.IsAutomatic) stats.Add(new("Workers:", "-", MainColour, Tooltip: "This machine is fully automatic."));
+        else if (m.MaxOperators > 0) stats.Add(new("Workers:", $"{N(m.Operators)}/{N(m.MaxOperators)}", MainColour));
     }
 
     // ---- the overview's research tab ----

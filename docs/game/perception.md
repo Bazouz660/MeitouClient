@@ -27,7 +27,7 @@ relations: [factions](factions-squads-towns.md). Simulation senses/leash remain 
   equals the character's and, both inside, its floor (custom parameter w) equals the character's (slot 0x60). Building
   lights and characters' carried lights both count.
 
-Meitou (`SightMap`): every sight test (aggro, crime witnesses, bounty spotting, slave catching, loot witnesses) uses these
+Meitou (`SightMap`): every sight test (aggro, dialogue sightings, crime witnesses, bounty spotting, slave catching, loot witnesses) uses these
 rules. Rooms are the registered towns' buildings' `interior mask` volumes and lamps their lights (ruins, the player's
 buildings and carried lights are not counted); a lit lamp of another building's interior is not counted indoors (floors are
 compared only within the character's building). With the `interiorlamps` switch on (Meitou, default) interior lamps count at

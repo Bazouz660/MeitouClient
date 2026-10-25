@@ -30,20 +30,26 @@ public sealed partial class WorldObjectRenderer
     /// </summary>
     public IReadOnlyDictionary<string, TurretPose>? Turrets { get; set; }
 
-    /// <summary>Turns a turret part to its pose: its placement, then a turn about each joint above it and its own, the innermost first (the joints are stored outermost first).</summary>
-    void PoseTurret(ObjectStreamer.Instance inst, GpuObjectMesh gpu)
+    /// <summary>
+    /// Turns a turret part or a rotating part (<see cref="AdvanceRotors"/>) to its pose: its placement, then a turn about each joint above it and its own, the innermost first (the joints are
+    /// stored outermost first). A mesh under a rotor is posed again each frame, a turret's only when its pose changes.
+    /// </summary>
+    void PoseJoints(ObjectStreamer.Instance inst, GpuObjectMesh gpu)
     {
         var pose = Turrets is { } turrets && turrets.TryGetValue(inst.Placed.PlacementId, out var found) ? found : null;
         int version = pose?.Version ?? 0;
-        if (version == inst.TurretStamp) return;
+        var joints = inst.Placed.Joints!;
+        bool rotor = false;
+        foreach (var j in joints) rotor |= j.Rotor is not null;
+        if (version == inst.TurretStamp && (!rotor || inst.RotorFrame == rotorFrame)) return;
         inst.TurretStamp = version;
+        inst.RotorFrame = rotorFrame;
         var m = inst.Placed.Transform;
-        if (pose is not null)
+        if (pose is not null || rotor)
         {
-            var joints = inst.Placed.Joints!;
             for (int k = joints.Count - 1; k >= 0; k--)
             {
-                float angle = pose.AngleOf(joints[k].PartId);
+                float angle = joints[k].Rotor is not null ? RotorTurn(inst.Placed, joints[k]) : pose?.AngleOf(joints[k].PartId) ?? 0;
                 if (angle == 0) continue;
                 m *= Matrix4x4.CreateTranslation(-joints[k].Pivot) * Matrix4x4.CreateFromAxisAngle(joints[k].Axis, angle) * Matrix4x4.CreateTranslation(joints[k].Pivot);
             }

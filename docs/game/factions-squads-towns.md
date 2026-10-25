@@ -26,7 +26,7 @@ role4 as recursive squads, prisoners into available home cages. First member can
 **Prisoners** (`FUN_140583a10`, **Observed**): only with a home building; its cages (`BuildingFinder_CagesWithinBuilding`) are counted, then each `prisoners` entry makes a
 platoon of the entry's `faction` (else the owner's) whose members each go into a random remaining cage (`FUN_140330600`, lock set) with `Character+0x190 = 9999999` (meaning
 **Unknown**); with no cage left, one member is removed and placing stops. A squad that made prisoner or slave squads gets no building shop ([economy](economy.md#shops-and-transactions)).
-Offsets `(3*(i%8),3*floor(i/8)+(i%2))`, animals2 spacing5 (spawn places). How the original spaces followers (FACTION `squad formation`: Caravan, Military, Random) is **Unknown**; Meitou's slots: [simulation](../simulation.md#movement-and-paths). Age=max(0,r*animal-age-random-0.1+v2/100).
+Offsets `(3*(i%8),3*floor(i/8)+(i%2))`, animals2 spacing5 (spawn places). Followers' slots by FACTION `squad formation`: [squads travelling together](pathfinding.md#squads-travelling-together); Meitou's: [simulation](../simulation.md#movement-and-paths). Age=max(0,r*animal-age-random-0.1+v2/100).
 Unique members go through one gate: [unique characters](#unique-characters).
 
 Generic weighted refs: v0=0 means100; exclude nonpositive weights and false world states,
@@ -454,7 +454,7 @@ or population); a failed start retries each run, up to 100 times; a gone target 
 
 **Phases** (`CampaignInstance::vfunc_10`, every war-manager run, loaded or not; times are game hours since the phase began):
 - Any phase but ended: the leader platoon loaded with every member down → defeat.
-- 0 travel: arrived within 0.8 × town radius (XZ) or 400 of a non-town target; then the `dialog announcement` waits, "{1} has arrived at
+- 0 travel: arrived within 0.8 × town radius (XZ; `Town::getRadius`, a player town's [reassessed radius](buildings-production.md#placement), at least 1250) or 400 of a non-town target; then the `dialog announcement` waits, "{1} has arrived at
   {2}", and phase 1, or straight to ended without victory or defeat when there is no `pt2 AI leader`. A loaded, non-hostile, non-DEFEND
   campaign within 1.8 × radius of a town with hostile occupiers (+0x128) is defeated at once (a trader or ally does not walk into an occupied town).
 - 1 at target: victory when the leader is back in its home town (two null towns compare equal); else by `key`: ASSAULT_TOWN wins after
@@ -535,7 +535,7 @@ every message {1} is the campaign's name and {2} the target town's (the cancel m
 - Nest respawn delay after "wiped out", the default of `DAT_142133588` (the Number of nests multiplier option; **Unknown**, the exe image holds zeros there), the rule that makes `TownPopulationManager::vfunc_4`
   declare a town wiped out (**Observed** gates: roaming pool cap <= 3 and <= 25 roaming members).
 - Campaigns: TownBase slots 92 / 96, the disabled-town flag, what besides the two calls recomputes the town level,
-  the "fought a player squad" test, the announcement wait's event-2 state, the follower steering, the A* road cost, `Platoon::vfunc_25` (sends phase 0 to 2), whether spawned campaign squads are `persistent`, DIPLOMATIC_ASSAULTS.
+  the "fought a player squad" test, the announcement wait's event-2 state, task 215's follower steering, the A* road cost, `Platoon::vfunc_25` (sends phase 0 to 2), whether spawned campaign squads are `persistent`, DIPLOMATIC_ASSAULTS.
 - `faction gen` at game start, `NEW_GAME_STARTOFF.faction relations`.
 - Unique characters: the `Character +0x279 & 7` gate and the 0.1 roll against a town list at platoon unload, platoon +0xac, the unit of
   `replacement time` (constant 2618.18 from `FUN_14066cd50`), UNIQUE_SQUAD_TEMPLATE `persistent` use and `missions` (DIPLOMATIC_ASSAULTS),

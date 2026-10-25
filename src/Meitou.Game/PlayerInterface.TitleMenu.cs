@@ -9,7 +9,7 @@ namespace Meitou.Game;
 /// <summary>
 /// The Meitou title's main menu, after the Meitou UI kit (docs/meitou-ui.md, "Layout and states"): a stack 320 wide, 56 from the left and 36
 /// from the bottom of a 1600×900 frame, scaled with the height. On top, the save card: worn paper with its dark edge and a drop shadow, the
-/// squad's letter, CONTINUE with an ENTER key badge, and the save's squad, day, place and money. Below it, plate buttons (the game's
+/// CONTINUE with an ENTER key badge, and the save's name, day, place, squad and money. Below it, plate buttons (the game's
 /// Button1Skin at 70% brightness, the pushed skin at 85% under the mouse) with the order-sprite icons. The surfaces are baked once per size
 /// from crops of the game's Kenshi_UI.png (rounded corners, edges and shadow included) and drawn as images; the original title's buttons
 /// stay in place, invisible, as the hit targets, so input is the faithful screen's.
@@ -31,7 +31,7 @@ sealed partial class PlayerInterface
     }
 
     const string MenuCard = "meitou:menu:card", MenuCardHover = "meitou:menu:card-hover", MenuPlate = "meitou:menu:plate", MenuPlateHover = "meitou:menu:plate-hover:v2",
-        MenuChip = "meitou:menu:chip", MenuKey = "meitou:menu:key", MenuVignette = "meitou:menu:vignette";
+        MenuKey = "meitou:menu:key", MenuVignette = "meitou:menu:vignette";
     /// <summary>The kit's numbers at 1600×900.</summary>
     const float MenuLeft = 56, MenuBottom = 36, MenuWidth = 320, MenuButton = 38, MenuGap = 6, MenuExitGap = 4, MenuCardGap = 8, MenuCardHeight = 78, MenuShadow = 22;
     /// <summary>The title's buttons and the catalog messages their captions are (FUN_140918ef0, upper-cased).</summary>
@@ -42,8 +42,8 @@ sealed partial class PlayerInterface
     ];
     static readonly (string Widget, string Caption, UiRect Icon)[] MenuButtons =
     [
-        ("NewGameButton", "NEW GAME", new(108, 90, 31, 32)), ("LoadGameButton", "LOAD GAME", new(222, 90, 32, 34)),
-        ("OptionsButton", "OPTIONS", new(146, 90, 32, 32)), ("CreditsButton", "CREDITS", new(49, 0, 44, 36)), ("ExitButton", "EXIT", new(202, 126, 30, 35)),
+        ("NewGameButton", "NEW GAME", new(108, 88, 33, 37)), ("LoadGameButton", "LOAD GAME", new(222, 90, 32, 23)),
+        ("OptionsButton", "OPTIONS", new(146, 88, 34, 37)), ("CreditsButton", "CREDITS", new(49, 0, 44, 36)), ("ExitButton", "EXIT", new(202, 126, 30, 36)),
     ];
     static Vector4 Hex(int r, int g, int b, float a = 1) => new(r / 255f, g / 255f, b / 255f, a);
     static readonly Vector4 InkMain = Hex(175, 166, 139), InkLight = Hex(217, 206, 184), InkPaper = Hex(20, 8, 6), InkDanger = Hex(191, 72, 52);
@@ -60,6 +60,7 @@ sealed partial class PlayerInterface
         catch (Exception e) when (e is IOException or InvalidDataException or NotSupportedException) { return null; }
     }
     Dictionary<string, (float Progress, long At)>? menuHover;
+    readonly Dictionary<UiRect, UiRect> menuIconBounds = [];
     (string Folder, DateTime Modified, SaveSlotInfo? Info) continueInfo;
 
     /// <summary>The kit's scale for this frame: 1 at 900 pixels high.</summary>
@@ -121,14 +122,12 @@ sealed partial class PlayerInterface
                 art.Add(Image("MeitouMenuCard", cardBounds, MenuCard));
                 if (hoverAmount > 0) art.Add(Image("MeitouMenuCardHover", cardBounds, MenuCardHover,
                     colour: FormattableString.Invariant($"1 1 1 {hoverAmount}")));
-                var (squad, line, meta) = ContinueText();
-                art.Add(Image("MeitouMenuChip", new(b.X + 16 * s, b.Y + 15 * s, 48 * s, 48 * s), MenuChip));
-                art.Add(Text("MeitouMenuChipLetter", new(b.X + 16 * s, b.Y + 15 * s, 48 * s, 48 * s), squad.Length > 0 ? squad[..1].ToUpperInvariant() : "?", 22, InkMain, "Center"));
-                art.Add(Text("MeitouMenuContinue", new(b.X + 76 * s, b.Y + 11 * s, b.Width - 140 * s, 26 * s), UpperTr("CONTINUE"), 22, InkPaper));
+                var (line, meta) = ContinueText();
+                art.Add(Text("MeitouMenuContinue", new(b.X + 16 * s, b.Y + 11 * s, b.Width - 80 * s, 26 * s), UpperTr("CONTINUE"), 22, InkPaper));
                 art.Add(Image("MeitouMenuKey", new(b.X + b.Width - 60 * s, b.Y + 15 * s, 44 * s, 16 * s), MenuKey));
                 art.Add(Text("MeitouMenuKeyText", new(b.X + b.Width - 60 * s, b.Y + 15 * s, 44 * s, 16 * s), "ENTER", 10, InkLight, "Center"));
-                art.Add(Text("MeitouMenuSaveLine", new(b.X + 76 * s, b.Y + 37 * s, b.Width - 92 * s, 16 * s), line, 12, InkPaper));
-                art.Add(Text("MeitouMenuSaveMeta", new(b.X + 76 * s, b.Y + 52 * s, b.Width - 92 * s, 16 * s), meta, 12, InkPaper with { W = 0.75f }));
+                art.Add(Text("MeitouMenuSaveLine", new(b.X + 16 * s, b.Y + 37 * s, b.Width - 32 * s, 16 * s), line, 12, InkPaper));
+                art.Add(Text("MeitouMenuSaveMeta", new(b.X + 16 * s, b.Y + 52 * s, b.Width - 32 * s, 16 * s), meta, 12, InkPaper with { W = 0.75f }));
                 controls[i] = Hollow(c) with { Properties = new Dictionary<string, string>(c.Properties) { ["DefaultAction"] = "true" } };
                 continue;
             }
@@ -137,11 +136,14 @@ sealed partial class PlayerInterface
             art.Add(Image("MeitouMenuPlate" + index, b, MenuPlate, colour: c.Enabled ? null : "0.7 0.7 0.7 1"));
             if (hoverAmount > 0) art.Add(Image("MeitouMenuPlateHover" + index, b, MenuPlateHover,
                 colour: FormattableString.Invariant($"1 1 1 {hoverAmount}")));
-            // The icon in a 24-wide column 12 in from the edge, fitted inside 24×20 (kit .mt-icon), dimmed until hovered.
-            float fit = Math.Min(24 / icon.Width, 20 / icon.Height) * s;
-            float iconX = b.X + 12 * s + (24 * s - icon.Width * fit) / 2, iconY = b.Y + (b.Height - icon.Height * fit) / 2;
-            art.Add(Image("MeitouMenuIcon" + index, new(iconX, iconY, icon.Width * fit, icon.Height * fit), "Kenshi_UI.png",
-                FormattableString.Invariant($"{icon.X} {icon.Y} {icon.Width} {icon.Height}"), FormattableString.Invariant($"1 1 1 {0.8f + 0.2f * hoverAmount}")));
+            // Use the sprite's tight visible box (stray pixels from neighbouring sprites dropped), fit it into the shared 24×20 slot
+            // without upscaling, and centre it on the slot.
+            var tight = menuIconBounds.TryGetValue(icon, out var cached) ? cached : UiAtlas() is { } atlas ? menuIconBounds[icon] = VisibleBounds(atlas, icon) : icon;
+            float fit = Math.Min(1f, Math.Min(24 / tight.Width, 20 / tight.Height)) * s;
+            float iconX = b.X + 24 * s - tight.Width * fit / 2;
+            float iconY = b.Y + b.Height / 2 - tight.Height * fit / 2 + 1.0f * s;
+            art.Add(Image("MeitouMenuIcon" + index, new(iconX, iconY, tight.Width * fit, tight.Height * fit), "Kenshi_UI.png",
+                FormattableString.Invariant($"{tight.X} {tight.Y} {tight.Width} {tight.Height}"), FormattableString.Invariant($"1 1 1 {0.8f + 0.2f * hoverAmount}")));
             var ink = !c.Enabled ? Hex(119, 119, 119) : Vector4.Lerp(InkMain, c.Name == "ExitButton" ? InkDanger : InkLight, hoverAmount);
             art.Add(Text("MeitouMenuLabel" + index, new(b.X + 48 * s, b.Y, b.Width - 60 * s, b.Height), UpperTr(caption), 14, ink));
             controls[i] = Hollow(c);
@@ -153,10 +155,55 @@ sealed partial class PlayerInterface
     /// <summary>A title button with nothing drawn: no skin, caption or background, the same bounds and action.</summary>
     static UiControl Hollow(UiControl c) => c with { Skin = "", Caption = "", Background = Vector4.Zero };
 
-    /// <summary>The save card's lines, from the newest save: the squad, "Squad · Day N · Place" and "c.N · M members".</summary>
-    (string Squad, string Line, string Meta) ContinueText()
+    /// <summary>
+    /// The tight box around an atlas crop's visible sprite: pixels with alpha ≥ 40 grouped into 8-connected blobs, blobs smaller than a tenth of the
+    /// biggest dropped (stray pixels from neighbouring sprites), the rest unioned. Falls back to the crop itself.
+    /// </summary>
+    static UiRect VisibleBounds(RgbaImage atlas, UiRect crop)
     {
-        if (slots.FirstOrDefault() is not { } slot) return ("", "", "");
+        int left = Math.Max(0, (int)MathF.Floor(crop.X)), top = Math.Max(0, (int)MathF.Floor(crop.Y));
+        int right = Math.Min(atlas.Width, (int)MathF.Ceiling(crop.X + crop.Width)), bottom = Math.Min(atlas.Height, (int)MathF.Ceiling(crop.Y + crop.Height));
+        int w = right - left, h = bottom - top;
+        if (w <= 0 || h <= 0) return crop;
+        bool Solid(int x, int y) => atlas.Pixels[((top + y) * atlas.Width + left + x) * 4 + 3] >= 40;
+
+        var seen = new bool[w * h];
+        var blobs = new List<(int Count, int X0, int Y0, int X1, int Y1)>();
+        var stack = new Stack<(int X, int Y)>();
+        for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++)
+            {
+                if (seen[y * w + x] || !Solid(x, y)) continue;
+                int count = 0, x0 = x, y0 = y, x1 = x, y1 = y;
+                seen[y * w + x] = true;
+                stack.Push((x, y));
+                while (stack.Count > 0)
+                {
+                    var (cx, cy) = stack.Pop();
+                    count++;
+                    x0 = Math.Min(x0, cx); y0 = Math.Min(y0, cy); x1 = Math.Max(x1, cx); y1 = Math.Max(y1, cy);
+                    for (int dy = -1; dy <= 1; dy++)
+                        for (int dx = -1; dx <= 1; dx++)
+                        {
+                            int nx = cx + dx, ny = cy + dy;
+                            if (nx < 0 || ny < 0 || nx >= w || ny >= h || seen[ny * w + nx] || !Solid(nx, ny)) continue;
+                            seen[ny * w + nx] = true;
+                            stack.Push((nx, ny));
+                        }
+                }
+                blobs.Add((count, x0, y0, x1, y1));
+            }
+        if (blobs.Count == 0) return crop;
+        int biggest = blobs.Max(b => b.Count);
+        var kept = blobs.Where(b => b.Count * 10 >= biggest).ToList();
+        int minX = kept.Min(b => b.X0), minY = kept.Min(b => b.Y0), maxX = kept.Max(b => b.X1), maxY = kept.Max(b => b.Y1);
+        return new(left + minX, top + minY, maxX - minX + 1, maxY - minY + 1);
+    }
+
+    /// <summary>The save card's lines, from the newest save: "Save · Day N · Place" and "Squad · c.N · M members" (the squad when it is not the save's name).</summary>
+    (string Line, string Meta) ContinueText()
+    {
+        if (slots.FirstOrDefault() is not { } slot) return ("", "");
         if (continueInfo.Folder != slot.Folder || continueInfo.Modified != slot.ModifiedUtc)
         {
             SaveSlotInfo? info = null;
@@ -164,11 +211,12 @@ sealed partial class PlayerInterface
             catch (Exception e) when (e is IOException or FormatException or ArgumentException) { }
             continueInfo = (slot.Folder, slot.ModifiedUtc, info);
         }
-        if (continueInfo.Info is not { } i) return (slot.Name, slot.Name, "");
-        string squad = string.IsNullOrWhiteSpace(i.Faction) ? slot.Name : i.Faction;
-        var line = string.Join(" · ", new[] { squad, $"Day {i.Day}", i.Area }.Where(p => !string.IsNullOrWhiteSpace(p)));
-        string meta = $"c.{i.Funds.ToString("N0", CultureInfo.InvariantCulture)} · {i.Members} {(i.Members == 1 ? "member" : "members")}";
-        return (squad, line, meta);
+        if (continueInfo.Info is not { } i) return (slot.Name, "");
+        var line = string.Join(" · ", new[] { slot.Name, $"Day {i.Day}", i.Area }.Where(p => !string.IsNullOrWhiteSpace(p)));
+        string squad = string.Equals(i.Faction, slot.Name, StringComparison.OrdinalIgnoreCase) ? "" : i.Faction;
+        string money = $"c.{i.Funds.ToString("N0", CultureInfo.InvariantCulture)} · {i.Members} {(i.Members == 1 ? "member" : "members")}";
+        string meta = string.IsNullOrWhiteSpace(squad) ? money : $"{squad} · {money}";
+        return (line, meta);
     }
 
     /// <summary>Whether the menu's surfaces are on the GPU at this frame's size; bakes and uploads them when not (the atlas is read once).</summary>
@@ -184,7 +232,6 @@ sealed partial class PlayerInterface
         painter.SetImage(MenuCardHover, MenuArt.Card(uiAtlas, paper, W(MenuWidth), W(MenuCardHeight), s, MenuShadow * s, 1.1f), srgb: false);
         painter.SetImage(MenuPlate, MenuArt.Plate(uiAtlas, new(612, 766, 118, 45), W(MenuWidth), W(MenuButton), s, 0.7f), srgb: false);      // Button1Skin
         painter.SetImage(MenuPlateHover, MenuArt.Plate(uiAtlas, new(612, 766, 118, 45), W(MenuWidth), W(MenuButton), s, 0.85f), srgb: false);
-        painter.SetImage(MenuChip, MenuArt.Chip(W(48), W(48), 4 * s, Hex(20, 8, 6, 0.72f), Hex(175, 166, 139, 0.12f)), srgb: false);
         painter.SetImage(MenuKey, MenuArt.Chip(W(44), W(16), 4 * s, Hex(20, 8, 6, 0.6f), null), srgb: false);
         painter.SetImage(MenuVignette, MenuArt.Vignette(256, 160), srgb: false);
         menuArtScale = s;
@@ -245,7 +292,7 @@ static partial class MenuArt
         return image;
     }
 
-    /// <summary>A flat chip with rounded corners (the save card's letter square, the key badge), with an optional 1px rim.</summary>
+    /// <summary>A flat chip with rounded corners (the save card's key badge), with an optional 1px rim.</summary>
     public static RgbaImage Chip(int width, int height, float radius, Vector4 fill, Vector4? rim)
     {
         var image = new RgbaImage(width, height);

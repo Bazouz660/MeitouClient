@@ -31,13 +31,30 @@ public readonly record struct UiRect(float X, float Y, float Width, float Height
     /// <summary>Align a skin piece when its reference canvas is resized.</summary>
     public UiRect AlignTo(UiRect parent, float referenceWidth, float referenceHeight, string align)
     {
-        var flags = align.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        bool Has(string s) => flags.Contains(s, StringComparer.Ordinal);
+        var flags = Flags(align);
         float dx = parent.Width - referenceWidth, dy = parent.Height - referenceHeight;
-        return new(parent.X + X + (Has("Right") ? dx : Has("HCenter") || Has("Center") ? dx / 2 : 0),
-            parent.Y + Y + (Has("Bottom") ? dy : Has("VCenter") || Has("Center") ? dy / 2 : 0),
-            Math.Max(0, Width + (Has("Stretch") || Has("HStretch") ? dx : 0)),
-            Math.Max(0, Height + (Has("Stretch") || Has("VStretch") ? dy : 0)));
+        return new(parent.X + X + ((flags & Align.Right) != 0 ? dx : (flags & Align.HCenter) != 0 ? dx / 2 : 0),
+            parent.Y + Y + ((flags & Align.Bottom) != 0 ? dy : (flags & Align.VCenter) != 0 ? dy / 2 : 0),
+            Math.Max(0, Width + ((flags & Align.HStretch) != 0 ? dx : 0)),
+            Math.Max(0, Height + ((flags & Align.VStretch) != 0 ? dy : 0)));
+    }
+
+    [Flags]
+    enum Align { Right = 1, HCenter = 2, Bottom = 4, VCenter = 8, HStretch = 16, VStretch = 32 }
+
+    // The words of an Align string, read in place: splitting it allocated per control per frame (docs/bench.md "Play benchmark").
+    static Align Flags(string align)
+    {
+        Align flags = 0;
+        var text = align.AsSpan();
+        foreach (var range in text.Split(' '))
+            flags |= text[range] switch
+            {
+                "Right" => Align.Right, "HCenter" => Align.HCenter, "Bottom" => Align.Bottom, "VCenter" => Align.VCenter,
+                "Center" => Align.HCenter | Align.VCenter, "HStretch" => Align.HStretch, "VStretch" => Align.VStretch, "Stretch" => Align.HStretch | Align.VStretch,
+                _ => 0,
+            };
+        return flags;
     }
 }
 

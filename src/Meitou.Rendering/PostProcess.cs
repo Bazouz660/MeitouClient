@@ -72,7 +72,7 @@ public sealed unsafe partial class PostProcess : IDisposable, IWorldPostChain
     Target2D? giAlbedo, giLow;   // the GI resolve (docs/render-gi.md "Resolve"): the lit fragments' albedo, the probes' light at 1/giDivisor of the render size
     int giDivisor;
     long frameIndex;
-    Target2D? aoA, aoB;
+    Target2D? aoA, aoB, aoMask;
     Target2D? ldr, ldrFxaa;   // the composite's LDR picture that FXAA or the heat haze reads, and FXAA's (or SMAA's) when the heat haze follows it
     Target2D? smaaEdges, smaaWeights;   // SMAA's edges and blending weights
     GpuTexture? flowTexture, perturbationTexture;   // the heat haze's FlowHAZE.dds and Perturber.dds (null: not found, no heat haze)
@@ -84,6 +84,7 @@ public sealed unsafe partial class PostProcess : IDisposable, IWorldPostChain
     // The native full-screen passes (docs/renderer-native.md 7.1, wave 3 agent E, step P): the same SPIR-V and layout as the GL programs they
     // replaced. Since phase 8 stage 2 each draws in a rendering of its own (8.6). Every handle is resolved once, here.
     readonly SsaoPass ssao;
+    readonly SsaoMaskPass ssaoMask;
     readonly BlurPass blur;
     readonly LuminancePass luminancePass;
     readonly AdaptPass adaptPass;
@@ -106,6 +107,12 @@ public sealed unsafe partial class PostProcess : IDisposable, IWorldPostChain
     {
         public readonly LegacyProgram P;
         protected FullscreenProgram(GpuContext gpu, string fragment, string name) => P = LegacyProgram.Create(gpu, PostProcessShaders.Vertex, fragment, name);
+    }
+
+    sealed class SsaoMaskPass : FullscreenProgram
+    {
+        public readonly SamplerSlot Scene;
+        public SsaoMaskPass(GpuContext gpu) : base(gpu, PostProcessShaders.SsaoMask, "post ssao mask") => Scene = P.Sampler("uScene");
     }
 
     sealed class BlurPass : FullscreenProgram
@@ -346,6 +353,7 @@ public sealed unsafe partial class PostProcess : IDisposable, IWorldPostChain
         Gpu = gpu;
         Options = options;
         (ssao, blur, luminancePass, adaptPass) = (new SsaoPass(gpu), new BlurPass(gpu), new LuminancePass(gpu), new AdaptPass(gpu));
+        ssaoMask = new SsaoMaskPass(gpu);
         (compositePass, fxaaPass, hazePass) = (new CompositePass(gpu), new FxaaPass(gpu), new HeatHazePass(gpu));
         smaaPasses = new SmaaPasses(gpu);
         (velocityPass, taaPass, fogPass) = (new VelocityPass(gpu), new TaaPass(gpu), new FogPass(gpu));
@@ -362,15 +370,15 @@ public sealed unsafe partial class PostProcess : IDisposable, IWorldPostChain
     // ---- targets ----
 
     IEnumerable<Target2D> Targets() =>
-        new[] { sceneColour, sceneDepth, farDepth, motion, upscaleDepth, reactive, historyA, historyB, aoA, aoB, ldr, ldrFxaa, smaaEdges, smaaWeights, luminance, adaptA, adaptB, lowTargets[0].Accum, lowTargets[0].Depth, lowTargets[1].Accum, lowTargets[1].Depth, rateDistance, rateImage, giAlbedo, giLow, shaftInjected, shaftLight }.OfType<Target2D>();
+        new[] { sceneColour, sceneDepth, farDepth, motion, upscaleDepth, reactive, historyA, historyB, aoA, aoB, aoMask, ldr, ldrFxaa, smaaEdges, smaaWeights, luminance, adaptA, adaptB, lowTargets[0].Accum, lowTargets[0].Depth, lowTargets[1].Accum, lowTargets[1].Depth, rateDistance, rateImage, neutralRate, giAlbedo, giLow, shaftInjected, shaftLight }.OfType<Target2D>();
 
     void Free()
     {
         Hiz?.Invalidate();
         foreach (var t in Targets()) t.Texture.Dispose();   // released after the frames in flight
-        sceneColour = sceneDepth = farDepth = motion = upscaleDepth = reactive = historyA = historyB = rateDistance = rateImage = null;
+        sceneColour = sceneDepth = farDepth = motion = upscaleDepth = reactive = historyA = historyB = rateDistance = rateImage = neutralRate = null;
         rateBuiltFrame = long.MinValue;
-        aoA = aoB = ldr = ldrFxaa = smaaEdges = smaaWeights = luminance = adaptA = adaptB = null;
+        aoA = aoB = aoMask = ldr = ldrFxaa = smaaEdges = smaaWeights = luminance = adaptA = adaptB = null;
         foreach (var l in lowTargets) l.Accum = l.Depth = null;
         giAlbedo = giLow = shaftInjected = shaftLight = null;
         adaptedValid = historyValid = false;
@@ -434,6 +442,7 @@ public sealed unsafe partial class PostProcess : IDisposable, IWorldPostChain
             int hw = Math.Max((w + 1) / 2, 1), hh = Math.Max((h + 1) / 2, 1);
             aoA = Make(batch, hw, hh, InternalFormat.RG16f, TextureMinFilter.Linear, "post ssao");
             aoB = Make(batch, hw, hh, InternalFormat.RG16f, TextureMinFilter.Linear, "post ssao");
+            aoMask = Make(batch, hw, hh, InternalFormat.R8, TextureMinFilter.Linear, "post ssao mask");
             // Exposure runs after the upscaler, at the display size: the luminance's whole mip chain (GL's, defined by GenerateMipmap), read mipmapped.
             luminance = Make(batch, LuminanceSize, LuminanceSize, InternalFormat.R32f, TextureMinFilter.LinearMipmapNearest, "post luminance", LuminanceLevels);
             adaptA = Make(batch, 1, 1, InternalFormat.RG32f, TextureMinFilter.Linear, "post exposure adapted");
@@ -670,6 +679,7 @@ public sealed unsafe partial class PostProcess : IDisposable, IWorldPostChain
     void DrawPass(LegacyProgram p, RenderTarget colour, InternalFormat format, RenderTarget depth, InternalFormat depthFormat, int targetWidth, int targetHeight, int viewportWidth, int viewportHeight, DrawState? state)
     {
         var cmd = Segment();
+        cmd.BeginLabel(p.Name);   // each pass its own range in a GPU trace (the segment is "post")
         cmd.BeginRendering(new RenderingDesc(colour, depth, targetWidth, targetHeight));
         var s = state ?? PassState;
         cmd.SetViewport(new PixelViewport(0, 0, viewportWidth, viewportHeight, 0, 1));
@@ -684,7 +694,8 @@ public sealed unsafe partial class PostProcess : IDisposable, IWorldPostChain
         p.Flush(cmd);
         cmd.Draw(3);
         cmd.EndRendering();
-        cmd.Order();
+        cmd.EndLabel();
+        cmd.Barrier([GpuDependency.Full]);
     }
 
     /// <summary>A target as its GL texture was sampled: its filters, clamped, the upscaler's LOD bias on a mipmapped filter (VkGl's rule,
@@ -1234,7 +1245,13 @@ public sealed unsafe partial class PostProcess : IDisposable, IWorldPostChain
         Bind(s.P, s.Depth, sceneDepth);
         // Characters count less as occluders (the mask, as the blur's below): a body lying on the ground darkened a halo round it as wide as itself.
         bool characters = sceneColour is not null && (CharactersDrawn || !MaskSkip);
-        Bind(s.P, s.Mask, characters ? sceneColour : null);
+        if (characters)
+        {
+            // The characters' mask at this half size first (PostProcessShaders.SsaoMask): the taps below read it instead of the scene colour.
+            Bind(ssaoMask.P, ssaoMask.Scene, sceneColour);
+            Draw(ssaoMask.P, aoMask!);
+        }
+        Bind(s.P, s.Mask, characters ? aoMask : null);
         s.P.Set(s.CharacterOccluder, characters ? PostOptions.SsaoCharacterOccluder : 1f);
         s.P.Set(s.Tan, tanY * aspect, tanY);
         s.P.Set(s.NearFar, nearPlane, farPlane);
@@ -1426,7 +1443,7 @@ public sealed unsafe partial class PostProcess : IDisposable, IWorldPostChain
         DisposeSceneLayers();
         DisposeMerged();
         Hiz?.Dispose();
-        foreach (var p in new FullscreenProgram[] { ssao, blur, luminancePass, adaptPass, compositePass, fxaaPass, hazePass, velocityPass, taaPass, fogPass, particleDepthPass, particleCompositePass, particleCoveragePass }) p.P.Dispose();
+        foreach (var p in new FullscreenProgram[] { ssao, ssaoMask, blur, luminancePass, adaptPass, compositePass, fxaaPass, hazePass, velocityPass, taaPass, fogPass, particleDepthPass, particleCompositePass, particleCoveragePass }) p.P.Dispose();
         smaaPasses.Dispose();
         giResolvePass?.P.Dispose();
         giApplyPass?.P.Dispose();

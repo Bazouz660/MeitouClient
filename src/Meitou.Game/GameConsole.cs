@@ -15,9 +15,22 @@ static partial class GameConsole
     /// <summary>Joins the console of the terminal that started the game, if any. Call before anything is written.</summary>
     public static void AttachToParent()
     {
-        if (!OperatingSystem.IsWindows() || GetConsoleWindow() != 0) return;
+        if (!OperatingSystem.IsWindows() || OutputRedirected() || GetConsoleWindow() != 0) return;
         if (AttachConsole(AttachParentProcess) != 0) Rebind();
     }
+
+    // A parent that hands the game a pipe or a file (the Debug launcher's capture) keeps it; attaching would rebind past it.
+    // Console.IsOutputRedirected is no test here: it also says true when a GUI program got no handle at all.
+    static bool OutputRedirected()
+    {
+        nint handle = GetStdHandle(StdOutputHandle);
+        if (handle is 0 or -1) return false;
+        uint type = GetFileType(handle);
+        return type is FileTypeDisk or FileTypePipe;
+    }
+
+    const int StdOutputHandle = -11;
+    const uint FileTypeDisk = 1, FileTypePipe = 3;
 
     static TextWriter? log;
 
@@ -70,4 +83,6 @@ static partial class GameConsole
     [LibraryImport("kernel32.dll")] private static partial int AttachConsole(uint processId);
     [LibraryImport("kernel32.dll")] private static partial int AllocConsole();
     [LibraryImport("kernel32.dll")] private static partial int FreeConsole();
+    [LibraryImport("kernel32.dll")] private static partial nint GetStdHandle(int handle);
+    [LibraryImport("kernel32.dll")] private static partial uint GetFileType(nint file);
 }

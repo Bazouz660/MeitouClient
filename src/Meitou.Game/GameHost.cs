@@ -46,7 +46,11 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
     Meitou.Data.Characters.CharacterRigs? characterRigs;
     Meitou.Navigation.RagdollGeometry? ragdollGeometry;
     Meitou.Navigation.NavSystem? nav;
-    volatile bool navChanged;
+    /// <summary>Zones whose mesh went live since the last <see cref="Meitou.Simulation.RepathCommand"/> (filled on the nav thread, under its own lock).</summary>
+    readonly HashSet<Meitou.Data.World.ZoneCoordinate> navReady = [];
+    long lastRepath;
+    /// <summary>Seconds between <see cref="Meitou.Simulation.RepathCommand"/>s at least: zones go live in runs along a long walk, and are sent together (engine choice).</summary>
+    const double RepathCoalesceSeconds = 1;
     readonly Dictionary<Meitou.Data.World.ZoneCoordinate, long> navZones = [];
     PlayerInterface player = null!;
     Meitou.Simulation.Squad? playerSquad;
@@ -161,7 +165,7 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
             if (levels is not null)
             {
                 nav = new Meitou.Navigation.NavSystem(install, gameDb, levels!, heights.HeightAt);
-                nav.ZoneReady += _ => navChanged = true;
+                nav.ZoneReady += ready => { lock (navReady) navReady.Add(ready.Zone); };
                 walkability = new NavAdapter(nav.Walkability);
                 // Ragdolls land on the terrain and the buildings' collision (gathered per zone on a worker when a ragdoll comes near).
                 ragdollGeometry = new Meitou.Navigation.RagdollGeometry(install, gameDb, levels!, heights.HeightAt);
@@ -380,12 +384,15 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
         camera.Distance = s.Distance;
     }
 
-    /// <summary>Keeps the navmesh on the zones the population has active (built on the nav thread, cached), drops the ones idle for 30 s, and has characters ask for their paths again when a mesh arrived (their first path may have crossed a building).</summary>
+    /// <summary>
+    /// Keeps the navmesh on the zones the population has active (built on the nav thread, cached), drops the ones idle for 30 s, and has the characters whose way
+    /// leads through a zone whose mesh arrived ask for their paths again (their first path may have crossed a building), at most every <see cref="RepathCoalesceSeconds"/>.
+    /// </summary>
     void UpdateNav(bool wait = false)
     {
         if (nav is null || population is null) return;
         long now = Stopwatch.GetTimestamp();
-        var pending = new List<Task>();
+        var pending = new List<Task<Meitou.Navigation.NavZoneReady>>();
         // The population's zones, and those the walkers' long routes lead into (NavmeshWalkability.RouteZones).
         foreach (var z in population.ActiveZones.Concat(nav.Walkability.RouteZones(TimeSpan.FromSeconds(30))))
         {
@@ -395,11 +402,17 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
         foreach (var (z, seen) in navZones.ToList())
             if (Stopwatch.GetElapsedTime(seen, now).TotalSeconds > 30) { nav.UnloadZone(z); navZones.Remove(z); }
         if (wait) Task.WaitAll([.. pending]);
-        if (navChanged || wait && pending.Count > 0)
+        HashSet<Meitou.Data.World.ZoneCoordinate> zones;
+        lock (navReady)
         {
-            navChanged = false;
-            session.World.Commands.Enqueue(new Meitou.Simulation.RepathCommand { Tick = session.World.Tick });
+            // The event follows the task's completion, so zones waited for are added here.
+            if (wait) foreach (var task in pending) navReady.Add(task.Result.Zone);
+            if (navReady.Count == 0 || !wait && Stopwatch.GetElapsedTime(lastRepath, now).TotalSeconds < RepathCoalesceSeconds) return;
+            zones = [.. navReady];
+            navReady.Clear();
         }
+        lastRepath = now;
+        session.World.Commands.Enqueue(new Meitou.Simulation.RepathCommand { Tick = session.World.Tick, Zones = zones });
     }
 
     /// <summary>Gives the player interface the camera it picks with.</summary>
@@ -445,8 +458,32 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
         UpdateInteriorView();
         // The frame's animation time (particles, water, wet surfaces) is game time: still while paused, faster at higher speeds.
         float gameTime = (float)(session.Clock.GameSeconds / 600 % 1e4);
-        WorldFrame.Draw(gpu, scene, camera, render, width, height, presentationHour ?? (float)session.Clock.HourOfDay, gameTime, o.FogDistance,
-            weatherHour: (float)session.Clock.HourOfDay);
+        // The next world tick runs on its own thread while the world is drawn from the shown snapshots (docs/simulation.md "Tick ahead"): from here to the
+        // join nothing the renderer calls back may touch the world, only the session's snapshots.
+        if (tickAhead) session.BeginTickAhead();
+        try
+        {
+            WorldFrame.Draw(gpu, scene, camera, render, width, height, presentationHour ?? (float)session.Clock.HourOfDay, gameTime, o.FogDistance,
+                weatherHour: (float)session.Clock.HourOfDay);
+        }
+        finally { session.EndTickAhead(); }
     }
+
+    /// <summary>This frame's world draw overlaps the next world tick (set by the interactive loop; never in stills, the duel, recorded flights or the play benchmark).</summary>
+    bool tickAhead;
+
+    /// <summary>
+    /// Meitou's dynamic tick ahead (engine choice): on once a world tick takes <see cref="AheadOnMs"/> (smoothed), off again under <see cref="AheadOffMs"/>, so a quiet
+    /// world keeps the game's input delay and a big fight or crowd overlaps; a tick run ahead is slower (it shares the cores with the draw), hence the gap.
+    /// </summary>
+    const double AheadOnMs = 4, AheadOffMs = 2;
+    bool worldBusy;
+
+    bool TickAheadWanted() => config.TickAhead switch
+    {
+        TickAheadMode.Always => true,
+        TickAheadMode.Dynamic => worldBusy = session.TickMs >= (worldBusy ? AheadOffMs : AheadOnMs),
+        _ => false,
+    };
 
 }

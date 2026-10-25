@@ -36,6 +36,9 @@ public sealed partial class LockSystem(GameConstants constants, BodyOptions opti
         {
             switch (command)
             {
+                case BuyBuilding buy:
+                    world.Fixtures.Buy(world, buy);
+                    break;
                 case PickLockOrder pick:
                 {
                     Fixture? cage;
@@ -107,7 +110,7 @@ public sealed partial class LockSystem(GameConstants constants, BodyOptions opti
                 if (d > reach)
                 {
                     // Still walking; another order (a new goal) or a failed path ends it.
-                    if (next[s].Task != (byte)CharacterTask.GoTo || Vector2.Distance(next[s].Goal, at) > (f.Kind == FixtureKind.Door ? reach : 1)) c.PickingLock = null;
+                    if (Redirected(next[s], at, reach)) c.PickingLock = null;
                     continue;
                 }
                 if (next[s].Task == (byte)CharacterTask.GoTo) MovementSystem.Stop(table, s);

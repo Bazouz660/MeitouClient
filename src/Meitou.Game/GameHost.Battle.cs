@@ -1,4 +1,5 @@
 using System.Numerics;
+using Meitou.Rendering;
 using Meitou.Simulation;
 using Meitou.Simulation.Combat;
 
@@ -11,7 +12,7 @@ namespace Meitou.Game;
 /// </summary>
 sealed partial class GameHost
 {
-    /// <summary>The two fronts start this far apart along Z, each block in ranks of up to <see cref="BattleRankWidth"/> fighters <see cref="BattleSpacing"/> apart.</summary>
+    /// <summary>The two fronts start this far apart along Z, each block in ranks of up to <see cref="BattleRankWidth"/> fighters <see cref="BattleSpacing"/> apart (more for bigger races).</summary>
     const float BattleGap = 40, BattleSpacing = 6;
     const int BattleRankWidth = 25;
     /// <summary>No orders before this tick: the blocks stand a moment before they charge.</summary>
@@ -63,14 +64,19 @@ sealed partial class GameHost
             var fighters = battleFighters[side];
             fighters.Clear();
             float sign = side == 0 ? -1 : 1;
-            // --battle's rows: that many rows of count / rows, the back row also taking the rest; otherwise rows of BattleRankWidth.
-            int rows = g.BattleRows is { } r ? Math.Min(r, count) : 0, width = rows > 0 ? count / rows : BattleRankWidth;
+            // Bigger bodies stand further apart: BattleSpacing is a human's (footprint 4), scaled by the race's footprint, never closer; the front rank at least that far off the middle.
+            var db = scene.Database!;
+            var race = db.Find(record)?.GetReferences("race").FirstOrDefault(r => r.Values.Value0 > 0) is { } raceRef ? db.Find(raceRef.TargetStringId) : null;
+            float footprint = race?.GetFloat("pathfind footprint radius", CombatTuning.DefaultFootprint) ?? CombatTuning.DefaultFootprint;
+            float spacing = Math.Max(BattleSpacing, BattleSpacing * footprint / CombatTuning.DefaultFootprint), front = Math.Max(BattleGap / 2, spacing);
+            // --battle-width: rows of that many; else --battle's rows: that many rows of count / rows, the back row also taking the rest; otherwise rows of BattleRankWidth.
+            int rows = g.BattleWidth[side] is null && g.BattleRows is { } r ? Math.Min(r, count) : 0, width = g.BattleWidth[side] ?? (rows > 0 ? count / rows : BattleRankWidth);
             var offsets = new Vector2[count];
             for (int i = 0; i < count; i++)
             {
                 int rank = rows > 0 ? Math.Min(i / width, rows - 1) : i / width;
                 int first = rank * width, inRank = rows > 0 && rank == rows - 1 ? count - first : Math.Min(width, count - first);
-                offsets[i] = new Vector2((i - first - (inRank - 1) / 2f) * BattleSpacing, sign * (BattleGap / 2 + rank * BattleSpacing));
+                offsets[i] = new Vector2((i - first - (inRank - 1) / 2f) * spacing, sign * (front + rank * spacing));
             }
             // Facing +Z is yaw 0; a look of its own per fighter.
             fighters.AddRange(population.SpawnSandboxSquad(world, record, new Vector2(battleSpot.X, battleSpot.Z), offsets, side == 0 ? 0 : MathF.PI, side * 1000 + 1, faction));
@@ -133,7 +139,7 @@ sealed partial class GameHost
             foreach (var id in standing[side])
             {
                 var st = combat.StateOf(id);
-                if (st.TargetSlot < 0 || st.Engaged || st.Ranged || at.GetValueOrDefault(st.TargetSlot) <= CombatSystem.MaxEngaged) continue;
+                if (st.TargetSlot < 0 || st.Engaged || st.Ranged || st.AttackTech >= 0 ||at.GetValueOrDefault(st.TargetSlot) <= CombatSystem.MaxEngaged) continue;
                 var here = Ground(id);
                 CharacterId? best = null;
                 float bestDistance = float.MaxValue;
@@ -148,6 +154,46 @@ sealed partial class GameHost
                 at[foe.Slot] = at.GetValueOrDefault(foe.Slot) + 1;
                 world.Commands.Enqueue(new AttackOrder([id], foe) { Tick = world.Tick });
             }
+    }
+
+    // The counter's numbers per side (standing, alive), counted again when the world ticks.
+    readonly (int Standing, int Alive)[] battleCounts = new (int, int)[2];
+    long battleCountedAt = -1;
+    World? battleCountedIn;
+
+    /// <summary>
+    /// The live counter at the top middle: each side's fighters still standing (the battle's own test: not incapacitated) and still alive (down but not dead count),
+    /// of how many it started with. Interface pass only (after the world draw's tick has joined).
+    /// </summary>
+    void DrawBattleCounter(DebugOverlay o, int width, int height)
+    {
+        var world = session.World;
+        if (battleCountedAt != world.Tick || battleCountedIn != world)
+        {
+            (battleCountedAt, battleCountedIn) = (world.Tick, world);
+            var table = world.Characters;
+            for (int side = 0; side < 2; side++)
+            {
+                int standing = 0, alive = 0;
+                foreach (var id in battleFighters[side])
+                {
+                    if (!table.TryResolveNext(id, out int slot) || table.Cold(slot)?.Medical is not { } medical || medical.Dead) continue;
+                    alive++;
+                    if (!medical.Incapacitated) standing++;
+                }
+                battleCounts[side] = (standing, alive);
+            }
+        }
+        string Line(int side) => $"{battleSides[side].Name}: {battleCounts[side].Standing} standing, {battleCounts[side].Alive} alive of {battleSides[side].Count}";
+        string a = Line(0), b = Line(1);
+        var colourA = new Vector4(0.55f, 0.8f, 1f, 1);
+        var colourB = new Vector4(1f, 0.6f, 0.5f, 1);
+        float pad = 8, w = Math.Max(a.Length, b.Length) * o.CharWidth + 2 * pad, h = 2 * o.LineHeight + 2 * pad;
+        float x0 = (width - w) / 2, y0 = 10;   // top middle: the HUD holds the corners
+        o.Rect(x0, y0, x0 + w, y0 + h, DebugOverlay.PanelColour);
+        o.Text(a, x0 + pad, y0 + pad, colourA);
+        o.Text(b, x0 + pad, y0 + pad + o.LineHeight, colourB);
+        o.Flush(width, height);
     }
 
     /// <summary>Once per frame, between ticks: Backspace starts the battle again in a new world made the same way.</summary>

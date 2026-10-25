@@ -22,7 +22,7 @@ namespace Meitou.Simulation.Locks;
 /// trips: <see cref="BedSystem"/>).</item>
 /// </list>
 /// </summary>
-public sealed class FixtureRegistry
+public sealed partial class FixtureRegistry
 {
     /// <summary>The cage finder's distance scale: weight clamp(1 - d^2 / 4608^2, 1e-5, 1), x100 for the carrier's faction, x100 in its home (economy.md 11.7, <b>Observed</b>).</summary>
     public const float CageSearchScale = 4608;
@@ -115,7 +115,11 @@ public sealed class FixtureRegistry
     {
         if (byBuilding.ContainsKey(b.Key)) return;
         var db = data.Db;
-        int owner = b.OwnerFactionId is { } o && data.FactionIndex(o) is var fi and >= 0 ? fi : townFaction;
+        int levelOwner = b.OwnerFactionId is { } o && data.FactionIndex(o) is var fi and >= 0 ? fi : townFaction;
+        int owner = levelOwner;
+        if (Saved?.GetValueOrDefault(b.Key)?.Strings.GetValueOrDefault("owner faction ID") is { Length: > 0 } savedOwner && data.FactionIndex(savedOwner) is >= 0 and var savedFaction)
+            owner = savedFaction;
+        RegisterProperty(data, site, b, owner, purchased: owner != levelOwner && owner == data.PlayerFaction);   // saved as the player's: bought, and saved again as such
         var faction = owner >= 0 && owner < data.Factions.Count ? data.Factions[owner] : null;
         var list = new List<Fixture>();
         var record = db.Find(b.BuildingId);
@@ -140,7 +144,7 @@ public sealed class FixtureRegistry
             });
             bed++;
         }
-        if (list.Count == 0) return;
+        if (list.Count == 0 && !properties.ContainsKey(b.Key)) return;
         byBuilding[b.Key] = list;
         buildings.Add(b.Key);
         foreach (var f in list) { all.Add(f); byId[f.Id] = f; }
@@ -487,7 +491,7 @@ public sealed class FixtureRegistry
 
     /// <summary>Whether nobody is in it: no occupant, or one that is gone or no longer held there.</summary>
     public static bool IsFree(CharacterTable table, Fixture f) =>
-        f.Occupant.IsNone || !table.TryResolveNext(f.Occupant, out int s) || table.Cold(s)!.InWhat != f.Id || table.Cold(s)!.InSomething == HeldState.None;
+        f.Occupant.IsNone || !table.TryResolveNext(f.Occupant, out int s) || table.Cold(s) is not { } held || held.InWhat != f.Id || held.InSomething == HeldState.None;
 
     /// <summary>
     /// The cage a carrier of <paramref name="faction"/> at <paramref name="at"/> puts a captive in (the original's finder, economy.md 11.7, <b>Observed</b>): every free cage weighs
@@ -880,6 +884,7 @@ public sealed class FixtureRegistry
     public bool WriteBuilding(string buildingInstance, FcsRecord state)
     {
         if (!byBuilding.TryGetValue(buildingInstance, out var list)) return false;
+        WriteProperty(buildingInstance, state);
         if (publicFlags.TryGetValue(buildingInstance, out bool open)) state.Bools["is public day"] = open;
         foreach (var f in list)
         {
@@ -948,7 +953,7 @@ public sealed class FixtureRegistry
         if (instance is null || !byBuilding.TryGetValue(instance, out var list)) return null;
         var doorList = list.Where(f => f.Kind == FixtureKind.Door).OrderBy(f => f.DoorIndex)
             .Select(f => new DoorDetail(f.Motion is DoorMotion.Open or DoorMotion.Opening, f.Lock is { EffectivelyLocked: true }, f.Lock?.Level ?? 0, f.DoorBroken, f.RecordId, f.WantsLock)).ToArray();
-        return new BuildingDetail(instance, doorList, faction >= 0 && list.Exists(f => f.Owner == faction), PublicOf(instance));
+        return new BuildingDetail(instance, doorList, OwnsBuilding(instance, faction), PublicOf(instance)) { SalePrice = SalePrice(instance, faction) };
     }
 
     /// <summary>
@@ -983,6 +988,7 @@ public sealed class FixtureRegistry
 
     internal void Hash(ref StateHasher h)
     {
+        HashProperties(ref h);
         h.Add(0x4C6F636B);
         h.Add(all.Count);
         foreach (var f in all) f.Hash(ref h);

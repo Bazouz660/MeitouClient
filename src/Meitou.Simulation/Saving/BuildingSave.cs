@@ -95,6 +95,8 @@ public static class BuildingSave
         BuildingBuildData? DataOf(string id) =>
             wallData.TryGetValue(id, out var d) ? d : wallData[id] = db.Find(id) is { Type: FcsRecordType.BUILDING } r ? BuildingBuildData.From(r) : null;
         ConstructionSystem.AttachWalls(reg, DataOf, reg.All.ToList());
+        // Engine choice: towns are reassessed on load (a save may hold a centre that was never moved, as Meitou's before it reassessed).
+        ConstructionSystem.ReassessTowns(world);
         return made;
     }
 
@@ -115,6 +117,7 @@ public static class BuildingSave
             string name = state.Name.StartsWith(TownStatePrefix, StringComparison.Ordinal) && state.Name.Length > TownStatePrefix.Length ? state.Name[TownStatePrefix.Length..] : PlayerTown.DefaultName;
             var town = world.Buildings.AddTown(instance.Position, playerIndex, name);
             town.SaveInstance = instance.Id;
+            town.Public = state.Bools.GetValueOrDefault("public");
             var hand = Hand.Read(state, "hand");
             if (!hand.IsNull)
             {
@@ -311,6 +314,7 @@ public static class BuildingSave
                 state.Strings["building material"] = DefaultTownMaterial;
                 state.Strings["replacementTown"] = "";
             }
+            state.Bools["public"] = town.Public;   // Town +0x380, the panel's Open to public
             hand.Write(state, "hand");
             state.Strings["faction"] = playerFactionId;
             state.Strings["instance"] = instance.Id;

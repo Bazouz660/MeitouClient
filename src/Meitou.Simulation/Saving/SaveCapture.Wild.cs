@@ -126,7 +126,8 @@ public static partial class SaveCapture
             var platoon = builder.AddPlatoon(FreshName(game, state, faction.Name), faction.Name, faction.Id, templateId, at, (int)Math.Clamp(money, int.MinValue, int.MaxValue));
             var record = platoon.Record;
             record.Ints["sqt"] = 2;
-            record.Bools["persistent"] = false;
+            // Not persistent, but while it occupies a town (the original's occupation makes its platoon persistent, docs/game/ai.md "Package classes").
+            record.Bools["persistent"] = Ai.AiSystem.Occupies(data.Ai, package);
             if (site.Kind == WildKind.Nest && site.Nest is { } nest && nests.TryGetValue(site.Index, out var hand))
             {
                 record.Strings["basetown"] = nest.Id;

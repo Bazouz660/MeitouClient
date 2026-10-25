@@ -103,40 +103,24 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         uniformAlign = Math.Max(gpu.UniformBufferAlign, 16);
         constantsLayout = GpuSetLayout.Fixed([new GpuSlot(0, GpuSlotKind.UniformBuffer, GpuStage.All, 1, OffsetAtBind: true)]);
         GpuSetLayout[] sets = [nativeFrame.SetLayout, GpuSetLayout.Bindless, constantsLayout];
-        patchColour = new TerrainProgram(gpu, sets, TerrainShaders.PatchVertexNative(), TerrainShaders.FragmentNative(), "terrain");
-        // The normal-maps-off path is a compile-time variant: the uniform branch still leaves the samples in the program on
-        // Metal (the shader compiler does not fold it), while the variant removes them (~1.8 ms, 12% of the no-object frame).
-        patchColourNoNormal = new TerrainProgram(gpu, sets, TerrainShaders.PatchVertexNative(), TerrainShaders.FragmentNative(normalMaps: false), "terrain no normal");
+        this.sets = sets;
+        UseColour(GroundRelief.ParallaxActive);
         patchDepth = new TerrainProgram(gpu, sets, TerrainShaders.PatchVertexNative(), TerrainShaders.DepthFragmentNative(), "terrain depth");
         patchPrepass = new TerrainProgram(gpu, sets, TerrainShaders.PatchVertexNative(), TerrainShaders.PrepassFragmentNative(), "terrain prepass");
-        patchColourCut = new TerrainProgram(gpu, sets, TerrainShaders.PatchVertexNative(), TerrainShaders.FragmentNative(interiorCut: true), "terrain interior cut");
-        patchColourCutNoNormal = new TerrainProgram(gpu, sets, TerrainShaders.PatchVertexNative(), TerrainShaders.FragmentNative(interiorCut: true, normalMaps: false), "terrain interior cut no normal");
         patchPrepassCut = new TerrainProgram(gpu, sets, TerrainShaders.PatchVertexNative(), TerrainShaders.PrepassFragmentNative(interiorCut: true), "terrain prepass interior cut");
         // The ground displacement (GroundRelief): the colour and prepass programs tessellated, for the patches near the eye (the same stages in both, so the
         // late colour's depth test meets the prepass's depths).
         if (gpu.HasTessellation)
         {
-            patchColourTess = new TerrainProgram(gpu, sets, TerrainShaders.PatchVertexTessNative(), TerrainShaders.FragmentNative(), "terrain relief",
-                TerrainShaders.PatchControlNative(), TerrainShaders.PatchEvaluationNative());
             patchPrepassTess = new TerrainProgram(gpu, sets, TerrainShaders.PatchVertexTessNative(), TerrainShaders.PrepassFragmentNative(), "terrain relief prepass",
-                TerrainShaders.PatchControlNative(), TerrainShaders.PatchEvaluationNative());
-            patchColourCutTess = new TerrainProgram(gpu, sets, TerrainShaders.PatchVertexTessNative(), TerrainShaders.FragmentNative(interiorCut: true), "terrain relief interior cut",
                 TerrainShaders.PatchControlNative(), TerrainShaders.PatchEvaluationNative());
             patchPrepassCutTess = new TerrainProgram(gpu, sets, TerrainShaders.PatchVertexTessNative(), TerrainShaders.PrepassFragmentNative(interiorCut: true), "terrain relief prepass interior cut",
                 TerrainShaders.PatchControlNative(), TerrainShaders.PatchEvaluationNative());
         }
-        meshColour = new TerrainProgram(gpu, sets, TerrainShaders.MeshVertexNative(), TerrainShaders.MeshFragmentNative(), "terrain meshes");
-        meshColourNoNormal = new TerrainProgram(gpu, sets, TerrainShaders.MeshVertexNative(), TerrainShaders.MeshFragmentNative(normalMaps: false), "terrain meshes no normal");
-        meshSolid = new TerrainProgram(gpu, sets, TerrainShaders.MeshVertexNative(), TerrainShaders.MeshFragmentSolidNative(), "terrain meshes solid");
-        meshSolidNoNormal = new TerrainProgram(gpu, sets, TerrainShaders.MeshVertexNative(), TerrainShaders.MeshFragmentSolidNative(normalMaps: false), "terrain meshes solid no normal");
         meshDepth = new TerrainProgram(gpu, sets, TerrainShaders.MeshInstancedDepthVertexNative(), TerrainShaders.DepthFragmentNative(), "terrain mesh depth");
         // The rocks' smoothing (RockSmoothing): the mesh programs tessellated, the casters with the same curve.
         if (gpu.HasTessellation)
         {
-            meshColourTess = new TerrainProgram(gpu, sets, TerrainShaders.MeshVertexTessNative(), TerrainShaders.MeshFragmentNative(), "terrain meshes smoothed",
-                TerrainShaders.MeshControlNative(), TerrainShaders.MeshEvaluationNative());
-            meshSolidTess = new TerrainProgram(gpu, sets, TerrainShaders.MeshVertexTessNative(), TerrainShaders.MeshFragmentSolidNative(), "terrain meshes solid smoothed",
-                TerrainShaders.MeshControlNative(), TerrainShaders.MeshEvaluationNative());
             meshDepthTess = new TerrainProgram(gpu, sets, TerrainShaders.MeshVertexTessNative(), TerrainShaders.DepthFragmentNative(), "terrain mesh depth smoothed",
                 TerrainShaders.MeshControlNative(), TerrainShaders.MeshEvaluationDepthNative());
         }
@@ -287,6 +271,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
     /// <summary>Draws the terrain; nodes whose highest point is under <paramref name="cullBelow"/> are skipped (the reflection pass clips everything below the water). <paramref name="secondary"/>: the reflection's call, with its own quadtree for its own LOD distance.</summary>
     public void Draw(Matrix4x4 viewProjection, Vector3 eye, Vector4[] frustum, WorldRenderOptions options, WorldLighting light, float cullBelow = float.NegativeInfinity, bool secondary = false, bool defer = false)
     {
+        UseColour(GroundRelief.ParallaxActive);
         current = secondary ? spare : quadtree;
         current.SetRanges(options.TerrainLod);
         frame = new Frame(viewProjection, eye, options, light);
@@ -348,8 +333,11 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         PrepareConstants(material: true, patches: true);
         RecordPatches(PatchColour, "terrain", PatchMode.Late, plainCount);
         if (reliefCount > 0) RecordPatches(patchColourTess!, "terrain relief", PatchMode.Late, reliefCount, reliefDraws);
-        if (cutCount > 0) RecordPatches(PatchColourCut, "terrain interior cut", PatchMode.Late, cutCount, cutDraws);
-        if (cutReliefCount > 0) RecordPatches(patchColourCutTess!, "terrain relief interior cut", PatchMode.Late, cutReliefCount, cutReliefDraws);
+        // The cut patches' colour without the cut: their prepass discarded the cut fragments, so an equal depth test leaves them out early. The cut's
+        // discard here turned the early depth test off, and the GPU drained between these draws (1.4 ms for 19 of them; docs/render-terrain.md "Registers").
+        // Both passes run the same vertex and tessellation stages (invariant positions): a kept fragment meets its own depth.
+        if (cutCount > 0) RecordPatches(PatchColour, "terrain interior cut", PatchMode.LateEqual, cutCount, cutDraws);
+        if (cutReliefCount > 0) RecordPatches(patchColourTess!, "terrain relief interior cut", PatchMode.LateEqual, cutReliefCount, cutReliefDraws);
     }
 
     /// <summary>
@@ -448,9 +436,9 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
     }
 
     /// <summary>How <see cref="RecordPatches"/> draws: filled (colour or depth), or the debug outline.</summary>
-    enum PatchMode { Solid, Wireframe, Prepass, Late }
+    enum PatchMode { Solid, Wireframe, Prepass, Late, LateEqual }
 
-    DrawState? lastGlState, lastPatchState, lastWireState, lastPrepassState, lastLateState;
+    DrawState? lastGlState, lastPatchState, lastWireState, lastPrepassState, lastLateState, lastLateEqualState;
 
     /// <summary>
     /// The state the patches draw with: the pass's (its targets' depth test, write and compare, blending, colour mask, depth clamp, bias, as GL
@@ -466,8 +454,13 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
             lastWireState = lastPatchState with { Polygon = PolygonKind.Line, BiasEnable = true, BiasConstant = -1, BiasSlope = -1 };
             lastPrepassState = lastPatchState with { ColourMask = 0 };   // depth only
             lastLateState = lastPatchState with { DepthWrite = false };   // the prepass wrote it; equal depths pass (less-or-equal)
+            lastLateEqualState = lastLateState with { Compare = DepthFunction.Equal };   // only where the prepass's own depth stayed
         }
-        return mode switch { PatchMode.Wireframe => lastWireState!, PatchMode.Prepass => lastPrepassState!, PatchMode.Late => lastLateState!, _ => lastPatchState! };
+        return mode switch
+        {
+            PatchMode.Wireframe => lastWireState!, PatchMode.Prepass => lastPrepassState!, PatchMode.Late => lastLateState!, PatchMode.LateEqual => lastLateEqualState!,
+            _ => lastPatchState!,
+        };
     }
 
     // ---- the native model (docs/renderer-native.md 7.1, wave 3b agent B: step O) ----
@@ -478,9 +471,65 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
 
     readonly NativeFrame nativeFrame;
     readonly GpuSetLayout constantsLayout;
-    readonly TerrainProgram patchColour, patchColourNoNormal, patchDepth, patchPrepass, patchColourCut, patchColourCutNoNormal, patchPrepassCut,
-        meshColour, meshColourNoNormal, meshSolid, meshSolidNoNormal, meshDepth;   // meshSolid: meshColour without the cross-fade discard (EarlyDepth)
-    readonly TerrainProgram? patchColourTess, patchPrepassTess, patchColourCutTess, patchPrepassCutTess, meshColourTess, meshSolidTess, meshDepthTess;   // null without tessellation shaders
+    readonly TerrainProgram patchDepth, patchPrepass, patchPrepassCut, meshDepth;
+    readonly TerrainProgram? patchPrepassTess, patchPrepassCutTess, meshDepthTess;   // null without tessellation shaders
+    // The colour programs, from the set the parallax setting asks for (UseColour): meshSolid is meshColour without the cross-fade discard (EarlyDepth).
+    TerrainProgram patchColour, patchColourNoNormal, patchColourCut, patchColourCutNoNormal, meshColour, meshColourNoNormal, meshSolid, meshSolidNoNormal;
+    TerrainProgram? patchColourTess, patchColourCutTess, meshColourTess, meshSolidTess;
+    readonly GpuSetLayout[] sets;
+
+    /// <summary>The colour programs, with the parallax's march (<see cref="GroundRelief.ParallaxActive"/>) or without it (<see cref="TerrainShaders.FragmentNative"/>),
+    /// and with the normal-map samples or without them (the no-normal variants are compile-time programs for Metal's shader compiler).</summary>
+    sealed record ColourSet(bool March, TerrainProgram Patch, TerrainProgram PatchNoNormal, TerrainProgram PatchCut, TerrainProgram PatchCutNoNormal,
+        TerrainProgram Mesh, TerrainProgram MeshNoNormal, TerrainProgram MeshSolid, TerrainProgram MeshSolidNoNormal,
+        TerrainProgram? PatchTess, TerrainProgram? PatchCutTess, TerrainProgram? MeshTess, TerrainProgram? MeshSolidTess) : IDisposable
+    {
+        public void Dispose()
+        {
+            foreach (var p in new[] { Patch, PatchNoNormal, PatchCut, PatchCutNoNormal, Mesh, MeshNoNormal, MeshSolid, MeshSolidNoNormal,
+                         PatchTess, PatchCutTess, MeshTess, MeshSolidTess }) p?.Dispose();
+        }
+    }
+
+    readonly ColourSet?[] colourSets = new ColourSet?[2];
+
+    /// <summary>
+    /// Draws with the colour set of <paramref name="march"/>, made the first time it is asked for (at load the setting's; a toggle in play makes the other once, and
+    /// keeps both: switching back costs nothing).
+    /// </summary>
+    [System.Diagnostics.CodeAnalysis.MemberNotNull(nameof(patchColour), nameof(patchColourNoNormal), nameof(patchColourCut), nameof(patchColourCutNoNormal),
+        nameof(meshColour), nameof(meshColourNoNormal), nameof(meshSolid), nameof(meshSolidNoNormal))]
+    void UseColour(bool march)
+    {
+        var set = colourSets[march ? 1 : 0] ??= MakeColour(march);
+        (patchColour, patchColourNoNormal, patchColourCut, patchColourCutNoNormal) = (set.Patch, set.PatchNoNormal, set.PatchCut, set.PatchCutNoNormal);
+        (meshColour, meshColourNoNormal, meshSolid, meshSolidNoNormal) = (set.Mesh, set.MeshNoNormal, set.MeshSolid, set.MeshSolidNoNormal);
+        (patchColourTess, patchColourCutTess, meshColourTess, meshSolidTess) = (set.PatchTess, set.PatchCutTess, set.MeshTess, set.MeshSolidTess);
+    }
+
+    ColourSet MakeColour(bool march)
+    {
+        bool tess = gpu.HasTessellation;
+        TerrainProgram Patch(string fragment, string name) => new(gpu, sets, TerrainShaders.PatchVertexNative(), fragment, name);
+        TerrainProgram? PatchTess(string fragment, string name) => tess
+            ? new(gpu, sets, TerrainShaders.PatchVertexTessNative(), fragment, name, TerrainShaders.PatchControlNative(), TerrainShaders.PatchEvaluationNative()) : null;
+        TerrainProgram Mesh(string fragment, string name) => new(gpu, sets, TerrainShaders.MeshVertexNative(), fragment, name);
+        TerrainProgram? MeshTess(string fragment, string name) => tess
+            ? new(gpu, sets, TerrainShaders.MeshVertexTessNative(), fragment, name, TerrainShaders.MeshControlNative(), TerrainShaders.MeshEvaluationNative()) : null;
+        return new ColourSet(march,
+            Patch(TerrainShaders.FragmentNative(march: march), "terrain"),
+            Patch(TerrainShaders.FragmentNative(march: march, normalMaps: false), "terrain no normal"),
+            Patch(TerrainShaders.FragmentNative(interiorCut: true, march: march), "terrain interior cut"),
+            Patch(TerrainShaders.FragmentNative(interiorCut: true, march: march, normalMaps: false), "terrain interior cut no normal"),
+            Mesh(TerrainShaders.MeshFragmentNative(march), "terrain meshes"),
+            Mesh(TerrainShaders.MeshFragmentNative(march, normalMaps: false), "terrain meshes no normal"),
+            Mesh(TerrainShaders.MeshFragmentSolidNative(march), "terrain meshes solid"),
+            Mesh(TerrainShaders.MeshFragmentSolidNative(march, normalMaps: false), "terrain meshes solid no normal"),
+            PatchTess(TerrainShaders.FragmentNative(march: march), "terrain relief"),
+            PatchTess(TerrainShaders.FragmentNative(interiorCut: true, march: march), "terrain relief interior cut"),
+            MeshTess(TerrainShaders.MeshFragmentNative(march), "terrain meshes smoothed"),
+            MeshTess(TerrainShaders.MeshFragmentSolidNative(march), "terrain meshes solid smoothed"));
+    }
 
     /// <summary>Whether the terrain colour programs may sample their normal-map arrays this frame: the option is on and the biome
     /// layers are resident. The no-normal programs are compile-time variants, so this must select the matching program.</summary>
@@ -1278,14 +1327,10 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         fineTexture.Dispose();
         foreach (var r in retired) r.Texture.Dispose();
         if (ownsTextures) textures?.Dispose();
-        foreach (var p in new[] { patchColour, patchColourNoNormal, patchDepth, patchPrepass, patchColourCut, patchColourCutNoNormal, patchPrepassCut,
-                     meshColour, meshColourNoNormal, meshSolid, meshSolidNoNormal, meshDepth }) p.Dispose();
-        patchColourTess?.Dispose();
+        foreach (var p in new[] { patchDepth, patchPrepass, patchPrepassCut, meshDepth }) p.Dispose();
+        foreach (var set in colourSets) set?.Dispose();
         patchPrepassTess?.Dispose();
-        patchColourCutTess?.Dispose();
         patchPrepassCutTess?.Dispose();
-        meshColourTess?.Dispose();
-        meshSolidTess?.Dispose();
         meshDepthTess?.Dispose();
         rockBake?.Dispose();
         gpu.Bindless.Free(BindlessKind.Texture2D, standIn2D);

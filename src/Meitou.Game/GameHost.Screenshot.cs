@@ -205,6 +205,7 @@ sealed partial class GameHost
                 if (g.TitlePreview) player.ShowTitle(); else if (showPanel) player.ShowUiPanel(panelName is "hud-expanded" or "edited" ? null : panelName, panelName == "hud-expanded");
                 player.Draw(overlay, w, h);
                 if (IsSandbox && !g.UiShowcase) DrawSandbox(overlay, w, h);
+                if (IsBattle && !g.UiShowcase) DrawBattleCounter(overlay, w, h);
                 if (session.CurrentSnapshot.Characters.FirstOrDefault(c => c.IsPlayer) is { } me && player.Project(DrawnPosition(me) + new Vector3(0, 1, 0)) is { } px)
                 {
                     var picked = player.Pick(px);

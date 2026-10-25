@@ -1,3 +1,4 @@
+using Meitou.Data.World;
 using Meitou.Simulation.Construction;
 
 namespace Meitou.Simulation.Production;
@@ -8,17 +9,13 @@ namespace Meitou.Simulation.Production;
 /// </summary>
 public sealed partial class ProductionSystem
 {
-    /// <summary>
-    /// A wind generator's share of its output (engine choice: the original reads a value from its turbine's animation, <c>FUN_1404cbd90</c>, driven by weather wind the simulation
-    /// does not have; <b>Unknown</b> in game units).
-    /// </summary>
-    public const float WindFraction = 0.5f;
-
     /// <summary>Per town, whether batteries covered a shortfall last tick (the original's town <c>+0x470</c>, read the frame after it is set; not saved).</summary>
     readonly Dictionary<int, bool> batteryMode = [];
     readonly Dictionary<int, List<Machine>> grids = [];
     /// <summary>Per town, whether its generators give power and its batteries can (the town object's <c>+0x474</c> and <c>+0x480</c> above 0 after <c>Town::vfunc_87</c>); what <see cref="HasPower"/> reads. Not saved.</summary>
     readonly Dictionary<int, (bool Generators, bool Batteries)> townSupply = [];
+    /// <summary>Per town, the grid's totals after the last tick (the town panel's power and battery bars, <see cref="TownPower"/>). Not saved.</summary>
+    readonly Dictionary<int, TownPower> townPower = [];
 
     float Rated(World world, Machine m) => m.Data.PowerOutput + world.Research.Upgrade(m.Data.Id).PowerIncrease;
     float Capacity(World world, Machine m) => m.Data.PowerCapacity + world.Research.Upgrade(m.Data.Id).CapacityIncrease;
@@ -26,21 +23,27 @@ public sealed partial class ProductionSystem
     /// <summary>Whether a generator has fuel: no fuel sections (wind), or something left in one.</summary>
     static bool Fueled(Machine m) => m.Inputs.Length == 0 || Array.Exists(m.Inputs, i => i.Level > 0 || i.Count > 0);
 
-    /// <summary>A generator's output now (<c>GeneratorBuilding::vfunc_166</c>): health x (output + increase), 0 out of fuel; wind x <see cref="WindFraction"/>, nothing below 1.</summary>
+    /// <summary>A generator's output now (<c>GeneratorBuilding::getPowerOutput</c>): health x (output + increase), 0 out of fuel; wind x <see cref="Machine.Wind"/>, nothing below 1 (<c>WindGeneratorBuilding::getPowerOutput</c>).</summary>
     float Output(World world, Machine m)
     {
         if (!m.PowerOn || !Fueled(m)) return 0;
         float output = Rated(world, m);
-        if (m.Data.IsWind && (output *= WindFraction) < 1) return 0;
+        if (m.Data.IsWind && (output *= m.Wind) < 1) return 0;
         return output;
     }
+
+    /// <summary>The player outposts with their grids' totals, for the town panel (docs/game/ui-screens.md "Town panel").</summary>
+    public IReadOnlyList<OutpostSnapshot> OutpostView(World world) => world.Buildings.Towns.Count == 0 ? []
+        : [.. world.Buildings.Towns.Select(t => new OutpostSnapshot(t.Number, t.Name, t.Position, t.Radius, t.Owner, t.Public, townPower.GetValueOrDefault(t.Number)))];
 
     void PowerTick(World world, float dt)
     {
         foreach (var list in grids.Values) list.Clear();
+        townPower.Clear();
         foreach (var m in world.Machines.All)
         {
             m.Power = 1;
+            if (m.Data.IsWind) (m.Wind, m.WindRated) = (WindShare(world, m), Rated(world, m));
             if (!m.Data.IsConsumer && !m.Data.IsGenerator && !m.Data.IsBattery) continue;
             if (Site(world, m.Site) is not { Complete: true } site) continue;
             if (!grids.TryGetValue(site.Town, out var grid)) grids[site.Town] = grid = [];
@@ -59,17 +62,29 @@ public sealed partial class ProductionSystem
             bool built = Site(world, m.Site) is { Complete: true };
             m.Efficiency = built ? Efficiency(world, m) : 0;
             m.HasPower = built && HasPower(world, m, Site(world, m.Site)!.Town);
+            m.Rotation = !built ? 0 : m.Data.IsGenerator ? (m.PowerOn ? Output(world, m) * 0.01f : 0) : m.Efficiency;
         }
+    }
+
+    /// <summary>
+    /// A wind generator's share of its output (<c>PhysicsCollection::getWindRotationPower</c>, <b>Verified</b>): its first ROTATION_WIND_SPEED part's <see cref="RotorSpec.WindShare"/> of the
+    /// wind speed of the weather region at the site; 0 without such a part or without weather. The original reads it from the part's render entity, so a generator without one loaded
+    /// gives nothing; here every built generator has its wind (engine choice).
+    /// </summary>
+    static float WindShare(World world, Machine m)
+    {
+        m.WindSpeed = world.Buildings.Find(m.Site) is { } site && world.Weather?.At(site.Position.X, site.Position.Z) is { } here ? here.WindSpeed : 0;
+        return m.Data.WindRotor is { } rotor ? RotorSpec.WindShare(m.WindSpeed, rotor.Min, rotor.Max) : 0;
     }
 
     /// <summary>
     /// The efficiency a machine's sound emitter hears (<c>FarmBuilding::vfunc_108</c>, <b>Observed</b>): the share of its operators (1 when the data has no operator count) x health (1 here) x the
     /// granted share of its demand (1 with no demand; for a battery, below its capacity, the share of its rate it is charging, negative while it drains) x the yield x the BUILDING's raw
-    /// output rate x the research production multiplier. A wind generator hears its turbine's animation (<c>WindGeneratorBuilding::vfunc_110</c>, <b>Unknown</b>): <see cref="WindFraction"/> (engine choice).
+    /// output rate x the research production multiplier. A wind generator hears its blade's wind share (<c>WindGeneratorBuilding::getSoundIntensity</c>, <b>Verified</b>): <see cref="Machine.Wind"/>.
     /// </summary>
     float Efficiency(World world, Machine m)
     {
-        if (m.Data.IsWind) return WindFraction;
+        if (m.Data.IsWind) return m.Wind;
         float share = m.Data.PowerOperators > 0 ? (float)m.Operators / m.Data.PowerOperators : 1;
         float saturation = m.Power;
         if (m.Data.IsBattery)
@@ -136,10 +151,10 @@ public sealed partial class ProductionSystem
                 batteryLeft -= give;
                 c.Granted += give;
             }
-        float charged = 0;
+        float charged = 0, drained = 0;
         if (supply <= 0)
         {
-            float used = batteries - batteryLeft;
+            float used = drained = batteries - batteryLeft;
             foreach (var b in grid)
                 if (b.Data.IsBattery) b.Granted = used > 0 && batteries > 0 ? -used * b.Demand / batteries : 0;
             batteryMode[town] = true;
@@ -157,6 +172,7 @@ public sealed partial class ProductionSystem
                 b.Granted = give;
             }
         }
+        float charge = 0, capacity = 0;
         foreach (var m in grid)
         {
             if (m.Data.IsConsumer) m.Power = m.Demand > 0 ? m.Granted / m.Demand : 1;
@@ -172,8 +188,10 @@ public sealed partial class ProductionSystem
                 float rate = Rated(world, m);
                 m.Store = Capacity(world, m);
                 if (rate > 0) m.Charge = Math.Clamp(m.Charge + m.Granted / rate * dt, 0, Capacity(world, m));
+                (charge, capacity) = (charge + m.Charge, capacity + m.Store);
             }
         }
+        townPower[town] = new(generated, demandTotal, charged, drained, charge, capacity);
     }
 
     /// <summary>A generator burns fuel as a producer draws inputs (<c>vfunc_183</c>): <c>rate x dt x P x option</c>, times its load.</summary>

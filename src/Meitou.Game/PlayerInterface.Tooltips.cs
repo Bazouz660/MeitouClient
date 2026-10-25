@@ -58,8 +58,8 @@ sealed partial class PlayerInterface
             (tipPoint, tipSince) = (mouse, now);
         }
         if (ResolveTooltip(hit) is not var (lines, kind) || lines.Count == 0) return;
-        // An item's (ToolTipInventory) shows at once: the inventory's mouse-move hook shows it, not MyGUI's tooltip timer (ToolTipInventory::vfunc_6, Verified).
-        if (!tipShown && (kind == TooltipKind.Inventory || Stopwatch.GetElapsedTime(tipSince, now).TotalSeconds >= UiTooltips.ShowDelaySeconds)) tipShown = true;
+        // An item's (ToolTipInventory) shows at once: the inventory's mouse-move hook shows it, not MyGUI's tooltip timer (ToolTipInventory::vfunc_6, Verified). The Meitou UI shows every one at once.
+        if (!tipShown && (kind == TooltipKind.Inventory || UiMode == UiMode.Meitou || Stopwatch.GetElapsedTime(tipSince, now).TotalSeconds >= UiTooltips.ShowDelaySeconds)) tipShown = true;
         if (!tipShown) return;
         // A static tooltip is shown in a widget of its own (the class names it: "static:AIToolTip"); an item's sits beside the window holding the item.
         UiRect? panel = kind == TooltipKind.Inventory ? ItemWindow(controls, hit) : null;
@@ -144,7 +144,8 @@ sealed partial class PlayerInterface
         string whole = Loc.Tr(text);
         return whole != text || text.Length <= 2 || text[0] != '[' || text[^1] != ']' ? whole : "[" + Loc.Tr(text[1..^1]) + "]";
     }
-    void PlaceTooltip(List<UiControl> controls, UiPainter painter, IReadOnlyList<TooltipLine> lines, TooltipKind kind, UiRect? given)
+    void PlaceTooltip(List<UiControl> controls, UiPainter painter, IReadOnlyList<TooltipLine> lines, TooltipKind kind, UiRect? given, string prefix = "tooltip", Vector2? point = null,
+        IReadOnlyList<string?>? valueColours = null)
     {
         float minimum = TitleOpen ? 0 : StandardPixels;
         Vector2 Measure(string text, float wrap)
@@ -156,7 +157,7 @@ sealed partial class PlayerInterface
         // The tooltip texts the code sets are messages of the game's catalog: shown in the active language (a row's "-" mark of an indented key stays).
         if (Loc.Translating)
             lines = [.. lines.Select(l => l with { Key = l.Key.StartsWith('-') ? "-" + TipTr(l.Key[1..]) : TipTr(l.Key), Value = TipTr(l.Value) })];
-        var layout = UiTooltips.Arrange(lines, kind, Width, Height, mouse, anchor, Measure);
+        var layout = UiTooltips.Arrange(lines, kind, Width, Height, point ?? mouse, anchor, Measure);
         var panel = layout.Panel;
         float scale = Height / 1080f;
         bool meitou = kind != TooltipKind.Static && UiMode == UiMode.Meitou && TooltipPlateReady(painter);
@@ -165,34 +166,34 @@ sealed partial class PlayerInterface
         else if (meitou)
         {
             float margin = TipPlateMargin * scale;
-            controls.Add(new("tooltip-plate", "ImageBox", new(panel.X - margin, panel.Y - margin, panel.Width + 2 * margin, panel.Height + 2 * margin), "", "", "", true,
+            controls.Add(new($"{prefix}-plate", "ImageBox", new(panel.X - margin, panel.Y - margin, panel.Width + 2 * margin, panel.Height + 2 * margin), "", "", "", true,
                 new Dictionary<string, string> { ["ImageTexture"] = TipPlate, ["ImageBorder"] = (TipPlateMargin + TipPlateRadius).ToString(CultureInfo.InvariantCulture),
                     ["ImageBorderScale"] = scale.ToString(CultureInfo.InvariantCulture) }, none, Pickable: false));
         }
         else if (kind == TooltipKind.Floating)
-            controls.Add(new("tooltip-panel", "Widget", panel, "", "", "Kenshi_GenericTextBoxSkin", true, new Dictionary<string, string>(), none, Pickable: false));
+            controls.Add(new($"{prefix}-panel", "Widget", panel, "", "", "Kenshi_GenericTextBoxSkin", true, new Dictionary<string, string>(), none, Pickable: false));
         else
         {
             // Kenshi_FloatingPanelLight: the floating panel skin with the parchment box in it (inset 5 for the inventory's; the HUD's own panel keeps 97.2 % of its height).
-            controls.Add(new("tooltip-panel", "Widget", panel, "", "", "Kenshi_FloatingPanelSkin", true, new Dictionary<string, string>(), none, Pickable: false));
+            controls.Add(new($"{prefix}-panel", "Widget", panel, "", "", "Kenshi_FloatingPanelSkin", true, new Dictionary<string, string>(), none, Pickable: false));
             var inner = kind == TooltipKind.Fixed ? panel with { Height = panel.Height * UiTooltips.FixedBoxFraction }
                 : new UiRect(panel.X + 5 * scale, panel.Y + 5 * scale, Math.Max(0, panel.Width - 10 * scale), Math.Max(0, panel.Height - 10 * scale));
-            controls.Add(new("tooltip-box", "Widget", inner, "", "", "Kenshi_GenericTextBoxSkin", true, new Dictionary<string, string>(), none, Pickable: false));
+            controls.Add(new($"{prefix}-box", "Widget", inner, "", "", "Kenshi_GenericTextBoxSkin", true, new Dictionary<string, string>(), none, Pickable: false));
         }
         for (int i = 0; i < lines.Count; i++)
         {
             var line = lines[i];
             var area = layout.Rows[i].Area;
-            void Text(string part, UiRect at, string text, string align, TooltipTone tone)
+            void Text(string part, UiRect at, string text, string align, TooltipTone tone, string? colour = null)
             {
                 if (text.Length == 0) return;
-                controls.Add(new($"tooltip-{part}-{i}", "TextBox", at, text, "", "", true,
-                    new Dictionary<string, string> { ["FontName"] = TooltipFont, ["TextAlign"] = align, ["WordWrap"] = "true", ["TextColour"] = TipColour(tone, meitou) },
+                controls.Add(new($"{prefix}-{part}-{i}", "TextBox", at, text, "", "", true,
+                    new Dictionary<string, string> { ["FontName"] = TooltipFont, ["TextAlign"] = align, ["WordWrap"] = "true", ["TextColour"] = colour ?? TipColour(tone, meitou) },
                     none, Pickable: false));
             }
             Text("key", area, line.Key, "Left Top", line.KeyTone);
             float suffixWidth = line.Suffix.Length > 0 ? painter.MeasureText(TooltipFont, line.Suffix, Height, 0, minimum).Width : 0;
-            Text("value", area with { Width = Math.Max(0, area.Width - suffixWidth) }, line.Value, "Right Top", line.ValueTone);
+            Text("value", area with { Width = Math.Max(0, area.Width - suffixWidth) }, line.Value, "Right Top", line.ValueTone, valueColours is not null && i < valueColours.Count ? valueColours[i] : null);
             Text("suffix", area, line.Suffix, "Right Top", line.SuffixTone);
         }
     }
@@ -215,8 +216,8 @@ sealed partial class PlayerInterface
         };
     static string ParchmentColour(TooltipTone tone) => tone switch
         {
-            TooltipTone.Main => MainColour, TooltipTone.Ink => TipHex("140806"), TooltipTone.Title => TitleColour, TooltipTone.Bad => BadColour, TooltipTone.BadBright => TipHex("bf4834"),
-            TooltipTone.Good => GoodColour, TooltipTone.Grey => TipHex("444444"), TooltipTone.GreyBright => TipHex("777777"), TooltipTone.Cyan => TipHex("14ffdc"), _ => MyGuiColours.InkText,
+            TooltipTone.Main => MainColour, TooltipTone.Ink => MyGuiColours.InkText, TooltipTone.Title => TitleColour, TooltipTone.Bad => BadColour, TooltipTone.BadBright => BadBrightColour,
+            TooltipTone.Good => GoodColour, TooltipTone.Grey => GreyColour, TooltipTone.GreyBright => TipHex("777777"), TooltipTone.Cyan => TipHex("14ffdc"), _ => MyGuiColours.InkText,
         };
 
     /// <summary>Bakes the Meitou tooltip plate once (rust under the kit's tint, rounded, with its drop shadow; drawn nine-sliced).</summary>
@@ -386,9 +387,11 @@ sealed partial class PlayerInterface
         public bool Brief { get; init; }
         /// <summary>The customer's own item while trading (its Sell value is the transfer's price); otherwise a stock item's Value is.</summary>
         public bool Goods { get; init; }
+        /// <summary>The smith who crafted the item ("" none); its tooltip ends with the crafted-by block.</summary>
+        public string Crafter { get; init; } = "";
         public static ItemTip NameOnly(string record, string material, string name, int quantity) => new(record, material, name, quantity, 0, 0, "", 0, 0, 0, -1, null, null) { Brief = true };
         public static ItemTip Of(InventoryItemView v, TradeItemView? trade = null, string? mapNote = null) =>
-            new(v.Record, v.Material, v.Name, v.Quantity, v.Weight, v.Quality, v.Company, v.Level, v.Charges, v.MaxCharges, v.StolenFrom, trade, mapNote) { Goods = trade is not null };
+            new(v.Record, v.Material, v.Name, v.Quantity, v.Weight, v.Quality, v.Company, v.Level, v.Charges, v.MaxCharges, v.StolenFrom, trade, mapNote) { Goods = trade is not null, Crafter = v.Crafter };
         public static ItemTip Of(TradeItemView v) =>
             new(v.Record, v.Material, v.Name, v.Quantity, v.Weight, v.Quality, v.Company, v.Level, v.Charges, v.MaxCharges, v.StolenFrom, v, null);
     }
@@ -435,7 +438,7 @@ sealed partial class PlayerInterface
         if (t.Trade is { Buyback: true }) lines.Add(new("Buyback", ""));
         if (t.Brief) return lines;
         // Every grade line (weapon model, armour, crossbow, prosthetic) goes right under the name, as in the original.
-        if (model is not null) lines.Add(new(model, "", GradeTone(ArmourTooltip.GradeOf(t.Level))));
+        if (model is not null) lines.Add(new(model, "", GradeTone(WeaponGrade(t.Level))));
         else if (type == Meitou.Data.Fcs.FcsRecordType.CROSSBOW)
         {
             int grade = ArmourTooltip.GradeOf(t.Level);
@@ -443,7 +446,7 @@ sealed partial class PlayerInterface
         }
         var combat = CombatOf?.Invoke();
         var armour = type == Meitou.Data.Fcs.FcsRecordType.ARMOUR ? combat?.Armour(t.Record) : null;
-        var armourHead = armour is not null ? ArmourTooltip.Head(armour, t.Quality).Select(ArmourRow).ToList() : null;
+        var armourHead = armour is not null ? ArmourTooltip.Head(armour, t.Level).Select(ArmourRow).ToList() : null;
         var limbRows = type == Meitou.Data.Fcs.FcsRecordType.LIMB_REPLACEMENT ? LimbRows(Meitou.Data.Gameplay.Bodies.LimbReplacement.From(record!), t.Level).ToList() : null;
         if (armourHead is not null) { lines.Add(armourHead[0]); armourHead.RemoveAt(0); }
         if (limbRows is not null) { lines.Add(limbRows[0]); limbRows.RemoveAt(0); }
@@ -493,7 +496,9 @@ sealed partial class PlayerInterface
             if (armourHead is not null) lines.AddRange(armourHead);
             if (limbRows is not null) lines.AddRange(limbRows);
             // "{n} x {unit} kg ({total} kg)" for a stack.
-            weightText = (t.Quantity > 1 ? $"{t.Quantity} x " : "") + Number(unitWeight) + " kg" + (t.Quantity > 1 ? $" ({Number(t.Weight)} kg)" : "");
+            // An armour piece prints whole kilograms, truncated (FUN_1407a1650, Observed).
+            weightText = armour is not null ? ((int)unitWeight).ToString(CultureInfo.InvariantCulture) + " kg"
+                : (t.Quantity > 1 ? $"{t.Quantity} x " : "") + Number(unitWeight) + " kg" + (t.Quantity > 1 ? $" ({Number(t.Weight)} kg)" : "");
             lines.Add(Row("Weight", weightText));
         }
         if (t.Trade is { } trade)
@@ -505,8 +510,41 @@ sealed partial class PlayerInterface
             lines.Add(new("-Value", "c." + Money(trade.Value), TooltipTone.Ink, TooltipTone.Ink, trade.Buyback && !t.Goods ? "" : suffix, TooltipTone.Bad));
             lines.Add(new("-Sell value", "c." + Money(trade.SellValue), TooltipTone.Ink, TooltipTone.Ink, trade.Buyback && t.Goods ? "" : suffix, TooltipTone.Bad));
         }
+        else if (PricesOf?.Invoke(t) is { } prices)
+        {
+            // Outside a trade: the plain prices, no trader (the inventory tooltip prints them all the time).
+            lines.Add(new("-Value", "c." + Money(prices.Value), TooltipTone.Ink, TooltipTone.Ink));
+            lines.Add(new("-Sell value", "c." + Money(prices.Sell), TooltipTone.Ink, TooltipTone.Ink));
+        }
+        // A trade item's average price follows the prices, in and out of a trade; while trading, the mark-up of the town and trader factors, Bad above 1 and Good below (FUN_1407ae130).
+        if (type == Meitou.Data.Fcs.FcsRecordType.ITEM && PricesOf?.Invoke(t) is { Average: { } average })
+        {
+            lines.Add(new("-Avg. Price", "c." + Money(average), TooltipTone.Ink, TooltipTone.Ink));
+            if (t.Trade is { } quote)
+            {
+                float markup = quote.MarketFactor * quote.PriceFactor;
+                lines.Add(new("-Price mark-up", ((int)(markup * 100)).ToString(CultureInfo.InvariantCulture) + "%", TooltipTone.Ink, markup < 1 ? TooltipTone.Good : TooltipTone.Bad));
+            }
+        }
         if (armour is not null)
-            lines.AddRange(ArmourTooltip.Tail(armour, id => RecordName?.Invoke(id)).Select(ArmourRow));
+        {
+            lines.AddRange(ArmourTooltip.Tail(armour, id => RecordName?.Invoke(id), t.Level).Select(ArmourRow));
+            // Then a blank row and the record's description; for a piece with a crafter's name another blank row, the heading and a paragraph naming the smith and the player's faction
+            // (FUN_1407a33a0, Observed: docs/game/ui-screens.md "Item tooltip"). Paragraphs wrap at the tooltip's width without widening it.
+            if (record?.GetString("description") is { Length: > 0 } description)
+            {
+                lines.Add(new(" "));
+                lines.Add(new(description, "", TooltipTone.Title, Paragraph: true));
+            }
+            if (t.Crafter.Length > 0)
+            {
+                string faction = PlayerFactionName?.Invoke() ?? "";
+                lines.Add(new(" "));
+                lines.Add(new(Loc.Tr("[Crafted by {1}]", t.Crafter), "", TooltipTone.Title));
+                lines.Add(new(t.Level >= 70 ? Loc.Tr("High quality armour crafted by the renowned smith {1} of {2}.", t.Crafter, faction)
+                    : Loc.Tr("Crafted by the smith {1} of {2}.", t.Crafter, faction), "", TooltipTone.Title, Paragraph: true));
+            }
+        }
         if (type == Meitou.Data.Fcs.FcsRecordType.ITEM && function is not (3 or 16))
         {
             if (t.MaxCharges > 1) lines.Add(Row("Charges", $"{Number(t.Charges)}/{Number(t.MaxCharges)}"));
@@ -514,6 +552,34 @@ sealed partial class PlayerInterface
         }
         if (t.MapNote is { Length: > 0 } note)
             foreach (string row in note.Split('\n')) lines.Add(new(row, "", row.StartsWith("[Right", StringComparison.Ordinal) || row.StartsWith("[Location", StringComparison.Ordinal) ? TooltipTone.Cyan : TooltipTone.Ink));
+        // The record's description closes every other item's tooltip, with no blank row before it (the second tooltip function, FUN_14079f4d0 and its overrides).
+        if (armour is null && record?.GetString("description") is { Length: > 0 } text)
+            lines.Add(new(text, "", TooltipTone.Ink, Paragraph: true));
+        if (type == Meitou.Data.Fcs.FcsRecordType.WEAPON) lines.AddRange(WeaponTail(t, model));
         return lines;
+    }
+
+    /// <summary>
+    /// A weapon's closing rows after its description (<c>FUN_14079fe80</c>, <b>Observed</b>): a blank row, <c>[Model # {model}]</c> in its level's grade colour, then
+    /// <c>[Manufactured by {company}]</c> and the company's description, or for a crafted weapon <c>[Crafted by {smith}]</c> and a sentence naming the smith and the player's faction
+    /// (the masterful one from level 45).
+    /// </summary>
+    IEnumerable<TooltipLine> WeaponTail(ItemTip t, string? model)
+    {
+        yield return new(" ");
+        // MyGUI prints "##" as one '#'.
+        if (model is not null) yield return new("[" + Loc.Tr("Model ##").Replace("##", "#", StringComparison.Ordinal) + " " + model + "]", "", GradeTone(WeaponGrade(t.Level)));
+        if (t.Crafter.Length > 0)
+        {
+            string faction = PlayerFactionName?.Invoke() ?? "";
+            yield return new("[" + Loc.Tr("Crafted by {1}", t.Crafter) + "]", "", TooltipTone.Main);
+            yield return new(t.Level >= 45 ? Loc.Tr("A masterful weapon crafted by the renowned smith {1} of {2}.", t.Crafter, faction)
+                : Loc.Tr("Crafted by the smith {1} of {2}.", t.Crafter, faction), "", TooltipTone.Ink, Paragraph: true);
+        }
+        else if (t.Company.Length > 0 && ItemRecordOf?.Invoke(t.Company) is { } company)
+        {
+            yield return new("[" + Loc.Tr("Manufactured by") + " " + company.Name + "]", "", TooltipTone.Main);
+            if (company.GetString("company description") is { Length: > 0 } about) yield return new(about, "", TooltipTone.Ink, Paragraph: true);
+        }
     }
 }

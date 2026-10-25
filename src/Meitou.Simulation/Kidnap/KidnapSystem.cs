@@ -71,8 +71,8 @@ public readonly record struct KidnapEvent(long Tick, KidnapEventKind Kind, Chara
 /// <item><b>Victim</b> (the finder of goal 132, <b>Verified</b>; <see cref="IsVictim"/>): the nearest character within sight that is alive, down, of a <c>carriable</c> race, not carried, not
 /// in a cage or a bed, not an animal, not already someone's pick; the sensed-list classes (<b>Unknown</b> bits) are read as "not of the kidnapper's faction or an ally". A free member
 /// (awake, not fighting, able to carry) lifts it (<see cref="CarrySystem.BeginPickUp"/>).</item>
-/// <item><b>Carry</b>: a campaign carrier goes on with its squad (back to following its leader) and, within a town of its faction (<see cref="KidnapSettings.TownSlack"/> x its radius), looks for a free
-/// cage there; an AI squad's member starts only when a cage of its faction is in range. At the cage it lets go and imprisons the victim (<see cref="CharacterCold.Kidnapped"/>: no sentence, no bail). No
+/// <item><b>Carry</b>: a campaign carrier goes on with its squad (following its leader, else wandering home, <see cref="ResumeOf"/>) and, within a town of its faction (<see cref="KidnapSettings.TownSlack"/> x its radius), looks for a free
+/// cage there (its faction's or an ally's, <see cref="CageFor"/>); an AI squad's member starts only when such a cage is in range. At the cage it lets go and imprisons the victim (<see cref="CharacterCold.Kidnapped"/>: no sentence, no bail). No
 /// free cage in the home town, or three failed walks: it drops the victim (<b>engine choice</b>; the original's give-up rule is Unknown).</item>
 /// </list>
 /// A marching carrier (a campaign's, or a squad's that lists a cannibal retreat package, which then needs no cage in range to lift) cages in the first town of its faction with a free cage and gives up only in its home town (<see cref="Abduction.HomeSite"/>).
@@ -117,7 +117,7 @@ public sealed class KidnapSystem(PopulationData data, PopulationSystem populatio
     }
 
     /// <summary>
-    /// Has the member in <paramref name="slot"/> lift <paramref name="victim"/> and carry it to a cage of its faction in range (the carrying and caging of goals 167 and 168, which the
+    /// Has the member in <paramref name="slot"/> lift <paramref name="victim"/> and carry it to a cage of its faction or an ally in range (the carrying and caging of goals 167 and 168, which the
     /// <see cref="CaptiveSystem"/> starts once it has cuffed or found the captive; the original's goal 112 puts the carried one in a cage). False when the member cannot carry, the victim
     /// is someone's pick already, or no free cage is in range.
     /// </summary>
@@ -184,8 +184,7 @@ public sealed class KidnapSystem(PopulationData data, PopulationSystem populatio
                 if (!campaign && !retreats && CageFor(world, table.Next[victim].Position, cold.Faction, null) is null) continue;
                 int homeSite = campaign ? (inst!.Home.Site is >= 0 and var h && h < data.SiteFactions.Count && data.SiteFactions[h] == cold.Faction ? h : -1)
                     : retreats ? squad.Ai!.Town : -1;
-                var task = (CharacterTask)table.Next[slot].Task;
-                if (!carry.BeginPickUp(world, slot, victimId, task is CharacterTask.Wander or CharacterTask.Follow ? task : CharacterTask.Idle)) continue;
+                if (!carry.BeginPickUp(world, slot, victimId, ResumeOf(table.Next[slot].Task, campaign || retreats))) continue;
                 cold.Engaged = true;
                 reserved.Add(victimId);
                 abductions.Add(new Abduction { Carrier = member, Victim = victimId, Faction = cold.Faction, Marching = campaign || retreats, HomeSite = homeSite });
@@ -245,7 +244,7 @@ public sealed class KidnapSystem(PopulationData data, PopulationSystem populatio
                 }
                 if (gn.Task == (byte)CharacterTask.PickUp) return true;
                 // The lift ended without the body (fought off, pushed away): again while it is down and free, a few times.
-                if (++a.Tries > Settings.LiftTries || !tc.CarriedBy.IsNone || !IsVictim(world, t, a.Faction) || !carry.BeginPickUp(world, g, a.Victim, ResumeOf(gn.Task))) return End(world, a, KidnapEventKind.GaveUp);
+                if (++a.Tries > Settings.LiftTries || !tc.CarriedBy.IsNone || !IsVictim(world, t, a.Faction) || !carry.BeginPickUp(world, g, a.Victim, ResumeOf(gn.Task, a.Marching))) return End(world, a, KidnapEventKind.GaveUp);
                 return true;
             }
             case KidnapPhase.Carry:
@@ -293,11 +292,20 @@ public sealed class KidnapSystem(PopulationData data, PopulationSystem populatio
         return true;
     }
 
-    static CharacterTask ResumeOf(byte task) => task is (byte)CharacterTask.Wander or (byte)CharacterTask.Follow ? (CharacterTask)task : CharacterTask.Idle;
+    /// <summary>
+    /// The task a carrier goes back to once it has the body: its wandering or following, else idle; a marching carrier wanders, also from a fight's idle, as it walks home by milling round its
+    /// own town (<see cref="PopulationSystem"/>'s retreating column leaves carriers alone; idle it would stand there with the captive).
+    /// </summary>
+    static CharacterTask ResumeOf(byte task, bool marching) =>
+        task is (byte)CharacterTask.Wander or (byte)CharacterTask.Follow ? (CharacterTask)task : marching ? CharacterTask.Wander : CharacterTask.Idle;
+
+    /// <summary>Whether a free cage a carrier of <paramref name="faction"/> may use is in range of <paramref name="at"/> (see <see cref="CageFor"/>).</summary>
+    public bool HasCage(World world, Vector3 at, int faction) => CageFor(world, at, faction, null) is not null;
 
     /// <summary>
-    /// A free cage of <paramref name="faction"/> within range of <paramref name="at"/> (the original's weights, <see cref="FixtureRegistry.FindCage"/>), not another abduction's; its town's fixtures are
-    /// registered first when <paramref name="at"/> is in one (a town no one has loaded has its cages all the same).
+    /// A free cage of <paramref name="faction"/> or an ally within range of <paramref name="at"/> (the original's weights, <see cref="FixtureRegistry.FindCage"/>, which prefer its own x100), not another
+    /// abduction's; its town's fixtures are registered first when <paramref name="at"/> is in one (a town no one has loaded has its cages all the same). The original takes another faction's cage when
+    /// it is "usable" (economy.md 11.7, test not decoded): <b>engine reading</b>, an ally's is (Stoat's slave shop cages are the United Cities', its slavers the Slave Traders).
     /// </summary>
     Fixture? CageFor(World world, Vector3 at, int faction, Abduction? self)
     {
@@ -305,7 +313,13 @@ public sealed class KidnapSystem(PopulationData data, PopulationSystem populatio
         if (site >= 0) world.Fixtures.RegisterSite(world, data, site);
         float range2 = Settings.CageRange * Settings.CageRange;
         var here = new Vector2(at.X, at.Z);
-        return world.Fixtures.FindCage(world, at, faction, null, f => f.Owner != faction || Vector2.DistanceSquared(here, new Vector2(f.Position.X, f.Position.Z)) > range2 || Reserved(f, self));
+        return world.Fixtures.FindCage(world, at, faction, null, f => !Usable(f.Owner, faction) || Vector2.DistanceSquared(here, new Vector2(f.Position.X, f.Position.Z)) > range2 || Reserved(f, self));
+    }
+
+    bool Usable(int owner, int faction)
+    {
+        var relations = data.Relations;
+        return owner == faction || owner >= 0 && relations.Contains(owner) && relations.Contains(faction) && relations.IsAlly(faction, owner);
     }
 
     bool Reserved(Fixture f, Abduction? self)

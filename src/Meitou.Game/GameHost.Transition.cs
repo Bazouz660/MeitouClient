@@ -149,7 +149,10 @@ sealed partial class GameHost
             if (warmSeconds >= nextWarmReport)
             {
                 nextWarmReport = warmSeconds + 5;
-                Console.WriteLine($"loading   {(TitleVisible ? "menu" : "game")} still preparing: terrain {(gpu.Streamer?.Idle == false ? "pending" : "ready")}, objects {gpu.Objects?.Pending ?? 0}{(gpu.Objects is { Pending: > 0 } po ? $" ({po.PendingDetail})" : "")}, foliage {gpu.Foliage?.Pending ?? 0}{(gpu.Foliage is { Pending: > 0 } pf ? $" ({pf.PendingDetail})" : "")}, population {(populationReady ? "ready" : "pending")}, characters {((TitleVisible ? TitleCharactersReady : charactersReady) ? "ready" : "pending")}");
+                int pendingLooks = gpu.Characters is { } characterRenderer
+                    ? TitleVisible ? characterRenderer.PendingLoads : session.CurrentSnapshot.Characters.Count(c => c.Appearance is { } appearance && !characterRenderer.IsPrepared(appearance))
+                    : 0;
+                Console.WriteLine($"loading   {(TitleVisible ? "menu" : "game")} still preparing: terrain {(gpu.Streamer?.Idle == false ? "pending" : "ready")}, objects {gpu.Objects?.Pending ?? 0}{(gpu.Objects is { Pending: > 0 } po ? $" ({po.PendingDetail})" : "")}, foliage {gpu.Foliage?.Pending ?? 0}{(gpu.Foliage is { Pending: > 0 } pf ? $" ({pf.PendingDetail})" : "")}, population {(populationReady ? "ready" : "pending")}, characters {((TitleVisible ? TitleCharactersReady : charactersReady) ? "ready" : $"pending ({pendingLooks} looks; {gpu.Characters?.PendingLoads ?? 0} assets/textures)")}");
             }
             return;
         }

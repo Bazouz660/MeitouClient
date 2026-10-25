@@ -41,8 +41,6 @@ public interface IDialogueSource
 
 public sealed class DialogueSettings
 {
-    /// <summary>How near the talker must stand (the original walks there as task 12's precondition; its distance is <b>Unknown</b>; engine choice, the surgeon's reach).</summary>
-    public float TalkRange { get; init; } = 60;
     /// <summary>Game seconds the talker has to reach the target before the order is dropped (engine choice).</summary>
     public float ApproachSeconds { get; init; } = 60;
     /// <summary>
@@ -50,7 +48,10 @@ public sealed class DialogueSettings
     /// (docs/game/dialogue.md "Ambient conversations"): off by default (the pinned scenarios), the game turns it on.
     /// </summary>
     public bool AmbientEvents { get; init; }
-    /// <summary>How near a player character must be to be seen, how often (ticks) the NPCs look, how many speak per look and the game hours before a squad reacts to the same character again (engine choices).</summary>
+    /// <summary>
+    /// How near a player character NPCs must be for their exchanges with each other to be run (a player character is seen by the sight test instead), how often (ticks) the NPCs look,
+    /// how many speak per look and the game hours before a squad reacts to the same character again (engine choices).
+    /// </summary>
     public float AmbientRange { get; init; } = 600;
     public int AmbientEveryTicks { get; init; } = 30;
     public int AmbientPerScan { get; init; } = 2;
@@ -171,7 +172,7 @@ public sealed partial class DialogueSystem : ITickSystem, IStateHashed, IDialogu
         {
             var table = world.Characters;
             if (!table.TryResolveNext(talker, out int p) || !table.TryResolveNext(target, out int n) || !Awake(table, p) || !Awake(table, n)) CancelApproach(world);
-            else if (Vector3.Distance(table.Next[p].Position, table.Next[n].Position) <= Settings.TalkRange)
+            else if (InTalkRange(table, p, n))
             {
                 MovementSystem.Stop(table, p);
                 var (who, whom) = (talker, target);
@@ -199,7 +200,7 @@ public sealed partial class DialogueSystem : ITickSystem, IStateHashed, IDialogu
         target = order.Target;
         approachUntil = world.Tick + (long)(Settings.ApproachSeconds / world.TickSeconds);
         Hold(world, n);
-        if (Vector3.Distance(table.Next[p].Position, table.Next[n].Position) > Settings.TalkRange)
+        if (!InTalkRange(table, p, n))
             world.Defer(new MoveOrder([talker], table.Next[n].Position) { Tick = world.Tick + 1 });
     }
 
@@ -207,6 +208,22 @@ public sealed partial class DialogueSystem : ITickSystem, IStateHashed, IDialogu
     {
         if (!target.IsNone && open?.Npc != target) Release(world, target);
         talker = target = CharacterId.None;
+    }
+
+    /// <summary>The talk distance beyond the target's radius while walking (7 x 3, <c>AI::isWithinChoppingRange</c> for a character, docs/game/dialogue.md "Player conversation").</summary>
+    public const float TalkReach = 21;
+    /// <summary>The largest height difference to talk across (the original's on the same floor; engine choice, the sim has no floors here).</summary>
+    public const float TalkHeight = 35;
+
+    /// <summary>
+    /// Whether <paramref name="talker"/> is near enough <paramref name="target"/> to talk: X/Z within the target's footprint radius + <see cref="TalkReach"/>, twice the reach once
+    /// the talker has stopped, and within <see cref="TalkHeight"/> in height.
+    /// </summary>
+    static bool InTalkRange(CharacterTable table, int talker, int target)
+    {
+        var (a, b) = (table.Next[talker].Position, table.Next[target].Position);
+        float reach = Combat.CombatTuning.Footprint(table.Cold(target)) + TalkReach * ((table.Next[talker].Flags & (ushort)MoveFlags.AnyPath) == 0 ? 2 : 1);
+        return Vector2.Distance(new(a.X, a.Z), new(b.X, b.Z)) < reach && MathF.Abs(a.Y - b.Y) < TalkHeight;
     }
 
     static bool Awake(CharacterTable table, int slot) => table.Next[slot].Alive && table.Cold(slot) is { IsImprisoned: false } c && c.Medical?.Incapacitated != true;

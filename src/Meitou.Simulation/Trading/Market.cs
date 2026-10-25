@@ -70,12 +70,33 @@ public sealed class Market
     }, this);
 
     /// <summary>
-    /// The culture price of an item record for a trader (section 6, <c>FUN_14092bec0</c>): the trader's town culture if it has one and names the item, else the faction's, else 1.
+    /// The Value and Sell value an inventory tooltip prints for one piece of gear with no trader (<b>Observed</b>: the Samurai Legplates at level 95 print c.16,262 and c.4,065, the numbers
+    /// the wiki lists for a Masterwork one): the base value at the item's level (a weapon's, crossbow's and armour's grade quality), and that x <c>loot price mult GEAR</c> truncated.
+    /// Null for anything but armour, a weapon or a crossbow (their prices need the charges and the category rows, not done).
+    /// </summary>
+    public static (int Value, int Sell)? GearPrices(GameDatabase db, PriceConstants k, string record, float level, string company)
+    {
+        if (db.Find(record) is not { Type: FcsRecordType.ARMOUR or FcsRecordType.WEAPON or FcsRecordType.CROSSBOW } r) return null;
+        var maker = company.Length > 0 ? db.Find(company) : null;
+        int value = ItemValue.Of(db, r, level, true, k, maker is { Type: FcsRecordType.WEAPON_MANUFACTURER } ? maker : null);
+        return (value, (int)(value * k.LootPriceMultGear));
+    }
+
+    /// <summary>
+    /// The <c>Avg. Price</c> an ITEM's tooltip prints when it is a <c>trade item</c> (<c>FUN_1407ae130</c>, <b>Observed</b> in the disassembly): <c>ItemValue</c> at the item's level (the
+    /// item's slot 87, 0 for a plain item, so quality plays no part) with the category rows and no manufacturer, i.e. the base value with no town or trader factor. Null otherwise.
+    /// </summary>
+    public int? AveragePrice(ItemInstance item) => item.Type == FcsRecordType.ITEM && Items.Info(item.Record) is { TradeItem: true } ? BaseValue(item) : null;
+
+    /// <summary>
+    /// The culture price of an item record for a trader (section 6, <c>FUN_14092bec0</c>, <b>Observed</b>): the trader's town's culture if it has one and names the item, else the
+    /// culture of the town's faction (the town's <c>getFaction</c>, not the trader's: a Shinobi thief in Sho-Battai prices by United Cities), else 1; 1 with no town.
     /// </summary>
     public float CulturePrice(string record, Trader trader)
     {
+        if ((uint)trader.Site >= (uint)data.Sites.Count) return 1;
         if (SiteCulture(trader.Site) is { } town && town.TryPrice(record, out float f)) return f;
-        return FactionCulture(trader.Faction) is { } own && own.TryPrice(record, out f) ? f : 1;
+        return FactionCulture(data.SiteFactions[trader.Site]) is { } owner && owner.TryPrice(record, out f) ? f : 1;
     }
 
     /// <summary>

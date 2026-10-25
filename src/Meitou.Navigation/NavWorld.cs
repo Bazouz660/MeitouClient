@@ -132,10 +132,15 @@ public sealed class NavWorld
     }
 
     /// <summary>The walkable collision surface of the zone at (x, z) nearest to <paramref name="y"/> within <paramref name="range"/> (<see cref="NavSurfaces"/>).</summary>
-    public bool TrySurfaceNear(float x, float z, float y, float range, out float height)
+    public bool TrySurfaceNear(float x, float z, float y, float range, out float height) => TrySurfaceNear(x, z, y, range, out height, out _);
+
+    /// <inheritdoc cref="TrySurfaceNear(float, float, float, float, out float)"/>
+    /// <param name="beside">The height is a surface's edge beside the point (<see cref="NavSurfaces.TryNear(float, float, float, float, out float, out bool)"/>).</param>
+    public bool TrySurfaceNear(float x, float z, float y, float range, out float height, out bool beside)
     {
         height = y;
-        return slots.TryGetValue(WorldLayout.ZoneOf(x, z), out int slot) && meshes[slot].Surfaces is { } s && s.TryNear(x, z, y, range, out height);
+        beside = false;
+        return slots.TryGetValue(WorldLayout.ZoneOf(x, z), out int slot) && meshes[slot].Surfaces is { } s && s.TryNear(x, z, y, range, out height, out beside);
     }
 
     /// <summary>The terrain height at (x, z) from the zone's own heightmap samples (<see cref="ZoneNavMesh.Terrain"/>); false where the zone has none.</summary>
@@ -167,8 +172,8 @@ public sealed class NavWorld
         return true;
     }
 
-    /// <summary>The polygon under or nearest to the point (nearest within <paramref name="maxDistance"/> on the XZ plane, height as the tie-break).</summary>
-    public bool TryFindPolygon(Vector3 p, float maxDistance, out NavRef polygon, out Vector3 snapped)
+    /// <summary>The polygon under or nearest to the point (nearest within <paramref name="maxDistance"/> on the XZ plane, height as the tie-break), not one <paramref name="skip"/> rules out.</summary>
+    public bool TryFindPolygon(Vector3 p, float maxDistance, out NavRef polygon, out Vector3 snapped, Func<NavRef, bool>? skip = null)
     {
         polygon = default;
         snapped = p;
@@ -181,7 +186,7 @@ public sealed class NavWorld
             {
                 if (!slots.TryGetValue(new ZoneCoordinate(zone.X + dx, zone.Y + dz), out int slot)) continue;
                 var m = meshes[slot];
-                int poly = m.Nearest(p.X, p.Y, p.Z, maxDistance, out float d);
+                int poly = m.Nearest(p.X, p.Y, p.Z, maxDistance, out float d, skip is null ? null : q => skip(new NavRef(slot, q)));
                 if (poly < 0) continue;
                 float y = m.HeightAt(poly, Math.Clamp(p.X, m.BoundsMin.X, m.BoundsMax.X), Math.Clamp(p.Z, m.BoundsMin.Y, m.BoundsMax.Y));
                 float score = d * 4 + Math.Abs(y - p.Y);

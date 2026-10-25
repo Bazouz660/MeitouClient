@@ -51,9 +51,12 @@ public static class SavedKit
         item.Section = s.Section;
         item.X = s.X;
         item.Y = s.Y;
-        item.Level = s.Level;
+        // Meitou saves from before armour took its level from its quality have level 0 and a grade quality below 100: that quality. The original saves some armour
+        // at level 0 and quality 100 (Observed, docs/game/ui-screens.md "Item tooltip"), which stays level 0.
+        item.Level = s.Level == 0 && item.Type == FcsRecordType.ARMOUR && s.Quality is > 0 and < 100 ? (int)s.Quality : s.Level;
         item.MaterialId = s.MaterialId;
         item.CompanyId = s.CompanyId;
+        item.Crafter = s.Crafter;
         item.Charges = s.Charges;
         item.Death = s.Death;
         (item.LimbDamage, item.LimbWear, item.LimbStun) = (s.Damage, s.Wear, s.Stun);
@@ -73,7 +76,7 @@ public static class SavedKit
 
     internal static SaveItem FromItem(ItemInstance i) => new()
     {
-        BaseId = i.Record, MaterialId = i.MaterialId, CompanyId = i.CompanyId, Section = i.Section, X = i.X, Y = i.Y, Quantity = i.Quantity, Level = i.Level,
+        BaseId = i.Record, MaterialId = i.MaterialId, CompanyId = i.CompanyId, Crafter = i.Crafter, Section = i.Section, X = i.X, Y = i.Y, Quantity = i.Quantity, Level = i.Level,
         ItemFunction = i.ItemFunction, Quality = i.Quality, Charges = i.Charges, Source = i.Saved,
         Damage = i.LimbDamage, Wear = i.LimbWear, Stun = i.LimbStun, Death = i.Death,
         Lock = i.Lock is { } l ? new SaveItemLock(l.Level, l.EffectivelyLocked, l.Broken, l.Hardness) : null,

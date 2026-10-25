@@ -17,14 +17,14 @@ public sealed class ProductionSettings
     public float ProductionOption { get; init; } = 1;
     /// <summary>The <i>Research speed</i> option (divides research hours); its default is Unknown, 1 is neutral.</summary>
     public float ResearchOption { get; init; } = 1;
-    /// <summary>An operator works from within the functionality's <c>use range</c> + footprint + this (engine choice; the original walks to the building's use points).</summary>
-    public float Reach { get; init; } = 20;
-    /// <summary>An operator whose path has ended counts as arrived within this much more (engine choice, as construction's).</summary>
+    /// <summary>A turret's gunner whose path has ended counts as at its spot within this much more (engine choice). Operators work within the machine's <c>use range</c> (<see cref="SiteReach"/>).</summary>
     public float SettleReach { get; init; } = 150;
     /// <summary>The footprint radius of a BUILDING record (the host knows it); null: 0.</summary>
     public Func<string, float>? Footprint { get; init; }
-    /// <summary>A character gives or takes items from within this far (X/Z) of a building, else "Out of trading range." (engine choice: the original allows the building's bounds radius + 40 for an item out of it and 60 for one out of a character's inventory, docs/game/economy.md "Trading range"; Meitou has no bounds radius in the sim).</summary>
-    public float TransferReach { get; init; } = 200;
+    /// <summary>The X/Z gap from a point to a site's footprint hull, 0 inside; null, or a null answer: the gap to its position (<see cref="SiteReach"/>).</summary>
+    public Func<BuildSite, Vector2, float?>? EdgeGap { get; init; }
+    /// <summary>A character gives or takes items from within this far (X/Z) of a building's footprint, else "Out of trading range." (the original: the building's bounds radius + 40 from its position for an item out of it, 60 for one out of a character's inventory, docs/game/economy.md "Trading range"; engine choice: 40 from the footprint both ways).</summary>
+    public float TransferReach { get; init; } = 40;
     /// <summary>Operators empty a full output into storages and fill empty inputs from them (docs/simulation.md "Production"; engine option: the original's wording "put any excess materials ... into storage" is the Ditch items squad AI option's, <see cref="SquadAi.Ditch"/>).</summary>
     public bool AutoHaul { get; init; } = true;
     /// <summary>How far (X/Z) from its machine an operator hauls (engine choice; the original's limit is Unknown).</summary>
@@ -300,7 +300,10 @@ public sealed partial class ProductionSystem : ITickSystem
             record.GetReferences("gun turret").Select(r => r.TargetStringId).FirstOrDefault() ?? "", null);
     }
 
-    /// <summary>Where an operator walks to: a turret's gunner spot (<see cref="Ai.AiSystem.TurretSpot"/>), else the building's place.</summary>
+    /// <summary>
+    /// Where an operator walks to: a turret's gunner spot (<see cref="Ai.AiSystem.TurretSpot"/>), else the floor point at or next to the building's place (furniture cuts a hole in
+    /// the floor's navmesh; <see cref="MovementSystem.GoToFloor"/>).
+    /// </summary>
     Vector2 GoalOf(World world, BuildSite site, Machine m)
     {
         if (m.Data.Function == Meitou.Data.World.ObjectRanges.TurretFunction && TurretPostOf(site) is { } post)
@@ -308,7 +311,16 @@ public sealed partial class ProductionSystem : ITickSystem
             var spot = Ai.AiSystem.TurretSpot(world, post);
             return turretSpots[site.Id] = new Vector2(spot.X, spot.Z);
         }
-        return new Vector2(site.Position.X, site.Position.Z);
+        var at = world.Walkability.FloorNear(site.Position.X, site.Position.Z, site.Position.Y, MovementSystem.FloorSlack) ?? site.Position;
+        return new Vector2(at.X, at.Z);
+    }
+
+    /// <summary>Sends an operator towards <paramref name="goal"/> (<see cref="GoalOf"/>) on the site's own floor (not a turret's, whose spot may stand above it).</summary>
+    void WalkToSite(ref CharacterHot n, CharacterCold cold, BuildSite site, Vector2 goal)
+    {
+        n.Goal = goal;
+        n.Flags |= (ushort)MoveFlags.NeedPath;
+        (cold.GoalHeight, cold.GoalHeightAt) = turretSpots.ContainsKey(site.Id) ? (float.NaN, default) : (site.Position.Y, n.Goal);
     }
 
     // The gunner spots of the player's turrets, as their walks found them (derived from the site and the ground; not saved, not hashed).
@@ -327,8 +339,6 @@ public sealed partial class ProductionSystem : ITickSystem
         return n;
     }
 
-    float ReachOf(BuildSite site, Machine m) => m.Data.UseRange + Settings.Reach + (Settings.Footprint?.Invoke(site.Record) ?? 0);
-
     static float Gap(Vector3 a, Vector3 b)
     {
         float dx = a.X - b.X, dz = a.Z - b.Z;
@@ -343,8 +353,29 @@ public sealed partial class ProductionSystem : ITickSystem
             float off = Vector2.Distance(new Vector2(n.Position.X, n.Position.Z), spot);
             return off <= Ai.AiSystem.TurretSlack || ((n.Flags & (ushort)MoveFlags.AnyPath) == 0 && off <= Ai.AiSystem.TurretSlack + Settings.SettleReach);
         }
-        float reach = ReachOf(site, m), gap = Gap(n.Position, site.Position);
-        return gap <= reach || ((n.Flags & (ushort)MoveFlags.AnyPath) == 0 && gap <= reach + Settings.SettleReach);
+        // The machine's use range (UseableStuff::getReachRange).
+        return SiteReach.Within(n, GapTo(site, n.Position), m.Data.UseRange);
+    }
+
+    /// <summary>
+    /// The X/Z gap from <paramref name="from"/> to a site (<see cref="SiteReach.Gap"/>). A rock's BUILDING footprint is not scaled like the rock, so a rock is measured to its bounds
+    /// circle (engine choice for the original's 1.2 x bounds box of a foliage building), else to its position.
+    /// </summary>
+    float GapTo(BuildSite site, Vector3 from)
+    {
+        if (!IsNatural(site.Id)) return SiteReach.Gap(Settings.EdgeGap, site, from);
+        float d = SiteReach.Gap(null, site, from);
+        return naturalBounds.TryGetValue(site.Id, out var rock) ? MathF.Max(0, Vector2.Distance(new Vector2(from.X, from.Z), rock.Centre) - rock.Radius) : d;
+    }
+
+    /// <summary>
+    /// The yaw from <paramref name="n"/> to a site: a rock's bounds centre (engine choice, as <see cref="GapTo"/>: a rock's origin can lie off its pile, so facing it turned miners
+    /// away), else its position.
+    /// </summary>
+    float FacingTo(in CharacterHot n, BuildSite site)
+    {
+        var at = naturalBounds.TryGetValue(site.Id, out var rock) ? rock.Centre : new Vector2(site.Position.X, site.Position.Z);
+        return MathF.Atan2(at.X - n.Position.X, at.Y - n.Position.Z);
     }
 
     /// <summary>The clip a turret's gunner holds.</summary>
@@ -370,11 +401,7 @@ public sealed partial class ProductionSystem : ITickSystem
         cold.Implicit = null;
         cold.HaulTo = null;
         var goal = GoalOf(world, site, m);
-        if (!AtSite(n, site, m))
-        {
-            n.Goal = goal;
-            n.Flags |= (ushort)MoveFlags.NeedPath;
-        }
+        if (!AtSite(n, site, m)) WalkToSite(ref n, cold, site, goal);
         sweep = true;
     }
 
@@ -455,7 +482,7 @@ public sealed partial class ProductionSystem : ITickSystem
     void Approach(World world, ref CharacterHot n, CharacterCold cold, BuildSite site, Machine m, float dt)
     {
         const ushort Path = (ushort)MoveFlags.AnyPath;
-        if (!turretSpots.ContainsKey(site.Id)) GoalOf(world, site, m);
+        if (m.Data.Function == Meitou.Data.World.ObjectRanges.TurretFunction && !turretSpots.ContainsKey(site.Id)) GoalOf(world, site, m);
         if (AtSite(n, site, m))
         {
             if ((n.Flags & Path) != 0)
@@ -470,9 +497,8 @@ public sealed partial class ProductionSystem : ITickSystem
         if ((n.Flags & Path) != 0) return;
         n.TaskTime -= dt;
         if (n.TaskTime > 0) return;
-        n.Goal = GoalOf(world, site, m);
+        WalkToSite(ref n, cold, site, GoalOf(world, site, m));
         n.Mode = SpeedMode.Free;
-        n.Flags |= (ushort)MoveFlags.NeedPath;
         n.TaskTime = PursuitSystem.RepathSeconds;
     }
 
@@ -501,6 +527,9 @@ public sealed partial class ProductionSystem : ITickSystem
         float dt = world.TickSeconds;
         foreach (var m in world.Machines.All)
             if (m.Farm is not null && Site(world, m.Site) is { Complete: true }) FarmTick(world, m, dt);
+        // An automatic machine works with nobody at it, at skill factor 1 (Verified, ProductionBuilding::vfunc_28 calls slot 150 with no operator when +0x3a9 is clear).
+        foreach (var m in world.Machines.All)
+            if (m.Data.IsAutomatic && m.Data.IsProducer && Site(world, m.Site) is { Complete: true }) ProduceStep(world, m, 1, dt);
 
         var table = world.Characters;
         int contributions = 0;
@@ -526,7 +555,7 @@ public sealed partial class ProductionSystem : ITickSystem
             // A turret: manned, facing it; the combat system fires it (docs/simulation.md "Combat", turrets). Its gunner counts as an operator, so it draws its power.
             if (m.Data.Function == Meitou.Data.World.ObjectRanges.TurretFunction)
             {
-                if (n.Velocity.X == 0 && n.Velocity.Z == 0) n.Yaw = MathF.Atan2(site.Position.X - n.Position.X, site.Position.Z - n.Position.Z);
+                if (n.Velocity.X == 0 && n.Velocity.Z == 0) n.Yaw = FacingTo(n, site);
                 m.Operators++;
                 cold.Operating = true;
                 continue;
@@ -535,8 +564,14 @@ public sealed partial class ProductionSystem : ITickSystem
             if (m.Data.IsTraining) { Train(ref n, cold, site, m, dt); continue; }
             // A chair (an implicit job): sat on, no work.
             if (!m.Data.Operable) { Settle(ref n, cold, site, m); continue; }
+            // An automatic machine (the 152 job): its hauler fills its inputs and carries its output away; the machine works by itself.
+            if (m.Data.IsAutomatic)
+            {
+                if (!StartHaul(world, cold, site, m) && n.Velocity.X == 0 && n.Velocity.Z == 0) n.Yaw = FacingTo(n, site);
+                continue;
+            }
             if (Settings.AutoHaul && StartHaul(world, cold, site, m)) continue;
-            if (n.Velocity.X == 0 && n.Velocity.Z == 0) n.Yaw = MathF.Atan2(site.Position.X - n.Position.X, site.Position.Z - n.Position.Z);
+            if (n.Velocity.X == 0 && n.Velocity.Z == 0) n.Yaw = FacingTo(n, site);
             m.Operators++;
             var stat = (StatsEnumerated)m.Data.Stat;
             float skill = m.Data.Stat > 0 ? Effective(cold, stat) : -1;
@@ -544,7 +579,8 @@ public sealed partial class ProductionSystem : ITickSystem
             bool worked;
             if (m.Data.IsResearch) worked = ResearchStep(world, m, s, dt, ref contributions);
             else if (m.Data.IsCrafting) worked = CraftStep(world, m, skill, s, dt);
-            else if (m.Farm is not null) worked = HarvestStep(world, m, skill, s, dt);
+            // A growing crop with water is tended: the operator plays the farm's clip (engine reading of task 87's start conditions, docs/game/buildings-production.md "Farming").
+            else if (m.Farm is not null) worked = HarvestStep(world, m, skill, s, dt) || Tended(m);
             else worked = ProduceStep(world, m, s, dt);
             cold.Operating = worked;
             // Operating trains the stat (Observed, FUN_1408c7250: 0.5, farming x1.5, through the continuous entry), every frame at the machine.
@@ -740,6 +776,10 @@ public sealed partial class ProductionSystem : ITickSystem
         return false;
     }
 
+    /// <summary>A farm whose crop is still growing and whose every input holds water.</summary>
+    static bool Tended(Machine m) =>
+        m.Farm is { Growth: < 1 } f && f.Death < m.Data.Farm!.DeathThreshold && m.Inputs.All(i => i.Rate <= 0 || i.Level + i.Count > 0);
+
     /// <summary>A plant is done (<b>Observed</b>, <c>FUN_1400e4800</c>): its growth -10, one more harvested.</summary>
     static void NextPlant(FarmState f)
     {
@@ -875,7 +915,7 @@ public sealed partial class ProductionSystem : ITickSystem
         var table = world.Characters;
         if (!table.TryResolveNext(who, out int slot) || table.Cold(slot) is not { IsPlayer: true } c || c.Inventory is null) return false;
         cold = c;
-        if (Gap(table.Next[slot].Position, site.Position) <= Settings.TransferReach + (Settings.Footprint?.Invoke(site.Record) ?? 0)) return true;
+        if (GapTo(site, table.Next[slot].Position) <= Settings.TransferReach) return true;
         world.Post("Out of trading range.");
         return false;
     }
@@ -915,12 +955,12 @@ public sealed partial class ProductionSystem : ITickSystem
     /// </summary>
     void TakeFromContainer(World world, Locks.Fixture container, CharacterCold cold, TakeFromMachine take)
     {
-        var storage = PlayerSystem.GridOf(world, container);
-        if (take.Index < 0 || take.Index >= storage.Items.Count) return;
+        var storage = PlayerSystem.GridOf(world, container, out var region);
+        if (take.Index < 0 || take.Index >= storage.Items.Count || !region.Holds(storage.Items[take.Index])) return;
         var item = storage.Items[take.Index];
         int mark = item.StolenFrom;
         if (container.Owner >= 0 && container.Owner != cold.Faction) item.StolenFrom = container.Owner;
-        int moved = InventoryCommands.MoveInto(storage, item, take.Count, cold.Inventory!, take.BagFirst, out bool worn);
+        int moved = InventoryCommands.MoveInto(storage, item, take.Count, cold.Inventory!, take.BagFirst, out bool worn, cold.Race?.StringId);
         if (storage.Items.Contains(item)) item.StolenFrom = mark;   // what stayed keeps its mark
         if (worn) Assembly?.RefreshEquipment(cold);
         if (moved > 0) world.Machines.Touch();
@@ -1004,7 +1044,7 @@ public sealed partial class ProductionSystem : ITickSystem
         {
             if (m.Storage is not { } storage || take.Index < 0 || take.Index >= storage.Items.Count) return;
             // What does not fit stays in the storage.
-            if (InventoryCommands.MoveInto(storage, storage.Items[take.Index], take.Count, root, take.BagFirst, out bool worn) > 0) world.Machines.Touch();
+            if (InventoryCommands.MoveInto(storage, storage.Items[take.Index], take.Count, root, take.BagFirst, out bool worn, cold.Race?.StringId) > 0) world.Machines.Touch();
             if (worn) Assembly?.RefreshEquipment(cold);
             return;
         }

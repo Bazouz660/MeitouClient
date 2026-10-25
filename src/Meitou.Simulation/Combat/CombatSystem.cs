@@ -136,7 +136,7 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
                 {
                     // The order itself changes no relation (the original's relation events come from the blows, Deeds); an attack that is not self-defence is an assault.
                     foreach (var id in order.Attackers)
-                        if (Engage(world, table, id, order.Target, now) && !order.Defensive && Crimes is { } crimes && table.TryResolveNext(order.Target, out int victimSlot))
+                        if (Engage(world, table, id, order.Target, now, order.Picked) && !order.Defensive && Crimes is { } crimes && table.TryResolveNext(order.Target, out int victimSlot))
                             crimes.Assault(world, id.Slot, victimSlot);
                     break;
                 }
@@ -161,7 +161,7 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
         }
     }
 
-    bool Engage(World world, CharacterTable table, CharacterId attacker, CharacterId target, int now)
+    bool Engage(World world, CharacterTable table, CharacterId attacker, CharacterId target, int now, bool picked)
     {
         if (!table.TryResolveNext(attacker, out int a) || !table.TryResolveNext(target, out int t) || a == t) return false;
         var cold = table.Cold(a)!;
@@ -176,6 +176,7 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
         }
         s.TargetSlot = t;
         s.TargetGeneration = target.Generation;
+        s.Picked = picked;
         s.ReadyTick = now + PauseTicks(world, a, 0);
         table.Next[a].Task = (byte)CharacterTask.Attack;
         cold.InCombat = true;
@@ -191,6 +192,7 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
         s.AttackTech = -1;
         s.NextBlow = 0;
         s.Engaged = false;
+        s.Picked = false;
         EndFight(table, slot);
     }
 

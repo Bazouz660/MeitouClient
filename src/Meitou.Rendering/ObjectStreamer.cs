@@ -37,8 +37,10 @@ sealed class ObjectStreamer(WorldObjects objects, ObjectMeshCache meshes) : IDis
         public bool Landmark;
         /// <summary>A door part: the open amount its <see cref="Transform"/> was last posed at (-1: not yet; <c>WorldObjectRenderer.PoseDoor</c>).</summary>
         public float DoorOpen = -1;
-        /// <summary>A turret part (<see cref="PlacedMesh.Joints"/>): the <see cref="TurretPose.Version"/> its <see cref="Transform"/> was last posed at (0: from its placement; <c>WorldObjectRenderer.PoseTurret</c>).</summary>
+        /// <summary>A turret part (<see cref="PlacedMesh.Joints"/>): the <see cref="TurretPose.Version"/> its <see cref="Transform"/> was last posed at (0: from its placement; <c>WorldObjectRenderer.PoseJoints</c>).</summary>
         public int TurretStamp;
+        /// <summary>A part under a rotor: the <c>WorldObjectRenderer.AdvanceRotors</c> frame its <see cref="Transform"/> was last posed at (-1: not yet).</summary>
+        public long RotorFrame = -1;
         public GpuObjectMesh? Gpu;
         public ObjectMaterialSet? Materials;
         /// <summary>Whether it stands in a loaded building's interior, as last found (<c>WorldObjectRenderer.InInterior</c>); one object, so a view recorded on another thread reads it whole.</summary>
@@ -249,8 +251,9 @@ sealed class ObjectStreamer(WorldObjects objects, ObjectMeshCache meshes) : IDis
         return taken;
     }
 
-    float NearKept(Vector3 p) { float d = float.PositiveInfinity; foreach (var k in Kept) d = MathF.Min(d, Vector3.Distance(k, p)); return d; }
-    float NearKeptZone(double x0, double z0) { float d = float.PositiveInfinity; foreach (var k in Kept) d = MathF.Min(d, ZoneDistance(x0, z0, k)); return d; }
+    // Indexed: a foreach over the interface boxed an enumerator per call, for every object and zone scanned.
+    float NearKept(Vector3 p) { float d = float.PositiveInfinity; var kept = Kept; for (int i = 0; i < kept.Count; i++) d = MathF.Min(d, Vector3.Distance(kept[i], p)); return d; }
+    float NearKeptZone(double x0, double z0) { float d = float.PositiveInfinity; var kept = Kept; for (int i = 0; i < kept.Count; i++) d = MathF.Min(d, ZoneDistance(x0, z0, kept[i])); return d; }
 
     /// <summary>Distance from the nearest of <paramref name="eye"/>, <see cref="Ahead"/> and <see cref="Kept"/> to <paramref name="p"/>.</summary>
     public float Near(Vector3 eye, Vector3 p)
@@ -258,6 +261,11 @@ sealed class ObjectStreamer(WorldObjects objects, ObjectMeshCache meshes) : IDis
         float d = MathF.Min(Vector3.Distance(eye, p), NearKept(p));
         return Ahead is { } a ? MathF.Min(d, Vector3.Distance(a, p)) : d;
     }
+    /// <summary>
+    /// The distance that starts new work for <paramref name="p"/> (a mesh request, a finer texture or mesh level): <see cref="Near"/>, but during a flight
+    /// only from <see cref="Ahead"/> and <see cref="Kept"/>, so the flight path keeps what it has and loads nothing (docs/render-objects.md "Arrival prefetch").
+    /// </summary>
+    public float LoadNear(Vector3 eye, Vector3 p) => Ahead is { } a ? MathF.Min(Vector3.Distance(a, p), NearKept(p)) : Near(eye, p);
     float NearZone(double x0, double z0, Vector3 eye)
     {
         float d = MathF.Min(ZoneDistance(x0, z0, eye), NearKeptZone(x0, z0));
@@ -423,7 +431,8 @@ sealed class ObjectStreamer(WorldObjects objects, ObjectMeshCache meshes) : IDis
                 switch (inst.Mesh.Status)
                 {
                     case ObjectMesh.State.None:
-                        meshes.Request(inst.Mesh, d, Rank(eye, inst.Centre, range) - RequestMargin);
+                        // Kept unparked (the zone test would bring it back every frame), but only near the arrival or a kept point is it asked for during a flight.
+                        if (Ahead is null || LoadNear(eye, inst.Centre) - RequestMargin <= range) meshes.Request(inst.Mesh, d, Rank(eye, inst.Centre, range) - RequestMargin);
                         waiting++;
                         break;
                     case ObjectMesh.State.Loading or ObjectMesh.State.Uploading:

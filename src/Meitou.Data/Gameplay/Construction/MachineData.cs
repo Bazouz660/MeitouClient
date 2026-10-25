@@ -67,8 +67,18 @@ public sealed record MachineData
     public float PowerCapacity { get; init; }
     /// <summary>The raw <c>max operators</c> (building, else functionality; 0 none): a consumer's draw is x operators / this when it is above 0 (<b>Observed</b>, <c>vfunc_163</c>).</summary>
     public int PowerOperators { get; init; }
+    /// <summary>
+    /// An automatic machine: the raw <c>max operators</c> is 0 (<b>Verified</b>, <c>FUN_1402a3750</c>). It works with nobody at it (<c>ProductionBuilding::vfunc_28</c>), and its menu
+    /// order is 152 "Operating automatic machine" (Auto-Haul) instead of 87.
+    /// </summary>
+    public bool IsAutomatic { get; init; }
     /// <summary>A wind generator: function 5 without <c>consumes</c> (<b>Observed</b>, the factory <c>FUN_14057cc70</c>).</summary>
     public bool IsWind { get; init; }
+    /// <summary>
+    /// The <c>wind speed rotation min/max</c> of the building's first ROTATION_WIND_SPEED part (depth first through <c>parts</c>, collision-less as the layout's rotors; max raised to min): a wind
+    /// generator's output share is <see cref="Meitou.Data.World.RotorSpec.WindShare"/> of the wind there (<c>PhysicsCollection::getWindRotationPower</c>). Null without such a part (the share is 0).
+    /// </summary>
+    public (float Min, float Max)? WindRotor { get; init; }
     /// <summary>The BUILDING's raw <c>output rate</c> (the exe's <c>+0x1a8</c>), a factor of the efficiency its sound emitter is told (docs/audio.md "Point emitters"); 1 without one.</summary>
     public float OutputRate { get; init; } = 1;
     public bool IsBattery => PowerCapacity > 0;
@@ -103,6 +113,22 @@ public sealed record MachineData
         return (Math.Max(1, building.GetInt("storage size width", 18)), Math.Max(1, building.GetInt("storage size height", 18)));
     }
 
+    static (float Min, float Max)? WindRotorOf(GameDatabase db, GameRecord holder, int depth)
+    {
+        if (depth > 8) return null;
+        foreach (var r in holder.GetReferences("parts"))
+        {
+            if (db.Find(r.TargetStringId) is not { Type: FcsRecordType.BUILDING_PART } part) continue;
+            if (part.GetInt("rotation function") == Meitou.Data.World.RotorSpec.WindSpeed && part.GetPath("xml collision").Length == 0)
+            {
+                float min = part.GetFloat("wind speed rotation min");
+                return (min, MathF.Max(min, part.GetFloat("wind speed rotation max")));
+            }
+            if (WindRotorOf(db, part, depth + 1) is { } below) return below;
+        }
+        return null;
+    }
+
     public static MachineData? From(GameDatabase db, GameRecord building)
     {
         var function = building.GetReferences("functionality") is [var link, ..] ? db.Find(link.TargetStringId) : null;
@@ -125,7 +151,8 @@ public sealed record MachineData
             if (function.GetReferences("produces") is [var p, ..] && db.Find(p.TargetStringId) is not null) output = new RecipeOutput(p.TargetStringId, p.Values.Value0);
         }
         int maxOperators = building.GetInt("max operators", -1);
-        int powerOperators = maxOperators > 0 ? maxOperators : Math.Max(0, function?.GetInt("max operators") ?? 0);
+        // The exe's +0x3ac (Verified, FUN_1402a3750): the BUILDING's value unless below 0, then the functionality's.
+        int rawOperators = maxOperators >= 0 ? maxOperators : function?.GetInt("max operators", -1) ?? -1;
         bool wind = fn == GeneratorFunction && inputs.Count == 0;
         if (maxOperators <= 0) maxOperators = Math.Max(1, function?.GetInt("max operators", 1) ?? 1);
         var craft = function is not null ? CraftBench.From(db, function) : null;
@@ -166,8 +193,10 @@ public sealed record MachineData
             StackBonusMult = building.GetFloat("stackable bonus mult", 1),
             PowerOutput = building.GetInt("power output"),
             PowerCapacity = building.GetInt("power capacity"),
-            PowerOperators = powerOperators,
+            PowerOperators = Math.Max(0, rawOperators),
+            IsAutomatic = rawOperators == 0,
             IsWind = wind,
+            WindRotor = wind ? WindRotorOf(db, building, 0) : null,
             OutputRate = building.GetFloat("output rate", 1),
         };
     }
@@ -262,6 +291,11 @@ public sealed class ResourceField
         this.map = map;
         this.nodes = nodes;
     }
+
+    /// <summary>Whether there is an areas map (without one every value is 0).</summary>
+    public bool HasMap => map is not null;
+    /// <summary>Whether rocks are known (without them IRON, COPPER and CARBON are 0).</summary>
+    public bool HasNodes => nodes is not null;
 
     /// <summary>The field prefix of a MiningResource (<c>read_stone_n3</c>).</summary>
     static string Prefix(int resource) => resource switch

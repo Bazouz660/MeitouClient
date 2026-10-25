@@ -103,7 +103,7 @@ public sealed partial class MyGuiScreenHost
     /// </summary>
     bool CycleFocus(bool backwards)
     {
-        if (frame.LastOrDefault() is not { } top) return false;
+        if (frame.LastOrDefault(f => !screens[f.Id].Panel) is not { } top) return false;   // Tab never moves into a HUD panel (it is change_squad there)
         var stops = top.Controls.Where(c => IsEditStop(c) || IsButtonStop(c)).ToList();
         if (stops.Count == 0) return false;
         int current = stops.FindIndex(c => focus == (top.Id, c.Name) || keyButton == (top.Id, c.Name)), firstEdit = stops.FindIndex(IsEditStop);

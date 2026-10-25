@@ -57,8 +57,18 @@ public sealed class Squad
     public Ai.Blackboard? Ai { get; set; }
     /// <summary>The dialogue-given AI a save or its stored state held, until the AI attaches a blackboard and applies it (then null).</summary>
     public Saving.AiSave? SavedAi { get; set; }
+    /// <summary>The package it ran when it left the world (a kept or saved squad's), until the AI attaches a blackboard: an occupation goes on (<see cref="Ai.AiSystem"/>).</summary>
+    public string? LeftPackage { get; set; }
+    /// <summary>The active half of a save's wild platoon (<see cref="Platoon.Wild"/>): the AI runs it, as the wild sites' own squads.</summary>
+    public bool Wild { get; init; }
     /// <summary>Whom a campaign squad in its assault also treats as enemies (<see cref="WarTargets"/>; written by the population's serial look, read by the aggro).</summary>
     public WarTargets War { get; set; } = WarTargets.None;
+    /// <summary>
+    /// Each member's formation slot (<see cref="Formation.Layout"/>), rebuilt by the movement's serial step when <see cref="FormationKey"/> (formation, head, members and roles)
+    /// changes. Derived state: not saved or hashed.
+    /// </summary>
+    public Dictionary<CharacterId, Vector2> FormationSlots { get; set; } = [];
+    public ulong FormationKey { get; set; }
 }
 
 /// <summary>

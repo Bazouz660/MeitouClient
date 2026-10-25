@@ -40,9 +40,19 @@ public sealed class Inventory(int width, int height)
         return false;
     }
 
-    /// <summary>Whether a w x h footprint at (x, y) of <paramref name="section"/> overlaps no item (bounds are the caller's to check).</summary>
+    /// <summary>
+    /// The rectangles the grid is split into (a building shop's stock, one per stock container, <see cref="Trading.Shop.ForBuilding"/>): an item lies wholly inside one, the cells outside
+    /// them hold nothing. Null: the whole grid is one.
+    /// </summary>
+    public IReadOnlyList<GridRegion>? Regions { get; init; }
+
+    /// <summary>Whether a w x h footprint at (x, y) lies inside one of the <see cref="Regions"/> (always without them).</summary>
+    public bool InRegion(int x, int y, int w, int h) => Regions is not { } regions || regions.Any(r => r.Contains(x, y, w, h));
+
+    /// <summary>Whether a w x h footprint at (x, y) of <paramref name="section"/> overlaps no item and lies inside one of the <see cref="Regions"/> (other bounds are the caller's to check).</summary>
     public bool IsFree(string section, int x, int y, int w, int h)
     {
+        if (!InRegion(x, y, w, h)) return false;
         foreach (var i in Items)
         {
             if (i.Section != section) continue;
@@ -189,4 +199,13 @@ public sealed class Inventory(int width, int height)
             i.Contents?.Hash(ref h);
         }
     }
+}
+
+/// <summary>A rectangle of an inventory's cells (<see cref="Inventory.Regions"/>).</summary>
+public readonly record struct GridRegion(int X, int Y, int Width, int Height)
+{
+    public bool Contains(int x, int y, int w, int h) => x >= X && y >= Y && x + w <= X + Width && y + h <= Y + Height;
+
+    /// <summary>Whether <paramref name="item"/>'s top-left cell lies inside.</summary>
+    public bool Holds(ItemInstance item) => item.X >= X && item.X < X + Width && item.Y >= Y && item.Y < Y + Height;
 }

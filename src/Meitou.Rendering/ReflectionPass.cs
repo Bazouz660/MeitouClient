@@ -103,6 +103,12 @@ public sealed class ReflectionPass : IDisposable
     public float FoliageReach => CullToWater ? FoliageDistance : Math.Max(FoliageDistance, 3000);
     /// <summary>Meitou: draw only the part of the reflection the water on the screen looks up (<see cref="WaterRect"/>), and nothing with no water in view.</summary>
     public bool CropToWater { get; set; } = true;
+    /// <summary>
+    /// The host's loading warm-up: every frame draws the whole mirrored view, water in view or not (no crop, no cull, no reuse), so that the pipelines it
+    /// draws with are made under the loading cover. Made the first time water came into view, they held that frame 2-4 s with a cold driver cache (the
+    /// first run after an install, an update or a new driver; docs/bench.md "Play benchmark").
+    /// </summary>
+    public bool Warm { get; set; }
     /// <summary>Extra ground (units) around a mirrored thing's footprint tested for water: the waves' ripples shift the lookup, and the terrain grid is coarse.</summary>
     public float WaterPad { get; set; } = 60;
     /// <summary>The distance from the eye beyond which the weather's fog hides every surface this frame (<see cref="FogVolumes.AtmosphereDistance"/>), set by the frame loop; null: none.</summary>
@@ -135,7 +141,7 @@ public sealed class ReflectionPass : IDisposable
     /// </summary>
     public bool MayShow(Vector3 centre, float radius)
     {
-        if (!CullToWater) return true;
+        if (!CullToWater || Warm) return true;
         float plane = WorldWater.Height;
         float he = realEye.Y - plane, hc = centre.Y - plane;
         if (hc + radius <= -WaterPad) return false;   // wholly below the water: the oblique clip removes it
@@ -252,7 +258,7 @@ public sealed class ReflectionPass : IDisposable
         Poll();
         lapAt = Stopwatch.GetTimestamp();
         Array.Clear(LastPhaseMs);
-        if (CanReuse(camera, fullWidth, fullHeight)) { Valid = hasImage; skipped++; age++; return; }   // the image, or the verdict that there is no water in view
+        if (!Warm && CanReuse(camera, fullWidth, fullHeight)) { Valid = hasImage; skipped++; age++; return; }   // the image, or the verdict that there is no water in view
         age = 0;
         lastEye = eye;
         lastView = camera.View;
@@ -263,7 +269,7 @@ public sealed class ReflectionPass : IDisposable
         var rect = new Vector4(-1, -1, 1, 1);
         NearestWater = float.NaN;
         noWater = false;
-        if (CropToWater)
+        if (CropToWater && !Warm)
         {
             if (WaterRect(camera, (float)fullWidth / fullHeight, out float nearestWater) is { } wet) { rect = wet; NearestWater = nearestWater; }
             else

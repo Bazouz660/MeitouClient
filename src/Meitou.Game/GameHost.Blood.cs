@@ -88,7 +88,7 @@ sealed partial class GameHost
         bloodTick = world.Tick;
         if (ticks > 0 && decalStore is { } aging && gpu.Decals is { } decals) aging.Age(ticks * tick, decals.Drawn);
         // The pieces move by the game time between frames, the tick count plus the simulation's alpha, so they fly smoothly at the display rate, not in tick steps.
-        double clock = world.Tick + session.SimulationAlpha;
+        double clock = session.ShownTick + session.SimulationAlpha;   // the shown tick: one run ahead is not on screen yet
         UpdateDebris(world, (float)Math.Clamp((clock - debrisClock) * tick, 0, 0.5));
         debrisClock = clock;
     }
@@ -105,7 +105,7 @@ sealed partial class GameHost
         bloodQueue.Clear();
         bloodFor = world;
         bloodTick = world.Tick;
-        debrisClock = world.Tick + session.SimulationAlpha;
+        debrisClock = session.ShownTick + session.SimulationAlpha;
         if (decalStore is not { } store) return;
         store.Clear();
         world.BloodMarks = bloodQueue;

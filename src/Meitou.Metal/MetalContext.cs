@@ -944,7 +944,8 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
     /// <inheritdoc/>
     public void Finish()
     {
-        if (Frame.Open) EndFrame();
+        // A still that never opened a frame (no panel matched, or preparation failed) still has to shut down cleanly.
+        if (slot >= 0 && Frame.Open) EndFrame();
         var marker = Queue.CommandBuffer();
         marker.Commit();
         marker.WaitUntilCompleted();

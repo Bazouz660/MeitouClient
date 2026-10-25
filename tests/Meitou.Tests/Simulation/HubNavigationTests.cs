@@ -61,7 +61,7 @@ public class HubNavigationTests
                     await Task.WhenAll(fresh.Select(z => (Task)nav.LoadZone(z)));
                     foreach (var (z, seen) in loaded.ToList())
                         if (tick - seen > 900) { nav.UnloadZone(z); loaded.Remove(z); }
-                    if (fresh.Count > 0) world.Commands.Enqueue(new RepathCommand { Tick = world.Tick });
+                    if (fresh.Count > 0) world.Commands.Enqueue(new RepathCommand { Tick = world.Tick, Zones = fresh.ToHashSet() });
                 }
                 world.RunTick();
                 var p = world.Characters.Previous[leader.Slot].Position;

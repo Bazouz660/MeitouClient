@@ -150,34 +150,6 @@ public sealed class PopulationData
         }
     }
 
-    float playerTownRadius = -1, playerTownExtent = -1;
-
-    /// <summary>A player town's radius as the campaigns measure it: the TOWN <c>player_town_template</c>'s <c>size radius</c> × its multiplier (500 when the data has none).</summary>
-    public float PlayerTownRadius
-    {
-        get
-        {
-            if (playerTownRadius < 0) PlayerTemplate();
-            return playerTownRadius;
-        }
-    }
-
-    /// <summary>A player town's radius as the in-town test measures it (<see cref="TownData.Radius"/> of <c>player_town_template</c>, an outpost: 1250 × its multiplier).</summary>
-    public float PlayerTownExtent
-    {
-        get
-        {
-            if (playerTownExtent < 0) PlayerTemplate();
-            return playerTownExtent;
-        }
-    }
-
-    void PlayerTemplate()
-    {
-        var template = Db.Find(Construction.PlayerTown.Template) is { Type: FcsRecordType.TOWN } r ? TownData.From(r) : null;
-        playerTownRadius = template is { SizeRadius: > 0 } ? template.SizeRadius * template.TownRadiusMult : 500;
-        playerTownExtent = template?.Radius ?? 1250;
-    }
 
     /// <summary>The BIOME_GROUP id at a point (null without a biome map or outside every group).</summary>
     public string? BiomeGroupAt(Vector2 at)
@@ -189,32 +161,39 @@ public sealed class PopulationData
     }
 
     /// <summary>
-    /// The trader's next town (the town chooser <c>FUN_14092c5e0</c> as <c>Package_WanderingTrader</c> calls it, docs/game/ai.md "Package classes", Verified by code): placed
-    /// towns other than <paramref name="exclude"/> of type town, village, slave camp or military (mask 0x6c), public or of <paramref name="faction"/>, not hostile to it and not in
-    /// its <c>no-go zones</c>; the 4 nearest to <paramref name="at"/> (X/Z), one drawn uniformly by <paramref name="roll"/>. -1 when there is none. Player towns would also qualify
-    /// by type, but only when public or the trader's own, which an AI squad's never are. Unread here: the town faction's flags +0x1d0 and type +0x34 (8 only for 8) and a
-    /// faction test <c>FUN_1406b26d0</c> (<b>Unknown</b>).
+    /// The trader's next town (the town chooser <c>FUN_14092c5e0</c> as <c>Package_WanderingTrader</c> calls it, docs/game/ai.md "Package classes", Verified by code): towns other than
+    /// <paramref name="exclude"/> of type town, village, slave camp or military (mask 0x6c) or any player town (<paramref name="outposts"/>), public or of <paramref name="faction"/>,
+    /// not hostile to it and not in its <c>no-go zones</c>; the 4 nearest to <paramref name="at"/> (X/Z), one drawn uniformly by <paramref name="roll"/>. None when there is none.
+    /// Placed towns come before the outposts in a tie (engine choice: the original's order over its two lists is <b>Unknown</b>). Unread here: the town faction's flags +0x1d0 and
+    /// type +0x34 (8 only for 8) and a faction test <c>FUN_1406b26d0</c> (<b>Unknown</b>).
     /// </summary>
-    public int TraderTown(int faction, Vector2 at, int exclude, ulong roll)
+    public CampaignTown TraderTown(int faction, Vector2 at, CampaignTown exclude, IReadOnlyList<Construction.PlayerTown> outposts, ulong roll)
     {
         var fd = faction >= 0 && faction < Factions.Count ? Factions[faction] : null;
-        Span<(float D, int Site)> best = stackalloc (float, int)[4];
+        Span<(float D, CampaignTown Town)> best = stackalloc (float, CampaignTown)[4];
         int n = 0;
-        foreach (var site in Sites)
+        bool Eligible(Vector2 centre, int theirs, bool open) =>
+            (open || theirs == faction) && !(faction >= 0 && theirs >= 0 && Relations.IsHostile(faction, theirs))
+            && !(fd is { NoGoZones.Count: > 0 } && BiomeGroupAt(centre) is { } group && fd.NoGoZones.Any(z => z.Id == group));
+        static void Offer(Span<(float D, CampaignTown Town)> best, ref int n, float d, CampaignTown town)
         {
-            if (site.Index == exclude || site.Town.Type is not (TownType.Town or TownType.Village or TownType.SlaveCamp or TownType.Military)) continue;
-            int theirs = site.Index < SiteFactions.Count ? SiteFactions[site.Index] : -1;
-            if (!site.Town.IsPublic && theirs != faction) continue;
-            if (faction >= 0 && theirs >= 0 && Relations.IsHostile(faction, theirs)) continue;
-            var centre = new Vector2(site.Position.X, site.Position.Z);
-            if (fd is { NoGoZones.Count: > 0 } && BiomeGroupAt(centre) is { } group && fd.NoGoZones.Any(z => z.Id == group)) continue;
-            float d = Vector2.DistanceSquared(at, centre);
-            // Insertion into the 4 nearest (a tie keeps site order, as the original's map keeps the first of equal keys).
+            // Insertion into the 4 nearest (a tie keeps the first, as the original's map keeps the first of equal keys).
             int k = n < 4 ? n++ : 4;
             while (k > 0 && best[k - 1].D > d) { if (k < 4) best[k] = best[k - 1]; k--; }
-            if (k < 4) best[k] = (d, site.Index);
+            if (k < 4) best[k] = (d, town);
         }
-        return n == 0 ? -1 : best[Rng.Int(roll, n)].Site;
+        foreach (var site in Sites)
+        {
+            if (site.Index == exclude.Site || site.Town.Type is not (TownType.Town or TownType.Village or TownType.SlaveCamp or TownType.Military)) continue;
+            var centre = new Vector2(site.Position.X, site.Position.Z);
+            if (Eligible(centre, site.Index < SiteFactions.Count ? SiteFactions[site.Index] : -1, site.Town.IsPublic)) Offer(best, ref n, Vector2.DistanceSquared(at, centre), CampaignTown.OfSite(site.Index));
+        }
+        foreach (var town in outposts)
+        {
+            var centre = new Vector2(town.Position.X, town.Position.Z);
+            if (town.Number != exclude.PlayerTown && Eligible(centre, town.Owner, town.Public)) Offer(best, ref n, Vector2.DistanceSquared(at, centre), CampaignTown.OfPlayer(town.Number));
+        }
+        return n == 0 ? CampaignTown.None : best[Rng.Int(roll, n)].Town;
     }
 
     /// <summary>FACTION <c>road preference</c> of a position in <see cref="Factions"/>; 0 (never the roads) for none.</summary>
@@ -242,7 +221,7 @@ public sealed class PopulationData
     public Meitou.Data.Gameplay.Combat.CombatDatabase Combat => LazyInitializer.EnsureInitialized(ref combat, () => Meitou.Data.Gameplay.Combat.CombatDatabase.From(Db));
     ItemFactory? items;
     /// <summary>Makes item instances and the starting inventories (loadout and the CHARACTER's <c>inventory</c> list).</summary>
-    public ItemFactory Items => LazyInitializer.EnsureInitialized(ref items, () => new ItemFactory(Db, Bodies.Constants));
+    public ItemFactory Items => LazyInitializer.EnsureInitialized(ref items, () => new ItemFactory(Db, Bodies.Constants, () => Combat));
     Meitou.Data.Gameplay.Ai.AiDatabase? ai;
     /// <summary>The AI_TASK and AI_PACKAGE records with their inheritance resolved (<see cref="Ai.AiSystem"/>).</summary>
     public Meitou.Data.Gameplay.Ai.AiDatabase Ai => LazyInitializer.EnsureInitialized(ref ai, () => new Meitou.Data.Gameplay.Ai.AiDatabase(Db));

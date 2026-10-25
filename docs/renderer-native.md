@@ -16,7 +16,7 @@ recording affects the whole submitted frame; never overwrite a used DeviceBuffer
 Buffers/Textures/Samplers define owned/borrowed resource bindings. FrameScratch per-slot bump
 allocation tracks120-frame maximum+25%headroom, shrinks at>2x need; Cap overflow fails and caller
 handles it. Staging can shed unused chunks; descriptor-referenced constants retain storage.
-PipelineLibrary caches explicit descriptions; prepare ahead, LatePipelines records late creation.
+PipelineLibrary caches explicit descriptions and records late creation (LatePipelines). `Prepare` has no caller: the loading warm-up draws what makes them, with the reflection and cloud passes forced on ([bench](bench.md) "Play benchmark").
 CommandList records bindings/draw/dispatch/transfer/dynamic rendering, preserving host pass order.
 
 ## Synchronization and shaders

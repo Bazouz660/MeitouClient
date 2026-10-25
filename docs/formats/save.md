@@ -299,8 +299,8 @@ PLATOON keys (**Verified**):
   and 3+ into 2, default 2): 1 residents (and bar squads), 2 roaming; every wild platoon of the samples has 2 (nests have only pool 2).
 - `persistent` (platoon +0x115, [persistent platoons](../game/factions-squads-towns.md#1-object-model)) is true on every `sqt` 1 platoon (census of saves
   1, 2, 3, wade, new, quicksave and three autosaves: residents, bar squads and the player's, 0 exceptions) and false on most `sqt` 2 ones (some `sqt` 2
-  town platoons are persistent, why **Unknown**). Meitou writes true with `sqt` 1 and false with 2; written false, the original would delete a resident
-  squad when it leaves the loaded area.
+  town platoons are persistent, why **Unknown**; an occupation sets it, [ai.md](../game/ai.md#package-classes)). Meitou writes true with `sqt` 1 and false
+  with 2 but while the platoon's package is an occupation; written false, the original would delete a resident squad when it leaves the loaded area.
 - `is resident` is set exactly on the platoons with a `homebuilding` (census of saves 1, 2, 3, wade: 0 exceptions); Meitou writes both for a squad with a home.
 - `hometown` (handle) puts the platoon into that town's or nest's pool at load (`FUN_1407ec8d0`; the platoon's faction and player status must match the town's);
   the pool counts living characters, `char count` while the platoon is not active (`FUN_1408f6a40`). `basetown` is only kept as a TOWN record pointer.
@@ -440,10 +440,11 @@ An outpost's entry (**Verified** by code, `Town::vfunc_17` `14036eb20` with `FUN
 instance id, or a new `<n>-quick.save-INGAME` (kept on the town, so later saves reuse it); target = the town's TOWN
 record (`player_town_template`); position = the town's, absolute; quaternion (0, 0, 0, 0); state `<id>-S5e`. Its
 GAMESTATE_TOWN (`Town::vfunc_85` `140376b80` and the TownBase writer) is named `Town state <name>` and has the base
-towns' keys: `instance` = the entry id, `is nest` false, `building material`, `public` (false for an outpost), `plevel`,
+towns' keys: `instance` = the entry id, `is nest` false, `building material`, `public` (Town +0x380, the [town panel](../game/ui-screens.md#town-panel)'s Open to public, false when made; **Verified**, `param_1[0x70]`; Meitou round-trips it as `PlayerTown.Public`), `plevel`,
 `replacementTown`, `trade goods`, `faction` = the player faction, `factions here<i>`, `discovered` / `explored` /
 `recently discovered`, `artifacts count`, the handle `hand*` (type 13 TOWN) and the population floats; plus int
-`override` (Town+0x51c, 0 when made, meaning **Unknown**), written only for a town whose faction is the player's.
+`override` (Town+0x51c, the player town's [reassessed radius](../game/buildings-production.md#placement); 0 when made), written only for a town
+whose faction is the player's. How the float is stored under an int key is **Unknown**; Meitou writes 0 and reassesses on load.
 Buildings name it by their `town` handle. Whether the loader takes the name from the record name is **Unknown**.
 
 Meitou writes the level towns' pool keys (`pop`, `popd`, `pop2`, `popd2`, `tod`, `started`, `ded`) for every town it made or loaded pools for, and

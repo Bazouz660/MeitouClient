@@ -205,8 +205,8 @@ sealed partial class GameHost
                 float time = layer.Time, weight = layer.Weight;
                 // Between ticks the clip time and weight move on from the last snapshot (a wrap of a looping clip just shows the new time).
                 if (before is not null)
-                    foreach (var old in before.Animations)
-                        if (old.Name == layer.Name)
+                    for (int k = 0; k < before.Animations.Count; k++)   // indexed: a foreach over the list's interface boxed an enumerator per layer per frame
+                        if (before.Animations[k] is var old && old.Name == layer.Name)
                         {
                             if (layer.Time >= old.Time) time = old.Time + (layer.Time - old.Time) * alpha;
                             weight = old.Weight + (layer.Weight - old.Weight) * alpha;

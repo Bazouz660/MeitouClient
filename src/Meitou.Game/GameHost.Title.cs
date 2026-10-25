@@ -1,8 +1,12 @@
 using System.Numerics;
+using Meitou.Data;
 using Meitou.Data.Particles;
 using Meitou.Data.Ui;
 using Meitou.Data.World;
 using Meitou.Rendering;
+using Meitou.Simulation;
+using Meitou.Simulation.Saving;
+using Meitou.Data.Save;
 using EffectType = Meitou.Data.Particles.EffectType;
 using WeatherEffectEntry = Meitou.Data.Particles.WeatherEffectEntry;
 
@@ -35,7 +39,7 @@ sealed partial class GameHost
     void EnsureTitleScene()
     {
         if (titleComposition is not null || scene.Database is not { } db) return;
-        titleComposition = new(install, db, scene.GroundAt, SandboxRecord(db));
+        titleComposition = new(install, db, scene.GroundAt, SandboxRecord(db), TitleSaveAppearance(db));
         if (popData is { } data && animationLengths is { } lengths && animationLibrary is { } library)
             titleBattle = TitleBattle.Create(data, scene.GroundAt, titleComposition.Fights, lengths, library);
         if (ActiveCharacters is { } characters)
@@ -45,6 +49,80 @@ sealed partial class GameHost
             titleAppearances = [.. list.Items.Select(c => c.Appearance)];
             foreach (var appearance in titleAppearances) characters.Prefetch(appearance);
         }
+    }
+
+    /// <summary>The first-created character in the player's first squad in the save Continue will load, drawn with its saved look and worn kit.</summary>
+    Meitou.Data.Characters.CharacterAppearance? TitleSaveAppearance(GameDatabase db)
+    {
+        try
+        {
+            SaveGame? save = StartSave;
+            if (save is null)
+            {
+                var slots = SaveCatalog.Scan(QuickSave.DefaultRoot, install.SaveDirectory,
+                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "kenshi", "save"));
+                if (slots.FirstOrDefault() is { } slot) save = SaveGame.Load(slot.Folder);
+            }
+            if (save?.PlayerFaction is not { } faction || popData?.Appearances is not { } appearances) return null;
+            var platoons = save.Platoons.Where(p => p.FactionId == faction.Id && p.File is not null && p.Characters.Count > 0)
+                .OrderBy(p => p.Record.Ints.GetValueOrDefault("squad index", int.MaxValue)).ToArray();
+            var candidates = platoons.SelectMany(p => p.Characters
+                .Where(c => db.Find(c.RecordId)?.Type == Meitou.Data.Fcs.FcsRecordType.CHARACTER && c.Medical?.Bools.GetValueOrDefault("dead") != true)
+                .Select(c => (Platoon: p, Character: c))).ToArray();
+            if (candidates.Length == 0) return null;
+            var startingRecords = StartingCharacterRecords(db, platoons[0].SquadTemplate);
+            var startingCandidates = candidates.Where(c => startingRecords.Contains(c.Character.RecordId)).ToArray();
+            // Player-hired characters are written into the player's faction too. Restrict to the start roster when it resolves,
+            // including when every starting character has died, so a recruit never replaces the protagonist.
+            if (startingRecords.Count > 0) candidates = startingCandidates;
+            if (candidates.Length == 0) return null;
+            // Squad and character slot order makes a dead first member fall through to the next living one.
+            var character = candidates.OrderBy(c => c.Platoon.Record.Ints.GetValueOrDefault("squad index", int.MaxValue))
+                .ThenBy(c => c.Character.Handle.I).First().Character;
+            var platoon = character.Platoon;
+            if (character is null) return null;
+            int serial = character.Handle.S & 0x7FFFFFFF;
+            var items = character.Inventory is { } inventory && platoon?.File is { } file ? SaveInventory.Read(file, inventory) : [];
+            if (items.Count > 0 && SavedKit.LoadoutOf(character.Appearance, items, db, serial) is { } exactKit &&
+                appearances.Create(character.RecordId, exactKit) is { } exact) return exact;
+            var rolled = appearances.Create(character.RecordId, character.OwnerFactionId.Length > 0 ? character.OwnerFactionId : null, serial);
+            if (rolled?.Loadout is not { } generated) return null;
+            var worn = SavedKit.Wear(generated, character.Appearance, db);
+            return worn is null ? rolled : appearances.Create(character.RecordId, worn) ?? rolled;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or FormatException or ArgumentException or Meitou.Data.Fcs.FcsFormatException)
+        {
+            return null;
+        }
+    }
+
+    static HashSet<string> StartingCharacterRecords(GameDatabase db, string startOrTemplateId)
+    {
+        var characters = new HashSet<string>(StringComparer.Ordinal);
+        var visited = new HashSet<string>(StringComparer.Ordinal);
+        void Add(string id)
+        {
+            if (id.Length == 0 || !visited.Add(id) || db.Find(id) is not { } record) return;
+            if (record.Type is Meitou.Data.Fcs.FcsRecordType.CHARACTER or Meitou.Data.Fcs.FcsRecordType.ANIMAL_CHARACTER)
+            {
+                characters.Add(id);
+                return;
+            }
+            if (record.Type == Meitou.Data.Fcs.FcsRecordType.NEW_GAME_STARTOFF)
+            {
+                foreach (var member in Meitou.Data.Gameplay.NewGameStart.From(record).Squad) Add(member.Id);
+                return;
+            }
+            if (record.Type is Meitou.Data.Fcs.FcsRecordType.SQUAD_TEMPLATE or Meitou.Data.Fcs.FcsRecordType.UNIQUE_SQUAD_TEMPLATE)
+                foreach (var start in Meitou.Data.Gameplay.NewGameStart.LoadAll(db).Where(s => s.Squad.Any(m => m.Id == id)))
+                    foreach (var member in start.Squad) Add(member.Id);
+            if (record.Type is not (Meitou.Data.Fcs.FcsRecordType.SQUAD_TEMPLATE or Meitou.Data.Fcs.FcsRecordType.UNIQUE_SQUAD_TEMPLATE)) return;
+            var template = Meitou.Data.Gameplay.SquadTemplate.From(record);
+            if (template.Leader is { } leader) Add(leader.Id);
+            foreach (var member in template.Squad.Concat(template.Squad2).Concat(template.ChooseFrom).Concat(template.Animals).Concat(template.Animals2)) Add(member.Id);
+        }
+        Add(startOrTemplateId);
+        return characters;
     }
 
     void FillTitleCharacters(CharacterDrawList list)

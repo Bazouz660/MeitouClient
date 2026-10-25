@@ -4,6 +4,7 @@ using Meitou.Data.Fcs;
 using Meitou.Data.Gameplay;
 using Meitou.Data.World;
 using Meitou.Simulation;
+using Meitou.Simulation.Ai;
 using Meitou.Simulation.Combat;
 using SimWorld = Meitou.Simulation.World;
 
@@ -17,10 +18,13 @@ public class WildTests(ITestOutputHelper output)
     const uint New = 0x10;
     static FcsRecord Rec(string id, FcsRecordType type, string name) => new() { StringId = id, Flags = New, Name = name, RecordType = type };
 
-    /// <summary>The synthetic town's data plus a biome group with homeless spawns and a dog nest; the group covers the four zones round the world's origin.</summary>
-    static PopulationData WildData()
+    /// <summary>
+    /// The synthetic town's data plus a biome group with homeless spawns and a dog nest; the group covers the four zones round the world's origin. <paramref name="changePatrol"/>
+    /// changes the <c>Patrol</c> template (<c>10-t</c>, also a homeless spawn) and <paramref name="extra"/> adds records.
+    /// </summary>
+    static PopulationData WildData(Action<FcsRecord>? changePatrol = null, params FcsRecord[] extra)
     {
-        var db = SyntheticTown.Database(residentSquads: 1);
+        var db = SyntheticTown.Database(residentSquads: 1, changePatrol: changePatrol);
         var dogs = Rec("52-t", FcsRecordType.SQUAD_TEMPLATE, "Dog pack");
         dogs.References["animals"] = [new FcsReference("4-t", 3, 0, 50)];
         dogs.References["faction"] = [new FcsReference("53-t", 0, 0, 0)];
@@ -40,7 +44,7 @@ public class WildTests(ITestOutputHelper output)
         group.References["homeless spawns"] = [new FcsReference("10-t", 30, 0, 0), new FcsReference("52-t", 10, 0, 0), new FcsReference("11-t", 50, 0, 0)];
         group.References["nests"] = [new FcsReference("51-t", 0, 0, 0)];
         var file = new FcsFile();
-        file.Records.AddRange([dogs, beasts, nest, group]);
+        file.Records.AddRange([dogs, beasts, nest, group, .. extra]);
         db.Apply(file, "wild.mod");
 
         var groups = BiomeGroupData.LoadAll(db);
@@ -144,6 +148,40 @@ public class WildTests(ITestOutputHelper output)
         Assert.All(pop.WildSites, s => Assert.Empty(pop.KeptWildOf(s.Index)));
         // Rolled anew, they come out the same: squad ids and slots are new; site, template, place and members are the same.
         if (!keep) Assert.Equal(before, WildSquads(world, pop));
+    }
+
+    [Fact]
+    public void An_occupier_is_kept_while_its_sector_is_unloaded_and_occupies_again_in_faithful_mode()
+    {
+        // The original makes an occupier's platoon persistent (docs/game/ai.md "Package classes"): Faithful drops the other wild squads as their area unloads, not it.
+        var roam = Rec("60-t", FcsRecordType.AI_PACKAGE, "Roam");
+        var occupy = Rec("61-t", FcsRecordType.AI_PACKAGE, "Occupy");
+        occupy.Ints["signal func"] = 30;
+        var data = WildData(p => p.References["AI packages"] = [new FcsReference("60-t", 0, 0, 0), new FcsReference("61-t", 1, 0, 0)], roam, occupy);
+        var (world, pop) = WildWorld(data, 1, StandardParts.Population | StandardParts.Movement | StandardParts.Ai);
+        using var _ = world;
+        pop.KeepWild = false;
+        world.RunTicks(32);
+        var squad = pop.WildSites.Where(s => s.Kind == WildKind.Sector).SelectMany(s => pop.WildSquadsOf(s.Index)).Select(id => world.Squads.Find(id)!).First(s => s.TemplateId == "10-t");
+        // It took an outpost round where it stands (an occupation only follows an assault; its state is set as the start would).
+        var town = world.Buildings.AddTown(squad.Position, data.PlayerFaction);
+        var board = squad.Ai!;
+        Assert.True(board.Resume(board.Packages.First(p => p.Package.Id == "61-t").Package));
+        board.Destination = CampaignTown.OfPlayer(town.Number);
+        world.Characters.Cold(squad.Members[0].Slot)!.Name = "Marked";
+        world.RunTicks(30);
+        Assert.Equal(PackageClass.OccupyTown, board.CurrentClass);
+
+        world.Commands.Enqueue(new FocusCommand(new Vector3(-90000, 0, -90000)) { Tick = world.Tick });
+        world.RunTicks(150);
+        Assert.Equal(0, world.Characters.Count);
+        Assert.Equal(1, pop.WildSites.Sum(s => pop.KeptWildOf(s.Index).Count));
+
+        world.Commands.Enqueue(new FocusCommand(Origin) { Tick = world.Tick });
+        world.RunTicks(32);
+        var back = world.Squads.All.Single(s => s.Members.Any(m => world.Characters.Cold(m.Slot)!.Name == "Marked"));
+        Assert.Equal(PackageClass.OccupyTown, back.Ai!.CurrentClass);
+        Assert.Equal(CampaignTown.OfPlayer(town.Number), back.Ai.Destination);
     }
 
     /// <summary>The wild round the origin for 600 ticks; pinned in <see cref="GoldenHashTests"/>.</summary>

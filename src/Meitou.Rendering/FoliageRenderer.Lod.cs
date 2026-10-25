@@ -154,8 +154,7 @@ public sealed unsafe partial class FoliageRenderer
             {
                 if (lodRunning >= 3) { lodWaiting++; continue; }
                 lodRunning++;
-                float radius = a.Radius;
-                lodTasks[name] = task = BackgroundWork.Run(() => MakeLods(name, radius));
+                lodTasks[name] = task = StartLods(name, a.Radius);
             }
             if (!task.IsCompleted) continue;
             a.LodDone = true;   // an unloaded mesh makes them again with its next residency
@@ -165,6 +164,9 @@ public sealed unsafe partial class FoliageRenderer
             if (result?.Set is { } set && a.Main is { } main && main.Parts.Count == set.Indices.Length) QueueLodUpload(a, main, set);
         }
     }
+
+    // Apart from PumpLods: a lambda there made its captured variables a new object on every pass of the loop, every frame, started or not.
+    Task<LodResult> StartLods(string name, float radius) => BackgroundWork.Run(() => MakeLods(name, radius));
 
     LodResult MakeLods(string name, float radius)
     {

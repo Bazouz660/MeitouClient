@@ -795,11 +795,17 @@ default.
 - **Population and navmesh.** The live Metal loop boots the simulation with `interactive: true`, loads the navmesh
   zones round the start and calls `UpdateNav` each frame. The Hub shows its wall guards and residents again; the
   background population costs frames, so measure the live window rather than the still's first-frames average.
+- **Tick ahead and rotors.** The live Metal loop sets the shared `tickAhead` mode (Dynamic/Always) and wraps
+  `WorldFrame.Draw` in `BeginTickAhead`/`EndTickAhead`; stills, the title and the editor keep it off. `UpdateBuildings`
+  also runs upstream's rotor pass, so wind generators and other `ROTATION_OUTPUT` parts turn on Metal.
+- **Play benchmark.** `--play-bench` is Vulkan-only: Metal rejects it with a message because the report's late-pipeline
+  and display timings are Vulkan's.
 - **UI/input scope.** `GameHost.Metal` boots `PlayerInterface` for presentation (`LoadUi`, `ArrangeUi`, `Draw`),
   portraits, item icons and the map callbacks. It wires the panels' keyboard/pointer controls (I/C, M/T/Y, Esc,
   F7, F10 settings, hover/click/scroll), the strategy camera (WASD/arrows, Q/E, wheel, middle drag, edge scroll),
   selection/box select and right-click move orders. Title, new game, save/load, audio and the shared trade, dialogue,
-  build and editor callbacks are wired; the pointer sprite and free camera remain.
+  build and editor callbacks are wired; the pointer sprite and free camera remain. Upstream's S3TC DDS prefetch is
+  ported, so the overview map uploads compressed instead of decoding it in the opening frame.
 - MSAA: `TextureDesc.Samples > 1` is `Type2DMultisample` (`Type2DMultisampleArray` for arrays), one mip level;
   `Resolve` is a render pass with the source as its colour attachment, `ResolveTexture` the target, and
   `StoreAction = MultisampleResolve`. A clear pipeline must name every attachment of the pass (the GI mask is slot 1).

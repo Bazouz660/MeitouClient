@@ -53,6 +53,9 @@ static class Program
             Console.Error.WriteLine($"Kenshi install not found: set {GameInstall.EnvironmentVariable} or create {GameInstall.LocalConfigFile}.");
             return 1;
         }
+        // Steamworks must start before Vulkan creates its device so Steam can hook the renderer for Shift+Tab. Not for pictures or a
+        // listing: those must not count as Kenshi play time or get the overlay.
+        using var steam = world.Screenshot is null && !game.ListStarts ? SteamSession.TryStart(install) : null;
         // A native splash at once, until the game window draws (docs/engine.md "Loading"); not for pictures or a listing.
         using var splash = world.Screenshot is null && !game.ListStarts ? SplashWindow.Show(install.DataDirectory) : null;
         var config = UserConfig.Load();

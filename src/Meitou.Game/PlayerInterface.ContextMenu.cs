@@ -175,10 +175,10 @@ sealed partial class PlayerInterface
         {
             // Fighting back at someone attacking the squad is defence, not an assault on its faction (as the quick order).
             verbs.Add(("Attack All", () => AttackAll(selection, target)));
-            verbs.Add(("Attack Target", () => Say(new Meitou.Simulation.Combat.AttackOrder(selection, id) { Tick = session.World.Tick, Defensive = target.FightsPlayer })));
+            verbs.Add(("Attack Target", () => Say(new Meitou.Simulation.Combat.AttackOrder(selection, id) { Tick = session.World.Tick, Picked = true, Defensive = target.FightsPlayer })));
             return;
         }
-        verbs.Add(("Attack Unprovoked", () => Say(new Meitou.Simulation.Combat.AttackOrder(selection, id) { Tick = session.World.Tick })));
+        verbs.Add(("Attack Unprovoked", () => Say(new Meitou.Simulation.Combat.AttackOrder(selection, id) { Tick = session.World.Tick, Picked = true })));
         verbs.Add(("Bodyguard", () => Say(new FollowOrder(selection, id) { Guard = true, Tick = session.World.Tick })));
         verbs.Add(("Follow", () => Say(new FollowOrder(selection, id) { Tick = session.World.Tick })));
     }
@@ -221,7 +221,7 @@ sealed partial class PlayerInterface
 
     /// <summary>
     /// A container (the original's building branch for a storage with an inventory): unlocked, Inventory (the player's) or Loot (26); another faction's locked one, Pick Lock (76). The
-    /// menu's orders skip the quick click's Alt test (<c>FUN_1407fa650</c>), so Loot on another faction's container takes from it at once (a shop's merged stock is stolen from);
+    /// menu's orders skip the quick click's Alt test (<c>FUN_1407fa650</c>), so Loot on another faction's container takes from it at once (a shop container's stock is stolen from);
     /// a locked one also has Use Tools and Use Strength (285, 286). Not built: Auto-Haul (124) on an interior container.
     /// </summary>
     List<(string Caption, Action Give)> ContainerVerbs(Meitou.Simulation.Locks.ContainerSpot container)

@@ -2,6 +2,7 @@ using System.Numerics;
 using Meitou.Data;
 using Meitou.Data.Fcs;
 using Meitou.Data.World;
+using Meitou.Simulation.Bodies;
 
 namespace Meitou.Navigation;
 
@@ -32,12 +33,12 @@ internal sealed partial class ZoneGeometryGatherer
         var win = map.ReadWindow(c0, r0, cols, rows, step);
         float water = WorldWater.Height;
         var index = new int[cols * rows];
-        var wet = new bool[cols * rows];
+        var depth = new float[cols * rows];   // under the water level; 0 or less: dry
         for (int j = 0; j < rows; j++)
             for (int i = 0; i < cols; i++)
             {
                 var p = win.Position(i, j);
-                wet[j * cols + i] = p.Y <= water;
+                depth[j * cols + i] = water - p.Y;
                 if (p.Y < water) p.Y = water; // the water surface replaces the ground under it
                 index[j * cols + i] = g.AddVertex(p);
             }
@@ -53,9 +54,10 @@ internal sealed partial class ZoneGeometryGatherer
 
         void Tri(int p, int q, int r)
         {
-            int n = (wet[p] ? 1 : 0) + (wet[q] ? 1 : 0) + (wet[r] ? 1 : 0);
+            int n = (depth[p] >= 0 ? 1 : 0) + (depth[q] >= 0 ? 1 : 0) + (depth[r] >= 0 ? 1 : 0);
             byte area;
-            if (n >= 2) { area = NavArea.Water; g.Stats.WaterTriangles++; }
+            // Banded by its shallowest corner (engine choice: a triangle across a band edge costs the cheaper band).
+            if (n >= 2) { area = NavArea.OfWetState(Speed.WetStateOfDepth(MathF.Min(depth[p], MathF.Min(depth[q], depth[r])))); g.Stats.WaterTriangles++; }
             else
             {
                 int ia = index[p] * 3, ib = index[q] * 3, ic = index[r] * 3;

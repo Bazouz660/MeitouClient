@@ -69,15 +69,31 @@ public sealed unsafe partial class PostProcess
 
     /// <summary>
     /// <paramref name="targets"/> with the fog shading rate image as their fragment shading rate attachment, when there is one fit for this frame: built by the previous frame, at this
-    /// size, with the camera no more than a little moved (a cut or a fast turn shows none until the next build); else <paramref name="targets"/> as they are.
+    /// size, with the camera no more than a little moved (a cut or a fast turn shows none until the next build). Else, with the switch on, a neutral image (every tile 1 x 1):
+    /// the frame shades as without one, and draws with the same pipelines as the others. Without any attachment it needed a second pipeline of everything it drew, made at the
+    /// first cut in play: a stall of seconds with a cold driver cache (docs/bench.md "Play benchmark"). With the switch off, <paramref name="targets"/> as they are.
     /// </summary>
     public PassTargets WithShadingRate(PassTargets targets)
     {
-        if (!FogVrs || rateImage is null || !FogVrsSupported || rateBuiltFrame != Gpu.Frame.Number - 1) return targets;
-        if (Vector3.DistanceSquared(eyeNow, rateEye) > 500f * 500f || Vector3.Dot(BackOf(viewRotation), rateBack) < 0.97f) return targets;
+        if (!FogVrs || !FogVrsSupported) return targets;
         int texel = Gpu.Device.ShadingRateTexel;
-        if (rateImage.Width != FogShadingRate.Tiles(width, texel) || rateImage.Height != FogShadingRate.Tiles(height, texel)) return targets;
-        return targets.WithShadingRate(rateImage.Texture.View(), texel);
+        int tw = FogShadingRate.Tiles(width, texel), th = FogShadingRate.Tiles(height, texel);
+        bool fit = rateImage is not null && rateBuiltFrame == Gpu.Frame.Number - 1 && rateImage.Width == tw && rateImage.Height == th
+            && Vector3.DistanceSquared(eyeNow, rateEye) <= 500f * 500f && Vector3.Dot(BackOf(viewRotation), rateBack) >= 0.97f;
+        return targets.WithShadingRate((fit ? rateImage! : NeutralRate(tw, th)).Texture.View(), texel);
+    }
+
+    Target2D? neutralRate;
+
+    /// <summary>An R8_UINT image of <paramref name="tiles"/> x <paramref name="rows"/> zeros: the rate code of 1 x 1 fragments in every tile.</summary>
+    Target2D NeutralRate(int tiles, int rows)
+    {
+        if (neutralRate is { } made && made.Width == tiles && made.Height == rows) return made;
+        neutralRate?.Texture.Dispose();   // released after the frames in flight
+        using var batch = Gpu.Uploads.Begin();
+        var texture = batch.Create(new TextureDesc(InternalFormat.R8ui, tiles, rows, Use: TextureUse.Sampled | TextureUse.ShadingRate | TextureUse.TransferDst, Name: "post fog rate neutral"));
+        batch.Write(texture, 0, 0, new PixelRect(0, 0, (uint)tiles, (uint)rows), new byte[tiles * rows]);
+        return neutralRate = new Target2D(texture, TextureMinFilter.Nearest, TextureMagFilter.Nearest);
     }
 
     static Vector3 BackOf(Matrix4x4 rotation) => new(rotation.M13, rotation.M23, rotation.M33);

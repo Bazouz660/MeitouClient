@@ -91,7 +91,7 @@ public class TradeTests
         b.World.RunTicks(1);
         var shop = b.SquadOf(shopkeeper).Shop!;
         Assert.Equal(home.Key, shop.Building);
-        Assert.Equal((20, 15), (shop.Stock.Width, shop.Stock.Height));   // the widest, and 300 cells at that width
+        Assert.Equal((20, 20), (shop.Stock.Width, shop.Stock.Height));   // the widest, the two side by side would not fit: a shelf each
         Assert.InRange(b.SquadOf(shopkeeper).Money, 5000 - 2000 + 500, 5000 + 2000 + 500);   // vendor money +/- 0.4 x it, plus the money roll
         Assert.InRange(shop.Stock.All().Sum(i => i.Quantity), 8, 12);
 

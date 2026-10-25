@@ -162,7 +162,9 @@ Stationhouse `Storm_House_08_BASE_COL.xml` / `_Exterior_COL_Steps.xml`) rays cli
 (Y −60 / −74, floor top 15.5); triangle-mesh faces keep the file's winding (unknown, 82 of 435 building collision files), so either side counts there. Clicks, queued moves and held-button steering share this destination and marker.
 Buildings without a readable interior mask/floor collision still use terrain; the original's pick filters: [building picking](#building-picking-and-selection).
 Outside the rooms, the ray's first descent onto a kept navmesh surface more than 5 units above the terrain (a wall top, ramp, deck) wins
-over the terrain, and its height is the goal's floor (engine choice). **Observed** (JC2, zone 20.29, scratch probe): a ray onto Defensive
+over the terrain, and its height is the goal's floor (engine choice). "Outside the rooms" means not under the building's collision
+(`InteriorVolume.Covered`): an open deck or roof walk within a hull's height is picked too, except in an opened building where its floor is above the viewed one (hidden).
+**Observed** (user, screenshots of the original): a click on the Longhouse's roof end at viewed floor 0 or 3, the character outside, walks onto it (floor 1). **Observed** (JC2, zone 20.29, scratch probe): a ray onto Defensive
 Wall II `16-Newwworld-INGAME` gave Y 1218 (terrain 1103); before, the goal resolved to the blocked ground under the wall.
 
 **Observed** (decompile): a ground move order shows an entity of `position.mesh` (a downward cone over a flat ring, 0.29 × 1.56 units)
@@ -297,6 +299,9 @@ interior-mask hulls); the hits are sorted nearest first (**Verified**, comparato
   floor cut the ray passes the hidden roof and floors and reaches what is shown. When the viewed floor (PlayerInterface+0x1e4, PgUp/PgDn) is
   below the hit's floor, the walk skips ahead to the next hit on the same building at or below it.
 - A turret or lamp mounted on the hit building (its slot 135 handle) met within 12 units behind the hit is taken instead (`FUN_1407f2af0`).
+- Outdoor farms have no collision ([collision](../formats/collision.md)), yet the original selects them; how is **Unknown** (not in the
+  `FarmBuilding` constructor). Meitou (engine choice, `BuildingFootprints.Plot`): a building without collision (a player's site of any kind,
+  a level farm) is hit where the ground under the cursor lies inside the hull of its parts' render-mesh bounds, just before the ground.
 
 **Building hover and click** (`FUN_1407fc6e0`, **Observed**). Every frame over a building it sets the pointer; on a command release (a quick
 right click) it gives the order to the selected characters (the shared order dispatch `FUN_1407fa650` / `FUN_1407fae70` / `FUN_1407f9e20`,
@@ -429,11 +434,11 @@ selection's, as the loot window), Pick Up and Kidnap (the same pick-up order; Ki
 [carry-loot](carry-loot.md)), First Aid, Splint Injuries, Unlock Shackles / Use Tools / Use Strength (shackles), Pick Lock / Escape / Pick Up / Set Free on a caged
 character, Inventory / Loot / Pick Lock / Use Tools / Use Strength on containers (Loot uses the Alt path: another faction's shop stock is stolen from at once, [locks](locks.md#containers-meitou)),
 Open / Close / Lock / Unlock (all the building's doors) / Pick Lock / Use Tools / Use Strength / Smash on doors ([locks](locks.md#player-orders-on-locks)), Build, Use, Auto-Haul (storage, as the job),
-Inventory (storage, furnace), Man Turret, Dismantle. **Bodyguard** (45, `FollowOrder.Guard`): follows like 31 and fights whoever attacks the target (engine reading; with Shift the perma-job, [jobs](ai-tasks.md#perma-jobs)). **Attack All** (16, **engine reading**): every standing hostile within 800 of the clicked one is a target and each selected character attacks the nearest. **Shoot At** (235): replaces the
+Inventory (storage, furnace), Man Turret, Dismantle, Auto-Haul 152 on an automatic machine (in place of Use; the 152 job with Shift, else a one-shot haul round). **Bodyguard** (45, `FollowOrder.Guard`): follows like 31 and fights whoever attacks the target (engine reading; with Shift the perma-job, [jobs](ai-tasks.md#perma-jobs)). **Attack All** (16, **engine reading**): every standing hostile within 800 of the clicked one is a target and each selected character attacks the nearest. **Shoot At** (235): replaces the
 attack verbs when the lead mans a turret; `ShootAtOrder` makes every selected gunner fire at the target until it is gone ([combat](combat.md#turrets)). **Cages** are published
 (`WorldSnapshot.Cages`) and picked like beds: Pick Lock / Use Tools / Use Strength while locked, Put in (108, the carried captive to that cage) or Get in (107) while free, Set Free (110) while occupied.
 Engine additions: Trade with a trader, Put in Cage, Put on Shackles, Cancel Construction, the door buttons, Mine. Training (97) sets the training job on a dummy. Not built: Stand Up, Throw out of home / town (the jobs 223 / 273 run), Repair / Repairs,
-Corpse Disposal (the jobs 137 / 138 run), Auto-Haul 152, Lock / Unlock of a cage (Pick Lock stands in), item menus beyond a ground item's Pick Up / Steal, the occupant's second menu and the unconscious message.
+Corpse Disposal (the jobs 137 / 138 run), Lock / Unlock of a cage (Pick Lock stands in), item menus beyond a ground item's Pick Up / Steal, the occupant's second menu and the unconscious message.
 
 ### Edit boxes and keyboard focus
 

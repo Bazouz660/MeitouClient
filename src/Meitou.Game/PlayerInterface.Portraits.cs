@@ -103,6 +103,15 @@ sealed partial class PlayerInterface
         return true;
     }
 
+    /// <summary>The squad bar member whose portrait is at <paramref name="p"/>, if any.</summary>
+    CharacterId? SquadBarMemberAt(Vector2 p)
+    {
+        if (!UiVisible || MyGuiPresentation.HitTest(ArrangeUi(), p.X, p.Y) is not { Action: "meitou:member" } frame
+            || !int.TryParse(frame.Argument, NumberStyles.None, CultureInfo.InvariantCulture, out int i)) return null;
+        var members = SquadBarMembers();
+        return i < members.Count ? members[i].Id : null;
+    }
+
     void AddSquadPortraits(List<UiControl> controls, UiRect panel)
     {
         var members = SquadBarMembers();

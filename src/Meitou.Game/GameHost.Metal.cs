@@ -43,6 +43,11 @@ sealed partial class GameHost
     /// </summary>
     int Metal()
     {
+        if (g.PlayBench is not null)
+        {
+            Console.Error.WriteLine("metal     --play-bench is Vulkan-only (its late-pipeline and display timings are Vulkan's).");
+            return 2;
+        }
         metalRenderer = true;
         // The banks and the output device load on a worker while the window, the world and the renderers are made.
         BeginAudio();
@@ -1182,10 +1187,13 @@ sealed partial class GameHost
                 // The interior view (docs/formats/zones.md): the player's building opens, its upper floors and their characters are hidden.
                 // It must run before the character draw list (which carries aboveFloor) and before the shadow casters.
                 UpdateInteriorView();
+                // The next world tick may run on its own thread while the frame is drawn, as in the Vulkan loop (docs/simulation.md "Tick ahead").
+                tickAhead = !Covered && skyArrival is null && !IsDuel && !TitleVisible && !player.EditorOpen && g.PlayBench is null && TickAheadWanted();
             }
             else
             {
                 // A still freezes the simulation after PrepareStill: only the panel and the warm-up frames change, never the tick.
+                tickAhead = false;
                 if (hud is not null) { hud.Width = size.X; hud.Height = size.Y; }
                 bool panelReady = false;
                 while (stillPanel < stillPanels.Length)
@@ -1325,12 +1333,14 @@ sealed partial class GameHost
             }
             var savedParticles = gpu.Particles;
             if (titleLook) { gpu.Weather = null; gpu.Particles = null; }   // the staged title sky and its own dust, not the world's weather
+            if (tickAhead) session.BeginTickAhead();
             try
             {
                 WorldFrame.Draw(gpu, scene, camera, render, size.X, size.Y, hour, (float)now / 600f, o.FogDistance);
             }
             finally
             {
+                if (tickAhead) session.EndTickAhead();
                 gpu.Weather = savedWeather;
                 gpu.Particles = savedParticles;
                 if (titleLook)

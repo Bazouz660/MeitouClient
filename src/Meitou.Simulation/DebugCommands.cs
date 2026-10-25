@@ -110,7 +110,7 @@ static class DebugCheats
             case DebugGiveItem give when data is not null:
                 if (!table.TryResolveNext(give.Character, out int owner) || table.Cold(owner)?.Inventory is not { } inventory) break;
                 if (data.Items.Create(give.Record, give.Quantity) is not { } item) { world.Post($"No item record {give.Record}."); break; }
-                if (item.Type == FcsRecordType.ARMOUR) item.Quality = Math.Clamp(give.Quality, 0, 100);
+                if (item.Type == FcsRecordType.ARMOUR) (item.Quality, item.Level) = (Math.Clamp(give.Quality, 0, 100), Math.Clamp(give.Quality, 0, 100));
                 else if (item.Type == FcsRecordType.WEAPON && DebugGiveItem.Grade(data.Db, give.Quality) is { } grade)
                     (item.CompanyId, item.MaterialId, item.Level) = (CraftBench.PlayerWeapons, grade.Model, grade.Level);
                 else if (DebugGiveItem.QualityTypes.Contains(item.Type)) item.Level = Math.Clamp(give.Quality, 0, 100);

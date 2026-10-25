@@ -8,7 +8,7 @@ Clean-room PhysX/NxuStream facts; never link SDKs. **Verified** reader/probe che
 
 NXUSTREAM2/NxuPhysicsCollection sdk285/nxu103; Max .PxProj is exporter project, not loaded.
 NxSceneDesc actors/globalPose/shapes/localPose/materials/groups; poses row-major3x3 then
-translation. Empty points/triangles with cookedData hex is normal. Box dimensions half extents,
+translation. Cooked mesh descriptions also carry an `NxSimpleTriangleMesh` with empty points/triangles (**Verified**: vanilla `data/buildings`, `CollisionInstallTests`). A description with empty cookedData is read from those plain lists instead (Building Collision Fix: the Longhouse base and stairs; **Observed**: without it the Longhouse had no ground floor in its interior navmesh). Box dimensions half extents,
 capsule radius/height, plane/sphere and mesh IDs retained. Exporter Z-up/gravity(0,0,-981).
 
 Triangle blob `NXS 01 MESH`: version1,flags,convex-edge threshold,heightfield-axis0xff,
@@ -61,6 +61,10 @@ use every rendered triangle as collision or infer PhysX actor dynamics from appe
   | 1 PROJECTED | 83 | 0 | 1 |
   | 2 OBSTACLE | 259 | 29 (signs, banners) | 16 |
   | 3 WALKABLE | 122 | 1 | 0 |
+
+- Farms (**Verified**, probe of the loaded BUILDING records named "Farm"): every outdoor farm (all crops, S to XL) has one
+  part, `farm posts` (`farm_poles1.mesh`, bounds about 103 x 150, the same for every size), with no `xml collision`; the indoor
+  farms (`indoor_farm1_part`) have collision.
 
 ### Collision groups (Observed, FUN_14055f6e0 and the loaders)
 

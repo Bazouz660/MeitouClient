@@ -1,15 +1,16 @@
-# Metal handoff — 2026-10-24
+# Metal handoff — 2026-10-25
 
 Repository: `/Users/daniilmiroshnykov/code/dotnet/MeitouClient`  
 Branch: `metal-spike`  
 Last code commit: `85e09af2 fix: flip Metal UI images and clip in top-left coordinates`
 
-State: functional opt-in Metal preview; **not 100% Vulkan effect parity**. **MEP-1, MEP-2, MEP-3 and MEP-5 are accepted**
-(2026-10-24: MetalFX temporal stability; reflection MSAA/characters; native bindless atmosphere-lit debris; native
-bindless water with foam shadows). **MEP-4 tessellation/terrain relief was evaluated and removed**: it is not shipping,
-and Metal keeps the flat/parallax terrain path. Vulkan remains the reference/default and the GPU cull stays off.
+State: functional opt-in Metal preview; **not 100% Vulkan effect parity**. Upstream v0.15.0 (`cd01e732`) is merged.
+**MEP-1, MEP-2, MEP-3 and MEP-5 are accepted** (2026-10-24: MetalFX temporal stability; reflection MSAA/characters;
+native bindless atmosphere-lit debris; native bindless water with foam shadows). **MEP-4 tessellation/terrain relief was
+evaluated and removed**: it is not shipping, and Metal keeps the flat/parallax terrain path. Vulkan remains the
+reference/default and the GPU cull stays off.
 
-Build: Release 0 warnings / 0 errors. Current quick suite: 424 passed, 2 skipped. The 11 Metal upload tests still fail
+Build: Release 0 warnings / 0 errors. Current quick suite: 450 passed, 2 skipped. The 11 Metal upload tests still fail
 before touching the engine while the host's `MTLCompilerService` XPC remains unhealthy after the 19:15 WindowServer
 GPU timeout; they passed on 2026-10-23 before that crash and need a full shutdown, not a code change.
 
@@ -17,6 +18,33 @@ UI fixes (2026-10-25): Metal UI render-target images now flip V on both backends
 top-left origin, and Metal uses the shared character draw list. Portraits, item icons and the editor stage are
 upright; editor race/gender/slider changes show live; the trader stock grid and HUD name plates sit in their
 windows. Verified by the user at 2560x1600.
+
+## Upstream sync (2026-10-25, `cd01e732`)
+
+`metal-spike` merges upstream v0.15.0 (`cd01e732`, 166 commits since `57a7968a`): the HUD town panel and outpost
+settings, house purchase and housed squads, the build readout and construction-panel changes, rotating parts, tick
+ahead, the play benchmark, Steam app-id handling in the launcher, and the simulation/UI fixes in that release. The
+shared code is upstream's; the Metal adaptations are:
+
+- `TerrainRenderer` keeps the seam (`IGpuContext`, `GpuSetLayout`) and now caches upstream's march/no-march colour
+  sets. The no-normal variants remain compile-time programs for Metal, and the cut patches use upstream's
+  `LateEqual` path.
+- `UiPainter` ports upstream's S3TC DDS prefetch to `GpuTexture`/`PixelRect`; `ImageFlipV` and the Metal top-left
+  scissor stay. The overview map uploads compressed instead of decoding it in the opening frame.
+- `GameHost.Metal` follows the shared `tickAhead` setting around `WorldFrame.Draw`, runs the rotor update through
+  `UpdateBuildings`, and takes the new town/build/readout interface callbacks through `ConfigurePlayerInterface`.
+  `MetalContext.Finish` tolerates a still that never opened a frame. `--play-bench` is rejected as Vulkan-only
+  because its late-pipeline and display timings are Vulkan's.
+- The launcher keeps the Metal/Auto/Vulkan selector and Metal memory budget while taking upstream's Steam app-id
+  handling and Debug-build selection.
+
+Validation: Release build 0 warnings / 0 errors. Quick suite: 450 passed, 2 skipped. The full suite ran 613 tests:
+585 passed, 2 skipped, 26 failed. Of the failures, 24 are Vulkan/GPU tests that cannot find `libvulkan.1.dylib` on this
+host (and the Vulkan smoke is blocked by GLFW's "doesn't support Vulkan" error); the 2 `HousePurchaseUiTests` fail at
+line 61 on clean `origin/master` too. A 30 s `--new-game Wanderer` Metal run and a 15 s tick-ahead run completed
+without a GPU fault; HUD, inventory and overview stills were written at 2560x1600 and show upright icons, the
+inventory grid and the name plates. The trade still path still finds no trader (pre-existing), so live trade remains
+the verification path.
 
 ## Upstream sync (2026-10-24, `57a7968a`)
 

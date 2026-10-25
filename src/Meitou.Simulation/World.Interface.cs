@@ -2,11 +2,17 @@ namespace Meitou.Simulation;
 
 public sealed partial class World
 {
-    /// <summary>Applies inventory, selection and open-shop transactions between ticks while paused, without advancing time or running simulation phases.</summary>
+    /// <summary>
+    /// Applies the interface's commands between ticks while paused, without advancing time or running simulation phases: selection, order toggles, job lists, crafting and
+    /// research queues, squads, inventory, open-shop transactions and building settings. Orders that send characters somewhere wait for the next tick.
+    /// </summary>
     public void ApplyPausedInterfaceCommands()
     {
         if (Characters.Phase != TablePhase.Outside) throw new InvalidOperationException("interface commands require a tick boundary");
-        var due = Commands.TakeDue(Tick, c => c is SelectCommand or InspectCommand or InspectBuildingCommand or ShowInventoryCommand or Items.HeldCommand or Items.QuickMoveItem or Items.ReadMapItem or Items.ArrangeInventory
+        var due = Commands.TakeDue(Tick, c => c is SelectCommand or OrdersCommand or RunSpeedCommand or SquadCommand or SquadAiCommand or RenameFactionCommand or SeenDiscoveriesCommand
+            or Production.AddJob or Production.AddOrderJob or Production.RemoveJob or Production.MoveJob or FirstAid.MedicJobCommand { Job: true } or Carrying.RescueJobCommand { Job: true }
+            or Production.QueueCraft or Production.CancelCraft or Production.RepeatCrafts or Production.QueueResearch or Production.CancelResearch
+            or Items.CloseContainer or Locks.BuyBuilding or Construction.UpgradeSite or Construction.DowngradeSite or Construction.SetBuildingPublic or InspectCommand or InspectBuildingCommand or ShowInventoryCommand or Items.HeldCommand or Items.QuickMoveItem or Items.ReadMapItem or Items.ArrangeInventory
             or Carrying.TakeLootItem or Carrying.PutLootItem or Production.PutInMachine or Production.TakeFromMachine
             or Trading.BuyItem or Trading.SellItem or Trading.ArrangeStock or Trading.CloseTrade or Dialogue.DialogueChoice or Dialogue.EndConversation or Dialogue.ConfirmCharacterTrade or Dialogue.CloseCharacterTrade
             or Construction.PlaceBuildings or Construction.CancelSite or Construction.PauseSite or Editing.EditCharacter or Editing.FinishCreation);
@@ -16,7 +22,8 @@ public sealed partial class World
         try
         {
             foreach (var system in systems)
-                if (system is PlayerSystem or Carrying.CarrySystem or Production.ProductionSystem or Trading.TradeSystem or Construction.ConstructionSystem or Dialogue.DialogueSystem)
+                if (system is PlayerSystem or Carrying.CarrySystem or Production.ProductionSystem or Trading.TradeSystem or Construction.ConstructionSystem or Dialogue.DialogueSystem
+                    or FirstAid.FirstAidSystem or Locks.LockSystem)
                     system.Inputs(this, due);
         }
         finally

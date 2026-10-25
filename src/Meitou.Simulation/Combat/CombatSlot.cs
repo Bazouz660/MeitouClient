@@ -49,6 +49,8 @@ public struct CombatSlot
     public int LastTech;
     /// <summary>One of the (at most five) fighters its target lets close in (the target's CombatClass +0x1f8 list, docs/game/combat.md "Attack slots and circling"); the rest circle.</summary>
     public bool Engaged;
+    /// <summary>The target is the player's pick (<see cref="AttackOrder.Picked"/>): it does not turn on a fighter that yields to it.</summary>
+    public bool Picked;
 
     // The ranged controller (docs/simulation.md "Combat", ranged; the original keeps it at Character +0x2f0). All zero for a character that never used a crossbow.
     /// <summary>Fighting with the crossbow rather than the melee weapon; the controller's state (<see cref="RangedStates"/>).</summary>
@@ -112,6 +114,7 @@ public struct CombatSlot
         h.Add(Reach);
         h.Add(LastTech);
         h.Add(Engaged);
+        if (Picked) h.Add(true);   // only when set, so worlds without player picks hash as before
         // The ranged controller goes in only once it has been used, so worlds without crossbows hash as they did before it existed.
         if (!RangedUsed) return;
         h.Add(Ranged);

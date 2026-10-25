@@ -14,6 +14,8 @@ sealed partial class PlayerInterface
     public bool UiCapturesPointer => UiVisible && (faithfulScreens.CapturesPointer || mapDrag is not null || liftPress is not null || scrollDrag is not null);
     /// <summary>A modal screen (the Esc menu, a message box) is up: the pointer is the interface's, even in the free camera.</summary>
     public bool ModalOpen => UiVisible && faithfulScreens.HasModal;
+    /// <summary>The faithful screens open, bottom first (the play benchmark says which modal one stopped the game).</summary>
+    public IReadOnlyList<string> OpenScreens => faithfulScreens.OpenScreens;
     /// <summary>Keys the host keeps for itself (the sandbox's letters), so the faithful window shortcuts leave them alone.</summary>
     public HashSet<Key> ReservedKeys { get; } = [];
     void UpdateMenuPause() => session.Simulation.RequestedPause = settingsOpen || faithfulScreens.HasModal;
@@ -95,6 +97,7 @@ sealed partial class PlayerInterface
         else if (e.Screen == "dialogue") DialogueAction(e);
         else if (e.Screen == CharacterTradeScreen) CharacterTradeAction(e);
         else if (e.Screen == "prospect") ProspectScreenAction(e);
+        else if (e.Screen == TownScreen) TownAction(e);
         else if (e.Screen == "overview") { MapAction(e.Widget); ResearchAction(e); CraftAction(e); AiAction(e); SquadsAction(e); FactionAction(e); }
         else if (e.Screen is "building" or "bench" or "storage") MachineAction(e);
         else if (e.Screen == "loot" && e.Widget == "OpenBagButton") lootBagOpen = !lootBagOpen;
@@ -122,6 +125,7 @@ sealed partial class PlayerInterface
         else if (id == "dialogue") BindDialogueScreen(b);
         else if (id == CharacterTradeScreen) BindCharacterTradeScreen(b);
         else if (id == "prospect") BindProspectScreen(b);
+        else if (id == TownScreen) BindTownScreen(b);
         else if (id == "build") BindBuildScreen(b);
         else if (id is "building" or "bench" or "storage") BindMachineScreen(id, b);
         else if (IsLootScreen(id)) BindLootScreen(id, b);

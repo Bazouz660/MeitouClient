@@ -37,6 +37,10 @@ public sealed record HudView(float Blood, float BloodCapacity, float Bleeding, f
 {
     /// <summary>The race's <c>bleed rate</c> multiplier (the Blood row's tooltip).</summary>
     public float BleedRate { get; init; } = 1;
+    /// <summary>The stomach store (<see cref="Bodies.MedicalState.Fed"/>); above 0 the Hunger row shows <c>&gt;</c>.</summary>
+    public float Fed { get; init; }
+    /// <summary>The race's <c>is robot</c>: the medical panel has no Hunger row.</summary>
+    public bool Robot { get; init; }
 }
 /// <summary>
 /// The information panel's extended lines (docs/game/ui-screens.md section 4): the XP rates as the fraction the panel shows as a percentage (Toughness as a plain multiplier),
@@ -51,6 +55,8 @@ public sealed record InventoryItemView(int Index, string Record, string Name, st
     public float? Charge { get; init; }
     /// <summary>The item's manufacturer record (<c>company sid</c>; "" none), its model level and its charges (what the tooltip shows).</summary>
     public string Company { get; init; } = "";
+    /// <summary>The smith who crafted the item (<see cref="Items.ItemInstance.Crafter"/>; "" none).</summary>
+    public string Crafter { get; init; } = "";
     public int Level { get; init; }
     public float Charges { get; init; }
     public float MaxCharges { get; init; }
@@ -251,6 +257,8 @@ public sealed record WorldSnapshot(long Tick, IReadOnlyList<CharacterSnapshot> C
     public IReadOnlyList<Construction.BuildingSnapshot> Buildings { get; init; } = [];
     /// <summary>Bumped when a building is added, completed, destroyed or removed (not on progress): the host diffs <see cref="Buildings"/> by id when it changes.</summary>
     public long BuildingsRevision { get; init; }
+    /// <summary>The player outposts with their power totals (the town panel, docs/game/ui-screens.md "Town panel").</summary>
+    public IReadOnlyList<Production.OutpostSnapshot> Outposts { get; init; } = [];
     /// <summary>Loose items lying in the world (<see cref="Items.GroundItems"/>), oldest first.</summary>
     public IReadOnlyList<Items.GroundItemSnapshot> GroundItems { get; init; } = [];
     /// <summary>The containers with an inventory (a building interior's chests and boxes), where they stand.</summary>
@@ -268,6 +276,8 @@ public sealed record WorldSnapshot(long Tick, IReadOnlyList<CharacterSnapshot> C
     /// <summary>The doors of the player's buildings and the others that are open, moving, locked or set to lock, by (building instance, index in its <c>doors</c> list); any other door is closed and unlocked (docs/simulation.md "Cages, beds and locks").</summary>
     public IReadOnlyDictionary<(string Building, int Door), Locks.DoorView> Doors { get; init; } = NoDoors;
 
+    /// <summary>The town houses the player owns (bought ones too, with or without doors); indoor placement checks them.</summary>
+    public IReadOnlySet<string> OwnedTownBuildings { get; init; } = EmptySet;
     /// <summary>The doors of the building the HUD shows (<see cref="InspectBuildingCommand"/>); null when none is shown or it has no fixtures.</summary>
     public Locks.BuildingDetail? InspectedBuilding { get; init; }
     /// <summary>The resource richness of the building the HUD shows (a mine or rock); null for others.</summary>

@@ -18,6 +18,12 @@ public sealed class ItemInstance
     public string EquipmentSection { get; init; } = "";
     /// <summary>ARMOUR <c>is locked</c> (the original makes it a <c>LockedArmour</c>: shackles); worn, it shows the portrait's <c>Slave</c> overlay (docs/game/ui-screens.md "Portrait cells").</summary>
     public bool IsLocked { get; init; }
+    /// <summary>The record's race limits (<see cref="ItemInfo.WornOnlyBy"/>, <see cref="ItemInfo.WornNeverBy"/>): who may put it in an equipment section.</summary>
+    public string[] WornOnlyBy { get; init; } = [];
+    public string[] WornNeverBy { get; init; } = [];
+    /// <summary>Whether a character of the RACE <paramref name="race"/> may wear it (null: no wearer, no limit).</summary>
+    public bool WearableBy(string? race) => Wearable(WornOnlyBy, WornNeverBy, race);
+    internal static bool Wearable(string[] only, string[] never, string? race) => race is null || (only.Length == 0 ? !never.Contains(race) : only.Contains(race));
     /// <summary>Shackles' lock (level = ARMOUR <c>lock level</c> clamped 0..100, its <c>hardness</c>, locked when made: <c>FUN_14089a440</c>); null for other items.</summary>
     public Locks.LockState? Lock { get; set; }
     /// <summary>Worn and effectively locked: the item cannot be taken off, sold or moved (LockedArmour's tooltip: "locked in place and cannot be removed").</summary>
@@ -46,6 +52,8 @@ public sealed class ItemInstance
         set => buyback = value;
     }
     public int Level { get; set; }
+    /// <summary>The name of the smith who crafted the item at a bench (the save key <c>crafter</c>; empty: not crafted by the player's smith). The tooltip prints it with the player faction's name.</summary>
+    public string Crafter { get; set; } = "";
     public int ItemFunction { get; set; }
     /// <summary>Quality 0 to 100 (clothing from the character's armour grade).</summary>
     public float Quality { get; set; }
@@ -60,7 +68,25 @@ public sealed class ItemInstance
     public int Width { get; init; } = 1;
     public int Height { get; init; } = 1;
     /// <summary>Weight of one unit in kg as it counts in the inventory total (weapons already scaled by <c>weapon inventory weight mult</c>).</summary>
-    public float UnitWeight { get; init; }
+    public float UnitWeight { get => DynamicWeight is null ? baseWeight : WorkedWeight(); init => baseWeight = value; }
+    float baseWeight;
+    /// <summary><see cref="DynamicWeight"/>'s answer for the inputs it was asked with (the inventory total reads it every tick); one object, so a reader on another thread sees a whole one.</summary>
+    sealed record WeightMemo(int Level, string Material, string Company, float Weight);
+    WeightMemo? weightMemo;
+    float WorkedWeight()
+    {
+        if (weightMemo is { } m && m.Level == Level && m.Material == MaterialId && m.Company == CompanyId) return m.Weight;
+        float weight = DynamicWeight!(this);
+        weightMemo = new(Level, MaterialId, CompanyId, weight);
+        return weight;
+    }
+    /// <summary>The record weight (<see cref="UnitWeight"/> when nothing replaces it).</summary>
+    public float RecordWeight => baseWeight;
+    /// <summary>
+    /// What replaces <see cref="RecordWeight"/> for items whose weight is worked out from the item: an armour piece's by its level and part coverage
+    /// (<see cref="Meitou.Data.Gameplay.Combat.ArmourData.WeightAt"/>), a melee weapon's by its level, manufacturer and material (<c>WeaponStats</c>); null for anything else.
+    /// </summary>
+    public Func<ItemInstance, float>? DynamicWeight { get; init; }
     /// <summary>How many units one cell holds (<see cref="ItemInfo.StackLimit"/>; 1: it does not stack). Inside a backpack the bag's bonus applies (<see cref="Inventory.LimitOf"/>).</summary>
     public int StackLimit { get; init; } = 1;
     public bool IsFood { get; init; }
@@ -84,8 +110,8 @@ public sealed class ItemInstance
     /// <summary>A copy of this item with another quantity (a stack split off; never used for a backpack, whose contents are not copied).</summary>
     public ItemInstance WithQuantity(int quantity) => new()
     {
-        Record = Record, Name = Name, Type = Type, EquipmentSection = EquipmentSection, IsLocked = IsLocked, MaterialId = MaterialId, CompanyId = CompanyId, Section = Section, X = X, Y = Y, Quantity = quantity, Level = Level,
-        ItemFunction = ItemFunction, Quality = Quality, Charges = Charges, MaxCharges = MaxCharges, Width = Width, Height = Height, UnitWeight = UnitWeight, StackLimit = StackLimit,
+        Record = Record, Name = Name, Type = Type, EquipmentSection = EquipmentSection, IsLocked = IsLocked, WornOnlyBy = WornOnlyBy, WornNeverBy = WornNeverBy, MaterialId = MaterialId, CompanyId = CompanyId, Section = Section, X = X, Y = Y, Quantity = quantity, Level = Level, Crafter = Crafter,
+        ItemFunction = ItemFunction, Quality = Quality, Charges = Charges, MaxCharges = MaxCharges, Width = Width, Height = Height, UnitWeight = baseWeight, DynamicWeight = DynamicWeight, StackLimit = StackLimit,
         IsFood = IsFood, ContentsFactor = ContentsFactor, StolenFrom = StolenFrom, Death = Death, Buyback = Buyback?.Take(quantity),
     };
 

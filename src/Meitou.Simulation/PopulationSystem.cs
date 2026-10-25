@@ -103,6 +103,7 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
 
     public void Inputs(World world, IReadOnlyList<SimCommand> commands)
     {
+        world.FactionFormations ??= [.. data.Factions.Select(f => f.SquadFormation)];
         foreach (var c in commands)
         {
             if (c is FocusCommand f) focus = f.Position;

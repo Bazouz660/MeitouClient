@@ -104,7 +104,7 @@ static class PostProcessShaders
                 float len = length(v);
                 float vn = dot(v, n) - bias;
                 float range = 1.0 - smoothstep(radius, 2.0 * radius, len);
-                float occluder = uCharacterOccluder < 1.0 ? mix(1.0, uCharacterOccluder, textureLod(uMask, uv, 0.0).a) : 1.0;
+                float occluder = uCharacterOccluder < 1.0 ? mix(1.0, uCharacterOccluder, textureLod(uMask, uv, 0.0).r) : 1.0;
                 sum += max(vn, 0.0) / (len * len + 0.05 * radius * radius) * radius * range * occluder;
             }
             float ao = 1.0 - clamp(uStrength * sum / float(N), 0.0, 1.0);
@@ -575,6 +575,18 @@ static class PostProcessShaders
             vec4 a = particlesAt(floor(vUv * uFullSize) + 0.5);
             fragColour = vec4(clamp(max(a.a, max(a.r, max(a.g, a.b))) * 30.0, 0.0, uLimit));
         }
+        """;
+
+    /// <summary>
+    /// The characters' mask at the occlusion's half size (<see cref="Ssao"/>'s <c>uMask</c>): the scene colour's alpha, which only the characters write, read once
+    /// per pixel into R8. The occlusion's twelve taps read the scene colour itself before, at scattered places: 0.2 ms of L2 traffic at 2560 x 1440 (docs/render-post.md).
+    /// </summary>
+    public const string SsaoMask = """
+        #version 330 core
+        in vec2 vUv;
+        out vec4 fragColour;
+        uniform sampler2D uScene;
+        void main() { fragColour = vec4(textureLod(uScene, vUv, 0.0).a, 0.0, 0.0, 1.0); }
         """;
 
     /// <summary>Depth-aware blur (7 taps) of the occlusion, one direction per pass.</summary>

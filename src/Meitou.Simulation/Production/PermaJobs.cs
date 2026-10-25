@@ -77,7 +77,7 @@ public static class PermaJobs
     /// <see cref="AggroSystem"/>; the carrying jobs (corpse disposal 137 / 138, intruders 223 / 273 with 224 / 274) in <c>ProductionSystem.Errands</c>, and Bodyguard 45 and Staying close 31
     /// (a follow of the job's character) beside the production pick. The rest are kept, shown and saved but never started.
     /// </summary>
-    public static bool Runs(TaskType type) => type is TaskType.OPERATE_MACHINERY or TaskType.OPERATE_STORAGE or TaskType.JOB_BUILDER or TaskType.MAN_A_TURRET_PLAYER_JOB or TaskType.USE_TRAINING_DUMMY;
+    public static bool Runs(TaskType type) => type is TaskType.OPERATE_MACHINERY or TaskType.OPERATE_AUTOMATIC_MACHINERY or TaskType.OPERATE_STORAGE or TaskType.JOB_BUILDER or TaskType.MAN_A_TURRET_PLAYER_JOB or TaskType.USE_TRAINING_DUMMY;
 
     /// <summary>
     /// Whether the job at <paramref name="k"/> of the list may start for a character on <paramref name="task"/> (the original's keys N+8, N+7, ... in list order, highest first;
