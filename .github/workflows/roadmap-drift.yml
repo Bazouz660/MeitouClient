@@ -1,0 +1,31 @@
+# Roadmap drift: compares site/src/data/roadmap.ts with GitHub (closed bugs still named, open bugs not named, bug lists out of step,
+# an old as-of commit, stale issue forms, play report suggestions) and keeps one "Roadmap out of date" issue. Reports only.
+name: Roadmap drift
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  push:
+    branches: [master]
+    paths:
+      - "site/src/data/roadmap.ts"
+      - "site/scripts/issue-forms.mjs"
+      - ".github/scripts/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - run: node .github/scripts/roadmap-drift.mjs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPORTS_URL: ${{ vars.REPORTS_URL }}

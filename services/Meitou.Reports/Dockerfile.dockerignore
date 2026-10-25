@@ -1,0 +1,7 @@
+# Only what the reports image needs from the repository root.
+*
+!Directory.Build.props
+!Directory.Build.targets
+!services/Meitou.Reports/
+services/Meitou.Reports/bin/
+services/Meitou.Reports/obj/

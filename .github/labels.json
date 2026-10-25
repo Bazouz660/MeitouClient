@@ -1,0 +1,82 @@
+[
+  {
+    "name": "bug",
+    "color": "d73a4a",
+    "description": "Something does not work"
+  },
+  {
+    "name": "parity",
+    "color": "c5def5",
+    "description": "Differs from the original game"
+  },
+  {
+    "name": "confirmed-works",
+    "color": "0e8a16",
+    "description": "Seen working in play"
+  },
+  {
+    "name": "roadmap-drift",
+    "color": "fbca04",
+    "description": "The roadmap no longer matches GitHub"
+  },
+  {
+    "name": "area:startup",
+    "color": "ededed",
+    "description": "Roadmap category: Startup and saves"
+  },
+  {
+    "name": "area:characters",
+    "color": "ededed",
+    "description": "Roadmap category: Characters"
+  },
+  {
+    "name": "area:movement",
+    "color": "ededed",
+    "description": "Roadmap category: Movement and control"
+  },
+  {
+    "name": "area:combat",
+    "color": "ededed",
+    "description": "Roadmap category: Combat"
+  },
+  {
+    "name": "area:economy",
+    "color": "ededed",
+    "description": "Roadmap category: Economy"
+  },
+  {
+    "name": "area:squads",
+    "color": "ededed",
+    "description": "Roadmap category: Squads and jobs"
+  },
+  {
+    "name": "area:buildings",
+    "color": "ededed",
+    "description": "Roadmap category: Buildings"
+  },
+  {
+    "name": "area:world",
+    "color": "ededed",
+    "description": "Roadmap category: World"
+  },
+  {
+    "name": "area:factions",
+    "color": "ededed",
+    "description": "Roadmap category: Factions and events"
+  },
+  {
+    "name": "area:audio",
+    "color": "ededed",
+    "description": "Roadmap category: Audio"
+  },
+  {
+    "name": "area:interface",
+    "color": "ededed",
+    "description": "Roadmap category: Interface"
+  },
+  {
+    "name": "area:platform",
+    "color": "ededed",
+    "description": "Roadmap category: Platform and performance"
+  }
+]

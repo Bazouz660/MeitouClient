@@ -73,6 +73,7 @@ public sealed partial class MainWindow : Window
         NightlyBox.IsChecked = config.IncludePrereleases;
         AutoUpdateBox.IsChecked = config.AutoUpdateLauncher;
         AutoUpdateBox.IsEnabled = updater.IsInstalled;
+        ShowReportButton();
         DataFolderText.Text = $"The launcher's and the game's settings: {LauncherConfig.DataDirectory}";
         InstallPathBox.Text = LauncherConfig.InstallDirectory;
         LauncherVersionText.Text = $"v{LauncherVersion} · {Releases.Rid}";

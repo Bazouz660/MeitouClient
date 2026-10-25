@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Roadmap
+    url: https://meitou.martinvlcek.sk/roadmap
+    about: What works in Meitou and what does not yet. "Works for me" and "Broken" buttons are on each row.
+  - name: Discord
+    url: https://discord.gg/DVAHH2n9DR
+    about: Questions and play reports (/works and /broken).

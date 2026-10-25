@@ -1,0 +1,61 @@
+# Reports image: builds services/Meitou.Reports (play reports for the roadmap), pushes it to GHCR as ghcr.io/vlcekm/meitou-reports,
+# then calls the Cloudovna redeploy webhook. Runs on pushes to master that touch the service or this file, and on demand.
+name: Reports image
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "services/Meitou.Reports/**"
+      - "Directory.Build.props"
+      - ".github/workflows/reports-image.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/vlcekm/meitou-reports
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,prefix=sha-,format=short
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/Meitou.Reports/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=reports
+          cache-to: type=gha,mode=max,scope=reports
+
+      # The URL carries a token, so it lives in a repository secret; skipped until it is set.
+      - name: Redeploy
+        env:
+          REPORTS_REDEPLOY_WEBHOOK_URL: ${{ secrets.REPORTS_REDEPLOY_WEBHOOK_URL }}
+        if: env.REPORTS_REDEPLOY_WEBHOOK_URL != ''
+        run: curl --fail --silent --show-error --max-time 60 -X POST "$REPORTS_REDEPLOY_WEBHOOK_URL"

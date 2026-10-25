@@ -5,8 +5,10 @@
 
 export type Status = 'works' | 'untested' | 'wip' | 'bug' | 'missing';
 export type Os = 'win' | 'linux' | 'mac';
+/** Evidence for a status: the build it was last confirmed on, when, and by whom ("playtest", an issue "#123", a tester). */
+export interface Seen { build: string; date: string; by: string; }
 /** id: a stable slug for the system, used in links (#id) and for play reports; keep it when the name is reworded. */
-export interface Row { id: string; system: string; status: Status; note: string; bugs: string[]; platforms?: Partial<Record<Os, Status | 'na'>>; }
+export interface Row { id: string; system: string; status: Status; note: string; bugs: string[]; platforms?: Partial<Record<Os, Status | 'na'>>; seen?: Seen; }
 export interface Category { id: string; name: string; blurb: string; rows: Row[]; }
 export interface Bug { id: string; seen: string; original: string; state: string; platform?: string; }
 export interface Fix { id: string; text: string; }

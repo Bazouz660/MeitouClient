@@ -1,0 +1,28 @@
+# Site check: builds site/ on pull requests that touch it (the image build runs only on master), so a broken page shows before merge.
+name: Site check
+
+on:
+  pull_request:
+    paths:
+      - "site/**"
+      - ".github/workflows/site-check.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: site
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - run: npm ci
+      - run: node scripts/history.mjs
+      - run: npm run build

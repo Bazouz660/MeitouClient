@@ -4,6 +4,8 @@ Released with tags `launcher-v<version>` by `.github/workflows/launcher-release.
 
 ## Unreleased
 
+- **Report to the roadmap** under the launcher version: tell the roadmap a system works or is broken, with the version,
+  platform and mods, and optionally the end of that version's log.txt. Shown once the reports service is live.
 - macOS Apple silicon: first start and Settings → Renderer offer **Auto**, native **Metal** and **Vulkan (MoltenVK)**. Auto
   uses Vulkan when its loader exists and Metal otherwise, so a new user does not need Homebrew; Metal starts without
   `DYLD_LIBRARY_PATH`.

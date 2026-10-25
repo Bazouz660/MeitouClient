@@ -18,6 +18,7 @@ used as a naming reference for our 1.0.68 analysis; they are **Observed** until 
 - [characters](characters.md)
 - [impostors](impostors.md)
 - [launcher](launcher.md): game release installer, mod list and presets
+- [play-reports](play-reports.md): roadmap upkeep: play reports service, Discord, launcher button, issue forms, drift check
 - [macos-port](macos-port.md): running on MoltenVK, its constraints and fixes; the native Metal path next to it
 - [metal-backend](metal-backend.md): a native Metal path next to Vulkan - what the spike proved and what a second backend would need
 - [metal-content-testability-plan](metal-content-testability-plan.md): the content/testability gaps and the order to close them

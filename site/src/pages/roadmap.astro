@@ -10,6 +10,9 @@ import '@fontsource/jetbrains-mono/500.css';
 import Base from '../layouts/Base.astro';
 import { asOf, allRows, bugs, categories, countBy, fixedSeen, fixedUnseen, order, platformStatus, refUrl, statuses } from '../data/roadmap';
 import type { Os, Row } from '../data/roadmap';
+import { history } from '../data/history';
+import { recheckBefore, reportBuilds } from '../data/releases';
+import { reports } from '../data/reports';
 
 const oses: Os[] = ['win', 'linux', 'mac'];
 const osShort = { win: 'Win', linux: 'Linux', mac: 'macOS' } as const;
@@ -20,6 +23,14 @@ const differs = (r: Row) => !!r.platforms && oses.some((os) => platformStatus(r,
 const rowData = (r: Row) => JSON.stringify({ s: r.status, p: Object.fromEntries(oses.map((os) => [os, platformStatus(r, os)])), d: differs(r), b: r.bugs.length > 0 });
 const counts = countBy(allRows);
 const backgrounds = [1, 2, 3, 4].map((i) => `/roadmap-bg/bg-${i}.jpg`);
+const stale = (r: Row) => !!r.seen && !!recheckBefore && r.seen.date < recheckBefore;
+const byText = (by: string) => (/^#\d+$/.test(by) ? by : by === 'playtest' ? 'a playtest' : by);
+// History chart: one stacked bar per day the roadmap changed (newest 40), as percentages of the rows that day.
+const snaps = history.snapshots.slice(-40);
+const chartW = 640, chartH = 120, barGap = 2;
+const barW = snaps.length ? Math.min(28, (chartW - barGap * (snaps.length - 1)) / snaps.length) : 0;
+const statusLabel = (s: keyof typeof statuses | null) => (s ? statuses[s].label : 'removed');
+const reportConfig = JSON.stringify({ url: reports.url.replace(/\/$/, ''), siteKey: reports.turnstileSiteKey, builds: reportBuilds });
 ---
 <Base title="Roadmap - Meitou" description="How far each of Kenshi's systems is in Meitou, against unmodded Kenshi 1.0.68.">
   <div class="backdrop" aria-hidden="true" data-bgs={JSON.stringify(backgrounds)}><div></div><div></div></div>
@@ -43,6 +54,7 @@ const backgrounds = [1, 2, 3, 4].map((i) => `/roadmap-bg/bg-${i}.jpg`);
         {Object.entries(platforms).map(([k, v]) => <button type="button" class="chip" data-p={k} aria-pressed={String(k === 'all')}>{v}</button>)}
         <span class="lbl gap">Bugs</span>
         <button type="button" class="chip hbchip" data-bugs aria-pressed="false">Has bugs</button>
+        <input type="search" class="search" placeholder="Search systems and notes" aria-label="Search systems and notes" hidden />
       </div>
       <div class="tiles" role="group" aria-label="Filter by status">
         {order.map((k) => (
@@ -99,7 +111,19 @@ const backgrounds = [1, 2, 3, 4].map((i) => `/roadmap-bg/bg-${i}.jpg`);
                     )}
                   </td>
                   <td class="st"><span class={`pill st-${r.status}`}>{statuses[r.status].label}</span></td>
-                  <td class="note">{r.note}</td>
+                  <td class="note">
+                    {r.note}
+                    {r.seen && (
+                      <span class:list={['seen', { stale: stale(r) }]}>
+                        {stale(r) ? `Not rechecked since ${r.seen.build} (${r.seen.date})` : `Last confirmed on ${r.seen.build}, ${r.seen.date}, by ${byText(r.seen.by)}`}
+                      </span>
+                    )}
+                    <span class="rep" data-rep={r.id} data-name={r.system} hidden>
+                      <span class="rc"></span>
+                      <button type="button" data-v="works">Works for me</button>
+                      <button type="button" data-v="broken">Broken</button>
+                    </span>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -145,7 +169,71 @@ const backgrounds = [1, 2, 3, 4].map((i) => `/roadmap-bg/bg-${i}.jpg`);
         </div>
       </div>
     </section>
+
+    {(snaps.length > 1 || history.changes.length > 0) && (
+      <section aria-labelledby="changes-h">
+        <h2 id="changes-h">Recent changes</h2>
+        <p class="meta">How the statuses moved. Also as <a href="/roadmap-changes.xml">RSS</a> and <a href="/roadmap-changes.json">JSON</a>; the whole roadmap is <a href="/roadmap.json">roadmap.json</a>.</p>
+        {snaps.length > 1 && (
+          <figure class="hist">
+            <svg viewBox={`0 0 ${chartW} ${chartH}`} role="img" aria-label="Share of systems in each status, per day the roadmap changed">
+              {snaps.map((s, i) => {
+                const total = order.reduce((n, k) => n + (s.counts[k] ?? 0), 0) || 1;
+                let y = chartH;
+                return (
+                  <g class="hbar" transform={`translate(${i * (barW + barGap)} 0)`}>
+                    <title>{`${s.date}: ${order.map((k) => `${s.counts[k] ?? 0} ${statuses[k].label.toLowerCase()}`).join(', ')}`}</title>
+                    {order.map((k) => {
+                      const h = ((s.counts[k] ?? 0) / total) * chartH;
+                      y -= h;
+                      return h > 0 && <rect class={`st-${k}`} x="0" y={y + 1} width={barW} height={Math.max(0, h - 2)} />;
+                    })}
+                  </g>
+                );
+              })}
+            </svg>
+            <figcaption class="legend">
+              {order.map((k) => <span><i class={`st-${k}`}></i>{statuses[k].label}</span>)}
+              <span class="meta">{snaps[0].date} to {snaps[snaps.length - 1].date}</span>
+            </figcaption>
+          </figure>
+        )}
+        {history.changes.length > 0 && (
+          <ul class="fixlist">
+            {history.changes.slice(0, 15).map((c) => (
+              <li><span class="tag">{c.date}</span><span><a href={`#${c.id}`}>{c.system}</a>: {c.from === null ? `added as ${statusLabel(c.to)}` : `${statusLabel(c.from)} to ${statusLabel(c.to)}`}</span></li>
+            ))}
+          </ul>
+        )}
+      </section>
+    )}
   </div>
+  <dialog class="repdlg" data-config={reportConfig}>
+    <form method="dialog">
+      <h3>Report: <span class="rname"></span></h3>
+      <fieldset class="verdict">
+        <label><input type="radio" name="verdict" value="works" /> Works for me</label>
+        <label><input type="radio" name="verdict" value="broken" /> Broken</label>
+      </fieldset>
+      <label>Build
+        <select name="build">{reportBuilds.map((b) => <option value={b}>{b}</option>)}<option value="other">Other or self-built</option></select>
+      </label>
+      <label>Platform
+        <select name="platform"><option value="win">Windows</option><option value="linux">Linux</option><option value="mac">macOS</option><option value="proton">Proton</option></select>
+      </label>
+      <label class="inline"><input type="checkbox" name="modded" /> Playing with mods</label>
+      <label>What you did or saw <span class="opt">(optional for Works)</span>
+        <input name="note" maxlength="300" autocomplete="off" />
+      </label>
+      <div class="ts"></div>
+      <p class="rstatus" role="status"></p>
+      <div class="actions">
+        <button type="submit" value="cancel" formnovalidate>Cancel</button>
+        <button type="button" class="send">Send report</button>
+      </div>
+      <p class="meta small">Stored: the row, your answers and a salted hash of your IP to count distinct people. Bugs with steps belong in a <a href="https://github.com/VlcekM/MeitouClient/issues/new/choose">GitHub issue</a>.</p>
+    </form>
+  </dialog>
   <a class="totop" href="#top" aria-label="Back to top" hidden>
     <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" d="M6 14l6-6 6 6" /></svg>
     <span>Top</span>
@@ -191,8 +279,12 @@ const backgrounds = [1, 2, 3, 4].map((i) => `/roadmap-bg/bg-${i}.jpg`);
     const ORDER = ['works', 'untested', 'wip', 'bug', 'missing'];
     const LABEL = { works: 'Works', untested: 'Untested', wip: 'WIP', bug: 'Bug', missing: 'Missing', na: 'N/A' };
     const PLAT = { win: 'Windows', linux: 'Linux', mac: 'macOS' };
-    let active = null, plat = 'all', onlyBugs = false;
-    const rows = [...document.querySelectorAll('tr[data-row]')].map((tr) => ({ tr, ...JSON.parse(tr.dataset.row) }));
+    let active = null, plat = 'all', onlyBugs = false, query = '';
+    const search = document.querySelector('.search');
+    search.hidden = false;
+    // Search text per row: the system, its note and evidence (not the report buttons).
+    const textOf = (tr) => [tr.querySelector('.sys').textContent, ...[...tr.querySelector('.note').childNodes].filter((n) => !n.classList?.contains('rep')).map((n) => n.textContent)].join(' ').toLowerCase();
+    const rows = [...document.querySelectorAll('tr[data-row]')].map((tr) => ({ tr, text: textOf(tr), ...JSON.parse(tr.dataset.row) }));
     const on = (r) => plat === 'all' ? true : plat === 'specific' ? r.d : r.p[plat] !== 'na';
     const st = (r) => (plat in PLAT ? r.p[plat] : r.s);
     const bar = (el, rs) => { const n = rs.length; el.querySelectorAll('span').forEach((s, i) => { s.style.width = n ? `${(100 * rs.filter((r) => st(r) === ORDER[i]).length) / n}%` : '0'; }); };
@@ -215,7 +307,7 @@ const backgrounds = [1, 2, 3, 4].map((i) => `/roadmap-bg/bg-${i}.jpg`);
           : 'nothing for this platform';
         let any = false;
         rs.forEach((r) => {
-          const s = on(r) ? st(r) : r.s, show = on(r) && (!active || s === active) && (!onlyBugs || r.b);
+          const s = on(r) ? st(r) : r.s, show = on(r) && (!active || s === active) && (!onlyBugs || r.b) && (!query || r.text.includes(query));
           const pill = r.tr.querySelector('.pill'); pill.className = `pill st-${s}`; pill.textContent = LABEL[s];
           r.tr.hidden = !show; any ||= show;
         });
@@ -226,6 +318,7 @@ const backgrounds = [1, 2, 3, 4].map((i) => `/roadmap-bg/bg-${i}.jpg`);
       if (plat !== 'all') parts.push(plat === 'specific' ? 'rows whose status differs by platform' : `the status on ${PLAT[plat]}`);
       if (active) parts.push(`${LABEL[active]} only`);
       if (onlyBugs) parts.push('systems with known bugs');
+      if (query) parts.push(`systems matching “${search.value.trim()}”`);
       note.firstChild.textContent = parts.length ? `Showing ${parts.join(', ')}. ` : plain;
       clear.hidden = !parts.length;
     }
@@ -235,8 +328,78 @@ const backgrounds = [1, 2, 3, 4].map((i) => `/roadmap-bg/bg-${i}.jpg`);
       if (c.hasAttribute('data-bugs')) onlyBugs = !onlyBugs; else plat = c.dataset.p;
       apply();
     });
-    clear.addEventListener('click', () => { active = null; plat = 'all'; onlyBugs = false; apply(); });
+    search.addEventListener('input', () => { query = search.value.trim().toLowerCase(); apply(); });
+    clear.addEventListener('click', () => { active = null; plat = 'all'; onlyBugs = false; query = search.value = ''; apply(); });
     apply();
+  })();
+
+  // Play reports: counts per row from the reports service, and a Works for me / Broken form. Hidden when the service is not set or down.
+  (() => {
+    const dlg = document.querySelector('.repdlg'), cfg = JSON.parse(dlg.dataset.config);
+    if (!cfg.url) return;
+    const form = dlg.querySelector('form'), status = dlg.querySelector('.rstatus'), send = dlg.querySelector('.send');
+    let row = null, widget = null;
+    const show = (summary) => {
+      const by = Object.fromEntries(summary.rows.map((s) => [s.row, s]));
+      document.querySelectorAll('[data-rep]').forEach((el) => {
+        const s = by[el.dataset.rep];
+        el.querySelector('.rc').textContent = s ? `${s.works} works, ${s.broken} broken, last on ${s.lastBuild}` : 'No reports yet';
+        el.hidden = false;
+      });
+    };
+    const load = (fresh) => fetch(`${cfg.url}/summary`, fresh ? { cache: 'reload' } : {}).then((r) => (r.ok ? r.json() : Promise.reject())).then(show);
+    load().catch(() => {});
+
+    // Turnstile is loaded on the first open only, so a visitor who never reports never loads it.
+    const turnstile = () => new Promise((resolve) => {
+      if (!cfg.siteKey) return resolve();
+      if (window.turnstile) return resolve();
+      const s = document.createElement('script');
+      s.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+      s.onload = () => resolve(); s.onerror = () => resolve();
+      document.head.append(s);
+    });
+    const guessPlatform = () => /Mac/.test(navigator.platform) ? 'mac' : /Linux/.test(navigator.platform) ? 'linux' : 'win';
+
+    document.addEventListener('click', async (e) => {
+      const b = e.target.closest('[data-rep] button'); if (!b) return;
+      const el = b.closest('[data-rep]');
+      row = el.dataset.rep;
+      dlg.querySelector('.rname').textContent = el.dataset.name;
+      form.reset();
+      form.verdict.value = b.dataset.v;
+      form.platform.value = guessPlatform();
+      status.textContent = ''; send.disabled = false;
+      dlg.showModal();
+      await turnstile();
+      if (cfg.siteKey && window.turnstile) {
+        if (widget === null) widget = window.turnstile.render(dlg.querySelector('.ts'), { sitekey: cfg.siteKey, theme: 'dark' });
+        else window.turnstile.reset(widget);
+      }
+    });
+
+    send.addEventListener('click', async () => {
+      const verdict = form.verdict.value, note = form.note.value.trim();
+      if (verdict === 'broken' && !note) { status.textContent = 'Say what happened.'; form.note.focus(); return; }
+      send.disabled = true; status.textContent = 'Sending…';
+      const body = {
+        row, verdict, note, build: form.build.value, platform: form.platform.value, modded: form.modded.checked, source: 'web',
+        turnstile: widget !== null && window.turnstile ? window.turnstile.getResponse(widget) : undefined,
+      };
+      try {
+        const r = await fetch(`${cfg.url}/reports`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        if (r.status === 429) throw new Error('Too many reports from here; try again later.');
+        const res = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(res.error ? `Not sent: ${res.error}.` : 'Not sent.');
+        status.textContent = 'Thanks, recorded.';
+        load(true).catch(() => {});
+        setTimeout(() => dlg.close(), 900);
+      } catch (err) {
+        status.textContent = err.message || 'Not sent; the report service did not answer.';
+        send.disabled = false;
+        if (widget !== null && window.turnstile) window.turnstile.reset(widget);
+      }
+    });
   })();
 </script>
 
@@ -353,6 +516,43 @@ const backgrounds = [1, 2, 3, 4].map((i) => `/roadmap-bg/bg-${i}.jpg`);
   .totop:hover, .totop:focus-visible { border-color: var(--accent); color: var(--accent); outline: none; }
   @media (prefers-reduced-motion: no-preference) { .totop { transition: border-color .15s, color .15s; } }
 
-  @media (max-width: 560px) { .rd h1 { font-size: 2rem; } }
+  .search { font: inherit; font-size: .9rem; color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; margin-left: auto; min-width: 0; flex: 0 1 240px; }
+  .search:focus-visible { border-color: var(--accent); outline: none; }
+  .seen { display: block; margin-top: 4px; font-size: .82rem; color: var(--works); }
+  .seen.stale { color: var(--wip); }
+  .rep { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; font-size: .8rem; }
+  .rep .rc { color: var(--muted); margin-right: 2px; }
+  .rep button { font: inherit; cursor: pointer; color: var(--fg); background: transparent; border: 1px solid var(--line); border-radius: 999px; padding: 1px 9px; }
+  .rep button:hover, .rep button:focus-visible { border-color: var(--accent); color: var(--accent); outline: none; }
+
+  .hist { margin: 0; display: grid; gap: 8px; }
+  .hist svg { width: 100%; max-width: 640px; height: auto; }
+  .hist rect { fill: var(--c); rx: 2px; }
+  .hbar:hover rect { opacity: .8; }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: .85rem; align-items: center; }
+  .legend span { display: inline-flex; gap: 6px; align-items: center; }
+  .legend i { width: 10px; height: 10px; border-radius: 2px; background: var(--c); }
+
+  .repdlg {
+    --bg: #1c1613; --surface: #2a201b; --fg: #eadfcb; --muted: #a8977f; --line: #3d312a; --accent: #e07b45;
+    color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 18px 20px; width: min(440px, calc(100vw - 32px));
+    font-family: "Source Sans 3", system-ui, sans-serif;
+  }
+  .repdlg::backdrop { background: rgba(0, 0, 0, .6); }
+  .repdlg form { display: grid; gap: 12px; }
+  .repdlg h3 { margin: 0; font-family: "Barlow Condensed", "Arial Narrow", sans-serif; font-size: 1.3rem; font-weight: 600; }
+  .repdlg fieldset { border: 0; padding: 0; margin: 0; display: flex; gap: 16px; }
+  .repdlg label { display: grid; gap: 4px; font-size: .9rem; }
+  .repdlg label.inline, .repdlg fieldset label { display: flex; gap: 6px; align-items: center; }
+  .repdlg :is(select, input:not([type])) { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 6px 8px; }
+  .repdlg .opt, .repdlg .small { color: var(--muted); font-size: .8rem; margin: 0; }
+  .repdlg a { color: var(--accent); }
+  .repdlg .rstatus { margin: 0; min-height: 1.2em; font-size: .9rem; }
+  .repdlg .actions { display: flex; gap: 8px; justify-content: flex-end; }
+  .repdlg .actions button { font: inherit; cursor: pointer; border-radius: 999px; padding: 5px 14px; border: 1px solid var(--line); background: transparent; color: var(--fg); }
+  .repdlg .actions .send { background: var(--accent); border-color: var(--accent); color: var(--bg); font-weight: 600; }
+  .repdlg .actions .send:disabled { opacity: .6; cursor: default; }
+
+  @media (max-width: 560px) { .rd h1 { font-size: 2rem; } .search { margin-left: 0; flex-basis: 100%; } }
   @media (prefers-reduced-motion: no-preference) { .tile, .rd .loop a { transition: border-color .15s, opacity .15s; } }
 </style>
