@@ -177,6 +177,8 @@ public sealed partial class AiSystem
                 case TaskType.STAND_AT_SHOPKEEPER_NODE or TaskType.STAND_AT_GUARD_NODE_HOMEBUILDING or TaskType.STAND_AT_GUARD_NODE_HOMEBUILDING_INDOORS_ONLY
                     or TaskType.STAND_AT_GUARD_NODE_HOMETOWN_OUTSIDE or TaskType.STAND_AT_GENERAL_NODE or TaskType.STAY_IN_HOME or TaskType.SIT_ON_THRONE
                     or TaskType.HOLD_POSITION or TaskType.MAN_THE_GATE:
+                    // Staying home on its claimed chair, else at home.
+                    if (type == TaskType.STAY_IN_HOME && board.SeatClaims.TryGetValue(slot, out var chair) && !mind.SeatUnreachable) return new PlanTarget(Targets.Seat, chair.Position);
                     return Spot(Targets.Spot, system.SpotFor(mind, board, AiBehaviour.Post, type));
                 case TaskType.GO_HOME_AND_GO_TO_BED or TaskType.GO_HOME_AND_GO_TO_BED_SECURE:
                     return Spot(Targets.Bed, system.SpotFor(mind, board, AiBehaviour.Sleep, type));

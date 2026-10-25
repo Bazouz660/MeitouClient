@@ -436,6 +436,8 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
                 mind.CommitUntil = world.GameHours + profile.CommitMin + Rng.Float(roll) * profile.CommitRange;
             }
         }
+        // Staying home sits on the chair its squad claimed for it (the original's 43 operates home furniture, chairs among it); without one it stands at home.
+        if (type == TaskType.STAY_IN_HOME && board.SeatClaims.ContainsKey(slot) && !mind.SeatUnreachable) behaviour = AiBehaviour.Sit;
         if (behaviour == AiBehaviour.Investigate && (fresh || mind.Behaviour != AiBehaviour.Investigate)) mind.LookAbout = Crime.CrimeSystem.FirstLookAboutSeconds;
         mind.Goal = goal;
         mind.Behaviour = behaviour;
@@ -991,10 +993,10 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
     }
 
     /// <summary>
-    /// Gives the members whose role list has relaxing (under a bar package) or sitting around open at this hour a seat of their <see cref="Blackboard.Home"/> (the
+    /// Gives the members whose role list has relaxing (under a bar package), sitting around or staying home open at this hour a seat of their <see cref="Blackboard.Home"/> (the
     /// package's bar under a bar package): in member order each takes the first seat no one in that building claimed in this cadence pass; members left without one
     /// do not relax or sit. Relaxing takes a chair, else a bar node, else a general node (the original operates furniture of the bar, docs/game/ai-tasks.md "Town
-    /// goals", Observed; the node fallbacks are an engine choice); sitting around a chair only (the original's furniture not claimed by others, Observed; its
+    /// goals", Observed; the node fallbacks are an engine choice); sitting around and staying home a chair only (the original's furniture not claimed by others, Observed; its
     /// training and throne furniture are left out). A member keeps the seat it had while it still relaxes or sits (engine choice: reassigning every pass in member
     /// order moved every later sitter to another chair whenever one came or went); the seats kept are reserved for every squad first (<see cref="ReserveSeats"/>).
     /// </summary>
@@ -1019,7 +1021,7 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             {
                 if (!roles[g].InWindow(hour)) continue;
                 relaxes |= bar && roles[g].Task.Type == TaskType.RELAX_IN_TOWN_PACKAGE;
-                sits |= roles[g].Task.Type == TaskType.SIT_AROUND;
+                sits |= roles[g].Task.Type is TaskType.SIT_AROUND or TaskType.STAY_IN_HOME;
             }
             if (taken is null && !seatTaken.TryGetValue(home, out taken)) seatTaken[home] = taken = [];
             int had = kept.TryGetValue(s, out var old) ? IndexOf(home, old) : -1;
