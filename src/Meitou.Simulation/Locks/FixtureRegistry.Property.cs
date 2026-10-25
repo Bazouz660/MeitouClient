@@ -78,6 +78,7 @@ public sealed partial class FixtureRegistry
         world.Player.Money -= price;
         p.Owner = world.Player.Faction;
         p.Purchased = true;
+        resetBuildings.Remove(order.Building);
         ownedProperties = null;
         foreach (var f in OfBuilding(order.Building)) f.Owner = p.Owner;
         containerSpots = null; doorPicks = null; bedSpots = null; cageList = null;
@@ -99,9 +100,12 @@ public sealed partial class FixtureRegistry
         bool Players(TownBuilding b) => properties.TryGetValue(b.Key, out var p) ? p.Purchased || p.Owner == player
             : sites.Contains(site) ? OfBuilding(b.Key).Any(f => f.Owner == player)
             : Saved?.GetValueOrDefault(b.Key)?.Strings.GetValueOrDefault("owner faction ID") is { Length: > 0 } id && data.FactionIndex(id) == player;
+        int LevelOwner(TownBuilding b) => b.OwnerFactionId is { } o && data.FactionIndex(o) is var fi and >= 0 ? fi : townFaction;
         var reset = town.Buildings.Where(b => b.Zone == town.Zone && !Players(b)).Select(b => b.Key).ToHashSet(StringComparer.Ordinal);
         if (Saved is { } saved && reset.Any(saved.ContainsKey))
             Saved = saved.Where(s => !reset.Contains(s.Key)).ToDictionary(s => s.Key, s => s.Value, StringComparer.Ordinal);
+        foreach (var b in town.Buildings)
+            if (reset.Contains(b.Key)) resetBuildings[b.Key] = (b, data, LevelOwner(b));
         if (!sites.Contains(site)) return;
         foreach (var b in town.Buildings)
         {
@@ -110,10 +114,9 @@ public sealed partial class FixtureRegistry
                 Unregister(b.Key);
                 properties.Remove(b.Key);
                 RegisterBuilding(world, data, site, b, townFaction);
-                resetBuildings[b.Key] = (b, data);
             }
             else if (Players(b)) continue;
-            int owner = b.OwnerFactionId is { } o && data.FactionIndex(o) is var fi and >= 0 ? fi : townFaction;
+            int owner = LevelOwner(b);
             if (properties.TryGetValue(b.Key, out var p)) p.Owner = owner;
             foreach (var f in OfBuilding(b.Key)) f.Owner = owner;
             world.ItemSlots.TransferBuilding(world, b, owner);
@@ -123,17 +126,28 @@ public sealed partial class FixtureRegistry
         containerSpots = null; doorPicks = null; bedSpots = null; cageList = null;
     }
 
-    // The buildings a town override registered again from the level: their saved record (patched, not rewritten, by a save) must not bring the old state back.
-    readonly Dictionary<string, (TownBuilding Building, PopulationData Data)> resetBuildings = new(StringComparer.Ordinal);
+    // The buildings a town override reset to the level, with their level owner then: their saved record (patched, not rewritten, by a save) must not bring the old state back.
+    // A building the player buys afterwards leaves it.
+    readonly Dictionary<string, (TownBuilding Building, PopulationData Data, int Owner)> resetBuildings = new(StringComparer.Ordinal);
 
-    /// <summary>A reset building's keys the live writers do not touch: its owner (the fixtures') and its level <c>destroyed</c>.</summary>
+    /// <summary>A reset building's keys the live writers do not touch: its owner (its fixtures', else the one it was reset to) and its level <c>destroyed</c>.</summary>
     void WriteReset(string building, FcsRecord state)
     {
         if (!resetBuildings.TryGetValue(building, out var reset)) return;
-        int owner = OfBuilding(building).FirstOrDefault()?.Owner ?? -1;
+        int owner = OfBuilding(building).FirstOrDefault()?.Owner ?? reset.Owner;
         if ((uint)owner < (uint)reset.Data.Factions.Count) state.Strings["owner faction ID"] = reset.Data.Factions[owner].Id;
         else state.Strings.Remove("owner faction ID");
         state.Bools["destroyed"] = reset.Building.Destroyed;
+    }
+
+    /// <summary>
+    /// Writes <see cref="WriteReset"/>'s keys into the saved records of every reset building, by instance id: also those with no fixtures or whose town was not registered, which
+    /// <see cref="WriteBuilding"/> never sees.
+    /// </summary>
+    public void WriteResets(IReadOnlyDictionary<string, FcsRecord> states)
+    {
+        foreach (var building in resetBuildings.Keys)
+            if (states.TryGetValue(building, out var state)) WriteReset(building, state);
     }
 
     void WriteProperty(string building, FcsRecord state)
