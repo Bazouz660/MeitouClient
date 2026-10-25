@@ -296,7 +296,7 @@ to Jobs; the saved `chase mode` flag is that switch (**Verified**, [perma-jobs](
   - `HealthText` words in priority: Dead, BEING EATEN ALIVE!!, Dying, Unconscious (N) (N = (int) of the medical float `+0xa0`, the KO timer, taken
     only while it is &gt; 0; "Rebooting" for skeletons; `FUN_14088a8f0`), Recovery coma, Playing dead..., Blood loss KO, Bleeding out,
     Crippled, Crippled arm, Critical, Limb trauma, Staying low, Starving (hunger &lt; 1), Bleeding, disguise words; else by the overall health h:
-    Hungry (h ≥ 0.7 and hunger &lt; 2), Wounded (h &lt; 0.7), Slightly Injured (h &lt; 0.9), Normal. h is medical `+0xa4 worstDamage`, the worst part's
+    Hungry (h ≥ 0.7 and hunger &lt; 2), Wounded (h &lt; 0.7), Slightly Injured (h &lt; 0.9), Normal. h is medical `+0xa4 worstDamage` (**Verified**: `FUN_14088a8f0` tests it against 0.7 and 0.9), the worst part's
     fraction ([character-stats.md](character-stats.md#hunger-blood-and-parts); a leg at 77 % and "Slightly Injured" in a screenshot, **Observed**).
 - Side-panel rendering follows the [main UI font policy](../formats/mygui.md),
   with 20-pixel row spacing at 1080 lines for name, state, XP and combat stats. Extended
