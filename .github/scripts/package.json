@@ -1,0 +1,11 @@
+{
+  "name": "meitou-workflow-scripts",
+  "private": true,
+  "type": "module",
+  "license": "GPL-3.0-or-later",
+  "description": "Scripts the GitHub workflows run; only roadmap-update.mjs needs these packages.",
+  "dependencies": {
+    "@anthropic-ai/sdk": "1.3.0",
+    "zod": "4.6.7"
+  }
+}

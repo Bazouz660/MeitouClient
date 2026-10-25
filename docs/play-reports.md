@@ -66,3 +66,13 @@ the last `X-Forwarded-For` entry. Port 8080.
   bugs that do not name each other, `asOf.master` over 100 commits behind, stale issue forms, and the reports' proposals (repository
   variable `REPORTS_URL`). Closes it when clean. `DRY_RUN=1 node .github/scripts/roadmap-drift.mjs` prints the findings.
 - `site-check.yml`: builds `site/` on pull requests.
+
+## Roadmap updates
+
+`roadmap-update.yml` runs after each successful Nightly or Release (and on demand). `.github/scripts/roadmap-update.mjs` sends
+Claude Haiku 5.5 (`claude-haiku-5-5`, effort medium, structured output) the roadmap file, the commits and issues since `asOf`, the
+drift findings and the play reports; the model returns edits (row status, note, bug ids; Known bugs and fixes to add or remove) with
+the evidence for each. The script applies them line by line (row ids, names, categories, platforms and `seen` are never touched),
+sets `asOf` to the run's commit, checks the file still loads with the same rows, the workflow builds the site, and the result goes
+to one PR from `auto/roadmap-update`, replaced on the next run. A person merges it. Needs the `ANTHROPIC_API_KEY` secret (skipped
+without it) and the repository setting that lets Actions create pull requests. `EDITS_FILE=<json>` applies a saved answer offline.

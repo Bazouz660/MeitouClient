@@ -1,0 +1,75 @@
+# Roadmap update: after each successful nightly or release (and on demand), Claude Haiku proposes edits to site/src/data/roadmap.ts
+# from the commits, issues, drift findings and play reports since the roadmap's as-of commit (.github/scripts/roadmap-update.mjs).
+# The edits go to one pull request on the auto/roadmap-update branch, updated in place; a person merges it.
+# Needs the ANTHROPIC_API_KEY secret, and "Allow GitHub Actions to create and approve pull requests" in the repository's Actions settings.
+name: Roadmap update
+
+on:
+  workflow_run:
+    workflows: [Nightly, Release]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: read
+
+concurrency:
+  group: roadmap-update
+  cancel-in-progress: false
+
+jobs:
+  propose:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: master
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+
+      - run: npm ci
+        working-directory: .github/scripts
+
+      - name: Ask Claude Haiku for edits
+        id: update
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPORTS_URL: ${{ vars.REPORTS_URL }}
+          SUMMARY_FILE: ${{ runner.temp }}/roadmap-update.md
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then echo "No ANTHROPIC_API_KEY secret; skipped." >> "$GITHUB_STEP_SUMMARY"; exit 0; fi
+          node .github/scripts/roadmap-update.mjs
+          if git diff --quiet; then echo "changed=false" >> "$GITHUB_OUTPUT"; else echo "changed=true" >> "$GITHUB_OUTPUT"; fi
+
+      # The page must still build with the edits.
+      - name: Build the site
+        if: steps.update.outputs.changed == 'true'
+        working-directory: site
+        run: |
+          npm ci
+          npm run build
+
+      - name: Open or update the pull request
+        if: steps.update.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SUMMARY_FILE: ${{ runner.temp }}/roadmap-update.md
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -C auto/roadmap-update
+          git commit -am "Roadmap: proposed update after $(git rev-parse --short=8 HEAD)"
+          git push --force origin auto/roadmap-update
+          if gh pr view auto/roadmap-update --json state -q .state 2>/dev/null | grep -q OPEN; then
+            gh pr edit auto/roadmap-update --body-file "$SUMMARY_FILE"
+          else
+            gh pr create --base master --head auto/roadmap-update --title "Roadmap: proposed update" --body-file "$SUMMARY_FILE"
+          fi
+          cat "$SUMMARY_FILE" >> "$GITHUB_STEP_SUMMARY"
