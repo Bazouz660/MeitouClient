@@ -2,6 +2,11 @@
 
 Released with tags `launcher-v<version>` by `.github/workflows/launcher-release.yml`; each release needs its `## v<version>` section.
 
+## v1.3.1
+
+- Texture quality's slider now has **Maximum on the right**, like every other slider. Your saved setting stays as it
+  was. Shows with game releases from the next one on.
+
 ## v1.3.0
 
 - **Videos in news posts**: a post can show a video, as its cover or in the text. It shows the first frame with a play
