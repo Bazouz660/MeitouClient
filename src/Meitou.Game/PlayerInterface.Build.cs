@@ -707,13 +707,13 @@ sealed partial class PlayerInterface
         contextMenu = Menu(SiteName(site), pending.At, SiteVerbs(site));
     }
 
+    /// <summary>A site the quick Build order and the hammer pointer apply to: unfinished, except a purchased town ruin, which needs the held menu's Repair until reconstruction starts.</summary>
+    static bool QuickConstruction(BuildingSnapshot site) => site.NeedsWork && !(site.LevelPlacement is not null && site.Destroyed);
+
     /// <summary>
     /// Whether a site is an object to act on, not a plain building: an unfinished one, or a finished machine, storage, furnace or turret. The original's pointer is the hammer (<c>build</c>)
     /// only for an unfinished building; a finished plain building is the arrow, and its quick order is a move (docs/game/ui-input.md "Building hover and click").
     /// </summary>
-    // Purchased town ruins require the held menu's Repair; once reconstruction starts they accept quick Build orders.
-    static bool QuickConstruction(BuildingSnapshot site) => site.NeedsWork && !(site.LevelPlacement is not null && site.Destroyed);
-
     bool SiteIsObject(BuildingSnapshot site) =>
         QuickConstruction(site) || Machine(site.Id) is { Operable: true } or { IsStorage: true } or { Function: MachineData.ItemFurnaceFunction or MachineData.TrainingFunction or Meitou.Data.World.ObjectRanges.TurretFunction };
 
