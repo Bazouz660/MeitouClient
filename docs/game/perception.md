@@ -132,7 +132,7 @@ is not the looker's ally becomes a target only when both tests pass:
   The same position test bounds job targets ([range](ai-tasks.md#perma-jobs), ROAM_FAR by default). Writers:
   `AI::setManuveringFreedomLevel` from standing orders 8/9 ([combat](combat.md#fight-lifecycle-and-orders)); the centre by
   `AI::setCenterOfMovement`, which every player order calls with its point (`Character::addOrder`) and which in
-  HOLD_GROUND / STAY_CLOSE also installs the hold-position task 30 / 31. Who sets the radii is **Unknown**.
+  HOLD_GROUND / STAY_CLOSE also installs the hold-position task 30 / 31. The radii are the constructor's (`AI::AI`: meiDistance 18, tolerance 5; no other writer found), so HOLD_GROUND reaches 63 and STAY_CLOSE 223.
 - **Post** (`AI::isTargetInRangeForHOLDMode_hostiles` `FUN_140598630`): only for a character on Hold (`CharStats::holdPositionMode`
   `FUN_1402b2b90`: CharStats +0x12b and not sneaking) that is not `FUN_1407f2840` (a ranged-weapon test): a target slower than 2 (movement
   +0xb8), or in its own state > 1, must be within 40 of the looker; a target more than 80 from the hold point
@@ -166,8 +166,7 @@ is not the looker's ally becomes a target only when both tests pass:
 
 ## Unknowns
 
-- Who sets the AI area's radii (AI +0x8, +0xc).
-- Slot 14 `+0xb4`, `+0x2f8` = 1, `FUN_140436610`, `FUN_140856bc0`, slot 60's `+0xd5`, the hearing re-roll factor, the meaning of
+- Slot 14 `+0xb4`, slot 60's `+0xd5`, the hearing re-roll factor, the meaning of
   character `+0x5b8` and `+0x504`.
 - Whether the run-away ratios (Faction +0xc / +0x10) are read at all.
 - The writer of a character's location handle `+0x80`; when can-see casts its physics ray; the building rules of can-hear;

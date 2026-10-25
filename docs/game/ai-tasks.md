@@ -833,7 +833,7 @@ A character's job list (the Orders menu's "Perma-Jobs"; class `OrdersReceiver`, 
   `isTargetInRangeForOrders(Vector3)` by `AI::ordersMovement` (+0x2bc, `AIManuverabilityOrders`; the constructor sets 2): zero vector → true;
   2 ROAM_FAR: the 3D distance² from the character itself < 4.246733e7 (≈ 6517; 12.5 × the medic nearness 3397386.5); 1 STAY_CLOSE (standing order
   NEAR, the centre set to the character's position then): from `centerOfMovement` (+0x2c0) < `meiDistance` (+8) + 200 + `meiDistanceTolerance` (+0xc);
-  0 HOLD_GROUND: + 40 instead, with an extra term **Unknown**. Other values: false. Standing order FAR sets a level the decompile drops (**Unknown**).
+  0 HOLD_GROUND: + 40 instead, with an extra term **Unknown**. Other values: false. Standing order FAR sets ROAM_FAR (EDX = 2 in the disassembly) and clears the centre target.
 - **Implicit jobs** (**Verified**, `FUN_14050e5b0` after the list, only for a character with a squad (+0x250), the switch on and not sneaking
   (`FUN_1405c9750`)): lowest keys for the squad AI options at `DAT_142134690` (the overview's AI tab), each kept when its task's desire is above 0:
   +0x117 "Ditch items" → 242 "Ditching resources" (only with an empty task queue +0x60); then, unless three tests hold (`FUN_1402b2b90` on the
@@ -896,7 +896,7 @@ A character's job list (the Orders menu's "Perma-Jobs"; class `OrdersReceiver`, 
 **Observed** (`FUN_14099f690`, `FUN_140998200`, `FUN_140998b90`, `FUN_1406b2460`, `FUN_140643ca0`; constants **Verified**).
 - Kits: organic (item function 1) and robot (12) in the medic's inventory or its backpack.
 - Candidates: sensed (1, 0x10); with flag 0 (job 58) not of a robot race (RACE byte +0x7c, `is robot`; the splint finder tests the same byte);
-  not in a give-up list; not carried (unless the carrier fails a test); `FUN_140436610`(c, 1, 0) false; and either the medic is of the player
+  not in a give-up list; not carried (unless the carrier fails a test); not fighting (`Character::isInCombatMode` `FUN_140436610`(c, 1, 0)); and either the medic is of the player
   faction or the patient is not injured in a way `FUN_140644170` reports and is seen or heard.
 - Need = (organic kit: the medical state's float +0xac) + (robot kit: +0xa8); a dead patient (+0x164) -0.1; an NPC medic counts both without kits
   for an imprisoned patient or one it owns. Another faction's patient: × 0.8 when vfunc 0x3f0 holds, else × relation / 100 (own faction 100), at least
@@ -931,7 +931,7 @@ feed, eject on; heal, help off (on in 4), rescue, stay, shootfirst off. Readers 
   rescuer's faction only for a player-faction rescuer with the option off.
 - **Feed Animals** (+0x114): off, the player characters' eating `FUN_1405d29c0` returns for an animal (vfunc 0x248), and desire `FUN_140597cb0`
   is 0 for an animal (its rows **Unknown**).
-- **Share Food** (+0x115): in `FUN_1405d29c0` (the player characters' eating), with no food in its own inventory or backpack and (`FUN_140856bc0`,
+- **Share Food** (+0x115): in `FUN_1405d29c0` (the player characters' eating), with no food in its own inventory or backpack and (`Character::isWithThePlayer` `FUN_140856bc0`,
   floats +0x4bc ≤ 0, +0x4b8 < 2.25, meanings **Unknown**) a character takes food from the backpack of a squad member within 200 units (squared 40000).
 - **Shoot first** (+0x11a): turret target choice `FUN_1404374d0`: enemies (sensed 4, 0x210) weigh `FUN_140435d70`(…, 1), unseen × 0.1, the current
   target × 1.5; with none, a player gunner with the option takes sensed (2, 0x210) characters whose faction's type (+0x34) is 0 or 8 or whose
