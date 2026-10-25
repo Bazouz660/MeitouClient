@@ -51,7 +51,7 @@ scale. **Observed** (field tour): the integrated range or normal-map strength as
 
 **Composite.** Every ground layer adds material; the relief height keeps the heaviest ground layers (base, grass, slope, dirt,
 road) by how much of the pixel each shows, from the blend map, overlay window and slope per pixel, not per patch, so neighbouring
-patches meet on the same heights: three at High quality, two at Medium, one at Low. The cliff over all has its own march. A biome
+patches meet on the same heights: five at High quality, two at Medium, one at Low. The cliff over all has its own march. A biome
 under 10% of the pixel is not marched (fading in to 30%), a layer under 5% is left out (to 15%).
 
 **Displacement** (needs `tessellationShader`): main-view patches within the displacement distance + 10 units (interior-cut ones
@@ -72,9 +72,9 @@ the rock bake are not tessellated.
 weight (`Relief`: one unscaled coordinate with its derivatives, and per layer its tiling, slice and weight) along the view ray, moving every layer's coordinate by it, then toward the sun for a soft self-shadow that dims the sun
 only (`atmoSelfShadow` in `kenshiLight`; darkening the albedo also darkened the ambient). Centred like the displacement: the flat
 surface is the relief's middle, so objects stand in the ground (marched from the top, the ground looks dug out round them). Steps
-fall with distance from 8 view and 4 sun steps to 4 and 2 at the parallax distance at High (Medium 6 and 3 to 3 and 2; Low 4 and 2
+fall with distance from 16 view and 8 sun steps to 6 and 3 at the parallax distance at High (Medium 6 and 3 to 3 and 2; Low 4 and 2
 to 2 and 1), in full to half of it; the sun's march reads the height two levels coarser and is skipped at 0 self-shadow. Where the
-ground is displaced, the view ray marches only the detail finer than the mesh (the height less its level at the segment, 4 steps),
+ground is displaced, the view ray marches only the detail finer than the mesh (the height less its level at the segment, 8 steps at High, 4 below),
 the whole height again as the displacement fades. The
 cliff layer is marched on each of its two projections with a weight over 0.1 along the surface's normal (the ray's move across the
 face over its depth into it). Heights are read as stored on both projections: the shading turns the `(x, height)` normal map round,
@@ -110,8 +110,8 @@ changed nothing. Every biome's march now runs before any is shaded (`biomeRelief
 the shading's: terrain 4.4 -> 4.0 ms, the picture unchanged. Without the march (`NO_MARCH`) that loop and its results' array are left out; kept with
 constants, they cost 0.28 ms. Drawing patches beyond the parallax's end with the march-free program saved nothing there.
 **Metal (Observed, 2026-10-25, a town view at 1024x640 scene / 2560x1600 output):** the interior-cut colour draw took 11.25 ms of a 31.03 ms frame,
-with a 6.2 KB register spill. With the march off it took 4.28 ms and the frame 19.75 ms, the spill 48 B. The steps and top-three layers above are the
-LOD that keeps the march; Metal's shader compiler and tile-memory architecture make the march much more expensive than the RTX path.
+with a 6.2 KB register spill. With the march off it took 4.28 ms and the frame 19.75 ms, the spill 48 B. That run used an 8/4-step, three-layer march; High's 5 layers and
+16/8 steps are **Unknown** on Metal (Medium or Low cut the cost); Metal's shader compiler and tile-memory architecture make the march much more expensive than the RTX path.
 The displacement costs 0.42 ms at a save's view (60 m; GPU frame 5.80 vs 5.38 with it off), mostly the tessellated prepass, bound by the primitive
 engine (30%). Culling patches off the view in the control stage (corners padded 40 units, sides by 10%) saved 0.03 ms, within the noise: not kept.
 

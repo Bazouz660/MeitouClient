@@ -688,9 +688,9 @@ static partial class TerrainShaders
         // Layers whose relief is marched together (GroundRelief): their common unscaled coordinate with its derivatives, and per layer its tiling (xy: the
         // coordinate's scale, also its move per unit of the march's offset), array layer (z) and weight (w: its share of the pixel times its depth factor).
         // Kept this small on purpose: the march carries it through every step, and a larger one (a coordinate and derivatives per layer) cost the
-        // parallax several times over in registers (docs/render-terrain.md, "Cost"). The quality keeps the heaviest one, two or three layers; the rest only
+        // parallax several times over in registers (docs/render-terrain.md, "Cost"). The quality keeps the heaviest one, two or five layers; the rest only
         // shade the surface.
-        const int ReliefMax = 3;
+        const int ReliefMax = 5;
         struct Relief { GradCoord base; vec4 layer[ReliefMax]; int n; float total; };
 
         Relief noRelief(GradCoord base) { Relief r; r.base = base; r.n = 0; r.total = 0.0; return r; }
@@ -733,10 +733,10 @@ static partial class TerrainShaders
         // displacement fades out). Set per pixel in biome().
         float reliefSegment = 0.0, reliefWhole = 1.0;
 
-        // The march's steps (view ray, sun), fewer with distance (set in biomeRelief(): high 8 and 4 near, 4 and 2 at the parallax's end; medium 6 and 3
+        // The march's steps (view ray, sun), fewer with distance (set in biomeRelief(): high 16 and 8 near, 6 and 3 at the parallax's end; medium 6 and 3
         // to 3 and 2; low 4 and 2 to 2 and 1), and the share of the pixel the biome being marched has (main sets it before biomeRelief(): a biome showing
         // little is not marched).
-        int reliefSteps = 8, reliefShadowSteps = 4;
+        int reliefSteps = 16, reliefShadowSteps = 8;
         float biomeShare = 1.0;
 
         // The relief's height at offset o (1 the top): the layers' heights by weight; finer: only the detail the displaced mesh leaves out (above).
@@ -770,7 +770,7 @@ static partial class TerrainShaders
         {
             // The detail finer than a displaced mesh is shallow and fine: half the steps do (each also reads its level at the spacing).
             int ShadowSteps = reliefShadowSteps;
-            int Steps = finer && reliefSegment > 0.0 && reliefWhole < 1.0 ? min(4, reliefSteps) : reliefSteps;
+            int Steps = finer && reliefSegment > 0.0 && reliefWhole < 1.0 ? min(uReliefQuality >= 2 ? 8 : 4, reliefSteps) : reliefSteps;
             vec2 rayStep = viewSpan / float(Steps);
             bool moving = dot(viewSpan, viewSpan) > 0.0;
             // Centred, as the displacement is: the flat surface is the relief's middle (half the depth above it, half below), so what stands on the ground
@@ -858,10 +858,10 @@ static partial class TerrainShaders
                 // A biome showing under 10% of the pixel is not marched, fading in to 30% (the march runs once per biome blended).
                 float strength = (1.0 - smoothstep(0.5 * uParallaxEnd, uParallaxEnd, distance)) * smoothstep(0.1, 0.3, biomeShare);
                 float far = clamp(distance / uParallaxEnd, 0.0, 1.0), shade = 1.0;
-                float viewNear = uReliefQuality >= 2 ? 8.0 : uReliefQuality >= 1 ? 6.0 : 4.0;
-                float viewFar = uReliefQuality >= 2 ? 4.0 : uReliefQuality >= 1 ? 3.0 : 2.0;
-                float sunNear = uReliefQuality >= 2 ? 4.0 : uReliefQuality >= 1 ? 3.0 : 2.0;
-                float sunFar = uReliefQuality >= 2 ? 2.0 : uReliefQuality >= 1 ? 2.0 : 1.0;
+                float viewNear = uReliefQuality >= 2 ? 16.0 : uReliefQuality >= 1 ? 6.0 : 4.0;
+                float viewFar = uReliefQuality >= 2 ? 6.0 : uReliefQuality >= 1 ? 3.0 : 2.0;
+                float sunNear = uReliefQuality >= 2 ? 8.0 : uReliefQuality >= 1 ? 3.0 : 2.0;
+                float sunFar = uReliefQuality >= 2 ? 3.0 : uReliefQuality >= 1 ? 2.0 : 1.0;
                 reliefSteps = int(round(mix(viewNear, viewFar, far)));
                 reliefShadowSteps = int(round(mix(sunNear, sunFar, far)));
                 vec3 v = normalize(uEye - vWorld);
