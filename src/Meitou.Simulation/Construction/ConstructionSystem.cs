@@ -166,6 +166,8 @@ public sealed class ConstructionSystem : ITickSystem
                                 site.Destroyed = false;
                                 world.Fixtures.RestoreTownShell(world, site);
                             }
+                            if (site.Stalled && !Carries(cold, site) && Source(world, slot, cold, site) is null)
+                                world.Bark(id, Loc.Tr("I don't have any building materials."));
                             Begin(world, slot, site, CharacterTask.Build, CharacterTask.Idle);
                         }
                     break;

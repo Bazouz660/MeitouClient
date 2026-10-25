@@ -137,6 +137,39 @@ public class HouseRepairTests
         Assert.Contains(finished.World.Fixtures.OfBuilding(finished.House.Key), f => f.Kind == FixtureKind.Door);
     }
 
+    [Theory]
+    [InlineData("none")]
+    [InlineData("inventory")]
+    [InlineData("ground")]
+    public void Repeated_manual_repair_barks_only_when_stalled_without_available_materials(string supply)
+    {
+        using var r = new Rig();
+        r.Buy(); r.Repair(); r.World.RunTicks(250);
+        Assert.True(r.Site.Stalled);
+        Assert.Empty(r.World.Snapshot.Speech);
+        if (supply == "inventory") r.Supply(32);
+        if (supply == "ground")
+            r.World.GroundItems.Drop(r.Items.Create(BuildingBuildData.BuildingMaterialsItem, 32)!, r.House.Position, 0);
+        r.Repair();
+        if (supply == "none")
+        {
+            var bubble = Assert.Single(r.World.Snapshot.Speech);
+            Assert.Equal(r.Builder, bubble.Speaker);
+            Assert.Equal("I don't have any building materials.", bubble.Text);
+            r.World.RunTicks(20);
+            Assert.Empty(r.World.Snapshot.Speech); // No repeated bark from the simulation's build ticks.
+            r.Repair();
+            Assert.Equal(bubble.Text, Assert.Single(r.World.Snapshot.Speech).Text);
+        }
+        else
+        {
+            Assert.Empty(r.World.Snapshot.Speech);
+            for (int i = 0; i < 2500 && !r.Site.Complete; i++) r.World.RunTick();
+            Assert.True(r.Site.Complete);
+            Assert.Empty(r.World.Snapshot.Speech);
+        }
+    }
+
     [Fact, Slow]
     public void Original_town_ruin_saves_in_place_and_restores_its_doors()
     {

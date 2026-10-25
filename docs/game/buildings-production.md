@@ -107,6 +107,12 @@ the update lists its records (a storage: every record it holds; a production bui
 record whose count (slot 5, `FUN_1403411c0`: always 2) is above 0, i.e. the first listed record, and moves up to 2 units
 while the character has room, then ends. Meitou takes the material instead of the first listed record (engine choice).
 
+Missing-material speech: **Verified** text in the original `locale/zh_CN/LC_MESSAGES/main.po`, source annotation
+`character.cpp:3412`: "I don't have any building materials." / "我没有建筑材料了。" The separate GOAP.cpp:490
+line is "I don't have any materials". **Observed** (user report): repeating a manual build order without materials
+shows a character speech bubble. Meitou emits the character-order line once per explicit order when the site is stalled,
+the builder carries no needed material and no fetch source exists; exact original trigger guards remain **Unknown**.
+
 ### Builders and dismantle
 
 Task ids and AI conditions: [ai-tasks](ai-tasks.md#build-tasks). Engineer job (**Verified**): row 125 "Engineer" has no
