@@ -256,7 +256,13 @@ public sealed partial class CombatSystem
                 // Deciding, it first asks to be one of the fighters its target lets close in (FUN_140666e20); a fighter left out circles (PursuitSystem) and asks again each tick.
                 if (fighting && !s.Engaged) s.Engaged = MayJoin(world, i, s.TargetSlot, now);
                 bool yielded = fighting && read[s.TargetSlot].YieldTo == i && now < read[s.TargetSlot].YieldUntil;
-                if (!aborted && fighting && (now >= s.ReadyTick || incoming >= 0 || yielded)) StartAttack(world, i, ref s, cold, key, now, dt);
+                if (!aborted && fighting && (now >= s.ReadyTick || incoming >= 0 || yielded))
+                {
+                    StartAttack(world, i, ref s, cold, key, now, dt);
+                    // A failed ask: with a blow coming it defends (below), else an engaged fighter goes to state 5 (FUN_14060c8b0); an attack ends it.
+                    s.CircleState = s.Engaged && s.AttackTech < 0 && incoming < 0;
+                }
+                if (!s.Engaged) s.CircleState = false;
                 // Only a fighter defends: a target whose fight is off is simply hit (the ask answers "attack", docs/game/combat.md "Fight lifecycle and orders").
                 if (s.AttackTech < 0 && now >= s.DefendReadyTick && (fighting || cold.InCombat)) React(world, i, ref s, cold, key, now, dt);
             }
@@ -271,6 +277,8 @@ public sealed partial class CombatSystem
         var fighter = cold.Fighter!;
         if (!fighter.CanAttack || Orders.Has(cold, CharacterOrders.Block)) return;   // the Block order: defends, starts no attack
         if (!s.Engaged) return;   // left out by its target: it circles (PursuitSystem)
+        // No one but enemies within its body room (x1.2 in state 5): the ask fails (FUN_14060c670, FUN_1402b3180).
+        if (NearestFriend(world, i, in s, cold) < BodyRoom(cold) * (s.CircleState ? CircleRoomFactor : 1)) return;
         var tc = table.Cold(t)!;
         var medical = cold.Medical!;
         float length = fighter.WeaponLength;
@@ -472,6 +480,49 @@ public sealed partial class CombatSystem
             if (++count >= MaxEngaged) return false;
         }
         return count < MaxEngaged;
+    }
+
+    /// <summary>The room a fighter needs round it to ask: its race's <c>pathfind footprint radius</c> + 2.5 (CombatClass +0x280, <b>Observed</b>, constructor <c>FUN_14060a9e0</c>).</summary>
+    internal static float BodyRoom(CharacterCold cold) => CombatTuning.Footprint(cold) + 2.5f;
+    /// <summary>State 5's stricter room (<c>CircleStateAI</c> <c>FUN_1402b3180</c>).</summary>
+    public const float CircleRoomFactor = 1.2f;
+    /// <summary>How far above or below a body still counts (the flocking list's height test, <c>FUN_14085a070</c>).</summary>
+    const float FlockHeight = 20;
+
+    struct FriendScan
+    {
+        public CombatSystem Self;
+        public World World;
+        public int Me, Faction, Target;
+        public Vector3 At;
+        public float Nearest;
+    }
+
+    /// <summary>
+    /// The centre distance to the nearest body round fighter <paramref name="i"/> that is not an enemy (<c>FlockingTools::getDistanceToClosestCharacter</c> over the
+    /// flocking list, <b>Observed</b>, docs/game/combat.md "Attack slots and circling"): standing characters within <see cref="FlockHeight"/> in height, an enemy being one of a
+    /// hostile faction, its target, or one fighting it (engine reading of <c>isEnemy</c>); 99 when none is near. A carried body is not counted (engine choice). Any thread after Schedule.
+    /// </summary>
+    float NearestFriend(World world, int i, in CombatSlot s, CharacterCold cold)
+    {
+        var prev = world.Characters.Previous;
+        var scan = new FriendScan { Self = this, World = world, Me = i, Faction = cold.Faction, Target = s.TargetSlot, At = prev[i].Position, Nearest = 99 };
+        float radius = BodyRoom(cold) * CircleRoomFactor;
+        world.Grid.Query(scan.At.X, scan.At.Z, radius, ref scan, static (int c, ref FriendScan q) =>
+        {
+            if (c == q.Me || c == q.Target) return;
+            var table = q.World.Characters;
+            ref readonly var p = ref table.Previous[c];
+            if (!p.Alive || MathF.Abs(p.Position.Y - q.At.Y) >= FlockHeight) return;
+            if (table.Cold(c) is not { } oc || oc.Medical is { Incapacitated: true } || oc.IsImprisoned || !oc.CarriedBy.IsNone) return;
+            ref readonly var o = ref q.Self.read[c];
+            if (o.TargetSlot == q.Me && o.TargetGeneration == table.Previous[q.Me].Generation) return;
+            bool enemy = q.Self.Relations is { } relations ? AggroSystem.IsEnemy(relations, q.Faction, oc.Faction) : oc.Faction != q.Faction;
+            if (enemy) return;
+            float d = Vector3.Distance(p.Position, q.At);
+            if (d < q.Nearest) q.Nearest = d;
+        });
+        return scan.Nearest;
     }
 
     /// <summary>Whether a fighter whose last tick's state is <paramref name="o"/> may reach Act's deciding step this tick (its swing or defence ends now, or a blow at it may cut a swing short).</summary>

@@ -193,7 +193,11 @@ a door takes the blow off its lock hardness, not construction progress (Meitou's
     crawling), one already fighting (+2 over an idle one), the nearest (up to +2), the least crowded (−1 per attacker). Meitou: `Combat.TargetScore`
     for the aggro look and the fighters' re-pick, candidates and omissions in [simulation](../simulation.md#combat).
 - **Deciding** (`FUN_14060c8b0`): pick a target, set +0x148 = 0.5, then ask (`FUN_14060c670`). The ask requires
-  centre distance − r_t ≤ +0x150 + (1.5r + L)·k and no other body nearer than r + 2.5 (`FUN_1402e9620`).
+  centre distance − r_t ≤ +0x150 + (1.5r + L)·k and no other body nearer than r + 2.5 (`FUN_1402e9620`). That test
+  (`FlockingTools::getDistanceToClosestCharacter`, called to count non-enemies only) takes the least `range` of the flocking list, 99 when empty;
+  r is the race's raw `pathfind footprint radius` (CombatClass +0x280 = r + 2.5, ctor `FUN_14060a9e0`). The list (`FUN_14085a070`) holds every
+  other character not down or dead (`FUN_1407d1440`) or imprisoned (+0x2f8) whose centre is within getRadius_self + getRadius_other + 40
+  horizontally and 20 in height; `range` = the 3D centre distance, `isEnemy` = Character vfunc 1000 (**Observed**).
   If the ask fails: being attacked → defend; engaged → state 5; else state 6.
 - **State 5** (`CircleStateAI`, update `FUN_1402b3180`): walk to the target until the body gap reaches max'
   (`FUN_14060cd20` = +0x150 + 1.5rk − L/4, +12 while running, minus 1.5rk; at least 6). Face the target and ask each
@@ -233,9 +237,10 @@ Meitou (`CombatSystem.HasSlot` / `MayJoin`, `PursuitSystem.Circle`):
   straight walk keeps to the ring, and face the target as the original does ([side steps](../animation.md#side-steps)).
 - **Block-mode timer**: an engaged fighter on the Block order (standing) frees the slots on itself every 1.5–4.5 s (`CombatSlot.SlotsCleared`:
   swings started before hold none). The +12 while running is in `CombatTuning.StandGap`.
-- Not modelled: the body tests of the ask and of state 5 (r + 2.5 and 1.2 × that). They are AI rules, not collision
-  (`FlockingTools::getDistanceToClosestCharacter` over the flocking list, non-enemies only; centre distance or gap, **Unknown**): Meitou bodies are
-  solid only to `BodyShare` × footprint (2.4 for a human), so they would fail for allies standing close.
+- **Body room** (`CombatSystem.NearestFriend`, `BodyRoom`): the ask fails while a non-enemy's centre is nearer than footprint + 2.5, ×1.2 in
+  state 5 (`CombatSlot.CircleState`: engaged, its last ask failed with no blow coming at it). An AI rule, not collision: Meitou bodies are solid
+  only to `BodyShare` × footprint (2.4 for a human), and the separation push (radius 8) spreads crowded allies until they have room. Engine
+  readings: an enemy is one of a hostile faction, the target, or one fighting the asker; carried bodies do not count.
 
 ## Fight lifecycle and orders
 

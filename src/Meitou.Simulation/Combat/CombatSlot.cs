@@ -52,6 +52,11 @@ public struct CombatSlot
     public int LastTech;
     /// <summary>One of the (at most five) fighters its target lets close in (the target's CombatClass +0x1f8 list, docs/game/combat.md "Attack slots and circling"); the rest circle.</summary>
     public bool Engaged;
+    /// <summary>
+    /// In state 5 (<c>CircleStateAI</c>): engaged, its last ask failed while nothing was coming at it; its asks then need 1.2 x the body room
+    /// (<see cref="CombatSystem.BodyRoom"/>, docs/game/combat.md "Attack slots and circling").
+    /// </summary>
+    public bool CircleState;
     /// <summary>The target is the player's pick (<see cref="AttackOrder.Picked"/>): it does not turn on a fighter that yields to it.</summary>
     public bool Picked;
     /// <summary>The tick of its next target choice (<see cref="CombatSystem.PickSeconds"/>); 0: at once.</summary>
@@ -129,6 +134,7 @@ public struct CombatSlot
         h.Add(Reach);
         h.Add(LastTech);
         h.Add(Engaged);
+        if (CircleState) h.Add(0x43697263);   // only when set, so worlds without crowded fights hash as before
         if (Picked) h.Add(true);   // only when set, so worlds without player picks hash as before
         h.Add(PickTick);
         h.Add(SensedTick);
