@@ -28,5 +28,22 @@ public readonly record struct ProspectLine(string Name, float Value)
 /// <param name="AreaMetres">"Area Size": <c>int((science / 100 x 6000 + 2000) x 0.2)</c>.</param>
 /// <param name="Environment">Green, Arid and Swamp, only those above 0 (empty: "Dead").</param>
 /// <param name="Resources">Water, Fertility, Stone, Iron, Copper in the window's order.</param>
+/// <param name="Map">The samples the window's map is drawn from (null: none taken).</param>
 public sealed record ProspectReport(long Serial, Vector3 Position, string Prospector, int Skill, string Zone, int Altitude, int AreaMetres,
-    IReadOnlyList<ProspectLine> Environment, IReadOnlyList<ProspectLine> Resources);
+    IReadOnlyList<ProspectLine> Environment, IReadOnlyList<ProspectLine> Resources, ProspectMap? Map = null);
+
+/// <summary>
+/// The ground under the results window's map (<b>Verified</b>, <c>FUN_14049d850</c> / <c>FUN_14049cd60</c>, docs/game/ui-screens.md "Prospecting"): <see cref="Size"/> x <see cref="Size"/> samples over the
+/// square of side <see cref="Extent"/> whose -X/-Z corner is <see cref="X"/>, <see cref="Z"/>, each taken at its cell's centre, rows from -Z.
+/// </summary>
+/// <param name="Heights">The terrain height of each sample.</param>
+/// <param name="Fields">Per resource row: the value of each sample (Water, Fertility, Stone); null for a rock resource.</param>
+/// <param name="Rocks">Per resource row: the rocks within <see cref="RockRange"/> x <see cref="Extent"/> of the spot with their own yields (Iron, Copper); empty for a field resource.</param>
+public sealed record ProspectMap(int Size, float X, float Z, float Extent, float[] Heights, IReadOnlyList<float[]?> Fields, IReadOnlyList<IReadOnlyList<ProspectRock>> Rocks)
+{
+    /// <summary>The rock search radius as a share of the side (<b>Verified</b>: squared 0.6 x side, <c>FUN_14049cd60</c>).</summary>
+    public const float RockRange = 0.6f;
+}
+
+/// <summary>A rock on the prospecting map: where it stands and its own yield (the value a mine next to it gets).</summary>
+public readonly record struct ProspectRock(float X, float Z, float Value);

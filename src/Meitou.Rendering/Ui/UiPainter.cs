@@ -687,6 +687,8 @@ public sealed partial class UiPainter : IDisposable
 
     (GpuTexture Texture, SampledTexture Sampled) Upload(string name, RgbaImage image, bool srgb = false)
     {
+        // A redrawn image replaces its texture (released once the frames in flight are done).
+        if (textures.Remove(name, out var old)) old.Texture.Dispose();
         using var upload = overlay.Gpu.Uploads.Begin();
         var texture = upload.Create(new TextureDesc(srgb ? InternalFormat.Srgb8Alpha8 : InternalFormat.Rgba8, image.Width, image.Height, Name: $"UI {name}"));
         upload.Write(texture, 0, 0, new PixelRect(0, 0, (uint)image.Width, (uint)image.Height), image.Pixels);

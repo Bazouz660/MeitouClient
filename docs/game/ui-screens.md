@@ -436,8 +436,11 @@ not through the order dispatcher: no `Right_Click`) and `Prospect_Click` is post
   - `OverviewDatapanel2`: `Wind Speed:` `{x.x} mph` (wind speed x 0.22369362; the region lookup's position, the spot or the camera, is **Unknown**); `Environment:` the group's resources record `green`, `arid`, `swamp` (map keys 1, 2, 3, **Observed**) as `Green 40%`, `Arid 10%`... for those above 0 in `#afa68b`, the first on the label's line, `Dead` when none is.
   - `ResourcesList`: a `Kenshi_ProspectingWindowResourceLine` per resource in the order Water (5), Fertility (6), Stone (2), Iron (1), Copper (3); Carbon (4) is not listed. Caption the name, `ValueText` `int(100 x v)` with v = `uses_resources`
     ([buildings-production](buildings-production.md#resources)) at the spot, coloured `#a8b774` above 0.75, `#59231a` below 0.5, else `#140806`. The rows are radio `CheckboxButton`s, the first checked.
-  - `Map` (`ProspectingWindow_Overview_1/2`, `FUN_14049cd60`): the checked resource over the square of half-size `s x 6000 + 2000` units around the spot, `CameraMarker` rotated to the camera heading, size `int(s x 246 + 6)` (`FUN_14048c970`).
-    **Not modelled in Meitou.**
+  - `Map` (`FUN_14049d850` sets it up, `FUN_14049cd60` draws it; constants from the disassembly): an image `int(s x 246 + 6)` pixels a side over the square of half-size `s x 6000 + 2000` units round the spot, rows from -Z, each pixel
+    sampled at its cell's centre. Ground: grey `(h - 500) / 9500 x 255` for terrain height h above 500, else black. Water, Fertility, Stone: where h >= 0 and `uses_resources` v > 0.01 (capped at 1), with a = (1 - v) v and g the
+    grey, red `(1 - a) g + 255 a`, green `(1 - v²) g + 255 v²`, blue g (bytes B, G, R of `PF_R8G8B8` / `PF_A8R8G8B8`). Iron, Copper: each rock of the resource within 0.6 x the side of the spot paints its pixel (and the three to
+    +X/+Z when the image is over 40 wide) red 255 a, green 255 v², blue the grey there, v its own yield (`vfunc_92`) clamped to 0..1. Redrawn for the checked row. `CameraMarker` (`FUN_14048c970`) sits on the camera's point, turned
+    to its heading (the angle to the view direction, negative towards -X).
 - The close button hides the window; hiding frees the rows (`FUN_14048d780`).
 
 Meitou: `ProspectOrder` makes `CharacterTask.Prospect` ([simulation](../simulation.md#prospecting)); the window is the faithful screen `prospect` in both UI modes; wind is the host's weather state at the camera (engine choice).
