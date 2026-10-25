@@ -42,6 +42,25 @@ public class SaveWorldTests
     static string Dir(string name) => Temp(name);
 
     [Fact]
+    public void A_dead_player_character_leaves_its_squad_for_the_hidden_dead_squad()
+    {
+        using var g = NewGame();
+        g.World.RunTicks(1);
+        var dead = g.Squad.Leader;
+        var next = g.Squad.Members[1];
+        g.World.Characters.Cold(dead.Slot)!.DiedTick = g.World.Tick;
+        g.World.RunTicks(1);
+
+        Assert.DoesNotContain(dead, g.Squad.Members);
+        Assert.Equal(next, g.Squad.Leader);
+        Assert.Equal((int)SquadRole.Leader, g.World.Characters.Cold(next.Slot)!.Role);
+        var graveyard = Assert.Single(g.World.Squads.All, s => s.Dead);
+        Assert.Equal([dead], graveyard.Members);
+        Assert.Equal(graveyard.Id, g.World.Characters.Cold(dead.Slot)!.SquadId);
+        Assert.DoesNotContain(graveyard, SquadManagement.PlayerSquads(g.World));
+    }
+
+    [Fact]
     public void An_inventory_changed_in_play_is_saved_and_loaded()
     {
         using var g = NewGame(items: true);
