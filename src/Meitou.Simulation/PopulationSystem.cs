@@ -337,6 +337,9 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
         if (best is null) return false;
         data.SetReplacement(site.Index, best);
         world.Fixtures.TownReplaced(world, data, site.Index);
+        // The zone's loose items go, as the original empties the zone file's 1-itemlist (item slots refill).
+        foreach (int id in world.GroundItems.All.Where(g => WorldLayout.ZoneOf(g.Position.X, g.Position.Z) == site.Zone).Select(g => g.Id).ToList())
+            world.GroundItems.Take(id);
         if (townLog.Count >= 256) townLog.RemoveAt(0);
         townLog.Add($"{site.Town.Name}: now {best.Name}");
         return true;

@@ -108,6 +108,79 @@ public class PopulationTests
         Assert.All(cages, c => Assert.True(world.Fixtures.Find(c.InWhat!)!.Lock!.Locked));
     }
 
+    sealed class FixedStates(params string[] holding) : IWorldStates
+    {
+        public bool IsTrue(string worldStateId) => holding.Contains(worldStateId);
+    }
+
+    [Fact]
+    public void A_town_takes_its_heaviest_qualifying_override_at_each_load_and_makes_its_residents()
+    {
+        // docs/game/factions-squads-towns.md "Town overrides". States 91 and 92 hold, 93 does not.
+        var R = SyntheticTown.Ref;
+        Meitou.Data.Fcs.FcsRecord State(string id) => SyntheticTown.Rec(id, Meitou.Data.Fcs.FcsRecordType.WORLD_EVENT_STATE, id);
+        Meitou.Data.Fcs.FcsRecord Town(string id, string name, string resident, Meitou.Data.Fcs.FcsReference[] states, params Meitou.Data.Fcs.FcsReference[] overrides)
+        {
+            var t = SyntheticTown.Rec(id, Meitou.Data.Fcs.FcsRecordType.TOWN, name);
+            t.Ints["type"] = 2;
+            t.Floats["size radius"] = 300;
+            t.Bools["residents override"] = true;
+            t.References["residents"] = [R(resident, 1, 0)];
+            t.References["world state"] = [.. states];
+            if (overrides.Length > 0) t.References["override town"] = [.. overrides];
+            return t;
+        }
+        var others = SyntheticTown.Rec("21-t", Meitou.Data.Fcs.FcsRecordType.FACTION, "Others");
+        var a = Town("50-t", "A (override)", "10-t", [R("91-t", 1)]);
+        var b = Town("51-t", "B (override)", "12-t", [R("91-t", 1), R("92-t", 1)], R("51-t"), R("50-t"));   // lists itself: never picked again
+        b.References["faction"] = [R("21-t")];
+        var c = Town("52-t", "C (override)", "10-t", [R("91-t", 1), R("93-t", 1)]);   // heavy, but 93 does not hold
+        var d = Town("53-t", "D (override)", "10-t", [R("92-t", 1), R("91-t", 1)]);   // as heavy as B, later in the list
+        var e = Town("54-t", "E (override)", "10-t", []);                              // no conditions: never
+        var db = SyntheticTown.Database(items: true, extra: [others, State("91-t"), State("92-t"), State("93-t"), a, b, c, d, e],
+            changeTown: t => t.References["override town"] = [R("54-t"), R("50-t"), R("52-t"), R("51-t"), R("53-t")]);
+        var made = SyntheticTown.Data(db);
+        var data = new PopulationData
+        {
+            Db = db, Sites = made.Sites, Factions = made.Factions, PlayerFaction = made.PlayerFaction, Relations = made.Relations, SiteFactions = made.SiteFactions,
+            States = new FixedStates("91-t", "92-t"),
+        };
+        var walk = new OpenGroundWalkability(SyntheticTown.Ground);
+        using var world = new Meitou.Simulation.World(new WorldSettings { Seed = 3, PublishSnapshots = false }, walk,
+            SyntheticTown.Standard(data, walk, StandardParts.Population | StandardParts.Movement, new PopulationSettings { CheckEveryTicks = 1, UnloadGraceSeconds = 1 }).Systems);
+        void Visit()
+        {
+            world.Commands.Enqueue(new FocusCommand(SyntheticTown.Centre) { Tick = world.Tick });
+            world.RunTicks(2);
+        }
+        void Leave()
+        {
+            world.Commands.Enqueue(new FocusCommand(new Vector3(-50000, 0, -50000)) { Tick = world.Tick });
+            world.RunTicks(60);
+        }
+        var site = data.Sites[0];
+        int Patrols() => world.Squads.All.Count(s => s.TemplateId == "10-t");
+
+        // B (weight 2, first of the heaviest): its faction, the town's own name, its residents only.
+        Visit();
+        Assert.Equal("51-t", site.Replacement?.Id);
+        Assert.Equal(("Testville", data.FactionIndex("21-t")), (site.Town.Name, data.SiteFactions[0]));
+        Assert.Equal((1, 0), (world.Squads.All.Count(s => s.TemplateId == "12-t"), Patrols()));
+
+        // Next load: B's own list gives A (B itself is skipped); A names no faction, so B's stays; A's residents are made though the town was made; loose items go.
+        Leave();
+        world.GroundItems.Drop(data.Items.Create("70-t")!, SyntheticTown.Centre, 0);
+        Visit();
+        Assert.Equal(("50-t", data.FactionIndex("21-t")), (site.Replacement?.Id, data.SiteFactions[0]));
+        Assert.Equal(1, Patrols());
+        Assert.Equal(0, world.GroundItems.Count);
+
+        // A has no overrides: nothing changes, nothing more is made.
+        Leave();
+        Visit();
+        Assert.Equal(("50-t", 1), (site.Replacement?.Id, Patrols()));
+    }
+
     [Fact]
     public void Background_building_gives_the_same_town_as_building_in_the_tick()
     {

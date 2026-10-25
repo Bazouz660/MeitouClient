@@ -26,7 +26,7 @@ static class SyntheticTown
     /// <paramref name="extra"/> adds records, <paramref name="changePatrol"/> changes the resident <c>Patrol</c> template (<c>10-t</c>) and <paramref name="changeFolk"/> the
     /// <c>Faction folk</c> one (<c>12-t</c>, the roaming squads') before the database is made.</summary>
     public static GameDatabase Database(int residentSquads = 3, bool overrideFlag = false, bool roaming = false, bool anatomy = false, bool items = false,
-        IReadOnlyList<FcsRecord>? extra = null, Action<FcsRecord>? changePatrol = null, Action<FcsRecord>? changeFolk = null)
+        IReadOnlyList<FcsRecord>? extra = null, Action<FcsRecord>? changePatrol = null, Action<FcsRecord>? changeFolk = null, Action<FcsRecord>? changeTown = null)
     {
         var race = Rec("1-t", FcsRecordType.RACE, "Testers");
         var parts = new List<FcsRecord>();
@@ -126,6 +126,7 @@ static class SyntheticTown
         if (far is not null) file.Records.Add(far);
         changePatrol?.Invoke(patrol);
         changeFolk?.Invoke(factionTemplate);
+        changeTown?.Invoke(town);
         if (extra is not null) file.Records.AddRange(extra);
         var db = new GameDatabase();
         db.Apply(file, "test.mod");
