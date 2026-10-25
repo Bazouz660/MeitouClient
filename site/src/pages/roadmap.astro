@@ -56,7 +56,7 @@ const reportConfig = JSON.stringify({ url: reports.url.replace(/\/$/, ''), siteK
       </div>
       <div class="tiles" role="group" aria-label="Filter by status">
         {order.map((k) => (
-          <button type="button" class={`tile st-${k}`} data-s={k} aria-pressed="false">
+          <button type="button" class={`tile st-${k}`} data-s={k} title={statuses[k].desc} aria-pressed="false">
             <span class="n">{counts[k]}</span><span class="k">{statuses[k].label}</span><span class="d">{statuses[k].desc}</span>
           </button>
         ))}
@@ -262,6 +262,16 @@ const reportConfig = JSON.stringify({ url: reports.url.replace(/\/$/, ''), siteK
     }, 20000);
   })();
 
+  // Sticky column: when taller than the window, stick by its bottom edge (a negative top), so it scrolls with the page
+  // instead of inside itself.
+  (() => {
+    const side = document.querySelector('.side');
+    const fit = () => side.style.setProperty('--side-top', `${Math.min(16, innerHeight - side.offsetHeight - 16)}px`);
+    new ResizeObserver(fit).observe(side);
+    addEventListener('resize', fit);
+    fit();
+  })();
+
   // Back to top: shown once the page is scrolled past the first screen; smooth unless reduced motion is asked for.
   (() => {
     const btn = document.querySelector('.totop');
@@ -421,6 +431,8 @@ const reportConfig = JSON.stringify({ url: reports.url.replace(/\/$/, ''), siteK
 <style is:global>
   /* The body and the site frame are transparent on this page so the backdrop shows behind them (html keeps the ground colour). */
   body:has(.rd), .mt-scene:has(.rd) { background: transparent; }
+  /* Less room under the site header here: the roadmap starts right below it. */
+  .mt-scene:has(.rd) .top { padding-bottom: 16px; }
 </style>
 
 <style>
@@ -567,24 +579,29 @@ const reportConfig = JSON.stringify({ url: reports.url.replace(/\/$/, ''), siteK
   .repdlg .actions .send { background: var(--accent); border-color: var(--accent); color: var(--bg); font-weight: 600; }
   .repdlg .actions .send:disabled { opacity: .6; cursor: default; }
 
-  /* Wide screens (16:9 desktops): the header across the top, the filters and categories in a sticky column on the left,
-     the tables beside it. The column scrolls on its own when it is taller than the window. */
+  /* Wide screens (16:9 desktops): the filters and categories in a sticky column on the left from the top of the page, the
+     header and tables beside it. A column taller than the window scrolls with the page until its bottom shows, then sticks
+     (the script sets --side-top). */
   @media (min-width: 1240px) {
-    .rd { max-width: 1600px; grid-template-columns: 340px minmax(0, 1fr); gap: 32px 40px; }
-    .rd > header { grid-column: 1 / -1; }
+    .rd { max-width: 1600px; grid-template-columns: 320px minmax(0, 1fr); grid-template-rows: auto 1fr; gap: 28px 40px; padding-top: 0; }
+    .rd > header { grid-column: 2; grid-row: 1; gap: 6px; }
+    .rd > header p { max-width: 110ch; }
+    .rd h1 { font-size: 2rem; }
+    .body { grid-column: 2; grid-row: 2; }
     .side {
-      position: sticky; top: 16px; max-height: calc(100vh - 32px); overflow-y: auto; gap: 28px;
-      padding: 18px; border-radius: var(--r-plate); background: color-mix(in srgb, var(--bg) 72%, transparent); border: 1px solid var(--line);
-      scrollbar-width: thin; scrollbar-color: var(--line) transparent;
+      grid-column: 1; grid-row: 1 / span 2; align-self: start; position: sticky; top: var(--side-top, 16px); gap: 22px;
+      padding: 16px; border-radius: var(--r-plate); background: color-mix(in srgb, var(--bg) 72%, transparent); border: 1px solid var(--line);
     }
-    .side .tiles { grid-template-columns: 1fr; gap: 6px; }
-    .side .tile { grid-template-columns: 3.2ch 1fr; column-gap: 12px; align-items: baseline; padding: 8px 12px 8px 16px; }
-    .side .tile .n { grid-row: span 2; font-size: 1.6rem; }
+    .side section { gap: 10px; }
+    .side .tiles { grid-template-columns: 1fr; gap: 4px; }
+    .side .tile { grid-template-columns: 3ch 1fr; column-gap: 10px; align-items: baseline; padding: 5px 12px 5px 16px; border-radius: var(--radius-card); }
+    .side .tile .n { font-size: 1.3rem; }
+    .side .tile .d { display: none; }
     .side .search { margin-left: 0; flex-basis: 100%; }
     .side .plats .gap { margin-left: 0; }
     .side .loop { display: grid; gap: 4px; }
     .side .loop .arrow { display: none; }
-    .rd .side .loop a { grid-template-columns: 1fr 72px; align-items: center; gap: 12px; min-width: 0; padding: 6px 12px; }
+    .rd .side .loop a { grid-template-columns: 1fr 72px; align-items: center; gap: 12px; min-width: 0; padding: 4px 12px; }
     .side .loop .nm { font-size: .9rem; }
   }
   @media (max-width: 560px) { .rd h1 { font-size: 2rem; } .search { margin-left: 0; flex-basis: 100%; } }
