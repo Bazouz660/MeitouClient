@@ -28,7 +28,7 @@ sealed record Config(
             connection,
             System.Text.Encoding.UTF8.GetBytes(salt),
             Get("REPORTS_ADMIN_TOKEN"),
-            new Uri(Get("ROADMAP_URL") ?? "https://meitou.kenshi.wiki/roadmap.json"),
+            new Uri(Get("ROADMAP_URL") ?? "https://raw.githubusercontent.com/VlcekM/MeitouClient/master/site/src/data/roadmap.ts"),
             Get("GITHUB_REPO") ?? "VlcekM/MeitouClient",
             List("ALLOWED_ORIGINS") is { Length: > 0 } o ? o : ["https://meitou.kenshi.wiki"],
             Get("TURNSTILE_SECRET"),

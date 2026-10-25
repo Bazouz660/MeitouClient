@@ -18,7 +18,7 @@ sealed record GithubRelease(
 /// The roadmap's rows (from the site, so reports can only name a real row) and the report cutoff: reports older than two full game
 /// releases stop counting, so the cutoff is when the release before the newest one came out.
 /// </summary>
-sealed class Roadmap(HttpClient http, Config config, ILogger<Roadmap> log)
+sealed partial class Roadmap(HttpClient http, Config config, ILogger<Roadmap> log)
 {
     static readonly TimeSpan RowsFor = TimeSpan.FromMinutes(10), ReleasesFor = TimeSpan.FromHours(1);
     readonly SemaphoreSlim gate = new(1, 1);
@@ -33,8 +33,11 @@ sealed class Roadmap(HttpClient http, Config config, ILogger<Roadmap> log)
         try
         {
             if (DateTimeOffset.UtcNow - rowsAt < RowsFor) return rows;
-            var file = await http.GetFromJsonAsync<RoadmapFile>(config.RoadmapUrl);
-            if (file?.Rows is { Count: > 0 } list) rows = list.ToDictionary(r => r.Id);
+            string text = await http.GetStringAsync(config.RoadmapUrl);
+            var list = config.RoadmapUrl.AbsolutePath.EndsWith(".json", StringComparison.Ordinal)
+                ? System.Text.Json.JsonSerializer.Deserialize<RoadmapFile>(text, System.Text.Json.JsonSerializerOptions.Web)?.Rows ?? []
+                : ParseSource(text);
+            if (list.Count > 0) rows = list.ToDictionary(r => r.Id);
             rowsAt = DateTimeOffset.UtcNow;
         }
         catch (Exception e) when (e is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
@@ -45,6 +48,29 @@ sealed class Roadmap(HttpClient http, Config config, ILogger<Roadmap> log)
         finally { gate.Release(); }
         return rows;
     }
+
+    /// <summary>
+    /// The rows of <c>site/src/data/roadmap.ts</c> itself: each category line <c>{ id: "...", name: "..."</c> is followed by its row lines
+    /// <c>{ id: "...", system: "...", status: "..."</c>. Read this way so the service needs neither the site nor a TypeScript runtime.
+    /// </summary>
+    public static List<RoadmapRow> ParseSource(string source)
+    {
+        var list = new List<RoadmapRow>();
+        string category = "";
+        foreach (var line in source.Split('\n'))
+        {
+            if (CategoryLine().Match(line) is { Success: true } c) category = c.Groups[1].Value;
+            else if (RowLine().Match(line) is { Success: true } r)
+                list.Add(new(r.Groups[1].Value, System.Text.RegularExpressions.Regex.Unescape(r.Groups[2].Value), category, r.Groups[3].Value));
+        }
+        return list;
+    }
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"^\s*\{\s*id:\s*""([^""]+)"",\s*name:\s*""")]
+    private static partial System.Text.RegularExpressions.Regex CategoryLine();
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"^\s*\{\s*id:\s*""([^""]+)"",\s*system:\s*""((?:[^""\\]|\\.)*)"",\s*status:\s*""(\w+)""")]
+    private static partial System.Text.RegularExpressions.Regex RowLine();
 
     /// <summary>Reports made before this stop counting: the publish time of the second newest full game release (<c>v*</c>, not a pre-release).</summary>
     public async Task<DateTimeOffset> Cutoff()

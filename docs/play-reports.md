@@ -21,7 +21,7 @@ Cloudovna. One table `reports`: row, verdict `works|broken`, build, platform `wi
 chars, required for Broken), source `web|discord|launcher`, reporter, trusted, gzipped log (launcher only, last 512 KiB).
 
 - Reporter = HMAC-SHA256(`REPORTS_SALT`, IP or Discord user id), 24 hex: counts distinct people, stores nothing personal.
-- Limits: 10 posts per IP per 10 minutes, 30 reports per reporter per day; unknown row ids are refused (rows from `ROADMAP_URL`).
+- Limits: 10 posts per IP per 10 minutes, 30 reports per reporter per day; unknown row ids are refused (rows from `ROADMAP_URL`). Not the site itself: a container on cic cannot reach domains its own edge serves directly (DNS-only, like `meitou.kenshi.wiki`).
 - Counting window: reports before the publish time of the second newest full game release (`v*`, not pre-release) stop counting.
 - Rules (`GET /proposals`): Untested to Works on 3 distinct reporters or 1 trusted tester; any Broken flags the row for a look. A
   Broken that someone reproduces with steps is what moves Works to Bug, by hand.
@@ -35,7 +35,7 @@ chars, required for Broken), source `web|discord|launcher`, reporter, trusted, g
 | `GET /reports?since&row&limit`, `GET /reports/{id}/log`, `DELETE /reports/{id}`, `POST /discord/register` | admin | `Authorization: Bearer REPORTS_ADMIN_TOKEN` |
 
 Environment: `DATABASE_URL` (postgresql URL) or `ConnectionStrings__Reports` (ADO.NET), `REPORTS_SALT` (required, never change it:
-distinct counts reset), `REPORTS_ADMIN_TOKEN`, `ROADMAP_URL` (default the site's `/roadmap.json`), `ALLOWED_ORIGINS` (CORS, default
+distinct counts reset), `REPORTS_ADMIN_TOKEN`, `ROADMAP_URL` (default `roadmap.ts` on GitHub raw, read line by line; a `.json` URL is read as `/roadmap.json`), `ALLOWED_ORIGINS` (CORS, default
 the site), `TURNSTILE_SECRET` (web reports need a Turnstile token when set), `DISCORD_PUBLIC_KEY`, `DISCORD_APP_ID`,
 `DISCORD_BOT_TOKEN`, `DISCORD_TRUSTED_ROLES` (role ids whose reports are trusted), `GITHUB_REPO`. Client IP: `CF-Connecting-IP`, else
 the last `X-Forwarded-For` entry. Port 8080.
