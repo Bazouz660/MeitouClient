@@ -159,6 +159,9 @@ sealed class PostTaa : IDisposable
         Fullscreen(cmd, velocity, motion!, width, height);
         if (External is not null && reactive is not null)
         {
+            // The reactive pass is a second encoder of the same program: re-bind the depth views, or the new encoder starts with them missing.
+            v.Bind(nearDepth, pointSampler with { View = depth.View() });
+            v.Bind(farDepth, ctx.Dummy(v.SamplerInfo(farDepth)));
             v.Set(waterY, waterHeight ?? float.MinValue);
             v.Set(waterReactive, 0.5f);
             v.Set(mode, 2);

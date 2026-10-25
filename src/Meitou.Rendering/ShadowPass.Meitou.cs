@@ -333,7 +333,6 @@ public sealed unsafe partial class ShadowPass
         var p = blockerNative!;
         var map = blocker!;
         p.Set(blockerSizeHandle, (float)atlasSize);
-        p.Bind(blockerAtlasSlot, atlasPlain);
         var cmd = Gpu.BeginNative("shadow blockers");
         var formats = new AttachmentFormats(map.Desc.Format, InternalFormat.None, 1);
         int side = map.Desc.Width;
@@ -346,6 +345,8 @@ public sealed unsafe partial class ShadowPass
             cmd.BeginRendering(new RenderingDesc(target, default, side, side));
             BlockerState.Record(cmd, new PassTargets(target, default, formats, side, side, new PixelViewport(0, 0, side, side, 0, 1), whole));
             cmd.BindPipeline(pipeline);
+            // Each layer is a new encoder: bind the atlas for it, not only once before the loop.
+            p.Bind(blockerAtlasSlot, atlasPlain);
             p.Set(blockerLayerHandle, i);
             p.Flush(cmd);
             cmd.Draw(3);
