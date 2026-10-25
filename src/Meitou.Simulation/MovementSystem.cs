@@ -91,6 +91,11 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
     /// </summary>
     public const float ProvisionalRepathSeconds = 2;
     public const int ProvisionalBlockedLimit = 5;
+    /// <summary>
+    /// How many times running a walker stopped on the navmesh part of its path (no ground it can stand on ahead) asks for the path again from where it stands before it drops it
+    /// and the order (engine choice: from a slightly different spot the path can start elsewhere, docs/game/pathfinding.md "Own builder").
+    /// </summary>
+    public const int BlockedRepathLimit = 3;
 
     public PathService Paths { get; } = paths;
 
@@ -234,6 +239,7 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
         var cold = table.Cold(slot)!;
         cold.OrderQueue.Clear();
         cold.ArriveWithin = 0;
+        cold.BlockedRepaths = 0;
         n.Task = (byte)CharacterTask.GoTo;
         n.Goal = target;
         n.Mode = mode;
@@ -548,6 +554,7 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
                     && (last || dist <= CornerReach || CanCut(walk, p.Position, cold.Path[n.PathCursor + 1])))
                 {
                     n.PathCursor++;
+                    if (cold.BlockedRepaths != 0) cold.BlockedRepaths = 0;
                     if (last) finished = true;
                 }
                 else
@@ -664,7 +671,8 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
                 else
                 {
                     // Blocked on the provisional part of a long route (the terrain-only route met a wall or a building): stand and ask again.
-                    if (n.PathCursor >= cold.PathExact && ++cold.ProvisionalBlocked <= ProvisionalBlockedLimit)
+                    // Blocked on its navmesh part: ask again from where it stands a few times before giving up.
+                    if (n.PathCursor >= cold.PathExact ? ++cold.ProvisionalBlocked <= ProvisionalBlockedLimit : ++cold.BlockedRepaths <= BlockedRepathLimit)
                     {
                         speed = 0;
                         dir = Vector2.Zero;
