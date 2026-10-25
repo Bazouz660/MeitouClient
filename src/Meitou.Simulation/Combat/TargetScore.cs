@@ -1,0 +1,65 @@
+namespace Meitou.Simulation.Combat;
+
+/// <summary>One candidate of a fight target choice, as <see cref="TargetScore.Score"/> weighs it.</summary>
+public readonly record struct TargetCandidate
+{
+    /// <summary>The chooser's current target.</summary>
+    public bool Current { get; init; }
+    /// <summary>Playing a stumble clip.</summary>
+    public bool Staggered { get; init; }
+    /// <summary>How many fight it, and whether the chooser is one of them.</summary>
+    public int Attackers { get; init; }
+    public bool ChooserAttacks { get; init; }
+    public bool Taunt { get; init; }
+    public bool Passive { get; init; }
+    /// <summary>It is on one of the chooser's side who does not fight it back, and fewer than two fight it.</summary>
+    public bool Protect { get; init; }
+    /// <summary>Ground distance from the chooser.</summary>
+    public float Distance { get; init; }
+    /// <summary>Its fight is on.</summary>
+    public bool Fighting { get; init; }
+    /// <summary>It mans a turret.</summary>
+    public bool Gunner { get; init; }
+    /// <summary>Crawling or unable to fight.</summary>
+    public bool Crippled { get; init; }
+}
+
+/// <summary>
+/// The fight target score (<c>AI::chooseBestAttackTarget</c>, docs/game/combat.md "Attack slots and circling", Target score): the CharStats weights are the same constants
+/// for every character (<b>Verified</b> literals of <c>CharStats::init</c>). The candidate lists and the Hold post test are the caller's.
+/// </summary>
+public static class TargetScore
+{
+    public const float Stubbornness = 5, Professionalness = 1, HoldingPosition = 2, Immediacy = 2, ImmediacyRange = 200, Manliness = 1, Murderous = -2;
+    /// <summary>A player-faction chooser drops candidates beyond this (its crossbow range with Ranged on).</summary>
+    public const float PlayerRange = 400;
+    /// <summary>On Hold the score is x0.01 beyond this.</summary>
+    public const float HoldNear = 40;
+
+    /// <summary>
+    /// The score of <paramref name="c"/> (higher is better), null when dropped. <paramref name="prone"/>: the chooser crawls (stubbornness x4, range term x20). The range term is
+    /// ROAM_FAR's, the manoeuvre mode every Meitou character has.
+    /// </summary>
+    public static float? Score(in TargetCandidate c, bool player, bool hold, bool prone, bool animal)
+    {
+        float s = 0;
+        if (c.Current) s += Stubbornness * (prone ? 4 : 1);
+        if (c.Staggered) s -= Professionalness;
+        float crowd = -Manliness * (c.Attackers - (c.ChooserAttacks ? 1 : 0));
+        if (c.Taunt)
+        {
+            s += 2;
+            crowd *= 0.35f;
+        }
+        s += crowd;
+        if (c.Passive) s -= 1;
+        if (c.Protect) s += 10;
+        if (player && c.Distance > PlayerRange) return null;
+        if (hold && c.Distance > HoldNear) s *= 0.01f;
+        s += (1 - c.Distance / ImmediacyRange) * Immediacy * (prone ? 20 : 1);
+        if (!c.Fighting) s += Murderous;
+        if (c.Gunner && !animal) s *= 3;
+        if (c.Crippled) s -= 10;
+        return s;
+    }
+}

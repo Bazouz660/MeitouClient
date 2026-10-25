@@ -137,6 +137,7 @@ public sealed partial class LockSystem
                 }
                 if (next[s].Task == (byte)CharacterTask.GoTo) MovementSystem.Stop(table, s);
             }
+            if (c.StaggeredUntil > world.Tick) continue;   // a stagger interrupts the work
             switch (job.Work)
             {
                 case ShackleWork.PutOn:

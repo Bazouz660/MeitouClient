@@ -270,18 +270,19 @@ commands with the original's limits ([Squads tab](game/ui-screens.md#squads-tab)
 ### Order toggles
 
 Passive/Hold/Block/Taunt/Jobs state belongs to the character (medic and rescue are job-list entries, [job lists](#production)) and relevant
-systems. Explicit player commands and automatic retaliation have different eligibility;
-Idle players self-defend unless Passive, and Hold prevents pursuit beyond attack reach.
+systems; the rules follow [combat](game/combat.md#fight-lifecycle-and-orders). A player's character defends itself only without an order
+(Idle, a bodyguard's Follow, or Loot with the attacker within 40) and against an attacker within √33000 ≈ 182; Passive does not stop that but keeps it
+from joining others' defence and from attack on sight. Hold adds attack on sight while Idle (not Passive, sneaking or crawling), and every target of a
+holder (sight, self-defence, re-pick) passes the post test (`Orders.HoldPost`); it walks to a target only within 80 (140 when the target fights it) of
+its hold point (`CharacterCold.HoldPoint`: where Hold was turned on, then each ground move's destination; not saved, a loaded holder holds where it stands).
 A toggle (button or hotkey) sets every selected character to the opposite of the first one's state, so a mixed selection ends uniform (engine choice; the original's rule is **Unknown**). Toggles and the run speed arrows also apply while paused ([time model](#time-model)).
 New player characters start with Jobs and Ranged enabled. Jobs gates the job list and automatic rescue (the medic, robotics, splint and attacking-enemies jobs run regardless, as the original); direct orders still run. The saved `chase mode` is this switch. Saved toggles override
 defaults, including explicit false values. Jobs is GAMESTATE_AI `jobs` ([perma-jobs](game/ai-tasks.md#perma-jobs)); Meitou's older `meitou jobs enabled` is read, not written.
 Sneak: sneaking speed cap and clips, quieter, smaller view factor; a hostile looker sees the sneaker only once its
 spot meter fills ([perception](game/perception.md#spotting-a-sneaker)); the exposure feeds stealth XP.
-Ranged (tooltip, **Verified** in `main.pot`, mainbar.cpp:1279: "prioritise ranged attacks, melee will be a last resort"): a
-crossbow carrier takes the crossbow at any distance and melees only when dry or a melee attacker is on it; off, the distance
-rule of `ChooseMode` applies (an engine choice; the original's Ranged flag gates the shooting orders, [combat](game/combat.md#unknowns-of-the-ranged-path)). Taunt (mainbar.cpp:1273: "draw more of the enemy to attack him"): a hostile looker picking a
-new fight prefers a visible taunter over any non-taunter (nearest first); its squad joins as usual. Fights already under way
-are not retargeted; a sneaking taunter does not count. Both rules are engine choices; the original's are **Unknown**.
+Ranged (on for every NPC): a crossbow carrier takes the crossbow at any distance and melees only when dry, in Block, or with a threat
+(anyone targeting it) within 40; off, it never shoots. Taunt and Passive act through the target score (`Combat.TargetScore`: Taunt +2 and its crowd term ×0.35,
+Passive −1), which both the aggro look and the fighters' re-pick use.
 New games select the squad's first member. The game host also selects the first member after
 loading, before publishing the initial snapshot; the save reader itself retains saved selection.
 
@@ -397,8 +398,8 @@ Original formulas, constants and unresolved technique terms: [combat.md](game/co
 Hits, pauses and initiative follow combat.md "Hit reactions" / "Pacing"; the combat system picks the stumble
 clip (through the animation system's chooser) and holds the fighter for its length. Engine choices: a miss waits
 0.2 s; the first attack after an order waits 0.15–0.6 s; the initiative roll is drawn per pair and tick so both
-sides agree, and the loser holds off for 1 s; a target that would not swing back (stumbling, defending, not fighting, Block or
-Passive order) is simply attacked; one that lost the roll to a fighter becomes its target; a defence that starts late
+sides agree, and the loser holds off for 1 s; a target that would not swing back (stumbling, defending, not fighting, or in
+Block) is simply attacked; one that lost the roll to a fighter becomes its target; a defence that starts late
 joins its clip partway so the passed roll counts when "Late dodges and blocks" is on (Advanced setting, a balance
 change: Faithful off, Meitou on);
 the attack technique, attack slots, the 5-fighter engaged list and circling follow combat.md "Attack technique choice" /
@@ -406,6 +407,14 @@ the attack technique, attack slots, the 5-fighter engaged list and circling foll
 CONSTANTS value and the default; Meitou 3); the block break-out ignores the 10% lower bound; only a heavy bolt staggers.
 Fighters walk in to their technique reach (`CombatTuning.StandGap`); the straight-line approach (`SelfApproach`) does not circle. A blow on
 the target that is not a hit gives up the engaged place (`FUN_14060a2f0`), so the circling fighters get their turn.
+Target choice (`CombatSystem.ChooseTarget`, combat.md "Target selection"): a fighter whose target goes down chooses again at once and ends its fight
+only when no candidate is left; while deciding it chooses again every 1 s (0.3 s on Hold), except for a player's pick. Candidates are its current
+target, its attackers and, unless Passive, the attackers of squad mates within `JoinRange` (+10 for one whose mate does not fight it back and that has
+under 2 attackers: engine reading of the protectee); not of its faction or squad. Not modelled: the sensed test, murderous ×0.5, getting up ×0.1.
+Only a fighter blocks or dodges. A landed hit that picks a stumble clip on a character outside a fight stops its walking and its work (first aid,
+lockpicking, building, operating) until the clip ends (`CharacterCold.StaggeredUntil`); the order then goes on where it was (engine choice: the original
+plans it again from its start). A fight's end puts no weapon away: a player's character sheathes once it is neither walking nor following on an order,
+an NPC by its planner's UNEQUIP_WEAPON step (one without an AI at once).
 
 ### Ranged
 
@@ -439,7 +448,8 @@ martial-arts category 5. [animals.md](game/animals.md), [characters.md](characte
 ### Hostility and relations
 
 `AggroSystem`, `RetaliationSystem`, `FleeSystem`: previous-position sight/hearing, faction
-relations, shared targets, idle-player self-defence, chase give-up and return to routine.
+relations, shared targets, idle-player self-defence ([order toggles](#order-toggles)), chase give-up and return to routine. The look picks
+the best `Combat.TargetScore` (the original's attack-on-sight finder), not the nearest.
 Free squad mates within `JoinRange` join an attacked member's defence each check even while it is already fighting or down (engine rule).
 Orders defer to the next tick. Relations are live state and deed/witness effects have distinct
 paths; preserve current ordering.

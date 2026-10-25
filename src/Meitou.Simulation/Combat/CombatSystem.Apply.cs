@@ -147,6 +147,7 @@ public sealed partial class CombatSystem
             D.StumbleClip = clip.Clip;
             D.StumbleStart = now;
             D.StunUntil = now + Math.Max(1, (int)MathF.Ceiling(clip.Seconds / world.TickSeconds));
+            dc.StaggeredUntil = D.StunUntil;
             D.ReadyTick = Math.Max(D.ReadyTick, D.StunUntil);
         }
         else D.ReadyTick = Math.Max(D.ReadyTick, now + (int)MathF.Ceiling(CombatTuning.InterruptPause / world.TickSeconds));

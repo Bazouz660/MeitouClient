@@ -18,11 +18,6 @@ public static class RangedTuning
     public const float AimHeight = 13;
     /// <summary>The body a bolt hits: an upright cylinder of the footprint radius, this tall (the original tests the physics shape, <b>Unknown</b>).</summary>
     public const float BodyHeight = 18;
-    /// <summary>
-    /// The ranged-or-melee choice (the original's is <b>Unknown</b>): a crossbowman with shots or ammunition fights with the crossbow while no melee attacker is within
-    /// <see cref="MeleeThreatGap"/> of it and its target's gap is at least <see cref="MeleeSwitchGap"/>; once in melee it takes the crossbow up again past <see cref="RangedSwitchGap"/>.
-    /// </summary>
-    public const float MeleeThreatGap = 15, MeleeSwitchGap = 20, RangedSwitchGap = 60;
     /// <summary>While closing in, the line of fire must be clear this long (seconds) before the shooter stops and aims again (<c>FUN_140438c70</c>'s 0.3 s, its ray flags <b>Unknown</b>).</summary>
     public const float ClearToAim = 0.3f;
     /// <summary>Stuck bolts kept in the world, oldest dropped first (the settings' <c>harpoonLimit</c>; its value is not read here).</summary>
@@ -244,17 +239,21 @@ public sealed partial class CombatSystem : IProjectileSource
         public bool Found;
     }
 
-    /// <summary>A melee fighter has the character as its target and is within <see cref="RangedTuning.MeleeThreatGap"/> (the planner's "being melee attacked", whose test is <b>Unknown</b>).</summary>
-    bool MeleeThreat(World world, int self)
+    /// <summary>
+    /// A threat within <see cref="RetaliationSystem.ImmediateReach"/>: a standing fighter whose target the character is, by centre distance (the planner's
+    /// <c>iAmBeingMeleeAttacked immediate</c>, Character +0x2b0, docs/game/combat.md "Fight lifecycle and orders").
+    /// </summary>
+    bool ImmediateThreat(World world, int self)
     {
         var prev = world.Characters.Previous;
         var scan = new ThreatScan { Read = read, Table = world.Characters, Self = self, SelfGeneration = prev[self].Generation };
-        world.Grid.Query(prev[self].Position.X, prev[self].Position.Z, CombatTuning.ReactionScanRadius, ref scan, static (int other, ref ThreatScan st) =>
+        world.Grid.Query(prev[self].Position.X, prev[self].Position.Z, RetaliationSystem.ImmediateReach, ref scan, static (int other, ref ThreatScan st) =>
         {
             if (st.Found || other == st.Self) return;
             ref readonly var o = ref st.Read[other];
-            if (o.TargetSlot != st.Self || o.TargetGeneration != st.SelfGeneration || o.Ranged || o.Down) return;
-            if (Gap(st.Table.Previous, st.Table, other, st.Self) <= RangedTuning.MeleeThreatGap) st.Found = true;
+            if (o.TargetSlot != st.Self || o.TargetGeneration != st.SelfGeneration || o.Down) return;
+            var d = st.Table.Previous[other].Position - st.Table.Previous[st.Self].Position;
+            if (d.X * d.X + d.Z * d.Z <= RetaliationSystem.ImmediateReach * RetaliationSystem.ImmediateReach) st.Found = true;
         });
         return scan.Found;
     }
@@ -262,10 +261,9 @@ public sealed partial class CombatSystem : IProjectileSource
     static WeaponKinds MeleeDrawn(Fighter f) => f.Weapon is { } w && !f.Unarmed ? HandHold.OfCategory(w.Data.SkillCategory).Weapon : WeaponKinds.None;
 
     /// <summary>
-    /// Chooses crossbow or melee for a fighting character that carries a crossbow (an <b>engine rule</b>, <see cref="RangedTuning"/>): the crossbow while it has shots or
-    /// ammunition, no melee attacker is on it and the target is not close; melee otherwise. With the Ranged order (its tooltip: "prioritise ranged attacks, melee will be a
-    /// last resort") the distance does not count: crossbow unless dry or a melee attacker is on it (the split is an <b>engine choice</b>; the original's switch rule is
-    /// <b>Unknown</b>). A character without a crossbow is left alone.
+    /// Chooses crossbow or melee for a fighting character that carries a crossbow (the planner's desires, docs/game/combat.md "Fight lifecycle and orders", melee or
+    /// shooting): in Ranged mode (on for every NPC, the player's toggle for its characters) the crossbow while it has shots or ammunition and no threat is within
+    /// <see cref="RetaliationSystem.ImmediateReach"/>, melee otherwise; out of Ranged mode never the crossbow. A character without a crossbow is left alone.
     /// </summary>
     void ChooseMode(World world, int i, ref CombatSlot s, CharacterCold cold, bool fighting)
     {
@@ -288,15 +286,9 @@ public sealed partial class CombatSystem : IProjectileSource
         // A crossbow (weapon category Bow) needs both arms (FUN_1407f2840, FUN_1409991d0); losing one puts it away (FUN_1405cc230) and the fight goes on in melee.
         bool can = (s.Loaded > 0 || hasAmmo) && cold.Medical is not { BothArmsWork: false };
         if (s.Dry == can) s.Dry = !can;
-        bool want;
-        if (!can || MeleeThreat(world, i) || Orders.Has(cold, CharacterOrders.Block)) want = false;   // the Block order shoots no bolts either
-        else
-        {
-            // The Ranged order takes the crossbow however close the target is (between swings); melee only when dry or a melee attacker is on it.
-            float gap = Gap(world.Characters.Previous, world.Characters, i, s.TargetSlot);
-            want = Orders.Has(cold, CharacterOrders.Ranged) ? s.Ranged || s.AttackTech < 0
-                : s.Ranged ? gap >= RangedTuning.MeleeSwitchGap : gap >= RangedTuning.RangedSwitchGap && s.AttackTech < 0;
-        }
+        // Ranged mode takes the crossbow however close the target is (between swings): melee is x0.1 against shooting's 1, and a threat within 40 refuses the shooting rows.
+        bool rangedMode = !cold.IsPlayer || Orders.Has(cold, CharacterOrders.Ranged);
+        bool want = can && rangedMode && !Orders.Has(cold, CharacterOrders.Block) && !ImmediateThreat(world, i) && (s.Ranged || s.AttackTech < 0);   // the Block order shoots no bolts either
         if (want == s.Ranged) return;
         s.Ranged = want;
         s.RangedState = want ? (byte)RangedStates.Aiming : (byte)0;

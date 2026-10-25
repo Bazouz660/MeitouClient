@@ -69,7 +69,13 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
         bool behind = lead > 0 && tv.X * level.X + tv.Z * level.Z > 0;
         // A crossbowman walks only while closing in (out of range or the line of fire blocked); aiming and reloading it stands.
         bool shooting = st.Ranged && st.RangedState != (byte)RangedStates.Closing;
-        bool holding = Orders.Has(cold, CharacterOrders.Hold);
+        // On Hold it walks only to a target within the post test's reach of the hold point (80, 140 when the target fights it; Orders.HoldPost), else it stands (engine reading).
+        bool holding = false;
+        if (Orders.Has(cold, CharacterOrders.Hold))
+        {
+            float far = combat.StateOf(new CharacterId(t, next[t].Generation)).TargetSlot == i ? 140 : 80;
+            holding = Vector2.DistanceSquared(Orders.HoldPointOf(cold, n.Position), new Vector2(next[t].Position.X, next[t].Position.Z)) > far * far;
+        }
         // One of more than MaxEngaged fighters that its target has not let close in circles it (WaitingStateAI, docs/game/combat.md "Attack slots and circling"); not while its
         // swing plays (a blow that is not a hit gives up the place at once, but the fighter asks again only when it next decides).
         int around = !st.Ranged && !st.Engaged && !behind && st.AttackTech < 0 ? combat.FightersAt(world, t) : 0;
@@ -157,7 +163,7 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
 /// A minimal answer to being attacked (an <b>engine rule</b>, the original's AI is stage 9): every <see cref="CheckEveryTicks"/> ticks, a character that is awake, armed with a
 /// <see cref="Fighter"/>, not fighting already, and that someone is attacking, fights that attacker, and so do its squad mates within <see cref="JoinRange"/> units of it that are
 /// free too, whether or not the attacked one is free itself (never against a mate of the same squad). An NPC always answers; one of the player's characters answers only while it has no order (task <see cref="CharacterTask.Idle"/>: not walking to an order, treating or
-/// resting), so a player who sends a character away is obeyed; the original's Passive toggle (non-combat mode) would turn it off and is not modelled (its default is off).
+/// resting), so a player who sends a character away is obeyed (<see cref="SelfDefends"/>); Passive keeps it from helping others, not from defending itself.
 /// The orders go into the world's deferred list for the next tick (<see cref="World.Defer"/>) and are marked <see cref="AttackOrder.Defensive"/>. With <see cref="SquadAi.Help"/> the player's
 /// free characters also defend characters of allied factions (<see cref="HelpAllies"/>).
 /// </summary>
@@ -194,7 +200,7 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem
             // A gunner leaves its turret only for a melee attacker (task 146's "!iAmBeingMeleeAttacked"); bolts do not bring it down.
             if (st.Ranged && table.Cold(t)?.Gunning is not null) continue;
             var defenders = new List<CharacterId>();
-            if (CanFight(table, t, taken))
+            if (SelfDefends(table, t, taken, next[a].Position))
             {
                 defenders.Add(new(t, next[t].Generation));
                 taken.Add(t);
@@ -205,10 +211,14 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem
             Guards(world, table, t, a, defenders, taken, guards);
             // Allies come to a defender that is already fighting too.
             HelpAllies(world, table, t, a, defenders, taken);
-            // The Hold order answers only an attacker within reach (Orders.HoldReach).
+            // The Hold order takes on only an attacker its post test accepts (Orders.HoldPost).
             var from = next[a].Position;
             for (int k = defenders.Count - 1; k >= 0; k--)
-                if (Orders.Has(table.Cold(defenders[k].Slot), CharacterOrders.Hold) && !Orders.InHoldReach(next[defenders[k].Slot].Position, from)) defenders.RemoveAt(k);
+            {
+                int ds = defenders[k].Slot;
+                if (table.Cold(ds) is { } dc && Orders.Holding(dc)
+                    && !Orders.HoldPost(next[ds].Position, Orders.HoldPointOf(dc, next[ds].Position), from, next[a].Velocity, st.Down, t == ds)) defenders.RemoveAt(k);
+            }
             if (defenders.Count == 0) continue;
             world.Defer(new AttackOrder(defenders, attacker) { Tick = world.Tick + 1, Defensive = true });
         }
@@ -286,13 +296,37 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem
         }
     }
 
-    static bool CanFight(CharacterTable table, int slot, HashSet<int> taken)
+    /// <summary>A player's character defends itself only against an attacker within this (Self preservation's desire is 0 beyond squared 33000, docs/game/combat.md "Fight lifecycle and orders").</summary>
+    public static readonly float SelfDefenceReach = MathF.Sqrt(33000);
+    /// <summary>A threat this near is immediate (Character +0x2b0): it ends a Loot order.</summary>
+    public const float ImmediateReach = 40;
+
+    /// <summary>
+    /// Whether the attacked character itself answers (Self preservation, docs/game/combat.md "Fight lifecycle and orders"): Passive does not stop it. A player's character has
+    /// it only without an order (its orders outrank the goal), and only against an attacker within <see cref="SelfDefenceReach"/>; a Loot order gives way to one within
+    /// <see cref="ImmediateReach"/>. An NPC always answers (engine choice: its attack-on-sight goal covers the farther attackers).
+    /// </summary>
+    static bool SelfDefends(CharacterTable table, int slot, HashSet<int> taken, Vector3 attacker)
     {
-        if (taken.Contains(slot)) return false;
-        byte task = table.Next[slot].Task;
-        if (task == (byte)CharacterTask.Attack) return false;
-        if (table.Cold(slot) is not { Fighter.CanAttack: true, Fleeing: false, IsImprisoned: false, Medical.Incapacitated: false, Carrying.IsNone: true, CarriedBy.IsNone: true } cold) return false;   // a carrier or a carried mate does not answer (the original's engagement weight is 0 while carrying)
-        // The Passive order (non-combat mode) does not answer attacks by itself.
-        return !cold.IsPlayer || (task == (byte)CharacterTask.Idle || cold.Guarding && task == (byte)CharacterTask.Follow) && (cold.Orders & CharacterOrders.Passive) == 0;
+        if (!Able(table, slot, taken, out var cold, out byte task)) return false;
+        if (!cold.IsPlayer) return true;
+        var d = attacker - table.Next[slot].Position;
+        float d2 = d.X * d.X + d.Z * d.Z;
+        if (d2 > SelfDefenceReach * SelfDefenceReach) return false;
+        return task == (byte)CharacterTask.Idle || cold.Guarding && task == (byte)CharacterTask.Follow || task == (byte)CharacterTask.Loot && d2 <= ImmediateReach * ImmediateReach;
+    }
+
+    /// <summary>Whether a character comes to another's defence: a player's character only without an order and not Passive (<c>scoreProtectAllies</c> is 0 when Passive).</summary>
+    static bool CanFight(CharacterTable table, int slot, HashSet<int> taken) =>
+        Able(table, slot, taken, out var cold, out byte task)
+        && (!cold.IsPlayer || (task == (byte)CharacterTask.Idle || cold.Guarding && task == (byte)CharacterTask.Follow) && (cold.Orders & CharacterOrders.Passive) == 0);
+
+    static bool Able(CharacterTable table, int slot, HashSet<int> taken, out CharacterCold cold, out byte task)
+    {
+        task = table.Next[slot].Task;
+        cold = table.Cold(slot)!;
+        if (taken.Contains(slot) || task == (byte)CharacterTask.Attack) return false;
+        // a carrier or a carried mate does not answer (the original's engagement weight is 0 while carrying)
+        return cold is { Fighter.CanAttack: true, Fleeing: false, IsImprisoned: false, Medical.Incapacitated: false, Carrying.IsNone: true, CarriedBy.IsNone: true };
     }
 }

@@ -115,6 +115,7 @@ public sealed partial class LockSystem(GameConstants constants, BodyOptions opti
                 }
                 if (next[s].Task == (byte)CharacterTask.GoTo) MovementSystem.Stop(table, s);
             }
+            if (c.StaggeredUntil > world.Tick) continue;   // a stagger interrupts the picking
             switch (Picking.Step(world, s, f, world.TickSeconds, Crimes))
             {
                 case PickOutcome.Open: c.PickingLock = null; world.EmitSound(SoundKind.Unlocked, s, next[s].Position); break;

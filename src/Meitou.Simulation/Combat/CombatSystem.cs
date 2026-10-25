@@ -149,7 +149,7 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
                     foreach (var id in stop.Characters) Disengage(table, id);
                     break;
                 // A move or follow order replaces the fight (the original's new task drops the fight task, and a new movement goal clears the stance): the runner
-                // neither swings at a chaser that comes into reach nor keeps its weapon out (docs/game/combat.md "Combat stance").
+                // neither swings at a chaser that comes into reach nor defends; its weapon stays out until it idles (docs/game/combat.md "Fight lifecycle and orders").
                 case MoveOrder move:
                     foreach (var id in move.Characters.Count > 0 ? move.Characters : world.Player.Selection.ToArray()) LeaveFight(table, id);
                     break;
@@ -177,6 +177,7 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
         s.TargetSlot = t;
         s.TargetGeneration = target.Generation;
         s.Picked = picked;
+        s.PickTick = now + PickTicks(world, cold);
         s.ReadyTick = now + PauseTicks(world, a, 0);
         table.Next[a].Task = (byte)CharacterTask.Attack;
         cold.InCombat = true;
@@ -207,7 +208,9 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
         cold.InCombat = false;
         cold.CombatRunning = false;
         cold.TargetFleeingTime = 0;
-        cold.DrawnWeapon = WeaponKinds.None;
+        // The fight's end sheathes nothing (docs/game/combat.md "Fight lifecycle and orders", weapon away): the planner puts it away before a goal that needs it away
+        // (the AI's UNEQUIP_WEAPON step), a player's character once it stops moving on an order (Act). A character without either sheathes now.
+        if (!cold.IsPlayer && cold.Ai is null) cold.DrawnWeapon = WeaponKinds.None;
         if (table.Next[slot].Task == (byte)CharacterTask.Attack) table.Next[slot].Task = (byte)CharacterTask.Idle;
     }
 

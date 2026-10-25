@@ -757,6 +757,7 @@ public sealed class ConstructionSystem : ITickSystem
                 continue;
             }
             if (!Arrived(n, goal)) continue;
+            if (cold.StaggeredUntil > world.Tick) continue;   // a stagger interrupts the work
             if (n.Velocity.X == 0 && n.Velocity.Z == 0) n.Yaw = MathF.Atan2(goal.At.X - n.Position.X, goal.At.Z - n.Position.Z);
             switch ((CharacterTask)n.Task)
             {

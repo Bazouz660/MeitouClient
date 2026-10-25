@@ -215,7 +215,7 @@ public sealed class FirstAidSystem(GameConstants constants, BodyOptions options,
         {
             if (!prev[i].Alive || next[i].Task != (byte)CharacterTask.Treat) continue;
             var cold = table.Cold(i)!;
-            if (cold.Medical is not { Incapacitated: false } medical || cold.InCombat || medical.Aggregates().BothArmsDisabled) continue;
+            if (cold.Medical is not { Incapacitated: false } medical || cold.InCombat || medical.Aggregates().BothArmsDisabled || cold.StaggeredUntil > world.Tick) continue;
             var target = cold.TreatTarget;
             if (!table.IsAlive(target)) continue;
             int t = target.Slot;

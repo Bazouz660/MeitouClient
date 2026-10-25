@@ -35,7 +35,7 @@ public class OrdersTests
     }
 
     [Fact]
-    public void Block_fights_back_without_attacking_and_passive_does_not_fight_back()
+    public void Block_fights_back_without_attacking_and_passive_still_defends_itself()
     {
         var (open, openCombat, p0, _) = Attacked(CharacterOrders.None);
         var (block, blockCombat, p1, _) = Attacked(CharacterOrders.Block);
@@ -46,8 +46,8 @@ public class OrdersTests
             Assert.True(openCombat.StateOf(p0).Thrown > 0, "without orders the attacked character swings back");
             Assert.True(blockCombat.StateOf(p1).TargetSlot >= 0 || block.Characters.Cold(p1.Slot)!.Medical!.Incapacitated, "a blocker still faces its attacker");
             Assert.Equal(0, blockCombat.StateOf(p1).Thrown);
-            Assert.NotEqual((byte)CharacterTask.Attack, passive.Characters.Next[p2.Slot].Task);
-            Assert.Equal(0, passiveCombat.StateOf(p2).Thrown);
+            // Passive keeps a character out of others' fights, not out of its own defence (Self preservation ignores it).
+            Assert.True(passiveCombat.StateOf(p2).Thrown > 0, "a passive character attacked swings back");
         }
     }
 

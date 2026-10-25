@@ -253,8 +253,13 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         public float HomeR2;
         public int Best;
         public float BestD2;
-        /// <summary>The best target so far has the Taunt order: it outranks every target without it.</summary>
-        public bool BestTaunts;
+        /// <summary>The best target's score (<see cref="Combat.TargetScore"/>).</summary>
+        public float BestScore;
+        /// <summary>The combat state the score reads (null: hand-built worlds without one, every candidate counts as unfought).</summary>
+        public Combat.CombatSystem? Combat;
+        /// <summary>The looker: one of the player's, on Hold (and its hold point), crawling, an animal.</summary>
+        public bool Player, Hold, Prone, Animal;
+        public Vector2 HoldPoint;
         /// <summary>The looker's spot meters (read only during the query) and the sneakers it sees this scan.</summary>
         public List<Spot>? Spots;
         public List<Sighting> Sightings;
@@ -280,7 +285,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
             }
             if (task is (byte)CharacterTask.Attack or (byte)CharacterTask.Treat || task == (byte)CharacterTask.Rest && !AiSleeper(table.Cold(i))) continue;
             if (table.Cold(i) is not { InCombat: false, Fleeing: false, IsImprisoned: false, SlaveState: not 1, Fighter.CanAttack: true, Medical.Incapacitated: false, Carrying.IsNone: true } cold
-                || !Relations.Contains(cold.Faction) || cold.IsPlayer && !HuntsEnemies(cold, task)) continue;
+                || !Relations.Contains(cold.Faction) || cold.IsPlayer && !HuntsEnemies(cold, task) && !HoldsGround(cold, task)) continue;
             var stance = cold.Ai?.Stance ?? Ai.AiStance.Aggressive;
             var war = cold.SquadId >= 0 && world.Squads.Find(cold.SquadId) is { War.IsSet: true } assaulting ? assaulting.War : WarTargets.None;
             if (stance == Ai.AiStance.Passive || !hasEnemy[cold.Faction] && stance != Ai.AiStance.AggressiveNeutrals && !war.IsSet && !(Memory?.AnyTempEnemy(cold.SquadId) ?? false)) continue;
@@ -290,7 +295,9 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
             var scan = new Scan
             {
                 Table = table, Relations = Relations, World = world, Memory = Memory, Self = i, Faction = cold.Faction, Squad = cold.SquadId, SquadFights = Combat is null ? null : squadFights,
-                Eye = prev[i].Position, Yaw = prev[i].Yaw, Range = range, Outdoor = outdoor, Sight = world.Sight, Best = -1, BestD2 = float.MaxValue,
+                Eye = prev[i].Position, Yaw = prev[i].Yaw, Range = range, Outdoor = outdoor, Sight = world.Sight, Best = -1, BestD2 = float.MaxValue, BestScore = float.NegativeInfinity,
+                Combat = Combat, Player = cold.IsPlayer, Hold = Orders.Holding(cold) && cold.Fighter.Crossbow is null, Prone = cold.Medical.Crawling, Animal = cold.Fighter.IsAnimal,
+                HoldPoint = Orders.HoldPointOf(cold, prev[i].Position),
                 Seed = world.Seed, Key = Rng.Key(new CharacterId(i, prev[i].Generation)), Tick = (ulong)world.Tick,
                 Stance = stance, War = war,
                 Home = cold.Ai?.Squad.HomeCentre ?? default, HomeR2 = cold.Ai is { } mind ? mind.Squad.HomeRadius * mind.Squad.HomeRadius : 0,
@@ -379,18 +386,15 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         ref readonly var other = ref s.Table.Previous[slot];
         float d2 = Vector3.DistanceSquared(other.Position, s.Eye);
         if (d2 > s.Range * s.Range && d2 > NoiseFar * NoiseFar) return;
-        var orders = s.Table.Cold(slot)?.Orders ?? CharacterOrders.None;
-        bool sneaking = (orders & CharacterOrders.Sneak) != 0;
-        // The Taunt order draws the looker (its tooltip: "draw more of the enemy to attack him"): a taunter outranks any target without it, nearest first among them.
-        // A sneaking taunter is not conspicuous. Engine choice: the original's weighting is Unknown.
-        bool taunts = !sneaking && (orders & CharacterOrders.Taunt) != 0;
-        // Strictly better only: the grid visits a cell's slots in ascending order, so a tie keeps the lower slot within a cell; across cells the
-        // order is the grid's fixed one. Either way it is a function of the state. A sneaker farther than the best still gets its spot meter.
-        bool better = taunts != s.BestTaunts ? taunts : d2 < s.BestD2;
-        if (!better && !sneaking) return;
         // A caged prisoner is nobody's target, an owned slave nobody's but its owner's enemies' (engine choice: the original's sensed-list filter is not decoded; town cages
         // hold enemies of their guards, and slaves of a hostile faction, such as Heng's Outlaws, stand among them).
         if (s.Table.Cold(slot) is not { Medical.Incapacitated: false, IsImprisoned: false } c || c.SlaveState == 1 && !IsEnemy(s.Relations, s.Faction, c.SlaveOwner)) return;
+        bool sneaking = (c.Orders & CharacterOrders.Sneak) != 0;
+        // The target score (Combat.TargetScore; Taunt and Passive weigh in there), after the Hold post test for a holding looker. Strictly better only: the grid visits a cell's
+        // slots in ascending order, so a tie keeps the lower slot within a cell; across cells the order is the grid's fixed one. A sneaker that scores lower still gets its spot meter.
+        float score = Score(ref s, slot, c, d2) ?? float.NegativeInfinity;
+        bool better = score > s.BestScore;
+        if (!better && !sneaking) return;
         // Wanted characters are the arrest system's (Crime.ArrestSystem): the police spot, fine or arrest them there.
         bool enemy = s.Stance != Ai.AiStance.Passive
             && (IsEnemy(s.Relations, s.Faction, c.Faction) || s.Stance == Ai.AiStance.AggressiveNeutrals && IsNeutral(s.Relations, s.Faction, c.Faction) || WarEnemy(s.War, s.Faction, c.Faction, other.Position));
@@ -433,7 +437,27 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         }
         s.Best = slot;
         s.BestD2 = d2;
-        s.BestTaunts = taunts;
+        s.BestScore = score;
+    }
+
+    /// <summary>The attack-on-sight score of <paramref name="c"/> in <paramref name="slot"/> (goal 16's finder picks by <c>FUN_14059e300</c>); null when dropped.</summary>
+    static float? Score(ref Scan s, int slot, CharacterCold c, float d2)
+    {
+        ref readonly var other = ref s.Table.Previous[slot];
+        var fight = s.Combat?.StateOf(new CharacterId(slot, other.Generation)) ?? Meitou.Simulation.Combat.CombatSlot.Fresh(other.Generation);
+        if (s.Hold && !Orders.HoldPost(s.Eye, s.HoldPoint, other.Position, other.Velocity, false, fight.TargetSlot == s.Self)) return null;
+        var candidate = new Meitou.Simulation.Combat.TargetCandidate
+        {
+            Staggered = fight.StumbleClip >= 0 && (int)s.Tick < fight.StunUntil,
+            Attackers = s.Combat?.AttackerCount(s.World, slot) ?? 0,
+            Taunt = (c.Orders & CharacterOrders.Taunt) != 0,
+            Passive = (c.Orders & CharacterOrders.Passive) != 0,
+            Distance = MathF.Sqrt(d2),
+            Fighting = c.InCombat,
+            Gunner = c.Gunning is not null,
+            Crippled = c.Medical!.Crawling || c.Fighter is not { CanAttack: true },
+        };
+        return Meitou.Simulation.Combat.TargetScore.Score(candidate, s.Player, s.Hold, s.Prone, s.Animal);
     }
 
     /// <summary>
@@ -523,8 +547,15 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         if (task is (byte)CharacterTask.Attack or (byte)CharacterTask.Treat || task == (byte)CharacterTask.Rest && !AiSleeper(table.Cold(slot))) return false;
         return table.Cold(slot) is { InCombat: false, Fleeing: false, IsImprisoned: false, Fighter.CanAttack: true, Medical.Incapacitated: false, Carrying.IsNone: true, Gunning: null, Ai: null or { Behaviour: not Ai.AiBehaviour.Turret } } cold
             // a carrier picks no fight (the original's engagement weight is 0 while carrying); a turret guard keeps to its turret (task 146: only a melee attacker takes it off)
-            && (!cold.IsPlayer || HuntsEnemies(cold, task));
+            && (!cold.IsPlayer || HuntsEnemies(cold, task) || HoldsGround(cold, task));
     }
+
+    /// <summary>
+    /// Whether one of the player's characters attacks on sight through the Hold order: Hold adds goal 16 (standing order 12), whose desire is 0 while sneaking, Passive or
+    /// not standing; it is a priority-3 goal, so only without an order (docs/game/combat.md "Fight lifecycle and orders"). Its targets pass the Hold post test (<see cref="Orders.HoldPost"/>).
+    /// </summary>
+    static bool HoldsGround(CharacterCold cold, byte task) =>
+        task == (byte)CharacterTask.Idle && Orders.Holding(cold) && (cold.Orders & CharacterOrders.Passive) == 0 && cold.Medical is { Crawling: false };
 
     /// <summary>
     /// Whether one of the player's characters looks for enemies like an NPC: it has the job 16 "Attacking enemies" (Shift with an attack; it runs with the jobs switch off,

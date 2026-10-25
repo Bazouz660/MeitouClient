@@ -163,6 +163,7 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
                     continue;
                 }
                 GoToFloor(world, slot, new Vector3(target.X, order.Target.Y, target.Y), cold.RunSpeed);
+                if ((cold.Orders & CharacterOrders.Hold) != 0) cold.HoldPoint = target;   // Task_Move sets the hold point to its destination while on Hold
             }
         }
         foreach (var squad in world.Squads.All) RefreshFormation(world, squad);
@@ -526,6 +527,12 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
                 // Lying down (knocked out or dead): no steering, no pushing; the body system has already dropped the orders.
                 n.Velocity = Vector3.Zero;
                 n.Animation = 0;
+                continue;
+            }
+            if (n.Task != (byte)CharacterTask.Attack && cold.StaggeredUntil > world.Tick)
+            {
+                // A stagger outside a fight stops the movement while the stumble clip plays (Character::_startStumble); the order's path is kept and resumed.
+                n.Velocity = Vector3.Zero;
                 continue;
             }
             if (cold.IsImprisoned || cold.InSomething == Locks.HeldState.Bed && n.Task == (byte)CharacterTask.Sleep)

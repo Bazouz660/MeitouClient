@@ -156,8 +156,8 @@ ends leaves 0.2 s.
     HOLD_GROUND R = 2 (meiDistance + tolerance) = 46, STAY_CLOSE R = meiDistance + 200 + tolerance = 223, ROAM_FAR (the default) R = 200;
     w = immediacy in ROAM_FAR, else holding position (both 2).
   - So a person prefers, in order of size: the attacker of its protectee left unopposed (+10), its current target (+5, +20 crouched or
-    crawling), one already fighting (+2 over an idle one), the nearest (up to +2), the least crowded (−1 per attacker). Meitou keeps its own
-    pick (the Taunt rule is in [simulation](../simulation.md#order-toggles)).
+    crawling), one already fighting (+2 over an idle one), the nearest (up to +2), the least crowded (−1 per attacker). Meitou: `Combat.TargetScore`
+    for the aggro look and the fighters' re-pick, candidates and omissions in [simulation](../simulation.md#combat).
 - **Deciding** (`FUN_14060c8b0`): pick a target, set +0x148 = 0.5, then ask (`FUN_14060c670`). The ask requires
   centre distance − r_t ≤ +0x150 + (1.5r + L)·k and no other body nearer than r + 2.5 (`FUN_1402e9620`).
   If the ask fails: being attacked → defend; engaged → state 5; else state 6.
@@ -230,7 +230,7 @@ Meitou (`CombatSystem.HasSlot` / `MayJoin`, `PursuitSystem.Circle`):
   (`MedicalSystem::hasAnArmToFightWith`), ranged mode, both arms, or a weapon outside the two-arm categories; else 1 when crippled; else 0.001
   when it can get out (`AI::isLocationAccessible`: outdoors, or its building passes `FUN_1405499a0`) unless it stands inside town walls whose
   gate state (`FUN_1402eb070`) is 3, else 0). So an attacked character fights back unless crippled; Passive does not touch this path (exe tooltip: "Passive
-  focuses on non-combat unless attacked first"). Meitou differs: Passive characters do not defend themselves ([simulation](../simulation.md)).
+  focuses on non-combat unless attacked first"). Meitou: [order toggles](../simulation.md#order-toggles).
 - **Melee or shooting.** Row 4 Attacking (`AI::scoreMeleeAttack`, slot 53): 1, ×0.1 with Ranged on, ×0.5 when its squad is not intact (`Platoon::isIntact`);
   0 against a caged target; a crippled fighter 0.1 (0.0001 in Block or Hold with no threat within 40; 0 for a non-player non-unique); on Hold
   only for a target its range tests accept. Shooting 262/263/266 (slot 54): only with Ranged on, a crossbow at back or hip and its bolts carried:
@@ -575,9 +575,8 @@ hands or at the back, and `vfunc 0x368` of the character zero (the player-side t
 the shoot orders 0x106 / 0x107 / 0x10a (`FUN_1407f9e20`), i.e. the Shooting tasks 262 / 263 / 266 ([ai-tasks](ai-tasks.md)), whose list A needs `!iAmBeingMeleeAttacked immediate`,
 `hasTwoWorkingArm` and `hasWeaponEquipped`; where it does not, attack orders stay melee. The attack-on-sight post and area test `FUN_140598630` skips its 80 / 140 unit melee
 reach limits when the gate holds, so a Ranged-on crossbowman engages from afar. Nothing switches back by the target's distance: melee comes from the planner
-dropping the Shooting task when a threat is within 40 (`immediate`, [lifecycle](#fight-lifecycle-and-orders), which also has the shooting desire). Meitou: `CombatSystem.ChooseMode` follows that for the Ranged order
-(crossbow unless dry or a melee attacker is on it) and, with the order off, uses its distance rule (an **engine choice**; the original, with the flag off, never issues the shoot
-orders of the player's characters). The Shooting rows' desire reads the flag too; the `CharStats` constructor sets it on for every character (the +0x128 dword = 0x100), and only the player's standing order and the save change it, so NPCs are always Ranged. Other unknowns: the reload animation against the timer; a character's hit shape
+dropping the Shooting task when a threat is within 40 (`immediate`, [lifecycle](#fight-lifecycle-and-orders), which also has the shooting desire). Meitou: `CombatSystem.ChooseMode` follows that (crossbow unless dry or a threat
+is within 40; never with the flag off; NPCs always on). The Shooting rows' desire reads the flag too; the `CharStats` constructor sets it on for every character (the +0x128 dword = 0x100), and only the player's standing order and the save change it, so NPCs are always Ranged. Other unknowns: the reload animation against the timer; a character's hit shape
 (capsule or ragdoll) and whether downed bodies stop bolts; whether the crossbow's bleed and target multipliers and the armour's `ranged skill mult` do anything; how NPC crossbowmen get their bolts.
 (The trigger flag `+0x34` is set by the controller tick itself every tick, so a shot leaves in the frame of its decision: [Turrets](#turrets), **Observed**.)
 

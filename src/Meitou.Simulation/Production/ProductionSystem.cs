@@ -462,6 +462,7 @@ public sealed partial class ProductionSystem : ITickSystem
                 cold.HaulSite = null;
                 cold.HaulFetch = null;
                 cold.Operating = false;
+            if (cold.StaggeredUntil > world.Tick) continue;   // a stagger interrupts the work
                 continue;
             }
             var site = Site(world, id);

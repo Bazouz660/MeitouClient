@@ -98,6 +98,9 @@ public sealed partial class CombatSystem
             }
             // The weapon in hand follows the arms (docs/game/combat.md "Arms"): losing one puts the weapon away and the fight goes on with what the arms still allow.
             if (cold.Fighter.SetArms(cold.Medical.ArmWorks(left: false), cold.Medical.ArmWorks(left: true)) && cold.InCombat && !s.Ranged) cold.DrawnWeapon = MeleeDrawn(cold.Fighter);
+            // A player's character out of a fight keeps its weapon out while it walks or follows on an order; idle or at work it sheathes (Idleness and the jobs need it away).
+            if (cold.IsPlayer && !cold.InCombat && cold.DrawnWeapon != WeaponKinds.None && next[i].Task is not ((byte)CharacterTask.GoTo or (byte)CharacterTask.Follow or (byte)CharacterTask.Attack))
+                cold.DrawnWeapon = WeaponKinds.None;
             s.Down = cold.Medical.Incapacitated;
             if (s.Down)
             {
@@ -120,7 +123,7 @@ public sealed partial class CombatSystem
                 int every = Math.Max(1, (int)MathF.Round(CombatTuning.BreakOutSeconds / dt));
                 bool chance = s.StumbleClip >= 0 && now > s.StumbleStart && (now - s.StumbleStart) % every == 0;
                 if (s.ReactTech >= 0 && now >= s.ReactStart + s.ReactTicks) s.ReactTech = -1;
-                if (chance && s.ReactTech < 0)
+                if (chance && s.ReactTech < 0 && (s.TargetSlot >= 0 || cold.InCombat))
                 {
                     React(world, i, ref s, cold, key, now, dt);
                     if (s.ReactTech >= 0 && !techniques[s.ReactTech].IsDodge) { s.StunUntil = now; s.StumbleClip = -1; }
@@ -130,15 +133,29 @@ public sealed partial class CombatSystem
             }
 
             // 3. The target.
+            // A target down or gone: the fighter chooses again at once (state 4, re-decide), and the fight ends only when nobody is left. While deciding, it chooses again
+            // every PickSeconds, unless the target is the player's pick (a focused order returns its target without scoring).
             bool fighting = s.TargetSlot >= 0;
             if (fighting && !(s.TargetSlot < prev.Length && prev[s.TargetSlot].Alive && prev[s.TargetSlot].Generation == s.TargetGeneration && !read[s.TargetSlot].Down))
             {
-                fighting = false;
-                s.TargetSlot = -1;
                 s.AttackTech = -1;
                 s.NextBlow = 0;
-                s.Picked = false;
-                EndFight(table, i);
+                int pick = ChooseTarget(world, i, s, cold, keep: false);
+                s.PickTick = now + PickTicks(world, cold);
+                if (pick >= 0) Retarget(ref s, pick, prev[pick].Generation);
+                else
+                {
+                    fighting = false;
+                    s.TargetSlot = -1;
+                    s.Picked = false;
+                    EndFight(table, i);
+                }
+            }
+            else if (fighting && !s.Picked && now >= s.PickTick && s.AttackTech < 0 && s.ReactTech < 0)
+            {
+                int pick = ChooseTarget(world, i, s, cold, keep: true);
+                s.PickTick = now + PickTicks(world, cold);
+                if (pick >= 0 && pick != s.TargetSlot) Retarget(ref s, pick, prev[pick].Generation);
             }
 
             // 3b. A crossbowman fights with the crossbow or the melee weapon; with the crossbow the ranged controller runs instead of the melee attack (a blow aimed at it is still met).
@@ -213,7 +230,8 @@ public sealed partial class CombatSystem
                 if (fighting && !s.Engaged) s.Engaged = MayJoin(world, i, s.TargetSlot, now);
                 bool yielded = fighting && read[s.TargetSlot].YieldTo == i && now < read[s.TargetSlot].YieldUntil;
                 if (!aborted && fighting && (now >= s.ReadyTick || incoming >= 0 || yielded)) StartAttack(world, i, ref s, cold, key, now, dt);
-                if (s.AttackTech < 0 && now >= s.DefendReadyTick) React(world, i, ref s, cold, key, now, dt);
+                // Only a fighter defends: a target whose fight is off is simply hit (the ask answers "attack", docs/game/combat.md "Fight lifecycle and orders").
+                if (s.AttackTech < 0 && now >= s.DefendReadyTick && (fighting || cold.InCombat)) React(world, i, ref s, cold, key, now, dt);
             }
         }
     }
@@ -302,14 +320,14 @@ public sealed partial class CombatSystem
     }
 
     /// <summary>
-    /// Whether <paramref name="t"/> would not swing back (staggered, down, not fighting, the Block or Passive order), so it cannot take the initiative. A fighter that is
+    /// Whether <paramref name="t"/> would not swing back (staggered, down, not fighting, the Block order; the ask has no Passive case), so it cannot take the initiative. A fighter that is
     /// blocking or dodging is not open: once its defence has started (+0x144) the original's answer rolls the initiative (FUN_140666a30).
     /// </summary>
     bool Open(int t, CharacterCold tc, int now)
     {
         ref readonly var target = ref read[t];
         return now < target.StunUntil || target.Down || target.TargetSlot < 0 || tc.Fighter is not { CanAttack: true }
-            || Orders.Has(tc, CharacterOrders.Block | CharacterOrders.Passive);
+            || Orders.Has(tc, CharacterOrders.Block);
     }
 
     /// <summary>

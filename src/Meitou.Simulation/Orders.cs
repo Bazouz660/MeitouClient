@@ -14,15 +14,15 @@ public enum CharacterOrders : ushort
     None = 0,
     /// <summary>Defensive mode: +20 melee defence (the combat code's guarding state) and no attacks of its own (the button's tooltip, Verified).</summary>
     Block = 1,
-    /// <summary>Hold position: answers an attack only within <see cref="Orders.HoldReach"/> and never walks after a target.</summary>
+    /// <summary>Hold position: attacks on sight and defends only against targets passing <see cref="Orders.HoldPost"/>, walks only within the hold area (docs/simulation.md "Order toggles").</summary>
     Hold = 2,
     /// <summary>Unused: the original's saved <c>chase mode</c> is the jobs switch (<see cref="Jobs"/>, docs/game/ai-tasks.md "Perma-jobs"); an old Meitou save's value is dropped.</summary>
     Chase = 4,
-    /// <summary>Non-combat mode: does not answer attacks by itself (an ordered attack still goes).</summary>
+    /// <summary>Non-combat mode: no attack on sight, no help for others, and a lesser target (score -1); it still defends itself (the tooltip: "unless attacked first").</summary>
     Passive = 8,
-    /// <summary>Ranged mode: a crossbow carrier shoots at any distance, melee only as the last resort (docs/simulation.md "Order toggles").</summary>
+    /// <summary>Ranged mode (on for every NPC): a crossbow carrier shoots until dry or a threat is within 40; off it never shoots (docs/simulation.md "Order toggles").</summary>
     Ranged = 16,
-    /// <summary>Taunt mode: hostile lookers picking a new fight prefer this character (docs/simulation.md "Order toggles").</summary>
+    /// <summary>Taunt mode: +2 in enemies' target score and its crowd penalty x0.35 (<see cref="Combat.TargetScore"/>).</summary>
     Taunt = 32,
     /// <summary>Sneaking: slower, harder to see and to hear, seen only once a looker's spot meter fills, trains stealth (docs/game/perception.md, docs/game/pathfinding.md "Sneaking").</summary>
     Sneak = 64,
@@ -61,7 +61,7 @@ public sealed record RunSpeedCommand(IReadOnlyList<CharacterId> Characters, int 
 /// <summary>The orders' rules and their save keys.</summary>
 public static class Orders
 {
-    /// <summary>How near an attacker must be for a holding character to answer it (<b>engine choice</b>: about a long weapon's reach; the original's rule is not traced).</summary>
+    /// <summary>How near a standing target must be for a holding character to take it on (<c>AI::isTargetInRangeForHOLDMode_hostiles</c>, Verified literal; <see cref="HoldPost"/>).</summary>
     public const float HoldReach = 40;
 
     /// <summary>
@@ -158,12 +158,23 @@ public static class Orders
     public static float SneakHearChance(float distance, float noise, float stealth) =>
         noise > 0 && distance < noise ? 0.1f * (1 - stealth) * (1 - distance * distance / (noise * noise)) : 0;
 
-    /// <summary>Whether a holding character at <paramref name="at"/> may answer an attacker at <paramref name="attacker"/>.</summary>
-    public static bool InHoldReach(Vector3 at, Vector3 attacker)
+    /// <summary>
+    /// The Hold order's post test (<c>AI::isTargetInRangeForHOLDMode_hostiles</c>, docs/game/perception.md "The attack-on-sight tests"): a target standing (slower than 2) or down must
+    /// be within <see cref="HoldReach"/> of the looker; one more than 80 from the hold point (140 when it fights the looker) within 60.
+    /// </summary>
+    public static bool HoldPost(Vector3 looker, Vector2 hold, Vector3 target, Vector3 velocity, bool down, bool fightsLooker)
     {
-        float dx = attacker.X - at.X, dz = attacker.Z - at.Z;
-        return dx * dx + dz * dz <= HoldReach * HoldReach;
+        float dx = target.X - looker.X, dz = target.Z - looker.Z, d2 = dx * dx + dz * dz;
+        if ((velocity.X * velocity.X + velocity.Z * velocity.Z < 2 * 2 || down) && d2 > HoldReach * HoldReach) return false;
+        float far = fightsLooker ? 140 : 80;
+        return Vector2.DistanceSquared(hold, new Vector2(target.X, target.Z)) <= far * far || d2 <= 60 * 60;
     }
+
+    /// <summary>The point a holding character holds (<see cref="CharacterCold.HoldPoint"/>, else where it stands).</summary>
+    public static Vector2 HoldPointOf(CharacterCold cold, Vector3 at) => cold.HoldPoint ?? new Vector2(at.X, at.Z);
+
+    /// <summary>The Hold toggle (standing order 12): holding, the character not sneaking (<c>CharStats::holdPositionMode</c>).</summary>
+    public static bool Holding(CharacterCold? cold) => cold is not null && (cold.Orders & (CharacterOrders.Hold | CharacterOrders.Sneak)) == CharacterOrders.Hold;
 
     /// <summary>Applies the order commands (the player system's inputs).</summary>
     internal static void Apply(World world, SimCommand command)
@@ -179,6 +190,8 @@ public static class Orders
                     if (!table.TryResolveNext(id, out int slot) || table.Cold(slot) is not { IsPlayer: true } cold) continue;
                     on ??= (cold.Orders & set.Order) == 0;
                     cold.Orders = on.Value ? cold.Orders | set.Order : cold.Orders & ~set.Order;
+                    // Turning Hold on holds where the character stands (setStandingOrder 12: hold point = position).
+                    if ((set.Order & CharacterOrders.Hold) != 0) cold.HoldPoint = on.Value ? new Vector2(table.Next[slot].Position.X, table.Next[slot].Position.Z) : null;
                 }
                 break;
             case RunSpeedCommand speed:

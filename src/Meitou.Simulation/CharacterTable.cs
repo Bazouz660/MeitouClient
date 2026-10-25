@@ -216,6 +216,10 @@ public sealed class CharacterCold
     public bool RescueJob => Jobs.Exists(j => j.Type == Meitou.Data.Gameplay.Ai.TaskType.FIND_AND_RESCUE_IF_THERES_BEDS);
     /// <summary>The orders panel's toggles (<see cref="Simulation.Orders"/>); the player's characters only.</summary>
     public CharacterOrders Orders { get; set; } = CharacterOrders.Jobs;
+    /// <summary>The point the Hold order holds (CharStats +0x130): where Hold was turned on, then each ground move's destination while on Hold; null: where it stands (not saved).</summary>
+    public System.Numerics.Vector2? HoldPoint { get; set; }
+    /// <summary>The tick its stumble clip ends (combat's StunUntil, set at each interrupting hit): until then it neither walks nor works (docs/game/combat.md "Stagger outside a fight").</summary>
+    public long StaggeredUntil { get; set; }
     /// <summary>The speed mode the character's move orders use (the original's saved <c>speed mode</c>: walk, run or no cap); no cap by default.</summary>
     public byte RunSpeed { get; set; } = SpeedMode.Free;
     /// <summary>
