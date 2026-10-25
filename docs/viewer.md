@@ -23,6 +23,8 @@ power-of-two sample step keeping<=2048 cells/side. World renderers/streaming are
 
 ## Options and modes
 
+Full list: [launch-options](launch-options.md).
+
 Explicit later options override named-view/--low-end presets. Meitou versus --faithful <feature|all>
 selects independent improvements; --meitou/--faithful overrides persisted switches. Tab controls
 quality/ranges/time/weather/fullscreen/VSync. Resolution/scale/upscaler, texture-quality/mips and

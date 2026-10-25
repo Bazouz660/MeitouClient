@@ -17,6 +17,7 @@ used as a naming reference for our 1.0.68 analysis; they are **Observed** until 
 - [character-viewer](character-viewer.md)
 - [characters](characters.md)
 - [impostors](impostors.md)
+- [launch-options](launch-options.md): every command-line option and environment variable
 - [launcher](launcher.md): game release installer, mod list and presets
 - [play-reports](play-reports.md): roadmap upkeep: play reports service, Discord, launcher button, issue forms, drift check
 - [macos-port](macos-port.md): running on MoltenVK, its constraints and fixes; the native Metal path next to it
