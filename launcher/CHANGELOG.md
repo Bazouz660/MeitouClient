@@ -2,6 +2,11 @@
 
 Released with tags `launcher-v<version>` by `.github/workflows/launcher-release.yml`; each release needs its `## v<version>` section.
 
+## v1.2.1
+
+- **Report to the roadmap**: the system picker has a search box. Type to filter the list, arrows move the highlight,
+  Enter or a click picks, Esc closes the list.
+
 ## v1.2.0
 
 - **Report to the roadmap** under the launcher version: tell the Meitou roadmap that a system works or is broken. The
