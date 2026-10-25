@@ -29,8 +29,10 @@ public sealed unsafe class VulkanDisplay : IDisposable
     /// <summary>The window's vsync (<see cref="VulkanPresenter.VSync"/>; the swapchain is remade at the next frame). Always off without a window.</summary>
     public bool VSync { get => presenter?.VSync ?? false; set { if (presenter is not null) presenter.VSync = value; } }
 
-    /// <summary>Streamline (DLSS), when <c>streamline</c> asked for it and it loaded; shut down before the device.</summary>
+    /// <summary>Streamline (DLSS), when <c>dlss</c> asked for it and it loaded; shut down before the device.</summary>
     public Streamline? Streamline { get; }
+    /// <summary>NGX (DLSS on Linux), when <c>dlss</c> asked for it and its client library and the DLSS model loaded; shut down before the device.</summary>
+    public Ngx? Ngx { get; }
 
     /// <summary>Set before creating the display: turns on the device features of the bench's triangle measurements (<see cref="VulkanDeviceOptions.TriangleMeasurements"/>; <c>--bench-tris</c>).</summary>
     public static bool TriangleMeasurements { get; set; }
@@ -39,7 +41,7 @@ public sealed unsafe class VulkanDisplay : IDisposable
     public static bool RayTracing { get; set; }
 
     /// <summary>A window created from <paramref name="options"/> (its Vulkan surface; shown), or headless when <paramref name="options"/> is null.</summary>
-    public VulkanDisplay(WindowOptions? options, bool vsync, bool streamline = false)
+    public VulkanDisplay(WindowOptions? options, bool vsync, bool dlss = false)
     {
         var (validation, sync, gpu) = VulkanDeviceOptions.FromEnvironment();
         validationRequested = validation == true;
@@ -50,12 +52,19 @@ public sealed unsafe class VulkanDisplay : IDisposable
             TriangleMeasurements = TriangleMeasurements,
             RayTracing = RayTracing,
         };
-        if (streamline)
+        if (dlss && OperatingSystem.IsWindows())
         {
             // Streamline goes in before the instance and adds what it needs to the device.
             Streamline = Streamline.TryInit(out var why);
             if (Streamline is null) Console.WriteLine($"upscaler  {why}");
             else Streamline.Apply(deviceOptions);
+        }
+        else if (dlss && OperatingSystem.IsLinux())
+        {
+            // Linux: NGX through NVIDIA's client library (libmeitou_ngx.so), likewise before the instance.
+            Ngx = Ngx.TryInit(out var why);
+            if (Ngx is null) Console.WriteLine($"upscaler  {why}");
+            else Ngx.Apply(deviceOptions);
         }
         if (options is not null)
         {
@@ -109,6 +118,7 @@ public sealed unsafe class VulkanDisplay : IDisposable
         Context.Dispose();
         Device.Frames.WaitAll();   // what was released after the frames in flight
         Streamline?.Dispose();
+        Ngx?.Dispose();
         if (Device.ValidationErrors > 0) Console.WriteLine($"vulkan validation: {Device.ValidationErrors} errors\n{string.Join("\n", Device.ValidationLog.Take(20))}");
         else if (validationRequested) Console.WriteLine("vulkan validation: 0 errors");
         Device.Dispose();

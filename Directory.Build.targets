@@ -3,6 +3,7 @@
   <!-- Local vendor binaries stay outside source control; both executable projects need the same runtime. Each one present is copied: Streamline
        for DLSS, amd_fidelityfx_vk.dll for FSR (the release zips fetch them in tools/scripts/package-release.ps1). -->
   <PropertyGroup>
+    <StreamlineRuntimePath Condition="'$(StreamlineRuntimePath)' == ''">$(MEITOU_DLSS_PATH)</StreamlineRuntimePath>
     <StreamlineRuntimePath Condition="'$(StreamlineRuntimePath)' == ''">$(MEITOU_STREAMLINE_PATH)</StreamlineRuntimePath>
     <StreamlineRuntimePath Condition="'$(StreamlineRuntimePath)' == ''">$(MSBuildThisFileDirectory)dlss-runtime</StreamlineRuntimePath>
   </PropertyGroup>
@@ -11,6 +12,11 @@
     <!-- Wildcards, so only the files present are listed. -->
     <None Include="$(StreamlineRuntimePath)/sl.*.dll;$(StreamlineRuntimePath)/nvngx_dlss*.dll;$(StreamlineRuntimePath)/NvLowLatencyVk*.dll;$(StreamlineRuntimePath)/amd_fidelityfx_vk*.dll"
           Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!-- Linux: the DLSS model and NGX's client library (libmeitou_ngx.so, tools/scripts/build-ngx-shim.sh) for Ngx.cs, the model in any version. -->
+  <ItemGroup Condition="('$(MSBuildProjectName)' == 'Meitou.Game' or '$(MSBuildProjectName)' == 'Meitou.ModelViewer') and Exists('$(StreamlineRuntimePath)') and ('$(RuntimeIdentifier)' == '' or $(RuntimeIdentifier.StartsWith('linux-')))">
+    <None Include="$(StreamlineRuntimePath)/libnvidia-ngx-dlss.so.*;$(StreamlineRuntimePath)/libmeitou_ngx.so" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Never" />
   </ItemGroup>
 
 </Project>

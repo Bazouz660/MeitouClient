@@ -66,8 +66,9 @@ THE SOFTWARE.
 ## NVIDIA Streamline
 
 `src/Meitou.Rendering/Upscalers/Streamline.cs` and `DlssUpscaler.cs` declare Streamline's structures, enums and
-entry points following its public headers (Streamline 2.14.16). The Streamline libraries and NVIDIA's DLSS runtime are
-not part of this repository; they are loaded at run time when the user provides them (see
+entry points following its public headers (Streamline 2.14.16). The Streamline libraries and NVIDIA's DLSS runtime
+(`nvngx_dlss.dll`) are not part of this repository; they are included in the Windows release zip under NVIDIA's
+licences (`licenses/NVIDIA`), and a build from source loads them at run time when the user provides them (see
 [LICENSE-EXCEPTION.md](LICENSE-EXCEPTION.md) for the DLSS runtime).
 
 ```
@@ -91,6 +92,17 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
+
+## NVIDIA DLSS (NGX)
+
+`src/Meitou.Rendering/Upscalers/Ngx.cs` and `NgxDlssUpscaler.cs` declare, in our own code, the interface needed to call
+NGX's documented Vulkan API on Linux: entry point signatures, structure layouts and parameter names. The interface
+identifiers (entry point and parameter names, constants such as the API version) are restated from NVIDIA's DLSS SDK
+headers (NVIDIA RTX SDKs license); no other header text and no SDK file is part of this repository. That API comes from
+NVIDIA's NGX client library, the DLSS SDK's static `libnvsdk_ngx.a`, which `tools/scripts/build-ngx-shim.sh` downloads
+(SHA-256 checked) and links unchanged into `libmeitou_ngx.so`. It and the DLSS runtime (`libnvidia-ngx-dlss.so.*`), both
+NVIDIA DLSS SDK 310.9.16, are included in the Linux release zip under NVIDIA's licence (`licenses/NVIDIA`); a build from
+source loads them at run time when the user provides them (see [LICENSE-EXCEPTION.md](LICENSE-EXCEPTION.md)).
 
 ## NuGet packages
 

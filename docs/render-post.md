@@ -18,13 +18,13 @@ Do not clamp before HDR lighting/composite. Texture mip bias log2(render/display
 Motion uses previous camera/depth plus moving-object/grass paths; near/far depth reconstruction
 must use the corresponding projection. `sun-motion` adds clock-driven sky motion near the sun.
 Reset temporal histories after cuts, target resize or incompatible setting changes.
-DLSS (the default) where Streamline reports it unsupported runs FSR, then TAA. TAA zeroes NaN/Inf
+DLSS (the default) where Streamline (Windows) or NGX (Linux) reports it unsupported runs FSR, then TAA. TAA zeroes NaN/Inf
 in its inputs and output: GLSL `max` need not drop NaN (AMD keeps it), and one in the history spreads.
 For FSR/DLSS the merged velocity kernel zeroes them in the scene colour in place and in the motion
 (Observed: the FSR fallback on an RX 9070 XT still flickered without it).
 
 Game/viewer builds and publishes copy the Streamline/DLSS DLLs and FSR's `amd_fidelityfx_vk.dll` that
-are present in `MEITOU_STREAMLINE_PATH` or the git-ignored root `dlss-runtime/`;
+are present in `MEITOU_DLSS_PATH` (else the older `MEITOU_STREAMLINE_PATH`) or the git-ignored root `dlss-runtime/`;
 `-p:StreamlineRuntimePath=` overrides the source. Without them a dev build logs
 "not found" and runs TAA (a release folder's DLLs can be copied there). Release packaging fetches its own.
 
@@ -33,6 +33,28 @@ YCoCg variance clip, blend 0.1. Upscaler sharpness: FSR's RCAS; after TAA and DL
 composite pushes each pixel from its 4 neighbours' mean by 2 x sharpness, clamped to their range (no halos;
 the history stays unsharpened). Measured (Hub, 1080p, mean |Laplacian|): no AA 16.6, TAA 12.5 before
 and 23.1 after (bias -1, display-pixel kernel, sharpen), DLSS 26.6.
+
+Linux runs DLSS through NGX (`Upscalers/Ngx.cs`): NVIDIA's NGX client library (the DLSS SDK's static `libnvsdk_ngx.a`,
+built into `libmeitou_ngx.so` by `tools/scripts/build-ngx-shim.sh`) over the driver's `libnvidia-ngx.so.1`, with the DLSS
+model `libnvidia-ngx-dlss.so.<version>`; each file is looked for in `MEITOU_DLSS_PATH`, then beside the executable, and
+NGX gets the same two folders to find the model. The client library is linked on Ubuntu 22.04 for releases, so it
+loads on glibc 2.35 and newer; on an older glibc the game logs the loader's error and runs without DLSS. FSR stays Windows-only. `MEITOU_NGX_LOG=1` prints NGX's whole log (its verbose level).
+NGX is loaded only when the model and the client library are in one of those folders and `MEITOU_DLSS` is not `0`, and
+handed only a device on NVIDIA's own driver (not NVK); without DLSS (other GPU, no NVIDIA driver, no libffi) it is shut
+down at once and the game runs on. Builds copy both to the output folder, never into a publish; the Linux release zip
+carries them with NVIDIA's licence (`package-release.ps1`). NGX's data folder is `~/.local/share/meitou/ngx`
+(`XDG_DATA_HOME`); its log goes to the game's log, its own log file is off.
+**Observed** (driver 615.78.08, DLSS SDK 310.9.16, RTX 4080 SUPER, headless `--screenshot --upscaler dlss`): called straight
+from managed code, `NVSDK_NGX_VULKAN_Init_with_ProjectID` aborts (`std::logic_error`, "basic_string::_M_construct null not
+valid"), and the same call through libffi (as from Python's ctypes) succeeds, so it goes through libffi; why is **Unknown**
+(libffi passes the arguments as a direct call does); the other calls work directly. `NVSDK_NGX_VULKAN_RequiredExtensions`
+asks for instance `VK_KHR_get_physical_device_properties2` and device `VK_NVX_binary_import`, `VK_NVX_image_view_handle`,
+`VK_EXT_buffer_device_address`, `VK_KHR_push_descriptor`; the device enables buffer device address as the Vulkan 1.2
+feature instead of that extension (no Vulkan validation errors from DLSS). Conventions as FSR: jitter in render pixels as is, motion
+scaled by −render size; inputs need sampled use, the output storage use, all left in GENERAL.
+**Observed** (Linux, DLSS 310.9.16, RTX 4080 SUPER): preset 0 (`MEITOU_DLSS_PRESET` unset) gives the guide's defaults,
+K for Quality, M for Performance, L for Ultra Performance: each headless screenshot is byte-identical to the one with
+that preset set and differs from K's (repeat runs are identical).
 
 ## SSAO, fog and layers
 

@@ -74,6 +74,7 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
     WorldRenderOptions render = null!;
     readonly Stopwatch realTime = Stopwatch.StartNew();
     Meitou.Rendering.Upscalers.Streamline? streamline;
+    Meitou.Rendering.Upscalers.Ngx? ngx;
     bool screenshotRequested;
     // The interactive run's animation clock (foliage sway, clouds, water): the frame steps, which are exact while the cinema records; off, the real time.
     double animSeconds;
@@ -128,7 +129,7 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
         });
         gpu = WorldFrame.CreateGpu(context, install, scene, assets, o, interactive, LoadingStep, AwaitLoading);
         if (!o.NoParticles) titleParticleFactory = () => ParticleRenderer.Create(context, install, gpu.Particles?.Library);
-        if (gpu.Post is { } vendorPost) vendorPost.UpscalerFactory = Meitou.Rendering.Upscalers.VendorUpscalers.Factory(display.Context, streamline);
+        if (gpu.Post is { } vendorPost) vendorPost.UpscalerFactory = Meitou.Rendering.Upscalers.VendorUpscalers.Factory(display.Context, streamline, ngx);
         (camera, render) = WorldFrame.Setup(scene, o);
         render.Grid = IsFlat;
         LoadingStep("people");

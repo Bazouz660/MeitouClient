@@ -36,7 +36,7 @@ within uncertainty are inconclusive. GPU clocks, other programs, motion, cached 
 warm-up and streaming affect results. Alternate builds and repeat comparisons without a runtime
 switch. Record conditions beside retained results. One view does not establish a general speedup.
 
-Check the log's actual upscaler: DLSS falls back to FSR, then TAA, without Streamline or an NVIDIA card. Two settled
+Check the log's actual upscaler: DLSS falls back to FSR, then TAA, without its runtime (Streamline on Windows; libmeitou_ngx.so and the DLSS model on Linux) or an NVIDIA card. Two settled
 baseline stills establish temporal noise before comparison. Use A/B images and
 `meitou-tools image-diff` to inspect changed pixels.
 

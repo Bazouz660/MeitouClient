@@ -280,9 +280,12 @@ These have no user-facing docs; options are from their top-level argument loops.
 | `MEITOU_SSAO_STAMPS` | `src/Meitou.Rendering/PostProcess.cs` | `1`: GPU timestamps around the SSAO pass (diagnostic). |
 | `MEITOU_SHAFT_STAMPS` | `src/Meitou.Rendering/PostProcess.Shafts.cs` | `1`: GPU timestamps around the light-shaft pass (diagnostic). |
 | `MEITOU_UPSCALER_LOG` | `src/Meitou.Rendering/Upscalers/Streamline.cs`, `FsrUpscaler.cs` | `1`: log upscaler info (errors are always logged). |
-| `MEITOU_STREAMLINE_PATH` | `src/Meitou.Rendering/Upscalers/Streamline.cs` | Path to the Streamline library (DLSS host). |
+| `MEITOU_DLSS_PATH` | `src/Meitou.Rendering/Upscalers/VendorUpscalers.cs` | Folder of the DLSS runtime: the Streamline DLLs on Windows, the DLSS model and `libmeitou_ngx.so` on Linux. |
+| `MEITOU_STREAMLINE_PATH` | `src/Meitou.Rendering/Upscalers/VendorUpscalers.cs` | Older name of `MEITOU_DLSS_PATH`, read when that is unset. |
 | `MEITOU_FFX_PATH` | `src/Meitou.Rendering/Upscalers/FsrUpscaler.cs` | Path to the FidelityFX library (FSR). |
-| `MEITOU_DLSS_PRESET` | `src/Meitou.Rendering/Upscalers/DlssUpscaler.cs` | Overrides the DLSS preset number. |
+| `MEITOU_DLSS_PRESET` | `src/Meitou.Rendering/Upscalers/VendorUpscalers.cs` | Overrides the DLSS preset number. |
+| `MEITOU_NGX_LOG` | `src/Meitou.Rendering/Upscalers/Ngx.cs` | `1` prints NGX's whole log (DLSS on Linux). |
+| `MEITOU_DLSS` | `src/Meitou.Rendering/Upscalers/Ngx.cs` | `0` keeps NGX from loading (no DLSS on Linux; the game uses TAA). |
 | `MEITOU_BENCH_ONLY` | `src/Meitou.Game/GameHost.PlayBench.cs` | Comma list of `--play-bench` segments to run (e.g. `settle,zoom`). |
 | `MEITOU_TERRAIN_NO_NORMAL` | `src/Meitou.Game/GameHost.Metal.cs` | `1`/`true`: terrain shader variant without normal mapping (A/B; fixed before the first draw). |
 | `MEITOU_METAL_GPU_BUDGET_MB` | `src/Meitou.Game/GameHost.Metal.cs` | Metal video-memory budget in MB (default 5 GB). The launcher sets it on macOS. |

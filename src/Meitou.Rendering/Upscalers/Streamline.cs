@@ -8,7 +8,7 @@ namespace Meitou.Rendering.Upscalers;
 
 /// <summary>
 /// NVIDIA Streamline (MIT; the signed <c>sl.interposer.dll</c>, <c>sl.common.dll</c>, <c>sl.dlss.dll</c> and NVIDIA's <c>nvngx_dlss.dll</c>,
-/// none of them in the repository), loaded at run time from <c>MEITOU_STREAMLINE_PATH</c> or next to the executable, in Streamline's
+/// none of them in the repository), loaded at run time from <see cref="VendorUpscalers.DlssPath"/> or next to the executable, in Streamline's
 /// manual-hooking mode: <see cref="TryInit"/> runs <c>slInit</c> before the Vulkan instance exists and reports the extensions and
 /// features DLSS needs (<see cref="Apply"/> adds them to the device), the device is handed over with <c>slSetVulkanInfo</c>, and
 /// presents go through the interposer's <c>vkQueuePresentKHR</c> (<see cref="PresentProxy"/>), which Streamline needs every frame.
@@ -118,7 +118,7 @@ public sealed unsafe class Streamline : IDisposable
 
     static IEnumerable<string> Candidates()
     {
-        if (Environment.GetEnvironmentVariable("MEITOU_STREAMLINE_PATH") is { Length: > 0 } env) yield return env;
+        if (VendorUpscalers.DlssPath is { } env) yield return env;
         yield return AppContext.BaseDirectory;
     }
 
@@ -139,8 +139,8 @@ public sealed unsafe class Streamline : IDisposable
             var requirements = (delegate* unmanaged<uint, FeatureRequirements*, int>)NativeLibrary.GetExport(lib, "slGetFeatureRequirements");
             var full = Path.GetFullPath(dir);
             nint plugin = Marshal.StringToHGlobalUni(full);
-            nint project = Marshal.StringToHGlobalAnsi("6e8a8f8c-6f1b-4b8e-9a51-6b2d5c9b4e21");   // Meitou's own project id (any GUID)
-            nint version = Marshal.StringToHGlobalAnsi("0.3");
+            nint project = Marshal.StringToHGlobalAnsi(VendorUpscalers.DlssProjectId);
+            nint version = Marshal.StringToHGlobalAnsi(VendorUpscalers.DlssEngineVersion);
             uint feature = FeatureDlss;
             nint paths = plugin;
             var prefs = new Preferences
@@ -165,7 +165,7 @@ public sealed unsafe class Streamline : IDisposable
             Console.WriteLine($"streamline {full}: DLSS needs instance [{string.Join(", ", sl.InstanceExtensions)}], device [{string.Join(", ", sl.DeviceExtensions)}], 1.2 [{string.Join(", ", sl.Features12)}]");
             return sl;
         }
-        reason = $"{InterposerName} not found (set MEITOU_STREAMLINE_PATH or put the Streamline DLLs next to the executable)";
+        reason = $"{InterposerName} not found (set MEITOU_DLSS_PATH or put the Streamline DLLs next to the executable)";
         return null;
     }
 

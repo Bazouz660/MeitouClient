@@ -40,8 +40,9 @@ sealed partial class GameHost
             IsVisible = false,
             FramesPerSecond = 0,
             UpdatesPerSecond = 0,
-        }, vsync, streamline: true);   // Load before the device so the settings panel can switch to DLSS without restarting.
+        }, vsync, dlss: true);   // Load before the device so the settings panel can switch to DLSS without restarting.
         streamline = display.Streamline;
+        ngx = display.Ngx;
         var window = display.Window!;
         // X11 opens it where Silk.NET asks (50,50), the desktop's corner, which can be another monitor (Observed 2026-10-26, XWayland): on the primary
         // monitor instead, the one full screen uses; leaving full screen puts it back where it was when full screen began.
