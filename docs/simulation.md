@@ -838,7 +838,7 @@ placement is the host's to avoid. `World.Research` (`Construction.ResearchState`
 (`ResearchGate.DefaultStartId`, [build menu](game/buildings-production.md#build-menu)) and the start-off's `research`
 (`PopulationSystem.StartPlayer`); a load takes the save's. Research benches change it ([Production](#production), which says when it is hashed).
 
-**Outposts.** `World.Buildings.Towns` (`PlayerTown`: `Number` 1.., `Name`, `Position`, `Owner`; never removed) and
+**Outposts.** `World.Buildings.Towns` (`PlayerTown`: `Number` 1.., `Name`, `Position`, `Owner`, `Public`; never removed; renamed and ticked public by the [town panel](game/ui-screens.md#town-panel)) and
 `BuildSite.Town` (a number, 0 none). `PlaceBuildings` gives each new site its town by the
 [outpost rule](game/buildings-production.md#placement): the parent's; else the nearest player town within 5000 (X/Z);
 else the town of the nearest player site within 2500; else a `creates player town` non-wall makes "Your Outpost" at its

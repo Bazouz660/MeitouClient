@@ -9,10 +9,11 @@ public sealed record MyGuiScreenFrame(string Id, IReadOnlyList<UiControl> Contro
 /// <summary>Window lifetime, z-order, capture, focus and template events for the original MyGUI layouts.</summary>
 public sealed partial class MyGuiScreenHost(MyGuiResources resources)
 {
-    sealed partial class Screen(MyGuiLayout layout, bool modal, bool centreRoot)
+    sealed partial class Screen(MyGuiLayout layout, bool modal, bool centreRoot, bool panel = false)
     {
         public MyGuiLayout Layout { get; set; } = layout;
         public bool Modal { get; } = modal;
+        public bool Panel { get; } = panel;
         public bool CentreRoot { get; } = centreRoot;
         public Vector2 Offset;
         public bool Pinned;
@@ -40,6 +41,8 @@ public sealed partial class MyGuiScreenHost(MyGuiResources resources)
     public IReadOnlyList<string> Registered => screens.Keys.ToArray();
     public IReadOnlyList<string> OpenScreens => open.ToArray();
     public void Register(string id, MyGuiLayout layout, bool modal = false, bool centreRoot = false) => screens.Add(id, new(MyGuiTemplates.Expand(layout, resources), modal, centreRoot));
+    /// <summary>Registers a HUD panel taken out of the HUD layout so that its edit boxes take typing (the town panel): drawn under every window, never raised, never closed by Escape.</summary>
+    public void RegisterPanel(string id, MyGuiLayout layout) => screens.Add(id, new(MyGuiTemplates.Expand(layout, resources), false, false, panel: true));
     /// <summary>Swaps a screen's layout for one composed at run time (rows the code makes from templates, as the original's <c>createWidgetT</c>); the screen's state stays.</summary>
     public void Replace(string id, MyGuiLayout layout) => screens[id].Layout = MyGuiTemplates.Expand(layout, resources);
     public MyGuiLayout Layout(string id) => screens[id].Layout;
@@ -50,7 +53,8 @@ public sealed partial class MyGuiScreenHost(MyGuiResources resources)
     public bool IsRegistered(string id) => screens.ContainsKey(id);
     public void Open(string id)
     {
-        if (!screens.ContainsKey(id)) throw new KeyNotFoundException(id);
+        if (!screens.TryGetValue(id, out var s)) throw new KeyNotFoundException(id);
+        if (s.Panel) { if (!open.Contains(id)) open.Insert(0, id); return; }
         open.Remove(id);
         open.Add(id);
         focus = null; edit = null; keyButton = null;
@@ -146,7 +150,7 @@ public sealed partial class MyGuiScreenHost(MyGuiResources resources)
         if (Pick(p) is not { } picked) { focus = null; edit = null; PressOutside(null); return false; }
         var (id, c) = picked;
         var s = screens[id];
-        open.Remove(id); open.Add(id);
+        if (!s.Panel) { open.Remove(id); open.Add(id); }
         if (!c.Enabled) return true;
         if (PressWidget(id, c, p)) return true;
         if (c.Action.StartsWith("mygui:", StringComparison.Ordinal))
@@ -199,7 +203,7 @@ public sealed partial class MyGuiScreenHost(MyGuiResources resources)
     {
         if (open.Count == 0) return false;
         if (CloseCombo()) return true;
-        string id = frame.LastOrDefault()?.Id ?? open[^1];
+        if ((frame.LastOrDefault(f => !screens[f.Id].Panel)?.Id ?? open.LastOrDefault(i => !screens[i].Panel)) is not { } id) return false;
         Close(leaders.TryGetValue(id, out var leader) && open.Contains(leader) ? leader : id);
         return true;
     }

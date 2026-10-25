@@ -341,6 +341,25 @@ to Jobs; the saved `chase mode` flag is that switch (**Verified**, [perma-jobs](
   `Run`/`Jog`/`Walk`), arrows FUN_140722580 / FUN_140722630, apply FUN_140722500, refresh FUN_140726930. While any selected
   character's state at +0xe0 is 1 the arrows re-apply without stepping (FUN_1407f3a20); what that state is is **Unknown**.
 
+### Town panel
+
+`TownPanel` of `Kenshi_MainPanel` (bottom right; class `TownPanel`, MainBarGUI +0x128, KenshiLib 1ce4a16). **Verified** by code unless noted:
+- **Widgets** (constructor `FUN_140724e10`): `OutpostNameEditBox`, `OpenToPublicCheckBox`, the `Research` / `Power` / `Battery` `ProgressBar`s (range 100) with their
+  `...Caption` boxes; the labels get `Open to public:`, `Research:`, `Power:`, `Battery charge:` through the translator.
+- **Shown** (HUD update `FUN_140728d50`): while the town list `DAT_142134100` has a town (and a global `DAT_142133ae0`, **Unknown**), the shown town stays while the
+  GameWorld +0x580 position (taken to be the camera pivot, **Unknown**) is within its radius (`vfunc 0x2a0`, X/Z); else the nearest town (`FUN_140927e40`, X/Z) of the player's
+  faction or with byte +0x3d0 set (**Unknown**), kept only if the position is within its radius. No town: hidden.
+- **Town change** (`FUN_140722de0`): the name box gets the town's name, the tick its +0x380; both are enabled only for a town whose faction is the player's (+0x250).
+- **Each frame** (`FUN_140727380`): Research = the research manager's current research (+0x58) name and its progress x 100, else `None` and 0. Power = the town's +0x474 /
+  +0x47c x 100 (+0x47c <= 0: 100 when +0x474 > 0, else 0), caption `{1,num}/{2,num}` of (int)+0x474, (int)+0x47c. Battery = +0x48c / +0x490 x 100, caption (int)+0x48c /
+  (int)+0x490, then ` >>` when +0x488 > 0, else `<< ` before it when +0x484 > 0 (exe strings). Field meanings: [Power](buildings-production.md#power).
+- **Actions**: the tick flips Town +0x380 and plays `General_Click` (`FUN_140721e50`); the name box's accept sets the town's name (`FUN_140722d60`), no other check. +0x380 is
+  the town state's saved `public` ([outposts](../formats/save.md#player-outposts)) and makes the town a trader destination and stay ([ai](ai.md#package-classes)).
+- Meitou (`PlayerInterface.Town.cs`): the subtree is registered as a screen panel (drawn under the windows, not raised, skipped by Esc and Tab) so the box takes typing; the
+  position is the camera pivot; Enter or losing the focus renames (`RenameTown`; an empty name is ignored, engine choice); the tick sends `SetTownPublic`; both only for
+  the player's own outposts (`PlayerTown.Public`, saved as `public`). A public outpost keeps a wandering trader for its stay; the trader's town chooser still never picks a
+  player town (not built).
+
 ### Biome banner
 
 **Verified** (`MainBarGUI::vfunc_10` `140728d50`, the HUD's per-frame update; save `FUN_140728af0` / `FUN_140728c10`) unless noted. `BiomeTextPanel` (full width, 0.24 to 0.36 of the screen height, hidden in the layout)

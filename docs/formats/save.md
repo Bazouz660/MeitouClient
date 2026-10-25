@@ -440,7 +440,7 @@ An outpost's entry (**Verified** by code, `Town::vfunc_17` `14036eb20` with `FUN
 instance id, or a new `<n>-quick.save-INGAME` (kept on the town, so later saves reuse it); target = the town's TOWN
 record (`player_town_template`); position = the town's, absolute; quaternion (0, 0, 0, 0); state `<id>-S5e`. Its
 GAMESTATE_TOWN (`Town::vfunc_85` `140376b80` and the TownBase writer) is named `Town state <name>` and has the base
-towns' keys: `instance` = the entry id, `is nest` false, `building material`, `public` (false for an outpost), `plevel`,
+towns' keys: `instance` = the entry id, `is nest` false, `building material`, `public` (Town +0x380, the [town panel](../game/ui-screens.md#town-panel)'s Open to public, false when made; **Verified**, `param_1[0x70]`; Meitou round-trips it as `PlayerTown.Public`), `plevel`,
 `replacementTown`, `trade goods`, `faction` = the player faction, `factions here<i>`, `discovered` / `explored` /
 `recently discovered`, `artifacts count`, the handle `hand*` (type 13 TOWN) and the population floats; plus int
 `override` (Town+0x51c, the player town's [reassessed radius](../game/buildings-production.md#placement); 0 when made), written only for a town

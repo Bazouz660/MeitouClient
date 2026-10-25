@@ -130,17 +130,20 @@ public sealed partial class AiSystem
 
     /// <summary>
     /// Whether a trader may start (vtable +0x60): always while on its way or just arrived; once done in a town, when it is ready to leave (<see cref="ReadyToLeave"/>); in a player
-    /// town at once. Engine choice: a town's own squad never starts it (Meitou unloads a town's squads with their town, so one away from home would vanish when it unloads).
+    /// town that is not public at once. Engine choice: a town's own squad never starts it (Meitou unloads a town's squads with their town, so one away from home would vanish when it unloads).
     /// </summary>
     bool TraderCanStart(World world, Squad squad, Blackboard board) =>
-        !squad.TownOwn && (board.InTown.PlayerTown > 0 || board.TraderState != 2 || ReadyToLeave(world, board));
+        !squad.TownOwn && (InPrivateOutpost(world, board) || board.TraderState != 2 || ReadyToLeave(world, board));
 
     /// <summary>
-    /// Ready to go on (<c>FUN_1402868c0</c>): in a player town that is not public (an outpost never is) at once; else after its stay (<see cref="Blackboard.TraderWait"/> hours since
-    /// it came into the town) and only between 06:00 and 20:59.
+    /// Ready to go on (<c>FUN_1402868c0</c>): in a player town that is not public (<see cref="Construction.PlayerTown.Public"/>) at once; else after its stay
+    /// (<see cref="Blackboard.TraderWait"/> hours since it came into the town) and only between 06:00 and 20:59.
     /// </summary>
     static bool ReadyToLeave(World world, Blackboard board) =>
-        board.InTown.PlayerTown > 0 || board.TraderWait <= world.GameHours - board.InTownSince && world.Hour is > 5 and < 21;
+        InPrivateOutpost(world, board) || board.TraderWait <= world.GameHours - board.InTownSince && world.Hour is > 5 and < 21;
+
+    static bool InPrivateOutpost(World world, Blackboard board) =>
+        board.InTown.PlayerTown > 0 && world.Buildings.FindTown(board.InTown.PlayerTown)?.Public != true;
 
     /// <summary>
     /// The trader's start (vtable +0x30): a stay of uniform [5, 8) hours, state 0 and the next town (<see cref="PopulationData.TraderTown"/> from where its leader is, not the town it

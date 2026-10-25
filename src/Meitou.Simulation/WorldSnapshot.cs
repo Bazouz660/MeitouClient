@@ -257,6 +257,8 @@ public sealed record WorldSnapshot(long Tick, IReadOnlyList<CharacterSnapshot> C
     public IReadOnlyList<Construction.BuildingSnapshot> Buildings { get; init; } = [];
     /// <summary>Bumped when a building is added, completed, destroyed or removed (not on progress): the host diffs <see cref="Buildings"/> by id when it changes.</summary>
     public long BuildingsRevision { get; init; }
+    /// <summary>The player outposts with their power totals (the town panel, docs/game/ui-screens.md "Town panel").</summary>
+    public IReadOnlyList<Production.OutpostSnapshot> Outposts { get; init; } = [];
     /// <summary>Loose items lying in the world (<see cref="Items.GroundItems"/>), oldest first.</summary>
     public IReadOnlyList<Items.GroundItemSnapshot> GroundItems { get; init; } = [];
     /// <summary>The containers with an inventory (a building interior's chests and boxes), where they stand.</summary>

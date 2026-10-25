@@ -220,6 +220,7 @@ sealed partial class PlayerInterface(WorldSession session, Func<float, float, fl
     {
         UpdateContextMenu();
         UpdateFactionName();
+        UpdateTownName();
         UpdateBed();
         UpdateMap();
         if (!final) UpdateBuild();

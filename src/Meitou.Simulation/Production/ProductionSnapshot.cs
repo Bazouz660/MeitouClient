@@ -96,3 +96,12 @@ public sealed record ResearchSnapshot(int TechLevel, int BenchLevel, IReadOnlyLi
     public int Finished { get; init; }
     public static ResearchSnapshot Empty { get; } = new(1, 0, [], 0, []);
 }
+
+/// <summary>
+/// A town grid's totals after a tick (docs/game/buildings-production.md "Power"): the generators' output and the consumers' demand (the original's Town +0x474, +0x47c), what charged the
+/// batteries and what was drawn from them (+0x488, +0x484), and the batteries' charge and capacity (+0x48c, +0x490).
+/// </summary>
+public readonly record struct TownPower(float Generated, float Demand, float Charging, float Draining, float Charge, float Capacity);
+
+/// <summary>A player outpost as the town panel shows it (docs/game/ui-screens.md "Town panel").</summary>
+public sealed record OutpostSnapshot(int Number, string Name, System.Numerics.Vector3 Position, float Radius, int Owner, bool Public, TownPower Power);

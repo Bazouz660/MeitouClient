@@ -128,6 +128,11 @@ public sealed class PlayerTown
     public float Radius => Override > 1 ? Override : 2500;
     /// <summary>The owning faction, a position in the world's faction list.</summary>
     public int Owner { get; init; }
+    /// <summary>
+    /// The town panel's Open to public tick (the original's Town +0x380, saved as the town state's <c>public</c>; <b>Verified</b>, <c>Town::vfunc_85</c> and the panel's
+    /// <c>FUN_140721e50</c>): a wandering trader in a public outpost stays as in a placed town instead of leaving at once. False when made (<c>FUN_140934e10</c>).
+    /// </summary>
+    public bool Public { get; set; }
     /// <summary>The save's instance id of its town-list entry (null until a save has named it); bookkeeping for <c>Saving.BuildingSave</c>, not hashed.</summary>
     public string? SaveInstance { get; set; }
     /// <summary>The save's town handle <c>hand*</c> (null until a save has named it); not hashed.</summary>
@@ -140,6 +145,7 @@ public sealed class PlayerTown
         h.Add(Position);
         h.Add(Owner);
         if (Override != 0) h.Add(Override);
+        if (Public) h.Add(1);
     }
 }
 

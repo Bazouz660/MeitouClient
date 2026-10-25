@@ -97,6 +97,7 @@ sealed partial class PlayerInterface
         else if (e.Screen == "dialogue") DialogueAction(e);
         else if (e.Screen == CharacterTradeScreen) CharacterTradeAction(e);
         else if (e.Screen == "prospect") ProspectScreenAction(e);
+        else if (e.Screen == TownScreen) TownAction(e);
         else if (e.Screen == "overview") { MapAction(e.Widget); ResearchAction(e); CraftAction(e); AiAction(e); SquadsAction(e); FactionAction(e); }
         else if (e.Screen is "building" or "bench" or "storage") MachineAction(e);
         else if (e.Screen == "loot" && e.Widget == "OpenBagButton") lootBagOpen = !lootBagOpen;
@@ -124,6 +125,7 @@ sealed partial class PlayerInterface
         else if (id == "dialogue") BindDialogueScreen(b);
         else if (id == CharacterTradeScreen) BindCharacterTradeScreen(b);
         else if (id == "prospect") BindProspectScreen(b);
+        else if (id == TownScreen) BindTownScreen(b);
         else if (id == "build") BindBuildScreen(b);
         else if (id is "building" or "bench" or "storage") BindMachineScreen(id, b);
         else if (IsLootScreen(id)) BindLootScreen(id, b);

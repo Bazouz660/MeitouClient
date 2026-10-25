@@ -19,6 +19,8 @@ public sealed partial class ProductionSystem
     readonly Dictionary<int, List<Machine>> grids = [];
     /// <summary>Per town, whether its generators give power and its batteries can (the town object's <c>+0x474</c> and <c>+0x480</c> above 0 after <c>Town::vfunc_87</c>); what <see cref="HasPower"/> reads. Not saved.</summary>
     readonly Dictionary<int, (bool Generators, bool Batteries)> townSupply = [];
+    /// <summary>Per town, the grid's totals after the last tick (the town panel's power and battery bars, <see cref="TownPower"/>). Not saved.</summary>
+    readonly Dictionary<int, TownPower> townPower = [];
 
     float Rated(World world, Machine m) => m.Data.PowerOutput + world.Research.Upgrade(m.Data.Id).PowerIncrease;
     float Capacity(World world, Machine m) => m.Data.PowerCapacity + world.Research.Upgrade(m.Data.Id).CapacityIncrease;
@@ -35,9 +37,14 @@ public sealed partial class ProductionSystem
         return output;
     }
 
+    /// <summary>The player outposts with their grids' totals, for the town panel (docs/game/ui-screens.md "Town panel").</summary>
+    public IReadOnlyList<OutpostSnapshot> OutpostView(World world) => world.Buildings.Towns.Count == 0 ? []
+        : [.. world.Buildings.Towns.Select(t => new OutpostSnapshot(t.Number, t.Name, t.Position, t.Radius, t.Owner, t.Public, townPower.GetValueOrDefault(t.Number)))];
+
     void PowerTick(World world, float dt)
     {
         foreach (var list in grids.Values) list.Clear();
+        townPower.Clear();
         foreach (var m in world.Machines.All)
         {
             m.Power = 1;
@@ -136,10 +143,10 @@ public sealed partial class ProductionSystem
                 batteryLeft -= give;
                 c.Granted += give;
             }
-        float charged = 0;
+        float charged = 0, drained = 0;
         if (supply <= 0)
         {
-            float used = batteries - batteryLeft;
+            float used = drained = batteries - batteryLeft;
             foreach (var b in grid)
                 if (b.Data.IsBattery) b.Granted = used > 0 && batteries > 0 ? -used * b.Demand / batteries : 0;
             batteryMode[town] = true;
@@ -157,6 +164,7 @@ public sealed partial class ProductionSystem
                 b.Granted = give;
             }
         }
+        float charge = 0, capacity = 0;
         foreach (var m in grid)
         {
             if (m.Data.IsConsumer) m.Power = m.Demand > 0 ? m.Granted / m.Demand : 1;
@@ -172,8 +180,10 @@ public sealed partial class ProductionSystem
                 float rate = Rated(world, m);
                 m.Store = Capacity(world, m);
                 if (rate > 0) m.Charge = Math.Clamp(m.Charge + m.Granted / rate * dt, 0, Capacity(world, m));
+                (charge, capacity) = (charge + m.Charge, capacity + m.Store);
             }
         }
+        townPower[town] = new(generated, demandTotal, charged, drained, charge, capacity);
     }
 
     /// <summary>A generator burns fuel as a producer draws inputs (<c>vfunc_183</c>): <c>rate x dt x P x option</c>, times its load.</summary>

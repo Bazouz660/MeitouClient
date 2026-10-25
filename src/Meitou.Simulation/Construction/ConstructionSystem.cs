@@ -200,6 +200,21 @@ public sealed class ConstructionSystem : ITickSystem
                         reg.Touch();
                     }
                     break;
+                // The panel enables its name box and tick only for a town of the player's faction (FUN_140722de0).
+                case RenameTown rename:
+                    if (reg.FindTown(rename.Town) is { } renamed && renamed.Owner == world.Player.Faction && rename.Name.Length > 0 && renamed.Name != rename.Name)
+                    {
+                        renamed.Name = rename.Name;
+                        reg.Touch();
+                    }
+                    break;
+                case SetTownPublic tick:
+                    if (reg.FindTown(tick.Town) is { } outpost && outpost.Owner == world.Player.Faction && outpost.Public != tick.Public)
+                    {
+                        outpost.Public = tick.Public;
+                        reg.Touch();
+                    }
+                    break;
             }
         }
     }
