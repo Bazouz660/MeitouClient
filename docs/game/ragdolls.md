@@ -126,12 +126,30 @@ bits on. So it lasts exactly while a leg is down; it does not knock out.
   off (4) sets 0 and ends sneaking. A theft witness (`ImStealingDoYouNotice`) in posture 1 or 3 gets 0.
 - Effects are those of posture ≠ 0: grounded clips, prone techniques only, stealth ×2, sight ×0.5, target-score terms; run
   speed S = 7 (5 with a leg down, [pathfinding](pathfinding.md#speed-and-orders)).
-- **Unknown**: what Stand Up (28, [context menu](ui-input.md)) does after the dispatch (read as setting 0); whether the
-  posture is saved; `isItSafeToGetUp` (AI `+0x94`, `+0x4c`); playing dead (3) is not built.
+- Stand Up (order 28, also shown for 65): `Character::addOrder` queues AI task 28 "Standing", built as `Task_UnCrouch`
+  ([ai-tasks](ai-tasks.md)): it plays `squat T` backwards and sets posture 0 once the clip is under 0.1. While getting up the
+  tick queues task 52 `GET_UP_STAY_DOWN_THOUGH` (posture 1/2) or 65 `GET_UP_STAND_UP` (posture 0).
+- The posture is not saved: neither the character writer (`FUN_1406280a0`) nor the medical writer (`FUN_14064ea50`) has a
+  key for it; the health panel (`MedicalSystem::getMedicalGUIData`) shows "Staying low" for 1 and "Playing dead..." for 3.
 - Meitou: `MedicalState.StayingLow` (not saved), `MedicalState.Prone` (posture ≠ 0) read wherever posture ≠ 0 is; set on
-  waking in `CombatSystem.Act` (always safe to get up), cleared by a leg down, a speed order, sneak off, Stand Up
-  (`StandUpCommand`) and the melee alert (`Fighting`, `AI::underMeleeAttack`). The order-during-get-up and theft-witness
-  resets are not built.
+  waking in `CombatSystem.Act`, cleared by a leg down, a speed order, sneak off, Stand Up (`StandUpCommand`, at once: no
+  `squat T`), the melee alert (`Fighting`, `AI::underMeleeAttack`), a caught thief's watcher (`CrimeSystem.Steal`) and a
+  player order to a selected character still getting up (`PlayerSystem.WantsToGetUp`, the orders that name characters).
+
+### Playing dead
+
+**Observed** (`FUN_1405d00b0`, `Character::isItSafeToGetUp` `FUN_1405ca450`, perception update `FUN_1408580d0`;
+KenshiLib 1ce4a16 names): posture 3 is chosen on getting up when `isItSafeToGetUp` fails, and kept while it does (the test
+runs each tick while WHOLE). Safe: the character's `SensoryData::numEnemies` (`+0x94`) is 0, or its state broadcast's slave
+state is 1 (a slave), or `numConsciousAllies` (`+0x4c`) is above 0 (sensed allies in posture 0, not unconscious or dead). A
+player order gets it up (1 when sneaking), as does a thief's watcher noticing. The Toughness tooltip lists "Get up and fight
+instead of playing dead" (`Character::updateGUIStatsDetails`); how toughness acts on it is **Unknown**, as is whether
+`numEnemies` counts down enemies.
+- Meitou: `MedicalState.PlayingDead` (not saved): a knockout that ends while `MedicalContext.PlayDead` is set keeps the
+  character `Unconscious` (so everyone treats it as down) with no timer. `BodySystem.Schedule` sets it serially from the last
+  tick: an awake enemy (`CombatSystem.IsEnemyOf`) within the vision range (500 inside) and no awake standing ally of its
+  faction or an allied one there; animals never play dead. Rechecked every 15 ticks (engine choice). `MedicalState.StandUp`
+  ends it. Health header: `HudText.HealthWord`.
 
 ## Bodies: kinematic or simulated
 

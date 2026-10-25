@@ -68,7 +68,7 @@ public sealed partial class CrimeSystem
     /// <summary>
     /// Takes from another faction's container (<paramref name="code"/>: the pending crime the move sets, Theft for a right click or a give, Looting for a drag), then the steal roll
     /// (<c>FUN_140794810</c>, <b>Observed</b>). True when the thief was caught, and the move is refused. No watcher, or one inside a building other than the container's while that has no
-    /// open door: always unseen. Caught by a watcher in bed: half the time it only says event 47; else it gets up, says event 8 and remembers the thief, and the thief gets a Theft (timer
+    /// open door: always unseen. Caught by a watcher in bed: half the time it only says event 47; else it gets up (also from staying low or playing dead), says event 8 and remembers the thief, and the thief gets a Theft (timer
     /// 30) against the container's owner, "Got caught stealing." for the player. Thievery trains unless the chance was 0.98 or more, the thief is imprisoned or its pending crime's
     /// timer was already 10 or more (engine reading of the game's field +0x180).
     /// </summary>
@@ -130,6 +130,8 @@ public sealed partial class CrimeSystem
             {
                 if (watcher.InSomething == Locks.HeldState.Bed) world.Fixtures.LeaveBed(world, watcherId);
                 else if (table.Next[w].Task == (byte)CharacterTask.Rest) table.Next[w].Task = (byte)CharacterTask.Idle;
+                // One staying low or playing dead stands (posture 0, docs/game/ragdolls.md "Staying low").
+                if (watcher.Medical is { } low) low.StandUp();
                 world.Defer(new Dialogue.DialogueEvent(watcherId, thiefId, CaughtEvent) { Tick = world.Tick + 1 });
                 if (c.IsPlayer) world.Post("Got caught stealing.");
                 SetPending(world, thief, CrimeCode.Theft, faction, victim, CaughtTimer);

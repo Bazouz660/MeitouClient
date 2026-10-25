@@ -169,12 +169,38 @@ public sealed partial class PlayerSystem(PopulationData? data = null) : ITickSys
         player.FactionName = name == data?.Factions[player.Faction].Name ? null : name;
     }
 
+    /// <summary>The characters a right-click order goes to (an empty list: the selection), null for any other command.</summary>
+    static IReadOnlyList<CharacterId>? Ordered(SimCommand command) => command switch
+    {
+        MoveOrder o => o.Characters, FollowOrder o => o.Characters, Combat.AttackOrder o => o.Attackers, Combat.ShootAtOrder o => o.Gunners,
+        Carrying.PickUpOrder o => o.Carriers, Carrying.PutDownOrder o => o.Carriers, Carrying.LootOrder o => o.Looters, Carrying.OpenLootOrder o => o.Looters,
+        Carrying.StealthKoOrder o => o.Attackers, FirstAid.TreatOrder o => o.Medics, FirstAid.SplintOrder o => o.Medics, Locks.PickLockOrder o => o.Characters,
+        Locks.UseBedOrder o => o.Characters, Production.OperateOrder o => o.Characters, Construction.BuildOrder o => o.Characters,
+        _ => null,
+    };
+
+    /// <summary>
+    /// <c>playerWantsMeToGetUp</c> (Character <c>+0xec</c>, docs/game/ragdolls.md "Staying low"): the order dispatch sets it on each selected character it reaches; one playing dead gets
+    /// up (staying low when sneaking), one still getting up stands rather than staying low. Internal orders (an empty selection, or none of it) leave it.
+    /// </summary>
+    static void WantsToGetUp(World world, IReadOnlyList<CharacterId> ordered)
+    {
+        var table = world.Characters;
+        foreach (var id in ordered.Count > 0 ? ordered : world.Player.Selection)
+        {
+            if (!world.Player.Selection.Contains(id) || !table.TryResolveNext(id, out int slot) || table.Cold(slot) is not { IsPlayer: true, Medical: { } medical } cold) continue;
+            if (medical.PlayingDead) medical.StandUp(Orders.Has(cold, CharacterOrders.Sneak));
+            else if (medical.StayingLow && cold.GettingUpUntil > world.Tick) medical.StandUp();
+        }
+    }
+
     public void Inputs(World world, IReadOnlyList<SimCommand> commands)
     {
         var table = world.Characters;
         var player = world.Player;
         foreach (var command in commands)
         {
+            if (Ordered(command) is { } ordered) WantsToGetUp(world, ordered);
             switch (command)
             {
                 case SelectCommand select:

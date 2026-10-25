@@ -159,11 +159,13 @@ sealed partial class PlayerInterface
     }
 
     /// <summary>
-    /// The medical header's word (the original's list is longer; Meitou shows the states it models): Dead, Unconscious (N) with N the KO timer as (int) while it runs, Starving below 1 hunger, then by the worst
-    /// part h: Wounded below 0.7, Hungry below 2 hunger, Slightly Injured below 0.9, else Normal.
+    /// The medical header's word (the original's list is longer; Meitou shows the states it models): Dead, Playing dead... (posture 3), Unconscious (N) with N the KO timer as (int) while it runs,
+    /// Staying low (posture 1), Starving below 1 hunger, then by the worst part h: Wounded below 0.7, Hungry below 2 hunger, Slightly Injured below 0.9, else Normal.
     /// </summary>
     internal static (string Text, string? Colour) HealthWord(BodyStatus body) =>
-        body.Dead ? (Loc.Tr("Dead"), (string?)BadColour) : body.Unconscious ? (body.KoTimer > 0 ? $"{Loc.Tr("Unconscious")} ({(int)body.KoTimer})" : Loc.Tr("Unconscious"), BadColour) : body.Hunger < 1 ? (Loc.Tr("Starving"), BadColour)
+        body.Dead ? (Loc.Tr("Dead"), (string?)BadColour) : body.PlayingDead ? (Loc.Tr("Playing dead..."), BadColour)
+        : body.Unconscious ? (body.KoTimer > 0 ? $"{Loc.Tr("Unconscious")} ({(int)body.KoTimer})" : Loc.Tr("Unconscious"), BadColour) : body.StayingLow ? (Loc.Tr("Staying low"), null)
+        : body.Hunger < 1 ? (Loc.Tr("Starving"), BadColour)
         : body.WorstPart < 0.7f ? (Loc.Tr("Wounded"), BadColour) : body.Hunger < 2 ? (Loc.Tr("Hungry"), BadColour) : body.WorstPart < 0.9f ? (Loc.Tr("Slightly Injured"), BadColour) : (Loc.Tr("Normal"), null);
 
     /// <summary>Adds a text panel's lines over the arranged widget <paramref name="panel"/>: one row per line, the label from 3 % of the width, the value right-aligned to 96 %.</summary>

@@ -223,9 +223,16 @@ public sealed partial class MedicalState
         {
             KoTimer -= dt;
             // Blood under 0 keeps an unconscious character out (reassessCollapseMode); the blood-KO flag only lowers the conscious threshold to -25 (CheckBlood).
-            if (KoTimer <= 0 && !vitalDown && Blood >= 0)
+            if (KoTimer <= 0 && !vitalDown && Blood >= 0 && ctx.PlayDead)
+            {
+                // Awake but not safe to get up: it lies on, playing dead (posture 3), until it is (docs/game/ragdolls.md "Playing dead").
+                KoTimer = 0;
+                PlayingDead = true;
+            }
+            else if (KoTimer <= 0 && !vitalDown && Blood >= 0)
             {
                 Unconscious = false;
+                PlayingDead = false;
                 KoTimer = 0;
                 if (starvationKo)
                 {
@@ -267,6 +274,7 @@ public sealed partial class MedicalState
         if (Unconscious && !VitalPartsKeepDown(KoPoint(c, ctx.Toughness)) && Blood >= 0)
         {
             Unconscious = false;
+            PlayingDead = false;
             KoTimer = 0;
             starvationKo = false;
         }

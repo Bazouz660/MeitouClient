@@ -219,6 +219,7 @@ public sealed partial class MedicalState
             events?.Add(new MedicalEvent(MedicalEventKind.KnockedOut));
         }
         else KoTimer = MathF.Max(KoTimer, seconds);
+        PlayingDead = false;
     }
 
     /// <summary>Starts the KO timer over at <paramref name="seconds"/>, also when a longer KO is running (<c>startKnockoutTimer</c> overwrites it).</summary>

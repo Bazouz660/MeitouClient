@@ -77,6 +77,54 @@ public sealed class BodySystem(GameConstants constants, BodyOptions? options = n
         if (stats.Scale - cold.ShownAge > AnimalData.ResizeStep && stats.Scale < AnimalData.ResizeBelow) cold.ShownAge = stats.Scale;
     }
 
+    /// <summary>Per slot: not safe to get up this tick (<see cref="MedicalContext.PlayDead"/>), from <see cref="Schedule"/>.</summary>
+    bool[] playDead = [];
+
+    /// <summary>How often a character playing dead looks again whether it is safe (engine choice, in ticks; the first test, as its knockout ends, is at once).</summary>
+    const int PlayDeadRecheckTicks = 15;
+
+    /// <summary>The vision range inside a building (<c>FUN_140851bc0</c>, Verified literal, no race multiplier).</summary>
+    const float InsideSight = 500;
+
+    /// <summary>
+    /// Who may not get up this tick: a knocked-out person (not an animal) whose knockout ends, or who plays dead, when <see cref="SafeToGetUp"/> fails. Serial, from the last tick's state.
+    /// </summary>
+    public void Schedule(World world)
+    {
+        var table = world.Characters;
+        if (playDead.Length < table.HighWater) Array.Resize(ref playDead, table.HighWater);
+        var combat = world.SystemOf<Combat.CombatSystem>();
+        for (int i = 0; i < table.HighWater; i++)
+        {
+            bool was = playDead[i];
+            playDead[i] = false;
+            if (!table.Previous[i].Alive || table.Cold(i) is not { Animal: null, Medical: { Unconscious: true, Dead: false, HasStatsObject: true } medical } cold) continue;
+            if (medical.PlayingDead && was && (world.Tick + i) % PlayDeadRecheckTicks != 0) { playDead[i] = true; continue; }
+            if (medical.PlayingDead || medical.WakesWithin(world.TickSeconds)) playDead[i] = !SafeToGetUp(world, combat, i, cold);
+        }
+    }
+
+    /// <summary>
+    /// <c>Character::isItSafeToGetUp</c> (docs/game/ragdolls.md "Playing dead", <b>Observed</b>): a slave, or no enemy sensed, or a conscious ally sensed. Meitou senses by distance
+    /// within the vision range (<see cref="AggroSystem.RangeOf"/>; 500 inside a building); an enemy is the combat system's (<see cref="Combat.CombatSystem.IsEnemyOf"/>), awake.
+    /// </summary>
+    static bool SafeToGetUp(World world, Combat.CombatSystem? combat, int me, CharacterCold cold)
+    {
+        if (cold.SlaveState == 1 || combat is null) return true;
+        var table = world.Characters;
+        var at = table.Previous[me].Position;
+        float r = world.Sight.Inside(me) ? InsideSight : AggroSystem.RangeOf(cold, AggroSystem.OutdoorSight);
+        bool enemy = false;
+        for (int j = 0; j < table.HighWater; j++)
+        {
+            if (j == me || !table.Previous[j].Alive || table.Cold(j) is not { Medical: { Incapacitated: false } om } o) continue;
+            if (Vector3.DistanceSquared(table.Previous[j].Position, at) > r * r) continue;
+            if (combat.IsEnemyOf(world, j, o, me, cold.Faction)) enemy = true;
+            else if (!om.Prone && (o.Faction == cold.Faction || combat.Relations?.IsAlly(cold.Faction, o.Faction) == true)) return true;
+        }
+        return !enemy;
+    }
+
     public void Act(World world, Partition part, EffectBuffer effects)
     {
         var table = world.Characters;
@@ -121,6 +169,7 @@ public sealed class BodySystem(GameConstants constants, BodyOptions? options = n
                 Resting = bed != BedKind.None,
                 HungerFloor = HungerFloor(world, cold, medical),
                 HealMult = cold.InSomething == Locks.HeldState.Imprisoned ? 2 : 1,
+                PlayDead = i < playDead.Length && playDead[i],
             };
             // The combat system's own context (hits) reads the encumbrance from the fighter, so it matches the one used here.
             if (cold.Fighter is { } fighter) fighter.EncumbranceFactor = encumbrance;

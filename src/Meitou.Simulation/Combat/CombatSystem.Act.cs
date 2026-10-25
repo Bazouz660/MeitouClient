@@ -96,7 +96,11 @@ public sealed partial class CombatSystem
             if (cold.IsPlayer && !cold.InCombat && cold.DrawnWeapon != WeaponKinds.None && next[i].Task is not ((byte)CharacterTask.GoTo or (byte)CharacterTask.Follow or (byte)CharacterTask.Attack))
                 cold.DrawnWeapon = WeaponKinds.None;
             // Waking while sneaking it stays low (posture 1, docs/game/ragdolls.md "Staying low"); otherwise it stands.
-            if (s.Down && !cold.Medical.Incapacitated) cold.Medical.StayingLow = Orders.Has(cold, CharacterOrders.Sneak);
+            if (s.Down && !cold.Medical.Incapacitated)
+            {
+                cold.Medical.StayingLow = cold.Medical.WokenLow ?? Orders.Has(cold, CharacterOrders.Sneak);
+                cold.Medical.WokenLow = null;
+            }
             // A leg down replaces it with the forced crawl (posture 2), which ends standing.
             if (cold.Medical.Crawling) cold.Medical.StayingLow = false;
             // Waking: it gets up for GetUpSeconds (Task_GetUp), less wanted as a target and left alone by a hit while its fight is off.

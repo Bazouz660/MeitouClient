@@ -91,6 +91,29 @@ public sealed partial class MedicalState
     /// </summary>
     public bool StayingLow { get; set; }
 
+    /// <summary>
+    /// Playing dead (posture 3 <c>PS_PLAYING_DEAD</c>, docs/game/ragdolls.md "Playing dead"): the knockout is over but the character lies on, still <see cref="Unconscious"/> to everyone,
+    /// until it is safe to get up (<see cref="MedicalContext.PlayDead"/>) or <see cref="StandUp"/>. Not saved: after a load the next tick decides again.
+    /// </summary>
+    public bool PlayingDead { get; private set; }
+
+    /// <summary>Knocked out with nothing but the KO timer keeping it down (vital parts and blood allow waking): whether it may wake within <paramref name="dt"/> seconds.</summary>
+    public bool WakesWithin(float dt) => Unconscious && !Dead && KoTimer <= dt && !VitalPartsKeepDown(LegKoPoint) && Blood >= 0;
+
+    /// <summary>How <see cref="StandUp"/> ended playing dead (staying low or not) for the get-up to take, instead of the sneak order; null when it did not.</summary>
+    public bool? WokenLow { get; set; }
+
+    /// <summary>Posture 0 (or 1 with <paramref name="stayLow"/>): ends staying low, and playing dead at once.</summary>
+    public void StandUp(bool stayLow = false)
+    {
+        StayingLow = stayLow;
+        if (!PlayingDead) return;
+        PlayingDead = false;
+        Unconscious = false;
+        KoTimer = 0;
+        WokenLow = stayLow;
+    }
+
     /// <summary>Posture not 0 while conscious: <see cref="Crawling"/> or <see cref="StayingLow"/>. What the grounded clips, the prone techniques and the stealth x2 read.</summary>
     public bool Prone => !Incapacitated && HasStatsObject && (StayingLow || Crawling);
 

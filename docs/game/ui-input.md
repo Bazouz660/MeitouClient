@@ -428,8 +428,8 @@ home (slot 59) is a building of the player's, or 273 when its +0x1a0 → +0x88 o
 ranged-weapon wielder, not built), and ends with the sound `Right_Click`. 235 Shoot At is Task_UseTurret's "target" order for the lead on a turret.
 A right click on the ground (`PlayerInterface::playerMove`) is order 29 through the same path; how an order replaces a fight: [combat](combat.md#fight-lifecycle-and-orders).
 **Unknown**: slots 34, 102 and the +0x260 handle (read here as the lead's turret, as it swaps every attack for 235); `FUN_1405c9750` (KenshiLib `Character::isStealthMode`) returns
-the sneak flag +0xd4 unless the fight is on (`isInCombatMode`, CombatClass +0x130); where a cage opens its menu at once; what 28 Stand Up does
-once dispatched (Meitou: stands the selection from posture 1, [staying low](ragdolls.md#staying-low)).
+the sneak flag +0xd4 unless the fight is on (`isInCombatMode`, CombatClass +0x130); where a cage opens its menu at once. 28 Stand Up is AI task 28
+(`Task_UnCrouch`, [staying low](ragdolls.md#staying-low)); Meitou stands the selection at once.
 
 Meitou (`PlayerInterface.ContextMenu.cs`; one method per target: characters, `ContainerVerbs`, `DoorVerbs`, `SiteVerbs` in `PlayerInterface.Build.cs`, `CageVerbs` in `PlayerInterface.Cages.cs`):
 the same labels and order (`VerbOrders`; Meitou's own verbs after), the animals-only filter, the chance column (Stealth KO, Kidnap), Shift on Use giving the job.

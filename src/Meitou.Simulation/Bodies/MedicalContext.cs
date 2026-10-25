@@ -41,6 +41,9 @@ public readonly struct MedicalContext(GameConstants constants, BodyOptions optio
     /// <summary>Using a machine: the hunger rate factor is 0.8 (probably the BUILDING's <c>hunger rate</c>).</summary>
     public bool UsingMachine { get; init; }
 
+    /// <summary>Not safe to get up (<c>Character::isItSafeToGetUp</c> failing): a knockout that ends keeps the character down, playing dead (<see cref="MedicalState.PlayingDead"/>).</summary>
+    public bool PlayDead { get; init; }
+
     /// <summary>
     /// The hunger level the character is kept at for free (character slot <c>0x348</c>, <c>FUN_1405c9ca0</c>, read by the hunger update <c>FUN_14064da70</c>; docs/game/character-stats.md
     /// "Free food"): below it, with an empty stomach, the stomach gets min(floor - hunger, 0.04). -10 (the default) for the player's characters: they must eat.
