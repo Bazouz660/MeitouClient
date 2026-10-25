@@ -82,7 +82,7 @@ public sealed partial class ProductionSystem
 
     /// <summary>
     /// The map's samples (<b>Verified</b>, <c>FUN_14049d850</c>): <c>int(s x 246 + 6)</c> cells a side over the square of half-side <c>s x 6000 + 2000</c> round the spot, s = science / 100. The field resources
-    /// are read at every cell's centre (<c>uses_resources</c>), the rock ones list the rocks in range (<c>FUN_14049cd60</c>).
+    /// are read at every cell's centre by the spot's resources record (<c>uses_resources</c>), the rock ones list the rocks in range (<c>FUN_14049cd60</c>).
     /// </summary>
     ProspectMap SampleProspectMap(World world, System.Numerics.Vector3 at, float s)
     {
@@ -106,7 +106,7 @@ public sealed partial class ProductionSystem
                 int i = row * size + col;
                 heights[i] = y;
                 for (int k = 0; k < fields.Length; k++)
-                    if (fields[k] is { } field) field[i] = resources.Yield(ProspectResources[k].Resource, new(x, y, z));
+                    if (fields[k] is { } field) field[i] = resources.FieldYield(ProspectResources[k].Resource, new(x, y, z), at);
             }
         return new ProspectMap(size, x0, z0, extent, heights, fields, rocks);
     }

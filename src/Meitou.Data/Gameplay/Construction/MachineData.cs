@@ -311,10 +311,8 @@ public sealed class ResourceField
     /// </summary>
     public float Yield(int resource, System.Numerics.Vector3 at)
     {
-        if (resource is MachineData.WaterResource or MachineData.GroundResource) return Value(resource, at.X, at.Y, at.Z);
+        if (resource is MachineData.WaterResource or MachineData.GroundResource or StoneResource) return FieldYield(resource, at, at);
         if (Resources(at.X, at.Z) is not { } r) return 0;
-        if (resource == StoneResource)
-            return World.FoliageNoise.Coverage(at.X, at.Z, r.GetFloat("stone noise zoom") * 1000, r.GetFloat("stone noise cutoff"), 3, 1) * r.GetFloat("stone mult");
         if (nodes is null || Prefix(resource).Length == 0) return 0;
         ResourceNode? best = null;
         float bestD = float.MaxValue;
@@ -328,6 +326,18 @@ public sealed class ResourceField
         float r2 = Math.Min(Range2, MathF.Max(625, n.Radius * n.Radius));
         float falloff = Math.Clamp((bestD - r2) / (Range2 - r2), 0, 1);
         return NodeYield(resource, n.Position) * (1 - falloff);
+    }
+
+    /// <summary>
+    /// WATER, GROUND or STONE at <paramref name="at"/> by the resources record of the ground at <paramref name="recordAt"/> (the prospecting map reads every cell by the spot's record, <b>Verified</b>,
+    /// <c>FUN_14049cd60</c> passes the group it looked up once). 0 for another resource or without a record.
+    /// </summary>
+    public float FieldYield(int resource, System.Numerics.Vector3 at, System.Numerics.Vector3 recordAt)
+    {
+        if (Resources(recordAt.X, recordAt.Z) is not { } r) return 0;
+        if (resource == StoneResource)
+            return World.FoliageNoise.Coverage(at.X, at.Z, r.GetFloat("stone noise zoom") * 1000, r.GetFloat("stone noise cutoff"), 3, 1) * r.GetFloat("stone mult");
+        return resource is MachineData.WaterResource or MachineData.GroundResource ? Value(r, resource, at.Y) : 0;
     }
 
     /// <summary>
@@ -369,9 +379,10 @@ public sealed class ResourceField
     /// The WATER or GROUND value at a position (<b>Observed</b>, <c>FUN_140a12ff0</c>): band x <c>&lt;p&gt; mult</c> + <c>&lt;p&gt; min</c>, the band 1 between the altitude min and max and
     /// ramping to 0 over the fade beyond them. 0 without a resources record.
     /// </summary>
-    public float Value(int resource, float x, float y, float z)
+    public float Value(int resource, float x, float y, float z) => Resources(x, z) is { } r ? Value(r, resource, y) : 0;
+
+    static float Value(GameRecord r, int resource, float y)
     {
-        if (Resources(x, z) is not { } r) return 0;
         string p = resource == MachineData.WaterResource ? "water" : resource == MachineData.GroundResource ? "farming" : "";
         if (p.Length == 0) return 0;
         float min = r.GetInt(p + " altitude min"), max = r.GetInt(p + " altitude max"), fade = r.GetInt(p + " altitude fade");
