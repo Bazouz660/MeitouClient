@@ -214,13 +214,13 @@ Authority: `tools/Meitou.Tools/Program.cs` (dispatch and usage), with the option
 | `formats` | | Count file types under the install's `data` folder. |
 | `fcs <file>` | path or name in `data` | Summarise a `.mod` or `.base` file. |
 | `load` | | Apply the load order; summarise merged game data. |
-| `armour <name>` | armour name | Armour lookup. Not in the usage text. |
+| `armour <name>` | armour name | ARMOUR records of that name after the load order, their fields and the quicksave's saved copies. |
 | `meshes` / `skeletons` / `materials` | | Read and report every mesh, skeleton or material script. |
 | `fcs-types` | | Match record type numbers to `fcs.def` names. |
 | `fcs-records <N>` | type number | Fields of the first records of type N. |
 | `world` | | Cross-check heightmap, zone files and `features.dat`. |
 | `particles [effects]` | `effects` optional | Survey particle scripts; `effects` lists EFFECT records. |
-| `particles weathers` | | Survey by weather. Not in the usage text. |
+| `particles weathers` | | Every fog volume, and every WEATHER with its effects, fog volumes and lights. |
 | `particles warmup [weather...]` | weather names | Cost of changing to a weather. |
 | `navmesh [...]` | see below | Build a zone's navmesh and write debug files. |
 | `weather [...]` | see below | Season and weather timeline for a region. |
@@ -319,9 +319,6 @@ Names starting `MEITOU_` are also recorded in the benchmark JSON (`WorldApp.Benc
 
 ## Unclear
 
-- The game's `Usage` says `--ui` defaults to faithful (`GameOptions.cs:80`), but an unset `--ui` falls back to `UserConfig.UiMode`, which defaults to Meitou (`UserConfig.cs:47`). The usage text is stale.
-- Enhancement ids `charlod`, `skin`, `interiorlamps`, `icons`, `blood` (`Enhancements.cs:129-141`) are missing from the `--faithful` help text (`WorldFrame.cs:246`).
-- `armour` (`tools/Meitou.Tools/Program.cs`, the top-level switch) and `particles weathers` are dispatched but missing from `Usage`.
 - `MEITOU_BENCH_SKIP` defaults differ: 1 in `WorldApp.Benchmark.cs:93`, 0 in `SpikeLog.cs:19`.
 - `MEITOU_METAL_GI_FALLBACK` (`MetalProbeGi.cs:469`), `MEITOU_METAL_PRIVATE_STATIC` (`TerrainRenderer.cs:63`), and the two `*_STAMPS` variables are described from the names and read sites only; their effects were not traced.
 - `MEITOU_FRAGMENT` (`src/Meitou.Rendering/Gpu/Shaders/GlslProgramCompiler.cs:167`) is a shader macro, not an environment variable, so it is excluded.

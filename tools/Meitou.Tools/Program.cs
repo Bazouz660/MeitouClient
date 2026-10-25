@@ -34,6 +34,7 @@ static int Usage()
         meitou-tools formats       count file types under the install's data/ folder
         meitou-tools fcs <file>    summarize a .mod/.base file (path, or a name inside data/)
         meitou-tools load          apply the load order and summarize the merged game data
+        meitou-tools armour <name> the ARMOUR records of that name after the load order: who defines and modifies them, their fields, and the quicksave's saved copies
         meitou-tools meshes        read every .mesh in data/ and report failures and contents
         meitou-tools skeletons     read every .skeleton in data/ and report failures and contents
         meitou-tools materials     compile every material script and cross-check mesh materials and textures
@@ -45,6 +46,7 @@ static int Usage()
                            gather and build a zone's navmesh, write debug files; --fingerprint prints SHA-256 of the cache files of The Hub (or --zone) and the Hub path points;
                            --compare samples each zone against the original's navmesh tiles
         meitou-tools particles [effects]  read every ParticleUniverse script and particle material and count what they use; "effects" lists the EFFECT records with their systems
+        meitou-tools particles weathers  every fog volume, and every WEATHER with its effects: type, how many at once, respawn times, fog volumes and lights
         meitou-tools particles warmup [weather...]  what changing to a weather costs: the schedule, the simulation of the warm-up on one thread and in parallel, and a frame
         meitou-tools world         read the heightmap, zone/level files and features.dat and cross-check them
         meitou-tools weather [--region name | --at x,z] [--days d0 d1] [--seed n] [--list] [--extents]  print a region's season and weather timeline (--list: the regions and their calendars)

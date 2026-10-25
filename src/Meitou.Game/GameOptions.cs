@@ -77,7 +77,7 @@ sealed class GameOptions
           --fps-limit <n>            frame limit when vsync is off (default 150 from meitou.user.json; 0 = unlimited)
           --vsync / --no-vsync       vsync (default off)
           --seed <n>                 the world seed (default 0)
-          --ui <faithful|meitou>      UI mode, independent of graphics; also available in the settings (default faithful)
+          --ui <faithful|meitou>      UI mode, independent of graphics; also available in the settings (default meitou)
           --ui-showcase              with --screenshot: capture HUD, inventory, stats, map, menus, a trade with the nearest trader and a conversation in either UI mode
           --ui-panel <name>          with --screenshot: open one HUD/panel for the picture (hud, hud-expanded, inventory, stats, overview, menu, title, ...)
           --title-preview            with --screenshot: capture the staged Meitou title scene
