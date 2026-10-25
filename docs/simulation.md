@@ -857,6 +857,7 @@ Engineer (125), which resumes available work after supplies arrive; a direct ord
 Jobs retain their queue priority and switch. Transient orders are not saved; persistent jobs and the house's progress,
 delivered materials and ownership are ([save](formats/save.md#zone-files)). Normal damage to a complete house needs no materials.
 Town houses cannot be dismantled, cancelled or upgraded through this seam. The original town and instance remain unchanged.
+Building inside one names the level instance as parent (as any owned town building; build mode's floor is the level one), refused while it is being repaired.
 **Verified** implementation coverage: `HouseRepairTests` and `HouseRepairUiTests` (both UI modes, original Storm House data).
 
 **Outposts.** `World.Buildings.Towns` (`PlayerTown`: `Number` 1.., `Name`, `Position`, `Owner`, `Public`; never removed; renamed and ticked public by the [town panel](game/ui-screens.md#town-panel)) and

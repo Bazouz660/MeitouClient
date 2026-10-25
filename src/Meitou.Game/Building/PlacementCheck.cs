@@ -89,7 +89,8 @@ public static class PlacementCheck
         // The resource row comes after the first row's "don't own" text and before "incomplete".
         var resources = PlacementRules.ResourceBlock(q.Services.Readout(b.Id, q.Position));
         if (resources != PlacementFailure.None) return resources;
-        if (q.On is { Level: null } && q.Sites.FirstOrDefault(s => s.Id == parent) is { Complete: false }) return PlacementFailure.InsideIncomplete;
+        // A site of ours, or an owned town house being repaired (a level building that is also a site).
+        if (q.On is not null && q.Sites.FirstOrDefault(s => s.Id == parent) is { Complete: false }) return PlacementFailure.InsideIncomplete;
         // A building under the ghost's centre (the one it stands in aside): another town's or the level's (not ours), or an unfinished site of ours.
         foreach (var site in q.Sites)
             if (site.Id != parent && q.Ignore?.Invoke(site.Record, site.Position, site.Rotation) != true && q.Services.Footprint(site.Record) is { } siteFootprint

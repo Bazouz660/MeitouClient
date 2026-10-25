@@ -273,10 +273,13 @@ sealed partial class GameHost
     // A level building's instance id and owning faction id (its state's owner, else its town's faction), by placement key; made on first use.
     Dictionary<string, (string Instance, string? Owner)>? levelOwners;
 
-    /// <summary>The floor a ghost stands on in <paramref name="room"/>: a player site's, else a level building's with whether the player's faction owns it.</summary>
+    /// <summary>
+    /// The floor a ghost stands on in <paramref name="room"/>: a player site's, else a level building's with whether the player's faction owns it. A repaired town house is
+    /// shown as a site but stays a level building, so what is built in it names the level instance as its parent (as in any owned town building).
+    /// </summary>
     Building.GhostFloor GhostFloorOf(InteriorVolume room, int floor)
     {
-        if (shownBuildings.ContainsKey(room.PlacementId)) return new(room.PlacementId, room.Footprint, floor);
+        if (shownBuildings.TryGetValue(room.PlacementId, out var shown) && shown.LevelPlacement is null) return new(room.PlacementId, room.Footprint, floor);
         if (levelOwners is null && popData is { } d)
         {
             levelOwners = new(StringComparer.Ordinal);
