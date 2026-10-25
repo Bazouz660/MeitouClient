@@ -262,7 +262,8 @@ sealed partial class GameHost
                     && s.GetReferences("vendors").FirstOrDefault().TargetStringId is { } vendor && db.Find(vendor)?.Name is { Length: > 0 } list
                     ? char.ToUpperInvariant(list[0]) + list[1..] : null;
                 var (town, owner) = townOf is not null && townOf.TryGetValue((zone, instance), out var info) ? (info.Town, info.Owner) : (null, null);
-                return new(name, type, town, owner, state?.GetBool("is public day") ?? false, state?.GetBool("is public night") ?? false, sells);
+                return new(name, type, town, owner, state?.GetBool("is public day") ?? false, state?.GetBool("is public night") ?? false, sells,
+                    placement.DestroyedOverride ?? state?.GetBool("destroyed") ?? false);
             },
             Towns = () => towns ??= popData is { } d ? [.. d.Sites.Select(s => new Meitou.Data.Gameplay.Construction.PlacementTown(s.Town, new(s.Position.X, s.Position.Z)))] : [],
             PlayerFactionId = () => popData is { } d && d.PlayerFaction is >= 0 and var mine && mine < d.Factions.Count ? d.Factions[mine].Id : "",

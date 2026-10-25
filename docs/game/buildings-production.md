@@ -107,6 +107,12 @@ the update lists its records (a storage: every record it holds; a production bui
 record whose count (slot 5, `FUN_1403411c0`: always 2) is above 0, i.e. the first listed record, and moves up to 2 units
 while the character has room, then ends. Meitou takes the material instead of the first listed record (engine choice).
 
+Missing-material speech: **Verified** text in the original `locale/zh_CN/LC_MESSAGES/main.po`, source annotation
+`character.cpp:3412`: "I don't have any building materials." / "我没有建筑材料了。" The separate GOAP.cpp:490
+line is "I don't have any materials". **Observed** (user report): repeating a manual build order without materials
+shows a character speech bubble. Meitou emits the character-order line once per explicit order when the site is stalled,
+the builder carries no needed material and no fetch source exists; exact original trigger guards remain **Unknown**.
+
 ### Builders and dismantle
 
 Task ids and AI conditions: [ai-tasks](ai-tasks.md#build-tasks). Engineer job (**Verified**): row 125 "Engineer" has no
@@ -148,7 +154,12 @@ same build work and ends once complete and `progress / target >= 1` (`FUN_140547
 (`FUN_14054a3f0` tests only incomplete ones), so repairing takes no materials. What lowers a complete building's
 progress (attacks) and whether slot 70 clamps at the target are **Unknown**.
 
-Purchased ruins: **Observed** in the user's original-game comparison: right-clicking a purchased damaged house exposes
+Purchased ruins: **Observed** in the user's original-game screenshot (Squin Longhouse, before and after purchase): Condition is 0
+with an empty bar before repair starts; the destroyed-building transition's 40% is not its purchase-time condition.
+**Observed** in the same user's original-game Squin Longhouse screenshot just after starting repair: Door Condition 16,
+Building Condition 9, Building Material 9/24. This is consistent with progress 9.6 displayed as an integer and randomized
+retained materials; one screenshot does not establish a fixed retained amount or the original RNG sequence.
+**Observed** in the user's original-game comparison: right-clicking a purchased damaged house exposes
 Repair, and selected characters supply building materials and work. This is reconstruction, distinct from the complete-house
 repair above. Meitou uses the destroyed-building transition and material gate already described here, activated by the explicit
 order; the exact original activation timing remains **Unknown**. Implementation and regression coverage:
