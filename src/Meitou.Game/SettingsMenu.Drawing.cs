@@ -20,17 +20,12 @@ sealed partial class SettingsMenu
 
     void Text(string caption, UiRect at, float size = 16, Vector4? colour = null, string align = "Left VCenter", UiRect? clip = null, bool wrap = false)
     {
-        caption = TranslateLabel(caption);
+        caption = Loc.Tr(caption);
         var properties = new Dictionary<string, string> { ["TextAlign"] = align, ["FontName"] = "Kenshi_StandardFont", ["FontPixels"] = ((int)MathF.Round(size * scale)).ToString(System.Globalization.CultureInfo.InvariantCulture) };
         if (wrap) properties["WordWrap"] = "true";
         controls.Add(new("settings-text", "TextBox", at, caption, "", "", true, properties, Vector4.Zero, colour ?? MainInk, Clip: clip, Pickable: false, TextScale: size * scale / 16));
     }
 
-    string TranslateLabel(string caption)
-    {
-        string gettext = Loc.Tr(caption);
-        return gettext != caption ? gettext : UserTranslationDictionary.Translate(caption, Loc.Language.Code);
-    }
 
     void Surface(UiRect at, string kind, bool selected = false, bool hover = false, UiRect? clip = null)
     {
@@ -187,9 +182,9 @@ sealed partial class SettingsMenu
 
     float RowHeight(Entry entry)
     {
-        float label = TextHeight(TranslateLabel(entry.Label), 456, 14);
+        float label = TextHeight(Loc.Tr(entry.Label), 456, 14);
         if (entry.Hint.Length == 0) return Math.Max(36, label + 4);
-        return Math.Max(36, 2 + label + 1 + TextHeight(TranslateLabel(entry.Hint), 456, 11) + 2);
+        return Math.Max(36, 2 + label + 1 + TextHeight(Loc.Tr(entry.Hint), 456, 11) + 2);
     }
 
     float EntryHeight(Entry entry) => RowHeight(entry) + (entry.Picture is null ? 0 : PictureGap + PictureHeight);
@@ -205,17 +200,17 @@ sealed partial class SettingsMenu
                 controls.Add(new("settings-picture", "ImageBox", R(212, y + row - 4, PictureWidth, PictureHeight), "", "", "", true,
                     new Dictionary<string, string> { ["ImageTexture"] = picture }, Vector4.Zero, Clip: viewport, Pickable: false));
         }
-        string translatedLabel = TranslateLabel(entry.Label);
+        string translatedLabel = Loc.Tr(entry.Label);
         float labelHeight = TextHeight(translatedLabel, 456, 14);
         float labelBoxHeight = entry.Hint.Length > 0 ? labelHeight + 1 : row - 4;
         bool labelWrap = TextLines(translatedLabel, 456, 14) > 1;
-        Text(translatedLabel, R(212, y + 2, 456, labelBoxHeight), 14, clip: viewport, wrap: labelWrap);
+        Text(entry.Label, R(212, y + 2, 456, labelBoxHeight), 14, clip: viewport, wrap: labelWrap);
         if (entry.Hint.Length > 0)
         {
-            string hint = TranslateLabel(entry.Hint);
+            string hint = Loc.Tr(entry.Hint);
             float hintHeight = TextHeight(hint, 456, 11);
             float hintY = y + 2 + labelHeight + 1;
-            Text(hint, R(212, hintY, 456, hintHeight + 1), 11, MutedInk, "Left Top", viewport, wrap: true);
+            Text(entry.Hint, R(212, hintY, 456, hintHeight + 1), 11, MutedInk, "Left Top", viewport, wrap: true);
         }
         if (entry.Toggle is { Remaster: true } remaster)
         {
@@ -232,7 +227,7 @@ sealed partial class SettingsMenu
         {
             var options = choice.Options();
             int index = choice.Current();
-            string current = TranslateLabel(index >= 0 && index < options.Count ? options[index] : "Unavailable");
+            string current = Loc.Tr(index >= 0 && index < options.Count ? options[index] : "Unavailable");
             var at = R(688, buttonY, 412, 26);
             Button(current + "   v", at, () =>
             {

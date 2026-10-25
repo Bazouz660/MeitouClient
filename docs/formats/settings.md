@@ -113,7 +113,7 @@ i.e. everything).
 | `font size2` | int (stored as float); slider −10 … 32 | 3 | Font Size | GUI font size: added in points to every font's MyGUI default height ([mygui.md](mygui.md)) |
 | `tutorials` | bool | 1 | Tutorials | In-game tutorials ("Reset Tutorials" is a button, not a key) |
 | `censorship` | bool | 0 | Language censorship | Filters swearing in dialogue (FUN_14067e8b0) |
-| `language` | string, locale code | see text | none in options | The locale folder `locale/<code>/` used for translations; empty falls back to `steam_language`, unknown is `en_GB` ([localisation](localisation.md)). The launcher writes the selected supported locale here; it preserves the other file contents |
+| `language` | string, locale code | see text | none in options | The locale folder `locale/<code>/` used for translations; empty falls back to `steam_language`, unknown is `en_GB` ([localisation](localisation.md)). Meitou reads it; the launcher's Language setting writes this line, nothing else of the file ([launcher](../launcher.md)) |
 | `steam_language` | string, Steam language name | see text | none | The Steam language the `language` was last chosen from; decides when `language` is empty (**Verified**, FUN_140175a90) |
 
 ### Audio

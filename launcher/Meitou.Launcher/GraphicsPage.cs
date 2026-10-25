@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Layout;
 using Avalonia.Threading;
+using Meitou.Localisation;
 using Meitou.Settings;
 
 namespace Meitou.Launcher;
@@ -34,7 +35,7 @@ public sealed partial class MainWindow
         game = GameSettings.Load();
         GraphicsPanel.Children.Clear();
         bool found = game.Version is not null;
-        GraphicsFileText.Text = Tr(found ? GameSettings.FileName : $"No {GameSettings.FileName} found");
+        GraphicsFileText.Text = found ? GameSettings.FileName : Loc.Format(Tr("No {1} found"), GameSettings.FileName);
         ToolTip.SetTip(GraphicsFileText, GameSettings.FilePath);
         if (!found)
             GraphicsPanel.Children.Add(new TextBlock
@@ -47,7 +48,7 @@ public sealed partial class MainWindow
         if (schema is null)
         {
             GraphicsPanel.Children.Add(new TextBlock { Classes = { "desc" }, Text = missing });
-            LauncherText.TranslateTree(GraphicsPanel, UiLanguage, originalUiText);
+            LauncherText.TranslateTree(GraphicsPanel, originalUiText);
             return;
         }
         schemaVersion = schema.SettingsVersion;
@@ -82,7 +83,7 @@ public sealed partial class MainWindow
         rows.Children.Add(Section("Reset"));
         rows.Children.Add(Row("Reset graphics", "Every graphics slider and Faithful / Meitou switch back to the game's defaults, also those only in the game's Tab panel.", reset, 150));
         GraphicsPanel.Children.Add(rows);
-        LauncherText.TranslateTree(GraphicsPanel, UiLanguage, originalUiText);
+        LauncherText.TranslateTree(GraphicsPanel, originalUiText);
     }
 
     TextBlock Section(string text) => new() { Classes = { "caps" }, Text = Tr(text).ToUpperInvariant(), Margin = new(0, 14, 0, 2) };

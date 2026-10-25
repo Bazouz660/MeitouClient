@@ -7,20 +7,20 @@ namespace Meitou.Localisation;
 /// <summary>
 /// The game's text localisation (docs/formats/localisation.md): the active <see cref="GameLanguage"/> and its gettext catalog, and the lookups that turn
 /// the English source strings of the code into the player's language. Everything is the identity until <see cref="Use(GameInstall)"/> runs
-/// (and stays so for English), so a string with no translation always shows its English text. Only strings that exist as a <c>msgid</c> in the
-/// game's <c>main.pot</c> have a translation; the lookups are exact, so Meitou's own texts are never touched.
+/// (and stays so for English), so a string with no translation always shows its English text. The game's catalog translates the strings that
+/// exist as a <c>msgid</c> in its <c>main.pot</c>; Meitou's own texts (<see cref="MeitouTranslations"/>) are looked up after it. Lookups are exact.
 /// </summary>
 public static class Loc
 {
     static GameLanguage language = GameLanguage.English;
-    static GettextCatalog catalog = GettextCatalog.Empty;
+    static GettextCatalog catalog = GettextCatalog.Empty, meitou = GettextCatalog.Empty;
     static CultureInfo culture = CultureInfo.InvariantCulture;
 
     /// <summary>The active language (English until <see cref="Use(GameInstall)"/> ran).</summary>
     public static GameLanguage Language => language;
 
     /// <summary>True when a catalog is loaded, i.e. some strings may differ from their English source.</summary>
-    public static bool Translating => catalog.Count > 0;
+    public static bool Translating => catalog.Count > 0 || meitou.Count > 0;
 
     /// <summary>Selects the language of <paramref name="install"/> and loads its message catalog.</summary>
     public static void Use(GameInstall install) => Use(GameLanguage.Detect(install));
@@ -29,17 +29,18 @@ public static class Loc
     public static void Use(GameLanguage selected)
     {
         var loaded = GettextCatalog.Load(selected.MessagesDirectory);
+        var own = MeitouTranslations.Load(selected.Code, selected.OverlayFolder);
         language = selected;
         catalog = loaded;
+        meitou = own;
         culture = CultureOf(selected.Code);
-        UserTranslationDictionary.Load();
     }
 
     /// <summary>
-    /// <paramref name="english"/> in the active language, or unchanged when the catalog has no translation (so a text that was never a
+    /// <paramref name="english"/> in the active language: the game's translation, else Meitou's own, else unchanged (so a text that was never a
     /// <c>msgid</c> passes through).
     /// </summary>
-    public static string Tr(string english) => catalog.Count == 0 ? english : catalog.Find(english) ?? english;
+    public static string Tr(string english) => !Translating ? english : catalog.Find(english) ?? meitou.Find(english) ?? english;
 
     /// <summary>
     /// <see cref="Tr(string)"/> followed by <see cref="Format"/>: the boost-style placeholders <c>{1}</c>, <c>{1,num}</c> and <c>{1,num=fix,p=2}</c>
@@ -52,7 +53,7 @@ public static class Loc
     /// <paramref name="n"/> by its <c>Plural-Forms</c> rule, else the English one. <paramref name="args"/> fill the placeholders (usually <paramref name="n"/> itself).
     /// </summary>
     public static string Plural(string singular, string plural, long n, params object?[] args) =>
-        Format(catalog.Count > 0 && catalog.FindPlural(singular, n) is { } found ? found : n == 1 ? singular : plural, args);
+        Format((Translating ? catalog.FindPlural(singular, n) ?? meitou.FindPlural(singular, n) : null) ?? (n == 1 ? singular : plural), args);
 
     /// <summary>
     /// Substitutes <c>{N}</c>, <c>{N,num}</c> and <c>{N,num=fix,p=K}</c> (N is 1-based) with <paramref name="args"/>: <c>num</c> writes a number in the

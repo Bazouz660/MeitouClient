@@ -1,60 +1,27 @@
 using System.Text;
 using Meitou.Content;
-using Meitou.Localisation;
 
 namespace Meitou.Launcher;
 
-/// <summary>Updates only the game's language choice in its settings.cfg.</summary>
+/// <summary>Reads and updates only the <c>language</c> line of the game's settings.cfg, keeping its encoding, line endings and every other line.</summary>
 internal static class KenshiLanguageSettings
 {
-    static readonly Dictionary<string, string> KenshiNames = new(StringComparer.OrdinalIgnoreCase)
+    /// <summary>The value of <c>language</c> in the install's settings.cfg (trimmed), or null when the file or the key is missing or unreadable.</summary>
+    public static string? GetLanguage(GameInstall install)
     {
-        ["English"] = "en_GB",
-        ["German"] = "de_DE",
-        ["French"] = "fr_FR",
-        ["Russian"] = "ru_RU",
-        ["Italian"] = "it_IT",
-        ["Portuguese"] = "pt_BR",
-        ["Portuguese (Brazil)"] = "pt_BR",
-        ["Português (Brasil)"] = "pt_BR",
-        ["Spanish"] = "es_ES",
-        ["Chinese"] = "zh_CN",
-        ["Japanese"] = "ja_JP",
-        ["Korean"] = "ko_KR",
-    };
-
-    public static string? ResolveCode(GameInstall install, string launcherCode, string? languageName = null)
-    {
-        if (languageName is not null && KenshiNames.TryGetValue(languageName.Trim(), out string? namedCode))
-            return namedCode;
-
-        if (launcherCode.Equals("en", StringComparison.OrdinalIgnoreCase)
-            || launcherCode.Replace('-', '_').Equals(GameLanguage.DefaultCode, StringComparison.OrdinalIgnoreCase))
-            return GameLanguage.DefaultCode;
-
-        string normalized = launcherCode.Replace('-', '_');
-        string? tableCode = GameLanguage.SteamLanguages
-            .Select(language => language.Code)
-            .FirstOrDefault(code => code.Equals(normalized, StringComparison.OrdinalIgnoreCase));
-        if (tableCode is not null) return tableCode;
-
+        string path = Path.Combine(install.Root, "settings.cfg");
         try
         {
-            string localeRoot = Path.Combine(install.Root, "locale");
-            string? installedCode = Directory.Exists(localeRoot)
-                ? Directory.EnumerateDirectories(localeRoot)
-                    .Select(Path.GetFileName)
-                    .FirstOrDefault(code => code is not null && !code.StartsWith('_')
-                        && code.Equals(normalized, StringComparison.OrdinalIgnoreCase))
-                : null;
-            return installedCode ?? (LauncherText.HasLanguage(launcherCode) ? launcherCode : null);
+            if (!File.Exists(path)) return null;
+            byte[] bytes = File.ReadAllBytes(path);
+            (Encoding encoding, int preambleLength) = DetectEncoding(bytes);
+            string text = encoding.GetString(bytes, preambleLength, bytes.Length - preambleLength);
+            return FindLanguage(text, out int valueStart, out int contentEnd) ? text[valueStart..contentEnd].Trim() : null;
         }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
-        {
-            return null;
-        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return null; }
     }
 
+    /// <summary>Writes <c>language=<paramref name="code"/></c> into the install's settings.cfg, replacing the existing line or appending one.</summary>
     public static void SetLanguage(GameInstall install, string code)
     {
         string path = Path.Combine(install.Root, "settings.cfg");
@@ -71,27 +38,33 @@ internal static class KenshiLanguageSettings
 
     static string ReplaceLanguage(string text, string code)
     {
+        if (FindLanguage(text, out int valueStart, out int contentEnd))
+            return string.Concat(text.AsSpan(0, valueStart), code, text.AsSpan(contentEnd));
         string newline = text.Contains("\r\n", StringComparison.Ordinal) ? "\r\n"
             : text.Contains('\n') ? "\n" : text.Contains('\r') ? "\r" : Environment.NewLine;
+        string separator = text.Length == 0 || text.EndsWith('\n') || text.EndsWith('\r') ? "" : newline;
+        return string.Concat(text, separator, "language=", code, newline);
+    }
 
+    /// <summary>The value span of the first <c>language=</c> line (after the <c>=</c> and its blanks, up to the line end).</summary>
+    static bool FindLanguage(string text, out int valueStart, out int contentEnd)
+    {
         for (int lineStart = 0; lineStart < text.Length;)
         {
-            int contentEnd = lineStart;
+            contentEnd = lineStart;
             while (contentEnd < text.Length && text[contentEnd] is not ('\r' or '\n')) contentEnd++;
             int equals = text.IndexOf('=', lineStart, contentEnd - lineStart);
             if (equals > lineStart && text[lineStart..equals].Trim().Equals("language", StringComparison.Ordinal))
             {
-                int valueStart = equals + 1;
+                valueStart = equals + 1;
                 while (valueStart < contentEnd && char.IsWhiteSpace(text[valueStart])) valueStart++;
-                return string.Concat(text.AsSpan(0, valueStart), code, text.AsSpan(contentEnd));
+                return true;
             }
-
             if (contentEnd == text.Length) break;
             lineStart = contentEnd + (text[contentEnd] == '\r' && contentEnd + 1 < text.Length && text[contentEnd + 1] == '\n' ? 2 : 1);
         }
-
-        string separator = text.Length == 0 || text.EndsWith('\n') || text.EndsWith('\r') ? "" : newline;
-        return string.Concat(text, separator, "language=", code, newline);
+        valueStart = contentEnd = -1;
+        return false;
     }
 
     static (Encoding Encoding, int PreambleLength) DetectEncoding(byte[] bytes)

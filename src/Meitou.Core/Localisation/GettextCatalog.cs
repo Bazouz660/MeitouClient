@@ -45,6 +45,15 @@ public sealed class GettextCatalog
         return Empty;
     }
 
+    /// <summary>Every message's key and first form.</summary>
+    public IEnumerable<KeyValuePair<string, string>> Messages => messages.Select(m => new KeyValuePair<string, string>(m.Key, m.Value[0]));
+
+    /// <summary>Puts <paramref name="later"/>'s messages over this catalog's (a later file overrides an earlier one); the plural rule stays.</summary>
+    public void Add(GettextCatalog later)
+    {
+        foreach (var (key, forms) in later.messages) messages[key] = forms;
+    }
+
     /// <summary>The translation of <paramref name="msgid"/> (first form), or null when the catalog has none.</summary>
     public string? Find(string msgid, string? context = null) =>
         messages.TryGetValue(context is null ? msgid : context + ContextSeparator + msgid, out var forms) ? forms[0] : null;

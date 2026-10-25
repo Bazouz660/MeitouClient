@@ -4,6 +4,7 @@
     <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>
   <ItemGroup>
-    <EmbeddedResource Include="../../launcher/Meitou.Launcher/translations.json" LogicalName="Meitou.Core.launcher-translations.json" />
+    <!-- Meitou's own texts per language (docs/formats/localisation.md), read by the game and the launcher. -->
+    <EmbeddedResource Include="Localisation/locale/*.po" LogicalName="Meitou.locale.%(Filename).po" />
   </ItemGroup>
 </Project>
