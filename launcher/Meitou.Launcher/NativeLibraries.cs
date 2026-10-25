@@ -19,6 +19,21 @@ static class NativeLibraries
     {
         var assembly = typeof(NativeLibraries).Assembly;
         var names = assembly.GetManifestResourceNames().Where(n => n.StartsWith(Prefix, StringComparison.Ordinal)).Order(StringComparer.Ordinal).ToArray();
+        var handles = new Dictionary<string, IntPtr>(StringComparer.OrdinalIgnoreCase);
+        // The launcher's own imports (news videos): OpenAL Soft by its file names, libvpx (linked in when published) by the system's.
+        NativeLibrary.SetDllImportResolver(assembly, (library, _, search) =>
+        {
+            string[] candidates = library switch
+            {
+                "openal" => ["soft_oal", "libopenal", "libopenal.so.1", "/System/Library/Frameworks/OpenAL.framework/OpenAL"],
+                "vpx" => ["vpx", "libvpx.so.9", "libvpx.so.8", "libvpx.so.7", "libvpx", "/opt/homebrew/lib/libvpx.dylib", "/usr/local/lib/libvpx.dylib"],
+                _ => [],
+            };
+            foreach (var candidate in candidates)
+                if (handles.GetValueOrDefault(candidate) is not 0 and var embedded) return embedded;
+                else if (NativeLibrary.TryLoad(candidate, assembly, search, out var loaded)) return loaded;
+            return 0;
+        });
         if (names.Length == 0) return;
 
         // Named by content, so a launcher update with other libraries never overwrites ones a running launcher has loaded.
@@ -33,7 +48,6 @@ static class NativeLibraries
         var directory = Path.Combine(LauncherConfig.DataDirectory, "native", Convert.ToHexStringLower(hash.GetHashAndReset())[..16]);
         Directory.CreateDirectory(directory);
 
-        var handles = new Dictionary<string, IntPtr>(StringComparer.OrdinalIgnoreCase);
         foreach (var name in names)
         {
             var path = Path.Combine(directory, name[Prefix.Length..]);

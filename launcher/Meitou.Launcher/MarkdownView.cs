@@ -29,9 +29,11 @@ static class MarkdownView
         return panel;
     }
 
-    /// <summary>An image loaded in the background; until then (or when it fails) it takes no room.</summary>
+    /// <summary>An image (or a <c>.webm</c> video, <see cref="VideoView"/>) loaded in the background; until then (or when it fails) it takes no room.</summary>
     public static Control Image(string url, NewsFeed feed, double maxHeight)
     {
+        if (Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.AbsolutePath.EndsWith(".webm", StringComparison.OrdinalIgnoreCase))
+            return VideoView.Create(url, feed, maxHeight);
         var image = new Image { Stretch = Stretch.Uniform, MaxHeight = maxHeight, HorizontalAlignment = HorizontalAlignment.Left };
         RenderOptions.SetBitmapInterpolationMode(image, BitmapInterpolationMode.HighQuality);
         var frame = new Border { CornerRadius = new CornerRadius(6), ClipToBounds = true, HorizontalAlignment = HorizontalAlignment.Left, Child = image, IsVisible = false };
@@ -188,6 +190,6 @@ static class MarkdownView
         return link;
     }
 
-    static IBrush Brush(string key) =>
+    internal static IBrush Brush(string key) =>
         Application.Current!.TryGetResource(key, null, out var value) && value is IBrush brush ? brush : Brushes.Gray;
 }

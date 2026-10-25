@@ -486,6 +486,7 @@ $RECYCLE.BIN/
 meitou.local.json
 # Local Streamline/DLSS runtime copied into executable build outputs.
 dlss-runtime/
+vpx-runtime/
 # The game's user settings (graphics sliders, key bindings, frame limit)
 meitou.user.json
 

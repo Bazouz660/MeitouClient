@@ -205,3 +205,17 @@ Debug builds run from a checkout read its own `news/` from disk instead (found a
 to preview posts before they are pushed; the header then says "Debug: local news/". Markdown is parsed by Markdig and drawn
 by `MarkdownView` (headings, paragraphs, emphasis, code, links, lists, quotes, code blocks, rules, images); raw HTML is dropped
 and links open only for http(s).
+
+A `.webm` in place of an image is a video (`VideoView`): the whole file is fetched and cached like an image, `WebmFile` reads the
+first video and audio track (Matroska elements, Block lacing), and the first decoded picture is the poster under a play button.
+A click plays it once, another stops it; one plays at a time, and it stops when the Home page is left or the post is rebuilt.
+Pictures: VP8/VP9 through libvpx (`VpxDecoder`, BSD), 8-bit only, converted BT.601 studio range to BGRA. Sound: Vorbis only
+(`CodecPrivate` holds the three Xiph-laced headers, fed with the frames to NVorbis as packets), played by OpenAL Soft as 16-bit
+stereo or mono; pictures follow the sound's clock, a stopwatch without sound. A late picture is decoded but not drawn. Anything
+else (AV1, Opus sound, no libvpx) leaves the video out or silent.
+libvpx comes from vcpkg (`VCPKG_COMMIT` in `launcher-release.yml`, libvpx 1.16.0): a publish links its static library into the
+executable (`DirectPInvoke`) from the git-ignored `vpx-runtime/<triplet>/` (vcpkg's `installed/<triplet>`; CI builds and caches
+it). vcpkg's Windows libvpx is static only, so a Debug build copies `vpx-runtime/x64-windows/bin/vpx.dll`, made from it with
+`link /DLL /DEF:vpx.def` exporting the six `vpx_codec_*` calls `VpxDecoder` imports; Linux/macOS Debug builds load the system's libvpx.
+**Verified** 2026-10-25: VP8 and VP9 + Vorbis clips from ffmpeg demux and decode in a console check (pictures match ffmpeg's
+within rounding, sound length matches), and the win-x64 publish contains libvpx 1.16.0. OpenAL Soft is embedded like Skia (`native/`).

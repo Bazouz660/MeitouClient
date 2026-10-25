@@ -19,6 +19,7 @@ permissions:
 
 env:
   VPK_VERSION: 1.2.161 # must match the Velopack package in Meitou.Launcher.csproj
+  VCPKG_COMMIT: 817892b0ecbc6af994dd6df999c73faf795adbf2 # libvpx 1.16.0
 
 jobs:
   version:
@@ -68,7 +69,31 @@ jobs:
       # Native AOT links with the platform's toolchain: clang and zlib on Linux (MSVC and Xcode are on the other runners).
       - name: AOT prerequisites
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
+        run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev nasm
+
+      # News videos: libvpx built from source by vcpkg (pinned), linked statically into the executable (Meitou.Launcher.csproj, VpxRoot).
+      - name: libvpx cache
+        id: vpx-cache
+        uses: actions/cache@v4
+        with:
+          path: vpx-runtime
+          key: vpx-${{ matrix.rid }}-${{ env.VCPKG_COMMIT }}
+
+      - name: libvpx
+        if: steps.vpx-cache.outputs.cache-hit != 'true'
+        shell: bash
+        env:
+          RID: ${{ matrix.rid }}
+        run: |
+          case "$RID" in
+            win-x64) triplet=x64-windows-static ;; linux-x64) triplet=x64-linux ;; osx-x64) triplet=x64-osx ;; osx-arm64) triplet=arm64-osx ;;
+          esac
+          [ "$RUNNER_OS" = macOS ] && brew install nasm
+          git clone https://github.com/microsoft/vcpkg.git "$RUNNER_TEMP/vcpkg"
+          git -C "$RUNNER_TEMP/vcpkg" checkout "$VCPKG_COMMIT"
+          case "$RUNNER_OS" in Windows) "$RUNNER_TEMP/vcpkg/bootstrap-vcpkg.bat" -disableMetrics ;; *) "$RUNNER_TEMP/vcpkg/bootstrap-vcpkg.sh" -disableMetrics ;; esac
+          "$RUNNER_TEMP/vcpkg/vcpkg" install "libvpx:$triplet"
+          mkdir -p vpx-runtime && cp -R "$RUNNER_TEMP/vcpkg/installed/$triplet" "vpx-runtime/$triplet"
 
       - name: Package
         shell: bash
@@ -77,6 +102,8 @@ jobs:
           RID: ${{ matrix.rid }}
           EXE: ${{ matrix.exe }}
         run: |
+          # Without libvpx the publish still succeeds, with news videos left out: refuse that.
+          ls vpx-runtime/*/lib/vpx.lib vpx-runtime/*/lib/libvpx.a 2>/dev/null | grep -q . || { echo "libvpx missing in vpx-runtime/"; exit 1; }
           dotnet tool install -g vpk --version "$VPK_VERSION"
           dotnet publish launcher/Meitou.Launcher -c Release -r "$RID" --self-contained -p:Version="$VERSION" -o pub
           # No paid Developer ID: ad-hoc sign the macOS executable so its integrity can be checked. Gatekeeper still warns.

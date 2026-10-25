@@ -23,7 +23,29 @@
     <PackageReference Include="Avalonia.Desktop" Version="12.1.4" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.4" />
     <PackageReference Include="Markdig" Version="1.4.2" />
+    <PackageReference Include="NVorbis" Version="0.10.5" />
+    <PackageReference Include="Silk.NET.OpenAL.Soft.Native" Version="1.23.1" />
     <PackageReference Include="Velopack" Version="1.2.161" />
+  </ItemGroup>
+  <!-- News videos: libvpx from vcpkg (`vcpkg install libvpx:<triplet>`), its installed/<triplet> folder at VpxRoot (default: the git-ignored
+       vpx-runtime/<triplet> at the repository root). A publish links the static library into the executable; Debug builds copy the DLL.
+       Without it the launcher builds and leaves videos out (docs/launcher.md, "News"). -->
+  <PropertyGroup>
+    <VpxTriplet Condition="'$(VpxTriplet)' == '' and '$(RuntimeIdentifier)' == 'win-x64'">x64-windows-static</VpxTriplet>
+    <VpxTriplet Condition="'$(VpxTriplet)' == '' and '$(RuntimeIdentifier)' == 'linux-x64'">x64-linux</VpxTriplet>
+    <VpxTriplet Condition="'$(VpxTriplet)' == '' and '$(RuntimeIdentifier)' == 'osx-x64'">x64-osx</VpxTriplet>
+    <VpxTriplet Condition="'$(VpxTriplet)' == '' and '$(RuntimeIdentifier)' == 'osx-arm64'">arm64-osx</VpxTriplet>
+    <VpxTriplet Condition="'$(VpxTriplet)' == '' and '$(RuntimeIdentifier)' == '' and $([MSBuild]::IsOSPlatform('Windows'))">x64-windows</VpxTriplet>
+    <VpxRoot Condition="'$(VpxRoot)' == ''">$(MSBuildThisFileDirectory)../../vpx-runtime/$(VpxTriplet)</VpxRoot>
+    <VpxStatic Condition="Exists('$(VpxRoot)/lib/vpx.lib')">$(VpxRoot)/lib/vpx.lib</VpxStatic>
+    <VpxStatic Condition="Exists('$(VpxRoot)/lib/libvpx.a')">$(VpxRoot)/lib/libvpx.a</VpxStatic>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(PublishAot)' == 'true' and '$(RuntimeIdentifier)' != '' and '$(VpxStatic)' != ''">
+    <DirectPInvoke Include="vpx" />
+    <NativeLibrary Include="$(VpxStatic)" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(RuntimeIdentifier)' == ''">
+    <None Include="$(VpxRoot)/bin/vpx*.dll" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <!-- On publish, the runtime's native libraries (Skia, HarfBuzz, ANGLE) go into the executable as native/<file> resources instead of next to it. -->
   <Target Name="EmbedNativeLibraries" AfterTargets="ResolvePackageAssets" Condition="'$(_IsPublishing)' == 'true' and '$(RuntimeIdentifier)' != ''">
