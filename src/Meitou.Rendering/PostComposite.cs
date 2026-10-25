@@ -151,7 +151,7 @@ sealed class PostComposite : IDisposable
         in SceneInputs inputs, bool temporal = false)
     {
         EnsureDisplay(target.Desc.Width, target.Desc.Height);
-        MakeTargets();
+        MakeTargets(o, temporal);
         // The luminance: 16 taps of the scene into 256², then the mip chain down to 1×1.
         luminance.Bind(lumSceneSlot, sceneSampler with { View = scene.View() });
         luminance.Set(lumCell, 1f / LuminanceSize, 1f / LuminanceSize);
@@ -484,7 +484,7 @@ sealed class PostComposite : IDisposable
         ldr = ldrFxaa = smaaEdges = smaaWeights = null;
     }
 
-    void MakeTargets()
+    void MakeTargets(PostOptions o, bool temporal)
     {
         if (luminanceTarget is null)
         {
@@ -494,12 +494,18 @@ sealed class PostComposite : IDisposable
             adaptB = ctx.CreateTexture(new TextureDesc(InternalFormat.RG32f, 1, 1, Use: TextureUse.ColourTarget | TextureUse.Sampled | TextureUse.TransferSrc, Name: "post exposure adapted"));
             (adaptedValid, adaptedFrames) = (false, 0);
         }
-        if (ldr is null && displayWidth > 0 && displayHeight > 0)
-        {
+        if (displayWidth <= 0 || displayHeight <= 0) return;
+        // LDR and FXAA targets only exist when the composite actually needs them: a temporal upscaler bypasses both, and SMAA is not allocated
+        // unless it is the selected anti-aliasing path. This keeps MetalFX from carrying ~60 MiB of never-bound display-size textures.
+        bool wantLdr = o.HeatHaze || (!temporal && (o.Fxaa || o.Smaa));
+        if (wantLdr && ldr is null)
             ldr = ctx.CreateTexture(new TextureDesc(InternalFormat.Rgba8, displayWidth, displayHeight,
                 Use: TextureUse.ColourTarget | TextureUse.Sampled, Name: "post ldr"));
+        if (wantLdr && !temporal && (o.Fxaa || o.Smaa) && ldrFxaa is null)
             ldrFxaa = ctx.CreateTexture(new TextureDesc(InternalFormat.Rgba8, displayWidth, displayHeight,
                 Use: TextureUse.ColourTarget | TextureUse.Sampled, Name: "post ldr fxaa"));
+        if (!temporal && o.Smaa && smaaEdges is null)
+        {
             smaaEdges = ctx.CreateTexture(new TextureDesc(InternalFormat.Rgba8, displayWidth, displayHeight,
                 Use: TextureUse.ColourTarget | TextureUse.Sampled, Name: "post smaa edges"));
             smaaWeights = ctx.CreateTexture(new TextureDesc(InternalFormat.Rgba8, displayWidth, displayHeight,

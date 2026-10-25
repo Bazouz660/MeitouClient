@@ -632,7 +632,8 @@ public sealed partial class UiPainter : IDisposable
     public void Prefetch(IEnumerable<string> names)
     {
         foreach (string name in names.Distinct(StringComparer.Ordinal))
-            if (!textures.ContainsKey(name) && !external.ContainsKey(name) && !stored.ContainsKey(name) && resolve(name) is { } path && path.EndsWith(".dds", StringComparison.OrdinalIgnoreCase))
+            if (!name.EndsWith("GUI_Map.dds", StringComparison.OrdinalIgnoreCase)
+                && !textures.ContainsKey(name) && !external.ContainsKey(name) && !stored.ContainsKey(name) && resolve(name) is { } path && path.EndsWith(".dds", StringComparison.OrdinalIgnoreCase))
                 stored[name] = Task.Run(() =>
                 {
                     try { return DdsReader.ReadFile(path) is { Format: DdsFormat.Bc1 or DdsFormat.Bc2 or DdsFormat.Bc3, IsCubemap: false, IsVolume: false, ImageCount: 1, Width: > 0, Height: > 0 } dds ? dds : null; }
