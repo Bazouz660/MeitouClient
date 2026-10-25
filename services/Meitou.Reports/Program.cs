@@ -7,7 +7,8 @@ using Npgsql;
 var builder = WebApplication.CreateBuilder(args);
 var config = Config.Load(builder.Configuration);
 builder.Services.AddSingleton(config);
-builder.Services.AddSingleton(new NpgsqlSlimDataSourceBuilder(config.ConnectionString).Build());   // the slim builder: the basic types, no reflection
+// The slim builder: the basic types and no reflection; TLS is opt-in there and the database is reached over it.
+builder.Services.AddSingleton(new NpgsqlSlimDataSourceBuilder(config.ConnectionString).EnableTransportSecurity().Build());
 builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.TypeInfoResolverChain.Insert(0, ReportsJson.Default));
 builder.Services.AddSingleton<Store>();
 builder.Services.AddHttpClient();
