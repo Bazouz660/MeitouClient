@@ -15,7 +15,7 @@ namespace Meitou.Simulation.Carrying;
 /// <item><b>Pick up</b> (<see cref="CharacterTask.PickUp"/>): the walk to the body (the first aid pattern), then the <c>shoulder lift left</c> clip: attached at 0.4 of it, done at 0.95.
 /// <b>Put down</b> (<see cref="CharacterTask.PutDown"/>): the clip backwards, let go below 0.2; a body the carrier does not regard as friendly is knocked out again.</item>
 /// <item><b>Dropped</b> at once when the carrier is knocked out or dies or its left arm fails or is cut off. A friendly body that comes round is set down; a non-friendly one is knocked out again on the
-/// shoulder (engine choices).</item>
+/// shoulder (engine choices). A squad mate lifted awake (<see cref="CharacterCold.CarriedAwake"/>) rides until put down.</item>
 /// <item><b>Rescue</b>: the rescue job, and NPC squads' knocked-out leaders (<see cref="CarrySettings.RescueNpcLeaders"/>).</item>
 /// <item><b>Loot</b> (<see cref="CharacterTask.Loot"/>): the walk, then everything of the main inventory and the backpack that fits moves to the looter (<see cref="LootOrder"/>), or the body's
 /// inventory opens in a window to take from (<see cref="OpenLootOrder"/>); a member of the victim's faction who sees it makes it a theft. NPCs with goal 177 loot by the original's
@@ -71,9 +71,14 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
 
     /// <summary>
     /// <see cref="CanBeLifted"/>, or the occupant of a cage that is not effectively locked, of a <c>carriable</c> race, awake or not (the lift out of a cage, locks.md "Cages and beds";
-    /// <b>engine choice</b>: whether the original lifts an awake prisoner is Unknown). The player's lift; the rescue and the arrest lift only the downed and free.
+    /// <b>engine choice</b>: whether the original lifts an awake prisoner is Unknown), or one of the player's own standing characters that carries no one (the original's Pick Up on a squad
+    /// mate, ui-input.md "Context menu verbs"). The player's lift; the rescue and the arrest lift only the downed and free.
     /// </summary>
-    public static bool CanBeLifted(World world, CharacterCold cold) => CanBeLifted(cold) || InOpenCage(world, cold) is not null;
+    public static bool CanBeLifted(World world, CharacterCold cold) => CanBeLifted(cold) || InOpenCage(world, cold) is not null || AwakeMate(cold);
+
+    /// <summary>One of the player's own characters, awake, of a <c>carriable</c> race, free, carrying no one and not carried.</summary>
+    static bool AwakeMate(CharacterCold cold) =>
+        cold is { IsPlayer: true, Medical.Incapacitated: false, Race.Carriable: true, IsImprisoned: false } && cold.Carrying.IsNone && cold.CarriedBy.IsNone;
 
     /// <summary>The cage a prisoner that may be lifted out sits in (null: not caged, or locked in, or not liftable).</summary>
     public static Locks.Fixture? InOpenCage(World world, CharacterCold cold) =>
@@ -358,6 +363,14 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
             }
             // Out of a bed: the attach clears the state (carry-loot.md, Character +0x2f8).
             if (table.Cold(b)!.InSomething == Locks.HeldState.Bed) world.Fixtures.LeaveBed(world, cold.CarryTarget);
+            var body = table.Cold(b)!;
+            if (body.Medical is { Incapacitated: false } && Friendly(cold, body))
+            {
+                // A squad mate lifted awake: it leaves its fight and task and rides until put down.
+                LeaveFight(world, b);
+                table.Next[b].Task = (byte)CharacterTask.Idle;
+                body.CarriedAwake = true;
+            }
             Link(table, i, b);
         }
         else if (!attached && before > CarrySettings.AttachAt * LiftSeconds) { End(table, i); return; }   // dropped again mid-lift
@@ -406,6 +419,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         var b = table.Cold(body)!;
         c.Carrying = CharacterId.None;
         b.CarriedBy = CharacterId.None;
+        b.CarriedAwake = false;
         ref var bn = ref table.Next[body];
         ref readonly var cn = ref table.Next[carrier];
         bn.Velocity = Vector3.Zero;
@@ -438,7 +452,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
             if (!next[i].Alive) continue;
             var cold = table.Cold(i)!;
             if (!cold.CarriedBy.IsNone && (!table.TryResolveNext(cold.CarriedBy, out int k) || table.Cold(k)!.Carrying != table.IdOf(i)))
-                cold.CarriedBy = CharacterId.None;   // the carrier is gone: the body stays where it was
+                (cold.CarriedBy, cold.CarriedAwake) = (CharacterId.None, false);   // the carrier is gone: the body stays where it was
             if (cold.Carrying.IsNone) continue;
             if (!table.TryResolveNext(cold.Carrying, out int b) || table.Cold(b)!.CarriedBy != table.IdOf(i))
             {
@@ -452,7 +466,8 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
                 Unlink(world, i, b, drop: true);
                 continue;
             }
-            if (body.Medical is { Incapacitated: false })
+            if (body.Medical is { Incapacitated: true }) body.CarriedAwake = false;   // knocked out on the shoulder: set down when it comes round
+            else if (body.Medical is not null && !body.CarriedAwake)
             {
                 // The body came round. A friendly one is set down (the AI's PUT_DOWN_CARRIED_DUDE_IF_THEY_CAN_WALK); a captive is knocked out again on the shoulder (engine stand-ins).
                 if (Friendly(cold, body)) { Unlink(world, i, b, drop: false); continue; }

@@ -129,7 +129,8 @@ sealed partial class PlayerInterface
 
     /// <summary>
     /// One of the player's own characters: another one than the selection is followed (31) or guarded (45, <see cref="FollowOrder.Guard"/>), its inventory opened beside the selection's
-    /// (26, labelled Trade for the player's own), and down it is picked up (225). Not built: Stand Up (28: needs the voluntary crawl, which Meitou does not have).
+    /// (26, labelled Trade for the player's own), and picked up (225), standing too when it carries no one (<c>FUN_1407a6bc0</c>, <b>Observed</b>). Not built: Stand Up (28: needs the
+    /// voluntary crawl, which Meitou does not have).
     /// </summary>
     void OwnCharacterVerbs(List<(string, Action)> verbs, CharacterSnapshot target, IReadOnlyList<CharacterId> selection, bool down)
     {
@@ -139,7 +140,7 @@ sealed partial class PlayerInterface
         verbs.Add(("Bodyguard", () => Say(new FollowOrder(selection, id) { Guard = true, Tick = session.World.Tick })));
         verbs.Add(("Follow", () => Say(new FollowOrder(selection, id) { Tick = session.World.Tick })));
         if (!target.CarriedBy.IsNone) return;
-        if (down) verbs.Add(("Pick Up", () => Say(new Meitou.Simulation.Carrying.PickUpOrder([], id) { Tick = session.World.Tick })));
+        if (down || target.Carrying.IsNone) verbs.Add(("Pick Up", () => Say(new Meitou.Simulation.Carrying.PickUpOrder([], id) { Tick = session.World.Tick })));
         verbs.Add(("Trade", () => Say(new Meitou.Simulation.Carrying.OpenLootOrder([], id) { Tick = session.World.Tick })));
     }
 
