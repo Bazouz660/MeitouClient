@@ -704,9 +704,12 @@ sealed partial class GameHost
                 toggles.Add(new Toggle("Skin scattering", () => characters.SkinShading, v => characters.SkinShading = v));
                 toggles.Add(new Toggle("Enhanced item icons", () => characters.EnhancedIcons, v => characters.EnhancedIcons = v));
             }
-            // Ground relief (docs/render-terrain.md): opt-in on Metal until its height-array parallax is validated.
+            // Ground relief (docs/render-terrain.md): the Tab panel's quality, depth, parallax distance and toggle.
             if (GroundRelief.Enabled)
             {
+                sliders.Add(new Slider(WorldFrame.GroundReliefQualitySlider, 0, 2, () => GroundRelief.Quality,
+                    v => GroundRelief.Quality = Math.Clamp((int)MathF.Round(v), 0, 2), "0",
+                    Text: v => GroundRelief.QualityName((int)MathF.Round(v))));
                 sliders.Add(new Slider("Ground relief depth (cm, typical ground)", 0, 40, () => GroundRelief.Depth * 10,
                     v => GroundRelief.Depth = MathF.Round(v * 2) / 20, "0.0"));
                 sliders.Add(new Slider("Ground parallax distance (m)", 10, 150, () => GroundRelief.ParallaxDistance / 10,
@@ -769,6 +772,9 @@ sealed partial class GameHost
                 v => o.Post.ShaftAir = MathF.Round(v * 20) / 20, "0.00"));
             sliders.Add(new Slider("Light shafts air at dawn and dusk (x)", 0, 6, () => o.Post.ShaftAirDawn,
                 v => o.Post.ShaftAirDawn = MathF.Round(v * 10) / 10, "0.0"));
+            sliders.Add(new Slider(WorldFrame.ShaftQualitySlider, 0, 2, () => o.Post.ShaftQuality,
+                v => o.Post.ShaftQuality = Math.Clamp((int)MathF.Round(v), 0, 2), "0",
+                Text: v => (int)MathF.Round(v) switch { 0 => "Low", 1 => "Medium", _ => "High" }));
             toggles.Add(new Toggle("Dithering", () => o.Post.Dither, v => o.Post.Dither = v));
             var actions = new List<PanelAction>();
             if (foliage?.ImpostorDiskCache is { } cache)

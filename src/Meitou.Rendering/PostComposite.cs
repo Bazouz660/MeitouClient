@@ -288,7 +288,7 @@ sealed class PostComposite : IDisposable
     {
         shaftFrame = default;
         if (!o.LightShafts || darkening <= 0) return;
-        int across = Math.Clamp(PostOptions.ShaftCells, 8, 1024), slices = Math.Clamp(PostOptions.ShaftSlices, 8, 256);
+        int across = Math.Clamp(o.ShaftCells, 8, 1024), slices = Math.Clamp(o.ShaftSlices, 8, 256);
         int down = Math.Max(1, (int)MathF.Round(across * scene.Desc.Height / (float)Math.Max(scene.Desc.Width, 1)));
         int columns = LightShaftShaders.AtlasColumns, rows = (slices + columns - 1) / columns;
         int aw = across * columns, ah = down * rows;
@@ -326,7 +326,7 @@ sealed class PostComposite : IDisposable
 
         var inject = shaftInjectP;
         Common(inject);
-        inject.P.Set(inject.Samples, Math.Clamp(PostOptions.ShaftSamples, 1, 16));
+        inject.P.Set(inject.Samples, Math.Clamp(o.ShaftSamples, 1, 16));
         inject.P.ApplyGlobals();
         Fullscreen(cmd, inject.P, shaftInjected!, aw, ah);
 

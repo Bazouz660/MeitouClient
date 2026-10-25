@@ -3,13 +3,22 @@ namespace Meitou.Rendering;
 /// <summary>
 /// Relief on the ground (docs/render-terrain.md, "Ground relief"), a Meitou look the game does not have: each terrain layer gets a height map
 /// integrated from its normal map (<see cref="NormalHeight"/>). Near the eye the terrain is tessellated and moved by it (the displacement); the terrain
-/// shader marches the view ray through it (the parallax), and toward the sun for a self-shadow. The Tab panel has the essentials (the toggles, the
-/// depth and the two distances); the rest are tuned values, settable for a run with the viewer's <c>--relief Name=value</c>.
+/// shader marches the view ray through it (the parallax), and toward the sun for a self-shadow. The Tab panel has the essentials (the quality, the
+/// toggles, the depth and the two distances); the rest are tuned values, settable for a run with the viewer's <c>--relief Name=value</c>.
 /// </summary>
 public static class GroundRelief
 {
     /// <summary>Read when the terrain textures are created (the height array is made then or not at all).</summary>
     public static bool Enabled { get; set; } = true;
+
+    /// <summary>
+    /// The march's budget: 0 low, 1 medium, 2 high (the Tab panel's slider; high by default). The quality changes the view and sun step counts and
+    /// how many of the heaviest layers the height keeps, not the material's layers or the relief's depth.
+    /// </summary>
+    public static int Quality { get; set; } = 2;
+
+    /// <summary>The name of a <see cref="Quality"/> level, for the settings panels.</summary>
+    public static string QualityName(int quality) => quality switch { 0 => "Low", 1 => "Medium", _ => "High" };
 
     /// <summary>Whether the patches march the height (the Tab panel's toggle; the viewer's K).</summary>
     public static bool ParallaxActive { get; set; } = true;

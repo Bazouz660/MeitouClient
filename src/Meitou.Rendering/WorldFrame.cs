@@ -173,7 +173,7 @@ sealed class WorldOptions
 
     /// <summary>
     /// <c>--low-end</c>: the potato-PC settings, applied where it stands among the options (so any option after it overrides one of them).
-    /// Short draw distances, no reflections or shadows, the game's FXAA turned off too, 0.83 render scale, quarter-size particles.
+    /// Short draw distances, no reflections, shadows, ground relief or light shafts, the game's FXAA turned off too, 0.83 render scale, quarter-size particles.
     /// </summary>
     void ApplyLowEnd()
     {
@@ -185,6 +185,13 @@ sealed class WorldOptions
         (ShadowsOff, ShadowFilter) = (true, 0);   // --shadow-range 0
         Enhancements.Apply(Switches(this), "ao,aa,shadows,water", meitou: false);
         Enhancements.Apply(Switches(this), "particles", meitou: true);
+        GroundRelief.Quality = 0;
+        GroundRelief.ParallaxActive = false;
+        GroundRelief.DisplaceActive = false;
+        GroundRelief.RefinePixels = 0;
+        RockSmoothing.TessellateActive = false;
+        Post.LightShafts = false;
+        Post.ShaftQuality = 0;
         Post.Fxaa = false;
         (Post.Upscale.Scale, Post.Upscale.Explicit) = (0.83f, true);
         Post.ParticleDivisor = 4;
@@ -232,7 +239,7 @@ sealed class WorldOptions
           --clouds <0..1>          cloud density c (test override)
           --no-audio               no sound (the biome ambience and weather beds from the game's Wwise banks)   --audio-gain <dB> raise or lower the whole mix (0 = the game's levels)
           --no-particles           no weather particles  --particle-prewarm <s> seconds simulated before the first picture (default: the longest particle life; 0 starts empty)   --particle-density <x> the effects' emission rate x (0.1-1, the Tab slider)   --anisotropy <n> the most anisotropic filtering any texture gets (1-16, the Tab slider; 16 default)
-          --low-end                potato-PC settings: short draw distances, no shadows, reflections, AO or anti-aliasing, 0.83 render scale, sparse grass and particles (options after it override)
+          --low-end                potato-PC settings: short draw distances, no shadows, reflections, AO, ground relief, light shafts or anti-aliasing, 0.83 render scale, sparse grass and particles (options after it override)
           --no-vsync               start with vsync off (uncapped; Tab slider)
           --grass-density <x>      grass blades x this (0.1-2, default 1; Tab slider)
           --camera-code <hex>      start at a camera code (Ctrl+C in the viewer copies one), the world loaded round it
@@ -977,7 +984,8 @@ static class WorldFrame
     public static readonly string[] ParticleSliders = ["Weather particles: 0 off 1 quarter 2 half 3 auto 4 full", "Particle density x"];
     // More labels the launcher's settings schema names (they are the meitou.user.json keys too).
     public const string ObjectDistanceSlider = "Object draw distance", GrassDensitySlider = "Grass density x", WaterReflectionSlider = "Water reflection 0-4 (game)",
-        ShadowDistanceSlider = "Shadow distance (game 1k-9k, 0 off)", ShadowMapSlider = "Shadow map size (game quality 0-2)";
+        ShadowDistanceSlider = "Shadow distance (game 1k-9k, 0 off)", ShadowMapSlider = "Shadow map size (game quality 0-2)",
+        GroundReliefQualitySlider = "Ground relief quality", ShaftQualitySlider = "Light shafts quality";
     /// <summary>The weather particles slider's position for the renderer's state: 0 off, 1 quarter, 2 half, 3 by sprite size (auto), 4 full size.</summary>
     public static int WeatherParticlesSlider(bool weatherOn, PostOptions o) =>
         !weatherOn ? 0 : !o.LowResParticles || o.ParticleDivisor == 1 ? 4 : o.ParticleDivisor switch { 4 => 1, 2 => 2, _ => 3 };
@@ -1098,7 +1106,9 @@ static class WorldFrame
         }
         sliders.Add(new Slider("Terrain detail: error px (less = finer)", 4, 32, () => r.TerrainPixelError, v => r.TerrainPixelError = v, "0.0", Logarithmic: true,
             Faithful: WorldRenderOptions.DefaultTerrainPixelError, Meitou: Enhancements.MeitouTerrainPixelError));
-        // Ours (docs/render-terrain.md "Ground relief"): the depth of the ground's relief (parallax and displacement; 0 off) and where each ends.
+        // Ours (docs/render-terrain.md "Ground relief"): the march's quality, the depth (parallax and displacement; 0 off) and where each ends.
+        sliders.Add(new Slider(GroundReliefQualitySlider, 0, 2, () => GroundRelief.Quality,
+            v => GroundRelief.Quality = Math.Clamp((int)MathF.Round(v), 0, 2), "0", Text: v => GroundRelief.QualityName((int)MathF.Round(v))));
         sliders.Add(new Slider("Ground relief depth (cm, typical ground)", 0, 80, () => GroundRelief.Depth * 10, v => GroundRelief.Depth = MathF.Round(v * 2) / 20, "0.0"));
         if (g.Sky.Gpu.HasTessellation)
             sliders.Add(new Slider("Ground displacement distance (m)", 10, 200, () => GroundRelief.DisplaceDistance / 10, v => GroundRelief.DisplaceDistance = MathF.Round(v) * 10, "0"));
@@ -1164,6 +1174,9 @@ static class WorldFrame
             sliders.Add(new Slider("Light shafts strength", 0, 1, () => post.Options.ShaftStrength, v => post.Options.ShaftStrength = MathF.Round(v * 20) / 20, "0.00"));
             sliders.Add(new Slider("Light shafts air (0 = none)", 0, 4, () => post.Options.ShaftAir, v => post.Options.ShaftAir = MathF.Round(v * 20) / 20, "0.00"));
             sliders.Add(new Slider("Light shafts air at dawn and dusk (x)", 0, 6, () => post.Options.ShaftAirDawn, v => post.Options.ShaftAirDawn = MathF.Round(v * 10) / 10, "0.0"));
+            sliders.Add(new Slider(ShaftQualitySlider, 0, 2, () => post.Options.ShaftQuality,
+                v => post.Options.ShaftQuality = Math.Clamp((int)MathF.Round(v), 0, 2), "0",
+                Text: v => (int)MathF.Round(v) switch { 0 => "Low", 1 => "Medium", _ => "High" }));
         }
         // Anisotropic filtering (docs/render-post.md "Texture filtering"): the most any texture is sampled with; the world's textures ask 8x, so 8x and 16x look the same there.
         sliders.Add(new Slider(FilteringSlider, 0, 4, () => MathF.Log2(g.Sky.Gpu.Samplers.MaxAnisotropy), v => g.Sky.Gpu.Samplers.MaxAnisotropy = 1 << (int)MathF.Round(v), "0",

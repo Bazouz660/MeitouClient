@@ -647,6 +647,7 @@ static partial class TerrainShaders
         uniform float uTessDetail;     // GroundRelief.TessDetail (PatchControl's segments)
         uniform float uOverlayRelief;  // GroundRelief.OverlayRelief: the grass, slope, dirt and road layers' share of relief (0: the base layer alone)
         uniform float uSelfShadow;     // GroundRelief.SelfShadow: the self-shadow's darkening
+        uniform int uReliefQuality;    // GroundRelief.Quality: 0 low, 1 medium, 2 high (the march's layers and steps)
         uniform sampler2D uParams;     // row = biome, ParamTexels texels
         uniform usampler2D uCells;     // blend cells, two texels each: slots 0..3, slot 4; biome row, 254 = not loaded yet, 255 = unused
         uniform sampler2D uBlendMap;   // whole world: weights of slots 0..3; slot 4 takes the remainder
@@ -687,7 +688,7 @@ static partial class TerrainShaders
         // Layers whose relief is marched together (GroundRelief): their common unscaled coordinate with its derivatives, and per layer its tiling (xy: the
         // coordinate's scale, also its move per unit of the march's offset), array layer (z) and weight (w: its share of the pixel times its depth factor).
         // Kept this small on purpose: the march carries it through every step, and a larger one (a coordinate and derivatives per layer) cost the
-        // parallax several times over in registers (docs/render-terrain.md, "Cost"). The three heaviest layers are enough for the height; the rest only
+        // parallax several times over in registers (docs/render-terrain.md, "Cost"). The quality keeps the heaviest one, two or three layers; the rest only
         // shade the surface.
         const int ReliefMax = 3;
         struct Relief { GradCoord base; vec4 layer[ReliefMax]; int n; float total; };
@@ -699,9 +700,10 @@ static partial class TerrainShaders
             // A layer showing under 5% of the pixel is left out, fading in to 15% (continuous: no seam where it drops out); the march's cost is per layer.
             float w = share * smoothstep(0.05, 0.15, share) * reliefDepth(layer, scale);
             if (w <= 0.0) return;
-            // Keep the three heaviest layers, sorted, so a later heavy layer replaces a light one. The height is a weighted average, so the order only
+            // Keep the quality's heaviest layers, sorted, so a later heavy layer replaces a light one. The height is a weighted average, so the order only
             // matters for the cap.
-            if (r.n < ReliefMax)
+            int cap = uReliefQuality >= 2 ? ReliefMax : uReliefQuality >= 1 ? 2 : 1;
+            if (r.n < cap)
             {
                 int at = r.n;
                 while (at > 0 && r.layer[at - 1].w < w)
@@ -713,10 +715,10 @@ static partial class TerrainShaders
                 r.n++;
                 r.total += w;
             }
-            else if (w > r.layer[ReliefMax - 1].w)
+            else if (w > r.layer[cap - 1].w)
             {
-                r.total += w - r.layer[ReliefMax - 1].w;
-                int at = ReliefMax - 1;
+                r.total += w - r.layer[cap - 1].w;
+                int at = cap - 1;
                 while (at > 0 && r.layer[at - 1].w < w)
                 {
                     r.layer[at] = r.layer[at - 1];
@@ -731,8 +733,9 @@ static partial class TerrainShaders
         // displacement fades out). Set per pixel in biome().
         float reliefSegment = 0.0, reliefWhole = 1.0;
 
-        // The march's steps (view ray, sun), fewer with distance (set in biomeRelief(): 8 and 4 near, 4 and 2 at the parallax's end), and the share of
-        // the pixel the biome being marched has (main sets it before biomeRelief(): a biome showing little is not marched).
+        // The march's steps (view ray, sun), fewer with distance (set in biomeRelief(): high 8 and 4 near, 4 and 2 at the parallax's end; medium 6 and 3
+        // to 3 and 2; low 4 and 2 to 2 and 1), and the share of the pixel the biome being marched has (main sets it before biomeRelief(): a biome showing
+        // little is not marched).
         int reliefSteps = 8, reliefShadowSteps = 4;
         float biomeShare = 1.0;
 
@@ -855,8 +858,12 @@ static partial class TerrainShaders
                 // A biome showing under 10% of the pixel is not marched, fading in to 30% (the march runs once per biome blended).
                 float strength = (1.0 - smoothstep(0.5 * uParallaxEnd, uParallaxEnd, distance)) * smoothstep(0.1, 0.3, biomeShare);
                 float far = clamp(distance / uParallaxEnd, 0.0, 1.0), shade = 1.0;
-                reliefSteps = int(round(mix(8.0, 4.0, far)));
-                reliefShadowSteps = int(round(mix(4.0, 2.0, far)));
+                float viewNear = uReliefQuality >= 2 ? 8.0 : uReliefQuality >= 1 ? 6.0 : 4.0;
+                float viewFar = uReliefQuality >= 2 ? 4.0 : uReliefQuality >= 1 ? 3.0 : 2.0;
+                float sunNear = uReliefQuality >= 2 ? 4.0 : uReliefQuality >= 1 ? 3.0 : 2.0;
+                float sunFar = uReliefQuality >= 2 ? 2.0 : uReliefQuality >= 1 ? 2.0 : 1.0;
+                reliefSteps = int(round(mix(viewNear, viewFar, far)));
+                reliefShadowSteps = int(round(mix(sunNear, sunFar, far)));
                 vec3 v = normalize(uEye - vWorld);
                 vec3 sun = normalize(uLightDir);   // not "l": RockBakeFragment patches the lighting at that line
                 // Where the geometry is displaced (ReliefFunctions, to uDisplaceEnd) the view ray marches only the detail finer than the mesh's spacing
@@ -1279,6 +1286,7 @@ static partial class TerrainShaders
             float refine;
             float pixelScale;
             float broadCut;
+            int reliefQuality;
         } terrain;
 
         """;
@@ -1316,7 +1324,7 @@ static partial class TerrainShaders
         ["uDisplaceEnd"] = "terrain.displaceEnd", ["uParallaxEnd"] = "terrain.parallaxEnd",
         ["uOverlayRelief"] = "terrain.overlayRelief", ["uSelfShadow"] = "terrain.selfShadow", ["uTessDetail"] = "terrain.tessDetail", ["uRockRound"] = "terrain.rockRound",
         ["uFieldTiles"] = "utextures2D[terrain.fieldTiles]", ["uFieldOrigin"] = "terrain.fieldOrigin", ["uFieldTile"] = "terrain.fieldTile",
-        ["uFieldColumns"] = "terrain.fieldColumns", ["uFieldCount"] = "terrain.fieldCount", ["uMaxDepth"] = "terrain.maxDepth", ["uTargetSlope"] = "terrain.targetSlope", ["uScaleFollow"] = "terrain.scaleFollow", ["uCliffScale"] = "terrain.cliffScale", ["uRefine"] = "terrain.refine", ["uPixelScale"] = "terrain.pixelScale", ["uBroadCut"] = "terrain.broadCut",
+        ["uFieldColumns"] = "terrain.fieldColumns", ["uFieldCount"] = "terrain.fieldCount", ["uMaxDepth"] = "terrain.maxDepth", ["uTargetSlope"] = "terrain.targetSlope", ["uScaleFollow"] = "terrain.scaleFollow", ["uCliffScale"] = "terrain.cliffScale", ["uRefine"] = "terrain.refine", ["uPixelScale"] = "terrain.pixelScale", ["uBroadCut"] = "terrain.broadCut", ["uReliefQuality"] = "terrain.reliefQuality",
     };
 
     const string DerivativeControl = "#extension GL_ARB_derivative_control : require\n";
@@ -1506,6 +1514,7 @@ struct TerrainConstants
     [System.Runtime.InteropServices.FieldOffset(840)] public float Refine;
     [System.Runtime.InteropServices.FieldOffset(844)] public float PixelScale;
     [System.Runtime.InteropServices.FieldOffset(848)] public float BroadCut;
+    [System.Runtime.InteropServices.FieldOffset(852)] public int ReliefQuality;
 }
 
 /// <summary>The cells of <see cref="TerrainConstants.BloodCells"/>: column, row, layer (std140 <c>vec4[32]</c>).</summary>

@@ -648,6 +648,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
             Diffuse = standInArray, Normal = standInArray, Height = standInArray, Relief = standIn2D, Blood = standInArray, Params = standIn2D, Cells = standInUInt, BlendMap = standIn2D, Overlay = standIn2D,
             Colour = standIn2D, Ground = standIn2D, WorldColour = standIn2D, Region = lastRegion, CellGrid = lastCellGrid,
             TessDetail = GroundRelief.TessDetail, RockRound = RockSmoothing.Roundness,   // the tessellation stages, the casters' too
+            ReliefQuality = GroundRelief.Quality,
             FieldTiles = standInUInt,
         };
         if (material)

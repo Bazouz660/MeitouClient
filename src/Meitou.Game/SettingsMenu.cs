@@ -154,6 +154,8 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
             : key == WorldFrame.ParticleSliders[0] ? ["Off", "Quarter resolution", "Half resolution", "Automatic", "Full resolution"]
             : key.StartsWith("Tone map", StringComparison.Ordinal) ? ["Original", "Shoulder", "ACES", "Hybrid"]
             : key.StartsWith("Shadow map", StringComparison.Ordinal) ? ["Low · 1024", "Medium · 2048", "High · 4096"]
+            : key == WorldFrame.GroundReliefQualitySlider ? ["Low", "Medium", "High"]
+            : key == WorldFrame.ShaftQualitySlider ? ["Low", "Medium", "High"]
             : key.StartsWith("Water reflection", StringComparison.Ordinal) ? ["Off", "Landscape", "Characters", "Buildings", "Everything"]
             : key == WorldFrame.FilteringSlider ? ["1x", "2x", "4x", "8x", "16x"] : null;
         string label = key == WorldFrame.UpscalerSliders[0] ? "Anti-aliasing" : key == WorldFrame.ParticleSliders[0] ? "Weather particles"

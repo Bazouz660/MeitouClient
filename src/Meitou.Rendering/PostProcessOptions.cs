@@ -26,8 +26,15 @@ public sealed class PostOptions
     public float ShaftStrength = 0.8f;
     /// <summary>How much the sky (which no haze covers) darkens behind shadowed air, relative to a surface at the grid's end.</summary>
     public const float ShaftSky = 0.5f;
-    /// <summary>The light shafts' grid: cells across the screen (down follows the aspect), depth slices, shadow samples per cell, where the first slice starts.</summary>
-    public const int ShaftCells = 160, ShaftSlices = 64, ShaftSamples = 2;
+    /// <summary>
+    /// The light shafts' budget: 0 low, 1 medium, 2 high (the Tab panel's slider; high by default). It sets the froxel grid and shadow samples;
+    /// the apply pass stays at the render size (docs/render-shafts.md, "Quality").
+    /// </summary>
+    public int ShaftQuality = 2;
+    /// <summary>The light shafts' grid: cells across the screen (down follows the aspect), depth slices, shadow samples per cell.</summary>
+    public int ShaftCells => ShaftQuality switch { 0 => 96, 1 => 128, _ => 160 };
+    public int ShaftSlices => ShaftQuality switch { 0 => 32, 1 => 48, _ => 64 };
+    public int ShaftSamples => ShaftQuality switch { 0 => 1, 1 => 2, _ => 2 };
     public const float ShaftNear = 50;
     /// <summary>The air layer (docs/render-shafts.md "Air layer"): its density as a multiple of <see cref="ShaftAirDensity"/> at the ground under the eye (0: none; the Tab slider),
     /// its scale height in world units and the Henyey-Greenstein anisotropy (0 even, towards 1 all towards the sun).</summary>
@@ -86,7 +93,8 @@ public sealed class PostOptions
     public void CopyFrom(PostOptions other)
     {
         Preset = other.Preset; Fxaa = other.Fxaa; Smaa = other.Smaa; HeatHaze = other.HeatHaze; Ssao = other.Ssao;
-        Dither = other.Dither; LowResParticles = other.LowResParticles; LightShafts = other.LightShafts; ShaftStrength = other.ShaftStrength; ShaftAir = other.ShaftAir; ShaftAirDawn = other.ShaftAirDawn;
+        Dither = other.Dither; LowResParticles = other.LowResParticles; LightShafts = other.LightShafts; ShaftQuality = other.ShaftQuality;
+        ShaftStrength = other.ShaftStrength; ShaftAir = other.ShaftAir; ShaftAirDawn = other.ShaftAirDawn;
         ParticleDivisor = other.ParticleDivisor; Exposure = other.Exposure; ToneMap = other.ToneMap; ToneMix = other.ToneMix; Grade = other.Grade;
         HeatHazeStrength = other.HeatHazeStrength; NightGradeStrength = other.NightGradeStrength;
     }

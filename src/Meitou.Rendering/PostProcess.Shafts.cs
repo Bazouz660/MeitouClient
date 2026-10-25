@@ -137,7 +137,7 @@ public sealed unsafe partial class PostProcess
     /// <summary>The grid's cells across, down (from the render size's aspect) and slices this frame, and the atlas's size.</summary>
     (int Across, int Down, int Slices, int AtlasWidth, int AtlasHeight) ShaftLayout()
     {
-        int across = Math.Clamp(PostOptions.ShaftCells, 8, 1024), slices = Math.Clamp(PostOptions.ShaftSlices, 8, 256);
+        int across = Math.Clamp(Options.ShaftCells, 8, 1024), slices = Math.Clamp(Options.ShaftSlices, 8, 256);
         int down = Math.Max(1, (int)MathF.Round(across * height / (float)Math.Max(width, 1)));
         int columns = LightShaftShaders.AtlasColumns, rows = (slices + columns - 1) / columns;
         return (across, down, slices, across * columns, down * rows);
@@ -155,7 +155,7 @@ public sealed unsafe partial class PostProcess
         ShaftsDescribe = !o.LightShafts ? "off" : $"darkening {darkening:0.###} (none: no passes)";
         if (!o.LightShafts || darkening <= 0 || sceneColour is null || !haveNearSlice) return;
         var (across, down, slices, aw, ah) = ShaftLayout();
-        ShaftsDescribe = $"darkening {darkening:0.###}, grid {across} x {down} x {slices} ({PostOptions.ShaftSamples} samples), {PostOptions.ShaftNear:0} to {far:0} units, air {(o.ShaftAir > 0 ? $"x{o.ShaftAir:0.##} x{airByTime:0.##} by the hour from {groundY:0} (scale height {PostOptions.ShaftAirHeight:0}, g {PostOptions.ShaftAirPhase:0.##})" : "off")}";
+        ShaftsDescribe = $"darkening {darkening:0.###}, grid {across} x {down} x {slices} ({Options.ShaftSamples} samples), {PostOptions.ShaftNear:0} to {far:0} units, air {(o.ShaftAir > 0 ? $"x{o.ShaftAir:0.##} x{airByTime:0.##} by the hour from {groundY:0} (scale height {PostOptions.ShaftAirHeight:0}, g {PostOptions.ShaftAirPhase:0.##})" : "off")}";
         if (shaftInjected is null || shaftInjected.Width != aw || shaftInjected.Height != ah)
         {
             foreach (var t in new[] { shaftInjected, shaftLight, shaftScatter }.OfType<Target2D>()) t.Texture.Dispose();   // released after the frames in flight
@@ -191,7 +191,7 @@ public sealed unsafe partial class PostProcess
 
         var i = shaftInject;
         Common(i);
-        i.P.Set(i.Samples, Math.Clamp(PostOptions.ShaftSamples, 1, 16));
+        i.P.Set(i.Samples, Math.Clamp(Options.ShaftSamples, 1, 16));
         i.P.ApplyGlobals();   // the atmosphere's uniforms and the shadow receivers, through the frame globals
         Draw(i.P, shaftInjected!);
         if (ShaftStamps) Stamp("shafts-inject");

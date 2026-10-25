@@ -55,7 +55,7 @@ public sealed unsafe partial class TerrainRenderer
             Colour = standIn2D, Ground = standIn2D, WorldColour = standIn2D, Region = lastRegion, CellGrid = lastCellGrid,
             HeightNormals = 0, Feature = 1, FeatureBiome = row, SunColour = Vector3.One, AmbientSky = Vector3.One, AmbientGround = Vector3.One,
             WaterHeight = -1e6f, HalfWorld = (float)WorldLayout.HalfWorldSize, FarStart = 1e9f, FarEnd = 2e9f,
-            Textured = 1, NormalMaps = 1, HasMaps = 0, MapState = 0, FieldTiles = standInUInt,
+            Textured = 1, NormalMaps = 1, HasMaps = 0, MapState = 0, ReliefQuality = GroundRelief.Quality, FieldTiles = standInUInt,
         };
         if (textures is { } t)
         {
