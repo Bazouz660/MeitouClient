@@ -131,6 +131,7 @@ sealed partial class GameHost
         void ApplyCameraRotateSpeed(float speed) => session.Camera.Settings.RotateSpeedX = session.Camera.Settings.RotateSpeedY =
             Math.Clamp(speed, UserConfig.MinCameraRotateSpeed, UserConfig.MaxCameraRotateSpeed);
         ApplyCameraRotateSpeed(config.CameraRotateSpeed);
+        config.EdgeScroll ??= Meitou.Audio.AudioSystem.Setting(install, "Edge scrolling", 1) != 0;
         if (panel is not null && !lowEnd)
             foreach (var slider in panel.Sliders)
                 if (!SessionSliders.Contains(slider.Label) && config.Graphics.TryGetValue(slider.Label, out float v) && !(o.Post.Upscale.Explicit && WorldFrame.UpscalerSliders.Contains(slider.Label))
@@ -482,6 +483,7 @@ sealed partial class GameHost
                 session.Input.Consume();
             }
             // Edge scrolling (the game's default): the pointer at the edge of the window pans the camera, unless something else has the pointer.
+            session.Camera.Settings.EdgeScroll = config.EdgeScroll != false;
             session.Camera.Strategy.EdgePointer = Covered || TitleVisible || panel?.Visible == true || interfaceHidden || cinemaHolds || cinema.EditorVisible ? null : WindowPointer.InWindow(window);
             session.World.Profile.Enabled = profiler is { Showing: not FrameProfiler.Mode.Off } || g.PlayBench is not null;
             if (!Covered) session.Advance(frameDt);   // loading and arrival preserve the loaded world's exact time

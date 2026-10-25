@@ -205,6 +205,9 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
         if (page == 3)
             result.Add(new(CameraRotateSpeed.Label, "How fast the rotate and tilt keys and the mouse turn the camera (the game: 6).", Slider: CameraRotateSpeed));
         if (page == 3)
+            result.Add(new("Edge scrolling", "The camera moves when the pointer is at the edge of the screen.",
+                Toggle: new("Edge scrolling", () => config.EdgeScroll != false, v => config.EdgeScroll = v)));
+        if (page == 3)
             foreach (var action in Enum.GetValues<InputAction>().Where(a => a != InputAction.Quit && a != InputAction.ToggleFps))
                 result.Add(new(ActionLabel(action), BindingHint(action), Binding: action));
         if (page == 5)
@@ -521,6 +524,7 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
         AudioChanged?.Invoke();
         config.HardwareMouse = false;
         CameraRotateSpeed.Set(global::Meitou.Data.World.KenshiCamera.DefaultRotateSpeed);
+        config.EdgeScroll = true;
         config.HoverOutline = true;
         config.SelectionRings = true;
         config.LuckyrenMode = false;

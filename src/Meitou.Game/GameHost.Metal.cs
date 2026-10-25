@@ -502,6 +502,7 @@ sealed partial class GameHost
         void ApplyCameraRotateSpeed(float speed) => session.Camera.Settings.RotateSpeedX = session.Camera.Settings.RotateSpeedY =
             Math.Clamp(speed, UserConfig.MinCameraRotateSpeed, UserConfig.MaxCameraRotateSpeed);
         ApplyCameraRotateSpeed(config.CameraRotateSpeed);
+        config.EdgeScroll ??= Meitou.Audio.AudioSystem.Setting(install, "Edge scrolling", 1) != 0;
         // The shared settings layout: Metal supplies the settings it can change live (window, upscaler, distances,
         // shadows, sky and the composite); the Interface/Controls/Advanced/Audio pages are the game's own.
         SettingsPanel? settingsValues = null;
@@ -1118,6 +1119,7 @@ sealed partial class GameHost
             if (!still)
             {
                 // Edge scrolling only while the world owns the pointer (the interface is visible and not dragging a panel).
+                session.Camera.Settings.EdgeScroll = config.EdgeScroll != false;
                 session.Camera.Strategy.EdgePointer = Covered || hud is not null && TitleVisible || settings?.Visible == true ||
                     hud is { UiVisible: false } or { UiCapturesPointer: true } ? null : WindowPointer.InWindow(window);
                 // The duel restarts between ticks when Backspace asks or its measured lap ends; its sun then holds at the lap's hour.

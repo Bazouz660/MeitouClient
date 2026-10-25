@@ -103,6 +103,9 @@ sealed class UserConfig
     /// <c>mouse speed pan</c> / <c>mouse speed tilt</c> (slider 2 … 50, default 6), one value for both here.</summary>
     public float CameraRotateSpeed { get; set; } = Meitou.Data.World.KenshiCamera.DefaultRotateSpeed;
     public const float MinCameraRotateSpeed = 2, MaxCameraRotateSpeed = 50;
+    /// <summary>The pointer at the screen's edge pans the strategy camera (the original's <c>Edge scrolling</c>, default on; Controls settings);
+    /// null until first used, then taken from the install's settings.cfg.</summary>
+    public bool? EdgeScroll { get; set; }
     /// <summary>The Windows cursor instead of the game's drawn pointer (the original's <c>hardware_mouse</c>, default off; Interface settings).</summary>
     public bool HardwareMouse { get; set; }
     /// <summary>Outline and tint the character under the cursor (Advanced settings; Meitou only, the game has none).</summary>
