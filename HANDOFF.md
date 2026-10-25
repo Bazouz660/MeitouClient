@@ -2,7 +2,7 @@
 
 Repository: `/Users/daniilmiroshnykov/code/dotnet/MeitouClient`  
 Branch: `metal-spike`  
-Last code commit: `02e46602 feat: expose ground relief and light shaft quality`
+Last code commit: `df566a83 perf: coalesce the Metal overlay encoders`
 
 State: functional opt-in Metal preview; **not 100% Vulkan effect parity**. Upstream v0.15.0 (`cd01e732`) is merged.
 **MEP-1, MEP-2, MEP-3 and MEP-5 are accepted** (2026-10-24: MetalFX temporal stability; reflection MSAA/characters;
@@ -29,6 +29,11 @@ Player quality controls (2026-10-25): **Ground relief quality** (Low/Medium/High
 the launcher, the Tab/Metal panels and the native settings. The quality presets scale both; Low turns ground relief and its
 tessellation effects off, and `--low-end` matches. The Metal smoke at High held 20.8 ms GPU at Border Zone; Low (both set to
 0) held 19.5 ms, confirming the live uniform path.
+
+Metal overlay coalescing (2026-10-25): the HUD, the direct HUD lines and the stats/settings overlays now share one
+`DebugOverlay.OverlayPass`, so they load/store the 3024×1712 backbuffer once instead of in separate render encoders.
+The final MetalFX/post upscale remains its own pass; merging it would require keeping the post chain's render pass open
+across the HUD. Build 0/0; quick suite 450 passed / 2 skipped; internal HUD screenshot verified. No new Xcode capture.
 
 ## Upstream sync (2026-10-25, `cd01e732`)
 
