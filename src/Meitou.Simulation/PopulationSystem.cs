@@ -50,6 +50,8 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
         public bool Pending;
         /// <summary>The nest rolls used since it loaded (a top-up's keys follow them).</summary>
         public int Made;
+        /// <summary>Replaced, its new residents not made yet (the original's <c>updatedTownOverrides</c>; not saved, as there).</summary>
+        public bool Repopulate;
     }
 
     public PopulationSystem(PopulationData data, PopulationSettings? settings = null)
@@ -320,11 +322,19 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
     /// <summary>
     /// The original's <c>ZoneManager::checkForRepopulateTown</c> at a town's load (docs/game/factions-squads-towns.md "Town overrides"): not behind the loading screen, nor for a town of the player's faction;
     /// of the current TOWN's <c>override town</c> list, the entries whose every <c>world state</c> holds, weighted by how many they have (none: never), other than the
-    /// replacement in place; the heaviest, the first of equals, takes the town's place. Whether it did.
+    /// replacement in place; the heaviest, the first of equals, takes the town's place. A town replaced whose new residents have not been made yet (the original's
+    /// <c>updatedTownOverrides</c>) answers yes again without looking. Either way its zone is reset (<see cref="ResetZone"/>). Whether the town is to be made afresh.
     /// </summary>
     bool Replace(World world, TownSite site)
     {
-        if (loadingScreen || site.Town.OverrideTown.Count == 0 || site.Index < data.SiteFactions.Count && data.SiteFactions[site.Index] is >= 0 and var f && f == PlayerFactionOf(world)) return false;
+        if (loadingScreen || site.Index < data.SiteFactions.Count && data.SiteFactions[site.Index] is >= 0 and var f && f == PlayerFactionOf(world)) return false;
+        var state = states[site.Index];
+        if (state.Repopulate)
+        {
+            ResetZone(world, site);
+            return true;
+        }
+        if (site.Town.OverrideTown.Count == 0) return false;
         TownData? best = null;
         int weight = 0;
         foreach (var link in site.Town.OverrideTown)
@@ -336,13 +346,24 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
         }
         if (best is null) return false;
         data.SetReplacement(site.Index, best);
-        world.Fixtures.TownReplaced(world, data, site.Index);
-        // The zone's loose items go, as the original empties the zone file's 1-itemlist (item slots refill).
-        foreach (int id in world.GroundItems.All.Where(g => WorldLayout.ZoneOf(g.Position.X, g.Position.Z) == site.Zone).Select(g => g.Id).ToList())
-            world.GroundItems.Take(id);
+        state.Repopulate = true;
+        ResetZone(world, site);
         if (townLog.Count >= 256) townLog.RemoveAt(0);
         townLog.Add($"{site.Town.Name}: now {best.Name}");
         return true;
+    }
+
+    /// <summary>
+    /// What the original drops from a replaced town's zone file (<c>FUN_1409fe340</c>, docs/game/factions-squads-towns.md "Town overrides"): the state of the town's buildings in
+    /// that zone that are not the player's (they come back as the level has them, under the town's faction now), the item slots' timers there (due at once), and every loose
+    /// item in the zone. The town's buildings in other zones change owner only.
+    /// </summary>
+    void ResetZone(World world, TownSite site)
+    {
+        world.Fixtures.TownReplaced(world, data, site.Index);
+        foreach (int id in world.GroundItems.All.Where(g => WorldLayout.ZoneOf(g.Position.X, g.Position.Z) == site.Zone).Select(g => g.Id).ToList())
+            world.GroundItems.Take(id);
+        world.ItemSlots.ResetZone(site.Zone);
     }
 
     /// <summary>
@@ -407,6 +428,7 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
     {
         var site = data.Sites[town.Site];
         var state = states[town.Site];
+        state.Repopulate = false;
         float radius = site.Town.SizeRadius * site.Town.TownRadiusMult;
         // The town's doors, cages, containers and beds, once (they stay registered when the town unloads).
         world.Fixtures.RegisterSite(world, data, town.Site);

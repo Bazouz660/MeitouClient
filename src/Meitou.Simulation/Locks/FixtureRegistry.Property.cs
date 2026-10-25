@@ -87,26 +87,37 @@ public sealed partial class FixtureRegistry
     }
 
     /// <summary>
-    /// A town replaced (docs/game/factions-squads-towns.md "Town overrides"): its buildings that are not the player's go back to their level owner under the town's new faction,
-    /// as the original drops their saved states. A town not registered yet takes the new faction when it is.
+    /// A town replaced (docs/game/factions-squads-towns.md "Town overrides"): its buildings that are not the player's go back to their level owner under the town's new faction.
+    /// Those in the town's own zone also lose their saved state, as the original drops it from the zone file (<c>FUN_1409fe340</c>): they are registered again as the level has
+    /// them (locks, doors, contents), and a held character is bound to its cage or bed again. A town not registered yet takes all of that when it is.
     /// </summary>
     public void TownReplaced(World world, PopulationData data, int site)
     {
-        if (!sites.Contains(site)) return;
+        var town = data.Sites[site];
         int townFaction = site < data.SiteFactions.Count ? data.SiteFactions[site] : -1;
         int player = world.Player.Faction >= 0 ? world.Player.Faction : data.PlayerFaction;
-        foreach (var b in data.Sites[site].Buildings)
+        bool Players(TownBuilding b) => properties.TryGetValue(b.Key, out var p) ? p.Purchased || p.Owner == player
+            : sites.Contains(site) ? OfBuilding(b.Key).Any(f => f.Owner == player)
+            : Saved?.GetValueOrDefault(b.Key)?.Strings.GetValueOrDefault("owner faction ID") is { Length: > 0 } id && data.FactionIndex(id) == player;
+        var reset = town.Buildings.Where(b => b.Zone == town.Zone && !Players(b)).Select(b => b.Key).ToHashSet(StringComparer.Ordinal);
+        if (Saved is { } saved && reset.Any(saved.ContainsKey))
+            Saved = saved.Where(s => !reset.Contains(s.Key)).ToDictionary(s => s.Key, s => s.Value, StringComparer.Ordinal);
+        if (!sites.Contains(site)) return;
+        foreach (var b in town.Buildings)
         {
-            int owner = b.OwnerFactionId is { } o && data.FactionIndex(o) is var fi and >= 0 ? fi : townFaction;
-            if (properties.TryGetValue(b.Key, out var p))
+            if (reset.Contains(b.Key))
             {
-                if (p.Purchased || p.Owner == player) continue;
-                p.Owner = owner;
+                Unregister(b.Key);
+                properties.Remove(b.Key);
+                RegisterBuilding(world, data, site, b, townFaction);
             }
-            else if (OfBuilding(b.Key).Any(f => f.Owner == player)) continue;
+            else if (Players(b)) continue;
+            int owner = b.OwnerFactionId is { } o && data.FactionIndex(o) is var fi and >= 0 ? fi : townFaction;
+            if (properties.TryGetValue(b.Key, out var p)) p.Owner = owner;
             foreach (var f in OfBuilding(b.Key)) f.Owner = owner;
             world.ItemSlots.TransferBuilding(world, b, owner);
         }
+        Bind(world);
         ownedProperties = null;
         containerSpots = null; doorPicks = null; bedSpots = null; cageList = null;
     }

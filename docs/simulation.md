@@ -136,9 +136,11 @@ budgets. The tier follows it, with Meitou choices marked.
 **Town overrides** ([rule](game/factions-squads-towns.md#town-overrides)): `PopulationSystem.Replace` runs at each town load but those behind the loading
 screen (`PrepareLoading`); the winner goes into `TownSite.Replacement`, and `TownSite.Town` (what every reader uses) becomes it with the placement's id and names
 kept (engine choice) and the old faction when it names none; `SiteFactions` follows. The town then makes the replacement's residents even if it was made before;
-its old squads stay. Its buildings, doors, containers and item slots not the player's go to their level owner under the new faction
-(`FixtureRegistry.TownReplaced`), and every loose item in its zone is removed. Saves write `replacementTown` (and the town's `faction` while replaced) and read it back; a new game or a load clears them
-first. Not done: the other saved state of those buildings is kept. Test: `PopulationTests.A_town_takes_its_heaviest_qualifying_override_at_each_load_and_makes_its_residents`.
+its old squads stay. Until those residents are made (`SiteState.Repopulate`, the original's `updatedTownOverrides`, not saved) each load makes them afresh without a
+new choice. Each such load resets the zone (`ResetZone`): the town's buildings there that are not the player's are registered again from the level (state, locks,
+doors, contents; `FixtureRegistry.TownReplaced`), its other buildings change owner only, the zone's item slots are due at once and its loose items are removed.
+Saves write `replacementTown` (and the town's `faction` while replaced) and read it back; a new game or a load clears them first.
+Test: `PopulationTests.A_town_takes_its_heaviest_qualifying_override_at_each_load_and_makes_its_residents`.
 
 Six Faithful/Meitou switches (the fifth, campaign inheritance, under Campaigns below; `PopulationSettings`, live on `PopulationSystem`; Advanced settings (the fifth on the Fixes page), Meitou on by default; `PopulationOffscreen.cs`):
 - **Squads keep their people** (`KeepRoamers`). Meitou: a roaming squad the population made keeps its characters as a `StoredSquad` from the

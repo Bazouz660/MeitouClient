@@ -116,7 +116,7 @@ export const categories: Category[] = [
     { id: "unique-npcs-their-capture-and-death", system: "Unique NPCs, their capture and death", status: "untested", note: "Made once; death and capture saved.", bugs: [] },
     { id: "world-event-states", system: "World event states", status: "untested", note: "Answered live from unique NPCs and relations.", bugs: [] },
     { id: "faction-relations-and-ranks", system: "Faction relations and ranks", status: "untested", note: "Relation changes from blows, deaths, caging and first aid; ranks saved.", bugs: [] },
-    { id: "towns-change-after-a-leader-falls", system: "Towns change after a leader falls", status: "untested", note: "A town takes its override when its zone loads, by the original's rule, with new residents and owners, its zone's loose items removed; saved.", bugs: [] },
+    { id: "towns-change-after-a-leader-falls", system: "Towns change after a leader falls", status: "untested", note: "A town takes its override when its zone loads, by the original's rule, its zone reset (buildings, item slots, loose items) and new residents; saved.", bugs: [] },
   ] },
   { id: "audio", name: "Audio", blurb: "Sound and music.", rows: [
     { id: "sound-and-music", system: "Sound and music", status: "works", note: "Heard on the Windows build, native Linux and macOS, with the Steam copy and with the GOG copy of Kenshi.", bugs: [] },

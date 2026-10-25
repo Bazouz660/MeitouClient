@@ -109,6 +109,13 @@ public sealed class ItemSlots
         return group;
     }
 
+    /// <summary>The slots of a zone start again: empty and due (a replaced town's zone, whose ITEM_PLACEMENT_GROUP states the original drops). Their items are the caller's to remove.</summary>
+    public void ResetZone(ZoneCoordinate zone)
+    {
+        foreach (var s in all)
+            if (s.Zone == zone) (s.Item, s.DueAt) = (-1, double.MinValue);
+    }
+
     /// <summary>Empties the slots whose item left the ground and fills the due ones in active zones.</summary>
     public void Step(World world, PopulationData data)
     {
