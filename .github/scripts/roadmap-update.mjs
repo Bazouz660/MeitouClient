@@ -93,22 +93,25 @@ if (process.env.EDITS_FILE) {
   edits = Edits.parse(JSON.parse(readFileSync(process.env.EDITS_FILE, 'utf8')));
 } else {
   const client = new Anthropic();
-  // High effort; a request the safety classifiers decline is re-run server-side on Anthropic's recommended fallback model.
-  const response = await client.beta.messages.parse({
+  // High effort, streamed (the SDK requires it for a long request); a request the safety classifiers decline is re-run server-side
+  // on Anthropic's recommended fallback model. The answer is the JSON the output format constrains, checked against Edits here.
+  const stream = client.beta.messages.stream({
     model: MODEL,
-    max_tokens: 32000,
+    max_tokens: 64000,
     system,
     messages: [{ role: 'user', content: user }],
     output_config: { effort: 'high', format: betaZodOutputFormat(Edits) },
     fallbacks: 'default',
     betas: ['server-side-fallback-2026-07-01'],
   });
-  if (response.stop_reason === 'refusal' || response.stop_reason === 'max_tokens' || !response.parsed_output) {
+  const response = await stream.finalMessage();
+  if (response.stop_reason !== 'end_turn') {
     console.error(`No usable answer (stop_reason ${response.stop_reason}).`);
     process.exit(1);
   }
-  edits = response.parsed_output;
-  console.log(`tokens: ${response.usage.input_tokens} in, ${response.usage.output_tokens} out`);
+  const text = response.content.filter((b) => b.type === 'text').map((b) => b.text).join('');
+  edits = Edits.parse(JSON.parse(text));
+  console.log(`model ${response.model}, tokens: ${response.usage.input_tokens} in, ${response.usage.output_tokens} out`);
 }
 console.log(JSON.stringify(edits, null, 1));
 

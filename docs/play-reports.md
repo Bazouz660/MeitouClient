@@ -61,7 +61,7 @@ the last `X-Forwarded-For` entry. Port 8080.
   renaming a row or category.
 - `issue-labels.yml`: syncs `labels.json` to GitHub on push; gives a new form issue its `area:` label (bug form Area, or the row's
   category).
-- `roadmap-drift.yml` (daily, and on pushes to the roadmap): keeps one "Roadmap out of date" issue listing closed issues still named
+- `roadmap-drift.yml` (started by the roadmap update after Claude's edits, or by hand): keeps one "Roadmap out of date" issue listing closed issues still named
   as bugs (a Known bugs entry whose state says closed is skipped), open `bug` issues the roadmap never names, row bug ids and Known
   bugs that do not name each other, `asOf.master` over 100 commits behind, stale issue forms, and the reports' proposals (repository
   variable `REPORTS_URL`). Closes it when clean. `DRY_RUN=1 node .github/scripts/roadmap-drift.mjs` prints the findings.
@@ -75,6 +75,7 @@ refusal) the roadmap file, the commits and issues since `asOf`, the drift findin
 (row status, note, bug ids; Known bugs and fixes to add or remove) with the evidence for each. The script applies them line by line
 (row ids, names, categories, platforms and `seen` are never touched), sets `asOf` to the run's commit and checks the file still
 loads with the same rows; the workflow builds the site and commits straight to master (the run summary lists the edits), then
-starts the site image and the drift check, since a push by `GITHUB_TOKEN` starts no workflow. Nobody reviews it first: a wrong edit
+starts the site image, since a push by `GITHUB_TOKEN` starts no workflow. Every run then starts the drift check, so its issue lists
+only what Claude left. Nobody reviews it first: a wrong edit
 is fixed by a normal commit. Needs the `ANTHROPIC_API_KEY` secret (skipped without it); billed to the linked Console org's monthly
 credit. `EDITS_FILE=<json>` applies a saved answer offline.
