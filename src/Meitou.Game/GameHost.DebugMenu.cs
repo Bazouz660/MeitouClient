@@ -9,7 +9,7 @@ using EngineKey = Meitou.Engine.Input.Key;
 namespace Meitou.Game;
 
 /// <summary>
-/// The debug menu (F10; Ctrl+F10 on Metal, where F10 is the settings panel; docs/game/ui-input.md "Debug menu"): cheats sent to the world as
+/// The debug menu (Insert; also Ctrl+F10 on Metal, where F10 is the settings panel; docs/game/ui-input.md "Debug menu"): cheats sent to the world as
 /// <see cref="DebugCommand"/>s. Up/Down pick a row, typing fills its field, Enter applies it, Esc or the close key closes; while open it takes every key.
 /// Teleport and spawn use the camera's target (the middle of the screen); heal, max skills and damage the selected characters, else the inspected one.
 /// </summary>
@@ -124,7 +124,7 @@ sealed partial class GameHost
         return found;
     }
 
-    void DrawDebugMenu(DebugOverlay o, int width, int height, float top, string close = "F10")
+    void DrawDebugMenu(DebugOverlay o, int width, int height, float top, string close = "Insert")
     {
         var world = session.World;
         var here = session.Camera.Current.Target;

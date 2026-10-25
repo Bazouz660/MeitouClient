@@ -404,16 +404,20 @@ static partial class TerrainShaders
         layout(location = 9) in vec4 aModel2;
         layout(location = 10) in vec4 aModel3;
         uniform mat4 uViewProjection;
+        uniform vec4 uNode;            // xyz: the mesh's extent (TerrainRenderer.MeshPush)
         out vec3 vWorld;
         out vec3 vNormal;
         out vec2 vCliffBlend;
         flat out int vFeatureBiome;
         flat out float vFade;
+        flat out float vContactHeight;
         void main()
         {
             mat4 model = mat4(vec4(aModel0.xyz, 0.0), aModel1, aModel2, aModel3);   // the placement of the map feature
             vFeatureBiome = int(aModel0.w);
             vFade = aModel1.w;   // the foliage cull's dither threshold for a rock crossfading with its impostor (0: none; a placement's row 1 w is otherwise 0)
+            // The placed mesh's height: its extent along each axis times that axis's rise in the world (GroundContact).
+            vContactHeight = dot(abs(vec3(aModel0.y, aModel1.y, aModel2.y)), uNode.xyz);
             vWorld = (model * vec4(aPosition, 1.0)).xyz;
             vNormal = transpose(inverse(mat3(model))) * aNormal;
             vec3 n = normalize(vNormal);
@@ -469,11 +473,14 @@ static partial class TerrainShaders
         layout(location = 3) out vec2 vcCliffBlend;
         layout(location = 4) flat out int vcFeatureBiome;
         layout(location = 5) flat out float vcFade;
+        layout(location = 6) flat out float vcContactHeight;
+        uniform vec4 uNode;            // xyz: the mesh's extent (MeshVertex)
         void main()
         {
             mat4 model = mat4(vec4(aModel0.xyz, 0.0), aModel1, aModel2, aModel3);
             vcFeatureBiome = int(aModel0.w);
             vcFade = aModel1.w;
+            vcContactHeight = dot(abs(vec3(aModel0.y, aModel1.y, aModel2.y)), uNode.xyz);
             vcWorld = (model * vec4(aPosition, 1.0)).xyz;
             mat3 normalMatrix = transpose(inverse(mat3(model)));
             vcNormal = normalMatrix * aNormal;
@@ -501,12 +508,14 @@ static partial class TerrainShaders
         layout(location = 3) in vec2 vcCliffBlend[];
         layout(location = 4) flat in int vcFeatureBiome[];
         layout(location = 5) flat in float vcFade[];
+        layout(location = 6) flat in float vcContactHeight[];
         layout(location = 0) out vec3 teWorld[];
         layout(location = 1) out vec3 teNormal[];
         layout(location = 2) out vec3 teCurve[];
         layout(location = 3) out vec2 teCliffBlend[];
         layout(location = 4) out int teFeatureBiome[];
         layout(location = 5) out float teFade[];
+        layout(location = 6) out float teContactHeight[];
         uniform vec3 uEye;
         uniform float uRockRound;      // RockSmoothing.Roundness: the curve's share (MeshEvaluation's)
         uniform float uTessDetail;     // GroundRelief.TessDetail: the deviation a segment may keep divided by it
@@ -530,6 +539,7 @@ static partial class TerrainShaders
             teCliffBlend[gl_InvocationID] = vcCliffBlend[gl_InvocationID];
             teFeatureBiome[gl_InvocationID] = vcFeatureBiome[gl_InvocationID];
             teFade[gl_InvocationID] = vcFade[gl_InvocationID];
+            teContactHeight[gl_InvocationID] = vcContactHeight[gl_InvocationID];
             if (gl_InvocationID == 0)
             {
                 // Outer level i is the edge facing control point i (where its coordinate is 0).
@@ -570,11 +580,13 @@ static partial class TerrainShaders
         layout(location = 3) in vec2 teCliffBlend[32];
         layout(location = 4) in int teFeatureBiome[32];
         layout(location = 5) in float teFade[32];
+        layout(location = 6) in float teContactHeight[32];
         out vec3 vWorld;
         out vec3 vNormal;
         out vec2 vCliffBlend;
         flat out int vFeatureBiome;
         flat out float vFade;
+        flat out float vContactHeight;
         void main()
         {
             vec3 b = gl_TessCoord;
@@ -583,6 +595,7 @@ static partial class TerrainShaders
             vCliffBlend = b.x * teCliffBlend[0] + b.y * teCliffBlend[1] + b.z * teCliffBlend[2];
             vFeatureBiome = teFeatureBiome[0];
             vFade = teFade[0];
+            vContactHeight = teContactHeight[0];
             gl_Position = uViewProjection * vec4(vWorld, 1.0);
         }
         """;
@@ -606,6 +619,9 @@ static partial class TerrainShaders
         #endif
         #ifndef RELIEF_QUALITY
         #define RELIEF_QUALITY uReliefQuality
+        #endif
+        #ifndef CONTACT_HEIGHT
+        #define CONTACT_HEIGHT 0.0
         #endif
         #ifndef BIOME_SLOTS
         #define BIOME_SLOTS 5
@@ -644,7 +660,8 @@ static partial class TerrainShaders
         uniform bool uHasGround;       // whole-world ground colour map available
         uniform bool uHasWorldColour;  // whole-world colour map available
         uniform float uCliffEps;       // the cliff weights up to this are dropped, the next as much ramp in (0: every nonzero weight counts)
-        uniform float uContactBand;    // meshes: GroundContact.Band, the height above the ground they blend into it over; 0 off
+        uniform float uContactBand;    // meshes: GroundContact.MaxBand, the most height above the ground they blend into it over; 0 off
+        uniform float uContactShare;   // meshes: GroundContact.Share, the band as a share of the placed mesh's height (CONTACT_HEIGHT)
 
         uniform sampler2DArray uDiffuse;
         uniform sampler2DArray uNormal;
@@ -1037,9 +1054,10 @@ static partial class TerrainShaders
             float distance = length(vWorld - uEye);
             // Ground contact (GroundContact, docs/render-terrain.md): a mesh's surface near the ground under it turns to the ground's normal, so its slope
             // layers, cliff projections and lighting meet the terrain's; the biomes follow below.
-            if (uFeature && uContactBand > 0.0 && distance < uFarEnd)
+            float contactBand = min(uContactShare * CONTACT_HEIGHT, uContactBand);   // a share of the mesh's height: a small rock keeps its own look
+            if (uFeature && contactBand > 0.0 && distance < uFarEnd)
             {
-                contact = 1.0 - smoothstep(0.0, uContactBand, vWorld.y - terrainHeight(vWorld.xz));
+                contact = 1.0 - smoothstep(0.0, contactBand, vWorld.y - terrainHeight(vWorld.xz));
                 if (contact > 0.0) n = normalize(mix(n, terrainNormal(vWorld.xz), contact));
             }
             // Map features clamp the slope at 1, so overhangs (normal pointing down) keep the cliff layer.
@@ -1229,9 +1247,10 @@ static partial class TerrainShaders
     {
         const string uniform = "uniform int uFeatureBiome;";
         if (!fragment.Contains(uniform)) throw new InvalidOperationException("TerrainShaders.Fragment no longer declares uFeatureBiome.");
-        string f = fragment.Replace(uniform, "flat in int vFeatureBiome;\n#define uFeatureBiome vFeatureBiome\nflat in float vFade;\n");
-        // The ground contact's sixth biome slot (GroundContact: the feature's own next to the ground's five); the patches keep five, and the registers of five.
-        f = f.Insert(f.IndexOf('\n') + 1, "#define BIOME_SLOTS 6\n");
+        string f = fragment.Replace(uniform, "flat in int vFeatureBiome;\n#define uFeatureBiome vFeatureBiome\nflat in float vFade;\nflat in float vContactHeight;\n");
+        // The ground contact (GroundContact): the placed mesh's height, and a sixth biome slot (the feature's own next to the ground's five); the
+        // patches keep five, and the registers of five.
+        f = f.Insert(f.IndexOf('\n') + 1, "#define BIOME_SLOTS 6\n#define CONTACT_HEIGHT vContactHeight\n");
         // A rock crossfading with its impostor (docs/impostors.md section 13): the cull's dither threshold in the placement's row 1 w, as the foliage meshes dither
         // (a threshold in (0, 1) keeps that share of the pixels; 0, what every other placement has, keeps all).
         const string wireframe = "if (uWireframe) { fragColour = vec4(0.1, 0.1, 0.1, 1.0); return; }";
@@ -1322,6 +1341,7 @@ static partial class TerrainShaders
             float broadCut;
             int reliefQuality;
             float contactBand;
+            float contactShare;
         } terrain;
 
         """;
@@ -1359,7 +1379,7 @@ static partial class TerrainShaders
         ["uDisplaceEnd"] = "terrain.displaceEnd", ["uParallaxEnd"] = "terrain.parallaxEnd",
         ["uOverlayRelief"] = "terrain.overlayRelief", ["uSelfShadow"] = "terrain.selfShadow", ["uTessDetail"] = "terrain.tessDetail", ["uRockRound"] = "terrain.rockRound",
         ["uFieldTiles"] = "utextures2D[terrain.fieldTiles]", ["uFieldOrigin"] = "terrain.fieldOrigin", ["uFieldTile"] = "terrain.fieldTile",
-        ["uFieldColumns"] = "terrain.fieldColumns", ["uFieldCount"] = "terrain.fieldCount", ["uMaxDepth"] = "terrain.maxDepth", ["uTargetSlope"] = "terrain.targetSlope", ["uScaleFollow"] = "terrain.scaleFollow", ["uCliffScale"] = "terrain.cliffScale", ["uRefine"] = "terrain.refine", ["uPixelScale"] = "terrain.pixelScale", ["uBroadCut"] = "terrain.broadCut", ["uReliefQuality"] = "terrain.reliefQuality", ["uContactBand"] = "terrain.contactBand",
+        ["uFieldColumns"] = "terrain.fieldColumns", ["uFieldCount"] = "terrain.fieldCount", ["uMaxDepth"] = "terrain.maxDepth", ["uTargetSlope"] = "terrain.targetSlope", ["uScaleFollow"] = "terrain.scaleFollow", ["uCliffScale"] = "terrain.cliffScale", ["uRefine"] = "terrain.refine", ["uPixelScale"] = "terrain.pixelScale", ["uBroadCut"] = "terrain.broadCut", ["uReliefQuality"] = "terrain.reliefQuality", ["uContactBand"] = "terrain.contactBand", ["uContactShare"] = "terrain.contactShare",
     };
 
     const string DerivativeControl = "#extension GL_ARB_derivative_control : require\n";
@@ -1553,6 +1573,7 @@ struct TerrainConstants
     [System.Runtime.InteropServices.FieldOffset(848)] public float BroadCut;
     [System.Runtime.InteropServices.FieldOffset(852)] public int ReliefQuality;
     [System.Runtime.InteropServices.FieldOffset(856)] public float ContactBand;
+    [System.Runtime.InteropServices.FieldOffset(860)] public float ContactShare;
 }
 
 /// <summary>The cells of <see cref="TerrainConstants.BloodCells"/>: column, row, layer (std140 <c>vec4[32]</c>).</summary>

@@ -29,11 +29,11 @@ const barW = snaps.length ? Math.min(28, (chartW - barGap * (snaps.length - 1)) 
 const statusLabel = (s: keyof typeof statuses | null) => (s ? statuses[s].label : 'removed');
 const reportConfig = JSON.stringify({ url: reports.url.replace(/\/$/, ''), siteKey: reports.turnstileSiteKey, builds: reportBuilds });
 ---
-<Base title="Roadmap - Meitou" description="How far each of Kenshi's systems is in Meitou, against unmodded Kenshi 1.0.68.">
+<Base title="Roadmap - Meitou" description="How far each of Kenshi's systems is in Meitou, against unmodded Kenshi 1.0.68." kofiTop>
+  <span slot="center">Roadmap page by @DemitriX</span>
   <div class="backdrop" aria-hidden="true" data-bgs={JSON.stringify(backgrounds)}><div></div><div></div></div>
   <div class="rd">
     <header>
-      <div class="eyebrow">Meitou against Kenshi 1.0.68</div>
       <h1>What works in Meitou, and what does not yet</h1>
       <p>
         Kenshi's systems, by category. Every system has one status. <b>Works</b> covers what someone has seen working in
@@ -45,23 +45,30 @@ const reportConfig = JSON.stringify({ url: reports.url.replace(/\/$/, ''), siteK
 
     <aside class="side">
     <section aria-labelledby="status-h">
-      <h2 id="status-h">Status at a glance</h2>
-      <div class="bigbar" data-bar="all">{order.map((k) => <span class={`st-${k}`} style={`width: ${(100 * counts[k]) / allRows.length}%`}></span>)}</div>
+      <div class="status-head">
+        <h2 id="status-h">Status at a glance</h2>
+        <button type="button" class="filt" aria-expanded="false" aria-controls="filters" hidden>
+          <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M3 5h18l-7 8.5V19l-4 2v-7.5z" /></svg>
+          Filter<span class="fc" hidden></span>
+        </button>
+      </div>
+      <div class="filters" id="filters"><div class="filters-in">
       <div class="plats" role="group" aria-label="Filter by platform">
         <span class="lbl">Platform</span>
         {Object.entries(platforms).map(([k, v]) => <button type="button" class="chip" data-p={k} aria-pressed={String(k === 'all')}>{v}</button>)}
         <span class="lbl gap">Bugs</span>
         <button type="button" class="chip hbchip" data-bugs aria-pressed="false">Has bugs</button>
-        <input type="search" class="search" placeholder="Search systems and notes" aria-label="Search systems and notes" hidden />
       </div>
+      <input type="search" class="search" placeholder="Search systems and notes" aria-label="Search systems and notes" hidden />
+      </div></div>
       <div class="tiles" role="group" aria-label="Filter by status">
         {order.map((k) => (
-          <button type="button" class={`tile st-${k}`} data-s={k} aria-pressed="false">
+          <button type="button" class={`tile st-${k}`} data-s={k} title={statuses[k].desc} aria-pressed="false">
             <span class="n">{counts[k]}</span><span class="k">{statuses[k].label}</span><span class="d">{statuses[k].desc}</span>
           </button>
         ))}
       </div>
-      <div class="filter-note">Click a platform, Has bugs or a status to filter the rows. <button type="button" class="clear" hidden>Show all</button></div>
+      <div class="filter-note" hidden>Showing all rows. <button type="button" class="clear">Show all</button></div>
     </section>
 
     <section aria-labelledby="cats-h">
@@ -262,6 +269,16 @@ const reportConfig = JSON.stringify({ url: reports.url.replace(/\/$/, ''), siteK
     }, 20000);
   })();
 
+  // Sticky column: when taller than the window, stick by its bottom edge (a negative top), so it scrolls with the page
+  // instead of inside itself.
+  (() => {
+    const side = document.querySelector('.side');
+    const fit = () => side.style.setProperty('--side-top', `${Math.min(16, innerHeight - side.offsetHeight - 16)}px`);
+    new ResizeObserver(fit).observe(side);
+    addEventListener('resize', fit);
+    fit();
+  })();
+
   // Back to top: shown once the page is scrolled past the first screen; smooth unless reduced motion is asked for.
   (() => {
     const btn = document.querySelector('.totop');
@@ -283,16 +300,16 @@ const reportConfig = JSON.stringify({ url: reports.url.replace(/\/$/, ''), siteK
     let active = null, plat = 'all', onlyBugs = false, query = '';
     const search = document.querySelector('.search');
     search.hidden = false;
+    const filt = document.querySelector('.filt'), filters = document.querySelector('.filters');
     // Search text per row: the system, its note and evidence (not the report buttons).
     const textOf = (tr) => [tr.querySelector('.sys').textContent, ...[...tr.querySelector('.note').childNodes].filter((n) => !n.classList?.contains('rep')).map((n) => n.textContent)].join(' ').toLowerCase();
     const rows = [...document.querySelectorAll('tr[data-row]')].map((tr) => ({ tr, text: textOf(tr), ...JSON.parse(tr.dataset.row) }));
     const on = (r) => plat === 'all' ? true : plat === 'specific' ? r.d : r.p[plat] !== 'na';
     const st = (r) => (plat in PLAT ? r.p[plat] : r.s);
     const bar = (el, rs) => { const n = rs.length; el.querySelectorAll('span').forEach((s, i) => { s.style.width = n ? `${(100 * rs.filter((r) => st(r) === ORDER[i]).length) / n}%` : '0'; }); };
-    const note = document.querySelector('.filter-note'), clear = note.querySelector('.clear'), plain = note.firstChild.textContent;
+    const note = document.querySelector('.filter-note'), clear = note.querySelector('.clear');
     function apply() {
       const vis = rows.filter(on);
-      bar(document.querySelector('[data-bar="all"]'), vis);
       document.querySelectorAll('.tile').forEach((t) => {
         t.querySelector('.n').textContent = vis.filter((r) => st(r) === t.dataset.s).length;
         t.setAttribute('aria-pressed', String(t.dataset.s === active));
@@ -320,8 +337,10 @@ const reportConfig = JSON.stringify({ url: reports.url.replace(/\/$/, ''), siteK
       if (active) parts.push(`${LABEL[active]} only`);
       if (onlyBugs) parts.push('systems with known bugs');
       if (query) parts.push(`systems matching “${search.value.trim()}”`);
-      note.firstChild.textContent = parts.length ? `Showing ${parts.join(', ')}. ` : plain;
-      clear.hidden = !parts.length;
+      note.firstChild.textContent = `Showing ${parts.join(', ')}. `;
+      note.hidden = !parts.length;
+      const n = (plat !== 'all') + onlyBugs + !!query, fc = filt.querySelector('.fc');
+      fc.textContent = n; fc.hidden = !n;
       // The filters live in the query string (defaults left out), so a filtered view can be linked; the #row anchor stays.
       const qs = new URLSearchParams();
       if (active) qs.set('status', active);
@@ -345,6 +364,12 @@ const reportConfig = JSON.stringify({ url: reports.url.replace(/\/$/, ''), siteK
     });
     search.addEventListener('input', () => { query = search.value.trim().toLowerCase(); apply(); });
     clear.addEventListener('click', () => { active = null; plat = 'all'; onlyBugs = false; query = search.value = ''; apply(); });
+    // Platform, bug and search filters fold away behind the Filter button; open at load when one of them is set.
+    filt.hidden = false;
+    const fold = (open) => { filt.setAttribute('aria-expanded', String(open)); filters.classList.toggle('shut', !open); filters.inert = !open; };
+    filt.addEventListener('click', () => fold(filters.classList.contains('shut')));
+    fold(plat !== 'all' || onlyBugs || !!query);
+    filters.offsetHeight; filters.classList.add('anim');
     apply();
   })();
 
@@ -421,6 +446,8 @@ const reportConfig = JSON.stringify({ url: reports.url.replace(/\/$/, ''), siteK
 <style is:global>
   /* The body and the site frame are transparent on this page so the backdrop shows behind them (html keeps the ground colour). */
   body:has(.rd), .mt-scene:has(.rd) { background: transparent; }
+  /* Less room under the site header here: the roadmap starts right below it. */
+  .mt-scene:has(.rd) .top { padding-top: 16px; padding-bottom: 32px; }
 </style>
 
 <style>
@@ -474,8 +501,7 @@ const reportConfig = JSON.stringify({ url: reports.url.replace(/\/$/, ''), siteK
   .filter-note { font-size: .9rem; color: var(--muted); }
   .filter-note button { font: inherit; color: var(--accent); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; }
 
-  .bigbar { display: flex; height: 12px; border-radius: 6px; overflow: hidden; background: var(--untested-bg); }
-  .bigbar span, .mini span { display: block; height: 100%; background: var(--c); }
+  .mini span { display: block; height: 100%; background: var(--c); }
 
   .loop { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
   .rd .loop a { text-decoration: none; color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-card); padding: 6px 10px; display: grid; gap: 4px; min-width: 118px; }
@@ -518,7 +544,7 @@ const reportConfig = JSON.stringify({ url: reports.url.replace(/\/$/, ''), siteK
   .fixlist li > span:last-child { min-width: 0; }
   .tag { font-family: var(--font-mono); font-size: .78rem; color: var(--muted); white-space: nowrap; }
 
-  /* Back to top: bottom right (the Ko-fi button takes the bottom left). */
+  /* Back to top: bottom right. */
   .totop {
     position: fixed; right: max(16px, env(safe-area-inset-right, 0px)); bottom: max(16px, env(safe-area-inset-bottom, 0px)); z-index: 5;
     display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 16px;
@@ -530,8 +556,19 @@ const reportConfig = JSON.stringify({ url: reports.url.replace(/\/$/, ''), siteK
   .totop:hover, .totop:focus-visible { border-color: var(--accent); color: var(--accent); outline: none; }
   @media (prefers-reduced-motion: no-preference) { .totop { transition: border-color .15s, color .15s; } }
 
-  .search { font: inherit; font-size: .9rem; color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; margin-left: auto; min-width: 0; flex: 0 1 240px; }
+  .search { font: inherit; font-size: .9rem; color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; width: 100%; }
   .search:focus-visible { border-color: var(--accent); outline: none; }
+  .status-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .status-head h2 { white-space: nowrap; }
+  .filt { display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: .9rem; cursor: pointer; color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 3px 12px; }
+  .filt:hover, .filt:focus-visible, .filt[aria-expanded="true"] { border-color: var(--accent); outline: none; }
+  .filt .fc { min-width: 18px; padding: 0 5px; border-radius: 999px; background: var(--accent); color: var(--bg); font-size: .75rem; font-weight: 600; line-height: 18px; text-align: center; }
+  /* Folds by animating its row from 0fr to 1fr, so it slides open to its natural height; the negative margin takes back the
+     section gap while shut. */
+  .filters { display: grid; grid-template-rows: 1fr; align-self: start; }
+  .filters.shut { grid-template-rows: 0fr; margin-top: -10px; opacity: 0; }
+  .filters-in { display: grid; gap: 10px; min-height: 0; overflow: hidden; }
+  @media (prefers-reduced-motion: no-preference) { .filters.anim { transition: grid-template-rows .25s ease, margin-top .25s ease, opacity .2s ease; } }
   .seen { display: block; margin-top: 4px; font-size: .82rem; color: var(--works); }
   .seen.stale { color: var(--wip); }
   .rep { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; font-size: .8rem; }
@@ -567,26 +604,33 @@ const reportConfig = JSON.stringify({ url: reports.url.replace(/\/$/, ''), siteK
   .repdlg .actions .send { background: var(--accent); border-color: var(--accent); color: var(--bg); font-weight: 600; }
   .repdlg .actions .send:disabled { opacity: .6; cursor: default; }
 
-  /* Wide screens (16:9 desktops): the header across the top, the filters and categories in a sticky column on the left,
-     the tables beside it. The column scrolls on its own when it is taller than the window. */
+  /* Wide screens (16:9 desktops): the filters and categories in a sticky column on the left from the top of the page, the
+     header and tables beside it. A column taller than the window scrolls with the page until its bottom shows, then sticks
+     (the script sets --side-top). */
   @media (min-width: 1240px) {
-    .rd { max-width: 1600px; grid-template-columns: 340px minmax(0, 1fr); gap: 32px 40px; }
-    .rd > header { grid-column: 1 / -1; }
+    .rd { max-width: none; grid-template-columns: 320px minmax(0, 1fr); grid-template-rows: auto 1fr; gap: 28px 40px; padding-top: 0; }
+    .rd > header { grid-column: 2; grid-row: 1; gap: 6px; }
+    .rd > header p { max-width: 110ch; grid-column: 1 / -1; }
+    .rd > header { grid-template-columns: 1fr auto; align-items: baseline; column-gap: 24px; }
+    .rd > header > .meta { grid-row: 1; grid-column: 2; text-align: right; }
+    .rd h1 { font-size: 2rem; }
+    .body { grid-column: 2; grid-row: 2; }
     .side {
-      position: sticky; top: 16px; max-height: calc(100vh - 32px); overflow-y: auto; gap: 28px;
-      padding: 18px; border-radius: var(--r-plate); background: color-mix(in srgb, var(--bg) 72%, transparent); border: 1px solid var(--line);
-      scrollbar-width: thin; scrollbar-color: var(--line) transparent;
+      grid-column: 1; grid-row: 1 / span 2; align-self: start; position: sticky; top: var(--side-top, 16px); gap: 22px;
+      padding: 16px; border-radius: var(--r-plate); background: color-mix(in srgb, var(--bg) 72%, transparent); border: 1px solid var(--line);
     }
-    .side .tiles { grid-template-columns: 1fr; gap: 6px; }
-    .side .tile { grid-template-columns: 3.2ch 1fr; column-gap: 12px; align-items: baseline; padding: 8px 12px 8px 16px; }
-    .side .tile .n { grid-row: span 2; font-size: 1.6rem; }
-    .side .search { margin-left: 0; flex-basis: 100%; }
-    .side .plats .gap { margin-left: 0; }
+    .side section { gap: 10px; }
+    .side .tiles { grid-template-columns: 1fr; gap: 4px; }
+    .side .tile { grid-template-columns: 3ch 1fr; column-gap: 10px; align-items: baseline; padding: 5px 12px 5px 16px; border-radius: var(--radius-card); }
+    .side .tile .n { font-size: 1.3rem; }
+    .side .tile .d { display: none; }
+    .side .plats .lbl { flex-basis: 100%; margin: 4px 0 0; }
+    .side .plats .chip { flex: 1 1 auto; }
     .side .loop { display: grid; gap: 4px; }
     .side .loop .arrow { display: none; }
-    .rd .side .loop a { grid-template-columns: 1fr 72px; align-items: center; gap: 12px; min-width: 0; padding: 6px 12px; }
+    .rd .side .loop a { grid-template-columns: 1fr 72px; align-items: center; gap: 12px; min-width: 0; padding: 4px 12px; }
     .side .loop .nm { font-size: .9rem; }
   }
-  @media (max-width: 560px) { .rd h1 { font-size: 2rem; } .search { margin-left: 0; flex-basis: 100%; } }
+  @media (max-width: 560px) { .rd h1 { font-size: 2rem; } }
   @media (prefers-reduced-motion: no-preference) { .tile, .rd .loop a { transition: border-color .15s, opacity .15s; } }
 </style>

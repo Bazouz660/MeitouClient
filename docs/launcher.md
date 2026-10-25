@@ -197,7 +197,7 @@ start the `settings.cfg` value wins. The launcher's labels come from the same `.
 ## News
 
 The Home page shows the repository's `news/` folder (format in `news/README.md`): one folder per article,
-`<yyyy-mm-dd>-<slug>/index.md` with an optional front matter block (`title`, `date`, `author`, `image`) and its pictures beside it, newest
+`<yyyy-mm-dd>-<slug>/index.md` with an optional front matter block (`title`, `date`, `author`, `image`, `video`: the full video's page, a "Full video" button on a video cover) and its pictures beside it, newest
 20 first. `news/` is listed through the contents API on `master` (one call, cached with its ETag in `news-cache/`); each
 `index.md` downloads from raw.githubusercontent.com and is kept by its folder's tree hash, images by URL, so the page works
 offline. Relative image and link paths resolve against the article's folder; a folder without `index.md` is skipped.
@@ -206,9 +206,9 @@ to preview posts before they are pushed; the header then says "Debug: local news
 by `MarkdownView` (headings, paragraphs, emphasis, code, links, lists, quotes, code blocks, rules, images); raw HTML is dropped
 and links open only for http(s).
 
-A `.webm` in place of an image is a video (`VideoView`, the post's full width): the whole file is fetched and cached like an image, `WebmFile` reads the
+A `.webm` in place of an image is a video (`VideoView`, the post's full width): its first MB is fetched with a Range request (`NewsFeed.HeadAsync`, cached as `.head`) for the poster, the whole file (cached like an image) only on the first Play, the button dimmed meanwhile; `WebmFile` reads the
 first video and audio track (Matroska elements, Block lacing), and the first decoded picture is the poster under a play button.
-A click plays it once, another stops it; one plays at a time, and it stops when the Home page is left or the post is rebuilt.
+A click plays it; then a click or Space pauses and resumes, the bottom bar (shown while paused or hovered) skips 10 s back or forward (or Left/Right) and seeks by click or drag. Every play, resume or seek is a new session from that time: decode from the keyframe before it without drawing, show it, then sound from its first Vorbis packet at or after it (Vorbis can start at any packet). Sessions of all videos run one after another, so two never hold OpenAL's current context. One plays at a time; it pauses when the Home page is left, returns to the poster at the end or when the post is rebuilt.
 Pictures: VP8/VP9 through libvpx (`VpxDecoder`, BSD), 8-bit only, converted BT.601 studio range to BGRA. Sound: Vorbis only
 (`CodecPrivate` holds the three Xiph-laced headers, fed with the frames to NVorbis as packets), played by OpenAL Soft as 16-bit
 stereo or mono; pictures follow the sound's clock, a stopwatch without sound. A late picture is decoded but not drawn. Anything

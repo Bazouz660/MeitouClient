@@ -89,7 +89,7 @@ sealed partial class GameHost
         var overlay = DebugOverlay.TryCreate(display.Context, assets.Find);
         if (overlay is not null) { player.CreateUiPainter(overlay, assets.Find); ConnectItemIcons(); }
         if (gpu.Characters is { } portraits) { var (atlas, sampled) = portraits.PortraitAtlas; player.SetUiTexture(PlayerInterface.PortraitTexture, atlas, sampled); }
-        // The debug overlays (docs/engine.md): F10 the debug menu (GameHost.DebugMenu.cs), F11 the frame statistics, F12 the profiler chart.
+        // The debug overlays (docs/engine.md): Insert the debug menu (GameHost.DebugMenu.cs), F11 the frame statistics, F10 the profiler chart.
         var profiler = overlay is null ? null : new FrameProfiler(display.Context, () => display.Context.GpuFrameMs);
         // The Faithful / Meitou switches; Shift+F1 turns Meitou off and back on (plain F2..F4 and F8 are the game's speed and screenshot keys), the Tab panel sets them one by one.
         var switches = WorldFrame.LiveSwitches(o, () => gpu, () => camera, () => render);
@@ -255,7 +255,7 @@ sealed partial class GameHost
                 if ((k == SilkKey.KeypadEnter ? EngineKey.Enter : KeyMap.Map(k)) is { } pickerKey) sandboxPicker.KeyDown(pickerKey);
                 return;
             }
-            // F10 (rebindable) opens the debug menu, which then takes every key until it closes.
+            // Insert (rebindable) opens the debug menu, which then takes every key until it closes.
             if (KeyMap.Map(k) is { } mapped && session.Bindings.Get(InputAction.ToggleDebugMenu).Contains(Binding.Of(mapped))) { debugMenuOpen = !debugMenuOpen; return; }
             if (debugMenuOpen)
             {
@@ -323,7 +323,7 @@ sealed partial class GameHost
                 if (shiftDown && key == EngineKey.F2 && switches.FirstOrDefault(e => e.Id == "skin") is { } skin)   // the skin switch alone, to compare faces
                 { skin.IsMeitou = !skin.IsMeitou; Console.WriteLine($"skin      {skin.State}"); return; }
                 if (shiftDown && key == EngineKey.F11) { ToggleNavOverlay(); return; }
-                if (shiftDown && key == EngineKey.F12) { if (profiler is not null) profiler.ShowVram = !profiler.ShowVram; return; }   // the VRAM pie (F12 alone cycles the profiler)
+                if (shiftDown && key == EngineKey.F10) { if (profiler is not null) profiler.ShowVram = !profiler.ShowVram; return; }   // the VRAM pie (F10 alone cycles the profiler)
                 if (player.BuildKey(key, shiftDown)) return;
                 session.Input.SetKey(key, true);
                 player.Key(key, shiftDown);
@@ -342,7 +342,7 @@ sealed partial class GameHost
                 if (PanelLive() && KeyMap.Map(b) is { } settingsButton && panel?.MouseDown(at, settingsButton) == true) { panelDrag = true; return; }
                 if (PanelLive() && panel?.Contains(at) == true) return;
                 if (b == SilkButton.Left && PanelLive() && sandboxPicker?.MouseDown(at) == true) return;
-                if (b == SilkButton.Left && profiler?.Click(at) == true) { profilerClick = true; return; }   // F12's legend opens and closes rows
+                if (b == SilkButton.Left && profiler?.Click(at) == true) { profilerClick = true; return; }   // F10's legend opens and closes rows
                 // The cinema's editor: its clicks never select or move characters.
                 if (b == SilkButton.Left && cinema.MouseDown(at)) return;
                 if (cinema.Contains(at)) return;
@@ -489,7 +489,7 @@ sealed partial class GameHost
             double advanceMs = Stopwatch.GetElapsedTime(a0).TotalMilliseconds;
             advanceTotal += advanceMs;
             PlayBenchUpdated(advanceMs);   // before SimProfile, which clears the world's tick profile
-            if (profiler is not null) SimProfile(profiler, advanceMs);   // F12's sim row and its parts
+            if (profiler is not null) SimProfile(profiler, advanceMs);   // F10's sim row and its parts
             BenchLap(1);
             WorldNews();
             HandleSaves();   // a quicksave or quickload asked for by a key: between ticks, none in flight
@@ -752,7 +752,7 @@ sealed partial class GameHost
         while (clock.Elapsed.TotalSeconds < end) Thread.SpinWait(64);
     }
 
-    // F12's sim parts: the names (the tick phases, the time outside the world's ticks, the world's systems), made again when the world is, and the frame's ms.
+    // F10's sim parts: the names (the tick phases, the time outside the world's ticks, the world's systems), made again when the world is, and the frame's ms.
     World? simNamesFor;
     string[] simNames = [];
     double[] simMs = [];

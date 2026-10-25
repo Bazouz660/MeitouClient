@@ -302,6 +302,9 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
         if (session.Bindings.Get(InputAction.Orbit).SequenceEqual([Binding.Of(EngineButton.Middle)])) session.Bindings.Set(InputAction.Orbit, EngineButton.Middle, EngineKey.LeftControl, EngineKey.RightControl);
         // F12 is the profiler now (as in the viewer); older saved configs took it for the screenshot.
         if (session.Bindings.Get(InputAction.Screenshot).SequenceEqual([Binding.Of(EngineKey.F12)])) session.Bindings.Set(InputAction.Screenshot, EngineKey.F8, EngineKey.PrintScreen);
+        // Steam takes F12 for its screenshot: the profiler moved to F10 and the debug menu to Insert; older saved configs had them on F12 and F10.
+        if (session.Bindings.Get(InputAction.CycleProfiler).SequenceEqual([Binding.Of(EngineKey.F12)])) session.Bindings.Set(InputAction.CycleProfiler, EngineKey.F10);
+        if (session.Bindings.Get(InputAction.ToggleDebugMenu).SequenceEqual([Binding.Of(EngineKey.F10)])) session.Bindings.Set(InputAction.ToggleDebugMenu, EngineKey.Insert);
         // F9 is the game's quickload now (F5 quicksave); older saved configs took F9 for the fps counter, which is on Ctrl+F9 and unbound here.
         if (session.Bindings.Get(InputAction.ToggleFps).SequenceEqual([Binding.Of(EngineKey.F9)])) session.Bindings.Set(InputAction.ToggleFps);
         // Tab is the game's change_squad, not the settings (they open from the Esc menu); older saved configs bound Tab to them.

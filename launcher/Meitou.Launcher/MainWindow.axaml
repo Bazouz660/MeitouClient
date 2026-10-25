@@ -4,7 +4,7 @@
         x:Class="Meitou.Launcher.MainWindow"
         Title="Meitou Launcher" Icon="avares://meitou-launcher/Assets/meitou.ico"
         WindowDecorations="None" TransparencyLevelHint="Transparent"
-        WindowStartupLocation="CenterScreen" Width="1440" Height="936" MinWidth="760" MinHeight="540">
+        WindowStartupLocation="CenterScreen" Width="1200" Height="936" MinWidth="760" MinHeight="540">
   <!-- No system frame: the plate floats on a transparent window with its own title bar; the margin holds its shadow and the resize grips. -->
   <Panel>
     <Border x:Name="Plate" Classes="plate" Margin="8" Padding="16,0,16,12">

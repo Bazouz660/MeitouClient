@@ -4,15 +4,18 @@ import '@fontsource/exo-2/600.css';
 import '../styles/meitou.css';
 import DiscordIcon from '../components/DiscordIcon.astro';
 import GithubIcon from '../components/GithubIcon.astro';
+import KofiIcon from '../components/KofiIcon.astro';
 
 interface Props {
   title: string;
   description?: string;
+  /** Ko-fi as a button at the top centre instead of the floating widget at the bottom left. */
+  kofiTop?: boolean;
   /** Loop the background video behind the first view. */
   video?: boolean;
 }
 
-const { title, description = 'MeitouClient: a .NET reimplementation of the Kenshi engine.', video = false } = Astro.props;
+const { title, description = 'MeitouClient: a .NET reimplementation of the Kenshi engine.', video = false, kofiTop = false } = Astro.props;
 ---
 <!doctype html>
 <html lang="en">
@@ -34,6 +37,12 @@ const { title, description = 'MeitouClient: a .NET reimplementation of the Kensh
       )}
       <header class:list={['top', { 'is-over': video }]}>
         {!video && <a class="brand" href="/">Meitou<span>Client</span></a>}
+        {kofiTop && (
+          <div class="center">
+            <a class="kofi" href="https://ko-fi.com/martinvlcek" title="It supports me in the development of Meitou."><KofiIcon />Support me on Ko-fi</a>
+            <slot name="center" />
+          </div>
+        )}
         <a class="gh" href="/roadmap">Roadmap</a>
         <a class="gh" href="https://discord.gg/DVAHH2n9DR">
           <DiscordIcon />
@@ -52,18 +61,20 @@ const { title, description = 'MeitouClient: a .NET reimplementation of the Kensh
         GPL-3.0-or-later · No game assets are distributed · Not affiliated with Lo-Fi Games
       </footer>
     </div>
-    <script is:inline src="https://storage.ko-fi.com/cdn/scripts/overlay-widget.js"></script>
-    <script is:inline>
-      kofiWidgetOverlay.draw('martinvlcek', {
-        'type': 'floating-chat',
-        'floating-chat.donateButton.text': 'Support me',
-        'floating-chat.donateButton.background-color': '#323842',
-        'floating-chat.donateButton.text-color': '#fff'
-      });
-      const kofiToggle = () => document.documentElement.classList.toggle('is-scrolled', scrollY > 0);
-      addEventListener('scroll', kofiToggle, { passive: true });
-      kofiToggle();
-    </script>
+    {!kofiTop && <script is:inline src="https://storage.ko-fi.com/cdn/scripts/overlay-widget.js"></script>}
+    {!kofiTop && (
+      <script is:inline>
+        kofiWidgetOverlay.draw('martinvlcek', {
+          'type': 'floating-chat',
+          'floating-chat.donateButton.text': 'Support me',
+          'floating-chat.donateButton.background-color': '#323842',
+          'floating-chat.donateButton.text-color': '#fff'
+        });
+        const kofiToggle = () => document.documentElement.classList.toggle('is-scrolled', scrollY > 0);
+        addEventListener('scroll', kofiToggle, { passive: true });
+        kofiToggle();
+      </script>
+    )}
     {video && (
       <script is:inline>
         if (matchMedia('(prefers-reduced-motion: reduce)').matches) document.querySelector('.bg video')?.pause();
@@ -134,6 +145,13 @@ const { title, description = 'MeitouClient: a .NET reimplementation of the Kensh
   .brand.is-corner { position: absolute; z-index: 1; right: var(--edge); top: calc(100svh - var(--edge) - 36px); margin: 0; }
   .gh { display: inline-flex; align-items: center; gap: var(--space-4); color: #fff; font: 400 16px/21px var(--font-exo); text-decoration: none; opacity: .85; transition: opacity .16s ease; }
   .gh:hover { color: #fff; opacity: 1; }
+  /* Ko-fi button and a page's own note, centred in the header bar on wide screens, on a line of their own below that. */
+  .center { position: absolute; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: var(--space-6); white-space: nowrap; color: var(--main); font: 400 14px/18px var(--font-exo); }
+  /* Ko-fi's own button in white, as in the launcher. */
+  .kofi { display: inline-flex; align-items: center; gap: var(--space-4); padding: 5px 12px; border-radius: var(--radius-card); background: #fff; color: #000; font: 600 13px/18px var(--font-exo); text-decoration: none; box-shadow: 0 1px 3px rgba(0, 0, 0, .8); transition: background .16s ease; }
+  .kofi:hover { background: #ebebeb; color: #000; }
+  .kofi:active { background: #d9d9d9; box-shadow: none; }
+  @media (max-width: 1100px) { .center { position: static; transform: none; order: 10; flex-basis: 100%; justify-content: center; white-space: normal; flex-wrap: wrap; } }
   main { padding: 0 var(--edge); }
   .foot { padding: var(--space-7) var(--edge) 36px; text-align: center; }
 

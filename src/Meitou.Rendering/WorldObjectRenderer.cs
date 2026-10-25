@@ -1095,7 +1095,7 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
             foreach (var gp in g.Parts)
                 if (gp.Count[lv] > 0)
                 {
-                    into.Add((meshes.PlainMesh(gp, lv), gp.Count[lv], inst.Transform));
+                    into.Add((meshes.PlainMesh(gp, lv, gpu.Max - gpu.Min), gp.Count[lv], inst.Transform));
                     DrawnTriangles += gp.Count[lv] / 3;
                 }
             return;
