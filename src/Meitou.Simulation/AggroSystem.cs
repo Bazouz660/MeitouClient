@@ -390,11 +390,6 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         // hold enemies of their guards, and slaves of a hostile faction, such as Heng's Outlaws, stand among them).
         if (s.Table.Cold(slot) is not { Medical.Incapacitated: false, IsImprisoned: false } c || c.SlaveState == 1 && !IsEnemy(s.Relations, s.Faction, c.SlaveOwner)) return;
         bool sneaking = (c.Orders & CharacterOrders.Sneak) != 0;
-        // The target score (Combat.TargetScore; Taunt and Passive weigh in there), after the Hold post test for a holding looker. Strictly better only: the grid visits a cell's
-        // slots in ascending order, so a tie keeps the lower slot within a cell; across cells the order is the grid's fixed one. A sneaker that scores lower still gets its spot meter.
-        float score = Score(ref s, slot, c, d2) ?? float.NegativeInfinity;
-        bool better = score > s.BestScore;
-        if (!better && !sneaking) return;
         // Wanted characters are the arrest system's (Crime.ArrestSystem): the police spot, fine or arrest them there.
         bool enemy = s.Stance != Ai.AiStance.Passive
             && (IsEnemy(s.Relations, s.Faction, c.Faction) || s.Stance == Ai.AiStance.AggressiveNeutrals && IsNeutral(s.Relations, s.Faction, c.Faction) || WarEnemy(s.War, s.Faction, c.Faction, other.Position));
@@ -412,6 +407,11 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         if (s.Stance == Ai.AiStance.Defensive && !c.InCombat) return;
         if (s.Stance == Ai.AiStance.ProtectSquad && (s.SquadFights is { } fights ? s.Squad < 0 || !fights.Contains((s.Squad, slot)) : !c.InCombat)) return;
         if (s.Stance == Ai.AiStance.Territorial && Vector2.DistanceSquared(new Vector2(other.Position.X, other.Position.Z), s.Home) > s.HomeR2) return;
+        // The target score (Combat.TargetScore; Taunt and Passive weigh in there), after the Hold post test for a holding looker. Strictly better only: the grid visits a cell's
+        // slots in ascending order, so a tie keeps the lower slot within a cell; across cells the order is the grid's fixed one. A sneaker that scores lower still gets its spot meter.
+        float score = Score(ref s, slot, c, d2) ?? float.NegativeInfinity;
+        bool better = score > s.BestScore;
+        if (!better && !sneaking) return;
         // A sneaking target is harder to see and to hear (the Sneak order; docs/game/perception.md "Sight", "Spotting a sneaker" and "Hearing"): in view it fills the
         // looker's spot meter and counts as seen only once the meter was full before this scan.
         float stealth = sneaking ? Orders.Stealth(c) : -1;

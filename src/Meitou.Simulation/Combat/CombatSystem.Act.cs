@@ -156,6 +156,13 @@ public sealed partial class CombatSystem
                 int pick = ChooseTarget(world, i, s, cold, keep: true);
                 s.PickTick = now + PickTicks(world, cold);
                 if (pick >= 0 && pick != s.TargetSlot) Retarget(ref s, pick, prev[pick].Generation);
+                else if (pick < 0)
+                {
+                    // Nobody qualifies, not even the current target (a holder's that left its area, a player's beyond 400): the chooser has no target and the fight ends.
+                    fighting = false;
+                    s.TargetSlot = -1;
+                    EndFight(table, i);
+                }
             }
 
             // 3b. A crossbowman fights with the crossbow or the melee weapon; with the crossbow the ranged controller runs instead of the melee attack (a blow aimed at it is still met).

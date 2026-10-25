@@ -408,8 +408,8 @@ CONSTANTS value and the default; Meitou 3); the block break-out ignores the 10% 
 Fighters walk in to their technique reach (`CombatTuning.StandGap`); the straight-line approach (`SelfApproach`) does not circle. A blow on
 the target that is not a hit gives up the engaged place (`FUN_14060a2f0`), so the circling fighters get their turn.
 Target choice (`CombatSystem.ChooseTarget`, combat.md "Target selection"): a fighter whose target goes down chooses again at once and ends its fight
-only when no candidate is left; while deciding it chooses again every 1 s (0.3 s on Hold), except for a player's pick. Candidates are its current
-target, its attackers and, unless Passive, the attackers of squad mates within `JoinRange` (+10 for one whose mate does not fight it back and that has
+only when no candidate is left; while deciding it chooses again every 1 s (0.3 s on Hold), except for a player's pick, and ends the fight when even
+its current target fails (a holder's that left the post test, a player's beyond 400). Candidates are its current target (any faction), its attackers and, unless Passive, the attackers of squad mates within `JoinRange` (+10 for one whose mate does not fight it back and that has
 under 2 attackers: engine reading of the protectee); not of its faction or squad. Not modelled: the sensed test, murderous ×0.5, getting up ×0.1.
 Only a fighter blocks or dodges. A landed hit that picks a stumble clip on a character outside a fight stops its walking and its work (first aid,
 lockpicking, building, operating) until the clip ends (`CharacterCold.StaggeredUntil`); the order then goes on where it was (engine choice: the original

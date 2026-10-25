@@ -71,7 +71,7 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
         bool shooting = st.Ranged && st.RangedState != (byte)RangedStates.Closing;
         // On Hold it walks only to a target within the post test's reach of the hold point (80, 140 when the target fights it; Orders.HoldPost), else it stands (engine reading).
         bool holding = false;
-        if (Orders.Has(cold, CharacterOrders.Hold))
+        if (Orders.Holding(cold))
         {
             float far = combat.StateOf(new CharacterId(t, next[t].Generation)).TargetSlot == i ? 140 : 80;
             holding = Vector2.DistanceSquared(Orders.HoldPointOf(cold, n.Position), new Vector2(next[t].Position.X, next[t].Position.Z)) > far * far;
