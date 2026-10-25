@@ -145,13 +145,15 @@ Meitou look, not in the game (`GroundContact`, switch `contact`; issue #65). The
 biome by the mesh's own slope, so a cliff face stops hard against the ground's grass or dirt. In the mesh colour programs a pixel
 `h` above `terrainHeight` gets `contact = 1 − smoothstep(0, band, h)` (not beyond `uFarEnd`). The band is `Share` (0.15) of the placed
 mesh's height, at most `MaxBand` (60 units): each mesh draw pushes its model's bounding-box size (`MeshBindings.Extent`, `uNode.xyz`) and
-the vertex stage takes its rise through the placement; a fixed 20-unit band erased boulders under 2 m. Its normal mixes
+the vertex stage takes its rise through the placement. Its normal mixes
 toward `terrainNormal` (so slope layers, cliff projections and lighting follow), the cliff weights toward the ground's, the road layer
 returns by `contact`, and the ground's five biome slots take `contact` of the weight with the feature's biome as a sixth slot
 (`BIOME_SLOTS` 6 in the mesh programs only; the patches keep 5). Depth, shadows, the impostor bake (`ContactBand` 0) and GI unchanged.
-**Observed** (Hub rock, 80 m): the foot takes the ground's gravel and colour; faces overhanging a slope close below also blend,
-since the test is height above the terrain at the pixel's x, z. **Unknown:** cost in the band (up to 6 biomes a pixel), and the look at
-the impostor crossfade.
+**Observed** (Hub, pixel diffs of on/off renders): on a large rock 80 m away only the foot changes, faces above it are identical. A
+boulder showing about 1 m above ground is still erased: many rock meshes' boxes are hundreds of units (most of the rock is buried), so
+neither the box height nor the box top over the ground at the origin (tried: blend almost gone on slopes) measures the visible part.
+**Unknown:** a per-instance visible height (box top over the lowest ground under the box, packed per placement), cost in the band (up
+to 6 biomes a pixel), and the look at the impostor crossfade.
 
 ## Interior cut
 
