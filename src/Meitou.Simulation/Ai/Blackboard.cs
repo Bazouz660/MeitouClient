@@ -291,6 +291,21 @@ public sealed class Blackboard
     }
 
     /// <summary>A saved contract (<see cref="Saving.AiSave"/>) running again until <paramref name="end"/>, with no target.</summary>
+    /// <summary>
+    /// Makes a package of the slots the current one again without its start (the original keeps the running package object on its platoon while the squad is out of the
+    /// world); false when no slot lists it.
+    /// </summary>
+    public bool Resume(AiPackage package)
+    {
+        foreach (var (slot, list) in slots)
+            if (list.Contains(package))
+            {
+                Start(package, slot, null);
+                return true;
+            }
+        return false;
+    }
+
     public void ResumeContract(AiPackage package, double end, IPackageRules? rules = null)
     {
         Contract = package;

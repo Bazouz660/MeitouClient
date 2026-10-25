@@ -75,9 +75,10 @@ public sealed partial class DialogueSystem
         open is { } o && (o.Npc == who || o.Player == who) || bubbles.Any(b => b.C != c && (b.Speaker == who || b.C.Npc == who));
 
     /// <summary>
-    /// Whom a loaded NPC reacts to by sight: the engine's stand-in for the perception that fires events 3, 66 and 67 (<c>FUN_140859680</c>). A player character within
-    /// <see cref="DialogueSettings.AmbientRange"/> first (66 hostile, 67 ally, else 3); else the nearest awake NPC of another squad within <see cref="TalkingRange"/> (event 3, as the
-    /// original fires it for a seen character outside the player's faction), only near a player character, where it can be heard.
+    /// Whom a loaded NPC reacts to by sight (the perception that fires events 3, 66 and 67, <c>FUN_140859680</c>): the nearest player character it sees by the sight test every
+    /// other sighting uses (<see cref="SightMap.Sees"/>: its race's range, daylight, light, places and view cone; a sneaker with its stealth, without the spot meter: engine choice),
+    /// or that a squad mate sees within twice its range R (the shared sightings of <c>FUN_140857b10</c>), 66 hostile, 67 ally, else 3; else the nearest awake NPC of another squad within <see cref="TalkingRange"/> (event 3, as the original fires it for a seen character outside
+    /// the player's faction), only within <see cref="DialogueSettings.AmbientRange"/> of a player character, where it can be heard. The nearest to a player look first.
     /// </summary>
     void SeeOthers(World world)
     {
@@ -86,27 +87,47 @@ public sealed partial class DialogueSystem
         for (int i = 0; i < table.HighWater; i++)
             if (table.Next[i].Alive && table.Cold(i) is { IsPlayer: true, Medical.Dead: false }) players.Add(i);
         if (players.Count == 0 || !data.Relations.Contains(world.Player.Faction)) return;
-        float range2 = Settings.AmbientRange * Settings.AmbientRange;
-        // The NPCs that can look or be greeted: loaded, awake, free, near a player character.
-        var near = new List<int>();
+        float audible2 = Settings.AmbientRange * Settings.AmbientRange;
+        // The NPCs that can look or be greeted: loaded, awake, free, within their sight reach of a player character; by that distance, then slot.
+        var near = new List<(int Slot, float D2)>();
         for (int i = 0; i < table.HighWater; i++)
         {
             if (!table.Next[i].Alive || table.Next[i].Task == (byte)CharacterTask.Rest || table.Cold(i) is not { IsPlayer: false, SquadId: >= 0, Engaged: false, InCombat: false, Fleeing: false, IsImprisoned: false } nc) continue;
             if (nc.Fighter?.IsAnimal == true || nc.Appearance?.Animal is not null || !data.Relations.Contains(nc.Faction) || !Awake(table, i)) continue;
+            float reach = MathF.Max(world.Sight.MaxRange(i, AggroSystem.RangeOf(nc, AggroSystem.OutdoorSight)), Settings.AmbientRange);
+            float nearest = float.MaxValue;
+            foreach (int p in players) nearest = MathF.Min(nearest, Vector3.DistanceSquared(table.Next[i].Position, table.Next[p].Position));
+            if (nearest <= reach * reach) near.Add((i, nearest));
+        }
+        near.Sort((a, b) => a.D2 != b.D2 ? a.D2.CompareTo(b.D2) : a.Slot.CompareTo(b.Slot));
+        // Who sees which player character, and which squads have a member seeing it (the original's squad-shared sightings, GroupSense: a mate's counts within 2 R).
+        var sees = new HashSet<(int Npc, int Player)>();
+        var squadSees = new HashSet<(int Squad, int Player)>();
+        foreach (var (i, _) in near)
+        {
+            var nc = table.Cold(i)!;
+            float outdoor = AggroSystem.RangeOf(nc, AggroSystem.OutdoorSight);
             foreach (int p in players)
-                if (Vector3.DistanceSquared(table.Next[i].Position, table.Next[p].Position) <= range2) { near.Add(i); break; }
+            {
+                var pc = table.Cold(p)!;
+                float stealth = (pc.Orders & CharacterOrders.Sneak) != 0 ? Orders.Stealth(pc) : -1;
+                if (world.Sight.Sees(i, p, table.Next[i].Position, table.Next[i].Yaw, table.Next[p].Position, outdoor, stealth) <= 0) continue;
+                sees.Add((i, p));
+                squadSees.Add((nc.SquadId, p));
+            }
         }
         int said = 0;
-        foreach (int i in near)
+        foreach (var (i, nearest) in near)
         {
             if (said >= Settings.AmbientPerScan) break;
             var nc = table.Cold(i)!;
+            float shared = 2 * AggroSystem.RangeOf(nc, AggroSystem.OutdoorSight);
             int best = -1;
-            float best2 = range2;
+            float best2 = float.MaxValue;
             foreach (int p in players)
             {
                 float d2 = Vector3.DistanceSquared(table.Next[i].Position, table.Next[p].Position);
-                if (d2 <= best2) (best, best2) = (p, d2);
+                if (d2 < best2 && (sees.Contains((i, p)) || d2 <= shared * shared && squadSees.Contains((nc.SquadId, p)))) (best, best2) = (p, d2);
             }
             // The squad's cooldown starts only once a line is said: the original asks again on every perception update and rolls `chance temporary` afresh each time
             // (the Red Sabres' attack root is 20%), so a failed look is tried again on the next scan. A player character it has nothing to say to leaves the turn to the NPCs.
@@ -116,10 +137,11 @@ public sealed partial class DialogueSystem
                 said++;
                 continue;
             }
+            if (nearest > audible2) continue;
             (best, best2) = (-1, TalkingRange * TalkingRange);
-            foreach (int o in near)
+            foreach (var (o, od2) in near)
             {
-                if (table.Cold(o)!.SquadId == nc.SquadId) continue;
+                if (od2 > audible2 || table.Cold(o)!.SquadId == nc.SquadId) continue;
                 float d2 = Vector3.DistanceSquared(table.Next[i].Position, table.Next[o].Position);
                 if (d2 <= best2 && !Recent(world, nc.SquadId, table.IdOf(o))) (best, best2) = (o, d2);
             }

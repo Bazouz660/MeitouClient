@@ -47,6 +47,7 @@ sealed partial class GameHost
         UpdateGroundItems(snapshot);
         UpdateDoors();
         UpdateTurretPoses(snapshot);
+        UpdateRotors(snapshot);
         UpdateFarms(snapshot);
         if (gpu.Objects is not { } objects) return;
         constructionLook.Clear();
@@ -147,7 +148,7 @@ sealed partial class GameHost
     static BuildingPlacement Placement(BuildingSnapshot site) =>
         site.LevelPlacement is { } level
             ? level with { Key = site.Id, WorldY = site.Position.Y, DestroyedOverride = site.Destroyed }
-            : new(WorldLayout.ZoneOf(site.Position.X, site.Position.Z), site.Id, site.Record, site.Position, site.Rotation, null, site.Position.Y) { Key = site.Id };
+            : new(WorldLayout.ZoneOf(site.Position.X, site.Position.Z), site.Id, site.Record, site.Position, site.Rotation, null, site.Position.Y) { Key = site.Id, Contained = site.Parent is not null, ContainerId = site.Parent };
 
     /// <summary>Navmesh membership (engine reading of the Observed rebuild on placing): <c>path mode</c> not 0 and the building complete or without a <c>build threshold</c>.</summary>
     void AddToNavmesh(BuildingSnapshot site, BuildingPlacement placement)
@@ -192,6 +193,22 @@ sealed partial class GameHost
         // Resource and node buildings are not selectable objects (TownBuildings leaves them out too).
         bool Pickable(string record) => pickable.TryGetValue(record, out bool known) ? known
             : pickable[record] = db.Find(record) is { } r && !r.GetBool("is node") && !r.GetBool("is foliage");
+        // The world's resources for the mine and farm readout, remade when a new game or a load replaces the population data. The check and the popup ask for the same ghost
+        // each frame: the last answer is kept.
+        var machines = new Dictionary<string, Meitou.Data.Gameplay.Construction.MachineData?>(StringComparer.Ordinal);
+        (Meitou.Simulation.PopulationData Data, Meitou.Data.Gameplay.Construction.ResourceField Field)? field = null;
+        (string Record, System.Numerics.Vector3 At, Meitou.Data.Gameplay.Construction.PlacementReadout? Readout)? lastReadout = null;
+        Meitou.Data.Gameplay.Construction.PlacementReadout? Readout(string record, System.Numerics.Vector3 at)
+        {
+            if (popData is not { } d) return null;
+            if (field?.Data != d) (field, lastReadout) = ((d, new Meitou.Data.Gameplay.Construction.ResourceField(d.Db, d.Biomes, d.ResourceNodes)), null);
+            if (lastReadout is { } last && last.Record == record && last.At == at) return last.Readout;
+            if (!machines.TryGetValue(record, out var machine))
+                machines[record] = machine = db.Find(record) is { Type: Meitou.Data.Fcs.FcsRecordType.BUILDING } r ? Meitou.Data.Gameplay.Construction.MachineData.From(db, r) : null;
+            var readout = Meitou.Data.Gameplay.Construction.PlacementRules.Readout(machine, field.Value.Field, at);
+            lastReadout = (record, at, readout);
+            return readout;
+        }
         return new Building.BuildServices
         {
             Menu = new Building.BuildMenu([.. BuildData().Values]),
@@ -210,11 +227,13 @@ sealed partial class GameHost
                 Ground = gpu.Terrain.HeightAt,
                 Footprint = footprints.Of,
                 CollisionMesh = footprints.Mesh,
+                Plot = footprints.Plot,
                 StaticAround = footprints.StaticAround,
                 StaticAlong = (origin, direction, length) => footprints.Along(origin, direction, length).Where(b => Pickable(b.Placement.BuildingId)),
                 // The movement pick's floors up to the viewed one: the build window's floor arrows choose the floor the ghost stands on.
                 FloorAlong = (origin, direction, length) => gpu.Objects?.FloorHit(origin, direction, viewedFloor, length) is { } hit
-                    ? (hit.Position, GhostFloorOf(hit.Room, hit.Room.FloorAt(hit.Position))) : null,
+                    ? (hit.Position, GhostFloorOf(hit.Room, hit.Room.FloorAt(hit.Position)) with { Ceiling = hit.Room.CeilingAbove(hit.Position) }) : null,
+                Readout = Readout,
             },
             WorldInfo = placement =>
             {

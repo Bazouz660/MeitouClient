@@ -16,6 +16,9 @@ public sealed record QueuedGhost(BuildingBuildData Building, Vector3 Position, Q
 /// </summary>
 public sealed record GhostFloor(string Building, Vector2[] Footprint, int Floor, string? Level = null, bool Owned = false)
 {
+    /// <summary>The height of the building's ceiling over the floor point, null when nothing is over it (what a <c>ceiling placement</c> ghost hangs from).</summary>
+    public float? Ceiling { get; init; }
+
     /// <summary>The parent the placed building records: the site's id, or the level building's instance id.</summary>
     public string Parent => Level ?? Building;
 }
@@ -35,8 +38,12 @@ public sealed class PlacementServices
     public Func<Vector3, Vector3, float, IEnumerable<PlacedBuilding>> StaticAlong { get; init; } = (_, _, _) => [];
     /// <summary>The collision triangles of a building record in its own space (a click on a building is tested against them); empty without level data.</summary>
     public Func<string, IReadOnlyList<(Vector3[] Vertices, int[] Indices)>> CollisionMesh { get; init; } = _ => [];
+    /// <summary>A building without collision's pick stand-in (<see cref="BuildingFootprints.Plot"/>): a click on the ground inside it selects the building. Never a placement footprint.</summary>
+    public Func<string, BuildingFootprint?> Plot { get; init; } = _ => null;
     /// <summary>Where a ray (origin, direction, length) first meets a loaded building's floor at or below the viewed floor, and that floor; null for none.</summary>
     public Func<Vector3, Vector3, float, (Vector3 Position, GhostFloor Floor)?> FloorAlong { get; init; } = (_, _, _) => null;
+    /// <summary>What a BUILDING's ghost reads of the world's resources at a position (<see cref="PlacementRules.Readout"/>); null without them.</summary>
+    public Func<string, Vector3, PlacementReadout?> Readout { get; init; } = (_, _) => null;
 }
 
 /// <summary>Everything one evaluation reads (the query is pure over it and the services).</summary>
@@ -55,9 +62,9 @@ public sealed record PlacementQuery(BuildingBuildData Building, Vector3 Position
 
 /// <summary>
 /// The host's half of the placement checks (docs/simulation.md "Buildings", "Placement validation"; the messages and their order are docs/game/buildings-production.md
-/// "Placement"): the ground, the footprints and the characters. It runs <see cref="PlacementRules.TownBlock"/> first and returns the first failure in the original's order.
-/// Not decided (so never failed): resource and crop yield, snap nodes, usage nodes, the floor number and ceilings. The ghost stands on the terrain or on a building's floor
-/// (<see cref="PlacementQuery.On"/>).
+/// "Placement"): the ground, the footprints and the characters. It runs <see cref="PlacementRules.TownBlock"/> and the resource row first and returns the first failure in the
+/// original's order. Not decided (so never failed): snap nodes, usage nodes and the floor number above floor 0; a ceiling ghost fails only without a ceiling. The ghost
+/// stands on the terrain or on a building's floor (<see cref="PlacementQuery.On"/>), a ceiling ghost hangs under the ceiling over that floor.
 /// </summary>
 public static class PlacementCheck
 {
@@ -78,11 +85,11 @@ public static class PlacementCheck
         // On a floor: the building must be ours, a level building the player's faction owns or a finished site.
         string? parent = q.On?.Building;
         if (q.On is { Level: not null, Owned: false }) return PlacementFailure.NotOwnedBuilding;
-        if (q.On is { Level: null })
-        {
-            if (q.Sites.FirstOrDefault(s => s.Id == parent) is not { } home) return PlacementFailure.NotOwnedBuilding;
-            if (!home.Complete) return PlacementFailure.InsideIncomplete;
-        }
+        if (q.On is { Level: null } && q.Sites.FirstOrDefault(s => s.Id == parent) is null) return PlacementFailure.NotOwnedBuilding;
+        // The resource row comes after the first row's "don't own" text and before "incomplete".
+        var resources = PlacementRules.ResourceBlock(q.Services.Readout(b.Id, q.Position));
+        if (resources != PlacementFailure.None) return resources;
+        if (q.On is { Level: null } && q.Sites.FirstOrDefault(s => s.Id == parent) is { Complete: false }) return PlacementFailure.InsideIncomplete;
         // A building under the ghost's centre (the one it stands in aside): another town's or the level's (not ours), or an unfinished site of ours.
         foreach (var site in q.Sites)
             if (site.Id != parent && q.Ignore?.Invoke(site.Record, site.Position, site.Rotation) != true && q.Services.Footprint(site.Record) is { } siteFootprint
@@ -123,6 +130,8 @@ public static class PlacementCheck
             float nodeY = Vector3.Transform(part.Transform.Translation, world).Y + source.GetFloat("footprint vertical");
             if (nodeY < q.Services.WaterLevel) return PlacementFailure.InvalidGround;
         }
+        // A ceiling ghost finds no ceiling over it: the floor-number text.
+        if (b.CeilingPlacement && q.On?.Ceiling is null) return PlacementFailure.InvalidFloor;
 
         // A wall piece pitches with the ground: its own up axis must be within `max slope` of the vertical (Verified, FUN_140429510).
         if (q.WallPiece)

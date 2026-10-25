@@ -54,6 +54,10 @@ public sealed class CharacterCold
     public int Role { get; set; }
     /// <summary>Seconds left that a follower blocked on its way straight to its slot takes paths (<see cref="MovementSystem.FollowPathSeconds"/>).</summary>
     public float FollowPathTime { get; set; }
+    /// <summary>A formation follower's heading (unit X/Z; zero until it starts), eased toward its leader's (<see cref="MovementSystem.HeadingEase"/>). Not saved; hashed while following.</summary>
+    public System.Numerics.Vector2 FollowHeading { get; set; }
+    /// <summary>The speed a follower wants this tick (<see cref="MovementSystem"/>, the original's desired speed). Not saved; hashed while following.</summary>
+    public float FollowSpeed { get; set; }
     /// <summary>Whom a <see cref="FollowOrder"/> told it to follow while its task is <see cref="CharacterTask.Follow"/> (None: its squad's leader). Not saved; hashed only while set.</summary>
     public CharacterId FollowOrder { get; set; } = CharacterId.None;
     /// <summary>Whether the <see cref="FollowOrder"/> is a Bodyguard order (45): the follower also defends its target (<see cref="RetaliationSystem"/>). Not saved; hashed with <see cref="FollowOrder"/>.</summary>
@@ -74,6 +78,8 @@ public sealed class CharacterCold
     public long ProvisionalRepathTick { get; set; }
     /// <summary>Times the walker was stopped on the provisional part since a long route last gained a navmesh part (<see cref="MovementSystem.ProvisionalBlockedLimit"/>).</summary>
     public int ProvisionalBlocked { get; set; }
+    /// <summary>Times the walker was stopped on the navmesh part of its path since it last reached a waypoint or was given an order (<see cref="MovementSystem.BlockedRepathLimit"/>).</summary>
+    public int BlockedRepaths { get; set; }
     /// <summary>The path request in flight, so an answer to an older one is ignored.</summary>
     public long PathRequest { get; set; }
     /// <summary>
@@ -123,7 +129,7 @@ public sealed class CharacterCold
     /// <summary>Sandbox only (the animation sandbox of the game host): replaces the movement mode of every order, and the speed the character walks at (0: the speed chain's). Not hashed; the normal game never sets them.</summary>
     public byte? ModeOverride { get; set; }
     public float SpeedOverride { get; set; }
-    /// <summary>The path cost factor of water for this character (race <c>water avoidance</c>, halved for the player faction; 0: default).</summary>
+    /// <summary>The path cost factor of water for this character (race <c>water avoidance</c>, halved for the player faction; 0: default), the floor of its <see cref="WaterCost"/>.</summary>
     public float WaterFactor { get; set; }
     /// <summary>Its faction's FACTION <c>road preference</c> (0: none), with which a long trip takes the roads (<see cref="RoadNetwork.Route"/>).</summary>
     public float RoadPreference { get; set; }
@@ -501,6 +507,7 @@ public sealed class CharacterTable
             hasher.Add(k.SquadId);
             hasher.Add(k.Role);
             hasher.Add(k.FollowPathTime);
+            if (c.Task == (byte)CharacterTask.Follow) { hasher.Add(k.FollowHeading); hasher.Add(k.FollowSpeed); }
             hasher.Add(k.Path.Length);
             hasher.Add(k.PathRequest);
             hasher.Add(k.IsPlayer);

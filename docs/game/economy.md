@@ -31,9 +31,13 @@ when count1, finally trader factor. Stack total: p*n-trunc(p-p*charges/maxCharge
 uses unit directly. The trade-window's split of exchanged-stock units remains **Observed/Unknown**.
 
 **Observed** trader T=buyMult*culturePrice, halved for the decoded stolen-to-player-faction case.
-**Verified** buyMult comes from trader squad template and applies both directions. Town culture
-wins over faction, default1; duplicate culture entries last-win. Trade-price percentage=v0/100,
-zero means100%. Culture also defines illegal/forbidden goods and buildings.
+**Verified** buyMult comes from trader squad template and applies both directions. **Observed** (`FUN_14079e6d0` -> `FUN_14092bec0`): the culture comes from the
+trader's town (its `isTown`, vtable 0x268): the town's culture (`Town+0x4a8`) if it names the item, else the culture of the
+**town's** faction (`getFaction`, vtable 0x58; `Faction+0x90`), never the trader's own faction; no town: 1. Duplicate culture entries
+last-win. Trade-price percentage=v0/100, zero means100%. Culture also defines illegal/forbidden goods and buildings.
+**Verified** (probe of the merged base data, 2026-10-24): no UC town has a culture, so UC towns price by FACTION United Cities'
+`empire` (also the culture of Traders Guild, Empire Peasants), for every trader there, thieves included: Hashish 1200%, Bloodrum/Hemp 400%, Sake 150%, the first three illegal. Hashish elsewhere:
+holy 400, slavers 600, shek 350, `empire SW override` towns 500, swamper 100.
 **Observed** town market factor starts uniform[1-m,1+m), m0.3, then clamps against global-town
 factors/default1 within distance/1e6*m*10. Actual setup-list membership/order remains unknown;
 save factors span0.7..1.3. Only generic items use market factors; save v0=trunc(factor*10000),
@@ -64,8 +68,8 @@ inventory, `uses_building_category`), or an owner of type 1 whose +0x2f8 is 2, o
 its slot +0x260 (meanings **Unknown**). Flagged: the owners must not be enemies (faction test) and must be on the same floor, and the limit is 60, or the source owner's bounds radius + 40
 when the source is a building (class 0). Same owner: always allowed. **Unknown**: which windows the three drop callers flag; whether take-all uses the check.
 
-Meitou (engine choices): window moves to and from a machine or storage need the character within `ProductionSettings.TransferReach` 200 of the building (the sim has no bounds
-radius), to and from a container within `PlayerSystem.TradingRange` 60; both post "Out of trading range.". The loot window closes beyond 1.5 x the carry reach. A held item given to a
+Meitou (engine choices): window moves to and from a machine or storage need the character within `ProductionSettings.TransferReach` 40 of the building's footprint hull (for the
+bounds radius + 40), to and from a container within `PlayerSystem.TradingRange` 60; both post "Out of trading range.". The loot window closes beyond 1.5 x the carry reach. A held item given to a
 character: within `PlayerSystem.GiveRange` 1000 of its window's owner, `StealRange` 60 out of a non-player window. No faction or floor test, no sound (`gui_notrade` is in no bank, [audio](../audio.md)).
 
 ### Who trades
@@ -96,8 +100,8 @@ character: within `PlayerSystem.GiveRange` 1000 of its window's owner, `StealRan
   -0.4 x `vendor money` (the upper bound is not shown by the decompile).
 - **Wealth** = clamp(faction wealth, 0.2, 1), but the faction wealth function (`FUN_1402dd530`) is a stub returning 1.0, so wealth is always 1
   (**Verified**, kenshi_x64.exe decompile: 9-byte function, constant return). It scales only shop stock count, purse and nest spawn weight; no price reads it.
-- Meitou (`Shop.ForBuilding`, engine choices): the merged stock is the shop's one inventory (no per-container inventories yet), the money stack goes to the purse, r is symmetric,
-  stock is saved on the platoon as squad shops' ([save keys](../formats/save.md#npc-platoons-meitou-mapping); the original keeps it in the containers, zone file). Observed with real data: Squin's armour shop (Bughouse) 18 x 287, Stack's bars (Storm House) 18 x 88.
+- Meitou (`Shop.ForBuilding`, engine choices): the stock is the shop's one inventory in which each stock container's grid is a rectangle of its own (`Inventory.Regions`, packed by maximal rectangles, the lowest of four orders; an item never spans two), the trade window shows them all with the cells outside every container greyed (a drop there: "No room for that item."), a container's window only its own. The money stack goes to the purse, r is symmetric,
+  stock is saved on the platoon as squad shops' ([save keys](../formats/save.md#npc-platoons-meitou-mapping); the original keeps it in the containers, zone file). Observed with real data (Squin, 2026-10-24): 3 to 13 rows more than the packed size (geometry: 300 random orders found none lower), e.g. the Bughouse armour shop 18 x 274 for 271.
 
 ## Crimes, bounties and prisoners
 
@@ -357,7 +361,9 @@ decompile's `DialogActionEnum` / `DialogConditionEnum` / `EventTriggerEnum`, com
   129 leads the planner to 203 Arresting (list B: target down, unarmed, carried) and then the cage goals.
 - **Caging** (goals 112 / 281 "Find and put in cage", subtask 108 `PUT_IN_CAGE`): desire `FUN_1405a1140` (0 unless carrying;
   0.1 / 0.5 / 1.4 / 2.0 by status, death and bounty tests in `FUN_1405a0f10`); cage finder `FUN_1408d0770(ai, wantFree 1, function 8)`
-  over the buildings the AI knows (interiors included): usable (`FUN_140621230`), not reserved, free; weight
+  over the buildings the AI knows (interiors included): usable (`FUN_140621230`, `Ownerships::canIUseThisBuilding`; **Verified** by decompile: true when the
+  building's town is the carrier's occupied town or the building is of its faction, else not when the building's faction is hostile, then further tests, last the ally test
+  `FUN_1406b2630`), not reserved, free; weight
   `clamp(1 - d^2 / 4608^2, 1e-5, 1)`, x100 if the cage is of the carrier's faction (otherwise it must be usable), x100 if in the
   carrier's home, x1e-5 for a police carrier when the cage's building fails slot 0x290; the **highest** weight wins (**Observed**).
   No free cage: the finder returns nothing; what the carrier then does is **Unknown**.
@@ -435,8 +441,6 @@ Meitou's reading: [simulation, slave trading](../simulation.md#arrest-and-jail).
   decides which neighbours have factors already.
 - **Whether `Zones_TownSetup` runs on a save load** and, if so, whether the saved `trade goods` factors (section 7.2, saved by `FUN_140376b80`,
   loaded by `FUN_1403715c0`) overwrite or are overwritten by a fresh roll. (That the factors are saved is settled.)
-- **How the market factor reaches the display**: `FUN_1407ae130` ("Price mark-up", "Avg. Price") builds the tooltip text from the
-  same functions; the exact strings and the average formula were not decoded.
 - **What `FUN_140745e30` really does** (it forwards a money delta to virtual slot 54 of the object at `+0x80`; the purse mutation itself) and how
   the trade window decides the `k` units priced with the opposite flag (`FUN_14070e3b0`, section 5).
 - **Where `MapItem+0x1e8` (the map price) comes from**, and which record `BlueprintItem+0xc0` points at (section 10).

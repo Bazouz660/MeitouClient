@@ -22,7 +22,12 @@ namespace Meitou.Simulation;
 /// an answer is applied in a serial step, so a path is never read while it is replaced.</item>
 /// </list>
 /// Water states cap or replace the top speed (<see cref="WaterStateAt"/>, <see cref="Speed.InWater"/>). Not modelled yet (Unknown or later): slopes (the original has no slope penalty), the combat speed
-/// multiplier, the original's formation slot rules (Unknown; followers keep <see cref="Formation.Slot"/> behind the leader, steered straight at it when near). Far trips take the roads in the path layer (<see cref="CharacterCold.RoadPreference"/>).
+/// multiplier. Far trips take the roads in the path layer (<see cref="CharacterCold.RoadPreference"/>).
+/// <item>Followers (the original's <c>Task_Follow</c>, docs/game/pathfinding.md "Squads travelling together"): a squad mate aims at its <see cref="Formation.Layout"/> slot turned
+/// onto a heading that eases toward the leader's, one second ahead of the leader; anyone else keeps a drawn 20..40 from its target. Its speed is the original's desired speed
+/// (<see cref="FollowSpeedFor"/>), capped by its top speed only (engine choice: the original's cap by speed mode is Unknown, and only this lets it settle in its slot). Within
+/// <see cref="DirectDistance"/> it steers straight at the aim, else it takes paths, and for <see cref="FollowPathSeconds"/> after a blocked step (engine choice). Not done: the
+/// original's aim outside a building the follower cannot enter, and its 50-100 hysteresis (practically nil).</item>
 /// <item>Turning (engine choice; the original's rate is Unknown): the heading a path is followed along turns at most <see cref="TurnRate"/>, and the
 /// speed is scaled by the cosine of what is left of the turn (none beyond 90 degrees), so a character turns about on the spot before it runs off.</item>
 /// Queued orders (<see cref="CharacterCold.OrderQueue"/>) and the formation (<see cref="Formation"/>) exist.
@@ -40,12 +45,31 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
     public const float BodyShare = 0.6f;
     /// <summary>A character within this distance of a waypoint has reached it.</summary>
     public const float ArriveRadius = 10;
+    /// <summary>
+    /// How near (units) a walker comes to a corner it may not cut (<see cref="CanCut"/>) before it turns for the next waypoint (engine choice: about a step).
+    /// </summary>
+    public const float CornerReach = 2;
+
+    /// <summary>
+    /// Whether a walker at <paramref name="from"/> can step straight toward <paramref name="to"/> for <see cref="ArriveRadius"/> units, its height carried on as each step's is: a corner
+    /// is cut early only then (engine choice; Observed: zone 22.10, a walker beside a door stair's foot cut its corner up the stair's side and stood there).
+    /// </summary>
+    static bool CanCut(IWalkability walk, Vector3 from, Vector3 to)
+    {
+        var leg = new Vector2(to.X - from.X, to.Z - from.Z);
+        float length = leg.Length();
+        if (length < 1e-3f) return true;
+        float y = from.Y;
+        for (float d = 1; d <= MathF.Min(length, ArriveRadius); d += 1)
+            if (!walk.TryStand(from.X + leg.X * (d / length), from.Z + leg.Y * (d / length), y, out y)) return false;
+        return true;
+    }
     /// <summary>The <see cref="CharacterCold.ArriveWithin"/> of a walk to a spot (engine choice: a barman stands at his node behind the counter, not a stride off it).</summary>
     public const float SpotArrive = 2;
-    /// <summary>A follower's velocity toward its slot is the leader's plus the gap times this (per second), so it closes the gap without lagging a moving slot (engine choice).</summary>
-    public const float FollowGain = 2;
-    /// <summary>A follower this close to its slot beside a standing leader stands (engine choice).</summary>
-    public const float SlotSlack = 2;
+    /// <summary>How fast a formation follower's heading eases toward its leader's, per second, while the leader moves (the original's 0.5).</summary>
+    public const float HeadingEase = 0.5f;
+    /// <summary>A leader slower than this counts as standing (its follower's speed bands then apply).</summary>
+    public const float StandingSpeed = 0.1f;
     /// <summary>Seconds a follower blocked on its way straight to its slot takes paths instead (engine choice).</summary>
     public const float FollowPathSeconds = 3;
     /// <summary>A follower on paths (far off, or blocked) farther than this from its slot asks for a path to it.</summary>
@@ -54,8 +78,8 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
     public const float RepathSeconds = 0.5f, FailedPathWait = 2;
     /// <summary>A wanderer waits this many seconds (uniform) after reaching a place.</summary>
     public const float WaitMin = 3, WaitMax = 10;
-    /// <summary>A follower farther than this from its slot runs at full speed to catch up, on a path; nearer it steers straight at the slot.</summary>
-    public const float CatchUpDistance = 60;
+    /// <summary>A follower nearer its aim than this steers straight at it; farther, it takes paths (the original's 50).</summary>
+    public const float DirectDistance = 50;
     /// <summary>
     /// Radians per second the heading of a path follower turns at most (engine choice: a Kenshi recording turns a standing character about 100 degrees in
     /// 0.15 s before it runs; docs/game/pathfinding.md "Turning").
@@ -67,6 +91,11 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
     /// </summary>
     public const float ProvisionalRepathSeconds = 2;
     public const int ProvisionalBlockedLimit = 5;
+    /// <summary>
+    /// How many times running a walker stopped on the navmesh part of its path (no ground it can stand on ahead) asks for the path again from where it stands before it drops it
+    /// and the order (engine choice: from a slightly different spot the path can start elsewhere, docs/game/pathfinding.md "Own builder").
+    /// </summary>
+    public const int BlockedRepathLimit = 3;
 
     public PathService Paths { get; } = paths;
 
@@ -133,10 +162,71 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
                     cold.OrderQueue.Add(target);   // after the order in hand (shift + right click)
                     continue;
                 }
-                GoTo(table, slot, target, cold.RunSpeed);
-                (cold.GoalHeight, cold.GoalHeightAt) = (order.Target.Y, target);
+                GoToFloor(world, slot, new Vector3(target.X, order.Target.Y, target.Y), cold.RunSpeed);
             }
         }
+        foreach (var squad in world.Squads.All) RefreshFormation(world, squad);
+    }
+
+    /// <summary>
+    /// Rebuilds a squad's <see cref="Squad.FormationSlots"/> when its formation, head, members or their roles changed (serial). The head is the leader, or the squad mate the
+    /// leader follows (the original's task-31 head). The draws are keyed by the squad and the key, so a rebuild of the same squad gives the same slots.
+    /// </summary>
+    static void RefreshFormation(World world, Squad squad)
+    {
+        var table = world.Characters;
+        var head = FormationHead(table, squad);
+        int type = squad.Faction >= 0 && world.FactionFormations is { } formations && squad.Faction < formations.Count ? formations[squad.Faction] : (int)SquadFormation.Random;
+        ulong key = Rng.Mix((ulong)type ^ Rng.Key(head) << 2);
+        foreach (var m in squad.Members) key = Rng.Mix(key ^ Rng.Key(m) ^ (ulong)(table.IsAlive(m) ? table.Cold(m.Slot)!.Role : 7) << 56);
+        if (key == squad.FormationKey) return;
+        squad.FormationKey = key;
+        if (head.IsNone || !table.IsAlive(head))
+        {
+            squad.FormationSlots = [];
+            return;
+        }
+        FormationMember Of(CharacterId id)
+        {
+            var c = table.Cold(id.Slot)!;
+            return new FormationMember(id, c.Role, c.Animal is not null, Formation.RadiusScale * (c.FootprintRadius > 0 ? c.FootprintRadius : Combat.CombatTuning.DefaultFootprint));
+        }
+        var others = new List<FormationMember>();
+        var slaves = new List<FormationMember>();
+        foreach (var m in squad.Members)
+        {
+            if (m == head || !table.IsAlive(m)) continue;
+            var member = Of(m);
+            (member.Role == (int)SquadRole.Slave ? slaves : others).Add(member);
+        }
+        ulong draws = 0, seed = Rng.Hash(world.Seed, (ulong)squad.Id, RngPurpose.Formation, key);
+        squad.FormationSlots = Formation.Layout((SquadFormation)type, Of(head), others, slaves, () => Rng.Float(Rng.Hash(seed, 0, RngPurpose.Formation, draws++)));
+    }
+
+    /// <summary>The character a squad's formation is laid out from: its leader, or the squad mate the leader follows.</summary>
+    static CharacterId FormationHead(CharacterTable table, Squad squad)
+    {
+        var leader = squad.Leader;
+        if (leader.IsNone || !table.IsAlive(leader)) return leader;
+        var followed = table.Cold(leader.Slot)!.FollowOrder;
+        return table.Next[leader.Slot].Task == (byte)CharacterTask.Follow && !followed.IsNone && squad.Members.Contains(followed) && table.IsAlive(followed) ? followed : leader;
+    }
+
+    /// <summary>How far above or below the given height the floor <see cref="GoToFloor"/> walks onto may be (engine choice: a storey is about 66).</summary>
+    public const float FloorSlack = 20;
+
+    /// <summary>
+    /// <see cref="GoTo"/> onto the floor at <paramref name="at"/>'s height (serial phases only). Furniture cuts holes in a building's floor mesh and a goal there resolves to the
+    /// storey above or the ground below, so the goal moves to the nearest floor point (<see cref="IWalkability.FloorNear"/>) and keeps its height. Returns the X/Z goal.
+    /// </summary>
+    public static Vector2 GoToFloor(World world, int slot, Vector3 at, byte mode)
+    {
+        var floor = world.Walkability.FloorNear(at.X, at.Z, at.Y, FloorSlack) ?? at;
+        var flat = new Vector2(floor.X, floor.Z);
+        GoTo(world.Characters, slot, flat, mode);
+        var cold = world.Characters.Cold(slot)!;
+        (cold.GoalHeight, cold.GoalHeightAt) = (floor.Y, flat);
+        return flat;
     }
 
     /// <summary>
@@ -149,6 +239,7 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
         var cold = table.Cold(slot)!;
         cold.OrderQueue.Clear();
         cold.ArriveWithin = 0;
+        cold.BlockedRepaths = 0;
         n.Task = (byte)CharacterTask.GoTo;
         n.Goal = target;
         n.Mode = mode;
@@ -172,6 +263,7 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
             cold.FollowOrder = order.Target;
             cold.Guarding = order.Guard;
             cold.FollowPathTime = 0;
+            cold.FollowHeading = Vector2.Zero;
             table.Next[s].Task = (byte)CharacterTask.Follow;
             table.Next[s].TaskTime = 0;
             BreakCircle(table, id);
@@ -207,6 +299,7 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
         var cold = table.Cold(slot)!;
         cold.OrderQueue.Clear();
         cold.PathRequest = 0;
+        cold.FollowHeading = Vector2.Zero;
     }
 
     public void Schedule(World world)
@@ -220,7 +313,8 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
             // The goal's floor: the height the order was given at, else the character's own (a wander or follow goal on its level).
             float nearY = cold.GoalHeightAt == next[i].Goal && !float.IsNaN(cold.GoalHeight) ? cold.GoalHeight : next[i].Position.Y;
             var to = new Vector3(next[i].Goal.X, world.Walkability.GroundHeight(next[i].Goal.X, next[i].Goal.Y, nearY), next[i].Goal.Y);
-            cold.PathRequest = Paths.Submit(new CharacterId(i, next[i].Generation), next[i].Position, to, cold.FootprintRadius, cold.WaterFactor, cold.RoadPreference);
+            cold.PathRequest = Paths.Submit(new CharacterId(i, next[i].Generation), next[i].Position, to, cold.FootprintRadius,
+                WaterCost.Of(cold.WaterFactor, next[i].MaxSpeed, cold.Race, cold.SwimSpeed), cold.RoadPreference);
             next[i].Flags = (ushort)((next[i].Flags & ~(ushort)MoveFlags.NeedPath) | (ushort)MoveFlags.Pending);
         }
         // The synchronous service has the answers already.
@@ -302,14 +396,41 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
                 }
                 if (table.Cold(leader.Slot)?.CarriedBy == table.IdOf(i)) continue;   // it carries its leader: the squad follows it, it does not follow itself
                 var lead = prev[leader.Slot];
-                var slotPos = new Vector2(lead.Position.X, lead.Position.Z) + SlotOffset(squad, table.IdOf(i), leader, lead.Yaw);
+                var self = table.IdOf(i);
+                var leadAt = new Vector2(lead.Position.X, lead.Position.Z);
+                var leadDir = new Vector2(MathF.Sin(lead.Yaw), MathF.Cos(lead.Yaw));
+                float leadSpeed = new Vector2(lead.Velocity.X, lead.Velocity.Z).Length();
+                bool moving = leadSpeed > StandingSpeed;
                 var here = new Vector2(n.Position.X, n.Position.Z);
+                Vector2 slotPos;
+                if (squad is not null && squad.FormationSlots.TryGetValue(self, out var slot) && squad.Members.Contains(leader))
+                {
+                    // A squad mate: its slot turned onto its eased heading, one second of the leader's travel ahead of the leader.
+                    var heading = cold.FollowHeading;
+                    if (heading == Vector2.Zero) heading = leadDir;
+                    else if (moving)
+                    {
+                        heading += (leadDir - heading) * (HeadingEase * dt);
+                        heading = heading.LengthSquared() > 1e-8f ? Vector2.Normalize(heading) : leadDir;
+                    }
+                    cold.FollowHeading = heading;
+                    slotPos = leadAt + heading * leadSpeed + Formation.ToWorld(slot, heading);
+                }
+                else
+                {
+                    // Anyone else: its drawn distance from the target, on its own side.
+                    var off = here - leadAt;
+                    off = off.LengthSquared() > 1e-6f ? Vector2.Normalize(off) : -leadDir;
+                    slotPos = leadAt + off * PlainDistance(world.Seed, self, leader);
+                }
                 float away = Vector2.Distance(here, slotPos);
+                cold.FollowSpeed = FollowSpeedFor(away, moving, leadDir, new Vector2(MathF.Sin(prev[i].Yaw), MathF.Cos(prev[i].Yaw)));
+                n.Mode = lead.Mode;
                 n.TaskTime -= dt;
                 if (cold.FollowPathTime > 0) cold.FollowPathTime = MathF.Max(cold.FollowPathTime - dt, 0);
-                if (away <= CatchUpDistance && cold.FollowPathTime <= 0)
+                if (away < DirectDistance && cold.FollowPathTime <= 0)
                 {
-                    // Near its slot: Move steers it straight there (a path it had is dropped), a speed mode up while it is behind.
+                    // Near its aim: Move steers it straight there (a path it had is dropped).
                     n.Goal = slotPos;
                     if (busy)
                     {
@@ -317,10 +438,8 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
                         n.PathCursor = 0;
                         cold.PathRequest = 0;
                     }
-                    n.Mode = away > Formation.Spacing && lead.Mode is SpeedMode.Walk or SpeedMode.Run ? (byte)(lead.Mode + 1) : lead.Mode;
                     continue;
                 }
-                n.Mode = away > CatchUpDistance ? SpeedMode.Free : lead.Mode;
                 if (away > FollowSlack && (flags & (MoveFlags.NeedPath | MoveFlags.Pending)) == 0 && n.TaskTime <= 0
                     && (!busy || Vector2.DistanceSquared(slotPos, n.Goal) > 20 * 20))
                 {
@@ -350,18 +469,24 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
     static CharacterId Followed(Squad? squad, CharacterCold cold) =>
         !cold.FollowOrder.IsNone ? cold.FollowOrder : cold.Ai is { FollowTarget.IsNone: false } follows ? follows.FollowTarget : squad?.Leader ?? CharacterId.None;
 
-    /// <summary>A follower's slot relative to <paramref name="leader"/> facing <paramref name="yaw"/>: its rank among the squad's other members (<see cref="Formation.Slot"/>).</summary>
-    static Vector2 SlotOffset(Squad? squad, CharacterId self, CharacterId leader, float yaw)
+    /// <summary>How far a follower that is not its target's squad mate keeps from it: 20..40, drawn per follower and target (the original draws it when the follow task is made).</summary>
+    static float PlainDistance(ulong seed, CharacterId self, CharacterId target) =>
+        20 + 20 * Rng.Float(Rng.Hash(seed, Rng.Key(self), RngPurpose.Formation, Rng.Key(target)));
+
+    /// <summary>
+    /// The original's desired speed of a follower <paramref name="away"/> from its aim (docs/game/pathfinding.md "Squads travelling together"): behind a moving leader the distance
+    /// itself, less while it faces away from the leader's heading (down to a tenth); beside a standing one 0 within 20, then 10-20, 20-30 and 30-999 at 50, 200 and 500 (linear in
+    /// the distance squared).
+    /// </summary>
+    public static float FollowSpeedFor(float away, bool leaderMoving, Vector2 leaderDir, Vector2 ownDir)
     {
-        int rank = 0, count = 0;
-        if (squad is not null)
-            foreach (var member in squad.Members)
-            {
-                if (member == leader) continue;
-                if (member == self) rank = count;
-                count++;
-            }
-        return Formation.Slot(rank, Math.Max(count, 1), yaw);
+        float d2 = away * away;
+        if (d2 < 1) return 0;
+        if (leaderMoving) return away * MathF.Max(0.1f, 0.5f + 0.5f * Vector2.Dot(leaderDir, ownDir));
+        if (d2 >= 40000) return 30 + 969 * Math.Clamp((d2 - 40000) / 210000, 0, 1);
+        if (d2 >= 2500) return 20 + 10 * Math.Clamp((d2 - 2500) / 37500, 0, 1);
+        if (d2 >= 400) return 10 + 10 * Math.Clamp((d2 - 400) / 2100, 0, 1);
+        return 0;
     }
 
     /// <summary>
@@ -425,9 +550,11 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
                 float dist = to.Length();
                 bool last = n.PathCursor == cold.Path.Length - 1;
                 closing = last && cold.ArriveWithin > 0 && dist <= ArriveRadius;
-                if (dist <= (last ? cold.ArriveWithin > 0 ? cold.ArriveWithin : ArriveRadius : ArriveRadius * 0.5f))
+                if (dist <= (last ? cold.ArriveWithin > 0 ? cold.ArriveWithin : ArriveRadius : ArriveRadius * 0.5f)
+                    && (last || dist <= CornerReach || CanCut(walk, p.Position, cold.Path[n.PathCursor + 1])))
                 {
                     n.PathCursor++;
+                    if (cold.BlockedRepaths != 0) cold.BlockedRepaths = 0;
                     if (last) finished = true;
                 }
                 else
@@ -437,10 +564,12 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
                     // A carrier in walk mode is raised to run mode (the original's speed selector, Observed; docs/game/carry-loot.md "Speed and weight").
                     if (mode == SpeedMode.Walk && !cold.Carrying.IsNone) mode = SpeedMode.Run;
                     float top = water > 0 && cold.Race is { } race ? Speed.InWater(water, n.MaxSpeed, race, cold.SwimSpeed) : n.MaxSpeed;
-                    desired = cold.SpeedOverride > 0 ? cold.SpeedOverride : MathF.Min(top, SpeedMode.Cap(mode, n.WalkSpeed));
+                    desired = cold.SpeedOverride > 0 ? cold.SpeedOverride
+                        : n.Task == (byte)CharacterTask.Follow ? MathF.Min(top, cold.FollowSpeed)   // a follower's own desired speed, not its mode's cap
+                        : MathF.Min(top, SpeedMode.Cap(mode, n.WalkSpeed));
                     // A fighter in its footwork closes in at a shuffle (docs/game/combat.md "Combat stance").
                     if (cold.InCombat && !cold.CombatRunning && n.Task == (byte)CharacterTask.Attack) desired = MathF.Min(desired, Combat.CombatTuning.FootworkSpeed);
-                    if (mode == SpeedMode.Group && cold.SpeedOverride <= 0) desired = MathF.Min(desired, SlowestOfSquad(world, cold));
+                    if (mode == SpeedMode.Group && cold.SpeedOverride <= 0 && n.Task != (byte)CharacterTask.Follow) desired = MathF.Min(desired, SlowestOfSquad(world, cold));
                     if ((cold.Orders & CharacterOrders.Sneak) != 0 && cold.SpeedOverride <= 0) desired = MathF.Min(desired, Orders.SneakSpeed(desired, Orders.Stealth(cold)));
                 }
                 // On the provisional part of a long route: ask again (the zones ahead may have loaded), following this one until the answer comes.
@@ -450,23 +579,18 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
             {
                 finished = true;
             }
-            else if (n.Task == (byte)CharacterTask.Follow && ((MoveFlags)n.Flags & MoveFlags.AnyPath) == 0 && cold.FollowPathTime <= 0
-                && Followed(cold.SquadId >= 0 ? world.Squads.Find(cold.SquadId) : null, cold) is { IsNone: false } led && table.IsAlive(led))
+            else if (n.Task == (byte)CharacterTask.Follow && ((MoveFlags)n.Flags & MoveFlags.AnyPath) == 0 && cold.FollowPathTime <= 0 && cold.FollowSpeed > 0)
             {
-                // Keeping its slot (Think set it as the goal): the leader's velocity plus the gap closed at FollowGain, capped by its speed mode.
-                ref readonly var lead = ref prev[led.Slot];
+                // Near its aim (Think set it as the goal): straight at it at its desired speed, capped by its top speed, never past it.
                 var gap = new Vector2(n.Goal.X - p.Position.X, n.Goal.Y - p.Position.Z);
-                var leadVelocity = new Vector2(lead.Velocity.X, lead.Velocity.Z);
-                var want = leadVelocity + gap * FollowGain;
-                float wanted = want.Length();
-                if (wanted > 0.5f && (gap.Length() > SlotSlack || leadVelocity.Length() > 1))
+                float dist = gap.Length();
+                if (dist > 1e-3f)
                 {
                     float top = water > 0 && cold.Race is { } race ? Speed.InWater(water, n.MaxSpeed, race, cold.SwimSpeed) : n.MaxSpeed;
-                    desired = MathF.Min(wanted, MathF.Min(top, SpeedMode.Cap(cold.ModeOverride ?? n.Mode, n.WalkSpeed)));
-                    (dir, speed) = Turn(p.Yaw, want / wanted, desired, dt);
-                    n.Yaw = MathF.Atan2(dir.X, dir.Y);
+                    dir = gap / dist;
+                    desired = MathF.Min(MathF.Min(cold.FollowSpeed, top), dist / dt);
+                    if ((cold.Orders & CharacterOrders.Sneak) != 0 && cold.SpeedOverride <= 0) desired = MathF.Min(desired, Orders.SneakSpeed(desired, Orders.Stealth(cold)));
                 }
-                else speed = 0;
             }
 
             if (finished)
@@ -547,7 +671,8 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
                 else
                 {
                     // Blocked on the provisional part of a long route (the terrain-only route met a wall or a building): stand and ask again.
-                    if (n.PathCursor >= cold.PathExact && ++cold.ProvisionalBlocked <= ProvisionalBlockedLimit)
+                    // Blocked on its navmesh part: ask again from where it stands a few times before giving up.
+                    if (n.PathCursor >= cold.PathExact ? ++cold.ProvisionalBlocked <= ProvisionalBlockedLimit : ++cold.BlockedRepaths <= BlockedRepathLimit)
                     {
                         speed = 0;
                         dir = Vector2.Zero;

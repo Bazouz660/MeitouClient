@@ -6,7 +6,7 @@ using Meitou.Data.Gameplay;
 namespace Meitou.Simulation.Items;
 
 /// <summary>Makes item instances and the inventories of new characters from the game data.</summary>
-public sealed class ItemFactory(GameDatabase db, GameConstants constants)
+public sealed class ItemFactory(GameDatabase db, GameConstants constants, Func<Meitou.Data.Gameplay.Combat.CombatDatabase>? combat = null)
 {
     readonly ConcurrentDictionary<string, ItemInfo?> infos = new();
 
@@ -28,6 +28,27 @@ public sealed class ItemFactory(GameDatabase db, GameConstants constants)
 
     string? CheapestFoodId() => cheapestFoodId.Value;
 
+    readonly System.Collections.Concurrent.ConcurrentDictionary<string, Meitou.Data.Gameplay.Combat.ArmourData?> armourData = new();
+
+    /// <summary>The weight function of an armour record that lists part coverage (null: it keeps its record weight).</summary>
+    Func<ItemInstance, float>? ArmourWeight(string recordId)
+    {
+        var data = armourData.GetOrAdd(recordId, id => Db.Find(id) is { Type: FcsRecordType.ARMOUR } r ? Meitou.Data.Gameplay.Combat.ArmourData.From(r) : null);
+        return data is { Coverage.Count: > 0 } ? item => data.WeightAt(item.Level) ?? item.RecordWeight : null;
+    }
+
+    /// <summary>
+    /// The weight function of a melee weapon (<b>Observed</b>, docs/game/ui-screens.md "Total Weight"): its level, manufacturer and material give the larger of <c>weight kg</c> x the manufacturer's weight
+    /// mod and 40 x blunt multiplier x <c>weight mult</c> x <c>weapon inventory weight mult</c> (<see cref="Combat.WeaponStats"/>); without combat data the record's weight x the multiplier.
+    /// </summary>
+    Func<ItemInstance, float>? WeaponWeight(string recordId) => combat is null ? null : item =>
+    {
+        var data = combat();
+        return data.Weapon(recordId) is { } weapon
+            ? Combat.WeaponStats.Compute(item.Level * 0.01f, weapon, data.Manufacturer(item.CompanyId) ?? Meitou.Data.Gameplay.Combat.WeaponManufacturer.Neutral, data.WeaponMaterial(item.MaterialId) ?? Meitou.Data.Gameplay.Combat.WeaponMaterial.None, data.Constants).Weight
+            : item.RecordWeight;
+    };
+
     /// <summary>A new instance of an item record (null for an unknown record). Food gets its charges scaled by <c>food quality mult</c>; weapons weigh <c>weapon inventory weight mult</c> of their weight.</summary>
     public ItemInstance? Create(string recordId, int quantity = 1, float quality = 0)
     {
@@ -39,18 +60,22 @@ public sealed class ItemFactory(GameDatabase db, GameConstants constants)
             Name = info.Name,
             Type = info.Type,
             EquipmentSection = info.Type is FcsRecordType.ARMOUR or FcsRecordType.ITEM && Db.Find(info.Id) is { } worn ? SectionOf(worn) : "",
+            WornOnlyBy = info.WornOnlyBy,
+            WornNeverBy = info.WornNeverBy,
             IsLocked = info.Type == FcsRecordType.ARMOUR && Db.Find(info.Id) is { } locked && locked.GetBool("is locked"),
             Lock = info.Type == FcsRecordType.ARMOUR && Db.Find(info.Id) is { } shackles && shackles.GetBool("is locked")
                 ? new Locks.LockState { Level = Math.Clamp(shackles.Ints.GetValueOrDefault("lock level"), 0, 100), Hardness = shackles.Floats.GetValueOrDefault("hardness"), Locked = true }
                 : null,
             Quantity = Math.Max(quantity, 1),
             Quality = quality,
+            Level = info.Type == FcsRecordType.ARMOUR ? (int)quality : 0,   // an armour piece's stats follow its level, which a made piece takes from its grade quality
             ItemFunction = info.Function,
             Charges = info.IsFood ? info.Charges * Constants.FoodQualityMult : info.Charges,
             MaxCharges = info.IsFood ? info.Charges * Constants.FoodQualityMult : info.Charges,
             Width = info.Width,
             Height = info.Height,
             UnitWeight = weapon ? info.Weight * Constants.WeaponInventoryWeightMult : info.Weight,
+            DynamicWeight = info.Type == FcsRecordType.ARMOUR ? ArmourWeight(info.Id) : info.Type == FcsRecordType.WEAPON ? WeaponWeight(info.Id) : null,
             StackLimit = info.StackLimit,
             IsFood = info.IsFood,
             Contents = info.Type == FcsRecordType.CONTAINER

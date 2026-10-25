@@ -9,6 +9,8 @@ namespace Meitou.Simulation.Saving;
 /// string id) and the ints <c>bountyexp&lt;k&gt;</c> (the game hour of the last raise, truncated), <c>amount&lt;k&gt;</c>, <c>crimes&lt;k&gt;</c> (the crime mask) and <c>claim&lt;k&gt;</c>
 /// (<b>Verified</b>: the writer <c>FUN_1406262b0</c> and the three sample saves agree on the names and types). The game hour is read as day x 24 + hour of the save's clock (<b>Observed</b>:
 /// every <c>bountyexp</c> in the three sample saves is at most that, and the largest is one hour below it); the world keeps ticks, converted here with the save's clock.
+/// The save's clock is floored to the minute, so the hour is written with a minute and a tick of slack (<b>engine</b>: a raise up to a minute before the hour is written as
+/// that hour); without it each save and load would truncate an entry read at a whole hour one hour lower and bounties would expire early.
 /// </summary>
 public static class BountySave
 {
@@ -31,7 +33,7 @@ public static class BountySave
             entry.Crimes = state.Ints.GetValueOrDefault($"crimes{k}");
             entry.Claimed = state.Ints.GetValueOrDefault($"claim{k}") != 0;
             double raised = state.Ints.GetValueOrDefault($"bountyexp{k}");
-            entry.RaisedTick = tick - (long)Math.Round((now - raised) / hoursPerTick);
+            entry.RaisedTick = tick - (long)Math.Floor((now - raised) / hoursPerTick);
         }
         return ledger;
     }
@@ -52,7 +54,7 @@ public static class BountySave
         {
             if (!relations.Contains(e.Faction)) continue;
             state.Strings[$"bountyfac{n}"] = relations.Factions[e.Faction].Id;
-            state.Ints[$"bountyexp{n}"] = (int)(now - (tick - e.RaisedTick) * hoursPerTick);
+            state.Ints[$"bountyexp{n}"] = (int)Math.Floor(now - (tick - e.RaisedTick) * hoursPerTick + 1.0 / 60 + hoursPerTick);
             state.Ints[$"amount{n}"] = e.Amount;
             state.Ints[$"crimes{n}"] = e.Crimes;
             state.Ints[$"claim{n}"] = e.Claimed ? 1 : 0;

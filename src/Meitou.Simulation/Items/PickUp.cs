@@ -33,11 +33,11 @@ namespace Meitou.Simulation
             walker.PickingLock = null;
             walker.Shackles = null;
             walker.PickingUpItem = order.Item;
-            if (bestDistance > PickUpReach) MovementSystem.GoTo(table, best, Flat(item.Position), walker.RunSpeed);
+            if (bestDistance > PickUpReach) MovementSystem.GoToFloor(world, best, item.Position, walker.RunSpeed);
         }
 
         /// <summary>Each tick: a walker in reach takes its item; one whose item is gone, who was given another goal or stopped, or who is down gives up.</summary>
-        static void PickUpWorkers(World world)
+        void PickUpWorkers(World world)
         {
             var table = world.Characters;
             var next = table.Next;
@@ -68,8 +68,14 @@ namespace Meitou.Simulation
                 // Another faction's item is stolen from it (the "Steal" pick-up); what stays on the ground keeps its old mark.
                 int before = item.Item.Quantity, mark = item.Item.StolenFrom;
                 if (item.OwnedBy >= 0 && item.OwnedBy != c.Faction) item.Item.StolenFrom = item.OwnedBy;
-                // What does not fit stays on the ground (Inventory.Add leaves it in the item).
-                if (inventory.Add(item.Item)) { world.GroundItems.Take(id); world.EmitSound(SoundKind.PickedUp, s, next[s].Position); }
+                // What does not fit stays on the ground (Inventory.Add leaves it in the item); gear that does not fit is worn when its slot is free.
+                bool wear = false;
+                if (inventory.Add(item.Item) || item.Item.Quantity == before && (wear = Items.InventoryCommands.TryEquip(inventory, item.Item, c.Race?.StringId)))
+                {
+                    world.GroundItems.Take(id);
+                    if (wear) assembly?.RefreshEquipment(c);
+                    world.EmitSound(SoundKind.PickedUp, s, next[s].Position);
+                }
                 else
                 {
                     item.Item.StolenFrom = mark;

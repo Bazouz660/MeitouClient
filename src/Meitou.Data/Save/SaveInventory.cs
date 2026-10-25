@@ -12,6 +12,8 @@ public sealed class SaveItem
     public required string BaseId { get; init; }
     public string MaterialId { get; init; } = "";
     public string CompanyId { get; init; } = "";
+    /// <summary>The <c>crafter</c> key: the name of the smith who made the item at a crafting bench (empty: none).</summary>
+    public string Crafter { get; init; } = "";
     public string Section { get; init; } = "main";
     public int X { get; init; }
     public int Y { get; init; }
@@ -71,6 +73,7 @@ public static class SaveInventory
         BaseId = r.Strings.GetValueOrDefault("base data sid", ""),
         MaterialId = r.Strings.GetValueOrDefault("material sid", ""),
         CompanyId = r.Strings.GetValueOrDefault("company sid", ""),
+        Crafter = r.Strings.GetValueOrDefault("crafter", ""),
         Section = r.Strings.GetValueOrDefault("section", "main"),
         X = r.Ints.GetValueOrDefault("inventory x"),
         Y = r.Ints.GetValueOrDefault("inventory y"),
@@ -128,6 +131,7 @@ public static class SaveInventory
         r.Bools["death"] = item.Death;
         r.Strings["material sid"] = item.MaterialId;
         r.Strings["company sid"] = item.CompanyId;
+        if (item.Crafter.Length > 0) r.Strings["crafter"] = item.Crafter;   // written only when not empty, as the original
         r.Strings["section"] = item.Section;
         r.Strings["base data sid"] = item.BaseId;
         r.Ints["item function"] = item.ItemFunction;

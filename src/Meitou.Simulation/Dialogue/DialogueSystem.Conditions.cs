@@ -111,16 +111,16 @@ public sealed partial class DialogueSystem
         }
     }
 
-    /// <summary>The player's outpost whose centre is within the player-town extent of <paramref name="at"/> (the nearest), or null.</summary>
+    /// <summary>The player's nearest outpost whose radius holds <paramref name="at"/>, or null.</summary>
     Construction.PlayerTown? PlayerTownAt(World world, Vector3 at)
     {
         Construction.PlayerTown? best = null;
-        float bestD = data.PlayerTownExtent * data.PlayerTownExtent;
+        float bestD = float.MaxValue;
         foreach (var town in world.Buildings.Towns)
         {
             if (town.Owner != world.Player.Faction) continue;
             float d = Vector2.DistanceSquared(new(at.X, at.Z), new(town.Position.X, town.Position.Z));
-            if (d <= bestD) (best, bestD) = (town, d);
+            if (d <= town.Radius * town.Radius && d < bestD) (best, bestD) = (town, d);
         }
         return best;
     }

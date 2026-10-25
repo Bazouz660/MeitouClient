@@ -103,7 +103,7 @@ public class CampaignTests(ITestOutputHelper output)
         Assert.True(RunUntil(() => inst.Phase == 1, 60_000));
         output.WriteLine($"arrived after {world.GameHours - 37:0.00} h with {inst.Platoons.Count} squad(s)");
         var leaderAt = world.Platoons.Find(inst.Leader)!.Position;
-        Assert.True(Vector2.Distance(leaderAt, new Vector2(outpost.Position.X, outpost.Position.Z)) < 1000);
+        Assert.True(Vector2.Distance(leaderAt, new Vector2(outpost.Position.X, outpost.Position.Z)) <= 0.8f * outpost.Radius);
 
         // A save at the target and a load: the same campaign, phase and squads (the phase timer starts again).
         var game = SaveCapture.Capture(world, data, new SaveClock(1, 13, 0), options: new SaveCaptureOptions { Placements = [.. levels.Towns()], Seed = 3 });

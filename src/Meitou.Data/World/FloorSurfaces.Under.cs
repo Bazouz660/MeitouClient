@@ -42,11 +42,19 @@ public sealed partial class FloorSurfaces
     /// The height of the lowest floor, stairs or unwalkable roof triangle straight above (<paramref name="x"/>, <paramref name="z"/>) at or over <paramref name="bottom"/>,
     /// or null when there is none: what covers a point inside the building (<see cref="InteriorVolume.Covered"/>).
     /// </summary>
-    public float? LowestAbove(float x, float z, float bottom)
+    public float? LowestAbove(float x, float z, float bottom) => Lowest(x, z, bottom, [surfaces, roofs]);
+
+    /// <summary>
+    /// <see cref="LowestAbove"/> with the solids' undersides: the ceiling straight above a point, the underside of the slab or roof over it rather than its top
+    /// (a ceiling ghost hangs from it, docs/game/buildings-production.md "Placement").
+    /// </summary>
+    public float? CeilingAbove(float x, float z, float bottom) => Lowest(x, z, bottom, [surfaces, roofs, undersides]);
+
+    float? Lowest(float x, float z, float bottom, ReadOnlySpan<List<Surface>> lists)
     {
         float best = float.PositiveInfinity;
         var q = new Vector2(x, z);
-        foreach (var list in (ReadOnlySpan<List<Surface>>)[surfaces, roofs])
+        foreach (var list in lists)
             foreach (var s in list)
             {
                 if (q.X < s.Min.X || q.Y < s.Min.Y || q.X > s.Max.X || q.Y > s.Max.Y || s.YMax < bottom) continue;

@@ -325,12 +325,12 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
         {
             if (ObjectStreamer.ZoneDistance(zone.X0, zone.Z0, eye) > range) continue;
             foreach (var inst in zone.Real)
-                if (inst.Gpu is not null && inst.Materials is not null && Vector3.Distance(inst.Centre, eye) - inst.Radius <= range && !InteriorHidden(inst.Placed) && !UnderConstruction(inst))
+                if (inst.Gpu is not null && inst.Materials is not null && Vector3.Distance(inst.Centre, eye) - inst.Radius <= range && !InteriorHidden(inst.Placed) && !ClosedAround(inst) && !UnderConstruction(inst))
                     yield return inst;
         }
         if (streamer.LandmarkZone is { } landmarks)
             foreach (var inst in landmarks.Real)
-                if (inst.Gpu is not null && inst.Materials is not null && Vector3.Distance(inst.Centre, eye) - inst.Radius <= range && !InteriorHidden(inst.Placed)) yield return inst;
+                if (inst.Gpu is not null && inst.Materials is not null && Vector3.Distance(inst.Centre, eye) - inst.Radius <= range && !InteriorHidden(inst.Placed) && !ClosedAround(inst)) yield return inst;
     }
 
     bool UnderConstruction(ObjectStreamer.Instance inst) =>
@@ -392,6 +392,8 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
     float needMargin;
     /// <summary>How far ahead a mesh is kept ready for: three times <see cref="needMargin"/> (the camera's speed over 1.5 s).</summary>
     float MeshMargin => needMargin * 3;
+    /// <summary>A camera move farther than this between two mark passes (a second apart) is a cut or a flight, not travel (the host's flight distance).</summary>
+    const float CutDistance = 10000;
 
     void Update(Vector3 eye, double budgetMs)
     {
@@ -469,8 +471,10 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
         long now = Environment.TickCount64;
         if (!force && now - lastMark < 1000) return;
         // How far the camera goes in the half second a finer texture takes to arrive: nearer than that counts as nearer.
-        if (!force && lastMarkTime != 0) needMargin = Math.Min(Vector3.Distance(eye, lastMarkEye) / Math.Max((now - lastMarkTime) / 1000f, 0.05f) * 0.5f, 30000f);
-        else if (force) needMargin = 0;
+        // A flight or a cut is no camera speed: its arrival is known (Ahead), and a margin from it would ask the whole path, or all around the landing, for full detail.
+        bool cut = streamer.Ahead is not null || lastMarkTime != 0 && Vector3.Distance(eye, lastMarkEye) > CutDistance;
+        if (force || cut) needMargin = 0;
+        else if (lastMarkTime != 0) needMargin = Math.Min(Vector3.Distance(eye, lastMarkEye) / Math.Max((now - lastMarkTime) / 1000f, 0.05f) * 0.5f, 30000f);
         (lastMarkEye, lastMarkTime) = (eye, now);
         lastMark = now;
         markStamp++;
@@ -490,6 +494,8 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
             if (inst.Materials is not { } set) return;
             if (set.Stamp != markStamp) { set.Stamp = markStamp; set.Touch(); }
             if (inst.Stand) return;
+            // During a flight the path asks for nothing finer: needs and mesh levels count only the arrival and the kept points (it keeps what it has).
+            if (streamer.Ahead is not null && (value = streamer.LoadNear(eye, inst.Centre) - inst.Radius) >= limit) return;
             if (set.NeedStamp != markStamp) { set.NeedStamp = markStamp; set.Near = set.NearScaled = float.PositiveInfinity; markedSets.Add(set); }
             float near = Math.Max(value - needMargin, 0);
             if (near < set.Near) set.Near = near;
@@ -609,7 +615,7 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
         }
         if (!inst.Stand && gpu.MinLevel > 0)
         {
-            float value = Math.Max(Vector3.Distance(eyeNow, centre) - radius - MeshMargin, 0);
+            float value = Math.Max(streamer.LoadNear(eyeNow, centre) - radius - MeshMargin, 0);
             if (gpu.Curve.LevelFor(value * LodBias) < gpu.MinLevel)
             {
                 if (value < 3000) heldNear++;   // an instance that close waiting for its mesh to be remade would be seen (the benchmark counts it)
@@ -635,8 +641,9 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
         if (made) materialSets[mkey] = set = MakeMaterials(inst.Placed, gpu);
         inst.Materials = set!;
         // Mip streaming: this instance's distance is a use of the textures from now on (before the pass that would find it), and a new set's
-        // textures are loaded now, knowing it (they were made without loading: deferred).
-        float near = Math.Max(Vector3.Distance(eyeNow, inst.Centre) - inst.Radius - needMargin, 0);
+        // textures are loaded now, knowing it (they were made without loading: deferred). Measured as the mark pass does (from the nearest kept point too),
+        // or a kept point's textures load coarse for the far eye and wait in the refine queue.
+        float near = Math.Max(streamer.LoadNear(eyeNow, inst.Centre) - inst.Radius - needMargin, 0);
         foreach (var part in set!.Parts) part.OfferNow(part.Triplanar ? near : near / Math.Max(scale, 1e-6f));
         if (made) set.Touch();
         return true;
@@ -691,7 +698,7 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
     internal Func<Vector3, float, bool>? MirrorCull { get; set; }
 
     /// <summary>
-    /// The buildings shown in the interior view (docs/formats/zones.md, "Interior view"): placement id to the viewed floor. Their parts above that floor
+    /// The buildings shown in the interior view (docs/render-objects.md, "Closed interiors"): placement id to the viewed floor. Their parts above that floor
     /// are hidden and their <c>interior</c> parts shown; every other building shows its outside (its interior parts hidden). Set by the game each frame.
     /// </summary>
     public IReadOnlyDictionary<string, int> InteriorView { get; set; } = new Dictionary<string, int>();
@@ -749,8 +756,9 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
         var at = inst.Transform.Translation;
         if (inst.Interior is { } known && known.Version == streamer.InteriorVersion && known.At == at) return known;
         bool inside = InteriorAt(at) is not null;
-        // Engine choice: the 2-unit margin the host gives characters, so an object standing on the hull's top floor counts as on it.
-        var holder = InteriorAt(at, 2);
+        // Engine choice: the 2-unit margin the host gives characters, so an object standing on the hull's top floor counts as on it. A building placed inside
+        // another takes that one's hull where it reaches it (a neighbour's within the margin is not its holder).
+        var holder = InteriorAt(at, 2, inst.Placed.ContainerId);
         return inst.Interior = new(streamer.InteriorVersion, at, inside, holder?.PlacementId, holder?.FloorAt(at) ?? 0);
     }
 
@@ -766,9 +774,26 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
         return answer.Building is { } building && InteriorView.TryGetValue(building, out int floor) && answer.Floor > floor;
     }
 
-    /// <summary>The indoor volume of a loaded building that contains <paramref name="p"/> (widened by <paramref name="margin"/>), or null.</summary>
-    public InteriorVolume? InteriorAt(Vector3 p, float margin = 0)
+    /// <summary>
+    /// Whether a building placed inside another (<see cref="PlacedMesh.Contained"/>) is hidden: the building whose hull holds it shows its outside (not in the interior
+    /// view; a construction site is open). Game: closing an interior hides its contained objects, in every view (docs/render-objects.md "Closed interiors").
+    /// </summary>
+    bool ClosedAround(ObjectStreamer.Instance inst)
     {
+        if (!inst.Placed.Contained) return false;
+        return InteriorOf(inst).Building is { } holder && holder != inst.Placed.PlacementId && !InteriorView.ContainsKey(holder) && construction?.ContainsKey(holder) != true;
+    }
+
+    /// <summary>The indoor volume of a loaded building that contains <paramref name="p"/> (widened by <paramref name="margin"/>), or null.</summary>
+    public InteriorVolume? InteriorAt(Vector3 p, float margin = 0) => InteriorAt(p, margin, null);
+
+    /// <summary>
+    /// <see cref="InteriorAt(Vector3, float)"/>, preferring the building <paramref name="prefer"/> names (a site's id or a level building's instance id,
+    /// <see cref="PlacedMesh.ContainerId"/>) when its volume is one of those containing the point.
+    /// </summary>
+    InteriorVolume? InteriorAt(Vector3 p, float margin, string? prefer)
+    {
+        InteriorVolume? first = null;
         // The zones within 200 units of the point (a building may stand over its zone's edge): the one it is in and at most three beside it.
         var (lo, hi) = (WorldLayout.ZoneOf(p.X - InteriorOver, p.Z - InteriorOver), WorldLayout.ZoneOf(p.X + InteriorOver, p.Z + InteriorOver));
         for (int x = lo.X; x <= hi.X; x++)
@@ -776,8 +801,30 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
             {
                 if (streamer.ZoneAt(new ZoneCoordinate(x, y)) is not { Interiors.Count: > 0 } zone || ObjectStreamer.ZoneDistance(zone.X0, zone.Z0, p) > InteriorOver) continue;
                 foreach (var v in zone.Interiors)
-                    if (v.Contains(p, margin)) return v;
+                    if (v.Contains(p, margin))
+                    {
+                        if (prefer is null || IsKeyOf(v.PlacementId, prefer)) return v;
+                        first ??= v;
+                    }
             }
+        return first;
+    }
+
+    /// <summary>Whether placement key <paramref name="key"/> is building <paramref name="id"/>'s: a site's key is its id, a level building's ends in ":" and its instance id (<see cref="BuildingKey"/>).</summary>
+    static bool IsKeyOf(string key, string id) =>
+        key == id || key.Length > id.Length && key[key.Length - id.Length - 1] == ':' && key.EndsWith(id, StringComparison.Ordinal);
+
+    /// <summary>The loaded volume of <paramref name="volume"/>'s building (the same, or its zone's re-laid one), or null once its zone is unloaded or the building removed or destroyed.</summary>
+    public InteriorVolume? LoadedInterior(InteriorVolume volume)
+    {
+        if (volume.Footprint.Length == 0) return null;
+        var at = volume.Footprint[0];
+        var (lo, hi) = (WorldLayout.ZoneOf(at.X - InteriorOver, at.Y - InteriorOver), WorldLayout.ZoneOf(at.X + InteriorOver, at.Y + InteriorOver));
+        for (int x = lo.X; x <= hi.X; x++)
+            for (int y = lo.Y; y <= hi.Y; y++)
+                if (streamer.ZoneAt(new ZoneCoordinate(x, y)) is { Interiors.Count: > 0 } zone)
+                    foreach (var v in zone.Interiors)
+                        if (ReferenceEquals(v, volume) || v.PlacementId == volume.PlacementId) return v;
         return null;
     }
 
@@ -1021,9 +1068,9 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
     {
         if (inst.Gpu is not { } gpu) return;
         if (!ReferenceEquals(inst.Mesh.Gpu, gpu)) { Unresolve(zone, inst); return; }
-        if (InteriorHidden(inst.Placed) || StandsAbove(inst)) return;
+        if (InteriorHidden(inst.Placed) || StandsAbove(inst) || ClosedAround(inst)) return;
         if (inst.Placed.DoorIndex >= 0) PoseDoor(inst, gpu);
-        if (inst.Placed.Joints is not null) PoseTurret(inst, gpu);
+        if (inst.Placed.Joints is not null) PoseJoints(inst, gpu);
         float value = Vector3.Distance(inst.Centre, eye) - inst.Radius;
         float limit = Math.Min(range, inst.Limit);
         if (value >= limit || !SphereVisible(frustum, inst.Centre, inst.Radius) || MirrorCull?.Invoke(inst.Centre, inst.Radius) == false || FogCull?.Hidden(inst.Centre, inst.Radius, FogVolumes.CullKind.Objects) == true)

@@ -7,6 +7,7 @@ return args switch
     ["formats"] => WithInstall(Formats),
     ["fcs", var path] => Fcs(path),
     ["load"] => WithInstall(Load),
+    ["armour", var armourName] => WithInstall(i => Armour(i, armourName)),
     ["meshes"] => WithInstall(MeshSurvey.Run),
     ["skeletons"] => WithInstall(SkeletonSurvey.Run),
     ["materials"] => WithInstall(MaterialSurvey.Run),
@@ -121,5 +122,24 @@ static int Load(GameInstall install)
     Console.WriteLine($"  {db.Issues.Count} issues");
     foreach (var g in db.Issues.GroupBy(i => (i.Kind, i.File)))
         Console.WriteLine($"    {g.Key.File}: {g.Key.Kind} x{g.Count()}, e.g. {g.First()}");
+    return 0;
+}
+
+static int Armour(GameInstall install, string name)
+{
+    var db = GameDatabase.Load(LoadOrder.FromInstall(install));
+    foreach (var r in db.Records.Values.Where(r => r.Name == name && r.Type == FcsRecordType.ARMOUR))
+    {
+        Console.WriteLine($"{r.StringId} {r.Name} defined by {r.DefinedBy}, modified by {string.Join(", ", r.ModifiedBy)}");
+        foreach (var f in r.Floats.OrderBy(f => f.Key)) Console.WriteLine($"  {f.Key} = {f.Value}");
+        foreach (var f in r.Ints.OrderBy(f => f.Key)) Console.WriteLine($"  {f.Key} = {f.Value}");
+        foreach (var f in r.Strings.OrderBy(f => f.Key)) Console.WriteLine($"  {f.Key} = {f.Value}");
+        foreach (string list in r.ReferenceLists) Console.WriteLine($"  LIST {list}: " + string.Join(", ", r.GetReferences(list).Select(x => $"{db.Find(x.TargetStringId)?.Name ?? x.TargetStringId}={x.Values.Value0}")));
+        string platoons = Path.Combine(install.Root, "save", "quicksave", "platoon");
+        if (!Directory.Exists(platoons)) continue;
+        foreach (string file in Directory.EnumerateFiles(platoons, "*.platoon"))
+            foreach (var s in Meitou.Data.Save.SaveFile.ReadFile(file).Records.Where(x => x.RecordType == FcsRecordType.INVENTORY_ITEM_STATE && x.Strings.GetValueOrDefault("base data sid") == r.StringId))
+                Console.WriteLine($"  SAVED {Path.GetFileName(file)} quality {s.Floats.GetValueOrDefault("quality")} level {s.Ints.GetValueOrDefault("level")} section {s.Strings.GetValueOrDefault("section")} material {s.Strings.GetValueOrDefault("material sid")}");
+    }
     return 0;
 }

@@ -124,7 +124,7 @@ public sealed partial class LockSystem
             else world.Post("Hold down the ALT key to pick the lock.");
         }
         else (player.DoorTarget, player.DoorWalker) = (door.Id, table.IdOf(best));
-        MovementSystem.GoTo(table, best, at, walker.RunSpeed);
+        MovementSystem.GoToFloor(world, best, new Vector3(at.X, door.Position.Y, at.Y), walker.RunSpeed);
     }
 
     /// <summary>Each tick: the door walker in reach opens or closes its door; one given another order, downed or gone gives up.</summary>
@@ -142,7 +142,7 @@ public sealed partial class LockSystem
         var (at, reach) = WorkSpot(world, door, Flat(n.Position));
         if (Vector2.Distance(Flat(n.Position), at) > reach)
         {
-            if (n.Task != (byte)CharacterTask.GoTo || Vector2.Distance(n.Goal, at) > reach) player.DoorTarget = null;
+            if (Redirected(n, at, reach)) player.DoorTarget = null;
             return;
         }
         if (n.Task == (byte)CharacterTask.GoTo) MovementSystem.Stop(table, s);

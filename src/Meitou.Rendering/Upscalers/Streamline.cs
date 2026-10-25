@@ -187,17 +187,18 @@ public sealed unsafe class Streamline : IDisposable
             Device = device.Device.Handle, Instance = device.Instance.Handle, PhysicalDevice = device.PhysicalDevice.Handle,
             ComputeQueueFamily = device.GraphicsFamily, GraphicsQueueFamily = device.GraphicsFamily,
         };
+        // Without DLSS Streamline is shut down at once, so no NVIDIA layer stays attached to another vendor's device (#55).
         int rc = setVulkanInfo(&info);
-        if (rc != 0) { Console.WriteLine($"streamline slSetVulkanInfo failed ({rc})"); return; }
+        if (rc != 0) { Console.WriteLine($"streamline slSetVulkanInfo failed ({rc})"); Dispose(); return; }
         var adapter = new AdapterInfo { StructType = AdapterInfoType, StructVersion = 1, VkPhysicalDevice = device.PhysicalDevice.Handle };
         rc = isFeatureSupported(FeatureDlss, &adapter);
-        if (rc != 0) { Console.WriteLine($"streamline DLSS is not supported on {device.DeviceName} ({rc})"); return; }
+        if (rc != 0) { Console.WriteLine($"streamline DLSS is not supported on {device.DeviceName} ({rc}); Streamline shut down"); Dispose(); return; }
         void* fn = null;
         fixed (byte* name = "slDLSSGetOptimalSettings\0"u8) rc = getFeatureFunction(FeatureDlss, name, &fn);
-        if (rc != 0 || fn == null) { Console.WriteLine($"streamline slDLSSGetOptimalSettings missing ({rc})"); return; }
+        if (rc != 0 || fn == null) { Console.WriteLine($"streamline slDLSSGetOptimalSettings missing ({rc})"); Dispose(); return; }
         DlssGetOptimalSettings = (delegate* unmanaged<void*, void*, int>)fn;
         fixed (byte* name = "slDLSSSetOptions\0"u8) rc = getFeatureFunction(FeatureDlss, name, &fn);
-        if (rc != 0 || fn == null) { Console.WriteLine($"streamline slDLSSSetOptions missing ({rc})"); return; }
+        if (rc != 0 || fn == null) { Console.WriteLine($"streamline slDLSSSetOptions missing ({rc})"); Dispose(); return; }
         DlssSetOptions = (delegate* unmanaged<void*, void*, int>)fn;
         fixed (byte* name = "vkQueuePresentKHR\0"u8) PresentProxy = (delegate* unmanaged<Queue, PresentInfoKHR*, Result>)interposerGetDeviceProcAddr(device.Device.Handle, name);
         DlssSupported = true;

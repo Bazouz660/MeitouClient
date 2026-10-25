@@ -48,12 +48,29 @@ sealed partial class GameHost
         };
     }
 
+    // The footprints a worker's reach of a building is measured to (docs/game/buildings-production.md "Work distance").
+    Meitou.Navigation.BuildingFootprints? siteFootprints;
+
+    /// <summary>
+    /// The X/Z gap from a point to a site's footprint hull (its collision, else for a building without it the hull of its parts' bounds); null while the record is being read, or
+    /// without a database.
+    /// </summary>
+    float? SiteEdgeGap(Meitou.Simulation.Construction.BuildSite site, Vector2 point)
+    {
+        if (scene.Database is not { } db) return null;
+        var footprints = siteFootprints ??= new Meitou.Navigation.BuildingFootprints(install, db, null);
+        if (!footprints.Ready(site.Record)) return null;
+        return (footprints.Of(site.Record) ?? footprints.Plot(site.Record))?.Gap(site.Position, site.Rotation, point);
+    }
+
     /// <summary>The system list and its order are <see cref="StandardSystems"/>' (docs/simulation.md "Threading"); built again for each world.</summary>
     Meitou.Simulation.StandardSystemSet BuildSystems(bool interactive, PopulationData? data = null, NewGameSettings? settings = null) =>
         Meitou.Simulation.StandardSystems.Build(data ?? popData!, simWalkability!, new Meitou.Simulation.StandardSystemOptions
         {
             // The sandbox compares motion with the original on characters standing still: a hostile foe there must not start a fight by itself. The duel and the battle script their fights.
-            Parts = IsSandbox || IsDuel || IsBattle ? Meitou.Simulation.StandardParts.All & ~Meitou.Simulation.StandardParts.Aggro : Meitou.Simulation.StandardParts.All,
+            // --battle-no-fear: no flee system, so nobody runs away.
+            Parts = (IsSandbox || IsDuel || IsBattle ? Meitou.Simulation.StandardParts.All & ~Meitou.Simulation.StandardParts.Aggro : Meitou.Simulation.StandardParts.All)
+                & ~(IsBattle && g.BattleNoFear ? Meitou.Simulation.StandardParts.Flee : Meitou.Simulation.StandardParts.None),
             Aggro = new Meitou.Simulation.AggroSettings { RecordLog = true },
             // NPCs that see a player character say a line as a speech bubble (docs/game/dialogue.md "Ambient conversations"); the sandbox, the duel and the battle stay silent.
             Dialogue = new Meitou.Simulation.Dialogue.DialogueSettings { AmbientEvents = !IsSandbox && !IsDuel && !IsBattle },
@@ -63,8 +80,8 @@ sealed partial class GameHost
                 CampaignAncestorsOnce = config.CampaignAncestorsOnce, KeepWild = config.KeepWild, ResidentSchedule = config.ResidentSchedule,
                 NestsMultiplier = (settings ?? difficulty)[6],
             },
-            Construction = new Meitou.Simulation.Construction.ConstructionSettings { BuildingSpeed = (settings ?? difficulty)[5] },
-            Production = new Meitou.Simulation.Production.ProductionSettings { ProductionOption = (settings ?? difficulty)[3], ResearchOption = (settings ?? difficulty)[4] },
+            Construction = new Meitou.Simulation.Construction.ConstructionSettings { BuildingSpeed = (settings ?? difficulty)[5], EdgeGap = SiteEdgeGap },
+            Production = new Meitou.Simulation.Production.ProductionSettings { ProductionOption = (settings ?? difficulty)[3], ResearchOption = (settings ?? difficulty)[4], EdgeGap = SiteEdgeGap },
             // The duel replays exactly: its paths are answered inside the tick, never on a thread whose timing differs from lap to lap.
             SynchronousPaths = !interactive || IsDuel,
             // The duel prints what its measured lap holds (MeasureLap).
@@ -107,6 +124,7 @@ sealed partial class GameHost
     void QuickSaveNow(string? destination = null)
     {
         if (!SavesAvailable(out string reason)) { player.Notice(reason, true); return; }
+        session.SettleAhead();   // a tick run ahead counts as run: the saved world and its clock agree
         var world = session.World;
         if (!world.Player.Exists) { player.Notice("Nothing to save: no player squad (start a new game)", true); return; }
         if (Busy()) { player.Notice("Save or load still in progress", true); return; }

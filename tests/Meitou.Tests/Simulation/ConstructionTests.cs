@@ -233,7 +233,9 @@ public class ConstructionTests
         rig.Say(new PlaceBuildings([new PlannedBuilding(Outpost, campAt, Quaternion.Identity)]) { Tick = 1 });
         rig.World.RunTicks(2);
         var town = Assert.Single(rig.World.Buildings.Towns);
-        Assert.Equal((1, PlayerTown.DefaultName, campAt, Rig.PlayerFaction), (town.Number, town.Name, town.Position, town.Owner));
+        // Made at the hut, then reassessed: centred between its two buildings, the radius 200 beyond them but at least 1250.
+        Assert.Equal((1, PlayerTown.DefaultName, (ShedAt + campAt) / 2, Rig.PlayerFaction), (town.Number, town.Name, town.Position, town.Owner));
+        Assert.Equal(1700, town.Radius);
         Assert.All(rig.World.Buildings.All, s => Assert.Equal(1, s.Town));
 
         var builder = new SaveBuilder(1);

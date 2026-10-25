@@ -25,13 +25,13 @@ public sealed partial class FixtureRegistry
     IReadOnlySet<string>? ownedProperties;
     int ownedFaction = -1;
 
-    void RegisterProperty(World world, PopulationData data, int site, TownBuilding building, int owner)
+    void RegisterProperty(World world, PopulationData data, int site, TownBuilding building, int owner, bool purchased)
     {
         var record = data.Db.Find(building.BuildingId);
         if (record is null || record.GetBool("is wall gate") || record.GetBool("links together")) return;
         int? function = TownBuildings.FunctionOf(data.Db, record, functions)?.GetInt("function");
         if (function != 19 && !(function is null && record.GetReferences("interior").Count > 0)) return;
-        properties[building.Key] = new(data, site, building, owner);
+        properties[building.Key] = new(data, site, building, owner) { Purchased = purchased };
         ownedProperties = null;
         RegisterTownConstruction(world, properties[building.Key]);
     }

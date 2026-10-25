@@ -16,7 +16,7 @@ namespace Meitou.Game;
 /// <summary>
 /// Build mode (docs/game/buildings-production.md "Placement" and "Build menu", docs/simulation.md "Buildings"): B opens <c>Kenshi_BuildWindow</c> (categories, groups, the stats, Confirm /
 /// Undo / Build, the floor arrows) and a ghost of the chosen building follows the cursor on the terrain, green where <see cref="PlacementCheck"/> allows it and red where not, with the
-/// original's message. A click (or the build map's apply key) queues the ghost, Confirm sends the queue as <see cref="PlaceBuildings"/>. The ghost's controls are the build map's keys at the
+/// original's message. A click (or the build map's apply key) queues the ghost, Confirm sends the queue as <see cref="PlaceBuildings"/> and leaves build mode. The ghost's controls are the build map's keys at the
 /// documented speeds. Right-clicking a site with characters selected orders them to build it; the context menu offers Dismantle.
 /// </summary>
 sealed partial class PlayerInterface
@@ -25,6 +25,8 @@ sealed partial class PlayerInterface
     public const float RotateDegreesPerSecond = 80, MoveUnitsPerSecond = 60, SlowMove = 6, TiltPerSecond = 1, DefaultTilt = 0.2f;
     /// <summary>The ghost's height offset is reset above this (<b>Verified</b>, the original's control code).</summary>
     const float MaxLift = 1000;
+    /// <summary>How far below the ceiling a <c>ceiling placement</c> ghost's origin hangs (docs/game/buildings-production.md "Placement": 1 below the upward ray's hit).</summary>
+    const float CeilingHang = 1;
 
     BuildServices? buildHost;
     bool buildMode;
@@ -189,7 +191,9 @@ sealed partial class PlayerInterface
             var axis = Vector3.Cross(Vector3.UnitY, normal);
             var tilt = axis.LengthSquared() < 1e-10f ? Quaternion.Identity : Quaternion.CreateFromAxisAngle(Vector3.Normalize(axis), angle);
             var rotation = tilt * Quaternion.CreateFromAxisAngle(Vector3.UnitY, ghostYaw);
-            var position = new Vector3(hit.X, hit.Y + ghostLift, hit.Z);
+            // A ceiling light hangs CeilingHang below the ceiling over the floor point (its mesh hangs below its origin, so on the floor it was buried under it).
+            float y = building.CeilingPlacement && on?.Ceiling is { } ceiling ? ceiling - CeilingHang : hit.Y;
+            var position = new Vector3(hit.X, y + ghostLift, hit.Z);
             float yaw = ghostYaw;
             Func<string, Vector3, Quaternion, bool>? ignore = null;
             // A wall ghost before its first click snaps to the nearest link point: it starts there, or ends there on a free start (Verified, FUN_140427950).
@@ -369,6 +373,7 @@ sealed partial class PlayerInterface
         Sound("Building_Confirm");
         Say(new PlaceBuildings([.. buildQueue.Select(q => new PlannedBuilding(q.Building.Id, q.Position, q.Rotation, q.Floor, q.Parent))]) { Tick = session.World.Tick });
         buildQueue.Clear();
+        SetBuildMode(false);
     }
 
     /// <summary>The pointer in build mode: <c>build</c> over the world while the ghost can stand, <c>invalidmove</c> while it cannot.</summary>
@@ -495,6 +500,7 @@ sealed partial class PlayerInterface
             var yaw = Quaternion.CreateFromAxisAngle(Vector3.UnitY, PlacementCheck.YawOf(site.Rotation));
             float? t = host.Placement.Footprint(site.Record) is { } footprint
                 ? BuildingRayT(ray, footprint.Place(site.Position, yaw), footprint.YMin, footprint.YMax, site.Record, site.Position, site.Position.Y, yaw)
+                : host.Placement.Plot(site.Record) is { } plot ? PlotT(ray, plot.Place(site.Position, yaw), ground < float.MaxValue ? ground : null)
                 : RaySegment(ray.Origin, ray.Direction, site.Position, site.Position + new Vector3(0, 16, 0), 12);
             if (t is not { } hit || hit >= ground) continue;
             hits.Add((site, hit));
@@ -550,8 +556,8 @@ sealed partial class PlayerInterface
 
     /// <summary>
     /// The verbs the selection has for a site (the original's building branch, docs/game/ui-input.md "Context menu verbs"): Build (2) for an unfinished one (the quick order); finished, a
-    /// machine's Use (87), a storage's Auto-Haul (124, the "Hauling to" job) and Inventory (26), a furnace's Inventory, a turret's Man Turret (146); Dismantle (96); Meitou's Cancel for a
-    /// site nothing has been delivered to and the building panel's door buttons. Repair (95) shares construction work; town ruins start rebuilding only on an explicit order. Not built: Auto-Haul (152) of automatic machines.
+    /// machine's Use (87) or an automatic machine's Auto-Haul (152), a storage's Auto-Haul (124, the "Hauling to" job) and Inventory (26), a furnace's Inventory, a turret's Man Turret (146);
+    /// Dismantle (96); Meitou's Cancel for a site nothing has been delivered to and the building panel's door buttons. Repair (95) shares construction work; town ruins start rebuilding only on an explicit order.
     /// </summary>
     List<(string Caption, Action Give)> SiteVerbs(BuildingSnapshot site)
     {
@@ -622,7 +628,8 @@ sealed partial class PlayerInterface
             // A turret: 146 USE_TURRET, which becomes the job 234 Turret guard (PermaJobs).
             var type = job.Function == Meitou.Data.World.ObjectRanges.TurretFunction ? Meitou.Data.Gameplay.Ai.TaskType.USE_TURRET
                 : job.Function == MachineData.TrainingFunction ? Meitou.Data.Gameplay.Ai.TaskType.USE_TRAINING_DUMMY
-                : job.Operable ? Meitou.Data.Gameplay.Ai.TaskType.OPERATE_MACHINERY : Meitou.Data.Gameplay.Ai.TaskType.OPERATE_STORAGE;
+                : job.Operable ? (job.IsAutomatic ? Meitou.Data.Gameplay.Ai.TaskType.OPERATE_AUTOMATIC_MACHINERY : Meitou.Data.Gameplay.Ai.TaskType.OPERATE_MACHINERY)
+                : Meitou.Data.Gameplay.Ai.TaskType.OPERATE_STORAGE;
             Say(new Meitou.Simulation.Production.AddJob(SelectedIds(), type, pending.Site.Id) { Tick = session.World.Tick });
             return;
         }

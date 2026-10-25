@@ -39,8 +39,13 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
     public float DrawDistance { get; set; } = 6000;
     /// <summary>A presentation fill light (linear colour, 0 in play): added ambient, three times as strong at the silhouette, so a backlit figure reads.</summary>
     public Vector3 Fill { get; set; }
-    /// <summary>Assets built per <see cref="Update"/> (0: all of them, for stills).</summary>
+    /// <summary>Assets built per <see cref="Update"/> (0: all of them, for stills), and no new one once <see cref="BuildBudgetMs"/> went on them.</summary>
     public int LoadBudget { get; set; } = 4;
+    /// <summary>
+    /// A frame's building time after which it starts no other (the first is always built). A new appearance takes 20-40 ms on the render thread (its item materials and
+    /// race rig), and four of them in one frame of a town filling up held it 150 ms (docs/bench.md "Play benchmark").
+    /// </summary>
+    public const double BuildBudgetMs = 4;
     /// <summary>Ogre's camera LOD bias as a distance factor (above 1: coarser levels sooner).</summary>
     public float LodBias { get; set; } = 1;
     /// <summary>Further factor on the LOD value in the shadow cascades (a shadow hides detail: coarser levels sooner).</summary>
@@ -364,6 +369,7 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
         // 1. Assets and the characters in range, with their layers resolved (the rig's caches are filled here, on this thread).
         liveCount = layerCount = attachCount = 0;
         int built = 0, boneTotal = 0, partTotal = 0;
+        double buildMs = 0;
         var items = Draws.Items;
         for (int i = 0; i < items.Count; i++)
         {
@@ -371,8 +377,10 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
             if (!assets.TryGetValue(inst.Appearance, out var asset))
             {
                 // Interactive: the files are read and the meshes prepared on a worker first (CharacterContent.Fetched), then a few a frame are uploaded.
-                if (LoadBudget > 0 && (!content.Fetched(inst.Appearance) || built >= LoadBudget)) continue;
+                if (LoadBudget > 0 && (!content.Fetched(inst.Appearance) || built >= LoadBudget || buildMs >= BuildBudgetMs)) continue;
+                long buildStart = Stopwatch.GetTimestamp();
                 asset = content.Build(inst.Appearance);
+                buildMs += Stopwatch.GetElapsedTime(buildStart).TotalMilliseconds;
                 assets[inst.Appearance] = asset;
                 built++;
             }

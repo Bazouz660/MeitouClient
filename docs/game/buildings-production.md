@@ -118,7 +118,29 @@ is a candidate, a complete one contributes its mounted children that need work. 
 0.0001)` (d 3D), x0.5 when slot 89 is set, / (n + 1) with n = characters already working it; a stalled site the
 character has no material for (condition 50 false) is multiplied by the planner cost of the 115 finder (`FUN_14060f1d0`)
 and skipped at 0, i.e. when no source exists. The highest score wins. No cap on builders per site (**Observed**: the
-score and the 0.75 falloff spread them). Work distance (`isAtLocation`) is **Unknown**.
+score and the 0.75 falloff spread them). Work distance: [below](#work-distance).
+
+### Work distance
+
+**Observed** (decompile of kenshi_x64.exe 1.0.68, names from KenshiLib 1ce4a16): the AI's arrival condition `isAtLocation`
+(AI slot 11, `FUN_1405a2450`) at a Vector3 is 12 units X/Z and |dy| < 20, or the path has ended; at an object it is
+`AI::isWithinChoppingRange(target, isMoving)` (`FUN_14059c6d0`). For a building (type 0) that is arrived when:
+- the building `is foliage` (+0xc0, a rock) and the character is inside its bounds box scaled 1.2 (`getAABB`, slot 0x420), under a
+  movement flag (+0x640 +8, **Unknown**); or the character's movement reports touching the building's handle (+0x300 slot 1); or
+- the X/Z distance to `getPositionMarker(charPos)` (slot 0x470: the nearest valid usage node, else the construction position
+  +0x26c when fewer than 2) is below `getReachRange()` (slot 0x350), **doubled when not moving**, and the character is on the
+  same floor (slot 0x60) or |dy| < 15 (45 or 130 for some kinds, **Unknown** which).
+- Otherwise not; once the path has ended at the target it logs "Task impossible: X can't get to Y". There is no settle slack.
+
+`getReachRange`: `Building` 40 (construction), `WallBuilding` 60, `UseableStuff` (machines, storages, farms, mines, rocks) its
+`maxUseRange` +0x420, read from the functionality's `use range` (`FUN_1402a0900`), `DoorStuff` 45 (kind 7) or 25. Vanilla `use range`
+(**Verified** by a probe of the install): 10 to 25 for benches and storage, 50 ore mines and iron rocks, 80 wind generators,
+100 copper rocks, 140 hybrid stone mines. Which tasks reach their building through `isAtLocation` is **Observed** only through
+the goal conditions (the call is virtual).
+
+Meitou (`SiteReach`): builders 40 (walls 60), operators and storage fetches the `use range`, doubled once stopped, measured
+to the building's footprint hull (engine choice standing in for touching; a building without collision uses its parts' bounds
+hull) or, unknown, its position. A rock is measured to its bounds circle, for working and for taking its ore (40), and its operator faces that circle's centre (engine choice; a rock's origin can lie off its pile). No height test.
 
 Repair (**Verified**, Building slot 0x328 `FUN_1400f6b70`, `Task_Build` `FUN_14034a440`): a building needs repair when
 `progress < target`; building health is construction progress. Orders 2 and 95 are both `Task_Build`, which pushes the
@@ -183,6 +205,15 @@ shows the first failing message in this order (**Verified** unless marked):
   `public` false, `plevel` 0, added to the player-town list (town manager +0x68) that the save writes
   ([player outposts](../formats/save.md#player-outposts)). On load (`FUN_14092ae80`) a player-faction town within the
   radius of another player town is removed with "Player town '<a>' withing boundaries of <b>".
+- **Centre and radius** (**Verified** by decompile, `Town::reassessTownPosition` `FUN_1405488f0`, via `TownList::reassessTownPositions`
+  `FUN_14054d080`; called on placement commit `FUN_1404d72a0`, dismantle `FUN_1402a2860` / `FUN_14054fea0` and town merge
+  `FUN_140931840`): a player town's centre (+0x48) becomes a weighted mean of its buildings' position markers (two building
+  sets, the first weighted x4; which buildings each holds is **Unknown**), put on the ground and on the navmesh within 500 (kept
+  when no point is found); the radius (+0x51c) becomes the farthest building's X/Z distance from it + 200, at least 1250, clamped
+  to [1000, 20000]. A town with no buildings at all is removed. `Town::getRadius` (`FUN_140926eb0`) returns +0x51c for a player
+  town (2500 while it is at most 1), and `type`-based radii (table above) otherwise; campaigns' arrival and in-town tests
+  (`FUN_140926d50`) use it. So the first building's spot stops being the centre as the base grows. Meitou:
+  `ConstructionSystem.ReassessTown`, a plain mean of the town's outdoor sites (engine choice), also on load.
 - **Slope** (slot 31 `FUN_1404daa20`): ground normal from four rays at the rotated bounding-box corners (outdoors) or
   one ray (indoors); slope = angle from vertical, compared with `max slope` in degrees. With `match slope` (forced for
   interior furniture and nodes) the ghost tilts to the ground and a slope over the limit fails; without it the tilt is
@@ -200,6 +231,14 @@ shows the first failing message in this order (**Verified** unless marked):
   need the biome's `resources` and a resource node within 1500, falling off from the node radius (>= 25) to 1500.
   Farms: fertility `1 - (1 - v) x fertility effect` (0 at or below `minimum fertility`), yield = biome
   dry/green/swamp weights x the farm's factors x fertility.
+- **Resource popup** (**Observed**, `FUN_1404d9ea0`, each frame for a ghost with a `world resource mining`): a
+  DatapanelGUI on the `Popup` layer above the ghost (its bounding-box corners projected, the highest y, kept on the
+  screen). Rows (key, value): `<name>:` (`FUN_140a0c300`: Iron, Stone, Copper, Carbon, Water, Fertility) and
+  `{1,num}%` of int(v x 100), v the value clamped to 0..1 (a farm: its fertility factor); a farm adds `Crop yield:`
+  and `Environment:`. Values are coloured (1 - c, c, 0), c clamped to 0..1. Environment: `-` when `fertility effect`
+  is 0, else of the coverages Green, Arid, Swamp (keys 1, 2, 3) the first largest, `, ` and the next equal one, or
+  `Dead` when the largest is below 0.1, in the crop yield's colour. The ghost is valid only while v and the crop yield
+  are >= 0.01.
 - **Controls** (bindings `FUN_1403636c0`, applied in `FUN_1404d5420` x frame time): rotate +-80 deg/s, move up/down
   +-60 units/s (6 with the slow modifier, capped by the margins; offset reset above 1000), tilt factor +-1/s in 0..1,
   default 0.2.
@@ -330,9 +369,15 @@ research `14213358c`) default **Unknown**; 1 below.
 **Per operator and frame** (**Observed**, `ProductionBuilding::vfunc_150` `FUN_140298700`, called by
 `Task_OperateMachine` `FUN_14035bc90` with the operator's skill factor s):
 `amount = yield x outputRate x upgrade x dt x P x health x powerSat x s x option`. Several operators add up.
-Nothing else calls slot 150 (**Observed**: the only decompiled caller of vtable +0x4b0 that also tests the building), and neither it
-nor the output add (`vfunc_184` `FUN_1402984b0`) tests the owner: any building, the player's, an NPC town's or a rock, makes output
-only while someone operates it.
+Neither it nor the output add (`vfunc_184` `FUN_1402984b0`) tests the owner. An operated building (the player's, an NPC town's or a
+rock) makes output only while someone operates it.
+- **Automatic machines** (**Verified**, decompile): +0x3ac (`numOperatorsMax`, KenshiLib 1ce4a16) is the BUILDING's `max operators`
+  unless below 0, then the functionality's (`FUN_1402a3750`); +0x3a9 "has operators" = that value is neither 0 nor from two negatives.
+  With +0x3a9 clear, `ProductionBuilding::vfunc_28` (each frame) calls slot 150 itself with no operator and s = 1, so the machine
+  works unattended (`ResearchBuilding::vfunc_28` does the same). +0x3ac = 0 gives the menu order 152 Auto-Haul instead of 87
+  ([ui-input](ui-input.md#context-menu-verbs)). Base game (**Verified** data): Iron Refinery III / IV, Cotton and Hemp Auto-Loom,
+  Automatic Grain Silo, Hybrid Stone Mine II (building 0); Campfire, Camp Fish Pile, Bread Oven, wind generators, Rain Collector,
+  Battery Bank, storages and lights (functionality 0).
 - s = `lerp(stat/100, 0.5, 1.4)` of the effective stat `stat used` (`FUN_1408852a0`; 1 without an operator; the lerp
   helper `FUN_140015b63` is `a + (b - a) t`).
 - outputRate = BUILDING `output rate` x functionality `production mult`; with `output per day`, / (2G) (loader
@@ -360,6 +405,11 @@ not a natural site, has a functionality and passes the owner test of [resources]
 skipped when a virtual test on the character (`+0x30`) fails (**Unknown** what it tests; Meitou skips animals). Meitou
 shows it for the whole operate task, the walk there included, and drops it when the task ends (the original's removal
 was not traced, **Unknown**).
+Operator animation: the functionality's `animation` reference (**Verified**, probe of vanilla BUILDING_FUNCTIONALITY). No
+farming clip exists: cactus, cotton, potato, rice and veg farms use `stonemine` (the mining swing, with the Hoe); `farming
+wheat` and `farming hemp` have none (what the original plays then is **Unknown**; Meitou falls back to `stonemine`). Whether
+the original plays it while the crop grows is **Unknown**; task 87's start conditions (inputs not empty, output not full) let
+an operator stay at a growing farm with water, and Meitou plays the clip there.
 
 | function | examples (production mult) |
 |---|---|
@@ -544,9 +594,20 @@ and `power capacity` (battery store, "in seconds" per fcs.def), plus research ([
 - **Kinds** (registration `FUN_14092da80`, from switching on `vfunc_99`): capacity > 0 a battery, else output > 0 a
   generator; output < 0 a consumer. Function 5 without `consumes` is a wind generator, otherwise fuelled; batteries
   (23) share the generator class (factory `FUN_14057cc70`).
-- **Generator output** (`GeneratorBuilding::vfunc_166`): health x (output + increase) when switched on (`power on`) and
-  fuelled ("Out of fuel" otherwise). Wind: x a value read from the turbine's animation (`FUN_1404cbd90`, **Unknown**
-  units), nothing below 1. A battery's output is its rate while it holds charge.
+- **Generator output** (`GeneratorBuilding::getPowerOutput`): health x (output + increase) when switched on (`power on`) and
+  fuelled ("Out of fuel" otherwise). A battery's output is its rate while it holds charge.
+- **Wind generators** (**Verified**, decompiled): output = the share x the above, 0 when below 1 (`WindGeneratorBuilding::getPowerOutput`); the share
+  (`PhysicsCollection::getWindRotationPower`) is the first ROTATION_WIND_SPEED part's wind share ([rotating parts](#rotating-parts)), 0 with none or without
+  the building's physics collection (render entity) loaded. Meitou gives every built one its share from the scheduled wind of the weather region at the site.
+  Sound intensity = the share. State (`getGUIState`): the production state, then "No Wind" ("There is currently not enough wind to drive the
+  machine.") while the share is 0. Panel (`getGUIPower`), only with rated output (`getMaxPower`: `power output` + research) above 0: section 4 (the condition
+  panel) rows `Wind`, `{int(share x 100)}%` with the share as the bar's first layer, tooltip "The current amount of wind." and, with a ROTATION_WIND_SPEED
+  part, a new line "Operating wind speed is between {1,num=fix,p=2} mph and {2,num=fix,p=2} mph." (wind min, max x 0.22369362); `Power Output`, int(output),
+  output / rated as the second layer, tooltip "Power is switched off." when off, else "Power output is at maximum." unless output <= rated − 1, then "Power output
+  is running at reduced efficiency due to damage." when the share is above 0 (so also in light wind) or "Currently not enough wind to generate any power".
+  Section 6 (stats): `Wind Speed` `{1,num=fix,p=1} mph` of the region's wind at the building, tooltip "The current wind speed". Meitou
+  (`PlayerInterface`): the same for the player's built wind generators, both bars in the yellow layer (the original's layer colours not seen), the rows after
+  the condition row (order **Observed**), state "Running" otherwise, no state tooltip.
 - **Demand** (`vfunc_163`): a consumer's |output + increase|, x operators / raw `max operators` when that is above 0; a
   battery's rate while below its capacity health x (capacity + increase) (`FUN_140297650`).
 - **Town frame** (`Town::vfunc_87`): consumers sorted by ascending demand (`FUN_140927350`); each takes
@@ -560,7 +621,7 @@ and `power capacity` (battery store, "in seconds" per fcs.def), plus research ([
 - **Battery store** (`vfunc_27`): += flow / rate x dt, clamped to 0..capacity.
 - **Efficiency and "has power"** (the sound emitter's inputs, [audio](../audio.md#point-emitters)): slot 108 = operators / raw `max operators` x `vfunc_109` x `vfunc_119`, with
   `vfunc_119` = yield (`vfunc_92`) x the BUILDING's raw `output rate` (`+0x1a8`) x the research production mult; `FUN_140299370` is true for a generator (fuel and switch ignored), a building drawing nothing,
-  else `power on` and the town's generator output (`Town::vfunc_87` `+0x474`) above 0 or battery mode with batteries' output (`+0x480`) above 0. Town `+0x47c` is the consumers' total demand.
+  else `power on` and the town's generator output (`Town::vfunc_87` `+0x474`) above 0 or battery mode with batteries' output (`+0x480`) above 0. Town `+0x47c` is the consumers' total demand. The town panel also reads +0x484 / +0x488 (taken to be the batteries' drain / charging this frame) and +0x48c / +0x490 (their charge / capacity) (**Observed**, `FUN_140727380`; [Town panel](ui-screens.md#town-panel)); Meitou sums them per town (`TownPower`).
 - **Switch** (`FarmBuilding::vfunc_161`): flips `power on` (slot 99), then the `Generator` switch `On`/`Off` and `UI_Generator` on GUI object 110.
 - **Save** (building `vfunc_17`/`18`): bools `power on`, `gets battery`, `broken`; float `batterycharge`.
 - **Status strings** (`GeneratorBuilding::vfunc_114`): "Out of fuel", battery "Charging" / "Draining" / "Stored" / "Empty".
@@ -569,6 +630,34 @@ and `power capacity` (battery store, "in seconds" per fcs.def), plus research ([
   research: Upgraded Small Generators +15, Amplified Generators +15, Battery Power / Advanced +10 each, Battery
   Capacity / Advanced +60 each.
 
+### Rotating parts
+
+**Verified** (decompiled `RotatingEnt` constructor `FUN_140556250`, `update` `140547ca0` with its disassembly, `weatherUpdated` `140549c60`,
+`Building::update`, `getOutputBasedRotationSpeedMult`) unless noted. A BUILDING_PART without a collision file whose `rotation function` (or
+its holder's) is set gets one; function 0 becomes 6 (still). Fields: `rotation speed min/max` (degrees/s), `wind speed rotation min/max`
+(units/s), `rotation axis` (0 X, 1 Y, 2 Z, else none). Function 3 raises speed max and wind max to their mins; every other function rolls
+speed max x U(0.95, 1.05). Then the node turns by U(0, 2π) about the axis (both rolls from the building's generator). `wind speed rotation danger`
+is read and never used (no reader of its field among the rotor functions or the wind panel, the only caller of `getWindMillPart`). Each frame of a built building (`Building::update`, skipped while `DAT_1421349c9` is set) each part steps with
+dt = `DAT_142133798` (game dt, 0 paused); functions 1 to 3 then set the orientation to angle x axis, the angle counting from 0 (the start roll
+is lost once a part moves):
+- **1 CONSTANT**: speed max (fan blades, six-barrel). **2 OUTPUT**: (max − min) x the building's mult each frame (spinners, drills, looms).
+  The mult: 1 for a plain building; a generator (output > 0, no capacity) `power on` ? its power output x 0.01 : 0; any other machine
+  operators / max operators (1 when 0) x efficiency (active ? granted / demand x health : 0) x yield x `output rate` x research mult.
+- **3 WIND_SPEED**: at the wind speed w of the region: share = 0 below wind min, 1 at max or above, else (w − min) / (max − min); speed =
+  lerp(speed min, speed max, share). The share is what wind generators multiply by.
+- **4 WIND_DIRECTION** (heads): speed max is a turn rate. Told the weather, it starts a turn: from its orientation now to the one whose
+  local X is the wind direction brought into the parent's frame (y = 0), turned −90° about Y (`quatSetDirection`), so its +Z, where the blades
+  sit, faces against the wind vector (into the wind, the vector being the way it blows as Meitou's cloud drift reads it); elapsed 0, length |yaw now − yaw target| / speed (yaws in (−π, π], unwrapped). Each frame while elapsed < length:
+  slerp(clamp(elapsed / length), from, to, short way), then elapsed += dt. Speed 0: never turns.
+- **Weather**: functions 3 and 4 register with the region at the part and are told at once, on a weather change and every frame the region's
+  wind is interpolating (`WeatherRegion::updateBT`), so a head stands still while the wind changes and turns after.
+- Data (**Verified**, probe of the merged data): Wind Generator (I, II) head 25°/s, blades 90°/s, wind 10 to 50; Small Wind Generator body
+  25°/s, blades 180°/s wind 4 to 25 (its share), dynamo wind 5 to 25; refinery spinners 16, drills 100, generator spinner 100, looms 90.
+
+Meitou (`RotorSpec`, `WorldObjectRenderer.AdvanceRotors`): the renderer turns the parts it draws by the game frame time and the scheduled
+wind; a level building's mult comes from its data as its sound emitter's efficiency does (generator output x 0.01, batteries and machines
+needing neither operators nor power their `output rate`, other machines 0; engine choice).
+
 **Storage** (**Verified**, 603 buildings): 87 have `has inventory`; default 18 x 18, `itemtype limit` 4; `stackable bonus
 mult` 1 to 100000; `limit inventory` restricts the items. Grid (**Observed**, the building loader): a building whose `limit inventory`
 names exactly one item is that item's `inventory footprint` (Iron Plates 4 x 3, Building Materials 6 x 3, steel bars 6 x 1), else
@@ -576,7 +665,9 @@ names exactly one item is that item's `inventory footprint` (Iron Plates 4 x 3, 
 `Kenshi_InventoryGenericWindow`: caption STORAGE, the one limited item's name as heading, `Max Capacity: N` with N the `stackable bonus
 mult`, the line red with "(Full)" once the first stack reaches it (exact red **Unknown**). Locks and containers: [locks](locks.md).
 Water Tower takes only Water and `Storage: Ore` only Raw Iron, both with mult 100 and functionality `Resource
-storage` (function 2); Large Barrels also hold Water.
+storage` (function 2); Large Barrels also hold Water. Other `itemtype limit`s (**Verified**, merged game data): ARMOUR
+(Armour Storage, Armour Stand), WEAPON (weapon stands, cabinets, display boards), CROSSBOW (Crossbow Locker); none takes
+CONTAINER (backpacks). Shop counters (function 9) have no type limit in Meitou (`IsStorage` is functions 2 and 13 only).
 
 ### Hauling
 
@@ -593,24 +684,22 @@ storage` (function 2); Large Barrels also hold Water.
   character's list that can run wins; operating is skipped while the machine's output is full or its inputs are empty (task 87's start
   conditions), so a character moves down its list and returns when the machine can work again.
 - **Unknown:** how the original picks the storage (nearest, same town, a range), when an operator leaves a
-  machine to haul, and where a 124 job takes its items from.
+  machine to haul, where a 124 job takes its items from, and whether 152 / 124 on an automatic machine ever empty its output
+  (152's goal is only "no empty inputs", !62).
+
+## House sales
+
+Rules of `For sale:` and the price: [selected building](ui-screens.md#selected-building). **Verified** on the base game
+(`HousePurchaseTests.The_Hub_has_a_ruined_Storm_House_for_4800_in_the_original_data`): The Hub's ruined Storm Houses have
+interior meshes but no functionality record, their level states lack `sell home` while their resident templates
+(`44421-rebirth.mod`, `44426-rebirth.mod`) set it; target 16, owner's `building cost mult` 2: 0.375 × 16 × 2 × 400 = 4,800.
+Meitou reads `sell home` from the saved state, else the level state, else the resident template; **Unknown** whether the
+original falls back to the template.
 
 ## Unknowns
 
-- How often Building slot 28 resets the builder counter, the work distance of builders, which HUD orders set the AI
+- How often Building slot 28 resets the builder counter, which HUD orders set the AI
   range mode, and what `FUN_14025c6d0` (holding dismantle work) tests.
 - Event types of the queue at `DAT_1421346d8` other than 8 (research progress) and 11 (build work).
-- The wind generator's animation value (its output share). `vfunc_0x520` (a consumer counted as active): 1 for every class but `LightBuilding`, whose answer is in [lights](../formats/lights.md#when-a-light-is-on).
+- `vfunc_0x520` (a consumer counted as active): 1 for every class but `LightBuilding`, whose answer is in [lights](../formats/lights.md#when-a-light-is-on).
 - Option slider defaults; the third value of reference triples; the record field of `BuildingClassType`.
-
-
-## House sales: level-data inputs
-
-**Verified** against base-game The Hub placements and referenced records by
-`HousePurchaseTests.The_Hub_has_a_ruined_Storm_House_for_4800_in_the_original_data`:
-ruined Storm Houses have interior meshes but no functionality record; their level states omit
-`sell home`, while resident templates `44421-rebirth.mod` and `44426-rebirth.mod` enable it.
-Their target is 16, owner faction's `building cost mult` is 2, and the documented ruined-house
-formula yields 0.375 × 16 × 2 × 400 = 4,800. Explicit saved/level sale flags take precedence
-in Meitou; absent flags fall back to the resident template. This fallback is an engine reading
-of the data, not verification of the original callback. See [selected-building rules](ui-screens.md#selected-building).

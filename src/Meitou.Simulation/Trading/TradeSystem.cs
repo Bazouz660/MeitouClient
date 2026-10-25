@@ -46,6 +46,8 @@ public sealed record TradeItemView(int Index, string Record, string Name, string
     public float Charges { get; init; }
     public float MaxCharges { get; init; }
     public float PriceFactor { get; init; } = 1;
+    /// <summary>The trader's town market factor of the item (<see cref="Market.MarketFactor"/>, 1: none); with <see cref="PriceFactor"/> it makes a trade item's <c>Price mark-up</c>.</summary>
+    public float MarketFactor { get; init; } = 1;
     /// <summary>The faction a stolen item was stolen from, -1 when it is not stolen.</summary>
     public int StolenFrom { get; init; } = -1;
     /// <summary>The tooltip's two prices of one unit (<c>FUN_14079e7a0</c> calls slot 81, <b>Verified</b>): what the shop asks for it (Value) and what it pays (Sell value).</summary>
@@ -72,6 +74,8 @@ public sealed record TradeView(CharacterId Customer, CharacterId Trader, string 
 {
     /// <summary>The held item (<see cref="PlayerState.Held"/>) priced as stock (lifted from the stock) or as the customer's goods (lifted from the customer); null for none or another's.</summary>
     public TradeItemView? Held { get; init; }
+    /// <summary>The stock cells outside every container of a building shop (<see cref="Shop.Unused"/>), which hold nothing; empty for a squad shop.</summary>
+    public IReadOnlyList<GridRegion> Unused { get; init; } = [];
 }
 
 /// <summary>A system that has an open trade to publish (the trade system).</summary>
@@ -396,13 +400,13 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
         if (item.Contents is not null)
         {
             // An empty bag moves itself (a copy would have no contents inventory); its receipt is replaced (none: this undid a sale).
-            placed = TransferContainer(shop.Stock, buy.Item, cold.Inventory!, buy.Section, buy.X, buy.Y, buy.Equip);
+            placed = TransferContainer(shop.Stock, buy.Item, cold.Inventory!, buy.Section, buy.X, buy.Y, buy.Equip, cold.Race?.StringId);
             if (placed > 0) item.Buyback = receipt;
             if (placed > 0 && InventoryCommands.IsEquipmentSection(item.Section)) assembly.RefreshEquipment(cold);
         }
         else if (buy.Section == "backpack_attach") placed = 0;
         else if (buy.Section is { } section) placed = PlaceAt(cold.Inventory!, bought, units, section, buy.X, buy.Y);
-        else if (buy.Equip && InventoryCommands.TryEquip(cold.Inventory!, bought.WithQuantity(1)))
+        else if (buy.Equip && InventoryCommands.TryEquip(cold.Inventory!, bought.WithQuantity(1), cold.Race?.StringId))
         {
             // One unit is worn; the rest of a stack goes where it fits.
             assembly.RefreshEquipment(cold);
@@ -456,7 +460,7 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
         long price = Price(m, item, units, true, shop.Terms, cold.Faction);
         bool equipped = InventoryCommands.IsEquipmentSection(item.Section);
         int placed = item.Contents is not null
-            ? TransferContainer(cold.Inventory!, sell.Item, shop.Stock, sell.X is not null ? "main" : null, sell.X ?? 0, sell.Y, false)
+            ? TransferContainer(cold.Inventory!, sell.Item, shop.Stock, sell.X is not null ? "main" : null, sell.X ?? 0, sell.Y, false, null)
             : sell.X is { } sx ? PlaceAt(shop.Stock, sold, units, "main", sx, sell.Y) : Place(shop.Stock, sold, units);
         if (placed == 0)
         {
@@ -499,11 +503,11 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
     }
 
     // Containers move whole: stack copies intentionally omit Contents. Transfer validates the destination before changing either inventory.
-    static int TransferContainer(Inventory from, InventoryItemToken token, Inventory into, string? section, int x, int y, bool equip)
+    static int TransferContainer(Inventory from, InventoryItemToken token, Inventory into, string? section, int x, int y, bool equip, string? wearer)
     {
         if (section is not (null or "main" or "backpack_attach")) return 0;
-        if (section == "backpack_attach") return InventoryCommands.Transfer(from, token, into, section, 0, 0) ? 1 : 0;
-        if (equip && InventoryCommands.Transfer(from, token, into, "backpack_attach", 0, 0)) return 1;
+        if (section == "backpack_attach") return InventoryCommands.Transfer(from, token, into, section, 0, 0, wearer: wearer) ? 1 : 0;
+        if (equip && InventoryCommands.Transfer(from, token, into, "backpack_attach", 0, 0, wearer: wearer)) return 1;
         if (section == "main" && InventoryCommands.Transfer(from, token, into, section, x, y)) return 1;
         var item = Find(from, token);
         return item is not null && into.FindCell("main", item.Width, item.Height, out int cx, out int cy)
@@ -587,7 +591,7 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
             {
                 Buyback = buyback, Container = item.Contents is not null,
                 Material = item.MaterialId, Charge = item.ChargeFraction, Value = value, SellValue = sellValue, Weight = item.Weight, PriceFactor = m.TraderFactor(item, shop.Terms, holder),
-                Company = item.CompanyId, Level = item.Level, Charges = item.Charges, MaxCharges = item.MaxCharges, StolenFrom = stolen ? item.StolenFrom : -1,
+                MarketFactor = m.MarketFactor(shop.Terms.Site, item.Record), Company = item.CompanyId, Level = item.Level, Charges = item.Charges, MaxCharges = item.MaxCharges, StolenFrom = stolen ? item.StolenFrom : -1,
                 FenceChance = sell && stolen && item.StolenFrom == squad.Faction ? Math.Clamp(FenceChance(thievery, true), 0, 1) : null,
                 FenceOdds = sell && stolen && !shop.Terms.BuysStolen && FenceChance(thievery, item.StolenFrom == squad.Faction) is < 1 and var odds ? Math.Max(odds, 0) : null,
             };
@@ -608,6 +612,6 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
             { From.Holder: ItemHolder.Character } h when h.From.Character == customer => View(h.Item, -1, true, cold.Faction),
             _ => null,
         };
-        return new TradeView(customer, trader, world.Characters.Cold(t)!.Name, squad.Money, world.Player.Money, shop.Stock.Width, shop.Stock.Height, stock, goods, shop.Terms.BuysStolen) { Held = held };
+        return new TradeView(customer, trader, world.Characters.Cold(t)!.Name, squad.Money, world.Player.Money, shop.Stock.Width, shop.Stock.Height, stock, goods, shop.Terms.BuysStolen) { Held = held, Unused = shop.UnusedCells };
     }
 }

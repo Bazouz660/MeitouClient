@@ -176,6 +176,11 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
                         SkinRacesChanged?.Invoke();
                     }, OnOff: true)));
         if (page == 0) result.Insert(2, new("Frame limit", "Used while vertical sync is off; 0 is unlimited.", Slider: frameLimit));
+        if (page == 0)
+            result.Insert(3, new("World tick alongside drawing", "Faithful runs the world, then draws it, as the game does. Meitou runs the next world tick while the frame is drawn "
+                + "whenever the world is busy (big fights, crowds), Always on every frame: much higher frame rates with many characters. "
+                + "Running alongside can add up to 33 ms of input delay (one world tick).",
+                Choice: new(() => ["Faithful (in series)", "Meitou (when busy)", "Always on"], () => (int)config.TickAhead, i => config.TickAhead = (TickAheadMode)i)));
         if (page == 2)
             result.Add(new("UI style", "Choose original Kenshi skins or Meitou materials.", Choice: new(() => ["Faithful", "Meitou"],
                 () => (int)player.UiMode, i => player.SetUiMode((UiMode)i))));
@@ -272,6 +277,9 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
                 Toggle: new("Character flights", () => config.CharacterFlights, v => config.CharacterFlights = v, Remaster: true, OnOff: true)));
             result.Add(new("Keep textures at characters", "Keeps the meshes and textures around every squad member loaded, not only around the camera, so a flight or jump to them lands on finished detail. Costs video memory.",
                 Toggle: new("Keep textures at characters", () => config.KeepTexturesAtCharacters, v => config.KeepTexturesAtCharacters = v, Remaster: true, OnOff: true)));
+            if (config.KeepTexturesAtCharacters)
+                result.Add(new("Keep textures at all squads", "Also keeps the surroundings of your other squads' members loaded, not only the squad on the squad bar. Costs more video memory.",
+                    Toggle: new("Keep textures at all squads", () => config.KeepTexturesAtAllSquads, v => config.KeepTexturesAtAllSquads = v, OnOff: true)));
             result.Add(new(characterFlightTime.Label, "Seconds a character flight takes, and each hop of the squad tour (numpad /).", Slider: characterFlightTime));
             foreach (var action in values.Actions)
                 result.Add(new(action.Label, "Delete cached billboards; they are rebuilt when needed.", Run: () =>
@@ -488,6 +496,7 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
         config.InGameTransitionSpeed = 1.5f;
         config.CharacterFlights = false;
         config.KeepTexturesAtCharacters = true;
+        config.KeepTexturesAtAllSquads = false;
         config.CharacterFlightSeconds = UserConfig.DefaultFlightSeconds;
         AttackSlotsSlider.Set(UserConfig.FaithfulAttackSlots);
         config.LateDefences = true;
@@ -511,6 +520,7 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
         player.SetUiMode(UiMode.Meitou);
         player.SpeedUnit = config.SpeedUnit = SpeedUnit.Mph;
         player.Floaters = config.Floaters = FloaterMode.Simple;
+        config.TickAhead = TickAheadMode.Dynamic;
         bindings.ResetToDefaults();
         resetPending = false;
         notice = "Default settings restored.";

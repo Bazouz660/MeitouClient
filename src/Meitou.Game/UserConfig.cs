@@ -7,6 +7,9 @@ namespace Meitou.Game;
 /// <summary>The unit the run speed is shown in.</summary>
 enum SpeedUnit { Mph, Kmh }
 
+/// <summary>When the next world tick runs during the world draw (<see cref="UserConfig.TickAhead"/>): never (Faithful), while ticks are expensive (Meitou), always.</summary>
+enum TickAheadMode { Faithful, Dynamic, Always }
+
 /// <summary>
 /// The player's settings, kept in <c>meitou.user.json</c> (git-ignored) in the working directory, else next to the executable:
 /// the frame limit, vsync, full screen, the simulation tick rate, the graphics sliders of the Tab panel (by label) and key bindings
@@ -48,12 +51,19 @@ sealed class UserConfig
     public bool CharacterFlights { get; set; } = false;
     /// <summary>Keeps the object meshes and textures and the terrain textures around every squad bar character loaded, not only around the camera (Advanced settings; Meitou only, costs video memory).</summary>
     public bool KeepTexturesAtCharacters { get; set; } = true;
+    /// <summary>With <see cref="KeepTexturesAtCharacters"/>, the other player squads' members are kept too, not only the squad bar's (more video memory).</summary>
+    public bool KeepTexturesAtAllSquads { get; set; }
     /// <summary>Seconds a character flight (and each squad tour hop, numpad /) takes.</summary>
     public float CharacterFlightSeconds { get; set; } = DefaultFlightSeconds;
     public const float DefaultFlightSeconds = 2, FlightDistance = 10000;
     /// <summary>Borderless full screen (the Tab panel, Alt+Enter); <c>--windowed</c> starts in a window for one run.</summary>
     public bool FullScreen { get; set; } = true;
     public int TickRate { get; set; } = 30;
+    /// <summary>
+    /// The next world tick run during the world draw (Display settings, docs/simulation.md "Tick ahead"): Faithful never (the world, then the draw, as the game),
+    /// Meitou (the default) while a tick is expensive, or always. Running ahead adds up to a tick (33 ms) of input delay.
+    /// </summary>
+    public TickAheadMode TickAhead { get; set; } = TickAheadMode.Dynamic;
     /// <summary>How many enemies may swing at one target at once (Advanced settings, 1-5; plus the race's extra slots): Faithful 1 (the game's CONSTANTS, the default), Meitou 3.</summary>
     public int AttackSlots { get; set; } = FaithfulAttackSlots;
     public const int FaithfulAttackSlots = 1, MeitouAttackSlots = 3;

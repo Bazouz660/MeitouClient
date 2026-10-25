@@ -184,15 +184,15 @@ power, `FUN_140258260` destroys), the building set-up `FUN_14055c240`, its loade
 each frame (`GameHost.UpdateEmitters`, key = the building's instance id). **Engine choices** are marked.
 
 - **Per-frame classes** (`MachineData.PowersEmitterEachFrame`: function 1 without a farm, 4, 5, 14, 23, 26, 27): `Sound` = (efficiency, has power and efficiency above 0), computed as the exe's chain above from the sim's values: operators
-  ÷ `PowerOperators` (the sim's operator count, like its power demand; an automated drill with `max operators` 0 on the building and 3 on its functionality is counted as 3, **engine choice**: the sim needs its operators too, so the
-  machine is silent while nobody works it), × the consumer's granted share (a battery's as above), × `Machine.Yield` × the raw `output rate` (`MachineData.OutputRate`) × the research production multiplier. Health is 1.
-  Has power follows `FUN_140299370` with the sim's town grid (generators' output above 0, or batteries while the town is in battery mode) and `power on`. A wind generator's efficiency is `ProductionSystem.WindFraction` (**engine choice**,
-  the turbine value is Unknown). Result: a Generator hums whenever built; a well, mine or still sounds while worked and powered, at `Intensity` 100 × the factors where its record has an `efficiency multiplier` (`Stone_Processor` 0.75 ×).
+  ÷ `PowerOperators` (the raw +0x3ac, like its power demand; an automatic machine, 0, counts as 1 and works unattended,
+  [production](game/buildings-production.md#production)), × the consumer's granted share (a battery's as above), × `Machine.Yield` × the raw `output rate` (`MachineData.OutputRate`) × the research production multiplier. Health is 1.
+  Has power follows `FUN_140299370` with the sim's town grid (generators' output above 0, or batteries while the town is in battery mode) and `power on`. A wind generator's efficiency is its blades' wind share (**Verified**, `WindGeneratorBuilding::getSoundIntensity`;
+  [rotating parts](game/buildings-production.md#rotating-parts)). Result: a Generator hums whenever built; a well, mine or still sounds while worked and powered, at `Intensity` 100 × the factors where its record has an `efficiency multiplier` (`Stone_Processor` 0.75 ×).
   A battery bank (constant `Intensity` 100) plays while it is full or charging, not while it drains or is empty.
 - **Once-powered classes** (benches, research, farms, others): `Sound` = (0, powered), the exe's completion call: they play from the moment the machine exists, at the base `Intensity` (global when 0). **Engine choice**: the order for
   a building the player finishes is Observed only (above), the sound is given to it as for the level's.
 - **The level's buildings** and layout furniture have no machine (the simulation runs only the player's buildings), so the host decides once when it adds the emitter (`GameHost.LevelPowered`, **engine choice**; the exe runs their
-  classes): needs-power emitters of once-powered classes play as above; generators, wind generators (efficiency `WindFraction`), battery banks (the town is assumed to produce power) and furnace-like machines needing no operators
+  classes): needs-power emitters of once-powered classes play as above; generators, wind generators (efficiency their wind share, each frame), battery banks (the town is assumed to produce power) and furnace-like machines needing no operators
   play; machines that need operators or town power (wells, mines, processors, stills, looms, silos, distillers, the Electrical Workbench) stay silent, since the NPC workers and town grids are not simulated. Level furniture
   that is a bench or generator follows the same rule through its own BUILDING record.
 - **Power switch.** The exe's `FarmBuilding::vfunc_161` (the machine panel's power button) flips `power on`, then sets the `Generator` switch to `On` / `Off` on the GUI object 110 and posts `UI_Generator`
@@ -266,7 +266,8 @@ through one helper (`FUN_1405c9a70(char, event, maxSqDist)`): **dropped when the
   `Sabres`, `Hackers`, `Heavy_Weapons` and so on, so **Observed (names compared, not heard):** the exe's `Blunt`, `Heavy`, `Bow` select nothing and those weapons' swings are silent in the original; Meitou keeps that.
   Animals set `Weapons` to their creature name and `Creature_VO` to it too.
 - **Impacts** (`Impact` event on the defender, after setting `Impacts`): a blow that lands: `Light_Hit` or `Heavy_Hit` (heavy = it staggers), `HtH_Impacts` or `HtH_Impacts_Robot` when the attacker fights
-  unarmed (robot race); blocked: `Parry` (`HtH_Impacts` for an unarmed non-robot attacker); a bolt into a body: `Deflection` after `Armor_Worn` when armour covers the spot, else `Impact`. A bolt in the ground:
+  unarmed (robot race); blocked: `Parry` (`HtH_Impacts` for an unarmed non-robot attacker), nothing when the block is a dodge technique (the base game's `Dodge back` rows are flagged
+  `is block` and `is dodge`; **engine choice**, what the exe posts there is **Unknown**); dodged: nothing; a bolt into a body: `Deflection` after `Armor_Worn` when armour covers the spot, else `Impact`. A bolt in the ground:
   `Impact` on a pooled object at the spot, `Impacts` = the ground's name (Stone for anything unnamed). `Attack` on a shooter.
 - **Voices** (`VO_Bank`, loaded explicitly). A person's `VO_Races` = RACE `sounds` (0..3: Human, Shek, Hive, Robot; other: Human) plus `_Male` / `_Female` unless single-gender; an animal's `Creature_VO` = RACE
   `sounds` less 4 indexing Beak, Bull, Cage, Dog, Duck, Gar, Goat, Gorillo, IronSpider, Leviathan, Pack, Spider, Turtle (below 4: Dog). A landed hit: **50 %** (`random & 8`) `VO_Get_Hit` (animals `VO_Creature_Take_Damage`).

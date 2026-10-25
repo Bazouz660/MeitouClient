@@ -20,34 +20,40 @@ sealed class AttackerIndex
         int n = table.HighWater;
         var prev = table.Previous;
         if (cells.Length < n) cells = new (int, int)[Math.Max(n, cells.Length * 2)];
-        if (attackers.Length < n) { attackers = new (int, int, int, int)[cells.Length]; yielders = new (int, int)[cells.Length]; }
+        if (attackers.Length < n) { attackers = new (int, int, int, int)[cells.Length]; gathered = new (int, int, int, int)[cells.Length]; yielders = new (int, int)[cells.Length]; }
         if (attackersAt.Length < n + 1) { attackersAt = new int[cells.Length + 1]; yieldersAt = new int[cells.Length + 1]; }
         attackerCount = yielderCount = 0;
         size = n;
+        Array.Clear(attackersAt, 0, n + 1);
         for (int o = 0; o < n && o < read.Length; o++)
         {
             if (!prev[o].Alive) continue;
             var cell = cells[o] = grid.Cell(prev[o].Position);
             ref readonly var s = ref read[o];
-            if ((uint)s.TargetSlot < (uint)n) attackers[attackerCount++] = (s.TargetSlot, cell.X, cell.Z, o);
+            if ((uint)s.TargetSlot < (uint)n) { gathered[attackerCount++] = (s.TargetSlot, cell.X, cell.Z, o); attackersAt[s.TargetSlot + 1]++; }
             if ((uint)s.YieldTo < (uint)n) yielders[yielderCount++] = (s.YieldTo, o);
         }
-        // The tuples are unique (the slot is in each), so the sort's order is total.
-        Array.Sort(attackers, 0, attackerCount);
+        // Sorted as whole tuples (unique, the slot is in each, so the order is total), done as a bucket per target and each bucket sorted by cell and slot:
+        // a crowd round few targets made the tuple sort a large part of the tick.
+        for (int t = 0; t < n; t++) attackersAt[t + 1] += attackersAt[t];
+        if (fill.Length < n) fill = new int[attackersAt.Length];
+        Array.Copy(attackersAt, fill, n);
+        for (int k = 0; k < attackerCount; k++) attackers[fill[gathered[k].Target]++] = gathered[k];
+        for (int t = 0; t < n; t++)
+            if (attackersAt[t + 1] - attackersAt[t] > 1)
+                attackers.AsSpan(attackersAt[t], attackersAt[t + 1] - attackersAt[t]).Sort(static (a, b) =>
+                    a.X != b.X ? a.X.CompareTo(b.X) : a.Z != b.Z ? a.Z.CompareTo(b.Z) : a.Slot.CompareTo(b.Slot));
         Array.Sort(yielders, 0, yielderCount);
-        Starts(attackersAt, n, attackerCount, k => attackers[k].Target);
-        Starts(yieldersAt, n, yielderCount, k => yielders[k].Target);
-    }
-
-    static void Starts(int[] at, int n, int count, Func<int, int> targetOf)
-    {
-        int k = 0;
+        int y = 0;
         for (int t = 0; t <= n; t++)
         {
-            while (k < count && targetOf(k) < t) k++;
-            at[t] = k;
+            while (y < yielderCount && yielders[y].Target < t) y++;
+            yieldersAt[t] = y;
         }
     }
+
+    (int Target, int X, int Z, int Slot)[] gathered = [];
+    int[] fill = [];
 
     /// <summary>The characters whose target is <paramref name="t"/>, in the grid's order, with their cells.</summary>
     public ReadOnlySpan<(int Target, int X, int Z, int Slot)> AttackersOf(int t) =>

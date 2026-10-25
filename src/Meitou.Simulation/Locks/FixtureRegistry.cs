@@ -116,10 +116,11 @@ public sealed partial class FixtureRegistry
     {
         if (byBuilding.ContainsKey(b.Key)) return;
         var db = data.Db;
-        int owner = b.OwnerFactionId is { } o && data.FactionIndex(o) is var fi and >= 0 ? fi : townFaction;
+        int levelOwner = b.OwnerFactionId is { } o && data.FactionIndex(o) is var fi and >= 0 ? fi : townFaction;
+        int owner = levelOwner;
         if (Saved?.GetValueOrDefault(b.Key)?.Strings.GetValueOrDefault("owner faction ID") is { Length: > 0 } savedOwner && data.FactionIndex(savedOwner) is >= 0 and var savedFaction)
             owner = savedFaction;
-        RegisterProperty(world, data, site, b, owner);
+        RegisterProperty(world, data, site, b, owner, purchased: owner != levelOwner && owner == data.PlayerFaction);   // saved as the player's: bought, and saved again as such
         var faction = owner >= 0 && owner < data.Factions.Count ? data.Factions[owner] : null;
         var list = new List<Fixture>();
         var record = db.Find(b.BuildingId);
@@ -491,7 +492,7 @@ public sealed partial class FixtureRegistry
 
     /// <summary>Whether nobody is in it: no occupant, or one that is gone or no longer held there.</summary>
     public static bool IsFree(CharacterTable table, Fixture f) =>
-        f.Occupant.IsNone || !table.TryResolveNext(f.Occupant, out int s) || table.Cold(s)!.InWhat != f.Id || table.Cold(s)!.InSomething == HeldState.None;
+        f.Occupant.IsNone || !table.TryResolveNext(f.Occupant, out int s) || table.Cold(s) is not { } held || held.InWhat != f.Id || held.InSomething == HeldState.None;
 
     /// <summary>
     /// The cage a carrier of <paramref name="faction"/> at <paramref name="at"/> puts a captive in (the original's finder, economy.md 11.7, <b>Observed</b>): every free cage weighs

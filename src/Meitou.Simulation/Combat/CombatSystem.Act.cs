@@ -106,6 +106,7 @@ public sealed partial class CombatSystem
                 s.ReactTech = -1;
                 s.TargetSlot = -1;
                 s.Engaged = false;
+                s.Picked = false;
                 if (cold.InCombat) EndFight(table, i);
                 continue;
             }
@@ -136,6 +137,7 @@ public sealed partial class CombatSystem
                 s.TargetSlot = -1;
                 s.AttackTech = -1;
                 s.NextBlow = 0;
+                s.Picked = false;
                 EndFight(table, i);
             }
 
@@ -156,12 +158,13 @@ public sealed partial class CombatSystem
                 s.ReactTech = -1;
             }
             float incoming = Incoming(world, i, now, out int yielder);
-            // One that lost the initiative roll to it: it turns on that one (FUN_140666a30 sets the winner to attack the asker).
-            if (yielder >= 0 && yielder != s.TargetSlot && !s.Ranged)
+            // One that lost the initiative roll to it: it turns on that one (FUN_140666a30 sets the winner to attack the asker), unless it fights the player's pick.
+            if (yielder >= 0 && yielder != s.TargetSlot && !s.Ranged && !(fighting && s.Picked))
             {
                 s.TargetSlot = yielder;
                 s.TargetGeneration = prev[yielder].Generation;
                 s.Engaged = false;
+                s.Picked = false;
                 fighting = true;
             }
             if (!fighting) s.Engaged = false;
@@ -207,7 +210,7 @@ public sealed partial class CombatSystem
             if (s.ReactTech < 0 && s.AttackTech < 0)
             {
                 // Deciding, it first asks to be one of the fighters its target lets close in (FUN_140666e20); a fighter left out circles (PursuitSystem) and asks again each tick.
-                if (fighting && !s.Engaged) s.Engaged = MayJoin(world, i, s.TargetSlot);
+                if (fighting && !s.Engaged) s.Engaged = MayJoin(world, i, s.TargetSlot, now);
                 bool yielded = fighting && read[s.TargetSlot].YieldTo == i && now < read[s.TargetSlot].YieldUntil;
                 if (!aborted && fighting && (now >= s.ReadyTick || incoming >= 0 || yielded)) StartAttack(world, i, ref s, cold, key, now, dt);
                 if (s.AttackTech < 0 && now >= s.DefendReadyTick) React(world, i, ref s, cold, key, now, dt);
@@ -268,8 +271,8 @@ public sealed partial class CombatSystem
 
     /// <summary>
     /// Whether <paramref name="i"/> may swing at <paramref name="t"/> now, asking the target first (<b>Verified</b>, FUN_14060c670 / FUN_140666a30, docs/game/combat.md
-    /// "Pacing"): yes when the target lost the initiative to it; not while the target is swinging at it (it defends instead); yes while the target is staggered,
-    /// defending or not fighting it; otherwise an initiative roll on both attack skills (the skill roll with <c>attack chance factor</c>, 50/50 at equal skill),
+    /// "Pacing"): yes when the target lost the initiative to it; not while the target is swinging at it (it defends instead); yes while the target is staggered
+    /// or not fighting it; otherwise an initiative roll on both attack skills (the skill roll with <c>attack chance factor</c>, 50/50 at equal skill),
     /// drawn from the pair and tick so both sides agree. The loser yields: the winner may swing at it at once (the original sets the winner to attack).
     /// </summary>
     bool HasInitiative(World world, int i, ref CombatSlot s, int t, CharacterCold cold, CharacterCold tc, int now)
@@ -291,16 +294,21 @@ public sealed partial class CombatSystem
         ulong pair = ((ulong)(uint)lo << 32) | (uint)hi;
         float roll = CombatRolls.Float(world.Seed, pair, CombatRoll.Initiative, (ulong)(uint)now);
         if ((roll < lowWins) == (i == lo)) return true;
+        // A winner still blocking or dodging can turn on it only when that ends, so the yield runs from there (engine choice).
+        int from = target.ReactTech >= 0 ? Math.Max(now, target.ReactStart + target.ReactTicks) : now;
         s.YieldTo = t;
-        s.YieldUntil = now + Math.Max(1, (int)MathF.Ceiling(CombatTuning.YieldSeconds / world.TickSeconds));
+        s.YieldUntil = from + Math.Max(1, (int)MathF.Ceiling(CombatTuning.YieldSeconds / world.TickSeconds));
         return false;
     }
 
-    /// <summary>Whether <paramref name="t"/> would not swing back (staggered, defending, down, not fighting, the Block or Passive order), so it cannot take the initiative.</summary>
+    /// <summary>
+    /// Whether <paramref name="t"/> would not swing back (staggered, down, not fighting, the Block or Passive order), so it cannot take the initiative. A fighter that is
+    /// blocking or dodging is not open: once its defence has started (+0x144) the original's answer rolls the initiative (FUN_140666a30).
+    /// </summary>
     bool Open(int t, CharacterCold tc, int now)
     {
         ref readonly var target = ref read[t];
-        return now < target.StunUntil || target.ReactTech >= 0 || target.Down || target.TargetSlot < 0 || tc.Fighter is not { CanAttack: true }
+        return now < target.StunUntil || target.Down || target.TargetSlot < 0 || tc.Fighter is not { CanAttack: true }
             || Orders.Has(tc, CharacterOrders.Block | CharacterOrders.Passive);
     }
 
@@ -363,10 +371,10 @@ public sealed partial class CombatSystem
             if (o.TargetGeneration != generation || o.Down || o.Ranged) continue;
             if (o.AttackTech >= 0 && o.NextBlow > 0)
             {
-                holders++;
+                if (++holders + ahead >= slots) return false;
                 continue;
             }
-            if (other > i || now < o.StunUntil || !o.Engaged && !MayJoin(world, other, t)) continue;
+            if (other > i || now < o.StunUntil || !o.Engaged && !MayJoin(world, other, t, now)) continue;
             // It decides this tick when its swing or reaction ends now (Act's steps 4 and 5): a block's end and a swing's end start a pause (cut short by a blow at it).
             int ready = o.ReadyTick;
             if (o.AttackTech >= 0)
@@ -385,7 +393,7 @@ public sealed partial class CombatSystem
             // Its reach is known from its last ask (StartAttack); one that has never asked counts.
             var c = table.Cold(other);
             if (c is null || o.Reach > 0 && CombatTuning.Gap(prev[other].Position, at, c, tc) > o.Reach) continue;
-            ahead++;
+            if (holders + ++ahead >= slots) return false;
         }
         return holders + ahead < slots;
     }
@@ -397,9 +405,10 @@ public sealed partial class CombatSystem
 
     /// <summary>
     /// Whether <paramref name="i"/> may join the fighters its target lets close in (<see cref="MaxEngaged"/>, <c>FUN_140666e20</c>): it joins while fewer are in. The ones that are
-    /// not in yet ask on every tick; those with a lower slot ask first (engine choice for the original's update order).
+    /// not in yet ask whenever they decide; those with a lower slot ask first (engine choice for the original's update order), counted only when they may decide this tick
+    /// (not staggered, blocking or dodging, or swinging past the point where it could still give the swing up), so a fighter is not left out for one that does not ask.
     /// </summary>
-    bool MayJoin(World world, int i, int t)
+    bool MayJoin(World world, int i, int t, int now)
     {
         var prev = world.Characters.Previous;
         var range = world.Grid.Range(prev[t].Position.X, prev[t].Position.Z, CombatTuning.EngageScanRadius);
@@ -409,10 +418,16 @@ public sealed partial class CombatSystem
             if (other == i || !range.Holds((x, z))) continue;
             ref readonly var o = ref read[other];
             if (o.TargetGeneration != generation || o.Down || o.Ranged) continue;
-            if (o.Engaged || other < i) count++;
+            if (!o.Engaged && (other > i || !MayDecide(in o, now))) continue;
+            if (++count >= MaxEngaged) return false;
         }
         return count < MaxEngaged;
     }
+
+    /// <summary>Whether a fighter whose last tick's state is <paramref name="o"/> may reach Act's deciding step this tick (its swing or defence ends now, or a blow at it may cut a swing short).</summary>
+    static bool MayDecide(in CombatSlot o, int now) =>
+        now >= o.StunUntil && (o.ReactTech < 0 || now >= o.ReactStart + o.ReactTicks)
+        && (o.AttackTech < 0 || now >= o.AttackEnd || now - o.AttackStart < CombatTuning.AbortOwnProgress * o.AttackTicks);
 
     readonly AttackerIndex index = new();
 
@@ -423,10 +438,19 @@ public sealed partial class CombatSystem
     public void IndexAttackers(World world)
     {
         index.Build(read, world.Characters, world.Grid);
+        // FightersAt's counts, once per target: asked per attacker, a crowd round one target would walk its list once per member.
+        int n = world.Characters.HighWater;
+        if (fightersAt.Length < n) fightersAt = new int[Math.Max(n, fightersAt.Length * 2)];
+        for (int t = 0; t < n; t++) fightersAt[t] = index.AttackersOf(t).IsEmpty ? 0 : CountFightersAt(world, t);
     }
 
-    /// <summary>The melee fighters (engaged or circling) at <paramref name="t"/>, as of the last tick: the original's engaged count plus the askers it turned away (<c>FUN_140666e20</c>).</summary>
-    public int FightersAt(World world, int t)
+    int[] fightersAt = [];
+
+    /// <summary>The melee fighters (engaged or circling) at <paramref name="t"/>, as of the last tick: the original's engaged count plus the askers it turned away (<c>FUN_140666e20</c>).
+    /// After <see cref="IndexAttackers"/>.</summary>
+    public int FightersAt(World world, int t) => (uint)t < (uint)world.Characters.HighWater && t < fightersAt.Length ? fightersAt[t] : 0;
+
+    int CountFightersAt(World world, int t)
     {
         var prev = world.Characters.Previous;
         var range = world.Grid.Range(prev[t].Position.X, prev[t].Position.Z, CombatTuning.EngageScanRadius);

@@ -49,6 +49,8 @@ public sealed record BuildingBuildData
     /// <summary><c>building height</c>.</summary>
     public float BuildingHeight { get; init; } = 100;
     public bool IsWallGate { get; init; }
+    /// <summary>Whether the <c>interior</c> list names any part: the original then gives the building its interior object (Building <c>+0x1f0</c>, <c>FUN_140551b20</c>).</summary>
+    public bool HasInterior { get; init; }
     /// <summary>The <c>wall subsections</c> (BUILDING ids): the shorter pieces, connector and wedge a line of this wall uses.</summary>
     public IReadOnlyList<string> WallSubsections { get; init; } = [];
 
@@ -110,6 +112,7 @@ public sealed record BuildingBuildData
             LinkLength = RecordReading.Float(r, "link length", 0) * RecordReading.Float(r, "scale", 1),
             BuildingHeight = RecordReading.Float(r, "building height", 100),
             IsWallGate = RecordReading.Bool(r, "is wall gate", false),
+            HasInterior = r.GetReferences("interior").Count > 0,
             WallSubsections = [.. r.GetReferences("wall subsections").Select(s => s.TargetStringId)],
         };
     }

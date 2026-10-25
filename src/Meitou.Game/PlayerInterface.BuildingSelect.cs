@@ -40,7 +40,7 @@ sealed partial class PlayerInterface
     /// <summary>A site of the player's as a selected building (what a left click on it selects).</summary>
     SelectedBuilding SiteBuilding(Meitou.Simulation.Construction.BuildingSnapshot site) =>
         new(SiteName(site), null, FactionName?.Invoke(session.World.Player.Faction), null, site.Id, site.Id, site.Position,
-            buildHost?.Placement.Footprint(site.Record) is { } f ? f.Place(site.Position, Quaternion.CreateFromAxisAngle(Vector3.UnitY, Meitou.Game.Building.PlacementCheck.YawOf(site.Rotation))) : null,
+            (buildHost?.Placement.Footprint(site.Record) ?? buildHost?.Placement.Plot(site.Record)) is { } f ? f.Place(site.Position, Quaternion.CreateFromAxisAngle(Vector3.UnitY, Meitou.Game.Building.PlacementCheck.YawOf(site.Rotation))) : null,
             Record: site.Record);
 
     /// <summary>The nearest building under the pixel, a site of the player's or a level-data one, when the ray meets it before the ground.</summary>
@@ -61,7 +61,9 @@ sealed partial class PlayerInterface
                 var b = candidate.Placement;
                 float y = b.WorldY ?? ground(b.Position.X, b.Position.Z) + b.Position.Y;
                 var hull = candidate.Footprint.Place(b.Position, b.Rotation);
-                if (BuildingRayT(ray, hull, candidate.Footprint.YMin, candidate.Footprint.YMax, b.BuildingId, b.Position, y, b.Rotation) is not { } t || t >= bestT) continue;
+                float? hit = candidate.Plot ? PlotT(ray, hull, limit < 6000 ? limit : null)
+                    : BuildingRayT(ray, hull, candidate.Footprint.YMin, candidate.Footprint.YMax, b.BuildingId, b.Position, y, b.Rotation);
+                if (hit is not { } t || t >= bestT) continue;
                 bestT = t;
                 var info = host.WorldInfo(b);
                 best = new(UiMode == Meitou.Data.Ui.UiMode.Meitou && info.Sells is { } sells ? sells : info.Name, info.Type, info.Owner, info.Town, null, b.Key, new Vector3(b.Position.X, y, b.Position.Z), hull, info.PublicDay, info.PublicNight, b.BuildingId);
@@ -127,9 +129,9 @@ sealed partial class PlayerInterface
             if (session.CurrentSnapshot.InspectedRichness is { } rich && rich.Instance == focus.Instance) AddRichnessLine(rich, stats);
             if (own && Machine(focus.SiteId) is { } machine) AddMachineLines(machine, stats, ref status, ref bad);
         }
-        if (mine && (player ? site?.TownName : focus.Town) is { Length: > 0 })
+        if (mine && (player ? site?.TownName : focus.Town) is { Length: > 0 } && (site?.Record ?? focus.Record) is { } record && DataOf(record) is { HasInterior: true })
         {
-            // The player's building in a town (the original's +0x1f0): a Kenshi_Button2 toggle of width 0.3, Public in Good, Private in BadBright (slots 82 / 83).
+            // The player's building with an interior in a town (the original's +0x1f0): a Kenshi_Button2 toggle of width 0.3, Public in Good, Private in BadBright (slots 82 / 83).
             bool open = PublicOf(focus, site, detail);
             stats.Add(new("Open to public:", open ? "Public" : "Private", MainColour, open ? GoodColour : BadBrightColour, Action: "meitou:building-public", ButtonWidth: 0.3f));
         }
@@ -209,6 +211,19 @@ sealed partial class PlayerInterface
         string tip = !complete ? Loc.Tr("The building is under construction and at {1,num}% completion.", (int)(fraction * 100))
             : fraction >= 1 ? Loc.Tr("The building is in good condition.") : Loc.Tr("The building is damaged.");
         rows.Add(Bar(Loc.Tr(door is null ? "Condition" : "Building Condition"), fraction, ((int)progress).ToString(CultureInfo.InvariantCulture), tip));
+        // A wind generator's rows (WindGeneratorBuilding::getGUIPower section 4): Wind, its share as a whole percent and the bar; Power Output, the output as an int over the rated.
+        if (site is { Complete: true } && Machine(site.Id) is { Wind: { Rated: > 0 } wind, Power: { } power })
+        {
+            string windTip = Loc.Tr("The current amount of wind.");
+            if (wind.Range is { } range)
+                windTip += "\n" + Loc.Tr("Operating wind speed is between {1,num=fix,p=2} mph and {2,num=fix,p=2} mph.", range.Min * MphPerUnit, range.Max * MphPerUnit);
+            rows.Add(new(Loc.Tr("Wind"), 0, wind.Share, 0, ((int)(wind.Share * 100)).ToString(CultureInfo.InvariantCulture) + "%", "", false, windTip));
+            float output = power.Demand;
+            string outputTip = !wind.PowerOn ? "Power is switched off."
+                : output <= wind.Rated - 1 ? wind.Share > 0 ? "Power output is running at reduced efficiency due to damage." : "Currently not enough wind to generate any power"
+                : "Power output is at maximum.";
+            rows.Add(Bar(Loc.Tr("Power Output"), output / wind.Rated, ((int)output).ToString(CultureInfo.InvariantCulture), outputTip));
+        }
         if (site is { Complete: false })
             foreach (var m in site.Materials)
             {

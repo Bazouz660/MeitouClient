@@ -43,9 +43,12 @@ public sealed partial class AiSystem
 
     /// <summary>
     /// The town a point is in (the original's <c>FUN_1402688d0</c>: the nearest town of any kind but a nest marker, when the point is within its radius, <c>FUN_140926d50</c>):
-    /// placed towns by <see cref="TownData.Radius"/>, the player's by <see cref="PopulationData.PlayerTownExtent"/>.
+    /// placed towns by <see cref="TownData.Radius"/>, the player's by <see cref="Construction.PlayerTown.Radius"/>.
     /// </summary>
-    internal CampaignTown CurrentTown(World world, Vector3 p)
+    internal CampaignTown CurrentTown(World world, Vector3 p) => TownAt(data, world, p);
+
+    /// <summary><see cref="CurrentTown"/> for any system that has the population data.</summary>
+    internal static CampaignTown TownAt(PopulationData data, World world, Vector3 p)
     {
         var at = Flat(p);
         var best = CampaignTown.None;
@@ -59,7 +62,7 @@ public sealed partial class AiSystem
         foreach (var town in world.Buildings.Towns)
         {
             float d = Vector2.DistanceSquared(at, Flat(town.Position));
-            if (d < bestD) (best, bestD, bestR) = (CampaignTown.OfPlayer(town.Number), d, data.PlayerTownExtent);
+            if (d < bestD) (best, bestD, bestR) = (CampaignTown.OfPlayer(town.Number), d, town.Radius);
         }
         return bestD <= bestR * bestR ? best : CampaignTown.None;
     }
@@ -111,7 +114,9 @@ public sealed partial class AiSystem
                 if (DestinationCentre(world, board) is { } centre)
                 {
                     squad.HomeCentre = centre;
-                    squad.HomeRadius = MathF.Max(data.PlayerTownRadius * 0.5f, 40);
+                    float radius = board.Destination.Site >= 0 ? data.Sites[board.Destination.Site].Town.SizeRadius * data.Sites[board.Destination.Site].Town.TownRadiusMult
+                        : world.Buildings.FindTown(board.Destination.PlayerTown)?.Radius ?? 0;
+                    squad.HomeRadius = MathF.Max(radius * 0.5f, 40);
                 }
                 break;
             default:
@@ -125,17 +130,20 @@ public sealed partial class AiSystem
 
     /// <summary>
     /// Whether a trader may start (vtable +0x60): always while on its way or just arrived; once done in a town, when it is ready to leave (<see cref="ReadyToLeave"/>); in a player
-    /// town at once. Engine choice: a town's own squad never starts it (Meitou unloads a town's squads with their town, so one away from home would vanish when it unloads).
+    /// town that is not public at once. Engine choice: a town's own squad never starts it (Meitou unloads a town's squads with their town, so one away from home would vanish when it unloads).
     /// </summary>
     bool TraderCanStart(World world, Squad squad, Blackboard board) =>
-        !squad.TownOwn && (board.InTown.PlayerTown > 0 || board.TraderState != 2 || ReadyToLeave(world, board));
+        !squad.TownOwn && (InPrivateOutpost(world, board) || board.TraderState != 2 || ReadyToLeave(world, board));
 
     /// <summary>
-    /// Ready to go on (<c>FUN_1402868c0</c>): in a player town that is not public (an outpost never is) at once; else after its stay (<see cref="Blackboard.TraderWait"/> hours since
-    /// it came into the town) and only between 06:00 and 20:59.
+    /// Ready to go on (<c>FUN_1402868c0</c>): in a player town that is not public (<see cref="Construction.PlayerTown.Public"/>) at once; else after its stay
+    /// (<see cref="Blackboard.TraderWait"/> hours since it came into the town) and only between 06:00 and 20:59.
     /// </summary>
     static bool ReadyToLeave(World world, Blackboard board) =>
-        board.InTown.PlayerTown > 0 || board.TraderWait <= world.GameHours - board.InTownSince && world.Hour is > 5 and < 21;
+        InPrivateOutpost(world, board) || board.TraderWait <= world.GameHours - board.InTownSince && world.Hour is > 5 and < 21;
+
+    static bool InPrivateOutpost(World world, Blackboard board) =>
+        board.InTown.PlayerTown > 0 && world.Buildings.FindTown(board.InTown.PlayerTown)?.Public != true;
 
     /// <summary>
     /// The trader's start (vtable +0x30): a stay of uniform [5, 8) hours, state 0 and the next town (<see cref="PopulationData.TraderTown"/> from where its leader is, not the town it
@@ -147,8 +155,7 @@ public sealed partial class AiSystem
         board.TraderWait = 5 + 3 * Rng.Float(Rng.Hash(world.Seed, key, RngPurpose.Think, SeedSalts.AiTraderWait));
         board.TraderState = 0;
         var at = LeaderPosition(world, squad) ?? squad.Position;
-        int town = data.TraderTown(squad.Faction, Flat(at), board.InTown.Site, Rng.Hash(world.Seed, key, RngPurpose.Think, SeedSalts.AiTraderTown));
-        board.Destination = town >= 0 ? CampaignTown.OfSite(town) : CampaignTown.None;
+        board.Destination = data.TraderTown(squad.Faction, Flat(at), board.InTown, world.Buildings.Towns, Rng.Hash(world.Seed, key, RngPurpose.Think, SeedSalts.AiTraderTown));
     }
 
     /// <summary>
@@ -250,8 +257,7 @@ public sealed partial class AiSystem
         foreach (var m in squad.Members)
         {
             if (!table.TryResolveNext(m, out int s) || table.Cold(s)?.Ai is not { } mind) continue;
-            float angle = mind.MemberIndex * 2.39996f, r = 20 + 6 * mind.MemberIndex;
-            mind.Post = centre + new Vector2(MathF.Sin(angle), MathF.Cos(angle)) * r;
+            mind.Post = PostRound(centre, mind.MemberIndex);
             // A stroll picked round the old post is dropped, so the next one is round the new.
             if (table.Next[s].Task == (byte)CharacterTask.Wander) Become(table, s, CharacterTask.Idle);
             if (say is { } e) world.Defer(new Dialogue.DialogueEvent(m, CharacterId.None, e) { Tick = world.Tick + 1 });
@@ -288,17 +294,86 @@ public sealed partial class AiSystem
 
     /// <summary>
     /// The occupation's start (vtable +0x30, <c>FUN_140288fe0</c>): the town its leader is in is its mission town and that town's faction its enemy; every member says
-    /// TAKEN_OVER_PLAYER_TOWN (73). The original also makes the platoon persistent while it lasts (Meitou keeps a wild squad only with <c>KeepWild</c>) and lists it among the
-    /// town's hostile occupiers (Town +0x118, its count +0x128, which the campaigns read: <see cref="Occupied"/>). The posts move into the town (<see cref="PostsInto"/>).
+    /// TAKEN_OVER_PLAYER_TOWN (73). The original also makes the platoon persistent while it lasts (the population keeps an occupier out of the world, <see cref="Occupies"/>) and
+    /// lists it among the town's hostile occupiers (Town +0x118, its count +0x128, which the campaigns read: <see cref="Occupied"/>). The posts move into the town (<see cref="PostsInto"/>).
     /// </summary>
-    void OccupyStarted(World world, Squad squad, Blackboard board)
+    /// <summary>A member's post on the ring of <see cref="PostsInto"/>: by member index, 20 + 6 per index from the centre.</summary>
+    static Vector2 PostRound(Vector2 centre, int index)
+    {
+        float angle = index * 2.39996f, r = 20 + 6 * index;
+        return centre + new Vector2(MathF.Sin(angle), MathF.Cos(angle)) * r;
+    }
+
+    /// <summary>
+    /// The post of a member whose mind is made while the squad occupies a town (a loaded or kept occupier resumes before its members have minds): on the town's ring, so
+    /// its goals without a building there are not all acted out where it stood when it was saved.
+    /// </summary>
+    Vector2? OccupierPost(World world, Blackboard board, int index) =>
+        board.CurrentClass == PackageClass.OccupyTown && DestinationCentre(world, board) is { } centre ? PostRound(centre, index) : null;
+
+    void OccupyStarted(World world, Squad squad, Blackboard board) => Occupy(world, squad, board, TakenOverPlayerTown);
+
+    /// <summary>An occupier come back into the world (<see cref="Blackboard.Resume"/>): the occupation's state again from the town it is in, without the members' line.</summary>
+    void OccupyResumed(World world, Squad squad, Blackboard board) => Occupy(world, squad, board, null);
+
+    void Occupy(World world, Squad squad, Blackboard board, int? say)
     {
         board.OccupyAway = 0;
         if (board.InTown.PlayerTown <= 0 || world.Buildings.FindTown(board.InTown.PlayerTown) is not { } town) return;
         board.Destination = board.InTown;
         board.AssaultEnemy = town.Owner;
-        PostsInto(world, squad, Flat(town.Position), TakenOverPlayerTown);
+        PostsInto(world, squad, Flat(town.Position), say);
     }
+
+    /// <summary>The complete buildings of the player town the squad's occupation holds (0 without one): where its town goals walk (<see cref="OccupiedSpot"/>).</summary>
+    static int OccupiedBuildings(World world, Blackboard board)
+    {
+        if (board.CurrentClass != PackageClass.OccupyTown || board.Destination.PlayerTown <= 0) return 0;
+        int n = 0;
+        foreach (var site in world.Buildings.All) if (site.Complete && site.Town == board.Destination.PlayerTown) n++;
+        return n;
+    }
+
+    /// <summary>
+    /// Where a town goal (36 Patrolling town, 37 Wandering town) of an occupier walks: a random complete building of the player town it holds (<b>engine choice</b>: the original's
+    /// <c>Task_PatrolTown</c> target is <b>Unknown</b>, and Meitou reads no nodes in a player town); null without one.
+    /// </summary>
+    static Vector3? OccupiedSpot(World world, Blackboard board, CharacterId self)
+    {
+        int n = OccupiedBuildings(world, board);
+        if (n == 0) return null;
+        int pick = Rng.Int(Rng.Hash(world.Seed, Rng.Key(self), RngPurpose.Think, SeedSalts.AiTarget ^ (ulong)world.Tick << 8 ^ 0x4F), n);
+        foreach (var site in world.Buildings.All)
+            if (site.Complete && site.Town == board.Destination.PlayerTown && pick-- == 0) return site.Position;
+        return null;
+    }
+
+    /// <summary>
+    /// The bed an occupier with no home sleeps in (153 Go home go to bed): the original's NPC bed search falls back to the nearest beds of allies, and its allies test
+    /// passes the occupied town's buildings (<c>canIUseThisBuilding</c>, docs/game/locks.md "Beds", <b>Verified</b> by decompile). Meitou takes the
+    /// <see cref="AiMind.MemberIndex"/>-th (round robin) complete BF_BED of the occupied town that is reachable for it and not held by someone outside its squad, so the
+    /// members spread over the beds and keep theirs as the others lie down (<b>engine choice</b>); null without one.
+    /// </summary>
+    static Locks.Fixture? OccupiedBed(World world, Blackboard board, AiMind mind, int slot)
+    {
+        if (board.CurrentClass != PackageClass.OccupyTown || board.Destination.PlayerTown <= 0 || world.Characters.Cold(slot) is not { } self) return null;
+        var table = world.Characters;
+        bool Takes(Locks.Fixture f) =>
+            f.Kind == Locks.FixtureKind.Bed && f.Bed.Function == Meitou.Data.World.TownBuildings.BedFunction && world.Buildings.Find(f.Building) is { Complete: true } site
+            && site.Town == board.Destination.PlayerTown && world.Fixtures.Reachable(world, f, self.Faction)
+            && (Locks.FixtureRegistry.IsFree(table, f) || table.TryResolveNext(f.Occupant, out int o) && table.Cold(o)?.SquadId == mind.Squad.Id);
+        int count = 0;
+        foreach (var f in world.Fixtures.All) if (Takes(f)) count++;
+        if (count == 0) return null;
+        int want = mind.MemberIndex % count;
+        foreach (var f in world.Fixtures.All)
+            if (Takes(f) && want-- == 0) return f;
+        return null;
+    }
+
+    /// <summary>Whether a package is an occupation (<c>Package_OccupyTown</c>, 30), whose platoon the original keeps while it lasts (persistent); false for null or an unknown id.</summary>
+    public static bool Occupies(AiDatabase ai, string? package) =>
+        package is not null && ai.Package(package) is { } p && PackageClasses.Of(p.Signal) == PackageClass.OccupyTown;
 
     /// <summary>
     /// Whether the occupation is over (vtable +0x68, <c>FUN_140289290</c>): the town gone; or no member alive and up in it (<c>FUN_140289180</c>) for more than 4 game seconds in

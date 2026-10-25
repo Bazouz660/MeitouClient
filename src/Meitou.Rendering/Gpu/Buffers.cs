@@ -168,13 +168,14 @@ public sealed unsafe class LinearAllocator : IDisposable
     /// </summary>
     public void Reset(int keepChunks = int.MaxValue)
     {
+        foreach (var c in large) device.Allocator.Free(c);
+        large.Clear();
         int keep = Math.Max(keepChunks, current + 1);
-        for (int i = chunks.Count - 1; i >= 0; i--)
-            if (chunks[i].Size > ChunkSize || i >= keep)
-            {
-                device.Allocator.Free(chunks[i]);
-                chunks.RemoveAt(i);
-            }
+        for (int i = chunks.Count - 1; i >= keep; i--)
+        {
+            device.Allocator.Free(chunks[i]);
+            chunks.RemoveAt(i);
+        }
         current = chunks.Count > 0 ? 0 : -1;
         offset = 0;
         Used = 0;
@@ -186,6 +187,7 @@ public sealed unsafe class LinearAllocator : IDisposable
         if (size == 0) size = 4;
         if (alignment == 0) alignment = 1;
         Used += size;
+        if (size > ChunkSize) return Slice(NewChunk(size, large), 0, size);
         if (current >= 0)
         {
             ulong aligned = (offset + alignment - 1) / alignment * alignment;
@@ -194,16 +196,25 @@ public sealed unsafe class LinearAllocator : IDisposable
                 offset = aligned + size;
                 return Slice(chunks[current], aligned, size);
             }
-            while (++current < chunks.Count)
-                if (size <= chunks[current].Size) { offset = size; return Slice(chunks[current], 0, size); }
+            if (++current < chunks.Count) { offset = size; return Slice(chunks[current], 0, size); }
         }
-        long profileStart = UploadProfile.Begin();
-        var chunk = device.Allocator.CreateBuffer(Math.Max(ChunkSize, size), Usage, MemoryKind.Upload, name);
-        UploadProfile.End(UploadProfile.Part.StagingChunk, profileStart);
-        chunks.Add(chunk);
+        var chunk = NewChunk(ChunkSize, chunks);
         current = chunks.Count - 1;
         offset = size;
         return Slice(chunk, 0, size);
+    }
+
+    // A request larger than a regular chunk gets one of its own, kept apart until the reset: in the regular list it moved the bump cursor past the
+    // regular chunks after the current one, and the next small request then added a regular chunk the reset keeps (one more per frame while such requests come).
+    readonly List<GpuBuffer> large = [];
+
+    GpuBuffer NewChunk(ulong size, List<GpuBuffer> into)
+    {
+        long profileStart = UploadProfile.Begin();
+        var chunk = device.Allocator.CreateBuffer(size, Usage, MemoryKind.Upload, name);
+        UploadProfile.End(UploadProfile.Part.StagingChunk, profileStart);
+        into.Add(chunk);
+        return chunk;
     }
 
     /// <summary>Copies <paramref name="data"/> into a fresh slice aligned to 16 bytes (or <paramref name="alignment"/>).</summary>
@@ -226,6 +237,8 @@ public sealed unsafe class LinearAllocator : IDisposable
             device.DeferFree(c);
         }
         chunks.Clear();
+        foreach (var c in large) device.DeferFree(c);
+        large.Clear();
     }
 }
 

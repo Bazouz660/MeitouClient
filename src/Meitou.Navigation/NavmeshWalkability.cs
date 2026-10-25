@@ -151,13 +151,17 @@ public sealed class NavmeshWalkability : IWalkability
         float lowest = float.MaxValue, layer = float.MinValue;
         foreach (float h in heights)
         {
-            float s = Snap(w, x, z, h);
+            float s = Snap(w, x, z, h, out bool beside);
             // Where the mesh is too far off for its surface to be found (a ramp the polygon cuts under), the surface at the walker's own height, when that
             // is nearer the mesh than what was found (Observed: the terrain 30 below, inside the ramp, at the Great Fortress) or within the terrain snap's reach
             // of it: a polygon spanning a flat top and its slope sags up to ~25 under the top and lies nearer a face inside the rock (Observed: the rock by the
             // Hub's gate, where the original's polygon is flat on the top).
             if (near && MathF.Abs(s - nearY) > StandRise && w.TrySurfaceNear(x, z, nearY, StandRise, out float own)
                 && MathF.Abs(own - h) < MathF.Max(MathF.Abs(s - h), TerrainSnapRange)) s = own;
+            // A walker on the ground along the foot of a raised top whose edge the snap took (nothing is over the spot): the ground, when the mesh is within the
+            // terrain snap's reach of it (Observed: a top at 560 over ground at 537 west of Black Desert City, a polygon at 550 by its foot, stopping walkers there).
+            else if (near && beside && MathF.Abs(s - nearY) > StandRise && Ground(w, x, z) is var t && MathF.Abs(t - nearY) <= StandRise
+                && MathF.Abs(t - h) <= TerrainSnapRange) s = t;
             lowest = MathF.Min(lowest, s);
             float reach = MathF.Min(h, s);
             if (reach > nearY + StandRise || reach <= layer || near && MathF.Max(h, s) < nearY - StandDrop) continue;
@@ -167,7 +171,7 @@ public sealed class NavmeshWalkability : IWalkability
         }
         if (!reachable && near && w.TryEdgeHeight(x, z, nearY, EdgeTolerance, out float edge))
         {
-            float s = Snap(w, x, z, edge);
+            float s = Snap(w, x, z, edge, out _);
             if (MathF.Min(edge, s) <= nearY + StandRise && MathF.Max(edge, s) >= nearY - StandDrop) (y, reachable) = (s, true);
         }
         if (!reachable) y = lowest;
@@ -176,17 +180,19 @@ public sealed class NavmeshWalkability : IWalkability
 
     /// <summary>
     /// The real surface a mesh height <paramref name="h"/> stands for: the walkable collision surface nearest it within <see cref="SnapRange"/> unless the
-    /// terrain is nearer; else the terrain within <see cref="TerrainSnapRange"/>; else the mesh's own height.
+    /// terrain is nearer; else the terrain within <see cref="TerrainSnapRange"/>; else the mesh's own height. <paramref name="beside"/>: the surface taken is
+    /// only beside the spot (its edge within <see cref="NavSurfaces.EdgeReach"/>).
     /// </summary>
-    float Snap(NavWorld w, float x, float z, float h)
+    float Snap(NavWorld w, float x, float z, float h, out bool beside)
     {
+        beside = false;
         float t = Ground(w, x, z);
         // Over ground under the water a polygon near the water's height is the water surface (the builder's water area): kept, not put on the seabed or a
         // sunken floor, so all of the water is at one height.
         bool waterSurface = t < WorldWater.Height && h < WorldWater.Height + WaterSurfaceBand;
         if (waterSurface) return h;
         float terrain = MathF.Abs(t - h);
-        if (w.TrySurfaceNear(x, z, h, MathF.Min(SnapRange, terrain), out float s)) return s;
+        if (w.TrySurfaceNear(x, z, h, MathF.Min(SnapRange, terrain), out float s, out beside)) return s;
         return terrain <= TerrainSnapRange ? t : h;
     }
 
@@ -272,15 +278,79 @@ public sealed class NavmeshWalkability : IWalkability
     PathResult Toward(NavWorld w, Vector3 from, Vector3 to, NavAgent agent)
     {
         var path = new NavQuery(w, Doors).FindPathToward(from, to, agent);
-        return path.Found ? new PathResult([.. path.Points.Select(p => new Vector3(p.X, GroundHeight(p.X, p.Z, p.Y) is var y && MathF.Abs(y - p.Y) <= TerrainSnapRange ? y : p.Y, p.Z))]) : path;
+        return path.Found ? FromWalker(from, path) : path;
     }
 
     PathResult Exact(NavWorld w, Vector3 from, Vector3 to, NavAgent agent)
     {
-        var path = new NavQuery(w, Doors).FindPath(from, to, agent);
-        if (!path.Found) return path;
-        // Path points are on the simplified surface: put them on the real ground.
-        return new PathResult([.. path.Points.Select(p => new Vector3(p.X, GroundHeight(p.X, p.Z, p.Y) is var y && MathF.Abs(y - p.Y) <= TerrainSnapRange ? y : p.Y, p.Z))]);
+        var query = new NavQuery(w, Doors);
+        var path = OnGround(query.FindPath(from, to, agent, null, out var start));
+        // A walker off the mesh (pushed beside a stair) can be nearest to a polygon it cannot step onto: the corner of the stair over it, whose simplified
+        // height snaps to the walker's own ground. Its path then begins with a wall, so the next nearest starts are tried, the first whose way the walker can
+        // step along taken (docs/game/pathfinding.md "Own builder").
+        if (start.Zone < 0 || IsOnMesh(w, from) || path.Found && Steppable(from, path.Points)) return path;
+        var tried = new HashSet<NavRef> { start };
+        for (int k = 0; k < OffMeshStarts; k++)
+        {
+            var other = OnGround(query.FindPath(from, to, agent, tried.Contains, out start));
+            if (start.Zone < 0) break;
+            tried.Add(start);
+            if (other.Found && Steppable(from, other.Points)) return other;
+        }
+        return path;
+
+        PathResult OnGround(PathResult found) => found.Found ? FromWalker(from, found) : found;
+    }
+
+    /// <summary>
+    /// A navmesh path for movement: its points put on the real ground (they are on the simplified surface), and the walker's own position first when the path starts
+    /// elsewhere. Movement takes the first point for where the walker stands; for one off the mesh the path starts at the nearest point of the mesh, which it walks to
+    /// first (Observed: zone 22.10, a walker on the terrain beside the Old Storm House's door stair dropped the step onto the stair's foot and walked up its side).
+    /// </summary>
+    PathResult FromWalker(Vector3 from, PathResult found)
+    {
+        var points = new List<Vector3>(found.Points.Count + 1);
+        if (Vector2.Distance(new(from.X, from.Z), new(found.Points[0].X, found.Points[0].Z)) > OffMeshStart) points.Add(from);
+        foreach (var p in found.Points) points.Add(new Vector3(p.X, GroundHeight(p.X, p.Z, p.Y) is var y && MathF.Abs(y - p.Y) <= TerrainSnapRange ? y : p.Y, p.Z));
+        return new PathResult(points);
+    }
+
+    /// <summary>How far (units) the start of a navmesh path may be from the walker before the walker's own position is put first (<see cref="FromWalker"/>).</summary>
+    public const float OffMeshStart = 0.5f;
+
+    /// <summary>How many other start polygons a walker off the mesh tries when the nearest one's path begins with a step it cannot take (engine choice).</summary>
+    public const int OffMeshStarts = 4;
+    /// <summary>How far (units) along its path a walker off the mesh must be able to step for the path to count (engine choice: past a stair's corner).</summary>
+    public const float SteppableReach = 10;
+
+    static bool IsOnMesh(NavWorld w, Vector3 p)
+    {
+        var heights = scratch ??= [];
+        heights.Clear();
+        w.HeightsAt(p.X, p.Z, heights);
+        return heights.Count > 0;
+    }
+
+    /// <summary>Whether a walker at <paramref name="from"/> can stand at every unit of the first <see cref="SteppableReach"/> units of the path, its height carried on as movement does.</summary>
+    bool Steppable(Vector3 from, IReadOnlyList<Vector3> points)
+    {
+        var at = from;
+        float y = from.Y, walked = 0;
+        foreach (var next in points)
+        {
+            var leg = new Vector2(next.X - at.X, next.Z - at.Z);
+            float length = leg.Length();
+            if (length < 1e-3f) continue;
+            for (float d = MathF.Min(1, length); d <= length && walked + d <= SteppableReach; d += 1)
+            {
+                var p = new Vector2(at.X, at.Z) + leg * (d / length);
+                if (!TryStand(p.X, p.Y, y, out y)) return false;
+            }
+            walked += length;
+            if (walked >= SteppableReach) return true;
+            at = next with { Y = y };
+        }
+        return true;
     }
 
     /// <summary>The road network long routes may take (<see cref="Route"/>); null: none, the terrain grid alone.</summary>
@@ -297,12 +367,12 @@ public sealed class NavmeshWalkability : IWalkability
     /// </summary>
     (List<Vector3> Route, bool Road) Route(Vector3 from, Vector3 to, NavAgent agent)
     {
-        if (agent.RoadPreference <= 0 || Roads?.Route(new(from.X, from.Z), new(to.X, to.Z), agent.RoadPreference) is not { } via) return (Coarse.Find(from, to, agent.WaterFactor), false);
+        if (agent.RoadPreference <= 0 || Roads?.Route(new(from.X, from.Z), new(to.X, to.Z), agent.RoadPreference) is not { } via) return (Coarse.Find(from, to, agent.Water), false);
         // via: the join, the road's points, the leave, then the goal.
         var route = new List<Vector3> { from };
         void Leg(Vector3 a, Vector3 b)
         {
-            var leg = Coarse.Find(a, b, agent.WaterFactor);
+            var leg = Coarse.Find(a, b, agent.Water);
             if (leg.Count > 1) route.AddRange(leg.Skip(1));
             else route.Add(b);
         }

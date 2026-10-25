@@ -66,7 +66,7 @@ public interface IWalkability
     }
 
     /// <summary>How far (units) <see cref="FloorNear"/> looks round a spot (engine choice: more than a table's half width).</summary>
-    const float FloorSearch = 12;
+    public const float FloorSearch = 12;
 }
 
 /// <summary>
@@ -102,10 +102,40 @@ public sealed class OpenGroundWalkability(Func<float, float, float> ground) : IW
 public interface IAgentWalkability : IWalkability
 {
     /// <summary>
-    /// A path for an agent of <paramref name="footprintRadius"/> units; 0 or less means the default human, and a water cost factor of <paramref name="waterFactor"/> (0 or less: the default).
+    /// A path for an agent of <paramref name="footprintRadius"/> units; 0 or less means the default human, and the water cost factors <paramref name="water"/> (unset: the default).
     /// A long trip takes the roads by the original's rule for FACTION <c>road preference</c> <paramref name="roadPreference"/> (0: never).
     /// </summary>
-    PathResult FindPath(Vector3 from, Vector3 to, float footprintRadius, float waterFactor, float roadPreference = 0);
+    PathResult FindPath(Vector3 from, Vector3 to, float footprintRadius, WaterCost water, float roadPreference = 0);
+}
+
+/// <summary>
+/// What a unit of path through water costs a character, by depth: the wet water states 1 shallow, 2 waist-deep, 3 deep (<see cref="Bodies.Speed.WaterState"/>).
+/// Each is the larger of RACE <c>water avoidance</c> (the original's flat water cost) and how much longer the character takes there than on land
+/// (docs/game/pathfinding.md "Water costs"). Default: unset.
+/// </summary>
+public readonly record struct WaterCost(float Shallow, float Waist, float Deep)
+{
+    public bool IsSet => Shallow > 0;
+    public float Min => MathF.Min(Shallow, MathF.Min(Waist, Deep));
+    public float this[int state] => state switch { 3 => Deep, 2 => Waist, _ => Shallow };
+    public static WaterCost Uniform(float factor) => new(factor, factor, factor);
+
+    /// <summary>
+    /// The costs for avoidance factor <paramref name="avoidance"/> (0 or less: unset), land top speed <paramref name="run"/> and swim speed <paramref name="swim"/>,
+    /// with the speeds of <see cref="Bodies.Speed.InWater"/> (a race that does not swim has no shallow state: it walks those at its land speed).
+    /// </summary>
+    public static WaterCost Of(float avoidance, float run, Meitou.Data.Gameplay.Bodies.RaceData? race, float swim)
+    {
+        if (avoidance <= 0) return default;
+        if (race is null || run <= 0) return Uniform(avoidance);
+        return new(Factor(1), Factor(2), Factor(3));
+
+        float Factor(int state)
+        {
+            float speed = state == 1 && !race.Swims ? run : Bodies.Speed.InWater(state, run, race, swim);
+            return speed > 0 ? MathF.Max(avoidance, run / speed) : avoidance;
+        }
+    }
 }
 
 /// <summary>Finding a walkable spot near a point (a stand-in's characters coming back into the world, docs/simulation.md "Off-screen tier").</summary>

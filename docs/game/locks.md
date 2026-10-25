@@ -227,9 +227,12 @@ Same targets as picking; Task_CutLock / Task_BruteForceLock share the shackle ta
   instances at local Z +11.18 / -11.05 (+12.18 / -12.05), the second turned 180°; Old, Camp and Fish Bed have none. `sleepinbed` holds `Bip01` at about
   (-11.8, 6.7, -1.5) in model space (`gotobed` moves it there from the origin), so from a node the pelvis lands on the mattress centre. Meitou:
   `FixtureRegistry.LieSpot`, also applied to a sleeper bound on load (engine choice); bad nodes are not modelled.
+  Heights (**Verified**, base game probe of the clips and `bed1.mesh` / `camp_bed1.mesh` bounds): `sleepinbed` holds `Bip01` 6.7 above the spot, `Bed`'s mesh
+  top is 7.36; `Camp Bed` plays `sleeponfloor` (`Bip01` 1.46) on a mesh 1.73 high. Drawn there, the body sinks into the mattress; Meitou draws a sleeper 1.5
+  higher (`World.BedLift`, engine choice). How the original avoids the sinking is **Unknown**.
 - **Rent cost** (UseableStuff slot 152 `FUN_140330ab0(bed, character)`): 0 with no bed faction, when the faction's flag +0x1d0 is set (**Unknown**),
   when ally(bed faction, character's) ([factions](factions-squads-towns.md) 3.3), for a `fundamental type` 8 (bandit) owner, or when the parent
-  building's town is missing or of type 0, 4 or 9 (**Unknown** meaning); -1 when a further test `FUN_140621230` fails (**Unknown**) or the house has no
+  building's town is missing or of type 0, 4 or 9 (**Unknown** meaning); -1 when `canIUseThisBuilding` (below) fails or the house has no
   resident squad, or its template's `public beds` is false, unless the building's designation (+0xc4, set from the `building designation` of the
   first squad to take it as home: `FUN_140553210`, `FUN_14057f1f0`) is 3 BD_BAR; else the template's `bed usage cost`,
   x4 for a BF_SKELETON_BED (25), negative read as 0. Data (**Verified**): 928 templates `public beds` false, 31 true (bars and shops, 0 to 750 cats);
@@ -241,8 +244,16 @@ Same targets as picking; Task_CutLock / Task_BruteForceLock share the shackle ta
   and desire of 148): a character in a bed keeps it. For a player-faction character: the complete buildings of function mask 0x40 (BF_BED only; skeleton
   beds are not searched) in its town, else the nearest town within √1.5625e7 ≈ 3953, plus its home building's town (`FUN_1408cbea0`); each free one not in
   the squad's give-up list weighs 0.5 for the character's faction, 0.01 for a faction that counts it as an ally, else is skipped; x3 when its
-  construction needs more than 1 material (Building+0x188), x2 with a parent building, x4 when slot 35 > 0 (**Unknown**). The heaviest wins (first on a
-  tie, `FUN_1408daa90`). **Other characters** (**Verified** by decompile, order of the steps; what the building lists hold is **Observed**): a target already set is kept. The candidate list
+  construction needs more than 1 material (Building+0x188), x2 with a parent building, x4 inside town walls (vfunc 0x118 `amInsideTownWalls` > 0,
+  KenshiLib 1ce4a16; not in Meitou). The heaviest wins (first on a tie, `FUN_1408daa90`). The town's beds are first filtered by the squad's
+  `canIUseThisBuilding` (below; the gatherer `FUN_140a00690`). So an **allied** faction's bed (relation to the player >= 50, e.g. the Shinobi Thieves after
+  joining, +100) is taken when no own bed is free; a merely neutral faction's never is (**Verified** by decompile, `FUN_1408cfe00`, `FUN_1406b2630`).
+- **canIUseThisBuilding** (`Ownerships::canIUseThisBuilding` `FUN_140621230(ownerships, building, character)`, **Verified** by decompile, names KenshiLib
+  1ce4a16): true with no squad faction, for the occupied town's buildings or the squad's own faction's; true for a cage (function 8) when the character
+  passes `FUN_1405c8aa0` (**Unknown**); false when the building's faction counts the squad's as an enemy, or the building has an inventory; outdoors, true in
+  the squad's home town; indoors, true when the parent building `isPublic`, the squad's faction is real and the building's is not the player's; else
+  ally(building's faction → squad's).
+- **Bed search, other characters** (**Verified** by decompile, order of the steps; what the building lists hold is **Observed**): a target already set is kept. The candidate list
   is built from the first step that yields a bed: (1) the beds (interior furniture of function 6, `FUN_14054d4f0`) of the home building (the squad's Ownerships +0x38 hand); (2) with the squad type
   (status +0xdc) not 4, those of the nearest "designated" building (`BuildingFinderNearestAllies_Designated`, kind 2; its per-building test `FUN_1408dac20` reads the building's designation record (vfunc 0x160), its faction, a shop test, a give-up test and an occupancy count `FUN_1403344c0`
   and is only partly read; the meaning of the designation kinds is **Unknown**); (3) with the squad type not 1, 2, 5 or 6, those of the nearest designated building of kind 3;
@@ -251,6 +262,9 @@ Same targets as picking; Task_CutLock / Task_BruteForceLock share the shackle ta
   not the building the character is in (+0x128 hand compare, **Unknown**) and the bed's field behind vfunc 0x228 +0x28 is above 1 (**Unknown**, read as a price). The order inside a list is
   that of a set of pointers (steps 1 to 3), so it is not reproducible. Meitou: `FixtureRegistry.FindBedNpc` takes the first free bed of the squad's home building, else the nearest free bed of its
   town (engine choices for steps 2 to 4 and the order); nothing in Meitou calls it for an NPC yet (NPC sleepers go to the home spot of their mind).
+  The finders' allies test (`FUN_1408ca5d0`, **Verified** by decompile) passes a building of the finder's faction or one `canIUseThisBuilding` accepts, which
+  includes the town the squad occupies ([economy](economy.md)), so a homeless occupier sleeps in the occupied town's beds. Meitou: `AiSystem.OccupiedBed`, the
+  member index's (round robin) complete BF_BED of the occupied town not held outside the squad (engine choice for the order).
 - **UI**: a quick right click on a bed (function 6 or 25) gives 258 (UseableStuff slot 131 `FUN_140299230`); the held menu (`FUN_1407a6bc0`) offers
   99 "Put in Bed" when the last selected player character carries someone, else 258 "Sleep" (verb names `FUN_14079b2d0`).
 - Meitou: [simulation](../simulation.md#cages-beds-and-locks).
@@ -261,7 +275,7 @@ Interior items with `has inventory` (grid as for a [storage](buildings-productio
 A resident squad with `vendors` has its home's stock containers filled and unlocked by the building filler, trader or not ([building shops](economy.md#building-shops-observed-decompile));
 the others start empty (what else the original stocks them with is **Unknown**). **Engine choices**, not Verified against the original: a right click with a selection walks the nearest
 character to one (`OpenContainerOrder`, reach 20) and opens a storage window beside the inventory, staying open until the player closes it (asking for the same container again reopens it, also while paused); the character's inventory opens beside it for an order-driven container and not when a storage or rock is merely selected (the original has no walk-away test; an opener who is down or gone closes it); the player's own locked one refuses
-("It's locked."). Another faction's: pointer `lockpick` while locked, else `scavenge` (`search` for own or unowned ones); a locked one with Alt sends the walker to pick it (76 PICK_LOCK), without Alt "Hold down the ALT key to pick the lock." and a walk to it, as the original's right-click path (`FUN_1407fc6e0`); what is taken from it is marked stolen from its owner (no witness or crime test yet, engine gap). A building shop's containers all show the shop's one merged inventory (`Shop.ForBuilding`, `PlayerSystem.GridOf`; engine choice, the original keeps the stock in the containers): taking from it is the theft of any other faction's container (the item is marked stolen from the container's owner), putting into it is refused ("That stock is the shop's."); without Alt another faction's gets the original's "Hold down the ALT key to steal items" and a walk, the menu's Loot (and Alt) steals at once. Items move with
+("It's locked."). Another faction's: pointer `lockpick` while locked, else `scavenge` (`search` for own or unowned ones); a locked one with Alt sends the walker to pick it (76 PICK_LOCK), without Alt "Hold down the ALT key to pick the lock." and a walk to it, as the original's right-click path (`FUN_1407fc6e0`); what is taken from it is marked stolen from its owner (no witness or crime test yet, engine gap). A building shop's stock containers each show their own part of the shop's stock (a rectangle of it, `Shop.ForBuilding`, `PlayerSystem.GridOf`; engine choice for where the original's containers keep it), its other containers their own contents: taking from a stock one is the theft of any other faction's container (the item is marked stolen from the container's owner), putting into it is refused ("That stock is the shop's."); without Alt another faction's gets the original's "Hold down the ALT key to steal items" and a walk, the menu's Loot (and Alt) steals at once. Items move with
 `PutInMachine` / `TakeFromMachine` addressed by the fixture id, within 60 of it ("Out of trading range.", [economy](economy.md#trading-range)). Contents are saved in Meitou's own GAMESTATE_BUILDING string `meitou container <layout index>` (the index of the fixture id; JSON list of items with cell, quality, level,
 material, maker, charge and a bag's contents; absent while empty; `Locks/ContainerSave.cs`), the original's interior ids being unmapped. Like the locks, only into building states the
 save already holds (zones visited), and the original ignores the key (**Unverified**). A lock on a stored shackle and prosthetic wear are not kept. Theft rolls

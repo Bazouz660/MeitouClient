@@ -67,20 +67,12 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
             ? (1 - combat.AttackRate(cold)) * CombatTuning.LeadSlope + CombatTuning.LeadBase : 0;
         var level = next[t].Position + tv * MathF.Min(lead, CombatTuning.AimLeadSeconds) - n.Position;
         bool behind = lead > 0 && tv.X * level.X + tv.Z * level.Z > 0;
-        if (behind)
-        {
-            var heading = Vector2.Normalize(new Vector2(tv.X, tv.Z));
-            var across = new Vector2(-heading.Y, heading.X);
-            float side = across.X * -d.X + across.Y * -d.Z;
-            float pass = CombatTuning.PassWidth * (CombatTuning.Footprint(cold) + CombatTuning.Footprint(tc));
-            var ahead = goal + new Vector2(tv.X, tv.Z) * (lead + RepathSeconds) + across * (side > 0 || side == 0 && (i & 1) == 0 ? pass : -pass);
-            if (world.Walkability.IsWalkable(ahead.X, ahead.Y, next[t].Position.Y)) goal = ahead;   // off the navmesh (a wall, a cliff) it goes for the target itself
-        }
         // A crossbowman walks only while closing in (out of range or the line of fire blocked); aiming and reloading it stands.
         bool shooting = st.Ranged && st.RangedState != (byte)RangedStates.Closing;
         bool holding = Orders.Has(cold, CharacterOrders.Hold);
-        // One of more than MaxEngaged fighters that its target has not let close in circles it (WaitingStateAI, docs/game/combat.md "Attack slots and circling").
-        int around = !st.Ranged && !st.Engaged && !behind ? combat.FightersAt(world, t) : 0;
+        // One of more than MaxEngaged fighters that its target has not let close in circles it (WaitingStateAI, docs/game/combat.md "Attack slots and circling"); not while its
+        // swing plays (a blow that is not a hit gives up the place at once, but the fighter asks again only when it next decides).
+        int around = !st.Ranged && !st.Engaged && !behind && st.AttackTech < 0 ? combat.FightersAt(world, t) : 0;
         if (around > CombatSystem.MaxEngaged && !st.Down && world.Tick >= st.StunUntil && st.ReactTech < 0 && !holding)
         {
             Circle(world, i, ref n, cold, tc, t, d, gap, around);
@@ -98,9 +90,19 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
             }
             return;
         }
-        bool asking = (n.Flags & (ushort)(MoveFlags.NeedPath | MoveFlags.Pending)) != 0;
+        if ((n.Flags & (ushort)(MoveFlags.NeedPath | MoveFlags.Pending)) != 0 || n.TaskTime > 0) return;
+        // The point past the runner only now, at most once per RepathSeconds: the navmesh test is a point query per chaser.
+        if (behind)
+        {
+            var heading = Vector2.Normalize(new Vector2(tv.X, tv.Z));
+            var across = new Vector2(-heading.Y, heading.X);
+            float side = across.X * -d.X + across.Y * -d.Z;
+            float pass = CombatTuning.PassWidth * (CombatTuning.Footprint(cold) + CombatTuning.Footprint(tc));
+            var ahead = goal + new Vector2(tv.X, tv.Z) * (lead + RepathSeconds) + across * (side > 0 || side == 0 && (i & 1) == 0 ? pass : -pass);
+            if (world.Walkability.IsWalkable(ahead.X, ahead.Y, next[t].Position.Y)) goal = ahead;   // off the navmesh (a wall, a cliff) it goes for the target itself
+        }
         bool stale = (n.Flags & (ushort)MoveFlags.HasPath) == 0 || Vector2.DistanceSquared(goal, n.Goal) > RepathDistance * RepathDistance;
-        if (asking || !stale || n.TaskTime > 0) return;
+        if (!stale) return;
         n.Goal = goal;
         n.Mode = SpeedMode.Free;
         n.Flags |= (ushort)MoveFlags.NeedPath;
@@ -154,7 +156,7 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
 /// <summary>
 /// A minimal answer to being attacked (an <b>engine rule</b>, the original's AI is stage 9): every <see cref="CheckEveryTicks"/> ticks, a character that is awake, armed with a
 /// <see cref="Fighter"/>, not fighting already, and that someone is attacking, fights that attacker, and so do its squad mates within <see cref="JoinRange"/> units of it that are
-/// free too. An NPC always answers; one of the player's characters answers only while it has no order (task <see cref="CharacterTask.Idle"/>: not walking to an order, treating or
+/// free too, whether or not the attacked one is free itself (never against a mate of the same squad). An NPC always answers; one of the player's characters answers only while it has no order (task <see cref="CharacterTask.Idle"/>: not walking to an order, treating or
 /// resting), so a player who sends a character away is obeyed; the original's Passive toggle (non-combat mode) would turn it off and is not modelled (its default is off).
 /// The orders go into the world's deferred list for the next tick (<see cref="World.Defer"/>) and are marked <see cref="AttackOrder.Defensive"/>. With <see cref="SquadAi.Help"/> the player's
 /// free characters also defend characters of allied factions (<see cref="HelpAllies"/>).
@@ -196,8 +198,9 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem
             {
                 defenders.Add(new(t, next[t].Generation));
                 taken.Add(t);
-                JoinMates(world, table, t, defenders, taken, CanFight);
             }
+            // Free squad mates come to an attacked character that is already fighting (or down) too, not only to one that answers now.
+            if (table.Cold(a)?.SquadId is not { } foeSquad || foeSquad < 0 || foeSquad != table.Cold(t)?.SquadId) JoinMates(world, table, t, defenders, taken, CanFight);
             // Bodyguards of the attacked character come too (Bodyguard, order 45).
             Guards(world, table, t, a, defenders, taken, guards);
             // Allies come to a defender that is already fighting too.

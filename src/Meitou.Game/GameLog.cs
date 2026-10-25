@@ -35,13 +35,15 @@ sealed class GameLog : TextWriter
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return null; }
     }
 
-    public override void Write(char value) { writer.Write(value); Trim(); }
-    public override void Write(string? value) { writer.Write(value); Trim(); }
-    public override void Write(char[] buffer, int index, int count) { writer.Write(buffer, index, count); Trim(); }
-    public override void WriteLine(string? value) { writer.WriteLine(value); Trim(); }
+    public override void Write(char value) { writer.Write(value); Trim(value == '\n'); }
+    public override void Write(string? value) { writer.Write(value); Trim(value is { Length: > 0 } && value[^1] == '\n'); }
+    public override void Write(char[] buffer, int index, int count) { writer.Write(buffer, index, count); Trim(count > 0 && buffer[index + count - 1] == '\n'); }
+    public override void WriteLine(string? value) { writer.WriteLine(value); Trim(true); }
 
-    void Trim()
+    void Trim(bool lineEnd)
     {
+        // A finished line goes to the disk, not just the OS cache: a hard reset (a GPU driver taking the PC down, #55) keeps it.
+        if (lineEnd) file.Flush(flushToDisk: true);
         if (file.Length <= Cap) return;
         var tail = new byte[Keep];
         file.Seek(-Keep, SeekOrigin.End);

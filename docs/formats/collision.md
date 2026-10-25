@@ -62,6 +62,10 @@ use every rendered triangle as collision or infer PhysX actor dynamics from appe
   | 2 OBSTACLE | 259 | 29 (signs, banners) | 16 |
   | 3 WALKABLE | 122 | 1 | 0 |
 
+- Farms (**Verified**, probe of the loaded BUILDING records named "Farm"): every outdoor farm (all crops, S to XL) has one
+  part, `farm posts` (`farm_poles1.mesh`, bounds about 103 x 150, the same for every size), with no `xml collision`; the indoor
+  farms (`indoor_farm1_part`) have collision.
+
 ### Collision groups (Observed, FUN_14055f6e0 and the loaders)
 
 | Group | What |

@@ -26,7 +26,7 @@ static class ContainerSave
     static List<Entry> Entries(Inventory grid) => [.. grid.Items.Select(i => new Entry(i.Record, i.Quantity, i.X, i.Y, i.Quality, i.Level, i.MaterialId, i.CompanyId, i.Charges, i.Section,
         i.Contents is { Items.Count: > 0 } bag ? Entries(bag) : null))];
 
-    /// <summary>Puts the saved items into <paramref name="grid"/> (items whose record the data lacks, or that no longer fit, are dropped).</summary>
+    /// <summary>Puts the saved items into <paramref name="grid"/>; one whose cell is no longer free (a changed grid) goes to the first that is, dropped when none is or when the data lacks its record.</summary>
     public static void Read(string text, Inventory grid, ItemFactory factory)
     {
         List<Entry>? entries;
@@ -42,7 +42,7 @@ static class ContainerSave
             var saved = new SaveItem { BaseId = e.R, Quantity = e.Q, X = e.X, Y = e.Y, Quality = e.Ql, Level = e.Lv, MaterialId = e.M ?? "", CompanyId = e.C ?? "", Charges = e.Ch, Section = topLevel ? "main" : e.S ?? "main" };
             if (SavedKit.ItemOf(saved, factory) is not { } item) continue;
             if (e.I is { } inner && item.Contents is { } bag) Fill(inner, bag, factory, topLevel: false);
-            if (topLevel && !grid.IsFree("main", item.X, item.Y, item.Width, item.Height)) continue;
+            if (topLevel && !grid.IsFree("main", item.X, item.Y, item.Width, item.Height)) { grid.AddTo("main", item); continue; }
             grid.Items.Add(item);
         }
     }

@@ -564,7 +564,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         int mark = item.StolenFrom, death = DeathUnits(from);
         if (Crime.CrimeSystem.IsLootTheft(cold, victim)) item.StolenFrom = victim.Faction;
         var owner = from.Items.Contains(item) ? from : from.Backpack?.Contents ?? from;
-        int moved = InventoryCommands.MoveInto(owner, item, take.Count, cold.Inventory!, take.BagFirst, out bool wear);
+        int moved = InventoryCommands.MoveInto(owner, item, take.Count, cold.Inventory!, take.BagFirst, out bool wear, cold.Race?.StringId);
         if (owner.Items.Contains(item)) item.StolenFrom = mark;   // what stays keeps its mark
         if (moved == 0)
         {
@@ -647,7 +647,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         if (item.Record != token.Record || item.Section != token.Section || item.X != token.X || item.Y != token.Y || item.Quantity != token.Quantity || item.LockedOn ||
             !InventoryCommands.IsMovableSection(item.Section)) return;
         var owner = looter.Inventory.Items.Contains(item) ? looter.Inventory : looter.Inventory.Backpack?.Contents;
-        if (owner is null || InventoryCommands.MoveInto(owner, item, put.Count, body.Inventory!, put.BagFirst, out bool wear) == 0) return;
+        if (owner is null || InventoryCommands.MoveInto(owner, item, put.Count, body.Inventory!, put.BagFirst, out bool wear, body.Race?.StringId) == 0) return;
         if (worn) Assembly?.RefreshEquipment(looter);
         if (wear) Assembly?.RefreshEquipment(body);
     }
