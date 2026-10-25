@@ -132,10 +132,15 @@ public sealed class NavWorld
     }
 
     /// <summary>The walkable collision surface of the zone at (x, z) nearest to <paramref name="y"/> within <paramref name="range"/> (<see cref="NavSurfaces"/>).</summary>
-    public bool TrySurfaceNear(float x, float z, float y, float range, out float height)
+    public bool TrySurfaceNear(float x, float z, float y, float range, out float height) => TrySurfaceNear(x, z, y, range, out height, out _);
+
+    /// <inheritdoc cref="TrySurfaceNear(float, float, float, float, out float)"/>
+    /// <param name="beside">The height is a surface's edge beside the point (<see cref="NavSurfaces.TryNear(float, float, float, float, out float, out bool)"/>).</param>
+    public bool TrySurfaceNear(float x, float z, float y, float range, out float height, out bool beside)
     {
         height = y;
-        return slots.TryGetValue(WorldLayout.ZoneOf(x, z), out int slot) && meshes[slot].Surfaces is { } s && s.TryNear(x, z, y, range, out height);
+        beside = false;
+        return slots.TryGetValue(WorldLayout.ZoneOf(x, z), out int slot) && meshes[slot].Surfaces is { } s && s.TryNear(x, z, y, range, out height, out beside);
     }
 
     /// <summary>The terrain height at (x, z) from the zone's own heightmap samples (<see cref="ZoneNavMesh.Terrain"/>); false where the zone has none.</summary>

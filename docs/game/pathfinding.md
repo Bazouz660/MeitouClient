@@ -251,7 +251,10 @@ heights snap to walkable collision (`NavSurfaces`, also its edge within `EdgeRea
 ground 22..28 under the Storm House floor, Observed, showed through furniture holes and walkers fell to it). A snap more than `StandRise` off the
 character takes the collision surface at the character's own height instead when that is within `TerrainSnapRange` (30) of the mesh (engine choice;
 **Observed** at the rock by the Hub's gate, -51686, 2740: our polygon spans its top (1595) and slope, sags to ~1580 and lies nearer a face inside the
-rock (~1567), stranding a walker on the top; the original's cached tile has a polygon flat at 1594.8 there); with no layer in range, a
+rock (~1567), stranding a walker on the top; the original's cached tile has a polygon flat at 1594.8 there). A snap that took only a surface's
+edge beside the spot, more than `StandRise` off a character within `StandRise` of the terrain, takes the terrain when the mesh is within `TerrainSnapRange`
+of it (engine choice; **Observed**, zone 33.28, scratch probe: by the foot of a walkable top at ~560 west of Black Desert City, ground 537, polygons
+at ~550, walkers at 7245, -13968 stopped and dropped their order); with no layer in range, a
 polygon within `EdgeTolerance` counts. A character already off every layer near its height still steps down.
 A path point takes the height of the corridor polygon under it; of stacked ones the corridor crosses, the one nearest the point's own height (`NavQuery.OnSurface`;
 **Observed** with `meitou-tools navmesh --town Squin --path`: a route into a Bughouse and up onto its roof beds ended on the floor below, y 372 for 482).
