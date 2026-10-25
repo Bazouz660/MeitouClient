@@ -611,6 +611,12 @@ public sealed unsafe class ShaderLibrary : IGpuShaders
     /// <summary>Whether the device can push this set's descriptors (the renderers write it for every draw).</summary>
     internal bool CanPush(GpuSetLayout set) => device.HasPushDescriptor && set.PerDraw && set.Slots.Sum(s => (int)s.Count) <= device.MaxPushDescriptors;
 
+    /// <summary>Whether set <paramref name="set"/> of <paramref name="program"/> was made as a push-descriptor set: a legacy or compute
+    /// program's set 0 as it was compiled (it fit), any other set as <see cref="CanPush"/> made its layout.</summary>
+    internal bool Pushes(VulkanProgram program, uint set) =>
+        set == 0 && program.Model is ShaderModel.Legacy or ShaderModel.Compute ? program.PushDescriptors
+            : set < program.NeutralSets.Length && !program.NeutralSets[set].IsBindless && CanPush(program.NeutralSets[set]);
+
     static DescriptorType VkDescriptorType(GpuSlot slot) => slot.Kind switch
     {
         GpuSlotKind.UniformBuffer => slot.OffsetAtBind ? DescriptorType.UniformBufferDynamic : DescriptorType.UniformBuffer,

@@ -186,10 +186,11 @@ public sealed unsafe class BindlessTable : IDisposable, IGpuBindlessTable
 
     static ScalarKind ScalarByName(InternalFormat format)
     {
+        // GL's names: an integer format ends in "ui" (R16ui, Rgba8ui) or "i" (R16i, Rgba32i); depth(-stencil) formats are read as float.
         var name = format.ToString();
-        if (GlConventions.IsDepthFormat(format) || name.EndsWith("S8Uint", StringComparison.Ordinal)) return ScalarKind.Float;   // depth(-stencil)
-        return name.Contains("Uint", StringComparison.Ordinal) ? ScalarKind.UInt
-            : name.Contains("Sint", StringComparison.Ordinal) ? ScalarKind.Int
+        if (GlConventions.IsDepthFormat(format)) return ScalarKind.Float;
+        return name.EndsWith("ui", StringComparison.Ordinal) ? ScalarKind.UInt
+            : name.EndsWith('i') ? ScalarKind.Int
             : ScalarKind.Float;
     }
 

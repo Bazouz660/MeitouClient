@@ -238,45 +238,56 @@ public sealed unsafe class PipelineLibrary : IGpuPipelines, IDisposable
     public GpuPipeline GetWithFragment(in GraphicsPipelineDesc desc, ShaderModule fragment)
     {
         lock (gate)
-            if (variants.TryGetValue(desc, out var v)) return new GpuPipeline(desc);
+            if (variants.TryGetValue(desc, out var v)) return new GpuPipeline(desc, v.Handle);
         var made = Create(desc, fragment);
         lock (gate)
         {
-            if (variants.TryGetValue(desc, out var raced)) { device.Vk.DestroyPipeline(device.Device, made, null); return new GpuPipeline(desc); }
+            if (variants.TryGetValue(desc, out var raced)) { device.Vk.DestroyPipeline(device.Device, made, null); return new GpuPipeline(desc, raced.Handle); }
             variants[desc] = made;
         }
-        return new GpuPipeline(desc);
+        return new GpuPipeline(desc, made.Handle);
     }
 
     public GpuPipeline Get(in GraphicsPipelineDesc desc)
     {
         lock (gate)
-            if (graphics.TryGetValue(desc, out var p)) return new GpuPipeline(desc);
+            if (graphics.TryGetValue(desc, out var p)) return new GpuPipeline(desc, p.Handle);
         var created = Create(desc);
         lock (gate)
         {
+            // Another thread may have made the same one meanwhile: keep the first, so every holder binds the same pipeline.
+            if (graphics.TryGetValue(desc, out var raced)) { device.Vk.DestroyPipeline(device.Device, created, null); return new GpuPipeline(desc, raced.Handle); }
             LatePipelines++;
             graphics[desc] = created;
         }
-        return new GpuPipeline(desc);
+        return new GpuPipeline(desc, created.Handle);
     }
 
     public GpuComputePipeline Get(in ComputePipelineDesc desc)
     {
         lock (gate)
         {
-            if (compute.TryGetValue(desc, out var p)) return new GpuComputePipeline(desc);
+            if (compute.TryGetValue(desc, out var p)) return new GpuComputePipeline(desc, p.Handle);
             { var vp = shaders.Backend(desc.Program); p = PipelineFactory.CreateCompute(device, vp.ComputeModule, vp.Layout); }
             compute[desc] = p;
-            return new GpuComputePipeline(desc);
+            return new GpuComputePipeline(desc, p.Handle);
         }
     }
 
-    /// <summary>The backend's identity of a handle (the command list's Vulkan-only internals resolve through this).</summary>
-    internal Pipeline Handle(in GpuPipeline pipeline) => graphics.TryGetValue(pipeline.Desc, out var p) ? p : variants.TryGetValue(pipeline.Desc, out var v) ? v : default;
+    /// <summary>The backend's identity of a handle (the command list's Vulkan-only internals resolve through this): the one it carries, else
+    /// looked up by its description (the recording threads call this, so under the lock).</summary>
+    internal Pipeline Handle(in GpuPipeline pipeline)
+    {
+        if (pipeline.Native != 0) return new Pipeline(pipeline.Native);
+        lock (gate) return graphics.TryGetValue(pipeline.Desc, out var p) ? p : variants.TryGetValue(pipeline.Desc, out var v) ? v : default;
+    }
 
     /// <summary>The backend's identity of a compute handle.</summary>
-    internal Pipeline Handle(in GpuComputePipeline pipeline) => compute.TryGetValue(pipeline.Desc, out var p) ? p : default;
+    internal Pipeline Handle(in GpuComputePipeline pipeline)
+    {
+        if (pipeline.Native != 0) return new Pipeline(pipeline.Native);
+        lock (gate) return compute.TryGetValue(pipeline.Desc, out var p) ? p : default;
+    }
 
     Pipeline Create(in GraphicsPipelineDesc d, ShaderModule fragment = default)
     {

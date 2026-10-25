@@ -678,8 +678,9 @@ static class WorldFrame
         public int GiResolve = 2;
         /// <summary>The Vulkan post chain (its reflection and GI also read it); null on a backend with a seam-only chain.</summary>
         public PostProcess? Post;
-        /// <summary>The chain <see cref="WorldFrame.Draw"/> runs: <see cref="Post"/> on Vulkan, the host's seam chain on Metal.</summary>
-        public IWorldPostChain? PostChain;
+        /// <summary>The chain <see cref="WorldFrame.Draw"/> runs: <see cref="Post"/> on Vulkan (also when a host sets only that), the host's seam chain on Metal.</summary>
+        public IWorldPostChain? PostChain { get => postChain ?? Post; set => postChain = value; }
+        IWorldPostChain? postChain;
         public WorldObjectRenderer? Objects;
         public FoliageRenderer? Foliage;
         /// <summary>The characters (null without <c>--crowd</c> or a host that feeds them).</summary>
@@ -881,9 +882,11 @@ static class WorldFrame
             // The Meitou water's FFT, shore field and reflection are seam-neutral. Metal packs the two biome
             // parameter maps into one array and drops refraction (its scene copy is still Vulkan-only), which
             // leaves the Meitou fragment exactly at Metal's 16-sampler stage limit.
-            bool meitouWater = o.MeitouWater;
+            // Vulkan always makes the Meitou water, so the Faithful / Meitou switch can turn it on while the game runs; another backend makes
+            // it only when the run starts with it.
+            bool meitouWater = o.MeitouWater, makeMeitou = meitouWater || context is GpuContext;
             gpu.Water = WaterRenderer.Create(context, install, scene.Database, assets, gpu.Sky, messages, scene.Coarse, o.WaterGrid, o.WaterOcean,
-                Ready(waterSource!), meitouWaves: meitouWater, shoreField: meitouWater);
+                Ready(waterSource!), meitouWaves: makeMeitou, shoreField: makeMeitou);
             gpu.Water.Meitou = meitouWater;
             step?.Invoke("reflections");
             gpu.Reflection = new ReflectionPass(context) { Level = o.WaterReflection, Range = ReflectionRange, Samples = o.ReflectionSamples };

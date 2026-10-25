@@ -46,7 +46,7 @@ static class MacSupport
     public static string Resolve(string requested) => requested switch
     {
         "metal" when MetalAvailable => "metal",
-        "vulkan" when VulkanAvailable => "vulkan",
+        "vulkan" or "auto" when VulkanAvailable => "vulkan",
         "vulkan" when MetalAvailable => "metal",   // explicit Vulkan became unavailable: keep the game startable
         _ when MetalAvailable => "metal",
         _ => "vulkan",

@@ -74,7 +74,7 @@ public class BindlessTests
         var frame = ctx.Frame;
         var cmd = frame.Commands;
         var pipeline = ctx.Pipelines.Get(new GraphicsPipelineDesc(program, VertexLayout.Empty, PrimitiveType.Triangles,
-            new AttachmentFormats(InternalFormat.Rgba8, InternalFormat.None), BlendState.Off,
+            new AttachmentFormats(format, InternalFormat.None), BlendState.Off,
             ColorMask.R | ColorMask.G | ColorMask.B | ColorMask.A, PolygonKind.Fill, false, false, program.Name));
         using (new GpuPass(frame, cmd, program.Name, [new PassUse(target, Access.ColourTarget)]))
         {

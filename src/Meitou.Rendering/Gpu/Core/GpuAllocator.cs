@@ -786,6 +786,7 @@ public sealed unsafe class GpuAllocator : IDisposable
         }
         long profileStart = UploadProfile.Begin();
         vk.DestroyBuffer(dev.Device, b.Buffer, null);
+        dev.RemoveBuffer(b.Index);
         Free(b.Allocation);
         UploadProfile.End(UploadProfile.Part.FreeBuffer, profileStart);
     }

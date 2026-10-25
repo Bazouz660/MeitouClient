@@ -167,19 +167,32 @@ public sealed unsafe class GpuFrame : IDisposable, IGpuFrame
     public DescriptorSet AllocateSet(DescriptorSetLayout layout)
     {
         RenderJobs.AssertNotInJob();
-        var list = pools[Slot];
-        var sizes = stackalloc DescriptorPoolSize[] { new(DescriptorType.UniformBuffer, 4096), new(DescriptorType.CombinedImageSampler, 8192), new(DescriptorType.StorageBuffer, 2048) };
-        for (int attempt = 0; attempt < 2; attempt++)
+        return AllocateSetAnyThread(layout);
+    }
+
+    readonly object setGate = new();
+
+    /// <summary>As <see cref="AllocateSet(DescriptorSetLayout)"/> from any thread: a recording job writes a set it cannot push
+    /// (<see cref="CommandList.BindProgramResources"/> on a device or layout without push descriptors). Serialized: the pools are shared.</summary>
+    internal DescriptorSet AllocateSetAnyThread(DescriptorSetLayout layout)
+    {
+        lock (setGate)
         {
-            if (list.Count > 0)
+            var list = pools[Slot];
+            var sizes = stackalloc DescriptorPoolSize[] { new(DescriptorType.UniformBuffer, 4096), new(DescriptorType.CombinedImageSampler, 8192), new(DescriptorType.StorageBuffer, 2048),
+                new(DescriptorType.StorageImage, 1024) };
+            for (int attempt = 0; attempt < 2; attempt++)
             {
-                var ai = new DescriptorSetAllocateInfo { SType = StructureType.DescriptorSetAllocateInfo, DescriptorPool = list[^1], DescriptorSetCount = 1, PSetLayouts = &layout };
-                DescriptorSet set;
-                if (device.Vk.AllocateDescriptorSets(device.Device, &ai, &set) == Result.Success) return set;
+                if (list.Count > 0)
+                {
+                    var ai = new DescriptorSetAllocateInfo { SType = StructureType.DescriptorSetAllocateInfo, DescriptorPool = list[^1], DescriptorSetCount = 1, PSetLayouts = &layout };
+                    DescriptorSet set;
+                    if (device.Vk.AllocateDescriptorSets(device.Device, &ai, &set) == Result.Success) return set;
+                }
+                var pi = new DescriptorPoolCreateInfo { SType = StructureType.DescriptorPoolCreateInfo, MaxSets = 1024, PoolSizeCount = 4, PPoolSizes = sizes };
+                VulkanException.Check(device.Vk.CreateDescriptorPool(device.Device, &pi, null, out var fresh), "vkCreateDescriptorPool");
+                list.Add(fresh);
             }
-            var pi = new DescriptorPoolCreateInfo { SType = StructureType.DescriptorPoolCreateInfo, MaxSets = 1024, PoolSizeCount = 3, PPoolSizes = sizes };
-            VulkanException.Check(device.Vk.CreateDescriptorPool(device.Device, &pi, null, out var fresh), "vkCreateDescriptorPool");
-            list.Add(fresh);
         }
         throw new InvalidOperationException("descriptor set allocation failed");
     }

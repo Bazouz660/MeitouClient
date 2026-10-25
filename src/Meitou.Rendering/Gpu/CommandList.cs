@@ -377,33 +377,25 @@ public sealed unsafe class CommandList : IGpuCommandList
         }
         var vp = ctx.Shaders.Backend(program);
         var point = vp.ComputeCode is not null ? PipelineBindPoint.Compute : PipelineBindPoint.Graphics;
-        if (push is not null)
+        // Pushed only into a layout made for it (a set too large for the device's push limit, or not per draw, is not one).
+        if (push is not null && ctx.Shaders.Pushes(vp, set))
         {
             push.CmdPushDescriptorSet(Handle, point, vp.Layout, set, (uint)bindings.Length, writes);
             Stats.DescriptorPushes++;
             return;
         }
-        // No push descriptors: the set is written and bound (the frame's pools free it when the slot comes round).
-        var allocated = ctx.Frame.AllocateSet(vp.SetLayouts[set]);
-        var allocatedSet = new GpuSet(device.AddSet(allocated));
+        // Otherwise the set is written and bound (the frame's pools free it when the slot comes round). Bound by its own handle, not
+        // through the device's set table: a set per draw would grow the table every frame. Safe on a recording job's thread.
+        var allocated = ctx.Frame.AllocateSetAnyThread(vp.SetLayouts[set]);
         for (int i = 0; i < bindings.Length; i++) writes[i].DstSet = allocated;
         device.Vk.UpdateDescriptorSets(device.Device, (uint)bindings.Length, writes, 0, null);
-        BindSets(program, set, new ReadOnlySpan<GpuSet>(in allocatedSet), []);
+        cmdBindDescriptorSets(Handle, point, vp.Layout, set, 1, &allocated, 0, null);
     }
 
     /// <summary>Pushes a block of constants to a program (the layout comes from the program).</summary>
     public void PushConstants<T>(GpuProgram program, GpuStage stages, in T value, uint offset = 0) where T : unmanaged
     {
         fixed (T* p = &value) cmdPushConstants(Handle, ctx.Shaders.Backend(program).Layout, VkStageFlags(stages), offset, (uint)sizeof(T), p);
-    }
-
-    static PipelineStageFlags2 VkStageFlags2(GpuStage stages)
-    {
-        var f = PipelineStageFlags2.None;
-        if (stages.HasFlag(GpuStage.Vertex)) f |= PipelineStageFlags2.VertexShaderBit;
-        if (stages.HasFlag(GpuStage.Fragment)) f |= PipelineStageFlags2.FragmentShaderBit;
-        if (stages.HasFlag(GpuStage.Compute)) f |= PipelineStageFlags2.ComputeShaderBit;
-        return f;
     }
 
     static ShaderStageFlags VkStageFlags(GpuStage stages)
@@ -676,7 +668,15 @@ public sealed unsafe class CommandList : IGpuCommandList
     public void Timestamp(IGpuTimestamps arena, in QuerySlot slot, GpuStage stage = GpuStage.All)
     {
         if (!slot.IsValid || arena is not QueryArena pools) return;
-        vk.CmdWriteTimestamp2(Handle, VkStageFlags2(stage), pools.Pool(in slot), slot.Index);
+        // A timestamp names one stage: a single shader stage as itself, any combination (GpuStage.All, the default) as all commands.
+        var vkStage = stage switch
+        {
+            GpuStage.Vertex => PipelineStageFlags2.VertexShaderBit,
+            GpuStage.Fragment => PipelineStageFlags2.FragmentShaderBit,
+            GpuStage.Compute => PipelineStageFlags2.ComputeShaderBit,
+            _ => PipelineStageFlags2.AllCommandsBit,
+        };
+        vk.CmdWriteTimestamp2(Handle, vkStage, pools.Pool(in slot), slot.Index);
     }
 
     /// <summary>As <see cref="Timestamp(QueryArena, in QuerySlot, GpuStage)"/>, with the backend's own stage (the pipe's ends).</summary>

@@ -105,9 +105,11 @@ public readonly record struct GpuProgram(int Index, ProgramInfo Info)
 /// <summary>
 /// A graphics pipeline the renderers hold: the description it was made from (docs/resource-layer.md)
 /// — it is the pipeline's identity (the backend caches by it). The pipeline state is the backend's
-/// (Vulkan: a VkPipeline; Metal: an MTLRenderPipelineState).
+/// (Vulkan: a VkPipeline; Metal: an MTLRenderPipelineState). <c>Native</c> is the backend's own handle when it has one
+/// to carry (Vulkan's VkPipeline: a bind needs no lookup, and the bench's counting variant of the same description is
+/// told apart by it); 0 makes the backend look it up by the description.
 /// </summary>
-public readonly record struct GpuPipeline(GraphicsPipelineDesc Desc)
+public readonly record struct GpuPipeline(GraphicsPipelineDesc Desc, ulong Native = 0)
 {
     /// <summary>The null pipeline (no program).</summary>
     public static GpuPipeline Null => default;
@@ -116,9 +118,10 @@ public readonly record struct GpuPipeline(GraphicsPipelineDesc Desc)
 }
 
 /// <summary>
-/// A compute pipeline the renderers hold: the description it was made from — the pipeline's identity.
+/// A compute pipeline the renderers hold: the description it was made from — the pipeline's identity (<c>Native</c> as
+/// <see cref="GpuPipeline"/>'s).
 /// </summary>
-public readonly record struct GpuComputePipeline(ComputePipelineDesc Desc)
+public readonly record struct GpuComputePipeline(ComputePipelineDesc Desc, ulong Native = 0)
 {
     /// <summary>The null pipeline (no program).</summary>
     public static GpuComputePipeline Null => default;

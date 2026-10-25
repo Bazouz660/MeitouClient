@@ -137,7 +137,7 @@ public sealed unsafe class FoliageGrassGpu : IDisposable
         if (initialised) return;
         var cmd = UploadCommands;
         cmd.FillBuffer(slots.Handle, 0, slots.Size, 0);
-        Barrier(cmd, Access.TransferDst, Access.TransferSrc);
+        Barrier(cmd, Access.TransferDst, Access.TransferSrc | Access.TransferDst);   // the slots are copied from and into after the fill
         initialised = true;
     }
 
