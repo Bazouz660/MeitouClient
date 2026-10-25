@@ -423,7 +423,8 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
             int interval = PoseInterval(Vector3.Distance(eye, centre) / MathF.Max(1, l.Radius / HumanRadius));
             // In time, not frames (a slow frame rate must not thin the poses out further): a new pose each time the character's own clock enters a new period.
             long bucket = interval == 1 ? updateStamp : (long)Math.Floor(poseSeconds * PoseRateHz / interval + unchecked((ulong)inst.Key * 0x9E3779B97F4A7C15UL) / 18446744073709551616.0);
-            l.Repose = inst.FullRateAnimation || inst.Bones is not null || state.Posed < 0 || state.Bones.Length != asset.Rig.BoneCount || bucket != state.PoseBucket;
+            l.Repose = inst.FullRateAnimation || inst.Bones is not null || state.Posed < 0 || state.Bones.Length != asset.Rig.BoneCount
+                || state.Attach.Length != asset.AttachCount || bucket != state.PoseBucket;   // a new asset with more attach points (its gear built later) sizes them in the repose
             state.PoseBucket = bucket;
             l.LayerStart = layerCount;
             var rig = asset.Rig;
