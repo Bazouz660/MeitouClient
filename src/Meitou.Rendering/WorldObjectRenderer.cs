@@ -203,10 +203,12 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
         streamer.AddRuntime(placement);
     }
 
-    /// <summary>A placed building is gone: its parts leave the zone.</summary>
+    /// <summary>A placed building is gone: its parts leave the zone. A town house's override is gone: its zone is laid out again, from the level data.</summary>
     public void RemoveRuntime(string instanceId)
     {
-        if (objects.RemoveRuntime(instanceId) is { } removed) streamer.RemoveRuntime(instanceId, removed.Zone);
+        if (objects.RemoveRuntime(instanceId) is not { } removed) return;
+        if (removed.DestroyedOverride is not null) streamer.Reload([removed.Zone]);
+        else streamer.RemoveRuntime(instanceId, removed.Zone);
     }
 
     /// <summary>Forgets every runtime building (a loaded save replaces the world) and lays out the zones that had one again.</summary>
