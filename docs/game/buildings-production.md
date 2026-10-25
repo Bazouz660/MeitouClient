@@ -156,8 +156,8 @@ same build work and ends once complete and `progress / target >= 1` (`FUN_140547
 Damage (**Verified**, slot 62 `hitByMeleeAttack`, KenshiLib 1ce4a16 names): only melee blows lower a complete building's
 progress. The Building/`UseableStuff` body (`1402972c0`) returns 1 and changes nothing; only `WallBuilding` (`14029d560`, gates
 included) and `DoorStuff` (`14029d690`) override it (formulas: [combat](combat.md#attack-zone)). No ranged slot exists beside
-62 on RootObject. The destroyed setter (slot 104) is called with 1 only by the wall hit and the "Wall termites" check
-(`FUN_1402ef1f0`); a destroyed wall takes the destroyed transition above (`WallBuilding` slot 70 calls the Building one first).
+62 on RootObject. In play the destroyed setter (slot 104) is called with 1 only by the wall hit (the "Wall termites" drain
+also calls it, but never runs, below); a destroyed wall takes the destroyed transition above (`WallBuilding` slot 70 calls the Building one first).
 
 Purchased ruins: **Observed** in the user's original-game screenshot (Squin Longhouse, before and after purchase): Condition is 0
 with an empty bar before repair starts; the destroyed-building transition's 40% is not its purchase-time condition.
@@ -343,13 +343,12 @@ short; a piece runs from its position along its own +Z for `link length` x `scal
   attaches to a nearby wall (`FUN_14029ac50`, links not saved, **Observed**); a child forwards build work and deliveries
   to the parent (slot 69), whose progress sets the children's (slots 71-73), so an attached subsection costs nothing of
   its own (**Observed**). A wall with `build threshold` 0 rebuilds the navmesh when queued (see Commit above).
-- **Wall termites** (**Verified**, `FUN_1402ef1f0`): the gate-code manager (singleton `DAT_14212e368`) keeps a list of
-  `TownBase*` (+0x78, count +0x80) that it drains at the end of each gate-code pass (`FUN_1402f03e0`, after the codes are
-  written to objects). Per town: the nearest building to the town's position (`BuildingFinderNearest`, filter 0x100000,
-  meaning **Unknown**); when it is complete and its record has `destroyed navmesh`, slot 104 `setDestroyed(1)`, else slot 73
-  `addDismantleProgress(1000)`; then the message "Wall termites! - Your base became inaccessible.  You need at least 1 gate
-  in your walls.". What adds a town is **Unknown** (KenshiLib 1ce4a16 has `Town::notifyAccesibility(bool)`; its 1.0.68 body
-  is not found, likely inlined). Meitou: not built; it needs the gate codes (walled regions), which Meitou lacks.
+- **Wall termites: disabled in 1.0.68** (**Verified**: no code adds to the list). The gate-code manager (singleton
+  `DAT_14212e368`) drains a list of `TownBase*` (+0x78, count +0x80) after each gate-code pass (`FUN_1402ef1f0`, from
+  `FUN_1402f03e0`): per town, the nearest building is destroyed (`destroyed navmesh`) or dismantled, with the message "Wall
+  termites! - Your base became inaccessible.  You need at least 1 gate in your walls.". The only code that references the
+  singleton is its constructor, getter, destructor, `FUN_1402eea40` and the drain itself, and none of them appends, so the
+  list stays empty (KenshiLib 1ce4a16's `Town::notifyAccesibility` has no 1.0.68 body). Meitou does not build it.
 - WallBuilding damage `clamp((hit1 x 2 + hit0 x 0.5) x 0.5, 10, 60) x 0.003` off health (slot 62, **Verified**).
 
 ### Build menu
