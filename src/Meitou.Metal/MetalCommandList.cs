@@ -44,6 +44,12 @@ public sealed class MetalCommandList : IGpuCommandList
     readonly ulong[] vertexOffsetState = new ulong[64];
     readonly MTLBuffer[] fragmentBufferState = new MTLBuffer[64];
     readonly ulong[] fragmentOffsetState = new ulong[64];
+    readonly MTLTexture[] vertexTextureState = new MTLTexture[64];
+    readonly MTLSamplerState[] vertexSamplerState = new MTLSamplerState[64];
+    readonly float[] vertexSamplerBias = new float[64];
+    readonly MTLTexture[] fragmentTextureState = new MTLTexture[64];
+    readonly MTLSamplerState[] fragmentSamplerState = new MTLSamplerState[64];
+    readonly float[] fragmentSamplerBias = new float[64];
 
     /// <summary>Made by the context (the frame's) or an upload batch (its own command buffer, its blit shared).</summary>
     internal MetalCommandList(MetalContext ctx, string name, MTLCommandBuffer command, MTLBlitCommandEncoder? sharedBlit = null)
@@ -112,6 +118,12 @@ public sealed class MetalCommandList : IGpuCommandList
         Array.Clear(vertexOffsetState);
         Array.Clear(fragmentBufferState);
         Array.Clear(fragmentOffsetState);
+        Array.Clear(vertexTextureState);
+        Array.Clear(vertexSamplerState);
+        Array.Clear(vertexSamplerBias);
+        Array.Clear(fragmentTextureState);
+        Array.Clear(fragmentSamplerState);
+        Array.Clear(fragmentSamplerBias);
         depthAttachment = !d.Depth.IsNull;
         renderDesc = d;
         hasViewport = hasScissor = false;
@@ -225,7 +237,14 @@ public sealed class MetalCommandList : IGpuCommandList
     {
         if (index >= (uint)vertexBufferState.Length)
             throw new NotSupportedException($"vertex buffer index {index} is outside the Metal buffer table");
-        if (CacheEncoderState && vertexBufferState[index].NativePtr == buffer.NativePtr && vertexOffsetState[index] == offset) return;
+        if (CacheEncoderState && vertexBufferState[index].NativePtr == buffer.NativePtr)
+        {
+            if (vertexOffsetState[index] == offset) return;
+            // Same buffer, new slice: setVertexBufferOffset is the cheap path Xcode asks for.
+            render.SetVertexBufferOffset(offset, index);
+            vertexOffsetState[index] = offset;
+            return;
+        }
         render.SetVertexBuffer(buffer, offset, index);
         vertexBufferState[index] = buffer;
         vertexOffsetState[index] = offset;
@@ -235,7 +254,13 @@ public sealed class MetalCommandList : IGpuCommandList
     {
         if (index >= (uint)fragmentBufferState.Length)
             throw new NotSupportedException($"fragment buffer index {index} is outside the Metal buffer table");
-        if (CacheEncoderState && fragmentBufferState[index].NativePtr == buffer.NativePtr && fragmentOffsetState[index] == offset) return;
+        if (CacheEncoderState && fragmentBufferState[index].NativePtr == buffer.NativePtr)
+        {
+            if (fragmentOffsetState[index] == offset) return;
+            render.SetFragmentBufferOffset(offset, index);
+            fragmentOffsetState[index] = offset;
+            return;
+        }
         render.SetFragmentBuffer(buffer, offset, index);
         fragmentBufferState[index] = buffer;
         fragmentOffsetState[index] = offset;
@@ -287,13 +312,31 @@ public sealed class MetalCommandList : IGpuCommandList
                 float bias = MetalSamplers.LodBias(binding.Texture.Sampler);
                 if (isVertex)
                 {
-                    render.SetVertexTexture(texture, index);
-                    render.SetVertexSamplerState(sampler, bias, 1000 + bias, index);
+                    if (!CacheEncoderState || vertexTextureState[index].NativePtr != texture.NativePtr)
+                    {
+                        render.SetVertexTexture(texture, index);
+                        vertexTextureState[index] = texture;
+                    }
+                    if (!CacheEncoderState || vertexSamplerState[index].NativePtr != sampler.NativePtr || vertexSamplerBias[index] != bias)
+                    {
+                        render.SetVertexSamplerState(sampler, bias, 1000 + bias, index);
+                        vertexSamplerState[index] = sampler;
+                        vertexSamplerBias[index] = bias;
+                    }
                 }
                 else
                 {
-                    render.SetFragmentTexture(texture, index);
-                    render.SetFragmentSamplerState(sampler, bias, 1000 + bias, index);
+                    if (!CacheEncoderState || fragmentTextureState[index].NativePtr != texture.NativePtr)
+                    {
+                        render.SetFragmentTexture(texture, index);
+                        fragmentTextureState[index] = texture;
+                    }
+                    if (!CacheEncoderState || fragmentSamplerState[index].NativePtr != sampler.NativePtr || fragmentSamplerBias[index] != bias)
+                    {
+                        render.SetFragmentSamplerState(sampler, bias, 1000 + bias, index);
+                        fragmentSamplerState[index] = sampler;
+                        fragmentSamplerBias[index] = bias;
+                    }
                 }
                 break;
             case GpuBindingKind.UniformBuffer or GpuBindingKind.StorageBuffer:
