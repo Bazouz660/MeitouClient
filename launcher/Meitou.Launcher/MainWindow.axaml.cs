@@ -29,7 +29,7 @@ public sealed partial class MainWindow : Window
     CancellationTokenSource? download;
     ModRow? dragged;
     readonly Dictionary<Control, string> originalUiText = [];
-    bool languageReady;
+    bool languageReady, populatingLanguages;
     static string Tr(string text) => LauncherText.Translate(text);
 
     const uint WS_CAPTION = 0x00C00000, WS_SYSMENU = 0x00080000, WS_MINIMIZEBOX = 0x00020000, WS_MAXIMIZEBOX = 0x00010000;
@@ -101,7 +101,7 @@ public sealed partial class MainWindow : Window
 
     void Language_SelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
-        if (!languageReady) return;
+        if (!languageReady || populatingLanguages) return;
         if (LanguageBox.SelectedItem is not ComboBoxItem item || item.Tag is not string code || code == LauncherText.Code) return;
         config.Language = code;
         config.Save();
@@ -138,6 +138,7 @@ public sealed partial class MainWindow : Window
         var codes = new List<string> { GameLanguage.DefaultCode };
         foreach (string code in GameLanguage.SteamLanguages.Select(l => l.Code).Concat(MeitouTranslations.EmbeddedCodes).Concat(InstalledLocaleCodes(gameInstall)))
             if (!codes.Any(known => SameLanguage(known, code))) codes.Add(code);
+        populatingLanguages = true;
         LanguageBox.Items.Clear();
         foreach (string code in codes)
         {
@@ -147,6 +148,7 @@ public sealed partial class MainWindow : Window
         }
         LanguageBox.SelectedItem = LanguageBox.Items.OfType<ComboBoxItem>().FirstOrDefault(item => item.Tag is string code && SameLanguage(code, LauncherText.Code))
             ?? LanguageBox.Items.OfType<ComboBoxItem>().First();
+        populatingLanguages = false;
     }
 
     static bool SameLanguage(string left, string right) => left.Replace('_', '-').Equals(right.Replace('_', '-'), StringComparison.OrdinalIgnoreCase);
