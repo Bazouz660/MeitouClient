@@ -15,7 +15,7 @@ sealed partial class PlayerInterface
 {
     /// <summary>A building selected by a click: what it is, where it stands (hull in the world, for the outline) and what the panels say of it.</summary>
     internal sealed record SelectedBuilding(string Name, string? Type, string? Owner, string? Town, string? SiteId, string Instance, Vector3 Position, Vector2[]? Hull,
-        bool PublicDay = false, bool PublicNight = false, string? Record = null);
+        bool PublicDay = false, bool PublicNight = false, string? Record = null, bool Destroyed = false);
 
     SelectedBuilding? selectedBuilding;
 
@@ -66,7 +66,7 @@ sealed partial class PlayerInterface
                 if (hit is not { } t || t >= bestT) continue;
                 bestT = t;
                 var info = host.WorldInfo(b);
-                best = new(UiMode == Meitou.Data.Ui.UiMode.Meitou && info.Sells is { } sells ? sells : info.Name, info.Type, info.Owner, info.Town, null, b.Key, new Vector3(b.Position.X, y, b.Position.Z), hull, info.PublicDay, info.PublicNight, b.BuildingId);
+                best = new(UiMode == Meitou.Data.Ui.UiMode.Meitou && info.Sells is { } sells ? sells : info.Name, info.Type, info.Owner, info.Town, null, b.Key, new Vector3(b.Position.X, y, b.Position.Z), hull, info.PublicDay, info.PublicNight, b.BuildingId, info.Destroyed);
             }
         if (PickRockAt(pixel) is { } rock && rock.T < bestT) best = RockBuilding(rock.Rock);
         return best;
@@ -196,7 +196,7 @@ sealed partial class PlayerInterface
     /// (<c>Condition</c> without doors), each the construction progress as the number and its fraction of the target as the bar, then while unfinished a row per material, delivered
     /// over required. Meitou models no building damage, so a finished building's progress is its target (the original's damaged state lowers it).
     /// </summary>
-    List<MedicalRow> BuildingRows(SelectedBuilding focus)
+    internal List<MedicalRow> BuildingRows(SelectedBuilding focus)
     {
         var rows = new List<MedicalRow>();
         if (focus.SiteId is { } natural && Meitou.Simulation.Production.ProductionSystem.IsNatural(natural)) return rows;
@@ -206,7 +206,7 @@ sealed partial class PlayerInterface
         var site = session.CurrentSnapshot.Buildings.FirstOrDefault(s => s.Id == focus.Instance);
         float? target = site?.Target ?? (focus.Record is { } record ? BuildTarget?.Invoke(record) : null);
         if (target is not { } total) return rows;
-        float progress = site is { Destroyed: true } ? 0.4f * total : site?.Progress ?? total;
+        float progress = (site?.Destroyed ?? focus.Destroyed) ? 0 : site?.Progress ?? total;
         bool complete = site?.Complete ?? true;
         float fraction = total > 0 ? Math.Min(progress / total, 1) : 1;
         string tip = !complete ? Loc.Tr("The building is under construction and at {1,num}% completion.", (int)(fraction * 100))
