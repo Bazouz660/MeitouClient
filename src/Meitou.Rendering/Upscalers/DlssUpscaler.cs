@@ -99,7 +99,7 @@ public sealed unsafe class DlssUpscaler : IUpscaler
             StructType = Streamline.ResourceType, StructVersion = 1,
             Type = 0,   // eTex2d
             Native = (nint)ctx.Device.NativeImage(texture).Handle, View = (nint)ctx.Device.NativeView(texture).Handle, State = layout,
-            Width = (uint)d.Width, Height = (uint)d.Height, NativeFormat = (uint)d.Format,
+            Width = (uint)d.Width, Height = (uint)d.Height, NativeFormat = (uint)GlConventions.VkFormat(d.Format),
             MipLevels = (uint)d.Levels, ArrayLayers = 1, Usage = (uint)ctx.Device.NativeUsage(texture),
         };
     }
