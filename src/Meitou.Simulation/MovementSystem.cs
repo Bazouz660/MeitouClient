@@ -45,6 +45,25 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
     public const float BodyShare = 0.6f;
     /// <summary>A character within this distance of a waypoint has reached it.</summary>
     public const float ArriveRadius = 10;
+    /// <summary>
+    /// How near (units) a walker comes to a corner it may not cut (<see cref="CanCut"/>) before it turns for the next waypoint (engine choice: about a step).
+    /// </summary>
+    public const float CornerReach = 2;
+
+    /// <summary>
+    /// Whether a walker at <paramref name="from"/> can step straight toward <paramref name="to"/> for <see cref="ArriveRadius"/> units, its height carried on as each step's is: a corner
+    /// is cut early only then (engine choice; Observed: zone 22.10, a walker beside a door stair's foot cut its corner up the stair's side and stood there).
+    /// </summary>
+    static bool CanCut(IWalkability walk, Vector3 from, Vector3 to)
+    {
+        var leg = new Vector2(to.X - from.X, to.Z - from.Z);
+        float length = leg.Length();
+        if (length < 1e-3f) return true;
+        float y = from.Y;
+        for (float d = 1; d <= MathF.Min(length, ArriveRadius); d += 1)
+            if (!walk.TryStand(from.X + leg.X * (d / length), from.Z + leg.Y * (d / length), y, out y)) return false;
+        return true;
+    }
     /// <summary>The <see cref="CharacterCold.ArriveWithin"/> of a walk to a spot (engine choice: a barman stands at his node behind the counter, not a stride off it).</summary>
     public const float SpotArrive = 2;
     /// <summary>How fast a formation follower's heading eases toward its leader's, per second, while the leader moves (the original's 0.5).</summary>
@@ -525,7 +544,8 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
                 float dist = to.Length();
                 bool last = n.PathCursor == cold.Path.Length - 1;
                 closing = last && cold.ArriveWithin > 0 && dist <= ArriveRadius;
-                if (dist <= (last ? cold.ArriveWithin > 0 ? cold.ArriveWithin : ArriveRadius : ArriveRadius * 0.5f))
+                if (dist <= (last ? cold.ArriveWithin > 0 ? cold.ArriveWithin : ArriveRadius : ArriveRadius * 0.5f)
+                    && (last || dist <= CornerReach || CanCut(walk, p.Position, cold.Path[n.PathCursor + 1])))
                 {
                     n.PathCursor++;
                     if (last) finished = true;

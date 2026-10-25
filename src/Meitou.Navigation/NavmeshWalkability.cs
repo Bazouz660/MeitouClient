@@ -272,15 +272,79 @@ public sealed class NavmeshWalkability : IWalkability
     PathResult Toward(NavWorld w, Vector3 from, Vector3 to, NavAgent agent)
     {
         var path = new NavQuery(w, Doors).FindPathToward(from, to, agent);
-        return path.Found ? new PathResult([.. path.Points.Select(p => new Vector3(p.X, GroundHeight(p.X, p.Z, p.Y) is var y && MathF.Abs(y - p.Y) <= TerrainSnapRange ? y : p.Y, p.Z))]) : path;
+        return path.Found ? FromWalker(from, path) : path;
     }
 
     PathResult Exact(NavWorld w, Vector3 from, Vector3 to, NavAgent agent)
     {
-        var path = new NavQuery(w, Doors).FindPath(from, to, agent);
-        if (!path.Found) return path;
-        // Path points are on the simplified surface: put them on the real ground.
-        return new PathResult([.. path.Points.Select(p => new Vector3(p.X, GroundHeight(p.X, p.Z, p.Y) is var y && MathF.Abs(y - p.Y) <= TerrainSnapRange ? y : p.Y, p.Z))]);
+        var query = new NavQuery(w, Doors);
+        var path = OnGround(query.FindPath(from, to, agent, null, out var start));
+        // A walker off the mesh (pushed beside a stair) can be nearest to a polygon it cannot step onto: the corner of the stair over it, whose simplified
+        // height snaps to the walker's own ground. Its path then begins with a wall, so the next nearest starts are tried, the first whose way the walker can
+        // step along taken (docs/game/pathfinding.md "Own builder").
+        if (start.Zone < 0 || IsOnMesh(w, from) || path.Found && Steppable(from, path.Points)) return path;
+        var tried = new HashSet<NavRef> { start };
+        for (int k = 0; k < OffMeshStarts; k++)
+        {
+            var other = OnGround(query.FindPath(from, to, agent, tried.Contains, out start));
+            if (start.Zone < 0) break;
+            tried.Add(start);
+            if (other.Found && Steppable(from, other.Points)) return other;
+        }
+        return path;
+
+        PathResult OnGround(PathResult found) => found.Found ? FromWalker(from, found) : found;
+    }
+
+    /// <summary>
+    /// A navmesh path for movement: its points put on the real ground (they are on the simplified surface), and the walker's own position first when the path starts
+    /// elsewhere. Movement takes the first point for where the walker stands; for one off the mesh the path starts at the nearest point of the mesh, which it walks to
+    /// first (Observed: zone 22.10, a walker on the terrain beside the Old Storm House's door stair dropped the step onto the stair's foot and walked up its side).
+    /// </summary>
+    PathResult FromWalker(Vector3 from, PathResult found)
+    {
+        var points = new List<Vector3>(found.Points.Count + 1);
+        if (Vector2.Distance(new(from.X, from.Z), new(found.Points[0].X, found.Points[0].Z)) > OffMeshStart) points.Add(from);
+        foreach (var p in found.Points) points.Add(new Vector3(p.X, GroundHeight(p.X, p.Z, p.Y) is var y && MathF.Abs(y - p.Y) <= TerrainSnapRange ? y : p.Y, p.Z));
+        return new PathResult(points);
+    }
+
+    /// <summary>How far (units) the start of a navmesh path may be from the walker before the walker's own position is put first (<see cref="FromWalker"/>).</summary>
+    public const float OffMeshStart = 0.5f;
+
+    /// <summary>How many other start polygons a walker off the mesh tries when the nearest one's path begins with a step it cannot take (engine choice).</summary>
+    public const int OffMeshStarts = 4;
+    /// <summary>How far (units) along its path a walker off the mesh must be able to step for the path to count (engine choice: past a stair's corner).</summary>
+    public const float SteppableReach = 10;
+
+    static bool IsOnMesh(NavWorld w, Vector3 p)
+    {
+        var heights = scratch ??= [];
+        heights.Clear();
+        w.HeightsAt(p.X, p.Z, heights);
+        return heights.Count > 0;
+    }
+
+    /// <summary>Whether a walker at <paramref name="from"/> can stand at every unit of the first <see cref="SteppableReach"/> units of the path, its height carried on as movement does.</summary>
+    bool Steppable(Vector3 from, IReadOnlyList<Vector3> points)
+    {
+        var at = from;
+        float y = from.Y, walked = 0;
+        foreach (var next in points)
+        {
+            var leg = new Vector2(next.X - at.X, next.Z - at.Z);
+            float length = leg.Length();
+            if (length < 1e-3f) continue;
+            for (float d = MathF.Min(1, length); d <= length && walked + d <= SteppableReach; d += 1)
+            {
+                var p = new Vector2(at.X, at.Z) + leg * (d / length);
+                if (!TryStand(p.X, p.Y, y, out y)) return false;
+            }
+            walked += length;
+            if (walked >= SteppableReach) return true;
+            at = next with { Y = y };
+        }
+        return true;
     }
 
     /// <summary>The road network long routes may take (<see cref="Route"/>); null: none, the terrain grid alone.</summary>

@@ -167,8 +167,8 @@ public sealed class NavWorld
         return true;
     }
 
-    /// <summary>The polygon under or nearest to the point (nearest within <paramref name="maxDistance"/> on the XZ plane, height as the tie-break).</summary>
-    public bool TryFindPolygon(Vector3 p, float maxDistance, out NavRef polygon, out Vector3 snapped)
+    /// <summary>The polygon under or nearest to the point (nearest within <paramref name="maxDistance"/> on the XZ plane, height as the tie-break), not one <paramref name="skip"/> rules out.</summary>
+    public bool TryFindPolygon(Vector3 p, float maxDistance, out NavRef polygon, out Vector3 snapped, Func<NavRef, bool>? skip = null)
     {
         polygon = default;
         snapped = p;
@@ -181,7 +181,7 @@ public sealed class NavWorld
             {
                 if (!slots.TryGetValue(new ZoneCoordinate(zone.X + dx, zone.Y + dz), out int slot)) continue;
                 var m = meshes[slot];
-                int poly = m.Nearest(p.X, p.Y, p.Z, maxDistance, out float d);
+                int poly = m.Nearest(p.X, p.Y, p.Z, maxDistance, out float d, skip is null ? null : q => skip(new NavRef(slot, q)));
                 if (poly < 0) continue;
                 float y = m.HeightAt(poly, Math.Clamp(p.X, m.BoundsMin.X, m.BoundsMax.X), Math.Clamp(p.Z, m.BoundsMin.Y, m.BoundsMax.Y));
                 float score = d * 4 + Math.Abs(y - p.Y);

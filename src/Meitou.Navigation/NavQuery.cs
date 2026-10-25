@@ -83,11 +83,16 @@ public sealed class NavQuery(NavWorld world, NavDoors? doors = null)
 
     [ThreadStatic] static SearchScratch? searchScratch;
 
-    public PathResult FindPath(Vector3 from, Vector3 to, NavAgent? agent = null)
+    public PathResult FindPath(Vector3 from, Vector3 to, NavAgent? agent = null) => FindPath(from, to, agent ?? NavAgent.Human, null, out _);
+
+    /// <summary>
+    /// As <see cref="FindPath(Vector3, Vector3, NavAgent?)"/>, from the nearest start polygon <paramref name="skipStart"/> does not rule out; <paramref name="start"/> is the
+    /// one taken (Zone −1 when none was found).
+    /// </summary>
+    public PathResult FindPath(Vector3 from, Vector3 to, NavAgent agent, Func<NavRef, bool>? skipStart, out NavRef start)
     {
-        agent ??= NavAgent.Human;
-        if (!World.TryFindPolygon(from, StartSnap, out var start, out var startPoint) || !World.TryFindPolygon(to, GoalSnap, out var goal, out var goalPoint))
-            return PathResult.NotFound;
+        if (!World.TryFindPolygon(from, StartSnap, out start, out var startPoint, skipStart)) { start = new NavRef(-1, -1); return PathResult.NotFound; }
+        if (!World.TryFindPolygon(to, GoalSnap, out var goal, out var goalPoint)) return PathResult.NotFound;
         var corridor = FindCorridor(start, startPoint, goal, goalPoint, agent);
         if (corridor is null) return PathResult.NotFound;
         return new PathResult(Pull(corridor, agent));
