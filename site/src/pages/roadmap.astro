@@ -52,7 +52,7 @@ const reportConfig = JSON.stringify({ url: reports.url.replace(/\/$/, ''), siteK
           Filter<span class="fc" hidden></span>
         </button>
       </div>
-      <div class="filters" id="filters">
+      <div class="filters" id="filters"><div class="filters-in">
       <div class="plats" role="group" aria-label="Filter by platform">
         <span class="lbl">Platform</span>
         {Object.entries(platforms).map(([k, v]) => <button type="button" class="chip" data-p={k} aria-pressed={String(k === 'all')}>{v}</button>)}
@@ -60,7 +60,7 @@ const reportConfig = JSON.stringify({ url: reports.url.replace(/\/$/, ''), siteK
         <button type="button" class="chip hbchip" data-bugs aria-pressed="false">Has bugs</button>
       </div>
       <input type="search" class="search" placeholder="Search systems and notes" aria-label="Search systems and notes" hidden />
-      </div>
+      </div></div>
       <div class="tiles" role="group" aria-label="Filter by status">
         {order.map((k) => (
           <button type="button" class={`tile st-${k}`} data-s={k} title={statuses[k].desc} aria-pressed="false">
@@ -366,9 +366,10 @@ const reportConfig = JSON.stringify({ url: reports.url.replace(/\/$/, ''), siteK
     clear.addEventListener('click', () => { active = null; plat = 'all'; onlyBugs = false; query = search.value = ''; apply(); });
     // Platform, bug and search filters fold away behind the Filter button; open at load when one of them is set.
     filt.hidden = false;
-    const fold = (open) => { filt.setAttribute('aria-expanded', String(open)); filters.hidden = !open; };
-    filt.addEventListener('click', () => fold(filters.hidden));
+    const fold = (open) => { filt.setAttribute('aria-expanded', String(open)); filters.classList.toggle('shut', !open); filters.inert = !open; };
+    filt.addEventListener('click', () => fold(filters.classList.contains('shut')));
     fold(plat !== 'all' || onlyBugs || !!query);
+    filters.offsetHeight; filters.classList.add('anim');
     apply();
   })();
 
@@ -562,7 +563,12 @@ const reportConfig = JSON.stringify({ url: reports.url.replace(/\/$/, ''), siteK
   .filt { display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: .9rem; cursor: pointer; color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 3px 12px; }
   .filt:hover, .filt:focus-visible, .filt[aria-expanded="true"] { border-color: var(--accent); outline: none; }
   .filt .fc { min-width: 18px; padding: 0 5px; border-radius: 999px; background: var(--accent); color: var(--bg); font-size: .75rem; font-weight: 600; line-height: 18px; text-align: center; }
-  .filters { display: grid; gap: 10px; }
+  /* Folds by animating its row from 0fr to 1fr, so it slides open to its natural height; the negative margin takes back the
+     section gap while shut. */
+  .filters { display: grid; grid-template-rows: 1fr; align-self: start; }
+  .filters.shut { grid-template-rows: 0fr; margin-top: -10px; opacity: 0; }
+  .filters-in { display: grid; gap: 10px; min-height: 0; overflow: hidden; }
+  @media (prefers-reduced-motion: no-preference) { .filters.anim { transition: grid-template-rows .25s ease, margin-top .25s ease, opacity .2s ease; } }
   .seen { display: block; margin-top: 4px; font-size: .82rem; color: var(--works); }
   .seen.stale { color: var(--wip); }
   .rep { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; font-size: .8rem; }
