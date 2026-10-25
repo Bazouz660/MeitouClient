@@ -95,7 +95,7 @@ labels: [confirmed-works]
 body:
   - type: markdown
     attributes:
-      value: This turns "it works" into evidence on the roadmap (https://meitou.martinvlcek.sk/roadmap).
+      value: This turns "it works" into evidence on the roadmap (https://meitou.kenshi.wiki/roadmap).
   - type: dropdown
     id: row
     attributes:

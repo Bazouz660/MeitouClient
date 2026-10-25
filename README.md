@@ -10,7 +10,7 @@ Early playable slice: streamed Vulkan world, characters/animation, movement/comb
 NPC population/partial AI, inventory/trade, saves and native UI. 
 
 Architecture/research: [docs index](docs/README.md)
-Website: [meitou.martinvlcek.sk](https://meitou.martinvlcek.sk/).
+Website: [meitou.kenshi.wiki](https://meitou.kenshi.wiki/).
 
 ## Download and requirements
 

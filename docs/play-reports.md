@@ -36,7 +36,7 @@ chars, required for Broken), source `web|discord|launcher`, reporter, trusted, g
 
 Environment: `DATABASE_URL` (postgresql URL) or `ConnectionStrings__Reports` (ADO.NET), `REPORTS_SALT` (required, never change it:
 distinct counts reset), `REPORTS_ADMIN_TOKEN`, `ROADMAP_URL` (default the site's `/roadmap.json`), `ALLOWED_ORIGINS` (CORS, default
-both site domains), `TURNSTILE_SECRET` (web reports need a Turnstile token when set), `DISCORD_PUBLIC_KEY`, `DISCORD_APP_ID`,
+the site), `TURNSTILE_SECRET` (web reports need a Turnstile token when set), `DISCORD_PUBLIC_KEY`, `DISCORD_APP_ID`,
 `DISCORD_BOT_TOKEN`, `DISCORD_TRUSTED_ROLES` (role ids whose reports are trusted), `GITHUB_REPO`. Client IP: `CF-Connecting-IP`, else
 the last `X-Forwarded-For` entry. Port 8080.
 
