@@ -135,10 +135,11 @@ const reportConfig = JSON.stringify({ url: reports.url.replace(/\/$/, ''), siteK
               ))}
             </tbody>
           </table>
-          <div class="empty-stage" hidden>No rows match the filters in this category.</div>
         </div>
       </section>
     ))}
+
+    <p class="empty-cats" hidden></p>
 
     <section id="bugs" class="stage" aria-labelledby="bugs-h">
       <h2 id="bugs-h">Known bugs</h2>
@@ -317,6 +318,7 @@ const reportConfig = JSON.stringify({ url: reports.url.replace(/\/$/, ''), siteK
       document.querySelector('.tiles').classList.toggle('filtering', !!active);
       document.querySelectorAll('.chip[data-p]').forEach((c) => c.setAttribute('aria-pressed', String(c.dataset.p === plat)));
       document.querySelector('[data-bugs]').setAttribute('aria-pressed', String(onlyBugs));
+      const left = [];
       document.querySelectorAll('.stage[id]:not(#bugs)').forEach((sec) => {
         const rs = rows.filter((r) => sec.contains(r.tr)), shown = rs.filter(on);
         bar(document.querySelector(`[data-bar="${sec.id}"]`), shown);
@@ -329,9 +331,14 @@ const reportConfig = JSON.stringify({ url: reports.url.replace(/\/$/, ''), siteK
           const pill = r.tr.querySelector('.pill'); pill.className = `pill st-${s}`; pill.textContent = LABEL[s];
           r.tr.hidden = !show; any ||= show;
         });
-        sec.querySelector('table').hidden = !any;
-        sec.querySelector('.empty-stage').hidden = any;
+        sec.hidden = !any;
+        if (!any) left.push(sec.querySelector('h2').textContent);
       });
+      // Categories with nothing to show are left out, and named in one line after the rest.
+      const empty = document.querySelector('.empty-cats');
+      empty.textContent = left.length === document.querySelectorAll('.stage[id]:not(#bugs)').length
+        ? 'No rows match the filters.' : `No rows match the filters in: ${left.join(', ')}.`;
+      empty.hidden = !left.length;
       const parts = [];
       if (plat !== 'all') parts.push(plat === 'specific' ? 'rows whose status differs by platform' : `the status on ${PLAT[plat]}`);
       if (active) parts.push(`${LABEL[active]} only`);
@@ -460,7 +467,7 @@ const reportConfig = JSON.stringify({ url: reports.url.replace(/\/$/, ''), siteK
   .backdrop { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; background: var(--bg); }
   .backdrop div { position: absolute; inset: -32px; background-size: cover; background-position: center; filter: blur(3px) saturate(.9); opacity: 0; }
   .backdrop div.on { opacity: 1; }
-  .backdrop::after { content: ""; position: absolute; inset: 0; background: color-mix(in srgb, var(--bg) 70%, transparent); }
+  .backdrop::after { content: ""; position: absolute; inset: 0; background: color-mix(in srgb, var(--bg) 84%, transparent); }
   @media (prefers-reduced-motion: no-preference) { .backdrop div { transition: opacity 1.5s ease; } }
 
   .rd, .side, .body { display: grid; gap: 40px; min-width: 0; align-content: start; }
@@ -530,7 +537,7 @@ const reportConfig = JSON.stringify({ url: reports.url.replace(/\/$/, ''), siteK
   td.note { color: var(--muted); font-size: .92rem; }
   td.ref { width: 1%; white-space: nowrap; font-family: var(--font-mono); font-size: .8rem; }
   .rd td.ref a { text-decoration: none; }
-  .empty-stage { color: var(--muted); font-size: .9rem; padding: 10px 12px; }
+  .rd .empty-cats { max-width: none; margin: 0; padding: 10px 14px; color: var(--muted); font-size: .9rem; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-plate); }
   /* A row linked as /roadmap#<row id> is marked. */
   tr[id] { scroll-margin-top: 24px; }
   tr:target td { background: color-mix(in srgb, var(--accent) 14%, transparent); }
