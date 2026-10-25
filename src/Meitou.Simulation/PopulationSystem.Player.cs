@@ -93,18 +93,21 @@ public sealed partial class PopulationSystem
             template ??= t;
             first.AddRange(SquadFactory.Plan(data.Db, t, settings.SquadSizeMultiplier, world.Seed, Rng.Mix(key ^ (uint)first.Count), States).Members);
         }
+        // A CHARACTER entry's characters stand up to 50 from the place on x and z, as the original's do.
+        Vector2 Scatter(int i) => new(Rng.Float(Rng.Hash(world.Seed, key, RngPurpose.Spawn, SeedSalts.PlayerScatter + 2 * (ulong)i)) * 100 - 50,
+            Rng.Float(Rng.Hash(world.Seed, key, RngPurpose.Spawn, SeedSalts.PlayerScatter + 2 * (ulong)i + 1)) * 100 - 50);
         foreach (var link in start.Squad)
         {
             var record = data.Db.Find(link.Id);
             if (record is null) continue;
             if (SquadFactory.IsTemplate(record)) AddTemplate(record);
-            else for (int n = 0; n < Math.Max(1, link.V0); n++) first.Add(new MemberPlan(link.Id, SquadRole.Squad1, first.Count, default, false, 1));
+            else for (int n = 0; n < Math.Max(1, link.V0); n++) first.Add(new MemberPlan(link.Id, SquadRole.Squad1, first.Count, Scatter(first.Count), false, 1));
         }
         if (first.Count == 0 && data.Db.Find(WandererSquadId) is { } wanderer && SquadFactory.IsTemplate(wanderer)) AddTemplate(wanderer);
-        // Renumber in creation order (the layout counts every member) and make the first the leader when none is.
+        // Renumber in creation order and make the first the leader when none is; each template keeps its own layout (in the original, a squad of its own).
         bool hasLeader = first.Any(m => m.Role == SquadRole.Leader);
         for (int i = 0; i < first.Count; i++)
-            first[i] = first[i] with { Index = i, Offset = SquadFactory.Offset(i), Role = !hasLeader && i == 0 ? SquadRole.Leader : first[i].Role };
+            first[i] = first[i] with { Index = i, Role = !hasLeader && i == 0 ? SquadRole.Leader : first[i].Role };
         var factionId = data.Factions[data.PlayerFaction].Id;
         foreach (var m in first)
         {
