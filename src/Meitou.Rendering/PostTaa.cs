@@ -134,7 +134,9 @@ sealed class PostTaa : IDisposable
         // The motion: the near slice's depth carried into the previous frame (the Metal path has one depth slice).
         var v = velocity;
         v.Bind(nearDepth, pointSampler with { View = depth.View() });
-        v.Bind(farDepth, ctx.Dummy(v.SamplerInfo(farDepth)));
+        // Metal has one depth slice; uHasFar is 0, so the far sampler is never read. Bind the real depth rather than a dummy:
+        // Xcode reports a dummy here as a missing fragment texture.
+        v.Bind(farDepth, pointSampler with { View = depth.View() });
         v.Set(nearToPrevious, toPrevious);
         v.Set(farToPrevious, Matrix4x4.Identity);
         v.Set(nearPlanes, near, far);
@@ -161,7 +163,7 @@ sealed class PostTaa : IDisposable
         {
             // The reactive pass is a second encoder of the same program: re-bind the depth views, or the new encoder starts with them missing.
             v.Bind(nearDepth, pointSampler with { View = depth.View() });
-            v.Bind(farDepth, ctx.Dummy(v.SamplerInfo(farDepth)));
+            v.Bind(farDepth, pointSampler with { View = depth.View() });
             v.Set(waterY, waterHeight ?? float.MinValue);
             v.Set(waterReactive, 0.5f);
             v.Set(mode, 2);
