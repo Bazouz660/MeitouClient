@@ -215,6 +215,17 @@ public sealed class SightMap
     /// <summary>In no building at all, neither inside nor on top (the original's location type 0xb, outdoors).</summary>
     public bool Outdoors(int slot) => !Known(slot) || place[slot] < 0;
 
+    /// <summary>The floor the character at <paramref name="at"/> stands on in its building (the original's <c>getFloor</c>); 0 outdoors or on top.</summary>
+    public int FloorOf(int slot, Vector3 at)
+    {
+        if (!Inside(slot)) return 0;
+        if (floorOf[slot] < 0) floorOf[slot] = rooms[place[slot]].Volume.FloorAt(at);
+        return floorOf[slot];
+    }
+
+    /// <summary>The floor of <paramref name="building"/> at <paramref name="at"/> (an object's <c>getFloor</c>); 0 for a building the map does not hold.</summary>
+    public int FloorAt(string building, Vector3 at) => roomOf.TryGetValue(building, out int r) ? rooms[r].Volume.FloorAt(at) : 0;
+
     /// <summary>The <see cref="TownBuilding.Key"/> of the building the character is <see cref="Inside"/>; null outdoors or on top.</summary>
     public string? BuildingOf(int slot) => Inside(slot) ? rooms[place[slot]].Key : null;
 

@@ -37,7 +37,7 @@ drag-drop unpermitted down-character→Theft3, other source→Looting10. Ordinar
 Ground pickup can raise Theft inside another faction's building.
 
 **Observed** steal roll (`FUN_140794810`, chance `FUN_1407944d0`; virtual names KenshiLib 1ce4a16): both inventory transfers above and the give
-set their pending crime, then roll; caught refuses the move. Character owner (Loot, 26, on a sleeper, a lying or a caged
+set their pending crime, then roll; caught refuses the move. Character owner (Loot, 26, on a sleeper, a playing-dead or a caged
 character: [ui-input](ui-input.md#context-menu-verbs)): the owner watches, p = 1.1 x thievery/100, an equipped item (`Item::isEquipped` +0x129)
 x0.75, x0.75 again when it is armour (`isArmour`); the drag passes no item. Container: the container's parent building (`isFurnitureOf` -> its
 building) must have a resident squad (`Building::residentSquad` +0xD0, a CHARACTER or PLATOON hand), else no watcher; the watcher is the nearest
@@ -48,7 +48,10 @@ watcher's `isIndoors` building differs from the container's (`hand::operator!=`)
 pending crime stays. Caught (`rand > p`): a watcher in bed says event 47 instead half the time (`rand > 0.5`); else it stands up, says event 8, the
 thief gets Theft timer 30 against the owner's faction and the watcher's squad a long-term STOLE_FROM_ME tag (4, `FUN_140673a20`); no faction
 relation event (none of the slot-5 callers in [factions 3.5](factions-squads-towns.md#35-what-fires-relation-changes-observed-decompile) is a theft
-or loot path). Thievery XP 2 x 20, caught 2 x 80, none when p >= 0.98, the thief is imprisoned or its `+0x180` is 10 or more.
+or loot path). Thievery XP 2 x 20, caught 2 x 80, none when p >= 0.98, the thief is imprisoned or its `+0x180` is 10 or more after the roll.
+`+0x180` is the pending crime's timer (ledger at `+0xF0`, timer `+0x90`, the setter `FUN_140852e10(this + 0xF0, ...)`), so a caught thief
+(Theft, 30) gets none unless the setter refused. A playing-dead owner (posture 3) is down for the codes (`isDown`) but not for the roll
+(only `+0x5b9`, dead, carried, imprisoned skip it), and a caught one stands up.
 
 Witnesses must be eligible and care about victim for theft/fencing/looting/kidnapping;
 assault/murder have separate branches. Ordinary witness reacts; only police-like witness with

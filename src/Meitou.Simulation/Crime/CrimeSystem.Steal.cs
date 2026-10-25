@@ -19,9 +19,6 @@ public sealed partial class CrimeSystem
     public const float WatchDistance = 200;
     /// <summary>The dialogue events of the roll: caught (THIEF_CAUGHT_STEALING_FROM_ME) and the in-bed watcher's line.</summary>
     public const int CaughtEvent = 8, InBedEvent = 47;
-    /// <summary>A watcher farther above or below the container than this is on another floor (engine choice, as the container's reach).</summary>
-    public const float FloorSlack = 20;
-
     /// <summary>Trains the thief's thievery (null: no XP).</summary>
     public XpService? Xp { get; set; }
 
@@ -48,6 +45,7 @@ public sealed partial class CrimeSystem
     static int Watcher(World world, int thief, Locks.Fixture container)
     {
         var table = world.Characters;
+        int floor = world.Sight.FloorOf(thief, table.Next[thief].Position);
         var at = table.Next[thief].Position;
         int same = -1, other = -1;
         float sameD = float.MaxValue, otherD = float.MaxValue;
@@ -58,7 +56,7 @@ public sealed partial class CrimeSystem
             {
                 if (!table.TryResolveNext(id, out int s) || !table.Next[s].Alive || table.Cold(s) is not { Medical.Incapacitated: false, IsImprisoned: false } c || !c.CarriedBy.IsNone) continue;
                 float d = Vector3.DistanceSquared(table.Next[s].Position, at);
-                if (MathF.Abs(table.Next[s].Position.Y - at.Y) <= FloorSlack) { if (d < sameD) (same, sameD) = (s, d); }
+                if (world.Sight.FloorOf(s, table.Next[s].Position) == floor) { if (d < sameD) (same, sameD) = (s, d); }
                 else if (d < otherD) (other, otherD) = (s, d);
             }
         }
@@ -70,13 +68,12 @@ public sealed partial class CrimeSystem
     /// (<c>FUN_140794810</c>, <b>Observed</b>). True when the thief was caught, and the move is refused. No watcher, or one inside a building other than the container's while that has no
     /// open door: always unseen. Caught by a watcher in bed: half the time it only says event 47; else it gets up (also from staying low or playing dead), says event 8 and remembers the thief, and the thief gets a Theft (timer
     /// 30) against the container's owner, "Got caught stealing." for the player. Thievery trains unless the chance was 0.98 or more, the thief is imprisoned or its pending crime's
-    /// timer was already 10 or more (engine reading of the game's field +0x180).
+    /// timer (+0x180) is 10 or more after the roll, so a caught thief, whose Theft has 30, gets none. Floors are the sight map's (<c>getFloor</c>).
     /// </summary>
     public bool Steal(World world, int thief, Locks.Fixture container, CrimeCode code)
     {
         var table = world.Characters;
         if (table.Cold(thief) is not { } c || container.Owner < 0 || container.Owner == c.Faction) return false;
-        float before = c.Pending?.Timer ?? 0;
         SetPending(world, thief, code, container.Owner, CharacterId.None, MinTimer);
         float p = 1;
         int w = Watcher(world, thief, container);
@@ -85,35 +82,57 @@ public sealed partial class CrimeSystem
             var wat = table.Next[w].Position;
             bool otherBuilding = world.Sight.BuildingOf(w) != container.Building;
             if (!(otherBuilding && !world.Fixtures.HasOpenDoor(container.Building)))
-                p = StealChance(Thievery(c), Vector3.Distance(wat, container.Position), otherBuilding, MathF.Abs(wat.Y - container.Position.Y) > FloorSlack);
+                p = StealChance(Thievery(c), Vector3.Distance(wat, container.Position), otherBuilding,
+                    world.Sight.FloorOf(w, wat) != world.Sight.FloorAt(container.Building, container.Position));
         }
-        return Roll(world, thief, w, p, container.Owner, CharacterId.None, Rng.StableHash(container.Id), before);
+        return Roll(world, thief, w, p, container.Owner, CharacterId.None, Rng.StableHash(container.Id));
+    }
+
+    /// <summary>How the item left its owner's window (the three transfer paths of docs/game/carry-loot.md "Theft and witnesses").</summary>
+    public enum TakeKind { RightClick, Drag, Give }
+
+    /// <summary>
+    /// The pending crime a take out of another faction's character sets (<b>Verified</b> call sites): a right click (<c>FUN_140713d20</c>) Theft from an owner not down, Looting from a down
+    /// one unless the loot is allowed (<see cref="IsLootTheft"/>); a drag (<c>FUN_140715560</c>) Theft from a down owner unless allowed, Looting from one not down; a give
+    /// (<c>FUN_140712490</c>) Theft. Down is the game's <c>isDown</c>: unconscious or dead, playing dead included. Null: no crime.
+    /// </summary>
+    public static CrimeCode? TakeCode(CharacterCold thief, CharacterCold owner, TakeKind kind)
+    {
+        bool down = owner.Medical?.Incapacitated == true;
+        return kind switch
+        {
+            TakeKind.Give => CrimeCode.Theft,
+            TakeKind.RightClick => !down ? CrimeCode.Theft : IsLootTheft(thief, owner) ? CrimeCode.Looting : null,
+            _ => !down ? CrimeCode.Looting : IsLootTheft(thief, owner) ? CrimeCode.Theft : null,
+        };
     }
 
     /// <summary>
-    /// Takes an item from a character that is not down (a pickpocket: a sleeper or a prisoner whose inventory is open; <paramref name="code"/> as for <see cref="Steal"/>), then the steal roll
+    /// Takes an item from another faction's character (a body, a sleeper, a prisoner whose inventory is open): the pending crime of <see cref="TakeCode"/>, then the steal roll
     /// (<c>FUN_1407944d0</c>, <b>Observed</b>): the owner watches, p = 1.1 x thievery / 100, x0.75 for an equipped item, x0.75 again for equipped armour (the drag passes no item); an
-    /// owner unconscious, dead, carried or imprisoned never notices. Caught as <see cref="Steal"/>, the Theft against the owner's faction. True when caught.
+    /// owner unconscious (not playing dead), dead, carried or imprisoned never notices, nor does anyone while the thief is down. Caught as <see cref="Steal"/>, the Theft against the
+    /// owner's faction. True when caught.
     /// </summary>
-    public bool Pickpocket(World world, int thief, int owner, Items.ItemInstance? item, CrimeCode code)
+    public bool Pickpocket(World world, int thief, int owner, Items.ItemInstance? item, TakeKind kind)
     {
         var table = world.Characters;
         if (table.Cold(thief) is not { } c || table.Cold(owner) is not { } o || o.Faction == c.Faction) return false;
-        float before = c.Pending?.Timer ?? 0;
         var ownerId = table.IdOf(owner);
-        SetPending(world, thief, code, o.Faction, ownerId, MinTimer);
+        if (TakeCode(c, o, kind) is { } code) SetPending(world, thief, code, o.Faction, ownerId, MinTimer);
+        if (kind == TakeKind.Drag) item = null;
         float p = 1;
-        bool watches = o.Medical is not { Incapacitated: true } && o.CarriedBy.IsNone && !o.IsImprisoned;
+        bool watches = o.Medical is not { Dead: true } && !(o.Medical is { Unconscious: true, PlayingDead: false }) && o.CarriedBy.IsNone && !o.IsImprisoned
+            && c.Medical is not { Incapacitated: true };
         if (watches)
         {
             p = 1.1f * Thievery(c) * 0.01f;
             if (item is not null && Items.InventoryCommands.IsEquipmentSection(item.Section)) p *= item.Type == Meitou.Data.Fcs.FcsRecordType.ARMOUR ? 0.75f * 0.75f : 0.75f;
         }
-        return Roll(world, thief, watches ? owner : -1, p, o.Faction, ownerId, Rng.Key(ownerId), before);
+        return Roll(world, thief, watches ? owner : -1, p, o.Faction, ownerId, Rng.Key(ownerId));
     }
 
     /// <summary>The steal roll's outcome (<c>FUN_140794810</c>): <paramref name="w"/> the watcher (-1: none); a caught thief's Theft is against <paramref name="faction"/>.</summary>
-    bool Roll(World world, int thief, int w, float p, int faction, CharacterId victim, ulong salt, float before)
+    bool Roll(World world, int thief, int w, float p, int faction, CharacterId victim, ulong salt)
     {
         var table = world.Characters;
         var c = table.Cold(thief)!;
@@ -138,7 +157,7 @@ public sealed partial class CrimeSystem
                 if (watcher.SquadId >= 0) world.SystemOf<Dialogue.DialogueSystem>()?.Memory.Remember(world, watcher.SquadId, thiefId, Dialogue.MemoryTag.StoleFromMe);
             }
         }
-        if (p < 0.98f && !c.IsImprisoned && before < 10 && c.Stats is { } stats && c.Race is { } race) Xp?.Continuous(stats, race, StatsEnumerated.Thieving, 1, caught ? CaughtXp : StealXp);
+        if (p < 0.98f && !c.IsImprisoned && (c.Pending?.Timer ?? 0) < 10 && c.Stats is { } stats && c.Race is { } race) Xp?.Continuous(stats, race, StatsEnumerated.Thieving, 1, caught ? CaughtXp : StealXp);
         return caught;
     }
 

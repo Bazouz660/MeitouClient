@@ -558,9 +558,10 @@ wanted; a speaker of a town squad sets Trespassing on a target with nothing pend
 the target's pending crime, which the town's investigators answer ([town alarms](game/economy.md#town-alarms)).
 Stealing (`CrimeSystem.Steal`, [carry-loot](game/carry-loot.md#theft-and-witnesses)): taking from another faction's container (right click: Theft;
 drag: Looting; give to a character: Theft) sets the pending crime, then the steal roll; caught, the item stays. Pickpocketing (`CrimeSystem.Pickpocket`):
-Loot on another faction's sleeper or prisoner opens its inventory (`CarrySystem.CanBePickpocketed`); a take from it while it is not down is the
-same, the owner watching. Engine choices: every squad living in the building watches (Meitou may house more than one), floors differ by more
-than 20, the field `+0x180` is read as the pending timer before the roll, the window closes when the sleeper wakes. A stolen ground pick-up inside
+Loot on another faction's sleeper or prisoner opens its inventory (`CarrySystem.CanBePickpocketed`). Every take out of another faction's
+character sets the call site's code (`CrimeSystem.TakeCode`: right click, drag, give) and rolls with the owner watching (a playing-dead owner
+too); the take-all (`LootOrder`) keeps the Looting of `CrimeSystem.Loot`. Floors are `SightMap.FloorOf` / `FloorAt`. Engine choices: every squad
+living in the building watches (Meitou may house more than one), the window closes when the sleeper wakes. A stolen ground pick-up inside
 a building is a pending Theft with thievery XP 20, no roll.
 
 ## Cages, beds and locks

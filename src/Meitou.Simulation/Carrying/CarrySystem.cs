@@ -532,7 +532,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         int death = DeathUnits(victim.Inventory!);
         var (taken, left) = TakeAll(bag, victim.Inventory!, Crime.CrimeSystem.IsLootTheft(cold, victim) ? victim.Faction : -1);
         Butcher(world, i, t, death);
-        bool seen = Looted(world, table, i, t, taken, left);
+        bool seen = Looted(world, table, i, t, taken, left, crime: true);
         if (cold.IsPlayer)
         {
             world.Post(left > 0 ? $"{cold.Name} took {taken} items from {victim.Name}; {left} did not fit" : $"{cold.Name} took {taken} items from {victim.Name}");
@@ -545,12 +545,12 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
     /// What a loot of <paramref name="taken"/> items sets off: being seen by the victim's faction (true), the pending Looting crime, the <see cref="Loots"/> entry. No relation event: none of
     /// the game's relation events comes from looting (docs/game/factions-squads-towns.md 3.5); the crime's witnesses do the rest.
     /// </summary>
-    bool Looted(World world, CharacterTable table, int i, int t, int taken, int left)
+    bool Looted(World world, CharacterTable table, int i, int t, int taken, int left, bool crime = true)
     {
         var cold = table.Cold(i)!;
         var victim = table.Cold(t)!;
         bool seen = taken > 0 && cold.IsPlayer && !victim.IsPlayer && cold.Faction != victim.Faction && Witnessed(world, table, i, t);
-        if (taken > 0 && victim.Medical?.Incapacitated != false) Crimes?.Loot(world, i, t);   // a pickpocket's crime is its steal roll's
+        if (crime && taken > 0) Crimes?.Loot(world, i, t);   // one item at a time: the take's own crime (Crime.CrimeSystem.Pickpocket)
         loots.Add(new LootEntry(world.Tick, table.IdOf(i), table.IdOf(t), taken, left, seen));
         return seen;
     }
@@ -598,8 +598,8 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
             if (cold.IsPlayer) world.Post("This item is locked in place and cannot be removed. You can try to pick the lock, find a saw, or use brute strength.");
             return;
         }
-        // A pickpocket (the owner is not down): Theft and the steal roll; caught, the item stays.
-        if (victim.Medical?.Incapacitated == false && Crimes?.Pickpocket(world, i, t, item, Crime.CrimeCode.Theft) == true) return;
+        // The right click's crime and the steal roll (the owner watching unless down); caught, the item stays.
+        if (!victim.IsPlayer && Crimes?.Pickpocket(world, i, t, item, Crime.CrimeSystem.TakeKind.RightClick) == true) return;
         bool worn = InventoryCommands.IsEquipmentSection(item.Section);
         int mark = item.StolenFrom, death = DeathUnits(from);
         if (Crime.CrimeSystem.IsLootTheft(cold, victim)) item.StolenFrom = victim.Faction;
@@ -622,7 +622,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
     {
         var table = world.Characters;
         bool first = seenLoot != world.Player.OpenLoot;
-        if (Looted(world, table, looter, body, 1, left))
+        if (Looted(world, table, looter, body, 1, left, crime: false))
         {
             if (first && table.Cold(looter)!.IsPlayer) world.Post($"{table.Cold(looter)!.Name} was seen looting {table.Cold(body)!.Name}");
             seenLoot = world.Player.OpenLoot;

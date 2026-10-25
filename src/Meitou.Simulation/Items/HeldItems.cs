@@ -214,18 +214,18 @@ public sealed partial class PlayerSystem
     }
 
     /// <summary>
-    /// The held item leaves another faction's container, or a pickpocketed character (not down), for another owner: the pending crime of the move (<paramref name="code"/>: Looting for a
-    /// drag, <c>FUN_140715560</c>, which rolls without the item; Theft for a give, <c>FUN_140712490</c>) and the steal roll (<see cref="Crime.CrimeSystem.Steal"/>,
+    /// The held item leaves another faction's container or character for another owner: the pending crime of the move (a container: Looting for a drag, <c>FUN_140715560</c>, Theft
+    /// for a give, <c>FUN_140712490</c>; a character: <see cref="Crime.CrimeSystem.TakeCode"/>) and the steal roll (<see cref="Crime.CrimeSystem.Steal"/>,
     /// <see cref="Crime.CrimeSystem.Pickpocket"/>). True when the thief was caught and the item goes back.
     /// </summary>
-    static bool Caught(World world, HeldItem held, Crime.CrimeCode code)
+    static bool Caught(World world, HeldItem held, Crime.CrimeSystem.TakeKind kind)
     {
         var table = world.Characters;
         if (world.SystemOf<Crime.CrimeSystem>() is not { } crimes || !table.TryResolveNext(held.Actor, out int thief)) return false;
         if (held.From.Holder == ItemHolder.Site)
-            return world.Fixtures.Find(held.From.Site) is { Contents: not null } box && box.Owner >= 0 && box.Owner != world.Player.Faction && crimes.Steal(world, thief, box, code);
-        return held.From.Holder == ItemHolder.Character && table.TryResolveNext(held.From.Character, out int owner) && table.Cold(owner) is { IsPlayer: false, Medical.Incapacitated: false }
-            && crimes.Pickpocket(world, thief, owner, code == Crime.CrimeCode.Theft ? held.Item : null, code);
+            return world.Fixtures.Find(held.From.Site) is { Contents: not null } box && box.Owner >= 0 && box.Owner != world.Player.Faction && crimes.Steal(world, thief, box, kind == Crime.CrimeSystem.TakeKind.Drag ? Crime.CrimeCode.Looting : Crime.CrimeCode.Theft);
+        return held.From.Holder == ItemHolder.Character && table.TryResolveNext(held.From.Character, out int owner) && table.Cold(owner) is { IsPlayer: false }
+            && crimes.Pickpocket(world, thief, owner, held.Item, kind);
     }
 
     /// <summary>The held item went to another owner out of the open loot: the body may be butchered (a death item) and the looting seen.</summary>
@@ -309,7 +309,7 @@ public sealed partial class PlayerSystem
             ReturnHeldItem(world);
             return;
         }
-        if (into != held.From && Caught(world, held, Crime.CrimeCode.Looting)) { ReturnHeldItem(world); return; }
+        if (into != held.From && Caught(world, held, Crime.CrimeSystem.TakeKind.Drag)) { ReturnHeldItem(world); return; }
         int limit = target.Columns == 0 ? 1 : target.Grid.LimitOf(item);
         // Leaving its window for another owner's: no longer a death item, maybe stolen. Put back on a refusal; the units that stay on the mouse keep the old marks.
         bool changes = into != held.From, death = item.Death;
@@ -444,7 +444,7 @@ public sealed partial class PlayerSystem
             ReturnHeldItem(world);
             return;
         }
-        if (Caught(world, held, Crime.CrimeCode.Theft)) { ReturnHeldItem(world); return; }
+        if (Caught(world, held, Crime.CrimeSystem.TakeKind.Give)) { ReturnHeldItem(world); return; }
         var item = held.Item;
         bool death = item.Death;
         int mark = item.StolenFrom, before = item.Quantity;
