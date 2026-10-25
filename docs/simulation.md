@@ -926,7 +926,7 @@ ticks and loads; the diff does not. Navmesh membership (engine reading of the Ob
 `RepathCommand` (with its zones, [long routes](game/pathfinding.md)).
 - Overlay type: `BuildingPlacement` (`StateId` null for new buildings, `WorldY` = absolute Y). Town repairs retain the
   original state and instance ids, overriding only `Destroyed`; render and nav replace by global `Key`, never append a second house.
-  A repaired town zone reloads its objects, interior and floors; its nav overlay applies from repair start even below build threshold.
+  A repaired town house replaces only its objects and interior in the resident zone; floors are invalidated and its nav overlay applies from repair start even below build threshold.
   House lamps and layout lamps replace the old lights, with none during reconstruction.
 - Rendering: `WorldObjects.AddRuntime/RemoveRuntime(BuildingPlacement)` merged into `BuildZone`. Engine choice: a loaded
   zone takes the placement incrementally (no reload); the scaffold is an approximation ([render-objects](render-objects.md#player-buildings-and-the-placement-ghost)).

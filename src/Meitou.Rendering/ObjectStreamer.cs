@@ -137,7 +137,7 @@ sealed class ObjectStreamer(WorldObjects objects, ObjectMeshCache meshes) : IDis
 
     // ---- runtime buildings (WorldObjects.AddRuntime / RemoveRuntime; docs/simulation.md "Buildings", host seam) ----
 
-    readonly List<(ZoneCoordinate Zone, string Id, Task<ZoneObjects> Job)> runtimeJobs = [];
+    readonly List<(ZoneCoordinate Zone, string Id, bool Replace, Task<ZoneObjects> Job)> runtimeJobs = [];
 
     /// <summary>
     /// A runtime placement was added to <see cref="WorldObjects"/>: a zone laid out later includes it; a zone already laid out gets only its instances (laid
@@ -148,8 +148,10 @@ sealed class ObjectStreamer(WorldObjects objects, ObjectMeshCache meshes) : IDis
         var zone = placement.Zone;
         EnsurePopulated(zone);
         if (!zones.ContainsKey(zone) && !jobs.ContainsKey(zone)) return;
-        if (jobs.ContainsKey(zone) || fills.Any(f => f.Zone.Coordinate == zone)) { Invalidate(zone); return; }
-        runtimeJobs.Add((zone, placement.Key, BackgroundWork.Run(() => objects.BuildRuntime(placement))));
+        bool replace = placement.DestroyedOverride is not null;
+        if (jobs.ContainsKey(zone) || !replace && fills.Any(f => f.Zone.Coordinate == zone)) { Invalidate(zone); return; }
+        runtimeJobs.RemoveAll(j => j.Id == placement.Key);
+        runtimeJobs.Add((zone, placement.Key, replace, BackgroundWork.Run(() => objects.BuildRuntime(placement))));
     }
 
     /// <summary>A runtime placement was removed from <see cref="WorldObjects"/>: its instances and indoor volume leave the zone.</summary>
@@ -158,6 +160,11 @@ sealed class ObjectStreamer(WorldObjects objects, ObjectMeshCache meshes) : IDis
         runtimeJobs.RemoveAll(j => j.Id == instanceId);
         if (jobs.ContainsKey(zone) || fills.Any(f => f.Zone.Coordinate == zone)) { Invalidate(zone); return; }
         if (!zones.TryGetValue(zone, out var z)) return;
+        RemoveInstances(z, instanceId);
+    }
+
+    void RemoveInstances(Zone z, string instanceId)
+    {
         bool Match(Instance i) => i.Placed.PlacementId == instanceId || i.Placed.ParentPlacementId == instanceId;
         z.Real.RemoveAll(Match);
         z.Stand.RemoveAll(Match);
@@ -193,12 +200,14 @@ sealed class ObjectStreamer(WorldObjects objects, ObjectMeshCache meshes) : IDis
     {
         for (int i = runtimeJobs.Count - 1; i >= 0; i--)
         {
-            var (zone, id, job) = runtimeJobs[i];
-            if (!job.IsCompleted) continue;
+            var (zone, id, replace, job) = runtimeJobs[i];
+            if (!job.IsCompleted || fills.Any(f => f.Zone.Coordinate == zone)) continue;
             runtimeJobs.RemoveAt(i);
             if (!job.IsCompletedSuccessfully || !objects.HasRuntime(id) || !zones.TryGetValue(zone, out var z)) continue;
             var laid = job.Result;
-            if (z.Real.Any(inst => inst.Placed.PlacementId == id)) continue;   // the zone's own layout already had it
+            // Keep the resident zone until the replacement layout is ready; only this house and its furniture change.
+            if (replace) RemoveInstances(z, id);
+            else if (z.Real.Any(inst => inst.Placed.PlacementId == id)) continue;   // the zone's own layout already had it
             foreach (var item in laid.Items) z.Real.Add(Make(item, stand: false, z));
             foreach (var item in laid.Stand) z.Stand.Add(Make(item, stand: true, z));
             if (laid.Interiors.Count > 0) { z.Interiors = [.. z.Interiors, .. laid.Interiors]; InteriorVersion++; }
