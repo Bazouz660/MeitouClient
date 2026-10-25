@@ -86,6 +86,31 @@ public sealed partial class FixtureRegistry
         RegisterTownConstruction(world, p);
     }
 
+    /// <summary>
+    /// A town replaced (docs/game/factions-squads-towns.md "Town overrides"): its buildings that are not the player's go back to their level owner under the town's new faction,
+    /// as the original drops their saved states. A town not registered yet takes the new faction when it is.
+    /// </summary>
+    public void TownReplaced(World world, PopulationData data, int site)
+    {
+        if (!sites.Contains(site)) return;
+        int townFaction = site < data.SiteFactions.Count ? data.SiteFactions[site] : -1;
+        int player = world.Player.Faction >= 0 ? world.Player.Faction : data.PlayerFaction;
+        foreach (var b in data.Sites[site].Buildings)
+        {
+            int owner = b.OwnerFactionId is { } o && data.FactionIndex(o) is var fi and >= 0 ? fi : townFaction;
+            if (properties.TryGetValue(b.Key, out var p))
+            {
+                if (p.Purchased || p.Owner == player) continue;
+                p.Owner = owner;
+            }
+            else if (OfBuilding(b.Key).Any(f => f.Owner == player)) continue;
+            foreach (var f in OfBuilding(b.Key)) f.Owner = owner;
+            world.ItemSlots.TransferBuilding(world, b, owner);
+        }
+        ownedProperties = null;
+        containerSpots = null; doorPicks = null; bedSpots = null; cageList = null;
+    }
+
     void WriteProperty(string building, FcsRecord state)
     {
         if (!properties.TryGetValue(building, out var p)) return;

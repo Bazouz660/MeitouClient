@@ -12,7 +12,10 @@ public sealed partial class PopulationSystem
         world.Uniques.SeedPrisoners(data.Db);
         RefreshStates(world);
         Inputs(world, []);
-        RefreshZones(world);
+        // Towns loaded behind the loading screen keep their TOWN, as the original checks no override then (its ZoneManager +8 byte).
+        loadingScreen = true;
+        try { RefreshZones(world); }
+        finally { loadingScreen = false; }
         foreach (var platoon in world.Platoons.All)
             if (platoon.State == PlatoonState.Unloaded && Wanted(platoon) && Ready(platoon))
                 Activate(world, platoon);

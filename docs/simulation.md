@@ -133,11 +133,12 @@ The original's rules: [off-screen world](game/factions-squads-towns.md#off-scree
 campaign squads off screen, moves them in straight lines (roads for long trips), never fights or heals there, and drives the rest by clock-based
 budgets. The tier follows it, with Meitou choices marked.
 
-**Town overrides** ([rule](game/factions-squads-towns.md#town-overrides)): `PopulationSystem.Replace` runs at each town load; the winner goes into
-`TownSite.Replacement`, and `TownSite.Town` (what every reader uses) becomes it with the placement's id and names kept (engine choice) and the old faction when it
-names none; `SiteFactions` follows. The town then makes the replacement's residents even if it was made before; its old squads stay. Saves write
-`replacementTown` (and the town's `faction` while replaced) and read it back; a new game or a load clears them first. Not done: dropping the zone's NPC
-building states and loose items.
+**Town overrides** ([rule](game/factions-squads-towns.md#town-overrides)): `PopulationSystem.Replace` runs at each town load but those behind the loading
+screen (`PrepareLoading`); the winner goes into `TownSite.Replacement`, and `TownSite.Town` (what every reader uses) becomes it with the placement's id and names
+kept (engine choice) and the old faction when it names none; `SiteFactions` follows. The town then makes the replacement's residents even if it was made before;
+its old squads stay. Its buildings, doors, containers and item slots not the player's go to their level owner under the new faction
+(`FixtureRegistry.TownReplaced`). Saves write `replacementTown` (and the town's `faction` while replaced) and read it back; a new game or a load clears them
+first. Not done: the other saved state of those buildings and the zone's loose items are kept.
 
 Six Faithful/Meitou switches (the fifth, campaign inheritance, under Campaigns below; `PopulationSettings`, live on `PopulationSystem`; Advanced settings (the fifth on the Fixes page), Meitou on by default; `PopulationOffscreen.cs`):
 - **Squads keep their people** (`KeepRoamers`). Meitou: a roaming squad the population made keeps its characters as a `StoredSquad` from the

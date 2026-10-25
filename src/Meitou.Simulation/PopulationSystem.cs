@@ -315,14 +315,16 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
         }
     }
 
+    bool loadingScreen;
+
     /// <summary>
-    /// The original's <c>ZoneManager::checkForRepopulateTown</c> at a town's load (docs/game/factions-squads-towns.md "Town overrides"): not for a town of the player's faction;
+    /// The original's <c>ZoneManager::checkForRepopulateTown</c> at a town's load (docs/game/factions-squads-towns.md "Town overrides"): not behind the loading screen, nor for a town of the player's faction;
     /// of the current TOWN's <c>override town</c> list, the entries whose every <c>world state</c> holds, weighted by how many they have (none: never), other than the
     /// replacement in place; the heaviest, the first of equals, takes the town's place. Whether it did.
     /// </summary>
     bool Replace(World world, TownSite site)
     {
-        if (site.Town.OverrideTown.Count == 0 || site.Index < data.SiteFactions.Count && data.SiteFactions[site.Index] is >= 0 and var f && f == PlayerFactionOf(world)) return false;
+        if (loadingScreen || site.Town.OverrideTown.Count == 0 || site.Index < data.SiteFactions.Count && data.SiteFactions[site.Index] is >= 0 and var f && f == PlayerFactionOf(world)) return false;
         TownData? best = null;
         int weight = 0;
         foreach (var link in site.Town.OverrideTown)
@@ -334,6 +336,7 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
         }
         if (best is null) return false;
         data.SetReplacement(site.Index, best);
+        world.Fixtures.TownReplaced(world, data, site.Index);
         if (townLog.Count >= 256) townLog.RemoveAt(0);
         townLog.Add($"{site.Town.Name}: now {best.Name}");
         return true;
