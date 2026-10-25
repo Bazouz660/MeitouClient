@@ -14,6 +14,7 @@ public sealed partial class CombatSystem
     {
         if (e.Kind == FireEffect) { ApplyFire(world, e); return; }
         if (e.Kind == ReloadEffect) { ApplyReload(world, e); return; }
+        if (e.Kind == ZoneBuildingsEffect) { ApplyZoneBuildings(world, e); return; }
         if (e.Kind != BlowEffect) return;
         var table = world.Characters;
         int a = e.Source, d = e.Target, blow = e.Arg, seq = (int)e.Amount, now = (int)world.Tick;
@@ -71,6 +72,7 @@ public sealed partial class CombatSystem
         var packet = fighter.Unarmed
             ? DamageFormulas.UnarmedPacket(skill, Eff(ac, StatsEnumerated.Toughness), str, fighter.Weapon, kind, dc.Race.StringId, fighter.DamageOutput, combat)
             : DamageFormulas.Packet(skill, dex, str, fighter.Weapon!, kind, dc.Race.StringId, fighter.DamageOutput, combat);
+        packet = Powered(packet, tech, blow);
 
         var ctx = MakeContext(world, d, dc);
         var events = hitEvents;   // Apply is serial, so one list serves every hit
@@ -101,7 +103,7 @@ public sealed partial class CombatSystem
             }
         }
         // A shackled defender is knocked out instead of staggered a quarter of the time (Character::_startStumble: MedicalSystem::knockout with factor 0.002, the floor of 3 s).
-        if (!dc.Medical.Incapacitated && Locks.LockSystem.WornShackles(dc) is not null
+        if (!dc.Medical.Incapacitated && Meitou.Simulation.Locks.LockSystem.WornShackles(dc) is not null
             && CombatRolls.Float(world.Seed, Rng.Key(table.IdOf(d)), CombatRoll.Shackled, CombatRolls.BlowCounter(a, seq, blow, 0)) < ShackledKnockout)
         {
             dc.Medical.KnockOut(dc.Medical.PutDownKoSeconds(ctx, 0.002f));
@@ -159,6 +161,16 @@ public sealed partial class CombatSystem
             D.ReadyTick = Math.Max(D.ReadyTick, D.StunUntil);
         }
         else D.ReadyTick = Math.Max(D.ReadyTick, now + (int)MathF.Ceiling(CombatTuning.InterruptPause / world.TickSeconds));
+    }
+
+    /// <summary>
+    /// A blow's packet times its impact point's <c>power N</c> (stored x0.01): cut, blunt, pierce and extra stun (<b>Verified</b>, <c>attackImpactCheck</c> FUN_14060a2f0 scales
+    /// the first four <c>Damages</c> fields; base data: 60 / 40 on <c>Downward combo</c>, 180 on <c>ma mega kick</c>).
+    /// </summary>
+    internal static DamagePacket Powered(in DamagePacket p, CombatTechnique tech, int blow)
+    {
+        float k = tech.PowerOf(blow) * 0.01f;
+        return p with { Cut = p.Cut * k, Blunt = p.Blunt * k, Pierce = p.Pierce * k, Stun = p.Stun * k };
     }
 
     /// <summary>The chance a landed blow knocks a shackled defender out (<c>Character::_startStumble</c>, Verified literal).</summary>

@@ -103,7 +103,13 @@ public sealed partial class LockSystem
                 : DamageFormulas.Packet(Eff(f.WeaponSkill), Eff(StatsEnumerated.Dexterity) * f.DexterityMult, str, f.Weapon!, TargetKind.Human, null, f.DamageOutput, k);
             damage = BlowDamage(packet.Cut, packet.Blunt, f.IsAnimal);
         }
-        var l = door.Lock!;
+        return Damage(door, damage);
+    }
+
+    /// <summary>Takes <paramref name="damage"/> (the clamped f) x <see cref="HardnessPerDamage"/> off a door; at 0 it breaks: unlocked and opened. True when it broke.</summary>
+    static bool Damage(Fixture door, float damage)
+    {
+        if (door.Lock is not { } l || door.DoorBroken) return false;
         l.Hardness -= damage * HardnessPerDamage;
         if (l.Hardness > 0) return false;
         l.Hardness = 0;
@@ -111,6 +117,14 @@ public sealed partial class LockSystem
         door.DoorBroken = true;
         FixtureRegistry.OpenDoor(door);
         return true;
+    }
+
+    /// <summary>A fight blow whose attack zone takes in a door (<see cref="CombatSystem"/>): <paramref name="damage"/> is clamp(2 blunt + 0.5 cut, 20, 60); a break tells navigation.</summary>
+    internal void Strike(World world, Fixture door, float damage, int attacker)
+    {
+        if (!Damage(door, damage)) return;
+        world.Fixtures.Touch(door);
+        world.EmitSound(SoundKind.Unlocked, attacker, world.Characters.Next[attacker].Position);
     }
 
     /// <summary>Gives the free attackers whose target is shut in another faction's building, while they are outside it, the nearest of its doors to bash.</summary>

@@ -92,6 +92,8 @@ public sealed record AnimationDefinition
     /// <summary><c>min speed</c> / <c>max speed</c>: where the speed weight of a movement clip starts rising and has fallen back to 0 (docs/animation.md "Choosing candidates").</summary>
     public float MinSpeed { get; init; }
     public float MaxSpeed { get; init; }
+    /// <summary><c>strafe speed max</c>: on a lower clip with no <c>move speed</c>, the side-step clip of a fighter (<c>strafe lower</c>, docs/animation.md "Side steps"); 0 on the walking clips.</summary>
+    public float StrafeSpeedMax { get; init; }
     /// <summary><c>L/R leg damage ideal</c>: the leg health the leg weight peaks at.</summary>
     public float LeftLegIdeal { get; init; } = 100;
     public float RightLegIdeal { get; init; } = 100;
@@ -189,6 +191,7 @@ public sealed record AnimationDefinition
             Relocates = Characters.AnimationMask.MovesCharacter(r),
             MinSpeed = r.GetFloat("min speed"),
             MaxSpeed = r.GetFloat("max speed"),
+            StrafeSpeedMax = r.GetFloat("strafe speed max"),
             LeftLegIdeal = r.GetFloat("L leg damage ideal", 100),
             RightLegIdeal = r.GetFloat("R leg damage ideal", 100),
             Stumbles = [.. r.GetReferences("stumbles").Select(x => x.TargetStringId)],
@@ -621,6 +624,23 @@ public sealed class AnimationLibrary
             if (d.Category == 0 && d.Idle && !d.IsAction && d.Area == AnimationArea.All && d.Fits(s)) list.Add((i, Math.Max(d.IdleChance, 0)));
         }
         return list.ToArray();
+    }, this);
+
+    readonly System.Collections.Concurrent.ConcurrentDictionary<AnimationStance, int> strafes = new();
+
+    /// <summary>
+    /// The side-step clip of the legs (docs/animation.md "Side steps"): the first lower clip of the normal category, in record order, with no <c>move speed</c> and a
+    /// <c>strafe speed max</c> above 0 that fits the stance (<c>strafe lower</c> in the base game: combat only); -1 when none. <b>Observed</b>: the original takes it from its
+    /// candidates by layer and modes like any clip; which test reads <c>strafe speed max</c> was not traced.
+    /// </summary>
+    public int Strafe(in AnimationStance stance) => strafes.GetOrAdd(Canonical(stance), static (s, self) =>
+    {
+        for (int i = 0; i < self.all.Count; i++)
+        {
+            var d = self.all[i];
+            if (d.Category == 0 && d.Area == AnimationArea.Lower && d.MoveSpeed == 0 && d.StrafeSpeedMax > 0 && !d.Technique && !d.IsAction && d.FitsExceptLegs(s)) return i;
+        }
+        return -1;
     }, this);
 
     readonly System.Collections.Concurrent.ConcurrentDictionary<AnimationStance, int> carryIdles = new();

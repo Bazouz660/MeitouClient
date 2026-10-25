@@ -48,6 +48,26 @@ of definitions and gives each a weight; zero-weight ones are dropped:
 - Finally the weights are **normalised per layer** (each layer's weights divided by that layer's sum,
   `@ 14051cde0`).
 
+### Side steps
+
+**Observed** (decompilation: `CombatMovementController::combatMovementUpdate` `@ 1402af1e0`, `combatMovementAnimationUpdate` `@ 1402ae1b0`,
+`setupCombatMovementVariables` `@ 1402ae6d0`, `AnimationClass` slot 29 `@ 14051de70`, `@ 14051f3f0`; constants read from the binary).
+
+- **Facing.** In the fight steering a fighter faces its target (`lookAtCharacter`) whichever way it moves, except in jog mode (body gap over 90,
+  back under 70: [combat stance](game/combat.md#combat-stance)) or chase mode, where it faces its velocity.
+- **State** `strafing` (+0x124): with the velocity in the facing's frame (z forward, x side), it starts when |x| / |z| > FORWARD_THRESHOLD
+  (+0xf4 = 1.5 + 3r per character) and stops when |z| / |x| > STRAFE_THRESHOLD (+0xf0 = 1.5 + 2r), only when `strafeStateTimer` (+0x120) has run
+  out; each flip sets it to 1 s. `canStrafe` (+0x126) is set to 1 at movement setup and never cleared (by the writes found); without it a strafing
+  fighter would face its velocity. The steering also seems to keep only the velocity's side part while strafing and its forward part otherwise
+  (decompile unclear; Meitou does not).
+- **Animation.** Forward speed = z, side speed = −x (to the right) only while strafing, else 0; x is zeroed when |z| > 1 and |x| < 0.5. The side-step
+  clip gets weight |side| / (|side| + |forward|) (the last value while the sum is ≤ 1, through a filter `@ AC+0x2b8`), the forward movement clips
+  the rest; it plays at F × `play speed` × side speed (signed). Base data: `strafe lower` (layer lower, no `move speed`, rebirth.mod `play speed`
+  −0.12, `strafe speed max` 999, combat only); `sidestep` is disabled and `strafe upper` removed. Which test reads `strafe speed max` (999 on
+  the blows, 99 on the guards, 0 on the walks) is **Unknown**. Animals' `strafe anim` is not decoded.
+- Meitou: `AnimationSystem.Strafe` and `AnimationLibrary.Strafe`; a fighter in its footwork (`CharacterCold.FaceSlot`) keeps facing its
+  target while its path moves it (`MovementSystem`, the turn's speed cut skipped).
+
 ### Idle stance
 
 Verified (decompilation). A human's animation object keeps its own idle: the `idle stance` of its appearance looked up by record name

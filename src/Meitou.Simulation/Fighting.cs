@@ -33,7 +33,9 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
     {
         var next = table.Next;
         ref var n = ref next[i];
-        if (!n.Alive || n.Task != (byte)CharacterTask.Attack || table.Cold(i)?.Bashing is not null) return;   // a basher walks to its door (Locks.LockSystem)
+        var self = table.Cold(i);
+        if (self is not null) self.FaceSlot = -1;
+        if (!n.Alive || n.Task != (byte)CharacterTask.Attack || self?.Bashing is not null) return;   // a basher walks to its door (Locks.LockSystem)
         var st = combat.StateOf(new CharacterId(i, n.Generation));
         int t = st.TargetSlot;
         if (t < 0 || t >= table.HighWater || !next[t].Alive || next[t].Generation != st.TargetGeneration) return;
@@ -51,6 +53,8 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
         else if (gap < CombatTuning.FootworkGap) cold.CombatRunning = false;
         bool fleeing = cold.TargetFleeingTime >= CombatTuning.FleeingSeconds;
         if (fleeing) cold.CombatRunning = true;
+        // In its footwork it faces its target whichever way its path takes it, and side-steps (docs/animation.md "Side steps"; MovementSystem).
+        if (!cold.CombatRunning) cold.FaceSlot = t;
         n.TaskTime -= dt;
         // Its swings are measured to where a target that is not fighting will be (CombatSystem.StartAttack's aim, AimLeadSeconds ahead), so standing and the run past are too:
         // stood within reach of the target itself, a runner's aim point would be out of reach and the chaser would stand there idle while the runner got away.
@@ -119,7 +123,7 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
     /// <summary>
     /// Walks a fighter its target has not let close in round the target (<see cref="CombatTuning.CircleSpeedOf"/>): every <see cref="RepathSeconds"/> a path to the point
     /// at least <see cref="CircleLookAhead"/> seconds of side-stepping further round (and past the arrival radius), at the gap kept within the band of <see cref="CombatTuning.CircleNear"/> /
-    /// <see cref="CombatTuning.CircleFar"/>. The original steers by forces and faces its target while it side-steps; here the walker follows the path and faces its way (engine).
+    /// <see cref="CombatTuning.CircleFar"/>. The original steers by forces; here the walker follows the path (engine), facing its target and side-stepping as the original does (MovementSystem).
     /// </summary>
     static void Circle(World world, int i, ref CharacterHot n, CharacterCold cold, CharacterCold? tc, int t, System.Numerics.Vector3 d, float gap, int around)
     {

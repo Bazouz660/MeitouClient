@@ -548,6 +548,7 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
             }
             float speed = MathF.Sqrt(p.Velocity.X * p.Velocity.X + p.Velocity.Z * p.Velocity.Z);
             var dir = Vector2.Zero;
+            bool facing = false;
             float desired = 0;
             bool finished = false, closing = false;
             int water = WaterStateAt(walk, p.Position, cold);
@@ -632,7 +633,14 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
             {
                 // A path is followed at the top speed at once (the nav agent sets its velocity to top speed x direction); the 15 / s ramp is the combat steering's.
                 speed = cold.InCombat && desired > speed ? MathF.Min(speed + Acceleration * dt, desired) : desired;
-                if (dir != Vector2.Zero)
+                if (dir != Vector2.Zero && FaceOf(prev, n, cold) is { } face)
+                {
+                    // In its footwork a fighter walks its path whichever way it lies and turns to face its target (the side steps, docs/animation.md "Side steps").
+                    facing = true;
+                    var heading = Turn(p.Yaw, face, 1, dt).Dir;
+                    n.Yaw = MathF.Atan2(heading.X, heading.Y);
+                }
+                else if (dir != Vector2.Zero)
                 {
                     (dir, speed) = Turn(p.Yaw, dir, speed, dt);
                     n.Yaw = MathF.Atan2(dir.X, dir.Y);   // also while it turns on the spot
@@ -676,7 +684,7 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
                 if (stands || !walk.IsWalkable(p.Position.X, p.Position.Z, p.Position.Y) && walk.IsWalkable(x, z))
                 {
                     n.Position = new Vector3(x, y, z);
-                    if (speed > 0.1f) n.Yaw = MathF.Atan2(dir.X, dir.Y);
+                    if (speed > 0.1f && !facing) n.Yaw = MathF.Atan2(dir.X, dir.Y);
                 }
                 else
                 {
@@ -813,6 +821,15 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
     /// The heading turned from <paramref name="yaw"/> towards <paramref name="wanted"/> by at most <see cref="TurnRate"/> x <paramref name="dt"/>,
     /// and the speed scaled by the cosine of the turn still to make (zero beyond 90 degrees: the character turns where it stands).
     /// </summary>
+    /// <summary>The way to the target a fighter in its footwork faces (<see cref="CharacterCold.FaceSlot"/>, the last tick's place), or null.</summary>
+    static Vector2? FaceOf(ReadOnlySpan<CharacterHot> prev, in CharacterHot n, CharacterCold cold)
+    {
+        int t = cold.FaceSlot;
+        if (t < 0 || t >= prev.Length || !prev[t].Alive || n.Task != (byte)CharacterTask.Attack || !cold.InCombat || cold.CombatRunning) return null;
+        var d = new Vector2(prev[t].Position.X - n.Position.X, prev[t].Position.Z - n.Position.Z);
+        return d.LengthSquared() > 1e-4f ? Vector2.Normalize(d) : null;
+    }
+
     public static (Vector2 Dir, float Speed) Turn(float yaw, Vector2 wanted, float speed, float dt)
     {
         float target = MathF.Atan2(wanted.X, wanted.Y);

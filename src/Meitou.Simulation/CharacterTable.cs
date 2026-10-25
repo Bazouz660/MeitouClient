@@ -173,6 +173,11 @@ public sealed class CharacterCold
     public string? Gunning { get; set; }
     /// <summary>A fighter running at its target out of the combat stance (set by the <see cref="PursuitSystem"/>, docs/game/combat.md "Combat stance").</summary>
     public bool CombatRunning { get; set; }
+    /// <summary>
+    /// The slot of the target a fighter in its footwork faces while a path moves it (set by the <see cref="PursuitSystem"/> every tick, -1: none; docs/animation.md "Side steps").
+    /// Derived every tick; not saved, not hashed.
+    /// </summary>
+    public int FaceSlot { get; set; } = -1;
     /// <summary>Seconds the fighter's target has been moving away out of a fight (the <see cref="PursuitSystem"/>'s fleeing check).</summary>
     public float TargetFleeingTime { get; set; }
     /// <summary>Its last path request came back with no way there (set by the <see cref="MovementSystem"/>, taken by the <see cref="PursuitSystem"/>).</summary>

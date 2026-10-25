@@ -397,7 +397,9 @@ undid the turn to a waypoint over 90° off the line to it, and the walker froze)
 Original formulas, constants and unresolved technique terms: [combat.md](game/combat.md).
 Hits, pauses and initiative follow combat.md "Hit reactions" / "Pacing"; the combat system picks the stumble
 clip (through the animation system's chooser) and holds the fighter for its length. No wait before the first swing, a swing with nobody in its attack zone waits 0.5 s and the loser of the
-initiative roll 0.5 s; each blow resolves against everyone in its attack zone (`CombatSystem.Strike`, combat.md "Attack zone"). Engine choices: the initiative roll is drawn per pair and tick so both
+initiative roll 0.5 s; each blow (its packet times the hit's `power`) resolves against everyone in its attack zone, slaves in the original's case and walls and
+doors included (`CombatSystem.Strike`, `ApplyZoneBuildings`, combat.md "Attack zone"). Fighters in their footwork face their target and side-step
+([animation](animation.md#side-steps)). Engine choices: the initiative roll is drawn per pair and tick so both
 sides agree; a target that would not swing back (stumbling, defending, not fighting, or in
 Block) is simply attacked; one that lost the roll to a fighter becomes its target; a defence that starts late
 joins its clip partway so the passed roll counts when "Late dodges and blocks" is on (Advanced setting, a balance

@@ -191,6 +191,7 @@ public static class StandardSystems
         if (Has(StandardParts.FirstAid)) systems.Add(beds = new Meitou.Simulation.Locks.BedSystem(data) { Carry = carry });
         Meitou.Simulation.Construction.ConstructionSystem? construction = null;
         if (Has(StandardParts.Construction)) systems.Add(construction = new Meitou.Simulation.Construction.ConstructionSystem(data, o.Construction));
+        if (combat is not null) combat.Construction = construction;
         Meitou.Simulation.Production.ProductionSystem? production = null;
         if (Has(StandardParts.Production)) systems.Add(production = new Meitou.Simulation.Production.ProductionSystem(data, o.Production) { Assembly = new CharacterAssembly(data), Construction = construction, Beds = beds, Carry = carry });
         if (Has(StandardParts.Combat)) systems.Add(combat!);
@@ -225,6 +226,7 @@ public static class StandardSystems
             // Right after it: the police act on this tick's bookings and sightings; the lock orders (picking, getting out) report their crimes to it.
             systems.Add(arrest = new Meitou.Simulation.Crime.ArrestSystem(crime, data.Bodies.Constants, o.Arrest) { Carry = carry, Deeds = deeds });
             systems.Add(locks = new Meitou.Simulation.Locks.LockSystem(data.Bodies.Constants, data.BodyOptions) { Crimes = crime, DoorsCloseBehind = o.DoorsCloseBehind, Assembly = new CharacterAssembly(data), Combat = combat, CombatConstants = data.Combat.Constants });
+            if (combat is not null) combat.Locks = locks;
         }
         Meitou.Simulation.Trading.TradeSystem? trade = null;
         if (Has(StandardParts.Trade))

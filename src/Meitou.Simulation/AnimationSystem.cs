@@ -43,6 +43,12 @@ public sealed class CharacterAnimation
     public readonly float[] Speeds = new float[SpeedWindow];
     public int SpeedCount;
     public const int SpeedWindow = 8, SpeedTrim = 3;
+    /// <summary>
+    /// Side steps (docs/animation.md "Side steps"): whether the fighter is in its side-stepping state, the seconds before that state may flip again, its side speed (units per
+    /// second, positive to its right; 0 out of the state) and the share of the legs the side-step clip has.
+    /// </summary>
+    public bool Strafing;
+    public float StrafeTimer, StrafeSpeed, StrafeShare;
 
     /// <summary>
     /// The speed the animations see (docs/animation.md "Movement", <b>Verified</b>): of the last 8 samples, sorted, the 3 lowest and 3 highest dropped and the
@@ -88,6 +94,7 @@ public sealed class CharacterAnimation
         h.Add(Rate);
         h.Add(SpeedCount);
         foreach (float s in Speeds) h.Add(s);
+        if (Strafing || StrafeTimer != 0 || StrafeSpeed != 0 || StrafeShare != 0) { h.Add(0x53747266); h.Add(Strafing); h.Add(StrafeTimer); h.Add(StrafeSpeed); h.Add(StrafeShare); }   // only once set, so worlds without fights hash as before
     }
 }
 
@@ -198,8 +205,15 @@ public sealed class AnimationSystem(AnimationLibrary library, AnimationLengths l
             var v = next[i].Velocity;
             float speed = v.Length();
             bool approaching = Approaching(table, i, cold);
-            // In combat the speed is signed along the facing: backing off is negative and picks the clips with a negative move speed.
-            if (cold.InCombat && !approaching) speed = v.X * MathF.Sin(next[i].Yaw) + v.Z * MathF.Cos(next[i].Yaw);
+            // In combat the speed is signed along the facing: backing off is negative and picks the clips with a negative move speed; the side speed drives the side steps.
+            if (cold.InCombat && !approaching)
+            {
+                float sin = MathF.Sin(next[i].Yaw), cos = MathF.Cos(next[i].Yaw);
+                speed = v.X * sin + v.Z * cos;
+                ulong roll = Rng.Hash(world.Seed, Rng.Key(table.IdOf(i)), RngPurpose.Animation, 0x5354524146UL);
+                Strafe(a, speed, v.Z * sin - v.X * cos, StrafeOnRatio(roll), StrafeOffRatio(roll), dt);
+            }
+            else (a.Strafing, a.StrafeTimer, a.StrafeSpeed, a.StrafeShare) = (false, 0, 0, 0);
             speed = a.SmoothSpeed(speed, CharacterAnimation.WindowFor(dt));
             var id = table.IdOf(i);
             var ragdoll = Ragdolls is { } r ? new RagdollView(r.HasRagdoll(cold), r.WasWhole(id)) : default;
@@ -214,6 +228,33 @@ public sealed class AnimationSystem(AnimationLibrary library, AnimationLengths l
     /// </summary>
     internal bool Approaching(CharacterTable table, int slot, CharacterCold cold) =>
         cold.InCombat && cold.CombatRunning && table.Next[slot].Task == (byte)CharacterTask.Attack;
+
+    /// <summary>Seconds the side-stepping state holds after it flips (<c>CombatMovementController::combatMovementUpdate</c>, <b>Observed</b>).</summary>
+    public const float StrafeHoldSeconds = 1;
+
+    /// <summary>The side-to-forward ratio over which a fighter starts side-stepping, 1.5 + 3r per character (FORWARD_THRESHOLD, <c>setupCombatMovementVariables</c>, <b>Observed</b>).</summary>
+    static float StrafeOnRatio(ulong roll) => 1.5f + 3 * Rng.Float(roll);
+    /// <summary>The forward-to-side ratio over which it stops, 1.5 + 2r (STRAFE_THRESHOLD, same source).</summary>
+    static float StrafeOffRatio(ulong roll) => 1.5f + 2 * ((roll & 0xFFFFFF) * (1f / (1 << 24)));
+
+    /// <summary>
+    /// The side-stepping state of a fighter in its stance (docs/animation.md "Side steps", <b>Observed</b> from <c>combatMovementUpdate</c> and
+    /// <c>combatMovementAnimationUpdate</c>): from its <paramref name="forward"/> and <paramref name="side"/> speeds (along its facing, and to its right), it starts when
+    /// |side| > <paramref name="on"/> x |forward| and stops when |forward| > <paramref name="off"/> x |side|, at most once per <see cref="StrafeHoldSeconds"/>; in the
+    /// state its side speed (0 while it walks straighter than |forward| > 1 with |side| under 0.5) is what the side-step clip plays at.
+    /// </summary>
+    internal static void Strafe(CharacterAnimation a, float forward, float side, float on, float off, float dt)
+    {
+        a.StrafeTimer = MathF.Max(a.StrafeTimer - dt, 0);
+        if ((forward != 0 || side != 0) && a.StrafeTimer <= 0
+            && (a.Strafing ? MathF.Abs(forward) > off * MathF.Abs(side) : MathF.Abs(side) > on * MathF.Abs(forward)))
+        {
+            a.Strafing = !a.Strafing;
+            a.StrafeTimer = StrafeHoldSeconds;
+        }
+        if (MathF.Abs(forward) > 1 && MathF.Abs(side) < 0.5f) side = 0;
+        a.StrafeSpeed = a.Strafing ? side : 0;
+    }
 
     /// <summary>What the combat system says about a character for its animation: the technique playing and its progress, and the last hit taken (the last finished tick's state).</summary>
     CombatView ViewOf(CharacterId id, long tick, CharacterCold cold, float tickSeconds)
@@ -340,6 +381,7 @@ public sealed class AnimationSystem(AnimationLibrary library, AnimationLengths l
         var wanted = lower;
         bool moving = false;
         int legs = 0;   // the lower movement clips at the head of the list (the phase follows them)
+        float legsShare = 1;   // their share of the legs (less while a side step plays)
         if (a.Action >= 0) wanted.Add((a.Action, 1));
         else if (down)
         {
@@ -361,6 +403,18 @@ public sealed class AnimationSystem(AnimationLibrary library, AnimationLengths l
             moving = moving && (lower.Count > 0 || upper.Count > 0);
             if (!moving && !(stance.Combat && lower.Count > 0)) lower.Clear();
             legs = lower.Count;
+            // Side-stepping: the side-step clip takes |side| / (|side| + |forward|) of the legs from the walking clips (the last share while both are under 1).
+            if (stance.Combat)
+            {
+                float side = MathF.Abs(a.StrafeSpeed), ahead = MathF.Abs(speed);
+                if (side + ahead > 1) a.StrafeShare = side / (side + ahead);
+                if (a.StrafeShare > 0 && Library.Strafe(stance) is >= 0 and var strafe)
+                {
+                    legsShare = 1 - a.StrafeShare;
+                    for (int k = 0; k < legs; k++) lower[k] = (lower[k].Index, lower[k].Weight * legsShare);
+                    lower.Add((strafe, a.StrafeShare));
+                }
+            }
             if (moving)
             {
                 wanted.AddRange(upper);
@@ -414,7 +468,7 @@ public sealed class AnimationSystem(AnimationLibrary library, AnimationLengths l
             a.Idle = -1;
         }
 
-        return Settle(a, wanted, legs, lift, liftTime, technique, fight, speed, dt, Lengths, 1, seed, key, tick);
+        return Settle(a, wanted, legs, lift, liftTime, technique, fight, speed, dt, Lengths, 1, seed, key, tick, legsShare);
     }
 
     /// <summary>
@@ -471,7 +525,7 @@ public sealed class AnimationSystem(AnimationLibrary library, AnimationLengths l
     /// the clip lengths of <paramref name="lengths"/>; returns the root motion of the relocating clips times <paramref name="rootScale"/>.
     /// </summary>
     Vector2 Settle(CharacterAnimation a, List<(int Index, float Weight)> wanted, int legs, int lift, float liftTime, int technique, in CombatView fight, float speed, float dt,
-        AnimationLengths lengths, float rootScale, ulong seed, ulong key, long tick)
+        AnimationLengths lengths, float rootScale, ulong seed, ulong key, long tick, float legsShare = 1)
     {
         // Targets: what is wanted fades in, everything else out. The first clips a character ever plays start at full weight (no fade from the binding pose).
         bool first = a.Count == 0;
@@ -503,6 +557,7 @@ public sealed class AnimationSystem(AnimationLibrary library, AnimationLengths l
             var d = Library.Definitions[index];
             if (d.Synchs && d.MoveSpeed != 0) cycles += weight * d.PlaySpeed;
         }
+        if (legsShare is > 0 and < 1) cycles /= legsShare;   // a side step thins the walking clips, not their stride
         a.Phase += a.Rate * speed * cycles * dt;
         a.Phase -= MathF.Floor(a.Phase);
 
@@ -521,10 +576,11 @@ public sealed class AnimationSystem(AnimationLibrary library, AnimationLengths l
             if (layer.Definition == lift) layer.Time = liftTime;
             else if (layer.Definition == technique) layer.Time = fight.Progress * length;   // the combat system's timing: the blow lands at its frame
             else if (layer.Definition == a.Action) layer.Time = MathF.Max(a.ActionTime, 0);   // held at the start while getting up blends out of a ragdoll
+            else if (IsStrafe(d)) layer.Time = Wrap(layer.Time + dt * a.Rate * d.PlaySpeed * a.StrafeSpeed, length);   // signed: a step the other way plays it backwards
             else if (synched) layer.Time = (a.Phase + d.SynchOffset - MathF.Floor(a.Phase + d.SynchOffset)) * length;
             else if (d.MoveSpeed != 0) layer.Time += dt * a.Rate * d.PlaySpeed * speed;
             else layer.Time += dt * (d.PlaySpeed > 0 ? d.PlaySpeed : d.Technique ? 1 : 0);
-            if (!d.Loop && !synched) layer.Time = Math.Clamp(layer.Time, 0, length * 0.999f);   // a one-shot clip holds its last frame
+            if (!d.Loop && !synched && !IsStrafe(d)) layer.Time = Math.Clamp(layer.Time, 0, length * 0.999f);   // a one-shot clip holds its last frame
             if (d.Relocates && layer.Time > before) root += (lengths.Root(d.Clip, layer.Time) - lengths.Root(d.Clip, before)) * layer.Weight;
             if (layer.Weight <= 0 && layer.Target <= 0) continue;   // faded out: dropped
             a.Layers[kept++] = layer;
@@ -532,6 +588,11 @@ public sealed class AnimationSystem(AnimationLibrary library, AnimationLengths l
         a.Count = kept;
         return root * rootScale;
     }
+
+    /// <summary>A side-step clip (<see cref="AnimationLibrary.Strafe"/>): its time follows the side speed.</summary>
+    static bool IsStrafe(AnimationDefinition d) => d.Area == AnimationArea.Lower && d.MoveSpeed == 0 && d.StrafeSpeedMax > 0 && !d.Technique;
+
+    static float Wrap(float time, float length) => length > 0 ? time - MathF.Floor(time / length) * length : 0;
 
     /// <summary>An animal's clips with those its skeleton lacks taken out, and the fall and lying clip chosen (<see cref="PlanOf"/>).</summary>
     sealed record AnimalPlan(int[] Movement, IReadOnlyList<(int Index, float Weight)> Idles, int Fall, int Lying, AnimationLengths Lengths);

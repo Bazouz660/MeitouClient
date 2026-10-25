@@ -112,7 +112,8 @@ Same targets as picking; Task_CutLock / Task_BruteForceLock share the shackle ta
 - **Bash door** (81/226/287, `Task_BashDoor`, update `FUN_140348c10`, **Observed**): needs a weapon (animals use their natural
   one); humans play `stonemine`, the blow lands at clip progress 0.6. Each update books Burglary (2) against the owner. A blow
   (door vfunc 62, `FUN_14029d690`): the attacker's damage packet, x0.25 for an animal (vfunc 0x248), then
-  `f = clamp(2 x blunt + 0.5 x cut, 20, 60)`; the door lock's hardness -= 0.015 x f. At <= 0 the door is broken, its lock
+  `f = clamp(2 x blunt + 0.5 x cut, 20, 60)`; 0.015 x f comes off the door's construction progress (Building +0x164 via `getBuildState`;
+  earlier read as the lock's hardness, which Meitou still uses as the door's health, `LockSystem.Damage`). At <= 0 the door is broken, its lock
   unlocked and the door opened, sound `Break`. The task ends once the door is broken, open or opening. No AI package lists the
   bash tasks: the planner starts them (when, **Unknown**).
 

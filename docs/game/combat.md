@@ -110,14 +110,17 @@ HitMaterialType: `HIT_MISSED` dodged 0.2 s, `HIT_SWORD` blocked 0.3 s, flesh or 
   h = max(0, (offset − `getRadius`) / 2), `getRadius` = k × footprint: the centre moves back by h and the depth grows by h. The height
   follows the ground (a down ray, clamped to ±15 of the feet, +9). Physics overlap query, at most 20 bodies.
 - **In it**: a character that is not an ally (`isAlly`), not unconscious (`isLiterallyUnconciousNotPretending`), and an enemy (`isEnemy`)
-  or the current target; also a slave in a case not decoded (`Character::isSlave` and two attacker-side fields, **Unknown**). Buildings in
-  the box are added too.
+  or the current target; also a slave (slave state 1) that is not the attacker's ally, when the attacker's faction is not the player's (+0x250
+  `isPlayer` null) and not anti-slavery (faction +8). Of the buildings in the box only walls (`WallBuilding`) and doors (`DoorStuff`) take the
+  blow, f = 2 × blunt + 0.5 × cut of the powered packet: a door loses clamp(f, 20, 60) × 0.015 of its construction progress (Building +0x164,
+  via `getBuildState`; a broken door nothing), a wall clamp(f / 2, 10, 60) × 0.003, destroyed at 0 (**Observed**).
 - Per target the attacker frees that one's attack slot (`AttackSlotManager::freeSlotH`), and after a hit or block takes it off its own engaged
   list (`removeAttackerH`, [attack slots](#attack-slots-and-circling)).
 
 Meitou (`CombatSystem.Strike`): the box above in 2D, a body counting when its size-scaled footprint circle meets it and its feet are within the
-half-height + 9 of the attacker's; the order is the target first, then by distance (the physics order is arbitrary); slaves and buildings are
-not hit. A defender that is not the attacker's target defends only with a block or dodge it is already playing.
+half-height + 9 of the attacker's; the order is the target first, then by distance (the physics order is arbitrary). Hits left over go to walls
+(the nearest edge of the wall line within the half-width) and doors (the leaf widened by its half-width), nearest first (`ApplyZoneBuildings`);
+a door takes the blow off its lock hardness, not construction progress (Meitou's door model, [locks](locks.md#locks-and-doors)). A defender that is not the attacker's target defends only with a block or dodge it is already playing.
 
 ### Attack slots and circling
 
@@ -227,10 +230,12 @@ Meitou (`CombatSystem.HasSlot` / `MayJoin`, `PursuitSystem.Circle`):
 - **Circling**: only fighters left out when more than 5 attack one target circle, and not while their own swing plays (they
   ask at the next decision). They path to a point on the ring at least 1 s of
   side-stepping ahead (and beyond the walker's arrival radius plus one repath step, so a slow side-step does not creep), pushed out so the
-  straight walk keeps to the ring, and face their path; the original faces the target.
+  straight walk keeps to the ring, and face the target as the original does ([side steps](../animation.md#side-steps)).
 - **Block-mode timer**: an engaged fighter on the Block order (standing) frees the slots on itself every 1.5–4.5 s (`CombatSlot.SlotsCleared`:
   swings started before hold none). The +12 while running is in `CombatTuning.StandGap`.
-- Not modelled: the body tests of the ask and of state 5 (r + 2.5 and 1.2 × that), which solid footprints (4 + 4 apart at least) never meet.
+- Not modelled: the body tests of the ask and of state 5 (r + 2.5 and 1.2 × that). They are AI rules, not collision
+  (`FlockingTools::getDistanceToClosestCharacter` over the flocking list, non-enemies only; centre distance or gap, **Unknown**): Meitou bodies are
+  solid only to `BodyShare` × footprint (2.4 for a human), so they would fail for allies standing close.
 
 ## Fight lifecycle and orders
 
