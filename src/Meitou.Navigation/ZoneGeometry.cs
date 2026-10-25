@@ -107,6 +107,11 @@ internal sealed class ZoneGeometry
     /// "Destroyed interiors").
     /// </summary>
     public bool InteriorDestroyed { get; init; }
+    /// <summary>
+    /// For the interior of an intact building without doors (an open doorway, e.g. the Hive Commune Hut): joined to the exterior wherever their edges meet
+    /// on the hull's line (docs/game/pathfinding.md, "Door joins").
+    /// </summary>
+    public bool InteriorDoorless { get; init; }
     /// <summary>For a zone's exterior mesh: the terrain height; regions with an edge on the zone's border at ground level are kept (<see cref="SeedPruner"/>).</summary>
     public Func<float, float, float>? TerrainHeight { get; init; }
     /// <summary>For a zone's exterior mesh: its heightmap samples (safe from the tile threads); walkable spans deep under the terrain are removed.</summary>

@@ -4,7 +4,8 @@ public sealed partial class World
 {
     /// <summary>
     /// Applies the interface's commands between ticks while paused, without advancing time or running simulation phases: selection, order toggles, job lists, crafting and
-    /// research queues, squads, inventory, open-shop transactions and building settings. Orders that send characters somewhere wait for the next tick.
+    /// research queues, squads, inventory, open-shop transactions, building settings, and movement, combat, first-aid and door/cage orders (they set the
+    /// characters' tasks; nobody moves or fights until the next tick).
     /// </summary>
     public void ApplyPausedInterfaceCommands()
     {
@@ -15,7 +16,10 @@ public sealed partial class World
             or Items.CloseContainer or Locks.BuyBuilding or Construction.UpgradeSite or Construction.DowngradeSite or Construction.SetBuildingPublic or InspectCommand or InspectBuildingCommand or ShowInventoryCommand or Items.HeldCommand or Items.QuickMoveItem or Items.ReadMapItem or Items.ArrangeInventory
             or Carrying.TakeLootItem or Carrying.PutLootItem or Production.PutInMachine or Production.TakeFromMachine
             or Trading.BuyItem or Trading.SellItem or Trading.ArrangeStock or Trading.CloseTrade or Dialogue.DialogueChoice or Dialogue.EndConversation or Dialogue.ConfirmCharacterTrade or Dialogue.CloseCharacterTrade
-            or Construction.PlaceBuildings or Construction.CancelSite or Construction.PauseSite or Editing.EditCharacter or Editing.FinishCreation);
+            or Construction.PlaceBuildings or Construction.CancelSite or Construction.PauseSite or Editing.EditCharacter or Editing.FinishCreation
+            or MoveOrder or FollowOrder or StopCommand or FirstAid.TreatOrder or FirstAid.SplintOrder or FirstAid.RestOrder or Combat.AttackOrder or Combat.ShootAtOrder
+            or Locks.PickLockOrder or Locks.GetOutOrder or Locks.ShackleOrder or Locks.PutShacklesOrder or Locks.ToggleDoorsOrder or Locks.ToggleDoorLocksOrder
+            or Locks.DoorOrder or Locks.SetFreeOrder or Locks.GetInCageOrder);
         if (due.Count == 0) return;
         Characters.BeginTick();
         Characters.Phase = TablePhase.Inputs;
@@ -23,7 +27,7 @@ public sealed partial class World
         {
             foreach (var system in systems)
                 if (system is PlayerSystem or Carrying.CarrySystem or Production.ProductionSystem or Trading.TradeSystem or Construction.ConstructionSystem or Dialogue.DialogueSystem
-                    or FirstAid.FirstAidSystem or Locks.LockSystem)
+                    or FirstAid.FirstAidSystem or Locks.LockSystem or MovementSystem or Combat.CombatSystem)
                     system.Inputs(this, due);
         }
         finally

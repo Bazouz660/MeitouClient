@@ -56,7 +56,7 @@ public sealed partial class UiPainter
     {
         var font = ResourceFont(fontName, viewportHeight / 1080f, minimumTextPixels) ?? standardFont ?? overlay;
         float scale = font == standardFont || font == overlay ? Math.Clamp(viewportHeight / 1080f, 0.5f, 1.5f) : 1;
-        text = text.Replace("\\n", "\n", StringComparison.Ordinal).ReplaceLineEndings("\n");
+        text = MyGuiTextTags.Strip(text.Replace("\\n", "\n", StringComparison.Ordinal)).ReplaceLineEndings("\n");
         var lines = wrapWidth > 0 ? font.WrapText(text, wrapWidth, scale) : text.Split('\n');
         float width = 0;
         foreach (string line in lines) width = Math.Max(width, font.MeasureText(line, scale));

@@ -132,6 +132,31 @@ public class CarryTests
         }
     }
 
+    [Fact]
+    public void A_squad_mate_lifted_awake_stays_carried_and_one_lifted_down_is_set_down_when_it_wakes()
+    {
+        using var rig = new Rig();
+        var a = rig.Add(1000, 2000);
+        var awake = rig.Add(1050, 2000);
+        var b = rig.Add(1400, 2000, squad: 2);
+        var down = rig.Add(1450, 2000, squad: 2);
+        rig.Body(down).KnockOut(10);
+        rig.World.RunTick();
+        rig.PickUp(a, awake);
+        rig.PickUp(b, down);
+        Assert.True(rig.Cold(awake).CarriedAwake);
+        Assert.True(rig.Body(down).Incapacitated && !rig.Cold(down).CarriedAwake);
+        for (int t = 0; t < 1500 && !rig.Cold(down).CarriedBy.IsNone; t++) rig.World.RunTick();
+        Assert.False(rig.Body(down).Incapacitated);
+        Assert.True(rig.Cold(down).CarriedBy.IsNone, "set down once it came round");
+        Assert.Equal(a, rig.Cold(awake).CarriedBy);
+        rig.Say(new PutDownOrder([a]) { Tick = rig.World.Tick });
+        for (int t = 0; t < 100 && !rig.Cold(awake).CarriedBy.IsNone; t++) rig.World.RunTick();
+        Assert.True(rig.Cold(awake).CarriedBy.IsNone);
+        Assert.False(rig.Cold(awake).CarriedAwake);
+        Assert.False(rig.Body(awake).Incapacitated, "a friendly put-down knocks no one out");
+    }
+
     // ------------------------------------------------------------------ looting
 
     static ItemInstance Item(string record, int w, int h, int quantity = 1, bool stack = false) =>

@@ -245,7 +245,7 @@ public sealed partial class PopulationSystem
         {
             var site = wildSites[i];
             var state = wildStates[i];
-            if (site.Kind != WildKind.Nest || state.Status != SiteStatus.Loaded || state.Pending) continue;
+            if (site.Kind != WildKind.Nest || state.Status != SiteStatus.Loaded || state.Pending || !active.Contains(site.Zone)) continue;   // held only by a squad away
             var centre = wildCentres[i] ?? site.Spots[0];
             var pools = NestPools(world, site);
             if (pools.Ded) continue;

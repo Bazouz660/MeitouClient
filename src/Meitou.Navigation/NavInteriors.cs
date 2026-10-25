@@ -14,9 +14,14 @@ internal static class NavInteriors
     public const float JoinDistance = 6, JoinHeight = 12;
     /// <summary>How far (units) round a door's polygons its approach reaches when the door itself joins nothing (engine choice: a flight of steps).</summary>
     public const float ApproachReach = 32;
+    /// <summary>How close (units) a doorless interior's open edges and the exterior's have to be to be joined: both are cut on the hull's line, a cell or so apart (engine choice).</summary>
+    public const float HullJoinDistance = 2.5f;
 
-    /// <summary>The zone's exterior mesh with the interior meshes appended and joined; both kept and pruned polygons are carried over.</summary>
-    public static ZoneNavMesh Combine(ZoneNavMesh exterior, IReadOnlyList<ZoneNavMesh> interiors, Action<string>? log = null)
+    /// <summary>
+    /// The zone's exterior mesh with the interior meshes appended and joined; both kept and pruned polygons are carried over. <paramref name="doorless"/> marks
+    /// (per interior) the intact buildings without doors, joined along their hull instead.
+    /// </summary>
+    public static ZoneNavMesh Combine(ZoneNavMesh exterior, IReadOnlyList<ZoneNavMesh> interiors, Action<string>? log = null, IReadOnlyList<bool>? doorless = null)
     {
         if (interiors.Count == 0) return exterior;
         var vertices = new List<Vector3>(exterior.Vertices);
@@ -59,7 +64,7 @@ internal static class NavInteriors
 
         int exteriorCount = exterior.PolygonCount;
         for (int k = 0; k < interiors.Count; k++)
-            Join(vertices, polygons, neighbours, areas, kept, links, doorOf, doorIds, exteriorCount, offsets[k], interiors[k].PolygonCount, log);
+            Join(vertices, polygons, neighbours, areas, kept, links, doorOf, doorIds, exteriorCount, offsets[k], interiors[k].PolygonCount, doorless?[k] ?? false, log);
 
         var heights = new List<HeightGrid?>();
         foreach (var m in interiors.Prepend(exterior))
@@ -75,9 +80,9 @@ internal static class NavInteriors
         };
     }
 
-    /// <summary>Links the door polygons of one interior (polygons [first, first + count)) to the exterior's door polygons of the same door.</summary>
+    /// <summary>Links the door polygons of one interior (polygons [first, first + count)) to the exterior's door polygons of the same door, or a doorless one along its hull.</summary>
     static void Join(List<Vector3> v, List<int[]> polygons, List<int[]> neighbours, List<byte> areas, List<bool> kept, List<List<int>?> links, List<int> doorOf, List<string> doorIds,
-        int exteriorCount, int first, int count, Action<string>? log)
+        int exteriorCount, int first, int count, bool doorless, Action<string>? log)
     {
         bool Free(int p, int e) => neighbours[p][e] < 0 && !NavGeometry.HasLink(CollectionsMarshal.AsSpan(links[p]), e);
         for (int door = 0; door < doorIds.Count; door++)
@@ -87,7 +92,7 @@ internal static class NavInteriors
             var outside = Enumerable.Range(0, exteriorCount).Where(p => kept[p] && areas[p] == NavArea.Door && doorOf[p] == door).ToList();
             // An edge that faces several polygons links to all of them, so which edges are open is decided before any link is added.
             var openInside = inside.SelectMany(p => Enumerable.Range(0, polygons[p].Length).Where(e => Free(p, e)).Select(e => (p, e))).ToList();
-            if (Link(openInside, OpenEdges(outside), "", door) > 0) continue;
+            if (Link(openInside, OpenEdges(outside), doorIds[door]) > 0) continue;
             // A door leaf set back inside the interior hull paints nothing outside it (the exterior is carved to the hull): the doorway's interior
             // polygons meet the exterior's ground along the hull's edge (Observed: the L-House 13-rebirth-INGAME, zone 18.35).
             var lo = new Vector2(float.MaxValue); var hi = new Vector2(float.MinValue);
@@ -95,7 +100,7 @@ internal static class NavInteriors
                 foreach (int i in polygons[p]) { lo = Vector2.Min(lo, new(v[i].X, v[i].Z)); hi = Vector2.Max(hi, new(v[i].X, v[i].Z)); }
             lo -= new Vector2(JoinDistance); hi += new Vector2(JoinDistance);
             var near = Enumerable.Range(0, exteriorCount).Where(q => kept[q] && areas[q] != NavArea.Null && polygons[q].Any(i => v[i].X >= lo.X && v[i].X <= hi.X && v[i].Z >= lo.Y && v[i].Z <= hi.Y)).ToList();
-            if (Link(openInside, OpenEdges(near), " (doorway edge)", door) > 0) continue;
+            if (Link(openInside, OpenEdges(near), $"{doorIds[door]} (doorway edge)") > 0) continue;
             // A raised sill reached by steps that cross the hull: the steps' upper part is the interior's (joined to the door polygons), the lower part the
             // exterior's, and the two meet on the hull's edge below the door (Observed: 29- and 27-rebirth-INGAME, zone 18.35). So the interior polygons
             // connected to the door within the approach box are joined too.
@@ -108,12 +113,25 @@ internal static class NavInteriors
                     if (n >= 0 && kept[n] && areas[n] != NavArea.Null && InBox(n) && approach.Add(n)) queue.Enqueue(n);
             var openApproach = approach.SelectMany(p => Enumerable.Range(0, polygons[p].Length).Where(e => Free(p, e)).Select(e => (p, e))).ToList();
             near = [.. Enumerable.Range(0, exteriorCount).Where(q => kept[q] && areas[q] != NavArea.Null && polygons[q].Any(i => v[i].X >= lo.X && v[i].X <= hi.X && v[i].Z >= lo.Y && v[i].Z <= hi.Y))];
-            Link(openApproach, OpenEdges(near), " (approach)", door);
+            Link(openApproach, OpenEdges(near), $"{doorIds[door]} (approach)");
+        }
+
+        // A doorless interior (an open doorway): the hull cuts the exterior and the interior along the same line, so their edges meet there.
+        if (doorless)
+        {
+            var lo = new Vector2(float.MaxValue); var hi = new Vector2(float.MinValue);
+            var inside = Enumerable.Range(first, count).Where(p => kept[p] && areas[p] != NavArea.Null).ToList();
+            foreach (int p in inside)
+                foreach (int i in polygons[p]) { lo = Vector2.Min(lo, new(v[i].X, v[i].Z)); hi = Vector2.Max(hi, new(v[i].X, v[i].Z)); }
+            lo -= new Vector2(JoinDistance); hi += new Vector2(JoinDistance);
+            var near = Enumerable.Range(0, exteriorCount).Where(q => kept[q] && areas[q] != NavArea.Null && polygons[q].Any(i => v[i].X >= lo.X && v[i].X <= hi.X && v[i].Z >= lo.Y && v[i].Z <= hi.Y)).ToList();
+            var openInside = inside.SelectMany(p => Enumerable.Range(0, polygons[p].Length).Where(e => Free(p, e)).Select(e => (p, e))).ToList();
+            Link(openInside, OpenEdges(near), "doorless hull edge", HullJoinDistance);
         }
 
         List<(int, int)> OpenEdges(IEnumerable<int> outside) => [.. outside.SelectMany(q => Enumerable.Range(0, polygons[q].Length).Where(f => Free(q, f)).Select(f => (q, f)))];
 
-        int Link(List<(int, int)> openInside, List<(int, int)> openOutside, string kind, int door)
+        int Link(List<(int, int)> openInside, List<(int, int)> openOutside, string kind, float distance = JoinDistance)
         {
             int joined = 0;
             foreach (var (p, e) in openInside)
@@ -121,8 +139,8 @@ internal static class NavInteriors
                 {
                     var a0 = v[polygons[p][e]]; var a1 = v[polygons[p][(e + 1) % polygons[p].Length]];
                     var b0 = v[polygons[q][f]]; var b1 = v[polygons[q][(f + 1) % polygons[q].Length]];
-                    if (!Facing(a0, a1, b0, b1)) continue;
-                    log?.Invoke($"    door join {doorIds[door]}{kind}: interior polygon {p - first} edge {e} to exterior {q} edge {f}");
+                    if (!Facing(a0, a1, b0, b1, distance)) continue;
+                    log?.Invoke($"    door join {kind}: interior polygon {p - first} edge {e} to exterior {q} edge {f}");
                     (links[p] ??= []).AddRange([e, q]);
                     (links[q] ??= []).AddRange([f, p]);
                     joined++;
@@ -131,8 +149,8 @@ internal static class NavInteriors
         }
     }
 
-    /// <summary>Two edges that run along each other: their midpoints and both ends within <see cref="JoinDistance"/> in plan and <see cref="JoinHeight"/> in height, overlapping.</summary>
-    static bool Facing(Vector3 a0, Vector3 a1, Vector3 b0, Vector3 b1)
+    /// <summary>Two edges that run along each other: their midpoints and both ends within <paramref name="distance"/> in plan and <see cref="JoinHeight"/> in height, overlapping.</summary>
+    static bool Facing(Vector3 a0, Vector3 a1, Vector3 b0, Vector3 b1, float distance = JoinDistance)
     {
         var ma = (a0 + a1) * 0.5f; var mb = (b0 + b1) * 0.5f;
         if (MathF.Abs(ma.Y - mb.Y) > JoinHeight) return false;
@@ -142,7 +160,7 @@ internal static class NavInteriors
         d /= len;
         float Along(Vector3 p) => (p.X - a0.X) * d.X + (p.Z - a0.Z) * d.Y;
         float Off(Vector3 p) => MathF.Abs((p.X - a0.X) * d.Y - (p.Z - a0.Z) * d.X);
-        if (Off(b0) > JoinDistance || Off(b1) > JoinDistance) return false;
+        if (Off(b0) > distance || Off(b1) > distance) return false;
         float lo = Math.Min(Along(b0), Along(b1)), hi = Math.Max(Along(b0), Along(b1));
         return Math.Min(hi, len) - Math.Max(lo, 0) > 0.5f;
     }

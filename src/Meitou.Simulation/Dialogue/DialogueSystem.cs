@@ -308,6 +308,7 @@ public sealed partial class DialogueSystem : ITickSystem, IStateHashed, IDialogu
         if (line.TakesMoney && line.Cost is { } cost) text += $" [c.{cost:N0}]";
         c.Text = text;
         c.Log.Add($"{NameOf(world, speaker)}: {text}");
+        world.Said(NameOf(world, speaker), text, false);
         RunEffects(world, c, line, speaker);
         if (c.Ended) return;
         Offer(world, c, line);
@@ -342,6 +343,7 @@ public sealed partial class DialogueSystem : ITickSystem, IStateHashed, IDialogu
         if (reply is not null)
         {
             c.Log.Add($"{NameOf(world, c.Player)}: {text}");
+            world.Said(NameOf(world, c.Player) is { Length: > 0 } name ? name : "Player", text, true);
             MarkUsed(world, c, reply);
             RunEffects(world, c, reply, c.Npc);
             if (c.Ended) return;

@@ -163,7 +163,7 @@ sealed partial class PlayerInterface
             foreach (string name in new[] { "MapCenterButton", "MapZoomInButton", "MapZoomOutButton" }) { b.Disabled.Remove(name); b.Actions[name] = name; }
             foreach (var tab in layout.Widgets.Where(w => w.Type == "TabItem")) b.Properties[tab.Name] = new Dictionary<string, string> { ["Visible"] = "true" };
             BindFactionTab(b);
-            b.Text["MessagesTextBox"] = string.Join('\n', uiMessages);
+            b.Text["MessagesTextBox"] = MessagesText();
             b.Properties["MessagesTextBox"] = new Dictionary<string, string> { ["Static"] = "true", ["WordWrap"] = "true", ["TextAlign"] = "Left Top" };
             BindSquadsTab(b);
             BindResearchTab(b);
@@ -239,7 +239,7 @@ sealed partial class PlayerInterface
             AddItemCell(controls, $"inventory-item-{item.Index}", area, item.Record, item.Material, item.Name, item.Quantity, ItemTip.Of(item, SellTip(lead.Id, item.Index), MapItemCaption(item.Record)), "InventoryItem", item.Index, slot.Bounds.Intersect(slot.Clip ?? slot.Bounds), charge: item.Charge);
         }
     }
-    readonly List<string> uiMessages = [];
+    readonly List<(string Text, MessageTone Tone)> uiMessages = [];
     /// <summary>
     /// The orders panel's toggles by the words in their widget names (the layout names only <c>OrdersChaseButton</c>, <c>OrdersMedicButton</c> and <c>OrdersRescueButton</c>
     /// for certain, docs/game/ui-screens.md section 4; the rest are matched by the button's word, so a differently spelt name still binds). Prospect is its own action (PlayerInterface.Prospecting.cs).

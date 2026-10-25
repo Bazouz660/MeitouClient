@@ -10,7 +10,7 @@ Crime prices/ledger: [economy](economy.md); body/load: [stats](character-stats.m
 Bip01 L UpperArm attachment. A collapsed, missing or crushed left arm prevents carrying ([arms](combat.md#arms)); right arm irrelevant.
 **Observed** target must resolve character and differ from carrier; already-carried targets
 require permitted snatch/partner check. AI down-state gate and player context-menu eligibility
-are different. Race carry-bone affects attachment; secondary character type unknown.
+are different: the menu offers Pick Up on a standing own character ([ui-input](ui-input.md#context-menu-verbs), **Observed**). Race carry-bone affects attachment; secondary character type unknown.
 
 **Observed** placement each frame (`CharacterAnimal::vfunc_77` `FUN_1405cda20`, `FUN_1405b5980`, `FUN_1405b1a30`): the body's
 *node* (not its root bone) gets position `carrierPos + carrierRot·boneModelPos + boneWorldRot·O` and rotation

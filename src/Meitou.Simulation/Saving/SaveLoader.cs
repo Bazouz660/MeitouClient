@@ -221,6 +221,8 @@ public static class SaveLoader
             Name = platoon.Record.Name is { Length: > 0 } shown ? shown : platoon.Name,
             Index = platoon.Record.Ints.GetValueOrDefault("squad index"),
             SaveName = platoon.Name,
+            // The faction's squad of the dead, found again by its name (FUN_1407f3fb0); its dead are not made, so it stays empty and hidden.
+            Dead = platoon.Name == SquadManagement.DeadSquadName || platoon.Record.Name == SquadManagement.DeadSquadName,
             Faction = playerIndex,
             Position = platoon.Position,
             HomeCentre = new Vector2(platoon.Position.X, platoon.Position.Z),

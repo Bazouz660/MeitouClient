@@ -108,6 +108,7 @@ internal sealed partial class ZoneGeometryGatherer
         {
             Zone = site.Zone, ZoneMin = boxMin, ZoneMax = boxMin + new Vector2(side), Margin = 8, InteriorHull = hull, InteriorOf = site.Placement.Key,
             ClippedAtBorder = crossLowX || crossLowZ || crossHighX || crossHighZ, InteriorDestroyed = site.Destroyed,
+            InteriorDoorless = !site.Destroyed && !site.Record.GetReferences("doors").Any(),
         };
 
         uint mask = site.Destroyed ? DestroyedInteriorGroupMask : InteriorGroupMask;

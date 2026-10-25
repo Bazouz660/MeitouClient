@@ -161,11 +161,18 @@ public sealed class Releases(HttpClient http)
         return [.. Directory.EnumerateDirectories(VersionsDirectory)
             .Where(d => FindGame(d) is not null)
             .Select(Path.GetFileName).OfType<string>()
-            .OrderByDescending(v => System.Version.TryParse(v.Split('-')[0], out var n) ? n : new System.Version())
-            .ThenBy(v => v.Contains('-'))
-            .ThenByDescending(v => ParseVersion(v).Nightly)
-            .ThenByDescending(v => ParseVersion(v).Build)
-            .ThenByDescending(v => v, StringComparer.Ordinal)];
+            .Order(Comparer<string>.Create((a, b) => CompareVersions(b, a)))];
+    }
+
+    /// <summary>Orders versions oldest first: by number, a release after its own pre-releases, nightlies by date, then that day's build.</summary>
+    public static int CompareVersions(string a, string b)
+    {
+        static System.Version Number(string v) => System.Version.TryParse(v.Split('-')[0], out var n) ? n : new System.Version();
+        int c = Number(a).CompareTo(Number(b));
+        if (c == 0) c = b.Contains('-').CompareTo(a.Contains('-'));
+        if (c == 0) c = Nullable.Compare(ParseVersion(a).Nightly, ParseVersion(b).Nightly);
+        if (c == 0) c = ParseVersion(a).Build.CompareTo(ParseVersion(b).Build);
+        return c != 0 ? c : StringComparer.Ordinal.Compare(a, b);
     }
 
     public static string VersionDirectory(string version) => Path.Combine(VersionsDirectory, version);

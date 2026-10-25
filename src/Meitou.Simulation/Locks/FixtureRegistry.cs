@@ -106,7 +106,8 @@ public sealed partial class FixtureRegistry
         foreach (var b in data.Sites[site].Buildings)
         {
             RegisterBuilding(world, data, site, b, townFaction);
-            if (data.Sight is { } sight) world.Sight.Add(sight, b);
+            if (data.Sight is { } sight) world.Sight.Add(sight, SightBuilding(b,
+                Saved?.GetValueOrDefault(b.Key)?.Bools.GetValueOrDefault("destroyed", b.Destroyed) ?? b.Destroyed));
         }
         Bind(world);
     }
@@ -119,12 +120,12 @@ public sealed partial class FixtureRegistry
         int owner = levelOwner;
         if (Saved?.GetValueOrDefault(b.Key)?.Strings.GetValueOrDefault("owner faction ID") is { Length: > 0 } savedOwner && data.FactionIndex(savedOwner) is >= 0 and var savedFaction)
             owner = savedFaction;
-        RegisterProperty(data, site, b, owner, purchased: owner != levelOwner && owner == data.PlayerFaction);   // saved as the player's: bought, and saved again as such
+        RegisterProperty(world, data, site, b, owner, purchased: owner != levelOwner && owner == data.PlayerFaction);   // saved as the player's: bought, and saved again as such
         var faction = owner >= 0 && owner < data.Factions.Count ? data.Factions[owner] : null;
         var list = new List<Fixture>();
         var record = db.Find(b.BuildingId);
         // A destroyed building has no doors and no lock of its own (docs/game/locks.md "Doors"); its interior's fixtures stay.
-        if (record is not null && !b.Destroyed)
+        if (record is not null && !(Saved?.GetValueOrDefault(b.Key)?.Bools.GetValueOrDefault("destroyed", b.Destroyed) ?? b.Destroyed))
         {
             AddDoors(world, db, record, b.Key, site, owner, faction, b.Position, b.Yaw, list);
             if (Lockable(db, record) is { } own) list.Add(Make(world, db, own, b.Key, b.Key, record, site, owner, faction, b.Position, b.Yaw));
@@ -981,7 +982,11 @@ public sealed partial class FixtureRegistry
     public bool? PublicOf(string building) => publicFlags.TryGetValue(building, out bool open) ? open : null;
 
     /// <summary>Sets a registered building's Open to public flag (the panel's toggle on a town building the player owns).</summary>
-    public void SetPublic(string building, bool open) => publicFlags[building] = open;
+    public void SetPublic(string building, bool open)
+    {
+        publicFlags[building] = open;
+        if (properties.TryGetValue(building, out var p) && p.Construction is { } site) site.Public = open;
+    }
 
     /// <summary>The registered buildings, in registration order.</summary>
     public IReadOnlyList<string> Buildings => buildings;

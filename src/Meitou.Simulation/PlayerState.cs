@@ -260,6 +260,7 @@ public sealed partial class PlayerSystem(PopulationData? data = null) : ITickSys
 
     public void SlowWorld(World world)
     {
+        SquadManagement.BuryDead(world, data?.Db);
         world.Player.Prune(world.Characters);
         SquadManagement.KeepActive(world);
         PickUpWorkers(world);

@@ -292,7 +292,7 @@ public static partial class SaveCapture
             squads++;
 
             // The squad's own platoon, by the file it was loaded from (never by its members: a character moved between squads would carry the platoon with it).
-            string? name = squad.SaveName ?? (index < 0 ? alive.Select(m => table.Cold(m.Slot)!.Save?.PlatoonName).FirstOrDefault(n => n is not null) : null);
+            string? name = squad.SaveName ?? (index < 0 && !squad.Dead ? alive.Select(m => table.Cold(m.Slot)!.Save?.PlatoonName).FirstOrDefault(n => n is not null) : null);
             var platoon = name is null || kept.Contains(name) ? null : game.Platoons.FirstOrDefault(p => p.Name == name);
             var at = alive.Count > 0 ? table.Previous[alive[0].Slot].Position : squad.Position;
             if (platoon is null)
@@ -307,6 +307,7 @@ public static partial class SaveCapture
                 if (squad.Name.Length > 0) platoon.Record.Name = squad.Name;
                 platoon.Record.Ints["squad index"] = index;
             }
+            else if (squad.Dead) platoon.Record.Name = SquadManagement.DeadSquadName;
 
             foreach (var id in alive)
             {

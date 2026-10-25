@@ -67,7 +67,9 @@ distant stand-ins and placement ghosts keep their normal appearance. Input/evide
 Sites and finished buildings of `WorldSnapshot.Buildings` are runtime placements (`WorldObjects.AddRuntime/RemoveRuntime`,
 `BuildingPlacement` with `WorldY` absolute), merged into their zone's layout. Meitou adds one to an already loaded zone
 incrementally (`ObjectStreamer.AddRuntime`, no zone reload, so nothing flickers; a pending zone job falls back to a
-reload). Host diff: [simulation.md](simulation.md#buildings).
+reload). Town-house repairs replace only the matching placement and its furniture/interior after the replacement layout
+is ready; loaded neighbours retain their instances and GPU bindings, including while a zone is still being filled.
+Host diff: [simulation.md](simulation.md#buildings).
 
 **Scaffold.** The original clips each part at `1.2 f` of its mesh height and draws the scaffold grid (`construction.dds`)
 above it ([construction look](game/buildings-production.md#construction-look)). Meitou's approximation: the part's

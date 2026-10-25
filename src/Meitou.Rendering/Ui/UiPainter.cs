@@ -356,6 +356,10 @@ public sealed partial class UiPainter : IDisposable
                 font.Target = overlay.Target;
             }
             string text = c.Caption.Replace("\\n", "\n", StringComparison.Ordinal);
+            // MyGUI's inline colour tags (an edited box shows its text as typed).
+            IReadOnlyList<TextColourRun> runs = [];
+            if (!focused) (text, runs) = MyGuiTextTags.Parse(text);
+            int cursor = 0;
             // A font resource's long line is cropped by the widget in the Faithful mode, as MyGUI does, never shortened with "...".
             var lines = c.Properties.GetValueOrDefault("WordWrap") == "true" ? font.WrapText(text, textArea.Width, scale)
                 : FitLines(text, original, font, textArea.Width, scale);
@@ -390,8 +394,10 @@ public sealed partial class UiPainter : IDisposable
                 if (new Meitou.Data.Ui.UiRect(x, y, textWidth, font.LineHeight * scale).Intersect(textClip).Width > 0)
                 {
                     if (c.Properties.GetValueOrDefault("TextShadow") == "true") font.TextScaled(line, x + 1, y + 1, new(0, 0, 0, textColour.W), scale);
-                    font.TextScaled(line, x, y, textColour, scale);
+                    if (runs.Count == 0) font.TextScaled(line, x, y, textColour, scale);
+                    else DrawRuns(font, text, line, ref cursor, runs, x, y, textColour, scale);
                 }
+                else if (runs.Count > 0 && text.IndexOf(line, cursor, StringComparison.Ordinal) is >= 0 and int at) cursor = at + line.Length;
                 y += font.LineHeight * scale;
             }
             font.Flush(width, height, textClip, pass);
@@ -512,6 +518,28 @@ public sealed partial class UiPainter : IDisposable
         var lines = text.AsSpan().IndexOfAny(LineEnds) >= 0 ? text.ReplaceLineEndings("\n").Split('\n') : [text];
         if (!original) for (int i = 0; i < lines.Length; i++) lines[i] = font.FitText(lines[i], width, scale);
         return lines;
+    }
+
+    /// <summary>
+    /// Draws <paramref name="line"/> of the plain <paramref name="text"/> in its tags' colours (<see cref="MyGuiTextTags"/>; before the first tag <paramref name="colour"/>, the alpha
+    /// always <paramref name="colour"/>'s). <paramref name="cursor"/> is where the line is looked for in the text, then past it; a line not found there (shortened) starts at it.
+    /// </summary>
+    static void DrawRuns(DebugOverlay font, string text, string line, ref int cursor, IReadOnlyList<TextColourRun> runs, float x, float y, Vector4 colour, float scale)
+    {
+        int at = text.IndexOf(line, cursor, StringComparison.Ordinal);
+        if (at < 0) at = cursor;
+        cursor = Math.Min(text.Length, at + line.Length);
+        int run = -1;
+        while (run + 1 < runs.Count && runs[run + 1].Start <= at) run++;
+        for (int start = 0; start < line.Length;)
+        {
+            int end = run + 1 < runs.Count ? Math.Clamp(runs[run + 1].Start - at, start + 1, line.Length) : line.Length;
+            string piece = line[start..end];
+            font.TextScaled(piece, x, y, run < 0 ? colour : new(runs[run].Colour, colour.W), scale);
+            x += font.MeasureText(piece, scale);
+            start = end;
+            while (run + 1 < runs.Count && runs[run + 1].Start <= at + start) run++;
+        }
     }
 
     static bool HasWord(string align, string a, string b)

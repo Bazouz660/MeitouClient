@@ -64,6 +64,9 @@ public sealed record WorldSettings
 /// deterministic: the same settings, systems, setup, commands and tick count give the same <see cref="StateHash"/> at any
 /// <see cref="WorldSettings.Threads"/>. A tick is, in order: inputs, schedule, think, move, act (parallel), commit, slow world, publish.
 /// </summary>
+/// <summary>A line of the DIALOGUE log (<see cref="World.Said"/>): who said it, the text, and whether the player's side said it.</summary>
+public readonly record struct SaidLine(string Owner, string Text, bool Player);
+
 public sealed partial class World : IDisposable
 {
     readonly List<ITickSystem> systems;
@@ -75,6 +78,7 @@ public sealed partial class World : IDisposable
     readonly List<SystemPhases> phases = [];
     readonly List<SimCommand> deferred = [];
     readonly List<string> messages = [];
+    readonly List<SaidLine> said = [];
     readonly Dictionary<CharacterId, (string Text, long Until)> barks = [];
     IAnimationSource? animations;
     IProjectileSource? projectiles;
@@ -345,6 +349,32 @@ public sealed partial class World : IDisposable
             if (messages.Count == 0) return [];
             string[] all = [.. messages];
             messages.Clear();
+            return all;
+        }
+    }
+
+    /// <summary>
+    /// A dialogue line for the Overview's DIALOGUE log (<c>ManagementScreen::addMessage</c>, docs/game/ui-screens.md "Dialogue log"), said by <paramref name="owner"/>
+    /// (<paramref name="player"/>: a player character, or the player's reply); serial phases only. Display only: not saved or hashed; the newest 200 are kept until the host takes them.
+    /// </summary>
+    public void Said(string owner, string text, bool player)
+    {
+        if (text.Length == 0) return;
+        lock (said)
+        {
+            said.Add(new(owner, text.ReplaceLineEndings(" "), player));
+            if (said.Count > 200) said.RemoveAt(0);
+        }
+    }
+
+    /// <summary>Takes the dialogue lines said since the last call (the host, between ticks).</summary>
+    public IReadOnlyList<SaidLine> TakeSaid()
+    {
+        lock (said)
+        {
+            if (said.Count == 0) return [];
+            SaidLine[] all = [.. said];
+            said.Clear();
             return all;
         }
     }

@@ -135,6 +135,25 @@ against French 1440-line screenshots. Every caption the code sets is the catalog
   squads (their platoon files copied whole), and, when ticked, the player's buildings and their zones, research, dead and imprisoned uniques and
   faction relations; with the reset tick the squads go to (-43500, 0, -6625). The full rules: [save.md](../formats/save.md#importing-a-game-savemanagerimportgame-fun_140378a30). Meitou: built (`SaveImport`); the Advanced options take the selected save's difficulty when opened or when a row is selected while open.
 
+### New game
+
+**Verified** (decompilation: `FUN_14036cb80` and `FUN_140872e00`, `resetGame` and `newGameWithCharEdit`, names from KenshiLib 1ce4a16; relations, start
+towns, discovered towns, research and scatter also **Observed** in the original against Son of a Captain, Nobodies, Holy Nation Citizen, The Freedom Seekers,
+Empire Citizen and The Cannibal Hunters). The "Meitou" sentences are engine choices, not claims about the original.
+
+- **Relations**: a new game's relations start from the data's (every faction is made anew, `FUN_1409ef230`); each `faction relations` entry then sets that faction's
+  relation with the player, both ways, to its v0.
+- **Place**: `force start pos` gives (`start pos X`, `start pos Z`). Otherwise a town is drawn among every placement of every listed `town`
+  (so a record placed many times, like Waystation, gives any of them). A list with no placed town gives the message "Cannot find any towns from the
+  game start town list.", then, as an empty list does, a draw among the TOWN and VILLAGE placements whose faction is real, not BANDIT and not hostile
+  to the player (-30 or below); with none, (-43500, -6625). Meitou stands the squad on a walkable spot near that place.
+- **Discovered**: every town of type TOWN in the biome group of the start place.
+- **Squad**: a SQUAD_TEMPLATE entry makes a squad of its own; a CHARACTER entry makes v0 characters (0 counts as 1), each at the place plus up to 50
+  on x and z, joining the player's current squad. Nobody made: the Wanderer squad `45550-gamedata.base`. Meitou makes one squad of them all, each
+  template keeping its own layout.
+- **Research**: the start's `research`, or `5359-gamedata.base` when it lists none.
+- **Clock**: day 1 (set by the reset), 10:00.
+
 ### Loading screen
 
 **Verified** (decompilation: constructor `FUN_14091a280`, show/hide `FUN_140916ca0`, picture `FUN_1409163e0`, tip `FUN_140913640`, per frame `FUN_1409133d0`):
@@ -331,7 +350,7 @@ to Jobs; the saved `chase mode` flag is that switch (**Verified**, [perma-jobs](
   giving an order". Jobs list (`JobsPanel`, an ItemBox; class `JobsPanel` with `JobInfo` rows built as `DataPanelLine`s, RTTI): "assigned player jobs and
   orders for the selected character"; each row has an X that removes the job, top rows take priority and rows can be dragged to reorder (tutorial strings,
   **Verified** in the exe). Empty, `JobsPanelInfo` shows "[No jobs assigned]" and the hint. The row text is **Unknown**; Meitou shows each job
-  as its type's name (with the building) and an X (`Kenshi_CloseButtonSkin`), dragged to reorder. Hold = hold position; Block = defensive mode ([combat.md](combat.md#techniques-block-and-dodge) has a +20 guarding-state term in the block chance; whether it is this stance is **Unknown** there) (+20 melee defence, no attacks; **Verified**
+  as its type's name (with the building) and an X (`Kenshi_CloseButtonSkin`), dragged to reorder. Hold = hold position; Block = defensive mode (CharStats +0x128, read by the block chance, defence and dodge; the buttons' standing orders: [combat.md](combat.md#fight-lifecycle-and-orders)) (+20 melee defence, no attacks; **Verified**
   against the tooltip string in the exe: "gain 20 to his melee defense skill ... will not attempt to make any
   attacks"); Passive = non-combat mode (tooltip strings; all the orders panel's tooltips: [Tooltips](#tooltips)).
 - Speed selector: the `SpeedPanel` ImageBox shows an image of `Kenshi_CharacterSpeedSet` / `Icons`, indexed Walk, Jog, Run, Group;
@@ -384,6 +403,25 @@ the next (**Observed**: the delegate's body is not read). Nothing new comes up w
 sits above another one instead (**Unknown**).
 
 Meitou (`PlayerInterface.Hud.cs`, both UI modes): its own notices (Saved, Loaded, errors) share the queue, errors in `Bad` red; always at the HUD's spot; real-time timers.
+
+### Dialogue log
+
+The Overview's Messages tab ("DIALOGUE") is the `MessagesTextBox` EditBox (`ManagementScreen+0x148`, unlimited length). **Observed** (KenshiLib 1ce4a16
+`ManagementScreen::addMessage(owner, message, MessageLogColor)`, 1.0.68 `14049a270`): each call appends a colour tag, then `owner` + `": "` + `message` (owner empty:
+`"["` + `message`; separators **Verified** as bytes in the exe), and a line end. Colours: ML_NORMAL (0) `#000000`, ML_PLAYER (1) the MyGUI colour `DialogueTextOption`
+(default 0.7 grey), ML_SYSTEM (2) `#c6ac6a`. Callers: every speech-bubble line as it is said (`14067fd80`; the speaker's name, ML_PLAYER when the speaker is a player
+character, test `FUN_1407916d0`), the conversation window's NPC line (`140674170`, ML_NORMAL), the player's chosen reply (`140683df0`, the player character's name or
+"Player", ML_PLAYER) and each MessageRoller message (`140724a20`, empty owner, ML_SYSTEM). **Unknown**: whether a system line closes its `[`.
+
+Meitou: `World.Said` from `DialogueSystem` (bubble lines, conversation lines, replies) → `PlayerInterface.LogMessage`, each line tagged with its colour (ML_NORMAL is
+the kit's Main colour in the Meitou mode, for its dark panel); notices log as ML_SYSTEM without the `[`. The newest 200 lines are kept; not saved (the original's saving of
+the log is **Unknown**).
+
+### Inline colour tags
+
+MyGUI 3.2's TextView (its source; **Observed**, no test): in any text widget `#rrggbb` colours the text after it and `##` prints one `#`. Meitou (`MyGuiTextTags`, drawn by
+`UiPainter`, measured without the tags): the same for every caption but a box being edited; a tag keeps the widget's alpha; a `#` before anything else stays as written (MyGUI
+reads any six characters; engine choice).
 
 ### Prospecting
 

@@ -82,7 +82,7 @@ public sealed partial class LockSystem
                 }
                 break;
             }
-            case Construction.SetBuildingPublic open when world.Buildings.Find(open.Building) is null:
+            case Construction.SetBuildingPublic open when world.Buildings.Find(open.Building) is null or { LevelPlacement: not null }:
                 // A town building the player owns (a site's flag is the construction system's).
                 if (world.Fixtures.OwnsBuilding(open.Building, world.Player.Faction)) fixtures.SetPublic(open.Building, open.Public);
                 break;

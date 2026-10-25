@@ -36,9 +36,6 @@ public static class SaveImport
     /// <summary>Where "Reset squad positions" puts the player's squads (<c>FUN_140378a30</c>, the camera and <c>FUN_14036b370</c>); squad i of the list stands at +(i, 0, i).</summary>
     public static readonly Vector3 ResetPosition = new(-43500, 0, -6625);
 
-    /// <summary>The name of a squad whose members all died; never imported (<c>FUN_140378a30</c>).</summary>
-    public const string DeadSquadName = "__DEAD_SQUAD__";
-
     /// <summary>The keys of a non-player town's state that an import keeps: what the player knew of it (docs/formats/save.md "Towns").</summary>
     static readonly string[] KnowledgeBools = ["is nest", "discovered", "explored", "recently discovered"];
 
@@ -55,7 +52,7 @@ public static class SaveImport
         var records = game.Quick.Records;
 
         // The player's squads, in the order of their squad index, renumbered from 0 (the original erases the index and the list order gives it).
-        var keep = game.Platoons.Where(p => p.FactionId == playerId && p.IsLoaded && p.Name != DeadSquadName && p.Record.Name != DeadSquadName)
+        var keep = game.Platoons.Where(p => p.FactionId == playerId && p.IsLoaded && p.Name != SquadManagement.DeadSquadName && p.Record.Name != SquadManagement.DeadSquadName)
             .OrderBy(p => p.Record.Ints.GetValueOrDefault("squad index")).ToList();
         // Engine choice: the original salvages a squad from a "Nameless_0.platoon" file and pays 10000 cats; here a save without a player squad is refused.
         if (keep.Count == 0) throw new InvalidOperationException("The save has no squad of the player's to import.");

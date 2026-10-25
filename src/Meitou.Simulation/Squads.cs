@@ -40,6 +40,8 @@ public sealed class Squad
     public bool Pinned { get; init; }
     /// <summary>One of its town's own squads: the town made it, or a save holds it as the town's.</summary>
     public bool TownOwn => Town >= 0 && (PlatoonId < 0 || Pinned);
+    /// <summary>The player faction's hidden <c>__DEAD_SQUAD__</c> its characters move to when they die (<see cref="SquadManagement.BuryDead"/>): no tab, never one of the player's squads.</summary>
+    public bool Dead { get; init; }
     /// <summary>Back from its town's time unloaded: its members' minds take up their schedule where it puts them (<see cref="PopulationSettings.ResidentSchedule"/>); cleared once they have minds.</summary>
     public bool Resume { get; set; }
     /// <summary>How many it was made with (its town's regeneration measures losses against it; not part of the state).</summary>
@@ -126,6 +128,7 @@ public sealed class SquadRegistry
             hasher.Add(s.Leader);
             if (s.Index != 0) hasher.Add(0x51647800 + s.Index);   // nothing for a squad in the first place, so the pinned hashes stay
             if (s.Resume) hasher.Add(0x52657375);
+            if (s.Dead) hasher.Add(0x44656164);
             hasher.Add(s.Members.Count);
             foreach (var m in s.Members)
             {

@@ -56,7 +56,7 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
     Meitou.Simulation.Squad? playerSquad;
     WorldFrame.Gpu gpu = null!;
     /// <summary>This run uses the native Metal loop: the shared world object exists, but its Vulkan post/loading path does not drive it.</summary>
-    bool metalRenderer;
+    bool metalRenderer = false;   // set by the Metal loop (GameHost.Metal.cs, macOS builds only)
     // Fallback services for a host whose renderers are not in WorldFrame.Gpu yet (the shared title, audio and save code asks through these).
     WorldWeather? fallbackWeather = null;
     WorldObjectRenderer? hostObjects = null;

@@ -10,12 +10,12 @@ public class GameClockTests
     public void Start_values_and_wrapping()
     {
         var game = new GameClock();
-        Assert.Equal(13, game.HourOfDay, 9);
+        Assert.Equal(10, game.HourOfDay, 9);
         Assert.Equal(1, game.Day);
         Assert.Equal(0, game.HoursSinceStart);
-        Assert.Equal("13:00", game.TimeText);
+        Assert.Equal("10:00", game.TimeText);
         Assert.Equal("Day: 1", game.DayText);
-        game.Advance(11 * Hour + 0.01);   // 13:00 + 11 h = 00:00 of day 2
+        game.Advance(14 * Hour + 0.01);   // 10:00 + 14 h = 00:00 of day 2
         Assert.Equal(2, game.Day);
         Assert.Equal("00:00", game.TimeText);
         game.Advance(1.5 * Hour);

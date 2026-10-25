@@ -101,7 +101,7 @@ public sealed class FirstAidSystem(GameConstants constants, BodyOptions options,
     static IReadOnlyList<CharacterId> Who(World world, IReadOnlyList<CharacterId> ids) => ids.Count > 0 ? ids : world.Player.Selection.ToArray();
 
     /// <summary>A character that can be ordered to treat or rest: it has a medical state, is awake and is not in a fight.</summary>
-    static bool CanAct(CharacterCold cold) => cold.Medical is { Incapacitated: false } && !cold.InCombat;
+    static bool CanAct(CharacterCold cold) => cold.Medical is { Incapacitated: false } && !cold.InCombat && cold.CarriedBy.IsNone;
 
     /// <summary>Starts a treatment (serial phases): the medic stands, then walks to the patient. <paramref name="resume"/> is the task to go back to afterwards (kept if already treating).</summary>
     static void Begin(World world, int slot, CharacterId patient, CharacterTask resume, bool splint = false)

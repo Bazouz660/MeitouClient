@@ -502,7 +502,8 @@ public sealed partial class MainWindow : Window
     string? PlayVersion => PickedVersion ?? installedVersions.FirstOrDefault();
 
     // The latest release when it is newer than every installed version and not skipped.
-    Release? NewRelease => installedVersions.Count > 0 && LatestRelease is { } latest && !installedVersions.Contains(latest.Version)
+    Release? NewRelease => installedVersions.Count > 0 && LatestRelease is { } latest
+        && Releases.CompareVersions(latest.Version, installedVersions[0]) > 0
         && latest.Version != config.SkippedVersion ? latest : null;
 
     // Playing the latest, with a new release: Play is the button that installs it.
@@ -650,7 +651,7 @@ public sealed partial class MainWindow : Window
         var installed = Releases.Installed();
         var selected = (ReleaseListBox.SelectedItem as ReleaseRow)?.Release.Tag;
         var rows = allReleases
-            .Where(r => r.Kind == ReleaseKind.Game && (config.IncludePrereleases || !r.Prerelease))
+            .Where(r => r.Kind == ReleaseKind.Game && (config.IncludePrereleases || !r.Prerelease || installed.Contains(r.Version)))
             .Select(r => new ReleaseRow(r, installed.Contains(r.Version), r.Version == PlayVersion))
             .ToList();
         ReleaseListBox.ItemsSource = rows;

@@ -10,6 +10,8 @@ internal static class SeedSalts
     public const ulong BarSquad = 0xBA45UL;
     /// <summary>XORed with the hash of the start-off's id into the player's start key.</summary>
     public const ulong PlayerStart = 0x57A27UL;
+    /// <summary>Counter (under <see cref="RngPurpose.Spawn"/>, keyed by the start key) of the roll that picks the start town among the candidates.</summary>
+    public const ulong PlayerStartTown = 0x57A28UL;
     /// <summary>XORed into the tick of a roaming squad's choice of its next town.</summary>
     public const ulong RoamNext = 0x7A6E7UL;
     /// <summary>XORed into the key of a roaming squad a town's pool makes.</summary>
@@ -45,6 +47,8 @@ internal static class SeedSalts
     public const ulong MemberLook = 1000;
     /// <summary>Counter base of the roll for the look of member n of the player's squad (n is added).</summary>
     public const ulong PlayerLook = 5000;
+    /// <summary>Counter base of the rolls that scatter member n of the player's squad made from a CHARACTER entry: x at 2n, z at 2n + 1 added.</summary>
+    public const ulong PlayerScatter = 6000;
     /// <summary>Counters (under <see cref="RngPurpose.Spawn"/>, keyed by the character's id) of a new NPC's bounty roll and its fuzz (<see cref="Crime.SpawnBounties"/>).</summary>
     public const ulong BountyChance = 0xB0C7UL, BountyFuzz = 0xB0F2UL;
     /// <summary>The AI's patrol timer and route (<see cref="Ai.AiSystem"/>).</summary>

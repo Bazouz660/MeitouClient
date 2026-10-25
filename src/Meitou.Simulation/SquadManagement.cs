@@ -42,13 +42,16 @@ public static class SquadManagement
     /// <summary>The faction a dismissed character joins (<c>1233-gamedata.base</c>, Tech Hunters), else <c>nofac</c>; and the squad template of its new squad ("Wandering Squad").</summary>
     public const string DismissFaction = "1233-gamedata.base", DismissFallbackFaction = "nofac", DismissTemplate = "5006-squad.mod";
 
-    /// <summary>The player's own squads in order: of the player's faction and not a platoon's active half.</summary>
+    /// <summary>The record name of the player faction's squad of the dead (<c>FUN_1407f4960</c>; <see cref="Squad.Dead"/>).</summary>
+    public const string DeadSquadName = "__DEAD_SQUAD__";
+
+    /// <summary>The player's own squads in order: of the player's faction, not a platoon's active half and not the squad of the dead.</summary>
     public static List<Squad> PlayerSquads(World world)
     {
         var list = new List<Squad>();
         if (!world.Player.Exists) return list;
         foreach (var s in world.Squads.All)
-            if (s.Faction == world.Player.Faction && s.PlatoonId < 0) list.Add(s);
+            if (Mine(world, s)) list.Add(s);
         list.Sort((a, b) => a.Index != b.Index ? a.Index.CompareTo(b.Index) : a.Id.CompareTo(b.Id));
         return list;
     }
@@ -92,7 +95,7 @@ public static class SquadManagement
     internal static void KeepActive(World world)
     {
         if (!world.Player.Exists) return;
-        if (world.Squads.Find(world.Player.Squad) is { } s && s.Faction == world.Player.Faction && s.PlatoonId < 0) return;
+        if (world.Squads.Find(world.Player.Squad) is { } s && Mine(world, s)) return;
         var squads = PlayerSquads(world);
         world.Player.Squad = (squads.FirstOrDefault(q => q.Members.Count > 0) ?? squads.FirstOrDefault())?.Id ?? -1;
     }
@@ -141,7 +144,56 @@ public static class SquadManagement
         }
     }
 
-    static Squad? Own(World world, int id) => world.Squads.Find(id) is { } s && s.Faction == world.Player.Faction && s.PlatoonId < 0 ? s : null;
+    static Squad? Own(World world, int id) => world.Squads.Find(id) is { } s && Mine(world, s) ? s : null;
+
+    static bool Mine(World world, Squad s) => s.Faction == world.Player.Faction && s.PlatoonId < 0 && !s.Dead;
+
+    /// <summary>
+    /// The death handler's player rule (<c>FUN_1407a6200</c>): a character of the player's faction that has died leaves its squad (the next member leads) for the faction's
+    /// squad of the dead, made the first time (<c>FUN_1407f4960</c>: the factory with no template, record name <see cref="DeadSquadName"/>). NPC squads keep their dead. Serial.
+    /// </summary>
+    internal static void BuryDead(World world, GameDatabase? db)
+    {
+        if (!world.Player.Exists) return;
+        var table = world.Characters;
+        Squad? dead = null;
+        foreach (var squad in PlayerSquads(world))
+        {
+            bool moved = false;
+            for (int i = squad.Members.Count - 1; i >= 0; i--)
+            {
+                var id = squad.Members[i];
+                if (!table.TryResolveNext(id, out int slot) || table.Cold(slot) is not { DiedTick: >= 0 } cold
+                    || !cold.IsPlayer && cold.Faction != world.Player.Faction) continue;
+                dead ??= DeadSquad(world, db, table.Next[slot].Position);
+                squad.Members.RemoveAt(i);
+                dead.Members.Add(id);
+                cold.SquadId = dead.Id;
+                moved = true;
+            }
+            if (moved) Relead(table, squad);
+        }
+    }
+
+    static Squad DeadSquad(World world, GameDatabase? db, Vector3 at)
+    {
+        foreach (var s in world.Squads.All)
+            if (s.Dead && s.Faction == world.Player.Faction) return s;
+        var template = db?.OfType(FcsRecordType.SQUAD_TEMPLATE).FirstOrDefault(r => r.BaseName == "blank squad");
+        var squad = new Squad
+        {
+            Id = world.Squads.NextId(),
+            TemplateId = template?.StringId ?? "blank squad",
+            Name = DeadSquadName,
+            Dead = true,
+            Faction = world.Player.Faction,
+            Position = at,
+            HomeCentre = new Vector2(at.X, at.Z),
+            HomeRadius = 100,
+        };
+        world.Squads.Add(squad);
+        return squad;
+    }
 
     static string FactionName(World world, PopulationData data) =>
         world.Player.Faction < data.Factions.Count && data.Factions[world.Player.Faction].Name is { Length: > 0 } name ? name : "Nameless";

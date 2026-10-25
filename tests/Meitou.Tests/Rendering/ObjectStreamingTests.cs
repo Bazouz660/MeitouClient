@@ -1,5 +1,6 @@
 using System.Numerics;
 using Meitou.Data.Ogre;
+using Meitou.Data.World;
 using Meitou.Rendering;
 
 namespace Meitou.Tests.Rendering;
@@ -7,6 +8,54 @@ namespace Meitou.Tests.Rendering;
 /// <summary>Distance-based streaming of the object textures' top mips and the meshes' finest LOD levels (docs/renderer-native.md 8.12).</summary>
 public class ObjectStreamingTests
 {
+    [Fact, Slow]
+    public void Repair_replaces_the_ruin_without_removing_neighbor_instances()
+    {
+        Assert.SkipWhen(InstallData.Install is null, "Kenshi install not found");
+        var install = InstallData.Install!;
+        var db = InstallData.BaseGame!;
+        using var map = TerrainHeightmap.Open(install);
+        using var objects = WorldObjects.Load(install, db, map, 0, 0, 0, 0);
+        var house = objects.Levels.Buildings().First(p =>
+            BuildingPlacements.Resolve(p, db, objects.Levels, map.HeightAt) is { Destroyed: true, Record.Name: "Storm House" });
+        var replacement = house with { DestroyedOverride = false };
+        var expected = objects.BuildRuntime(replacement).Items.Where(p => p.PlacementId == house.Key)
+            .Select(p => p.MeshPath).Order().ToArray();
+        Assert.NotEmpty(expected);
+        // Get only creates mesh handles; no decode, upload or GPU device is needed for this streaming contract.
+        using var meshes = new ObjectMeshCache(null!, null!, null!);
+        using var streamer = new ObjectStreamer(objects, meshes);
+        void Frame() => streamer.Update(house.Position, 0, 16);
+        Assert.True(SpinWait.SpinUntil(() =>
+        {
+            Frame();
+            return streamer.ZoneAt(house.Zone) is not null && streamer.Pending == 0;
+        }, TimeSpan.FromSeconds(30)), "Initial zone did not finish loading");
+        var zone = streamer.ZoneAt(house.Zone)!;
+        var neighbors = zone.Real.Where(i => i.Placed.PlacementId != house.Key && i.Placed.ParentPlacementId != house.Key).ToArray();
+        Assert.NotEmpty(neighbors);
+        string[] HouseMeshes() => zone.Real.Where(i => i.Placed.PlacementId == house.Key).Select(i => i.Placed.MeshPath).Order().ToArray();
+        Assert.NotEmpty(HouseMeshes());
+        Assert.False(expected.SequenceEqual(HouseMeshes()));
+        void CheckNeighbors()
+        {
+            Assert.Same(zone, streamer.ZoneAt(house.Zone));
+            foreach (var neighbor in neighbors) Assert.Contains(neighbor, zone.Real);
+        }
+        objects.AddRuntime(replacement);
+        streamer.AddRuntime(replacement);
+        CheckNeighbors();
+        Assert.True(SpinWait.SpinUntil(() =>
+        {
+            Frame();
+            CheckNeighbors();
+            return expected.SequenceEqual(HouseMeshes());
+        }, TimeSpan.FromSeconds(30)), "Ruin was not replaced with the repaired house");
+        Frame();
+        CheckNeighbors();
+        Assert.Equal(expected, HouseMeshes());
+    }
+
     // 1600 x 900, 50 degrees: a pixel's footprint at distance d is at least d * cos^2(corner) / focal.
     static MipStreaming View()
     {
