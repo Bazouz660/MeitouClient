@@ -23,6 +23,17 @@ public sealed partial class DialogueSystem
     }
 
     /// <summary>
+    /// <c>AI::underMeleeAttack</c> / <c>underRangedAttack</c> and the blow paths (<c>Character::hitByMeleeAttack</c>, <c>iShotYou</c>): the attacked character's squad tags its attacker
+    /// TEMP_ENEMY, so every mate takes it for an enemy whatever the relations say (docs/game/dialogue.md "Squad memory").
+    /// </summary>
+    internal void RememberAttacker(World world, int victim, int attacker)
+    {
+        var table = world.Characters;
+        if (table.Cold(victim) is not { SquadId: >= 0 } vc || table.Cold(attacker) is not { } ac) return;
+        FlagFrom(world, vc, table.IdOf(victim), table.IdOf(attacker), ac, MemoryTag.TempEnemy);
+    }
+
+    /// <summary>
     /// "A regards B as friendly" (Character slot 126, <c>FUN_1407923d0</c>): the same faction; never when A's squad holds TEMP_ENEMY on B (or, for a player-faction A, B's squad on A);
     /// always when B's squad holds TEMP_ALLY on a player-faction A, A's squad TEMP_ALLY on B, or A loves B (DC 52); else A's faction is allied to B's. Engine: the uniform disguise
     /// the original can substitute for B's faction is not read.

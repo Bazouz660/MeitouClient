@@ -259,7 +259,8 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem
             }
             if (alerted[a] || !combat.Alerts(world, a, t)) continue;
             alerted[a] = justAlerted[a] = fresh = true;
-            // The alert ends the target's sneaking (AI::underMeleeAttack).
+            // The alert ends the target's sneaking and its squad tags the attacker TEMP_ENEMY (AI::underMeleeAttack).
+            world.SystemOf<Dialogue.DialogueSystem>()?.RememberAttacker(world, t, a);
             if (table.Cold(t) is { } tc)
             {
                 tc.Orders &= ~CharacterOrders.Sneak;

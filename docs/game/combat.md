@@ -251,8 +251,8 @@ Meitou (`CombatSystem.HasSlot` / `MayJoin`, `Fighting.Steer`):
 - **Being targeted.** Choosing a fight target (`CombatClass::setAttackTarget`, `setAttackTargetHandle`) calls `AI::underMeleeAttack` on the
   target at once (through `Character::attackingYou`), before any blow; dropping it sends "stop", which only removes the attacker from the
   target's engaged list. A landed blow (not blocked or dodged) on a defender whose fight is off sends it too (`FUN_1404394f0`). The call ends the
-  target's sneaking, adds the attacker to its engaged list, to its senses (seen, alert timer 5) and to its squad memory as an attacker (kind 4,
-  not for allies), tells a campaign, and when the target's fight is off: unless it is getting up, or is player-side and moving (CharMovement
+  target's sneaking, adds the attacker to its engaged list, to its senses (seen, alert timer 5) and to its squad memory as TEMP ENEMY (kind 4,
+  not for allies; the whole squad then takes it for an enemy, [squad memory](dialogue.md#squad-memory)), tells a campaign, and when the target's fight is off: unless it is getting up, or is player-side and moving (CharMovement
   +0x24, `Character::isWithThePlayer`), its current goal is cleared and it replans (`AITaskSytem` vfunc 3); a target getting up instead has a
   10% chance of its knockout timer (+0x4f8 = MedicalSystem +0xa0) being set to 10.0: knocked down again for 10 s (**Verified**). The targeting path sets the call's last flag (r9b = 1 in the disassembly), the hit path
   clears it. With the flag, when the target is the player's, or the attacker is the player's and the target is not yet aware of it, the call

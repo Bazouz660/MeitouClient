@@ -294,6 +294,14 @@ me, 5 captor, 6 friendly, 7 defeated my squad, 8 I beat his squad, 9 killed my f
 - **Short-term write** (`FUN_140674300`): never TEMP ENEMY on the squad's own faction; a TEMP ALLY on a player character sets the bool;
   for a player character the squad's player entry takes the time. The character-level wrapper `FUN_1406744a0` also skips TEMP ENEMY on
   an allied faction or one the character regards as friendly. Cleared by `FUN_1406788d0` (contract code clears 4, 7, 2).
+- **Attacks write TEMP ENEMY** (**Observed**, decompile; names KenshiLib 1ce4a16): the attacked character's squad tags its attacker 4
+  through the wrapper in `AI::underMeleeAttack` (also reached from being targeted, [combat](combat.md#fight-lifecycle-and-orders)),
+  `AI::underRangedAttack`, `Character::hitByMeleeAttack`, `CombatClass::_iHitYouAreYouHit` and `Character::iShotYou`. So an assault on one
+  member makes the attacker an enemy of the whole squad (slot 125 below) at any relation, and its attack-on-sight members (goal 16) join.
+  `Character::attackTarget` tags the other way (the attacker's squad on its target), but only task code calls it (stealth KO, kidnapping,
+  investigating alarms, dialogue actions, crime assessment), not the player's attack orders. Nothing times the tag out: the perception
+  update (`SensoryData::add`) clears it only once the tagged enemy is a slave of the looker's faction (or its state +0x2f8 is 2, **Unknown**).
+  Meitou: the alert in `RetaliationSystem` (`DialogueSystem.RememberAttacker`); `attackTarget`'s tag is not written.
 - **Readers**: DC 18 (`FUN_140673290`: hours since the time, **9999.99** when never noted), DC 20 (an entry exists), DC 23, DC 52
   (long & 0xc), DC 53 (long & 0x2b0), "regards as friendly" (`FUN_1407923d0`, Character slot 126: same faction; not with TEMP ENEMY;
   yes with TEMP ALLY or love; else faction ally) and "regards as enemy" (`FUN_14079c950`, slot 125): TEMP ENEMY makes, and TEMP ALLY
