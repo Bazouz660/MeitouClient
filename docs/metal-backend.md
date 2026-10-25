@@ -490,7 +490,7 @@ including the MetalFX preset (which owns the render scale), VSync, frame limit a
 `meitou.user.json`. The frontend shell is in: the staged Meitou title (or the faithful title image), New Game with the
 start chooser, save/load slots and confirmations, the in-game Esc menu, the loading screen and sky transitions, and the
 audio system (main theme, interface sounds, ambience, music and world emitters, with the saved volume sliders).
-Still missing: the pointer sprite, the free camera and a runtime pass over the shared trade/dialogue/build/editor screens.
+Still missing: the pointer sprite, the free camera and the cinema camera.
 
 **Current Metal mode (2026-10-22).** Terrain textures, water, foliage, terrain shadows and cloud shadows are on.
 Turn any of them off for diagnosis with `MEITOU_METAL_FOLIAGE=0`, `_WATER=0`, `_SHADOWS=0`, `_CLOUD_SHADOWS=0` or

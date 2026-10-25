@@ -2,7 +2,7 @@
 
 Repository: `/Users/daniilmiroshnykov/code/dotnet/MeitouClient`  
 Branch: `metal-spike`  
-Last code commit: `85e09af2 fix: flip Metal UI images and clip in top-left coordinates`
+Last code commit: `2ae43608 Merge remote-tracking branch 'origin/master' into metal-spike`
 
 State: functional opt-in Metal preview; **not 100% Vulkan effect parity**. Upstream v0.15.0 (`cd01e732`) is merged.
 **MEP-1, MEP-2, MEP-3 and MEP-5 are accepted** (2026-10-24: MetalFX temporal stability; reflection MSAA/characters;
