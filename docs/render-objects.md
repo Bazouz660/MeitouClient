@@ -33,7 +33,8 @@ The simulation focus moves to the landing character at once, so its towns popula
 
 Advanced "Keep textures at characters" (Meitou, default on, `UserConfig.KeepTexturesAtCharacters`): the host sets `WorldFrame` `Kept` to
 the drawn position of every squad bar member each frame. `ObjectStreamer.Near` / zone layout count the nearest of eye, `Ahead` and `Kept`,
-so object meshes and texture mips stay loaded round each character; terrain biome textures gather cells round each (ranked after the
+so object meshes and texture mips stay loaded round each character (a resolving instance's first texture need is measured the same way, else
+its textures load coarse for the far eye and wait for refines); terrain biome textures gather cells round each (ranked after the
 eye's). `Kept` ranks after the eye in the load order. Foliage and grass pages follow only the eye and `Ahead`. Costs video memory
 (the VRAM guard still applies). `WorldFrame` merges the points first (`ObjectStreamer.MergeKept`): one within 500 units of the eye or of an
 earlier point is dropped, so a squad standing together is one point. Every distance test walks the kept points, and `ObjectStreamer.Scan`

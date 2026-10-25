@@ -634,8 +634,9 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
         if (made) materialSets[mkey] = set = MakeMaterials(inst.Placed, gpu);
         inst.Materials = set!;
         // Mip streaming: this instance's distance is a use of the textures from now on (before the pass that would find it), and a new set's
-        // textures are loaded now, knowing it (they were made without loading: deferred).
-        float near = Math.Max(Vector3.Distance(eyeNow, inst.Centre) - inst.Radius - needMargin, 0);
+        // textures are loaded now, knowing it (they were made without loading: deferred). Measured as the mark pass does (from the nearest kept point too),
+        // or a kept point's textures load coarse for the far eye and wait in the refine queue.
+        float near = Math.Max(streamer.Near(eyeNow, inst.Centre) - inst.Radius - needMargin, 0);
         foreach (var part in set!.Parts) part.OfferNow(part.Triplanar ? near : near / Math.Max(scale, 1e-6f));
         if (made) set.Touch();
         return true;
