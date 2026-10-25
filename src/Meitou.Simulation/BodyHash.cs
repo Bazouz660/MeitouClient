@@ -35,6 +35,7 @@ static class BodyHash
         h.Add((int)medical.Cause);
         h.Add(medical.Light);
         h.Add(medical.LegKoPoint);
+        if (medical.StayingLow) h.Add(0x4C6F77);
         h.Add(medical.Wounds.Count);
         foreach (float w in medical.Wounds) h.Add(w);
     }

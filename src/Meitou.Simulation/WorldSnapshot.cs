@@ -139,6 +139,8 @@ public sealed record CharacterSnapshot(CharacterId Id, CharacterAppearance? Appe
     public bool WorkingShackles { get; init; }
     /// <summary>Lying in a bed (<see cref="Locks.HeldState.Bed"/>).</summary>
     public bool InBed { get; init; }
+    /// <summary>Crawling by choice (<see cref="Bodies.MedicalState.StayingLow"/>, not crippled): the context menu's Stand Up.</summary>
+    public bool StayingLow { get; init; }
     /// <summary>In a fight (<see cref="CharacterCold.InCombat"/>): the portrait's <c>Combat</c> overlay.</summary>
     public bool InCombat { get; init; }
     /// <summary>An NPC whose fight's target is one of the player's characters, whatever its faction thinks of the player's (a robbery a dialogue line started, a retaliation).</summary>

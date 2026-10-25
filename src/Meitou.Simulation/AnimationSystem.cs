@@ -345,7 +345,7 @@ public sealed class AnimationSystem(AnimationLibrary library, AnimationLengths l
         bool carried = !cold.CarriedBy.IsNone;
         var stance = StanceOf(cold) with { Combat = cold.InCombat && !approaching };
         bool down = cold.Medical is { Incapacitated: true };
-        bool crawling = !carried && cold.Medical is { Crawling: true };
+        bool crawling = !carried && cold.Medical is { Prone: true };
         if (HoldsForRagdoll(a, down, carried, ragdoll)) return Vector2.Zero;
 
         bool inBed = cold.InSomething == Locks.HeldState.Bed;
@@ -733,7 +733,7 @@ public sealed class AnimationSystem(AnimationLibrary library, AnimationLengths l
         var stance = new AnimationStance
         {
             Right = new HandHold(cold.DrawnWeapon), Combat = cold.InCombat, Stealth = (cold.Orders & CharacterOrders.Sneak) != 0, CarryingLeft = !cold.Carrying.IsNone, BeingCarried = !cold.CarriedBy.IsNone,
-            Prone = cold.CarriedBy.IsNone && cold.Medical is { Crawling: true },   // the crawl records are prone; no standing clip (stumbles included) fits a crawler
+            Prone = cold.CarriedBy.IsNone && cold.Medical is { Prone: true },   // the crawl records are prone; no standing clip (stumbles included) fits a crawler
         };
         if (cold.Medical is not { } body) return stance;
         float left = 100, right = 100;

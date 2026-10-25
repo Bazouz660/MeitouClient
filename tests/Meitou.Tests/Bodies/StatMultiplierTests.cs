@@ -55,10 +55,10 @@ public class SpeedAndEncumbranceTests
         // a leg at 0.6 or better is not penalised at all (x1.8 clamps to 1)
         m.Parts[RLeg].Flesh = 60;
         Assert.Equal(1f, Speed.LegFactor(m), 5);
-        // the lower leg counts: a leg that is down gives the floor of 11
+        // the lower leg counts: a leg that is down crawls at 5 (not the floor of 11)
         m.Parts[RLeg].Flesh = -50;
         Assert.Equal(0f, Speed.LegFactor(m));
-        Assert.Equal(11f, Speed.Run(Human, stats, m, 1));
+        Assert.Equal(Speed.CrawlSpeed, Speed.Run(Human, stats, m, 1));
         // the unhurt shortcut
         Assert.Equal(80f, Speed.RunUnhurt(Human, 20));
     }

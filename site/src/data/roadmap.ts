@@ -57,7 +57,7 @@ export const categories: Category[] = [
     { id: "medical-beds-skeleton-repair-robot-repair", system: "Medical beds, skeleton repair, robot repair", status: "untested", note: "Bed healing rates and repair beds for skeletons.", bugs: [] },
     { id: "xp-stats-training-dummies", system: "XP, stats, training dummies", status: "untested", note: "Training dummy XP cap as the original.", bugs: [] },
     { id: "encumbrance", system: "Encumbrance", status: "works", note: "Tested in play: carried weight slows characters and changes stats.", bugs: [] },
-    { id: "standing-up-and-crawling-on-purpose", system: "Standing up and crawling on purpose", status: "missing", note: "Only forced crawling, from a crippled leg, exists.", bugs: [] },
+    { id: "standing-up-and-crawling-on-purpose", system: "Standing up and crawling on purpose", status: "untested", note: "Waking while sneaking stays low and crawls; Stand Up, a speed order, sneak off or a melee attack stands.", bugs: [] },
   ] },
   { id: "movement", name: "Movement and control", blurb: "Selection, pathfinding, right-click orders, stairs and roofs.", rows: [
     { id: "switch-between-bases-and-squads", system: "Switch between bases and squads", status: "works", note: "Selecting a character in another base moves the camera there (Tab, double-tap 1).", bugs: [] },

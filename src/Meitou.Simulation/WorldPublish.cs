@@ -118,6 +118,7 @@ public sealed partial class World
                 PickingLock = cold?.PickingLock is not null,
                 WorkingShackles = cold?.Shackles is { Work: Locks.ShackleWork.Pick or Locks.ShackleWork.Cut },
                 InBed = cold is { InSomething: Locks.HeldState.Bed },
+                StayingLow = cold?.Medical is { StayingLow: true, Prone: true, Crawling: false },
                 InCombat = cold?.InCombat ?? false,
                 FightsPlayer = cold is { IsPlayer: false, InCombat: true } && combat?.StateOf(id) is { TargetSlot: >= 0 and var fought } fight
                     && fought < state.Length && state[fought].Alive && state[fought].Generation == fight.TargetGeneration && table.Cold(fought) is { IsPlayer: true },

@@ -73,7 +73,7 @@ public sealed partial class MedicalState
 
     /// <summary>
     /// The original's forced crawl (posture 2, <c>FUN_140649320</c>, <b>Observed</b>): a conscious character with a stats object (not an animal) any of whose legs is down by
-    /// <see cref="HealthPart.LegDown"/>. One leg is enough; it moves at the speed floor (<see cref="Speed.Minimum"/>) and plays the grounded clips. Read live, so a hit shows at once.
+    /// <see cref="HealthPart.LegDown"/>. One leg is enough; it moves at <see cref="Speed.CrawlSpeed"/> and plays the grounded clips. Read live, so a hit shows at once.
     /// </summary>
     public bool Crawling
     {
@@ -84,6 +84,15 @@ public sealed partial class MedicalState
             return false;
         }
     }
+
+    /// <summary>
+    /// The voluntary crawl (posture 1 <c>PS_STAYING_LOW</c>, docs/game/ragdolls.md "Staying low"): set on waking while sneaking, cleared by a speed order, sneak off, Stand Up or a melee
+    /// attack. Kept on the medical state beside <see cref="Crawling"/> so <see cref="Prone"/> reads both; not saved (the original's save key, if any, is <b>Unknown</b>).
+    /// </summary>
+    public bool StayingLow { get; set; }
+
+    /// <summary>Posture not 0 while conscious: <see cref="Crawling"/> or <see cref="StayingLow"/>. What the grounded clips, the prone techniques and the stealth x2 read.</summary>
+    public bool Prone => !Incapacitated && HasStatsObject && (StayingLow || Crawling);
 
     /// <summary>
     /// The character's light level P that the stat multiplier's light term reads (<c>FUN_1406457e0</c> reads Character <c>+0xd8</c>, the light level of docs/game/perception.md

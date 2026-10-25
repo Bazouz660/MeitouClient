@@ -10,8 +10,11 @@ namespace Meitou.Simulation.Bodies;
 /// </summary>
 public static class Speed
 {
-    /// <summary>The floor of S: a crippled character still crawls at 11.</summary>
+    /// <summary>The floor of S.</summary>
     public const float Minimum = 11;
+
+    /// <summary>S while crawling (<c>FUN_140886460</c>'s last overrides, <b>Observed</b>): 7 staying low (posture 1), 5 with a leg down (medical <c>+0x160</c>), the latter winning.</summary>
+    public const float StayingLowSpeed = 7, CrawlSpeed = 5;
 
     /// <summary>The cap of S in shallow water (water state 1), <b>Verified</b> by reading <c>FUN_140886460</c>.</summary>
     public const float ShallowWaterCap = 45;
@@ -37,10 +40,12 @@ public static class Speed
 
     /// <summary>
     /// S = (V - 11) x leg factor x hunger factor x the fitted legs' athletics multipliers x encumbrance factor x <paramref name="statsFactor"/> (<c>CharStats+0x18</c>, 1 when
-    /// unknown) + 11, never below 11; shallow water caps it at 45.
+    /// unknown) + 11, never below 11; shallow water caps it at 45. A crawler moves at <see cref="CrawlSpeed"/> or <see cref="StayingLowSpeed"/> instead.
     /// </summary>
     public static float Run(RaceData race, CharacterStats stats, MedicalState medical, float encumbranceFactor, bool shallowWater = false, float statsFactor = 1)
     {
+        if (medical.Crawling) return CrawlSpeed;
+        if (medical.Prone) return StayingLowSpeed;
         float v = RunValue(race, stats.Athletics);
         float s = (v - Minimum) * LegFactor(medical) * HungerFactor(medical.Hunger) * medical.LegItemFactor(StatsEnumerated.Athletics)
             * encumbranceFactor * statsFactor + Minimum;

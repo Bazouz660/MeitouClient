@@ -428,8 +428,8 @@ home (slot 59) is a building of the player's, or 273 when its +0x1a0 → +0x88 o
 ranged-weapon wielder, not built), and ends with the sound `Right_Click`. 235 Shoot At is Task_UseTurret's "target" order for the lead on a turret.
 A right click on the ground (`PlayerInterface::playerMove`) is order 29 through the same path; how an order replaces a fight: [combat](combat.md#fight-lifecycle-and-orders).
 **Unknown**: slots 34, 102 and the +0x260 handle (read here as the lead's turret, as it swaps every attack for 235); `FUN_1405c9750` (KenshiLib `Character::isStealthMode`) returns
-the sneak flag +0xd4 unless the fight is on (`isInCombatMode`, CombatClass +0x130); where a cage opens its menu at once; the posture 1 (voluntary crawl)
-that 28 Stand Up answers to ([ragdolls](ragdolls.md#forced-crawl): the legs' forced crawl is 2).
+the sneak flag +0xd4 unless the fight is on (`isInCombatMode`, CombatClass +0x130); where a cage opens its menu at once; what 28 Stand Up does
+once dispatched (Meitou: stands the selection from posture 1, [staying low](ragdolls.md#staying-low)).
 
 Meitou (`PlayerInterface.ContextMenu.cs`; one method per target: characters, `ContainerVerbs`, `DoorVerbs`, `SiteVerbs` in `PlayerInterface.Build.cs`, `CageVerbs` in `PlayerInterface.Cages.cs`):
 the same labels and order (`VerbOrders`; Meitou's own verbs after), the animals-only filter, the chance column (Stealth KO, Kidnap), Shift on Use giving the job.
@@ -443,7 +443,7 @@ Open / Close / Lock / Unlock (all the building's doors) / Pick Lock / Use Tools 
 Inventory (storage, furnace), Man Turret, Dismantle, Auto-Haul 152 on an automatic machine (in place of Use; the 152 job with Shift, else a one-shot haul round). **Bodyguard** (45, `FollowOrder.Guard`): follows like 31 and fights whoever attacks the target (engine reading; with Shift the perma-job, [jobs](ai-tasks.md#perma-jobs)). **Attack All** (16, **engine reading**): every standing hostile within 800 of the clicked one is a target and each selected character attacks the nearest. **Shoot At** (235): replaces the
 attack verbs when the lead mans a turret; `ShootAtOrder` makes every selected gunner fire at the target until it is gone ([combat](combat.md#turrets)). **Cages** are published
 (`WorldSnapshot.Cages`) and picked like beds: Pick Lock / Use Tools / Use Strength while locked, Put in (108, the carried captive to that cage) or Get in (107) while free, Set Free (110) while occupied.
-Engine additions: Trade with a trader, Put in Cage, Put on Shackles, Cancel Construction, the door buttons, Mine. Training (97) sets the training job on a dummy. Not built: Stand Up, Throw out of home / town (the jobs 223 / 273 run), Repairs (60),
+Engine additions: Trade with a trader, Put in Cage, Put on Shackles, Cancel Construction, the door buttons, Mine. Training (97) sets the training job on a dummy. Stand Up (28) on a selected character staying low. Not built: Throw out of home / town (the jobs 223 / 273 run), Repairs (60),
 Corpse Disposal (the jobs 137 / 138 run), Lock / Unlock of a cage (Pick Lock stands in), item menus beyond a ground item's Pick Up / Steal, the occupant's second menu and the unconscious message.
 
 ### Edit boxes and keyboard focus

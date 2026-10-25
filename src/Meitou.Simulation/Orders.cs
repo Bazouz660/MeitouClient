@@ -58,6 +58,9 @@ public sealed record OrdersCommand(IReadOnlyList<CharacterId> Characters, Charac
 /// </summary>
 public sealed record RunSpeedCommand(IReadOnlyList<CharacterId> Characters, int Step = 1) : SimCommand;
 
+/// <summary>Stand Up (order 28): the characters crawling by choice stand (<see cref="Bodies.MedicalState.StayingLow"/>).</summary>
+public sealed record StandUpCommand(IReadOnlyList<CharacterId> Characters) : SimCommand;
+
 /// <summary>The orders' rules and their save keys.</summary>
 public static class Orders
 {
@@ -102,7 +105,7 @@ public static class Orders
     /// <summary>
     /// The stealth term s of a character in [0, 1] (<c>FUN_140884850</c>): its stealth skill x 0.75 while carrying someone, x 2 while crawling (posture not 0), x the
     /// encumbrance factor, x the body term (<see cref="MedicalState.StealthBodyFactor"/>), x the gear's factor (<see cref="Combat.Fighter.StealthMult"/>), x the fitted limbs'
-    /// factor, x 0.01. Not the stat multiplier's table: the game never sends stealth through it. Meitou has only the forced crawl, so the voluntary one's x2 never applies.
+    /// factor, x 0.01. Not the stat multiplier's table: the game never sends stealth through it.
     /// </summary>
     public static float Stealth(CharacterCold cold)
     {
@@ -112,7 +115,7 @@ public static class Orders
         {
             s *= medical.StealthBodyFactor(stats[StatsEnumerated.Toughness] * stats.Scale)
                 * Bodies.StatMultiplier.LimbItemFactor(medical, StatsEnumerated.Stealth, medical.Aggregates());
-            if (medical.Crawling) s *= 2;
+            if (medical.Prone) s *= 2;
         }
         if (!cold.Carrying.IsNone) s *= 0.75f;
         return Math.Clamp(s * 0.01f, 0, 1);
@@ -190,6 +193,8 @@ public static class Orders
                     if (!table.TryResolveNext(id, out int slot) || table.Cold(slot) is not { IsPlayer: true } cold) continue;
                     on ??= (cold.Orders & set.Order) == 0;
                     cold.Orders = on.Value ? cold.Orders | set.Order : cold.Orders & ~set.Order;
+                    // Sneak off stands one staying low (setStandingOrder 4).
+                    if ((set.Order & CharacterOrders.Sneak) != 0 && !on.Value && cold.Medical is { } low) low.StayingLow = false;
                     // Turning Hold on holds where the character stands (setStandingOrder 12: hold point = position).
                     if ((set.Order & CharacterOrders.Hold) != 0) cold.HoldPoint = on.Value ? new Vector2(table.Next[slot].Position.X, table.Next[slot].Position.Z) : null;
                 }
@@ -199,9 +204,19 @@ public static class Orders
                 foreach (var id in speed.Characters.Count > 0 ? speed.Characters : world.Player.Selection.ToArray())
                 {
                     if (!table.TryResolveNext(id, out int slot) || table.Cold(slot) is not { IsPlayer: true } cold) continue;
+                    // One staying low (not crippled) stands up instead of changing speed (setStandingOrder 0, 1, 2, 16).
+                    if (cold.Medical is { StayingLow: true, Crawling: false } low && low.Prone)
+                    {
+                        low.StayingLow = false;
+                        continue;
+                    }
                     mode ??= ((cold.RunSpeed + speed.Step) % SpeedMode.Count + SpeedMode.Count) % SpeedMode.Count;
                     cold.RunSpeed = (byte)mode.Value;
                 }
+                break;
+            case StandUpCommand stand:
+                foreach (var id in stand.Characters)
+                    if (table.TryResolveNext(id, out int slot) && table.Cold(slot) is { IsPlayer: true, Medical: { } medical }) medical.StayingLow = false;
                 break;
         }
     }

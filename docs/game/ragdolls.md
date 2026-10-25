@@ -93,8 +93,8 @@ No path from hits, knockback, stagger or explosions: a conscious character is ne
 
 ### Forced crawl
 
-**Observed** (decompile). Posture (slot 109/110, field `+0xe0`, setter `FUN_1405c7e20`): 0 standing,
-1 voluntary crawl (orders reset it unless `+0x5b8` forces it), 2 forced crawl, 3/4 set while ragdolled.
+**Observed** (decompile). Posture (slot 109/110, field `+0xe0`, setter `FUN_1405c7e20`; KenshiLib 1ce4a16 `ProneState`):
+0 `PS_NORMAL`, 1 `PS_STAYING_LOW` (voluntary crawl, [below](#staying-low)), 2 `PS_CRIPPLED`, 3 `PS_PLAYING_DEAD`, 4 `PS_KO`.
 The character tick `FUN_1405d00b0` resets 2 to 0; the medical tick `FUN_140649320` (while conscious) sets
 it back to 2 when **any one** part with `collapse part` 0x10/0x20 tests down, and keeps those leg ragdoll
 bits on. So it lasts exactly while a leg is down; it does not knock out.
@@ -110,6 +110,28 @@ bits on. So it lasts exactly while a leg is down; it does not knock out.
 - Meitou: `HealthPart.LegDown`, `MedicalState.Crawling` (KO point cached each medical tick), `AnimationSystem.Crawl`
   (engine choices: `crawl use` replaces the medic clip; crawl legs weighed at no less than −100). The ×0.5
   sight factor for a crawler ([perception](perception.md)) is not applied to crawlers who are not sneaking.
+
+### Staying low
+
+**Observed** (character tick `FUN_1405d00b0`, `Character::setStandingOrder` `FUN_1405caa50`,
+`Character::ImStealingDoYouNotice` `FUN_140794810`, run speed `FUN_140886460`; field names KenshiLib 1ce4a16):
+- Set only on getting up: while totally ragdolled (`AnimationClass::isTotallyRagdoll`, WHOLE) and not carried, a posture
+  3/4 character whose AI can get up becomes 3 when `Character::isItSafeToGetUp` fails, else 1 when sneaking (`+0xd4`),
+  else 0. `playerWantsMeToGetUp` (`+0xec`, set for each selected character by every player order, `FUN_1407f9e20`,
+  cleared each tick) turns that into 0 (1 only from 3 while sneaking). The exe tooltip says the same: a sneaker who wakes
+  stays down and crawls. No other setter of 1 was found.
+- Standing (not WHOLE): crippled (vfunc 0x360) gives 2; otherwise 1 is kept, anything else becomes 0, and 1 becomes 0
+  too while `_isLiterallyUnderMeleeAttackRightNowForSure` (`+0x2b0`). So the forced crawl ends a voluntary one.
+- Standing orders: run, jog, walk, group speed (0, 1, 2, 16) on a posture-1 uncrippled character set 0 instead; stealth
+  off (4) sets 0 and ends sneaking. A theft witness (`ImStealingDoYouNotice`) in posture 1 or 3 gets 0.
+- Effects are those of posture ≠ 0: grounded clips, prone techniques only, stealth ×2, sight ×0.5, target-score terms; run
+  speed S = 7 (5 with a leg down, [pathfinding](pathfinding.md#speed-and-orders)).
+- **Unknown**: what Stand Up (28, [context menu](ui-input.md)) does after the dispatch (read as setting 0); whether the
+  posture is saved; `isItSafeToGetUp` (AI `+0x94`, `+0x4c`); playing dead (3) is not built.
+- Meitou: `MedicalState.StayingLow` (not saved), `MedicalState.Prone` (posture ≠ 0) read wherever posture ≠ 0 is; set on
+  waking in `CombatSystem.Act` (always safe to get up), cleared by a leg down, a speed order, sneak off, Stand Up
+  (`StandUpCommand`) and the melee alert (`Fighting`, `AI::underMeleeAttack`). The order-during-get-up and theft-witness
+  resets are not built.
 
 ## Bodies: kinematic or simulated
 

@@ -95,6 +95,10 @@ public sealed partial class CombatSystem
             // A player's character out of a fight keeps its weapon out while it walks or follows on an order; idle or at work it sheathes (Idleness and the jobs need it away).
             if (cold.IsPlayer && !cold.InCombat && cold.DrawnWeapon != WeaponKinds.None && next[i].Task is not ((byte)CharacterTask.GoTo or (byte)CharacterTask.Follow or (byte)CharacterTask.Attack))
                 cold.DrawnWeapon = WeaponKinds.None;
+            // Waking while sneaking it stays low (posture 1, docs/game/ragdolls.md "Staying low"); otherwise it stands.
+            if (s.Down && !cold.Medical.Incapacitated) cold.Medical.StayingLow = Orders.Has(cold, CharacterOrders.Sneak);
+            // A leg down replaces it with the forced crawl (posture 2), which ends standing.
+            if (cold.Medical.Crawling) cold.Medical.StayingLow = false;
             // Waking: it gets up for GetUpSeconds (Task_GetUp), less wanted as a target and left alone by a hit while its fight is off.
             if (s.Down && !cold.Medical.Incapacitated && GetUpSeconds > 0)
             {
@@ -202,7 +206,7 @@ public sealed partial class CombatSystem
             }
             if (!fighting) s.Engaged = false;
             // The Block order, standing and let close in: every 1.5-4.5 s it frees the attack slots on itself, so others may start swinging at it (CircleStateAI's timer).
-            if (fighting && s.Engaged && Orders.Has(cold, CharacterOrders.Block) && !cold.Medical.Crawling)
+            if (fighting && s.Engaged && Orders.Has(cold, CharacterOrders.Block) && !cold.Medical.Prone)
             {
                 if (s.BlockTimerTick == 0) s.BlockTimerTick = now + BlockTimerTicks(world, key, now);
                 else if (now >= s.BlockTimerTick)
@@ -291,7 +295,7 @@ public sealed partial class CombatSystem
             Skill = cold.Stats![fighter.WeaponSkill],
             UnarmedSkill = WeaponStats.Lerp(e, 0.2f, 1) * (cold.Stats[StatsEnumerated.MartialArts] + fighter.UnarmedBonus),
             Animal = fighter.IsAnimal,
-            Prone = medical.Crawling,
+            Prone = medical.Prone,
             Encumbrance = e,
             WeaponLength = length,
             Scale = medical.ScaleK,
@@ -609,7 +613,7 @@ public sealed partial class CombatSystem
             float effective = DefenceFormulas.EffectiveDefence(Eff(cold, StatsEnumerated.MartialArts), fighter.EncumbranceFactor, Speed.LegFactor(cold.Medical!), fighter.DefenceBonus, Guarding(cold));
             dodge = DefenceFormulas.BlockChance(effective, attack.AttackSkill, combat, 0, 95);
         }
-        int pick = TechniqueChooser.ChooseReaction(techniques, fighter.TechniqueCategory, cold.Medical!.Crawling, fighter.CanBlock, direction, block, dodge, chanceRoll, pickRoll);
+        int pick = TechniqueChooser.ChooseReaction(techniques, fighter.TechniqueCategory, cold.Medical!.Prone, fighter.CanBlock, direction, block, dodge, chanceRoll, pickRoll);
         if (pick < 0)
         {
             // No defence (a failed dodge roll, or nothing fits): none is tried again for a while (the original's +0x14c).

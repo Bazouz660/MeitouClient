@@ -42,7 +42,7 @@ the sneak speed `FUN_140884920` reads s. Body term (`FUN_140644da0`): clamp(lowe
 LEG parts, 1 with none, + toughness x scale x 0.01, 0, 1). Its only caller is the sense update `FUN_1408586d0`,
 past an early return on a Character +0xd4 byte, so otherwise it keeps its last value (1 at start; **Observed**,
 fits #46's torso at 0.5 leaving stealth at 1). The table's stealth case (A; 0.9, 0.9, 0.8) exists, but no caller
-found reaches it. Meitou: `Orders.Stealth`; its x2 is for the forced crawl only (Meitou has no voluntary crawl).
+found reaches it. Meitou: `Orders.Stealth` (its x2 reads `MedicalState.Prone`, both crawls).
 
 ### Gear factors
 

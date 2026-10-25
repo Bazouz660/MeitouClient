@@ -32,7 +32,7 @@ public sealed partial class CombatSystem
         bool hold = Orders.Holding(cold) && !s.Ranged;
         var q = new Choice
         {
-            Self = i, Current = s.TargetSlot, Cold = cold, Player = cold.IsPlayer, Hold = hold, Prone = cold.Medical!.Crawling, Animal = cold.Fighter!.IsAnimal,
+            Self = i, Current = s.TargetSlot, Cold = cold, Player = cold.IsPlayer, Hold = hold, Prone = cold.Medical!.Prone, Animal = cold.Fighter!.IsAnimal,
             HoldPoint = hold ? Orders.HoldPointOf(cold, prev[i].Position) : default, Best = -1, BestScore = float.NegativeInfinity,
         };
         // The current target first, so a tie keeps it (the caller's sense test; the others are sensed: an attacker is put in the senses of whom it attacks).

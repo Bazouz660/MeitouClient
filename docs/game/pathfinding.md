@@ -35,7 +35,8 @@ Havok paths, local steering and unloaded-platoon movement are distinct code path
 ## Speed and orders
 
 **Observed** S=max(11,(V-11)*leg*hunger*replacement*encumbrance*statScale+11),
-V=lerp(speedMin,speedMax,athletics/100)*(0.5+0.5*slot115). Path agent sets top-speed velocity
+V=lerp(speedMin,speedMax,athletics/100)*(0.5+0.5*slot115). After the water states `FUN_140886460` overrides S: 7 while
+the posture is 1 (staying low), then 5 when medical `+0x160` (a leg down) is set (**Observed** literals; Meitou `Speed.Run`). Path agent sets top-speed velocity
 immediately; pathfind-acceleration brakes before corners, not a universal acceleration ramp.
 Combat/follow steering ramps15/s, with turning/backward/arrival caps. Combat-move-speed multiplier
 and water factors0.75/0.5/0.4 apply separately (`FUN_14065dba0`, by water state 1/2/3; Meitou does not apply them yet). No independent slope-speed term was found.

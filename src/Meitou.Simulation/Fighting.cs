@@ -264,6 +264,8 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem
             if (table.Cold(t) is { } tc)
             {
                 tc.Orders &= ~CharacterOrders.Sneak;
+                // Under melee attack (Character +0x2b0) one staying low stands.
+                if (tc.Medical is { } medical) medical.StayingLow = false;
                 combat.UnderAttackGettingUp(world, t, tc, (ulong)(uint)a);
             }
         }

@@ -296,7 +296,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
             {
                 Table = table, Relations = Relations, World = world, Memory = Memory, Self = i, Faction = cold.Faction, Squad = cold.SquadId, SquadFights = Combat is null ? null : squadFights,
                 Eye = prev[i].Position, Yaw = prev[i].Yaw, Range = range, Outdoor = outdoor, Sight = world.Sight, Best = -1, BestD2 = float.MaxValue, BestScore = float.NegativeInfinity,
-                Combat = Combat, Player = cold.IsPlayer, Hold = Orders.Holding(cold) && cold.Fighter.Crossbow is null, Prone = cold.Medical.Crawling, Animal = cold.Fighter.IsAnimal,
+                Combat = Combat, Player = cold.IsPlayer, Hold = Orders.Holding(cold) && cold.Fighter.Crossbow is null, Prone = cold.Medical.Prone, Animal = cold.Fighter.IsAnimal,
                 HoldPoint = Orders.HoldPointOf(cold, prev[i].Position),
                 Seed = world.Seed, Key = Rng.Key(new CharacterId(i, prev[i].Generation)), Tick = (ulong)world.Tick,
                 Stance = stance, War = war,
@@ -569,7 +569,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
     /// not standing; it is a priority-3 goal, so only without an order (docs/game/combat.md "Fight lifecycle and orders"). Its targets pass the Hold post test (<see cref="Orders.HoldPost"/>).
     /// </summary>
     static bool HoldsGround(CharacterCold cold, byte task) =>
-        task == (byte)CharacterTask.Idle && Orders.Holding(cold) && (cold.Orders & CharacterOrders.Passive) == 0 && cold.Medical is { Crawling: false };
+        task == (byte)CharacterTask.Idle && Orders.Holding(cold) && (cold.Orders & CharacterOrders.Passive) == 0 && cold.Medical is { Prone: false };
 
     /// <summary>
     /// Whether one of the player's characters looks for enemies like an NPC: it has the job 16 "Attacking enemies" (Shift with an attack; it runs with the jobs switch off,

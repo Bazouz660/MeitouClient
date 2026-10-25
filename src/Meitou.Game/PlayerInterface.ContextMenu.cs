@@ -129,13 +129,17 @@ sealed partial class PlayerInterface
 
     /// <summary>
     /// One of the player's own characters: another one than the selection is followed (31) or guarded (45, <see cref="FollowOrder.Guard"/>), its inventory opened beside the selection's
-    /// (26, labelled Trade for the player's own), and picked up (225), standing too when it carries no one (<c>FUN_1407a6bc0</c>, <b>Observed</b>). Not built: Stand Up (28: needs the
-    /// voluntary crawl, which Meitou does not have).
+    /// (26, labelled Trade for the player's own), and picked up (225), standing too when it carries no one (<c>FUN_1407a6bc0</c>, <b>Observed</b>). A selected one crawling by choice
+    /// gets Stand Up (28, the selection's order).
     /// </summary>
     void OwnCharacterVerbs(List<(string, Action)> verbs, CharacterSnapshot target, IReadOnlyList<CharacterId> selection, bool down)
     {
         var id = target.Id;
-        if (selection.Contains(id)) return;
+        if (selection.Contains(id))
+        {
+            if (target.StayingLow) verbs.Add(("Stand Up", () => Say(new StandUpCommand(selection) { Tick = session.World.Tick })));
+            return;
+        }
         // Bodyguard (45): follows and defends the target; with Shift it is the Bodyguard job (PlayerInterface.SquadAi.cs).
         verbs.Add(("Bodyguard", () => Say(new FollowOrder(selection, id) { Guard = true, Tick = session.World.Tick })));
         verbs.Add(("Follow", () => Say(new FollowOrder(selection, id) { Tick = session.World.Tick })));

@@ -235,7 +235,7 @@ public sealed partial class PlayerSystem(PopulationData? data = null) : ITickSys
                 case SquadAiCommand option:
                     player.SquadAi = option.On ? player.SquadAi | option.Option : player.SquadAi & ~option.Option;
                     break;
-                case OrdersCommand or RunSpeedCommand:
+                case OrdersCommand or RunSpeedCommand or StandUpCommand:
                     Orders.Apply(world, command);
                     break;
                 case Editing.EditCharacter edit:
