@@ -607,6 +607,9 @@ static partial class TerrainShaders
         #ifndef RELIEF_QUALITY
         #define RELIEF_QUALITY uReliefQuality
         #endif
+        #ifndef BIOME_SLOTS
+        #define BIOME_SLOTS 5
+        #endif
 
         """;
 
@@ -641,6 +644,7 @@ static partial class TerrainShaders
         uniform bool uHasGround;       // whole-world ground colour map available
         uniform bool uHasWorldColour;  // whole-world colour map available
         uniform float uCliffEps;       // the cliff weights up to this are dropped, the next as much ramp in (0: every nonzero weight counts)
+        uniform float uContactBand;    // meshes: GroundContact.Band, the height above the ground they blend into it over; 0 off
 
         uniform sampler2DArray uDiffuse;
         uniform sampler2DArray uNormal;
@@ -826,14 +830,17 @@ static partial class TerrainShaders
             return 1.0 - texWorld.y / 5000.0 + (cos(texWorld.x * distort.x) + cos(texWorld.z * distort.x)) * distort.y;
         }
 
-        // Cliff: two vertical projections, weighted by how much the surface faces X or Z (meshes: per vertex).
+        // How much of a mesh's surface takes the ground's material (GroundContact; 0 none, 1 at and under the ground). Set by main before biome().
+        float contact = 0.0;
+
+        // Cliff: two vertical projections, weighted by how much the surface faces X or Z (meshes: per vertex, the ground's way by the contact).
         vec2 cliffBlend(vec3 n)
         {
             vec2 cb = max(abs(normalize(n.xz + vec2(1e-5))) - 0.2, vec2(0.0)) * 7.0;
             cb *= cb;
             cb /= max(cb.x + cb.y, 1e-5);
             if (n.y > 0.995) cb = vec2(0.5);
-            if (uFeature) cb = vCliffBlend;
+            if (uFeature) cb = mix(vCliffBlend, cb, contact);
             return cb;
         }
 
@@ -1028,6 +1035,13 @@ static partial class TerrainShaders
             texWorld = uHeightNormals ? vNormal : vWorld;
             vec3 n = uHeightNormals ? terrainNormal(texWorld.xz) : normalize(vNormal);
             float distance = length(vWorld - uEye);
+            // Ground contact (GroundContact, docs/render-terrain.md): a mesh's surface near the ground under it turns to the ground's normal, so its slope
+            // layers, cliff projections and lighting meet the terrain's; the biomes follow below.
+            if (uFeature && uContactBand > 0.0 && distance < uFarEnd)
+            {
+                contact = 1.0 - smoothstep(0.0, uContactBand, vWorld.y - terrainHeight(vWorld.xz));
+                if (contact > 0.0) n = normalize(mix(n, terrainNormal(vWorld.xz), contact));
+            }
             // Map features clamp the slope at 1, so overhangs (normal pointing down) keep the cliff layer.
             float slope = uFeature ? min(1.0, 1.0 - n.y) : 1.0 - n.y;
             vec2 world01 = (texWorld.xz + uHalfWorld) / (2.0 * uHalfWorld);
@@ -1055,7 +1069,7 @@ static partial class TerrainShaders
                 {
                     map = texture(uOverlay, fract((texWorld.xz + uHalfWorld) * uRegion.zw));
                     map.r = max(map.r, map.g);
-                    if (uFeature) map.a = 0.0;
+                    if (uFeature) map.a *= contact;   // no road on a map feature, but where it meets the ground
                     colour = texture(uColour, fract((texWorld.xz + uHalfWorld) * uRegion.zw)) * 1.2;
                 }
                 if (uTextured)
@@ -1072,7 +1086,11 @@ static partial class TerrainShaders
                     float fieldInside;
                     ivec2 field = uFeature ? ivec2(-1) : fieldTile(texWorld.xz, fieldInside);
                     fieldLayer = field.y;
-                    int single = field.x >= 0 ? field.x : uFeatureBiome;
+                    // Where a mesh meets the ground (contact) the ground's biomes take the contact's share and the feature's own biome the rest: a sixth slot.
+                    uint own = 255u;
+                    float groundShare = 1.0;
+                    if (contact > 0.0 && uFeatureBiome >= 0) { own = uint(uFeatureBiome); groundShare = contact; }
+                    int single = field.x >= 0 ? field.x : own < 254u ? -1 : uFeatureBiome;
                     if (single >= 0)
                     {
                         // A map feature has one biome for its whole surface (the game builds its material for the biome at its origin).
@@ -1084,11 +1102,11 @@ static partial class TerrainShaders
                         // Every biome's march first, then the shading (biomeRelief). Without the march (NO_MARCH) the results' array is left out: kept with
                         // constants, it still cost the pass 0.28 ms.
                         #ifndef NO_MARCH
-                        ReliefOut reliefs[5];
-                        for (int k = 0; k < 5; k++)
+                        ReliefOut reliefs[BIOME_SLOTS];
+                        for (int k = 0; k < BIOME_SLOTS; k++)
                         {
-                            uint b = k < 4 ? slots[k] : slot4;
-                            float wk = k < 4 ? weights[k] : rest;
+                            uint b = k < 4 ? slots[k] : k == 4 ? slot4 : own;
+                            float wk = k < 5 ? (k < 4 ? weights[k] : rest) * groundShare : 1.0 - groundShare;
                             reliefs[k] = ReliefOut(vec2(0.0), vec2(0.0), vec2(0.0), 1.0);
                             if (b >= 254u || wk < 0.004) continue;
                             biomeShare = wk;
@@ -1098,10 +1116,10 @@ static partial class TerrainShaders
                         #else
                         #define RELIEF_OF(k) ReliefOut(vec2(0.0), vec2(0.0), vec2(0.0), 1.0)
                         #endif
-                        for (int k = 0; k < 5; k++)
+                        for (int k = 0; k < BIOME_SLOTS; k++)
                         {
-                            uint b = k < 4 ? slots[k] : slot4;
-                            float wk = k < 4 ? weights[k] : rest;
+                            uint b = k < 4 ? slots[k] : k == 4 ? slot4 : own;
+                            float wk = k < 5 ? (k < 4 ? weights[k] : rest) * groundShare : 1.0 - groundShare;
                             if (b == 254u && wk >= 0.004) pending += wk;   // biome still loading: its share shows the ground colour
                             if (b >= 254u || wk < 0.004) continue;
                             Surface s = biome(int(b), n, slope, map, colour, distance, RELIEF_OF(k));
@@ -1212,6 +1230,8 @@ static partial class TerrainShaders
         const string uniform = "uniform int uFeatureBiome;";
         if (!fragment.Contains(uniform)) throw new InvalidOperationException("TerrainShaders.Fragment no longer declares uFeatureBiome.");
         string f = fragment.Replace(uniform, "flat in int vFeatureBiome;\n#define uFeatureBiome vFeatureBiome\nflat in float vFade;\n");
+        // The ground contact's sixth biome slot (GroundContact: the feature's own next to the ground's five); the patches keep five, and the registers of five.
+        f = f.Insert(f.IndexOf('\n') + 1, "#define BIOME_SLOTS 6\n");
         // A rock crossfading with its impostor (docs/impostors.md section 13): the cull's dither threshold in the placement's row 1 w, as the foliage meshes dither
         // (a threshold in (0, 1) keeps that share of the pixels; 0, what every other placement has, keeps all).
         const string wireframe = "if (uWireframe) { fragColour = vec4(0.1, 0.1, 0.1, 1.0); return; }";
@@ -1301,6 +1321,7 @@ static partial class TerrainShaders
             float pixelScale;
             float broadCut;
             int reliefQuality;
+            float contactBand;
         } terrain;
 
         """;
@@ -1338,7 +1359,7 @@ static partial class TerrainShaders
         ["uDisplaceEnd"] = "terrain.displaceEnd", ["uParallaxEnd"] = "terrain.parallaxEnd",
         ["uOverlayRelief"] = "terrain.overlayRelief", ["uSelfShadow"] = "terrain.selfShadow", ["uTessDetail"] = "terrain.tessDetail", ["uRockRound"] = "terrain.rockRound",
         ["uFieldTiles"] = "utextures2D[terrain.fieldTiles]", ["uFieldOrigin"] = "terrain.fieldOrigin", ["uFieldTile"] = "terrain.fieldTile",
-        ["uFieldColumns"] = "terrain.fieldColumns", ["uFieldCount"] = "terrain.fieldCount", ["uMaxDepth"] = "terrain.maxDepth", ["uTargetSlope"] = "terrain.targetSlope", ["uScaleFollow"] = "terrain.scaleFollow", ["uCliffScale"] = "terrain.cliffScale", ["uRefine"] = "terrain.refine", ["uPixelScale"] = "terrain.pixelScale", ["uBroadCut"] = "terrain.broadCut", ["uReliefQuality"] = "terrain.reliefQuality",
+        ["uFieldColumns"] = "terrain.fieldColumns", ["uFieldCount"] = "terrain.fieldCount", ["uMaxDepth"] = "terrain.maxDepth", ["uTargetSlope"] = "terrain.targetSlope", ["uScaleFollow"] = "terrain.scaleFollow", ["uCliffScale"] = "terrain.cliffScale", ["uRefine"] = "terrain.refine", ["uPixelScale"] = "terrain.pixelScale", ["uBroadCut"] = "terrain.broadCut", ["uReliefQuality"] = "terrain.reliefQuality", ["uContactBand"] = "terrain.contactBand",
     };
 
     const string DerivativeControl = "#extension GL_ARB_derivative_control : require\n";
@@ -1531,6 +1552,7 @@ struct TerrainConstants
     [System.Runtime.InteropServices.FieldOffset(844)] public float PixelScale;
     [System.Runtime.InteropServices.FieldOffset(848)] public float BroadCut;
     [System.Runtime.InteropServices.FieldOffset(852)] public int ReliefQuality;
+    [System.Runtime.InteropServices.FieldOffset(856)] public float ContactBand;
 }
 
 /// <summary>The cells of <see cref="TerrainConstants.BloodCells"/>: column, row, layer (std140 <c>vec4[32]</c>).</summary>

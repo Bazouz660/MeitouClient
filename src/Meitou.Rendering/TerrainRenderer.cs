@@ -658,6 +658,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
             c.HeightNormals = patches ? 1u : 0u;
             c.Feature = patches ? 0u : 1u;
             c.FeatureBiome = -1;
+            c.ContactBand = !patches && GroundContact.Enabled ? GroundContact.Band : 0;
             c.SunColour = light.SunColour;
             c.AmbientSky = light.AmbientSky;
             c.AmbientGround = light.AmbientGround;

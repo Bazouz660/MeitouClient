@@ -141,6 +141,9 @@ public static class Enhancements
         new("blood", "Blood cells", "8 nearest", $"up to {TerrainDecalRenderer.MaxSlots}",
             blood ?? (() => false), setBlood ?? (_ => { }),
             $"the game draws the blood of only the 8 terrain cells (288 units square) nearest the camera, so a big battle's blood ends at a straight cell edge and the cells past it dry up unseen; Meitou draws every cell within Decal Range, up to {TerrainDecalRenderer.MaxSlots} (docs/game/blood-decals.md)"),
+        new("contact", "Ground contact", "hard edge", "blended",
+            () => GroundContact.Enabled, v => GroundContact.Enabled = v,
+            "the game textures a TERRAIN-mode rock with one biome by its own slope, so where it meets the ground a cliff face stops at a hard edge against grass or dirt; Meitou blends the rock's foot into the ground's normal, layers and biomes (docs/render-terrain.md \"Ground contact\")"),
     ];
 
     /// <summary><c>--meitou</c> / <c>--faithful &lt;all|id,id...&gt;</c>: turns those switches to Meitou or to Faithful.</summary>

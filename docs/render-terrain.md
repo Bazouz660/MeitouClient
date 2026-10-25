@@ -139,6 +139,16 @@ shadow map curves alike): Phong tessellation (α 0.75, `RockSmoothing.Roundness`
 tessellation detail), at most 16, `fractional_odd_spacing`; both sides of an edge curve it from the same two ends, so it does not
 crack. Levels by the camera eye in the shadow pass too. The impostor bake and the GI's ray meshes stay flat.
 
+## Ground contact
+
+Meitou look, not in the game (`GroundContact`, switch `contact`; issue #65). The game shades a TERRAIN-mode mesh with its feature's one
+biome by the mesh's own slope, so a cliff face stops hard against the ground's grass or dirt. In the mesh colour programs a pixel
+`h` above `terrainHeight` gets `contact = 1 − smoothstep(0, Band, h)` (Band 20 units; not beyond `uFarEnd`): its normal mixes
+toward `terrainNormal` (so slope layers, cliff projections and lighting follow), the cliff weights toward the ground's, the road layer
+returns by `contact`, and the ground's five biome slots take `contact` of the weight with the feature's biome as a sixth slot
+(`BIOME_SLOTS` 6 in the mesh programs only; the patches keep 5). Depth, shadows, the impostor bake (`ContactBand` 0) and GI unchanged.
+**Unknown:** cost in the band (up to 6 biomes a pixel), and the look at the impostor crossfade.
+
 ## Interior cut
 
 Patches over a building's interior mask are cut: [render-interior-cut](render-interior-cut.md).
