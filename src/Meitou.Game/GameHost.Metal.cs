@@ -1410,7 +1410,7 @@ sealed partial class GameHost
                 }
                 if (settings?.Visible == true)
                 {
-                    settings.Draw(size.X, size.Y);
+                    settings.Draw(size.X, size.Y, overlayPass);
                     wrote = true;
                 }
                 // The mouse pointer over everything, as Vulkan draws it: the system cursor when Hardware mouse is on, else the
