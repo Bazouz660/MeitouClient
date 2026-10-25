@@ -81,6 +81,13 @@ public sealed class WeatherWorld
     /// <summary>The schedule of the region at a world position.</summary>
     public WeatherRegion RegionAt(float x, float z) => RegionOf(areas.RegionAt(Data, x, z));
 
+    /// <summary>The scheduled wind at (x, z): its region's speed and direction (a weather forced at the camera is a view setting and does not change it; what turns the rotors and drives wind generators).</summary>
+    public (float Speed, Vector2 Direction) WindAt(float x, float z)
+    {
+        var r = RegionAt(x, z);
+        return (r.WindSpeed, r.WindDirection);
+    }
+
     /// <summary>
     /// Forces one weather at the camera (the viewer's <c>--weather</c>), at <paramref name="strength"/>, wind at its range for that strength. The sky,
     /// clouds and ramps snap to it on the next update unless <paramref name="snap"/> is false (then they fade and ramp like a weather change). <c>null</c> hands the camera back to the scheduler.

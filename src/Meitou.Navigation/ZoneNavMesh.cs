@@ -227,8 +227,8 @@ public sealed class ZoneNavMesh
     bool Covers(PointIndex ix, int p, float x, float z) =>
         Kept[p] && x >= ix.Min[p].X - 1e-3f && x <= ix.Max[p].X + 1e-3f && z >= ix.Min[p].Y - 1e-3f && z <= ix.Max[p].Y + 1e-3f && Contains(p, x, z);
 
-    /// <summary>The kept polygon nearest to (x, y, z) in XZ distance (ties and containing polygons by height), within <paramref name="maxDistance"/>; −1 when none.</summary>
-    public int Nearest(float x, float y, float z, float maxDistance, out float distance)
+    /// <summary>The kept polygon nearest to (x, y, z) in XZ distance (ties and containing polygons by height), within <paramref name="maxDistance"/>, not one <paramref name="skip"/> rules out; −1 when none.</summary>
+    public int Nearest(float x, float y, float z, float maxDistance, out float distance, Func<int, bool>? skip = null)
     {
         var ix = index.Value;
         int best = -1;
@@ -240,7 +240,7 @@ public sealed class ZoneNavMesh
             for (int cx = x0; cx <= x1; cx++)
                 foreach (int p in ix.Cells[cz * ix.Columns + cx])
                 {
-                    if (!Kept[p]) continue;
+                    if (!Kept[p] || skip?.Invoke(p) == true) continue;
                     if (x < ix.Min[p].X - maxDistance || x > ix.Max[p].X + maxDistance || z < ix.Min[p].Y - maxDistance || z > ix.Max[p].Y + maxDistance) continue;
                     float d = DistanceXZ(p, x, z);
                     if (d > maxDistance) continue;

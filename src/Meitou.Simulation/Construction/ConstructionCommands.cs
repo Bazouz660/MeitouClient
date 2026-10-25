@@ -28,3 +28,9 @@ public sealed record DowngradeSite(string Site) : SimCommand;
 
 /// <summary>The panel's Open to public toggle on a building of the player's: a site's <see cref="BuildSite.Public"/>, else an owned town building's flag in the fixtures.</summary>
 public sealed record SetBuildingPublic(string Building, bool Public) : SimCommand;
+
+/// <summary>The town panel's name box accepted (<c>FUN_140722d60</c>): the player's outpost <see cref="Town"/> is renamed (no uniqueness test; an empty name is ignored, engine choice).</summary>
+public sealed record RenameTown(int Town, string Name) : SimCommand;
+
+/// <summary>The town panel's Open to public tick on the player's outpost <see cref="Town"/> (<see cref="PlayerTown.Public"/>).</summary>
+public sealed record SetTownPublic(int Town, bool Public) : SimCommand;

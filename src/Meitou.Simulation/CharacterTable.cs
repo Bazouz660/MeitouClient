@@ -78,6 +78,8 @@ public sealed class CharacterCold
     public long ProvisionalRepathTick { get; set; }
     /// <summary>Times the walker was stopped on the provisional part since a long route last gained a navmesh part (<see cref="MovementSystem.ProvisionalBlockedLimit"/>).</summary>
     public int ProvisionalBlocked { get; set; }
+    /// <summary>Times the walker was stopped on the navmesh part of its path since it last reached a waypoint or was given an order (<see cref="MovementSystem.BlockedRepathLimit"/>).</summary>
+    public int BlockedRepaths { get; set; }
     /// <summary>The path request in flight, so an answer to an older one is ignored.</summary>
     public long PathRequest { get; set; }
     /// <summary>
@@ -127,7 +129,7 @@ public sealed class CharacterCold
     /// <summary>Sandbox only (the animation sandbox of the game host): replaces the movement mode of every order, and the speed the character walks at (0: the speed chain's). Not hashed; the normal game never sets them.</summary>
     public byte? ModeOverride { get; set; }
     public float SpeedOverride { get; set; }
-    /// <summary>The path cost factor of water for this character (race <c>water avoidance</c>, halved for the player faction; 0: default).</summary>
+    /// <summary>The path cost factor of water for this character (race <c>water avoidance</c>, halved for the player faction; 0: default), the floor of its <see cref="WaterCost"/>.</summary>
     public float WaterFactor { get; set; }
     /// <summary>Its faction's FACTION <c>road preference</c> (0: none), with which a long trip takes the roads (<see cref="RoadNetwork.Route"/>).</summary>
     public float RoadPreference { get; set; }

@@ -74,6 +74,11 @@ public sealed record MachineData
     public bool IsAutomatic { get; init; }
     /// <summary>A wind generator: function 5 without <c>consumes</c> (<b>Observed</b>, the factory <c>FUN_14057cc70</c>).</summary>
     public bool IsWind { get; init; }
+    /// <summary>
+    /// The <c>wind speed rotation min/max</c> of the building's first ROTATION_WIND_SPEED part (depth first through <c>parts</c>, collision-less as the layout's rotors; max raised to min): a wind
+    /// generator's output share is <see cref="Meitou.Data.World.RotorSpec.WindShare"/> of the wind there (<c>PhysicsCollection::getWindRotationPower</c>). Null without such a part (the share is 0).
+    /// </summary>
+    public (float Min, float Max)? WindRotor { get; init; }
     /// <summary>The BUILDING's raw <c>output rate</c> (the exe's <c>+0x1a8</c>), a factor of the efficiency its sound emitter is told (docs/audio.md "Point emitters"); 1 without one.</summary>
     public float OutputRate { get; init; } = 1;
     public bool IsBattery => PowerCapacity > 0;
@@ -106,6 +111,22 @@ public sealed record MachineData
         if (building.GetReferences("limit inventory") is [var only] && db.Find(only.TargetStringId) is { } item)
             return (Math.Max(1, item.GetInt("inventory footprint width", 1)), Math.Max(1, item.GetInt("inventory footprint height", 1)));
         return (Math.Max(1, building.GetInt("storage size width", 18)), Math.Max(1, building.GetInt("storage size height", 18)));
+    }
+
+    static (float Min, float Max)? WindRotorOf(GameDatabase db, GameRecord holder, int depth)
+    {
+        if (depth > 8) return null;
+        foreach (var r in holder.GetReferences("parts"))
+        {
+            if (db.Find(r.TargetStringId) is not { Type: FcsRecordType.BUILDING_PART } part) continue;
+            if (part.GetInt("rotation function") == Meitou.Data.World.RotorSpec.WindSpeed && part.GetPath("xml collision").Length == 0)
+            {
+                float min = part.GetFloat("wind speed rotation min");
+                return (min, MathF.Max(min, part.GetFloat("wind speed rotation max")));
+            }
+            if (WindRotorOf(db, part, depth + 1) is { } below) return below;
+        }
+        return null;
     }
 
     public static MachineData? From(GameDatabase db, GameRecord building)
@@ -175,6 +196,7 @@ public sealed record MachineData
             PowerOperators = Math.Max(0, rawOperators),
             IsAutomatic = rawOperators == 0,
             IsWind = wind,
+            WindRotor = wind ? WindRotorOf(db, building, 0) : null,
             OutputRate = building.GetFloat("output rate", 1),
         };
     }

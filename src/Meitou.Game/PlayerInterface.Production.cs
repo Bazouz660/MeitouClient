@@ -254,6 +254,9 @@ sealed partial class PlayerInterface
             Loc.Tr("The richness of natural {1} present in this location. Anything over 50% is considered good.", Loc.Tr(Name).ToLower(CultureInfo.CurrentCulture))));
     }
 
+    /// <summary>Miles per hour per world unit per second (the original's 0.22369362: a unit is a metre).</summary>
+    const float MphPerUnit = 0.22369362f;
+
     /// <summary>The stats lines of a selected machine: the farm's crop and growth, the output's progress, workers and the bench's tech level.</summary>
     void AddMachineLines(MachineSnapshot m, List<HudLine> stats, ref string status, ref bool bad)
     {
@@ -283,6 +286,13 @@ sealed partial class PlayerInterface
                 bad = pw.Charge <= 0;
                 stats.Add(new("Charge:", P(pw.Store > 0 ? pw.Charge / pw.Store : 0), MainColour));
             }
+            else if (m.Wind is { } wind)
+            {
+                // WindGeneratorBuilding::getGUIState: the production state, then "No Wind" while the share is 0; getGUIPower section 6: the wind speed at the building.
+                status = wind.Share <= 0 ? "No Wind" : "Running";
+                bad = wind.Share <= 0;
+                stats.Add(new("Wind Speed", Loc.Tr("{1,num=fix,p=1} mph", wind.Speed * MphPerUnit), MainColour, Tooltip: "The current wind speed"));
+            }
             else if (pw.Kind == PowerKind.Generator)
             {
                 status = pw.Fueled ? "Running" : "Out of fuel";
@@ -297,7 +307,9 @@ sealed partial class PlayerInterface
             }
         }
         if (m.TechLevel > 0) stats.Add(new("Tech level:", N(m.TechLevel), MainColour));
-        if (m.MaxOperators > 0) stats.Add(new("Workers:", $"{N(m.Operators)}/{N(m.MaxOperators)}", MainColour));
+        // FUN_1403075b0: an automatic machine (raw max operators 0) reads "-".
+        if (m.IsAutomatic) stats.Add(new("Workers:", "-", MainColour, Tooltip: "This machine is fully automatic."));
+        else if (m.MaxOperators > 0) stats.Add(new("Workers:", $"{N(m.Operators)}/{N(m.MaxOperators)}", MainColour));
     }
 
     // ---- the overview's research tab ----

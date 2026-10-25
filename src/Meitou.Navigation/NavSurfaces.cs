@@ -67,9 +67,14 @@ public sealed class NavSurfaces
     /// The height of the surface at (x, z) nearest to <paramref name="y"/>, when one is within <paramref name="range"/>. A surface beside the point within
     /// <see cref="EdgeReach"/> counts with its edge height, its distance added to the difference (a steep side under the point loses to the top beside it).
     /// </summary>
-    public bool TryNear(float x, float z, float y, float range, out float height)
+    public bool TryNear(float x, float z, float y, float range, out float height) => TryNear(x, z, y, range, out height, out _);
+
+    /// <inheritdoc cref="TryNear(float, float, float, float, out float)"/>
+    /// <param name="beside">The height is a surface's edge beside the point, none being over it.</param>
+    public bool TryNear(float x, float z, float y, float range, out float height, out bool beside)
     {
         height = y;
+        beside = false;
         if (cells.Length == 0) return false;
         float best = range, bestEdge = range, edgeHeight = y;
         bool found = false, foundEdge = false;
@@ -101,7 +106,7 @@ public sealed class NavSurfaces
                         foundEdge = true;
                     }
                 }
-        if (foundEdge && (!found || bestEdge < best)) height = edgeHeight;
+        if (foundEdge && (!found || bestEdge < best)) (height, beside) = (edgeHeight, true);
         return found || foundEdge;
     }
 

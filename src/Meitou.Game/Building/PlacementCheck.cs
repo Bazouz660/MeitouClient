@@ -16,6 +16,9 @@ public sealed record QueuedGhost(BuildingBuildData Building, Vector3 Position, Q
 /// </summary>
 public sealed record GhostFloor(string Building, Vector2[] Footprint, int Floor, string? Level = null, bool Owned = false)
 {
+    /// <summary>The height of the building's ceiling over the floor point, null when nothing is over it (what a <c>ceiling placement</c> ghost hangs from).</summary>
+    public float? Ceiling { get; init; }
+
     /// <summary>The parent the placed building records: the site's id, or the level building's instance id.</summary>
     public string Parent => Level ?? Building;
 }
@@ -60,8 +63,8 @@ public sealed record PlacementQuery(BuildingBuildData Building, Vector3 Position
 /// <summary>
 /// The host's half of the placement checks (docs/simulation.md "Buildings", "Placement validation"; the messages and their order are docs/game/buildings-production.md
 /// "Placement"): the ground, the footprints and the characters. It runs <see cref="PlacementRules.TownBlock"/> and the resource row first and returns the first failure in the
-/// original's order. Not decided (so never failed): snap nodes, usage nodes, the floor number and ceilings. The ghost stands on the terrain or on a building's floor
-/// (<see cref="PlacementQuery.On"/>).
+/// original's order. Not decided (so never failed): snap nodes, usage nodes and the floor number above floor 0; a ceiling ghost fails only without a ceiling. The ghost
+/// stands on the terrain or on a building's floor (<see cref="PlacementQuery.On"/>), a ceiling ghost hangs under the ceiling over that floor.
 /// </summary>
 public static class PlacementCheck
 {
@@ -127,6 +130,8 @@ public static class PlacementCheck
             float nodeY = Vector3.Transform(part.Transform.Translation, world).Y + source.GetFloat("footprint vertical");
             if (nodeY < q.Services.WaterLevel) return PlacementFailure.InvalidGround;
         }
+        // A ceiling ghost finds no ceiling over it: the floor-number text.
+        if (b.CeilingPlacement && q.On?.Ceiling is null) return PlacementFailure.InvalidFloor;
 
         // A wall piece pitches with the ground: its own up axis must be within `max slope` of the vertical (Verified, FUN_140429510).
         if (q.WallPiece)

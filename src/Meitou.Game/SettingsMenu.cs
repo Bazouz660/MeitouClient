@@ -277,6 +277,9 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
                 Toggle: new("Character flights", () => config.CharacterFlights, v => config.CharacterFlights = v, Remaster: true, OnOff: true)));
             result.Add(new("Keep textures at characters", "Keeps the meshes and textures around every squad member loaded, not only around the camera, so a flight or jump to them lands on finished detail. Costs video memory.",
                 Toggle: new("Keep textures at characters", () => config.KeepTexturesAtCharacters, v => config.KeepTexturesAtCharacters = v, Remaster: true, OnOff: true)));
+            if (config.KeepTexturesAtCharacters)
+                result.Add(new("Keep textures at all squads", "Also keeps the surroundings of your other squads' members loaded, not only the squad on the squad bar. Costs more video memory.",
+                    Toggle: new("Keep textures at all squads", () => config.KeepTexturesAtAllSquads, v => config.KeepTexturesAtAllSquads = v, OnOff: true)));
             result.Add(new(characterFlightTime.Label, "Seconds a character flight takes, and each hop of the squad tour (numpad /).", Slider: characterFlightTime));
             foreach (var action in values.Actions)
                 result.Add(new(action.Label, "Delete cached billboards; they are rebuilt when needed.", Run: () =>
@@ -493,6 +496,7 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
         config.InGameTransitionSpeed = 1.5f;
         config.CharacterFlights = false;
         config.KeepTexturesAtCharacters = true;
+        config.KeepTexturesAtAllSquads = false;
         config.CharacterFlightSeconds = UserConfig.DefaultFlightSeconds;
         AttackSlotsSlider.Set(UserConfig.FaithfulAttackSlots);
         config.LateDefences = true;

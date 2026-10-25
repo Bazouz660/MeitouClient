@@ -203,10 +203,12 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
         streamer.AddRuntime(placement);
     }
 
-    /// <summary>A placed building is gone: its parts leave the zone.</summary>
+    /// <summary>A placed building is gone: its parts leave the zone. A town house's override is gone: its zone is laid out again, from the level data.</summary>
     public void RemoveRuntime(string instanceId)
     {
-        if (objects.RemoveRuntime(instanceId) is { } removed) streamer.RemoveRuntime(instanceId, removed.Zone);
+        if (objects.RemoveRuntime(instanceId) is not { } removed) return;
+        if (removed.DestroyedOverride is not null) streamer.Reload([removed.Zone]);
+        else streamer.RemoveRuntime(instanceId, removed.Zone);
     }
 
     /// <summary>Forgets every runtime building (a loaded save replaces the world) and lays out the zones that had one again.</summary>
@@ -391,6 +393,8 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
     float needMargin;
     /// <summary>How far ahead a mesh is kept ready for: three times <see cref="needMargin"/> (the camera's speed over 1.5 s).</summary>
     float MeshMargin => needMargin * 3;
+    /// <summary>A camera move farther than this between two mark passes (a second apart) is a cut or a flight, not travel (the host's flight distance).</summary>
+    const float CutDistance = 10000;
 
     void Update(Vector3 eye, double budgetMs)
     {
@@ -468,8 +472,10 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
         long now = Environment.TickCount64;
         if (!force && now - lastMark < 1000) return;
         // How far the camera goes in the half second a finer texture takes to arrive: nearer than that counts as nearer.
-        if (!force && lastMarkTime != 0) needMargin = Math.Min(Vector3.Distance(eye, lastMarkEye) / Math.Max((now - lastMarkTime) / 1000f, 0.05f) * 0.5f, 30000f);
-        else if (force) needMargin = 0;
+        // A flight or a cut is no camera speed: its arrival is known (Ahead), and a margin from it would ask the whole path, or all around the landing, for full detail.
+        bool cut = streamer.Ahead is not null || lastMarkTime != 0 && Vector3.Distance(eye, lastMarkEye) > CutDistance;
+        if (force || cut) needMargin = 0;
+        else if (lastMarkTime != 0) needMargin = Math.Min(Vector3.Distance(eye, lastMarkEye) / Math.Max((now - lastMarkTime) / 1000f, 0.05f) * 0.5f, 30000f);
         (lastMarkEye, lastMarkTime) = (eye, now);
         lastMark = now;
         markStamp++;
@@ -489,6 +495,8 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
             if (inst.Materials is not { } set) return;
             if (set.Stamp != markStamp) { set.Stamp = markStamp; set.Touch(); }
             if (inst.Stand) return;
+            // During a flight the path asks for nothing finer: needs and mesh levels count only the arrival and the kept points (it keeps what it has).
+            if (streamer.Ahead is not null && (value = streamer.LoadNear(eye, inst.Centre) - inst.Radius) >= limit) return;
             if (set.NeedStamp != markStamp) { set.NeedStamp = markStamp; set.Near = set.NearScaled = float.PositiveInfinity; markedSets.Add(set); }
             float near = Math.Max(value - needMargin, 0);
             if (near < set.Near) set.Near = near;
@@ -608,7 +616,7 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
         }
         if (!inst.Stand && gpu.MinLevel > 0)
         {
-            float value = Math.Max(Vector3.Distance(eyeNow, centre) - radius - MeshMargin, 0);
+            float value = Math.Max(streamer.LoadNear(eyeNow, centre) - radius - MeshMargin, 0);
             if (gpu.Curve.LevelFor(value * LodBias) < gpu.MinLevel)
             {
                 if (value < 3000) heldNear++;   // an instance that close waiting for its mesh to be remade would be seen (the benchmark counts it)
@@ -634,8 +642,9 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
         if (made) materialSets[mkey] = set = MakeMaterials(inst.Placed, gpu);
         inst.Materials = set!;
         // Mip streaming: this instance's distance is a use of the textures from now on (before the pass that would find it), and a new set's
-        // textures are loaded now, knowing it (they were made without loading: deferred).
-        float near = Math.Max(Vector3.Distance(eyeNow, inst.Centre) - inst.Radius - needMargin, 0);
+        // textures are loaded now, knowing it (they were made without loading: deferred). Measured as the mark pass does (from the nearest kept point too),
+        // or a kept point's textures load coarse for the far eye and wait in the refine queue.
+        float near = Math.Max(streamer.LoadNear(eyeNow, inst.Centre) - inst.Radius - needMargin, 0);
         foreach (var part in set!.Parts) part.OfferNow(part.Triplanar ? near : near / Math.Max(scale, 1e-6f));
         if (made) set.Touch();
         return true;
@@ -1062,7 +1071,7 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
         if (!ReferenceEquals(inst.Mesh.Gpu, gpu)) { Unresolve(zone, inst); return; }
         if (InteriorHidden(inst.Placed) || StandsAbove(inst) || ClosedAround(inst)) return;
         if (inst.Placed.DoorIndex >= 0) PoseDoor(inst, gpu);
-        if (inst.Placed.Joints is not null) PoseTurret(inst, gpu);
+        if (inst.Placed.Joints is not null) PoseJoints(inst, gpu);
         float value = Vector3.Distance(inst.Centre, eye) - inst.Radius;
         float limit = Math.Min(range, inst.Limit);
         if (value >= limit || !SphereVisible(frustum, inst.Centre, inst.Radius) || MirrorCull?.Invoke(inst.Centre, inst.Radius) == false || FogCull?.Hidden(inst.Centre, inst.Radius, FogVolumes.CullKind.Objects) == true)

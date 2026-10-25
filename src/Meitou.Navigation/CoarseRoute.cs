@@ -1,12 +1,15 @@
 using System.Numerics;
 using Meitou.Data.World;
+using Meitou.Simulation;
+using Meitou.Simulation.Bodies;
+using Meitou.Threading;
 
 namespace Meitou.Navigation;
 
 /// <summary>
 /// Long trips across zones whose navmesh is not loaded (a move order on the map): A* over a coarse grid of the whole world built from the terrain
 /// alone. A step between two cells is barred where the terrain between them is steeper than <see cref="MaxSlopeDegrees"/>; cells under the water
-/// cost the agent's water factor. A step that crosses a building's footprint (the level data's walls and buildings, and the player's: <see cref="SetPlayerObstacles"/>) costs
+/// cost the agent's water cost for their depth. A step that crosses a building's footprint (the level data's walls and buildings, and the player's: <see cref="SetPlayerObstacles"/>) costs
 /// <see cref="BuildingCost"/> times as much, so routes go round towns and walls where open ground allows and still through them where not (a coarse cell
 /// is wider than a gate). Foliage is not in it: the navmesh path near the walker refines the route as its zones load (<see cref="NavmeshWalkability"/>).
 /// Engine choice, not the original's (which routes over its pre-built navmesh tiles, docs/game/pathfinding.md).
@@ -28,9 +31,10 @@ public sealed class CoarseRoute
     /// <summary>The cost factor of a step across a building's footprint (engine choice: a 5.5k-unit wall is walked round, not crossed; finite, so a walled town is still reached).</summary>
     public const float BuildingCost = 40;
 
-    // Direction k: (dx, dz). Bits 0..7 of a cell: the step in direction k is barred. Bit 8: under the water.
+    // Direction k: (dx, dz). Bits 0..7 of a cell: the step in direction k is barred. Bit 8: under the water; bits 9..10: then its wet state 1..3 (Speed.WetStateOfDepth).
     static readonly (int Dx, int Dz)[] Directions = [(1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1), (0, -1), (1, -1)];
     const ushort Water = 1 << 8;
+    const int WetShift = 9;
 
     readonly Func<float, float, float> terrain;
     Func<Func<float, float, float>>? slopeTerrain;
@@ -77,7 +81,8 @@ public sealed class CoarseRoute
             for (int x = 0; x < Side; x++)
             {
                 var c = Centre(x, z);
-                ushort flags = height(c.X, c.Y) < WorldWater.Height ? Water : (ushort)0;
+                float depth = WorldWater.Height - height(c.X, c.Y);
+                ushort flags = depth > 0 ? (ushort)(Water | (Speed.WetStateOfDepth(depth) << WetShift)) : (ushort)0;
                 // Directions 0..3 are tested here; 4..7 are the same steps seen from the other end.
                 for (int k = 0; k < 4; k++)
                 {
@@ -189,21 +194,22 @@ public sealed class CoarseRoute
     /// A route from <paramref name="from"/> to <paramref name="to"/>: the points where it turns (X/Z, Y the terrain or the water surface), both ends included;
     /// empty when the goal cannot be reached over the terrain (or the search ran out).
     /// </summary>
-    public List<Vector3> Find(Vector3 from, Vector3 to, float waterFactor)
+    public List<Vector3> Find(Vector3 from, Vector3 to, WaterCost water)
     {
         // A goal the slope test cuts off (a narrow ramp the coarse grid smooths into a cliff) is still routed to, over every slope: the navmesh near the
         // walker finds the real way up.
-        var route = Find(from, to, waterFactor, slopes: true);
-        return route.Count > 0 ? route : Find(from, to, waterFactor, slopes: false);
+        var route = Find(from, to, water, slopes: true);
+        return route.Count > 0 ? route : Find(from, to, water, slopes: false);
     }
 
-    List<Vector3> Find(Vector3 from, Vector3 to, float waterFactor, bool slopes)
+    List<Vector3> Find(Vector3 from, Vector3 to, WaterCost water, bool slopes)
     {
         var map = cells.Value;
         var crossing = Combined(crossings, playerCrossings);
         int sx = CellOf(from.X), sz = CellOf(from.Z), gx = CellOf(to.X), gz = CellOf(to.Z);
         int start = sz * Side + sx, goal = gz * Side + gx;
-        float waterCost = MathF.Max(1, waterFactor);
+        // By wet state 1..3, never below dry ground.
+        Span<float> waterCost = [1, MathF.Max(1, water[1]), MathF.Max(1, water[2]), MathF.Max(1, water[3])];
         List<int> cellsOnRoute;
         lock (searchLock)
         {
@@ -223,6 +229,7 @@ public sealed class CoarseRoute
                 float gc = g[cell];
                 if (f > gc + HeuristicWeight * Heuristic(cx, cz, gx, gz) + 1e-3f) continue;   // a stale entry
                 if (++expanded > MaxExpanded) break;
+                SafePoint.Every(expanded);
                 ushort flags = map[cell];
                 ushort barred = slopes ? flags : Border(cx, cz);
                 for (int k = 0; k < 8; k++)
@@ -232,7 +239,7 @@ public sealed class CoarseRoute
                     int next = (cz + dz) * Side + cx + dx;
                     float step = (k & 1) == 0 ? 1 : MathF.Sqrt(2);
                     // Half the step in each cell; water cells cost the water factor.
-                    float cost = step * 0.5f * (((flags & Water) != 0 ? waterCost : 1) + ((map[next] & Water) != 0 ? waterCost : 1));
+                    float cost = step * 0.5f * (waterCost[(flags >> WetShift) & 3] + waterCost[(map[next] >> WetShift) & 3]);
                     if ((crossing[cell] & (1 << k)) != 0) cost *= BuildingCost;
                     float gn = gc + cost;
                     if (stamp[next] == generation && gn >= g[next]) continue;

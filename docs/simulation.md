@@ -6,7 +6,9 @@ below do not claim original-game parity. Retain Verified/Observed/Unknown scopes
 
 ## Time model
 
-Control: 30 Hz real time, input/UI/camera continue while paused. Simulation: 1/30 s game time;
+Control: 30 Hz real time, input/UI/camera continue while paused. The interface's own commands (selection, order toggles, run speed, job lists,
+crafting/research queues, squads, inventory, shops, building settings, movement/combat/first-aid/door/cage orders) apply between ticks while paused
+(`World.ApplyPausedInterfaceCommands`); orders only set tasks, nobody moves or fights until the next tick. Simulation: 1/30 s game time;
 accumulate `realDt*speed`, speeds 0/1/2/5. Budget `6*speed` ticks per frame; excess is dropped and
 `AchievedSpeed` reports slowdown. Control ticks precede simulation ticks; a speed change applies
 to the entire frame. `WorldSession` rejects unequal world/clock tick lengths, owns snapshots,
@@ -27,8 +29,6 @@ pause with a tick ahead takes it at once (the picture jumps a tick, then the pau
 a tick takes 4 ms (`WorldSession.TickMs`, smoothed over about ten ticks) until it is under 2 ms (a tick ahead is slower, sharing the cores); Always
 every frame. Off whatever the setting in stills, the duel, recorded flights and the play benchmark (their ticks stay in step with the frame).
 F12's `tick ahead` row is its wall time; `outside ticks` leaves it out.
-
-While paused, due player-interface commands apply between ticks and republish snapshots: selection and inspection, squad selection/management, faction name, inventory and trade, construction, dialogue, research and crafting queues, movement/combat/treatment orders, and supported door/cage interactions. Orders may update character task state, but no movement, combat, game time or other simulation phases advance until resumed. Async population results remain pending until a world tick.
 
 **Verified** original clock: 1200/11 seconds per game hour ([game-loop.md](game/game-loop.md)).
 `BodySystem.HoursPerTick=11/36000`; the medical tick takes `TickSeconds` ([character-stats](game/character-stats.md#time)). Navmesh unload uses
@@ -272,6 +272,7 @@ commands with the original's limits ([Squads tab](game/ui-screens.md#squads-tab)
 Passive/Hold/Block/Taunt/Jobs state belongs to the character (medic and rescue are job-list entries, [job lists](#production)) and relevant
 systems. Explicit player commands and automatic retaliation have different eligibility;
 Idle players self-defend unless Passive, and Hold prevents pursuit beyond attack reach.
+A toggle (button or hotkey) sets every selected character to the opposite of the first one's state, so a mixed selection ends uniform (engine choice; the original's rule is **Unknown**). Toggles and the run speed arrows also apply while paused ([time model](#time-model)).
 New player characters start with Jobs and Ranged enabled. Jobs gates the job list and automatic rescue (the medic, robotics, splint and attacking-enemies jobs run regardless, as the original); direct orders still run. The saved `chase mode` is this switch. Saved toggles override
 defaults, including explicit false values. Jobs is GAMESTATE_AI `jobs` ([perma-jobs](game/ai-tasks.md#perma-jobs)); Meitou's older `meitou jobs enabled` is read, not written.
 Sneak: sneaking speed cap and clips, quieter, smaller view factor; a hostile looker sees the sneaker only once its
@@ -808,7 +809,7 @@ that damages a complete building. Production, power and research: [Production](#
 - `Meitou.Data/Gameplay/Construction/BuildingBuildData.cs`: `BuildingBuildData.From/LoadAll` (build fields, material
   entries), `MaterialCost`, `Target` (sum of required), `Rate` (`build speed mult` / (1200/11)), `EstimatedHours(buildSpeed)`
   (the build window's estimate, **Verified** algebra: materials / (`build speed mult` x CONSTANTS `build speed` x option)).
-- `.../ResearchGate.cs`: `StartResearch(db, start)` (the default start research, then the start-off's `research`),
+- `.../ResearchGate.cs`: `StartResearch(db, start)` (the start-off's `research`, or the default start research when it lists none),
   `Unlocked(db, completed)` (union of `enable buildings`, BUILDING targets only), `DefaultStartId`.
 - `.../PlacementRules.cs`: `PlacementFailure` (one value per original message), `PlacementTown`,
   `TownBlock(BuildingBuildData, Vector2 at, IReadOnlyList<PlacementTown>, string playerFactionId)`, `Message(PlacementFailure)`
@@ -824,16 +825,25 @@ that damages a complete building. Production, power and research: [Production](#
   required, delivered), `Complete`, `Paused`, `Dismantling`, `Public`, `TownName`), `BuildingsRevision`, `UnlockedBuildings`.
 
 **Simulation state.** `World.Buildings` (`Construction.BuildingRegistry`, sites as `BuildSite`): player-built sites in
-creation order, by id, holding the snapshot's fields plus rate, builder counter and the destroyed flags. Base-game
-placements are not in it. Ids `<n>-zone<X>.<Y>-INGAME`, n from a per-zone counter (hashed) that starts above every such id
+creation order, by id, holding the snapshot's fields plus rate, builder counter and the destroyed flags. Owned town houses needing repair also register, with `LevelPlacement` and a zone-qualified id; completed restored houses stay registered for their scene overlay. Ids `<n>-zone<X>.<Y>-INGAME`, n from a per-zone counter (hashed) that starts above every such id
 in the loaded save (generated interiors share the pattern; `Reserve(id)`). The 106 `-zoneX.Y-INGAME` ids of the level data
 are not reserved by the simulation (**engine gap**, the host may call `World.Buildings.Reserve`); a collision with a base
 placement is the host's to avoid. `World.Research` (`Construction.ResearchState`): completed RESEARCH ids and the
-`Unlocked` set (replaced, never changed in place). A new game completes the default start research
-(`ResearchGate.DefaultStartId`, [build menu](game/buildings-production.md#build-menu)) and the start-off's `research`
+`Unlocked` set (replaced, never changed in place). A new game completes the start-off's `research`, or the default start research
+(`ResearchGate.DefaultStartId`, [build menu](game/buildings-production.md#build-menu)) when it lists none
 (`PopulationSystem.StartPlayer`); a load takes the save's. Research benches change it ([Production](#production), which says when it is hashed).
 
-**Outposts.** `World.Buildings.Towns` (`PlayerTown`: `Number` 1.., `Name`, `Position`, `Owner`; never removed) and
+**Town-house repairs.** `FixtureRegistry` registers an owned damaged/incomplete house on purchase or town activation.
+Buying a ruin leaves it destroyed; an explicit Repair order from an able selected player character starts rebuilding,
+applying the [ruin transition](game/buildings-production.md#construction-tick) once and restoring doors and indoor sight.
+Build, DeliverMaterials and FetchMaterials use the same work and resource rules as new construction. Shift also adds
+Engineer (125), which resumes available work after supplies arrive; a direct order stops when no source exists.
+Jobs retain their queue priority and switch. Transient orders are not saved; persistent jobs and the house's progress,
+delivered materials and ownership are ([save](formats/save.md#zone-files)). Normal damage to a complete house needs no materials.
+Town houses cannot be dismantled, cancelled or upgraded through this seam. The original town and instance remain unchanged.
+**Verified** implementation coverage: `HouseRepairTests` and `HouseRepairUiTests` (both UI modes, original Storm House data).
+
+**Outposts.** `World.Buildings.Towns` (`PlayerTown`: `Number` 1.., `Name`, `Position`, `Owner`, `Public`; never removed; renamed and ticked public by the [town panel](game/ui-screens.md#town-panel)) and
 `BuildSite.Town` (a number, 0 none). `PlaceBuildings` gives each new site its town by the
 [outpost rule](game/buildings-production.md#placement): the parent's; else the nearest player town within 5000 (X/Z);
 else the town of the nearest player site within 2500; else a `creates player town` non-wall makes "Your Outpost" at its
@@ -888,7 +898,7 @@ optional), `EdgeGap` (site, point -> gap to its footprint hull; the host's).
   `Rng.Float(Rng.Hash(seed, StableHash(id), RngPurpose.Build, i))`, m = CONSTANTS `min dismantle materials percentage` /
   100; each unit is its own ground item (`GroundItems.Drop`, yaw 0) at x, z = position + (2u - 1) r, u from streams
   `2000 + (i << 16) + 2k` and `+1`, r = the footprint radius, at least `Reach` (engine: the original's bounding box is
-  not in the sim). A destroyed flag (a save's; nothing sets it in play) turns a building into a ruin on the next tick
+  not in the sim). A destroyed flag (a save's; nothing sets it in play) turns a player-built building into a ruin on the next tick; a town house waits for Repair
   (**Verified** rule: progress 0.4 x target, delivered floor(delivered x U[0.3, 0.5) + 0.5)).
 - Engineer job (125, run by the [job lists](#production)): `EngineerSite` scores the faction's sites that `NeedsWork`,
   not paused, destroyed, attached or being dismantled, `max(2 (1 - d^2/9000^2), 0.0001) / (n + 1)` (d 3D, n others
@@ -910,7 +920,10 @@ newly complete → navmesh and lamps (lamps leave when it is no longer complete)
 ticks and loads; the diff does not. Navmesh membership (engine reading of the Observed rebuild on placing):
 `PathMode != 0` and (`Complete` or `BuildThreshold == 0`). Rebuilt zones that publish go into the host's next
 `RepathCommand` (with its zones, [long routes](game/pathfinding.md)).
-- Overlay type: the existing `BuildingPlacement` (`StateId` null, `WorldY` = absolute Y, zone of the position).
+- Overlay type: `BuildingPlacement` (`StateId` null for new buildings, `WorldY` = absolute Y). Town repairs retain the
+  original state and instance ids, overriding only `Destroyed`; render and nav replace by global `Key`, never append a second house; removing the override lays its zone out again from the level data.
+  A repaired town house replaces only its objects and interior in the resident zone; floors are invalidated and its nav overlay applies from repair start even below build threshold.
+  House lamps and layout lamps replace the old lights, with none during reconstruction.
 - Rendering: `WorldObjects.AddRuntime/RemoveRuntime(BuildingPlacement)` merged into `BuildZone`. Engine choice: a loaded
   zone takes the placement incrementally (no reload); the scaffold is an approximation ([render-objects](render-objects.md#player-buildings-and-the-placement-ghost)).
 - Navigation: one thread-safe overlay store shared by every `ZoneGeometryGatherer` (`NearBuildings` and `BuildingHash`
@@ -936,7 +949,9 @@ faction; else the original's "don't own" / "incomplete" texts); the parent is le
 level), and interior-only furniture is refused only off a floor. Engine stand-in for the original's node boxes against the
 building's walls: the footprint must lie within the building's indoor hull. **Not decided** (never fail, so the ghost may
 show valid where the original refuses): snap nodes, usage nodes, blocked use nodes, the floor-number
-check and ceilings, vertical margins, the 5 deg object-surface rule. A site inside another (its parent) is picked through
+check above floor 0, vertical margins, the 5 deg object-surface rule. A `ceiling placement` ghost hangs its origin 1 below the
+lowest collision over the floor point (a slab's or roof's underside, from 5 up; its meshes hang below their origin, Ceiling Lamp
+y -19..+4) and fails with the floor-number text when there is none. A site inside another (its parent) is picked through
 the parent's roof and walls while the interior view shows the parent; a site in a level building takes the usual town rules. Messages: `PlacementRules.Message`, else the original's text table in `PlacementCheck`.
 
 Build mode (B, `Kenshi_BuildWindow`, Faithful UI only): categories and groups list `WorldSnapshot.UnlockedBuildings` in
@@ -1043,7 +1058,7 @@ crafting benches, generators and batteries. Facts: [production](game/buildings-p
   town (sites grouped by `Town`, 0 included) shares power as the [original](game/buildings-production.md#power) after the
   operators, so grants follow last tick's operators. The factor scales production, crafting, research and farm growth;
   research `improve buildings` (`ResearchState.Upgrades`) scales rates and adds output and capacity. Engine choices: health
-  is 1; wind generators give `WindFraction` 0.5 of their output; battery mode is not saved. HUD: output, fuel use, charge,
+  is 1; wind generators give their blades' share of the region's wind ([rotating parts](game/buildings-production.md#rotating-parts)), loaded or not; battery mode is not saved. HUD: output, fuel use, charge,
   "No power" / "Low power".
 - **Hauling** (`ProductionSystem.Hauling.cs`, `ProductionSettings.AutoHaul`, default on; facts in
   [buildings-production](game/buildings-production.md#hauling)). An operator at its machine first puts carried items
@@ -1060,7 +1075,8 @@ crafting benches, generators and batteries. Facts: [production](game/buildings-p
   `CharacterCold.Jobs` is the ordered list; `AddJob` (Shift + right click on a finished machine or storage) adds through the original's rules
   (remap, duplicate refusal, companion, switch on); `RemoveJob` is the list's X. Every `JobCheckTicks` 10 (staggered by slot) a player character
   that is idle (no task, following or wandering, as for the medic job) or on a job takes the first job that is not blocked, so a higher job takes over as soon as it can run and a blocked one passes
-  to the next; an order replaces the job's task, and the list resumes once the character is idle. A job that ends returns the
+  to the next; a job whose site (or the engineer finder's pick) is `JobRangeSq` 4.246733e7 (≈ 6517, 3D) or more from the character is skipped
+  ([range](game/ai-tasks.md#perma-jobs); players are treated as ROAM_FAR and the home-town exception is left out); an order replaces the job's task, and the list resumes once the character is idle. A job that ends returns the
   character to the following or wandering it took it from. The lists also run with no machine while a site `NeedsWork` or a job follows a character. The production pick runs the
   jobs below; first aid, carry and aggro passes run others (further below):
   - 97 Training (Shift + right click on a training dummy, function 7, or the "Training" verb): the Operate task at the dummy; `Train` raises the building's `stat used` by the capped continuous
@@ -1354,7 +1370,8 @@ combat engagement, wound-list/pain, base-game building state beyond locks and do
 generation), ground items and game speed are not fully restored. The camera view is ([saved camera](formats/camera.md#saved-camera)). Loaded hashes need not match captured hashes: compare carried fields and agreement
 between repeated loads. QuickSaveTests checks carried fields and repeatable loading.
 
-**Crime and jail** (keys in [save.md](formats/save.md#locks-cages-and-sentences)). Saved: bounty ledger, held state and sentence, the escaped flag, the recently-wanted
+**Crime and jail** (keys in [save.md](formats/save.md#locks-cages-and-sentences)). Saved: bounty ledger (`bountyexp` written with a minute and a tick of slack over the minute-floored
+save clock, so an entry does not lose an hour per save and load; `BountySave`), held state and sentence, the escaped flag, the recently-wanted
 and recognition timers (player platoon characters, written only while set), the locks of interior cages and containers (an imprisoned character stays locked in), and the homes a
 lock-up round locked (without the flag a loaded night's locks would never be undone). **Restarted, not saved** (engine choice; the guard, hunter, releaser and warden of each job is a
 town NPC the population makes again with a new id, so a saved link would dangle): arrests (a downed target lies where it fell, is spotted again once awake, the saved markers make

@@ -51,6 +51,8 @@ sealed class UserConfig
     public bool CharacterFlights { get; set; } = false;
     /// <summary>Keeps the object meshes and textures and the terrain textures around every squad bar character loaded, not only around the camera (Advanced settings; Meitou only, costs video memory).</summary>
     public bool KeepTexturesAtCharacters { get; set; } = true;
+    /// <summary>With <see cref="KeepTexturesAtCharacters"/>, the other player squads' members are kept too, not only the squad bar's (more video memory).</summary>
+    public bool KeepTexturesAtAllSquads { get; set; }
     /// <summary>Seconds a character flight (and each squad tour hop, numpad /) takes.</summary>
     public float CharacterFlightSeconds { get; set; } = DefaultFlightSeconds;
     public const float DefaultFlightSeconds = 2, FlightDistance = 10000;

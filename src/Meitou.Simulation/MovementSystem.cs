@@ -45,6 +45,25 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
     public const float BodyShare = 0.6f;
     /// <summary>A character within this distance of a waypoint has reached it.</summary>
     public const float ArriveRadius = 10;
+    /// <summary>
+    /// How near (units) a walker comes to a corner it may not cut (<see cref="CanCut"/>) before it turns for the next waypoint (engine choice: about a step).
+    /// </summary>
+    public const float CornerReach = 2;
+
+    /// <summary>
+    /// Whether a walker at <paramref name="from"/> can step straight toward <paramref name="to"/> for <see cref="ArriveRadius"/> units, its height carried on as each step's is: a corner
+    /// is cut early only then (engine choice; Observed: zone 22.10, a walker beside a door stair's foot cut its corner up the stair's side and stood there).
+    /// </summary>
+    static bool CanCut(IWalkability walk, Vector3 from, Vector3 to)
+    {
+        var leg = new Vector2(to.X - from.X, to.Z - from.Z);
+        float length = leg.Length();
+        if (length < 1e-3f) return true;
+        float y = from.Y;
+        for (float d = 1; d <= MathF.Min(length, ArriveRadius); d += 1)
+            if (!walk.TryStand(from.X + leg.X * (d / length), from.Z + leg.Y * (d / length), y, out y)) return false;
+        return true;
+    }
     /// <summary>The <see cref="CharacterCold.ArriveWithin"/> of a walk to a spot (engine choice: a barman stands at his node behind the counter, not a stride off it).</summary>
     public const float SpotArrive = 2;
     /// <summary>How fast a formation follower's heading eases toward its leader's, per second, while the leader moves (the original's 0.5).</summary>
@@ -72,6 +91,11 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
     /// </summary>
     public const float ProvisionalRepathSeconds = 2;
     public const int ProvisionalBlockedLimit = 5;
+    /// <summary>
+    /// How many times running a walker stopped on the navmesh part of its path (no ground it can stand on ahead) asks for the path again from where it stands before it drops it
+    /// and the order (engine choice: from a slightly different spot the path can start elsewhere, docs/game/pathfinding.md "Own builder").
+    /// </summary>
+    public const int BlockedRepathLimit = 3;
 
     public PathService Paths { get; } = paths;
 
@@ -215,6 +239,7 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
         var cold = table.Cold(slot)!;
         cold.OrderQueue.Clear();
         cold.ArriveWithin = 0;
+        cold.BlockedRepaths = 0;
         n.Task = (byte)CharacterTask.GoTo;
         n.Goal = target;
         n.Mode = mode;
@@ -288,7 +313,8 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
             // The goal's floor: the height the order was given at, else the character's own (a wander or follow goal on its level).
             float nearY = cold.GoalHeightAt == next[i].Goal && !float.IsNaN(cold.GoalHeight) ? cold.GoalHeight : next[i].Position.Y;
             var to = new Vector3(next[i].Goal.X, world.Walkability.GroundHeight(next[i].Goal.X, next[i].Goal.Y, nearY), next[i].Goal.Y);
-            cold.PathRequest = Paths.Submit(new CharacterId(i, next[i].Generation), next[i].Position, to, cold.FootprintRadius, cold.WaterFactor, cold.RoadPreference);
+            cold.PathRequest = Paths.Submit(new CharacterId(i, next[i].Generation), next[i].Position, to, cold.FootprintRadius,
+                WaterCost.Of(cold.WaterFactor, next[i].MaxSpeed, cold.Race, cold.SwimSpeed), cold.RoadPreference);
             next[i].Flags = (ushort)((next[i].Flags & ~(ushort)MoveFlags.NeedPath) | (ushort)MoveFlags.Pending);
         }
         // The synchronous service has the answers already.
@@ -524,9 +550,11 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
                 float dist = to.Length();
                 bool last = n.PathCursor == cold.Path.Length - 1;
                 closing = last && cold.ArriveWithin > 0 && dist <= ArriveRadius;
-                if (dist <= (last ? cold.ArriveWithin > 0 ? cold.ArriveWithin : ArriveRadius : ArriveRadius * 0.5f))
+                if (dist <= (last ? cold.ArriveWithin > 0 ? cold.ArriveWithin : ArriveRadius : ArriveRadius * 0.5f)
+                    && (last || dist <= CornerReach || CanCut(walk, p.Position, cold.Path[n.PathCursor + 1])))
                 {
                     n.PathCursor++;
+                    if (cold.BlockedRepaths != 0) cold.BlockedRepaths = 0;
                     if (last) finished = true;
                 }
                 else
@@ -643,7 +671,8 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
                 else
                 {
                     // Blocked on the provisional part of a long route (the terrain-only route met a wall or a building): stand and ask again.
-                    if (n.PathCursor >= cold.PathExact && ++cold.ProvisionalBlocked <= ProvisionalBlockedLimit)
+                    // Blocked on its navmesh part: ask again from where it stands a few times before giving up.
+                    if (n.PathCursor >= cold.PathExact ? ++cold.ProvisionalBlocked <= ProvisionalBlockedLimit : ++cold.BlockedRepaths <= BlockedRepathLimit)
                     {
                         speed = 0;
                         dir = Vector2.Zero;

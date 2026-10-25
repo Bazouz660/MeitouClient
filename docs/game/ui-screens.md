@@ -135,6 +135,25 @@ against French 1440-line screenshots. Every caption the code sets is the catalog
   squads (their platoon files copied whole), and, when ticked, the player's buildings and their zones, research, dead and imprisoned uniques and
   faction relations; with the reset tick the squads go to (-43500, 0, -6625). The full rules: [save.md](../formats/save.md#importing-a-game-savemanagerimportgame-fun_140378a30). Meitou: built (`SaveImport`); the Advanced options take the selected save's difficulty when opened or when a row is selected while open.
 
+### New game
+
+**Verified** (decompilation: `FUN_14036cb80` and `FUN_140872e00`, `resetGame` and `newGameWithCharEdit`, names from KenshiLib 1ce4a16; relations, start
+towns, discovered towns, research and scatter also **Observed** in the original against Son of a Captain, Nobodies, Holy Nation Citizen, The Freedom Seekers,
+Empire Citizen and The Cannibal Hunters). The "Meitou" sentences are engine choices, not claims about the original.
+
+- **Relations**: a new game's relations start from the data's (every faction is made anew, `FUN_1409ef230`); each `faction relations` entry then sets that faction's
+  relation with the player, both ways, to its v0.
+- **Place**: `force start pos` gives (`start pos X`, `start pos Z`). Otherwise a town is drawn among every placement of every listed `town`
+  (so a record placed many times, like Waystation, gives any of them). A list with no placed town gives the message "Cannot find any towns from the
+  game start town list.", then, as an empty list does, a draw among the TOWN and VILLAGE placements whose faction is real, not BANDIT and not hostile
+  to the player (-30 or below); with none, (-43500, -6625). Meitou stands the squad on a walkable spot near that place.
+- **Discovered**: every town of type TOWN in the biome group of the start place.
+- **Squad**: a SQUAD_TEMPLATE entry makes a squad of its own; a CHARACTER entry makes v0 characters (0 counts as 1), each at the place plus up to 50
+  on x and z, joining the player's current squad. Nobody made: the Wanderer squad `45550-gamedata.base`. Meitou makes one squad of them all, each
+  template keeping its own layout.
+- **Research**: the start's `research`, or `5359-gamedata.base` when it lists none.
+- **Clock**: day 1 (set by the reset), 10:00.
+
 ### Loading screen
 
 **Verified** (decompilation: constructor `FUN_14091a280`, show/hide `FUN_140916ca0`, picture `FUN_1409163e0`, tip `FUN_140913640`, per frame `FUN_1409133d0`):
@@ -288,7 +307,9 @@ to Jobs; the saved `chase mode` flag is that switch (**Verified**, [perma-jobs](
   background). Part (H health, S a deduction, D a pending amount, Mx its maximum): Green (H − S)/Mx, Yellow (H + D − S)/Mx, Red (Mx − S)/Mx, White
   splint % × 0.01 + green, number floor(H − S + 0.1); arrows `<<   ` below 0 and degenerating, `<<!!   ` at the KO point, `!!!   ` destroyed. Blood:
   green blood / capacity, number floor(blood + 0.1), arrows a run of `<`, ceil(|bleed rate| / 0.05) of them (at most 100). Hunger (0..3): number
-  (int)(hunger × 100), Green hunger − 2, Yellow hunger − 1, Red hunger; arrows `>   ` recovering, `<!   ` below 2, else `<   `. The parts come in the
+  (int)(hunger × 100), Green hunger − 2, Yellow hunger − 1, Red hunger; arrows, first match: `>   ` stomach (+0x64) > 0 (digesting), `<!   `
+  hunger < 2, none in a bed (character `inSomething` +0x2f8 = IN_BED), else `<   `. A `<<!!   ` branch for hunger < 1 sits after the < 2 test
+  and is unreachable. The row is skipped for robot races (race +0x7c, KenshiLib 1ce4a16, Observed). The parts come in the
   medical part array's order ([part order](character-stats.md#part-order), **Verified**): head, torso, arms, legs, left before right.
 - Information panel: `ExtendingPanel` starts collapsed, its bottom moved onto the panel's bottom (behind the Overlapped `StatsPanel`), and slides over
   0.5 s to its layout place when `ExtendedStatsButton` is pressed (**Verified**). `BountyPanel` shows only for one selected character with a bounty or
@@ -329,7 +350,7 @@ to Jobs; the saved `chase mode` flag is that switch (**Verified**, [perma-jobs](
   giving an order". Jobs list (`JobsPanel`, an ItemBox; class `JobsPanel` with `JobInfo` rows built as `DataPanelLine`s, RTTI): "assigned player jobs and
   orders for the selected character"; each row has an X that removes the job, top rows take priority and rows can be dragged to reorder (tutorial strings,
   **Verified** in the exe). Empty, `JobsPanelInfo` shows "[No jobs assigned]" and the hint. The row text is **Unknown**; Meitou shows each job
-  as its type's name (with the building) and an X (`Kenshi_CloseButtonSkin`), dragged to reorder. Hold = hold position; Block = defensive mode ([combat.md](combat.md#techniques-block-and-dodge) has a +20 guarding-state term in the block chance; whether it is this stance is **Unknown** there) (+20 melee defence, no attacks; **Verified**
+  as its type's name (with the building) and an X (`Kenshi_CloseButtonSkin`), dragged to reorder. Hold = hold position; Block = defensive mode (CharStats +0x128, read by the block chance, defence and dodge; the buttons' standing orders: [combat.md](combat.md#fight-lifecycle-and-orders)) (+20 melee defence, no attacks; **Verified**
   against the tooltip string in the exe: "gain 20 to his melee defense skill ... will not attempt to make any
   attacks"); Passive = non-combat mode (tooltip strings; all the orders panel's tooltips: [Tooltips](#tooltips)).
 - Speed selector: the `SpeedPanel` ImageBox shows an image of `Kenshi_CharacterSpeedSet` / `Icons`, indexed Walk, Jog, Run, Group;
@@ -338,6 +359,24 @@ to Jobs; the saved `chase mode` flag is that switch (**Verified**, [perma-jobs](
   built the index is 0 (Walk) until the first refresh. **Verified**: `kenshi_images.xml`, the panel's name list in FUN_14072b540 (exe bytes
   `Run`/`Jog`/`Walk`), arrows FUN_140722580 / FUN_140722630, apply FUN_140722500, refresh FUN_140726930. While any selected
   character's state at +0xe0 is 1 the arrows re-apply without stepping (FUN_1407f3a20); what that state is is **Unknown**.
+
+### Town panel
+
+`TownPanel` of `Kenshi_MainPanel` (bottom right; class `TownPanel`, MainBarGUI +0x128, KenshiLib 1ce4a16). **Verified** by code unless noted:
+- **Widgets** (constructor `FUN_140724e10`): `OutpostNameEditBox`, `OpenToPublicCheckBox`, the `Research` / `Power` / `Battery` `ProgressBar`s (range 100) with their
+  `...Caption` boxes; the labels get `Open to public:`, `Research:`, `Power:`, `Battery charge:` through the translator.
+- **Shown** (HUD update `FUN_140728d50`): while the town list `DAT_142134100` has a town (and a global `DAT_142133ae0`, **Unknown**), the shown town stays while the
+  GameWorld +0x580 position (taken to be the camera pivot, **Unknown**) is within its radius (`vfunc 0x2a0`, X/Z); else the nearest town (`FUN_140927e40`, X/Z) of the player's
+  faction or with byte +0x3d0 set (**Unknown**), kept only if the position is within its radius. No town: hidden.
+- **Town change** (`FUN_140722de0`): the name box gets the town's name, the tick its +0x380; both are enabled only for a town whose faction is the player's (+0x250).
+- **Each frame** (`FUN_140727380`): Research = the research manager's current research (+0x58) name and its progress x 100, else `None` and 0. Power = the town's +0x474 /
+  +0x47c x 100 (+0x47c <= 0: 100 when +0x474 > 0, else 0), caption `{1,num}/{2,num}` of (int)+0x474, (int)+0x47c. Battery = +0x48c / +0x490 x 100, caption (int)+0x48c /
+  (int)+0x490, then ` >>` when +0x488 > 0, else `<< ` before it when +0x484 > 0 (exe strings). Field meanings: [Power](buildings-production.md#power).
+- **Actions**: the tick flips Town +0x380 and plays `General_Click` (`FUN_140721e50`); the name box's accept sets the town's name (`FUN_140722d60`), no other check. +0x380 is
+  the town state's saved `public` ([outposts](../formats/save.md#player-outposts)) and makes the town a trader destination and stay ([ai](ai.md#package-classes)).
+- Meitou (`PlayerInterface.Town.cs`): the subtree is registered as a screen panel (drawn under the windows, not raised, skipped by Esc and Tab) so the box takes typing; the
+  position is the camera pivot; Enter or losing the focus renames (`RenameTown`; an empty name is ignored, engine choice); the tick sends `SetTownPublic`; both only for
+  the player's own outposts (`PlayerTown.Public`, saved as `public`). A public outpost is a wandering trader's destination as a public placed town is, and keeps it for its stay.
 
 ### Biome banner
 
@@ -407,10 +446,11 @@ How a building gets selected: [ui-input](ui-input.md#building-picking-and-select
     stuff, don't lose them."); furniture: "Dismantling this building will destroy all furniture.\nDo you want to continue?"; else the message box
     "Dismantle" / "Are you sure?". What the confirmation's callback (`LAB_14002b666`) does is **Unknown**. Pause is slot 85 (`FUN_140546f40`): flips
     the paused byte, `General_Click`.
-  - 6: `Open to public:` (label Main) coloured `Public` (Good) / `Private` (Bad) for another faction's building; for the player's own building in a
-    town (+0x1f0, the town pointer the For sale rule reads) a `Kenshi_Button2` toggle of width 0.3 (Public in Good, Private in BadBright; slot 83 `FUN_140546ef0` flips the byte +0xc8 read by slot
+  - 6: `Open to public:` (label Main) coloured `Public` (Good) / `Private` (Bad) for another faction's building; for the player's own building (owner
+    +0x250 set) with an interior object (+0x1f0, **Verified** `FUN_140301840`; `FUN_140551b20` creates it only when the BUILDING's `interior` list is
+    non-empty, so wind generators and benches get no line) a `Kenshi_Button2` toggle of width 0.3 (Public in Good, Private in BadBright; slot 83 `FUN_140546ef0` flips the byte +0xc8 read by slot
     82, `General_Click`). `For sale:` with a button `c.{1,num}` (both Good) when slot 88 (`FUN_14029c500`) is true: a building of class 0xb with no
-    parent whose town (+0x1f0) has its +0x2c byte clear and type 1, 2 or 3 (**Unknown** which these are), owned by a faction neither the player's nor
+    parent whose interior (+0x1f0) has its +0x2c byte clear and type 1, 2 or 3 (**Unknown** which these are), owned by a faction neither the player's nor
     allied, and its state's bool `sell home` set (true without a state). Price (`FUN_1407ad300`): int(f × target × the owner FACTION's float
     `building cost mult` × 400), f = 0.375 when slot 102 (+0x330) answers true, else 1. That slot reads the destroyed byte +0x1a1
     ([construction state](buildings-production.md#construction-state), **Verified** there against `FUN_1405595a0`). The button (slot 80
@@ -441,8 +481,11 @@ How a building gets selected: [ui-input](ui-input.md#building-picking-and-select
   door object). Open to public is the state's `is public day` / `is public night` for the time of day (**Observed** reading), for another faction's
   buildings. A building of the player's (its site, or a town building whose fixtures the player's faction owns, `BuildingDetail.Owned`) gets the
   buttons: the door lines as full-row buttons, `[UPGRADE]` / `[DOWNGRADE]` on a site (`UpgradeSite` / `DowngradeSite`, same scope as the
-  simulation's), and in a town the Open to public toggle (`SetBuildingPublic`: a site's `BuildSite.Public`, a town building's flag in the fixtures,
+  simulation's), and in a town, for a record with an `interior` list, the Open to public toggle (`SetBuildingPublic`: a site's `BuildSite.Public`, a town building's flag in the fixtures,
   both saved as `is public day`; a town building set Private drops out of the town AI's wander and bar places). **Observed** (owner's original-game Longhouse screenshot): clicking its price opens a confirmation titled with the building name, asking `Do you want to buy this building for c.{1,num}?`, with Yes / No buttons. For sale and its confirmation use the [house purchase contract](../simulation.md#town-house-purchases). Not built: Dismantle of a town building the player owns, the original's other consumers of +0xc8 (**Unknown**).
+- **Workers** (`FUN_1403075b0`, **Verified** strings and branch): with raw `max operators` (+0x3ac) 0, `Workers:` `-` with the tooltip "This machine
+  is fully automatic." (wind generators); else `{1,num}/{2,num}` operators / +0x3ac, tooltip "The machine is fully staffed." / "The machine is under-staffed.",
+  the value in another colour when nobody operates it.
 - **Door** (DoorStuff slot 40 `FUN_140304120`), then the house's own lines of the same section: 4 `Door Condition`, the number int(progress) of the
   door's own construction state, tooltip "The door is in good condition." while that number is not negative, else "The door is damaged." (Title);
   6 `Open/Close:` with "The door is open / closed / broken" and `Security:` `Locked` / `Unlocked` and ` (lvl {1,num})`, with tooltips ([Tooltips](#tooltips)).
@@ -659,7 +702,7 @@ unless marked; Meitou: `PlayerInterface.Squads.cs`, commands in `SquadManagement
   - Meitou (`PlayerInterface.Inventory.cs`, `Items/HeldItems.cs`): the held item is world state (`PlayerState.Held`, commands `LiftItem`, `PlaceHeld`, `GiveHeld`, `DropHeld`,
     `ReturnHeld`; [simulation](../simulation.md#items-and-eating)). Engine choices: the release places only after the pointer moved at least 5 px since the press (a click keeps the item for the
     next press); right click or Escape puts it back; a stock item goes only into the customer's windows and the customer's own items onto the stock; give range 1000 (60 for an item out of
-    a non-player window) from the window's owner. Not built: the race check, section item-count caps, "That's not for sale." (no trader character window), "Got caught stealing." and
+    a non-player window) from the window's owner; let go over a squad bar portrait, it is given to that member (same range and room rules; its own portrait puts it back). Not built: the race check, section item-count caps, "That's not for sale." (no trader character window), "Got caught stealing." and
     "Attempted smuggling!" (looting's witness test stands in), CAMPING buildings.
 - **Observed** in the original Metaru screenshot supplied on 2026-10-15: inventory
   icons have translucent black rectangular backings covering their cell footprints;

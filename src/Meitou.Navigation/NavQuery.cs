@@ -1,5 +1,6 @@
 using System.Numerics;
 using Meitou.Simulation;
+using Meitou.Threading;
 
 namespace Meitou.Navigation;
 
@@ -9,10 +10,10 @@ public sealed record NavAgent
     /// <summary>RACE <c>pathfind footprint radius</c> × the size factor (humans 4, Garru 7, Leviathan 40).</summary>
     public float Radius { get; init; } = 4;
     /// <summary>
-    /// Cost multiplier of water polygons: a + 1 for RACE <c>water avoidance</c> a ≥ 0, 1 / (1 − a) below, halved for the player's faction
-    /// (docs/game/pathfinding.md, "Filters and costs"). 7 is a Greenlander (a = 6).
+    /// Cost multipliers of the water polygons by depth (<see cref="NavArea.WetState"/>): at least a + 1 for RACE <c>water avoidance</c> a ≥ 0, 1 / (1 − a) below, halved for the
+    /// player's faction, and more where the agent is that much slower than on land (docs/game/pathfinding.md, "Water costs"). 7 is a Greenlander (a = 6).
     /// </summary>
-    public float WaterFactor { get; init; } = 7;
+    public WaterCost Water { get; init; } = WaterCost.Uniform(7);
     /// <summary>FACTION <c>road preference</c>: a long route takes the roads by the original's rule (<see cref="RoadNetwork.Route"/>); 0 never.</summary>
     public float RoadPreference { get; init; }
     /// <summary>Doors are blocked (closed, face data 5) when this is true; open doors cost <see cref="OpenDoorCost"/> extra.</summary>
@@ -83,11 +84,16 @@ public sealed class NavQuery(NavWorld world, NavDoors? doors = null)
 
     [ThreadStatic] static SearchScratch? searchScratch;
 
-    public PathResult FindPath(Vector3 from, Vector3 to, NavAgent? agent = null)
+    public PathResult FindPath(Vector3 from, Vector3 to, NavAgent? agent = null) => FindPath(from, to, agent ?? NavAgent.Human, null, out _);
+
+    /// <summary>
+    /// As <see cref="FindPath(Vector3, Vector3, NavAgent?)"/>, from the nearest start polygon <paramref name="skipStart"/> does not rule out; <paramref name="start"/> is the
+    /// one taken (Zone −1 when none was found).
+    /// </summary>
+    public PathResult FindPath(Vector3 from, Vector3 to, NavAgent agent, Func<NavRef, bool>? skipStart, out NavRef start)
     {
-        agent ??= NavAgent.Human;
-        if (!World.TryFindPolygon(from, StartSnap, out var start, out var startPoint) || !World.TryFindPolygon(to, GoalSnap, out var goal, out var goalPoint))
-            return PathResult.NotFound;
+        if (!World.TryFindPolygon(from, StartSnap, out start, out var startPoint, skipStart)) { start = new NavRef(-1, -1); return PathResult.NotFound; }
+        if (!World.TryFindPolygon(to, GoalSnap, out var goal, out var goalPoint)) return PathResult.NotFound;
         var corridor = FindCorridor(start, startPoint, goal, goalPoint, agent);
         if (corridor is null) return PathResult.NotFound;
         return new PathResult(Pull(corridor, agent));
@@ -123,13 +129,14 @@ public sealed class NavQuery(NavWorld world, NavDoors? doors = null)
         int iterations = 0;
         Node? last = null, nearest = first;
         float nearestDistance = float.MaxValue;
-        float minFactor = Math.Min(1f, agent.WaterFactor);
+        float minFactor = Math.Min(1f, agent.Water.Min);
         // A start polygon none of whose exits leaves the radius clear (a sliver by a stair or a wall the walker was pushed into) is left through the narrow ones:
         // the walker stands in it already (docs/game/pathfinding.md, "Own builder").
         bool squeezeOut = false;
 
         while (open.Count > 0 && iterations++ < MaxIterations)
         {
+            SafePoint.Every(iterations);
             var node = open.Dequeue();
             if (node.Closed) continue;
             node.Closed = true;
@@ -214,7 +221,7 @@ public sealed class NavQuery(NavWorld world, NavDoors? doors = null)
 
     static float Detour(Vector3 a, Vector3 p, Vector3 b) => Vector3.Distance(a, p) + Vector3.Distance(p, b);
 
-    static float Factor(byte area, NavAgent agent) => area == NavArea.Water ? agent.WaterFactor : 1;
+    static float Factor(byte area, NavAgent agent) => NavArea.WetState(area) is var state and > 0 ? agent.Water[state] : 1;
 
     /// <summary>
     /// The shared segment between a polygon's edge and the polygon behind it: the overlap of the two collinear edges. Left and right are as seen when

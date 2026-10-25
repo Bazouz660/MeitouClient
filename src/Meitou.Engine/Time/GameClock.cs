@@ -11,8 +11,8 @@ public sealed class GameClock
 {
     /// <summary>Game seconds per game hour (Verified: the game's 0.0091666... hours per second at speed 1).</summary>
     public const double SecondsPerGameHour = 1200.0 / 11;
-    /// <summary>Hour of day a new game starts at (Unknown in the original: the one sample save, a new game, was saved at 13:39; engine choice).</summary>
-    public const double DefaultStartHour = 13;
+    /// <summary>Hour of day a new game starts at (<c>FUN_140872e00</c>, docs/game/ui-screens.md "New game").</summary>
+    public const double DefaultStartHour = 10;
     /// <summary>Day count of a new game (Observed: the sample save, a new game, reads day 1).</summary>
     public const long DefaultStartDay = 1;
     /// <summary>The CONSTANTS record's values in the shipped data (Verified: <c>sunrise</c> 5, <c>sunset</c> 23, <c>days per year</c> 100).</summary>

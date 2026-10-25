@@ -44,7 +44,8 @@ sealed partial class PlayerInterface
         statHelp = StatHelpCatalog.From(template);
         MyGuiColours.LoadPalette(resolve("kenshi_colours.xml"));
         uiResources = MyGuiResources.Load("kenshi_init.xml", resolve, "kenshi_fonts.xml");
-        faithfulHud = MyGuiTemplates.Expand(MyGuiReader.ReadLayout(resolve("Kenshi_MainPanel.layout") ?? throw new FileNotFoundException("Kenshi_MainPanel.layout not found.")), uiResources);
+        var mainPanel = MyGuiReader.ReadLayout(resolve("Kenshi_MainPanel.layout") ?? throw new FileNotFoundException("Kenshi_MainPanel.layout not found."));
+        faithfulHud = MyGuiTemplates.Expand(mainPanel, uiResources);
         relationsLineLayout = resolve("Kenshi_FactionRelationsLine.layout") is { } relationsLine ? MyGuiTemplates.Expand(MyGuiReader.ReadLayout(relationsLine), uiResources) : null;
         squadBoxLayout = resolve("Kenshi_SquadBox.layout") is { } squadBox ? MyGuiTemplates.Expand(MyGuiReader.ReadLayout(squadBox), uiResources) : null;
         messageLayout = resolve("Kenshi_MessagePanel.layout") is { } messages ? MyGuiTemplates.Expand(MyGuiReader.ReadLayout(messages), uiResources) : null;
@@ -64,6 +65,7 @@ sealed partial class PlayerInterface
         characterRowLayout = resolve("Kenshi_CharacterSelectionBox.layout") is { } characterRow ? MyGuiTemplates.Expand(MyGuiReader.ReadLayout(characterRow), uiResources) : null;
         // The title's start, load and import windows leave its buttons live (the original's title windows are not modal): another button replaces them.
         faithfulScreens.PassThrough = id => id is "new-game" or "load" or "import" && faithfulScreens.IsOpen("title");
+        faithfulScreens.RegisterPanel(TownScreen, TownPanelLayout(mainPanel));
         faithfulScreens.Follow("bag", "inventory");   // the bag window is married to the inventory, opened and closed by OPEN BAG only
         faithfulScreens.Follow("loot-bag", "loot");
         faithfulScreens.Activated += FaithfulAction;
@@ -214,6 +216,7 @@ sealed partial class PlayerInterface
         var b = BindUi();
         faithfulScreens.FocusRing = UiMode == UiMode.Meitou;
         bool hud =!TitleOpen && !EditorOpen && !conversationShown;   // the conversation panel covers the HUD bar (engine reading of its layout)
+        SyncTownPanel(hud);
         var controls = hud ? MyGuiPresentation.Arrange(faithfulHud, Width, Height, b, uiResources.Layers).ToList() : [];
         UiRect FaithfulSlot(string name) => controls.FirstOrDefault(c => c.Name == name)?.Bounds ?? default;
         var slots = new Dictionary<string, UiRect>
@@ -272,6 +275,7 @@ sealed partial class PlayerInterface
         if (SquadTabClick(c)) return true;
         if (c.Action.StartsWith("faithful:", StringComparison.Ordinal))
         {
+            // A second click on the open tab's button closes the overview.
             int tab = c.Name == "ShortcutTechButton" ? 2 : c.Name == "ShortcutSquadButton" ? 4 : 0;
             if (faithfulScreens.IsOpen("overview") && faithfulScreens.GetTab("overview", "TabsMain") == tab)
                 faithfulScreens.Close("overview");
@@ -309,12 +313,12 @@ sealed partial class PlayerInterface
         else if (action == "squad") Select(ActiveSquadMembers(), false);
         else if (action == "member")
         {
-            // A portrait click selects, a double click centres and follows (docs/game/ui-input.md section 7).
+            // A portrait click selects (Shift: adds), a double click centres and follows (docs/game/ui-input.md section 7).
             int index = int.Parse(argument, CultureInfo.InvariantCulture);
             long now = System.Diagnostics.Stopwatch.GetTimestamp();
             bool doubleClick = index == lastMemberClick && System.Diagnostics.Stopwatch.GetElapsedTime(lastMemberClickAt, now).TotalSeconds <= DoubleTapSeconds;
             (lastMemberClick, lastMemberClickAt) = (doubleClick ? -1 : index, now);
-            SelectMember(index, false, doubleClick);
+            SelectMember(index, pressShift, doubleClick);
         }
         else if (action == "stop") Say(new StopCommand(SelectedIds()) { Tick = session.World.Tick });
         else if (action == "medic") Say(new Meitou.Simulation.FirstAid.MedicJobCommand(SelectedIds(), SlowModifier) { Tick = session.World.Tick });

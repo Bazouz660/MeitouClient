@@ -355,7 +355,7 @@ static class NavmeshTool
         using var w = new StreamWriter(path);
         for (int i = 0; i < g.Vertices.Count; i += 3)
             w.WriteLine(string.Create(CultureInfo.InvariantCulture, $"v {g.Vertices[i]:0.##} {g.Vertices[i + 1]:0.##} {g.Vertices[i + 2]:0.##}"));
-        foreach (var (name, area) in new[] { ("null", NavArea.Null), ("ground", NavArea.Ground), ("water", NavArea.Water) })
+        foreach (var (name, area) in new[] { ("null", NavArea.Null), ("ground", NavArea.Ground), ("water", NavArea.Water), ("water-waist", NavArea.WaterWaist), ("water-deep", NavArea.WaterDeep) })
         {
             w.WriteLine($"g {name}");
             for (int t = 0; t < g.TriangleCount; t++)
@@ -375,7 +375,7 @@ static class NavmeshTool
             var colour = g.Areas[t] switch
             {
                 NavArea.Ground => ((byte)110, (byte)170, (byte)90),
-                NavArea.Water => ((byte)70, (byte)110, (byte)200),
+                NavArea.Water or NavArea.WaterWaist or NavArea.WaterDeep => ((byte)70, (byte)110, (byte)200),
                 _ => ((byte)190, (byte)90, (byte)70),
             };
             r.Triangle(P(0), P(1), P(2), colour);
@@ -399,7 +399,7 @@ static class NavmeshTool
         Console.WriteLine($"wrote {path} ({r.Width}x{r.Height})");
     }
 
-    static readonly (string Name, byte Area)[] AreaNames = [("ground", NavArea.Ground), ("water", NavArea.Water), ("door", NavArea.Door)];
+    static readonly (string Name, byte Area)[] AreaNames = [("ground", NavArea.Ground), ("water", NavArea.Water), ("water-waist", NavArea.WaterWaist), ("water-deep", NavArea.WaterDeep), ("door", NavArea.Door)];
 
     /// <summary>The polygons as an OBJ: one group per area, plus "pruned" for those the seed pass removed.</summary>
     static void WriteMeshObj(ZoneNavMesh m, string path)
@@ -446,7 +446,7 @@ static class NavmeshTool
                 var poly = m.Polygons[p];
                 var colour = !m.Kept[p] ? ((byte)200, (byte)60, (byte)60) : m.Areas[p] switch
                 {
-                    NavArea.Water => ((byte)80, (byte)130, (byte)230),
+                    NavArea.Water or NavArea.WaterWaist or NavArea.WaterDeep => ((byte)80, (byte)130, (byte)230),
                     NavArea.Door => ((byte)255, (byte)170, (byte)40),
                     _ => ((byte)120, (byte)220, (byte)120),
                 };

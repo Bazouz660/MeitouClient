@@ -39,6 +39,7 @@ sealed partial class PlayerInterface
         {
             faithfulScreens.EditEnter(ctrl);
             if (faithfulScreens.Focus is { Screen: "overview", Widget: FactionNameBox }) faithfulScreens.Blur();   // Enter accepts the faction name
+            if (faithfulScreens.Focus is { Screen: TownScreen, Widget: TownNameBox }) faithfulScreens.Blur();   // and the outpost name (FUN_140722d60)
         }
         return true;
     }

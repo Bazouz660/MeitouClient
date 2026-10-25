@@ -37,6 +37,10 @@ public sealed record HudView(float Blood, float BloodCapacity, float Bleeding, f
 {
     /// <summary>The race's <c>bleed rate</c> multiplier (the Blood row's tooltip).</summary>
     public float BleedRate { get; init; } = 1;
+    /// <summary>The stomach store (<see cref="Bodies.MedicalState.Fed"/>); above 0 the Hunger row shows <c>&gt;</c>.</summary>
+    public float Fed { get; init; }
+    /// <summary>The race's <c>is robot</c>: the medical panel has no Hunger row.</summary>
+    public bool Robot { get; init; }
 }
 /// <summary>
 /// The information panel's extended lines (docs/game/ui-screens.md section 4): the XP rates as the fraction the panel shows as a percentage (Toughness as a plain multiplier),
@@ -253,6 +257,8 @@ public sealed record WorldSnapshot(long Tick, IReadOnlyList<CharacterSnapshot> C
     public IReadOnlyList<Construction.BuildingSnapshot> Buildings { get; init; } = [];
     /// <summary>Bumped when a building is added, completed, destroyed or removed (not on progress): the host diffs <see cref="Buildings"/> by id when it changes.</summary>
     public long BuildingsRevision { get; init; }
+    /// <summary>The player outposts with their power totals (the town panel, docs/game/ui-screens.md "Town panel").</summary>
+    public IReadOnlyList<Production.OutpostSnapshot> Outposts { get; init; } = [];
     /// <summary>Loose items lying in the world (<see cref="Items.GroundItems"/>), oldest first.</summary>
     public IReadOnlyList<Items.GroundItemSnapshot> GroundItems { get; init; } = [];
     /// <summary>The containers with an inventory (a building interior's chests and boxes), where they stand.</summary>

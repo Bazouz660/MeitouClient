@@ -12,10 +12,15 @@ public static class NavArea
 {
     public const byte Null = 0;
     public const byte Ground = 1;
-    public const byte Water = 2;
+    /// <summary>Water by depth: shallow, waist-deep and deep, the wet water states 1..3 of a size-1 swimmer (<see cref="WetState"/>; docs/game/pathfinding.md "Water costs").</summary>
+    public const byte Water = 2, WaterWaist = 4, WaterDeep = 5;
     public const byte Door = 3;
 
     public static bool IsWalkable(byte area) => area != Null;
+    public static bool IsWater(byte area) => WetState(area) > 0;
+    /// <summary>The water state 1..3 a water area stands for; 0 for any other.</summary>
+    public static int WetState(byte area) => area switch { Water => 1, WaterWaist => 2, WaterDeep => 3, _ => 0 };
+    public static byte OfWetState(int state) => state switch { 3 => WaterDeep, 2 => WaterWaist, _ => Water };
 }
 
 /// <summary>A convex prism: a convex polygon on the XZ plane between two heights. Used for carvers (removes the mesh) and door painters.</summary>

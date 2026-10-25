@@ -115,6 +115,7 @@ A slave's Slave role list runs through the Obedient Slave job (187): [role lists
   again; in its town state 0 → 1 → 2, and when ready (`FUN_1402868c0`: in a player town that is not public at once, else W h after arriving and between
   06:00 and 20:59) it drops its town (`FUN_140288bd0`) to draw another. Can start while state < 2 or when ready; finished at state 2. So templates with a slot-0 bar
   package hop town to town, sitting in each town's bar 5-8 h. Unread: a leader flag (Character +0x648 → +0x70) that also lets it leave 0.2 h after being set (**Unknown**).
+  Meitou (`PopulationData.TraderTown`): placed towns and the player's outposts (`PlayerTown.Public`, the [town panel](ui-screens.md#town-panel)'s tick) in one nearest-4 draw, placed towns first in a tie (the original's order over its two lists is **Unknown**).
 - **Package_PassingByTownAssault** (29): can start when `attacks` (settings.cfg) is not 5, it is not spent (+0xb4), its leader's town is a player town whose faction it is
   not allied with (`FUN_1406b2630`: same or relation ≥ 50), the platoon is intact, the faction's wait has passed (global map by faction `DAT_14212dde0` of
   {last end, running}: free while one runs; a faction that never ended one is free; else more than the wait since the last end) and that town's faction has someone

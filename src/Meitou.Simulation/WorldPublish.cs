@@ -11,13 +11,21 @@ public sealed partial class World
     /// <summary>
     /// Where a character is drawn: a character on the water, which the simulation keeps on the navmesh's flat surface, is lowered to the seabed or, swimming, to <see cref="Bodies.Speed.WadingHeight"/>
     /// (the same surface test as <see cref="MovementSystem"/>'s water state: within <see cref="Bodies.Speed.WaterSlack"/> of the water level). Not a carried or a downed body.
+    /// One lying in a bed is raised by <see cref="BedLift"/>.
     /// </summary>
     Vector3 DrawnPosition(CharacterCold? cold, Vector3 at)
     {
+        if (cold?.InSomething == Locks.HeldState.Bed) return at with { Y = at.Y + BedLift };
         if (cold is not { Race: { } race, Medical: not { Incapacitated: true } } || !cold.CarriedBy.IsNone || at.Y > Meitou.Data.World.WorldWater.Height + Bodies.Speed.WaterSlack) return at;
         float terrain = Walkability.TerrainHeight(at.X, at.Z);
         return terrain < at.Y ? at with { Y = Bodies.Speed.WadingHeight(terrain, 1, race.Swims) } : at;
     }
+
+    /// <summary>
+    /// How far a sleeper is drawn above its lie spot (engine choice, docs/game/locks.md "Beds"): the bed clips hold <c>Bip01</c> about level with the mattress top
+    /// (<c>sleepinbed</c> 6.7 on <c>Bed</c>'s 7.36, <c>sleeponfloor</c> 1.46 on <c>Camp Bed</c>'s 1.73), so the body sank into it.
+    /// </summary>
+    const float BedLift = 1.5f;
 
     /// <summary>
     /// The faction the bounty panel calls local (<c>FUN_140852010</c>, docs/game/ui-screens.md section 4): the cage owner's while imprisoned, else (Meitou's reading of the status
@@ -140,7 +148,7 @@ public sealed partial class World
         Snapshot = new WorldSnapshot(Tick, list) { Projectiles = projectiles?.PublishProjectiles() ?? [], Trade = trades?.PublishTrade(), Conversation = dialogues?.PublishConversation(), CharacterTrade = dialogues?.PublishCharacterTrade(), Speech = PublishSpeech(), DialogueRequest = dialogues?.PublishRequest(), Towns = Player.Towns, Camps = Player.Camps, SquadAi = Player.SquadAi, PlayerSquads = PublishSquads(), ActiveSquad = Player.Squad, OpenLoot = Player.OpenLoot, LootOpener = Player.LootOpener,
             Held = Player.Held is { } held ? Items.HeldItemView.Of(held) : null, HeldSerial = Player.HeldSerial,
             Buildings = Buildings.Published(), BuildingsRevision = Buildings.Revision, GroundItems = GroundItems.Published(), GroundItemsRevision = GroundItems.Revision, UnlockedBuildings = Research.Unlocked, Doors = Fixtures.PublishedDoors(), Containers = Fixtures.ContainerSpots, Beds = Fixtures.BedSpots, Cages = Fixtures.CageSpots(Characters), DoorPicks = Fixtures.DoorPicks, OwnedTownBuildings = Fixtures.OwnedProperties(Player.Faction), InspectedBuilding = Fixtures.DetailOf(Player.InspectedBuilding, Player.Faction), InspectedRichness = production?.RichnessOf(this, Player.InspectedBuilding),
-            Machines = OpenContainerView() is { } container ?[.. production is null ? [] : Machines.Published(production.Items), container] : production is null ? [] : Machines.Published(production.Items), MachinesVersion = Machines.Version, Research = production?.ResearchView(this) ?? Production.ResearchSnapshot.Empty,
+            Machines = OpenContainerView() is { } container ?[.. production is null ? [] : Machines.Published(production.Items), container] : production is null ? [] : Machines.Published(production.Items), MachinesVersion = Machines.Version, Research = production?.ResearchView(this) ?? Production.ResearchSnapshot.Empty, Outposts = production?.OutpostView(this) ?? [],
             Crafts = production?.CraftsView(this) ?? Snapshot.Crafts };
     }
 
@@ -218,7 +226,7 @@ public sealed partial class World
         lines.Add(new("Toughness:", stats.Toughness, stats.Toughness));
         if (!ranged) lines.Add(Line("Dodge:", StatsEnumerated.Dodge, fighter?.DodgeMult ?? 1));
         return new HudView(med.Blood, Bodies.MedicalState.BloodCapacity(race, stats.Strength, med.HasStatsObject, med.ScaleK, med.ScaleZ), med.Bleeding,
-            fighter?.EncumbranceFactor ?? 1, lines.AsReadOnly(), cold.Extended) { BleedRate = race.BleedRate };
+            fighter?.EncumbranceFactor ?? 1, lines.AsReadOnly(), cold.Extended) { BleedRate = race.BleedRate, Fed = med.Fed, Robot = race.IsRobot };
     }
 
     static BodyStatus BodyOf(CharacterCold cold, Bodies.MedicalState med, RaceData race, byte task) => new(

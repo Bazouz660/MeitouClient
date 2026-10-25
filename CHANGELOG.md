@@ -3,6 +3,43 @@
 What changed in each release, newest first. The release workflow copies the section of the version it builds into the GitHub release
 notes and refuses to release a version without one: add a `## vX.Y.Z` section with one `- ` line per change before running it.
 
+## v0.15.0
+
+- Linux and macOS builds (linux-x64, osx-x64, osx-arm64) alongside Windows
+- Production: wells, farms with growing crops, mines, research benches and repeatable research, crafting benches with queues, quality and criticals, refiners
+- Power: generators, fuel, batteries, wind generators driven by the region's wind, and town power sharing; fans, spinners and wind blades turn
+- Job lists as the original: operate, haul, build, medic, rescue, bodyguard, training dummies, corpse disposal and more, with the AI tab and squad AI options (Heal, Rescue Allies, Share Food, Shoot first...)
+- Automatic machines work unattended; operators haul outputs to storage and fetch inputs; building upgrades and downgrades
+- Your outposts get the town panel (rename, Open to public, research, power and battery bars), and public outposts draw traders
+- Squad management: squads tab to add, rename, delete, reorder and swap members; followers keep the original's formations
+- Beds: Sleep and Put in Bed orders, bed rent, town house purchases, and NPCs sleep in their homes' beds
+- Turrets fire: gunners aim and reload, town guards man turrets when enemies are near
+- Containers and storage windows, loot window with the whole inventory, drag items onto the ground, ground item labels on Alt, and stealing
+- Trade: buyback, slave trading, bag and backpack trading, stock kept per shop container; prices from the trader's town culture
+- Full item tooltips: armour, weapons, crossbows, limbs and food, with grades, values, resistances and crafted-by
+- Combat as the original: attack technique choice, attack slots, initiative, circling, chase give-up and pursuit; right click switches targets mid-fight
+- Stealth: the original's 3D arrows over noticing NPCs, the light-level icon, and gear and crawling factors
+- First aid: kits drain as the original, NPC medics treat prisoners, and knockouts follow the original's KO point and coma rules
+- Captives: cannibals eat prisoners, slavers turn captives into slaves and work them in mines, occupiers hold towns, refugees flee home
+- Dialogue: much more of the original's conditions and actions, squad memory, NPC-to-NPC conversations, faction ranks (join the Shinobi Thieves), police talk and bail
+- Relations change from blows, deaths, cagings and first aid as in the original; trespassing and witnessed assaults
+- Weather affects characters: dust, acid rain and ground, gas and worn protection
+- Animals age and grow, pack beasts spawn with their bags, and animals can be bought
+- Character editor matches the original, with .bod2 import and export and stat-driven bodies
+- Language selection with the game's translations
+- Import game: start a new world from an old save
+- Graphics: subsurface scattering on skin, ground and rock relief (parallax and displacement), SMAA, blood decals on the terrain, campfire and torch effects, carried lanterns, quality presets and ambient light sliders
+- Audio: doors, machines, footsteps on building floors, prospecting and research sounds; voice cap slider
+- Faithful mode: the original's splash screens, loading screen, title windows and fonts; a Fixes page for vanilla bug fixes
+- Performance: big battles, threaded pathfinding, the next world tick runs during the draw, faster blood and posing; default frame cap 150 fps
+- luckyren Mode: fatal hits burst the character
+- Saves keep the camera, container contents, blood decals, shop stock and more
+- Navmesh: many stairs, doors, gates and roofs walkable, no more walkers under houses or stuck off the mesh
+- Fix bounties losing an hour on every save and load
+- Fix a rare crash at load in the ragdoll warm-up, and a crash at speed 5 with caged characters
+- Fix character creation keeping a race the start doesn't offer
+- log.txt keeps its lines after a hard reset
+
 ## v0.14.1
 
 - Fix the main menu never appearing on slower GPUs (integrated graphics, GTX 1050 Ti class): it now opens after 5 s of ready content even when frames are not smooth

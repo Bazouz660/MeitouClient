@@ -85,6 +85,9 @@ public sealed class SavedPopulation
 {
     public required SaveHandles Handles { get; init; }
     public required IReadOnlyDictionary<FcsRecord, string> InstanceOf { get; init; }
+    /// <summary>The instance ids of <see cref="InstanceOf"/>, as a set (made on first use).</summary>
+    public IReadOnlySet<string> InstanceIds => instanceIds ??= new(InstanceOf.Values, StringComparer.Ordinal);
+    HashSet<string>? instanceIds;
     public IAppearanceSource? Appearances { get; init; }
     /// <summary>The save's clock, which is world tick 0 (bounty timers are read against it).</summary>
     public SaveClock Clock { get; init; }
@@ -241,7 +244,7 @@ internal static class SavedCharacters
         // In a bed or a cage, and the sentence (docs/simulation.md "Cages, beds and locks"); the fixture binds when its town registers.
         HeldSave.Read(sc.GameState, cold, context.Handles, context.InstanceOf);
         if (cold.InSomething == Locks.HeldState.Bed) hot.Task = (byte)CharacterTask.Sleep;   // it lies there until an order (Locks.BedSystem)
-        if (cold.IsPlayer && sc.Ai is { } ai) PermaJobSave.Read(ai, sc.GameState, cold, world.Buildings, context.Handles, context.InstanceOf);
+        if (cold.IsPlayer && sc.Ai is { } ai) PermaJobSave.Read(ai, sc.GameState, cold, world.Buildings, context.Handles, context.InstanceOf, context.InstanceIds);
         // The portrait camera's number: the saved one, else the handle's serial (CharacterAnimal::vfunc_18).
         cold.PortraitSerial = sc.GameState is { } portrait && portrait.Ints.TryGetValue("portrait_serial", out int serial) ? (uint)serial : (uint)sc.Handle.S;
         cold.Save.InSomething = cold.InSomething;

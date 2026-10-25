@@ -21,8 +21,12 @@ reflection and streaming residency need consistent bounds.
 ## Arrival prefetch
 
 During a character flight or squad tour hop ([viewer.md](viewer.md#squad-tour)) the host sets `WorldFrame` `Ahead` to the landing
-view's eye from the tap on. Object zones are laid out and kept, meshes requested, and mesh LOD / texture mips chosen by the nearer of
-the eye and that point (`ObjectStreamer.Near`); terrain biome textures gather cells round both. Foliage zones within the near reach of
+view's eye from the tap on. Object zones are laid out and kept by the nearer of the eye and that point (`ObjectStreamer.Near`), and what
+is loaded near either stays. New object work (mesh requests, a resolving instance's LOD level and first texture need, mark-pass texture needs
+and mesh LOD remakes) counts only that point and the kept points (`ObjectStreamer.LoadNear`): the flight path draws what is already
+loaded and stand-ins, and asks for nothing finer. The mark pass's camera-speed margin is 0 during a flight and after any camera move of
+more than 10000 units between passes (a cut), else a flight asked everything near the path, or round the landing, for full detail.
+Terrain biome textures gather cells round both. Foliage zones within the near reach of
 that point are laid out and kept as well. The load order puts the arrival first: zone layouts, mesh decodes, instance resolves, terrain
 biome pairs and foliage layouts rank by distance from the arrival, and what is only near the eye (the flight path) ranks after all of it
 (`ObjectStreamer.Rank`). Object textures the arrival view uses are touched first and decode ahead of the other streaming work
@@ -32,8 +36,10 @@ The simulation focus moves to the landing character at once, so its towns popula
 ## Kept points
 
 Advanced "Keep textures at characters" (Meitou, default on, `UserConfig.KeepTexturesAtCharacters`): the host sets `WorldFrame` `Kept` to
-the drawn position of every squad bar member each frame. `ObjectStreamer.Near` / zone layout count the nearest of eye, `Ahead` and `Kept`,
-so object meshes and texture mips stay loaded round each character; terrain biome textures gather cells round each (ranked after the
+the drawn position of every squad bar member each frame; its sub-option "Keep textures at all squads" (default off, shown only while the
+main one is on, `KeepTexturesAtAllSquads`) takes every player squad's members instead. `ObjectStreamer.Near` / zone layout count the nearest of eye, `Ahead` and `Kept`,
+so object meshes and texture mips stay loaded round each character (a resolving instance's first texture need is measured the same way, else
+its textures load coarse for the far eye and wait for refines); terrain biome textures gather cells round each (ranked after the
 eye's). `Kept` ranks after the eye in the load order. Foliage and grass pages follow only the eye and `Ahead`. Costs video memory
 (the VRAM guard still applies). `WorldFrame` merges the points first (`ObjectStreamer.MergeKept`): one within 500 units of the eye or of an
 earlier point is dropped, so a squad standing together is one point. Every distance test walks the kept points, and `ObjectStreamer.Scan`
@@ -61,7 +67,9 @@ distant stand-ins and placement ghosts keep their normal appearance. Input/evide
 Sites and finished buildings of `WorldSnapshot.Buildings` are runtime placements (`WorldObjects.AddRuntime/RemoveRuntime`,
 `BuildingPlacement` with `WorldY` absolute), merged into their zone's layout. Meitou adds one to an already loaded zone
 incrementally (`ObjectStreamer.AddRuntime`, no zone reload, so nothing flickers; a pending zone job falls back to a
-reload). Host diff: [simulation.md](simulation.md#buildings).
+reload). Town-house repairs replace only the matching placement and its furniture/interior after the replacement layout
+is ready; loaded neighbours retain their instances and GPU bindings, including while a zone is still being filled.
+Host diff: [simulation.md](simulation.md#buildings).
 
 **Scaffold.** The original clips each part at `1.2 f` of its mesh height and draws the scaffold grid (`construction.dds`)
 above it ([construction look](game/buildings-production.md#construction-look)). Meitou's approximation: the part's
@@ -99,10 +107,21 @@ A turret's turning parts (BUILDING_PART `rotation function` ROTATION_TARGET) are
 `PlacedMesh.Joints` (the joints above it and its own, outermost first; `TurnJoint` = part record, pivot = its node's place, axis = its node's Y for a yaw part or X for the
 gun's pitch, both as placed). The host (`GameHost.UpdateTurretPoses`) gives the renderer `WorldObjectRenderer.Turrets` (placement id = turret key → `TurretPose`: the
 simulation's `TurretRig` angles from `MannedTurret.Angles`, interpolated between the last two snapshots by the simulation's alpha, kept after the gunner leaves).
-`DrawReal` poses a part (`PoseTurret`) when the pose's version changed: its placement times, from the innermost joint out, a turn about the joint's pivot and axis by its
+`DrawReal` poses a part (`PoseJoints`) when the pose's version changed: its placement times, from the innermost joint out, a turn about the joint's pivot and axis by its
 angle. **Verified** by a probe over every turret building of the install (random yaw, position and angles): the posed part's origin and its Z and Y directions equal the
 simulation's `TurretRig.Derived` (30 of 30 parts). **Unknown**: the pose has not been looked at in a rendered frame. Only simulated turrets (the combat system) turn; the
 viewer never does. Parts that are not joints (the six-barrel add-on, the lamp) ride on their joint.
+
+## Rotating parts
+
+Parts with `rotation function` 1 to 4 ([facts](game/buildings-production.md#rotating-parts)) are joints too: `TurnJoint.Rotor` (`RotorSpec`: function, speeds, wind
+range, start roll, parent X/Z) with pivot = the node's place and axis = its `rotation axis` in world, as placed (at the start roll). The six-barrel now spins on the
+turret's joints; the wind generator's blades ride on its head. A part's state (`WorldObjectRenderer.Rotors.cs`, by placement, part and pivot) is made when one of
+its meshes is first drawn and dropped 600 frames after the last; the host (`GameHost.UpdateRotors`) calls `AdvanceRotors` once a frame with real time x speed (0
+paused), the scheduled wind (`WeatherWorld.WindAt`, a forced weather does not count) and the mult (`MachineSnapshot.Rotation`, level buildings by data); construction sites stand still (`RotorUnbuilt`). A head
+hears the weather when the wind at it differs from the last frame (the original's notifications come while it interpolates). Joint meshes under a rotor are posed
+every frame: angle less the start roll (functions 1 to 3 stay at the roll until they first move). **Unknown**: not looked at in a rendered frame; shadow caches and
+motion vectors of moving parts not checked.
 
 ## Closed interiors
 

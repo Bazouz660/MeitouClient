@@ -130,14 +130,17 @@ public class ProductionTests
         }
 
         /// <summary>A player character beside site <paramref name="site"/> with one stat and what it carries (one stack each).</summary>
-        public CharacterId Add(int site, StatsEnumerated stat, float level, params (string Item, int Count)[] carried)
+        public CharacterId Add(int site, StatsEnumerated stat, float level, params (string Item, int Count)[] carried) => Add(site, Vector3.Zero, stat, level, carried);
+
+        /// <summary>A worker <paramref name="offset"/> further from the building than the usual 10.</summary>
+        public CharacterId Add(int site, Vector3 offset, StatsEnumerated stat, float level, params (string Item, int Count)[] carried)
         {
             var inventory = new Inventory();
             foreach (var (item, count) in carried) inventory.Add(Items.Create(item, count)!);
             var stats = new CharacterStats();
             stats[stat] = level;
             var cold = new CharacterCold { Name = "worker" + site, Race = Human, Stats = stats, Medical = MedicalState.Create(Human, 50), Inventory = inventory, IsPlayer = true, Faction = PlayerFaction };
-            var p = World.Buildings.Find(Sites[site])!.Position + new Vector3(0, 0, 10);
+            var p = World.Buildings.Find(Sites[site])!.Position + new Vector3(0, 0, 10) + offset;
             return World.Characters.Spawn(new CharacterHot { Position = p, MaxSpeed = 40, WalkSpeed = 15, Task = (byte)CharacterTask.Idle }, cold, 0);
         }
 
@@ -342,6 +345,13 @@ public class ProductionTests
             [.. nodes.Where(n => n.Resource == resource && Vector2.Distance(new(n.Position.X, n.Position.Z), new(x, z)) <= range)];
     }
 
+    /// <summary>The same wind speed everywhere, no other weather.</summary>
+    sealed class Wind(float speed) : IWeatherSource
+    {
+        public WeatherHere? At(float x, float z) => new WeatherHere(WeatherAffecting.None, 0, 0, 0, speed);
+        public IReadOnlyList<WeatherAffectZone> Zones => [];
+    }
+
     /// <summary>
     /// An ore mine yields the nearest rock of its resource x (1 - (d² - 625) / (1500² - 625)) (docs/game/buildings-production.md "Resources"): the rock's own yield is the resources
     /// record's iron mult (0.6), 0.1 for copper which the record lacks; nothing beyond 1500, for a resource with no rock, or with no rock source at all.
@@ -458,6 +468,19 @@ public class ProductionTests
         Assert.Equal((rig.Sites[1], 0, 1), (cold.OperateSite, cold.JobIndex, cold.Jobs.Count));
     }
 
+    /// <summary>A character takes a machine job just inside the original's job range (about 6517, docs/game/ai-tasks.md "Perma-jobs") and skips one just outside it.</summary>
+    [Fact]
+    public void A_machine_job_beyond_the_job_range_is_skipped()
+    {
+        using var rig = new Rig(Database(), Constants, [Well, Well]);
+        var (far, near) = (rig.Add(0, new Vector3(0, 0, 6600), StatsEnumerated.Labouring, Unit), rig.Add(1, new Vector3(0, 0, 6400), StatsEnumerated.Labouring, Unit));
+        rig.World.RunTick();
+        rig.World.Commands.Enqueue(new AddJob([far], Meitou.Data.Gameplay.Ai.TaskType.OPERATE_MACHINERY, rig.Sites[0]) { Tick = rig.World.Tick });
+        rig.World.Commands.Enqueue(new AddJob([near], Meitou.Data.Gameplay.Ai.TaskType.OPERATE_MACHINERY, rig.Sites[1]) { Tick = rig.World.Tick });
+        rig.World.RunTicks(2 * ProductionSystem.JobCheckTicks);
+        Assert.Equal((-1, 0), (rig.World.Characters.Cold(far.Slot)!.JobIndex, rig.World.Characters.Cold(near.Slot)!.JobIndex));
+    }
+
     /// <summary>
     /// Jobs farm then well, the farm dry and no water anywhere: the farmer pumps the well full, carries its water into the farm and then tends the growing crop, counted as
     /// operating (docs/simulation.md "Production", Hauling and 87).
@@ -510,7 +533,7 @@ public class ProductionTests
         var quick = new Meitou.Data.Save.SaveFile();
         quick.Data.Records.Add(new FcsRecord { Type = (int)FcsRecordType.CAMERA, StringId = "1051", Name = "camera" });
         var back = new CharacterCold { Orders = Orders.PlayerDefaults };
-        Meitou.Simulation.Saving.PermaJobSave.Read(ai, null, back, rig.World.Buildings, new Meitou.Data.Save.SaveGame(quick).BuildHandles(), new Dictionary<FcsRecord, string>());
+        Meitou.Simulation.Saving.PermaJobSave.Read(ai, null, back, rig.World.Buildings, new Meitou.Data.Save.SaveGame(quick).BuildHandles(), new Dictionary<FcsRecord, string>(), new HashSet<string>());
         // Re-adding 152 brings 124 again and the saved 124 is then refused as a duplicate; the switch is read last.
         Assert.Equal(saved.Jobs.Select(j => (j.Type, j.Site)), back.Jobs.Select(j => (j.Type, j.Site)));
         Assert.True((back.Orders & CharacterOrders.Jobs) == 0);
@@ -589,7 +612,7 @@ public class ProductionTests
 
     /// <summary>
     /// The installed Small Generator (1976, 40) with Upgraded Small Generators gives 55; the Battery Bank (1855, rate 40, store 60) with Battery Power, Advanced Battery Power,
-    /// Battery Capacity and Advanced Battery Capacity charges at 60 into 180; the Wind Generator (1999, 50, no fuel) gives its output x the wind fraction
+    /// Battery Capacity and Advanced Battery Capacity charges at 60 into 180; the Wind Generator (1999, 50, no fuel) gives its output x its blades' wind share (wind 10 to 50: half at 30)
     /// (docs/game/buildings-production.md "Power"). The resource storages take only their resource.
     /// </summary>
     [Fact, Slow]
@@ -600,12 +623,13 @@ public class ProductionTests
         using var rig = new Rig(db!, GameConstants.FromDatabase(db!), ["1976-gamedata.base", "1855-gamedata.base", "1999-gamedata.base"]);
         string[] names = ["Upgraded Small Generators", "Battery Power", "Advanced Battery Power", "Battery Capacity", "Advanced Battery Capacity"];
         rig.World.Research.Set(db!, [.. names.Select(n => db!.OfType(FcsRecordType.RESEARCH).First(r => r.Name == n).StringId)]);
+        rig.World.Weather = new Wind(30);
         rig.World.RunTick();
         rig.Production.Ensure(rig.World, rig.World.Buildings.Find(rig.Sites[0])!)!.Inputs[0].Count = 10;
         rig.World.RunTicks(2);
         var (generator, battery, wind) = (rig.Machine(0), rig.Machine(1), rig.Machine(2));
         Assert.True(wind.Data.IsWind && !generator.Data.IsWind && battery.Data.IsBattery);
-        Assert.Equal((55f, 50 * ProductionSystem.WindFraction, 60f, 180f), (generator.Demand, wind.Demand, battery.Granted, battery.Store));
+        Assert.Equal((55f, 25f, 60f, 180f), (generator.Demand, wind.Demand, battery.Granted, battery.Store));
 
         // The Water Tower (1950) takes only Water and Storage: Ore only Raw Iron (1866), both resource storages with stacks x 100 (docs/game/buildings-production.md "Storage").
         var tower = MachineData.From(db!, db!.Find("1950-gamedata.base")!)!;

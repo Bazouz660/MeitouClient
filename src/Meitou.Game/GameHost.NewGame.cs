@@ -43,29 +43,27 @@ sealed partial class GameHost
         StandardSystemSet? built = null;
         var nextDifficulty = player.NewGameOptions;
         var nextData = nextDifficulty.Apply(popData!);
+        // A fresh seed per game, as the original rolls its names and squads anew each time (docs/characters.md "Names"); --seed keeps one.
+        ulong seed = g.SeedGiven ? g.Seed : (ulong)Random.Shared.NextInt64(1, long.MaxValue);
         AudioGameStarts();
         StartSceneLoad(player.TitleOpen,
             Stage("build", () =>
             {
                 built = BuildSystems(interactive: true, nextData, nextDifficulty);
-                var at = chosen.StartPosition;
-                if (!chosen.ForceStartPos)
-                    foreach (var link in chosen.Towns)
-                        if (popData!.Sites.FirstOrDefault(s => s.Town.Id == link.Id) is { } site) { at = new(site.Position.X, site.Position.Z); break; }
+                // The navmesh round the place the squad will stand, drawn with the same seed as StartPlayer.
+                var at = PopulationSystem.StartPlace(nextData, seed, chosen).Centre;
                 return NavmeshAround(new(at.X, 0, at.Y));
             }, duringAscent: true),
             Stage("people", () =>
             {
                 Squad? spawned = null;
-                // A fresh seed per game, as the original rolls its names and squads anew each time (docs/characters.md "Names"); --seed keeps one.
-                ulong seed = g.SeedGiven ? g.Seed : (ulong)Random.Shared.NextInt64(1, long.MaxValue);
                 try { session.ReplaceWorld(built!.Systems, world => { world.RestoreSeed(seed); spawned = built.Population!.StartPlayer(world, chosen); }); }
                 catch (Exception e) { Console.Error.WriteLine($"new game  {e}"); throw new SceneLoadFailed($"New game failed: {e.Message}"); }
                 popData = nextData; difficulty = nextDifficulty;
                 population = built.Population; aggro = built.Aggro; playerSquad = spawned;
                 if (nav is not null) population!.ZoneGate = zone => nav.Walkability.World.Contains(zone);
                 loadedSave = null; preparedBase = null; worldEpoch++;
-                session.Clock.SetTime(1, 13);
+                session.Clock.SetTime(Meitou.Engine.Time.GameClock.DefaultStartDay, Meitou.Engine.Time.GameClock.DefaultStartHour);
                 var lead = session.World.Characters.Previous[spawned!.Leader.Slot].Position;
                 var view = session.Camera.Current;
                 session.Camera.Place(new Vector2(lead.X, lead.Z), view.Yaw, view.Pitch, view.Distance);

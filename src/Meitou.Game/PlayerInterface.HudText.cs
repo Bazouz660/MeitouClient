@@ -303,8 +303,11 @@ sealed partial class PlayerInterface
                     PartTip(part, hud?.Extended?.KoPoint, body.Unconscious)));
             }
             float hunger = body.Hunger;
-            rows.Add(new(Loc.Tr("Hunger"), hunger - 2, hunger - 1, hunger, ((int)(hunger * 100)).ToString(CultureInfo.InvariantCulture), hunger < 2 ? "<!   " : "<   ", false,
-                HungerTip(hunger, body.Unconscious, ActiveSquadMembers().Count)));
+            // '>' digesting, '<!' below 2, none in a bed, else '<'. Robot races have no Hunger row.
+            string hungerArrows = hud?.Fed > 0 ? ">   " : hunger < 2 ? "<!   " : lead.InBed ? "" : "<   ";
+            if (hud is not { Robot: true })
+                rows.Add(new(Loc.Tr("Hunger"), hunger - 2, hunger - 1, hunger, ((int)(hunger * 100)).ToString(CultureInfo.InvariantCulture), hungerArrows, false,
+                    HungerTip(hunger, body.Unconscious, ActiveSquadMembers().Count)));
         }
         for (int i = 1; i <= 9; i++)
         {

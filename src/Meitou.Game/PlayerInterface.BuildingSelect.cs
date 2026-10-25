@@ -91,21 +91,22 @@ sealed partial class PlayerInterface
         bool bad = false;
         bool own = focus.SiteId is not null;
         bool player = focus.SiteId is { } siteId && !Meitou.Simulation.Production.ProductionSystem.IsNatural(siteId);
-        var site = focus.SiteId is { } id ? session.CurrentSnapshot.Buildings.FirstOrDefault(s => s.Id == id) : null;
+        var site = session.CurrentSnapshot.Buildings.FirstOrDefault(s => s.Id == focus.Instance);
         // A town building the player owns (bought, or the player's in the save) gets the buttons of a building of the player's (the original's slot 79: the owner is the player's faction).
         var detail = session.CurrentSnapshot.InspectedBuilding is { } d && d.Instance == focus.Instance ? d : null;
         bool mine = player || detail is { Owned: true };
         if (focus.Type is { Length: > 0 } type) state.Add(new("Type:", type));
         if ((focus.Town ?? site?.TownName) is { Length: > 0 } town) state.Add(new("Town:", town));
-        if (player && site is not null) AddUpgradeLines(site, state);
+        if (player && site is { LevelPlacement: null }) AddUpgradeLines(site, state);
         // The construction buttons (Building slot 117, FUN_1402fea10): Dismantle in BadBright, and while unfinished PAUSE CONSTRUCTION, captioned [PAUSED] in #777777 while paused.
-        if (player && site is not null)
+        if (player && site is { LevelPlacement: null })
         {
             state.Add(new("", Loc.Tr("Dismantle"), ValueColour: BadBrightColour, Action: "meitou:building-dismantle"));
             if (!site.Complete) state.Add(site.Paused ? new("", Loc.Tr("[PAUSED]"), ValueColour: PausedColour, Action: "meitou:building-pause")
                 : new("", Loc.Tr("PAUSE CONSTRUCTION"), ValueColour: MainColour, Action: "meitou:building-pause"));
         }
-        if (site is { Complete: false })
+        if (site is { Destroyed: true }) { status = "Broken"; bad = true; }
+        else if (site is { Complete: false })
         {
             status = site.Dismantling ? "Being dismantled" : site.Paused ? "Paused" : "Under construction";
             bad = true;
@@ -127,17 +128,18 @@ sealed partial class PlayerInterface
             }
             if (session.CurrentSnapshot.InspectedRichness is { } rich && rich.Instance == focus.Instance) AddRichnessLine(rich, stats);
             if (own && Machine(focus.SiteId) is { } machine) AddMachineLines(machine, stats, ref status, ref bad);
-            if (mine && (player ? site?.TownName : focus.Town) is { Length: > 0 })
-            {
-                // The player's building in a town (the original's +0x1f0): a Kenshi_Button2 toggle of width 0.3, Public in Good, Private in BadBright (slots 82 / 83).
-                bool open = PublicOf(focus, site, detail);
-                stats.Add(new("Open to public:", open ? "Public" : "Private", MainColour, open ? GoodColour : BadBrightColour, Action: "meitou:building-public", ButtonWidth: 0.3f));
-            }
-            else if (!mine && (focus.PublicDay || focus.PublicNight))
-            {
-                bool open = session.Clock.IsDaytime ? focus.PublicDay : focus.PublicNight;
-                stats.Add(new("Open to public:", open ? "Public" : "Private", MainColour, open ? GoodColour : BadColour));
-            }
+        }
+        // Not on a player-built site under construction; an owned town house has it while being repaired too.
+        if (mine && site is not { LevelPlacement: null, Complete: false } && (player ? site?.TownName : focus.Town) is { Length: > 0 } && (site?.Record ?? focus.Record) is { } record && DataOf(record) is { HasInterior: true })
+        {
+            // The player's building with an interior in a town (the original's +0x1f0): a Kenshi_Button2 toggle of width 0.3, Public in Good, Private in BadBright (slots 82 / 83).
+            bool open = PublicOf(focus, site, detail);
+            stats.Add(new("Open to public:", open ? "Public" : "Private", MainColour, open ? GoodColour : BadBrightColour, Action: "meitou:building-public", ButtonWidth: 0.3f));
+        }
+        else if (!mine && (focus.PublicDay || focus.PublicNight))
+        {
+            bool open = session.Clock.IsDaytime ? focus.PublicDay : focus.PublicNight;
+            stats.Add(new("Open to public:", open ? "Public" : "Private", MainColour, open ? GoodColour : BadColour));
         }
         if (detail?.SalePrice is { } price)
             stats.Add(new("For sale:", Loc.Tr("c.{1,num}", price), GoodColour, GoodColour, Action: "meitou:building-buy", ButtonWidth: 0.4f));
@@ -201,15 +203,28 @@ sealed partial class PlayerInterface
         var door = FirstDoor(focus);
         if (door is { Record.Length: > 0 } && BuildTarget?.Invoke(door.Value.Record) is { } doorTarget)
             rows.Add(Bar(Loc.Tr("Door Condition"), 1, ((int)doorTarget).ToString(CultureInfo.InvariantCulture), "The door is in good condition."));
-        var site = focus.SiteId is { } id ? session.CurrentSnapshot.Buildings.FirstOrDefault(s => s.Id == id) : null;
+        var site = session.CurrentSnapshot.Buildings.FirstOrDefault(s => s.Id == focus.Instance);
         float? target = site?.Target ?? (focus.Record is { } record ? BuildTarget?.Invoke(record) : null);
         if (target is not { } total) return rows;
-        float progress = site?.Progress ?? total;
+        float progress = site is { Destroyed: true } ? 0.4f * total : site?.Progress ?? total;
         bool complete = site?.Complete ?? true;
         float fraction = total > 0 ? Math.Min(progress / total, 1) : 1;
         string tip = !complete ? Loc.Tr("The building is under construction and at {1,num}% completion.", (int)(fraction * 100))
             : fraction >= 1 ? Loc.Tr("The building is in good condition.") : Loc.Tr("The building is damaged.");
         rows.Add(Bar(Loc.Tr(door is null ? "Condition" : "Building Condition"), fraction, ((int)progress).ToString(CultureInfo.InvariantCulture), tip));
+        // A wind generator's rows (WindGeneratorBuilding::getGUIPower section 4): Wind, its share as a whole percent and the bar; Power Output, the output as an int over the rated.
+        if (site is { Complete: true } && Machine(site.Id) is { Wind: { Rated: > 0 } wind, Power: { } power })
+        {
+            string windTip = Loc.Tr("The current amount of wind.");
+            if (wind.Range is { } range)
+                windTip += "\n" + Loc.Tr("Operating wind speed is between {1,num=fix,p=2} mph and {2,num=fix,p=2} mph.", range.Min * MphPerUnit, range.Max * MphPerUnit);
+            rows.Add(new(Loc.Tr("Wind"), 0, wind.Share, 0, ((int)(wind.Share * 100)).ToString(CultureInfo.InvariantCulture) + "%", "", false, windTip));
+            float output = power.Demand;
+            string outputTip = !wind.PowerOn ? "Power is switched off."
+                : output <= wind.Rated - 1 ? wind.Share > 0 ? "Power output is running at reduced efficiency due to damage." : "Currently not enough wind to generate any power"
+                : "Power output is at maximum.";
+            rows.Add(Bar(Loc.Tr("Power Output"), output / wind.Rated, ((int)output).ToString(CultureInfo.InvariantCulture), outputTip));
+        }
         if (site is { Complete: false })
             foreach (var m in site.Materials)
             {
@@ -264,7 +279,7 @@ sealed partial class PlayerInterface
             Sound("General_Click");
             Say(new Meitou.Simulation.Construction.SetBuildingPublic(id, !site.Public) { Tick = session.World.Tick });
         }
-        if (action == "building-dismantle")
+        if (action == "building-dismantle" && site?.LevelPlacement is null)
         {
             var selection = SelectedIds();
             Confirm("Dismantle", "Are you sure?", () => Say(new Meitou.Simulation.Construction.DismantleOrder(selection, id) { Tick = session.World.Tick }));
