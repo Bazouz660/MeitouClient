@@ -28,9 +28,7 @@ a tick takes 4 ms (`WorldSession.TickMs`, smoothed over about ten ticks) until i
 every frame. Off whatever the setting in stills, the duel, recorded flights and the play benchmark (their ticks stay in step with the frame).
 F12's `tick ahead` row is its wall time; `outside ticks` leaves it out.
 
-At player speed 0 (without a modal/loading pause), queued selection, held-item, inventory right-click/arrange
-and open-shop buy/sell/close commands apply between ticks and republish snapshots. Other
-commands stay queued; neither world ticks, game time nor simulation phases advance.
+While paused, due player-interface commands apply between ticks and republish snapshots: selection and inspection, squad selection/management, faction name, inventory and trade, construction, dialogue, research and crafting queues, movement/combat/treatment orders, and supported door/cage interactions. Orders may update character task state, but no movement, combat, game time or other simulation phases advance until resumed. Async population results remain pending until a world tick.
 
 **Verified** original clock: 1200/11 seconds per game hour ([game-loop.md](game/game-loop.md)).
 `BodySystem.HoursPerTick=11/36000`; the medical tick takes `TickSeconds` ([character-stats](game/character-stats.md#time)). Navmesh unload uses
