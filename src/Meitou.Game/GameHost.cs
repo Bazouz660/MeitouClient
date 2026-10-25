@@ -413,6 +413,7 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
     void UpdateNav(bool wait = false)
     {
         if (nav is null || population is null) return;
+        UpdateGateRegions(nav);
         long now = Stopwatch.GetTimestamp();
         var pending = new List<Task<Meitou.Navigation.NavZoneReady>>();
         // The population's zones, and those the walkers' long routes lead into (NavmeshWalkability.RouteZones).
@@ -422,7 +423,7 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
             navZones[z] = now;
         }
         foreach (var (z, seen) in navZones.ToList())
-            if (Stopwatch.GetElapsedTime(seen, now).TotalSeconds > 30) { nav.UnloadZone(z); navZones.Remove(z); }
+            if (Stopwatch.GetElapsedTime(seen, now).TotalSeconds > 30) { nav.UnloadZone(z); navZones.Remove(z); relabelGates = true; }
         if (wait) Task.WaitAll([.. pending]);
         HashSet<Meitou.Data.World.ZoneCoordinate> zones;
         lock (navReady)
@@ -434,7 +435,38 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
             navReady.Clear();
         }
         lastRepath = now;
+        relabelGates = true;
         session.World.Commands.Enqueue(new Meitou.Simulation.RepathCommand { Tick = session.World.Tick, Zones = zones });
+    }
+
+    /// <summary>The navmesh changed since the gate codes were made (a zone went live or was dropped).</summary>
+    bool relabelGates;
+    Task<Meitou.Navigation.NavGateRegions>? gateLabelling;
+    Meitou.Navigation.NavGateRegions? gateRegions;
+    object? gateRegionsFor;
+
+    /// <summary>
+    /// Keeps the simulation's gate codes (docs/game/pathfinding.md "Gate codes") up to date: labels the loaded meshes on the pool after they changed, one labelling at a time, and
+    /// hands each result to the world (again to a new world) as a <see cref="Meitou.Simulation.Locks.GateRegionsCommand"/>.
+    /// </summary>
+    void UpdateGateRegions(Meitou.Navigation.NavSystem navSystem)
+    {
+        if (gateLabelling is { IsCompleted: true } done)
+        {
+            if (done.Status == TaskStatus.RanToCompletion) { gateRegions = done.Result; gateRegionsFor = null; }
+            else Console.Error.WriteLine($"nav       gate codes failed: {done.Exception?.GetBaseException().Message}");
+            gateLabelling = null;
+        }
+        if (relabelGates && gateLabelling is null)
+        {
+            relabelGates = false;
+            gateLabelling = Task.Run(navSystem.LabelGates);
+        }
+        if (gateRegions is { } regions && !ReferenceEquals(gateRegionsFor, session.World))
+        {
+            gateRegionsFor = session.World;
+            session.World.Commands.Enqueue(new Meitou.Simulation.Locks.GateRegionsCommand(regions) { Tick = session.World.Tick });
+        }
     }
 
     /// <summary>Gives the player interface the camera it picks with.</summary>

@@ -21,12 +21,24 @@ public sealed class NavSystem : IDisposable
     // Footprints for the long-range grid's obstacles, the level data's and the player's (one record cache for both).
     readonly Lazy<BuildingFootprints> footprints;
     readonly WorldLevelData levels;
+    readonly GameDatabase db;
+    // The level data's buildings by placement key (what the door polygons are named by), their BUILDING record ids.
+    readonly Lazy<Dictionary<string, string>> levelRecords;
+    readonly Dictionary<string, GameRecord?> functions = [];
+    readonly object labelGate = new();
     readonly Func<double, double, float> placementHeight;
     readonly object playerRouteGate = new();
 
     public NavSystem(GameInstall install, GameDatabase db, WorldLevelData levels, Func<float, float, float> terrainHeight, NavBuildSettings? settings = null, NavMeshCache? cache = null)
     {
         this.levels = levels;
+        this.db = db;
+        levelRecords = new(() =>
+        {
+            var map = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var b in levels.Buildings()) map.TryAdd(b.Key, b.BuildingId);
+            return map;
+        });
         placementHeight = (x, z) => terrainHeight((float)x, (float)z);
         footprints = new(() => new BuildingFootprints(install, db, levels));
         // The long-range grid reads every second heightmap sample (36 units) when it is first needed: the simulation's own grid is coarse far from the start.
@@ -100,6 +112,21 @@ public sealed class NavSystem : IDisposable
     {
         lock (playerRouteGate) Walkability.Coarse.SetPlayerObstacles(footprints.Value.Obstacles(Runtime.All(), levels, placementHeight));
     });
+
+    /// <summary>
+    /// The gate codes of the meshes loaded now (<see cref="NavGateRegions"/>). Slow (a flood over the walled regions): call it off the simulation thread. One labelling at a
+    /// time; each reads the world and the player's buildings as they are then.
+    /// </summary>
+    public NavGateRegions LabelGates()
+    {
+        lock (labelGate)
+        {
+            var runtime = Runtime.All().ToDictionary(p => p.Key, p => p.BuildingId, StringComparer.Ordinal);
+            return NavGateRegions.Label(Walkability.World, id =>
+                (runtime.TryGetValue(id, out var record) || levelRecords.Value.TryGetValue(id, out record)) && db.Find(record) is { } building
+                && TownBuildings.IsGate(db, building, functions));
+        }
+    }
 
     /// <summary>Builds a zone again if its mesh is loaded (a zone that is not is built with the current buildings when it is asked for).</summary>
     public void RebuildZone(ZoneCoordinate zone)

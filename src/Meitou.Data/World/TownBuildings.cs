@@ -131,6 +131,15 @@ public static class TownBuildings
     public const int BedFunction = 6, SkeletonBedFunction = 25;
     /// <summary>BUILDING_FUNCTIONALITY <c>function</c> 8, BF_CAGE: cages, the prisoner pole, the peeler (docs/game/locks.md "Data").</summary>
     public const int CageFunction = 8;
+    /// <summary>BUILDING_FUNCTIONALITY <c>function</c> 21, BF_GATE (docs/game/buildings-production.md "Classes and functions").</summary>
+    public const int GateFunction = 21;
+
+    /// <summary>
+    /// A gate, a boundary of the gate codes (docs/game/pathfinding.md "Gate codes"): a wall gate the player builds (<c>is wall gate</c>) or a building whose functionality is
+    /// BF_GATE (engine reading of the original's GatewayBuilding class, which the factory picks by the function, <b>Observed</b>).
+    /// </summary>
+    public static bool IsGate(GameDatabase db, GameRecord building, Dictionary<string, GameRecord?> cache) =>
+        building.GetBool("is wall gate") || FunctionOf(db, building, cache)?.GetInt("function") == GateFunction;
     /// <summary>BUILDING_FUNCTIONALITY <c>function</c> 17, BF_CHAIR: stools, benches, sitting pillows and spots (docs/game/ai-tasks.md "Town goals").</summary>
     public const int ChairFunction = 17;
     /// <summary>BF_TABLE, BF_CORPSE_DISPOSAL, BF_REFINERY: what a free seat faces (<see cref="SeatYaw"/>).</summary>

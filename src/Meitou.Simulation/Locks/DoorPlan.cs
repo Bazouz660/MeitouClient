@@ -40,7 +40,7 @@ sealed class DoorPlan : IPlanWorld
     {
         (world, combat, me, foe, building, door, spot) = (w, fights, s, t, shutIn, mainDoor, mainSpot);
         cold = w.Characters.Cold(s)!;
-        aggressive = Aggressive();
+        aggressive = AggressiveTowards(w, fights, cold, shutIn, mainSpot.Centre);
         if (TaskDataTable.Of(TaskType.MELEE_ATTACK) is not { } row) return false;
         var target = new PlanTarget(Foe, w.Characters.Next[t].Position);
         if (TaskPlanner.Local.Plan(row, 1, target, this, [], plan) <= 0) return false;
@@ -53,9 +53,9 @@ sealed class DoorPlan : IPlanWorld
     /// <c>AI::scoreAggressiveAction</c> for the building (docs/game/locks.md "Bash door", <b>Observed</b>): 0 in the basher's home town; a bandit 1.1; else 0 towards an ally,
     /// 1 towards an enemy, and towards the rest 0 for a trader, civilian, diplomat or adventurer faction, else 1. Not modelled: the war-campaign case (its byte is <b>Unknown</b>).
     /// </summary>
-    float Aggressive()
+    internal static float AggressiveTowards(World world, CombatSystem? combat, CharacterCold cold, string building, Vector3 at)
     {
-        if (cold.SquadId >= 0 && world.Squads.Find(cold.SquadId)?.Ai is { Town: >= 0 } board && world.SystemOf<AiSystem>()?.TownAt(spot.Centre) == board.Town) return 0;
+        if (cold.SquadId >= 0 && world.Squads.Find(cold.SquadId)?.Ai is { Town: >= 0 } board && world.SystemOf<AiSystem>()?.TownAt(at) == board.Town) return 0;
         if (cold.NpcClass == FundamentalType.Bandit) return BanditDesire;
         int owner = world.Fixtures.DoorOwner(building);
         if (combat?.Relations is not { } relations || !relations.Contains(cold.Faction)) return owner == cold.Faction ? 0 : 1;

@@ -115,6 +115,8 @@ public sealed class Fixture
     /// <summary>Doors: how the leaf moves (its record's <c>door move speed</c> etc.), and the parent BUILDING record (the door's position is looked up by it and <see cref="DoorIndex"/>; a player building's bed has it too, so an upgrade is noticed).</summary>
     public DoorLeaf Leaf { get; init; }
     public string HostRecordId { get; init; } = "";
+    /// <summary>Doors: its building is a gate (<see cref="Meitou.Data.World.TownBuildings.IsGate"/>), a boundary of the gate codes; derived from the data, not hashed or saved.</summary>
+    public bool IsGate { get; init; }
     /// <summary>Doors: where the leaf is in the world, once the door gate has told it (<see cref="FixtureRegistry.DoorSpotOf"/>); derived from the data, not hashed or saved.</summary>
     internal DoorSpot? Spot { get; set; }
     internal bool SpotAsked { get; set; }

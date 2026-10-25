@@ -434,6 +434,29 @@ yellow. Original: polygons magenta, ends orange, edges joined to the next tile v
 **Observed** (Hub, zone 20.32): the original's polygons are large and simplified, building footprints are holes (interiors separate), and rock and cliff
 cuts follow the blocky 36-unit terrain grid (generator inputs, terrain). The original has no such view (`rebuild_navmesh` Ctrl+Shift+F11 only rebuilds).
 
+## Gate codes
+
+The original labels the walkable ground by the gates (**Verified** structure, decompile of 1.0.68):
+- **Pass**: a background job (`FUN_1402ef4a0`, applied by `FUN_1402f03e0`) floods the navmesh (`FUN_1402ed460`, a Havok flood) from the two side points of every
+  gate (GateData, 0x48 bytes: side points +0x20 and +0x2c, codes +0x38 and +0x3c, state +0x40), writes each region's code into its faces, and gives every object
+  the code at its position (`setInsideTownWalls`, slot 0x120; read as `amInsideTownWalls`, slot 0x118, RootObject +0xA0, KenshiLib 1ce4a16 names). A flood that
+  hits its face limit logs "ERROR: LIMIT REACHED"; the limit is **Unknown**. Code 0 is the open world (**Observed**: the fight-or-flee rule measures the route
+  to code 0, and the pass logs "Multiple gatecode 0 regions"). `NavMesh::getGateCode` (`FUN_1403a30f0`) reads a position's code, -1 while a pass runs.
+- **Gate states** (`FUN_1402eebb0`, `FUN_1402eb070`): a map keyed by the pair (smaller code | larger << 8); several gates between one pair keep the lowest
+  state (**Verified**); routes through several gates are as bad as their worst gate, best route kept (**Observed**). Same code → 0, either -1 → -1.
+  Gate state 1 open or broken, 2 closed, 3 locked (**Observed**). `FUN_1402ebdd0` finds the gate a route between two codes leaves by.
+- **Readers in play**: DESTINATION_NOT_BLOCKED_BY_FORTIFICATIONS ([gates](locks.md#cutting-and-breaking-285--185-cut-286--186-break)), the run-away score
+  ([combat](combat.md)). Wall termites reads the pass's town list but is disabled ([walls](buildings-production.md#walls)).
+
+Meitou (`Meitou.Navigation/NavGateRegions`, engine reading): gates are buildings with `is wall gate` or a BF_GATE functionality
+(`TownBuildings.IsGate`); their door polygons (named by the building, `ZoneNavMesh.DoorIds`) are the boundaries. From each polygon beside a gate's door
+polygons a flood spreads over kept polygons, across zone links, never into a gate's door; it is a walled region (codes from 1, gates in instance id order)
+when it stays within 4000 (X/Z) of its start, under 200 000 polygons and away from the loaded world's edge, else code 0, as is every polygon no flood
+reached; off the mesh -1. `NavSystem.LabelGates` runs on the pool whenever zone meshes go live or unload; the host hands the result to the world
+(`GateRegionsCommand`, not hashed or saved). **Observed** (Meitou's meshes, 3 x 3 zones, 35 to 90 ms): Stack, Squin, Heng and Admag are walled regions
+joined to 0 by their gates; the Hub's gateways have no doors, so it has none; Bad Teeth's gates all lie in 0. A gate may also border small pockets of its
+own (gateway inside), which get codes of their own.
+
 ## Unknowns
 
 - How the game uses `InteriorFilter` (its admit test is "uid < 0x10000", the same side the `ExteriorFilter` requires) and the

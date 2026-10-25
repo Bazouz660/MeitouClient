@@ -33,7 +33,11 @@ public sealed partial class LockSystem
         if (Combat is null) return;
         var table = world.Characters;
         var next = table.Next;
-        if (world.Tick % BashCheckTicks == 0) FindBashers(world);
+        if (world.Tick % BashCheckTicks == 0)
+        {
+            gateGraph = null;
+            FindBashers(world);
+        }
         for (int s = 0; s < table.HighWater; s++)
         {
             if (!next[s].Alive || table.Cold(s) is not { Bashing: { } doorId } c) continue;
@@ -43,8 +47,8 @@ public sealed partial class LockSystem
                 StopBashing(table, s, c);
                 continue;
             }
-            var stand = StandSpot(door, spot);
-            bool there = DoorPlan.AtDoor(next[s], spot);
+            var stand = door.IsGate ? GateStandSpot(spot, Flat(next[s].Position)) : StandSpot(door, spot);
+            bool there = door.IsGate ? GatePlan.AtGate(next[s], spot) : DoorPlan.AtDoor(next[s], spot);
             if (!there && c.BashOrdered)
             {
                 // An ordered smash walks by its order's own goal; a new order (another task) ends it.
@@ -146,8 +150,9 @@ public sealed partial class LockSystem
             var st = Combat!.StateOf(table.IdOf(s));
             int t = st.TargetSlot;
             if (t < 0 || t >= table.HighWater || !next[t].Alive || next[t].Generation != st.TargetGeneration) continue;
+            if (FindGateBasher(world, s, t, c)) continue;
             shut ??= ShutBuildings(world);
-            if (shut.Count == 0) return;
+            if (shut.Count == 0) continue;
             var target = Flat(next[t].Position);
             var me = Flat(next[s].Position);
             foreach (var (building, origin, radius, door, spot) in shut)

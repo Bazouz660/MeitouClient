@@ -162,9 +162,10 @@ public sealed partial class FixtureRegistry
     }
 
     /// <summary>One door fixture per entry of the building's <c>doors</c> list: the door's own <c>lock level bonus</c> and motion, the parent's <c>hardness</c>.</summary>
-    static void AddDoors(World world, GameDatabase db, GameRecord record, string instance, int site, int owner, FactionData? faction, Vector3 at, float yaw, List<Fixture> list)
+    void AddDoors(World world, GameDatabase db, GameRecord record, string instance, int site, int owner, FactionData? faction, Vector3 at, float yaw, List<Fixture> list)
     {
         var doorRefs = record.GetReferences("doors");
+        bool gate = TownBuildings.IsGate(db, record, functions);
         for (int i = 0; i < doorRefs.Count; i++)
         {
             var door = db.Find(doorRefs[i].TargetStringId);
@@ -172,7 +173,7 @@ public sealed partial class FixtureRegistry
             list.Add(new Fixture
             {
                 Id = id, Building = instance, Kind = FixtureKind.Door, RecordId = doorRefs[i].TargetStringId, Site = site, Owner = owner,
-                Position = at, Yaw = yaw, DoorIndex = i, WantsLock = door?.GetBool("always locks") ?? false, HostRecordId = record.StringId,
+                Position = at, Yaw = yaw, DoorIndex = i, WantsLock = door?.GetBool("always locks") ?? false, HostRecordId = record.StringId, IsGate = gate,
                 Leaf = door is null ? new DoorLeaf(0, 30, 1, 0) : DoorLeaf.Of(door),
                 Lock = new LockState { Level = RollLevel(world.Seed, id, faction, IntOf(door, "lock level bonus"), door: true), Hardness = FloatOf(record, "hardness") },
             });

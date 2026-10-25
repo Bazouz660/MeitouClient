@@ -609,6 +609,13 @@ unload, hashed only once non-empty. Facts: [locks](game/locks.md), [economy 11.5
   `LiftOut` (a `PickUpOrder` on the occupant of an unlocked cage, awake or down, engine; out of another faction's cage
   the lifter gets a pending code 7 and the freed one Escaping Prison + `Escaped`), `Release` (unlock, clear, erase the releaser's and jail's bounty entries for a booking releaser),
   `GetOut` (refused while locked; Escaping Prison unless served), `EnterBed`/`LeaveBed`.
+- **Bashing gates** (`LockSystem.Gates`, `GatePlan`; rules in [locks](game/locks.md#cutting-and-breaking-285--185-cut-286--186-break), codes in
+  [gate codes](game/pathfinding.md#gate-codes)): `LockSystem.Regions` holds the latest `GateRegionsCommand` (null: nothing is blocked). At each bash check an NPC
+  attacker (as for doors) whose target's code differs from its own, behind a route that is not open (`RouteState`: the widest path over the gates, each gate's
+  state from its door fixtures: broken/open 1, closed 2, locked 3; codes no gate joins count as 3, engine choice), plans row 4 with `GatePlan`: 90 from the
+  codes, 122's finder the first gate on the route (nearest of the equally good), 123/290/81 at it (91: within 45 of the leaf, x2 standing; crowdLimit8: under
+  8 bashers on it), the flagged search (restricted rows allowed). A plan that bashes sets `Bashing` to the gate's main door, and the door basher takes over,
+  standing on the attacker's side of the leaf. Gate state 2 needs no plan (Meitou walks through closed unlocked doors). Checked before the house doors.
 - **Beds** (`Locks/BedSystem`, serial; facts in [locks](game/locks.md#beds)): bed fixtures are the town interiors' beds and, registered with the player's
   buildings (`<site>@bed0`, site -1), the beds the player built; each keeps its `BedData` (function, clip, construction materials). `UseBedOrder` (258: a quick
   right click on a bed, or its held menu's "Sleep") sends the nearest awake, non-carrying selected character; `PutInBedOrder` (99: "Put in Bed" on the bed's menu,
