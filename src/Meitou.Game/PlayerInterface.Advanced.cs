@@ -34,6 +34,8 @@ sealed partial class PlayerInterface
         float scale = Height / 1080f, width = Math.Min(size.Width, Width - 24), mainHeight = Math.Min(size.Height, Height - 24);
         float extra = advancedOpen ? Math.Max(0, Math.Min(Height * .43f, Height - 24 - mainHeight)) : 0;
         float x = Math.Min(Width * (TitleOpen || id == "import" ? 0.5f : 0.6f), Width - width), y = Math.Min(Height * 0.05f, Math.Max(0, Height - mainHeight - extra));
+        // Meitou: centred across, the window with its options panel centred down (the menu stack is on the left, so the original's spot reads off-centre).
+        if (UiMode == UiMode.Meitou) { x = (Width - width) / 2; y = Math.Max(0, (Height - mainHeight - extra) / 2); }
         b.Positions["Root"] = new(x, y, width, mainHeight);
         b.Positions["advanced-Root"] = new(x, y + mainHeight, width, extra);
         if (!advancedOpen) b.Hidden.Add("advanced-Root");

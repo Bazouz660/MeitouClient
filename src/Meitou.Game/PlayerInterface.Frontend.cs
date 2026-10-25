@@ -220,15 +220,11 @@ sealed partial class PlayerInterface
                 if (session.World.Player.Exists) Enable("SaveGameButton");
                 return true;
             }
-            Enable("ExitButton", "CreditsButton");
+            Enable("ExitButton", "CreditsButton", "ImportGameButton");
             if (UiMode == UiMode.Faithful)
-            {
-                Enable("ImportGameButton");
                 foreach (var (widget, caption) in TitleCaptions) b.Text[widget] = UpperCaption(caption);
-            }
             if (UiMode == UiMode.Meitou)
             {
-                b.Hidden.Add("ImportGameButton");
                 foreach (var (widget, at) in MenuLayout(card: slots.Count > 0 && slotReadable)) b.Positions[widget] = at;
             }
             // Continue is shown only when a save exists (docs/game/ui-screens.md section 3), not greyed out.

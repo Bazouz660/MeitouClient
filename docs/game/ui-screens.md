@@ -111,6 +111,7 @@ against French 1440-line screenshots. Every caption the code sets is the catalog
   the template's Client ([MyGUI](../formats/mygui.md)).
 - **Placement**: the start and import windows at 0.5, 0.05 of the screen (0.6, 0.05 for the start window from the in-game menu); the load and save
   windows centred, with the left edge at the screen's centre while the title exists; the advanced options under the start or import window.
+  Meitou mode centres all four (start and import together with their options panel).
   Those windows leave the title's buttons live (another button replaces them; Meitou: modal screens that pass clicks through, `MyGuiScreenHost.PassThrough`).
   Esc closes the top window, else the credits (Meitou).
 - **Advanced options help**: the last option whose name was under the pointer, kept while the panel is open (Meitou: the name column only, so the

@@ -43,6 +43,7 @@ sealed partial class PlayerInterface
     static readonly (string Widget, string Caption, UiRect Icon)[] MenuButtons =
     [
         ("NewGameButton", "NEW GAME", new(108, 88, 33, 37)), ("LoadGameButton", "LOAD GAME", new(222, 90, 32, 23)),
+        ("ImportGameButton", "IMPORT GAME", new(73, 88, 32, 32)),   // pic_PointerPickupItem
         ("OptionsButton", "OPTIONS", new(146, 88, 34, 37)), ("CreditsButton", "CREDITS", new(49, 0, 44, 36)), ("ExitButton", "EXIT", new(202, 126, 30, 36)),
     ];
     static Vector4 Hex(int r, int g, int b, float a = 1) => new(r / 255f, g / 255f, b / 255f, a);

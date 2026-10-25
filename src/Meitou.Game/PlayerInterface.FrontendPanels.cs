@@ -20,7 +20,7 @@ sealed partial class PlayerInterface
         var root = faithfulScreens.Layout(id).Roots[0];
         var size = root.Position.RelativeTo(new(0, 0, Width, Height), root.RealPosition);
         float w = Math.Min(size.Width, Width), h = Math.Min(size.Height, Height);
-        float x = TitleOpen ? Math.Min(Width / 2f, Width - w) : (Width - w) / 2;
+        float x = TitleOpen && UiMode == UiMode.Faithful ? Math.Min(Width / 2f, Width - w) : (Width - w) / 2;
         b.Positions[root.Name] = new(x, (Height - h) / 2, w, h);
         // Meitou: the save list ends above the buttons' row, where the Kenshi saves tick goes (WithSaveFilter).
         if (id == "load" && UiMode == UiMode.Meitou) b.Positions["GamesList"] = new(x + 0.0102941f * w, (Height - h) / 2 + 0.135385f * h, 0.644118f * w, 0.69f * h);
