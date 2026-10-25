@@ -31,6 +31,8 @@ public static class BorderlessFullScreen
         var size = monitor.VideoMode.Resolution ?? monitor.Bounds.Size;
         if (!OperatingSystem.IsWindows())
         {
+            // Shown first: GLFW ignores showing a full-screen window, and on Wayland going full screen doesn't show it either.
+            window.IsVisible = true;
             window.WindowState = WindowState.Fullscreen;
             Console.WriteLine($"window    full screen {size.X} x {size.Y}, asked of the window manager");
             return;
