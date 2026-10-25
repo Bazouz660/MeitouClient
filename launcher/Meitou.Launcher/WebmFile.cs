@@ -36,21 +36,28 @@ public sealed class WebmFile
 
     WebmFile(ReadOnlyMemory<byte> data) => this.data = data;
 
-    /// <summary>Reads a WebM file; throws <see cref="InvalidDataException"/> when it is not one.</summary>
-    public static WebmFile Read(ReadOnlyMemory<byte> data)
+    /// <summary>
+    /// Reads a WebM file; throws <see cref="InvalidDataException"/> when it is not one. A <paramref name="head"/> is only the file's
+    /// start (for its first picture): it ends wherever it was cut, the last frame possibly incomplete.
+    /// </summary>
+    public static WebmFile Read(ReadOnlyMemory<byte> data, bool head = false)
     {
         var file = new WebmFile(data);
         int pos = 0;
         var (id, _, _) = file.Header(ref pos);
         if (id != EbmlHeader) throw new InvalidDataException("not a WebM file");
         pos = 0;
-        while (pos < data.Length)
+        try
         {
-            var (child, size, start) = file.Header(ref pos);
-            int end = file.End(start, size);
-            if (child == Segment) file.ReadSegment(start, end);
-            pos = end;
+            while (pos < data.Length)
+            {
+                var (child, size, start) = file.Header(ref pos);
+                int end = file.End(start, size);
+                if (child == Segment) file.ReadSegment(start, end);
+                pos = end;
+            }
         }
+        catch (InvalidDataException) when (head) { }
         return file;
     }
 

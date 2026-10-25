@@ -17,23 +17,27 @@ namespace Meitou.Launcher;
 /// </summary>
 sealed class VideoView : Border
 {
+    /// <summary>Bytes fetched for the poster: enough for the first frame of a 720p or 1080p clip.</summary>
+    const int PosterBytes = 1 << 20;
+
     static VideoView? playing;
 
-    readonly WebmFile file;
-    readonly Image image = new() { Stretch = Stretch.Uniform, HorizontalAlignment = HorizontalAlignment.Left };
+    readonly string url;
+    readonly NewsFeed feed;
+    WebmFile? file; // the whole video, downloaded on the first Play
+    readonly Image image = new() { Stretch = Stretch.Uniform };
     readonly Control button;
     readonly WriteableBitmap poster;
     WriteableBitmap? frame;
     CancellationTokenSource? run;
 
-    VideoView(WebmFile file, byte[] firstPicture, int width, int height, double maxHeight)
+    /// <summary>Fills the post's width, its height following the picture's shape.</summary>
+    VideoView(string url, NewsFeed feed, WebmFile? file, byte[] firstPicture, int width, int height)
     {
-        this.file = file;
+        (this.url, this.feed, this.file) = (url, feed, file);
         CornerRadius = new CornerRadius(6);
         ClipToBounds = true;
-        HorizontalAlignment = HorizontalAlignment.Left;
         Cursor = new Cursor(StandardCursorType.Hand);
-        image.MaxHeight = maxHeight;
         RenderOptions.SetBitmapInterpolationMode(image, BitmapInterpolationMode.HighQuality);
         poster = Bitmap(width, height);
         Copy(firstPicture, poster);
@@ -58,40 +62,75 @@ sealed class VideoView : Border
         DetachedFromVisualTree += (_, _) => Stop();
     }
 
-    /// <summary>A video loaded in the background; until then (or when it cannot be played) it takes no room, like an image.</summary>
-    public static Control Create(string url, NewsFeed feed, double maxHeight)
+    /// <summary>
+    /// A video whose first picture loads in the background from the file's start (<see cref="NewsFeed.HeadAsync"/>); the rest downloads
+    /// only when it is played. Until then (or when it cannot be played) it takes no room, like an image.
+    /// </summary>
+    public static Control Create(string url, NewsFeed feed)
     {
-        var host = new Panel { HorizontalAlignment = HorizontalAlignment.Left };
+        var host = new Panel();
         _ = Task.Run(async () =>
         {
-            var bytes = await feed.ImageAsync(url);
-            if (bytes is null || !VpxDecoder.Available) return;
-            try
+            if (!VpxDecoder.Available) return;
+            var bytes = await feed.HeadAsync(url, PosterBytes);
+            bool whole = bytes is not null && bytes.Length < PosterBytes; // a short file comes whole
+            if (bytes is null) return;
+            if (Poster(bytes, head: !whole) is not var (head, pixels, width, height))
             {
-                var file = WebmFile.Read(bytes);
-                if (file.VideoCodec is null) return;
-                using var decoder = new VpxDecoder(file.VideoCodec);
-                byte[] pixels = [];
-                foreach (var f in file.VideoFrames)
-                    if (decoder.Decode(f.Data.Span, ref pixels) is var (width, height))
-                    {
-                        Dispatcher.UIThread.Post(() => host.Children.Add(new VideoView(file, pixels, width, height, maxHeight)));
-                        return;
-                    }
+                // A first frame larger than the head: take the whole file after all.
+                if (whole || await feed.ImageAsync(url) is not { } all || Poster(all, head: false) is not var (full, p, w, h)) return;
+                (head, pixels, width, height, whole) = (full, p, w, h, true);
             }
-            catch (Exception e) when (e is InvalidDataException or NotSupportedException or InvalidOperationException or ArgumentException) { }
+            Dispatcher.UIThread.Post(() => host.Children.Add(new VideoView(url, feed, whole ? head : null, pixels, width, height)));
         });
         return host;
+    }
+
+    static (WebmFile File, byte[] Pixels, int Width, int Height)? Poster(byte[] bytes, bool head)
+    {
+        try
+        {
+            var file = WebmFile.Read(bytes, head);
+            if (file.VideoCodec is null) return null;
+            using var decoder = new VpxDecoder(file.VideoCodec);
+            byte[] pixels = [];
+            foreach (var f in file.VideoFrames)
+                if (decoder.Decode(f.Data.Span, ref pixels) is var (width, height)) return (file, pixels, width, height);
+        }
+        catch (Exception e) when (e is InvalidDataException or NotSupportedException or InvalidOperationException or ArgumentException) { }
+        return null;
     }
 
     void Play()
     {
         playing?.Stop();
         playing = this;
-        button.IsVisible = false;
         run = new CancellationTokenSource();
         var token = run.Token;
-        _ = Task.Run(() => Loop(token));
+        // Dimmed while the video downloads, gone once it plays.
+        if (file is null) button.Opacity = 0.5; else button.IsVisible = false;
+        _ = Task.Run(async () =>
+        {
+            if (file is null)
+            {
+                var bytes = await feed.ImageAsync(url, token);
+                WebmFile? loaded = null;
+                try { if (bytes is not null) loaded = WebmFile.Read(bytes); }
+                catch (InvalidDataException) { }
+                Dispatcher.UIThread.Post(() =>
+                {
+                    button.Opacity = 1;
+                    file ??= loaded;
+                    if (token.IsCancellationRequested) return;
+                    if (file is null) { Stop(); return; } // could not be downloaded: back to the poster
+                    button.IsVisible = false;
+                    var whole = file;
+                    _ = Task.Run(() => Loop(whole, token));
+                });
+                return;
+            }
+            Loop(file, token);
+        });
     }
 
     void Stop()
@@ -105,7 +144,7 @@ sealed class VideoView : Border
     }
 
     /// <summary>Decodes every frame in order and shows each at its time, on the sound's clock when there is sound, else a stopwatch.</summary>
-    void Loop(CancellationToken token)
+    void Loop(WebmFile file, CancellationToken token)
     {
         try
         {

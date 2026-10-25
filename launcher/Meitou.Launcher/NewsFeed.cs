@@ -143,6 +143,47 @@ public sealed class NewsFeed(HttpClient http)
         return new NewsPost(file, title, date, meta.GetValueOrDefault("author"), meta.GetValueOrDefault("image"), string.Join("\n", lines[bodyStart..]).Trim(), baseUrl);
     }
 
+    static string CacheFile(string url, string extension) =>
+        Path.Combine(CacheDirectory, Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(url)))[..32] + extension);
+
+    /// <summary>
+    /// A file's first <paramref name="length"/> bytes (a video's poster frame), fetched with a Range request and cached apart from the
+    /// whole file; the whole file when it is already cached or the server sends all of it. Null when it cannot be had.
+    /// </summary>
+    public async Task<byte[]?> HeadAsync(string url, int length, CancellationToken ct = default)
+    {
+        if (Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.IsFile)
+        {
+            try
+            {
+                await using var stream = File.OpenRead(uri.LocalPath);
+                var head = new byte[Math.Min(length, stream.Length)];
+                await stream.ReadExactlyAsync(head, ct);
+                return head;
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return null; }
+        }
+        var whole = CacheFile(url, ".img");
+        var cached = CacheFile(url, ".head");
+        try
+        {
+            if (File.Exists(whole)) return await File.ReadAllBytesAsync(whole, ct);
+            if (File.Exists(cached)) return await File.ReadAllBytesAsync(cached, ct);
+            using var request = new HttpRequestMessage(HttpMethod.Get, url);
+            request.Headers.Range = new RangeHeaderValue(0, length - 1);
+            using var response = await http.SendAsync(request, ct);
+            response.EnsureSuccessStatusCode();
+            var bytes = await response.Content.ReadAsByteArrayAsync(ct);
+            Directory.CreateDirectory(CacheDirectory);
+            await File.WriteAllBytesAsync(response.StatusCode == HttpStatusCode.PartialContent ? cached : whole, bytes, ct);
+            return bytes;
+        }
+        catch (Exception e) when (e is HttpRequestException or OperationCanceledException or IOException)
+        {
+            return null;
+        }
+    }
+
     /// <summary>An image's bytes, from the disk cache or downloaded once; null when it cannot be had.</summary>
     public async Task<byte[]?> ImageAsync(string url, CancellationToken ct = default)
     {
@@ -151,7 +192,7 @@ public sealed class NewsFeed(HttpClient http)
             try { return await File.ReadAllBytesAsync(uri.LocalPath, ct); }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return null; }
         }
-        var cached = Path.Combine(CacheDirectory, Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(url)))[..32] + ".img");
+        var cached = CacheFile(url, ".img");
         try
         {
             if (File.Exists(cached)) return await File.ReadAllBytesAsync(cached, ct);
