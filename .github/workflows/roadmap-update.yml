@@ -1,7 +1,7 @@
-# Roadmap update: after each successful nightly or release (and on demand), Claude Haiku proposes edits to site/src/data/roadmap.ts
-# from the commits, issues, drift findings and play reports since the roadmap's as-of commit (.github/scripts/roadmap-update.mjs).
-# The edits go to one pull request on the auto/roadmap-update branch, updated in place; a person merges it.
-# Needs the ANTHROPIC_API_KEY secret, and "Allow GitHub Actions to create and approve pull requests" in the repository's Actions settings.
+# Roadmap update: after each successful nightly or game release (and on demand), Claude Sonnet 5.5 updates site/src/data/roadmap.ts
+# from the commits, issues, drift findings and play reports since the roadmap's as-of commit (.github/scripts/roadmap-update.mjs),
+# and the result is committed to master. A push by this workflow starts no other workflow, so it starts the site image and the
+# drift check itself. Needs the ANTHROPIC_API_KEY secret (skipped without it). docs/play-reports.md, "Roadmap updates".
 name: Roadmap update
 
 on:
@@ -12,7 +12,7 @@ on:
 
 permissions:
   contents: write
-  pull-requests: write
+  actions: write
   issues: read
 
 concurrency:
@@ -20,7 +20,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  propose:
+  update:
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
@@ -36,7 +36,7 @@ jobs:
       - run: npm ci
         working-directory: .github/scripts
 
-      - name: Ask Claude Haiku for edits
+      - name: Ask Claude Sonnet 5.5 for edits
         id: update
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -46,9 +46,15 @@ jobs:
         run: |
           if [ -z "$ANTHROPIC_API_KEY" ]; then echo "No ANTHROPIC_API_KEY secret; skipped." >> "$GITHUB_STEP_SUMMARY"; exit 0; fi
           node .github/scripts/roadmap-update.mjs
-          if git diff --quiet; then echo "changed=false" >> "$GITHUB_OUTPUT"; else echo "changed=true" >> "$GITHUB_OUTPUT"; fi
+          if git diff --quiet; then
+            echo "Nothing to change." >> "$GITHUB_STEP_SUMMARY"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            cat "$SUMMARY_FILE" >> "$GITHUB_STEP_SUMMARY"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
 
-      # The page must still build with the edits.
+      # The page must still build with the edits; a failure here leaves master untouched.
       - name: Build the site
         if: steps.update.outputs.changed == 'true'
         working-directory: site
@@ -56,20 +62,22 @@ jobs:
           npm ci
           npm run build
 
-      - name: Open or update the pull request
+      - name: Commit to master
         if: steps.update.outputs.changed == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SUMMARY_FILE: ${{ runner.temp }}/roadmap-update.md
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git switch -C auto/roadmap-update
-          git commit -am "Roadmap: proposed update after $(git rev-parse --short=8 HEAD)"
-          git push --force origin auto/roadmap-update
-          if gh pr view auto/roadmap-update --json state -q .state 2>/dev/null | grep -q OPEN; then
-            gh pr edit auto/roadmap-update --body-file "$SUMMARY_FILE"
-          else
-            gh pr create --base master --head auto/roadmap-update --title "Roadmap: proposed update" --body-file "$SUMMARY_FILE"
-          fi
-          cat "$SUMMARY_FILE" >> "$GITHUB_STEP_SUMMARY"
+          git commit -am "Roadmap updated by Claude Sonnet 5.5 after $(git rev-parse --short=8 HEAD)"
+          for i in 1 2 3; do
+            git pull --rebase origin master && git push origin HEAD:master && exit 0
+            sleep 10
+          done
+          exit 1
+
+      - name: Rebuild the site and rerun the drift check
+        if: steps.update.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh workflow run site-image.yml --ref master
+          gh workflow run roadmap-drift.yml --ref master
