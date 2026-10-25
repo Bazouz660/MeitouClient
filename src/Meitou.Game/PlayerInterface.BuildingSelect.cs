@@ -127,9 +127,9 @@ sealed partial class PlayerInterface
             }
             if (session.CurrentSnapshot.InspectedRichness is { } rich && rich.Instance == focus.Instance) AddRichnessLine(rich, stats);
             if (own && Machine(focus.SiteId) is { } machine) AddMachineLines(machine, stats, ref status, ref bad);
-            if (mine && (player ? site?.TownName : focus.Town) is { Length: > 0 })
+            if (mine && (player ? site?.TownName : focus.Town) is { Length: > 0 } && (site?.Record ?? focus.Record) is { } record && DataOf(record) is { HasInterior: true })
             {
-                // The player's building in a town (the original's +0x1f0): a Kenshi_Button2 toggle of width 0.3, Public in Good, Private in BadBright (slots 82 / 83).
+                // The player's building with an interior (the original's +0x1f0) in a town: a Kenshi_Button2 toggle of width 0.3, Public in Good, Private in BadBright (slots 82 / 83).
                 bool open = PublicOf(focus, site, detail);
                 stats.Add(new("Open to public:", open ? "Public" : "Private", MainColour, open ? GoodColour : BadBrightColour, Action: "meitou:building-public", ButtonWidth: 0.3f));
             }

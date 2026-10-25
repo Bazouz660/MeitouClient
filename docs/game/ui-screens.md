@@ -409,10 +409,11 @@ How a building gets selected: [ui-input](ui-input.md#building-picking-and-select
     stuff, don't lose them."); furniture: "Dismantling this building will destroy all furniture.\nDo you want to continue?"; else the message box
     "Dismantle" / "Are you sure?". What the confirmation's callback (`LAB_14002b666`) does is **Unknown**. Pause is slot 85 (`FUN_140546f40`): flips
     the paused byte, `General_Click`.
-  - 6: `Open to public:` (label Main) coloured `Public` (Good) / `Private` (Bad) for another faction's building; for the player's own building in a
-    town (+0x1f0, the town pointer the For sale rule reads) a `Kenshi_Button2` toggle of width 0.3 (Public in Good, Private in BadBright; slot 83 `FUN_140546ef0` flips the byte +0xc8 read by slot
+  - 6: `Open to public:` (label Main) coloured `Public` (Good) / `Private` (Bad) for another faction's building; for the player's own building (owner
+    +0x250 set) with an interior object (+0x1f0, **Verified** `FUN_140301840`; `FUN_140551b20` creates it only when the BUILDING's `interior` list is
+    non-empty, so wind generators and benches get no line) a `Kenshi_Button2` toggle of width 0.3 (Public in Good, Private in BadBright; slot 83 `FUN_140546ef0` flips the byte +0xc8 read by slot
     82, `General_Click`). `For sale:` with a button `c.{1,num}` (both Good) when slot 88 (`FUN_14029c500`) is true: a building of class 0xb with no
-    parent whose town (+0x1f0) has its +0x2c byte clear and type 1, 2 or 3 (**Unknown** which these are), owned by a faction neither the player's nor
+    parent whose interior (+0x1f0) has its +0x2c byte clear and type 1, 2 or 3 (**Unknown** which these are), owned by a faction neither the player's nor
     allied, and its state's bool `sell home` set (true without a state). Price (`FUN_1407ad300`): int(f × target × the owner FACTION's float
     `building cost mult` × 400), f = 0.375 when slot 102 (+0x330) answers true, else 1. That slot reads the destroyed byte +0x1a1
     ([construction state](buildings-production.md#construction-state), **Verified** there against `FUN_1405595a0`). The button (slot 80
@@ -443,8 +444,11 @@ How a building gets selected: [ui-input](ui-input.md#building-picking-and-select
   door object). Open to public is the state's `is public day` / `is public night` for the time of day (**Observed** reading), for another faction's
   buildings. A building of the player's (its site, or a town building whose fixtures the player's faction owns, `BuildingDetail.Owned`) gets the
   buttons: the door lines as full-row buttons, `[UPGRADE]` / `[DOWNGRADE]` on a site (`UpgradeSite` / `DowngradeSite`, same scope as the
-  simulation's), and in a town the Open to public toggle (`SetBuildingPublic`: a site's `BuildSite.Public`, a town building's flag in the fixtures,
+  simulation's), and in a town, for a record with an `interior` list, the Open to public toggle (`SetBuildingPublic`: a site's `BuildSite.Public`, a town building's flag in the fixtures,
   both saved as `is public day`; a town building set Private drops out of the town AI's wander and bar places). **Observed** (owner's original-game Longhouse screenshot): clicking its price opens a confirmation titled with the building name, asking `Do you want to buy this building for c.{1,num}?`, with Yes / No buttons. For sale and its confirmation use the [house purchase contract](../simulation.md#town-house-purchases). Not built: Dismantle of a town building the player owns, the original's other consumers of +0xc8 (**Unknown**).
+- **Workers** (`FUN_1403075b0`, **Verified** strings and branch): with raw `max operators` (+0x3ac) 0, `Workers:` `-` with the tooltip "This machine
+  is fully automatic." (wind generators); else `{1,num}/{2,num}` operators / +0x3ac, tooltip "The machine is fully staffed." / "The machine is under-staffed.",
+  the value in another colour when nobody operates it.
 - **Door** (DoorStuff slot 40 `FUN_140304120`), then the house's own lines of the same section: 4 `Door Condition`, the number int(progress) of the
   door's own construction state, tooltip "The door is in good condition." while that number is not negative, else "The door is damaged." (Title);
   6 `Open/Close:` with "The door is open / closed / broken" and `Security:` `Locked` / `Unlocked` and ` (lvl {1,num})`, with tooltips ([Tooltips](#tooltips)).

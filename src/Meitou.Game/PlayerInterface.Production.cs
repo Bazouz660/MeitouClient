@@ -297,7 +297,9 @@ sealed partial class PlayerInterface
             }
         }
         if (m.TechLevel > 0) stats.Add(new("Tech level:", N(m.TechLevel), MainColour));
-        if (m.MaxOperators > 0) stats.Add(new("Workers:", $"{N(m.Operators)}/{N(m.MaxOperators)}", MainColour));
+        // FUN_1403075b0: an automatic machine (raw max operators 0) reads "-".
+        if (m.IsAutomatic) stats.Add(new("Workers:", "-", MainColour, Tooltip: "This machine is fully automatic."));
+        else if (m.MaxOperators > 0) stats.Add(new("Workers:", $"{N(m.Operators)}/{N(m.MaxOperators)}", MainColour));
     }
 
     // ---- the overview's research tab ----
