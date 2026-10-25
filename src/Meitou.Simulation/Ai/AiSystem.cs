@@ -244,7 +244,7 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
     }
 
     /// <summary>The nearest town whose <see cref="TownData.Radius"/> holds a point (as the game's position lookup, <c>FUN_140928890</c>), -1 when none.</summary>
-    int TownAt(Vector3 p)
+    internal int TownAt(Vector3 p)
     {
         var at = Flat(p);
         int best = -1;

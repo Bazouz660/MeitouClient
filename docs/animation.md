@@ -63,8 +63,10 @@ of definitions and gives each a weight; zero-weight ones are dropped:
 - **Animation.** Forward speed = z, side speed = −x (to the right) only while strafing, else 0; x is zeroed when |z| > 1 and |x| < 0.5. The side-step
   clip gets weight |side| / (|side| + |forward|) (the last value while the sum is ≤ 1, through a filter `@ AC+0x2b8`, times the movement layer's weight), the forward movement clips
   the rest; it plays at F × `play speed` × side speed (signed). Base data: `strafe lower` (layer lower, no `move speed`, rebirth.mod `play speed`
-  −0.12, `strafe speed max` 999, combat only); `sidestep` is disabled and `strafe upper` removed. Which test reads `strafe speed max` (999 on
-  the blows, 99 on the guards, 0 on the walks) is **Unknown**. Animals' `strafe anim` is not decoded.
+  −0.12, `strafe speed max` 999, combat only); `sidestep` is disabled and `strafe upper` removed. `strafe speed max` (999 on the blows, 99 on the guards, 0 on the walks) is only tested
+  for > 0 when the lists are built (`FUN_1405bbd40`, **Observed**): such a clip goes to the strafe list instead of the by-name action list, and the value is never a speed.
+  Only the base/animal class reads the strafe list (its first entry is the side step in a fight); humans fetch `strafe lower` by name. An animal's `strafe anim`
+  is its side step only when none of its `animations` has `strafe speed max` > 0.
 - Meitou: `AnimationSystem.Strafe` and `AnimationLibrary.Strafe`; a fighter in its footwork (`CharacterCold.FaceSlot`) keeps facing its
   target while its path moves it (`MovementSystem`, the turn's speed cut skipped); the share is 0 below a total speed of 1 (standing; engine reading of the weight).
 

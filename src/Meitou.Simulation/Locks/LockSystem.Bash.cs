@@ -6,9 +6,8 @@ using Meitou.Simulation.Combat;
 namespace Meitou.Simulation.Locks;
 
 /// <summary>
-/// Bashing doors (Task_BashDoor, docs/game/locks.md "Bash door"; docs/simulation.md "Cages, beds and locks"). <b>Engine</b> stand-in for the original's planner, which bashes a door
-/// when a locked one blocks a walk: an NPC attacking a target inside a building shut by another faction's locked doors (<see cref="FixtureRegistry.IsShut"/>), itself outside, walks
-/// to the nearest door and swings at it. Each swing (<c>FUN_14029d690</c>, <b>Observed</b>) takes 0.015 x clamp(2 x blunt + 0.5 x cut, 20, 60) off the door's construction progress (1 when whole), an
+/// Bashing doors (Task_BashDoor, docs/game/locks.md "Bash door"; docs/simulation.md "Cages, beds and locks"). An NPC attacking a target inside a building shut by locked doors
+/// (<see cref="FixtureRegistry.IsShut"/>), itself outside, bashes the building's main door when the original's planner does (<see cref="DoorPlan"/>): it walks there and swings. Each swing (<c>FUN_14029d690</c>, <b>Observed</b>) takes 0.015 x clamp(2 x blunt + 0.5 x cut, 20, 60) off the door's construction progress (1 when whole), an
 /// animal's damage at a quarter; at 0 the door breaks: broken, unlocked and opening, so the building opens for paths and the attacker's pursuit carries on.
 /// </summary>
 public sealed partial class LockSystem
@@ -17,8 +16,12 @@ public sealed partial class LockSystem
     public const int BashCheckTicks = 30;
     /// <summary>Game seconds between swings (engine choice: the original swings at 0.6 of its <c>stonemine</c> clip, whose length Meitou does not read).</summary>
     public const float BashSwingSeconds = 1.5f;
-    /// <summary>How far out from the leaf the basher stands, and how near that spot counts as there.</summary>
-    public const float BashStandOff = 12, BashReach = 20;
+    /// <summary>How far out from the leaf the basher walks to (engine choice: a walk goal on the outside; arriving is <see cref="DoorPlan.AtDoor"/>).</summary>
+    public const float BashStandOff = 12;
+    /// <summary>How near the stand spot by a door a lock worker counts as there.</summary>
+    public const float DoorWorkReach = 20;
+    /// <summary>The gap (distance minus both radii) within which a character ahead of the basher stops it (<c>FUN_14033d690</c>).</summary>
+    public const float BashBlockGap = 10;
 
     /// <summary>Whose attack targets the bashers follow (null: no bashing, as in worlds without combat).</summary>
     internal CombatSystem? Combat { get; set; }
@@ -41,14 +44,14 @@ public sealed partial class LockSystem
                 continue;
             }
             var stand = StandSpot(door, spot);
-            float d = Vector2.Distance(Flat(next[s].Position), stand);
-            if (d > BashReach && c.BashOrdered)
+            bool there = DoorPlan.AtDoor(next[s], spot);
+            if (!there && c.BashOrdered)
             {
                 // An ordered smash walks by its order's own goal; a new order (another task) ends it.
                 if (next[s].Task != (byte)CharacterTask.GoTo) StopBashing(table, s, c);
                 continue;
             }
-            if (d > BashReach)
+            if (!there)
             {
                 // Walk there (the pursuit leaves a basher alone); a failed path ends it.
                 if ((next[s].Flags & (ushort)MoveFlags.AnyPath) == 0)
@@ -64,6 +67,8 @@ public sealed partial class LockSystem
             if ((next[s].Flags & (ushort)MoveFlags.AnyPath) != 0) { next[s].Flags = (ushort)(next[s].Flags & ~(ushort)MoveFlags.AnyPath); next[s].PathCursor = 0; c.PathRequest = 0; }
             var face = new Vector2(spot.Centre.X, spot.Centre.Z) - Flat(next[s].Position);
             if (face.LengthSquared() > 1e-4f) next[s].Yaw = MathF.Atan2(face.X, face.Y);
+            // Someone in the way: the task is impossible (the plan fails; an NPC looks again at the next check).
+            if (InTheWay(world, s, face)) { StopBashing(table, s, c); continue; }
             if (c.BashOrdered && next[s].Task == (byte)CharacterTask.GoTo) MovementSystem.Stop(table, s);
             if (c.BashTime < 0) c.BashTime = 0;
             c.BashTime += world.TickSeconds;
@@ -127,17 +132,16 @@ public sealed partial class LockSystem
         world.EmitSound(SoundKind.Unlocked, attacker, world.Characters.Next[attacker].Position);
     }
 
-    /// <summary>Gives the free attackers whose target is shut in another faction's building, while they are outside it, the nearest of its doors to bash.</summary>
+    /// <summary>Gives the free attackers whose target is shut in another building, while they are outside it, its main door to bash when the planner says so (<see cref="DoorPlan"/>).</summary>
     void FindBashers(World world)
     {
         var table = world.Characters;
         var next = table.Next;
-        List<(string Building, Vector2 Origin, float Radius, List<(Fixture Door, DoorSpot Spot)> Doors)>? shut = null;
+        List<(string Building, Vector2 Origin, float Radius, Fixture Door, DoorSpot Spot)>? shut = null;
         for (int s = 0; s < table.HighWater; s++)
         {
             if (!next[s].Alive || next[s].Task != (byte)CharacterTask.Attack) continue;
-            if (table.Cold(s) is not { IsPlayer: false, Bashing: null, IsImprisoned: false, Medical.Incapacitated: false, Carrying.IsNone: true, Fighter: { } fighter } c) continue;
-            if (!fighter.IsAnimal && fighter.Unarmed) continue;   // the task wants a weapon (hasWeaponEquipped)
+            if (table.Cold(s) is not { IsPlayer: false, Bashing: null, IsImprisoned: false, Medical.Incapacitated: false, Carrying.IsNone: true, Fighter: not null } c) continue;
             var st = Combat!.StateOf(table.IdOf(s));
             int t = st.TargetSlot;
             if (t < 0 || t >= table.HighWater || !next[t].Alive || next[t].Generation != st.TargetGeneration) continue;
@@ -145,25 +149,29 @@ public sealed partial class LockSystem
             if (shut.Count == 0) return;
             var target = Flat(next[t].Position);
             var me = Flat(next[s].Position);
-            foreach (var (building, origin, radius, doors) in shut)
+            foreach (var (building, origin, radius, door, spot) in shut)
             {
                 if (Vector2.Distance(target, origin) > radius || Vector2.Distance(me, origin) <= radius) continue;
-                if (world.Fixtures.DoorOwner(building) == c.Faction) continue;   // an owner unlocks instead
-                var best = doors.MinBy(x => Vector2.DistanceSquared(StandSpot(x.Door, x.Spot), me));
-                c.Bashing = best.Door.Id;
-                c.BashTime = 0;
+                if (doorPlan.PlansBash(world, Combat, s, t, building, door, spot))
+                {
+                    c.Bashing = door.Id;
+                    c.BashTime = 0;
+                }
                 break;
             }
         }
     }
 
-    List<(string, Vector2, float, List<(Fixture, DoorSpot)>)> ShutBuildings(World world)
+    readonly DoorPlan doorPlan = new();
+
+    /// <summary>The shut buildings with their main door (<c>Building::getDoor</c>, one per building; engine reading: the one of lowest door index with a known leaf).</summary>
+    List<(string, Vector2, float, Fixture, DoorSpot)> ShutBuildings(World world)
     {
-        var list = new List<(string, Vector2, float, List<(Fixture, DoorSpot)>)>();
+        var list = new List<(string, Vector2, float, Fixture, DoorSpot)>();
         foreach (var b in world.Fixtures.Buildings)
         {
             if (!world.Fixtures.IsShut(b)) continue;
-            var doors = new List<(Fixture, DoorSpot)>();
+            (Fixture Door, DoorSpot Spot)? main = null;
             Vector2 origin = default;
             float radius = 0;
             foreach (var f in world.Fixtures.OfBuilding(b))
@@ -171,10 +179,10 @@ public sealed partial class LockSystem
                 if (f.Kind != FixtureKind.Door || world.Fixtures.DoorSpotOf(f) is not { } spot) continue;
                 origin = Flat(f.Position);
                 radius = MathF.Max(radius, Vector2.Distance(origin, new Vector2(spot.Centre.X, spot.Centre.Z)));
-                doors.Add((f, spot));
+                if (main is null || f.DoorIndex < main.Value.Door.DoorIndex) main = (f, spot);
             }
             // Inside: nearer the origin than its farthest door (engine reading; the building's hull is not consulted).
-            if (doors.Count > 0) list.Add((b, origin, radius, doors));
+            if (main is { } m) list.Add((b, origin, radius, m.Door, m.Spot));
         }
         return list;
     }
@@ -188,6 +196,36 @@ public sealed partial class LockSystem
         var centre = new Vector2(spot.Centre.X, spot.Centre.Z);
         if (Vector2.Dot(centre - Flat(door.Position), n) < 0) n = -n;
         return centre + n * BashStandOff;
+    }
+
+    struct WayScan
+    {
+        public CharacterTable Table;
+        public int Self;
+        public Vector2 At, Face;
+        public float Radius;
+        public bool Found;
+    }
+
+    /// <summary>
+    /// A character ahead of the basher within <see cref="BashBlockGap"/> whose body the line along its facing meets (<c>FUN_14033d690</c>, <b>Observed</b>: a ray from 12 up along the
+    /// facing at each sensed character in front with that gap; any character, ally or not). Engine reading: the ray is the flat line against the body's radius.
+    /// </summary>
+    static bool InTheWay(World world, int s, Vector2 face)
+    {
+        if (face.LengthSquared() < 1e-6f) return false;
+        var table = world.Characters;
+        var scan = new WayScan { Table = table, Self = s, At = Flat(table.Previous[s].Position), Face = Vector2.Normalize(face), Radius = CombatSteering.Radius(table.Cold(s)) };
+        world.Grid.Query(scan.At.X, scan.At.Y, scan.Radius + BashBlockGap + CombatTuning.DefaultFootprint * 4, ref scan, static (int o, ref WayScan w) =>
+        {
+            if (w.Found || o == w.Self || !w.Table.Previous[o].Alive) return;
+            var to = Flat(w.Table.Previous[o].Position) - w.At;
+            float rc = CombatSteering.Radius(w.Table.Cold(o));
+            float along = Vector2.Dot(to, w.Face);
+            if (along <= 0 || to.Length() - w.Radius - rc >= BashBlockGap) return;
+            if (MathF.Abs(w.Face.X * to.Y - w.Face.Y * to.X) < rc) w.Found = true;
+        });
+        return scan.Found;
     }
 
     static void StopBashing(CharacterTable table, int s, CharacterCold c)

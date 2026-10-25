@@ -115,8 +115,20 @@ Same targets as picking; Task_CutLock / Task_BruteForceLock share the shackle ta
   `f = clamp(2 x blunt + 0.5 x cut, 20, 60)`; 0.015 x f comes off the door's own construction progress (`getBuildState`, slot 69, returns
   the door's Building +0x160; `constructionProgress` +4; 1 when whole), so a whole door takes 2 to 4 blows; the lock's hardness is not touched
   (Meitou: `Fixture.DoorProgress`, `LockSystem.Damage`; not among the door save keys, so not saved; a template's BROKEN door starts at 0, engine reading). At <= 0 the door is broken, its lock
-  unlocked and the door opened, sound `Break`. The task ends once the door is broken, open or opening. No AI package lists the
-  bash tasks: the planner starts them (when, **Unknown**).
+  unlocked and the door opened, sound `Break`. The task ends once the door is broken, open or opening; no timer.
+  - **Who** (**Verified** scans): only the planner makes 81 and 287; 226 is the player's Smash order (not a provider, desire 1).
+  - **When** (**Observed**): a row needing DESTINATION_IS_ACCESSIBLE (59; every walk to a target, attacks, entering) finds the target's building without an open
+    door (`Building::hasAnOpenDoor`: none, broken, open or opening; a closed unlocked door counts as shut). 85 Open destination door (finder: that building)
+    wants DOOR_IS_OPEN; its providers, in ascending type, are 72 Opening door, 81 and 287. Locked: 72 needs !54, which 78 (own door only) or 81 could give, and
+    81 (B: not mine, not allied, a weapon, at the door) wins, walked to by 82. 287 is the break-out twin (LOCATION_IS_ACCESSIBLE 60 → 84 → 74 → !55).
+  - **Desire** (`AI::scoreAggressiveAction` `FUN_14079d1a0`): 0 for a building in the basher's home town; 1.1 for a bandit (NPC type 8); a player character 1.1
+    when aggressive, against an enemy or a not-real faction, else 0; an NPC 0 towards an ally (or in a war campaign, flag **Unknown**), 1 towards an enemy, else 0
+    for trader, civilian, diplomat or adventurer factions and 1 otherwise. Picking and breaking score 0.1, so a bash beats them. Inference, not run: a bandit
+    (1.1 > 72's 1) bashes even an unlocked closed door.
+  - **Door and place**: the building's one door (`getDoor`); at it within the door's reach of its marker (25, 45 for a gateway; x2 standing), height 130.
+  - **Impossible**: no door, or a character ahead within a gap of 10 that a ray along the facing hits (any character). Which registry a character plans with
+    is **Unknown** (an animal-only one could not reach 81 through 85).
+  - Meitou ([simulation](../simulation.md#cages-beds-and-locks)): `DoorPlan` runs this search for NPC attackers whose target is shut in.
 
 ## Doors
 

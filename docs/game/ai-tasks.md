@@ -691,7 +691,7 @@ vfunc 5 `FUN_14050caf0`). TaskData fields: +0x108 desire (a member function, nea
   263, 266, 228, 235, 44, 253, 5, 61, 97, 258. *Restricted* (+0x41): 122, 270, 140, 76, 202, 185, 285. *Keeps the queue* (+0x23): 87, 221. +0x22
   (28, 65, 147): **Unknown**.
 - **Providers**: six registries, one per category flag bit (1, 2, 4, 0x10, 0x20, 0x40), each map a state and its polarity to the rows of that category,
-  not +0x40, whose list A holds it. Which registry a character plans with is **Unknown** (rows only flagged 0x20 are dog play and animal attacks).
+  not +0x40, whose list A holds it, in ascending task type (filled from the registry's map keyed by type, `FUN_14060fe30`, **Observed**). Which registry a character plans with is **Unknown** (rows only flagged 0x20 are dog play and animal attacks).
 - **Can run** (memoised per row, target and effect target): the first B entry that does not hold is reported unmet, false; else true without an effect;
   with one, the effect target (from the finder when asked), false without one; true when the effect holds, else the effect is reported unmet.
 - **Search**: a node is (row, target hand, position), with value g = h = the row's desire when made; a node whose desire is not above 0 is a dead end

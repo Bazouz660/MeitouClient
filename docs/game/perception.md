@@ -61,14 +61,13 @@ and stealth x 5). Each looker keeps a meter per target (`SensoryData::SpottingPe
   (**Verified**, read with `OgreMeshReader`). Colour red 0xdd0000 detected, yellow 0xffdd00 noticing, green 0x00ff00 when a
   looker test (vtable +0x3f0, **Unknown**) passes. Material (`FUN_1409b7830`): `debug_marker` cloned as `debug_#rrggbb`,
   pass 0 `colour` = (rgb, 1); with its last argument set (this call) pass 1 is kept as (rgb, 0.2), else removed. The
-  sneaker's state +0xe8 becomes 1 (any red) or 2 (any yellow).
+  sneaker's state +0xe8 (`stealthUnseen`, **Observed** `FUN_1408586d0`) becomes 0 when it is fighting or a looker's meter is red, 2 when only yellow, else 1 (unseen).
 - Name tag (`FUN_1406e8100`, colours loaded in `FUN_1406eb3a0`): shown within 10954 of the camera (1.2e8
   squared). Tag state 1/2/3 tints a stealth icon with the GUI colours `NameTagStealthHidden` / `AlmostSeen` / `Seen`,
   fallbacks (0.25, 0.521, 0.745), (0.745, 0.721, 0.25), (0.745, 0.25, 0.29) (**Verified** literals; the GUI XML may
   override). A second icon's frame is round((1 - x) x (frames - 1)), x = clamp(character +0xd8, 0, 1): the
   `LightLevel` image of `Kenshi_CharacterNameTags` (7 frames, frame 0 full light; **Verified**, kenshi_images.xml), on the
-  panel's right in colour (0.942, 0.806, 0.341) (**Verified**, `Kenshi_CharacterNamePanel.layout`). How tag state 1-3 is
-  derived from +0xe8 is **Unknown**.
+  panel's right in colour (0.942, 0.806, 0.341) (**Verified**, `Kenshi_CharacterNamePanel.layout`). The tag state is set alongside: 3 seen, 2 almost seen, 1 hidden.
 - Stealth XP: see [character-stats](character-stats.md#levelling-xp).
 
 Meitou: meters only for hostile/police lookers the aggro scan runs, no line-of-sight ray, f = 0.5, dt = the scan interval,

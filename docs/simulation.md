@@ -616,10 +616,13 @@ unload, hashed only once non-empty. Facts: [locks](game/locks.md), [economy 11.5
   carried, not on a pole), `Break` (strength > 3 x hardness). Not built: cutting locks other than shackles.
   A player character picking a lock or shackles at the lock gets the floating bar (`CharacterSnapshot.Bar`, drawn in the
   `Kenshi_ProgressBarPanel` layout just above the name tag; anchor engine choice). No bar for cutting.
-- **Bashing doors** (`LockSystem.Bash`; blow rule in [locks](game/locks.md)): engine stand-in for the planner. Every 30 ticks an
-  NPC attacking (armed or an animal) whose target is inside a building another faction's locked doors shut (`IsShut`; inside:
-  nearer the door fixture's origin than its farthest door spot) while it is outside takes the nearest door (`CharacterCold.Bashing`);
-  the pursuit leaves it alone, it walks to 12 out from the leaf and swings every 1.5 s (engine; the clip length is not read).
+- **Bashing doors** (`LockSystem.Bash`, `DoorPlan`; rules in [locks](game/locks.md)): every 30 ticks an NPC attacking whose target is inside a building
+  whose doors are all locked (`IsShut`; inside: nearer the door fixture's origin than its farthest door spot) while it is outside plans row 4 with the
+  original's rows (85 → 72 / 81 / 287 → 82); a plan with a bash takes the building's main door (lowest door index with a spot) (`CharacterCold.Bashing`).
+  Only door states are evaluated (the rest of row 4 is held); the desire is `scoreAggressiveAction` (no war-campaign case); an animal's natural weapon
+  counts. The pursuit leaves it alone; it walks to 12 out from the leaf until within the door's reach (25, x2 standing, the leaf for the marker, no
+  gateway 45) and swings every 1.5 s (engine; the clip length is not read); a character ahead within 10 ends it until the next check. A closed unlocked
+  door is passed by the walk, so the bandit branch (bashing unlocked doors) and the break-out (287) are not acted out.
   Broken: lock unlocked, door broken and opening, the pursuit resumes. Engine: no crime for NPCs, the `Unlocked` sound for
   `Break`; headless (no door gate, no spots) nothing is bashed. Player characters never bash.
 
@@ -1293,7 +1296,7 @@ whose first step is neither the goal nor a step the engine carries out (`AiSyste
   so such goals do not plan. Rows on the way have their `TaskProfiles` desire, else 1.
 - States (`PlanContext.Holds`): location, distance, bed, sitting, home (within 20 of the home), home town, town, weapon drawn and
   carrying are evaluated; moving, getting up, arms, power, buildings, doors, gates, accessibility, machine slots and readiness are
-  held true (movement and the lock-up round deal with doors); every other state is false.
+  held true (movement and the lock-up round deal with doors; the bashers' `DoorPlan` evaluates them); every other state is false.
 
 Combat stances (`AiStance`, the most aggressive combat goal in its hours; none at all attacks on sight): PROTECT_OWN_SQUAD joins only
 fights of its own squad, against a mate's target or a mate's attacker (as the original's finder, [ai-tasks](game/ai-tasks.md#combat-goals));

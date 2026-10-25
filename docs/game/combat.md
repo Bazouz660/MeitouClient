@@ -45,8 +45,8 @@ list unless `is block` or `is dodge` (then the defence list), in data order. Eac
 - Filter: category table; `min skill` ≤ skill ≤ `max skill`; (1 − e)·100 ≤ `max encumbrance`; `is prone` = posture ≠ 0;
   limb factor f > 0, and f ≥ 1 except in the last pass.
 - f = product over blows. `limb` 4 (weapon) 1; 0 left arm, 1 right arm: 0.001 if not working (+0x5be / +0x5bd).
-  Legs 2/3: prone → technique out; flag +0x5b8 or a leg part down → ×0.25. A limb part kind 1
-  (`FUN_140643b30`, **Unknown** meaning) → 0.001. No blow above 0.01 → 0.
+  Legs 2/3: prone → technique out; flag +0x5b8 or a leg part down → ×0.25. A missing limb
+  (`MedicalSystem::getLimbState` `FUN_140643b30` = 1 STUMP, **Verified**; 0 original, 2 replaced, 3 crushed) → 0.001. No blow above 0.01 → 0.
 - Reach R = `attack distance` + L/2, L = weapon `length` (CharStats +0x200). Fists never armed: L = 0. The max R of
   filtered techniques, at least 1, is CharStats +0x150. A technique needs gap ≤ R.
 - Weight: c = min(a, b)/max(a, b), a = gap + 3, b = k·(`attack distance` + L/4) + 3. Multiply by f, by 0.02 under
@@ -132,7 +132,7 @@ a door takes it off its own progress as a bash does ([locks](locks.md#cutting-an
   `FUN_14060cc50`). `FUN_14060c670` joins before it checks reach. A blow that lands or is blocked takes its
   defender off the *attacker's* list (`FUN_14060a2f0` → `removeAttackerH` `FUN_1406657d0` on its own +0x1f8; not after a dodge, **Verified**). The list is cleared when the fight ends.
 - **Slots** (+0x8, `FUN_140666310`): count = clamp(`max num attack slots` + RACE `extra attack slots`, 1, 5),
-  `FUN_1406661d0`. It is 1 while the target is attacking (state 0) or when an **Unknown** test (+0x448 → +0x228) fails.
+  `FUN_1406661d0`. It is 1 while the target is attacking (state 0) or stumbling (its AnimationClass +0x448 has a current stumble clip +0x228; **Verified**).
   The CombatClass constructor also clamps the CONSTANTS value to 1..5.
 - A slot is granted by `FUN_140666a30` and kept until the swing's last blow (`FUN_14060a590` → `FUN_140665910`).
   Hitting someone removes them from your own slots.
@@ -142,13 +142,13 @@ a door takes it off its own progress as a bash does ([locks](locks.md#cutting-an
   `FUN_140665420` (its +0x140 value, read only when the asker's hand passes a test) is strictly between 0 and 1 → 1; no free slot
   (`FUN_140666310`) → 5; target stumbling (state 8, or deciding with plan 8) or `Character::stumbleState` `FUN_140435570` true (a stumble clip still playing) →
   **mass combat XP** to the target, take the slot again, +0x120 = 1 → 0; target without a target (+0x2a0 = 0xb) → plan 2, slot → 0 / 5;
-  target AI object (+0x298) vfunc 0x10 true (**Unknown**) with +0x144 clear (+0x144 is set when the defence update `FUN_14060a190` →
+  the target fighting someone other than the asker (its target handle +0x298 `operator!=` the asker, **Verified**) with +0x144 (`inDeadTime`) clear (+0x144 is set when the defence update `FUN_14060a190` →
   `FUN_140609c70` plays its block or dodge, and at a swing's last blow while attacked; cleared by the pause after an attack `FUN_14060d6a0`
   and the stumble; so a fighter already blocking or dodging falls through to the roll below): target defending → XP, slot → 0 / 5; target attacking → XP, then
   a random contest `FUN_140665370` of the two fighting stats (each side's factor 1 + |difference| × a constant for the lower one, two uniform
   draws; true → 5), else slot → +0x120 = 1, plan 1, → 0. Other cases: +0x240 set → target plans defence, → 0; target in Block mode
   (`CharStats::isDefensiveMode` `FUN_1402b2b50`) → 0; else the same contest: asker wins with a free slot → target plans defence, → 0; target wins → it plans to attack
-  and turns on the asker (`CombatClass::setAttackTargetHandle` `FUN_140665650`, state 3 unless `FUN_1405b34b0`), → 1 when the asker is its target, else 5.
+  and turns on the asker (`CombatClass::setAttackTargetHandle` `FUN_140665650`, state 3 unless `FUN_1405b34b0`: an unfinished, non-looping whole-body action clip still plays, then at its next decision), → 1 when the asker is its target, else 5.
   `setAttackTargetHandle` does nothing when the asker already is its target (hand vfunc +8 is "equal"), else stores the asker's handle in +0x2a0..+0x2b0
   and notifies both characters ([being targeted](#fight-lifecycle-and-orders)). A focused fighter is turned this way too, but its next pick, at most 1 s
   later, returns the focused target.
@@ -185,7 +185,7 @@ a door takes it off its own progress as a bash does ([locks](locks.md#cutting-an
     otherwise the candidate is dropped. A candidate whose path has failed (`AITaskSytem::isPathImpossible` `FUN_1405b0290`: the chooser's
     `pathFailures` map, AITaskSytem +0x218, where `notifyPathImpossible` `FUN_140796ed0` stores 20 when a path to it fails) skips these last
     terms and is never picked. (**Verified** order and factors in the decompile of `FUN_14059e300`.) Meitou: `PursuitSystem.PathImpossible`, a
-    failed pursuit path leaves its target out of the choice (a player's pick too) for 20 s (the decay of the stored 20 is not traced; read as seconds).
+    failed pursuit path leaves its target out of the choice (a player's pick too) for 20 s. **Observed**: the 20 counts down in the AI's 4-frame update and, at 0, is re-armed to 20 while no path exists, else dropped (game or real seconds: **Unknown**).
   - Range term (`AI::scoreTargetRange`) = (1 − d/R) × w by the chooser's manoeuvre mode ([area](perception.md#the-attack-on-sight-tests)):
     HOLD_GROUND R = 2 (meiDistance + tolerance) = 46, STAY_CLOSE R = meiDistance + 200 + tolerance = 223, ROAM_FAR (the default) R = 200;
     w = immediacy in ROAM_FAR, else holding position (both 2).
@@ -196,7 +196,7 @@ a door takes it off its own progress as a bash does ([locks](locks.md#cutting-an
   centre distance − r_t ≤ +0x150 + (1.5r + L)·k and no other body nearer than r + 2.5 (`FUN_1402e9620`). That test
   (`FlockingTools::getDistanceToClosestCharacter`, called to count non-enemies only) takes the least `range` of the flocking list, 99 when empty;
   r is the race's raw `pathfind footprint radius` (CombatClass +0x280 = r + 2.5, ctor `FUN_14060a9e0`). The list (`FUN_14085a070`) holds every
-  other character not down or dead (`FUN_1407d1440`) or imprisoned (+0x2f8) whose centre is within getRadius_self + getRadius_other + 40
+  other character not down or dead (`FUN_1407d1440`), in a bed or cage (+0x2f8) or sitting on a chair or throne (StateBroadcast +0xb8 `isSitting`, **Verified**; a sitting looker builds none) whose centre is within getRadius_self + getRadius_other + 40
   horizontally and 20 in height; `range` = the 3D centre distance, `isEnemy` = Character vfunc 1000 (**Observed**).
   If the ask fails: being attacked → defend; engaged → state 5; else state 6.
 - **State 5** (`CircleStateAI`, update `FUN_1402b3180`): walk to the target until the body gap reaches max'
@@ -222,8 +222,7 @@ Meitou (`CombatSystem.HasSlot` / `MayJoin`, `Fighting.Steer`):
   (rejoining, pause cut short by a blow at it, swing or block ending now, never asked yet), so the count is never
   exceeded. **Verified** by `DuelTests` (5 attackers, target fighting back, 1-3 slots).
 - **Ask while defending**: a blocking or dodging target gets the initiative roll (the +0x144 path); one that wins while still in its
-  defence leaves the loser yielding from the defence's end (engine choice; the original's `FUN_1405b34b0` test, which may cut the defence, is
-  not decoded).
+  defence leaves the loser yielding from the defence's end (engine choice; the original switches it to deciding at once only when no unfinished non-looping action clip plays, `FUN_1405b34b0`).
 - **Player's pick**: a target the player picked (right click, Attack Target, Attack Unprovoked; not Attack All) is kept: the winner of a
   roll does not turn on the asker while that target stands (engine choice; without it a losing old foe re-yields every exchange and the
   order never sticks). The original lets the swap happen and returns to the focused target at the next pick (above).
@@ -253,7 +252,7 @@ Meitou (`CombatSystem.HasSlot` / `MayJoin`, `Fighting.Steer`):
   target's sneaking, adds the attacker to its engaged list, to its senses (seen, alert timer 5) and to its squad memory as an attacker (kind 4,
   not for allies), tells a campaign, and when the target's fight is off: unless it is getting up, or is player-side and moving (CharMovement
   +0x24, `Character::isWithThePlayer`), its current goal is cleared and it replans (`AITaskSytem` vfunc 3); a target getting up instead has a
-  10% chance of setting +0x4f8 = 10 (**Unknown**). The targeting path sets the call's last flag (r9b = 1 in the disassembly), the hit path
+  10% chance of its knockout timer (+0x4f8 = MedicalSystem +0xa0) being set to 10.0: knocked down again for 10 s (**Verified**). The targeting path sets the call's last flag (r9b = 1 in the disassembly), the hit path
   clears it. With the flag, when the target is the player's, or the attacker is the player's and the target is not yet aware of it, the call
   is ignored unless both are in the same building and on the same floor and the target has a clear line to the attacker. So targeting a
   player's character through a wall, or an unaware NPC from another floor, alerts nobody until a blow lands. Meitou: `CombatSystem.Alerts`, answered by
@@ -272,7 +271,7 @@ Meitou (`CombatSystem.HasSlot` / `MayJoin`, `Fighting.Steer`):
   target score) or 35 Running away (slot 55: 0 for a player character that can still fight: an arm to fight with
   (`MedicalSystem::hasAnArmToFightWith`), ranged mode, both arms, or a weapon outside the two-arm categories; else 1 when crippled; else 0.001
   when it can get out (`AI::isLocationAccessible`: outdoors, or its building has a door open or opening, or none: `Building::hasAnOpenDoor` `FUN_1405499a0`,
-  **Verified**) unless it stands inside town walls whose gate state (`FUN_1402eb070`, a lookup keyed by a pair of ids, meaning **Unknown**) is 3, else 0). So an attacked character fights back unless crippled; Passive does not touch this path (exe tooltip: "Passive
+  **Verified**) unless it stands inside town walls whose gate state (`FUN_1402eb070`: per pair of walled regions, 1 a gate open or broken, 2 closed, 3 locked, a route as bad as its worst gate and the best route kept; **Observed**) is 3, i.e. every way out passes a locked gate, else 0). So an attacked character fights back unless crippled; Passive does not touch this path (exe tooltip: "Passive
   focuses on non-combat unless attacked first"). Meitou: [order toggles](../simulation.md#order-toggles).
 - **Melee or shooting.** Row 4 Attacking (`AI::scoreMeleeAttack`, slot 53): 1, ×0.1 with Ranged on, ×0.5 when its squad is not intact (`Platoon::isIntact`);
   0 against a caged target; a crippled fighter 0.1 (0.0001 in Block or Hold with no threat within 40; 0 for a non-player non-unique); on Hold
@@ -413,8 +412,7 @@ which its next update (`FUN_14050d920` → `FUN_14050d7d0`) consumes by dropping
   blocked, the two are in different places, or the 2 s chase timer runs ([Combat stance](#combat-stance)). Any other
   state clears the test's cached gate, so it restarts with each path chase. The gate (`vfunc_0`, computed once on entry,
   which also stamps the start time) passes when the chaser's faction is **not the player's** (Faction `+0x250` null),
-  the target is alive (vfunc `0x30`), not in a bed or cage (`+0x2f8` 0), the chaser's Dialogue passes `FUN_140671c60`
-  (**Unknown**), and either the target flees (its current task is 35 Running away or 127 Retreating fast, or 29 Move order
+  the target is alive (vfunc `0x30`), not in a bed or cage (`+0x2f8` 0), the chaser is not in a conversation (`Dialogue::conversationHasEnded` `FUN_140671c60`), and either the target flees (its current task is 35 Running away or 127 Retreating fast, or 29 Move order
   to a point farther from the chaser than the target is: `FUN_140331ee0`), or the chaser counts it an enemy (Character
   slot 125), or two floats of the chaser's status object (`+0x1a0`: `+0xa0` + `+0xac` > 0) or the target's `+0x148` are set.
   Then each tick (`vfunc_1`, never when Character slot 126 calls the target friendly):
@@ -427,9 +425,10 @@ which its next update (`FUN_14050d920` → `FUN_14050d7d0`) consumes by dropping
 - Time: the world clock is in game hours; the sense-age unit is hours × 3600 / 33 × 0.5 (`FUN_140852150`, `FUN_14033a170`),
   so 12 = 13.2 game minutes, about 24 s real at 1x ([game loop](game-loop.md#the-three-time-values)).
 - So a player's character never gives up a path chase by this rule, and an NPC on open ground (no path chase) keeps
-  running at the target with the footwork lead while it has a fight target. When that pick (`FUN_140666ee0`) and the attack
-  goal's finder (seen/heard only, [Combat goals](ai-tasks.md#combat-goals)) let go of a runner on open ground is **Unknown**:
-  how long a lost sense entry keeps counting as a candidate was not traced. The runner's side: [perception](perception.md#retreat-and-memory).
+  running at the target with the footwork lead while it has a fight target. The attack goal's finder (seen/heard only, [Combat goals](ai-tasks.md#combat-goals)) lets go at once; the pick (`FUN_140666ee0`) keeps the target while its
+  sense entry lasts (**Observed**, `SensoryData::decay` `FUN_140859010`): an unsensed entry loses seen/heard, follows the target's real place for 8 sense units (25 out of
+  town), and is dropped after 30, 60 when the target is fighting, a long-term tag (intruder, thief, captor, friend killer) or the looker's slave, 120 for a player
+  character inside the looker's home building. The runner's side: [perception](perception.md#retreat-and-memory).
 
 Meitou (`AggroSystem.Chase` / `SenseQuarry`): this give-up (9.1 s gate, 24 s unsensed, 60 units; NPCs only, event 60), tested in every
 running chase, not only a path chase (engine choice), but never while a target not sneaking is within 60 of the chaser itself (engine choice: one running past its runner has it at its back); the chaser senses only its own target, a sneaker by sight without the spot meter.
@@ -465,7 +464,7 @@ values; trajectory, aim timing and obstruction uncertainties remain labelled.
   when > 1; tooltip `FUN_14030d620` "Default damage:" shows Building slot 120 `FUN_140297b30` = `+0x1a4` × the research multiplier of a player-owned building (`FUN_14082ec70`,
   owner test `FUN_140546dd0`)). Base data: harpoon turrets 75, auto/multi 50 (`output rate`, **Verified** probe); walls 10–30.
 - **Gun slots of `GunClassTurret`** (vtable `1416d5258`): 6 target weight `FUN_1404348e0`: 1 when dot(turret facing `+0x458`, target − turret) > 0, else 0.1 for a target outdoors,
-  0 / 0.1 for one inside a building (by a handle and level test, **Unknown** detail); 12 aim direction = the barrel node's +Z (`FUN_140434f40`); 13 aim error = building `+0x448`;
+  for one inside a building 0.1 only in the turret's own building on its floor, else 0 (**Observed**); 12 aim direction = the barrel node's +Z (`FUN_140434f40`); 13 aim error = building `+0x448`;
   18 mount factor M = 1 + 0.01 × the output value of the building in `+0x478` (the `mounted` handle: a wall's turret bonus) (`FUN_1404353b0`); 19 power factor P = 0.8 e + 0.2 (`FUN_140435380`),
   e = building slot 109 `FUN_140296e00` = 0 when not operational, else hp ratio × power grant; 22/23 pierce ends trunc(0.75 D), trunc(1.25 D).
 - **Manning** (`Task_UseTurret`, update `FUN_1403474f0`): the building of the order's target or the character's `+0x258`; it must be a turret (slot 107 = 8) with a free
@@ -511,16 +510,16 @@ Order 228 "Stealth KO" (verb list `FUN_14079b2d0`), `Task_StealthKO` (vtable slo
 - Chance (`FUN_1408852f0`): X = attacker assassination x injury mult minus the target's max of assassination, 0.5 x
   thievery, 0.5 x stealth term x 100, 0.5 x melee defence, toughness (each x its injury mult); chance =
   100 x (X + K) / 2K, K = 30 for X >= 0 else 15 (disassembly: the hidden third argument is +K). Unclamped. 0 when the
-  target's sense entry of the attacker has its +0x38 flag (it sees the attacker); x0.5 with +0x39 (**Unknown**).
+  target's sense entry of the attacker has its +0x38 flag (it sees the attacker); x0.5 when it only hears the attacker (+0x39 heard, **Verified**). Also 0 when the target is fighting, has an entry for the attacker and the attacker is not unseen (Character +0xe8 ≠ 1).
 - Roll uniform 0..100; lands when chance > roll. Hit: floating "*Thunk*", target KO time `FUN_140644980` with
   assassination x 0.01 (the put-down KO formula, [carry-loot](carry-loot.md)). Miss: "Failed!", the target turns on
   the attacker. Assassination XP via the generic entry, dt 1: 100 x f on a hit, 300 x f on a miss; f = 0.5 for a
-  sleeping target (+0x2f8 == 1), 0.07 for +0x2f8 == 2, else 1; " (No XP)" under an **Unknown** test.
+  sleeping target (+0x2f8 == 1), 0.07 in prison (+0x2f8 == 2), else 1; " (No XP)": a miss on a target that is fighting and aware of the attacker gives no XP.
 
 Meitou: the point is 8 behind the target's facing; "senses" = the target's spot meter on the attacker is full or it
 is fighting; the +0x39 halving, the 0.07 case and No XP are not modelled; a swing is reported as an Assault (the
 original's crime call is not traced). The verb shows the chance; a quick right click on an NPC while sneaking gives it.
-Order 229 "Stealth Kill" shares the task; not modelled.
+Order 229 "Stealth Kill" shares the task but nothing issues it (no row, no use of 229; **Observed**).
 
 ## Validation
 
@@ -625,7 +624,7 @@ the random vertex), not saved.
 node in the shooter's `hands` (`Bip01 Prop2` with the attach offset; without built meshes the character's position + (0, 10, 0)); the muzzle (slot 9
 `FUN_140434fc0`) is that node's world position + its orientation x (`barrel pos Y`, `barrel pos Z`, 0), the place of loaded bolt 0 (base game: (-1, 5.9, 0),
 Spring Bat (-1, 1.75, 0)). The direction is normalise(aim point - muzzle) (slot 12), the aim point the target's `Bip01 Spine2` (`Spine1` for some targets)
-plus a velocity lead whose form is **Unknown**, tilted by `randomDeviant(random x deviation)`. Flight: each frame a ray from the bolt along its z on the physics
+plus a lead of target velocity x distance / `shot speed` (first order, **Verified**), tilted by `randomDeviant(random x deviation)`. Flight: each frame a ray from the bolt along its z on the physics
 thread (raycastClosestShape, group mask `0x087fde47`, read one frame late); a hit counts within 2 x the step. Groups tested: 0 and 1 (characters among them),
 2 terrain, 6 and 14 foliage, 9-12 building floors, 15-18 stairs, 19-22 furniture, 27 unwalkable roofs; not ragdolls, items, doors, interior hulls or
 passable parts. The shooter is skipped (`FUN_1400cd0b0`). Meitou: the simulation fires from a fixed point 15 up and 8 ahead (`RangedTuning.Barrel*`, measured

@@ -96,7 +96,7 @@ public sealed partial class LockSystem
         var outside = StandSpot(f, spot);
         var centre = new Vector2(spot.Centre.X, spot.Centre.Z);
         var inside = 2 * centre - outside;
-        return (Vector2.DistanceSquared(from, inside) < Vector2.DistanceSquared(from, outside) ? inside : outside, BashReach);
+        return (Vector2.DistanceSquared(from, inside) < Vector2.DistanceSquared(from, outside) ? inside : outside, DoorWorkReach);
     }
 
     void DoorOrderInput(World world, DoorOrder order)

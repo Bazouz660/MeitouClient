@@ -98,7 +98,8 @@ public class DoorTests(ITestOutputHelper output)
         var levels = InstallData.Levels!;
         var data = PopulationData.Create(db, levels.Towns(), buildings: TownBuildings.Build(db, levels, null, (_, _) => 0));
         int site = data.Sites.ToList().FindIndex(s => s.Town.Name == "The Hub");
-        var walk = new OpenGroundWalkability((_, _) => 150);
+        float ground = 150;
+        var walk = new OpenGroundWalkability((_, _) => ground);
         var systems = StandardSystems.Build(data, walk, new StandardSystemOptions
         {
             Parts = StandardParts.Movement | StandardParts.Pursuit | StandardParts.Body | StandardParts.Combat | StandardParts.Crime, SynchronousPaths = true,
@@ -108,6 +109,7 @@ public class DoorTests(ITestOutputHelper output)
         world.Fixtures.RegisterSite(world, data, site);
         world.Fixtures.Doors = new SpotGate();   // headless: a stand-in for navigation's door spots
         var b = data.Sites[site].Buildings.First(x => world.Fixtures.OfBuilding(x.Key).Any(f => f.Kind == FixtureKind.Door));
+        ground = b.Position.Y;   // the house stands at its level height: the ground under the walkers too
         var doors = world.Fixtures.OfBuilding(b.Key).Where(f => f.Kind == FixtureKind.Door).ToList();
         foreach (var d in doors) { d.Lock!.Level = Math.Max(1, d.Lock.Level); world.Fixtures.SetLocked(d, true); }
         Assert.True(world.Fixtures.IsShut(b.Key));
@@ -142,7 +144,7 @@ public class DoorTests(ITestOutputHelper output)
         Assert.False(door.Lock.Locked);
         Assert.Equal(DoorMotion.Opening, door.Motion);
         Assert.False(world.Fixtures.IsShut(b.Key));
-        Assert.True(Vector2.Distance(new Vector2(at.X, at.Z), new Vector2(spot.Centre.X, spot.Centre.Z)) <= LockSystem.BashStandOff + LockSystem.BashReach);
+        Assert.True(Vector2.Distance(new Vector2(at.X, at.Z), new Vector2(spot.Centre.X, spot.Centre.Z)) < 2 * DoorPlan.DoorReach);
         // The pursuit carries on into the house.
         world.RunTicks(150);
         Assert.Null(table.Cold(dog.Slot)!.Bashing);

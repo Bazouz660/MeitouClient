@@ -129,7 +129,7 @@ score and the 0.75 falloff spread them). Work distance: [below](#work-distance).
   movement flag (+0x640 +8, **Unknown**); or the character's movement reports touching the building's handle (+0x300 slot 1); or
 - the X/Z distance to `getPositionMarker(charPos)` (slot 0x470: the nearest valid usage node, else the construction position
   +0x26c when fewer than 2) is below `getReachRange()` (slot 0x350), **doubled when not moving**, and the character is on the
-  same floor (slot 0x60) or |dy| < 15 (45 or 130 for some kinds, **Unknown** which).
+  same floor (slot 0x60) or |dy| < 15: 130 for a door or a building with a door, 45 outdoors or ceiling-mounted (**Observed**, `AI::isWithinChoppingRange` `FUN_14059c6d0`).
 - Otherwise not; once the path has ended at the target it logs "Task impossible: X can't get to Y". There is no settle slack.
 
 `getReachRange`: `Building` 40 (construction), `WallBuilding` 60, `UseableStuff` (machines, storages, farms, mines, rocks) its

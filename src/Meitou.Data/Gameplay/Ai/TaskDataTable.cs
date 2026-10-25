@@ -299,11 +299,11 @@ public static class TaskDataTable
     public static TaskDataRow? Of(TaskType type) => (uint)type < (uint)ByType.Length ? ByType[(int)type] : null;
 
     /// <summary>
-    /// The rows of a category (a registration flag bit) whose list A holds a state with the wanted value, in registration order, not
+    /// The rows of a category (a registration flag bit) whose list A holds a state with the wanted value, in ascending task type (the original fills them from its registry map keyed by type), not
     /// <see cref="TaskDataFlags.NotProvider"/> ones (docs/game/ai-tasks.md "Planner": the provider maps).
     /// </summary>
     public static IReadOnlyList<TaskDataRow> Providers(int category, TaskCondition state) =>
-        providers.GetOrAdd((category, state), static k => [.. Rows.Where(r => (r.Category & k.Item1) != 0 && !r.Is(TaskDataFlags.NotProvider) && r.Done.Contains(k.Item2))]);
+        providers.GetOrAdd((category, state), static k => [.. Rows.Where(r => (r.Category & k.Item1) != 0 && !r.Is(TaskDataFlags.NotProvider) && r.Done.Contains(k.Item2)).OrderBy(r => (int)r.Type)]);
 
     static readonly System.Collections.Concurrent.ConcurrentDictionary<(int, TaskCondition), TaskDataRow[]> providers = new();
 
