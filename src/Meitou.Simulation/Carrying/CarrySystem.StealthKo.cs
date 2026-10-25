@@ -174,11 +174,12 @@ public sealed partial class CarrySystem
         float chance = StealthKoChance(cold, target, spotted, cold.KnockoutHeard, noticed);
         float roll = Rng.Float(Rng.Hash(world.Seed, Rng.Key(attackerId), RngPurpose.StealthKo, (ulong)world.Tick)) * 100;
         bool success = chance > roll;
-        // XP: assassination through the generic entry with dt 1, 100 on a hit and 300 on a miss, halved on a sleeping target (Verified literals; the original's 0.07 case and
-        // its "(No XP)" condition are Unknown).
-        if (cold.Stats is { } stats && cold.Race is { } race)
+        // XP: assassination through the generic entry with dt 1, 100 on a hit and 300 on a miss (Verified literals); x0.07 on a target in prison, x0.5 on a sleeping one
+        // (Observed, +0x2f8). A miss on a target that is fighting and aware of the attacker gives none: "Failed! (No XP)" (Observed).
+        bool noXp = !success && target.InCombat && aware;
+        if (!noXp && cold.Stats is { } stats && cold.Race is { } race)
         {
-            float f = table.Next[t].Task == (byte)CharacterTask.Rest || target.Ai is { Behaviour: Ai.AiBehaviour.Sleep } ? 0.5f : 1;
+            float f = target.IsImprisoned ? 0.07f : table.Next[t].Task == (byte)CharacterTask.Rest || target.Ai is { Behaviour: Ai.AiBehaviour.Sleep } ? 0.5f : 1;
             (xp ??= new XpService(Constants, bodyOptions)).Continuous(stats, race, StatsEnumerated.Assassination, 1, f * (success ? 100 : 300));
         }
         if (success)
@@ -195,6 +196,6 @@ public sealed partial class CarrySystem
         else world.Defer(new Combat.AttackOrder([targetId], attackerId) { Tick = world.Tick + 1 });
         // Hit or miss, the swing is an assault on the victim's faction if someone sees it (engine choice: the original's crime call for this task is not traced).
         Crimes?.Assault(world, i, t);
-        knockouts.Add(new StealthKoEntry(world.Tick, attackerId, targetId, chance, success));
+        knockouts.Add(new StealthKoEntry(world.Tick, attackerId, targetId, chance, success, noXp));
     }
 }
