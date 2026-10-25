@@ -28,12 +28,6 @@ public sealed partial class CombatSystem
         _ => 1,
     };
 
-    int PauseTicks(World world, int slot, int counter)
-    {
-        float u = CombatRolls.Float(world.Seed, Rng.Key(world.Characters.IdOf(slot)), CombatRoll.Pause, (ulong)(uint)counter ^ ((ulong)(uint)world.Tick << 20));
-        return Math.Max(1, (int)MathF.Ceiling((CombatTuning.PauseMin + u * (CombatTuning.PauseMax - CombatTuning.PauseMin)) / world.TickSeconds));
-    }
-
     /// <summary>
     /// The ticks a technique's clip takes at <c>anim speed mult</c> x <paramref name="rate"/> clip seconds per second; the clip's length is from the fighter's skeleton (an
     /// animal's own, <see cref="AnimationLengths.For"/>: <c>attack1</c> is 0.77 s on a bonedog and 5 s on a beak thing).
@@ -102,7 +96,12 @@ public sealed partial class CombatSystem
             if (cold.IsPlayer && !cold.InCombat && cold.DrawnWeapon != WeaponKinds.None && next[i].Task is not ((byte)CharacterTask.GoTo or (byte)CharacterTask.Follow or (byte)CharacterTask.Attack))
                 cold.DrawnWeapon = WeaponKinds.None;
             // Waking: it gets up for GetUpSeconds (Task_GetUp), less wanted as a target and left alone by a hit while its fight is off.
-            if (s.Down && !cold.Medical.Incapacitated && GetUpSeconds > 0) cold.GettingUpUntil = now + (int)MathF.Ceiling(GetUpSeconds / dt);
+            if (s.Down && !cold.Medical.Incapacitated && GetUpSeconds > 0)
+            {
+                // It neither walks, works nor fights until it stands (Task_GetUp holds the character).
+                cold.GettingUpUntil = now + (int)MathF.Ceiling(GetUpSeconds / dt);
+                cold.StaggeredUntil = Math.Max(cold.StaggeredUntil, cold.GettingUpUntil);
+            }
             s.Down = cold.Medical.Incapacitated;
             if (s.Down)
             {
@@ -113,6 +112,13 @@ public sealed partial class CombatSystem
                 s.Engaged = false;
                 s.Picked = false;
                 if (cold.InCombat) EndFight(table, i);
+                continue;
+            }
+            if (now < cold.GettingUpUntil)
+            {
+                s.AttackTech = -1;
+                s.NextBlow = 0;
+                s.ReactTech = -1;
                 continue;
             }
 
@@ -208,7 +214,7 @@ public sealed partial class CombatSystem
                 }
                 else if (s.NextBlow > 0 && fighting && now >= s.AttackStart + (int)MathF.Ceiling(tech.StrikeProgress(s.NextBlow) * s.AttackTicks))
                 {
-                    effects.Emit(i, s.TargetSlot, BlowEffect, s.AttackSeq, default, s.NextBlow);
+                    Strike(world, i, s, cold, tech, s.NextBlow, effects);
                     s.Thrown++;
                     int blow = s.NextBlow;
                     s.NextBlow = s.NextBlow < tech.Blows ? s.NextBlow + 1 : 0;
@@ -290,7 +296,7 @@ public sealed partial class CombatSystem
         s.AttackEnd = now + Math.Max(1, (int)MathF.Ceiling(tech.EndProgress * s.AttackTicks));
         s.NextBlow = 1;
         s.LastOutcome = BlowOutcome.Missed;
-        s.AttackReach = TechniqueChooser.ReachOf(tech, length);
+        s.AttackFrom = prev[i].Position;
         // Less the dust's "Weather penalty" (FUN_140643a30, docs/formats/weather.md "Effects on characters").
         s.AttackSkill = Eff(cold, fighter.Unarmed ? StatsEnumerated.MartialArts : StatsEnumerated.MeleeAttack) + (fighter.Unarmed ? fighter.UnarmedBonus : fighter.AttackBonus + (fighter.Weapon?.Stats.AttackMod ?? 0))
             - cold.Medical!.DustAttackPenalty;

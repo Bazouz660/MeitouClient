@@ -128,6 +128,32 @@ public sealed partial class CombatSystem
         return now - s.SensedTick <= (int)MathF.Ceiling(AggroSystem.GiveUpSenseSeconds / world.TickSeconds);
     }
 
+    /// <summary>How far apart in height two characters inside one building may stand and still be on the same floor (engine reading of the floor test).</summary>
+    public const float SameFloorHeight = 20;
+    /// <summary>The height of the eyes above the feet for the alert's line test (engine choice, near <see cref="RangedTuning.BarrelHeight"/>).</summary>
+    const float EyeHeight = 15;
+
+    /// <summary>
+    /// Whether attacker <paramref name="a"/> taking <paramref name="t"/> as its target alerts it (<c>AI::underMeleeAttack</c> from the targeting path, docs/game/combat.md
+    /// "Fight lifecycle and orders"): always, unless the target is the player's, or the attacker is and the target is not aware of it (fighting it, or hit by it); then only
+    /// when both stand in the same place (<see cref="SightMap.PlaceOf"/>), on the same floor (<see cref="SameFloorHeight"/>) and with a clear line between their eyes (terrain
+    /// and buildings, <see cref="SolidHits"/>). A blow landed by the attacker alerts in any case (the hit path). Reads the last tick's state; any thread after Schedule.
+    /// </summary>
+    public bool Alerts(World world, int a, int t)
+    {
+        var table = world.Characters;
+        if (table.Cold(a) is not { } ac || table.Cold(t) is not { } tc) return false;
+        ref readonly var o = ref read[t];
+        if (o.HitFrom == a) return true;
+        if (!tc.IsPlayer && !(ac.IsPlayer && o.TargetSlot != a)) return true;
+        var prev = table.Previous;
+        if (world.Sight.PlaceOf(a) != world.Sight.PlaceOf(t)) return false;
+        var from = prev[a].Position + new Vector3(0, EyeHeight, 0);
+        var seg = prev[t].Position + new Vector3(0, EyeHeight, 0) - from;
+        if (world.Sight.Inside(t) && MathF.Abs(seg.Y) > SameFloorHeight) return false;
+        return SolidHits.Hit(world.Walkability, Buildings, from, seg, RangedTuning.TerrainStep, out _) < 0;
+    }
+
     /// <summary>Turns a fighter on a new target: it asks its target again for a place and weighs its techniques afresh.</summary>
     static void Retarget(ref CombatSlot s, int target, int generation, int now)
     {

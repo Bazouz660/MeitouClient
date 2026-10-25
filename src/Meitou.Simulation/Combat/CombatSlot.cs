@@ -15,9 +15,10 @@ public struct CombatSlot
     public int AttackTech;
     /// <summary>The tick the attack started, its length in ticks, and the tick after which a new action may start.</summary>
     public int AttackStart, AttackTicks, AttackEnd;
-    /// <summary>The blow (1 or 2) that arrives next, 0 when all have; the attack number (raised per attack, part of the roll keys); the reach the attack was chosen at.</summary>
+    /// <summary>The blow (1 or 2) that arrives next, 0 when all have; the attack number (raised per attack, part of the roll keys).</summary>
     public int NextBlow, AttackSeq;
-    public float AttackReach;
+    /// <summary>Where the attack started (the original's +0x15c): the attack zone reaches the technique's attack distance less the way moved since.</summary>
+    public System.Numerics.Vector3 AttackFrom;
     /// <summary>The attacker's rating at the start of the attack (melee attack x injury multiplier + weapon mod), what defenders compare their defence with.</summary>
     public float AttackSkill;
     /// <summary>The reaction technique (index), -1 when not reacting; its start tick and length in ticks.</summary>
@@ -32,6 +33,8 @@ public struct CombatSlot
     public int Thrown, Landed, Parried, Evaded, Taken, Blocks, Dodges;
     /// <summary>The last hit taken, for the hit reaction clip: its tick (-1: none yet), the body part (index into the medical state's parts), whether it was heavy (above the stumble threshold) and came from behind.</summary>
     public int HitTick, HitPart;
+    /// <summary>The slot of the last character that landed a blow on it (-1: none yet): it is aware of that one (<see cref="CombatSystem.Alerts"/>).</summary>
+    public int HitFrom;
     public bool HitHeavy, HitBehind;
     /// <summary>The hit reaction the last interrupting hit started (an animation library index, -1: none) and its tick; it holds the character helpless until <see cref="StunUntil"/>.</summary>
     public int StumbleClip, StumbleStart;
@@ -71,7 +74,7 @@ public struct CombatSlot
 
     public static CombatSlot Fresh(int generation) => new()
     {
-        Generation = generation, TargetSlot = -1, TargetGeneration = 0, AttackTech = -1, ReactTech = -1, ReactedSlot = -1, ReactedSeq = -1, HitTick = -1, HitPart = -1, StumbleClip = -1, YieldTo = -1, LastTech = -1,
+        Generation = generation, TargetSlot = -1, TargetGeneration = 0, AttackTech = -1, ReactTech = -1, ReactedSlot = -1, ReactedSeq = -1, HitTick = -1, HitPart = -1, HitFrom = -1, StumbleClip = -1, YieldTo = -1, LastTech = -1,
     };
 
     public readonly bool Fighting => TargetSlot >= 0;
@@ -87,7 +90,9 @@ public struct CombatSlot
         h.Add(AttackEnd);
         h.Add(NextBlow);
         h.Add(AttackSeq);
-        h.Add(AttackReach);
+        h.Add(AttackFrom.X);
+        h.Add(AttackFrom.Y);
+        h.Add(AttackFrom.Z);
         h.Add(AttackSkill);
         h.Add(ReactTech);
         h.Add(ReactStart);
@@ -107,6 +112,7 @@ public struct CombatSlot
         h.Add(Dodges);
         h.Add(HitTick);
         h.Add(HitPart);
+        h.Add(HitFrom);
         h.Add(HitHeavy);
         h.Add(HitBehind);
         h.Add(StumbleClip);

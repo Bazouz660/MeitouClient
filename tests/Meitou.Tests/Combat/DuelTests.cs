@@ -55,11 +55,11 @@ public class DuelTests(ITestOutputHelper output)
         foreach (int slots in new[] { 1, 2 })
         {
             using var world = NewWorld(5, 1, out var combat, new CombatOptions { AttackSlots = slots });
-            var target = Spawn(world, new Combatant { Name = "target", Toughness = 100, Defence = 90 }, new Vector3(1000, 150, 1000));
+            var target = Spawn(world, new Combatant { Name = "target", Toughness = 100, Defence = 90, Attack = 10, WeaponSkill = 10 }, new Vector3(1000, 150, 1000));
             var attackers = Enumerable.Range(0, 5).Select(k => Spawn(world, new Combatant { Attack = 20, WeaponSkill = 20 },
                 new Vector3(1000 + 12 * MathF.Cos(k * MathF.Tau / 5), 150, 1000 + 12 * MathF.Sin(k * MathF.Tau / 5)))).ToArray();
             world.Commands.Enqueue(new AttackOrder(attackers, target) { Tick = 0 });
-            // It fights back: blocks and lost initiative rolls are where same-tick asks used to slip past the count.
+            // It fights back: blocks and lost initiative rolls are where same-tick asks used to slip past the count. Weakly: its cuts sweep the ring (the attack zone), and strong ones keep the attackers staggered.
             world.Commands.Enqueue(new AttackOrder([target], attackers[0]) { Tick = 0 });
             Assert.Equal(slots, MostAtOnce(world, combat, target, attackers, 300));
             if (slots != 1) continue;

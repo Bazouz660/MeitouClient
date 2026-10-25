@@ -27,22 +27,15 @@ public sealed partial class CombatSystem
         var prev = table.Previous;
         int direction = tech.DirectionOf(blow);
 
-        // Reach: the blow arrives only if the target is still within the reach the attack started with (an engine rule; the gap as the technique was chosen by, without the lead).
-        float gap = CombatTuning.Gap(prev[a].Position, prev[d].Position, ac, dc);
-        BlowOutcome outcome;
-        float progress = 0;
-        if (gap > A.AttackReach + CombatTuning.ReachSlack) outcome = BlowOutcome.Missed;
-        else
-        {
-            CombatTechnique? reaction = D.ReactTech >= 0 && !D.Down && now >= D.StunUntil ? techniques[D.ReactTech] : null;
-            if (reaction is not null) progress = Math.Clamp((now - D.ReactStart) / (float)D.ReactTicks, 0, 1);
-            outcome = HitOutcomes.Decide(reaction, progress, direction);
-        }
+        // The defender was in the attack zone when the blow arrived (Strike); its own block or dodge decides the outcome.
+        CombatTechnique? reaction = D.ReactTech >= 0 && !D.Down && now >= D.StunUntil ? techniques[D.ReactTech] : null;
+        float progress = reaction is not null ? Math.Clamp((now - D.ReactStart) / (float)D.ReactTicks, 0, 1) : 0;
+        var outcome = HitOutcomes.Decide(reaction, progress, direction);
 
         A.LastOutcome = outcome;
-        // A blow on its target that is not a hit gives up its place among the fighters the target lets close in (FUN_14060a2f0 → FUN_1406657d0, docs/game/combat.md
-        // "Attack slots and circling"): it asks again when it next decides, after the ones circling with a lower slot.
-        if (outcome != BlowOutcome.Hit && d == A.TargetSlot) A.Engaged = false;
+        // A blow that lands or is blocked takes the defender off the attacker's list of fighters it lets close in (attackImpactCheck → CombatClass::removeAttackerH on
+        // the attacker's own list, docs/game/combat.md "Attack slots and circling"): a defender fighting the attacker asks again before its next swing.
+        if (outcome is BlowOutcome.Hit or BlowOutcome.Blocked && D.TargetSlot == a && D.TargetGeneration == prev[a].Generation) D.Engaged = false;
         switch (outcome)
         {
             case BlowOutcome.Missed:
@@ -90,6 +83,7 @@ public sealed partial class CombatSystem
         D.Taken++;
         D.HitTick = now;
         D.HitPart = part;
+        D.HitFrom = a;
         D.HitHeavy = false;
         // From behind (docs/animation.md "Hit reactions"): the attacker is more than 90 degrees off the defender's heading (yaw 0 along +Z, towards +X).
         var toAttacker = new Vector2(prev[a].Position.X - prev[d].Position.X, prev[a].Position.Z - prev[d].Position.Z);

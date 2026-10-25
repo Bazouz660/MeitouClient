@@ -80,7 +80,7 @@ A blocked blow neither staggers nor pushes (`FUN_140665540`). A shackled defende
 (`FUN_14060c670` → `FUN_140666a30`): target swinging at it → the attacker blocks; target stumbling or blocking →
 attack; otherwise an initiative roll on both attack skills (`FUN_140665370`, the skill roll above). If the asker wins,
 the target blocks. If the target wins, the asker is refused; with no free slot it is refused too, and waits
-(see [Attack slots and circling](#attack-slots-and-circling)). `max simultaneous hits` caps one swing's targets;
+(see [Attack slots and circling](#attack-slots-and-circling)). `max simultaneous hits` caps one blow's targets ([attack zone](#attack-zone));
 `power N` multiplies hit N's packet; `limb N` picks the punch/kick sound.
 
 **Observed** (decompiled, not measured in game), with several attackers: a target answering a request is asked by
@@ -92,6 +92,33 @@ frame (`FUN_14060a590`). The defence covers the most advanced incoming blow from
 no defence for 1.2 s (+0x14c). A dodge plays its whole clip at its own speed, then decides at once; a block that
 ends leaves 0.2 s.
 
+**Verified** (decompile; the waits are `deadTimer` +0x148): there is no wait before the first swing (`startupState`, state 3, enters the
+planned state at once). Deciding sets the wait to 0.5 s before it asks; the impact check overwrites it by outcome, so a swing that finds
+nobody in its [attack zone](#attack-zone) waits 0.5 s, and the loser of the initiative roll (plan 1) decides again after at most 0.5 s.
+
+### Attack zone
+
+**Verified** (`calculateTargetsInAttackZone` `FUN_1406087a0`, `attackImpactCheck` `FUN_14060a2f0`; field names KenshiLib). At a blow's impact
+frame the blow resolves against every character in a box ahead of the attacker, at most the technique's `max simultaneous hits` (+0x54), in
+the list's order; each outcome sets the wait (the last wins) and each one's own block or dodge decides it (`Character::hitByMeleeAttack`,
+HitMaterialType: `HIT_MISSED` dodged 0.2 s, `HIT_SWORD` blocked 0.3 s, flesh or metal hit 0.6 s).
+
+- **Box**: heading f = the movement direction (`AbstractMovementBase` +0xd0, horizontal); k = the size (Character vfunc 0x390), s =
+  lerp(k, 0.45, 1), r = `myRadiusX` (+0x1a0, the race's `pathfind footprint radius`), L = the weapon's length (CharStats +0x200). Centre
+  (L/4 + r + max(0, attack distance − |pos − attack start|)) s ahead; half-extents (width, height, depth) (r + 0.5, 25, L/2) s, or
+  (13, 8, L/2) s when the impact point's direction is `CUT_LEFT` or `CUT_RIGHT` (a horizontal cut sweeps wide and low). Then
+  h = max(0, (offset − `getRadius`) / 2), `getRadius` = k × footprint: the centre moves back by h and the depth grows by h. The height
+  follows the ground (a down ray, clamped to ±15 of the feet, +9). Physics overlap query, at most 20 bodies.
+- **In it**: a character that is not an ally (`isAlly`), not unconscious (`isLiterallyUnconciousNotPretending`), and an enemy (`isEnemy`)
+  or the current target; also a slave in a case not decoded (`Character::isSlave` and two attacker-side fields, **Unknown**). Buildings in
+  the box are added too.
+- Per target the attacker frees that one's attack slot (`AttackSlotManager::freeSlotH`), and after a hit or block takes it off its own engaged
+  list (`removeAttackerH`, [attack slots](#attack-slots-and-circling)).
+
+Meitou (`CombatSystem.Strike`): the box above in 2D, a body counting when its size-scaled footprint circle meets it and its feet are within the
+half-height + 9 of the attacker's; the order is the target first, then by distance (the physics order is arbitrary); slaves and buildings are
+not hit. A defender that is not the attacker's target defends only with a block or dodge it is already playing.
+
 ### Attack slots and circling
 
 **Observed** (decompiled). CombatClass state +0x1f0: 0 attacking, 1 defending, 3 deciding, 4 re-decide, 5 and 6 below,
@@ -99,8 +126,8 @@ ends leaves 0.2 s.
 
 - **Engaged list** (+0x1f8, `FUN_140666e20`): an asker joins its target's list while the list holds at most 4,
   so 5 fighters at most. A refused asker adds to a two-frame overflow counter (+0x210/+0x214, swapped by
-  `FUN_14060cc50`). `FUN_14060c670` joins before it checks reach. An entry is removed when its blow on that
-  target is not a hit (`FUN_14060a2f0` → `FUN_1406657d0`). The list is cleared when the fight ends.
+  `FUN_14060cc50`). `FUN_14060c670` joins before it checks reach. A blow that lands or is blocked takes its
+  defender off the *attacker's* list (`FUN_14060a2f0` → `removeAttackerH` `FUN_1406657d0` on its own +0x1f8; not after a dodge, **Verified**). The list is cleared when the fight ends.
 - **Slots** (+0x8, `FUN_140666310`): count = clamp(`max num attack slots` + RACE `extra attack slots`, 1, 5),
   `FUN_1406661d0`. It is 1 while the target is attacking (state 0) or when an **Unknown** test (+0x448 → +0x228) fails.
   The CombatClass constructor also clamps the CONSTANTS value to 1..5.
@@ -190,7 +217,7 @@ Meitou (`CombatSystem.HasSlot` / `MayJoin`, `PursuitSystem.Circle`):
 - **Player's pick**: a target the player picked (right click, Attack Target, Attack Unprovoked; not Attack All) is kept: the winner of a
   roll does not turn on the asker while that target stands (engine choice; without it a losing old foe re-yields every exchange and the
   order never sticks). The original lets the swap happen and returns to the focused target at the next pick (above).
-- **Engaged list**: removal after a blocked or dodged blow is not modelled.
+- **Engaged list**: a landed or blocked blow takes a defender fighting the attacker off its list (`CombatSlot.Engaged`): it asks again.
 - **Approach**: an engaged fighter walks in to body gap max(6, reach − L/4) and stands.
 - **Joining**: a lower table slot asks first; one not yet in is counted ahead only when it may decide this tick (not staggered,
   defending, or swinging past its abort point), so nobody is left out for a fighter that does not ask (engine choice).
@@ -217,7 +244,9 @@ Meitou (`CombatSystem.HasSlot` / `MayJoin`, `PursuitSystem.Circle`):
   10% chance of setting +0x4f8 = 10 (**Unknown**). The targeting path sets the call's last flag (r9b = 1 in the disassembly), the hit path
   clears it. With the flag, when the target is the player's, or the attacker is the player's and the target is not yet aware of it, the call
   is ignored unless both are in the same building and on the same floor and the target has a clear line to the attacker. So targeting a
-  player's character through a wall, or an unaware NPC from another floor, alerts nobody until a blow lands.
+  player's character through a wall, or an unaware NPC from another floor, alerts nobody until a blow lands. Meitou: `CombatSystem.Alerts`, answered by
+  `RetaliationSystem` the same tick (it ends sneaking); same place by `SightMap.PlaceOf`, same floor as within 20 units of height inside, a terrain and
+  building line between the eyes; aware = fighting the attacker or hit by it (engine readings).
 - **Threats.** The perception pass (`SensoryData::addToThreatsAndFlockingList`) looks at each sensed live character of another faction: its
   state broadcast's intended aggression adds to +0x90; when its intended target (+0x68) passes `AITaskSytem::intendsToAttackTarget` (prone
   state < 3 and its fight on; on Hold with the fight off, only within 40), a target that is the looker puts it on the threats list
@@ -238,7 +267,8 @@ Meitou (`CombatSystem.HasSlot` / `MayJoin`, `PursuitSystem.Circle`):
   only for a target its range tests accept. Shooting 262/263/266 (slot 54): only with Ranged on, a crossbow at back or hip and its bolts carried:
   1 (0.5), 0.1 with a threat within 40, which their list B forbids anyway. So Ranged on shoots until dry or rushed, Ranged off never shoots.
 - **Fight task.** Rows 4 and 227 build `Task_MeleeAttack`; orders 5 Attack Target and 61 Attack Unprovoked build `Task_FocusedMeleeAttack`.
-  The planner first needs 37 `isReadyForAction`, given by 59 Get ready after 6 Equipping weapon draws. Task start → `initCombatMode` (mode 0):
+  The planner first needs 37 `isReadyForAction`, given by 59 Get ready after 6 Equipping weapon draws (at once: its task swaps the
+  weapon in one call, **Observed**; Meitou draws when the fight starts). Task start → `initCombatMode` (mode 0):
   CombatClass +0x130 on, state 4, attack start position, the technique cleared; the focused task also stores the target as CombatClassAI
   +0x2c8 and (with its +0x98 flag) marks the broadcast as aggressor (+0x114). Task end → `Character::endCombatMode` → mode 2: +0x130 off,
   the target released, state 4, dead timer `calculateDeadTime(2)` = 0.2 s, the animation combat flag off, movement mode MOVE_NORMAL

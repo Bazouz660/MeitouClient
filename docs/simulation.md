@@ -396,24 +396,25 @@ A fighter faces its target only while it has no pursuit path; on one, movement s
 undid the turn to a waypoint over 90° off the line to it, and the walker froze).
 Original formulas, constants and unresolved technique terms: [combat.md](game/combat.md).
 Hits, pauses and initiative follow combat.md "Hit reactions" / "Pacing"; the combat system picks the stumble
-clip (through the animation system's chooser) and holds the fighter for its length. Engine choices: a miss waits
-0.2 s; the first attack after an order waits 0.15–0.6 s; the initiative roll is drawn per pair and tick so both
-sides agree, and the loser holds off for 1 s; a target that would not swing back (stumbling, defending, not fighting, or in
+clip (through the animation system's chooser) and holds the fighter for its length. No wait before the first swing, a swing with nobody in its attack zone waits 0.5 s and the loser of the
+initiative roll 0.5 s; each blow resolves against everyone in its attack zone (`CombatSystem.Strike`, combat.md "Attack zone"). Engine choices: the initiative roll is drawn per pair and tick so both
+sides agree; a target that would not swing back (stumbling, defending, not fighting, or in
 Block) is simply attacked; one that lost the roll to a fighter becomes its target; a defence that starts late
 joins its clip partway so the passed roll counts when "Late dodges and blocks" is on (Advanced setting, a balance
-change: Faithful off, Meitou on);
+change: off by default and in both presets);
 the attack technique, attack slots, the 5-fighter engaged list and circling follow combat.md "Attack technique choice" /
 "Attack slots and circling" with the engine readings listed there (Advanced setting "Attackers per target", 1-5: Faithful 1, the
 CONSTANTS value and the default; Meitou 3); the block break-out ignores the 10% lower bound; only a heavy bolt staggers.
-Fighters walk in to their technique reach (`CombatTuning.StandGap`); the straight-line approach (`SelfApproach`) does not circle. A blow on
-the target that is not a hit gives up the engaged place (`FUN_14060a2f0`), so the circling fighters get their turn.
+Fighters walk in to their technique reach (`CombatTuning.StandGap`); the straight-line approach (`SelfApproach`) does not circle. A landed or
+blocked blow takes a defender fighting the attacker off the attacker's engaged list (`FUN_14060a2f0`), so it asks again.
 Target choice (`CombatSystem.ChooseTarget`, combat.md "Target selection"): a fighter whose target goes down chooses again at once and ends its fight
 only when no candidate is left; while deciding it chooses again every 1 s (0.3 s on Hold), except for a player's pick, and ends the fight when even
 its current target fails (a holder's that left the post test, a player's beyond 400). Candidates are its current target (any faction), its attackers and, unless Passive, the attackers of squad mates within `JoinRange` (+10 for one whose mate does not fight it back and that has
 under 2 attackers: engine reading of the protectee); not of its faction or squad. The current target must be sensed: an NPC's sense entry is its
 chase's (`AggroSystem` gives up after 24 s unsensed); a player's character keeps it 24 s after it last had it within sight range (a sneaker: in view;
 `CombatSlot.SensedTick`; engine reading). "Intended aggression ≤ 0" is a fight-off candidate not counting the chooser's faction an enemy (engine
-reading); getting up is `CharacterCold.GettingUpUntil`, from waking for `CombatSystem.GetUpSeconds` (the get-up blend and `standing up 3` to `GetUpEnd`).
+reading); getting up is `CharacterCold.GettingUpUntil`, from waking for `CombatSystem.GetUpSeconds` (the get-up blend and `standing up 3` to `GetUpEnd`),
+during which it neither walks, works nor fights (Task_GetUp; it counts as staggered for the work systems).
 Only a fighter blocks or dodges. A landed blow on a shackled defender knocks it out 25% of the time (`PutDownKoSeconds` with 0.002: 3 s). A hit on a
 character outside a fight that is getting up does nothing more; on any other (not a gunner) it restarts the task (timer, lift or knock-out swing, and a
 new path from where it stands; a lock's, site's or machine's progress stays with the object), and a picked stumble clip stops its walking and its work
@@ -454,7 +455,8 @@ martial-arts category 5. [animals.md](game/animals.md), [characters.md](characte
 `AggroSystem`, `RetaliationSystem`, `FleeSystem`: previous-position sight/hearing, faction
 relations, shared targets, idle-player self-defence ([order toggles](#order-toggles)), chase give-up and return to routine. The look picks
 the best `Combat.TargetScore` (the original's attack-on-sight finder), not the nearest.
-Free squad mates within `JoinRange` join an attacked member's defence each check even while it is already fighting or down (engine rule).
+Being taken as a target is answered the same tick when it alerts ([being targeted](game/combat.md#fight-lifecycle-and-orders)), the rest every 15 ticks;
+free squad mates within `JoinRange` join an attacked member's defence each check even while it is already fighting or down (engine rule).
 Orders defer to the next tick. Relations are live state and deed/witness effects have distinct
 paths; preserve current ordering.
 Relation events (`FactionDeeds`, built with the aggro part; [factions 3.5](game/factions-squads-towns.md#35-what-fires-relation-changes-observed-decompile)):

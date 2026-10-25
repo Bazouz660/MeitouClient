@@ -160,7 +160,9 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
 
 
 /// <summary>
-/// A minimal answer to being attacked (an <b>engine rule</b>, the original's AI is stage 9): every <see cref="CheckEveryTicks"/> ticks, a character that is awake, armed with a
+/// A minimal answer to being attacked (an <b>engine rule</b>, the original's AI is stage 9): at once when an attacker takes it as its target and that alerts it
+/// (<see cref="CombatSystem.Alerts"/>: not through a wall or from another floor for the player's side, until a blow lands; the alert ends its sneaking), and again every
+/// <see cref="CheckEveryTicks"/> ticks, a character that is awake, armed with a
 /// <see cref="Fighter"/>, not fighting already, and that someone is attacking, fights that attacker, and so do its squad mates within <see cref="JoinRange"/> units of it that are
 /// free too, whether or not the attacked one is free itself (never against a mate of the same squad). An NPC always answers; one of the player's characters answers only while it has no order (task <see cref="CharacterTask.Idle"/>: not walking to an order, treating or
 /// resting), so a player who sends a character away is obeyed (<see cref="SelfDefends"/>); Passive keeps it from helping others, not from defending itself.
@@ -173,12 +175,46 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem
     public const float JoinRange = 250;
 
     readonly List<int> guards = [], players = [];
+    /// <summary>Per attacker slot: the target (slot, generation) it last took and whether that target has been alerted (<see cref="CombatSystem.Alerts"/>).</summary>
+    int[] alertSlot = [], alertGeneration = [];
+    bool[] alerted = [], justAlerted = [];
 
     public void SlowWorld(World world)
     {
-        if (world.Tick % CheckEveryTicks != 0) return;
         var table = world.Characters;
         var next = table.Next;
+        if (alertSlot.Length < table.HighWater)
+        {
+            int size = Math.Max(table.HighWater, alertSlot.Length * 2);
+            Array.Resize(ref alertSlot, size);
+            Array.Resize(ref alertGeneration, size);
+            Array.Resize(ref alerted, size);
+            Array.Resize(ref justAlerted, size);
+        }
+        // A target taken (or a blow landed) alerts at once and is answered in the same pass; the rest is looked at every CheckEveryTicks.
+        bool fresh = false;
+        for (int a = 0; a < table.HighWater; a++)
+        {
+            justAlerted[a] = false;
+            int t = next[a].Alive && next[a].Task == (byte)CharacterTask.Attack ? combat.StateOf(new CharacterId(a, next[a].Generation)).TargetSlot : -1;
+            if (t < 0 || t >= table.HighWater)
+            {
+                alertSlot[a] = -1;
+                continue;
+            }
+            if (alertSlot[a] != t || alertGeneration[a] != next[t].Generation)
+            {
+                alertSlot[a] = t;
+                alertGeneration[a] = next[t].Generation;
+                alerted[a] = false;
+            }
+            if (alerted[a] || !combat.Alerts(world, a, t)) continue;
+            alerted[a] = justAlerted[a] = fresh = true;
+            // The alert ends the target's sneaking (AI::underMeleeAttack).
+            if (table.Cold(t) is { } tc) tc.Orders &= ~CharacterOrders.Sneak;
+        }
+        bool periodic = world.Tick % CheckEveryTicks == 0;
+        if (!periodic && !fresh) return;
         ResumeGuards(world, table);
         // The bodyguards and the player's characters, in slot order, for Guards and HelpAllies (each looked through the whole table per attacker before).
         guards.Clear();
@@ -197,6 +233,8 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem
             var st = combat.StateOf(attacker);
             int t = st.TargetSlot;
             if (t < 0 || t >= table.HighWater || !next[t].Alive || next[t].Generation != st.TargetGeneration || table.Cold(a) is not { Medical.Incapacitated: false }) continue;
+            // An attacker its target was not alerted to (the wall and floor filter) is left alone until a blow lands.
+            if (alertSlot[a] != t || !alerted[a] || !periodic && !justAlerted[a]) continue;
             // A gunner leaves its turret only for a melee attacker (task 146's "!iAmBeingMeleeAttacked"); bolts do not bring it down.
             if (st.Ranged && table.Cold(t)?.Gunning is not null) continue;
             var defenders = new List<CharacterId>();

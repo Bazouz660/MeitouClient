@@ -507,8 +507,8 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
         config.KeepTexturesAtAllSquads = false;
         config.CharacterFlightSeconds = UserConfig.DefaultFlightSeconds;
         AttackSlotsSlider.Set(UserConfig.FaithfulAttackSlots);
-        config.LateDefences = true;
-        LateDefencesChanged?.Invoke(true);
+        config.LateDefences = false;
+        LateDefencesChanged?.Invoke(false);
         config.KeepRoamers = config.OffscreenFights = config.OffscreenHealing = config.CampaignAncestorsOnce = config.KeepWild = config.ResidentSchedule = true;
         config.DoorsCloseBehind = true;
         DoorsCloseChanged?.Invoke(true);

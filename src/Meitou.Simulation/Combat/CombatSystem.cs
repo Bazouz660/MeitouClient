@@ -183,7 +183,7 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
         s.Picked = picked;
         s.PickTick = now + PickTicks(world, cold);
         s.SensedTick = now;
-        s.ReadyTick = now + PauseTicks(world, a, 0);
+        s.ReadyTick = now;   // no wait before the first swing (startupState enters the attack at once)
         table.Next[a].Task = (byte)CharacterTask.Attack;
         cold.InCombat = true;
         cold.DrawnWeapon = s.Ranged ? HandHold.OfCategory((int)WeaponCategory.Bow).Weapon : MeleeDrawn(cold.Fighter);

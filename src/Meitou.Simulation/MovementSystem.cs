@@ -529,9 +529,10 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
                 n.Animation = 0;
                 continue;
             }
-            if (n.Task != (byte)CharacterTask.Attack && cold.StaggeredUntil > world.Tick)
+            if (n.Task != (byte)CharacterTask.Attack && cold.StaggeredUntil > world.Tick || cold.GettingUpUntil > world.Tick)
             {
-                // A stagger outside a fight stops the movement while the stumble clip plays (Character::_startStumble); the order's path is kept and resumed.
+                // A stagger outside a fight stops the movement while the stumble clip plays (Character::_startStumble), and getting up after a knockout in or out of
+                // one (Task_GetUp); the order's path is kept and resumed.
                 n.Velocity = Vector3.Zero;
                 continue;
             }
