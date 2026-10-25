@@ -116,29 +116,43 @@ ends leaves 0.2 s.
   `FUN_140609c70` plays its block or dodge, and at a swing's last blow while attacked; cleared by the pause after an attack `FUN_14060d6a0`
   and the stumble; so a fighter already blocking or dodging falls through to the roll below): target defending → XP, slot → 0 / 5; target attacking → XP, then
   a random contest `FUN_140665370` of the two fighting stats (each side's factor 1 + |difference| × a constant for the lower one, two uniform
-  draws; true → 5), else slot → +0x120 = 1, plan 1, → 0. Other cases: +0x240 set → target plans defence, → 0; hold stance
-  (`FUN_1402b2b50`) → 0; else the same contest: asker wins with a free slot → target plans defence, → 0; target wins → it plans to attack
-  and turns on the asker (`FUN_140665650`, state 3 unless `FUN_1405b34b0`), → 1 when the asker is its target, else 5. `FUN_140665650` returns
-  unchanged when the target handle at +0x298 (vfunc +8 on the asker's +0x58, likely "same character"; **Unknown**) accepts the asker, else
-  copies the asker's handle (+0x60..+0x70) into +0x2a0..+0x2b0; it has no player-order test of its own.
+  draws; true → 5), else slot → +0x120 = 1, plan 1, → 0. Other cases: +0x240 set → target plans defence, → 0; target in Block mode
+  (`CharStats::isDefensiveMode` `FUN_1402b2b50`) → 0; else the same contest: asker wins with a free slot → target plans defence, → 0; target wins → it plans to attack
+  and turns on the asker (`CombatClass::setAttackTargetHandle` `FUN_140665650`, state 3 unless `FUN_1405b34b0`), → 1 when the asker is its target, else 5.
+  `setAttackTargetHandle` does nothing when the asker already is its target (hand vfunc +8 is "equal"), else stores the asker's handle in +0x2a0..+0x2b0
+  and notifies both characters ([being targeted](#fight-lifecycle-and-orders)). A focused fighter is turned this way too, but its next pick, at most 1 s
+  later, returns the focused target.
 - **Mass combat XP** (`FUN_1408c5e80`) therefore fires on the *target's* stats, once per ask answered in those three cases: being hit at while
   stumbling or already fighting someone. It adds exp gain multiplier × 0.05 to the save-only stat (no consumer found), so it changes nothing
   visible; Meitou does not call `XpService.MassCombat` (the stat is not read anywhere).
-- **Target selection** (`FUN_140666ee0`, called from the deciding state; **Observed**). The current target is kept while the pick timer (+0x2f0,
-  seconds) is below 1.0 (0.3 when the order object's +299 flag is set, the Hold order's id 0xc in `FUN_1405caa50`). Otherwise the candidates are
-  collected from the character's target lists (the planner's current target and the AI's sensed enemies; no candidate and no entry → state 9, no
-  target), each list is scored by `FUN_14059e300` and the best score wins; with the order object's range flag a winner more than 400 away is dropped.
-  The scorer skips candidates failing the dead/ally/relation tests (`FUN_1407d1440`, `FUN_1408569a0`, `FUN_1406b2630`; animals pass), then adds
-  with the AI settings weights (object at CombatClassAI +0x310, values **Unknown**): the stickiness weight (+0x154; ×4 when the chooser is a
-  player squad member) for the current target; minus +0x158 when the candidate's animation object has +0x228 set; minus (candidate's engaged
-  count + overflow count, less 1 when the chooser is already in it) × +0x168 (× 0.35 and +2 when the candidate's order flag +0x12a is set, which
-  is the Taunt order's id 0xe in `FUN_1405caa50`; −1 for flag +0x12c); +10 for the chooser's remembered attacker when the candidate has under 2
-  engaged; ×0.01 beyond 40 units when the chooser's +299 flag is set; then, when the post and area test `FUN_140598630` passes
-  ([perception](perception.md#the-attack-on-sight-tests)), a proximity term (1 − d / R) × (+0x15c, +0x160 in mode 2) with R = 2 × (radii
-  sum) or radii + 200 by the chooser's mode `FUN_14059a030`, ×20 for some chooser kind (vfunc 0x360), plus +0x16c unless the candidate is already
-  fighting (halved when its vfunc 0x1e8 value is 0 or less); ×0.1 for a candidate flagged +0x4f; ×3 for a turret gunner when the chooser has no
-  vehicle target; −10 for a downed candidate. Meitou keeps its own pick (the Taunt rule is in [simulation](../simulation.md#order-toggles));
-  the weights and several predicates stay **Unknown**.
+- **Target selection** (`CombatClassAI::chooseAttackTarget` `FUN_140666ee0`, from the deciding state; **Observed**). The current target is kept
+  while the pick timer (+0x2f0, s) is under 1 (0.3 on Hold). Then a focused target (CombatClassAI +0x2c8, set by orders 5 and 61,
+  [lifecycle](#fight-lifecycle-and-orders)) is returned without scoring, unless its path is in the task system's impossible list
+  (`AITaskSytem::isPathImpossible`) or refocus mode (+0x2e8) is set. Otherwise three lists are scored: the attackers (engaged list +0x1f8) of
+  the current AI task's target when the chooser is aware of it, the chooser's own attackers, and its threats (SensoryData +0x50). A candidate
+  must not be crippled (vfunc 0x360) and must be sensed by the chooser or by the task's target. The best score over the lists wins; none →
+  no target while threats remain, else the attack-on-sight finder `FUN_14059fa70`.
+- **Target score** (`AI::chooseBestAttackTarget` `FUN_14059e300`). Skips dead or down (`FUN_1407d1440`), `FUN_1408569a0`, allies by faction
+  (`FUN_1406b2630`, unless the candidate is an animal) and impossible-path candidates. Weights are CharStats fields that `CharStats::init` sets
+  to the same constants for every character (**Verified** literals; not saved, no other writer found; names KenshiLib 1ce4a16): `STUBBOURNESS`
+  +0x154 = 5, `PROFESSIONALNESS` +0x158 = 1, `HOLDING_POSITION` +0x15c = 2, `IMMEDIACY` +0x160 = 2, `IMMEDIACY_MAX_RANGE` +0x164 = 200,
+  `MANLINESS` +0x168 = 1, `MURDEROUS` +0x16c = −2. Terms, in order:
+  - + stubbornness (×4 when the chooser's prone state, vfunc 0x368, is not 0) for the current target; − professionalness when the candidate's
+    animation +0x228 is set (**Unknown**, the stumble test of the ask reads it too);
+  - − manliness × (candidate's attackers + waiting count, less 1 when the chooser is one); a Taunt candidate gets +2 and this term ×0.35; a
+    Passive one −1;
+  - +10 when the candidate's intended target (state broadcast +0x68) is the chooser's AI-task target, that target is not fighting it back, and
+    the candidate has under 2 attackers;
+  - a player-faction chooser drops candidates beyond 400 (its crossbow range with Ranged on); on Hold ×0.01 beyond 40;
+  - when the Hold test `FUN_140598630` passes: + range term (×20 for a crippled chooser), + murderous (−2) for a candidate whose fight is off
+    (then ×0.5 when its intended aggression, vfunc 0x1e8, is ≤ 0), ×0.1 while it gets up (+0x278), ×3 for a turret gunner when the chooser is
+    not an animal, −10 when crippled or (medical test `FUN_140644170`); otherwise the candidate is dropped.
+  - Range term (`AI::scoreTargetRange`) = (1 − d/R) × w by the chooser's manoeuvre mode ([area](perception.md#the-attack-on-sight-tests)):
+    HOLD_GROUND R = 2 (meiDistance + tolerance), STAY_CLOSE R = meiDistance + 200 + tolerance, ROAM_FAR R = 200; w = immediacy in ROAM_FAR,
+    else holding position (both 2).
+  - So a person prefers, in order of size: the attacker of its protectee left unopposed (+10), its current target (+5, +20 crouched or
+    crawling), one already fighting (+2 over an idle one), the nearest (up to +2), the least crowded (−1 per attacker). Meitou keeps its own
+    pick (the Taunt rule is in [simulation](../simulation.md#order-toggles)).
 - **Deciding** (`FUN_14060c8b0`): pick a target, set +0x148 = 0.5, then ask (`FUN_14060c670`). The ask requires
   centre distance − r_t ≤ +0x150 + (1.5r + L)·k and no other body nearer than r + 2.5 (`FUN_1402e9620`).
   If the ask fails: being attacked → defend; engaged → state 5; else state 6.
@@ -153,7 +167,7 @@ ends leaves 0.2 s.
   `FUN_1402ae6d0`), s becomes ±12. c = 30 + 3b + 12u′ with b = 3 + 3u″. For a humanoid, c′ = 3(1 − e)c + 1 and
   b′ = 2(1 − e)b + 1. b′ is kept in 0..20; c′ is at most 90 and at least b′ + 10. So c′ = 11 for an unburdened
   person, 39 or more for an animal.
-- Both states also start a 1.5–4.5 s timer. State 6 does not use it; state 5 uses it only in a hold stance
+- Both states also start a 1.5–4.5 s timer. State 6 does not use it; state 5 uses it only in Block mode
   (CharStats +0x128, standing), clearing its own slots each time it runs out.
 
 Meitou (`CombatSystem.HasSlot` / `MayJoin`, `PursuitSystem.Circle`):
@@ -168,7 +182,7 @@ Meitou (`CombatSystem.HasSlot` / `MayJoin`, `PursuitSystem.Circle`):
   not decoded).
 - **Player's pick**: a target the player picked (right click, Attack Target, Attack Unprovoked; not Attack All) is kept: the winner of a
   roll does not turn on the asker while that target stands (engine choice; without it a losing old foe re-yields every exchange and the
-  order never sticks). How the original keeps an ordered target against `FUN_140665650` is **Unknown**.
+  order never sticks). The original lets the swap happen and returns to the focused target at the next pick (above).
 - **Engaged list**: removal after a blocked or dodged blow is not modelled.
 - **Approach**: an engaged fighter walks in to body gap max(6, reach − L/4) and stands.
 - **Joining**: a lower table slot asks first; one not yet in is counted ahead only when it may decide this tick (not staggered,
@@ -177,7 +191,88 @@ Meitou (`CombatSystem.HasSlot` / `MayJoin`, `PursuitSystem.Circle`):
   place drops at the blow, the ask comes at the next decision). They path to a point on the ring at least 1 s of
   side-stepping ahead (and beyond the walker's arrival radius plus one repath step, so a slow side-step does not creep), pushed out so the
   straight walk keeps to the ring, and face their path; the original faces the target.
-- The crowd test, the hold-stance timer and the +12 while running are not modelled.
+- The crowd test, the Block-mode timer and the +12 while running are not modelled.
+
+## Fight lifecycle and orders
+
+**Observed** (decompile of kenshi_x64 1.0.68; class/method/field names KenshiLib 1ce4a16, **Observed**; literals **Verified** in the decompile).
+
+- **Who has fight goals.** `Character::setupAI` gives every character goals 14 Idleness (priority 1) and 32 Self preservation (priority 3,
+  urgent, target itself); non-player characters also 243 (animals 259). Attack on sight is goal 16 ([combat goals](ai-tasks.md#combat-goals)):
+  NPCs get it from packages, a player character only while on Hold. Its desire (`AI::scoreAttackEnemies`) is 1, but 0 while sneaking outside a
+  fight (`Character::isStealthMode`), Passive, or not standing (prone state ≠ 0); `scoreProtectAllies` is 0 when sneaking or Passive.
+- **Being targeted.** Choosing a fight target (`CombatClass::setAttackTarget`, `setAttackTargetHandle`) calls `AI::underMeleeAttack` on the
+  target at once (through `Character::attackingYou`), before any blow; dropping it sends "stop", which only removes the attacker from the
+  target's engaged list. A landed blow (not blocked or dodged) on a defender whose fight is off sends it too (`FUN_1404394f0`). The call ends the
+  target's sneaking, adds the attacker to its engaged list, to its senses (seen, alert timer 5) and to its squad memory as an attacker (kind 4,
+  not for allies), tells a campaign, and when the target's fight is off: unless it is getting up, or is player-side and moving (CharMovement
+  +0x24, `Character::isWithThePlayer`), its current goal is cleared and it replans (`AITaskSytem` vfunc 3); a target getting up instead has a
+  10% chance of setting +0x4f8 = 10 (**Unknown**). With the call's last flag set and either side the player's (the target not yet aware of a
+  player attacker), the call is ignored unless both are in the same building and floor and the target has a clear line (the hit path clears
+  the flag; the targeting path's flag was not recovered).
+- **Threats.** The perception pass (`SensoryData::addToThreatsAndFlockingList`) looks at each sensed live character of another faction: its
+  state broadcast's intended aggression adds to +0x90; when its intended target (+0x68) passes `AITaskSytem::intendsToAttackTarget` (prone
+  state < 3 and its fight on; on Hold with the fight off, only within 40), a target that is the looker puts it on the threats list
+  (SensoryData +0x50) and adds its aggression towards the target to +0x88; a target of the looker's faction adds that to +0x8c.
+  `iAmBeingMeleeAttacked general` (state 159) is "threats list not empty"; `immediate` (158) is Character +0x2b0, set in the periodic update
+  (`FUN_1404378f0`) while a threat within 40 stands (prone state < 3), is not in a bed or cage, not getting up and not carried.
+- **Self-defence.** Self preservation's desire (AI slot 17): 1 with a threat within 40, 0.7 with a threat of positive aggression within 181.7
+  (squared 33000), else 0. It wants `!isAggressionTowardsMe`, given by 13 "Attacking attackers of" (desire 1; finder `AI::findAttackerOf`:
+  the subject's attackers and threats that are enemies or target it, never allies, within 150 of a subject other than the chooser; best by the
+  target score) or 35 Running away (slot 55: 0 for a player character carrying any weapon outside the two-arm categories, or with both arms;
+  1 when crippled; else 0.001 or 0 by a test not decoded). So an attacked character fights back unless crippled; Passive does not touch this
+  path (exe tooltip: "Passive focuses on non-combat unless attacked first").
+- **Melee or shooting.** Row 4 Attacking (`AI::scoreMeleeAttack`, slot 53): 1, ×0.1 with Ranged on, ×0.5 when `FUN_1407ac7b0`(platoon) fails;
+  0 against a caged target; a crippled fighter 0.1 (0.0001 in Block or Hold with no threat within 40; 0 for a non-player non-unique); on Hold
+  only for a target its range tests accept. Shooting 262/263/266 (slot 54): only with Ranged on, a crossbow at back or hip and its bolts carried:
+  1 (0.5), 0.1 with a threat within 40, which their list B forbids anyway. So Ranged on shoots until dry or rushed, Ranged off never shoots.
+- **Fight task.** Rows 4 and 227 build `Task_MeleeAttack`; orders 5 Attack Target and 61 Attack Unprovoked build `Task_FocusedMeleeAttack`.
+  The planner first needs 37 `isReadyForAction`, given by 59 Get ready after 6 Equipping weapon draws. Task start → `initCombatMode` (mode 0):
+  CombatClass +0x130 on, state 4, attack start position, the technique cleared; the focused task also stores the target as CombatClassAI
+  +0x2c8 and (with its +0x98 flag) marks the broadcast as aggressor (+0x114). Task end → `Character::endCombatMode` → mode 2: +0x130 off,
+  the target released, state 4, dead timer `calculateDeadTime(2)` = 0.2 s, the animation combat flag off, movement plain (mode 0), engaged and
+  threat counts zeroed, focus cleared. `getTimeSinceLastCombatModeInHours` reads +0x138, stamped at start.
+- **Weapon away.** The fight's end sheathes nothing. Idleness (14), first aid, splinting, repair, lockpicking and patrols need
+  `!hasWeaponEquipped`, so the planner puts 7 Sheathing weapon before them: a character stays armed while urgent goals run and sheathes when it
+  drops to Idleness or is ordered to such a job.
+- **Orders beat goals.** `AITaskSytem::chooseGoal` tries, in order: the player's order queue (`checkOrders`, OrdersReceiver +0x38), jobs, urgent
+  perma-jobs, priority-3 goals (Self preservation, Hold's goal 16, package goals), the other perma-jobs, priority 2 then 1 goals, the hold-position
+  task. So a character with an order does not defend itself: a hit while it runs only clears and replans the current goal, and the queue's
+  first order wins again. `Character::addOrder` without Shift clears the order queue and the jobs, sets the AI's centre of movement to the order
+  point ([area](perception.md#the-attack-on-sight-tests)), queues the order at priority 3 and replans at once.
+- **Right click elsewhere mid-fight.** Ground: `PlayerInterface::playerMove` gives each selected character order 29 Move order. At the replan
+  its fight task ends (above): it no longer blocks or dodges, since a target whose fight is off always answers an ask with "attack"
+  ([ask](#attack-slots-and-circling)), and its attackers keep their target and chase it ([leaving](#leaving-a-fight)). `Task_Move` start resets
+  the clip, puts the movement in plain mode and zeroes the Hold point (CharStats +0x130). Once the order is done the goals run again: with a
+  threat left, Self preservation restarts a fight on `findAttackerOf`'s pick; without one, Idleness sheathes. A right click on an enemy is
+  order 5 (focused); on anything else, that target's quick verb.
+- **Actions mid-fight.** Any order runs during a fight. First aid 25, splint 249, repair 60 and pick lock 76/201 test no threat in their rows
+  and the first-aid and lock-pick task updates test none, so they go on while their character is hit (after sheathing). The Loot order (26,
+  `Task_Loot_Order` update) ends when a threat is within 40 (+0x2b0). Rows refused while a threat is within 40: Shooting, 146 Turret gunner,
+  123/290 Bashing gate, 272 Smashing, 164 Following and talking; 248 Attacking Squad needs no threat at all. There is no pickpocket verb on a
+  standing character: stealing from a person is Loot on one that is down or asleep ([verbs](ui-input.md#context-menu-verbs)), after a Stealth KO
+  ([below](#stealth-knock-out)) or a knockout.
+
+**Standing orders** (`Character::setStandingOrder`, player faction only; ids are KenshiLib's `StandingOrder`, `M_SET_ORDER_*`):
+
+| Id | Order | Effect |
+|---|---|---|
+| 0, 1, 2, 16 | run, jog, walk, group speed | movement speed mode; a crouching (prone state 1), uncrippled character stands up instead |
+| 3, 4 | stealth on / off | Character +0xd4 |
+| 5, 6, 7 | aggressive / defensive / evasive | AI +0x2b8 (no reader found) |
+| 8, 9 | far / near | manoeuvre mode (9: STAY_CLOSE, centre at its position) |
+| 11 | Block (`DEFENSIVE_COMBAT`) | CharStats +0x128 (set only with vfunc 0x250, KenshiLib `isHuman`) |
+| 12 | Hold | +0x12b; on: hold point +0x130 = position and goal 16 added (priority 3); off: goal 16 removed |
+| 13 | Passive | +0x12c |
+| 14 | Taunt | +0x12a |
+| 15 | Jobs (`CHASE`) | `OrdersReceiver::setJobsEnabled` |
+| 17 | Ranged | +0x129 |
+
+Readers: Block (`isDefensiveMode`: +0x128 and prone state 0) feeds the block chance, melee defence and dodge (exe tooltip: never attacks,
++20 defence), makes the ask answer 0 and runs the state-5 timer. Hold (`holdPositionMode`: +0x12b, not sneaking) feeds the post test
+`AI::isTargetInRangeForHOLDMode_hostiles` ([perception](perception.md#the-attack-on-sight-tests)), the score's ×0.01, the 0.3 s re-pick and
+the melee desire. Passive and Taunt act through the desires and the target score above; Ranged through the shooting desire and the shooting
+gate ([ranged](#unknowns-of-the-ranged-path)).
 
 
 ## Combat stance
@@ -192,7 +287,7 @@ Meitou (`PursuitSystem`, engine rules): the lead is a path goal, re-pathed when 
 
 Data (**Verified**, the base ANIMATION records through `AnimationLibrary`): with the flag on, the lower clips are the `walk lower combat shuffle` trio (speeds −99 to 50) and `jog lower combat fallback` (50 and up); `walk`/`jog`/`run lower` are combat NO.
 
-**Unknown**: the extra offset the steering adds while leading in a non-zero steering mode (`FUN_1402e9420` at radius + 40, `FUN_1402e9530`) and the side terms of `FUN_1402e93c0`; whether the original also holds a chaser from swinging while behind; the steering's radii (`+0xe0` and `FUN_14065dc30`) and mode 6 (possibly a ranged closer; Meitou uses 90 for every fighter); what makes the AI conditions `iAmBeingMeleeAttacked immediate` / `general` (ids 158 and 159, registered in `FUN_140610250`) true (they read a flag byte at `+0x2b0` of the object at Character `+0x2f8` and an int at `+0x58` of the object that object's vtable slot `0x68` returns; no writer found), and so when a player's character that is idle starts its fight task when attacked. Meitou: `RetaliationSystem` engages it at once, and `PursuitSystem` keeps the running flag by the rule above ([simulation](../simulation.md#animation)).
+**Unknown**: the extra offset the steering adds while leading in a non-zero steering mode (`FUN_1402e9420` at radius + 40, `FUN_1402e9530`) and the side terms of `FUN_1402e93c0`; whether the original also holds a chaser from swinging while behind; the steering's radii (`+0xe0` and `FUN_14065dc30`) and mode 6 (possibly a ranged closer; Meitou uses 90 for every fighter). When an idle character starts fighting back: [lifecycle](#fight-lifecycle-and-orders). Meitou: `RetaliationSystem` engages it at once, and `PursuitSystem` keeps the running flag by the rule above ([simulation](../simulation.md#animation)).
 
 ## Leaving a fight
 
@@ -205,8 +300,8 @@ which its next update (`FUN_14050d920` → `FUN_14050d7d0`) consumes by dropping
 - **Target down or held**: each tick, a fight target that is down or dead (`FUN_1407d1440`) or imprisoned (`+0x2f8` 2)
   is dropped and the fight goes to state 4 (re-decide); when it was also the task's target the task ends.
 - **Nothing left** (`Task_MeleeAttack` update): the task ends when the fight task stopped (`FUN_1405c9750`), or when all hold:
-  the senses object's (Character vfunc `0x68`) int `+0x94` is 0 and float `+0x8c` ≤ 0 (meanings **Unknown**; the
-  `+0x94`/`+0x98` enemy counters of `Task_GetUp` look alike), nobody is engaged on the character (engaged list + overflow 0),
+  the senses (Character vfunc `0x68`) count no enemies (`numEnemies` +0x94 = 0) and no threat to allies (`totalThreatLevelAllies` +0x8c ≤ 0,
+  [threats](#fight-lifecycle-and-orders)), nobody is engaged on the character (engaged list + overflow 0),
   the fight has no target (`+0x2a0` none), and the task's own target is gone or fails its vfunc `0x30` test.
 - **Path chase give-up** (`ChaseMode`, a base of `Task_MeleeAttack` at task `+0x78`): checked only while the fight is in
   state 11, the path chase that `CombatClassAI::vfunc_9` enters from state 10 when the navmesh line to the target is
@@ -456,21 +551,20 @@ traced.
 hands or at the back, and `vfunc 0x368` of the character zero (the player-side test `FUN_1405caa50` also uses). Where the gate holds, the player's attack orders (5, 0x10, 0x3d) become
 the shoot orders 0x106 / 0x107 / 0x10a (`FUN_1407f9e20`), i.e. the Shooting tasks 262 / 263 / 266 ([ai-tasks](ai-tasks.md)), whose list A needs `!iAmBeingMeleeAttacked immediate`,
 `hasTwoWorkingArm` and `hasWeaponEquipped`; where it does not, attack orders stay melee. The attack-on-sight post and area test `FUN_140598630` skips its 80 / 140 unit melee
-reach limits when the gate holds, so a Ranged-on crossbowman engages from afar. Nothing was found that switches back by the target's distance: melee comes from the planner
-dropping the Shooting task when a melee attacker is on the character (the condition's writer is **Unknown**). Meitou: `CombatSystem.ChooseMode` follows that for the Ranged order
+reach limits when the gate holds, so a Ranged-on crossbowman engages from afar. Nothing switches back by the target's distance: melee comes from the planner
+dropping the Shooting task when a threat is within 40 (`immediate`, [lifecycle](#fight-lifecycle-and-orders), which also has the shooting desire). Meitou: `CombatSystem.ChooseMode` follows that for the Ranged order
 (crossbow unless dry or a melee attacker is on it) and, with the order off, uses its distance rule (an **engine choice**; the original, with the flag off, never issues the shoot
-orders of the player's characters). The flag's default for NPCs and whether the planner's own Shooting rows read it are **Unknown**. Other unknowns: the reload animation against the timer; a character's hit shape
+orders of the player's characters). The Shooting rows' desire reads the flag too; its default for NPCs is **Unknown**. Other unknowns: the reload animation against the timer; a character's hit shape
 (capsule or ragdoll) and whether downed bodies stop bolts; whether the crossbow's bleed and target multipliers and the armour's `ranged skill mult` do anything; how NPC crossbowmen get their bolts.
 (The trigger flag `+0x34` is set by the controller tick itself every tick, so a shot leaves in the frame of its decision: [Turrets](#turrets), **Observed**.)
 
 ## Unknowns
 
 - The roles of hunger and "fed" in recovery (the `+0x60`/`+0x64` pair is the hunger level and stomach buffer, [character-stats.md](character-stats.md#hunger-and-starvation)). KO wake-up and the KO point: [character-stats.md](character-stats.md#blood-and-ko).
-- Target selection weights and predicates ([Attack slots](#attack-slots-and-circling)), aggression and stance; the steering's force terms (`FUN_1402af1e0`, `FUN_1402e9740`) behind the side-step and the
+- Some target-score predicates (animation +0x228, `FUN_1408569a0`, `FUN_1407ac7b0`); the steering's force terms (`FUN_1402af1e0`, `FUN_1402e9740`) behind the side-step and the
   min/max gap (the defence pick `140887970` tests no skill, **Observed**). The bluntBase of non-blunt-dominant weapons; the stat that scales max blood; the part `+0x28` link.
 - The role of the class-table columns 4-6 (athletics, combat speed, stealth is an inference) and of the slot-adjusted factor (armour item field index 0x5d) in `140898e90`.
 - Turrets: see [Turrets](#turrets) for its own unknowns; the meaning of the weight/price-like armour table fields; the remaining difficulty floats beyond the dialog bindings listed above (their consumers).
-- Whether the +20 guarding state of the block chance is the state the HUD's Block stance sets ([ui-screens.md](ui-screens.md#4-hud-mainbargui)).
 - What `anim hesitate point` (stored as a frame fraction, no reader found) does; what reads the stumble's `+0x128` = 0.85; where `min cut damage mult` x the manufacturer's `min cut damage` is applied (the engine floors the cut at it); the term shapes of the fist damage (the engine takes half the stat each). The engine's answers are in [simulation.md](../simulation.md#combat).
 - Whether the decompiled maths matches in-game numbers: nothing has been compared in play.
 

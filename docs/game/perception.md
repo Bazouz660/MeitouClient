@@ -122,17 +122,22 @@ entry has a tag word (entry +0x30 → +0x30): bit 0 SENSE_ALLY, 1 SENSE_NEUTRAL,
 **Observed** (decompile; goal 16's finder, [ai-tasks](ai-tasks.md#combat-goals)). A sensed character of a faction that
 is not the looker's ally becomes a target only when both tests pass:
 - **Area** (`FUN_140599f30`): true when the target stands in the looker's own building (character vfunc +0x98's
-  +0x30 equals the target's vfunc +0x78). Else the AI's area test `FUN_140597790`: AI +0x2bc picks the centre
-  and radius: mode 2 the looker itself (AI +0x2c0 set to its position), in when d^2 < 42467328 (about 6517
-  units); mode 0 the point AI +0x2c0 (height from AI +0x18 +0xcc), in when d < R + 40 + R' (R = AI +0x8, R' =
-  AI +0xc) or d^2 < s^4 with s^2 the squared distance from AI +0x18 +0xc8 to that point (as written); mode 1 in
-  when d < R + 200 + R'. A target outside it still counts while it is fighting the looker (its combat object's
-  +0x140 between 0 and 1 for the looker, `FUN_140665420`). Writers: mode 2 by `FUN_1406236d0`, reset in
-  `FUN_1408819e0` / `FUN_140881d90`; who sets modes 0/1 and the radii is **Unknown**.
-- **Post** (`FUN_140598630`): only for a character with an active post (character +0x450, `FUN_1402b2b90`: its
-  byte +299 and not a slave) that is not `FUN_1407f2840` (a ranged-weapon test): a target slower than 2 (movement
-  +0xb8), or in its own state > 1, must be within 40 of the looker; a target more than 80 from the post's point
-  (+0x130; 140 when the target is fighting and faces the post) must be within 60 of the looker.
+  +0x30 equals the target's vfunc +0x78). Else the AI's area test `FUN_140597790` by its manoeuvre mode (AI +0x2bc
+  `ordersMovement`, KenshiLib `AIManuverabilityOrders`: 0 HOLD_GROUND, 1 STAY_CLOSE, 2 ROAM_FAR): ROAM_FAR around the
+  looker itself (AI +0x2c0 set to its position), in when d^2 < 42467328 (about 6517 units); HOLD_GROUND around the
+  centre of movement AI +0x2c0 (height from the state broadcast's position, AI +0x18 +0xcc), in when d < R + 40 + R'
+  (R = AI +0x8 `meiDistance`, R' = AI +0xc `meiDistanceTolerance`) or d^2 < s^4 with s^2 the squared distance from
+  the broadcast position to that point (as written); STAY_CLOSE in when d < R + 200 + R'. A target outside it still
+  counts while it is fighting the looker (its combat object's +0x140 between 0 and 1 for the looker, `FUN_140665420`).
+  The same position test bounds job targets ([range](ai-tasks.md#perma-jobs), ROAM_FAR by default). Writers:
+  `AI::setManuveringFreedomLevel` from standing orders 8/9 ([combat](combat.md#fight-lifecycle-and-orders)); the centre by
+  `AI::setCenterOfMovement`, which every player order calls with its point (`Character::addOrder`) and which in
+  HOLD_GROUND / STAY_CLOSE also installs the hold-position task 30 / 31. Who sets the radii is **Unknown**.
+- **Post** (`AI::isTargetInRangeForHOLDMode_hostiles` `FUN_140598630`): only for a character on Hold (`CharStats::holdPositionMode`
+  `FUN_1402b2b90`: CharStats +0x12b and not sneaking) that is not `FUN_1407f2840` (a ranged-weapon test): a target slower than 2 (movement
+  +0xb8), or in its own state > 1, must be within 40 of the looker; a target more than 80 from the hold point
+  (CharStats +0x130, set when Hold is turned on and zeroed by a move order's start; 140 when the target is fighting and
+  faces it) must be within 60 of the looker.
 - So there is no give-up distance measured from where a fight began: an attack starts inside the AI's area, and a
   chase ends by time and lost senses ([Leaving a fight](combat.md#leaving-a-fight)).
 
@@ -157,11 +162,11 @@ is not the looker's ally becomes a target only when both tests pass:
 | Run away (Task_Runaway) | 2000 + 400 r away from the threats' centre, then hops of 1000 + 400 r; until no enemy sensed and nobody attacking | **Verified** (literals), flow **Observed** | `FUN_14034b440`, `FUN_140336820` |
 | Squad not intact (retreat package) | 4+ members: fewer than 20% (40% with the leader down) able; under 4: leader down | **Observed** | `FUN_14079acf0` |
 | FACTION `run away ratio of squad size` / `relative to enemy` | loaded into Faction +0xc / +0x10 (base data: 92 factions 0, others 0.2 to 0.5); no reader found | **Unknown** | `FUN_1407fe270` |
-| Attack-on-sight area / post | mode 2: 6517 around the looker; mode 0/1: R + 40 / R + 200 + R' around AI +0x2c0; post: 80 (140) / 60 / 40 | **Verified** (literals), flow **Observed** | `FUN_140597790`, `FUN_140598630` |
+| Attack-on-sight area / post | ROAM_FAR: 6517 around the looker; HOLD_GROUND / STAY_CLOSE: R + 40 / R + 200 + R' around the centre of movement; Hold: 80 (140) / 60 / 40 | **Verified** (literals), flow **Observed** | `FUN_140597790`, `FUN_140598630` |
 
 ## Unknowns
 
-- Who sets the AI area's modes 0/1 and radii (AI +0x2bc, +0x8, +0xc, +0x2c0) and the post object (+0x450).
+- Who sets the AI area's radii (AI +0x8, +0xc).
 - Slot 14 `+0xb4`, `+0x2f8` = 1, `FUN_140436610`, `FUN_140856bc0`, slot 60's `+0xd5`, the hearing re-roll factor, the meaning of
   character `+0x5b8` and `+0x504`.
 - Whether the run-away ratios (Faction +0xc / +0x10) are read at all.

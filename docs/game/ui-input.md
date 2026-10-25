@@ -422,8 +422,9 @@ home (slot 59) is a building of the player's, or 273 when its +0x1a0 → +0x88 o
 **Dispatch** (`FUN_1407fa650` → `FUN_1407f9e20`, **Observed**): 45, 0x111 and 0xdf go through the job giver `FUN_1407f5a90` (sound `Permanent_Job`), every other order through
 `FUN_1407f9e20`, which per selected character swaps 5 / 16 / 0x3d for 0x107 / 0x106 / 0x10a when `FUN_1407f2840(character)` is true (**Unknown** which characters: Meitou reads it as a
 ranged-weapon wielder, not built), and ends with the sound `Right_Click`. 235 Shoot At is Task_UseTurret's "target" order for the lead on a turret.
-**Unknown**: slots 34, 102 and the +0x260 handle (read here as the lead's turret, as it swaps every attack for 235); `FUN_1405c9750` returns byte +0xd4
-unless `FUN_140436610(c, 1)` (Meitou reads it as sneaking; [ai-tasks](ai-tasks.md#perma-jobs) reads it as a slave test); where a cage opens its menu at once; the posture 1 (voluntary crawl)
+A right click on the ground (`PlayerInterface::playerMove`) is order 29 through the same path; how an order replaces a fight: [combat](combat.md#fight-lifecycle-and-orders).
+**Unknown**: slots 34, 102 and the +0x260 handle (read here as the lead's turret, as it swaps every attack for 235); `FUN_1405c9750` (KenshiLib `Character::isStealthMode`) returns
+the sneak flag +0xd4 unless the fight is on (`isInCombatMode`, CombatClass +0x130); where a cage opens its menu at once; the posture 1 (voluntary crawl)
 that 28 Stand Up answers to ([ragdolls](ragdolls.md#forced-crawl): the legs' forced crawl is 2).
 
 Meitou (`PlayerInterface.ContextMenu.cs`; one method per target: characters, `ContainerVerbs`, `DoorVerbs`, `SiteVerbs` in `PlayerInterface.Build.cs`, `CageVerbs` in `PlayerInterface.Cages.cs`):
