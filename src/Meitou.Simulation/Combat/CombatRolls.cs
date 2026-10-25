@@ -21,6 +21,8 @@ public enum CombatRoll : ulong
     Shackled = 9,
     /// <summary>A fighter's steering draws (ENEMY_DIST, ALLY_DIST, the dead zone; counter 0 to 3, drawn once: docs/game/combat.md "Fight steering").</summary>
     Steering = 10,
+    /// <summary>Whether an attack on a character getting up knocks it back down for 10 s (counter: the tick and the attacker).</summary>
+    KnockDown = 11,
 }
 
 /// <summary>

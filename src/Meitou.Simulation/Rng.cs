@@ -49,6 +49,8 @@ public enum RngPurpose : uint
     ChaseSense = 24,
     /// <summary>Squad formations: a layout's draws (keyed by the squad) and a plain follower's distance (keyed by the follower) (<see cref="MovementSystem"/>).</summary>
     Formation = 25,
+    /// <summary>A stealth KO target's hearing roll on the creeping attacker's last step (<see cref="Carrying.CarrySystem"/>).</summary>
+    KnockoutHear = 26,
 }
 
 /// <summary>

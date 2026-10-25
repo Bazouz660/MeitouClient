@@ -68,6 +68,13 @@ public static class CombatSteering
         return (min, MathF.Max(f, min + 5));
     }
 
+    /// <summary>
+    /// Left out of the flocking list (<c>FUN_14085a070</c>, docs/game/combat.md "Attack slots and circling"): down, in a cage or a bed, or sitting on a chair or throne (<c>isSitting</c>;
+    /// Meitou: resting on a seat). Engine reading: a carried body too.
+    /// </summary>
+    internal static bool OutOfFlock(in CharacterHot h, CharacterCold c) => c.Medical is { Incapacitated: true } || c.IsImprisoned || c.InSomething == Locks.HeldState.Bed
+        || !c.CarriedBy.IsNone || h.Task == (byte)CharacterTask.Rest && c.Ai?.SitClip is not null;
+
     /// <summary>A character's steering radius (<c>getRadius</c>): its footprint x its size.</summary>
     public static float Radius(CharacterCold? c) => CombatTuning.Footprint(c) * (c?.Medical?.ScaleK ?? 1);
 
@@ -138,7 +145,7 @@ public static class CombatSteering
             var table = p.World.Characters;
             ref readonly var o = ref table.Previous[c];
             if (!o.Alive || MathF.Abs(o.Position.Y - p.At.Y) >= FlockHeight) return;
-            if (table.Cold(c) is not { } oc || oc.Medical is { Incapacitated: true } || oc.IsImprisoned || !oc.CarriedBy.IsNone) return;
+            if (table.Cold(c) is not { } oc || OutOfFlock(o, oc)) return;
             float rc = Radius(oc);
             var away = new Vector2(p.At.X - o.Position.X, p.At.Z - o.Position.Z);
             float flatDistance = away.Length();

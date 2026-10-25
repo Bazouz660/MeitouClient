@@ -50,11 +50,12 @@ public sealed partial class CarrySystem
     /// <summary>
     /// The chance in per cent that a stealth knock-out lands (<c>FUN_1408852f0</c>, <b>Verified</b> literals; docs/game/combat.md "Stealth knock-out"). X = the attacker's assassination minus
     /// the target's best of: assassination, half its thievery, half its stealth term x 100, half its melee defence, its toughness (each skill times its injury multiplier); then
-    /// 100 x (X + K) / 2K with K = 30 for X >= 0 and 15 below, unclamped (50 at X = 0, 100 at +30, 0 at -15). 0 when the target has spotted the attacker.
+    /// 100 x (X + K) / 2K with K = 30 for X >= 0 and 15 below, unclamped (50 at X = 0, 100 at +30, 0 at -15). 0 when the target has spotted the attacker, or is fighting, aware of
+    /// it and the attacker is not unseen (<paramref name="noticedInFight"/>); halved when it only heard the attacker.
     /// </summary>
-    public static float StealthKoChance(CharacterCold attacker, CharacterCold target, bool spotted = false)
+    public static float StealthKoChance(CharacterCold attacker, CharacterCold target, bool spotted = false, bool heard = false, bool noticedInFight = false)
     {
-        if (spotted || attacker.Stats is not { } a || target.Stats is not { } t) return 0;
+        if (spotted || noticedInFight || attacker.Stats is not { } a || target.Stats is not { } t) return 0;
         float Skill(CharacterCold c, CharacterStats s, StatsEnumerated stat) => s[stat] * (c.Medical?.StatMultiplier(stat) ?? 1) * Combat.CombatSystem.GearFactor(c, stat);
         float defence = Skill(target, t, StatsEnumerated.Assassination);
         defence = MathF.Max(defence, Skill(target, t, StatsEnumerated.Thieving) * 0.5f);
@@ -63,7 +64,7 @@ public sealed partial class CarrySystem
         defence = MathF.Max(defence, Skill(target, t, StatsEnumerated.Toughness));
         float x = Skill(attacker, a, StatsEnumerated.Assassination) - defence;
         float k = x < 0 ? 15 : 30;
-        return (x + k) / (2 * k) * 100;
+        return (x + k) / (2 * k) * 100 * (heard ? 0.5f : 1);
     }
 
     void BeginKnockOut(World world, StealthKoOrder order)
@@ -108,6 +109,10 @@ public sealed partial class CarrySystem
                 n.Flags = (ushort)(n.Flags & ~(ushort)MoveFlags.AnyPath);
                 n.PathCursor = 0;
                 cold.PathRequest = 0;
+                // The target's sense entry: heard on this last step (the sneaking hearing roll at the step's speed; the original's pass cadence is not traced).
+                float stealth = Orders.Stealth(cold), step = new Vector2(n.Velocity.X, n.Velocity.Z).Length();
+                float hear = step > 0.01f ? Orders.SneakHearChance(Vector3.Distance(n.Position, next[t].Position), Orders.SneakNoise(stealth, WeatherSystem.NoiseFactor(cold)), stealth) : 0;
+                cold.KnockoutHeard = hear > 0 && Rng.Float(Rng.Hash(world.Seed, Rng.Key(table.IdOf(i)), RngPurpose.KnockoutHear, (ulong)world.Tick)) < hear;
                 n.Velocity = Vector3.Zero;
                 cold.LiftTime = 0;
                 Face(ref n, next[t]);
@@ -162,7 +167,11 @@ public sealed partial class CarrySystem
         var target = table.Cold(t)!;
         var attackerId = table.IdOf(i);
         var targetId = table.IdOf(t);
-        float chance = StealthKoChance(cold, target, Aggro?.Spotted(t, attackerId) == true);
+        bool spotted = Aggro?.Spotted(t, attackerId) == true;
+        // Fighting and aware of the attacker (fighting it or having spotted it) while the attacker is not unseen: no chance.
+        bool aware = spotted || world.SystemOf<Combat.CombatSystem>()?.StateOf(targetId) is { } fight && fight.TargetSlot == i && fight.TargetGeneration == attackerId.Generation;
+        bool noticed = target.InCombat && aware && Aggro?.Unseen(table, attackerId) == false;
+        float chance = StealthKoChance(cold, target, spotted, cold.KnockoutHeard, noticed);
         float roll = Rng.Float(Rng.Hash(world.Seed, Rng.Key(attackerId), RngPurpose.StealthKo, (ulong)world.Tick)) * 100;
         bool success = chance > roll;
         // XP: assassination through the generic entry with dt 1, 100 on a hit and 300 on a miss, halved on a sleeping target (Verified literals; the original's 0.07 case and

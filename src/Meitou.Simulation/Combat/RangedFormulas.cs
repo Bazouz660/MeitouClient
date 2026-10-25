@@ -151,8 +151,11 @@ public static class TurretFormulas
         return s <= 0 ? 0.001f : s;
     }
 
-    /// <summary>The turret's own weight of a target (gun slot 6 <c>FUN_1404348e0</c>): 1 in front of it (positive dot product with its facing), 0.1 behind.</summary>
-    public static float Arc(Vector3 facing, Vector3 toTarget) => Vector3.Dot(facing, toTarget) > 0 ? 1 : 0.1f;
+    /// <summary>
+    /// The turret's own weight of a target (gun slot 6 <c>FUN_1404348e0</c>, <b>Observed</b>): 1 in front of it (positive dot product with its facing); behind, 0.1 for one outdoors or on a
+    /// roof and for one inside the turret's own building on its floor (<paramref name="indoors"/> false), 0 for one inside elsewhere.
+    /// </summary>
+    public static float Arc(Vector3 facing, Vector3 toTarget, bool indoors = false) => Vector3.Dot(facing, toTarget) > 0 ? 1 : indoors ? 0 : 0.1f;
 }
 
 /// <summary>Finding and using up a crossbow's ammunition in an inventory: the main inventory first, then the worn backpack (<c>CharacterAnimal</c> slot 47, <c>FUN_1405cb5b0</c>).</summary>

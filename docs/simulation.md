@@ -412,9 +412,8 @@ blocked blow takes a defender fighting the attacker off the attacker's engaged l
 Target choice (`CombatSystem.ChooseTarget`, combat.md "Target selection"): a fighter whose target goes down chooses again at once and ends its fight
 only when no candidate is left; while deciding it chooses again every 1 s (0.3 s on Hold), except for a player's pick, and ends the fight when even
 its current target fails (a holder's that left the post test, a player's beyond 400). Candidates are its current target (any faction), its attackers and, unless Passive, the attackers of squad mates within `JoinRange` (+10 for one whose mate does not fight it back and that has
-under 2 attackers: engine reading of the protectee); not of its faction or squad. The current target must be sensed: an NPC's sense entry is its
-chase's (`AggroSystem` gives up after 24 s unsensed); a player's character keeps it 24 s after it last had it within sight range (a sneaker: in view;
-`CombatSlot.SensedTick`; engine reading). "Intended aggression ≤ 0" is a fight-off candidate not counting the chooser's faction an enemy (engine
+under 2 attackers: engine reading of the protectee); not of its faction or squad. The current target must be sensed: within sight range (a sneaker: in view) now, or within the sense entry's lifetime
+since (30 / 60 / 120 units of 2 s, combat.md "Leaving a fight"; `CombatSlot.SensedTick`); an NPC's chase may give it up sooner (`AggroSystem`, 24 s unsensed). "Intended aggression ≤ 0" is a fight-off candidate not counting the chooser's faction an enemy (engine
 reading); getting up is `CharacterCold.GettingUpUntil`, from waking for `CombatSystem.GetUpSeconds` (the get-up blend and `standing up 3` to `GetUpEnd`),
 during which it neither walks, works nor fights (Task_GetUp; it counts as staggered for the work systems).
 Only a fighter blocks or dodges. A landed blow on a shackled defender knocks it out 25% of the time (`PutDownKoSeconds` with 0.002: 3 s). A hit on a

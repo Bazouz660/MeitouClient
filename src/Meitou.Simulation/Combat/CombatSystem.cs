@@ -76,6 +76,21 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
     public Func<CharacterCold, string, bool, int, float, (int Clip, float Seconds)?>? StumbleChooser { get; set; }
     /// <summary>How long a woken character gets up (the animation system sets it from <c>standing up 3</c>: its 0.75 s blend and the clip to <c>GetUpEnd</c>); 0: no get-up.</summary>
     public float GetUpSeconds { get; set; }
+    /// <summary>The chance that an attack on a character getting up with its fight off knocks it back down, and for how long (<c>AI::underMeleeAttack</c>, 0.1 and 10.0, <b>Verified</b>).</summary>
+    public const float KnockDownChance = 0.1f, KnockDownSeconds = 10;
+
+    /// <summary>
+    /// <c>AI::underMeleeAttack</c> on <paramref name="t"/> getting up with its fight off (targeted by an attacker, or hit; <paramref name="counter"/> tells the attacks of one tick apart): a <see cref="KnockDownChance"/> roll knocks it out for
+    /// <see cref="KnockDownSeconds"/> (its KO timer set). Serial phases.
+    /// </summary>
+    internal void UnderAttackGettingUp(World world, int t, CharacterCold tc, ulong counter)
+    {
+        if (tc.InCombat || tc.GettingUpUntil <= world.Tick || tc.Medical is not { Incapacitated: false } medical) return;
+        float roll = CombatRolls.Float(world.Seed, Rng.Key(world.Characters.IdOf(t)), CombatRoll.KnockDown, ((ulong)world.Tick << 32) ^ counter);
+        if (roll >= KnockDownChance) return;
+        medical.KnockOut(KnockDownSeconds);
+        tc.GettingUpUntil = 0;
+    }
     /// <summary>The outdoor sight a fighter senses a current target within (before the race's multiplier; <see cref="AggroSettings.SightRange"/>'s default).</summary>
     public float SenseRange { get; set; } = AggroSystem.OutdoorSight;
     public IReadOnlyList<CombatTechnique> Techniques => techniques;

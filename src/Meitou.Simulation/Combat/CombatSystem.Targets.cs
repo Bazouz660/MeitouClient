@@ -114,20 +114,42 @@ public sealed partial class CombatSystem
         return (tc.Orders & CharacterOrders.Sneak) == 0 || world.Sight.Sees(i, c, prev[i].Position, prev[i].Yaw, prev[c].Position, outdoor, Orders.Stealth(tc)) > 0;
     }
 
+    /// <summary>The original's sense-age unit in seconds (hours x 3600 / 33 x 0.5, <see cref="AggroSystem.GiveUpSenseSeconds"/> = 12 of them).</summary>
+    public const float SenseUnitSeconds = AggroSystem.GiveUpSenseSeconds / 12;
+    /// <summary>How long a sense entry lasts unsensed, in sense units (<c>SensoryData::decay</c>): 30, 60 for some targets, 120 for an intruder in the home (<see cref="SenseLife"/>).</summary>
+    public const int SenseLifeUnits = 30, SenseLifeLongUnits = 60, SenseLifeHomeUnits = 120;
+    /// <summary>The long-term squad memory tags that keep an entry 60 units: intruder, stole from me, captor, killed my friend (mask 0x232).</summary>
+    const uint LongSenseTags = 0x232;
+
     /// <summary>
-    /// The chooser's sense test on its current target (a sense entry, docs/game/combat.md "Target selection"). An NPC's entry lasts until its chase gives up
-    /// (<see cref="AggroSystem"/>, 24 s unsensed), so it passes here; a player's character keeps one <see cref="AggroSystem.GiveUpSenseSeconds"/> after it last
-    /// <see cref="Senses"/> the target (engine reading: the original's player entries never give a chase up, and when they lapse is not traced).
+    /// The chooser's sense test on its current target (a sense entry, docs/game/combat.md "Target selection"): it passes while the chooser <see cref="Senses"/> the target and
+    /// for <see cref="SenseLife"/> after (an NPC's chase may give it up sooner, <see cref="AggroSystem"/>, 24 s unsensed).
     /// </summary>
     bool CurrentSensed(World world, int i, ref CombatSlot s, CharacterCold cold, int now)
     {
-        if (!cold.IsPlayer) return true;
         if (Senses(world, i, cold, s.TargetSlot))
         {
             s.SensedTick = now;
             return true;
         }
-        return now - s.SensedTick <= (int)MathF.Ceiling(AggroSystem.GiveUpSenseSeconds / world.TickSeconds);
+        return (now - s.SensedTick) * world.TickSeconds <= SenseLife(world, i, cold, s.TargetSlot) * SenseUnitSeconds;
+    }
+
+    /// <summary>
+    /// The lifetime of looker <paramref name="i"/>'s sense entry of <paramref name="t"/> in sense units (<c>SensoryData::decay</c> <c>FUN_140859010</c>, <b>Observed</b>): 120 when the
+    /// looker's faction is real and <paramref name="t"/> is a player character inside the looker's home building; 60 when it is fighting, its squad remembers it as an intruder, thief,
+    /// captor or friend killer, or it is the looker's faction's slave; else 30.
+    /// </summary>
+    int SenseLife(World world, int i, CharacterCold cold, int t)
+    {
+        if (world.Characters.Cold(t) is not { } tc) return SenseLifeUnits;
+        var squad = cold.SquadId >= 0 ? world.Squads.Find(cold.SquadId) : null;
+        bool real = Relations is not { } relations || !relations.Contains(cold.Faction) || !relations.Factions[cold.Faction].NotReal;
+        if (real && world.Player.Faction >= 0 && tc.Faction == world.Player.Faction && squad?.HomeBuilding is { } home && world.Sight.BuildingOf(t) == home.Key) return SenseLifeHomeUnits;
+        if (tc.InCombat || tc.SlaveState == 1 && tc.SlaveOwner == cold.Faction) return SenseLifeLongUnits;
+        if (squad is not null && world.SystemOf<AggroSystem>()?.Memory?.Find(world, squad.Id, world.Characters.IdOf(t)) is { } memory && (memory.Long & LongSenseTags) != 0)
+            return SenseLifeLongUnits;
+        return SenseLifeUnits;
     }
 
     /// <summary>How far apart in height two characters inside one building may stand and still be on the same floor (engine reading of the floor test).</summary>

@@ -257,6 +257,17 @@ public sealed partial class CombatSystem
     /// the caged; a target down scores 0 for an NPC gunner and x 0.01 for the player's. <b>Engine choices</b>: every candidate counts as seen (the original's sense list and its seen flag),
     /// the 1.5 for "fights the gunner" (<c>FUN_1405ca6f0</c>), the candidate radius. A player gunner with Shoot first then takes the neutrals of <see cref="SquadAiRules.ShootsFirstAt"/>.
     /// </summary>
+    /// <summary>
+    /// Target <paramref name="o"/> is inside a building other than the turret's or on another floor of it (<see cref="TurretFormulas.Arc"/>'s 0 case). Engine reading: the turret's
+    /// building and floor are its gunner's (<see cref="SightMap.BuildingOf"/>, within <see cref="SameFloorHeight"/>).
+    /// </summary>
+    static bool Indoors(World world, int g, int o)
+    {
+        if (world.Sight.BuildingOf(o) is not { } building) return false;
+        var prev = world.Characters.Previous;
+        return world.Sight.BuildingOf(g) != building || MathF.Abs(prev[g].Position.Y - prev[o].Position.Y) > SameFloorHeight;
+    }
+
     int ChooseTurretTarget(World world, TurretState t, int g, CharacterCold gc)
     {
         var table = world.Characters;
@@ -288,7 +299,7 @@ public sealed partial class CombatSystem
             float distance = Vector3.Distance(at, there);
             float s = TurretFormulas.Closeness(distance, range, rangeFactor, down);
             if (distance >= rangeFactor * range) return s;
-            s *= TurretFormulas.Arc(facing, there - t.Position);
+            s *= TurretFormulas.Arc(facing, there - t.Position, Indoors(world, g, o));
             if (s <= 0) return 0;
             if (read[o].TargetSlot == g && read[o].TargetGeneration == generation) s *= 1.5f;
             if (o == current) s += 0.1f;

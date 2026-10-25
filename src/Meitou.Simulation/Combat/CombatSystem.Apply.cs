@@ -141,7 +141,11 @@ public sealed partial class CombatSystem
         // unless it mans a turret (shooting at a live target).
         if (D.TargetSlot < 0 && !dc.InCombat)
         {
-            if (dc.GettingUpUntil > now) return;
+            if (dc.GettingUpUntil > now)
+            {
+                UnderAttackGettingUp(world, d, dc, counter);
+                return;
+            }
             if (dc.Gunning is null) Restart(world.Characters, d, dc);
         }
         bool stumbling = D.StumbleClip >= 0 && now < D.StunUntil;

@@ -372,6 +372,18 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
     /// <summary>Whether the NPC in slot <paramref name="looker"/> has spotted the sneaker <paramref name="target"/> (its spot meter is full; serial phases).</summary>
     public bool Spotted(int looker, CharacterId target) => looker < slots.Length && SpotOf(slots[looker].Spots, target.Slot, target.Generation) > 1;
 
+    /// <summary>
+    /// Whether the sneaker <paramref name="target"/> is unseen (Character +0xe8 = 1, docs/game/perception.md "Spotting a sneaker"): not fighting, and no looker's spot meter on it is
+    /// filling or full (red or yellow); serial phases.
+    /// </summary>
+    public bool Unseen(CharacterTable table, CharacterId target)
+    {
+        if (table.Cold(target.Slot) is { InCombat: true }) return false;
+        for (int k = 0; k < size && k < slots.Length; k++)
+            if (SpotOf(slots[k].Spots, target.Slot, target.Generation) > 0) return false;
+        return true;
+    }
+
     /// <summary>The looker's spot meter on <paramref name="slot"/> before this scan (0: none).</summary>
     static float SpotOf(List<Spot>? spots, int slot, int generation)
     {

@@ -43,7 +43,7 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
         var d = next[t].Position - n.Position;
         var cold = table.Cold(i)!;
         var tc = table.Cold(t);
-        NotePathFailure(world, cold, new CharacterId(t, next[t].Generation));
+        NotePathFailure(world, i, cold, new CharacterId(t, next[t].Generation));
         float gap = MathF.Sqrt(d.X * d.X + d.Z * d.Z) - CombatTuning.Footprint(cold) - CombatTuning.Footprint(tc);
         // It runs at the target out of the combat stance from RunGap, back to its footwork under FootworkGap, and after a target that keeps moving away at any gap.
         var tv = next[t].Velocity;
@@ -156,16 +156,44 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
     /// <summary>How long a target the fighter found no path to is left out of its target choice (<b>Verified</b> literal 20, <c>AITaskSytem::notifyPathImpossible</c>; read as seconds).</summary>
     public const float PathFailureSeconds = 20;
 
-    /// <summary>Drops the lapsed path failures and, after a path request that found no way, adds <paramref name="target"/> (<see cref="CharacterCold.PathFailures"/>).</summary>
-    static void NotePathFailure(World world, CharacterCold cold, CharacterId target)
+    /// <summary>
+    /// Lapses the path failures and, after a path request that found no way, adds <paramref name="target"/> (<see cref="CharacterCold.PathFailures"/>). A lapsed one is armed for another
+    /// <see cref="PathFailureSeconds"/> while there is still no path to its target, else dropped (<c>AITaskSytem::update4Frame</c>, <b>Observed</b>; at most one dropped per call).
+    /// </summary>
+    static void NotePathFailure(World world, int i, CharacterCold cold, CharacterId target)
     {
         var failures = cold.PathFailures;
+        long armed = world.Tick + (long)MathF.Ceiling(PathFailureSeconds / world.TickSeconds);
+        bool dropped = false;
         if (failures is not null)
             for (int k = failures.Count - 1; k >= 0; k--)
-                if (failures[k].Until <= world.Tick || cold.PathFailed && failures[k].Target == target) failures.RemoveAt(k);
+            {
+                if (cold.PathFailed && failures[k].Target == target) { failures.RemoveAt(k); continue; }
+                if (failures[k].Until > world.Tick || dropped) continue;
+                if (!PathExists(world, i, cold, failures[k].Target)) failures[k] = (failures[k].Target, armed);
+                else { failures.RemoveAt(k); dropped = true; }
+            }
         if (!cold.PathFailed) return;
         cold.PathFailed = false;
-        (cold.PathFailures ??= []).Add((target, world.Tick + (long)MathF.Ceiling(PathFailureSeconds / world.TickSeconds)));
+        (cold.PathFailures ??= []).Add((target, armed));
+    }
+
+    /// <summary>
+    /// Whether fighter <paramref name="i"/> has a path to <paramref name="target"/> (<c>Character::pathExists</c>): a gone target counts as one (the entry is dropped). Engine reading:
+    /// asked of the walkability on the spot, with the fighter's footprint and water costs, as its own path requests are.
+    /// </summary>
+    static bool PathExists(World world, int i, CharacterCold cold, CharacterId target)
+    {
+        var table = world.Characters;
+        int t = target.Slot;
+        var prev = table.Previous;
+        if ((uint)t >= (uint)prev.Length || !prev[t].Alive || prev[t].Generation != target.Generation) return true;
+        var next = table.Next;
+        var water = WaterCost.Of(cold.WaterFactor, next[i].MaxSpeed, cold.Race, cold.SwimSpeed);
+        var path = world.Walkability is IAgentWalkability agent
+            ? agent.FindPath(next[i].Position, prev[t].Position, cold.FootprintRadius, water, cold.RoadPreference)
+            : world.Walkability.FindPath(next[i].Position, prev[t].Position);
+        return path.Points.Count > 0;
     }
 
     /// <summary>Whether <paramref name="cold"/> found no path to <paramref name="target"/> within the last <see cref="PathFailureSeconds"/>.</summary>
@@ -232,7 +260,11 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem
             if (alerted[a] || !combat.Alerts(world, a, t)) continue;
             alerted[a] = justAlerted[a] = fresh = true;
             // The alert ends the target's sneaking (AI::underMeleeAttack).
-            if (table.Cold(t) is { } tc) tc.Orders &= ~CharacterOrders.Sneak;
+            if (table.Cold(t) is { } tc)
+            {
+                tc.Orders &= ~CharacterOrders.Sneak;
+                combat.UnderAttackGettingUp(world, t, tc, (ulong)(uint)a);
+            }
         }
         bool periodic = world.Tick % CheckEveryTicks == 0;
         if (!periodic && !fresh) return;

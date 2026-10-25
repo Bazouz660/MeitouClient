@@ -514,7 +514,7 @@ public sealed partial class CombatSystem
             var table = q.World.Characters;
             ref readonly var p = ref table.Previous[c];
             if (!p.Alive || MathF.Abs(p.Position.Y - q.At.Y) >= FlockHeight) return;
-            if (table.Cold(c) is not { } oc || oc.Medical is { Incapacitated: true } || oc.IsImprisoned || !oc.CarriedBy.IsNone) return;
+            if (table.Cold(c) is not { } oc || CombatSteering.OutOfFlock(p, oc)) return;
             ref readonly var o = ref q.Self.read[c];
             if (o.TargetSlot == q.Me && o.TargetGeneration == table.Previous[q.Me].Generation) return;
             bool enemy = q.Self.Relations is { } relations ? AggroSystem.IsEnemy(relations, q.Faction, oc.Faction) : oc.Faction != q.Faction;

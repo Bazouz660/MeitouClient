@@ -158,7 +158,8 @@ a door takes it off its own progress as a bash does ([locks](locks.md#cutting-an
 - **Target selection** (`CombatClassAI::chooseAttackTarget` `FUN_140666ee0`, from the deciding state; **Observed**). The current target is kept
   while the pick timer (+0x2f0, s) is under 1 (0.3 on Hold). Then a focused target (CombatClassAI +0x2c8, set by orders 5 and 61,
   [lifecycle](#fight-lifecycle-and-orders)) is returned without scoring, unless its path is in the task system's impossible list
-  (`AITaskSytem::isPathImpossible`) or refocus mode (+0x2e8) is set. Otherwise three lists are scored: the attackers (engaged list +0x1f8) of
+  (`AITaskSytem::isPathImpossible`) or refocus mode (+0x2e8) is set. Meitou's sense test on the current target (`CombatSystem.CurrentSensed`): sensed now or within its entry's
+  lifetime (`SenseLife`, [Leaving a fight](#leaving-a-fight): 30 / 60 / 120 units of 2 s), for NPCs and the player's characters alike. Otherwise three lists are scored: the attackers (engaged list +0x1f8) of
   the current AI task's target when the chooser is aware of it, the chooser's own attackers, and its threats (SensoryData +0x50). A candidate
   must not be crippled (vfunc 0x360) and must be sensed by the chooser or by the task's target. The best score over the lists wins; none →
   the sensed-enemy finder `FUN_14059fa70` when the task system's aggro mode (OrdersReceiver +0x30, KenshiLib `AggroType`, 0 aggressive by
@@ -185,7 +186,7 @@ a door takes it off its own progress as a bash does ([locks](locks.md#cutting-an
     otherwise the candidate is dropped. A candidate whose path has failed (`AITaskSytem::isPathImpossible` `FUN_1405b0290`: the chooser's
     `pathFailures` map, AITaskSytem +0x218, where `notifyPathImpossible` `FUN_140796ed0` stores 20 when a path to it fails) skips these last
     terms and is never picked. (**Verified** order and factors in the decompile of `FUN_14059e300`.) Meitou: `PursuitSystem.PathImpossible`, a
-    failed pursuit path leaves its target out of the choice (a player's pick too) for 20 s. **Observed**: the 20 counts down in the AI's 4-frame update and, at 0, is re-armed to 20 while no path exists, else dropped (game or real seconds: **Unknown**).
+    failed pursuit path leaves its target out of the choice (a player's pick too) for 20 s. **Observed**: the 20 counts down in the AI's 4-frame update and, at 0, is re-armed to 20 while no path exists, else dropped (game or real seconds: **Unknown**). Meitou reads seconds and asks the walkability for a path on the spot when one lapses (`PursuitSystem.PathExists`, while the fighter pursues).
   - Range term (`AI::scoreTargetRange`) = (1 − d/R) × w by the chooser's manoeuvre mode ([area](perception.md#the-attack-on-sight-tests)):
     HOLD_GROUND R = 2 (meiDistance + tolerance) = 46, STAY_CLOSE R = meiDistance + 200 + tolerance = 223, ROAM_FAR (the default) R = 200;
     w = immediacy in ROAM_FAR, else holding position (both 2).
@@ -236,7 +237,8 @@ Meitou (`CombatSystem.HasSlot` / `MayJoin`, `Fighting.Steer`):
 - **Body room** (`CombatSystem.NearestFriend`, `BodyRoom`): the ask fails while a non-enemy's centre is nearer than footprint + 2.5, ×1.2 in
   state 5 (`CombatSlot.CircleState`: engaged, its last ask failed with no blow coming at it). An AI rule, not collision: Meitou bodies are solid
   only to `BodyShare` × footprint (2.4 for a human), and the separation push (radius 8) spreads crowded allies until they have room. Engine
-  readings: an enemy is one of a hostile faction, the target, or one fighting the asker; carried bodies do not count.
+  readings: an enemy is one of a hostile faction, the target, or one fighting the asker; carried bodies do not count. Out of the list (`CombatSteering.OutOfFlock`): the down,
+  caged, in a bed, carried, and those resting on a seat (Meitou's chair or throne sitting).
 
 ## Fight lifecycle and orders
 
@@ -257,7 +259,8 @@ Meitou (`CombatSystem.HasSlot` / `MayJoin`, `Fighting.Steer`):
   is ignored unless both are in the same building and on the same floor and the target has a clear line to the attacker. So targeting a
   player's character through a wall, or an unaware NPC from another floor, alerts nobody until a blow lands. Meitou: `CombatSystem.Alerts`, answered by
   `RetaliationSystem` the same tick (it ends sneaking); same place by `SightMap.PlaceOf`, same floor as within 20 units of height inside, a terrain and
-  building line between the eyes; aware = fighting the attacker or hit by it (engine readings).
+  building line between the eyes; aware = fighting the attacker or hit by it (engine readings). The 10% knock-down: `CombatSystem.UnderAttackGettingUp`, from the alert and
+  from a landed blow outside a fight.
 - **Threats.** The perception pass (`SensoryData::addToThreatsAndFlockingList`) looks at each sensed live character of another faction: its
   state broadcast's intended aggression adds to +0x90; when its intended target (+0x68) passes `AITaskSytem::intendsToAttackTarget` (prone
   state < 3 and its fight on; on Hold with the fight off, only within 40), a target that is the looker puts it on the threats list
@@ -495,7 +498,7 @@ values; trajectory, aim timing and obstruction uncertainties remain labelled.
 
 - **Save** (**Observed**): a turret saves its building and machine keys and the `mounted` handle only; the aim error, rotation and reload state are not saved ([save](../formats/save.md#faction-trust-war-flags-bed-rent-and-turrets)).
 
-Meitou ([simulation](../simulation.md#ranged)): `CombatSystem.Turrets.cs`, `TurretGun`, `TurretFormulas`.
+Meitou ([simulation](../simulation.md#ranged)): `CombatSystem.Turrets.cs`, `TurretGun`, `TurretFormulas`. The indoor weight takes the gunner's building and floor for the turret's (engine reading).
 
 ## Stealth knock-out
 
@@ -517,7 +520,8 @@ Order 228 "Stealth KO" (verb list `FUN_14079b2d0`), `Task_StealthKO` (vtable slo
   sleeping target (+0x2f8 == 1), 0.07 in prison (+0x2f8 == 2), else 1; " (No XP)": a miss on a target that is fighting and aware of the attacker gives no XP.
 
 Meitou: the point is 8 behind the target's facing; "senses" = the target's spot meter on the attacker is full or it
-is fighting; the +0x39 halving, the 0.07 case and No XP are not modelled; a swing is reported as an Assault (the
+is fighting; heard = the target's sneaking hearing roll on the attacker's last step before the swing (`CharacterCold.KnockoutHeard`, engine reading of the pass cadence);
+the fight zero: the target fighting, fighting the attacker or having spotted it, and some looker's meter on the attacker filling (`AggroSystem.Unseen`); the 0.07 case and No XP are not modelled; a swing is reported as an Assault (the
 original's crime call is not traced). The verb shows the chance; a quick right click on an NPC while sneaking gives it.
 Order 229 "Stealth Kill" shares the task but nothing issues it (no row, no use of 229; **Observed**).
 
