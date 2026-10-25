@@ -130,6 +130,9 @@ public sealed record InteriorVolume(string PlacementId, Vector2[] Footprint, flo
     /// </summary>
     public bool Covered(Vector3 p) => floors?.Value.LowestAbove(p.X, p.Z, p.Y + CoverClearance) is not null;
 
+    /// <summary>The height of the ceiling over <paramref name="p"/> (from <see cref="CoverClearance"/> up), or null when nothing is over it (<see cref="FloorSurfaces.CeilingAbove"/>).</summary>
+    public float? CeilingAbove(Vector3 p) => floors?.Value.CeilingAbove(p.X, p.Z, p.Y + CoverClearance);
+
     /// <summary>
     /// The floor (0..3) a character standing at <paramref name="feet"/> in this building is on, from the building's floor collision under it (made on first use;
     /// 0 when nothing is hit). See <see cref="FloorSurfaces.FloorAt"/>.
@@ -245,6 +248,8 @@ public sealed partial class FloorSurfaces
     readonly List<Surface> surfaces = [];
     /// <summary>The <c>is unwalkable roof</c> parts: no floor, only cover (<see cref="LowestAbove"/>).</summary>
     readonly List<Surface> roofs = [];
+    /// <summary>The solids' flat undersides left out of the floors: a slab's bottom, what a ceiling ghost hangs from (<see cref="CeilingAbove"/>).</summary>
+    readonly List<Surface> undersides = [];
 
     /// <summary>How far above the feet the downward ray starts (game: 10 units above the character).</summary>
     public const float RayStart = 10;
@@ -271,23 +276,31 @@ public sealed partial class FloorSurfaces
             // A solid's flat underside (outward and facing down: a slab's or steps' bottom) is no floor; a wall hit dropped onto it put the goal under the building.
             bool roof = part.GetBool("is unwalkable roof");
             var kept = new List<Vector3>(mesh.Indices.Length);
+            var under = new List<Vector3>();
             for (int t = 0; t + 2 < mesh.Indices.Length; t += 3)
             {
                 var a = Vector3.Transform(mesh.Vertices[mesh.Indices[t]], node);
                 var b = Vector3.Transform(mesh.Vertices[mesh.Indices[t + 1]], node);
                 var c = Vector3.Transform(mesh.Vertices[mesh.Indices[t + 2]], node);
                 var normal = Vector3.Cross(b - a, c - a);
-                if (!roof && mesh.Outward[t / 3] && normal.Y < 0 && -normal.Y >= normal.Length() * MathF.Cos(40 * MathF.PI / 180)) continue;
-                kept.Add(a); kept.Add(b); kept.Add(c);
+                bool underside = !roof && mesh.Outward[t / 3] && normal.Y < 0 && -normal.Y >= normal.Length() * MathF.Cos(40 * MathF.PI / 180);
+                var list = underside ? under : kept;
+                list.Add(a); list.Add(b); list.Add(c);
             }
-            var corners = kept.ToArray();
-            if (corners.Length == 0) continue;
-            var min = new Vector2(corners.Min(c => c.X), corners.Min(c => c.Z));
-            var max = new Vector2(corners.Max(c => c.X), corners.Max(c => c.Z));
-            (roof ? result.roofs : result.surfaces).Add(new Surface(Math.Clamp(part.GetInt("building floor"), 0, 3), part.GetBool("is stairs"), corners,
-                corners.Min(c => c.Y), corners.Max(c => c.Y), min, max));
+            int floor = Math.Clamp(part.GetInt("building floor"), 0, 3);
+            if (Of(floor, part.GetBool("is stairs"), kept) is { } surface) (roof ? result.roofs : result.surfaces).Add(surface);
+            if (Of(floor, false, under) is { } bottom) result.undersides.Add(bottom);
         }
         return result;
+    }
+
+    static Surface? Of(int floor, bool stairs, List<Vector3> kept)
+    {
+        if (kept.Count == 0) return null;
+        var corners = kept.ToArray();
+        var min = new Vector2(corners.Min(c => c.X), corners.Min(c => c.Z));
+        var max = new Vector2(corners.Max(c => c.X), corners.Max(c => c.Z));
+        return new Surface(floor, stairs, corners, corners.Min(c => c.Y), corners.Max(c => c.Y), min, max);
     }
 
     /// <summary>

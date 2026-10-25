@@ -25,6 +25,8 @@ sealed partial class PlayerInterface
     public const float RotateDegreesPerSecond = 80, MoveUnitsPerSecond = 60, SlowMove = 6, TiltPerSecond = 1, DefaultTilt = 0.2f;
     /// <summary>The ghost's height offset is reset above this (<b>Verified</b>, the original's control code).</summary>
     const float MaxLift = 1000;
+    /// <summary>How far below the ceiling a <c>ceiling placement</c> ghost's origin hangs (docs/game/buildings-production.md "Placement": 1 below the upward ray's hit).</summary>
+    const float CeilingHang = 1;
 
     BuildServices? buildHost;
     bool buildMode;
@@ -189,7 +191,9 @@ sealed partial class PlayerInterface
             var axis = Vector3.Cross(Vector3.UnitY, normal);
             var tilt = axis.LengthSquared() < 1e-10f ? Quaternion.Identity : Quaternion.CreateFromAxisAngle(Vector3.Normalize(axis), angle);
             var rotation = tilt * Quaternion.CreateFromAxisAngle(Vector3.UnitY, ghostYaw);
-            var position = new Vector3(hit.X, hit.Y + ghostLift, hit.Z);
+            // A ceiling light hangs CeilingHang below the ceiling over the floor point (its mesh hangs below its origin, so on the floor it was buried under it).
+            float y = building.CeilingPlacement && on?.Ceiling is { } ceiling ? ceiling - CeilingHang : hit.Y;
+            var position = new Vector3(hit.X, y + ghostLift, hit.Z);
             float yaw = ghostYaw;
             Func<string, Vector3, Quaternion, bool>? ignore = null;
             // A wall ghost before its first click snaps to the nearest link point: it starts there, or ends there on a free start (Verified, FUN_140427950).

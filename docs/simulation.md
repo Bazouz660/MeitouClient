@@ -941,7 +941,9 @@ faction; else the original's "don't own" / "incomplete" texts); the parent is le
 level), and interior-only furniture is refused only off a floor. Engine stand-in for the original's node boxes against the
 building's walls: the footprint must lie within the building's indoor hull. **Not decided** (never fail, so the ghost may
 show valid where the original refuses): snap nodes, usage nodes, blocked use nodes, the floor-number
-check and ceilings, vertical margins, the 5 deg object-surface rule. A site inside another (its parent) is picked through
+check above floor 0, vertical margins, the 5 deg object-surface rule. A `ceiling placement` ghost hangs its origin 1 below the
+lowest collision over the floor point (a slab's or roof's underside, from 5 up; its meshes hang below their origin, Ceiling Lamp
+y -19..+4) and fails with the floor-number text when there is none. A site inside another (its parent) is picked through
 the parent's roof and walls while the interior view shows the parent; a site in a level building takes the usual town rules. Messages: `PlacementRules.Message`, else the original's text table in `PlacementCheck`.
 
 Build mode (B, `Kenshi_BuildWindow`, Faithful UI only): categories and groups list `WorldSnapshot.UnlockedBuildings` in
