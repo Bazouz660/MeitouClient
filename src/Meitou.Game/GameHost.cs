@@ -273,7 +273,7 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
             var m = shelf ??= new Meitou.Simulation.Trading.Market(d, 0);
             var item = new Meitou.Simulation.Items.ItemInstance
             {
-                Record = tip.Record, Type = r.Type, Quality = tip.Quality, Level = tip.Level, CompanyId = tip.Company, Charges = tip.Charges, MaxCharges = tip.MaxCharges,
+                Record = tip.Record, Type = d.Db.Find(tip.Company) is { Type: Meitou.Data.Fcs.FcsRecordType.RESEARCH } ? Meitou.Data.Fcs.FcsRecordType.BLUEPRINT : r.Type, Quality = tip.Quality, Level = tip.Level, CompanyId = tip.Company, Charges = tip.Charges, MaxCharges = tip.MaxCharges,
                 Quantity = tip.Quantity, StolenFrom = tip.StolenFrom,
             };
             var none = Meitou.Simulation.Trading.Trader.None;

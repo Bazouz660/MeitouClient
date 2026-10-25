@@ -52,13 +52,33 @@ public sealed class ItemFactory(GameDatabase db, GameConstants constants, Func<M
     /// <summary>A new instance of an item record (null for an unknown record). Food gets its charges scaled by <c>food quality mult</c>; weapons weigh <c>weapon inventory weight mult</c> of their weight.</summary>
     public ItemInstance? Create(string recordId, int quantity = 1, float quality = 0)
     {
-        if (Info(recordId) is not { } info) return null;
+        if (Db.Find(recordId) is { Type: FcsRecordType.RESEARCH } research) return Blueprint(research, quantity, quality);
+        return Info(recordId) is { } info ? Make(info, info.Type, quantity, quality) : null;
+    }
+
+    /// <summary>
+    /// A blueprint of a RESEARCH record (the original's item factory, <c>FUN_140580750</c>, <b>Verified</b>; docs/game/buildings-production.md "Blueprints"): it looks like the research's
+    /// <c>blueprint item</c> (an ITEM), else <c>BLUEPRINT_ITEM</c>, and carries the research as its company and material, as the saves hold it. Null without a look record.
+    /// </summary>
+    public ItemInstance? Blueprint(GameRecord research, int quantity = 1, float quality = 0)
+    {
+        string look = research.GetReferences("blueprint item").Select(r => r.TargetStringId).FirstOrDefault(id => Db.Find(id) is { Type: FcsRecordType.ITEM }) ?? "BLUEPRINT_ITEM";
+        if (Info(look) is not { } info || Make(info, FcsRecordType.BLUEPRINT, quantity, quality) is not { } item) return null;
+        item.CompanyId = item.MaterialId = research.StringId;
+        return item;
+    }
+
+    /// <summary>The research a blueprint teaches (null for any other item).</summary>
+    public GameRecord? ResearchOf(ItemInstance item) => item.Type == FcsRecordType.BLUEPRINT && Db.Find(item.CompanyId) is { Type: FcsRecordType.RESEARCH } r ? r : null;
+
+    ItemInstance Make(ItemInfo info, FcsRecordType type, int quantity, float quality)
+    {
         bool weapon = info.Type is FcsRecordType.WEAPON or FcsRecordType.CROSSBOW;
         return new ItemInstance
         {
             Record = info.Id,
             Name = info.Name,
-            Type = info.Type,
+            Type = type,
             EquipmentSection = info.Type is FcsRecordType.ARMOUR or FcsRecordType.ITEM && Db.Find(info.Id) is { } worn ? SectionOf(worn) : "",
             WornOnlyBy = info.WornOnlyBy,
             WornNeverBy = info.WornNeverBy,

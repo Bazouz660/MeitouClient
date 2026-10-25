@@ -22,14 +22,21 @@ public sealed record VendorList
     public float MoneyItemProb { get; init; }
     public int MoneyItemMin { get; init; }
     public int MoneyItemMax { get; init; }
-    /// <summary>The items, weapons, armour, crossbows, limbs, containers, maps and blueprints of every list, in the record's order.</summary>
+    /// <summary>
+    /// The items, weapons, armour, crossbows, limbs, containers and maps of every list, in the record's order, and the blueprints: a <c>blueprints</c> entry is a RESEARCH (made into a
+    /// blueprint item), an <c>armour blueprints</c> / <c>crossbow blueprints</c> / <c>backpack blueprints</c> entry the gear's <c>&lt;id&gt;.TECH.1</c> research (<b>Verified</b>,
+    /// <c>FUN_140956ba0</c> -> <c>Research::getBlueprintsFor</c>; never the gear itself).
+    /// </summary>
     public IReadOnlyList<VendorEntry> Entries { get; init; } = [];
+
+    /// <summary>The lists whose entries name gear and give its blueprint.</summary>
+    static readonly string[] GearBlueprintLists = ["armour blueprints", "crossbow blueprints", "backpack blueprints"];
     /// <summary>The WEAPON_MANUFACTURERs a weapon from the list may be made by (v0 the weight, 0 counting as 100).</summary>
     public IReadOnlyList<RecordLink> Manufacturers { get; init; } = [];
 
     /// <summary>The record types a vendor list hands out as items.</summary>
     public static bool IsItemType(FcsRecordType t) => t is FcsRecordType.ITEM or FcsRecordType.WEAPON or FcsRecordType.ARMOUR or FcsRecordType.CROSSBOW
-        or FcsRecordType.LIMB_REPLACEMENT or FcsRecordType.CONTAINER or FcsRecordType.MAP_ITEM or FcsRecordType.BLUEPRINT;
+        or FcsRecordType.LIMB_REPLACEMENT or FcsRecordType.CONTAINER or FcsRecordType.MAP_ITEM;
 
     public static VendorList From(GameDatabase db, GameRecord r)
     {
@@ -38,8 +45,13 @@ public sealed record VendorList
         foreach (string list in r.ReferenceLists)
             foreach (var e in r.GetReferences(list))
             {
-                if (db.Find(e.TargetStringId) is not { } target) continue;
-                if (IsItemType(target.Type)) entries.Add(new VendorEntry(target.StringId, target.Type, e.Values.Value0 == 0 ? 100 : e.Values.Value0));
+                bool gear = GearBlueprintLists.Contains(list);
+                if (db.Find(gear ? e.TargetStringId + ".TECH.1" : e.TargetStringId) is not { } target) continue;
+                if (gear || list == "blueprints")
+                {
+                    if (target.Type == FcsRecordType.RESEARCH) entries.Add(new VendorEntry(target.StringId, target.Type, e.Values.Value0 == 0 ? 100 : e.Values.Value0));
+                }
+                else if (IsItemType(target.Type)) entries.Add(new VendorEntry(target.StringId, target.Type, e.Values.Value0 == 0 ? 100 : e.Values.Value0));
                 else if (target.Type == FcsRecordType.WEAPON_MANUFACTURER) makers.Add(RecordLink.From(e));
             }
         int count = RecordReading.Int(r, "items count", 40);

@@ -50,6 +50,7 @@ public sealed class GameDatabase
         db.LoadTranslation(loadOrder.Language.ModTranslationFile);
         db.DropTranslationOnlyRecords();
         db.AddWallMasters();
+        db.AddGearBlueprints();
         return db;
     }
 
@@ -109,6 +110,45 @@ public sealed class GameDatabase
                 if (records.TryGetValue(sub.TargetStringId, out var section))
                     section.ReferenceList("wall master")[master.StringId] = new ReferenceValues(0, 0, 0);
         }
+    }
+
+    /// <summary>
+    /// The research of gear blueprints (docs/game/buildings-production.md "Blueprints", <b>Verified</b> <c>Research::_setup</c> -> <c>_createBlueprintsFor</c>): each ARMOUR, CONTAINER and
+    /// CROSSBOW gets a RESEARCH <c>&lt;id&gt;.TECH.1</c>, a copy of <c>RESEARCH_TEMPLATE</c> named as the item, <c>blueprint only</c>, <c>money</c> = trunc(ItemValue(item, 40, raw) x
+    /// <c>blueprint price mult</c>), enabling the item's craft and showing as <c>BLUEPRINT_ITEM_ARMOUR</c> (armour) or <c>BLUEPRINT_ITEM_GEAR</c>. An id that already exists is kept
+    /// (the original's handling of that is <b>Unknown</b>). Run once after the files and translations.
+    /// </summary>
+    public void AddGearBlueprints()
+    {
+        var template = Find("RESEARCH_TEMPLATE") is { Type: FcsRecordType.RESEARCH } t ? t : null;
+        var prices = Gameplay.Economy.PriceConstants.FromDatabase(this);
+        foreach (var item in records.Values.Where(r => r.Type is FcsRecordType.ARMOUR or FcsRecordType.CONTAINER or FcsRecordType.CROSSBOW).ToList())
+        {
+            string id = item.StringId + ".TECH.1";
+            if (records.ContainsKey(id)) continue;
+            var research = new GameRecord(id, FcsRecordType.RESEARCH, item.BaseName, item.DefinedBy);
+            if (item.Name != item.BaseName) research.Translate(item.Name);
+            if (template is not null) CopyFields(template, research);
+            research.BoolTable["blueprint only"] = true;
+            research.IntTable["money"] = (int)(Gameplay.Economy.ItemValue.Of(this, item, 40, false, prices) * prices.BlueprintPriceMult);
+            string enable = item.Type switch { FcsRecordType.ARMOUR => "enable armour", FcsRecordType.CONTAINER => "enable backpack", _ => "enable crossbow" };
+            research.ReferenceList(enable)[item.StringId] = new ReferenceValues(0, 0, 0);
+            research.ReferenceList("blueprint item")[item.Type == FcsRecordType.ARMOUR ? "BLUEPRINT_ITEM_ARMOUR" : "BLUEPRINT_ITEM_GEAR"] = new ReferenceValues(0, 0, 0);
+            records.Add(id, research);
+        }
+    }
+
+    static void CopyFields(GameRecord from, GameRecord to)
+    {
+        foreach (var (k, v) in from.BoolTable) to.BoolTable[k] = v;
+        foreach (var (k, v) in from.FloatTable) to.FloatTable[k] = v;
+        foreach (var (k, v) in from.IntTable) to.IntTable[k] = v;
+        foreach (var (k, v) in from.Vector3Table) to.Vector3Table[k] = v;
+        foreach (var (k, v) in from.Vector4Table) to.Vector4Table[k] = v;
+        foreach (var (k, v) in from.StringTable) to.StringTable[k] = v;
+        foreach (var (k, v) in from.FilenameTable) to.FilenameTable[k] = v;
+        foreach (var list in from.ReferenceLists)
+            foreach (var r in from.GetReferences(list)) to.ReferenceList(list)[r.TargetStringId] = r.Values;
     }
 
     /// <summary>Applies one file on top of everything loaded so far.</summary>

@@ -819,6 +819,29 @@ public sealed partial class ProductionSystem : ITickSystem
         return true;
     }
 
+    /// <summary>
+    /// A blueprint read (<b>Verified</b>, <c>BlueprintItem::learnResearch</c> <c>FUN_1402b65d0</c>): its research's requirements unmet (<c>checkRequirements</c> without the level or cost
+    /// test) or the research already finished once posts a message and keeps the blueprint (false); otherwise the research completes as at a bench and the caller uses the blueprint up.
+    /// </summary>
+    public bool Learn(World world, string id)
+    {
+        if (Research(id) is not { } data) return false;
+        if (!Met(world, data))
+        {
+            world.Post(Loc.Tr("Failed to learn from blueprint: Technology requirements not met"));
+            return false;
+        }
+        if (world.Research.IsDone(id))
+        {
+            world.Post(Loc.Tr("Research already known"));
+            return false;
+        }
+        world.Research.Complete(db, id);
+        publishedResearch = null;
+        world.Post(Loc.Tr("Research complete: {1}", data.Name));
+        return true;
+    }
+
     /// <summary>The research the player may queue now (<b>Observed</b>, <c>FUN_1408333b0</c>): not blueprint-only, not exhausted (every repetition done) or queued, <c>level</c> within the tech level, requirements met.</summary>
     public bool Available(World world, ResearchData r) =>
         !r.BlueprintOnly && !world.Research.Exhausted(db, r.Id) && !world.Research.IsQueued(r.Id) && r.Level <= world.Research.TechLevel && Met(world, r);

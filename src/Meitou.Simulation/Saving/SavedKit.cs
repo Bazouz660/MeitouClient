@@ -47,7 +47,9 @@ public static class SavedKit
     /// <summary>A saved item as an instance (without a container's contents); null when the game data lacks its record.</summary>
     internal static ItemInstance? ItemOf(SaveItem s, ItemFactory factory)
     {
-        if (factory.Create(s.BaseId, s.Quantity, s.Quality) is not { } item) return null;
+        // A blueprint is saved as its look record with the RESEARCH as company and material (Verified, the owner's saves); the factory makes it from the research.
+        var research = factory.Db.Find(s.CompanyId) is { Type: FcsRecordType.RESEARCH } c ? c : factory.Db.Find(s.MaterialId) is { Type: FcsRecordType.RESEARCH } m ? m : null;
+        if ((research is not null ? factory.Blueprint(research, s.Quantity, s.Quality) : factory.Create(s.BaseId, s.Quantity, s.Quality)) is not { } item) return null;
         item.Section = s.Section;
         item.X = s.X;
         item.Y = s.Y;

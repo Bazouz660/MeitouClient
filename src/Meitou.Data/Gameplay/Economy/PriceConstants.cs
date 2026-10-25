@@ -40,7 +40,7 @@ public sealed record PriceConstants
     public float LootPriceMultPlayerArmour { get; init; }
     /// <summary><c>loot price mult player weapons</c> (0.25): the same for weapons.</summary>
     public float LootPriceMultPlayerWeapons { get; init; }
-    /// <summary><c>blueprint price mult</c> (1.5): research cost of a generated blueprint (section 10).</summary>
+    /// <summary><c>blueprint price mult</c> (1.5): the <c>money</c> factor of a generated gear blueprint research (<see cref="GameDatabase.AddGearBlueprints"/>).</summary>
     public float BlueprintPriceMult { get; init; }
     /// <summary>The 0.3 the loader writes into the slot after the blueprint row itself (no FCS field): an armour price factor of <c>Armour::vfunc_81</c> whose condition is <b>Unknown</b>.</summary>
     public const float HardCodedArmourFactor = 0.3f;

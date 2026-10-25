@@ -437,6 +437,7 @@ public sealed partial class PlayerSystem
             ReturnHeldItem(world);
             return;
         }
+        if (Caught(world, held, Crime.CrimeCode.Theft)) { ReturnHeldItem(world); return; }
         var item = held.Item;
         bool death = item.Death;
         int mark = item.StolenFrom, before = item.Quantity;
@@ -568,7 +569,7 @@ public sealed partial class PlayerSystem
     /// <summary>
     /// A right click on an item of a player character's own window (<c>FUN_140714a20</c>, <b>Observed</b>), one unit (all with <see cref="QuickMoveItem.All"/>, repeated until a move fails):
     /// money becomes cats; a worn item goes to the main grid (else the open bag); a grid item to the slot that takes it, else a prosthetic onto its stump, else from the main grid into the open
-    /// bag. Blueprints are not read (the BLUEPRINT record's research link is <b>Unknown</b>, docs/game/economy.md); map items are <see cref="ReadMapItem"/>.
+    /// bag. A blueprint of the player's faction is read (<see cref="Production.ProductionSystem.Learn"/>) and used up when it taught something; map items are <see cref="ReadMapItem"/>.
     /// </summary>
     void QuickMove(World world, QuickMoveItem quick)
     {
@@ -581,6 +582,12 @@ public sealed partial class PlayerSystem
         {
             Cash(world, item, item.Quantity);
             holder.Items.Remove(item);
+            return;
+        }
+        if (item.Type == FcsRecordType.BLUEPRINT && cold.Faction == world.Player.Faction)
+        {
+            // One read whatever Shift says: a second unit would only say "Research already known".
+            if (data?.Items.ResearchOf(item) is { } research && world.SystemOf<Production.ProductionSystem>()?.Learn(world, research.StringId) == true) root.RemoveOne(item);
             return;
         }
         var bag = quick.BagOpen ? root.Backpack?.Contents : null;

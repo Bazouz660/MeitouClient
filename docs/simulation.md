@@ -1080,6 +1080,8 @@ crafting benches, generators and batteries. Facts: [production](game/buildings-p
   - Bench level is the best complete bench's `tech level`.
   - Several operators add with the 0.6^k falloff.
   - Partial progress is kept off the queue (in memory only).
+  - Blueprints ([rules](game/buildings-production.md#blueprints)): `GameDatabase.AddGearBlueprints` makes the `.TECH.1` research after loading;
+    `ItemFactory.Blueprint` makes the item (type `BLUEPRINT`); the own-window right click (`HeldItems.QuickMove`) calls `ProductionSystem.Learn`.
 - **Hash.** Machines and research join the world hash only once the player has one; golden hashes are unchanged. Yields read the
   biome map and rock source, so a replay without them (headless) hashes other yields than the host.
   RNG: `RngPurpose.Farm` (replanting, harvest rolls), `RngPurpose.Craft` (critical rolls).

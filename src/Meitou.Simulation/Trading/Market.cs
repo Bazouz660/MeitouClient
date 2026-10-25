@@ -120,8 +120,8 @@ public sealed class Market
     /// <item>Weapons and crossbows: trunc(T x base), selling trunc(T x base x <c>loot price mult GEAR</c>). (A crossbow taking the weapon's slot is an engine reading: <b>Unknown</b>.)</item>
     /// <item>Armour: the same with the factor applied to the base first. The player-made rows and the hard-coded 0.3 have no condition here (no crafting; <c>Armour+0x1e8</c> is <b>Unknown</b>).</item>
     /// <item>The money item: its record <c>value</c>, nothing else.</item>
-    /// <item>Maps and blueprints: trunc(T x <c>value</c>), selling x <c>loot price mult</c> / <c>loot price mult GEAR</c>; the game's stored price comes from places not traced, so the
-    /// record's <c>value</c> is an engine stand-in.</item>
+    /// <item>Maps and blueprints: trunc(T x <c>value</c>), selling x <c>loot price mult</c> / <c>loot price mult GEAR</c>. A blueprint's value is its research's <c>money</c>
+    /// (<b>Verified</b>, the <c>BlueprintItem</c> constructor); a map's stored price comes from places not traced, so the record's <c>value</c> is an engine stand-in.</item>
     /// <item>Everything else (<c>FUN_1407a8f90</c>, <b>Verified</b>): the base value, x the town's market factor, x <c>loot price mult</c> when sold unless it is a <c>trade item</c> that is
     /// not stolen, x charges / max charges for a single unit, then trunc(T x that), each step truncated.</item>
     /// </list>
@@ -145,7 +145,7 @@ public sealed class Market
             }
             case FcsRecordType.MAP_ITEM or FcsRecordType.BLUEPRINT:
             {
-                int value = Items.Info(item.Record)?.Value ?? 0;
+                int value = item.Type == FcsRecordType.BLUEPRINT ? Items.ResearchOf(item)?.GetInt("money") ?? 0 : Items.Info(item.Record)?.Value ?? 0;
                 if (!sell) return (int)(t * value);
                 return (int)(t * value * (item.Type == FcsRecordType.MAP_ITEM ? k.LootPriceMult : k.LootPriceMultGear));
             }

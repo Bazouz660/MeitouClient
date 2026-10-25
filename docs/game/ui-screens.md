@@ -805,8 +805,8 @@ unless marked; Meitou: `PlayerInterface.Squads.cs`, commands in `SquadManagement
     - Meitou: `PlayerInterface.InventoryRightClick` buys or sells one unit (Shift all); a bought weapon goes into a free `back` then `hip` cell and armour into its empty slot
       (`InventoryCommands.TryEquip`), the rest of the stack and everything else into the first free cell; a stolen item a non-fence shop may catch asks the prompt above (`TradeItemView.FenceOdds`).
       Window to window (loot, container, storage) the units go by `InventoryCommands.MoveInto` (the open bag window first, then slots, then the main grid). Own windows only: `ReadMapItem`, else
-      `QuickMoveItem` (money, equip / take off, prosthetic onto its stump, main grid to the open bag). Not built: blueprints (which RESEARCH a BLUEPRINT record names is **Unknown**,
-      [economy](economy.md)), the owner tag.
+      `QuickMoveItem` (money, equip / take off, prosthetic onto its stump, main grid to the open bag, a blueprint read: [blueprints](buildings-production.md#blueprints)). Not built:
+      the owner tag.
   - Reference screenshot (**Observed**, 2026-10-17, from a video): `Money:` label left and `c.442,269` right in the money box, stock icons at their footprints with plain counts bottom
     right, a vertical scrollbar, no other panels; the HUD stays. The character panel reads `Disguise: None`. Its text boxes and empty cells are dark, where the install's skins draw parchment; the cause (a UI mod or setting) is **Unknown**.
 - **Character trading window** (`CharacterTradingWindow` `FUN_14072a880`, rows `FUN_14072a070`; DA 41 / 42 / 43 / 48, [economy 12](economy.md#12-slaves-prisoners-animals); code

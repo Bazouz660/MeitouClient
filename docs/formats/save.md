@@ -42,6 +42,9 @@ order finished; every sample holds only `finished0` = `5359-gamedata.base`), flo
 `current prog<k>`, and `paid<k>` (**Observed**, [research](../game/buildings-production.md#research)). Meitou (`Saving/ResearchSave`) round-trips all of them;
 progress of research taken off the queue is not saved (as the original).
 
+**Blueprint items** (**Verified**: 1954 INVENTORY_ITEM_STATEs in the owner's saves): `base data sid` is the look ITEM (`BLUEPRINT_ITEM`,
+`BLUEPRINT_ITEM_ARMOUR`, ...), `company sid` = `material sid` = the RESEARCH id, `item function` 11. Meitou (`SavedKit`) rebuilds them from the research.
+
 **Terrain decals** (TERRAIN_DECALS in `quick.save`, **Verified**: two saves, writer `FUN_1408de5d0`): int `total`; one instance per cell copy of a decal
 ([blood decals](../game/blood-decals.md)), id = the 1-based counter as raw int32 bytes, target `-`, the 24-byte `DecalInfo` in the seven position/rotation
 floats as raw bits: x = local X | local Z << 16 (shorts, 1/1000 of the 288-unit cell), y = half width | half height << 16 (size × texels × 10),
@@ -528,7 +531,7 @@ yet, is left out. Round trip checked with a throwaway probe (write, read, clear)
 | `INVENTORY_ITEM_STATE.base data sid` | all 2181 resolve: ARMOUR 891, ITEM 1018, WEAPON 230, CROSSBOW 14, CONTAINER 26, MAP_ITEM 2 |
 | `MEDICAL_STATE.sid<k>` | 1610 of 1610 resolve to LOCATIONAL_DAMAGE |
 | `TOWN` states | 304 of 304 instances match base town placements; `trade goods` are 75 ITEM records |
-| Strings that do **not** resolve | `company sid` / `material sid` values with a `.TECH.<n>` suffix (17), `GAMESTATE_TOWN.instance` (instance ids, not records), BIOMES `E<n>` instance targets (numbers) |
+| Strings that do **not** resolve | `company sid` / `material sid` values with a `.TECH.<n>` suffix (17: research the engine makes at start, [blueprints](../game/buildings-production.md#blueprints)), `GAMESTATE_TOWN.instance` (instance ids, not records), BIOMES `E<n>` instance targets (numbers) |
 
 ### Functions
 

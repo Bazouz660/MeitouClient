@@ -608,6 +608,27 @@ to `FUN_140836b70`: contribution k of the frame is x 0.6^k (counter `+0x174`, cl
   panels); the bench's `Kenshi_InventoryResearchWindow` (`ResearchButton`); HUD `ResearchProgressBar`; header
   "RESEARCH - LEVEL {1} (CURRENT RATE: {2}x)" (`FUN_140494af0`).
 
+### Blueprints
+
+- **Item** (**Verified**, `BlueprintItem` constructor `FUN_1402b78a0`, item factory `FUN_140580750`; KenshiLib 1ce4a16 names): no BLUEPRINT (90) record
+  exists in the data. A blueprint is an item made from a RESEARCH record: the factory turns a RESEARCH (as the record, or as the company or material) into a
+  `BlueprintItem` whose look is the research's `blueprint item` ITEM, else `BLUEPRINT_ITEM` (weight 0, 1 x 1, no stack, function 11), and whose manufacturer slot
+  (`+0xc0`) is the research. Its `value` (`+0x1e8`) is the research's `money`; prices in [economy](economy.md) section 5. Shops get them from VENDOR_LIST `blueprints`
+  and the gear lists (economy Unknowns, list table); saves in [save](../formats/save.md).
+- **Gear research** (**Verified**, `Research::_setup` `FUN_140834b70` -> `_createBlueprintsFor` `FUN_1408324f0`): at start every ARMOUR, CONTAINER and CROSSBOW
+  gets a RESEARCH `<item id>.TECH.1`: a copy of `RESEARCH_TEMPLATE` (base data: level 1, time 12, Smithing, `blueprint only`), named as the item, `blueprint only`
+  true, `money` = trunc(ItemValue(item, quality 40, no category row) x `blueprint price mult`), `enable armour` / `enable backpack` / `enable crossbow` = the item,
+  `blueprint item` = `BLUEPRINT_ITEM_ARMOUR` (armour) or `BLUEPRINT_ITEM_GEAR`. Base data: 165 such records. What happens when the id already exists is **Unknown**
+  (Meitou keeps the existing record).
+- **Learning** (**Verified**, `BlueprintItem::learnResearch` `FUN_1402b65d0`): right click in an own window ([ui-screens](ui-screens.md#6-inventory-trade-dialogue-build)).
+  Requirements unmet (`checkRequirements` `FUN_140832fa0` with no level or cost test: each `requirements` RESEARCH finished, each BUILDING unlocked) posts
+  "Failed to learn from blueprint: Technology requirements not met"; finished before (the finished set, any repetition) "Research already known"; both keep the
+  item. Otherwise `completeResearch` (as above, message and sound included) and the item is used up. Tech and bench level play no part.
+- **Tooltip** (`FUN_1407ab430`, **Observed**): the research name, "Research Blueprint", then "Research already known", "Needs research bench level {1}",
+  "Cannot learn this yet" or "Right-click to learn tech", and the unlock lists ("Requirements:", "New Building:", ...). Meitou shows the name, the second line and
+  the right-click hint.
+- **Unknown**: CHARACTER `blueprints` (2 base records: settler Wheatstraw Farming, Savant) and what reads it.
+
 ## Power
 
 **Observed** unless noted. Per building: `power output` (generator output, battery rate, consumer draw when negative)

@@ -135,7 +135,7 @@ data cross-references, and the base values from a probe over CONSTANTS; "[Editor
 | 0x3b `142133ebc` | `loot price mult` | 0.5 | [0.4] | as is | sell fraction of maps, items, limbs (slot 81) |
 | 0x3c `142133ec0` | `loot price mult player armour` | 0.25 | [1.0] | as is | sell fraction of armour the player crafted (`Armour::vfunc_81`) |
 | 0x3d `142133ec4` | `loot price mult player weapons` | 0.25 | [0.5] | as is | same for weapons (`Weapon::vfunc_81`) |
-| 0x3e `142133ec8` | `blueprint price mult` | 1.5 | [1.5] | as is | research cost (section 10) |
+| 0x3e `142133ec8` | `blueprint price mult` | 1.5 | [1.5] | as is | money of a generated blueprint research ([blueprints](buildings-production.md#blueprints)) |
 | 0x3f `142133ecc` | (none: the loader writes the constant 0.3 itself) | 0.3 | n/a | hard-coded | `Armour::vfunc_81` (see section 5) |
 
 ### 4.2 ARMOUR and clothing (type 3)
@@ -171,7 +171,7 @@ sale, and the same flag selects which price is computed).
 | --- | --- | --- |
 | `Weapon::vfunc_81` `FUN_1408a52f0` | `trunc( T * stored )` | `trunc( T * stored * f )`, `f` = `loot price mult player weapons` if `Weapon+0x208` is set, else `loot price mult GEAR` |
 | `Armour::vfunc_81` `FUN_1408a9c20` | `stored`, then if `Armour+0x1e8` is set `* 0.3` (the hard-coded 0.3 of section 3), then `trunc( T * . )` | the `stored` first gets `loot price mult player armour` if `Armour+0x208` is set, else `loot price mult GEAR`, and then the same 0.3 and `T` steps |
-| `BlueprintItem::vfunc_81` `FUN_1402d30f0` | `trunc( T * value )` (`value` = the research `money` stored at `+0x1e8`, section 10) | `trunc( T * value * loot price mult GEAR )` |
+| `BlueprintItem::vfunc_81` `FUN_1402d30f0` | `trunc( T * value )` (`value` = the research `money` stored at `+0x1e8`, [blueprints](buildings-production.md#blueprints)) | `trunc( T * value * loot price mult GEAR )` |
 | `MapItem::vfunc_81` `FUN_14075d950` | `trunc( T * value )` (the int at `MapItem+0x1e8`; where it is set was not traced) | `* loot price mult` |
 | `MoneyItem::vfunc_81` `FUN_14001352a` (thunk to `FUN_14075f660`) | the record `value`, nothing else | same |
 | everything else (`Item`, `InventoryItemBase`, `Gear`, `NestItem`, `ContainerItem`, `SeveredLimbItem`, `RobotLimbItem`) `FUN_1407a8f90` | see below | see below |
@@ -466,7 +466,8 @@ Meitou's reading: [simulation, slave trading](../simulation.md#arrest-and-jail).
   loaded by `FUN_1403715c0`) overwrite or are overwritten by a fresh roll. (That the factors are saved is settled.)
 - **What `FUN_140745e30` really does** (it forwards a money delta to virtual slot 54 of the object at `+0x80`; the purse mutation itself) and how
   the trade window decides the `k` units priced with the opposite flag (`FUN_14070e3b0`, section 5).
-- **Where `MapItem+0x1e8` (the map price) comes from**, and which record `BlueprintItem+0xc0` points at (section 10).
+- **Where `MapItem+0x1e8` (the map price) comes from.** (`BlueprintItem+0xc0` is the item's manufacturer slot, holding the RESEARCH; `+0x1e8` its `money`,
+  [blueprints](buildings-production.md#blueprints).)
 - **How weapon quality is rolled for shop stock** and how VENDOR_LIST reference value 1 (and a value 0 in the first slot, as in
   `(0,100,0)`) is read for clothing, armour and weapon entries (`FUN_140956ba0` / `FUN_1409555d0` read them; "val0 is relative
   chance" per the editor, but 472 entries have (0, 100, 0)). It follows the NPC clothing rule in [characters.md](../characters.md)
@@ -480,12 +481,15 @@ Meitou's reading: [simulation, slave trading](../simulation.md#arrest-and-jail).
   registered but no TaskData row uses it); how `+0x110` decays; the escaped flag's expiry ("Leave town to clear this status. Expires in
   {1}", cleared by `FUN_1404ff060` for an undecoded reason);
   whether NPC bounty hunters ever cage or hand in a captive; what the speaker-in-own-town branch of `DA_ARREST_TARGET` tests exactly.
-- **Research cost** beyond the formula of section 10, crafting costs, building purchase price, bed cost.
+- **Research cost** beyond the bench queue cost, crafting costs, building purchase price, bed cost.
 - **The purpose of `FUN_1405d4260`** (the crime-in-progress tooltip function; its behaviour remains untraced).
 - **Which item records make a `MoneyItem`** (priced at their `value` alone, section 2): `Cats`, and probably `String of Cats` and the other value-only items, but the constructor's
   choice of class was not traced; Meitou tests the name `Cats` (found 2026-10-14 while building the trade).
-- **The names of the VENDOR_LIST reference lists** (`items`, `weapons`, `clothing`, ... in section 9.2) and the reading of a v0 of 0 in them: Meitou reads every list and keeps
-  each entry by its target's record type, with 0 counting as 100 (engine choices, [../simulation.md "Trade"](../simulation.md#trade)).
+- **The reading of a v0 of 0 in VENDOR_LIST lists**: Meitou counts it as 100 and keeps each entry by its target's record type (engine choices,
+  [../simulation.md "Trade"](../simulation.md#trade)). The list names and accepted types are **Verified** (`FUN_140956ba0`): `items` ITEM, `weapons` WEAPON (with
+  `weapon manufacturers`), `armours` / `clothing` ARMOUR, `containers` CONTAINER, `blueprints` RESEARCH (a blueprint item), `crossbows` CROSSBOW, `robotics`
+  LIMB_REPLACEMENT, `maps` MAP_ITEM; `armour blueprints` / `crossbow blueprints` / `backpack blueprints` name gear and give its `<id>.TECH.1` research's blueprint
+  (skipped when missing), never the gear. Merged base data: `armour blueprints` 318, `blueprints` 141, `crossbow blueprints` 20, `backpack blueprints` 0 entries.
 - **The FACTION field names of the armour vendor quality chances** (`armors 0..5` in section 9.2): read as the ints `armors 0` .. `armors 5`, falling back to the editor defaults; not
   checked against the data.
 - **Opening a trade**: Meitou opens it within 30 units; the original's opening distance is not traced (the item check is in [Trading range](#trading-range)).

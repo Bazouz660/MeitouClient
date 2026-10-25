@@ -433,10 +433,18 @@ sealed partial class PlayerInterface
         var type = record?.Type;
         // A weapon's grade is its model ("Mk I"), shown under the name in the colour of its level's grade; a brief tooltip puts it before the name ("Mk I Fragment Axe").
         string? model = type == Meitou.Data.Fcs.FcsRecordType.WEAPON && t.Material.Length > 0 && RecordName?.Invoke(t.Material) is { Length: > 0 } m ? m : null;
-        string name = t.Brief && model is not null ? model + " " + t.Name : t.Name;
+        // A blueprint is titled with its research (BlueprintItem's first tooltip function, FUN_1407ab430): the name, "Research Blueprint", how a right click goes. The original's
+        // known / bench-level states and the unlock lists are not shown.
+        var research = ItemRecordOf?.Invoke(t.Company) is { Type: Meitou.Data.Fcs.FcsRecordType.RESEARCH } r ? r : null;
+        string name = research?.Name ?? (t.Brief && model is not null ? model + " " + t.Name : t.Name);
         var lines = new List<TooltipLine> { new(t.Quantity > 1 ? $"{name} ({t.Quantity})" : name, "", TooltipTone.Title) };
         if (t.Trade is { Buyback: true }) lines.Add(new("Buyback", ""));
         if (t.Brief) return lines;
+        if (research is not null)
+        {
+            lines.Add(new(Loc.Tr("Research Blueprint"), "", TooltipTone.Main));
+            lines.Add(new(Loc.Tr("Right-click to learn tech"), "", TooltipTone.Cyan));
+        }
         // Every grade line (weapon model, armour, crossbow, prosthetic) goes right under the name, as in the original.
         if (model is not null) lines.Add(new(model, "", GradeTone(WeaponGrade(t.Level))));
         else if (type == Meitou.Data.Fcs.FcsRecordType.CROSSBOW)
