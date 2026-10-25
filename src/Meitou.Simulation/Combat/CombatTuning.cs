@@ -66,9 +66,12 @@ public static class CombatTuning
     /// <summary>
     /// The gap between the bodies (footprints) a fighter walks in to (<b>Observed</b>, <c>FUN_1402b4570</c> moving to <c>FUN_14060cd20</c> through the steering's
     /// <c>FUN_1402ae320</c>): its longest reach (<see cref="CombatSlot.Reach"/>) less a quarter of its weapon's length, at least 6 (the steering keeps the far end 5 beyond its near
-    /// end of 1); <see cref="CloseInGap"/> before its first choice.
+    /// end of 1), +<see cref="RunningGap"/> while it runs (<c>FUN_1402aebf0</c> in <c>CircleStateAI</c>); <see cref="CloseInGap"/> before its first choice.
     /// </summary>
-    public static float StandGap(float reach, float weaponLength) => reach > 0 ? MathF.Max(6, reach - weaponLength * 0.25f) : CloseInGap;
+    public static float StandGap(float reach, float weaponLength, bool running) => reach > 0 ? MathF.Max(6, reach - weaponLength * 0.25f + (running ? RunningGap : 0)) : CloseInGap;
+
+    /// <summary>A running fighter stops this much farther out (<b>Verified</b> literal, <c>CircleStateAI</c> FUN_1402b3180).</summary>
+    public const float RunningGap = 12;
 
     /// <summary>How far (world units) around a target the fighters on it are counted for its attack slots and the fighters it lets close in (engine choice).</summary>
     public const float EngageScanRadius = 300;

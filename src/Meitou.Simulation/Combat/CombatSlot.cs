@@ -58,6 +58,11 @@ public struct CombatSlot
     public int PickTick;
     /// <summary>The tick a player's fighter last sensed its target (<see cref="CombatSystem.PickSeconds"/>'s sense test keeps it <see cref="AggroSystem.GiveUpSenseSeconds"/> after).</summary>
     public int SensedTick;
+    /// <summary>
+    /// The Block order's timer while engaged (the tick it runs out, 0: not running) and the tick it last ran out: swings at the character started before that hold no attack
+    /// slot any more (<c>CircleStateAI</c> FUN_1402b3180 → FUN_1406658c0, docs/game/combat.md "Attack slots and circling").
+    /// </summary>
+    public int BlockTimerTick, SlotsCleared;
 
     // The ranged controller (docs/simulation.md "Combat", ranged; the original keeps it at Character +0x2f0). All zero for a character that never used a crossbow.
     /// <summary>Fighting with the crossbow rather than the melee weapon; the controller's state (<see cref="RangedStates"/>).</summary>
@@ -127,6 +132,8 @@ public struct CombatSlot
         if (Picked) h.Add(true);   // only when set, so worlds without player picks hash as before
         h.Add(PickTick);
         h.Add(SensedTick);
+        h.Add(BlockTimerTick);
+        h.Add(SlotsCleared);
         // The ranged controller goes in only once it has been used, so worlds without crossbows hash as they did before it existed.
         if (!RangedUsed) return;
         h.Add(Ranged);

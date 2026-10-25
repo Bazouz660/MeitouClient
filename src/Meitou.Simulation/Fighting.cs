@@ -77,14 +77,14 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
             holding = Vector2.DistanceSquared(Orders.HoldPointOf(cold, n.Position), new Vector2(next[t].Position.X, next[t].Position.Z)) > far * far;
         }
         // One of more than MaxEngaged fighters that its target has not let close in circles it (WaitingStateAI, docs/game/combat.md "Attack slots and circling"); not while its
-        // swing plays (a blow that is not a hit gives up the place at once, but the fighter asks again only when it next decides).
+        // swing plays (it asks again only when it next decides).
         int around = !st.Ranged && !st.Engaged && !behind && st.AttackTech < 0 ? combat.FightersAt(world, t) : 0;
         if (around > CombatSystem.MaxEngaged && !st.Down && world.Tick >= st.StunUntil && st.ReactTech < 0 && !holding)
         {
             Circle(world, i, ref n, cold, tc, t, d, gap, around);
             return;
         }
-        float stand = CombatTuning.StandGap(st.Reach, cold.Fighter?.WeaponLength ?? 0);
+        float stand = CombatTuning.StandGap(st.Reach, cold.Fighter?.WeaponLength ?? 0, cold.CombatRunning);
         if (st.Down || st.AttackTech >= 0 || st.ReactTech >= 0 || world.Tick < st.StunUntil || shooting || !st.Ranged && !behind && aimGap <= stand || holding)
         {
             // In reach, mid-swing or staggered (the hit reaction carries it), or holding position: stand and fight.

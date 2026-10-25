@@ -260,7 +260,7 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
             bool shooting = s.Ranged && s.RangedState != (byte)RangedStates.Closing;
             bool busy = s.Down || s.AttackTech >= 0 || s.ReactTech >= 0 || now < s.StunUntil || shooting;
             float gap = distance - CombatTuning.Footprint(cold) - CombatTuning.Footprint(table.Cold(t));
-            float stand = CombatTuning.StandGap(s.Reach, cold.Fighter?.WeaponLength ?? 0);
+            float stand = CombatTuning.StandGap(s.Reach, cold.Fighter?.WeaponLength ?? 0, cold.CombatRunning);
             if (busy || gap <= stand)
             {
                 n.Velocity = default;

@@ -192,7 +192,8 @@ not hit. A defender that is not the attacker's target defends only with a block 
   If the ask fails: being attacked → defend; engaged → state 5; else state 6.
 - **State 5** (`CircleStateAI`, update `FUN_1402b3180`): walk to the target until the body gap reaches max'
   (`FUN_14060cd20` = +0x150 + 1.5rk − L/4, +12 while running, minus 1.5rk; at least 6). Face the target and ask each
-  tick. Then grab a slot and re-decide. A crowd within 1.2 × (r + 2.5) makes it retarget (`FUN_140666ee0`).
+  tick. Once the ask passes and no other body is within 1.2 × (r + 2.5) (`FUN_1402e9620`), it re-picks its target (`FUN_140666ee0`,
+  re-deciding on a new one) and, with a free slot, re-decides (**Verified**, `CircleStateAI` `FUN_1402b3180`).
   The attack start uses the same walk while no technique is in reach.
 - **State 6** (`WaitingStateAI`, `FUN_1402b3760` / `FUN_1402b3800`): not engaged. Keep the body gap in
   [n/4 + 15, 3n + 25], each end minus 1.5rk. n = engaged count + last frame's refusals. Side-step at speed s
@@ -221,11 +222,13 @@ Meitou (`CombatSystem.HasSlot` / `MayJoin`, `PursuitSystem.Circle`):
 - **Approach**: an engaged fighter walks in to body gap max(6, reach − L/4) and stands.
 - **Joining**: a lower table slot asks first; one not yet in is counted ahead only when it may decide this tick (not staggered,
   defending, or swinging past its abort point), so nobody is left out for a fighter that does not ask (engine choice).
-- **Circling**: only fighters left out when more than 5 attack one target circle, and not while their own swing plays (the
-  place drops at the blow, the ask comes at the next decision). They path to a point on the ring at least 1 s of
+- **Circling**: only fighters left out when more than 5 attack one target circle, and not while their own swing plays (they
+  ask at the next decision). They path to a point on the ring at least 1 s of
   side-stepping ahead (and beyond the walker's arrival radius plus one repath step, so a slow side-step does not creep), pushed out so the
   straight walk keeps to the ring, and face their path; the original faces the target.
-- The crowd test, the Block-mode timer and the +12 while running are not modelled.
+- **Block-mode timer**: an engaged fighter on the Block order (standing) frees the slots on itself every 1.5–4.5 s (`CombatSlot.SlotsCleared`:
+  swings started before hold none). The +12 while running is in `CombatTuning.StandGap`.
+- Not modelled: the body tests of the ask and of state 5 (r + 2.5 and 1.2 × that), which solid footprints (4 + 4 apart at least) never meet.
 
 ## Fight lifecycle and orders
 

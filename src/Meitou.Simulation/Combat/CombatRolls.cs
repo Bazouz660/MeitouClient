@@ -5,8 +5,8 @@ public enum CombatRoll : ulong
 {
     /// <summary>Which attack technique (counter: the character's attack number).</summary>
     Technique = 1,
-    /// <summary>The pause before an attack starts.</summary>
-    Pause = 2,
+    /// <summary>The Block order's timer that frees the attack slots on the blocker (counter: the tick it is drawn).</summary>
+    BlockTimer = 2,
     /// <summary>The defender's block (or dodge) roll against one incoming blow.</summary>
     Block = 3,
     /// <summary>Which reaction technique among the candidates.</summary>

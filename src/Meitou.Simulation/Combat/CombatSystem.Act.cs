@@ -200,6 +200,17 @@ public sealed partial class CombatSystem
                 fighting = true;
             }
             if (!fighting) s.Engaged = false;
+            // The Block order, standing and let close in: every 1.5-4.5 s it frees the attack slots on itself, so others may start swinging at it (CircleStateAI's timer).
+            if (fighting && s.Engaged && Orders.Has(cold, CharacterOrders.Block) && !cold.Medical.Crawling)
+            {
+                if (s.BlockTimerTick == 0) s.BlockTimerTick = now + BlockTimerTicks(world, key, now);
+                else if (now >= s.BlockTimerTick)
+                {
+                    s.SlotsCleared = now;
+                    s.BlockTimerTick = now + BlockTimerTicks(world, key, now);
+                }
+            }
+            else s.BlockTimerTick = 0;
             bool aborted = false;
             if (s.AttackTech >= 0)
             {
@@ -402,7 +413,8 @@ public sealed partial class CombatSystem
             if (other == i || !range.Holds((x, z))) continue;
             ref readonly var o = ref read[other];
             if (o.TargetGeneration != generation || o.Down || o.Ranged) continue;
-            if (o.AttackTech >= 0 && o.NextBlow > 0)
+            // A swing holds its slot unless the target (a blocker) freed its slots after the swing started.
+            if (o.AttackTech >= 0 && o.NextBlow > 0 && o.AttackStart >= read[t].SlotsCleared)
             {
                 if (++holders + ahead >= slots) return false;
                 continue;
@@ -430,6 +442,10 @@ public sealed partial class CombatSystem
         }
         return holders + ahead < slots;
     }
+
+    /// <summary>The Block order's slot timer: uniform 1.5 to 4.5 s (<b>Verified</b> literals, FUN_1402b3180).</summary>
+    static int BlockTimerTicks(World world, ulong key, int now) =>
+        Math.Max(1, (int)MathF.Ceiling((1.5f + 3 * CombatRolls.Float(world.Seed, key, CombatRoll.BlockTimer, (ulong)(uint)now)) / world.TickSeconds));
 
     /// <summary>The most attack slots a target can have (the slot count is clamped to 1 to 5, <c>FUN_1406661d0</c>).</summary>
     public const int MaxAttackSlots = 5;
