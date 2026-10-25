@@ -312,6 +312,7 @@ public sealed partial class PopulationSystem
         {
             var state = wildStates[i];
             if (active.Contains(wildSites[i].Zone)) continue;
+            if (AnyMemberActive(world, state)) { state.UnloadAtTick = -1; continue; }
             if (state.UnloadAtTick < 0) state.UnloadAtTick = world.Tick + grace;
             else if (world.Tick >= state.UnloadAtTick)
             {

@@ -236,6 +236,9 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
                 case SiteStatus.Loaded or SiteStatus.Loading when wanted:
                     state.UnloadAtTick = -1;
                     break;
+                case SiteStatus.Loaded or SiteStatus.Loading when AnyMemberActive(world, state):
+                    state.UnloadAtTick = -1;
+                    break;
                 case SiteStatus.Loaded or SiteStatus.Loading:
                     if (state.UnloadAtTick < 0) state.UnloadAtTick = world.Tick + grace;
                     else if (world.Tick >= state.UnloadAtTick) Unload(world, site.Index, state);
@@ -243,6 +246,23 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
             }
         }
         StepWild(world, grace);
+    }
+
+    /// <summary>
+    /// Whether a living member of one of the site's squads stands in an active zone: the site then stays loaded wherever its own zone is, so a squad
+    /// chasing the player away from home does not vanish with it (the original unloads each platoon by its own place, docs/simulation.md "Population").
+    /// </summary>
+    bool AnyMemberActive(World world, SiteState state)
+    {
+        var table = world.Characters;
+        foreach (int id in state.Squads)
+        {
+            if (world.Squads.Find(id) is not { } squad) continue;
+            foreach (var m in squad.Members)
+                if (table.TryResolveNext(m, out int slot) && table.IsAlive(m)
+                    && active.Contains(WorldLayout.ZoneOf(table.Previous[slot].Position.X, table.Previous[slot].Position.Z))) return true;
+        }
+        return false;
     }
 
     /// <summary>Whether a zone may be loaded now: the host holds a town back until its navmesh is ready, so residents are not placed inside buildings of an open-ground stand-in (null: always).</summary>
