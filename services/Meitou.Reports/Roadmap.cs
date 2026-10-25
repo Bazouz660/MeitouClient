@@ -35,7 +35,7 @@ sealed partial class Roadmap(HttpClient http, Config config, ILogger<Roadmap> lo
             if (DateTimeOffset.UtcNow - rowsAt < RowsFor) return rows;
             string text = await http.GetStringAsync(config.RoadmapUrl);
             var list = config.RoadmapUrl.AbsolutePath.EndsWith(".json", StringComparison.Ordinal)
-                ? System.Text.Json.JsonSerializer.Deserialize<RoadmapFile>(text, System.Text.Json.JsonSerializerOptions.Web)?.Rows ?? []
+                ? System.Text.Json.JsonSerializer.Deserialize(text, ReportsJson.Default.RoadmapFile)?.Rows ?? []
                 : ParseSource(text);
             if (list.Count > 0) rows = list.ToDictionary(r => r.Id);
             rowsAt = DateTimeOffset.UtcNow;
@@ -84,7 +84,7 @@ sealed partial class Roadmap(HttpClient http, Config config, ILogger<Roadmap> lo
             request.Headers.UserAgent.ParseAdd("meitou-reports");
             using var response = await http.SendAsync(request);
             response.EnsureSuccessStatusCode();
-            var full = (await response.Content.ReadFromJsonAsync<List<GithubRelease>>() ?? [])
+            var full = (await response.Content.ReadFromJsonAsync(ReportsJson.Default.ListGithubRelease) ?? [])
                 .Where(r => r.Tag.StartsWith('v') && !r.Prerelease && !r.Draft && r.Published is not null)
                 .OrderByDescending(r => r.Published).ToList();
             cutoff = full.Count >= 2 ? full[1].Published!.Value : DateTimeOffset.MinValue;

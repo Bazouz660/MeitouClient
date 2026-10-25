@@ -1,8 +1,6 @@
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json.Nodes;
-using Org.BouncyCastle.Crypto.Parameters;
-using Org.BouncyCastle.Crypto.Signers;
 
 namespace Meitou.Reports;
 
@@ -20,12 +18,7 @@ sealed class Discord(Config config, Intake intake, Roadmap roadmap, IHttpClientF
         if (config.DiscordPublicKey is null || signature is null || timestamp is null) return false;
         try
         {
-            var signer = new Ed25519Signer();
-            signer.Init(false, new Ed25519PublicKeyParameters(Convert.FromHexString(config.DiscordPublicKey), 0));
-            var ts = Encoding.UTF8.GetBytes(timestamp);
-            signer.BlockUpdate(ts, 0, ts.Length);
-            signer.BlockUpdate(body, 0, body.Length);
-            return signer.VerifySignature(Convert.FromHexString(signature));
+            return Ed25519.Verify(Convert.FromHexString(config.DiscordPublicKey), Convert.FromHexString(signature), [.. Encoding.UTF8.GetBytes(timestamp), .. body]);
         }
         catch (FormatException) { return false; }
     }
@@ -46,7 +39,7 @@ sealed class Discord(Config config, Intake intake, Roadmap roadmap, IHttpClientF
             foreach (var r in rows.Values
                          .Where(r => typed.Length == 0 || r.System.Contains(typed, StringComparison.OrdinalIgnoreCase) || r.Id.Contains(typed, StringComparison.OrdinalIgnoreCase))
                          .Take(25))
-                choices.Add(new JsonObject { ["name"] = Trim(r.System, 100), ["value"] = r.Id });
+                choices.Add((JsonNode)new JsonObject { ["name"] = Trim(r.System, 100), ["value"] = r.Id });   // the non-generic Add: the generic one is not AOT-safe
             return new() { ["type"] = 8, ["data"] = new JsonObject { ["choices"] = choices } };
         }
 

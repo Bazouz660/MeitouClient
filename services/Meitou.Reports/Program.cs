@@ -1,5 +1,5 @@
-using System.Net.Http.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
 using Meitou.Reports;
 using Npgsql;
@@ -7,7 +7,8 @@ using Npgsql;
 var builder = WebApplication.CreateBuilder(args);
 var config = Config.Load(builder.Configuration);
 builder.Services.AddSingleton(config);
-builder.Services.AddSingleton(NpgsqlDataSource.Create(config.ConnectionString));
+builder.Services.AddSingleton(new NpgsqlSlimDataSourceBuilder(config.ConnectionString).Build());   // the slim builder: the basic types, no reflection
+builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.TypeInfoResolverChain.Insert(0, ReportsJson.Default));
 builder.Services.AddSingleton<Store>();
 builder.Services.AddHttpClient();
 builder.Services.AddSingleton(sp => new Roadmap(sp.GetRequiredService<IHttpClientFactory>().CreateClient(), config, sp.GetRequiredService<ILogger<Roadmap>>()));
@@ -33,7 +34,7 @@ app.MapGet("/summary", async (Store store, Roadmap roadmap, HttpResponse respons
 {
     var since = await roadmap.Cutoff();
     response.Headers.CacheControl = "public, max-age=60";
-    return new { since, rows = await store.Summary(since) };
+    return new Summary(since, await store.Summary(since));
 });
 
 // Public: the status changes the reports suggest; a person approves them on the roadmap.
@@ -45,10 +46,10 @@ app.MapPost("/reports", async (HttpContext ctx, ReportBody body, Intake intake, 
 {
     bool launcher = body.Source == "launcher";
     if (!launcher && config.TurnstileSecret is { } secret && !await Turnstile(http, secret, body.Turnstile, ClientIp(ctx)))
-        return Results.BadRequest(new { error = "bot check failed" });
+        return Results.BadRequest(new Refused("bot check failed"));
     var report = new Incoming(body.Row, body.Verdict, body.Build, body.Platform, body.Modded, body.Note, launcher ? body.Log : null);
     var (id, error) = await intake.Add(report, launcher ? "launcher" : "web", intake.Reporter($"ip:{ClientIp(ctx)}"), trusted: false);
-    return error is null ? Results.Ok(new { id }) : Results.BadRequest(new { error });
+    return error is null ? Results.Ok(new Recorded(id)) : Results.BadRequest(new Refused(error));
 }).RequireRateLimiting("post");
 
 // Admin (Authorization: Bearer REPORTS_ADMIN_TOKEN): the raw reports, a report's log, removing spam, registering the Discord commands.
@@ -68,7 +69,7 @@ app.MapPost("/discord", async (HttpRequest request, Discord discord) =>
     await request.Body.CopyToAsync(buffer);
     var body = buffer.ToArray();
     if (!discord.Verify(request.Headers["X-Signature-Ed25519"], request.Headers["X-Signature-Timestamp"], body)) return Results.Unauthorized();
-    return Results.Json(await discord.Handle(JsonNode.Parse(body)!));
+    return Results.Text((await discord.Handle(JsonNode.Parse(body)!)).ToJsonString(), "application/json");
 });
 
 app.Run();
@@ -90,7 +91,7 @@ static async Task<bool> Turnstile(IHttpClientFactory http, string secret, string
     {
         using var response = await http.CreateClient().PostAsync("https://challenges.cloudflare.com/turnstile/v0/siteverify",
             new FormUrlEncodedContent(new Dictionary<string, string> { ["secret"] = secret, ["response"] = token, ["remoteip"] = ip }));
-        var result = await response.Content.ReadFromJsonAsync<JsonObject>();
+        var result = JsonNode.Parse(await response.Content.ReadAsStreamAsync());
         return result?["success"]?.GetValue<bool>() == true;
     }
     catch (HttpRequestException) { return false; }
@@ -98,3 +99,22 @@ static async Task<bool> Turnstile(IHttpClientFactory http, string secret, string
 
 /// <summary>The JSON body of <c>POST /reports</c>.</summary>
 sealed record ReportBody(string? Row, string? Verdict, string? Build, string? Platform, bool? Modded, string? Note, string? Source, string? Turnstile, string? Log);
+
+/// <summary><c>GET /summary</c>: the counts per row since the cutoff.</summary>
+sealed record Summary(DateTimeOffset Since, List<RowSummary> Rows);
+
+/// <summary><c>POST /reports</c> answers: the stored report's id, or why it was refused.</summary>
+sealed record Recorded(long? Id);
+sealed record Refused(string Error);
+
+/// <summary>Every type that crosses the wire as JSON: Native AOT has no reflection-based serializer, so each is generated here.</summary>
+[JsonSourceGenerationOptions(System.Text.Json.JsonSerializerDefaults.Web)]
+[JsonSerializable(typeof(ReportBody))]
+[JsonSerializable(typeof(Summary))]
+[JsonSerializable(typeof(List<Proposal>))]
+[JsonSerializable(typeof(List<Report>))]
+[JsonSerializable(typeof(Recorded))]
+[JsonSerializable(typeof(Refused))]
+[JsonSerializable(typeof(RoadmapFile))]
+[JsonSerializable(typeof(List<GithubRelease>))]
+sealed partial class ReportsJson : JsonSerializerContext;

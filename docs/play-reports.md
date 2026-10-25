@@ -16,8 +16,9 @@ and checks only propose.
 
 ## Reports service
 
-`services/Meitou.Reports` (ASP.NET, PostgreSQL), image `ghcr.io/vlcekm/meitou-reports` from `reports-image.yml`, runs on
-Cloudovna. One table `reports`: row, verdict `works|broken`, build, platform `win|linux|mac|proton|other`, modded, note (300
+`services/Meitou.Reports` (ASP.NET minimal API, PostgreSQL), image `ghcr.io/vlcekm/meitou-reports` from `reports-image.yml`, runs on
+Cloudovna. Published Native AOT on the chiseled `runtime-deps` image: Npgsql (slim builder) is the only package; JSON goes through the
+`ReportsJson` source-generated context (add new wire types there), Discord signatures through the service's own `Ed25519.cs`. One table `reports`: row, verdict `works|broken`, build, platform `win|linux|mac|proton|other`, modded, note (300
 chars, required for Broken), source `web|discord|launcher`, reporter, trusted, gzipped log (launcher only, last 512 KiB).
 
 - Reporter = HMAC-SHA256(`REPORTS_SALT`, IP or Discord user id), 24 hex: counts distinct people, stores nothing personal.

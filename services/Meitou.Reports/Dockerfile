@@ -1,17 +1,19 @@
-# Meitou play reports. Built from the repository root (it needs Directory.Build.props):
+# Meitou play reports, published Native AOT: one static executable on the chiseled runtime-deps image (no .NET runtime, no shell).
+# Built from the repository root (it needs Directory.Build.props):
 #   docker build -f services/Meitou.Reports/Dockerfile .
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+RUN apt-get update && apt-get install -y --no-install-recommends clang zlib1g-dev && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 COPY Directory.Build.props Directory.Build.targets ./
 COPY services/Meitou.Reports/Meitou.Reports.csproj services/Meitou.Reports/
-RUN dotnet restore services/Meitou.Reports/Meitou.Reports.csproj
+RUN dotnet restore services/Meitou.Reports/Meitou.Reports.csproj -r linux-x64
 COPY services/Meitou.Reports/ services/Meitou.Reports/
-RUN dotnet publish services/Meitou.Reports/Meitou.Reports.csproj -c Release -o /out --no-restore
+RUN dotnet publish services/Meitou.Reports/Meitou.Reports.csproj -c Release -r linux-x64 -o /out --no-restore
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0
+FROM mcr.microsoft.com/dotnet/runtime-deps:10.0-noble-chiseled
 WORKDIR /app
-COPY --from=build /out .
+COPY --from=build /out/meitou-reports .
 ENV ASPNETCORE_HTTP_PORTS=8080
 EXPOSE 8080
 USER $APP_UID
-ENTRYPOINT ["dotnet", "meitou-reports.dll"]
+ENTRYPOINT ["./meitou-reports"]
