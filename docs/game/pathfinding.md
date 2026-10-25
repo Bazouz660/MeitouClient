@@ -69,6 +69,14 @@ mode3. FCS `MoveSpeed` (editor enum, **Verified**): WALK 0, JOG 1, RUN 2, GROUPE
 Squad formations: [squads travelling together](#squads-travelling-together). Off-screen arrival remains unknown. Whether living characters block each other beyond the
 separation steering is **Unknown**; sitting characters are never pushed (**Observed** in play) (Meitou adds solid body contact: [simulation](../simulation.md#movement-and-paths)).
 
+### Water costs
+
+**Engine choice** (not the original's, which charges water faces one flat factor, RACE `water avoidance` a + 1, or 1 / (1 − a) below 0, halved for the player
+faction): the own builder bands terrain water triangles by their shallowest corner's depth (`Speed.WetStateOfDepth`, size 1) into areas shallow 2, waist 4, deep 5
+(`NavArea`). A path request's `WaterCost` per state is max(avoidance factor, land top speed / `Speed.InWater` speed); a non-swimmer's shallows take its land speed. A human
+swimming at 6 with top speed 40 pays 6.7 in deep water, at least the flat factor everywhere. `CoarseRoute` bands its cells by centre depth the same way, never below 1.
+Bands are at size 1, so larger races (Garru, Leviathan) are charged as if they swam where they wade.
+
 ## Squads travelling together
 
 Source: kenshi_x64.exe 1.0.68; names from KenshiLib 1ce4a16. Constants are **Verified** (bytes at the loads in the cited functions);

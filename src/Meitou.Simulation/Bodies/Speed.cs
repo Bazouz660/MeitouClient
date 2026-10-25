@@ -61,6 +61,9 @@ public static class Speed
         return swims ? 1 : 0;
     }
 
+    /// <summary>The wet water state 1..3 of a swimmer of size 1 over ground <paramref name="depth"/> under the water level: what the navmesh's water areas stand for (docs/game/pathfinding.md "Water costs").</summary>
+    public static int WetStateOfDepth(float depth) => depth >= DeepWaterDepth ? 3 : depth >= WaistWaterDepth ? 2 : 1;
+
     /// <summary>The water level's margin over a character's height, and the depths (times its size) that make the water waist-deep and deep (<b>Verified</b>, <c>FUN_1405c7fd0</c>).</summary>
     public const float WaterSlack = 2, WaistWaterDepth = 6, DeepWaterDepth = 15;
 

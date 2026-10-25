@@ -4,7 +4,7 @@ using System.Numerics;
 namespace Meitou.Simulation;
 
 /// <summary>A path wanted by one character.</summary>
-public readonly record struct PathRequest(long Id, CharacterId Character, Vector3 From, Vector3 To, float Radius = 0, float WaterFactor = 0, float RoadPreference = 0);
+public readonly record struct PathRequest(long Id, CharacterId Character, Vector3 From, Vector3 To, float Radius = 0, WaterCost Water = default, float RoadPreference = 0);
 
 /// <summary>The answer to a <see cref="PathRequest"/>: the path (empty when none).</summary>
 public readonly record struct PathAnswer(long Id, CharacterId Character, PathResult Path);
@@ -56,10 +56,10 @@ public sealed class PathService : IDisposable
     public int Pending => Volatile.Read(ref pending);
 
     /// <summary>Asks for a path; returns the request id.</summary>
-    public long Submit(CharacterId character, Vector3 from, Vector3 to, float radius = 0, float waterFactor = 0, float roadPreference = 0)
+    public long Submit(CharacterId character, Vector3 from, Vector3 to, float radius = 0, WaterCost water = default, float roadPreference = 0)
     {
         long id = Interlocked.Increment(ref nextId);
-        var request = new PathRequest(id, character, from, to, radius, waterFactor, roadPreference);
+        var request = new PathRequest(id, character, from, to, radius, water, roadPreference);
         if (IsSynchronous) { answers.Enqueue(Answer(request)); return id; }
         newest[character] = id;
         Interlocked.Increment(ref pending);
@@ -67,8 +67,8 @@ public sealed class PathService : IDisposable
         return id;
     }
 
-    PathAnswer Answer(PathRequest r) => new(r.Id, r.Character, (r.Radius > 0 || r.WaterFactor > 0 || r.RoadPreference > 0) && walkability is IAgentWalkability agent
-        ? agent.FindPath(r.From, r.To, r.Radius, r.WaterFactor, r.RoadPreference) : walkability.FindPath(r.From, r.To));
+    PathAnswer Answer(PathRequest r) => new(r.Id, r.Character, (r.Radius > 0 || r.Water.IsSet || r.RoadPreference > 0) && walkability is IAgentWalkability agent
+        ? agent.FindPath(r.From, r.To, r.Radius, r.Water, r.RoadPreference) : walkability.FindPath(r.From, r.To));
 
     void Work()
     {

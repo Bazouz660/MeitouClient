@@ -297,12 +297,12 @@ public sealed class NavmeshWalkability : IWalkability
     /// </summary>
     (List<Vector3> Route, bool Road) Route(Vector3 from, Vector3 to, NavAgent agent)
     {
-        if (agent.RoadPreference <= 0 || Roads?.Route(new(from.X, from.Z), new(to.X, to.Z), agent.RoadPreference) is not { } via) return (Coarse.Find(from, to, agent.WaterFactor), false);
+        if (agent.RoadPreference <= 0 || Roads?.Route(new(from.X, from.Z), new(to.X, to.Z), agent.RoadPreference) is not { } via) return (Coarse.Find(from, to, agent.Water), false);
         // via: the join, the road's points, the leave, then the goal.
         var route = new List<Vector3> { from };
         void Leg(Vector3 a, Vector3 b)
         {
-            var leg = Coarse.Find(a, b, agent.WaterFactor);
+            var leg = Coarse.Find(a, b, agent.Water);
             if (leg.Count > 1) route.AddRange(leg.Skip(1));
             else route.Add(b);
         }
