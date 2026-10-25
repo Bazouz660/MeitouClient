@@ -1,4 +1,4 @@
-if (along <= 0 || along >= w.Leaf || to.Length()if (w.Found || o == w.Self || !w.Table.Previous[o].Alive || w.Table.Cold(o) is { Medical.Incapacitated: true }) return;using System.Numerics;
+using System.Numerics;
 using Meitou.Data.Gameplay.Bodies;
 using Meitou.Data.Gameplay.Combat;
 using Meitou.Simulation.Combat;
@@ -209,8 +209,8 @@ public sealed partial class LockSystem
 
     /// <summary>
     /// A character ahead of the basher within <see cref="BashBlockGap"/> whose body the line along its facing meets (<c>FUN_14033d690</c>, <b>Observed</b>: a ray from 12 up along the
-    /// facing at each sensed character in front with that gap; any character, ally or not). Engine reading: the ray is the flat line against the body's radius, stopped by the door leaf; a body lying down
-    /// (the ray starts 12 up) does not count.
+    /// facing at each sensed character in front with that gap; any character, ally or not). Engine reading: the ray is the flat line against the body's radius, stopped by the door
+    /// leaf; a body lying down (the ray starts 12 up) does not count.
     /// </summary>
     static bool InTheWay(World world, int s, Vector2 face)
     {
