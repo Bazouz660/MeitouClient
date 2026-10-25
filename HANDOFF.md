@@ -2,7 +2,7 @@
 
 Repository: `/Users/daniilmiroshnykov/code/dotnet/MeitouClient`  
 Branch: `metal-spike`  
-Last code commit: `9cab0323 perf: reuse frame constants for set buffers and cache pushes`
+Last code commit: `869feef4 fix: draw the pointer in the shared overlay pass`
 
 State: functional opt-in Metal preview; **not 100% Vulkan effect parity**. Upstream v0.15.0 (`cd01e732`) is merged.
 **MEP-1, MEP-2, MEP-3 and MEP-5 are accepted** (2026-10-24: MetalFX temporal stability; reflection MSAA/characters;
@@ -59,6 +59,11 @@ Metal set/push reuse (2026-10-25): descriptor argument buffers are now slices of
 block is unchanged. This targets the late-`MTLBuffer` rows (the tiny values were resource addresses, not lamp colour)
 and the 20 redundant `setVertexBytes`/`setFragmentBytes` rows in Render Encoder 6. API/CPU cleanup, not a GPU-time claim.
 Build 0/0; quick suite 450 passed / 2 skipped; internal screenshot runs. No new capture.
+
+Metal pointer layering (2026-10-25): the in-game pointer now appends to the shared overlay pass after the HUD, map,
+inventory and settings. The overlay coalescing had delayed that pass until the end of the frame while the pointer still
+flushed its own encoder immediately, so the UI covered the cursor. Build 0/0; quick suite 450 passed / 2 skipped; no new
+capture. Needs a live check with the map/inventory open.
 
 ## Upstream sync (2026-10-25, `cd01e732`)
 
