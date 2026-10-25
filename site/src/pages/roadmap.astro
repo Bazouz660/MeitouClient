@@ -60,7 +60,7 @@ const reportConfig = JSON.stringify({ url: reports.url.replace(/\/$/, ''), siteK
           </button>
         ))}
       </div>
-      <div class="filter-note">Click a platform, Has bugs or a status to filter the rows. <button type="button" class="clear" hidden>Show all</button></div>
+      <div class="filter-note" hidden>Showing all rows. <button type="button" class="clear">Show all</button></div>
     </section>
 
     <section aria-labelledby="cats-h">
@@ -298,7 +298,7 @@ const reportConfig = JSON.stringify({ url: reports.url.replace(/\/$/, ''), siteK
     const on = (r) => plat === 'all' ? true : plat === 'specific' ? r.d : r.p[plat] !== 'na';
     const st = (r) => (plat in PLAT ? r.p[plat] : r.s);
     const bar = (el, rs) => { const n = rs.length; el.querySelectorAll('span').forEach((s, i) => { s.style.width = n ? `${(100 * rs.filter((r) => st(r) === ORDER[i]).length) / n}%` : '0'; }); };
-    const note = document.querySelector('.filter-note'), clear = note.querySelector('.clear'), plain = note.firstChild.textContent;
+    const note = document.querySelector('.filter-note'), clear = note.querySelector('.clear');
     function apply() {
       const vis = rows.filter(on);
       bar(document.querySelector('[data-bar="all"]'), vis);
@@ -329,8 +329,8 @@ const reportConfig = JSON.stringify({ url: reports.url.replace(/\/$/, ''), siteK
       if (active) parts.push(`${LABEL[active]} only`);
       if (onlyBugs) parts.push('systems with known bugs');
       if (query) parts.push(`systems matching “${search.value.trim()}”`);
-      note.firstChild.textContent = parts.length ? `Showing ${parts.join(', ')}. ` : plain;
-      clear.hidden = !parts.length;
+      note.firstChild.textContent = `Showing ${parts.join(', ')}. `;
+      note.hidden = !parts.length;
       // The filters live in the query string (defaults left out), so a filtered view can be linked; the #row anchor stays.
       const qs = new URLSearchParams();
       if (active) qs.set('status', active);
