@@ -2,7 +2,7 @@
 
 Repository: `/Users/daniilmiroshnykov/code/dotnet/MeitouClient`  
 Branch: `metal-spike`  
-Last code commit: `2ae43608 Merge remote-tracking branch 'origin/master' into metal-spike`
+Last code commit: `e6ab68d3 perf: cap the terrain relief march at an LOD`
 
 State: functional opt-in Metal preview; **not 100% Vulkan effect parity**. Upstream v0.15.0 (`cd01e732`) is merged.
 **MEP-1, MEP-2, MEP-3 and MEP-5 are accepted** (2026-10-24: MetalFX temporal stability; reflection MSAA/characters;
@@ -18,6 +18,11 @@ UI fixes (2026-10-25): Metal UI render-target images now flip V on both backends
 top-left origin, and Metal uses the shared character draw list. Portraits, item icons and the editor stage are
 upright; editor race/gender/slider changes show live; the trader stock grid and HUD name plates sit in their
 windows. Verified by the user at 2560x1600.
+
+Terrain relief LOD (2026-10-25): the parallax march now uses 8 view and 4 sun steps near (4 and 2 at the parallax
+end), the three heaviest ground layers, and 4 steps on the displaced-detail path. The Metal town capture had the
+interior-cut draw at 11.25 ms of a 31.03 ms frame; with the march off it was 4.28 ms and 19.75 ms, and the 6.2 KB
+register spill fell to 48 B. A 45 s Border Zone smoke with the LOD ran at 20.3 ms GPU with relief on.
 
 ## Upstream sync (2026-10-25, `cd01e732`)
 
