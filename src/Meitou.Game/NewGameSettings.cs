@@ -27,9 +27,10 @@ internal sealed record NewGameSettings
         copy[index] = float.IsFinite(value) ? Math.Clamp(value, Options[index].Min, Options[index].Max) : 1;
         return new(copy);
     }
-    public PopulationData Apply(PopulationData data) => data.WithBodyOptions(data.BodyOptions with
+    /// <summary>The body options of a new world: these and the Gameplay settings' <paramref name="dismemberment"/>.</summary>
+    public PopulationData Apply(PopulationData data, Meitou.Simulation.Bodies.Dismemberment dismemberment) => data.WithBodyOptions(data.BodyOptions with
     {
-        HungerTime = this[0], ChanceOfDeath = this[1], GlobalDamageMultiplier = this[2],
+        HungerTime = this[0], ChanceOfDeath = this[1], GlobalDamageMultiplier = this[2], Dismemberment = dismemberment,
     });
     public void Write(SaveCamera camera)
     {

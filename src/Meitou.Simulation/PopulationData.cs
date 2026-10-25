@@ -317,7 +317,7 @@ public sealed class PopulationData
 public sealed class PopulationSettings
 {
     /// <summary>The <c>Squad size multiplier</c> setting (factions-squads-towns.md section 9).</summary>
-    public float SquadSizeMultiplier { get; init; } = 1;
+    public float SquadSizeMultiplier { get; set; } = 1;
     /// <summary>The <c>Fast zone hopping</c> setting: a ring of one more zone round the activated ones (game-loop.md "Zones", Verified).</summary>
     public bool FastZoneHopping { get; init; }
     /// <summary>
@@ -338,7 +338,7 @@ public sealed class PopulationSettings
     /// <summary>Share of a faction's <c>roaming population</c> a town's roaming pool may hold (0.7 is the nests' floor, 6.3; for towns the cap is <b>Unknown</b>).</summary>
     public float RoamingShare { get; init; } = 0.7f;
     /// <summary>The <c>Global population multiplier</c> setting.</summary>
-    public float PopulationMultiplier { get; init; } = 1;
+    public float PopulationMultiplier { get; set; } = 1;
     /// <summary>Game seconds a loaded roaming squad stays loaded after its zone stopped being active (the original's 4 to 5 s countdown, 6.x of game-loop.md; engine choice 10).</summary>
     public float RoamUnloadGraceSeconds { get; init; } = 10;
     /// <summary>A roaming squad has reached a town within this distance of its centre.</summary>
@@ -370,9 +370,9 @@ public sealed class PopulationSettings
 
     // ---- faction campaigns (docs/game/factions-squads-towns.md "Campaigns") ----
     /// <summary>The original's <c>raidFrequencyMult</c> (settings.cfg, "Town raid events: frequency" 0.25 to 3; default 1): times the roll chance.</summary>
-    public float RaidFrequencyMult { get; init; } = 1;
+    public float RaidFrequencyMult { get; set; } = 1;
     /// <summary>The original's <c>raidSizeMult</c> ("Town raid events: size" 0.25 to 4; default 1): times <c>num forces</c>.</summary>
-    public float RaidSizeMult { get; init; } = 1;
+    public float RaidSizeMult { get; set; } = 1;
 
     // ---- the wild: homeless squads and nests (6.2, 6.3) ----
     /// <summary>The new game's <i>Number of nests multiplier</i> (slider 0.5 to 4; its default is <b>Unknown</b>, 1 here).</summary>

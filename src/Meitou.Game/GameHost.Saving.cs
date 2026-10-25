@@ -63,7 +63,20 @@ sealed partial class GameHost
         return (footprints.Of(site.Record) ?? footprints.Plot(site.Record))?.Gap(site.Position, site.Rotation, point);
     }
 
-    /// <summary>The system list and its order are <see cref="StandardSystems"/>' (docs/simulation.md "Threading"); built again for each world.</summary>
+    /// <summary>The Gameplay settings, first taken from the install's settings.cfg.</summary>
+    GameplaySettings Gameplay => config.Gameplay ??= GameplaySettings.FromInstall(install);
+
+    /// <summary>Hands the Gameplay settings to the running world's systems (all but Dismemberment, which a world takes when it is built).</summary>
+    void ApplyGameplay()
+    {
+        var gameplay = Gameplay;
+        foreach (var population in session.World.Systems.OfType<Meitou.Simulation.PopulationSystem>())
+            (population.Settings.SquadSizeMultiplier, population.Settings.PopulationMultiplier, population.Settings.RaidSizeMult, population.Settings.RaidFrequencyMult) =
+                (gameplay.SquadSize, gameplay.Population, gameplay.RaidSize, gameplay.RaidFrequency);
+        foreach (var ai in session.World.Systems.OfType<Meitou.Simulation.Ai.AiSystem>()) ai.Settings.TownAttacks = gameplay.TownAttacks;
+    }
+
+    /// <summary>The system list and its order are <see cref="StandardSystems"/>'(docs/simulation.md "Threading"); built again for each world.</summary>
     Meitou.Simulation.StandardSystemSet BuildSystems(bool interactive, PopulationData? data = null, NewGameSettings? settings = null) =>
         Meitou.Simulation.StandardSystems.Build(data ?? popData!, simWalkability!, new Meitou.Simulation.StandardSystemOptions
         {
@@ -79,7 +92,9 @@ sealed partial class GameHost
                 Background = interactive && !IsDuel && !IsBattle, KeepRoamers = config.KeepRoamers, OffscreenFights = config.OffscreenFights, OffscreenHealing = config.OffscreenHealing,
                 CampaignAncestorsOnce = config.CampaignAncestorsOnce, KeepWild = config.KeepWild, ResidentSchedule = config.ResidentSchedule,
                 NestsMultiplier = (settings ?? difficulty)[6],
+                SquadSizeMultiplier = Gameplay.SquadSize, PopulationMultiplier = Gameplay.Population, RaidSizeMult = Gameplay.RaidSize, RaidFrequencyMult = Gameplay.RaidFrequency,
             },
+            Ai = new Meitou.Simulation.Ai.AiSettings { TownAttacks = Gameplay.TownAttacks },
             Construction = new Meitou.Simulation.Construction.ConstructionSettings { BuildingSpeed = (settings ?? difficulty)[5], EdgeGap = SiteEdgeGap },
             Production = new Meitou.Simulation.Production.ProductionSettings { ProductionOption = (settings ?? difficulty)[3], ResearchOption = (settings ?? difficulty)[4], EdgeGap = SiteEdgeGap },
             // The duel replays exactly: its paths are answered inside the tick, never on a thread whose timing differs from lap to lap.
@@ -256,7 +271,7 @@ sealed partial class GameHost
         LoadedSave? loaded = null;
         StandardSystemSet built;
         var nextDifficulty = NewGameSettings.Read(read.Result.Camera);
-        var nextData = nextDifficulty.Apply(popData!);
+        var nextData = nextDifficulty.Apply(popData!, Gameplay.Dismemberment);
         try
         {
             built = BuildSystems(interactive, nextData, nextDifficulty);

@@ -42,7 +42,7 @@ sealed partial class GameHost
         if (scene.Database is not { } database || NewGameStart.Find(NewGameStart.LoadAll(database), id) is not { } chosen) return;
         StandardSystemSet? built = null;
         var nextDifficulty = player.NewGameOptions;
-        var nextData = nextDifficulty.Apply(popData!);
+        var nextData = nextDifficulty.Apply(popData!, Gameplay.Dismemberment);
         // A fresh seed per game, as the original rolls its names and squads anew each time (docs/characters.md "Names"); --seed keeps one.
         ulong seed = g.SeedGiven ? g.Seed : (ulong)Random.Shared.NextInt64(1, long.MaxValue);
         AudioGameStarts();

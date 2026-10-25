@@ -11,7 +11,7 @@ namespace Meitou.Game;
 /// <summary>Shared settings layout and interaction; the current UI mode selects only its presentation.</summary>
 sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, InputBindings bindings, Action save, Slider frameLimit, UserConfig config)
 {
-    static readonly string[] Pages = ["Display", "Graphics", "Interface", "Controls", "Advanced", "Audio", "Fixes"];
+    static readonly string[] Pages = ["Display", "Graphics", "Interface", "Controls", "Advanced", "Audio", "Gameplay", "Fixes"];
     static readonly string[] GraphicsPages = ["World", "Lighting", "Water", "Effects", "Skin"];
     /// <summary>The Metal-only preset row (Native / MetalFX quality, balanced, performance / TAA), edited by the Metal settings panel.</summary>
     internal const string MetalPresetSlider = "Metal upscaling";
@@ -45,6 +45,21 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
             v => { config.Audio = (config.Audio ?? new()) with { Voices = (int)MathF.Round(v / 8) * 8 }; AudioChanged?.Invoke(); },
             "0", Text: v => v >= AudioSettings.MaxVoices ? "All" : $"{v:0}", Faithful: AudioSettings.MaxVoices, Meitou: AudioSettings.MeitouVoices),
     ];
+
+    Slider[]? gameplaySliders;
+    /// <summary>The four sliders of the original's Gameplay page (docs/formats/settings.md "Gameplay"); each writes <see cref="UserConfig.Gameplay"/> and calls <see cref="GameplayChanged"/>.</summary>
+    Slider[] GameplaySliders => gameplaySliders ??= [
+        Multiplier("Squad size multiplier", GameplaySettings.MinSquadSize, GameplaySettings.MaxSquadSize, g => g.SquadSize, (g, v) => g with { SquadSize = v }),
+        Multiplier("Global population multiplier", GameplaySettings.MinPopulation, GameplaySettings.MaxPopulation, g => g.Population, (g, v) => g with { Population = v }),
+        Multiplier("Town raid events: size", GameplaySettings.MinRaidSize, GameplaySettings.MaxRaidSize, g => g.RaidSize, (g, v) => g with { RaidSize = v }),
+        Multiplier("Town raid events: frequency", GameplaySettings.MinRaidFrequency, GameplaySettings.MaxRaidFrequency, g => g.RaidFrequency, (g, v) => g with { RaidFrequency = v }),
+    ];
+
+    Slider Multiplier(string label, float min, float max, Func<GameplaySettings, float> get, Func<GameplaySettings, float, GameplaySettings> set) =>
+        new(label, min, max, () => get(config.Gameplay ??= new()), v => SetGameplay(set(config.Gameplay ?? new(), Math.Clamp(MathF.Round(v * 20) / 20, min, max))),
+            "0.##", Faithful: 1);
+
+    void SetGameplay(GameplaySettings value) { config.Gameplay = value; GameplayChanged?.Invoke(); }
 
     Slider Volume(string label, Func<AudioSettings, float> get, Func<AudioSettings, float, AudioSettings> set) =>
         new(label, 0, 1, () => get(config.Audio ??= new()), v => { config.Audio = set(config.Audio ?? new(), Math.Clamp(v, 0, 1)); AudioChanged?.Invoke(); },
@@ -101,6 +116,8 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
     public IReadOnlyList<(string Id, string Name, bool Default)> SkinRaceList { get; init; } = [];
     /// <summary>A race's skin was turned on or off (the config's <see cref="UserConfig.SkinRaces"/> holds it); the game hands it to the character renderer.</summary>
     public Action? SkinRacesChanged { get; init; }
+    /// <summary>Called when a Gameplay setting changes (the config holds the new values); the game hands them to the running world.</summary>
+    public Action? GameplayChanged { get; init; }
     /// <summary>Called when an audio slider changes (the config holds the new values); the game applies them to the running sound.</summary>
     public Action? AudioChanged { get; init; }
     public bool Visible
@@ -227,6 +244,24 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
         }
         if (page == 6)
         {
+            string[] hints = [
+                "Size of the squads made from now on: townspeople, roaming squads and raids (the game: 1). Affects performance.",
+                "How many squads roam and live in the wild (the game: 1). Affects performance.",
+                "How many fighters a raid on your towns gathers (the game: 1).",
+                "How often factions start raids on your towns (the game: 1).",
+            ];
+            for (int i = 0; i < GameplaySliders.Length; i++)
+                result.Add(new(GameplaySliders[i].Label, hints[i], Slider: GameplaySliders[i]));
+            result.Add(new("Town attacks frequency", "How long a faction waits between attacks on your towns by squads passing by (the game: Normal). Never stops them.",
+                Choice: new(() => GameplaySettings.TownAttackLabels, () => (config.Gameplay ??= new()).TownAttacks,
+                    i => SetGameplay((config.Gameplay ?? new()) with { TownAttacks = i }))));
+            result.Add(new("Dismemberment", "When a destroyed limb is cut off: Rare only by a single heavy blow, Frequent also when a wound worsens (the game: Rare). "
+                + "Applies from the next game started or loaded.",
+                Choice: new(() => GameplaySettings.DismembermentLabels, () => (int)(config.Gameplay ??= new()).Dismemberment,
+                    i => SetGameplay((config.Gameplay ?? new()) with { Dismemberment = (global::Meitou.Simulation.Bodies.Dismemberment)i }))));
+        }
+        if (page == 7)
+        {
             // Bugs of the game as it ships; on fixes them, off plays as the game does.
             result.Add(new("Raids as written", "Raid and campaign data that builds on a base campaign counts the base's squads and follow-up campaigns once. "
                 + "The game counts them twice, so inherited squads come up more often and follow-up raids are about twice as likely.",
@@ -300,7 +335,7 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
         }
         if (page == 4)
             result.Insert(0, PageSidesEntry(result, "All gameplay changes", "Every change on this page as the game plays, or every Meitou change.", "gameplay change"));
-        if (page == 6)
+        if (page == 7)
             result.Insert(0, PageSidesEntry(result, "All fixes", "Every bug on this page as the game ships it, or every fix.", "fix"));
         return result;
     }
@@ -522,6 +557,7 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
         OffscreenChanged?.Invoke();
         config.Audio = new();
         AudioChanged?.Invoke();
+        SetGameplay(new());
         config.HardwareMouse = false;
         CameraRotateSpeed.Set(global::Meitou.Data.World.KenshiCamera.DefaultRotateSpeed);
         config.EdgeScroll = true;

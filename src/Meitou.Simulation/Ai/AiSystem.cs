@@ -34,7 +34,7 @@ public sealed class AiSettings
     /// The original's <c>attacks</c> (settings.cfg "Town attacks frequency": 0 Bombardment, 1 High, 2 Normal, 3 Fewer, 4 Rare, 5 Never; default 2): a faction's wait between
     /// passing-by assaults on the player's towns (docs/game/ai.md "Package classes"); Never stops them.
     /// </summary>
-    public int TownAttacks { get; init; } = 2;
+    public int TownAttacks { get; set; } = 2;
 }
 
 /// <summary>

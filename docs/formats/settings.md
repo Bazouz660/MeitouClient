@@ -189,7 +189,8 @@ the game calls `Root::restoreConfig` / `saveConfig` (**Verified**), which use th
 | `harpoonLimit` | Not implemented |
 | `generate distant towns` | Not honoured: towns without a baked mesh are drawn from their buildings' distant meshes |
 | `mouse speed pan`, `mouse speed tilt` | The game's Controls page has one "Camera rotation speed" slider (2 … 50, default 6) setting both; kept in `meitou.user.json`, `settings.cfg` not read |
-| `npc range`, `mouse speed horizontal` / `vertical`, `invert *`, UI, audio, gameplay keys | Not applicable / not implemented |
+| `Squad size multiplier`, `Global population multiplier`, `raidSizeMult`, `raidFrequencyMult`, `attacks`, `Dismemberment` | The game's Gameplay settings page, same ranges and defaults; kept in `meitou.user.json` (first run: this file). All but `Dismemberment` reach the running world at once (they act on squads, raids and assaults made afterwards); `Dismemberment` applies to the next world started or loaded |
+| `npc range`, `mouse speed horizontal` / `vertical`, `invert *`, UI, audio, other gameplay keys | Not applicable / not implemented |
 
 ### Viewer: water reflection
 
