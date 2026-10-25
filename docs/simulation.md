@@ -28,7 +28,7 @@ pause with a tick ahead takes it at once (the picture jumps a tick, then the pau
 (`SettleAhead`); `ReplaceWorld` drops it. Display → World tick alongside drawing (`TickAhead`): Faithful never (the world, then the draw); Meitou, the default, once
 a tick takes 4 ms (`WorldSession.TickMs`, smoothed over about ten ticks) until it is under 2 ms (a tick ahead is slower, sharing the cores); Always
 every frame. Off whatever the setting in stills, the duel, recorded flights and the play benchmark (their ticks stay in step with the frame).
-F12's `tick ahead` row is its wall time; `outside ticks` leaves it out.
+The profiler's `tick ahead` row is its wall time; `outside ticks` leaves it out.
 
 **Verified** original clock: 1200/11 seconds per game hour ([game-loop.md](game/game-loop.md)).
 `BodySystem.HoursPerTick=11/36000`; the medical tick takes `TickSeconds` ([character-stats](game/character-stats.md#time)). Navmesh unload uses
@@ -55,7 +55,7 @@ Randomness: stateless `Rng.Hash(seed,entityKey,purpose,counter)`; changing purpo
 Worker partitions are `threads*2`, minimum 16 slots (game 32: 128 left a 500-character battle 3 partitions); one worker means caller execution.
 Async paths, navmesh and population results enter at tick boundaries; arrival timing is not
 repeatable in play. Determinism tests use synchronous services. `PathService` runs 2-4 threads (a quarter of the cores) and drops a
-request its character replaced before a thread took it up; F12's sim rows show the requests waiting.
+request its character replaced before a thread took it up; the profiler's sim rows show the requests waiting.
 
 `StateHash` is ordered, includes slot/generation/free-list and hashed subsystem state, normalizes
 negative zero, and is a diagnostic rather than gameplay work. Golden scenarios must agree at

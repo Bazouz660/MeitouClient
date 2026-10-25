@@ -472,7 +472,7 @@ The settings panel and the native Meitou UI have their own keyboard focus ([nati
 
 ### Debug menu
 
-Meitou only (no original counterpart). F10 (`ToggleDebugMenu`, rebindable) opens a cheat list; while open it takes every key (Up/Down, typing, Enter, Esc).
+Meitou only (no original counterpart). Insert (`ToggleDebugMenu`, rebindable; unbound in the game, and F12 is Steam's screenshot key, so the profiler is on F10) opens a cheat list; while open it takes every key (Up/Down, typing, Enter, Esc).
 Rows send `DebugCommand`s, applied in the next tick's Inputs phase: teleport the selection to the camera target, spawn a character record there
 (own squad, first faction hostile to the player), give an item record (`name x5 q80`; quality 0-100: armour's quality, crossbows' and limbs' level, a weapon the `PLAYER_WEAPONS` model of the highest level at or below it (else the lowest) and that level; what does not fit drops at their feet) to the first selected, add or remove money (signed number),
 heal fully (`MedicalState.Heal`), every stat to 100, one cut of n damage, finish every RESEARCH record and repetition (queue emptied). Heal, stats and damage fall back to the inspected character. Names match a record's string id,

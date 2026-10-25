@@ -52,11 +52,11 @@ Offscreen frames have no present wait. Render-thread benchmark totals exclude `d
 In the game the head is split too: `host` (the host's frame work before the world draw), `blood` (the host's blood marks and pools, then
 the terrain decal layers redrawn), so `upd-terrain` and `gi` hold only their own work.
 `sim` (game only) is the simulation ticks run on the render thread before the frame's clock starts (`FrameProfiler.Outside`); it counts in the total. The tick run ahead during the world draw ([simulation](simulation.md#tick-ahead)) is not in it: its wall time is the `tick ahead` row.
-It opens (not plotted) to the world ticks per frame and the mean tick's ms, the tick phases (`World.Profile`, `TickProfile`; on while F12 shows; a
+It opens (not plotted) to the world ticks per frame and the mean tick's ms, the tick phases (`World.Profile`, `TickProfile`; on while the profiler shows (game F10, viewer F12); a
 parallel phase is wall time up to its barrier), `outside ticks` (control ticks, host orders), the ten costliest systems (all their spans: serial calls, parallel phases, effect applies), then the
 parts systems mark inside their own time (`TickProfile.Part`; Ragdoll's `rag setup`, `rag step` (the physics), `rag back`, `rag sweep`) and, per parallel
 phase, `<phase> cpu` (its jobs' time summed over the threads) and `<phase> slow` (each system's slowest job, summed): wall near `slow` is one job holding up the rest.
-F12's legend groups stages (update, pre-frame, scene, present) into one summed row and line each; a click on a `+` row opens it (plotting
+The profiler's legend groups stages (update, pre-frame, scene, present) into one summed row and line each; a click on a `+` row opens it (plotting
 its stages instead), `-` closes it.
 The orange line on both charts and the header's `frame` (mean of the last 30, fps, max) is the whole frame's wall time, one `BeginFrame` to the next:
 the stage total plus what no stage holds (the host's work before the frame, the waits for a free frame). `upd-chars` opens to its render-thread parts (`StageClock.Part`; not plotted; the pass meter shows them as subs): `fill` (the host's draw list),
@@ -106,7 +106,7 @@ Each interaction targets the nearest candidate within 150 m and retries every 3 
 `MEITOU_BENCH_ONLY=settle,zoom` keeps only the named segments (the run is deterministic from the save, so a hitch comes back at its tick).
 
 `frames.csv` has one row per frame: interval, loop sections (`BenchLap`), render-thread stages (`StageClock`), GPU stages, world tick steps
-and the slowest system (the world's `TickProfile`, as F12's sim rows), GC counts, bytes and pause (`BenchGcListener`: the
+and the slowest system (the world's `TickProfile`, as the profiler's sim rows), GC counts, bytes and pause (`BenchGcListener`: the
 runtime's events in process), pipelines created while drawing. `summary.md` has per-segment percentiles, the largest stages, steps and
 systems, the stutters (over 20 ms and twice the segment's median) and the collections. A frame's interval holds the previous frame's tail.
 
