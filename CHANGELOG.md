@@ -25,6 +25,7 @@ notes and refuses to release a version without one: add a `## vX.Y.Z` section wi
 - Fix full screen not starting on Wayland (#77)
 - Fix neighbouring buildings flickering when town repairs start
 
+- Fix the HUD's Toughness XP showing 1x for a whole character where the original shows 3x (#82)
 ## v0.15.0
 
 - Linux and macOS builds (linux-x64, osx-x64, osx-arm64) alongside Windows
