@@ -29,13 +29,16 @@ static class MarkdownView
         return panel;
     }
 
-    /// <summary>An image (or a <c>.webm</c> video, <see cref="VideoView"/>) loaded in the background; until then (or when it fails) it takes no room.</summary>
+    /// <summary>
+    /// An image (or a <c>.webm</c> video, <see cref="VideoView"/>) loaded in the background, at most the post's width (shrunk to fit, never
+    /// enlarged); until then (or when it fails) it takes no room.
+    /// </summary>
     /// <param name="fullVideo">For a video: the page its open button goes to, and how links open.</param>
-    public static Control Image(string url, NewsFeed feed, double maxHeight, (string Url, Action<string> Open)? fullVideo = null)
+    public static Control Image(string url, NewsFeed feed, (string Url, Action<string> Open)? fullVideo = null)
     {
         if (Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.AbsolutePath.EndsWith(".webm", StringComparison.OrdinalIgnoreCase))
             return VideoView.Create(url, feed, fullVideo);
-        var image = new Image { Stretch = Stretch.Uniform, MaxHeight = maxHeight, HorizontalAlignment = HorizontalAlignment.Left };
+        var image = new Image { Stretch = Stretch.Uniform, StretchDirection = StretchDirection.DownOnly, HorizontalAlignment = HorizontalAlignment.Left };
         RenderOptions.SetBitmapInterpolationMode(image, BitmapInterpolationMode.HighQuality);
         var frame = new Border { CornerRadius = new CornerRadius(6), ClipToBounds = true, HorizontalAlignment = HorizontalAlignment.Left, Child = image, IsVisible = false };
         _ = Task.Run(async () =>
@@ -71,7 +74,7 @@ static class MarkdownView
                 {
                     var images = new StackPanel { Spacing = 8 };
                     foreach (var link in inlines.OfType<LinkInline>())
-                        images.Children.Add(Image(NewsFeed.Resolve(post, link.Url ?? ""), feed, 420));
+                        images.Children.Add(Image(NewsFeed.Resolve(post, link.Url ?? ""), feed));
                     return images;
                 }
                 return Text(paragraph.Inline, post, open);
