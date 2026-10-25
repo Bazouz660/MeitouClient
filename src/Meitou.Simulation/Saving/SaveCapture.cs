@@ -103,6 +103,7 @@ public static partial class SaveCapture
         UpdateFactions(game, data, loaded);
         WriteTownKnowledge(builder, data, world.Player);
         if (world.Systems.OfType<PopulationSystem>().FirstOrDefault() is { } pools) WriteTownPools(game, data, pools);
+        WriteTownReplacements(game, data);
         // The zone files of the zones visited since (before the locks, the player's buildings and the home handles, which write into them).
         ZoneSave.WriteVisited(game, world, data, options.Levels);
         var buildings = HeldSave.BuildingStates(game);
@@ -224,6 +225,21 @@ public static partial class SaveCapture
                 pools.Write(town.Record);
                 town.Record.Bools["started"] = pools.Started;
             }
+    }
+
+    /// <summary>Each placed town's <c>replacementTown</c> (the TOWN in its place, "" none) and, while replaced, its <c>faction</c>, into its state.</summary>
+    static void WriteTownReplacements(SaveGame game, PopulationData data)
+    {
+        var sites = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var s in data.Sites) if (s.InstanceId.Length > 0) sites.TryAdd(s.InstanceId, s.Index);
+        foreach (var town in game.Towns)
+        {
+            if (town.IsNest || !sites.TryGetValue(town.Instance, out int site)) continue;
+            var replacement = data.Sites[site].Replacement;
+            if (replacement is null && !town.Record.Strings.ContainsKey("replacementTown")) continue;
+            town.Record.Strings["replacementTown"] = replacement?.Id ?? "";
+            if (replacement is not null && data.Sites[site].Town.Faction is { } faction) town.Record.Strings["faction"] = faction;
+        }
     }
 
     static void UpdateFactions(SaveGame game, PopulationData data, LoadedSave? loaded)

@@ -106,6 +106,12 @@ public static class SaveLoader
         ReadNests(save, data, context);
         foreach (var town in save.Towns)
             if (!town.IsNest && town.Instance.Length > 0) context.TownStates.TryAdd(town.Instance, town.Record);
+        // The towns' replacements (replacementTown: the TOWN in their place, "" none).
+        data.ClearReplacements();
+        foreach (var site in data.Sites)
+            if (site.InstanceId.Length > 0 && context.TownStates.TryGetValue(site.InstanceId, out var state)
+                && state.Strings.GetValueOrDefault("replacementTown") is { Length: > 0 } replacement && data.Db.Find(replacement) is { Type: FcsRecordType.TOWN } record)
+                data.SetReplacement(site.Index, TownData.From(record));
         // The war states, and the town handles their targets and homes name (docs/formats/save.md WAR_SAVESTATE).
         var siteOf = data.Sites.Where(s => s.InstanceId.Length > 0).GroupBy(s => s.InstanceId).ToDictionary(g => g.Key, g => g.First().Index, StringComparer.Ordinal);
         foreach (var town in save.Towns)

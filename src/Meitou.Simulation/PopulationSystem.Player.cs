@@ -67,6 +67,7 @@ public sealed partial class PopulationSystem
         if (data.PlayerFaction < 0) throw new InvalidOperationException("the game data has no player faction (Nameless)");
         ulong key = Rng.Mix(SeedSalts.PlayerStart ^ Rng.StableHash(start.Id));
         ApplyStartRelations(data.Relations, start);
+        data.ClearReplacements();
         var (centre, town, missing) = StartPlace(data, world.Seed, start);
         if (missing) world.Post(Loc.Tr("Cannot find any towns from the game start town list."));
         // The original stands the squad at the place itself; here on a walkable spot near it.

@@ -300,7 +300,9 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
         var walk = world.Walkability;
         EnsurePools(world);
         // A town made once (its pools say so) never makes residents again; its own squads that lost too many are made afresh (docs/simulation.md "Off-screen tier").
-        bool held = HoldsSquads(world, site.Index) || PoolsOf(site.Index) is { Started: true };
+        // A town that has just been replaced makes the replacement's residents, as the original treats its zone as fresh; the squads it had stay.
+        bool replaced = Replace(world, site);
+        bool held = !replaced && (HoldsSquads(world, site.Index) || PoolsOf(site.Index) is { Started: true });
         if (held) CheckRegeneration(world, site.Index);
         if (work is null)
         {
@@ -311,6 +313,30 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
         {
             work.Add(() => built.Enqueue(BuildTown(site, loadId, seed, walk, held)));
         }
+    }
+
+    /// <summary>
+    /// The original's <c>ZoneManager::checkForRepopulateTown</c> at a town's load (docs/game/factions-squads-towns.md "Town overrides"): not for a town of the player's faction;
+    /// of the current TOWN's <c>override town</c> list, the entries whose every <c>world state</c> holds, weighted by how many they have (none: never), other than the
+    /// replacement in place; the heaviest, the first of equals, takes the town's place. Whether it did.
+    /// </summary>
+    bool Replace(World world, TownSite site)
+    {
+        if (site.Town.OverrideTown.Count == 0 || site.Index < data.SiteFactions.Count && data.SiteFactions[site.Index] is >= 0 and var f && f == PlayerFactionOf(world)) return false;
+        TownData? best = null;
+        int weight = 0;
+        foreach (var link in site.Town.OverrideTown)
+        {
+            if (data.Db.Find(link.Id) is not { Type: FcsRecordType.TOWN } record || record.StringId == site.Replacement?.Id) continue;
+            var candidate = TownData.From(record);
+            var states = candidate.WorldState.Where(w => data.Db.Find(w.Id) is { Type: FcsRecordType.WORLD_EVENT_STATE }).DistinctBy(w => w.Id).ToList();
+            if (states.Count > weight && states.All(w => IWorldStates.Passes(States, data.Db, w.Id, w.V0))) (best, weight) = (candidate, states.Count);
+        }
+        if (best is null) return false;
+        data.SetReplacement(site.Index, best);
+        if (townLog.Count >= 256) townLog.RemoveAt(0);
+        townLog.Add($"{site.Town.Name}: now {best.Name}");
+        return true;
     }
 
     /// <summary>

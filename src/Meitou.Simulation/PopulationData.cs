@@ -68,9 +68,24 @@ public sealed class GeneratedAppearances(GameDatabase db, string installRoot) : 
     }
 }
 
-/// <summary>A town placed in the world.</summary>
-public sealed record TownSite(int Index, TownData Town, Vector3 Position, ZoneCoordinate Zone)
+/// <summary>A town placed in the world: <see cref="Record"/> is the placement's TOWN.</summary>
+public sealed record TownSite(int Index, TownData Record, Vector3 Position, ZoneCoordinate Zone)
 {
+    /// <summary>
+    /// The TOWN the town is now, as the original's <c>Town::getGameData</c> (its replacement, else its own record): <see cref="Replacement"/> with the placement's id and
+    /// names (engine choice: the override records' names are editor labels) and, when it names no faction, the faction the town had; else <see cref="Record"/>.
+    /// </summary>
+    public TownData Town { get; private set; } = Record;
+    /// <summary>The <c>override town</c> that took the town's place (docs/game/factions-squads-towns.md "Town overrides"; saved as <c>replacementTown</c>); null: none.</summary>
+    public TownData? Replacement { get; private set; }
+
+    internal void Replace(TownData? replacement)
+    {
+        Town = replacement is null ? Record
+            : replacement with { Id = Record.Id, Name = Record.Name, UnexploredName = Record.UnexploredName, Faction = replacement.Faction ?? Town.Faction };
+        Replacement = replacement;
+    }
+
     /// <summary>The placement's instance id in the level data (<c>9-rebirth-INGAME</c>), which the save's town state names.</summary>
     public string InstanceId { get; init; } = "";
     /// <summary>The town's placed buildings with their beds and nodes (<see cref="TownBuildings"/>), the AI's homes; empty when the host gave none.</summary>
@@ -96,8 +111,27 @@ public sealed class PopulationData
     /// Worlds built on the same data share it.
     /// </summary>
     public FactionRelations Relations { get; init; } = FactionRelations.Build([]);
-    /// <summary>The faction of every placed town, a position in <see cref="Factions"/> (-1: none).</summary>
-    public IReadOnlyList<int> SiteFactions { get; init; } = [];
+    /// <summary>The faction of every placed town, a position in <see cref="Factions"/> (-1: none); a <see cref="SetReplacement"/> changes it.</summary>
+    public IReadOnlyList<int> SiteFactions { get => siteFactions; init => siteFactions = [.. value]; }
+    int[] siteFactions = [];
+
+    /// <summary>
+    /// Puts <paramref name="replacement"/> in the town's place, or the town's own record back (null): the original's <c>FUN_1409fe7a0</c>, whose town then reads everything
+    /// from it and takes its <c>faction</c> when it names one (docs/game/factions-squads-towns.md "Town overrides").
+    /// </summary>
+    public void SetReplacement(int site, TownData? replacement)
+    {
+        var s = Sites[site];
+        s.Replace(replacement);
+        if (site < siteFactions.Length) siteFactions[site] = s.Town.Faction is { } fid ? FactionIndex(fid) : -1;
+    }
+
+    /// <summary>Every town back to its own record (a new game or a save starting; the data outlives the worlds, as <see cref="Relations"/> does).</summary>
+    public void ClearReplacements()
+    {
+        foreach (var s in Sites)
+            if (s.Replacement is not null) SetReplacement(s.Index, null);
+    }
 
     /// <summary>The nearest placed town whose radius holds a point (the game's position lookup, <c>FUN_140928890</c>), -1 when none.</summary>
     public int TownAt(Vector3 p)

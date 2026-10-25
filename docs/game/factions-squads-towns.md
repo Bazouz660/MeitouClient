@@ -112,7 +112,24 @@ Area-sector grid uses the4608-zone coordinate system with9-unit offset; biome po
 homeless/roaming pools, nests, town residents/bar/roam squads and campaigns have separate caps,
 spawn distances/timers/owner rules. Nest debris and regenerating squads are stateful. Towns
 resolve faction, homes/parts/material replacement, residents, interiors, contents and culture.
-World-state replacement towns and faction ownership affect both population and building data.
+World-state replacement towns and faction ownership affect both population and building data ([town overrides](#town-overrides)).
+
+### Town overrides
+
+**Verified** by decompile (`ZoneManager::checkForRepopulateTown` `FUN_1409ff5a0`, KenshiLib 1ce4a16 tier B; the setter `FUN_1409fe7a0`; zone load `FUN_1409ffad0`;
+`Town::getGameData` `140951f70`); Meitou: [simulation](../simulation.md#off-screen-tier).
+- A town reads everything from `getGameData`: its replacement (Town +0x338, saved `replacementTown`) when set, else its own TOWN. So a replacement's own
+  `override town` list chains on (Shark: Grayflayer, then "all ded").
+- Checked only when the town's zone loads, for each placed town of the zone (nothing runs at the death). Skipped for a town of the player's faction and while a
+  ZoneManager byte (+8) is set (meaning **Unknown**).
+- Candidates: the current TOWN's `override town` entries. One qualifies when each distinct `world state` entry (WORLD_EVENT_STATE) equals its v0; its weight is
+  how many there are, so an entry with none never qualifies. The replacement in place is skipped. The heaviest wins; equals keep the first in list order.
+- Applying: replacement = the winner; the town re-reads `no-foliage range`, `type`, `is public`, and takes the winner's `faction` when it names one and it differs;
+  resident data is set up again. In the zone's saved `0-buildinglist`, entries whose building state is not the player's and names this town (`townC` / `townCS`)
+  are dropped, as is every `1-itemlist` item, and the zone counts as fresh, so the residents are made again. Existing platoons are untouched.
+- Data (merged base files, throwaway census): 117 TOWNs have `override town`, 234 entries; the replacements are TOWNs named `... (override) ...`.
+- **Unknown**: the ZoneManager set `updatedTownOverrides` (+0x168148): a town in it answers "repopulate" again at every load; filled after the loading screen's
+  resident pass (`FUN_140a0e760`); when it is cleared was not found.
 
 **Sector and nest counts** (**Verified** by code): a platoon is filed in the area sector of its position (`FUN_1408f6c80`, from the platoon constructor and
 `Platoon::vfunc_28`): persistent platoons and nest squads into a set that is not counted, the rest into the counted set (+0x60, size +0x70), moved to a third set
@@ -556,7 +573,7 @@ every message {1} is the campaign's name and {2} the target town's (the cancel m
 - Unique characters: the `Character +0x279 & 7` gate and the 0.1 roll against a town list at platoon unload, platoon +0xac, the unit of
   `replacement time` (constant 2618.18 from `FUN_14066cd50`), UNIQUE_SQUAD_TEMPLATE `persistent` use and `missions` (DIPLOMATIC_ASSAULTS),
   the polarity of the import handle test; other readers of `unique` (`FUN_14067b070` dialogue conditions, `FUN_1407609e0` / `FUN_140761550`) not opened.
-- Which override town wins among several qualifying candidates; what exactly repopulating a town from its override does.
+- Town overrides: the ZoneManager +8 byte and the `updatedTownOverrides` set ([town overrides](#town-overrides)).
 - Whether the 1250 radius of the proximity helper is squared.
 - Patrol routes: the patrol tasks (`Task_Patrol`, `Task_PatrolTown`, `GoOutOnPatrol*`) were not decoded here (class mapping: [ai-tasks.md](ai-tasks.md#tasktype-to-task-class); packages: [ai.md](ai.md#signal-functions-and-the-package-classes)); no fixed route data
   was found in FCS records (squad templates only name `AI packages`; `patrol approaches towns` is a bool).
