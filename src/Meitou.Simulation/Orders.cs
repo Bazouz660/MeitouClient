@@ -172,11 +172,13 @@ public static class Orders
         switch (command)
         {
             case OrdersCommand set:
+                // A toggle sets the whole selection to the opposite of the first character's state, so a mixed selection ends up all on or all off.
+                bool? on = set.On;
                 foreach (var id in set.Characters.Count > 0 ? set.Characters : world.Player.Selection.ToArray())
                 {
                     if (!table.TryResolveNext(id, out int slot) || table.Cold(slot) is not { IsPlayer: true } cold) continue;
-                    bool on = set.On ?? (cold.Orders & set.Order) == 0;
-                    cold.Orders = on ? cold.Orders | set.Order : cold.Orders & ~set.Order;
+                    on ??= (cold.Orders & set.Order) == 0;
+                    cold.Orders = on.Value ? cold.Orders | set.Order : cold.Orders & ~set.Order;
                 }
                 break;
             case RunSpeedCommand speed:
