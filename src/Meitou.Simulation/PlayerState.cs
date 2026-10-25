@@ -189,7 +189,13 @@ public sealed partial class PlayerSystem(PopulationData? data = null) : ITickSys
         foreach (var id in ordered.Count > 0 ? ordered : world.Player.Selection)
         {
             if (!world.Player.Selection.Contains(id) || !table.TryResolveNext(id, out int slot) || table.Cold(slot) is not { IsPlayer: true, Medical: { } medical } cold) continue;
-            if (medical.PlayingDead) medical.StandUp(Orders.Has(cold, CharacterOrders.Sneak));
+            if (medical.PlayingDead)
+            {
+                bool low = Orders.Has(cold, CharacterOrders.Sneak);
+                medical.StandUp(low);
+                // Standing up (not staying low) on the order trains toughness when enemies are about.
+                if (!low) world.SystemOf<BodySystem>()?.GotUpByOrder(world, slot, cold);
+            }
             else if (medical.StayingLow && cold.GettingUpUntil > world.Tick) medical.StandUp();
         }
     }

@@ -197,4 +197,21 @@ public sealed class XpService(GameConstants constants, BodyOptions options)
     /// </summary>
     public float ToughnessFromKnockOut(CharacterStats stats, RaceData race) =>
         stats.Gain(StatsEnumerated.Toughness, EventUnit * race.StatMultiplier(StatsEnumerated.Toughness));
+
+    /// <summary>
+    /// The Toughness XP multiplier f (the HUD's, <c>FUN_1408c6780</c>): 1, or 2 with the left arm crippled, plus 2 for the right arm, 2 while the blood-loss trauma flag is set, and 2 for
+    /// the "Critical wounds" term, which tests the worst part's fraction (at most 1) against 15 and so is always on.
+    /// </summary>
+    public static float ToughnessFactor(MedicalState medical)
+    {
+        var arms = medical.Aggregates();
+        return (arms.LeftArmDisabled ? 2 : 1) + (arms.RightArmDisabled ? 2 : 0) + (medical.BloodKo ? 2 : 0) + 2;
+    }
+
+    /// <summary>
+    /// Toughness for getting up on the player's order near enemies (<c>FUN_1408c6780</c>, <b>Observed</b>): the core gain of 0.075 x f x (<paramref name="enemies"/> + 10) x race[toughness],
+    /// f = <see cref="ToughnessFactor"/>.
+    /// </summary>
+    public float ToughnessFromGettingUp(CharacterStats stats, RaceData race, MedicalState medical, int enemies) =>
+        PerEvent(stats, race, StatsEnumerated.Toughness, ToughnessFactor(medical) * (enemies + 10));
 }

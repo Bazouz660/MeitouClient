@@ -105,24 +105,49 @@ public sealed class BodySystem(GameConstants constants, BodyOptions? options = n
     }
 
     /// <summary>
-    /// <c>Character::isItSafeToGetUp</c> (docs/game/ragdolls.md "Playing dead", <b>Observed</b>): a slave, or no enemy sensed, or a conscious ally sensed. Meitou senses by distance
-    /// within the vision range (<see cref="AggroSystem.RangeOf"/>; 500 inside a building); an enemy is the combat system's (<see cref="Combat.CombatSystem.IsEnemyOf"/>), awake.
+    /// <c>Character::isItSafeToGetUp</c> (docs/game/ragdolls.md "Playing dead", <b>Observed</b>): a slave, or no enemy sensed, or a conscious ally sensed.
     /// </summary>
     static bool SafeToGetUp(World world, Combat.CombatSystem? combat, int me, CharacterCold cold)
     {
         if (cold.SlaveState == 1 || combat is null) return true;
+        var (enemies, _, allies) = Senses(world, combat, me, cold);
+        return enemies == 0 || allies > 0;
+    }
+
+    /// <summary>
+    /// The sense counts playing dead and the ordered get-up read (<c>SensoryData</c> <c>numEnemies</c>, <c>numNeutrals</c>, <c>numConsciousAllies</c>, tallied by <c>FUN_1408593d0</c> and
+    /// <c>FUN_1408580d0</c>, <b>Observed</b>): enemies and neutrals awake, alive and not carried; allies standing (posture 0), awake and alive. Meitou senses by distance within the vision
+    /// range (<see cref="AggroSystem.RangeOf"/>; 500 inside a building); an enemy is the combat system's (<see cref="Combat.CombatSystem.IsEnemyOf"/>), an ally of the same or an allied
+    /// faction, anyone else neutral.
+    /// </summary>
+    internal static (int Enemies, int Neutrals, int Allies) Senses(World world, Combat.CombatSystem combat, int me, CharacterCold cold)
+    {
         var table = world.Characters;
         var at = table.Previous[me].Position;
         float r = world.Sight.Inside(me) ? InsideSight : AggroSystem.RangeOf(cold, AggroSystem.OutdoorSight);
-        bool enemy = false;
+        int enemies = 0, neutrals = 0, allies = 0;
         for (int j = 0; j < table.HighWater; j++)
         {
             if (j == me || !table.Previous[j].Alive || table.Cold(j) is not { Medical: { Incapacitated: false } om } o) continue;
             if (Vector3.DistanceSquared(table.Previous[j].Position, at) > r * r) continue;
-            if (combat.IsEnemyOf(world, j, o, me, cold.Faction)) enemy = true;
-            else if (!om.Prone && (o.Faction == cold.Faction || combat.Relations?.IsAlly(cold.Faction, o.Faction) == true)) return true;
+            if (o.Faction == cold.Faction || combat.Relations?.IsAlly(cold.Faction, o.Faction) == true) { if (!om.Prone) allies++; }
+            else if (!o.CarriedBy.IsNone) continue;
+            else if (combat.IsEnemyOf(world, j, o, me, cold.Faction)) enemies++;
+            else neutrals++;
         }
-        return !enemy;
+        return (enemies, neutrals, allies);
+    }
+
+    /// <summary>
+    /// Getting up on the player's order (<c>Task_GetUp</c> start <c>FUN_14033ca10</c> with <c>playerWantsMeToGetUp</c>, then <c>FUN_1408c6780</c>, <b>Observed</b>; the Toughness tooltip's
+    /// "Get up and fight instead of playing dead"): with an enemy or neutral sensed and no conscious ally, toughness gains
+    /// <see cref="XpService.ToughnessFromGettingUp"/> for the enemies sensed.
+    /// </summary>
+    internal void GotUpByOrder(World world, int slot, CharacterCold cold)
+    {
+        if (world.SystemOf<Combat.CombatSystem>() is not { } combat || cold is not { Stats: { } stats, Race: { } race, Medical: { } medical }) return;
+        var (enemies, neutrals, allies) = Senses(world, combat, slot, cold);
+        if (enemies + neutrals >= 1 && allies == 0) xp.ToughnessFromGettingUp(stats, race, medical, enemies);
     }
 
     public void Act(World world, Partition part, EffectBuffer effects)
@@ -244,8 +269,7 @@ public sealed class BodySystem(GameConstants constants, BodyOptions? options = n
     ExtendedStats ExtendedOf(CharacterStats stats, RaceData race, MedicalState medical, float speed, float encumbrance, bool resting)
     {
         float runValue = Speed.RunValue(race, stats.Athletics);
-        var arms = medical.Aggregates();
-        float toughness = (arms.LeftArmDisabled ? 2 : 1) + (arms.RightArmDisabled ? 2 : 0) + (medical.BloodKo ? 2 : 0) + 2;
+        float toughness = XpService.ToughnessFactor(medical);
         float hunger = race.HungerRate * MedicalState.HungerSituationFactor(Constants, resting || medical.Unconscious || medical.Dead, false, encumbrance);
         return new ExtendedStats(XpService.AthleticsRate(encumbrance, speed, runValue), xp.StrengthCarryRate(encumbrance), toughness,
             MedicalState.KoPoint(Constants, stats.Toughness), speed, runValue, hunger);

@@ -142,14 +142,20 @@ bits on. So it lasts exactly while a leg is down; it does not knock out.
 KenshiLib 1ce4a16 names): posture 3 is chosen on getting up when `isItSafeToGetUp` fails, and kept while it does (the test
 runs each tick while WHOLE). Safe: the character's `SensoryData::numEnemies` (`+0x94`) is 0, or its state broadcast's slave
 state is 1 (a slave), or `numConsciousAllies` (`+0x4c`) is above 0 (sensed allies in posture 0, not unconscious or dead). A
-player order gets it up (1 when sneaking), as does a thief's watcher noticing. The Toughness tooltip lists "Get up and fight
-instead of playing dead" (`Character::updateGUIStatsDetails`); how toughness acts on it is **Unknown**, as is whether
-`numEnemies` counts down enemies.
+player order gets it up (1 when sneaking), as does a thief's watcher noticing.
+- Counts (`FUN_1408593d0`, per sensed character): `numEnemies` (`+0x94`) and `numNeutrals` (`+0x98`) skip the unconscious
+  (vfunc 0x30), the dead (`+0x5bc`) and the carried (`+0x3d4`), so downed enemies do not count; allies count in
+  `FUN_1408580d0` (above).
+- Toughness: the Toughness tooltip lists "Get up and fight instead of playing dead" under **Ways To Train**, not as an
+  effect. `Task_GetUp`'s start (`FUN_14033ca10`) with posture 0 and `playerWantsMeToGetUp` calls `FUN_1408c6780`: no
+  enemy or neutral sensed: dialogue event 0x17; else with no conscious ally sensed: toughness gains
+  core(f x (`numEnemies` + 10) x 0.075 x race[toughness]) ([character-stats](character-stats.md)) and event 0x19; else
+  event 0x18. Without the order the get-up only says 0x17 / 0x18.
 - Meitou: `MedicalState.PlayingDead` (not saved): a knockout that ends while `MedicalContext.PlayDead` is set keeps the
   character `Unconscious` (so everyone treats it as down) with no timer. `BodySystem.Schedule` sets it serially from the last
-  tick: an awake enemy (`CombatSystem.IsEnemyOf`) within the vision range (500 inside) and no awake standing ally of its
-  faction or an allied one there; animals never play dead. Rechecked every 15 ticks (engine choice). `MedicalState.StandUp`
-  ends it. Health header: `HudText.HealthWord`.
+  tick by `BodySystem.Senses` (enemies `CombatSystem.IsEnemyOf`, by distance within the vision range, 500 inside); a player
+  order standing it up grants the toughness (`BodySystem.GotUpByOrder`); animals never play dead. Rechecked every 15 ticks
+  (engine choice). `MedicalState.StandUp` ends it. Health header: `HudText.HealthWord`.
 
 ## Bodies: kinematic or simulated
 
