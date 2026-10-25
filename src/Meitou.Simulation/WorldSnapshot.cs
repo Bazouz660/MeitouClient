@@ -39,6 +39,8 @@ public sealed record HudView(float Blood, float BloodCapacity, float Bleeding, f
     public float BleedRate { get; init; } = 1;
     /// <summary>The stomach store (<see cref="Bodies.MedicalState.Fed"/>); above 0 the Hunger row shows <c>&gt;</c>.</summary>
     public float Fed { get; init; }
+    /// <summary>The race's <c>is robot</c>: the medical panel has no Hunger row.</summary>
+    public bool Robot { get; init; }
 }
 /// <summary>
 /// The information panel's extended lines (docs/game/ui-screens.md section 4): the XP rates as the fraction the panel shows as a percentage (Toughness as a plain multiplier),
