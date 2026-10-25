@@ -313,7 +313,7 @@ public static class SquadManagement
         {
             old.Members.Remove(id);
             if (Own(world, old.Id) is not null) Relead(table, old);
-            else if (old.Leader == id) old.Leader = old.Members.Count > 0 ? old.Members[0] : CharacterId.None;
+            else if (old.Leader == id) old.Leader = SquadRegistry.Successor(old.Members, table);
         }
         world.Player.Selection.Remove(id);
         var at = table.Next[slot].Position;

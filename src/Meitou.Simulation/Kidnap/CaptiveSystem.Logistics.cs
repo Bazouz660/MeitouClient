@@ -240,7 +240,7 @@ public sealed partial class CaptiveSystem
         if (world.Squads.Find(c.SquadId) is { } old)
         {
             old.Members.Remove(id);
-            if (old.Leader == id) old.Leader = old.Members.Count > 0 ? old.Members[0] : CharacterId.None;
+            if (old.Leader == id) old.Leader = SquadRegistry.Successor(old.Members, world.Characters);
         }
         c.SquadId = squad.Id;
         c.Role = (int)role;

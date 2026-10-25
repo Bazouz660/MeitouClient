@@ -121,10 +121,12 @@ public sealed partial class PopulationSystem
         var delta = position - stored.Anchor;
         bool moved = delta.LengthSquared() > 1;
         bool hasLeader = stored.Members.Any(m => m.Leader);
+        // Without one the first member that is not an animal leads (SquadRegistry.Successor).
+        var successor = hasLeader ? null : stored.Members.FirstOrDefault(m => !SquadRegistry.IsAnimal(m.Cold)) ?? stored.Members.FirstOrDefault();
         foreach (var m in stored.Members)
         {
             var cold = m.Cold;
-            bool leads = m.Leader || !hasLeader && squad.Members.Count == 0;
+            bool leads = m.Leader || ReferenceEquals(m, successor);
             cold.SquadId = squad.Id;
             var at = m.Position;
             if (moved)
@@ -151,7 +153,7 @@ public sealed partial class PopulationSystem
         }
         squad.SpawnSize = Math.Max(size, squad.Members.Count);
         stored.Members.Clear();
-        if (squad.Leader.IsNone) squad.Leader = squad.Members[0];
+        if (squad.Leader.IsNone) squad.Leader = SquadRegistry.Successor(squad.Members, table);
         world.Squads.Add(squad);
         Memory?.Restore(squad.Id, stored.Memory);
         stored.Memory = null;

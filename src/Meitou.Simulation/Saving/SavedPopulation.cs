@@ -350,6 +350,9 @@ internal static class SavedCharacters
         var notes = new List<string>();
         var made = new List<(SavedMember Member, int Role)>();
         bool hasLeader = built.Any(b => b.Parts.Source.IsLeader && b.Parts.Medical is not { Dead: true });
+        // Without one the first living member that is not an animal leads (SquadRegistry.Successor).
+        var alive = built.Where(b => b.Parts.Medical is not { Dead: true }).ToList();
+        var successor = hasLeader ? null : alive.FirstOrDefault(b => b.Parts.Look?.Animal is null).Member ?? alive.FirstOrDefault().Member;
         foreach (var (m, p) in built)
         {
             if (p.Medical is { Dead: true })
@@ -365,7 +368,7 @@ internal static class SavedCharacters
                 at = new Vector3(x, walk.GroundHeight(x, z), z);
             }
             float yaw = m.Position is null ? SaveRotation.YawOf(p.Source.Rotation) : m.Yaw;
-            bool leads = p.Source.IsLeader || !hasLeader && made.Count == 0;
+            bool leads = p.Source.IsLeader || ReferenceEquals(m, successor);
             var task = leads ? (sp.Pinned || sp.Wild is not null ? CharacterTask.Wander : CharacterTask.Idle) : CharacterTask.Follow;
             var id = Make(world, p, sp.Name, squad, platoon.Faction, context.PlayerFaction, false, at, yaw, task, SpeedMode.Walk, data, assembly, context, m.Bounties, notes);
             // Made again after its platoon left the world: the save's ragdoll is from before that.
@@ -381,7 +384,7 @@ internal static class SavedCharacters
         }
         foreach (var n in notes) context.Log(n);
         if (squad.Members.Count == 0) return null;
-        if (squad.Leader.IsNone) squad.Leader = squad.Members[0];
+        if (squad.Leader.IsNone) squad.Leader = SquadRegistry.Successor(squad.Members, world.Characters);
         // Its shop as it was when it left the world, else the save's (a fresh fill when the save has none).
         squad.Shop = sp.Shop ?? ShopSave.Read(world, squad, sp.Source.Record, data);
         squad.SavedAi = sp.Ai;

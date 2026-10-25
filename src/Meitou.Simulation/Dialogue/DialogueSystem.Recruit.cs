@@ -76,7 +76,7 @@ public sealed partial class DialogueSystem
     {
         if (world.Squads.Find(mc.SquadId) is not { } old) return;
         old.Members.Remove(me);
-        if (old.Leader == me) old.Leader = old.Members.Count > 0 ? old.Members[0] : CharacterId.None;
+        if (old.Leader == me) old.Leader = SquadRegistry.Successor(old.Members, world.Characters);
     }
 
     /// <summary>

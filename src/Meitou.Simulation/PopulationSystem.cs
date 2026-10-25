@@ -532,7 +532,7 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
             if (plan.Role == SquadRole.Leader && squad.Leader.IsNone) squad.Leader = id;
         }
         squad.SpawnSize = squad.Members.Count;
-        if (squad.Leader.IsNone && squad.Members.Count > 0) squad.Leader = squad.Members[0];
+        if (squad.Leader.IsNone) squad.Leader = SquadRegistry.Successor(squad.Members, table);
         world.Squads.Add(squad);
         return squad;
     }

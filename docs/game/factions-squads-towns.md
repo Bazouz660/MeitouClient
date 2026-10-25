@@ -34,6 +34,15 @@ first cumulative weight exceeding uniform roll wins; single candidate no roll. S
 instead drops v0<=0 and budgets expected squad sizes using its separate sentinel/range rules.
 Do not reuse one zero-weight convention for both.
 
+### Squad leader
+
+`ActivePlatoon` (KenshiLib 1ce4a16, **Observed**) keeps `squadleader` (`+0xa0`, set by `setSquadLeader`, which gives it member type 2) and `backupLeader`
+(`+0xa8`). `getSquadLeader` (`140792b90`) returns the leader unless it is unconscious or `inSomething` (`+0x2f8`), else the backup under the same test, else
+the first conscious member of the container list (animals included) in a loaded zone, cached as the backup; the stored leader is never replaced there. Who
+becomes `squadleader` after the leader dies is **Unknown**. A campaign's announcement is task 129 in the leader's AI package, and animals get only
+`dialog animal`, so an animal never announces. Meitou keeps one leader: a squad without one (death, leaving, a save or stand-in without a leader) takes its
+first member that is not an animal, else its first (`SquadRegistry.Successor`, engine choice). A player squad edited on the squads screen still makes its index 0 the leader.
+
 ## Unique characters
 
 **Data** (merged base files, throwaway survey): 155 of 639 CHARACTERs have `unique`; 13 of them have exactly one `unique replacement spawn`

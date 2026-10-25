@@ -107,9 +107,22 @@ public sealed class SquadRegistry
         {
             squad.Members.RemoveAll(m => !table.TryResolveNext(m, out _));
             if (squad.Leader.IsNone || !table.TryResolveNext(squad.Leader, out _))
-                squad.Leader = squad.Members.Count > 0 ? squad.Members[0] : CharacterId.None;
+                squad.Leader = Successor(squad.Members, table);
         }
     }
+
+    /// <summary>
+    /// Who leads an NPC squad that has no leader: its first member that is not an animal, else its first (docs/game/factions-squads-towns.md "Squad leader"; engine
+    /// choice, so a goat never leads a caravan or says its leader's lines). None when it has no members.
+    /// </summary>
+    public static CharacterId Successor(List<CharacterId> members, CharacterTable table)
+    {
+        foreach (var id in members)
+            if (table.TryResolveNext(id, out int slot) && table.Cold(slot) is { } c && !IsAnimal(c)) return id;
+        return members.Count > 0 ? members[0] : CharacterId.None;
+    }
+
+    public static bool IsAnimal(CharacterCold c) => c.Fighter?.IsAnimal == true || c.Appearance?.Animal is not null;
 
     internal void Hash(ref StateHasher hasher)
     {
