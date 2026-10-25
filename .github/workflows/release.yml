@@ -1,6 +1,6 @@
 # Manual release (nightlies: nightly.yml): builds the game and the world viewer (meitou-viewer), self-contained, for Windows, Linux and macOS
 # (tools/scripts/package-release.ps1; the Windows zip with NVIDIA DLSS/Streamline and AMD FidelityFX next to the exes), tags the commit
-# v<version> and publishes a GitHub release with one Meitou-<version>-<rid>.zip per runtime (docs/launcher.md), never marked Latest
+# v<version> and publishes a GitHub release with one Meitou-<version>-<rid>.zip per runtime (docs/launcher.md), never a pre-release (only nightlies are) and never marked Latest
 # (that is the newest full launcher release, launcher-release.yml).
 name: Release
 
@@ -11,10 +11,6 @@ on:
         description: "Version without the v, e.g. 0.1.0 (empty: 0.0.<run number>)"
         required: false
         default: ""
-      prerelease:
-        description: "Mark as a pre-release"
-        type: boolean
-        default: false
 
 permissions:
   contents: write
@@ -120,13 +116,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.version.outputs.version }}
-          PRERELEASE: ${{ inputs.prerelease }}
         run: |
           $zips = @('win-x64', 'linux-x64', 'osx-x64', 'osx-arm64') | ForEach-Object { "out/Meitou-$env:VERSION-$_.zip" }
           foreach ($zip in $zips) { if (-not (Test-Path $zip)) { throw "$zip missing" } }
           $notes = (Get-Content -Raw "$env:RUNNER_TEMP/changes.md").Trim()
           $flags = @('--latest=false', '--generate-notes')
-          if ($env:PRERELEASE -eq 'true') { $flags += '--prerelease' }
           # GitHub's generated notes (merged pull requests) start at the previous full release, not a launcher-v* tag in between
           # (docs/launcher.md), so they span its nightlies.
           $previous = git tag -l "v[0-9]*" --sort=-v:refname | Where-Object { $_ -notmatch '-nightly\.' } | Select-Object -First 1
