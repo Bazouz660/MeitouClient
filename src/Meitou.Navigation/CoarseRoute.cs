@@ -2,6 +2,7 @@ using System.Numerics;
 using Meitou.Data.World;
 using Meitou.Simulation;
 using Meitou.Simulation.Bodies;
+using Meitou.Threading;
 
 namespace Meitou.Navigation;
 
@@ -228,7 +229,7 @@ public sealed class CoarseRoute
                 float gc = g[cell];
                 if (f > gc + HeuristicWeight * Heuristic(cx, cz, gx, gz) + 1e-3f) continue;   // a stale entry
                 if (++expanded > MaxExpanded) break;
-                if ((expanded & 255) == 0) Thread.Yield();   // a safe point for a collection, as NavQuery's search
+                SafePoint.Every(expanded);
                 ushort flags = map[cell];
                 ushort barred = slopes ? flags : Border(cx, cz);
                 for (int k = 0; k < 8; k++)
