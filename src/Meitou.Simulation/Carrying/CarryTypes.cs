@@ -45,8 +45,8 @@ public sealed record PutLootItem(CharacterId Character, Items.InventoryItemToken
 /// </summary>
 public sealed record StealthKoOrder(IReadOnlyList<CharacterId> Attackers, CharacterId Target) : SimCommand;
 
-/// <summary>A stealth knock-out swing that was rolled: the target was knocked out (<see cref="Success"/>) or turned on the attacker.</summary>
-public readonly record struct StealthKoEntry(long Tick, CharacterId Attacker, CharacterId Target, float Chance, bool Success);
+/// <summary>A stealth knock-out swing that was rolled: the target was knocked out (<see cref="Success"/>) or turned on the attacker; <see cref="NoXp"/>: a miss that gave no XP.</summary>
+public readonly record struct StealthKoEntry(long Tick, CharacterId Attacker, CharacterId Target, float Chance, bool Success, bool NoXp = false);
 
 /// <summary>
 /// The Rescue button for the characters (the selection when the list is empty), the original's order 148 <c>FIND_AND_RESCUE_IF_THERES_BEDS</c> (NUM8; docs/game/ai-tasks.md

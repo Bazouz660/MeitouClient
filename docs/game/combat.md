@@ -521,7 +521,7 @@ Order 228 "Stealth KO" (verb list `FUN_14079b2d0`), `Task_StealthKO` (vtable slo
 
 Meitou: the point is 8 behind the target's facing; "senses" = the target's spot meter on the attacker is full or it
 is fighting; heard = the target's sneaking hearing roll on the attacker's last step before the swing (`CharacterCold.KnockoutHeard`, engine reading of the pass cadence);
-the fight zero: the target fighting, fighting the attacker or having spotted it, and some looker's meter on the attacker filling (`AggroSystem.Unseen`); the 0.07 case and No XP are not modelled; a swing is reported as an Assault (the
+the fight zero: the target fighting, fighting the attacker or having spotted it, and some looker's meter on the attacker filling (`AggroSystem.Unseen`); the 0.07 and No XP rules as above (aware: fighting the attacker or having spotted it); a swing is reported as an Assault (the
 original's crime call is not traced). The verb shows the chance; a quick right click on an NPC while sneaking gives it.
 Order 229 "Stealth Kill" shares the task but nothing issues it (no row, no use of 229; **Observed**).
 
