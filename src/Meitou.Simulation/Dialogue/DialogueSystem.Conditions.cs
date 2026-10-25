@@ -2,6 +2,7 @@ using System.Numerics;
 using Meitou.Data.Gameplay;
 using Meitou.Data.Gameplay.Bodies;
 using Meitou.Data.Gameplay.Dialogue;
+using Meitou.Data.Gameplay.Economy;
 
 namespace Meitou.Simulation.Dialogue;
 
@@ -10,7 +11,7 @@ public sealed partial class DialogueSystem
     /// <summary>
     /// One condition (<c>FUN_140676950</c>, docs/game/dialogue.md "Conditions"): <c>who</c> 0 tests the speaker, any other value the target. Yes/no conditions pass when the computed
     /// answer equals value &gt; 0; counts compare by <c>compare by</c> (Num3: 1 &lt;, 2 &gt;, else ==; Num2: 1 &lt;, else &gt;=). Conditions whose inputs Meitou does not have
-    /// (building locks, town walls, strength ratings, head counts, illegal items, training equipment) compute "no".
+    /// (building locks, town walls, strength ratings, head counts, training equipment) compute "no".
     /// </summary>
     bool Condition(World world, Conversation c, DialogueCondition dc, CharacterId me, CharacterCold mc, CharacterId other)
     {
@@ -90,6 +91,7 @@ public sealed partial class DialogueSystem
             case 66: return Bool(s.IsPlayer && world.Player.Money >= (s.Bounties?.AmountFor(meF) ?? 0));
             case 67: return Bool((s.Orders & CharacterOrders.Sneak) != 0 && !s.InCombat);
             case 68: return Bool(world.Characters.TryResolveNext(subjectId, out int indoors) && world.Sight.BuildingOf(indoors) is not null);
+            case 69: return Num2(HasIllegalItem(world, c, me, mc, subjectId) ? 1 : 0);
             case 71: return Bool(s.Medical is { } fed && fed.Hunger < 1.7f);
             case 72:
             {
@@ -109,6 +111,33 @@ public sealed partial class DialogueSystem
             case 79: return Bool(s.Race?.IsRobot == true || (s.Medical?.Parts.Any(p => p.Limb == Bodies.LimbState.Replaced) ?? false));
             default: return Bool(false);
         }
+    }
+
+    // Per culture faction: its trade culture (Faction +0x90), built on first use.
+    TradeCulture?[]? factionCultures;
+    // When "{1} has been discovered smuggling {2}" was last posted per carrier and item (game hours); display only, not hashed.
+    readonly Dictionary<(CharacterId, string), double> smugglingPosted = [];
+
+    /// <summary>
+    /// DC_HAS_ILLEGAL_ITEM (<c>FUN_140676950</c>, docs/game/dialogue.md "Conditions"): a member of S's squad that Me perceives (<see cref="Known"/>) carries an item on the
+    /// <c>illegal goods</c> of the culture of Me's town's faction, else of Me's faction. Each carrier found posts the smuggling message (not on the Talk menu's dry run, and once
+    /// per carrier and item per game hour: engine choice).
+    /// </summary>
+    bool HasIllegalItem(World world, Conversation c, CharacterId me, CharacterCold mc, CharacterId subject)
+    {
+        int faction = Position(world, me) is { } at && TownAt(at) is >= 0 and var town && town < data.SiteFactions.Count && data.SiteFactions[town] >= 0 ? data.SiteFactions[town] : mc.Faction;
+        factionCultures ??= [.. data.Factions.Select(f => TradeCulture.From(data.Db, f.TradeCulture))];
+        if ((uint)faction >= (uint)factionCultures.Length || factionCultures[faction] is not { Illegal.Count: > 0 } culture) return false;
+        bool found = false;
+        foreach (var m in Known(world, me, subject))
+        {
+            if (Cold(world, m) is not { Inventory: { } inventory } carrier || inventory.All().FirstOrDefault(i => culture.Illegal.Contains(i.Record)) is not { } item) continue;
+            found = true;
+            if (c.DryRun || (smugglingPosted.TryGetValue((m, item.Record), out double last) && world.GameHours - last < 1)) continue;
+            smugglingPosted[(m, item.Record)] = world.GameHours;
+            world.Post(Loc.Tr("{1} has been discovered smuggling {2}", carrier.Name, data.Db.Find(item.Record)?.Name ?? item.Record));
+        }
+        return found;
     }
 
     /// <summary>The player's nearest outpost whose radius holds <paramref name="at"/>, or null.</summary>

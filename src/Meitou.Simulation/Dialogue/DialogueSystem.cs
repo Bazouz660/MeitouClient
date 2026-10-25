@@ -112,6 +112,8 @@ public sealed partial class DialogueSystem : ITickSystem, IStateHashed, IDialogu
     {
         public required CharacterId Npc, Player;
         public required int Event;
+        /// <summary>The Talk menu's dry run of the pick: conditions post no messages.</summary>
+        public bool DryRun { get; init; }
         public DialogueNode? Root;
         /// <summary>The NPC-side line on screen and who said it.</summary>
         public DialogueNode? Line;
@@ -290,7 +292,7 @@ public sealed partial class DialogueSystem : ITickSystem, IStateHashed, IDialogu
         if (talker is not { } player) return true;
         // A dry run of Start's pick (it rolls dice and memoizes permanent chances: both put back), so the menu never offers a Talk that ends in "has nothing to say".
         var (savedRolls, known) = (rolls, permanent.Keys.ToList());
-        bool says = Pick(world, new Conversation { Npc = npc, Player = player, Event = DialogueEvents.PlayerTalkToMe }, roots) is not null;
+        bool says = Pick(world, new Conversation { Npc = npc, Player = player, Event = DialogueEvents.PlayerTalkToMe, DryRun = true }, roots) is not null;
         rolls = savedRolls;
         foreach (var key in permanent.Keys.Except(known).ToList()) permanent.Remove(key);
         return says;

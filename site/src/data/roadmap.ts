@@ -101,7 +101,7 @@ export const categories: Category[] = [
   { id: "world", name: "World", blurb: "Towns, crime, dialogue, animals, raids, roads and the map.", rows: [
     { id: "town-life-residents-shops-bars", system: "Town life: residents, shops, bars", status: "untested", note: "Wandering, shopping, bar seats, sleeping at home.", bugs: [] },
     { id: "crime-trespassing-arrest-jail", system: "Crime, trespassing, arrest, jail", status: "wip", note: "Guards, fines, cages, bail, bounty hunters, crime alarms; guards do not take stolen goods.", bugs: [] },
-    { id: "holy-nation-inspections-and-smuggling", system: "Holy Nation inspections and smuggling", status: "missing", note: "There is a smuggling crime, but no check for illegal items, so inspections cannot find any.", bugs: [] },
+    { id: "holy-nation-inspections-and-smuggling", system: "Holy Nation inspections and smuggling", status: "untested", note: "Gate guard inspections find the faction's illegal goods (Holy Nation: hashish and forbidden books) and post who was caught smuggling. Selling illegal goods to a trader is not checked yet.", bugs: [] },
     { id: "squads-away-from-the-camera", system: "Squads away from the camera", status: "works", note: "Tested in play: squads away from the camera work. Unloaded squads travel, fight and heal off screen.", bugs: [] },
     { id: "world-map-overview-and-town-discovery", system: "World map, overview and town discovery", status: "works", note: "Tested in play: the world map works. Faction overview, map items and discovering towns not seen one by one yet.", bugs: [] },
     { id: "kidnapping-cannibals-slavers", system: "Kidnapping, cannibals, slavers", status: "untested", note: "Carried to cages, made slaves, eaten.", bugs: [] },
