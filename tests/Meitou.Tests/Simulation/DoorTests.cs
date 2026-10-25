@@ -152,6 +152,61 @@ public class DoorTests(ITestOutputHelper output)
         Assert.True(Vector2.Distance(new Vector2(now.X, now.Z), new Vector2(b.Position.X, b.Position.Z)) < Vector2.Distance(new Vector2(at.X, at.Z), new Vector2(b.Position.X, b.Position.Z)));
     }
 
+    /// <summary>Gate codes split by the line z = <see cref="SyntheticTown.Centre"/>.Z: 0 south of it, 1 north; one gate between them.</summary>
+    sealed class LineRegions(string gate) : IGateRegions
+    {
+        public int CodeAt(Vector3 at) => at.Z < SyntheticTown.Centre.Z ? 0 : 1;
+        public IReadOnlyList<GateLink> Gates { get; } = [new GateLink(gate, [0, 1])];
+    }
+
+    [Fact]
+    public void A_bandit_outside_a_locked_gate_plans_to_bash_it_and_none_once_it_is_broken()
+    {
+        static Meitou.Data.Fcs.FcsRecord Rec(string id, Meitou.Data.Fcs.FcsRecordType type, string name) => SyntheticTown.Rec(id, type, name);
+        var owners = Rec("60-g", Meitou.Data.Fcs.FcsRecordType.FACTION, "owners");
+        var raiders = Rec("61-g", Meitou.Data.Fcs.FcsRecordType.FACTION, "raiders");
+        var leaf = Rec("62-g", Meitou.Data.Fcs.FcsRecordType.BUILDING, "Gate door");
+        var gateRecord = Rec("63-g", Meitou.Data.Fcs.FcsRecordType.BUILDING, "Gate");
+        gateRecord.Bools["is wall gate"] = true;
+        gateRecord.References["doors"] = [SyntheticTown.Ref("62-g")];
+        var town = Rec("64-g", Meitou.Data.Fcs.FcsRecordType.TOWN, "Walled");
+        town.References["faction"] = [SyntheticTown.Ref("60-g")];
+        var file = new Meitou.Data.Fcs.FcsFile();
+        file.Records.AddRange([owners, raiders, leaf, gateRecord, town]);
+        var db = new GameDatabase();
+        db.Apply(file, "test.mod");
+        var buildings = new Dictionary<string, List<TownBuilding>> { ["walled"] = [new("gate", "63-g", "63-g", SyntheticTown.Centre, 0, false, false, [])] };
+        var data = PopulationData.Create(db, [new TownPlacement("walled", "64-g", SyntheticTown.Centre, null)], buildings: buildings);
+
+        var locks = new LockSystem(BaseGame, BodyOptions.Default);
+        using var world = new SimWorld(new WorldSettings { Seed = 5, PublishSnapshots = false, MinPartitionSize = 1 }, new OpenGroundWalkability((_, _) => 300), [locks]);
+        world.Fixtures.RegisterSite(world, data, 0);
+        world.Fixtures.Doors = new Gate();
+        string key = data.Sites[0].Buildings[0].Key;
+        var door = Assert.Single(world.Fixtures.OfBuilding(key), f => f.Kind == FixtureKind.Door);
+        Assert.True(door.IsGate);
+        door.Lock!.Level = Math.Max(1, door.Lock.Level);
+        world.Fixtures.SetLocked(door, true);
+        locks.Inputs(world, [new GateRegionsCommand(new LineRegions(key)) { Tick = 0 }]);
+
+        CharacterId Spawn(float dz, int faction)
+        {
+            var cold = new Meitou.Tests.Combat.Combatant { Name = "raider" }.MakeCold();
+            cold.Faction = faction;
+            cold.NpcClass = Meitou.Data.Gameplay.FundamentalType.Bandit;
+            return world.Characters.Spawn(new CharacterHot { Position = SyntheticTown.Centre + new Vector3(0, 0, dz), Health = 100, MaxSpeed = 60, WalkSpeed = 15, Task = (byte)CharacterTask.Attack }, cold, 0);
+        }
+        var raider = Spawn(-300, data.FactionIndex("61-g"));
+        var target = Spawn(300, data.FactionIndex("60-g"));
+        var spot = world.Fixtures.DoorSpotOf(door)!.Value;
+        var plan = new GatePlan();
+        Assert.True(plan.PlansBash(world, null, locks, raider.Slot, target.Slot, key, door, spot));
+
+        // Broken, the gate is open (state 1): the way is not blocked, so nothing is bashed.
+        door.DoorBroken = true;
+        Assert.False(plan.PlansBash(world, null, locks, raider.Slot, target.Slot, key, door, spot));
+    }
+
     [Fact, Slow]
     public void Every_door_in_the_hub_has_a_known_position_and_its_destroyed_gates_have_none()
     {
