@@ -27,6 +27,8 @@ internal sealed class WorldLamps : IDisposable
     readonly Dictionary<string, WorldLight[]> runtime = new(StringComparer.Ordinal);
     readonly Dictionary<string, float> runtimePower = new(StringComparer.Ordinal);
     bool runtimeChanged;
+    // The world's lamps at the start of lamps (those of no replaced building); the placed buildings' follow.
+    int worldCount;
     readonly Texture[] cells, index, data;
     readonly Sampler nearest;
     readonly float[] cellValues = new float[Cells * Cells * 2];
@@ -83,7 +85,9 @@ internal sealed class WorldLamps : IDisposable
     /// <summary>Shows the lamps of a building placed during play, replacing any it had (the host calls it when the building is complete).</summary>
     public void SetRuntime(string building, IEnumerable<WorldLight> lights)
     {
-        runtime[building] = [.. lights.Where(l => l.Intensity > 0 && l.Radius > 0)];
+        WorldLight[] shown = [.. lights.Where(l => l.Intensity > 0 && l.Radius > 0)];
+        if (runtime.TryGetValue(building, out var old) && old.AsSpan().SequenceEqual(shown)) return;   // unchanged: no rebuild of the lamp list
+        runtime[building] = shown;
         runtimeChanged = true;
     }
 
@@ -107,7 +111,18 @@ internal sealed class WorldLamps : IDisposable
     }
 
     /// <summary>The power factor of lamp <paramref name="i"/>: 1 for the world's, the building's factor for a placed building's (its placement id is the building id).</summary>
-    float PowerFactor(int i) => i >= lamps!.Length ? 1 : runtimePower.GetValueOrDefault(lamps[i].PlacementId, 1);
+    float PowerFactor(int i) => i < worldCount || i >= lamps!.Length ? 1 : runtimePower.GetValueOrDefault(lamps[i].PlacementId, 1);
+
+    /// <summary>Whether a world lamp belongs to a building whose lamps <see cref="SetRuntime"/> replaced (a repaired town house): its key, or a prefix before a "/".</summary>
+    bool Replaced(WorldLight l)
+    {
+        var id = l.PlacementId.AsSpan();
+        var lookup = runtime.GetAlternateLookup<ReadOnlySpan<char>>();
+        if (lookup.ContainsKey(id)) return true;
+        for (int i = 0; i < id.Length; i++)
+            if (id[i] == '/' && lookup.ContainsKey(id[..i])) return true;
+        return false;
+    }
 
     /// <summary>Lamp <paramref name="i"/> of this frame: the world's and placed buildings', then <see cref="Moving"/>.</summary>
     WorldLight Lamp(int i) => i < lamps!.Length ? lamps[i] : Moving[i - lamps.Length];
@@ -137,8 +152,9 @@ internal sealed class WorldLamps : IDisposable
         }
         if (runtimeChanged || lamps is null)
         {
-            lamps = runtime.Count == 0 ? world : [.. world.Where(l => !runtime.ContainsKey(l.PlacementId)
-                && !runtime.Keys.Any(id => l.PlacementId.StartsWith(id + "/", StringComparison.Ordinal))), .. runtime.Values.SelectMany(r => r)];
+            WorldLight[] kept = runtime.Count == 0 ? world : [.. world.Where(l => !Replaced(l))];
+            worldCount = kept.Length;
+            lamps = runtime.Count == 0 ? world : [.. kept, .. runtime.Values.SelectMany(r => r)];
             runtimeChanged = false;
         }
         int count = lamps.Length + Moving.Count;

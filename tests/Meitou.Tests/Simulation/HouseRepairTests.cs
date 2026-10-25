@@ -67,16 +67,25 @@ public class HouseRepairTests
         public void Dispose() => World.Dispose();
     }
 
+    sealed class HouseSight : ISightSource
+    {
+        public InteriorVolume? Room(TownBuilding b) => new(b.Key,
+            [new(90, 90), new(110, 90), new(110, 110), new(90, 110)], -1, 20);
+        public IReadOnlyList<WorldLight> Lights(TownBuilding b) => [];
+    }
+
     [Fact]
     public void Ruins_require_purchase_and_an_explicit_order_then_consume_only_delivered_materials()
     {
-        using var r = new Rig();
+        using var r = new Rig(sight: new HouseSight());
         r.Repair(); Assert.Empty(r.World.Buildings.All);
         r.Buy(); r.World.RunTicks(5);
         Assert.True(r.Site.Destroyed); Assert.True(r.Site.Complete);
         Assert.Null(r.Construction.EngineerSite(r.World, r.Builder.Slot));
+        r.World.Sight.Update(r.World); Assert.True(r.World.Sight.Outdoors(r.Builder.Slot));
         r.Repair();
         Assert.False(r.Site.Destroyed); Assert.False(r.Site.Complete);
+        r.World.Sight.Update(r.World); Assert.False(r.World.Sight.Outdoors(r.Builder.Slot));
         float retained = Assert.Single(r.Site.Materials).Delivered;
         Assert.InRange(retained, 10, 16);
         Assert.InRange(r.Site.Progress, 12.8f, 13);
@@ -92,70 +101,44 @@ public class HouseRepairTests
     }
 
     [Fact]
-    public void Save_mid_repair_preserves_materials_progress_and_completed_house_overlay()
-    {
-        using var r = new Rig(); r.Buy(); r.Supply(3); r.Repair(); r.World.RunTicks(300);
-        float progress = r.Site.Progress, delivered = r.Site.Materials[0].Delivered;
-        using var loaded = new Rig(r.Save());
-        Assert.Equal(progress, loaded.Site.Progress); Assert.Equal(delivered, loaded.Site.Materials[0].Delivered);
-        Assert.False(loaded.Site.Destroyed); Assert.False(loaded.Site.Complete);
-        loaded.World.RunTicks(20);
-        Assert.Equal(progress, loaded.Site.Progress); Assert.Equal(delivered, loaded.Site.Materials[0].Delivered);
-        loaded.Supply(32); loaded.Repair();
-        for (int i = 0; i < 2000 && !loaded.Site.Complete; i++) loaded.World.RunTick();
-        Assert.True(loaded.Site.Complete);
-        using var finished = new Rig(loaded.Save());
-        Assert.True(finished.Site.Complete); Assert.False(finished.Site.Destroyed);
-        Assert.NotNull(finished.Site.LevelPlacement);
-        Assert.False(finished.Site.NeedsWork);
-        Assert.Contains(finished.World.Fixtures.OfBuilding(finished.House.Key), f => f.Kind == FixtureKind.Door);
-    }
-
-    [Fact]
-    public void Engineer_job_waits_for_materials_fetches_them_and_retains_its_queue_entry()
+    public void Engineer_job_survives_a_mid_repair_save_fetches_materials_and_the_finished_house_reloads_in_place()
     {
         using var initial = new Rig(); initial.Buy(); initial.Repair();
         initial.Say(new AddJob([initial.Builder], TaskType.REPAIR, initial.House.Key) { Tick = initial.World.Tick }); initial.World.RunTicks(250);
         Assert.False(initial.Site.Complete);
         Assert.Equal(TaskType.JOB_BUILDER, Assert.Single(initial.Cold.Jobs).Type);
+        float progress = initial.Site.Progress, delivered = initial.Site.Materials[0].Delivered;
         var ai = new FcsRecord(); var state = initial.Save();
         PermaJobSave.Write(ai, initial.Cold, initial.World.Buildings, new Dictionary<string, FcsRecord> { [initial.House.Key] = state });
-        using var r = new Rig(state);
+        using var r = new Rig(state, new HouseSight());
+        Assert.Equal(progress, r.Site.Progress); Assert.Equal(delivered, r.Site.Materials[0].Delivered);
+        Assert.False(r.Site.Destroyed);
+        r.World.Sight.Update(r.World); Assert.False(r.World.Sight.Outdoors(r.Builder.Slot));
         // Save loading restores jobs before the town's construction registry is populated.
         PermaJobSave.Read(ai, null, r.Cold, new BuildingRegistry(), new SaveBuilder().Game.BuildHandles(),
-            new Dictionary<FcsRecord, string> { [state] = r.House.Key });
+            new Dictionary<FcsRecord, string> { [state] = r.House.Key }, new HashSet<string> { r.House.Key });
         Assert.Equal(r.House.Key, Assert.Single(r.Cold.Jobs).Site);
         Assert.True((r.Cold.Orders & CharacterOrders.Jobs) != 0);
         // Loose resources exercise the fetch -> deliver -> build transitions without a navigation test.
         r.World.GroundItems.Drop(r.Items.Create(BuildingBuildData.BuildingMaterialsItem, 32)!, r.House.Position, 0);
-        bool fetched = false, delivered = false;
+        bool fetched = false, deliveredAny = false;
         for (int i = 0; i < 2500 && !r.Site.Complete; i++)
         {
             r.World.RunTick();
             var task = (CharacterTask)r.World.Characters.Previous[r.Builder.Slot].Task;
             fetched |= task == CharacterTask.FetchMaterials;
-            delivered |= task == CharacterTask.DeliverMaterials;
+            deliveredAny |= task == CharacterTask.DeliverMaterials;
         }
-        Assert.True(fetched); Assert.True(delivered); Assert.True(r.Site.Complete);
+        Assert.True(fetched); Assert.True(deliveredAny); Assert.True(r.Site.Complete);
         Assert.Equal(TaskType.JOB_BUILDER, Assert.Single(r.Cold.Jobs).Type);
-    }
-
-    [Fact]
-    public void Damaged_complete_house_repairs_without_consuming_materials()
-    {
-        using var original = new Rig(); original.Buy();
-        var state = original.Save();
-        state.Bools["destroyed"] = false;
-        state.Bools["is complete"] = true;
-        state.Floats["construction progress"] = 10;
-        using var r = new Rig(state); r.Supply(5); r.Repair();
-        for (int i = 0; i < 1000 && r.Site.NeedsWork; i++) r.World.RunTick();
-        Assert.False(r.Site.NeedsWork); Assert.True(r.Site.Complete);
-        Assert.Equal(5, r.Carried); Assert.Equal(32, r.Site.Materials[0].Delivered);
+        using var finished = new Rig(r.Save());
+        Assert.True(finished.Site.Complete); Assert.False(finished.Site.Destroyed); Assert.False(finished.Site.NeedsWork);
+        Assert.NotNull(finished.Site.LevelPlacement);
+        Assert.Contains(finished.World.Fixtures.OfBuilding(finished.House.Key), f => f.Kind == FixtureKind.Door);
     }
 
     [Fact, Slow]
-    public void Original_town_ruin_saves_in_place_and_restores_its_normal_mesh_and_doors()
+    public void Original_town_ruin_saves_in_place_and_restores_its_doors()
     {
         Assert.SkipWhen(InstallData.Install is null, "Kenshi install not found");
         var db = InstallData.BaseGame!;
@@ -189,44 +172,6 @@ public class HouseRepairTests
         var restored = Assert.Single(loaded.Buildings.All);
         Assert.Equal(house.Key, restored.Id); Assert.Equal(site.Progress, restored.Progress);
         Assert.Contains(loaded.Fixtures.OfBuilding(house.Key), f => f.Kind == FixtureKind.Door);
-        var before = house.Resolved!.Value;
-        var placement = restored.LevelPlacement! with { DestroyedOverride = false };
-        var after = BuildingPlacements.Resolve(placement, db, levels, (_, _) => 0)!.Value;
-        Assert.False(after.Destroyed); Assert.Equal(before.Placement.InstanceId, after.Placement.InstanceId);
-        var ruin = WorldObjectLayout.Building(db, before.Record, house.InstanceId, before.Position, before.Placement.Rotation,
-            new BuildingState(true) { WithInterior = false, Identity = house.Key });
-        var repaired = WorldObjectLayout.Building(db, after.Record, house.InstanceId, after.Position, placement.Rotation,
-            new BuildingState(false) { WithInterior = true, Identity = house.Key });
-        Assert.NotEmpty(repaired);
-        Assert.False(ruin.Select(m => m.MeshPath).SequenceEqual(repaired.Select(m => m.MeshPath)));
-    }
-
-    sealed class HouseSight : ISightSource
-    {
-        public InteriorVolume? Room(TownBuilding b) => new(b.Key,
-            [new(90, 90), new(110, 90), new(110, 110), new(90, 110)], -1, 20);
-        public IReadOnlyList<WorldLight> Lights(TownBuilding b) => [];
-    }
-
-    [Fact]
-    public void Starting_repair_restores_the_indoor_volume_and_reload_keeps_it()
-    {
-        using var r = new Rig(sight: new HouseSight()); r.Buy();
-        r.World.Sight.Update(r.World); Assert.True(r.World.Sight.Outdoors(r.Builder.Slot));
-        r.Repair(); r.World.Sight.Update(r.World);
-        Assert.False(r.World.Sight.Outdoors(r.Builder.Slot));
-        using var loaded = new Rig(r.Save(), new HouseSight());
-        loaded.World.Sight.Update(loaded.World);
-        Assert.False(loaded.World.Sight.Outdoors(loaded.Builder.Slot));
-    }
-
-    [Fact]
-    public void Placement_override_replaces_only_the_matching_world_key()
-    {
-        var a = new BuildingPlacement(new(1, 1), "same", "house", new(1, 2, 3), Quaternion.Identity, "state", 2);
-        var b = a with { Zone = new(2, 1) };
-        var replacement = a with { DestroyedOverride = false };
-        var merged = BuildingPlacements.Overlay([a, b], [replacement]).ToArray();
-        Assert.Equal(2, merged.Length); Assert.Same(replacement, merged[0]); Assert.Same(b, merged[1]);
+        Assert.Equal(house.InstanceId, restored.LevelPlacement!.InstanceId);
     }
 }

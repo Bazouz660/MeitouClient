@@ -129,7 +129,8 @@ sealed partial class PlayerInterface
             if (session.CurrentSnapshot.InspectedRichness is { } rich && rich.Instance == focus.Instance) AddRichnessLine(rich, stats);
             if (own && Machine(focus.SiteId) is { } machine) AddMachineLines(machine, stats, ref status, ref bad);
         }
-        if (mine && (player ? site?.TownName : focus.Town) is { Length: > 0 } && (site?.Record ?? focus.Record) is { } record && DataOf(record) is { HasInterior: true })
+        // Not on a player-built site under construction; an owned town house has it while being repaired too.
+        if (mine && site is not { LevelPlacement: null, Complete: false } && (player ? site?.TownName : focus.Town) is { Length: > 0 } && (site?.Record ?? focus.Record) is { } record && DataOf(record) is { HasInterior: true })
         {
             // The player's building with an interior in a town (the original's +0x1f0): a Kenshi_Button2 toggle of width 0.3, Public in Good, Private in BadBright (slots 82 / 83).
             bool open = PublicOf(focus, site, detail);

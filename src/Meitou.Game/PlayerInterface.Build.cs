@@ -563,9 +563,11 @@ sealed partial class PlayerInterface
     {
         var verbs = new List<(string, Action)>();
         var selection = SelectedIds();
-        if (selection.Count == 0 || site.Owner != session.World.Player.Faction) return verbs;
-        if (site.Destroyed || site.Complete && site.NeedsWork) verbs.Add(("Repair", () => OrderConstruction(site, selection)));
-        else if (!site.Complete) verbs.Add(("Build", () => OrderConstruction(site, selection)));
+        if (selection.Count == 0) return verbs;
+        // Building work is the owner's (the construction system ignores it on another faction's); the other verbs are as before.
+        bool own = site.Owner == session.World.Player.Faction;
+        if (own && (site.Destroyed || site.Complete && site.NeedsWork)) verbs.Add(("Repair", () => OrderConstruction(site, selection)));
+        else if (own && !site.Complete) verbs.Add(("Build", () => OrderConstruction(site, selection)));
         AddMachineVerb(verbs, site, selection);
         if (site.Complete && Machine(site.Id) is { } machine)
         {

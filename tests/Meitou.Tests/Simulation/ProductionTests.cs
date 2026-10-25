@@ -533,7 +533,7 @@ public class ProductionTests
         var quick = new Meitou.Data.Save.SaveFile();
         quick.Data.Records.Add(new FcsRecord { Type = (int)FcsRecordType.CAMERA, StringId = "1051", Name = "camera" });
         var back = new CharacterCold { Orders = Orders.PlayerDefaults };
-        Meitou.Simulation.Saving.PermaJobSave.Read(ai, null, back, rig.World.Buildings, new Meitou.Data.Save.SaveGame(quick).BuildHandles(), new Dictionary<FcsRecord, string>());
+        Meitou.Simulation.Saving.PermaJobSave.Read(ai, null, back, rig.World.Buildings, new Meitou.Data.Save.SaveGame(quick).BuildHandles(), new Dictionary<FcsRecord, string>(), new HashSet<string>());
         // Re-adding 152 brings 124 again and the saved 124 is then refused as a duplicate; the switch is read last.
         Assert.Equal(saved.Jobs.Select(j => (j.Type, j.Site)), back.Jobs.Select(j => (j.Type, j.Site)));
         Assert.True((back.Orders & CharacterOrders.Jobs) == 0);

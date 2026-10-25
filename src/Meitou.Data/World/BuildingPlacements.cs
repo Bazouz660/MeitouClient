@@ -13,7 +13,10 @@ public readonly record struct ResolvedBuilding(BuildingPlacement Placement, Game
 public static class BuildingPlacements
 {
     /// <summary>Overlay existing placements by world key, without duplicating buildings whose zone-local ids repeat.</summary>
-    public static IEnumerable<BuildingPlacement> Overlay(IEnumerable<BuildingPlacement> original, IReadOnlyList<BuildingPlacement> changes)
+    public static IEnumerable<BuildingPlacement> Overlay(IEnumerable<BuildingPlacement> original, IReadOnlyList<BuildingPlacement> changes) =>
+        changes.Count == 0 ? original : OverlayWith(original, changes);
+
+    static IEnumerable<BuildingPlacement> OverlayWith(IEnumerable<BuildingPlacement> original, IReadOnlyList<BuildingPlacement> changes)
     {
         var replacements = changes.ToDictionary(p => p.Key, StringComparer.Ordinal);
         foreach (var p in original) yield return replacements.Remove(p.Key, out var replacement) ? replacement : p;
