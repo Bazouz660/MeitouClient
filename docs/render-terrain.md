@@ -22,7 +22,8 @@ where occluders justify it. A depth prepass is extra geometry, not automatically
 
 Meitou look, not in the game (`GroundRelief`). Tab toggles "Ground parallax", "Ground displacement (tessellation)", "Terrain outline
 refinement (tessellation)", "Rock smoothing (tessellation)"; sliders "Ground relief quality" (High by default; Medium and Low reduce
-the march), "Ground relief depth (cm, typical ground)" (default 40), "Ground displacement distance (m)" (100), "Ground parallax
+the march; compiled into the colour programs, one set per quality made on first use: a uniform quality cost High 12% of the terrain's
+GPU time, **Verified** by swamp-low A/B), "Ground relief depth (cm, typical ground)" (default 40), "Ground displacement distance (m)" (100), "Ground parallax
 distance (m)" (60); viewer K toggles the parallax. The other values are tuned constants, expressed at a 20 cm reference depth and
 settable for a run with the viewer's `--relief Name=value`: target slope 0.2, scale follow 0.5, max depth 80 cm (160 at the default
 40), cliff scale 1, overlay relief 1, self-shadow 0.6, tessellation detail 0.5, refinement 0.5 px, tilt 0.5, broad cut 2 m.
