@@ -13,7 +13,7 @@ namespace Meitou.Launcher;
 public sealed partial class MainWindow
 {
     /// <summary>The reports service; empty hides the Report button.</summary>
-    const string ReportsUrl = "";
+    const string ReportsUrl = "https://gear-pastry-chorus.cloudovna.app";
     const string RoadmapUrl = "https://meitou.martinvlcek.sk/roadmap.json";
     const int LogTail = 512 * 1024;
 

@@ -43,7 +43,8 @@ the last `X-Forwarded-For` entry. Port 8080.
 ## Ways in
 
 - **Site**: "Works for me" / "Broken" under each row and a form dialog; `site/src/data/reports.ts` holds the service URL and the
-  Turnstile site key (empty URL hides the buttons).
+  Turnstile site key (empty URL hides the buttons). Live at `https://gear-pastry-chorus.cloudovna.app` (Cloudovna stack
+  `meitou-reports`, database `meitou-reports db`; redeployed by the `REPORTS_REDEPLOY_WEBHOOK_URL` secret).
 - **Discord**: `/works system [build platform modded note]` and `/broken system what [build platform modded]`, system autocompleted
   from the rows; answers are visible to the reporter only. Setup: a Discord application, its Interactions Endpoint URL set to
   `<service>/discord`, the env above, then `POST /discord/register` once.
