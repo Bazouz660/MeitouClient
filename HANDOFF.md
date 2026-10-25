@@ -2,7 +2,7 @@
 
 Repository: `/Users/daniilmiroshnykov/code/dotnet/MeitouClient`  
 Branch: `metal-spike`  
-Last code commit: `6d96f399 perf: cache Metal buffer offsets and sampler states`
+Last code commit: `a12f8360 fix: bind the real depth to the unused TAA far slot`
 
 State: functional opt-in Metal preview; **not 100% Vulkan effect parity**. Upstream v0.15.0 (`cd01e732`) is merged.
 **MEP-1, MEP-2, MEP-3 and MEP-5 are accepted** (2026-10-24: MetalFX temporal stability; reflection MSAA/characters;
@@ -51,6 +51,8 @@ Metal binding cache (2026-10-25): `MetalCommandList` now uses `setVertexBufferOf
 same buffer moves to another slice, and caches texture and sampler state per slot. This targets Xcode's redundant-binding
 API insights (324 buffer binds in Render Encoder 16; 85 buffer and 83 sampler binds in Render Encoder 28). It is API/CPU
 hygiene, not a GPU-time claim. Build 0/0; quick suite 450 passed / 2 skipped; internal screenshot runs. No new capture.
+The 14:50 trace showed API Usage down from 637 to 57 insights; the remaining post-TAA `uFarDepth` row was the dummy far
+slot, now bound to the real depth (unused with `uHasFar = 0`). Local commit `a12f8360`; no new capture.
 
 ## Upstream sync (2026-10-25, `cd01e732`)
 
