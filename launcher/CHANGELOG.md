@@ -2,23 +2,24 @@
 
 Released with tags `launcher-v<version>` by `.github/workflows/launcher-release.yml`; each release needs its `## v<version>` section.
 
-## Unreleased
+## v1.2.0
 
-- **Report to the roadmap** under the launcher version: tell the roadmap a system works or is broken, with the version,
-  platform and mods, and optionally the end of that version's log.txt. Shown once the reports service is live.
+- **Report to the roadmap** under the launcher version: tell the Meitou roadmap that a system works or is broken. The
+  report carries the version, platform and whether mods are on, and optionally the end of that version's log.txt.
+- **Language** in Settings: switch the launcher to another language, with Brazilian Portuguese as the first. It also sets
+  Kenshi's language for the title and settings screens (#80).
+- Steam copy on Windows: Play starts Meitou as Kenshi for Steam, so the Steam overlay and play time can work (not yet
+  confirmed in a Steam run).
+- An update is offered only for a release newer than the newest one installed, and installed versions always stay in the
+  Versions list.
 - macOS Apple silicon: first start and Settings → Renderer offer **Auto**, native **Metal** and **Vulkan (MoltenVK)**. Auto
-  uses Vulkan when its loader exists and Metal otherwise, so a new user does not need Homebrew; Metal starts without
-  `DYLD_LIBRARY_PATH`.
-- macOS Vulkan now gets a narrow `vulkan/` loader folder through `DYLD_LIBRARY_PATH` instead of all of Homebrew's library
-  folder, so Homebrew `libjpeg`/`libpng` cannot replace AppKit/ImageIO's copies. Settings has the Homebrew command and a
-  loader check.
-- First start explains that Kenshi is required and links to a macOS acquisition guide; Find now searches macOS Steam,
-  CrossOver and Whisky locations.
-- The launcher reads the release's `settings-schema.json` `renderers` list, so a Vulkan-only release does not claim Metal
-  support.
-- macOS Metal has a **memory budget** in Settings: Safe 5120 MB, Balanced 6144 MB, High 8120 MB on 16 GB-or-larger Macs.
-  It is passed to the game as a soft allocation guard; the launcher also clears the experimental GPU-cull environment
-  switch so users cannot turn on the path that caused GPU progress timeouts.
+  uses Vulkan when its loader is installed and Metal otherwise, so Homebrew is no longer required.
+- macOS Vulkan gets only the Vulkan loader from Homebrew, so Homebrew's image libraries can no longer break the game.
+  Settings shows the Homebrew command and checks for the loader.
+- First start explains that Kenshi is required and links to a guide for getting it on macOS; Find also searches the macOS
+  Steam, CrossOver and Whisky folders.
+- A game version that only supports Vulkan no longer offers Metal.
+- macOS Metal has a **memory budget** in Settings: Safe, Balanced, or High on Macs with 16 GB or more.
 
 ## v1.1.2
 
