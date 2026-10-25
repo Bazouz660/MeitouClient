@@ -620,7 +620,9 @@ names exactly one item is that item's `inventory footprint` (Iron Plates 4 x 3, 
 `Kenshi_InventoryGenericWindow`: caption STORAGE, the one limited item's name as heading, `Max Capacity: N` with N the `stackable bonus
 mult`, the line red with "(Full)" once the first stack reaches it (exact red **Unknown**). Locks and containers: [locks](locks.md).
 Water Tower takes only Water and `Storage: Ore` only Raw Iron, both with mult 100 and functionality `Resource
-storage` (function 2); Large Barrels also hold Water.
+storage` (function 2); Large Barrels also hold Water. Other `itemtype limit`s (**Verified**, merged game data): ARMOUR
+(Armour Storage, Armour Stand), WEAPON (weapon stands, cabinets, display boards), CROSSBOW (Crossbow Locker); none takes
+CONTAINER (backpacks). Shop counters (function 9) have no type limit in Meitou (`IsStorage` is functions 2 and 13 only).
 
 ### Hauling
 
