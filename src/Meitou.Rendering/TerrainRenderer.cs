@@ -658,7 +658,6 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
             c.HeightNormals = patches ? 1u : 0u;
             c.Feature = patches ? 0u : 1u;
             c.FeatureBiome = -1;
-            (c.ContactBand, c.ContactShare) = !patches && GroundContact.Enabled ? (GroundContact.MaxBand, GroundContact.Share) : (0, 0);
             c.SunColour = light.SunColour;
             c.AmbientSky = light.AmbientSky;
             c.AmbientGround = light.AmbientGround;
@@ -1093,15 +1092,11 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         placements = gpu.Frame.AllocateConstants((ulong)(total * 64), 64);
         var target = (Matrix4x4*)placements.Pointer;
         var t = biomes ? textures : null;
-        bool contact = biomes && GroundContact.Enabled;
-        var ground = contact ? Snapshot() : default;
         for (int i = 0; i < items.Length; i++)
         {
             var placed = items[i].Model;
             // Not resident yet (or no textures): -1, blend the biomes as the terrain does.
             if (biomes) placed.M14 = t?.FeatureBiomeRow(placed.M41, placed.M43) ?? -1;
-            // Row 2 w (the position's unused w): how far the placement stands above the ground, which sizes the ground contact.
-            if (contact) placed.M34 = GroundContact.VisibleHeight(items[i].Model, items[i].Mesh.Support, ground);
             target[cursors[groupOf[i]]++] = placed;
         }
         return true;

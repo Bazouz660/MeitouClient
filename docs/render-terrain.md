@@ -139,23 +139,6 @@ shadow map curves alike): Phong tessellation (α 0.75, `RockSmoothing.Roundness`
 tessellation detail), at most 16, `fractional_odd_spacing`; both sides of an edge curve it from the same two ends, so it does not
 crack. Levels by the camera eye in the shadow pass too. The impostor bake and the GI's ray meshes stay flat.
 
-## Ground contact
-
-Meitou look, not in the game (`GroundContact`, switch `contact`; issue #65). The game shades a TERRAIN-mode mesh with its feature's one
-biome by the mesh's own slope, so a cliff face stops hard against the ground's grass or dirt. In the mesh colour programs a pixel
-`h` above `terrainHeight` gets `contact = 1 − smoothstep(0, band, h)` (not beyond `uFarEnd`). The band is `Share` (0.15) of the
-placement's visible height, at most `MaxBand` (60 units). Visible height (`GroundContact.VisibleHeight`, CPU): the highest of the mesh's
-26 extreme vertices (`Support`, one per axis/edge/corner direction, made at decode for TERRAIN-mode meshes) placed, over the ground under
-that point. It rides in the placement's row 2 w: `TerrainRenderer.GroupMeshes` writes it each frame for the CPU-drawn rocks; the GPU-culled
-rocks carry it in `Ground.W` above the rock bits (`FoliageCull.RockBits`, step 2048, whole units) and the compact kernel copies it there.
-Its normal mixes toward `terrainNormal` (so slope layers, cliff projections and lighting follow), the cliff weights toward the ground's,
-the road layer returns by `contact`, and the ground's five biome slots take `contact` of the weight with the feature's biome as a sixth
-slot (`BIOME_SLOTS` 6 in the mesh programs only; the patches keep 5). Depth, shadows, the impostor bake (`ContactBand` 0) and GI unchanged.
-**Observed** (Hub, pixel diffs of on/off renders from one build): a large rock 80 m away (visible height over 30 m) changes only at its
-foot; a boulder showing under 1 m is unchanged. Bounding boxes do not work as the measure: many rock meshes are mostly buried and
-tilted, so a box's height, or its top over the ground, read 10 to 30 m for that boulder and erased it.
-**Unknown:** cost in the band (up to 6 biomes a pixel) and of the per-frame height on the CPU path, and the look at the impostor crossfade.
-
 ## Interior cut
 
 Patches over a building's interior mask are cut: [render-interior-cut](render-interior-cut.md).

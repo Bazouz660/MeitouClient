@@ -1,5 +1,3 @@
-using System.Numerics;
-
 namespace Meitou.Rendering.Gpu;
 
 /// <summary>A vertex attribute of an interleaved mesh vertex: its location, component count and byte offset; floats, or with
@@ -15,10 +13,7 @@ public sealed class MeshBindings(LegacyProgram.Attribute?[] attributes, GpuBuffe
     public LegacyProgram.Attribute?[] Attributes { get; } = attributes;
     public GpuBufferBinding Elements { get; } = elements;
 
-    /// <summary>The whole mesh's extreme vertices in its own space (<see cref="GroundContact.Support"/>; empty: unknown), which size the ground contact.</summary>
-    public Vector3[] Support { get; init; } = [];
-
     /// <summary>The attributes over the owner's vertex buffer, and the whole of <paramref name="elements"/> as the indices.</summary>
-    public static MeshBindings Of(LegacyProgram.Attribute?[] attributes, DeviceBuffer elements, Vector3[]? support = null) =>
-        new(attributes, new GpuBufferBinding(elements.Handle, 0, elements.Size)) { Support = support ?? [] };
+    public static MeshBindings Of(LegacyProgram.Attribute?[] attributes, DeviceBuffer elements) =>
+        new(attributes, new GpuBufferBinding(elements.Handle, 0, elements.Size));
 }
