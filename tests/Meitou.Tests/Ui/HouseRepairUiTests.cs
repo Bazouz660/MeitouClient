@@ -26,7 +26,7 @@ public class HouseRepairUiTests
         var install = GameInstall.Locate(); Assert.SkipWhen(install is null, "No Kenshi install configured");
         var (data, house) = HousePurchaseTests.Setup(destroyed: true);
         using var session = new WorldSession(Vector3.Zero, (-1000, -1000, 1000, 1000), (_, _) => 0,
-            systems: [new PlayerSystem(), new LockSystem(data.Bodies.Constants, data.BodyOptions)]);
+            systems: [new PlayerSystem(), new ConstructionSystem(data), new LockSystem(data.Bodies.Constants, data.BodyOptions)]);
         var world = session.World;
         world.Player.Faction = data.PlayerFaction; world.Player.Money = 10000;
         world.Fixtures.RegisterSite(world, data, 0);
@@ -49,6 +49,14 @@ public class HouseRepairUiTests
         try
         {
             var point = new Vector2(800, 450);
+            ui.MouseMove(point);
+            _ = ui.UiFrame; // Arrange hover hit testing for the new mouse position, as the host does each frame.
+            Assert.Equal("arrow", ui.PointerName);
+            ui.MouseDown(MouseButton.Right, point, shift);
+            ui.MouseUp(MouseButton.Right, point, shift);
+            Assert.False(ui.ContextMenuOpen);
+            var quick = world.Commands.TakeDue(long.MaxValue);
+            Assert.DoesNotContain(quick, c => c is BuildOrder or AddJob);
             ui.MouseDown(MouseButton.Right, point, shift);
             Thread.Sleep(TimeSpan.FromSeconds(PlayerInterface.ContextHoldSeconds + 0.05));
             ui.Steer();
@@ -61,6 +69,17 @@ public class HouseRepairUiTests
             var commands = world.Commands.TakeDue(long.MaxValue);
             Assert.Equal(house.Key, Assert.Single(commands.OfType<BuildOrder>()).Site);
             Assert.Equal(shift ? 1 : 0, commands.OfType<AddJob>().Count());
+            world.Commands.Enqueue(Assert.Single(commands.OfType<BuildOrder>()));
+            world.RunTick();
+            Assert.False(world.Buildings.Find(house.Key)!.Destroyed);
+            Assert.False(world.Buildings.Find(house.Key)!.Complete);
+            point = new Vector2(800, 450);
+            ui.MouseMove(point);
+            _ = ui.UiFrame; // Arrange hover hit testing for the new mouse position, as the host does each frame.
+            Assert.Equal("build", ui.PointerName);
+            ui.MouseDown(MouseButton.Right, point, shift);
+            ui.MouseUp(MouseButton.Right, point, shift);
+            Assert.Equal(house.Key, Assert.Single(world.Commands.TakeDue(long.MaxValue).OfType<BuildOrder>()).Site);
         }
         finally { ui.DisposeUi(); }
     }

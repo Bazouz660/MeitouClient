@@ -636,7 +636,7 @@ sealed partial class PlayerInterface
             return;
         }
         // With Shift the Build order becomes the Engineer job (125), which builds any unfinished site.
-        if (pending.Site.NeedsWork) OrderConstruction(pending.Site, SelectedIds());
+        if (QuickConstruction(pending.Site)) OrderConstruction(pending.Site, SelectedIds());
         else if (Machine(pending.Site.Id) is { Operable: true } or { Function: MachineData.TrainingFunction }) Say(new Meitou.Simulation.Production.OperateOrder(SelectedIds(), pending.Site.Id) { Tick = session.World.Tick });
         else if (Machine(pending.Site.Id) is { Function: Meitou.Data.World.ObjectRanges.TurretFunction })
             Say(new Meitou.Simulation.Production.UseTurretOrder(SelectedIds(), pending.Site.Id) { Tick = session.World.Tick });   // the original's order 146 USE_TURRET
@@ -711,8 +711,11 @@ sealed partial class PlayerInterface
     /// Whether a site is an object to act on, not a plain building: an unfinished one, or a finished machine, storage, furnace or turret. The original's pointer is the hammer (<c>build</c>)
     /// only for an unfinished building; a finished plain building is the arrow, and its quick order is a move (docs/game/ui-input.md "Building hover and click").
     /// </summary>
+    // Purchased town ruins require the held menu's Repair; once reconstruction starts they accept quick Build orders.
+    static bool QuickConstruction(BuildingSnapshot site) => site.NeedsWork && !(site.LevelPlacement is not null && site.Destroyed);
+
     bool SiteIsObject(BuildingSnapshot site) =>
-        site.NeedsWork || Machine(site.Id) is { Operable: true } or { IsStorage: true } or { Function: MachineData.ItemFurnaceFunction or MachineData.TrainingFunction or Meitou.Data.World.ObjectRanges.TurretFunction };
+        QuickConstruction(site) || Machine(site.Id) is { Operable: true } or { IsStorage: true } or { Function: MachineData.ItemFurnaceFunction or MachineData.TrainingFunction or Meitou.Data.World.ObjectRanges.TurretFunction };
 
     /// <summary>
     /// The pointer over a site with characters selected: <c>build</c> while unfinished (the original's pointer mode 0xb), <c>search</c> over a storage, else the class's slot 130 pointer
@@ -721,7 +724,7 @@ sealed partial class PlayerInterface
     string? SitePointer(Vector2 p)
     {
         if (SelectedIds().Count == 0 || PickSite(p) is not { } site) return null;
-        if (site.NeedsWork) return "build";
+        if (QuickConstruction(site)) return "build";
         if (Machine(site.Id) is not { } m || !SiteIsObject(site)) return null;
         if (m.IsStorage) return "search";   // a finished storage: the original's pointer for opening it
         return m.Function is MachineData.MineFunction or MachineData.NaturalMineFunction ? "mine" : "use";

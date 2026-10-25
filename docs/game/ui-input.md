@@ -310,6 +310,10 @@ floor); on a select release without a command release in
 the same frame it selects. With an animals-only selection (+0x268: no selected character is a CharacterHuman) only the selection runs. Tests
 in order (task numbers are [ai-tasks](ai-tasks.md) taskTypes):
 
+**Observed** (user's original-game comparison, purchased ruined town house): hovering shows no right-click action pointer,
+and a quick right click does not start repair. Hold right click and choose Repair to begin reconstruction. Meitou keeps
+that activation menu-only; once the ruin becomes an unfinished construction site, quick Build orders apply.
+
 | Building | Pointer | Quick right click |
 |---|---|---|
 | not complete (+0x160, [construction](buildings-production.md#construction-state)) | `build` | 2 BUILD |
