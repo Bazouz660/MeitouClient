@@ -3,4 +3,7 @@
     <!-- The launcher references this and is published Native AOT: trim/AOT analyzer warnings here are build errors. -->
     <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="../../launcher/Meitou.Launcher/translations.json" LogicalName="Meitou.Core.launcher-translations.json" />
+  </ItemGroup>
 </Project>

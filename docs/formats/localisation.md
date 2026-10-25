@@ -13,7 +13,7 @@ Addresses are `kenshi_x64.exe` (1.0.68).
 - **Verified** (`FUN_140175a90`): a fixed table maps the ten Steam names (english, german, french, russian, italian, portuguese,
   spanish, chinese, japanese, korean) to codes. A non-empty `language` in `settings.cfg` wins when it is one of the table's codes or a
   `locale/` folder (not `_`-prefixed); when empty, `steam_language` decides; anything unknown is `en_GB`. With Steam running a changed Steam
-  language overrides `language` and the choice is written back to `settings.cfg` (**Observed**; Meitou does neither).
+  language overrides `language` and the choice is written back to `settings.cfg` (**Observed**; the launcher writes the selected supported locale to `language` when its selector changes; Meitou itself does not use Steam).
   Related: `FUN_1401753e0`, `FUN_1401751d0`, `FUN_1401750a0`, `FUN_140174c00`, `FUN_140174d50`; launcher language message `FUN_140124650`.
 - **Verified** (`Ogre_RegisterResourceLocations` `140816d90`): for a non-English language its `locale/<code>` is registered as a resource
   folder after the base game's and before the mods' (the last registered location wins a name), so fonts, layouts, images and sounds
@@ -31,8 +31,9 @@ Addresses are `kenshi_x64.exe` (1.0.68).
 
 ## Meitou implementation
 
-- `GameLanguage.Detect` applies the rules above (reads only `settings.cfg`; no new setting, no Steam). The Meitou settings menu has no
-  language option and the menu itself is not translated. `Loc.Use` runs at start after `UserConfig.Load()`.
+- `GameLanguage.Detect` applies the rules above (reads only `settings.cfg`; no Steam). `Loc.Use` runs at start after `UserConfig.Load()`.
+  The launcher matches the translation catalog's language display name (for example `German` or `Portuguese (Brazil)`) to a Kenshi locale, then uses the locale code as a fallback; it updates only `language` in the install's `settings.cfg`. The game uses it on its next start.
+  The Meitou settings menu sends drawn captions and hints through `Loc.Tr`; it has no separate language selector.
 - **Catalog** (`GettextCatalog`): `main.mo` (LE/BE, plural splits, `\x04` context), else `main.po` (fuzzy and obsolete skipped). Plural rule
   (`PluralRule`) is parsed from the header `Plural-Forms`; Germanic when absent. Verified for all eight locales: `.mo` and `.po` give the same messages.
 - **Placeholders**: `{N}`, `{N,num}`, `{N,num=fix,p=K}` (1-based, boost-format). `num` uses the language's culture. Translations may reorder them.
@@ -45,14 +46,19 @@ Addresses are `kenshi_x64.exe` (1.0.68).
   combo items), HUD `AddLines`, context-menu verbs, `Notice`, `Confirm`/`UpperTr`, `PlaceTooltip` (keys and values; bracketed headings by their
   inside), stat help (`StatHelpCatalog`), the loading tip, the day text, and the interpolated simulation messages (relations, bounties, research,
   campaigns, construction, fixtures, discoveries). Layout captions the original leaves English stay English.
+- **JSON fallback**: after gettext leaves a string unchanged, the Meitou title-menu buttons (`UpperTr`, uppercase then title-case) and the Meitou
+  settings menu's drawn captions and choices look up the source in the shared `launcher.translations.json` using the active game language code.
+  Missing entries stay English; any `base` property is ignored. Lookup accepts exact or normalized matches, preserves a small dynamic suffix, and uses a conservative nearest-string
+  match for small typos; unmatched or ambiguous strings stay English. Codes declared in the JSON can be active Meitou languages without a game locale
+  folder. Settings rows measure their active-font wrapped labels and hints and grow to fit them.
 - **Fonts, tips, names**: through the overlay folder (`OgreScriptResources.ForInstall`) and `Loc.FindTextFile`.
 - **New-game option help**: `NewGameHelpCatalog` reads the installed English `main.pot` source references and passes the exact msgid through `Loc.Tr`; no paraphrases or translated paragraphs are embedded. Missing translations fall back to the original English; a missing template leaves help empty. Font resources use the active locale overlay.
 - All text files are read and written as UTF-8.
 
 ## Unknown / not done
 
-- Steam-language override and the `settings.cfg` write-back.
+- Steam-language override while Meitou itself is running.
 - The mod-entry flag gate of `Mods_LocateModTranslation`.
 - The exact lookup behaviour of `FUN_14017c3f0` (**Observed** only).
 - Whether ghost records from translations of unloaded mods persist in the original.
-- A translated Meitou settings menu and language option (needs a decision).
+- Full Meitou settings-menu coverage depends on matching msgids in the active gettext catalog; Meitou-specific labels without catalog entries stay in English.

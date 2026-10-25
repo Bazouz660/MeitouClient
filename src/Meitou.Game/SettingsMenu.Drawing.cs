@@ -11,6 +11,8 @@ sealed partial class SettingsMenu
     static readonly Vector4 MutedInk = new(0.52f, 0.49f, 0.43f, 1);
     static readonly Vector4 Brass = new(196 / 255f, 160 / 255f, 98 / 255f, 1);
     bool Meitou => player.UiMode == UiMode.Meitou;
+    int textViewportHeight;
+    readonly Dictionary<(string Text, int Width, int Size, int Height, int Scale, string Language), float> textHeights = [];
 
     UiRect R(float x, float y, float w, float h) => new(MathF.Round(bounds.X + x * scale), bounds.Y + y * scale, MathF.Round(w * scale), MathF.Round(h * scale));
 
@@ -18,9 +20,16 @@ sealed partial class SettingsMenu
 
     void Text(string caption, UiRect at, float size = 16, Vector4? colour = null, string align = "Left VCenter", UiRect? clip = null, bool wrap = false)
     {
+        caption = TranslateLabel(caption);
         var properties = new Dictionary<string, string> { ["TextAlign"] = align, ["FontName"] = "Kenshi_StandardFont", ["FontPixels"] = ((int)MathF.Round(size * scale)).ToString(System.Globalization.CultureInfo.InvariantCulture) };
         if (wrap) properties["WordWrap"] = "true";
         controls.Add(new("settings-text", "TextBox", at, caption, "", "", true, properties, Vector4.Zero, colour ?? MainInk, Clip: clip, Pickable: false, TextScale: size * scale / 16));
+    }
+
+    string TranslateLabel(string caption)
+    {
+        string gettext = Loc.Tr(caption);
+        return gettext != caption ? gettext : UserTranslationDictionary.Translate(caption, Loc.Language.Code);
     }
 
     void Surface(UiRect at, string kind, bool selected = false, bool hover = false, UiRect? clip = null)
@@ -75,6 +84,7 @@ sealed partial class SettingsMenu
         AdvanceMotion();
         art.Ensure(painter, Meitou, player.UiAtlas);
         scale = Math.Max(0.35f, Math.Min(1.25f, Math.Min(height / 900f, width / 1280f)));
+        textViewportHeight = height;
         bounds = new(MathF.Round((width - 1120 * scale) / 2), MathF.Round((height - 720 * scale) / 2), MathF.Round(1120 * scale), MathF.Round(720 * scale));
         bounds = bounds with { Y = bounds.Y + (1 - Ease(menuProgress)) * 8 * scale };
         controls.Clear(); hits.Clear();
@@ -150,15 +160,39 @@ sealed partial class SettingsMenu
         painter.Draw(controls, width, height, pointer, null);
     }
 
-    /// <summary>The lines a hint wraps to (about 86 characters of the 11 px text fit the 456-unit column).</summary>
-    static int HintLines(Entry entry) => entry.Hint.Length == 0 ? 0 : Math.Max(1, (int)MathF.Ceiling(entry.Hint.Length / 86f));
+    /// <summary>Measures with the same font resource and wrapped width used by the settings text controls.</summary>
+    float TextHeight(string text, float width, float size)
+    {
+        if (text.Length == 0) return 0;
+        int px = (int)MathF.Round(size * scale);
+        var key = (text, (int)width, (int)size, textViewportHeight, (int)MathF.Round(scale * 1000), Loc.Language.Code);
+        if (textHeights.TryGetValue(key, out float cached)) return cached;
+        if (player.SettingsPainter is not { } painter) return size * 1.25f;
+        float measured = painter.MeasurePixelText(text, MathF.Round(width * scale), Math.Clamp(px, 8, 96), size * scale / 16).Height / scale;
+        textHeights[key] = measured;
+        return measured;
+    }
+
+    int TextLines(string text, float width, float size)
+    {
+        if (text.Length == 0) return 0;
+        if (player.SettingsPainter is null) return Math.Max(1, (int)MathF.Ceiling(text.Length / Math.Max(1, width / size)));
+        float wrapped = TextHeight(text, width, size);
+        float line = TextHeight("Mg", 0, size);
+        return Math.Max(1, (int)MathF.Ceiling(wrapped / Math.Max(1, line)));
+    }
 
     /// <summary>A picture under an entry's row: 560 units wide, the luckyren Mode image's proportions, with 8 units above it.</summary>
     const float PictureWidth = 560, PictureHeight = 72, PictureGap = 8;
 
-    static float RowHeight(Entry entry) => entry.Hint.Length > 0 ? 28 + 14 * HintLines(entry) : 36;
+    float RowHeight(Entry entry)
+    {
+        float label = TextHeight(TranslateLabel(entry.Label), 456, 14);
+        if (entry.Hint.Length == 0) return Math.Max(36, label + 4);
+        return Math.Max(36, 2 + label + 1 + TextHeight(TranslateLabel(entry.Hint), 456, 11) + 2);
+    }
 
-    static float EntryHeight(Entry entry) => RowHeight(entry) + (entry.Picture is null ? 0 : PictureGap + PictureHeight);
+    float EntryHeight(Entry entry) => RowHeight(entry) + (entry.Picture is null ? 0 : PictureGap + PictureHeight);
 
     void DrawEntry(Entry entry, float y)
     {
@@ -171,9 +205,18 @@ sealed partial class SettingsMenu
                 controls.Add(new("settings-picture", "ImageBox", R(212, y + row - 4, PictureWidth, PictureHeight), "", "", "", true,
                     new Dictionary<string, string> { ["ImageTexture"] = picture }, Vector4.Zero, Clip: viewport, Pickable: false));
         }
-        Text(entry.Label, R(212, y + 2, 456, entry.Hint.Length > 0 ? 20 : 32), 14, clip: viewport);
-        if (HintLines(entry) is var lines and > 0)
-            Text(entry.Hint, R(212, y + 19, 456, 14 * lines + 3), 11, MutedInk, lines > 1 ? "Left Top" : "Left VCenter", viewport, wrap: lines > 1);
+        string translatedLabel = TranslateLabel(entry.Label);
+        float labelHeight = TextHeight(translatedLabel, 456, 14);
+        float labelBoxHeight = entry.Hint.Length > 0 ? labelHeight + 1 : row - 4;
+        bool labelWrap = TextLines(translatedLabel, 456, 14) > 1;
+        Text(translatedLabel, R(212, y + 2, 456, labelBoxHeight), 14, clip: viewport, wrap: labelWrap);
+        if (entry.Hint.Length > 0)
+        {
+            string hint = TranslateLabel(entry.Hint);
+            float hintHeight = TextHeight(hint, 456, 11);
+            float hintY = y + 2 + labelHeight + 1;
+            Text(hint, R(212, hintY, 456, hintHeight + 1), 11, MutedInk, "Left Top", viewport, wrap: true);
+        }
         if (entry.Toggle is { Remaster: true } remaster)
         {
             // A Faithful / Meitou switch: both sides as buttons, the active one marked.
@@ -189,7 +232,7 @@ sealed partial class SettingsMenu
         {
             var options = choice.Options();
             int index = choice.Current();
-            string current = index >= 0 && index < options.Count ? options[index] : "Unavailable";
+            string current = TranslateLabel(index >= 0 && index < options.Count ? options[index] : "Unavailable");
             var at = R(688, buttonY, 412, 26);
             Button(current + "   v", at, () =>
             {

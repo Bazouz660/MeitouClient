@@ -37,6 +37,8 @@ public sealed class LauncherConfig
     /// <summary>A game release the user chose not to be offered as an update; a newer one is offered again.</summary>
     public string? SkippedVersion { get; set; }
     public string LaunchArguments { get; set; } = "";
+    /// <summary>Language of the launcher's interface, also written to Kenshi's settings.cfg when a matching locale or JSON catalog exists.</summary>
+    public string UiLanguage { get; set; } = "en";
     /// <summary>An installed launcher applies its own update at startup and restarts into it.</summary>
     public bool AutoUpdateLauncher { get; set; } = true;
     public List<ModPreset> Presets { get; set; } = [];

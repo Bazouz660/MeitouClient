@@ -177,7 +177,7 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
                     }, OnOff: true)));
         if (page == 0) result.Insert(2, new("Frame limit", "Used while vertical sync is off; 0 is unlimited.", Slider: frameLimit));
         if (page == 0)
-            result.Insert(3, new("World tick alongside drawing", "Faithful runs the world, then draws it, as the game does. Meitou runs the next world tick while the frame is drawn "
+            result.Insert(3, new("World tick alongside drawing", "Faithful runs the world, then draws it, as the game does. Meitou runs the next world tick while the frame is drawn."
                 + "whenever the world is busy (big fights, crowds), Always on every frame: much higher frame rates with many characters. "
                 + "Running alongside can add up to 33 ms of input delay (one world tick).",
                 Choice: new(() => ["Faithful (in series)", "Meitou (when busy)", "Always on"], () => (int)config.TickAhead, i => config.TickAhead = (TickAheadMode)i)));

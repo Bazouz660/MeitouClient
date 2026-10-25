@@ -56,6 +56,24 @@ public sealed partial class UiPainter
     {
         var font = ResourceFont(fontName, viewportHeight / 1080f, minimumTextPixels) ?? standardFont ?? overlay;
         float scale = font == standardFont || font == overlay ? Math.Clamp(viewportHeight / 1080f, 0.5f, 1.5f) : 1;
+        return Measure(font, text, wrapWidth, scale);
+    }
+
+    /// <summary>Measures text exactly as a settings caption with an explicit <c>FontPixels</c> size is drawn.</summary>
+    public TextSize MeasurePixelText(string text, float wrapWidth, int pixels, float resourceScale)
+    {
+        if (StandardSource() is { } source)
+        {
+            var font = UiFontFor("", source.Spec, source.Path, Math.Clamp(pixels, 8, 96) * 64L, 72, false, false);
+            return Measure(font, text, wrapWidth, 1);
+        }
+        if (ResourceFont("Kenshi_StandardFont", resourceScale, 0) is { } resourceFont)
+            return Measure(resourceFont, text, wrapWidth, 1);
+        return Measure(standardFont ?? overlay, text, wrapWidth, resourceScale);
+    }
+
+    static TextSize Measure(DebugOverlay font, string text, float wrapWidth, float scale)
+    {
         text = text.Replace("\\n", "\n", StringComparison.Ordinal).ReplaceLineEndings("\n");
         var lines = wrapWidth > 0 ? font.WrapText(text, wrapWidth, scale) : text.Split('\n');
         float width = 0;

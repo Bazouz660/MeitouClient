@@ -32,6 +32,7 @@ public static class Loc
         language = selected;
         catalog = loaded;
         culture = CultureOf(selected.Code);
+        UserTranslationDictionary.Load();
     }
 
     /// <summary>

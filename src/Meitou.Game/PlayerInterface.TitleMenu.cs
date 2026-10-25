@@ -22,12 +22,16 @@ sealed partial class PlayerInterface
     /// </summary>
     internal static string UpperTr(string upper)
     {
-        if (!Loc.Translating || upper.Length == 0) return upper;
+        if (upper.Length == 0) return upper;
         string exact = Loc.Tr(upper);
         if (exact != upper) return exact;
         string plain = char.ToUpperInvariant(upper[0]) + upper[1..].ToLowerInvariant();
         string translated = Loc.Tr(plain);
-        return translated == plain ? upper : translated.ToUpperInvariant();
+        if (translated != plain) return translated.ToUpperInvariant();
+        string dictionary = UserTranslationDictionary.Translate(upper, Loc.Language.Code);
+        if (dictionary != upper) return dictionary;
+        dictionary = UserTranslationDictionary.Translate(plain, Loc.Language.Code);
+        return dictionary == plain ? upper : dictionary.ToUpperInvariant();
     }
 
     const string MenuCard = "meitou:menu:card", MenuCardHover = "meitou:menu:card-hover", MenuPlate = "meitou:menu:plate", MenuPlateHover = "meitou:menu:plate-hover:v2",

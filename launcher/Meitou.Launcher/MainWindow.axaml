@@ -287,6 +287,16 @@
               <TextBlock Text="Settings" />
             </Border>
             <Border Classes="row">
+              <Grid ColumnDefinitions="*,Auto">
+                <StackPanel VerticalAlignment="Center">
+                  <TextBlock Classes="name" Text="Interface language" />
+                  <TextBlock Classes="desc" Text="Choose the language used by the launcher." />
+                </StackPanel>
+                <ComboBox Grid.Column="1" x:Name="LanguageBox" Width="240" HorizontalAlignment="Right"
+                          SelectionChanged="Language_SelectionChanged" DropDownOpened="Language_DropDownOpened" />
+              </Grid>
+            </Border>
+            <Border Classes="row">
               <Grid ColumnDefinitions="*,460">
                 <StackPanel VerticalAlignment="Center">
                   <TextBlock Classes="name" Text="Kenshi folder" />

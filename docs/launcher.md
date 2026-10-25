@@ -89,7 +89,7 @@ Native dependencies off Windows:
 
 The launcher's data folder (its program, once installed, is Velopack's, e.g. `%LocalAppData%/MeitouLauncher`) is `%LocalAppData%/Meitou`, `~/.local/share/Meitou` or `~/Library/Application Support/Meitou`, the same
 folder as the game's caches (shader cache, LODs, navmesh). Beside them it holds
-`launcher.json` (Kenshi folder, install folder, channel, chosen version, launch arguments, presets) and is the game's working directory.
+`launcher.json` (Kenshi folder, install folder, channel, chosen version, launch arguments, presets, launcher interface language) and is the game's working directory.
 The game runs from that folder, so its `meitou.user.json` (and anything else it writes to the working directory) is shared by all
 versions. The game gets the Kenshi folder through `KENSHI_PATH`; on macOS also `DYLD_LIBRARY_PATH` and the MoltenVK setting
 ([macos-port](macos-port.md#running)), and Play refuses with a `brew install` hint when no Homebrew folder holds the Vulkan loader.
@@ -120,6 +120,8 @@ setting reaches the launcher with its release; the launcher knows none of them. 
   (sliders and Faithful / Meitou switches). A top-level Default writes the schema's `default`. Whole values are written as integers.
 - Read-only when the file is unreadable, or its `version` differs from the schema's `settingsVersion` (another layout: the keys may
   mean something else). Warnings: the game is running (it writes the file on exit), `--low-end` (the game ignores `graphics`).
+
+The launcher's Settings page selects its interface language and writes the matching Kenshi locale to `settings.cfg`. In Debug builds, `LauncherText` reads the project's `translations.json`; installed builds read `%LocalAppData%/Meitou/launcher.translations.json`, initialized from the embedded dictionary on first run. On each load, embedded catalogs are merged with this editable file, whose entries override matching embedded strings. Add a top-level display name with a nested locale code and translations, for example `"Español": { "es-ES": { "Settings": "Configuración" } }`. Missing translations stay English; a `base` property is ignored. JSON languages appear with that name; the launcher's Kenshi language list and locale folders also appear automatically, with `(Interface not yet translated)` appended when no launcher translation exists. Custom codes declared in the JSON can be selected by Meitou even without a matching Kenshi locale folder. The older flat locale-to-strings shape is still read. Mod names, news and release notes remain source text.
 
 `meitou.user.json` layout (`UserConfig`; **Verified** by loading crafted files through the built game 2026-10-20):
 - `version` (no key: 1) is raised when a key is renamed, retyped or reinterpreted; `UserConfig.Migrate` converts older files step by
