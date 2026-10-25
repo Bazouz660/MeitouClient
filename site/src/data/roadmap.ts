@@ -13,7 +13,7 @@ export interface Category { id: string; name: string; blurb: string; rows: Row[]
 export interface Bug { id: string; seen: string; original: string; state: string; platform?: string; }
 export interface Fix { id: string; text: string; }
 
-export const asOf = { date: "2026-10-25", master: "17581bd4" };
+export const asOf = { date: "2026-10-25", master: "f4a41faa" };
 
 export const statuses: Record<Status, { label: string; desc: string }> = {
   "works": {
@@ -62,7 +62,7 @@ export const categories: Category[] = [
   { id: "movement", name: "Movement and control", blurb: "Selection, pathfinding, right-click orders, stairs and roofs.", rows: [
     { id: "switch-between-bases-and-squads", system: "Switch between bases and squads", status: "works", note: "Selecting a character in another base moves the camera there (Tab, double-tap 1).", bugs: [] },
     { id: "pathfinding-and-getting-stuck", system: "Pathfinding and getting stuck", status: "works", note: "Works mostly, and works for everyone on the latest build so far. Long routes no longer re-plan over and over (#50); the maintainer says NPCs still get stuck at times (#27). The northern stairs on the hub that one player could not walk down are fixed on master (#59). Newer upstream fixes for walkers stranded off the navmesh are checked in scratch simulations only, not yet in play.", bugs: [] },
-    { id: "right-click-verbs-and-target-picking", system: "Right-click verbs and target picking", status: "wip", note: "Original labels and order; Throw out of home, locking a cage and cutting locks other than shackles are not built. Pick up on squad members is missing (#74).", bugs: ["#74"] },
+    { id: "right-click-verbs-and-target-picking", system: "Right-click verbs and target picking", status: "wip", note: "Original labels and order; Throw out of home, locking a cage and cutting locks other than shackles are not built. Pick up on squad members is fixed on master (#74).", bugs: [] },
     { id: "clicks-on-roofs-and-upper-decks", system: "Clicks on roofs and upper decks", status: "works", note: "A click on a roof walk takes the character there by the stairs.", bugs: [] },
   ] },
   { id: "combat", name: "Combat", blurb: "Melee, ranged weapons, stealth and turrets.", rows: [
@@ -79,7 +79,7 @@ export const categories: Category[] = [
   ] },
   { id: "squads", name: "Squads and jobs", blurb: "Recruiting, squads, orders and jobs.", rows: [
     { id: "recruiting", system: "Recruiting", status: "untested", note: "Hires, freed prisoners, unique recruits, up to the faction cap.", bugs: [] },
-    { id: "squads-formations-orders-hotkeys", system: "Squads, formations, orders, hotkeys", status: "works", note: "Tested in play: squads work. One player reports a dead character stays in the squad (#70); squads after an import are wrong.", bugs: ["#70"] },
+    { id: "squads-formations-orders-hotkeys", system: "Squads, formations, orders, hotkeys", status: "works", note: "Tested in play: squads work. A dead character staying in the squad is fixed on master (#70); squads after an import are wrong.", bugs: [] },
     { id: "permanent-jobs-job-lists-ai-options", system: "Permanent jobs, job lists, AI options", status: "works", note: "Medic, robotics, splint, foraging and attack-enemies jobs; tested in play, works mostly.", bugs: [] },
     { id: "hiring-mercenaries-ai-contracts", system: "Hiring mercenaries (AI contracts)", status: "untested", note: "Contracts start and end through dialogue.", bugs: [] },
   ] },
@@ -107,7 +107,7 @@ export const categories: Category[] = [
     { id: "kidnapping-cannibals-slavers", system: "Kidnapping, cannibals, slavers", status: "untested", note: "Carried to cages, made slaves, eaten.", bugs: [] },
     { id: "roaming-squads-roads-patrols", system: "Roaming squads, roads, patrols", status: "works", note: "Tested in play: roaming squads work. Road preference and sector patrols follow the decoded rules.", bugs: [] },
     { id: "dialogue-and-speech-bubbles", system: "Dialogue and speech bubbles", status: "wip", note: "Conditions that need state Meitou does not track yet do not pass. Said dialogue lines and replies are logged in the Dialog tab on master (#76).", bugs: [] },
-    { id: "chasing-and-running-away", system: "Chasing and running away", status: "untested", note: "Chasers give up as the original does; players report pursuing squads vanishing during long chases, often in the fog islands.", bugs: ["#57"] },
+    { id: "chasing-and-running-away", system: "Chasing and running away", status: "untested", note: "Chasers give up as the original does; players reported pursuing squads vanishing during long chases, often in the fog islands, fixed on master (#57).", bugs: [] },
     { id: "raids-and-campaigns", system: "Raids and campaigns", status: "wip", note: "Campaigns run and can target player outposts; some war types are not built, and an attack on an unloaded town always wins after 4 hours without changing the town.", bugs: [] },
     { id: "animals-and-nests", system: "Animals and nests", status: "wip", note: "Own meshes and clips, ageing, pack beasts, butchering; the player's animals have no feeding behaviour.", bugs: [] },
     { id: "occupied-towns", system: "Occupied towns", status: "untested", note: "A squad that holds a town patrols it, throws out downed intruders and fetches food; occupiers stay saved and resume after a load.", bugs: [] },
@@ -123,7 +123,7 @@ export const categories: Category[] = [
   ] },
   { id: "interface", name: "Interface", blurb: "Windows, tooltips, pause, text and input.", rows: [
     { id: "game-speed-and-pause", system: "Game speed and pause", status: "works", note: "Pause and the 1x, 2x and 5x speeds; tested in play. Orders and interface actions given while paused work on master (#73).", bugs: [] },
-    { id: "inventory-machine-and-loot-windows", system: "Inventory, machine and loot windows", status: "works", note: "Placement and opening rules as the original; both bags open when looting. An animal's character window shows an inventory grid the original leaves out. A dead character the player still owns cannot be selected to see its stats (#79).", bugs: ["#79"] },
+    { id: "inventory-machine-and-loot-windows", system: "Inventory, machine and loot windows", status: "works", note: "Placement and opening rules as the original; both bags open when looting. An animal's character window shows an inventory grid the original leaves out. A dead character the player still owns not being selectable to see its stats is fixed on master (#79).", bugs: [] },
     { id: "item-tooltips", system: "Item tooltips", status: "works", note: "Food, tools, weapons and armour rows, with armour stats and effect lines by the original's rules; readable with the dark palette.", bugs: [] },
     { id: "right-click-item-transfer-between-windows", system: "Right-click item transfer between windows", status: "works", note: "Fixed on master: one unit per click, Shift for the stack.", bugs: [] },
     { id: "translations", system: "Translations", status: "wip", note: "The launcher and the title and settings screens can be switched to another language, with Brazilian Portuguese as the first (#80); the rest of the game's interface is not translated yet, and some game strings are missed (#51).", bugs: [] },
@@ -143,10 +143,6 @@ export const categories: Category[] = [
 
 export const bugs: Bug[] = [
   { id: "#55", seen: "Crash near the end of main menu loading, on one player's PC (recent nightlies).", original: "Not applicable.", state: "Open issue; maintainer suspects a GPU driver fault" },
-  { id: "#57", seen: "A squad chasing the player vanishes during a long chase; another player sees it often in the fog islands, where the squad reappears on backtracking and some squads then stand still.", original: "A chasing squad gives up and stays in the world.", state: "Open issue; maintainer asked for a log" },
-  { id: "#70", seen: "A character who dies stays in its squad.", original: "A dead character is removed from its squad for good.", state: "Open issue" },
-  { id: "#74", seen: "Right-clicking another squad member offers Trade, Follow and Bodyguard, but no Pick up.", original: "Pick up is offered on squad members other than hired bodyguards.", state: "Open issue" },
-  { id: "#79", seen: "A dead character the player still owns cannot be selected to see its stats.", original: "A dead owned character can be selected and its stats read.", state: "Open issue" },
   { id: "#17", seen: "Borderless full screen on macOS shows no window.", original: "Not applicable.", state: "Issue closed; last report says still broken", platform: "macOS" },
 ];
 
@@ -167,6 +163,10 @@ export const fixedSeen: Fix[] = [
 
 // Fixed on master, not yet seen in play.
 export const fixedUnseen: Fix[] = [
+  { id: "#79", text: "A dead character the player still owns can be selected to see its stats" },
+  { id: "#74", text: "Pick up is offered on squad members" },
+  { id: "#70", text: "A character who dies is removed from its squad" },
+  { id: "#57", text: "A squad chasing the player no longer vanishes during a long chase" },
   { id: "#71", text: "Doorless interiors such as hive huts can be entered and left" },
   { id: "#76", text: "Said dialogue lines and replies are logged in the Dialog tab" },
   { id: "#78", text: "No more long Proton stutters from path searches; no crash placing character parts after a quickload" },
