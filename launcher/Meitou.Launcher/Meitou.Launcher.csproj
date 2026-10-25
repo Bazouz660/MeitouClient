@@ -4,7 +4,8 @@
     <OutputType>WinExe</OutputType>
     <AssemblyName>meitou-launcher</AssemblyName>
     <RootNamespace>Meitou.Launcher</RootNamespace>
-    <Version>1.0.1</Version>
+    <!-- The newest launcher/CHANGELOG.md section's version, so local builds match the latest release; the release workflow passes -p:Version. -->
+    <Version>$([System.Text.RegularExpressions.Regex]::Match($([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)../CHANGELOG.md')), '(?m)^## v(\S+)').Groups[1].Value)</Version>
     <ApplicationIcon>../../assets/branding/meitou.ico</ApplicationIcon>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <!-- Published as one Native AOT executable: the native libraries are embedded (below, NativeLibraries.cs), symbols stay out. -->
