@@ -19,6 +19,9 @@ public sealed partial class WorldObjectRenderer
     /// <summary>What a building's ROTATION_OUTPUT parts turn by (<c>getOutputBasedRotationSpeedMult</c>), asked with one of its meshes. Null: 1, the plain building's.</summary>
     public Func<PlacedMesh, float>? RotorOutput { get; set; }
 
+    /// <summary>Whether a building is not built (a construction site): its parts stand still, as the original turns them only in a built building's update. Null: all are built.</summary>
+    public Func<PlacedMesh, bool>? RotorUnbuilt { get; set; }
+
     sealed class RotorState(RotorSpec spec, PlacedMesh placed, Vector3 pivot)
     {
         public readonly RotorSpec Spec = spec;
@@ -52,6 +55,7 @@ public sealed partial class WorldObjectRenderer
         foreach (var (key, r) in rotors)
         {
             if (rotorFrame - r.Seen > RotorKeepFrames) { rotorsGone.Add(key); continue; }
+            if (RotorUnbuilt?.Invoke(r.Placed) == true) continue;
             var spec = r.Spec;
             if (spec.Function == RotorSpec.WindDirection) { StepHead(r, dt); continue; }
             float speed = spec.Function switch

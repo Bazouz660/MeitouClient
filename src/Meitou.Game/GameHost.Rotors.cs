@@ -14,6 +14,7 @@ sealed partial class GameHost
 {
     readonly Dictionary<string, float> rotorOutputs = new(StringComparer.Ordinal);
     readonly Dictionary<string, float> levelRotorOutputs = new(StringComparer.Ordinal);
+    readonly HashSet<string> unbuiltSites = new(StringComparer.Ordinal);
     readonly Stopwatch rotorClock = new();
 
     /// <summary>Once a frame, with the buildings.</summary>
@@ -23,7 +24,11 @@ sealed partial class GameHost
         rotorOutputs.Clear();
         foreach (var m in snapshot.Machines)
             if (!m.IsContainer) rotorOutputs[m.Site] = m.Rotation;
+        unbuiltSites.Clear();
+        foreach (var site in snapshot.Buildings)
+            if (!site.Complete) unbuiltSites.Add(site.Id);
         objects.RotorOutput ??= RotorOutputOf;
+        objects.RotorUnbuilt ??= placed => unbuiltSites.Contains(placed.PlacementId);
         objects.RotorWind ??= (x, z) => gpu.Weather?.World is { } weather ? weather.WindAt(x, z) : (0, Vector2.Zero);
         float real = rotorClock.IsRunning ? (float)Math.Min(rotorClock.Elapsed.TotalSeconds, 0.25) : 0;
         rotorClock.Restart();

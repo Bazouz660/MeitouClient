@@ -626,7 +626,7 @@ and `power capacity` (battery store, "in seconds" per fcs.def), plus research ([
 its holder's) is set gets one; function 0 becomes 6 (still). Fields: `rotation speed min/max` (degrees/s), `wind speed rotation min/max`
 (units/s), `rotation axis` (0 X, 1 Y, 2 Z, else none). Function 3 raises speed max and wind max to their mins; every other function rolls
 speed max x U(0.95, 1.05). Then the node turns by U(0, 2π) about the axis (both rolls from the building's generator). `wind speed rotation danger`
-is read and never used. Each frame of a built building (`Building::update`, skipped while `DAT_1421349c9` is set) each part steps with
+is read and never used (no reader of its field among the rotor functions or the wind panel, the only caller of `getWindMillPart`). Each frame of a built building (`Building::update`, skipped while `DAT_1421349c9` is set) each part steps with
 dt = `DAT_142133798` (game dt, 0 paused); functions 1 to 3 then set the orientation to angle x axis, the angle counting from 0 (the start roll
 is lost once a part moves):
 - **1 CONSTANT**: speed max (fan blades, six-barrel). **2 OUTPUT**: (max − min) x the building's mult each frame (spinners, drills, looms).
@@ -636,7 +636,7 @@ is lost once a part moves):
   lerp(speed min, speed max, share). The share is what wind generators multiply by.
 - **4 WIND_DIRECTION** (heads): speed max is a turn rate. Told the weather, it starts a turn: from its orientation now to the one whose
   local X is the wind direction brought into the parent's frame (y = 0), turned −90° about Y (`quatSetDirection`), so its +Z, where the blades
-  sit, faces into the wind; elapsed 0, length |yaw now − yaw target| / speed (yaws in (−π, π], unwrapped). Each frame while elapsed < length:
+  sit, faces against the wind vector (into the wind, the vector being the way it blows as Meitou's cloud drift reads it); elapsed 0, length |yaw now − yaw target| / speed (yaws in (−π, π], unwrapped). Each frame while elapsed < length:
   slerp(clamp(elapsed / length), from, to, short way), then elapsed += dt. Speed 0: never turns.
 - **Weather**: functions 3 and 4 register with the region at the part and are told at once, on a weather change and every frame the region's
   wind is interpolating (`WeatherRegion::updateBT`), so a head stands still while the wind changes and turns after.

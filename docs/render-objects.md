@@ -116,7 +116,7 @@ Parts with `rotation function` 1 to 4 ([facts](game/buildings-production.md#rota
 range, start roll, parent X/Z) with pivot = the node's place and axis = its `rotation axis` in world, as placed (at the start roll). The six-barrel now spins on the
 turret's joints; the wind generator's blades ride on its head. A part's state (`WorldObjectRenderer.Rotors.cs`, by placement, part and pivot) is made when one of
 its meshes is first drawn and dropped 600 frames after the last; the host (`GameHost.UpdateRotors`) calls `AdvanceRotors` once a frame with real time x speed (0
-paused), the scheduled wind (`WeatherWorld.WindAt`, a forced weather does not count) and the mult (`MachineSnapshot.Rotation`, level buildings by data). A head
+paused), the scheduled wind (`WeatherWorld.WindAt`, a forced weather does not count) and the mult (`MachineSnapshot.Rotation`, level buildings by data); construction sites stand still (`RotorUnbuilt`). A head
 hears the weather when the wind at it differs from the last frame (the original's notifications come while it interpolates). Joint meshes under a rotor are posed
 every frame: angle less the start roll (functions 1 to 3 stay at the roll until they first move). **Unknown**: not looked at in a rendered frame; shadow caches and
 motion vectors of moving parts not checked.
