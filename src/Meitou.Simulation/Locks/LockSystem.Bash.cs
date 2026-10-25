@@ -1,4 +1,4 @@
-using System.Numerics;
+if (along <= 0 || along >= w.Leaf || to.Length()if (w.Found || o == w.Self || !w.Table.Previous[o].Alive || w.Table.Cold(o) is { Medical.Incapacitated: true }) return;using System.Numerics;
 using Meitou.Data.Gameplay.Bodies;
 using Meitou.Data.Gameplay.Combat;
 using Meitou.Simulation.Combat;
@@ -203,26 +203,28 @@ public sealed partial class LockSystem
         public CharacterTable Table;
         public int Self;
         public Vector2 At, Face;
-        public float Radius;
+        public float Radius, Leaf;
         public bool Found;
     }
 
     /// <summary>
     /// A character ahead of the basher within <see cref="BashBlockGap"/> whose body the line along its facing meets (<c>FUN_14033d690</c>, <b>Observed</b>: a ray from 12 up along the
-    /// facing at each sensed character in front with that gap; any character, ally or not). Engine reading: the ray is the flat line against the body's radius.
+    /// facing at each sensed character in front with that gap; any character, ally or not). Engine reading: the ray is the flat line against the body's radius, stopped by the door leaf; a body lying down
+    /// (the ray starts 12 up) does not count.
     /// </summary>
     static bool InTheWay(World world, int s, Vector2 face)
     {
-        if (face.LengthSquared() < 1e-6f) return false;
+        float leaf = face.Length();
+        if (leaf < 1e-3f) return false;
         var table = world.Characters;
-        var scan = new WayScan { Table = table, Self = s, At = Flat(table.Previous[s].Position), Face = Vector2.Normalize(face), Radius = CombatSteering.Radius(table.Cold(s)) };
+        var scan = new WayScan { Table = table, Self = s, At = Flat(table.Previous[s].Position), Face = face / leaf, Leaf = leaf, Radius = CombatSteering.Radius(table.Cold(s)) };
         world.Grid.Query(scan.At.X, scan.At.Y, scan.Radius + BashBlockGap + CombatTuning.DefaultFootprint * 4, ref scan, static (int o, ref WayScan w) =>
         {
-            if (w.Found || o == w.Self || !w.Table.Previous[o].Alive) return;
+            if (w.Found || o == w.Self || !w.Table.Previous[o].Alive || w.Table.Cold(o) is { Medical.Incapacitated: true }) return;
             var to = Flat(w.Table.Previous[o].Position) - w.At;
             float rc = CombatSteering.Radius(w.Table.Cold(o));
             float along = Vector2.Dot(to, w.Face);
-            if (along <= 0 || to.Length() - w.Radius - rc >= BashBlockGap) return;
+            if (along <= 0 || along >= w.Leaf || to.Length() - w.Radius - rc >= BashBlockGap) return;
             if (MathF.Abs(w.Face.X * to.Y - w.Face.Y * to.X) < rc) w.Found = true;
         });
         return scan.Found;
