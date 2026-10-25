@@ -23,12 +23,15 @@ sealed partial class VideoAudio : IDisposable
     readonly Lock clock = new();
 
     public int SampleRate { get; }
+    /// <summary>The time in the video the sound starts at (its first frame at or after the time asked for).</summary>
+    public TimeSpan StartTime { get; }
 
-    VideoAudio(IntPtr device, IntPtr context, NVorbis.StreamDecoder decoder)
+    VideoAudio(IntPtr device, IntPtr context, NVorbis.StreamDecoder decoder, TimeSpan start)
     {
         this.device = device;
         this.context = context;
         this.decoder = decoder;
+        StartTime = start;
         channels = decoder.Channels;
         outChannels = Math.Min(channels, 2);
         SampleRate = decoder.SampleRate;
@@ -37,10 +40,12 @@ sealed partial class VideoAudio : IDisposable
         thread = new Thread(Run) { Name = "News video sound", IsBackground = true };
     }
 
-    /// <summary>The Vorbis track's player, not yet started; null (silent video) when OpenAL or the stream cannot be opened.</summary>
-    public static VideoAudio? TryOpen(WebmFile file)
+    /// <summary>The Vorbis track's player from <paramref name="from"/>, not yet started; null (silent video) when OpenAL or the stream cannot be opened.</summary>
+    public static VideoAudio? TryOpen(WebmFile file, TimeSpan from)
     {
         if (file.AudioCodec != "A_VORBIS" || file.AudioHeaders.Count != 3) return null;
+        int first = file.AudioFrames.FindIndex(f => f.Time >= from);
+        if (first < 0) return null; // past the sound's end
         IntPtr device = 0, context = 0;
         try
         {
@@ -48,7 +53,7 @@ sealed partial class VideoAudio : IDisposable
             if (device == 0) return null;
             context = alcCreateContext(device, 0);
             if (context == 0 || !alcMakeContextCurrent(context)) throw new InvalidOperationException("no OpenAL context");
-            return new VideoAudio(device, context, Decoder(file));
+            return new VideoAudio(device, context, Decoder(file, first), file.AudioFrames[first].Time);
         }
         catch (Exception e) when (e is DllNotFoundException or EntryPointNotFoundException or InvalidOperationException or InvalidDataException
                                       or ArgumentException or IndexOutOfRangeException)
@@ -59,8 +64,8 @@ sealed partial class VideoAudio : IDisposable
         }
     }
 
-    /// <summary>The Vorbis track as samples (its headers first, then its frames).</summary>
-    internal static NVorbis.StreamDecoder Decoder(WebmFile file) => new(new VorbisPackets(file)) { ClipSamples = true };
+    /// <summary>The Vorbis track as samples: its headers, then its frames from <paramref name="first"/> (Vorbis can start at any packet).</summary>
+    internal static NVorbis.StreamDecoder Decoder(WebmFile file, int first = 0) => new(new VorbisPackets(file, first)) { ClipSamples = true };
 
     public void Start() => thread.Start();
 
@@ -72,7 +77,7 @@ sealed partial class VideoAudio : IDisposable
             lock (clock)
             {
                 alGetSourcei(source, AlSampleOffset, out int offset);
-                return TimeSpan.FromSeconds((double)(playedFrames + offset) / SampleRate);
+                return StartTime + TimeSpan.FromSeconds((double)(playedFrames + offset) / SampleRate);
             }
         }
     }
@@ -141,10 +146,10 @@ sealed partial class VideoAudio : IDisposable
     }
 
     /// <summary>The track's three headers, then its frames, as NVorbis packets.</summary>
-    sealed class VorbisPackets(WebmFile file) : NVorbis.Contracts.IPacketProvider
+    sealed class VorbisPackets(WebmFile file, int first) : NVorbis.Contracts.IPacketProvider
     {
         int next;
-        int Count => 3 + file.AudioFrames.Count;
+        int Count => 3 + file.AudioFrames.Count - first;
 
         public bool CanSeek => false;
         public int StreamSerial => 0;
@@ -154,7 +159,7 @@ sealed partial class VideoAudio : IDisposable
         public long SeekTo(long granulePos, int preRoll, NVorbis.Contracts.GetPacketGranuleCount getPacketGranuleCount) => throw new NotSupportedException();
 
         Packet Packet(int index) =>
-            new(index < 3 ? file.AudioHeaders[index] : file.AudioFrames[index - 3].Data) { IsEndOfStream = index == Count - 1 };
+            new(index < 3 ? file.AudioHeaders[index] : file.AudioFrames[first + index - 3].Data) { IsEndOfStream = index == Count - 1 };
     }
 
     sealed class Packet(ReadOnlyMemory<byte> data) : NVorbis.DataPacket
