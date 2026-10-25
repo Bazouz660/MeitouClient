@@ -50,7 +50,10 @@ public sealed partial class MedicalState
 
     public DeathCause Cause { get; private set; }
 
-    /// <summary>Set when blood reached 0 (<c>+0x163</c>, "unconscious from blood loss"); clears above 25. While set, a conscious character goes down only under -25.</summary>
+    /// <summary>
+    /// Set when blood reached 0 (<c>+0x163 bloodlossTrauma</c>); clears above 25 (the original only on an update that found blood below capacity, docs/game/character-stats.md
+    /// "Blood and KO"). While set, a conscious character goes down only under -25, and the HUD's Toughness XP shows "Blood loss trauma: +2x".
+    /// </summary>
     public bool BloodKo { get; private set; }
 
     /// <summary>

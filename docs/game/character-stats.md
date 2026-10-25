@@ -118,6 +118,11 @@ clamped to capacity every tick, and with no bleeding recovers `blood recovery ra
 (`FUN_140652000`). The wound is opened whatever the race's `bleed rate` (no race read in `FUN_1406508d0`; a bloodless race
 gets wounds that drain nothing). The KO timer +0xa0 falls by dt.
 
+**worstDamage** (medical `+0xa4`, KenshiLib 1ce4a16; **Verified** decompile of the aggregates `FUN_140644e60`): the minimum over the organic parts
+(race `robot` clear, no `robotLimb`) of (`flesh` + `bandaging`) / M (M = `_maxHealth` x `age` x `HPMult` - `wearDamage`), x0.01 and set to 1 above 0.999;
+starts at 1.0 (constructor `FUN_1406409f0`). So it is at most 1 and under 0 only while a part is below zero. Read by the HUD's health word, the hunger
+word and the Toughness XP multiplier ([ui-screens.md](ui-screens.md#4-hud-mainbargui)). Meitou: no single field; `HealthPart.Fraction` is per part.
+
 **Verified** coma point=-lerp(10,85,toughness/100). **Observed** KO duration combines base20,
 vital/negative-part and missing-blood terms; leg loss adds a separate random KO, arm loss does
 not. Death: vital h-s<-M, blood<=-capacity or hunger<=0. Preserve KO/coma/death distinctions.
@@ -131,7 +136,11 @@ not. Death: vital h-s<-M, blood<=-capacity or hunger<=0. Preserve KO/coma/death 
 - `reassessCollapseMode` (`140649320`) rebuilds `+0x161` each update: set by a hunger KO, a KO timer > 0, a vital part at
   collapse stage 2, or blood: for a character unconscious before the update, blood < 0 (and it sets `+0x163`); for a
   conscious one (or on the update after a fresh limb loss, `hasFreshlySeveredALimb`), blood < 0, or < -25 once `+0x163`.
-  `+0x163` clears when blood is above 25 (`medicalUpdate`). So a character wakes once all of those are clear.
+  `+0x163` (`bloodlossTrauma`, KenshiLib 1ce4a16; medical bytes `+0x160 crippled`, `+0x161 unconcious`, `+0x162 sub50KO`, `+0x165 rightArmOk`,
+  `+0x166 leftArmOk`) clears in `medicalUpdate` only on an update that finds blood below capacity and then above 25 (**Verified**, decompile of
+  `FUN_140652000`: the test sits inside the recovery branch). Natural recovery passes through that window; blood written straight to capacity does not,
+  which is why issue #82 saw the HUD's "Blood loss trauma" term 142 s after the blood was back. So a character wakes once all of those are clear.
+  Meitou clears the flag whenever blood is above 25 (engine choice: the quirk needs a direct write).
 - Stage of a torso/head part, v = h - s + rig: 0 when v >= 0; under the KO point 2, and a vital part sets the coma flag
   `+0x162`; between the KO point and 0, 2 for a non-vital part, and for a vital one 2 only while `+0x162` is set. `+0x162`
   clears on an update where no vital part is at stage 2. So a vital part between the KO point and 0 does not keep a
@@ -265,7 +274,7 @@ offsets). Stats are `float`s inside `CharStats`. The number is what RACE `heal s
 | Strength tail of every event | same | `strength` rises by `core(0.075 * 0.55 * 2*xp rate strength * map[1])` scaled x0.4 for event 2, x0.1 for event 4, and by the weapon-weight factor below; for unarmed (kind 5) the weapon-weight factor is replaced by (1 - encumbrance factor) |
 | Toughness per damage received | `FUN_1408c68e0`, called from `FUN_140666780` | 0.075 x k x `xp rate toughness` x `map[21]`; k = 0.05 normally, 0.25 for damage kind 1, 0.5 for kind 5 (kind meanings not decoded) |
 | Toughness when knocked out | `FUN_1408c6720` (from the part damage `FUN_14064f300` when a hit knocks out, unless its fourth argument is set) | **Verified**: core(0.075 x `map[21]`) (`DAT_142134edc` = exp gain multiplier x 0.1, set in `FUN_1408c6980`) |
-| Toughness while down (task `FUN_14033ca10`) | `FUN_1408c6780` | **Verified**: core(f x (n + 10) x 0.075 x `map[21]`), f = 1 (+1 left arm, +2 right arm, +2 blood KO, +2 medical +0xa4 < 15), n an int of the slot-0x68 object (**Unknown**); dialogue events 0x17 to 0x19. Not in Meitou |
+| Toughness while down (task `FUN_14033ca10`) | `FUN_1408c6780` | **Verified**: core(f x (n + 10) x 0.075 x `map[21]`), f the HUD's Toughness XP multiplier ([ui-screens.md](ui-screens.md#4-hud-mainbargui): 1, +1 left arm crippled, +2 right arm, +2 `bloodlossTrauma`, +2 always since `worstDamage` < 15), n an int of the slot-0x68 object (**Unknown**); dialogue events 0x17 to 0x19. Not in Meitou |
 | Toughness from losing a limb | `FUN_14064edc0` via `FUN_1408c7310` | generic entry with dt 1, amount 300 into stat 21 (a large one-off gain) |
 | Weapon-weight strength factor | `FUN_1408838e0` / `FUN_1408839a0` | `min strength xp mult` (0.1) + clamp((weapon weight - strength x injury multiplier) / `weight strength diff 1x` (20), 0, `weight strength diff max` (1)); stored at +0x184 |
 | Strength from carrying | `FUN_1408c60c0` (from the movement tick `FUN_1408c6660`) | (1 - encumbrance factor)^2 capped at 0.5, x2 unless in state 0xb, x `xp rate strength from walking` (0.5) |
@@ -315,7 +324,7 @@ panel `FUN_14088a8f0`, the hunger term of the stat multiplier `FUN_1406457e0` an
 | Hunger level | State |
 | --- | --- |
 | 2 or above | well fed, no problem |
-| below 2, at or above 1 | stat penalty and up to half movement speed; the panel says "Hungry" when the stomach buffer is empty and "Malnourished" ("fed and slowly recovering") when there is food in it (**Observed**; the panel also needs a value at medical +0xa4 of at least 0.7, meaning not traced) |
+| below 2, at or above 1 | stat penalty and up to half movement speed; the panel says "Hungry" when the stomach buffer is empty and "Malnourished" ("fed and slowly recovering") when there is food in it (**Observed**; the panel also needs `worstDamage` of at least 0.7) |
 | below 1 | "Starving": the character passes out below a toughness-dependent point; dies at 0 |
 
 ### Eating

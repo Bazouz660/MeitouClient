@@ -286,7 +286,7 @@ to Jobs; the saved `chase mode` flag is that switch (**Verified**, [perma-jobs](
     Extended values (**Verified**, decompile of `FUN_140895350`, 2026-10-14; Meitou: `BodySystem.ExtendedOf`, `PlayerInterface.ExtendedLines`):
     Athletics XP `{n}%` = (int)(100 × `FUN_1408c5ec0`): the encumbrance factor, ×1.5 when the current speed is over 80 % of the run value V (the `xp rate athletics` constant is applied elsewhere).
     Strength XP `{n}%` = (int)(100 × `FUN_1408c60c0`), the carrying rate (includes `xp rate strength from walking`); with a weapon in hand the original shows a "Weapon weight" figure from a field at `+0x184` instead (**Unknown**, Meitou keeps the carrying rate).
-    Toughness XP `{n}x` (the suffix is the `x` at `0x1416bc008`, **Verified** in the exe) = `FUN_1408c5f40`: 1, but 2 with the left arm crippled, +2 right arm crippled, +2 blood-loss KO, +2 when a counter at `+0xa4` is under 15 (**Unknown**, Meitou omits it).
+    Toughness XP `{n}x` (the suffix is the `x` at `0x1416bc008`) = `FUN_1408c5f40` (**Verified**: decompile, and in game on vanilla 1.0.65 in issue #82, 2026-10-25): 1, but 2 with medical `+0x166 leftArmOk` clear, +2 with `+0x165 rightArmOk` clear, +2 while `+0x163 bloodlossTrauma` is set, +2 when `+0xa4 worstDamage` is under 15 (field names KenshiLib 1ce4a16). `worstDamage` is a fraction of at most 1 ([character-stats.md](character-stats.md#hunger-blood-and-parts)), so the last term is always on: a whole character reads `3x`, both arms crippled `6x`, a leg below zero adds nothing. Meitou: the same four terms (`BodySystem.ExtendedOf`).
     KO point = (int)`FUN_140643ae0` (negative HP, [character-stats.md](character-stats.md#hunger-blood-and-parts)). Run speed = the current top speed S × 0.22369362 (units per second to mph) rounded, `{S} (+{d}) mph` or `(-{d})` where d is S minus V in mph; plain when equal. Meitou adds an Interface setting "Speed units" (`UserConfig.SpeedUnit`, default mph): km/h multiplies by 0.36 instead. Hunger Rate `{n}%` = (int)(100 × `FUN_1408837a0`), the race's hunger rate × its situation factor.
     Each line also carries a tooltip with its breakdown (Encumbrance penalty, Full speed bonus, Carrying somebody, Crippled arms ...), not modelled ([Tooltips](#tooltips)).
   - Stats lines: Martial Arts when unarmed; Crossbows, Precision, Perception with a crossbow in ranged mode; else Attack and Defense; then Strength,
@@ -296,8 +296,8 @@ to Jobs; the saved `chase mode` flag is that switch (**Verified**, [perma-jobs](
   - `HealthText` words in priority: Dead, BEING EATEN ALIVE!!, Dying, Unconscious (N) (N = (int) of the medical float `+0xa0`, the KO timer, taken
     only while it is &gt; 0; "Rebooting" for skeletons; `FUN_14088a8f0`), Recovery coma, Playing dead..., Blood loss KO, Bleeding out,
     Crippled, Crippled arm, Critical, Limb trauma, Staying low, Starving (hunger &lt; 1), Bleeding, disguise words; else by the overall health h:
-    Hungry (h ≥ 0.7 and hunger &lt; 2), Wounded (h &lt; 0.7), Slightly Injured (h &lt; 0.9), Normal. What h is exactly is **Unknown**; the worst part's
-    fraction matches a screenshot (a leg at 77 % and "Slightly Injured", **Observed**).
+    Hungry (h ≥ 0.7 and hunger &lt; 2), Wounded (h &lt; 0.7), Slightly Injured (h &lt; 0.9), Normal. h is medical `+0xa4 worstDamage`, the worst part's
+    fraction ([character-stats.md](character-stats.md#hunger-blood-and-parts); a leg at 77 % and "Slightly Injured" in a screenshot, **Observed**).
 - Side-panel rendering follows the [main UI font policy](../formats/mygui.md),
   with 20-pixel row spacing at 1080 lines for name, state, XP and combat stats. Extended
   labels use the same uppercase Main colour as combat stats (**Observed** in the
@@ -1056,8 +1056,10 @@ Code: `UiTooltips` (data, layout), `PlayerInterface.Tooltips.cs` (hover runtime,
   `Blunt weapon damage:`, `Damage resistance:`, `Max carry weight:`, `Health KO point:`, `Wound degeneration speed:`, `Dodge skill:`, `Careful Shooting`,
   `Total:`, `-End total:`; the extended lines: Athletics XP (`Encumbrance penalty:`, `Full speed bonus:` when the speed is over 0.8 of the run value, then "This
   is the rate at which your athletics skill is increasing while running."), Strength XP (`Encumbrance bonus:`, `Carrying somebody:`, or `Encumbrance:` /
-  `Weapon weight:`, then "This is the rate at which your strength is increasing."), Toughness XP (`Crippled left arm:`, `Crippled right arm:`, `Blood loss
-  trauma:`, `Critical wounds:`, then "This is the rate at which your toughness increases when you get hurt."), KO point (the single text "When an injury to a
+  `Weapon weight:`, then "This is the rate at which your strength is increasing."), Toughness XP (**Verified**, decompile and issue #82: `Crippled left arm: +1x` with
+  `leftArmOk` clear, `Crippled right arm: +2x` with `rightArmOk` clear, `Blood loss trauma: +2x` while `bloodlossTrauma` is set, `Critical wounds: +2x` only while
+  `worstDamage` &lt; 0, a part below zero; the multiplier itself counts that +2 always (its test is &lt; 15), so a whole character shows `3x` with no row; then "This is
+  the rate at which your toughness increases when you get hurt."), KO point (the single text "When an injury to a
   body part goes below your KO point of {1,num} then you are down for good. Your body will enter a coma and won't regain consciousness until all critical body
   parts have healed above 0."), Run speed (`Stealth mode:`, `Total:`, ...), Hunger Rate; Defense: "Your defense skill is your chance of blocking enemy attacks.".
   Their values and order are not read. Meitou shows only the KO point's.
