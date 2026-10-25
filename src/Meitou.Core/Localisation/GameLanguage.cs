@@ -46,8 +46,9 @@ public sealed record GameLanguage(string Code, bool IsDefault, string? OverlayFo
     /// The language of <paramref name="install"/> given the folders of its loaded mods in load order. Rules (<b>Verified</b>
     /// <c>FUN_140175a90</c> selection, <c>Ogre_RegisterResourceLocations</c> overlay and mod language, <c>Fcs_GameLoadSequence</c> translation files):
     /// <list type="number">
-    /// <item><c>language</c> from settings.cfg picks a locale code; when it is empty the Steam name in <c>steam_language</c> does; anything unknown or
-    /// absent is English. Valid codes are the table's nine plus every folder under <c>locale/</c> not starting with <c>_</c>.</item>
+    /// <item><c>language</c> from settings.cfg picks a locale code; when it is empty the Steam name in <c>steam_language</c> does. The original accepts the
+    /// table's codes and the folders under <c>locale/</c> not starting with <c>_</c>; Meitou also accepts a code it has built-in texts for
+    /// (<see cref="MeitouTranslations.HasEmbedded"/>). Other unknown or absent values are English.</item>
     /// <item>A non-English choice with a <c>locale/&lt;code&gt;</c> folder registers it as an overlay; its <c>&lt;code&gt;.translation</c> follows the core files.</item>
     /// <item>The first mod in load order whose <c>locale/&lt;X&gt;</c> has <c>LC_MESSAGES/main.mo</c> or <c>X.translation</c> makes X the active language (messages from
     /// that mod, no core translation); the first mod with an existing <c>X.translation</c> supplies the translation applied after all mods.</item>
@@ -114,6 +115,7 @@ public sealed record GameLanguage(string Code, bool IsDefault, string? OverlayFo
             return SteamLanguages.FirstOrDefault(s => s.Steam == steamLanguage).Code ?? DefaultCode;
         if (SteamLanguages.Any(s => s.Code == language)) return language;
         if (language[0] != '_' && Directory.Exists(Path.Combine(localeRoot, language))) return language;
+        if (MeitouTranslations.HasEmbedded(language)) return language;
         return DefaultCode;
     }
 

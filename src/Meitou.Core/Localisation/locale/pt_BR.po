@@ -1,0 +1,1513 @@
+# Meitou's own texts (launcher, title menu, settings menu) in Portuguese (Brazil).
+# Kenshi's own texts come from locale/pt_BR/LC_MESSAGES/main.mo; this file only adds what Meitou shows.
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+"Language: pt_BR\n"
+"Plural-Forms: nplurals=2; plural=(n > 1);\n"
+
+msgid "Minimise"
+msgstr "Minimizar"
+
+msgid "Maximise"
+msgstr "Maximizar"
+
+msgid "Close"
+msgstr "Fechar"
+
+msgid "Play"
+msgstr "Jogar"
+
+msgid "Change the Kenshi folder"
+msgstr "Alterar a pasta do Kenshi"
+
+msgid "Install latest"
+msgstr "Instalar versão mais recente"
+
+msgid "Play latest"
+msgstr "Jogar versão mais recente"
+
+msgid "Choose the version to play"
+msgstr "Escolher a versão para jogar"
+
+msgid "Nightly builds"
+msgstr "Versões diárias"
+
+msgid "HOME"
+msgstr "INÍCIO"
+
+msgid "VERSIONS"
+msgstr "VERSÕES"
+
+msgid "GRAPHICS"
+msgstr "GRÁFICOS"
+
+msgid "SETTINGS"
+msgstr "CONFIGURAÇÕES"
+
+msgid "News"
+msgstr "Novidades"
+
+msgid "Support me on Ko-fi"
+msgstr "Apoie-me no Ko-fi"
+
+msgid "Presets"
+msgstr "Predefinições"
+
+msgid "Apply"
+msgstr "Aplicar"
+
+msgid "Delete"
+msgstr "Excluir"
+
+msgid "Select all"
+msgstr "Selecionar todos"
+
+msgid "Select none"
+msgstr "Desmarcar todos"
+
+msgid "Refresh"
+msgstr "Atualizar"
+
+msgid "Save mod list"
+msgstr "Salvar lista de mods"
+
+msgid "New preset name"
+msgstr "Nome da nova predefinição"
+
+msgid "Save as preset"
+msgstr "Salvar predefinição"
+
+msgid "Drag to change the load order"
+msgstr "Arraste para alterar a ordem de carregamento"
+
+msgid "Versions"
+msgstr "Versões"
+
+msgid "Release page"
+msgstr "Página da versão"
+
+msgid "Open folder"
+msgstr "Abrir pasta"
+
+msgid "Uninstall"
+msgstr "Desinstalar"
+
+msgid "Select"
+msgstr "Selecionar"
+
+msgid "Install"
+msgstr "Instalar"
+
+msgid "Play this version"
+msgstr "Jogar esta versão"
+
+msgid "Play starts the latest installed version."
+msgstr "Jogar inicia a versão mais recente instalada"
+
+msgid "Play latest nightly"
+msgstr "Jogar a versão mais recente"
+
+msgid "Check for releases"
+msgstr "Verificar versões"
+
+msgid "Select a release to read its notes."
+msgstr "Selecione uma versão para ler as notas."
+
+msgid "Graphics"
+msgstr "Gráficos"
+
+msgid "Kenshi folder"
+msgstr "Pasta do Kenshi"
+
+msgid "Find"
+msgstr "Localizar"
+
+msgid "Browse"
+msgstr "Procurar"
+
+msgid "Install folder"
+msgstr "Pasta de instalação"
+
+msgid "Where versions are installed; changing it moves them."
+msgstr "Onde as versões são instaladas; alterá-la move os arquivos."
+
+msgid "Open"
+msgstr "Abrir"
+
+msgid "Launch arguments"
+msgstr "Argumentos de inicialização"
+
+msgid "Passed to the game, e.g. --faithful or --windowed."
+msgstr "Enviados ao jogo, por exemplo, --faithful ou --windowed."
+
+msgid "Data folder"
+msgstr "Pasta de dados"
+
+msgid "Launcher"
+msgstr "Inicializador"
+
+msgid "Update the launcher automatically"
+msgstr "Atualizar o inicializador automaticamente"
+
+msgid "At startup, install a new launcher version and restart into it."
+msgstr "Ao iniciar, instalar uma nova versão do inicializador e reiniciá-lo."
+
+msgid "Language"
+msgstr "Idioma"
+
+msgid "Of the game (written to Kenshi's settings.cfg) and of the launcher. Kenshi's own translations, plus Meitou's where they exist."
+msgstr "Do jogo (gravado no settings.cfg do Kenshi) e do inicializador. As traduções do próprio Kenshi, mais as do Meitou onde existirem."
+
+msgid "Only nightly builds so far: tick Nightly builds beside Play to list them."
+msgstr "Por enquanto, só há versões diárias: marque Versões diárias ao lado de Jogar para listá-las."
+
+msgid "Reset"
+msgstr "Redefinir"
+
+msgid "Click again"
+msgstr "Clique novamente"
+
+msgid "Default"
+msgstr "Padrão"
+
+msgid "Game default"
+msgstr "Padrão do jogo"
+
+msgid "Reset graphics"
+msgstr "Redefinir gráficos"
+
+msgid "Every graphics slider and Faithful / Meitou switch back to the game's defaults, also those only in the game's Tab panel."
+msgstr "Restaura os controles gráficos e as opções Faithful / Meitou aos padrões do jogo, inclusive os disponíveis apenas no painel Tab."
+
+msgid "The game is running: it saves its settings when it closes, over changes made here."
+msgstr "O jogo está aberto: ao fechar, ele salva as configurações por cima das alterações feitas aqui."
+
+msgid "The launch arguments have --low-end: the game ignores the graphics sliders while it is set."
+msgstr "Os argumentos incluem --low-end: enquanto estiver ativo, o jogo ignora os controles gráficos."
+
+msgid "Steam workshop"
+msgstr "Oficina Steam"
+
+msgid "Local mod"
+msgstr "Mod local"
+
+msgid "RE_Kenshi plugin: its DLLs are ignored in Meitou"
+msgstr "Plugin RE_Kenshi: as DLLs são ignoradas pelo Meitou"
+
+msgid "nightly"
+msgstr "diária"
+
+msgid "Installed"
+msgstr "Instalada"
+
+msgid "Installed · Play"
+msgstr "Instalada · Em uso"
+
+msgid "Cancel"
+msgstr "Cancelar"
+
+msgid "Selected"
+msgstr "Selecionada"
+
+msgid "No releases listed yet. Check for releases below."
+msgstr "Nenhuma versão listada. Verifique se há versões abaixo."
+
+msgid "Full screen"
+msgstr "Tela cheia"
+
+msgid "Fill the monitor with a borderless game window."
+msgstr "Preenche o monitor com uma janela de jogo sem bordas."
+
+msgid "Window"
+msgstr "Janela"
+
+msgid "Borderless"
+msgstr "Sem borda"
+
+msgid "Frame limit"
+msgstr "Limite de quadros"
+
+msgid "Texture quality"
+msgstr "Qualidade das texturas"
+
+msgid "Object draw distance"
+msgstr "Distância de renderização dos objetos"
+
+msgid "Shadow distance"
+msgstr "Distância das sombras"
+
+msgid "Shadow map size"
+msgstr "Resolução do mapa de sombras"
+
+msgid "Anti-aliasing"
+msgstr "Antisserrilhamento"
+
+msgid "Render scale"
+msgstr "Escala de renderização"
+
+msgid "Anisotropic filtering"
+msgstr "Filtragem anisotrópica"
+
+msgid "Water reflection"
+msgstr "Reflexos na água"
+
+msgid "Grass density multiplier"
+msgstr "Multiplicador da densidade da grama"
+
+msgid "Weather particles"
+msgstr "Resolução das partículas climáticas"
+
+msgid "Match the display refresh rate to prevent tearing."
+msgstr "Sincroniza a taxa de atualização da tela para evitar cortes na imagem."
+
+msgid "Frames per second when VSync is off."
+msgstr "Quadros por segundo quando a sincronização vertical está desativada."
+
+msgid "Texture resolution; terrain changes need a restart."
+msgstr "Resolução das texturas; alterações no terreno exigem reiniciar o jogo."
+
+msgid "Maximum distance at which objects remain visible."
+msgstr "Distância máxima em que os objetos permanecem visíveis."
+
+msgid "How far shadows are drawn; zero disables them."
+msgstr "Distância de renderização das sombras; zero as desativa."
+
+msgid "Higher resolution gives sharper shadow detail."
+msgstr "Uma resolução maior proporciona sombras mais definidas."
+
+msgid "Adjust anti-aliasing: 0 off 1 fxaa 2 smaa 3 taa 4 fsr 5 dlss."
+msgstr "Ajusta o antisserrilhamento: 0 desativado, 1 FXAA, 2 SMAA, 3 TAA, 4 FSR, 5 DLSS."
+
+msgid "Internal rendering resolution relative to the window."
+msgstr "Resolução interna de renderização em relação à janela."
+
+msgid "Keep textures sharp when viewed at an angle."
+msgstr "Mantém as texturas nítidas quando vistas em ângulo."
+
+msgid "Choose which parts of the scene appear in reflections."
+msgstr "Escolhe quais partes da cena aparecem nos reflexos."
+
+msgid "Scale the number of grass instances drawn."
+msgstr "Ajusta a quantidade de grama renderizada."
+
+msgid "Rendering resolution for rain, dust and other weather particles."
+msgstr "Resolução de renderização da chuva, poeira e outras partículas climáticas."
+
+msgid "Particle density multiplier"
+msgstr "Multiplicador da densidade de partículas"
+
+msgid "Scale the number of weather particles emitted."
+msgstr "Ajusta a quantidade de partículas climáticas emitidas."
+
+msgid "Maximum"
+msgstr "Máximo"
+
+msgid "Minimum"
+msgstr "Mínimo"
+
+msgid "Medium"
+msgstr "Médio"
+
+msgid "Low"
+msgstr "Baixo"
+
+msgid "Fugly"
+msgstr "Horrível"
+
+msgid "High"
+msgstr "Alto"
+
+msgid "Very High"
+msgstr "Muito alto"
+
+msgid "Very Low"
+msgstr "Muito baixo"
+
+msgid "Custom"
+msgstr "Personalizado"
+
+msgid "On"
+msgstr "Ligado"
+
+msgid "Off"
+msgstr "Desligado"
+
+msgid "Landscape"
+msgstr "Paisagens"
+
+msgid "Characters"
+msgstr "Personagens"
+
+msgid "Objects"
+msgstr "Objetos"
+
+msgid "Weather"
+msgstr "Clima"
+
+msgid "Buildings"
+msgstr "Construções"
+
+msgid "Everything"
+msgstr "Tudo"
+
+msgid "None"
+msgstr "Nenhum"
+
+msgid "Quarter size"
+msgstr "1/4"
+
+msgid "Half size"
+msgstr "1/2"
+
+msgid "Full size"
+msgstr "Completo"
+
+msgid "All fixes"
+msgstr "Todas as correções"
+
+msgid "Every bug on this page as the game ships it, or every fix."
+msgstr "Todos os bugs desta página conforme presentes na versão original do jogo ou todas as correções."
+
+msgid "Raids as written"
+msgstr "Incursões conforme planejado"
+
+msgid "Raid and campaign data that builds on a base campaign counts the base's squads and follow-up campaigns once. The game counts them twice, so inherited squads come up more often and follow-up raids are about twice as likely."
+msgstr "Os dados de incursões e campanhas baseados em uma campanha principal contabilizam os esquadrões da base e as campanhas subsequentes apenas uma vez. O jogo os contabiliza duas vezes, fazendo com que esquadrões herdados apareçam com mais frequência e que incursões subsequentes sejam aproximadamente duas vezes mais prováveis."
+
+msgid "Door break sound"
+msgstr "Som de portas quebrando"
+
+msgid "Doors and gates make their breaking sound when they are bashed or broken open. The game never picks which breaking sound to play, so it plays none."
+msgstr "Portas e portões reproduzem o som de arrombamento quando são golpeados ou abertos à força. O jogo nunca seleciona qual som de quebra reproduzir, então nenhum som é emitido."
+
+msgid "Ambience after loading"
+msgstr "Ambiente sonoro após carregar"
+
+msgid "A biome whose sounds were not loaded yet starts its day or night ambience by the time of day. The game plays the opposite one (night sounds by day) until the next biome or day change."
+msgstr "Um bioma cujos sons ainda não foram carregados inicia a ambientação sonora diurna ou noturna de acordo com o horário atual. O jogo reproduz a ambientação oposta (sons noturnos durante o dia) até que o bioma ou o período do dia mude."
+
+msgid "Wind stops"
+msgstr "O vento para"
+
+msgid "The wind's sound ends when the wind dies down. The game asks for a stop sound that does not exist, so once the wind has blown it never goes quiet."
+msgstr "O som do vento termina quando ele perde a força. O jogo solicita um som de encerramento que não existe, fazendo com que o vento nunca pare de ser ouvido depois que começa a soprar."
+
+msgid "Load button"
+msgstr "Botão Carregar"
+
+msgid "The load window's Load button works only once a save that can be read is selected. The game keeps it live: with nothing selected a click does nothing, and an unreadable save fails to load."
+msgstr "O botão Carregar da janela de carregamento só funciona quando um salvamento legível está selecionado. O jogo mantém o botão ativo: sem nada selecionado, clicar não faz nada; se o salvamento for ilegível, o carregamento falha."
+
+msgid "Turret gunners turn"
+msgstr "Artilheiros de torres giram"
+
+msgid "A turret's gunner turns with the gun, facing where it aims. In the game the gunner keeps facing the turret, so once the gun swings toward a target the gunner looks off to the side."
+msgstr "O artilheiro de uma torre gira junto com a arma, olhando na direção da mira. No jogo, o artilheiro continua olhando para a torre, então, quando a arma gira em direção a um alvo, ele acaba olhando para o lado."
+
+msgid "Volume of the biome music and the main theme."
+msgstr "Volume das músicas dos biomas e do tema principal."
+
+msgid "Volume of the weather and the world's ambience."
+msgstr "Volume dos sons do clima e da ambientação do mundo."
+
+msgid "Volume of footsteps."
+msgstr "Volume dos sons dos passos."
+
+msgid "Sfx volume"
+msgstr "Volume dos efeitos sonoros"
+
+msgid "Volume of the interface sounds."
+msgstr "Volume dos sons da interface."
+
+msgid "Volume of the voices."
+msgstr "Volume das vozes."
+
+msgid "Music frequency"
+msgstr "Frequência da música"
+
+msgid "Average minutes of silence between pieces of biome music."
+msgstr "Média de minutos de silêncio entre as músicas dos biomas."
+
+msgid "Sound voices"
+msgstr "Vozes simultâneas"
+
+msgid "The most sounds heard at once: the loudest play, quieter ones wait silently and come back when they are loud enough. Lower it if big fights stutter; All mixes every sound."
+msgstr "Quantidade máxima de sons reproduzidos simultaneamente: os mais altos são reproduzidos, enquanto os mais baixos aguardam em silêncio e voltam quando atingem volume suficiente. Reduza esse valor se houver travamentos durante grandes combates. A opção All mistura todos os sons."
+
+msgid "UI style"
+msgstr "Estilo da interface"
+
+msgid "Choose original Kenshi skins or Meitou materials."
+msgstr "Escolha as aparências originais do Kenshi ou os materiais do Meitou."
+
+msgid "Speed units"
+msgstr "Unidades de velocidade"
+
+msgid "The unit of the run speed in the character's information panel (the game: mph)."
+msgstr "Unidade de velocidade de corrida exibida no painel de informações do personagem (no jogo: milhas por hora)."
+
+msgid "Damage floaters"
+msgstr "Indicadores flutuantes de dano"
+
+msgid "Numbers that float over a character when a blow lands, with the damage armour stopped in brackets. Simple shows the total. Full shows the total, then armour per damage type and the part hit. Healing of your own characters floats up in green."
+msgstr "Números que aparecem sobre um personagem quando ele recebe um golpe, com o dano absorvido pela armadura entre parênteses. O modo Simple mostra o dano total. O modo Full mostra o total, seguido do dano absorvido pela armadura por tipo de dano e pela parte atingida. A cura dos seus próprios personagens aparece em verde."
+
+msgid "Hardware mouse"
+msgstr "Cursor do mouse do sistema"
+
+msgid "Use the Windows cursor instead of the game's drawn pointer (no hover pointers)."
+msgstr "Usa o cursor do Windows em vez do cursor desenhado pelo jogo (sem indicadores de cursor ao passar o mouse)."
+
+msgid "Vertical sync"
+msgstr "Sincronização vertical"
+
+msgid "Borderless full screen"
+msgstr "Tela cheia sem bordas"
+
+msgid "Used while vertical sync is off; 0 is unlimited."
+msgstr "Usado quando a sincronização vertical está desativada; 0 significa sem limite."
+
+msgid "World tick alongside drawing"
+msgstr "Simulação do mundo durante a renderização"
+
+msgid "Faithful runs the world, then draws it, as the game does. Meitou runs the next world tick while the frame is drawn whenever the world is busy (big fights, crowds). Always on every frame: much higher frame rates with many characters. Running alongside can add up to 33 ms of input delay (one world tick)."
+msgstr "O modo Faithful simula o mundo e depois o renderiza, como no jogo original. O modo Meitou executa o próximo ciclo de simulação enquanto o quadro é renderizado quando o mundo está ocupado (grandes combates, multidões). A opção Sempre ativado executa isso em todos os quadros, proporcionando taxas de quadros muito maiores com muitos personagens. Executar a simulação em paralelo pode adicionar até 33 ms de atraso nos comandos (um ciclo do mundo)."
+
+msgid "Upscaler sharpness"
+msgstr "Nitidez do upscaler"
+
+msgid "Sharpen the image after resolution reconstruction."
+msgstr "Aumenta a nitidez da imagem após a reconstrução da resolução."
+
+msgid "Quality preset"
+msgstr "Predefinição de qualidade"
+
+msgid "Sets draw distances, foliage, shadow, water, particle and texture settings together. High is the default. Low also turns the costliest Meitou effects off (indirect light, light shafts, clouds, ambient occlusion, Meitou shadows and water). Anti-aliasing and render scale stay as they are."
+msgstr "Ajusta em conjunto as distâncias de renderização e as configurações de vegetação, sombras, água, partículas e texturas. Alto é o padrão. Baixo também desativa os efeitos mais pesados do Meitou (iluminação indireta, feixes de luz, nuvens, oclusão de ambiente, sombras e água do Meitou). O antisserrilhamento e a escala de renderização permanecem inalterados."
+
+msgid "All graphics features"
+msgstr "Todos os recursos gráficos"
+
+msgid "Every graphics feature as the game ships it, or every Meitou improvement. The quality settings stay as they are."
+msgstr "Todos os recursos gráficos da versão original do jogo ou todas as melhorias do Meitou. As configurações de qualidade permanecem inalteradas."
+
+msgid "Foliage ranges"
+msgstr "Distâncias da vegetação"
+
+msgid "Set foliage visibility by mesh size rather than layer."
+msgstr "Define a visibilidade da vegetação pelo tamanho das malhas, em vez de pelas camadas."
+
+msgid "Far impostors"
+msgstr "Representações distantes da vegetação"
+
+msgid "Draw distant foliage using baked billboard images."
+msgstr "Renderiza a vegetação distante usando imagens pré-renderizadas em formato billboard."
+
+msgid "Draw distances"
+msgstr "Distâncias de renderização"
+
+msgid "Use extended object and landmark visibility ranges."
+msgstr "Usa distâncias de visibilidade ampliadas para objetos e pontos de referência."
+
+msgid "Foliage levels"
+msgstr "Níveis de detalhe da vegetação"
+
+msgid "Use generated simpler meshes for distant foliage."
+msgstr "Usa malhas simplificadas geradas para a vegetação distante."
+
+msgid "Landmark distance"
+msgstr "Distância dos pontos de referência"
+
+msgid "Keep large wrecks, towers and landmarks visible farther away."
+msgstr "Mantém grandes destroços, torres e pontos de referência visíveis a distâncias maiores."
+
+msgid "Distant towns"
+msgstr "Cidades distantes"
+
+msgid "How many surrounding zones can display distant towns."
+msgstr "Define quantas zonas ao redor podem exibir cidades distantes."
+
+msgid "Object LOD distance multiplier"
+msgstr "Multiplicador da distância de LOD dos objetos"
+
+msgid "Higher values retain detailed object meshes farther away."
+msgstr "Valores maiores mantêm as malhas detalhadas dos objetos visíveis a distâncias maiores."
+
+msgid "Foliage draw distance multiplier"
+msgstr "Multiplicador da distância de renderização da vegetação"
+
+msgid "Scale how far trees and other foliage remain visible."
+msgstr "Ajusta a distância em que árvores e outras vegetações permanecem visíveis."
+
+msgid "Settings"
+msgstr "Configurações"
+
+msgid "Display"
+msgstr "Exibição"
+
+msgid "Controls"
+msgstr "Controles"
+
+msgid "Advanced"
+msgstr "Avançado"
+
+msgid "Audio"
+msgstr "Áudio"
+
+msgid "Fixes"
+msgstr "Correções"
+
+msgid "World"
+msgstr "Mundo"
+
+msgid "Lighting"
+msgstr "Iluminação"
+
+msgid "Water"
+msgstr "Água"
+
+msgid "Effects"
+msgstr "Efeitos"
+
+msgid "Skin"
+msgstr "Pele"
+
+msgid "Restore defaults"
+msgstr "Restaurar padrões"
+
+msgid "Restore defaults?"
+msgstr "Restaurar padrões?"
+
+msgid "Restore all preferences and controls to their defaults?"
+msgstr "Restaurar todas as preferências e todos os controles para seus valores padrão?"
+
+msgid "Save"
+msgstr "Salvar"
+
+msgid "Confirm"
+msgstr "Confirmar"
+
+msgid "Assign a control"
+msgstr "Atribuir um controle"
+
+msgid "Delete clears the binding. Esc cancels."
+msgstr "Delete remove a atribuição. Esc cancela."
+
+msgid "Binding cleared."
+msgstr "Atribuição removida."
+
+msgid "Unbound"
+msgstr "Sem atribuição"
+
+msgid "Unavailable"
+msgstr "Indisponível"
+
+msgid "Clear cache"
+msgstr "Limpar cache"
+
+msgid "Clear cached files?"
+msgstr "Limpar arquivos em cache?"
+
+msgid "Faithful (off)"
+msgstr "Faithful (desativado)"
+
+msgid "Meitou (on)"
+msgstr "Meitou (ativado)"
+
+msgid "All Faithful"
+msgstr "Tudo no Faithful"
+
+msgid "All Meitou"
+msgstr "Tudo no Meitou"
+
+msgid "Faithful (in series)"
+msgstr "Faithful (em sequência)"
+
+msgid "Meitou (when busy)"
+msgstr "Meitou (quando ocupado)"
+
+msgid "Always on"
+msgstr "Sempre ativado"
+
+msgid "All"
+msgstr "Todos"
+
+msgid "Shoulder"
+msgstr "Realce de altas luzes"
+
+msgid "Hybrid"
+msgstr "Híbrido"
+
+msgid "Quarter resolution"
+msgstr "Resolução de 1/4"
+
+msgid "Half resolution"
+msgstr "Resolução de 1/2"
+
+msgid "Automatic"
+msgstr "Automático"
+
+msgid "Full resolution"
+msgstr "Resolução completa"
+
+msgid "Low · 1024"
+msgstr "Baixo · 1024"
+
+msgid "Medium · 2048"
+msgstr "Médio · 2048"
+
+msgid "High · 4096"
+msgstr "Alto · 4096"
+
+msgid "Simple info"
+msgstr "Informações simples"
+
+msgid "Full info"
+msgstr "Informações completas"
+
+msgid "Colour grading"
+msgstr "Correção de cores"
+
+msgid "Camera rotation speed"
+msgstr "Velocidade de rotação da câmera"
+
+msgid "How fast the rotate and tilt keys and the mouse turn the camera (the game: 6)."
+msgstr "Define a velocidade com que as teclas de rotação e inclinação e o mouse movimentam a câmera (no jogo: 6)."
+
+msgid "Numbers that float over a character when a blow lands, with the damage armour stopped in brackets. Simple shows the total, Full one number per damage type and the part hit. Healing of your own characters floats up in green."
+msgstr "Números que aparecem sobre um personagem quando ele recebe um golpe, com o dano absorvido pela armadura entre parênteses. O modo Simples mostra o dano total. O modo Completo mostra um número por tipo de dano e pela parte atingida. A cura dos seus próprios personagens aparece em verde."
+
+msgid "Skin scatters light on this race (the default)."
+msgstr "A pele desta raça dispersa a luz (padrão)."
+
+msgid "A robot race: no skin scattering unless turned on."
+msgstr "Uma raça robótica: a pele não dispersa a luz, a menos que essa opção seja ativada."
+
+msgid "Adjust the camera rotation speed."
+msgstr "Ajusta a velocidade de rotação da câmera."
+
+msgid "Every change on this page as the game plays, or every Meitou change."
+msgstr "Todas as alterações desta página conforme o jogo original funciona ou todas as alterações do Meitou."
+
+msgid "All gameplay changes"
+msgstr "Todas as alterações de jogabilidade"
+
+msgid "Foliage LOD distance multiplier"
+msgstr "Multiplicador da distância de LOD da vegetação"
+
+msgid "Higher values retain detailed foliage farther away."
+msgstr "Valores maiores mantêm a vegetação detalhada visível a distâncias maiores."
+
+msgid "Large foliage range"
+msgstr "Alcance da vegetação grande"
+
+msgid "Maximum visibility range for the largest foliage."
+msgstr "Distância máxima de visibilidade da vegetação de maior porte."
+
+msgid "Impostor distance"
+msgstr "Distância de transição para billboards"
+
+msgid "Distance where foliage changes to billboard images."
+msgstr "Distância em que a vegetação passa a ser representada por imagens billboard."
+
+msgid "Large impostor distance"
+msgstr "Distância de transição para billboards grandes"
+
+msgid "Billboard transition distance for large foliage."
+msgstr "Distância de transição para imagens billboard da vegetação de grande porte."
+
+msgid "Medium foliage range"
+msgstr "Alcance da vegetação média"
+
+msgid "Maximum visibility range for medium-sized foliage."
+msgstr "Distância máxima de visibilidade da vegetação de porte médio."
+
+msgid "Small foliage range"
+msgstr "Alcance da vegetação pequena"
+
+msgid "Maximum visibility range for small foliage."
+msgstr "Distância máxima de visibilidade da vegetação de pequeno porte."
+
+msgid "Grass draw distance multiplier"
+msgstr "Multiplicador da distância de renderização da grama"
+
+msgid "Scale the distance at which grass disappears."
+msgstr "Ajusta a distância em que a grama deixa de ser exibida."
+
+msgid "Terrain detail"
+msgstr "Detalhamento do terreno"
+
+msgid "Lower values keep the terrain mesh more detailed."
+msgstr "Valores menores mantêm a malha do terreno mais detalhada."
+
+msgid "Reflection range multiplier"
+msgstr "Multiplicador do alcance dos reflexos"
+
+msgid "Scale how far away reflected objects are drawn."
+msgstr "Ajusta a distância de renderização dos objetos refletidos."
+
+msgid "Water clarity multiplier"
+msgstr "Multiplicador da transparência da água"
+
+msgid "Adjust visibility beneath the water surface."
+msgstr "Ajusta a visibilidade abaixo da superfície da água."
+
+msgid "Far water clarity"
+msgstr "Transparência da água a distância"
+
+msgid "Adjust underwater visibility at a distance."
+msgstr "Ajusta a visibilidade subaquática a longas distâncias."
+
+msgid "Water see-through distance"
+msgstr "Distância de visibilidade através da água"
+
+msgid "Distance over which submerged scenery stays visible."
+msgstr "Distância na qual o cenário submerso permanece visível."
+
+msgid "Shadow filter"
+msgstr "Filtro de sombras"
+
+msgid "Higher values smooth shadow edges with more samples."
+msgstr "Valores maiores suavizam as bordas das sombras usando mais amostras."
+
+msgid "Haze strength"
+msgstr "Intensidade da névoa atmosférica"
+
+msgid "Scale the amount of atmospheric haze."
+msgstr "Ajusta a intensidade da névoa atmosférica."
+
+msgid "Planetshine strength"
+msgstr "Intensidade da iluminação planetária"
+
+msgid "Scale night lighting from the planet and moon."
+msgstr "Ajusta a iluminação noturna proveniente do planeta e da lua."
+
+msgid "Ambient light strength"
+msgstr "Intensidade da luz ambiente"
+
+msgid "Scale the sky's light in shade, at night and indoors."
+msgstr "Ajusta a iluminação do céu em áreas sombreadas, durante a noite e em ambientes internos."
+
+msgid "Night ambient light strength"
+msgstr "Intensidade da luz ambiente noturna"
+
+msgid "Brighten or darken nights further, on top of Ambient light strength."
+msgstr "Clareia ou escurece ainda mais as noites, além do efeito da intensidade da luz ambiente."
+
+msgid "Light shafts strength"
+msgstr "Intensidade dos feixes de luz"
+
+msgid "Adjust the brightness of light scattered through the air."
+msgstr "Ajusta o brilho da luz dispersada pelo ar."
+
+msgid "Light shafts air"
+msgstr "Dispersão da luz no ar"
+
+msgid "Air scattering density; zero removes air scattering."
+msgstr "Densidade da dispersão da luz no ar; zero desativa esse efeito."
+
+msgid "Light shafts air at dawn and dusk"
+msgstr "Dispersão da luz no ar ao amanhecer e ao anoitecer"
+
+msgid "Scale air scattering around sunrise and sunset."
+msgstr "Ajusta a dispersão da luz no ar durante o nascer e o pôr do sol."
+
+msgid "Tone map"
+msgstr "Mapeamento de tons"
+
+msgid "Choose how bright scene colours fit the display range."
+msgstr "Define como as cores claras da cena são ajustadas à faixa de brilho da tela."
+
+msgid "Hybrid tone map: ACES share"
+msgstr "Mapeamento de tons híbrido: proporção de ACES"
+
+msgid "Blend more ACES into the hybrid tone mapping curve."
+msgstr "Aumenta a participação do ACES na curva híbrida de mapeamento de tons."
+
+msgid "Heat haze strength"
+msgstr "Intensidade da distorção térmica"
+
+msgid "Scale the distortion caused by hot air."
+msgstr "Ajusta a distorção causada pelo ar quente."
+
+msgid "Night grading strength"
+msgstr "Intensidade da correção de cores noturna"
+
+msgid "Adjust the blue shift of colours in low light."
+msgstr "Ajusta o tom azulado das cores em condições de pouca luz."
+
+msgid "Ambient occlusion"
+msgstr "Oclusão de ambiente"
+
+msgid "Add contact shading around nearby surfaces and creases."
+msgstr "Adiciona sombras de contato entre superfícies próximas e nas reentrâncias."
+
+msgid "Dithering"
+msgstr "Pontilhamento"
+
+msgid "Reduce visible colour bands in smooth gradients."
+msgstr "Reduz as faixas de cores visíveis em gradientes suaves."
+
+msgid "Haze"
+msgstr "Névoa atmosférica"
+
+msgid "Use Meitou's atmospheric haze tuning."
+msgstr "Usa o ajuste de névoa atmosférica do Meitou."
+
+msgid "Use temporal smoothing instead of FXAA."
+msgstr "Usa suavização temporal em vez de FXAA."
+
+msgid "Shadows"
+msgstr "Sombras"
+
+msgid "Use soft shadows and include distant terrain."
+msgstr "Usa sombras suaves e inclui terrenos distantes."
+
+msgid "Add animated waves and shoreline surf."
+msgstr "Adiciona ondas animadas e arrebentação junto à costa."
+
+msgid "Render weather at an adaptive lower resolution."
+msgstr "Renderiza os efeitos climáticos em uma resolução inferior adaptável."
+
+msgid "Indirect light"
+msgstr "Iluminação indireta"
+
+msgid "Use light probes for bounced and ambient lighting."
+msgstr "Usa sondas de iluminação para luz refletida e iluminação ambiente."
+
+msgid "Indoor GI"
+msgstr "Iluminação global em ambientes internos"
+
+msgid "With Indirect light on, use bounced light indoors. Off keeps the original indoor ambient lighting."
+msgstr "Com a iluminação indireta ativada, usa luz refletida em ambientes internos. Desativada, mantém a iluminação ambiente original desses ambientes."
+
+msgid "Tone map and grade"
+msgstr "Mapeamento de tons e correção de cores"
+
+msgid "Use hybrid tone mapping and scene colour grading."
+msgstr "Usa mapeamento de tons híbrido e correção de cores da cena."
+
+msgid "Let shadows shape the light scattered through haze."
+msgstr "Permite que as sombras influenciem a luz dispersada pela névoa."
+
+msgid "Heat haze"
+msgstr "Distorção térmica"
+
+msgid "Use Meitou's reduced heat distortion strength."
+msgstr "Usa a intensidade reduzida de distorção térmica do Meitou."
+
+msgid "Night air"
+msgstr "Brilho atmosférico noturno"
+
+msgid "Add airglow to the night haze."
+msgstr "Adiciona brilho atmosférico à névoa noturna."
+
+msgid "Light the night scene from the planet and moon."
+msgstr "Ilumina a cena noturna com a luz do planeta e da lua."
+
+msgid "Night sky"
+msgstr "Céu noturno"
+
+msgid "Draw individual stars instead of a starfield texture."
+msgstr "Renderiza estrelas individuais em vez de uma textura de céu estrelado."
+
+msgid "Night grading"
+msgstr "Correção de cores noturna"
+
+msgid "Shift dark scenes toward the blue of night vision."
+msgstr "Aproxima as cores das cenas escuras do tom azulado da visão noturna."
+
+msgid "Clouds"
+msgstr "Nuvens"
+
+msgid "Render clouds with volume and depth."
+msgstr "Renderiza nuvens com volume e profundidade."
+
+msgid "Cloud shadows"
+msgstr "Sombras das nuvens"
+
+msgid "Let clouds cast shadows across land and water."
+msgstr "Permite que as nuvens projetem sombras sobre a terra e a água."
+
+msgid "Cloud shadows in fog"
+msgstr "Sombras das nuvens na neblina"
+
+msgid "Fade cloud shadows near and inside fog. Without it, places like the swamp or the Deadlands get too dark."
+msgstr "Suaviza as sombras das nuvens perto da neblina e dentro dela. Sem essa opção, lugares como o pântano e as Terras Mortas ficam escuros demais."
+
+msgid "Let sunlight soften and warm under bare skin instead of ending at a hard edge."
+msgstr "Permite que a luz solar se difunda e aqueça sob a pele exposta, em vez de terminar em uma borda abrupta."
+
+msgid "Shadow cascade 5 (Meitou)"
+msgstr "Quinta cascata de sombras (Meitou)"
+
+msgid "Add a fifth shadow cascade for distant scenery."
+msgstr "Adiciona uma quinta cascata de sombras para cenários distantes."
+
+msgid "Move the camera forward."
+msgstr "Move a câmera para a frente."
+
+msgid "Move the camera backward."
+msgstr "Move a câmera para trás."
+
+msgid "Move the camera left."
+msgstr "Move a câmera para a esquerda."
+
+msgid "Move the camera right."
+msgstr "Move a câmera para a direita."
+
+msgid "Raise the camera in free camera mode."
+msgstr "Eleva a câmera no modo de câmera livre."
+
+msgid "Lower the camera in free camera mode."
+msgstr "Abaixa a câmera no modo de câmera livre."
+
+msgid "Orbit the camera to the left round its target."
+msgstr "Gira a câmera para a esquerda ao redor do alvo."
+
+msgid "Orbit the camera to the right round its target."
+msgstr "Gira a câmera para a direita ao redor do alvo."
+
+msgid "Tilt the view upward: the camera comes down."
+msgstr "Inclina a visão para cima: a câmera desce."
+
+msgid "Tilt the view downward: the camera rises."
+msgstr "Inclina a visão para baixo: a câmera sobe."
+
+msgid "Move the view closer."
+msgstr "Aproxima a visão."
+
+msgid "Move the view farther away."
+msgstr "Afasta a visão."
+
+msgid "Hold and move the mouse to turn the camera."
+msgstr "Mantenha o botão pressionado e mova o mouse para girar a câmera."
+
+msgid "Switch between orbit and free camera movement."
+msgstr "Alterna entre o movimento orbital e o modo de câmera livre."
+
+msgid "Pause or resume the simulation."
+msgstr "Pausa ou retoma a simulação."
+
+msgid "Step up to the next simulation speed."
+msgstr "Avança para a próxima velocidade de simulação."
+
+msgid "Step down to the previous simulation speed."
+msgstr "Retorna à velocidade de simulação anterior."
+
+msgid "Run the simulation at normal speed."
+msgstr "Executa a simulação em velocidade normal."
+
+msgid "Run the simulation at double speed."
+msgstr "Executa a simulação em velocidade dobrada."
+
+msgid "Run the simulation at five times normal speed."
+msgstr "Executa a simulação a cinco vezes a velocidade normal."
+
+msgid "Save an image of the current view."
+msgstr "Salva uma imagem da visão atual."
+
+msgid "Open or close this settings dialog."
+msgstr "Abre ou fecha esta janela de configurações."
+
+msgid "Open or close the debug menu: teleport, spawn, items, money, heal and damage."
+msgstr "Abre ou fecha o menu de depuração: teletransporte, criação de personagens, itens, dinheiro, cura e dano."
+
+msgid "Show or hide frame statistics."
+msgstr "Mostra ou oculta as estatísticas de quadros."
+
+msgid "Cycle GPU, CPU and hidden profiler views."
+msgstr "Alterna entre as visualizações do perfilador de GPU, CPU e oculto."
+
+msgid "Save the game to the quicksave slot."
+msgstr "Salva o jogo no espaço de salvamento rápido."
+
+msgid "Load the game from the quicksave slot."
+msgstr "Carrega o jogo a partir do salvamento rápido."
+
+msgid "View the next higher building floor."
+msgstr "Exibe o próximo andar superior do edifício."
+
+msgid "View the next lower building floor."
+msgstr "Exibe o próximo andar inferior do edifício."
+
+msgid "Hold to highlight building signs and outline the characters about."
+msgstr "Mantenha pressionado para destacar placas de construções e contornar os personagens próximos."
+
+msgid "Hide or show the whole interface."
+msgstr "Oculta ou exibe toda a interface."
+
+msgid "Open or close the selected character's inventory."
+msgstr "Abre ou fecha o inventário do personagem selecionado."
+
+msgid "Open or close the selected character's stats window."
+msgstr "Abre ou fecha a janela de atributos do personagem selecionado."
+
+msgid "Open the world map, or close it."
+msgstr "Abre ou fecha o mapa-múndi."
+
+msgid "Open the faction page, or close it."
+msgstr "Abre ou fecha a página da facção."
+
+msgid "Open the research page, or close it."
+msgstr "Abre ou fecha a página de pesquisa."
+
+msgid "Open the crafting page, or close it."
+msgstr "Abre ou fecha a página de fabricação."
+
+msgid "Show the next squad in the squad bar."
+msgstr "Exibe o próximo esquadrão na barra de esquadrões."
+
+msgid "Select the whole squad (Shift adds it to the selection)."
+msgstr "Seleciona todo o esquadrão (Shift adiciona seus membros à seleção)."
+
+msgid "Select the next member of the character's squad."
+msgstr "Seleciona o próximo integrante do esquadrão do personagem."
+
+msgid "Select the previous member of the character's squad."
+msgstr "Seleciona o integrante anterior do esquadrão do personagem."
+
+msgid "Centre the camera on the selected character."
+msgstr "Centraliza a câmera no personagem selecionado."
+
+msgid "Stop the selected characters."
+msgstr "Interrompe o movimento dos personagens selecionados."
+
+msgid "Open or close the build menu."
+msgstr "Abre ou fecha o menu de construção."
+
+msgid "Turn the Block order of the selection on or off."
+msgstr "Ativa ou desativa a ordem de Bloquear para os personagens selecionados."
+
+msgid "Turn the Hold position order of the selection on or off."
+msgstr "Ativa ou desativa a ordem de Manter posição para os personagens selecionados."
+
+msgid "Turn the Passive order of the selection on or off."
+msgstr "Ativa ou desativa a ordem Passivo para os personagens selecionados."
+
+msgid "Turn the Jobs order of the selection on or off."
+msgstr "Ativa ou desativa a ordem de Trabalhos para os personagens selecionados."
+
+msgid "Turn the Ranged order of the selection on or off."
+msgstr "Ativa ou desativa a ordem de Combate à distância para os personagens selecionados."
+
+msgid "Turn sneaking of the selection on or off."
+msgstr "Ativa ou desativa o modo furtivo para os personagens selecionados."
+
+msgid "Turn the Taunt order of the selection on or off."
+msgstr "Ativa ou desativa a ordem Provocar para os personagens selecionados."
+
+msgid "Step the selection's movement speed: walk, jog, run, group."
+msgstr "Alterna a velocidade de movimento dos selecionados: caminhar, trotar, correr ou manter o grupo."
+
+msgid "The selection looks for someone to treat (Shift: add the medic job)."
+msgstr "Os selecionados procuram alguém para tratar (Shift: adiciona o trabalho de médico)."
+
+msgid "The selection looks for someone to rescue (Shift: add the rescue job)."
+msgstr "Os selecionados procuram alguém para resgatar (Shift: adiciona o trabalho de resgate)."
+
+msgid "Prospect the ground with the selected character nearest the camera."
+msgstr "Prospecta o terreno com o personagem selecionado mais próximo da câmera."
+
+msgid "The selection sits down to rest."
+msgstr "Os personagens selecionados sentam-se para descansar."
+
+msgid "The selected carriers put their bodies down."
+msgstr "Os carregadores selecionados colocam os corpos que transportam no chão."
+
+msgid "How many enemies may swing at one character at once (the game: 1, plus its race's extra slots); the others wait at reach or circle."
+msgstr "Define quantos inimigos podem atacar um personagem ao mesmo tempo (no jogo: 1, além dos espaços extras da raça); os demais aguardam ao alcance ou circulam ao redor."
+
+msgid "Late dodges and blocks"
+msgstr "Esquivas e bloqueios tardios"
+
+msgid "Balance change: a dodge or block that succeeds its roll but starts a moment late still works, instead of failing as in the game. Makes skilled fighters much harder to wear down when several enemies attack at once."
+msgstr "Alteração de equilíbrio: uma esquiva ou bloqueio que obtém sucesso na verificação, mas começa um pouco tarde, ainda funciona, em vez de falhar como no jogo original. Torna lutadores habilidosos muito mais difíceis de derrotar quando vários inimigos atacam ao mesmo tempo."
+
+msgid "Squads keep their people"
+msgstr "Esquadrões mantêm seus integrantes"
+
+msgid "Roaming squads keep their characters when they leave the area around your squads, and travel on as themselves. In the game they are removed and new ones are made later."
+msgstr "Esquadrões errantes mantêm seus personagens ao saírem da área ao redor dos seus esquadrões e continuam viajando com os mesmos integrantes. No jogo original, eles são removidos e novos são criados posteriormente."
+
+msgid "Fights far away"
+msgstr "Combates a distância"
+
+msgid "Hostile squads that meet far from your squads fight it out by strength; the loser is wiped out. In the game nothing happens far away."
+msgstr "Esquadrões hostis que se encontram longe dos seus lutam de acordo com sua força; o perdedor é eliminado. No jogo original, nada acontece quando estão distantes."
+
+msgid "Healing far away"
+msgstr "Cura a distância"
+
+msgid "A squad coming back into the area around your squads has healed for the time it was away. In the game it comes back as it left."
+msgstr "Um esquadrão que retorna à área ao redor dos seus esquadrões recupera a saúde durante o tempo em que esteve ausente. No jogo original, ele retorna no mesmo estado em que saiu."
+
+msgid "Wild squads stay"
+msgstr "Esquadrões selvagens permanecem"
+
+msgid "Animals, bandits and other wild squads keep their characters, wounds and places when the area around them unloads, and are there again when you come back. In the game they are removed and new ones are made."
+msgstr "Animais, bandidos e outros esquadrões selvagens mantêm seus personagens, ferimentos e posições quando a área ao redor deixa de ser carregada, e continuam lá quando você retorna. No jogo original, eles são removidos e novos são criados."
+
+msgid "Towns keep their schedule"
+msgstr "Habitantes mantêm sua rotina"
+
+msgid "Townspeople you come back to after an hour or more are where their day puts them: in bed at night, at the counter, at their posts and seats. In the game they are where they stood when you left."
+msgstr "Os habitantes que você reencontra após uma hora ou mais estarão onde sua rotina diária os levaria: na cama à noite, no balcão, em seus postos ou assentos. No jogo original, eles permanecem onde estavam quando você saiu."
+
+msgid "Doors close behind"
+msgstr "Portas fecham após a passagem"
+
+msgid "A door someone opened by walking through it closes again a few seconds after the last person went through. In the game doors stay open."
+msgstr "Uma porta aberta pela passagem de alguém fecha novamente alguns segundos após a última pessoa atravessá-la. No jogo original, as portas permanecem abertas."
+
+msgid "Hover outline"
+msgstr "Contorno ao passar o cursor"
+
+msgid "Outline and tint the character under the cursor, in the colour of what a right click would do."
+msgstr "Contorna e colore o personagem sob o cursor com a cor correspondente à ação de clicar com o botão direito."
+
+msgid "Selection rings"
+msgstr "Anéis de seleção"
+
+msgid "Draw the green ring on the ground under each selected character."
+msgstr "Exibe o anel verde no chão sob cada personagem selecionado."
+
+msgid "luckyren Mode"
+msgstr "Modo luckyren"
+
+msgid "A character that takes a fatal hit explodes, covers everything around in blood and sends bones flying everywhere. Its gear falls to the ground around the spot."
+msgstr "Um personagem que recebe um golpe fatal explode, espalhando sangue ao redor e lançando ossos em todas as direções. Seus equipamentos caem no chão ao redor do local."
+
+msgid "Dropped items kept"
+msgstr "Itens deixados no chão"
+
+msgid "How many items dropped during play (severed limbs, luckyren Mode's gear) stay on the ground; past it the oldest disappears. Items that were on the ground in the save always stay."
+msgstr "Define quantos itens deixados no chão durante o jogo (membros decepados e equipamentos do Modo luckyren) permanecem no local; ao ultrapassar esse limite, o item mais antigo desaparece. Os itens que já estavam no chão no salvamento permanecem sempre."
+
+msgid "Splash screens"
+msgstr "Telas de abertura"
+
+msgid "Faithful shows the game's logos at startup (Faithful UI); a key or a click skips each one. Meitou shows the menu as soon as the game has loaded."
+msgstr "O modo Faithful exibe os logotipos do jogo ao iniciar (interface Faithful); uma tecla ou um clique pula cada tela. O modo Meitou exibe o menu assim que o jogo termina de carregar."
+
+msgid "Main menu scene transitions"
+msgstr "Transições de cena do menu principal"
+
+msgid "Sky flight to/from the main menu (Meitou UI)."
+msgstr "Transição aérea de ida e volta para o menu principal (interface Meitou)."
+
+msgid "Main menu transition speed"
+msgstr "Velocidade de transição do menu principal"
+
+msgid "Higher values make the camera ascend and descend faster."
+msgstr "Valores maiores fazem a câmera subir e descer mais rapidamente."
+
+msgid "In-game scene transitions"
+msgstr "Transições de cena durante o jogo"
+
+msgid "Sky flight for save loads/new games during play (Meitou UI)."
+msgstr "Transição aérea ao carregar salvamentos ou iniciar novos jogos durante a partida (interface Meitou)."
+
+msgid "In-game transition speed"
+msgstr "Velocidade das transições durante o jogo"
+
+msgid "Character flights"
+msgstr "Deslocamentos de câmera até personagens"
+
+msgid "A double click on a squad member far from the view (or a double tap of their number) flies the camera there in an arc instead of cutting."
+msgstr "Um clique duplo em um integrante do esquadrão distante da tela (ou dois toques no número dele) faz a câmera voar em arco até sua posição, em vez de se deslocar instantaneamente."
+
+msgid "Keep textures at characters"
+msgstr "Manter texturas carregadas nos personagens"
+
+msgid "Keeps the meshes and textures around every squad member loaded, not only around the camera, so a flight or jump to them lands on finished detail. Costs video memory."
+msgstr "Mantém carregadas as malhas e texturas ao redor de cada integrante do esquadrão, não apenas nas proximidades da câmera, para que um voo ou salto até eles mostre os detalhes completos. Consome memória de vídeo."
+
+msgid "Character flight time"
+msgstr "Duração do deslocamento da câmera"
+
+msgid "Seconds a character flight takes, and each hop of the squad tour (numpad /)."
+msgstr "Duração, em segundos, do voo da câmera até um personagem e de cada salto durante o passeio pelo esquadrão (tecla / do teclado numérico)."
+
+msgid "Delete cached billboards; they are rebuilt when needed."
+msgstr "Exclui as imagens billboard armazenadas em cache; elas serão recriadas quando necessário."
+
+msgid "Choose the control for"
+msgstr "Escolha o controle para"
+
+msgid "Sets draw distances, foliage, shadow, water, particle and texture settings together; High is the default. "
+msgstr "Ajusta em conjunto as distâncias de renderização e as configurações de vegetação, sombras, água, partículas e texturas; Alto é o padrão. "
+
+msgid "Low also turns the costliest Meitou effects off (indirect light, light shafts, clouds, ambient occlusion, Meitou shadows and water). Anti-aliasing and render scale stay as they are."
+msgstr "O modo Baixo também desativa os efeitos Meitou que mais exigem recursos (luz indireta, feixes de luz, nuvens, oclusão ambiental, sombras Meitou e água). O antisserrilhado e a escala de renderização permanecem inalterados."
+
+msgid "FAITHFUL"
+msgstr "PADRÃO KENSHI"
+
+msgid "Planetshine"
+msgstr "Iluminação planetária"
+
+msgid "Texture filtering"
+msgstr "Filtragem de texturas"
+
+msgid "Grading"
+msgstr "Correção de cores"
+
+msgid "Apply the scene's colour and contrast adjustments."
+msgstr "Aplica os ajustes de cor e contraste da cena."
+
+msgid "Music volume"
+msgstr "Volume da música"
+
+msgid "Ambient volume"
+msgstr "Volume do ambiente"
+
+msgid "Footstep volume"
+msgstr "Volume dos passos"
+
+msgid "UI volume"
+msgstr "Volume da interface"
+
+msgid "VO volume"
+msgstr "Volume das vozes"
+
+msgid "Volume of combat, building and other sound effects."
+msgstr "Volume dos sons de combate, construção e outros efeitos sonoros."
+
+msgid "Attackers per target"
+msgstr "Atacantes por alvo"
+
+msgid "Default settings restored."
+msgstr "Configurações padrão restauradas."
+
+msgid "That key is reserved. Choose another key, or Esc to cancel."
+msgstr "Essa tecla é reservada. Escolha outra tecla ou pressione Esc para cancelar."
+
+msgid "Enter a valid number, or press Esc to cancel."
+msgstr "Digite um número válido ou pressione Esc para cancelar."
+
+msgid "Low quality applied."
+msgstr "Qualidade baixa aplicada."
+
+msgid "Medium quality applied."
+msgstr "Qualidade média aplicada."
+
+msgid "High quality applied."
+msgstr "Qualidade alta aplicada."
+
+msgid "Ultra quality applied."
+msgstr "Qualidade ultra aplicada."
+
+msgid "Every graphics feature is Meitou."
+msgstr "Todos os recursos gráficos estão no modo Meitou."
+
+msgid "Every graphics feature is as the game ships it."
+msgstr "Todos os recursos gráficos estão como na versão original do jogo."
+
+msgid "Every gameplay change is Meitou."
+msgstr "Todas as alterações de jogabilidade estão no modo Meitou."
+
+msgid "Every gameplay change is as the game ships it."
+msgstr "Todas as alterações de jogabilidade estão como na versão original do jogo."
+
+msgid "Every fix is Meitou."
+msgstr "Todas as correções estão ativadas."
+
+msgid "Every fix is as the game ships it."
+msgstr "Todas as correções estão desativadas, como na versão original do jogo."
+
+msgid "Select All"
+msgstr "Selecionar todos"
+
+msgid "Move Forward"
+msgstr "Mover para a frente"
+
+msgid "Move Back"
+msgstr "Mover para trás"
+
+msgid "Move Left"
+msgstr "Mover para a esquerda"
+
+msgid "Move Right"
+msgstr "Mover para a direita"
+
+msgid "Move Up"
+msgstr "Mover para cima"
+
+msgid "Move Down"
+msgstr "Mover para baixo"
+
+msgid "Rotate Left"
+msgstr "Girar para a esquerda"
+
+msgid "Rotate Right"
+msgstr "Girar para a direita"
+
+msgid "Pitch Up"
+msgstr "Inclinar para cima"
+
+msgid "Pitch Down"
+msgstr "Inclinar para baixo"
+
+msgid "Zoom In"
+msgstr "Aproximar"
+
+msgid "Zoom Out"
+msgstr "Afastar"
+
+msgid "Orbit"
+msgstr "Orbitar"
+
+msgid "Toggle Free Camera"
+msgstr "Alternar câmera livre"
+
+msgid "Pause"
+msgstr "Pausar"
+
+msgid "Time Faster"
+msgstr "Acelerar o tempo"
+
+msgid "Time Slower"
+msgstr "Desacelerar o tempo"
+
+msgid "Speed1"
+msgstr "Velocidade 1"
+
+msgid "Speed2"
+msgstr "Velocidade 2"
+
+msgid "Speed3"
+msgstr "Velocidade 3"
+
+msgid "Screenshot"
+msgstr "Captura de tela"
+
+msgid "Toggle Settings"
+msgstr "Alternar configurações"
+
+msgid "Toggle Debug Menu"
+msgstr "Alternar menu de depuração"
+
+msgid "Toggle Stats"
+msgstr "Alternar estatísticas"
+
+msgid "Cycle Profiler"
+msgstr "Alternar perfilador"
+
+msgid "Quick Save"
+msgstr "Salvamento rápido"
+
+msgid "Quick Load"
+msgstr "Carregamento rápido"
+
+msgid "Floor Up"
+msgstr "Andar acima"
+
+msgid "Floor Down"
+msgstr "Andar abaixo"
+
+msgid "Highlight"
+msgstr "Destacar"
+
+msgid "Toggle Interface"
+msgstr "Alternar interface"
+
+msgid "Toggle Inventory"
+msgstr "Alternar inventário"
+
+msgid "Toggle Character Stats"
+msgstr "Alternar atributos do personagem"
+
+msgid "Toggle Map"
+msgstr "Alternar mapa"
+
+msgid "Toggle Faction"
+msgstr "Alternar facção"
+
+msgid "Toggle Research"
+msgstr "Alternar pesquisa"
+
+msgid "Toggle Crafting"
+msgstr "Alternar fabricação"
+
+msgid "Change Squad"
+msgstr "Trocar de esquadrão"
+
+msgid "Next Character"
+msgstr "Próximo personagem"
+
+msgid "Previous Character"
+msgstr "Personagem anterior"
+
+msgid "Focus Character"
+msgstr "Focar no personagem"
+
+msgid "Stop Movement"
+msgstr "Parar movimento"
+
+msgid "Toggle Build"
+msgstr "Alternar construção"
+
+msgid "Toggle Block"
+msgstr "Alternar Bloquear"
+
+msgid "Toggle Hold"
+msgstr "Alternar Manter posição"
+
+msgid "Toggle Passive"
+msgstr "Alternar Passivo"
+
+msgid "Toggle Jobs"
+msgstr "Alternar Trabalhos"
+
+msgid "Toggle Ranged"
+msgstr "Alternar Combate à distância"
+
+msgid "Toggle Sneak"
+msgstr "Alternar furtivo"
+
+msgid "Toggle Taunt"
+msgstr "Alternar Provocar"
+
+msgid "Cycle Run Speed"
+msgstr "Alternar velocidade de movimento"
+
+msgid "Medic"
+msgstr "Médico"
+
+msgid "Rescue"
+msgstr "Resgatar"
+
+msgid "Prospect"
+msgstr "Prospectar"
+
+msgid "Rest"
+msgstr "Descansar"
+
+msgid "Put Down"
+msgstr "Largar corpos"
+
+msgid "no {1} build"
+msgstr "sem versão para {1}"
+
+msgid "Smooths edges. Active: {1}"
+msgstr "Suaviza as bordas. Ativo: {1}"
+
+msgid "Meitou's texts not yet translated"
+msgstr "textos do Meitou ainda não traduzidos"
+
+msgid "Skip v{1}"
+msgstr "Pular v{1}"
+
+msgid "New version {1}"
+msgstr "Nova versão {1}"
+
+msgid "Game language set to {1}. It applies when the game starts."
+msgstr "Idioma do jogo definido como {1}. Vale a partir da próxima inicialização do jogo."
+
+msgid "Could not update Kenshi's language setting: {1}"
+msgstr "Não foi possível atualizar o idioma do Kenshi: {1}"
+
+msgid "No {1} found"
+msgstr "{1} não encontrado"

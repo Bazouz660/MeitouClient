@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Layout;
 using Avalonia.Threading;
+using Meitou.Localisation;
 using Meitou.Settings;
 
 namespace Meitou.Launcher;
@@ -34,7 +35,7 @@ public sealed partial class MainWindow
         game = GameSettings.Load();
         GraphicsPanel.Children.Clear();
         bool found = game.Version is not null;
-        GraphicsFileText.Text = found ? GameSettings.FileName : $"No {GameSettings.FileName} found";
+        GraphicsFileText.Text = found ? GameSettings.FileName : Loc.Format(Tr("No {1} found"), GameSettings.FileName);
         ToolTip.SetTip(GraphicsFileText, GameSettings.FilePath);
         if (!found)
             GraphicsPanel.Children.Add(new TextBlock
@@ -47,6 +48,7 @@ public sealed partial class MainWindow
         if (schema is null)
         {
             GraphicsPanel.Children.Add(new TextBlock { Classes = { "desc" }, Text = missing });
+            LauncherText.TranslateTree(GraphicsPanel, originalUiText);
             return;
         }
         schemaVersion = schema.SettingsVersion;
@@ -73,7 +75,7 @@ public sealed partial class MainWindow
         reset.Click += (_, _) =>
         {
             // Two clicks: the sliders tuned in the game's Tab panel are not undone by a stray one.
-            if (reset.Tag is null) { reset.Tag = true; reset.Content = "Click again"; return; }
+            if (reset.Tag is null) { reset.Tag = true; reset.Content = Tr("Click again"); return; }
             game.ResetGraphics();
             SaveGame();
             ShowGraphics();
@@ -81,9 +83,10 @@ public sealed partial class MainWindow
         rows.Children.Add(Section("Reset"));
         rows.Children.Add(Row("Reset graphics", "Every graphics slider and Faithful / Meitou switch back to the game's defaults, also those only in the game's Tab panel.", reset, 150));
         GraphicsPanel.Children.Add(rows);
+        LauncherText.TranslateTree(GraphicsPanel, originalUiText);
     }
 
-    static TextBlock Section(string text) => new() { Classes = { "caps" }, Text = text.ToUpperInvariant(), Margin = new(0, 14, 0, 2) };
+    TextBlock Section(string text) => new() { Classes = { "caps" }, Text = Tr(text).ToUpperInvariant(), Margin = new(0, 14, 0, 2) };
 
     static Border Row(string name, string description, Control control, int width)
     {
@@ -102,11 +105,11 @@ public sealed partial class MainWindow
     Border ToggleRow(SettingDescription s)
     {
         bool value = game.GetBool(s.Key) ?? s.Default >= 0.5f;
-        var toggle = new ToggleButton { IsChecked = value, Content = value ? s.On : s.Off, HorizontalAlignment = HorizontalAlignment.Stretch };
+        var toggle = new ToggleButton { IsChecked = value, Content = Tr(value ? s.On : s.Off), HorizontalAlignment = HorizontalAlignment.Stretch };
         toggle.Click += (_, _) =>
         {
             bool v = toggle.IsChecked == true;
-            toggle.Content = v ? s.On : s.Off;
+            toggle.Content = Tr(v ? s.On : s.Off);
             game.Set(s.Key, v);
             SaveGame();
         };
@@ -124,21 +127,21 @@ public sealed partial class MainWindow
         float? Get() => s.Graphics ? game.GetGraphics(s.Key) : game.GetNumber(s.Key) ?? s.Default;
         var slider = new Slider { Minimum = ToSlider(s.Min), Maximum = ToSlider(s.Max), Margin = new(0, 0, 10, 0) };
         var value = new TextBlock { Classes = { "desc" }, Width = 120, VerticalAlignment = VerticalAlignment.Center, TextWrapping = Avalonia.Media.TextWrapping.NoWrap };
-        var reset = new Button { Content = "Default", Margin = new(6, 0, 0, 0), IsEnabled = s.Graphics || s.Default is not null };
+        var reset = new Button { Content = Tr("Default"), Margin = new(6, 0, 0, 0), IsEnabled = s.Graphics || s.Default is not null };
         bool loading = false;
         void Show()
         {
             loading = true;
             var v = Get();
             slider.Value = ToSlider(Math.Clamp(v ?? s.Shown, s.Min, s.Max));
-            value.Text = v is { } x ? s.Text(x) : "Game default";
+            value.Text = Tr(v is { } x ? s.Text(x) : "Game default");
             loading = false;
         }
         slider.ValueChanged += (_, e) =>
         {
             if (loading) return;
             float v = FromSlider(e.NewValue);
-            value.Text = s.Text(v);
+            value.Text = Tr(s.Text(v));
             if (s.Graphics) game.SetGraphics(s.Key, v);
             else game.Set(s.Key, v);
             SaveGameSoon();
