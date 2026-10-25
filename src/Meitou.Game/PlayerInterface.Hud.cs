@@ -6,6 +6,9 @@ using Meitou.Simulation;
 
 namespace Meitou.Game;
 
+/// <summary>The colour of a DIALOGUE log line (the original's <c>MessageLogColor</c>: ML_NORMAL, ML_PLAYER, ML_SYSTEM).</summary>
+enum MessageTone { Normal, Player, System }
+
 /// <summary>The minimal HUD: the clock, the speed buttons, the selection panel, rings, paths and the drag box.</summary>
 sealed partial class PlayerInterface
 {
@@ -32,15 +35,33 @@ sealed partial class PlayerInterface
     public void Notice(string text, bool error = false)
     {
         string line = Loc.Tr(text).ReplaceLineEndings(" ");
-        LogMessage(line);
+        LogMessage("", line, MessageTone.System);
         noticeQueue.Enqueue((line, error));
     }
 
-    /// <summary>Adds <paramref name="line"/> to the Overview's DIALOGUE log only (a said dialogue line, docs/game/ui-screens.md "Dialogue log"); the newest 200 are kept.</summary>
-    public void LogMessage(string line)
+    /// <summary>Adds a line to the Overview's DIALOGUE log only ("owner: text", docs/game/ui-screens.md "Dialogue log"); the newest 200 are kept.</summary>
+    public void LogMessage(string owner, string text, MessageTone tone)
     {
-        uiMessages.Add(line);
+        uiMessages.Add((owner.Length == 0 ? text : $"{owner}: {text}", tone));
         if (uiMessages.Count > 200) uiMessages.RemoveAt(0);
+    }
+
+    /// <summary>
+    /// The DIALOGUE log as the text box's text: each line after the colour tag of its tone (the original's MessageLogColor: #000000, <c>DialogueTextOption</c>, #c6ac6a),
+    /// its own <c>#</c> doubled. The Meitou mode's dark panel takes the kit's text colour for the black.
+    /// </summary>
+    string MessagesText()
+    {
+        string normal = UiMode == UiMode.Meitou ? Tag(MainColour) : "#000000", player = Tag(MyGuiColours.Named("DialogueTextOption", "b3b3b3"));
+        return string.Join('\n', uiMessages.Select(m => (m.Tone switch { MessageTone.Player => player, MessageTone.System => "#c6ac6a", _ => normal })
+            + m.Text.Replace("#", "##", StringComparison.Ordinal)));
+    }
+
+    /// <summary>A MyGUI "r g b" colour as a <c>#rrggbb</c> tag.</summary>
+    static string Tag(string rgb)
+    {
+        var c = MyGuiColours.Parse(rgb, Vector4.One);
+        return $"#{(int)MathF.Round(c.X * 255):x2}{(int)MathF.Round(c.Y * 255):x2}{(int)MathF.Round(c.Z * 255):x2}";
     }
 
     /// <summary>Once a frame: the next queued message comes up at full alpha when none shows; the shown one holds, then fades out.</summary>

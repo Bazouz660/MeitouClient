@@ -231,7 +231,7 @@ public sealed partial class DialogueSystem
             if (text.Length > 0)
             {
                 shown[speaker] = (text, world.Tick + (long)MathF.Ceiling(seconds / world.TickSeconds), IsLarge(c.Event));
-                world.Said(NameOf(world, speaker), text);
+                world.Said(NameOf(world, speaker), text, world.Characters.Cold(n) is { IsPlayer: true });
             }
             foreach (var e in line.Effects) if (e.Action == DialogueActions.BubbleWait) seconds = MathF.Max(seconds, e.Value);
             if (c.Ended || NextBubble(world, c, line) is not { } next)

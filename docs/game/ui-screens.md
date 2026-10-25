@@ -413,8 +413,15 @@ The Overview's Messages tab ("DIALOGUE") is the `MessagesTextBox` EditBox (`Mana
 character, test `FUN_1407916d0`), the conversation window's NPC line (`140674170`, ML_NORMAL), the player's chosen reply (`140683df0`, the player character's name or
 "Player", ML_PLAYER) and each MessageRoller message (`140724a20`, empty owner, ML_SYSTEM). **Unknown**: whether a system line closes its `[`.
 
-Meitou: `World.Said` from `DialogueSystem` (bubble lines, conversation lines, replies) → `PlayerInterface.LogMessage`, plain `name: text` without the colours; notices
-log without the `[`. The newest 200 lines are kept; not saved (the original's saving of the log is **Unknown**).
+Meitou: `World.Said` from `DialogueSystem` (bubble lines, conversation lines, replies) → `PlayerInterface.LogMessage`, each line tagged with its colour (ML_NORMAL is
+the kit's Main colour in the Meitou mode, for its dark panel); notices log as ML_SYSTEM without the `[`. The newest 200 lines are kept; not saved (the original's saving of
+the log is **Unknown**).
+
+### Inline colour tags
+
+MyGUI 3.2's TextView (its source; **Observed**, no test): in any text widget `#rrggbb` colours the text after it and `##` prints one `#`. Meitou (`MyGuiTextTags`, drawn by
+`UiPainter`, measured without the tags): the same for every caption but a box being edited; a tag keeps the widget's alpha; a `#` before anything else stays as written (MyGUI
+reads any six characters; engine choice).
 
 ### Prospecting
 
