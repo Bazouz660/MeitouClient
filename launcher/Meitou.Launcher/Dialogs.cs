@@ -55,6 +55,7 @@ public sealed partial class MainWindow
             plate.Opacity = 1;
         }
         plate.LayoutUpdated += Place;
+        LauncherText.TranslateTree(plate, originalUiText);
         SetupHost.Child = plate;
         SetupHost.IsVisible = true;
         noButton.Focus();

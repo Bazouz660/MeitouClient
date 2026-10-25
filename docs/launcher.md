@@ -102,7 +102,7 @@ Native dependencies off Windows:
 
 The launcher's data folder (its program, once installed, is Velopack's, e.g. `%LocalAppData%/MeitouLauncher`) is `%LocalAppData%/Meitou`, `~/.local/share/Meitou` or `~/Library/Application Support/Meitou`, the same
 folder as the game's caches (shader cache, LODs, navmesh). Beside them it holds
-`launcher.json` (Kenshi folder, install folder, channel, chosen version, launch arguments, renderer, Metal memory budget, presets) and is the game's working directory.
+`launcher.json` (Kenshi folder, install folder, channel, chosen version, launch arguments, renderer, Metal memory budget, presets, language) and is the game's working directory.
 The game runs from that folder, so its `meitou.user.json` (and anything else it writes to the working directory) is shared by all
 versions. The game gets the Kenshi folder through `KENSHI_PATH`. On macOS, **Vulkan** gets `DYLD_LIBRARY_PATH` pointing at the
 launcher's `vulkan/` folder (symlinks to `libvulkan.1.dylib` and `libMoltenVK.dylib`, with the sources found under Homebrew) plus the
@@ -162,6 +162,12 @@ setting reaches the launcher with its release; the launcher knows none of them. 
   (sliders and Faithful / Meitou switches). A top-level Default writes the schema's `default`. Whole values are written as integers.
 - Read-only when the file is unreadable, or its `version` differs from the schema's `settingsVersion` (another layout: the keys may
   mean something else). Warnings: the game is running (it writes the file on exit), `--low-end` (the game ignores `graphics`).
+
+The Settings page's Language picks the game's and the launcher's language: English, Kenshi's nine languages, the install's `locale/` folders and the
+languages Meitou has texts for, marked when Meitou's own texts are not translated. Choosing one writes only the `language` line of the Kenshi
+folder's `settings.cfg` (encoding and line endings kept) and remembers the code in `launcher.json` (`Language`, used without a Kenshi folder); at
+start the `settings.cfg` value wins. The launcher's labels come from the same `.po` catalogs as the game's Meitou texts
+([localisation](formats/localisation.md)); a string without a translation stays English. Mod names, news and release notes are data, not translated.
 
 `meitou.user.json` layout (`UserConfig`; **Verified** by loading crafted files through the built game 2026-10-20):
 - `version` (no key: 1) is raised when a key is renamed, retyped or reinterpreted; `UserConfig.Migrate` converts older files step by

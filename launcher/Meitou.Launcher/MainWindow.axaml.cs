@@ -10,6 +10,7 @@ using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using Meitou.Content;
+using Meitou.Localisation;
 
 namespace Meitou.Launcher;
 
@@ -27,6 +28,9 @@ public sealed partial class MainWindow : Window
     GameInstall? install;
     CancellationTokenSource? download;
     ModRow? dragged;
+    readonly Dictionary<Control, string> originalUiText = [];
+    bool languageReady;
+    static string Tr(string text) => LauncherText.Translate(text);
 
     const uint WS_CAPTION = 0x00C00000, WS_SYSMENU = 0x00080000, WS_MINIMIZEBOX = 0x00020000, WS_MAXIMIZEBOX = 0x00010000;
 
@@ -39,6 +43,10 @@ public sealed partial class MainWindow : Window
         this.config = config;
         updater = new LauncherUpdater(releases, config.IncludePrereleases);
         InitializeComponent();
+        LauncherText.Use(StartLanguage(found), found);
+        PopulateLanguageOptions(found);
+        LauncherText.TranslateTree(this, originalUiText);
+        languageReady = true;
         // Windows animates minimise, maximise and restore only for windows with a caption style. Avalonia sizes the client area of an
         // undecorated window to the whole window whatever its styles, so the caption bits add the animations and no frame.
         if (OperatingSystem.IsWindows())
@@ -75,10 +83,101 @@ public sealed partial class MainWindow : Window
         UseKenshi(found);
         if (!config.FoldersConfirmed) ShowSetup();
         Closing += (_, _) => { if (graphicsSave?.IsEnabled == true) SaveGame(); };
-        Opened += async (_, _) => await Task.WhenAll(LoadNewsAsync(), RefreshReleasesAsync(updateLauncher: true));
+        Opened += async (_, _) =>
+        {
+            // Apply after Avalonia has attached control templates; the constructor pass runs before some text presenters exist.
+            LauncherText.TranslateTree(this, originalUiText);
+            await Task.WhenAll(LoadNewsAsync(), RefreshReleasesAsync(updateLauncher: true));
+        };
     }
 
     void Status(string text) => SetText(StatusText, text);
+
+    // ---- Language: one choice for the game (Kenshi's settings.cfg) and the launcher ----
+
+    /// <summary>The language to start in: the Kenshi folder's settings.cfg choice, else the launcher's last one.</summary>
+    string StartLanguage(GameInstall? found) =>
+        (found is null ? null : KenshiLanguageSettings.GetLanguage(found)) is { Length: > 0 } game ? game : config.Language;
+
+    void Language_SelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (!languageReady) return;
+        if (LanguageBox.SelectedItem is not ComboBoxItem item || item.Tag is not string code || code == LauncherText.Code) return;
+        config.Language = code;
+        config.Save();
+        LauncherText.Use(code, install);
+        if (install is not null)
+        {
+            try
+            {
+                KenshiLanguageSettings.SetLanguage(install, code);
+                Status(Loc.Format(Tr("Game language set to {1}. It applies when the game starts."), code));
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            {
+                Status(Loc.Format(Tr("Could not update Kenshi's language setting: {1}"), error.Message));
+            }
+        }
+        LauncherText.TranslateTree(this, originalUiText);
+        foreach (var row in mods) row.LanguageChanged();
+        ShowReleases();
+        PopulateLanguageOptions(install);
+    }
+
+    // Opening the list reads the catalogs again, so a meitou.po added or edited meanwhile shows up.
+    void Language_DropDownOpened(object? sender, EventArgs e)
+    {
+        LauncherText.Use(LauncherText.Code, install);
+        PopulateLanguageOptions(install);
+        LauncherText.TranslateTree(this, originalUiText);
+    }
+
+    /// <summary>English, Kenshi's own languages, the locale folders of the install and the languages Meitou has texts for; the current one selected.</summary>
+    void PopulateLanguageOptions(GameInstall? gameInstall)
+    {
+        var codes = new List<string> { GameLanguage.DefaultCode };
+        foreach (string code in GameLanguage.SteamLanguages.Select(l => l.Code).Concat(MeitouTranslations.EmbeddedCodes).Concat(InstalledLocaleCodes(gameInstall)))
+            if (!codes.Any(known => SameLanguage(known, code))) codes.Add(code);
+        LanguageBox.Items.Clear();
+        foreach (string code in codes)
+        {
+            bool translated = code == GameLanguage.DefaultCode || MeitouTranslations.Has(code, LauncherText.LocaleFolder(gameInstall, code));
+            string name = translated ? GameLanguageName(code) : $"{GameLanguageName(code)} ({Tr("Meitou's texts not yet translated")})";
+            LanguageBox.Items.Add(new ComboBoxItem { Content = name, Tag = code });
+        }
+        LanguageBox.SelectedItem = LanguageBox.Items.OfType<ComboBoxItem>().FirstOrDefault(item => item.Tag is string code && SameLanguage(code, LauncherText.Code))
+            ?? LanguageBox.Items.OfType<ComboBoxItem>().First();
+    }
+
+    static bool SameLanguage(string left, string right) => left.Replace('_', '-').Equals(right.Replace('_', '-'), StringComparison.OrdinalIgnoreCase);
+
+    static IEnumerable<string> InstalledLocaleCodes(GameInstall? gameInstall)
+    {
+        if (gameInstall is null) return [];
+        try
+        {
+            string root = Path.Combine(gameInstall.Root, "locale");
+            return Directory.Exists(root)
+                ? Directory.EnumerateDirectories(root).Select(Path.GetFileName).OfType<string>().Where(code => !code.StartsWith('_')).ToArray()
+                : [];
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return []; }
+    }
+
+    static string GameLanguageName(string code) => code.Replace('_', '-').ToLowerInvariant() switch
+    {
+        "en-gb" => "English",
+        "de-de" => "German",
+        "fr-fr" => "French",
+        "ru-ru" => "Russian",
+        "it-it" => "Italian",
+        "pt-br" => "Portuguese (Brazil)",
+        "es-es" => "Spanish",
+        "zh-cn" => "Chinese",
+        "ja-jp" => "Japanese",
+        "ko-kr" => "Korean",
+        _ => code,
+    };
 
     // ---- Pages ----
 
@@ -90,6 +189,21 @@ public sealed partial class MainWindow : Window
             page.IsVisible = nav == sender;
         }
         if (sender == NavGraphics) ShowGraphics();
+        Control? selectedPage = sender == NavHome ? HomePage
+            : sender == NavMods ? ModsPage
+            : sender == NavVersions ? VersionsPage
+            : sender == NavGraphics ? GraphicsPage
+            : sender == NavSettings ? SettingsPage : null;
+        if (selectedPage is not null)
+        {
+            EventHandler? applyAfterLayout = null;
+            applyAfterLayout = (_, _) =>
+            {
+                selectedPage.LayoutUpdated -= applyAfterLayout;
+                LauncherText.TranslateTree(selectedPage, originalUiText);
+            };
+            selectedPage.LayoutUpdated += applyAfterLayout;
+        }
     }
 
     // ---- Home: news ----
@@ -139,6 +253,12 @@ public sealed partial class MainWindow : Window
         {
             config.KenshiPath = found.Root;
             config.Save();
+        }
+        if (languageReady)
+        {
+            LauncherText.Use(StartLanguage(found), found);
+            PopulateLanguageOptions(found);
+            LauncherText.TranslateTree(this, originalUiText);
         }
         LoadMods();
     }
@@ -614,8 +734,8 @@ public sealed partial class MainWindow : Window
         // Playing the latest, Play itself is the update (ShowPlay); playing a picked version, this button beside it.
         UpdateButton.IsVisible = PickedVersion is not null && NewRelease is not null;
         SkipButton.IsVisible = NewRelease is not null;
-        SkipText.Text = $"Skip v{NewRelease?.Version}";
-        UpdateTitle.Text = $"New version {latest?.Version}";
+        SkipText.Text = Loc.Format(Tr("Skip v{1}"), NewRelease?.Version);
+        UpdateTitle.Text = Loc.Format(Tr("New version {1}"), latest?.Version);
         SetText(UpdateHint, "Click to install");
         ToolTip.SetTip(UpdateButton, $"Download and install {latest?.Title}");
         ShowPlay();
@@ -626,11 +746,11 @@ public sealed partial class MainWindow : Window
     {
         var row = ReleaseListBox.SelectedItem as ReleaseRow;
         bool installed = row?.Installed == true;
-        InstallButton.Content = download is not null ? "Cancel" : installed ? "Installed" : "Install";
+        InstallButton.Content = Tr(download is not null ? "Cancel" : installed ? "Installed" : "Install");
         InstallButton.IsEnabled = download is not null || (row?.Release.Asset is not null && !installed);
         UninstallButton.IsEnabled = installed && download is null;
         OpenFolderButton.IsEnabled = installed;
-        SelectVersionButton.Content = row?.Played == true ? "Selected" : "Select";
+        SelectVersionButton.Content = Tr(row?.Played == true ? "Selected" : "Select");
         SelectVersionButton.IsEnabled = installed && row?.Played != true;
     }
 
@@ -658,8 +778,8 @@ public sealed partial class MainWindow : Window
         ReleaseListBox.SelectedItem = rows.FirstOrDefault(r => r.Release.Tag == selected);
         NotesEmpty.IsVisible = ReleaseListBox.SelectedItem is null;
         ReleasesEmpty.IsVisible = rows.Count == 0;
-        ReleasesEmpty.Text = allReleases.Any(r => r.Kind == ReleaseKind.Game) ? "Only nightly builds so far: tick Nightly builds beside Play to list them."
-            : "No releases listed yet. Check for releases below.";
+        ReleasesEmpty.Text = Tr(allReleases.Any(r => r.Kind == ReleaseKind.Game) ? "Only nightly builds so far: tick Nightly builds beside Play to list them."
+            : "No releases listed yet. Check for releases below.");
         VersionCount.Text = $"{rows.Count} releases · {installed.Count} installed";
         ShowVersionButtons();
         ShowFooter();
@@ -727,7 +847,7 @@ public sealed partial class MainWindow : Window
         StatusText.Inlines = [new Run($"Downloading {release.Title}  "), new Run(size + speed) { FontFamily = Mono }];
     }
 
-    static void SetText(TextBlock block, string text) => block.Inlines = [new Run(text)];
+    void SetText(TextBlock block, string text) => block.Inlines = [new Run(Tr(text))];
 
     async Task InstallAsync(Release release)
     {
@@ -827,7 +947,7 @@ public sealed partial class MainWindow : Window
         if (updater.IsInstalled)
         {
             try { version = await updater.CheckAsync(); }
-            catch (Exception ex) { LauncherAbout.Text = $"Version {LauncherVersion}. The update check failed: {ex.Message}"; return; }
+            catch (Exception ex) { LauncherAbout.Text = Loc.Format(Tr("Version {1}. The update check failed: {2}"), LauncherVersion, ex.Message); return; }
             LauncherUpdateButton.Tag = null;
         }
         else
@@ -838,9 +958,9 @@ public sealed partial class MainWindow : Window
             LauncherUpdateButton.Tag = page?.PageUrl;
         }
         LauncherUpdateButton.IsVisible = version is not null;
-        LauncherUpdateButton.Content = updater.IsInstalled ? $"Update to {version}" : $"Get launcher {version}";
+        LauncherUpdateButton.Content = Loc.Format(Tr(updater.IsInstalled ? "Update to {1}" : "Get launcher {1}"), version);
         TitleLauncherUpdateButton.IsVisible = version is not null;
-        TitleLauncherUpdateText.Text = updater.IsInstalled ? $"Update launcher to {version}" : $"Get launcher {version}";
+        TitleLauncherUpdateText.Text = Loc.Format(Tr(updater.IsInstalled ? "Update launcher to {1}" : "Get launcher {1}"), version);
         ToolTip.SetTip(TitleLauncherUpdateButton, updater.IsInstalled ? "Download the new launcher and restart into it" : "Open the launcher's release page");
         if (version is not null) Status($"Launcher {version} is available.");
     }

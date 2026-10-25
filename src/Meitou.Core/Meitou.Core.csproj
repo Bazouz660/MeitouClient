@@ -3,4 +3,8 @@
     <!-- The launcher references this and is published Native AOT: trim/AOT analyzer warnings here are build errors. -->
     <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>
+  <ItemGroup>
+    <!-- Meitou's own texts per language (docs/formats/localisation.md), read by the game and the launcher. -->
+    <EmbeddedResource Include="Localisation/locale/*.po" LogicalName="Meitou.locale.%(Filename).po" />
+  </ItemGroup>
 </Project>

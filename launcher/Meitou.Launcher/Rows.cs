@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using Meitou.Content;
+using Meitou.Localisation;
 
 namespace Meitou.Launcher;
 
@@ -11,9 +12,9 @@ public sealed class ModRow(ModInfo mod, bool enabled) : INotifyPropertyChanged
 
     public ModInfo Mod { get; } = mod;
     public string Name => Mod.Name;
-    public string Detail => (Mod.Source == ModSource.Workshop ? "Steam workshop" : "Local mod")
+    public string Detail => LauncherText.Translate(Mod.Source == ModSource.Workshop ? "Steam workshop" : "Local mod")
         + (Mod.Header is { Author.Length: > 0 } h ? $" · {h.Author}" : "");
-    public string Notes => Mod.HasNativePlugin ? "RE_Kenshi plugin: its DLLs are ignored in Meitou" : "";
+    public string Notes => Mod.HasNativePlugin ? LauncherText.Translate("RE_Kenshi plugin: its DLLs are ignored in Meitou") : "";
     public bool HasNotes => Mod.HasNativePlugin;
 
     public bool Enabled
@@ -21,6 +22,13 @@ public sealed class ModRow(ModInfo mod, bool enabled) : INotifyPropertyChanged
         get;
         set { if (field != value) { field = value; Changed(); } }
     } = enabled;
+
+    /// <summary>The launcher's language changed: the translated texts are read again.</summary>
+    public void LanguageChanged()
+    {
+        Changed(nameof(Detail));
+        Changed(nameof(Notes));
+    }
 
     void Changed([CallerMemberName] string? name = null) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 }
@@ -34,10 +42,10 @@ public sealed class ReleaseRow(Release release, bool installed, bool played)
     public string Detail => string.Join(" · ", new[]
     {
         Release.Published.ToString("yyyy-MM-dd"),
-        Release.Prerelease ? "nightly" : null,
-        Release.Asset is null ? $"no {Releases.Rid} build" : null,
+        Release.Prerelease ? LauncherText.Translate("nightly") : null,
+        Release.Asset is null ? Loc.Format(LauncherText.Translate("no {1} build"), Releases.Rid) : null,
     }.OfType<string>());
     /// <summary>The version Play starts.</summary>
     public bool Played { get; } = played;
-    public string State => Played ? "Installed · Play" : Installed ? "Installed" : "";
+    public string State => Played ? LauncherText.Translate("Installed · Play") : Installed ? LauncherText.Translate("Installed") : "";
 }

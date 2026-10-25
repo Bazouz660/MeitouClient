@@ -114,7 +114,7 @@ sealed partial class SettingsMenu
         Choice: new(() => ["Faithful", "Meitou"], () =>
         {
             var live = toggles.Where(t => !stuckSwitches.Contains(t.Label)).ToList();
-            bool AtMark(Slider s, float? mark) => mark is { } m && MathF.Abs(s.Get() - m) <= 0.002f * (s.Max - s.Min);
+            static bool AtMark(Slider s, float? mark) => mark is { } m && MathF.Abs(s.Get() - m) <= 0.002f * (s.Max - s.Min);
             return live.All(t => t.Get()) && sliders.All(s => AtMark(s, s.Meitou)) ? 1 : live.All(t => !t.Get()) && sliders.All(s => AtMark(s, s.Faithful)) ? 0 : -1;
         }, side =>
         {
