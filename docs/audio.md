@@ -213,7 +213,9 @@ snapshot leaves out plainly closed doors. A door seen for the first time is assu
 `clamp(2·p1 + 0.5·p0, 20, 60)` and loses 0.015 × that of its integrity (wall: half the sum, clamped 10 to 60, 0.003 ×); when the integrity is 0 or less it is marked broken (virtual `+0x310`/`+0x340`) and `Break` posts on the building's object. **Neither
 function sets the `Break` switch group** (cases `Door` and `Gate`, bank `SFX_General_Bank`): no other code in the exe sets it (**Verified**, no `SetSwitch` string `Break`), so with the group never set the original plays the container's default, which
 is silent (**Observed**, rendered). **Meitou:** `DoorSounds` posts `Break` when a door becomes broken (the lock bash `LockSystem.Bash` and a lockpick's break set `DoorBroken`), after setting `Break` to `Gate` for door type 2 and `Door` otherwise
-(**engine choice**: it fixes the exe's omission; Fixes settings page, `Door break sound`, off plays as the exe). **Walls: no trigger**: nothing in Meitou damages walls (no damage model is invented).
+(**engine choice**: it fixes the exe's omission; Fixes settings page, `Door break sound`, off plays as the exe). Neither break posts `Character_Unlock_Success`. Walls: a wall line hit to 0
+(`CombatSystem.ApplyZoneBuildings`) emits `SoundKind.WallBroken`; the host posts `Break` on a pooled object at the wall's position (`CharacterSounds.WallBreak`; the exe uses the
+building's object), with `Break` = `Gate` under the same setting (**engine choice**; off: unset, silent as the exe).
 
 **Turrets** (`TurretBuilding::vfunc_28` `140434b70`, `RotatingEnt::vfunc_2`). **Verified:** each frame of an active turret with a target the largest angle its turning parts still have to turn (`FUN_1404cc0d0`, degrees) is kept; with the counter at 0 and that angle over 0.1 it posts `Turret_Mvt_Start` and sets
 the counter to 8; the counter counts down every frame and posts `Turret_Mvt_Stop` on reaching 0 (so a turret that keeps turning posts a start and a stop every 8 frames; no fade on either). Both post on the building's object (`+0x208`, registered when the gun first asks for it).
@@ -497,7 +499,7 @@ Open for the next wave: which event each game action posts and on which object, 
 
 ### Not done
 
-The emitters of foliage and map features, corpse flies and wall-break sounds (nothing in Meitou triggers them), the callers that post effects, the task and interface sounds whose trigger Meitou lacks (listed under [Characters](#characters-footsteps-combat-voices) and [Interface](#interface)) (the engine is ready:
+The emitters of foliage and map features, corpse flies, the callers that post effects, the task and interface sounds whose trigger Meitou lacks (listed under [Characters](#characters-footsteps-combat-voices) and [Interface](#interface)) (the engine is ready:
 [API](#api-for-event-sources)), the game's Wwise voice limits (Meitou has its own [cap](#voice-cap)), obstruction and occlusion (the game uses none), the radio, serial effect slots and the cone as Wwise draws it, and unloading ambience
 banks left behind (they stay loaded: about 5 to 14 MB of Ogg each; the music banks unload as above).
 

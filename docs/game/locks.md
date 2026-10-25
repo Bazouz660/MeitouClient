@@ -129,6 +129,9 @@ Same targets as picking; Task_CutLock / Task_BruteForceLock share the shackle ta
   - **Impossible**: no door, or a character ahead within a gap of 10 that a ray along the facing hits (any character). Which registry a character plans with
     is **Unknown** (an animal-only one could not reach 81 through 85).
   - Meitou ([simulation](../simulation.md#cages-beds-and-locks)): `DoorPlan` runs this search for NPC attackers whose target is shut in.
+  - **Gates** (123/290 Bashing gate, [table](ai-tasks.md)): need `AT_LOCATION_FORTIFICATION_GATE` (91), reached by 121 Moving to gate,
+    which needs `LOCATION_IS_ACCESSIBLE` (60); both read the gate codes (walled regions). Meitou has no gate codes, so raiders do not seek
+    out a player gate; one in a blow's reach still takes the blow ([combat](combat.md#attack-zone)).
 
 ## Doors
 

@@ -502,6 +502,20 @@ public sealed class CharacterSounds
         Swings++;
     }
 
+    /// <summary>
+    /// A wall line broke at <paramref name="at"/> (<c>WallBuilding::vfunc_62</c>): <c>Break</c>, on a pooled object there (the exe: the building's object). <paramref name="fix"/>: the
+    /// <c>Break</c> switch set to <c>Gate</c> (<b>engine choice</b>, the bank has only <c>Door</c> and <c>Gate</c>); off, as the exe, which never sets it, so it plays nothing.
+    /// </summary>
+    public void WallBreak(Vector3 at, bool fix)
+    {
+        if (Vector3.DistanceSquared(at, camera) >= EventLimit) return;
+        ulong id = pool[poolAt++ % pool.Length];
+        player.SetPosition(id, at);
+        if (fix) player.SetSwitch("Break", "Gate", id);
+        player.Post("Break", id);
+        Impacts++;
+    }
+
     /// <summary>A bolt stuck in the ground at <paramref name="at"/>: <c>Impact</c> on a pooled object there, <c>Impacts</c> = the ground's name (<c>Stone</c> for anything the table lacks).</summary>
     public void BoltStuck(Vector3 at, int surface)
     {

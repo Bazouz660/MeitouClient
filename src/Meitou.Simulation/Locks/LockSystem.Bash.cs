@@ -76,10 +76,10 @@ public sealed partial class LockSystem
             c.BashTime = 0;
             // Each update of the task books Burglary against the door's owner (Task_BashDoor, locks.md); the pursuit's bashers book none yet.
             if (c.BashOrdered && Crimes is not null && door.Owner >= 0 && door.Owner != c.Faction) Crimes.SetPending(world, s, Crime.CrimeCode.Burglary, door.Owner, CharacterId.None, Crime.CrimeSystem.MinTimer);
+            // A break's only sound is the door's Break (Task_BashDoor posts no unlock sound), played by the host's door sounds.
             if (Hit(door, c))
             {
                 world.Fixtures.Touch(door);
-                world.EmitSound(SoundKind.Unlocked, s, next[s].Position);
                 StopBashing(table, s, c);
             }
         }
@@ -124,12 +124,13 @@ public sealed partial class LockSystem
         return true;
     }
 
-    /// <summary>A fight blow whose attack zone takes in a door (<see cref="CombatSystem"/>): <paramref name="damage"/> is clamp(2 blunt + 0.5 cut, 20, 60); a break tells navigation.</summary>
-    internal void Strike(World world, Fixture door, float damage, int attacker)
+    /// <summary>
+    /// A fight blow whose attack zone takes in a door (<see cref="CombatSystem"/>): <paramref name="damage"/> is clamp(2 blunt + 0.5 cut, 20, 60); a break tells navigation.
+    /// The blow posts no character sound (the door's own <c>Break</c> is the host's door sounds).
+    /// </summary>
+    internal static void Strike(World world, Fixture door, float damage)
     {
-        if (!Damage(door, damage)) return;
-        world.Fixtures.Touch(door);
-        world.EmitSound(SoundKind.Unlocked, attacker, world.Characters.Next[attacker].Position);
+        if (Damage(door, damage)) world.Fixtures.Touch(door);
     }
 
     /// <summary>Gives the free attackers whose target is shut in another building, while they are outside it, its main door to bash when the planner says so (<see cref="DoorPlan"/>).</summary>

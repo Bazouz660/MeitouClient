@@ -343,9 +343,14 @@ short; a piece runs from its position along its own +Z for `link length` x `scal
   attaches to a nearby wall (`FUN_14029ac50`, links not saved, **Observed**); a child forwards build work and deliveries
   to the parent (slot 69), whose progress sets the children's (slots 71-73), so an attached subsection costs nothing of
   its own (**Observed**). A wall with `build threshold` 0 rebuilds the navmesh when queued (see Commit above).
-- **Walls after building** (**Observed**): "Wall termites! - Your base became inaccessible. You need at least 1 gate in
-  your walls." (`FUN_1402ef1f0`) destroys a trapping wall with `destroyed navmesh`, else dismantles it; WallBuilding damage
-  `clamp((hit1 x 2 + hit0 x 0.5) x 0.5, 10, 60) x 0.003` off health (slot 62, **Verified**).
+- **Wall termites** (**Verified**, `FUN_1402ef1f0`): the gate-code manager (singleton `DAT_14212e368`) keeps a list of
+  `TownBase*` (+0x78, count +0x80) that it drains at the end of each gate-code pass (`FUN_1402f03e0`, after the codes are
+  written to objects). Per town: the nearest building to the town's position (`BuildingFinderNearest`, filter 0x100000,
+  meaning **Unknown**); when it is complete and its record has `destroyed navmesh`, slot 104 `setDestroyed(1)`, else slot 73
+  `addDismantleProgress(1000)`; then the message "Wall termites! - Your base became inaccessible.  You need at least 1 gate
+  in your walls.". What adds a town is **Unknown** (KenshiLib 1ce4a16 has `Town::notifyAccesibility(bool)`; its 1.0.68 body
+  is not found, likely inlined). Meitou: not built; it needs the gate codes (walled regions), which Meitou lacks.
+- WallBuilding damage `clamp((hit1 x 2 + hit0 x 0.5) x 0.5, 10, 60) x 0.003` off health (slot 62, **Verified**).
 
 ### Build menu
 

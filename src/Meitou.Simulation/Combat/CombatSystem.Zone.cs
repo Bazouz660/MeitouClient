@@ -173,7 +173,7 @@ public sealed partial class CombatSystem
         for (int n = 0; n < found.Count && n < left; n++)
         {
             var (_, doorId, wall) = found[n];
-            if (doorId is not null && world.Fixtures.Find(doorId) is { } door) Locks!.Strike(world, door, Math.Clamp(f, 20, 60), a);
+            if (doorId is not null && world.Fixtures.Find(doorId) is { } door) global::Meitou.Simulation.Locks.LockSystem.Strike(world, door, Math.Clamp(f, 20, 60));
             else if (wall is not null)
             {
                 var line = wall.WallParent is { } parent && world.Buildings.Find(parent) is { } p ? p : wall;
@@ -182,7 +182,7 @@ public sealed partial class CombatSystem
                 {
                     line.Progress = 0;
                     line.Destroyed = true;
-                    world.EmitSound(SoundKind.Unlocked, a, line.Position);
+                    world.EmitSound(SoundKind.WallBroken, a, line.Position);
                 }
                 world.Buildings.Changed();
             }
