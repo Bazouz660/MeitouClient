@@ -7,8 +7,8 @@ below do not claim original-game parity. Retain Verified/Observed/Unknown scopes
 ## Time model
 
 Control: 30 Hz real time, input/UI/camera continue while paused. The interface's own commands (selection, order toggles, run speed, job lists,
-crafting/research queues, squads, inventory, shops, building settings) apply between ticks while paused (`World.ApplyPausedInterfaceCommands`);
-orders that send characters somewhere wait for the next tick. Simulation: 1/30 s game time;
+crafting/research queues, squads, inventory, shops, building settings, movement/combat/first-aid/door/cage orders) apply between ticks while paused
+(`World.ApplyPausedInterfaceCommands`); orders only set tasks, nobody moves or fights until the next tick. Simulation: 1/30 s game time;
 accumulate `realDt*speed`, speeds 0/1/2/5. Budget `6*speed` ticks per frame; excess is dropped and
 `AchievedSpeed` reports slowdown. Control ticks precede simulation ticks; a speed change applies
 to the entire frame. `WorldSession` rejects unequal world/clock tick lengths, owns snapshots,
@@ -29,10 +29,6 @@ pause with a tick ahead takes it at once (the picture jumps a tick, then the pau
 a tick takes 4 ms (`WorldSession.TickMs`, smoothed over about ten ticks) until it is under 2 ms (a tick ahead is slower, sharing the cores); Always
 every frame. Off whatever the setting in stills, the duel, recorded flights and the play benchmark (their ticks stay in step with the frame).
 F12's `tick ahead` row is its wall time; `outside ticks` leaves it out.
-
-At player speed 0 (without a modal/loading pause), queued selection, held-item, inventory right-click/arrange
-and open-shop buy/sell/close commands apply between ticks and republish snapshots. Other
-commands stay queued; neither world ticks, game time nor simulation phases advance.
 
 **Verified** original clock: 1200/11 seconds per game hour ([game-loop.md](game/game-loop.md)).
 `BodySystem.HoursPerTick=11/36000`; the medical tick takes `TickSeconds` ([character-stats](game/character-stats.md#time)). Navmesh unload uses

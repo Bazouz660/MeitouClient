@@ -275,8 +275,16 @@ sealed partial class PlayerInterface
         if (SquadTabClick(c)) return true;
         if (c.Action.StartsWith("faithful:", StringComparison.Ordinal))
         {
-            faithfulScreens.Open("overview");
-            faithfulScreens.SetTab("overview", "TabsMain", c.Name == "ShortcutTechButton" ? 2 : c.Name == "ShortcutSquadButton" ? 4 : 0);
+            // A second click on the open tab's button closes the overview.
+            int tab = c.Name == "ShortcutTechButton" ? 2 : c.Name == "ShortcutSquadButton" ? 4 : 0;
+            if (faithfulScreens.IsOpen("overview") && faithfulScreens.GetTab("overview", "TabsMain") == tab)
+                faithfulScreens.Close("overview");
+            else
+            {
+                faithfulScreens.Open("overview");
+                faithfulScreens.SetTab("overview", "TabsMain", tab);
+            }
+            UpdateMenuPause();
             return true;
         }
         uiHost.Dispatch(c);
