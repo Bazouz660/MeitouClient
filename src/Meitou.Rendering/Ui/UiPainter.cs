@@ -192,10 +192,13 @@ public sealed partial class UiPainter : IDisposable
     /// <summary>The width in pixels of <paramref name="text"/> in the standard face at <paramref name="emPixels"/> (to fit a panel to its text before it is drawn).</summary>
     public float MeasureStandard(string text, float emPixels) => (standardFont ?? overlay).MeasureText(text, emPixels / 16f);
 
-    public void Draw(IReadOnlyList<UiControl> controls, int width, int height, Vector2 mouse, string? active, float minimumTextPixels = 0)
+    public void Draw(IReadOnlyList<UiControl> controls, int width, int height, Vector2 mouse, string? active, float minimumTextPixels = 0,
+        DebugOverlay.OverlayPass? pass = null)
     {
         for (int uploads = 0; uploads < IconUploadsPerFrame && decodedIcons.TryDequeue(out var icon); uploads++) Upload(icon.Name, icon.Image);
-        using var pass = (overlayPass ??= new DebugOverlay.OverlayPass(overlay.Gpu, width, height)).Reset(width, height);
+        bool owns = pass is null;
+        pass ??= (overlayPass ??= new DebugOverlay.OverlayPass(overlay.Gpu, width, height)).Reset(width, height);
+        using var owned = owns ? pass : null;
         foreach (var c in controls)
         {
             var b = c.Bounds;

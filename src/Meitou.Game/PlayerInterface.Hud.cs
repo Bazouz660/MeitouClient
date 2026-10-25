@@ -115,7 +115,7 @@ sealed partial class PlayerInterface
     public bool SelectionRings { get; set; } = true;
 
     /// <summary>The HUD, the selection rings and the drag box, over the finished picture.</summary>
-    public void Draw(DebugOverlay o, int width, int height)
+    public void Draw(DebugOverlay o, int width, int height, DebugOverlay.OverlayPass? pass = null)
     {
         PollUiSounds();
         Width = width;
@@ -162,7 +162,7 @@ sealed partial class PlayerInterface
             o.Line(from.X, mouse.Y, from.X, from.Y, 1, edge);
         }
 
-        DrawGameUi(o, width, height);
-        o.Flush(width, height);
+        DrawGameUi(o, width, height, pass);
+        o.Flush(width, height, null, pass);
     }
 }

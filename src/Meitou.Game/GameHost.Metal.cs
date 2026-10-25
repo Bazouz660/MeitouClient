@@ -1364,6 +1364,9 @@ sealed partial class GameHost
             if (overlay is not null)
             {
                 overlay.Target = backbuffer;
+                // One overlay pass: the HUD, the direct HUD lines and the stats/settings text would otherwise each load/store the whole backbuffer.
+                {
+                using var overlayPass = overlay.BeginPass(size.X, size.Y);
                 if (hud is not null)
                 {
                     hud.Width = size.X;
@@ -1375,7 +1378,7 @@ sealed partial class GameHost
                     if (hud.UiVisible)
                     {
                         hud.SelectionRings = config.SelectionRings;
-                        hud.Draw(overlay, size.X, size.Y);
+                        hud.Draw(overlay, size.X, size.Y, overlayPass);
                         if (IsSandbox && !g.UiShowcase) DrawSandbox(overlay, size.X, size.Y);
                     }
                 }
@@ -1424,7 +1427,8 @@ sealed partial class GameHost
                         wrote = true;
                     }
                 }
-                if (wrote) overlay.Flush(size.X, size.Y);
+                if (wrote) overlay.Flush(size.X, size.Y, null, overlayPass);
+                }
                 // The scene changes use the same Kenshi loading screen as Vulkan; it covers the world until the sky arrival is done.
                 if (loading is not null && (sceneLoad is not null || loading.Exiting))
                 {

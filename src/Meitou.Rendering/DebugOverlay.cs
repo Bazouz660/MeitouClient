@@ -452,8 +452,11 @@ public sealed unsafe class DebugOverlay : IDisposable
     public void Flush(int width, int height, Meitou.Data.Ui.UiRect? clip = null)
         => Flush(width, height, clip, null);
 
+    /// <summary>A pass that collects several overlays (the HUD, the debug text, the loading screen) into one render encoder; dispose it to draw them.</summary>
+    public OverlayPass BeginPass(int width, int height) => new(Gpu, width, height);
+
     /// <summary>Widget and font batches share one rendering; scissors and draw order still change per flush.</summary>
-    internal void Flush(int width, int height, Meitou.Data.Ui.UiRect? clip, OverlayPass? pass)
+    public void Flush(int width, int height, Meitou.Data.Ui.UiRect? clip, OverlayPass? pass)
     {
         if (batch.Count == 0 || width <= 0 || height <= 0 || Target is null) { batch.Clear(); imageBatch = null; atlasRuns.Clear(); return; }
         var t = PassTargets.Of(Target, null).At(new PixelViewport(0, 0, width, height, 0, 1));
@@ -531,7 +534,7 @@ public sealed unsafe class DebugOverlay : IDisposable
     }
 
     /// <summary>Collects painter-ordered batches, coalescing adjacent compatible draws into one upload and rendering.</summary>
-    internal sealed class OverlayPass(IGpuContext gpu, int width, int height) : IDisposable
+    public sealed class OverlayPass(IGpuContext gpu, int width, int height) : IDisposable
     {
         readonly List<float> vertices = [];
         readonly List<Run> runs = [];
