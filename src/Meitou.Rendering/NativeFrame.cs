@@ -67,9 +67,10 @@ sealed unsafe class NativeFrame : IDisposable
     /// <summary>The native model's sets: the bindless table, then <see cref="SetLayout"/>.</summary>
     public GpuSetLayout[] SetLayouts { get; }
 
-    /// <summary>A native program with the model's layout and the shared push-constant range (<see cref="NativeShaders.PushBytes"/>).</summary>
-    public GpuProgram Program(string vertexGlsl, string fragmentGlsl, string name) =>
-        ctx.Shaders.Native(vertexGlsl, fragmentGlsl, name, SetLayouts, NativeShaders.PushBytes);
+    /// <summary>A native program with the model's layout, then the consumer's <paramref name="own"/> sets (set 2 and up), and the shared
+    /// push-constant range (<see cref="NativeShaders.PushBytes"/>).</summary>
+    public GpuProgram Program(string vertexGlsl, string fragmentGlsl, string name, params GpuSetLayout[] own) =>
+        ctx.Shaders.Native(vertexGlsl, fragmentGlsl, name, [.. SetLayouts, .. own], NativeShaders.PushBytes);
 
     /// <summary>The frame constants as the last <see cref="Bind"/> wrote them (diagnostics and tests).</summary>
     public FrameConstants Constants => constants;

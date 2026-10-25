@@ -392,10 +392,12 @@ public sealed unsafe class CommandList : IGpuCommandList
         cmdBindDescriptorSets(Handle, point, vp.Layout, set, 1, &allocated, 0, null);
     }
 
-    /// <summary>Pushes a block of constants to a program (the layout comes from the program).</summary>
+    /// <summary>Pushes a block of constants to a program (the layout comes from the program). Vulkan names the stages of the program's one
+    /// range, whatever <paramref name="stages"/> says: a push must name every stage of a range it overlaps and none outside it.</summary>
     public void PushConstants<T>(GpuProgram program, GpuStage stages, in T value, uint offset = 0) where T : unmanaged
     {
-        fixed (T* p = &value) cmdPushConstants(Handle, ctx.Shaders.Backend(program).Layout, VkStageFlags(stages), offset, (uint)sizeof(T), p);
+        var vp = ctx.Shaders.Backend(program);
+        fixed (T* p = &value) cmdPushConstants(Handle, vp.Layout, vp.PushConstantStages, offset, (uint)sizeof(T), p);
     }
 
     static ShaderStageFlags VkStageFlags(GpuStage stages)

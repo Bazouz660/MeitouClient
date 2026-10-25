@@ -1005,9 +1005,9 @@ public sealed unsafe class WaterRenderer : IDisposable
         public GpuProgram Gpu => Program.P;
 
         public WaterProgram(IGpuContext gpu, NativeFrame frame, string vertex, string fragment, string name, PrimitiveType topology,
-            ReadOnlySpan<LegacyProgram.Attribute?> attributes)
+            ReadOnlySpan<LegacyProgram.Attribute?> attributes, GpuSetLayout constants)
         {
-            Program = new NativeProg(gpu, frame, vertex, fragment, name);
+            Program = new NativeProg(gpu, frame, vertex, fragment, name, constants);
             Layout = Program.Layout(attributes);
             Vertices = Program.Buffers(attributes, attributes.Length);
             Topology = topology;
@@ -1080,7 +1080,7 @@ public sealed unsafe class WaterRenderer : IDisposable
         quad = DeviceBuffer.Create(gpu, sizeof(float) * (ulong)corners.Length, BufferUse.Vertex, "water quad");
         using (var batch = gpu.Uploads.Begin()) batch.Write(quad, 0, MemoryMarshal.AsBytes(corners.AsSpan()));
         LegacyProgram.Attribute?[] quadAttributes = [QuadAttribute(quad)];
-        faithful = new WaterProgram(gpu, frame, NativeVertex(Vertex), NativeFragment(Fragment), "water", PrimitiveType.TriangleStrip, quadAttributes);
+        faithful = new WaterProgram(gpu, frame, NativeVertex(Vertex), NativeFragment(Fragment), "water", PrimitiveType.TriangleStrip, quadAttributes, constantsLayout);
 
         if (meitouWaves)
         {
@@ -1094,7 +1094,7 @@ public sealed unsafe class WaterRenderer : IDisposable
             }
             LegacyProgram.Attribute?[] gridAttributes = [QuadAttribute(grid)];
             meitou = new WaterProgram(gpu, frame, NativeVertex(MeitouVertex), NativeFragment(MeitouFragment), "water meitou",
-                PrimitiveType.Triangles, gridAttributes);
+                PrimitiveType.Triangles, gridAttributes, constantsLayout);
             gridIndexCount = (uint)indices.Length;
         }
     }

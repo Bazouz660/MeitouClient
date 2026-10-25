@@ -16,10 +16,10 @@ internal sealed class NativeProg : IDisposable
     public readonly int Own;
     VertexLayout? last;
 
-    public NativeProg(IGpuContext ctx, NativeFrame frame, string vertex, string fragment, string name)
+    public NativeProg(IGpuContext ctx, NativeFrame frame, string vertex, string fragment, string name, params GpuSetLayout[] own)
     {
         this.ctx = ctx;
-        P = frame.Program(vertex, fragment, name);
+        P = frame.Program(vertex, fragment, name, own);
         var inputs = P.Info.VertexReflection!.Inputs;
         locations = [.. inputs.SelectMany(i => Enumerable.Range(i.Location, i.Slots))];
         kinds = [.. inputs.SelectMany(i => Enumerable.Repeat(i.Kind, i.Slots))];
