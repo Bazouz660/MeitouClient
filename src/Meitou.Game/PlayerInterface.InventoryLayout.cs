@@ -110,6 +110,22 @@ sealed partial class PlayerInterface
         }
     }
 
+    /// <summary>
+    /// A machine or container window's place (<b>Observed</b> on the original's 2026-10-26 screenshot of a mined iron rock): at the screen's left edge, vertically centred; an open
+    /// inventory (with its bag) under it moves right of it.
+    /// </summary>
+    void PlaceMachineWindow(string id)
+    {
+        var roots = WindowRoots();
+        if (!roots.TryGetValue(id, out var window)) return;
+        faithfulScreens.SetOffset(id, faithfulScreens.GetOffset(id) + new Vector2(-window.X, (Height - window.Height) / 2 - window.Y));
+        float left = new[] { "bag", "inventory" }.Where(roots.ContainsKey).Select(s => roots[s].X).DefaultIfEmpty(float.MaxValue).Min();
+        float push = window.Width + 6 * InventoryScale - left;
+        if (push <= 0) return;
+        foreach (string screen in new[] { "inventory", "bag" })
+            if (roots.ContainsKey(screen)) faithfulScreens.SetOffset(screen, faithfulScreens.GetOffset(screen) + new Vector2(push, 0));
+    }
+
     /// <summary>Puts window <paramref name="id"/> beside <paramref name="anchor"/>'s, moving the anchor in when the pair would not fit the screen.</summary>
     void PlaceInventoryBeside(string id, bool left, string anchor = "inventory")
     {

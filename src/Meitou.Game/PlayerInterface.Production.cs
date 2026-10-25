@@ -11,7 +11,7 @@ namespace Meitou.Game;
 /// <summary>
 /// Production in the UI (docs/simulation.md "Production", docs/game/ui-screens.md "Selected building"):
 /// <list type="bullet">
-/// <item>Selecting a complete machine of the player's opens its window beside the inventory: a well or farm the original's <c>Kenshi_GenericBuildingWindow</c> (inputs in <c>in1</c> / <c>in2</c>,
+/// <item>Selecting a complete machine of the player's opens its window at the left edge, vertically centred: a well or farm the original's <c>Kenshi_GenericBuildingWindow</c> (inputs in <c>in1</c> / <c>in2</c>,
 /// the output in <c>out</c>, their bars and texts), a research bench <c>Kenshi_InventoryResearchWindow</c> (its storage grid; the RESEARCH button opens the overview's research tab).
 /// Items are held with the mouse between the windows and the selected character's inventory (PlayerInterface.Inventory.cs), or moved with a right click (<see cref="PutInMachine"/>,
 /// <see cref="TakeFromMachine"/>).</item>
@@ -25,8 +25,6 @@ sealed partial class PlayerInterface
     /// <summary>The site whose machine window is shown (null: none), and a site whose window the player closed (not reopened until the selection changes).</summary>
     string? shownMachine, closedMachine;
 
-    /// <summary>The machine window placed beside the inventory by an order (a right click) and where it stood before; it goes back there when the inventory closes, as the original's does.</summary>
-    (string Screen, Vector2 Offset)? machineHome;
     string? researchCategory, researchFocus;
 
     MachineSnapshot? Machine(string? site) => site is null ? null : session.CurrentSnapshot.Machines.FirstOrDefault(m => m.Site == site);
@@ -54,12 +52,6 @@ sealed partial class PlayerInterface
             faithfulScreens.Close("storage");
             shownMachine = null;
             storageWithInventory = null;
-            machineHome = null;
-        }
-        if (machineHome is { } home && !faithfulScreens.IsOpen("inventory"))
-        {
-            if (faithfulScreens.IsOpen(home.Screen)) faithfulScreens.SetOffset(home.Screen, home.Offset);
-            machineHome = null;
         }
         if (shownMachine is not null && Machine(shownMachine) is { } shown && !faithfulScreens.IsOpen(MachineScreen(shown)))
         {
@@ -67,7 +59,6 @@ sealed partial class PlayerInterface
             closedMachine = shownMachine;
             shownMachine = null;
             storageWithInventory = null;
-            machineHome = null;
             return;
         }
         if (m is null || shownMachine == m.Site || closedMachine == m.Site) return;
@@ -79,8 +70,7 @@ sealed partial class PlayerInterface
         bool alone = !m.IsContainer && storageWithInventory != m.Site;
         if (!alone && Selected().Count > 0 && !faithfulScreens.IsOpen("inventory")) faithfulScreens.Open("inventory");
         faithfulScreens.Open(screen);
-        if (!alone) machineHome = (screen, faithfulScreens.GetOffset(screen));
-        PlaceInventoryBeside(screen, left: false);
+        PlaceMachineWindow(screen);
     }
 
     void BindMachineScreen(string id, UiBindings b)
