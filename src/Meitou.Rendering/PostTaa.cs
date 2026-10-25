@@ -134,7 +134,9 @@ sealed class PostTaa : IDisposable
         // The motion: the near slice's depth carried into the previous frame (the Metal path has one depth slice).
         var v = velocity;
         v.Bind(nearDepth, pointSampler with { View = depth.View() });
-        v.Bind(farDepth, ctx.Dummy(v.SamplerInfo(farDepth)));
+        // Metal has one depth slice; uHasFar is 0, so the far sampler is never read. Bind the real depth rather than a dummy:
+        // Xcode reports a dummy here as a missing fragment texture.
+        v.Bind(farDepth, pointSampler with { View = depth.View() });
         v.Set(nearToPrevious, toPrevious);
         v.Set(farToPrevious, Matrix4x4.Identity);
         v.Set(nearPlanes, near, far);
@@ -159,6 +161,9 @@ sealed class PostTaa : IDisposable
         Fullscreen(cmd, velocity, motion!, width, height);
         if (External is not null && reactive is not null)
         {
+            // The reactive pass is a second encoder of the same program: re-bind the depth views, or the new encoder starts with them missing.
+            v.Bind(nearDepth, pointSampler with { View = depth.View() });
+            v.Bind(farDepth, pointSampler with { View = depth.View() });
             v.Set(waterY, waterHeight ?? float.MinValue);
             v.Set(waterReactive, 0.5f);
             v.Set(mode, 2);
@@ -218,6 +223,8 @@ sealed class PostTaa : IDisposable
             Console.WriteLine($"upscaler  {upscaler.Name} failed; using TAA");
             upscaler.Dispose();
             External = null;
+            // The history was skipped while the external upscaler was selected: make it before the TAA path below uses it.
+            Ensure(width, height, displayWidth, displayHeight);
         }
 
         // The TAA: this frame's scene and motion against the previous history, into the other history target.
@@ -249,7 +256,10 @@ sealed class PostTaa : IDisposable
 
     void Ensure(int w, int h, int dw, int dh)
     {
-        if (motion is not null && width == w && height == h && displayWidth == dw && displayHeight == dh) return;
+        // MetalFX owns the temporal history. TAA's two display-size RGBA16F histories are only needed when it falls back.
+        bool wantHistory = External is null;
+        if (motion is not null && width == w && height == h && displayWidth == dw && displayHeight == dh
+            && (historyA is not null) == wantHistory) return;
         DisposeTargets();
         width = w;
         height = h;
@@ -259,10 +269,13 @@ sealed class PostTaa : IDisposable
             Use: TextureUse.ColourTarget | TextureUse.Sampled, Name: "post taa motion"));
         reactive = ctx.CreateTexture(new TextureDesc(InternalFormat.R32f, w, h,
             Use: TextureUse.ColourTarget | TextureUse.Sampled, Name: "post taa reactive"));
-        historyA = ctx.CreateTexture(new TextureDesc(InternalFormat.Rgba16f, dw, dh,
-            Use: TextureUse.ColourTarget | TextureUse.Sampled, Name: "post taa history"));
-        historyB = ctx.CreateTexture(new TextureDesc(InternalFormat.Rgba16f, dw, dh,
-            Use: TextureUse.ColourTarget | TextureUse.Sampled, Name: "post taa history"));
+        if (wantHistory)
+        {
+            historyA = ctx.CreateTexture(new TextureDesc(InternalFormat.Rgba16f, dw, dh,
+                Use: TextureUse.ColourTarget | TextureUse.Sampled, Name: "post taa history"));
+            historyB = ctx.CreateTexture(new TextureDesc(InternalFormat.Rgba16f, dw, dh,
+                Use: TextureUse.ColourTarget | TextureUse.Sampled, Name: "post taa history"));
+        }
         historyValid = false;
         externalValid = false;
         previousValid = false;

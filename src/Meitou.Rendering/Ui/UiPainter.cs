@@ -192,10 +192,13 @@ public sealed partial class UiPainter : IDisposable
     /// <summary>The width in pixels of <paramref name="text"/> in the standard face at <paramref name="emPixels"/> (to fit a panel to its text before it is drawn).</summary>
     public float MeasureStandard(string text, float emPixels) => (standardFont ?? overlay).MeasureText(text, emPixels / 16f);
 
-    public void Draw(IReadOnlyList<UiControl> controls, int width, int height, Vector2 mouse, string? active, float minimumTextPixels = 0)
+    public void Draw(IReadOnlyList<UiControl> controls, int width, int height, Vector2 mouse, string? active, float minimumTextPixels = 0,
+        DebugOverlay.OverlayPass? pass = null)
     {
         for (int uploads = 0; uploads < IconUploadsPerFrame && decodedIcons.TryDequeue(out var icon); uploads++) Upload(icon.Name, icon.Image);
-        using var pass = (overlayPass ??= new DebugOverlay.OverlayPass(overlay.Gpu, width, height)).Reset(width, height);
+        bool owns = pass is null;
+        pass ??= (overlayPass ??= new DebugOverlay.OverlayPass(overlay.Gpu, width, height)).Reset(width, height);
+        using var owned = owns ? pass : null;
         foreach (var c in controls)
         {
             var b = c.Bounds;
@@ -626,18 +629,18 @@ public sealed partial class UiPainter : IDisposable
     /// Draws the mouse pointer <paramref name="name"/> (kenshi_pointers.xml) with its hot spot on <paramref name="mouse"/>, in screen pixels as MyGUI does; nothing for an unknown name.
     /// Called last in a frame: the original's <c>Pointer</c> layer is above every other.
     /// </summary>
-    public void DrawPointer(string name, Vector2 mouse, int width, int height)
+    public void DrawPointer(string name, Vector2 mouse, int width, int height, DebugOverlay.OverlayPass? pass = null)
     {
         if (!pointers.TryGetValue(name, out var pointer)) pointers[name] = pointer = MyGuiPointers.Resolve(resources, name);
         if (pointer is null) return;
-        overlay.Flush(width, height);   // whatever was queued before (another texture, text) goes first
+        overlay.Flush(width, height, null, pass);   // whatever was queued before (another texture, text) goes first
         var loaded = LoadTexture(pointer.Image.Texture);
         var at = pointer.At(MathF.Round(mouse.X), MathF.Round(mouse.Y));
         var source = pointer.Image.Source;
         float w = loaded.Texture.Desc.Width, h = loaded.Texture.Desc.Height;
         overlay.Image(loaded.Sampled, new(at.X, at.Y, at.X + at.Width, at.Y + at.Height),
             new(source.X / w, source.Y / h, (source.X + source.Width) / w, (source.Y + source.Height) / h), Vector4.One);
-        overlay.Flush(width, height);
+        overlay.Flush(width, height, null, pass);
     }
 
     (GpuTexture Texture, SampledTexture Sampled) LoadTexture(string name)
@@ -657,7 +660,8 @@ public sealed partial class UiPainter : IDisposable
     public void Prefetch(IEnumerable<string> names)
     {
         foreach (string name in names.Distinct(StringComparer.Ordinal))
-            if (!textures.ContainsKey(name) && !external.ContainsKey(name) && !stored.ContainsKey(name) && resolve(name) is { } path && path.EndsWith(".dds", StringComparison.OrdinalIgnoreCase))
+            if (!name.EndsWith("GUI_Map.dds", StringComparison.OrdinalIgnoreCase)
+                && !textures.ContainsKey(name) && !external.ContainsKey(name) && !stored.ContainsKey(name) && resolve(name) is { } path && path.EndsWith(".dds", StringComparison.OrdinalIgnoreCase))
                 stored[name] = Task.Run(() =>
                 {
                     try { return DdsReader.ReadFile(path) is { Format: DdsFormat.Bc1 or DdsFormat.Bc2 or DdsFormat.Bc3, IsCubemap: false, IsVolume: false, ImageCount: 1, Width: > 0, Height: > 0 } dds ? dds : null; }

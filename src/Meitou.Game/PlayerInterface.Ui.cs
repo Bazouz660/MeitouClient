@@ -338,12 +338,12 @@ sealed partial class PlayerInterface
     /// <summary>The original's background-loading bar, drawn over the interface in the Faithful mode (the host steps it).</summary>
     internal ResourceLoadBar? LoadBar { get; set; }
 
-    void DrawGameUi(DebugOverlay overlay, int width, int height)
+    void DrawGameUi(DebugOverlay overlay, int width, int height, DebugOverlay.OverlayPass? pass = null)
     {
         IReadOnlyList<UiControl> controls = ArrangeUi();
         if (UiMode == UiMode.Faithful && LoadBar is { Visible: true } bar) controls = [.. controls, .. bar.Controls(uiResources, width, height)];
         uiPainter?.Draw(controls, width, height, mouse, $"meitou:speed.{Array.IndexOf(ButtonSpeeds, session.Simulation.Speed)}",
-            minimumTextPixels: TitleOpen ? 0 : StandardPixels);
+            minimumTextPixels: TitleOpen ? 0 : StandardPixels, pass: pass);
     }
 
     /// <summary>For screenshot reviews: open the same panel through its registered button action.</summary>

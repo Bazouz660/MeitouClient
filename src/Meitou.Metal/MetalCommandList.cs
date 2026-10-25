@@ -44,6 +44,12 @@ public sealed class MetalCommandList : IGpuCommandList
     readonly ulong[] vertexOffsetState = new ulong[64];
     readonly MTLBuffer[] fragmentBufferState = new MTLBuffer[64];
     readonly ulong[] fragmentOffsetState = new ulong[64];
+    readonly MTLTexture[] vertexTextureState = new MTLTexture[64];
+    readonly MTLSamplerState[] vertexSamplerState = new MTLSamplerState[64];
+    readonly float[] vertexSamplerBias = new float[64];
+    readonly MTLTexture[] fragmentTextureState = new MTLTexture[64];
+    readonly MTLSamplerState[] fragmentSamplerState = new MTLSamplerState[64];
+    readonly float[] fragmentSamplerBias = new float[64];
 
     /// <summary>Made by the context (the frame's) or an upload batch (its own command buffer, its blit shared).</summary>
     internal MetalCommandList(MetalContext ctx, string name, MTLCommandBuffer command, MTLBlitCommandEncoder? sharedBlit = null)
@@ -112,6 +118,13 @@ public sealed class MetalCommandList : IGpuCommandList
         Array.Clear(vertexOffsetState);
         Array.Clear(fragmentBufferState);
         Array.Clear(fragmentOffsetState);
+        Array.Clear(vertexTextureState);
+        Array.Clear(vertexSamplerState);
+        Array.Clear(vertexSamplerBias);
+        Array.Clear(fragmentTextureState);
+        Array.Clear(fragmentSamplerState);
+        Array.Clear(fragmentSamplerBias);
+        pushSent.Clear();
         depthAttachment = !d.Depth.IsNull;
         renderDesc = d;
         hasViewport = hasScissor = false;
@@ -225,7 +238,14 @@ public sealed class MetalCommandList : IGpuCommandList
     {
         if (index >= (uint)vertexBufferState.Length)
             throw new NotSupportedException($"vertex buffer index {index} is outside the Metal buffer table");
-        if (CacheEncoderState && vertexBufferState[index].NativePtr == buffer.NativePtr && vertexOffsetState[index] == offset) return;
+        if (CacheEncoderState && vertexBufferState[index].NativePtr == buffer.NativePtr)
+        {
+            if (vertexOffsetState[index] == offset) return;
+            // Same buffer, new slice: setVertexBufferOffset is the cheap path Xcode asks for.
+            render.SetVertexBufferOffset(offset, index);
+            vertexOffsetState[index] = offset;
+            return;
+        }
         render.SetVertexBuffer(buffer, offset, index);
         vertexBufferState[index] = buffer;
         vertexOffsetState[index] = offset;
@@ -235,7 +255,13 @@ public sealed class MetalCommandList : IGpuCommandList
     {
         if (index >= (uint)fragmentBufferState.Length)
             throw new NotSupportedException($"fragment buffer index {index} is outside the Metal buffer table");
-        if (CacheEncoderState && fragmentBufferState[index].NativePtr == buffer.NativePtr && fragmentOffsetState[index] == offset) return;
+        if (CacheEncoderState && fragmentBufferState[index].NativePtr == buffer.NativePtr)
+        {
+            if (fragmentOffsetState[index] == offset) return;
+            render.SetFragmentBufferOffset(offset, index);
+            fragmentOffsetState[index] = offset;
+            return;
+        }
         render.SetFragmentBuffer(buffer, offset, index);
         fragmentBufferState[index] = buffer;
         fragmentOffsetState[index] = offset;
@@ -287,13 +313,31 @@ public sealed class MetalCommandList : IGpuCommandList
                 float bias = MetalSamplers.LodBias(binding.Texture.Sampler);
                 if (isVertex)
                 {
-                    render.SetVertexTexture(texture, index);
-                    render.SetVertexSamplerState(sampler, bias, 1000 + bias, index);
+                    if (!CacheEncoderState || vertexTextureState[index].NativePtr != texture.NativePtr)
+                    {
+                        render.SetVertexTexture(texture, index);
+                        vertexTextureState[index] = texture;
+                    }
+                    if (!CacheEncoderState || vertexSamplerState[index].NativePtr != sampler.NativePtr || vertexSamplerBias[index] != bias)
+                    {
+                        render.SetVertexSamplerState(sampler, bias, 1000 + bias, index);
+                        vertexSamplerState[index] = sampler;
+                        vertexSamplerBias[index] = bias;
+                    }
                 }
                 else
                 {
-                    render.SetFragmentTexture(texture, index);
-                    render.SetFragmentSamplerState(sampler, bias, 1000 + bias, index);
+                    if (!CacheEncoderState || fragmentTextureState[index].NativePtr != texture.NativePtr)
+                    {
+                        render.SetFragmentTexture(texture, index);
+                        fragmentTextureState[index] = texture;
+                    }
+                    if (!CacheEncoderState || fragmentSamplerState[index].NativePtr != sampler.NativePtr || fragmentSamplerBias[index] != bias)
+                    {
+                        render.SetFragmentSamplerState(sampler, bias, 1000 + bias, index);
+                        fragmentSamplerState[index] = sampler;
+                        fragmentSamplerBias[index] = bias;
+                    }
                 }
                 break;
             case GpuBindingKind.UniformBuffer or GpuBindingKind.StorageBuffer:
@@ -406,11 +450,13 @@ public sealed class MetalCommandList : IGpuCommandList
         if (!any) return;
         // The MSL struct is padded to argument-buffer alignment (16); a one-member set needs 16 bytes, not 8.
         var size = Math.Max(16ul, (ulong)members.Length * 8 + 15 & ~15ul);
-        var constants = ctx.NewSetBuffer(size);
-        fixed (ulong* from = entries) Buffer.MemoryCopy(from, (void*)constants.Contents, (long)size, (long)size);
-        if (computePass) compute.SetBuffer(constants, 0, set);
-        else if (stage == GpuStage.Vertex) BindVertexBuffer(MetalShaders.VertexBlockBase + set, constants, 0);
-        else BindFragmentBuffer(set, constants, 0);
+        // A slice of the frame's constants ring, not a fresh 16-byte MTLBuffer per bind (Xcode's late-buffer insight).
+        var constants = ctx.Frame.AllocateConstants(size, 16);
+        fixed (ulong* from = entries) Buffer.MemoryCopy(from, (void*)constants.Pointer, (long)size, (long)size);
+        var argumentBuffer = ctx.BufferAt(constants.Handle);
+        if (computePass) compute.SetBuffer(argumentBuffer, constants.Offset, set);
+        else if (stage == GpuStage.Vertex) BindVertexBuffer(MetalShaders.VertexBlockBase + set, argumentBuffer, constants.Offset);
+        else BindFragmentBuffer(set, argumentBuffer, constants.Offset);
     }
 
     /// <summary>Tells the current encoder a resource the argument buffer holds; the compute encoder needs it for its writes too.</summary>
@@ -476,15 +522,23 @@ public sealed class MetalCommandList : IGpuCommandList
     }
 
     readonly Dictionary<(int Program, GpuStage Stage), byte[]> pushBlocks = [];
+    readonly Dictionary<(int Program, GpuStage Stage), byte[]> pushSent = [];
 
     unsafe void PushStage(GpuStage stage, GpuProgram program, byte* source, int raw, int offset, int padded, bool compute)
     {
         var key = (program.Index, stage);
         if (!pushBlocks.TryGetValue(key, out var block) || block.Length < padded)
             pushBlocks[key] = block = new byte[Math.Max(padded, 16)];
+        if (!pushSent.TryGetValue(key, out var sent) || sent.Length < block.Length)
+            pushSent[key] = sent = new byte[block.Length];
         fixed (byte* destination = block)
         {
             Buffer.MemoryCopy(source, destination + offset, block.Length - offset, raw);
+            if (block.AsSpan(0, block.Length).SequenceEqual(sent.AsSpan(0, block.Length))) return;
+            block.AsSpan(0, block.Length).CopyTo(sent);
+        }
+        fixed (byte* destination = sent)
+        {
             if (compute) ComputeEncoder().SetBytes((nint)destination, (ulong)block.Length, MslTranslator.PushConstantBinding);
             else if (stage == GpuStage.Vertex) render.SetVertexBytes((nint)destination, (ulong)block.Length, MslTranslator.PushConstantBinding);
             else render.SetFragmentBytes((nint)destination, (ulong)block.Length, MslTranslator.PushConstantBinding);
@@ -732,6 +786,7 @@ public sealed class MetalCommandList : IGpuCommandList
         EndBlit();
         if (render.NativePtr != IntPtr.Zero) throw new InvalidOperationException("a compute pass inside a rendering");
         compute = command.ComputeCommandEncoder();
+        pushSent.Clear();
         lastCompute = default;
         return compute;
     }

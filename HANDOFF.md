@@ -2,7 +2,7 @@
 
 Repository: `/Users/daniilmiroshnykov/code/dotnet/MeitouClient`  
 Branch: `metal-spike`  
-Last code commit: `02e46602 feat: expose ground relief and light shaft quality`
+Last code commit: `d25d951f fix: draw settings in the shared overlay pass`
 
 State: functional opt-in Metal preview; **not 100% Vulkan effect parity**. Upstream v0.15.0 (`cd01e732`) is merged.
 **MEP-1, MEP-2, MEP-3 and MEP-5 are accepted** (2026-10-24: MetalFX temporal stability; reflection MSAA/characters;
@@ -29,6 +29,45 @@ Player quality controls (2026-10-25): **Ground relief quality** (Low/Medium/High
 the launcher, the Tab/Metal panels and the native settings. The quality presets scale both; Low turns ground relief and its
 tessellation effects off, and `--low-end` matches. The Metal smoke at High held 20.8 ms GPU at Border Zone; Low (both set to
 0) held 19.5 ms, confirming the live uniform path.
+
+Metal overlay coalescing (2026-10-25): the HUD, the direct HUD lines and the stats/settings overlays now share one
+`DebugOverlay.OverlayPass`, so they load/store the 3024×1712 backbuffer once instead of in separate render encoders.
+The final MetalFX/post upscale remains its own pass; merging it would require keeping the post chain's render pass open
+across the HUD. Build 0/0; quick suite 450 passed / 2 skipped; internal HUD screenshot verified. No new Xcode capture.
+
+Metal binding fixes (2026-10-25): the post-TAA reactive pass now rebinds `uNearDepth`/`uFarDepth` before its second
+fullscreen encoder, and the shadow blocker pass binds its atlas for every layer. Xcode had flagged those as missing
+fragment texture bindings; the affected passes are 50.64 µs and 62.25 µs, so this is API correctness, not a frame-time
+win. Build 0/0; quick suite 450 passed / 2 skipped; internal screenshot runs. No new Xcode capture to confirm the
+missing-binding rows are gone.
+
+Metal memory targets (2026-10-25): the post-TAA history is allocated only when TAA is the fallback, the composite's
+LDR/FXAA/SMAA targets are allocated only when the selected path needs them, and the 8192² overview map is no longer
+prefetched (it loads when the map first opens). This avoids the never-bound 2 × 40.5 MiB TAA histories, 2 × 20.25 MiB
+SMAA targets, 20.25 MiB FXAA target and 32 MiB map prefetch in the 13:38 trace — about 174 MiB, before the driver's own
+26 MiB. Build 0/0; quick suite 450 passed / 2 skipped; internal screenshot runs. No new Xcode capture.
+
+Metal binding cache (2026-10-25): `MetalCommandList` now uses `setVertexBufferOffset`/`setFragmentBufferOffset` when the
+same buffer moves to another slice, and caches texture and sampler state per slot. This targets Xcode's redundant-binding
+API insights (324 buffer binds in Render Encoder 16; 85 buffer and 83 sampler binds in Render Encoder 28). It is API/CPU
+hygiene, not a GPU-time claim. Build 0/0; quick suite 450 passed / 2 skipped; internal screenshot runs. No new capture.
+The 14:50 trace showed API Usage down from 637 to 57 insights; the remaining post-TAA `uFarDepth` row was the dummy far
+slot, now bound to the real depth (unused with `uHasFar = 0`). Local commit `a12f8360`; no new capture.
+
+Metal set/push reuse (2026-10-25): descriptor argument buffers are now slices of the frame constants ring instead of
+16-byte `MTLBuffer`s created per bind, and push-constant blocks are cached per program/stage and skipped when the full
+block is unchanged. This targets the late-`MTLBuffer` rows (the tiny values were resource addresses, not lamp colour)
+and the 20 redundant `setVertexBytes`/`setFragmentBytes` rows in Render Encoder 6. API/CPU cleanup, not a GPU-time claim.
+Build 0/0; quick suite 450 passed / 2 skipped; internal screenshot runs. No new capture.
+
+Metal pointer layering (2026-10-25): the in-game pointer now appends to the shared overlay pass after the HUD, map,
+inventory and settings. The overlay coalescing had delayed that pass until the end of the frame while the pointer still
+flushed its own encoder immediately, so the UI covered the cursor. Build 0/0; quick suite 450 passed / 2 skipped; no new
+capture. Needs a live check with the map/inventory open.
+
+Metal settings layering (2026-10-25): `SettingsMenu.Draw` now accepts the shared `OverlayPass`, so the settings window is
+appended after the HUD and escape menu instead of being flushed before them. This fixes the settings window sitting
+behind the pause menu. Build 0/0; quick suite 450 passed / 2 skipped; live check needed with Options open.
 
 ## Upstream sync (2026-10-25, `cd01e732`)
 

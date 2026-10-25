@@ -804,8 +804,6 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
         frame.CommitPreFrame();
         command.PresentDrawable(drawable);
         command.Commit();
-        foreach (var buffer in setBuffers) buffer.Dispose();
-        setBuffers.Clear();
     }
 
     public void EnsureFrame()
@@ -828,16 +826,6 @@ public sealed unsafe class MetalContext : IGpuContext, IDisposable
     internal MetalBindlessTable BindlessTable => bindless;
 
     internal MTLBuffer BufferAt(GpuBuffer buffer) => buffers[buffer.Index]!.Buffer;
-
-    /// <summary>A small shared buffer for a descriptor set's argument buffer; released once this frame's command buffer has
-    /// been committed (the command buffer keeps the resources it encoded).</summary>
-    internal MTLBuffer NewSetBuffer(ulong size)
-    {
-        var buffer = Device.NewBuffer(Math.Max(size, 8ul), MTLResourceOptions.ResourceStorageModeShared);
-        setBuffers.Add(buffer);
-        return buffer;
-    }
-    readonly List<MTLBuffer> setBuffers = [];
 
     internal SharedBuffer NewSharedBuffer(ulong size, string name)
     {

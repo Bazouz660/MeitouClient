@@ -1,6 +1,7 @@
 using System.Numerics;
 using System.Globalization;
 using Meitou.Data.Ui;
+using Meitou.Rendering;
 
 namespace Meitou.Game;
 
@@ -73,7 +74,7 @@ sealed partial class SettingsMenu
         page = next; scroll = scrollTarget = 0; contentProgress = 0; focus = -1; openChoice = null; rebinding = null; notice = "";
     }
 
-    public void Draw(int width, int height)
+    public void Draw(int width, int height, DebugOverlay.OverlayPass? pass = null)
     {
         if (!Visible || player.SettingsPainter is not { } painter) return;
         AdvanceMotion();
@@ -152,7 +153,7 @@ sealed partial class SettingsMenu
                     else if (pendingAction is { } action) { notice = action(); pendingAction = null; }
                 });
         Opacity(0, Ease(menuProgress));
-        painter.Draw(controls, width, height, pointer, null);
+        painter.Draw(controls, width, height, pointer, null, pass: pass);
     }
 
     /// <summary>Measures with the same font resource and wrapped width used by the settings text controls.</summary>
