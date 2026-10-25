@@ -1,12 +1,9 @@
 ---
-// Roadmap: the look of the standalone parity roadmap (demitrix2k.github.io/meitou-parity-roadmap) inside the site's
-// header and footer: condensed headings, status tiles and platform chips that filter the rows, category chips
-// with a status bar each, one table per category, and Kenshi screenshots behind it that change every 20 s.
-import '@fontsource/barlow-condensed/600.css';
-import '@fontsource/barlow-condensed/700.css';
-import '@fontsource/source-sans-3/400.css';
-import '@fontsource/source-sans-3/600.css';
-import '@fontsource/jetbrains-mono/500.css';
+// Roadmap: the parity roadmap inside the site's header and footer, in the site's Exo 2 and rounded plates: status tiles and
+// platform chips that filter the rows (kept in the query string so a filtered view is linkable), category chips with a
+// status bar each, one table per category, and Kenshi screenshots behind it that change every 20 s. On wide screens
+// the filters and categories stay in a sticky column beside the tables.
+import '@fontsource/exo-2/700.css';
 import Base from '../layouts/Base.astro';
 import { asOf, allRows, bugs, categories, countBy, fixedSeen, fixedUnseen, order, platformStatus, refUrl, statuses } from '../data/roadmap';
 import type { Os, Row } from '../data/roadmap';
@@ -46,6 +43,7 @@ const reportConfig = JSON.stringify({ url: reports.url.replace(/\/$/, ''), siteK
       <div class="meta">As of {asOf.date} · <span class="mono">master {asOf.master}</span> · Reference: unmodded Kenshi 1.0.68</div>
     </header>
 
+    <aside class="side">
     <section aria-labelledby="status-h">
       <h2 id="status-h">Status at a glance</h2>
       <div class="bigbar" data-bar="all">{order.map((k) => <span class={`st-${k}`} style={`width: ${(100 * counts[k]) / allRows.length}%`}></span>)}</div>
@@ -83,7 +81,9 @@ const reportConfig = JSON.stringify({ url: reports.url.replace(/\/$/, ''), siteK
         })}
       </nav>
     </section>
+    </aside>
 
+    <div class="body">
     {categories.map((c, i) => (
       <section class="stage" id={c.id}>
         <div class="stage-head">
@@ -207,6 +207,7 @@ const reportConfig = JSON.stringify({ url: reports.url.replace(/\/$/, ''), siteK
         )}
       </section>
     )}
+    </div>
   </div>
   <dialog class="repdlg" data-config={reportConfig}>
     <form method="dialog">
@@ -321,7 +322,21 @@ const reportConfig = JSON.stringify({ url: reports.url.replace(/\/$/, ''), siteK
       if (query) parts.push(`systems matching “${search.value.trim()}”`);
       note.firstChild.textContent = parts.length ? `Showing ${parts.join(', ')}. ` : plain;
       clear.hidden = !parts.length;
+      // The filters live in the query string (defaults left out), so a filtered view can be linked; the #row anchor stays.
+      const qs = new URLSearchParams();
+      if (active) qs.set('status', active);
+      if (plat !== 'all') qs.set('platform', plat);
+      if (onlyBugs) qs.set('bugs', '1');
+      if (search.value.trim()) qs.set('q', search.value.trim());
+      const url = location.pathname + (qs.size ? `?${qs}` : '') + location.hash;
+      if (url !== location.pathname + location.search + location.hash) history.replaceState(null, '', url);
     }
+    const given = new URLSearchParams(location.search), PLATS = ['all', 'specific', ...Object.keys(PLAT)];
+    if (ORDER.includes(given.get('status'))) active = given.get('status');
+    if (PLATS.includes(given.get('platform'))) plat = given.get('platform');
+    onlyBugs = given.get('bugs') === '1';
+    search.value = given.get('q') ?? '';
+    query = search.value.trim().toLowerCase();
     document.querySelector('.tiles').addEventListener('click', (e) => { const t = e.target.closest('.tile'); if (!t) return; active = active === t.dataset.s ? null : t.dataset.s; apply(); });
     document.querySelector('.plats').addEventListener('click', (e) => {
       const c = e.target.closest('.chip'); if (!c) return;
@@ -413,9 +428,7 @@ const reportConfig = JSON.stringify({ url: reports.url.replace(/\/$/, ''), siteK
     --bg: #1c1613; --surface: #2a201b; --fg: #eadfcb; --muted: #a8977f; --line: #3d312a; --accent: #e07b45;
     --works: #7fd09c; --works-bg: #1f3a2a; --untested: #a7b1ac; --untested-bg: #2a312d;
     --wip: #e6b84e; --wip-bg: #3d321a; --bug: #f08b82; --bug-bg: #432522; --missing: #c3a6ec; --missing-bg: #352a45;
-    --font-display: "Barlow Condensed", "Arial Narrow", sans-serif;
-    --font-body: "Source Sans 3", system-ui, sans-serif;
-    --font-mono: "JetBrains Mono", ui-monospace, monospace;
+    --font-display: var(--font-exo); --font-body: var(--font-exo); --r-plate: calc(2 * var(--radius-card));
   }
   .backdrop { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; background: var(--bg); }
   .backdrop div { position: absolute; inset: -32px; background-size: cover; background-position: center; filter: blur(3px) saturate(.9); opacity: 0; }
@@ -423,12 +436,13 @@ const reportConfig = JSON.stringify({ url: reports.url.replace(/\/$/, ''), siteK
   .backdrop::after { content: ""; position: absolute; inset: 0; background: color-mix(in srgb, var(--bg) 70%, transparent); }
   @media (prefers-reduced-motion: no-preference) { .backdrop div { transition: opacity 1.5s ease; } }
 
-  .rd { max-width: 1080px; margin: 0 auto; padding: 8px 0 64px; display: grid; gap: 40px; color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.5; }
+  .rd, .side, .body { display: grid; gap: 40px; min-width: 0; align-content: start; }
+  .rd { max-width: 1080px; margin: 0 auto; padding: 8px 0 64px; color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.5; }
   .rd section { display: grid; gap: 12px; min-width: 0; }
   .rd :is(h1, h2, h3) { font-family: var(--font-display); text-wrap: balance; margin: 0; letter-spacing: .01em; color: var(--fg); }
-  .rd h1 { font-size: 2.6rem; font-weight: 700; line-height: 1.05; }
-  .rd h2 { font-size: 1.6rem; font-weight: 600; }
-  .rd h3 { font-size: 1.2rem; font-weight: 600; }
+  .rd h1 { font-size: 2.3rem; font-weight: 700; line-height: 1.1; }
+  .rd h2 { font-size: 1.45rem; font-weight: 600; }
+  .rd h3 { font-size: 1.1rem; font-weight: 600; }
   .rd p { margin: 0; max-width: 70ch; }
   .rd a { color: var(--accent); }
   .mono { font-family: var(--font-mono); font-size: .85em; }
@@ -437,10 +451,10 @@ const reportConfig = JSON.stringify({ url: reports.url.replace(/\/$/, ''), siteK
   header { display: grid; gap: 10px; }
 
   .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
-  .tile { font: inherit; color: inherit; text-align: left; cursor: pointer; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px 12px 16px; display: grid; gap: 2px; position: relative; overflow: hidden; }
+  .tile { font: inherit; color: inherit; text-align: left; cursor: pointer; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-plate); padding: 12px 14px 12px 16px; display: grid; gap: 2px; position: relative; overflow: hidden; }
   .tile::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 4px; background: var(--c); }
-  .tile .n { font-family: var(--font-display); font-size: 2.1rem; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; color: var(--c); }
-  .tile .k { font-family: var(--font-display); font-weight: 600; font-size: 1.1rem; }
+  .tile .n { font-family: var(--font-display); font-size: 1.8rem; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; color: var(--c); }
+  .tile .k { font-family: var(--font-display); font-weight: 600; font-size: 1rem; }
   .tile .d { color: var(--muted); font-size: .85rem; }
   .tile:hover, .tile:focus-visible { border-color: var(--c); outline: none; }
   .tile[aria-pressed="true"] { border-color: var(--c); box-shadow: inset 0 0 0 1px var(--c); }
@@ -452,10 +466,10 @@ const reportConfig = JSON.stringify({ url: reports.url.replace(/\/$/, ''), siteK
   .chip:hover, .chip:focus-visible { border-color: var(--accent); outline: none; }
   .chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--bg); }
   .chip.hbchip[aria-pressed="true"] { background: var(--bug); border-color: var(--bug); }
-  .rd .hb { display: inline-block; margin-left: 8px; font-family: var(--font-mono); font-size: .7rem; font-weight: 500; line-height: 1.5; padding: 0 6px; border-radius: 3px; color: var(--bug); border: 1px solid var(--bug); text-decoration: none; white-space: nowrap; vertical-align: 1px; }
+  .rd .hb { display: inline-block; margin-left: 8px; font-family: var(--font-mono); font-size: .7rem; font-weight: 500; line-height: 1.5; padding: 0 6px; border-radius: var(--radius-portrait); color: var(--bug); border: 1px solid var(--bug); text-decoration: none; white-space: nowrap; vertical-align: 1px; }
   .rd .hb:hover, .rd .hb:focus-visible { background: var(--bug-bg); outline: none; }
   .obs { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
-  .ob { font-family: var(--font-mono); font-size: .7rem; font-weight: 500; line-height: 1.5; padding: 0 5px; border-radius: 3px; color: var(--c); background: var(--cb); white-space: nowrap; }
+  .ob { font-family: var(--font-mono); font-size: .7rem; font-weight: 500; line-height: 1.5; padding: 0 5px; border-radius: var(--radius-portrait); color: var(--c); background: var(--cb); white-space: nowrap; }
   .st-na { --c: var(--muted); --cb: transparent; border: 1px dashed var(--line); }
   .filter-note { font-size: .9rem; color: var(--muted); }
   .filter-note button { font: inherit; color: var(--accent); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; }
@@ -464,9 +478,9 @@ const reportConfig = JSON.stringify({ url: reports.url.replace(/\/$/, ''), siteK
   .bigbar span, .mini span { display: block; height: 100%; background: var(--c); }
 
   .loop { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-  .rd .loop a { text-decoration: none; color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 6px 10px; display: grid; gap: 4px; min-width: 118px; }
+  .rd .loop a { text-decoration: none; color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-card); padding: 6px 10px; display: grid; gap: 4px; min-width: 118px; }
   .rd .loop a:hover, .rd .loop a:focus-visible { border-color: var(--accent); outline: none; }
-  .loop .nm { font-family: var(--font-display); font-weight: 600; font-size: 1.05rem; }
+  .loop .nm { font-family: var(--font-display); font-weight: 600; font-size: .95rem; }
   .loop .mini { display: flex; height: 5px; border-radius: 3px; overflow: hidden; background: var(--untested-bg); }
   .loop .arrow { color: var(--muted); font-family: var(--font-display); }
 
@@ -480,7 +494,7 @@ const reportConfig = JSON.stringify({ url: reports.url.replace(/\/$/, ''), siteK
   .stage { scroll-margin-top: 16px; }
   .stage-head { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: baseline; }
   .stage-head p { color: var(--muted); flex-basis: 100%; }
-  .tbl { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; }
+  .tbl { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-plate); }
   table { border-collapse: collapse; width: 100%; min-width: 680px; }
   th, td { text-align: left; vertical-align: top; padding: 9px 12px; border-bottom: 1px solid var(--line); }
   tbody tr:last-child td { border-bottom: 0; }
@@ -511,7 +525,7 @@ const reportConfig = JSON.stringify({ url: reports.url.replace(/\/$/, ''), siteK
     border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--fg);
     font: 600 1rem/1 var(--font-display); letter-spacing: .06em; text-transform: uppercase; text-decoration: none;
     box-shadow: 0 4px 14px rgba(0, 0, 0, .45);
-    --bg: #1c1613; --surface: #2a201b; --fg: #eadfcb; --line: #3d312a; --accent: #e07b45; --font-display: "Barlow Condensed", "Arial Narrow", sans-serif;
+    --bg: #1c1613; --surface: #2a201b; --fg: #eadfcb; --line: #3d312a; --accent: #e07b45; --font-display: var(--font-exo);
   }
   .totop:hover, .totop:focus-visible { border-color: var(--accent); color: var(--accent); outline: none; }
   @media (prefers-reduced-motion: no-preference) { .totop { transition: border-color .15s, color .15s; } }
@@ -535,16 +549,16 @@ const reportConfig = JSON.stringify({ url: reports.url.replace(/\/$/, ''), siteK
 
   .repdlg {
     --bg: #1c1613; --surface: #2a201b; --fg: #eadfcb; --muted: #a8977f; --line: #3d312a; --accent: #e07b45;
-    color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 18px 20px; width: min(440px, calc(100vw - 32px));
-    font-family: "Source Sans 3", system-ui, sans-serif;
+    color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: calc(2 * var(--radius-card)); padding: 18px 20px; width: min(440px, calc(100vw - 32px));
+    font-family: var(--font-exo);
   }
   .repdlg::backdrop { background: rgba(0, 0, 0, .6); }
   .repdlg form { display: grid; gap: 12px; }
-  .repdlg h3 { margin: 0; font-family: "Barlow Condensed", "Arial Narrow", sans-serif; font-size: 1.3rem; font-weight: 600; }
+  .repdlg h3 { margin: 0; font-family: var(--font-exo); font-size: 1.3rem; font-weight: 600; }
   .repdlg fieldset { border: 0; padding: 0; margin: 0; display: flex; gap: 16px; }
   .repdlg label { display: grid; gap: 4px; font-size: .9rem; }
   .repdlg label.inline, .repdlg fieldset label { display: flex; gap: 6px; align-items: center; }
-  .repdlg :is(select, input:not([type])) { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 6px 8px; }
+  .repdlg :is(select, input:not([type])) { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius-btn); padding: 6px 8px; }
   .repdlg .opt, .repdlg .small { color: var(--muted); font-size: .8rem; margin: 0; }
   .repdlg a { color: var(--accent); }
   .repdlg .rstatus { margin: 0; min-height: 1.2em; font-size: .9rem; }
@@ -553,6 +567,26 @@ const reportConfig = JSON.stringify({ url: reports.url.replace(/\/$/, ''), siteK
   .repdlg .actions .send { background: var(--accent); border-color: var(--accent); color: var(--bg); font-weight: 600; }
   .repdlg .actions .send:disabled { opacity: .6; cursor: default; }
 
+  /* Wide screens (16:9 desktops): the header across the top, the filters and categories in a sticky column on the left,
+     the tables beside it. The column scrolls on its own when it is taller than the window. */
+  @media (min-width: 1240px) {
+    .rd { max-width: 1600px; grid-template-columns: 340px minmax(0, 1fr); gap: 32px 40px; }
+    .rd > header { grid-column: 1 / -1; }
+    .side {
+      position: sticky; top: 16px; max-height: calc(100vh - 32px); overflow-y: auto; gap: 28px;
+      padding: 18px; border-radius: var(--r-plate); background: color-mix(in srgb, var(--bg) 72%, transparent); border: 1px solid var(--line);
+      scrollbar-width: thin; scrollbar-color: var(--line) transparent;
+    }
+    .side .tiles { grid-template-columns: 1fr; gap: 6px; }
+    .side .tile { grid-template-columns: 3.2ch 1fr; column-gap: 12px; align-items: baseline; padding: 8px 12px 8px 16px; }
+    .side .tile .n { grid-row: span 2; font-size: 1.6rem; }
+    .side .search { margin-left: 0; flex-basis: 100%; }
+    .side .plats .gap { margin-left: 0; }
+    .side .loop { display: grid; gap: 4px; }
+    .side .loop .arrow { display: none; }
+    .rd .side .loop a { grid-template-columns: 1fr 72px; align-items: center; gap: 12px; min-width: 0; padding: 6px 12px; }
+    .side .loop .nm { font-size: .9rem; }
+  }
   @media (max-width: 560px) { .rd h1 { font-size: 2rem; } .search { margin-left: 0; flex-basis: 100%; } }
   @media (prefers-reduced-motion: no-preference) { .tile, .rd .loop a { transition: border-color .15s, opacity .15s; } }
 </style>
