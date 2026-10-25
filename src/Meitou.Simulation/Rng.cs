@@ -53,6 +53,8 @@ public enum RngPurpose : uint
     KnockoutHear = 26,
     /// <summary>The kidnap roll (<see cref="Carrying.CarrySystem.KidnapChance"/>).</summary>
     Kidnap = 27,
+    /// <summary>The steal roll (<see cref="Crime.CrimeSystem.StealChance"/>) and its in-bed coin flip.</summary>
+    Steal = 28,
 }
 
 /// <summary>

@@ -1,0 +1,121 @@
+using System.Numerics;
+using Meitou.Data.Gameplay.Bodies;
+using Meitou.Simulation.Bodies;
+
+namespace Meitou.Simulation.Crime;
+
+/// <summary>
+/// Stealing from another faction's container (docs/game/carry-loot.md "Theft and witnesses"): the move sets a pending crime (the call site's code), then the steal roll
+/// (<c>FUN_140794810</c>, chance <c>FUN_1407944d0</c>, <b>Observed</b>) decides whether the container's watcher catches the thief. Caught: the move is refused, the watcher says event 8
+/// and remembers the thief (long-term STOLE_FROM_ME), and the pending crime becomes a Theft with timer 30, which witnesses and the guards' event-8 lines answer as any other.
+/// </summary>
+public sealed partial class CrimeSystem
+{
+    /// <summary>Thievery XP: a steal roll gives 2 x 20 when it succeeds and 2 x 80 when caught; a stolen ground pick-up 20 (<b>Observed</b>).</summary>
+    public const float StealXp = 40, CaughtXp = 160, PickUpXp = 20;
+    /// <summary>The timer of the Theft a caught thief gets (<b>Observed</b>).</summary>
+    public const float CaughtTimer = 30;
+    /// <summary>The distance over which the watcher's distance term goes from 0.5 to 1 (<b>Observed</b>).</summary>
+    public const float WatchDistance = 200;
+    /// <summary>The dialogue events of the roll: caught (THIEF_CAUGHT_STEALING_FROM_ME) and the in-bed watcher's line.</summary>
+    public const int CaughtEvent = 8, InBedEvent = 47;
+    /// <summary>A watcher farther above or below the container than this is on another floor (engine choice, as the container's reach).</summary>
+    public const float FloorSlack = 20;
+
+    /// <summary>Trains the thief's thievery (null: no XP).</summary>
+    public XpService? Xp { get; set; }
+
+    /// <summary>The effective thievery: stat 10 times its body multiplier.</summary>
+    public static float Thievery(CharacterCold c) => (c.Stats?[StatsEnumerated.Thieving] ?? 0) * (c.Medical?.StatMultiplier(StatsEnumerated.Thieving) ?? 1);
+
+    /// <summary>
+    /// The chance that a steal from a container goes unseen (<c>FUN_1407944d0</c>, <b>Observed</b>): t = lerp(0.5, 1, clamp(distance / 200)), halved when the watcher is not inside the
+    /// container's building; p = lerp(0.3, 2.25, thievery / 100 x t); x1.5 when the watcher is on another floor. Not clamped: 1 or more always succeeds.
+    /// </summary>
+    public static float StealChance(float thievery, float distance, bool otherBuilding, bool otherFloor)
+    {
+        float t = 0.5f + 0.5f * Math.Clamp(distance / WatchDistance, 0, 1);
+        if (otherBuilding) t *= 0.5f;
+        float p = 0.3f + 1.95f * thievery * 0.01f * t;
+        return otherFloor ? p * 1.5f : p;
+    }
+
+    /// <summary>
+    /// The container's watcher (<c>FUN_140792ce0</c>, <b>Observed</b>: the nearest to the thief of a list of the owner's characters that are not down, those on the thief's floor first).
+    /// Engine choice for the list: the members of the owner's squads living in the container's building. -1: none.
+    /// </summary>
+    static int Watcher(World world, int thief, Locks.Fixture container)
+    {
+        var table = world.Characters;
+        var at = table.Next[thief].Position;
+        int same = -1, other = -1;
+        float sameD = float.MaxValue, otherD = float.MaxValue;
+        foreach (var squad in world.Squads.All)
+        {
+            if (squad.Faction != container.Owner || squad.HomeBuilding?.Key != container.Building) continue;
+            foreach (var id in squad.Members)
+            {
+                if (!table.TryResolveNext(id, out int s) || !table.Next[s].Alive || table.Cold(s) is not { Medical.Incapacitated: false, IsImprisoned: false } c || !c.CarriedBy.IsNone) continue;
+                float d = Vector3.DistanceSquared(table.Next[s].Position, at);
+                if (MathF.Abs(table.Next[s].Position.Y - at.Y) <= FloorSlack) { if (d < sameD) (same, sameD) = (s, d); }
+                else if (d < otherD) (other, otherD) = (s, d);
+            }
+        }
+        return same >= 0 ? same : other;
+    }
+
+    /// <summary>
+    /// Takes from another faction's container (<paramref name="code"/>: the pending crime the move sets, Theft for a right click or a give, Looting for a drag), then the steal roll
+    /// (<c>FUN_140794810</c>, <b>Observed</b>). True when the thief was caught, and the move is refused. No watcher, or one inside a building other than the container's while that has no
+    /// open door: always unseen. Caught by a watcher in bed: half the time it only says event 47; else it gets up, says event 8 and remembers the thief, and the thief gets a Theft (timer
+    /// 30) against the container's owner, "Got caught stealing." for the player. Thievery trains unless the chance was 0.98 or more, the thief is imprisoned or its pending crime's
+    /// timer was already 10 or more (engine reading of the game's field +0x180).
+    /// </summary>
+    public bool Steal(World world, int thief, Locks.Fixture container, CrimeCode code)
+    {
+        var table = world.Characters;
+        if (table.Cold(thief) is not { } c || container.Owner < 0 || container.Owner == c.Faction) return false;
+        float before = c.Pending?.Timer ?? 0;
+        SetPending(world, thief, code, container.Owner, CharacterId.None, MinTimer);
+        float p = 1;
+        int w = Watcher(world, thief, container);
+        if (w >= 0)
+        {
+            var wat = table.Next[w].Position;
+            bool otherBuilding = world.Sight.BuildingOf(w) != container.Building;
+            if (!(otherBuilding && !world.Fixtures.HasOpenDoor(container.Building)))
+                p = StealChance(Thievery(c), Vector3.Distance(wat, container.Position), otherBuilding, MathF.Abs(wat.Y - container.Position.Y) > FloorSlack);
+        }
+        var thiefId = table.IdOf(thief);
+        ulong key = Rng.Hash(world.Seed, Rng.Key(thiefId) ^ Rng.StableHash(container.Id), RngPurpose.Steal, (ulong)world.Tick);
+        bool caught = w >= 0 && Rng.Float(key) > p;
+        if (caught)
+        {
+            var watcher = table.Cold(w)!;
+            var watcherId = table.IdOf(w);
+            if (watcher.InSomething == Locks.HeldState.Bed && Rng.Float(Rng.Mix(key + 1)) > 0.5f)
+                world.Defer(new Dialogue.DialogueEvent(watcherId, thiefId, InBedEvent) { Tick = world.Tick + 1 });
+            else
+            {
+                if (watcher.InSomething == Locks.HeldState.Bed) world.Fixtures.LeaveBed(world, watcherId);
+                else if (table.Next[w].Task == (byte)CharacterTask.Rest) table.Next[w].Task = (byte)CharacterTask.Idle;
+                world.Defer(new Dialogue.DialogueEvent(watcherId, thiefId, CaughtEvent) { Tick = world.Tick + 1 });
+                if (c.IsPlayer) world.Post("Got caught stealing.");
+                SetPending(world, thief, CrimeCode.Theft, container.Owner, CharacterId.None, CaughtTimer);
+                if (watcher.SquadId >= 0) world.SystemOf<Dialogue.DialogueSystem>()?.Memory.Remember(world, watcher.SquadId, thiefId, Dialogue.MemoryTag.StoleFromMe);
+            }
+        }
+        if (p < 0.98f && !c.IsImprisoned && before < 10 && c.Stats is { } stats && c.Race is { } race) Xp?.Continuous(stats, race, StatsEnumerated.Thieving, 1, caught ? CaughtXp : StealXp);
+        return caught;
+    }
+
+    /// <summary>
+    /// A ground item of another faction picked up inside a building (<c>Task_Pickup</c>, <b>Observed</b>): a pending Theft against the owner and thievery XP 20; no steal roll.
+    /// </summary>
+    public void StolePickUp(World world, int thief, int owner)
+    {
+        if (world.Characters.Cold(thief) is not { } c || owner < 0 || owner == c.Faction) return;
+        SetPending(world, thief, CrimeCode.Theft, owner, CharacterId.None, MinTimer);
+        if (c.Stats is { } stats && c.Race is { } race) Xp?.Continuous(stats, race, StatsEnumerated.Thieving, 1, PickUpXp);
+    }
+}

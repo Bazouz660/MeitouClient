@@ -549,6 +549,10 @@ witness rules above then fire event 17 and a police-like witness books 100. The 
 it). DA 33 CRIME_ALARM (`CrimeSystem.Alarm`): the speaker attacks the target, the target's crime timer is 30 and it is recently
 wanted; a speaker of a town squad sets Trespassing on a target with nothing pending inside its private home, and raises the town alarm for
 the target's pending crime, which the town's investigators answer ([town alarms](game/economy.md#town-alarms)).
+Stealing (`CrimeSystem.Steal`, [carry-loot](game/carry-loot.md#theft-and-witnesses)): taking from another faction's container (right click: Theft;
+drag: Looting; give to a character: Theft) sets the pending crime, then the steal roll; caught, the item stays. Engine choices: the watcher list is
+the owner's squads living in the container's building, floors differ by more than 20, the field `+0x180` is read as the pending timer before the
+roll. A stolen ground pick-up inside a building is a pending Theft with thievery XP 20, no roll.
 
 ## Cages, beds and locks
 
@@ -1202,8 +1206,8 @@ per stock container, each container's window showing only its own (`Shop.ForBuil
 trader has its home's containers filled instead (`FillHome`). Only members that trade (`DialogueSystem.Trades`, [who trades](game/economy.md#who-trades)) publish `IsTrader`, the
 Trade verb and pointer. Shop state is hashed; the open trade is not, except its buyback receipts (below). A shop is saved on its platoon (`Saving/ShopSave`: stock, fill count,
 `inventory refresh time`, [economy](game/economy.md#building-shops-observed-decompile)) and kept by a saved platoon that leaves the world; a save without it gets a fresh fill.
-Transfers and money changes must succeed together. Not built: smuggling (economy 8.5, undecoded) and stealing other than
-looting a downed character ([crimes](#crimes-and-bounties)), i.e. from a conscious owner or a shop container.
+Transfers and money changes must succeed together. Stealing from containers: [crimes](#crimes-and-bounties). Not built: smuggling (economy 8.5,
+undecoded) and pickpocketing (no order opens a conscious NPC's inventory).
 
 Bags (engine choice; how the original trades bags and their contents is **Unknown**): a bag trades whole, the same instance with its contents grid, and only empty ("That bag
 isn't empty."), since its contents would otherwise go unpriced and unchecked for theft; a bag's contents are not shown as stock. A right click puts a bought bag into a free

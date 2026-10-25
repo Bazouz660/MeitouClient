@@ -17,7 +17,7 @@ namespace Meitou.Simulation
     /// <summary>
     /// Opening a container of a building's interior (docs/game/locks.md "Containers"): a character walks up to it, its inventory shows in a window beside the character's, and items are
     /// moved with <see cref="Production.PutInMachine"/> / <see cref="Production.TakeFromMachine"/> addressed by the fixture id. <b>Engine choices</b>: the reach, a locked one refusing, a shop's
-    /// containers staying the shop's (each its own rectangle of the shop's stock, <see cref="Trading.Shop.ForBuilding"/>), what is taken from another faction's marked stolen with no witness test.
+    /// containers staying the shop's (each its own rectangle of the shop's stock, <see cref="Trading.Shop.ForBuilding"/>). Taking from another faction's is stealing (<see cref="Crime.CrimeSystem.Steal"/>).
     /// </summary>
     public sealed partial class PlayerSystem
     {

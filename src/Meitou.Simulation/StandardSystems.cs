@@ -220,7 +220,7 @@ public static class StandardSystems
         if (Has(StandardParts.Crime))
         {
             // Last: its sweep sees every position, task and carry link the tick left; the deeds come in from combat and carrying in their own serial steps.
-            systems.Add(crime = new Meitou.Simulation.Crime.CrimeSystem(data.Relations, o.Crime));
+            systems.Add(crime = new Meitou.Simulation.Crime.CrimeSystem(data.Relations, o.Crime) { Xp = new Meitou.Simulation.Bodies.XpService(data.Bodies.Constants, data.BodyOptions) });
             if (combat is not null) combat.Crimes = crime;
             if (carry is not null) carry.Crimes = crime;
             if (ai is not null) ai.Crimes = crime;

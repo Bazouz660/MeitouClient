@@ -20,7 +20,7 @@ namespace Meitou.Simulation.Crime;
 /// An NPC is a culprit only of an Assault, never booked (engine choice: an NPC's looting and carrying raise no crime; its attacks on characters not hostile to them, such as hungry
 /// bandits on a town's visitors, are witnessed so the town's police step in).
 /// </summary>
-public sealed class CrimeSystem(FactionRelations relations, CrimeSettings? settings = null) : ITickSystem, IStateHashed
+public sealed partial class CrimeSystem(FactionRelations relations, CrimeSettings? settings = null) : ITickSystem, IStateHashed
 {
     /// <summary>The freshness a pending crime starts with at least (the setter's minimum, <b>Observed</b>), and the timers the game gives some deeds.</summary>
     public const float MinTimer = 3, WitnessTimer = 20, PoliceHitTimer = 30, KidnapTimer = 20;

@@ -459,6 +459,20 @@ public sealed partial class FixtureRegistry
         return any;
     }
 
+    /// <summary>The building has a door open, opening or broken, or no doors (<c>Building::hasAnOpenDoor</c> as the steal roll reads it).</summary>
+    public bool HasOpenDoor(string building)
+    {
+        if (!byBuilding.TryGetValue(building, out var list)) return true;
+        bool any = false;
+        foreach (var d in list)
+        {
+            if (d.Kind != FixtureKind.Door) continue;
+            any = true;
+            if (d.DoorBroken || d.Motion is DoorMotion.Open or DoorMotion.Opening) return true;
+        }
+        return !any;
+    }
+
     /// <summary>The faction that owns a building's doors (-1: no doors).</summary>
     public int DoorOwner(string building)
     {

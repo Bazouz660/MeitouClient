@@ -73,6 +73,8 @@ namespace Meitou.Simulation
                 if (inventory.Add(item.Item) || item.Item.Quantity == before && (wear = Items.InventoryCommands.TryEquip(inventory, item.Item, c.Race?.StringId)))
                 {
                     world.GroundItems.Take(id);
+                    // Task_Pickup: another faction's item taken inside a building is a Theft.
+                    if (item.OwnedBy >= 0 && item.OwnedBy != c.Faction && world.Sight.BuildingOf(s) is not null) world.SystemOf<Crime.CrimeSystem>()?.StolePickUp(world, s, item.OwnedBy);
                     if (wear) assembly?.RefreshEquipment(c);
                     world.EmitSound(SoundKind.PickedUp, s, next[s].Position);
                 }

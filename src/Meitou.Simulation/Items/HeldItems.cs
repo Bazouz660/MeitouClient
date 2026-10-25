@@ -213,6 +213,14 @@ public sealed partial class PlayerSystem
         return item.StolenFrom;
     }
 
+    /// <summary>
+    /// The held item leaves another faction's container for another owner: the pending crime of the move (<paramref name="code"/>: Looting for a drag, <c>FUN_140715560</c>; Theft for a
+    /// give, <c>FUN_140712490</c>) and the steal roll (<see cref="Crime.CrimeSystem.Steal"/>). True when the thief was caught and the item goes back.
+    /// </summary>
+    static bool Caught(World world, HeldItem held, Crime.CrimeCode code) =>
+        held.From.Holder == ItemHolder.Site && world.Fixtures.Find(held.From.Site) is { Contents: not null } box && box.Owner >= 0 && box.Owner != world.Player.Faction
+        && world.SystemOf<Crime.CrimeSystem>() is { } crimes && world.Characters.TryResolveNext(held.Actor, out int thief) && crimes.Steal(world, thief, box, code);
+
     /// <summary>The held item went to another owner out of the open loot: the body may be butchered (a death item) and the looting seen.</summary>
     static void LeftLoot(World world, HeldItem held, bool death)
     {
@@ -294,6 +302,7 @@ public sealed partial class PlayerSystem
             ReturnHeldItem(world);
             return;
         }
+        if (into != held.From && Caught(world, held, Crime.CrimeCode.Looting)) { ReturnHeldItem(world); return; }
         int limit = target.Columns == 0 ? 1 : target.Grid.LimitOf(item);
         // Leaving its window for another owner's: no longer a death item, maybe stolen. Put back on a refusal; the units that stay on the mouse keep the old marks.
         bool changes = into != held.From, death = item.Death;
