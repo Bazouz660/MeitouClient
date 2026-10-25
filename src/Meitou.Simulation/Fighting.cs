@@ -81,14 +81,8 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
             float far = combat.StateOf(new CharacterId(t, next[t].Generation)).TargetSlot == i ? 140 : 80;
             holding = Vector2.DistanceSquared(Orders.HoldPointOf(cold, n.Position), new Vector2(next[t].Position.X, next[t].Position.Z)) > far * far;
         }
-        // One of more than MaxEngaged fighters that its target has not let close in circles it (WaitingStateAI, docs/game/combat.md "Attack slots and circling"); not while its
-        // swing plays (it asks again only when it next decides).
-        int around = !st.Ranged && !st.Engaged && !behind && st.AttackTech < 0 ? combat.FightersAt(world, t) : 0;
-        if (around > CombatSystem.MaxEngaged && !st.Down && world.Tick >= st.StunUntil && st.ReactTech < 0 && !holding)
-        {
-            Circle(world, i, ref n, cold, tc, t, d, gap, around);
-            return;
-        }
+        // In its footwork with a clear line to the target, the fight steering moves it (docs/game/combat.md "Fight steering"): its state sets the band, no paths.
+        if (Steer(world, i, ref n, cold, st, t, holding)) return;
         float stand = CombatTuning.StandGap(st.Reach, cold.Fighter?.WeaponLength ?? 0, cold.CombatRunning);
         if (st.Down || st.AttackTech >= 0 || st.ReactTech >= 0 || world.Tick < st.StunUntil || shooting || !st.Ranged && !behind && aimGap <= stand || holding)
         {
@@ -121,42 +115,42 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
     }
 
     /// <summary>
-    /// Walks a fighter its target has not let close in round the target (<see cref="CombatTuning.CircleSpeedOf"/>): every <see cref="RepathSeconds"/> a path to the point
-    /// at least <see cref="CircleLookAhead"/> seconds of side-stepping further round (and past the arrival radius), at the gap kept within the band of <see cref="CombatTuning.CircleNear"/> /
-    /// <see cref="CombatTuning.CircleFar"/>. The original steers by forces; here the walker follows the path (engine), facing its target and side-stepping as the original does (MovementSystem).
+    /// Hands fighter <paramref name="i"/> to the fight steering (<see cref="CombatSteering"/>) when it is in its footwork, melee, not holding and not down, and the line
+    /// to its target is clear (<see cref="CombatSystem.SteersAt"/>, checked every <see cref="RepathSeconds"/>): its paths are dropped and its fight state sets the band
+    /// (<c>combatMovementOffensive</c>'s callers, docs/game/combat.md "Fight steering"). A stumble holds it still (engine choice: the hit reaction carries it). False: it walks paths.
     /// </summary>
-    static void Circle(World world, int i, ref CharacterHot n, CharacterCold cold, CharacterCold? tc, int t, System.Numerics.Vector3 d, float gap, int around)
+    bool Steer(World world, int i, ref CharacterHot n, CharacterCold cold, in CombatSlot st, int t, bool holding)
     {
-        const ushort Path = (ushort)MoveFlags.AnyPath;
-        if ((n.Flags & (ushort)(MoveFlags.NeedPath | MoveFlags.Pending)) != 0 || n.TaskTime > 0) return;
-        float k = cold.Medical?.ScaleK ?? 1;
-        float own = 1.5f * CombatTuning.Footprint(cold) * k;
-        float near = MathF.Max(1, around * 0.25f + CombatTuning.CircleNear - own);
-        float far = MathF.Max(3 * around + CombatTuning.CircleFar - own, near + 5);
-        float bodies = CombatTuning.Footprint(cold) + CombatTuning.Footprint(tc);
-        float radius = Math.Clamp(gap, near, far) + bodies;
-        var table = world.Characters;
-        ulong key = Rng.Key(table.IdOf(i)), counter = (ulong)(uint)t * 3;
-        float speed = CombatTuning.CircleSpeedOf(CombatRolls.Float(world.Seed, key, CombatRoll.Circle, counter), CombatRolls.Float(world.Seed, key, CombatRoll.Circle, counter + 1),
-            CombatRolls.Float(world.Seed, key, CombatRoll.Circle, counter + 2), cold.Fighter?.EncumbranceFactor ?? 1, cold.Fighter is not { IsAnimal: true });
-        var target = table.Next[t].Position;
-        // The point lies at least beyond the walker's arrival radius and one repath interval of walking, or a slow side-step (|s| of 12) would end the path after a stride and the
-        // fighter would creep; and it is pushed out so that the straight walk to it (a chord) keeps to the ring instead of cutting in towards the target.
-        float ahead = MathF.Max(MathF.Abs(speed) * CircleLookAhead, MovementSystem.ArriveRadius + CombatTuning.FootworkSpeed * RepathSeconds + 1);
-        float arc = MathF.Min(ahead / MathF.Max(radius, 1), 2);
-        float angle = MathF.Atan2(-d.Z, -d.X) + MathF.CopySign(arc, speed);
-        float goalRadius = radius / MathF.Max(MathF.Cos(arc / 2), 0.5f);
-        var goal = new Vector2(target.X + MathF.Cos(angle) * goalRadius, target.Z + MathF.Sin(angle) * goalRadius);
-        if (!world.Walkability.IsWalkable(goal.X, goal.Y, target.Y))
+        var steer = cold.Steer ??= new SteerState();
+        bool was = steer.Active;
+        steer.Active = false;
+        if (cold.CombatRunning || st.Ranged || holding || st.Down) return false;
+        if (world.Tick >= steer.LineTick || steer.Target != t)
         {
-            // Off the navmesh: it stands where it is (engine choice).
-            if ((n.Flags & Path) != 0) { n.Flags = (ushort)(n.Flags & ~Path); n.PathCursor = 0; cold.PathRequest = 0; }
-            return;
+            steer.LineClear = combat.SteersAt(world, i, t);
+            steer.LineTick = world.Tick + (long)MathF.Ceiling(RepathSeconds / world.TickSeconds);
         }
-        n.Goal = goal;
-        n.Mode = SpeedMode.Free;
-        n.Flags |= (ushort)MoveFlags.NeedPath;
-        n.TaskTime = RepathSeconds;
+        if (!steer.LineClear) return false;
+        float r = CombatTuning.Footprint(cold);
+        float reach = CombatTuning.StandGap(st.Reach, cold.Fighter?.WeaponLength ?? 0, false);
+        int around = st.AttackTech < 0 && st.ReactTech < 0 && !st.Engaged ? combat.FightersAt(world, t) : 0;
+        // Swinging (AttackState), defending (CombatClassAI slot 12), engaged (attack start, state 5), else waiting (state 6).
+        var (near, far, through, limit) = st.AttackTech >= 0 ? (0.7f * r, reach * 0.5f, true, 200f)
+            : st.ReactTech >= 0 ? (r + 7.5f, r + 19, false, 16f)
+            : st.Engaged ? (1.4f * r, reach, !st.CircleState, 200f)
+            : (around * 0.25f + CombatTuning.CircleNear, 3 * around + CombatTuning.CircleFar, false, 200f);
+        (steer.Min, steer.Max) = CombatSteering.Band(near, far, r);
+        (steer.PowerThrough, steer.Limit, steer.Target) = (through, limit, t);
+        if ((n.Flags & (ushort)MoveFlags.AnyPath) != 0)
+        {
+            n.Flags = (ushort)(n.Flags & ~(ushort)MoveFlags.AnyPath);
+            n.PathCursor = 0;
+            cold.PathRequest = 0;
+        }
+        if (world.Tick < st.StunUntil) return true;
+        if (!was) steer.Reset();
+        steer.Active = true;
+        return true;
     }
 
     /// <summary>How long a target the fighter found no path to is left out of its target choice (<b>Verified</b> literal 20, <c>AITaskSytem::notifyPathImpossible</c>; read as seconds).</summary>
@@ -181,9 +175,6 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
         foreach (var (t, until) in failures) if (t == target && until > tick) return true;
         return false;
     }
-
-    /// <summary>Seconds of side-stepping the circling walker's path point lies ahead at least (engine choice: twice the path interval; <c>Circle</c> also keeps it past the arrival radius).</summary>
-    public const float CircleLookAhead = 1;
 }
 
 

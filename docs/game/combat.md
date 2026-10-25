@@ -205,16 +205,16 @@ a door takes it off its own progress as a bash does ([locks](locks.md#cutting-an
   re-deciding on a new one) and, with a free slot, re-decides (**Verified**, `CircleStateAI` `FUN_1402b3180`).
   The attack start uses the same walk while no technique is in reach.
 - **State 6** (`WaitingStateAI`, `FUN_1402b3760` / `FUN_1402b3800`): not engaged. Keep the body gap in
-  [n/4 + 15, 3n + 25], each end minus 1.5rk. n = engaged count + last frame's refusals. Side-step at speed s
-  (steering +0x114). Try to join each tick; re-decide once engaged or attacked.
-- **Side-step speed**: drawn on entry as s = 50u − 25. If |s| is below the steering's least speed c (+0x108,
+  [n/4 + 15, 3n + 25], each end minus 1.5rk. n = engaged count + last frame's refusals. Its side speed s goes to
+  steering +0x114, which nothing reads ([steering](#fight-steering)). Try to join each tick; re-decide once engaged or attacked.
+- **Side-step speed** (unused): drawn on entry as s = 50u − 25. If |s| is below the steering's least speed c (+0x108,
   `FUN_1402ae6d0`), s becomes ±12. c = 30 + 3b + 12u′ with b = 3 + 3u″. For a humanoid, c′ = 3(1 − e)c + 1 and
   b′ = 2(1 − e)b + 1. b′ is kept in 0..20; c′ is at most 90 and at least b′ + 10. So c′ = 11 for an unburdened
   person, 39 or more for an animal.
 - Both states also start a 1.5–4.5 s timer. State 6 does not use it; state 5 uses it only in Block mode
   (CharStats +0x128, standing), clearing its own slots each time it runs out.
 
-Meitou (`CombatSystem.HasSlot` / `MayJoin`, `PursuitSystem.Circle`):
+Meitou (`CombatSystem.HasSlot` / `MayJoin`, `Fighting.Steer`):
 
 - **Slots**: the holders are the fighters whose swing at the target has a blow to come. On the same tick, fighters
   with lower table slots ask first (engine choice for update order). Fighters are counted within 300 units. Those
@@ -228,13 +228,10 @@ Meitou (`CombatSystem.HasSlot` / `MayJoin`, `PursuitSystem.Circle`):
   roll does not turn on the asker while that target stands (engine choice; without it a losing old foe re-yields every exchange and the
   order never sticks). The original lets the swap happen and returns to the focused target at the next pick (above).
 - **Engaged list**: a landed or blocked blow takes a defender fighting the attacker off its list (`CombatSlot.Engaged`): it asks again.
-- **Approach**: an engaged fighter walks in to body gap max(6, reach − L/4) and stands.
+- **Approach**: the [fight steering](#fight-steering) band of its state (max' = max(6, reach − L/4) when engaged).
 - **Joining**: a lower table slot asks first; one not yet in is counted ahead only when it may decide this tick (not staggered,
   defending, or swinging past its abort point), so nobody is left out for a fighter that does not ask (engine choice).
-- **Circling**: only fighters left out when more than 5 attack one target circle, and not while their own swing plays (they
-  ask at the next decision). They path to a point on the ring at least 1 s of
-  side-stepping ahead (and beyond the walker's arrival radius plus one repath step, so a slow side-step does not creep), pushed out so the
-  straight walk keeps to the ring, and face the target as the original does ([side steps](../animation.md#side-steps)).
+- **Waiting**: fighters left out keep the state-6 band by the [fight steering](#fight-steering); none orbits.
 - **Block-mode timer**: an engaged fighter on the Block order (standing) frees the slots on itself every 1.5–4.5 s (`CombatSlot.SlotsCleared`:
   swings started before hold none). The +12 while running is in `CombatTuning.StandGap`.
 - **Body room** (`CombatSystem.NearestFriend`, `BodyRoom`): the ask fails while a non-enemy's centre is nearer than footprint + 2.5, ×1.2 in
@@ -349,15 +346,53 @@ gate ([ranged](#unknowns-of-the-ranged-path)).
 
 **Observed** (static reading; the animation's combat flag is `AnimationClass +0x244`, the value a clip's `is combat mode` is compared with, [animation](../animation.md#choosing-candidates--14051d660)). One setter, `FUN_14051cc30`, writes it. Set on: every tick of the fight's attack update (`CombatClass::vfunc_11`), and by the combat footwork (`FUN_1402ae1b0`, from a movement flag, not from the target). Cleared by: any new movement goal (`CharMovement::vfunc_18`), the end of the fight task (`CombatClass::vfunc_2`, mode 2), and the chase branch of `CombatClassAI::vfunc_9` (fight states 10 and 11, which also put the movement back to its plain mode 0; every other state sets movement mode 1). When a movement stops (`CharMovement::vfunc_19`) the flag is set to whether the fight task is active (`FUN_140436610`, `CombatClass +0x130`, set at task start). So the stance follows the fight's own steering and is off while the character walks a path to a goal, including a chase of its target along a path (states 10/11). `CombatClassAI::vfunc_9` sets `+0x58` each tick when the navmesh line query between the two (`FUN_1403a56e0`, 1 clear, 0 blocked, −1 failed) returns 0; that, or the two being in different places (a vtable `0x60` id of each differs), or the 2 s chase timer `+0x14c` still running, picks the chase; otherwise the AI picks its target and approach (`FUN_14060c8b0`, state 3) and steers with mode 1.
 
-**Observed** (static reading, the fight steering `FUN_1402af1e0`; its constants are literals in the decompile): the footwork flag `FUN_1402ae1b0` reads is a "running" flag. With gap = distance − (own radius + target's radius), it is set when gap > 90 (> 160 in a steering mode 6, not decoded) and cleared when gap < 70; then forced on while the target is fleeing (`FUN_1402ae0e0`: target's movement in plain mode 0, speed > 9, for 1.5 s on end; the chaser then aims at a lead point, below). The anim combat flag is `!running`. Speed: up to `min(cap, own max speed)` (the AI's cap is 200, so the max speed), ramping 15 units/s per second; not running it is capped at 18 (16 backing off). So a fighter runs normally from afar and drops into the shuffle within 70 units of its target, distance-driven, whether or not it walks a path.
+**Observed** (static reading, the fight steering `FUN_1402af1e0`; its constants are literals in the decompile): the footwork flag `FUN_1402ae1b0` reads is a "running" flag. With gap = distance − (own radius + target's radius), it is set when gap > 90 (> 160 in fight state 6, waiting; Meitou uses 90 in every state) and cleared when gap < 70; then forced on while the target is fleeing (`FUN_1402ae0e0`: target's movement in plain mode 0, speed > 9, for 1.5 s on end; the chaser then aims at a lead point, below). The anim combat flag is `!running`. Speed: up to `min(cap, own max speed)` (the AI's cap is 200, so the max speed), ramping 15 units/s per second; not running it is capped at 18 (16 backing off). So a fighter runs normally from afar and drops into the shuffle within 70 units of its target, distance-driven, whether or not it walks a path.
 
 **Observed** (static reading, `FUN_1402af1e0` → `FUN_1404354d0`; the stat from `FUN_1408866b0` → `FUN_140883a80`): the lead point is the target's position + its velocity (Character vfuncs 9 speed × 10 heading, movement +0xb8 and +0xd0) × `(1 − r) × 2 + 1.2` seconds, recomputed every tick, with r the chaser's CharStats +0x188: its attack play rate (lerp(0.01 (0.6 dex + 0.4 attack), 0.8, 1.2) × G, capped at 1.2, the rate attack clips play at; × 0.8 when `FUN_1405c7fd0(character) == 3`, condition not decoded). So 0.8 s ahead at r = 1.2, 1.6 s at 0.8, more for a slowed attacker; a faster chaser aims past the runner, and since the lead follows the velocity it swings to the new side when the runner turns, and drops as soon as the runner slows under 9 or leaves plain movement (the 1.5 s timer restarts). The steering faces its movement while leading. A second override (`CharMovement::vfunc_28` sets movement +0x168 and a point at +0x16c, the steering's +0x50/+0x54): the chaser heads for that point instead at most 55 u/s, the lead is off, and it clears within 10 units; `CombatClassAI::vfunc_9` skips its chase while it is set. Its caller is **Unknown**.
 
 Meitou (`PursuitSystem`, engine rules): the lead is a path goal, re-pathed when it moves over 12 units (at most every 0.5 s, so a turn can overshoot by ~12 units at a run), put a further 0.5 s of the runner's way ahead (a path ends in a stop and a fighter's speed ramps back slowly) and `PassWidth` 1.25 × the two footprints (clear of the separation radius) beside the runner's track on the chaser's side (bodies are solid, so the chaser passes the runner instead of pushing it along; the original's runs through it). It is used only while the chaser is behind the nearer of the lead point and the swing's aim point (target + velocity × `AimLeadSeconds` 1.2); level with it, it goes for the target and stands once the aim point is within reach, so the runner comes into its swing. Standing is measured to that aim point, as the swing is (stood within reach of the runner itself, the aim point would be out of reach and the chaser idle). A fighter at its path's end asks for the next one after `RepathSeconds` 0.5 (not the wanderer's 3 to 10 s wait). A lead off the navmesh falls back to the target. The +0x168 override is not modelled.
 
+### Fight steering
+
+**Observed** (`CombatMovementController::combatMovementUpdate` `FUN_1402af1e0`, disassembly read for the vector maths; constants read from the binary;
+called from `CharMovement::vfunc_11` in movement mode 1 with the frame time, the fight state +0x1f0 and the race's `combat move speed mult`).
+Each frame it builds a velocity from forces, not a path:
+
+- **Band** (`combatMovementOffensive` `FUN_1402ae320`, via `CharMovement` `FUN_1402ae900`): each fight state gives a target, near n, far f, a
+  "circling speed", `powerThrough` and a speed limit. min = clamp(n − m, 1, f′), max = max(f′, min + 5) with f′ = clamp(f − m, 0, 9999), m =
+  +0x110 = CombatClass +0x278 = 1.4 × the raw footprint. Calls: attack start and state 5 (n = 1.4r, f = max' of `FUN_14060cd20`, powerThrough on);
+  state 5 escorting (+0x178 → +0x20 set: n = max', f = 50); state 6 (n = N/4 + 15, f = 3N + 25, the drawn side speed); a swing (`AttackState`
+  slot 1: n = 0.7r, f = max'/2, powerThrough); defending (slot 12: n = r + 7.5, f = r + 19, limit 16, or 18 with powerThrough on a designated
+  target +0x2c8); the defaults are 10, 20, limit 200. The **circling speed +0x114 is written but never read** (no read of +0x114 or
+  CharMovement +0x22c anywhere): state 6 does not orbit.
+- **Seek** along the facing (the unit vector to the target, or the lead point while chasing): with d = centre distance and R = own radius
+  `+0xe0` + target radius (`getRadius`, footprint × size), m(X) = (d / (R + X) − 1) × 100; outside max the seek is m(max) × 2 × speed mult
+  (walk in), inside it min(m(min), 0) (back off only inside min; not while chasing). A forced point (+0x50) adds 750 × the unit vector to it.
+- **Repulsion** (`FlockingTools::calculateCurrentRepulsionVector` `FUN_1402e9740` over the [flocking list](#attack-slots-and-circling)): each
+  other character c except the target, enemies (c's `isEnemy` of the mover) with radius R + ENEMY_DIST (+0xfc = 15 + 30u) and non-enemies with
+  R + ALLY_DIST (+0x100 = m + 30u), pushes along the flat unit vector away from c by (1 − d / (r_c + radius)) × 100 when positive
+  (`getRepulsionVector` `FUN_1402e9420`), at most 26 contributions; with `powerThrough` one pointing behind the facing is turned to the
+  perpendicular of the facing on its own side, its length kept (`FUN_1402e9530`). Velocity = (enemies + 2 × allies) × 0.105 + seek (×0.5 when
+  the caller's flag is set: a look-at target over 40 away in a state with +299, rare).
+- **Dead zone** (unless `powerThrough`): under STOP (+0x104) while moving, or START (+0x108) while standing, the velocity is 0. STOP = 3 + 3u,
+  START = 30 + 3 STOP + 12u; for a humanoid both × (1 − `encumbranceMult`) × 2 / × 3, + 1; STOP is kept in 0..20, START ≤ 90 and ≥ STOP + 10.
+- **Facing**: at the look-at character (+0x130) unless running; at the velocity while chasing.
+- **Side steps** ([animation](../animation.md#side-steps)): in the facing's frame (x = facing × −Y), not strafing the side part is ×0.105,
+  strafing the forward part is (STRAFE_STATE_DAMPING +0xec = 0.105): movement snaps to forward/back or sideways.
+- **Speed**: cap = min(limit, or 55 at a forced point; own max speed); the ramp +0x12c (from 20) rises 15/s up to it; facing-forward
+  (dot > 0.5) the ramp, backing (dot < −0.5) 16, sideways 18; not running at most 18. Over the cap the velocity is cut to it.
+- **Smoothing**: x and z each through a `MotionFilter` (10 samples, newest first, weights 0.8^k, normalised; per frame).
+- The caller then ×speed mult (×0.75 / 0.5 / 0.4 in movement levels 1–3), caps at the animation's max speed and hands it to the nav agent.
+
+Meitou (`CombatSteering`, `Fighting.Steer`, `MovementSystem`): melee fighters in the footwork (not running, not stunned or holding) steer
+this way while in the same place as the target with a walkable straight line to it (`CombatSystem.SteersAt`, every 2 units, rechecked
+every 0.5 s); otherwise they walk paths. Engine readings: one band per Meitou fight state (swing, defence, engaged, waiting); the forced
+point and leading offsets are not modelled; the separation push is off while steering (the repulsion replaces it); the smoothing runs per
+tick (fewer samples at 0.8^(60 dt) when a tick is longer than a frame) and forgets when steering starts.
+
 Data (**Verified**, the base ANIMATION records through `AnimationLibrary`): with the flag on, the lower clips are the `walk lower combat shuffle` trio (speeds −99 to 50) and `jog lower combat fallback` (50 and up); `walk`/`jog`/`run lower` are combat NO.
 
-**Unknown**: the extra offset the steering adds while leading in a non-zero steering mode (`FUN_1402e9420` at radius + 40, `FUN_1402e9530`) and the side terms of `FUN_1402e93c0`; whether the original also holds a chaser from swinging while behind; the steering's radii (`+0xe0` and `FUN_14065dc30`) and mode 6 (possibly a ranged closer; Meitou uses 90 for every fighter). When an idle character starts fighting back: [lifecycle](#fight-lifecycle-and-orders). Meitou: `RetaliationSystem` engages it at once, and `PursuitSystem` keeps the running flag by the rule above ([simulation](../simulation.md#animation)).
+**Unknown**: the extra offset the steering adds while leading in a non-zero steering mode (`FUN_1402e9420` at radius + 40, `FUN_1402e9530`) and the side terms of `FUN_1402e93c0`; whether the original also holds a chaser from swinging while behind. When an idle character starts fighting back: [lifecycle](#fight-lifecycle-and-orders). Meitou: `RetaliationSystem` engages it at once, and `PursuitSystem` keeps the running flag by the rule above ([simulation](../simulation.md#animation)).
 
 ## Leaving a fight
 

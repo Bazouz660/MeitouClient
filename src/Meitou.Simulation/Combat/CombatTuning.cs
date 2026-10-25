@@ -77,31 +77,9 @@ public static class CombatTuning
     public const float EngageScanRadius = 300;
 
     /// <summary>
-    /// A fighter its target does not let close in circles it (<b>Observed</b>, <c>WaitingStateAI</c> <c>FUN_1402b3800</c>): it keeps the gap between the bodies from
-    /// n / 4 + <see cref="CircleNear"/> to 3 n + <see cref="CircleFar"/>, each less 1.5 x its footprint x its size (at least 1, and the far end at least 5 beyond), n the fighters at
-    /// the target, and side-steps at a speed drawn once from ±<see cref="CircleSpeed"/> (<see cref="CircleSpeedOf"/>).
+    /// The band a fighter its target does not let close in keeps (<b>Observed</b>, <c>WaitingStateAI</c> <c>FUN_1402b3800</c>, through <see cref="CombatSteering.Band"/>): near
+    /// n / 4 + <see cref="CircleNear"/>, far 3 n + <see cref="CircleFar"/>, n the fighters at the target. The side-step speed the state draws is never read by the steering:
+    /// it does not orbit (docs/game/combat.md "Fight steering").
     /// </summary>
-    public const float CircleNear = 15, CircleFar = 25, CircleSpeed = 25;
-
-    /// <summary>
-    /// The side-step speed of a circling fighter (<b>Observed</b>, <c>FUN_1402b3760</c> and <c>FUN_1402ae320</c>, with the steering's least speed from <c>FUN_1402ae6d0</c>):
-    /// s = 50 <paramref name="u3"/> - 25, raised to ±12 when |s| is under the least speed c. c = 30 + 3 b + 12 <paramref name="u2"/> with b = 3 + 3 <paramref name="u1"/>; for a
-    /// person both are then scaled, b' = 2 (1 - e) b + 1 and c' = 3 (1 - e) c + 1 (e the encumbrance factor, 1 unburdened); b' is kept in [0, 20], c' at most 90 and at least b' + 10.
-    /// An unburdened person's c' is 11, an animal's 39 or more (always ±12).
-    /// </summary>
-    public static float CircleSpeedOf(float u1, float u2, float u3, float encumbrance, bool person)
-    {
-        float b = 3 + 3 * u1, c = 30 + 3 * b + 12 * u2;
-        if (person)
-        {
-            b = (1 - encumbrance) * 2 * b + 1;
-            c = (1 - encumbrance) * 3 * c + 1;
-        }
-        b = Math.Clamp(b, 0, 20);
-        c = MathF.Max(MathF.Min(c, 90), b + 10);
-        float s = 50 * u3 - 25;
-        if (s > 0 && s < c) s = 12;
-        else if (s <= 0 && -s < c) s = -12;
-        return s;
-    }
+    public const float CircleNear = 15, CircleFar = 25;
 }

@@ -178,6 +178,8 @@ public sealed class CharacterCold
     /// Derived every tick; not saved, not hashed.
     /// </summary>
     public int FaceSlot { get; set; } = -1;
+    /// <summary>The fight steering of a fighter in its footwork (<see cref="Combat.SteerState"/>; null until its first fight). Not saved; hashed while active.</summary>
+    public Combat.SteerState? Steer { get; set; }
     /// <summary>Seconds the fighter's target has been moving away out of a fight (the <see cref="PursuitSystem"/>'s fleeing check).</summary>
     public float TargetFleeingTime { get; set; }
     /// <summary>Its last path request came back with no way there (set by the <see cref="MovementSystem"/>, taken by the <see cref="PursuitSystem"/>).</summary>
@@ -539,6 +541,7 @@ public sealed class CharacterTable
             hasher.Add(k.DiedTick);
             hasher.Add(k.InCombat);
             if (k.CombatRunning || k.TargetFleeingTime != 0) { hasher.Add(0x43527573); hasher.Add(k.CombatRunning); hasher.Add(k.TargetFleeingTime); }   // only while set, so worlds without fights hash as before
+            if (k.Steer is { Active: true } steer) steer.Hash(ref hasher);
             if (k.PathFailures is { Count: > 0 } failures) { hasher.Add(0x50464C53); foreach (var (target, until) in failures) { hasher.Add(target.Slot); hasher.Add(target.Generation); hasher.Add(until); } }
             if (k.Animation is { } anim) anim.Hash(ref hasher); else hasher.Add(-1);
             hasher.Add(k.Name.Length);

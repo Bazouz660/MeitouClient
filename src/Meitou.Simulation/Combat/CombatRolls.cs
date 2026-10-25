@@ -17,10 +17,10 @@ public enum CombatRoll : ulong
     Stumble = 6,
     /// <summary>Who swings first when two fighters are ready at each other on the same tick (keyed by the pair, so both sides draw the same number).</summary>
     Initiative = 7,
-    /// <summary>The side-step speed of a fighter circling its target (counter: three per target slot).</summary>
-    Circle = 8,
     /// <summary>Whether a landed blow knocks a shackled defender out instead of staggering it (counter: the blow).</summary>
     Shackled = 9,
+    /// <summary>A fighter's steering draws (ENEMY_DIST, ALLY_DIST, the dead zone; counter 0 to 3, drawn once: docs/game/combat.md "Fight steering").</summary>
+    Steering = 10,
 }
 
 /// <summary>

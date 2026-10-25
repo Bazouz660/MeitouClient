@@ -34,6 +34,8 @@ namespace Meitou.Simulation;
 /// </summary>
 public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
 {
+    /// <summary>The fights the steering reads (null: no fight steering, as in worlds without combat; the world's combat system unless set).</summary>
+    public Combat.CombatSystem? Fights { get; set; }
     /// <summary>Speed gained per second in combat (docs/game/pathfinding.md, the combat / follow steering: "ramps up by 15 per second").</summary>
     public const float Acceleration = 15;
     /// <summary>R of the separation steering: neighbour radius plus margin; a human's footprint radius is 4.</summary>
@@ -305,6 +307,7 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
 
     public void Schedule(World world)
     {
+        Fights ??= world.Systems.OfType<Combat.CombatSystem>().FirstOrDefault();
         var table = world.Characters;
         var next = table.Next;
         for (int i = 0; i < next.Length; i++)
@@ -553,8 +556,22 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
             bool finished = false, closing = false;
             int water = WaterStateAt(walk, p.Position, cold);
             cold.WaterState = (byte)water;
+            // A fighter in its footwork: the fight steering's velocity, facing its target (docs/game/combat.md "Fight steering").
+            bool steering = Fights is not null && cold.Steer is { Active: true } && n.Task == (byte)CharacterTask.Attack;
 
-            if (((MoveFlags)n.Flags & MoveFlags.HasPath) != 0 && n.PathCursor < cold.Path.Length)
+            if (steering)
+            {
+                var v = Combat.CombatSteering.Velocity(world, Fights!, i, cold, cold.Steer!, n.MaxSpeed, cold.Animation?.Strafing ?? false, speed > 0.01f, out var face);
+                float vs = v.Length();
+                (dir, speed) = vs > 1e-4f ? (v / vs, vs) : (Vector2.Zero, 0f);
+                if (face != Vector2.Zero)
+                {
+                    facing = true;
+                    var heading = Turn(p.Yaw, face, 1, dt).Dir;
+                    n.Yaw = MathF.Atan2(heading.X, heading.Y);
+                }
+            }
+            else if (((MoveFlags)n.Flags & MoveFlags.HasPath) != 0 && n.PathCursor < cold.Path.Length)
             {
                 var waypoint = cold.Path[n.PathCursor];
                 var to = new Vector2(waypoint.X - p.Position.X, waypoint.Z - p.Position.Z);
@@ -604,7 +621,8 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
                 }
             }
 
-            if (finished)
+            if (steering) { }   // its velocity is the steering's
+            else if (finished)
             {
                 n.Flags = (ushort)(n.Flags & ~(ushort)MoveFlags.HasPath);
                 n.PathCursor = 0;
@@ -664,7 +682,7 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
 
             // Closing on its spot it is not held off by those standing round it (they are pushed aside as it arrives); a sitter is not moved at all.
             bool seated = Seated(n, cold);
-            if (closing || seated) push.Sum = Vector2.Zero;
+            if (closing || seated || steering) push.Sum = Vector2.Zero;   // a steering fighter's repulsion is its separation
             var drive = closing || seated ? dir * speed : Blocked(world, cold, ref push, new Vector2(p.Position.X, p.Position.Z), dir * speed);
             var step = (drive + push.Sum * SeparationStrength) * dt;
             var shove = closing || seated ? Vector2.Zero : Contact(world, i, cold, ref push, new Vector2(p.Position.X, p.Position.Z) + step);
@@ -686,6 +704,7 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
                     n.Position = new Vector3(x, y, z);
                     if (speed > 0.1f && !facing) n.Yaw = MathF.Atan2(dir.X, dir.Y);
                 }
+                else if (steering) speed = 0;   // into a wall or off the ground: it stands this tick
                 else
                 {
                     // Blocked on the provisional part of a long route (the terrain-only route met a wall or a building): stand and ask again.

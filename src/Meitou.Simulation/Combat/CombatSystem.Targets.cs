@@ -156,6 +156,39 @@ public sealed partial class CombatSystem
         return SolidHits.Hit(world.Walkability, Buildings, from, seg, RangedTuning.TerrainStep, out _) < 0;
     }
 
+    /// <summary>
+    /// Whether <paramref name="c"/> counts as an enemy of <paramref name="me"/> for the steering's repulsion (its <c>isEnemy</c>, engine reading): of a hostile faction
+    /// (another faction when there is no relation table), or fighting <paramref name="me"/>, or fought by it. Last tick's state; any thread after Schedule.
+    /// </summary>
+    public bool IsEnemyOf(World world, int c, CharacterCold oc, int me, int myFaction)
+    {
+        var prev = world.Characters.Previous;
+        if (read[c].TargetSlot == me && read[c].TargetGeneration == prev[me].Generation) return true;
+        if (read[me].TargetSlot == c && read[me].TargetGeneration == prev[c].Generation) return true;
+        return Relations is { } relations ? AggroSystem.IsEnemy(relations, oc.Faction, myFaction) : oc.Faction != myFaction;
+    }
+
+    /// <summary>The spacing of the points the steering's line test stands on (engine choice: under a footprint, so a wall's gap of a body width is not skipped).</summary>
+    const float SteerLineStep = 2;
+
+    /// <summary>
+    /// Whether fighter <paramref name="a"/> may steer at <paramref name="t"/> rather than walk a path (<c>CombatClassAI::vfunc_9</c>'s chase test, docs/game/combat.md
+    /// "Combat stance"): the same place (<see cref="SightMap.PlaceOf"/>), within <see cref="SameFloorHeight"/> in height, and every <see cref="SteerLineStep"/> of the straight
+    /// line between them walkable from the last (engine stand-in for the navmesh line query). Last tick's places; any thread after Sight's update.
+    /// </summary>
+    public bool SteersAt(World world, int a, int t)
+    {
+        if (world.Sight.PlaceOf(a) != world.Sight.PlaceOf(t)) return false;
+        var prev = world.Characters.Previous;
+        Vector3 from = prev[a].Position, to = prev[t].Position;
+        if (MathF.Abs(to.Y - from.Y) > SameFloorHeight) return false;
+        var leg = new Vector2(to.X - from.X, to.Z - from.Z);
+        float length = leg.Length(), y = from.Y;
+        for (float d = SteerLineStep; d < length; d += SteerLineStep)
+            if (!world.Walkability.TryStand(from.X + leg.X * (d / length), from.Z + leg.Y * (d / length), y, out y)) return false;
+        return true;
+    }
+
     /// <summary>Turns a fighter on a new target: it asks its target again for a place and weighs its techniques afresh.</summary>
     static void Retarget(ref CombatSlot s, int target, int generation, int now)
     {
