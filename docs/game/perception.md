@@ -136,7 +136,7 @@ is not the looker's ally becomes a target only when both tests pass:
 - **Post** (`AI::isTargetInRangeForHOLDMode_hostiles` `FUN_140598630`): only for a character on Hold (`CharStats::holdPositionMode`
   `FUN_1402b2b90`: CharStats +0x12b and not sneaking) that is not `FUN_1407f2840` (a ranged-weapon test): a target slower than 2 (movement
   +0xb8), or in its own state > 1, must be within 40 of the looker; a target more than 80 from the hold point
-  (CharStats +0x130, set when Hold is turned on and zeroed by a move order's start; 140 when the target is fighting and
+  (CharStats +0x130, set when Hold is turned on and to a ground move's destination while on Hold; 140 when the target is fighting and
   faces it) must be within 60 of the looker.
 - So there is no give-up distance measured from where a fight began: an attack starts inside the AI's area, and a
   chase ends by time and lost senses ([Leaving a fight](combat.md#leaving-a-fight)).

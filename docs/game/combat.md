@@ -131,7 +131,8 @@ ends leaves 0.2 s.
   (`AITaskSytem::isPathImpossible`) or refocus mode (+0x2e8) is set. Otherwise three lists are scored: the attackers (engaged list +0x1f8) of
   the current AI task's target when the chooser is aware of it, the chooser's own attackers, and its threats (SensoryData +0x50). A candidate
   must not be crippled (vfunc 0x360) and must be sensed by the chooser or by the task's target. The best score over the lists wins; none →
-  no target while threats remain, else the attack-on-sight finder `FUN_14059fa70`.
+  the sensed-enemy finder `FUN_14059fa70` when the task system's aggro mode (OrdersReceiver +0x30, KenshiLib `AggroType`, 0 aggressive by
+  the constructor; no other writer traced) is 0, else no target.
 - **Target score** (`AI::chooseBestAttackTarget` `FUN_14059e300`). Skips dead or down (`FUN_1407d1440`), `FUN_1408569a0`, allies by faction
   (`FUN_1406b2630`, unless the candidate is an animal) and impossible-path candidates. Weights are CharStats fields that `CharStats::init` sets
   to the same constants for every character (**Verified** literals; not saved, no other writer found; names KenshiLib 1ce4a16): `STUBBOURNESS`
@@ -215,13 +216,15 @@ Meitou (`CombatSystem.HasSlot` / `MayJoin`, `PursuitSystem.Circle`):
   state < 3 and its fight on; on Hold with the fight off, only within 40), a target that is the looker puts it on the threats list
   (SensoryData +0x50) and adds its aggression towards the target to +0x88; a target of the looker's faction adds that to +0x8c.
   `iAmBeingMeleeAttacked general` (state 159) is "threats list not empty"; `immediate` (158) is Character +0x2b0, set in the periodic update
-  (`FUN_1404378f0`) while a threat within 40 stands (prone state < 3), is not in a bed or cage, not getting up and not carried.
+  (`FUN_1404378f0`) while a threat within 40 stands (prone state < 3), is not in a bed or cage, not getting up, not carried and fails
+  `AI::isTargetOutsideTheGates` (not decoded).
 - **Self-defence.** Self preservation's desire (AI slot 17): 1 with a threat within 40, 0.7 with a threat of positive aggression within 181.7
   (squared 33000), else 0. It wants `!isAggressionTowardsMe`, given by 13 "Attacking attackers of" (desire 1; finder `AI::findAttackerOf`:
   the subject's attackers and threats that are enemies or target it, never allies, within 150 of a subject other than the chooser; best by the
-  target score) or 35 Running away (slot 55: 0 for a player character carrying any weapon outside the two-arm categories, or with both arms;
-  1 when crippled; else 0.001 or 0 by a test not decoded). So an attacked character fights back unless crippled; Passive does not touch this
-  path (exe tooltip: "Passive focuses on non-combat unless attacked first").
+  target score) or 35 Running away (slot 55: 0 for a player character that can still fight: an arm to fight with
+  (`MedicalSystem::hasAnArmToFightWith`), ranged mode, both arms, or a weapon outside the two-arm categories; else 1 when crippled; else 0.001 or
+  0 by a test not decoded). So an attacked character fights back unless crippled; Passive does not touch this path (exe tooltip: "Passive
+  focuses on non-combat unless attacked first"). Meitou differs: Passive characters do not defend themselves ([simulation](../simulation.md)).
 - **Melee or shooting.** Row 4 Attacking (`AI::scoreMeleeAttack`, slot 53): 1, ×0.1 with Ranged on, ×0.5 when `FUN_1407ac7b0`(platoon) fails;
   0 against a caged target; a crippled fighter 0.1 (0.0001 in Block or Hold with no threat within 40; 0 for a non-player non-unique); on Hold
   only for a target its range tests accept. Shooting 262/263/266 (slot 54): only with Ranged on, a crossbow at back or hip and its bolts carried:
@@ -242,8 +245,10 @@ Meitou (`CombatSystem.HasSlot` / `MayJoin`, `PursuitSystem.Circle`):
   point ([area](perception.md#the-attack-on-sight-tests)), queues the order at priority 3 and replans at once.
 - **Right click elsewhere mid-fight.** Ground: `PlayerInterface::playerMove` gives each selected character order 29 Move order. At the replan
   its fight task ends (above): it no longer blocks or dodges, since a target whose fight is off always answers an ask with "attack"
-  ([ask](#attack-slots-and-circling)), and its attackers keep their target and chase it ([leaving](#leaving-a-fight)). `Task_Move` start resets
-  the clip, puts the movement in plain mode and zeroes the Hold point (CharStats +0x130). Once the order is done the goals run again: with a
+  ([ask](#attack-slots-and-circling)). It also stops being its attackers' threat and leaves their engaged lists, so once their 1 s pick timer
+  runs out they keep it only through the sensed-enemy fallback or a focused order, then chase it ([leaving](#leaving-a-fight)). `Task_Move`
+  start resets the clip and puts the movement in plain mode; it zeroes the Hold point (CharStats +0x130), which its update sets to the move's
+  destination while on Hold, so Hold follows the last ground move. Once the order is done the goals run again: with a
   threat left, Self preservation restarts a fight on `findAttackerOf`'s pick; without one, Idleness sheathes. A right click on an enemy is
   order 5 (focused); on anything else, that target's quick verb.
 - **Actions mid-fight.** Any order runs during a fight. First aid 25, splint 249, repair 60 and pick lock 76/201 test no threat in their rows
