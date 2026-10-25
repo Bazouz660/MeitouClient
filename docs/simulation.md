@@ -1394,7 +1394,8 @@ Opening a fresh new-game dialog resets the draft; collapsing keeps it. Failed wo
 world's options and body factory. Saves carry seven `meitou difficulty <key>` CAMERA floats (hunger, death, damage,
 production, research, building, nests). Missing/nonfinite values use 1; out-of-range values clamp to the slider range.
 These are Meitou extensions; original difficulty save encoding is not implemented here. Saves without the extensions
-use neutral values. Bandit looting (CAMERA `bl`, `PlayerState.BanditsLoot`) is read from and written to saves but has no new-game switch; easy prospecting is not exposed.
+use neutral values. Under the sliders are the original's two ticks, saved under its own CAMERA bools: Bandits loot the player (`bl`, default on,
+`PlayerState.BanditsLoot`, set on a new world) and Easy prospecting (`ep`, default off, kept and saved only: the original never reads it).
 
 ## Saves
 

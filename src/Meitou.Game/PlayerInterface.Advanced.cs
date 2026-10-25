@@ -46,6 +46,11 @@ sealed partial class PlayerInterface
     bool AdvancedAction(MyGuiEvent e)
     {
         var parts = e.Action.Split(':');
+        if (parts.Length == 2 && parts[0] == "advanced-tick" && int.TryParse(parts[1], out int t) && t >= 0 && t < NewGameSettings.Ticks.Length)
+        {
+            NewGameOptions = NewGameOptions.SetTick(t, !NewGameOptions.Ticked(t));
+            return true;
+        }
         if (parts.Length < 2 || !parts[0].StartsWith("advanced-", StringComparison.Ordinal) ||
             !int.TryParse(parts[1], out int i) || i < 0 || i >= NewGameSettings.Options.Length) return false;
         var option = NewGameSettings.Options[i];
@@ -70,7 +75,8 @@ sealed partial class PlayerInterface
             ["FontName"] = "Kenshi_StandardFont_Medium", ["FontPixels"] = Math.Max(8, (int)(14 * s)).ToString(CultureInfo.InvariantCulture),
             ["TextColour"] = MyGuiColours.InkText, ["TextAlign"] = align,
         };
-        float row = area.Height / 7, labelWidth = area.Width * .46f, arrow = 24 * s, valueWidth = 48 * s;
+        int sliders = NewGameSettings.Options.Length;
+        float row = area.Height / (sliders + NewGameSettings.Ticks.Length), labelWidth = area.Width * .46f, arrow = 24 * s, valueWidth = 48 * s;
         for (int i = 0; i < NewGameSettings.Options.Length; i++)
         {
             var option = NewGameSettings.Options[i];
@@ -88,9 +94,22 @@ sealed partial class PlayerInterface
             controls.Add(new($"advanced-knob-{i}", "Button", new(track.X + t * track.Width - 6 * s, y + (row - 28 * s) / 2, 12 * s, 28 * s), "", "", "Kenshi_SliderButtonSkin", true, new Dictionary<string, string>(), Vector4.Zero, Pickable: false));
             controls.Add(new($"advanced-value-{i}", "TextBox", new(right + arrow, y + 4 * s, valueWidth, row - 8 * s), NewGameOptions[i].ToString("0.##", CultureInfo.InvariantCulture), "", "Kenshi_SpeedTextboxSkin", true, Text("Center"), Vector4.Zero, Pickable: false));
         }
+        // The ticks under the sliders (FUN_1409151d0: "Bandits loot the player", "Easy prospecting"), the box at the right end of the row.
+        for (int i = 0; i < NewGameSettings.Ticks.Length; i++)
+        {
+            var tick = NewGameSettings.Ticks[i];
+            float y = area.Y + (sliders + i) * row, box = Math.Min(row - 6 * s, 28 * s);
+            if (new UiRect(area.X, y, labelWidth, row).Contains(mouse.X, mouse.Y) && advancedHelp != sliders + i) { advancedHelp = sliders + i; inventoryScroll.Remove(screen); }
+            controls.Add(new($"advanced-tick-label-{i}", "TextBox", new(area.X, y + 4 * s, labelWidth - 6 * s, row - 8 * s), Loc.Tr(tick.Label), "", "Kenshi_GenericTextBoxFlatSkin", true, Text(), Vector4.Zero, Pickable: false));
+            string ticked = NewGameOptions.Ticked(i) ? "true" : "false";
+            controls.Add(new($"advanced-tick-{i}", "Button", new(area.X + area.Width - valueWidth / 2 - box / 2, y + (row - box) / 2, box, box), "", $"advanced-tick:{i}", "Kenshi_TickBoxSkin", true,
+                new Dictionary<string, string> { ["Checked"] = ticked, ["StateSelected"] = ticked }, Vector4.Zero));
+        }
         if (controls.FirstOrDefault(c => c.Name == "advanced-TooltipPanel") is { } footer)
         {
-            string help = advancedHelp >= 0 && advancedHelp < NewGameSettings.Options.Length ? advancedHelpCatalog.TextAt(NewGameSettings.Options[advancedHelp].HelpLine) : "";
+            int helpLine = advancedHelp >= 0 && advancedHelp < sliders ? NewGameSettings.Options[advancedHelp].HelpLine
+                : advancedHelp >= sliders && advancedHelp < sliders + NewGameSettings.Ticks.Length ? NewGameSettings.Ticks[advancedHelp - sliders].HelpLine : -1;
+            string help = helpLine >= 0 ? advancedHelpCatalog.TextAt(helpLine) : "";
             var view = new UiRect(footer.Bounds.X + 8 * s, footer.Bounds.Y + 8 * s, footer.Bounds.Width - 16 * s, footer.Bounds.Height - 16 * s);
             var text = new Dictionary<string, string> { ["FontName"] = "Kenshi_StandardFont_Medium", ["TextColour"] = MyGuiColours.InkText, ["TextAlign"] = "Left Top", ["WordWrap"] = "true" };
             var shown = new UiControl("advanced-help", "TextBox", view, help, "", "", true, text, Vector4.Zero, Pickable: false, Clip: view.Intersect(footer.Bounds));

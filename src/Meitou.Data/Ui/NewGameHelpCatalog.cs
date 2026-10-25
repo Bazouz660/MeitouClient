@@ -15,7 +15,7 @@ public sealed class NewGameHelpCatalog
         // A label and its description share a source line; the description is the longer msgid.
         foreach (var entry in entries)
             foreach (var (file, line) in entry.References)
-                if (file == "kenshi/titlescreen.cpp" && line is >= 557 and <= 563 && entry.Id.Length > result.EnglishAt(line).Length)
+                if (file == "kenshi/titlescreen.cpp" && line is >= 557 and <= 564 && entry.Id.Length > result.EnglishAt(line).Length)
                     result.descriptions[line] = entry.Id;
         return result;
     }

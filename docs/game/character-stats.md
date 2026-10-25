@@ -370,7 +370,7 @@ stomach gets min(floor - hunger, 0.04). Nobody but the player has to feed anyone
 
 | Character | Floor |
 | --- | --- |
-| animal (slot 0x248), unless the byte `142133599` (next to "Bandits loot the player", no UI binding; **Unknown**) is set | 3 |
+| animal (slot 0x248), unless the byte `142133599` (`GameplayOptions` +0x21, KenshiLib `animalsEat`, default 1; no UI binding) is set | 3 |
 | slave (status 1) | 1 |
 | imprisoned (+0x2f8 = 2): held by the player's faction / free / escaped slave | -10 / 2 / 1.15 |
 | player's faction | -10 (never) |
@@ -522,7 +522,9 @@ and a consumer that reads the same offset):
 ### New-game advanced options that change these mechanics
 
 **Observed**, UI constructor `FUN_1409151d0` and writer `FUN_140912f80` (nine floats copied to the globals at
-`142133578..142133598` when options are applied). The exe image holds zeros there, so defaults are set at game
+`142133578..142133598` when options are applied). The block is `GameplayOptions` (**KenshiLib 1ce4a16**: `+0x4 easyProspecting`,
+`+0x20 banditsLootPlayer`, `+0x21 animalsEat`, `+0x22 difficultHealing`); its loader `FUN_1403eef20` reads CAMERA bool `ep` into +0x4
+and `bl` into +0x20, defaulting +0x4 to 0 and +0x20, +0x21, +0x22 to 1 (**Verified**, decompile). The exe image holds zeros there, so defaults are set at game
 start, not statically readable (**Unknown**; the sliders' ranges are in the binding).
 
 | Option label | Global | Slider range | Effect found |
@@ -532,6 +534,7 @@ start, not statically readable (**Unknown**; the sliders' ranges are in the bind
 | Global damage multiplier | 142133580 | 0.5 to 4 | multiplies damage and combat XP ([combat.md](combat.md#global-tuning-the-constants-record)) |
 | Building speed / Research speed / Production speed | 142133584 / 14213358c / 142133590 | 0.5 to 2 | construction, research and production rates, [buildings-production.md](buildings-production.md#construction-tick) |
 | Bandits loot the player ("Makes life unfair"; CAMERA `bl`, default on) | 142133598 (byte) | checkbox | NPCs may loot the player's downed characters ([NPC looting](carry-loot.md#33-npc-looting)) |
+| Easy prospecting (no help text; CAMERA `ep`, default off) | 14213357c (byte) | checkbox | none: **Verified** that nothing reads it in 1.0.68 (the only RIP-relative references, by a scan of the exe's `.text`, are the writer `FUN_140912f80` and this UI; the struct's own methods load/save/reset `FUN_1403eef20`/`FUN_1403ee910`/`FUN_1403e75d0` and `getStarvationTimeInHours` `FUN_1403e7620` only copy it or read `+0x1c`). A dead option |
 | Number of nests multiplier | 142133588 | 0.5 to 4 | scales the nest count of the area spawner, [factions-squads-towns.md](factions-squads-towns.md#population-and-contents) (**Observed**: that doc's "global density float" `DAT_142133588` is this slider; [combat.md](combat.md#global-tuning-the-constants-record) lists the binding) |
 
 ### CONSTANTS used by this subsystem

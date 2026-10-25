@@ -73,7 +73,7 @@ The ones that limit these screens:
 | Prospecting | The map overlay ([Prospecting](simulation.md#prospecting)) |
 | Squads, faction | Dismissed squads are not saved ([Squads tab](game/ui-screens.md#squads-tab)); the faction cannot be renamed (its rule in [Faction tab](game/ui-screens.md#faction-tab)) |
 | Inventory | Race constraints ([Items and eating](simulation.md#items-and-eating)); the blueprint tooltip's known / bench-level states and unlock lists ([Blueprints](game/buildings-production.md#blueprints)) |
-| New game | Bandit looting and easy prospecting switches; the seven numeric options are Meitou-encoded ([New-game difficulty](simulation.md#new-game-difficulty)) |
+| New game | The seven numeric options are Meitou-encoded ([New-game difficulty](simulation.md#new-game-difficulty)) |
 | Import | The salvage of a save without a squad, the "town too close" removal, the old-save tick disabling ([rules](formats/save.md#importing-a-game-savemanagerimportgame-fun_140378a30)) |
 
 ## Validation
