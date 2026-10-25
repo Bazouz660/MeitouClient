@@ -61,6 +61,9 @@ public sealed record SettingDescription
     public float Max { get; set; } = 1;
     public float Step { get; set; } = 1;
     public bool Logarithmic { get; set; }
+    /// <summary>A slider whose stored value falls as the setting improves (texture quality's level 0 is Maximum): drawn mirrored, so
+    /// right is always more; the value stored stays the same.</summary>
+    public bool Reversed { get; set; }
     /// <summary>How a slider value reads: <see cref="Labels"/>[rounded value] when given, else value x <see cref="Scale"/> in <see cref="Format"/>
     /// plus <see cref="Suffix"/>; below <see cref="OffBelow"/> it reads <see cref="OffText"/>.</summary>
     public string[]? Labels { get; set; }

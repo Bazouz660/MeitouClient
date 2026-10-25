@@ -122,10 +122,13 @@ public sealed partial class MainWindow
     {
         bool log = s.Logarithmic && s.Min > 0;
         float step = s.Step > 0 ? s.Step : 1;
-        float ToSlider(float v) => log ? MathF.Log(v) : v;
-        float FromSlider(double x) => Math.Clamp(MathF.Round((log ? MathF.Exp((float)x) : (float)x) / step) * step, s.Min, s.Max);
+        // A reversed setting's value is mirrored onto the slider (Min + Max - value), so right is always the better end.
+        float Mirror(float v) => s.Reversed ? s.Min + s.Max - v : v;
+        float ToSlider(float v) => log ? MathF.Log(Mirror(v)) : Mirror(v);
+        float FromSlider(double x) => Math.Clamp(Mirror(MathF.Round((log ? MathF.Exp((float)x) : (float)x) / step) * step), s.Min, s.Max);
         float? Get() => s.Graphics ? game.GetGraphics(s.Key) : game.GetNumber(s.Key) ?? s.Default;
-        var slider = new Slider { Minimum = ToSlider(s.Min), Maximum = ToSlider(s.Max), Margin = new(0, 0, 10, 0) };
+        // The range itself is not mirrored: Min..Max either way.
+        var slider = new Slider { Minimum = log ? MathF.Log(s.Min) : s.Min, Maximum = log ? MathF.Log(s.Max) : s.Max, Margin = new(0, 0, 10, 0) };
         var value = new TextBlock { Classes = { "desc" }, Width = 120, VerticalAlignment = VerticalAlignment.Center, TextWrapping = Avalonia.Media.TextWrapping.NoWrap };
         var reset = new Button { Content = Tr("Default"), Margin = new(6, 0, 0, 0), IsEnabled = s.Graphics || s.Default is not null };
         bool loading = false;

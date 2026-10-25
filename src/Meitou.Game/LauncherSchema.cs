@@ -48,7 +48,7 @@ static class LauncherSchema
                     Settings =
                     [
                         Graphics(WorldFrame.TextureQualitySlider, 0, Meitou.Data.Textures.TextureQuality.Maximum, 1, 0) with
-                            { Labels = [.. Meitou.Data.Textures.TextureQuality.Labels] },
+                            { Labels = [.. Meitou.Data.Textures.TextureQuality.Labels], Reversed = true },
                         Graphics(WorldFrame.ObjectDistanceSlider, 1000, 400000, 100, Enhancements.MeitouObjectDistance) with { Logarithmic = true },
                         Graphics(WorldFrame.ShadowDistanceSlider, KenshiShadows.MinRange * 0.9f, 200000, 100, Enhancements.MeitouShadowRange) with
                             { Logarithmic = true, OffBelow = KenshiShadows.MinRange },

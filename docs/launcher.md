@@ -161,6 +161,8 @@ setting reaches the launcher with its release; the launcher knows none of them. 
 
 - A missing `graphics` key is the game's default for the mode ("Game default"); Default removes it, Reset graphics removes `graphics`
   (sliders and Faithful / Meitou switches). A top-level Default writes the schema's `default`. Whole values are written as integers.
+- A slider marked `reversed` (texture quality, whose level 0 is Maximum) is drawn mirrored, so right is always the better end; the
+  value written is unchanged. Older schemas lack the flag and show it unmirrored.
 - Read-only when the file is unreadable, or its `version` differs from the schema's `settingsVersion` (another layout: the keys may
   mean something else). Warnings: the game is running (it writes the file on exit), `--low-end` (the game ignores `graphics`).
 
