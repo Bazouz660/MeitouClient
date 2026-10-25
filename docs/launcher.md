@@ -206,7 +206,7 @@ to preview posts before they are pushed; the header then says "Debug: local news
 by `MarkdownView` (headings, paragraphs, emphasis, code, links, lists, quotes, code blocks, rules, images); raw HTML is dropped
 and links open only for http(s).
 
-A `.webm` in place of an image is a video (`VideoView`, the post's full width): the whole file is fetched and cached like an image, `WebmFile` reads the
+A `.webm` in place of an image is a video (`VideoView`): the whole file is fetched and cached like an image, `WebmFile` reads the
 first video and audio track (Matroska elements, Block lacing), and the first decoded picture is the poster under a play button.
 A click plays it once, another stops it; one plays at a time, and it stops when the Home page is left or the post is rebuilt.
 Pictures: VP8/VP9 through libvpx (`VpxDecoder`, BSD), 8-bit only, converted BT.601 studio range to BGRA. Sound: Vorbis only

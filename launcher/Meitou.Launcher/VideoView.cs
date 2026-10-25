@@ -20,19 +20,20 @@ sealed class VideoView : Border
     static VideoView? playing;
 
     readonly WebmFile file;
-    readonly Image image = new() { Stretch = Stretch.Uniform };
+    readonly Image image = new() { Stretch = Stretch.Uniform, HorizontalAlignment = HorizontalAlignment.Left };
     readonly Control button;
     readonly WriteableBitmap poster;
     WriteableBitmap? frame;
     CancellationTokenSource? run;
 
-    /// <summary>Fills the post's width, its height following the picture's shape.</summary>
-    VideoView(WebmFile file, byte[] firstPicture, int width, int height)
+    VideoView(WebmFile file, byte[] firstPicture, int width, int height, double maxHeight)
     {
         this.file = file;
         CornerRadius = new CornerRadius(6);
         ClipToBounds = true;
+        HorizontalAlignment = HorizontalAlignment.Left;
         Cursor = new Cursor(StandardCursorType.Hand);
+        image.MaxHeight = maxHeight;
         RenderOptions.SetBitmapInterpolationMode(image, BitmapInterpolationMode.HighQuality);
         poster = Bitmap(width, height);
         Copy(firstPicture, poster);
@@ -58,9 +59,9 @@ sealed class VideoView : Border
     }
 
     /// <summary>A video loaded in the background; until then (or when it cannot be played) it takes no room, like an image.</summary>
-    public static Control Create(string url, NewsFeed feed)
+    public static Control Create(string url, NewsFeed feed, double maxHeight)
     {
-        var host = new Panel();
+        var host = new Panel { HorizontalAlignment = HorizontalAlignment.Left };
         _ = Task.Run(async () =>
         {
             var bytes = await feed.ImageAsync(url);
@@ -74,7 +75,7 @@ sealed class VideoView : Border
                 foreach (var f in file.VideoFrames)
                     if (decoder.Decode(f.Data.Span, ref pixels) is var (width, height))
                     {
-                        Dispatcher.UIThread.Post(() => host.Children.Add(new VideoView(file, pixels, width, height)));
+                        Dispatcher.UIThread.Post(() => host.Children.Add(new VideoView(file, pixels, width, height, maxHeight)));
                         return;
                     }
             }
