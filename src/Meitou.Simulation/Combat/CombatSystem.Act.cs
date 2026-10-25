@@ -159,7 +159,8 @@ public sealed partial class CombatSystem
                     EndFight(table, i);
                 }
             }
-            else if (fighting && !s.Picked && now >= s.PickTick && s.AttackTech < 0 && s.ReactTech < 0)
+            // A player's pick is kept, unless no path leads to it (the focused target is dropped while its path is impossible).
+            else if (fighting && (!s.Picked || PursuitSystem.PathImpossible(cold, new CharacterId(s.TargetSlot, s.TargetGeneration), now)) && now >= s.PickTick && s.AttackTech < 0 && s.ReactTech < 0)
             {
                 int pick = ChooseTarget(world, i, s, cold, keep: CurrentSensed(world, i, ref s, cold, now));
                 s.PickTick = now + PickTicks(world, cold);

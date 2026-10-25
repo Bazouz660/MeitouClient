@@ -41,6 +41,7 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
         var d = next[t].Position - n.Position;
         var cold = table.Cold(i)!;
         var tc = table.Cold(t);
+        NotePathFailure(world, cold, new CharacterId(t, next[t].Generation));
         float gap = MathF.Sqrt(d.X * d.X + d.Z * d.Z) - CombatTuning.Footprint(cold) - CombatTuning.Footprint(tc);
         // It runs at the target out of the combat stance from RunGap, back to its footwork under FootworkGap, and after a target that keeps moving away at any gap.
         var tv = next[t].Velocity;
@@ -152,6 +153,29 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
         n.Mode = SpeedMode.Free;
         n.Flags |= (ushort)MoveFlags.NeedPath;
         n.TaskTime = RepathSeconds;
+    }
+
+    /// <summary>How long a target the fighter found no path to is left out of its target choice (<b>Verified</b> literal 20, <c>AITaskSytem::notifyPathImpossible</c>; read as seconds).</summary>
+    public const float PathFailureSeconds = 20;
+
+    /// <summary>Drops the lapsed path failures and, after a path request that found no way, adds <paramref name="target"/> (<see cref="CharacterCold.PathFailures"/>).</summary>
+    static void NotePathFailure(World world, CharacterCold cold, CharacterId target)
+    {
+        var failures = cold.PathFailures;
+        if (failures is not null)
+            for (int k = failures.Count - 1; k >= 0; k--)
+                if (failures[k].Until <= world.Tick || cold.PathFailed && failures[k].Target == target) failures.RemoveAt(k);
+        if (!cold.PathFailed) return;
+        cold.PathFailed = false;
+        (cold.PathFailures ??= []).Add((target, world.Tick + (long)MathF.Ceiling(PathFailureSeconds / world.TickSeconds)));
+    }
+
+    /// <summary>Whether <paramref name="cold"/> found no path to <paramref name="target"/> within the last <see cref="PathFailureSeconds"/>.</summary>
+    public static bool PathImpossible(CharacterCold cold, CharacterId target, long tick)
+    {
+        if (cold.PathFailures is not { Count: > 0 } failures) return false;
+        foreach (var (t, until) in failures) if (t == target && until > tick) return true;
+        return false;
     }
 
     /// <summary>Seconds of side-stepping the circling walker's path point lies ahead at least (engine choice: twice the path interval; <c>Circle</c> also keeps it past the arrival radius).</summary>

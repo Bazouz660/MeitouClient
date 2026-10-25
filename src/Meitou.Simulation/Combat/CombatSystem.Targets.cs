@@ -60,6 +60,8 @@ public sealed partial class CombatSystem
         var prev = table.Previous;
         int i = q.Self;
         if (c == i || (uint)c >= (uint)prev.Length || !prev[c].Alive || read[c].Down || table.Cold(c) is not { Medical.Incapacitated: false, IsImprisoned: false } tc) return;
+        // One it found no path to lately is left out (AITaskSytem::isPathImpossible).
+        if (PursuitSystem.PathImpossible(q.Cold, new CharacterId(c, prev[c].Generation), world.Tick)) return;
         // The current target is whoever the order named, of any faction.
         if (c != q.Current && (tc.Faction == q.Cold.Faction || q.Cold.SquadId >= 0 && tc.SquadId == q.Cold.SquadId)) return;
         ref readonly var o = ref read[c];

@@ -347,6 +347,7 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
             n.Flags = (ushort)(n.Flags & ~(ushort)MoveFlags.Pending);
             if (answer.Path.Found)
             {
+                cold.PathFailed = false;
                 cold.Path = [.. answer.Path.Points.Skip(1)];
                 cold.PathExact = answer.Path.IsProvisional ? answer.Path.Exact - 1 : int.MaxValue;
                 if (answer.Path.Exact > 1) cold.ProvisionalBlocked = 0;
@@ -356,6 +357,7 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
             else
             {
                 // No way there: the old path (an order given on the move) is dropped too.
+                cold.PathFailed = true;
                 n.Flags = (ushort)(n.Flags & ~(ushort)MoveFlags.HasPath);
                 n.PathCursor = 0;
                 n.TaskTime = FailedPathWait;
