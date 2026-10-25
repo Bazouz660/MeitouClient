@@ -447,6 +447,9 @@ sealed partial class GameHost
             };
             if (characters is not null)
             {
+                // The HUD now owns the editor previews and portraits: use the same draw list as Vulkan instead of the
+                // interface-less list, or the editor stage never shows a race, gender or slider change.
+                characters.Source = FillDrawList;
                 var (atlas, sampled) = characters.PortraitAtlas;
                 hud.SetUiTexture(PlayerInterface.PortraitTexture, atlas, sampled);
             }

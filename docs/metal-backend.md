@@ -687,8 +687,9 @@ backend-neutral once `DebugOverlay` took `IGpuContext` (`UiPainter` had no `GpuC
 orders, jobs), the inventory with item icons, the stats and overview/map windows, and the pause menu. Portraits
 are drawn into the character renderer's atlas and the item icons come from the install's files or the renderer.
 `--ui-panel inventory|stats|overview|menu` opens one in a still; `--ui-showcase` now uses the same panel set and
-shared still preparation as Vulkan. `RenderTargetsBottomUp` on `IGpuContext` (true for Vulkan, false for Metal)
-makes the runtime images (portraits, icons, editor stage) draw as stored on Metal instead of applying Vulkan's V flip.
+shared still preparation as Vulkan. Runtime images (portraits, icons, editor stage) flip their V on both backends,
+because both draw them with the engine's y-up clip space. Metal uses the shared character draw list, so the editor
+stage applies race, gender, slider and clothes changes instead of the interface-less world list.
 
 **What is not wired:** the pointer sprite and the cinema camera. The shared trade/dialogue/build/editor screens use the
 host callbacks `ConfigurePlayerInterface` supplies (build services, rocks, factions, tooltips, editor previews); the
@@ -759,9 +760,11 @@ default.
   allocations (the character palettes, then materials, then instances); replacing the constants buffer on growth
   would leave those writes in the old ring and the GPU reading zeros. `MetalFrame` uses a new 1 MB shared chunk
   for each overflow and resets all chunks at the frame's begin.
-- **UI target orientation.** `IGpuContext.RenderTargetsBottomUp` is true for Vulkan and false for Metal; the UI
-  painter applies a display's `ImageFlipV` only on a bottom-up target. This is what keeps the squad portraits, item
-  icons and editor stage upright on Metal. Vulkan's behaviour is unchanged.
+- **UI target orientation and scissors.** The engine's y-up clip space stores renderer images upside down on both
+  backends, so `ImageFlipV` is applied on both (Metal's targets have row 0 at the top, but its viewport maps that
+  clip space top-down). `RenderTargetsBottomUp` still selects the depth/post convention. UI scissor rectangles are
+  top-left on Metal and bottom-up on Vulkan; using Vulkan's flip on Metal shifted clipped controls (the trader stock
+  grid and HUD name plates) down by the panel height.
 - **Cube stand-ins.** A dummy cube's `TextureDesc.Layers` is 1: its six faces are the cube type's slices, not array
   layers. Passing 6 made `GpuTexture.View` ask for 36 slices and `MTL_DEBUG_LAYER=1` abort at the first cube
   sampler (the UI's first frame after the painter was added). `MetalContext.Dummy` now passes 1.

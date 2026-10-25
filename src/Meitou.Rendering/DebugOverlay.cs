@@ -463,7 +463,10 @@ public sealed unsafe class DebugOverlay : IDisposable
             // The target keeps the renderer's lower-left convention; UI rectangles use top-left.
             int left = (int)Math.Floor(clipped.X), right = (int)Math.Ceiling(clipped.X + clipped.Width);
             int top = (int)Math.Floor(clipped.Y), bottom = (int)Math.Ceiling(clipped.Y + clipped.Height);
-            t = t with { Scissor = new PixelRect(left, height - bottom, (uint)(right - left), (uint)(bottom - top)) };
+            // Vulkan's target is bottom-up, so its scissor is measured from the bottom; Metal's scissor has the
+            // same top-left origin as the UI rectangles. A missing flip here shifts every clipped widget down.
+            int scissorTop = Gpu.RenderTargetsBottomUp ? height - bottom : top;
+            t = t with { Scissor = new PixelRect(left, scissorTop, (uint)(right - left), (uint)(bottom - top)) };
         }
         // The atlas texture of run `run` of the batch: a UI font's (it can change within a batch), else the baked one.
         SampledTexture AtlasAt(int run) => atlasRuns.Count > 0 ? atlasRuns[run].Texture : uiFont is { } ui ? ui.Sampled : atlasSampled;
@@ -554,7 +557,7 @@ public sealed unsafe class DebugOverlay : IDisposable
             // Different widget clips can then share a draw without changing their pixels.
             bool contained = true, solid = true;
             float left = clip.X, right = left + clip.Width;
-            float bottom = height - clip.Y, top = bottom - clip.Height;
+            float top = gpu.RenderTargetsBottomUp ? height - clip.Y - clip.Height : clip.Y, bottom = top + clip.Height;
             for (int i = 0; i < data.Length; i += Stride)
             {
                 contained &= data[i] >= left && data[i] <= right && data[i + 1] >= top && data[i + 1] <= bottom;

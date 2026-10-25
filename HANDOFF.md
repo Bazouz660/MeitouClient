@@ -13,6 +13,11 @@ Build: Release 0 warnings / 0 errors. Current quick suite: 424 passed, 2 skipped
 before touching the engine while the host's `MTLCompilerService` XPC remains unhealthy after the 19:15 WindowServer
 GPU timeout; they passed on 2026-10-23 before that crash and need a full shutdown, not a code change.
 
+UI fixes (2026-10-25): Metal UI render-target images now flip V on both backends, the UI scissor uses Metal's
+top-left origin, and Metal uses the shared character draw list. Portraits, item icons and the editor stage are
+upright; editor race/gender/slider changes show live; the trader stock grid and HUD name plates sit in their
+windows. Verified by the user at 2560x1600.
+
 ## Upstream sync (2026-10-24, `57a7968a`)
 
 `metal-spike` now merges upstream `57a7968a` (131 commits since `a9970dbc`), including player-built buildings and
