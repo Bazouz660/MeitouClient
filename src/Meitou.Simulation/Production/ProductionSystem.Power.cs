@@ -43,7 +43,7 @@ public sealed partial class ProductionSystem
         foreach (var m in world.Machines.All)
         {
             m.Power = 1;
-            if (m.Data.IsWind) m.Wind = WindShare(world, m);
+            if (m.Data.IsWind) (m.Wind, m.WindRated) = (WindShare(world, m), Rated(world, m));
             if (!m.Data.IsConsumer && !m.Data.IsGenerator && !m.Data.IsBattery) continue;
             if (Site(world, m.Site) is not { Complete: true } site) continue;
             if (!grids.TryGetValue(site.Town, out var grid)) grids[site.Town] = grid = [];
@@ -73,8 +73,8 @@ public sealed partial class ProductionSystem
     /// </summary>
     static float WindShare(World world, Machine m)
     {
-        if (m.Data.WindRotor is not { } rotor || world.Buildings.Find(m.Site) is not { } site || world.Weather?.At(site.Position.X, site.Position.Z) is not { } here) return 0;
-        return RotorSpec.WindShare(here.WindSpeed, rotor.Min, rotor.Max);
+        m.WindSpeed = world.Buildings.Find(m.Site) is { } site && world.Weather?.At(site.Position.X, site.Position.Z) is { } here ? here.WindSpeed : 0;
+        return m.Data.WindRotor is { } rotor ? RotorSpec.WindShare(m.WindSpeed, rotor.Min, rotor.Max) : 0;
     }
 
     /// <summary>

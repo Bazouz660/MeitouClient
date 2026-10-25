@@ -33,6 +33,12 @@ public readonly record struct PowerView(PowerKind Kind, float Demand, float Gran
 /// <summary>What the host tells a machine's sound emitter (docs/audio.md "Point emitters"): the efficiency and whether it is powered, as the exe's <c>FUN_140258c20</c> takes them.</summary>
 public readonly record struct MachineSound(float Efficiency, bool Powered);
 
+/// <summary>
+/// A wind generator as its panel shows it (docs/game/buildings-production.md "Wind generators"): its blades' wind share, the wind speed at the site (units/s), the blades' operating range
+/// (null without a ROTATION_WIND_SPEED part), its rated output (data + research) and whether it is switched on.
+/// </summary>
+public readonly record struct WindView(float Share, float Speed, (float Min, float Max)? Range, float Rated, bool PowerOn);
+
 /// <summary>A machine of a complete player building after a tick (docs/simulation.md "Production"); <see cref="Site"/> is the building's instance id.</summary>
 public sealed record MachineSnapshot(string Site, string Record, IReadOnlyList<MachineSlotView> Inputs, MachineSlotView? Output, InventoryView? Storage, FarmView? Farm, byte Status, int Operators, int MaxOperators)
 {
@@ -60,6 +66,8 @@ public sealed record MachineSnapshot(string Site, string Record, IReadOnlyList<M
     public MachineSound Sound { get; init; }
     /// <summary>What its ROTATION_OUTPUT parts turn by (<see cref="Machine.Rotation"/>).</summary>
     public float Rotation { get; init; }
+    /// <summary>A wind generator's wind (null for other machines).</summary>
+    public WindView? Wind { get; init; }
 
     internal static MachineSnapshot Of(Machine m, ItemFactory items)
     {
@@ -73,7 +81,7 @@ public sealed record MachineSnapshot(string Site, string Record, IReadOnlyList<M
             ? new FarmView(f.Growth, f.Death, f.Harvested, f.Plants.Length, f.Status, m.Yield, m.CropMatch, ProductionSystem.Ripeness(f)) { PlantGrowth = [.. f.Plants] } : null;
         // The classes that update their emitter every frame tell it the efficiency and the power; the others powered it once, when built, with no operators (efficiency 0).
         var sound = m.Data.PowersEmitterEachFrame ? new MachineSound(m.Efficiency, m.HasPower && m.Efficiency > 0) : new MachineSound(0, true);
-        return new MachineSnapshot(m.Site, m.Data.Id, inputs, output, storage, farm, m.Status, m.Operators, m.Data.MaxOperators) { Sound = sound, Rotation = m.Rotation, TechLevel = m.Data.IsResearch ? m.Data.TechLevel : 0, Operable = m.Data.Operable, IsAutomatic = m.Data.IsAutomatic, IsStorage = m.Data.IsStorage, Function = m.Data.Function, StorageLimitName = m.Data.StorageLimit is [var only] ? Name(only) : null, StorageCapacity = m.Data.StorageLimit is [_] ? (int)m.Data.StackBonusMult : 0, Craft = Crafting(m, items),
+        return new MachineSnapshot(m.Site, m.Data.Id, inputs, output, storage, farm, m.Status, m.Operators, m.Data.MaxOperators) { Sound = sound, Rotation = m.Rotation, Wind = m.Data.IsWind ? new WindView(m.Wind, m.WindSpeed, m.Data.WindRotor, m.WindRated, m.PowerOn) : null, TechLevel = m.Data.IsResearch ? m.Data.TechLevel : 0, Operable = m.Data.Operable, IsAutomatic = m.Data.IsAutomatic, IsStorage = m.Data.IsStorage, Function = m.Data.Function, StorageLimitName = m.Data.StorageLimit is [var only] ? Name(only) : null, StorageCapacity = m.Data.StorageLimit is [_] ? (int)m.Data.StackBonusMult : 0, Craft = Crafting(m, items),
             Power = m.Data.IsConsumer || m.Data.IsGenerator || m.Data.IsBattery ? new PowerView(m.Data.IsBattery ? PowerKind.Battery : m.Data.IsGenerator ? PowerKind.Generator : PowerKind.Consumer, m.Demand, m.Granted, m.Usage, m.Charge, m.Store, m.Inputs.Length == 0 || Array.Exists(m.Inputs, i => i.Level > 0 || i.Count > 0)) : null };
     }
 

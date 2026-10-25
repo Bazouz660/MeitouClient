@@ -210,6 +210,19 @@ sealed partial class PlayerInterface
         string tip = !complete ? Loc.Tr("The building is under construction and at {1,num}% completion.", (int)(fraction * 100))
             : fraction >= 1 ? Loc.Tr("The building is in good condition.") : Loc.Tr("The building is damaged.");
         rows.Add(Bar(Loc.Tr(door is null ? "Condition" : "Building Condition"), fraction, ((int)progress).ToString(CultureInfo.InvariantCulture), tip));
+        // A wind generator's rows (WindGeneratorBuilding::getGUIPower section 4): Wind, its share as a whole percent and the bar; Power Output, the output as an int over the rated.
+        if (site is { Complete: true } && Machine(site.Id) is { Wind: { Rated: > 0 } wind, Power: { } power })
+        {
+            string windTip = Loc.Tr("The current amount of wind.");
+            if (wind.Range is { } range)
+                windTip += "\n" + Loc.Tr("Operating wind speed is between {1,num=fix,p=2} mph and {2,num=fix,p=2} mph.", range.Min * MphPerUnit, range.Max * MphPerUnit);
+            rows.Add(new(Loc.Tr("Wind"), 0, wind.Share, 0, ((int)(wind.Share * 100)).ToString(CultureInfo.InvariantCulture) + "%", "", false, windTip));
+            float output = power.Demand;
+            string outputTip = !wind.PowerOn ? "Power is switched off."
+                : output <= wind.Rated - 1 ? wind.Share > 0 ? "Power output is running at reduced efficiency due to damage." : "Currently not enough wind to generate any power"
+                : "Power output is at maximum.";
+            rows.Add(Bar(Loc.Tr("Power Output"), output / wind.Rated, ((int)output).ToString(CultureInfo.InvariantCulture), outputTip));
+        }
         if (site is { Complete: false })
             foreach (var m in site.Materials)
             {
