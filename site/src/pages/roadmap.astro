@@ -33,7 +33,6 @@ const reportConfig = JSON.stringify({ url: reports.url.replace(/\/$/, ''), siteK
   <div class="backdrop" aria-hidden="true" data-bgs={JSON.stringify(backgrounds)}><div></div><div></div></div>
   <div class="rd">
     <header>
-      <div class="eyebrow">Meitou against Kenshi 1.0.68</div>
       <h1>What works in Meitou, and what does not yet</h1>
       <p>
         Kenshi's systems, by category. Every system has one status. <b>Works</b> covers what someone has seen working in
@@ -432,7 +431,7 @@ const reportConfig = JSON.stringify({ url: reports.url.replace(/\/$/, ''), siteK
   /* The body and the site frame are transparent on this page so the backdrop shows behind them (html keeps the ground colour). */
   body:has(.rd), .mt-scene:has(.rd) { background: transparent; }
   /* Less room under the site header here: the roadmap starts right below it. */
-  .mt-scene:has(.rd) .top { padding-bottom: 16px; }
+  .mt-scene:has(.rd) .top { padding-top: 16px; padding-bottom: 32px; }
 </style>
 
 <style>
@@ -598,7 +597,8 @@ const reportConfig = JSON.stringify({ url: reports.url.replace(/\/$/, ''), siteK
     .side .tile .n { font-size: 1.3rem; }
     .side .tile .d { display: none; }
     .side .search { margin-left: 0; flex-basis: 100%; }
-    .side .plats .gap { margin-left: 0; }
+    .side .plats .lbl { flex-basis: 100%; margin: 4px 0 0; }
+    .side .plats .chip { flex: 1 1 auto; }
     .side .loop { display: grid; gap: 4px; }
     .side .loop .arrow { display: none; }
     .rd .side .loop a { grid-template-columns: 1fr 72px; align-items: center; gap: 12px; min-width: 0; padding: 4px 12px; }
