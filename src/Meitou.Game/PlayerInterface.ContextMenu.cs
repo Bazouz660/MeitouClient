@@ -159,6 +159,19 @@ sealed partial class PlayerInterface
             verbs.Add(PickUpVerb(target));
             return;
         }
+        if (target.Asleep)
+        {
+            // Not standing (the original's state 1): the pick-up verb and Stealth KO; not hostile, also Attack Unprovoked, Bodyguard and Talk To. Not built: Loot on a sleeper.
+            if (!target.CarriedBy.IsNone) return;
+            verbs.Add(PickUpVerb(target));
+            if (target.StealthKoChance is { } koChance)
+                verbs.Add((WithChance("Stealth KO", koChance), () => Say(new Meitou.Simulation.Carrying.StealthKoOrder(selection, id) { Tick = session.World.Tick })));
+            if (Hostile(target)) return;
+            verbs.Add(("Attack Unprovoked", () => Say(new Meitou.Simulation.Combat.AttackOrder(selection, id) { Tick = session.World.Tick, Picked = true })));
+            verbs.Add(("Bodyguard", () => Say(new FollowOrder(selection, id) { Guard = true, Tick = session.World.Tick })));
+            if (session.World.CanTalk(id, selection[0])) verbs.Add(("Talk To", () => Say(new Meitou.Simulation.Dialogue.TalkOrder(selection[0], id) { Tick = session.World.Tick })));
+            return;
+        }
         bool onTurret = Selected().LastOrDefault() is { Turret: not null };
         bool hostile = Hostile(target);
         if (session.World.CanTalk(id, selection[0])) verbs.Add(("Talk To", () => Say(new Meitou.Simulation.Dialogue.TalkOrder(selection[0], id) { Tick = session.World.Tick })));
@@ -209,15 +222,15 @@ sealed partial class PlayerInterface
 
     /// <summary>
     /// The pick-up verb (<c>FUN_140796f80</c>, docs/game/ui-input.md "Context menu verbs"): Pick Up (225) for an ally that is not a trader and for a caged character, else Kidnap (246), which
-    /// shows the chance column (100% for a downed target, <c>FUN_140885600</c>). Both give the pick-up order; the kidnapping is a crime only when witnessed. Not read: the original's tests of the
-    /// target's owner object, its +0xf0 list and the AI state 8.
+    /// shows the chance column (<c>Character::getKidnappingChance</c>) and gives the kidnap order (a sleeper too; the roll on arrival, docs/game/carry-loot.md "Kidnapping"). Not read: the
+    /// original's tests of the target's owner object, its +0xf0 list and the AI state 8.
     /// </summary>
     (string, Action) PickUpVerb(CharacterSnapshot target)
     {
         var id = target.Id;
-        void Give() => Say(new Meitou.Simulation.Carrying.PickUpOrder([], id) { Tick = session.World.Tick });
         bool friendly = AlliedFaction?.Invoke(target.Faction) == true && !target.IsTrader;
-        return friendly || target.Prison is not null ? ("Pick Up", Give) : (WithChance("Kidnap", 100), Give);
+        if (friendly || target.Prison is not null) return ("Pick Up", () => Say(new Meitou.Simulation.Carrying.PickUpOrder([], id) { Tick = session.World.Tick }));
+        return (WithChance("Kidnap", target.KidnapChance ?? 100), () => Say(new Meitou.Simulation.Carrying.PickUpOrder([], id) { Tick = session.World.Tick, Kidnap = true }));
     }
 
     /// <summary>

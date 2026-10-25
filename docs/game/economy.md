@@ -325,6 +325,27 @@ money, mark the entry claimed (it never pays twice) and show "Received c.{1} rew
   ([squad memory](dialogue.md#squad-memory)).
 - `FUN_140673a20` in the trespass path is the squad-memory tag MY_INTRUDER, not a witness function (factions 3.5).
 
+### Town alarms
+
+**Observed** (decompile; `Task_InvestigateAlarms` names KenshiLib 1ce4a16; literals **Verified**).
+- **Raising** (`FUN_1409335e0(town, code, position, culprit, faction, raiser)`): nothing for code 0. Called only by DA 33 CRIME_ALARM (the
+  target's pending crime code and victim faction, at the target) and a failed kidnap ([carry-loot](carry-loot.md#kidnapping): code 15, the
+  victim's faction, at the kidnapper). The town keeps its alarms per code; one of the same code and faction is moved (position, building,
+  floor), else a new one is made (+0x24 = 8.0, **Unknown**; no expiry found). "Alarm raised" when the culprit is the player's, at most every 30 s.
+- **Investigators**: goals 209 INVESTIGATE_ALARMS and 210 (the task's flag: only alarms of its own faction), Urgent, weight 0.1, 0-24 h, in 51
+  packages of the merged load order (town and gate guards, police, shops, residents, throne rooms; **Verified** by probe). Row 209: effect
+  !130 ALARMS_IN_THE_VICINITY, needs 86 atATown. Finder `FUN_14092a810(town, 0, 375, me, faction or 0)`: the nearest alarm of the
+  investigator's squad's town within 375 for a trespass (code 11), 187.5 otherwise; halved again when it is in a closed building the
+  investigator is not in; skipped across floors (building flag +0xc2 or more than one floor apart).
+- **Update** (`FUN_140354260`): no town or no alarm ends the task. Within 100 of it: faces it and counts down (15 s at the start, 10
+  after any walk); at 0 the alarm is deleted and the task ends (the only remover found). Farther: runs (mode 2) to 30 short of it on its
+  own side, the count set to 10, and every sensed character (neutral or enemy, not down: `SenseItr(6, 8)`) with a pending crime whose
+  victim faction is an ally of the investigator's (`FactionRelations::isAlly`: same, or 50+) is tagged TEMP ENEMY and attacked
+  (`Character::attackTarget`).
+
+Meitou (`CrimeSystem.TownAlarm` / `AlarmFor` / `Investigate`, `AiBehaviour.Investigate`): as above; alarms are not saved; the building and
+floor tests are not modelled; "sensed" is the witnesses' sight test.
+
 ### 11.7 Arrest
 
 Arrests are started by **dialogue**, not by a crime test in code (**Verified** by probe of the merged data; enum numbers from the FCS

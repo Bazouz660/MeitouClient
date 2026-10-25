@@ -447,6 +447,8 @@ public sealed class AiMind
     /// <summary>The role list and hour <see cref="Stance"/> was worked out for (a cache; the stance itself is hashed).</summary>
     internal IReadOnlyList<AiGoal>? StanceFrom { get; set; }
     internal int StanceHour { get; set; } = -1;
+    /// <summary>The investigation's look-about count in seconds (<see cref="Crime.CrimeSystem.LookAboutSeconds"/>; the task starts it at 15).</summary>
+    public float LookAbout { get; set; } = Crime.CrimeSystem.FirstLookAboutSeconds;
 
     internal void Hash(ref StateHasher hasher)
     {
@@ -469,5 +471,6 @@ public sealed class AiMind
         if (PlaceAt is { } place) hasher.Add(place);
         if (BedAt is { } bed) hasher.Add(Rng.StableHash(bed));
         if (!FollowTarget.IsNone) hasher.Add(FollowTarget);
+        if (LookAbout != Crime.CrimeSystem.FirstLookAboutSeconds) hasher.Add(LookAbout);
     }
 }

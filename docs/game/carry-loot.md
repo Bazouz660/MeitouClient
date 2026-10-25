@@ -133,6 +133,25 @@ it is not part of target eligibility.
 - **Bandits loot the player** is the new-game option at block `+0x20`, saved as CAMERA bool `bl` (**Verified**: the reader `FUN_1403eef20` reads key `bl` into `+0x20`, the writer
   `FUN_140912f80` copies `+0x20` to `142133598`; the reader's default is 1, and `bl` is true in the owner's three readable original saves).
 
+## Kidnapping
+
+**Observed** (decompile; names KenshiLib 1ce4a16; literals **Verified**). Verb 246 (the pick-up verb on another faction's character that is
+not standing: down, asleep, imprisoned, [ui-input](ui-input.md#context-menu-verbs)) runs `Task_Kidnapping`, a `Task_LiftSomething` whose
+arrival (vfunc 1, `FUN_14034ffa0`) first rolls:
+- The victim's squad tags the kidnapper TEMP ENEMY and the kidnapper gets a pending Kidnapping (code 15) against the victim's faction.
+- **Chance** (`Character::getKidnappingChance`, also the verb's column): 100 for a down victim that is not getting up (+0x278); else
+  the stealth KO's formula ([combat](combat.md#stealth-knock-out)) with the victim's effective strength in place of its toughness and no
+  sense terms. Roll uniform 0..100; taken when roll <= chance.
+- **Taken**: a victim neither dead nor unconscious is knocked out for lerp(2, 300, kidnapper assassination x 0.01) s (raw stat); assassination
+  XP 100; then the lift.
+- **Failed**: the victim perceives the kidnapper (a field of the kidnapper's, +0x110 = 250, **Unknown**); its town's alarm is raised at the
+  kidnapper (code 15, [town alarms](economy.md#town-alarms)); a sleeper (state 1) gets order 116 Getting out of bed; its squad tags the
+  kidnapper TEMP ENEMY and long-term 1 (intruder) and says event 8 to it; assassination XP 300; the task ends; a sleeper wakes (state 0) and
+  goes for the kidnapper (`Character::attackTarget`).
+
+Meitou (`CarrySystem.Kidnap.cs`, `PickUpOrder.Kidnap`): as above; asleep is lying in a bed or resting with the sleep behaviour; the
+perception mark and +0x110 are not modelled.
+
 ## Unknowns
 
 1. The bed search (`FUN_1408cfe00`) is decoded for player-faction characters and, in outline, for others ([locks](locks.md#beds)); the meaning of the designated-building kinds is not.

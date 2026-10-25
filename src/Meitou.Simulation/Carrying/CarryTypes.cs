@@ -4,7 +4,11 @@ namespace Meitou.Simulation.Carrying;
 /// Orders one of the carriers (the selection when the list is empty) to pick <see cref="Target"/> up: the nearest one that can carry walks to it and lifts it onto its left shoulder
 /// (the original's <c>LIFT_PERSON_PLAYER_ORDER</c>, context menu verb "Pick Up"). The target must be knocked out or dead, of a <c>carriable</c> race and not carried already.
 /// </summary>
-public sealed record PickUpOrder(IReadOnlyList<CharacterId> Carriers, CharacterId Target) : SimCommand;
+public sealed record PickUpOrder(IReadOnlyList<CharacterId> Carriers, CharacterId Target) : SimCommand
+{
+    /// <summary>The verb was Kidnap (246, <c>Task_Kidnapping</c>): a sleeping target may be taken too, and the lift rolls <see cref="CarrySystem.KidnapChance"/> first.</summary>
+    public bool Kidnap { get; init; }
+}
 
 /// <summary>Orders the carriers (the selection when the list is empty) that carry someone to set it down where they stand (the original's <c>PUT_DOWN_OBJECT</c>, "Put Down").</summary>
 public sealed record PutDownOrder(IReadOnlyList<CharacterId> Carriers) : SimCommand;

@@ -126,9 +126,12 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
             switch (command)
             {
                 case PickUpOrder order:
-                    if (!table.TryResolveNext(order.Target, out int body) || !CanBeLifted(world, table.Cold(body)!)) break;
+                    if (!table.TryResolveNext(order.Target, out int body) || !(CanBeLifted(world, table.Cold(body)!) || order.Kidnap && CanBeKidnapped(table, body))) break;
                     if (Nearest(table, Who(world, order.Carriers), body, s => s != body && CanCarry(table.Cold(s)!)) is int carrier)
+                    {
                         Begin(table, carrier, order.Target, CharacterTask.PickUp, CharacterTask.Idle);
+                        table.Cold(carrier)!.Kidnapping = order.Kidnap;
+                    }
                     break;
                 case LootOrder loot:
                     if (!table.TryResolveNext(loot.Target, out int victim) || !CanBeLooted(table.Cold(victim)!)) break;
@@ -252,6 +255,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         cold.CarryTarget = target;
         cold.LiftTime = -1;
         cold.ResumeTask = resume;
+        cold.Kidnapping = false;
     }
 
     /// <summary>Ends a pick-up, put-down or loot (serial phases): back to the task before it.</summary>
@@ -285,7 +289,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
             var cold = table.Cold(i)!;
             bool lifting = n.Task == (byte)CharacterTask.PickUp;
             if (cold.Medical is not { Incapacitated: false } || cold.InCombat || !table.TryResolveNext(cold.CarryTarget, out int t)
-                || (lifting ? cold.LiftTime < 0 && !(CanCarry(cold) && CanBeLifted(world, table.Cold(t)!)) : !(Opening(world, i) ? CanBeOpened(table.Cold(t)!) : CanBeLooted(table.Cold(t)!))))
+                || (lifting ? cold.LiftTime < 0 && !(CanCarry(cold) && (CanBeLifted(world, table.Cold(t)!) || cold.Kidnapping && CanBeKidnapped(table, t))) : !(Opening(world, i) ? CanBeOpened(table.Cold(t)!) : CanBeLooted(table.Cold(t)!))))
             {
                 if (!(lifting && cold.LiftTime >= 0)) End(table, i);   // a lift under way is finished or broken off in SlowWorld
                 continue;
@@ -344,6 +348,16 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         var cold = table.Cold(i)!;
         if (cold.LiftTime < 0) return;   // still walking
         float before = cold.LiftTime;
+        // A kidnap rolls on arrival (Task_Kidnapping's override of the lift): a miss ends the task.
+        if (before == 0 && cold.Kidnapping)
+        {
+            cold.Kidnapping = false;
+            if (!Kidnap(world, table, i))
+            {
+                End(table, i);
+                return;
+            }
+        }
         cold.LiftTime += dt;
         bool attached = !cold.Carrying.IsNone && cold.Carrying == cold.CarryTarget;
         if (!attached && cold.LiftTime > CarrySettings.AttachAt * LiftSeconds)

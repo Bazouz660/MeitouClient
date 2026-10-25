@@ -51,6 +51,8 @@ public enum RngPurpose : uint
     Formation = 25,
     /// <summary>A stealth KO target's hearing roll on the creeping attacker's last step (<see cref="Carrying.CarrySystem"/>).</summary>
     KnockoutHear = 26,
+    /// <summary>The kidnap roll (<see cref="Carrying.CarrySystem.KidnapChance"/>).</summary>
+    Kidnap = 27,
 }
 
 /// <summary>

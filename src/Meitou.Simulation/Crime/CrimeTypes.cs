@@ -155,6 +155,18 @@ public sealed class BountyLedger
 }
 
 /// <summary>
+/// A town's raised alarm (<c>FUN_1409335e0</c>'s record, <b>Observed</b>): the crime, the faction it was against, where it was raised. It stays until an investigator has looked about at
+/// it (<see cref="CrimeSystem.Investigate"/>; the original's field +0x24 = 8.0 is <b>Unknown</b>, no expiry was found). Not saved (engine choice).
+/// </summary>
+public sealed class TownAlarm
+{
+    public required int Town { get; init; }
+    public required CrimeCode Code { get; init; }
+    public required int Faction { get; init; }
+    public System.Numerics.Vector3 Position { get; set; }
+}
+
+/// <summary>
 /// A crime the character committed that nobody has booked yet (economy.md 11.6, carry-loot.md 4.3: code, victim faction, victim, a freshness timer; the "booked" flag). One per
 /// character, as in the game. <see cref="Timer"/> is in game seconds and counts down (the game's countdown was not found: engine choice); a witness sets it to 20 again.
 /// </summary>

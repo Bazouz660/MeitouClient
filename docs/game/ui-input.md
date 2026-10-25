@@ -421,7 +421,7 @@ Labels (`FUN_14079b2d0`): 2 Build; 3 Pick Up, or Steal when the item's owner fac
 The pick-up verb (`FUN_140796f80`, **Verified** by re-reading the decompile 2026-10-23): for a character of another faction than the lead's, whose faction lacks flag +0x1d0 and whose
 +0x1a0 → +0x88 object is set and whose faction has +0x250 clear: 225 when it is friendly to the lead (slot 126, vfunc +0x3f0) and not a trader (`FUN_1405cff70`) and `FUN_140796240` is false;
 else, when the count at +0xf0 (`FUN_140854080(+0xf0, 0)`) is below 1 and its AI state (+0x1a0 → +0xdc) is not 8: 246 Kidnap, or 225 while imprisoned (+0x2f8 = 2); every other case 225.
-Kidnap's chance column (`FUN_140885600`) is 100 for a downed target whose byte +0x278 is clear (**Observed**), else a clamp of stat products (not decoded). `FUN_140793d80` adds 223 when the target's
+Kidnap's chance column is `Character::getKidnappingChance` ([carry-loot](carry-loot.md#kidnapping)). `FUN_140793d80` adds 223 when the target's
 home (slot 59) is a building of the player's, or 273 when its +0x1a0 → +0x88 owner is the player's, its slot 35 is above 0 and the lead is not its enemy.
 **Dispatch** (`FUN_1407fa650` → `FUN_1407f9e20`, **Observed**): 45, 0x111 and 0xdf go through the job giver `FUN_1407f5a90` (sound `Permanent_Job`), every other order through
 `FUN_1407f9e20`, which per selected character swaps 5 / 16 / 0x3d for 0x107 / 0x106 / 0x10a when `FUN_1407f2840(character)` is true (**Unknown** which characters: Meitou reads it as a
@@ -436,7 +436,7 @@ the same labels and order (`VerbOrders`; Meitou's own verbs after), the animals-
 Containers and doors open their menu on a held press (a quick click as before). Built: Put Down, Talk To, Attack Target (hostile), Attack
 Unprovoked, Stealth KO, Follow (`FollowOrder`, [simulation](../simulation.md)), Loot, Trade (the player's own character, standing or down: the nearest selected walks over and its inventory opens beside the
 selection's, as the loot window), Pick Up and Kidnap (the same pick-up order; Pick Up on the player's own character standing too, when it carries no one: `FUN_1407a6bc0`'s own-faction
-branch adds 26, 45, 31 and, with no selected carrier of it, the pick-up verb for a carriable race not carrying (+0x348) nor carried (+0x3d4), with no down test, **Observed**; Kidnap when the target is not an ally or is a trader, shown with 100%; the kidnapping is a crime only when witnessed,
+branch adds 26, 45, 31 and, with no selected carrier of it, the pick-up verb for a carriable race not carrying (+0x348) nor carried (+0x3d4), with no down test, **Observed**; Kidnap when the target is not an ally or is a trader, with its chance, also on a sleeper (with Stealth KO, and Attack Unprovoked, Bodyguard, Talk To when not hostile; Loot on a sleeper is not built; [carry-loot](carry-loot.md#kidnapping)),
 [carry-loot](carry-loot.md)), First Aid, Splint Injuries, Unlock Shackles / Use Tools / Use Strength (shackles), Pick Lock / Escape / Pick Up / Set Free on a caged
 character, Inventory / Loot / Pick Lock / Use Tools / Use Strength on containers (Loot uses the Alt path: another faction's shop stock is stolen from at once, [locks](locks.md#containers-meitou)),
 Open / Close / Lock / Unlock (all the building's doors) / Pick Lock / Use Tools / Use Strength / Smash on doors ([locks](locks.md#player-orders-on-locks)), Build, Repair (owned ruined/damaged houses; Shift adds Engineer), Use, Auto-Haul (storage, as the job),

@@ -20,7 +20,7 @@ namespace Meitou.Simulation.Crime;
 /// An NPC is a culprit only of an Assault, never booked (engine choice: an NPC's looting and carrying raise no crime; its attacks on characters not hostile to them, such as hungry
 /// bandits on a town's visitors, are witnessed so the town's police step in).
 /// </summary>
-public sealed class CrimeSystem(FactionRelations relations, CrimeSettings? settings = null) : ITickSystem
+public sealed class CrimeSystem(FactionRelations relations, CrimeSettings? settings = null) : ITickSystem, IStateHashed
 {
     /// <summary>The freshness a pending crime starts with at least (the setter's minimum, <b>Observed</b>), and the timers the game gives some deeds.</summary>
     public const float MinTimer = 3, WitnessTimer = 20, PoliceHitTimer = 30, KidnapTimer = 20;
@@ -182,6 +182,7 @@ public sealed class CrimeSystem(FactionRelations relations, CrimeSettings? setti
         int every = Math.Max(1, Settings.SweepEveryTicks);
         if (world.Tick % every != 0) return;
         Sweep(world, every * world.TickSeconds);
+        if (alarms.Count > 0) Investigate(world, every * world.TickSeconds);
     }
 
     void Sweep(World world, float seconds)
@@ -280,6 +281,8 @@ public sealed class CrimeSystem(FactionRelations relations, CrimeSettings? setti
             p.Timer = WitnessTimer;
             c.RecentlyWanted = RecentlyWantedSeconds;
             var witness = table.IdOf(w);
+            // Its squad tags the culprit short-term CRIMINAL (7).
+            if (wc.SquadId >= 0) world.SystemOf<Dialogue.DialogueSystem>()?.Memory.Flag(world, wc.SquadId, culpritId, Dialogue.MemoryTag.Criminal);
             // A witness that is the crime's own victim (a trespass's is the witness that called it) goes for the culprit (Character::attackTarget: its squad tags the culprit TEMP_ENEMY).
             if (p.Victim == witness && wc.Fighter?.CanAttack == true
                 && !(world.SystemOf<Combat.CombatSystem>()?.StateOf(witness) is { } fight && fight.TargetSlot == culprit && fight.TargetGeneration == culpritId.Generation))
@@ -367,8 +370,7 @@ public sealed class CrimeSystem(FactionRelations relations, CrimeSettings? setti
     /// <summary>
     /// DA 33 CRIME_ALARM said by <paramref name="speaker"/> at <paramref name="target"/> (<c>FUN_140680560</c>, <b>Observed</b>): the speaker turns on the target (its perception marks it
     /// hostile, <c>FUN_140858f40</c>), the target's crime timer is set to 30 and it is recently wanted (<c>FUN_140851f40</c>); with no crime pending, a target inside the speaker's own
-    /// home that is not public gets a pending Trespassing. Then the alarm of the speaker's town is raised at the target (<c>FUN_1409335e0</c>, "Alarm raised" at most every 30 s for
-    /// the player's); what answers the town alarm is <b>Unknown</b>, Meitou sends the town's police-like characters within twice their sight of the target at it (engine choice).
+    /// home that is not public gets a pending Trespassing. Then the alarm of the speaker's town is raised at the target for its pending crime (<see cref="TownAlarm"/>).
     /// </summary>
     public void Alarm(World world, int speaker, int target)
     {
@@ -383,25 +385,104 @@ public sealed class CrimeSystem(FactionRelations relations, CrimeSettings? setti
         if (town < 0) return;   // the original also needs the speaker's faction not hostile to its town's (a town squad's is its town's here)
         if (t.Pending is null && squad!.Ai?.HomePublic == false && HomeKey(squad) is { } home && world.Sight.BuildingOf(target) == home
             && SetPending(world, target, CrimeCode.Trespassing, s.Faction, table.IdOf(speaker), MinTimer)) t.Pending!.Timer = AlarmTimer;
+        if (t.Pending is { } crime) TownAlarm(world, target, town, crime.Code, crime.VictimFaction);
+    }
+
+    /// <summary>
+    /// The alarm of <paramref name="town"/> raised at <paramref name="target"/> (<c>FUN_1409335e0</c>, <b>Observed</b>), for the crime <paramref name="code"/> against
+    /// <paramref name="faction"/>: nothing for code 0; "Alarm raised" at most every 30 s for the player's; the town keeps one alarm per code and faction, a new one moving it to the target.
+    /// The town's investigators answer it (<see cref="Investigate"/>).
+    /// </summary>
+    public void TownAlarm(World world, int target, int town, CrimeCode code, int faction)
+    {
+        var table = world.Characters;
+        if (town < 0 || code == CrimeCode.None || table.Cold(target) is not { } t) return;
         if (t.IsPlayer && world.GameHours - lastAlarmHours >= AlarmPostSeconds / World.SecondsPerGameHour)
         {
             lastAlarmHours = world.GameHours;
             world.Post(Loc.Tr("Alarm raised"));
         }
         var at = table.Next[target].Position;
-        var guards = new List<CharacterId>();
-        foreach (var q in world.Squads.All)
-        {
-            if (q.Town != town) continue;
-            foreach (var m in q.Members)
+        foreach (var a in alarms)
+            if (a.Town == town && a.Code == code && a.Faction == faction)
             {
-                if (!table.TryResolveNext(m, out int g) || g == speaker || !table.Next[g].Alive) continue;
-                if (table.Cold(g) is not { IsPlayer: false, IsImprisoned: false, Medical.Incapacitated: false, Fighter.CanAttack: true } gc || !IsPoliceLike(world, gc)) continue;
-                float r = 2 * AggroSystem.RangeOf(gc, AggroSystem.OutdoorSight);
-                if (Vector3.DistanceSquared(table.Next[g].Position, at) <= r * r) guards.Add(m);
+                a.Position = at;
+                return;
+            }
+        alarms.Add(new TownAlarm { Town = town, Code = code, Faction = faction, Position = at });
+    }
+
+    readonly List<TownAlarm> alarms = [];
+
+    /// <summary>The towns' raised alarms, oldest first.</summary>
+    public IReadOnlyList<TownAlarm> Alarms => alarms;
+
+    /// <summary>How far an investigator answers an alarm (<c>FUN_14092a810</c>'s 375, <b>Verified</b> literal): a trespass at that range, any other crime at half of it.</summary>
+    public const float AlarmReach = 375;
+    /// <summary>Within this of the alarm an investigator stops and looks about (100, <b>Verified</b>: the squared 10000), for <see cref="LookAboutSeconds"/> (10; 15 at the task's start).</summary>
+    public const float AlarmLookRange = 100, LookAboutSeconds = 10, FirstLookAboutSeconds = 15;
+    /// <summary>An investigator runs to this far short of the alarm, on its own side (30, <b>Verified</b>).</summary>
+    public const float AlarmApproach = 30;
+
+    /// <summary>
+    /// The alarm an investigator of <paramref name="town"/> at <paramref name="at"/> answers (<c>FUN_14092a810</c>, <b>Observed</b>): the nearest within <see cref="AlarmReach"/> for a
+    /// trespass, half of it otherwise; with <paramref name="faction"/> (goal 210, allies only) only its faction's. Engine: the original's further halving for an alarm inside a closed
+    /// building the investigator is not in, and its floor test, are not modelled. Null when none.
+    /// </summary>
+    public TownAlarm? AlarmFor(int town, Vector3 at, int faction = -1)
+    {
+        TownAlarm? best = null;
+        float bestD = float.MaxValue;
+        foreach (var a in alarms)
+        {
+            if (a.Town != town || faction >= 0 && a.Faction != faction) continue;
+            float reach = a.Code == CrimeCode.Trespassing ? AlarmReach : AlarmReach * 0.5f;
+            float d = Vector3.DistanceSquared(a.Position, at);
+            if (d < reach * reach && d < bestD) (best, bestD) = (a, d);
+        }
+        return best;
+    }
+
+    /// <summary>
+    /// The investigators' serial step (<c>Task_InvestigateAlarms</c> update, <b>Observed</b>), for each NPC whose AI acts out goal 209 or 210 (<see cref="Ai.AiBehaviour.Investigate"/>):
+    /// within <see cref="AlarmLookRange"/> of its alarm it counts <see cref="Ai.AiMind.LookAbout"/> down and clears the alarm when it runs out; on the way there it keeps the count at
+    /// <see cref="LookAboutSeconds"/>, and every character it sees that is not down, not of its faction or an ally, and has a pending crime against its faction or an ally, its squad
+    /// tags TEMP_ENEMY and it goes for (<c>Character::attackTarget</c>). Engine: "sees" is the witnesses' sight test, the original's sense list (seen or heard) is not.
+    /// </summary>
+    void Investigate(World world, float seconds)
+    {
+        var table = world.Characters;
+        var next = table.Next;
+        for (int i = 0; i < table.HighWater; i++)
+        {
+            if (!next[i].Alive || table.Cold(i) is not { Ai: { Behaviour: Ai.AiBehaviour.Investigate, Goal: { } goal, Squad.Ai: { } board } mind } cold || !Ai.AiSystem.Holds(next[i], cold)) continue;
+            var alarm = AlarmFor(board.Town, next[i].Position, goal.Task.Type == Data.Gameplay.Ai.TaskType.INVESTIGATE_ALARMS_ALLIES_ONLY ? cold.Faction : -1);
+            if (alarm is null) continue;
+            if (Vector3.DistanceSquared(alarm.Position, next[i].Position) <= AlarmLookRange * AlarmLookRange)
+            {
+                mind.LookAbout -= seconds;
+                if (mind.LookAbout < 0) alarms.Remove(alarm);
+                continue;
+            }
+            mind.LookAbout = LookAboutSeconds;
+            if (cold.Fighter?.CanAttack != true) continue;
+            float range = AggroSystem.RangeOf(cold, Settings.Sight);
+            for (int c = 0; c < table.HighWater; c++)
+            {
+                if (c == i || !next[c].Alive || table.Cold(c) is not { Pending: { } p, Medical.Incapacitated: false } cc || Friendly(cold.Faction, cc.Faction) || !Friendly(cold.Faction, p.VictimFaction)) continue;
+                if (Vector3.DistanceSquared(next[c].Position, next[i].Position) > range * range || world.Sight.Sees(i, c, next[i].Position, next[i].Yaw, next[c].Position, range) <= 0) continue;
+                world.SystemOf<Dialogue.DialogueSystem>()?.TagEnemy(world, i, c);
+                world.Defer(new Combat.AttackOrder([table.IdOf(i)], table.IdOf(c)) { Tick = world.Tick + 1 });
+                break;
             }
         }
-        if (guards.Count > 0) world.Defer(new Combat.AttackOrder(guards, targetId) { Tick = world.Tick + 1 });
+    }
+
+    public void Hash(ref StateHasher hasher)
+    {
+        if (alarms.Count == 0) return;
+        hasher.Add(alarms.Count);
+        foreach (var a in alarms) { hasher.Add(a.Town); hasher.Add((int)a.Code); hasher.Add(a.Faction); hasher.Add(a.Position); }
     }
 
     /// <summary>The crime timer DA 33 sets (the literal 30.0 passed to <c>FUN_140851f40</c>), and how often "Alarm raised" may be posted (real seconds in the original; game seconds here).</summary>

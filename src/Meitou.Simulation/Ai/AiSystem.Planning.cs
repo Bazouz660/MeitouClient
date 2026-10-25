@@ -121,6 +121,8 @@ public sealed partial class AiSystem
                     ? system.AtHomeTown(world, mind.Squad, board, world.Characters.IdOf(slot)) : system.CurrentTown(world, Me.Position) == board.Destination,
                 StateType.hasDestinationTown => board.Town >= 0 || !board.Destination.IsNone,
                 StateType.atATown => system.TownAt(Me.Position) >= 0,
+                // Any alarm of its town in reach (goal 210's own-faction filter is its desire's).
+                StateType.ALARMS_IN_THE_VICINITY => system.AlarmOf(world, slot, TaskType.INVESTIGATE_ALARMS, board) is not null,
                 StateType.isLeaderDown => mind.Squad.Leader.IsNone || !world.Characters.IsAlive(mind.Squad.Leader),
                 StateType.isFullyRested => cold.Medical is not { Incapacitated: true },
                 StateType.hasOneWorkingArm => cold.Medical is not { } arms || arms.ArmWorks(left: true) || arms.ArmWorks(left: false),

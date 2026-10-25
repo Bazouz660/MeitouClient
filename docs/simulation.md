@@ -547,9 +547,8 @@ building is not open (template `public day`, kept as `Blackboard.HomePublic`; op
 building is not public, its residents' faction is not an ally, and the culprit is a slave or the residents have locked up. The
 witness rules above then fire event 17 and a police-like witness books 100. The MY_INTRUDER memory tag is not kept (nothing reads
 it). DA 33 CRIME_ALARM (`CrimeSystem.Alarm`): the speaker attacks the target, the target's crime timer is 30 and it is recently
-wanted; a speaker of a town squad sets Trespassing on a target with nothing pending inside its private home, posts "Alarm raised"
-(at most every 30 game seconds) and, engine choice (the original's town-alarm readers are not traced), sends the town's
-police-like characters within twice their sight of the target at it.
+wanted; a speaker of a town squad sets Trespassing on a target with nothing pending inside its private home, and raises the town alarm for
+the target's pending crime, which the town's investigators answer ([town alarms](game/economy.md#town-alarms)).
 
 ## Cages, beds and locks
 

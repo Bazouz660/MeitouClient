@@ -174,6 +174,10 @@ public sealed record CharacterSnapshot(CharacterId Id, CharacterAppearance? Appe
     /// selected character is sneaking or this one cannot be knocked out (a player character, or already down).
     /// </summary>
     public float? StealthKoChance { get; init; }
+    /// <summary>The chance in per cent that the selection's lead kidnaps this NPC (<see cref="Carrying.CarrySystem.KidnapChance"/>); null for a player character or with nothing selected.</summary>
+    public float? KidnapChance { get; init; }
+    /// <summary>Asleep (<see cref="Carrying.CarrySystem.Asleep"/>): not standing, so the menu offers the down verbs (Kidnap among them).</summary>
+    public bool Asleep { get; init; }
     /// <summary>In a cage: whether it is locked and the sentence (null: not imprisoned).</summary>
     public PrisonView? Prison { get; init; }
     /// <summary>The town turret this character stands at the gun of (the AI's turret goals, arrived and idle); null when it mans none. Read-only, for the host's turret sounds.</summary>

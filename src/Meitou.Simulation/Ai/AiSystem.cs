@@ -79,6 +79,13 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
 
     public AiSettings Settings { get; } = settings ?? new AiSettings();
     PopulationData Data => data;
+    /// <summary>The towns' alarms the investigators answer (<see cref="AiBehaviour.Investigate"/>); null: none are raised.</summary>
+    public Crime.CrimeSystem? Crimes { get; set; }
+
+    /// <summary>The alarm an investigator answers: its squad's town's nearest in reach, for goal 210 only its own faction's (<see cref="Crime.CrimeSystem.AlarmFor"/>).</summary>
+    internal Crime.TownAlarm? AlarmOf(World world, int slot, TaskType type, Blackboard board) =>
+        Crimes is { Alarms.Count: > 0 } crimes && world.Characters.Cold(slot) is { } cold
+            ? crimes.AlarmFor(board.Town, world.Characters.Previous[slot].Position, type == TaskType.INVESTIGATE_ALARMS_ALLIES_ONLY ? cold.Faction : -1) : null;
 
     readonly Dictionary<string, (IReadOnlyList<SlottedPackage> Packages, SquadTemplate? Template)> templates = [];
     // Squads already looked at (ids are never reused); derived from the squads, so not part of the hash.
@@ -126,7 +133,7 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             CharacterTask.Idle or CharacterTask.Wander or CharacterTask.Follow => true,
             // The walks to its spots, and lying or sitting there, are the AI's own.
             CharacterTask.GoTo => mind.Behaviour is AiBehaviour.Post or AiBehaviour.Sleep or AiBehaviour.Sit or AiBehaviour.GoHome or AiBehaviour.Patrol or AiBehaviour.Turret
-                or AiBehaviour.TownNode or AiBehaviour.Shop or AiBehaviour.Relax or AiBehaviour.ToTown or AiBehaviour.Travel or AiBehaviour.Work,
+                or AiBehaviour.TownNode or AiBehaviour.Shop or AiBehaviour.Relax or AiBehaviour.ToTown or AiBehaviour.Travel or AiBehaviour.Work or AiBehaviour.Investigate,
             CharacterTask.Rest => mind.Behaviour is AiBehaviour.Sleep or AiBehaviour.Sit or AiBehaviour.Relax,
             // In the bed it went to (or lying in one when loaded, before its first think).
             CharacterTask.Sleep => cold.InSomething == Locks.HeldState.Bed && (mind.Behaviour == AiBehaviour.Sleep || mind.Goal is null),
@@ -239,6 +246,8 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             AiBehaviour.ToTown => TownAt(world.Characters.Previous[self.Slot].Position) >= 0 ? 0 : 1,
             // To the package's mission town while not in it.
             AiBehaviour.Travel => board.RefugeeTarget >= 0 ? 1 : board.Destination.IsNone ||CurrentTown(world, world.Characters.Previous[self.Slot].Position) == board.Destination ? 0 : 1,
+            // Only while an alarm of its town is in reach (the row's done state !ALARMS_IN_THE_VICINITY).
+            AiBehaviour.Investigate => AlarmOf(world, self.Slot, type, board) is null ? 0 : 1,
             _ => 1,
         };
     }
@@ -427,6 +436,7 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
                 mind.CommitUntil = world.GameHours + profile.CommitMin + Rng.Float(roll) * profile.CommitRange;
             }
         }
+        if (behaviour == AiBehaviour.Investigate && (fresh || mind.Behaviour != AiBehaviour.Investigate)) mind.LookAbout = Crime.CrimeSystem.FirstLookAboutSeconds;
         mind.Goal = goal;
         mind.Behaviour = behaviour;
         mind.Version = board.Version;
@@ -550,6 +560,23 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
                     if (table.Cold(slot) is { } workerCold) workerCold.ActionClip = mind.WorkClip;
                 }
                 break;
+            case AiBehaviour.Investigate:
+            {
+                // Task_InvestigateAlarms: within 100 of the alarm it stops and faces it (the serial step counts the look-about down); else it runs to 30 short of it, on its side.
+                if (AlarmOf(world, slot, type, board) is not { } alarm) { Become(table, slot, CharacterTask.Idle); break; }
+                var gap = n.Position - alarm.Position;
+                if (gap.LengthSquared() <= Crime.CrimeSystem.AlarmLookRange * Crime.CrimeSystem.AlarmLookRange)
+                {
+                    if (mind.Walking) Become(table, slot, CharacterTask.Idle);
+                    mind.Walking = false;
+                    if (gap.X * gap.X + gap.Z * gap.Z > 1e-4f) n.Yaw = MathF.Atan2(-gap.X, -gap.Z);
+                    break;
+                }
+                var side = Flat(gap);
+                var spot = Flat(alarm.Position) + (side.LengthSquared() > 1e-4f ? Vector2.Normalize(side) : Vector2.UnitX) * Crime.CrimeSystem.AlarmApproach;
+                GoToSpot(world.Walkability, table, slot, mind, spot, GiveUp.Target, SpeedMode.Run);
+                break;
+            }
             case AiBehaviour.Travel:
                 // To the mission town's centre; the goal is no longer wanted once inside the town (Desire), long before the centre.
                 if (DestinationCentre(world, board) is not { } town) Become(table, slot, CharacterTask.Idle);

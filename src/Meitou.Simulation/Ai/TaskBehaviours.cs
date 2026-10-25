@@ -45,6 +45,11 @@ public enum AiBehaviour : byte
     /// 190, finders <c>FUN_1408cac60</c> / <c>FUN_1408cadb0</c>, docs/game/ai-tasks.md "Slave work, shout and capture"; the machines of NPC towns produce nothing here).
     /// </summary>
     Work = 15,
+    /// <summary>
+    /// Answers a raised alarm of its town (INVESTIGATE_ALARMS 209, and 210 for its own faction's only; <c>Task_InvestigateAlarms</c>, docs/game/economy.md "Town alarms"): runs to it, looks
+    /// about there and clears it, attacking criminals it sees on the way (<see cref="Crime.CrimeSystem"/>'s serial step). Wanted only while an alarm is in reach.
+    /// </summary>
+    Investigate = 16,
 }
 
 /// <summary>The engine's table from <see cref="TaskType"/> to <see cref="AiBehaviour"/>, and the TaskData display text (docs/game/ai-tasks.md "TaskData registry", Verified) of the types it acts out.</summary>
@@ -93,6 +98,8 @@ public static class TaskBehaviours
         [TaskType.TRAVEL_TO_TARGET_PACKAGE] = (AiBehaviour.Travel, "Travelling"),
         // Its Task_PatrolTownViolent is not decoded (engine choice): it roams the town it assaults, as patrolling does without a patrol package.
         [TaskType.RUN_AROUND_TOWN_LOOKING_FOR_PEOPLE] = (AiBehaviour.Patrol, "Ransacking town"),
+        [TaskType.INVESTIGATE_ALARMS] = (AiBehaviour.Investigate, "Investigating"),
+        [TaskType.INVESTIGATE_ALARMS_ALLIES_ONLY] = (AiBehaviour.Investigate, "Investigating"),
     };
 
     /// <summary>
