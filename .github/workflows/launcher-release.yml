@@ -76,6 +76,9 @@ jobs:
         run: |
           [ "${{ steps.dotnet.outcome }}" = success ] || echo "setup-dotnet failed; trying the preinstalled SDKs: $(dotnet --list-sdks | tr '\n' ' ')"
           dotnet --version
+          # Tools such as vpk find the runtime through DOTNET_ROOT, which setup-dotnet sets only when it installs.
+          # (Windows finds it in Program Files without it, and would not read a Git Bash path.)
+          [ "$RUNNER_OS" = Windows ] || echo "DOTNET_ROOT=$(dirname "$(realpath "$(command -v dotnet)")")" >> "$GITHUB_ENV"
 
       # Native AOT links with the platform's toolchain: clang and zlib on Linux (MSVC and Xcode are on the other runners).
       - name: AOT prerequisites
@@ -88,7 +91,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: vpx-runtime
-          key: vpx-${{ matrix.rid }}-${{ env.VCPKG_COMMIT }}
+          key: vpx-${{ matrix.rid }}-${{ env.VCPKG_COMMIT }}-macos12
 
       - name: libvpx
         if: steps.vpx-cache.outputs.cache-hit != 'true'
@@ -103,7 +106,8 @@ jobs:
           git clone https://github.com/microsoft/vcpkg.git "$RUNNER_TEMP/vcpkg"
           git -C "$RUNNER_TEMP/vcpkg" checkout "$VCPKG_COMMIT"
           case "$RUNNER_OS" in Windows) "$RUNNER_TEMP/vcpkg/bootstrap-vcpkg.bat" -disableMetrics ;; *) "$RUNNER_TEMP/vcpkg/bootstrap-vcpkg.sh" -disableMetrics ;; esac
-          "$RUNNER_TEMP/vcpkg/vcpkg" install "libvpx:$triplet"
+          # For macOS 12, the launcher's own minimum (.NET's default), not the runner's version.
+          MACOSX_DEPLOYMENT_TARGET=12.0 VCPKG_KEEP_ENV_VARS=MACOSX_DEPLOYMENT_TARGET "$RUNNER_TEMP/vcpkg/vcpkg" install "libvpx:$triplet"
           mkdir -p vpx-runtime && cp -R "$RUNNER_TEMP/vcpkg/installed/$triplet" "vpx-runtime/$triplet"
 
       - name: Package
