@@ -62,9 +62,19 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # When Microsoft's download server is down (actions/setup-dotnet#794, 2026-10-25), the runner's preinstalled SDK is used if it
+      # satisfies global.json; the next step fails otherwise.
       - uses: actions/setup-dotnet@v5
+        id: dotnet
+        continue-on-error: true
         with:
           dotnet-version: 10.0.x
+
+      - name: .NET SDK
+        shell: bash
+        run: |
+          [ "${{ steps.dotnet.outcome }}" = success ] || echo "setup-dotnet failed; trying the preinstalled SDKs: $(dotnet --list-sdks | tr '\n' ' ')"
+          dotnet --version
 
       # Native AOT links with the platform's toolchain: clang and zlib on Linux (MSVC and Xcode are on the other runners).
       - name: AOT prerequisites
