@@ -333,10 +333,10 @@ public sealed partial class FixtureRegistry
             if (d.Kind != FixtureKind.Door || d.Restored || d.Lock is not { } l) continue;
             switch (state)
             {
-                case 1: l.Locked = false; l.Broken = false; d.DoorBroken = false; d.Motion = DoorMotion.Open; d.OpenAmount = 1; break;
-                case 2: l.Locked = true; l.Broken = false; d.DoorBroken = false; d.Motion = DoorMotion.Closed; d.OpenAmount = 0; break;
-                case 3: l.Broken = true; d.DoorBroken = true; break;
-                default: l.Locked = false; l.Broken = false; d.DoorBroken = false; d.Motion = DoorMotion.Closed; d.OpenAmount = 0; break;
+                case 1: l.Locked = false; l.Broken = false; d.DoorBroken = false; d.DoorProgress = 1; d.Motion = DoorMotion.Open; d.OpenAmount = 1; break;
+                case 2: l.Locked = true; l.Broken = false; d.DoorBroken = false; d.DoorProgress = 1; d.Motion = DoorMotion.Closed; d.OpenAmount = 0; break;
+                case 3: l.Broken = true; d.DoorBroken = true; d.DoorProgress = 0; break;
+                default: l.Locked = false; l.Broken = false; d.DoorBroken = false; d.DoorProgress = 1; d.Motion = DoorMotion.Closed; d.OpenAmount = 0; break;
             }
         }
         SyncDoors(buildingInstance);
@@ -970,6 +970,7 @@ public sealed partial class FixtureRegistry
             d.Motion = was.Motion;
             d.OpenAmount = was.OpenAmount;
             d.DoorBroken = was.DoorBroken;
+            d.DoorProgress = was.DoorProgress;
             d.WantsLock = was.WantsLock;
             d.GateCode = was.GateCode;
             if (d.Lock is { } l && was.Lock is { } wl) l.Locked = wl.Locked;

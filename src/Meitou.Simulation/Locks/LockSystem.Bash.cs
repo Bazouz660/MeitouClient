@@ -8,7 +8,7 @@ namespace Meitou.Simulation.Locks;
 /// <summary>
 /// Bashing doors (Task_BashDoor, docs/game/locks.md "Bash door"; docs/simulation.md "Cages, beds and locks"). <b>Engine</b> stand-in for the original's planner, which bashes a door
 /// when a locked one blocks a walk: an NPC attacking a target inside a building shut by another faction's locked doors (<see cref="FixtureRegistry.IsShut"/>), itself outside, walks
-/// to the nearest door and swings at it. Each swing (<c>FUN_14029d690</c>, <b>Observed</b>) takes 0.015 x clamp(2 x blunt + 0.5 x cut, 20, 60) off the door lock's hardness, an
+/// to the nearest door and swings at it. Each swing (<c>FUN_14029d690</c>, <b>Observed</b>) takes 0.015 x clamp(2 x blunt + 0.5 x cut, 20, 60) off the door's construction progress (1 when whole), an
 /// animal's damage at a quarter; at 0 the door breaks: broken, unlocked and opening, so the building opens for paths and the attacker's pursuit carries on.
 /// </summary>
 public sealed partial class LockSystem
@@ -80,8 +80,8 @@ public sealed partial class LockSystem
         }
     }
 
-    /// <summary>The door lock hardness one point of <see cref="BlowDamage"/> takes off.</summary>
-    public const float HardnessPerDamage = 0.015f;
+    /// <summary>The door construction progress (1 when whole) one point of <see cref="BlowDamage"/> takes off (<c>DoorStuff::vfunc_62</c>).</summary>
+    public const float ProgressPerDamage = 0.015f;
 
     /// <summary>A blow's damage to a door (<c>FUN_14029d690</c>): clamp(2 x blunt + 0.5 x cut, 20, 60), an animal's packet at a quarter first (<c>FUN_140348c10</c>).</summary>
     public static float BlowDamage(float cut, float blunt, bool animal)
@@ -106,14 +106,14 @@ public sealed partial class LockSystem
         return Damage(door, damage);
     }
 
-    /// <summary>Takes <paramref name="damage"/> (the clamped f) x <see cref="HardnessPerDamage"/> off a door; at 0 it breaks: unlocked and opened. True when it broke.</summary>
+    /// <summary>Takes <paramref name="damage"/> (the clamped f) x <see cref="ProgressPerDamage"/> off a door's <see cref="Fixture.DoorProgress"/>; at 0 it breaks: unlocked and opened. True when it broke.</summary>
     static bool Damage(Fixture door, float damage)
     {
-        if (door.Lock is not { } l || door.DoorBroken) return false;
-        l.Hardness -= damage * HardnessPerDamage;
-        if (l.Hardness > 0) return false;
-        l.Hardness = 0;
-        l.Locked = false;
+        if (door.Kind != FixtureKind.Door || door.DoorBroken) return false;
+        door.DoorProgress -= damage * ProgressPerDamage;
+        if (door.DoorProgress > 0) return false;
+        door.DoorProgress = 0;
+        if (door.Lock is { } l) l.Locked = false;
         door.DoorBroken = true;
         FixtureRegistry.OpenDoor(door);
         return true;

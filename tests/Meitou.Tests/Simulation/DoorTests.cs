@@ -80,7 +80,7 @@ public class DoorTests(ITestOutputHelper output)
         Assert.Equal(60, LockSystem.BlowDamage(100, 40, animal: false));   // 130 -> 60
         Assert.Equal(25, LockSystem.BlowDamage(0, 50, animal: true));      // 100 x 0.25, then the clamp
         Assert.Equal(20, LockSystem.BlowDamage(30, 10, animal: true));
-        Assert.Equal(0.015f, LockSystem.HardnessPerDamage);
+        Assert.Equal(0.015f, LockSystem.ProgressPerDamage);
     }
 
     sealed class SpotGate : IDoorGate
@@ -126,10 +126,10 @@ public class DoorTests(ITestOutputHelper output)
         world.Defer(new AttackOrder([dog], me) { Tick = world.Tick + 1 });
         var table = world.Characters;
 
-        // A bonedog's blows do the minimum (a quarter of its packet is under 20): 0.3 hardness each, one every 1.5 s.
+        // A bonedog's blows do the minimum (a quarter of its packet is under 20): 0.3 of the door's progress each, one every 1.5 s.
         bool bashed = false;
         Vector3 at = default;
-        int ticks = (int)((MathF.Ceiling(hardness / (20 * LockSystem.HardnessPerDamage)) + 4) * LockSystem.BashSwingSeconds / world.TickSeconds) + 900;
+        int ticks = (int)((MathF.Ceiling(door.DoorProgress / (20 * LockSystem.ProgressPerDamage)) + 4) * LockSystem.BashSwingSeconds / world.TickSeconds) + 900;
         for (int t = 0; t < ticks && !door.DoorBroken; t++)
         {
             world.RunTick();

@@ -107,6 +107,11 @@ public sealed class Fixture
     public bool DoorBroken { get; set; }
     public int GateCode { get; set; } = -1;
     public bool WantsLock { get; set; }
+    /// <summary>
+    /// Doors: the door's own construction progress (Building +0x164, 1 when whole; docs/game/locks.md "Bash door"): blows take it down, at 0 the door breaks. Not among the
+    /// zone save's door keys, so not saved; hashed only while under 1.
+    /// </summary>
+    public float DoorProgress { get; set; } = 1;
     /// <summary>Doors: how the leaf moves (its record's <c>door move speed</c> etc.), and the parent BUILDING record (the door's position is looked up by it and <see cref="DoorIndex"/>; a player building's bed has it too, so an upgrade is noticed).</summary>
     public DoorLeaf Leaf { get; init; }
     public string HostRecordId { get; init; } = "";
@@ -135,7 +140,7 @@ public sealed class Fixture
     {
         h.Add(Rng.StableHash(Id)); h.Add((int)Kind); h.Add(Owner);
         if (Lock is { } l) l.Hash(ref h); else h.Add(-1);
-        if (Kind == FixtureKind.Door) { h.Add((int)Motion); h.Add(OpenAmount); h.Add(DoorBroken); h.Add(WantsLock); if (AutoOpened) h.Add(LastPass); }
+        if (Kind == FixtureKind.Door) { h.Add((int)Motion); h.Add(OpenAmount); h.Add(DoorBroken); h.Add(WantsLock); if (AutoOpened) h.Add(LastPass); if (DoorProgress != 1) h.Add(DoorProgress); }
         h.Add(Occupant);
         Contents?.Hash(ref h);
     }
