@@ -75,6 +75,7 @@ public sealed partial class World : IDisposable
     readonly List<SystemPhases> phases = [];
     readonly List<SimCommand> deferred = [];
     readonly List<string> messages = [];
+    readonly List<string> said = [];
     readonly Dictionary<CharacterId, (string Text, long Until)> barks = [];
     IAnimationSource? animations;
     IProjectileSource? projectiles;
@@ -345,6 +346,32 @@ public sealed partial class World : IDisposable
             if (messages.Count == 0) return [];
             string[] all = [.. messages];
             messages.Clear();
+            return all;
+        }
+    }
+
+    /// <summary>
+    /// A dialogue line for the Overview's DIALOGUE log (<c>ManagementScreen::addMessage</c>, docs/game/ui-screens.md "Dialogue log"): "<paramref name="owner"/>: <paramref name="text"/>";
+    /// serial phases only. Display only: not saved or hashed; the newest 200 are kept until the host takes them.
+    /// </summary>
+    public void Said(string owner, string text)
+    {
+        if (text.Length == 0) return;
+        lock (said)
+        {
+            said.Add($"{owner}: {text.ReplaceLineEndings(" ")}");
+            if (said.Count > 200) said.RemoveAt(0);
+        }
+    }
+
+    /// <summary>Takes the dialogue lines said since the last call (the host, between ticks).</summary>
+    public IReadOnlyList<string> TakeSaid()
+    {
+        lock (said)
+        {
+            if (said.Count == 0) return [];
+            string[] all = [.. said];
+            said.Clear();
             return all;
         }
     }

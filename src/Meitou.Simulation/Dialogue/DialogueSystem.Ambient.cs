@@ -228,7 +228,11 @@ public sealed partial class DialogueSystem
             string text = Expand(world, c, line, PickText(world, speaker, line), speaker, speaker == c.Player ? c.Npc : c.Player);
             RunEffects(world, c, line, c.Npc);
             float seconds = 2 + 0.12f * text.Length;
-            if (text.Length > 0) shown[speaker] = (text, world.Tick + (long)MathF.Ceiling(seconds / world.TickSeconds), IsLarge(c.Event));
+            if (text.Length > 0)
+            {
+                shown[speaker] = (text, world.Tick + (long)MathF.Ceiling(seconds / world.TickSeconds), IsLarge(c.Event));
+                world.Said(NameOf(world, speaker), text);
+            }
             foreach (var e in line.Effects) if (e.Action == DialogueActions.BubbleWait) seconds = MathF.Max(seconds, e.Value);
             if (c.Ended || NextBubble(world, c, line) is not { } next)
             {

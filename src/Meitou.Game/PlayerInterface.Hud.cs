@@ -32,9 +32,15 @@ sealed partial class PlayerInterface
     public void Notice(string text, bool error = false)
     {
         string line = Loc.Tr(text).ReplaceLineEndings(" ");
+        LogMessage(line);
+        noticeQueue.Enqueue((line, error));
+    }
+
+    /// <summary>Adds <paramref name="line"/> to the Overview's DIALOGUE log only (a said dialogue line, docs/game/ui-screens.md "Dialogue log"); the newest 200 are kept.</summary>
+    public void LogMessage(string line)
+    {
         uiMessages.Add(line);
         if (uiMessages.Count > 200) uiMessages.RemoveAt(0);
-        noticeQueue.Enqueue((line, error));
     }
 
     /// <summary>Once a frame: the next queued message comes up at full alpha when none shows; the shown one holds, then fades out.</summary>

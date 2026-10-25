@@ -404,6 +404,18 @@ sits above another one instead (**Unknown**).
 
 Meitou (`PlayerInterface.Hud.cs`, both UI modes): its own notices (Saved, Loaded, errors) share the queue, errors in `Bad` red; always at the HUD's spot; real-time timers.
 
+### Dialogue log
+
+The Overview's Messages tab ("DIALOGUE") is the `MessagesTextBox` EditBox (`ManagementScreen+0x148`, unlimited length). **Observed** (KenshiLib 1ce4a16
+`ManagementScreen::addMessage(owner, message, MessageLogColor)`, 1.0.68 `14049a270`): each call appends a colour tag, then `owner` + `": "` + `message` (owner empty:
+`"["` + `message`; separators **Verified** as bytes in the exe), and a line end. Colours: ML_NORMAL (0) `#000000`, ML_PLAYER (1) the MyGUI colour `DialogueTextOption`
+(default 0.7 grey), ML_SYSTEM (2) `#c6ac6a`. Callers: every speech-bubble line as it is said (`14067fd80`; the speaker's name, ML_PLAYER when the speaker is a player
+character, test `FUN_1407916d0`), the conversation window's NPC line (`140674170`, ML_NORMAL), the player's chosen reply (`140683df0`, the player character's name or
+"Player", ML_PLAYER) and each MessageRoller message (`140724a20`, empty owner, ML_SYSTEM). **Unknown**: whether a system line closes its `[`.
+
+Meitou: `World.Said` from `DialogueSystem` (bubble lines, conversation lines, replies) → `PlayerInterface.LogMessage`, plain `name: text` without the colours; notices
+log without the `[`. The newest 200 lines are kept; not saved (the original's saving of the log is **Unknown**).
+
 ### Prospecting
 
 **Verified** unless noted. `OrdersProspectButton` (`FUN_140721800`): with the window visible it hides it; else the selected character nearest the camera pivot (`FUN_1407f4ba0`, **Observed** over the selection) that has no task 150 gets one (`FUN_1405d20d0`,

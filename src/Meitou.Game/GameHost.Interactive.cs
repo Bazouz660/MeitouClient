@@ -779,6 +779,7 @@ sealed partial class GameHost
             Console.WriteLine($"relations {message}");
             player.Notice(message);
         }
+        foreach (string line in world.TakeSaid()) player.LogMessage(line);
         // Stealth knock-outs: the original's floating "*Thunk*" (a hit) or "Failed!" over the attacker, here as a notice.
         if (world.Systems.OfType<Meitou.Simulation.Carrying.CarrySystem>().FirstOrDefault() is { Knockouts.Count: > 0 } carry)
             foreach (var k in carry.TakeKnockouts())
