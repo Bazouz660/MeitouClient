@@ -150,18 +150,13 @@ static class Program
                 Console.Error.WriteLine("--new-game needs the population (it is the player's squad); drop --no-population.");
                 return 2;
             }
-            // Load the world around the start: its first listed town, else the fixed position.
-            Vector2? at = start.ForceStartPos ? start.StartPosition : null;
-            if (at is null)
-            {
-                var towns = Meitou.Data.World.WorldLevelData.Load(install).Towns().ToList();
-                foreach (var link in start.Towns)
-                    if (towns.FirstOrDefault(t => t.TownId == link.Id) is { } placed) { at = new Vector2(placed.Position.X, placed.Position.Z); break; }
-            }
-            at ??= start.StartPosition;
-            (world.X, world.Z) = (at.Value.X, at.Value.Y);
+            // Load the world round the place the squad will stand: the start's town drawn with the world's seed, as StartPlayer draws it.
+            var at = Meitou.Simulation.PopulationSystem.StartPlace(
+                Meitou.Simulation.PopulationData.Create(db, Meitou.Data.World.WorldLevelData.Load(install).Towns()), game.Seed, start).Centre;
+            (world.X, world.Z) = (at.X, at.Y);
             world.Town = null;
-            Console.WriteLine($"new game  {start.Name}: {start.Money} cats, {start.Squad.Count} squad link(s), at {at.Value.X:0}, {at.Value.Y:0}");
+            if (!rest.Contains("--time")) world.Hour = (float)Meitou.Engine.Time.GameClock.DefaultStartHour;
+            Console.WriteLine($"new game  {start.Name}: {start.Money} cats, {start.Squad.Count} squad link(s), at {at.X:0}, {at.Y:0}");
         }
         Meitou.Data.Save.SaveGame? save = null;
         if (game.Load is { } folder)

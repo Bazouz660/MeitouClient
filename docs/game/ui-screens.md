@@ -135,6 +135,25 @@ against French 1440-line screenshots. Every caption the code sets is the catalog
   squads (their platoon files copied whole), and, when ticked, the player's buildings and their zones, research, dead and imprisoned uniques and
   faction relations; with the reset tick the squads go to (-43500, 0, -6625). The full rules: [save.md](../formats/save.md#importing-a-game-savemanagerimportgame-fun_140378a30). Meitou: built (`SaveImport`); the Advanced options take the selected save's difficulty when opened or when a row is selected while open.
 
+### New game
+
+**Verified** (decompilation: `FUN_14036cb80` and `FUN_140872e00`, `resetGame` and `newGameWithCharEdit`, names from KenshiLib 1ce4a16; relations, start
+towns, discovered towns, research and scatter also **Observed** in the original against Son of a Captain, Nobodies, Holy Nation Citizen, The Freedom Seekers,
+Empire Citizen and The Cannibal Hunters). The "Meitou" sentences are engine choices, not claims about the original.
+
+- **Relations**: a new game's relations start from the data's (every faction is made anew, `FUN_1409ef230`); each `faction relations` entry then sets that faction's
+  relation with the player, both ways, to its v0.
+- **Place**: `force start pos` gives (`start pos X`, `start pos Z`). Otherwise a town is drawn among every placement of every listed `town`
+  (so a record placed many times, like Waystation, gives any of them). A list with no placed town gives the message "Cannot find any towns from the
+  game start town list.", then, as an empty list does, a draw among the TOWN and VILLAGE placements whose faction is real, not BANDIT and not hostile
+  to the player (-30 or below); with none, (-43500, -6625). Meitou stands the squad on a walkable spot near that place.
+- **Discovered**: every town of type TOWN in the biome group of the start place.
+- **Squad**: a SQUAD_TEMPLATE entry makes a squad of its own; a CHARACTER entry makes v0 characters (0 counts as 1), each at the place plus up to 50
+  on x and z, joining the player's current squad. Nobody made: the Wanderer squad `45550-gamedata.base`. Meitou makes one squad of them all, each
+  template keeping its own layout.
+- **Research**: the start's `research`, or `5359-gamedata.base` when it lists none.
+- **Clock**: day 1 (set by the reset), 10:00.
+
 ### Loading screen
 
 **Verified** (decompilation: constructor `FUN_14091a280`, show/hide `FUN_140916ca0`, picture `FUN_1409163e0`, tip `FUN_140913640`, per frame `FUN_1409133d0`):
