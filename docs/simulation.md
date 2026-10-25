@@ -1411,6 +1411,10 @@ repeatability. Sandbox omits Aggro when its scripted foe must remain idle; bench
 separate simulation work, startup and rendering.
 `--sandbox-races` adds one character of every person race (the first CHARACTER record whose `race` list holds only that race; base game and
 mods alike) in rings round the pair, for looking at races side by side.
+The panel's **animation** drop-down (top right) forces a clip on the hero: the list holds every ANIMATION and COMBAT_TECHNIQUE record
+name, typed letters filter it, the wheel, Up / Down and PageUp / PageDown scroll it, a click or Enter picks, Esc closes. The pick loops by the wall clock
+from the moment it was picked (a technique keeps only its root height, as in the game), drawn by the host in place of the simulation's layers;
+"simulation" gives the hero back. Nothing is sent to the simulation.
 
 ## Duel
 

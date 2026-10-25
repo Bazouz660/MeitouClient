@@ -27,6 +27,7 @@ sealed partial class GameHost
     bool sandboxPatrol, sandboxFollow;   // follow off: the camera stays on the middle of the floor until moved (Y follows the pair)
     float patrolTarget;
     long patrolIssued = -1;
+    SandboxAnimationPicker? sandboxPicker;   // made on the first draw (the library is loaded with the scene)
 
     /// <summary>The CHARACTER record the sandbox spawns: the one asked for, else the first member of the default new-game start's squad.</summary>
     string SandboxRecord(Meitou.Data.GameDatabase db)
@@ -232,10 +233,13 @@ sealed partial class GameHost
         Add("");
         Add($"patrol {(sandboxPatrol ? $"ON: x {-PatrolHalf:0} <-> {PatrolHalf:0} (to {patrolTarget:0})" : "off")}   follow {(sandboxFollow ? "on" : "off")}", dim);
         Add("Z walk  X run  C free  [ ] fixed speed +-5  P patrol  G fight  Y follow  R stop", dim);
+        sandboxPicker ??= animationLibrary is { } lib ? new SandboxAnimationPicker(lib, animationLengths) : null;
+        if (sandboxPicker is not null) { Add(""); if (sandboxPicker.Status is { Length: > 0 } status) Add(status, dim); }   // the button on the blank row
         float pad = 8, textW = lines.Max(l => l.Text.Length) * o.CharWidth, w = textW + 2 * pad, h = lines.Count * o.LineHeight + 2 * pad;
         float x0 = width - w - 10, y0 = 10;   // top right: the HUD holds the bottom and the top left, the character stands in the middle
         o.Rect(x0, y0, x0 + w, y0 + h, DebugOverlay.PanelColour);
         for (int i = 0; i < lines.Count; i++) o.Text(lines[i].Text, x0 + pad, y0 + pad + i * o.LineHeight, lines[i].Colour);
+        sandboxPicker?.Draw(o, x0 + pad, y0 + pad + (lines.Count - (sandboxPicker.Status.Length > 0 ? 2 : 1)) * o.LineHeight - 2, textW);
         o.Flush(width, height);
     }
 

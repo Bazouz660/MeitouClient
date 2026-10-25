@@ -224,6 +224,7 @@ sealed partial class GameHost
             {
                 if (Covered) return;
                 if (panel?.Visible == true) panel.TextInput(value);
+                else if (sandboxPicker is { Open: true }) sandboxPicker.TextInput(value);
                 else if (debugMenuOpen) DebugMenuText(value);
                 else player.UiText(value);
             };
@@ -246,6 +247,12 @@ sealed partial class GameHost
                     if (settingsKey is EngineKey.F8 or EngineKey.PrintScreen) screenshotRequested = true;
                     else panel.KeyDown(settingsKey, shiftDown, keyboard.IsKeyPressed(SilkKey.ControlLeft) || keyboard.IsKeyPressed(SilkKey.ControlRight));
                 }
+                return;
+            }
+            // The sandbox animation list, while open, takes every key too.
+            if (sandboxPicker is { Open: true })
+            {
+                if ((k == SilkKey.KeypadEnter ? EngineKey.Enter : KeyMap.Map(k)) is { } pickerKey) sandboxPicker.KeyDown(pickerKey);
                 return;
             }
             // F10 (rebindable) opens the debug menu, which then takes every key until it closes.
@@ -334,6 +341,7 @@ sealed partial class GameHost
                 var at = Pixels(m.Position);
                 if (PanelLive() && KeyMap.Map(b) is { } settingsButton && panel?.MouseDown(at, settingsButton) == true) { panelDrag = true; return; }
                 if (PanelLive() && panel?.Contains(at) == true) return;
+                if (b == SilkButton.Left && PanelLive() && sandboxPicker?.MouseDown(at) == true) return;
                 if (b == SilkButton.Left && profiler?.Click(at) == true) { profilerClick = true; return; }   // F12's legend opens and closes rows
                 // The cinema's editor: its clicks never select or move characters.
                 if (b == SilkButton.Left && cinema.MouseDown(at)) return;
@@ -369,6 +377,7 @@ sealed partial class GameHost
             mouse.Scroll += (m, wheel) =>
             {
                 if (Covered || PanelLive() && panel?.Scroll(wheel.Y) == true) return;
+                if (PanelLive() && sandboxPicker?.Scroll(wheel.Y) == true) return;
                 if (!cinema.Contains(Pixels(m.Position)) && !player.UiScroll(Pixels(m.Position), wheel.Y) && !(PanelLive() && player.ContainsUi(Pixels(m.Position)))) session.Input.AddWheel(wheel.Y);
             };
         }
