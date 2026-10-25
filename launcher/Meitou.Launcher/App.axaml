@@ -325,6 +325,14 @@
       <Setter Property="FontSize" Value="12" />
       <Setter Property="FontWeight" Value="Medium" />
     </Style>
+    <Style Selector="FlyoutPresenter">
+      <Setter Property="Background" Value="{StaticResource Plate}" />
+      <Setter Property="BorderBrush" Value="{StaticResource PlateRim}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="7" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="MaxWidth" Value="1200" />
+    </Style>
     <Style Selector="MenuFlyoutPresenter">
       <Setter Property="Background" Value="{StaticResource Plate}" />
       <Setter Property="BorderBrush" Value="{StaticResource PlateRim}" />

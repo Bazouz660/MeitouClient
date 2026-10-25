@@ -2,9 +2,11 @@ using System.Text;
 using System.Text.Json.Nodes;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 
 namespace Meitou.Launcher;
 
@@ -17,16 +19,19 @@ public sealed partial class MainWindow
     const string RoadmapUrl = "https://meitou.kenshi.wiki/roadmap.json";
     const int LogTail = 512 * 1024;
 
+    /// <summary>A roadmap row: the id sent in the report and the system name shown (its text in the picker's list).</summary>
+    sealed record RoadmapRow(string Id, string Name) { public override string ToString() => Name; }
+
     void ShowReportButton() => ReportButton.IsVisible = ReportsUrl.Length > 0;
 
     async void Report_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        List<(string Id, string Name)> rows;
+        List<RoadmapRow> rows;
         try
         {
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
             var file = JsonNode.Parse(await Http.GetStringAsync(RoadmapUrl, cts.Token));
-            rows = (file?["rows"] as JsonArray ?? []).OfType<JsonObject>().Select(r => ((string)r["id"]!, (string)r["system"]!)).ToList();
+            rows = (file?["rows"] as JsonArray ?? []).OfType<JsonObject>().Select(r => new RoadmapRow((string)r["id"]!, (string)r["system"]!)).ToList();
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
         {
@@ -36,8 +41,51 @@ public sealed partial class MainWindow
         if (rows.Count == 0) { Status("The roadmap lists no systems."); return; }
 
         var secondary = (IBrush)this.FindResource("Secondary")!;
-        var system = new ComboBox { HorizontalAlignment = HorizontalAlignment.Stretch, MaxDropDownHeight = 320, PlaceholderText = "Roadmap system" };
-        foreach (var (id, name) in rows) system.Items.Add(new ComboBoxItem { Content = name, Tag = id });
+        var main = (IBrush)this.FindResource("Main")!;
+        // The system picker: a plate button that drops a searchable list (a ComboBox cannot hold a search box), the pick committed by a
+        // click or Enter; arrows move the highlight, Esc closes.
+        RoadmapRow? chosen = null;
+        var systemLabel = new TextBlock { Text = "Roadmap system", Foreground = (IBrush)this.FindResource("Quiet")!, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
+        var chevron = new Avalonia.Controls.Shapes.Path { Data = StreamGeometry.Parse("M0,0 H12 L6,7 Z"), Fill = main, VerticalAlignment = VerticalAlignment.Center, Margin = new(12, 0, 0, 0) };
+        DockPanel.SetDock(chevron, Dock.Right);
+        var system = new Button { HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch, Padding = new(12, 6), Content = new DockPanel { Children = { chevron, systemLabel } } };
+        var search = new TextBox { PlaceholderText = LauncherText.Translate("Search"), Margin = new(8, 8, 8, 4) };
+        var list = new ListBox { MaxHeight = 280 };
+        var noMatch = new TextBlock { Classes = { "desc" }, Text = LauncherText.Translate("No match"), Margin = new(16, 6, 16, 10), IsVisible = false };
+        var picker = new StackPanel { Children = { search, list, noMatch } };
+        var flyout = new Flyout { Content = picker, Placement = PlacementMode.BottomEdgeAlignedLeft };
+        system.Flyout = flyout;
+        void Filter()
+        {
+            string query = search.Text?.Trim() ?? "";
+            var shown = rows.Where(r => r.Name.Contains(query, StringComparison.OrdinalIgnoreCase)).ToList();
+            list.ItemsSource = shown;
+            list.SelectedIndex = shown.Count > 0 ? 0 : -1;
+            noMatch.IsVisible = shown.Count == 0;
+        }
+        void Pick()
+        {
+            if (list.SelectedItem is not RoadmapRow row) return;
+            chosen = row;
+            systemLabel.Text = row.Name;
+            systemLabel.Foreground = main;
+            flyout.Hide();
+        }
+        flyout.Opening += (_, _) =>
+        {
+            picker.Width = Math.Max(0, system.Bounds.Width - 2);
+            search.Text = "";
+            Filter();
+        };
+        flyout.Opened += (_, _) => search.Focus();
+        search.TextChanged += (_, _) => Filter();
+        search.KeyDown += (_, k) =>
+        {
+            if (k.Key == Key.Enter) { Pick(); k.Handled = true; }
+            else if (k.Key == Key.Down && list.ContainerFromIndex(0) is { } first) { first.Focus(); k.Handled = true; }
+        };
+        list.AddHandler(KeyDownEvent, (_, k) => { if (k.Key == Key.Enter) { Pick(); k.Handled = true; } }, RoutingStrategies.Bubble, handledEventsToo: true);
+        list.AddHandler(TappedEvent, (_, t) => { if ((t.Source as Avalonia.Visual)?.GetSelfAndVisualAncestors().OfType<ListBoxItem>().Any() == true) Pick(); }, RoutingStrategies.Bubble, handledEventsToo: true);
         var works = new RadioButton { Content = "Works for me", GroupName = "verdict", IsChecked = true, Margin = new(0, 0, 16, 0) };
         var broken = new RadioButton { Content = "Broken", GroupName = "verdict" };
         var version = new ComboBox { HorizontalAlignment = HorizontalAlignment.Stretch };
@@ -80,13 +128,13 @@ public sealed partial class MainWindow
         plate.KeyDown += (_, k) => { if (k.Key == Key.Escape) Close(); };
         send.Click += async (_, _) =>
         {
-            if (system.SelectedItem is not ComboBoxItem { Tag: string row }) { problem.Text = LauncherText.Translate("Pick a system."); return; }
+            if (chosen is not { } row) { problem.Text = LauncherText.Translate("Pick a system."); return; }
             bool isBroken = broken.IsChecked == true;
             if (isBroken && string.IsNullOrWhiteSpace(note.Text)) { problem.Text = LauncherText.Translate("Say what happened."); return; }
             string? build = (version.SelectedItem as ComboBoxItem)?.Tag as string;
             var body = new JsonObject
             {
-                ["row"] = row, ["verdict"] = isBroken ? "broken" : "works", ["build"] = build ?? "unknown", ["platform"] = Platform(),
+                ["row"] = row.Id, ["verdict"] = isBroken ? "broken" : "works", ["build"] = build ?? "unknown", ["platform"] = Platform(),
                 ["modded"] = mods.Any(m => m.Enabled), ["note"] = note.Text?.Trim(), ["source"] = "launcher",
             };
             if (attach.IsChecked == true && build is not null && ReadLogTail(build) is { } log) body["log"] = log;
