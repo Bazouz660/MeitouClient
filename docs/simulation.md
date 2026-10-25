@@ -1333,7 +1333,7 @@ the original computes in a function of its own counts as 1. Town goals ([ai-task
 wandering and patrolling in town walk to a general node of a public town building in the walker's zone
 (public: the residents' template's `public day`, else the level state's `is public day`, else public; drawn
 among those with a general node, engine choice), shopping to a node of a
-shop, relaxing under a bar package and sitting around (275, in the home) sit on a seat claimed per
+shop, relaxing under a bar package, sitting around (275) and staying home (43; the home is the bar under a bar package) sit on a seat claimed per
 member on the package cadence, and the wanderer walks to the nearest town. A bar package (both kinds) reserves
 one table per squad as the original (`AiSystem.PickTable`: public bars tried from a random one, first table no
 other bar squad holds; no bar, or the outdoors kind: a free table placed outdoors in the town; none free: the
@@ -1350,7 +1350,8 @@ Defensive Gates is inside the wall about 110 along it from the opening; headless
 are made at the origin and keep that post. Seats are the home's
 interior furniture with a CHAIR functionality (`HomeSpotKind.Chair`; never a standing node), free
 in that building this pass; relaxing falls back to a bar node, then a general node, sitting around
-has none and is not wanted without a chair (without a home it sits where it is). A seated character
+has none and is not wanted without a chair (without a home it sits where it is), staying home without one stands at home (engine choice: the original's
+43 operates home furniture, chairs among it, [ai-tasks](game/ai-tasks.md#town-goals); a given-up seat is tried again when the goal is renewed). A seated character
 is put on the seat's origin with no offset, facing the seat's way ([ai-tasks](game/ai-tasks.md) "Sitting"), and plays the functionality's clip ("sitting chair", pillows
 "sitting idle"). A town's bars and shops are
 the buildings whose residents (the squads living there, else the level data's `residents template`)
@@ -1373,7 +1374,8 @@ node, else a guard post, else any node; a home or seat given up
 after three failed walks is tried again when a new goal is taken up, and a member that gave its seat up
 leaves it to the next; a member keeps its seat while it still relaxes or sits (every squad's kept seats are reserved before any claims), so a
 patron coming or going does not move every later sitter to another chair. Headless Hub, Squin and Stack bars (2026-10-21): each patron sits once
-and stays for 12000 ticks, with or without that rule (the reported sit/stand churn is not reproduced).
+and stays for 12000 ticks, with or without that rule (the reported sit/stand churn is not reproduced). **Observed** (headless Hub, 2026-10-26): the
+Storm House's 5 tables go to `hub squatters` squads (package signal 17, STAY_IN_HOME only), so the visiting bar squads get none and shop at the counter.
 
 Turret goals (149, 222, 234, 146) man a turret of the squad's town: a placed BUILDING with a
 `BUILDING_FUNCTIONALITY` function 12 (`TownBuilding.Turret`: its `use range` and `gun turret`
