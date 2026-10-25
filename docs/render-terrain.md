@@ -143,11 +143,15 @@ crack. Levels by the camera eye in the shadow pass too. The impostor bake and th
 
 Meitou look, not in the game (`GroundContact`, switch `contact`; issue #65). The game shades a TERRAIN-mode mesh with its feature's one
 biome by the mesh's own slope, so a cliff face stops hard against the ground's grass or dirt. In the mesh colour programs a pixel
-`h` above `terrainHeight` gets `contact = 1 − smoothstep(0, Band, h)` (Band 20 units; not beyond `uFarEnd`): its normal mixes
+`h` above `terrainHeight` gets `contact = 1 − smoothstep(0, band, h)` (not beyond `uFarEnd`). The band is `Share` (0.15) of the placed
+mesh's height, at most `MaxBand` (60 units): each mesh draw pushes its model's bounding-box size (`MeshBindings.Extent`, `uNode.xyz`) and
+the vertex stage takes its rise through the placement; a fixed 20-unit band erased boulders under 2 m. Its normal mixes
 toward `terrainNormal` (so slope layers, cliff projections and lighting follow), the cliff weights toward the ground's, the road layer
 returns by `contact`, and the ground's five biome slots take `contact` of the weight with the feature's biome as a sixth slot
 (`BIOME_SLOTS` 6 in the mesh programs only; the patches keep 5). Depth, shadows, the impostor bake (`ContactBand` 0) and GI unchanged.
-**Unknown:** cost in the band (up to 6 biomes a pixel), and the look at the impostor crossfade.
+**Observed** (Hub rock, 80 m): the foot takes the ground's gravel and colour; faces overhanging a slope close below also blend,
+since the test is height above the terrain at the pixel's x, z. **Unknown:** cost in the band (up to 6 biomes a pixel), and the look at
+the impostor crossfade.
 
 ## Interior cut
 

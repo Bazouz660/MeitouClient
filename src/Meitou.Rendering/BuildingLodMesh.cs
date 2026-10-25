@@ -511,9 +511,10 @@ sealed unsafe class ObjectMeshCache(IGpuContext gpuContext, AssetLocator assets,
 
     /// <summary>
     /// The part as the terrain shader's mesh path takes it, which draws from the first index: level 0 shares the part's buffers, a reduced level
-    /// gets an index buffer of its own (made on first use, from the indices kept for this).
+    /// gets an index buffer of its own (made on first use, from the indices kept for this). <paramref name="extent"/>: the whole mesh's size
+    /// (<see cref="MeshBindings.Extent"/>).
     /// </summary>
-    public MeshBindings PlainMesh(GpuObjectPart part, int level)
+    public MeshBindings PlainMesh(GpuObjectPart part, int level, Vector3 extent)
     {
         part.PlainMesh ??= new MeshBindings?[part.Count.Length];
         part.PlainEbo ??= new DeviceBuffer?[part.Count.Length];
@@ -530,7 +531,7 @@ sealed unsafe class ObjectMeshCache(IGpuContext gpuContext, AssetLocator assets,
                 batch.Write(elements, 0, System.Runtime.InteropServices.MemoryMarshal.AsBytes(indices.AsSpan()));
             part.PlainEbo[level] = elements;
         }
-        return part.PlainMesh[level] = MeshBindings.Of(VertexAttributes(part.Vertices), elements);
+        return part.PlainMesh[level] = MeshBindings.Of(VertexAttributes(part.Vertices), elements, extent);
     }
 
     public int Unloads { get; private set; }

@@ -658,7 +658,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
             c.HeightNormals = patches ? 1u : 0u;
             c.Feature = patches ? 0u : 1u;
             c.FeatureBiome = -1;
-            c.ContactBand = !patches && GroundContact.Enabled ? GroundContact.Band : 0;
+            (c.ContactBand, c.ContactShare) = !patches && GroundContact.Enabled ? (GroundContact.MaxBand, GroundContact.Share) : (0, 0);
             c.SunColour = light.SunColour;
             c.AmbientSky = light.AmbientSky;
             c.AmbientGround = light.AmbientGround;
@@ -1126,7 +1126,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
             job.Add(new MeshJob.Draw
             {
                 Pipeline = pipeline, Front = g.Mirrored ? s.Cw : s.Ccw, Vertices = n.Vertices, VertexCount = n.VertexCount, Elements = n.Elements,
-                IndexCount = (uint)g.IndexCount, Instances = (uint)g.Count, FirstInstance = (uint)g.Offset,
+                IndexCount = (uint)g.IndexCount, Instances = (uint)g.Count, FirstInstance = (uint)g.Offset, Push = MeshPush(g.Mesh),
             });
         }
         gpu.Record(label, job);
@@ -1165,6 +1165,10 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
 
     readonly JobPool<MeshJob> meshJobs = new();
 
+    /// <summary>A TERRAIN-mode mesh draw's push: <c>uNode</c>'s xyz the mesh's extent, which the vertex stage turns into the placed height the
+    /// ground contact is a share of (<see cref="GroundContact"/>).</summary>
+    static TerrainPush MeshPush(MeshBindings mesh) => new() { Node = new Vector4(mesh.Extent, 0) };
+
     /// <summary>A TERRAIN-mode mesh segment as prepared (<see cref="DrawGroups"/>, <see cref="DrawIndirect"/>): recorded on any thread, the same
     /// commands as before wave 4.</summary>
     sealed class MeshJob : RecordJob
@@ -1177,6 +1181,8 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
             public int VertexCount;
             public GpuBufferBinding Elements;
             public uint IndexCount, Instances, FirstInstance;
+            /// <summary>The mesh's <c>uNode</c>: its extent in xyz (<see cref="MeshPush"/>).</summary>
+            public TerrainPush Push;
             /// <summary>Indirect: the arguments' buffer (else a plain indexed draw).</summary>
             public GpuBuffer Args;
             public ulong ArgsOffset;
@@ -1225,6 +1231,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
                 if (d.Front != front) { cmd.SetFrontFace(d.Front); front = d.Front; }
                 cmd.BindVertexBuffers(0, ((ReadOnlySpan<GpuBufferBinding>)d.Vertices)[..d.VertexCount]);
                 cmd.BindIndexBuffer(d.Elements, IndexKind.U32);
+                cmd.PushConstants(Program, GpuStage.Graphics, in d.Push);
                 if (!d.Args.IsNull) cmd.DrawIndexedIndirect(d.Args, d.ArgsOffset, 1);
                 else cmd.DrawIndexed(d.IndexCount, d.Instances, 0, 0, d.FirstInstance);
             }
@@ -1286,7 +1293,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
             job.Add(new MeshJob.Draw
             {
                 Pipeline = pipeline, Front = m.Mirrored ? s.Cw : s.Ccw, Vertices = n.Vertices, VertexCount = n.VertexCount, Elements = n.Elements,
-                Args = args, ArgsOffset = argsOffset + (ulong)i * 20,
+                Args = args, ArgsOffset = argsOffset + (ulong)i * 20, Push = MeshPush(m.Mesh),
             });
         }
         gpu.Record(label, job);

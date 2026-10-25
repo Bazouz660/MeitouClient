@@ -893,6 +893,8 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
         public required DeviceBuffer Vertices, Indices;
         public LegacyProgram.Attribute?[] Attributes = [];
         public MeshBindings? Plain;
+        /// <summary>The whole model's bounding box size (<see cref="MeshBindings.Extent"/>).</summary>
+        public Vector3 Extent;
         /// <summary>What a native draw needs, per program (<see cref="NativeMesh"/>).</summary>
         public NativeMesh ColourNative, DepthNative, ColourSolidNative, PrepassNative, PrepassSolidNative;
         public int Count;
@@ -1019,7 +1021,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
                 {
                     Vertices = DeviceBuffer.Create(Gpu, (ulong)vertexBytes, BufferUse.Vertex | RayInput, MeshAllocationName),
                     Indices = DeviceBuffer.Create(Gpu, (ulong)indexBytes, BufferUse.Index | RayInput, MeshAllocationName),
-                    Count = p.Indices.Length, TrimCount = p.TrimmedIndices?.Length ?? 0, HasTangents = p.HasTangents, HasColours = p.HasColours,
+                    Count = p.Indices.Length, TrimCount = p.TrimmedIndices?.Length ?? 0, HasTangents = p.HasTangents, HasColours = p.HasColours, Extent = model.Max - model.Min,
                 };
                 gp.Attributes = VertexAttributes(gp.Vertices);
                 mesh.Parts.Add(gp);
@@ -1131,7 +1133,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
     }
 
     /// <summary>The part for the terrain's mesh path (the attributes at 0 to 4 and the index buffer); made on first use.</summary>
-    static MeshBindings PlainMesh(GpuPart gp) => gp.Plain ??= MeshBindings.Of(VertexAttributes(gp.Vertices), gp.Indices);
+    static MeshBindings PlainMesh(GpuPart gp) => gp.Plain ??= MeshBindings.Of(VertexAttributes(gp.Vertices), gp.Indices, gp.Extent);
 
     // ------------------------------------------------------------------ drawing
 
