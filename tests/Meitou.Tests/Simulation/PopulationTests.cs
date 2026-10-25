@@ -46,6 +46,30 @@ public class PopulationTests
     }
 
     [Fact]
+    public void A_town_stays_loaded_while_one_of_its_squads_stands_in_an_active_zone()
+    {
+        // Issue #57: a squad chasing the player away from home vanished with its site's zone.
+        using var world = SyntheticTown.World(5, 1, 3, new PopulationSettings { UnloadGraceSeconds = 10, CheckEveryTicks = 1 });
+        var population = (PopulationSystem)world.Systems[0];
+        world.RunTick();
+        var table = world.Characters;
+        var chaser = world.Squads.All.First().Members[0];
+        var far = new Vector3(-50000, 0, -50000);
+        world.Commands.Enqueue(new FocusCommand(far) { Tick = world.Tick });
+        world.RunTick();
+        table.Place(chaser.Slot, far, 0);
+        world.RunTicks(350);   // past 10 s
+        Assert.Equal(SiteStatus.Loaded, population.StatusOf(0));
+        Assert.True(table.IsAlive(chaser));
+
+        // Back home, out of the active zones: the town goes after its grace.
+        table.Place(chaser.Slot, SyntheticTown.Centre, 0);
+        world.RunTicks(350);
+        Assert.Equal(SiteStatus.Unloaded, population.StatusOf(0));
+        Assert.Equal(0, table.Count);
+    }
+
+    [Fact]
     public void A_housed_squads_prisoners_are_made_caged_in_its_home_held_without_a_sentence_and_trimmed_to_its_free_cages()
     {
         var function = SyntheticTown.Rec("53-t", Meitou.Data.Fcs.FcsRecordType.BUILDING_FUNCTIONALITY, "Cage");
