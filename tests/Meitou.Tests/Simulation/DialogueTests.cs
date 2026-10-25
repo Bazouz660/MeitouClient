@@ -433,4 +433,58 @@ public class DialogueInstallTests
         }
         Assert.True(spoke);
     }
+
+    /// <summary>DC 69 HAS_ILLEGAL_ITEM: a Holy Nation gate guard's inspection finds the player's Hashish (the faction culture's <c>illegal goods</c>) and posts the find once.</summary>
+    [Fact]
+    public void A_holy_nation_gate_guard_finds_hashish_and_posts_the_smuggling_once()
+    {
+        Assert.SkipWhen(InstallData.Install is null, "Kenshi install not found");
+        var db = InstallData.BaseGame!;
+        var data = PopulationData.Create(db, []);
+        var dialogue = new DialogueSystem(data);
+        var ground = new OpenGroundWalkability((_, _) => 150);
+        using var world = new SimWorld(new WorldSettings { Seed = 1, PublishSnapshots = false }, ground, [new MovementSystem(new PathService(ground, true)), dialogue]);
+        world.Player.Faction = data.PlayerFaction;
+        // The check (DIALOGUE 52700) starts locked, and its male greeting (DIALOGUE_LINE 52728) asks for one personality tag of the guard.
+        int tag = db.Find("52728-Dialogue.mod")!.GetReferences("conditions").Select(c => db.Find(c.TargetStringId)!).First(a => a.GetInt("condition name") == 26).GetInt("tag");
+
+        CharacterId Spawn(string name, float x, int faction, bool player, string template)
+        {
+            var squad = new Squad { Id = world.Squads.NextId(), TemplateId = template, Faction = faction, HomeCentre = new(x, 0), HomeRadius = 10 };
+            world.Squads.Add(squad);
+            var cold = new Meitou.Tests.Combat.Combatant { Name = name }.MakeCold();
+            cold.Faction = faction;
+            cold.IsPlayer = player;
+            cold.Inventory = new Inventory();
+            cold.SquadId = squad.Id;
+            if (!player) (cold.Personality, cold.DialogueLocks) = (tag, new(StringComparer.Ordinal) { ["52700-Dialogue.mod"] = false });   // part 1 (53178) unlocks the check as it stops the player
+            var id = world.Characters.Spawn(new CharacterHot { Position = new Vector3(x, 150, 0), Health = 100, MaxSpeed = 60, WalkSpeed = 15, Task = (byte)CharacterTask.Idle }, cold, 0);
+            squad.Members.Add(id);
+            squad.Leader = id;
+            return id;
+        }
+        var hero = Spawn("hero", 0, data.PlayerFaction, true, "");
+        var guard = Spawn("Guard", 20, data.FactionIndex("1083-gamedata.base"), false, "18881-rebirth.mod");   // Holy Gate Guards
+        Assert.True(world.Characters.TryResolveNext(hero, out int hs));
+        Assert.True(world.Characters.Cold(hs)!.Inventory!.Add(new ItemInstance { Record = "1230-gamedata.base" }));   // Hashish
+
+        world.Commands.Enqueue(new TalkOrder(hero, guard) { Tick = world.Tick });
+        // Show the gear, then take the first reply each time until the guard orders the seizure ("/SEIZE/" says "Attack"); every line on the way re-checks DC 69.
+        var posted = new List<string>();
+        string said = "";
+        for (int step = 0; step < 12 && !said.StartsWith("Attack", StringComparison.Ordinal); step++)
+        {
+            world.RunTicks(2);
+            posted.AddRange(world.TakeMessages());
+            var talk = dialogue.PublishConversation();
+            Assert.NotNull(talk);
+            said = talk.Text;
+            int gear = talk.Choices.ToList().FindIndex(t => t.Contains("Show him your gear", StringComparison.Ordinal));
+            world.Commands.Enqueue(new DialogueChoice(Math.Max(0, gear)) { Tick = world.Tick });
+        }
+        Assert.StartsWith("Attack", said);
+        world.RunTicks(2);
+        posted.AddRange(world.TakeMessages());
+        Assert.Equal(["hero has been discovered smuggling Hashish"], posted.Where(m => m.Contains("smuggling", StringComparison.Ordinal)));
+    }
 }
