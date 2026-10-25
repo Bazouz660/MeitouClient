@@ -584,7 +584,9 @@ const reportConfig = JSON.stringify({ url: reports.url.replace(/\/$/, ''), siteK
   @media (min-width: 1240px) {
     .rd { max-width: 1600px; grid-template-columns: 320px minmax(0, 1fr); grid-template-rows: auto 1fr; gap: 28px 40px; padding-top: 0; }
     .rd > header { grid-column: 2; grid-row: 1; gap: 6px; }
-    .rd > header p { max-width: 110ch; }
+    .rd > header p { max-width: 110ch; grid-column: 1 / -1; }
+    .rd > header { grid-template-columns: 1fr auto; align-items: baseline; column-gap: 24px; }
+    .rd > header > .meta { grid-row: 1; grid-column: 2; text-align: right; }
     .rd h1 { font-size: 2rem; }
     .body { grid-column: 2; grid-row: 2; }
     .side {
