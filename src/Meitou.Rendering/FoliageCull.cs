@@ -86,8 +86,13 @@ public static class FoliageCull
     public static bool Mirrors(in Matrix4x4 transform) => transform.GetDeterminant() < 0;
 
     /// <summary>A TERRAIN-mode rock's <c>Ground.W</c> for the GPU cull (<see cref="FoliageShaders.CullCompute"/>): 1024 when the placement
-    /// mirrors, plus its biome map row + 1 (<paramref name="biomeRow"/> -1: none; at most 1022). Whole numbers, exact in a float.</summary>
-    public static float RockBits(in Matrix4x4 transform, int biomeRow) => (Mirrors(transform) ? 1024 : 0) + Math.Clamp(biomeRow, -1, 1022) + 1;
+    /// mirrors, plus its biome map row + 1 (<paramref name="biomeRow"/> -1: none; at most 1022), plus <see cref="RockHeightStep"/> times its visible
+    /// height in whole units (<see cref="GroundContact.VisibleHeight"/>, at most 8191). Whole numbers below 2^24, exact in a float.</summary>
+    public static float RockBits(in Matrix4x4 transform, int biomeRow, float visibleHeight = 0) =>
+        (Mirrors(transform) ? 1024 : 0) + Math.Clamp(biomeRow, -1, 1022) + 1 + RockHeightStep * Math.Clamp(MathF.Round(visibleHeight), 0, 8191);
+
+    /// <summary>The visible height's step in <see cref="RockBits"/> (the bits below are the mirroring flag and the biome row).</summary>
+    public const int RockHeightStep = 2048;
 
     /// <summary>The fade a TERRAIN-mode rock needs to be drawn at all: the terrain shader has no dither, so it goes at the middle of the fade.</summary>
     public const float RockThreshold = 0.5f;

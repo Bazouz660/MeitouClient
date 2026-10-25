@@ -143,17 +143,18 @@ crack. Levels by the camera eye in the shadow pass too. The impostor bake and th
 
 Meitou look, not in the game (`GroundContact`, switch `contact`; issue #65). The game shades a TERRAIN-mode mesh with its feature's one
 biome by the mesh's own slope, so a cliff face stops hard against the ground's grass or dirt. In the mesh colour programs a pixel
-`h` above `terrainHeight` gets `contact = 1 − smoothstep(0, band, h)` (not beyond `uFarEnd`). The band is `Share` (0.15) of the placed
-mesh's height, at most `MaxBand` (60 units): each mesh draw pushes its model's bounding-box size (`MeshBindings.Extent`, `uNode.xyz`) and
-the vertex stage takes its rise through the placement. Its normal mixes
-toward `terrainNormal` (so slope layers, cliff projections and lighting follow), the cliff weights toward the ground's, the road layer
-returns by `contact`, and the ground's five biome slots take `contact` of the weight with the feature's biome as a sixth slot
-(`BIOME_SLOTS` 6 in the mesh programs only; the patches keep 5). Depth, shadows, the impostor bake (`ContactBand` 0) and GI unchanged.
-**Observed** (Hub, pixel diffs of on/off renders): on a large rock 80 m away only the foot changes, faces above it are identical. A
-boulder showing about 1 m above ground is still erased: many rock meshes' boxes are hundreds of units (most of the rock is buried), so
-neither the box height nor the box top over the ground at the origin (tried: blend almost gone on slopes) measures the visible part.
-**Unknown:** a per-instance visible height (box top over the lowest ground under the box, packed per placement), cost in the band (up
-to 6 biomes a pixel), and the look at the impostor crossfade.
+`h` above `terrainHeight` gets `contact = 1 − smoothstep(0, band, h)` (not beyond `uFarEnd`). The band is `Share` (0.15) of the
+placement's visible height, at most `MaxBand` (60 units). Visible height (`GroundContact.VisibleHeight`, CPU): the highest of the mesh's
+26 extreme vertices (`Support`, one per axis/edge/corner direction, made at decode for TERRAIN-mode meshes) placed, over the ground under
+that point. It rides in the placement's row 2 w: `TerrainRenderer.GroupMeshes` writes it each frame for the CPU-drawn rocks; the GPU-culled
+rocks carry it in `Ground.W` above the rock bits (`FoliageCull.RockBits`, step 2048, whole units) and the compact kernel copies it there.
+Its normal mixes toward `terrainNormal` (so slope layers, cliff projections and lighting follow), the cliff weights toward the ground's,
+the road layer returns by `contact`, and the ground's five biome slots take `contact` of the weight with the feature's biome as a sixth
+slot (`BIOME_SLOTS` 6 in the mesh programs only; the patches keep 5). Depth, shadows, the impostor bake (`ContactBand` 0) and GI unchanged.
+**Observed** (Hub, pixel diffs of on/off renders from one build): a large rock 80 m away (visible height over 30 m) changes only at its
+foot; a boulder showing under 1 m is unchanged. Bounding boxes do not work as the measure: many rock meshes are mostly buried and
+tilted, so a box's height, or its top over the ground, read 10 to 30 m for that boulder and erased it.
+**Unknown:** cost in the band (up to 6 biomes a pixel) and of the per-frame height on the CPU path, and the look at the impostor crossfade.
 
 ## Interior cut
 

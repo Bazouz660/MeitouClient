@@ -404,7 +404,6 @@ static partial class TerrainShaders
         layout(location = 9) in vec4 aModel2;
         layout(location = 10) in vec4 aModel3;
         uniform mat4 uViewProjection;
-        uniform vec4 uNode;            // xyz: the mesh's extent (TerrainRenderer.MeshPush)
         out vec3 vWorld;
         out vec3 vNormal;
         out vec2 vCliffBlend;
@@ -416,8 +415,7 @@ static partial class TerrainShaders
             mat4 model = mat4(vec4(aModel0.xyz, 0.0), aModel1, aModel2, aModel3);   // the placement of the map feature
             vFeatureBiome = int(aModel0.w);
             vFade = aModel1.w;   // the foliage cull's dither threshold for a rock crossfading with its impostor (0: none; a placement's row 1 w is otherwise 0)
-            // The placed mesh's height: its extent along each axis times that axis's rise in the world (GroundContact).
-            vContactHeight = dot(abs(vec3(aModel0.y, aModel1.y, aModel2.y)), uNode.xyz);
+            vContactHeight = aModel2.w;   // how far the placement stands above the ground (GroundContact.VisibleHeight; row 2 w is otherwise 0)
             vWorld = (model * vec4(aPosition, 1.0)).xyz;
             vNormal = transpose(inverse(mat3(model))) * aNormal;
             vec3 n = normalize(vNormal);
@@ -474,13 +472,12 @@ static partial class TerrainShaders
         layout(location = 4) flat out int vcFeatureBiome;
         layout(location = 5) flat out float vcFade;
         layout(location = 6) flat out float vcContactHeight;
-        uniform vec4 uNode;            // xyz: the mesh's extent (MeshVertex)
         void main()
         {
             mat4 model = mat4(vec4(aModel0.xyz, 0.0), aModel1, aModel2, aModel3);
             vcFeatureBiome = int(aModel0.w);
             vcFade = aModel1.w;
-            vcContactHeight = dot(abs(vec3(aModel0.y, aModel1.y, aModel2.y)), uNode.xyz);
+            vcContactHeight = aModel2.w;
             vcWorld = (model * vec4(aPosition, 1.0)).xyz;
             mat3 normalMatrix = transpose(inverse(mat3(model)));
             vcNormal = normalMatrix * aNormal;

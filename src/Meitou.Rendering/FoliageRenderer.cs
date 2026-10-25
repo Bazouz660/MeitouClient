@@ -847,6 +847,8 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
         public float Size;
         /// <summary><see cref="Centre"/>, <see cref="Radius"/> and <see cref="SizeClass"/> are known (the mesh was decoded once; they never change).</summary>
         public bool HasBounds;
+        /// <summary>A TERRAIN-mode mesh's extreme vertices (<see cref="GroundContact.Support"/>), set with the bounds.</summary>
+        public Vector3[] Support = [];
         public FoliageSizeClass SizeClass;
         /// <summary>Billboarded from <see cref="LargeImpostorDistance"/> rather than <see cref="ImpostorDistance"/> (<see cref="FoliageSizes.LargeBillboard"/>; trees are not).</summary>
         public bool LargeBillboard;
@@ -893,8 +895,8 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
         public required DeviceBuffer Vertices, Indices;
         public LegacyProgram.Attribute?[] Attributes = [];
         public MeshBindings? Plain;
-        /// <summary>The whole model's bounding box size (<see cref="MeshBindings.Extent"/>).</summary>
-        public Vector3 Extent;
+        /// <summary>A TERRAIN-mode mesh's extreme vertices (<see cref="MeshBindings.Support"/>; empty for other meshes).</summary>
+        public Vector3[] Support = [];
         /// <summary>What a native draw needs, per program (<see cref="NativeMesh"/>).</summary>
         public NativeMesh ColourNative, DepthNative, ColourSolidNative, PrepassNative, PrepassSolidNative;
         public int Count;
@@ -965,6 +967,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
             a.LargeBillboard = FoliageSizes.LargeBillboard(a.Radius, a.Mesh);
             a.Triangles = main.Parts.Sum(p => p.Indices.Length / 3) + (leaves?.Parts.Sum(p => p.Indices.Length / 3) ?? 0);
             a.HasBounds = true;
+            if (a.Terrain) a.Support = GroundContact.Support(main);   // the ground contact's visible height (rocks only)
             a.TriExtent = FoliageScreenLod.TriangleExtent(Triangles(main).Concat(leaves is null ? [] : Triangles(leaves)));
             QueueMesh(a, main, leaves);
         }
@@ -989,8 +992,8 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
         var gpuMain = new GpuMesh();
         var gpuLeaves = leaves is null ? null : new GpuMesh();
         var bytesTotal = new long[1];
-        QueueModel(gpuMain, main, bytesTotal);
-        if (leaves is not null) QueueModel(gpuLeaves!, leaves, bytesTotal);
+        QueueModel(gpuMain, main, bytesTotal, a.Support);
+        if (leaves is not null) QueueModel(gpuLeaves!, leaves, bytesTotal, []);
         uploads.Enqueue(() =>
         {
             a.Main = gpuMain;
@@ -1004,7 +1007,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
         });
     }
 
-    void QueueModel(GpuMesh mesh, Model model, long[] tally)
+    void QueueModel(GpuMesh mesh, Model model, long[] tally, Vector3[] support)
     {
         foreach (var part in model.Parts)
         {
@@ -1021,7 +1024,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
                 {
                     Vertices = DeviceBuffer.Create(Gpu, (ulong)vertexBytes, BufferUse.Vertex | RayInput, MeshAllocationName),
                     Indices = DeviceBuffer.Create(Gpu, (ulong)indexBytes, BufferUse.Index | RayInput, MeshAllocationName),
-                    Count = p.Indices.Length, TrimCount = p.TrimmedIndices?.Length ?? 0, HasTangents = p.HasTangents, HasColours = p.HasColours, Extent = model.Max - model.Min,
+                    Count = p.Indices.Length, TrimCount = p.TrimmedIndices?.Length ?? 0, HasTangents = p.HasTangents, HasColours = p.HasColours, Support = support,
                 };
                 gp.Attributes = VertexAttributes(gp.Vertices);
                 mesh.Parts.Add(gp);
@@ -1133,7 +1136,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
     }
 
     /// <summary>The part for the terrain's mesh path (the attributes at 0 to 4 and the index buffer); made on first use.</summary>
-    static MeshBindings PlainMesh(GpuPart gp) => gp.Plain ??= MeshBindings.Of(VertexAttributes(gp.Vertices), gp.Indices, gp.Extent);
+    static MeshBindings PlainMesh(GpuPart gp) => gp.Plain ??= MeshBindings.Of(VertexAttributes(gp.Vertices), gp.Indices, gp.Support);
 
     // ------------------------------------------------------------------ drawing
 
@@ -1571,11 +1574,13 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
         bool sorted = RockImpostorsActive;
         if (g.RockReady && ReferenceEquals(g.RockBiomes, source) && (g.RockSorted || !sorted)) return;
         bool plain = false, mirrored = false;
+        // The visible height (GroundContact) from the heights now: it is made again with the records when the biome source changes.
+        var ground = terrain.Snapshot();
         foreach (ref var r in g.Instances.AsSpan())
         {
             bool m = FoliageCull.Mirrors(r.Transform);
             (plain, mirrored) = (plain | !m, mirrored | m);
-            r.Ground.W = FoliageCull.RockBits(r.Transform, terrain.FeatureBiomeRowAny(r.Transform.M41, r.Transform.M43));
+            r.Ground.W = FoliageCull.RockBits(r.Transform, terrain.FeatureBiomeRowAny(r.Transform.M41, r.Transform.M43), GroundContact.VisibleHeight(r.Transform, g.Asset.Support, ground));
         }
         if (sorted)
         {

@@ -18,6 +18,8 @@ sealed class DecodedObjectMesh
     public float Top;
     /// <summary>The local bounding box: the file's bounds, else the vertices'.</summary>
     public Vector3 Min, Max;
+    /// <summary>A TERRAIN-mode mesh's extreme vertices (<see cref="GroundContact.Support"/>; empty for the others).</summary>
+    public Vector3[] Support = [];
     /// <summary>How the levels are picked (<see cref="LodCurve"/>); null: the distances as they are.</summary>
     public LodCurve? Curve;
     /// <summary>The finest level held (0: all of them): see <see cref="ObjectMeshCache.LevelFor"/>.</summary>
@@ -83,8 +85,9 @@ sealed class GpuObjectMesh
     public required float Radius;
     /// <summary>The mesh's highest local Y (the scaffold clip of an unfinished building scales with it).</summary>
     public float Top;
-    /// <summary>The local bounding box (<see cref="DecodedObjectMesh.Min"/>).</summary>
+    /// <summary>The local bounding box (<see cref="DecodedObjectMesh.Min"/>), and a TERRAIN-mode mesh's extreme vertices (<see cref="DecodedObjectMesh.Support"/>).</summary>
     public Vector3 Min, Max;
+    public Vector3[] Support = [];
     public long Bytes;
     /// <summary>The finest LOD level whose triangles are held (<see cref="ObjectMeshCache.LevelFor"/>): a draw at a finer level uses this one instead.</summary>
     public int MinLevel;
@@ -341,7 +344,8 @@ sealed unsafe class ObjectMeshCache(IGpuContext gpuContext, AssetLocator assets,
             manual[l] = inner;
         }
         if (minLevel >= levels.Count) minLevel = levels.Count - 1;   // the chain ended earlier than the distances said
-        var result = new DecodedObjectMesh { Model = model, Levels = levels, Manual = manual, Centre = centre, Radius = radius, Top = top, Min = min, Max = max, Curve = curve, MinLevel = minLevel };
+        var result = new DecodedObjectMesh { Model = model, Levels = levels, Manual = manual, Centre = centre, Radius = radius, Top = top, Min = min, Max = max, Curve = curve, MinLevel = minLevel,
+            Support = keep ? GroundContact.Support(model) : [] };
         foreach (var part in model.Parts) result.Prepared.Add(PreparePart(result, part, keep));
         return result;
     }
@@ -384,6 +388,7 @@ sealed unsafe class ObjectMeshCache(IGpuContext gpuContext, AssetLocator assets,
         Top = d.Top,
         Min = d.Min,
         Max = d.Max,
+        Support = d.Support,
         MinLevel = d.MinLevel,
     };
 
@@ -511,10 +516,10 @@ sealed unsafe class ObjectMeshCache(IGpuContext gpuContext, AssetLocator assets,
 
     /// <summary>
     /// The part as the terrain shader's mesh path takes it, which draws from the first index: level 0 shares the part's buffers, a reduced level
-    /// gets an index buffer of its own (made on first use, from the indices kept for this). <paramref name="extent"/>: the whole mesh's size
-    /// (<see cref="MeshBindings.Extent"/>).
+    /// gets an index buffer of its own (made on first use, from the indices kept for this). <paramref name="support"/>: the whole mesh's extreme vertices
+    /// (<see cref="MeshBindings.Support"/>).
     /// </summary>
-    public MeshBindings PlainMesh(GpuObjectPart part, int level, Vector3 extent)
+    public MeshBindings PlainMesh(GpuObjectPart part, int level, Vector3[] support)
     {
         part.PlainMesh ??= new MeshBindings?[part.Count.Length];
         part.PlainEbo ??= new DeviceBuffer?[part.Count.Length];
@@ -531,7 +536,7 @@ sealed unsafe class ObjectMeshCache(IGpuContext gpuContext, AssetLocator assets,
                 batch.Write(elements, 0, System.Runtime.InteropServices.MemoryMarshal.AsBytes(indices.AsSpan()));
             part.PlainEbo[level] = elements;
         }
-        return part.PlainMesh[level] = MeshBindings.Of(VertexAttributes(part.Vertices), elements, extent);
+        return part.PlainMesh[level] = MeshBindings.Of(VertexAttributes(part.Vertices), elements, support);
     }
 
     public int Unloads { get; private set; }

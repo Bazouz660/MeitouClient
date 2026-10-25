@@ -391,8 +391,8 @@ static class FoliageShaders
         struct Instance { float f[17]; };
         // batchStart and batchEnd: the chunk range of the chunk's batch (the split: a batch's visible instances are laid out solid first, then fading, see ScanCompute).
         struct Chunk { uint first; uint count; float range; float rangeSquared; float inverseBand; uint flags; float transition; float inverseTransitionBand; float lodError; float lodNextError; uint batchStart; uint batchEnd; };
-        // A TERRAIN-mode rock chunk (flags 1; with 2 its group's mirroring placements, else the others): ground.w is 1024 when the placement
-        // mirrors, plus its biome map row + 1 (0: none). The view's biome rows switch (mode.x) and the resident biomes (a bit per row).
+        // A TERRAIN-mode rock chunk (flags 1; with 2 its group's mirroring placements, else the others): ground.w has 1024 when the placement
+        // mirrors, plus its biome map row + 1 (0: none), plus 2048 times its visible height (FoliageCull.RockBits). The view's biome rows switch (mode.x) and the resident biomes (a bit per row).
         // A mesh chunk of a group with an impostor (flags 4) keeps the instances before the transition, the group's impostor chunk (flags 8,
         // the same instances) those from the crossfade band on (docs/impostors.md "Drawing"). Not drawn: -2 (visible values are above -1.5).
         // mode.y: the fog cull is on (main colour pass; FogVolumes.WriteCull): fog[0] box min and in w the weather fog's distance squared (0: none), fog[1] box max and in w 1 when the eye's block
@@ -547,7 +547,7 @@ static class FoliageShaders
                         if (side < limit) { visible = false; break; }
                     }
                     if (visible && (k.flags & 1u) != 0u)
-                        visible = !(w < 0.5) && ((uint(ground.w) >= 1024u) == ((k.flags & 2u) != 0u));
+                        visible = !(w < 0.5) && (((uint(ground.w) & 1024u) != 0u) == ((k.flags & 2u) != 0u));
                     if (visible && (k.flags & 16u) != 0u) visible = LodSelected(k, sphere);
                     if (visible) packed = w >= pc.fullThreshold ? 2.0 : w;
                     if (visible && (k.flags & 12u) != 0u)
@@ -698,7 +698,7 @@ static class FoliageShaders
                 uint o = position * 4u;
                 uint at = chunks[c].first + i;
                 float w = f;
-                float lane = 0.0;
+                float lane = 0.0, height = 0.0;
                 if ((flags & 1u) != 0u)
                 {
                     int row = int(uint(instances[at].f[16]) & 1023u) - 1;
@@ -706,11 +706,13 @@ static class FoliageShaders
                     w = view.mode.x != 0u ? (resident ? float(row) : -1.0) : 0.0;
                     // A rock with an impostor (flag 4) in its transition band: row 1's w, which the terrain's mesh vertex program passes on as the dither threshold.
                     if ((flags & 4u) != 0u && f < 1.0) lane = f;
+                    // Row 2 w: the visible height above FoliageCull.RockBits' low bits (GroundContact), as TerrainRenderer.DrawMeshes writes it.
+                    height = float(uint(instances[at].f[16]) >> 11);
                 }
                 // The fourth column is 0, 0, 0, 1 (FoliageInstanceRecord.Pack checks it); row 0's w is the fade.
                 rows[o] = vec4(instances[at].f[0], instances[at].f[1], instances[at].f[2], w);
                 rows[o + 1u] = vec4(instances[at].f[3], instances[at].f[4], instances[at].f[5], lane);
-                rows[o + 2u] = vec4(instances[at].f[6], instances[at].f[7], instances[at].f[8], 0.0);
+                rows[o + 2u] = vec4(instances[at].f[6], instances[at].f[7], instances[at].f[8], height);
                 rows[o + 3u] = vec4(instances[at].f[9], instances[at].f[10], instances[at].f[11], 1.0);
             }
         }

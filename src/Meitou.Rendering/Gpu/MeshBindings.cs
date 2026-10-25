@@ -15,10 +15,10 @@ public sealed class MeshBindings(LegacyProgram.Attribute?[] attributes, GpuBuffe
     public LegacyProgram.Attribute?[] Attributes { get; } = attributes;
     public GpuBufferBinding Elements { get; } = elements;
 
-    /// <summary>The whole mesh's bounding box size in its own space (zero: unknown), which sizes the ground contact (<see cref="GroundContact"/>).</summary>
-    public Vector3 Extent { get; init; }
+    /// <summary>The whole mesh's extreme vertices in its own space (<see cref="GroundContact.Support"/>; empty: unknown), which size the ground contact.</summary>
+    public Vector3[] Support { get; init; } = [];
 
     /// <summary>The attributes over the owner's vertex buffer, and the whole of <paramref name="elements"/> as the indices.</summary>
-    public static MeshBindings Of(LegacyProgram.Attribute?[] attributes, DeviceBuffer elements, Vector3 extent = default) =>
-        new(attributes, new GpuBufferBinding(elements.Handle, 0, elements.Size)) { Extent = extent };
+    public static MeshBindings Of(LegacyProgram.Attribute?[] attributes, DeviceBuffer elements, Vector3[]? support = null) =>
+        new(attributes, new GpuBufferBinding(elements.Handle, 0, elements.Size)) { Support = support ?? [] };
 }
