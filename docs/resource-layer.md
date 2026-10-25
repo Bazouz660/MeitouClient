@@ -126,7 +126,7 @@ of a sampled view, as `default(ComponentMapping)` was), and a handle's index 0 i
 
 A dense index into the backend's table plus the description. The renderers cannot reach the
 backend's objects, which is the point of the layer; the backend resolves the index (an array
-lookup). Vulkan's tables are appended under a lock and read without one; a released entry is
+lookup). Vulkan's tables are appended under a lock and read without one, the view cache too (a view is looked up per draw); a released entry is
 cleared once no frame in flight reads it, and its index is never reused (caches compare views and
 buffers by index). A pipeline handle is its description plus, where the backend has one, its native
 handle: a bind needs no lookup, and `--bench-tris`'s variant of the same description stays apart. The alternative - backend interfaces (`IGpuImage`, `IGpuBuffer`, `IGpuSampler`) - would
