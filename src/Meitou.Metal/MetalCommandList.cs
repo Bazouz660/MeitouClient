@@ -124,6 +124,7 @@ public sealed class MetalCommandList : IGpuCommandList
         Array.Clear(fragmentTextureState);
         Array.Clear(fragmentSamplerState);
         Array.Clear(fragmentSamplerBias);
+        pushSent.Clear();
         depthAttachment = !d.Depth.IsNull;
         renderDesc = d;
         hasViewport = hasScissor = false;
@@ -449,11 +450,13 @@ public sealed class MetalCommandList : IGpuCommandList
         if (!any) return;
         // The MSL struct is padded to argument-buffer alignment (16); a one-member set needs 16 bytes, not 8.
         var size = Math.Max(16ul, (ulong)members.Length * 8 + 15 & ~15ul);
-        var constants = ctx.NewSetBuffer(size);
-        fixed (ulong* from = entries) Buffer.MemoryCopy(from, (void*)constants.Contents, (long)size, (long)size);
-        if (computePass) compute.SetBuffer(constants, 0, set);
-        else if (stage == GpuStage.Vertex) BindVertexBuffer(MetalShaders.VertexBlockBase + set, constants, 0);
-        else BindFragmentBuffer(set, constants, 0);
+        // A slice of the frame's constants ring, not a fresh 16-byte MTLBuffer per bind (Xcode's late-buffer insight).
+        var constants = ctx.Frame.AllocateConstants(size, 16);
+        fixed (ulong* from = entries) Buffer.MemoryCopy(from, (void*)constants.Pointer, (long)size, (long)size);
+        var argumentBuffer = ctx.BufferAt(constants.Handle);
+        if (computePass) compute.SetBuffer(argumentBuffer, constants.Offset, set);
+        else if (stage == GpuStage.Vertex) BindVertexBuffer(MetalShaders.VertexBlockBase + set, argumentBuffer, constants.Offset);
+        else BindFragmentBuffer(set, argumentBuffer, constants.Offset);
     }
 
     /// <summary>Tells the current encoder a resource the argument buffer holds; the compute encoder needs it for its writes too.</summary>
@@ -519,15 +522,23 @@ public sealed class MetalCommandList : IGpuCommandList
     }
 
     readonly Dictionary<(int Program, GpuStage Stage), byte[]> pushBlocks = [];
+    readonly Dictionary<(int Program, GpuStage Stage), byte[]> pushSent = [];
 
     unsafe void PushStage(GpuStage stage, GpuProgram program, byte* source, int raw, int offset, int padded, bool compute)
     {
         var key = (program.Index, stage);
         if (!pushBlocks.TryGetValue(key, out var block) || block.Length < padded)
             pushBlocks[key] = block = new byte[Math.Max(padded, 16)];
+        if (!pushSent.TryGetValue(key, out var sent) || sent.Length < block.Length)
+            pushSent[key] = sent = new byte[block.Length];
         fixed (byte* destination = block)
         {
             Buffer.MemoryCopy(source, destination + offset, block.Length - offset, raw);
+            if (block.AsSpan(0, block.Length).SequenceEqual(sent.AsSpan(0, block.Length))) return;
+            block.AsSpan(0, block.Length).CopyTo(sent);
+        }
+        fixed (byte* destination = sent)
+        {
             if (compute) ComputeEncoder().SetBytes((nint)destination, (ulong)block.Length, MslTranslator.PushConstantBinding);
             else if (stage == GpuStage.Vertex) render.SetVertexBytes((nint)destination, (ulong)block.Length, MslTranslator.PushConstantBinding);
             else render.SetFragmentBytes((nint)destination, (ulong)block.Length, MslTranslator.PushConstantBinding);
@@ -775,6 +786,7 @@ public sealed class MetalCommandList : IGpuCommandList
         EndBlit();
         if (render.NativePtr != IntPtr.Zero) throw new InvalidOperationException("a compute pass inside a rendering");
         compute = command.ComputeCommandEncoder();
+        pushSent.Clear();
         lastCompute = default;
         return compute;
     }
