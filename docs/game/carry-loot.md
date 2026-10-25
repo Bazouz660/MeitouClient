@@ -37,12 +37,14 @@ drag-drop unpermitted down-character→Theft3, other source→Looting10. Ordinar
 Ground pickup can raise Theft inside another faction's building.
 
 **Observed** steal roll (`FUN_140794810`, chance `FUN_1407944d0`; virtual names KenshiLib 1ce4a16): both inventory transfers above and the give
-set their pending crime, then roll; caught refuses the move. Character owner: the owner watches, p = 1.1 x thievery/100, an equipped item x0.75,
-x0.75 again for a slotted one. Container: the watcher is the nearest to the thief of the owner's characters not down and posture < 3, those on the
-thief's floor (`getFloor`) first (`FUN_140792ce0`; whose list is **Unknown**); t = lerp(0.5, 1, clamp(d/200)), d watcher to container; when the
+set their pending crime, then roll; caught refuses the move. Character owner (Loot, 26, on a sleeper, a lying or a caged
+character: [ui-input](ui-input.md#context-menu-verbs)): the owner watches, p = 1.1 x thievery/100, an equipped item (`Item::isEquipped` +0x129)
+x0.75, x0.75 again when it is armour (`isArmour`); the drag passes no item. Container: the container's parent building (`isFurnitureOf` -> its
+building) must have a resident squad (`Building::residentSquad` +0xD0, a CHARACTER or PLATOON hand), else no watcher; the watcher is the nearest
+to the thief of that platoon's active members (`Platoon::activePlatoon` +0x1D8) not down and posture < 3, those on the thief's floor (`getFloor`)
+first (`FUN_140792ce0`); t = lerp(0.5, 1, clamp(d/200)), d watcher to container; when the
 watcher's `isIndoors` building differs from the container's (`hand::operator!=`), t x0.5 and, if that building has no open door
-(`Building::hasAnOpenDoor`), the steal always succeeds; p = 0.3 + 1.95 x thievery/100 x t; posture-3 watcher x2, another floor x1.5. A gate on the
-container's building `+0xd8` (1 or 0x22) is **Unknown**. No watcher, or one unconscious, dead, carried or imprisoned (or a down thief): p = 1, the
+(`Building::hasAnOpenDoor`), the steal always succeeds; p = 0.3 + 1.95 x thievery/100 x t; posture-3 watcher x2, another floor x1.5. No watcher, or one unconscious, dead, carried or imprisoned (or a down thief): p = 1, the
 pending crime stays. Caught (`rand > p`): a watcher in bed says event 47 instead half the time (`rand > 0.5`); else it stands up, says event 8, the
 thief gets Theft timer 30 against the owner's faction and the watcher's squad a long-term STOLE_FROM_ME tag (4, `FUN_140673a20`); no faction
 relation event (none of the slot-5 callers in [factions 3.5](factions-squads-towns.md#35-what-fires-relation-changes-observed-decompile) is a theft

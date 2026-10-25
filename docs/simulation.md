@@ -557,9 +557,11 @@ it). DA 33 CRIME_ALARM (`CrimeSystem.Alarm`): the speaker attacks the target, th
 wanted; a speaker of a town squad sets Trespassing on a target with nothing pending inside its private home, and raises the town alarm for
 the target's pending crime, which the town's investigators answer ([town alarms](game/economy.md#town-alarms)).
 Stealing (`CrimeSystem.Steal`, [carry-loot](game/carry-loot.md#theft-and-witnesses)): taking from another faction's container (right click: Theft;
-drag: Looting; give to a character: Theft) sets the pending crime, then the steal roll; caught, the item stays. Engine choices: the watcher list is
-the owner's squads living in the container's building, floors differ by more than 20, the field `+0x180` is read as the pending timer before the
-roll. A stolen ground pick-up inside a building is a pending Theft with thievery XP 20, no roll.
+drag: Looting; give to a character: Theft) sets the pending crime, then the steal roll; caught, the item stays. Pickpocketing (`CrimeSystem.Pickpocket`):
+Loot on another faction's sleeper or prisoner opens its inventory (`CarrySystem.CanBePickpocketed`); a take from it while it is not down is the
+same, the owner watching. Engine choices: every squad living in the building watches (Meitou may house more than one), floors differ by more
+than 20, the field `+0x180` is read as the pending timer before the roll, the window closes when the sleeper wakes. A stolen ground pick-up inside
+a building is a pending Theft with thievery XP 20, no roll.
 
 ## Cages, beds and locks
 
@@ -1216,7 +1218,7 @@ trader has its home's containers filled instead (`FillHome`). Only members that 
 Trade verb and pointer. Shop state is hashed; the open trade is not, except its buyback receipts (below). A shop is saved on its platoon (`Saving/ShopSave`: stock, fill count,
 `inventory refresh time`, [economy](game/economy.md#building-shops-observed-decompile)) and kept by a saved platoon that leaves the world; a save without it gets a fresh fill.
 Transfers and money changes must succeed together. Stealing from containers: [crimes](#crimes-and-bounties). Not built: smuggling (economy 8.5,
-undecoded) and pickpocketing (no order opens a conscious NPC's inventory).
+undecoded).
 
 Bags (engine choice; how the original trades bags and their contents is **Unknown**): a bag trades whole, the same instance with its contents grid, and only empty ("That bag
 isn't empty."), since its contents would otherwise go unpriced and unchecked for theft; a bag's contents are not shown as stock. A right click puts a bought bag into a free

@@ -88,7 +88,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
     float ReachOf(World world, CharacterCold body) =>
         body.IsImprisoned && body.InWhat is { } id && world.Fixtures.Find(id) is { } cage ? MathF.Max(Settings.Reach, cage.UseRange + Locks.LockSystem.Reach) : Settings.Reach;
 
-    /// <summary>A character that may be looted: knocked out or dead (the original's <c>isItemLootable</c> also takes the bedded and imprisoned, not modelled here yet), with an inventory.</summary>
+    /// <summary>A character that may be looted: knocked out or dead, with an inventory (the bedded and imprisoned that the original's <c>isItemLootable</c> also takes are opened as a pickpocket, <see cref="CanBePickpocketed"/>).</summary>
     public static bool CanBeLooted(CharacterCold cold) => cold is { Medical.Incapacitated: true, Inventory: not null };
 
     /// <summary>
@@ -96,6 +96,15 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
     /// engine choice: the walk and the window are the loot's).
     /// </summary>
     public static bool CanBeOpened(CharacterCold cold) => CanBeLooted(cold) || cold is { IsPlayer: true, Inventory: not null };
+
+    /// <summary>
+    /// Another faction's character that is not down but whose inventory Loot (26) opens as a pickpocket: asleep (the original's state 1) or imprisoned (state 2), not carried
+    /// (docs/game/ui-input.md "Context menu verbs"); what is taken from it rolls the steal check (<see cref="Crime.CrimeSystem.Pickpocket"/>).
+    /// </summary>
+    public static bool CanBePickpocketed(CharacterTable table, int slot) =>
+        table.Cold(slot) is { IsPlayer: false, Inventory: not null, Medical.Incapacitated: false } c && c.CarriedBy.IsNone && (c.IsImprisoned || Asleep(table, slot));
+
+    static bool Openable(CharacterTable table, int slot) => CanBeOpened(table.Cold(slot)!) || CanBePickpocketed(table, slot);
 
     /// <summary>Whether slot <paramref name="i"/>'s loot task is the walk of an <see cref="OpenLootOrder"/> (it opens the window instead of taking all).</summary>
     static bool Opening(World world, int i) =>
@@ -143,7 +152,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
                     }
                     break;
                 case OpenLootOrder open:
-                    if (!table.TryResolveNext(open.Target, out int body2) || !CanBeOpened(table.Cold(body2)!)) break;
+                    if (!table.TryResolveNext(open.Target, out int body2) || !Openable(table, body2)) break;
                     if (Nearest(table, Who(world, open.Looters), body2, s => s != body2 && table.Cold(s) is { Medical.Incapacitated: false, Inventory: not null } c && c.CarriedBy.IsNone) is int opener)
                     {
                         LeaveFight(world, opener);
@@ -289,7 +298,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
             var cold = table.Cold(i)!;
             bool lifting = n.Task == (byte)CharacterTask.PickUp;
             if (cold.Medical is not { Incapacitated: false } || cold.InCombat || !table.TryResolveNext(cold.CarryTarget, out int t)
-                || (lifting ? cold.LiftTime < 0 && !(CanCarry(cold) && (CanBeLifted(world, table.Cold(t)!) || cold.Kidnapping && CanBeKidnapped(table, t))) : !(Opening(world, i) ? CanBeOpened(table.Cold(t)!) : CanBeLooted(table.Cold(t)!))))
+                || (lifting ? cold.LiftTime < 0 && !(CanCarry(cold) && (CanBeLifted(world, table.Cold(t)!) || cold.Kidnapping && CanBeKidnapped(table, t))) : !(Opening(world, i) ? Openable(table, t) : CanBeLooted(table.Cold(t)!))))
             {
                 if (!(lifting && cold.LiftTime >= 0)) End(table, i);   // a lift under way is finished or broken off in SlowWorld
                 continue;
@@ -499,10 +508,10 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
     void Loot(World world, CharacterTable table, int i, float dt)
     {
         var cold = table.Cold(i)!;
-        if (!table.TryResolveNext(cold.CarryTarget, out int t) || Gap(table.Next[i], table.Next[t]) > Settings.Reach) return;   // still walking (Schedule ends a loot whose target went)
+        if (!table.TryResolveNext(cold.CarryTarget, out int t) || Gap(table.Next[i], table.Next[t]) > ReachOf(world, table.Cold(t)!)) return;   // still walking (Schedule ends a loot whose target went)
         var victim = table.Cold(t)!;
         bool opening = Opening(world, i);
-        if (cold.Inventory is not { } bag || !(opening ? CanBeOpened(victim) : CanBeLooted(victim)))
+        if (cold.Inventory is not { } bag || !(opening ? Openable(table, t) : CanBeLooted(victim)))
         {
             End(table, i);
             return;
@@ -541,7 +550,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         var cold = table.Cold(i)!;
         var victim = table.Cold(t)!;
         bool seen = taken > 0 && cold.IsPlayer && !victim.IsPlayer && cold.Faction != victim.Faction && Witnessed(world, table, i, t);
-        if (taken > 0) Crimes?.Loot(world, i, t);
+        if (taken > 0 && victim.Medical?.Incapacitated != false) Crimes?.Loot(world, i, t);   // a pickpocket's crime is its steal roll's
         loots.Add(new LootEntry(world.Tick, table.IdOf(i), table.IdOf(t), taken, left, seen));
         return seen;
     }
@@ -565,9 +574,9 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
     {
         var player = world.Player;
         var table = world.Characters;
-        return table.TryResolveNext(player.OpenLoot, out int t) && table.Cold(t) is { } body && CanBeOpened(body) && body.CarriedBy.IsNone
+        return table.TryResolveNext(player.OpenLoot, out int t) && table.Cold(t) is { } body && Openable(table, t) && body.CarriedBy.IsNone
             && table.TryResolveNext(player.LootOpener, out int o) && table.Cold(o) is { Medical.Incapacitated: false, Inventory: not null } looter && looter.CarriedBy.IsNone
-            && Gap(table.Next[o], table.Next[t]) <= Settings.Reach * 1.5f ? (o, t) : null;
+            && Gap(table.Next[o], table.Next[t]) <= ReachOf(world, body) * 1.5f ? (o, t) : null;
     }
 
     /// <summary>
@@ -589,6 +598,8 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
             if (cold.IsPlayer) world.Post("This item is locked in place and cannot be removed. You can try to pick the lock, find a saw, or use brute strength.");
             return;
         }
+        // A pickpocket (the owner is not down): Theft and the steal roll; caught, the item stays.
+        if (victim.Medical?.Incapacitated == false && Crimes?.Pickpocket(world, i, t, item, Crime.CrimeCode.Theft) == true) return;
         bool worn = InventoryCommands.IsEquipmentSection(item.Section);
         int mark = item.StolenFrom, death = DeathUnits(from);
         if (Crime.CrimeSystem.IsLootTheft(cold, victim)) item.StolenFrom = victim.Faction;

@@ -107,13 +107,16 @@ sealed partial class PlayerInterface
     }
 
     /// <summary>
-    /// A caged character. Meitou cannot point at a cage, so the cage's own verbs come here (engine stand-ins): Pick Lock its locked cage (the prisoner its own, a mate from outside), and
+    /// A caged character: Talk To (12) and Loot (26). Meitou cannot point at a cage, so the cage's own verbs come here (engine stand-ins): Pick Lock its locked cage (the prisoner its own, a mate from outside), and
     /// once it is open Escape (207, the prisoner when selected; an escape unless served) or Pick Up (225, a mate lifts it out; out of another faction's cage a crime, locks.md "Cages and beds").
     /// </summary>
     void PrisonerVerbs(List<(string, Action)> verbs, CharacterSnapshot target, PrisonView prison, IReadOnlyList<CharacterId> selection, bool down)
     {
         var id = target.Id;
         if (!down && session.World.CanTalk(id, selection[0])) verbs.Add(("Talk To", () => Say(new Meitou.Simulation.Dialogue.TalkOrder(selection[0], id) { Tick = session.World.Tick })));
+        // 26 unless it is the player's and selected: Trade for the player's own, else Loot (a pickpocket while it is awake).
+        if (target.CarriedBy.IsNone && !(target.IsPlayer && selection.Contains(id)))
+            verbs.Add((target.IsPlayer ? "Trade" : "Loot", () => Say(new Meitou.Simulation.Carrying.OpenLootOrder([], id) { Tick = session.World.Tick })));
         if (prison.Locked)
         {
             if (!down) verbs.Add(("Pick Lock", () => Say(new Meitou.Simulation.Locks.PickLockOrder(selection, id) { Tick = session.World.Tick })));
@@ -151,7 +154,7 @@ sealed partial class PlayerInterface
     /// <summary>
     /// Another faction's character (docs/game/ui-input.md "Context menu verbs"). Standing: Talk To (12), Stealth KO (228, with its chance) while a selected character sneaks; against a hostile one Attack
     /// All (16) and Attack Target (5), against anyone else Attack Unprovoked (61), Bodyguard (45) and Follow (31); Meitou adds Trade with a trader (its quick order). With the lead on a turret every
-    /// attack becomes Shoot At (235). Down: Loot (26) and the pick-up verb (<see cref="PickUpVerb"/>). Not built: Throw out of home / town (223, 273).
+    /// attack becomes Shoot At (235). Down or asleep: Loot (26, a pickpocket on a sleeper) and the pick-up verb (<see cref="PickUpVerb"/>). Not built: Throw out of home / town (223, 273).
     /// </summary>
     void OtherCharacterVerbs(List<(string, Action)> verbs, CharacterSnapshot target, IReadOnlyList<CharacterId> selection, bool down)
     {
@@ -165,8 +168,9 @@ sealed partial class PlayerInterface
         }
         if (target.Asleep)
         {
-            // Not standing (the original's state 1): the pick-up verb and Stealth KO; not hostile, also Attack Unprovoked, Bodyguard and Talk To. Not built: Loot on a sleeper.
+            // Not standing (the original's state 1): Loot (a pickpocket), the pick-up verb and Stealth KO; not hostile, also Attack Unprovoked, Bodyguard and Talk To.
             if (!target.CarriedBy.IsNone) return;
+            verbs.Add(("Loot", () => Say(new Meitou.Simulation.Carrying.OpenLootOrder([], id) { Tick = session.World.Tick })));
             verbs.Add(PickUpVerb(target));
             if (target.StealthKoChance is { } koChance)
                 verbs.Add((WithChance("Stealth KO", koChance), () => Say(new Meitou.Simulation.Carrying.StealthKoOrder(selection, id) { Tick = session.World.Tick })));

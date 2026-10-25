@@ -214,12 +214,19 @@ public sealed partial class PlayerSystem
     }
 
     /// <summary>
-    /// The held item leaves another faction's container for another owner: the pending crime of the move (<paramref name="code"/>: Looting for a drag, <c>FUN_140715560</c>; Theft for a
-    /// give, <c>FUN_140712490</c>) and the steal roll (<see cref="Crime.CrimeSystem.Steal"/>). True when the thief was caught and the item goes back.
+    /// The held item leaves another faction's container, or a pickpocketed character (not down), for another owner: the pending crime of the move (<paramref name="code"/>: Looting for a
+    /// drag, <c>FUN_140715560</c>, which rolls without the item; Theft for a give, <c>FUN_140712490</c>) and the steal roll (<see cref="Crime.CrimeSystem.Steal"/>,
+    /// <see cref="Crime.CrimeSystem.Pickpocket"/>). True when the thief was caught and the item goes back.
     /// </summary>
-    static bool Caught(World world, HeldItem held, Crime.CrimeCode code) =>
-        held.From.Holder == ItemHolder.Site && world.Fixtures.Find(held.From.Site) is { Contents: not null } box && box.Owner >= 0 && box.Owner != world.Player.Faction
-        && world.SystemOf<Crime.CrimeSystem>() is { } crimes && world.Characters.TryResolveNext(held.Actor, out int thief) && crimes.Steal(world, thief, box, code);
+    static bool Caught(World world, HeldItem held, Crime.CrimeCode code)
+    {
+        var table = world.Characters;
+        if (world.SystemOf<Crime.CrimeSystem>() is not { } crimes || !table.TryResolveNext(held.Actor, out int thief)) return false;
+        if (held.From.Holder == ItemHolder.Site)
+            return world.Fixtures.Find(held.From.Site) is { Contents: not null } box && box.Owner >= 0 && box.Owner != world.Player.Faction && crimes.Steal(world, thief, box, code);
+        return held.From.Holder == ItemHolder.Character && table.TryResolveNext(held.From.Character, out int owner) && table.Cold(owner) is { IsPlayer: false, Medical.Incapacitated: false }
+            && crimes.Pickpocket(world, thief, owner, code == Crime.CrimeCode.Theft ? held.Item : null, code);
+    }
 
     /// <summary>The held item went to another owner out of the open loot: the body may be butchered (a death item) and the looting seen.</summary>
     static void LeftLoot(World world, HeldItem held, bool death)
