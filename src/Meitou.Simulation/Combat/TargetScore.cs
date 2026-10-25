@@ -22,6 +22,10 @@ public readonly record struct TargetCandidate
     public bool Gunner { get; init; }
     /// <summary>Crawling or unable to fight.</summary>
     public bool Crippled { get; init; }
+    /// <summary>Its fight is off and its intended aggression is 0 or less (Meitou: it does not count the chooser's faction an enemy).</summary>
+    public bool Peaceful { get; init; }
+    /// <summary>Getting up after a knockout (Character +0x278).</summary>
+    public bool GettingUp { get; init; }
 }
 
 /// <summary>
@@ -57,7 +61,12 @@ public static class TargetScore
         if (player && c.Distance > PlayerRange) return null;
         if (hold && c.Distance > HoldNear) s *= 0.01f;
         s += (1 - c.Distance / ImmediacyRange) * Immediacy * (prone ? 20 : 1);
-        if (!c.Fighting) s += Murderous;
+        if (!c.Fighting)
+        {
+            s += Murderous;
+            if (c.Peaceful) s *= 0.5f;
+        }
+        if (c.GettingUp) s *= 0.1f;
         if (c.Gunner && !animal) s *= 3;
         if (c.Crippled) s -= 10;
         return s;

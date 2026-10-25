@@ -159,6 +159,8 @@ public sealed class AnimationSystem(AnimationLibrary library, AnimationLengths l
     {
         if (combat is null) return false;
         combat.StumbleChooser = (cold, part, big, side, roll) => ChooseStumble(library, lengths, cold, part, big, side, roll);
+        int getUp = library.IndexOf("standing up 3");
+        combat.GetUpSeconds = getUp >= 0 ? Meitou.Simulation.Ragdolls.RagdollSystem.GetUpBlend + lengths.Of(library.Definitions[getUp].Clip) * GetUpEnd : 0;
         return true;
     }
 

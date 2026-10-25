@@ -106,6 +106,13 @@ public sealed partial class CombatSystem
                     break;
             }
         }
+        // A shackled defender is knocked out instead of staggered a quarter of the time (Character::_startStumble: MedicalSystem::knockout with factor 0.002, the floor of 3 s).
+        if (!dc.Medical.Incapacitated && Locks.LockSystem.WornShackles(dc) is not null
+            && CombatRolls.Float(world.Seed, Rng.Key(table.IdOf(d)), CombatRoll.Shackled, CombatRolls.BlowCounter(a, seq, blow, 0)) < ShackledKnockout)
+        {
+            dc.Medical.KnockOut(dc.Medical.PutDownKoSeconds(ctx, 0.002f));
+            knockout = true;
+        }
         if (dc.Medical.Incapacitated)
         {
             D.Down = true;
@@ -134,6 +141,13 @@ public sealed partial class CombatSystem
     /// </summary>
     void Stagger(World world, ref CombatSlot D, int d, CharacterCold dc, bool heavy, int now, ulong counter)
     {
+        // Outside a fight (docs/game/combat.md "Stagger outside a fight"): one getting up is left alone; any other drops its task, which is planned again from its start,
+        // unless it mans a turret (shooting at a live target).
+        if (D.TargetSlot < 0 && !dc.InCombat)
+        {
+            if (dc.GettingUpUntil > now) return;
+            if (dc.Gunning is null) Restart(world.Characters, d, dc);
+        }
         bool stumbling = D.StumbleClip >= 0 && now < D.StunUntil;
         D.HitHeavy = heavy && !stumbling;
         if (stumbling && !heavy) return;
@@ -151,6 +165,24 @@ public sealed partial class CombatSystem
             D.ReadyTick = Math.Max(D.ReadyTick, D.StunUntil);
         }
         else D.ReadyTick = Math.Max(D.ReadyTick, now + (int)MathF.Ceiling(CombatTuning.InterruptPause / world.TickSeconds));
+    }
+
+    /// <summary>The chance a landed blow knocks a shackled defender out (<c>Character::_startStumble</c>, Verified literal).</summary>
+    public const float ShackledKnockout = 0.25f;
+
+    /// <summary>
+    /// A task cut off by a hit is planned again from its start (the original ends it and queues it behind Stumbling): its timer and any lift or knock-out swing start over,
+    /// and a walk asks for a new path from where the hit left it. What each task keeps of its progress (a lock's pick time, a site's or a machine's work) stays with its object.
+    /// </summary>
+    static void Restart(CharacterTable table, int slot, CharacterCold cold)
+    {
+        ref var n = ref table.Next[slot];
+        n.TaskTime = 0;
+        cold.LiftTime = -1;
+        if ((n.Flags & (ushort)MoveFlags.AnyPath) == 0) return;
+        n.Flags = (ushort)((n.Flags & ~(ushort)MoveFlags.AnyPath) | (ushort)MoveFlags.NeedPath);
+        n.PathCursor = 0;
+        cold.PathRequest = 0;
     }
 
     /// <summary>The cover roll of one blow: a function of the defender, the blow and the armour piece.</summary>

@@ -274,7 +274,7 @@ systems; the rules follow [combat](game/combat.md#fight-lifecycle-and-orders). A
 (Idle, a bodyguard's Follow, or Loot with the attacker within 40) and against an attacker within √33000 ≈ 182; Passive does not stop that but keeps it
 from joining others' defence and from attack on sight. Hold adds attack on sight while Idle (not Passive, sneaking or crawling), and every target of a
 holder (sight, self-defence, re-pick) passes the post test (`Orders.HoldPost`); it walks to a target only within 80 (140 when the target fights it) of
-its hold point (`CharacterCold.HoldPoint`: where Hold was turned on, then each ground move's destination; not saved, a loaded holder holds where it stands).
+its hold point (`CharacterCold.HoldPoint`: where Hold was turned on, then each ground move's destination; not saved: a loaded holder holds where it stands, as setStandingOrder 12 does; **Observed**: the loader replays the jobs switch through it, Verified; Hold assumed alike).
 A toggle (button or hotkey) sets every selected character to the opposite of the first one's state, so a mixed selection ends uniform (engine choice; the original's rule is **Unknown**). Toggles and the run speed arrows also apply while paused ([time model](#time-model)).
 New player characters start with Jobs and Ranged enabled. Jobs gates the job list and automatic rescue (the medic, robotics, splint and attacking-enemies jobs run regardless, as the original); direct orders still run. The saved `chase mode` is this switch. Saved toggles override
 defaults, including explicit false values. Jobs is GAMESTATE_AI `jobs` ([perma-jobs](game/ai-tasks.md#perma-jobs)); Meitou's older `meitou jobs enabled` is read, not written.
@@ -410,10 +410,14 @@ the target that is not a hit gives up the engaged place (`FUN_14060a2f0`), so th
 Target choice (`CombatSystem.ChooseTarget`, combat.md "Target selection"): a fighter whose target goes down chooses again at once and ends its fight
 only when no candidate is left; while deciding it chooses again every 1 s (0.3 s on Hold), except for a player's pick, and ends the fight when even
 its current target fails (a holder's that left the post test, a player's beyond 400). Candidates are its current target (any faction), its attackers and, unless Passive, the attackers of squad mates within `JoinRange` (+10 for one whose mate does not fight it back and that has
-under 2 attackers: engine reading of the protectee); not of its faction or squad. Not modelled: the sensed test, murderous ×0.5, getting up ×0.1.
-Only a fighter blocks or dodges. A landed hit that picks a stumble clip on a character outside a fight stops its walking and its work (first aid,
-lockpicking, building, operating) until the clip ends (`CharacterCold.StaggeredUntil`); the order then goes on where it was (engine choice: the original
-plans it again from its start). A fight's end puts no weapon away: a player's character sheathes once it is neither walking nor following on an order,
+under 2 attackers: engine reading of the protectee); not of its faction or squad. The current target must be sensed: an NPC's sense entry is its
+chase's (`AggroSystem` gives up after 24 s unsensed); a player's character keeps it 24 s after it last had it within sight range (a sneaker: in view;
+`CombatSlot.SensedTick`; engine reading). "Intended aggression ≤ 0" is a fight-off candidate not counting the chooser's faction an enemy (engine
+reading); getting up is `CharacterCold.GettingUpUntil`, from waking for `CombatSystem.GetUpSeconds` (the get-up blend and `standing up 3` to `GetUpEnd`).
+Only a fighter blocks or dodges. A landed blow on a shackled defender knocks it out 25% of the time (`PutDownKoSeconds` with 0.002: 3 s). A hit on a
+character outside a fight that is getting up does nothing more; on any other (not a gunner) it restarts the task (timer, lift or knock-out swing, and a
+new path from where it stands; a lock's, site's or machine's progress stays with the object), and a picked stumble clip stops its walking and its work
+(first aid, lockpicking, building, operating) until the clip ends (`CharacterCold.StaggeredUntil`). A fight's end puts no weapon away: a player's character sheathes once it is neither walking nor following on an order,
 an NPC by its planner's UNEQUIP_WEAPON step (one without an AI at once).
 
 ### Ranged

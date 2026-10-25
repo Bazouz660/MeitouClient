@@ -74,6 +74,10 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
     /// (0 front, 1 rear) and a roll in [0, 1); returns the clip (an animation library index) and its length in seconds, or null when none fits. Null: hits play no clip.
     /// </summary>
     public Func<CharacterCold, string, bool, int, float, (int Clip, float Seconds)?>? StumbleChooser { get; set; }
+    /// <summary>How long a woken character gets up (the animation system sets it from <c>standing up 3</c>: its 0.75 s blend and the clip to <c>GetUpEnd</c>); 0: no get-up.</summary>
+    public float GetUpSeconds { get; set; }
+    /// <summary>The outdoor sight a fighter senses a current target within (before the race's multiplier; <see cref="AggroSettings.SightRange"/>'s default).</summary>
+    public float SenseRange { get; set; } = AggroSystem.OutdoorSight;
     public IReadOnlyList<CombatTechnique> Techniques => techniques;
 
     /// <summary>The resolved blows so far (when <see cref="CombatOptions.RecordLog"/> is on).</summary>
@@ -178,6 +182,7 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
         s.TargetGeneration = target.Generation;
         s.Picked = picked;
         s.PickTick = now + PickTicks(world, cold);
+        s.SensedTick = now;
         s.ReadyTick = now + PauseTicks(world, a, 0);
         table.Next[a].Task = (byte)CharacterTask.Attack;
         cold.InCombat = true;

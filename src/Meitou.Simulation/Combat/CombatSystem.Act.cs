@@ -101,6 +101,8 @@ public sealed partial class CombatSystem
             // A player's character out of a fight keeps its weapon out while it walks or follows on an order; idle or at work it sheathes (Idleness and the jobs need it away).
             if (cold.IsPlayer && !cold.InCombat && cold.DrawnWeapon != WeaponKinds.None && next[i].Task is not ((byte)CharacterTask.GoTo or (byte)CharacterTask.Follow or (byte)CharacterTask.Attack))
                 cold.DrawnWeapon = WeaponKinds.None;
+            // Waking: it gets up for GetUpSeconds (Task_GetUp), less wanted as a target and left alone by a hit while its fight is off.
+            if (s.Down && !cold.Medical.Incapacitated && GetUpSeconds > 0) cold.GettingUpUntil = now + (int)MathF.Ceiling(GetUpSeconds / dt);
             s.Down = cold.Medical.Incapacitated;
             if (s.Down)
             {
@@ -142,7 +144,7 @@ public sealed partial class CombatSystem
                 s.NextBlow = 0;
                 int pick = ChooseTarget(world, i, s, cold, keep: false);
                 s.PickTick = now + PickTicks(world, cold);
-                if (pick >= 0) Retarget(ref s, pick, prev[pick].Generation);
+                if (pick >= 0) Retarget(ref s, pick, prev[pick].Generation, now);
                 else
                 {
                     fighting = false;
@@ -153,9 +155,9 @@ public sealed partial class CombatSystem
             }
             else if (fighting && !s.Picked && now >= s.PickTick && s.AttackTech < 0 && s.ReactTech < 0)
             {
-                int pick = ChooseTarget(world, i, s, cold, keep: true);
+                int pick = ChooseTarget(world, i, s, cold, keep: CurrentSensed(world, i, ref s, cold, now));
                 s.PickTick = now + PickTicks(world, cold);
-                if (pick >= 0 && pick != s.TargetSlot) Retarget(ref s, pick, prev[pick].Generation);
+                if (pick >= 0 && pick != s.TargetSlot) Retarget(ref s, pick, prev[pick].Generation, now);
                 else if (pick < 0)
                 {
                     // Nobody qualifies, not even the current target (a holder's that left its area, a player's beyond 400): the chooser has no target and the fight ends.

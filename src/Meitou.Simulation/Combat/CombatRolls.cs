@@ -19,6 +19,8 @@ public enum CombatRoll : ulong
     Initiative = 7,
     /// <summary>The side-step speed of a fighter circling its target (counter: three per target slot).</summary>
     Circle = 8,
+    /// <summary>Whether a landed blow knocks a shackled defender out instead of staggering it (counter: the blow).</summary>
+    Shackled = 9,
 }
 
 /// <summary>

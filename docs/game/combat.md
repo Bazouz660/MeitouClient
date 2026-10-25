@@ -150,8 +150,10 @@ ends leaves 0.2 s.
     the candidate has under 2 attackers;
   - a player-faction chooser drops candidates beyond 400 (its crossbow range with Ranged on); on Hold ×0.01 beyond 40;
   - when the Hold test `FUN_140598630` passes: + range term (×20 for a crippled chooser), + murderous (−2) for a candidate whose fight is off
-    (then ×0.5 when its intended aggression, vfunc 0x1e8, is ≤ 0), ×0.1 while it gets up (+0x278), ×3 for a turret gunner when the chooser is
-    not an animal, −10 when crippled or limbless (`MedicalSystem::isUselessNoLimbGuy`); otherwise the candidate is dropped.
+    (then the whole score ×0.5 when its intended aggression, vfunc 0x1e8 `getIntendedAggression`, is ≤ 0), the whole score ×0.1 while it gets up
+    (+0x278), ×3 for a turret gunner when the chooser is not an animal, −10 when crippled or limbless (`MedicalSystem::isUselessNoLimbGuy`);
+    otherwise the candidate is dropped. A candidate failing `FUN_1405b0290` (chooser +0x650 +0x20 against candidate +0x58, **Unknown**) skips
+    these last terms and is never picked. (**Verified** order and factors in the decompile of `FUN_14059e300`.)
   - Range term (`AI::scoreTargetRange`) = (1 − d/R) × w by the chooser's manoeuvre mode ([area](perception.md#the-attack-on-sight-tests)):
     HOLD_GROUND R = 2 (meiDistance + tolerance) = 46, STAY_CLOSE R = meiDistance + 200 + tolerance = 223, ROAM_FAR (the default) R = 200;
     w = immediacy in ROAM_FAR, else holding position (both 2).
@@ -260,7 +262,7 @@ Meitou (`CombatSystem.HasSlot` / `MayJoin`, `PursuitSystem.Circle`):
   threat left, Self preservation restarts a fight on `findAttackerOf`'s pick; without one, Idleness sheathes. A right click on an enemy is
   order 5 (focused); on anything else, that target's quick verb.
 - **Stagger outside a fight** (`Character::_startStumble` `FUN_1404391f0`, from every landed blow). A shackled defender is knocked out
-  instead 25% of the time (`MedicalSystem::knockout` with 0.002). Otherwise the movement stops, and when the defender's fight is off: one
+  instead 25% of the time (`FUN_140644980` with factor 0.002, the leg-loss KO shape, so its 3 s floor). Otherwise the movement stops, and when the defender's fight is off: one
   getting up is left alone; else, unless it is shooting at a live target, its current task ends (`FUN_1400522c0`), and task 147
   `STUMBLE_TASK_FORCED` ("Stumbling") is pushed to the front of its order queue (`AI::forceOrderInsert`, which also replans).
   `Task_Stumble` tracks the clip's root motion until `Character::stumbleState` reports the clip done (`AnimationClass::isLinearAnimationDone`),

@@ -35,7 +35,7 @@ public sealed partial class CombatSystem
             Self = i, Current = s.TargetSlot, Cold = cold, Player = cold.IsPlayer, Hold = hold, Prone = cold.Medical!.Crawling, Animal = cold.Fighter!.IsAnimal,
             HoldPoint = hold ? Orders.HoldPointOf(cold, prev[i].Position) : default, Best = -1, BestScore = float.NegativeInfinity,
         };
-        // The current target first, so a tie keeps it.
+        // The current target first, so a tie keeps it (the caller's sense test; the others are sensed: an attacker is put in the senses of whom it attacks).
         if (keep) Consider(world, ref q, s.TargetSlot, false);
         int generation = prev[i].Generation;
         foreach (var (_, _, _, a) in index.AttackersOf(i)) if (read[a].TargetGeneration == generation) Consider(world, ref q, a, false);
@@ -79,6 +79,8 @@ public sealed partial class CombatSystem
             Fighting = o.TargetSlot >= 0,
             Gunner = tc.Gunning is not null,
             Crippled = tc.Medical.Crawling || tc.Fighter is not { CanAttack: true },
+            Peaceful = o.TargetSlot < 0 && Relations is { } relations && !AggroSystem.IsEnemy(relations, tc.Faction, q.Cold.Faction),
+            GettingUp = tc.GettingUpUntil > world.Tick,
         };
         if (TargetScore.Score(candidate, q.Player, q.Hold, q.Prone, q.Animal) is { } score && score > q.BestScore)
         {
@@ -95,9 +97,41 @@ public sealed partial class CombatSystem
         return n;
     }
 
-    /// <summary>Turns a fighter on a new target: it asks its target again for a place and weighs its techniques afresh.</summary>
-    static void Retarget(ref CombatSlot s, int target, int generation)
+    /// <summary>
+    /// Whether fighter <paramref name="i"/> senses <paramref name="c"/> (the chooser's sense test, engine reading of the sense entries): one attacking it always; else within its
+    /// sight range (<see cref="SenseRange"/>, the race's multiplier and the weather, 500 indoors), and a sneaker only while in view (<see cref="SightMap.Sees"/> with its stealth).
+    /// </summary>
+    bool Senses(World world, int i, CharacterCold cold, int c)
     {
+        var prev = world.Characters.Previous;
+        if ((uint)c >= (uint)prev.Length || !prev[c].Alive || world.Characters.Cold(c) is not { } tc) return false;
+        if (read[c].TargetSlot == i) return true;
+        float outdoor = AggroSystem.RangeOf(cold, SenseRange);
+        float range = world.Sight.MaxRange(i, outdoor);
+        if (Vector3.DistanceSquared(prev[c].Position, prev[i].Position) > range * range) return false;
+        return (tc.Orders & CharacterOrders.Sneak) == 0 || world.Sight.Sees(i, c, prev[i].Position, prev[i].Yaw, prev[c].Position, outdoor, Orders.Stealth(tc)) > 0;
+    }
+
+    /// <summary>
+    /// The chooser's sense test on its current target (a sense entry, docs/game/combat.md "Target selection"). An NPC's entry lasts until its chase gives up
+    /// (<see cref="AggroSystem"/>, 24 s unsensed), so it passes here; a player's character keeps one <see cref="AggroSystem.GiveUpSenseSeconds"/> after it last
+    /// <see cref="Senses"/> the target (engine reading: the original's player entries never give a chase up, and when they lapse is not traced).
+    /// </summary>
+    bool CurrentSensed(World world, int i, ref CombatSlot s, CharacterCold cold, int now)
+    {
+        if (!cold.IsPlayer) return true;
+        if (Senses(world, i, cold, s.TargetSlot))
+        {
+            s.SensedTick = now;
+            return true;
+        }
+        return now - s.SensedTick <= (int)MathF.Ceiling(AggroSystem.GiveUpSenseSeconds / world.TickSeconds);
+    }
+
+    /// <summary>Turns a fighter on a new target: it asks its target again for a place and weighs its techniques afresh.</summary>
+    static void Retarget(ref CombatSlot s, int target, int generation, int now)
+    {
+        s.SensedTick = now;
         s.TargetSlot = target;
         s.TargetGeneration = generation;
         s.Engaged = false;

@@ -51,6 +51,39 @@ public class OrdersTests
         }
     }
 
+    /// <summary>
+    /// A stagger outside a fight (docs/game/combat.md "Fight lifecycle and orders"): a character walking on a move order and hit from behind stops while its stumble clip plays,
+    /// does not fight back (its order outranks self-defence), and walks on to the same goal afterwards.
+    /// </summary>
+    [Fact]
+    public void A_hit_walker_stands_through_its_stumble_and_walks_on()
+    {
+        var (world, combat, player, _) = Attacked(CharacterOrders.None, distance: 15);
+        using var _w = world;
+        combat.StumbleChooser = (_, _, _, _, _) => (0, 0.5f);
+        world.Characters.Cold(player.Slot)!.RunSpeed = SpeedMode.Walk;   // the raider catches it
+        var goal = new Vector3(1000, 150, 3000);
+        world.Commands.Enqueue(new MoveOrder([player], goal) { Tick = 0 });
+        bool stood = false, walkedOn = false, ordered = false;
+        for (int k = 0; k < 900 && !(stood && walkedOn); k++)
+        {
+            world.RunTicks(1);
+            var cold = world.Characters.Cold(player.Slot)!;
+            ref readonly var n = ref world.Characters.Next[player.Slot];
+            if (cold.Medical!.Incapacitated) break;
+            ordered |= n.Task == (byte)CharacterTask.GoTo;
+            if (!ordered) continue;
+            Assert.Equal((byte)CharacterTask.GoTo, n.Task);
+            float speed = new Vector2(n.Velocity.X, n.Velocity.Z).Length();
+            if (cold.StaggeredUntil > world.Tick) { if (speed == 0) stood = true; }
+            else if (stood && speed > 1) walkedOn = true;
+        }
+        Assert.True(stood, "it stands while its stumble clip plays");
+        Assert.True(walkedOn, "it walks on afterwards");
+        Assert.Equal(new Vector2(goal.X, goal.Z), world.Characters.Next[player.Slot].Goal);
+        Assert.Equal(0, combat.StateOf(player).Thrown);
+    }
+
     [Fact]
     public void Orders_go_to_the_originals_state_keys_and_back()
     {

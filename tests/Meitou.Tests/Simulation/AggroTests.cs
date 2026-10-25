@@ -245,6 +245,78 @@ public class AggroTests
         Assert.InRange((a.World.Tick - caught) * a.World.TickSeconds, 0, 5);
     }
 
+    /// <summary>Raiders (0) and the player's Nameless (1), enemies (the player's relations are in the other side's table).</summary>
+    static FactionRelations OneSided()
+    {
+        var table = FactionRelations.Build([
+            new FactionData { Id = "raiders", Name = "raiders", Relations = new Dictionary<string, int> { ["Nameless"] = -80 } },
+            new FactionData { Id = "Nameless", Name = "Nameless", Relations = new Dictionary<string, int>() },
+        ]);
+        table.PlayerFaction = 1;
+        return table;
+    }
+
+    /// <summary>Makes a raider a raiders' slave: it looks for no fight, yet stays a target for the raiders' enemies.</summary>
+    static void Docile(Arena a, CharacterId raider) => (a.World.Characters.Cold(raider.Slot)!.SlaveState, a.World.Characters.Cold(raider.Slot)!.SlaveOwner) = (1, 0);
+
+    /// <summary>
+    /// Hold (docs/game/combat.md "Fight lifecycle and orders", perception.md "The attack-on-sight tests"): an idle holder attacks on sight only targets its post test takes, so a
+    /// raider standing 50 away is left alone while one walking past within 80 of the hold point is attacked.
+    /// </summary>
+    [Fact]
+    public void A_holder_takes_on_a_raider_passing_its_post_but_not_one_standing_off()
+    {
+        using var a = Make(4, 1, OneSided());
+        a.Aggro.Combat = a.Combat;
+        var o = new Vector2(2000, 2000);
+        var me = a.World.Characters.Spawn(new CharacterHot { Position = new Vector3(o.X, 150, o.Y), Health = 100, MaxSpeed = 60, WalkSpeed = 15 },
+            new Combatant { Name = "holder" }.MakeCold(), 0);
+        var cold = a.World.Characters.Cold(me.Slot)!;
+        (cold.Faction, cold.IsPlayer, cold.Orders, cold.HoldPoint) = (1, true, CharacterOrders.Hold, o);
+        var stander = a.SquadOf(0, o, true, (o + new Vector2(0, 50), MathF.PI)).Members[0];
+        Docile(a, stander);
+        a.World.RunTicks((int)(3 / a.World.TickSeconds));
+        Assert.False(a.Fighting(me), "a raider standing 50 away fails the post test (standing targets within 40 only)");
+        // A raider walking across in front, 60 from the hold point at its nearest.
+        var walker = a.SquadOf(0, o, true, (o + new Vector2(-300, 60), 0f)).Members[0];
+        Docile(a, walker);
+        a.World.Commands.Enqueue(new MoveOrder([walker], new Vector3(o.X + 300, 150, o.Y + 60)) { Tick = a.World.Tick });
+        for (int k = 0; k < (int)(10 / a.World.TickSeconds) && !a.Fighting(me); k++) a.World.RunTicks(1);
+        Assert.True(a.Fighting(me), "the walker passing within 80 of the hold point is attacked");
+        Assert.Equal(walker.Slot, a.Combat.StateOf(me).TargetSlot);
+        Assert.NotEqual(stander.Slot, a.Combat.StateOf(me).TargetSlot);
+    }
+
+    /// <summary>
+    /// The fighters' re-pick (docs/game/combat.md "Target selection"): a villager whose raider goes down turns at once on the raider attacking its squad mate, and once
+    /// that one is down too and nobody is left, its fight ends.
+    /// </summary>
+    [Fact]
+    public void A_fighter_whose_target_drops_turns_on_a_mates_attacker_and_stops_when_none_is_left()
+    {
+        var table = FactionRelations.Build([
+            new FactionData { Id = "raiders", Name = "raiders", Relations = new Dictionary<string, int>() },
+            new FactionData { Id = "villagers", Name = "villagers", Relations = new Dictionary<string, int>() },
+        ]);
+        using var a = Make(6, 1, table);
+        var o = new Vector2(2000, 2000);
+        var villagers = a.SquadOf(1, o, true, (o, 0f), (o + new Vector2(40, 0), 0f));
+        var raiders = a.SquadOf(0, o, true, (o + new Vector2(0, 20), MathF.PI), (o + new Vector2(40, 20), MathF.PI));
+        CharacterId fighter = villagers.Members[0], mate = villagers.Members[1], first = raiders.Members[0], second = raiders.Members[1];
+        a.World.Commands.Enqueue(new AttackOrder([fighter], first) { Tick = a.World.Tick });
+        a.World.Commands.Enqueue(new AttackOrder([first], fighter) { Tick = a.World.Tick });
+        a.World.Commands.Enqueue(new AttackOrder([second], mate) { Tick = a.World.Tick });
+        a.World.RunTicks(30);
+        Assert.Equal(first.Slot, a.Combat.StateOf(fighter).TargetSlot);
+        a.World.Characters.Cold(first.Slot)!.Medical!.KnockOut(600);
+        a.World.RunTicks(5);
+        Assert.Equal(second.Slot, a.Combat.StateOf(fighter).TargetSlot);
+        a.World.Characters.Cold(second.Slot)!.Medical!.KnockOut(600);
+        a.World.RunTicks(5);
+        Assert.False(a.Fighting(fighter), "nobody left: the fight ends");
+        Assert.True(a.Combat.StateOf(fighter).TargetSlot < 0);
+    }
+
     /// <summary>The crossroads with a player character among the raiders who then assaults a villager; pinned in <see cref="GoldenHashTests"/>.</summary>
     internal static List<ulong> Hashes(int threads)
     {
