@@ -2,7 +2,7 @@
 
 Repository: `/Users/daniilmiroshnykov/code/dotnet/MeitouClient`  
 Branch: `metal-spike`  
-Last code commit: `869feef4 fix: draw the pointer in the shared overlay pass`
+Last code commit: `d25d951f fix: draw settings in the shared overlay pass`
 
 State: functional opt-in Metal preview; **not 100% Vulkan effect parity**. Upstream v0.15.0 (`cd01e732`) is merged.
 **MEP-1, MEP-2, MEP-3 and MEP-5 are accepted** (2026-10-24: MetalFX temporal stability; reflection MSAA/characters;
@@ -64,6 +64,10 @@ Metal pointer layering (2026-10-25): the in-game pointer now appends to the shar
 inventory and settings. The overlay coalescing had delayed that pass until the end of the frame while the pointer still
 flushed its own encoder immediately, so the UI covered the cursor. Build 0/0; quick suite 450 passed / 2 skipped; no new
 capture. Needs a live check with the map/inventory open.
+
+Metal settings layering (2026-10-25): `SettingsMenu.Draw` now accepts the shared `OverlayPass`, so the settings window is
+appended after the HUD and escape menu instead of being flushed before them. This fixes the settings window sitting
+behind the pause menu. Build 0/0; quick suite 450 passed / 2 skipped; live check needed with Options open.
 
 ## Upstream sync (2026-10-25, `cd01e732`)
 
