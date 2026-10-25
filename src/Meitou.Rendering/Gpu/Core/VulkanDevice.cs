@@ -123,7 +123,7 @@ public sealed unsafe class VulkanDevice : IDisposable
                     foreach (var v in cut)
                     {
                         Vk.DestroyImageView(Device, viewTable[v], null);
-                        viewCache.Remove(viewKeys[v]);
+                        viewCache.TryRemove(viewKeys[v], out _);
                         viewKeys.Remove(v);
                         viewTable[v] = default;
                     }
@@ -135,8 +135,9 @@ public sealed unsafe class VulkanDevice : IDisposable
     }
 
     /// <summary>The views cut on a texture, by the range they cover (the backend's own cache), and per texture the views cut on it (its release
-    /// takes those, not a walk over every view).</summary>
-    readonly Dictionary<(int Texture, int BaseLevel, int Levels, int BaseLayer, int Layers, GpuViewType Type, int Swizzle), int> viewCache = [];
+    /// takes those, not a walk over every view). The cache is read without the lock: every draw asks for its views, and a lock there was contended by the
+    /// streaming threads' table adds (6% of the render thread's samples on the hub view).</summary>
+    readonly System.Collections.Concurrent.ConcurrentDictionary<(int Texture, int BaseLevel, int Levels, int BaseLayer, int Layers, GpuViewType Type, int Swizzle), int> viewCache = [];
     readonly Dictionary<int, (int Texture, int BaseLevel, int Levels, int BaseLayer, int Layers, GpuViewType Type, int Swizzle)> viewKeys = [];
     readonly Dictionary<int, List<int>> textureViews = [];
 
@@ -144,9 +145,10 @@ public sealed unsafe class VulkanDevice : IDisposable
     public unsafe GpuView View(GpuTexture texture, int baseLevel, int levels, int baseLayer, int layers, GpuViewType type, GpuSwizzle swizzle)
     {
         var key = (texture.Index, baseLevel, levels, baseLayer, layers, type, (int)swizzle.R | (int)swizzle.G << 4 | (int)swizzle.B << 8 | (int)swizzle.A << 12);
+        if (viewCache.TryGetValue(key, out var index)) return new GpuView(index);
         lock (tableGate)
         {
-            if (viewCache.TryGetValue(key, out var index)) return new GpuView(index);
+            if (viewCache.TryGetValue(key, out index)) return new GpuView(index);
             var info = new ImageViewCreateInfo
             {
                 SType = StructureType.ImageViewCreateInfo, Image = textureTable[texture.Index].Image, ViewType = VkViewType(type), Format = GlConventions.VkFormat(texture.Desc.Format), Components = VkSwizzle(swizzle),

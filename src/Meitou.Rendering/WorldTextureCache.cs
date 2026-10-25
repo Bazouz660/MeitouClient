@@ -523,7 +523,7 @@ public sealed unsafe class WorldTextureCache : IDisposable
 
     /// <summary>A new image with <paramref name="levels"/> levels in GENERAL layout (the transition in the frame's upload commands, before the copies).</summary>
     GpuTexture Create(InternalFormat format, int width, int height, int levels, bool mipmaps) =>
-        gpu.CreateTexture(new TextureDesc(format, width, height, levels,
+        gpu.Frame.PreFrame.CreateTexture(new TextureDesc(format, width, height, levels,
             Use: TextureUse.Sampled | TextureUse.TransferDst | (mipmaps ? TextureUse.TransferSrc : 0), Name: allocationName));
 
     /// <summary>
