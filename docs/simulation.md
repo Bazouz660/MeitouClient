@@ -825,8 +825,9 @@ failed walks mark the cage unreachable for the faction; its own faction's shut d
 Player construction contract (Faithful UI). Facts: [construction](game/buildings-production.md#construction),
 [placement](game/buildings-production.md#placement), [build menu](game/buildings-production.md#build-menu),
 [build tasks](game/ai-tasks.md#build-tasks), [save keys](formats/zones.md#placement-keys). Not built: outpost
-residents, renaming and the map marker (raids on outposts: [campaigns](#off-screen-tier)), the door x3 rule, anything
-that damages a complete building. Production, power and research: [Production](#production).
+residents, the map marker (raids on outposts: [campaigns](#off-screen-tier)), the door x3 rule, the "Wall termites" check.
+Damage: melee blows on walls and doors (`CombatSystem.ApplyZoneBuildings`, the original's only damage,
+[repair](game/buildings-production.md#work-distance)). Production, power and research: [Production](#production).
 
 **Shared types** (stubs f4cb78c, filled by the simulation track):
 - `Meitou.Data/Gameplay/Construction/BuildingBuildData.cs`: `BuildingBuildData.From/LoadAll` (build fields, material
@@ -922,7 +923,7 @@ optional), `EdgeGap` (site, point -> gap to its footprint hull; the host's).
   `Rng.Float(Rng.Hash(seed, StableHash(id), RngPurpose.Build, i))`, m = CONSTANTS `min dismantle materials percentage` /
   100; each unit is its own ground item (`GroundItems.Drop`, yaw 0) at x, z = position + (2u - 1) r, u from streams
   `2000 + (i << 16) + 2k` and `+1`, r = the footprint radius, at least `Reach` (engine: the original's bounding box is
-  not in the sim). A destroyed flag (a save's; nothing sets it in play) turns a player-built building into a ruin on the next tick; a town house waits for Repair
+  not in the sim). A destroyed flag (a save's, or a wall line hit to 0) turns a player-built building into a ruin on the next tick; a town house waits for Repair
   (**Verified** rule: progress 0.4 x target, delivered floor(delivered x U[0.3, 0.5) + 0.5)).
 - Engineer job (125, run by the [job lists](#production)): `EngineerSite` scores the faction's sites that `NeedsWork`,
   not paused, destroyed, attached or being dismantled, `max(2 (1 - d^2/9000^2), 0.0001) / (n + 1)` (d 3D, n others

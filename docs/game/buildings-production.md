@@ -151,8 +151,13 @@ hull) or, unknown, its position. A rock is measured to its bounds circle, for wo
 Repair (**Verified**, Building slot 0x328 `FUN_1400f6b70`, `Task_Build` `FUN_14034a440`): a building needs repair when
 `progress < target`; building health is construction progress. Orders 2 and 95 are both `Task_Build`, which pushes the
 same build work and ends once complete and `progress / target >= 1` (`FUN_140547200`). A complete building never stalls
-(`FUN_14054a3f0` tests only incomplete ones), so repairing takes no materials. What lowers a complete building's
-progress (attacks) and whether slot 70 clamps at the target are **Unknown**.
+(`FUN_14054a3f0` tests only incomplete ones), so repairing takes no materials. Whether slot 70 clamps at the target is **Unknown**.
+
+Damage (**Verified**, slot 62 `hitByMeleeAttack`, KenshiLib 1ce4a16 names): only melee blows lower a complete building's
+progress. The Building/`UseableStuff` body (`1402972c0`) returns 1 and changes nothing; only `WallBuilding` (`14029d560`, gates
+included) and `DoorStuff` (`14029d690`) override it (formulas: [combat](combat.md#attack-zone)). No ranged slot exists beside
+62 on RootObject. The destroyed setter (slot 104) is called with 1 only by the wall hit and the "Wall termites" check
+(`FUN_1402ef1f0`); a destroyed wall takes the destroyed transition above (`WallBuilding` slot 70 calls the Building one first).
 
 Purchased ruins: **Observed** in the user's original-game screenshot (Squin Longhouse, before and after purchase): Condition is 0
 with an empty bar before repair starts; the destroyed-building transition's 40% is not its purchase-time condition.
