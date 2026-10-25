@@ -2,7 +2,7 @@
 
 Repository: `/Users/daniilmiroshnykov/code/dotnet/MeitouClient`  
 Branch: `metal-spike`  
-Last code commit: `cc617f80 fix: bind TAA reactive depths and blocker atlas per encoder`
+Last code commit: `59a202b7 perf: skip unused post targets and defer the overview map`
 
 State: functional opt-in Metal preview; **not 100% Vulkan effect parity**. Upstream v0.15.0 (`cd01e732`) is merged.
 **MEP-1, MEP-2, MEP-3 and MEP-5 are accepted** (2026-10-24: MetalFX temporal stability; reflection MSAA/characters;
@@ -40,6 +40,12 @@ fullscreen encoder, and the shadow blocker pass binds its atlas for every layer.
 fragment texture bindings; the affected passes are 50.64 µs and 62.25 µs, so this is API correctness, not a frame-time
 win. Build 0/0; quick suite 450 passed / 2 skipped; internal screenshot runs. No new Xcode capture to confirm the
 missing-binding rows are gone.
+
+Metal memory targets (2026-10-25): the post-TAA history is allocated only when TAA is the fallback, the composite's
+LDR/FXAA/SMAA targets are allocated only when the selected path needs them, and the 8192² overview map is no longer
+prefetched (it loads when the map first opens). This avoids the never-bound 2 × 40.5 MiB TAA histories, 2 × 20.25 MiB
+SMAA targets, 20.25 MiB FXAA target and 32 MiB map prefetch in the 13:38 trace — about 174 MiB, before the driver's own
+26 MiB. Build 0/0; quick suite 450 passed / 2 skipped; internal screenshot runs. No new Xcode capture.
 
 ## Upstream sync (2026-10-25, `cd01e732`)
 
