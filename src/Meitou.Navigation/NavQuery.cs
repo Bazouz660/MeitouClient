@@ -135,6 +135,8 @@ public sealed class NavQuery(NavWorld world, NavDoors? doors = null)
 
         while (open.Count > 0 && iterations++ < MaxIterations)
         {
+            // A long search stops for a collection now and then: under Wine the runtime cannot interrupt a thread that only computes; a yield is a call into the OS where it can.
+            if ((iterations & 255) == 0) Thread.Yield();
             var node = open.Dequeue();
             if (node.Closed) continue;
             node.Closed = true;
