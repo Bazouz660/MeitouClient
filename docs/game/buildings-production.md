@@ -626,7 +626,9 @@ to `FUN_140836b70`: contribution k of the frame is x 0.6^k (counter `+0x174`, cl
 - **Tooltip** (`FUN_1407ab430`, **Observed**): the research name, "Research Blueprint", then "Research already known", "Needs research bench level {1}",
   "Cannot learn this yet" or "Right-click to learn tech", and the unlock lists ("Requirements:", "New Building:", ...). Meitou shows the name, the second line and
   the right-click hint.
-- **Unknown**: CHARACTER `blueprints` (2 base records: settler Wheatstraw Farming, Savant) and what reads it.
+- **Starting blueprints** (**Verified**, `CharacterHuman::setupInventorySections` `FUN_14062c4e0`): after the weapons and before the `inventory` list, a
+  new character gets one blueprint (quantity forced to 1) of each RESEARCH in its CHARACTER `blueprints` list whose v0 is above 0. Base data: the settler
+  (Wheatstraw Farming) and Savant (Skeleton-Human Transformation Bible), both v0 1.
 
 ## Power
 

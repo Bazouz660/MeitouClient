@@ -115,7 +115,7 @@ public sealed class ItemFactory(GameDatabase db, GameConstants constants, Func<M
             : (Inventory.MainWidth, Inventory.MainHeight);
 
     /// <summary>
-    /// The inventory of a new character: what the generator rolled to wear and carry (clothing in its slot's section, a backpack, the crossbow and weapons at hip/back), then the CHARACTER
+    /// The inventory of a new character: what the generator rolled to wear and carry (clothing in its slot's section, a backpack, the crossbow and weapons at hip/back), then a blueprint per CHARACTER <c>blueprints</c> entry, then the CHARACTER
     /// record's <c>inventory</c> list (an ITEM reference whose first value is the quantity; entries with 0 never spawn, <b>Observed</b>), and last its <c>death items</c> the same way,
     /// marked <see cref="ItemInstance.Death"/> (docs/game/animals.md "Death items").
     /// </summary>
@@ -141,6 +141,11 @@ public sealed class ItemFactory(GameDatabase db, GameConstants constants, Func<M
             foreach (var w in loadout.Weapons) AddWeapon(inventory, w);
         }
         if (character is { Type: FcsRecordType.ANIMAL_CHARACTER }) AddAnimalBackpacks(inventory, character);
+        // The CHARACTER's blueprints come after the weapons and before its inventory list (CharacterHuman::setupInventorySections, Verified): one of each RESEARCH whose v0 is
+        // above 0, whatever the number.
+        if (character is not null)
+            foreach (var r in character.GetReferences("blueprints"))
+                if (r.Values.Value0 > 0 && Db.Find(r.TargetStringId) is { Type: FcsRecordType.RESEARCH } research && Blueprint(research) is { } blueprint) inventory.Add(blueprint);
         if (character is not null)
             foreach (var r in character.GetReferences("inventory"))
             {
