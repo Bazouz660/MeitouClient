@@ -1,5 +1,6 @@
 using System.Numerics;
 using Meitou.Simulation;
+using Meitou.Threading;
 
 namespace Meitou.Navigation;
 
@@ -135,6 +136,7 @@ public sealed class NavQuery(NavWorld world, NavDoors? doors = null)
 
         while (open.Count > 0 && iterations++ < MaxIterations)
         {
+            SafePoint.Every(iterations);
             var node = open.Dequeue();
             if (node.Closed) continue;
             node.Closed = true;
