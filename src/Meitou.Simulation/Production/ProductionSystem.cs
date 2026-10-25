@@ -358,14 +358,14 @@ public sealed partial class ProductionSystem : ITickSystem
     }
 
     /// <summary>
-    /// The X/Z gap from <paramref name="from"/> to a site (<see cref="SiteReach.Gap"/>). A rock's BUILDING footprint is not scaled like the rock, so a rock is measured to its bounds
-    /// circle (engine choice for the original's 1.2 x bounds box of a foliage building), else to its position.
+    /// The X/Z gap from <paramref name="from"/> to a site (<see cref="SiteReach.Gap"/>). A rock's BUILDING footprint is not scaled like the rock, so a rock is measured to its mesh's
+    /// bounds box as placed (engine choice for the original's 1.2 x bounds box of a foliage building; a circle of its longest half-extent left miners standing off a long rock's
+    /// side), else to its position.
     /// </summary>
     float GapTo(BuildSite site, Vector3 from)
     {
         if (!IsNatural(site.Id)) return SiteReach.Gap(Settings.EdgeGap, site, from);
-        float d = SiteReach.Gap(null, site, from);
-        return naturalBounds.TryGetValue(site.Id, out var rock) ? MathF.Max(0, Vector2.Distance(new Vector2(from.X, from.Z), rock.Centre) - rock.Radius) : d;
+        return naturalBounds.TryGetValue(site.Id, out var rock) ? rock.Gap(from) : SiteReach.Gap(null, site, from);
     }
 
     /// <summary>
@@ -374,7 +374,7 @@ public sealed partial class ProductionSystem : ITickSystem
     /// </summary>
     float FacingTo(in CharacterHot n, BuildSite site)
     {
-        var at = naturalBounds.TryGetValue(site.Id, out var rock) ? rock.Centre : new Vector2(site.Position.X, site.Position.Z);
+        var at = naturalBounds.TryGetValue(site.Id, out var rock) ? rock.Flat : new Vector2(site.Position.X, site.Position.Z);
         return MathF.Atan2(at.X - n.Position.X, at.Y - n.Position.Z);
     }
 

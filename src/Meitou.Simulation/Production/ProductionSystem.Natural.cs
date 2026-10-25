@@ -14,8 +14,26 @@ public sealed partial class ProductionSystem
     const string NaturalPrefix = "natural:";
 
     readonly Dictionary<string, BuildSite?> naturalSites = new(StringComparer.Ordinal);
-    /// <summary>A rock site's centre (X/Z) and bounds radius from the host's rock source: an operator inside it has reached the rock.</summary>
-    readonly Dictionary<string, (Vector2 Centre, float Radius)> naturalBounds = new(StringComparer.Ordinal);
+    /// <summary>
+    /// A rock site's centre and bounds radius from the host's rock source, with its mesh's bounds box and the instance's transform when the source has the mesh: an operator inside
+    /// them has reached the rock.
+    /// </summary>
+    readonly record struct RockBounds(Vector3 Centre, float Radius, RockShape? Shape, Matrix4x4 Transform)
+    {
+        public Vector2 Flat => new(Centre.X, Centre.Z);
+
+        /// <summary>The X/Z gap from <paramref name="from"/> to the rock: to its bounds box where the instance places it (taken at the box's height), else to its bounds circle.</summary>
+        public float Gap(Vector3 from)
+        {
+            var at = new Vector2(from.X, from.Z);
+            if (Shape is not { } shape || !Matrix4x4.Invert(Transform, out var inverse)) return MathF.Max(0, Vector2.Distance(at, Flat) - Radius);
+            var local = Vector3.Clamp(Vector3.Transform(new Vector3(from.X, Centre.Y, from.Z), inverse), shape.Min, shape.Max);
+            var nearest = Vector3.Transform(local, Transform);
+            return Vector2.Distance(at, new Vector2(nearest.X, nearest.Z));
+        }
+    }
+
+    readonly Dictionary<string, RockBounds> naturalBounds = new(StringComparer.Ordinal);
 
     /// <summary>The site id of the rock of BUILDING <paramref name="record"/> at <paramref name="at"/>.</summary>
     public static string NaturalId(string record, Vector3 at) =>
@@ -49,8 +67,7 @@ public sealed partial class ProductionSystem
                 if (nodes is not null)
                 {
                     if (nodes.Near(0, x, z, 1).FirstOrDefault(n => n.Record == record) is not { Record.Length: > 0 } rock) return null;
-                    var centre = rock.Centre ?? rock.Position;
-                    naturalBounds[id] = (new Vector2(centre.X, centre.Z), rock.Radius);
+                    naturalBounds[id] = new RockBounds(rock.Centre ?? rock.Position, rock.Radius, rock.Shape, rock.Transform);
                 }
                 site = new BuildSite { Id = id, Record = record, Name = building.Name, Position = position, Owner = -1, Materials = [], Complete = true };
             }
