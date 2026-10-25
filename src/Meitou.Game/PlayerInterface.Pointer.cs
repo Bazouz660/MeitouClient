@@ -1,4 +1,5 @@
 using System.Numerics;
+using Meitou.Rendering;
 using Meitou.Simulation;
 
 namespace Meitou.Game;
@@ -114,5 +115,6 @@ sealed partial class PlayerInterface
     }
 
     /// <summary>Draws the pointer <paramref name="name"/> at <paramref name="at"/> (framebuffer pixels) over everything drawn so far; nothing without the UI painter.</summary>
-    public void DrawPointer(string name, Vector2 at, int width, int height) => uiPainter?.DrawPointer(name, at, width, height);
+    public void DrawPointer(string name, Vector2 at, int width, int height, DebugOverlay.OverlayPass? pass = null)
+        => uiPainter?.DrawPointer(name, at, width, height, pass);
 }

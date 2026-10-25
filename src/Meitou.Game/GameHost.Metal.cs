@@ -1423,7 +1423,7 @@ sealed partial class GameHost
                     if (cursorMode != windowCursor) pointerMouse.Cursor.CursorMode = windowCursor = cursorMode;
                     if (!config.HardwareMouse && !freeLook)
                     {
-                        hud.DrawPointer(pointerWorld ? hud.PointerName : "arrow", pointerAt, size.X, size.Y);
+                        hud.DrawPointer(pointerWorld ? hud.PointerName : "arrow", pointerAt, size.X, size.Y, overlayPass);
                         wrote = true;
                     }
                 }

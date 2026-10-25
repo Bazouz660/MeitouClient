@@ -601,18 +601,18 @@ public sealed partial class UiPainter : IDisposable
     /// Draws the mouse pointer <paramref name="name"/> (kenshi_pointers.xml) with its hot spot on <paramref name="mouse"/>, in screen pixels as MyGUI does; nothing for an unknown name.
     /// Called last in a frame: the original's <c>Pointer</c> layer is above every other.
     /// </summary>
-    public void DrawPointer(string name, Vector2 mouse, int width, int height)
+    public void DrawPointer(string name, Vector2 mouse, int width, int height, DebugOverlay.OverlayPass? pass = null)
     {
         if (!pointers.TryGetValue(name, out var pointer)) pointers[name] = pointer = MyGuiPointers.Resolve(resources, name);
         if (pointer is null) return;
-        overlay.Flush(width, height);   // whatever was queued before (another texture, text) goes first
+        overlay.Flush(width, height, null, pass);   // whatever was queued before (another texture, text) goes first
         var loaded = LoadTexture(pointer.Image.Texture);
         var at = pointer.At(MathF.Round(mouse.X), MathF.Round(mouse.Y));
         var source = pointer.Image.Source;
         float w = loaded.Texture.Desc.Width, h = loaded.Texture.Desc.Height;
         overlay.Image(loaded.Sampled, new(at.X, at.Y, at.X + at.Width, at.Y + at.Height),
             new(source.X / w, source.Y / h, (source.X + source.Width) / w, (source.Y + source.Height) / h), Vector4.One);
-        overlay.Flush(width, height);
+        overlay.Flush(width, height, null, pass);
     }
 
     (GpuTexture Texture, SampledTexture Sampled) LoadTexture(string name)
