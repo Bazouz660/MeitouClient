@@ -899,6 +899,7 @@ public sealed partial class FixtureRegistry
     public bool WriteBuilding(string buildingInstance, FcsRecord state)
     {
         if (!byBuilding.TryGetValue(buildingInstance, out var list)) return false;
+        WriteReset(buildingInstance, state);
         WriteProperty(buildingInstance, state);
         if (publicFlags.TryGetValue(buildingInstance, out bool open)) state.Bools["is public day"] = open;
         foreach (var f in list)

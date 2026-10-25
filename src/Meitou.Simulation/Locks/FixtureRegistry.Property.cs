@@ -110,6 +110,7 @@ public sealed partial class FixtureRegistry
                 Unregister(b.Key);
                 properties.Remove(b.Key);
                 RegisterBuilding(world, data, site, b, townFaction);
+                resetBuildings[b.Key] = (b, data);
             }
             else if (Players(b)) continue;
             int owner = b.OwnerFactionId is { } o && data.FactionIndex(o) is var fi and >= 0 ? fi : townFaction;
@@ -120,6 +121,19 @@ public sealed partial class FixtureRegistry
         Bind(world);
         ownedProperties = null;
         containerSpots = null; doorPicks = null; bedSpots = null; cageList = null;
+    }
+
+    // The buildings a town override registered again from the level: their saved record (patched, not rewritten, by a save) must not bring the old state back.
+    readonly Dictionary<string, (TownBuilding Building, PopulationData Data)> resetBuildings = new(StringComparer.Ordinal);
+
+    /// <summary>A reset building's keys the live writers do not touch: its owner (the fixtures') and its level <c>destroyed</c>.</summary>
+    void WriteReset(string building, FcsRecord state)
+    {
+        if (!resetBuildings.TryGetValue(building, out var reset)) return;
+        int owner = OfBuilding(building).FirstOrDefault()?.Owner ?? -1;
+        if ((uint)owner < (uint)reset.Data.Factions.Count) state.Strings["owner faction ID"] = reset.Data.Factions[owner].Id;
+        else state.Strings.Remove("owner faction ID");
+        state.Bools["destroyed"] = reset.Building.Destroyed;
     }
 
     void WriteProperty(string building, FcsRecord state)
