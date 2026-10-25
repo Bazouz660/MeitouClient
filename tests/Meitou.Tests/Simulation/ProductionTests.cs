@@ -345,6 +345,13 @@ public class ProductionTests
             [.. nodes.Where(n => n.Resource == resource && Vector2.Distance(new(n.Position.X, n.Position.Z), new(x, z)) <= range)];
     }
 
+    /// <summary>The same wind speed everywhere, no other weather.</summary>
+    sealed class Wind(float speed) : IWeatherSource
+    {
+        public WeatherHere? At(float x, float z) => new WeatherHere(WeatherAffecting.None, 0, 0, 0, speed);
+        public IReadOnlyList<WeatherAffectZone> Zones => [];
+    }
+
     /// <summary>
     /// An ore mine yields the nearest rock of its resource x (1 - (d² - 625) / (1500² - 625)) (docs/game/buildings-production.md "Resources"): the rock's own yield is the resources
     /// record's iron mult (0.6), 0.1 for copper which the record lacks; nothing beyond 1500, for a resource with no rock, or with no rock source at all.
@@ -605,7 +612,7 @@ public class ProductionTests
 
     /// <summary>
     /// The installed Small Generator (1976, 40) with Upgraded Small Generators gives 55; the Battery Bank (1855, rate 40, store 60) with Battery Power, Advanced Battery Power,
-    /// Battery Capacity and Advanced Battery Capacity charges at 60 into 180; the Wind Generator (1999, 50, no fuel) gives its output x the wind fraction
+    /// Battery Capacity and Advanced Battery Capacity charges at 60 into 180; the Wind Generator (1999, 50, no fuel) gives its output x its blades' wind share (wind 10 to 50: half at 30)
     /// (docs/game/buildings-production.md "Power"). The resource storages take only their resource.
     /// </summary>
     [Fact, Slow]
@@ -616,12 +623,13 @@ public class ProductionTests
         using var rig = new Rig(db!, GameConstants.FromDatabase(db!), ["1976-gamedata.base", "1855-gamedata.base", "1999-gamedata.base"]);
         string[] names = ["Upgraded Small Generators", "Battery Power", "Advanced Battery Power", "Battery Capacity", "Advanced Battery Capacity"];
         rig.World.Research.Set(db!, [.. names.Select(n => db!.OfType(FcsRecordType.RESEARCH).First(r => r.Name == n).StringId)]);
+        rig.World.Weather = new Wind(30);
         rig.World.RunTick();
         rig.Production.Ensure(rig.World, rig.World.Buildings.Find(rig.Sites[0])!)!.Inputs[0].Count = 10;
         rig.World.RunTicks(2);
         var (generator, battery, wind) = (rig.Machine(0), rig.Machine(1), rig.Machine(2));
         Assert.True(wind.Data.IsWind && !generator.Data.IsWind && battery.Data.IsBattery);
-        Assert.Equal((55f, 50 * ProductionSystem.WindFraction, 60f, 180f), (generator.Demand, wind.Demand, battery.Granted, battery.Store));
+        Assert.Equal((55f, 25f, 60f, 180f), (generator.Demand, wind.Demand, battery.Granted, battery.Store));
 
         // The Water Tower (1950) takes only Water and Storage: Ore only Raw Iron (1866), both resource storages with stacks x 100 (docs/game/buildings-production.md "Storage").
         var tower = MachineData.From(db!, db!.Find("1950-gamedata.base")!)!;

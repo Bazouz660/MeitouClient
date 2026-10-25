@@ -1,3 +1,4 @@
+using Meitou.Data.World;
 using Meitou.Simulation.Construction;
 
 namespace Meitou.Simulation.Production;
@@ -8,12 +9,6 @@ namespace Meitou.Simulation.Production;
 /// </summary>
 public sealed partial class ProductionSystem
 {
-    /// <summary>
-    /// A wind generator's share of its output (engine choice: the original reads a value from its turbine's animation, <c>FUN_1404cbd90</c>, driven by weather wind the simulation
-    /// does not have; <b>Unknown</b> in game units).
-    /// </summary>
-    public const float WindFraction = 0.5f;
-
     /// <summary>Per town, whether batteries covered a shortfall last tick (the original's town <c>+0x470</c>, read the frame after it is set; not saved).</summary>
     readonly Dictionary<int, bool> batteryMode = [];
     readonly Dictionary<int, List<Machine>> grids = [];
@@ -28,12 +23,12 @@ public sealed partial class ProductionSystem
     /// <summary>Whether a generator has fuel: no fuel sections (wind), or something left in one.</summary>
     static bool Fueled(Machine m) => m.Inputs.Length == 0 || Array.Exists(m.Inputs, i => i.Level > 0 || i.Count > 0);
 
-    /// <summary>A generator's output now (<c>GeneratorBuilding::vfunc_166</c>): health x (output + increase), 0 out of fuel; wind x <see cref="WindFraction"/>, nothing below 1.</summary>
+    /// <summary>A generator's output now (<c>GeneratorBuilding::getPowerOutput</c>): health x (output + increase), 0 out of fuel; wind x <see cref="Machine.Wind"/>, nothing below 1 (<c>WindGeneratorBuilding::getPowerOutput</c>).</summary>
     float Output(World world, Machine m)
     {
         if (!m.PowerOn || !Fueled(m)) return 0;
         float output = Rated(world, m);
-        if (m.Data.IsWind && (output *= WindFraction) < 1) return 0;
+        if (m.Data.IsWind && (output *= m.Wind) < 1) return 0;
         return output;
     }
 
@@ -48,6 +43,7 @@ public sealed partial class ProductionSystem
         foreach (var m in world.Machines.All)
         {
             m.Power = 1;
+            if (m.Data.IsWind) m.Wind = WindShare(world, m);
             if (!m.Data.IsConsumer && !m.Data.IsGenerator && !m.Data.IsBattery) continue;
             if (Site(world, m.Site) is not { Complete: true } site) continue;
             if (!grids.TryGetValue(site.Town, out var grid)) grids[site.Town] = grid = [];
@@ -66,17 +62,29 @@ public sealed partial class ProductionSystem
             bool built = Site(world, m.Site) is { Complete: true };
             m.Efficiency = built ? Efficiency(world, m) : 0;
             m.HasPower = built && HasPower(world, m, Site(world, m.Site)!.Town);
+            m.Rotation = !built ? 0 : m.Data.IsGenerator ? (m.PowerOn ? Output(world, m) * 0.01f : 0) : m.Efficiency;
         }
+    }
+
+    /// <summary>
+    /// A wind generator's share of its output (<c>PhysicsCollection::getWindRotationPower</c>, <b>Verified</b>): its first ROTATION_WIND_SPEED part's <see cref="RotorSpec.WindShare"/> of the
+    /// wind speed of the weather region at the site; 0 without such a part or without weather. The original reads it from the part's render entity, so a generator without one loaded
+    /// gives nothing; here every built generator has its wind (engine choice).
+    /// </summary>
+    static float WindShare(World world, Machine m)
+    {
+        if (m.Data.WindRotor is not { } rotor || world.Buildings.Find(m.Site) is not { } site || world.Weather?.At(site.Position.X, site.Position.Z) is not { } here) return 0;
+        return RotorSpec.WindShare(here.WindSpeed, rotor.Min, rotor.Max);
     }
 
     /// <summary>
     /// The efficiency a machine's sound emitter hears (<c>FarmBuilding::vfunc_108</c>, <b>Observed</b>): the share of its operators (1 when the data has no operator count) x health (1 here) x the
     /// granted share of its demand (1 with no demand; for a battery, below its capacity, the share of its rate it is charging, negative while it drains) x the yield x the BUILDING's raw
-    /// output rate x the research production multiplier. A wind generator hears its turbine's animation (<c>WindGeneratorBuilding::vfunc_110</c>, <b>Unknown</b>): <see cref="WindFraction"/> (engine choice).
+    /// output rate x the research production multiplier. A wind generator hears its blade's wind share (<c>WindGeneratorBuilding::getSoundIntensity</c>, <b>Verified</b>): <see cref="Machine.Wind"/>.
     /// </summary>
     float Efficiency(World world, Machine m)
     {
-        if (m.Data.IsWind) return WindFraction;
+        if (m.Data.IsWind) return m.Wind;
         float share = m.Data.PowerOperators > 0 ? (float)m.Operators / m.Data.PowerOperators : 1;
         float saturation = m.Power;
         if (m.Data.IsBattery)

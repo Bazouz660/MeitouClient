@@ -124,6 +124,13 @@ public sealed class Machine
     /// </summary>
     public float Efficiency { get; set; }
     public bool HasPower { get; set; }
+    /// <summary>A wind generator's share of its output: its blade's <see cref="Meitou.Data.World.RotorSpec.WindShare"/> of the wind at the site (derived each tick; not saved, not hashed).</summary>
+    public float Wind { get; set; }
+    /// <summary>
+    /// What its parts with <c>rotation function</c> ROTATION_OUTPUT turn by (<c>getOutputBasedRotationSpeedMult</c>, docs/game/buildings-production.md "Rotating parts"): a generator's output x 0.01
+    /// while switched on, every other machine's <see cref="Efficiency"/>. Derived each tick for the host's display; not saved, not hashed.
+    /// </summary>
+    public float Rotation { get; set; }
 
     internal void Hash(ref StateHasher h)
     {

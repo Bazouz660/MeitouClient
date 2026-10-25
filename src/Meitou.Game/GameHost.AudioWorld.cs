@@ -29,6 +29,8 @@ sealed partial class GameHost
     readonly HashSet<string> runtimeSeen = new(StringComparer.Ordinal);
     // The level's building records as machines (null for one that is not), for whether their emitters play.
     readonly Dictionary<string, MachineData?> levelMachines = new(StringComparer.Ordinal);
+    // The level's wind generators' emitters, told their blade's wind share each frame.
+    readonly List<(PlacedEmitter Emitter, (float Min, float Max) Rotor)> levelWind = [];
 
     /// <summary>Once a frame, after the ambience: <paramref name="pivot"/> is the camera's target (the game tests the building under it), <paramref name="eye"/> the camera's position (the emitters' distance).</summary>
     void UpdateWorldAudio(AudioSystem sound, Vector3 pivot, Vector3 eye)
@@ -126,6 +128,7 @@ sealed partial class GameHost
         // The machines of the player's buildings tell their emitters what they do (the exe's per-frame call, docs/audio.md "Point emitters"); one without an emitter is ignored.
         foreach (var machine in session.CurrentSnapshot.Machines)
             if (!machine.IsContainer) emitters.SetPower(machine.Site, machine.Sound.Efficiency, machine.Sound.Powered);
+        foreach (var (emitter, rotor) in levelWind) emitters.SetPower(emitter.Key, LevelWindShare(emitter.Position, rotor), true);
     }
 
     /// <summary>
@@ -139,15 +142,23 @@ sealed partial class GameHost
         if (!levelMachines.TryGetValue(emitter.Building, out var data))
             levelMachines[emitter.Building] = data = db.Find(emitter.Building) is { } record ? MachineData.From(db, record) : null;
         if (data is null || !data.PowersEmitterEachFrame) return true;
-        if (data.IsWind) efficiency = ProductionSystem.WindFraction;
+        if (data.IsWind)
+        {
+            if (data.WindRotor is { } rotor) { levelWind.Add((emitter, rotor)); efficiency = LevelWindShare(emitter.Position, rotor); }
+        }
         else if (data.IsGenerator || data.IsBattery || (data.PowerOperators == 0 && data.PowerOutput == 0)) efficiency = data.OutputRate;
         else return false;
         return true;
     }
 
+    /// <summary>A level wind generator's share: its blade's <see cref="RotorSpec.WindShare"/> of the scheduled wind at the place (0 without weather), as the simulation's own generators.</summary>
+    float LevelWindShare(Vector3 at, (float Min, float Max) rotor) =>
+        gpu.Weather?.World is { } weather ? RotorSpec.WindShare(weather.WindAt(at.X, at.Z).Speed, rotor.Min, rotor.Max) : 0;
+
     void ForgetEmitters()
     {
         levelMachines.Clear();
+        levelWind.Clear();
         emittersFor = null;
         levelEmitters = null;
         levelEmittersAdded = false;

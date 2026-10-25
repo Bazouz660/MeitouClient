@@ -105,10 +105,21 @@ A turret's turning parts (BUILDING_PART `rotation function` ROTATION_TARGET) are
 `PlacedMesh.Joints` (the joints above it and its own, outermost first; `TurnJoint` = part record, pivot = its node's place, axis = its node's Y for a yaw part or X for the
 gun's pitch, both as placed). The host (`GameHost.UpdateTurretPoses`) gives the renderer `WorldObjectRenderer.Turrets` (placement id = turret key → `TurretPose`: the
 simulation's `TurretRig` angles from `MannedTurret.Angles`, interpolated between the last two snapshots by the simulation's alpha, kept after the gunner leaves).
-`DrawReal` poses a part (`PoseTurret`) when the pose's version changed: its placement times, from the innermost joint out, a turn about the joint's pivot and axis by its
+`DrawReal` poses a part (`PoseJoints`) when the pose's version changed: its placement times, from the innermost joint out, a turn about the joint's pivot and axis by its
 angle. **Verified** by a probe over every turret building of the install (random yaw, position and angles): the posed part's origin and its Z and Y directions equal the
 simulation's `TurretRig.Derived` (30 of 30 parts). **Unknown**: the pose has not been looked at in a rendered frame. Only simulated turrets (the combat system) turn; the
 viewer never does. Parts that are not joints (the six-barrel add-on, the lamp) ride on their joint.
+
+## Rotating parts
+
+Parts with `rotation function` 1 to 4 ([facts](game/buildings-production.md#rotating-parts)) are joints too: `TurnJoint.Rotor` (`RotorSpec`: function, speeds, wind
+range, start roll, parent X/Z) with pivot = the node's place and axis = its `rotation axis` in world, as placed (at the start roll). The six-barrel now spins on the
+turret's joints; the wind generator's blades ride on its head. A part's state (`WorldObjectRenderer.Rotors.cs`, by placement, part and pivot) is made when one of
+its meshes is first drawn and dropped 600 frames after the last; the host (`GameHost.UpdateRotors`) calls `AdvanceRotors` once a frame with real time x speed (0
+paused), the scheduled wind (`WeatherWorld.WindAt`, a forced weather does not count) and the mult (`MachineSnapshot.Rotation`, level buildings by data). A head
+hears the weather when the wind at it differs from the last frame (the original's notifications come while it interpolates). Joint meshes under a rotor are posed
+every frame: angle less the start roll (functions 1 to 3 stay at the roll until they first move). **Unknown**: not looked at in a rendered frame; shadow caches and
+motion vectors of moving parts not checked.
 
 ## Closed interiors
 

@@ -186,13 +186,13 @@ each frame (`GameHost.UpdateEmitters`, key = the building's instance id). **Engi
 - **Per-frame classes** (`MachineData.PowersEmitterEachFrame`: function 1 without a farm, 4, 5, 14, 23, 26, 27): `Sound` = (efficiency, has power and efficiency above 0), computed as the exe's chain above from the sim's values: operators
   ÷ `PowerOperators` (the raw +0x3ac, like its power demand; an automatic machine, 0, counts as 1 and works unattended,
   [production](game/buildings-production.md#production)), × the consumer's granted share (a battery's as above), × `Machine.Yield` × the raw `output rate` (`MachineData.OutputRate`) × the research production multiplier. Health is 1.
-  Has power follows `FUN_140299370` with the sim's town grid (generators' output above 0, or batteries while the town is in battery mode) and `power on`. A wind generator's efficiency is `ProductionSystem.WindFraction` (**engine choice**,
-  the turbine value is Unknown). Result: a Generator hums whenever built; a well, mine or still sounds while worked and powered, at `Intensity` 100 × the factors where its record has an `efficiency multiplier` (`Stone_Processor` 0.75 ×).
+  Has power follows `FUN_140299370` with the sim's town grid (generators' output above 0, or batteries while the town is in battery mode) and `power on`. A wind generator's efficiency is its blades' wind share (**Verified**, `WindGeneratorBuilding::getSoundIntensity`;
+  [rotating parts](game/buildings-production.md#rotating-parts)). Result: a Generator hums whenever built; a well, mine or still sounds while worked and powered, at `Intensity` 100 × the factors where its record has an `efficiency multiplier` (`Stone_Processor` 0.75 ×).
   A battery bank (constant `Intensity` 100) plays while it is full or charging, not while it drains or is empty.
 - **Once-powered classes** (benches, research, farms, others): `Sound` = (0, powered), the exe's completion call: they play from the moment the machine exists, at the base `Intensity` (global when 0). **Engine choice**: the order for
   a building the player finishes is Observed only (above), the sound is given to it as for the level's.
 - **The level's buildings** and layout furniture have no machine (the simulation runs only the player's buildings), so the host decides once when it adds the emitter (`GameHost.LevelPowered`, **engine choice**; the exe runs their
-  classes): needs-power emitters of once-powered classes play as above; generators, wind generators (efficiency `WindFraction`), battery banks (the town is assumed to produce power) and furnace-like machines needing no operators
+  classes): needs-power emitters of once-powered classes play as above; generators, wind generators (efficiency their wind share, each frame), battery banks (the town is assumed to produce power) and furnace-like machines needing no operators
   play; machines that need operators or town power (wells, mines, processors, stills, looms, silos, distillers, the Electrical Workbench) stay silent, since the NPC workers and town grids are not simulated. Level furniture
   that is a bench or generator follows the same rule through its own BUILDING record.
 - **Power switch.** The exe's `FarmBuilding::vfunc_161` (the machine panel's power button) flips `power on`, then sets the `Generator` switch to `On` / `Off` on the GUI object 110 and posts `UI_Generator`

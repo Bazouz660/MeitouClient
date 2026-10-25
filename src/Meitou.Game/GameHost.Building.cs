@@ -47,6 +47,7 @@ sealed partial class GameHost
         UpdateGroundItems(snapshot);
         UpdateDoors();
         UpdateTurretPoses(snapshot);
+        UpdateRotors(snapshot);
         UpdateFarms(snapshot);
         if (gpu.Objects is not { } objects) return;
         constructionLook.Clear();

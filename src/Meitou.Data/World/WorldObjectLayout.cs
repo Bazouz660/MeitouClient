@@ -50,11 +50,12 @@ public sealed record PlacedMesh(string MeshPath, Matrix4x4 Transform, GameRecord
 }
 
 /// <summary>
-/// A joint of a turret (a BUILDING_PART with <c>rotation function</c> ROTATION_TARGET) in a laid-out building: <paramref name="PartId"/> is the part record, <paramref name="Pivot"/> its node's world place and
-/// <paramref name="Axis"/> the world direction of the axis it turns about (its node's Y for a yaw part, X for the gun's pitch), both of the building as placed (angles 0). A mesh's pose is its placement
-/// times, from its innermost joint out to the outermost, a turn about that joint's pivot and axis by the joint's angle (<c>TurretRig</c>'s angles).
+/// A joint of a laid-out building: a turret part (a BUILDING_PART with <c>rotation function</c> ROTATION_TARGET) or a part that turns by itself (<paramref name="Rotor"/>, functions 1 to 4).
+/// <paramref name="PartId"/> is the part record, <paramref name="Pivot"/> its node's world place and <paramref name="Axis"/> the world direction of the axis it turns about (a turret's node's Y for a yaw part,
+/// X for the gun's pitch; a rotor's <c>rotation axis</c>), both of the building as placed (a turret at angle 0, a rotor at its <see cref="RotorSpec.Start"/>). A mesh's pose is its placement times, from its
+/// innermost joint out to the outermost, a turn about that joint's pivot and axis by the joint's angle (<c>TurretRig</c>'s angles; a rotor's angle less its start).
 /// </summary>
-public readonly record struct TurnJoint(string PartId, Vector3 Pivot, Vector3 Axis, bool Yaw);
+public readonly record struct TurnJoint(string PartId, Vector3 Pivot, Vector3 Axis, bool Yaw, RotorSpec? Rotor = null);
 
 /// <summary>A LIGHT instance of a placed building (docs/formats/lights.md); <see cref="WorldLights"/> turns it into a <see cref="WorldLight"/>.</summary>
 /// <param name="Light">The LIGHT record.</param>
@@ -255,24 +256,38 @@ public static class WorldObjectLayout
             : new Vector3(part.GetFloat("offset X"), part.GetFloat("offset Y"), part.GetFloat("offset Z")) * a.Scale;
         var local = Matrix4x4.CreateScale(a.Scale);
 
-        // Rotating parts (no collision file, a rotation function on the part or its holder) roll a speed variation (unless
+        // Rotating parts (no collision file, a rotation function on the part or its holder; RotatingEnt's constructor) roll a speed variation (unless
         // ROTATION_WIND_SPEED) and a start angle about their axis. The viewer leaves turret parts (ROTATION_TARGET) unrotated.
         string collision = a.State.Destroyed && part.GetPath("destroyed collision") is { Length: > 0 } dc ? dc : part.GetPath("xml collision");
+        RotorSpec? rotor = null;
+        var rotorAxis = Vector3.Zero;
         if (collision.Length == 0 && (part.GetInt("rotation function") > 0 || holder.GetInt("rotation function") > 0))
         {
             int function = part.GetInt("rotation function");
             if (function == 0) function = 6;
-            if (function != 3) a.Random.Next();
+            float speedMin = float.DegreesToRadians(part.GetFloat("rotation speed min")), speedMax = float.DegreesToRadians(part.GetFloat("rotation speed max"));
+            float windMin = part.GetFloat("wind speed rotation min"), windMax = part.GetFloat("wind speed rotation max");
+            if (function == RotorSpec.WindSpeed) (speedMax, windMax) = (MathF.Max(speedMin, speedMax), MathF.Max(windMin, windMax));
+            else speedMax = a.Random.NextFloat(speedMax * 0.95f, speedMax * 1.05f);
             if (entity)
             {
                 float angle = a.Random.NextFloat(0, MathF.Tau);
-                var axis = part.GetInt("rotation axis", 2) switch { 0 => Vector3.UnitX, 1 => Vector3.UnitY, 2 => Vector3.UnitZ, _ => Vector3.Zero };
-                if (function != 5 && axis != Vector3.Zero) local *= Matrix4x4.CreateFromAxisAngle(axis, angle);
+                rotorAxis = part.GetInt("rotation axis", 2) switch { 0 => Vector3.UnitX, 1 => Vector3.UnitY, 2 => Vector3.UnitZ, _ => Vector3.Zero };
+                if (function != 5 && rotorAxis != Vector3.Zero) local *= Matrix4x4.CreateFromAxisAngle(rotorAxis, angle);
+                if (function is >= RotorSpec.Constant and <= RotorSpec.WindDirection && rotorAxis != Vector3.Zero)
+                    rotor = new RotorSpec(function, speedMin, speedMax, windMin, windMax, angle,
+                        Vector3.Normalize(new Vector3(parentNode.M11, parentNode.M12, parentNode.M13)), Vector3.Normalize(new Vector3(parentNode.M31, parentNode.M32, parentNode.M33)));
             }
         }
         local *= Matrix4x4.CreateTranslation(offset);
         var node = local * parentNode;
         if (!entity) return null;
+        // A part that turns by itself is a joint too: it and everything hanging from it turn about its node's axis.
+        if (rotor is not null)
+        {
+            var axis = Vector3.TransformNormal(rotorAxis, node);
+            if (axis.LengthSquared() > 1e-12f) below = [.. joints ?? [], new TurnJoint(part.StringId, node.Translation, Vector3.Normalize(axis), rotorAxis == Vector3.UnitY, rotor)];
+        }
         // A part that turns to the target (ROTATION_TARGET) is a joint: it and everything hanging from it turn about its node (see TurnJoint).
         if (part.GetInt("rotation function") == 5)
         {

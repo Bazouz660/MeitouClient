@@ -588,9 +588,15 @@ and `power capacity` (battery store, "in seconds" per fcs.def), plus research ([
 - **Kinds** (registration `FUN_14092da80`, from switching on `vfunc_99`): capacity > 0 a battery, else output > 0 a
   generator; output < 0 a consumer. Function 5 without `consumes` is a wind generator, otherwise fuelled; batteries
   (23) share the generator class (factory `FUN_14057cc70`).
-- **Generator output** (`GeneratorBuilding::vfunc_166`): health x (output + increase) when switched on (`power on`) and
-  fuelled ("Out of fuel" otherwise). Wind: x a value read from the turbine's animation (`FUN_1404cbd90`, **Unknown**
-  units), nothing below 1. A battery's output is its rate while it holds charge.
+- **Generator output** (`GeneratorBuilding::getPowerOutput`): health x (output + increase) when switched on (`power on`) and
+  fuelled ("Out of fuel" otherwise). A battery's output is its rate while it holds charge.
+- **Wind generators** (**Verified**, decompiled): output = the share x the above, 0 when below 1 (`WindGeneratorBuilding::getPowerOutput`); the share
+  (`PhysicsCollection::getWindRotationPower`) is the first ROTATION_WIND_SPEED part's wind share ([rotating parts](#rotating-parts)), 0 with none or without
+  the building's physics collection (render entity) loaded. Meitou gives every built one its share from the scheduled wind of the weather region at the site.
+  Sound intensity = the share. Status "No Wind" ("There is currently not enough wind to drive the machine.") while it is 0. Panel: wind `{share x 100 as int}%`
+  ("The current amount of wind.", "Operating wind speed is between {wind min} mph and {wind max} mph.", x 0.22369362), Power Output with "Power is switched off.",
+  "Power output is at maximum.", "Power output is running at reduced efficiency due to damage." (share > 0) or "Currently not enough wind to generate any power";
+  a "Wind Speed" line `{x.x} mph` ("The current wind speed").
 - **Demand** (`vfunc_163`): a consumer's |output + increase|, x operators / raw `max operators` when that is above 0; a
   battery's rate while below its capacity health x (capacity + increase) (`FUN_140297650`).
 - **Town frame** (`Town::vfunc_87`): consumers sorted by ascending demand (`FUN_140927350`); each takes
@@ -612,6 +618,34 @@ and `power capacity` (battery store, "in seconds" per fcs.def), plus research ([
   Battery Bank 40 / capacity 60; Weapon Smith -8, refineries -10 to -40, Research Bench III-VI -10 to -30. Power
   research: Upgraded Small Generators +15, Amplified Generators +15, Battery Power / Advanced +10 each, Battery
   Capacity / Advanced +60 each.
+
+### Rotating parts
+
+**Verified** (decompiled `RotatingEnt` constructor `FUN_140556250`, `update` `140547ca0` with its disassembly, `weatherUpdated` `140549c60`,
+`Building::update`, `getOutputBasedRotationSpeedMult`) unless noted. A BUILDING_PART without a collision file whose `rotation function` (or
+its holder's) is set gets one; function 0 becomes 6 (still). Fields: `rotation speed min/max` (degrees/s), `wind speed rotation min/max`
+(units/s), `rotation axis` (0 X, 1 Y, 2 Z, else none). Function 3 raises speed max and wind max to their mins; every other function rolls
+speed max x U(0.95, 1.05). Then the node turns by U(0, 2π) about the axis (both rolls from the building's generator). `wind speed rotation danger`
+is read and never used. Each frame of a built building (`Building::update`, skipped while `DAT_1421349c9` is set) each part steps with
+dt = `DAT_142133798` (game dt, 0 paused); functions 1 to 3 then set the orientation to angle x axis, the angle counting from 0 (the start roll
+is lost once a part moves):
+- **1 CONSTANT**: speed max (fan blades, six-barrel). **2 OUTPUT**: (max − min) x the building's mult each frame (spinners, drills, looms).
+  The mult: 1 for a plain building; a generator (output > 0, no capacity) `power on` ? its power output x 0.01 : 0; any other machine
+  operators / max operators (1 when 0) x efficiency (active ? granted / demand x health : 0) x yield x `output rate` x research mult.
+- **3 WIND_SPEED**: at the wind speed w of the region: share = 0 below wind min, 1 at max or above, else (w − min) / (max − min); speed =
+  lerp(speed min, speed max, share). The share is what wind generators multiply by.
+- **4 WIND_DIRECTION** (heads): speed max is a turn rate. Told the weather, it starts a turn: from its orientation now to the one whose
+  local X is the wind direction brought into the parent's frame (y = 0), turned −90° about Y (`quatSetDirection`), so its +Z, where the blades
+  sit, faces into the wind; elapsed 0, length |yaw now − yaw target| / speed (yaws in (−π, π], unwrapped). Each frame while elapsed < length:
+  slerp(clamp(elapsed / length), from, to, short way), then elapsed += dt. Speed 0: never turns.
+- **Weather**: functions 3 and 4 register with the region at the part and are told at once, on a weather change and every frame the region's
+  wind is interpolating (`WeatherRegion::updateBT`), so a head stands still while the wind changes and turns after.
+- Data (**Verified**, probe of the merged data): Wind Generator (I, II) head 25°/s, blades 90°/s, wind 10 to 50; Small Wind Generator body
+  25°/s, blades 180°/s wind 4 to 25 (its share), dynamo wind 5 to 25; refinery spinners 16, drills 100, generator spinner 100, looms 90.
+
+Meitou (`RotorSpec`, `WorldObjectRenderer.AdvanceRotors`): the renderer turns the parts it draws by the game frame time and the scheduled
+wind; a level building's mult comes from its data as its sound emitter's efficiency does (generator output x 0.01, batteries and machines
+needing neither operators nor power their `output rate`, other machines 0; engine choice).
 
 **Storage** (**Verified**, 603 buildings): 87 have `has inventory`; default 18 x 18, `itemtype limit` 4; `stackable bonus
 mult` 1 to 100000; `limit inventory` restricts the items. Grid (**Observed**, the building loader): a building whose `limit inventory`
@@ -656,5 +690,5 @@ original falls back to the template.
 - How often Building slot 28 resets the builder counter, which HUD orders set the AI
   range mode, and what `FUN_14025c6d0` (holding dismantle work) tests.
 - Event types of the queue at `DAT_1421346d8` other than 8 (research progress) and 11 (build work).
-- The wind generator's animation value (its output share). `vfunc_0x520` (a consumer counted as active): 1 for every class but `LightBuilding`, whose answer is in [lights](../formats/lights.md#when-a-light-is-on).
+- `vfunc_0x520` (a consumer counted as active): 1 for every class but `LightBuilding`, whose answer is in [lights](../formats/lights.md#when-a-light-is-on).
 - Option slider defaults; the third value of reference triples; the record field of `BuildingClassType`.

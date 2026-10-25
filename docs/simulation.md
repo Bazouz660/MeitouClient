@@ -1050,7 +1050,7 @@ crafting benches, generators and batteries. Facts: [production](game/buildings-p
   town (sites grouped by `Town`, 0 included) shares power as the [original](game/buildings-production.md#power) after the
   operators, so grants follow last tick's operators. The factor scales production, crafting, research and farm growth;
   research `improve buildings` (`ResearchState.Upgrades`) scales rates and adds output and capacity. Engine choices: health
-  is 1; wind generators give `WindFraction` 0.5 of their output; battery mode is not saved. HUD: output, fuel use, charge,
+  is 1; wind generators give their blades' share of the region's wind ([rotating parts](game/buildings-production.md#rotating-parts)), loaded or not; battery mode is not saved. HUD: output, fuel use, charge,
   "No power" / "Low power".
 - **Hauling** (`ProductionSystem.Hauling.cs`, `ProductionSettings.AutoHaul`, default on; facts in
   [buildings-production](game/buildings-production.md#hauling)). An operator at its machine first puts carried items

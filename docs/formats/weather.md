@@ -83,7 +83,7 @@ within a region immediate; static map-feature units immortal. Missing particle i
 fall back to white. Fog-volume ground movement and effect lights are not fully implemented.
 **Verified** plugin constructor default quota500; ash techniques total1550. Denser original ash
 remains unexplained. Gameplay effects: [Effects on characters](#effects-on-characters); collector rain
-and generator wind are untraced.
+is untraced; generator wind: [rotating parts](../game/buildings-production.md#rotating-parts).
 
 ## Effects on characters
 
