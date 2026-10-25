@@ -272,6 +272,7 @@ public sealed class FirstAidSystem(GameConstants constants, BodyOptions options,
             float woundSkill = SkillOf(race.IsRobot && !kitless);
             body.CloseWound(dt, woundSkill, woundKit is { } wk ? Items.Info(wk.Item.Record)?.Quality ?? 0 : KitlessQuality, Constants);
             if (woundKit is { } used) Drain(used, woundSkill, dt, race.IsRobot, 1);
+            medicCold.UseSkill(StatOf(race.IsRobot && !kitless), world.Tick);
             xp.Medic(stats, race, medicRace, dt, StatOf(race.IsRobot && !kitless));
             return;
         }
@@ -285,6 +286,7 @@ public sealed class FirstAidSystem(GameConstants constants, BodyOptions options,
                 End(table, m);
                 return;
             }
+            medicCold.UseSkill(StatsEnumerated.Medic, world.Tick);
             xp.Medic(stats, race, medicRace, dt, StatsEnumerated.Medic);
             Deeds?.FirstAid(world, m, p, dt);
             return;
@@ -313,6 +315,7 @@ public sealed class FirstAidSystem(GameConstants constants, BodyOptions options,
             return;
         }
         if (medicCold.IsPlayer) Drain(kit, skill, dt, robot, touched);   // once per part bandaged; only the player's medics use up kits here (FUN_140649a00: faction +0x250)
+        medicCold.UseSkill(StatOf(robot), world.Tick);
         xp.Medic(stats, race, medicRace, dt, StatOf(robot));
         // An unconscious patient's faction is grateful to the medic's (engine choice: every update that bandages; the original's update fires it only when its loop got past the wounds).
         Deeds?.FirstAid(world, m, p, dt);
@@ -341,6 +344,7 @@ public sealed class FirstAidSystem(GameConstants constants, BodyOptions options,
             return;
         }
         Drain(kit, skill, dt, false, 1);
+        medicCold.UseSkill(StatsEnumerated.Medic, world.Tick);
         xp.Medic(stats, race, medicRace, dt, StatsEnumerated.Medic);
     }
 

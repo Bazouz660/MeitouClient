@@ -103,8 +103,8 @@ sealed partial class PlayerInterface
         return (head, text);
     }
 
-    /// <summary>The state lines (State, Goal, Encumbrance) of the selected character.</summary>
-    static HudLine[] StateLines(CharacterSnapshot lead)
+    /// <summary>The state lines (State, Goal, Encumbrance and, alive, the Current Skill line) of the selected character.</summary>
+    static HudLine[] StateLines(CharacterSnapshot lead, SpeedUnit unit)
     {
         var body = lead.Body;
         string state = body is { Dead: true } ? Loc.Tr("Dead") : body is { Unconscious: true } ? Loc.Tr("Unconscious") : (lead.Orders & CharacterOrders.Block) != 0 ? Loc.Tr("Defensive") : Loc.Tr("Normal");
@@ -121,8 +121,22 @@ sealed partial class PlayerInterface
             colour = lead.WeatherNoticeProtection > 0.9f && lead.WeatherNotice is not (WeatherNotice.AcidWater or WeatherNotice.AcidFeet) ? GoodColour : BadColour;
         }
         int encumbrance = (int)((1 - Math.Clamp(lead.Hud?.Encumbrance ?? 1, 0, 1)) * 100);
-        return [new(Loc.Tr("State:"), state, ValueColour: colour, Tooltip: tooltip), new(Loc.Tr("Goal:"), lead.Activity ?? TaskText(lead.Task)),
+        HudLine[] lines = [new(Loc.Tr("State:"), state, ValueColour: colour, Tooltip: tooltip), new(Loc.Tr("Goal:"), lead.Activity ?? TaskText(lead.Task)),
             new(Loc.Tr("Encumbrance:"), encumbrance.ToString(CultureInfo.InvariantCulture) + "%", ValueColour: encumbrance >= 50 ? BadColour : null)];
+        return body is { Dead: true } || lead.Hud?.Skill is not { } skill ? lines : [.. lines, SkillLine(skill, unit)];
+    }
+
+    /// <summary>
+    /// The state panel's "Current Skill" line: the job's skill by the editor's stat names (<c>FUN_140888440</c>) and its level (<c>{1,num=fix,p=0}</c>), Bad when penalised;
+    /// a fallback keeps its own label; Swimming shows the swim speed like the run speed.
+    /// </summary>
+    static HudLine SkillLine(CurrentSkillView skill, SpeedUnit unit)
+    {
+        string label = skill.Label is { } own ? Loc.Tr(own) : EditorStatName(skill.Stat);
+        string value = skill.Speed
+            ? $"{(int)(skill.Value * (unit == SpeedUnit.Kmh ? 0.36f : 0.22369362f))} {(unit == SpeedUnit.Kmh ? "km/h" : "mph")}"
+            : ((int)skill.Value).ToString(CultureInfo.InvariantCulture);
+        return new(label, value, ValueColour: skill.Penalised ? BadColour : null);
     }
 
     /// <summary>
@@ -241,7 +255,7 @@ sealed partial class PlayerInterface
         if (Lead() is not { } lead) return;
         string faction = FactionName?.Invoke(lead.Faction) ?? "";
         AddLines(controls, "NameText", [new(lead.Name, faction, TitleColour, TitleColour)], row, sidePixels);
-        AddLines(controls, "StateText", StateLines(lead), row, sidePixels);
+        AddLines(controls, "StateText", StateLines(lead, SpeedUnit), row, sidePixels);
         if (lead.Bounties.Count > 0 || lead.Slave is not null) AddLines(controls, "BountyText", [BountyLine(lead.Bounties)], row, sidePixels);
         // The base game draws the stats labels in the painted face (Observed: glyph shapes and widths match Sentencia at its resized 22 pt); the values
         // take the standard face, like the medical column's numbers.

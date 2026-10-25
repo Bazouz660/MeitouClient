@@ -804,6 +804,7 @@ public sealed class ConstructionSystem : ITickSystem
         float scaled = amount * Settings.BuildingSpeed * constants.BuildSpeed * Falloff[Math.Min(k, CounterCap)];
         site.Progress = site.Rate > 0 ? site.Progress + site.Rate * scaled : site.Target;
         world.Buildings.Touch();
+        cold.UseSkill(StatsEnumerated.Engineering, world.Tick);
         if (cold.Stats is { } stats && cold.Race is { } race) xp.Engineering(stats, race, dt);
         // A repair (a complete building never stalls, so it takes no materials) stops at the target (the clamp is the engine's; Task_Build ends at progress / target >= 1).
         if (site.Complete) site.Progress = MathF.Min(site.Progress, site.Target);
@@ -1013,6 +1014,7 @@ public sealed class ConstructionSystem : ITickSystem
         site.Dismantling = true;
         world.Buildings.Touch();
         SyncChildren(world, site);
+        cold.UseSkill(StatsEnumerated.Engineering, world.Tick);
         if (cold.Stats is { } stats && cold.Race is { } race) xp.Engineering(stats, race, dt);
         if (site.Progress > 0) return;
         Refund(world, site);

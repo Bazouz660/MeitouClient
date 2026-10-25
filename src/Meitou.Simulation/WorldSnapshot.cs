@@ -41,7 +41,15 @@ public sealed record HudView(float Blood, float BloodCapacity, float Bleeding, f
     public float Fed { get; init; }
     /// <summary>The race's <c>is robot</c>: the medical panel has no Hunger row.</summary>
     public bool Robot { get; init; }
+    /// <summary>The state panel's "Current Skill" line (null: the line is empty).</summary>
+    public CurrentSkillView? Skill { get; init; }
 }
+/// <summary>
+/// The state panel's "Current Skill" line (docs/game/ui-screens.md section 4): the skill the job uses, labelled by its stat name (<see cref="Label"/> null), or a fallback with its
+/// own label (the drawn weapon's class, Athletics, Stealth, Swimming). <see cref="Value"/> is the level, or for Swimming the swim speed in units per second (<see cref="Speed"/>);
+/// <see cref="Penalised"/> shows it Bad.
+/// </summary>
+public readonly record struct CurrentSkillView(Meitou.Data.Gameplay.Bodies.StatsEnumerated Stat, string? Label, float Value, bool Penalised = false, bool Speed = false);
 /// <summary>
 /// The information panel's extended lines (docs/game/ui-screens.md section 4): the XP rates as the fraction the panel shows as a percentage (Toughness as a plain multiplier),
 /// the KO point (negative HP), the run speed in units per second with the unhurt run value it is measured against, and the hunger rate as a multiple of the race's.

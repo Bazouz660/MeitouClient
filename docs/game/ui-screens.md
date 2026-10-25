@@ -283,6 +283,16 @@ to Jobs; the saved `chase mode` flag is that switch (**Verified**, [perma-jobs](
   - Name: the character's name left and its faction's name right (the player's default faction name is "Nameless"), both Title.
   - State lines: `State:` Dead / Locked (lvl: N) / Sleeping / Unconscious (Rebooting for skeletons) / Defensive / Normal (Bad for the bad ones);
     `Goal:` the AI goal package's name, else Aimless (Meitou: when the AI is not running the character, its movement task's name, e.g. Moving, Attacking, else Aimless); `Encumbrance:` (int)((1 - f) × 100) "%" with f the encumbrance factor in 0..1, Bad from 50 %.
+    Then, alive, the "Current Skill" line (**Verified**: decompile of the HUD update `1405d4260` panel 3, 2026-10-26; vanilla screenshot "Labouring 1" while operating a machine):
+    `Character +0x198 currentSkillUsing` (KenshiLib 1ce4a16), which the task updates set each tick (constants such as 4, 5, 6, 9, 0xb, or the machine's stat) and the HUD
+    clears after reading it (unless `DAT_1421349c9`, meaning **Unknown**, likely pause). With a named stat: label its name from the editor table (`FUN_140888440`, no
+    colon), value the effective level `FUN_140884ac0(stat, 0)` as `{1,num=fix,p=0}`, Bad when `FUN_140890b00` (the tooltip builder) sums its penalty percentages
+    (injuries, hunger, weather, darkness, limbs, gear, missing arm) above 2. Otherwise, by `FUN_1408840d0`: 2 (aiming a ranged weapon) gives `Accuracy Error:` lines;
+    in combat (`FUN_140436610(c, 1)`) the weapon class `+0x7b` gives `Heavy:` (3), `Katana:` (0), `Hacker:` (4), `Sabre:` (1), `Martial Arts:` (5), `Polearm:` (8) with
+    the raw level and a Damage tooltip; with no label yet, `Stealth:` (`FUN_14088f900`) while sneaking, else `Athletics:` (raw level, CharStats +0x94) when the speed
+    (+0x640 → +0xb8) is over 9 units a second (not the XP gate). Swimming (`FUN_1405c7fd0` 3) replaces it with "Swimming" and the swim speed in mph; Lockpicking (37)
+    adds an "Imprisoned:" tooltip. Meitou (`World.SkillLine`, `CharacterCold.UseSkill`): the operating, training-dummy, turret, building, first-aid and lockpicking
+    jobs set the skill; penalised is the stat multiplier under 0.98; the ranged accuracy lines and the tooltips are not modelled.
     Extended (when expanded): Athletics XP, Strength XP, Toughness XP, KO point, Run speed, Hunger Rate.
     Extended values (**Verified**, decompile of `FUN_140895350`, 2026-10-14; Meitou: `BodySystem.ExtendedOf`, `PlayerInterface.ExtendedLines`):
     Athletics XP `{n}%` = (int)(100 × `FUN_1408c5ec0`): the encumbrance factor, ×1.5 when the current speed is over 80 % of the run value V (the `xp rate athletics` constant is applied elsewhere).

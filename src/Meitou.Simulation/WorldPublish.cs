@@ -95,7 +95,7 @@ public sealed partial class World
                 Inventory = selected && cold!.Inventory is { } carried ? Items.InventoryText.Lines(carried) : [],
                 AllSkills = detailed && cold!.Stats is { } allStats ? Array.AsReadOnly(allStats.ToArray()) : [],
                 SkillXpMultipliers = detailed && cold!.Race is { } skillRace ? Array.AsReadOnly((float[])skillRace.StatMultipliers.Clone()) : [],
-                Hud = detailed && cold!.Medical is { } hudMed && cold.Race is { } hudRace && cold.Stats is { } hudStats ? HudOf(cold, hudMed, hudRace, hudStats) : null,
+                Hud = detailed && cold!.Medical is { } hudMed && cold.Race is { } hudRace && cold.Stats is { } hudStats ? HudOf(cold, hudMed, hudRace, hudStats, state[i]) : null,
                 LimbBits = cold?.Medical?.LimbBits ?? 0,
                 HealthParts = detailed && cold!.Medical is { } health && cold.Race is { } anatomy ? Array.AsReadOnly(health.Parts.Select(p => new HealthPartView(p.Template.StringId, p.Template.Name, p.Flesh, p.Stun, p.Bandage, p.Rig, p.MaxHp, p.IsRobotic(anatomy)) { Vital = p.Template.Vital, Type = p.Template.Type }).ToArray()) : [],
                 ItemGrid = (selected || id == Player.OpenLoot || cold is { IsPlayer: true } && Player.InventoryShown.Contains(id)) && cold!.Inventory is { } grid ? new InventoryView(grid.Width, grid.Height, grid.Backpack?.Contents?.Width ?? 0, grid.Backpack?.Contents?.Height ?? 0,
@@ -219,7 +219,7 @@ public sealed partial class World
     /// Perception in ranged mode with a crossbow, else Martial Arts unarmed or Attack and Defense with a melee weapon; then Strength, Dexterity, Toughness and, but
     /// in ranged mode, Dodge. A value is the stat times its injury multiplier (and the fighter's dexterity or dodge factor), against the trained stat; toughness is plain.
     /// </summary>
-    static HudView HudOf(CharacterCold cold, Bodies.MedicalState med, RaceData race, Bodies.CharacterStats stats)
+    HudView HudOf(CharacterCold cold, Bodies.MedicalState med, RaceData race, Bodies.CharacterStats stats, in CharacterHot hot)
     {
         var fighter = cold.Fighter;
         HudStatLine Line(string label, StatsEnumerated stat, float factor = 1) => new(label, stats[stat] * med.StatMultiplier(stat) * factor, stats[stat]);
@@ -233,7 +233,35 @@ public sealed partial class World
         lines.Add(new("Toughness:", stats.Toughness, stats.Toughness));
         if (!ranged) lines.Add(Line("Dodge:", StatsEnumerated.Dodge, fighter?.DodgeMult ?? 1));
         return new HudView(med.Blood, Bodies.MedicalState.BloodCapacity(race, stats.Strength, med.HasStatsObject, med.ScaleK, med.ScaleZ), med.Bleeding,
-            fighter?.EncumbranceFactor ?? 1, lines.AsReadOnly(), cold.Extended) { BleedRate = race.BleedRate, Fed = med.Fed, Robot = race.IsRobot };
+            fighter?.EncumbranceFactor ?? 1, lines.AsReadOnly(), cold.Extended) { BleedRate = race.BleedRate, Fed = med.Fed, Robot = race.IsRobot, Skill = SkillLine(cold, med, stats, hot) };
+    }
+
+    /// <summary>
+    /// The state panel's "Current Skill" line (the HUD update's panel 3, docs/game/ui-screens.md section 4): the skill the job used this tick at its effective level, Bad when its
+    /// penalties pass 2 % (Meitou reads that as the stat multiplier under 0.98); else, in a fight, the drawn melee weapon's class at its trained level; else Athletics when moving
+    /// faster than 9 units a second, Stealth (the stealth term x 100) when sneaking. Swimming replaces it with the swim speed. Picking a lock is Lockpicking.
+    /// </summary>
+    CurrentSkillView? SkillLine(CharacterCold cold, Bodies.MedicalState med, Bodies.CharacterStats stats, in CharacterHot hot)
+    {
+        float speed = MathF.Sqrt(hot.Velocity.X * hot.Velocity.X + hot.Velocity.Z * hot.Velocity.Z);
+        if (cold.WaterState == 3) return new(StatsEnumerated.Swimming, "Swimming", speed, Speed: true);
+        var stat = cold.SkillInUseTick >= Tick - 1 ? cold.SkillInUse : PickBar(cold, hot.Task) is not null ? StatsEnumerated.Lockpicking : StatsEnumerated.None;
+        if (stat != StatsEnumerated.None)
+        {
+            float multiplier = med.StatMultiplier(stat);
+            return new(stat, null, MathF.Round(stats[stat] * multiplier), multiplier < 0.98f);
+        }
+        if (cold.InCombat && (cold.Orders & CharacterOrders.Ranged) == 0 && cold.Fighter is { } f)
+        {
+            string? label = f.WeaponSkill switch
+            {
+                StatsEnumerated.HeavyWeapons => "Heavy:", StatsEnumerated.Katanas => "Katana:", StatsEnumerated.Hackers => "Hacker:", StatsEnumerated.Sabres => "Sabre:",
+                StatsEnumerated.MartialArts => "Martial Arts:", StatsEnumerated.Polearms => "Polearm:", _ => null,
+            };
+            if (label is not null) return new(f.WeaponSkill, label, (int)stats[f.WeaponSkill]);
+        }
+        if ((cold.Orders & CharacterOrders.Sneak) != 0) return new(StatsEnumerated.Stealth, "Stealth:", MathF.Round(Orders.Stealth(cold) * 100));
+        return speed > 9 ? new(StatsEnumerated.Athletics, "Athletics:", (int)stats.Athletics) : null;
     }
 
     static BodyStatus BodyOf(CharacterCold cold, Bodies.MedicalState med, RaceData race, byte task) => new(

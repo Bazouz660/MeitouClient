@@ -559,10 +559,16 @@ public sealed partial class ProductionSystem : ITickSystem
                 if (n.Velocity.X == 0 && n.Velocity.Z == 0) n.Yaw = FacingTo(n, site);
                 m.Operators++;
                 cold.Operating = true;
+                cold.UseSkill(StatsEnumerated.Turrets, world.Tick);
                 continue;
             }
             // A training dummy: the user trains the building's stat (docs/game/ai-tasks.md "Finders of the jobs").
-            if (m.Data.IsTraining) { Train(ref n, cold, site, m, dt); continue; }
+            if (m.Data.IsTraining)
+            {
+                cold.UseSkill((StatsEnumerated)m.Data.Stat, world.Tick);
+                Train(ref n, cold, site, m, dt);
+                continue;
+            }
             // A chair (an implicit job): sat on, no work.
             if (!m.Data.Operable) { Settle(ref n, cold, site, m); continue; }
             // An automatic machine (the 152 job): its hauler fills its inputs and carries its output away; the machine works by itself.
@@ -585,6 +591,7 @@ public sealed partial class ProductionSystem : ITickSystem
             else worked = ProduceStep(world, m, s, dt);
             cold.Operating = worked;
             // Operating trains the stat (Observed, FUN_1408c7250: 0.5, farming x1.5, through the continuous entry), every frame at the machine.
+            if (m.Data.Stat > 0) cold.UseSkill(stat, world.Tick);
             if (m.Data.Stat > 0 && cold.Stats is { } stats && cold.Race is { } race) xp.Continuous(stats, race, stat, dt, OperateXp(m.Data.Stat));
         }
         PowerTick(world, dt);

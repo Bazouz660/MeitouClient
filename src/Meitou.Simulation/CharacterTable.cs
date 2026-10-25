@@ -110,6 +110,14 @@ public sealed class CharacterCold
     public int CrossbowShots { get; set; }
     /// <summary>The numbers of the HUD's extended lines, refreshed by <see cref="BodySystem"/> every tick (display only: not hashed, not saved).</summary>
     public ExtendedStats Extended { get; set; }
+    /// <summary>
+    /// The skill its job used at <see cref="SkillInUseTick"/> (the original's Character <c>+0x198</c> <c>currentSkillUsing</c>, docs/game/ui-screens.md section 4): what the HUD's
+    /// "Current Skill" line shows. Set by the job systems with <see cref="UseSkill"/> (display only: not hashed, not saved).
+    /// </summary>
+    public Meitou.Data.Gameplay.Bodies.StatsEnumerated SkillInUse { get; private set; }
+    public long SkillInUseTick { get; private set; } = long.MinValue;
+    /// <summary>Marks <paramref name="stat"/> as the skill its job uses this tick.</summary>
+    public void UseSkill(Meitou.Data.Gameplay.Bodies.StatsEnumerated stat, long tick) => (SkillInUse, SkillInUseTick) = (stat, tick);
     /// <summary>The race, stats and medical state (null for anything without a race record): see <see cref="BodySystem"/>.</summary>
     public Meitou.Data.Gameplay.Bodies.RaceData? Race { get; set; }
     /// <summary>
