@@ -120,7 +120,7 @@ HitMaterialType: `HIT_MISSED` dodged 0.2 s, `HIT_SWORD` blocked 0.3 s, flesh or 
 Meitou (`CombatSystem.Strike`): the box above in 2D, a body counting when its size-scaled footprint circle meets it and its feet are within the
 half-height + 9 of the attacker's; the order is the target first, then by distance (the physics order is arbitrary). Hits left over go to walls
 (the nearest edge of the wall line within the half-width) and doors (the leaf widened by its half-width), nearest first (`ApplyZoneBuildings`);
-a door takes the blow off its lock hardness, not construction progress (Meitou's door model, [locks](locks.md#locks-and-doors)). A defender that is not the attacker's target defends only with a block or dodge it is already playing.
+a door takes the blow off its lock hardness, not construction progress (Meitou's door model, [locks](locks.md#cutting-and-breaking-285--185-cut-286--186-break)). A defender that is not the attacker's target defends only with a block or dodge it is already playing.
 
 ### Attack slots and circling
 

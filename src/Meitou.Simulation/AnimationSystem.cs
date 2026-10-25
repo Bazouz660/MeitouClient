@@ -403,11 +403,11 @@ public sealed class AnimationSystem(AnimationLibrary library, AnimationLengths l
             moving = moving && (lower.Count > 0 || upper.Count > 0);
             if (!moving && !(stance.Combat && lower.Count > 0)) lower.Clear();
             legs = lower.Count;
-            // Side-stepping: the side-step clip takes |side| / (|side| + |forward|) of the legs from the walking clips (the last share while both are under 1).
+            // Side-stepping: the side-step clip takes |side| / (|side| + |forward|) of the legs from the walking clips (none while both together are under 1: standing).
             if (stance.Combat)
             {
                 float side = MathF.Abs(a.StrafeSpeed), ahead = MathF.Abs(speed);
-                if (side + ahead > 1) a.StrafeShare = side / (side + ahead);
+                a.StrafeShare = side + ahead > 1 ? side / (side + ahead) : 0;
                 if (a.StrafeShare > 0 && Library.Strafe(stance) is >= 0 and var strafe)
                 {
                     legsShare = 1 - a.StrafeShare;

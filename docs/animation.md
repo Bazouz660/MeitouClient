@@ -61,12 +61,12 @@ of definitions and gives each a weight; zero-weight ones are dropped:
   fighter would face its velocity. The steering also seems to keep only the velocity's side part while strafing and its forward part otherwise
   (decompile unclear; Meitou does not).
 - **Animation.** Forward speed = z, side speed = −x (to the right) only while strafing, else 0; x is zeroed when |z| > 1 and |x| < 0.5. The side-step
-  clip gets weight |side| / (|side| + |forward|) (the last value while the sum is ≤ 1, through a filter `@ AC+0x2b8`), the forward movement clips
+  clip gets weight |side| / (|side| + |forward|) (the last value while the sum is ≤ 1, through a filter `@ AC+0x2b8`, times the movement layer's weight), the forward movement clips
   the rest; it plays at F × `play speed` × side speed (signed). Base data: `strafe lower` (layer lower, no `move speed`, rebirth.mod `play speed`
   −0.12, `strafe speed max` 999, combat only); `sidestep` is disabled and `strafe upper` removed. Which test reads `strafe speed max` (999 on
   the blows, 99 on the guards, 0 on the walks) is **Unknown**. Animals' `strafe anim` is not decoded.
 - Meitou: `AnimationSystem.Strafe` and `AnimationLibrary.Strafe`; a fighter in its footwork (`CharacterCold.FaceSlot`) keeps facing its
-  target while its path moves it (`MovementSystem`, the turn's speed cut skipped).
+  target while its path moves it (`MovementSystem`, the turn's speed cut skipped); the share is 0 below a total speed of 1 (standing; engine reading of the weight).
 
 ### Idle stance
 
