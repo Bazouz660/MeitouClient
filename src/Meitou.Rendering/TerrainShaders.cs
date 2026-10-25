@@ -687,8 +687,9 @@ static partial class TerrainShaders
         // Layers whose relief is marched together (GroundRelief): their common unscaled coordinate with its derivatives, and per layer its tiling (xy: the
         // coordinate's scale, also its move per unit of the march's offset), array layer (z) and weight (w: its share of the pixel times its depth factor).
         // Kept this small on purpose: the march carries it through every step, and a larger one (a coordinate and derivatives per layer) cost the
-        // parallax several times over in registers (docs/render-terrain.md, "Cost").
-        const int ReliefMax = 5;
+        // parallax several times over in registers (docs/render-terrain.md, "Cost"). The three heaviest layers are enough for the height; the rest only
+        // shade the surface.
+        const int ReliefMax = 3;
         struct Relief { GradCoord base; vec4 layer[ReliefMax]; int n; float total; };
 
         Relief noRelief(GradCoord base) { Relief r; r.base = base; r.n = 0; r.total = 0.0; return r; }
@@ -697,10 +698,32 @@ static partial class TerrainShaders
         {
             // A layer showing under 5% of the pixel is left out, fading in to 15% (continuous: no seam where it drops out); the march's cost is per layer.
             float w = share * smoothstep(0.05, 0.15, share) * reliefDepth(layer, scale);
-            if (w <= 0.0 || r.n >= ReliefMax) return;
-            r.layer[r.n] = vec4(scale, layer, w);
-            r.n++;
-            r.total += w;
+            if (w <= 0.0) return;
+            // Keep the three heaviest layers, sorted, so a later heavy layer replaces a light one. The height is a weighted average, so the order only
+            // matters for the cap.
+            if (r.n < ReliefMax)
+            {
+                int at = r.n;
+                while (at > 0 && r.layer[at - 1].w < w)
+                {
+                    r.layer[at] = r.layer[at - 1];
+                    at--;
+                }
+                r.layer[at] = vec4(scale, layer, w);
+                r.n++;
+                r.total += w;
+            }
+            else if (w > r.layer[ReliefMax - 1].w)
+            {
+                r.total += w - r.layer[ReliefMax - 1].w;
+                int at = ReliefMax - 1;
+                while (at > 0 && r.layer[at - 1].w < w)
+                {
+                    r.layer[at] = r.layer[at - 1];
+                    at--;
+                }
+                r.layer[at] = vec4(scale, layer, w);
+            }
         }
 
         // Where the ground is displaced (ReliefFunctions), the mesh carries the relief down to its spacing there (reliefSegment, world units; 0 not
@@ -708,9 +731,9 @@ static partial class TerrainShaders
         // displacement fades out). Set per pixel in biome().
         float reliefSegment = 0.0, reliefWhole = 1.0;
 
-        // The march's steps (view ray, sun), fewer with distance (set in biomeRelief(): 16 and 8 near, 6 and 3 at the parallax's end), and the share of
+        // The march's steps (view ray, sun), fewer with distance (set in biomeRelief(): 8 and 4 near, 4 and 2 at the parallax's end), and the share of
         // the pixel the biome being marched has (main sets it before biomeRelief(): a biome showing little is not marched).
-        int reliefSteps = 16, reliefShadowSteps = 12;
+        int reliefSteps = 8, reliefShadowSteps = 4;
         float biomeShare = 1.0;
 
         // The relief's height at offset o (1 the top): the layers' heights by weight; finer: only the detail the displaced mesh leaves out (above).
@@ -744,7 +767,7 @@ static partial class TerrainShaders
         {
             // The detail finer than a displaced mesh is shallow and fine: half the steps do (each also reads its level at the spacing).
             int ShadowSteps = reliefShadowSteps;
-            int Steps = finer && reliefSegment > 0.0 && reliefWhole < 1.0 ? min(8, reliefSteps) : reliefSteps;
+            int Steps = finer && reliefSegment > 0.0 && reliefWhole < 1.0 ? min(4, reliefSteps) : reliefSteps;
             vec2 rayStep = viewSpan / float(Steps);
             bool moving = dot(viewSpan, viewSpan) > 0.0;
             // Centred, as the displacement is: the flat surface is the relief's middle (half the depth above it, half below), so what stands on the ground
@@ -832,8 +855,8 @@ static partial class TerrainShaders
                 // A biome showing under 10% of the pixel is not marched, fading in to 30% (the march runs once per biome blended).
                 float strength = (1.0 - smoothstep(0.5 * uParallaxEnd, uParallaxEnd, distance)) * smoothstep(0.1, 0.3, biomeShare);
                 float far = clamp(distance / uParallaxEnd, 0.0, 1.0), shade = 1.0;
-                reliefSteps = int(round(mix(16.0, 6.0, far)));
-                reliefShadowSteps = int(round(mix(8.0, 3.0, far)));
+                reliefSteps = int(round(mix(8.0, 4.0, far)));
+                reliefShadowSteps = int(round(mix(4.0, 2.0, far)));
                 vec3 v = normalize(uEye - vWorld);
                 vec3 sun = normalize(uLightDir);   // not "l": RockBakeFragment patches the lighting at that line
                 // Where the geometry is displaced (ReliefFunctions, to uDisplaceEnd) the view ray marches only the detail finer than the mesh's spacing
