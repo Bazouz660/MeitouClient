@@ -2,6 +2,17 @@
 
 Released with tags `launcher-v<version>` by `.github/workflows/launcher-release.yml`; each release needs its `## v<version>` section.
 
+## v1.3.0
+
+- **Videos in news posts**: a post can show a video, as its cover or in the text. It shows the first frame with a play
+  button, and only downloads when you press play. Pause and resume with a click or Space, skip 10 s back or forward with
+  the buttons or Left/Right, and seek anywhere on the bar. Videos play with sound.
+- A video cover can have a **Full video** button that opens the full-quality video in your browser.
+- News pictures now fill the post's width (without being blown up past their size), and the date and author sit on
+  the right of the title.
+- Scroll bars always show at full size.
+- The launcher window opens taller.
+
 ## v1.2.1
 
 - **Report to the roadmap**: the system picker has a search box. Type to filter the list, arrows move the highlight,
