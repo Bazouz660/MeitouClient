@@ -225,7 +225,7 @@ public sealed partial class MainWindow : Window
     Control PostCard(NewsPost post)
     {
         var card = new StackPanel { Spacing = 8 };
-        if (post.Image is { } cover) card.Children.Add(MarkdownView.Image(NewsFeed.Resolve(post, cover), news, 300));
+        if (post.Image is { } cover) card.Children.Add(MarkdownView.Image(NewsFeed.Resolve(post, cover), news, 300, post.Video is { } video ? (NewsFeed.Resolve(post, video), OpenLink) : null));
         // The title, with "19 October 2026 · author" (either part when only it is given) on its right.
         var heading = new DockPanel();
         var byline = string.Join(" · ", new[] { post.Date?.ToString("d MMMM yyyy", System.Globalization.CultureInfo.InvariantCulture), post.Author }.Where(s => !string.IsNullOrEmpty(s)));

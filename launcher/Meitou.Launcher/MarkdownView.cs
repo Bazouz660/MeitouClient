@@ -30,10 +30,11 @@ static class MarkdownView
     }
 
     /// <summary>An image (or a <c>.webm</c> video, <see cref="VideoView"/>) loaded in the background; until then (or when it fails) it takes no room.</summary>
-    public static Control Image(string url, NewsFeed feed, double maxHeight)
+    /// <param name="fullVideo">For a video: the page its open button goes to, and how links open.</param>
+    public static Control Image(string url, NewsFeed feed, double maxHeight, (string Url, Action<string> Open)? fullVideo = null)
     {
         if (Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.AbsolutePath.EndsWith(".webm", StringComparison.OrdinalIgnoreCase))
-            return VideoView.Create(url, feed);
+            return VideoView.Create(url, feed, fullVideo);
         var image = new Image { Stretch = Stretch.Uniform, MaxHeight = maxHeight, HorizontalAlignment = HorizontalAlignment.Left };
         RenderOptions.SetBitmapInterpolationMode(image, BitmapInterpolationMode.HighQuality);
         var frame = new Border { CornerRadius = new CornerRadius(6), ClipToBounds = true, HorizontalAlignment = HorizontalAlignment.Left, Child = image, IsVisible = false };

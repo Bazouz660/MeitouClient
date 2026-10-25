@@ -47,7 +47,7 @@ sealed class VideoView : Border
     double? dragging; // the seek bar's fraction while it is held
 
     /// <summary>Fills the post's width, its height following the picture's shape.</summary>
-    VideoView(string url, NewsFeed feed, WebmFile? file, byte[] firstPicture, int width, int height)
+    VideoView(string url, NewsFeed feed, WebmFile? file, byte[] firstPicture, int width, int height, (string Url, Action<string> Open)? fullVideo)
     {
         (this.url, this.feed, this.file) = (url, feed, file);
         CornerRadius = new CornerRadius(6);
@@ -117,7 +117,34 @@ sealed class VideoView : Border
         };
         bar.PointerPressed += (_, e) => e.Handled = true; // the bar's gaps are not clicks on the picture
 
-        Child = new Panel { Children = { image, button, bar } };
+        var layers = new Panel { Children = { image, button, bar } };
+        if (fullVideo is var (page, open))
+        {
+            // "Full video" in the top right corner: the post's full-quality video on the web (front matter `video`).
+            var link = new Border
+            {
+                Background = shade, CornerRadius = new CornerRadius(4), Padding = new Thickness(8, 4), Margin = new Thickness(8),
+                HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top,
+                Child = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal, Spacing = 6,
+                    Children =
+                    {
+                        new TextBlock { Text = "Full video", Foreground = ink, FontSize = 12, VerticalAlignment = VerticalAlignment.Center },
+                        new Path { Data = Geometry.Parse("M 0,3 H 5 V 5 H 2 V 10 H 7 V 7 H 9 V 12 H 0 Z M 6,0 H 12 V 6 L 10,4 L 6,8 L 4,6 L 8,2 Z"), Fill = ink, VerticalAlignment = VerticalAlignment.Center },
+                    },
+                },
+            };
+            ToolTip.SetTip(link, page);
+            link.PointerPressed += (_, e) =>
+            {
+                e.Handled = true;
+                Pause();
+                open(page);
+            };
+            layers.Children.Add(link);
+        }
+        Child = layers;
         PointerPressed += (_, e) =>
         {
             if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
@@ -160,7 +187,7 @@ sealed class VideoView : Border
     /// A video whose first picture loads in the background from the file's start (<see cref="NewsFeed.HeadAsync"/>); the rest downloads
     /// only when it is played. Until then (or when it cannot be played) it takes no room, like an image.
     /// </summary>
-    public static Control Create(string url, NewsFeed feed)
+    public static Control Create(string url, NewsFeed feed, (string Url, Action<string> Open)? fullVideo = null)
     {
         var host = new Panel();
         _ = Task.Run(async () =>
@@ -175,7 +202,7 @@ sealed class VideoView : Border
                 if (whole || await feed.ImageAsync(url) is not { } all || Poster(all, head: false) is not var (full, p, w, h)) return;
                 (head, pixels, width, height, whole) = (full, p, w, h, true);
             }
-            Dispatcher.UIThread.Post(() => host.Children.Add(new VideoView(url, feed, whole ? head : null, pixels, width, height)));
+            Dispatcher.UIThread.Post(() => host.Children.Add(new VideoView(url, feed, whole ? head : null, pixels, width, height, fullVideo)));
         });
         return host;
     }

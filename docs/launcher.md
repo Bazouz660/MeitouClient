@@ -197,7 +197,7 @@ start the `settings.cfg` value wins. The launcher's labels come from the same `.
 ## News
 
 The Home page shows the repository's `news/` folder (format in `news/README.md`): one folder per article,
-`<yyyy-mm-dd>-<slug>/index.md` with an optional front matter block (`title`, `date`, `author`, `image`) and its pictures beside it, newest
+`<yyyy-mm-dd>-<slug>/index.md` with an optional front matter block (`title`, `date`, `author`, `image`, `video`: the full video's page, a "Full video" button on a video cover) and its pictures beside it, newest
 20 first. `news/` is listed through the contents API on `master` (one call, cached with its ETag in `news-cache/`); each
 `index.md` downloads from raw.githubusercontent.com and is kept by its folder's tree hash, images by URL, so the page works
 offline. Relative image and link paths resolve against the article's folder; a folder without `index.md` is skipped.
