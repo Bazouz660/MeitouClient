@@ -53,14 +53,17 @@ public sealed partial class MainWindow
         var list = new ListBox { MaxHeight = 280 };
         var noMatch = new TextBlock { Classes = { "desc" }, Text = LauncherText.Translate("No match"), Margin = new(16, 6, 16, 10), IsVisible = false };
         var picker = new StackPanel { Children = { search, list, noMatch } };
+        // Anchored on a border around the button, not the button: keys typed in the popup bubble to its anchor, and a Button treats Space
+        // as a press.
+        var anchor = new Border { Child = system };
         var flyout = new Flyout { Content = picker, Placement = PlacementMode.BottomEdgeAlignedLeft };
-        system.Flyout = flyout;
+        system.Click += (_, _) => flyout.ShowAt(anchor);
         void Filter()
         {
             string query = search.Text?.Trim() ?? "";
             var shown = rows.Where(r => r.Name.Contains(query, StringComparison.OrdinalIgnoreCase)).ToList();
             list.ItemsSource = shown;
-            list.SelectedIndex = shown.Count > 0 ? 0 : -1;
+            list.SelectedIndex = query.Length == 0 && chosen is not null ? Math.Max(0, shown.IndexOf(chosen)) : shown.Count > 0 ? 0 : -1;
             noMatch.IsVisible = shown.Count == 0;
         }
         void Pick()
@@ -73,19 +76,21 @@ public sealed partial class MainWindow
         }
         flyout.Opening += (_, _) =>
         {
-            picker.Width = Math.Max(0, system.Bounds.Width - 2);
+            picker.Width = Math.Max(0, anchor.Bounds.Width - 2);
             search.Text = "";
             Filter();
         };
         flyout.Opened += (_, _) => search.Focus();
+        flyout.Closed += (_, _) => system.Focus();
         search.TextChanged += (_, _) => Filter();
-        search.KeyDown += (_, k) =>
+        search.AddHandler(KeyDownEvent, (_, k) =>
         {
             if (k.Key == Key.Enter) { Pick(); k.Handled = true; }
-            else if (k.Key == Key.Down && list.ContainerFromIndex(0) is { } first) { first.Focus(); k.Handled = true; }
-        };
+            else if (k.Key == Key.Down && list.ContainerFromIndex(Math.Max(0, list.SelectedIndex)) is { } row) { row.Focus(); k.Handled = true; }
+        }, RoutingStrategies.Bubble, handledEventsToo: true);
         list.AddHandler(KeyDownEvent, (_, k) => { if (k.Key == Key.Enter) { Pick(); k.Handled = true; } }, RoutingStrategies.Bubble, handledEventsToo: true);
         list.AddHandler(TappedEvent, (_, t) => { if ((t.Source as Avalonia.Visual)?.GetSelfAndVisualAncestors().OfType<ListBoxItem>().Any() == true) Pick(); }, RoutingStrategies.Bubble, handledEventsToo: true);
+        picker.AddHandler(KeyDownEvent, (_, k) => { if (k.Key == Key.Escape) { flyout.Hide(); k.Handled = true; } }, RoutingStrategies.Bubble, handledEventsToo: true);
         var works = new RadioButton { Content = "Works for me", GroupName = "verdict", IsChecked = true, Margin = new(0, 0, 16, 0) };
         var broken = new RadioButton { Content = "Broken", GroupName = "verdict" };
         var version = new ComboBox { HorizontalAlignment = HorizontalAlignment.Stretch };
@@ -109,7 +114,7 @@ public sealed partial class MainWindow
                 {
                     new Border { Classes = { "header" }, Child = new TextBlock { Text = "Report to the roadmap" } },
                     new TextBlock { Classes = { "desc" }, TextWrapping = TextWrapping.Wrap, Text = "Tell the roadmap how one of Kenshi's systems plays in Meitou. Bugs with steps are best as a GitHub issue." },
-                    Labelled("System", system),
+                    Labelled("System", anchor),
                     new StackPanel { Orientation = Orientation.Horizontal, Children = { works, broken } },
                     Labelled("Meitou version", version),
                     note,
