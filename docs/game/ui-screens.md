@@ -357,8 +357,7 @@ to Jobs; the saved `chase mode` flag is that switch (**Verified**, [perma-jobs](
   the town state's saved `public` ([outposts](../formats/save.md#player-outposts)) and makes the town a trader destination and stay ([ai](ai.md#package-classes)).
 - Meitou (`PlayerInterface.Town.cs`): the subtree is registered as a screen panel (drawn under the windows, not raised, skipped by Esc and Tab) so the box takes typing; the
   position is the camera pivot; Enter or losing the focus renames (`RenameTown`; an empty name is ignored, engine choice); the tick sends `SetTownPublic`; both only for
-  the player's own outposts (`PlayerTown.Public`, saved as `public`). A public outpost keeps a wandering trader for its stay; the trader's town chooser still never picks a
-  player town (not built).
+  the player's own outposts (`PlayerTown.Public`, saved as `public`). A public outpost is a wandering trader's destination as a public placed town is, and keeps it for its stay.
 
 ### Biome banner
 

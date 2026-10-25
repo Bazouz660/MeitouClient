@@ -155,8 +155,7 @@ public sealed partial class AiSystem
         board.TraderWait = 5 + 3 * Rng.Float(Rng.Hash(world.Seed, key, RngPurpose.Think, SeedSalts.AiTraderWait));
         board.TraderState = 0;
         var at = LeaderPosition(world, squad) ?? squad.Position;
-        int town = data.TraderTown(squad.Faction, Flat(at), board.InTown.Site, Rng.Hash(world.Seed, key, RngPurpose.Think, SeedSalts.AiTraderTown));
-        board.Destination = town >= 0 ? CampaignTown.OfSite(town) : CampaignTown.None;
+        board.Destination = data.TraderTown(squad.Faction, Flat(at), board.InTown, world.Buildings.Towns, Rng.Hash(world.Seed, key, RngPurpose.Think, SeedSalts.AiTraderTown));
     }
 
     /// <summary>
