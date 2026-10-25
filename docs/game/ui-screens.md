@@ -137,7 +137,9 @@ against French 1440-line screenshots. Every caption the code sets is the catalog
 
 ### New game
 
-A new game is set up by `FUN_14036cb80` and `FUN_140872e00` (`resetGame` and `newGameWithCharEdit`, names from KenshiLib 1ce4a16):
+**Verified** (decompilation: `FUN_14036cb80` and `FUN_140872e00`, `resetGame` and `newGameWithCharEdit`, names from KenshiLib 1ce4a16; relations, start
+towns, discovered towns, research and scatter also **Observed** in the original against Son of a Captain, Nobodies, Holy Nation Citizen, The Freedom Seekers,
+Empire Citizen and The Cannibal Hunters). The "Meitou" sentences are engine choices, not claims about the original.
 
 - **Relations**: a new game's relations start from the data's (every faction is made anew, `FUN_1409ef230`); each `faction relations` entry then sets that faction's
   relation with the player, both ways, to its v0.
