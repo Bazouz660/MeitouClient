@@ -29,7 +29,8 @@ const barW = snaps.length ? Math.min(28, (chartW - barGap * (snaps.length - 1)) 
 const statusLabel = (s: keyof typeof statuses | null) => (s ? statuses[s].label : 'removed');
 const reportConfig = JSON.stringify({ url: reports.url.replace(/\/$/, ''), siteKey: reports.turnstileSiteKey, builds: reportBuilds });
 ---
-<Base title="Roadmap - Meitou" description="How far each of Kenshi's systems is in Meitou, against unmodded Kenshi 1.0.68.">
+<Base title="Roadmap - Meitou" description="How far each of Kenshi's systems is in Meitou, against unmodded Kenshi 1.0.68." kofiTop>
+  <span slot="center">Roadmap page by @DemitriX</span>
   <div class="backdrop" aria-hidden="true" data-bgs={JSON.stringify(backgrounds)}><div></div><div></div></div>
   <div class="rd">
     <header>
@@ -529,7 +530,7 @@ const reportConfig = JSON.stringify({ url: reports.url.replace(/\/$/, ''), siteK
   .fixlist li > span:last-child { min-width: 0; }
   .tag { font-family: var(--font-mono); font-size: .78rem; color: var(--muted); white-space: nowrap; }
 
-  /* Back to top: bottom right (the Ko-fi button takes the bottom left). */
+  /* Back to top: bottom right. */
   .totop {
     position: fixed; right: max(16px, env(safe-area-inset-right, 0px)); bottom: max(16px, env(safe-area-inset-bottom, 0px)); z-index: 5;
     display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 16px;
