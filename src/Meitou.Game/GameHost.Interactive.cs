@@ -496,7 +496,9 @@ sealed partial class GameHost
             cinema.Advance(cinema.FrameTime(dt));   // a flight through the keys moves the camera (and takes it from the rig)
             if (tour.Active && !tour.Advance(dt, camera, TourPosition)) EndTour();
             gpu.Ahead = tour.ArrivalEye(TourPosition);   // the streaming loads the landing view during the flight
-            gpu.Kept = config.KeepTexturesAtCharacters ? [.. player.SquadBarMembers().Select(c => TourPosition(c.Id)).OfType<Vector3>()] : [];
+            gpu.Kept = !config.KeepTexturesAtCharacters ? []
+                : config.KeepTexturesAtAllSquads ? [.. session.CurrentSnapshot.PlayerSquads.SelectMany(s => s.Members).Select(TourPosition).OfType<Vector3>()]
+                : [.. player.SquadBarMembers().Select(c => TourPosition(c.Id)).OfType<Vector3>()];
             string? takeFile = cinema.TakeFrame();
             // A flight puts the focus on where it lands from the first frame (the towns there populate during the flight), not on the arc.
             SendFocus(tour.Active && tour.Current is { } landing && TourPosition(landing) is { } landingAt ? landingAt : cinemaHolds ? camera.Target : null);
