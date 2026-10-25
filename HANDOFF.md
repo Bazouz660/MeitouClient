@@ -2,7 +2,7 @@
 
 Repository: `/Users/daniilmiroshnykov/code/dotnet/MeitouClient`  
 Branch: `metal-spike`  
-Last code commit: `e6ab68d3 perf: cap the terrain relief march at an LOD`
+Last code commit: `02e46602 feat: expose ground relief and light shaft quality`
 
 State: functional opt-in Metal preview; **not 100% Vulkan effect parity**. Upstream v0.15.0 (`cd01e732`) is merged.
 **MEP-1, MEP-2, MEP-3 and MEP-5 are accepted** (2026-10-24: MetalFX temporal stability; reflection MSAA/characters;
@@ -23,6 +23,12 @@ Terrain relief LOD (2026-10-25): the parallax march now uses 8 view and 4 sun st
 end), the three heaviest ground layers, and 4 steps on the displaced-detail path. The Metal town capture had the
 interior-cut draw at 11.25 ms of a 31.03 ms frame; with the march off it was 4.28 ms and 19.75 ms, and the 6.2 KB
 register spill fell to 48 B. A 45 s Border Zone smoke with the LOD ran at 20.3 ms GPU with relief on.
+
+Player quality controls (2026-10-25): **Ground relief quality** (Low/Medium/High: one/two/three layers, 4/6/8 view and
+2/3/4 sun steps near) and **Light shafts quality** (96/128/160 cells, 32/48/64 slices, 1/2/2 samples) are saved settings in
+the launcher, the Tab/Metal panels and the native settings. The quality presets scale both; Low turns ground relief and its
+tessellation effects off, and `--low-end` matches. The Metal smoke at High held 20.8 ms GPU at Border Zone; Low (both set to
+0) held 19.5 ms, confirming the live uniform path.
 
 ## Upstream sync (2026-10-25, `cd01e732`)
 
