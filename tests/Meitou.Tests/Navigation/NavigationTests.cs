@@ -237,4 +237,46 @@ public class NavigationTests
             if (Directory.Exists(dir)) Directory.Delete(dir, true);
         }
     }
+
+    [Fact]
+    public void A_doorless_interior_is_joined_through_its_open_doorway_and_a_destroyed_one_stays_an_island()
+    {
+        var s = new Scene(new(32, 32));
+        float cx = s.X0 + 2300, cz = s.Z0 + 2300;
+        Vector2[] hull = [new(cx - 60, cz - 40), new(cx + 60, cz - 40), new(cx + 60, cz + 40), new(cx - 60, cz + 40)];
+        // A Hive hut: the hull is a hole in the street, walled all round except an open doorway in the west wall, with no door and no painter.
+        s.G.Carvers.Add(new NavVolume(hull, 0, 60));
+        s.Box(new(cx - 66, 0, cz - 46), new(cx + 66, 60, cz - 40));
+        s.Box(new(cx - 66, 0, cz + 40), new(cx + 66, 60, cz + 46));
+        s.Box(new(cx + 60, 0, cz - 40), new(cx + 66, 60, cz + 40));
+        s.Box(new(cx - 66, 0, cz - 40), new(cx - 60, 60, cz - 8));
+        s.Box(new(cx - 66, 0, cz + 8), new(cx - 60, 60, cz + 40));
+        s.G.Seeds.Add(new(s.X0 + 500, 10, s.Z0 + 500));
+        var exterior = ZoneNavMeshBuilder.Build(s.G, Settings, out _);
+
+        var lo = new Vector2(cx - 72, cz - 52);
+        var interior = new ZoneGeometry { Zone = new(32, 32), ZoneMin = lo, ZoneMax = lo + new Vector2(192), Margin = 8, InteriorHull = new NavVolume(hull, 0, 60), InteriorOf = "hut" };
+        int a = interior.AddVertex(new(lo.X - 8, 10, lo.Y - 8)), b = interior.AddVertex(new(lo.X + 200, 10, lo.Y - 8));
+        int c = interior.AddVertex(new(lo.X + 200, 10, lo.Y + 200)), d = interior.AddVertex(new(lo.X - 8, 10, lo.Y + 200));
+        interior.AddTriangle(a, d, c, NavArea.Ground);
+        interior.AddTriangle(a, c, b, NavArea.Ground);
+        ZoneGeometryGatherer.AddOutsideCarvers(interior, hull);
+        interior.Seeds.Add(new(cx, 10, cz));
+        var inside = ZoneNavMeshBuilder.Build(interior, Settings, out _);
+        Assert.DoesNotContain(NavArea.Door, inside.Areas);
+
+        var street = new Vector3(cx - 200, 10, cz);
+        var room = new Vector3(cx + 30, 10, cz + 10);
+        var open = new NavQuery(NavWorld.Empty.With(NavInteriors.Combine(exterior, [inside], doorless: [true]).WithoutPruned()));
+        var inward = open.FindPath(street, room);
+        Assert.True(inward.Found, "no way in");
+        // Through the doorway, not over the walls, and back out.
+        Assert.InRange(Length(inward.Points), 230, 260);
+        Assert.All(inward.Points.Where(p => p.X > cx - 66 && p.X < cx - 60), p => Assert.InRange(p.Z, cz - 8, cz + 8));
+        Assert.True(open.FindPath(room, street).Found, "no way out");
+
+        // A destroyed building's interior (not doorless) is not joined.
+        var island = new NavQuery(NavWorld.Empty.With(NavInteriors.Combine(exterior, [inside], doorless: [false]).WithoutPruned()));
+        Assert.False(island.FindPath(street, room).Found);
+    }
 }
