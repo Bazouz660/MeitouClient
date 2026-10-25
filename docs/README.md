@@ -24,6 +24,7 @@ used as a naming reference for our 1.0.68 analysis; they are **Observed** until 
 - [metal-performance-memory](metal-performance-memory.md): the Metal frame-rate and bounded-memory plan (baseline, targets, order)
 - [metal-effects-parity-plan](metal-effects-parity-plan.md): MEP-I, the remaining Metal effect-parity milestones and ship gates
 - [meitou-ui](meitou-ui.md): UI kit for the Meitou UI mode
+- [modding](modding.md): C# modding API, preliminary concept (manifest, per-mod load context, tick systems, sidecar saves)
 - [native-ui](native-ui.md)
 - [render-clouds](render-clouds.md)
 - [render-distance-benchmark](render-distance-benchmark.md)
