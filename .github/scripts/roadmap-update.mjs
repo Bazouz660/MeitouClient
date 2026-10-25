@@ -1,17 +1,17 @@
-// Roadmap update proposal: after a nightly or release, Claude Haiku reads the roadmap, what changed since its as-of commit (commits,
+// Roadmap update: after a nightly or release, Claude Sonnet 5.5 reads the roadmap, what changed since its as-of commit (commits,
 // issues, the drift findings, play reports) and returns edits as structured output. This script applies them to
-// site/src/data/roadmap.ts line by line (ids, names and categories never change) and writes a summary for the pull request.
-// A person merges the PR: nothing here changes the live roadmap on its own. docs/play-reports.md, "Roadmap updates".
-//   ANTHROPIC_API_KEY, GITHUB_TOKEN, REPORTS_URL (optional); writes $SUMMARY_FILE (default roadmap-update.md) when it changed the file.
+// site/src/data/roadmap.ts line by line (ids, names and categories never change) and writes a summary for the commit.
+// The workflow commits the result to master. docs/play-reports.md, "Roadmap updates".
+//   ANTHROPIC_API_KEY, GITHUB_TOKEN, REPORTS_URL (optional); writes $SUMMARY_FILE (default roadmap-update.md, the commit message body) when it changed the file.
 import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import Anthropic from '@anthropic-ai/sdk';
-import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
+import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod';
 import { z } from 'zod';
 import { all } from './github.mjs';
 import { loadRoadmap, root } from '../../site/scripts/issue-forms.mjs';
 
-const MODEL = 'claude-haiku-5-5';
+const MODEL = 'claude-sonnet-5-5';
 const file = new URL('site/src/data/roadmap.ts', root);
 const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', maxBuffer: 64 << 20 }).trim();
 const data = await loadRoadmap();
@@ -93,12 +93,15 @@ if (process.env.EDITS_FILE) {
   edits = Edits.parse(JSON.parse(readFileSync(process.env.EDITS_FILE, 'utf8')));
 } else {
   const client = new Anthropic();
-  const response = await client.messages.parse({
+  // High effort; a request the safety classifiers decline is re-run server-side on Anthropic's recommended fallback model.
+  const response = await client.beta.messages.parse({
     model: MODEL,
-    max_tokens: 16000,
+    max_tokens: 32000,
     system,
     messages: [{ role: 'user', content: user }],
-    output_config: { effort: 'medium', format: zodOutputFormat(Edits) },
+    output_config: { effort: 'high', format: betaZodOutputFormat(Edits) },
+    fallbacks: 'default',
+    betas: ['server-side-fallback-2026-07-01'],
   });
   if (response.stop_reason === 'refusal' || response.stop_reason === 'max_tokens' || !response.parsed_output) {
     console.error(`No usable answer (stop_reason ${response.stop_reason}).`);
@@ -162,7 +165,7 @@ try {
 }
 
 const out = process.env.SUMMARY_FILE || 'roadmap-update.md';
-writeFileSync(out, `Proposed by ${MODEL} after master ${head}, from commits since ${data.asOf.master}, issues, the drift check and play reports. Check each line against its evidence before merging.
+writeFileSync(out, `By ${MODEL} after master ${head}, from commits since ${data.asOf.master}, issues, the drift check and play reports.
 
 ${edits.summary.trim()}
 ${skipped.length ? `\nNot applied:\n${skipped.map((s) => `- ${s}`).join('\n')}\n` : ''}`);
