@@ -35,6 +35,8 @@ public class HousePurchaseUiTests
         var ui = new PlayerInterface(session, (_, _) => 0, c => c.Position) { Width = 1600, Height = 900, FactionName = _ => "Nameless" };
         ui.LoadUi(mode, name => resources.Find(name));
         ui.ConfigureFrontend(data.Db, () => [], "");
+        // Open to public needs an interior (docs/game/ui-screens.md "Selected building"); the fixture house has none of its own.
+        ui.BuildingData = id => Meitou.Data.Gameplay.Construction.BuildingBuildData.From(data.Db.Find(id)!) with { HasInterior = true };
         try
         {
             var focus = new PlayerInterface.SelectedBuilding("House", null, "Owner", "Town", null, house.Key, house.Position, null, Record: house.BuildingId);

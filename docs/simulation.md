@@ -7,8 +7,8 @@ below do not claim original-game parity. Retain Verified/Observed/Unknown scopes
 ## Time model
 
 Control: 30 Hz real time, input/UI/camera continue while paused. The interface's own commands (selection, order toggles, run speed, job lists,
-crafting/research queues, squads, inventory, shops, building settings) apply between ticks while paused (`World.ApplyPausedInterfaceCommands`);
-orders that send characters somewhere wait for the next tick. Simulation: 1/30 s game time;
+crafting/research queues, squads, inventory, shops, building settings, movement/combat/first-aid/door/cage orders) apply between ticks while paused
+(`World.ApplyPausedInterfaceCommands`); orders only set tasks, nobody moves or fights until the next tick. Simulation: 1/30 s game time;
 accumulate `realDt*speed`, speeds 0/1/2/5. Budget `6*speed` ticks per frame; excess is dropped and
 `AchievedSpeed` reports slowdown. Control ticks precede simulation ticks; a speed change applies
 to the entire frame. `WorldSession` rejects unequal world/clock tick lengths, owns snapshots,
@@ -29,10 +29,6 @@ pause with a tick ahead takes it at once (the picture jumps a tick, then the pau
 a tick takes 4 ms (`WorldSession.TickMs`, smoothed over about ten ticks) until it is under 2 ms (a tick ahead is slower, sharing the cores); Always
 every frame. Off whatever the setting in stills, the duel, recorded flights and the play benchmark (their ticks stay in step with the frame).
 F12's `tick ahead` row is its wall time; `outside ticks` leaves it out.
-
-At player speed 0 (without a modal/loading pause), queued selection, held-item, inventory right-click/arrange
-and open-shop buy/sell/close commands apply between ticks and republish snapshots. Other
-commands stay queued; neither world ticks, game time nor simulation phases advance.
 
 **Verified** original clock: 1200/11 seconds per game hour ([game-loop.md](game/game-loop.md)).
 `BodySystem.HoursPerTick=11/36000`; the medical tick takes `TickSeconds` ([character-stats](game/character-stats.md#time)). Navmesh unload uses
@@ -813,7 +809,7 @@ that damages a complete building. Production, power and research: [Production](#
 - `Meitou.Data/Gameplay/Construction/BuildingBuildData.cs`: `BuildingBuildData.From/LoadAll` (build fields, material
   entries), `MaterialCost`, `Target` (sum of required), `Rate` (`build speed mult` / (1200/11)), `EstimatedHours(buildSpeed)`
   (the build window's estimate, **Verified** algebra: materials / (`build speed mult` x CONSTANTS `build speed` x option)).
-- `.../ResearchGate.cs`: `StartResearch(db, start)` (the default start research, then the start-off's `research`),
+- `.../ResearchGate.cs`: `StartResearch(db, start)` (the start-off's `research`, or the default start research when it lists none),
   `Unlocked(db, completed)` (union of `enable buildings`, BUILDING targets only), `DefaultStartId`.
 - `.../PlacementRules.cs`: `PlacementFailure` (one value per original message), `PlacementTown`,
   `TownBlock(BuildingBuildData, Vector2 at, IReadOnlyList<PlacementTown>, string playerFactionId)`, `Message(PlacementFailure)`
@@ -833,8 +829,8 @@ creation order, by id, holding the snapshot's fields plus rate, builder counter 
 in the loaded save (generated interiors share the pattern; `Reserve(id)`). The 106 `-zoneX.Y-INGAME` ids of the level data
 are not reserved by the simulation (**engine gap**, the host may call `World.Buildings.Reserve`); a collision with a base
 placement is the host's to avoid. `World.Research` (`Construction.ResearchState`): completed RESEARCH ids and the
-`Unlocked` set (replaced, never changed in place). A new game completes the default start research
-(`ResearchGate.DefaultStartId`, [build menu](game/buildings-production.md#build-menu)) and the start-off's `research`
+`Unlocked` set (replaced, never changed in place). A new game completes the start-off's `research`, or the default start research
+(`ResearchGate.DefaultStartId`, [build menu](game/buildings-production.md#build-menu)) when it lists none
 (`PopulationSystem.StartPlayer`); a load takes the save's. Research benches change it ([Production](#production), which says when it is hashed).
 
 **Town-house repairs.** `FixtureRegistry` registers an owned damaged/incomplete house on purchase or town activation.

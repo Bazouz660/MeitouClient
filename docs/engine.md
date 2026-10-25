@@ -29,7 +29,7 @@ PlayerInterface owns picking/HUD/panels/commands. StandardSystems supplies order
 bridges Navigation; never let UI/rendering duplicate simulation state.
 GUI executable attaches a caller's console; folder prompt creates its own when necessary.
 Native splash precedes Vulkan; worker loading and render-thread GPU steps keep the window
-responsive. On Wayland the window is shown and its first configure taken before the first loading frame is presented: a buffer attached before the shell role makes the compositor drop the client (**Verified** natively on KDE Wayland, GLFW 3.4). Scene transitions draw loading between stages, wait on asynchronous results, and
+responsive. On Wayland the window is shown and its first configure taken before the first loading frame is presented: a buffer attached before the shell role makes the compositor drop the client (**Verified** natively on KDE Wayland, GLFW 3.4). Full screen at start shows the window before going full screen there: GLFW ignores showing a full-screen window, and on Wayland (unlike X11) going full screen while hidden never maps it (**Verified** KDE Plasma, GLFW 3.4, PR #77). Scene transitions draw loading between stages, wait on asynchronous results, and
 preserve world on failure. Gameplay warm-up waits for nearby population, terrain, scenery, character
 assets and used textures (including deferred loads), then <40ms frames for0.5s (max5s for frame pacing).
 After 5s of continuous `VramGuard` pressure, content it holds back is no longer waited for (it cannot load until the use falls).
