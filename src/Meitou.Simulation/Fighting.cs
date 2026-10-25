@@ -164,7 +164,8 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
 /// (<see cref="CombatSystem.Alerts"/>: not through a wall or from another floor for the player's side, until a blow lands; the alert ends its sneaking), and again every
 /// <see cref="CheckEveryTicks"/> ticks, a character that is awake, armed with a
 /// <see cref="Fighter"/>, not fighting already, and that someone is attacking, fights that attacker, and so do its squad mates within <see cref="JoinRange"/> units of it that are
-/// free too, whether or not the attacked one is free itself (never against a mate of the same squad). An NPC always answers; one of the player's characters answers only while it has no order (task <see cref="CharacterTask.Idle"/>: not walking to an order, treating or
+/// free too, whether or not the attacked one is free itself, against an attacker within <see cref="ProtectReach"/> of it (never against a mate of the same squad; a minded NPC
+/// only by a protect goal, <see cref="ProtectsMates"/>). An NPC always answers; one of the player's characters answers only while it has no order (task <see cref="CharacterTask.Idle"/>: not walking to an order, treating or
 /// resting), so a player who sends a character away is obeyed (<see cref="SelfDefends"/>); Passive keeps it from helping others, not from defending itself.
 /// The orders go into the world's deferred list for the next tick (<see cref="World.Defer"/>) and are marked <see cref="AttackOrder.Defensive"/>. With <see cref="SquadAi.Help"/> the player's
 /// free characters also defend characters of allied factions (<see cref="HelpAllies"/>).
@@ -172,6 +173,7 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
 public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem
 {
     public const int CheckEveryTicks = 15;
+    /// <summary>How near a mate must be to join (engine choice: the original's only limit is that the joiner senses the mate, up to its sight range).</summary>
     public const float JoinRange = 250;
 
     readonly List<int> guards = [], players = [];
@@ -243,8 +245,12 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem
                 defenders.Add(new(t, next[t].Generation));
                 taken.Add(t);
             }
-            // Free squad mates come to an attacked character that is already fighting (or down) too, not only to one that answers now.
-            if (table.Cold(a)?.SquadId is not { } foeSquad || foeSquad < 0 || foeSquad != table.Cold(t)?.SquadId) JoinMates(world, table, t, defenders, taken, CanFight);
+            // Free squad mates come to an attacked character that is already fighting (or down) too, not only to one that answers now, against an attacker within
+            // ProtectReach of it (AI::findAttackerOf); a minded NPC only by a protect goal and to a mate that fights (ProtectsMates).
+            var gap = next[a].Position - next[t].Position;
+            bool fights = combat.StateOf(new CharacterId(t, next[t].Generation)).TargetSlot >= 0 || defenders.Count > 0;
+            if (gap.X * gap.X + gap.Z * gap.Z <= ProtectReach * ProtectReach && (table.Cold(a)?.SquadId is not { } foeSquad || foeSquad < 0 || foeSquad != table.Cold(t)?.SquadId))
+                JoinMates(world, table, t, defenders, taken, fights ? CanProtectFighter : CanProtect);
             // Bodyguards of the attacked character come too (Bodyguard, order 45).
             Guards(world, table, t, a, defenders, taken, guards);
             // Allies come to a defender that is already fighting too.
@@ -358,6 +364,22 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem
     static bool CanFight(CharacterTable table, int slot, HashSet<int> taken) =>
         Able(table, slot, taken, out var cold, out byte task)
         && (!cold.IsPlayer || (task == (byte)CharacterTask.Idle || cold.Guarding && task == (byte)CharacterTask.Follow) && (cold.Orders & CharacterOrders.Passive) == 0);
+
+    /// <summary>A mate is protected only against an attacker within this of it (<c>AI::findAttackerOf</c>, docs/game/combat.md "Fight lifecycle and orders").</summary>
+    public const float ProtectReach = 150;
+
+    /// <summary>
+    /// Whether a squad mate comes to the defence of one that fights (<see cref="CanProtectFighter"/>) or not (<see cref="CanProtect"/>): one that <see cref="CanFight"/>, and of the
+    /// NPCs with an AI only those whose combat goal protects (143 PROTECT_OWN_SQUAD finds the attackers of a mate holding a target; PROTECT_ALLIES and the like); the
+    /// others join through their stance in <see cref="AggroSystem"/>, and one with no combat goal does not (docs/game/ai-tasks.md "Combat goals"). An NPC without an AI
+    /// and the player's characters keep the old rule.
+    /// </summary>
+    static bool CanProtectFighter(CharacterTable table, int slot, HashSet<int> taken) => CanFight(table, slot, taken) && ProtectsMates(table.Cold(slot)!, true);
+
+    static bool CanProtect(CharacterTable table, int slot, HashSet<int> taken) => CanFight(table, slot, taken) && ProtectsMates(table.Cold(slot)!, false);
+
+    static bool ProtectsMates(CharacterCold cold, bool fights) =>
+        cold.IsPlayer || cold.Ai is not { } mind || fights && mind.Stance is Ai.AiStance.ProtectSquad or Ai.AiStance.Defensive;
 
     static bool Able(CharacterTable table, int slot, HashSet<int> taken, out CharacterCold cold, out byte task)
     {
