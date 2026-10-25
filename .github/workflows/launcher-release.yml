@@ -52,6 +52,7 @@ jobs:
   package:
     needs: version
     strategy:
+      fail-fast: false # one platform failing must not hide the others' results
       matrix:
         include:
           - { rid: win-x64, os: windows-latest, exe: meitou-launcher.exe }
@@ -113,7 +114,7 @@ jobs:
           EXE: ${{ matrix.exe }}
         run: |
           # Without libvpx the publish still succeeds, with news videos left out: refuse that.
-          ls vpx-runtime/*/lib/vpx.lib vpx-runtime/*/lib/libvpx.a 2>/dev/null | grep -q . || { echo "libvpx missing in vpx-runtime/"; exit 1; }
+          find vpx-runtime -path "*/lib/*" \( -name vpx.lib -o -name libvpx.a \) 2>/dev/null | grep -q . || { echo "libvpx missing in vpx-runtime/"; exit 1; }
           dotnet tool install -g vpk --version "$VPK_VERSION"
           dotnet publish launcher/Meitou.Launcher -c Release -r "$RID" --self-contained -p:Version="$VERSION" -o pub
           # No paid Developer ID: ad-hoc sign the macOS executable so its integrity can be checked. Gatekeeper still warns.
