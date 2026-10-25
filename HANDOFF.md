@@ -2,7 +2,7 @@
 
 Repository: `/Users/daniilmiroshnykov/code/dotnet/MeitouClient`  
 Branch: `metal-spike`  
-Last code commit: `df566a83 perf: coalesce the Metal overlay encoders`
+Last code commit: `cc617f80 fix: bind TAA reactive depths and blocker atlas per encoder`
 
 State: functional opt-in Metal preview; **not 100% Vulkan effect parity**. Upstream v0.15.0 (`cd01e732`) is merged.
 **MEP-1, MEP-2, MEP-3 and MEP-5 are accepted** (2026-10-24: MetalFX temporal stability; reflection MSAA/characters;
@@ -34,6 +34,12 @@ Metal overlay coalescing (2026-10-25): the HUD, the direct HUD lines and the sta
 `DebugOverlay.OverlayPass`, so they load/store the 3024×1712 backbuffer once instead of in separate render encoders.
 The final MetalFX/post upscale remains its own pass; merging it would require keeping the post chain's render pass open
 across the HUD. Build 0/0; quick suite 450 passed / 2 skipped; internal HUD screenshot verified. No new Xcode capture.
+
+Metal binding fixes (2026-10-25): the post-TAA reactive pass now rebinds `uNearDepth`/`uFarDepth` before its second
+fullscreen encoder, and the shadow blocker pass binds its atlas for every layer. Xcode had flagged those as missing
+fragment texture bindings; the affected passes are 50.64 µs and 62.25 µs, so this is API correctness, not a frame-time
+win. Build 0/0; quick suite 450 passed / 2 skipped; internal screenshot runs. No new Xcode capture to confirm the
+missing-binding rows are gone.
 
 ## Upstream sync (2026-10-25, `cd01e732`)
 
