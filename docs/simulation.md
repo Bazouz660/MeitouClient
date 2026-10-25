@@ -6,7 +6,9 @@ below do not claim original-game parity. Retain Verified/Observed/Unknown scopes
 
 ## Time model
 
-Control: 30 Hz real time, input/UI/camera continue while paused. Simulation: 1/30 s game time;
+Control: 30 Hz real time, input/UI/camera continue while paused. The interface's own commands (selection, order toggles, run speed, job lists,
+crafting/research queues, squads, inventory, shops, building settings) apply between ticks while paused (`World.ApplyPausedInterfaceCommands`);
+orders that send characters somewhere wait for the next tick. Simulation: 1/30 s game time;
 accumulate `realDt*speed`, speeds 0/1/2/5. Budget `6*speed` ticks per frame; excess is dropped and
 `AchievedSpeed` reports slowdown. Control ticks precede simulation ticks; a speed change applies
 to the entire frame. `WorldSession` rejects unequal world/clock tick lengths, owns snapshots,
@@ -274,7 +276,7 @@ commands with the original's limits ([Squads tab](game/ui-screens.md#squads-tab)
 Passive/Hold/Block/Taunt/Jobs state belongs to the character (medic and rescue are job-list entries, [job lists](#production)) and relevant
 systems. Explicit player commands and automatic retaliation have different eligibility;
 Idle players self-defend unless Passive, and Hold prevents pursuit beyond attack reach.
-A toggle (button or hotkey) sets every selected character to the opposite of the first one's state, so a mixed selection ends uniform (engine choice; the original's rule is **Unknown**). Toggles and the run speed arrows also apply while paused.
+A toggle (button or hotkey) sets every selected character to the opposite of the first one's state, so a mixed selection ends uniform (engine choice; the original's rule is **Unknown**). Toggles and the run speed arrows also apply while paused ([time model](#time-model)).
 New player characters start with Jobs and Ranged enabled. Jobs gates the job list and automatic rescue (the medic, robotics, splint and attacking-enemies jobs run regardless, as the original); direct orders still run. The saved `chase mode` is this switch. Saved toggles override
 defaults, including explicit false values. Jobs is GAMESTATE_AI `jobs` ([perma-jobs](game/ai-tasks.md#perma-jobs)); Meitou's older `meitou jobs enabled` is read, not written.
 Sneak: sneaking speed cap and clips, quieter, smaller view factor; a hostile looker sees the sneaker only once its
