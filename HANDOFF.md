@@ -2,7 +2,7 @@
 
 Repository: `/Users/daniilmiroshnykov/code/dotnet/MeitouClient`  
 Branch: `metal-spike`  
-Last code commit: `a12f8360 fix: bind the real depth to the unused TAA far slot`
+Last code commit: `9cab0323 perf: reuse frame constants for set buffers and cache pushes`
 
 State: functional opt-in Metal preview; **not 100% Vulkan effect parity**. Upstream v0.15.0 (`cd01e732`) is merged.
 **MEP-1, MEP-2, MEP-3 and MEP-5 are accepted** (2026-10-24: MetalFX temporal stability; reflection MSAA/characters;
@@ -53,6 +53,12 @@ API insights (324 buffer binds in Render Encoder 16; 85 buffer and 83 sampler bi
 hygiene, not a GPU-time claim. Build 0/0; quick suite 450 passed / 2 skipped; internal screenshot runs. No new capture.
 The 14:50 trace showed API Usage down from 637 to 57 insights; the remaining post-TAA `uFarDepth` row was the dummy far
 slot, now bound to the real depth (unused with `uHasFar = 0`). Local commit `a12f8360`; no new capture.
+
+Metal set/push reuse (2026-10-25): descriptor argument buffers are now slices of the frame constants ring instead of
+16-byte `MTLBuffer`s created per bind, and push-constant blocks are cached per program/stage and skipped when the full
+block is unchanged. This targets the late-`MTLBuffer` rows (the tiny values were resource addresses, not lamp colour)
+and the 20 redundant `setVertexBytes`/`setFragmentBytes` rows in Render Encoder 6. API/CPU cleanup, not a GPU-time claim.
+Build 0/0; quick suite 450 passed / 2 skipped; internal screenshot runs. No new capture.
 
 ## Upstream sync (2026-10-25, `cd01e732`)
 
