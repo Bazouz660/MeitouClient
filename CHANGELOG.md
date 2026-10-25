@@ -3,6 +3,28 @@
 What changed in each release, newest first. The release workflow copies the section of the version it builds into the GitHub release
 notes and refuses to release a version without one: add a `## vX.Y.Z` section with one `- ` line per change before running it.
 
+## v0.15.1
+
+- macOS: native Metal renderer on Apple silicon, chosen by the launcher (Auto, Metal or Vulkan via MoltenVK); no Homebrew needed for Metal
+- Combat follows the original: scored target re-pick, Passive self-defence, Hold attacks on sight, NPCs fight Ranged, stagger interrupts orders and tasks
+- Close-in fighters move by the original's force-based steering (band, repulsion, strafing), with attack zones, side steps that face the target and block slots freed as the original
+- Mates join a fight only for a protect goal and an attacker within range; unreachable targets are dropped after 20 s
+- NPCs whose target hides behind a door bash it in as the original's planner does; door blows depend on the door's construction progress
+- Stealth KO XP as the original: x0.07 on a prisoner, none for a miss on a fighting, aware target
+- Purchased ruined town houses are restored through construction jobs, and what you build in them saves correctly
+- New game as the original: start faction relations, start town draw with fallbacks, discovered towns of the start biome, start squad characters, research and the day-1 10:00 clock
+- Pause: movement, combat, first-aid and door/cage orders apply while paused; a second shortcut click closes its overview tab
+- Pick Up works on standing squad mates: lifted awake they ride until put down (#74)
+- Dead player characters leave the squad and the next member leads, saved and loaded as such (#70)
+- Said dialogue lines and replies are logged in the Overview's DIALOGUE tab with the original's colours (#76)
+- Meitou's own texts are translatable (.po catalogs), with Brazilian Portuguese as the first (#80)
+- Graphics: Ground relief and Light shafts quality settings, scaled by the quality presets; Low turns ground relief off
+- Fix towns unloading while one of their squads chases you, so chasers no longer vanish (#57)
+- Fix Hive huts and other doorless interiors being unreachable on the navmesh (#71)
+- Fix GC stalls under Proton and a crash placing character parts (#78)
+- Fix full screen not starting on Wayland (#77)
+- Fix neighbouring buildings flickering when town repairs start
+
 ## v0.15.0
 
 - Linux and macOS builds (linux-x64, osx-x64, osx-arm64) alongside Windows
