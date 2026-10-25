@@ -226,10 +226,17 @@ public sealed partial class MainWindow : Window
     {
         var card = new StackPanel { Spacing = 8 };
         if (post.Image is { } cover) card.Children.Add(MarkdownView.Image(NewsFeed.Resolve(post, cover), news, 300));
-        card.Children.Add(new TextBlock { Text = post.Title, FontSize = 22, TextWrapping = Avalonia.Media.TextWrapping.Wrap });
-        // "19 October 2026 · author", either part when only it is given.
+        // The title, with "19 October 2026 · author" (either part when only it is given) on its right.
+        var heading = new DockPanel();
         var byline = string.Join(" · ", new[] { post.Date?.ToString("d MMMM yyyy", System.Globalization.CultureInfo.InvariantCulture), post.Author }.Where(s => !string.IsNullOrEmpty(s)));
-        if (byline.Length > 0) card.Children.Add(new TextBlock { Classes = { "desc" }, Text = byline });
+        if (byline.Length > 0)
+        {
+            var aside = new TextBlock { Classes = { "desc" }, Text = byline, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center, Margin = new Avalonia.Thickness(16, 0, 0, 0) };
+            DockPanel.SetDock(aside, Dock.Right);
+            heading.Children.Add(aside);
+        }
+        heading.Children.Add(new TextBlock { Text = post.Title, FontSize = 22, TextWrapping = Avalonia.Media.TextWrapping.Wrap });
+        card.Children.Add(heading);
         card.Children.Add(MarkdownView.Render(post, news, OpenLink));
         return new Border { Classes = { "post" }, Child = card };
     }

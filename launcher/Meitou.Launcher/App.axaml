@@ -72,6 +72,10 @@
       <Setter Property="FontWeight" Value="SemiBold" />
       <Setter Property="FontSize" Value="14" />
     </Style>
+    <!-- Scroll bars always full size, never the thin auto-hiding strip. -->
+    <Style Selector="ScrollViewer">
+      <Setter Property="AllowAutoHide" Value="False" />
+    </Style>
     <Style Selector="TextBlock">
       <Setter Property="Foreground" Value="{StaticResource Main}" />
     </Style>
