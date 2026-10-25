@@ -40,19 +40,18 @@ const reportConfig = JSON.stringify({ url: reports.url.replace(/\/$/, ''), siteK
         play and reported bugs whose fix is on master; a feature that is only in the code and was never reported is{' '}
         <b>Untested</b>, however complete it looks.
       </p>
+      <input type="search" class="search" placeholder="Search systems and notes" aria-label="Search systems and notes" hidden />
       <div class="meta">As of {asOf.date} · <span class="mono">master {asOf.master}</span> · Reference: unmodded Kenshi 1.0.68</div>
     </header>
 
     <aside class="side">
     <section aria-labelledby="status-h">
       <h2 id="status-h">Status at a glance</h2>
-      <div class="bigbar" data-bar="all">{order.map((k) => <span class={`st-${k}`} style={`width: ${(100 * counts[k]) / allRows.length}%`}></span>)}</div>
       <div class="plats" role="group" aria-label="Filter by platform">
         <span class="lbl">Platform</span>
         {Object.entries(platforms).map(([k, v]) => <button type="button" class="chip" data-p={k} aria-pressed={String(k === 'all')}>{v}</button>)}
         <span class="lbl gap">Bugs</span>
         <button type="button" class="chip hbchip" data-bugs aria-pressed="false">Has bugs</button>
-        <input type="search" class="search" placeholder="Search systems and notes" aria-label="Search systems and notes" hidden />
       </div>
       <div class="tiles" role="group" aria-label="Filter by status">
         {order.map((k) => (
@@ -302,7 +301,6 @@ const reportConfig = JSON.stringify({ url: reports.url.replace(/\/$/, ''), siteK
     const note = document.querySelector('.filter-note'), clear = note.querySelector('.clear');
     function apply() {
       const vis = rows.filter(on);
-      bar(document.querySelector('[data-bar="all"]'), vis);
       document.querySelectorAll('.tile').forEach((t) => {
         t.querySelector('.n').textContent = vis.filter((r) => st(r) === t.dataset.s).length;
         t.setAttribute('aria-pressed', String(t.dataset.s === active));
@@ -486,8 +484,7 @@ const reportConfig = JSON.stringify({ url: reports.url.replace(/\/$/, ''), siteK
   .filter-note { font-size: .9rem; color: var(--muted); }
   .filter-note button { font: inherit; color: var(--accent); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; }
 
-  .bigbar { display: flex; height: 12px; border-radius: 6px; overflow: hidden; background: var(--untested-bg); }
-  .bigbar span, .mini span { display: block; height: 100%; background: var(--c); }
+  .mini span { display: block; height: 100%; background: var(--c); }
 
   .loop { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
   .rd .loop a { text-decoration: none; color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-card); padding: 6px 10px; display: grid; gap: 4px; min-width: 118px; }
@@ -542,7 +539,7 @@ const reportConfig = JSON.stringify({ url: reports.url.replace(/\/$/, ''), siteK
   .totop:hover, .totop:focus-visible { border-color: var(--accent); color: var(--accent); outline: none; }
   @media (prefers-reduced-motion: no-preference) { .totop { transition: border-color .15s, color .15s; } }
 
-  .search { font: inherit; font-size: .9rem; color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; margin-left: auto; min-width: 0; flex: 0 1 240px; }
+  .search { font: inherit; font-size: .9rem; color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; justify-self: start; width: min(100%, 320px); }
   .search:focus-visible { border-color: var(--accent); outline: none; }
   .seen { display: block; margin-top: 4px; font-size: .82rem; color: var(--works); }
   .seen.stale { color: var(--wip); }
@@ -583,9 +580,10 @@ const reportConfig = JSON.stringify({ url: reports.url.replace(/\/$/, ''), siteK
      header and tables beside it. A column taller than the window scrolls with the page until its bottom shows, then sticks
      (the script sets --side-top). */
   @media (min-width: 1240px) {
-    .rd { max-width: 1600px; grid-template-columns: 320px minmax(0, 1fr); grid-template-rows: auto 1fr; gap: 28px 40px; padding-top: 0; }
+    .rd { max-width: none; grid-template-columns: 320px minmax(0, 1fr); grid-template-rows: auto 1fr; gap: 28px 40px; padding-top: 0; }
     .rd > header { grid-column: 2; grid-row: 1; gap: 6px; }
-    .rd > header p { max-width: 110ch; grid-column: 1 / -1; }
+    .rd > header p { max-width: 110ch; grid-column: 1; }
+    .rd > header > .search { grid-row: 2; grid-column: 2; justify-self: end; width: 280px; }
     .rd > header { grid-template-columns: 1fr auto; align-items: baseline; column-gap: 24px; }
     .rd > header > .meta { grid-row: 1; grid-column: 2; text-align: right; }
     .rd h1 { font-size: 2rem; }
@@ -599,7 +597,6 @@ const reportConfig = JSON.stringify({ url: reports.url.replace(/\/$/, ''), siteK
     .side .tile { grid-template-columns: 3ch 1fr; column-gap: 10px; align-items: baseline; padding: 5px 12px 5px 16px; border-radius: var(--radius-card); }
     .side .tile .n { font-size: 1.3rem; }
     .side .tile .d { display: none; }
-    .side .search { margin-left: 0; flex-basis: 100%; }
     .side .plats .lbl { flex-basis: 100%; margin: 4px 0 0; }
     .side .plats .chip { flex: 1 1 auto; }
     .side .loop { display: grid; gap: 4px; }
@@ -607,6 +604,6 @@ const reportConfig = JSON.stringify({ url: reports.url.replace(/\/$/, ''), siteK
     .rd .side .loop a { grid-template-columns: 1fr 72px; align-items: center; gap: 12px; min-width: 0; padding: 4px 12px; }
     .side .loop .nm { font-size: .9rem; }
   }
-  @media (max-width: 560px) { .rd h1 { font-size: 2rem; } .search { margin-left: 0; flex-basis: 100%; } }
+  @media (max-width: 560px) { .rd h1 { font-size: 2rem; } }
   @media (prefers-reduced-motion: no-preference) { .tile, .rd .loop a { transition: border-color .15s, opacity .15s; } }
 </style>
