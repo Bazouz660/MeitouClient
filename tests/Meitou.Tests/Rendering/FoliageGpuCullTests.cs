@@ -297,14 +297,14 @@ public class FoliageGpuCullTests
                 using var pyramidBuffer = DeviceBuffer.Create(ctx, (ulong)data.Count * 4, BufferUse.Storage | BufferUse.TransferDst, "pyramid test");
                 ctx.Uploads.Write(pyramidBuffer, 0, MemoryMarshal.AsBytes(data.ToArray().AsSpan()));
                 var vectors = HizPyramid.Vectors(eye, Vector3.Distance(current, eye), cam.Right, cam.Up, cam.Back, OcclusionCullTests.TanX, OcclusionCullTests.TanY, W, H, sizes.Count, sizes[0].W, sizes[0].H, offsets);
-                var occlusion = new OcclusionView(new BufferBinding(pyramidBuffer.Handle, 0, pyramidBuffer.Size), vectors);
+                var occlusion = new OcclusionView(new GpuBufferBinding(pyramidBuffer.Handle, 0, pyramidBuffer.Size), vectors);
                 var view = new FoliageCullView().Set([]);
                 var result = cull.Dispatch(work, view, new Vector2(current.X, current.Z), default, 0.999f, default, occlusion);
                 int n = chunks.Count;
                 using var readback = ReadbackBuffer.Create(ctx, FoliageGpuCull.ReadbackBytes(result), "cull readback");
                 cull.CopyForReadback(result, readback);
                 using var total = ReadbackBuffer.Create(ctx, 12, "occlusion total");
-                ctx.Frame.PreFrame.CopyBuffer(result.Offsets, total.Handle, new BufferCopy(result.OffsetsOffset + (ulong)n * 4, 0, 12));
+                ctx.Frame.PreFrame.CopyBuffer(result.Offsets, total.Handle, new GpuBufferCopy(result.OffsetsOffset + (ulong)n * 4, 0, 12));
                 ctx.EndFrame();
                 d!.Frames.WaitAll();
 

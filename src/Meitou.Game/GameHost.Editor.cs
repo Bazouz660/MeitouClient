@@ -15,15 +15,15 @@ sealed partial class GameHost
     /// <summary>The new game's squad, waiting for the loading screen to lift before the editor opens on it.</summary>
     List<CharacterId>? pendingCreation;
 
-    void ConfigureEditor()
+    void ConfigureEditor(PlayerInterface ui)
     {
         if (popData is not { } data) return;
-        player.EditorData = (data.Db, install.Root);
-        player.PreviewSource = (recordId, loadout) => data.Appearances?.Create(recordId, loadout);
-        player.PreviewReady = look => gpu.Characters?.IsPrepared(look) ?? true;
+        ui.EditorData = (data.Db, install.Root);
+        ui.PreviewSource = (recordId, loadout) => data.Appearances?.Create(recordId, loadout);
+        ui.PreviewReady = look => ActiveCharacters?.IsPrepared(look) ?? true;
         // The editor's looks are close-ups: their meshes without generated levels (CharacterContent.PrepareMesh), so a new hair or head shows at once, as in the original.
-        player.PreviewFetch = look => gpu.Characters?.PrefetchCloseUp(look);
-        player.PreviewWarm = (look, urgent) => gpu.Characters?.Warm(look, urgent, close: true);
+        ui.PreviewFetch = look => ActiveCharacters?.PrefetchCloseUp(look);
+        ui.PreviewWarm = (look, urgent) => ActiveCharacters?.Warm(look, urgent, close: true);
     }
 
     /// <summary>Opens the editor on the new game's squad once the world shows and the squad is in the snapshot.</summary>
@@ -47,6 +47,12 @@ sealed partial class GameHost
         if (!creationWarmOwed || pendingCreation is not null || player.EditorOpen || sceneLoad is not null) return;
         creationWarmOwed = false;
         if (playerSquad is { Leader.IsNone: false } squad) player.Follow = squad.Leader;   // a new game starts with the camera locked to the leader
+        if (gpu is null || metalRenderer)
+        {
+            // Metal has no Vulkan loading/warm loop here: the world was loaded and drawn under the editor already. Apply the edits at once.
+            session.World.RunTick();
+            return;
+        }
         if (loading is null) return;
         session.World.RunTick();
         loading.Restart();
@@ -74,7 +80,7 @@ sealed partial class GameHost
     /// </summary>
     void DrawEditorStage(int width, int height)
     {
-        if (gpu.Characters is not { } characters) return;
+        if (ActiveCharacters is not { } characters) return;
         editorStaged = true;
         if (player.EditorView() is not { } view || session.CurrentSnapshot.Characters.FirstOrDefault(c => c.Id == view.Character) is not { } c) { characters.StageRequest = null; return; }
         characters.StageRequest = new EditorStageRequest(DrawKey(view.Character), width, height, view.Yaw, view.Elevation, view.Distance, view.Head, camera.FieldOfView, EditorStageShift);
@@ -95,7 +101,7 @@ sealed partial class GameHost
     /// </summary>
     void DrawEditorPlatform(CharacterId character, CharacterRenderer characters)
     {
-        if (gpu.Objects is not { } objects || popData is not { } data || characters.StageView is not { } stage || characters.StageDrawTarget is not { } target) return;
+        if (ActiveObjects is not { } objects || popData is not { } data || characters.StageView is not { } stage || characters.StageDrawTarget is not { } target) return;
         if (editorPlatformFor != character)
         {
             editorPlatformFor = character;
@@ -113,9 +119,9 @@ sealed partial class GameHost
     {
         if (!editorStaged) return;
         editorStaged = false;
-        gpu.Characters?.ReleaseCloseUps();
+        ActiveCharacters?.ReleaseCloseUps();
         if (editorPlatformFor is null) return;
         editorPlatformFor = null;
-        gpu.Objects?.SetStageProp(null);
+        ActiveObjects?.SetStageProp(null);
     }
 }

@@ -1,6 +1,7 @@
+using InternalFormat = Meitou.Rendering.Gpu.InternalFormat;
 using Meitou.Rendering.Gpu;
 using Silk.NET.Vulkan;
-using Texture = Meitou.Rendering.Gpu.Texture;
+using GpuTexture = Meitou.Rendering.Gpu.GpuTexture;
 
 namespace Meitou.Rendering.Impostors;
 
@@ -12,8 +13,8 @@ namespace Meitou.Rendering.Impostors;
 /// </summary>
 public sealed class ImpostorTextures : IDisposable
 {
-    readonly GpuContext gpu;
-    readonly Texture[] maps = new Texture[2];
+    readonly IGpuContext gpu;
+    readonly GpuTexture[] maps = new GpuTexture[2];
     readonly ImpostorTexture?[] sources = new ImpostorTexture?[2];
     readonly uint[] indices = new uint[2];
     float indexBias;
@@ -30,8 +31,8 @@ public sealed class ImpostorTextures : IDisposable
     public int LevelsOf(int map) => levels - skips[map];
     /// <summary>The GPU bytes: the levels kept, of the maps.</summary>
     public long Bytes { get; }
-    public Texture Albedo => maps[0];
-    public Texture Normal => maps[1];
+    public GpuTexture Albedo => maps[0];
+    public GpuTexture Normal => maps[1];
     /// <summary>Every level written (<see cref="UploadStep"/> ran <see cref="StepCount"/> times).</summary>
     public bool Complete => map >= 2;
     int map, level, row;
@@ -49,7 +50,7 @@ public sealed class ImpostorTextures : IDisposable
     /// <param name="batch">Where the textures' layout transitions are recorded (<see cref="Uploader.Begin"/>).</param>
     /// <param name="skip">Top levels of the albedo to leave out; <paramref name="surfaceSkip"/> those of the normal map (at
     /// most all but the last level).</param>
-    public ImpostorTextures(GpuContext gpu, ImpostorAtlas atlas, UploadBatch batch, int skip = 0, int surfaceSkip = 0)
+    public ImpostorTextures(IGpuContext gpu, ImpostorAtlas atlas, IGpuUploadBatch batch, int skip = 0, int surfaceSkip = 0)
     {
         this.gpu = gpu;
         Atlas = atlas;
@@ -62,10 +63,10 @@ public sealed class ImpostorTextures : IDisposable
             sources[i] = texture;
             var format = texture.Encoding switch
             {
-                ImpostorEncoding.Bc3 => Format.BC3UnormBlock,
-                ImpostorEncoding.Bc1 => Format.BC1RgbaUnormBlock,
-                ImpostorEncoding.Bc5 => Format.BC5UnormBlock,
-                _ => Format.R8G8B8A8Unorm,
+                ImpostorEncoding.Bc3 => InternalFormat.CompressedRgbaS3TCDxt5Ext,
+                ImpostorEncoding.Bc1 => InternalFormat.CompressedRgbaS3TCDxt1Ext,
+                ImpostorEncoding.Bc5 => InternalFormat.CompressedRGRgtc2,
+                _ => InternalFormat.Rgba8,
             };
             int size = atlas.AtlasPixels >> skips[i];
             maps[i] = batch.Create(new TextureDesc(format, size, size, LevelsOf(i), Name: AllocationName(order[i])));
@@ -118,7 +119,7 @@ public sealed class ImpostorTextures : IDisposable
     }
 
     /// <summary>Writes the next slab of the next (map, level) through <paramref name="batch"/>; false when everything is written.</summary>
-    public bool UploadStep(UploadBatch batch)
+    public bool UploadStep(IGpuUploadBatch batch)
     {
         if (Complete) return false;
         int source = skips[map] + level;
@@ -131,7 +132,7 @@ public sealed class ImpostorTextures : IDisposable
         int unit = encoding == ImpostorEncoding.Rgba8 ? 1 : 4;   // pixel rows per row
         // A slab of whole block rows; the last one ends at the level's edge.
         int y = row * unit, height = Math.Min(n * unit, pixels - y);
-        batch.Write(maps[map], level, 0, new Rect2D(new Offset2D(0, y), new Extent2D((uint)pixels, (uint)height)),
+        batch.Write(maps[map], level, 0, new PixelRect(0, y, (uint)pixels, (uint)height),
             texture.Levels[source].Span.Slice(row * rowBytes, n * rowBytes));
         row += n;
         if (row >= rows)
@@ -149,7 +150,7 @@ public sealed class ImpostorTextures : IDisposable
     }
 
     /// <summary>Writes every level through <paramref name="batch"/>.</summary>
-    public void Upload(UploadBatch batch)
+    public void Upload(IGpuUploadBatch batch)
     {
         while (UploadStep(batch)) { }
     }
@@ -168,7 +169,7 @@ public sealed class ImpostorTextures : IDisposable
             var sampler = gpu.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.LinearMipmapLinear, TextureMagFilter.Linear, TextureWrapMode.ClampToEdge,
                 TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, false, DepthFunction.Lequal, transparentBorder: false, anisotropy: 1, integerFormat: false, bias));
             for (int i = 0; i < 2; i++)
-                indices[i] = gpu.Bindless.Register(BindlessKind.Texture2D, new SampledTexture(sampler, maps[i].View(0, LevelsOf(i)), maps[i].Image));
+                indices[i] = gpu.Bindless.Register(BindlessKind.Texture2D, new SampledTexture(sampler, maps[i].View(0, LevelsOf(i))));
             (registered, indexBias) = (true, bias);
         }
         return indices[map];

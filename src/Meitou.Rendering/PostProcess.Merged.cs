@@ -1,8 +1,11 @@
+using InternalFormat = Meitou.Rendering.Gpu.InternalFormat;
 using System.Numerics;
 using System.Runtime.InteropServices;
 
 using Meitou.Rendering.Gpu;
 using Vk = Silk.NET.Vulkan;
+
+using Meitou.Rendering.Gpu.Core;
 
 namespace Meitou.Rendering;
 
@@ -25,17 +28,17 @@ public sealed unsafe partial class PostProcess
     /// <summary>The exposure kernel alone.</summary>
     public bool MergeExposure { get; set; } = true;
 
-    ShaderProgram? velocityProgram, exposureProgram;
-    ComputePipeline? velocityPipeline, exposurePipeline;
+    GpuProgram? velocityProgram, exposureProgram;
+    GpuComputePipeline? velocityPipeline, exposurePipeline;
     DeviceBuffer? exposureState;
     bool exposureStateZeroed;
-    Vk.Sampler pointSampler;
+    GpuSampler pointSampler;
 
-    Vk.Sampler Point() => pointSampler.Handle != 0 ? pointSampler : pointSampler = Gpu.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Nearest, TextureMagFilter.Nearest,
+    GpuSampler Point() => pointSampler.Index != 0 ? pointSampler : pointSampler = Gpu.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Nearest, TextureMagFilter.Nearest,
         TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, TextureWrapMode.Repeat, false, DepthFunction.Lequal, false, 1, false, 0));
 
     /// <summary>Whether the kernels can run: they write storage images (the formats of the motion, depth, reactivity and adaptation targets).</summary>
-    public bool MergeSupported => SupportsStorage(Vk.Format.R16G16B16A16Sfloat) && SupportsStorage(Vk.Format.R32Sfloat) && SupportsStorage(Vk.Format.R32G32Sfloat);
+    public bool MergeSupported => SupportsStorage(InternalFormat.Rgba16f) && SupportsStorage(InternalFormat.R32f) && SupportsStorage(InternalFormat.RG32f);
 
     [StructLayout(LayoutKind.Sequential)]
     struct VelocityParams
@@ -61,7 +64,7 @@ public sealed unsafe partial class PostProcess
         if (velocityProgram is null)
         {
             velocityProgram = Gpu.Shaders.Compute(MergedShaders.Velocity, "post velocity merged");
-            velocityPipeline = Gpu.Pipelines.Get(new ComputePipelineDesc(velocityProgram, "post velocity merged"));
+            velocityPipeline = Gpu.Pipelines.Get(new ComputePipelineDesc(velocityProgram!.Value, "post velocity merged"));
         }
         float tanY = MathF.Tan(fovNow * 0.5f);
         var r = viewRotation;
@@ -80,29 +83,21 @@ public sealed unsafe partial class PostProcess
         var cmd = Segment();
         var near = Sampled(sceneDepth!);
         var far = Sampled(farDepth!);
-        var infos = stackalloc Vk.DescriptorImageInfo[6];
-        infos[0] = new Vk.DescriptorImageInfo(Point(), near.View, Vk.ImageLayout.General);
-        infos[1] = new Vk.DescriptorImageInfo(Point(), far.View, Vk.ImageLayout.General);
-        infos[2] = new Vk.DescriptorImageInfo(default, motionOut.Texture.View(), Vk.ImageLayout.General);
-        infos[3] = new Vk.DescriptorImageInfo(default, (depthOut ?? motionOut).Texture.View(), Vk.ImageLayout.General);
-        infos[4] = new Vk.DescriptorImageInfo(default, (reactiveOut ?? motionOut).Texture.View(), Vk.ImageLayout.General);
-        infos[5] = new Vk.DescriptorImageInfo(default, (cleanColour ? sceneColour! : motionOut).Texture.View(), Vk.ImageLayout.General);
-        var buffer = new Vk.DescriptorBufferInfo(data.Handle, data.Offset, (ulong)sizeof(VelocityParams));
-        var writes = stackalloc Vk.WriteDescriptorSet[7];
-        for (int i = 0; i < 6; i++)
-            writes[i] = new Vk.WriteDescriptorSet
-            {
-                SType = Vk.StructureType.WriteDescriptorSet, DstBinding = (uint)(i < 5 ? i : 6), DescriptorCount = 1, PImageInfo = &infos[i],
-                DescriptorType = i < 2 ? Vk.DescriptorType.CombinedImageSampler : Vk.DescriptorType.StorageImage,
-            };
-        writes[6] = new Vk.WriteDescriptorSet { SType = Vk.StructureType.WriteDescriptorSet, DstBinding = 5, DescriptorCount = 1, DescriptorType = Vk.DescriptorType.StorageBuffer, PBufferInfo = &buffer };
-        cmd.Barrier(BarrierBatch.Full);
-        cmd.BindPipeline(velocityPipeline!);
-        cmd.PushDescriptors(velocityProgram.Layout, 0, new ReadOnlySpan<Vk.WriteDescriptorSet>(writes, 7), Vk.PipelineBindPoint.Compute);
+        var bindings = stackalloc GpuBinding[7];
+        bindings[0] = GpuBinding.Sampled(0, new SampledTexture(Point(), near.View));
+        bindings[1] = GpuBinding.Sampled(1, new SampledTexture(Point(), far.View));
+        bindings[2] = GpuBinding.StorageImage(2, new SampledTexture(default, motionOut.Texture.View()));
+        bindings[3] = GpuBinding.StorageImage(3, new SampledTexture(default, (depthOut ?? motionOut).Texture.View()));
+        bindings[4] = GpuBinding.StorageImage(4, new SampledTexture(default, (reactiveOut ?? motionOut).Texture.View()));
+        bindings[5] = GpuBinding.Storage(5, new GpuBufferBinding(data.Handle, data.Offset, (ulong)sizeof(VelocityParams)));
+        bindings[6] = GpuBinding.StorageImage(6, new SampledTexture(default, (cleanColour ? sceneColour! : motionOut).Texture.View()));
+        cmd.Order();
+        cmd.BindPipeline(velocityPipeline!.Value);
+        cmd.BindProgramResources(velocityProgram!.Value, 0, new ReadOnlySpan<GpuBinding>(bindings, 7));
         var size = new Vector2(width, height);
-        cmd.PushConstants(velocityProgram.Layout, Vk.ShaderStageFlags.ComputeBit, in size);
+        cmd.PushConstants(velocityProgram!.Value, GpuStage.Compute, in size);
         cmd.Dispatch((uint)((width + 15) / 16), (uint)((height + 15) / 16));
-        cmd.Barrier(BarrierBatch.Full);
+        cmd.Order();
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -120,7 +115,7 @@ public sealed unsafe partial class PostProcess
         if (exposureProgram is null)
         {
             exposureProgram = Gpu.Shaders.Compute(MergedShaders.Exposure, "post exposure merged");
-            exposurePipeline = Gpu.Pipelines.Get(new ComputePipelineDesc(exposureProgram, "post exposure merged"));
+            exposurePipeline = Gpu.Pipelines.Get(new ComputePipelineDesc(exposureProgram!.Value, "post exposure merged"));
         }
         exposureState ??= DeviceBuffer.Create(Gpu, 16 + 256 * 4, BufferUse.Storage | BufferUse.TransferDst, "post exposure state");
         var cmd = Segment();
@@ -130,33 +125,25 @@ public sealed unsafe partial class PostProcess
             exposureStateZeroed = true;
         }
         var scene = Sampled(postColour);
-        var infos = stackalloc Vk.DescriptorImageInfo[3];
-        infos[0] = new Vk.DescriptorImageInfo(scene.Sampler, scene.View, Vk.ImageLayout.General);
-        infos[1] = new Vk.DescriptorImageInfo(default, adaptA!.Texture.View(), Vk.ImageLayout.General);
-        infos[2] = new Vk.DescriptorImageInfo(default, adaptB!.Texture.View(), Vk.ImageLayout.General);
-        var buffer = new Vk.DescriptorBufferInfo(exposureState.Handle, 0, exposureState.Size);
-        var writes = stackalloc Vk.WriteDescriptorSet[4];
-        for (int i = 0; i < 3; i++)
-            writes[i] = new Vk.WriteDescriptorSet
-            {
-                SType = Vk.StructureType.WriteDescriptorSet, DstBinding = (uint)i, DescriptorCount = 1, PImageInfo = &infos[i],
-                DescriptorType = i == 0 ? Vk.DescriptorType.CombinedImageSampler : Vk.DescriptorType.StorageImage,
-            };
-        writes[3] = new Vk.WriteDescriptorSet { SType = Vk.StructureType.WriteDescriptorSet, DstBinding = 3, DescriptorCount = 1, DescriptorType = Vk.DescriptorType.StorageBuffer, PBufferInfo = &buffer };
-        cmd.Barrier(BarrierBatch.Full);
-        cmd.BindPipeline(exposurePipeline!);
-        cmd.PushDescriptors(exposureProgram.Layout, 0, new ReadOnlySpan<Vk.WriteDescriptorSet>(writes, 4), Vk.PipelineBindPoint.Compute);
+        var bindings = stackalloc GpuBinding[4];
+        bindings[0] = GpuBinding.Sampled(0, new SampledTexture(scene.Sampler, scene.View));
+        bindings[1] = GpuBinding.StorageImage(1, new SampledTexture(default, adaptA!.Texture.View()));
+        bindings[2] = GpuBinding.StorageImage(2, new SampledTexture(default, adaptB!.Texture.View()));
+        bindings[3] = GpuBinding.Storage(3, new GpuBufferBinding(exposureState.Handle, 0, exposureState.Size));
+        cmd.Order();
+        cmd.BindPipeline(exposurePipeline!.Value);
+        cmd.BindProgramResources(exposureProgram!.Value, 0, new ReadOnlySpan<GpuBinding>(bindings, 4));
         var push = new ExposurePush { Blend = blend, BandMin = band.Min, BandMax = band.Max };
-        cmd.PushConstants(exposureProgram.Layout, Vk.ShaderStageFlags.ComputeBit, in push);
+        cmd.PushConstants(exposureProgram!.Value, GpuStage.Compute, in push);
         cmd.Dispatch(16, 16);
-        cmd.Barrier(BarrierBatch.Full);
+        cmd.Order();
     }
 
     void DisposeMerged()
     {
         exposureState?.Dispose();
-        velocityProgram?.Dispose();
-        exposureProgram?.Dispose();
+        if (velocityProgram is { } vp) Gpu.Shaders.Dispose(vp);
+        if (exposureProgram is { } ep) Gpu.Shaders.Dispose(ep);
     }
 }
 

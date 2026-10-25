@@ -62,6 +62,51 @@ sealed partial class GameHost
         finally { fillTotal += Stopwatch.GetElapsedTime(f0).TotalMilliseconds; fillCalls++; }
     }
 
+    /// <summary>
+    /// The world's characters for a host without the player interface (the Metal loop): the same interpolation and ragdoll
+    /// blending as <see cref="FillDrawListCore"/>, without the editor previews and the portraits.
+    /// </summary>
+    void FillWorldDrawList(CharacterDrawList list)
+    {
+        var current = session.CurrentSnapshot;
+        IndexPrevious();
+        float alpha = session.SimulationAlpha;
+        foreach (var c in current.Characters)
+        {
+            if (c.Appearance is null) continue;
+            var position = c.Position;
+            float yaw = c.Yaw;
+            CharacterSnapshot? before = null;
+            if (previousById.TryGetValue(c.Id, out var found))
+            {
+                before = found;
+                position = Vector3.Lerp(found.Position, c.Position, alpha);
+                yaw = Meitou.Engine.Time.Interp.LerpAngle(found.Yaw, c.Yaw, alpha);
+            }
+            position += CarriedOffset(c, yaw);
+            var poses = new CharacterPose[c.Animations.Count];
+            for (int i = 0; i < poses.Length; i++)
+            {
+                var layer = c.Animations[i];
+                float time = layer.Time, weight = layer.Weight;
+                if (before is not null)
+                    foreach (var old in before.Animations)
+                        if (old.Name == layer.Name)
+                        {
+                            if (layer.Time >= old.Time) time = old.Time + (layer.Time - old.Time) * alpha;
+                            weight = old.Weight + (layer.Weight - old.Weight) * alpha;
+                            break;
+                        }
+                poses[i] = new CharacterPose(layer.Name, time, weight);
+            }
+            list.Add(new CharacterInstance(DrawKey(c.Id), c.Appearance, position, yaw, poses)
+            {
+                WeaponDrawn = c.WeaponDrawn, Scale = c.Scale, Hidden = hiddenIndoors.Contains(c.Id), FullRateAnimation = c.IsPlayer,
+                Bones = Blend(before?.Ragdoll, c.Ragdoll, alpha, ref Slot(ref ragdollsBySlot, c.Id.Slot)),
+            });
+        }
+    }
+
 
     /// <summary>A character's key in the draw list: stable while it exists, new for every world (the renderer keeps its poses by it).</summary>
     long DrawKey(CharacterId id) => (((long)id.Slot << 32 | (uint)id.Generation) + 1) | (long)worldEpoch << 56;

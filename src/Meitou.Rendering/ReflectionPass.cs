@@ -1,24 +1,26 @@
+using InternalFormat = Meitou.Rendering.Gpu.InternalFormat;
 using System.Diagnostics;
 using System.Numerics;
 using Meitou.Data.World;
 
 using Meitou.Rendering.Gpu;
-using Silk.NET.Vulkan;
-using GpuTexture = Meitou.Rendering.Gpu.Texture;
+using GpuTexture = Meitou.Rendering.Gpu.GpuTexture;
+
+using Meitou.Rendering.Gpu.Core;
 
 namespace Meitou.Rendering;
 
 /// <summary>
 /// Planar reflection of the scene for the water (docs/formats/terrain.md, "Water"; the game does the same with a 512Â²
-/// render target drawn by a mirrored camera). The sky, terrain and, through <see cref="SceneDraw"/>, objects (foliage
-/// later) are drawn mirrored about the water plane into a half-resolution texture; <see cref="WaterRenderer"/> samples it
+/// render target drawn by a mirrored camera). The sky, terrain and, through <see cref="SceneDraw"/>, characters, objects
+/// and foliage are drawn mirrored about the water plane into a half-resolution texture; <see cref="WaterRenderer"/> samples it
 /// with the same view-projection, so no flip of the texture is needed. The mirror reverses triangle winding, which a
 /// mirrored (negated) clip X puts right again, so no renderer has to change its culling. Nothing below the water leaks
 /// into the picture: the projection's near plane is replaced by the water plane (oblique near-plane clipping).
 /// </summary>
 public sealed class ReflectionPass : IDisposable
 {
-    /// <summary>Draws the scene's other geometry (objects, foliage) with the given matrix, eye and frustum planes of one depth slice.</summary>
+    /// <summary>Draws the scene's other geometry (characters, objects, foliage) with the given matrix, eye and frustum planes of one depth slice.</summary>
     public delegate void SceneDraw(Matrix4x4 viewProjection, Vector3 eye, Vector4[] frustum);
 
     /// <summary>Size of the texture relative to the picture (the game's is a fixed 512Â²).</summary>
@@ -27,9 +29,9 @@ public sealed class ReflectionPass : IDisposable
     public const float Margin = 1.12f;
     /// <summary>Samples per texel of the reflection (1 = off). Resolved into the plain texture the water samples.</summary>
     public const int DefaultSamples = 4;
-    /// <summary>Samples per texel of the reflection in use (1 = off; a change rebuilds the targets). Default <see cref="DefaultSamples"/>; <c>--reflection-samples</c>, <c>--ab refl-msaa</c>.</summary>
+    /// <summary>Samples per texel of the reflection in use (1 = off; a change rebuilds the targets). Default <see cref="DefaultSamples"/>; <c>--reflection-samples</c>.</summary>
     public int Samples { get; set; } = DefaultSamples;
-    /// <summary>Side B of <c>--ab refl-msaa</c> (1).</summary>
+    /// <summary>Side B of the reflection MSAA A/B (1).</summary>
     public int AbSamples => 1;
     /// <summary>
     /// Meitou: the mirrored scene is drawn without the sun shadows (the receivers see a lit surface: the frame's shadow block is swapped for the
@@ -42,7 +44,7 @@ public sealed class ReflectionPass : IDisposable
     FrameBlock? unshadowed;
 
     /// <summary>The native GPU API (all native since phase 8 stage 3: the pass is the guests' host, docs/renderer-native.md 8.9).</summary>
-    public GpuContext Gpu { get; }
+    public IGpuContext Gpu { get; }
     readonly PassTimer timer;
     readonly WorldRenderOptions options = new();
     // The texture the water samples, and the depth beside it when the scene is drawn without multisampling; else the multisampled twins the
@@ -57,7 +59,7 @@ public sealed class ReflectionPass : IDisposable
     readonly List<double> gpuSamples = [];
     readonly List<double> cpuSamples = [];
 
-    public ReflectionPass(GpuContext gpu)
+    public ReflectionPass(IGpuContext gpu)
     {
         Gpu = gpu;
         timer = new PassTimer(gpu);
@@ -68,8 +70,8 @@ public sealed class ReflectionPass : IDisposable
     public const float DefaultRange = 0.6f;
     /// <summary>
     /// The game's <c>water reflection</c> 0..4: what the mirrored scene holds. 0 no pass (the water shows the sky colour, the viewer's
-    /// counterpart of the shader's NO_REFLECTION branch), 1 sky and terrain, 2 adds the characters (none in the viewer yet), 3 adds
-    /// buildings (here every placed object), 4 everything (also foliage). The frame loop reads it for what to draw.
+    /// counterpart of the shader's NO_REFLECTION branch), 1 sky and terrain, 2 adds the characters, 3 adds buildings (here every
+    /// placed object), 4 everything (also foliage). The frame loop reads it for what to draw.
     /// </summary>
     public int Level { get; set; } = DefaultLevel;
     /// <summary>The game's <c>reflection range</c>: the far clip is the haze distance (the game's view distance Ã— 10) times this; the frame loop sets <see cref="MaxDistance"/> from it.</summary>
@@ -182,9 +184,11 @@ public sealed class ReflectionPass : IDisposable
     /// </summary>
     public SampledTexture Sampled => colour is null ? default
         : new(Gpu.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Linear, TextureMagFilter.Linear, TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge,
-            TextureWrapMode.Repeat, false, DepthFunction.Lequal, false, 1, false, 0)), colour.View(), colour.Image);
+            TextureWrapMode.Repeat, false, DepthFunction.Lequal, false, 1, false, 0)), colour.View());
     public int Width => width;
     public int Height => height;
+    /// <summary>The samples the targets in use were made with (0: single-sample; otherwise the MSAA count).</summary>
+    public int SamplesInUse => samples;
     /// <summary>Time the CPU spent recording the last reflection pass, and what the GPU spent on it (a few frames late).</summary>
     public double CpuMs { get; private set; }
     public double GpuMs { get; private set; }
@@ -198,31 +202,26 @@ public sealed class ReflectionPass : IDisposable
         if (w == width && h == height && colour is not null && builtFor == Samples) return;
         Free();
         (width, height, builtFor) = (w, h, Samples);
-        colour = GpuTexture.Create(Gpu, new TextureDesc(Format.R16G16B16A16Sfloat, w, h, Use: TextureUse.Sampled | TextureUse.ColourTarget | TextureUse.TransferDst, Name: "reflection colour"));
+        colour = Gpu.CreateTexture(new TextureDesc(InternalFormat.Rgba16f, w, h, Use: TextureUse.Sampled | TextureUse.ColourTarget | TextureUse.TransferDst, Name: "reflection colour"));
 
         // The picture is drawn multisampled and resolved: the mirrored shoreline, fences and rooflines are hard edges, and
         // without it each texel of the half-resolution image is a visible stair step that the wave distortion then smears.
-        samples = Math.Min(Samples, MaxSamples());
+        // The API's sample counts are powers of two; a requested odd count (or one above the device's) takes the next
+        // lower supported count rather than making an invalid texture.
+        int maxSamples = Gpu.MaxSampleCount;
+        samples = 1;
+        while (samples * 2 <= Samples && samples * 2 <= maxSamples) samples *= 2;
         if (samples <= 1) samples = 0;
-        GpuTexture Target(Format format, TextureUse use, int count, string name) =>
-            GpuTexture.Create(Gpu, new TextureDesc(format, w, h, Samples: Math.Max(count, 1), Use: use, Name: name));
+        GpuTexture Target(InternalFormat format, TextureUse use, int count, string name, bool privateMemory) =>
+            Gpu.CreateTexture(new TextureDesc(format, w, h, Samples: Math.Max(count, 1), Use: use, Name: name, Private: privateMemory));
         if (samples == 0)
         {
-            depth = Target(Format.D32Sfloat, TextureUse.DepthTarget | TextureUse.Sampled, 1, "reflection depth");
+            depth = Target(InternalFormat.DepthComponent24, TextureUse.DepthTarget | TextureUse.Sampled, 1, "reflection depth", false);
             return;
         }
-        msColour = Target(Format.R16G16B16A16Sfloat, TextureUse.ColourTarget | TextureUse.TransferSrc, samples, "reflection colour msaa");
-        msDepth = Target(Format.D32Sfloat, TextureUse.DepthTarget | TextureUse.Sampled, samples, "reflection depth msaa");
-    }
-
-    /// <summary>The most samples a colour and depth target may have on this device (VkGl answered GL's MAX_SAMPLES with 8).</summary>
-    int MaxSamples()
-    {
-        var l = Gpu.Device.Limits;
-        uint both = (uint)(l.FramebufferColorSampleCounts & l.FramebufferDepthSampleCounts);
-        int max = 1;
-        while (max < 64 && (both & (uint)(max * 2)) != 0) max *= 2;
-        return max;
+        // Multisample render targets are not CPU-visible on Metal: their storage is private (Vulkan ignores the hint).
+        msColour = Target(InternalFormat.Rgba16f, TextureUse.ColourTarget | TextureUse.TransferSrc, samples, "reflection colour msaa", true);
+        msDepth = Target(InternalFormat.DepthComponent24, TextureUse.DepthTarget | TextureUse.Sampled, samples, "reflection depth msaa", true);
     }
 
     void Free()
@@ -307,15 +306,15 @@ public sealed class ReflectionPass : IDisposable
         if (unlit) Gpu.Globals.OverrideBlock(ShadowShaders.ReceiverBlock, (unshadowed ??= new FrameBlock(Gpu, ShadowPass.ReceiverBytes)).Binding);   // zeros: shadows off
         var target = msColour is not null ? PassTargets.Of(msColour, msDepth) : PassTargets.Of(colour, depth);
         // Wave 4 (docs/renderer-native.md 6): the guests' segments are secondaries, recorded on the job threads when the pass ends.
-        bool secondaries = Recording.Secondaries;
+        bool secondaries = Gpu.RecordsSecondaries;
         cmd.BeginRendering(new RenderingDesc(
-            target.Colour with { Load = AttachmentLoadOp.Clear, Clear = new ClearValue(new ClearColorValue(light.FogColour.X, light.FogColour.Y, light.FogColour.Z, 1)) },
-            target.Depth with { Load = AttachmentLoadOp.Clear, Clear = new ClearValue(depthStencil: new ClearDepthStencilValue(1f, 0)) },
+            target.Colour with { Load = LoadOp.Clear, Clear = new ClearColour(light.FogColour.X, light.FogColour.Y, light.FogColour.Z, 1) },
+            target.Depth with { Load = LoadOp.Clear, DepthClear = 1f },
             target.Width, target.Height), secondaries);
         // What the guests draw with: the scene's state (depth tested with less-or-equal and written, no culling, blending or clamp, every channel).
         // The sky turns the depth test off for itself.
         Gpu.BeginHostPass(cmd, target, DrawState.Scene(target.Formats));
-        if (secondaries) Gpu.Frame.Parallel.Begin(cmd, target.Formats, ReflectionStage);
+        if (secondaries && Gpu is GpuContext vulkanGpu) vulkanGpu.Frame.Parallel.Begin((CommandList)cmd, target.Formats, ReflectionStage);
         Lap(4);
         sky.Draw(skyProjection, colours);
         Lap(0);
@@ -338,7 +337,7 @@ public sealed class ReflectionPass : IDisposable
         {
             float far = Math.Min(far0, MaxDistance);
             if (far <= near * 1.5f) continue;
-            if (!first) Gpu.ClearDepth(cmd, 1f, new Rect2D(new Offset2D(0, 0), new Extent2D((uint)target.Width, (uint)target.Height)));
+            if (!first) Gpu.ClearDepth(cmd, 1f, new PixelRect(0, 0, (uint)target.Width, (uint)target.Height));
             first = false;
             var projection = Oblique(Perspective(camera.FieldOfView, aspect, near, far), view, clip);
             var viewProjection = view * projection;
@@ -347,19 +346,19 @@ public sealed class ReflectionPass : IDisposable
             var frustum = Frustum(viewProjection, rect);
             terrain.Draw(viewProjection, mirroredEye, frustum, options, light, plane - 1, secondary: true);
             Lap(1);
-            if (near <= camera.Near && render.Objects) drawObjects?.Invoke(viewProjection, mirroredEye, frustum);
+            if (near <= camera.Near) drawObjects?.Invoke(viewProjection, mirroredEye, frustum);
         }
         if (unlit) Gpu.Globals.OverrideBlock(ShadowShaders.ReceiverBlock, null);
         (DrawnChunks, DrawnTriangles) = (terrain.DrawnChunks, terrain.DrawnTriangles);
         ViewProjection = mapped;   // x and y do not depend on the near plane
         Valid = hasImage = !first;
 
-        if (Gpu.Frame.Parallel.Open) Gpu.Frame.Parallel.End();
+        if (Gpu is GpuContext parallelGpu && parallelGpu.Frame.Parallel.Open) parallelGpu.Frame.Parallel.End();
         cmd.EndRendering();
         if (msColour is not null)
         {
             // The multisampled colour into the texture the water samples (a resolve, as the framebuffer blit was), between full barriers.
-            cmd.Barrier(BarrierBatch.Full);
+            cmd.Order();
             cmd.Resolve(msColour, colour!);
         }
         Gpu.EndHostPass(cmd);
@@ -377,7 +376,7 @@ public sealed class ReflectionPass : IDisposable
     /// </summary>
     bool CanReuse(WorldCamera camera, int fullWidth, int fullHeight)
     {
-        if (age >= MaxAge) return false;
+        if (age >= MaxAge || builtFor != Samples) return false;
         // An image at this size, or the no-water verdict at this size (heights stream in, so it is checked again after MaxAge frames like an image).
         if (hasImage ? colour is null || msColour is null && samples != 0 || width != Math.Max((int)(fullWidth * Scale), 64) || height != Math.Max((int)(fullHeight * Scale), 64)
                      : !noWater || fullWidth != noWaterWidth || fullHeight != noWaterHeight) return false;
@@ -413,7 +412,7 @@ public sealed class ReflectionPass : IDisposable
         }
         int frames = cpuSamples.Count + skipped;
         double perFrame(IEnumerable<double> v) => v.Skip(1).Sum() / Math.Max(frames - 1, 1);
-        return $"{cpuSamples.Count} passes drawn, {skipped} frames reused; per frame mean cpu {perFrame(cpuSamples):0.00} ms, gpu {perFrame(gpuSamples):0.00} ms; per pass: gpu {One(gpuSamples)}, cpu {One(cpuSamples)} ms (cpu mean by part: terrain {PhaseMs[1] / Math.Max(cpuSamples.Count, 1):0.00}, objects {PhaseMs[2] / Math.Max(cpuSamples.Count, 1):0.00}, foliage {PhaseMs[3] / Math.Max(cpuSamples.Count, 1):0.00}); nearest water {NearestWater:0} units";
+        return $"{cpuSamples.Count} passes drawn, {skipped} frames reused, {(samples == 0 ? "single-sample" : $"{samples}x samples")}; per frame mean cpu {perFrame(cpuSamples):0.00} ms, gpu {perFrame(gpuSamples):0.00} ms; per pass: gpu {One(gpuSamples)}, cpu {One(cpuSamples)} ms (cpu mean by part: terrain {PhaseMs[1] / Math.Max(cpuSamples.Count, 1):0.00}, objects {PhaseMs[2] / Math.Max(cpuSamples.Count, 1):0.00}, foliage {PhaseMs[3] / Math.Max(cpuSamples.Count, 1):0.00}); nearest water {NearestWater:0} units";
     }
 
     /// <summary>OpenGL perspective (depth âˆ’1..1) with clip X negated: the mirror's reversed winding turns back to counter-clockwise.</summary>
@@ -509,7 +508,7 @@ public sealed class ReflectionPass : IDisposable
     public bool FogVolumes { get; set; }
     LegacyProgram? fogProgram;
     int fogProgramSamples = -1;
-    GraphicsPipeline? fogPipeline;
+    GpuPipeline? fogPipeline;
 
     /// <summary>The fog pass over the reflection: the fog volume functions with the texel's distance rebuilt from the reflection's depth
     /// (<paramref name="multisampled"/>: its first sample) through the inverse of the near slice's mirrored, oblique view-projection, and the ray's
@@ -546,7 +545,7 @@ public sealed class ReflectionPass : IDisposable
         }
         """;
 
-    void RunFog(CommandList cmd, Matrix4x4 nearViewProjection, Matrix4x4 nearRays, Vector3 mirroredEye)
+    void RunFog(IGpuCommandList cmd, Matrix4x4 nearViewProjection, Matrix4x4 nearRays, Vector3 mirroredEye)
     {
         var depthTexture = msDepth ?? depth;
         if (depthTexture is null || colour is null || !Matrix4x4.Invert(nearViewProjection, out var inverse) || !Matrix4x4.Invert(nearRays, out var rayInverse)) return;
@@ -556,27 +555,27 @@ public sealed class ReflectionPass : IDisposable
             fogProgram = LegacyProgram.Create(Gpu, PostProcessShaders.Vertex, FogFragment(samples > 0), "reflection fog volumes");
             fogProgramSamples = samples;
             // The fog volumes pass's blend: scene Ã— transmittance (alpha) + the fog's light, colour only.
-            var state = new DrawState(CullModeFlags.None, GlConventions.FrontFace(FrontFaceDirection.Ccw), false, false, CompareOp.LessOrEqual, false, 0, 0,
-                new BlendState(true, BlendFactor.One, BlendFactor.SrcAlpha), DrawState.Rgb, PolygonMode.Fill, false, false);
-            fogPipeline = Gpu.Pipelines.Get(state.Pipeline(fogProgram.Program, fogProgram.VertexLayout([]), PrimitiveTopology.TriangleList,
-                new AttachmentFormats(colour.Desc.Format, Format.Undefined), fogProgram.Name));
+            var state = new DrawState(CullMode.None, FrontFaceDirection.Ccw, false, false, DepthFunction.Lequal, false, 0, 0,
+                new BlendState(true, BlendingFactor.One, BlendingFactor.SrcAlpha), DrawState.Rgb, PolygonKind.Fill, false, false);
+            fogPipeline = Gpu.Pipelines.Get(state.Pipeline(fogProgram.Program, fogProgram.VertexLayout([]), PrimitiveType.Triangles,
+                new AttachmentFormats(colour.Desc.Format, InternalFormat.None), fogProgram.Name));
         }
         var p = fogProgram;
         p.Bind(p.Sampler("uDepth"), new SampledTexture(Gpu.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Nearest, TextureMagFilter.Nearest, TextureWrapMode.ClampToEdge,
-            TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, false, DepthFunction.Lequal, false, 1, false, 0)), depthTexture.View(), depthTexture.Image));
+            TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, false, DepthFunction.Lequal, false, 1, false, 0)), depthTexture.View()));
         p.Set(p.Uniform("uInverse"), in inverse);
         p.Set(p.Uniform("uRayInverse"), in rayInverse);
         p.Set(p.Uniform("uMirroredEye"), mirroredEye.X, mirroredEye.Y, mirroredEye.Z);
         p.Set(p.Uniform("uWaterY"), WorldWater.Height);
         p.ApplyGlobals();   // the atmosphere's and the fog volumes' uniforms, through the frame globals
-        cmd.Barrier(BarrierBatch.Full);
+        cmd.Order();
         cmd.BeginRendering(new RenderingDesc(PassTargets.Of(colour, null).Colour, default, width, height));
-        cmd.SetViewport(new Viewport(0, 0, width, height, 0, 1));
-        cmd.SetScissor(new Rect2D(default, new Extent2D((uint)width, (uint)height)));
-        cmd.SetRaster(CullModeFlags.None, GlConventions.FrontFace(FrontFaceDirection.Ccw));
-        cmd.SetDepth(false, false, CompareOp.LessOrEqual);
+        cmd.SetViewport(new PixelViewport(0, 0, width, height, 0, 1));
+        cmd.SetScissor(new PixelRect(0, 0, (uint)width, (uint)height));
+        cmd.SetRaster(CullMode.None, FrontFaceDirection.Ccw);
+        cmd.SetDepth(false, false, DepthFunction.Lequal);
         cmd.SetDepthBias(false, 0, 0);
-        cmd.BindPipeline(fogPipeline!);
+        cmd.BindPipeline(fogPipeline!.Value);
         p.Flush(cmd);
         cmd.Draw(3);
         cmd.EndRendering();

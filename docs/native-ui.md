@@ -16,12 +16,12 @@ opens it; Esc/the original Kenshi X/Save saves preferences and returns. Changes 
 upscaler shown separately from the requested one. Terrain texture quality needs a restart.
 Every Graphics sub-page starts with two rows (`SettingsMenu.Presets.cs`):
 - **Quality preset** Low / Medium / High / Ultra sets the distance, foliage, grass, reflection, shadow, particle density,
-  filtering and texture sliders; High is the start default (texture quality: full size). Distances that follow a
-  switch's side (object distance, terrain error: Draw distances; shadow distance: Shadows) are multiples of that side's
-  mark, so High reads High in either look. Low also sets the costliest Meitou switches Faithful (AO, indirect light,
-  light shafts, clouds, cloud shadows, water, shadows) and quarter-size particles, as `--low-end`; no preset turns a
-  costly Meitou effect on, and anti-aliasing and render scale are left alone. The shown preset is derived (sliders and the fifth
-  cascade only; Custom otherwise), not saved.
+  filtering, texture, ground-relief quality and light-shaft quality sliders; High is the start default (texture quality: full
+  size). Distances that follow a switch's side (object distance, terrain error: Draw distances; shadow distance: Shadows) are
+  multiples of that side's mark, so High reads High in either look. Low also sets the costliest Meitou switches Faithful (AO,
+  indirect light, light shafts, clouds, cloud shadows, water, shadows), turns ground relief and its tessellation effects off, and
+  uses quarter-size particles, as `--low-end`; no preset turns a costly Meitou effect on, and anti-aliasing and render scale are
+  left alone. The shown preset is derived (sliders and the fifth cascade only; Custom otherwise), not saved.
 - **All graphics features** sets every Faithful / Meitou graphics switch to one side (gameplay switches and sliders
   untouched); mixed switches show neither side. A switch that does not take (indirect light without ray queries) is ignored.
   Advanced (**All gameplay changes**) and Fixes (**All fixes**) start with the same switch over their own page's

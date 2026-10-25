@@ -50,15 +50,15 @@ public class GpuApiTests
         -0.2f,  0.9f, 0, 0, 1,
     ];
 
-    static RenderingDesc Target(Texture t, AttachmentLoadOp load = AttachmentLoadOp.Clear) =>
-        new(new RenderTarget(t.Attachment(), load, new ClearValue(new ClearColorValue(0f, 0f, 0f, 1f)), t.Image), default, t.Desc.Width, t.Desc.Height);
+    static RenderingDesc Target(GpuTexture t, LoadOp load = LoadOp.Clear) =>
+        new(new RenderTarget(t.Attachment(), load, new ClearColour(0f, 0f, 0f, 1f)), default, t.Desc.Width, t.Desc.Height);
 
-    static void FullTargetState(CommandList cmd, int w, int h)
+    static void FullTargetState(IGpuCommandList cmd, int w, int h)
     {
-        cmd.SetViewport(new Viewport(0, 0, w, h, 0, 1));
-        cmd.SetScissor(new Rect2D(new Offset2D(0, 0), new Extent2D((uint)w, (uint)h)));
-        cmd.SetRaster(CullModeFlags.None, FrontFace.Clockwise);
-        cmd.SetDepth(false, false, CompareOp.Always);
+        cmd.SetViewport(new PixelViewport(0, 0, w, h, 0, 1));
+        cmd.SetScissor(new PixelRect(0, 0, (uint)w, (uint)h));
+        cmd.SetRaster(CullMode.None, FrontFaceDirection.Ccw);
+        cmd.SetDepth(false, false, DepthFunction.Always);
         cmd.SetDepthBias(false, 0, 0);
     }
 
@@ -71,7 +71,7 @@ public class GpuApiTests
         using (var ctx = new GpuContext(d!))
         {
             // The sources through LegacyProgram into an RGBA8 texture (until phase 8 stage 3 compared byte for byte with VkGl's picture).
-            using var target = Texture.Create(ctx, new TextureDesc(Format.R8G8B8A8Unorm, W, H, Use: TextureUse.ColourTarget | TextureUse.TransferSrc, Name: "golden"));
+            using var target = ctx.CreateTexture(new TextureDesc(InternalFormat.Rgba8, W, H, Use: TextureUse.ColourTarget | TextureUse.TransferSrc, Name: "golden"));
             using var lp = LegacyProgram.Create(ctx, Vertex, Fragment, "golden triangle");
             Assert.True(lp.Uniform("uMissing") is { IsValid: false });
             lp.Set(lp.Uniform("uOffset"), 0.1f, -0.05f);
@@ -84,12 +84,12 @@ public class GpuApiTests
             var vertices = frame.Constants.Write<float>(Vertices);
             LegacyProgram.Attribute?[] attributes =
             [
-                new LegacyProgram.Attribute(vertices.Binding, Format.R32G32Sfloat, 20, false),
-                new LegacyProgram.Attribute(new BufferBinding(vertices.Handle, vertices.Offset + 8), Format.R32G32B32Sfloat, 20, false),
+                new LegacyProgram.Attribute(vertices.Binding, InternalFormat.RG32f, 20, false),
+                new LegacyProgram.Attribute(new GpuBufferBinding(vertices.Handle, vertices.Offset + 8), InternalFormat.Rgb32f, 20, false),
             ];
-            var pipeline = ctx.Pipelines.Get(new GraphicsPipelineDesc(lp.Program, lp.VertexLayout(attributes), PrimitiveTopology.TriangleList,
-                new AttachmentFormats(Format.R8G8B8A8Unorm, Format.Undefined), BlendState.Off,
-                ColorComponentFlags.RBit | ColorComponentFlags.GBit | ColorComponentFlags.BBit | ColorComponentFlags.ABit, Silk.NET.Vulkan.PolygonMode.Fill, false, false));
+            var pipeline = ctx.Pipelines.Get(new GraphicsPipelineDesc(lp.Program, lp.VertexLayout(attributes), PrimitiveType.Triangles,
+                new AttachmentFormats(InternalFormat.Rgba8, InternalFormat.None), BlendState.Off,
+                ColorMask.R | ColorMask.G | ColorMask.B | ColorMask.A, PolygonKind.Fill, false, false));
             cmd.BeginRendering(Target(target));
             cmd.BindPipeline(pipeline);
             FullTargetState(cmd, W, H);
@@ -183,44 +183,44 @@ public class GpuApiTests
         Assert.SkipWhen(d is null, "No Vulkan 1.3 device");
         using (var ctx = new GpuContext(d!))
         {
-            using var source = Texture.Create(ctx, new TextureDesc(Format.R8G8B8A8Unorm, 1, 1, Name: "pre-frame source"));
-            using var target = Texture.Create(ctx, new TextureDesc(Format.R8G8B8A8Unorm, 16, 8, Use: TextureUse.ColourTarget | TextureUse.TransferSrc, Name: "pre-frame target"));
+            using var source = ctx.CreateTexture(new TextureDesc(InternalFormat.Rgba8, 1, 1, Name: "pre-frame source"));
+            using var target = ctx.CreateTexture(new TextureDesc(InternalFormat.Rgba8, 16, 8, Use: TextureUse.ColourTarget | TextureUse.TransferSrc, Name: "pre-frame target"));
             using var args = DeviceBuffer.Create(ctx, 20, BufferUse.Storage | BufferUse.Indirect | BufferUse.TransferSrc, "pre-frame args");
             using var indices = DeviceBuffer.Create(ctx, 16, BufferUse.Index | BufferUse.TransferDst, "indices");
             using var readback = ReadbackBuffer.Create(ctx, 20, "pre-frame readback");
-            using var compute = ctx.Shaders.Compute(ArgsCompute, "args");
-            using var draw = ctx.Shaders.Native(BindlessVertex, BindlessFragment, "bindless", [ctx.Bindless.Layout], 4);
+            var compute = ctx.Shaders.Compute(ArgsCompute, "args");
+            var draw = ctx.Shaders.Native(BindlessVertex, BindlessFragment, "bindless", [GpuSetLayout.Bindless], 4);
             var sampler = ctx.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Nearest, TextureMagFilter.Nearest, TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge,
                 TextureWrapMode.ClampToEdge, false, DepthFunction.Lequal, false, 1, false, 0));
-            uint index = ctx.Bindless.Register(BindlessKind.Texture2D, new SampledTexture(sampler, source.View(), source.Image));
+            uint index = ctx.Bindless.Register(BindlessKind.Texture2D, new SampledTexture(sampler, source.View()));
 
             ctx.BeginFrame();
             var frame = ctx.Frame;
-            ctx.Uploads.Write(source, 0, 0, new Rect2D(new Offset2D(0, 0), new Extent2D(1, 1)), [40, 90, 160, 255]);
+            ctx.Uploads.Write(source, 0, 0, new PixelRect(0, 0, 1, 1), [40, 90, 160, 255]);
             ctx.Uploads.Write(indices, 0, MemoryMarshalBytes([0u, 1u, 2u]));
             // The frame's own commands first (in CPU order): an indirect draw from args, then a copy of args.
             ctx.EnsureFrame();
             var cmd = frame.Commands;
             cmd.Invalidate();
-            var pipeline = ctx.Pipelines.Get(new GraphicsPipelineDesc(draw, VertexLayout.Empty, PrimitiveTopology.TriangleList,
-                new AttachmentFormats(Format.R8G8B8A8Unorm, Format.Undefined), BlendState.Off,
-                ColorComponentFlags.RBit | ColorComponentFlags.GBit | ColorComponentFlags.BBit | ColorComponentFlags.ABit, Silk.NET.Vulkan.PolygonMode.Fill, false, false, "bindless"));
+            var pipeline = ctx.Pipelines.Get(new GraphicsPipelineDesc(draw, VertexLayout.Empty, PrimitiveType.Triangles,
+                new AttachmentFormats(InternalFormat.Rgba8, InternalFormat.None), BlendState.Off,
+                ColorMask.R | ColorMask.G | ColorMask.B | ColorMask.A, PolygonKind.Fill, false, false, "bindless"));
             cmd.BeginRendering(Target(target));
             cmd.BindPipeline(pipeline);
             FullTargetState(cmd, 16, 8);
-            cmd.BindSets(draw.Layout, 0, [ctx.Bindless.Set], []);
-            cmd.PushConstants(draw.Layout, ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit, index);
-            cmd.BindIndexBuffer(indices.Binding(frame), IndexType.Uint32);
+            cmd.BindBindlessTable(draw, 0);
+            cmd.PushConstants(draw, GpuStage.Vertex | GpuStage.Fragment, index);
+            cmd.BindIndexBuffer(indices.Binding(frame), IndexKind.U32);
             cmd.DrawIndexedIndirect(args.Handle, 0, 1);
 
             // Later on the CPU, with that rendering still open: the dispatch that writes args, into the pre-frame list.
             var pre = frame.PreFrame;
             var cp = ctx.Pipelines.Get(new ComputePipelineDesc(compute, "args"));
             pre.BindPipeline(cp);
-            var info = new DescriptorBufferInfo(args.Handle, 0, 20);
+            var info = new DescriptorBufferInfo(ctx.Device.BufferAt(args.Handle.Index), 0, 20);
             var write = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstBinding = 0, DescriptorCount = 1, DescriptorType = DescriptorType.StorageBuffer, PBufferInfo = &info };
-            pre.PushDescriptors(compute.Layout, 0, [write], PipelineBindPoint.Compute);
-            pre.PushConstants(compute.Layout, ShaderStageFlags.ComputeBit, 3u);
+            pre.PushDescriptors(compute, 0, [write], GpuBindPoint.Compute);
+            pre.PushConstants(compute, GpuStage.Compute, 3u);
             pre.Dispatch(1);
             var after = new BarrierBatch();
             after.Add(PipelineStageFlags2.ComputeShaderBit, AccessFlags2.ShaderStorageWriteBit, PipelineStageFlags2.DrawIndirectBit | PipelineStageFlags2.AllTransferBit,
@@ -231,7 +231,7 @@ public class GpuApiTests
             var full = new BarrierBatch();
             full.Add(PipelineStageFlags2.AllCommandsBit, AccessFlags2.MemoryWriteBit, PipelineStageFlags2.AllCommandsBit, AccessFlags2.MemoryReadBit | AccessFlags2.MemoryWriteBit);
             cmd.Barrier(full);
-            cmd.CopyBuffer(args.Handle, readback.Handle, new BufferCopy(0, 0, 20));
+            cmd.CopyBuffer(args.Handle, readback.Handle, new GpuBufferCopy(0, 0, 20));
             long number = frame.Number;
             ctx.EndFrame();
             Assert.False(ReadbackBuffer.Completed(ctx, number + 1));
@@ -247,15 +247,15 @@ public class GpuApiTests
     }
 
     /// <summary>A prepared segment of the test below: one fullscreen triangle through a scissor, reading one bindless texture.</summary>
-    sealed class ColumnJob(GraphicsPipeline pipeline, PipelineLayout layout, DescriptorSet table, uint texture, int x) : RecordJob
+    sealed class ColumnJob(GpuPipeline pipeline, GpuProgram program, uint texture, int x) : RecordJob
     {
-        public override void Record(CommandList cmd)
+        public override void Record(IGpuCommandList cmd)
         {
             FullTargetState(cmd, W, H);
-            cmd.SetScissor(new Rect2D(new Offset2D(x, 0), new Extent2D((uint)(W - x), H)));
+            cmd.SetScissor(new PixelRect(x, 0, (uint)(W - x), H));
             cmd.BindPipeline(pipeline);
-            cmd.BindSets(layout, 0, [table], []);
-            cmd.PushConstants(layout, ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit, texture);
+            cmd.BindBindlessTable(program, 0);
+            cmd.PushConstants(program, GpuStage.Vertex | GpuStage.Fragment, texture);
             cmd.Draw(3);
         }
     }
@@ -263,7 +263,7 @@ public class GpuApiTests
     /// <summary>A job that reaches for render-thread state (docs/renderer-native.md 6.3): must throw.</summary>
     sealed class GreedyJob : RecordJob
     {
-        public override void Record(CommandList cmd) => RenderJobs.AssertNotInJob();
+        public override void Record(IGpuCommandList cmd) => RenderJobs.AssertNotInJob();
     }
 
     /// <summary>
@@ -285,31 +285,31 @@ public class GpuApiTests
             using (var ctx = new GpuContext(d!))
             {
                 const int Columns = 8;
-                var sources = new Texture[Columns];
+                var sources = new GpuTexture[Columns];
                 var indices = new uint[Columns];
-                using var target = Texture.Create(ctx, new TextureDesc(Format.R8G8B8A8Unorm, W, H, Use: TextureUse.ColourTarget | TextureUse.TransferSrc, Name: "columns"));
-                using var draw = ctx.Shaders.Native(BindlessVertex, BindlessFragment, "bindless", [ctx.Bindless.Layout], 4);
+                using var target = ctx.CreateTexture(new TextureDesc(InternalFormat.Rgba8, W, H, Use: TextureUse.ColourTarget | TextureUse.TransferSrc, Name: "columns"));
+                var draw = ctx.Shaders.Native(BindlessVertex, BindlessFragment, "bindless", [GpuSetLayout.Bindless], 4);
                 var sampler = ctx.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Nearest, TextureMagFilter.Nearest, TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge,
                     TextureWrapMode.ClampToEdge, false, DepthFunction.Lequal, false, 1, false, 0));
                 for (int k = 0; k < Columns; k++)
                 {
-                    sources[k] = Texture.Create(ctx, new TextureDesc(Format.R8G8B8A8Unorm, 1, 1, Name: $"column {k}"));
-                    indices[k] = ctx.Bindless.Register(BindlessKind.Texture2D, new SampledTexture(sampler, sources[k].View(), sources[k].Image));
+                    sources[k] = ctx.CreateTexture(new TextureDesc(InternalFormat.Rgba8, 1, 1, Name: $"column {k}"));
+                    indices[k] = ctx.Bindless.Register(BindlessKind.Texture2D, new SampledTexture(sampler, sources[k].View()));
                 }
-                var formats = new AttachmentFormats(Format.R8G8B8A8Unorm, Format.Undefined);
-                var pipeline = ctx.Pipelines.Get(new GraphicsPipelineDesc(draw, VertexLayout.Empty, PrimitiveTopology.TriangleList, formats, BlendState.Off,
-                    ColorComponentFlags.RBit | ColorComponentFlags.GBit | ColorComponentFlags.BBit | ColorComponentFlags.ABit, Silk.NET.Vulkan.PolygonMode.Fill, false, false, "bindless"));
+                var formats = new AttachmentFormats(InternalFormat.Rgba8, InternalFormat.None);
+                var pipeline = ctx.Pipelines.Get(new GraphicsPipelineDesc(draw, VertexLayout.Empty, PrimitiveType.Triangles, formats, BlendState.Off,
+                    ColorMask.R | ColorMask.G | ColorMask.B | ColorMask.A, PolygonKind.Fill, false, false, "bindless"));
 
                 ctx.BeginFrame();
                 var frame = ctx.Frame;
-                for (int k = 0; k < Columns; k++) ctx.Uploads.Write(sources[k], 0, 0, new Rect2D(new Offset2D(0, 0), new Extent2D(1, 1)), [(byte)(10 + 30 * k), (byte)(200 - 20 * k), (byte)(5 * k), 255]);
+                for (int k = 0; k < Columns; k++) ctx.Uploads.Write(sources[k], 0, 0, new PixelRect(0, 0, 1, 1), [(byte)(10 + 30 * k), (byte)(200 - 20 * k), (byte)(5 * k), 255]);
                 var cmd = ctx.BeginNative("columns host");
                 cmd.BeginRendering(Target(target), secondaries: true);
-                frame.Parallel.Begin(cmd, formats, 0);
-                ctx.BeginHostPass(cmd, PassTargets.Of(target, null), DrawState.For(formats, d!.DepthClamp));
+                frame.Parallel.Begin((CommandList)cmd, formats, 0);
+                ctx.BeginHostPass((CommandList)cmd, PassTargets.Of(target, null), DrawState.For(formats, d!.DepthClamp));
                 for (int k = 0; k < Columns; k++)
                 {
-                    var job = new ColumnJob(pipeline, draw.Layout, ctx.Bindless.Set, indices[k], k * (W / Columns));
+                    var job = new ColumnJob(pipeline, draw, indices[k], k * (W / Columns));
                     if (k == 4)
                     {
                         // A guest that is not a job: records at once into a secondary of its own, in its place.

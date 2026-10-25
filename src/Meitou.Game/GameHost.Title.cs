@@ -17,10 +17,10 @@ sealed partial class GameHost
     TitleComposition? titleComposition;
     TitleBattle? titleBattle;
     Meitou.Data.Characters.CharacterAppearance[] titleAppearances = [];
-    bool TitleCharactersReady => gpu.Characters is not { } characters ||
+    bool TitleCharactersReady => ActiveCharacters is not { } characters ||
         titleAppearances.Length > 0 && titleAppearances.All(characters.IsPrepared) && !characters.ContentPending;
-    bool TitleSceneReady => TitleCharactersReady && gpu.Streamer is not { Idle: false } &&
-        !(gpu.Objects?.Pending > 0) && !(gpu.Foliage?.Pending > 0);
+    bool TitleSceneReady => TitleCharactersReady && (gpu is null || gpu.Streamer is not { Idle: false } &&
+        !(gpu.Objects?.Pending > 0) && !(gpu.Foliage?.Pending > 0));
     Func<ParticleRenderer>? titleParticleFactory;
     ParticleRenderer? titleParticles;
     IReadOnlyList<WeatherEffectEntry>? titleDust;
@@ -42,7 +42,7 @@ sealed partial class GameHost
         titleComposition = new(install, db, scene.GroundAt, SandboxRecord(db), TitleSaveAppearance(db));
         if (popData is { } data && animationLengths is { } lengths && animationLibrary is { } library)
             titleBattle = TitleBattle.Create(data, scene.GroundAt, titleComposition.Fights, lengths, library);
-        if (gpu.Characters is { } characters)
+        if (ActiveCharacters is { } characters)
         {
             var list = new CharacterDrawList();
             FillTitleCharacters(list);
@@ -140,22 +140,22 @@ sealed partial class GameHost
         if (!TitleVisible)
         {
             if (gameplayLens is { } lens) { camera.FieldOfView = lens; camera.MaxNear = 200; gameplayLens = null; }
-            if (gameplayCharacters is { } source && gpu.Characters is { } restore) { restore.Source = source; gameplayCharacters = null; }
-            if (gpu.Foliage is { } plants && titleComposition is { } shown && plants.Shift == shown.Ruins) plants.Shift = null;
-            if (gpu.Objects is { } things && titleComposition is { } staged && things.Staged == staged.Staged) things.Staged = null;
+            if (gameplayCharacters is { } source && ActiveCharacters is { } restore) { restore.Source = source; gameplayCharacters = null; }
+            if (ActiveFoliage is { } plants && titleComposition is { } shown && plants.Shift == shown.Ruins) plants.Shift = null;
+            if (ActiveObjects is { } things && titleComposition is { } staged && things.Staged == staged.Staged) things.Staged = null;
             return;
         }
         EnsureTitleScene();
         if (titleComposition is not { } title) return;
         gameplayLens ??= camera.FieldOfView;
         player.TitleLogoSource ??= TitleLogo.Load;
-        if (gpu.Characters is { } characters && gameplayCharacters is null)
+        if (ActiveCharacters is { } characters && gameplayCharacters is null)
         {
             gameplayCharacters = characters.Source;
             characters.Source = FillTitleCharacters;
         }
-        if (gpu.Foliage is { } foliage && foliage.Shift != title.Ruins) foliage.Shift = title.Ruins;
-        if (gpu.Objects is { } objects && objects.Staged != title.Staged) objects.Staged = title.Staged;
+        if (ActiveFoliage is { } foliage && foliage.Shift != title.Ruins) foliage.Shift = title.Ruins;
+        if (ActiveObjects is { } objects && objects.Staged != title.Staged) objects.Staged = title.Staged;
         TitleComposition.Place(camera);
     }
 

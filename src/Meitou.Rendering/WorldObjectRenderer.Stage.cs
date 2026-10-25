@@ -1,7 +1,6 @@
 using System.Numerics;
 using Meitou.Data.World;
 using Meitou.Rendering.Gpu;
-using Silk.NET.Vulkan;
 
 namespace Meitou.Rendering;
 
@@ -31,7 +30,7 @@ public sealed unsafe partial class WorldObjectRenderer
     /// Draws the stage's prop into <paramref name="colour"/> and <paramref name="depth"/>, which hold the character already (outside any pass): the stage's camera and light,
     /// the stage's lighting (a fog distance of -2) and no weather. Nothing while its mesh is not loaded.
     /// </summary>
-    public void DrawStageProp(global::Meitou.Rendering.Gpu.Texture colour, global::Meitou.Rendering.Gpu.Texture depth, Matrix4x4 viewProjection, Vector3 eye, Vector3 light, float fogDistance = -2)
+    public void DrawStageProp(GpuTexture colour, GpuTexture depth, Matrix4x4 viewProjection, Vector3 eye, Vector3 light, float fogDistance = -2)
     {
         if (stageInstance is not { Gpu: { } gpu, Materials: { } materials } inst) return;
         foreach (var b in batchMap.Values) b.Count = 0;
@@ -42,7 +41,7 @@ public sealed unsafe partial class WorldObjectRenderer
         int total = 0;
         foreach (var b in active) { b.Offset = total; total += b.Count; }
         if (total == 0) return;
-        instances = Gpu.Frame.Constants.Allocate((ulong)total * InstanceStride, 16);
+        instances = Gpu.Frame.AllocateConstants((ulong)total * InstanceStride, 16);
         var target = new Span<byte>(instances.Pointer, total * InstanceStride);
         foreach (var b in active)
             System.Runtime.InteropServices.MemoryMarshal.AsBytes(b.Data.AsSpan(0, b.Count)).CopyTo(target[(b.Offset * InstanceStride)..]);
@@ -50,7 +49,7 @@ public sealed unsafe partial class WorldObjectRenderer
         var targets = PassTargets.Of(colour, depth);
         cmd.BeginRendering(new RenderingDesc(targets.Colour, targets.Depth, targets.Width, targets.Height));
         Gpu.BeginHostPass(cmd, targets, DrawState.Scene(targets.Formats));
-        Gpu.SetPassViewport(new Viewport(0, 0, targets.Width, targets.Height, 0, 1), new Rect2D(default, new Extent2D((uint)targets.Width, (uint)targets.Height)));
+        Gpu.SetPassViewport(new PixelViewport(0, 0, targets.Width, targets.Height, 0, 1), new PixelRect(0, 0, (uint)targets.Width, (uint)targets.Height));
         var constants = new ViewConstants { ViewProjection = Matrix4x4.CreateTranslation(eye) * viewProjection, Eye = Vector3.Zero, LightDir = light, FogDistance = fogDistance };
         PrepareDraws(iconOptions, wire: false);
         for (int d = 0; d < drawCount; d++) draws[d].Push.Spare = MeshSurface.NoWeather;

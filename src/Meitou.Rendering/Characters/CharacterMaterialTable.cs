@@ -11,7 +11,7 @@ namespace Meitou.Rendering.Characters;
 /// </summary>
 internal sealed class CharacterMaterialTable : IDisposable
 {
-    readonly GpuContext gpu;
+    readonly IGpuContext gpu;
     DeviceBuffer buffer;
     CharacterMaterialRecord[] host = new CharacterMaterialRecord[1024];
     PartMaterial?[] owners = new PartMaterial?[1024];
@@ -19,13 +19,12 @@ internal sealed class CharacterMaterialTable : IDisposable
     readonly Stack<int> free = [];
     readonly Queue<(int Slot, long Frame)> retired = [];
     readonly List<int> dirty = [];
-    readonly List<ulong> dirtyOffsets = [];
     CharacterMaterialRecord[] dirtyRecords = new CharacterMaterialRecord[64];
 
     /// <summary>Updates without a draw after which a material gives its slot back (it takes a new one when it is drawn again).</summary>
     public const int IdleUpdates = 600;
 
-    public CharacterMaterialTable(GpuContext gpu)
+    public CharacterMaterialTable(IGpuContext gpu)
     {
         this.gpu = gpu;
         buffer = DeviceBuffer.Create(gpu, (ulong)host.Length * CharacterMaterialRecord.Size, BufferUse.Storage, "character materials");
@@ -38,7 +37,7 @@ internal sealed class CharacterMaterialTable : IDisposable
     public void BeginFrame()
     {
         long frame = gpu.Frame.Number;
-        int inFlight = gpu.Device.FramesInFlight;
+        int inFlight = gpu.FramesInFlight;
         while (retired.Count > 0 && frame - retired.Peek().Frame > inFlight) free.Push(retired.Dequeue().Slot);
     }
 
@@ -80,7 +79,8 @@ internal sealed class CharacterMaterialTable : IDisposable
             buffer.Dispose();
             buffer = DeviceBuffer.Create(gpu, (ulong)host.Length * CharacterMaterialRecord.Size, BufferUse.Storage, "character materials");
             gpu.EnsureFrame();
-            gpu.Uploads.Write(buffer, 0, MemoryMarshal.AsBytes(host.AsSpan(0, slot)));
+            using var batch = gpu.Uploads.Begin();
+            batch.Write(buffer, 0, MemoryMarshal.AsBytes(host.AsSpan(0, slot)));
         }
         return slot;
     }
@@ -90,18 +90,16 @@ internal sealed class CharacterMaterialTable : IDisposable
     {
         if (dirty.Count == 0) return;
         if (dirtyRecords.Length < dirty.Count) dirtyRecords = new CharacterMaterialRecord[Math.Max(dirty.Count, dirtyRecords.Length * 2)];
-        dirtyOffsets.Clear();
-        for (int i = 0; i < dirty.Count; i++)
-        {
-            dirtyRecords[i] = host[dirty[i]];
-            dirtyOffsets.Add((ulong)dirty[i] * CharacterMaterialRecord.Size);
-        }
+        for (int i = 0; i < dirty.Count; i++) dirtyRecords[i] = host[dirty[i]];
         gpu.EnsureFrame();
-        gpu.Uploads.WriteScattered(buffer, MemoryMarshal.AsBytes(dirtyRecords.AsSpan(0, dirty.Count)), CharacterMaterialRecord.Size, CollectionsMarshal.AsSpan(dirtyOffsets));
+        // The seam's uploads are batched (Vulkan would take one scattered copy; Metal records its own copy commands).
+        using var batch = gpu.Uploads.Begin();
+        for (int i = 0; i < dirty.Count; i++)
+            batch.Write(buffer, (ulong)dirty[i] * CharacterMaterialRecord.Size, MemoryMarshal.AsBytes(dirtyRecords.AsSpan(i, 1)));
         dirty.Clear();
     }
 
-    public BufferBinding Binding(GpuFrame frame) => buffer.Binding(frame);
+    public GpuBufferBinding Binding(IGpuFrame frame) => buffer.Binding(frame);
 
     public void Dispose() => buffer.Dispose();
 }

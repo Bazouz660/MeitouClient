@@ -95,21 +95,22 @@ public sealed unsafe class PipelineStatsMeter : IDisposable
         return q;
     }
 
-    void Open(CommandList cmd)
+    void Open(IGpuCommandList cmd)
     {
         if (!active || open >= 0) return;
         if (next >= Capacity) { Lost++; return; }
         open = next++;
-        openBuffer = cmd.Handle.Handle;
-        vk.CmdBeginQuery(cmd.Handle, pool, (uint)open, 0);
+        openBuffer = ((CommandList)cmd).Handle.Handle;
+        vk.CmdBeginQuery(((CommandList)cmd).Handle, pool, (uint)open, 0);
         loose.Add(open);
     }
 
-    void End(CommandList cmd)
+    void End(IGpuCommandList cmd)
     {
         if (open < 0) return;
-        if (cmd.Handle.Handle != openBuffer) { Lost++; open = -1; return; }
-        vk.CmdEndQuery(cmd.Handle, pool, (uint)open);
+        var vkList = (CommandList)cmd;
+        if (vkList.Handle.Handle != openBuffer) { Lost++; open = -1; return; }
+        vk.CmdEndQuery(vkList.Handle, pool, (uint)open);
         open = -1;
     }
 

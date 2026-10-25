@@ -401,7 +401,8 @@ sealed partial class GameHost
         var sb = new StringBuilder();
         static double P(List<double> v, double q) { if (v.Count == 0) return 0; var s = v.Order().ToList(); return s[Math.Min(s.Count - 1, (int)(q * s.Count))]; }
         var stages = StageClock.Names;
-        sb.Append(ci, $"# Play benchmark\n\n{benchFrames.Count} frames, {sz.X}x{sz.Y}, {gpu.Sky.Gpu.Device.DeviceName}, upscaler {o.Post.Upscale.Kind} at {o.Post.Upscale.EffectiveScale:0.00}; frame limit and vsync off.\n\n");
+        string device = gpu.Sky.Gpu is Meitou.Rendering.Gpu.GpuContext vk ? vk.Device.DeviceName : "Metal";
+        sb.Append(ci, $"# Play benchmark\n\n{benchFrames.Count} frames, {sz.X}x{sz.Y}, {device}, upscaler {o.Post.Upscale.Kind} at {o.Post.Upscale.EffectiveScale:0.00}; frame limit and vsync off.\n\n");
         sb.Append("| segment | frames | fps | frame ms p50 | p95 | p99 | max | update ms | ticks/frame | sim ms/tick | gpu ms | render cpu ms | alloc MB/s | gen2 |\n|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n");
         for (int s = 0; s < benchScript!.Length; s++)
         {

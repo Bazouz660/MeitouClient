@@ -21,11 +21,11 @@ where occluders justify it. A depth prepass is extra geometry, not automatically
 ## Ground relief
 
 Meitou look, not in the game (`GroundRelief`). Tab toggles "Ground parallax", "Ground displacement (tessellation)", "Terrain outline
-refinement (tessellation)", "Rock smoothing (tessellation)"; sliders "Ground relief depth (cm, typical ground)" (default 40),
-"Ground displacement distance (m)" (100), "Ground parallax distance (m)" (60); viewer K toggles the parallax. The other values are
-tuned constants, expressed at a 20 cm reference depth and settable for a run with the viewer's `--relief Name=value`: target slope
-0.2, scale follow 0.5, max depth 80 cm (160 at the default 40),
-cliff scale 1, overlay relief 1, self-shadow 0.6, tessellation detail 0.5, refinement 0.5 px, tilt 0.5, broad cut 2 m.
+refinement (tessellation)", "Rock smoothing (tessellation)"; sliders "Ground relief quality" (High by default; Medium and Low reduce
+the march), "Ground relief depth (cm, typical ground)" (default 40), "Ground displacement distance (m)" (100), "Ground parallax
+distance (m)" (60); viewer K toggles the parallax. The other values are tuned constants, expressed at a 20 cm reference depth and
+settable for a run with the viewer's `--relief Name=value`: target slope 0.2, scale follow 0.5, max depth 80 cm (160 at the default
+40), cliff scale 1, overlay relief 1, self-shadow 0.6, tessellation detail 0.5, refinement 0.5 px, tilt 0.5, broad cut 2 m.
 
 **Heights** (`NormalHeight.FromNormals`, at load, ≤512², an R8 array, one slice per pair slot; no readable normal map: flat, out
 of the relief). The normal map's slopes (`dh/du = x/z`, `dh/dv = -y/z` in the terrain tangent frame) are integrated by FFT
@@ -49,9 +49,10 @@ scale. **Observed** (field tour): the integrated range or normal-map strength as
 (`BurntWoodLike`, `SharpblockLoop`) and fine textures flat or spiky; this rule gives at 20 cm e.g. `WadiGravel` 13–15 cm,
 `Rocksurface01` 13 cm, `BurntWoodLike` 29 cm, `SharpblockLoop` 30 cm (twice that at the default 40).
 
-**Composite.** Every ground layer adds relief by how much of the pixel it shows in the material's order (base, grass, slope,
-dirt, road, the cliff over all), from the blend map, overlay window and slope per pixel, not per patch, so neighbouring patches
-meet on the same heights. A biome under 10% of the pixel is not marched (fading in to 30%), a layer under 5% is left out (to 15%).
+**Composite.** Every ground layer adds material; the relief height keeps the heaviest ground layers (base, grass, slope, dirt,
+road) by how much of the pixel each shows, from the blend map, overlay window and slope per pixel, not per patch, so neighbouring
+patches meet on the same heights: three at High quality, two at Medium, one at Low. The cliff over all has its own march. A biome
+under 10% of the pixel is not marched (fading in to 30%), a layer under 5% is left out (to 15%).
 
 **Displacement** (needs `tessellationShader`): main-view patches within the displacement distance + 10 units (interior-cut ones
 too) draw with tessellated colour and prepass programs (patch lists of 3, culling off, `fractional_odd_spacing`). The vertex
@@ -71,9 +72,10 @@ the rock bake are not tessellated.
 weight (`Relief`: one unscaled coordinate with its derivatives, and per layer its tiling, slice and weight) along the view ray, moving every layer's coordinate by it, then toward the sun for a soft self-shadow that dims the sun
 only (`atmoSelfShadow` in `kenshiLight`; darkening the albedo also darkened the ambient). Centred like the displacement: the flat
 surface is the relief's middle, so objects stand in the ground (marched from the top, the ground looks dug out round them). Steps
-fall with distance from 16 view and 8 sun steps to 6 and 3 at the parallax distance, in full to half of it; the sun's march reads
-the height two levels coarser and is skipped at 0 self-shadow. Where the ground is displaced, the view ray marches only the detail
-finer than the mesh (the height less its level at the segment, 8 steps), the whole height again as the displacement fades. The
+fall with distance from 8 view and 4 sun steps to 4 and 2 at the parallax distance at High (Medium 6 and 3 to 3 and 2; Low 4 and 2
+to 2 and 1), in full to half of it; the sun's march reads the height two levels coarser and is skipped at 0 self-shadow. Where the
+ground is displaced, the view ray marches only the detail finer than the mesh (the height less its level at the segment, 4 steps),
+the whole height again as the displacement fades. The
 cliff layer is marched on each of its two projections with a weight over 0.1 along the surface's normal (the ray's move across the
 face over its depth into it). Heights are read as stored on both projections: the shading turns the `(x, height)` normal map round,
 but a texel's height does not change with that (read upside down, `CliffChunky`'s cracks became ridges). The `(z, height)`
@@ -83,7 +85,9 @@ for some facings. Not in the rock impostor bake (parallax 0 there).
 **Refinement** (needs tessellation): every main-view patch takes the tessellated programs; an edge is also split where the terrain
 leaves it (at its quarters and middle) by more than 0.5 px, level `sqrt(deviation px / 0.5)` (a split in n takes a smooth curve's
 deviation down by about n²), at most 16, and the new points are put on the terrain (`terrainHeight`); an unsplit edge keeps its
-ends, so neighbours meet. Displacement and refinement take the larger level per edge. Shadow casters stay unrefined.
+ends, so neighbours meet. Displacement and refinement take the larger level per edge. Shadow casters stay unrefined. On Metal
+the tessellation toggles stay hidden and the flat/parallax path is used; a 2026-10-24 prototype was removed for cost and
+fallback risk (`docs/metal-backend.md`, "Tessellation").
 
 **Cost** (**Observed**, `meitou-viewer --ab <switch>` at a save's view, RTX 4090, 1080p DLSS 0.83): the terrain stage without
 relief 0.86 ms at error 16 (0.96 at 8, 1.34 at 4; error 1, 41 M triangles: 15.6 ms; the slider's minimum is 4); parallax +0.88 ms
@@ -101,10 +105,13 @@ the picture unchanged. The interior-cut patches' late colour took 1.4 ms for 19 
 depth test off. Their prepass already discards the cut, so the late colour draws them with the plain program and an equal depth test (both passes
 run the same vertex and tessellation stages, invariant positions): GPU frame 6.14 -> 5.80 ms, the picture unchanged (one pixel over 8 levels at a town view).
 With the parallax on (60 m, displacement 60 m), nearly all the visible terrain is relief patches. The march held their pixel warps to 12% (21% without it) at the
-same register file use, with the SM throughput at 20% (39%). The march's sampling hardly counts: no self-shadow, or the base layer alone, changed nothing.
-Every biome's march now runs before any is shaded (`biomeRelief`, then `biome` with its result), so the march's state no longer sits on the shading's:
-terrain 4.4 -> 4.0 ms, the picture unchanged. Without the march (`NO_MARCH`) that loop and its results' array are left out; kept with constants, they
-cost 0.28 ms. Drawing patches beyond the parallax's end with the march-free program saved nothing there.
+same register file use, with the SM throughput at 20% (39%). On the RTX path the march's sampling hardly counts: no self-shadow, or the base layer alone,
+changed nothing. Every biome's march now runs before any is shaded (`biomeRelief`, then `biome` with its result), so the march's state no longer sits on
+the shading's: terrain 4.4 -> 4.0 ms, the picture unchanged. Without the march (`NO_MARCH`) that loop and its results' array are left out; kept with
+constants, they cost 0.28 ms. Drawing patches beyond the parallax's end with the march-free program saved nothing there.
+**Metal (Observed, 2026-10-25, a town view at 1024x640 scene / 2560x1600 output):** the interior-cut colour draw took 11.25 ms of a 31.03 ms frame,
+with a 6.2 KB register spill. With the march off it took 4.28 ms and the frame 19.75 ms, the spill 48 B. The steps and top-three layers above are the
+LOD that keeps the march; Metal's shader compiler and tile-memory architecture make the march much more expensive than the RTX path.
 The displacement costs 0.42 ms at a save's view (60 m; GPU frame 5.80 vs 5.38 with it off), mostly the tessellated prepass, bound by the primitive
 engine (30%). Culling patches off the view in the control stage (corners padded 40 units, sides by 10%) saved 0.03 ms, within the noise: not kept.
 

@@ -8,7 +8,7 @@ namespace Meitou.Rendering.Gpu;
 /// colour programs of the main view (<see cref="TriangleBins.CategoryOf"/>) are made with a fragment shader that runs the original and then adds
 /// one to a counter in a storage buffer, by category and by the area of the sample's triangle (<see cref="TriangleBins.Instrument"/>). The buffer
 /// is reached by its device address, written into the shader text, so no renderer's layout or sets change. Normal programs and pipelines are
-/// never touched: the instrumented ones are separate pipelines (<see cref="PipelineLibrary.GetWithFragment"/>, swapped in at <see cref="CommandList.BindPipeline(GraphicsPipeline)"/>), made only while it is on.
+/// never touched: the instrumented ones are separate pipelines (<see cref="PipelineLibrary.GetWithFragment"/>, swapped in at <see cref="CommandList.BindPipeline(GpuPipeline)"/>), made only while it is on.
 /// </summary>
 public sealed unsafe class TriangleCounter : IDisposable
 {
@@ -18,10 +18,11 @@ public sealed unsafe class TriangleCounter : IDisposable
     readonly Vk vk;
     readonly VulkanDevice device;
     readonly Silk.NET.Vulkan.Buffer buffer;
+    readonly GpuBuffer handle;
     readonly DeviceMemory memory;
     readonly ulong address;
     readonly ReadbackBuffer readback;
-    readonly Dictionary<ShaderProgram, ShaderModule> modules = [];
+    readonly Dictionary<GpuProgram, ShaderModule> modules = [];
     readonly List<string> skipped = [];
     readonly List<string> counted = [];
 
@@ -55,6 +56,7 @@ public sealed unsafe class TriangleCounter : IDisposable
         var alloc = new MemoryAllocateInfo { SType = StructureType.MemoryAllocateInfo, AllocationSize = req.Size, MemoryTypeIndex = type, PNext = &flags };
         VulkanException.Check(vk.AllocateMemory(device.Device, in alloc, null, out memory), "vkAllocateMemory(triangle counters)");
         VulkanException.Check(vk.BindBufferMemory(device.Device, buffer, memory, 0), "vkBindBufferMemory(triangle counters)");
+        handle = new GpuBuffer(device.AddBuffer(new BufferEntry(buffer, null)), Bytes);
         var addressInfo = new BufferDeviceAddressInfo { SType = StructureType.BufferDeviceAddressInfo, Buffer = buffer };
         address = vk.GetBufferDeviceAddress(device.Device, in addressInfo);
         readback = ReadbackBuffer.Create(ctx, Bytes, "triangle counters readback");
@@ -75,31 +77,31 @@ public sealed unsafe class TriangleCounter : IDisposable
     {
         ctx.EnsureFrame();
         var list = ctx.BeginNative("triangle counters clear");
-        list.FillBuffer(buffer, 0, Bytes, 0);
+        list.FillBuffer(handle, 0, Bytes, 0);
         ctx.EndNative(list);
     }
 
-    GraphicsPipeline Substitute(GraphicsPipeline pipeline)
+    GpuPipeline Substitute(GpuPipeline pipeline)
     {
         var module = ModuleFor(pipeline.Desc.Program);
         return module.Handle == 0 ? pipeline : ctx.Pipelines.GetWithFragment(pipeline.Desc, module);
     }
 
     // Called from the recording threads: the modules are made under a lock (once per program).
-    ShaderModule ModuleFor(ShaderProgram program)
+    ShaderModule ModuleFor(GpuProgram program)
     {
         lock (modules) return ModuleForLocked(program);
     }
 
-    ShaderModule ModuleForLocked(ShaderProgram program)
+    ShaderModule ModuleForLocked(GpuProgram program)
     {
         if (modules.TryGetValue(program, out var module)) return module;
         int category = TriangleBins.CategoryOf(program.Name);
-        if (category >= 0 && program.FragmentSource is { } source)
+        if (category >= 0 && ctx.Shaders.Backend(program).FragmentSource is { } source)
         {
             if (TriangleBins.Instrument(source, category, address) is { } text)
             {
-                module = program.CreateModule(ctx.Shaders.Compiler.CompileNative(text, fragment: true));
+                module = ctx.Shaders.Backend(program).CreateModule(ctx.Shaders.Compiler.CompileNative(text, fragment: true));
                 counted.Add(TriangleBins.EarlyTests(source, category) ? program.Name : program.Name + " (late depth test)");
             }
             else skipped.Add(program.Name);
@@ -112,7 +114,7 @@ public sealed unsafe class TriangleCounter : IDisposable
     {
         ctx.EnsureFrame();
         var list = ctx.BeginNative("triangle counters read");
-        list.CopyBuffer(buffer, readback.Handle, new BufferCopy(0, 0, Bytes));
+        list.CopyBuffer(handle, readback.Handle, new GpuBufferCopy(0, 0, Bytes));
         ctx.EndNative(list);
         ctx.Finish();
         var bytes = readback.Read(0, Bytes);

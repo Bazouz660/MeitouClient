@@ -1,6 +1,5 @@
 using System.Numerics;
 using Meitou.Rendering.Gpu;
-using Silk.NET.Vulkan;
 
 namespace Meitou.Rendering.Characters;
 
@@ -77,13 +76,13 @@ internal sealed class PreviewResolve : IDisposable
         }
         """;
 
-    readonly GpuContext gpu;
+    readonly IGpuContext gpu;
     readonly LegacyProgram program;
     readonly SamplerSlot source;
     readonly UniformHandle rect, scale, tone, toneMix, grade, saturation, contrast, dither;
-    readonly Dictionary<Format, GraphicsPipeline> pipelines = [];
+    readonly Dictionary<InternalFormat, GpuPipeline> pipelines = [];
 
-    public PreviewResolve(GpuContext gpu)
+    public PreviewResolve(IGpuContext gpu)
     {
         this.gpu = gpu;
         program = LegacyProgram.Create(gpu, PostProcessShaders.Vertex, Fragment, "character preview resolve");
@@ -93,13 +92,13 @@ internal sealed class PreviewResolve : IDisposable
     }
 
     /// <summary>A half-float colour target and its depth for <paramref name="width"/> × <paramref name="height"/> destination pixels at <paramref name="look"/>'s supersampling.</summary>
-    public static (Texture Colour, Texture Depth, SampledTexture Sampled) Targets(GpuContext gpu, int width, int height, PreviewLook look, string name)
+    public static (GpuTexture Colour, GpuTexture Depth, SampledTexture Sampled) Targets(IGpuContext gpu, int width, int height, PreviewLook look, string name)
     {
         int s = Math.Max(look.Supersample, 1);
-        var colour = Texture.Create(gpu, new TextureDesc(Format.R16G16B16A16Sfloat, width * s, height * s, Use: TextureUse.Sampled | TextureUse.ColourTarget, Name: name));
-        var depth = Texture.Create(gpu, new TextureDesc(Format.D32Sfloat, width * s, height * s, Use: TextureUse.DepthTarget, Name: name + " depth"));
+        var colour = gpu.CreateTexture(new TextureDesc(InternalFormat.Rgba16f, width * s, height * s, Use: TextureUse.Sampled | TextureUse.ColourTarget, Name: name));
+        var depth = gpu.CreateTexture(new TextureDesc(InternalFormat.DepthComponent24, width * s, height * s, Use: TextureUse.DepthTarget, Name: name + " depth"));
         var sampled = new SampledTexture(gpu.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Nearest, TextureMagFilter.Nearest,
-            TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, false, DepthFunction.Lequal, false, 1, false, 0)), colour.View(), colour.Image);
+            TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, false, DepthFunction.Lequal, false, 1, false, 0)), colour.View());
         return (colour, depth, sampled);
     }
 
@@ -107,15 +106,15 @@ internal sealed class PreviewResolve : IDisposable
     /// Resolves <paramref name="from"/> into the <paramref name="regions"/> of <paramref name="into"/> (each its destination pixels; the source holds each from its corner,
     /// <see cref="PreviewLook.Supersample"/> times larger), outside any pass; the rest of <paramref name="into"/> keeps what it holds.
     /// </summary>
-    public void Run(SampledTexture from, Texture into, PreviewLook look, ReadOnlySpan<Rect2D> regions)
+    public void Run(SampledTexture from, GpuTexture into, PreviewLook look, ReadOnlySpan<PixelRect> regions)
     {
         if (regions.Length == 0) return;
         var targets = PassTargets.Of(into, null);
         var state = DrawState.For(targets.Formats, false);
         if (!pipelines.TryGetValue(into.Desc.Format, out var pipeline))
-            pipelines[into.Desc.Format] = pipeline = gpu.Pipelines.Get(state.Pipeline(program.Program, program.VertexLayout([]), PrimitiveTopology.TriangleList, targets.Formats, program.Name));
+            pipelines[into.Desc.Format] = pipeline = gpu.Pipelines.Get(state.Pipeline(program.Program, program.VertexLayout([]), PrimitiveType.Triangles, targets.Formats, program.Name));
         var cmd = gpu.BeginNative("character preview resolve");
-        cmd.Barrier(BarrierBatch.Full);   // the source was just drawn
+        cmd.Order();   // the source was just drawn
         cmd.BeginRendering(new RenderingDesc(targets.Colour, default, targets.Width, targets.Height));
         cmd.SetRaster(state.Cull, state.Front);
         cmd.SetDepth(state.DepthTest, state.DepthWrite, state.Compare);
@@ -131,14 +130,14 @@ internal sealed class PreviewResolve : IDisposable
         program.Set(dither, look.Dither ? 1 : 0);
         foreach (var r in regions)
         {
-            cmd.SetViewport(new Viewport(r.Offset.X, r.Offset.Y, r.Extent.Width, r.Extent.Height, 0, 1));
+            cmd.SetViewport(new PixelViewport(r.X, r.Y, r.Width, r.Height, 0, 1));
             cmd.SetScissor(r);
-            program.Set(rect, new Vector4(r.Offset.X, r.Offset.Y, r.Extent.Width, r.Extent.Height));
+            program.Set(rect, new Vector4(r.X, r.Y, r.Width, r.Height));
             program.Flush(cmd);
             cmd.Draw(3);
         }
         cmd.EndRendering();
-        cmd.Barrier(BarrierBatch.Full);
+        cmd.Order();
         gpu.EndNative(cmd);
     }
 

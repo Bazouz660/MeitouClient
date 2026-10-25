@@ -21,6 +21,8 @@ sealed class WorldOptions
     public float? Yaw, Pitch, Distance;
     public string? Screenshot;
     public int Width = 1280, Height = 960;
+    /// <summary><c>--size</c> was given: an interactive window keeps that size instead of starting maximised.</summary>
+    public bool SizeGiven;
     /// <summary>The size of a bench run (<c>--bench-frames</c> or <c>--ab</c>) without <c>--size</c>: smaller, so the runs are quicker.</summary>
     public static readonly (int Width, int Height) BenchSize = (1280, 720);
     public bool NoTextures, NoObjects, Wireframe;
@@ -55,6 +57,8 @@ sealed class WorldOptions
     // The viewer starts at full quality (the old look); the game's missing-key defaults are TextureQuality.Default (1) and
     // ReflectionPass.DefaultLevel (2): --texture-quality 1 --water-reflection 2.
     public int TextureQuality = 0, WaterReflection = 4;
+    /// <summary>Samples per texel of the reflection target (<c>--reflection-samples</c>; 1 disables the MSAA/resolve path).</summary>
+    public int ReflectionSamples = ReflectionPass.DefaultSamples;
     /// <summary>Sun shadows (docs/formats/shadows.md): the game's <c>shadow quality</c> index, <c>Shadow Range</c>, the debug view.</summary>
     public int ShadowQuality = 2, DebugShadows, ShadowFilter = 2;
     /// <summary>The ray-traced global illumination's debug view (0 off; docs/render-gi.md).</summary>
@@ -169,7 +173,7 @@ sealed class WorldOptions
 
     /// <summary>
     /// <c>--low-end</c>: the potato-PC settings, applied where it stands among the options (so any option after it overrides one of them).
-    /// Short draw distances, no reflections or shadows, the game's FXAA turned off too, 0.83 render scale, quarter-size particles.
+    /// Short draw distances, no reflections, shadows, ground relief or light shafts, the game's FXAA turned off too, 0.83 render scale, quarter-size particles.
     /// </summary>
     void ApplyLowEnd()
     {
@@ -181,6 +185,13 @@ sealed class WorldOptions
         (ShadowsOff, ShadowFilter) = (true, 0);   // --shadow-range 0
         Enhancements.Apply(Switches(this), "ao,aa,shadows,water", meitou: false);
         Enhancements.Apply(Switches(this), "particles", meitou: true);
+        GroundRelief.Quality = 0;
+        GroundRelief.ParallaxActive = false;
+        GroundRelief.DisplaceActive = false;
+        GroundRelief.RefinePixels = 0;
+        RockSmoothing.TessellateActive = false;
+        Post.LightShafts = false;
+        Post.ShaftQuality = 0;
         Post.Fxaa = false;
         (Post.Upscale.Scale, Post.Upscale.Explicit) = (0.83f, true);
         Post.ParticleDivisor = 4;
@@ -198,7 +209,7 @@ sealed class WorldOptions
           --yaw <deg> --pitch <deg> --distance <units>   camera around the point (defaults 30, 35, radius)
           --screenshot <out.png> --size <W>x<H>          render offscreen to a PNG and exit
           --monitor <n>                                  open the window on monitor n (1-based)
-          --windowed                                     a bordered, maximized window (default: borderless full screen; Alt+Enter toggles)
+          --windowed                                     a bordered window: the --size asked, else maximized (default: borderless full screen; Alt+Enter toggles)
           --no-objects             skip buildings and map features
           --no-foliage             no trees, bushes, rocks or grass (F toggles)
           --no-load-cache          do not read or write the load caches (the foliage layout cache)
@@ -212,7 +223,8 @@ sealed class WorldOptions
           --no-water               leave out the water
           --water-grid <n>         the Meitou water grid's segments round the eye (default 256; 128 lower detail, 512 finer)
           --water-ocean <n>        the Meitou water's FFT size per cascade: 64, 128 or 256 (default 256; 128 for integrated GPUs, a quarter of the work)
-          --water-reflection <0..4> the game's `water reflection`: what the water mirrors: 0 nothing (sky colour; R toggles), 1 sky and terrain, 2 the same (the characters' level; none yet), 3 + buildings and features, 4 + trees, bushes and rocks (default 4; the game's own default is 2; Tab slider)
+          --water-reflection <0..4> the game's `water reflection`: what the water mirrors: 0 nothing (sky colour; R toggles), 1 sky and terrain, 2 + characters, 3 + buildings and features, 4 + trees, bushes and rocks (default 4; the game's own default is 2; Tab slider)
+          --reflection-samples <n> samples per texel of the half-resolution reflection target (default 4; 1 disables MSAA; the device may cap it)
           --texture-quality <0..4> the game's `texture resolution gimping`: 0 Maximum, 1 High, 2 Medium, 3 Low, 4 Fugly; each step drops the top mip of compressed textures as they load (default 0, full size; the game's own default is 1)
           --shadow-quality <0|1|2> map side 1024/2048/4096 (default 2)   --shadow-range <u> (1000..9000, default 5000; with the Meitou shadows 1000..15000, default 10000)
           --shadow-range 0         shadows start off (the Tab slider turns them on)
@@ -227,7 +239,7 @@ sealed class WorldOptions
           --clouds <0..1>          cloud density c (test override)
           --no-audio               no sound (the biome ambience and weather beds from the game's Wwise banks)   --audio-gain <dB> raise or lower the whole mix (0 = the game's levels)
           --no-particles           no weather particles  --particle-prewarm <s> seconds simulated before the first picture (default: the longest particle life; 0 starts empty)   --particle-density <x> the effects' emission rate x (0.1-1, the Tab slider)   --anisotropy <n> the most anisotropic filtering any texture gets (1-16, the Tab slider; 16 default)
-          --low-end                potato-PC settings: short draw distances, no shadows, reflections, AO or anti-aliasing, 0.83 render scale, sparse grass and particles (options after it override)
+          --low-end                potato-PC settings: short draw distances, no shadows, reflections, AO, ground relief, light shafts or anti-aliasing, 0.83 render scale, sparse grass and particles (options after it override)
           --no-vsync               start with vsync off (uncapped; Tab slider)
           --grass-density <x>      grass blades x this (0.1-2, default 1; Tab slider)
           --camera-code <hex>      start at a camera code (Ctrl+C in the viewer copies one), the world loaded round it
@@ -259,7 +271,7 @@ sealed class WorldOptions
           --terrain-error <px>     terrain LOD: the height error allowed near the eye, in pixels of the rendered picture (the reach switch, F8: default 16 in Meitou, 10 in Faithful; Tab slider)
           --wireframe
           --post <meitou|kenshi|off>   post-processing preset (default meitou), before the options below: HDR scene, SSAO
-          --upscaler <off|taa|fsr|dlss>   temporal upscaling (default taa in Meitou, off in Faithful; FSR and DLSS need the vendor library, else TAA)
+          --upscaler <off|taa|fsr|dlss|metalfx>   temporal upscaling (default taa in Meitou, off in Faithful; FSR and DLSS need the vendor library; MetalFX is the Metal backend's opt-in, else TAA)
           --render-scale <0.25..1|native|ultra-quality|quality|balanced|performance|ultra>   render size per axis (Meitou default 0.83 with an upscaler, else 1)
           --no-fxaa                the game's FXAA off when no upscaler runs (the game's own FXAA setting, default on)
           --smaa                   SMAA instead of FXAA when no upscaler runs
@@ -296,6 +308,7 @@ sealed class WorldOptions
         if (viewAt >= 0 && viewAt + 1 < args.Length) o.View = args[viewAt + 1];
         args = NamedViews.Expand(args);   // --view <name> becomes its options, in place: the ones after it win
         bool sizeGiven = args.Contains("--size");
+        o.SizeGiven = sizeGiven;
         for (int i = 0; i < args.Length; i++)
         {
             string a = args[i];
@@ -338,6 +351,12 @@ sealed class WorldOptions
                 case "--water-grid": o.WaterGrid = Math.Clamp(int.Parse(Next(), CultureInfo.InvariantCulture), 64, 1024); break;
                 case "--water-ocean": o.WaterOcean = int.Parse(Next(), CultureInfo.InvariantCulture) switch { <= 64 => 64, <= 128 => 128, _ => 256 }; break;
                 case "--water-reflection": o.WaterReflection = Math.Clamp(int.Parse(Next(), CultureInfo.InvariantCulture), 0, 4); break;
+                case "--reflection-samples":
+                {
+                    int samples = int.Parse(Next(), CultureInfo.InvariantCulture);
+                    o.ReflectionSamples = samples <= 1 ? 1 : samples;
+                    break;
+                }
                 case "--texture-quality": o.TextureQuality = Math.Clamp(int.Parse(Next(), CultureInfo.InvariantCulture), 0, Meitou.Data.Textures.TextureQuality.Maximum); break;
                 case "--shadow-quality": o.ShadowQuality = int.Parse(Next(), CultureInfo.InvariantCulture); break;
                 case "--shadow-filter": o.ShadowFilter = Math.Clamp(int.Parse(Next(), CultureInfo.InvariantCulture), 0, 2); break;
@@ -416,49 +435,49 @@ sealed class WorldOptions
 /// timestamps); <see cref="Close"/> records the queued jobs on the job threads and executes everything in order. <see cref="ClearDepth"/> clears
 /// the depth in its place among the guests.
 /// </summary>
-sealed class SceneHost(GpuContext ctx)
+sealed class SceneHost(IGpuContext ctx)
 {
-    CommandList? cmd;
+    IGpuCommandList? cmd;
     PassTargets? targets;
 
     public bool IsOpen => cmd is not null;
 
     /// <summary>Opens the host on <paramref name="targets"/> (nothing when it is open already); its jobs count towards <paramref name="stage"/>.
     /// <paramref name="clearColour"/> / <paramref name="clearDepth"/>: the attachments are cleared by the rendering's load ops (to the colour, to 1).
-    /// Without secondaries (<see cref="Recording.Mode"/> 0) the guests record straight into its rendering.</summary>
-    public void Open(int stage, PassTargets targets, Vk.ClearColorValue? clearColour = null, bool clearDepth = false)
+    /// Without secondaries (<see cref="IGpuContext.RecordsSecondaries"/>) the guests record straight into its rendering.</summary>
+    public void Open(int stage, PassTargets targets, ClearColour? clearColour = null, bool clearDepth = false)
     {
         if (cmd is not null) { Stage(stage); return; }
         var list = ctx.BeginNative("scene");
-        bool secondaries = Recording.Secondaries;
-        var colour = clearColour is { } c ? targets.Colour with { Load = Vk.AttachmentLoadOp.Clear, Clear = new Vk.ClearValue(c) } : targets.Colour;
-        var depth = clearDepth ? targets.Depth with { Load = Vk.AttachmentLoadOp.Clear, Clear = new Vk.ClearValue(depthStencil: new Vk.ClearDepthStencilValue(1f, 0)) } : targets.Depth;
+        bool secondaries = ctx.RecordsSecondaries;
+        var colour = clearColour is { } c ? targets.Colour with { Load = LoadOp.Clear, Clear = c } : targets.Colour;
+        var depth = clearDepth ? targets.Depth with { Load = LoadOp.Clear, DepthClear = 1f } : targets.Depth;
         // The extra target (the GI resolve's albedo) is cleared to 0 with the colour: no surface there takes the probes' light in post.
-        var extra = clearColour is not null && !targets.Extra.IsNull ? targets.Extra with { Load = Vk.AttachmentLoadOp.Clear, Clear = default } : targets.Extra;
+        var extra = clearColour is not null && !targets.Extra.IsNull ? targets.Extra with { Load = LoadOp.Clear, Clear = default } : targets.Extra;
         list.BeginRendering(new RenderingDesc(colour, depth, targets.Width, targets.Height, 0, 0, targets.ShadingRate, targets.ShadingRateTexel, extra), secondaries);
         this.targets = targets;
-        ctx.BeginHostPass(list, targets, DrawState.Scene(targets.Formats, DrawState.Rgb));   // alpha: the characters only (the SSAO character mask)
-        if (secondaries) ctx.Frame.Parallel.Begin(list, targets.Formats, stage);
+        ctx.BeginHostPassParallel(list, targets, DrawState.Scene(targets.Formats, DrawState.Rgb), stage);   // alpha: the characters only (the SSAO character mask)
         cmd = list;
     }
 
     /// <summary>The <see cref="StageClock"/> stage the guests' jobs count towards from now on.</summary>
     public void Stage(int stage)
     {
-        if (cmd is not null) ctx.Frame.Parallel.Stage = stage;
+        if (cmd is not null) ctx.SetPassStage(stage);
     }
 
     /// <summary>Clears the open rendering's depth to 1 over the whole target, in its place among the guests' segments.</summary>
     public void ClearDepth()
     {
         if (cmd is not { } list || targets is not { } t) throw new InvalidOperationException("ClearDepth without an open scene host");
-        ctx.ClearDepth(list, 1f, new Vk.Rect2D(default, new Vk.Extent2D((uint)t.Width, (uint)t.Height)));
+        ctx.ClearDepth(list, 1f, new PixelRect(0, 0, (uint)t.Width, (uint)t.Height));
     }
 
     public void Close()
     {
         if (cmd is not { } list) return;
-        if (ctx.Frame.Parallel.Open) ctx.Frame.Parallel.End();
+        // Vulkan's queued guests execute into the rendering's secondaries; they must finish before EndRendering.
+        ctx.EndHostPassParallel(list);
         list.EndRendering();
         ctx.EndHostPass(list);
         ctx.EndNative(list);
@@ -647,6 +666,8 @@ static class WorldFrame
         internal Gi.GiScene? Gi;
         internal Gi.GiDebugPass? GiDebugPass;
         internal Gi.GiProbes? Probes;
+        /// <summary>A backend-owned probe GI (Metal's native ray tracing); Vulkan uses <see cref="Gi"/> and <see cref="Probes"/> instead.</summary>
+        internal Gi.IProbeGi? ProbeGi;
         internal WorldLamps? Lamps;
         /// <summary>The placed buildings' effects (campfires, torches, smoke; docs/formats/lights.md "Effects on buildings"), read on a worker, handed to the particles once read.</summary>
         internal Task<List<PlacedEffect>>? BuildingEffects;
@@ -655,7 +676,11 @@ static class WorldFrame
         public bool GiActive = true;
         /// <summary>The GI resolve's divisor (0 the lit fragments read the probes, 1 full size, 2 half; the bench's gi-resolve switch; docs/render-gi.md "Resolve").</summary>
         public int GiResolve = 2;
+        /// <summary>The Vulkan post chain (its reflection and GI also read it); null on a backend with a seam-only chain.</summary>
         public PostProcess? Post;
+        /// <summary>The chain <see cref="WorldFrame.Draw"/> runs: <see cref="Post"/> on Vulkan (also when a host sets only that), the host's seam chain on Metal.</summary>
+        public IWorldPostChain? PostChain { get => postChain ?? Post; set => postChain = value; }
+        IWorldPostChain? postChain;
         public WorldObjectRenderer? Objects;
         public FoliageRenderer? Foliage;
         /// <summary>The characters (null without <c>--crowd</c> or a host that feeds them).</summary>
@@ -682,6 +707,7 @@ static class WorldFrame
         public void Dispose()
         {
             GiDebugPass?.Dispose();
+            ProbeGi?.Dispose();
             Probes?.Dispose();
             Lamps?.Dispose();
             Gi?.Dispose();
@@ -699,7 +725,7 @@ static class WorldFrame
             Surfaces?.Dispose();
             Reflection?.Dispose();
             Shadow?.Dispose();
-            Post?.Dispose();
+            Post?.Dispose();   // a seam-only chain (MetalPostChain) is owned by its host
             Sky.Dispose();
             Terrain.Dispose();
         }
@@ -710,7 +736,7 @@ static class WorldFrame
     /// benchmark start, a 300 ms stall two frames later), and one full, compacting collection runs now instead of a blocking gen2 collection a few
     /// frames into play (300+ ms measured), then gen2 collections only in the background while the world runs (DECISIONS 12).
     /// </summary>
-    public static void FinishLoading(GpuContext context)
+    public static void FinishLoading(IGpuContext context)
     {
         context.Finish();
         System.Runtime.GCSettings.LargeObjectHeapCompactionMode = System.Runtime.GCLargeObjectHeapCompactionMode.CompactOnce;
@@ -747,7 +773,7 @@ static class WorldFrame
     }
 
     /// <summary>The particle renderer (reads the scripts and materials, makes the pass's program) if there is none yet; for whoever feeds it a weather's effect list.</summary>
-    public static ParticleRenderer EnsureParticles(Gpu gpu, GpuContext context, GameInstall install)
+    public static ParticleRenderer EnsureParticles(Gpu gpu, IGpuContext context, GameInstall install)
     {
         if (gpu.Particles is { } existing) return existing;
         return gpu.Particles = ParticleRenderer.Create(context, install);
@@ -755,7 +781,9 @@ static class WorldFrame
 
     /// <summary>The renderer for <paramref name="scene"/>. <paramref name="step"/> is called before each of its steps (terrain, biomes, sky, water, objects, foliage, shadows) with the step's name: the game draws a loading frame there.</summary>
     /// <paramref name="wait"/> waits for the CPU work started on workers at the beginning (the terrain textures' and the water's files and bakes); the game draws loading frames while it waits.
-    public static Gpu CreateGpu(GpuContext context, GameInstall install, WorldScene scene, AssetLocator assets, WorldOptions o, bool interactive, Action<string>? step = null, Action<Task>? wait = null)
+    public static Gpu CreateGpu(IGpuContext context, GameInstall install, WorldScene scene, AssetLocator assets, WorldOptions o, bool interactive,
+        Action<string>? step = null, Action<Task>? wait = null, bool terrainTextures = true, bool particlesEnabled = true, int objectLoadBudget = -1,
+        Func<(ulong Used, ulong Budget)>? vramSample = null)
     {
         var watch = Stopwatch.StartNew();
         context.Samplers.MaxAnisotropy = o.Anisotropy;
@@ -765,14 +793,14 @@ static class WorldFrame
         int layerSize = Math.Max(2048 >> Meitou.Data.Textures.TextureQuality.LevelsToDrop("terrain.dds", "Landscape"), 16);
         if (layerSize != 2048) Console.WriteLine($"textures  quality {o.TextureQuality} ({Meitou.Data.Textures.TextureQuality.Labels[o.TextureQuality]}): terrain layers {layerSize}² instead of 2048²");
         // The files the terrain textures and the water read and bake (seconds of CPU work) are read on workers while the steps before them run.
-        var terrainSource = !o.NoTextures && scene.Database is { } textureDb ? Task.Run(() => TerrainTextures.Prepare(install, textureDb)) : null;
+        var terrainSource = !o.NoTextures && terrainTextures && scene.Database is { } textureDb ? Task.Run(() => TerrainTextures.Prepare(install, textureDb)) : null;
         var waterSource = !o.NoWater && scene.Database is { } waterDb ? Task.Run(() => WaterRenderer.Prepare(install, waterDb, assets, scene.Coarse)) : null;
         T Ready<T>(Task<T> work) { if (wait is not null) wait(work); return work.GetAwaiter().GetResult(); }
         step?.Invoke("terrain");
         var terrain = new TerrainRenderer(context, scene.Coarse, scene.CoarseSize, scene.Window);
         Console.WriteLine($"uploaded  terrain heights: {terrain.LevelCount} LOD levels, finest {terrain.FinestSpacing:0.#} units ({watch.ElapsedMilliseconds} ms)");
         TerrainTextures? textures = null;
-        if (!o.NoTextures && scene.Database is not null)
+        if (!o.NoTextures && terrainTextures && scene.Database is not null)
         {
             step?.Invoke("biomes");
             textures = TerrainTextures.Create(context, install, scene.Database, assets, layerSize, source: Ready(terrainSource!));
@@ -781,12 +809,15 @@ static class WorldFrame
             terrain.SetTextures(textures);
         }
         step?.Invoke("sky");
-        var gpu = new Gpu { Terrain = terrain, Sky = new SkyRenderer(context, assets) { CloudCoverage = o.Clouds }, Post = new PostProcess(context, o.Post) };
-        gpu.Post.LoadHeatHaze(assets);
+        // WorldFrame.Draw runs a post chain through IWorldPostChain. Vulkan's PostProcess is complete here; Metal supplies its
+        // PostComposite/PostTaa slice as a host-constructed chain and leaves the Vulkan-only reflection and GI paths null.
+        var post = context is GpuContext vulkanPost ? new PostProcess(vulkanPost, o.Post) : null;
+        var gpu = new Gpu { Terrain = terrain, Sky = new SkyRenderer(context, assets) { CloudCoverage = o.Clouds }, Post = post, PostChain = post };
+        post?.LoadHeatHaze(assets);
         // The placed fog volumes (docs/formats/fogfeatures.md): the swamp's fog and the like, part of the game's look.
         // Always made: the weather's fog spheres go through it too, with or without a fogfeatures.dat.
         gpu.FogVolumes = new FogVolumes(context, o.NoFogFeatures ? [] : FogFeatures.Load(install));
-        gpu.Post.FogVrs = true;   // takes effect where the device supports fragment shading rates
+        if (post is not null) post.FogVrs = true;   // takes effect where the device supports fragment shading rates
         gpu.Sky.HazeStrength = o.HazeStrength;
         gpu.Sky.NightAir = o.NightAir;
         gpu.Sky.Planetshine = o.Planetshine;
@@ -815,7 +846,7 @@ static class WorldFrame
         // The weather's particle effects (rain, ash...) follow the weather state (UpdateParticles); the map's effect placers are always on
         // (docs/formats/weather.md "Effect placers on the map"), so the particle renderer exists from the start whatever the weather.
         step?.Invoke("particles");
-        if (!o.NoParticles && scene.Database is { } effectsDb)
+        if (particlesEnabled && !o.NoParticles && scene.Database is { } effectsDb)
         {
             var particleWatch = Stopwatch.StartNew();
             var particles = EnsureParticles(gpu, context, install);
@@ -848,10 +879,17 @@ static class WorldFrame
         {
             var messages = new List<string>();
             step?.Invoke("water");
-            gpu.Water = WaterRenderer.Create(context, install, scene.Database, assets, gpu.Sky, messages, scene.Coarse, o.WaterGrid, o.WaterOcean, Ready(waterSource!));
-            gpu.Water.Meitou = o.MeitouWater;
+            // The Meitou water's FFT, shore field and reflection are seam-neutral. Metal packs the two biome
+            // parameter maps into one array and drops refraction (its scene copy is still Vulkan-only), which
+            // leaves the Meitou fragment exactly at Metal's 16-sampler stage limit.
+            // Vulkan always makes the Meitou water, so the Faithful / Meitou switch can turn it on while the game runs; another backend makes
+            // it only when the run starts with it.
+            bool meitouWater = o.MeitouWater, makeMeitou = meitouWater || context is GpuContext;
+            gpu.Water = WaterRenderer.Create(context, install, scene.Database, assets, gpu.Sky, messages, scene.Coarse, o.WaterGrid, o.WaterOcean,
+                Ready(waterSource!), meitouWaves: makeMeitou, shoreField: makeMeitou);
+            gpu.Water.Meitou = meitouWater;
             step?.Invoke("reflections");
-            gpu.Reflection = new ReflectionPass(context) { Level = o.WaterReflection, Range = ReflectionRange };
+            gpu.Reflection = new ReflectionPass(context) { Level = o.WaterReflection, Range = ReflectionRange, Samples = o.ReflectionSamples };
             foreach (var m in messages) Console.WriteLine($"warning   {m}");
             Console.WriteLine($"water     at height {WorldWater.Height} ({watch.ElapsedMilliseconds} ms)");
         }
@@ -859,8 +897,9 @@ static class WorldFrame
         {
             // Landmarks (huge objects, drawn to their own distance) are kept apart from the zones only when the viewer starts with them (Meitou reach, distance above 0).
             step?.Invoke("objects");
+            int loadBudget = objectLoadBudget >= 0 ? objectLoadBudget : interactive ? 8 : 0;
             gpu.Objects = new WorldObjectRenderer(context, assets, scene.Objects, landmarks: o.LandmarkDistanceFor(o.MeitouReach) > 0)
-            { ObjectDistance = o.ObjectDistanceFor(o.MeitouReach), LandmarkDistance = o.LandmarkDistanceFor(o.MeitouReach), DistantRange = o.DistantZones * WorldLayout.ZoneSize, NoDistant = o.DistantZones <= 0, LoadBudget = interactive ? 8 : 0, SortNearestFirst = o.MeitouReach, LodBias = 1 / o.ObjectLod };
+            { ObjectDistance = o.ObjectDistanceFor(o.MeitouReach), LandmarkDistance = o.LandmarkDistanceFor(o.MeitouReach), DistantRange = o.DistantZones * WorldLayout.ZoneSize, NoDistant = o.DistantZones <= 0, LoadBudget = loadBudget, SortNearestFirst = o.MeitouReach, LodBias = 1 / o.ObjectLod };
             Console.WriteLine($"objects   GPU ready ({watch.ElapsedMilliseconds} ms)");
         }
         if (!o.NoFoliage && scene.Database is not null)
@@ -893,36 +932,48 @@ static class WorldFrame
         if (gpu.Characters is { } crowd) (crowd.GeneratedLod, crowd.SkinShading) = (o.CharacterLod, o.SkinShading);
         gpu.DebugShadows = o.DebugShadows;
         step?.Invoke("gi");
-        if (o.GiDebug > 0 || o.Gi)
+        if ((o.GiDebug > 0 || o.Gi) && context is GpuContext giContext)
         {
-            if (!context.Device.HasRayQuery) Console.WriteLine("gi        off: the device has no ray queries (VK_KHR_ray_query)");
+            if (!giContext.Device.HasRayQuery) Console.WriteLine("gi        off: the device has no ray queries (VK_KHR_ray_query)");
             else
             {
-                gpu.Gi = new Gi.GiScene(context);
+                gpu.Gi = new Gi.GiScene(giContext);
                 if (o.GiDebug > 0)
                 {
-                    gpu.GiDebugPass = new Gi.GiDebugPass(context);
+                    gpu.GiDebugPass = new Gi.GiDebugPass(giContext);
                     gpu.GiDebug = o.GiDebug;
                     Console.WriteLine($"gi        debug view {o.GiDebug}");
                 }
                 if (o.Gi)
                 {
-                    gpu.Probes = new Gi.GiProbes(context) { Enabled = o.GiProbes, InteriorEnabled = o.InteriorGi };
+                    gpu.Probes = new Gi.GiProbes(giContext) { Enabled = o.GiProbes, InteriorEnabled = o.InteriorGi };
                     Console.WriteLine($"gi        {gpu.Probes.Describe()}");
                 }
             }
         }
-        // The memory-pressure guard (VramGuard): MEITOU_VRAM_GUARD=0 leaves it off.
+        // The memory-pressure guard (VramGuard): MEITOU_VRAM_GUARD=0 leaves it off. Vulkan samples its allocator;
+        // another backend supplies the sample (Metal's device allocation and conservative budget).
         if (Environment.GetEnvironmentVariable("MEITOU_VRAM_GUARD") != "0")
         {
-            var guard = gpu.Guard = new VramGuard(context.Device.VideoMemory) { Allocator = context.Device.Allocator };
-            if (gpu.Objects is not null) gpu.Objects.Guard = guard;
-            if (gpu.Foliage is not null) gpu.Foliage.Guard = guard;
-            if (gpu.Shadow is not null) gpu.Shadow.Guard = guard;
-            if (gpu.Characters is not null) gpu.Characters.Guard = guard;
+            VramGuard? guard = context is GpuContext vulkanGuard
+                ? new VramGuard(vulkanGuard.Device.VideoMemory) { Allocator = vulkanGuard.Device.Allocator }
+                : vramSample is not null ? new VramGuard(vramSample) : null;
+            if (guard is not null)
+            {
+                gpu.Guard = guard;
+                if (gpu.Objects is not null) gpu.Objects.Guard = guard;
+                if (gpu.Foliage is not null) gpu.Foliage.Guard = guard;
+                if (gpu.Shadow is not null) gpu.Shadow.Guard = guard;
+                if (gpu.Characters is not null) gpu.Characters.Guard = guard;
+            }
         }
         return gpu;
     }
+
+    /// <summary>The depth slices this chain's scene targets can hold: Vulkan's far and near depth, or one slice for a backend with a
+    /// single scene depth target.</summary>
+    static IEnumerable<(float Near, float Far)> SceneSlices(IWorldPostChain post, WorldCamera camera) =>
+        post.DepthSlices ? camera.Slices() : [(camera.Near, camera.ViewDistance)];
 
     /// <summary>Draws a frame: the sky, then the far depth slice (terrain, water), then the near one (terrain, objects, water).</summary>
     // The Tab panel: draw distances and LOD.
@@ -936,7 +987,8 @@ static class WorldFrame
     public static readonly string[] ParticleSliders = ["Weather particles: 0 off 1 quarter 2 half 3 auto 4 full", "Particle density x"];
     // More labels the launcher's settings schema names (they are the meitou.user.json keys too).
     public const string ObjectDistanceSlider = "Object draw distance", GrassDensitySlider = "Grass density x", WaterReflectionSlider = "Water reflection 0-4 (game)",
-        ShadowDistanceSlider = "Shadow distance (game 1k-9k, 0 off)", ShadowMapSlider = "Shadow map size (game quality 0-2)";
+        ShadowDistanceSlider = "Shadow distance (game 1k-9k, 0 off)", ShadowMapSlider = "Shadow map size (game quality 0-2)",
+        GroundReliefQualitySlider = "Ground relief quality", ShaftQualitySlider = "Light shafts quality";
     /// <summary>The weather particles slider's position for the renderer's state: 0 off, 1 quarter, 2 half, 3 by sprite size (auto), 4 full size.</summary>
     public static int WeatherParticlesSlider(bool weatherOn, PostOptions o) =>
         !weatherOn ? 0 : !o.LowResParticles || o.ParticleDivisor == 1 ? 4 : o.ParticleDivisor switch { 4 => 1, 2 => 2, _ => 3 };
@@ -979,14 +1031,16 @@ static class WorldFrame
             () => gpu()?.Water?.Meitou ?? o.MeitouWater, v => { o.MeitouWater = v; if (gpu()?.Water is { } w) w.Meitou = v; },
             () => gpu()?.Foliage?.Lod ?? o.FoliageLod, v => { o.FoliageLod = v; if (gpu()?.Foliage is { } f) f.Lod = v; },
             // Without probes (--no-gi, no ray queries) the switch reads off: the picture has the flat ambient whatever it is set to.
-            () => gpu() is { } giGpu ? giGpu.Probes?.Enabled ?? false : o.GiProbes, v => { o.GiProbes = v; if (gpu()?.Probes is { } p) p.Enabled = v; },
+            () => gpu() is { } giGpu ? giGpu.Probes?.Enabled ?? giGpu.ProbeGi?.Enabled ?? false : o.GiProbes,
+                v => { o.GiProbes = v; if (gpu()?.Probes is { } p) p.Enabled = v; if (gpu()?.ProbeGi is { } m) m.Enabled = v; },
             () => gpu()?.Sky.NightAir ?? o.NightAir, v => { o.NightAir = v; if (gpu() is { } g) g.Sky.NightAir = v; },
             () => gpu()?.Sky.Planetshine ?? o.Planetshine, v => { o.Planetshine = v; if (gpu() is { } g) g.Sky.Planetshine = v; },
             () => gpu()?.Sky.MeitouStars ?? o.MeitouStars, v => { o.MeitouStars = v; if (gpu() is { } stars) stars.Sky.MeitouStars = v; },
             () => gpu()?.Sky.LitClouds ?? o.MeitouClouds, v => { o.MeitouClouds = v; if (gpu() is { } g) g.Sky.LitClouds = v; },
             () => gpu()?.Sky.CloudShadows ?? o.CloudShadows, v => { o.CloudShadows = v; if (gpu() is { } g) g.Sky.CloudShadows = v; },
             () => gpu()?.Sky.CloudFog ?? o.CloudFog, v => { o.CloudFog = v; if (gpu() is { } g) g.Sky.CloudFog = v; },
-            () => gpu()?.Probes?.InteriorEnabled ?? o.InteriorGi, v => { o.InteriorGi = v; if (gpu()?.Probes is { } p) p.InteriorEnabled = v; },
+            () => gpu()?.Probes?.InteriorEnabled ?? gpu()?.ProbeGi?.InteriorEnabled ?? o.InteriorGi,
+                v => { o.InteriorGi = v; if (gpu()?.Probes is { } p) p.InteriorEnabled = v; if (gpu()?.ProbeGi is { } m) m.InteriorEnabled = v; },
             () => gpu()?.Characters?.GeneratedLod ?? o.CharacterLod, v => { o.CharacterLod = v; if (gpu()?.Characters is { } c) c.GeneratedLod = v; },
             () => gpu()?.Characters?.SkinShading ?? o.SkinShading, v => { o.SkinShading = v; if (gpu()?.Characters is { } c) c.SkinShading = v; },
             () => gpu()?.Lamps?.InteriorAllDay ?? o.InteriorLamps, v => { o.InteriorLamps = v; if (gpu()?.Lamps is { } l) l.InteriorAllDay = v; },
@@ -1055,9 +1109,11 @@ static class WorldFrame
         }
         sliders.Add(new Slider("Terrain detail: error px (less = finer)", 4, 32, () => r.TerrainPixelError, v => r.TerrainPixelError = v, "0.0", Logarithmic: true,
             Faithful: WorldRenderOptions.DefaultTerrainPixelError, Meitou: Enhancements.MeitouTerrainPixelError));
-        // Ours (docs/render-terrain.md "Ground relief"): the depth of the ground's relief (parallax and displacement; 0 off) and where each ends.
+        // Ours (docs/render-terrain.md "Ground relief"): the march's quality, the depth (parallax and displacement; 0 off) and where each ends.
+        sliders.Add(new Slider(GroundReliefQualitySlider, 0, 2, () => GroundRelief.Quality,
+            v => GroundRelief.Quality = Math.Clamp((int)MathF.Round(v), 0, 2), "0", Text: v => GroundRelief.QualityName((int)MathF.Round(v))));
         sliders.Add(new Slider("Ground relief depth (cm, typical ground)", 0, 80, () => GroundRelief.Depth * 10, v => GroundRelief.Depth = MathF.Round(v * 2) / 20, "0.0"));
-        if (g.Sky.Gpu.Device.HasTessellation)
+        if (g.Sky.Gpu.HasTessellation)
             sliders.Add(new Slider("Ground displacement distance (m)", 10, 200, () => GroundRelief.DisplaceDistance / 10, v => GroundRelief.DisplaceDistance = MathF.Round(v) * 10, "0"));
         sliders.Add(new Slider("Ground parallax distance (m)", 10, 150, () => GroundRelief.ParallaxDistance / 10, v => GroundRelief.ParallaxDistance = MathF.Round(v) * 10, "0"));
         // The game's `Shadow Range` slider goes 1000 to 9000; the viewer allows more (the cascades stretch over it), and its left end (0) turns the
@@ -1121,6 +1177,9 @@ static class WorldFrame
             sliders.Add(new Slider("Light shafts strength", 0, 1, () => post.Options.ShaftStrength, v => post.Options.ShaftStrength = MathF.Round(v * 20) / 20, "0.00"));
             sliders.Add(new Slider("Light shafts air (0 = none)", 0, 4, () => post.Options.ShaftAir, v => post.Options.ShaftAir = MathF.Round(v * 20) / 20, "0.00"));
             sliders.Add(new Slider("Light shafts air at dawn and dusk (x)", 0, 6, () => post.Options.ShaftAirDawn, v => post.Options.ShaftAirDawn = MathF.Round(v * 10) / 10, "0.0"));
+            sliders.Add(new Slider(ShaftQualitySlider, 0, 2, () => post.Options.ShaftQuality,
+                v => post.Options.ShaftQuality = Math.Clamp((int)MathF.Round(v), 0, 2), "0",
+                Text: v => (int)MathF.Round(v) switch { 0 => "Low", 1 => "Medium", _ => "High" }));
         }
         // Anisotropic filtering (docs/render-post.md "Texture filtering"): the most any texture is sampled with; the world's textures ask 8x, so 8x and 16x look the same there.
         sliders.Add(new Slider(FilteringSlider, 0, 4, () => MathF.Log2(g.Sky.Gpu.Samplers.MaxAnisotropy), v => g.Sky.Gpu.Samplers.MaxAnisotropy = 1 << (int)MathF.Round(v), "0",
@@ -1129,10 +1188,12 @@ static class WorldFrame
         var toggles = switches?.Select(e => new Toggle(e.Name, () => e.IsMeitou, v => e.IsMeitou = v, () => e.IsMeitou ? e.Meitou : e.Faithful, Remaster: true, OnOff: e.Faithful is "off" or "none")).ToList();
         if (fifthCascade is not null) (toggles ??= []).Add(fifthCascade);
         (toggles ??= []).Add(new Toggle("Ground parallax", () => GroundRelief.ParallaxActive, v => GroundRelief.ParallaxActive = v, OnOff: true));
-        if (g.Sky.Gpu.Device.HasTessellation) toggles.Add(new Toggle("Ground displacement (tessellation)", () => GroundRelief.DisplaceActive, v => GroundRelief.DisplaceActive = v, OnOff: true));
-        if (g.Sky.Gpu.Device.HasTessellation) toggles.Add(new Toggle("Rock smoothing (tessellation)", () => RockSmoothing.TessellateActive, v => RockSmoothing.TessellateActive = v, OnOff: true));
-        if (g.Sky.Gpu.Device.HasTessellation)
+        if (g.Sky.Gpu.HasTessellation)
+        {
+            toggles.Add(new Toggle("Ground displacement (tessellation)", () => GroundRelief.DisplaceActive, v => GroundRelief.DisplaceActive = v, OnOff: true));
+            toggles.Add(new Toggle("Rock smoothing (tessellation)", () => RockSmoothing.TessellateActive, v => RockSmoothing.TessellateActive = v, OnOff: true));
             toggles.Add(new Toggle("Terrain outline refinement (tessellation)", () => GroundRelief.RefinePixels > 0, v => GroundRelief.RefinePixels = v ? GroundRelief.DefaultRefinePixels : 0, OnOff: true));
+        }
         // The billboard (impostor atlas) disk cache: deleted files are baked again when next needed; the resident atlases stay until evicted.
         var actions = new List<PanelAction>();
         if (g.Foliage?.ImpostorDiskCache is { } cache)
@@ -1180,7 +1241,7 @@ static class WorldFrame
     public static void DrawLoadingSky(Gpu gpu, WorldScene scene, WorldCamera camera, int width, int height, float hour, float seconds, float fogDistance)
     {
         gpu.Terrain.Activate();
-        var post = gpu.Post ?? throw new InvalidOperationException("the sky frame needs the post-processing chain");
+        var post = gpu.PostChain ?? throw new InvalidOperationException("the sky frame needs the post-processing chain");
         post.GiResolve = 0;
         post.Begin(width, height);
         float aspect = width / (float)Math.Max(height, 1);
@@ -1198,34 +1259,39 @@ static class WorldFrame
         post.SetCamera(eye, view, camera.FieldOfView, aspect);
         post.BeginNearSlice(1, 1000);
         post.SetNearSlice(1, 1000, camera.FieldOfView, aspect);
-        var host = gpu.Scene ??= new SceneHost(post.Gpu);
-        host.Open(5, post.SceneTargets, new Vk.ClearColorValue(0, 0, 0, 0), clearDepth: true);
+        var host = gpu.Scene ??= new SceneHost(post.Context);
+        host.Open(5, post.SceneTargets, new ClearColour(0, 0, 0, 0), clearDepth: true);
         gpu.Sky.Draw(vp, colours);
         host.Close();
         // Motion and particle callbacks belong to the world that is being replaced.
-        var motion = post.ObjectMotion;
+        var motion = gpu.PostChain?.ObjectMotion;
         var particles = post.Particles;
-        post.ObjectMotion = null;
+        gpu.PostChain?.ObjectMotion = null;
         post.Particles = null;
         try { post.End(); }
-        finally { post.ObjectMotion = motion; post.Particles = particles; }
+        finally
+        {
+            gpu.PostChain?.ObjectMotion = motion;
+            post.Particles = particles;
+        }
     }
 
     public static void Draw(Gpu gpu, WorldScene scene, WorldCamera camera, WorldRenderOptions render, int width, int height, float hour, float time, float fogDistance, float? weatherHour = null)
     {
         gpu.Terrain.Activate();
+        var post = gpu.PostChain ?? throw new InvalidOperationException("the world frame needs a post-processing chain");
         if (gpu.Surfaces is { } surfaces) surfaces.GameTime = time;
         // Everything is drawn into the post-processing chain's HDR framebuffer (before the reflection pass, which restores whatever is bound).
         // The GI resolve while the probes light the world: the scene targets carry the albedo target, the lit fragments write it.
         bool giResolve = gpu.GiResolve > 0 && gpu.GiActive && gpu.Probes is { Enabled: true, Shade: true };
         if (gpu.Post is { } giPost) giPost.GiResolve = giResolve ? gpu.GiResolve : 0;
         if (gpu.Probes is { } giProbes) giProbes.Resolve = giResolve;
-        gpu.Post?.Begin(width, height);
+        post.Begin(width, height);
         // The scene is drawn at the render size (smaller than the display with an upscaler), its projection jittered by the upscaler.
-        int rw = gpu.Post?.RenderWidth ?? width, rh = gpu.Post?.RenderHeight ?? height;
+        int rw = post.RenderWidth, rh = post.RenderHeight;
         // The terrain LOD measures its error in the pixels actually rendered (after the upscaler's render scale).
         render.TerrainPixelScale = TerrainLod.ProjectionScale(rh, camera.FieldOfView);
-        var jitter = gpu.Post?.JitterPixels ?? Vector2.Zero;
+        var jitter = post.JitterPixels;
         var eye = camera.Eye;
         gpu.Guard?.Tick();
         var kept = ObjectStreamer.MergeKept(gpu.Kept, eye);
@@ -1266,7 +1332,7 @@ static class WorldFrame
         // haze takes longer to close in the higher the eye.
         var sun = scene.Clock.SunDirection(hour);
         // The weather at the camera (before the sky's tables are prepared: the colour multiplier feeds them). A held frame (a screenshot) has dt 0, the first frame snaps.
-        bool held = gpu.Post?.InstantAdaptation ?? true;
+        bool held = post.InstantAdaptation;
         if (gpu.Weather is { } weather)
         {
             float scheduleHour = weatherHour ?? hour;
@@ -1283,9 +1349,9 @@ static class WorldFrame
         gpu.Sky.Eye = new Vector3((float)eye.X, (float)eye.Y, (float)eye.Z);
         var (colours, light) = gpu.Sky.Prepare(sun, eye.Y, fogDistance + 3 * Math.Max(eye.Y, 0));
         // The game's exposure (0.55 over the mean luminance, clamped to its band) goes with the game's sky and light.
-        if (gpu.Post is { } exposed) exposed.AutoExposure = (gpu.Sky.MinLuminance, gpu.Sky.MaxLuminance);
-        if (gpu.Post is { } upscaling) upscaling.WaterHeight = render.Water && gpu.Water is not null ? WorldWater.Height : null;
-        if (gpu.Post is { } hazy) UpdateHeatHaze(gpu, hazy, sun.Y);
+        post.AutoExposure = (gpu.Sky.MinLuminance, gpu.Sky.MaxLuminance);
+        post.WaterHeight = render.Water && gpu.Water is not null ? WorldWater.Height : null;
+        UpdateHeatHaze(gpu, post, sun.Y);
         // The Meitou water's waves on the game clock (the heat haze's, held still for a still picture), led by the wind at the camera.
         gpu.Water?.Animate(gpu.GameHours ?? gpu.HeatHazeHours,gpu.WeatherState.WindDirection, gpu.WeatherState.WindSpeed);
         gpu.Water?.Track(eye, gpu.Terrain.Snapshot());
@@ -1325,7 +1391,8 @@ static class WorldFrame
         StageClock.Lap(13);
         if (gpu.Shadow is not null) gpu.Shadow.RangeCap = gpu.FogVolumes?.AtmosphereDistance;   // the cascades end where the weather fog hides everything
         gpu.Shadow?.SetFogHide(gpu.FogVolumes?.ShadowHideDistance, gpu.FogVolumes?.ShadowHidePending == true);   // or where the placed fog block the eye is in hides the whole view
-        if (gpu.Shadow is not null) { gpu.Shadow.Temporal = gpu.Post?.Temporal == true; DrawShadows(gpu, camera, render, light, rw, rh, gpu.Sky.ShadowSunHeight); }
+        if (gpu.Shadow is not null) { gpu.Shadow.Temporal = post.Temporal; DrawShadows(gpu, camera, render, light, rw, rh, gpu.Sky.ShadowSunHeight); }
+
         StageClock.Lap(12);
         if (gpu.Lamps is { } lamps)
         {
@@ -1343,6 +1410,15 @@ static class WorldFrame
             gpu.Probes?.Update(gi, eye, heights, gpu.Lamps, gpu.FogVolumes, gpu.Objects?.GiInteriorFocus(camera.Target));
             StageClock.Sub("gi blend");
         }
+        if (gpu.ProbeGi is { } probeGi)
+        {
+            probeGi.Active = gpu.GiActive;
+            if (gpu.GiActive)
+            {
+                probeGi.Update(eye, gpu.Terrain.Snapshot(), render.Objects ? gpu.Objects : null, gpu.Lamps, gpu.FogVolumes);
+                StageClock.Sub("gi metal");
+            }
+        }
         StageClock.Lap(14);
         // The blood on the ground near the eye (docs/game/blood-decals.md), before any terrain draw reads it.
         if (gpu.Decals is { } decals && gpu.DecalStore is { } decalStore) decals.Record(decalStore, eye);
@@ -1354,12 +1430,13 @@ static class WorldFrame
         // The mirrored scene keeps the flat ambient: the probes' light is not worth a second view's reads in a blurred reflection (docs/render-gi.md).
         if (gpu.Probes is { } reflectedProbes) reflectedProbes.InReflection = reflecting && !reflectedProbes.Reflected;
         if (reflecting)
-            gpu.Reflection!.Render(camera, rw, rh, gpu.Sky, colours, light, gpu.Terrain, render, gpu.Objects is null ? null : (vp, e, frustum) =>
+            gpu.Reflection!.Render(camera, rw, rh, gpu.Sky, colours, light, gpu.Terrain, render,
+                gpu.Objects is null && gpu.Characters is null && gpu.Foliage is null ? null : (vp, e, frustum) =>
             {
                 var reflection = gpu.Reflection;
-                var objects = gpu.Objects;
-                // The level (docs/formats/settings.md): 3 adds buildings (and the map features, which are not told apart), 4 everything else (foliage).
-                if (reflection.Level >= 3)
+                // The level (docs/formats/settings.md): 2 characters, 3 buildings (and the map features, which are not told
+                // apart), 4 everything else (foliage). Characters still reflect when the debug object switch is off.
+                if (reflection.Level >= 3 && render.Objects && gpu.Objects is { } objects)
                 {
                     float distance = objects.ObjectDistance, landmarks = objects.LandmarkDistance;
                     float bias = objects.LodBias;
@@ -1377,20 +1454,33 @@ static class WorldFrame
                     objects.LandmarkDistance = landmarks;
                     objects.LodBias = bias;
                 }
-                if (reflection.Level >= 4) gpu.Foliage?.Draw(vp, e, frustum, render, light.SunDirection, light.FogColour, light.FogDistance, gpu.Terrain, grass: false, maxRange: reflection.FoliageReach);
+                if (reflection.Level >= 4 && render.Objects) gpu.Foliage?.Draw(vp, e, frustum, render, light.SunDirection, light.FogColour, light.FogDistance, gpu.Terrain, grass: false, maxRange: reflection.FoliageReach);
                 reflection.Lap(3);
                 StageClock.Sub("refl foliage");
-                reflection.SceneStats = reflection.Level < 3 ? "no objects (level < 3)" : $"{objects.DrawnInstances} objects ({objects.DrawnTriangles:N0} triangles, {objects.DrawCalls} calls), {(reflection.Level >= 4 ? gpu.Foliage?.DrawnInstances ?? 0 : 0)} foliage meshes ({(reflection.Level >= 4 ? gpu.Foliage?.DrawCalls ?? 0 : 0)} calls)";
+                // Level 2 is the game's characters layer. They are drawn after the opaque objects and foliage as in the
+                // main view, and without the main view's fog cull (the reflection's own range/HideDistance handles that).
+                if (reflection.Level >= 2 && gpu.Characters is { } reflectedCharacters)
+                {
+                    reflectedCharacters.FogCull = null;
+                    reflectedCharacters.InteriorObjects = null;
+                    reflectedCharacters.Draw(vp, e, frustum, light.SunDirection, light.FogColour, light.FogDistance);
+                    reflection.Lap(2);
+                    StageClock.Sub("refl characters");
+                }
+                var reflectedObjects = reflection.Level >= 3 && render.Objects ? $"{gpu.Objects?.DrawnInstances ?? 0} objects ({gpu.Objects?.DrawnTriangles ?? 0:N0} triangles, {gpu.Objects?.DrawCalls ?? 0} calls)" : "no objects (level < 3)";
+                var reflectedFoliage = reflection.Level >= 4 && render.Objects ? $"{gpu.Foliage?.DrawnInstances ?? 0} foliage meshes ({gpu.Foliage?.DrawCalls ?? 0} calls)" : "";
+                var reflectedPeople = reflection.Level >= 2 ? $"{gpu.Characters?.DrawnCharacters ?? 0} characters" : "no characters (level < 2)";
+                reflection.SceneStats = $"{reflectedPeople}, {reflectedObjects}{(reflectedFoliage.Length > 0 ? $", {reflectedFoliage}" : "")}";
             });
         if (gpu.Probes is not null) gpu.Probes.InReflection = false;
         // What the reflection's rect learnt for the water pass: the nearest water in view, or NaN when no pass ran to find out.
         if (gpu.Water is { } gated) gated.NearestWater = reflecting ? gpu.Reflection!.NearestWater : float.NaN;
+        gpu.Water?.PrepareFrame();   // the FFT before the scene's render pass (Metal records compute in the same command buffer)
         StageClock.Lap(4);
         // The scene's passes are a native host that hands its guests the targets and state (phase 8 stage 3); wave 4 (docs/renderer-native.md 6):
         // its rendering takes secondaries, the guests' segments recorded on the job threads when it ends.
         // The scene starts cleared to the fog colour and depth 1 (the rendering's load ops).
-        var post = gpu.Post ?? throw new InvalidOperationException("the world frame needs the post-processing chain");
-        var host = gpu.Scene ??= new SceneHost(post.Gpu);
+        var host = gpu.Scene ??= new SceneHost(post.Context);
         float aspect = width / (float)Math.Max(height, 1);
         var view = camera.View;
         // Rotation only: with the eye's world position in the matrix, the directions rebuilt from it lose float
@@ -1403,21 +1493,21 @@ static class WorldFrame
         if (skyHidden) gpu.Sky.SkipMainSky();
         else gpu.Sky.PrepareClouds(skyProjection, rw, rh, gpu.Sky.Eye, fogVolumes: gpu.FogVolumes is { UsedData: > 0 });
         // The interior masks with the near slice's camera, before the scene's passes (the terrain of that slice reads them).
-        if (render.Objects && gpu.Objects is { } maskObjects && camera.Slices().FirstOrDefault(s => s.Near <= camera.Near) is { Far: > 0 } maskSlice)
+        if (render.Objects && gpu.Objects is { } maskObjects && SceneSlices(post, camera).FirstOrDefault(s => s.Near <= camera.Near) is { Far: > 0 } maskSlice)
         {
-            gpu.InteriorMask ??= new InteriorMaskRenderer(maskObjects.Gpu, maskObjects);
+            gpu.InteriorMask ??= new InteriorMaskRenderer(post.Context, maskObjects);
             gpu.InteriorMask.Record(view * Jitter.Apply(camera.Projection(aspect, maskSlice.Near, maskSlice.Far), jitter, rw, rh), eye, post.RenderWidth, post.RenderHeight);
         }
         else if (gpu.InteriorMask is { } unused) unused.Record(default, eye, 0, 0);
-        host.Open(5, post.WithShadingRate(post.SceneTargets), new Vk.ClearColorValue(light.FogColour.X, light.FogColour.Y, light.FogColour.Z, 0), clearDepth: true);   // alpha 0: no character (the SSAO mask)
+        host.Open(5, post.WithShadingRate(post.SceneTargets), new ClearColour(light.FogColour.X, light.FogColour.Y, light.FogColour.Z, 0), clearDepth: true);   // alpha 0: no character (the SSAO mask)
         if (!skyHidden) gpu.Sky.Draw(skyProjection, colours);
         StageClock.Lap(5);
-        gpu.Post?.SetCamera(eye, view, camera.FieldOfView, aspect);
+        post.SetCamera(eye, view, camera.FieldOfView, aspect);
         gpu.Terrain.BeginFrame();
         bool first = true, foliageDrawn = false;
         Matrix4x4 particleViewProjection = default, particleNearProjection = default;
         float particleNear = 0;
-        foreach (var (near, far) in camera.Slices())
+        foreach (var (near, far) in SceneSlices(post, camera))
         {
             bool nearSlice = near <= camera.Near;
             // The slices draw into different framebuffers (the far slice has a depth of its own, which the fog volumes pass reads): one host per slice.
@@ -1427,15 +1517,15 @@ static class WorldFrame
             if (!first && host.IsOpen) host.ClearDepth();
             host.Open(6, post.WithShadingRate(post.SceneTargets), clearDepth: !first && !host.IsOpen);
             first = false;
-            if (nearSlice) gpu.Post?.SetNearSlice(near, far, camera.FieldOfView, aspect);
+            if (nearSlice) post.SetNearSlice(near, far, camera.FieldOfView, aspect);
             var viewProjection = view * Jitter.Apply(camera.Projection(aspect, near, far), jitter, rw, rh);
             var frustum = WorldCamera.FrustumPlanes(viewProjection);
-            if (nearSlice && gpu.Post is { Temporal: true } && gpu.Foliage is { } swaying)
+            if (nearSlice && post.Temporal && gpu.Foliage is { } swaying)
             {
-                gpu.Post.ObjectMotion ??= swaying.DrawGrassMotion;
+                post.ObjectMotion ??= swaying.DrawGrassMotion;
                 swaying.SetMotionCamera(viewProjection, view * camera.Projection(aspect, near, far), eye, frustum);
             }
-            if (nearSlice) gpu.Characters?.AttachMotion(gpu.Post, gpu.Foliage, viewProjection, view * camera.Projection(aspect, near, far), eye, frustum);
+            if (nearSlice) gpu.Characters?.AttachMotion(post, gpu.Foliage, viewProjection, view * camera.Projection(aspect, near, far), eye, frustum);
             host.Stage(6);
             var fogCull = gpu.FogVolumes;
             gpu.Terrain.FogCull = fogCull;
@@ -1496,70 +1586,72 @@ static class WorldFrame
         }
         // Records the last slice's jobs and executes them: the render thread's share (the fork-join) counts as "water", the last stage of the host.
         if (host.IsOpen) { host.Close(); StageClock.Lap(9); }
-        gpu.Post!.RunGiResolve();
+        post.RunGiResolve();
         StageClock.Lap(14, "gi resolve");   // the resolve is the gi stage's (its time was the particles stage's before, with the shafts and the fog volumes)
         // The Meitou light shafts (docs/render-shafts.md): the haze darkened where the sun is shadowed along the view, before the fog volumes blend over it.
-        if (gpu.Shadow is { Enabled: true }) { gpu.Post!.RunLightShafts(ShaftDarkening(post.Options, light, sun.Y) * ShaftCloudFade(Overcast(gpu)), Math.Min(camera.ViewDistance, gpu.Sky.HazeCompleteDistance ?? gpu.Sky.HazeDistance), floor, ShaftAirByTime(post.Options, scene.Clock, hour)); StageClock.Lap(StageClock.Shafts); }
-        if (gpu.DebugShadows >= 2 && gpu.Shadow is not null && gpu.Post is not null) gpu.Shadow.CaptureDepth(gpu.Post.SceneDepth, rw, rh);
+        if (gpu.Shadow is { Enabled: true }) { post.RunLightShafts(ShaftDarkening(post.Options, light, sun.Y) * ShaftCloudFade(Overcast(gpu)), Math.Min(camera.ViewDistance, gpu.Sky.HazeCompleteDistance ?? gpu.Sky.HazeDistance), floor, ShaftAirByTime(post.Options, scene.Clock, hour)); StageClock.Lap(StageClock.Shafts); }
+        if (gpu.DebugShadows >= 2 && gpu.Shadow is not null) gpu.Shadow.CaptureDepth(post.SceneDepth, rw, rh);
         // The placed fog volumes over the finished scene (opaque, water, sky; the haze is in the shaders), one pass reading the depth, as the game's queue 82 does.
-        gpu.Post!.RunFogVolumes(gpu.FogVolumes is { UsedData: > 0 });
-        gpu.Post.BuildShadingRate(eye);   // the next frame's fog shading rate (fog-vrs), from this frame's depth
+        post.RunFogVolumes(gpu.FogVolumes is { UsedData: > 0 });
+        post.BuildShadingRate(eye);   // the next frame's fog shading rate (fog-vrs), from this frame's depth
         StageClock.Lap(StageClock.Fog, "fog volumes");
         // The SSAO onto the scene before the particles: they are not occluded by the surfaces behind them (the post chain leaves it out of its composite).
-        gpu.Post.ApplySsao();
+        post.ApplySsao();
         // Then the particles, blended over it and tested against the near slice's depth (they are not fogged; docs/formats/fogfeatures.md).
         if (gpu.Particles is { } particleDraw && particleNear > 0)
         {
             particleDraw.Prepare(particleViewProjection, particleNearProjection, particleNear, view, eye, sun, post.ParticlePixelsPerUnit(camera.Projection(aspect, 1, 10).M22), (float)post.RenderWidth * post.RenderHeight, post.Options.ParticleDivisor);
             if (particleDraw.FullCount > 0)
             {
-                host.Open(13, post.SceneTargets);
+                host.Open(13, post.SceneTargetsForParticles);
                 particleDraw.Record(1);
                 host.Close();
             }
             // Meitou: the alpha and additive sprites that are big on screen into low-resolution targets (half, then quarter size), each over the scene with a depth-aware upsample.
-            foreach (int divisor in (ReadOnlySpan<int>)[2, 4])
-            {
-                if (particleDraw.CountFor(divisor) == 0) continue;
-                post.BeginParticlesLow(divisor);
-                host.Open(13, post.ParticleTargets(divisor));
-                particleDraw.Record(divisor);
-                host.Close();
-                post.MarkParticleDraws();
-                post.CompositeParticlesLow(divisor);
-            }
+            if (post.LowResParticles)
+                foreach (int divisor in (ReadOnlySpan<int>)[2, 4])
+                {
+                    if (particleDraw.CountFor(divisor) == 0) continue;
+                    post.BeginParticlesLow(divisor);
+                    host.Open(13, post.ParticleTargets(divisor));
+                    particleDraw.Record(divisor);
+                    host.Close();
+                    post.MarkParticleDraws();
+                    post.CompositeParticlesLow(divisor);
+                }
             StageClock.Lap(13);
         }
         post.MarkParticles();
-        if (gpu.Post is { } coverageTarget) coverageTarget.Particles = gpu.Particles;
-        gpu.Post?.End(); // SSAO, upscaler, exposure, tone map, FXAA into gpu.Post.Target
+        post.Particles = gpu.Particles;
+        post.End(); // SSAO, upscaler, exposure, tone map, FXAA into the chain's target
+        var slices = SceneSlices(post, camera).ToList();
         // The movement marker and stealth arrows over the finished picture, in their materials' colours, sorted against the near slice's depth like the game's debug_marker.
-        if (gpu.Markers is { Active: true } marker && particleNear > 0 && gpu.Post is { Target: { } picture } markerPost)
+        if (gpu.Markers is { Active: true } marker && particleNear > 0 && post.Target is { } picture)
         {
-            var (markerNear, markerFar) = camera.Slices().Last();
-            marker.Record(picture, width, height, markerPost.SceneDepth, markerPost.RenderWidth, markerPost.RenderHeight, view * camera.Projection(aspect, markerNear, markerFar), eye, sun);
+            var (markerNear, markerFar) = slices[^1];
+            marker.Record(picture, width, height, post.SceneDepth, post.RenderWidth, post.RenderHeight, view * camera.Projection(aspect, markerNear, markerFar), eye, sun);
         }
         // The navmesh debug view over the finished picture (Meitou only).
-        if (gpu.NavmeshOverlay is { Visible: true } navOverlay && gpu.Post is { Target: { } navPicture } navPost)
+        if (gpu.NavmeshOverlay is { Visible: true } navOverlay && post.Target is { } navPicture)
         {
-            var (navNear, navFar) = camera.Slices().Last();
-            navOverlay.Record(navPicture, width, height, navPost.SceneDepth, navPost.RenderWidth, navPost.RenderHeight, view * camera.Projection(aspect, navNear, navFar), eye);
+            var (navNear, navFar) = slices[^1];
+            navOverlay.Record(navPicture, width, height, post.SceneDepth, post.RenderWidth, post.RenderHeight, view * camera.Projection(aspect, navNear, navFar), eye);
         }
         // The hover outline over the finished picture too (Meitou only): the mask drawn after the portraits, sorted against the near slice.
-        if (gpu.HoverOutline is { } outline && gpu.Characters?.HoverMasks is { Count: > 0 } hover && gpu.Post is { Target: { } hoverPicture } hoverPost)
+        if (gpu.HoverOutline is { } outline && gpu.Characters?.HoverMasks is { Count: > 0 } hover && post.Target is { } hoverPicture)
         {
-            var (hoverNear, hoverFar) = camera.Slices().Last();
-            outline.Record(hoverPicture, width, height, hover, hoverPost.SceneDepth, hoverPost.RenderWidth, hoverPost.RenderHeight, hoverNear, hoverFar, view * camera.Projection(aspect, hoverNear, hoverFar));
+            var (hoverNear, hoverFar) = slices[^1];
+            outline.Record(hoverPicture, width, height, hover, post.SceneDepth, post.RenderWidth, post.RenderHeight, hoverNear, hoverFar, view * camera.Projection(aspect, hoverNear, hoverFar));
         }
         if (gpu.DebugShadows > 0 && gpu.Shadow is not null)
         {
-            var (nearestNear, nearestFar) = camera.Slices().Last();
-            gpu.Shadow.DrawDebug(gpu.DebugShadows, gpu.Post!.Target!, width, height, view, camera.Projection(aspect, nearestNear, nearestFar), eye);
+            var (nearestNear, nearestFar) = slices[^1];
+            gpu.Shadow.DrawDebug(gpu.DebugShadows, post.Target!, width, height, view, camera.Projection(aspect, nearestNear, nearestFar), eye);
         }
-        if (gpu.GiDebug > 0 && gpu.GiActive && gpu.Gi is { } traced && gpu.GiDebugPass is { } giDebug && gpu.Post?.Target is { } giTarget)
+        if (gpu.GiDebug > 0 && gpu.GiActive && gpu.Gi is { } traced && gpu.GiDebugPass is { } giDebug && post.Target is { } giTarget)
         {
             // The near slice's depth back to positions relative to the eye: the rotation-only view and that slice's projection, inverted.
-            var (nearestNear, nearestFar) = camera.Slices().Last();
+            var (nearestNear, nearestFar) = slices[^1];
             Matrix4x4.Invert(rotation * camera.Projection(aspect, nearestNear, nearestFar), out var inverse);
             giDebug.Run(gpu.GiDebug, traced, post.SceneDepth, giTarget, post.RenderWidth, post.RenderHeight, inverse, eye, light);
         }
@@ -1609,7 +1701,7 @@ static class WorldFrame
     /// moves towards it at 1/3 per second of real time (game speed 1), and jumps there for still pictures. The animation's
     /// <c>gameTime</c> is the caller's game clock when it has one, else real time at game speed 1 (held still for pictures).
     /// </summary>
-    static void UpdateHeatHaze(Gpu gpu, PostProcess post, float sunY)
+    static void UpdateHeatHaze(Gpu gpu, IWorldPostChain post, float sunY)
     {
         float dt = (float)Math.Min(gpu.HeatHazeClock.Elapsed.TotalSeconds, 0.25);
         bool first = !gpu.HeatHazeClock.IsRunning;
@@ -1635,9 +1727,12 @@ static class WorldFrame
     /// The characters of all the cascades drawn are gathered first, in one walk.
     /// </summary>
     /// <param name="sunHeight">The real sun's height: the map is drawn along the lighting direction while the sun still has a colour (as the game).</param>
-    public static void DrawShadows(Gpu gpu, WorldCamera camera, WorldRenderOptions render, WorldLighting light, int width, int height, float? sunHeight = null)
+    public static void DrawShadows(Gpu gpu, WorldCamera camera, WorldRenderOptions render, WorldLighting light, int width, int height, float? sunHeight = null,
+        bool? temporal = null)
     {
         var shadow = gpu.Shadow!;
+        // The caller's post chain owns the temporal decision (Metal's PostTaa/MetalFX is outside gpu.Post).
+        shadow.Temporal = temporal ?? gpu.PostChain?.Temporal == true;
         var v = camera.View;
         var view = new ShadowView(camera.Eye, camera.Forward, Vector3.Normalize(new Vector3(v.M12, v.M22, v.M32)), camera.FieldOfView, width / (float)Math.Max(height, 1), camera.Near, camera.Distance);
         int objects = 0, foliage = 0;

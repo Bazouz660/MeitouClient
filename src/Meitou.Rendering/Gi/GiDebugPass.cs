@@ -1,7 +1,10 @@
+using InternalFormat = Meitou.Rendering.Gpu.InternalFormat;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using Meitou.Rendering.Gpu;
 using Silk.NET.Vulkan;
+
+using Meitou.Rendering.Gpu.Core;
 
 namespace Meitou.Rendering.Gi;
 
@@ -12,10 +15,10 @@ namespace Meitou.Rendering.Gi;
 sealed unsafe class GiDebugPass : IDisposable
 {
     readonly GpuContext ctx;
-    readonly ShaderProgram program;
-    readonly ComputePipeline pipeline;
-    readonly Sampler sampler;
-    Texture? output;
+    readonly GpuProgram program;
+    readonly GpuComputePipeline pipeline;
+    readonly GpuSampler sampler;
+    GpuTexture? output;
     uint frame;
 
     /// <summary>Bounce rays per pixel in mode 2, their length, the exposure of the picture and the grey of every surface.</summary>
@@ -50,13 +53,13 @@ sealed unsafe class GiDebugPass : IDisposable
     /// Traces <paramref name="mode"/> over <paramref name="depth"/> (the near slice's, <paramref name="width"/> × <paramref name="height"/>) and scales the
     /// result over <paramref name="target"/>. <paramref name="inverse"/>: NDC to the position relative to the eye; <paramref name="eye"/> in world space.
     /// </summary>
-    public void Run(int mode, GiScene scene, Texture depth, Texture target, int width, int height, Matrix4x4 inverse, Vector3 eye, WorldLighting light)
+    public void Run(int mode, GiScene scene, GpuTexture depth, GpuTexture target, int width, int height, Matrix4x4 inverse, Vector3 eye, WorldLighting light)
     {
         if (scene.Top is null) return;
         if (output is null || output.Desc.Width != width || output.Desc.Height != height)
         {
             output?.Dispose();
-            output = Texture.Create(ctx, new TextureDesc(Format.R16G16B16A16Sfloat, width, height, Use: TextureUse.Storage | TextureUse.Sampled | TextureUse.TransferSrc, Name: "gi debug"));
+            output = ctx.CreateTexture(new TextureDesc(InternalFormat.Rgba16f, width, height, Use: TextureUse.Storage | TextureUse.Sampled | TextureUse.TransferSrc, Name: "gi debug"));
         }
         var parameters = new Params
         {
@@ -71,15 +74,15 @@ sealed unsafe class GiDebugPass : IDisposable
         };
         var constants = ctx.Frame.Constants.Write<Params>(new ReadOnlySpan<Params>(&parameters, 1), 256);
 
-        var cmd = ctx.BeginNative("gi debug");
+        var cmd = (CommandList)ctx.BeginNative("gi debug");
         cmd.BeginLabel("gi debug");
-        cmd.Barrier(BarrierBatch.Full);
-        var image = new DescriptorImageInfo(sampler, depth.View(), ImageLayout.General);
-        var storage = new DescriptorImageInfo(default, output.View(), ImageLayout.General);
+        ((CommandList)cmd).Barrier(BarrierBatch.Full);
+        var image = new DescriptorImageInfo(ctx.Device.SamplerAt(sampler.Index), ctx.Device.ViewAt(depth.View().Index), ImageLayout.General);
+        var storage = new DescriptorImageInfo(default, ctx.Device.ViewAt(output.View().Index), ImageLayout.General);
         var top = scene.Top.Handle;
         var asWrite = new WriteDescriptorSetAccelerationStructureKHR { SType = StructureType.WriteDescriptorSetAccelerationStructureKhr, AccelerationStructureCount = 1, PAccelerationStructures = &top };
-        var records = new DescriptorBufferInfo(scene.Records.Buffer, scene.Records.Offset, scene.Records.Size);
-        var uniform = new DescriptorBufferInfo(constants.Handle, constants.Offset, (ulong)sizeof(Params));
+        var records = new DescriptorBufferInfo(ctx.Device.BufferAt(scene.Records.Buffer.Index), scene.Records.Offset, scene.Records.Size);
+        var uniform = new DescriptorBufferInfo(ctx.Device.BufferAt(constants.Handle.Index), constants.Offset, (ulong)sizeof(Params));
         var writes = stackalloc WriteDescriptorSet[5];
         writes[0] = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstBinding = 0, DescriptorCount = 1, DescriptorType = DescriptorType.CombinedImageSampler, PImageInfo = &image };
         writes[1] = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstBinding = 1, DescriptorCount = 1, DescriptorType = DescriptorType.StorageImage, PImageInfo = &storage };
@@ -87,11 +90,11 @@ sealed unsafe class GiDebugPass : IDisposable
         writes[3] = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstBinding = 3, DescriptorCount = 1, DescriptorType = DescriptorType.StorageBuffer, PBufferInfo = &records };
         writes[4] = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstBinding = 4, DescriptorCount = 1, DescriptorType = DescriptorType.UniformBuffer, PBufferInfo = &uniform };
         cmd.BindPipeline(pipeline);
-        cmd.PushDescriptors(program.Layout, 0, new ReadOnlySpan<WriteDescriptorSet>(writes, 5), PipelineBindPoint.Compute);
+        ((CommandList)cmd).PushDescriptors(program, 0, new ReadOnlySpan<WriteDescriptorSet>(writes, 5), GpuBindPoint.Compute);
         cmd.Dispatch((uint)((width + 7) / 8), (uint)((height + 7) / 8));
-        cmd.Barrier(BarrierBatch.Full);
-        cmd.Blit(output, target, Filter.Linear);
-        cmd.Barrier(BarrierBatch.Full);
+        ((CommandList)cmd).Barrier(BarrierBatch.Full);
+        cmd.Blit(output, target, TextureMinFilter.Linear);
+        ((CommandList)cmd).Barrier(BarrierBatch.Full);
         cmd.EndLabel();
         ctx.EndNative(cmd);
     }
@@ -99,6 +102,6 @@ sealed unsafe class GiDebugPass : IDisposable
     public void Dispose()
     {
         output?.Dispose();
-        program.Dispose();
+        ctx.Shaders.Dispose(program);
     }
 }

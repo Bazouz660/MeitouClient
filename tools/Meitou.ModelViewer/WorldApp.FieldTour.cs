@@ -3,6 +3,7 @@ using System.Numerics;
 using System.Text;
 using Meitou.Rendering;
 using Meitou.Rendering.Gpu;
+using Meitou.Rendering.Gpu.Core;
 using static Meitou.Rendering.WorldFrame;
 
 namespace Meitou.ModelViewer;
@@ -78,7 +79,7 @@ static partial class WorldApp
     }
 
     /// <summary>The tour: each tile from <see cref="tourDistance"/> back at the camera's heading and <see cref="tourPitch"/> up, saved as tile-NNN.png.</summary>
-    static void FieldTour(Gpu gpu, WorldScene scene, WorldCamera camera, WorldRenderOptions render, WorldOptions o, int w, int h, GpuContext context, Texture target)
+    static void FieldTour(Gpu gpu, WorldScene scene, WorldCamera camera, WorldRenderOptions render, WorldOptions o, int w, int h, GpuContext context, GpuTexture target)
     {
         if (fieldTour is null || gpu.Terrain.TextureSet is not { FieldCount: > 0 } t) return;
         var (yaw, pitch, distance, targetAt) = (camera.Yaw, camera.Pitch, camera.Distance, camera.Target);

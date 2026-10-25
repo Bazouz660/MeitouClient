@@ -28,7 +28,7 @@ internal sealed unsafe class UiFont : IDisposable
     internal readonly record struct Glyph(float Advance, float OffsetX, float OffsetY, float Width, float Height, ushort X, ushort Y, ushort PixelWidth, ushort PixelHeight);
 
     const int MaxSide = 2048;
-    readonly GpuContext gpu;
+    readonly IGpuContext gpu;
     readonly FreeTypeFace face;
     readonly FT_SizeRec_* size;
     readonly bool faithful;
@@ -45,7 +45,7 @@ internal sealed unsafe class UiFont : IDisposable
     int cursorX, cursorY, rowHeight;
     int dirtyX0, dirtyY0, dirtyX1, dirtyY1;
     bool dirty;
-    Texture? texture;
+    GpuTexture? texture;
     SampledTexture sampled;
     float tab = -1;
     bool disposed;
@@ -60,7 +60,7 @@ internal sealed unsafe class UiFont : IDisposable
     public float Baseline { get; }
     public float CharWidth { get; }
 
-    public UiFont(GpuContext gpu, UiFontOptions options)
+    public UiFont(IGpuContext gpu, UiFontOptions options)
     {
         this.gpu = gpu;
         faithful = options.Faithful;
@@ -313,7 +313,7 @@ internal sealed unsafe class UiFont : IDisposable
 
     /// <summary>
     /// Drops the GPU texture after sending it what is pending (quads already queued sample it). It is freed once the frames that use it
-    /// have finished (<see cref="Texture.Dispose"/>), so the atlas can be replaced in the middle of a frame.
+    /// have finished (<see cref="GpuTexture.Dispose"/>), so the atlas can be replaced in the middle of a frame.
     /// </summary>
     void Retire()
     {
@@ -343,11 +343,11 @@ internal sealed unsafe class UiFont : IDisposable
     void Create()
     {
         using var upload = gpu.Uploads.Begin();
-        var created = upload.Create(new TextureDesc(Format.R8Unorm, Side, Side, Use: TextureUse.Sampled | TextureUse.TransferDst, Name: "UI font"));
-        upload.Write(created, 0, 0, new Rect2D(default, new Extent2D((uint)Side, (uint)Side)), pixels);
+        var created = upload.Create(new TextureDesc(InternalFormat.R8, Side, Side, Use: TextureUse.Sampled | TextureUse.TransferDst, Name: "UI font"));
+        upload.Write(created, 0, 0, new PixelRect(0, 0, (uint)Side, (uint)Side), pixels);
         texture = created;
         sampled = new SampledTexture(gpu.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Linear, TextureMagFilter.Linear, TextureWrapMode.ClampToEdge,
-            TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, false, DepthFunction.Lequal, false, 1, false, 0)), created.View(), created.Image);
+            TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, false, DepthFunction.Lequal, false, 1, false, 0)), created.View());
         dirty = false;
     }
 
@@ -358,7 +358,7 @@ internal sealed unsafe class UiFont : IDisposable
         if (uploadScratch.Length < width * height) uploadScratch = new byte[width * height];
         for (int row = 0; row < height; row++) System.Buffer.BlockCopy(pixels, (dirtyY0 + row) * Side + dirtyX0, uploadScratch, row * width, width);
         using var upload = gpu.Uploads.Begin();
-        upload.Write(texture, 0, 0, new Rect2D(new Offset2D(dirtyX0, dirtyY0), new Extent2D((uint)width, (uint)height)), uploadScratch.AsSpan(0, width * height));
+        upload.Write(texture, 0, 0, new PixelRect(dirtyX0, dirtyY0, (uint)width, (uint)height), uploadScratch.AsSpan(0, width * height));
         dirty = false;
     }
 

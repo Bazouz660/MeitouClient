@@ -28,7 +28,7 @@ internal sealed class ShoreField : IDisposable
     /// <summary>A finished bake: the world rectangle, and the texels, or the one value every texel has.</summary>
     sealed record Baked(float X0, float Z0, float X1, float Z1, bool Uniform, Vector2 Value, float[]? Texels, double Ms);
 
-    readonly GpuContext gpu;
+    readonly IGpuContext gpu;
     readonly int size;
     readonly float texel;
     TerrainTexture? texture;
@@ -51,7 +51,7 @@ internal sealed class ShoreField : IDisposable
     // The upload in progress: a full-size texture filled a few rows a frame.
     (Baked Bake, TerrainTexture Target, int Row)? uploading;
 
-    public ShoreField(GpuContext gpu, int size = DefaultSize, float texel = DefaultTexel)
+    public ShoreField(IGpuContext gpu, int size = DefaultSize, float texel = DefaultTexel)
     {
         this.gpu = gpu;
         this.size = size;
@@ -149,8 +149,8 @@ internal sealed class ShoreField : IDisposable
                 var value = baked.Value;
                 using (var batch = gpu.Uploads.Begin())
                 {
-                    var t = batch.Create(new TextureDesc(Silk.NET.Vulkan.Format.R32G32Sfloat, 1, 1, Name: "shore field"));
-                    batch.Write(t, 0, 0, new Silk.NET.Vulkan.Rect2D(new(0, 0), new(1, 1)), MemoryMarshal.AsBytes(new ReadOnlySpan<Vector2>(in value)));
+                    var t = batch.Create(new TextureDesc(InternalFormat.RG32f, 1, 1, Name: "shore field"));
+                    batch.Write(t, 0, 0, new PixelRect(0, 0, 1, 1), MemoryMarshal.AsBytes(new ReadOnlySpan<Vector2>(in value)));
                     next = new TerrainTexture(gpu, t, TextureMinFilter.Linear, TextureMagFilter.Linear, TextureWrapMode.ClampToEdge);
                 }
                 Swap(next, uniform: true, baked);
@@ -169,7 +169,7 @@ internal sealed class ShoreField : IDisposable
         else
         {
             using var batch = gpu.Uploads.Begin();
-            target = new TerrainTexture(gpu, batch.Create(new TextureDesc(Silk.NET.Vulkan.Format.R32G32Sfloat, size, size, Name: "shore field")),
+            target = new TerrainTexture(gpu, batch.Create(new TextureDesc(InternalFormat.RG32f, size, size, Name: "shore field")),
                 TextureMinFilter.Linear, TextureMagFilter.Linear, TextureWrapMode.ClampToEdge);
         }
         uploading = (baked, target, 0);
@@ -186,7 +186,7 @@ internal sealed class ShoreField : IDisposable
         long start = System.Diagnostics.Stopwatch.GetTimestamp();
         UploadProfile.Take();
         using (var batch = gpu.Uploads.Begin())
-            batch.Write(target.Texture, 0, 0, new Silk.NET.Vulkan.Rect2D(new(0, row), new((uint)size, (uint)rows)),
+            batch.Write(target.Texture, 0, 0, new PixelRect(0, row, (uint)size, (uint)rows),
                 MemoryMarshal.AsBytes(baked.Texels.AsSpan(row * size * 2, rows * size * 2)));
         row += rows;
         if (row < size) { uploading = (baked, target, row); Log(start, "rows"); return; }

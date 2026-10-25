@@ -12,16 +12,21 @@ public enum BufferUse
     Vertex = 1, Index = 2, Uniform = 4, Storage = 8, Indirect = 16, TransferSrc = 32, TransferDst = 64,
     /// <summary>Read by acceleration structure builds and by shaders through its device address (needs <see cref="Core.VulkanDevice.HasRayQuery"/>).</summary>
     RayInput = 128,
+    /// <summary>Static GPU-only storage: Metal may choose private storage; Vulkan ignores this hint.</summary>
+    GpuOnly = 256,
 }
 
 /// <summary>A range of a buffer as a draw or a descriptor reads it.</summary>
-public readonly record struct BufferBinding(Buffer Buffer, ulong Offset, ulong Size = Vk.WholeSize)
+public readonly record struct GpuBufferBinding(GpuBuffer Buffer, ulong Offset, ulong Size = GpuBufferBinding.WholeSize)
 {
-    public bool IsNull => Buffer.Handle == 0;
+    /// <summary>The whole of the rest of the buffer (what a draw or a descriptor reads).</summary>
+    public const ulong WholeSize = ulong.MaxValue;
 
-    // By handle: Silk.NET's handle structs are not IEquatable, so the generated equality boxed the buffer.
-    public bool Equals(BufferBinding other) => Buffer.Handle == other.Buffer.Handle && Offset == other.Offset && Size == other.Size;
-    public override int GetHashCode() => HashCode.Combine(Buffer.Handle, Offset, Size);
+    public bool IsNull => Buffer.IsNull;
+
+    // By handle: the generated equality boxed the handle (on every Bindless call).
+    public bool Equals(GpuBufferBinding other) => Buffer == other.Buffer && Offset == other.Offset && Size == other.Size;
+    public override int GetHashCode() => HashCode.Combine(Buffer, Offset, Size);
 }
 
 /// <summary>
@@ -30,22 +35,19 @@ public readonly record struct BufferBinding(Buffer Buffer, ulong Offset, ulong S
 /// </summary>
 public sealed class DeviceBuffer : IDisposable
 {
-    readonly VulkanDevice device;
+    readonly IGpuContext ctx;
     readonly bool owned;
 
-    internal DeviceBuffer(VulkanDevice device, GpuBuffer buffer, bool owned)
+    internal DeviceBuffer(IGpuContext ctx, GpuBuffer buffer, bool owned, string name)
     {
-        this.device = device;
-        Underlying = buffer;
+        this.ctx = ctx;
+        Handle = buffer;
         this.owned = owned;
+        Name = name;
     }
-
     /// <summary>A new device-local buffer of <paramref name="size"/> bytes.</summary>
-    public static DeviceBuffer Create(GpuContext ctx, ulong size, BufferUse use, string name)
-    {
-        var buffer = ctx.Device.Allocator.CreateBuffer(Math.Max(size, 4), Usage(use) | BufferUsageFlags.TransferDstBit, MemoryKind.DeviceLocal, name);
-        return new DeviceBuffer(ctx.Device, buffer, owned: true);
-    }
+    public static DeviceBuffer Create(IGpuContext ctx, ulong size, BufferUse use, string name) =>
+        new(ctx, ctx.CreateBuffer(size, use, name), owned: true, name);
 
     internal static BufferUsageFlags Usage(BufferUse use)
     {
@@ -61,33 +63,25 @@ public sealed class DeviceBuffer : IDisposable
         return f;
     }
 
-    /// <summary>The buffer's device address (it must have been made with <see cref="BufferUse.RayInput"/>).</summary>
-    public unsafe ulong Address
-    {
-        get
-        {
-            var info = new BufferDeviceAddressInfo { SType = StructureType.BufferDeviceAddressInfo, Buffer = Handle };
-            return device.Vk.GetBufferDeviceAddress(device.Device, in info);
-        }
-    }
-
-    public GpuBuffer Underlying { get; }
-    public Buffer Handle => Underlying.Buffer;
-    public ulong Size => Underlying.Size;
+    /// <summary>The handle the renderers hold: the backend's identity and the size.</summary>
+    public GpuBuffer Handle { get; }
+    /// <summary>The name the buffer was made with (diagnostics).</summary>
+    public string Name { get; }
+    public ulong Size => Handle.Size;
     /// <summary>The last frame that bound it (<see cref="Binding"/>); 0 when never.</summary>
     public long UsedFrame { get; internal set; }
 
     /// <summary>A binding of the range from <paramref name="offset"/>, marking the buffer used by <paramref name="frame"/> (the Uploader
     /// refuses to write it again in that frame).</summary>
-    public BufferBinding Binding(GpuFrame frame, ulong offset = 0, ulong size = Vk.WholeSize)
+    public GpuBufferBinding Binding(IGpuFrame frame, ulong offset = 0, ulong size = GpuBufferBinding.WholeSize)
     {
         UsedFrame = frame.Number;
-        return new BufferBinding(Handle, offset, size);
+        return new GpuBufferBinding(Handle, offset, size);
     }
 
     public void Dispose()
     {
-        if (owned) device.DeferFree(Underlying);
+        if (owned) ctx.ReleaseBuffer(Handle);
     }
 }
 
@@ -95,12 +89,12 @@ public sealed class DeviceBuffer : IDisposable
 /// (Added for the GPU cull's verify mode, docs/renderer-native.md 5.6.) A host-visible, cached buffer the GPU copies into (transfer
 /// destination) and the CPU reads once the frame that wrote it has completed (<see cref="Completed"/>), never waiting for it.
 /// </summary>
-public sealed unsafe class ReadbackBuffer : IDisposable
+public sealed unsafe class ReadbackBuffer : IGpuReadback
 {
     readonly VulkanDevice device;
-    readonly GpuBuffer buffer;
+    readonly BufferAllocation buffer;
 
-    ReadbackBuffer(VulkanDevice device, GpuBuffer buffer)
+    ReadbackBuffer(VulkanDevice device, BufferAllocation buffer)
     {
         this.device = device;
         this.buffer = buffer;
@@ -109,7 +103,7 @@ public sealed unsafe class ReadbackBuffer : IDisposable
     public static ReadbackBuffer Create(GpuContext ctx, ulong size, string name) =>
         new(ctx.Device, ctx.Device.Allocator.CreateBuffer(Math.Max(size, 4), BufferUsageFlags.TransferDstBit, MemoryKind.Readback, name));
 
-    public Buffer Handle => buffer.Buffer;
+    public GpuBuffer Handle => buffer.Handle;
     public ulong Size => buffer.Size;
 
     /// <summary>Whether frame <paramref name="frame"/> (a <see cref="GpuFrame.Number"/>) has completed on the GPU, so what it copied can be read.</summary>
@@ -127,13 +121,13 @@ public sealed unsafe class ReadbackBuffer : IDisposable
 }
 
 /// <summary>A slice of host-visible per-frame memory, valid until the frame slot comes round again.</summary>
-public readonly unsafe struct Transient(Buffer handle, ulong offset, byte* pointer, ulong size)
+public readonly unsafe struct Transient(GpuBuffer handle, ulong offset, byte* pointer, ulong size)
 {
-    public Buffer Handle { get; } = handle;
+    public GpuBuffer Handle { get; } = handle;
     public ulong Offset { get; } = offset;
     public byte* Pointer { get; } = pointer;
     public ulong Size { get; } = size;
-    public BufferBinding Binding => new(Handle, Offset, Size);
+    public GpuBufferBinding Binding => new(Handle, Offset, Size);
     public Span<byte> Bytes => new(Pointer, (int)Size);
 }
 
@@ -149,7 +143,7 @@ public sealed unsafe class LinearAllocator : IDisposable
         BufferUsageFlags.IndexBufferBit | BufferUsageFlags.IndirectBufferBit | BufferUsageFlags.TransferSrcBit | BufferUsageFlags.TransferDstBit;
     readonly VulkanDevice device;
     readonly string name;
-    readonly List<GpuBuffer> chunks = [];
+    readonly List<BufferAllocation> chunks = [];
     int current = -1;
     ulong offset;
 
@@ -206,9 +200,9 @@ public sealed unsafe class LinearAllocator : IDisposable
 
     // A request larger than a regular chunk gets one of its own, kept apart until the reset: in the regular list it moved the bump cursor past the
     // regular chunks after the current one, and the next small request then added a regular chunk the reset keeps (one more per frame while such requests come).
-    readonly List<GpuBuffer> large = [];
+    readonly List<BufferAllocation> large = [];
 
-    GpuBuffer NewChunk(ulong size, List<GpuBuffer> into)
+    BufferAllocation NewChunk(ulong size, List<BufferAllocation> into)
     {
         long profileStart = UploadProfile.Begin();
         var chunk = device.Allocator.CreateBuffer(size, Usage, MemoryKind.Upload, name);
@@ -228,7 +222,7 @@ public sealed unsafe class LinearAllocator : IDisposable
         return t;
     }
 
-    static Transient Slice(GpuBuffer chunk, ulong at, ulong size) => new(chunk.Buffer, at, (byte*)chunk.Mapped + at, size);
+    static Transient Slice(BufferAllocation chunk, ulong at, ulong size) => new(chunk.Handle, at, (byte*)chunk.Mapped + at, size);
 
     public void Dispose()
     {
@@ -254,13 +248,13 @@ public readonly record struct ArenaRange(ulong Offset, ulong Size)
 /// </summary>
 public sealed class BufferArena : IDisposable
 {
-    readonly VulkanDevice device;
+    readonly IGpuContext ctx;
     readonly List<(ulong Offset, ulong Size)> free = [];
     readonly object gate = new();
 
-    public BufferArena(GpuContext ctx, ulong size, BufferUse use, string name)
+    public BufferArena(IGpuContext ctx, ulong size, BufferUse use, string name)
     {
-        device = ctx.Device;
+        this.ctx = ctx;
         Buffer = DeviceBuffer.Create(ctx, size, use, name);
         free.Add((0, Buffer.Size));
     }
@@ -293,7 +287,7 @@ public sealed class BufferArena : IDisposable
     public void Free(ArenaRange range)
     {
         if (range.IsEmpty) return;
-        device.Frames.DeferDelete(() => Release(range));
+        ctx.DeferDelete(() => Release(range));
     }
 
     void Release(ArenaRange range)

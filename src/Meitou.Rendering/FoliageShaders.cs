@@ -165,11 +165,7 @@ static class FoliageShaders
             gl_Position = uViewProjection * vec4(p, 1.0);
             vHazeMul = vec3(1.0);
             vHazeAdd = vec3(0.0);
-            if (uFogDistance > 0.0)
-            {
-                vHazeAdd = atmoApply(vec3(0.0), uEye, p);
-                vHazeMul = atmoApply(vec3(1.0), uEye, p) - vHazeAdd;
-            }
+            if (uFogDistance > 0.0) atmoApplyCoefficients(uEye, p, vHazeMul, vHazeAdd);
         }
         """;
 

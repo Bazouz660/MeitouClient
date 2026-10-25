@@ -25,6 +25,7 @@ static class LauncherSchema
         return new SettingsSchema
         {
             SettingsVersion = UserConfig.CurrentVersion,
+            Renderers = OperatingSystem.IsMacOS() ? ["vulkan", "metal"] : ["vulkan"],
             Sections =
             [
                 new SettingsSection
@@ -52,6 +53,8 @@ static class LauncherSchema
                         Graphics(WorldFrame.ShadowDistanceSlider, KenshiShadows.MinRange * 0.9f, 200000, 100, Enhancements.MeitouShadowRange) with
                             { Logarithmic = true, OffBelow = KenshiShadows.MinRange },
                         Graphics(WorldFrame.ShadowMapSlider, 0, 2, 1, 2) with { Labels = [.. KenshiShadows.QualitySizes.Select(s => $"{s}²")] },
+                        Graphics(WorldFrame.GroundReliefQualitySlider, 0, 2, 1, 2) with { Labels = ["Low", "Medium", "High"] },
+                        Graphics(WorldFrame.ShaftQualitySlider, 0, 2, 1, 2) with { Labels = ["Low", "Medium", "High"] },
                         Graphics(WorldFrame.UpscalerSliders[0], 0, 5, 1, 3) with { Name = "Anti-aliasing", Labels = ["Off", "FXAA", "SMAA", "TAA", "FSR", "DLSS"] },
                         Graphics(WorldFrame.UpscalerSliders[1], 0.33f, 1, 0.01f, 1) with { Scale = 100, Suffix = " %" },
                         Graphics(WorldFrame.FilteringSlider, 0, 4, 1, 4) with { Labels = ["1x", "2x", "4x", "8x", "16x"] },

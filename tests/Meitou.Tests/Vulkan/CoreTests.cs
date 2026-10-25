@@ -1,3 +1,4 @@
+using Meitou.Rendering.Gpu;
 using Meitou.Rendering.Gpu.Core;
 using Silk.NET.Vulkan;
 
@@ -29,8 +30,8 @@ public unsafe class CoreTests(ITestOutputHelper output)
         using var d = TryCreate();
         Assert.SkipWhen(d is null, "No Vulkan 1.3 device");
         var rng = new Random(1234);
-        var buffers = new List<GpuBuffer>();
-        var images = new List<GpuImage>();
+        var buffers = new List<BufferAllocation>();
+        var images = new List<ImageAllocation>();
         const BufferUsageFlags usage = BufferUsageFlags.TransferSrcBit | BufferUsageFlags.TransferDstBit | BufferUsageFlags.UniformBufferBit;
         for (int i = 0; i < 300; i++)
         {
@@ -50,7 +51,7 @@ public unsafe class CoreTests(ITestOutputHelper output)
                 {
                     SType = StructureType.ImageCreateInfo,
                     ImageType = ImageType.Type2D,
-                    Format = Format.R8G8B8A8Unorm,
+                    Format = GlConventions.VkFormat(InternalFormat.Rgba8),
                     Extent = new Extent3D((uint)w, (uint)h, 1),
                     MipLevels = 1,
                     ArrayLayers = 1,

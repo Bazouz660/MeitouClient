@@ -26,7 +26,7 @@ public sealed partial class FoliageRenderer
 
     readonly Dictionary<MeshAsset, RayMesh> rayMeshes = [];
     /// <summary>The usage a mesh buffer needs to be built into the traced scene (none without ray queries).</summary>
-    BufferUse RayInput => Gpu.Device.HasRayQuery ? BufferUse.RayInput : 0;
+    BufferUse RayInput => Gpu.HasRayQuery ? BufferUse.RayInput : 0;
 
     /// <summary>
     /// Adds every laid-out instance whose bounding radius is at least <paramref name="minRadius"/> and whose bounding sphere comes within

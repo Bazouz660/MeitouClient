@@ -22,7 +22,7 @@ public sealed unsafe class VulkanDisplay : IDisposable
     readonly VulkanPresenter? presenter;
 
     /// <summary>With a window: what the frame is drawn into (the window's framebuffer size), valid after <see cref="BeginFrame"/>; null when headless.</summary>
-    public Texture? Backbuffer => presenter?.Backbuffer;
+    public GpuTexture? Backbuffer => presenter?.Backbuffer;
     /// <summary>Stopwatch ticks spent acquiring swapchain images and presenting (0 when headless).</summary>
     public long AcquireTicks => presenter?.AcquireTicks ?? 0;
     public long PresentTicks => presenter?.PresentTicks ?? 0;

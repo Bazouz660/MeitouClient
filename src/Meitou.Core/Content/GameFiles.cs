@@ -23,7 +23,9 @@ public static class GameFiles
     /// </summary>
     public static string Resolve(string path)
     {
-        if (!Fold || path.Length == 0 || File.Exists(path) || Directory.Exists(path)) return path;
+        if (!Fold || path.Length == 0) return path;
+        // Walk even when the path exists: on macOS and Windows the file system ignores case, and the caller wants the spelling on disk
+        // (the upstream test pins it; a record may name a file in another case than the install).
         return Walk(path) ?? path;
     }
 

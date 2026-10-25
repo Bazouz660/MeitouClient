@@ -99,13 +99,13 @@ public sealed unsafe class ParticleRenderer : IDisposable
     /// <summary>The farthest a unit is drawn (the near depth slice's far plane is about this).</summary>
     public const float DrawRange = 20400;
 
-    readonly GpuContext gpu;
+    readonly IGpuContext gpu;
     readonly string texturesDirectory;
     readonly LegacyProgram program;
     readonly NativeSegment segment;
     readonly DeviceBuffer quad;
     readonly VertexArrayBindings vertexSource;
-    readonly BufferBinding[] bindings = new BufferBinding[5];
+    readonly GpuBufferBinding[] bindings = new GpuBufferBinding[5];
     readonly UniformHandle viewProjection, cameraRight, cameraUp, mode, anchor, commonDirection, commonUp, colourScale, coverageMode, coverageLimit;
     readonly SamplerSlot textureSlot;
     readonly SampledImage white;
@@ -165,14 +165,14 @@ public sealed unsafe class ParticleRenderer : IDisposable
         public float Fill;
     }
 
-    ParticleRenderer(GpuContext gpu, string texturesDirectory, ParticleLibrary library)
+    ParticleRenderer(IGpuContext gpu, string texturesDirectory, ParticleLibrary library)
     {
         this.gpu = gpu;
         this.texturesDirectory = texturesDirectory;
         Library = library;
         weatherGroups = new WeatherGroups(library, World);
         program = LegacyProgram.Create(gpu, Vertex, Fragment, "particles");
-        segment = new NativeSegment(gpu, program, Silk.NET.Vulkan.PrimitiveTopology.TriangleStrip, "particles");
+        segment = new NativeSegment(gpu, program, PrimitiveType.TriangleStrip, "particles");
         viewProjection = program.Uniform("uViewProjection");
         cameraRight = program.Uniform("uCameraRight");
         cameraUp = program.Uniform("uCameraUp");
@@ -190,12 +190,12 @@ public sealed unsafe class ParticleRenderer : IDisposable
         var attributes = new LegacyProgram.Attribute?[5];
         attributes[0] = WaterRenderer.QuadAttribute(quad);
         for (int a = 0; a < 4; a++)
-            attributes[1 + a] = new LegacyProgram.Attribute(default, Silk.NET.Vulkan.Format.R32G32B32A32Sfloat, InstanceBytes, true);
+            attributes[1 + a] = new LegacyProgram.Attribute(default, InternalFormat.Rgba32f, InstanceBytes, true);
         vertexSource = new VertexArrayBindings(attributes, default);
         white = SampledImage.Rgba8(gpu, 1, 1, [255, 255, 255, 255], repeat: false, mipmaps: false, "particle white");
     }
 
-    public static ParticleRenderer Create(GpuContext gpu, GameInstall install, ParticleLibrary? library = null)
+    public static ParticleRenderer Create(IGpuContext gpu, GameInstall install, ParticleLibrary? library = null)
     {
         BackgroundWork.Run(EffectGroups.PrimeJit);   // the group kinds' code is compiled off the render thread, before the first weather change needs it
         return new(gpu, GameFiles.Resolve(Path.Combine(install.DataDirectory, "particles", "textures")), library ?? ParticleLibrary.Load(install));
@@ -455,13 +455,13 @@ public sealed unsafe class ParticleRenderer : IDisposable
         bool low = divisor > 1;
         var cmd = gpu.BeginGuest(low ? "particles low" : "particles");
         var targets = gpu.CurrentTargets();
-        bool hasDepth = targets.Formats.Depth != Silk.NET.Vulkan.Format.Undefined, hasColour = targets.Formats.Colour != Silk.NET.Vulkan.Format.Undefined;
+        bool hasDepth = targets.Formats.Depth != InternalFormat.None, hasColour = targets.Formats.Colour != InternalFormat.None;
         var baseState = gpu.CurrentState();
         cmd.SetViewport(targets.Viewport);
         cmd.SetScissor(targets.Scissor);
         // The alpha channel of the scene target carries the characters' mask: particles write colour only (the low-resolution target uses all four).
-        const Silk.NET.Vulkan.ColorComponentFlags rgb = Silk.NET.Vulkan.ColorComponentFlags.RBit | Silk.NET.Vulkan.ColorComponentFlags.GBit | Silk.NET.Vulkan.ColorComponentFlags.BBit;
-        RecordDraws(cmd, in baseState, in targets, hasDepth, hasColour, low ? rgb | Silk.NET.Vulkan.ColorComponentFlags.ABit : rgb, low ? Kind.Low : Kind.Colour, divisor);
+        const ColorMask rgb = ColorMask.R | ColorMask.G | ColorMask.B;
+        RecordDraws(cmd, in baseState, in targets, hasDepth, hasColour, low ? rgb | ColorMask.A : rgb, low ? Kind.Low : Kind.Colour, divisor);
         gpu.EndGuest(cmd);
     }
 
@@ -481,7 +481,7 @@ public sealed unsafe class ParticleRenderer : IDisposable
         coveragePending = false;
         if (!Enabled || (weatherGroups.Groups.Count == 0 && placerGroups.Count == 0)) return;
         draws.Clear();
-        var constants = gpu.Frame.Constants;
+        var frame = gpu.Frame;
         var forward = -new Vector3(view.M13, view.M23, view.M33);   // the view's -Z axis in the world
         var planes = WorldCamera.FrustumPlanes(viewProjectionMatrix);
         var units = new List<EffectUnit>();
@@ -516,7 +516,10 @@ public sealed unsafe class ParticleRenderer : IDisposable
                 int written = sim.Collect(t, scratch.AsSpan(0, n), u.Tint, u.Alpha * EffectOpacity(u.Effect.Name), offset);
                 if (written == 0) continue;
                 int close = PartitionByDepth(scratch.AsSpan(0, written), forward, nearPlane);
-                var instances = constants.Allocate((ulong)(written * InstanceBytes), 16);
+                // Metal's near-plane particle path is not safe yet: a large dust sprite crossing the close projection
+                // produced a black frame and a GPU reset. Draw only the normal-depth set until that path is ported.
+                if (gpu.ClipDepthZeroToOne) close = 0;
+                var instances = frame.AllocateConstants((ulong)(written * InstanceBytes), 16);
                 scratch.AsSpan(0, written).CopyTo(new Span<ParticleInstance>(instances.Pointer, written));
                 long collected = Stopwatch.GetTimestamp() - collectStart;
                 collectTotal += collected;
@@ -562,10 +565,11 @@ public sealed unsafe class ParticleRenderer : IDisposable
     /// <summary>
     /// The frame's particles again into the upscalers' reactive mask (docs/renderer-native.md 8.20): the same quads and matrices as the colour draw, adding
     /// their alpha (or brightness, for additive ones) into <paramref name="mask"/>'s channels. Without it the temporal history keeps about 90% of what was
-    /// behind a fast, thin particle (rain), which then barely shows. No depth test (a hidden particle only makes its pixels a little less stable).
+    /// behind a fast, thin particle (rain), which then barely shows. Without <paramref name="depthTest"/> a particle hidden behind terrain still makes its
+    /// pixels a little less stable; Metal's reactive path tests the scene depth so those pixels keep their history.
     /// Called by the post chain with the target bound (cleared or loaded as it wants), once per frame after <c>Draw</c>.
     /// </summary>
-    public void DrawCoverage(Silk.NET.Vulkan.ColorComponentFlags mask)
+    public void DrawCoverage(ColorMask mask, bool depthTest = false)
     {
         if (!HasCoverage || FullCount == 0) return;
         var cmd = gpu.BeginGuest("particle coverage");
@@ -573,7 +577,7 @@ public sealed unsafe class ParticleRenderer : IDisposable
         var baseState = gpu.CurrentState();
         cmd.SetViewport(targets.Viewport);
         cmd.SetScissor(targets.Scissor);
-        RecordDraws(cmd, in baseState, in targets, false, true, mask, Kind.Coverage);
+        RecordDraws(cmd, in baseState, in targets, depthTest, true, mask, Kind.Coverage);
         gpu.EndGuest(cmd);
     }
 
@@ -598,8 +602,8 @@ public sealed unsafe class ParticleRenderer : IDisposable
         return (size >= QuarterPixels ? 4 : size >= HalfPixels ? 2 : 1, fill);
     }
 
-    void RecordDraws(CommandList cmd, in DrawState baseState, in PassTargets targets, bool hasDepth, bool hasColour,
-        Silk.NET.Vulkan.ColorComponentFlags rgb, Kind kind, int divisor = 1)
+    void RecordDraws(IGpuCommandList cmd, in DrawState baseState, in PassTargets targets, bool hasDepth, bool hasColour,
+        ColorMask rgb, Kind kind, int divisor = 1)
     {
         int coverage = kind == Kind.Coverage ? 1 : 0;
         var (vp, closeVp, right, up, ambient) = (frameVp, frameCloseVp, frameRight, frameUp, frameAmbient);
@@ -616,12 +620,17 @@ public sealed unsafe class ParticleRenderer : IDisposable
                 if (count == 0) continue;
                 var state = baseState with
                 {
-                    Cull = Silk.NET.Vulkan.CullModeFlags.None, DepthTest = hasDepth && m.DepthCheck && !close, DepthWrite = false, ColourMask = rgb,
-                    Blend = kind == Kind.Low ? new BlendState(true, Silk.NET.Vulkan.BlendFactor.One, Silk.NET.Vulkan.BlendFactor.OneMinusSrcAlpha)
-                        : coverage != 0 ? new BlendState(true, Silk.NET.Vulkan.BlendFactor.One, Silk.NET.Vulkan.BlendFactor.One) : hasColour ? BlendFor(m.Blend) : BlendState.Off,
+                    Cull = CullMode.None, DepthTest = hasDepth && m.DepthCheck && !close, DepthWrite = false, ColourMask = rgb,
+                    Blend = kind == Kind.Low ? new BlendState(true, BlendingFactor.One, BlendingFactor.OneMinusSrcAlpha)
+                        // The reactive mask is a per-pixel confidence in [0, 1]: overlapping particles must not add past 1.
+                        // (TAA's motion alpha keeps the additive 2 = all-current-frame convention.)
+                        : coverage != 0 ? rgb == ColorMask.R
+                            ? new BlendState(true, BlendingFactor.One, BlendingFactor.One, BlendOperation.Max, BlendOperation.Max)
+                            : new BlendState(true, BlendingFactor.One, BlendingFactor.One)
+                        : hasColour ? BlendFor(m.Blend) : BlendState.Off,
                 };
                 program.Set(coverageMode, kind == Kind.Low ? (m.Blend == ParticleBlend.Alpha ? 3 : 4) : coverage == 0 ? 0 : m.Blend == ParticleBlend.Alpha ? 1 : 2);
-                program.Set(coverageLimit, rgb == Silk.NET.Vulkan.ColorComponentFlags.ABit ? 2f : 1f);   // the TAA takes half the motion target's alpha, so 2 is "all current frame"
+                program.Set(coverageLimit, rgb == ColorMask.A ? 2f : 1f);   // the TAA takes half the motion target's alpha, so 2 is "all current frame"
                 var matrix = close ? closeVp : vp;
                 program.Set(this.viewProjection, in matrix);
                 program.Set(cameraRight, right);
@@ -637,8 +646,8 @@ public sealed unsafe class ParticleRenderer : IDisposable
                 cmd.SetDepth(state.DepthTest, state.DepthWrite, state.Compare);
                 cmd.SetDepthBias(state.BiasEnable, state.BiasConstant, state.BiasSlope);
                 cmd.BindPipeline(segment.Get(state, targets.Formats, vertexSource));
-                bindings[0] = new BufferBinding(quad.Handle, 0);
-                for (int a = 0; a < 4; a++) bindings[1 + a] = new BufferBinding(d.Instances.Handle, d.Instances.Offset + (ulong)(16 * a));
+                bindings[0] = new GpuBufferBinding(quad.Handle, 0);
+                for (int a = 0; a < 4; a++) bindings[1 + a] = new GpuBufferBinding(d.Instances.Handle, d.Instances.Offset + (ulong)(16 * a));
                 cmd.BindVertexBuffers(0, bindings);
                 program.Flush(cmd);
                 cmd.Draw(4, (uint)count, 0, (uint)first);
@@ -668,11 +677,11 @@ public sealed unsafe class ParticleRenderer : IDisposable
 
     static BlendState BlendFor(ParticleBlend blend) => blend switch
     {
-        ParticleBlend.Add => new BlendState(true, Silk.NET.Vulkan.BlendFactor.One, Silk.NET.Vulkan.BlendFactor.One),
-        ParticleBlend.Modulate => new BlendState(true, Silk.NET.Vulkan.BlendFactor.DstColor, Silk.NET.Vulkan.BlendFactor.Zero),
-        ParticleBlend.ColourBlend => new BlendState(true, Silk.NET.Vulkan.BlendFactor.SrcColor, Silk.NET.Vulkan.BlendFactor.OneMinusSrcColor),
+        ParticleBlend.Add => new BlendState(true, BlendingFactor.One, BlendingFactor.One),
+        ParticleBlend.Modulate => new BlendState(true, BlendingFactor.DstColor, BlendingFactor.Zero),
+        ParticleBlend.ColourBlend => new BlendState(true, BlendingFactor.SrcColor, BlendingFactor.OneMinusSrcColor),
         ParticleBlend.Opaque => BlendState.Off,
-        _ => new BlendState(true, Silk.NET.Vulkan.BlendFactor.SrcAlpha, Silk.NET.Vulkan.BlendFactor.OneMinusSrcAlpha),
+        _ => new BlendState(true, BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha),
     };
 
     static int ModeOf(string billboardType) => billboardType switch

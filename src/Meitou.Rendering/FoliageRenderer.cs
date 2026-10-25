@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Numerics;
+using System.Runtime.InteropServices;
 using Meitou.Content;
 using Meitou.Data;
 using Meitou.Data.Ogre;
@@ -31,7 +32,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
     const int InstanceStride = 64;
 
     /// <summary>The native GPU API (docs/renderer-native.md 7.1 step 8; since phase 8 stage 1 the only one this renderer uses).</summary>
-    public GpuContext Gpu { get; }
+    public IGpuContext Gpu { get; }
     /// <summary>The meshes' allocation name (the F12 VRAM pie groups by it).</summary>
     const string MeshAllocationName = "foliage meshes";
     readonly GameInstall install;
@@ -103,7 +104,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
     /// <summary>Zone layouts in flight: whole ones and far-only ones, each limited to <see cref="workers"/> at a time.</summary>
     int runningWhole, runningFar;
 
-    public FoliageRenderer(GpuContext gpu, GameInstall install, GameDatabase db, WorldLevelData levels, AssetLocator assets)
+    public FoliageRenderer(IGpuContext gpu, GameInstall install, GameDatabase db, WorldLevelData levels, AssetLocator assets)
     {
         Gpu = gpu;
         this.install = install;
@@ -126,7 +127,10 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
         grassProgram = new NativeProg(gpu, nativeFrame, FoliageShaders.GrassVertexNative(), FoliageShaders.GrassFragmentNative(), "foliage grass");
         grassMotionProgram = new NativeProg(gpu, nativeFrame, FoliageShaders.GrassMotionVertexNative(), FoliageShaders.GrassMotionFragmentNative(), "foliage grass motion");
         textures = new WorldTextureCache(gpu, assets, "foliage textures");
-        gpuCull = new FoliageGpuCull(gpu);
+        // Metal's GPU cull and its separate pre-frame command buffer are opt-in after the 2026-10-23 progress
+        // timeouts; the CPU cull is the stable reference. Vulkan keeps the GPU path.
+        bool metalGpuCull = Environment.GetEnvironmentVariable("MEITOU_METAL_GPU_CULL") is "1" or "true";
+        gpuCull = gpu is GpuContext || metalGpuCull ? new FoliageGpuCull(gpu) : null;
         InitGrassStore(gpu);
         workers = Math.Clamp(Environment.ProcessorCount / 4, 1, 3);
         var used = catalog.ByBiome.Values.SelectMany(l => l).Distinct().ToList();
@@ -170,6 +174,10 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
     public int DrawnBlades { get; private set; }
     public int DrawCalls { get; private set; }
     public double LastDrawCpuMs { get; private set; }
+    /// <summary>The groups the last CPU cull tested (diagnostics for the parallel path).</summary>
+    public int LastCullGroups { get; private set; }
+    /// <summary>Views the GPU cull dispatched in all (diagnostic; 0 while the CPU path or the Metal GPU cull is off).</summary>
+    public long GpuCullDispatches => gpuCull?.Dispatched ?? 0;
     /// <summary>With <see cref="WorldFrame.DetailedStats"/>: the last depth draw's and the frame's main draws' CPU time by step (culling, upload, meshes, grass, TERRAIN-mode rocks).</summary>
     internal string DepthDetail = "", MainDetail = "";
     /// <summary>GPU time of the foliage draws of one frame (the main camera's draw, grass included), from timestamp queries a frame or two old.</summary>
@@ -204,7 +212,13 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
         {
             guard = value;
             textures.Guard = value;
-            if (gpuCull is not null) { gpuCull.MayGrow = value is null ? null : value.Allows; gpuCull.Scratch.MayGrow = value is null ? null : bytes => Gpu.Device.Allocator.FitsInFreeSpace(bytes) || value.AllowsPriority(bytes); }
+            if (gpuCull is not null)
+            {
+                gpuCull.MayGrow = value is null ? null : value.Allows;
+                gpuCull.Scratch.MayGrow = value is null ? null
+                    : Gpu is GpuContext vk ? (Func<ulong, bool>)(bytes => vk.Device.Allocator.FitsInFreeSpace(bytes) || value.AllowsPriority(bytes))
+                    : value.Allows;
+            }
         }
     }
     VramGuard? guard;
@@ -251,7 +265,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
         {
             static string One(string name, FrameScratch s) => string.Create(System.Globalization.CultureInfo.InvariantCulture,
                 $"{name} {s.AllocatedBytes / 1048576.0:0.0} MB held, need per frame mean {s.MeanNeed / 1048576.0:0.0} / peak {s.PeakNeed / 1048576.0:0.0} MB (demand peak {s.PeakDemand / 1048576.0:0.0}), cap {s.Cap / 1048576.0:0} MB per slot, {s.Overflows} refused in {s.OverflowFrames} frames, {s.Rebuilds} rebuilds ({s.KeptOnRefusal} kept for a refusal)");
-            return (gpuCull is { } g ? One("cull", g.Scratch) + $"; arena {g.ArenaUsed / 1048576.0:0.0} of {g.ArenaBytes / 1048576.0:0} MB at {FoliageInstanceRecord.GpuSize} B a record ({g.PackMismatches} not lossless)" : "no GPU cull") + "; " + One("grass", grassStore.Scratch);
+            return (gpuCull is { } g ? One("cull", g.Scratch) + $"; arena {g.ArenaUsed / 1048576.0:0.0} of {g.ArenaBytes / 1048576.0:0} MB at {FoliageInstanceRecord.GpuSize} B a record ({g.PackMismatches} not lossless)" : "no GPU cull") + "; " + (grassStore.Scratch is { } grassScratch ? One("grass", grassScratch) : "grass store (CPU)");
         }
     }
 
@@ -576,7 +590,12 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
             pressureSince = guard is { Pressure: true } ? pressureSince ?? watch.Elapsed.TotalSeconds : null;
             if (pressureSince is { } since && watch.Elapsed.TotalSeconds - since > 5) { Console.WriteLine("warning   foliage streaming stopped waiting: memory pressure (VramGuard)"); return; }
             // An impostor bake reads its rows back after the frame they were recorded into, and atlas uploads are spread over frames: end it.
-            if (impostorBake is { NeedsFrame: true } || impostorUploadsWaiting) Gpu.Finish();
+            // A live host owns its open frame (Metal cannot end and reopen it here): leave the remaining bakes to its later frames.
+            if (impostorBake is { NeedsFrame: true } || impostorUploadsWaiting)
+            {
+                if (Gpu.Frame.Open) return;
+                Gpu.Finish();
+            }
             else Thread.Sleep(2);
         }
         Console.WriteLine($"warning   foliage streaming did not finish in {timeoutMs / 1000} s");
@@ -694,7 +713,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
         if (gpuCull is null) return;
         foreach (var g in groups)
         {
-            gpuCull.Free(g.Arena, g.ArenaGeneration);
+            gpuCull?.Free(g.Arena, g.ArenaGeneration);
             (g.Arena, g.ArenaGeneration) = (default, 0);
         }
     }
@@ -1011,7 +1030,10 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
                 uploads.Enqueue(() =>
                 {
                     Gpu.EnsureFrame();
-                    Gpu.Uploads.Write(gp!.Vertices, (ulong)start, System.Runtime.InteropServices.MemoryMarshal.AsBytes(p.Vertices.AsSpan()).Slice(start, length));
+                {
+                    using var batch = Gpu.Uploads.Begin();
+                    batch.Write(gp!.Vertices, (ulong)start, System.Runtime.InteropServices.MemoryMarshal.AsBytes(p.Vertices.AsSpan()).Slice(start, length));
+                }
                 });
             }
             for (int at = 0; at < indexBytes; at += SlabBytes)
@@ -1020,7 +1042,10 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
                 uploads.Enqueue(() =>
                 {
                     Gpu.EnsureFrame();
-                    Gpu.Uploads.Write(gp!.Indices, (ulong)start, System.Runtime.InteropServices.MemoryMarshal.AsBytes(allIndices.AsSpan()).Slice(start, length));
+                {
+                    using var batch = Gpu.Uploads.Begin();
+                    batch.Write(gp!.Indices, (ulong)start, System.Runtime.InteropServices.MemoryMarshal.AsBytes(allIndices.AsSpan()).Slice(start, length));
+                }
                 });
             }
         }
@@ -1100,7 +1125,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
     {
         var result = new LegacyProgram.Attribute?[MeshLayout.Length];
         foreach (var a in MeshLayout)
-            result[a.Location] = new LegacyProgram.Attribute(new BufferBinding(vertices.Handle, (ulong)a.Offset),
+            result[a.Location] = new LegacyProgram.Attribute(new GpuBufferBinding(vertices.Handle, (ulong)a.Offset),
                 GlConventions.VertexFormat(GLEnum.Float, a.Size, false, false), (uint)Vertex.Size, false);
         return result;
     }
@@ -1224,8 +1249,8 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
         if (!gpu) foreach (var b in impostorActive) { b.Offset = total; total += b.Count; }
         if (total > 0 && !gpu)
         {
-            instances = Gpu.Frame.Constants.Allocate((ulong)total * InstanceStride, 16);
-            var target = new Span<byte>(instances.Pointer, total * InstanceStride);
+            instances = Gpu.Frame.AllocateConstants((ulong)(total * InstanceStride), 16);
+            var target = instances.Bytes;
             foreach (var b in active)
                 System.Runtime.InteropServices.MemoryMarshal.AsBytes(b.Data.AsSpan(0, b.Count)).CopyTo(target[(b.Offset * InstanceStride)..]);
             foreach (var b in impostorActive)
@@ -1251,7 +1276,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
         {
             if (gpu)
             {
-                gpuResult = DispatchGpuCull(new Vector2(eye.X, eye.Z), terrain);
+                gpuResult = DispatchGpuCull(new Vector2(eye.X, eye.Z), terrain, coverage);
                 if (gpuResult.IsEmpty) { meshDraws.Clear(); rockDraws.Clear(); }   // the scratch memory is over its cap: this view has no foliage this frame
             }
             if (meshDraws.Count > 0 || impostorDraws.Count > 0)
@@ -1408,17 +1433,26 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
             if ((parts & FoliageCull.ImpostorPart) != 0) ImpostorBatchOf(g.Asset);
         }
         while (cullOutputs.Count < cullWork.Count) cullOutputs.Add(new FoliageCullOutput());
+        LastCullGroups = cullWork.Count;
         var eyeXz = new Vector2(eye.X, eye.Z);
         var view = cullView;
-        RenderJobs.For(cullWork.Count, k =>
+        // The Hub has well over a thousand groups; one work item per group spends more time in the job queue than in the
+        // short cull. Each chunk writes its groups' own outputs, so the order and results are unchanged.
+        const int CullChunk = 16;
+        int chunks = (cullWork.Count + CullChunk - 1) / CullChunk;
+        RenderJobs.For(chunks, chunk =>
         {
-            var (g, range, parts) = cullWork[k];
-            if (!g.SpheresReady)
+            int start = chunk * CullChunk, end = Math.Min(start + CullChunk, cullWork.Count);
+            for (int k = start; k < end; k++)
             {
-                FoliageCull.FillSpheres(g.Instances, g.Asset.Centre, g.Asset.Radius);   // the mesh's bounds are known once it is resident, and never change
-                g.SpheresReady = true;
+                var (g, range, parts) = cullWork[k];
+                if (!g.SpheresReady)
+                {
+                    FoliageCull.FillSpheres(g.Instances, g.Asset.Centre, g.Asset.Radius);   // the mesh's bounds are known once it is resident, and never change
+                    g.SpheresReady = true;
+                }
+                FoliageCull.CullGroup(g.Instances, range, eyeXz, view, record, cullOutputs[k], parts, record ? null : FogCull);
             }
-            FoliageCull.CullGroup(g.Instances, range, eyeXz, view, record, cullOutputs[k], parts, record ? null : FogCull);
         });
         for (int k = 0; k < cullWork.Count; k++)
         {
@@ -1791,13 +1825,13 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
 
     /// <summary>Records this view's cull ahead of the frame: the chunks (once a frame per work list), one draw per mesh draw (its batch's
     /// chunks), then one per rock draw.</summary>
-    FoliageCullResult DispatchGpuCull(Vector2 eye, TerrainRenderer terrain)
+    FoliageCullResult DispatchGpuCull(Vector2 eye, TerrainRenderer terrain, bool coverage)
     {
         var cull = gpuCull!;
         var frame = Gpu.Frame;
         if (gpuChunkFrame != frame.Number)
         {
-            gpuChunkData = frame.Constants.Write<FoliageCullChunk>(gpuChunks.AsSpan(0, gpuChunkCount), 256);
+            gpuChunkData = frame.WriteConstants(MemoryMarshal.AsBytes(gpuChunks.AsSpan(0, gpuChunkCount)), 256);
             gpuChunkFrame = frame.Number;
         }
         int meshes = meshDraws.Count, rocks = meshes + rockDraws.Count, count = rocks + impostorDraws.Count;
@@ -1817,16 +1851,16 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
             int b = impostorDraws[k].Batch;
             gpuDraws[rocks + k] = new FoliageCullDraw { IndexCount = 6, ChunkStart = (uint)gpuBatchStart[b], ChunkEnd = (uint)gpuBatchStart[b + 1] };
         }
-        var draws = frame.Constants.Write<FoliageCullDraw>(gpuDraws.AsSpan(0, count), 256);
+        var draws = frame.WriteConstants(MemoryMarshal.AsBytes(gpuDraws.AsSpan(0, count)), 256);
         // What the rocks' row 0 w carries, as the terrain's mesh path writes it: the biome row in colour (resident ones, now), 0 in depth.
         var rock = new FoliageRockView { BiomeRows = !depthPass };
         if (!depthPass && gpuRockOrder.Count > 0) terrain.FeatureResidentBiomes(rock.Resident);
-        if (FoliageGpuCull.CountTriangles) cull.TallyView = (depthPass ? 1 : Gpu.CurrentTargets().Formats.Samples > 1 ? 2 : 0, meshes, rocks);
+        if (FoliageGpuCull.CountTriangles) cull.TallyView = (depthPass ? 1 : coverage ? 2 : 0, meshes, rocks);
         // The fog cull rides in the main colour view's dispatch only (FogCull is set around that draw alone): per instance, in the cull kernel.
         Span<Vector4> fog = stackalloc Vector4[FogVolumes.CullVectors];
         bool fogOn = !depthPass && FogCull is { } fogCull && fogCull.WriteCull(fog);
         bool occlusionOn = !depthPass && !Occlusion.IsEmpty;
-        cull.TimingClass = depthPass || Gpu.CurrentTargets().Formats.Samples > 1 ? 0 : occlusionOn ? 2 : 1;
+        cull.TimingClass = depthPass || coverage ? 0 : occlusionOn ? 2 : 1;
         // The split (EarlyDepth): in the colour views each batch's dithered instances come after its fully visible ones, drawn with the other program.
         bool split = !depthPass && EarlyDepth.Enabled;
         // The interior cut (main colour view): with the split, the fully visible instances over a mask go with the fading ones, to the program with the cut.
@@ -1909,15 +1943,15 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
     struct NativeMesh
     {
         public VertexLayout? Layout;
-        public BufferBinding[] Vertices;
-        public BufferBinding Elements;
+        public GpuBufferBinding[] Vertices;
+        public GpuBufferBinding Elements;
         public int SegA, SegB;
-        public GraphicsPipeline? PipeA, PipeB;
+        public GpuPipeline? PipeA, PipeB;
     }
 
     /// <summary>The pipeline state a segment's draws share (everything of <see cref="GraphicsPipelineDesc"/> but the vertex layout).</summary>
-    readonly record struct SegmentPipeline(ShaderProgram Program, AttachmentFormats Formats, BlendState Blend, Silk.NET.Vulkan.ColorComponentFlags Mask,
-        Silk.NET.Vulkan.PolygonMode Polygon, bool AlphaToCoverage, bool DepthClamp);
+    readonly record struct SegmentPipeline(GpuProgram Program, AttachmentFormats Formats, BlendState Blend, ColorMask Mask,
+        PolygonKind Polygon, bool AlphaToCoverage, bool DepthClamp);
 
     readonly Dictionary<(int Kind, SegmentPipeline State), int> segmentByState = [];
     readonly SegmentPipeline[] lastSegment = new SegmentPipeline[8];
@@ -1925,7 +1959,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
     int segmentCount;
 
     /// <summary>A stable number for a segment's pipeline state, so a mesh compares one int per draw.</summary>
-    int SegmentId(int kind, ShaderProgram p, PassTargets t, DrawState s)
+    int SegmentId(int kind, GpuProgram p, PassTargets t, DrawState s)
     {
         var segment = new SegmentPipeline(p, t.Formats, s.Blend, s.ColourMask, s.Polygon, s.AlphaToCoverage, s.DepthClamp);
         if (segmentIds[kind] != 0 && segment == lastSegment[kind]) return segmentIds[kind];
@@ -1942,25 +1976,25 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
         Span<LegacyProgram.Attribute?> attributes = stackalloc LegacyProgram.Attribute?[16];
         part.Attributes.AsSpan().CopyTo(attributes);
         for (int a = 0; a < 4; a++)
-            attributes[RowLocation + a] = new LegacyProgram.Attribute(default, Silk.NET.Vulkan.Format.R32G32B32A32Sfloat, InstanceStride, true);
+            attributes[RowLocation + a] = new LegacyProgram.Attribute(default, InternalFormat.Rgba32f, InstanceStride, true);
         n.Layout = p.Layout(attributes);
         n.Vertices = p.Buffers(attributes, p.Own);
-        n.Elements = new BufferBinding(part.Indices.Handle, 0, part.Indices.Size);
+        n.Elements = new GpuBufferBinding(part.Indices.Handle, 0, part.Indices.Size);
         n.SegA = n.SegB = 0;
         n.PipeA = n.PipeB = null;
     }
 
-    GraphicsPipeline PipelineFor(ref NativeMesh n, NativeProg p, int segment, DrawState state, AttachmentFormats formats, string label)
+    GpuPipeline PipelineFor(ref NativeMesh n, NativeProg p, int segment, DrawState state, AttachmentFormats formats, string label)
     {
-        if (n.SegA == segment) return n.PipeA!;
-        if (n.SegB == segment) return n.PipeB!;
-        var pipeline = Gpu.Pipelines.Get(state.Pipeline(p.P, n.Layout!, Silk.NET.Vulkan.PrimitiveTopology.TriangleList, formats, label));
+        if (n.SegA == segment) return n.PipeA!.Value;
+        if (n.SegB == segment) return n.PipeB!.Value;
+        var pipeline = Gpu.Pipelines.Get(state.Pipeline(p.P, n.Layout!, PrimitiveType.Triangles, formats, label));
         (n.SegB, n.PipeB) = (n.SegA, n.PipeA);
         (n.SegA, n.PipeA) = (segment, pipeline);
         return pipeline;
     }
 
-    /// <summary>The scene's near depth (<see cref="PostProcess.MotionTargets.NearDepth"/>) in the bindless 2D float array the shaders index: registered
+    /// <summary>The scene's near depth (<see cref="MotionTargets.NearDepth"/>) in the bindless 2D float array the shaders index: registered
     /// again (the old index freed after the frames in flight) only when the texture or its sampler changed.</summary>
     uint NearDepthIndex(in SampledTexture nearDepth)
     {
@@ -1973,10 +2007,10 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
     (SampledTexture Texture, uint Index)? nearDepthIndex;
 
     /// <summary>Pushes <paramref name="value"/> when its bytes differ from what the segment pushed last (<paramref name="last"/>).</summary>
-    static void Push<T>(CommandList cmd, ShaderProgram p, in T value, ref T last, ref bool pushed) where T : unmanaged
+    static void Push<T>(IGpuCommandList cmd, GpuProgram p, in T value, ref T last, ref bool pushed) where T : unmanaged
     {
         if (pushed && System.Runtime.InteropServices.MemoryMarshal.AsBytes(new ReadOnlySpan<T>(in value)).SequenceEqual(System.Runtime.InteropServices.MemoryMarshal.AsBytes(new ReadOnlySpan<T>(in last)))) return;
-        cmd.PushConstants(p.Layout, Silk.NET.Vulkan.ShaderStageFlags.VertexBit | Silk.NET.Vulkan.ShaderStageFlags.FragmentBit, in value);
+        cmd.PushConstants(p, GpuStage.Vertex | GpuStage.Fragment, in value);
         last = value;
         pushed = true;
     }
@@ -2071,19 +2105,19 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
         var targets = Gpu.CurrentTargets();
         // The host's state, with what the GL version set around the meshes: back faces culled (GL's cull face on, its mode never changed from
         // BACK), alpha to coverage with a multisampled target.
-        var sceneState = Gpu.CurrentState() with { Cull = Silk.NET.Vulkan.CullModeFlags.BackBit, AlphaToCoverage = coverage };
+        var sceneState = Gpu.CurrentState() with { Cull = CullMode.Back, AlphaToCoverage = coverage };
         // The prepass writes depth only; the colour after it draws exactly the fragments that left their depth there (the prepass has the discards, this has none).
-        var state = prepass ? sceneState with { ColourMask = 0 } : equal ? sceneState with { Compare = Silk.NET.Vulkan.CompareOp.Equal, DepthWrite = false } : sceneState;
+        var state = prepass ? sceneState with { ColourMask = 0 } : equal ? sceneState with { Compare = DepthFunction.Equal, DepthWrite = false } : sceneState;
         int segment = SegmentId(depth ? DepthKind : prepass ? PrepassKind : equal ? EqualKind : ColourKind, p, targets, state);
         var job = meshJobs.Rent();
-        (job.Owner, job.Targets, job.State, job.Layout, job.Count) = (this, targets, state, p.Layout, 0);
+        (job.Owner, job.Targets, job.State, job.Program, job.Count) = (this, targets, state, p, 0);
         var view = new ViewConstants { ViewProjection = viewProjection, Eye = eye, LightDir = light, FogColour = fogColour, FogDistance = fogDistance };
         if (!depth) InteriorMaskRenderer.Apply(ref view, InteriorCut);
         job.Frame = nativeFrame.Prepare(in view);
         // The GPU cull's compacted rows and one indirect draw per mesh draw (its batch's count and first instance), else this call's constants.
         bool indirect = !gpuResult.IsEmpty;
         for (int a = 0; a < 4; a++)
-            job.Rows[a] = indirect ? new BufferBinding(gpuResult.Rows, gpuResult.RowsOffset + (ulong)(16 * a)) : new BufferBinding(instances.Handle, instances.Offset + (ulong)(16 * a));
+            job.Rows[a] = indirect ? new GpuBufferBinding(gpuResult.Rows, gpuResult.RowsOffset + (ulong)(16 * a)) : new GpuBufferBinding(instances.Handle, instances.Offset + (ulong)(16 * a));
         int drawIndex = 0;
         NewTextureSegment();
         // The constants the GL code set on every draw (Shaders.MeshFragment's uniforms the foliage does not vary).
@@ -2093,8 +2127,8 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
             Tint = Vector3.One, TriplanarScale = 1f / 5000, AlphaChannel = 3, GreyChannel = -1, HeadDiffuse = standIn, HeadNormal = standIn,
             Coverage = coverage ? 1u : 0u,
         };
-        var sided = Silk.NET.Vulkan.CullModeFlags.None;
-        Silk.NET.Vulkan.CullModeFlags? side = null;
+        var sided = CullMode.None;
+        CullMode? side = null;
         // The split (EarlyDepth; GPU cull, colour views): the program without the discards draws the fully visible instances of the parts without a cut-out.
         bool splitView = indirect && gpuResult.Split && !depth && !equal;
         // The prepass splits the same way: the empty program for the fully visible instances of a part without a cut-out, the dither (and the cut-out) program for the rest.
@@ -2134,7 +2168,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
                 Current(ref sn, part, solidMesh);
                 job.Add(new MeshJob.Draw
                 {
-                    SetRaster = raster, Cull = want, Pipeline = sn.SegA == solidSegment ? sn.PipeA! : PipelineFor(ref sn, solidMesh, solidSegment, state, targets.Formats, prepass ? "foliage mesh prepass solid" : "foliage meshes solid"),
+                    SetRaster = raster, Cull = want, Pipeline = sn.SegA == solidSegment ? sn.PipeA!.Value : PipelineFor(ref sn, solidMesh, solidSegment, state, targets.Formats, prepass ? "foliage mesh prepass solid" : "foliage meshes solid"),
                     Vertices = sn.Vertices, Elements = sn.Elements, Push = pc,
                     Args = gpuResult.Args, ArgsOffset = gpuResult.ArgsOffset + (ulong)(gpuResult.DrawCount + drawIndex) * 20,
                     FirstIndex = DrawFirst(part), IndexCount = DrawCount(part), Instances = d.Instances, FirstInstance = d.FirstInstance,
@@ -2143,7 +2177,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
             }
             job.Add(new MeshJob.Draw
             {
-                SetRaster = raster, Cull = want, Pipeline = n.SegA == segment ? n.PipeA! : PipelineFor(ref n, mp, segment, state, targets.Formats, label),
+                SetRaster = raster, Cull = want, Pipeline = n.SegA == segment ? n.PipeA!.Value : PipelineFor(ref n, mp, segment, state, targets.Formats, label),
                 Vertices = n.Vertices, Elements = n.Elements, Push = pc,
                 Args = indirect ? gpuResult.Args : default, ArgsOffset = gpuResult.ArgsOffset + (ulong)((split ? 2 * gpuResult.DrawCount : 0) + drawIndex) * 20,
                 FirstIndex = DrawFirst(part), IndexCount = DrawCount(part), Instances = d.Instances, FirstInstance = d.FirstInstance,
@@ -2159,7 +2193,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
         {
             // The billboards are not in the prepass (their fragment stage has its own discard), or only the rocks' are not: their own segment, with the scene's depth test and write.
             var billboards = meshJobs.Rent();
-            (billboards.Owner, billboards.Targets, billboards.State, billboards.Layout, billboards.Count) = (this, targets, sceneState, p.Layout, 0);
+            (billboards.Owner, billboards.Targets, billboards.State, billboards.Program, billboards.Count) = (this, targets, sceneState, p, 0);
             billboards.Frame = job.Frame;
             for (int a = 0; a < 4; a++) billboards.Rows[a] = job.Rows[a];
             AddImpostorDraws(billboards, false, viewProjection, targets, sceneState, coverage, indirect, meshDraws.Count + rockDraws.Count, billboardPrepass ? ImpostorPass.RocksOnly : ImpostorPass.Scene);
@@ -2175,13 +2209,13 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
         public struct Draw
         {
             public bool SetRaster;
-            public Silk.NET.Vulkan.CullModeFlags Cull;
-            public GraphicsPipeline Pipeline;
-            public BufferBinding[] Vertices;
-            public BufferBinding Elements;
+            public CullMode Cull;
+            public GpuPipeline Pipeline;
+            public GpuBufferBinding[] Vertices;
+            public GpuBufferBinding Elements;
             public MeshPush Push;
             /// <summary>Indirect: the arguments' buffer (else a plain indexed draw).</summary>
-            public Silk.NET.Vulkan.Buffer Args;
+            public GpuBuffer Args;
             public ulong ArgsOffset;
             public uint IndexCount, FirstIndex, Instances, FirstInstance;
         }
@@ -2189,9 +2223,9 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
         public FoliageRenderer Owner = null!;
         public PassTargets Targets = null!;
         public DrawState State = null!;
-        public Silk.NET.Vulkan.PipelineLayout Layout;
+        public GpuProgram Program = default;
         public FrameBinding Frame;
-        public readonly BufferBinding[] Rows = new BufferBinding[4];
+        public readonly GpuBufferBinding[] Rows = new GpuBufferBinding[4];
         public Draw[] Draws = new Draw[64];
         public int Count;
         public override int Size => Count;
@@ -2202,14 +2236,14 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
             Draws[Count++] = d;
         }
 
-        public override void Record(CommandList cmd)
+        public override void Record(IGpuCommandList cmd)
         {
-            var (targets, state, layout) = (Targets, State, Layout);
+            var (targets, state) = (Targets, State);
             cmd.SetViewport(targets.Viewport);
             cmd.SetScissor(targets.Scissor);
             cmd.SetDepth(state.DepthTest, state.DepthWrite, state.Compare);
             cmd.SetDepthBias(state.BiasEnable, state.BiasConstant, state.BiasSlope);
-            NativeFrame.Record(cmd, layout, in Frame);
+            NativeFrame.Record(cmd, Program, in Frame);
             cmd.BindVertexBuffers(RowLocation, Rows);
             MeshPush last = default;
             bool pushed = false;
@@ -2219,9 +2253,9 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
                 if (d.SetRaster) cmd.SetRaster(d.Cull, state.Front);
                 cmd.BindPipeline(d.Pipeline);
                 if (d.Vertices.Length > 0) cmd.BindVertexBuffers(0, d.Vertices);
-                cmd.BindIndexBuffer(d.Elements, Silk.NET.Vulkan.IndexType.Uint32);
-                PushTo(cmd, layout, in d.Push, ref last, ref pushed);
-                if (d.Args.Handle != 0) cmd.DrawIndexedIndirect(d.Args, d.ArgsOffset, 1);
+                cmd.BindIndexBuffer(d.Elements, IndexKind.U32);
+                PushTo(cmd, Program, in d.Push, ref last, ref pushed);
+                if (!d.Args.IsNull) cmd.DrawIndexedIndirect(d.Args, d.ArgsOffset, 1);
                 else cmd.DrawIndexed(d.IndexCount, d.Instances, d.FirstIndex, 0, d.FirstInstance);
             }
         }
@@ -2235,10 +2269,10 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
     }
 
     /// <summary><see cref="Push{T}"/> by layout (a job keeps the layout, not the program).</summary>
-    static void PushTo<T>(CommandList cmd, Silk.NET.Vulkan.PipelineLayout layout, in T value, ref T last, ref bool pushed) where T : unmanaged
+    static void PushTo<T>(IGpuCommandList cmd, GpuProgram program, in T value, ref T last, ref bool pushed) where T : unmanaged
     {
         if (pushed && System.Runtime.InteropServices.MemoryMarshal.AsBytes(new ReadOnlySpan<T>(in value)).SequenceEqual(System.Runtime.InteropServices.MemoryMarshal.AsBytes(new ReadOnlySpan<T>(in last)))) return;
-        cmd.PushConstants(layout, Silk.NET.Vulkan.ShaderStageFlags.VertexBit | Silk.NET.Vulkan.ShaderStageFlags.FragmentBit, in value);
+        cmd.PushConstants(program, GpuStage.Vertex | GpuStage.Fragment, in value);
         last = value;
         pushed = true;
     }
@@ -2343,7 +2377,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
         var view = new ViewConstants { ViewProjection = viewProjection, Eye = eye, LightDir = light, FogColour = fogColour, FogDistance = fogDistance, Time = SwayPhase() };
         if (!depthPass) InteriorMaskRenderer.Apply(ref view, InteriorCut);
         var job = grassJobs.Rent();
-        (job.Owner, job.Targets, job.State, job.Layout, job.Count) = (this, targets, state, p.Layout, 0);
+        (job.Owner, job.Targets, job.State, job.Program, job.Count) = (this, targets, state, p, 0);
         job.Frame = nativeFrame.Prepare(in view);
         NewTextureSegment();
         // The blades of every page are one buffer (the grass arena): one pipeline and one vertex binding for the segment, the draw's first instance finds its page.
@@ -2363,11 +2397,11 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
 
     /// <summary>The host's state for the grass, with what the GL version set around it: no culling (GL's cull face off), alpha to coverage
     /// with a multisampled target.</summary>
-    static DrawState GrassState(GpuContext gpu, bool coverage) =>
-        gpu.CurrentState() with { Cull = Silk.NET.Vulkan.CullModeFlags.None, AlphaToCoverage = coverage };
+    static DrawState GrassState(IGpuContext gpu, bool coverage) =>
+        gpu.CurrentState() with { Cull = CullMode.None, AlphaToCoverage = coverage };
 
     /// <summary>The motion pass's state (the host's: colour mask red and green, no depth test, no blending) without culling (GL's cull face off).</summary>
-    static DrawState MotionState(GpuContext gpu) => gpu.CurrentState() with { Cull = Silk.NET.Vulkan.CullModeFlags.None };
+    static DrawState MotionState(IGpuContext gpu) => gpu.CurrentState() with { Cull = CullMode.None };
 
     readonly JobPool<GrassJob> grassJobs = new();
 
@@ -2383,23 +2417,23 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
         public FoliageRenderer Owner = null!;
         public PassTargets Targets = null!;
         public DrawState State = null!;
-        public Silk.NET.Vulkan.PipelineLayout Layout;
+        public GpuProgram Program = default;
         public FrameBinding Frame;
-        public GraphicsPipeline Pipeline = null!;
-        public BufferBinding[] Vertices = [];
+        public GpuPipeline Pipeline = default;
+        public GpuBufferBinding[] Vertices = [];
         public Draw[] Draws = new Draw[64];
         public int Count;
         public override int Size => Count;
 
-        public override void Record(CommandList cmd)
+        public override void Record(IGpuCommandList cmd)
         {
-            var (targets, state, layout) = (Targets, State, Layout);
+            var (targets, state) = (Targets, State);
             cmd.SetViewport(targets.Viewport);
             cmd.SetScissor(targets.Scissor);
             cmd.SetRaster(state.Cull, state.Front);
             cmd.SetDepth(state.DepthTest, state.DepthWrite, state.Compare);
             cmd.SetDepthBias(state.BiasEnable, state.BiasConstant, state.BiasSlope);
-            NativeFrame.Record(cmd, layout, in Frame);
+            NativeFrame.Record(cmd, Program, in Frame);
             GrassPush last = default;
             bool pushed = false;
             cmd.BindPipeline(Pipeline);
@@ -2407,14 +2441,14 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
             for (int i = 0; i < Count; i++)
             {
                 ref readonly var d = ref Draws[i];
-                PushTo(cmd, layout, in d.Push, ref last, ref pushed);
+                PushTo(cmd, Program, in d.Push, ref last, ref pushed);
                 cmd.Draw(d.Vertices, d.Instances, 0, d.FirstInstance);
             }
         }
 
         public override void Release()
         {
-            Pipeline = null!;
+            Pipeline = default;
             Count = 0;
             Owner.grassJobs.Return(this);
         }
@@ -2441,11 +2475,11 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
     }
 
     /// <summary>
-    /// The swaying grass's own motion over the camera motion, for the upscalers (<see cref="PostProcess.ObjectMotion"/> binds the motion target,
+    /// The swaying grass's own motion over the camera motion, for the upscalers (<see cref="IWorldPostChain.ObjectMotion"/> binds the motion target,
     /// red and green only, without depth test or blending): the near slice's blades of layers with wind, now and with last frame's sway phase
     /// and camera, written where they are what the depth buffer shows. Blades without sway move with the camera and need nothing.
     /// </summary>
-    public void DrawGrassMotion(PostProcess.MotionTargets targets)
+    public void DrawGrassMotion(MotionTargets targets)
     {
         if (!motionCamera) return;
         motionCamera = false;
@@ -2505,7 +2539,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
             }
     }
 
-    void RecordMotion(PostProcess.MotionTargets targets, Vector3 eye, float time, float previousTime, Matrix4x4 previous)
+    void RecordMotion(MotionTargets targets, Vector3 eye, float time, float previousTime, Matrix4x4 previous)
     {
         var gp = grassMotionProgram;
         var p = gp.P;
@@ -2523,7 +2557,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
             ViewProjection = motionViewProjection, PreviousViewProjection = previous, Eye = eye, Time = time, PreviousTime = previousTime,
             NearPlanes = targets.NearPlanes, JitterNdc = targets.JitterNdc,
         };
-        nativeFrame.Bind(cmd, p.Layout, in view);
+        nativeFrame.Bind(cmd, p, in view);
         NewTextureSegment();
         uint nearDepth = NearDepthIndex(targets.NearDepth);
         GrassPush last = default;
@@ -2549,7 +2583,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
     readonly List<Timer> timers = [];
     QuerySlot timerStart, pendingStamp;
     bool timerContinuation;
-    Action<CommandList>? recordStamp;
+    Action<IGpuCommandList>? recordStamp;
     double gpuSum;
     int gpuCount;
 
@@ -2589,7 +2623,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
                 gpuSum += (end - start) / 1e6;
                 if (!t.Continuation) gpuCount++;
             }
-            else if (Gpu.Frame.Number - t.Start.Frame <= 2 * Gpu.Device.Frames.Count) continue;   // not collected yet
+            else if (Gpu.Frame.Number - t.Start.Frame <= 2 * Gpu.FramesInFlight) continue;   // not collected yet
             timers.RemoveAt(i--);
         }
         if (gpuCount > 0) { GpuMs = gpuSum / gpuCount; gpuSum = 0; gpuCount = 0; }

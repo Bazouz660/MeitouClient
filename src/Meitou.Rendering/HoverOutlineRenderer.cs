@@ -62,17 +62,17 @@ public sealed class HoverOutlineRenderer
         }
         """;
 
-    readonly GpuContext gpu;
+    readonly IGpuContext gpu;
     readonly LegacyProgram program;
     readonly NativeSegment segment;
     readonly UniformHandle depthScale, maskPlanes, scenePlanes, colour, radius;
     readonly SamplerSlot mask, maskDepth, sceneDepth;
 
-    public HoverOutlineRenderer(GpuContext gpu)
+    public HoverOutlineRenderer(IGpuContext gpu)
     {
         this.gpu = gpu;
         program = LegacyProgram.Create(gpu, Vertex, Fragment, "hover outline");
-        segment = new NativeSegment(gpu, program, Vk.PrimitiveTopology.TriangleList, "hover outline");
+        segment = new NativeSegment(gpu, program, PrimitiveType.Triangles, "hover outline");
         depthScale = program.Uniform("uDepthScale");
         maskPlanes = program.Uniform("uMaskPlanes");
         scenePlanes = program.Uniform("uScenePlanes");
@@ -89,33 +89,33 @@ public sealed class HoverOutlineRenderer
     /// is blended twice. <paramref name="nearDepth"/> is the scene's near slice (<paramref name="sceneNear"/>..<paramref name="sceneFar"/>), <paramref name="renderWidth"/>
     /// × <paramref name="renderHeight"/> of it used.
     /// </summary>
-    internal void Record(Texture picture, int width, int height, IReadOnlyList<HoverMask> masks,
-        Texture nearDepth, int renderWidth, int renderHeight, float sceneNear, float sceneFar, Matrix4x4 viewProjection)
+    internal void Record(GpuTexture picture, int width, int height, IReadOnlyList<HoverMask> masks,
+        GpuTexture nearDepth, int renderWidth, int renderHeight, float sceneNear, float sceneFar, Matrix4x4 viewProjection)
     {
         int outline = Math.Clamp((int)MathF.Round(2.5f * height / 1080f), 1, 6);
         var nearest = gpu.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Nearest, TextureMagFilter.Nearest, TextureWrapMode.ClampToEdge,
             TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, false, DepthFunction.Lequal, false, 1, false, 0));
-        var viewport = new Vk.Viewport(0, 0, width, height, 0, 1);
+        var viewport = new PixelViewport(0, 0, width, height, 0, 1);
         foreach (var hover in masks)
         {
-            var rects = new List<Vk.Rect2D>();
+            var rects = new List<PixelRect>();
             foreach (var (centre, sphereRadius) in hover.Spheres)
                 if (Bounds(centre, sphereRadius, viewProjection, width, height, outline + 1) is { } r) rects.Add(r);
-            Join(rects);
+            Join(rects, height);
             foreach (var scissor in rects)
             {
                 var cmd = gpu.BeginNative("hover outline");
                 var over = PassTargets.Of(picture, null).At(viewport, scissor);
                 cmd.BeginRendering(over.Rendering);
-                program.Bind(mask, new SampledTexture(nearest, hover.Colour.View(), hover.Colour.Image));
-                program.Bind(maskDepth, new SampledTexture(nearest, hover.Depth.View(), hover.Depth.Image));
-                program.Bind(sceneDepth, new SampledTexture(nearest, nearDepth.View(), nearDepth.Image));
+                program.Bind(mask, new SampledTexture(nearest, hover.Colour.View()));
+                program.Bind(maskDepth, new SampledTexture(nearest, hover.Depth.View()));
+                program.Bind(sceneDepth, new SampledTexture(nearest, nearDepth.View()));
                 program.Set(depthScale, renderWidth / (float)width, renderHeight / (float)height);
                 program.Set(maskPlanes, hover.Near, hover.Far);
                 program.Set(scenePlanes, sceneNear, sceneFar);
                 program.Set(colour, hover.Tint.X, hover.Tint.Y, hover.Tint.Z, hover.Tint.W);
                 program.Set(radius, outline);
-                var state = DrawState.For(over.Formats, gpu.Device.DepthClamp, blend: new BlendState(true, Vk.BlendFactor.One, Vk.BlendFactor.OneMinusSrcAlpha));
+                var state = DrawState.For(over.Formats, gpu.DepthClamp, blend: new BlendState(true, BlendingFactor.One, BlendingFactor.OneMinusSrcAlpha));
                 state.Record(cmd, over);
                 cmd.BindPipeline(segment.Get(state, over.Formats, null));
                 program.Flush(cmd);
@@ -127,7 +127,7 @@ public sealed class HoverOutlineRenderer
     }
 
     /// <summary>Replaces overlapping rectangles by their bounding rectangle until none overlap.</summary>
-    static void Join(List<Vk.Rect2D> rects)
+    static void Join(List<PixelRect> rects, int height)
     {
         for (bool joined = true; joined;)
         {
@@ -136,12 +136,11 @@ public sealed class HoverOutlineRenderer
                 for (int j = i + 1; j < rects.Count && !joined; j++)
                 {
                     var (a, b) = (rects[i], rects[j]);
-                    int left = Math.Min(a.Offset.X, b.Offset.X), top = Math.Min(a.Offset.Y, b.Offset.Y);
-                    int right = Math.Max(a.Offset.X + (int)a.Extent.Width, b.Offset.X + (int)b.Extent.Width);
-                    int bottom = Math.Max(a.Offset.Y + (int)a.Extent.Height, b.Offset.Y + (int)b.Extent.Height);
-                    if (a.Offset.X >= b.Offset.X + (int)b.Extent.Width || b.Offset.X >= a.Offset.X + (int)a.Extent.Width ||
-                        a.Offset.Y >= b.Offset.Y + (int)b.Extent.Height || b.Offset.Y >= a.Offset.Y + (int)a.Extent.Height) continue;
-                    rects[i] = new Vk.Rect2D(new Vk.Offset2D(left, top), new Vk.Extent2D((uint)(right - left), (uint)(bottom - top)));
+                    int left = Math.Min(a.X, b.X), right = Math.Max(a.X + (int)a.Width, b.X + (int)b.Width);
+                    int bottom = Math.Min(a.Y, b.Y), top = Math.Max(a.Y + (int)a.Height, b.Y + (int)b.Height);
+                    if (a.X >= b.X + (int)b.Width || b.X >= a.X + (int)a.Width ||
+                        a.Y >= b.Y + (int)b.Height || b.Y >= a.Y + (int)a.Height) continue;
+                    rects[i] = new PixelRect(left, bottom, (uint)(right - left), (uint)(top - bottom));
                     rects.RemoveAt(j);
                     joined = true;
                 }
@@ -152,20 +151,20 @@ public sealed class HoverOutlineRenderer
     /// The scissor round the sphere's projection, <paramref name="pad"/> pixels wider, in the picture's attachment rows (the UI's top-left rectangle turned
     /// as the overlay turns it); the whole picture when the sphere reaches behind the eye, null when it is off screen.
     /// </summary>
-    internal static Vk.Rect2D? Bounds(Vector3 centre, float radius, Matrix4x4 viewProjection, int width, int height, int pad)
+    internal static PixelRect? Bounds(Vector3 centre, float radius, Matrix4x4 viewProjection, int width, int height, int pad)
     {
         float x0 = float.MaxValue, y0 = float.MaxValue, x1 = float.MinValue, y1 = float.MinValue;
         for (int corner = 0; corner < 8; corner++)
         {
             var p = centre + new Vector3((corner & 1) == 0 ? -radius : radius, (corner & 2) == 0 ? -radius : radius, (corner & 4) == 0 ? -radius : radius);
             var clip = Vector4.Transform(new Vector4(p, 1), viewProjection);
-            if (clip.W <= 0.01f) return new Vk.Rect2D(default, new Vk.Extent2D((uint)width, (uint)height));
+            if (clip.W <= 0.01f) return new PixelRect(0, 0, (uint)width, (uint)height);
             float x = (clip.X / clip.W * 0.5f + 0.5f) * width, y = (0.5f - clip.Y / clip.W * 0.5f) * height;   // top-left pixels
             (x0, y0, x1, y1) = (MathF.Min(x0, x), MathF.Min(y0, y), MathF.Max(x1, x), MathF.Max(y1, y));
         }
         int left = Math.Max(0, (int)MathF.Floor(x0) - pad), right = Math.Min(width, (int)MathF.Ceiling(x1) + pad);
         int top = Math.Max(0, (int)MathF.Floor(y0) - pad), bottom = Math.Min(height, (int)MathF.Ceiling(y1) + pad);
         if (right <= left || bottom <= top) return null;
-        return new Vk.Rect2D(new Vk.Offset2D(left, height - bottom), new Vk.Extent2D((uint)(right - left), (uint)(bottom - top)));
+        return new PixelRect(left, height - bottom, (uint)(right - left), (uint)(bottom - top));
     }
 }

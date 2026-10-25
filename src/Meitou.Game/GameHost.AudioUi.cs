@@ -10,6 +10,7 @@ sealed partial class GameHost
     /// <summary>Called when the audio is attached: the interface starts sounding, or stays silent without audio.</summary>
     void AttachUiSounds()
     {
+        if (player is null) return;
         uiSounds = audio is null ? null : new UiSounds(audio.Player, () => scene.Database);
         var sounds = uiSounds;
         player.UiSound = sounds is null ? null : e => sounds.Play(e);

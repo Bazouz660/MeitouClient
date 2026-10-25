@@ -1,3 +1,4 @@
+using InternalFormat = Meitou.Rendering.Gpu.InternalFormat;
 using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.InteropServices;
@@ -153,20 +154,21 @@ internal sealed unsafe partial class CharacterRenderer
         (DrawnCharacters, DrawnParts) = (vb.Characters, vb.Parts);
         var active = vb.Active;
         if (active.Count == 0) { LastDrawCpuMs = cpu.Elapsed.TotalMilliseconds; return; }
+        // The instances were laid out when the view was gathered (AllocateRows), each batch contiguous and reached by firstInstance.
         var instances = vb.Instances;
 
         // 3. One draw per batch.
         var prog = motionPass ? motionProg : depthPass ? depthProg : colourProg;
         string label = motionPass ? "characters motion" : depthPass ? "characters depth" : "characters";
         var targets = Gpu.CurrentTargets();
-        var state = Gpu.CurrentState() with { Cull = Vk.CullModeFlags.None };
+        var state = Gpu.CurrentState() with { Cull = CullMode.None };
         // The colour pass writes alpha 1 (the scene host masks it off for everything else): the SSAO character mask (PostProcess).
         if (!depthPass && !motionPass) state = state with { ColourMask = DrawState.Rgba };
         var job = drawJobs.Rent();
-        (job.Owner, job.Targets, job.State, job.Layout, job.Count) = (this, targets, state, prog.P.Layout, 0);
+        (job.Owner, job.Targets, job.State, job.Program, job.Count) = (this, targets, state, prog.P, 0);
         job.Frame = nativeFrame.Prepare(in view, [bones.Binding, content.Materials.Binding(Gpu.Frame), content.Morphs.Binding(Gpu.Frame), previousBones.Binding]);
-        job.Cull = depthPass ? Vk.CullModeFlags.None : Vk.CullModeFlags.BackBit;
-        for (int a = 0; a < 9; a++) job.Rows[a] = new BufferBinding(instances.Handle, instances.Offset + (ulong)(16 * a));
+        job.Cull = depthPass ? CullMode.None : CullMode.Back;
+        for (int a = 0; a < 9; a++) job.Rows[a] = new GpuBufferBinding(instances.Handle, instances.Offset + (ulong)(16 * a));
         job.Push = new CharacterPush { DepthIndex = motionPass ? motionDepth : 0, Fill = new(Fill, 0), SkinLut = SkinShading ? skinScattering.Index : 0 };
         job.RowCount = motionPass ? 9 : 5;
         if (job.Draws.Length < active.Count) job.Draws = new DrawJob.Draw[Math.Max(active.Count, job.Draws.Length * 2)];
@@ -178,8 +180,8 @@ internal sealed unsafe partial class CharacterRenderer
             Current(ref native, part, prog);
             job.Draws[n++] = new DrawJob.Draw
             {
-                Pipeline = Gpu.Pipelines.Get(state.Pipeline(prog.P, native.Layout!, Vk.PrimitiveTopology.TriangleList, targets.Formats, label)),
-                Vertices = native.Vertices, Elements = new BufferBinding(native.Elements.Buffer, native.Elements.Offset + (ulong)part.Offset[b.Level] * 4),
+                Pipeline = Gpu.Pipelines.Get(state.Pipeline(prog.P, native.Layout!, PrimitiveType.Triangles, targets.Formats, label)),
+                Vertices = native.Vertices, Elements = new GpuBufferBinding(native.Elements.Buffer, native.Elements.Offset + (ulong)part.Offset[b.Level] * 4),
                 IndexCount = (uint)part.Count[b.Level], Instances = (uint)b.Count, FirstInstance = (uint)b.Offset, TwoSided = b.DoubleSided,
             };
             DrawCalls++;
@@ -455,7 +457,7 @@ internal sealed unsafe partial class CharacterRenderer
         active.Sort((a, b) => a.DoubleSided.CompareTo(b.DoubleSided));
         int total = 0;
         foreach (var b in active) { b.Offset = total; total += b.Count; }
-        vb.Instances = Gpu.Frame.Constants.Allocate((ulong)Math.Max(total, 1) * CharInstance.Size, 16);
+        vb.Instances = Gpu.Frame.AllocateConstants((ulong)Math.Max(total, 1) * CharInstance.Size, 16);
     }
 
     /// <summary>The batch id of <paramref name="part"/>'s mesh part <paramref name="g"/> at level <paramref name="lv"/>: from the part's cache, else made or found under the lock (any thread).</summary>
@@ -534,13 +536,13 @@ internal sealed unsafe partial class CharacterRenderer
         Span<LegacyProgram.Attribute?> attributes = stackalloc LegacyProgram.Attribute?[16];
         part.Attributes.AsSpan().CopyTo(attributes);
         for (int a = 0; a < 4; a++)
-            attributes[CharacterShaders.InstanceLocation + a] = new LegacyProgram.Attribute(default, Vk.Format.R32G32B32A32Sfloat, CharInstance.Size, true);
-        attributes[CharacterShaders.DataLocation] = new LegacyProgram.Attribute(default, Vk.Format.R32G32B32A32Uint, CharInstance.Size, true);
+            attributes[CharacterShaders.InstanceLocation + a] = new LegacyProgram.Attribute(default, InternalFormat.Rgba32f, CharInstance.Size, true);
+        attributes[CharacterShaders.DataLocation] = new LegacyProgram.Attribute(default, InternalFormat.Rgba32ui, CharInstance.Size, true);
         for (int a = 0; a < 4; a++)
-            attributes[CharacterShaders.PreviousLocation + a] = new LegacyProgram.Attribute(default, Vk.Format.R32G32B32A32Sfloat, CharInstance.Size, true);
+            attributes[CharacterShaders.PreviousLocation + a] = new LegacyProgram.Attribute(default, InternalFormat.Rgba32f, CharInstance.Size, true);
         n.Layout = p.Layout(attributes);
         n.Vertices = p.Buffers(attributes, p.Own);
-        n.Elements = new BufferBinding(part.Indices.Handle, 0, part.Indices.Size);
+        n.Elements = new GpuBufferBinding(part.Indices.Handle, 0, part.Indices.Size);
         n.SegA = n.SegB = 0;
         n.PipeA = n.PipeB = null;
     }
@@ -552,9 +554,9 @@ internal sealed unsafe partial class CharacterRenderer
     {
         public struct Draw
         {
-            public GraphicsPipeline Pipeline;
-            public BufferBinding[] Vertices;
-            public BufferBinding Elements;
+            public GpuPipeline Pipeline;
+            public GpuBufferBinding[] Vertices;
+            public GpuBufferBinding Elements;
             public uint IndexCount, Instances, FirstInstance;
             public bool TwoSided;
         }
@@ -562,39 +564,39 @@ internal sealed unsafe partial class CharacterRenderer
         public CharacterRenderer Owner = null!;
         public PassTargets Targets = null!;
         public DrawState State = null!;
-        public Vk.PipelineLayout Layout;
+        public GpuProgram Program = default;
         public FrameBinding Frame;
-        public Vk.CullModeFlags Cull;
-        public readonly BufferBinding[] Rows = new BufferBinding[9];
+        public CullMode Cull;
+        public readonly GpuBufferBinding[] Rows = new GpuBufferBinding[9];
         public int RowCount;
         public CharacterPush Push;
         public Draw[] Draws = new Draw[64];
         public int Count;
         public override int Size => Count;
 
-        public override void Record(CommandList cmd)
+        public override void Record(IGpuCommandList cmd)
         {
-            var (targets, state, layout) = (Targets, State, Layout);
+            var (targets, state) = (Targets, State);
             cmd.SetViewport(targets.Viewport);
             cmd.SetScissor(targets.Scissor);
             cmd.SetDepth(state.DepthTest, state.DepthWrite, state.Compare);
             cmd.SetDepthBias(state.BiasEnable, state.BiasConstant, state.BiasSlope);
-            NativeFrame.Record(cmd, layout, in Frame);
+            NativeFrame.Record(cmd, Program, in Frame);
             cmd.BindVertexBuffers(CharacterShaders.InstanceLocation, Rows.AsSpan(0, RowCount));
             var push = Push;
-            cmd.PushConstants(layout, Vk.ShaderStageFlags.VertexBit | Vk.ShaderStageFlags.FragmentBit, in push);
+            cmd.PushConstants(Program, GpuStage.Vertex | GpuStage.Fragment, in push);
             bool? twoSided = null;
             for (int i = 0; i < Count; i++)
             {
                 ref readonly var d = ref Draws[i];
                 if (twoSided != d.TwoSided)
                 {
-                    cmd.SetRaster(d.TwoSided ? Vk.CullModeFlags.None : Cull, state.Front);
+                    cmd.SetRaster(d.TwoSided ? CullMode.None : Cull, state.Front);
                     twoSided = d.TwoSided;
                 }
                 cmd.BindPipeline(d.Pipeline);
                 cmd.BindVertexBuffers(0, d.Vertices);
-                cmd.BindIndexBuffer(d.Elements, Vk.IndexType.Uint32);
+                cmd.BindIndexBuffer(d.Elements, IndexKind.U32);
                 cmd.DrawIndexed(d.IndexCount, d.Instances, 0, 0, d.FirstInstance);
             }
         }

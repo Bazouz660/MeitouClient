@@ -18,7 +18,11 @@ used as a naming reference for our 1.0.68 analysis; they are **Observed** until 
 - [characters](characters.md)
 - [impostors](impostors.md)
 - [launcher](launcher.md): game release installer, mod list and presets
-- [macos-port](macos-port.md): running on MoltenVK, its constraints and fixes
+- [macos-port](macos-port.md): running on MoltenVK, its constraints and fixes; the native Metal path next to it
+- [metal-backend](metal-backend.md): a native Metal path next to Vulkan - what the spike proved and what a second backend would need
+- [metal-content-testability-plan](metal-content-testability-plan.md): the content/testability gaps and the order to close them
+- [metal-performance-memory](metal-performance-memory.md): the Metal frame-rate and bounded-memory plan (baseline, targets, order)
+- [metal-effects-parity-plan](metal-effects-parity-plan.md): MEP-I, the remaining Metal effect-parity milestones and ship gates
 - [meitou-ui](meitou-ui.md): UI kit for the Meitou UI mode
 - [native-ui](native-ui.md)
 - [render-clouds](render-clouds.md)
@@ -35,6 +39,7 @@ used as a naming reference for our 1.0.68 analysis; they are **Observed** until 
 - [render-terrain](render-terrain.md)
 - [render-water](render-water.md)
 - [renderer-native](renderer-native.md)
+- [resource-layer](resource-layer.md): the resources and the commands between the renderers and the API - the proposed neutral vocabulary
 - [simulation](simulation.md)
 - [audio](audio.md): what the game sends to Wwise, Meitou's player, ambience rules
 - [viewer](viewer.md)

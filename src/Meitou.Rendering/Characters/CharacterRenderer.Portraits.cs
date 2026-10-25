@@ -1,7 +1,7 @@
+using InternalFormat = Meitou.Rendering.Gpu.InternalFormat;
 using Meitou.Data.Characters;
 using System.Numerics;
 using Meitou.Rendering.Gpu;
-using Silk.NET.Vulkan;
 
 namespace Meitou.Rendering.Characters;
 
@@ -32,24 +32,24 @@ internal sealed unsafe partial class CharacterRenderer
     readonly HashSet<long> portraitKeys = [];
     readonly Dictionary<long, int> liveByKey = [];
     int portraitLive = -1;
-    Texture? portraitColour, portraitDepth;
+    GpuTexture? portraitColour, portraitDepth;
     SampledTexture? portraitSampled;
     // The enhanced portraits (Look): each drawn into this half-float square, then resolved into its cell of the atlas above.
-    Texture? portraitHdr, portraitHdrDepth;
+    GpuTexture? portraitHdr, portraitHdrDepth;
     SampledTexture portraitHdrSampled;
 
     /// <summary>The atlas (sRGB, transparent where no character is), made on first use. Render thread.</summary>
-    public (Texture Texture, SampledTexture Sampled) PortraitAtlas
+    public (GpuTexture Texture, SampledTexture Sampled) PortraitAtlas
     {
         get
         {
             if (portraitColour is null)
             {
                 int w = PortraitCell * PortraitColumns, h = PortraitCell * PortraitRows;
-                portraitColour = Texture.Create(Gpu, new TextureDesc(Format.R8G8B8A8Srgb, w, h, Use: TextureUse.Sampled | TextureUse.ColourTarget, Name: "portraits"));
-                portraitDepth = Texture.Create(Gpu, new TextureDesc(Format.D32Sfloat, w, h, Use: TextureUse.DepthTarget, Name: "portraits depth"));
+                portraitColour = Gpu.CreateTexture(new TextureDesc(InternalFormat.Srgb8Alpha8, w, h, Use: TextureUse.Sampled | TextureUse.ColourTarget, Name: "portraits"));
+                portraitDepth = Gpu.CreateTexture(new TextureDesc(InternalFormat.DepthComponent24, w, h, Use: TextureUse.DepthTarget, Name: "portraits depth"));
                 portraitSampled = new SampledTexture(Gpu.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Linear, TextureMagFilter.Linear,
-                    TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, false, DepthFunction.Lequal, false, 1, false, 0)), portraitColour.View(), portraitColour.Image);
+                    TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, false, DepthFunction.Lequal, false, 1, false, 0)), portraitColour.View());
                 cleared = false;
                 portraitShown.Clear();
             }
@@ -68,7 +68,7 @@ internal sealed unsafe partial class CharacterRenderer
     }
 
     sealed record ShownPortrait(long Key, uint Serial, CharacterAsset Asset, float Radius,
-        (Texture? Image, bool Swizzled)[] Textures);
+        (GpuTexture? Image, bool Swizzled)[] Textures);
     /// <summary>The character, appearance and streamed texture images each cell last showed.</summary>
     readonly Dictionary<int, ShownPortrait> portraitShown = [];
     Matrix4x4[] portraitBones = [], portraitAttach = [];
@@ -97,7 +97,7 @@ internal sealed unsafe partial class CharacterRenderer
             var whole = PassTargets.Of(atlas, portraitDepth);
             clear.BeginRendering(new RenderingDesc(whole.Colour, whole.Depth, whole.Width, whole.Height));
             Gpu.BeginHostPass(clear, whole, DrawState.Scene(whole.Formats));
-            Gpu.Clear(clear, true, default, false, 1, new Rect2D(default, new Extent2D((uint)whole.Width, (uint)whole.Height)));
+            clear.Clear(true, default, false, 1, new PixelRect(0, 0, (uint)whole.Width, (uint)whole.Height));
             Gpu.EndHostPass(clear);
             clear.EndRendering();
             Gpu.EndNative(clear);
@@ -114,22 +114,22 @@ internal sealed unsafe partial class CharacterRenderer
                 if (!Due(request, out int index)) continue;
                 var cmd = Gpu.BeginNative("portrait");
                 var target = PassTargets.Of(portraitHdr, portraitHdrDepth);
-                cmd.BeginRendering(new RenderingDesc(target.Colour, target.Depth with { Load = AttachmentLoadOp.Clear, Clear = new ClearValue(depthStencil: new ClearDepthStencilValue(1f, 0)) },
+                cmd.BeginRendering(new RenderingDesc(target.Colour, target.Depth with { Load = LoadOp.Clear, DepthClear = 1f },
                     target.Width, target.Height));
                 Gpu.BeginHostPass(cmd, target, DrawState.Scene(target.Formats));
-                var whole = new Rect2D(default, new Extent2D((uint)target.Width, (uint)target.Height));
-                DrawPortraitCell(cmd, request, index, new Viewport(0, 0, target.Width, target.Height, 0, 1), whole);
+                var whole = new PixelRect(0, 0, (uint)target.Width, (uint)target.Height);
+                DrawPortraitCell(cmd, request, index, new PixelViewport(0, 0, target.Width, target.Height, 0, 1), whole);
                 Gpu.EndHostPass(cmd);
                 cmd.EndRendering();
                 Gpu.EndNative(cmd);
                 int x = request.Cell % PortraitColumns * PortraitCell, y = request.Cell / PortraitColumns * PortraitCell;
-                preview.Run(portraitHdrSampled, atlas, look with { Supersample = PortraitSupersample }, [new Rect2D(new Offset2D(x, y), new Extent2D(PortraitCell, PortraitCell))]);
+                preview.Run(portraitHdrSampled, atlas, look with { Supersample = PortraitSupersample }, [new PixelRect(x, y, PortraitCell, PortraitCell)]);
             }
             return;
         }
         var pass = Gpu.BeginNative("portraits");
         var cells = PassTargets.Of(atlas, portraitDepth);
-        pass.BeginRendering(new RenderingDesc(cells.Colour, cells.Depth with { Load = AttachmentLoadOp.Clear, Clear = new ClearValue(depthStencil: new ClearDepthStencilValue(1f, 0)) },
+        pass.BeginRendering(new RenderingDesc(cells.Colour, cells.Depth with { Load = LoadOp.Clear, DepthClear = 1f },
             cells.Width, cells.Height));
         Gpu.BeginHostPass(pass, cells, DrawState.Scene(cells.Formats));
         foreach (var request in PortraitRequests)
@@ -137,7 +137,7 @@ internal sealed unsafe partial class CharacterRenderer
             if (!Due(request, out int index)) continue;
             // The original's 128 px in the cell's corner; the whole cell cleared.
             int x = request.Cell % PortraitColumns * PortraitCell, y = request.Cell / PortraitColumns * PortraitCell;
-            DrawPortraitCell(pass, request, index, new Viewport(x, y, FaithfulPortraitSize, FaithfulPortraitSize, 0, 1), new Rect2D(new Offset2D(x, y), new Extent2D(PortraitCell, PortraitCell)));
+            DrawPortraitCell(pass, request, index, new PixelViewport(x, y, FaithfulPortraitSize, FaithfulPortraitSize, 0, 1), new PixelRect(x, y, PortraitCell, PortraitCell));
         }
         Gpu.EndHostPass(pass);
         pass.EndRendering();
@@ -145,13 +145,13 @@ internal sealed unsafe partial class CharacterRenderer
     }
 
     /// <summary>Poses <paramref name="request"/>'s character still and draws it into <paramref name="rect"/> (cleared first) of the open pass.</summary>
-    void DrawPortraitCell(CommandList cmd, PortraitRequest request, int index, Viewport viewport, Rect2D rect)
+    void DrawPortraitCell(IGpuCommandList cmd, PortraitRequest request, int index, PixelViewport viewport, PixelRect rect)
     {
         ref var l = ref live[index];
         var head = PosePortrait(in l);
         portraitShown[request.Cell] = new ShownPortrait(request.Key, request.Serial, l.Asset, l.Radius,
             l.Asset.Parts.SelectMany(p => p.Material.Tex).Select(t => (t?.Native, t?.Swizzled ?? false)).ToArray());
-        Gpu.Clear(cmd, true, default, true, 1, rect);
+        cmd.Clear(true, default, true, 1, rect);
         Gpu.SetPassViewport(viewport, rect);
         var (eye, target) = PortraitCamera(in l, head, request.Serial);
         var view = Matrix4x4.CreateLookAt(eye, target, Vector3.UnitY);
@@ -164,7 +164,7 @@ internal sealed unsafe partial class CharacterRenderer
         var (liveBones, livePrevious) = (bones, previousBones);
         var (boneBase, attachBase, weapon, ranged) = (l.BoneBase, l.AttachBase, l.WeaponDrawn, l.RangedDrawn);
         int bonesCount = l.Asset.Rig.BoneCount;
-        bones = previousBones = Gpu.Frame.Constants.Allocate((ulong)Math.Max(bonesCount, 1) * 64, 256);
+        bones = previousBones = AllocateConstants((ulong)Math.Max(bonesCount, 1) * 64, 256);
         portraitBones.AsSpan(0, bonesCount).CopyTo(new Span<Matrix4x4>(bones.Pointer, bonesCount));
         if (attach.Length < attachCount + l.Asset.AttachCount) Array.Resize(ref attach, attachCount + l.Asset.AttachCount);
         portraitAttach.AsSpan(0, l.Asset.AttachCount).CopyTo(attach.AsSpan(attachCount));
@@ -245,5 +245,6 @@ internal sealed unsafe partial class CharacterRenderer
         portraitColour?.Dispose();
         portraitDepth?.Dispose();
         (portraitColour, portraitDepth, portraitSampled) = (null, null, null);
+        DisposePortraitHdr();
     }
 }

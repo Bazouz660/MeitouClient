@@ -9,5 +9,5 @@ sealed partial class GameHost
     /// the building's <c>interior material</c> when the character stands inside a building's indoor hull, else its <c>exterior material</c>.
     /// </summary>
     int FloorSurface(Vector3 feet) =>
-        gpu.Objects is { } objects ? objects.FloorMaterialUnder(feet, objects.InteriorAt(feet, InsideMargin) is not null) : -1;
+        ActiveObjects is { } objects ? objects.FloorMaterialUnder(feet, objects.InteriorAt(feet, InsideMargin) is not null) : -1;
 }

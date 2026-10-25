@@ -23,6 +23,8 @@
     <InternalsVisibleTo Include="meitou-viewer" />
     <InternalsVisibleTo Include="MeitouClient" />
     <InternalsVisibleTo Include="Meitou.Tests" />
+    <InternalsVisibleTo Include="Meitou.Metal" />
+    <InternalsVisibleTo Include="meitou-metal-host" />
   </ItemGroup>
 
 </Project>

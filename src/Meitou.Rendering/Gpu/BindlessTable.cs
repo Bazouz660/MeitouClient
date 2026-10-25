@@ -28,7 +28,7 @@ public readonly record struct BindlessHandle(BindlessKind Kind, uint Index);
 /// what a draw sees part-way through a frame (as GL does when a texture's view or sampler changes between two draws), register a new index
 /// and free the old one.
 /// </remarks>
-public sealed unsafe class BindlessTable : IDisposable
+public sealed unsafe class BindlessTable : IDisposable, IGpuBindlessTable
 {
     /// <summary>The number of arrays (bindings 0 to 6 of the set).</summary>
     public const int ArrayCount = 7;
@@ -75,8 +75,9 @@ public sealed unsafe class BindlessTable : IDisposable
     readonly VulkanDevice device;
     readonly DescriptorPool pool;
     readonly DescriptorSet[] sets;
+    readonly int[] setIndices;
     readonly long[] applied;   // per slot: journal entries replayed so far
-    readonly List<(BindlessKind Kind, uint Index, SampledTexture Texture)> journal = [];
+    readonly List<(BindlessKind Kind, uint Index, SampledTexture GpuTexture)> journal = [];
     long journalBase;          // number of entries dropped from the front of the journal
     readonly Stack<uint>[] free = new Stack<uint>[ArrayCount];
     readonly uint[] next = new uint[ArrayCount];
@@ -125,6 +126,7 @@ public sealed unsafe class BindlessTable : IDisposable
         };
         VulkanException.Check(device.Vk.CreateDescriptorPool(device.Device, &pi, null, out pool), "vkCreateDescriptorPool");
         sets = new DescriptorSet[slots];
+        setIndices = new int[slots];
         applied = new long[slots];
         for (int i = 0; i < slots; i++)
         {
@@ -132,6 +134,7 @@ public sealed unsafe class BindlessTable : IDisposable
             DescriptorSet set;
             VulkanException.Check(device.Vk.AllocateDescriptorSets(device.Device, &ai, &set), "vkAllocateDescriptorSets");
             sets[i] = set;
+            setIndices[i] = device.AddSet(set);
         }
     }
 
@@ -141,6 +144,8 @@ public sealed unsafe class BindlessTable : IDisposable
     int currentSlot;
     /// <summary>The set of the frame being recorded (bind once per command buffer).</summary>
     public DescriptorSet Set => sets[currentSlot];
+    /// <summary>The set of the frame being recorded, as the renderers' handle (the index into the backend's sets).</summary>
+    public int SetIndex => setIndices[currentSlot];
     public int Registered
     {
         get
@@ -150,11 +155,10 @@ public sealed unsafe class BindlessTable : IDisposable
             return n;
         }
     }
-
     /// <summary>The array a texture of <paramref name="format"/> and <paramref name="kind"/> belongs in: integer formats (UINT, SINT) go to
     /// <see cref="BindlessKind.UTexture2D"/> / <see cref="BindlessKind.ITexture2D"/>, a depth texture read with comparison
     /// (<paramref name="shadow"/>) to <see cref="BindlessKind.Shadow2D"/> (a 2D array one to <see cref="BindlessKind.ShadowArray"/>), the rest by kind.</summary>
-    public static BindlessKind KindFor(Format format, TextureKind kind = TextureKind.Texture2D, bool shadow = false)
+    public static BindlessKind KindFor(InternalFormat format, TextureKind kind = TextureKind.Texture2D, bool shadow = false)
     {
         if (shadow)
         {
@@ -173,19 +177,20 @@ public sealed unsafe class BindlessTable : IDisposable
 
     /// <summary>What a shader reads from a colour texture of <paramref name="format"/>: UInt for UINT formats, Int for SINT, Float otherwise
     /// (UNORM, SNORM, SFLOAT, SRGB, and depth: a depth-stencil format's stencil part is not sampled).</summary>
-    public static ScalarKind ScalarOf(Format format) => Scalars.TryGetValue(format, out var s) ? s : ScalarByName(format);
+    public static ScalarKind ScalarOf(InternalFormat format) => Scalars.TryGetValue(format, out var s) ? s : ScalarByName(format);
 
     /// <summary><see cref="ScalarByName"/> of every named format, worked out once: <see cref="ScalarOf"/> runs for every
     /// texture registered, and the enum's name is a string allocation and three searches (~0.1 us).</summary>
-    static readonly System.Collections.Frozen.FrozenDictionary<Format, ScalarKind> Scalars =
-        System.Collections.Frozen.FrozenDictionary.ToFrozenDictionary(Enum.GetValues<Format>().Distinct(), f => f, ScalarByName);
+    static readonly System.Collections.Frozen.FrozenDictionary<InternalFormat, ScalarKind> Scalars =
+        System.Collections.Frozen.FrozenDictionary.ToFrozenDictionary(Enum.GetValues<InternalFormat>().Distinct(), f => f, ScalarByName);
 
-    static ScalarKind ScalarByName(Format format)
+    static ScalarKind ScalarByName(InternalFormat format)
     {
+        // GL's names: an integer format ends in "ui" (R16ui, Rgba8ui) or "i" (R16i, Rgba32i); depth(-stencil) formats are read as float.
         var name = format.ToString();
-        if (GlConventions.IsDepthFormat(format) || name.EndsWith("S8Uint", StringComparison.Ordinal)) return ScalarKind.Float;   // depth(-stencil)
-        return name.Contains("Uint", StringComparison.Ordinal) ? ScalarKind.UInt
-            : name.Contains("Sint", StringComparison.Ordinal) ? ScalarKind.Int
+        if (GlConventions.IsDepthFormat(format)) return ScalarKind.Float;
+        return name.EndsWith("ui", StringComparison.Ordinal) ? ScalarKind.UInt
+            : name.EndsWith('i') ? ScalarKind.Int
             : ScalarKind.Float;
     }
 
@@ -201,10 +206,10 @@ public sealed unsafe class BindlessTable : IDisposable
 
     /// <summary>Adds <paramref name="texture"/>'s full view with <paramref name="sampler"/> to the array its format and kind select
     /// (<see cref="KindFor"/>; <paramref name="shadow"/> for a depth texture read with comparison).</summary>
-    public BindlessHandle Register(Texture texture, Sampler sampler, bool shadow = false)
+    public BindlessHandle Register(GpuTexture texture, GpuSampler sampler, bool shadow = false)
     {
         var kind = KindFor(texture.Desc.Format, texture.Desc.Kind, shadow);
-        return new BindlessHandle(kind, Register(kind, new SampledTexture(sampler, texture.View(), texture.Image)));
+        return new BindlessHandle(kind, Register(kind, new SampledTexture(sampler, texture.View())));
     }
 
     /// <summary>Replaces an entry's sampler or view (the upscaler's LOD bias changed, a texture was re-created). Takes effect in the frame
@@ -232,7 +237,7 @@ public sealed unsafe class BindlessTable : IDisposable
 
     /// <summary>At the start of a frame in <paramref name="slot"/> (the slot's previous frame has finished): the journal's new entries are
     /// written into the slot's set.</summary>
-    internal void BeginFrame(int slot)
+    public void BeginFrame(int slot)
     {
         currentSlot = slot;
         Apply(slot, endOfFrame: false);
@@ -241,7 +246,7 @@ public sealed unsafe class BindlessTable : IDisposable
 
     /// <summary>At the end of the open frame, before it is submitted: what was registered or updated during the frame is written into the
     /// frame's set. Update-after-bind allows this while the set is bound in the command buffer being recorded, which is not pending yet.</summary>
-    internal void EndFrame()
+    public void EndFrame()
     {
         if (!open) return;
         open = false;
@@ -278,7 +283,7 @@ public sealed unsafe class BindlessTable : IDisposable
                         continue;
                     }
                     if (!written.Add((kind, index))) continue;
-                    pi[count] = new DescriptorImageInfo(t.Sampler, t.View, ImageLayout.General);
+                    pi[count] = new DescriptorImageInfo(device.SamplerAt(t.Sampler.Index), device.ViewAt(t.View.Index), ImageLayout.General);
                     pw[count] = new WriteDescriptorSet
                     {
                         SType = StructureType.WriteDescriptorSet, DstSet = sets[slot], DstBinding = (uint)kind, DstArrayElement = index,

@@ -3,6 +3,8 @@ using System.Runtime.InteropServices;
 using Meitou.Data.Ogre;
 using Meitou.Rendering.Gpu;
 
+using Meitou.Rendering.Gpu.Core;
+
 namespace Meitou.Rendering;
 
 /// <summary>
@@ -71,19 +73,19 @@ public sealed unsafe class MarkerRenderer : IDisposable
     /// <summary>Samples per pixel of the markers (anti-aliasing: the meshes have many triangles under a pixel; at most what the device allows).</summary>
     const int WantedSamples = 8;
 
-    readonly GpuContext gpu;
+    readonly IGpuContext gpu;
     readonly LegacyProgram program;
     readonly NativeSegment segment;
     readonly DeviceBuffer vertices;
     readonly VertexArrayBindings vertexSource;
-    readonly BufferBinding[] bindings = new BufferBinding[2];
+    readonly GpuBufferBinding[] bindings = new GpuBufferBinding[2];
     readonly UniformHandle viewProjection, rotation, offset, sun, colour, depthScale, hiddenPass;
     readonly SamplerSlot sceneDepth;
     readonly LegacyProgram composite;
     readonly NativeSegment compositeSegment;
     readonly SamplerSlot markerImage;
     // The markers drawn multisampled with a depth of their own, at the picture's size, and resolved.
-    Texture? msColour, msDepth, resolved;
+    GpuTexture? msColour, msDepth, resolved;
     int samples;
     // The vertex ranges of the two meshes in the buffer (count 0: the mesh is missing).
     readonly (int First, int Count) marker, arrow;
@@ -95,13 +97,13 @@ public sealed unsafe class MarkerRenderer : IDisposable
     /// <summary>This frame's stealth arrows, replaced whole each frame (empty: none; ignored without <c>arrow.mesh</c>).</summary>
     public Arrow[] Arrows { get; set; } = [];
 
-    MarkerRenderer(GpuContext gpu, float[] data, (int, int) marker, (int, int) arrow)
+    MarkerRenderer(IGpuContext gpu, float[] data, (int, int) marker, (int, int) arrow)
     {
         this.gpu = gpu;
         this.marker = marker;
         this.arrow = arrow;
         program = LegacyProgram.Create(gpu, Vertex, Fragment, "markers");
-        segment = new NativeSegment(gpu, program, Silk.NET.Vulkan.PrimitiveTopology.TriangleList, "markers");
+        segment = new NativeSegment(gpu, program, PrimitiveType.Triangles, "markers");
         viewProjection = program.Uniform("uViewProjection");
         rotation = program.Uniform("uRotation");
         offset = program.Uniform("uOffset");
@@ -111,23 +113,26 @@ public sealed unsafe class MarkerRenderer : IDisposable
         hiddenPass = program.Uniform("uHidden");
         sceneDepth = program.Sampler("uSceneDepth");
         composite = LegacyProgram.Create(gpu, CompositeVertex, CompositeFragment, "markers composite");
-        compositeSegment = new NativeSegment(gpu, composite, Silk.NET.Vulkan.PrimitiveTopology.TriangleList, "markers composite");
+        compositeSegment = new NativeSegment(gpu, composite, PrimitiveType.Triangles, "markers composite");
         markerImage = composite.Sampler("uMarker");
-        var l = gpu.Device.Limits;
-        uint both = (uint)(l.FramebufferColorSampleCounts & l.FramebufferDepthSampleCounts);
         samples = 1;
-        while (samples < WantedSamples && (both & (uint)(samples * 2)) != 0) samples *= 2;
+        if (gpu is GpuContext vk)
+        {
+            var l = vk.Device.Limits;
+            uint both = (uint)(l.FramebufferColorSampleCounts & l.FramebufferDepthSampleCounts);
+            while (samples < WantedSamples && (both & (uint)(samples * 2)) != 0) samples *= 2;
+        }
         vertices = DeviceBuffer.Create(gpu, sizeof(float) * (ulong)data.Length, BufferUse.Vertex, "markers");
         using (var batch = gpu.Uploads.Begin()) batch.Write(vertices, 0, MemoryMarshal.AsBytes(data.AsSpan()));
         vertexSource = new VertexArrayBindings(
         [
-            new LegacyProgram.Attribute(default, Silk.NET.Vulkan.Format.R32G32B32Sfloat, 24, false),
-            new LegacyProgram.Attribute(default, Silk.NET.Vulkan.Format.R32G32B32Sfloat, 24, false),
+            new LegacyProgram.Attribute(default, InternalFormat.Rgb32f, 24, false),
+            new LegacyProgram.Attribute(default, InternalFormat.Rgb32f, 24, false),
         ], default);
     }
 
     /// <summary>The markers from <c>position.mesh</c> and <c>arrow.mesh</c> (null when neither is readable; a missing one is not drawn).</summary>
-    public static MarkerRenderer? Create(GpuContext gpu, Func<string, string?> find)
+    public static MarkerRenderer? Create(IGpuContext gpu, Func<string, string?> find)
     {
         var data = new List<float>();
         var marker = Append(data, find, "position.mesh", MarkerScale);
@@ -179,43 +184,43 @@ public sealed unsafe class MarkerRenderer : IDisposable
     /// (<paramref name="renderWidth"/> × <paramref name="renderHeight"/> of it used). The markers are drawn multisampled into targets of their own
     /// (their own depth hides their far sides), resolved, and blended over the picture. Depth is clamped, so a marker beyond the near slice is drawn whole.
     /// </summary>
-    public void Record(Texture picture, int width, int height, Texture nearDepth, int renderWidth, int renderHeight, Matrix4x4 nearViewProjection, Vector3 eye, Vector3 sunDirection)
+    public void Record(GpuTexture picture, int width, int height, GpuTexture nearDepth, int renderWidth, int renderHeight, Matrix4x4 nearViewProjection, Vector3 eye, Vector3 sunDirection)
     {
         if (!Active || width <= 0 || height <= 0) return;
         if (msColour is null || msColour.Desc.Width != width || msColour.Desc.Height != height)
         {
             msColour?.Dispose(); msDepth?.Dispose(); resolved?.Dispose();
             var sampled = samples > 1 ? TextureUse.TransferSrc : TextureUse.Sampled;
-            msColour = Texture.Create(gpu, new TextureDesc(Silk.NET.Vulkan.Format.R8G8B8A8Unorm, width, height, Samples: samples, Use: TextureUse.ColourTarget | sampled, Name: "markers colour"));
-            msDepth = Texture.Create(gpu, new TextureDesc(Silk.NET.Vulkan.Format.D32Sfloat, width, height, Samples: samples, Use: TextureUse.DepthTarget, Name: "markers depth"));
-            resolved = samples > 1 ? Texture.Create(gpu, new TextureDesc(Silk.NET.Vulkan.Format.R8G8B8A8Unorm, width, height, Use: TextureUse.Sampled | TextureUse.TransferDst, Name: "markers resolved")) : msColour;
+            msColour = gpu.CreateTexture(new TextureDesc(InternalFormat.Rgba8, width, height, Samples: samples, Use: TextureUse.ColourTarget | sampled, Name: "markers colour"));
+            msDepth = gpu.CreateTexture(new TextureDesc(InternalFormat.DepthComponent24, width, height, Samples: samples, Use: TextureUse.DepthTarget, Name: "markers depth"));
+            resolved = samples > 1 ? gpu.CreateTexture(new TextureDesc(InternalFormat.Rgba8, width, height, Use: TextureUse.Sampled | TextureUse.TransferDst, Name: "markers resolved")) : msColour;
         }
         var arrows = Arrows;
         var cmd = gpu.BeginNative("markers");
-        var viewport = new Silk.NET.Vulkan.Viewport(0, 0, width, height, 0, 1);
+        var viewport = new PixelViewport(0, 0, width, height, 0, 1);
         var t = PassTargets.Of(msColour, msDepth).At(viewport);
         t = t with
         {
-            Colour = t.Colour with { Load = Silk.NET.Vulkan.AttachmentLoadOp.Clear, Clear = new Silk.NET.Vulkan.ClearValue(new Silk.NET.Vulkan.ClearColorValue(0f, 0f, 0f, 0f)) },
-            Depth = t.Depth with { Load = Silk.NET.Vulkan.AttachmentLoadOp.Clear, Clear = new Silk.NET.Vulkan.ClearValue(depthStencil: new Silk.NET.Vulkan.ClearDepthStencilValue(1, 0)) },
+            Colour = t.Colour with { Load = LoadOp.Clear, Clear = new ClearColour(0f, 0f, 0f, 0f) },
+            Depth = t.Depth with { Load = LoadOp.Clear, DepthClear = 1 },
         };
         cmd.BeginRendering(t.Rendering);
         var vp = Matrix4x4.CreateTranslation(eye) * nearViewProjection;
         program.Set(viewProjection, in vp);
         program.Set(sun, sunDirection);
         program.Set(depthScale, renderWidth / (float)width, renderHeight / (float)height);
-        program.Bind(sceneDepth, new SampledTexture(Nearest(), nearDepth.View(), nearDepth.Image));
-        var premultiplied = new BlendState(true, Silk.NET.Vulkan.BlendFactor.One, Silk.NET.Vulkan.BlendFactor.OneMinusSrcAlpha);
+        program.Bind(sceneDepth, new SampledTexture(Nearest(), nearDepth.View()));
+        var premultiplied = new BlendState(true, BlendingFactor.One, BlendingFactor.OneMinusSrcAlpha);
         for (int pass = 0; pass < 2; pass++)
         {
             bool hidden = pass == 1;
-            var state = DrawState.For(t.Formats, gpu.Device.DepthClamp, cull: Silk.NET.Vulkan.CullModeFlags.BackBit, depthTest: true, depthWrite: !hidden,
-                compare: Silk.NET.Vulkan.CompareOp.LessOrEqual, blend: premultiplied, depthClamp: gpu.Device.DepthClamp, front: GlConventions.FrontFace(FrontFaceDirection.Ccw));
+            var state = DrawState.For(t.Formats, gpu.DepthClamp, cull: CullMode.Back, depthTest: true, depthWrite: !hidden,
+                compare: DepthFunction.Lequal, blend: premultiplied, depthClamp: gpu.DepthClamp, front: FrontFaceDirection.Ccw);
             program.Set(hiddenPass, hidden ? 1 : 0);
             state.Record(cmd, t);
             cmd.BindPipeline(segment.Get(state, t.Formats, vertexSource));
-            bindings[0] = new BufferBinding(vertices.Handle, 0);
-            bindings[1] = new BufferBinding(vertices.Handle, 12);
+            bindings[0] = new GpuBufferBinding(vertices.Handle, 0);
+            bindings[1] = new GpuBufferBinding(vertices.Handle, 12);
             cmd.BindVertexBuffers(0, bindings);
             if (Strength > 0 && marker.Count > 0)
             {
@@ -227,16 +232,16 @@ public sealed unsafe class MarkerRenderer : IDisposable
                     Draw(cmd, arrow, a.At - eye, PointAlong(a.Direction), new Vector4(a.Colour, hidden ? ArrowHiddenAlpha : 1));
         }
         cmd.EndRendering();
-        cmd.Barrier(BarrierBatch.Full);
+        cmd.Order();
         if (samples > 1)
         {
             cmd.Resolve(msColour, resolved!);
-            cmd.Barrier(BarrierBatch.Full);
+            cmd.Order();
         }
         var over = PassTargets.Of(picture, null).At(viewport);
         cmd.BeginRendering(over.Rendering);
-        composite.Bind(markerImage, new SampledTexture(Nearest(), resolved!.View(), resolved.Image));
-        var overState = DrawState.For(over.Formats, gpu.Device.DepthClamp, blend: premultiplied);
+        composite.Bind(markerImage, new SampledTexture(Nearest(), resolved!.View()));
+        var overState = DrawState.For(over.Formats, gpu.DepthClamp, blend: premultiplied);
         overState.Record(cmd, over);
         cmd.BindPipeline(compositeSegment.Get(overState, over.Formats, null));
         composite.Flush(cmd);
@@ -245,7 +250,7 @@ public sealed unsafe class MarkerRenderer : IDisposable
         gpu.EndNative(cmd);
     }
 
-    void Draw(CommandList cmd, (int First, int Count) mesh, Vector3 relative, Matrix4x4 turn, Vector4 c)
+    void Draw(IGpuCommandList cmd, (int First, int Count) mesh, Vector3 relative, Matrix4x4 turn, Vector4 c)
     {
         program.Set(offset, relative);
         program.Set(rotation, in turn);
@@ -264,7 +269,7 @@ public sealed unsafe class MarkerRenderer : IDisposable
         return Matrix4x4.CreateFromQuaternion(Quaternion.Normalize(new Quaternion(Vector3.Cross(from, direction), 1 + dot)));
     }
 
-    Silk.NET.Vulkan.Sampler Nearest() => gpu.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Nearest, TextureMagFilter.Nearest, TextureWrapMode.ClampToEdge,
+    GpuSampler Nearest() => gpu.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Nearest, TextureMagFilter.Nearest, TextureWrapMode.ClampToEdge,
         TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, false, DepthFunction.Lequal, false, 1, false, 0));
 
     public void Dispose()

@@ -10,6 +10,10 @@ enum SpeedUnit { Mph, Kmh }
 /// <summary>When the next world tick runs during the world draw (<see cref="UserConfig.TickAhead"/>): never (Faithful), while ticks are expensive (Meitou), always.</summary>
 enum TickAheadMode { Faithful, Dynamic, Always }
 
+/// <summary>The Metal display path: native at full size, MetalFX temporal at any preset scale, MetalFX spatial as an
+/// alternative, or TAA.</summary>
+enum MetalUpscalerMode { Native, Temporal, Spatial, Taa }
+
 /// <summary>
 /// The player's settings, kept in <c>meitou.user.json</c> (git-ignored) in the working directory, else next to the executable:
 /// the frame limit, vsync, full screen, the simulation tick rate, the graphics sliders of the Tab panel (by label) and key bindings
@@ -36,6 +40,10 @@ sealed class UserConfig
     /// <summary>Frames per second when vsync is off; 0 = unlimited. Engine default 150.</summary>
     public int FpsLimit { get; set; } = 150;
     public bool VSync { get; set; }
+    /// <summary>The Metal display default: MetalFX balanced (temporal at 0.50); Native is used when MetalFX is unavailable.</summary>
+    public MetalUpscalerMode MetalUpscaler { get; set; } = MetalUpscalerMode.Temporal;
+    /// <summary>The Metal render scale; the default 0.50 is the balanced profile. The Metal settings panel edits it live.</summary>
+    public float MetalRenderScale { get; set; } = 0.5f;
     public Meitou.Data.Ui.UiMode UiMode { get; set; } = Meitou.Data.Ui.UiMode.Meitou;
     /// <summary>The unit of the run speed in the information panel (Interface settings): mph as the game, or km/h.</summary>
     public SpeedUnit SpeedUnit { get; set; } = SpeedUnit.Mph;
@@ -134,6 +142,7 @@ sealed class UserConfig
     {
         var config = Read(file) ?? new UserConfig();
         config.Path = file;
+        config.Normalize();
         return config;
     }
 
@@ -243,6 +252,15 @@ sealed class UserConfig
             case (JsonArray a, int index) when index < a.Count: a.RemoveAt(index); return true;
             default: return false;
         }
+    }
+
+    /// <summary>Keeps a hand-edited or older config inside the values the Metal path can use.</summary>
+    void Normalize()
+    {
+        if (!float.IsFinite(MetalRenderScale)) MetalRenderScale = 0.5f;
+        MetalRenderScale = Math.Clamp(MetalRenderScale, 0.33f, 1f);
+        if (!Enum.IsDefined(MetalUpscaler)) MetalUpscaler = MetalUpscalerMode.Temporal;
+        if (MetalUpscaler is MetalUpscalerMode.Temporal or MetalUpscalerMode.Spatial) MetalRenderScale = Math.Clamp(MetalRenderScale, 0.4f, 1f);
     }
 
     public void Save()

@@ -20,23 +20,29 @@ static class UpscaleShaders
         uniform vec2 uNearPlanes, uFarPlanes, uFullPlanes;
         uniform vec2 uJitterNdc;
         uniform int uHasFar, uMode;            // 0: motion, depth, reactive; 1: depth alone; 2: reactive alone
+        uniform int uClipDepthZeroToOne;       // Metal's NDC depth is 0..1; Vulkan's is -1..1 (stored as 0..1)
+        uniform int uFlipDepthY;               // Metal's top-down targets: a standard fullscreen vUv reads the depth bottom-up
         uniform vec2 uTan;                     // tan(fov / 2) * aspect, tan(fov / 2)
         uniform vec3 uRight, uUp, uBack;       // the view axes in the world
         uniform float uEyeY, uWaterY, uWaterReactive;
         uniform vec4 uSun, uSunMotion;         // the sun's direction and its inner cos; its motion, outer cos, on (PostProcess.SunMotion.cs)
 
-        // Distance along the view axis from a depth-buffer value: System.Numerics' projection gives clip depth 0..1 (D3D style), which GL's
-        // depth range stores as 0.5..1.
-        float viewZ(float d, vec2 nf) { float zd = 2.0 * d - 1.0; return nf.x * nf.y / (nf.y - zd * (nf.y - nf.x)); }
+        // Distance along the view axis from a depth-buffer value. System.Numerics' projection gives clip depth 0..1; Vulkan's
+        // viewport maps that from -1..1, while Metal's NDC depth is already 0..1.
+        float ndcDepth(float d) { return uClipDepthZeroToOne != 0 ? d : 2.0 * d - 1.0; }
+        float viewZ(float d, vec2 nf) { float zd = ndcDepth(d); return nf.x * nf.y / (nf.y - zd * (nf.y - nf.x)); }
 
         void main()
         {
-            float d = textureLod(uNearDepth, vUv, 0.0).r;
+            // The NDC below is the projection's (the vertex shader's vUv); the depth image can have the other row
+            // order (Metal's targets are top-down, so its standard vUv reads the depth bottom-up).
+            vec2 depthUv = uFlipDepthY != 0 ? vec2(vUv.x, 1.0 - vUv.y) : vUv;
+            float d = textureLod(uNearDepth, depthUv, 0.0).r;
             mat4 toPrev = uNearToPrev;
             vec2 planes = uNearPlanes;
             if (d >= 1.0 && uHasFar != 0)
             {
-                d = textureLod(uFarDepth, vUv, 0.0).r;
+                d = textureLod(uFarDepth, depthUv, 0.0).r;
                 toPrev = uFarToPrev;
                 planes = uFarPlanes;
             }
@@ -49,7 +55,7 @@ static class UpscaleShaders
             vec3 offset = (uRight * ndc.x * uTan.x + uUp * ndc.y * uTan.y - uBack) * z;
             float reactive = uEyeY > uWaterY && uEyeY + offset.y < uWaterY ? uWaterReactive : 0.0;
             if (uMode == 2) { fragColour = vec4(reactive, 0.0, 0.0, 1.0); return; }
-            vec4 prev = toPrev * vec4(ndc, 2.0 * d - 1.0, 1.0);
+            vec4 prev = toPrev * vec4(ndc, ndcDepth(d), 1.0);
             vec2 motion = ((ndc - uJitterNdc) - prev.xy / prev.w) * 0.5;
             // The sky round the sun moves with the sun (PostProcess.SunMotion.cs).
             if (uSunMotion.w != 0.0 && d >= 1.0)

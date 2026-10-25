@@ -43,7 +43,7 @@ internal sealed class MemoryBlock
 /// <summary>A memory block as seen by tests and diagnostics.</summary>
 public readonly record struct BlockInfo(uint MemoryTypeIndex, bool Optimal, bool Dedicated, ulong Size, ulong Used, int FreeRanges);
 
-public sealed class GpuBuffer
+public sealed class BufferAllocation
 {
     internal bool Freed;
     public Silk.NET.Vulkan.Buffer Buffer { get; internal set; }
@@ -55,9 +55,13 @@ public sealed class GpuBuffer
     public MemoryKind Kind { get; internal set; }
     /// <summary>Host pointer to the start of the buffer (null for device-local memory).</summary>
     public unsafe void* Mapped => (void*)Allocation.MappedPointer;
+    /// <summary>The index into the device's buffers: the handle the renderers hold.</summary>
+    public int Index { get; internal set; }
+    /// <summary>The handle the renderers hold (the backend's identity and the size).</summary>
+    public GpuBuffer Handle => new(Index, Size);
 }
 
-public sealed class GpuImage
+public sealed class ImageAllocation
 {
     internal bool Freed;
     public Image Image { get; internal set; }
@@ -88,8 +92,8 @@ public sealed unsafe class GpuAllocator : IDisposable
     readonly ulong blockSize;
     readonly object gate = new();
     readonly Dictionary<(uint Type, bool Optimal), List<MemoryBlock>> pools = new();
-    readonly HashSet<GpuBuffer> liveBuffers = new();
-    readonly HashSet<GpuImage> liveImages = new();
+    readonly HashSet<BufferAllocation> liveBuffers = new();
+    readonly HashSet<ImageAllocation> liveImages = new();
     PhysicalDeviceMemoryProperties memProps;
     ulong totalAllocated;
     ulong totalUsed;
@@ -664,14 +668,14 @@ public sealed unsafe class GpuAllocator : IDisposable
 
     // ---- buffers and images --------------------------------------------------------------------------------
 
-    public GpuBuffer CreateBuffer(ulong size, BufferUsageFlags usage, MemoryKind kind, string? name = null)
+    public BufferAllocation CreateBuffer(ulong size, BufferUsageFlags usage, MemoryKind kind, string? name = null)
     {
         long profileStart = UploadProfile.Begin();
         try { return CreateBufferCore(size, usage, kind, name); }
         finally { UploadProfile.End(UploadProfile.Part.CreateBuffer, profileStart); }
     }
 
-    GpuBuffer CreateBufferCore(ulong size, BufferUsageFlags usage, MemoryKind kind, string? name)
+    BufferAllocation CreateBufferCore(ulong size, BufferUsageFlags usage, MemoryKind kind, string? name)
     {
         var info = new BufferCreateInfo
         {
@@ -699,7 +703,8 @@ public sealed unsafe class GpuAllocator : IDisposable
             Free(alloc);
             throw new VulkanException($"vkBindBufferMemory failed: {r}", r);
         }
-        var gb = new GpuBuffer { Buffer = buffer, Allocation = alloc, Size = size, Usage = usage, Name = name ?? "", Kind = kind };
+        var gb = new BufferAllocation { Buffer = buffer, Allocation = alloc, Size = size, Usage = usage, Name = name ?? "", Kind = kind };
+        gb.Index = dev.AddBuffer(new BufferEntry(buffer, gb));
         lock (gate)
         {
             liveBuffers.Add(gb);
@@ -711,14 +716,14 @@ public sealed unsafe class GpuAllocator : IDisposable
         return gb;
     }
 
-    public GpuImage CreateImage(in ImageCreateInfo info, MemoryKind kind = MemoryKind.DeviceLocal, string? name = null)
+    public ImageAllocation CreateImage(in ImageCreateInfo info, MemoryKind kind = MemoryKind.DeviceLocal, string? name = null)
     {
         long profileStart = UploadProfile.Begin();
         try { return CreateImageCore(in info, kind, name); }
         finally { UploadProfile.End(UploadProfile.Part.CreateImage, profileStart); }
     }
 
-    GpuImage CreateImageCore(in ImageCreateInfo info, MemoryKind kind, string? name)
+    ImageAllocation CreateImageCore(in ImageCreateInfo info, MemoryKind kind, string? name)
     {
         VulkanException.Check(vk.CreateImage(dev.Device, in info, null, out var image), "vkCreateImage");
         vk.GetImageMemoryRequirements(dev.Device, image, out var req);
@@ -739,7 +744,7 @@ public sealed unsafe class GpuAllocator : IDisposable
             Free(alloc);
             throw new VulkanException($"vkBindImageMemory failed: {r}", r);
         }
-        var gi = new GpuImage
+        var gi = new ImageAllocation
         {
             Image = image,
             Allocation = alloc,
@@ -763,8 +768,8 @@ public sealed unsafe class GpuAllocator : IDisposable
         return gi;
     }
 
-    /// <summary>Destroys the buffer and frees its memory now (use <see cref="VulkanDevice.DeferFree(GpuBuffer)"/> when the GPU may still use it).</summary>
-    public void Free(GpuBuffer? b)
+    /// <summary>Destroys the buffer and frees its memory now (use <see cref="VulkanDevice.DeferFree(BufferAllocation)"/> when the GPU may still use it).</summary>
+    public void Free(BufferAllocation? b)
     {
         if (b == null)
         {
@@ -781,11 +786,12 @@ public sealed unsafe class GpuAllocator : IDisposable
         }
         long profileStart = UploadProfile.Begin();
         vk.DestroyBuffer(dev.Device, b.Buffer, null);
+        dev.RemoveBuffer(b.Index);
         Free(b.Allocation);
         UploadProfile.End(UploadProfile.Part.FreeBuffer, profileStart);
     }
 
-    public void Free(GpuImage? i)
+    public void Free(ImageAllocation? i)
     {
         if (i == null)
         {
@@ -809,8 +815,8 @@ public sealed unsafe class GpuAllocator : IDisposable
     /// <summary>Destroys what is still alive and releases all blocks (the device must be idle).</summary>
     public void Dispose()
     {
-        GpuBuffer[] bs;
-        GpuImage[] ims;
+        BufferAllocation[] bs;
+        ImageAllocation[] ims;
         lock (gate)
         {
             if (disposed)

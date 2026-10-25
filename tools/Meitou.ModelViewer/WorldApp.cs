@@ -118,7 +118,7 @@ static partial class WorldApp
 
         // Offscreen: the post-processing chain (HDR scene, resolve, effects) ends in a plain RGBA8 texture that is read back.
         int w = o.Width, h = o.Height;
-        using var target = Meitou.Rendering.Gpu.Texture.Create(context, new TextureDesc(Silk.NET.Vulkan.Format.R8G8B8A8Unorm, w, h,
+        using var target = context.CreateTexture(new TextureDesc(InternalFormat.Rgba8, w, h,
             Use: TextureUse.ColourTarget | TextureUse.TransferSrc | TextureUse.TransferDst | TextureUse.Sampled, Name: "offscreen picture"));
         gpu.Post!.Target = target;
         gpu.Post.InstantAdaptation = true;   // a still picture: the exposure settles at once

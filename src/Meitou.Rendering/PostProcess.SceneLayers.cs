@@ -1,3 +1,4 @@
+using InternalFormat = Meitou.Rendering.Gpu.InternalFormat;
 using System.Numerics;
 
 using Meitou.Rendering.Gpu;
@@ -148,7 +149,7 @@ public sealed unsafe partial class PostProcess
             l.P.Set(l.Layers, shaftsPending ? 1 : 0, fogPending ? 1 : 0, occlusion ? 1 : 0, 0);
             l.P.ApplyGlobals();
             DrawPass(l.P, sceneColour!.Attachment, sceneColour.Format,
-                layerMask.Attachment with { Load = Vk.AttachmentLoadOp.Clear, Clear = new Vk.ClearValue(depthStencil: new Vk.ClearDepthStencilValue(0f, 0)) }, layerMask.Format,
+                layerMask.Attachment with { Load = LoadOp.Clear, DepthClear = 0f }, layerMask.Format,
                 width, height, width, height, LeanState);
             if (SsaoStamps) Stamp("layers lean");
         }
@@ -172,9 +173,9 @@ public sealed unsafe partial class PostProcess
     }
 
     /// <summary>The lean pass: the fog's blend, and the mask depth written (always passing) for the full pass to test.</summary>
-    static readonly DrawState LeanState = FogState with { DepthTest = true, DepthWrite = true, Compare = Vk.CompareOp.Always };
+    static readonly DrawState LeanState = FogState with { DepthTest = true, DepthWrite = true, Compare = DepthFunction.Always };
     /// <summary>The full pass over the pixels the lean one marked (mask depth 1): the full-screen triangle (depth 0.5) is less than it, and not less than the 0 of the rest.</summary>
-    static readonly DrawState FallbackState = FogState with { DepthTest = true, DepthWrite = false, Compare = Vk.CompareOp.Less };
+    static readonly DrawState FallbackState = FogState with { DepthTest = true, DepthWrite = false, Compare = DepthFunction.Less };
 
     void DisposeSceneLayers()
     {

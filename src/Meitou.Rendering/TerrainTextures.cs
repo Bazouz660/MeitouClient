@@ -29,7 +29,7 @@ public sealed unsafe class TerrainTextures : IDisposable
     const byte Pending = 254, Unused = 255;
 
     /// <summary>The native GPU API every texture is made with (phase 8: no GL texture of its own).</summary>
-    public GpuContext Gpu { get; }
+    public IGpuContext Gpu { get; }
     readonly GameInstall install;
     readonly AssetLocator assets;
     readonly int layerSize, levelCount;
@@ -45,6 +45,7 @@ public sealed unsafe class TerrainTextures : IDisposable
     readonly int maxInFlight = Math.Clamp(Environment.ProcessorCount / 2, 2, 6);
     readonly MapWindows? mapWindows;
     readonly List<int> needed = [];
+    static readonly bool PrivateStatics = Environment.GetEnvironmentVariable("MEITOU_METAL_PRIVATE_STATIC") == "1";
     TerrainTexture? diffuseArray, normalArray, heightArray, reliefTexture, paramTexture, cellTexture, blendTexture, overlayTexture, colourTexture, groundTexture, worldColourTexture;
     int inFlight, nextFree, printed, stamp;
     long frame;
@@ -74,7 +75,7 @@ public sealed unsafe class TerrainTextures : IDisposable
     /// <summary>Side of the height array's layers (<see cref="GroundRelief"/>): the layer size, at most 512.</summary>
     int HeightSize => Math.Min(layerSize, 512);
 
-    TerrainTextures(GpuContext gpu, GameInstall install, AssetLocator assets, BlendInfoFile info, BiomeTerrain[] all, int layerSize, MapWindows? maps)
+    TerrainTextures(IGpuContext gpu, GameInstall install, AssetLocator assets, BlendInfoFile info, BiomeTerrain[] all, int layerSize, MapWindows? maps)
     {
         Gpu = gpu;
         this.install = install;
@@ -148,6 +149,19 @@ public sealed unsafe class TerrainTextures : IDisposable
         internal int WorldColourSize;
         internal FoliageBiomeMap? BiomeMap;
         internal readonly List<string> Messages = [];
+
+        /// <summary>Drops the CPU images after <see cref="Create"/> has uploaded them. They are the largest LOH objects
+        /// of a cold start (the blend, ground and world-colour buffers); keeping the source alive kept them rooted.</summary>
+        internal void ReleaseUploaded()
+        {
+            Blend = null;
+            Ground = null;
+            WorldColour = null;
+            BiomeMap = null;
+            All = null!;
+            Info = null!;
+            // Maps stays: the TerrainTextures owns the live map windows.
+        }
     }
 
     /// <summary>The CPU part of <see cref="Create"/>, on any thread (it makes no GPU resource).</summary>
@@ -177,7 +191,7 @@ public sealed unsafe class TerrainTextures : IDisposable
         return s;
     }
 
-    public static TerrainTextures Create(GpuContext gpu, GameInstall install, GameDatabase db, AssetLocator assets, int layerSize = 512, int worldColourSize = 2048, Source? source = null)
+    public static TerrainTextures Create(IGpuContext gpu, GameInstall install, GameDatabase db, AssetLocator assets, int layerSize = 512, int worldColourSize = 2048, Source? source = null)
     {
         source ??= Prepare(install, db, worldColourSize);
         var t = new TerrainTextures(gpu, install, assets, source.Info, [.. source.All.Values], layerSize, source.Maps);
@@ -191,6 +205,7 @@ public sealed unsafe class TerrainTextures : IDisposable
         if (source.Blend is { } blend) t.BuildBiomes(blend);
         t.BuildWorld(source);
         t.biomeMap = source.BiomeMap;
+        source.ReleaseUploaded();
         return t;
     }
 
@@ -249,7 +264,7 @@ public sealed unsafe class TerrainTextures : IDisposable
     {
         if (biomes.Count == 0) return;
         // The cell table (GL RGBA8UI, nearest, clamped), written whole by UploadCells.
-        cellTexture = Make(GlConventions.VkFormat(InternalFormat.Rgba8ui), CellsX * 2, CellsZ, 1, 1, TextureMinFilter.Nearest, TextureMagFilter.Nearest,
+        cellTexture = Make(InternalFormat.Rgba8ui, CellsX * 2, CellsZ, 1, 1, TextureMinFilter.Nearest, TextureMagFilter.Nearest,
             TextureWrapMode.ClampToEdge, "terrain cells");
         UploadCells();
 
@@ -257,19 +272,19 @@ public sealed unsafe class TerrainTextures : IDisposable
         diffuseArray = AllocateArray(true);
         normalArray = AllocateArray(false);
         if (GroundRelief.Enabled)
-            heightArray = Make(GlConventions.VkFormat(InternalFormat.R8), HeightSize, HeightSize, (int)Math.Log2(HeightSize) + 1, Math.Max(Capacity, 1),
+            heightArray = Make(InternalFormat.R8, HeightSize, HeightSize, (int)Math.Log2(HeightSize) + 1, Math.Max(Capacity, 1),
                 TextureMinFilter.LinearMipmapLinear, TextureMagFilter.Linear, TextureWrapMode.Repeat, "terrain textures height", kind: TextureKind.Texture2DArray);
         // Each slot's steepness factor (1 / (side × its height's steepness); 0: flat), read by the slot's index: its depth (GroundRelief.LayerDepthCm).
         if (GroundRelief.Enabled)
         {
-            reliefTexture = Make(GlConventions.VkFormat(InternalFormat.R32f), Math.Max(Capacity, 1), 1, 1, 1, TextureMinFilter.Nearest, TextureMagFilter.Nearest,
+            reliefTexture = Make(InternalFormat.R32f, Math.Max(Capacity, 1), 1, 1, 1, TextureMinFilter.Nearest, TextureMagFilter.Nearest,
                 TextureWrapMode.ClampToEdge, "terrain relief depths");
             using var batch = Gpu.Uploads.Begin();
             batch.Write(reliefTexture.Texture, 0, 0, Rect(0, 0, Math.Max(Capacity, 1), 1), new byte[Math.Max(Capacity, 1) * 4]);
         }
 
         // One parameter row per biome; its layer indices are written when the biome becomes resident.
-        paramTexture = Make(GlConventions.VkFormat(InternalFormat.Rgba32f), TerrainShaders.ParamTexels, biomes.Count, 1, 1, TextureMinFilter.Nearest, TextureMagFilter.Nearest,
+        paramTexture = Make(InternalFormat.Rgba32f, TerrainShaders.ParamTexels, biomes.Count, 1, 1, TextureMinFilter.Nearest, TextureMagFilter.Nearest,
             TextureWrapMode.ClampToEdge, "terrain biome parameters");
         using (var batch = Gpu.Uploads.Begin())
             batch.Write(paramTexture.Texture, 0, 0, Rect(0, 0, TerrainShaders.ParamTexels, biomes.Count), new byte[biomes.Count * TerrainShaders.ParamTexels * 16]);
@@ -278,28 +293,28 @@ public sealed unsafe class TerrainTextures : IDisposable
         HasBiomes = true;
     }
 
-    static Silk.NET.Vulkan.Rect2D Rect(int x, int y, int width, int height) => new(new(x, y), new((uint)width, (uint)height));
+    static PixelRect Rect(int x, int y, int width, int height) => new(x, y, (uint)width, (uint)height);
 
     /// <summary>A native texture with the GL sampler state the GL one had (nothing written yet; its transition goes with the next uploads).</summary>
-    TerrainTexture Make(Silk.NET.Vulkan.Format format, int width, int height, int levels, int layers, TextureMinFilter min, TextureMagFilter mag,
+    TerrainTexture Make(InternalFormat format, int width, int height, int levels, int layers, TextureMinFilter min, TextureMagFilter mag,
         TextureWrapMode wrap, string name, float anisotropy = 1, TextureKind kind = TextureKind.Texture2D)
     {
         using var batch = Gpu.Uploads.Begin();
-        var t = batch.Create(new TextureDesc(format, width, height, levels, layers, Kind: kind, Name: name));
+        var t = batch.Create(new TextureDesc(format, width, height, levels, layers, Kind: kind, Name: name, Private: PrivateStatics));
         return new TerrainTexture(Gpu, t, min, mag, wrap, anisotropy);
     }
 
     /// <summary>
     /// A 2D RGBA8 texture from top-first rows, as <c>WorldGl.Texture2D</c> made it: with <paramref name="mipmaps"/> the whole chain made on the
-    /// GPU as GL's GenerateMipmap made it in VkGl (<see cref="CommandList.GenerateMips"/>) and trilinear filtering, else one level, linear;
+    /// GPU as GL's GenerateMipmap made it in VkGl (<see cref="IGpuCommandList.GenerateMips"/>) and trilinear filtering, else one level, linear;
     /// clamped to the edge.
     /// </summary>
     TerrainTexture Rgba8(int width, int height, byte[] rgba, bool mipmaps, string name)
     {
         int levels = mipmaps ? 1 + (int)Math.Floor(Math.Log2(Math.Max(Math.Max(width, height), 1))) : 1;
         using var batch = Gpu.Uploads.Begin();
-        var t = batch.Create(new TextureDesc(GlConventions.VkFormat(InternalFormat.Rgba8), width, height, levels,
-            Use: TextureUse.Sampled | TextureUse.TransferDst | TextureUse.TransferSrc, Name: name));
+        var t = batch.Create(new TextureDesc(InternalFormat.Rgba8, width, height, levels,
+            Use: TextureUse.Sampled | TextureUse.TransferDst | TextureUse.TransferSrc, Name: name, Private: PrivateStatics));
         batch.Write(t, 0, 0, Rect(0, 0, width, height), rgba.AsSpan(0, width * height * 4));
         if (mipmaps) batch.Commands.GenerateMips(t);
         return new TerrainTexture(Gpu, t, mipmaps ? TextureMinFilter.LinearMipmapLinear : TextureMinFilter.Linear, TextureMagFilter.Linear, TextureWrapMode.ClampToEdge);
@@ -324,10 +339,10 @@ public sealed unsafe class TerrainTextures : IDisposable
     {
         try
         {
-            return Make(GlConventions.VkFormat(FormatOf(diffuse)), layerSize, layerSize, levelCount, Math.Max(Capacity, 1), TextureMinFilter.LinearMipmapLinear,
+            return Make(FormatOf(diffuse), layerSize, layerSize, levelCount, Math.Max(Capacity, 1), TextureMinFilter.LinearMipmapLinear,
                 TextureMagFilter.Linear, TextureWrapMode.Repeat, diffuse ? "terrain textures diffuse" : "terrain textures normal", anisotropy: 8, kind: TextureKind.Texture2DArray);
         }
-        catch (Meitou.Rendering.Gpu.Core.VulkanException e)
+        catch (Exception e)
         {
             Messages.Add($"terrain layer array allocation: {e.Message}; try a higher --texture-quality");
             return null;
@@ -837,7 +852,7 @@ public sealed unsafe class TerrainTextures : IDisposable
 
     /// <summary>A window texture: <paramref name="levels"/> levels (the GL one had more allocated but sampled only these), trilinear, repeating.</summary>
     TerrainTexture EmptyMap(int size, int levels, string name) =>
-        Make(GlConventions.VkFormat(InternalFormat.Rgba8), size, size, levels, 1, TextureMinFilter.LinearMipmapLinear, TextureMagFilter.Linear, TextureWrapMode.Repeat, name);
+        Make(InternalFormat.Rgba8, size, size, levels, 1, TextureMinFilter.LinearMipmapLinear, TextureMagFilter.Linear, TextureWrapMode.Repeat, name);
 
     // ---- whole-world maps ----------------------------------------------------------------------------------
 
@@ -951,7 +966,7 @@ public sealed unsafe class TerrainTextures : IDisposable
         FieldTile = tile;
         FieldOrigin = centre - new Vector2(FieldColumns, rows) * tile / 2;
         pinned = [.. tiles.Select(e => e.Row).Distinct()];
-        fieldTexture ??= Make(GlConventions.VkFormat(InternalFormat.Rgba8ui), Math.Max(tiles.Length, 1), 1, 1, 1, TextureMinFilter.Nearest, TextureMagFilter.Nearest,
+        fieldTexture ??= Make(InternalFormat.Rgba8ui, Math.Max(tiles.Length, 1), 1, 1, 1, TextureMinFilter.Nearest, TextureMagFilter.Nearest,
             TextureWrapMode.ClampToEdge, "terrain texture field");
         fieldDirty = true;
         int needed = pinned.SelectMany(b => state[b].Pairs).Distinct().Count();
@@ -999,7 +1014,7 @@ public sealed unsafe class TerrainTextures : IDisposable
 /// </summary>
 internal sealed class TerrainTexture : IDisposable
 {
-    readonly GpuContext ctx;
+    readonly IGpuContext ctx;
     readonly TextureMinFilter min;
     readonly TextureMagFilter mag;
     readonly TextureWrapMode wrap;
@@ -1012,7 +1027,7 @@ internal sealed class TerrainTexture : IDisposable
     SampledTexture registered;
     bool hasEntry;
 
-    public TerrainTexture(GpuContext ctx, Texture texture, TextureMinFilter min, TextureMagFilter mag, TextureWrapMode wrap, float anisotropy = 1)
+    public TerrainTexture(IGpuContext ctx, GpuTexture texture, TextureMinFilter min, TextureMagFilter mag, TextureWrapMode wrap, float anisotropy = 1)
     {
         this.ctx = ctx;
         Texture = texture;
@@ -1020,7 +1035,7 @@ internal sealed class TerrainTexture : IDisposable
         integer = GlConventions.IsIntegerFormat(texture.Desc.Format);
     }
 
-    public Texture Texture { get; }
+    public GpuTexture Texture { get; }
 
     /// <summary>The sampler and view a draw samples it with now (what VkGl's <c>Sampled</c> gave for the GL texture).</summary>
     public SampledTexture Sampled()
@@ -1029,7 +1044,7 @@ internal sealed class TerrainTexture : IDisposable
         if (!(bias == cachedBias) || cachedGeneration != ctx.Samplers.Generation)
         {
             var sampler = ctx.Samplers.Get(SamplerDesc.FromGl(min, mag, wrap, wrap, TextureWrapMode.Repeat, false, DepthFunction.Lequal, false, anisotropy, integer, bias));
-            (cached, cachedBias, cachedGeneration) = (new SampledTexture(sampler, Texture.View(), Texture.Image), bias, ctx.Samplers.Generation);
+            (cached, cachedBias, cachedGeneration) = (new SampledTexture(sampler, Texture.View()), bias, ctx.Samplers.Generation);
         }
         return cached;
     }
@@ -1087,8 +1102,10 @@ sealed class MapWindows
             size = cache.Get(0, 0)?.Width ?? throw new InvalidDataException($"cannot read {first}");
             return cache;
         }
-        var o = Cache("new_overlay", 24, out int ot);
-        var c = Cache("colour", 12, out int ct);
+        // A 2048² overlay tile is 16 MB and a colour tile can be larger. The window spans only a few tiles; keep
+        // enough for one compose and clear them below, instead of pinning 24 + 12 full decoded maps for the session.
+        var o = Cache("new_overlay", 4, out int ot);
+        var c = Cache("colour", 2, out int ct);
         return new MapWindows(o, c, ot, ct);
     }
 
@@ -1150,7 +1167,12 @@ sealed class MapWindows
                     var cdata = Cut(colour, colourTile, sx * ratio, sz * ratio, sw * ratio, sh * ratio);
                     pieces.Add(new Piece(true, sx * ratio % cs, sz * ratio % cs, sw * ratio, sh * ratio, TerrainTextures.Mips(cdata, sw * ratio, sh * ratio, 7, pooled: true)));
                 }
-        return new Update(px0, pz0, pieces);
+        var update = new Update(px0, pz0, pieces);
+        // The pieces own pooled copies of what they need; the decoded tiles are large and a window moves only after
+        // 4,608 units, so retaining them for the next compose is not worth hundreds of MB of LOH.
+        overlay.Clear();
+        colour.Clear();
+        return update;
     }
 
     /// <summary>Splits [start, start + length) at multiples of <paramref name="period"/> (the texture wraps there).</summary>
@@ -1209,6 +1231,12 @@ sealed class MapWindows
             var img = File.Exists(path) ? TextureLoader.LoadImage(File.ReadAllBytes(path)) : null;
             lock (tiles) tiles[(tx, tz)] = (img, ++clock);
             return img;
+        }
+
+        /// <summary>Drops every decoded tile after a compose has copied what it needs.</summary>
+        public void Clear()
+        {
+            lock (tiles) tiles.Clear();
         }
 
         /// <summary>Drops the least recently used tiles beyond the cache size, keeping the ones just used.</summary>

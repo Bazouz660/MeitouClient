@@ -31,7 +31,7 @@ public unsafe class PostProcessNativeTests
             foreach (var (w, h) in new[] { (64, 36), (80, 48) })
             {
                 // The caller's RGBA8 target, as the viewer's offscreen framebuffer.
-                using var target = Texture.Create(ctx, new TextureDesc(Silk.NET.Vulkan.Format.R8G8B8A8Unorm, w, h,
+                using var target = ctx.CreateTexture(new TextureDesc(InternalFormat.Rgba8, w, h,
                     Use: TextureUse.ColourTarget | TextureUse.TransferSrc | TextureUse.Sampled, Name: "test target"));
                 post.Target = target;
 
@@ -45,8 +45,8 @@ public unsafe class PostProcessNativeTests
                     var t = post.SceneTargets;
                     var cmd = ctx.BeginNative("test scene clear");
                     cmd.BeginRendering(new RenderingDesc(
-                        t.Colour with { Load = Silk.NET.Vulkan.AttachmentLoadOp.Clear, Clear = new Silk.NET.Vulkan.ClearValue(new Silk.NET.Vulkan.ClearColorValue(0.5f, 0.5f, 0.5f, 1)) },
-                        t.Depth with { Load = Silk.NET.Vulkan.AttachmentLoadOp.Clear, Clear = new Silk.NET.Vulkan.ClearValue(depthStencil: new Silk.NET.Vulkan.ClearDepthStencilValue(1f, 0)) },
+                        t.Colour with { Load = LoadOp.Clear, Clear = new ClearColour(0.5f, 0.5f, 0.5f, 1) },
+                        t.Depth with { Load = LoadOp.Clear, DepthClear = 1f },
                         t.Width, t.Height));
                     cmd.EndRendering();
                     ctx.EndNative(cmd);

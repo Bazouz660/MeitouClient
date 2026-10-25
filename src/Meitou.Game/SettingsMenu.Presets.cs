@@ -21,6 +21,7 @@ sealed partial class SettingsMenu
         new("Distant towns (zones)", 3, 6, float.NaN),
         new("Object LOD distance x", 0.25f, 0.6f, 2),
         new("Terrain detail: error px (less = finer)", 2, 1.5f, 0.6f, Mode: "Draw distances"),
+        new(WorldFrame.GroundReliefQualitySlider, 0, 1, 2, High: 2),
         new("Foliage draw distance x", 0.25f, 0.5f, 2, Scale: true),
         new("Foliage LOD distance x (lod Meitou)", 0.5f, 0.75f, 2),
         new("Large foliage range (F6 Meitou)", 0.1f, 0.5f, 1.5f, Scale: true),
@@ -36,6 +37,7 @@ sealed partial class SettingsMenu
         new(WorldFrame.ShadowDistanceSlider, float.NegativeInfinity, 0.6f, 1.5f, Mode: "Shadows"),
         new(WorldFrame.ShadowMapSlider, 0, 1, 2),
         new("Shadow filter 0-2 (Meitou; 0 low-end)", 0, 1, 2),
+        new(WorldFrame.ShaftQualitySlider, 0, 1, 2, High: 2),
         new(WorldFrame.ParticleSliders[1], 0.25f, 0.5f, float.NaN),
         new(WorldFrame.FilteringSlider, 1, 2, 4, High: 4),
         // The start default is the saved level (applied before the menu exists), so High names the full size.
@@ -44,13 +46,15 @@ sealed partial class SettingsMenu
 
     /// <summary>The costliest Meitou effects, set Faithful by Low (as <c>--low-end</c> does); no preset turns a switch on.</summary>
     static readonly string[] LowOffSwitches = ["Ambient occlusion", "Indirect light", "Light shafts", "Clouds", "Cloud shadows", "Water", "Shadows"];
+    /// <summary>The on/off effects Low turns off too (the ground relief and the tessellation's relief/rocks; they are not Faithful / Meitou switches).</summary>
+    static readonly string[] LowOffToggles = ["Ground parallax", "Ground displacement (tessellation)", "Terrain outline refinement (tessellation)", "Rock smoothing (tessellation)"];
     const string FifthCascade = "Shadow cascade 5 (Meitou)";
 
     /// <summary>The Faithful / Meitou switches whose reading stays put when set (Indirect light without ray queries); the all switch ignores them.</summary>
     readonly HashSet<string> stuckSwitches = [];
 
-    Entry PresetEntry => new("Quality preset", "Sets draw distances, foliage, shadow, water, particle and texture settings together; High is the default. "
-        + "Low also turns the costliest Meitou effects off (indirect light, light shafts, clouds, ambient occlusion, Meitou shadows and water). Anti-aliasing and render scale stay as they are.",
+    Entry PresetEntry => new("Quality preset", "Sets draw distances, foliage, shadow, water, particle, texture, relief and light-shaft quality settings together; High is the default. "
+        + "Low also turns the costliest Meitou effects off (indirect light, light shafts, clouds, ambient occlusion, Meitou shadows, water and ground relief). Anti-aliasing and render scale stay as they are.",
         Choice: new(() => PresetNames, CurrentPreset, ApplyPreset));
 
     float PresetTarget(PresetSlider p, Slider slider, int preset)
@@ -93,6 +97,8 @@ sealed partial class SettingsMenu
         if (preset == 0)
         {
             foreach (var toggle in values.Toggles.Where(t => t.Remaster && LowOffSwitches.Contains(t.Label) && t.Get())) toggle.Set(false);
+            foreach (var label in LowOffToggles)
+                if (values.Toggles.FirstOrDefault(t => t.Label == label && t.Get()) is { } toggle) toggle.Set(false);
             if (values.Sliders.FirstOrDefault(s => s.Label == WorldFrame.ParticleSliders[0]) is { } particles) particles.Set(1);   // a quarter of the render size
         }
         foreach (var (p, slider) in PresetPairs()) slider.Set(PresetTarget(p, slider, preset));

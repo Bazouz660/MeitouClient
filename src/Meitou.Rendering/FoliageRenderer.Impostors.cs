@@ -32,6 +32,18 @@ public sealed partial class FoliageRenderer
 
     /// <summary>The <c>impostors</c> switch (Enhancements): Meitou (default) draws far instances as impostors; Faithful never loads or draws one.</summary>
     public bool Impostors { get; set; } = true;
+
+    /// <summary>
+    /// Turns impostors off and releases every atlas already resident (the Metal host's workaround while the atlas path is broken). A later
+    /// <see cref="Impostors"/> true can load them again.
+    /// </summary>
+    public void DisableImpostors()
+    {
+        Impostors = false;
+        foreach (var a in ImpostorAssets().ToArray())
+            if (a.Impostor is not null) UnloadImpostor(a);
+        DisposeImpostors();
+    }
     /// <summary>The transition distance (units along the ground) of meshes below the large size class (the small impostor class scales it by size).</summary>
     public float ImpostorDistance { get; set; } = DefaultImpostorDistance;
     /// <summary>The transition distance of meshes of the large size class (<see cref="FoliageSizes.LargeFrom"/> and up), instead of <see cref="ImpostorDistance"/>.</summary>
@@ -350,8 +362,8 @@ public sealed partial class FoliageRenderer
     /// <summary>The limit from the current budget and pressure (once a scan).</summary>
     void UpdateImpostorLimit()
     {
-        long budget = guard is { BudgetBytes: > 0 } g ? g.BudgetBytes : (long)Math.Min(Gpu.Device.VideoMemory().Budget, (ulong)long.MaxValue);
-        impostorLimitBytes = (long)(ImpostorBudget.LimitMb(ImpostorBudgetMb, budget, Gpu.Device.IsIntegrated, guard is { Pressure: true }) * 1048576);
+        long budget = guard is { BudgetBytes: > 0 } g ? g.BudgetBytes : (long)Math.Min(Gpu.VideoMemoryBudget, (ulong)long.MaxValue);
+        impostorLimitBytes = (long)(ImpostorBudget.LimitMb(ImpostorBudgetMb, budget, Gpu.IsIntegrated, guard is { Pressure: true }) * 1048576);
     }
 
     /// <summary>
@@ -1006,7 +1018,7 @@ public sealed partial class FoliageRenderer
     void WarmImpostorPipeline(bool depth, bool coverage)
     {
         if (impostorDraw is null || !Impostors) return;
-        var state = Gpu.CurrentState() with { Cull = Silk.NET.Vulkan.CullModeFlags.None, AlphaToCoverage = coverage };
+        var state = Gpu.CurrentState() with { Cull = CullMode.None, AlphaToCoverage = coverage };
         impostorDraw.Pipeline(depth ? ImpostorProgram.Caster : ImpostorProgram.Plain, state, Gpu.CurrentTargets().Formats);
         if (!depth && RockImpostorsActive) impostorDraw.Pipeline(ImpostorProgram.Rock, state, Gpu.CurrentTargets().Formats);
         if (!depth && PrepassView && ImpostorPrepass.Enabled && FoliagePrepass.Enabled && !coverage)
@@ -1024,7 +1036,7 @@ public sealed partial class FoliageRenderer
     void AddImpostorDraws(MeshJob job, bool depth, Matrix4x4 viewProjection, PassTargets targets, DrawState state, bool coverage, bool indirect, int argsFirst, ImpostorPass pass = ImpostorPass.Scene)
     {
         impostorDraw ??= new ImpostorDraw(Gpu, nativeFrame);
-        var drawState = state with { Cull = Silk.NET.Vulkan.CullModeFlags.None };
+        var drawState = state with { Cull = CullMode.None };
         var program = depth ? ImpostorProgram.Caster : pass == ImpostorPass.Prepass ? ImpostorProgram.Prepass : pass == ImpostorPass.AfterPrepass ? ImpostorProgram.AfterPrepass : ImpostorProgram.Plain;
         var pipeline = impostorDraw.Pipeline(program, drawState, targets.Formats);
         var up = new Vector3(viewProjection.M12, viewProjection.M22, viewProjection.M32);
@@ -1032,9 +1044,9 @@ public sealed partial class FoliageRenderer
         var forward = new Vector3(viewProjection.M13, viewProjection.M23, viewProjection.M33);
         var view = depth && forward.LengthSquared() > 0 ? new Vector4(-Vector3.Normalize(forward), 1) : Vector4.Zero;
         var quad = impostorDraw.Quad;
-        BufferBinding[] none = [];
+        GpuBufferBinding[] none = [];
         // A TERRAIN-mode rock's colour draws fade to the ground colour with distance as the terrain's mesh shader does (its own program, the terrain's maps in the push).
-        GraphicsPipeline? rockPipeline = null;
+        GpuPipeline? rockPipeline = null;
         (Vector4 Region, uint Ground, uint WorldColour, uint Colour, float HalfWorld, float FarStart, float FarEnd, uint Flags) far = default;
         bool firstDraw = true;
         for (int k = 0; k < impostorDraws.Count; k++)
@@ -1063,7 +1075,7 @@ public sealed partial class FoliageRenderer
                     Flags = far.Flags,
                 };
                 System.Runtime.CompilerServices.Unsafe.As<MeshPush, ImpostorRockPush>(ref bytes) = rockPush;
-                drawPipeline = rockPipeline;
+                drawPipeline = rockPipeline!.Value;
             }
             else System.Runtime.CompilerServices.Unsafe.As<MeshPush, ImpostorPush>(ref bytes) = push;
             job.Add(new MeshJob.Draw

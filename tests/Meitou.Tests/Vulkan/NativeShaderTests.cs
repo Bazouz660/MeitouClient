@@ -42,9 +42,14 @@ public class NativeShaderTests
         yield return ("objects depth", BuildingLodShaders.VertexNative(), BuildingLodShaders.DepthNative(), typeof(ObjectPush));
         // The terrain (step O): the patches, the TERRAIN-mode meshes, and their shadow depth.
         yield return ("terrain patch", TerrainShaders.PatchVertexNative(), TerrainShaders.FragmentNative(), typeof(TerrainPush));
+        yield return ("terrain patch no normal", TerrainShaders.PatchVertexNative(), TerrainShaders.FragmentNative(normalMaps: false), typeof(TerrainPush));
+        yield return ("terrain patch cut", TerrainShaders.PatchVertexNative(), TerrainShaders.FragmentNative(interiorCut: true), typeof(TerrainPush));
+        yield return ("terrain patch cut no normal", TerrainShaders.PatchVertexNative(), TerrainShaders.FragmentNative(interiorCut: true, normalMaps: false), typeof(TerrainPush));
         yield return ("terrain patch depth", TerrainShaders.PatchVertexNative(), TerrainShaders.DepthFragmentNative(), typeof(TerrainPush));
         yield return ("terrain patch prepass", TerrainShaders.PatchVertexNative(), TerrainShaders.PrepassFragmentNative(), typeof(TerrainPush));
         yield return ("terrain mesh", TerrainShaders.MeshVertexNative(), TerrainShaders.MeshFragmentNative(), typeof(TerrainPush));
+        yield return ("terrain mesh no normal", TerrainShaders.MeshVertexNative(), TerrainShaders.MeshFragmentNative(normalMaps: false), typeof(TerrainPush));
+        yield return ("terrain mesh solid no normal", TerrainShaders.MeshVertexNative(), TerrainShaders.MeshFragmentSolidNative(normalMaps: false), typeof(TerrainPush));
         yield return ("terrain mesh depth", TerrainShaders.MeshInstancedDepthVertexNative(), TerrainShaders.DepthFragmentNative(), typeof(TerrainPush));
     }
 
@@ -59,7 +64,7 @@ public class NativeShaderTests
             using var frame = new NativeFrame(ctx);
             foreach (var (name, v, f, pushType) in Variants())
             {
-                using var p = frame.Program(v, f, name);
+                var p = frame.Program(v, f, name);
                 foreach (var r in new[] { p.VertexReflection!, p.FragmentReflection! })
                     foreach (var b in r.Blocks)
                     {

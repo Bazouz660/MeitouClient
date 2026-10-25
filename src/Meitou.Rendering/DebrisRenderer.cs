@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using Meitou.Data.Ogre;
 using Meitou.Data.Textures;
 using Meitou.Rendering.Gpu;
+using Meitou.Rendering.Gpu.Shaders;
 
 namespace Meitou.Rendering;
 
@@ -14,9 +15,10 @@ public readonly record struct DebrisPiece(string Mesh, float Scale, Quaternion R
 
 /// <summary>
 /// Loose meshes thrown about by the host (luckyren Mode's bones and limbs, docs/game/luckyren.md): each a static mesh, centred on its bounds, textured with
-/// its first resolved diffuse map and lit as the world's objects (<c>kenshiLight</c> under the game sky, the plain light otherwise, then the haze). Drawn
-/// in the scene pass of the near slice before the characters (colour only, leaving the alpha to them); they cast no shadow. A mesh is loaded the first time
-/// its <see cref="Extent"/> is asked for.
+/// its first resolved diffuse map and lit as the world's objects (<c>kenshiLight</c> under the game sky, the plain light otherwise, then the haze). The same
+/// fragment runs on Vulkan and Metal: every atmosphere/shadow texture and the debris diffuse map come through the bindless table, so Metal's 16 direct
+/// fragment samplers are no longer a constraint. Drawn in the scene pass of the near slice before the characters (colour only, leaving the alpha to them); they
+/// cast no shadow. A mesh is loaded the first time its <see cref="Extent"/> is asked for.
 /// </summary>
 public sealed unsafe class DebrisRenderer : IDisposable
 {
@@ -73,52 +75,114 @@ public sealed unsafe class DebrisRenderer : IDisposable
         }
         """;
 
+    /// <summary>The native push block shared by the vertex and fragment stages (std430, 128 bytes): the model, the simple-sky fallback light, and the
+    /// per-part bindless diffuse index and cut-out state.</summary>
+    const string PushMembers = """
+        mat4 model;
+        vec3 sunColour;
+        vec3 ambientSky;
+        vec3 ambientGround;
+        uint diffuse;
+        int textured;
+        float alphaThreshold;
+        """;
+
+    /// <summary>The uniforms whose native form is not in <see cref="NativeShaders.Map"/>: the model and the simple-sky fallback.</summary>
+    static readonly Dictionary<string, string> NativeOwn = new()
+    {
+        ["uModel"] = "pc.model",
+        ["uTextured"] = "pc.textured",
+        ["uSunColour"] = "pc.sunColour",
+        ["uAmbientSky"] = "pc.ambientSky",
+        ["uAmbientGround"] = "pc.ambientGround",
+    };
+
+    /// <summary>A loaded diffuse texture and its stable bindless entry. The sampler can change with the upscaler's LOD bias; the index
+    /// stays, so a draw recorded earlier in the frame keeps its view (the table's update-after-bind rules).</summary>
+    sealed class DebrisTexture : IDisposable
+    {
+        readonly IGpuContext gpu;
+        readonly SampledImage image;
+        BindlessHandle handle;
+        SampledTexture registered;
+        bool hasEntry;
+
+        public DebrisTexture(IGpuContext gpu, SampledImage image)
+        {
+            this.gpu = gpu;
+            this.image = image;
+        }
+
+        /// <summary>The bindless index for <see cref="SampledImage.Sampled"/> now, registering or updating the entry.</summary>
+        public uint Index
+        {
+            get
+            {
+                var sampled = image.Sampled();
+                if (!hasEntry)
+                {
+                    handle = new BindlessHandle(BindlessKind.Texture2D, gpu.Bindless.Register(BindlessKind.Texture2D, sampled));
+                    hasEntry = true;
+                }
+                else if (!sampled.Equals(registered))
+                {
+                    gpu.Bindless.Update(handle, sampled);
+                }
+                registered = sampled;
+                CachedIndex = handle.Index;
+                return CachedIndex;
+            }
+        }
+
+        /// <summary>The index <see cref="Index"/> last registered; safe to use after the frame's bindless table has been bound.</summary>
+        public uint CachedIndex { get; private set; }
+
+        public void Dispose()
+        {
+            if (hasEntry) gpu.Bindless.Free(handle);
+            image.Dispose();
+        }
+    }
+
     /// <summary>A loaded mesh: one buffer of vertices and one of indices, a draw per part.</summary>
-    sealed class Mesh(DeviceBuffer vertices, DeviceBuffer indices, (uint First, uint Count, int VertexOffset, SampledImage? Diffuse, float AlphaThreshold)[] parts, Vector3 extent)
+    sealed class Mesh(DeviceBuffer vertices, DeviceBuffer indices, (uint First, uint Count, int VertexOffset, DebrisTexture? Diffuse, float AlphaThreshold)[] parts, Vector3 extent)
     {
         public readonly DeviceBuffer Vertices = vertices, Indices = indices;
-        public readonly (uint First, uint Count, int VertexOffset, SampledImage? Diffuse, float AlphaThreshold)[] Parts = parts;
+        public readonly (uint First, uint Count, int VertexOffset, DebrisTexture? Diffuse, float AlphaThreshold)[] Parts = parts;
         public readonly Vector3 Extent = extent;
     }
 
-    readonly GpuContext gpu;
+    readonly IGpuContext gpu;
     readonly MaterialResolver? resolver;
     readonly Func<string, string?> find;
-    readonly LegacyProgram program;
-    readonly NativeSegment segment;
-    readonly VertexArrayBindings vertexSource;
-    readonly BufferBinding[] bindings = new BufferBinding[3];
-    readonly UniformHandle viewProjection, model, eyeU, textured, alphaThreshold, lightDir, sunColour, ambientSky, ambientGround;
-    readonly SamplerSlot diffuse;
+    readonly NativeFrame frame;
+    readonly NativeProg program;
+    readonly VertexLayout layout;
+    readonly GpuBufferBinding[] bindings = new GpuBufferBinding[3];
     readonly Dictionary<string, Mesh?> meshes = new(StringComparer.OrdinalIgnoreCase);
-    readonly Dictionary<string, SampledImage?> textures = new(StringComparer.OrdinalIgnoreCase);
+    readonly Dictionary<string, DebrisTexture?> textures = new(StringComparer.OrdinalIgnoreCase);
 
     /// <param name="resolver">Finds a mesh's textures (null: every mesh untextured).</param>
     /// <param name="find">A file name to its path in the install (the configured resource locations).</param>
-    public DebrisRenderer(GpuContext gpu, MaterialResolver? resolver, Func<string, string?> find)
+    public DebrisRenderer(IGpuContext gpu, MaterialResolver? resolver, Func<string, string?> find)
     {
         this.gpu = gpu;
         this.resolver = resolver;
         this.find = find;
-        program = LegacyProgram.Create(gpu, Vertex, Fragment, "debris");
-        segment = new NativeSegment(gpu, program, Silk.NET.Vulkan.PrimitiveTopology.TriangleList, "debris");
-        viewProjection = program.Uniform("uViewProjection");
-        model = program.Uniform("uModel");
-        eyeU = program.Uniform("uEye");
-        textured = program.Uniform("uTextured");
-        alphaThreshold = program.Uniform("uAlphaThreshold");
-        lightDir = program.Uniform("uLightDir");
-        sunColour = program.Uniform("uSunColour");
-        ambientSky = program.Uniform("uAmbientSky");
-        ambientGround = program.Uniform("uAmbientGround");
-        diffuse = program.Sampler("uDiffuse");
+        frame = new NativeFrame(gpu);
+        string vertex = NativeShaders.Port(Vertex, NativeShaders.Map(NativeOwn), PushMembers);
+        string fragment = NativeShaders.Port(Fragment, NativeShaders.Map(NativeOwn), PushMembers);
+        program = new NativeProg(gpu, frame, vertex, fragment, "debris");
         uint stride = (uint)Rendering.Vertex.Size;
-        vertexSource = new VertexArrayBindings(
+        layout = program.Layout(
         [
-            new LegacyProgram.Attribute(default, Silk.NET.Vulkan.Format.R32G32B32Sfloat, stride, false),
-            new LegacyProgram.Attribute(default, Silk.NET.Vulkan.Format.R32G32B32Sfloat, stride, false),
-            new LegacyProgram.Attribute(default, Silk.NET.Vulkan.Format.R32G32Sfloat, stride, false),
-        ], default);
+            new LegacyProgram.Attribute(default, InternalFormat.Rgb32f, stride, false),
+            new LegacyProgram.Attribute(default, InternalFormat.Rgb32f, stride, false),
+            new LegacyProgram.Attribute(default, InternalFormat.RG32f, stride, false),
+        ]);
+        // The native model's bindless table is what keeps the full atmosphere inside Metal's direct-sampler budget.
+        if (program.P.Info.FragmentReflection is { } reflection)
+            SamplerBudget.Require("debris", reflection.Samplers, NativeShaders.BindlessSet);
     }
 
     /// <summary>
@@ -138,7 +202,7 @@ public sealed unsafe class DebrisRenderer : IDisposable
         var targets = gpu.CurrentTargets();
         var state = gpu.CurrentState() with
         {
-            Cull = Silk.NET.Vulkan.CullModeFlags.BackBit, Front = GlConventions.FrontFace(FrontFaceDirection.Ccw), DepthTest = true, DepthWrite = true,
+            Cull = CullMode.Back, Front = FrontFaceDirection.Ccw, DepthTest = true, DepthWrite = true,
             Blend = BlendState.Off, ColourMask = DrawState.Rgb,
         };
         cmd.SetViewport(targets.Viewport);
@@ -146,30 +210,49 @@ public sealed unsafe class DebrisRenderer : IDisposable
         cmd.SetRaster(state.Cull, state.Front);
         cmd.SetDepth(state.DepthTest, state.DepthWrite, state.Compare);
         cmd.SetDepthBias(false, 0, 0);
-        cmd.BindPipeline(segment.Get(state, targets.Formats, vertexSource));
-        program.ApplyGlobals();
-        var vp = Matrix4x4.CreateTranslation(eye) * sliceViewProjection;
-        program.Set(viewProjection, in vp);
-        program.Set(eyeU, eye);
-        program.Set(lightDir, light.SunDirection);
-        program.Set(sunColour, light.SunColour);
-        program.Set(ambientSky, light.AmbientSky);
-        program.Set(ambientGround, light.AmbientGround);
+        cmd.BindPipeline(gpu.Pipelines.Get(state.Pipeline(program.P, layout, PrimitiveType.Triangles, targets.Formats, "debris")));
+
+        // The bindless table is bound once per segment: register/update the debris textures before that bind. On Metal the
+        // argument buffer must already name them when the encoder takes it.
+        var standIn = gpu.StandIn2D;
+        foreach (var piece in pieces)
+            if (meshes.TryGetValue(piece.Mesh, out var known) && known is not null)
+                foreach (var part in known.Parts) _ = part.Diffuse?.Index;
+
+        // The view block carries the camera-relative projection/eye and the light direction; the frame block carries the atmosphere.
+        var view = new ViewConstants
+        {
+            // The model matrices are camera-relative (as the legacy path set them), so the view projection is too.
+            ViewProjection = Matrix4x4.CreateTranslation(eye) * sliceViewProjection,
+            Eye = eye,
+            LightDir = light.SunDirection,
+            FogColour = light.FogColour,
+            FogDistance = light.FogDistance,
+        };
+        frame.Bind(cmd, program.P, in view);
+
+        var basePush = new DebrisPush
+        {
+            SunColour = light.SunColour,
+            AmbientSky = light.AmbientSky,
+            AmbientGround = light.AmbientGround,
+        };
         foreach (var piece in pieces)
         {
             // Only meshes loaded before (Extent): nothing is uploaded inside the pass.
             if (!meshes.TryGetValue(piece.Mesh, out var mesh) || mesh is null || !FrustumTests.SphereVisible(frustum, piece.Position, mesh.Extent.Length() * piece.Scale * MathF.Max(piece.Stretch, 1))) continue;
             var m = Matrix4x4.CreateScale(piece.Scale, piece.Scale, piece.Scale * piece.Stretch) * Matrix4x4.CreateFromQuaternion(piece.Rotation) * Matrix4x4.CreateTranslation(piece.Position - eye);
-            program.Set(this.model, in m);
-            for (int k = 0; k < 3; k++) bindings[k] = new BufferBinding(mesh.Vertices.Handle, (ulong)(k * 12));
+            for (int k = 0; k < 3; k++) bindings[k] = new GpuBufferBinding(mesh.Vertices.Handle, (ulong)(k * 12));
             cmd.BindVertexBuffers(0, bindings);
-            cmd.BindIndexBuffer(new BufferBinding(mesh.Indices.Handle, 0), Silk.NET.Vulkan.IndexType.Uint32);
+            cmd.BindIndexBuffer(new GpuBufferBinding(mesh.Indices.Handle, 0), IndexKind.U32);
             foreach (var part in mesh.Parts)
             {
-                program.Set(textured, part.Diffuse is null ? 0 : 1);
-                program.Set(alphaThreshold, part.AlphaThreshold);
-                if (part.Diffuse is { } image) program.Bind(diffuse, image.Sampled());
-                program.Flush(cmd);
+                var push = basePush;
+                push.Model = m;
+                push.Diffuse = part.Diffuse is { } diffuse ? diffuse.CachedIndex : standIn;
+                push.Textured = part.Diffuse is null ? 0 : 1;
+                push.AlphaThreshold = part.AlphaThreshold;
+                cmd.PushConstants(program.P, GpuStage.Vertex | GpuStage.Fragment, in push);
                 cmd.DrawIndexed(part.Count, 1, part.First, part.VertexOffset);
             }
         }
@@ -199,7 +282,7 @@ public sealed unsafe class DebrisRenderer : IDisposable
         var centre = built.Center;
         var vertices = new List<Vertex>();
         var indices = new List<uint>();
-        var parts = new List<(uint, uint, int, SampledImage?, float)>();
+        var parts = new List<(uint, uint, int, DebrisTexture?, float)>();
         foreach (var part in built.Parts)
         {
             var material = resolver?.Candidates(materialOf, new OgreSubMesh { MaterialName = part.MaterialName }).FirstOrDefault();
@@ -218,21 +301,21 @@ public sealed unsafe class DebrisRenderer : IDisposable
         return new Mesh(vb, ib, [.. parts], (built.Max - built.Min) / 2);
     }
 
-    SampledImage? Texture(string? name)
+    DebrisTexture? Texture(string? name)
     {
         if (name is null) return null;
         if (textures.TryGetValue(name, out var known)) return known;
-        SampledImage? image = null;
+        DebrisTexture? texture = null;
         try
         {
-            if (find(name) is { } path) image = SampledImage.FromDds(gpu, DdsReader.ReadFile(path), repeat: true, "debris " + name);
+            if (find(name) is { } path) texture = new DebrisTexture(gpu, SampledImage.FromDds(gpu, DdsReader.ReadFile(path), repeat: true, "debris " + name));
         }
         catch (Exception e) when (e is IOException or InvalidDataException or NotSupportedException)
         {
             Console.Error.WriteLine($"debris texture skipped: {name}: {e.Message}");
         }
-        textures[name] = image;
-        return image;
+        textures[name] = texture;
+        return texture;
     }
 
     public void Dispose()
@@ -244,5 +327,19 @@ public sealed unsafe class DebrisRenderer : IDisposable
         }
         foreach (var image in textures.Values) image?.Dispose();
         program.Dispose();
+        frame.Dispose();
     }
+}
+
+/// <summary>The C# side of <see cref="DebrisRenderer.PushMembers"/> (std430 push constants, 128 bytes).</summary>
+[StructLayout(LayoutKind.Explicit, Size = 128)]
+struct DebrisPush
+{
+    [FieldOffset(0)] public Matrix4x4 Model;
+    [FieldOffset(64)] public Vector3 SunColour;
+    [FieldOffset(76)] public Vector3 AmbientSky;
+    [FieldOffset(88)] public Vector3 AmbientGround;
+    [FieldOffset(100)] public uint Diffuse;
+    [FieldOffset(104)] public int Textured;
+    [FieldOffset(108)] public float AlphaThreshold;
 }

@@ -5,6 +5,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Documents;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
@@ -49,6 +50,18 @@ public sealed partial class MainWindow : Window
         ModListBox.AddHandler(PointerReleasedEvent, ModList_PointerReleased, RoutingStrategies.Bubble, handledEventsToo: true);
         ModListBox.AddHandler(PointerCaptureLostEvent, (_, _) => EndDrag(), RoutingStrategies.Direct | RoutingStrategies.Bubble, handledEventsToo: true);
         ArgumentsBox.Text = config.LaunchArguments;
+        RendererRow.IsVisible = OperatingSystem.IsMacOS();
+        RendererMetalItem.IsVisible = MacSupport.MetalAvailable;
+        if (!MacSupport.MetalAvailable && config.Renderer == "metal") config.Renderer = "auto";
+        RendererBox.SelectedIndex = config.Renderer switch { "metal" => 1, "vulkan" => 2, _ => 0 };
+        RendererBox.SelectionChanged += Renderer_Changed;
+        UpdateRendererHint();
+        MetalBudgetRow.IsVisible = OperatingSystem.IsMacOS() && MacSupport.MetalAvailable;
+        MetalBudgetHighItem.IsVisible = MacSupport.CanUseHighBudget;
+        if (!MacSupport.CanUseHighBudget && config.MetalMemoryBudget == 8120) config.MetalMemoryBudget = 5120;
+        MetalBudgetBox.SelectedIndex = config.MetalMemoryBudget switch { 8120 => 2, 6144 => 1, _ => 0 };
+        MetalBudgetBox.SelectionChanged += MetalBudget_Changed;
+        UpdateMetalBudgetHint();
         NightlyBox.IsChecked = config.IncludePrereleases;
         AutoUpdateBox.IsChecked = config.AutoUpdateLauncher;
         AutoUpdateBox.IsEnabled = updater.IsInstalled;
@@ -156,6 +169,76 @@ public sealed partial class MainWindow : Window
         config.LaunchArguments = ArgumentsBox.Text ?? "";
         config.Save();
     }
+
+    void Renderer_Changed(object? sender, SelectionChangedEventArgs e)
+    {
+        if (RendererBox.SelectedItem is ComboBoxItem { Tag: string renderer } && renderer is "auto" or "metal" or "vulkan")
+        {
+            config.Renderer = renderer;
+            config.Save();
+            UpdateRendererHint();
+            Status($"Renderer: {RendererLabel(MacSupport.Resolve(renderer))}; Play starts the game with it.");
+        }
+    }
+
+    void UpdateRendererHint()
+    {
+        bool vulkan = MacSupport.VulkanAvailable;
+        string effective = RendererLabel(MacSupport.Resolve(config.Renderer));
+        RendererHint.Text = config.Renderer switch
+        {
+            "auto" => $"Auto: {effective}" + (vulkan ? " (Vulkan loader found)." : MacSupport.MetalAvailable ? " (no Vulkan loader)." : "."),
+            "metal" => MacSupport.MetalAvailable ? "Metal (native)." : "Metal is not available on this Mac; Auto uses Vulkan.",
+            _ => vulkan ? "Vulkan (MoltenVK loader found)." : "Vulkan loader not found. Use Auto/Metal or install it with Setup.",
+        };
+    }
+
+    void MetalBudget_Changed(object? sender, SelectionChangedEventArgs e)
+    {
+        if (MetalBudgetBox.SelectedItem is ComboBoxItem { Tag: string tag } && int.TryParse(tag, out int mb))
+        {
+            config.MetalMemoryBudget = mb;
+            UpdateMetalBudgetHint();
+            Status($"Metal memory budget: {config.MetalMemoryBudget} MB.");
+        }
+    }
+
+    void UpdateMetalBudgetHint()
+    {
+        MetalBudgetHint.Text = config.MetalMemoryBudget switch
+        {
+            8120 => "High: keeps the most textures, terrain and objects resident. Best on a 16 GB-or-larger Mac with other memory-heavy apps closed.",
+            6144 => "Balanced: more resident detail than Safe, with some headroom for macOS and other apps.",
+            _ => "Safe: the conservative default; the guard shortens ranges and evicts caches sooner.",
+        };
+    }
+
+    static string RendererLabel(string renderer) => renderer == "metal" ? "Metal" : "Vulkan";
+
+    async void VulkanSetup_Click(object? sender, RoutedEventArgs e)
+    {
+        if (MacSupport.VulkanAvailable)
+        {
+            UpdateRendererHint();
+            Status("The Vulkan loader is already installed. Select Vulkan to use it.");
+            return;
+        }
+        if (TopLevel.GetTopLevel(this)?.Clipboard is { } clipboard)
+            await clipboard.SetValueAsync(DataFormat.Text, MacSupport.HomebrewVulkanCommand);
+        await this.Launcher.LaunchUriAsync(new Uri("https://brew.sh"));
+        Status($"Copied '{MacSupport.HomebrewVulkanCommand}' and opened brew.sh; install Homebrew, run it in Terminal, then press Check.");
+    }
+
+    void VulkanCheck_Click(object? sender, RoutedEventArgs e)
+    {
+        UpdateRendererHint();
+        Status(MacSupport.VulkanAvailable
+            ? "Vulkan loader found. Select Vulkan to use it."
+            : "Vulkan loader not found. Install Homebrew and MoltenVK, or use Auto/Metal.");
+    }
+
+    async void KenshiHelp_Click(object? sender, RoutedEventArgs e) =>
+        await this.Launcher.LaunchUriAsync(new Uri("https://github.com/VlcekM/MeitouClient/blob/master/docs/kenshi-on-macos.md"));
 
     async void Nightly_Click(object? sender, RoutedEventArgs e)
     {
@@ -866,6 +949,11 @@ public sealed partial class MainWindow : Window
 #endif
         };
         start.Environment[GameInstall.EnvironmentVariable] = install.Root;
+        // The Metal GPU cull is experimental and has caused GPU progress timeouts; it is not a user setting.
+        start.Environment.Remove("MEITOU_METAL_GPU_CULL");
+        start.Environment.Remove("MEITOU_METAL_GPU_BUDGET_MB");
+        string? renderer = null;
+        bool metalFallback = false;
         // Steamworks reads this file from the working directory when the game is started outside Steam.
         // Keep it only for the lifetime of this launch; never ship it or overwrite a user's file. A file that already holds Kenshi's
         // ID is one an earlier launch left (the launcher closed before the game did), so this launch takes it over and removes it.
@@ -898,18 +986,61 @@ public sealed partial class MainWindow : Window
                 start.Environment["SteamGameId"] = KenshiAppId;
             }
         }
-        if (OperatingSystem.IsMacOS() && !AddMacVulkanEnvironment(start.Environment))
+        if (OperatingSystem.IsMacOS())
         {
-            RemoveSteamAppIds();
-            Status("The Vulkan loader is not installed: run 'brew install molten-vk vulkan-loader' in a terminal, then Play again.");
-            return;
+            // A release advertises its renderers in settings-schema.json; an old release without the key is Vulkan-only.
+            bool metalSupported = PlaySchema().Schema?.Renderers.Contains("metal", StringComparer.OrdinalIgnoreCase) == true;
+            string requested = config.Renderer;
+            if (requested == "metal" && !MacSupport.MetalAvailable)
+            {
+                RemoveSteamAppIds();
+                Status("Metal needs an Apple-silicon Mac; choose Auto or Vulkan.");
+                return;
+            }
+            if (requested == "metal" && !metalSupported)
+            {
+                RemoveSteamAppIds();
+                Status("This Meitou version does not include Metal; choose Vulkan or install a newer version.");
+                return;
+            }
+            if (requested == "auto" && !metalSupported) requested = "vulkan";
+            renderer = MacSupport.Resolve(requested);
+            if (renderer == "metal" && !metalSupported)
+            {
+                RemoveSteamAppIds();
+                Status("This Meitou version does not include Metal; choose Vulkan or install a newer version.");
+                return;
+            }
+            metalFallback = requested == "vulkan" && renderer == "metal";
+            if (renderer == "metal")
+            {
+                start.Environment.Remove("DYLD_LIBRARY_PATH");
+                start.Environment["MEITOU_METAL_GPU_BUDGET_MB"] = config.MetalMemoryBudget.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            }
+            else if (!MacSupport.AddVulkanEnvironment(start.Environment))
+            {
+                RemoveSteamAppIds();
+                Status(MacSupport.MetalAvailable && !metalSupported
+                    ? "This Meitou version has no Metal renderer and no Vulkan loader; install a newer version or MoltenVK."
+                    : MacSupport.MetalAvailable
+                        ? "The Vulkan loader is not installed: use Auto/Metal, or install MoltenVK from Settings > Setup."
+                        : "The Vulkan loader is not installed: run 'brew install molten-vk vulkan-loader' in a terminal, then Play again.");
+                return;
+            }
         }
         foreach (var arg in SplitArguments(config.LaunchArguments)) start.ArgumentList.Add(arg);
+        if (renderer is not null)
+        {
+            // Appended last so the selector wins over a hand-written --renderer in Launch arguments.
+            start.ArgumentList.Add("--renderer");
+            start.ArgumentList.Add(renderer);
+        }
         try
         {
             var game = Process.Start(start);
             running = game;
-            Status($"Meitou {version} started.");
+            string suffix = metalFallback ? " (Vulkan loader missing)" : "";
+            Status(renderer is null ? $"Meitou {version} started." : $"Meitou {version} started with {RendererLabel(renderer)}{suffix}.");
             if (game is null) { RemoveSteamAppIds(); return; }
             // The game's window is all a player sees of it, so a crash (above all one before the window opens) is reported here.
             var log = Path.Combine(Path.GetDirectoryName(exe)!, "log.txt");
@@ -938,14 +1069,6 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    const string KenshiAppId = "233860";
-
-    static void TryDeleteSteamAppId(string path)
-    {
-        try { File.Delete(path); }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
-    }
-
 #if DEBUG
     static string? FindDevelopmentGame()
     {
@@ -962,19 +1085,12 @@ public sealed partial class MainWindow : Window
     }
 #endif
 
-    // dlopen's default path lacks Homebrew's lib dir, and a launcher started from Finder has no DYLD_LIBRARY_PATH, so the game
-    // would not find the Vulkan loader (#20); MoltenVK also needs argument buffers (docs/macos-port.md). Values already set win.
-    // False when no folder on the resulting path holds the loader.
-    static bool AddMacVulkanEnvironment(IDictionary<string, string?> environment)
+    const string KenshiAppId = "233860";
+
+    static void TryDeleteSteamAppId(string path)
     {
-        environment.TryGetValue("DYLD_LIBRARY_PATH", out var existing);
-        var dirs = (existing ?? "").Split(':', StringSplitOptions.RemoveEmptyEntries).ToList();
-        foreach (var dir in new[] { "/opt/homebrew/lib", "/usr/local/lib" })
-            if (!dirs.Contains(dir) && File.Exists(Path.Combine(dir, "libvulkan.1.dylib"))) dirs.Add(dir);
-        if (dirs.Count > 0) environment["DYLD_LIBRARY_PATH"] = string.Join(':', dirs);
-        if (!environment.TryGetValue("MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS", out var mvk) || string.IsNullOrEmpty(mvk))
-            environment["MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS"] = "1";
-        return dirs.Any(d => File.Exists(Path.Combine(d, "libvulkan.1.dylib")));
+        try { File.Delete(path); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
     }
 
     // Space-separated, with double quotes around arguments that contain spaces.

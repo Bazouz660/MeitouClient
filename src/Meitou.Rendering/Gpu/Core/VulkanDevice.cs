@@ -8,6 +8,12 @@ using Silk.NET.Vulkan.Extensions.KHR;
 
 namespace Meitou.Rendering.Gpu.Core;
 
+/// <summary>A buffer the backend made: its buffer, and the allocation behind it (null when the buffer is not the allocator's).</summary>
+public readonly record struct BufferEntry(Silk.NET.Vulkan.Buffer Buffer, BufferAllocation? Allocation);
+
+/// <summary>A texture the backend made: its image, the allocation behind it (null when borrowed) and its description.</summary>
+public readonly record struct TextureEntry(Image Image, ImageAllocation? Allocation, bool Owned, TextureDesc Desc);
+
 /// <summary>
 /// Instance, physical and logical device, queues, memory allocator, frame ring and pipeline cache. Headless unless
 /// <see cref="VulkanDeviceOptions.CreateSurface"/> is given.
@@ -67,6 +73,151 @@ public sealed unsafe class VulkanDevice : IDisposable
     public GpuAllocator Allocator { get; private set; } = null!;
     public PipelineCache PipelineCache { get; private set; }
     public FrameRing Frames { get; private set; } = null!;
+
+    // The handle tables below: added to from any thread (the allocator's callers, the recording jobs' views) under this lock; read without it
+    // (an index never moves). Slots are not reused: the renderers' caches compare views and buffers by index, so a reused slot would pass for
+    // the old resource. A released one is cleared once no frame in flight can read it, so what it held goes to the GC.
+    readonly object tableGate = new();
+
+    /// <summary>The samplers the renderers hold by index (index 0 is the null sampler).</summary>
+    readonly List<Silk.NET.Vulkan.Sampler> samplerTable = [default];
+    public Silk.NET.Vulkan.Sampler SamplerAt(int index) => samplerTable[index];
+    public int AddSampler(Silk.NET.Vulkan.Sampler sampler) { lock (tableGate) { samplerTable.Add(sampler); return samplerTable.Count - 1; } }
+
+    /// <summary>The views the renderers hold by index (index 0 is the null view).</summary>
+    readonly List<Silk.NET.Vulkan.ImageView> viewTable = [default];
+    public Silk.NET.Vulkan.ImageView ViewAt(int index) => viewTable[index];
+    public int AddView(Silk.NET.Vulkan.ImageView view) { lock (tableGate) { viewTable.Add(view); return viewTable.Count - 1; } }
+
+    /// <summary>The sets the renderers bind by index (index 0 is the null set): the persistent ones (per-draw sets are bound by their own handle).</summary>
+    readonly List<Silk.NET.Vulkan.DescriptorSet> setTable = [default];
+    public Silk.NET.Vulkan.DescriptorSet SetAt(int index) => setTable[index];
+    public int AddSet(Silk.NET.Vulkan.DescriptorSet set) { lock (tableGate) { setTable.Add(set); return setTable.Count - 1; } }
+
+    /// <summary>The textures the renderers hold by index (index 0 is the null texture).</summary>
+    readonly List<TextureEntry> textureTable = [default];
+    readonly HashSet<int> releasedTextures = [];
+    public TextureEntry TextureAt(int index) => textureTable[index];
+    public int AddTexture(Image image, ImageAllocation? allocation, bool owned, TextureDesc desc)
+    {
+        lock (tableGate) { textureTable.Add(new TextureEntry(image, allocation, owned, desc)); return textureTable.Count - 1; }
+    }
+
+    /// <summary>Releases a texture: the views cut on it, then the image, and clears their slots (once every frame that could use them has finished).
+    /// A second release of the same texture does nothing.</summary>
+    public void ReleaseTexture(int index)
+    {
+        TextureEntry entry;
+        lock (tableGate)
+        {
+            entry = textureTable[index];
+            // The entry and its views stay until the frames in flight are done (a pass recorded later this frame may still name them).
+            if (entry.Image.Handle == 0 || !releasedTextures.Add(index)) return;
+        }
+        var alloc = entry.Allocation;
+        Frames.DeferDelete(() =>
+        {
+            lock (tableGate)
+            {
+                if (textureViews.Remove(index, out var cut))
+                    foreach (var v in cut)
+                    {
+                        Vk.DestroyImageView(Device, viewTable[v], null);
+                        viewCache.Remove(viewKeys[v]);
+                        viewKeys.Remove(v);
+                        viewTable[v] = default;
+                    }
+                textureTable[index] = default;
+                releasedTextures.Remove(index);
+            }
+            if (alloc is not null) Allocator.Free(alloc);
+        });
+    }
+
+    /// <summary>The views cut on a texture, by the range they cover (the backend's own cache), and per texture the views cut on it (its release
+    /// takes those, not a walk over every view).</summary>
+    readonly Dictionary<(int Texture, int BaseLevel, int Levels, int BaseLayer, int Layers, GpuViewType Type, int Swizzle), int> viewCache = [];
+    readonly Dictionary<int, (int Texture, int BaseLevel, int Levels, int BaseLayer, int Layers, GpuViewType Type, int Swizzle)> viewKeys = [];
+    readonly Dictionary<int, List<int>> textureViews = [];
+
+    /// <summary>A view of a texture's level and layer range: cut on the first ask and kept until the texture is released. Any thread.</summary>
+    public unsafe GpuView View(GpuTexture texture, int baseLevel, int levels, int baseLayer, int layers, GpuViewType type, GpuSwizzle swizzle)
+    {
+        var key = (texture.Index, baseLevel, levels, baseLayer, layers, type, (int)swizzle.R | (int)swizzle.G << 4 | (int)swizzle.B << 8 | (int)swizzle.A << 12);
+        lock (tableGate)
+        {
+            if (viewCache.TryGetValue(key, out var index)) return new GpuView(index);
+            var info = new ImageViewCreateInfo
+            {
+                SType = StructureType.ImageViewCreateInfo, Image = textureTable[texture.Index].Image, ViewType = VkViewType(type), Format = GlConventions.VkFormat(texture.Desc.Format), Components = VkSwizzle(swizzle),
+                SubresourceRange = new ImageSubresourceRange(GlConventions.VkAspect(texture.Desc), (uint)baseLevel, (uint)levels, (uint)baseLayer, (uint)layers),
+            };
+            VulkanException.Check(Vk.CreateImageView(Device, &info, null, out var view), "vkCreateImageView");
+            viewTable.Add(view);
+            index = viewTable.Count - 1;
+            viewCache[key] = index;
+            viewKeys[index] = key;
+            if (!textureViews.TryGetValue(texture.Index, out var list)) textureViews[texture.Index] = list = [];
+            list.Add(index);
+            return new GpuView(index);
+        }
+    }
+
+    /// <summary>The buffers the renderers hold by index (index 0 is the null buffer; a freed one is cleared, <see cref="RemoveBuffer"/>).</summary>
+    readonly List<BufferEntry> bufferTable = [default];
+    public Silk.NET.Vulkan.Buffer BufferAt(int index) => bufferTable[index].Buffer;
+    public BufferEntry BufferEntryAt(int index) => bufferTable[index];
+    public int AddBuffer(BufferEntry buffer) { lock (tableGate) { bufferTable.Add(buffer); return bufferTable.Count - 1; } }
+
+    /// <summary>Clears a destroyed buffer's slot (the allocator's free, which runs once no frame in flight can use it).</summary>
+    internal void RemoveBuffer(int index)
+    {
+        if (index <= 0) return;
+        lock (tableGate)
+        {
+            if (bufferTable[index].Buffer.Handle == 0) return;
+            bufferTable[index] = default;
+        }
+    }
+
+    /// <summary>The buffer's device address (it must have been made with the device address flag).</summary>
+    public ulong Address(GpuBuffer buffer)
+    {
+        var info = new BufferDeviceAddressInfo { SType = StructureType.BufferDeviceAddressInfo, Buffer = BufferAt(buffer.Index) };
+        return Vk.GetBufferDeviceAddress(Device, in info);
+    }
+
+    static ImageViewType VkViewType(GpuViewType t) => t switch
+    {
+        GpuViewType.Texture2DArray => ImageViewType.Type2DArray,
+        GpuViewType.Cube => ImageViewType.TypeCube,
+        _ => ImageViewType.Type2D,
+    };
+
+    static ComponentMapping VkSwizzle(GpuSwizzle s) => new()
+    {
+        R = VkSwizzleComponent(s.R), G = VkSwizzleComponent(s.G), B = VkSwizzleComponent(s.B), A = VkSwizzleComponent(s.A),
+    };
+
+    static ComponentSwizzle VkSwizzleComponent(GpuSwizzleComponent c) => c switch
+    {
+        GpuSwizzleComponent.Identity => ComponentSwizzle.Identity,
+        GpuSwizzleComponent.R => ComponentSwizzle.R,
+        GpuSwizzleComponent.G => ComponentSwizzle.G,
+        GpuSwizzleComponent.B => ComponentSwizzle.B,
+        GpuSwizzleComponent.A => ComponentSwizzle.A,
+        GpuSwizzleComponent.One => ComponentSwizzle.One,
+        _ => ComponentSwizzle.Zero,
+    };
+
+    /// <summary>The native image (Vulkan's): the paths that copy or clear an image themselves need the handle.</summary>
+    public Image NativeImage(GpuTexture texture) => TextureAt(texture.Index).Image;
+
+    /// <summary>The native image's usage flags (Vulkan's): the vendor upscalers ask for them.</summary>
+    public ImageUsageFlags NativeUsage(GpuTexture texture) => TextureAt(texture.Index).Allocation?.Usage ?? 0;
+
+    /// <summary>The native view (Vulkan's): the Streamline (DLSS) path needs the handle itself, and that path is NVIDIA's.</summary>
+    public ImageView NativeView(GpuTexture texture, int level = 0, int layer = 0) => ViewAt(View(texture, level, 1, layer, 1, GpuViewType.Texture2D, default).Index);
     public int FramesInFlight => options.FramesInFlight;
 
     public bool ValidationEnabled { get; private set; }
@@ -1072,10 +1223,10 @@ public sealed unsafe class VulkanDevice : IDisposable
     }
 
     /// <summary>Frees the buffer once every frame that could use it has finished.</summary>
-    public void DeferFree(GpuBuffer b) => Frames.DeferDelete(() => Allocator.Free(b));
+    public void DeferFree(BufferAllocation b) => Frames.DeferDelete(() => Allocator.Free(b));
 
     /// <summary>Frees the image once every frame that could use it has finished.</summary>
-    public void DeferFree(GpuImage i) => Frames.DeferDelete(() => Allocator.Free(i));
+    public void DeferFree(ImageAllocation i) => Frames.DeferDelete(() => Allocator.Free(i));
 
     public void WaitIdle()
     {

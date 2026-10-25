@@ -24,7 +24,7 @@ namespace Meitou.Rendering;
 public sealed unsafe partial class WorldObjectRenderer : IDisposable
 {
     /// <summary>The native GPU API (docs/renderer-native.md 7.1 step 8; since phase 8 stage 1 the only one this renderer uses).</summary>
-    public GpuContext Gpu { get; }
+    public IGpuContext Gpu { get; }
     readonly NativeFrame nativeFrame;
     readonly ObjProg colourProg, solidProg, depthProg;   // the colour, the colour without a discard (EarlyDepth) and the depth (shadow caster) programs, native
     readonly WorldTextureCache textureCache;
@@ -90,7 +90,7 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
 
     /// <param name="landmarks">Collect the world's landmarks (<see cref="LandmarkClass"/>) and keep them apart from the zones, to be drawn to <see cref="LandmarkDistance"/>.
     /// Without it (Faithful) every placement stays in its zone and the object distance rules all.</param>
-    internal WorldObjectRenderer(GpuContext gpu, AssetLocator assets, WorldObjects objects, bool landmarks = false)
+    internal WorldObjectRenderer(IGpuContext gpu, AssetLocator assets, WorldObjects objects, bool landmarks = false)
     {
         Gpu = gpu;
         this.assets = assets;
@@ -1027,8 +1027,8 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
         foreach (var b in active) { b.Offset = total; total += b.Count; }
         if (total > 0)
         {
-            instances = Gpu.Frame.Constants.Allocate((ulong)total * InstanceStride, 16);
-            var target = new Span<byte>(instances.Pointer, total * InstanceStride);
+            instances = Gpu.Frame.AllocateConstants((ulong)(total * InstanceStride), 16);
+            var target = instances.Bytes;
             foreach (var b in active)
                 System.Runtime.InteropServices.MemoryMarshal.AsBytes(b.Data.AsSpan(0, b.Count)).CopyTo(target[(b.Offset * InstanceStride)..]);
         }
@@ -1220,19 +1220,19 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
     /// it, as VkGl feeds a GL program (<see cref="LegacyProgram.VertexLayout"/>: a disabled attribute reads GL's constant through a stride-0 binding).</summary>
     sealed class ObjProg : IDisposable
     {
-        readonly GpuContext ctx;
-        public readonly ShaderProgram P;
+        readonly IGpuContext ctx;
+        public readonly GpuProgram P;
         readonly int[] locations;
         readonly Meitou.Rendering.Gpu.Shaders.ScalarKind[] kinds;
         /// <summary>The program's own input locations (below the instance rows): 0 .. Own − 1.</summary>
         public readonly int Own;
         VertexLayout? last;
 
-        public ObjProg(GpuContext ctx, NativeFrame frame, string vertex, string fragment, string name)
+        public ObjProg(IGpuContext ctx, NativeFrame frame, string vertex, string fragment, string name)
         {
             this.ctx = ctx;
             P = frame.Program(vertex, fragment, name);
-            var inputs = P.VertexReflection!.Inputs;
+            var inputs = P.Info.VertexReflection!.Inputs;
             locations = [.. inputs.SelectMany(i => Enumerable.Range(i.Location, i.Slots))];
             kinds = [.. inputs.SelectMany(i => Enumerable.Repeat(i.Kind, i.Slots))];
             Own = locations.Where(l => l < RowLocation).DefaultIfEmpty(-1).Max() + 1;
@@ -1246,22 +1246,24 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
                 int loc = locations[i];
                 inputs[i] = loc < byLocation.Length && byLocation[loc] is { } a
                     ? new VertexInput((uint)loc, a.Format, a.Stride, a.PerInstance)
-                    : new VertexInput((uint)loc, GlConventions.DummyVertexFormat(kinds[i]), 0, false);
+                    : new VertexInput((uint)loc, GlConventions.DummyVertexFormat(kinds[i]), ctx.ConstantVertexAttributes ? 0u : 16u, false);
             }
             if (last is { } l && inputs.SequenceEqual(l.Inputs)) return l;
             return last = new VertexLayout(inputs.ToArray());
         }
 
         /// <summary>Locations 0 .. <paramref name="count"/> − 1 as one array for one bind: each attribute's buffer, GL's constant where none.</summary>
-        public BufferBinding[] Buffers(ReadOnlySpan<LegacyProgram.Attribute?> byLocation, int count)
+        public GpuBufferBinding[] Buffers(ReadOnlySpan<LegacyProgram.Attribute?> byLocation, int count)
         {
-            var result = new BufferBinding[count];
+            var result = new GpuBufferBinding[count];
             for (int loc = 0; loc < count; loc++)
             {
                 int input = Array.IndexOf(locations, loc);
                 result[loc] = loc < byLocation.Length && byLocation[loc] is { } a
                     ? a.Buffer
-                    : new BufferBinding(ctx.Defaults.DummyVertex.Buffer, GlConventions.DummyVertexOffset(input >= 0 ? kinds[input] : Meitou.Rendering.Gpu.Shaders.ScalarKind.Float));
+                    : ctx.ConstantVertexAttributes
+                    ? new GpuBufferBinding(ctx.DummyVertex, GlConventions.DummyVertexOffset(input >= 0 ? kinds[input] : Meitou.Rendering.Gpu.Shaders.ScalarKind.Float))
+                    : new GpuBufferBinding(ctx.DummyVertexArray(input >= 0 ? kinds[input] : Meitou.Rendering.Gpu.Shaders.ScalarKind.Float), 0);
             }
             return result;
         }
@@ -1269,13 +1271,13 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
         public void Dispose()
         {
             ctx.Pipelines.Forget(P);
-            P.Dispose();
+            ctx.Shaders.Dispose(P);
         }
     }
 
     /// <summary>The pipeline state a segment's draws share (everything of <see cref="GraphicsPipelineDesc"/> but the vertex layout).</summary>
-    readonly record struct SegmentPipeline(ShaderProgram Program, AttachmentFormats Formats, BlendState Blend, Silk.NET.Vulkan.ColorComponentFlags Mask,
-        Silk.NET.Vulkan.PolygonMode Polygon, bool AlphaToCoverage, bool DepthClamp);
+    readonly record struct SegmentPipeline(GpuProgram Program, AttachmentFormats Formats, BlendState Blend, ColorMask Mask,
+        PolygonKind Polygon, bool AlphaToCoverage, bool DepthClamp);
 
     readonly Dictionary<(int Kind, SegmentPipeline State), int> segmentByState = [];
     readonly SegmentPipeline[] lastSegment = new SegmentPipeline[5];
@@ -1283,7 +1285,7 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
     int segmentCount;
 
     /// <summary>A stable number for a segment's pipeline state, so a part compares one int per draw.</summary>
-    int SegmentId(int kind, ShaderProgram p, PassTargets t, DrawState s)
+    int SegmentId(int kind, GpuProgram p, PassTargets t, DrawState s)
     {
         var segment = new SegmentPipeline(p, t.Formats, s.Blend, s.ColourMask, s.Polygon, s.AlphaToCoverage, s.DepthClamp);
         if (segmentIds[kind] != 0 && segment == lastSegment[kind]) return segmentIds[kind];
@@ -1300,24 +1302,24 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
         Span<LegacyProgram.Attribute?> attributes = stackalloc LegacyProgram.Attribute?[16];
         part.Attributes.AsSpan().CopyTo(attributes);
         for (int a = 0; a < 4; a++)
-            attributes[RowLocation + a] = new LegacyProgram.Attribute(default, Silk.NET.Vulkan.Format.R32G32B32A32Sfloat, InstanceStride, true);
+            attributes[RowLocation + a] = new LegacyProgram.Attribute(default, InternalFormat.Rgba32f, InstanceStride, true);
         n.Layout = p.Layout(attributes);
         n.Vertices = p.Buffers(attributes, p.Own);
-        n.Elements = new BufferBinding(part.Indices.Handle, 0, part.Indices.Size);
+        n.Elements = new GpuBufferBinding(part.Indices.Handle, 0, part.Indices.Size);
         n.SegA = n.SegB = 0;
         n.PipeA = n.PipeB = null;
     }
 
-    GraphicsPipeline PipelineFor(ref ObjectNativeMesh n, ObjProg p, int segment, DrawState state, AttachmentFormats formats, string label)
+    GpuPipeline PipelineFor(ref ObjectNativeMesh n, ObjProg p, int segment, DrawState state, AttachmentFormats formats, string label)
     {
-        if (n.SegB == segment) return n.PipeB!;
-        var pipeline = Gpu.Pipelines.Get(state.Pipeline(p.P, n.Layout!, Silk.NET.Vulkan.PrimitiveTopology.TriangleList, formats, label));
+        if (n.SegB == segment) return n.PipeB!.Value;
+        var pipeline = Gpu.Pipelines.Get(state.Pipeline(p.P, n.Layout!, PrimitiveType.Triangles, formats, label));
         (n.SegB, n.PipeB) = (n.SegA, n.PipeA);
         (n.SegA, n.PipeA) = (segment, pipeline);
         return pipeline;
     }
 
-    /// <summary>The segment's LOD bias (the upscaler's, <see cref="GpuContext.LodBias"/>) and GL's stand-in for a texture not resident.</summary>
+    /// <summary>The segment's LOD bias (the upscaler's, <see cref="IGpuContext.LodBias"/>) and GL's stand-in for a texture not resident.</summary>
     float textureBias;
     uint textureStandIn;
 
@@ -1434,15 +1436,15 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
         var targets = Gpu.CurrentTargets();
         // The objects are drawn double-sided (the GL version turned the cull face off); the wireframe as lines pulled forward
         // (GL's PolygonMode LINE with POLYGON_OFFSET_LINE and PolygonOffset(-1, -1)).
-        var state = Gpu.CurrentState() with { Cull = Silk.NET.Vulkan.CullModeFlags.None };
-        if (wire) state = state with { Polygon = Silk.NET.Vulkan.PolygonMode.Line, BiasEnable = true, BiasConstant = -1, BiasSlope = -1 };
+        var state = Gpu.CurrentState() with { Cull = CullMode.None };
+        if (wire) state = state with { Polygon = PolygonKind.Line, BiasEnable = true, BiasConstant = -1, BiasSlope = -1 };
         int segment = SegmentId(kind, prog.P, targets, state);
         // The fully visible draws of a colour pass use the program without a discard (own segment, own pipelines per part).
         int solidSegment = !depthPass && !wire ? SegmentId(4, solidProg.P, targets, state) : 0;
         var job = drawJobs.Rent();
-        (job.Owner, job.Targets, job.State, job.Layout, job.Count) = (this, targets, state, prog.P.Layout, 0);
+        (job.Owner, job.Targets, job.State, job.Program, job.Count) = (this, targets, state, prog.P, 0);
         job.Frame = nativeFrame.Prepare(in view);
-        for (int a = 0; a < 4; a++) job.Rows[a] = new BufferBinding(instances.Handle, instances.Offset + (ulong)(16 * a));
+        for (int a = 0; a < 4; a++) job.Rows[a] = new GpuBufferBinding(instances.Handle, instances.Offset + (ulong)(16 * a));
         NewTextureSegment();
         if (job.Draws.Length < drawCount) job.Draws = new DrawJob.Draw[Math.Max(drawCount, job.Draws.Length * 2)];
         var list = draws;
@@ -1463,10 +1465,10 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
             Current(ref n, part, drawProg);
             job.Draws[i] = new DrawJob.Draw
             {
-                Pipeline = n.SegA == drawSegment ? n.PipeA! : PipelineFor(ref n, drawProg, drawSegment, state, targets.Formats, label),
-                Vertices = n.Vertices, Elements = new BufferBinding(n.Elements.Buffer, n.Elements.Offset + (ulong)part.Offset[d.Level] * 4),
+                Pipeline = n.SegA == drawSegment ? n.PipeA!.Value : PipelineFor(ref n, drawProg, drawSegment, state, targets.Formats, label),
+                Vertices = n.Vertices, Elements = new GpuBufferBinding(n.Elements.Buffer, n.Elements.Offset + (ulong)part.Offset[d.Level] * 4),
                 Push = pc, IndexCount = (uint)part.Count[d.Level], Instances = d.Instances, FirstInstance = d.FirstInstance,
-                Cull = d.BackCull ? Silk.NET.Vulkan.CullModeFlags.BackBit : state.Cull,
+                Cull = d.BackCull ? CullMode.Back : state.Cull,
             };
         }
         job.Count = drawCount;
@@ -1480,35 +1482,34 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
     {
         public struct Draw
         {
-            public GraphicsPipeline Pipeline;
-            public BufferBinding[] Vertices;
-            public BufferBinding Elements;
+            public GpuPipeline Pipeline;
+            public GpuBufferBinding[] Vertices;
+            public GpuBufferBinding Elements;
             public ObjectPush Push;
             public uint IndexCount, Instances, FirstInstance;
-            public Silk.NET.Vulkan.CullModeFlags Cull;
+            public CullMode Cull;
         }
 
         public WorldObjectRenderer Owner = null!;
         public PassTargets Targets = null!;
         public DrawState State = null!;
-        public Silk.NET.Vulkan.PipelineLayout Layout;
+        public GpuProgram Program = default;
         public FrameBinding Frame;
-        public readonly BufferBinding[] Rows = new BufferBinding[4];
+        public readonly GpuBufferBinding[] Rows = new GpuBufferBinding[4];
         public Draw[] Draws = new Draw[64];
         public int Count;
         public override int Size => Count;
 
-        public override void Record(CommandList cmd)
+        public override void Record(IGpuCommandList cmd)
         {
-            var (targets, state, layout) = (Targets, State, Layout);
+            var (targets, state) = (Targets, State);
             cmd.SetViewport(targets.Viewport);
             cmd.SetScissor(targets.Scissor);
             cmd.SetRaster(state.Cull, state.Front);
             cmd.SetDepth(state.DepthTest, state.DepthWrite, state.Compare);
             cmd.SetDepthBias(state.BiasEnable, state.BiasConstant, state.BiasSlope);
-            NativeFrame.Record(cmd, layout, in Frame);
+            NativeFrame.Record(cmd, Program, in Frame);
             cmd.BindVertexBuffers(RowLocation, Rows);
-            var stages = Silk.NET.Vulkan.ShaderStageFlags.VertexBit | Silk.NET.Vulkan.ShaderStageFlags.FragmentBit;
             ObjectPush last = default;
             bool pushed = false;
             var cull = state.Cull;
@@ -1518,10 +1519,10 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
                 cmd.BindPipeline(d.Pipeline);
                 if (d.Cull != cull) cmd.SetRaster(cull = d.Cull, state.Front);
                 cmd.BindVertexBuffers(0, d.Vertices);
-                cmd.BindIndexBuffer(d.Elements, Silk.NET.Vulkan.IndexType.Uint32);
+                cmd.BindIndexBuffer(d.Elements, IndexKind.U32);
                 if (!pushed || !System.Runtime.InteropServices.MemoryMarshal.AsBytes(new ReadOnlySpan<ObjectPush>(in d.Push)).SequenceEqual(System.Runtime.InteropServices.MemoryMarshal.AsBytes(new ReadOnlySpan<ObjectPush>(in last))))
                 {
-                    cmd.PushConstants(layout, stages, in d.Push);
+                    cmd.PushConstants(Program, GpuStage.Vertex | GpuStage.Fragment, in d.Push);
                     last = d.Push;
                     pushed = true;
                 }

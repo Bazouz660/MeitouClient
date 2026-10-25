@@ -48,8 +48,8 @@ public class NativeHostTests
         void main() { colour = vec4(1.0, 1.0, 0.0, 1.0); }
         """;
 
-    static Texture Target(GpuContext ctx) =>
-        Texture.Create(ctx, new TextureDesc(Format.R8G8B8A8Unorm, W, H, Use: TextureUse.ColourTarget | TextureUse.TransferSrc, Name: "native host test"));
+    static GpuTexture Target(GpuContext ctx) =>
+        ctx.CreateTexture(new TextureDesc(InternalFormat.Rgba8, W, H, Use: TextureUse.ColourTarget | TextureUse.TransferSrc, Name: "native host test"));
 
     static (byte, byte, byte, byte) At(byte[] p, int x, int y)
     {
@@ -57,7 +57,7 @@ public class NativeHostTests
         return (p[i], p[i + 1], p[i + 2], p[i + 3]);
     }
 
-    static Rect2D Quarter(int q) => new(new Offset2D(q * W / 4, 0), new Extent2D(W / 4, H));
+    static PixelRect Quarter(int q) => new(q * W / 4, 0, W / 4, H);
 
     [Fact]
     [Slow]
@@ -78,12 +78,12 @@ public class NativeHostTests
             // The host: its own segment and rendering instance (cleared green by the load op), announced with its targets and state.
             var cmd = ctx.BeginNative("host");
             var targets = PassTargets.Of(target, null);
-            cmd.BeginRendering(targets.Rendering with { Colour = targets.Colour with { Load = AttachmentLoadOp.Clear, Clear = new ClearValue(new ClearColorValue(0, 1, 0, 1)) } });
-            ctx.BeginHostPass(cmd, targets, DrawState.For(targets.Formats, d!.DepthClamp));
+            cmd.BeginRendering(targets.Rendering with { Colour = targets.Colour with { Load = LoadOp.Clear, Clear = new ClearColour(0, 1, 0, 1) } });
+            ctx.BeginHostPass((CommandList)cmd, targets, DrawState.For(targets.Formats, d!.DepthClamp));
             Assert.Throws<InvalidOperationException>(() => ctx.BeginNative("nested"));
-            Assert.Throws<InvalidOperationException>(() => ctx.BeginHostPass(cmd, targets, DrawState.For(targets.Formats, d.DepthClamp)));
+            Assert.Throws<InvalidOperationException>(() => ctx.BeginHostPass((CommandList)cmd, targets, DrawState.For(targets.Formats, d.DepthClamp)));
             // A clear of the host's targets in its place: the first quarter blue.
-            ctx.Clear(cmd, true, new ClearColorValue(0, 0, 1, 1), false, 1, Quarter(0));
+            ctx.Clear(cmd, true, new ClearColour(0, 0, 1, 1), false, 1, Quarter(0));
 
             // Guest A: the host's list, with the scissor of its quarter.
             ctx.SetPassViewport(targets.Viewport, Quarter(1));
@@ -94,7 +94,7 @@ public class NativeHostTests
             Assert.Equal(Quarter(1), ta.Scissor);
             Assert.Equal(targets.Formats, ta.Formats);
             var state = ctx.CurrentState();
-            a.BindPipeline(ctx.Pipelines.Get(state.Pipeline(red.Program, red.VertexLayout([]), PrimitiveTopology.TriangleList, ta.Formats, "host red")));
+            a.BindPipeline(ctx.Pipelines.Get(state.Pipeline(red.Program, red.VertexLayout([]), PrimitiveType.Triangles, ta.Formats, "host red")));
             state.Record(a, ta);
             red.Set(colour, 1f, 0f, 0f, 1f);
             red.Flush(a);
@@ -106,7 +106,7 @@ public class NativeHostTests
             ctx.SetPassViewport(targets.Viewport, Quarter(3));
             var b = ctx.BeginGuest("guest b");
             var tb = ctx.CurrentTargets();
-            b.BindPipeline(ctx.Pipelines.Get(state.Pipeline(yellow.Program, yellow.VertexLayout([]), PrimitiveTopology.TriangleList, tb.Formats, "host yellow")));
+            b.BindPipeline(ctx.Pipelines.Get(state.Pipeline(yellow.Program, yellow.VertexLayout([]), PrimitiveType.Triangles, tb.Formats, "host yellow")));
             state.Record(b, tb);
             yellow.Flush(b);
             b.Draw(3);

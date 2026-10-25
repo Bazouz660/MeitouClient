@@ -138,18 +138,20 @@ static class ShadowShaders
         """;
 
     /// <summary>
-    /// What every caster's fragment stage ends with: the game's caster bias on the 0..1 depth the cascade matrices produce (the GL clip z
-    /// of −1..1 holds it unchanged, so it is window depth · 2 − 1), flattened onto 0 when the caster lies between the box and the sun.
+    /// What every caster's fragment stage ends with: the game's caster bias on the 0..1 depth the cascade matrices produce, flattened
+    /// onto 0 when the caster lies between the box and the sun. The viewport's clip-depth mapping differs by backend: Vulkan's
+    /// depth clip control uses −1..1 (so window depth · 2 − 1 recovers the matrix's depth), Metal's NDC uses 0..1 (window depth is
+    /// already it). <c>uShadowBias.w</c> carries 2 or 1 for the two cases.
     /// </summary>
     const string CasterDepth = $$"""
 
         layout(std140) uniform {{CasterBlock}}
         {
-            vec4 uShadowBias;   // x fixed, y slope, z max slope (depth units)
+            vec4 uShadowBias;   // x fixed, y slope, z max slope (depth units); w: the clip-depth scale (2: −1..1, 1: 0..1)
         };
         void shadowWriteDepth()
         {
-            float z = gl_FragCoord.z * 2.0 - 1.0;
+            float z = gl_FragCoord.z * uShadowBias.w + (1.0 - uShadowBias.w);
             float g = length(vec2(dFdx(z), dFdy(z)));
             gl_FragDepth = clamp(z + min(uShadowBias.z, uShadowBias.y * g) + uShadowBias.x, 0.0, 1.0);
         }

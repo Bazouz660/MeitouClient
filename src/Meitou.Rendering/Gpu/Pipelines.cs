@@ -5,7 +5,7 @@ namespace Meitou.Rendering.Gpu;
 
 /// <summary>One vertex input: the shader location, its format, the stride of its buffer (0 = a constant, GL's disabled attribute) and the
 /// input rate. Each location has its own binding (binding number = location), as in VkGl.</summary>
-public readonly record struct VertexInput(uint Location, Format Format, uint Stride, bool PerInstance);
+public readonly record struct VertexInput(uint Location, InternalFormat Format, uint Stride, bool PerInstance);
 
 /// <summary>The vertex inputs of a pipeline, by location. Compared by value; hashed once.</summary>
 public sealed class VertexLayout : IEquatable<VertexLayout>
@@ -32,12 +32,12 @@ public sealed class VertexLayout : IEquatable<VertexLayout>
 /// <summary>A pass's attachment formats: one colour attachment (Undefined = none), depth (Undefined = none), samples; <c>ShadingRate</c>: the rendering has a fragment
 /// shading rate attachment (the pipeline is made for it); <paramref name="Extra"/>: a second colour attachment (location 1; the GI resolve's surface target,
 /// docs/render-gi.md), written only by programs whose fragment shader declares that output.</summary>
-public readonly record struct AttachmentFormats(Format Colour, Format Depth, int Samples = 1, bool ShadingRate = false, Format Extra = Format.Undefined);
+public readonly record struct AttachmentFormats(InternalFormat Colour, InternalFormat Depth, int Samples = 1, bool ShadingRate = false, InternalFormat Extra = InternalFormat.None);
 
 /// <summary>GL's blend: one factor pair for colour and alpha, add (or <paramref name="ColourOp"/> / <paramref name="AlphaOp"/>, e.g. min and max); <paramref name="AlphaSrc"/> /
 /// <paramref name="AlphaDst"/>: alpha's own pair (GL's separate blend).</summary>
-public readonly record struct BlendState(bool Enable, BlendFactor Src = BlendFactor.One, BlendFactor Dst = BlendFactor.Zero, BlendOp ColourOp = BlendOp.Add, BlendOp AlphaOp = BlendOp.Add,
-    BlendFactor? AlphaSrc = null, BlendFactor? AlphaDst = null)
+public readonly record struct BlendState(bool Enable, BlendingFactor Src = BlendingFactor.One, BlendingFactor Dst = BlendingFactor.Zero, BlendOperation ColourOp = BlendOperation.Add, BlendOperation AlphaOp = BlendOperation.Add,
+    BlendingFactor? AlphaSrc = null, BlendingFactor? AlphaDst = null)
 {
     public static readonly BlendState Off = new(false);
 }
@@ -45,34 +45,20 @@ public readonly record struct BlendState(bool Enable, BlendFactor Src = BlendFac
 /// <summary>Everything a graphics pipeline is made from (docs/renderer-native.md 2.5); built at load, hashed once. Dynamic state (viewport,
 /// scissor, cull mode, front face, depth test/write/compare, depth bias enable and values) is set while recording.</summary>
 public readonly record struct GraphicsPipelineDesc(
-    ShaderProgram Program, VertexLayout Vertex, PrimitiveTopology Topology, AttachmentFormats Targets,
-    BlendState Blend, ColorComponentFlags ColourMask, Silk.NET.Vulkan.PolygonMode Polygon, bool AlphaToCoverage, bool DepthClamp, string Name = "")
+    GpuProgram Program, VertexLayout Vertex, PrimitiveType Topology, AttachmentFormats Targets,
+    BlendState Blend, ColorMask ColourMask, PolygonKind Polygon, bool AlphaToCoverage, bool DepthClamp, string Name = "")
 {
     // The name is for labels and logs: two descs that differ only by name are the same pipeline.
-    public bool Equals(GraphicsPipelineDesc other) => ReferenceEquals(Program, other.Program) && Vertex.Equals(other.Vertex) && Topology == other.Topology &&
+    public bool Equals(GraphicsPipelineDesc other) => Program == other.Program && Vertex.Equals(other.Vertex) && Topology == other.Topology &&
         Targets == other.Targets && Blend == other.Blend && ColourMask == other.ColourMask && Polygon == other.Polygon &&
         AlphaToCoverage == other.AlphaToCoverage && DepthClamp == other.DepthClamp;
     public override int GetHashCode() => HashCode.Combine(Program, Vertex, Topology, Targets, Blend, ColourMask, Polygon, HashCode.Combine(AlphaToCoverage, DepthClamp));
 }
 
-public sealed class GraphicsPipeline(Pipeline handle, GraphicsPipelineDesc desc)
+public readonly record struct ComputePipelineDesc(GpuProgram Program, string Name = "")
 {
-    public Pipeline Handle { get; } = handle;
-    public GraphicsPipelineDesc Desc { get; } = desc;
-    public PipelineLayout Layout => Desc.Program.Layout;
-}
-
-public readonly record struct ComputePipelineDesc(ShaderProgram Program, string Name = "")
-{
-    public bool Equals(ComputePipelineDesc other) => ReferenceEquals(Program, other.Program);
+    public bool Equals(ComputePipelineDesc other) => Program == other.Program;
     public override int GetHashCode() => Program.GetHashCode();
-}
-
-public sealed class ComputePipeline(Pipeline handle, ComputePipelineDesc desc)
-{
-    public Pipeline Handle { get; } = handle;
-    public ComputePipelineDesc Desc { get; } = desc;
-    public PipelineLayout Layout => Desc.Program.Layout;
 }
 
 /// <summary>
@@ -89,8 +75,8 @@ public static unsafe class PipelineFactory
     ];
 
     public static Pipeline CreateGraphics(VulkanDevice device, ShaderModule vertex, ShaderModule fragment, PipelineLayout layout,
-        ReadOnlySpan<VertexInput> inputs, PrimitiveTopology topology, AttachmentFormats targets, BlendState blendState,
-        ColorComponentFlags colourMask, bool polygonLine, bool alphaToCoverage, bool depthClamp, ColorComponentFlags extraMask = 0, ShaderModule tessControl = default, ShaderModule tessEvaluation = default)
+        ReadOnlySpan<VertexInput> inputs, PrimitiveType topology, AttachmentFormats targets, BlendState blendState,
+        ColorMask colourMask, PolygonKind polygon, bool alphaToCoverage, bool depthClamp, ColorMask extraMask = 0, ShaderModule tessControl = default, ShaderModule tessEvaluation = default)
     {
         var entry = "main"u8;
         int n = inputs.Length;
@@ -100,7 +86,7 @@ public static unsafe class PipelineFactory
         {
             var input = inputs[i];
             vbind[i] = new VertexInputBindingDescription(input.Location, input.Stride, input.PerInstance ? VertexInputRate.Instance : VertexInputRate.Vertex);
-            vattr[i] = new VertexInputAttributeDescription(input.Location, input.Location, input.Format, 0);
+            vattr[i] = new VertexInputAttributeDescription(input.Location, input.Location, GlConventions.VkFormat(input.Format), 0);
         }
         var vertexInput = new PipelineVertexInputStateCreateInfo
         {
@@ -108,7 +94,7 @@ public static unsafe class PipelineFactory
             VertexBindingDescriptionCount = (uint)n, PVertexBindingDescriptions = vbind,
             VertexAttributeDescriptionCount = (uint)n, PVertexAttributeDescriptions = vattr,
         };
-        var assembly = new PipelineInputAssemblyStateCreateInfo { SType = StructureType.PipelineInputAssemblyStateCreateInfo, Topology = topology };
+        var assembly = new PipelineInputAssemblyStateCreateInfo { SType = StructureType.PipelineInputAssemblyStateCreateInfo, Topology = GlConventions.Topology(topology) };
         var clip = new PipelineViewportDepthClipControlCreateInfoEXT { SType = StructureType.PipelineViewportDepthClipControlCreateInfoExt, NegativeOneToOne = true };
         var viewportState = new PipelineViewportStateCreateInfo
         {
@@ -119,7 +105,7 @@ public static unsafe class PipelineFactory
         {
             SType = StructureType.PipelineRasterizationStateCreateInfo,
             DepthClampEnable = depthClamp,
-            PolygonMode = polygonLine && device.FillModeNonSolid ? Silk.NET.Vulkan.PolygonMode.Line : Silk.NET.Vulkan.PolygonMode.Fill,
+            PolygonMode = polygon == PolygonKind.Line && device.FillModeNonSolid ? Silk.NET.Vulkan.PolygonMode.Line : GlConventions.VkPolygon(polygon),
             LineWidth = 1,
         };
         var multisample = new PipelineMultisampleStateCreateInfo
@@ -133,14 +119,14 @@ public static unsafe class PipelineFactory
         attachments[0] = new PipelineColorBlendAttachmentState
         {
             BlendEnable = blendState.Enable,
-            SrcColorBlendFactor = blendState.Src, DstColorBlendFactor = blendState.Dst, ColorBlendOp = blendState.ColourOp,
-            SrcAlphaBlendFactor = blendState.AlphaSrc ?? blendState.Src, DstAlphaBlendFactor = blendState.AlphaDst ?? blendState.Dst, AlphaBlendOp = blendState.AlphaOp,
-            ColorWriteMask = colourMask,
+            SrcColorBlendFactor = GlConventions.BlendFactor(blendState.Src), DstColorBlendFactor = GlConventions.BlendFactor(blendState.Dst), ColorBlendOp = GlConventions.VkBlendOp(blendState.ColourOp),
+            SrcAlphaBlendFactor = GlConventions.BlendFactor(blendState.AlphaSrc ?? blendState.Src), DstAlphaBlendFactor = GlConventions.BlendFactor(blendState.AlphaDst ?? blendState.Dst), AlphaBlendOp = GlConventions.VkBlendOp(blendState.AlphaOp),
+            ColorWriteMask = GlConventions.VkColorMask(colourMask),
         };
         // The extra attachment (location 1) is never blended: written by the programs that declare it (extraMask), else left as it is.
-        attachments[1] = new PipelineColorBlendAttachmentState { BlendEnable = false, ColorWriteMask = extraMask };
-        uint colourCount = targets.Colour == Format.Undefined ? 0u : targets.Extra == Format.Undefined ? 1u : 2u;
-        if (colourCount == 2 && blendState.Enable && !device.IndependentBlend) attachments[1] = attachments[0] with { ColorWriteMask = extraMask };
+        attachments[1] = new PipelineColorBlendAttachmentState { BlendEnable = false, ColorWriteMask = GlConventions.VkColorMask(extraMask) };
+        uint colourCount = targets.Colour == InternalFormat.None ? 0u : targets.Extra == InternalFormat.None ? 1u : 2u;
+        if (colourCount == 2 && blendState.Enable && !device.IndependentBlend) attachments[1] = attachments[0] with { ColorWriteMask = GlConventions.VkColorMask(extraMask) };
         var blend = new PipelineColorBlendStateCreateInfo
         {
             SType = StructureType.PipelineColorBlendStateCreateInfo,
@@ -149,13 +135,13 @@ public static unsafe class PipelineFactory
         fixed (DynamicState* dynamics = Dynamic)
         {
             var dynamic = new PipelineDynamicStateCreateInfo { SType = StructureType.PipelineDynamicStateCreateInfo, DynamicStateCount = (uint)Dynamic.Length, PDynamicStates = dynamics };
-            var colourFormats = stackalloc Format[2] { targets.Colour, targets.Extra };
-            bool stencil = targets.Depth is Format.D24UnormS8Uint or Format.D32SfloatS8Uint;
+            var colourFormats = stackalloc Format[2] { GlConventions.VkFormatOrUndefined(targets.Colour), GlConventions.VkFormatOrUndefined(targets.Extra) };
+            bool stencil = targets.Depth is InternalFormat.Depth24Stencil8 or InternalFormat.Depth32fStencil8;
             var rendering = new PipelineRenderingCreateInfo
             {
                 SType = StructureType.PipelineRenderingCreateInfo,
                 ColorAttachmentCount = colourCount, PColorAttachmentFormats = colourFormats,
-                DepthAttachmentFormat = targets.Depth, StencilAttachmentFormat = stencil ? targets.Depth : Format.Undefined,
+                DepthAttachmentFormat = GlConventions.VkFormatOrUndefined(targets.Depth), StencilAttachmentFormat = stencil ? GlConventions.VkFormat(targets.Depth) : Format.Undefined,
             };
             // A rendering with a shading rate attachment (Formats.ShadingRate): the pipeline keeps its own rate (1x1) and takes the attachment's.
             var rate = new PipelineFragmentShadingRateStateCreateInfoKHR { SType = StructureType.PipelineFragmentShadingRateStateCreateInfoKhr, FragmentSize = new Extent2D(1, 1) };
@@ -214,14 +200,19 @@ public static unsafe class PipelineFactory
 /// thread-safe); <see cref="Get"/> while drawing returns a prepared one, and a miss creates it synchronously and counts it in
 /// <see cref="LatePipelines"/>, which should stay 0 after the warm-up frames.
 /// </summary>
-public sealed unsafe class PipelineLibrary : IDisposable
+public sealed unsafe class PipelineLibrary : IGpuPipelines, IDisposable
 {
     readonly VulkanDevice device;
-    readonly Dictionary<GraphicsPipelineDesc, GraphicsPipeline> graphics = [];
-    readonly Dictionary<ComputePipelineDesc, ComputePipeline> compute = [];
+    readonly ShaderLibrary shaders;
+    readonly Dictionary<GraphicsPipelineDesc, Pipeline> graphics = [];
+    readonly Dictionary<ComputePipelineDesc, Pipeline> compute = [];
     readonly object gate = new();
 
-    public PipelineLibrary(VulkanDevice device) => this.device = device;
+    public PipelineLibrary(VulkanDevice device, ShaderLibrary shaders)
+    {
+        this.device = device;
+        this.shaders = shaders;
+    }
 
     /// <summary>Pipelines created by <see cref="Get"/> because nothing prepared them.</summary>
     public int LatePipelines { get; private set; }
@@ -234,73 +225,90 @@ public sealed unsafe class PipelineLibrary : IDisposable
         {
             var p = Create(d);
             lock (gate)
-                if (!graphics.TryAdd(d, p)) device.Vk.DestroyPipeline(device.Device, p.Handle, null);
+                if (!graphics.TryAdd(d, p)) device.Vk.DestroyPipeline(device.Device, p, null);
         }));
     }
 
-    readonly Dictionary<GraphicsPipelineDesc, GraphicsPipeline> variants = [];
+    readonly Dictionary<GraphicsPipelineDesc, Pipeline> variants = [];
 
     /// <summary>
     /// The pipeline of <paramref name="desc"/> with <paramref name="fragment"/> in place of its program's fragment module (the bench's counting
     /// variants, <c>--bench-tris</c>): kept apart from the normal pipelines, which nothing here touches. Safe from the recording threads.
     /// </summary>
-    public GraphicsPipeline GetWithFragment(in GraphicsPipelineDesc desc, ShaderModule fragment)
+    public GpuPipeline GetWithFragment(in GraphicsPipelineDesc desc, ShaderModule fragment)
     {
         lock (gate)
-            if (variants.TryGetValue(desc, out var v)) return v;
+            if (variants.TryGetValue(desc, out var v)) return new GpuPipeline(desc, v.Handle);
         var made = Create(desc, fragment);
         lock (gate)
         {
-            if (variants.TryGetValue(desc, out var raced)) { device.Vk.DestroyPipeline(device.Device, made.Handle, null); return raced; }
+            if (variants.TryGetValue(desc, out var raced)) { device.Vk.DestroyPipeline(device.Device, made, null); return new GpuPipeline(desc, raced.Handle); }
             variants[desc] = made;
         }
-        return made;
+        return new GpuPipeline(desc, made.Handle);
     }
 
-    public GraphicsPipeline Get(in GraphicsPipelineDesc desc)
+    public GpuPipeline Get(in GraphicsPipelineDesc desc)
     {
         lock (gate)
-            if (graphics.TryGetValue(desc, out var p)) return p;
+            if (graphics.TryGetValue(desc, out var p)) return new GpuPipeline(desc, p.Handle);
         var created = Create(desc);
         lock (gate)
         {
+            // Another thread may have made the same one meanwhile: keep the first, so every holder binds the same pipeline.
+            if (graphics.TryGetValue(desc, out var raced)) { device.Vk.DestroyPipeline(device.Device, created, null); return new GpuPipeline(desc, raced.Handle); }
             LatePipelines++;
             graphics[desc] = created;
         }
-        return created;
+        return new GpuPipeline(desc, created.Handle);
     }
 
-    public ComputePipeline Get(in ComputePipelineDesc desc)
+    public GpuComputePipeline Get(in ComputePipelineDesc desc)
     {
         lock (gate)
         {
-            if (compute.TryGetValue(desc, out var p)) return p;
-            p = new ComputePipeline(PipelineFactory.CreateCompute(device, desc.Program.ComputeModule, desc.Program.Layout), desc);
+            if (compute.TryGetValue(desc, out var p)) return new GpuComputePipeline(desc, p.Handle);
+            { var vp = shaders.Backend(desc.Program); p = PipelineFactory.CreateCompute(device, vp.ComputeModule, vp.Layout); }
             compute[desc] = p;
-            return p;
+            return new GpuComputePipeline(desc, p.Handle);
         }
     }
 
-    GraphicsPipeline Create(in GraphicsPipelineDesc d, ShaderModule fragment = default)
+    /// <summary>The backend's identity of a handle (the command list's Vulkan-only internals resolve through this): the one it carries, else
+    /// looked up by its description (the recording threads call this, so under the lock).</summary>
+    internal Pipeline Handle(in GpuPipeline pipeline)
     {
-        var p = d.Program;
+        if (pipeline.Native != 0) return new Pipeline(pipeline.Native);
+        lock (gate) return graphics.TryGetValue(pipeline.Desc, out var p) ? p : variants.TryGetValue(pipeline.Desc, out var v) ? v : default;
+    }
+
+    /// <summary>The backend's identity of a compute handle.</summary>
+    internal Pipeline Handle(in GpuComputePipeline pipeline)
+    {
+        if (pipeline.Native != 0) return new Pipeline(pipeline.Native);
+        lock (gate) return compute.TryGetValue(pipeline.Desc, out var p) ? p : default;
+    }
+
+    Pipeline Create(in GraphicsPipelineDesc d, ShaderModule fragment = default)
+    {
+        var p = shaders.Backend(d.Program);
         if (p.VertexModule.Handle == 0 || p.FragmentModule.Handle == 0) throw new ArgumentException($"{p.Name}: not a graphics program");
         var handle = PipelineFactory.CreateGraphics(device, p.VertexModule, fragment.Handle != 0 ? fragment : p.FragmentModule, p.Layout, d.Vertex.Inputs, d.Topology, d.Targets, d.Blend,
-            d.ColourMask, d.Polygon == Silk.NET.Vulkan.PolygonMode.Line, d.AlphaToCoverage, d.DepthClamp,
-            p.FragmentReflection?.Outputs.Any(o => o.Location == 1) == true ? DrawState.Rgba : 0, p.TessControlModule, p.TessEvaluationModule);
+            d.ColourMask, d.Polygon, d.AlphaToCoverage, d.DepthClamp,
+            p.FragmentReflection?.Outputs.Any(o => o.Location == 1) == true ? DrawState.Rgba : ColorMask.None, p.TessControlModule, p.TessEvaluationModule);
         if (d.Name.Length > 0) device.SetName(ObjectType.Pipeline, handle.Handle, d.Name);
-        return new GraphicsPipeline(handle, d);
+        return handle;
     }
 
     /// <summary>Destroys the pipelines of <paramref name="program"/> after the frames in flight.</summary>
-    public void Forget(ShaderProgram program)
+    public void Forget(GpuProgram program)
     {
         List<Pipeline> doomed = [];
         lock (gate)
         {
-            foreach (var k in graphics.Keys.Where(k => ReferenceEquals(k.Program, program)).ToList()) { doomed.Add(graphics[k].Handle); graphics.Remove(k); }
-            foreach (var k in compute.Keys.Where(k => ReferenceEquals(k.Program, program)).ToList()) { doomed.Add(compute[k].Handle); compute.Remove(k); }
-            foreach (var k in variants.Keys.Where(k => ReferenceEquals(k.Program, program)).ToList()) { doomed.Add(variants[k].Handle); variants.Remove(k); }
+            foreach (var k in graphics.Keys.Where(k => k.Program == program).ToList()) { doomed.Add(graphics[k]); graphics.Remove(k); }
+            foreach (var k in compute.Keys.Where(k => k.Program == program).ToList()) { doomed.Add(compute[k]); compute.Remove(k); }
+            foreach (var k in variants.Keys.Where(k => k.Program == program).ToList()) { doomed.Add(variants[k]); variants.Remove(k); }
         }
         var (vk, dev) = (device.Vk, device.Device);
         device.Frames.DeferDelete(() => { foreach (var p in doomed) vk.DestroyPipeline(dev, p, null); });
@@ -308,9 +316,9 @@ public sealed unsafe class PipelineLibrary : IDisposable
 
     public void Dispose()
     {
-        foreach (var p in graphics.Values) device.Vk.DestroyPipeline(device.Device, p.Handle, null);
-        foreach (var p in compute.Values) device.Vk.DestroyPipeline(device.Device, p.Handle, null);
-        foreach (var p in variants.Values) device.Vk.DestroyPipeline(device.Device, p.Handle, null);
+        foreach (var p in graphics.Values) device.Vk.DestroyPipeline(device.Device, p, null);
+        foreach (var p in compute.Values) device.Vk.DestroyPipeline(device.Device, p, null);
+        foreach (var p in variants.Values) device.Vk.DestroyPipeline(device.Device, p, null);
         variants.Clear();
         graphics.Clear();
         compute.Clear();

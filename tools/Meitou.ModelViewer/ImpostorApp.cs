@@ -10,7 +10,9 @@ using Meitou.Rendering.Display;
 using Meitou.Rendering.Gpu;
 using Meitou.Rendering.Impostors;
 using Silk.NET.Vulkan;
-using Texture = Meitou.Rendering.Gpu.Texture;
+using GpuTexture = Meitou.Rendering.Gpu.GpuTexture;
+
+using Meitou.Rendering.Gpu.Core;
 
 namespace Meitou.ModelViewer;
 
@@ -287,26 +289,26 @@ static class ImpostorApp
     /// A 4× multisampled target of the given size cleared to the sky colour, drawn by <paramref name="draw"/> (into the open rendering of the frame's
     /// <see cref="GpuFrame.PreFrame"/>), resolved, read back and saved as a PNG (rows flipped: the images hold GL's bottom row first).
     /// </summary>
-    static void Offscreen(Frames frames, int w, int h, string path, Action<CommandList, AttachmentFormats> draw)
+    static void Offscreen(Frames frames, int w, int h, string path, Action<IGpuCommandList, AttachmentFormats> draw)
     {
         var gpu = frames.Gpu;
         frames.Open();
         var cmd = gpu.Frame.PreFrame;
         var pre = cmd.Handle;
-        using var colour = Texture.Create(gpu, new TextureDesc(Format.R8G8B8A8Unorm, w, h, Samples: 4, Use: TextureUse.ColourTarget | TextureUse.TransferSrc, Name: "impostor preview target"), pre);
-        using var depth = Texture.Create(gpu, new TextureDesc(Format.D32Sfloat, w, h, Samples: 4, Use: TextureUse.DepthTarget, Name: "impostor preview target"), pre);
-        using var resolved = Texture.Create(gpu, new TextureDesc(Format.R8G8B8A8Unorm, w, h, Use: TextureUse.TransferDst | TextureUse.TransferSrc, Name: "impostor preview target"), pre);
+        using var colour = gpu.CreateTexture(new TextureDesc(InternalFormat.Rgba8, w, h, Samples: 4, Use: TextureUse.ColourTarget | TextureUse.TransferSrc, Name: "impostor preview target"), pre);
+        using var depth = gpu.CreateTexture(new TextureDesc(InternalFormat.DepthComponent24, w, h, Samples: 4, Use: TextureUse.DepthTarget, Name: "impostor preview target"), pre);
+        using var resolved = gpu.CreateTexture(new TextureDesc(InternalFormat.Rgba8, w, h, Use: TextureUse.TransferDst | TextureUse.TransferSrc, Name: "impostor preview target"), pre);
         var formats = new AttachmentFormats(colour.Desc.Format, depth.Desc.Format, 4);
-        cmd.Barrier(BarrierBatch.Full);
+        cmd.Order();
         cmd.BeginRendering(new RenderingDesc(
-            new RenderTarget(colour.Attachment(), AttachmentLoadOp.Clear, new ClearValue(new ClearColorValue(Sky.X, Sky.Y, Sky.Z, 1f)), colour.Image),
-            new RenderTarget(depth.Attachment(), AttachmentLoadOp.Clear, new ClearValue(depthStencil: new ClearDepthStencilValue(1f, 0)), depth.Image), w, h));
-        cmd.SetScissor(new Rect2D(default, new Extent2D((uint)w, (uint)h)));
+            new RenderTarget(colour.Attachment(), LoadOp.Clear, new ClearColour(Sky.X, Sky.Y, Sky.Z, 1f)),
+            new RenderTarget(depth.Attachment(), LoadOp.Clear, default, DepthClear: 1f), w, h));
+        cmd.SetScissor(new PixelRect(0, 0, (uint)w, (uint)h));
         draw(cmd, formats);
         cmd.EndRendering();
-        cmd.Barrier(BarrierBatch.Full);
+        cmd.Order();
         cmd.Resolve(colour, resolved);
-        cmd.Barrier(BarrierBatch.Full);
+        cmd.Order();
         cmd.Invalidate();
         frames.Flush();
         var pixels = gpu.ReadBack(resolved, 4);
@@ -356,8 +358,8 @@ static class ImpostorApp
                     var right = Vector3.Normalize(Vector3.Cross(forward, worldUp));
                     var cameraUp = Vector3.Cross(right, forward);
                     int y = (rows - 1 - row) * cell;
-                    preview.DrawMeshes(cmd, formats, new Viewport(col * 2 * cell, y, cell, cell, 0, 1), view * projection, eye, sun, one, coverage: false);
-                    preview.DrawImpostors(cmd, formats, new Viewport((col * 2 + 1) * cell, y, cell, cell, 0, 1), view * projection, eye, cameraUp, sun, one, coverage: false);
+                    preview.DrawMeshes(cmd, formats, new PixelViewport(col * 2 * cell, y, cell, cell, 0, 1), view * projection, eye, sun, one, coverage: false);
+                    preview.DrawImpostors(cmd, formats, new PixelViewport((col * 2 + 1) * cell, y, cell, cell, 0, 1), view * projection, eye, cameraUp, sun, one, coverage: false);
                 }
         });
     }
@@ -384,7 +386,7 @@ static class ImpostorApp
         var projection = Matrix4x4.CreatePerspectiveFieldOfView(fov, aspect, 50 * fieldScale, 20000 * fieldScale);
         var forward = Vector3.Normalize(target - eye);
         var cameraUp = Vector3.Cross(Vector3.Normalize(Vector3.Cross(forward, Vector3.UnitY)), forward);
-        var all = new Viewport(0, 0, o.Width, o.Height, 0, 1);
+        var all = new PixelViewport(0, 0, o.Width, o.Height, 0, 1);
         Offscreen(frames, o.Width, o.Height, stem + "-mesh.png", (cmd, formats) => preview.DrawMeshes(cmd, formats, all, view * projection, eye, sun, ordered, coverage: false));
         Offscreen(frames, o.Width, o.Height, stem + "-impostor.png", (cmd, formats) => preview.DrawImpostors(cmd, formats, all, view * projection, eye, cameraUp, sun, ordered, coverage: false));
     }

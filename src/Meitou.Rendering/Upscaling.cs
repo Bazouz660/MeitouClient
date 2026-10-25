@@ -5,7 +5,7 @@ namespace Meitou.Rendering;
 
 /// <summary>How the scene gets from its render size to the display: drawn at full size, edges smoothed by FXAA (off), or temporally reconstructed from
 /// jittered frames at a render scale (the built-in TAA, AMD FSR, NVIDIA DLSS). docs/engine.md "Upscaling".</summary>
-public enum UpscalerKind { Off, Taa, Fsr, Dlss }
+public enum UpscalerKind { Off, Taa, Fsr, Dlss, MetalFx }
 
 /// <summary>The upscaler options of <see cref="PostOptions"/>: which one, the render scale (per axis) and the sharpening.</summary>
 public sealed class UpscaleOptions
@@ -95,8 +95,8 @@ public static class Jitter
 /// </summary>
 public sealed record UpscaleInputs
 {
-    public required Gpu.Texture Colour, Depth, Motion, Output;
-    public Gpu.Texture? Reactive;
+    public required Gpu.GpuTexture Colour, Depth, Motion, Output;
+    public Gpu.GpuTexture? Reactive;
     public required int RenderWidth, RenderHeight, DisplayWidth, DisplayHeight;
     public required Vector2 JitterPixels;
     public required float Near, Far, FieldOfView, DeltaSeconds, Sharpness;

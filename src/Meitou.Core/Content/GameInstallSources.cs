@@ -85,6 +85,14 @@ public static partial class GameInstallSources
         var prefixes = new List<string> { Path.Combine(home, ".wine") };
         foreach (var bottles in new[] { Path.Combine(xdg.DataHome, "bottles", "bottles"), Path.Combine(home, ".var", "app", "com.usebottles.bottles", "data", "bottles", "bottles") })
             if (Directory.Exists(bottles)) prefixes.AddRange(Safe(() => Directory.EnumerateDirectories(bottles)));
+        if (OperatingSystem.IsMacOS())
+            foreach (var bottles in new[]
+            {
+                Path.Combine(home, "Library", "Application Support", "CrossOver", "Bottles"),
+                Path.Combine(home, "Library", "Application Support", "Whisky", "Bottles"),
+                Path.Combine(home, "Library", "Containers", "com.isaacmarovitz.Whisky", "Data", "Library", "Application Support", "Whisky", "Bottles"),
+            })
+                if (Directory.Exists(bottles)) prefixes.AddRange(Safe(() => Directory.EnumerateDirectories(bottles)));
         // The registry of every Wine prefix we know of: what a GOG installer wrote there says where it installed Kenshi.
         foreach (var heroic in configs)
             foreach (var prefix in HeroicPrefixes(Path.Combine(heroic, "heroic", "GamesConfig"))) prefixes.Add(prefix);
@@ -215,6 +223,10 @@ public static partial class GameInstallSources
         yield return Path.Combine(driveRoot, "GOG Games", "Kenshi");
         yield return Path.Combine(driveRoot, "Program Files (x86)", "GOG Galaxy", "Games", "Kenshi");
         yield return Path.Combine(driveRoot, "Program Files", "GOG Galaxy", "Games", "Kenshi");
+        // A Windows Steam bottle (CrossOver/Whisky): its default and secondary library folders.
+        yield return Path.Combine(driveRoot, "Program Files (x86)", "Steam", "steamapps", "common", "Kenshi");
+        yield return Path.Combine(driveRoot, "Program Files", "Steam", "steamapps", "common", "Kenshi");
+        yield return Path.Combine(driveRoot, "SteamLibrary", "steamapps", "common", "Kenshi");
     }
 
     /// <summary>

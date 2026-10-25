@@ -31,7 +31,7 @@ public sealed unsafe partial class WorldObjectRenderer
         public bool Framed;
         public Matrix4x4 Model, View, Projection;
         public Vector3 Anchor;
-        public global::Meitou.Rendering.Gpu.Texture? Colour, Depth;
+        public global::Meitou.Rendering.Gpu.GpuTexture? Colour, Depth;
         public SampledTexture Sampled;
         /// <summary>Nothing to draw (no parts, no bounds): the window shows none.</summary>
         public bool Failed;
@@ -48,7 +48,7 @@ public sealed unsafe partial class WorldObjectRenderer
     /// The drawn picture of the BUILDING <paramref name="record"/> (upside down, as the renderer's targets are: show it flipped) once it exists; asking starts it being made from
     /// <paramref name="parts"/> (laid out at the origin, unrotated). Any thread.
     /// </summary>
-    public bool TryGetBuildingIcon(string record, IReadOnlyList<PlacedMesh> parts, out (global::Meitou.Rendering.Gpu.Texture Texture, SampledTexture Sampled) icon)
+    public bool TryGetBuildingIcon(string record, IReadOnlyList<PlacedMesh> parts, out (global::Meitou.Rendering.Gpu.GpuTexture Texture, SampledTexture Sampled) icon)
     {
         if (!buildingIcons.TryGetValue(record, out var entry))
         {
@@ -132,10 +132,10 @@ public sealed unsafe partial class WorldObjectRenderer
         const int size = BuildingIconStyle.Size;
         if (entry.Colour is null)
         {
-            entry.Colour = global::Meitou.Rendering.Gpu.Texture.Create(Gpu, new TextureDesc(Format.R8G8B8A8Unorm, size, size, Use: TextureUse.Sampled | TextureUse.ColourTarget | TextureUse.TransferSrc, Name: $"building icon {entry.Record}"));
-            entry.Depth = global::Meitou.Rendering.Gpu.Texture.Create(Gpu, new TextureDesc(Format.D32Sfloat, size, size, Use: TextureUse.DepthTarget, Name: $"building icon depth {entry.Record}"));
+            entry.Colour = Gpu.CreateTexture(new TextureDesc(InternalFormat.Rgba8, size, size, Use: TextureUse.Sampled | TextureUse.ColourTarget | TextureUse.TransferSrc, Name: $"building icon {entry.Record}"));
+            entry.Depth = Gpu.CreateTexture(new TextureDesc(InternalFormat.DepthComponent24, size, size, Use: TextureUse.DepthTarget, Name: $"building icon depth {entry.Record}"));
             entry.Sampled = new SampledTexture(Gpu.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Linear, TextureMagFilter.Linear,
-                TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, false, DepthFunction.Lequal, false, 1, false, 0)), entry.Colour.View(), entry.Colour.Image);
+                TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, false, DepthFunction.Lequal, false, 1, false, 0)), entry.Colour.View());
         }
         // The batches of this picture alone (the frame's Draw starts its own from nothing).
         foreach (var b in batchMap.Values) b.Count = 0;
@@ -151,18 +151,18 @@ public sealed unsafe partial class WorldObjectRenderer
         foreach (var b in active) { b.Offset = total; total += b.Count; }
         if (total > 0)
         {
-            instances = Gpu.Frame.Constants.Allocate((ulong)total * InstanceStride, 16);
+            instances = Gpu.Frame.AllocateConstants((ulong)total * InstanceStride, 16);
             var target = new Span<byte>(instances.Pointer, total * InstanceStride);
             foreach (var b in active)
                 System.Runtime.InteropServices.MemoryMarshal.AsBytes(b.Data.AsSpan(0, b.Count)).CopyTo(target[(b.Offset * InstanceStride)..]);
         }
         var cmd = Gpu.BeginNative("building icon");
         var targets = PassTargets.Of(entry.Colour, entry.Depth);
-        cmd.BeginRendering(new RenderingDesc(targets.Colour, targets.Depth with { Load = AttachmentLoadOp.Clear, Clear = new ClearValue(depthStencil: new ClearDepthStencilValue(1f, 0)) }, targets.Width, targets.Height));
+        cmd.BeginRendering(new RenderingDesc(targets.Colour, targets.Depth with { Load = LoadOp.Clear, DepthClear = 1f }, targets.Width, targets.Height));
         Gpu.BeginHostPass(cmd, targets, DrawState.Scene(targets.Formats));
-        var rect = new Rect2D(default, new Extent2D(size, size));
-        Gpu.Clear(cmd, true, default, true, 1, rect);
-        Gpu.SetPassViewport(new Viewport(0, 0, size, size, 0, 1), rect);
+        var rect = new PixelRect(0, 0, (uint)size, (uint)size);
+        cmd.Clear(true, default, true, 1, rect);
+        Gpu.SetPassViewport(new PixelViewport(0, 0, size, size, 0, 1), rect);
         if (active.Count > 0)
         {
             // The camera relative to where the parts stand; no fog and the objects' plain lighting (a positive fog distance would select the sky's).

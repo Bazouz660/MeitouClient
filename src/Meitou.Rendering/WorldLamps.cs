@@ -1,3 +1,4 @@
+using InternalFormat = Meitou.Rendering.Gpu.InternalFormat;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using Meitou.Data.World;
@@ -20,7 +21,7 @@ internal sealed class WorldLamps : IDisposable
     // Allow for the small offset between collision masks and visible wall/floor surfaces.
     const float RoomSurfaceMargin = 0.5f;
 
-    readonly GpuContext ctx;
+    readonly IGpuContext ctx;
     readonly Task<WorldLight[]> loading;
     // The lamps binned each frame: the world's (once loaded) and those of buildings placed during play, by building id.
     WorldLight[]? world, lamps;
@@ -29,8 +30,8 @@ internal sealed class WorldLamps : IDisposable
     bool runtimeChanged;
     // The world's lamps at the start of lamps (those of no replaced building); the placed buildings' follow.
     int worldCount;
-    readonly Texture[] cells, index, data;
-    readonly Sampler nearest;
+    readonly GpuTexture[] cells, index, data;
+    readonly GpuSampler nearest;
     readonly float[] cellValues = new float[Cells * Cells * 2];
     readonly float[] indexValues = new float[IndexWidth * IndexRows];
     readonly Vector4[] dataValues = new Vector4[MaxLamps * DataWidth];
@@ -49,20 +50,20 @@ internal sealed class WorldLamps : IDisposable
     public int Count => lamps?.Length ?? 0;
     public int InGrid { get; private set; }
 
-    public WorldLamps(GpuContext ctx, Func<IReadOnlyList<WorldLight>> load)
+    public WorldLamps(IGpuContext ctx, Func<IReadOnlyList<WorldLight>> load)
     {
         this.ctx = ctx;
         loading = Task.Run(() => load().Where(l => l.Intensity > 0 && l.Radius > 0).ToArray());
-        int frames = ctx.Device.Frames.Count;
-        cells = new Texture[frames];
-        index = new Texture[frames];
-        data = new Texture[frames];
+        int frames = ctx.FramesInFlight;
+        cells = new GpuTexture[frames];
+        index = new GpuTexture[frames];
+        data = new GpuTexture[frames];
         const TextureUse use = TextureUse.Sampled | TextureUse.TransferDst;
         for (int i = 0; i < frames; i++)
         {
-            cells[i] = Texture.Create(ctx, new TextureDesc(Format.R32G32Sfloat, Cells, Cells, Use: use, Name: "lamp cells"));
-            index[i] = Texture.Create(ctx, new TextureDesc(Format.R32Sfloat, IndexWidth, IndexRows, Use: use, Name: "lamp index"));
-            data[i] = Texture.Create(ctx, new TextureDesc(Format.R32G32B32A32Sfloat, DataWidth, MaxLamps, Use: use, Name: "lamp data"));
+            cells[i] = ctx.CreateTexture(new TextureDesc(InternalFormat.RG32f, Cells, Cells, Use: use, Name: "lamp cells"));
+            index[i] = ctx.CreateTexture(new TextureDesc(InternalFormat.R32f, IndexWidth, IndexRows, Use: use, Name: "lamp index"));
+            data[i] = ctx.CreateTexture(new TextureDesc(InternalFormat.Rgba32f, DataWidth, MaxLamps, Use: use, Name: "lamp data"));
         }
         nearest = ctx.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Nearest, TextureMagFilter.Nearest, TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge,
             TextureWrapMode.ClampToEdge, false, DepthFunction.Lequal, false, 1, false, 0));
@@ -73,11 +74,11 @@ internal sealed class WorldLamps : IDisposable
         g.Publish("uLightData", () => Sampled(data[slot]));
     }
 
-    SampledTexture Sampled(Texture t) => new(nearest, t.View(), t.Image);
+    SampledTexture Sampled(GpuTexture t) => new(nearest, t.View());
 
     /// <summary>The textures of this frame's slot, for a compute pass that binds them itself (the probe trace).</summary>
-    internal (Texture Cells, Texture Index, Texture Data) Current => (cells[slot], index[slot], data[slot]);
-    internal Sampler NearestSampler => nearest;
+    internal (GpuTexture Cells, GpuTexture Index, GpuTexture Data) Current => (cells[slot], index[slot], data[slot]);
+    internal GpuSampler NearestSampler => nearest;
     /// <summary>This frame's <c>uLightGrid</c> (w 0: no lamps).</summary>
     internal Vector4 Grid => grid;
     internal uint Emitter(string placementId) => emitters.GetValueOrDefault(placementId);
@@ -232,10 +233,13 @@ internal sealed class WorldLamps : IDisposable
             }
         }
 
-        var full = new Rect2D(new Offset2D(0, 0), new Extent2D(Cells, Cells));
-        ctx.Uploads.Write(cells[slot], 0, 0, full, MemoryMarshal.AsBytes(cellValues.AsSpan()));
-        ctx.Uploads.Write(index[slot], 0, 0, new Rect2D(new Offset2D(0, 0), new Extent2D(IndexWidth, IndexRows)), MemoryMarshal.AsBytes(indexValues.AsSpan()));
-        ctx.Uploads.Write(data[slot], 0, 0, new Rect2D(new Offset2D(0, 0), new Extent2D(DataWidth, (uint)near.Count)), MemoryMarshal.AsBytes(dataValues.AsSpan(0, near.Count * DataWidth)));
+        var full = new PixelRect(0, 0, Cells, Cells);
+        using (var batch = ctx.Uploads.Begin())
+        {
+            batch.Write(cells[slot], 0, 0, full, MemoryMarshal.AsBytes(cellValues.AsSpan()));
+            batch.Write(index[slot], 0, 0, new PixelRect(0, 0, IndexWidth, IndexRows), MemoryMarshal.AsBytes(indexValues.AsSpan()));
+            batch.Write(data[slot], 0, 0, new PixelRect(0, 0, DataWidth, (uint)near.Count), MemoryMarshal.AsBytes(dataValues.AsSpan(0, near.Count * DataWidth)));
+        }
         grid = new Vector4(x0, z0, CellSize, Cells);
         InGrid = near.Count;
     }

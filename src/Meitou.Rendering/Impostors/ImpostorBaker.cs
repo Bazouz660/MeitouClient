@@ -1,12 +1,13 @@
+using InternalFormat = Meitou.Rendering.Gpu.InternalFormat;
 using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using Meitou.Data.Ogre;
 using Meitou.Rendering.Gpu;
 using Silk.NET.Vulkan;
-using PolygonMode = Silk.NET.Vulkan.PolygonMode;
-using Buffer = Silk.NET.Vulkan.Buffer;
-using Texture = Meitou.Rendering.Gpu.Texture;
+using GpuTexture = Meitou.Rendering.Gpu.GpuTexture;
+
+using Meitou.Rendering.Gpu.Core;
 
 namespace Meitou.Rendering.Impostors;
 
@@ -105,7 +106,7 @@ public readonly record struct ImpostorBakeTimes(double Upload, double Render, do
 /// </summary>
 public sealed unsafe class ImpostorBaker : IDisposable
 {
-    readonly GpuContext gpu;
+    readonly IGpuContext gpu;
     readonly WorldTextureCache textures;
     readonly bool ownsTextures;
     readonly NativeFrame frame;
@@ -113,17 +114,17 @@ public sealed unsafe class ImpostorBaker : IDisposable
     uint standIn;
 
     /// <param name="assets">Where texture names are looked up; null only when no source names a texture (tests).</param>
-    public ImpostorBaker(GpuContext gpu, AssetLocator? assets)
+    public ImpostorBaker(IGpuContext gpu, AssetLocator? assets)
         : this(gpu, new WorldTextureCache(gpu, assets!, "impostor textures") { IdleSeconds = double.MaxValue, HighWaterMb = double.MaxValue }, owns: true)
     {
     }
 
     /// <summary>A baker that reads the materials' textures from <paramref name="textures"/> (the foliage's own cache: already resident).</summary>
-    public ImpostorBaker(GpuContext gpu, WorldTextureCache textures) : this(gpu, textures, owns: false)
+    public ImpostorBaker(IGpuContext gpu, WorldTextureCache textures) : this(gpu, textures, owns: false)
     {
     }
 
-    ImpostorBaker(GpuContext gpu, WorldTextureCache textures, bool owns)
+    ImpostorBaker(IGpuContext gpu, WorldTextureCache textures, bool owns)
     {
         this.gpu = gpu;
         this.textures = textures;
@@ -137,7 +138,7 @@ public sealed unsafe class ImpostorBaker : IDisposable
 
     public List<string> Messages => textures.Messages;
     internal WorldTextureCache Textures => textures;
-    internal GpuContext Gpu => gpu;
+    internal IGpuContext Gpu => gpu;
     public ImpostorBakeTimes LastTimes { get; internal set; }
     /// <summary>Encode the maps (BC3 / BC5); false keeps them RGBA8 (debugging).</summary>
     public bool Compress { get; set; } = true;
@@ -168,7 +169,7 @@ public sealed unsafe class ImpostorBaker : IDisposable
     internal struct Part
     {
         public DeviceBuffer Vertices, Indices;
-        public BufferBinding[] Bindings;
+        public GpuBufferBinding[] Bindings;
         public VertexLayout Layout;
         public int Count;
         public bool HasColours;
@@ -191,8 +192,11 @@ public sealed unsafe class ImpostorBaker : IDisposable
             if (mp.Indices.Length == 0) continue;
             var vertices = DeviceBuffer.Create(gpu, (ulong)(mp.Vertices.Length * Vertex.Size), BufferUse.Vertex, "impostor bake meshes");
             var indices = DeviceBuffer.Create(gpu, (ulong)(mp.Indices.Length * sizeof(uint)), BufferUse.Index, "impostor bake meshes");
-            gpu.Uploads.Write(vertices, 0, MemoryMarshal.AsBytes(mp.Vertices.AsSpan()));
-            gpu.Uploads.Write(indices, 0, MemoryMarshal.AsBytes(mp.Indices.AsSpan()));
+            using (var batch = gpu.Uploads.Begin())
+            {
+                batch.Write(vertices, 0, MemoryMarshal.AsBytes(mp.Vertices.AsSpan()));
+                batch.Write(indices, 0, MemoryMarshal.AsBytes(mp.Indices.AsSpan()));
+            }
             if (rock)
             {
                 // A rock is drawn by the terrain's mesh program: its own vertex layout and buffers.
@@ -210,8 +214,8 @@ public sealed unsafe class ImpostorBaker : IDisposable
         return [.. parts];
     }
 
-    static readonly DrawState BakeState = new(CullModeFlags.BackBit, FrontFace.Clockwise, true, true, CompareOp.Less, false, 0, 0, BlendState.Off,
-        ColorComponentFlags.RBit | ColorComponentFlags.GBit | ColorComponentFlags.BBit | ColorComponentFlags.ABit, PolygonMode.Fill, false, false);
+    static readonly DrawState BakeState = new(CullMode.Back, FrontFaceDirection.Ccw, true, true, DepthFunction.Less, false, 0, 0, BlendState.Off,
+        ColorMask.R | ColorMask.G | ColorMask.B | ColorMask.A, PolygonKind.Fill, false, false);
 
     /// <summary>GL's texture 0 (what the GL baker bound for a missing map) as a bindless index.</summary>
     uint StandIn()
@@ -231,7 +235,7 @@ public sealed unsafe class ImpostorBaker : IDisposable
     {
         if (globalsPrepared) return;
         globalsPrepared = true;
-        var block = gpu.Frame.Constants.Write<ImpostorShaders.BakeBlock>([default], 256);
+        var block = gpu.Frame.WriteConstants(System.Runtime.InteropServices.MemoryMarshal.AsBytes(new ImpostorShaders.BakeBlock[1]), 256);
         frame.Prepare(new ViewConstants { LightDir = Vector3.UnitY }, [block.Binding]);
     }
 
@@ -240,8 +244,8 @@ public sealed unsafe class ImpostorBaker : IDisposable
     /// <paramref name="large"/> (and <paramref name="depth"/>), halved into <paramref name="small"/> by a linear blit and copied into
     /// <paramref name="readback"/> at pass × the row's bytes.
     /// </summary>
-    internal void RecordRow(CommandList cmd, int row, ImpostorClass size, ImpostorMeshes meshes, Part[] mainParts, Material main, Part[] leavesParts, Material? leaves,
-        Texture large, Texture depth, Texture small, Buffer readback, float lodBias, ImpostorSource? rock = null)
+    internal void RecordRow(IGpuCommandList cmd, int row, ImpostorClass size, ImpostorMeshes meshes, Part[] mainParts, Material main, Part[] leavesParts, Material? leaves,
+        GpuTexture large, GpuTexture depth, GpuTexture small, GpuBuffer readback, float lodBias, ImpostorSource? rock = null)
     {
         int grid = size.Grid, f = size.FramePixels, samples = 2 * f, width = grid * samples, smallWidth = grid * f;
         PrepareFrameGlobals();
@@ -252,17 +256,17 @@ public sealed unsafe class ImpostorBaker : IDisposable
         float rockScale = rock is null ? 1 : rock.MeanScale;
         (c, r) = (c * rockScale, r * rockScale);
         var formats = new AttachmentFormats(large.Desc.Format, depth.Desc.Format);
-        var full = new Rect2D(default, new Extent2D((uint)width, (uint)samples));
+        var full = new PixelRect(0, 0, (uint)width, (uint)samples);
         ulong rowBytes = (ulong)(smallWidth * f * 4);
         for (int pass = 0; pass < 3; pass++)
         {
-            cmd.Barrier(BarrierBatch.Full);
+            cmd.Order();
             cmd.BeginRendering(new RenderingDesc(
-                new RenderTarget(large.Attachment(), AttachmentLoadOp.Clear, new ClearValue(new ClearColorValue(0f, 0f, 0f, 0f)), large.Image),
-                new RenderTarget(depth.Attachment(), AttachmentLoadOp.Clear, new ClearValue(depthStencil: new ClearDepthStencilValue(1f, 0)), depth.Image),
+                new RenderTarget(large.Attachment(), LoadOp.Clear, new ClearColour(0f, 0f, 0f, 0f)),
+                new RenderTarget(depth.Attachment(), LoadOp.Clear, default, DepthClear: 1f),
                 width, samples));
             cmd.SetScissor(full);
-            cmd.SetDepth(true, true, CompareOp.Less);
+            cmd.SetDepth(true, true, DepthFunction.Less);
             cmd.SetDepthBias(false, 0, 0);
             for (int column = 0; column < grid; column++)
             {
@@ -271,40 +275,32 @@ public sealed unsafe class ImpostorBaker : IDisposable
                 var eye = c + d * (2 * r);
                 var view = Matrix4x4.CreateLookAt(eye, c, up);
                 var projection = Matrix4x4.CreateOrthographic(2 * r, 2 * r, 0.5f * r, 3.5f * r);
-                cmd.SetViewport(new Viewport(column * samples, 0, samples, samples, 0, 1));
+                cmd.SetViewport(new PixelViewport(column * samples, 0, samples, samples, 0, 1));
                 if (rock is not null)
                 {
                     RockTerrain!.RecordRockBake(cmd, formats, BakeState, rock.RockBiome, rockScale, size.BakeDistance, view * projection, eye, d, right, up, pass, mainParts);
                     continue;
                 }
-                var block = gpu.Frame.Constants.Write<ImpostorShaders.BakeBlock>([new ImpostorShaders.BakeBlock
+                var block = gpu.Frame.WriteConstants(System.Runtime.InteropServices.MemoryMarshal.AsBytes(new ImpostorShaders.BakeBlock[1]
                 {
-                    Sphere = new Vector4(c, r), Dir = new Vector4(d, 0), Right = new Vector4(right, 0), Up = new Vector4(up, 0), Pass = pass,
-                }], 256);
+                    new() { Sphere = new Vector4(c, r), Dir = new Vector4(d, 0), Right = new Vector4(right, 0), Up = new Vector4(up, 0), Pass = pass },
+                }), 256);
                 var constants = new ViewConstants { ViewProjection = view * projection, Eye = eye, LightDir = Vector3.UnitY, FogDistance = 0 };
-                frame.Bind(cmd, program.P.Layout, in constants, [block.Binding]);
+                frame.Bind(cmd, program.P, in constants, [block.Binding]);
                 Draw(cmd, mainParts, main, formats, lodBias);
                 if (leaves is not null) Draw(cmd, leavesParts, leaves, formats, lodBias);
             }
             cmd.EndRendering();
-            cmd.Barrier(BarrierBatch.Full);
-            cmd.Blit(large, small, Filter.Linear);
-            cmd.Barrier(BarrierBatch.Full);
-            var region = new BufferImageCopy
-            {
-                BufferOffset = (ulong)pass * rowBytes,
-                ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1),
-                ImageExtent = new Extent3D((uint)smallWidth, (uint)f, 1),
-            };
-            gpu.Device.Vk.CmdCopyImageToBuffer(cmd.Handle, small.Image, ImageLayout.General, readback, 1, &region);
+            cmd.Order();
+            cmd.Blit(large, small, TextureMinFilter.Linear);
+            cmd.Order();
+            cmd.CopyTextureToBuffer(small, 0, 0, new PixelRect(0, 0, (uint)smallWidth, (uint)f), readback, (ulong)pass * rowBytes);
         }
-        var host = new BarrierBatch();
-        host.Add(PipelineStageFlags2.AllTransferBit, AccessFlags2.TransferWriteBit, PipelineStageFlags2.HostBit, AccessFlags2.HostReadBit);
-        cmd.Barrier(in host);
+        cmd.Barrier([new GpuDependency(Access.TransferDst, Access.Any)]);
     }
 
     /// <summary>The material as the GL baker set it (<c>FoliageRenderer.DrawMesh</c>'s uniforms: textures and normal maps on), one draw per part.</summary>
-    void Draw(CommandList cmd, Part[] parts, Material m, AttachmentFormats formats, float lodBias)
+    void Draw(IGpuCommandList cmd, Part[] parts, Material m, AttachmentFormats formats, float lodBias)
     {
         var s = m.Settings;
         uint stand = StandIn();
@@ -324,32 +320,32 @@ public sealed unsafe class ImpostorBaker : IDisposable
             Tile = s.Tile, AlphaSource = cut ? 2 : 0, AlphaThreshold = cut ? s.AlphaThreshold : 0f, Specular = textured ? s.Specular : 0.3f,
             HasNormal = normal || cut ? 1u : 0u, Spare = MeshSurface.NoWeather,
         };
-        var state = BakeState with { Cull = s.DoubleSided ? CullModeFlags.None : CullModeFlags.BackBit };
+        var state = BakeState with { Cull = s.DoubleSided ? CullMode.None : CullMode.Back };
         cmd.SetRaster(state.Cull, state.Front);
         foreach (var p in parts)
         {
             pc.HasDual = dual && p.HasColours ? 1u : 0u;
             pc.UseVertexColour = p.HasColours ? 1u : 0u;
-            cmd.BindPipeline(gpu.Pipelines.Get(state.Pipeline(program.P, p.Layout, PrimitiveTopology.TriangleList, formats, "impostor bake")));
+            cmd.BindPipeline(gpu.Pipelines.Get(state.Pipeline(program.P, p.Layout, PrimitiveType.Triangles, formats, "impostor bake")));
             cmd.BindVertexBuffers(0, p.Bindings);
-            cmd.BindIndexBuffer(new BufferBinding(p.Indices.Handle, 0, p.Indices.Size), IndexType.Uint32);
-            cmd.PushConstants(program.P.Layout, ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit, in pc);
+            cmd.BindIndexBuffer(new GpuBufferBinding(p.Indices.Handle, 0, p.Indices.Size), IndexKind.U32);
+            cmd.PushConstants(program.P, GpuStage.Vertex | GpuStage.Fragment, in pc);
             cmd.DrawIndexed((uint)p.Count);
         }
     }
 
     // ---- readback buffers: a row's three pictures, reused from row to row and bake to bake (render thread, except ReturnReadback) ----
 
-    readonly System.Collections.Concurrent.ConcurrentDictionary<ulong, System.Collections.Concurrent.ConcurrentBag<ReadbackBuffer>> readbacks = new();
+    readonly System.Collections.Concurrent.ConcurrentDictionary<ulong, System.Collections.Concurrent.ConcurrentBag<IGpuReadback>> readbacks = new();
 
-    internal ReadbackBuffer RentReadback(ulong size)
+    internal IGpuReadback RentReadback(ulong size)
     {
         var bag = readbacks.GetOrAdd(size, _ => new());
-        return bag.TryTake(out var buffer) ? buffer : ReadbackBuffer.Create(gpu, size, "impostor bake readback");
+        return bag.TryTake(out var buffer) ? buffer : gpu.CreateReadback(size, "impostor bake readback");
     }
 
     /// <summary>Hands a buffer whose picture has been read back to the pool (any thread: the GPU is done with it).</summary>
-    internal void ReturnReadback(ReadbackBuffer buffer) => readbacks.GetOrAdd(buffer.Size, _ => new()).Add(buffer);
+    internal void ReturnReadback(IGpuReadback buffer) => readbacks.GetOrAdd(buffer.Size, _ => new()).Add(buffer);
 
     // ---- bake targets, kept from bake to bake: a bake takes a set of the atlas's size and gives it back (render thread) ----
     // Making and freeing the three images of every bake (367 bakes in a minute's fast flight) cost 0.5 to 3 ms of the render thread in a bake's first
@@ -358,10 +354,10 @@ public sealed unsafe class ImpostorBaker : IDisposable
     /// <summary>Sets kept idle at most (the largest, 6144 x 512, is 28 MB); the oldest goes when another comes back.</summary>
     const int KeptTargetSets = 3;
 
-    readonly List<((int Grid, int Frame) Key, Texture Large, Texture Depth, Texture Small)> targets = [];
+    readonly List<((int Grid, int Frame) Key, GpuTexture Large, GpuTexture Depth, GpuTexture Small)> targets = [];
 
     /// <summary>A colour target at twice the frame size, its depth and the half-size picture for the atlas size; made when none is kept.</summary>
-    internal (Texture Large, Texture Depth, Texture Small) RentTargets(ImpostorClass size, CommandBuffer pre)
+    internal (GpuTexture Large, GpuTexture Depth, GpuTexture Small) RentTargets(ImpostorClass size, IGpuCommandList pre)
     {
         var key = (size.Grid, size.FramePixels);
         int at = targets.FindIndex(t => t.Key == key);
@@ -372,13 +368,14 @@ public sealed unsafe class ImpostorBaker : IDisposable
             return (kept.Large, kept.Depth, kept.Small);
         }
         int f = size.FramePixels, samples = 2 * f, width = size.Grid * samples;
-        return (Texture.Create(gpu, new TextureDesc(Format.R8G8B8A8Unorm, width, samples, Use: TextureUse.ColourTarget | TextureUse.TransferSrc, Name: "impostor bake target"), pre),
-            Texture.Create(gpu, new TextureDesc(Format.D32Sfloat, width, samples, Use: TextureUse.DepthTarget, Name: "impostor bake target"), pre),
-            Texture.Create(gpu, new TextureDesc(Format.R8G8B8A8Unorm, size.Grid * f, f, Use: TextureUse.TransferDst | TextureUse.TransferSrc, Name: "impostor bake target"), pre));
+        return (pre.CreateTexture(new TextureDesc(InternalFormat.Rgba8, width, samples, Use: TextureUse.ColourTarget | TextureUse.Sampled | TextureUse.TransferSrc, Name: "impostor bake target")),
+            pre.CreateTexture(new TextureDesc(InternalFormat.DepthComponent24, width, samples, Use: TextureUse.DepthTarget, Name: "impostor bake target")),
+            // Metal halves the rows with a sampling render pass (BlitScaled), so the half-size atlas is a colour target as well as a copy source.
+            pre.CreateTexture(new TextureDesc(InternalFormat.Rgba8, size.Grid * f, f, Use: TextureUse.ColourTarget | TextureUse.TransferDst | TextureUse.TransferSrc, Name: "impostor bake target")));
     }
 
     /// <summary>Takes a bake's set back (the rows recorded into it are ahead of any later use in the queue).</summary>
-    internal void ReturnTargets(ImpostorClass size, Texture large, Texture depth, Texture small)
+    internal void ReturnTargets(ImpostorClass size, GpuTexture large, GpuTexture depth, GpuTexture small)
     {
         if (targetsClosed)
         {
@@ -442,8 +439,8 @@ public sealed class ImpostorBakeJob : IDisposable
     readonly ImpostorAssembler assembler;
     readonly Stopwatch watch = Stopwatch.StartNew();
     ImpostorBaker.Part[] mainParts = [], leavesParts = [];
-    Texture? large, depth, small;
-    readonly List<(int Row, long Frame, ReadbackBuffer Buffer)> rows = [];
+    GpuTexture? large, depth, small;
+    readonly List<(int Row, long Frame, IGpuReadback Buffer)> rows = [];
     int recorded, assembled;
     Task? chain;
     Task<ImpostorAtlas>? finish;
@@ -513,14 +510,14 @@ public sealed class ImpostorBakeJob : IDisposable
             mainParts = baker.Upload(meshes.Main, source.IsRock);
             leavesParts = leaves is not null ? baker.Upload(meshes.Leaves!) : [];
             double t1 = watch.Elapsed.TotalMilliseconds;
-            (large, depth, small) = baker.RentTargets(size, gpu.Frame.PreFrame.Handle);
+            (large, depth, small) = baker.RentTargets(size, gpu.Frame.PreFrame);
             started = true;
             upload += watch.Elapsed.TotalMilliseconds - t0;
             SlowNote("start", $"meshes {t1 - t0:0.0} ms, targets {watch.Elapsed.TotalMilliseconds - t1:0.0} ms", watch.Elapsed.TotalMilliseconds - t0);
         }
         // Rows whose frame has completed go to the assembler, in order, one after the other on a worker.
         double tRead = watch.Elapsed.TotalMilliseconds;
-        while (rows.Count > 0 && ReadbackBuffer.Completed(gpu, rows[0].Frame))
+        while (rows.Count > 0 && gpu.FrameCompleted(rows[0].Frame))
         {
             var (row, _, buffer) = rows[0];
             rows.RemoveAt(0);

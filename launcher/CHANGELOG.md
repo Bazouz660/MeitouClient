@@ -2,6 +2,22 @@
 
 Released with tags `launcher-v<version>` by `.github/workflows/launcher-release.yml`; each release needs its `## v<version>` section.
 
+## Unreleased
+
+- macOS Apple silicon: first start and Settings → Renderer offer **Auto**, native **Metal** and **Vulkan (MoltenVK)**. Auto
+  uses Vulkan when its loader exists and Metal otherwise, so a new user does not need Homebrew; Metal starts without
+  `DYLD_LIBRARY_PATH`.
+- macOS Vulkan now gets a narrow `vulkan/` loader folder through `DYLD_LIBRARY_PATH` instead of all of Homebrew's library
+  folder, so Homebrew `libjpeg`/`libpng` cannot replace AppKit/ImageIO's copies. Settings has the Homebrew command and a
+  loader check.
+- First start explains that Kenshi is required and links to a macOS acquisition guide; Find now searches macOS Steam,
+  CrossOver and Whisky locations.
+- The launcher reads the release's `settings-schema.json` `renderers` list, so a Vulkan-only release does not claim Metal
+  support.
+- macOS Metal has a **memory budget** in Settings: Safe 5120 MB, Balanced 6144 MB, High 8120 MB on 16 GB-or-larger Macs.
+  It is passed to the game as a soft allocation guard; the launcher also clears the experimental GPU-cull environment
+  switch so users cannot turn on the path that caused GPU progress timeouts.
+
 ## v1.1.2
 
 - When there are two nightly builds on the same day, the Versions list marks the second one "#2" and shows them in order.

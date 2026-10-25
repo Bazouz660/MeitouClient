@@ -67,8 +67,8 @@ public sealed unsafe class DebugOverlay : IDisposable
         """;
 
     /// <summary>The native GPU API (docs/renderer-native.md 7.1 step 8).</summary>
-    public GpuContext Gpu { get; }
-    readonly Texture? atlas;
+    public IGpuContext Gpu { get; }
+    readonly GpuTexture? atlas;
     readonly SampledTexture atlasSampled;
     readonly LegacyProgram program;
     readonly UniformHandle uScreen;
@@ -93,9 +93,9 @@ public sealed unsafe class DebugOverlay : IDisposable
     public bool Visible { get; set; }
 
     /// <summary>What <see cref="Flush"/> draws into: the frame's final picture (the window's backbuffer, or an offscreen texture). Set by the host.</summary>
-    public Texture? Target { get; set; }
+    public GpuTexture? Target { get; set; }
 
-    DebugOverlay(GpuContext gpu, byte[] font, float pixelHeight = 16)
+    DebugOverlay(IGpuContext gpu, byte[] font, float pixelHeight = 16)
     {
         Gpu = gpu;
         (PixelHeight, AtlasSize) = (pixelHeight, pixelHeight > 32 ? 2048 : 512);
@@ -110,11 +110,11 @@ public sealed unsafe class DebugOverlay : IDisposable
         // The glyphs (R8), sampled as the GL texture was: linear, repeating, no mips.
         using (var upload = gpu.Uploads.Begin())
         {
-            atlas = upload.Create(new TextureDesc(Format.R8Unorm, AtlasSize, AtlasSize, Use: TextureUse.Sampled | TextureUse.TransferDst, Name: "debug overlay font"));
-            upload.Write(atlas, 0, 0, new Rect2D(default, new Extent2D((uint)AtlasSize, (uint)AtlasSize)), pixels);
+            atlas = upload.Create(new TextureDesc(InternalFormat.R8, AtlasSize, AtlasSize, Use: TextureUse.Sampled | TextureUse.TransferDst, Name: "debug overlay font"));
+            upload.Write(atlas, 0, 0, new PixelRect(0, 0, (uint)AtlasSize, (uint)AtlasSize), pixels);
         }
         atlasSampled = new SampledTexture(gpu.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Linear, TextureMagFilter.Linear, TextureWrapMode.Repeat,
-            TextureWrapMode.Repeat, TextureWrapMode.Repeat, false, DepthFunction.Lequal, false, 1, false, 0)), atlas.View(), atlas.Image);
+            TextureWrapMode.Repeat, TextureWrapMode.Repeat, false, DepthFunction.Lequal, false, 1, false, 0)), atlas!.View());
 
         program = LegacyProgram.Create(gpu, Vertex, Fragment, "debug overlay");
         uScreen = program.Uniform("uScreen");
@@ -123,7 +123,7 @@ public sealed unsafe class DebugOverlay : IDisposable
     }
 
     /// <summary>An overlay that draws and measures with the glyph-cache font <paramref name="font"/> (owned from here on).</summary>
-    DebugOverlay(GpuContext gpu, UiFont font)
+    DebugOverlay(IGpuContext gpu, UiFont font)
     {
         Gpu = gpu;
         uiFont = font;
@@ -140,20 +140,20 @@ public sealed unsafe class DebugOverlay : IDisposable
     /// The overlay, or null when no font is found: a monospace system font (the columns are padded with spaces), else, if <paramref name="resolve"/>
     /// finds game files, the game's standard face (proportional, so columns drift).
     /// </summary>
-    public static DebugOverlay? TryCreate(GpuContext gpu, Func<string, string?>? resolve = null)
+    public static DebugOverlay? TryCreate(IGpuContext gpu, Func<string, string?>? resolve = null)
     {
         var path = FontCandidates.FirstOrDefault(File.Exists) ?? resolve?.Invoke(UiPainter.StandardFontFile);
         return path is null ? null : new DebugOverlay(gpu, File.ReadAllBytes(path));
     }
 
     /// <param name="pixelHeight">The size the glyphs are baked at: about the size the face is drawn at keeps it sharp.</param>
-    public static DebugOverlay FromFont(GpuContext gpu, string path, float pixelHeight = 16) => new(gpu, File.ReadAllBytes(path), pixelHeight);
+    public static DebugOverlay FromFont(IGpuContext gpu, string path, float pixelHeight = 16) => new(gpu, File.ReadAllBytes(path), pixelHeight);
 
     /// <summary>
     /// A UI face (<see cref="UiFont"/>: FreeType glyphs for any code point, MyGUI's or Meitou's metrics). The overlay owns <paramref name="font"/>
     /// and frees it; measuring (<see cref="MeasureText"/>, <see cref="FitText"/>, <see cref="WrapText"/>) and drawing use the same glyph advances.
     /// </summary>
-    internal static DebugOverlay FromUiFont(GpuContext gpu, UiFont font) => new(gpu, font);
+    internal static DebugOverlay FromUiFont(IGpuContext gpu, UiFont font) => new(gpu, font);
 
     /// <summary>The advance of one code point (kerned against <paramref name="previous"/>, -1: none), which becomes the new previous. The stb faces have the baked range only: '?' for the rest.</summary>
     float Step(int codePoint, ref int previous, float scale)
@@ -286,31 +286,32 @@ public sealed unsafe class DebugOverlay : IDisposable
     /// Draws a titled panel at the left edge, below <paramref name="top"/>, listing <paramref name="lines"/> in as many
     /// columns as the height left needs; returns the panel's bottom (where a next panel can start).
     /// </summary>
-    public float Panel(int width, int height, string title, IReadOnlyList<string> lines, float top = 0)
+    public float Panel(int width, int height, string title, IReadOnlyList<string> lines, float top = 0, float scale = 1)
     {
         if (width <= 0 || height <= 0) return top;
         const float margin = 16, pad = 12, gap = 28;
+        float lineHeight = LineHeight * scale, charWidth = CharWidth * scale;
         float y = top + margin;
-        int rowsFit = Math.Max((int)((height - y - margin - 2 * pad - LineHeight * 1.5f) / LineHeight), 1);
+        int rowsFit = Math.Max((int)((height - y - margin - 2 * pad - lineHeight * 1.5f) / lineHeight), 1);
         // Lines wider than the window wrap (the resident memory lines run long); with more than one column, to the column's share of it.
         float usable = width - 2 * margin - 2 * pad;
         var source = lines;
-        lines = Wrap(source, (int)(usable / CharWidth));
+        lines = Wrap(source, (int)(usable / charWidth));
         int columns = (lines.Count + rowsFit - 1) / rowsFit;
         for (int pass = 0; pass < 2 && columns > 1; pass++)
         {
-            lines = Wrap(source, (int)((usable - (columns - 1) * gap) / columns / CharWidth));
+            lines = Wrap(source, (int)((usable - (columns - 1) * gap) / columns / charWidth));
             columns = (lines.Count + rowsFit - 1) / rowsFit;
         }
         int rows = (lines.Count + columns - 1) / Math.Max(columns, 1);
-        float columnWidth = (lines.Count == 0 ? 0 : lines.Max(l => l.Length)) * CharWidth;
-        float panelW = Math.Max(columns * columnWidth + (columns - 1) * gap, title.Length * CharWidth) + 2 * pad;
-        float panelH = (rows + 1.5f) * LineHeight + 2 * pad;
+        float columnWidth = (lines.Count == 0 ? 0 : lines.Max(l => l.Length)) * charWidth;
+        float panelW = Math.Max(columns * columnWidth + (columns - 1) * gap, title.Length * charWidth) + 2 * pad;
+        float panelH = (rows + 1.5f) * lineHeight + 2 * pad;
 
         Rect(margin, y, margin + panelW, y + panelH, PanelColour);
-        Text(title, margin + pad, y + pad, TextColour);
+        TextScaled(title, margin + pad, y + pad, TextColour, scale);
         for (int i = 0; i < lines.Count; i++)
-            Text(lines[i], margin + pad + i / rows * (columnWidth + gap), y + pad + (i % rows + 1.5f) * LineHeight, TextColour);
+            TextScaled(lines[i], margin + pad + i / rows * (columnWidth + gap), y + pad + (i % rows + 1.5f) * lineHeight, TextColour, scale);
         Flush(width, height);
         return y + panelH;
     }
@@ -455,28 +456,30 @@ public sealed unsafe class DebugOverlay : IDisposable
     internal void Flush(int width, int height, Meitou.Data.Ui.UiRect? clip, OverlayPass? pass)
     {
         if (batch.Count == 0 || width <= 0 || height <= 0 || Target is null) { batch.Clear(); imageBatch = null; atlasRuns.Clear(); return; }
-        Rect2D? scissor = null;
+        var t = PassTargets.Of(Target, null).At(new PixelViewport(0, 0, width, height, 0, 1));
         if (clip is { } rect)
         {
             var clipped = rect.Intersect(new(0, 0, width, height));
             // The target keeps the renderer's lower-left convention; UI rectangles use top-left.
             int left = (int)Math.Floor(clipped.X), right = (int)Math.Ceiling(clipped.X + clipped.Width);
             int top = (int)Math.Floor(clipped.Y), bottom = (int)Math.Ceiling(clipped.Y + clipped.Height);
-            scissor = new Rect2D(new Offset2D(left, height - bottom), new Extent2D((uint)(right - left), (uint)(bottom - top)));
+            // Vulkan's target is bottom-up, so its scissor is measured from the bottom; Metal's scissor has the
+            // same top-left origin as the UI rectangles. A missing flip here shifts every clipped widget down.
+            int scissorTop = Gpu.RenderTargetsBottomUp ? height - bottom : top;
+            t = t with { Scissor = new PixelRect(left, scissorTop, (uint)(right - left), (uint)(bottom - top)) };
         }
         // The atlas texture of run `run` of the batch: a UI font's (it can change within a batch), else the baked one.
         SampledTexture AtlasAt(int run) => atlasRuns.Count > 0 ? atlasRuns[run].Texture : uiFont is { } ui ? ui.Sampled : atlasSampled;
         if (pass is not null)
         {
             // Only the scissor goes to the pass (the whole target without a clip, as PassTargets.At gives).
-            var passScissor = scissor ?? new Rect2D(default, new Extent2D((uint)Target.Desc.Width, (uint)Target.Desc.Height));
             var all = CollectionsMarshal.AsSpan(batch);
-            if (atlasRuns.Count <= 1) pass.Add(this, all, imageBatch, passScissor, imageBatch is null ? AtlasAt(0) : null);
+            if (atlasRuns.Count <= 1) pass.Add(this, all, imageBatch, t.Scissor, imageBatch is null ? AtlasAt(0) : null);
             else
                 for (int run = 0; run < atlasRuns.Count; run++)
                 {
                     int from = run == 0 ? 0 : atlasRuns[run].Start, to = run + 1 < atlasRuns.Count ? atlasRuns[run + 1].Start : all.Length;
-                    pass.Add(this, all[from..to], null, passScissor, atlasRuns[run].Texture);
+                    pass.Add(this, all[from..to], null, t.Scissor, atlasRuns[run].Texture);
                 }
             batch.Clear();
             atlasRuns.Clear();
@@ -485,27 +488,26 @@ public sealed unsafe class DebugOverlay : IDisposable
         }
         // A native segment of its own. It is begun first: the overlay is also drawn after a frame ended (a screenshot's key list), and the
         // segment opens the frame whose constants hold the vertices.
-        var t = PassTargets.Of(Target, null).At(new Viewport(0, 0, width, height, 0, 1));
-        if (scissor is { } s) t = t with { Scissor = s };
+
         var cmd = Gpu.BeginNative("debug overlay");
         cmd.BeginRendering(t.Rendering);
         program.Set(uScreen, (float)width, height);
         program.Set(uImage, imageBatch is null ? 0 : 1);
         var floats = CollectionsMarshal.AsSpan(batch);
-        var vertices = Gpu.Frame.Constants.Allocate((ulong)(floats.Length * 4), 16);
+        var vertices = Gpu.Frame.AllocateConstants((ulong)(floats.Length * 4), 16);
         MemoryMarshal.AsBytes(floats).CopyTo(new Span<byte>(vertices.Pointer, floats.Length * 4));
         // As the GL version drew: no depth test or culling, blended over by alpha.
-        var state = DrawState.For(t.Formats, Gpu.Device.DepthClamp, blend: new BlendState(true, BlendFactor.SrcAlpha, BlendFactor.OneMinusSrcAlpha));
+        var state = DrawState.For(t.Formats, Gpu.DepthClamp, blend: new BlendState(true, BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha));
         state.Record(cmd, t);
         Span<LegacyProgram.Attribute?> attributes =
         [
-            new LegacyProgram.Attribute(new BufferBinding(vertices.Handle, vertices.Offset), Format.R32G32Sfloat, Stride * 4, false),
-            new LegacyProgram.Attribute(new BufferBinding(vertices.Handle, vertices.Offset + 8), Format.R32G32Sfloat, Stride * 4, false),
-            new LegacyProgram.Attribute(new BufferBinding(vertices.Handle, vertices.Offset + 16), Format.R32G32B32A32Sfloat, Stride * 4, false),
+            new LegacyProgram.Attribute(new GpuBufferBinding(vertices.Handle, vertices.Offset), InternalFormat.RG32f, Stride * 4, false),
+            new LegacyProgram.Attribute(new GpuBufferBinding(vertices.Handle, vertices.Offset + 8), InternalFormat.RG32f, Stride * 4, false),
+            new LegacyProgram.Attribute(new GpuBufferBinding(vertices.Handle, vertices.Offset + 16), InternalFormat.Rgba32f, Stride * 4, false),
         ];
-        var pipeline = Gpu.Pipelines.Get(state.Pipeline(program.Program, program.VertexLayout(attributes), PrimitiveTopology.TriangleList, t.Formats, "debug overlay"));
+        var pipeline = Gpu.Pipelines.Get(state.Pipeline(program.Program, program.VertexLayout(attributes), PrimitiveType.Triangles, t.Formats, "debug overlay"));
         cmd.BindPipeline(pipeline);
-        Span<BufferBinding> buffers = [attributes[0]!.Value.Buffer, attributes[1]!.Value.Buffer, attributes[2]!.Value.Buffer];
+        Span<GpuBufferBinding> buffers = [attributes[0]!.Value.Buffer, attributes[1]!.Value.Buffer, attributes[2]!.Value.Buffer];
         cmd.BindVertexBuffers(0, buffers);
         if (imageBatch is not null || atlasRuns.Count <= 1)
         {
@@ -529,13 +531,13 @@ public sealed unsafe class DebugOverlay : IDisposable
     }
 
     /// <summary>Collects painter-ordered batches, coalescing adjacent compatible draws into one upload and rendering.</summary>
-    internal sealed class OverlayPass(GpuContext gpu, int width, int height) : IDisposable
+    internal sealed class OverlayPass(IGpuContext gpu, int width, int height) : IDisposable
     {
         readonly List<float> vertices = [];
         readonly List<Run> runs = [];
         DebugOverlay? renderer;
-        Texture? target;
-        readonly record struct Run(SampledTexture Texture, bool Image, Rect2D Scissor, int First, int Count);
+        GpuTexture? target;
+        readonly record struct Run(SampledTexture Texture, bool Image, PixelRect Scissor, int First, int Count);
 
         public OverlayPass Reset(int newWidth, int newHeight)
         {
@@ -545,7 +547,7 @@ public sealed unsafe class DebugOverlay : IDisposable
         }
 
         /// <param name="atlas">The font atlas texture the glyph quads of <paramref name="data"/> sample (a UI font's can change between runs); null: the owner's baked one.</param>
-        public void Add(DebugOverlay owner, ReadOnlySpan<float> data, SampledTexture? image, Rect2D clip, SampledTexture? atlas = null)
+        public void Add(DebugOverlay owner, ReadOnlySpan<float> data, SampledTexture? image, PixelRect clip, SampledTexture? atlas = null)
         {
             if (owner.Gpu != gpu || target is not null && target != owner.Target)
                 throw new InvalidOperationException("An overlay pass must share its GPU and target.");
@@ -554,14 +556,14 @@ public sealed unsafe class DebugOverlay : IDisposable
             // If no geometry reaches outside this scissor, the full viewport clips it identically.
             // Different widget clips can then share a draw without changing their pixels.
             bool contained = true, solid = true;
-            float left = clip.Offset.X, right = left + clip.Extent.Width;
-            float bottom = height - clip.Offset.Y, top = bottom - clip.Extent.Height;
+            float left = clip.X, right = left + clip.Width;
+            float top = gpu.RenderTargetsBottomUp ? height - clip.Y - clip.Height : clip.Y, bottom = top + clip.Height;
             for (int i = 0; i < data.Length; i += Stride)
             {
                 contained &= data[i] >= left && data[i] <= right && data[i + 1] >= top && data[i + 1] <= bottom;
                 solid &= data[i + 2] < 0;
             }
-            if (contained) clip = new Rect2D(default, new Extent2D((uint)width, (uint)height));
+            if (contained) clip = new PixelRect(0, 0, (uint)width, (uint)height);
             var texture = image ?? atlas ?? owner.atlasSampled;
             bool isImage = image.HasValue;
             int first = vertices.Count / Stride, count = data.Length / Stride;
@@ -578,32 +580,32 @@ public sealed unsafe class DebugOverlay : IDisposable
             runs.Add(new(texture, isImage, clip, first, count));
         }
 
-        static bool SameClip(Rect2D a, Rect2D b) => a.Offset.X == b.Offset.X && a.Offset.Y == b.Offset.Y
-            && a.Extent.Width == b.Extent.Width && a.Extent.Height == b.Extent.Height;
+        static bool SameClip(PixelRect a, PixelRect b) => a.X == b.X && a.Y == b.Y
+            && a.Width == b.Width && a.Height == b.Height;
 
         public void Dispose()
         {
             if (renderer is not { } painter || target is null || runs.Count == 0) return;
             var cmd = gpu.BeginNative("UI overlay");
-            var targets = PassTargets.Of(target, null).At(new Viewport(0, 0, width, height, 0, 1));
+            var targets = PassTargets.Of(target, null).At(new PixelViewport(0, 0, width, height, 0, 1));
             cmd.BeginRendering(targets.Rendering);
             try
             {
-                var state = DrawState.For(targets.Formats, gpu.Device.DepthClamp, blend: new BlendState(true, BlendFactor.SrcAlpha, BlendFactor.OneMinusSrcAlpha));
+                var state = DrawState.For(targets.Formats, gpu.DepthClamp, blend: new BlendState(true, BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha));
                 state.Record(cmd, targets);
                 var data = CollectionsMarshal.AsSpan(vertices);
-                var upload = gpu.Frame.Constants.Allocate((ulong)(data.Length * 4), 16);
+                var upload = gpu.Frame.AllocateConstants((ulong)(data.Length * 4), 16);
                 MemoryMarshal.AsBytes(data).CopyTo(new Span<byte>(upload.Pointer, data.Length * 4));
                 Span<LegacyProgram.Attribute?> attributes =
                 [
-                    new(new BufferBinding(upload.Handle, upload.Offset), Format.R32G32Sfloat, Stride * 4, false),
-                    new(new BufferBinding(upload.Handle, upload.Offset + 8), Format.R32G32Sfloat, Stride * 4, false),
-                    new(new BufferBinding(upload.Handle, upload.Offset + 16), Format.R32G32B32A32Sfloat, Stride * 4, false),
+                    new(new GpuBufferBinding(upload.Handle, upload.Offset), InternalFormat.RG32f, Stride * 4, false),
+                    new(new GpuBufferBinding(upload.Handle, upload.Offset + 8), InternalFormat.RG32f, Stride * 4, false),
+                    new(new GpuBufferBinding(upload.Handle, upload.Offset + 16), InternalFormat.Rgba32f, Stride * 4, false),
                 ];
                 var program = painter.program;
-                var pipeline = gpu.Pipelines.Get(state.Pipeline(program.Program, program.VertexLayout(attributes), PrimitiveTopology.TriangleList, targets.Formats, "UI overlay"));
+                var pipeline = gpu.Pipelines.Get(state.Pipeline(program.Program, program.VertexLayout(attributes), PrimitiveType.Triangles, targets.Formats, "UI overlay"));
                 cmd.BindPipeline(pipeline);
-                Span<BufferBinding> buffers = [attributes[0]!.Value.Buffer, attributes[1]!.Value.Buffer, attributes[2]!.Value.Buffer];
+                Span<GpuBufferBinding> buffers = [attributes[0]!.Value.Buffer, attributes[1]!.Value.Buffer, attributes[2]!.Value.Buffer];
                 cmd.BindVertexBuffers(0, buffers);
                 program.Set(painter.uScreen, (float)width, height);
                 var scissor = targets.Scissor;

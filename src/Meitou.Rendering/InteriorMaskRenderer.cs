@@ -4,6 +4,8 @@ using Meitou.Data.Ogre;
 using Meitou.Data.World;
 using Meitou.Rendering.Gpu;
 
+using Meitou.Rendering.Gpu.Core;
+
 namespace Meitou.Rendering;
 
 /// <summary>
@@ -49,7 +51,7 @@ public sealed unsafe class InteriorMaskRenderer : IDisposable
         public Vector3 Min, Max;
     }
 
-    readonly GpuContext gpu;
+    readonly IGpuContext gpu;
     readonly WorldObjectRenderer objects;
     readonly LegacyProgram program;
     readonly NativeSegment segment;
@@ -58,18 +60,18 @@ public sealed unsafe class InteriorMaskRenderer : IDisposable
     readonly Dictionary<string, MaskMesh> meshes = new(StringComparer.OrdinalIgnoreCase);
     readonly List<InteriorVolume> near = [];
     readonly List<(Vector2 Min, Vector2 Max)> boxes = [];
-    Texture? target;
-    (Texture Texture, uint Index)? bindless;
+    GpuTexture? target;
+    (GpuTexture Texture, uint Index)? bindless;
 
-    internal InteriorMaskRenderer(GpuContext gpu, WorldObjectRenderer objects)
+    internal InteriorMaskRenderer(IGpuContext gpu, WorldObjectRenderer objects)
     {
         this.gpu = gpu;
         this.objects = objects;
         program = LegacyProgram.Create(gpu, Vertex, Fragment, "interior mask");
-        segment = new NativeSegment(gpu, program, Silk.NET.Vulkan.PrimitiveTopology.TriangleList, "interior mask");
+        segment = new NativeSegment(gpu, program, PrimitiveType.Triangles, "interior mask");
         mvp = program.Uniform("uMvp");
         inside = program.Uniform("uInside");
-        vertexSource = new VertexArrayBindings([new LegacyProgram.Attribute(default, Silk.NET.Vulkan.Format.R32G32B32Sfloat, 12, false)], default);
+        vertexSource = new VertexArrayBindings([new LegacyProgram.Attribute(default, InternalFormat.Rgb32f, 12, false)], default);
     }
 
     /// <summary>Whether the last <see cref="Record"/> drew a mask: only then do <see cref="Index"/> and <see cref="Boxes"/> apply.</summary>
@@ -141,16 +143,16 @@ public sealed unsafe class InteriorMaskRenderer : IDisposable
             if (bindless is { } old) gpu.Bindless.Free(BindlessKind.Texture2D, old.Index);
             bindless = null;
             target?.Dispose();
-            target = Texture.Create(gpu, new TextureDesc(Silk.NET.Vulkan.Format.R16G16B16A16Sfloat, width, height, Use: TextureUse.ColourTarget | TextureUse.Sampled, Name: "interior mask"));
+            target = gpu.CreateTexture(new TextureDesc(InternalFormat.Rgba16f, width, height, Use: TextureUse.ColourTarget | TextureUse.Sampled, Name: "interior mask"));
         }
         var cmd = gpu.BeginNative("interior mask");
-        var viewport = new Silk.NET.Vulkan.Viewport(0, 0, width, height, 0, 1);
+        var viewport = new PixelViewport(0, 0, width, height, 0, 1);
         var t = PassTargets.Of(target, null).At(viewport);
-        t = t with { Colour = t.Colour with { Load = Silk.NET.Vulkan.AttachmentLoadOp.Clear, Clear = new Silk.NET.Vulkan.ClearValue(new Silk.NET.Vulkan.ClearColorValue(NoFront, 0f, 0f, 0f)) } };
+        t = t with { Colour = t.Colour with { Load = LoadOp.Clear, Clear = new ClearColour(NoFront, 0f, 0f, 0f) } };
         cmd.BeginRendering(t.Rendering);
         // Min on the colour (the nearest face), max on the alpha (the farthest); every face drawn, no depth test (the game's target has no depth).
-        var blend = new BlendState(true, Silk.NET.Vulkan.BlendFactor.One, Silk.NET.Vulkan.BlendFactor.One, Silk.NET.Vulkan.BlendOp.Min, Silk.NET.Vulkan.BlendOp.Max);
-        var state = DrawState.For(t.Formats, gpu.Device.DepthClamp, blend: blend, mask: Silk.NET.Vulkan.ColorComponentFlags.RBit | Silk.NET.Vulkan.ColorComponentFlags.ABit);
+        var blend = new BlendState(true, BlendingFactor.One, BlendingFactor.One, BlendOperation.Min, BlendOperation.Max);
+        var state = DrawState.For(t.Formats, gpu.DepthClamp, blend: blend, mask: ColorMask.R | ColorMask.A);
         state.Record(cmd, t);
         cmd.BindPipeline(segment.Get(state, t.Formats, vertexSource));
         var relative = Matrix4x4.CreateTranslation(eye) * viewProjection;   // camera-relative placement keeps the precision far from the origin
@@ -168,7 +170,7 @@ public sealed unsafe class InteriorMaskRenderer : IDisposable
                 program.Set(mvp, in m);
                 program.Set(inside, eyeInside ? 1 : 0);
                 program.Flush(cmd);
-                cmd.BindVertexBuffers(0, [new BufferBinding(buffer.Handle, 0)]);
+                cmd.BindVertexBuffers(0, [new GpuBufferBinding(buffer.Handle, 0)]);
                 cmd.Draw((uint)mesh.Count);
                 Drawn++;
                 any = true;
@@ -183,11 +185,11 @@ public sealed unsafe class InteriorMaskRenderer : IDisposable
             if (any) boxes.Add((min, max));
         }
         cmd.EndRendering();
-        cmd.Barrier(BarrierBatch.Full);
+        cmd.Order();
         gpu.EndNative(cmd);
         if (Drawn == 0) return;
         if (bindless is not { } known || known.Texture != target)
-            bindless = (target, gpu.Bindless.Register(BindlessKind.Texture2D, new SampledTexture(Nearest(), target.View(), target.Image)));
+            bindless = (target, gpu.Bindless.Register(BindlessKind.Texture2D, new SampledTexture(Nearest(), target.View())));
         Active = true;
     }
 
@@ -226,7 +228,7 @@ public sealed unsafe class InteriorMaskRenderer : IDisposable
         return mesh;
     }
 
-    Silk.NET.Vulkan.Sampler Nearest() => gpu.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Nearest, TextureMagFilter.Nearest, TextureWrapMode.ClampToEdge,
+    GpuSampler Nearest() => gpu.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Nearest, TextureMagFilter.Nearest, TextureWrapMode.ClampToEdge,
         TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, false, DepthFunction.Lequal, false, 1, false, 0));
 
     public void Dispose()

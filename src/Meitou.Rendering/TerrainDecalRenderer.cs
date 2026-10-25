@@ -58,19 +58,19 @@ public sealed unsafe class TerrainDecalRenderer : IDisposable
     }
 
     static readonly VertexLayout Rows = new(
-        new VertexInput(0, Silk.NET.Vulkan.Format.R32G32B32A32Sfloat, DecalInstance.Size, true),
-        new VertexInput(1, Silk.NET.Vulkan.Format.R32G32B32A32Sfloat, DecalInstance.Size, true),
-        new VertexInput(2, Silk.NET.Vulkan.Format.R32G32Sfloat, DecalInstance.Size, true),
-        new VertexInput(3, Silk.NET.Vulkan.Format.R32Uint, DecalInstance.Size, true));
+        new VertexInput(0, InternalFormat.Rgba32f, DecalInstance.Size, true),
+        new VertexInput(1, InternalFormat.Rgba32f, DecalInstance.Size, true),
+        new VertexInput(2, InternalFormat.RG32f, DecalInstance.Size, true),
+        new VertexInput(3, InternalFormat.R32ui, DecalInstance.Size, true));
 
     // The colour alpha blended (red, green, blue), the alpha added: the game's separate blend in one pass.
-    static readonly BlendState Blend = new(true, Silk.NET.Vulkan.BlendFactor.SrcAlpha, Silk.NET.Vulkan.BlendFactor.OneMinusSrcAlpha,
-        AlphaSrc: Silk.NET.Vulkan.BlendFactor.One, AlphaDst: Silk.NET.Vulkan.BlendFactor.One);
+    static readonly BlendState Blend = new(true, BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha,
+        AlphaSrc: BlendingFactor.One, AlphaDst: BlendingFactor.One);
 
-    readonly GpuContext gpu;
+    readonly IGpuContext gpu;
     readonly NativeFrame frame;
-    readonly ShaderProgram program;
-    GraphicsPipeline? pipeline;
+    readonly GpuProgram program;
+    GpuPipeline? pipeline;
     readonly SampledImage?[][] sprites;
     // Each sprite's bindless index (uint.MaxValue: none), registered with the samplers of spriteBias (the upscaler's LOD bias, as the images give them).
     readonly uint[][] spriteIndex;
@@ -81,12 +81,12 @@ public sealed unsafe class TerrainDecalRenderer : IDisposable
     readonly List<(float Distance, uint Key)> near = [];
     readonly HashSet<uint> drawn = [];
     readonly Vector4[] cells = new Vector4[MaxSlots];
-    Texture? target;
+    GpuTexture? target;
     int layers;
-    (Texture Texture, uint Index)? bindless;
+    (GpuTexture Texture, uint Index)? bindless;
     int count;
 
-    TerrainDecalRenderer(GpuContext gpu, SampledImage?[][] sprites)
+    TerrainDecalRenderer(IGpuContext gpu, SampledImage?[][] sprites)
     {
         this.gpu = gpu;
         this.sprites = sprites;
@@ -96,7 +96,7 @@ public sealed unsafe class TerrainDecalRenderer : IDisposable
     }
 
     /// <summary>The renderer for the decal textures <paramref name="files"/> (per <see cref="TerrainDecalType"/>, its variants in order); a file that cannot be read draws nothing.</summary>
-    public static TerrainDecalRenderer Create(GpuContext gpu, IReadOnlyList<IReadOnlyList<string>> files)
+    public static TerrainDecalRenderer Create(IGpuContext gpu, IReadOnlyList<IReadOnlyList<string>> files)
     {
         var sprites = new SampledImage?[4][];
         for (int t = 0; t < 4; t++)
@@ -154,7 +154,7 @@ public sealed unsafe class TerrainDecalRenderer : IDisposable
             bindless = null;
             target?.Dispose();
             layers = target is null || target.Desc.Width != resolution ? need : Math.Max(layers, need);
-            target = Texture.Create(gpu, new TextureDesc(Silk.NET.Vulkan.Format.R8G8B8A8Unorm, resolution, resolution, Layers: layers, Kind: TextureKind.Texture2DArray,
+            target = gpu.CreateTexture(new TextureDesc(InternalFormat.Rgba8, resolution, resolution, Layers: layers, Kind: TextureKind.Texture2DArray,
                 Use: TextureUse.ColourTarget | TextureUse.Sampled, Name: "terrain decals"));
             Array.Clear(slots);
         }
@@ -176,7 +176,7 @@ public sealed unsafe class TerrainDecalRenderer : IDisposable
                 if (!taken[s]) { layerOf[i] = s; taken[s] = true; slots[s] = (near[i].Key, 0, 0, 0); break; }
         }
 
-        CommandList? cmd = null;
+        IGpuCommandList? cmd = null;
         count = 0;
         for (int i = 0; i < near.Count; i++)
         {
@@ -198,11 +198,11 @@ public sealed unsafe class TerrainDecalRenderer : IDisposable
         }
         if (cmd is not null)
         {
-            cmd.Barrier(BarrierBatch.Full);
+            cmd.Order();
             gpu.EndNative(cmd);
         }
         if (count > 0 && target is not null && (bindless is not { } known || known.Texture != target))
-            bindless = (target, gpu.Bindless.Register(BindlessKind.Texture2DArray, new SampledTexture(Linear(), target.View(), target.Image)));
+            bindless = (target, gpu.Bindless.Register(BindlessKind.Texture2DArray, new SampledTexture(Linear(), target.View())));
     }
 
     /// <summary>
@@ -210,7 +210,7 @@ public sealed unsafe class TerrainDecalRenderer : IDisposable
     /// place in the cell, its sides the half sizes / 10240 in clip space along the rotation, the texture × the colour (its alpha at most the life). The colour is alpha
     /// blended (red, green, blue only) and the alpha added, the game's separate blend; one instanced draw in the decals' order.
     /// </summary>
-    void DrawLayer(CommandList cmd, int layer, TerrainDecalStore store, ReadOnlySpan<TerrainDecal> decals, bool clear)
+    void DrawLayer(IGpuCommandList cmd, int layer, TerrainDecalStore store, ReadOnlySpan<TerrainDecal> decals, bool clear)
     {
         if (!clear && decals.IsEmpty) return;
         if (instances.Length < decals.Length) instances = new DecalInstance[Math.Max(decals.Length, instances.Length * 2)];
@@ -230,19 +230,19 @@ public sealed unsafe class TerrainDecalRenderer : IDisposable
             };
         }
         var t = PassTargets.Of(target, null);
-        var colourTarget = new RenderTarget(target!.Attachment(0, layer), clear ? Silk.NET.Vulkan.AttachmentLoadOp.Clear : Silk.NET.Vulkan.AttachmentLoadOp.Load,
-            new Silk.NET.Vulkan.ClearValue(new Silk.NET.Vulkan.ClearColorValue(0f, 0f, 0f, 0f)), target.Image);
+        var colourTarget = new RenderTarget(target!.Attachment(0, layer), clear ? LoadOp.Clear : LoadOp.Load,
+            clear ? new ClearColour(0f, 0f, 0f, 0f) : default);
         t = t with { Colour = colourTarget };
         cmd.BeginRendering(t.Rendering);
         if (n > 0)
         {
-            var rows = gpu.Frame.Constants.Allocate((ulong)(n * DecalInstance.Size), 16);
+            var rows = gpu.Frame.AllocateConstants((ulong)(n * DecalInstance.Size), 16);
             MemoryMarshal.AsBytes(instances.AsSpan(0, n)).CopyTo(new Span<byte>(rows.Pointer, n * DecalInstance.Size));
-            var state = DrawState.For(t.Formats, gpu.Device.DepthClamp, blend: Blend);
+            var state = DrawState.For(t.Formats, gpu.DepthClamp, blend: Blend);
             state.Record(cmd, t);
-            cmd.BindPipeline(pipeline ??= gpu.Pipelines.Get(state.Pipeline(program, Rows, Silk.NET.Vulkan.PrimitiveTopology.TriangleStrip, t.Formats, "terrain decals")));
-            frame.Bind(cmd, program.Layout, default);
-            Span<BufferBinding> buffers = [new(rows.Handle, rows.Offset), new(rows.Handle, rows.Offset + 16), new(rows.Handle, rows.Offset + 32), new(rows.Handle, rows.Offset + 40)];
+            cmd.BindPipeline(pipeline ??= gpu.Pipelines.Get(state.Pipeline(program, Rows, PrimitiveType.TriangleStrip, t.Formats, "terrain decals")));
+            frame.Bind(cmd, program, default);
+            Span<GpuBufferBinding> buffers = [new(rows.Handle, rows.Offset), new(rows.Handle, rows.Offset + 16), new(rows.Handle, rows.Offset + 32), new(rows.Handle, rows.Offset + 40)];
             cmd.BindVertexBuffers(0, buffers);
             cmd.Draw(4, (uint)n);
         }
@@ -273,7 +273,7 @@ public sealed unsafe class TerrainDecalRenderer : IDisposable
         for (int i = 0; i < count; i++) c.BloodCells[i] = cells[i];
     }
 
-    Silk.NET.Vulkan.Sampler Linear() => gpu.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Linear, TextureMagFilter.Linear, TextureWrapMode.ClampToEdge,
+    GpuSampler Linear() => gpu.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Linear, TextureMagFilter.Linear, TextureWrapMode.ClampToEdge,
         TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, false, DepthFunction.Lequal, false, 1, false, 0));
 
     public void Dispose()
@@ -286,7 +286,7 @@ public sealed unsafe class TerrainDecalRenderer : IDisposable
         foreach (var list in sprites)
             foreach (var image in list) image?.Dispose();
         gpu.Pipelines.Forget(program);
-        program.Dispose();
+        gpu.Shaders.Dispose(program);
         frame.Dispose();
     }
 }

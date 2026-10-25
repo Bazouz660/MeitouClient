@@ -1,7 +1,9 @@
+using InternalFormat = Meitou.Rendering.Gpu.InternalFormat;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using Meitou.Rendering.Gpu;
-using Silk.NET.Vulkan;
+
+using Meitou.Rendering.Gpu.Core;
 
 namespace Meitou.Rendering;
 
@@ -23,8 +25,8 @@ struct OceanPush
 /// The Meitou water's open waves (docs/render-water.md "Meitou water"): Tessendorf's FFT ocean on the GPU. <see cref="OceanSpectrum"/> gives the
 /// initial amplitudes (rebuilt on a worker thread when the wind turns or changes strength, and blended in over <see cref="BlendSeconds"/>);
 /// each frame a compute pass evolves them to the game clock, runs an inverse FFT over rows and then columns (Stockham, radix 2, in shared
-/// memory, four complex fields per texel packing eight real ones) and writes per cascade the displacement and the slopes into two RGBA16F
-/// texture arrays with mips, which the water's shaders sample. Nothing runs while the clock and the spectrum stand still (a paused game).
+/// memory, four complex fields per texel packing eight real ones) and writes the displacement and the slopes into one RGBA16F
+/// texture array with mips (three layers each), which the water's shaders sample. Nothing runs while the clock and the spectrum stand still (a paused game).
 /// Recorded into the frame's pre-frame commands; render thread only.
 /// </summary>
 public sealed unsafe class OceanWaves : IDisposable
@@ -38,12 +40,12 @@ public sealed unsafe class OceanWaves : IDisposable
     public const float RebuildAngle = 0.17f, RebuildChange = 0.12f;
 
     const int Cascades = 3;
-    readonly GpuContext ctx;
-    readonly ShaderProgram evolve, fft, assemble;
-    readonly ComputePipeline evolvePipe, fftPipe, assemblePipe;
+    readonly IGpuContext ctx;
+    readonly GpuProgram evolve, fft, assemble;
+    readonly GpuComputePipeline evolvePipe, fftPipe, assemblePipe;
     readonly DeviceBuffer spectrum, fieldsA, fieldsB, output, foam;
-    readonly Texture displacement, slopes;
-    readonly Sampler sampler;
+    readonly GpuTexture oceanMaps;   // layers 0..2 displacement, 3..5 slopes
+    readonly GpuSampler sampler;
     readonly ulong texels;
 
     // The spectra: slot `to` is shown at blend 1. A new one goes into the other slot once the blend is complete.
@@ -59,7 +61,7 @@ public sealed unsafe class OceanWaves : IDisposable
     double? lastPass;
     bool foamCleared;
 
-    public OceanWaves(GpuContext ctx, int size = DefaultSize)
+    public OceanWaves(IGpuContext ctx, int size = DefaultSize)
     {
         if (size is not (64 or 128 or 256)) throw new ArgumentOutOfRangeException(nameof(size), "64, 128 or 256");
         this.ctx = ctx;
@@ -79,13 +81,11 @@ public sealed unsafe class OceanWaves : IDisposable
         int levels = 1 + (int)Math.Log2(size);
         using (var batch = ctx.Uploads.Begin())
         {
-            TextureDesc Desc(string name) => new(Format.R16G16B16A16Sfloat, size, size, levels, Cascades, Kind: TextureKind.Texture2DArray,
-                Use: TextureUse.Sampled | TextureUse.TransferDst | TextureUse.TransferSrc, Name: name);
-            displacement = batch.Create(Desc("ocean displacement"));
-            slopes = batch.Create(Desc("ocean slopes"));
+            oceanMaps = batch.Create(new TextureDesc(InternalFormat.Rgba16f, size, size, levels, 2 * Cascades,
+                Kind: TextureKind.Texture2DArray, Use: TextureUse.Sampled | TextureUse.TransferDst | TextureUse.TransferSrc, Name: "ocean maps"));
         }
-        sampler = ctx.Samplers.Get(new SamplerDesc(Filter.Linear, Filter.Linear, SamplerMipmapMode.Linear, true, SamplerAddressMode.Repeat,
-            SamplerAddressMode.Repeat, SamplerAddressMode.Repeat, false, CompareOp.Always, false, false, 8, 0));
+        sampler = ctx.Samplers.Get(new SamplerDesc(TextureMinFilter.LinearMipmapLinear, TextureMagFilter.Linear, true, TextureWrapMode.Repeat,
+            TextureWrapMode.Repeat, TextureWrapMode.Repeat, false, DepthFunction.Always, false, false, 8, 0));
     }
 
     /// <summary>Texels along a cascade's side.</summary>
@@ -94,11 +94,12 @@ public sealed unsafe class OceanWaves : IDisposable
     public float Choppiness { get; set; } = 1.0f;
     /// <summary>The cascades' tile sizes (units), w unused.</summary>
     public Vector4 Lengths => new(OceanSpectrum.Lengths[0], OceanSpectrum.Lengths[1], OceanSpectrum.Lengths[2], 0);
-    /// <summary>Per cascade (layer): displacement x, y, z (units; the horizontal ones times the choppiness) and the foam (0..1): where the crests
-    /// fold it is renewed, elsewhere it fades over <see cref="FoamSeconds"/>, so foam lingers behind a crest.</summary>
-    public SampledTexture Displacement => new(sampler, displacement.View(), displacement.Image);
-    /// <summary>Per cascade (layer): ∂Dy/∂x, ∂Dy/∂z, ∂Dx/∂x, ∂Dz/∂z (the last two times the choppiness).</summary>
-    public SampledTexture Slopes => new(sampler, slopes.View(), slopes.Image);
+    /// <summary>
+    /// Layers 0..2: per cascade displacement x, y, z (units; the horizontal ones times the choppiness) and the foam (0..1):
+    /// where the crests fold it is renewed, elsewhere it fades over <see cref="FoamSeconds"/>, so foam lingers behind a crest.
+    /// Layers 3..5: ∂Dy/∂x, ∂Dy/∂z, ∂Dx/∂x, ∂Dz/∂z (the last two times the choppiness).
+    /// </summary>
+    public SampledTexture OceanMaps => new(sampler, oceanMaps.View());
     /// <summary>Compute passes recorded so far (a paused game records none).</summary>
     public long Dispatched { get; private set; }
     /// <summary>GPU time of the timed passes (microseconds, summed) and their count, read a few frames late.</summary>
@@ -169,7 +170,7 @@ public sealed unsafe class OceanWaves : IDisposable
         {
             Lengths = Lengths, Time = (float)time, Blend = blend, From = from, To = to, Choppiness = Choppiness, Dt = dt,
         };
-        Span<BufferBinding> b =
+        Span<GpuBufferBinding> b =
         [
             new(spectrum.Handle, 0, spectrum.Size), new(fieldsA.Handle, 0, fieldsA.Size), new(fieldsB.Handle, 0, fieldsB.Size), new(output.Handle, 0, output.Size),
             new(foam.Handle, 0, foam.Size),
@@ -178,9 +179,9 @@ public sealed unsafe class OceanWaves : IDisposable
         cmd.BeginLabel("ocean");
         // The last frame's draws sampled the textures, its passes used the buffers, and the spectrum may just have been written.
         if (!foamCleared) { cmd.FillBuffer(foam.Handle, 0, foam.Size, 0); foamCleared = true; }
-        cmd.Barrier(BarrierBatch.Full);
+        cmd.Order();
         var stamps = (ctx.Frame.Timestamps.Allocate(), ctx.Frame.Timestamps.Allocate());
-        cmd.Timestamp(ctx.Frame.Timestamps, stamps.Item1, PipelineStageFlags2.ComputeShaderBit);
+        cmd.Timestamp(ctx.Frame.Timestamps, stamps.Item1, GpuStage.Compute);
         uint groups = (uint)Size / 16;
         Run(cmd, evolve, evolvePipe, b, push, groups, groups, Cascades);
         Compute(cmd);
@@ -189,17 +190,14 @@ public sealed unsafe class OceanWaves : IDisposable
         Run(cmd, fft, fftPipe, b, push with { Pass = 1 }, (uint)Size, Cascades, 1);
         Compute(cmd);
         Run(cmd, assemble, assemblePipe, b, push, groups, groups, Cascades);
-        var copy = new BarrierBatch();
-        copy.Add(PipelineStageFlags2.ComputeShaderBit, AccessFlags2.ShaderStorageWriteBit, PipelineStageFlags2.AllTransferBit, AccessFlags2.TransferReadBit);
-        cmd.Barrier(copy);
+        cmd.Barrier([new GpuDependency(Access.StorageWrite, Access.TransferSrc)]);
         for (int c = 0; c < Cascades; c++)
         {
-            cmd.CopyBufferToImage(output.Handle, (ulong)c * texels * 8, displacement, 0, c);
-            cmd.CopyBufferToImage(output.Handle, (ulong)(Cascades + c) * texels * 8, slopes, 0, c);
+            cmd.CopyBufferToImage(output.Handle, (ulong)c * texels * 8, oceanMaps, 0, c);
+            cmd.CopyBufferToImage(output.Handle, (ulong)(Cascades + c) * texels * 8, oceanMaps, 0, Cascades + c);
         }
-        cmd.GenerateMips(displacement);
-        cmd.GenerateMips(slopes);
-        cmd.Timestamp(ctx.Frame.Timestamps, stamps.Item2, PipelineStageFlags2.AllTransferBit);
+        cmd.GenerateMips(oceanMaps);
+        cmd.Timestamp(ctx.Frame.Timestamps, stamps.Item2, GpuStage.All);
         if (stamps.Item1.IsValid && stamps.Item2.IsValid) pendingTimes.Add(stamps);
         cmd.EndLabel();
         FrameProfiler.PreStamp(cmd, 9);   // the water stage: the ocean's FFT is the water's
@@ -212,7 +210,7 @@ public sealed unsafe class OceanWaves : IDisposable
         for (int i = 0; i < pendingTimes.Count; i++)
         {
             var (b, e) = pendingTimes[i];
-            if (b.Frame + ctx.Device.Frames.Count + 2 < ctx.Frame.Number) { pendingTimes.RemoveAt(i--); continue; }   // never collected
+            if (b.Frame + ctx.FramesInFlight + 2 < ctx.Frame.Number) { pendingTimes.RemoveAt(i--); continue; }   // never collected
             if (!q.TryRead(b, out ulong tb) || !q.TryRead(e, out ulong te)) continue;
             GpuMicroseconds += (te - tb) / 1000.0;
             GpuTimed++;
@@ -222,36 +220,29 @@ public sealed unsafe class OceanWaves : IDisposable
 
     void Write(uint slot, Vector4[][] s)
     {
+        using var batch = ctx.Uploads.Begin();
         for (int c = 0; c < Cascades; c++)
-            ctx.Uploads.Write(spectrum, ((ulong)slot * Cascades + (ulong)c) * texels * 16, MemoryMarshal.AsBytes(s[c].AsSpan()));
+            batch.Write(spectrum, ((ulong)slot * Cascades + (ulong)c) * texels * 16, MemoryMarshal.AsBytes(s[c].AsSpan()));
     }
 
-    static void Compute(CommandList cmd)
+    static void Compute(IGpuCommandList cmd)
     {
-        var batch = new BarrierBatch();
-        batch.Add(PipelineStageFlags2.ComputeShaderBit, AccessFlags2.ShaderStorageWriteBit, PipelineStageFlags2.ComputeShaderBit,
-            AccessFlags2.ShaderStorageReadBit | AccessFlags2.ShaderStorageWriteBit);
-        cmd.Barrier(batch);
+        cmd.Barrier([new GpuDependency(Access.StorageWrite, Access.StorageRead | Access.StorageWrite)]);
     }
 
-    static void Run(CommandList cmd, ShaderProgram p, ComputePipeline pipe, ReadOnlySpan<BufferBinding> b, in OceanPush push, uint x, uint y, uint z)
+    void Run(IGpuCommandList cmd, GpuProgram p, GpuComputePipeline pipe, ReadOnlySpan<GpuBufferBinding> b, in OceanPush push, uint x, uint y, uint z)
     {
         cmd.BindPipeline(pipe);
-        var bindings = p.ComputeReflection!.Blocks.Where(k => k.Kind == Gpu.Shaders.BlockKind.StorageBuffer && k.Set == 0).Select(k => (uint)k.Binding).ToArray();
-        int count = bindings.Length;
-        var infos = stackalloc DescriptorBufferInfo[count];
-        var writes = stackalloc WriteDescriptorSet[count];
+        var slots = p.Info.ComputeReflection!.Blocks.Where(k => k.Kind == Gpu.Shaders.BlockKind.StorageBuffer && k.Set == 0).Select(k => (uint)k.Binding).ToArray();
+        int count = slots.Length;
+        var bindings = stackalloc GpuBinding[count];
         for (int i = 0; i < count; i++)
         {
-            ref readonly var bb = ref b[(int)bindings[i]];
-            infos[i] = new DescriptorBufferInfo(bb.Buffer, bb.Offset, bb.Size);
-            writes[i] = new WriteDescriptorSet
-            {
-                SType = StructureType.WriteDescriptorSet, DstBinding = bindings[i], DescriptorCount = 1, DescriptorType = DescriptorType.StorageBuffer, PBufferInfo = &infos[i],
-            };
+            ref readonly var bb = ref b[(int)slots[i]];
+            bindings[i] = GpuBinding.Storage(slots[i], bb);
         }
-        cmd.PushDescriptors(p.Layout, 0, new ReadOnlySpan<WriteDescriptorSet>(writes, count), PipelineBindPoint.Compute);
-        cmd.PushConstants(p.Layout, ShaderStageFlags.ComputeBit, in push);
+        cmd.BindProgramResources(p, 0, new ReadOnlySpan<GpuBinding>(bindings, count));
+        cmd.PushConstants(p, GpuStage.Compute, in push);
         cmd.Dispatch(x, y, z);
     }
 
@@ -362,10 +353,9 @@ public sealed unsafe class OceanWaves : IDisposable
         fieldsB.Dispose();
         output.Dispose();
         foam.Dispose();
-        displacement.Dispose();
-        slopes.Dispose();
-        evolve.Dispose();
-        fft.Dispose();
-        assemble.Dispose();
+        oceanMaps.Dispose();
+        ctx.Shaders.Dispose(evolve);
+        ctx.Shaders.Dispose(fft);
+        ctx.Shaders.Dispose(assemble);
     }
 }

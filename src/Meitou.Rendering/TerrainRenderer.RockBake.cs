@@ -1,3 +1,4 @@
+using InternalFormat = Meitou.Rendering.Gpu.InternalFormat;
 using System.Numerics;
 using Meitou.Data.World;
 using Meitou.Rendering.Gpu;
@@ -18,7 +19,7 @@ public sealed unsafe partial class TerrainRenderer
     TerrainProgram RockBakeProgram()
     {
         if (rockBake is not null) return rockBake;
-        Silk.NET.Vulkan.DescriptorSetLayout[] sets = [nativeFrame.SetLayout, gpu.Bindless.Layout, constantsLayout];
+        GpuSetLayout[] sets = [nativeFrame.SetLayout, GpuSetLayout.Bindless, constantsLayout];
         return rockBake = new TerrainProgram(gpu, sets, TerrainShaders.RockBakeVertexNative(), TerrainShaders.RockBakeFragmentNative(), "terrain rock bake");
     }
 
@@ -29,14 +30,14 @@ public sealed unsafe partial class TerrainRenderer
     internal string? RockBiomeKey(int row) => textures?.BiomeKey(row);
 
     /// <summary>The vertex layout and buffers of a rock's mesh part for the bake program (positions at 0, normals at 1, the placement's rows at 7 to 10).</summary>
-    internal (VertexLayout Layout, BufferBinding[] Bindings) RockBakeVertices(DeviceBuffer vertices)
+    internal (VertexLayout Layout, GpuBufferBinding[] Bindings) RockBakeVertices(DeviceBuffer vertices)
     {
         var p = RockBakeProgram();
         var attributes = new LegacyProgram.Attribute?[TerrainShaders.MeshInstanceLocation + 4];
         FoliageRenderer.VertexAttributes(vertices).AsSpan().CopyTo(attributes);
         for (int a = 0; a < 4; a++)
-            attributes[TerrainShaders.MeshInstanceLocation + a] = new LegacyProgram.Attribute(default, Silk.NET.Vulkan.Format.R32G32B32A32Sfloat, 64, true);
-        var bindings = new BufferBinding[p.Own];
+            attributes[TerrainShaders.MeshInstanceLocation + a] = new LegacyProgram.Attribute(default, InternalFormat.Rgba32f, 64, true);
+        var bindings = new GpuBufferBinding[p.Own];
         p.Buffers(attributes, bindings);
         return (p.VertexLayout(attributes), bindings);
     }
@@ -54,7 +55,7 @@ public sealed unsafe partial class TerrainRenderer
             Colour = standIn2D, Ground = standIn2D, WorldColour = standIn2D, Region = lastRegion, CellGrid = lastCellGrid,
             HeightNormals = 0, Feature = 1, FeatureBiome = row, SunColour = Vector3.One, AmbientSky = Vector3.One, AmbientGround = Vector3.One,
             WaterHeight = -1e6f, HalfWorld = (float)WorldLayout.HalfWorldSize, FarStart = 1e9f, FarEnd = 2e9f,
-            Textured = 1, NormalMaps = 1, HasMaps = 0, MapState = 0, FieldTiles = standInUInt,
+            Textured = 1, NormalMaps = 1, HasMaps = 0, MapState = 0, ReliefQuality = GroundRelief.Quality, FieldTiles = standInUInt,
         };
         if (textures is { } t)
         {
@@ -93,31 +94,31 @@ public sealed unsafe partial class TerrainRenderer
     /// <paramref name="dir"/> with the biome's material, writing the output of <paramref name="pass"/> (0 albedo, 1 normal in the frame's basis, 2 gloss).
     /// <paramref name="distance"/> is the distance the material is shaded for (its fade with distance), <paramref name="scale"/> the placement's.
     /// </summary>
-    internal void RecordRockBake(CommandList cmd, AttachmentFormats formats, DrawState state, int row, float scale, float distance, in Matrix4x4 viewProjection, Vector3 eye,
+    internal void RecordRockBake(IGpuCommandList cmd, AttachmentFormats formats, DrawState state, int row, float scale, float distance, in Matrix4x4 viewProjection, Vector3 eye,
         Vector3 dir, Vector3 right, Vector3 up, int pass, ImpostorBaker.Part[] parts)
     {
         var p = RockBakeProgram();
         var view = new ViewConstants { ViewProjection = viewProjection, Eye = eye, LightDir = Vector3.UnitY, FogDistance = 0 };
         var binding = nativeFrame.Prepare(in view);
-        NativeFrame.Record(cmd, p.Layout, in binding);
-        var constantsSlice = gpu.Frame.Constants.Write<TerrainConstants>([BakeConstants(row)], uniformAlign);
-        ulong key = constantsSlice.Handle.Handle;
+        NativeFrame.Record(cmd, p.P, in binding);
+        var constantsSlice = gpu.Frame.WriteConstants(System.Runtime.InteropServices.MemoryMarshal.AsBytes(new ReadOnlySpan<TerrainConstants>([BakeConstants(row)])), uniformAlign);
+        ulong key = (ulong)constantsSlice.Handle.Index;
         if (!constantSets.TryGetValue(key, out var set)) constantSets[key] = set = ConstantSet(constantsSlice.Handle);
         uint offset = (uint)constantsSlice.Offset;
-        cmd.BindSets(p.Layout, TerrainShaders.ConstantsSet, new ReadOnlySpan<DescriptorSet>(in set), new ReadOnlySpan<uint>(in offset));
-        var rows = gpu.Frame.Constants.Allocate(64, 64);
+        cmd.BindSets(p.P, TerrainShaders.ConstantsSet, new ReadOnlySpan<GpuSet>(in set), new ReadOnlySpan<uint>(in offset));
+        var rows = gpu.Frame.WriteConstants(new byte[64], 64);
         *(Matrix4x4*)rows.Pointer = BakePlacement(scale, row);
-        Span<BufferBinding> instance = stackalloc BufferBinding[4];
-        for (int a = 0; a < 4; a++) instance[a] = new BufferBinding(rows.Handle, rows.Offset + (ulong)(16 * a));
+        Span<GpuBufferBinding> instance = stackalloc GpuBufferBinding[4];
+        for (int a = 0; a < 4; a++) instance[a] = new GpuBufferBinding(rows.Handle, rows.Offset + (ulong)(16 * a));
         cmd.SetRaster(state.Cull, state.Front);
         cmd.BindVertexBuffers(TerrainShaders.MeshInstanceLocation, instance);
         var push = new TerrainBakePush { Dir = new Vector4(dir, distance), Right = new Vector4(right, 0), Up = new Vector4(up, 0), Pass = pass };
-        cmd.PushConstants(p.Layout, ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit, in push);
+        cmd.PushConstants(p.P, GpuStage.Vertex | GpuStage.Fragment, in push);
         foreach (var part in parts)
         {
-            cmd.BindPipeline(gpu.Pipelines.Get(state.Pipeline(p.P, part.Layout, PrimitiveTopology.TriangleList, formats, "impostor rock bake")));
+            cmd.BindPipeline(gpu.Pipelines.Get(state.Pipeline(p.P, part.Layout, PrimitiveType.Triangles, formats, "impostor rock bake")));
             cmd.BindVertexBuffers(0, part.Bindings);
-            cmd.BindIndexBuffer(new BufferBinding(part.Indices.Handle, 0, part.Indices.Size), IndexType.Uint32);
+            cmd.BindIndexBuffer(new GpuBufferBinding(part.Indices.Handle, 0, part.Indices.Size), IndexKind.U32);
             cmd.DrawIndexed((uint)part.Count);
         }
     }

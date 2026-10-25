@@ -52,7 +52,7 @@ sealed partial class GameHost
     /// <summary>Once a frame: when the <c>icons</c> switch has changed, the interface's icons and the renderer's save folder follow it.</summary>
     void SyncIconLook()
     {
-        if (gpu.Characters is not { } drawer || iconsEnhanced == drawer.EnhancedIcons) return;
+        if (ActiveCharacters is not { } drawer || iconsEnhanced == drawer.EnhancedIcons) return;
         iconsEnhanced = drawer.EnhancedIcons;
         drawer.IconSaveDirectory = IconSaveDirectory(drawer.EnhancedIcons);
         player.SetItemIcons(ItemIconsOfInstall(drawer.EnhancedIcons));
@@ -66,12 +66,12 @@ sealed partial class GameHost
     {
         iconsEnhanced = null;
         SyncIconLook();
-        if (gpu.Characters is null) player.SetItemIcons(ItemIconsOfInstall(false));
+        if (ActiveCharacters is null) player.SetItemIcons(ItemIconsOfInstall(false));
         player.SetRenderedIcons(name =>
         {
             if (UiPainter.TryParseRenderedIcon(name, out string record, out string material, out string colour))
-                return gpu.Characters is { } characters && characters.TryGetIcon(new IconKey(record, material, colour), out var icon) ? icon : null;
-            if (UiPainter.TryParseRenderedBuildingIcon(name, out string building) && gpu.Objects is { } objects && player.BuildHost is { } host)
+                return ActiveCharacters is { } characters && characters.TryGetIcon(new IconKey(record, material, colour), out var icon) ? icon : null;
+            if (UiPainter.TryParseRenderedBuildingIcon(name, out string building) && ActiveObjects is { } objects && player.BuildHost is { } host)
                 return objects.TryGetBuildingIcon(building, host.Parts(building), out var picture) ? picture : null;
             return null;
         });

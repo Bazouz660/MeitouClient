@@ -51,11 +51,13 @@ static class AtmosphereShaders
         uniform vec4 uAtmoAltitude;   // viewer: x the physical haze's share (0 the game's haze, 1 the physical), y haze strength (1 the game's), z how far the eye is above the game's camera heights (0 within them, 1 high above)
         uniform vec4 uAtmoMaps;       // x irradiance cube, y specular cube, z ambient map present (0: none, else 1 + the night ambient floor); w half the world's width
         uniform vec4 uAtmoNight;      // Meitou night air (docs/formats/sky.md "Night air"): rgb its colour at full night at the horizon, a its weight (0: Faithful, or by day)
-        uniform samplerCube uAtmoIrradiance, uAtmoSpecular;
+        uniform samplerCube uAtmoIrradiance;
+        uniform samplerCube uAtmoSpecular;
         uniform sampler2D uAtmoAmbientMap;
         uniform vec4 uAtmoCloud;      // x strength, y legacy density offset or volume coverage, z base height, w 1 volume transmission map
         uniform vec4 uAtmoCloudWind;  // legacy: xy wind shift; volume: xy map origin, z map span
-        uniform sampler2D uAtmoClouds, uAtmoCloudsTile;
+        uniform sampler2D uAtmoClouds;
+        uniform sampler2D uAtmoCloudsTile;
         // The sun light that gets past the cloud layer to a world point: the sun's ray from the point hits the world-anchored plane, where the sky pass's
         // overhead alpha (the game's second lookup and tile, the horizon band at 1, no fake volume) is read. textureLod only: the grass's vertex stage includes this.
         float atmoCloudShadow(vec3 world)
@@ -288,7 +290,7 @@ static class AtmosphereShaders
                 giAlbedoOut = uvec4(o, c.r | (c.g << 8), c.b | 256u | (giInterior ? 512u : 0u));
             }
             else
-            #endif
+                    #endif
             if (useGi)
             {
                 vec4 gi = giIrradiance(world, n, v);
@@ -416,5 +418,71 @@ static class AtmosphereShaders
         // The haze (and the weather's fog) every world shader ends with. The placed fog volumes are not here: the game draws them over the finished,
         // hazed scene, so Meitou does in one full-screen pass (FogVolumeShaders, PostProcessShaders.FogVolumes), not once per fragment.
         vec3 atmoApply(vec3 colour, vec3 eye, vec3 position) { return atmoApplyHaze(colour, eye, position); }
+
+        // The same haze as a colour transform: colour * mul + add. The grass evaluates it per vertex and needs both terms; computing them
+        // once here is one atmosphere evaluation instead of the two atmoApply calls it used to make. Keep these twins in step with
+        // atmoKenshiHaze and atmoPhysicalHaze above.
+        void atmoKenshiHazeCoefficients(vec3 ray, float dist, out vec3 mul, out vec3 add)
+        {
+            float level = clamp((dist - uAtmoHaze.y) / max(uAtmoHaze.z - uAtmoHaze.y, 1.0), 0.0, 1.0);
+            level = min(level * uAtmoAltitude.y, 1.0);
+            vec3 rgb = mix(hazeTarget(ray), uAtmoHazeCloud.rgb, uAtmoHazeCloud.a);
+            float alpha = level;
+            if (uAtmoFog.z > 0.0)
+            {
+                float amount = clamp(dist * uAtmoHaze.w, 0.0, 1.0);
+                float curve = (amount < 0.5 ? 2.0 * amount * amount : 1.0 - 2.0 * (amount - 1.0) * (amount - 1.0)) * uAtmoFog.z;
+                rgb = mix(rgb, uAtmoFogColour, curve);
+                alpha = clamp(alpha + curve, 0.0, 1.0);
+            }
+            mul = vec3(1.0 - alpha);
+            add = rgb * alpha;
+        }
+        void atmoPhysicalHazeCoefficients(vec3 eye, vec3 d, float dist, out vec3 mul, out vec3 add)
+        {
+            float h = uAtmoParams.z;
+            float a0 = max(eye.y, 0.0) / h, len = dist / h;
+            if (d.y < 0.0) len = min(len, a0 / -d.y);
+            float column = atmoColumn(a0, d.y, len, 1.0);
+            vec3 haze = 1.0 - exp(-(uAtmoTau.rgb + uAtmoTau.a) * column);
+            haze = min(haze * uAtmoAltitude.y, vec3(1.0));
+            float far = smoothstep(0.55, 1.0, dist / uAtmoParams.y);
+            haze = 1.0 - (1.0 - haze) * (1.0 - far);
+            mul = vec3(1.0) - haze;
+            add = atmoSky(d) * haze;
+            if (uAtmoFog.z > 0.0)
+            {
+                float fog = clamp((dist - uAtmoFog.x) / max(uAtmoFog.y - uAtmoFog.x, 1.0), 0.0, 1.0) * uAtmoFog.z;
+                mul *= 1.0 - fog;
+                add = add * (1.0 - fog) + uAtmoFogColour * fog;
+            }
+        }
+        void atmoApplyCoefficients(vec3 eye, vec3 position, out vec3 mul, out vec3 add)
+        {
+            vec3 ray = position - eye;
+            float dist = length(ray);
+            if (dist < 1.0) { mul = vec3(1.0); add = vec3(0.0); return; }
+            vec3 d = ray / dist;
+            if (uAtmoParams.x < 0.5)
+            {
+                float f = clamp(dist / uAtmoSimple.w, 0.0, 1.0);
+                float alpha = f * f * 0.9;
+                mul = vec3(1.0 - alpha);
+                add = uAtmoSimple.rgb * alpha;
+                return;
+            }
+            if (uAtmoHaze.x > 0.5 && uAtmoAltitude.x < 1.0)
+            {
+                vec3 kenshiMul, kenshiAdd;
+                atmoKenshiHazeCoefficients(ray, dist, kenshiMul, kenshiAdd);
+                if (uAtmoAltitude.x <= 0.0) { mul = kenshiMul; add = kenshiAdd; return; }
+                vec3 physicalMul, physicalAdd;
+                atmoPhysicalHazeCoefficients(eye, d, dist, physicalMul, physicalAdd);
+                mul = mix(kenshiMul, physicalMul, uAtmoAltitude.x);
+                add = mix(kenshiAdd, physicalAdd, uAtmoAltitude.x);
+                return;
+            }
+            atmoPhysicalHazeCoefficients(eye, d, dist, mul, add);
+        }
         """;
 }

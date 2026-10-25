@@ -35,7 +35,7 @@ sealed partial class GameHost
     /// What the bar counts as the original's resource loader queue: the objects' and the characters' loads waiting (engine choice: the original's queue holds the
     /// meshes and textures it loads in the background; Meitou's terrain and foliage streaming are left out, as the original's are not in that queue).
     /// </summary>
-    int PendingLoads() => (gpu?.Objects?.Pending ?? 0) + (gpu?.Characters?.PendingLoads ?? 0);
+    int PendingLoads() => (ActiveObjects?.Pending ?? 0) + (ActiveCharacters?.PendingLoads ?? 0);
 
     /// <summary>Opens the loading screen on the window (nothing without an overlay, e.g. headless).</summary>
     void BeginLoadingScreen(VulkanDisplay display)

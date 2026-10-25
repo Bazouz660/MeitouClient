@@ -4,14 +4,16 @@ using Meitou.Rendering.Gpu;
 using Silk.NET.Vulkan;
 using Buffer = Silk.NET.Vulkan.Buffer;
 
+using Meitou.Rendering.Gpu.Core;
+
 namespace Meitou.Rendering;
 
 /// <summary>What a foliage cull dispatch needs of the previous frame's depth pyramid (<see cref="HizPyramid.ViewFor"/>): the buffer and the
 /// vec4s <see cref="FoliageShaders"/>' <c>ViewData.hz</c> and <c>hzOff</c> hold (<see cref="Vectors"/>).</summary>
-public readonly struct OcclusionView(BufferBinding buffer, Vector4[] vectors)
+public readonly struct OcclusionView(GpuBufferBinding buffer, Vector4[] vectors)
 {
     /// <summary>The pyramid's storage buffer.</summary>
-    public BufferBinding Buffer { get; } = buffer;
+    public GpuBufferBinding Buffer { get; } = buffer;
     /// <summary><see cref="HizPyramid.ViewVectors"/> vec4s: [0] the previous eye and the eye's step, [1..3] the previous view's right, up and back axes,
     /// [4] tan x, tan y, width and height of the depth, [5] pixels per unit of tangent, level count, level 0's width and height, [6..8] the level offsets (as uints).</summary>
     public Vector4[] Vectors { get; } = vectors;
@@ -37,8 +39,8 @@ public sealed unsafe class HizPyramid : IDisposable
     const int FusedLevels = 5;
 
     readonly GpuContext ctx;
-    readonly ShaderProgram baseProgram, reduceProgram;
-    readonly ComputePipeline basePipeline, reducePipeline;
+    readonly GpuProgram baseProgram, reduceProgram;
+    readonly GpuComputePipeline basePipeline, reducePipeline;
     DeviceBuffer? buffer;
     readonly uint[] offsets = new uint[MaxLevels];
     int levelCount, width, height, baseWidth, baseHeight;
@@ -46,7 +48,7 @@ public sealed unsafe class HizPyramid : IDisposable
     Vector3 eye, right, up, back;
     float tanX, tanY;
     long builtFrame = long.MinValue;
-    Sampler sampler;
+    GpuSampler sampler;
 
     public HizPyramid(GpuContext ctx)
     {
@@ -88,7 +90,7 @@ public sealed unsafe class HizPyramid : IDisposable
     /// is the camera's view without its translation (the world to view rotation, as <c>PostProcess</c> keeps it), <paramref name="fieldOfView"/> and <paramref name="aspect"/> the
     /// projection's.
     /// </summary>
-    public void Build(CommandList cmd, Texture near, Texture? far, Vector2 nearPlanes, Vector2 farPlanes, int w, int h, Vector3 eyePosition, Matrix4x4 viewRotation, float fieldOfView, float aspect)
+    public void Build(IGpuCommandList cmd, GpuTexture near, GpuTexture? far, Vector2 nearPlanes, Vector2 farPlanes, int w, int h, Vector3 eyePosition, Matrix4x4 viewRotation, float fieldOfView, float aspect)
     {
         var levels = Levels(w, h);
         ulong texels = 0;
@@ -111,42 +113,38 @@ public sealed unsafe class HizPyramid : IDisposable
         var farView = (far ?? near).View();
         cmd.BeginLabel("hiz");
         // The depth was just drawn (the scene's passes, in whichever layout they leave it: GENERAL), and the last frame's cull may still read the buffer.
-        cmd.Barrier(BarrierBatch.Full);
+        cmd.Order();
         {
             // Levels 0 to 4 in one dispatch (a 16 x 16 tile of level 0 per workgroup, the rest through shared memory).
-            var infos = stackalloc DescriptorImageInfo[2];
-            infos[0] = new DescriptorImageInfo(sampler, depthView, ImageLayout.General);
-            infos[1] = new DescriptorImageInfo(sampler, farView, ImageLayout.General);
-            var bufferInfo = new DescriptorBufferInfo(buffer.Handle, 0, buffer.Size);
-            var writes = stackalloc WriteDescriptorSet[3];
-            writes[0] = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstBinding = 0, DescriptorCount = 1, DescriptorType = DescriptorType.CombinedImageSampler, PImageInfo = &infos[0] };
-            writes[1] = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstBinding = 1, DescriptorCount = 1, DescriptorType = DescriptorType.CombinedImageSampler, PImageInfo = &infos[1] };
-            writes[2] = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstBinding = 2, DescriptorCount = 1, DescriptorType = DescriptorType.StorageBuffer, PBufferInfo = &bufferInfo };
+            var bindings = stackalloc GpuBinding[3];
+            bindings[0] = GpuBinding.Sampled(0, new SampledTexture(sampler, depthView));
+            bindings[1] = GpuBinding.Sampled(1, new SampledTexture(sampler, farView));
+            bindings[2] = GpuBinding.Storage(2, new GpuBufferBinding(buffer.Handle, 0, buffer.Size));
             cmd.BindPipeline(basePipeline);
-            cmd.PushDescriptors(baseProgram.Layout, 0, new ReadOnlySpan<WriteDescriptorSet>(writes, 3), PipelineBindPoint.Compute);
+            cmd.BindProgramResources(baseProgram, 0, new ReadOnlySpan<GpuBinding>(bindings, 3));
             var push = new BasePush
             {
                 Near = nearPlanes, Far = farPlanes, Width = (uint)w, Height = (uint)h, BaseWidth = (uint)levels[0].W, BaseHeight = (uint)levels[0].H, HasFar = far is null ? 0u : 1u,
                 Levels = (uint)levels.Count, Offset0 = offsets[0], Offset1 = offsets[1], Offset2 = offsets[2], Offset3 = offsets[3], Offset4 = offsets[4],
             };
-            cmd.PushConstants(baseProgram.Layout, ShaderStageFlags.ComputeBit, in push);
+            cmd.PushConstants(baseProgram, GpuStage.Compute, in push);
             cmd.Dispatch((uint)((levels[0].W + 15) / 16), (uint)((levels[0].H + 15) / 16));
         }
         if (levels.Count > FusedLevels)
         {
             // The rest (at most about a thousand texels a level) in one workgroup, a level at a time.
-            cmd.Barrier(BarrierBatch.Full);
-            var bufferInfo = new DescriptorBufferInfo(buffer.Handle, 0, buffer.Size);
-            var write = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstBinding = 0, DescriptorCount = 1, DescriptorType = DescriptorType.StorageBuffer, PBufferInfo = &bufferInfo };
+            cmd.Order();
+            var bindings = stackalloc GpuBinding[1];
+            bindings[0] = GpuBinding.Storage(0, new GpuBufferBinding(buffer.Handle, 0, buffer.Size));
             cmd.BindPipeline(reducePipeline);
-            cmd.PushDescriptors(reduceProgram.Layout, 0, new ReadOnlySpan<WriteDescriptorSet>(&write, 1), PipelineBindPoint.Compute);
+            cmd.BindProgramResources(reduceProgram, 0, new ReadOnlySpan<GpuBinding>(bindings, 1));
             var push = new ReducePush { BaseWidth = (uint)levels[0].W, BaseHeight = (uint)levels[0].H, Levels = (uint)levels.Count };
             for (int i = 0; i < MaxLevels; i++) push.Offsets[i] = i < levels.Count ? offsets[i] : 0;
-            cmd.PushConstants(reduceProgram.Layout, ShaderStageFlags.ComputeBit, in push);
+            cmd.PushConstants(reduceProgram, GpuStage.Compute, in push);
             cmd.Dispatch(1);
         }
         // The cull reads it in the next frame's pre-frame commands.
-        cmd.Barrier(BarrierBatch.Full);
+        cmd.Order();
         cmd.EndLabel();
         builtFrame = ctx.Frame.Number;
         Builds++;
@@ -164,7 +162,7 @@ public sealed unsafe class HizPyramid : IDisposable
         if (!HasData || ctx.Frame.Number - builtFrame > 1) return default;
         float step = Vector3.Distance(current, eye);
         if (!(step <= maxStep)) return default;
-        return new OcclusionView(new BufferBinding(buffer!.Handle, 0, buffer.Size), Vectors(eye, step, right, up, back, tanX, tanY, width, height, levelCount, baseWidth, baseHeight, offsets));
+        return new OcclusionView(new GpuBufferBinding(buffer!.Handle, 0, buffer.Size), Vectors(eye, step, right, up, back, tanX, tanY, width, height, levelCount, baseWidth, baseHeight, offsets));
     }
 
     /// <summary>The vec4s of <see cref="OcclusionView.Vectors"/>: the camera the depth was drawn from (<paramref name="eye"/>, view axes, tangents of half the field of view, size) and the eye's step since.</summary>
@@ -210,7 +208,7 @@ public sealed unsafe class HizPyramid : IDisposable
         foreach (var p in new[] { baseProgram, reduceProgram })
         {
             ctx.Pipelines.Forget(p);
-            p.Dispose();
+            ctx.Shaders.Dispose(p);
         }
         buffer?.Dispose();
     }

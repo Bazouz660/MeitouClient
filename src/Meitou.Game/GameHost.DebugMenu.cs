@@ -9,9 +9,9 @@ using EngineKey = Meitou.Engine.Input.Key;
 namespace Meitou.Game;
 
 /// <summary>
-/// The F10 debug menu (Meitou only, docs/game/ui-input.md "Debug menu"): cheats sent to the world as <see cref="DebugCommand"/>s. Up/Down pick a row, typing fills its field,
-/// Enter applies it, Esc or F10 closes; while open it takes every key. Teleport and spawn use the camera's target (the middle of the screen); heal, max skills and damage the
-/// selected characters, else the inspected one.
+/// The debug menu (F10; Ctrl+F10 on Metal, where F10 is the settings panel; docs/game/ui-input.md "Debug menu"): cheats sent to the world as
+/// <see cref="DebugCommand"/>s. Up/Down pick a row, typing fills its field, Enter applies it, Esc or the close key closes; while open it takes every key.
+/// Teleport and spawn use the camera's target (the middle of the screen); heal, max skills and damage the selected characters, else the inspected one.
 /// </summary>
 sealed partial class GameHost
 {
@@ -124,7 +124,7 @@ sealed partial class GameHost
         return found;
     }
 
-    void DrawDebugMenu(DebugOverlay o, int width, int height, float top)
+    void DrawDebugMenu(DebugOverlay o, int width, int height, float top, string close = "F10")
     {
         var world = session.World;
         var here = session.Camera.Current.Target;
@@ -142,14 +142,14 @@ sealed partial class GameHost
             lines.Add(line);
         }
         string info = $"{world.Player.Selection.Count} selected   here {here.X:0}, {here.Z:0}   money c.{world.Player.Money.ToString("N0", CultureInfo.InvariantCulture)}";
-        const string Hint = "Up/Down pick   type to edit   Enter apply   Esc/F10 close";
+        string hint = $"Up/Down pick   type to edit   Enter apply   Esc/{close} close";
         var dim = new Vector4(0.7f, 0.75f, 0.8f, 1);
         float pad = 10, x0 = 16, y0 = top + 16;
-        int chars = Math.Max(lines.Max(l => l.Length), Math.Max(info.Length, Math.Max(Hint.Length, debugStatus.Length)));
+        int chars = Math.Max(lines.Max(l => l.Length), Math.Max(info.Length, Math.Max(hint.Length, debugStatus.Length)));
         float w = chars * o.CharWidth + 2 * pad, h = (lines.Count + 5) * o.LineHeight + 2 * pad;
         o.Rect(x0, y0, x0 + w, y0 + h, DebugOverlay.PanelColour);
         float y = y0 + pad;
-        o.Text("Debug   (F10 closes)", x0 + pad, y, DebugOverlay.TextColour);
+        o.Text($"Debug   ({close} closes)", x0 + pad, y, DebugOverlay.TextColour);
         y += 1.5f * o.LineHeight;
         for (int i = 0; i < lines.Count; i++, y += o.LineHeight)
         {
@@ -158,7 +158,7 @@ sealed partial class GameHost
         }
         y += 0.5f * o.LineHeight;
         o.Text(info, x0 + pad, y, dim);
-        o.Text(Hint, x0 + pad, y + o.LineHeight, dim);
+        o.Text(hint, x0 + pad, y + o.LineHeight, dim);
         if (debugStatus.Length > 0) o.Text(debugStatus, x0 + pad, y + 2 * o.LineHeight, new Vector4(1f, 0.9f, 0.4f, 1));
         o.Flush(width, height);
     }

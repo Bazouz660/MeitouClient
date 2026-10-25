@@ -1,3 +1,4 @@
+using InternalFormat = Meitou.Rendering.Gpu.InternalFormat;
 using System.Collections.Concurrent;
 using System.Numerics;
 using Meitou.Data;
@@ -32,7 +33,7 @@ internal sealed unsafe partial class CharacterRenderer
         public required IconKey Key;
         public CharacterAsset? Asset;
         public ItemIconStyle Style = null!;
-        public Texture? Colour, Depth;
+        public GpuTexture? Colour, Depth;
         public SampledTexture Sampled;
         /// <summary>The asset could not be made (no mesh): the cell keeps the name.</summary>
         public bool Failed;
@@ -46,7 +47,7 @@ internal sealed unsafe partial class CharacterRenderer
         /// <summary>The material record it is drawn with (the key's, else the item's first): the picture's file is named by it.</summary>
         public string MaterialId = "";
         /// <summary>The supersampled picture an enhanced icon is drawn into before it is resolved into <see cref="Colour"/> (<see cref="EnhancedIcons"/>).</summary>
-        public Texture? Large, LargeDepth;
+        public GpuTexture? Large, LargeDepth;
         public SampledTexture LargeSampled;
     }
 
@@ -79,7 +80,7 @@ internal sealed unsafe partial class CharacterRenderer
     /// </summary>
     public string? IconSaveDirectory { get; set; }
 
-    readonly List<(IconEntry Entry, ReadbackBuffer Buffer, long Frame)> iconSaves = [];
+    readonly List<(IconEntry Entry, IGpuReadback Buffer, long Frame)> iconSaves = [];
 
     readonly ConcurrentDictionary<IconKey, IconEntry> icons = new();
     readonly ConcurrentQueue<IconEntry> iconRequests = new();
@@ -90,7 +91,7 @@ internal sealed unsafe partial class CharacterRenderer
     /// <summary>
     /// The drawn icon of <paramref name="key"/> as a texture (drawn upside down, as the renderer's targets are: show it flipped), once it exists; asking starts it being made. Any thread.
     /// </summary>
-    public bool TryGetIcon(IconKey key, out (Texture Texture, SampledTexture Sampled) icon)
+    public bool TryGetIcon(IconKey key, out (GpuTexture Texture, SampledTexture Sampled) icon)
     {
         if (!icons.TryGetValue(key, out var entry))
         {
@@ -210,9 +211,9 @@ internal sealed unsafe partial class CharacterRenderer
         var (w, h) = entry.Style.TextureSize;
         if (entry.Colour is null)
         {
-            entry.Colour = Texture.Create(Gpu, new TextureDesc(Format.R8G8B8A8Unorm, w, h, Use: TextureUse.Sampled | TextureUse.ColourTarget | TextureUse.TransferSrc, Name: $"icon {entry.Key.Record}"));
+            entry.Colour = Gpu.CreateTexture(new TextureDesc(InternalFormat.Rgba8, w, h, Use: TextureUse.Sampled | TextureUse.ColourTarget | TextureUse.TransferSrc, Name: $"icon {entry.Key.Record}"));
             entry.Sampled = new SampledTexture(Gpu.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Linear, TextureMagFilter.Linear,
-                TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, false, DepthFunction.Lequal, false, 1, false, 0)), entry.Colour.View(), entry.Colour.Image);
+                TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, false, DepthFunction.Lequal, false, 1, false, 0)), entry.Colour.View());
         }
         // Enhanced: drawn into a half-float picture IconSupersample times larger, then resolved into the icon (coverage-weighted, so the edges blend into the transparent background).
         // One that gave up waiting for its textures is drawn plainly: it may wait for good, and its large targets are freed.
@@ -220,15 +221,15 @@ internal sealed unsafe partial class CharacterRenderer
         if (large && entry.Large is null)
             (entry.Large, entry.LargeDepth, entry.LargeSampled) = PreviewResolve.Targets(Gpu, w, h, IconLook, $"icon large {entry.Key.Record}");
         if (!large && entry.Depth is null)
-            entry.Depth = Texture.Create(Gpu, new TextureDesc(Format.D32Sfloat, w, h, Use: TextureUse.DepthTarget, Name: $"icon depth {entry.Key.Record}"));
+            entry.Depth = Gpu.CreateTexture(new TextureDesc(InternalFormat.DepthComponent24, w, h, Use: TextureUse.DepthTarget, Name: $"icon depth {entry.Key.Record}"));
         int s = large ? IconSupersample : 1;
         var cmd = Gpu.BeginNative("item icon");
         var target = large ? PassTargets.Of(entry.Large, entry.LargeDepth) : PassTargets.Of(entry.Colour, entry.Depth);
-        cmd.BeginRendering(new RenderingDesc(target.Colour, target.Depth with { Load = AttachmentLoadOp.Clear, Clear = new ClearValue(depthStencil: new ClearDepthStencilValue(1f, 0)) }, target.Width, target.Height));
+        cmd.BeginRendering(new RenderingDesc(target.Colour, target.Depth with { Load = LoadOp.Clear, DepthClear = 1f }, target.Width, target.Height));
         Gpu.BeginHostPass(cmd, target, DrawState.Scene(target.Formats));
-        var rect = new Rect2D(default, new Extent2D((uint)(w * s), (uint)(h * s)));
-        Gpu.Clear(cmd, true, default, true, 1, rect);
-        Gpu.SetPassViewport(new Viewport(0, 0, w * s, h * s, 0, 1), rect);
+        var rect = new PixelRect(0, 0, (uint)(w * s), (uint)(h * s));
+        cmd.Clear(true, default, true, 1, rect);
+        Gpu.SetPassViewport(new PixelViewport(0, 0, w * s, h * s, 0, 1), rect);
         var (_, view, projection) = entry.Style.Matrices();
         var eye = new Vector3(0, 0, entry.Style.Distance);
         portraitLive = index;
@@ -240,22 +241,15 @@ internal sealed unsafe partial class CharacterRenderer
         {
             Gpu.EndNative(cmd);
             preview ??= new PreviewResolve(Gpu);
-            preview.Run(entry.LargeSampled, entry.Colour, IconLook, [new Rect2D(default, new Extent2D((uint)w, (uint)h))]);
+            preview.Run(entry.LargeSampled, entry.Colour, IconLook, [new PixelRect(0, 0, (uint)w, (uint)h)]);
             cmd = Gpu.BeginNative("item icon readback");
         }
         if (save)
         {
-            var buffer = ReadbackBuffer.Create(Gpu, (ulong)(w * h * 4), $"icon readback {entry.Key.Record}");
-            cmd.Barrier(BarrierBatch.Full);
-            var region = new BufferImageCopy
-            {
-                ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1),
-                ImageExtent = new Extent3D((uint)w, (uint)h, 1),
-            };
-            Gpu.Device.Vk.CmdCopyImageToBuffer(cmd.Handle, entry.Colour.Image, ImageLayout.General, buffer.Handle, 1, &region);
-            var host = new BarrierBatch();
-            host.Add(PipelineStageFlags2.AllTransferBit, AccessFlags2.TransferWriteBit, PipelineStageFlags2.HostBit, AccessFlags2.HostReadBit);
-            cmd.Barrier(in host);
+            var buffer = Gpu.CreateReadback((ulong)(w * h * 4), $"icon readback {entry.Key.Record}");
+            cmd.Order();
+            cmd.CopyTextureToBuffer(entry.Colour, 0, 0, new PixelRect(0, 0, (uint)w, (uint)h), buffer.Handle, 0);
+            cmd.Order();
             iconSaves.Add((entry, buffer, Gpu.Frame.Number));
         }
         Gpu.EndNative(cmd);
@@ -267,7 +261,7 @@ internal sealed unsafe partial class CharacterRenderer
         for (int k = iconSaves.Count - 1; k >= 0; k--)
         {
             var (entry, buffer, frame) = iconSaves[k];
-            if (!ReadbackBuffer.Completed(Gpu, frame)) continue;
+            if (!Gpu.FrameCompleted(frame)) continue;
             iconSaves.RemoveAt(k);
             var (w, h) = entry.Style.TextureSize;
             byte[] pixels = buffer.Read(0, (ulong)(w * h * 4)).ToArray();

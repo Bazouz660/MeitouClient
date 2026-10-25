@@ -145,7 +145,7 @@ public sealed unsafe partial class FoliageRenderer
     {
         lodWaiting = lodRunning = 0;
         foreach (var t in lodTasks.Values) if (!t.IsCompleted) lodRunning++;
-        if (!Lod || !GpuCull) return;
+        if (!Lod || !GpuCull || Gpu is not GpuContext) return;   // the upload path needs a frame the host owns; Metal's generated levels are not wired yet
         foreach (var a in assetsByMesh.Values)
         {
             if (!a.Terrain || a.LodDone || !a.Resident || a.Main is null || a.Triangles < FoliageLodBuilder.MinTriangles) continue;
@@ -216,7 +216,10 @@ public sealed unsafe partial class FoliageRenderer
                 {
                     var bytesOfLevel = MemoryMarshal.AsBytes(levels[l - 1].AsSpan());
                     for (int s = 0; s < bytesOfLevel.Length; s += SlabBytes)
-                        Gpu.Uploads.Write(indices, at + (ulong)s, bytesOfLevel.Slice(s, Math.Min(SlabBytes, bytesOfLevel.Length - s)));
+                    {
+                        using var batch = Gpu.Uploads.Begin();
+                        batch.Write(indices, at + (ulong)s, bytesOfLevel.Slice(s, Math.Min(SlabBytes, bytesOfLevel.Length - s)));
+                    }
                     at += (ulong)bytesOfLevel.Length;
                 }
                 bytes += (long)total * sizeof(uint);
@@ -291,7 +294,7 @@ public sealed unsafe partial class FoliageRenderer
     bool IsRockBatch(int batch) => batch >= gpuOrder.Count && batch < gpuOrder.Count + gpuRockOrder.Count;
 
     /// <summary>The work lists of this frame have generated levels (the switch and the GPU cull).</summary>
-    bool LodWanted => Lod && GpuCull;
+    bool LodWanted => Lod && GpuCull && Gpu is GpuContext;
 
     /// <summary>Whether this view picks generated levels, and how it measures them.</summary>
     FoliageLodView CurrentLodView(float eyeY)

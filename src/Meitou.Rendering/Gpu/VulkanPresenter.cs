@@ -36,7 +36,7 @@ public sealed unsafe class VulkanPresenter : IDisposable
     bool vsync, stale = true;
 
     /// <summary>What the frame is drawn into (RGBA8, the window's framebuffer size; made again when the size changes): valid after <see cref="BeginFrame"/>.</summary>
-    public Texture? Backbuffer { get; private set; }
+    public GpuTexture? Backbuffer { get; private set; }
 
     /// <summary>Stopwatch ticks spent acquiring swapchain images and presenting, since the presenter was made.</summary>
     public long AcquireTicks { get; private set; }
@@ -70,7 +70,7 @@ public sealed unsafe class VulkanPresenter : IDisposable
         if (Backbuffer is not { } b || b.Desc.Width != width || b.Desc.Height != height)
         {
             Backbuffer?.Dispose();   // released after the frames in flight
-            Backbuffer = Texture.Create(ctx, new TextureDesc(Format.R8G8B8A8Unorm, width, height,
+            Backbuffer = ctx.CreateTexture(new TextureDesc(InternalFormat.Rgba8, width, height,
                 Use: TextureUse.ColourTarget | TextureUse.TransferSrc | TextureUse.TransferDst | TextureUse.Sampled, Name: "backbuffer"));
         }
         ctx.BeginFrame();
@@ -93,7 +93,7 @@ public sealed unsafe class VulkanPresenter : IDisposable
         if (!acquiredImage || Backbuffer is not { } src) { ctx.EndFrame(); return; }
         var dst = images[imageIndex];
         int w = src.Desc.Width, h = src.Desc.Height;
-        var list = ctx.BeginNative("present");
+        var list = (CommandList)ctx.BeginNative("present");
         var cb = list.Handle;
         Barrier(cb, dst, ImageLayout.Undefined, ImageLayout.TransferDstOptimal, PipelineStageFlags2.ColorAttachmentOutputBit, AccessFlags2.None,
             PipelineStageFlags2.BlitBit, AccessFlags2.TransferWriteBit);
@@ -107,7 +107,7 @@ public sealed unsafe class VulkanPresenter : IDisposable
         // Flipped: row 0 (the bottom) goes to the swapchain's last row.
         blit.DstOffsets[0] = new Offset3D(0, (int)extent.Height, 0);
         blit.DstOffsets[1] = new Offset3D((int)extent.Width, 0, 1);
-        vk.CmdBlitImage(cb, src.Image, ImageLayout.General, dst, ImageLayout.TransferDstOptimal, 1, &blit, Filter.Nearest);
+        vk.CmdBlitImage(cb, ctx.Device.NativeImage(src), ImageLayout.General, dst, ImageLayout.TransferDstOptimal, 1, &blit, Filter.Nearest);
         Barrier(cb, dst, ImageLayout.TransferDstOptimal, ImageLayout.PresentSrcKhr, PipelineStageFlags2.BlitBit, AccessFlags2.TransferWriteBit,
             PipelineStageFlags2.BottomOfPipeBit, AccessFlags2.None);
         ctx.EndNative(list);

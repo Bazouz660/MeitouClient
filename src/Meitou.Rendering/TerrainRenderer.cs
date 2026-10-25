@@ -60,6 +60,7 @@ public readonly record struct WorldLighting(Vector3 SunDirection, Vector3 SunCol
 /// </summary>
 public sealed unsafe partial class TerrainRenderer : IDisposable
 {
+    static readonly bool PrivateStatics = Environment.GetEnvironmentVariable("MEITOU_METAL_PRIVATE_STATIC") == "1";
     readonly DeviceBuffer gridVertices, gridIndices;
     readonly TerrainTexture coarseTexture;
     TerrainTexture fineTexture;
@@ -87,7 +88,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
 
     /// <param name="coarse">Whole-world raw heights, (<paramref name="coarseSize"/>)² samples (2^n + 1 per side).</param>
     /// <param name="fine">The loaded region at its own step.</param>
-    public TerrainRenderer(GpuContext gpu, ushort[] coarse, int coarseSize, HeightWindow fine)
+    public TerrainRenderer(IGpuContext gpu, ushort[] coarse, int coarseSize, HeightWindow fine)
     {
         this.gpu = gpu;
         this.fine = fine;
@@ -99,11 +100,9 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         fineBand = BandOf(fine);
         // The native programs (docs/renderer-native.md 7.1, step O), all made here so a draw never compiles.
         nativeFrame = new NativeFrame(gpu);
-        uniformAlign = Math.Max(gpu.Device.Limits.MinUniformBufferOffsetAlignment, 16);
-        constantsLayout = gpu.Shaders.CreateSetLayout(
-            [new Silk.NET.Vulkan.DescriptorSetLayoutBinding(0, Silk.NET.Vulkan.DescriptorType.UniformBufferDynamic, 1,
-                gpu.Shaders.GraphicsStages)], 0);
-        Silk.NET.Vulkan.DescriptorSetLayout[] sets = [nativeFrame.SetLayout, gpu.Bindless.Layout, constantsLayout];
+        uniformAlign = Math.Max(gpu.UniformBufferAlign, 16);
+        constantsLayout = GpuSetLayout.Fixed([new GpuSlot(0, GpuSlotKind.UniformBuffer, GpuStage.All, 1, OffsetAtBind: true)]);
+        GpuSetLayout[] sets = [nativeFrame.SetLayout, GpuSetLayout.Bindless, constantsLayout];
         this.sets = sets;
         UseColour(GroundRelief.ParallaxActive);
         patchDepth = new TerrainProgram(gpu, sets, TerrainShaders.PatchVertexNative(), TerrainShaders.DepthFragmentNative(), "terrain depth");
@@ -111,7 +110,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         patchPrepassCut = new TerrainProgram(gpu, sets, TerrainShaders.PatchVertexNative(), TerrainShaders.PrepassFragmentNative(interiorCut: true), "terrain prepass interior cut");
         // The ground displacement (GroundRelief): the colour and prepass programs tessellated, for the patches near the eye (the same stages in both, so the
         // late colour's depth test meets the prepass's depths).
-        if (gpu.Device.HasTessellation)
+        if (gpu.HasTessellation)
         {
             patchPrepassTess = new TerrainProgram(gpu, sets, TerrainShaders.PatchVertexTessNative(), TerrainShaders.PrepassFragmentNative(), "terrain relief prepass",
                 TerrainShaders.PatchControlNative(), TerrainShaders.PatchEvaluationNative());
@@ -120,7 +119,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         }
         meshDepth = new TerrainProgram(gpu, sets, TerrainShaders.MeshInstancedDepthVertexNative(), TerrainShaders.DepthFragmentNative(), "terrain mesh depth");
         // The rocks' smoothing (RockSmoothing): the mesh programs tessellated, the casters with the same curve.
-        if (gpu.Device.HasTessellation)
+        if (gpu.HasTessellation)
         {
             meshDepthTess = new TerrainProgram(gpu, sets, TerrainShaders.MeshVertexTessNative(), TerrainShaders.DepthFragmentNative(), "terrain mesh depth smoothed",
                 TerrainShaders.MeshControlNative(), TerrainShaders.MeshEvaluationDepthNative());
@@ -153,33 +152,34 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         }
         // The patch grid as one vertex buffer (location 0: the grid point, two floats) and one index buffer (GL's vertex array, made native).
         var gridIndexData = indices.ToArray();
-        gridVertices = DeviceBuffer.Create(gpu, (ulong)grid.Length * sizeof(float), BufferUse.Vertex, "terrain patches vertices");
-        gridIndices = DeviceBuffer.Create(gpu, (ulong)gridIndexData.Length * sizeof(uint), BufferUse.Index, "terrain patches indices");
+        BufferUse staticUse = PrivateStatics ? BufferUse.GpuOnly : 0;
+        gridVertices = DeviceBuffer.Create(gpu, (ulong)grid.Length * sizeof(float), BufferUse.Vertex | staticUse, "terrain patches vertices");
+        gridIndices = DeviceBuffer.Create(gpu, (ulong)gridIndexData.Length * sizeof(uint), BufferUse.Index | staticUse, "terrain patches indices");
         using (var batch = gpu.Uploads.Begin())
         {
             batch.Write(gridVertices, 0, System.Runtime.InteropServices.MemoryMarshal.AsBytes(grid.AsSpan()));
             batch.Write(gridIndices, 0, System.Runtime.InteropServices.MemoryMarshal.AsBytes(gridIndexData.AsSpan()));
         }
-        gridVertex = new LegacyProgram.Attribute(new BufferBinding(gridVertices.Handle, 0, gridVertices.Size), Silk.NET.Vulkan.Format.R32G32Sfloat, 8, false);
-        gridElements = new BufferBinding(gridIndices.Handle, 0, gridIndices.Size);
+        gridVertex = new LegacyProgram.Attribute(new GpuBufferBinding(gridVertices.Handle, 0, gridVertices.Size), InternalFormat.RG32f, 8, false);
+        gridElements = new GpuBufferBinding(gridIndices.Handle, 0, gridIndices.Size);
     }
 
     /// <summary>The grid's vertex attribute at location 0 and its index buffer, as VkGl fed them from the GL vertex array.</summary>
     readonly LegacyProgram.Attribute gridVertex;
-    readonly BufferBinding gridElements;
+    readonly GpuBufferBinding gridElements;
 
     /// <summary>Width of the band at the fine window's border where it fades into the coarse grid.</summary>
     static float BandOf(HeightWindow w) => Math.Clamp((w.Columns - 1) * w.Spacing * 0.1f, w.Spacing * 4, 3000);
 
     /// <summary>A height texture (GL's R16, one level, linear, clamped) through <paramref name="batch"/>, with <paramref name="raw"/> written when given.</summary>
-    TerrainTexture HeightTexture(UploadBatch batch, ushort[]? raw, int width, int height)
+    TerrainTexture HeightTexture(IGpuUploadBatch batch, ushort[]? raw, int width, int height)
     {
-        var t = batch.Create(new TextureDesc(GlConventions.VkFormat(InternalFormat.R16), width, height, Name: "terrain heights"));
+        var t = batch.Create(new TextureDesc(InternalFormat.R16, width, height, Name: "terrain heights"));
         if (raw is not null) batch.Write(t, 0, 0, Rect(0, 0, width, height), System.Runtime.InteropServices.MemoryMarshal.AsBytes(raw.AsSpan(0, width * height)));
         return new TerrainTexture(gpu, t, TextureMinFilter.Linear, TextureMagFilter.Linear, TextureWrapMode.ClampToEdge);
     }
 
-    static Silk.NET.Vulkan.Rect2D Rect(int x, int y, int width, int height) => new(new(x, y), new((uint)width, (uint)height));
+    static PixelRect Rect(int x, int y, int width, int height) => new(x, y, (uint)width, (uint)height);
 
     public int LevelCount => quadtree.LevelCount;
     public double FinestSpacing => quadtree.Spacing(0);
@@ -298,9 +298,9 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
                 }
                 else
                 {
-                    RecordPatches(patchColour, "terrain", PatchMode.Solid, plainCount);
+                    RecordPatches(PatchColour, "terrain", PatchMode.Solid, plainCount);
                     if (reliefCount > 0) RecordPatches(patchColourTess!, "terrain relief", PatchMode.Solid, reliefCount, reliefDraws);
-                    if (cutCount > 0) RecordPatches(patchColourCut, "terrain interior cut", PatchMode.Solid, cutCount, cutDraws);
+                    if (cutCount > 0) RecordPatches(PatchColourCut, "terrain interior cut", PatchMode.Solid, cutCount, cutDraws);
                     if (cutReliefCount > 0) RecordPatches(patchColourCutTess!, "terrain relief interior cut", PatchMode.Solid, cutReliefCount, cutReliefDraws);
                 }
                 DrawnChunks += nodes.Count;
@@ -311,8 +311,8 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
                 // The debug outline (Wireframe 1 and 2): the same patches as lines in a dark grey, pulled towards the eye as GL's polygon offset (-1, -1) did.
                 PrepareConstants(material: true, patches: true);
                 constants.Wireframe = 1;
-                RecordPatches(patchColour, "terrain wireframe", PatchMode.Wireframe, plainCount);
-                RecordPatches(patchColour, "terrain wireframe", PatchMode.Wireframe, cutCount, cutDraws);
+                RecordPatches(PatchColour, "terrain wireframe", PatchMode.Wireframe, plainCount);
+                RecordPatches(PatchColour, "terrain wireframe", PatchMode.Wireframe, cutCount, cutDraws);
             }
         }
     }
@@ -331,12 +331,12 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         latePending = false;
         frame = lateFrame;
         PrepareConstants(material: true, patches: true);
-        RecordPatches(patchColour, "terrain", PatchMode.Late, plainCount);
+        RecordPatches(PatchColour, "terrain", PatchMode.Late, plainCount);
         if (reliefCount > 0) RecordPatches(patchColourTess!, "terrain relief", PatchMode.Late, reliefCount, reliefDraws);
         // The cut patches' colour without the cut: their prepass discarded the cut fragments, so an equal depth test leaves them out early. The cut's
         // discard here turned the early depth test off, and the GPU drained between these draws (1.4 ms for 19 of them; docs/render-terrain.md "Registers").
         // Both passes run the same vertex and tessellation stages (invariant positions): a kept fragment meets its own depth.
-        if (cutCount > 0) RecordPatches(patchColour, "terrain interior cut", PatchMode.LateEqual, cutCount, cutDraws);
+        if (cutCount > 0) RecordPatches(PatchColour, "terrain interior cut", PatchMode.LateEqual, cutCount, cutDraws);
         if (cutReliefCount > 0) RecordPatches(patchColourTess!, "terrain relief interior cut", PatchMode.LateEqual, cutReliefCount, cutReliefDraws);
     }
 
@@ -450,11 +450,11 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         if (lastGlState is null || pass != lastGlState)
         {
             lastGlState = pass;
-            lastPatchState = pass with { Cull = Silk.NET.Vulkan.CullModeFlags.BackBit, Front = GlConventions.FrontFace(FrontFaceDirection.Ccw) };
-            lastWireState = lastPatchState with { Polygon = Silk.NET.Vulkan.PolygonMode.Line, BiasEnable = true, BiasConstant = -1, BiasSlope = -1 };
+            lastPatchState = pass with { Cull = CullMode.Back, Front = FrontFaceDirection.Ccw };
+            lastWireState = lastPatchState with { Polygon = PolygonKind.Line, BiasEnable = true, BiasConstant = -1, BiasSlope = -1 };
             lastPrepassState = lastPatchState with { ColourMask = 0 };   // depth only
             lastLateState = lastPatchState with { DepthWrite = false };   // the prepass wrote it; equal depths pass (less-or-equal)
-            lastLateEqualState = lastLateState with { Compare = Silk.NET.Vulkan.CompareOp.Equal };   // only where the prepass's own depth stayed
+            lastLateEqualState = lastLateState with { Compare = DepthFunction.Equal };   // only where the prepass's own depth stayed
         }
         return mode switch
         {
@@ -470,21 +470,24 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
     // group: its pipeline, buffers and draw, kept per mesh while the vertex-array stamp holds).
 
     readonly NativeFrame nativeFrame;
-    readonly Silk.NET.Vulkan.DescriptorSetLayout constantsLayout;
+    readonly GpuSetLayout constantsLayout;
     readonly TerrainProgram patchDepth, patchPrepass, patchPrepassCut, meshDepth;
     readonly TerrainProgram? patchPrepassTess, patchPrepassCutTess, meshDepthTess;   // null without tessellation shaders
     // The colour programs, from the set the parallax setting asks for (UseColour): meshSolid is meshColour without the cross-fade discard (EarlyDepth).
-    TerrainProgram patchColour, patchColourCut, meshColour, meshSolid;
+    TerrainProgram patchColour, patchColourNoNormal, patchColourCut, patchColourCutNoNormal, meshColour, meshColourNoNormal, meshSolid, meshSolidNoNormal;
     TerrainProgram? patchColourTess, patchColourCutTess, meshColourTess, meshSolidTess;
-    readonly Silk.NET.Vulkan.DescriptorSetLayout[] sets;
+    readonly GpuSetLayout[] sets;
 
-    /// <summary>The colour programs, with the parallax's march (<see cref="GroundRelief.ParallaxActive"/>) or without it (<see cref="TerrainShaders.FragmentNative"/>).</summary>
-    sealed record ColourSet(bool March, TerrainProgram Patch, TerrainProgram PatchCut, TerrainProgram Mesh, TerrainProgram MeshSolid,
+    /// <summary>The colour programs, with the parallax's march (<see cref="GroundRelief.ParallaxActive"/>) or without it (<see cref="TerrainShaders.FragmentNative"/>),
+    /// and with the normal-map samples or without them (the no-normal variants are compile-time programs for Metal's shader compiler).</summary>
+    sealed record ColourSet(bool March, TerrainProgram Patch, TerrainProgram PatchNoNormal, TerrainProgram PatchCut, TerrainProgram PatchCutNoNormal,
+        TerrainProgram Mesh, TerrainProgram MeshNoNormal, TerrainProgram MeshSolid, TerrainProgram MeshSolidNoNormal,
         TerrainProgram? PatchTess, TerrainProgram? PatchCutTess, TerrainProgram? MeshTess, TerrainProgram? MeshSolidTess) : IDisposable
     {
         public void Dispose()
         {
-            foreach (var p in new[] { Patch, PatchCut, Mesh, MeshSolid, PatchTess, PatchCutTess, MeshTess, MeshSolidTess }) p?.Dispose();
+            foreach (var p in new[] { Patch, PatchNoNormal, PatchCut, PatchCutNoNormal, Mesh, MeshNoNormal, MeshSolid, MeshSolidNoNormal,
+                         PatchTess, PatchCutTess, MeshTess, MeshSolidTess }) p?.Dispose();
         }
     }
 
@@ -494,17 +497,19 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
     /// Draws with the colour set of <paramref name="march"/>, made the first time it is asked for (at load the setting's; a toggle in play makes the other once, and
     /// keeps both: switching back costs nothing).
     /// </summary>
-    [System.Diagnostics.CodeAnalysis.MemberNotNull(nameof(patchColour), nameof(patchColourCut), nameof(meshColour), nameof(meshSolid))]
+    [System.Diagnostics.CodeAnalysis.MemberNotNull(nameof(patchColour), nameof(patchColourNoNormal), nameof(patchColourCut), nameof(patchColourCutNoNormal),
+        nameof(meshColour), nameof(meshColourNoNormal), nameof(meshSolid), nameof(meshSolidNoNormal))]
     void UseColour(bool march)
     {
         var set = colourSets[march ? 1 : 0] ??= MakeColour(march);
-        (patchColour, patchColourCut, meshColour, meshSolid) = (set.Patch, set.PatchCut, set.Mesh, set.MeshSolid);
+        (patchColour, patchColourNoNormal, patchColourCut, patchColourCutNoNormal) = (set.Patch, set.PatchNoNormal, set.PatchCut, set.PatchCutNoNormal);
+        (meshColour, meshColourNoNormal, meshSolid, meshSolidNoNormal) = (set.Mesh, set.MeshNoNormal, set.MeshSolid, set.MeshSolidNoNormal);
         (patchColourTess, patchColourCutTess, meshColourTess, meshSolidTess) = (set.PatchTess, set.PatchCutTess, set.MeshTess, set.MeshSolidTess);
     }
 
     ColourSet MakeColour(bool march)
     {
-        bool tess = gpu.Device.HasTessellation;
+        bool tess = gpu.HasTessellation;
         TerrainProgram Patch(string fragment, string name) => new(gpu, sets, TerrainShaders.PatchVertexNative(), fragment, name);
         TerrainProgram? PatchTess(string fragment, string name) => tess
             ? new(gpu, sets, TerrainShaders.PatchVertexTessNative(), fragment, name, TerrainShaders.PatchControlNative(), TerrainShaders.PatchEvaluationNative()) : null;
@@ -513,14 +518,27 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
             ? new(gpu, sets, TerrainShaders.MeshVertexTessNative(), fragment, name, TerrainShaders.MeshControlNative(), TerrainShaders.MeshEvaluationNative()) : null;
         return new ColourSet(march,
             Patch(TerrainShaders.FragmentNative(march: march), "terrain"),
+            Patch(TerrainShaders.FragmentNative(march: march, normalMaps: false), "terrain no normal"),
             Patch(TerrainShaders.FragmentNative(interiorCut: true, march: march), "terrain interior cut"),
+            Patch(TerrainShaders.FragmentNative(interiorCut: true, march: march, normalMaps: false), "terrain interior cut no normal"),
             Mesh(TerrainShaders.MeshFragmentNative(march), "terrain meshes"),
+            Mesh(TerrainShaders.MeshFragmentNative(march, normalMaps: false), "terrain meshes no normal"),
             Mesh(TerrainShaders.MeshFragmentSolidNative(march), "terrain meshes solid"),
+            Mesh(TerrainShaders.MeshFragmentSolidNative(march, normalMaps: false), "terrain meshes solid no normal"),
             PatchTess(TerrainShaders.FragmentNative(march: march), "terrain relief"),
             PatchTess(TerrainShaders.FragmentNative(interiorCut: true, march: march), "terrain relief interior cut"),
             MeshTess(TerrainShaders.MeshFragmentNative(march), "terrain meshes smoothed"),
             MeshTess(TerrainShaders.MeshFragmentSolidNative(march), "terrain meshes solid smoothed"));
     }
+
+    /// <summary>Whether the terrain colour programs may sample their normal-map arrays this frame: the option is on and the biome
+    /// layers are resident. The no-normal programs are compile-time variants, so this must select the matching program.</summary>
+    bool NormalMapsOn => frame.Options.Textures && frame.Options.NormalMaps && textures is { HasBiomes: true };
+
+    TerrainProgram PatchColour => NormalMapsOn ? patchColour : patchColourNoNormal;
+    TerrainProgram PatchColourCut => NormalMapsOn ? patchColourCut : patchColourCutNoNormal;
+    TerrainProgram MeshColour => NormalMapsOn ? meshColour : meshColourNoNormal;
+    TerrainProgram MeshSolid => NormalMapsOn ? meshSolid : meshSolidNoNormal;
 
     /// <summary>A mesh program, or its tessellated twin while the rocks are smoothed (<see cref="RockSmoothing.TessellateActive"/>).</summary>
     TerrainProgram Smoothed(TerrainProgram p, TerrainProgram? tessellated) => RockSmoothing.TessellateActive && tessellated is not null ? tessellated : p;
@@ -535,29 +553,28 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
     /// </summary>
     sealed class TerrainProgram : IDisposable
     {
-        readonly GpuContext ctx;
-        public readonly ShaderProgram P;
+        readonly IGpuContext ctx;
+        public readonly GpuProgram P;
         readonly int[] locations;
         readonly ScalarKind[] kinds;
         /// <summary>The program's own input locations (below the placements' rows): 0 .. Own − 1.</summary>
         public readonly int Own;
         VertexLayout? last;
 
-        public TerrainProgram(GpuContext ctx, Silk.NET.Vulkan.DescriptorSetLayout[] sets, string vertex, string fragment, string name,
+        public TerrainProgram(IGpuContext ctx, GpuSetLayout[] sets, string vertex, string fragment, string name,
             string? control = null, string? evaluation = null)
         {
             this.ctx = ctx;
             P = control is null || evaluation is null
                 ? ctx.Shaders.Native(vertex, fragment, name, sets, NativeShaders.PushBytes)
                 : ctx.Shaders.NativeTessellated(vertex, control, evaluation, fragment, name, sets, NativeShaders.PushBytes);
-            var inputs = P.VertexReflection!.Inputs;
+            var inputs = P.Info.VertexReflection!.Inputs;
             locations = [.. inputs.SelectMany(i => Enumerable.Range(i.Location, i.Slots))];
             kinds = [.. inputs.SelectMany(i => Enumerable.Repeat(i.Kind, i.Slots))];
             Own = locations.Where(l => l < TerrainShaders.MeshInstanceLocation).DefaultIfEmpty(-1).Max() + 1;
             if (Own > 4) throw new NotSupportedException($"{name}: more than four own vertex inputs");
         }
 
-        public Silk.NET.Vulkan.PipelineLayout Layout => P.Layout;
 
         public VertexLayout VertexLayout(ReadOnlySpan<LegacyProgram.Attribute?> byLocation)
         {
@@ -567,28 +584,30 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
                 int loc = locations[i];
                 inputs[i] = loc < byLocation.Length && byLocation[loc] is { } a
                     ? new VertexInput((uint)loc, a.Format, a.Stride, a.PerInstance)
-                    : new VertexInput((uint)loc, GlConventions.DummyVertexFormat(kinds[i]), 0, false);
+                    : new VertexInput((uint)loc, GlConventions.DummyVertexFormat(kinds[i]), ctx.ConstantVertexAttributes ? 0u : 16u, false);
             }
             if (last is { } l && inputs.SequenceEqual(l.Inputs)) return l;
             return last = new VertexLayout(inputs.ToArray());
         }
 
         /// <summary>Locations 0 .. <see cref="Own"/> − 1 into <paramref name="result"/>: each attribute's buffer, GL's constant where none.</summary>
-        public void Buffers(ReadOnlySpan<LegacyProgram.Attribute?> byLocation, Span<BufferBinding> result)
+        public void Buffers(ReadOnlySpan<LegacyProgram.Attribute?> byLocation, Span<GpuBufferBinding> result)
         {
             for (int loc = 0; loc < Own; loc++)
             {
                 int input = Array.IndexOf(locations, loc);
                 result[loc] = loc < byLocation.Length && byLocation[loc] is { } a
                     ? a.Buffer
-                    : new BufferBinding(ctx.Defaults.DummyVertex.Buffer, GlConventions.DummyVertexOffset(input >= 0 ? kinds[input] : ScalarKind.Float));
+                    : ctx.ConstantVertexAttributes
+                        ? new GpuBufferBinding(ctx.DummyVertex, GlConventions.DummyVertexOffset(input >= 0 ? kinds[input] : ScalarKind.Float))
+                        : new GpuBufferBinding(ctx.DummyVertexArray(input >= 0 ? kinds[input] : ScalarKind.Float), 0);
             }
         }
 
         public void Dispose()
         {
             ctx.Pipelines.Forget(P);
-            P.Dispose();
+            ctx.Shaders.Dispose(P);
         }
     }
 
@@ -597,9 +616,9 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
     TerrainConstants constants, written;
     long writtenFrame = -1;
     Transient constantsSlice;
-    readonly Dictionary<ulong, Silk.NET.Vulkan.DescriptorSet> constantSets = [];
+    readonly Dictionary<ulong, GpuSet> constantSets = [];
     ulong lastSetKey;
-    Silk.NET.Vulkan.DescriptorSet lastSet;
+    GpuSet lastSet;
     Vector4 lastRegion;
     Vector2 lastCellGrid;
 
@@ -629,6 +648,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
             Diffuse = standInArray, Normal = standInArray, Height = standInArray, Relief = standIn2D, Blood = standInArray, Params = standIn2D, Cells = standInUInt, BlendMap = standIn2D, Overlay = standIn2D,
             Colour = standIn2D, Ground = standIn2D, WorldColour = standIn2D, Region = lastRegion, CellGrid = lastCellGrid,
             TessDetail = GroundRelief.TessDetail, RockRound = RockSmoothing.Roundness,   // the tessellation stages, the casters' too
+            ReliefQuality = GroundRelief.Quality,
             FieldTiles = standInUInt,
         };
         if (material)
@@ -701,18 +721,18 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
 
     /// <summary>Once per segment, in Prepare (wave 4): <see cref="constants"/> into the frame's constants (again only when it changed within the
     /// frame), and the set and dynamic offset the segment's job binds as set 2.</summary>
-    (Silk.NET.Vulkan.DescriptorSet Set, uint Offset) PrepareConstantsBinding()
+    (GpuSet Set, uint Offset) PrepareConstantsBinding()
     {
         var f = gpu.Frame;
         if (writtenFrame != f.Number || !System.Runtime.InteropServices.MemoryMarshal.AsBytes(new ReadOnlySpan<TerrainConstants>(in constants))
                 .SequenceEqual(System.Runtime.InteropServices.MemoryMarshal.AsBytes(new ReadOnlySpan<TerrainConstants>(in written))))
         {
-            constantsSlice = f.Constants.Write<TerrainConstants>(new ReadOnlySpan<TerrainConstants>(in constants), uniformAlign);
+            constantsSlice = f.WriteConstants(System.Runtime.InteropServices.MemoryMarshal.AsBytes(new ReadOnlySpan<TerrainConstants>(in constants)), uniformAlign);
             (written, writtenFrame) = (constants, f.Number);
             f.Stats.ConstantBytes += sizeof(TerrainConstants);
         }
-        ulong key = constantsSlice.Handle.Handle;
-        if (key != lastSetKey || lastSet.Handle == 0)
+        ulong key = (ulong)constantsSlice.Handle.Index;
+        if (key != lastSetKey || lastSet.IsNull)
         {
             if (!constantSets.TryGetValue(key, out var made)) constantSets[key] = made = ConstantSet(constantsSlice.Handle);
             (lastSetKey, lastSet) = (key, made);
@@ -720,18 +740,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         return (lastSet, (uint)constantsSlice.Offset);
     }
 
-    Silk.NET.Vulkan.DescriptorSet ConstantSet(Silk.NET.Vulkan.Buffer buffer)
-    {
-        var set = gpu.AllocatePersistentSet(constantsLayout);
-        var info = new Silk.NET.Vulkan.DescriptorBufferInfo(buffer, 0, (ulong)sizeof(TerrainConstants));
-        var write = new Silk.NET.Vulkan.WriteDescriptorSet
-        {
-            SType = Silk.NET.Vulkan.StructureType.WriteDescriptorSet, DstSet = set, DstBinding = 0, DescriptorCount = 1,
-            DescriptorType = Silk.NET.Vulkan.DescriptorType.UniformBufferDynamic, PBufferInfo = &info,
-        };
-        gpu.Device.Vk.UpdateDescriptorSets(gpu.Device.Device, 1, &write, 0, null);
-        return set;
-    }
+    GpuSet ConstantSet(GpuBuffer buffer) => gpu.AllocateConstantSet(constantsLayout, buffer, (ulong)sizeof(TerrainConstants));
 
     // ---- the terrain patches ----
 
@@ -749,9 +758,9 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
     sealed class PatchPipeline
     {
         public SegmentPipeline Segment;
-        public GraphicsPipeline Pipeline = null!;
-        public BufferBinding Vertex;
-        public BufferBinding Elements;
+        public GpuPipeline Pipeline = default;
+        public GpuBufferBinding Vertex;
+        public GpuBufferBinding Elements;
     }
 
     readonly List<PatchPipeline> patchPipelines = [];
@@ -798,12 +807,12 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         // Prepare (wave 4, docs/renderer-native.md 6.2): the pass's targets and state now, the pipeline, the sets, the draws, into a job.
         var targets = gpu.CurrentTargets();
         var state = PatchState(gpu.CurrentState(), mode);
-        if (p.P.Tessellated) state = state with { Cull = Silk.NET.Vulkan.CullModeFlags.None };   // the raised triangles' winding is not checked: draw both sides
+        if (p.P.Tessellated) state = state with { Cull = CullMode.None };   // the raised triangles' winding is not checked: draw both sides
         var r = ResolvePatches(p, state, targets, label);
         var job = patchJobs.Rent();
         job.Owner = this;
-        (job.Targets, job.State, job.Layout, job.Pipeline, job.Vertex, job.Elements) = (targets, state, p.Layout, r.Pipeline, r.Vertex, r.Elements);
-        job.Stages = p.P.PushConstantStages;
+        (job.Targets, job.State, job.Program, job.Pipeline, job.Vertex, job.Elements) = (targets, state, p.P, r.Pipeline, r.Vertex, r.Elements);
+        job.Stages = GpuStage.Graphics;
         var view = View();
         job.Frame = nativeFrame.Prepare(in view);
         (job.ConstantSet, job.ConstantOffset) = PrepareConstantsBinding();
@@ -821,33 +830,31 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         public TerrainRenderer Owner = null!;
         public PassTargets Targets = null!;
         public DrawState State = null!;
-        public Silk.NET.Vulkan.PipelineLayout Layout;
-        public GraphicsPipeline Pipeline = null!;
-        public BufferBinding Vertex, Elements;
+        public GpuProgram Program = default;
+        public GpuPipeline Pipeline = default;
+        public GpuBufferBinding Vertex, Elements;
         public FrameBinding Frame;
-        public Silk.NET.Vulkan.DescriptorSet ConstantSet;
+        public GpuSet ConstantSet;
         public uint ConstantOffset;
-        public Silk.NET.Vulkan.ShaderStageFlags Stages;   // the program's push range: a push names every stage of it
+        public GpuStage Stages;   // the program's push range: a push names every stage of it
         public PatchDraw[] Draws = new PatchDraw[256];
         public int Count;
         public override int Size => Count;
 
-        public override void Record(CommandList cmd)
+        public override void Record(IGpuCommandList cmd)
         {
             State.Record(cmd, Targets);
-            NativeFrame.Record(cmd, Layout, in Frame);
+            NativeFrame.Record(cmd, Program, in Frame);
             uint offset = ConstantOffset;
-            cmd.BindSets(Layout, TerrainShaders.ConstantsSet, new ReadOnlySpan<Silk.NET.Vulkan.DescriptorSet>(in ConstantSet), new ReadOnlySpan<uint>(in offset));
+            cmd.BindSets(Program, TerrainShaders.ConstantsSet, new ReadOnlySpan<GpuSet>(in ConstantSet), new ReadOnlySpan<uint>(in offset));
             cmd.BindPipeline(Pipeline);
-            cmd.BindVertexBuffers(0, new ReadOnlySpan<BufferBinding>(in Vertex));
-            cmd.BindIndexBuffer(Elements, Silk.NET.Vulkan.IndexType.Uint32);
-            var layout = Layout;
-            var stages = Stages;
+            cmd.BindVertexBuffers(0, new ReadOnlySpan<GpuBufferBinding>(in Vertex));
+            cmd.BindIndexBuffer(Elements, IndexKind.U32);
             var (counts, firsts) = (Owner.indexCounts, Owner.firstIndices);
             for (int i = 0; i < Count; i++)
             {
                 ref readonly var d = ref Draws[i];
-                cmd.PushConstants(layout, stages, in d.Push);
+                cmd.PushConstants(Program, Stages, in d.Push);
                 cmd.DrawIndexed((uint)counts[d.Part], 1, (uint)firsts[d.Part]);
             }
         }
@@ -865,13 +872,13 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         if (patchPipelines.Count >= 16) patchPipelines.Clear();
         Span<LegacyProgram.Attribute?> attributes = stackalloc LegacyProgram.Attribute?[16];
         attributes[0] = gridVertex;
-        Span<BufferBinding> vertex = stackalloc BufferBinding[1];
+        Span<GpuBufferBinding> vertex = stackalloc GpuBufferBinding[1];
         p.Buffers(attributes, vertex);
         var entry = new PatchPipeline
         {
             Segment = segment,
             Pipeline = gpu.Pipelines.Get(state.Pipeline(p.P, p.VertexLayout(attributes),
-                p.P.Tessellated ? Silk.NET.Vulkan.PrimitiveTopology.PatchList : Silk.NET.Vulkan.PrimitiveTopology.TriangleList, targets.Formats, label)),
+                p.P.Tessellated ? PrimitiveType.PatchList : PrimitiveType.Triangles, targets.Formats, label)),
             Vertex = vertex[0], Elements = gridElements,
         };
         patchPipelines.Add(entry);
@@ -894,7 +901,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
     /// had) and the <see cref="TerrainShaders.HeightFunctions"/> uniforms, read when a consumer draws or applies its globals.
     /// </summary>
     sealed class ActiveTerrain { public TerrainRenderer? Owner; }
-    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<GpuContext, ActiveTerrain> activeTerrain = new();
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<IGpuContext, ActiveTerrain> activeTerrain = new();
 
     internal void Activate()
     {
@@ -936,12 +943,12 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
             meshCut = cut;
             try { PrepareConstants(material: true, patches: false); }
             finally { meshCut = null; }
-            return DrawGroups(Smoothed(meshColour, meshColourTess), Colour, "terrain meshes interior cut");
+            return DrawGroups(Smoothed(MeshColour, meshColourTess), Colour, "terrain meshes interior cut");
         }
         PrepareConstants(material: true, patches: false);
         // No placement of this path fades (row 1's w is 0): the program without the discard, so the depth test runs first (EarlyDepth).
-        return EarlyDepth.Enabled ? DrawGroups(Smoothed(meshSolid, meshSolidTess), Solid, "terrain meshes solid")
-            : DrawGroups(Smoothed(meshColour, meshColourTess), Colour, "terrain meshes");
+        return EarlyDepth.Enabled ? DrawGroups(Smoothed(MeshSolid, meshSolidTess), Solid, "terrain meshes solid")
+            : DrawGroups(Smoothed(MeshColour, meshColourTess), Colour, "terrain meshes");
     }
 
     /// <summary>The interior cut of the mesh draw being prepared (<see cref="DrawMeshes"/>, <see cref="DrawMeshesIndirect"/>; docs/render-interior-cut.md), null otherwise.</summary>
@@ -950,7 +957,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
     /// <summary>This call's placements (each group's contiguous, <see cref="MeshGroup.Offset"/> instances in), in the frame's constants.</summary>
     Transient placements;
     const int Colour = 0, Depth = 1, Solid = 2;
-    readonly GpuContext gpu;
+    readonly IGpuContext gpu;
 
     // ---- depth only (the sun's shadow map, ShadowPass) ----
     bool depthReady;
@@ -1006,12 +1013,12 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
     }
 
     /// <summary>The pipeline state a segment's draws share (everything of <see cref="GraphicsPipelineDesc"/> but the vertex layout).</summary>
-    readonly record struct SegmentPipeline(ShaderProgram Program, AttachmentFormats Formats, BlendState Blend, Silk.NET.Vulkan.ColorComponentFlags Mask,
-        Silk.NET.Vulkan.PolygonMode Polygon, bool AlphaToCoverage, bool DepthClamp);
+    readonly record struct SegmentPipeline(GpuProgram Program, AttachmentFormats Formats, BlendState Blend, ColorMask Mask,
+        PolygonKind Polygon, bool AlphaToCoverage, bool DepthClamp);
 
     /// <summary>A mesh's own vertex buffers (locations 0 to 3: position, normal, and for the smoothed programs the tangent slot), bound with one call.</summary>
     [System.Runtime.CompilerServices.InlineArray(4)]
-    struct OwnVertices { BufferBinding first; }
+    struct OwnVertices { GpuBufferBinding first; }
 
     /// <summary>A mesh resolved for one program: the mesh it came from, its vertex layout and own vertex buffers (locations 0 up to the
     /// placements), its indices, and its pipelines for the last two segment states (the reflection's multisampled target alternates with the
@@ -1024,9 +1031,9 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         public VertexLayout? Layout;
         public int VertexCount;
         public OwnVertices Vertices;
-        public BufferBinding Elements;
+        public GpuBufferBinding Elements;
         public int SegA, SegB;
-        public GraphicsPipeline? PipeA, PipeB;
+        public GpuPipeline? PipeA, PipeB;
     }
 
     // Per program kind: the last segment state and its number; numbers are stable per state (a mesh compares one int per draw).
@@ -1035,7 +1042,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
     readonly int[] segmentIds = new int[3];
     int segmentCount;
 
-    int SegmentId(int kind, ShaderProgram p, PassTargets t, DrawState s)
+    int SegmentId(int kind, GpuProgram p, PassTargets t, DrawState s)
     {
         var segment = new SegmentPipeline(p, t.Formats, s.Blend, s.ColourMask, s.Polygon, s.AlphaToCoverage, s.DepthClamp);
         if (segmentIds[kind] != 0 && segment == lastSegment[kind]) return segmentIds[kind];
@@ -1081,7 +1088,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         if (cursors.Length < meshGroupList.Count) cursors = new int[Math.Max(meshGroupList.Count, cursors.Length * 2)];
         for (int k = 0; k < meshGroupList.Count; k++) { var g = meshGroupList[k]; cursors[k] = g.Offset = total; total += g.Count; }
         // Pass 2: each placement straight into its group's place in the frame's (write-combined) constants, one 64-byte line each.
-        placements = gpu.Frame.Constants.Allocate((ulong)total * 64, 64);
+        placements = gpu.Frame.AllocateConstants((ulong)(total * 64), 64);
         var target = (Matrix4x4*)placements.Pointer;
         var t = biomes ? textures : null;
         for (int i = 0; i < items.Length; i++)
@@ -1113,7 +1120,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         {
             ref var n = ref g.Native(kind);
             if (n.Source != g.Mesh || n.Program != p) Current(ref n, g.Mesh, p);
-            var pipeline = n.SegA == s.Segment ? n.PipeA! : PipelineFor(ref n, p, s.Segment, s.State, s.Targets.Formats, label);
+            var pipeline = n.SegA == s.Segment ? n.PipeA!.Value : PipelineFor(ref n, p, s.Segment, s.State, s.Targets.Formats, label);
             job.Add(new MeshJob.Draw
             {
                 Pipeline = pipeline, Front = g.Mirrored ? s.Cw : s.Ccw, Vertices = n.Vertices, VertexCount = n.VertexCount, Elements = n.Elements,
@@ -1130,12 +1137,12 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         public PassTargets Targets;
         public DrawState State;
         public int Segment;
-        public Silk.NET.Vulkan.FrontFace Ccw, Cw;
+        public FrontFaceDirection Ccw, Cw;
     }
 
     /// <summary>Opens a native segment for TERRAIN-mode meshes inside the host's pass: dynamic state (back faces culled, counter-clockwise),
     /// the frame and terrain sets, and the placements' rows from <paramref name="rows"/> at locations 7 to 10.</summary>
-    MeshJob OpenMeshSegment(TerrainProgram p, int kind, string label, Silk.NET.Vulkan.Buffer rows, ulong rowsOffset, out MeshSegment s)
+    MeshJob OpenMeshSegment(TerrainProgram p, int kind, string label, GpuBuffer rows, ulong rowsOffset, out MeshSegment s)
     {
         // Prepare (wave 4, docs/renderer-native.md 6.2): what the segment's commands need, into a job recorded by the caller.
         var targets = gpu.CurrentTargets();
@@ -1143,10 +1150,10 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         s = new MeshSegment
         {
             Targets = targets, State = state, Segment = SegmentId(kind, p.P, targets, state),
-            Ccw = GlConventions.FrontFace(FrontFaceDirection.Ccw), Cw = GlConventions.FrontFace(FrontFaceDirection.CW),
+            Ccw = FrontFaceDirection.Ccw, Cw = FrontFaceDirection.CW,
         };
         var job = meshJobs.Rent();
-        (job.Owner, job.Targets, job.State, job.Layout, job.Ccw, job.Count) = (this, targets, state, p.Layout, s.Ccw, 0);
+        (job.Owner, job.Targets, job.State, job.Program, job.Ccw, job.Count) = (this, targets, state, p.P, s.Ccw, 0);
         var view = View();
         job.Frame = nativeFrame.Prepare(in view);
         (job.ConstantSet, job.ConstantOffset) = PrepareConstantsBinding();
@@ -1162,26 +1169,26 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
     {
         public struct Draw
         {
-            public GraphicsPipeline Pipeline;
-            public Silk.NET.Vulkan.FrontFace Front;
+            public GpuPipeline Pipeline;
+            public FrontFaceDirection Front;
             public OwnVertices Vertices;
             public int VertexCount;
-            public BufferBinding Elements;
+            public GpuBufferBinding Elements;
             public uint IndexCount, Instances, FirstInstance;
             /// <summary>Indirect: the arguments' buffer (else a plain indexed draw).</summary>
-            public Silk.NET.Vulkan.Buffer Args;
+            public GpuBuffer Args;
             public ulong ArgsOffset;
         }
 
         public TerrainRenderer Owner = null!;
         public PassTargets Targets = null!;
         public DrawState State = null!;
-        public Silk.NET.Vulkan.PipelineLayout Layout;
-        public Silk.NET.Vulkan.FrontFace Ccw;
+        public GpuProgram Program = default;
+        public FrontFaceDirection Ccw;
         public FrameBinding Frame;
-        public Silk.NET.Vulkan.DescriptorSet ConstantSet;
+        public GpuSet ConstantSet;
         public uint ConstantOffset;
-        public Silk.NET.Vulkan.Buffer Rows;
+        public GpuBuffer Rows;
         public ulong RowsOffset;
         public Draw[] Draws = new Draw[64];
         public int Count;
@@ -1193,20 +1200,20 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
             Draws[Count++] = d;
         }
 
-        public override void Record(CommandList cmd)
+        public override void Record(IGpuCommandList cmd)
         {
             var (targets, state) = (Targets, State);
             cmd.SetViewport(targets.Viewport);
             cmd.SetScissor(targets.Scissor);
-            cmd.SetRaster(Silk.NET.Vulkan.CullModeFlags.BackBit, Ccw);
+            cmd.SetRaster(CullMode.Back, Ccw);
             cmd.SetDepth(state.DepthTest, state.DepthWrite, state.Compare);
             cmd.SetDepthBias(state.BiasEnable, state.BiasConstant, state.BiasSlope);
-            NativeFrame.Record(cmd, Layout, in Frame);
+            NativeFrame.Record(cmd, Program, in Frame);
             uint offset = ConstantOffset;
-            cmd.BindSets(Layout, TerrainShaders.ConstantsSet, new ReadOnlySpan<Silk.NET.Vulkan.DescriptorSet>(in ConstantSet), new ReadOnlySpan<uint>(in offset));
+            cmd.BindSets(Program, TerrainShaders.ConstantsSet, new ReadOnlySpan<GpuSet>(in ConstantSet), new ReadOnlySpan<uint>(in offset));
             // The placement's rows at locations the meshes' vertex arrays leave free (their other programs do not read them).
-            Span<BufferBinding> bindings = stackalloc BufferBinding[4];
-            for (int a = 0; a < 4; a++) bindings[a] = new BufferBinding(Rows, RowsOffset + (ulong)(16 * a));
+            Span<GpuBufferBinding> bindings = stackalloc GpuBufferBinding[4];
+            for (int a = 0; a < 4; a++) bindings[a] = new GpuBufferBinding(Rows, RowsOffset + (ulong)(16 * a));
             cmd.BindVertexBuffers(TerrainShaders.MeshInstanceLocation, bindings);
             var front = Ccw;
             for (int i = 0; i < Count; i++)
@@ -1214,9 +1221,9 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
                 ref readonly var d = ref Draws[i];
                 cmd.BindPipeline(d.Pipeline);
                 if (d.Front != front) { cmd.SetFrontFace(d.Front); front = d.Front; }
-                cmd.BindVertexBuffers(0, ((ReadOnlySpan<BufferBinding>)d.Vertices)[..d.VertexCount]);
-                cmd.BindIndexBuffer(d.Elements, Silk.NET.Vulkan.IndexType.Uint32);
-                if (d.Args.Handle != 0) cmd.DrawIndexedIndirect(d.Args, d.ArgsOffset, 1);
+                cmd.BindVertexBuffers(0, ((ReadOnlySpan<GpuBufferBinding>)d.Vertices)[..d.VertexCount]);
+                cmd.BindIndexBuffer(d.Elements, IndexKind.U32);
+                if (!d.Args.IsNull) cmd.DrawIndexedIndirect(d.Args, d.ArgsOffset, 1);
                 else cmd.DrawIndexed(d.IndexCount, d.Instances, 0, 0, d.FirstInstance);
             }
         }
@@ -1240,7 +1247,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
     /// writes them) from <paramref name="rowsOffset"/>, with the argument's firstInstance. Same programs, state, and GL state left behind as
     /// <see cref="DrawMeshes"/>; the caller orders the meshes. Returns the number of draw calls.
     /// </summary>
-    public int DrawMeshesIndirect(ReadOnlySpan<IndirectMesh> meshes, Silk.NET.Vulkan.Buffer rows, ulong rowsOffset, Silk.NET.Vulkan.Buffer args, ulong argsOffset, bool depth = false, bool solid = false,
+    public int DrawMeshesIndirect(ReadOnlySpan<IndirectMesh> meshes, GpuBuffer rows, ulong rowsOffset, GpuBuffer args, ulong argsOffset, bool depth = false, bool solid = false,
         InteriorMaskRenderer? cut = null)
     {
         if (meshes.Length == 0) return 0;
@@ -1257,11 +1264,11 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         finally { meshCut = null; }
         // solid: none of these placements is mid cross-fade (the caller splits them), so the program without the discard draws them (EarlyDepth).
         return solidDraw
-            ? DrawIndirect(meshes, rows, rowsOffset, args, argsOffset, Smoothed(meshSolid, meshSolidTess), Solid, "terrain meshes solid")
-            : DrawIndirect(meshes, rows, rowsOffset, args, argsOffset, Smoothed(meshColour, meshColourTess), Colour, "terrain meshes");
+            ? DrawIndirect(meshes, rows, rowsOffset, args, argsOffset, Smoothed(MeshSolid, meshSolidTess), Solid, "terrain meshes solid")
+            : DrawIndirect(meshes, rows, rowsOffset, args, argsOffset, Smoothed(MeshColour, meshColourTess), Colour, "terrain meshes");
     }
 
-    int DrawIndirect(ReadOnlySpan<IndirectMesh> meshes, Silk.NET.Vulkan.Buffer rows, ulong rowsOffset, Silk.NET.Vulkan.Buffer args, ulong argsOffset, TerrainProgram p, int kind, string label)
+    int DrawIndirect(ReadOnlySpan<IndirectMesh> meshes, GpuBuffer rows, ulong rowsOffset, GpuBuffer args, ulong argsOffset, TerrainProgram p, int kind, string label)
     {
         var job = OpenMeshSegment(p, kind, label, rows, rowsOffset, out var s);
         if (meshGroups.Count > 4096) meshGroups.Clear();   // meshes come and go with streaming
@@ -1273,7 +1280,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
             if (!meshGroups.TryGetValue(key, out var g)) meshGroups[key] = g = new MeshGroup { Mesh = m.Mesh, IndexCount = m.IndexCount, Mirrored = m.Mirrored };
             ref var n = ref g.Native(kind);
             if (n.Source != g.Mesh || n.Program != p) Current(ref n, g.Mesh, p);
-            var pipeline = n.SegA == s.Segment ? n.PipeA! : PipelineFor(ref n, p, s.Segment, s.State, s.Targets.Formats, label);
+            var pipeline = n.SegA == s.Segment ? n.PipeA!.Value : PipelineFor(ref n, p, s.Segment, s.State, s.Targets.Formats, label);
             job.Add(new MeshJob.Draw
             {
                 Pipeline = pipeline, Front = m.Mirrored ? s.Cw : s.Ccw, Vertices = n.Vertices, VertexCount = n.VertexCount, Elements = n.Elements,
@@ -1291,7 +1298,7 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         Span<LegacyProgram.Attribute?> attributes = stackalloc LegacyProgram.Attribute?[16];
         va.Attributes.AsSpan().CopyTo(attributes);
         for (int a = 0; a < 4; a++)
-            attributes[TerrainShaders.MeshInstanceLocation + a] = new LegacyProgram.Attribute(default, Silk.NET.Vulkan.Format.R32G32B32A32Sfloat, 64, true);
+            attributes[TerrainShaders.MeshInstanceLocation + a] = new LegacyProgram.Attribute(default, InternalFormat.Rgba32f, 64, true);
         n.Layout = p.VertexLayout(attributes);
         n.VertexCount = p.Own;
         p.Buffers(attributes, n.Vertices);
@@ -1302,11 +1309,11 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         n.PipeA = n.PipeB = null;
     }
 
-    GraphicsPipeline PipelineFor(ref NativeMesh n, TerrainProgram p, int segment, DrawState state, AttachmentFormats formats, string label)
+    GpuPipeline PipelineFor(ref NativeMesh n, TerrainProgram p, int segment, DrawState state, AttachmentFormats formats, string label)
     {
-        if (n.SegA == segment) return n.PipeA!;
-        if (n.SegB == segment) { (n.SegA, n.PipeA, n.SegB, n.PipeB) = (n.SegB, n.PipeB, n.SegA, n.PipeA); return n.PipeA!; }
-        var topology = p.P.Tessellated ? Silk.NET.Vulkan.PrimitiveTopology.PatchList : Silk.NET.Vulkan.PrimitiveTopology.TriangleList;
+        if (n.SegA == segment) return n.PipeA!.Value;
+        if (n.SegB == segment) { (n.SegA, n.PipeA, n.SegB, n.PipeB) = (n.SegB, n.PipeB, n.SegA, n.PipeA); return n.PipeA!.Value; }
+        var topology = p.P.Tessellated ? PrimitiveType.PatchList : PrimitiveType.Triangles;
         var pipeline = gpu.Pipelines.Get(state.Pipeline(p.P, n.Layout!, topology, formats, label));
         (n.SegB, n.PipeB) = (n.SegA, n.PipeA);
         (n.SegA, n.PipeA) = (segment, pipeline);
@@ -1331,7 +1338,5 @@ public sealed unsafe partial class TerrainRenderer : IDisposable
         gpu.Bindless.Free(BindlessKind.Texture2DArray, standInArray);
         gpu.Bindless.Free(BindlessKind.UTexture2D, standInUInt);
         nativeFrame.Dispose();
-        var (vk, device, layout) = (gpu.Device.Vk, gpu.Device.Device, constantsLayout);
-        gpu.Device.Frames.DeferDelete(() => vk.DestroyDescriptorSetLayout(device, layout, null));
     }
 }

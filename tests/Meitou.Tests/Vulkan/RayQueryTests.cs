@@ -60,18 +60,18 @@ public class RayQueryTests
         *(InstanceRecord*)instances.Mapped = InstanceRecord.Of(Matrix4x4.CreateTranslation(0, 2, 0), 7, 0xFF, 0, 0);
         var results = DeviceBuffer.Create(ctx, N * N * 8, BufferUse.Storage | BufferUse.TransferSrc, "test results");
         using var readback = ReadbackBuffer.Create(ctx, N * N * 8, "test results");
-        using var program = ctx.Shaders.Compute(Trace, "ray query test", [(0, DescriptorType.AccelerationStructureKhr), (1, DescriptorType.StorageBuffer)]);
+        var program = ctx.Shaders.Compute(Trace, "ray query test", [(0, DescriptorType.AccelerationStructureKhr), (1, DescriptorType.StorageBuffer)]);
         var pipeline = ctx.Pipelines.Get(new ComputePipelineDesc(program, "ray query test"));
 
         var cmd = ctx.BeginNative("ray query test");
-        cmd.Barrier(BarrierBatch.Full);
-        var blas = AccelerationStructure.BuildBottom(device, cmd, [new TriangleGeometry(vertices.Address, 12, 3, index.Address, 1)], "test bottom");
+        cmd.Order();
+        var blas = AccelerationStructure.BuildBottom(device, (CommandList)cmd, [new TriangleGeometry(device.Address(vertices.Handle), 12, 3, device.Address(index.Handle), 1)], "test bottom");
         ((InstanceRecord*)instances.Mapped)->Reference = blas.Address;
-        cmd.Barrier(AccelerationStructure.BuildToTrace);
+        ((CommandList)cmd).Barrier(AccelerationStructure.BuildToTrace);
         var tlas = AccelerationStructure.CreateTop(device, 4, "test top");
         var addressInfo = new BufferDeviceAddressInfo { SType = StructureType.BufferDeviceAddressInfo, Buffer = instances.Buffer };
-        tlas.RebuildTop(cmd, device.Vk.GetBufferDeviceAddress(device.Device, in addressInfo), 1);
-        cmd.Barrier(AccelerationStructure.BuildToTrace);
+        tlas.RebuildTop((CommandList)cmd, device.Vk.GetBufferDeviceAddress(device.Device, in addressInfo), 1);
+        ((CommandList)cmd).Barrier(AccelerationStructure.BuildToTrace);
 
         var got = new List<Vector2[]>();
         var writes = stackalloc WriteDescriptorSet[2];
@@ -81,17 +81,17 @@ public class RayQueryTests
         {
             var handle = tlas.Handle;
             var asWrite = new WriteDescriptorSetAccelerationStructureKHR { SType = StructureType.WriteDescriptorSetAccelerationStructureKhr, AccelerationStructureCount = 1, PAccelerationStructures = &handle };
-            var bufferInfo = new DescriptorBufferInfo(results.Handle, 0, results.Size);
+            var bufferInfo = new DescriptorBufferInfo(ctx.Device.BufferAt(results.Handle.Index), 0, results.Size);
 
             writes[0] = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, PNext = &asWrite, DstBinding = 0, DescriptorCount = 1, DescriptorType = DescriptorType.AccelerationStructureKhr };
             writes[1] = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstBinding = 1, DescriptorCount = 1, DescriptorType = DescriptorType.StorageBuffer, PBufferInfo = &bufferInfo };
             cmd.BindPipeline(pipeline);
-            cmd.PushDescriptors(program.Layout, 0, new ReadOnlySpan<WriteDescriptorSet>(writes, 2), PipelineBindPoint.Compute);
+            ((CommandList)cmd).PushDescriptors(program, 0, new ReadOnlySpan<WriteDescriptorSet>(writes, 2), GpuBindPoint.Compute);
             var push = new Push { StartY = c.StartY, DirY = c.DirY, Flags = c.Flags };
-            cmd.PushConstants(program.Layout, ShaderStageFlags.ComputeBit, in push);
+            cmd.PushConstants(program, GpuStage.Compute, in push);
             cmd.Dispatch(1, 1);
-            cmd.Barrier(BarrierBatch.Full);
-            cmd.CopyBuffer(results.Handle, readback.Handle, new BufferCopy(0, 0, results.Size));
+            cmd.Order();
+            cmd.CopyBuffer(results.Handle, readback.Handle, new GpuBufferCopy(0, 0, results.Size));
             ctx.EndNative(cmd);
             ctx.Finish();
             got.Add(MemoryMarshal.Cast<byte, Vector2>(readback.Read(0, results.Size)).ToArray());

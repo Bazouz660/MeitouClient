@@ -15,7 +15,7 @@ public readonly record struct QuerySlot(long Frame, int Slot, uint Index)
 /// after the slot's previous results were collected. Indices are handed out with an interlocked counter, so any recording thread may take
 /// them. Results are read a frame-ring later, never waited for: <see cref="TryRead"/> answers once the slot's frame has completed.
 /// </summary>
-public sealed unsafe class QueryArena : IDisposable
+public sealed unsafe class QueryArena : IGpuTimestamps, IDisposable
 {
     public const uint Capacity = 4096;
     readonly VulkanDevice device;

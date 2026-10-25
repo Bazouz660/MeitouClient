@@ -184,7 +184,7 @@ internal sealed class FogVolumes
     }
 
     /// <summary>With the frame globals published (the world's renderer).</summary>
-    public FogVolumes(GpuContext gpu, IReadOnlyList<FogFeature> features) : this(features)
+    public FogVolumes(IGpuContext gpu, IReadOnlyList<FogFeature> features) : this(features)
     {
         var g = gpu.Globals;
         g.PublishUniform("uFogVolumeEye", () => eyeLight);

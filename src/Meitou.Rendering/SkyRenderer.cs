@@ -112,6 +112,12 @@ public sealed unsafe partial class SkyRenderer : IDisposable
         }
         """;
 
+    /// <summary>The sky's own GLSL, for a backend that compiles the sky itself (the Metal path): the fullscreen vertex shader and the simple fragment shader.</summary>
+    public static (string Vertex, string SimpleFragment) SimpleShader => (Vertex, SimpleFragment);
+
+    /// <summary>The sky's own GLSL, the physical sky's fragment shader with it.</summary>
+    public static (string Vertex, string Fragment) PhysicalShader => (Vertex, SkyFragment);
+
     // SkyX's skydome per pixel (HDR): the scattered light, its night glow and starfield; no sun disc (the game's sun is the Mie lobe).
     static string F(float v) => v.ToString("0.#########", System.Globalization.CultureInfo.InvariantCulture) + (v == MathF.Floor(v) ? ".0" : "");
 
@@ -441,7 +447,7 @@ public sealed unsafe partial class SkyRenderer : IDisposable
         """;
 
     /// <summary>The native GPU API (phase 8 stage 2: the sky makes no GL call; docs/renderer-native.md 8.6).</summary>
-    public GpuContext Gpu { get; }
+    public IGpuContext Gpu { get; }
     // Native programs (docs/renderer-native.md 7.1, wave 3 agent D): the same SPIR-V as the GL programs they replace.
     readonly SkyProg simple, sky;
     // Native textures with the GL sampler state their GL versions had (phase 8 stage 2); null when the file was not found.
@@ -689,14 +695,14 @@ public sealed unsafe partial class SkyRenderer : IDisposable
     Vector3 builtTint;
     bool builtPhysical;
 
-    public SkyRenderer(GpuContext gpu, AssetLocator? assets = null)
+    public SkyRenderer(IGpuContext gpu, AssetLocator? assets = null)
     {
         Gpu = gpu;
         simple = new SkyProg(gpu, Vertex, SimpleFragment, "sky simple");
         sky = new SkyProg(gpu, Vertex, SkyFragment, "sky");
         skyTimer = new PassTimer(gpu);
         // MEITOU_FORCE_INTEGRATED=1 (VulkanDevice.IsIntegrated) shows the integrated GPU's star layers on any card.
-        if (gpu.Device.IsIntegrated) StarLayers = StarField.IntegratedLayers;
+        if (gpu.IsIntegrated) StarLayers = StarField.IntegratedLayers;
         if (assets is not null)
         {
             LoadTextures(assets);
@@ -1162,21 +1168,21 @@ public readonly record struct SkyColourHandles(UniformHandle Sun, UniformHandle 
 /// reflection's multisampled one alternate) and the vertex export they were made for, so a draw compares a few fields instead of building a
 /// pipeline description.
 /// </summary>
-internal sealed class NativeSegment(GpuContext gpu, LegacyProgram program, Silk.NET.Vulkan.PrimitiveTopology topology, string label)
+internal sealed class NativeSegment(IGpuContext gpu, LegacyProgram program, PrimitiveType topology, string label)
 {
-    readonly record struct Key(AttachmentFormats Formats, BlendState Blend, Silk.NET.Vulkan.ColorComponentFlags Mask, Silk.NET.Vulkan.PolygonMode Polygon,
+    readonly record struct Key(AttachmentFormats Formats, BlendState Blend, ColorMask Mask, PolygonKind Polygon,
         bool AlphaToCoverage, bool DepthClamp);
 
     Key key0, key1;
-    GraphicsPipeline? pipeline0, pipeline1;
+    GpuPipeline? pipeline0, pipeline1;
     VertexArrayBindings? source0, source1;
 
     /// <summary>The pipeline for <paramref name="state"/> into <paramref name="formats"/>, with the vertex inputs of <paramref name="vertices"/> (null: none).</summary>
-    public GraphicsPipeline Get(DrawState state, AttachmentFormats formats, VertexArrayBindings? vertices)
+    public GpuPipeline Get(DrawState state, AttachmentFormats formats, VertexArrayBindings? vertices)
     {
         var key = new Key(formats, state.Blend, state.ColourMask, state.Polygon, state.AlphaToCoverage, state.DepthClamp);
-        if (pipeline0 is not null && key == key0 && ReferenceEquals(vertices, source0)) return pipeline0;
-        if (pipeline1 is not null && key == key1 && ReferenceEquals(vertices, source1)) return pipeline1;
+        if (pipeline0 is not null && key == key0 && ReferenceEquals(vertices, source0)) return pipeline0!.Value;
+        if (pipeline1 is not null && key == key1 && ReferenceEquals(vertices, source1)) return pipeline1!.Value;
         var made = gpu.Pipelines.Get(state.Pipeline(program.Program, program.VertexLayout(vertices is null ? default : vertices.Attributes), topology, formats, label));
         (key1, pipeline1, source1) = (key0, pipeline0, source0);
         (key0, pipeline0, source0) = (key, made, vertices);
@@ -1195,10 +1201,10 @@ sealed class SkyProg : IDisposable
     public readonly SamplerSlot Stars, Planet0, Planet1, Clouds, CloudsNormal, CloudsTile, CloudsSmooth, CloudsTileSmooth, VolumeImage;
     public readonly Meitou.Rendering.Gpu.Shaders.SamplerInfo? StarsInfo, CloudsInfo;
 
-    public SkyProg(GpuContext gpu, string vertex, string fragment, string name)
+    public SkyProg(IGpuContext gpu, string vertex, string fragment, string name)
     {
         P = LegacyProgram.Create(gpu, vertex, fragment, name);
-        Segment = new NativeSegment(gpu, P, Silk.NET.Vulkan.PrimitiveTopology.TriangleList, name);
+        Segment = new NativeSegment(gpu, P, PrimitiveType.Triangles, name);
         InverseViewProjection = P.Uniform("uInverseViewProjection");
         Colours = SkyColourHandles.Resolve(P);
         Extra = P.Uniform("uSkyExtra");
@@ -1234,27 +1240,27 @@ sealed class SkyProg : IDisposable
 
 /// <summary>
 /// (Phase 8 stage 2.) A native texture with the sampler state of the GL texture it replaces: <see cref="SamplerDesc.FromGl"/> with the GL
-/// parameters and, on a mipmapped filter, the upscaler's LOD bias (<see cref="GpuContext.LodBias"/>), as VkGl's <c>SamplerFor</c> made it; the
+/// parameters and, on a mipmapped filter, the upscaler's LOD bias (<see cref="IGpuContext.LodBias"/>), as VkGl's <c>SamplerFor</c> made it; the
 /// view covers the levels VkGl's covered. For <see cref="LegacyProgram.Bind"/> and the frame globals (no bindless entry of its own).
 /// Render thread only.
 /// </summary>
 internal sealed class SampledImage : IDisposable
 {
-    readonly GpuContext ctx;
+    readonly IGpuContext ctx;
     readonly TextureMinFilter min;
     readonly TextureMagFilter mag;
     readonly TextureWrapMode wrap, wrapR;
     float cachedBias = float.NaN;
     SampledTexture cached;
 
-    SampledImage(GpuContext ctx, Texture texture, TextureMinFilter min, TextureMagFilter mag, TextureWrapMode wrap, TextureWrapMode wrapR)
+    SampledImage(IGpuContext ctx, GpuTexture texture, TextureMinFilter min, TextureMagFilter mag, TextureWrapMode wrap, TextureWrapMode wrapR)
     {
         this.ctx = ctx;
         Texture = texture;
         (this.min, this.mag, this.wrap, this.wrapR) = (min, mag, wrap, wrapR);
     }
 
-    public Texture Texture { get; }
+    public GpuTexture Texture { get; }
 
     /// <summary>The sampler and view a draw samples it with now (what VkGl's <c>Sampled</c> gave for the GL texture).</summary>
     public SampledTexture Sampled()
@@ -1263,27 +1269,27 @@ internal sealed class SampledImage : IDisposable
         if (!(bias == cachedBias))
         {
             var sampler = ctx.Samplers.Get(SamplerDesc.FromGl(min, mag, wrap, wrap, wrapR, false, DepthFunction.Lequal, false, 1, false, bias));
-            (cached, cachedBias) = (new SampledTexture(sampler, Texture.View(), Texture.Image), bias);
+            (cached, cachedBias) = (new SampledTexture(sampler, Texture.View()), bias);
         }
         return cached;
     }
 
-    static Silk.NET.Vulkan.Rect2D Rect(int width, int height) => new(new(0, 0), new((uint)width, (uint)height));
+    static PixelRect Rect(int width, int height) => new(0, 0, (uint)width, (uint)height);
 
     /// <summary>
     /// What <c>WorldGl.Texture2D</c> made: RGBA8 from top-first rows, with <paramref name="mipmaps"/> the whole chain made on the GPU as GL's
-    /// GenerateMipmap made it in VkGl (<see cref="CommandList.GenerateMips"/>) and trilinear filtering, else one level, linear; repeating or
+    /// GenerateMipmap made it in VkGl (<see cref="IGpuCommandList.GenerateMips"/>) and trilinear filtering, else one level, linear; repeating or
     /// clamped to the edge (S and T; R stays GL's default, repeat).
     /// </summary>
-    public static SampledImage Rgba8(GpuContext ctx, RgbaImage image, bool repeat, bool mipmaps, string name) =>
+    public static SampledImage Rgba8(IGpuContext ctx, RgbaImage image, bool repeat, bool mipmaps, string name) =>
         Rgba8(ctx, image.Width, image.Height, image.Pixels, repeat, mipmaps, name);
 
     /// <inheritdoc cref="Rgba8(GpuContext, RgbaImage, bool, bool, string)"/>
-    public static SampledImage Rgba8(GpuContext ctx, int width, int height, byte[] rgba, bool repeat, bool mipmaps, string name)
+    public static SampledImage Rgba8(IGpuContext ctx, int width, int height, byte[] rgba, bool repeat, bool mipmaps, string name)
     {
         int levels = mipmaps ? 1 + (int)Math.Floor(Math.Log2(Math.Max(Math.Max(width, height), 1))) : 1;
         using var batch = ctx.Uploads.Begin();
-        var t = batch.Create(new TextureDesc(Silk.NET.Vulkan.Format.R8G8B8A8Unorm, width, height, levels,
+        var t = batch.Create(new TextureDesc(InternalFormat.Rgba8, width, height, levels,
             Use: TextureUse.Sampled | TextureUse.TransferDst | TextureUse.TransferSrc, Name: name));
         batch.Write(t, 0, 0, Rect(width, height), rgba.AsSpan(0, width * height * 4));
         if (mipmaps) batch.Commands.GenerateMips(t);
@@ -1295,10 +1301,10 @@ internal sealed class SampledImage : IDisposable
     /// A 2D DDS file with every level it has: BC1 blocks as they are (half a byte a texel), any other format decoded to RGBA8; trilinear,
     /// repeating or clamped to the edge. The sky's starfield and planet maps (4096² and 4096 × 2048 BC1: 11 and 6 MB instead of 85 and 43 MB as RGBA8).
     /// </summary>
-    public static SampledImage FromDds(GpuContext ctx, Meitou.Data.Textures.DdsFile dds, bool repeat, string name)
+    public static SampledImage FromDds(IGpuContext ctx, Meitou.Data.Textures.DdsFile dds, bool repeat, string name)
     {
         bool bc1 = dds.Format == Meitou.Data.Textures.DdsFormat.Bc1;
-        var format = bc1 ? Silk.NET.Vulkan.Format.BC1RgbaUnormBlock : Silk.NET.Vulkan.Format.R8G8B8A8Unorm;
+        var format = bc1 ? InternalFormat.CompressedRgbaS3TCDxt1Ext : InternalFormat.Rgba8;
         using var batch = ctx.Uploads.Begin();
         var t = batch.Create(new TextureDesc(format, dds.Width, dds.Height, dds.MipCount, Name: name));
         for (int level = 0; level < dds.MipCount; level++)
@@ -1319,11 +1325,22 @@ internal sealed class SampledImage : IDisposable
     }
 
     /// <summary>RGBA32F, one level, linear, clamped to the edge: the GL texture <c>WaterRenderer</c> made for its biome parameter maps.</summary>
-    public static SampledImage Rgba32F(GpuContext ctx, Vector4[] data, int width, int height, string name)
+    public static SampledImage Rgba32F(IGpuContext ctx, Vector4[] data, int width, int height, string name)
     {
         using var batch = ctx.Uploads.Begin();
-        var t = batch.Create(new TextureDesc(Silk.NET.Vulkan.Format.R32G32B32A32Sfloat, width, height, Name: name));
+        var t = batch.Create(new TextureDesc(InternalFormat.Rgba32f, width, height, Name: name));
         batch.Write(t, 0, 0, Rect(width, height), System.Runtime.InteropServices.MemoryMarshal.AsBytes(data.AsSpan(0, width * height)));
+        return new SampledImage(ctx, t, TextureMinFilter.Linear, TextureMagFilter.Linear, TextureWrapMode.ClampToEdge, TextureWrapMode.Repeat);
+    }
+
+    /// <summary>Two RGBA32F layers (the water's biome parameter maps A and B), linear, clamped to the edge.</summary>
+    public static SampledImage Rgba32FArray(IGpuContext ctx, Vector4[] a, Vector4[] b, int width, int height, string name)
+    {
+        using var batch = ctx.Uploads.Begin();
+        var t = batch.Create(new TextureDesc(InternalFormat.Rgba32f, width, height, Layers: 2,
+            Kind: TextureKind.Texture2DArray, Name: name));
+        batch.Write(t, 0, 0, Rect(width, height), System.Runtime.InteropServices.MemoryMarshal.AsBytes(a.AsSpan(0, width * height)));
+        batch.Write(t, 0, 1, Rect(width, height), System.Runtime.InteropServices.MemoryMarshal.AsBytes(b.AsSpan(0, width * height)));
         return new SampledImage(ctx, t, TextureMinFilter.Linear, TextureMagFilter.Linear, TextureWrapMode.ClampToEdge, TextureWrapMode.Repeat);
     }
 
@@ -1332,12 +1349,12 @@ internal sealed class SampledImage : IDisposable
     /// face order); trilinear, clamped to the edge on S, T and R (Vulkan's cube sampling is always seamless, as GL's was with
     /// <c>TEXTURE_CUBE_MAP_SEAMLESS</c>). The GL version's <c>MAX_LEVEL</c> was the file's last level, so its view had the file's levels too.
     /// </summary>
-    public static SampledImage Cube(GpuContext ctx, DdsFile dds, string name)
+    public static SampledImage Cube(IGpuContext ctx, DdsFile dds, string name)
     {
         if (!dds.IsCubemap || dds.ImageCount < 6) throw new InvalidOperationException($"not a cube map: {dds}");
         var first = DdsDecoder.Decode(dds, 0, 0);
         using var batch = ctx.Uploads.Begin();
-        var t = batch.Create(new TextureDesc(Silk.NET.Vulkan.Format.R8G8B8A8Unorm, first.Width, first.Height, dds.MipCount, Kind: TextureKind.Cube, Name: name));
+        var t = batch.Create(new TextureDesc(InternalFormat.Rgba8, first.Width, first.Height, dds.MipCount, Kind: TextureKind.Cube, Name: name));
         for (int face = 0; face < 6; face++)
             for (int level = 0; level < dds.MipCount; level++)
             {
@@ -1359,7 +1376,7 @@ internal sealed class SampledImage : IDisposable
 /// </summary>
 static class ShadowsOffGlobals
 {
-    public static void Publish(GpuContext gpu)
+    public static void Publish(IGpuContext gpu)
     {
         var g = gpu.Globals;
         foreach (var (name, bytes) in new[] { (ShadowShaders.ReceiverBlock, ShadowPass.ReceiverBytes), (ShadowShaders.CasterBlock, 16), (MeitouShadowShaders.Block, MeitouShadowShaders.BlockBytes) })

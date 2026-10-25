@@ -9,12 +9,12 @@ namespace Meitou.Rendering.Characters;
 /// <param name="Depth">Its depth, from the projection <paramref name="Near"/>..<paramref name="Far"/>.</param>
 /// <param name="Tint">The outline's and tint's colour (alpha: their strength).</param>
 /// <param name="Spheres">The bounding spheres of the characters in it.</param>
-public readonly record struct HoverMask(Texture Colour, Texture Depth, float Near, float Far, Vector4 Tint, IReadOnlyList<(Vector3 Centre, float Radius)> Spheres);
+public readonly record struct HoverMask(GpuTexture Colour, GpuTexture Depth, float Near, float Far, Vector4 Tint, IReadOnlyList<(Vector3 Centre, float Radius)> Spheres);
 
 /// <summary>The outlined characters drawn alone into masks of their own, one per colour, for the hover outline (<see cref="HoverOutlineRenderer"/>, docs/game/ui-input.md "Hover outline").</summary>
 internal sealed unsafe partial class CharacterRenderer
 {
-    readonly List<(Texture Colour, Texture Depth)> hoverTargets = [];
+    readonly List<(GpuTexture Colour, GpuTexture Depth)> hoverTargets = [];
     readonly List<HoverMask> hoverMasks = [];
 
     /// <summary>This frame's masks (empty when nothing is outlined).</summary>
@@ -50,8 +50,8 @@ internal sealed unsafe partial class CharacterRenderer
             {
                 if (hoverTargets.Count > g) { hoverTargets[g].Colour.Dispose(); hoverTargets[g].Depth.Dispose(); }
                 // The portraits' formats, so the masks share their pipelines.
-                var pair = (Texture.Create(Gpu, new TextureDesc(Format.R8G8B8A8Srgb, width, height, Use: TextureUse.Sampled | TextureUse.ColourTarget, Name: "hover mask")),
-                    Texture.Create(Gpu, new TextureDesc(Format.D32Sfloat, width, height, Use: TextureUse.Sampled | TextureUse.DepthTarget, Name: "hover mask depth")));
+                var pair = (Gpu.CreateTexture(new TextureDesc(InternalFormat.Srgb8Alpha8, width, height, Use: TextureUse.Sampled | TextureUse.ColourTarget, Name: "hover mask")),
+                    Gpu.CreateTexture(new TextureDesc(InternalFormat.DepthComponent24, width, height, Use: TextureUse.Sampled | TextureUse.DepthTarget, Name: "hover mask depth")));
                 if (hoverTargets.Count > g) hoverTargets[g] = pair; else hoverTargets.Add(pair);
             }
             var (colourTarget, depthTarget) = hoverTargets[g];
@@ -70,10 +70,10 @@ internal sealed unsafe partial class CharacterRenderer
             foreach (int i in groups[g].Live)
             {
                 var cmd = Gpu.BeginNative("hover mask");
-                var load = first ? AttachmentLoadOp.Clear : AttachmentLoadOp.Load;
+                var load = first ? LoadOp.Clear : LoadOp.Load;
                 cmd.BeginRendering(new RenderingDesc(
-                    target.Colour with { Load = load, Clear = new ClearValue(new ClearColorValue(0f, 0f, 0f, 0f)) },
-                    target.Depth with { Load = load, Clear = new ClearValue(depthStencil: new ClearDepthStencilValue(1f, 0)) }, target.Width, target.Height));
+                    target.Colour with { Load = load, Clear = new ClearColour(0f, 0f, 0f, 0f) },
+                    target.Depth with { Load = load, DepthClear = 1f }, target.Width, target.Height));
                 Gpu.BeginHostPass(cmd, target, DrawState.Scene(target.Formats));
                 portraitLive = i;
                 try { DrawView(new ViewConstants { ViewProjection = view * projection, Eye = eye, LightDir = Vector3.UnitY }, eye, []); }

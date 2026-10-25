@@ -1,8 +1,11 @@
+using InternalFormat = Meitou.Rendering.Gpu.InternalFormat;
 using System.Numerics;
 using System.Text;
 
 using Meitou.Rendering.Gpu;
 using Vk = Silk.NET.Vulkan;
+
+using Meitou.Rendering.Gpu.Core;
 
 namespace Meitou.Rendering;
 
@@ -19,33 +22,37 @@ namespace Meitou.Rendering;
 /// Native (docs/renderer-native.md 8, phase 8 stages 2 and 3): every target and texture is a native <see cref="Texture"/> ("post …"), every
 /// pass a rendering of its own in a native segment, the timings native timestamps; no GL names (stage 3).
 /// </remarks>
-public sealed unsafe partial class PostProcess : IDisposable
+public sealed unsafe partial class PostProcess : IDisposable, IWorldPostChain
 {
     /// <summary>A native target with the GL sampler state its GL texture had (linear or nearest, clamped; the luminance's mipmapped
     /// minification).</summary>
-    sealed class Target2D(Texture texture, TextureMinFilter min, TextureMagFilter mag)
+    sealed class Target2D(GpuTexture texture, TextureMinFilter min, TextureMagFilter mag)
     {
-        public readonly Texture Texture = texture;
+        public readonly GpuTexture Texture = texture;
         public readonly TextureMinFilter Min = min;
         public readonly TextureMagFilter Mag = mag;
         public int Width => Texture.Desc.Width;
         public int Height => Texture.Desc.Height;
-        public Vk.Format Format => Texture.Desc.Format;
-        public RenderTarget Attachment => new(Texture.Attachment(), Vk.AttachmentLoadOp.Load, default, Texture.Image);
+        public InternalFormat Format => Texture.Desc.Format;
+        public RenderTarget Attachment => new(Texture.Attachment(), LoadOp.Load, default);
     }
 
     /// <summary>The native GPU API (docs/renderer-native.md 7.1 step 8); ports use it instead of looking it up.</summary>
     public GpuContext Gpu { get; }
+    IGpuContext IWorldPostChain.Context => Gpu;
+    /// <summary>Vulkan keeps a far and a near depth slice (the far one has its own target for the motion vectors).</summary>
+    public bool DepthSlices => true;
     public PostOptions Options { get; }
     /// <summary>What the final image goes to: an RGBA8 colour target at least the display size (the window's backbuffer, or an offscreen
     /// texture). Set before <see cref="End"/>.</summary>
-    public Texture? Target;
+    public GpuTexture? Target { get; set; }
     /// <summary>What the scene's slice is drawn into now (valid after <see cref="Begin"/>): the scene colour and the slice's depth, at the render size.</summary>
     public PassTargets SceneTargets { get; private set; } = null!;
+    PassTargets IWorldPostChain.SceneTargetsForParticles => SceneTargets;
     /// <summary>The scene's depth (the near slice's; valid after <see cref="Begin"/>).</summary>
-    public Texture SceneDepth => sceneDepth!.Texture;
+    public GpuTexture SceneDepth => sceneDepth!.Texture;
     /// <summary>The scene's colour at the render size (valid after <see cref="Begin"/>; the Meitou water copies it for its refraction).</summary>
-    public Texture SceneColour => sceneColour!.Texture;
+    public GpuTexture SceneColour => sceneColour!.Texture;
     /// <summary>The previous frame's depth pyramid for the foliage occlusion cull (<see cref="HizPyramid"/>); built at the end of each frame while <see cref="OcclusionCull"/> is on.</summary>
     public HizPyramid? Hiz { get; private set; }
     /// <summary>On (default): <see cref="End"/> builds the pyramid (<c>--no-occlusion-cull</c> turns it off).</summary>
@@ -68,9 +75,10 @@ public sealed unsafe partial class PostProcess : IDisposable
     Target2D? aoA, aoB, aoMask;
     Target2D? ldr, ldrFxaa;   // the composite's LDR picture that FXAA or the heat haze reads, and FXAA's (or SMAA's) when the heat haze follows it
     Target2D? smaaEdges, smaaWeights;   // SMAA's edges and blending weights
-    Texture? flowTexture, perturbationTexture;   // the heat haze's FlowHAZE.dds and Perturber.dds (null: not found, no heat haze)
+    GpuTexture? flowTexture, perturbationTexture;   // the heat haze's FlowHAZE.dds and Perturber.dds (null: not found, no heat haze)
     Target2D? luminance, adaptA, adaptB;   // Kenshi's exposure: the luminance measure (mipmapped) and the adapted value (1 × 1, ping-pong)
     bool adaptedValid;
+    int adaptedFrames;
     readonly System.Diagnostics.Stopwatch adaptClock = new();
 
     // The native full-screen passes (docs/renderer-native.md 7.1, wave 3 agent E, step P): the same SPIR-V and layout as the GL programs they
@@ -193,11 +201,13 @@ public sealed unsafe partial class PostProcess : IDisposable
     sealed class VelocityPass : FullscreenProgram
     {
         public readonly SamplerSlot NearDepth, FarDepth;
-        public readonly UniformHandle NearToPrev, FarToPrev, NearPlanes, FarPlanes, FullPlanes, JitterNdc, HasFar, Mode, Tan, Right, Up, Back, EyeY, WaterY, WaterReactive;
+        public readonly UniformHandle NearToPrev, FarToPrev, NearPlanes, FarPlanes, FullPlanes, JitterNdc, HasFar, Mode, ClipDepthZeroToOne, FlipDepthY, Tan, Right, Up, Back, EyeY, WaterY, WaterReactive;
         public readonly UniformHandle Sun, SunMotionUniform;
         public VelocityPass(GpuContext gpu) : base(gpu, UpscaleShaders.Velocity, "post velocity")
         {
             (Sun, SunMotionUniform) = (P.Uniform("uSun"), P.Uniform("uSunMotion"));
+            ClipDepthZeroToOne = P.Uniform("uClipDepthZeroToOne");
+            FlipDepthY = P.Uniform("uFlipDepthY");
             (NearDepth, FarDepth) = (P.Sampler("uNearDepth"), P.Sampler("uFarDepth"));
             (NearToPrev, FarToPrev, NearPlanes, FarPlanes, FullPlanes) = (P.Uniform("uNearToPrev"), P.Uniform("uFarToPrev"), P.Uniform("uNearPlanes"),
                 P.Uniform("uFarPlanes"), P.Uniform("uFullPlanes"));
@@ -286,11 +296,12 @@ public sealed unsafe partial class PostProcess : IDisposable
     sealed class ParticleCompositePass : FullscreenProgram
     {
         public readonly SamplerSlot Accum, LowDepth, Depth;
-        public readonly UniformHandle LowSize, NearPlanes, Div;
+        public readonly UniformHandle LowSize, NearPlanes, Div, ClipDepthZeroToOne;
         public ParticleCompositePass(GpuContext gpu) : base(gpu, PostProcessShaders.ParticleComposite, "post particle composite")
         {
             (Accum, LowDepth, Depth) = (P.Sampler("uAccum"), P.Sampler("uLowDepth"), P.Sampler("uDepth"));
             (LowSize, NearPlanes, Div) = (P.Uniform("uLowSize"), P.Uniform("uNearPlanes"), P.Uniform("uDiv"));
+            ClipDepthZeroToOne = P.Uniform("uClipDepthZeroToOne");
         }
     }
 
@@ -298,11 +309,12 @@ public sealed unsafe partial class PostProcess : IDisposable
     sealed class ParticleCoveragePass : FullscreenProgram
     {
         public readonly SamplerSlot Accum, LowDepth, Depth;
-        public readonly UniformHandle LowSize, NearPlanes, Div, FullSize, Limit;
+        public readonly UniformHandle LowSize, NearPlanes, Div, FullSize, ClipDepthZeroToOne, Limit;
         public ParticleCoveragePass(GpuContext gpu) : base(gpu, PostProcessShaders.ParticleCoverage, "post particle coverage")
         {
             (Accum, LowDepth, Depth) = (P.Sampler("uAccum"), P.Sampler("uLowDepth"), P.Sampler("uDepth"));
             (LowSize, NearPlanes, Div, FullSize, Limit) = (P.Uniform("uLowSize"), P.Uniform("uNearPlanes"), P.Uniform("uDiv"), P.Uniform("uFullSize"), P.Uniform("uLimit"));
+            ClipDepthZeroToOne = P.Uniform("uClipDepthZeroToOne");
         }
     }
 
@@ -322,7 +334,7 @@ public sealed unsafe partial class PostProcess : IDisposable
     readonly Queue<StampSet> pendingStamps = new();
     readonly Stack<StampSet> freeStamps = new();
     StampSet? stamps;
-    Action<CommandList>? stampWriter;
+    Action<IGpuCommandList>? stampWriter;
     QuerySlot written;
     readonly Dictionary<string, (double Sum, int Count)> costs = [];
 
@@ -332,9 +344,9 @@ public sealed unsafe partial class PostProcess : IDisposable
 
     /// <summary>What every pass draws with: what VkGl made of the GL state the chain set (no culling, depth test or write, bias or blending; all
     /// channels; filled; one sample).</summary>
-    static readonly DrawState PassState = new(Vk.CullModeFlags.None, GlConventions.FrontFace(FrontFaceDirection.Ccw), false, false, Vk.CompareOp.LessOrEqual,
-        false, 0, 0, BlendState.Off, Vk.ColorComponentFlags.RBit | Vk.ColorComponentFlags.GBit | Vk.ColorComponentFlags.BBit | Vk.ColorComponentFlags.ABit,
-        Vk.PolygonMode.Fill, false, false);
+    static readonly DrawState PassState = new(CullMode.None, FrontFaceDirection.Ccw, false, false, DepthFunction.Lequal,
+        false, 0, 0, BlendState.Off, ColorMask.R | ColorMask.G | ColorMask.B | ColorMask.A,
+        PolygonKind.Fill, false, false);
 
     public PostProcess(GpuContext gpu, PostOptions options)
     {
@@ -370,28 +382,29 @@ public sealed unsafe partial class PostProcess : IDisposable
         foreach (var l in lowTargets) l.Accum = l.Depth = null;
         giAlbedo = giLow = shaftInjected = shaftLight = null;
         adaptedValid = historyValid = false;
+        adaptedFrames = 0;
     }
 
-    readonly Dictionary<Vk.Format, bool> storageSupport = [];
+    readonly Dictionary<InternalFormat, bool> storageSupport = [];
 
     /// <summary>Whether the device can make <paramref name="format"/> a storage image (VkGl gave its float colour textures storage use, which the vendor upscalers write with).</summary>
-    bool SupportsStorage(Vk.Format format)
+    bool SupportsStorage(InternalFormat format)
     {
         if (!storageSupport.TryGetValue(format, out bool ok))
         {
-            Gpu.Device.Vk.GetPhysicalDeviceFormatProperties(Gpu.Device.PhysicalDevice, format, out var props);
+            var vk = GlConventions.VkFormat(format);
+            Gpu.Device.Vk.GetPhysicalDeviceFormatProperties(Gpu.Device.PhysicalDevice, vk, out var props);
             storageSupport[format] = ok = (props.OptimalTilingFeatures & Vk.FormatFeatureFlags.StorageImageBit) != 0;
         }
         return ok;
     }
 
     /// <summary>A target of a GL internal format (the format VkGl made of it), with the uses VkGl's image had, one level unless asked.</summary>
-    Target2D Make(UploadBatch batch, int w, int h, InternalFormat glFormat, TextureMinFilter min, string name, int levels = 1)
+    Target2D Make(IGpuUploadBatch batch, int w, int h, InternalFormat glFormat, TextureMinFilter min, string name, int levels = 1)
     {
-        var format = GlConventions.VkFormat(glFormat);
-        var use = TextureUse.Sampled | TextureUse.TransferSrc | TextureUse.TransferDst | (GlConventions.IsDepthFormat(format) ? TextureUse.DepthTarget : TextureUse.ColourTarget);
-        if (format is Vk.Format.R16G16B16A16Sfloat or Vk.Format.R32Sfloat or Vk.Format.R16G16Sfloat or Vk.Format.R32G32Sfloat && SupportsStorage(format)) use |= TextureUse.Storage;
-        var texture = batch.Create(new TextureDesc(format, w, h, levels, Use: use, Name: name));
+        var use = TextureUse.Sampled | TextureUse.TransferSrc | TextureUse.TransferDst | (GlConventions.IsDepthFormat(glFormat) ? TextureUse.DepthTarget : TextureUse.ColourTarget);
+        if (glFormat is InternalFormat.Rgba16f or InternalFormat.R32f or InternalFormat.RG16f or InternalFormat.RG32f && SupportsStorage(glFormat)) use |= TextureUse.Storage;
+        var texture = batch.Create(new TextureDesc(glFormat, w, h, levels, Use: use, Name: name));
         return new Target2D(texture, min, min == TextureMinFilter.Nearest ? TextureMagFilter.Nearest : TextureMagFilter.Linear);
     }
 
@@ -548,9 +561,6 @@ public sealed unsafe partial class PostProcess : IDisposable
     /// <summary>The vendor upscaler for <see cref="UpscalerKind.Fsr"/> / <see cref="UpscalerKind.Dlss"/>; without one (or on failure) TAA runs.</summary>
     public IUpscaler? External { get; set; }
 
-    /// <summary>What <see cref="ObjectMotion"/> gets: the near slice's depth texture (with the sampler the chain reads it with) and planes, the jitter in NDC, and the render height over twice the tangent of half the field of view (pixels per unit at distance 1; 0: unknown).</summary>
-    public readonly record struct MotionTargets(SampledTexture NearDepth, Vector2 NearPlanes, Vector2 JitterNdc, float FocalPixels = 0);
-
     /// <summary>
     /// Draws motion of moving geometry over the camera motion (the swaying grass), called after the velocity pass with the motion target bound,
     /// only red and green written (B and A, depth and reactivity, stay), no depth test, culling or blending.
@@ -621,7 +631,7 @@ public sealed unsafe partial class PostProcess : IDisposable
         var cmd = Gpu.BeginNative("post far slice clear");
         cmd.BeginRendering(new RenderingDesc(default, farDepth!.Attachment with
         {
-            Load = Vk.AttachmentLoadOp.Clear, Clear = new Vk.ClearValue(depthStencil: new Vk.ClearDepthStencilValue(1f, 0)),
+            Load = LoadOp.Clear, DepthClear = 1f,
         }, width, height));
         cmd.EndRendering();
         Gpu.EndNative(cmd);
@@ -641,10 +651,10 @@ public sealed unsafe partial class PostProcess : IDisposable
 
     // ---- native passes ----
 
-    CommandList? segment;
+    IGpuCommandList? segment;
 
     /// <summary>The open native segment of the chain (one is begun when none is open: VkGl's pass ends, a full barrier is placed).</summary>
-    CommandList Segment() => segment ??= Gpu.BeginNative("post");
+    IGpuCommandList Segment() => segment ??= Gpu.BeginNative("post");
 
     /// <summary>Ends the open segment (before anything that records through VkGl: the vendor upscalers, the grass-motion guest).</summary>
     void CloseSegment()
@@ -656,45 +666,45 @@ public sealed unsafe partial class PostProcess : IDisposable
 
     /// <summary>One full-screen triangle with <paramref name="p"/> into <paramref name="target"/> (its uniforms and samplers set before), in a
     /// rendering of its own, followed by a full barrier (VkGl barriered before every pass).</summary>
-    readonly Dictionary<(LegacyProgram, Vk.Format, Vk.Format, DrawState), GraphicsPipeline> pipelines = [];
+    readonly Dictionary<(LegacyProgram, InternalFormat, InternalFormat, DrawState), GpuPipeline> pipelines = [];
 
     void Draw(LegacyProgram p, Target2D target) => Draw(p, target.Attachment, target.Format, target.Width, target.Height, target.Width, target.Height);
 
-    void Draw(LegacyProgram p, RenderTarget colour, Vk.Format format, int targetWidth, int targetHeight, int viewportWidth, int viewportHeight, DrawState? state = null)
+    void Draw(LegacyProgram p, RenderTarget colour, InternalFormat format, int targetWidth, int targetHeight, int viewportWidth, int viewportHeight, DrawState? state = null)
     {
-        DrawPass(p, colour, format, default, Vk.Format.Undefined, targetWidth, targetHeight, viewportWidth, viewportHeight, state);
+        DrawPass(p, colour, format, default, InternalFormat.None, targetWidth, targetHeight, viewportWidth, viewportHeight, state);
     }
 
-    /// <summary>As <see cref="Draw(LegacyProgram, RenderTarget, Vk.Format, int, int, int, int, DrawState?)"/>, with an optional depth attachment (the pipeline is cached per program and attachment formats: one state each).</summary>
-    void DrawPass(LegacyProgram p, RenderTarget colour, Vk.Format format, RenderTarget depth, Vk.Format depthFormat, int targetWidth, int targetHeight, int viewportWidth, int viewportHeight, DrawState? state)
+    /// <summary>As <see cref="Draw(LegacyProgram, RenderTarget, InternalFormat, int, int, int, int, DrawState?)"/>, with an optional depth attachment (the pipeline is cached per program and attachment formats: one state each).</summary>
+    void DrawPass(LegacyProgram p, RenderTarget colour, InternalFormat format, RenderTarget depth, InternalFormat depthFormat, int targetWidth, int targetHeight, int viewportWidth, int viewportHeight, DrawState? state)
     {
         var cmd = Segment();
         cmd.BeginLabel(p.Name);   // each pass its own range in a GPU trace (the segment is "post")
         cmd.BeginRendering(new RenderingDesc(colour, depth, targetWidth, targetHeight));
         var s = state ?? PassState;
-        cmd.SetViewport(new Vk.Viewport(0, 0, viewportWidth, viewportHeight, 0, 1));
-        cmd.SetScissor(new Vk.Rect2D(default, new Vk.Extent2D((uint)targetWidth, (uint)targetHeight)));
+        cmd.SetViewport(new PixelViewport(0, 0, viewportWidth, viewportHeight, 0, 1));
+        cmd.SetScissor(new PixelRect(0, 0, (uint)targetWidth, (uint)targetHeight));
         cmd.SetRaster(s.Cull, s.Front);
         cmd.SetDepth(s.DepthTest, s.DepthWrite, s.Compare);
         cmd.SetDepthBias(s.BiasEnable, s.BiasConstant, s.BiasSlope);
         if (!pipelines.TryGetValue((p, format, depthFormat, s), out var pipeline))
-            pipelines[(p, format, depthFormat, s)] = pipeline = Gpu.Pipelines.Get(s.Pipeline(p.Program, p.VertexLayout([]), Vk.PrimitiveTopology.TriangleList,
+            pipelines[(p, format, depthFormat, s)] = pipeline = Gpu.Pipelines.Get(s.Pipeline(p.Program, p.VertexLayout([]), PrimitiveType.Triangles,
                 new AttachmentFormats(format, depthFormat), p.Name));
         cmd.BindPipeline(pipeline);
         p.Flush(cmd);
         cmd.Draw(3);
         cmd.EndRendering();
         cmd.EndLabel();
-        cmd.Barrier(BarrierBatch.Full);
+        cmd.Barrier([GpuDependency.Full]);
     }
 
     /// <summary>A target as its GL texture was sampled: its filters, clamped, the upscaler's LOD bias on a mipmapped filter (VkGl's rule,
     /// <see cref="SamplerDesc.FromGl"/>, with the bias as it is now).</summary>
     SampledTexture Sampled(Target2D t) => Sampled(t.Texture, t.Min, t.Mag, TextureWrapMode.ClampToEdge, 1);
 
-    SampledTexture Sampled(Texture t, TextureMinFilter min, TextureMagFilter mag, TextureWrapMode wrap, float anisotropy) =>
+    SampledTexture Sampled(GpuTexture t, TextureMinFilter min, TextureMagFilter mag, TextureWrapMode wrap, float anisotropy) =>
         new(Gpu.Samplers.Get(SamplerDesc.FromGl(min, mag, wrap, wrap, TextureWrapMode.Repeat, false, DepthFunction.Lequal, false, anisotropy, false, Gpu.LodBias)),
-            t.View(), t.Image);
+            t.View());
 
     /// <summary>Binds a target (null: the stand-in VkGl bound for nothing). Call where the GL code bound the unit: the sampler depends on the LOD bias then.</summary>
     void Bind(LegacyProgram p, SamplerSlot slot, Target2D? target)
@@ -821,7 +831,7 @@ public sealed unsafe partial class PostProcess : IDisposable
 
     /// <summary>Blends the volumes' accumulated (colour, transmittance) over the scene: source one, destination the source alpha; red, green and
     /// blue only, so the alpha (the characters' SSAO mask) stays.</summary>
-    static readonly DrawState FogState = PassState with { Blend = new BlendState(true, Vk.BlendFactor.One, Vk.BlendFactor.SrcAlpha), ColourMask = DrawState.Rgb };
+    static readonly DrawState FogState = PassState with { Blend = new BlendState(true, BlendingFactor.One, BlendingFactor.SrcAlpha), ColourMask = DrawState.Rgb };
 
     /// <summary>
     /// The placed fog volumes (docs/formats/fogfeatures.md), in one full-screen pass over the finished scene: after the opaque geometry, the water and
@@ -876,7 +886,7 @@ public sealed unsafe partial class PostProcess : IDisposable
     bool aoApplied;
 
     /// <summary>The occlusion multiplied in: the scene colour kept by the factor; red, green and blue only (the alpha is the characters' mask).</summary>
-    static readonly DrawState AoMultiplyState = PassState with { Blend = new BlendState(true, Vk.BlendFactor.Zero, Vk.BlendFactor.SrcColor), ColourMask = DrawState.Rgb };
+    static readonly DrawState AoMultiplyState = PassState with { Blend = new BlendState(true, BlendingFactor.Zero, BlendingFactor.SrcColor), ColourMask = DrawState.Rgb };
 
     /// <summary>
     /// Runs the SSAO and multiplies it into the scene colour now, so what is drawn after (the weather's particles) is not darkened by the occlusion
@@ -909,7 +919,7 @@ public sealed unsafe partial class PostProcess : IDisposable
     /// </summary>
     public int GiResolve { get; set; }
 
-    Texture? GiAlbedoTarget => GiResolve > 0 ? giAlbedo?.Texture : null;
+    GpuTexture? GiAlbedoTarget => GiResolve > 0 ? giAlbedo?.Texture : null;
 
     /// <summary>Makes the albedo and low targets for <see cref="GiResolve"/> (again when its divisor or the render size changed).</summary>
     void EnsureGi()
@@ -920,7 +930,7 @@ public sealed unsafe partial class PostProcess : IDisposable
         giDivisor = GiResolve;
         using var batch = Gpu.Uploads.Begin();
         // The lit surfaces' normal, sqrt(albedo) and take-the-probes flag, packed (AtmosphereShaders' giAlbedoOut); the low target signed (the probes' light can be below the sky's) with the view depth in alpha.
-        giAlbedo = new Target2D(batch.Create(new TextureDesc(Vk.Format.R16G16B16A16Uint, width, height, Use: TextureUse.Sampled | TextureUse.ColourTarget, Name: "post gi surface")),
+        giAlbedo = new Target2D(batch.Create(new TextureDesc(InternalFormat.Rgba16ui, width, height, Use: TextureUse.Sampled | TextureUse.ColourTarget, Name: "post gi surface")),
             TextureMinFilter.Nearest, TextureMagFilter.Nearest);
         giLow = Make(batch, (width + giDivisor - 1) / giDivisor, (height + giDivisor - 1) / giDivisor, InternalFormat.Rgba16f, TextureMinFilter.Nearest, "post gi resolve");
     }
@@ -963,7 +973,7 @@ public sealed unsafe partial class PostProcess : IDisposable
     }
 
     /// <summary>The resolve added to the scene: source one, destination one; red, green and blue only (the alpha is the characters' SSAO mask).</summary>
-    static readonly DrawState GiAddState = PassState with { Blend = new BlendState(true, Vk.BlendFactor.One, Vk.BlendFactor.One), ColourMask = DrawState.Rgb };
+    static readonly DrawState GiAddState = PassState with { Blend = new BlendState(true, BlendingFactor.One, BlendingFactor.One), ColourMask = DrawState.Rgb };
 
     // ---- low-resolution particles (Meitou) ----
 
@@ -1013,12 +1023,12 @@ public sealed unsafe partial class PostProcess : IDisposable
         Bind(d.P, d.Depth, sceneDepth);
         d.P.Set(d.FullSize, (float)width, (float)height);
         d.P.Set(d.Div, (float)div);
-        DrawPass(d.P, default, Vk.Format.Undefined, low.Depth!.Attachment with { Load = Vk.AttachmentLoadOp.Clear, Clear = new Vk.ClearValue(depthStencil: new Vk.ClearDepthStencilValue(1f, 0)) },
-            low.Depth.Format, lw, lh, lw, lh, PassState with { DepthTest = true, DepthWrite = true, Compare = Vk.CompareOp.Always });
+        DrawPass(d.P, default, InternalFormat.None, low.Depth!.Attachment with { Load = LoadOp.Clear, DepthClear = 1f },
+            low.Depth.Format, lw, lh, lw, lh, PassState with { DepthTest = true, DepthWrite = true, Compare = DepthFunction.Always });
         CloseSegment();
         Stamp("particle depth");
         var targets = PassTargets.Of(low.Accum.Texture, low.Depth.Texture);
-        low.Targets = targets with { Colour = targets.Colour with { Load = Vk.AttachmentLoadOp.Clear, Clear = default } };
+        low.Targets = targets with { Colour = targets.Colour with { Load = LoadOp.Clear, Clear = default } };
     }
 
     /// <summary>The accumulation of one size over the scene colour (<see cref="PostProcessShaders.ParticleComposite"/>), after the host drew into <see cref="ParticleTargets"/>.</summary>
@@ -1032,13 +1042,14 @@ public sealed unsafe partial class PostProcess : IDisposable
         c.P.Set(c.LowSize, (float)low.Accum!.Width, (float)low.Accum.Height);
         c.P.Set(c.NearPlanes, nearPlanes.X, nearPlanes.Y);
         c.P.Set(c.Div, (float)low.Divisor);
+        c.P.Set(c.ClipDepthZeroToOne, Gpu.ClipDepthZeroToOne ? 1 : 0);
         Draw(c.P, sceneColour!.Attachment, sceneColour.Format, width, height, width, height, ParticleLowState);
         CloseSegment();
         low.Drawn = true;
     }
 
     /// <summary>Premultiplied "over": the accumulation's colour added, the scene kept by one minus its opacity; red, green and blue only (the alpha is the characters' mask).</summary>
-    static readonly DrawState ParticleLowState = PassState with { Blend = new BlendState(true, Vk.BlendFactor.One, Vk.BlendFactor.OneMinusSrcAlpha), ColourMask = DrawState.Rgb };
+    static readonly DrawState ParticleLowState = PassState with { Blend = new BlendState(true, BlendingFactor.One, BlendingFactor.OneMinusSrcAlpha), ColourMask = DrawState.Rgb };
 
     void DrawFinal(LegacyProgram p, PassTargets final) =>
         Draw(p, final.Colour, final.Formats.Colour, final.Width, final.Height, displayWidth, displayHeight);
@@ -1076,8 +1087,8 @@ public sealed unsafe partial class PostProcess : IDisposable
             var targets = PassTargets.Of(motion!.Texture, null);
             var cmd = Gpu.BeginNative("object motion");
             cmd.BeginRendering(targets.Rendering);
-            Gpu.BeginHostPass(cmd, targets, DrawState.For(targets.Formats, Gpu.Device.DepthClamp,
-                mask: Silk.NET.Vulkan.ColorComponentFlags.RBit | Silk.NET.Vulkan.ColorComponentFlags.GBit));
+            Gpu.BeginHostPass((CommandList)cmd, targets, DrawState.For(targets.Formats, Gpu.Device.DepthClamp,
+                mask: ColorMask.R | ColorMask.G));
             objectMotion(new MotionTargets(Sampled(sceneDepth!), nearPlanes, new Vector2(2 * JitterPixels.X / width, 2 * JitterPixels.Y / height), height / (2 * MathF.Tan(fovNow * 0.5f))));
             cmd.EndRendering();
             Gpu.EndHostPass(cmd);
@@ -1093,7 +1104,7 @@ public sealed unsafe partial class PostProcess : IDisposable
             if (!merged && WaterHeight is not null) Velocity(reactive!, 2);
             bool covered = Particles is { HasCoverage: true };
             if (covered) Stamp("velocity");
-            if (covered) RunCoverage(reactive!, Vk.ColorComponentFlags.RBit, clear: WaterHeight is null);
+            if (covered) RunCoverage(reactive!, ColorMask.R, clear: WaterHeight is null);
             CloseSegment();   // the vendor upscaler records its own segment
             if (covered) Stamp("particle coverage");
             done = external.Dispatch(new UpscaleInputs
@@ -1118,13 +1129,13 @@ public sealed unsafe partial class PostProcess : IDisposable
         }
         if (!done)
         {
-            if (Options.Upscale.Kind is UpscalerKind.Fsr or UpscalerKind.Dlss && !warnedFallback)
+            if (Options.Upscale.Kind is UpscalerKind.Fsr or UpscalerKind.Dlss or UpscalerKind.MetalFx && !warnedFallback)
             {
                 Console.WriteLine($"upscaler  {Options.Upscale.Kind.ToString().ToUpperInvariant()} is not available here; using TAA");
                 warnedFallback = true;
             }
             // The particles' coverage into the motion target's alpha (the TAA's reactive channel; the water's analytic value is there already).
-            if (Particles is { HasCoverage: true }) RunCoverage(motion!, Vk.ColorComponentFlags.ABit, clear: false);
+            if (Particles is { HasCoverage: true }) RunCoverage(motion!, ColorMask.A, clear: false);
             var t = taaPass;
             Bind(t.P, t.Colour, sceneColour);
             Bind(t.P, t.Motion, motion);
@@ -1159,6 +1170,8 @@ public sealed unsafe partial class PostProcess : IDisposable
         v.P.Set(v.JitterNdc, 2 * JitterPixels.X / width, 2 * JitterPixels.Y / height);
         v.P.Set(v.HasFar, farSliceDrawn ? 1 : 0);
         v.P.Set(v.Mode, mode);
+        v.P.Set(v.ClipDepthZeroToOne, Gpu.ClipDepthZeroToOne ? 1 : 0);
+        v.P.Set(v.FlipDepthY, Gpu.RenderTargetsBottomUp ? 0 : 1);
         float tanY = MathF.Tan(fovNow * 0.5f);
         v.P.Set(v.Tan, tanY * aspectNow, tanY);
         var r = viewRotation;
@@ -1177,14 +1190,14 @@ public sealed unsafe partial class PostProcess : IDisposable
     public ParticleRenderer? Particles { get; set; }
 
     /// <summary>The particles' coverage into <paramref name="target"/>'s channels <paramref name="mask"/>, added to what is there (or onto zero when <paramref name="clear"/>).</summary>
-    void RunCoverage(Target2D target, Vk.ColorComponentFlags mask, bool clear)
+    void RunCoverage(Target2D target, ColorMask mask, bool clear)
     {
         CloseSegment();
         var targets = PassTargets.Of(target.Texture, null);
-        if (clear) targets = targets with { Colour = targets.Colour with { Load = Vk.AttachmentLoadOp.Clear, Clear = default } };
+        if (clear) targets = targets with { Colour = targets.Colour with { Load = LoadOp.Clear, Clear = default } };
         var cmd = Gpu.BeginNative("particle coverage");
         cmd.BeginRendering(targets.Rendering);
-        Gpu.BeginHostPass(cmd, targets, DrawState.For(targets.Formats, Gpu.Device.DepthClamp, mask: mask));
+        Gpu.BeginHostPass((CommandList)cmd, targets, DrawState.For(targets.Formats, Gpu.Device.DepthClamp, mask: mask));
         Particles!.DrawCoverage(mask);
         cmd.EndRendering();
         Gpu.EndHostPass(cmd);
@@ -1201,9 +1214,17 @@ public sealed unsafe partial class PostProcess : IDisposable
             c.P.Set(c.NearPlanes, nearPlanes.X, nearPlanes.Y);
             c.P.Set(c.Div, (float)low.Divisor);
             c.P.Set(c.FullSize, (float)width, (float)height);
-            c.P.Set(c.Limit, mask == Vk.ColorComponentFlags.ABit ? 2f : 1f);   // the TAA takes half the motion target's alpha, so 2 is "all current frame"
+            c.P.Set(c.ClipDepthZeroToOne, Gpu.ClipDepthZeroToOne ? 1 : 0);
+            c.P.Set(c.Limit, mask == ColorMask.A ? 2f : 1f);   // the TAA takes half the motion target's alpha, so 2 is "all current frame"
             Draw(c.P, target.Attachment, target.Format, target.Width, target.Height, target.Width, target.Height,
-                PassState with { Blend = new BlendState(true, Vk.BlendFactor.One, Vk.BlendFactor.One), ColourMask = mask });
+                PassState with
+                {
+                    // The FSR/MetalFX reactive mask is a confidence in [0, 1]; overlap must not add past 1.
+                    Blend = mask == ColorMask.R
+                        ? new BlendState(true, BlendingFactor.One, BlendingFactor.One, BlendOperation.Max, BlendOperation.Max)
+                        : new BlendState(true, BlendingFactor.One, BlendingFactor.One),
+                    ColourMask = mask,
+                });
         }
         CloseSegment();
     }
@@ -1305,11 +1326,11 @@ public sealed unsafe partial class PostProcess : IDisposable
     }
 
     /// <summary>The file's levels as they are (BC1 blocks), or decoded to RGBA8 for another format; every level the file has.</summary>
-    Texture HazeTexture(Meitou.Data.Textures.DdsFile dds, string name)
+    GpuTexture HazeTexture(Meitou.Data.Textures.DdsFile dds, string name)
     {
         bool bc1 = dds.Format == Meitou.Data.Textures.DdsFormat.Bc1;
         var top = dds.Surface(0, 0);
-        var format = GlConventions.VkFormat(bc1 ? InternalFormat.CompressedRgbaS3TCDxt1Ext : InternalFormat.Rgba8);
+        var format = bc1 ? InternalFormat.CompressedRgbaS3TCDxt1Ext : InternalFormat.Rgba8;
         using var batch = Gpu.Uploads.Begin();
         var texture = batch.Create(new TextureDesc(format, top.Width, top.Height, dds.MipCount, Name: name));
         for (int level = 0; level < dds.MipCount; level++)
@@ -1317,12 +1338,12 @@ public sealed unsafe partial class PostProcess : IDisposable
             if (bc1)
             {
                 var s = dds.Surface(0, level);
-                batch.Write(texture, level, 0, new Vk.Rect2D(default, new Vk.Extent2D((uint)s.Width, (uint)s.Height)), dds.Data.AsSpan(s.Offset, s.Length));
+                batch.Write(texture, level, 0, new PixelRect(0, 0, (uint)s.Width, (uint)s.Height), dds.Data.AsSpan(s.Offset, s.Length));
             }
             else
             {
                 var img = Meitou.Data.Textures.DdsDecoder.Decode(dds, 0, level);
-                batch.Write(texture, level, 0, new Vk.Rect2D(default, new Vk.Extent2D((uint)img.Width, (uint)img.Height)), img.Pixels);
+                batch.Write(texture, level, 0, new PixelRect(0, 0, (uint)img.Width, (uint)img.Height), img.Pixels);
             }
         }
         return texture;
@@ -1381,10 +1402,12 @@ public sealed unsafe partial class PostProcess : IDisposable
         {
             float mdt = (float)adaptClock.Elapsed.TotalSeconds;
             adaptClock.Restart();
-            float mblend = InstantAdaptation || !adaptedValid ? 1 : 1 - MathF.Exp(-mdt * AdaptationRate);
+            // Seed both ping-pong targets before smoothing; the next frame reads the other one.
+            float mblend = InstantAdaptation || !adaptedValid || adaptedFrames < 2 ? 1 : 1 - MathF.Exp(-mdt * AdaptationRate);
             (adaptA, adaptB) = (adaptB, adaptA);
             ExposureMerged(mblend, AutoExposure!.Value);
             adaptedValid = true;
+            adaptedFrames = Math.Min(adaptedFrames + 1, 2);
             return;
         }
         var lum = luminance!;
@@ -1395,17 +1418,20 @@ public sealed unsafe partial class PostProcess : IDisposable
         Segment().GenerateMips(lum.Texture);   // VkGl's GenerateMipmap: linear blits level by level, full barriers around
         float dt = (float)adaptClock.Elapsed.TotalSeconds;
         adaptClock.Restart();
-        float blend = InstantAdaptation || !adaptedValid ? 1 : 1 - MathF.Exp(-dt * AdaptationRate);
+        // Seed both ping-pong targets before smoothing; the next frame reads the other one.
+        float blend = InstantAdaptation || !adaptedValid || adaptedFrames < 2 ? 1 : 1 - MathF.Exp(-dt * AdaptationRate);
+        var previous = adaptB;   // the target written last frame; the swap below makes it adaptA
         (adaptA, adaptB) = (adaptB, adaptA);
         var ap = adaptPass;
         Bind(ap.P, ap.Luminance, lum);
-        Bind(ap.P, ap.Last, adaptA);
+        Bind(ap.P, ap.Last, previous);
         ap.P.Set(ap.Level, MathF.Log2(LuminanceSize));
         ap.P.Set(ap.Blend, blend);
         var band = AutoExposure!.Value;
         ap.P.Set(ap.Band, band.Min, band.Max);
         Draw(ap.P, adaptB!);
         adaptedValid = true;
+        adaptedFrames = Math.Min(adaptedFrames + 1, 2);
     }
 
     public void Dispose()

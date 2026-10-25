@@ -26,7 +26,7 @@ public class VolumetricCloudNativeTests
                     sky.CloudDensityInput = 0.5f;
                     sky.Eye = new Vector3(-50000, 2000, 3000);
                     sky.Prepare(Vector3.Normalize(new Vector3(0.3f, 0.8f, 0.2f)), sky.Eye.Y, 50000);
-                    using var target = Texture.Create(ctx, new TextureDesc(Vk.Format.R8G8B8A8Unorm, 96, 64,
+                    using var target = ctx.CreateTexture(new TextureDesc(Meitou.Rendering.Gpu.InternalFormat.Rgba8, 96, 64,
                         Use: TextureUse.ColourTarget | TextureUse.TransferSrc, Name: "cloud test picture"));
                     var view = Matrix4x4.CreateLookAt(Vector3.Zero, Vector3.Normalize(new Vector3(0, 0.4f, -1)), Vector3.UnitY);
                     var vp = view * Matrix4x4.CreatePerspectiveFieldOfView(1.0f, 1.5f, 1, 1000);
@@ -39,7 +39,7 @@ public class VolumetricCloudNativeTests
                         var targets = PassTargets.Of(target, null);
                         var cmd = ctx.BeginNative("cloud test scene");
                         cmd.BeginRendering(targets.Rendering);
-                        ctx.BeginHostPass(cmd, targets, DrawState.Scene(targets.Formats));
+                        ctx.BeginHostPass((CommandList)cmd, targets, DrawState.Scene(targets.Formats));
                         sky.Draw(vp, SkyColours.For(Vector3.UnitY));
                         ctx.EndHostPass(cmd); cmd.EndRendering(); ctx.EndNative(cmd);
                         ctx.Finish();
@@ -90,7 +90,7 @@ public class VolumetricCloudNativeTests
                         """;
                     using var reference = LegacyProgram.Create(ctx, PostProcessShaders.Vertex,
                         referenceFragment.Replace("in vec2 vUv;", AtmosphereShaders.Functions + "\nin vec2 vUv;"), "cloud horizon reference");
-                    var segment = new NativeSegment(ctx, reference, Vk.PrimitiveTopology.TriangleList, "cloud horizon reference");
+                    var segment = new NativeSegment(ctx, reference, PrimitiveType.Triangles, "cloud horizon reference");
                     Matrix4x4.Invert(vp, out var inverse);
                     reference.Set(reference.Uniform("uInverse"), in inverse);
                     reference.ApplyGlobals();

@@ -17,6 +17,13 @@ walking each column once. Distances, projection and depth slices must match scen
 Prepared depth/shadow/global constants and barriers precede compute/apply. Half-resolution
 scene-layer integration needs depth-aware fallback at discontinuities.
 
+**Quality** (`Light shafts quality`, High by default): High uses 160 cells across, 64 depth
+slices and 2 shadow samples per cell; Medium 128 x 48 x 2; Low 96 x 32 x 1. The apply pass stays
+at the render size; the setting changes the froxel grid and sample count, not the effect's
+strength. The Low quality preset turns the shafts off (the `Light shafts` switch) rather than
+relying on the low tier. `--ab shafts-half` is a separate experiment for the merged apply pass,
+not a quality tier.
+
 Placed fog volumes receive their own shadowed scattering, respecting plane/sphere/cylinder
 geometry and colour/additive/alpha. Cloud cover reduces appropriate sun contribution; actual
 volumetric cloud-shadow-map sampling is incomplete. Air layer is an engine near-ground term,

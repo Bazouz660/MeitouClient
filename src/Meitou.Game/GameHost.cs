@@ -55,6 +55,21 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
     PlayerInterface player = null!;
     Meitou.Simulation.Squad? playerSquad;
     WorldFrame.Gpu gpu = null!;
+    /// <summary>This run uses the native Metal loop: the shared world object exists, but its Vulkan post/loading path does not drive it.</summary>
+    bool metalRenderer = false;   // set by the Metal loop (GameHost.Metal.cs, macOS builds only)
+    // Fallback services for a host whose renderers are not in WorldFrame.Gpu yet (the shared title, audio and save code asks through these).
+    WorldWeather? fallbackWeather = null;
+    WorldObjectRenderer? hostObjects = null;
+    FoliageRenderer? hostFoliage = null;
+    CharacterRenderer? hostCharacters = null;
+    WorldLamps? hostLamps = null;
+    Func<float, float, float>? hostGround = null;
+    WorldWeather? ActiveWeather => gpu is null ? fallbackWeather : gpu.Weather ?? fallbackWeather;
+    WorldObjectRenderer? ActiveObjects => gpu is null ? hostObjects : gpu.Objects ?? hostObjects;
+    FoliageRenderer? ActiveFoliage => gpu is null ? hostFoliage : gpu.Foliage ?? hostFoliage;
+    CharacterRenderer? ActiveCharacters => gpu is null ? hostCharacters : gpu.Characters ?? hostCharacters;
+    WorldLamps? ActiveLamps => gpu is null ? hostLamps : gpu.Lamps ?? hostLamps;
+    float ActiveGround(float x, float z) => hostGround?.Invoke(x, z) ?? (gpu is null ? 0 : gpu.Terrain.HeightAt(x, z));
     WorldCamera camera = null!;
     WorldRenderOptions render = null!;
     readonly Stopwatch realTime = Stopwatch.StartNew();
@@ -79,7 +94,18 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
 
     public int Run()
     {
-        try { return o.Screenshot is not null ? Screenshot() : Interactive(); }
+        try
+        {
+#if MEITOU_METAL
+            if (g.Renderer == "metal") return Metal();
+#endif
+            if (g.Renderer != "vulkan")
+            {
+                Console.Error.WriteLine($"the {g.Renderer} renderer is macOS only.");
+                return 2;
+            }
+            return o.Screenshot is not null ? Screenshot() : Interactive();
+        }
         finally { DisposeAudio(); DisposeTitleScene(); session?.Dispose(); nav?.Dispose(); ragdollGeometry?.Dispose(); ownedScene?.Dispose(); }
     }
 
@@ -192,6 +218,78 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
         return (walkability, systems, constants);
     }
 
+    /// <summary>
+    /// The callbacks the interface asks the host for: the game data, the map, the build services, the tooltips and the character editor. Shared by the Vulkan
+    /// and Metal loops so the two expose the same interaction layer.
+    /// </summary>
+    void ConfigurePlayerInterface(PlayerInterface ui)
+    {
+        ui.FixLoadButton = config.FixLoadButton;
+        // The region (BIOME_GROUP) under a point and the wind at the camera, for the biome banner and the prospecting window.
+        ui.RegionAt = (x, z) => ActiveWeather?.World.RegionAt(x, z).Def is { } def ? (def.StringId, def.Name) : null;
+        ui.WindSpeed = () => ActiveWeather?.State.WindSpeed ?? 0;
+        ui.BuildHost = MakeBuildServices();
+        ui.FactionName = faction => faction >= 0 && faction == session.World.Player.Faction && session.World.Player.FactionName is { } renamed ? renamed : popData is { } d && faction >= 0 && faction < d.Factions.Count ? d.Factions[faction].Name : null;
+        // The faction tab's list (docs/game/ui-screens.md "Faction tab"): every faction but the player's, the `not real` ones (engine choice: the original's filter is Unknown) and the
+        // generation template, with the player's relation towards it.
+        ui.FactionRelations = () => popData is { } d && session.World.Player.Faction is >= 0 and var own && d.Relations.Contains(own)
+            ? [.. d.Relations.Factions.Select((f, i) => (f, i)).Where(p => p.i != own && !p.f.NotReal && p.f.Id != "GENERATION_TEMPLATE_FACTION").Select(p => (p.f.Name, d.Relations.Get(own, p.i)))]
+            : [];
+        // A BUILDING's construction target (its Condition rows): the sum of its materials' required amounts.
+        ui.BuildTarget = record => popData?.Db.Find(record) is { Type: Meitou.Data.Fcs.FcsRecordType.BUILDING } r
+            ? Meitou.Data.Gameplay.Construction.BuildingBuildData.From(r).Materials.Sum(m => m.Required) : null;
+        // The upgrade chain of a BUILDING (the panel's [UPGRADE] / [DOWNGRADE]) and its build data (their tooltips' materials).
+        ui.UpgradeOf = record => popData is { } d ? Meitou.Simulation.Construction.BuildingUpgrades.UpgradeOf(d.Db, record) : null;
+        ui.DowngradeOf = record => popData is { } d ? Meitou.Simulation.Construction.BuildingUpgrades.DowngradeOf(d.Db, record) : null;
+        ui.BuildingData = record => popData?.Db.Find(record) is { Type: Meitou.Data.Fcs.FcsRecordType.BUILDING } r ? Meitou.Data.Gameplay.Construction.BuildingBuildData.From(r) : null;
+        ui.PowerOutput = record => popData?.Db.Find(record)?.GetInt("power output");
+        ui.SquadLimits = () => popData?.Bodies.Constants;
+        ui.Rocks = () => popData?.ResourceNodes;
+        ui.AlliedFaction = faction => popData is { } d && session.World.Player.Faction is (>= 0 and var mine) && d.Relations.Contains(faction) && d.Relations.IsAlly(mine, faction);
+        ui.HostileFaction = faction => popData is not { } d || session.World.Player.Faction is not (>= 0 and var mine) || !d.Relations.Contains(faction) || d.Relations.IsHostile(mine, faction);
+        ui.MapTowns = () => popData?.Sites ?? [];
+        ui.MapFactionOf = id =>
+        {
+            if (popData is not { } d || id is null || d.FactionIndex(id) is not (>= 0 and var town)) return null;
+            var faction = d.Factions[town];
+            if (session.World.Player.Faction is not (>= 0 and var mine))
+                return new MapFaction(faction.Name, 0, MapStanding.Neutral, faction.NotReal);
+            float relation = d.Relations.Get(mine, town);
+            var standing = town == mine ? MapStanding.Player : d.Relations.IsAlly(mine, town) ? MapStanding.Ally : relation < -30 ? MapStanding.Enemy : MapStanding.Neutral;
+            return new MapFaction(faction.Name, relation, standing, faction.NotReal);
+        };
+        ui.ArmourOf = record => popData?.Combat.Armour(record);
+        ui.RecordName = id => popData?.Db.Find(id)?.Name;
+        ui.PlayerFactionName = () => ui.FactionName?.Invoke(session.World.Player.Faction) ?? "";
+        Meitou.Data.Gameplay.Economy.PriceConstants? priceConstants = null;
+        Meitou.Simulation.Trading.Market? shelf = null;
+        ui.PricesOf = tip =>
+        {
+            if (popData is not { } d || d.Db.Find(tip.Record) is not { } r) return null;
+            if (r.Type is Meitou.Data.Fcs.FcsRecordType.ARMOUR or Meitou.Data.Fcs.FcsRecordType.WEAPON or Meitou.Data.Fcs.FcsRecordType.CROSSBOW)
+                return Meitou.Simulation.Trading.Market.GearPrices(d.Db, priceConstants ??= Meitou.Data.Gameplay.Economy.PriceConstants.FromDatabase(d.Db), tip.Record, tip.Level, tip.Company) is { } gear
+                    ? (gear.Value, gear.Sell, null) : null;
+            // No trader, so no town or culture factor (the seed only rolls those). StolenFrom is set only when the item is stolen for its holder; holder -1 keeps that.
+            var m = shelf ??= new Meitou.Simulation.Trading.Market(d, 0);
+            var item = new Meitou.Simulation.Items.ItemInstance
+            {
+                Record = tip.Record, Type = r.Type, Quality = tip.Quality, Level = tip.Level, CompanyId = tip.Company, Charges = tip.Charges, MaxCharges = tip.MaxCharges,
+                Quantity = tip.Quantity, StolenFrom = tip.StolenFrom,
+            };
+            var none = Meitou.Simulation.Trading.Trader.None;
+            return (m.UnitPrice(item, false, none, -1), m.UnitPrice(item, true, none, -1), m.AveragePrice(item));
+        };
+        ui.ArtifactOf = id => popData?.Db.Find(id)?.GetBool("artifact") == true;
+        ui.ItemRecordOf = id => popData?.Db.Find(id);
+        ui.CombatOf = () => popData?.Combat;
+        ui.MapItemTowns = record =>
+        {
+            if (popData is not { } d || d.Db.Find(record) is not { Type: Meitou.Data.Fcs.FcsRecordType.MAP_ITEM } map) return null;
+            return [.. Meitou.Simulation.Items.MapItems.Reveals(d, map, session.CurrentSnapshot.Towns, session.World.Seed).Select(i => d.Sites[i].Town.Name)];
+        };
+        ConfigureEditor(ui);
+    }
+
     /// <summary>The rest of <see cref="Boot"/> once the session exists: bindings, the player's interface, the start (a new game's squad, the sandbox, the duel), the camera, a <c>--load</c> save.</summary>
     void BootPlayer(VulkanDisplay display, bool interactive)
     {
@@ -222,76 +320,19 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
         SetUpBlood(context);
         gpu.HoverOutline ??= new HoverOutlineRenderer(context);
         gpu.NavmeshOverlay ??= new NavmeshOverlayRenderer(context);
+        navOverlayRenderer = gpu.NavmeshOverlay;
         player.MeshHit = (id, origin, direction) => gpu.Characters?.RayHit(DrawKey(id), origin, direction);
         player.Floor = (() => viewedFloor, StepFloor);
         player.HiddenInWorld = hiddenIndoors.Contains;
         player.BuildingMoveHit = (origin, direction, distance) => gpu.Objects?.MoveHit(origin, direction, viewedFloor, distance);
         player.SurfaceMoveHit = SurfaceMoveHit;
         player.ClosedBuildingHit = (origin, direction, distance) => gpu.Objects?.ClosedBuildingHit(origin, direction, distance);
-        player.BuildHost = MakeBuildServices();
-        player.FactionName = faction => faction >= 0 && faction == session.World.Player.Faction && session.World.Player.FactionName is { } renamed ? renamed : popData is { } d && faction >= 0 && faction < d.Factions.Count ? d.Factions[faction].Name : null;
-        // The faction tab's list (docs/game/ui-screens.md "Faction tab"): every faction but the player's, the `not real` ones (engine choice: the original's filter is Unknown) and the
-        // generation template, with the player's relation towards it.
-        player.FactionRelations = () => popData is { } d && session.World.Player.Faction is >= 0 and var own && d.Relations.Contains(own)
-            ? [.. d.Relations.Factions.Select((f, i) => (f, i)).Where(p => p.i != own && !p.f.NotReal && p.f.Id != "GENERATION_TEMPLATE_FACTION").Select(p => (p.f.Name, d.Relations.Get(own, p.i)))]
-            : [];
-        // A BUILDING's construction target (its Condition rows): the sum of its materials' required amounts.
-        player.BuildTarget = record => popData?.Db.Find(record) is { Type: Meitou.Data.Fcs.FcsRecordType.BUILDING } r
-            ? Meitou.Data.Gameplay.Construction.BuildingBuildData.From(r).Materials.Sum(m => m.Required) : null;
-        // The upgrade chain of a BUILDING (the panel's [UPGRADE] / [DOWNGRADE]) and its build data (their tooltips' materials).
-        player.UpgradeOf = record => popData is { } d ? Meitou.Simulation.Construction.BuildingUpgrades.UpgradeOf(d.Db, record) : null;
-        player.DowngradeOf = record => popData is { } d ? Meitou.Simulation.Construction.BuildingUpgrades.DowngradeOf(d.Db, record) : null;
-        player.BuildingData = record => popData?.Db.Find(record) is { Type: Meitou.Data.Fcs.FcsRecordType.BUILDING } r ? Meitou.Data.Gameplay.Construction.BuildingBuildData.From(r) : null;
-        player.PowerOutput = record => popData?.Db.Find(record)?.GetInt("power output");
-        player.SquadLimits = () => popData?.Bodies.Constants;
-        player.Rocks = () => popData?.ResourceNodes;
-        player.AlliedFaction = faction => popData is { } d && session.World.Player.Faction is (>= 0 and var mine) && d.Relations.Contains(faction) && d.Relations.IsAlly(mine, faction);
-        player.HostileFaction = faction => popData is not { } d || session.World.Player.Faction is not (>= 0 and var mine) || !d.Relations.Contains(faction) || d.Relations.IsHostile(mine, faction);
-        player.MapTowns = () => popData?.Sites ?? [];
-        player.MapFactionOf = id =>
-        {
-            if (popData is not { } d || id is null || d.FactionIndex(id) is not (>= 0 and var town)) return null;
-            var faction = d.Factions[town];
-            if (session.World.Player.Faction is not (>= 0 and var mine)) return new MapFaction(faction.Name, 0, MapStanding.Neutral, faction.NotReal);
-            float relation = d.Relations.Get(mine, town);
-            var standing = town == mine ? MapStanding.Player : d.Relations.IsAlly(mine, town) ? MapStanding.Ally : relation < -30 ? MapStanding.Enemy : MapStanding.Neutral;
-            return new MapFaction(faction.Name, relation, standing, faction.NotReal);
-        };
-        player.ArmourOf = record => popData?.Combat.Armour(record);
-        player.RecordName = id => popData?.Db.Find(id)?.Name;
-        player.PlayerFactionName = () => player.FactionName?.Invoke(session.World.Player.Faction) ?? "";
-        Meitou.Data.Gameplay.Economy.PriceConstants? priceConstants = null;
-        Meitou.Simulation.Trading.Market? shelf = null;
-        player.PricesOf = tip =>
-        {
-            if (popData is not { } d || d.Db.Find(tip.Record) is not { } r) return null;
-            if (r.Type is Meitou.Data.Fcs.FcsRecordType.ARMOUR or Meitou.Data.Fcs.FcsRecordType.WEAPON or Meitou.Data.Fcs.FcsRecordType.CROSSBOW)
-                return Meitou.Simulation.Trading.Market.GearPrices(d.Db, priceConstants ??= Meitou.Data.Gameplay.Economy.PriceConstants.FromDatabase(d.Db), tip.Record, tip.Level, tip.Company) is { } gear
-                    ? (gear.Value, gear.Sell, null) : null;
-            // No trader, so no town or culture factor (the seed only rolls those). StolenFrom is set only when the item is stolen for its holder; holder -1 keeps that.
-            var m = shelf ??= new Meitou.Simulation.Trading.Market(d, 0);
-            var item = new Meitou.Simulation.Items.ItemInstance
-            {
-                Record = tip.Record, Type = r.Type, Quality = tip.Quality, Level = tip.Level, CompanyId = tip.Company, Charges = tip.Charges, MaxCharges = tip.MaxCharges,
-                Quantity = tip.Quantity, StolenFrom = tip.StolenFrom,
-            };
-            var none = Meitou.Simulation.Trading.Trader.None;
-            return (m.UnitPrice(item, false, none, -1), m.UnitPrice(item, true, none, -1), m.AveragePrice(item));
-        };
-        player.ArtifactOf = id => popData?.Db.Find(id)?.GetBool("artifact") == true;
-        player.ItemRecordOf = id => popData?.Db.Find(id);
-        player.CombatOf = () => popData?.Combat;
-        player.MapItemTowns = record =>
-        {
-            if (popData is not { } d || d.Db.Find(record) is not { Type: Meitou.Data.Fcs.FcsRecordType.MAP_ITEM } map) return null;
-            return [.. Meitou.Simulation.Items.MapItems.Reveals(d, map, session.CurrentSnapshot.Towns, session.World.Seed).Select(i => d.Sites[i].Town.Name)];
-        };
+        ConfigurePlayerInterface(player);
         if (IsSandbox) player.ReservedKeys.UnionWith([Meitou.Engine.Input.Key.Z, Meitou.Engine.Input.Key.X, Meitou.Engine.Input.Key.C, Meitou.Engine.Input.Key.Y, Meitou.Engine.Input.Key.P, Meitou.Engine.Input.Key.G]);
         player.ConfigureFrontend(scene.Database,
             () => Meitou.Data.Save.SaveCatalog.Scan(Meitou.Simulation.Saving.QuickSave.DefaultRoot, install.SaveDirectory,
                 Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "kenshi", "save")),
             assets.Find("credits.txt") is { } creditsFile ? File.ReadAllText(creditsFile) : "");
-        ConfigureEditor();
         if (OpensOnTitle(interactive)) player.ShowTitle();
         if (nav is not null && (start is not null || !interactive))
         {

@@ -43,12 +43,13 @@ sealed partial class GameHost
         }, vsync, streamline: true);   // Load before the device so the settings panel can switch to DLSS without restarting.
         streamline = display.Streamline;
         var window = display.Window!;
-        // Borderless full screen as the viewer starts (Alt+Enter and the Tab panel switch it); --windowed keeps the window for this run, maximised.
-        // Sized while still hidden: resized after it shows (maximised, then borderless) the window flashed white and black before its first frame.
+        // Borderless full screen as the viewer starts (Alt+Enter and the Tab panel switch it); --windowed keeps a window for
+        // this run: the size asked by --size, else maximised. Sized while still hidden: resizing after it shows (maximised,
+        // then borderless) flashed white and black before the first frame.
         bool fullScreen = config.FullScreen && !o.Windowed;
         bool savedVSync = vsync, savedFullScreen = fullScreen;
         if (fullScreen) BorderlessFullScreen.Toggle(window);
-        else window.WindowState = WindowState.Maximized;
+        else if (!o.SizeGiven) window.WindowState = WindowState.Maximized;
         BeginLoadingScreen(display);   // its textures and fonts are made before the window shows
         // The Faithful start shows the original's splash, as the game does before its title, instead of the loading screen (unless the Interface setting turns it off).
         if (loading is { Faithful: true } && config.SplashScreens && OpensOnTitle(interactive: true)) loading.StartSplash();
@@ -680,6 +681,10 @@ sealed partial class GameHost
         }
         WritePlayBench(window.FramebufferSize);
         SaveSettings();
+        // Collect the last frames' GPU timestamps and print the --log-spikes run summary: the game's own one-shot runs
+        // otherwise dispose the profiler before the frame ring has delivered them.
+        profiler?.Flush();
+        if (SpikeLog.Enabled) SpikeLog.PrintSummary();
         profiler?.Dispose();
         player.DisposeUi();
         EndLoadingScreen();
@@ -722,7 +727,7 @@ sealed partial class GameHost
         a.Held(InputAction.PitchUp) || a.Held(InputAction.PitchDown) || a.Held(InputAction.ZoomIn) || a.Held(InputAction.ZoomOut) ||
         a.Held(InputAction.Orbit) && a.MouseDelta != Vector2.Zero || a.Wheel != 0 || a.Pressed(InputAction.ToggleFreeCamera);
 
-    static void SaveScreenshot(GpuContext context, Texture backbuffer, int width, int height)
+    static void SaveScreenshot(GpuContext context, GpuTexture backbuffer, int width, int height)
     {
         var file = Path.Combine(Directory.CreateDirectory(@"C:\Temp").FullName, $"meitou-{DateTime.Now:yyyyMMdd-HHmmss}.png");
         FramebufferCapture.SavePng(context, backbuffer, file, width, height);

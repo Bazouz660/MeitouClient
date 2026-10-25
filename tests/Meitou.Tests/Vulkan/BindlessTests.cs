@@ -56,34 +56,34 @@ public class BindlessTests
         void main() { colour = texture(textures2D[nonuniformEXT(pc.texture)], vec2(0.5)); }
         """;
 
-    static void FullTargetState(CommandList cmd, int w, int h)
+    static void FullTargetState(IGpuCommandList cmd, int w, int h)
     {
-        cmd.SetViewport(new Viewport(0, 0, w, h, 0, 1));
-        cmd.SetScissor(new Rect2D(new Offset2D(0, 0), new Extent2D((uint)w, (uint)h)));
-        cmd.SetRaster(CullModeFlags.None, FrontFace.Clockwise);
-        cmd.SetDepth(false, false, CompareOp.Always);
+        cmd.SetViewport(new PixelViewport(0, 0, w, h, 0, 1));
+        cmd.SetScissor(new PixelRect(0, 0, (uint)w, (uint)h));
+        cmd.SetRaster(CullMode.None, FrontFaceDirection.Ccw);
+        cmd.SetDepth(false, false, DepthFunction.Always);
         cmd.SetDepthBias(false, 0, 0);
     }
 
-    static Silk.NET.Vulkan.Sampler Nearest(GpuContext ctx, bool integer) =>
+    static GpuSampler Nearest(GpuContext ctx, bool integer) =>
         ctx.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Nearest, TextureMagFilter.Nearest, TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge,
             TextureWrapMode.ClampToEdge, false, DepthFunction.Lequal, false, 1, integer, 0));
 
-    static void Draw(GpuContext ctx, ShaderProgram program, Format format, Texture target, ReadOnlySpan<uint> push)
+    static void Draw(GpuContext ctx, GpuProgram program, InternalFormat format, GpuTexture target, ReadOnlySpan<uint> push)
     {
         var frame = ctx.Frame;
         var cmd = frame.Commands;
-        var pipeline = ctx.Pipelines.Get(new GraphicsPipelineDesc(program, VertexLayout.Empty, PrimitiveTopology.TriangleList,
-            new AttachmentFormats(format, Format.Undefined), BlendState.Off,
-            ColorComponentFlags.RBit | ColorComponentFlags.GBit | ColorComponentFlags.BBit | ColorComponentFlags.ABit, Silk.NET.Vulkan.PolygonMode.Fill, false, false, program.Name));
+        var pipeline = ctx.Pipelines.Get(new GraphicsPipelineDesc(program, VertexLayout.Empty, PrimitiveType.Triangles,
+            new AttachmentFormats(format, InternalFormat.None), BlendState.Off,
+            ColorMask.R | ColorMask.G | ColorMask.B | ColorMask.A, PolygonKind.Fill, false, false, program.Name));
         using (new GpuPass(frame, cmd, program.Name, [new PassUse(target, Access.ColourTarget)]))
         {
-            cmd.BeginRendering(new RenderingDesc(new RenderTarget(target.Attachment(), AttachmentLoadOp.DontCare, default, target.Image), default, target.Desc.Width, target.Desc.Height));
+            cmd.BeginRendering(new RenderingDesc(new RenderTarget(target.Attachment(), LoadOp.DontCare, default), default, target.Desc.Width, target.Desc.Height));
             cmd.BindPipeline(pipeline);
             FullTargetState(cmd, target.Desc.Width, target.Desc.Height);
-            cmd.BindSets(program.Layout, 0, [ctx.Bindless.Set], []);
+            cmd.BindBindlessTable(program, 0);
             for (int i = 0; i < push.Length; i++)
-                cmd.PushConstants(program.Layout, ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit, push[i], (uint)(4 * i));
+                cmd.PushConstants(program, GpuStage.Vertex | GpuStage.Fragment, push[i], (uint)(4 * i));
             cmd.Draw(3, 1, 0, 0);
             cmd.EndRendering();
         }
@@ -100,11 +100,11 @@ public class BindlessTests
         Assert.SkipWhen(d is null, "No Vulkan 1.3 device");
         using (var ctx = new GpuContext(d!))
         {
-            using var cells = Texture.Create(ctx, new TextureDesc(Format.R8G8B8A8Uint, 2, 1, Name: "cells"));
-            using var wide = Texture.Create(ctx, new TextureDesc(Format.R16Uint, 2, 1, Name: "wide"));
-            using var signed = Texture.Create(ctx, new TextureDesc(Format.R16Sint, 2, 1, Name: "signed"));
-            using var target = Texture.Create(ctx, new TextureDesc(Format.R32G32B32A32Uint, 2, 1, Use: TextureUse.ColourTarget | TextureUse.TransferSrc, Name: "integer target"));
-            using var program = ctx.Shaders.Native(FullScreen, IntegerFragment, "bindless integer", [ctx.Bindless.Layout], 12);
+            using var cells = ctx.CreateTexture(new TextureDesc(InternalFormat.Rgba8ui, 2, 1, Name: "cells"));
+            using var wide = ctx.CreateTexture(new TextureDesc(InternalFormat.R16ui, 2, 1, Name: "wide"));
+            using var signed = ctx.CreateTexture(new TextureDesc(InternalFormat.R16i, 2, 1, Name: "signed"));
+            using var target = ctx.CreateTexture(new TextureDesc(InternalFormat.Rgba32ui, 2, 1, Use: TextureUse.ColourTarget | TextureUse.TransferSrc, Name: "integer target"));
+            var program = ctx.Shaders.Native(FullScreen, IntegerFragment, "bindless integer", [GpuSetLayout.Bindless], 12);
 
             // Reflection sees the runtime arrays the shader reads, with their element types.
             var used = program.FragmentReflection!.Samplers.ToDictionary(s => s.Name);
@@ -119,13 +119,13 @@ public class BindlessTests
             var s = ctx.Bindless.Register(signed, sampler);
             Assert.Equal((BindlessKind.UTexture2D, BindlessKind.UTexture2D, BindlessKind.ITexture2D), (w.Kind, c.Kind, s.Kind));
             Assert.NotEqual(w.Index, c.Index);
-            var all = new Rect2D(new Offset2D(0, 0), new Extent2D(2, 1));
+            var all = new PixelRect(0, 0, 2, 1);
             ctx.Uploads.Write(cells, 0, 0, all, [1, 2, 3, 254, 255, 0, 128, 7]);
             ctx.Uploads.Write(wide, 0, 0, all, Bytes<ushort>(1000, 65535));
             ctx.Uploads.Write(signed, 0, 0, all, Bytes<short>(-5, 32767));
             ctx.EnsureFrame();
             ctx.Frame.Commands.Invalidate();
-            Draw(ctx, program, Format.R32G32B32A32Uint, target, [c.Index, w.Index, s.Index]);
+            Draw(ctx, program, InternalFormat.Rgba32ui, target, [c.Index, w.Index, s.Index]);
             ctx.EndFrame();
 
             var texels = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, uint>(ctx.ReadBack(target, 16)).ToArray();
@@ -143,13 +143,13 @@ public class BindlessTests
         using (var ctx = new GpuContext(d!))
         {
             byte[][] colours = [[200, 10, 20, 255], [30, 210, 40, 255], [50, 60, 220, 255], [255, 255, 255, 255]];
-            var sources = colours.Select((_, i) => Texture.Create(ctx, new TextureDesc(Format.R8G8B8A8Unorm, 1, 1, Name: $"source {i}"))).ToArray();
+            var sources = colours.Select((_, i) => ctx.CreateTexture(new TextureDesc(InternalFormat.Rgba8, 1, 1, Name: $"source {i}"))).ToArray();
             const int Frames = 7;
-            var targets = Enumerable.Range(0, Frames).Select(i => Texture.Create(ctx, new TextureDesc(Format.R8G8B8A8Unorm, 1, 1,
+            var targets = Enumerable.Range(0, Frames).Select(i => ctx.CreateTexture(new TextureDesc(InternalFormat.Rgba8, 1, 1,
                 Use: TextureUse.ColourTarget | TextureUse.TransferSrc, Name: $"target {i}"))).ToArray();
-            using var program = ctx.Shaders.Native(FullScreen, ColourFragment, "bindless colour", [ctx.Bindless.Layout], 4);
+            var program = ctx.Shaders.Native(FullScreen, ColourFragment, "bindless colour", [GpuSetLayout.Bindless], 4);
             var sampler = Nearest(ctx, integer: false);
-            SampledTexture Of(int i) => new(sampler, sources[i].View(), sources[i].Image);
+            SampledTexture Of(int i) => new(sampler, sources[i].View());
             var expected = new int[Frames];
             BindlessHandle h = default, h2 = default;
 
@@ -159,7 +159,7 @@ public class BindlessTests
                 ctx.BeginFrame();
                 if (f == 0)
                     for (int i = 0; i < sources.Length; i++)
-                        ctx.Uploads.Write(sources[i], 0, 0, new Rect2D(new Offset2D(0, 0), new Extent2D(1, 1)), colours[i]);
+                        ctx.Uploads.Write(sources[i], 0, 0, new PixelRect(0, 0, 1, 1), colours[i]);
                 ctx.EnsureFrame();
                 ctx.Frame.Commands.Invalidate();
                 switch (f)
@@ -187,7 +187,7 @@ public class BindlessTests
                         expected[f] = 3;
                         break;
                 }
-                Draw(ctx, program, Format.R8G8B8A8Unorm, targets[f], [f >= 5 ? h2.Index : h.Index]);
+                Draw(ctx, program, InternalFormat.Rgba8, targets[f], [f >= 5 ? h2.Index : h.Index]);
                 if (f == 4)
                 {
                     // Updated in place after the draw was recorded: update-after-bind descriptors are read at execution, so the draw shows

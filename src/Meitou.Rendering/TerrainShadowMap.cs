@@ -4,6 +4,8 @@ using Meitou.Data.World;
 
 using Meitou.Rendering.Gpu;
 
+using Meitou.Rendering.Gpu.Core;
+
 namespace Meitou.Rendering;
 
 /// <summary>
@@ -21,15 +23,15 @@ namespace Meitou.Rendering;
 sealed unsafe class TerrainShadowMap : IDisposable
 {
     /// <summary>The native GPU API the map is made and drawn with.</summary>
-    public GpuContext Gpu { get; }
+    public IGpuContext Gpu { get; }
     readonly int size;
     readonly float spacing;
-    readonly Texture heights;
+    readonly GpuTexture heights;
     readonly SampledTexture heightsSampled;
     readonly LegacyProgram sweep;
     readonly SamplerSlot sourceSlot;
     readonly UniformHandle uSize, uFirst, uStep, uDrop, uDistance;
-    readonly Texture[] targets = new Texture[2];
+    readonly GpuTexture[] targets = new GpuTexture[2];
     readonly SampledTexture[] targetsSampled = new SampledTexture[2];
 
     Vector3 builtFor;
@@ -39,7 +41,7 @@ sealed unsafe class TerrainShadowMap : IDisposable
     public const float RebuildAngle = 0.0017f;
 
     /// <param name="coarse">The whole-world raw heights, <paramref name="size"/>² samples (WorldScene.Coarse).</param>
-    public TerrainShadowMap(GpuContext gpu, ushort[] coarse, int size)
+    public TerrainShadowMap(IGpuContext gpu, ushort[] coarse, int size)
     {
         Gpu = gpu;
         this.size = size;
@@ -49,29 +51,29 @@ sealed unsafe class TerrainShadowMap : IDisposable
             TextureWrapMode.Repeat, false, DepthFunction.Lequal, false, 1, false, 0));
         using (var batch = gpu.Uploads.Begin())
         {
-            heights = batch.Create(new TextureDesc(GlConventions.VkFormat(InternalFormat.R16), size, size, Name: "terrain shadow map heights"));
-            batch.Write(heights, 0, 0, new Silk.NET.Vulkan.Rect2D(default, new((uint)size, (uint)size)),
+            heights = batch.Create(new TextureDesc(InternalFormat.R16, size, size, Name: "terrain shadow map heights"));
+            batch.Write(heights, 0, 0, new PixelRect(0, 0, (uint)size, (uint)size),
                 System.Runtime.InteropServices.MemoryMarshal.AsBytes(coarse.AsSpan(0, size * size)));
             for (int i = 0; i < 2; i++)
-                targets[i] = batch.Create(new TextureDesc(GlConventions.VkFormat(InternalFormat.RG32f), size, size,
+                targets[i] = batch.Create(new TextureDesc(InternalFormat.RG32f, size, size,
                     Use: TextureUse.Sampled | TextureUse.ColourTarget, Name: "terrain shadow map"));
         }
-        heightsSampled = new SampledTexture(linear, heights.View(), heights.Image);
-        for (int i = 0; i < 2; i++) targetsSampled[i] = new SampledTexture(linear, targets[i].View(), targets[i].Image);
+        heightsSampled = new SampledTexture(linear, heights.View());
+        for (int i = 0; i < 2; i++) targetsSampled[i] = new SampledTexture(linear, targets[i].View());
         // Native (docs/renderer-native.md 7.1, wave 3 agent B, step P): VkGl's SPIR-V and layout, made once, never inside a draw.
         sweep = LegacyProgram.Create(gpu, ShadowShaders.FullscreenVertex, MeitouShadowShaders.SweepFragment, "terrain shadow sweep");
         (sourceSlot, uSize, uFirst, uStep, uDrop, uDistance) = (sweep.Sampler("uSource"), sweep.Uniform("uSize"), sweep.Uniform("uFirst"),
             sweep.Uniform("uStep"), sweep.Uniform("uDrop"), sweep.Uniform("uDistance"));
-        format = new AttachmentFormats(targets[0].Desc.Format, Silk.NET.Vulkan.Format.Undefined);
+        format = new AttachmentFormats(targets[0].Desc.Format, InternalFormat.None);
         // What VkGl made of the GL state the sweep set (no culling, depth or blending; all channels; filled).
-        state = new DrawState(Silk.NET.Vulkan.CullModeFlags.None, GlConventions.FrontFace(FrontFaceDirection.Ccw), false, false, Silk.NET.Vulkan.CompareOp.LessOrEqual,
-            false, 0, 0, BlendState.Off, Silk.NET.Vulkan.ColorComponentFlags.RBit | Silk.NET.Vulkan.ColorComponentFlags.GBit | Silk.NET.Vulkan.ColorComponentFlags.BBit |
-            Silk.NET.Vulkan.ColorComponentFlags.ABit, Silk.NET.Vulkan.PolygonMode.Fill, false, false);
+        state = new DrawState(CullMode.None, FrontFaceDirection.Ccw, false, false, DepthFunction.Lequal,
+            false, 0, 0, BlendState.Off, ColorMask.R | ColorMask.G | ColorMask.B |
+            ColorMask.A, PolygonKind.Fill, false, false);
     }
 
     readonly AttachmentFormats format;
     readonly DrawState state;
-    GraphicsPipeline? pipeline;
+    GpuPipeline? pipeline;
 
     /// <summary>The finished map with its sampler (linear, clamped); null before the first build or when the sun is too high for any terrain
     /// shadow.</summary>
@@ -102,9 +104,9 @@ sealed unsafe class TerrainShadowMap : IDisposable
         int passes = 1;
         while ((1 << (passes - 1)) < size) passes++;
         int write = 0;
-        pipeline ??= Gpu.Pipelines.Get(state.Pipeline(sweep.Program, sweep.VertexLayout([]), Silk.NET.Vulkan.PrimitiveTopology.TriangleList, format, "terrain shadow sweep"));
-        var viewport = new Silk.NET.Vulkan.Viewport(0, 0, size, size, 0, 1);
-        var scissor = new Silk.NET.Vulkan.Rect2D(default, new((uint)size, (uint)size));
+        pipeline ??= Gpu.Pipelines.Get(state.Pipeline(sweep.Program, sweep.VertexLayout([]), PrimitiveType.Triangles, format, "terrain shadow sweep"));
+        var viewport = new PixelViewport(0, 0, size, size, 0, 1);
+        var scissor = new PixelRect(0, 0, (uint)size, (uint)size);
         sweep.Set(uSize, (float)size);
         var cmd = Gpu.BeginNative("terrain shadow sweep");
         for (int pass = 0; pass < passes; pass++)
@@ -116,17 +118,17 @@ sealed unsafe class TerrainShadowMap : IDisposable
             sweep.Set(uDistance, step * spacing);
             sweep.Bind(sourceSlot, pass == 0 ? heightsSampled : targetsSampled[1 - write]);
             var target = targets[write];
-            cmd.BeginRendering(new RenderingDesc(new RenderTarget(target.Attachment(), Silk.NET.Vulkan.AttachmentLoadOp.Load, default, target.Image), default, size, size));
+            cmd.BeginRendering(new RenderingDesc(new RenderTarget(target.Attachment(), LoadOp.Load, default), default, size, size));
             cmd.SetViewport(viewport);
             cmd.SetScissor(scissor);
             cmd.SetRaster(state.Cull, state.Front);
             cmd.SetDepth(state.DepthTest, state.DepthWrite, state.Compare);
             cmd.SetDepthBias(state.BiasEnable, state.BiasConstant, state.BiasSlope);
-            cmd.BindPipeline(pipeline);
+            cmd.BindPipeline(pipeline!.Value);
             sweep.Flush(cmd);
             cmd.Draw(3);
             cmd.EndRendering();
-            cmd.Barrier(BarrierBatch.Full);   // the next pass reads what this one wrote (VkGl: a full barrier before each pass)
+            cmd.Order();   // the next pass reads what this one wrote (VkGl: a full barrier before each pass)
             write = 1 - write;
         }
         Gpu.EndNative(cmd);

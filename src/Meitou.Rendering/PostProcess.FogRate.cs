@@ -1,7 +1,10 @@
+using InternalFormat = Meitou.Rendering.Gpu.InternalFormat;
 using System.Numerics;
 
 using Meitou.Rendering.Gpu;
 using Vk = Silk.NET.Vulkan;
+
+using Meitou.Rendering.Gpu.Core;
 
 namespace Meitou.Rendering;
 
@@ -88,8 +91,8 @@ public sealed unsafe partial class PostProcess
         if (neutralRate is { } made && made.Width == tiles && made.Height == rows) return made;
         neutralRate?.Texture.Dispose();   // released after the frames in flight
         using var batch = Gpu.Uploads.Begin();
-        var texture = batch.Create(new TextureDesc(Vk.Format.R8Uint, tiles, rows, Use: TextureUse.Sampled | TextureUse.ShadingRate | TextureUse.TransferDst, Name: "post fog rate neutral"));
-        batch.Write(texture, 0, 0, new Vk.Rect2D(default, new Vk.Extent2D((uint)tiles, (uint)rows)), new byte[tiles * rows]);
+        var texture = batch.Create(new TextureDesc(InternalFormat.R8ui, tiles, rows, Use: TextureUse.Sampled | TextureUse.ShadingRate | TextureUse.TransferDst, Name: "post fog rate neutral"));
+        batch.Write(texture, 0, 0, new PixelRect(0, 0, (uint)tiles, (uint)rows), new byte[tiles * rows]);
         return neutralRate = new Target2D(texture, TextureMinFilter.Nearest, TextureMagFilter.Nearest);
     }
 
@@ -115,7 +118,7 @@ public sealed unsafe partial class PostProcess
             foreach (var t in new[] { rateDistance, rateImage }.OfType<Target2D>()) t.Texture.Dispose();   // released after the frames in flight
             using var batch = Gpu.Uploads.Begin();
             rateDistance = Make(batch, dw, dh, InternalFormat.RG32f, TextureMinFilter.Nearest, "post fog rate distance");
-            var texture = batch.Create(new TextureDesc(Vk.Format.R8Uint, tw, th, Use: TextureUse.Sampled | TextureUse.ColourTarget | TextureUse.ShadingRate | TextureUse.TransferSrc, Name: "post fog rate"));
+            var texture = batch.Create(new TextureDesc(InternalFormat.R8ui, tw, th, Use: TextureUse.Sampled | TextureUse.ColourTarget | TextureUse.ShadingRate | TextureUse.TransferSrc, Name: "post fog rate"));
             rateImage = new Target2D(texture, TextureMinFilter.Nearest, TextureMagFilter.Nearest);
         }
         rateDistancePass ??= new FogRateDistancePass(Gpu);
@@ -171,8 +174,8 @@ public sealed unsafe partial class PostProcess
             ImageSubresource = new Vk.ImageSubresourceLayers(Vk.ImageAspectFlags.ColorBit, 0, 0, 1),
             ImageExtent = new Vk.Extent3D((uint)image.Width, (uint)image.Height, 1),
         };
-        Gpu.Device.Vk.CmdCopyImageToBuffer(cmd.Handle, image.Texture.Image, Vk.ImageLayout.General, slot.Buffer.Handle, 1, &region);
-        cmd.Barrier(BarrierBatch.Full);
+        Gpu.Device.Vk.CmdCopyImageToBuffer(((CommandList)cmd).Handle, Gpu.Device.NativeImage(image.Texture), Vk.ImageLayout.General, Gpu.Device.BufferAt(slot.Buffer.Handle.Index), 1, &region);
+        cmd.Order();
         slot.Frame = Gpu.Frame.Number;
         rateReadbackNext = (rateReadbackNext + 1) % rateReadbacks.Length;
     }

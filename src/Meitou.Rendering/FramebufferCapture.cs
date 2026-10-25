@@ -1,3 +1,4 @@
+using InternalFormat = Meitou.Rendering.Gpu.InternalFormat;
 using Meitou.Data.Textures;
 
 using Meitou.Rendering.Gpu;
@@ -13,7 +14,7 @@ namespace Meitou.Rendering;
 /// </summary>
 public static unsafe class FramebufferCapture
 {
-    public static void SavePng(GpuContext ctx, Texture target, string path, int w, int h)
+    public static void SavePng(GpuContext ctx, GpuTexture target, string path, int w, int h)
     {
         var pixels = Read(ctx, target, w, h);
         // The picture's rows start at the bottom (the GL convention it is drawn with); PNG rows at the top. Also force opaque alpha.
@@ -26,10 +27,10 @@ public static unsafe class FramebufferCapture
     }
 
     /// <summary>The target's RGBA8 texels in the lower-left <paramref name="w"/> × <paramref name="h"/> (rows in the image's own order).</summary>
-    public static byte[] Read(GpuContext ctx, Texture target, int w, int h)
+    public static byte[] Read(GpuContext ctx, GpuTexture target, int w, int h)
     {
         var d = target.Desc;
-        if (d.Format != Vk.Format.R8G8B8A8Unorm || d.Samples != 1 || d.Width < w || d.Height < h)
+        if (d.Format != InternalFormat.Rgba8 || d.Samples != 1 || d.Width < w || d.Height < h)
             throw new ArgumentException($"a capture reads an RGBA8 single-sample target of at least {w} x {h} ({d.Format}, {d.Samples} samples, {d.Width} x {d.Height})");
         ctx.Finish();   // submits the frame so far and waits for it (the readback below is outside the frame)
         var device = ctx.Device;
@@ -43,7 +44,7 @@ public static unsafe class FramebufferCapture
                 ImageSubresource = new Vk.ImageSubresourceLayers(Vk.ImageAspectFlags.ColorBit, 0, 0, 1),
                 ImageExtent = new Vk.Extent3D((uint)w, (uint)h, 1),
             };
-            device.Vk.CmdCopyImageToBuffer(cb, target.Image, Vk.ImageLayout.General, buffer.Buffer, 1, &region);
+            device.Vk.CmdCopyImageToBuffer(cb, device.NativeImage(target), Vk.ImageLayout.General, buffer.Buffer, 1, &region);
             device.EndImmediate(cb);
             device.Allocator.Invalidate(buffer.Allocation);
             return new ReadOnlySpan<byte>(buffer.Mapped, (int)size).ToArray();

@@ -1,14 +1,17 @@
+using InternalFormat = Meitou.Rendering.Gpu.InternalFormat;
 using System.Numerics;
 using Meitou.Data.World;
 using Meitou.Rendering.Gpu;
 using Vk = Silk.NET.Vulkan;
+
+using Meitou.Rendering.Gpu.Core;
 
 namespace Meitou.Rendering;
 
 /// <summary>Half-resolution clouds, independent view histories and a world-space sun-transmission map.</summary>
 public sealed class VolumetricCloudRenderer : IDisposable
 {
-    readonly GpuContext gpu;
+    readonly IGpuContext gpu;
     readonly SampledImage noise;
     readonly LegacyProgram march, resolve, shadow;
     readonly NativeSegment marchSegment, resolveSegment, shadowSegment;
@@ -18,13 +21,13 @@ public sealed class VolumetricCloudRenderer : IDisposable
     public double ReflectionGpuMs { get; private set; }
     public double ShadowGpuMs { get; private set; }
     readonly ViewHistory main = new(), mirror = new();
-    Texture? shadowMap;
+    GpuTexture? shadowMap;
     public Vector2 ShadowOrigin { get; private set; }
     public SampledTexture ShadowMap => shadowMap is null ? default : Sample(shadowMap);
 
     sealed class ViewHistory : IDisposable
     {
-        public Texture? Current, Distance, A, B;
+        public GpuTexture? Current, Distance, A, B;
         public Matrix4x4 Previous;
         public Vector3 Eye, Key, Light, Ambient, Forward;
         public Vector2 Wind;
@@ -38,7 +41,7 @@ public sealed class VolumetricCloudRenderer : IDisposable
         }
     }
 
-    public VolumetricCloudRenderer(GpuContext gpu)
+    public VolumetricCloudRenderer(IGpuContext gpu)
     {
         this.gpu = gpu;
         mainTimer = new(gpu); mirrorTimer = new(gpu); shadowTimer = new(gpu);
@@ -46,22 +49,22 @@ public sealed class VolumetricCloudRenderer : IDisposable
         march = LegacyProgram.Create(gpu, PostProcessShaders.Vertex, VolumetricCloudShaders.March, "cloud march");
         resolve = LegacyProgram.Create(gpu, PostProcessShaders.Vertex, VolumetricCloudShaders.Resolve, "cloud history");
         shadow = LegacyProgram.Create(gpu, PostProcessShaders.Vertex, VolumetricCloudShaders.Shadow, "cloud shadow map");
-        marchSegment = new(gpu, march, Vk.PrimitiveTopology.TriangleList, "cloud march");
-        resolveSegment = new(gpu, resolve, Vk.PrimitiveTopology.TriangleList, "cloud history");
-        shadowSegment = new(gpu, shadow, Vk.PrimitiveTopology.TriangleList, "cloud shadow map");
+        marchSegment = new(gpu, march, PrimitiveType.Triangles, "cloud march");
+        resolveSegment = new(gpu, resolve, PrimitiveType.Triangles, "cloud history");
+        shadowSegment = new(gpu, shadow, PrimitiveType.Triangles, "cloud shadow map");
     }
 
-    Texture Make(int width, int height, Vk.Format format, string name)
+    GpuTexture Make(int width, int height, InternalFormat format, string name)
     {
         using var upload = gpu.Uploads.Begin();
         return upload.Create(new TextureDesc(format, width, height, Use: TextureUse.Sampled | TextureUse.ColourTarget, Name: name));
     }
 
-    SampledTexture Sample(Texture t)
+    SampledTexture Sample(GpuTexture t)
     {
         var sampler = gpu.Samplers.Get(SamplerDesc.FromGl(TextureMinFilter.Linear, TextureMagFilter.Linear, TextureWrapMode.ClampToEdge,
             TextureWrapMode.ClampToEdge, TextureWrapMode.ClampToEdge, false, DepthFunction.Lequal, false, 1, false, 0));
-        return new(sampler, t.View(), t.Image);
+        return new(sampler, t.View());
     }
 
     void Common(LegacyProgram p, float coverage, Vector2 wind, Vector3 eye)
@@ -71,7 +74,7 @@ public sealed class VolumetricCloudRenderer : IDisposable
         p.Set(p.Uniform("uEye"), eye);
     }
 
-    void Draw(LegacyProgram p, NativeSegment segment, Texture target, Texture? extra = null)
+    void Draw(LegacyProgram p, NativeSegment segment, GpuTexture target, GpuTexture? extra = null)
     {
         var targets = PassTargets.Of(target, null, extra);
         var state = DrawState.For(targets.Formats, false);
@@ -80,7 +83,7 @@ public sealed class VolumetricCloudRenderer : IDisposable
         state.Record(cmd, targets);
         cmd.BindPipeline(segment.Get(state, targets.Formats, null));
         p.Flush(cmd); cmd.Draw(3); cmd.EndRendering();
-        cmd.Barrier(BarrierBatch.Full);
+        cmd.Order();
         gpu.EndNative(cmd);
     }
 
@@ -110,16 +113,16 @@ public sealed class VolumetricCloudRenderer : IDisposable
         if (h.Current is null || h.Current.Desc.Width != w || h.Current.Desc.Height != ht)
         {
             h.Dispose();
-            h.Current = Make(w, ht, Vk.Format.R16G16B16A16Sfloat, "cloud current");
-            h.Distance = Make(w, ht, Vk.Format.R32Sfloat, "cloud distance");
-            h.A = Make(w, ht, Vk.Format.R16G16B16A16Sfloat, "cloud history a");
-            h.B = Make(w, ht, Vk.Format.R16G16B16A16Sfloat, "cloud history b");
+            h.Current = Make(w, ht, InternalFormat.Rgba16f, "cloud current");
+            h.Distance = Make(w, ht, InternalFormat.R32f, "cloud distance");
+            h.A = Make(w, ht, InternalFormat.Rgba16f, "cloud history a");
+            h.B = Make(w, ht, InternalFormat.Rgba16f, "cloud history b");
         }
         Common(march, coverage, wind, eye);
         march.Set(march.Uniform("uInverse"), in inverse);
         march.Set(march.Uniform("uKey"), key); march.Set(march.Uniform("uLight"), light); march.Set(march.Uniform("uAmbient"), ambient);
         march.ApplyGlobals();
-        march.Set(march.Uniform("uSteps"), gpu.Device.IsIntegrated ? 64 : 96);
+        march.Set(march.Uniform("uSteps"), gpu.IsIntegrated ? 64 : 96);
         // The reach round a texel's centre: the bilinear lookup of the full-size sky reads a texel from up to one texel away, and the fog pass's
         // ray is the unjittered pixel centre (half a full-size pixel, a quarter texel, off); 1.5 texels with room to spare.
         march.Set(march.Uniform("uFogSkip"), fogSkip ? 1 : 0, FogSkipReach * 2f / w, FogSkipReach * 2f / ht, 0);
@@ -156,7 +159,7 @@ public sealed class VolumetricCloudRenderer : IDisposable
         samples.Clear();
         if (shadowTimer.Poll(samples) is { } ms) ShadowGpuMs = ms;
         shadowTimer.Begin();
-        shadowMap ??= Make(512, 512, Vk.Format.R16Sfloat, "cloud shadow map");
+        shadowMap ??= Make(512, 512, InternalFormat.R16f, "cloud shadow map");
         const float texel = VolumetricClouds.ShadowSpan / 512;
         ShadowOrigin = new(MathF.Floor(eye.X / texel) * texel - VolumetricClouds.ShadowSpan * 0.5f,
                            MathF.Floor(eye.Z / texel) * texel - VolumetricClouds.ShadowSpan * 0.5f);

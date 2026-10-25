@@ -12,7 +12,7 @@ static partial class TerrainShaders
     /// <summary>Rows of the per-biome parameter texture (RGBA32F, one row per biome).</summary>
     public const int ParamTexels = 13;
 
-    /// <summary>Texture units of the world-wide maps (TerrainTextures binds units 0..6 for the region).</summary>
+    /// <summary>GpuTexture units of the world-wide maps (TerrainTextures binds units 0..6 for the region).</summary>
     public const int HeightCoarseUnit = 7, HeightFineUnit = 8, GroundUnit = 9, WorldColourUnit = 10;
 
     /// <summary>
@@ -450,6 +450,7 @@ static partial class TerrainShaders
         """;
 
     /// <summary>
+
     /// <see cref="MeshVertex"/> for the tessellated TERRAIN-mode meshes (RockSmoothing, docs/render-terrain.md "Rocks"), to the control stage (no clip
     /// position): also the geometry normal the triangles curve to, the tangent slot's xyz where its w is RockSmoothing.Tag (zero otherwise: not curved).
     /// The colour and the shadow programs share it, so the casters curve as the surface does.
@@ -593,7 +594,18 @@ static partial class TerrainShaders
         void main() { gl_Position = uViewProjection * vec4(curvedPoint(), 1.0); }
         """;
 
-    public static readonly string Fragment = "#version 330 core\n#extension GL_ARB_derivative_control : require\n" + HeightFunctions + ReliefDepth + AtmosphereShaders.Functions + """
+    /// The runtime default of the terrain's normal-map switch. The no-normal program defines <see cref="TerrainNormalMaps"/>
+    /// before this text, so the compiler removes the samples and the tangent-frame path instead of testing a uniform.
+    /// </summary>
+    const string TerrainNormalMaps = "TERRAIN_NORMAL_MAPS";
+    const string VariantDefaults = """
+        #ifndef TERRAIN_NORMAL_MAPS
+        #define TERRAIN_NORMAL_MAPS uNormalMaps
+        #endif
+
+        """;
+
+    public static readonly string Fragment = "#version 330 core\n#extension GL_ARB_derivative_control : require\n" + VariantDefaults + HeightFunctions + ReliefDepth + AtmosphereShaders.Functions + """
 
         in vec3 vWorld;
         in vec3 vNormal;
@@ -635,6 +647,7 @@ static partial class TerrainShaders
         uniform float uTessDetail;     // GroundRelief.TessDetail (PatchControl's segments)
         uniform float uOverlayRelief;  // GroundRelief.OverlayRelief: the grass, slope, dirt and road layers' share of relief (0: the base layer alone)
         uniform float uSelfShadow;     // GroundRelief.SelfShadow: the self-shadow's darkening
+        uniform int uReliefQuality;    // GroundRelief.Quality: 0 low, 1 medium, 2 high (the march's layers and steps)
         uniform sampler2D uParams;     // row = biome, ParamTexels texels
         uniform usampler2D uCells;     // blend cells, two texels each: slots 0..3, slot 4; biome row, 254 = not loaded yet, 255 = unused
         uniform sampler2D uBlendMap;   // whole world: weights of slots 0..3; slot 4 takes the remainder
@@ -675,8 +688,9 @@ static partial class TerrainShaders
         // Layers whose relief is marched together (GroundRelief): their common unscaled coordinate with its derivatives, and per layer its tiling (xy: the
         // coordinate's scale, also its move per unit of the march's offset), array layer (z) and weight (w: its share of the pixel times its depth factor).
         // Kept this small on purpose: the march carries it through every step, and a larger one (a coordinate and derivatives per layer) cost the
-        // parallax several times over in registers (docs/render-terrain.md, "Cost").
-        const int ReliefMax = 5;
+        // parallax several times over in registers (docs/render-terrain.md, "Cost"). The quality keeps the heaviest one, two or three layers; the rest only
+        // shade the surface.
+        const int ReliefMax = 3;
         struct Relief { GradCoord base; vec4 layer[ReliefMax]; int n; float total; };
 
         Relief noRelief(GradCoord base) { Relief r; r.base = base; r.n = 0; r.total = 0.0; return r; }
@@ -685,10 +699,33 @@ static partial class TerrainShaders
         {
             // A layer showing under 5% of the pixel is left out, fading in to 15% (continuous: no seam where it drops out); the march's cost is per layer.
             float w = share * smoothstep(0.05, 0.15, share) * reliefDepth(layer, scale);
-            if (w <= 0.0 || r.n >= ReliefMax) return;
-            r.layer[r.n] = vec4(scale, layer, w);
-            r.n++;
-            r.total += w;
+            if (w <= 0.0) return;
+            // Keep the quality's heaviest layers, sorted, so a later heavy layer replaces a light one. The height is a weighted average, so the order only
+            // matters for the cap.
+            int cap = uReliefQuality >= 2 ? ReliefMax : uReliefQuality >= 1 ? 2 : 1;
+            if (r.n < cap)
+            {
+                int at = r.n;
+                while (at > 0 && r.layer[at - 1].w < w)
+                {
+                    r.layer[at] = r.layer[at - 1];
+                    at--;
+                }
+                r.layer[at] = vec4(scale, layer, w);
+                r.n++;
+                r.total += w;
+            }
+            else if (w > r.layer[cap - 1].w)
+            {
+                r.total += w - r.layer[cap - 1].w;
+                int at = cap - 1;
+                while (at > 0 && r.layer[at - 1].w < w)
+                {
+                    r.layer[at] = r.layer[at - 1];
+                    at--;
+                }
+                r.layer[at] = vec4(scale, layer, w);
+            }
         }
 
         // Where the ground is displaced (ReliefFunctions), the mesh carries the relief down to its spacing there (reliefSegment, world units; 0 not
@@ -696,9 +733,10 @@ static partial class TerrainShaders
         // displacement fades out). Set per pixel in biome().
         float reliefSegment = 0.0, reliefWhole = 1.0;
 
-        // The march's steps (view ray, sun), fewer with distance (set in biomeRelief(): 16 and 8 near, 6 and 3 at the parallax's end), and the share of
-        // the pixel the biome being marched has (main sets it before biomeRelief(): a biome showing little is not marched).
-        int reliefSteps = 16, reliefShadowSteps = 12;
+        // The march's steps (view ray, sun), fewer with distance (set in biomeRelief(): high 8 and 4 near, 4 and 2 at the parallax's end; medium 6 and 3
+        // to 3 and 2; low 4 and 2 to 2 and 1), and the share of the pixel the biome being marched has (main sets it before biomeRelief(): a biome showing
+        // little is not marched).
+        int reliefSteps = 8, reliefShadowSteps = 4;
         float biomeShare = 1.0;
 
         // The relief's height at offset o (1 the top): the layers' heights by weight; finer: only the detail the displaced mesh leaves out (above).
@@ -732,7 +770,7 @@ static partial class TerrainShaders
         {
             // The detail finer than a displaced mesh is shallow and fine: half the steps do (each also reads its level at the spacing).
             int ShadowSteps = reliefShadowSteps;
-            int Steps = finer && reliefSegment > 0.0 && reliefWhole < 1.0 ? min(8, reliefSteps) : reliefSteps;
+            int Steps = finer && reliefSegment > 0.0 && reliefWhole < 1.0 ? min(4, reliefSteps) : reliefSteps;
             vec2 rayStep = viewSpan / float(Steps);
             bool moving = dot(viewSpan, viewSpan) > 0.0;
             // Centred, as the displacement is: the flat surface is the relief's middle (half the depth above it, half below), so what stands on the ground
@@ -820,8 +858,12 @@ static partial class TerrainShaders
                 // A biome showing under 10% of the pixel is not marched, fading in to 30% (the march runs once per biome blended).
                 float strength = (1.0 - smoothstep(0.5 * uParallaxEnd, uParallaxEnd, distance)) * smoothstep(0.1, 0.3, biomeShare);
                 float far = clamp(distance / uParallaxEnd, 0.0, 1.0), shade = 1.0;
-                reliefSteps = int(round(mix(16.0, 6.0, far)));
-                reliefShadowSteps = int(round(mix(8.0, 3.0, far)));
+                float viewNear = uReliefQuality >= 2 ? 8.0 : uReliefQuality >= 1 ? 6.0 : 4.0;
+                float viewFar = uReliefQuality >= 2 ? 4.0 : uReliefQuality >= 1 ? 3.0 : 2.0;
+                float sunNear = uReliefQuality >= 2 ? 4.0 : uReliefQuality >= 1 ? 3.0 : 2.0;
+                float sunFar = uReliefQuality >= 2 ? 2.0 : uReliefQuality >= 1 ? 2.0 : 1.0;
+                reliefSteps = int(round(mix(viewNear, viewFar, far)));
+                reliefShadowSteps = int(round(mix(sunNear, sunFar, far)));
                 vec3 v = normalize(uEye - vWorld);
                 vec3 sun = normalize(uLightDir);   // not "l": RockBakeFragment patches the lighting at that line
                 // Where the geometry is displaced (ReliefFunctions, to uDisplaceEnd) the view ray marches only the detail finer than the mesh's spacing
@@ -928,7 +970,7 @@ static partial class TerrainShaders
             s.albedo.rgb *= layersB.z;
             s.shade = relief.shade;
 
-            if (uNormalMaps)
+            if (TERRAIN_NORMAL_MAPS)
             {
                 s.normal = uParallax > 0.0 ? tex(uNormal, base, layersA.x) : tex(uNormal, base.p, layersA.x);
                 if (map.r != 0.0) s.normal = mix(s.normal, tex(uNormal, grass, layersA.w), map.r);
@@ -1069,7 +1111,7 @@ static partial class TerrainShaders
                     if (total > 0.0) nearWeight *= total / (total + pending);
                     else if (pending > 0.0) nearWeight = 0.0;
                     if (uDebug == 1) albedo = vec4(weights.rgb + weights.a * vec3(1.0, 1.0, 0.0) + rest * vec3(1.0), 1.0);
-                    if (uNormalMaps)
+                    if (TERRAIN_NORMAL_MAPS)
                     {
                         // Tangent frame as the game builds it for terrain: binormal = n x (-1, 0, 0), tangent = binormal x n.
                         vec3 bn = normalize(cross(n, vec3(-1.0, 0.0, 0.0)));
@@ -1244,6 +1286,7 @@ static partial class TerrainShaders
             float refine;
             float pixelScale;
             float broadCut;
+            int reliefQuality;
         } terrain;
 
         """;
@@ -1281,7 +1324,7 @@ static partial class TerrainShaders
         ["uDisplaceEnd"] = "terrain.displaceEnd", ["uParallaxEnd"] = "terrain.parallaxEnd",
         ["uOverlayRelief"] = "terrain.overlayRelief", ["uSelfShadow"] = "terrain.selfShadow", ["uTessDetail"] = "terrain.tessDetail", ["uRockRound"] = "terrain.rockRound",
         ["uFieldTiles"] = "utextures2D[terrain.fieldTiles]", ["uFieldOrigin"] = "terrain.fieldOrigin", ["uFieldTile"] = "terrain.fieldTile",
-        ["uFieldColumns"] = "terrain.fieldColumns", ["uFieldCount"] = "terrain.fieldCount", ["uMaxDepth"] = "terrain.maxDepth", ["uTargetSlope"] = "terrain.targetSlope", ["uScaleFollow"] = "terrain.scaleFollow", ["uCliffScale"] = "terrain.cliffScale", ["uRefine"] = "terrain.refine", ["uPixelScale"] = "terrain.pixelScale", ["uBroadCut"] = "terrain.broadCut",
+        ["uFieldColumns"] = "terrain.fieldColumns", ["uFieldCount"] = "terrain.fieldCount", ["uMaxDepth"] = "terrain.maxDepth", ["uTargetSlope"] = "terrain.targetSlope", ["uScaleFollow"] = "terrain.scaleFollow", ["uCliffScale"] = "terrain.cliffScale", ["uRefine"] = "terrain.refine", ["uPixelScale"] = "terrain.pixelScale", ["uBroadCut"] = "terrain.broadCut", ["uReliefQuality"] = "terrain.reliefQuality",
     };
 
     const string DerivativeControl = "#extension GL_ARB_derivative_control : require\n";
@@ -1301,6 +1344,19 @@ static partial class TerrainShaders
         if (text.Contains(DerivativeControl, StringComparison.Ordinal))
             text = text.Replace(DerivativeControl, "", StringComparison.Ordinal).Replace("#version 450\n", "#version 450\n" + DerivativeControl, StringComparison.Ordinal);
         return text;
+    }
+
+    /// <summary>
+    /// A native terrain text with the normal-map switch fixed. Null leaves the runtime uniform in place; a value emits a
+    /// <c>#define</c> before <see cref="VariantDefaults"/> so the preprocessor takes the literal path. The uniform stays in the
+    /// constants block for the ABI, but the no-normal program no longer samples the normal arrays.
+    /// </summary>
+    static string Variant(string native, bool? normalMaps = null)
+    {
+        if (normalMaps is not { } value) return native;
+        int line = native.IndexOf('\n');
+        if (line < 0) throw new InvalidOperationException("TerrainShaders.Variant: the native text has no version line.");
+        return native.Insert(line + 1, $"#define {TerrainNormalMaps} {(value ? "true" : "false")}\n");
     }
 
     /// <summary>The rock bake's extra push members (after <see cref="PushMembers"/>; std430 offsets 32, 48, 64, 80; <see cref="TerrainBakePush"/> is the C# side):
@@ -1354,8 +1410,8 @@ static partial class TerrainShaders
     public static string PatchVertexTessNative() => Native(PatchVertexTess);
     public static string PatchControlNative() => Native(PatchControl);
     public static string PatchEvaluationNative() => Native(PatchEvaluation);
-    public static string FragmentNative(bool interiorCut = false, bool march = true) =>
-        Gi.GiResolveShaders.WithAlbedo(Native(interiorCut ? InteriorMaskRenderer.WithCut(Marched(Fragment, march)) : Marched(Fragment, march)));
+    public static string FragmentNative(bool interiorCut = false, bool march = true, bool? normalMaps = null) =>
+        Gi.GiResolveShaders.WithAlbedo(Variant(Native(interiorCut ? InteriorMaskRenderer.WithCut(Marched(Fragment, march)) : Marched(Fragment, march)), normalMaps));
 
     /// <summary>
     /// <paramref name="fragment"/> with the ground parallax's march (march false: left out, by defining NO_MARCH). Off it never runs (uParallax 0), but its registers were the
@@ -1371,8 +1427,10 @@ static partial class TerrainShaders
     }
     public static string MeshVertexNative() => Native(MeshVertex);
     /// <summary>The TERRAIN-mode meshes' colour program, with the interior cut (on per draw: <see cref="TerrainConstants.InteriorCut"/>; the cross-fade already discards).</summary>
-    public static string MeshFragmentNative(bool march = true) => Gi.GiResolveShaders.WithAlbedo(Native(InteriorMaskRenderer.WithCut(Marched(MeshFragment, march))));
-    public static string MeshFragmentSolidNative(bool march = true) => Gi.GiResolveShaders.WithAlbedo(Native(Marched(MeshFragmentSolid, march)));
+    public static string MeshFragmentNative(bool march = true, bool? normalMaps = null) =>
+        Gi.GiResolveShaders.WithAlbedo(Variant(Native(InteriorMaskRenderer.WithCut(Marched(MeshFragment, march))), normalMaps));
+    public static string MeshFragmentSolidNative(bool march = true, bool? normalMaps = null) =>
+        Gi.GiResolveShaders.WithAlbedo(Variant(Native(Marched(MeshFragmentSolid, march)), normalMaps));
     public static string MeshInstancedDepthVertexNative() => Native(MeshInstancedDepthVertex);
     /// <summary>The rocks' smoothing (RockSmoothing): <see cref="MeshVertexTess"/>, <see cref="MeshControl"/>, <see cref="MeshEvaluation"/> and its casters' twin.</summary>
     public static string MeshVertexTessNative() => Native(MeshVertexTess);
@@ -1456,6 +1514,7 @@ struct TerrainConstants
     [System.Runtime.InteropServices.FieldOffset(840)] public float Refine;
     [System.Runtime.InteropServices.FieldOffset(844)] public float PixelScale;
     [System.Runtime.InteropServices.FieldOffset(848)] public float BroadCut;
+    [System.Runtime.InteropServices.FieldOffset(852)] public int ReliefQuality;
 }
 
 /// <summary>The cells of <see cref="TerrainConstants.BloodCells"/>: column, row, layer (std140 <c>vec4[32]</c>).</summary>

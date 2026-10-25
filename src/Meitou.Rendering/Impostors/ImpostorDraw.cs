@@ -1,6 +1,6 @@
+using InternalFormat = Meitou.Rendering.Gpu.InternalFormat;
 using Meitou.Rendering.Gpu;
 using Silk.NET.Vulkan;
-using PolygonMode = Silk.NET.Vulkan.PolygonMode;
 
 namespace Meitou.Rendering.Impostors;
 
@@ -15,15 +15,15 @@ internal enum ImpostorProgram { Plain, Caster, Rock, Prepass, AfterPrepass }
 
 internal sealed class ImpostorDraw : IDisposable
 {
-    readonly GpuContext gpu;
+    readonly IGpuContext gpu;
     readonly NativeProg plain, caster, rock, prepass, afterPrepass;
     readonly DeviceBuffer quad;
-    readonly Dictionary<(ImpostorProgram, DrawStateKey, AttachmentFormats), GraphicsPipeline> pipelines = [];
+    readonly Dictionary<(ImpostorProgram, DrawStateKey, AttachmentFormats), GpuPipeline> pipelines = [];
 
     /// <summary>What of a <see cref="DrawState"/> is in a pipeline (the dynamic parts are not).</summary>
-    readonly record struct DrawStateKey(BlendState Blend, ColorComponentFlags Mask, PolygonMode Polygon, bool AlphaToCoverage, bool DepthClamp);
+    readonly record struct DrawStateKey(BlendState Blend, ColorMask Mask, PolygonKind Polygon, bool AlphaToCoverage, bool DepthClamp);
 
-    public ImpostorDraw(GpuContext gpu, NativeFrame frame)
+    public ImpostorDraw(IGpuContext gpu, NativeFrame frame)
     {
         this.gpu = gpu;
         plain = new NativeProg(gpu, frame, ImpostorShaders.VertexNative(), ImpostorShaders.FragmentNative(), "impostors");
@@ -37,21 +37,21 @@ internal sealed class ImpostorDraw : IDisposable
     }
 
     /// <summary>Every native program's layout is compatible (the shared push range and sets).</summary>
-    public PipelineLayout Layout => plain.P.Layout;
+    public GpuProgram Program => plain.P;
 
     /// <summary>The six-entry index buffer (0 to 5).</summary>
-    public BufferBinding Quad => new(quad.Handle, 0, quad.Size);
+    public GpuBufferBinding Quad => new(quad.Handle, 0, quad.Size);
 
     /// <summary>The pipeline for <paramref name="state"/>'s fixed-function part into <paramref name="formats"/>. Render thread (Prepare).</summary>
-    public GraphicsPipeline Pipeline(ImpostorProgram which, DrawState state, AttachmentFormats formats)
+    public GpuPipeline Pipeline(ImpostorProgram which, DrawState state, AttachmentFormats formats)
     {
         var key = (which, new DrawStateKey(state.Blend, state.ColourMask, state.Polygon, state.AlphaToCoverage, state.DepthClamp), formats);
         if (pipelines.TryGetValue(key, out var p)) return p;
         var program = which switch { ImpostorProgram.Caster => caster, ImpostorProgram.Rock => rock, ImpostorProgram.Prepass => prepass, ImpostorProgram.AfterPrepass => afterPrepass, _ => plain };
         Span<LegacyProgram.Attribute?> rows = new LegacyProgram.Attribute?[FoliageShaders.InstanceLocation + 4];
         for (int a = 0; a < 4; a++)
-            rows[FoliageShaders.InstanceLocation + a] = new LegacyProgram.Attribute(default, Format.R32G32B32A32Sfloat, 64, true);
-        p = gpu.Pipelines.Get(state.Pipeline(program.P, program.Layout(rows), PrimitiveTopology.TriangleList, formats, program.P.Name));
+            rows[FoliageShaders.InstanceLocation + a] = new LegacyProgram.Attribute(default, InternalFormat.Rgba32f, 64, true);
+        p = gpu.Pipelines.Get(state.Pipeline(program.P, program.Layout(rows), PrimitiveType.Triangles, formats, program.P.Name));
         pipelines[key] = p;
         return p;
     }

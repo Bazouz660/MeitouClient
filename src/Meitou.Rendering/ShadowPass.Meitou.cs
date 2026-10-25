@@ -1,3 +1,4 @@
+using InternalFormat = Meitou.Rendering.Gpu.InternalFormat;
 using System.Diagnostics;
 using System.Numerics;
 using Meitou.Data.World;
@@ -135,7 +136,7 @@ public sealed unsafe partial class ShadowPass
     int coarseSize;
     TerrainShadowMap? terrainMap;
     SampledTexture? boundTerrain;   // the terrain shadow map the receivers sample, as the GL code bound it to its unit (kept while no new one is)
-    Texture? blocker;
+    GpuTexture? blocker;
     SampledTexture blockerSampled;
     bool blockerPublished;
     LegacyProgram? blockerNative;
@@ -143,7 +144,7 @@ public sealed unsafe partial class ShadowPass
     UniformHandle blockerSizeHandle, blockerLayerHandle;
 
     /// <summary>The half-resolution blocker map (native; null until the first frame with contact hardening).</summary>
-    public Texture? BlockerMap => blocker;
+    public GpuTexture? BlockerMap => blocker;
 
     /// <summary>The whole-world height grid (WorldScene.Coarse) for the terrain shadow beyond the range; uploaded when first needed.</summary>
     public void SetTerrain(ushort[] heights, int size) => (coarse, coarseSize) = (heights, size);
@@ -176,7 +177,7 @@ public sealed unsafe partial class ShadowPass
     /// <summary>The landmark shadow map's side (texels). Over the landmarks of the default reach (150000 around the camera) a texel is about 75 units;
     /// a landmark is 2000 or more in radius.</summary>
     public const int LandmarkMapSize = 4096;
-    Texture? landmarkMap;
+    GpuTexture? landmarkMap;
     SampledTexture landmarkSampled;
     bool landmarkPublished;
     ShadowCascade? landmarkBox;
@@ -202,12 +203,12 @@ public sealed unsafe partial class ShadowPass
         if (landmarkMap is null)
         {
             // A map of its own (4096², larger than a cascade layer), read through its own sampler (uShadowLandmark), not a layer of the cascade array.
-            landmarkMap = Texture.Create(Gpu, new TextureDesc(Format.D32Sfloat, LandmarkMapSize, LandmarkMapSize, Use: TextureUse.Sampled | TextureUse.DepthTarget, Name: "landmark shadow map"));
+            landmarkMap = Gpu.CreateTexture(new TextureDesc(InternalFormat.DepthComponent24, LandmarkMapSize, LandmarkMapSize, Use: TextureUse.Sampled | TextureUse.DepthTarget, Name: "landmark shadow map"));
             landmarkSampled = Sampled(landmarkMap, TextureMinFilter.Linear, TextureMagFilter.Linear, TextureWrapMode.ClampToEdge, compare: true);
         }
         var host = BeginHost("landmark shadows", clear: true, landmarkMap);
         SetTile(0, 0, LandmarkMapSize);
-        SetCasterBias(new Vector4(box.FixedBias, KenshiShadows.SlopeBias, KenshiShadows.MaxSlopeBias, 0));
+        SetCasterBias(new Vector4(box.FixedBias, KenshiShadows.SlopeBias, KenshiShadows.MaxSlopeBias, DepthScale));
         l.Draw(box, box.WorldToClip(), box.CullPlanes(), view.Eye);
         EndHost(host);
         (landmarkBox, landmarkKey, landmarkSun) = (box, key, toSun);
@@ -268,7 +269,7 @@ public sealed unsafe partial class ShadowPass
             int i = c.Index;
             var host = BeginHost("shadow cascade", clear: true, layer: i);
             SetTile(0, 0, atlasSize);
-            SetCasterBias(new Vector4(c.FixedBias, MeitouShadowFit.Slope, c.MaxSlopeBias, 0));
+            SetCasterBias(new Vector4(c.FixedBias, MeitouShadowFit.Slope, c.MaxSlopeBias, DepthScale));
             draw(c, worldToClip, planes, lodEye);
             EndHost(host);
             stored[i] = c;
@@ -306,7 +307,7 @@ public sealed unsafe partial class ShadowPass
         if (blocker is null || blocker.Desc.Width != size || blocker.Desc.Layers != count)
         {
             blocker?.Dispose();
-            blocker = Texture.Create(Gpu, new TextureDesc(Format.R32Sfloat, size, size, Layers: count, Kind: TextureKind.Texture2DArray,
+            blocker = Gpu.CreateTexture(new TextureDesc(InternalFormat.R32f, size, size, Layers: count, Kind: TextureKind.Texture2DArray,
                 Use: TextureUse.Sampled | TextureUse.ColourTarget | TextureUse.TransferSrc, Name: "shadow blocker map"));
             blockerSampled = Sampled(blocker, TextureMinFilter.Nearest, TextureMagFilter.Nearest, TextureWrapMode.ClampToEdge);
             blockerPublished = false;
@@ -323,9 +324,9 @@ public sealed unsafe partial class ShadowPass
     }
 
     /// <summary>The blocker pass's state, as the GL version's was: no culling, depth or blending, every colour channel written.</summary>
-    static readonly DrawState BlockerState = new(CullModeFlags.None, FrontFace.Clockwise, false, false, CompareOp.LessOrEqual, false, 0, 0,
-        BlendState.Off, ColorComponentFlags.RBit | ColorComponentFlags.GBit | ColorComponentFlags.BBit | ColorComponentFlags.ABit,
-        Silk.NET.Vulkan.PolygonMode.Fill, false, false);
+    static readonly DrawState BlockerState = new(CullMode.None, FrontFaceDirection.Ccw, false, false, DepthFunction.Lequal, false, 0, 0,
+        BlendState.Off, ColorMask.R | ColorMask.G | ColorMask.B | ColorMask.A,
+        PolygonKind.Fill, false, false);
 
     void RecordBlockers(ReadOnlySpan<bool> drawn, int count, bool fresh)
     {
@@ -334,16 +335,16 @@ public sealed unsafe partial class ShadowPass
         p.Set(blockerSizeHandle, (float)atlasSize);
         p.Bind(blockerAtlasSlot, atlasPlain);
         var cmd = Gpu.BeginNative("shadow blockers");
-        var formats = new AttachmentFormats(map.Desc.Format, Format.Undefined, 1);
+        var formats = new AttachmentFormats(map.Desc.Format, InternalFormat.None, 1);
         int side = map.Desc.Width;
-        var whole = new Rect2D(default, new Extent2D((uint)side, (uint)side));
-        var pipeline = Gpu.Pipelines.Get(BlockerState.Pipeline(p.Program, p.VertexLayout([]), PrimitiveTopology.TriangleList, formats, "shadow blockers"));
+        var whole = new PixelRect(0, 0, (uint)side, (uint)side);
+        var pipeline = Gpu.Pipelines.Get(BlockerState.Pipeline(p.Program, p.VertexLayout([]), PrimitiveType.Triangles, formats, "shadow blockers"));
         for (int i = 0; i < count; i++)
         {
             if (!drawn[i] && !fresh) continue;
-            var target = new RenderTarget(map.Attachment(0, i), AttachmentLoadOp.Load, default, map.Image);
+            var target = new RenderTarget(map.Attachment(0, i), LoadOp.Load, default);
             cmd.BeginRendering(new RenderingDesc(target, default, side, side));
-            BlockerState.Record(cmd, new PassTargets(target, default, formats, side, side, new Viewport(0, 0, side, side, 0, 1), whole));
+            BlockerState.Record(cmd, new PassTargets(target, default, formats, side, side, new PixelViewport(0, 0, side, side, 0, 1), whole));
             cmd.BindPipeline(pipeline);
             p.Set(blockerLayerHandle, i);
             p.Flush(cmd);
@@ -368,7 +369,7 @@ public sealed unsafe partial class ShadowPass
         {
             var c = cascades[i];
             float world = c.Size.X;   // world units per unit of tile UV
-            Put(data, i * 16, c.OriginToTile(origin));
+            Put(data, i * 16, ReceiverTile(c, origin));
             Put(data, RectAt + i * 4, c.Tile);
             Put(data, CascadeAt + i * 4, new Vector4(c.FarDepth, c.FilterRadius, c.Size.X, c.Size.Y));
             Put(data, ExtentAt + i * 4, new Vector4(c.Size.Z, 1f / tile, 0, 0));
@@ -396,7 +397,7 @@ public sealed unsafe partial class ShadowPass
         if (landmarkBox is { } box)
         {
             // The landmark map: (p - origin) -> (u, v, depth); its filter radius (UV) and normal offset (world: one and a half texels).
-            Put(ms, P + 16, box.OriginToTile(origin));
+            Put(ms, P + 16, ReceiverTile(box, origin));
             Put(ms, P + 32, new Vector4(box.FilterRadius, (float)(box.Texel * 1.5), 0, 1));
             landmarkPublished = true;
         }

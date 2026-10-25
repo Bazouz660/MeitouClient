@@ -29,10 +29,10 @@ public sealed unsafe class GpuDefaults : IDisposable
     }
 
     /// <summary>GL's generic attribute value for disabled vertex attributes.</summary>
-    public GpuBuffer DummyVertex { get; }
+    public BufferAllocation DummyVertex { get; }
 
     /// <summary>A 1×1 stand-in image (in GENERAL layout).</summary>
-    public readonly record struct DummyTexture(GpuImage Image, Format Format, int Layers, int Slot);
+    public readonly record struct DummyTexture(ImageAllocation Image, InternalFormat Format, int Layers, int Slot);
 
     /// <summary>The stand-in for a sampler of target <paramref name="slot"/> (0 2D, 1 2D array, 2 cube), the sampled
     /// <paramref name="kind"/>, and <paramref name="depth"/> (a shadow sampler): created on first use.</summary>
@@ -41,16 +41,16 @@ public sealed unsafe class GpuDefaults : IDisposable
         // VkGl's key: the slot and kind for colour, and the same for depth (the kind does not change a depth dummy's contents).
         var key = (slot, kind, depth);
         if (textures.TryGetValue(key, out var d)) return d;
-        var format = depth ? Format.D32Sfloat : kind switch
+        var format = depth ? InternalFormat.DepthComponent24 : kind switch
         {
-            ScalarKind.UInt => Format.R32Uint,
-            ScalarKind.Int => Format.R32Sint,
-            _ => Format.R8G8B8A8Unorm,
+            ScalarKind.UInt => InternalFormat.R32ui,
+            ScalarKind.Int => InternalFormat.R32i,
+            _ => InternalFormat.Rgba8,
         };
         int layers = slot == 2 ? 6 : 1;
         var info = new ImageCreateInfo
         {
-            SType = StructureType.ImageCreateInfo, ImageType = ImageType.Type2D, Format = format, Extent = new Extent3D(1, 1, 1),
+            SType = StructureType.ImageCreateInfo, ImageType = ImageType.Type2D, Format = GlConventions.VkFormat(format), Extent = new Extent3D(1, 1, 1),
             MipLevels = 1, ArrayLayers = (uint)layers, Samples = SampleCountFlags.Count1Bit, Tiling = ImageTiling.Optimal,
             Usage = ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit, SharingMode = SharingMode.Exclusive,
             Flags = slot == 2 ? ImageCreateFlags.CreateCubeCompatibleBit : 0,

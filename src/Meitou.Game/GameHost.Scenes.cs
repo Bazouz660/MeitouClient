@@ -142,7 +142,7 @@ sealed partial class GameHost
     /// The scene's frames: <see cref="StageScene"/>, then per frame the ticks, the camera on the focus (else the leader), the world and the interface drawn, the picture saved;
     /// the menu scene opens one menu per frame instead of running ticks.
     /// </summary>
-    void SceneShots(string scene, VulkanDisplay display, Texture target, DebugOverlay? overlay, int w, int h)
+    void SceneShots(string scene, VulkanDisplay display, GpuTexture target, DebugOverlay? overlay, int w, int h)
     {
         var focus = StageScene(scene);
         int frames = scene == "menu" ? SceneMenus.Length : g.SceneFrames;

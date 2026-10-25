@@ -7,7 +7,7 @@ namespace Meitou.Rendering.Gpu;
 /// (VkGl: <c>uploadCmd</c>, "before: uploadCmd"). An upload is therefore seen by the whole frame, and native and VkGl uploads keep their call
 /// order. Staging comes from the frame's <see cref="GpuFrame.Staging"/>. Render thread only, while a frame is open.
 /// </summary>
-public sealed unsafe class Uploader
+public sealed unsafe class Uploader : IGpuUploads
 {
     readonly GpuContext ctx;
 
@@ -24,10 +24,10 @@ public sealed unsafe class Uploader
         var staging = ctx.Frame.Staging.Write(data);
         var copy = new BufferCopy(staging.Offset, offset, (ulong)data.Length);
         var cmd = Cmd;
-        ctx.Device.Vk.CmdCopyBuffer(cmd, staging.Handle, target.Handle, 1, &copy);
+        ctx.Device.Vk.CmdCopyBuffer(cmd, ctx.Device.BufferAt(staging.Handle.Index), ctx.Device.BufferAt(target.Handle.Index), 1, &copy);
         TransferBarrier(cmd);
         ctx.Frame.Stats.UploadBytes += data.Length;
-        if (SpikeLog.Enabled) SpikeLog.Note("upload " + target.Underlying.Name, data.Length);
+        if (SpikeLog.Enabled) SpikeLog.Note("upload " + target.Name, data.Length);
     }
 
     /// <summary>Writes <paramref name="data"/>'s <paramref name="stride"/>-byte records each to its own offset of <paramref name="offsets"/> (in order): one staging copy and one copy command.</summary>
@@ -45,26 +45,26 @@ public sealed unsafe class Uploader
             copies[i] = new BufferCopy(staging.Offset + (ulong)(i * stride), offsets[i], (ulong)stride);
         }
         var cmd = Cmd;
-        fixed (BufferCopy* p = copies) ctx.Device.Vk.CmdCopyBuffer(cmd, staging.Handle, target.Handle, (uint)copies.Length, p);
+        fixed (BufferCopy* p = copies) ctx.Device.Vk.CmdCopyBuffer(cmd, ctx.Device.BufferAt(staging.Handle.Index), ctx.Device.BufferAt(target.Handle.Index), (uint)copies.Length, p);
         TransferBarrier(cmd);
         ctx.Frame.Stats.UploadBytes += data.Length;
-        if (SpikeLog.Enabled) SpikeLog.Note("upload " + target.Underlying.Name, data.Length);
+        if (SpikeLog.Enabled) SpikeLog.Note("upload " + target.Name, data.Length);
     }
 
     /// <summary>Writes texels of one level and layer (tightly packed, in the texture's format; for block-compressed formats whole blocks).</summary>
-    public void Write(Texture target, int level, int layer, in Rect2D region, ReadOnlySpan<byte> data)
+    public void Write(GpuTexture target, int level, int layer, in PixelRect region, ReadOnlySpan<byte> data)
     {
         if (data.IsEmpty) return;
         var staging = ctx.Frame.Staging.Write(data);
         var copy = new BufferImageCopy
         {
             BufferOffset = staging.Offset,
-            ImageSubresource = new ImageSubresourceLayers(target.Desc.Aspect, (uint)level, (uint)layer, 1),
-            ImageOffset = new Offset3D(region.Offset.X, region.Offset.Y, 0),
-            ImageExtent = new Extent3D(region.Extent.Width, region.Extent.Height, 1),
+            ImageSubresource = new ImageSubresourceLayers(GlConventions.VkAspect(target.Desc), (uint)level, (uint)layer, 1),
+            ImageOffset = new Offset3D(region.X, region.Y, 0),
+            ImageExtent = new Extent3D(region.Width, region.Height, 1),
         };
         var cmd = Cmd;
-        ctx.Device.Vk.CmdCopyBufferToImage(cmd, staging.Handle, target.Image, ImageLayout.General, 1, &copy);
+        ctx.Device.Vk.CmdCopyBufferToImage(cmd, ctx.Device.BufferAt(staging.Handle.Index), ctx.Device.NativeImage(target), ImageLayout.General, 1, &copy);
         TransferBarrier(cmd);
         ctx.Frame.Stats.UploadBytes += data.Length;
         if (SpikeLog.Enabled) SpikeLog.Note("upload " + target.Desc.Name + (level > 0 ? " mip" : ""), data.Length);
@@ -73,11 +73,11 @@ public sealed unsafe class Uploader
     /// <summary>
     /// (Added in phase 8 stage 1, terrain.) Uploads and the commands that belong with them (a new texture's layout transition, its mip
     /// generation) for resources made outside the frame's passes, whether or not a frame is open: while one is, into the frame's upload
-    /// command buffer (<see cref="GpuFrame.PreFrame"/>, as <see cref="Write(Texture, int, int, in Rect2D, ReadOnlySpan{byte})"/>); otherwise
+    /// command buffer (<see cref="GpuFrame.PreFrame"/>, as <see cref="Write(Texture, int, int, in PixelRect, ReadOnlySpan{byte})"/>); otherwise
     /// (at load, before the first frame: VkGl opened a frame for such uploads, the native API does not) into a one-shot command buffer with
     /// staging of its own, which <see cref="UploadBatch.Dispose"/> submits and waits for. Render thread only.
     /// </summary>
-    public UploadBatch Begin() => new(ctx);
+    public IGpuUploadBatch Begin() => new UploadBatch(ctx);
 
     /// <summary>Orders successive uploads (two writes to overlapping ranges must not race).</summary>
     internal static void TransferBarrier(Vk vk, CommandBuffer cmd)
@@ -100,27 +100,28 @@ public sealed unsafe class Uploader
 /// one-shot command buffer that <see cref="Dispose"/> submits and waits for. <see cref="Commands"/> takes what goes with the uploads (layout
 /// transitions, <see cref="CommandList.GenerateMips"/>); they run after the uploads recorded before them.
 /// </summary>
-public sealed unsafe class UploadBatch : IDisposable
+public sealed unsafe class UploadBatch : IGpuUploadBatch
 {
     readonly GpuContext ctx;
     readonly bool immediate;
-    readonly List<Meitou.Rendering.Gpu.Core.GpuBuffer> staging = [];
+    readonly List<Meitou.Rendering.Gpu.Core.BufferAllocation> staging = [];
 
     internal UploadBatch(GpuContext ctx)
     {
         this.ctx = ctx;
         immediate = !ctx.Frame.Open;
-        Commands = immediate ? new CommandList(ctx.Device, new GpuStats()) { Handle = ctx.Device.BeginImmediate() } : ctx.Frame.PreFrame;
+        Commands = immediate ? new CommandList(ctx, new GpuStats()) { Handle = ctx.Device.BeginImmediate() } : ctx.Frame.PreFrame;
     }
 
     /// <summary>Where the batch records (the frame's <see cref="GpuFrame.PreFrame"/>, or the one-shot buffer).</summary>
     public CommandList Commands { get; }
+    IGpuCommandList IGpuUploadBatch.Commands => Commands;
 
     /// <summary>A new texture in GENERAL layout, its transition recorded into this batch.</summary>
-    public Texture Create(TextureDesc desc) => Texture.Create(ctx, desc, Commands.Handle);
+    public GpuTexture Create(TextureDesc desc) => ctx.CreateTexture(desc, Commands.Handle);
 
     /// <summary>Writes texels of one level and layer (tightly packed, in the texture's format; for block-compressed formats whole blocks).</summary>
-    public void Write(Texture target, int level, int layer, in Rect2D region, ReadOnlySpan<byte> data)
+    public void Write(GpuTexture target, int level, int layer, in PixelRect region, ReadOnlySpan<byte> data)
     {
         if (data.IsEmpty) return;
         if (!immediate) { ctx.Uploads.Write(target, level, layer, region, data); return; }
@@ -128,11 +129,11 @@ public sealed unsafe class UploadBatch : IDisposable
         var copy = new BufferImageCopy
         {
             BufferOffset = offset,
-            ImageSubresource = new ImageSubresourceLayers(target.Desc.Aspect, (uint)level, (uint)layer, 1),
-            ImageOffset = new Offset3D(region.Offset.X, region.Offset.Y, 0),
-            ImageExtent = new Extent3D(region.Extent.Width, region.Extent.Height, 1),
+            ImageSubresource = new ImageSubresourceLayers(GlConventions.VkAspect(target.Desc), (uint)level, (uint)layer, 1),
+            ImageOffset = new Offset3D(region.X, region.Y, 0),
+            ImageExtent = new Extent3D(region.Width, region.Height, 1),
         };
-        ctx.Device.Vk.CmdCopyBufferToImage(Commands.Handle, buffer, target.Image, ImageLayout.General, 1, &copy);
+        ctx.Device.Vk.CmdCopyBufferToImage(Commands.Handle, buffer, ctx.Device.NativeImage(target), ImageLayout.General, 1, &copy);
         Uploader.TransferBarrier(ctx.Device.Vk, Commands.Handle);
     }
 
@@ -144,7 +145,7 @@ public sealed unsafe class UploadBatch : IDisposable
         if (offset + (ulong)data.Length > target.Size) throw new ArgumentOutOfRangeException(nameof(data), "write past the end of the buffer");
         var (buffer, from) = Stage(data);
         var copy = new BufferCopy(from, offset, (ulong)data.Length);
-        ctx.Device.Vk.CmdCopyBuffer(Commands.Handle, buffer, target.Handle, 1, &copy);
+        ctx.Device.Vk.CmdCopyBuffer(Commands.Handle, buffer, ctx.Device.BufferAt(target.Handle.Index), 1, &copy);
         Uploader.TransferBarrier(ctx.Device.Vk, Commands.Handle);
     }
 

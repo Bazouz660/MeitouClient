@@ -65,6 +65,19 @@ items); the launcher never downloads or hosts mods.
   the same buttons open the newest `launcher-v*` release page.
 - **Unknown**: the update path end to end (1.0.1 → 1.0.2 is the first real one).
 
+## Unsigned macOS packages
+
+The macOS launcher and game are **not notarized**: there is no paid Apple Developer ID in this project. The app and the
+published executable are ad-hoc signed where the build produces them, but Gatekeeper will still warn, and a `.pkg` downloaded
+through a browser may be blocked outright.
+
+- Tell users to right-click the downloaded `.pkg`/app and choose **Open**, then allow it in **System Settings → Privacy &
+  Security** if macOS still asks. Do not tell them to disable Gatekeeper globally.
+- Prefer a `.dmg`/zip with the `.app` when the `.pkg` is hard to open; test the exact path on a clean macOS account.
+- Publish SHA-256 checksums beside the release; the source is public, so the warning is at least understandable.
+- Test the launcher's self-update path while unsigned; if macOS blocks it, a manual update is the fallback.
+- If the project ever gets a Developer ID, notarize the launcher and game binaries; no code change should be needed.
+
 ## Game zips per runtime
 
 `release.yml` and `nightly.yml` run `tools/scripts/package-release.ps1 -Rid <rid>` on one runner per RID (win-x64 on Windows, linux-x64 on Ubuntu,
@@ -89,22 +102,51 @@ Native dependencies off Windows:
 
 The launcher's data folder (its program, once installed, is Velopack's, e.g. `%LocalAppData%/MeitouLauncher`) is `%LocalAppData%/Meitou`, `~/.local/share/Meitou` or `~/Library/Application Support/Meitou`, the same
 folder as the game's caches (shader cache, LODs, navmesh). Beside them it holds
-`launcher.json` (Kenshi folder, install folder, channel, chosen version, launch arguments, presets) and is the game's working directory.
+`launcher.json` (Kenshi folder, install folder, channel, chosen version, launch arguments, renderer, Metal memory budget, presets) and is the game's working directory.
 The game runs from that folder, so its `meitou.user.json` (and anything else it writes to the working directory) is shared by all
-versions. The game gets the Kenshi folder through `KENSHI_PATH`; on macOS also `DYLD_LIBRARY_PATH` and the MoltenVK setting
-([macos-port](macos-port.md#running)), and Play refuses with a `brew install` hint when no Homebrew folder holds the Vulkan loader.
+versions. The game gets the Kenshi folder through `KENSHI_PATH`. On macOS, **Vulkan** gets `DYLD_LIBRARY_PATH` pointing at the
+launcher's `vulkan/` folder (symlinks to `libvulkan.1.dylib` and `libMoltenVK.dylib`, with the sources found under Homebrew) plus the
+MoltenVK setting ([macos-port](macos-port.md#running)); Play refuses with a `brew install` hint when no loader is found. Keeping the
+loader in its own folder avoids putting all of Homebrew's `libjpeg`/`libpng` on the game's dyld path. **Metal** gets neither and is
+started with `--renderer metal`.
 Play refuses while the game it started still runs. A game that exits with a non-zero code is reported in the status line with its
 `log.txt` path.
+
+### Renderer on macOS
+
+The first-start dialog and Settings offer **Auto**, **Metal (native)** and **Vulkan (MoltenVK)** on macOS. Auto uses Vulkan when
+its loader is installed and falls back to Metal otherwise; on Apple silicon this means a new user does not need Homebrew just to
+start. The value is stored in `launcher.json` and appended to the game's arguments after **Launch arguments**, so it wins over a
+hand-written `--renderer`.
+
+Vulkan is the reference path and stays selectable; its **Setup** button copies `brew install molten-vk vulkan-loader` and opens
+brew.sh, and **Check** re-detects the loader. Metal starts without the Vulkan loader and without Homebrew on
+`DYLD_LIBRARY_PATH`. The launcher reads the release's `settings-schema.json` `renderers` list, so a Vulkan-only release does not
+silently claim Metal support. The launcher runs installed GitHub releases, not local checkouts.
+
+On Apple silicon, Settings also has a **Metal memory budget**: Safe 5120 MB (default), Balanced 6144 MB and, on 16 GB-or-larger
+Macs, High 8120 MB. It is the game's soft `VramGuard` ceiling, not a hard VRAM reservation; Apple silicon uses unified memory
+shared with macOS and other apps. The launcher passes it as `MEITOU_METAL_GPU_BUDGET_MB` only when it starts Metal. The
+experimental GPU foliage cull is deliberately not exposed here or in the game: it has caused GPU progress timeouts, so the
+launcher clears any inherited `MEITOU_METAL_GPU_CULL` before Play.
+
+### Kenshi data
+
+Meitou ships no Kenshi assets. The first-start dialog explains that Kenshi is required and links to
+[kenshi-on-macos](kenshi-on-macos.md), which covers copying a Windows install, CrossOver/Whisky, GOG/Wine and the advanced
+DepotDownloader route. The launcher's **Find** searches macOS Steam, CrossOver and Whisky locations, and **Browse** accepts any
+folder containing `data/gamedata.base`. DepotDownloader is not bundled or automated: it needs Steam credentials and ownership.
 
 ## Steam overlay and play time
 
 - In a Debug launcher run, Play uses `src/Meitou.Game/bin/Debug/net10.0/MeitouClient.exe` when available, so source changes are tested instead of an older downloaded release; Release builds continue using the selected installed version. Debug runs redirect the child's stdout/stderr into the launcher's console and debugger output.
-- On Windows Kenshi installs that include `steam_api64.dll`, Play writes `steam_appid.txt` (`233860`) in the working directory and beside the Meitou executable and sets `SteamAppId`/`SteamGameId` for the game, then removes the files when Meitou exits (or on the next Play, if the launcher closed first). If either place already holds another ID, it writes nothing and sets no variables. The game (not for `--screenshot` or a start listing) loads the install's Steamworks DLL and calls `SteamAPI_InitFlat` when exported, else `SteamAPI_Init`, before creating its Vulkan device, and `SteamAPI_Shutdown` on exit; Meitou ships no Steamworks binaries. Other platforms and installs without the DLL skip it.
+- On Windows Kenshi installs that include `steam_api64.dll`, Play writes `steam_appid.txt` (`233860`) in the working directory and beside the Meitou executable and sets `SteamAppId`/`SteamGameId` for the game, then removes the files when Meitou exits (or on the next Play, if the launcher closed first). If either place already holds another ID, it writes nothing and sets no variables. The game (not for `--screenshot` or a start listing) loads the install's Steamworks DLL and calls `SteamAPI_InitFlat` when exported, else `SteamAPI_Init`, before creating its graphics device, and `SteamAPI_Shutdown` on exit; Meitou ships no Steamworks binaries. Other platforms and installs without the DLL skip it.
 - **Unknown** (from the [Steamworks API](https://partner.steamgames.com/doc/sdk/api) and [overlay](https://partner.steamgames.com/doc/features/overlay) docs, not yet checked against a Steam run): a direct launch with `steam_appid.txt` counts as Kenshi play time, needs a Kenshi licence and a running Steam client, and gets the overlay on Vulkan, whose FPS counter is under Steam Settings → In Game.
 
 `versions/` and `downloads/` live in the install folder, by default the data folder. On first start (until `FoldersConfirmed`
-is saved) an overlay on the main window asks for the install folder and the Kenshi folder, prefilled with the current and the detected ones. Changing
-the install folder there or in Settings moves the installed versions (copied, then deleted, across drives).
+is saved) an overlay asks for the install folder, the Kenshi folder and the renderer, prefilled with the current and the
+detected ones. Changing the install folder there or in Settings moves the installed versions (copied, then deleted,
+across drives).
 
 ## Graphics
 
