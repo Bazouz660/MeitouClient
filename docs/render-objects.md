@@ -21,8 +21,12 @@ reflection and streaming residency need consistent bounds.
 ## Arrival prefetch
 
 During a character flight or squad tour hop ([viewer.md](viewer.md#squad-tour)) the host sets `WorldFrame` `Ahead` to the landing
-view's eye from the tap on. Object zones are laid out and kept, meshes requested, and mesh LOD / texture mips chosen by the nearer of
-the eye and that point (`ObjectStreamer.Near`); terrain biome textures gather cells round both. Foliage zones within the near reach of
+view's eye from the tap on. Object zones are laid out and kept by the nearer of the eye and that point (`ObjectStreamer.Near`), and what
+is loaded near either stays. New object work (mesh requests, a resolving instance's LOD level and first texture need, mark-pass texture needs
+and mesh LOD remakes) counts only that point and the kept points (`ObjectStreamer.LoadNear`): the flight path draws what is already
+loaded and stand-ins, and asks for nothing finer. The mark pass's camera-speed margin is 0 during a flight and after any camera move of
+more than 10000 units between passes (a cut), else a flight asked everything near the path, or round the landing, for full detail.
+Terrain biome textures gather cells round both. Foliage zones within the near reach of
 that point are laid out and kept as well. The load order puts the arrival first: zone layouts, mesh decodes, instance resolves, terrain
 biome pairs and foliage layouts rank by distance from the arrival, and what is only near the eye (the flight path) ranks after all of it
 (`ObjectStreamer.Rank`). Object textures the arrival view uses are touched first and decode ahead of the other streaming work
