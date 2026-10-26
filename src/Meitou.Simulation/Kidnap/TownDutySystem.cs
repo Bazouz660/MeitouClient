@@ -26,7 +26,7 @@ public sealed record TownDutySettings
     public double RefuseHours { get; init; } = 2;
 }
 
-public enum TownDutyKind : byte { Lift, Out, Cage, Food }
+public enum TownDutyKind : byte { Lift, Out, Cage, Food, Confiscate, LootFood }
 
 /// <summary>One member's errand of the <see cref="TownDutySystem"/>: an intruder it lifts and carries out or to a cage, or a store it fetches food from.</summary>
 public sealed class TownDuty
@@ -101,12 +101,14 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
             if (!c.Carrying.IsNone) reserved.Add(c.Carrying);
             if (c is { Medical: { Unconscious: true, Dead: false } } && c.InSomething == HeldState.None && CarrySystem.CanBeLifted(c)) downed.Add(s);
         }
-        Span<int> intruders = stackalloc int[5], food = stackalloc int[5];
+        Span<int> intruders = stackalloc int[5], food = stackalloc int[5], confiscate = stackalloc int[5], loot = stackalloc int[5];
         foreach (var squad in world.Squads.All)
         {
             if (squad.Ai is null || squad.Members.Count == 0) continue;
             intruders.Fill(-1);
             food.Fill(-1);
+            confiscate.Fill(-1);
+            loot.Fill(-1);
             foreach (var member in squad.Members)
             {
                 if (!table.TryResolveNext(member, out int slot) || !Free(world, slot) || Busy(member)) continue;
@@ -114,9 +116,19 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
                 int role = (int)AiSystem.RoleOf(squad, member, cold);
                 if (intruders[role] < 0) intruders[role] = population.GoalDuty(world, squad, (AiRole)role, TaskType.PICKUP_INTRUDERS_TOWN) ? 1 : 0;
                 if (food[role] < 0) food[role] = population.GoalDuty(world, squad, (AiRole)role, TaskType.AQUIRE_FOOD_AT_HOMEBASE) ? 1 : 0;
-                if (intruders[role] == 0 && food[role] == 0) continue;
+                if (confiscate[role] < 0) confiscate[role] = population.GoalDuty(world, squad, (AiRole)role, TaskType.LOOT_STOLEN_GOODS) ? 1 : 0;
+                if (loot[role] < 0) loot[role] = population.GoalDuty(world, squad, (AiRole)role, TaskType.LOOT_FOOD_AND_STUFF) ? 1 : 0;
+                if (intruders[role] == 0 && food[role] == 0 && confiscate[role] == 0 && loot[role] == 0) continue;
                 var at = table.Next[slot].Position;
                 var town = AiSystem.TownAt(data, world, at);
+                // 131 Looting food, in whatever town it is in (the original's target town, else the current one).
+                if (loot[role] == 1 && !town.IsNone && !HoldsFood(cold) && Store(world, at, town, cold.Faction) is var (lootId, lootSpot))
+                {
+                    cold.Engaged = true;
+                    duties.Add(new TownDuty { Member = member, Faction = cold.Faction, Town = town, Kind = TownDutyKind.LootFood, Target = lootId, Goal = lootSpot });
+                    MovementSystem.GoTo(table, slot, lootSpot, SpeedMode.Walk);
+                    continue;
+                }
                 if (town.IsNone || !MyTown(world, squad, town)) continue;
                 if (intruders[role] == 1 && downed.Count > 0 && Intruder(world, slot, cold, town) is >= 0 and var body
                     && carry.BeginPickUp(world, slot, table.IdOf(body), CharacterTask.Idle))
@@ -124,6 +136,14 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
                     cold.Engaged = true;
                     reserved.Add(table.IdOf(body));
                     duties.Add(new TownDuty { Member = member, Body = table.IdOf(body), Faction = cold.Faction, Town = town, Kind = TownDutyKind.Lift });
+                    continue;
+                }
+                if (confiscate[role] == 1 && Contraband(world, town) is var (cage, prisoner) && cage is not null)
+                {
+                    cold.Engaged = true;
+                    var goal = Flat(cage.Position);
+                    duties.Add(new TownDuty { Member = member, Body = prisoner, Faction = cold.Faction, Town = town, Kind = TownDutyKind.Confiscate, Target = cage.Id, Goal = goal });
+                    MovementSystem.GoTo(table, slot, goal, SpeedMode.Walk);
                     continue;
                 }
                 if (food[role] == 1 && !HoldsFood(cold) && Store(world, at, town) is var (id, spot))
@@ -229,7 +249,7 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
     /// The nearest store of the town with food in it (<c>BuildingFinder_LootFoodAndStuff</c>, its filter only partly read: buildings with an inventory holding food): a complete player storage
     /// of the player town, or a container that is not locked inside the town. Its id and where the member walks.
     /// </summary>
-    (string Id, Vector2 Spot)? Store(World world, Vector3 at, CampaignTown town)
+    (string Id, Vector2 Spot)? Store(World world, Vector3 at, CampaignTown town, int looter = -1)
     {
         var here = Flat(at);
         (string, Vector2)? best = null;
@@ -243,6 +263,7 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
             }
         foreach (var f in world.Fixtures.All)
         {
+            if (looter >= 0 && f.Owner == looter) continue;
             if (f.Contents is not { } c || f.Lock is { EffectivelyLocked: true } || !c.Items.Any(i => i.IsFood) || AiSystem.TownAt(data, world, f.Position) != town) continue;
             float d = Vector2.DistanceSquared(here, Flat(f.Position));
             if (d < bestD) (best, bestD) = ((f.Id, Flat(f.Position)), d);
@@ -260,7 +281,8 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
         var table = world.Characters;
         if (!table.TryResolveNext(d.Member, out int g) || table.Cold(g) is not { Medical.Incapacitated: false } gc) return End(world, d);
         ref var gn = ref table.Next[g];
-        if (d.Kind == TownDutyKind.Food) return StepFood(world, d, g, gc);
+        if (d.Kind is TownDutyKind.Food or TownDutyKind.LootFood) return StepFood(world, d, g, gc);
+        if (d.Kind == TownDutyKind.Confiscate) return StepConfiscate(world, d, g, gc);
         if (!table.TryResolveNext(d.Body, out int b) || table.Cold(b) is not { Medical.Dead: false } body || body.IsImprisoned)
         {
             carry.LetGo(world, g);
@@ -334,8 +356,60 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
         if (Vector2.Distance(Flat(gn.Position), d.Goal) <= Settings.Arrive || !walking && Vector2.Distance(Flat(gn.Position), d.Goal) <= Settings.CageSlack)
         {
             MovementSystem.Stop(table, g);
-            if (store.Items.FirstOrDefault(i => i.IsFood) is { } item) InventoryCommands.MoveInto(store, item, 1, into, bagFirst: false, out _);
+            if (d.Kind == TownDutyKind.LootFood)
+                foreach (var item in store.Items.Where(i => i.IsFood).ToList()) InventoryCommands.MoveInto(store, item, 0, into, bagFirst: true, out _);   // Task_EmptyMachine: while there is room
+            else if (store.Items.FirstOrDefault(i => i.IsFood) is { } item) InventoryCommands.MoveInto(store, item, 1, into, bagFirst: false, out _);
             world.Machines.Touch();
+            return End(world, d);
+        }
+        if (walking) return true;
+        if (++d.Tries > Settings.Walks) return End(world, d);
+        MovementSystem.GoTo(table, g, d.Goal, SpeedMode.Walk);
+        return true;
+    }
+
+    /// <summary>
+    /// <c>AI::findPrisonerWithContraband</c> (<c>FUN_1408cf6a0</c>, goal 212): the first cage of the town, in list order (no distance weighting), whose occupant carries a stolen item
+    /// and is not another errand's. Engine choice: the original's room test for the item is left to the take.
+    /// </summary>
+    (Fixture? Cage, CharacterId Prisoner) Contraband(World world, CampaignTown town)
+    {
+        var table = world.Characters;
+        if (town.Site >= 0) world.Fixtures.RegisterSite(world, data, town.Site);
+        foreach (var f in world.Fixtures.All)
+        {
+            if (f.Kind != FixtureKind.Cage || FixtureRegistry.IsFree(table, f) || !table.TryResolveNext(f.Occupant, out int s) || duties.Any(o => o.Body == f.Occupant)) continue;
+            if (table.Cold(s)?.Inventory is not { } inv || !inv.All().Any(i => i.StolenFrom >= 0) || AiSystem.TownAt(data, world, f.Position) != town) continue;
+            return (f, f.Occupant);
+        }
+        return (null, CharacterId.None);
+    }
+
+    /// <summary>
+    /// A confiscation (212; its effect is row 3 "Collecting item" acted out by <c>Task_Loot_AI</c>): at the cage the guard takes the prisoner's stolen items, its worn armour first, as
+    /// many as fit. Engine choice: only the stolen items (whether the original's loot take is limited to them is <b>Unknown</b>).
+    /// </summary>
+    bool StepConfiscate(World world, TownDuty d, int g, CharacterCold gc)
+    {
+        var table = world.Characters;
+        ref var gn = ref table.Next[g];
+        var cage = d.Target is { } id ? world.Fixtures.Find(id) : null;
+        if (cage is null || cage.Occupant != d.Body || !table.TryResolveNext(d.Body, out int p) || table.Cold(p)?.Inventory is not { } from || gc.Inventory is not { } into) return End(world, d);
+        bool walking = gn.Task == (byte)CharacterTask.GoTo;
+        float gap = Vector2.Distance(Flat(gn.Position), d.Goal);
+        if (gap <= cage.UseRange + Settings.CageReach || !walking && gap <= Settings.CageSlack)
+        {
+            MovementSystem.Stop(table, g);
+            bool worn = false;
+            foreach (var item in from.Items.Where(i => i.StolenFrom >= 0).OrderBy(i => InventoryCommands.IsEquipmentSection(i.Section) ? 0 : 1).ToList())
+            {
+                if (item.LockedOn) continue;
+                worn |= InventoryCommands.IsEquipmentSection(item.Section);
+                InventoryCommands.MoveInto(from, item, 0, into, bagFirst: true, out _);
+            }
+            if (from.Backpack?.Contents is { } bag)
+                foreach (var item in bag.Items.Where(i => i.StolenFrom >= 0).ToList()) InventoryCommands.MoveInto(bag, item, 0, into, bagFirst: true, out _);
+            if (worn) carry.Assembly?.RefreshEquipment(table.Cold(p)!);
             return End(world, d);
         }
         if (walking) return true;
