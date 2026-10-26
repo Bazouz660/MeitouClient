@@ -75,4 +75,5 @@ internal sealed record NewGameSettings
         settings.ticks[0] = bools.GetValueOrDefault("bl", true);
         settings.ticks[1] = bools.GetValueOrDefault("ep");
         return settings;
-    }}
+    }
+}
