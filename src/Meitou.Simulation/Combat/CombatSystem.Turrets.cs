@@ -135,6 +135,9 @@ public sealed partial class CombatSystem
         }
         if (cold.Ai is not { Behaviour: Ai.AiBehaviour.Turret, Squad.Ai: { } board } || n.Task != (byte)CharacterTask.Idle || !Ai.AiSystem.Holds(n, cold)
             || !board.TurretClaims.TryGetValue(i, out int claimed) || (uint)claimed >= (uint)board.Turrets.Count || board.Turrets[claimed] is not { Turret: { } post } building) return null;
+        // A town turret is a TurretBuilding like the player's: its saved `broken` (FUN_1402a1750) stops manning as well. Nothing at run time breaks a town's own turret (only a player
+        // owner may dismantle, slot 79; hits never damage machines, slot 62), so the zone state is its only source (docs/game/buildings-production.md "Broken machines").
+        if (world.Fixtures.Saved?.GetValueOrDefault(building.Key)?.Bools.GetValueOrDefault("broken") == true) return null;
         float reach = post.UseRange + Ai.AiSystem.TurretSlack;
         if (Vector2.DistanceSquared(new(n.Position.X, n.Position.Z), new(post.Position.X, post.Position.Z)) > reach * reach) return null;
         float mount = 1;

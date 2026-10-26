@@ -686,7 +686,15 @@ and `power capacity` (battery store, "in seconds" per fcs.def), plus research ([
   - Not read by production (slot 150 `FUN_140298700`, slot 109 `FUN_140296e00`), power (slots 163, 166, `FUN_140299370`), `Task_OperateMachine`, or the
     engineers' finder (slot 101 `FUN_1400f6b70`: progress below target).
   Meitou: `Machine.Broken`, saved as `broken`, set and cleared by the dismantle, build, completion and ruin steps; the header (`PlayerInterface.BuildingLines`) and
-  turret manning read it. The lock rule is not built: Meitou registers no lock of its own for a player-built cage or safe.
+  turret manning read it, and a town turret's saved `broken` (below). The lock rule is not built: Meitou registers no lock of its own for a player-built cage or safe.
+- **What damages a building** (**Verified**, decompile): hits go to slot 62, which is `FUN_1402972c0` (returns 1, no effect) for every UseableStuff class (machines,
+  turrets, storages, lights) and `FUN_1400d20b0` for plain and gate buildings; only WallBuilding (`FUN_14029d560`, [walls](#walls)) and doors (`FUN_14029d690`)
+  lose health, a wall at 0 becoming destroyed (slot 104). Destroyed (+0x1a1) is otherwise set only from the level state `building ruined` (`FUN_14057f1f0`) and
+  a system message (0x10, `FUN_1407b65b0`); the first build step on it ruins the building ([construction tick](#construction-tick)). Dismantle (slot 73, its
+  only damage path for machines) is offered only when slot 79 (`FUN_14029c380`) holds: the owner is a player faction. So raids and fights never break a
+  machine, and a town's own turret (owned by the town's faction) breaks only through a loaded `broken` (none set in the owner's six saves, **Observed**: no
+  `broken` true in their zone files). Meitou: an NPC gunner does not man a town turret whose saved state has `broken` (`CombatSystem.Manning`); town buildings
+  have no machines otherwise, which this rule makes unnecessary.
 - **Status strings** (`GeneratorBuilding::vfunc_114`): "Out of fuel", battery "Charging" / "Draining" / "Stored" / "Empty".
 - Data (**Verified**, probe): Small Generator 40, Generator II 100, Wind Generator 50, Small Wind 25, Wind II 100,
   Battery Bank 40 / capacity 60; Weapon Smith -8, refineries -10 to -40, Research Bench III-VI -10 to -30. Power
