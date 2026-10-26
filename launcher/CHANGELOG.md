@@ -4,6 +4,8 @@ Released with tags `launcher-v<version>` by `.github/workflows/launcher-release.
 
 ## v1.3.1
 
+- **Launch as Kenshi on Steam** (Settings, Windows): turn it off to start the game without Steam treating it as Kenshi,
+  so no Steam overlay and no Kenshi play time. On by default, as before.
 - Texture quality's slider now has **Maximum on the right**, like every other slider. Your saved setting stays as it
   was. Shows with game releases from the next one on.
 
