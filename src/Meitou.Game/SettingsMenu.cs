@@ -27,7 +27,7 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
         () => config.CameraRotateSpeed, v => { config.CameraRotateSpeed = MathF.Round(v * 2) / 2; CameraRotateSpeedChanged?.Invoke(config.CameraRotateSpeed); },
         "0.#", Faithful: global::Meitou.Data.World.KenshiCamera.DefaultRotateSpeed);
     Slider[]? audioSliders;
-    /// <summary>The audio sliders of the original's options (docs/formats/settings.md); each writes <see cref="UserConfig.Audio"/> and calls <see cref="AudioChanged"/>.</summary>
+    /// <summary>The seven audio sliders of the original's options (docs/formats/settings.md); each writes <see cref="UserConfig.Audio"/> and calls <see cref="AudioChanged"/>.</summary>
     Slider[] AudioSliders => audioSliders ??= [
         Volume("Music volume", a => a.Music, (a, v) => a with { Music = v }),
         Volume("Ambient volume", a => a.Ambient, (a, v) => a with { Ambient = v }),
@@ -44,11 +44,6 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
             () => (config.Audio ??= new()).Voices,
             v => { config.Audio = (config.Audio ?? new()) with { Voices = (int)MathF.Round(v / 8) * 8 }; AudioChanged?.Invoke(); },
             "0", Text: v => v >= AudioSettings.MaxVoices ? "All" : $"{v:0}", Faithful: AudioSettings.MaxVoices, Meitou: AudioSettings.MeitouVoices),
-        // Meitou's hearing range (docs/audio.md "Hearing range"): a factor on every distance sounds are heard from.
-        new("Sound range", AudioSettings.MinRange, AudioSettings.MaxRange,
-            () => (config.Audio ??= new()).Range,
-            v => { config.Audio = (config.Audio ?? new()) with { Range = Math.Clamp(MathF.Round(v * 4) / 4, AudioSettings.MinRange, AudioSettings.MaxRange) }; AudioChanged?.Invoke(); },
-            "0.##", Text: v => $"{v:0.##}x", Faithful: 1, Meitou: AudioSettings.MeitouRange),
     ];
 
     Slider[]? gameplaySliders;
@@ -243,7 +238,6 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
                 "Volume of the voices.",
                 "Average minutes of silence between pieces of biome music.",
                 "The most sounds heard at once: the loudest play, quieter ones wait silently and come back when they are loud enough. Lower it if big fights stutter; All mixes every sound.",
-                "How far away sounds are heard: 1x is the original, 4x hears fights, footsteps and machines four times as far. Higher values mix more sounds at once.",
             ];
             for (int i = 0; i < AudioSliders.Length; i++)
                 result.Add(new(AudioSliders[i].Label, hints[i], Slider: AudioSliders[i]));
