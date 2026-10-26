@@ -15,6 +15,9 @@ public interface IAppearanceSource
     /// <summary>The look of a CHARACTER record, rolled from <paramref name="seed"/>; <paramref name="factionId"/> limits hair and beards.</summary>
     CharacterAppearance? Create(string recordId, string? factionId, int seed);
 
+    /// <summary>As <see cref="Create(string, string?, int)"/> for a member of the SQUAD_TEMPLATE <paramref name="templateId"/>, whose <c>race override</c> wins over the CHARACTER's races.</summary>
+    CharacterAppearance? Create(string recordId, string? factionId, int seed, string? templateId) => Create(recordId, factionId, seed);
+
     /// <summary>The look of a CHARACTER record drawn from a given loadout (a saved character's appearance and worn items); nothing is rolled. Null: no look.</summary>
     CharacterAppearance? Create(string recordId, Loadout loadout) => null;
 
@@ -31,7 +34,9 @@ public sealed class GeneratedAppearances(GameDatabase db, string installRoot) : 
     // One look per ANIMAL_CHARACTER (nothing of an animal's is rolled): every animal of a record shares it, so the renderer builds one asset per species.
     readonly ConcurrentDictionary<string, CharacterAppearance?> animals = new(StringComparer.Ordinal);
 
-    public CharacterAppearance? Create(string recordId, string? factionId, int seed)
+    public CharacterAppearance? Create(string recordId, string? factionId, int seed) => Create(recordId, factionId, seed, null);
+
+    public CharacterAppearance? Create(string recordId, string? factionId, int seed, string? templateId)
     {
         try
         {
@@ -41,7 +46,7 @@ public sealed class GeneratedAppearances(GameDatabase db, string installRoot) : 
                     try { return CharacterAppearance.BuildAnimal(s.db, s.installRoot, s.animal); }
                     catch (KeyNotFoundException) { return null; }
                 }, (db, installRoot, animal));
-            return CharacterAppearance.Build(db, installRoot, recordId, new CharacterOptions { Seed = seed, Faction = factionId });
+            return CharacterAppearance.Build(db, installRoot, recordId, new CharacterOptions { Seed = seed, Faction = factionId, RaceOverride = templateId is null ? null : db.Find(templateId)?.GetReferences("race override") });
         }
         catch (Exception e) when (e is IOException or FcsFormatException or KeyNotFoundException or InvalidDataException or UnauthorizedAccessException)
         {

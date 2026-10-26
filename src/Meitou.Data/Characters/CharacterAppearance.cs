@@ -79,6 +79,8 @@ public sealed record CharacterOptions
     public Loadout? Loadout { get; init; }
     /// <summary>With <see cref="Seed"/>: the FACTION (name or string id) the character spawns in; default its own <c>faction</c>.</summary>
     public string? Faction { get; init; }
+    /// <summary>With <see cref="Seed"/>: the squad template's <c>race override</c> (RACE references, val0 the weight), which wins over the CHARACTER's <c>race</c> list when it has any.</summary>
+    public IReadOnlyList<GameReference>? RaceOverride { get; init; }
 }
 
 /// <summary>
@@ -150,7 +152,7 @@ public sealed class CharacterAppearance
         if (record.Type == FcsRecordType.ANIMAL_CHARACTER) return BuildAnimal(db, installRoot, record);
         // With a seed the generator rolls everything (docs/characters.md, "Generating a character").
         var faction = options.Faction is { } factionName ? Find(db, factionName, FcsRecordType.FACTION) : null;
-        var loadout = options.Loadout ?? (options.Seed is { } seed ? CharacterGenerator.Generate(db, installRoot, record, seed, options.Female, faction) : null);
+        var loadout = options.Loadout ?? (options.Seed is { } seed ? CharacterGenerator.Generate(db, installRoot, record, seed, options.Female, faction, options.RaceOverride) : null);
         Random? random = null;
         var notes = new List<string>();
         GameRecord? character = record.Type == FcsRecordType.CHARACTER ? record : null;

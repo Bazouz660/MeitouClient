@@ -96,7 +96,9 @@ legacy layouts (types 5, 8, 9, 10, 13: the `.body` files and three `.bod2`), and
 | reference | `race` (RACE) |
 
 CHARACTER `race` overrides the body file's race (fcs.def "will override race in .body file"; the viewer
-follows this, not traced).
+follows this, not traced). The candidates (`Faction::chooseARace` `FUN_1407ff1a0`, **Verified** in outline): the squad template's
+`race override` (7 templates) when one is given, else the CHARACTER's `race`, else the faction's `races`; a weighted draw by the reference value. Meitou keeps a body file's race
+before the faction's.
 
 ### Hidden body parts (Verified, `@ 140075600`, `@ 140071f90`, `@ 140531cc0`; HLSL `skin.hlsl`)
 

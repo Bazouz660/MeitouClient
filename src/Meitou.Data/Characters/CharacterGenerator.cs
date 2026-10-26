@@ -31,7 +31,7 @@ public static class CharacterGenerator
         return Generate(db, installRoot, record, seed, female, faction);
     }
 
-    public static Loadout Generate(GameDatabase db, string installRoot, GameRecord record, int seed, bool? female = null, GameRecord? faction = null)
+    public static Loadout Generate(GameDatabase db, string installRoot, GameRecord record, int seed, bool? female = null, GameRecord? faction = null, IReadOnlyList<GameReference>? raceOverride = null)
     {
         var rng = MsvcRandom.FromSeed(seed ^ Fnv1a(record.StringId)); // different records roll differently for one seed
         var notes = new List<string>();
@@ -45,12 +45,17 @@ public static class CharacterGenerator
             catch (Exception e) when (e is IOException or FcsFormatException or UnauthorizedAccessException) { notes.Add($"body file {bodyPath}: {e.Message}"); }
         }
 
-        // Race: the CHARACTER's "race" list (val0 = relative weight, entries with val0 > 0), else the body file's.
+        // Race (Faction::chooseARace, Verified in outline): the squad template's "race override", else the CHARACTER's "race" list (val0 = relative weight, entries with
+        // val0 > 0), else the body file's, else the faction's "races" (the original takes the faction's before any body file; engine order for characters with one).
         GameRecord? race = record.Type == FcsRecordType.RACE ? record : null;
+        if (race is null && character is not null && raceOverride is { Count: > 0 })
+            race = PickRelative(rng, raceOverride.Where(r => r.Values.Value0 > 0).Select(r => (db.Find(r.TargetStringId), (float)r.Values.Value0)));
         if (race is null && character is not null)
             race = PickRelative(rng, character.GetReferences("race").Where(r => r.Values.Value0 > 0)
                 .Select(r => (db.Find(r.TargetStringId), (float)r.Values.Value0)));
         if (race is null && bodyFile?.RaceId is { } bodyRace) race = db.Find(bodyRace);
+        if (race is null && (faction ?? (character?.GetReferences("faction") is { Count: > 0 } own ? db.Find(own[0].TargetStringId) : null)) is { } races)
+            race = PickRelative(rng, races.GetReferences("races").Select(r => (db.Find(r.TargetStringId), r.Values.Value0 > 0 ? (float)r.Values.Value0 : 1f)));
         race ??= CharacterAppearance.Find(db, "Greenlander", FcsRecordType.RACE) ?? throw new KeyNotFoundException($"'{record.Name}' has no race.");
 
         // Gender: "female chance" percent, never for a single-gender race.
