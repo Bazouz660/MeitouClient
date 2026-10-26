@@ -63,6 +63,8 @@ public sealed record AnimationDefinition
     public AnimationArea Area { get; init; }
     public bool Idle { get; init; }
     public bool IsAction { get; init; }
+    /// <summary><c>disables movement</c>: while this is the character's action clip it cannot move along waypoints (<c>AnimationData::restrictsMovementOrders</c>, <b>Verified</b>).</summary>
+    public bool DisablesMovement { get; init; }
     public bool Loop { get; init; }
     public bool Synchs { get; init; }
     public float SynchOffset { get; init; }
@@ -169,6 +171,7 @@ public sealed record AnimationDefinition
             Area = r.GetString("layer", "upper") switch { "all" => AnimationArea.All, "lower" => AnimationArea.Lower, "upper" => AnimationArea.Upper, "overlay" => AnimationArea.Overlay, _ => AnimationArea.Other },
             Idle = r.GetBool("idle"),
             IsAction = r.GetBool("is action"),
+            DisablesMovement = r.GetBool("disables movement"),
             Loop = r.GetBool("loop"),
             Synchs = r.GetBool("synchs"),
             SynchOffset = r.GetFloat("synch offset"),

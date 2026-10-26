@@ -37,6 +37,8 @@ public sealed class CharacterAnimation
     public int Action = -1;
     public float ActionTime;
     public bool ActionIsStumble;
+    /// <summary>Whether a clip it plays has <c>disables movement</c> (a bow, a reload, getting up): the movement system holds it still, its path kept. Derived, not hashed.</summary>
+    public bool HoldsStill;
     /// <summary>The tick of the last hit a reaction was chosen for (-1: none), and whether the character was down (knocked out or dead) the last tick.</summary>
     public int SeenHit = -1;
     public bool WasDown;
@@ -577,6 +579,8 @@ public sealed class AnimationSystem(AnimationLibrary library, AnimationLengths l
     Vector2 Settle(CharacterAnimation a, List<(int Index, float Weight)> wanted, int legs, int lift, float liftTime, int technique, in CombatView fight, float speed, float dt,
         AnimationLengths lengths, float rootScale, ulong seed, ulong key, long tick, float legsShare = 1)
     {
+        a.HoldsStill = false;
+        foreach (var (index, _) in wanted) if (Library.Definitions[index].DisablesMovement) { a.HoldsStill = true; break; }
         // Targets: what is wanted fades in, everything else out. The first clips a character ever plays start at full weight (no fade from the binding pose).
         bool first = a.Count == 0;
         // A looping clip that starts on a character joins at its own point of the loop, and a character's first steps at its own phase, so a squad or herd made on one

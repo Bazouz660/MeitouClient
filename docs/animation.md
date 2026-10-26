@@ -183,6 +183,12 @@ dazed `sitting dazed`, KO `foetal`; which list entry the pointer takes and which
 `Character+0x51c` (meaning **Unknown**) at or under 0.05, or a leg-collapse state, gives `+0x418` at rate 0.025, at or under 0.2 `+0x418` at 0.5, else `+0x408` at 0.5; a running `stand 1` action is dropped first.
 Meitou: a sleeper plays `CharacterCold.OperateClip` as a held clip at its `play speed`; `AnimationSystem` chooses no cage clip (a knocked-out prisoner takes the lying clip like anyone down).
 
+### Clips that stop movement
+
+**Verified** (`AnimationClass::isCurrentlyIncapableOfWaypointMovemode` `@ 14051c870`, from `CharMovement::update`): while the current action clip has ANIMATION `disables movement`
+(`AnimationData+0x89`; 11 base clips: blows, `standing up 3`, `bowing`, the reload phases) the character cannot move along waypoints. Meitou: any wanted clip with the flag sets
+`CharacterAnimation.HoldsStill`, and `MovementSystem` then stops a character with a path, keeping it. `normalise` (layer flag `+0x5f`) is read by the original, its effect **Unknown**; not used.
+
 ## Shape notation and factors
 
 **Verified formula body** from14052e6c0; stat-field identity matching remains **Observed**.
