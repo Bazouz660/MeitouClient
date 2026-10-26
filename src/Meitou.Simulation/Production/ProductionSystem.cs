@@ -709,7 +709,7 @@ public sealed partial class ProductionSystem : ITickSystem
     /// A farm's catch-up for <paramref name="h"/> unloaded game hours (<b>Verified</b>, <c>FarmBuilding::timeSkip</c>, docs/game/buildings-production.md "Unloaded zones"): the crop advances along its
     /// cycle (growth, harvest time, death time) for the watered hours, then at the drought rate while its death grows; a completed cycle replants. An NPC farm ignores water.
     /// </summary>
-    void TimeSkip(World world, Machine m, float h, bool ignoreWater)
+    internal void TimeSkip(World world, Machine m, float h, bool ignoreWater)
     {
         var f = m.Farm!;
         var fd = m.Data.Farm!;
