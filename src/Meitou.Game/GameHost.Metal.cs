@@ -539,8 +539,9 @@ sealed partial class GameHost
                     config.Graphics.TryGetValue(slider.Label, out float value))
                     slider.Set(Math.Clamp(value, slider.Min, slider.Max));
             foreach (var toggle in settingsValues.Toggles)
-                if (config.Graphics.TryGetValue("Meitou: " + toggle.Label, out float value) && (value >= 0.5f) != toggle.Get())
+                if (config.Graphics.TryGetValue(SettingsMenu.SwitchKeyPrefix + toggle.Label, out float value) && (value >= 0.5f) != toggle.Get())
                     toggle.Set(value >= 0.5f);
+            settings.ApplySavedPreset();
             // The impostor atlas path is re-enabled after the frame-slot fence. Keep the diagnostic off switch as a
             // fallback; the saved "Far impostors" toggle is otherwise allowed through.
             if (foliage is not null && !metalImpostors) foliage.DisableImpostors();
@@ -1539,7 +1540,8 @@ sealed partial class GameHost
                     config.Graphics[slider.Label] = slider.Get();
                 }
                 foreach (var toggle in settingsValues.Toggles)
-                    config.Graphics["Meitou: " + toggle.Label] = toggle.Get() ? 1 : 0;
+                    config.Graphics[SettingsMenu.SwitchKeyPrefix + toggle.Label] = toggle.Get() ? 1 : 0;
+                settings?.SavePreset();
             }
             config.Save();
         }

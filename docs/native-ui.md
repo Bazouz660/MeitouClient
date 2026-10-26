@@ -18,10 +18,12 @@ Every Graphics sub-page starts with two rows (`SettingsMenu.Presets.cs`):
 - **Quality preset** Low / Medium / High / Ultra sets the distance, foliage, grass, reflection, shadow, particle density,
   filtering, texture, ground-relief quality and light-shaft quality sliders; High is the start default (texture quality: full
   size). Distances that follow a switch's side (object distance, terrain error: Draw distances; shadow distance: Shadows) are
-  multiples of that side's mark, so High reads High in either look. Low also sets the costliest Meitou switches Faithful (AO,
-  indirect light, light shafts, clouds, cloud shadows, water, shadows), turns ground relief and its tessellation effects off, and
-  uses quarter-size particles, as `--low-end`; no preset turns a costly Meitou effect on, and anti-aliasing and render scale are
-  left alone. The shown preset is derived (sliders and the fifth cascade only; Custom otherwise), not saved.
+  multiples of that side's mark, so High reads High in either look. Low is `--low-end` (`WorldOptions.LowEnd*`, the same values):
+  its distances, grass and particle density, texture quality, 1x filtering, shadows off, AO / anti-aliasing / light shafts / water /
+  shadows Faithful, ground relief and its tessellation effects off, quarter-size particles, no anti-aliasing (not even FXAA) at 0.83
+  render scale; what `--low-end` leaves alone stays at High. Its VSync off and material distance are not Tab panel settings and are
+  not set. No preset turns a Meitou effect on; the others leave anti-aliasing and render scale alone. The shown preset is
+  derived (sliders and the fifth cascade only; Custom otherwise); its name is saved (`graphicsPreset`) for the launcher, and a saved one the settings do not sit at is applied at start ([launcher](launcher.md#graphics)).
 - **All graphics features** sets every Faithful / Meitou graphics switch to one side (gameplay switches and sliders
   untouched); mixed switches show neither side. A switch that does not take (indirect light without ray queries) is ignored.
   Advanced (**All gameplay changes**) and Fixes (**All fixes**) start with the same switch over their own page's

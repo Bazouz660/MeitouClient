@@ -138,10 +138,14 @@ sealed partial class GameHost
                 if (!SessionSliders.Contains(slider.Label) && config.Graphics.TryGetValue(slider.Label, out float v) && !(o.Post.Upscale.Explicit && WorldFrame.UpscalerSliders.Contains(slider.Label))
                     && !(slider.Label == WorldFrame.TextureQualitySlider && Environment.GetCommandLineArgs().Contains("--texture-quality")))   // the saved one was applied before the boot (Program)
                     slider.Set(Math.Clamp(v, slider.Min, slider.Max));
-        // The switches as saved, unless the command line chose them (--meitou / --faithful).
+        // The switches as saved, then the saved preset (one the launcher chose), unless the command line chose them (--meitou / --faithful):
+        // switches it moved would read as another preset.
         if (panel is not null && !lowEnd && !Environment.GetCommandLineArgs().Any(a => a is "--meitou" or "--faithful"))
+        {
             foreach (var toggle in panel.Toggles)
                 if (config.Graphics.TryGetValue(SwitchKey(toggle.Label), out float v) && (v >= 0.5f) != toggle.Get()) toggle.Set(v >= 0.5f);
+            panel.ApplySavedPreset();
+        }
         var stats = new List<string>();
         bool statsVisible = false, fpsVisible = false;
         string fpsText = "";
@@ -758,13 +762,14 @@ sealed partial class GameHost
                 foreach (var slider in panel.Sliders)
                     if (!SessionSliders.Contains(slider.Label)) config.Graphics[slider.Label] = slider.Get();
                 foreach (var toggle in panel.Toggles) config.Graphics[SwitchKey(toggle.Label)] = toggle.Get() ? 1 : 0;
+                panel.SavePreset();
             }
             config.Bindings = session.Bindings.ToDictionary();
             config.UiMode = player.UiMode;
             config.Save();
         }
 
-        static string SwitchKey(string label) => "Meitou: " + label;
+        static string SwitchKey(string label) => SettingsMenu.SwitchKeyPrefix + label;
     }
 
     /// <summary>Panel rows that are the session's state, not graphics settings: kept out of <c>graphics</c> in meitou.user.json (vsync and full screen have their own keys).</summary>

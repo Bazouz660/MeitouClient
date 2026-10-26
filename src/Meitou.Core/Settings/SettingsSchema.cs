@@ -18,7 +18,10 @@ public sealed class SettingsSchema
     public int SettingsVersion { get; set; }
     /// <summary>The frame renderers this release contains; an older schema without the key is Vulkan-only.</summary>
     public List<string> Renderers { get; set; } = ["vulkan"];
+    /// <summary>The sections, one launcher tab each, in the game's page order.</summary>
     public List<SettingsSection> Sections { get; set; } = [];
+    /// <summary>The graphics quality presets; null in an older schema (no preset row).</summary>
+    public SettingsPresets? Presets { get; set; }
 
     public string ToJson() => JsonSerializer.Serialize(this, SettingsSchemaJson.Default.SettingsSchema);
 
@@ -41,9 +44,32 @@ public sealed class SettingsSection
     public List<SettingDescription> Settings { get; set; } = [];
 }
 
+/// <summary>
+/// The quality presets: <see cref="Key"/> is a top-level <c>meitou.user.json</c> key holding one of <see cref="Names"/>. The game saves the preset
+/// its settings sit at and, at start, applies a saved one they do not sit at; <see cref="Custom"/> applies nothing. A launcher that changes one of
+/// <see cref="Keys"/> (the <c>graphics</c> keys a preset sets) saves <see cref="Custom"/>, so the game keeps that change.
+/// </summary>
+public sealed class SettingsPresets
+{
+    public string Key { get; set; } = "";
+    public string Name { get; set; } = "";
+    public string Description { get; set; } = "";
+    public List<string> Names { get; set; } = [];
+    public string Custom { get; set; } = "";
+    /// <summary>The preset shown while nothing is saved (the game's start settings).</summary>
+    public string Default { get; set; } = "";
+    public List<string> Keys { get; set; } = [];
+    /// <summary>
+    /// The game's option that picks a preset for the hardware: <c>&lt;exe&gt; &lt;Detect&gt; &lt;file&gt;</c> writes a JSON object whose <c>preset</c> is one of
+    /// <see cref="Names"/> and whose <c>summary</c> is a line to show. Null in an older schema (no detection).
+    /// </summary>
+    public string? Detect { get; set; }
+}
+
 public enum SettingKind { Toggle, Slider }
 
-/// <summary>One setting: a top-level key of <c>meitou.user.json</c>, or (<see cref="Graphics"/>) a Tab panel slider under <c>graphics</c> by its label.</summary>
+/// <summary>One setting: a top-level key of <c>meitou.user.json</c>, or (<see cref="Graphics"/>) a Tab panel slider or switch under <c>graphics</c>
+/// (a slider by its label, a switch by <c>Meitou: </c> and its label, saved 1 on, 0 off).</summary>
 public sealed record SettingDescription
 {
     public string Key { get; set; } = "";
@@ -51,7 +77,8 @@ public sealed record SettingDescription
     public SettingKind Kind { get; set; }
     public string Name { get; set; } = "";
     public string Description { get; set; } = "";
-    /// <summary>The value when the key is missing (a toggle: 1 on, 0 off); null when it depends on the mode, and the slider then sits at <see cref="Shown"/>.</summary>
+    /// <summary>The value when the key is missing (a toggle: 1 on, 0 off); null when it depends on the mode or the computer, and the slider then sits at
+    /// <see cref="Shown"/> (a graphics toggle offers the game's default as a choice of its own).</summary>
     public float? Default { get; set; }
     public float Shown { get; set; }
     /// <summary>A toggle's two states.</summary>

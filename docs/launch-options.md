@@ -25,6 +25,7 @@ Authority: `src/Meitou.Game/GameOptions.cs` (`Split`, `Usage`), `src/Meitou.Game
 | `--no-precompile` | | off | Compile methods on first call, not ahead on a background thread. |
 | `--play-bench <dir>` | folder | none | Scripted run, every frame measured; writes `frames.csv` and `summary.md`, then quits. Forces fps limit 0 and vsync off. Works with `--load` or `--new-game`. |
 | `--settings-schema <file>` | path | | Writes the launcher's settings description and exits. Must be the first two arguments; no log or window. |
+| `--recommend-preset <file>` | path | | Writes the quality preset for this computer (`HardwareProbe`, [launcher](launcher.md#graphics)) as JSON and exits. Must be the first two arguments; no log or window. |
 
 ### Graphics and UI
 

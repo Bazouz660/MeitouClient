@@ -57,7 +57,7 @@ sealed partial class SettingsMenu
         _ => $"Adjust {Label(label).ToLowerInvariant()}.",
     };
 
-    static string ToggleHint(string label) => label switch
+    internal static string ToggleHint(string label) => label switch
     {
         "Ambient occlusion" => "Add contact shading around nearby surfaces and creases.",
         "Dithering" => "Reduce visible colour bands in smooth gradients.",

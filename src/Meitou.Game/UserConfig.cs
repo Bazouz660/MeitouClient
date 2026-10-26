@@ -123,6 +123,9 @@ sealed class UserConfig
     /// <summary>Worker threads of the simulation; null = half the cores.</summary>
     public int? SimThreads { get; set; }
     public Dictionary<string, float> Graphics { get; set; } = [];
+    /// <summary>The Graphics quality preset (Low, Medium, High, Ultra, Custom): the game saves the one its settings sit at; one the launcher chose is applied at start
+    /// unless the settings already sit at it (<c>SettingsMenu.ApplySavedPreset</c>). Null: nothing saved yet.</summary>
+    public string? GraphicsPreset { get; set; }
     public Dictionary<string, string> Bindings { get; set; } = [];
     /// <summary>The Meitou skin per race, where chosen against the default (RACE string id to on or off; Graphics > Skin): <c>CharacterRenderer.SkinRaces</c>.</summary>
     public Dictionary<string, bool> SkinRaces { get; set; } = [];

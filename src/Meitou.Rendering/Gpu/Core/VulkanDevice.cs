@@ -336,6 +336,17 @@ public sealed unsafe class VulkanDevice : IDisposable
         return (HasMemoryBudget ? used : Allocator.TotalAllocatedBytes, Math.Min(total, BudgetOverride));
     }
 
+    /// <summary>The device-local heaps' size: the card's video memory (an integrated GPU's share of the system's).</summary>
+    public ulong DeviceLocalBytes()
+    {
+        PhysicalDeviceMemoryProperties props;
+        Vk.GetPhysicalDeviceMemoryProperties(PhysicalDevice, &props);
+        ulong total = 0;
+        for (int i = 0; i < props.MemoryHeapCount; i++)
+            if ((props.MemoryHeaps[i].Flags & MemoryHeapFlags.DeviceLocalBit) != 0) total += props.MemoryHeaps[i].Size;
+        return total;
+    }
+
     /// <summary><c>MEITOU_VRAM_BUDGET_MB</c> makes <see cref="VideoMemory"/> report at most that budget (a card with less memory, for testing the
     /// memory-pressure guard, <c>VramGuard</c>, and the viewer's watch on a bigger one).</summary>
     static readonly ulong BudgetOverride = ulong.TryParse(Environment.GetEnvironmentVariable("MEITOU_VRAM_BUDGET_MB"), out var mb) && mb > 0 ? mb << 20 : ulong.MaxValue;

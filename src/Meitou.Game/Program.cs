@@ -6,11 +6,15 @@ namespace Meitou.Game;
 
 static class Program
 {
+    /// <summary>The launcher's preset detection (<see cref="HardwareProbe"/>), named in the settings schema.</summary>
+    internal const string HardwareProbeFlag = "--recommend-preset";
+
     static int Main(string[] args)
     {
         GameConsole.AttachToParent();
         // The launcher's settings description (package-release.ps1): no log, window or game files.
         if (args is ["--settings-schema", var schema]) return LauncherSchema.Write(schema);
+        if (args is [HardwareProbeFlag, var report]) return HardwareProbe.Write(report);
         GameConsole.StartLog();
         RenderJobs.RaiseRenderThread();
         GameOptions game;

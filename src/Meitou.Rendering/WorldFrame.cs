@@ -178,9 +178,9 @@ sealed class WorldOptions
     void ApplyLowEnd()
     {
         VSync = false;
-        (ObjectDistance, ObjectLod) = (5000, 0.25f);
-        (LargeRange, ImpostorDistance, LargeImpostorDistance) = (5050, 1150, 1100);   // the medium and small ranges follow the large one
-        GrassDensity = 0.1f;
+        (ObjectDistance, ObjectLod) = (LowEndObjectDistance, LowEndObjectLod);
+        (LargeRange, ImpostorDistance, LargeImpostorDistance) = (LowEndLargeRange, LowEndImpostorDistance, LowEndLargeImpostorDistance);   // the medium and small ranges follow the large one
+        GrassDensity = LowEndGrassDensity;
         WaterReflection = 0;
         (ShadowsOff, ShadowFilter) = (true, 0);   // --shadow-range 0
         Enhancements.Apply(Switches(this), "ao,aa,shadows,water", meitou: false);
@@ -193,11 +193,16 @@ sealed class WorldOptions
         Post.LightShafts = false;
         Post.ShaftQuality = 0;
         Post.Fxaa = false;
-        (Post.Upscale.Scale, Post.Upscale.Explicit) = (0.83f, true);
+        (Post.Upscale.Scale, Post.Upscale.Explicit) = (LowEndRenderScale, true);
         Post.ParticleDivisor = 4;
-        ParticleDensity = 0.1f;
-        (Anisotropy, TextureQuality, MaterialDistance) = (1, 3, 15000);
+        ParticleDensity = LowEndParticleDensity;
+        (Anisotropy, TextureQuality, MaterialDistance) = (1, LowEndTextureQuality, 15000);
     }
+
+    /// <summary><c>--low-end</c>'s values, which the Low graphics preset sets too (<c>SettingsMenu.Presets</c>).</summary>
+    public const float LowEndObjectDistance = 5000, LowEndObjectLod = 0.25f, LowEndLargeRange = 5050, LowEndImpostorDistance = 1150, LowEndLargeImpostorDistance = 1100,
+        LowEndGrassDensity = 0.1f, LowEndRenderScale = 0.83f, LowEndParticleDensity = 0.1f;
+    public const int LowEndTextureQuality = 3;
 
     public const string Usage = """
         meitou-viewer --world [where] [options]
@@ -985,10 +990,50 @@ static class WorldFrame
     public const string FilteringSlider = "Anisotropic filtering (texture filtering)";
     public const string TextureQualitySlider = "Texture quality 0-4 (game)";
     public static readonly string[] ParticleSliders = ["Weather particles: 0 off 1 quarter 2 half 3 auto 4 full", "Particle density x"];
-    // More labels the launcher's settings schema names (they are the meitou.user.json keys too).
+    // The Tab panel sliders' labels: the meitou.user.json keys, and the launcher's settings schema names them (keep them).
     public const string ObjectDistanceSlider = "Object draw distance", GrassDensitySlider = "Grass density x", WaterReflectionSlider = "Water reflection 0-4 (game)",
         ShadowDistanceSlider = "Shadow distance (game 1k-9k, 0 off)", ShadowMapSlider = "Shadow map size (game quality 0-2)",
         GroundReliefQualitySlider = "Ground relief quality", ShaftQualitySlider = "Light shafts quality";
+    public const string
+        LandmarkDistanceSlider = "Landmark distance (Meitou)",
+        DistantTownsSlider = "Distant towns (zones)",
+        ObjectLodSlider = "Object LOD distance x",
+        FoliageDistanceSlider = "Foliage draw distance x",
+        FoliageLodSlider = "Foliage LOD distance x (lod Meitou)",
+        LargeFoliageRangeSlider = "Large foliage range (F6 Meitou)",
+        ImpostorDistanceSlider = "Impostor distance (F7 Meitou)",
+        LargeImpostorDistanceSlider = "Large impostor distance (F7 Meitou)",
+        MediumFoliageRangeSlider = "Medium foliage range",
+        SmallFoliageRangeSlider = "Small foliage range",
+        GrassDistanceSlider = "Grass draw distance x",
+        ReflectionRangeSlider = "Reflection range x (game 0.6)",
+        WaterClaritySlider = "Water clarity x (Meitou)",
+        FarWaterClaritySlider = "Far water clarity (Meitou)",
+        WaterClearDistanceSlider = "Water see-through distance (Meitou, game 4000)",
+        TerrainErrorSlider = "Terrain detail: error px (less = finer)",
+        GroundReliefDepthSlider = "Ground relief depth (cm, typical ground)",
+        GroundDisplaceDistanceSlider = "Ground displacement distance (m)",
+        GroundParallaxDistanceSlider = "Ground parallax distance (m)",
+        ShadowFilterSlider = "Shadow filter 0-2 (Meitou; 0 low-end)",
+        HazeStrengthSlider = "Haze strength (1 = game)",
+        PlanetshineStrengthSlider = "Planetshine strength (x physical)",
+        AmbientStrengthSlider = "Ambient light strength (1 = game)",
+        NightAmbientStrengthSlider = "Night ambient light strength (1 = 1.2x game)",
+        ToneMapSlider = "Tone map (0 = game)",
+        ToneMixSlider = "Hybrid tone map: ACES share",
+        GradingSlider = "Grading (0 = game)",
+        HeatHazeStrengthSlider = "Heat haze strength (1 = game)",
+        NightGradeStrengthSlider = "Night grading strength (0 = game)",
+        ShaftStrengthSlider = "Light shafts strength",
+        ShaftAirSlider = "Light shafts air (0 = none)",
+        ShaftAirDawnSlider = "Light shafts air at dawn and dusk (x)";
+    /// <summary>The Tab panel switches that are not Faithful / Meitou ones (saved as <c>Meitou: &lt;label&gt;</c> like those).</summary>
+    public const string
+        FifthCascadeSwitch = "Shadow cascade 5 (Meitou)",
+        GroundParallaxSwitch = "Ground parallax",
+        GroundDisplaceSwitch = "Ground displacement (tessellation)",
+        RockSmoothingSwitch = "Rock smoothing (tessellation)",
+        OutlineRefineSwitch = "Terrain outline refinement (tessellation)";
     /// <summary>The weather particles slider's position for the renderer's state: 0 off, 1 quarter, 2 half, 3 by sprite size (auto), 4 full size.</summary>
     public static int WeatherParticlesSlider(bool weatherOn, PostOptions o) =>
         !weatherOn ? 0 : !o.LowResParticles || o.ParticleDivisor == 1 ? 4 : o.ParticleDivisor switch { 4 => 1, 2 => 2, _ => 3 };
@@ -1070,25 +1115,25 @@ static class WorldFrame
             sliders.Add(new Slider(ObjectDistanceSlider, 1000, 400000, () => objects.ObjectDistance, v => objects.ObjectDistance = v, "0", Logarithmic: true,
                 Faithful: Enhancements.FaithfulObjectDistance, Meitou: Enhancements.MeitouObjectDistance));
             if (objects.HasLandmarks)
-                sliders.Add(new Slider("Landmark distance (Meitou)", 1000, 400000, () => objects.LandmarkDistance, v => objects.LandmarkDistance = MathF.Round(v / 100) * 100, "0", Logarithmic: true));
-            sliders.Add(new Slider("Distant towns (zones)", 0, ObjectRanges.MaxDistantTownRangeZones * 10,
+                sliders.Add(new Slider(LandmarkDistanceSlider, 1000, 400000, () => objects.LandmarkDistance, v => objects.LandmarkDistance = MathF.Round(v / 100) * 100, "0", Logarithmic: true));
+            sliders.Add(new Slider(DistantTownsSlider, 0, ObjectRanges.MaxDistantTownRangeZones * 10,
                 () => objects.DistantRange / WorldLayout.ZoneSize, v => objects.DistantRange = MathF.Round(v) * WorldLayout.ZoneSize, "0"));
-            sliders.Add(new Slider("Object LOD distance x", 0.25f, 4, () => 1 / objects.LodBias, v => objects.LodBias = 1 / v, "0.00", Logarithmic: true));
+            sliders.Add(new Slider(ObjectLodSlider, 0.25f, 4, () => 1 / objects.LodBias, v => objects.LodBias = 1 / v, "0.00", Logarithmic: true));
         }
         if (g.Foliage is { } foliage)
         {
-            sliders.Add(new Slider("Foliage draw distance x", 0.25f, 80, () => foliage.RangeSetting, v => foliage.RangeSetting = v, "0.00", Logarithmic: true));
+            sliders.Add(new Slider(FoliageDistanceSlider, 0.25f, 80, () => foliage.RangeSetting, v => foliage.RangeSetting = v, "0.00", Logarithmic: true));
             // The generated levels switch at a pixel tolerance; the distance where each level takes over scales with its inverse.
-            sliders.Add(new Slider("Foliage LOD distance x (lod Meitou)", 0.25f, 8, () => FoliageRenderer.DefaultLodTolerance / foliage.LodTolerance,
+            sliders.Add(new Slider(FoliageLodSlider, 0.25f, 8, () => FoliageRenderer.DefaultLodTolerance / foliage.LodTolerance,
                 v => foliage.LodTolerance = FoliageRenderer.DefaultLodTolerance / v, Logarithmic: true,
                 Text: v => string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{v:0.00} ({FoliageRenderer.DefaultLodTolerance / v:0.0} px)")));
             // The range switch's class ranges (Meitou; the slider above then only moves the FAR layers' large meshes).
-            sliders.Add(new Slider("Large foliage range (F6 Meitou)", 1000, 120000, () => foliage.LargeRange, v => foliage.LargeRange = MathF.Round(v / 50) * 50, "0", Logarithmic: true));
-            sliders.Add(new Slider("Impostor distance (F7 Meitou)", 500, 40000, () => foliage.ImpostorDistance, v => foliage.ImpostorDistance = MathF.Round(v / 50) * 50, "0", Logarithmic: true));
-            sliders.Add(new Slider("Large impostor distance (F7 Meitou)", 500, 40000, () => foliage.LargeImpostorDistance, v => foliage.LargeImpostorDistance = MathF.Round(v / 50) * 50, "0", Logarithmic: true));
-            sliders.Add(new Slider("Medium foliage range", 400, 80000, () => foliage.MediumRange, v => foliage.MediumRange = MathF.Round(v / 50) * 50, "0", Logarithmic: true));
-            sliders.Add(new Slider("Small foliage range", 200, 40000, () => foliage.SmallRange, v => foliage.SmallRange = MathF.Round(v / 50) * 50, "0", Logarithmic: true));
-            sliders.Add(new Slider("Grass draw distance x", 0.25f, 80, () => foliage.GrassRangeSetting, v => foliage.GrassRangeSetting = v, "0.00", Logarithmic: true));
+            sliders.Add(new Slider(LargeFoliageRangeSlider, 1000, 120000, () => foliage.LargeRange, v => foliage.LargeRange = MathF.Round(v / 50) * 50, "0", Logarithmic: true));
+            sliders.Add(new Slider(ImpostorDistanceSlider, 500, 40000, () => foliage.ImpostorDistance, v => foliage.ImpostorDistance = MathF.Round(v / 50) * 50, "0", Logarithmic: true));
+            sliders.Add(new Slider(LargeImpostorDistanceSlider, 500, 40000, () => foliage.LargeImpostorDistance, v => foliage.LargeImpostorDistance = MathF.Round(v / 50) * 50, "0", Logarithmic: true));
+            sliders.Add(new Slider(MediumFoliageRangeSlider, 400, 80000, () => foliage.MediumRange, v => foliage.MediumRange = MathF.Round(v / 50) * 50, "0", Logarithmic: true));
+            sliders.Add(new Slider(SmallFoliageRangeSlider, 200, 40000, () => foliage.SmallRange, v => foliage.SmallRange = MathF.Round(v / 50) * 50, "0", Logarithmic: true));
+            sliders.Add(new Slider(GrassDistanceSlider, 0.25f, 80, () => foliage.GrassRangeSetting, v => foliage.GrassRangeSetting = v, "0.00", Logarithmic: true));
             sliders.Add(new Slider(GrassDensitySlider, 0.1f, 2, () => foliage.GrassDensitySetting, v => foliage.GrassDensitySetting = v, "0.00"));
         }
         // The game's `water reflection` (0 off .. 4 everything) and `reflection range` (x the haze distance), docs/formats/settings.md.
@@ -1096,26 +1141,26 @@ static class WorldFrame
         {
             sliders.Add(new Slider(WaterReflectionSlider, 0, 4, () => reflection.Level, v => reflection.Level = (int)MathF.Round(v), "0",
                 Text: v => (int)MathF.Round(v) switch { 0 => "0 off", 1 => "1 landscape", 2 => "2 characters", 3 => "3 buildings", _ => "4 everything" }));   // the label is the user config key: keep it
-            sliders.Add(new Slider("Reflection range x (game 0.6)", 0.1f, 50, () => reflection.Range, v => reflection.Range = v, "0.00", Logarithmic: true));
+            sliders.Add(new Slider(ReflectionRangeSlider, 0.1f, 50, () => reflection.Range, v => reflection.Range = v, "0.00", Logarithmic: true));
         }
         // How far the Meitou water lets the floor show through (docs/render-water.md "Clarity"); the Faithful water keeps the game's alpha.
         if (g.Water is { } water)
         {
-            sliders.Add(new Slider("Water clarity x (Meitou)", 0.25f, 8, () => water.Clarity, v => water.Clarity = v, "0.00", Logarithmic: true));
-            sliders.Add(new Slider("Far water clarity (Meitou)", 0, 1, () => water.FarClarity, v => water.FarClarity = v, "0.00",
+            sliders.Add(new Slider(WaterClaritySlider, 0.25f, 8, () => water.Clarity, v => water.Clarity = v, "0.00", Logarithmic: true));
+            sliders.Add(new Slider(FarWaterClaritySlider, 0, 1, () => water.FarClarity, v => water.FarClarity = v, "0.00",
                 Text: v => v <= 0 ? "0 (true slant)" : v.ToString("0.00", CultureInfo.InvariantCulture)));
-            sliders.Add(new Slider("Water see-through distance (Meitou, game 4000)", 1000, 100000, () => water.ClearDistance,
+            sliders.Add(new Slider(WaterClearDistanceSlider, 1000, 100000, () => water.ClearDistance,
                 v => water.ClearDistance = MathF.Round(v / 100) * 100, "0", Logarithmic: true));
         }
-        sliders.Add(new Slider("Terrain detail: error px (less = finer)", 4, 32, () => r.TerrainPixelError, v => r.TerrainPixelError = v, "0.0", Logarithmic: true,
+        sliders.Add(new Slider(TerrainErrorSlider, 4, 32, () => r.TerrainPixelError, v => r.TerrainPixelError = v, "0.0", Logarithmic: true,
             Faithful: WorldRenderOptions.DefaultTerrainPixelError, Meitou: Enhancements.MeitouTerrainPixelError));
         // Ours (docs/render-terrain.md "Ground relief"): the march's quality, the depth (parallax and displacement; 0 off) and where each ends.
         sliders.Add(new Slider(GroundReliefQualitySlider, 0, 2, () => GroundRelief.Quality,
             v => GroundRelief.Quality = Math.Clamp((int)MathF.Round(v), 0, 2), "0", Text: v => GroundRelief.QualityName((int)MathF.Round(v))));
-        sliders.Add(new Slider("Ground relief depth (cm, typical ground)", 0, 80, () => GroundRelief.Depth * 10, v => GroundRelief.Depth = MathF.Round(v * 2) / 20, "0.0"));
+        sliders.Add(new Slider(GroundReliefDepthSlider, 0, 80, () => GroundRelief.Depth * 10, v => GroundRelief.Depth = MathF.Round(v * 2) / 20, "0.0"));
         if (g.Sky.Gpu.HasTessellation)
-            sliders.Add(new Slider("Ground displacement distance (m)", 10, 200, () => GroundRelief.DisplaceDistance / 10, v => GroundRelief.DisplaceDistance = MathF.Round(v) * 10, "0"));
-        sliders.Add(new Slider("Ground parallax distance (m)", 10, 150, () => GroundRelief.ParallaxDistance / 10, v => GroundRelief.ParallaxDistance = MathF.Round(v) * 10, "0"));
+            sliders.Add(new Slider(GroundDisplaceDistanceSlider, 10, 200, () => GroundRelief.DisplaceDistance / 10, v => GroundRelief.DisplaceDistance = MathF.Round(v) * 10, "0"));
+        sliders.Add(new Slider(GroundParallaxDistanceSlider, 10, 150, () => GroundRelief.ParallaxDistance / 10, v => GroundRelief.ParallaxDistance = MathF.Round(v) * 10, "0"));
         // The game's `Shadow Range` slider goes 1000 to 9000; the viewer allows more (the cascades stretch over it), and its left end (0) turns the
         // shadows off (low-end GPUs).
         Toggle? fifthCascade = null;
@@ -1131,17 +1176,17 @@ static class WorldFrame
             sliders.Add(new Slider(ShadowMapSlider, 0, 2, () => Array.IndexOf(KenshiShadows.QualitySizes, shadow.Settings.MapSize),
                 v => shadow.Settings = shadow.Settings with { MapSize = KenshiShadows.MapSize((int)MathF.Round(v)) }, "0",
                 Text: v => KenshiShadows.MapSize((int)MathF.Round(v)).ToString(CultureInfo.InvariantCulture) + "²"));
-            if (shadow.Meitou) sliders.Add(new Slider("Shadow filter 0-2 (Meitou; 0 low-end)", 0, 2, () => shadow.FilterQuality, v => shadow.FilterQuality = (int)MathF.Round(v), "0"));
-            if (shadow.Meitou) fifthCascade = new Toggle("Shadow cascade 5 (Meitou)", () => shadow.MeitouCascades >= 5, v => shadow.MeitouCascades = v ? 5 : 4);
+            if (shadow.Meitou) sliders.Add(new Slider(ShadowFilterSlider, 0, 2, () => shadow.FilterQuality, v => shadow.FilterQuality = (int)MathF.Round(v), "0"));
+            if (shadow.Meitou) fifthCascade = new Toggle(FifthCascadeSwitch, () => shadow.MeitouCascades >= 5, v => shadow.MeitouCascades = v ? 5 : 4);
         }
         // A viewer option, not the game's: 1 is the game's haze (docs/formats/sky.md).
-        sliders.Add(new Slider("Haze strength (1 = game)", 0, 3, () => g.Sky.HazeStrength, v => g.Sky.HazeStrength = v, "0.00", Faithful: 1, Meitou: Enhancements.MeitouHazeStrength));
+        sliders.Add(new Slider(HazeStrengthSlider, 0, 3, () => g.Sky.HazeStrength, v => g.Sky.HazeStrength = v, "0.00", Faithful: 1, Meitou: Enhancements.MeitouHazeStrength));
         // Ours (docs/formats/sky.md "Planetshine"): the planet's light at night, a multiple of the physical value.
-        sliders.Add(new Slider("Planetshine strength (x physical)", 0, 200, () => g.Sky.PlanetshineStrength, v => g.Sky.PlanetshineStrength = MathF.Round(v), "0"));
+        sliders.Add(new Slider(PlanetshineStrengthSlider, 0, 200, () => g.Sky.PlanetshineStrength, v => g.Sky.PlanetshineStrength = MathF.Round(v), "0"));
         // Ours: the sky's ambient light (shade, nights, interiors), a multiple of the game's.
-        sliders.Add(new Slider("Ambient light strength (1 = game)", 0, 3, () => g.Sky.AmbientStrength, v => g.Sky.AmbientStrength = MathF.Round(v * 20) / 20, "0.00"));
+        sliders.Add(new Slider(AmbientStrengthSlider, 0, 3, () => g.Sky.AmbientStrength, v => g.Sky.AmbientStrength = MathF.Round(v * 20) / 20, "0.00"));
         // Ours: a further multiple by night (the exposure sits at its night floor there, so it is not adapted away).
-        sliders.Add(new Slider("Night ambient light strength (1 = 1.2x game)", 0, 5, () => g.Sky.NightAmbientStrength, v => g.Sky.NightAmbientStrength = MathF.Round(v * 20) / 20, "0.00"));
+        sliders.Add(new Slider(NightAmbientStrengthSlider, 0, 5, () => g.Sky.NightAmbientStrength, v => g.Sky.NightAmbientStrength = MathF.Round(v * 20) / 20, "0.00"));
         if (g.Post is { } post)
         {
             // Upscaling (docs/engine.md "Upscaling"): FSR and DLSS fall back to TAA where their library or backend is missing.
@@ -1166,17 +1211,17 @@ static class WorldFrame
             }, "0"));
             sliders.Add(new Slider(ParticleSliders[1], 0.1f, 1, () => g.ParticleDensity, v => g.ParticleDensity = MathF.Round(v * 20) / 20, "0.00"));
             // Ours, not the game's (docs/render-post.md "Tone map and grading"): the tone curve, the saturation / contrast grade, and a scale on the heat haze.
-            sliders.Add(new Slider("Tone map (0 = game)", 0, 3, () => (int)post.Options.ToneMap, v => post.Options.ToneMap = (ToneMapOperator)(int)MathF.Round(v), "0",
+            sliders.Add(new Slider(ToneMapSlider, 0, 3, () => (int)post.Options.ToneMap, v => post.Options.ToneMap = (ToneMapOperator)(int)MathF.Round(v), "0",
                 Text: v => (ToneMapOperator)(int)MathF.Round(v) switch { ToneMapOperator.Shoulder => "shoulder", ToneMapOperator.Aces => "ACES", ToneMapOperator.Hybrid => "hybrid (clamp + ACES)", _ => "clamp (as the game)" }));
-            sliders.Add(new Slider("Hybrid tone map: ACES share", 0, 1, () => post.Options.ToneMix, v => post.Options.ToneMix = MathF.Round(v * 20) / 20, "0.00"));
-            sliders.Add(new Slider("Grading (0 = game)", 0, 1, () => post.Options.Grade ? 1 : 0, v => post.Options.Grade = v >= 0.5f,
+            sliders.Add(new Slider(ToneMixSlider, 0, 1, () => post.Options.ToneMix, v => post.Options.ToneMix = MathF.Round(v * 20) / 20, "0.00"));
+            sliders.Add(new Slider(GradingSlider, 0, 1, () => post.Options.Grade ? 1 : 0, v => post.Options.Grade = v >= 0.5f,
                 Text: v => v >= 0.5f ? $"saturation {PostOptions.Saturation:0.00}, contrast {PostOptions.Contrast:0.00}" : "off (as the game)"));
-            sliders.Add(new Slider("Heat haze strength (1 = game)", 0, 3, () => post.Options.HeatHazeStrength, v => post.Options.HeatHazeStrength = MathF.Round(v * 20) / 20, "0.00",
+            sliders.Add(new Slider(HeatHazeStrengthSlider, 0, 3, () => post.Options.HeatHazeStrength, v => post.Options.HeatHazeStrength = MathF.Round(v * 20) / 20, "0.00",
                 Faithful: 1, Meitou: Enhancements.MeitouHeatHazeStrength));
-            sliders.Add(new Slider("Night grading strength (0 = game)", 0, 1, () => post.Options.NightGradeStrength, v => post.Options.NightGradeStrength = MathF.Round(v * 20) / 20, "0.00"));
-            sliders.Add(new Slider("Light shafts strength", 0, 1, () => post.Options.ShaftStrength, v => post.Options.ShaftStrength = MathF.Round(v * 20) / 20, "0.00"));
-            sliders.Add(new Slider("Light shafts air (0 = none)", 0, 4, () => post.Options.ShaftAir, v => post.Options.ShaftAir = MathF.Round(v * 20) / 20, "0.00"));
-            sliders.Add(new Slider("Light shafts air at dawn and dusk (x)", 0, 6, () => post.Options.ShaftAirDawn, v => post.Options.ShaftAirDawn = MathF.Round(v * 10) / 10, "0.0"));
+            sliders.Add(new Slider(NightGradeStrengthSlider, 0, 1, () => post.Options.NightGradeStrength, v => post.Options.NightGradeStrength = MathF.Round(v * 20) / 20, "0.00"));
+            sliders.Add(new Slider(ShaftStrengthSlider, 0, 1, () => post.Options.ShaftStrength, v => post.Options.ShaftStrength = MathF.Round(v * 20) / 20, "0.00"));
+            sliders.Add(new Slider(ShaftAirSlider, 0, 4, () => post.Options.ShaftAir, v => post.Options.ShaftAir = MathF.Round(v * 20) / 20, "0.00"));
+            sliders.Add(new Slider(ShaftAirDawnSlider, 0, 6, () => post.Options.ShaftAirDawn, v => post.Options.ShaftAirDawn = MathF.Round(v * 10) / 10, "0.0"));
             sliders.Add(new Slider(ShaftQualitySlider, 0, 2, () => post.Options.ShaftQuality,
                 v => post.Options.ShaftQuality = Math.Clamp((int)MathF.Round(v), 0, 2), "0",
                 Text: v => (int)MathF.Round(v) switch { 0 => "Low", 1 => "Medium", _ => "High" }));
@@ -1187,12 +1232,12 @@ static class WorldFrame
         // The Faithful / Meitou switches as checkboxes (ticked: Meitou), the F-key toggles' state.
         var toggles = switches?.Select(e => new Toggle(e.Name, () => e.IsMeitou, v => e.IsMeitou = v, () => e.IsMeitou ? e.Meitou : e.Faithful, Remaster: true, OnOff: e.Faithful is "off" or "none")).ToList();
         if (fifthCascade is not null) (toggles ??= []).Add(fifthCascade);
-        (toggles ??= []).Add(new Toggle("Ground parallax", () => GroundRelief.ParallaxActive, v => GroundRelief.ParallaxActive = v, OnOff: true));
+        (toggles ??= []).Add(new Toggle(GroundParallaxSwitch, () => GroundRelief.ParallaxActive, v => GroundRelief.ParallaxActive = v, OnOff: true));
         if (g.Sky.Gpu.HasTessellation)
         {
-            toggles.Add(new Toggle("Ground displacement (tessellation)", () => GroundRelief.DisplaceActive, v => GroundRelief.DisplaceActive = v, OnOff: true));
-            toggles.Add(new Toggle("Rock smoothing (tessellation)", () => RockSmoothing.TessellateActive, v => RockSmoothing.TessellateActive = v, OnOff: true));
-            toggles.Add(new Toggle("Terrain outline refinement (tessellation)", () => GroundRelief.RefinePixels > 0, v => GroundRelief.RefinePixels = v ? GroundRelief.DefaultRefinePixels : 0, OnOff: true));
+            toggles.Add(new Toggle(GroundDisplaceSwitch, () => GroundRelief.DisplaceActive, v => GroundRelief.DisplaceActive = v, OnOff: true));
+            toggles.Add(new Toggle(RockSmoothingSwitch, () => RockSmoothing.TessellateActive, v => RockSmoothing.TessellateActive = v, OnOff: true));
+            toggles.Add(new Toggle(OutlineRefineSwitch, () => GroundRelief.RefinePixels > 0, v => GroundRelief.RefinePixels = v ? GroundRelief.DefaultRefinePixels : 0, OnOff: true));
         }
         // The billboard (impostor atlas) disk cache: deleted files are baked again when next needed; the resident atlases stay until evicted.
         var actions = new List<PanelAction>();

@@ -9,53 +9,61 @@ sealed partial class SettingsMenu
     const int HighPreset = 2, CustomPreset = 4;
 
     /// <summary>
-    /// A preset's slider: its value at Low, Medium and Ultra (High is the start default), either fixed or a multiple of the start default.
+    /// A preset's slider: its value at Low, Medium and Ultra (High is the start default; NaN: the start default too), either fixed or a multiple of the start default.
     /// <see cref="Mode"/> names the switch whose side picks the base instead (the slider's Meitou or Faithful mark), so High reads High in both looks.
+    /// <see cref="LowFixed"/>: Low's value is fixed even where the others are multiples. Low is <c>--low-end</c> (WorldOptions.ApplyLowEnd): a slider it leaves alone stays at High.
     /// </summary>
-    sealed record PresetSlider(string Label, float Low, float Medium, float Ultra, bool Scale = false, string? Mode = null, float? High = null);
+    sealed record PresetSlider(string Label, float Low, float Medium, float Ultra, bool Scale = false, string? Mode = null, float? High = null, bool LowFixed = false);
+
+    // --low-end's large foliage range, as a multiple of the default; the medium and small ranges follow it.
+    const float LowFoliageRange = WorldOptions.LowEndLargeRange / global::Meitou.Data.World.FoliageSizes.DefaultLargeRange;
 
     static readonly PresetSlider[] PresetSliders =
     [
-        new(WorldFrame.ObjectDistanceSlider, 0.25f, 0.6f, 2, Mode: "Draw distances"),
-        new("Landmark distance (Meitou)", 0.25f, 0.6f, 1.5f, Scale: true),
-        new("Distant towns (zones)", 3, 6, float.NaN),
-        new("Object LOD distance x", 0.25f, 0.6f, 2),
-        new("Terrain detail: error px (less = finer)", 2, 1.5f, 0.6f, Mode: "Draw distances"),
+        new(WorldFrame.ObjectDistanceSlider, WorldOptions.LowEndObjectDistance, 0.6f, 2, Mode: "Draw distances", LowFixed: true),
+        // --low-end's landmarks follow its object distance, at the Meitou defaults' ratio.
+        new(WorldFrame.LandmarkDistanceSlider, WorldOptions.LowEndObjectDistance * (Enhancements.MeitouLandmarkDistance / Enhancements.MeitouObjectDistance), 0.6f, 1.5f,
+            Scale: true, LowFixed: true),
+        new(WorldFrame.DistantTownsSlider, float.NaN, 6, float.NaN),
+        new(WorldFrame.ObjectLodSlider, WorldOptions.LowEndObjectLod, 0.6f, 2),
+        new(WorldFrame.TerrainErrorSlider, float.NaN, 1.5f, 0.6f, Mode: "Draw distances"),
         new(WorldFrame.GroundReliefQualitySlider, 0, 1, 2, High: 2),
-        new("Foliage draw distance x", 0.25f, 0.5f, 2, Scale: true),
-        new("Foliage LOD distance x (lod Meitou)", 0.5f, 0.75f, 2),
-        new("Large foliage range (F6 Meitou)", 0.1f, 0.5f, 1.5f, Scale: true),
-        new("Medium foliage range", 0.1f, 0.5f, 1.5f, Scale: true),
-        new("Small foliage range", 0.1f, 0.5f, 1.5f, Scale: true),
-        new("Impostor distance (F7 Meitou)", 0.3f, 0.6f, 1.5f, Scale: true),
-        new("Large impostor distance (F7 Meitou)", 0.1f, 0.5f, 1.5f, Scale: true),
-        new("Grass draw distance x", 0.25f, 0.5f, 2, Scale: true),
-        new(WorldFrame.GrassDensitySlider, 0.2f, 0.5f, float.NaN),
+        new(WorldFrame.FoliageDistanceSlider, float.NaN, 0.5f, 2, Scale: true),
+        new(WorldFrame.FoliageLodSlider, float.NaN, 0.75f, 2),
+        new(WorldFrame.LargeFoliageRangeSlider, LowFoliageRange, 0.5f, 1.5f, Scale: true),
+        new(WorldFrame.MediumFoliageRangeSlider, LowFoliageRange, 0.5f, 1.5f, Scale: true),
+        new(WorldFrame.SmallFoliageRangeSlider, LowFoliageRange, 0.5f, 1.5f, Scale: true),
+        new(WorldFrame.ImpostorDistanceSlider, WorldOptions.LowEndImpostorDistance, 0.6f, 1.5f, Scale: true, LowFixed: true),
+        new(WorldFrame.LargeImpostorDistanceSlider, WorldOptions.LowEndLargeImpostorDistance, 0.5f, 1.5f, Scale: true, LowFixed: true),
+        new(WorldFrame.GrassDistanceSlider, float.NaN, 0.5f, 2, Scale: true),
+        new(WorldFrame.GrassDensitySlider, WorldOptions.LowEndGrassDensity, 0.5f, float.NaN),
         new(WorldFrame.WaterReflectionSlider, 0, 1, 4),
-        new("Reflection range x (game 0.6)", 0.6f, 1, 6),
+        new(WorldFrame.ReflectionRangeSlider, float.NaN, 1, 6),
         // Low's shadow distance is the slider's left end: shadows off.
         new(WorldFrame.ShadowDistanceSlider, float.NegativeInfinity, 0.6f, 1.5f, Mode: "Shadows"),
-        new(WorldFrame.ShadowMapSlider, 0, 1, 2),
-        new("Shadow filter 0-2 (Meitou; 0 low-end)", 0, 1, 2),
+        new(WorldFrame.ShadowMapSlider, float.NaN, 1, 2),
+        new(WorldFrame.ShadowFilterSlider, 0, 1, 2),
         new(WorldFrame.ShaftQualitySlider, 0, 1, 2, High: 2),
-        new(WorldFrame.ParticleSliders[1], 0.25f, 0.5f, float.NaN),
-        new(WorldFrame.FilteringSlider, 1, 2, 4, High: 4),
+        new(WorldFrame.ParticleSliders[1], WorldOptions.LowEndParticleDensity, 0.5f, float.NaN),
+        new(WorldFrame.FilteringSlider, 0, 2, 4, High: 4),
         // The start default is the saved level (applied before the menu exists), so High names the full size.
-        new(WorldFrame.TextureQualitySlider, 3, 1, 0, High: 0),
+        new(WorldFrame.TextureQualitySlider, WorldOptions.LowEndTextureQuality, 1, 0, High: 0),
     ];
 
-    /// <summary>The costliest Meitou effects, set Faithful by Low (as <c>--low-end</c> does); no preset turns a switch on.</summary>
-    static readonly string[] LowOffSwitches = ["Ambient occlusion", "Indirect light", "Light shafts", "Clouds", "Cloud shadows", "Water", "Shadows"];
+    /// <summary>The Meitou effects Low sets Faithful, as <c>--low-end</c> does; no preset turns a switch on.</summary>
+    static readonly string[] LowOffSwitches = ["Ambient occlusion", "Anti-aliasing", "Light shafts", "Water", "Shadows"];
     /// <summary>The on/off effects Low turns off too (the ground relief and the tessellation's relief/rocks; they are not Faithful / Meitou switches).</summary>
-    static readonly string[] LowOffToggles = ["Ground parallax", "Ground displacement (tessellation)", "Terrain outline refinement (tessellation)", "Rock smoothing (tessellation)"];
-    const string FifthCascade = "Shadow cascade 5 (Meitou)";
+    static readonly string[] LowOffToggles = [WorldFrame.GroundParallaxSwitch, WorldFrame.GroundDisplaceSwitch, WorldFrame.OutlineRefineSwitch, WorldFrame.RockSmoothingSwitch];
+    const string FifthCascade = WorldFrame.FifthCascadeSwitch;
 
     /// <summary>The Faithful / Meitou switches whose reading stays put when set (Indirect light without ray queries); the all switch ignores them.</summary>
     readonly HashSet<string> stuckSwitches = [];
 
-    Entry PresetEntry => new("Quality preset", "Sets draw distances, foliage, shadow, water, particle, texture, relief and light-shaft quality settings together; High is the default. "
-        + "Low also turns the costliest Meitou effects off (indirect light, light shafts, clouds, ambient occlusion, Meitou shadows, water and ground relief). Anti-aliasing and render scale stay as they are.",
-        Choice: new(() => PresetNames, CurrentPreset, ApplyPreset));
+    internal const string PresetHint = "Sets draw distances, foliage, shadow, water, particle, texture, relief and light-shaft quality settings together; High is the default. "
+        + "Low is the --low-end option: it also turns ambient occlusion, anti-aliasing, light shafts, Meitou shadows, water and ground relief off and renders at 83%. "
+        + "The other presets leave anti-aliasing and render scale as they are.";
+
+    Entry PresetEntry => new("Quality preset", PresetHint, Choice: new(() => PresetNames, CurrentPreset, ApplyPreset));
 
     float PresetTarget(PresetSlider p, Slider slider, int preset)
     {
@@ -67,7 +75,7 @@ sealed partial class SettingsMenu
         float value = preset == HighPreset ? p.High ?? start
             : float.IsNaN(factor) ? p.High ?? start
             : float.IsNegativeInfinity(factor) ? slider.Min
-            : p.Scale || p.Mode is not null ? start * factor : factor;
+            : (p.Scale || p.Mode is not null) && !(preset == 0 && p.LowFixed) ? start * factor : factor;
         // A Faithful shadow distance stays within the game's slider.
         if (p.Mode == "Shadows" && !values.Toggles.Any(t => t.Label == "Shadows" && t.Get()) && value > slider.Min)
             value = Math.Min(value, global::Meitou.Data.World.KenshiShadows.MaxRange);
@@ -90,6 +98,32 @@ sealed partial class SettingsMenu
         return CustomPreset;
     }
 
+    /// <summary>The prefix of a switch's key in <c>meitou.user.json</c>'s <c>graphics</c> (the Faithful / Meitou ones and the plain on/off ones alike).</summary>
+    internal const string SwitchKeyPrefix = "Meitou: ";
+
+    /// <summary>The preset names a saved <see cref="UserConfig.GraphicsPreset"/> takes, the last one (Custom) applying nothing.</summary>
+    internal static IReadOnlyList<string> PresetChoices => PresetNames;
+    internal static string DefaultPreset => PresetNames[HighPreset];
+
+    /// <summary>The <c>graphics</c> keys a preset may set: a launcher that changes one of them no longer asks for a preset.</summary>
+    internal static IEnumerable<string> PresetKeys() => PresetSliders.Select(p => p.Label).Append(WorldFrame.ParticleSliders[0]).Concat(WorldFrame.UpscalerSliders.Take(2))
+        .Concat(LowOffSwitches.Concat(LowOffToggles).Append(FifthCascade).Select(label => SwitchKeyPrefix + label)).Distinct();
+
+    /// <summary>
+    /// At start, after the saved sliders and switches: applies the saved preset when the settings do not sit at it, so a preset the launcher
+    /// chose (docs/launcher.md "Graphics") takes effect; the launcher saves Custom once it changes a setting the preset sets.
+    /// </summary>
+    internal void ApplySavedPreset()
+    {
+        int preset = Array.IndexOf(PresetNames, config.GraphicsPreset);
+        if (preset is < 0 or >= CustomPreset || preset == CurrentPreset()) return;
+        ApplyPreset(preset);
+        notice = "";
+    }
+
+    /// <summary>Saves the preset the settings sit at (Custom when none), for the launcher to show.</summary>
+    internal void SavePreset() => config.GraphicsPreset = PresetNames[CurrentPreset()];
+
     void ApplyPreset(int preset)
     {
         if (preset is < 0 or >= CustomPreset) return;
@@ -100,6 +134,9 @@ sealed partial class SettingsMenu
             foreach (var label in LowOffToggles)
                 if (values.Toggles.FirstOrDefault(t => t.Label == label && t.Get()) is { } toggle) toggle.Set(false);
             if (values.Sliders.FirstOrDefault(s => s.Label == WorldFrame.ParticleSliders[0]) is { } particles) particles.Set(1);   // a quarter of the render size
+            // No anti-aliasing at all (not even FXAA), at --low-end's render scale.
+            if (values.Sliders.FirstOrDefault(s => s.Label == WorldFrame.UpscalerSliders[0]) is { } antiAliasing) antiAliasing.Set(0);
+            if (values.Sliders.FirstOrDefault(s => s.Label == WorldFrame.UpscalerSliders[1]) is { } scale) scale.Set(WorldOptions.LowEndRenderScale);
         }
         foreach (var (p, slider) in PresetPairs()) slider.Set(PresetTarget(p, slider, preset));
         if (values.Toggles.FirstOrDefault(t => t.Label == FifthCascade) is { } cascade && cascade.Get() != CascadeFor(preset)) cascade.Set(CascadeFor(preset));

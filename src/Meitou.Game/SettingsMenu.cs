@@ -12,7 +12,7 @@ namespace Meitou.Game;
 sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, InputBindings bindings, Action save, Slider frameLimit, UserConfig config)
 {
     static readonly string[] Pages = ["Display", "Graphics", "Interface", "Controls", "Advanced", "Audio", "Gameplay", "Fixes"];
-    static readonly string[] GraphicsPages = ["World", "Lighting", "Water", "Effects", "Skin"];
+    internal static readonly string[] GraphicsPages = ["World", "Lighting", "Water", "Effects", "Skin"];
     /// <summary>The Metal-only preset row (Native / MetalFX quality, balanced, performance / TAA), edited by the Metal settings panel.</summary>
     internal const string MetalPresetSlider = "Metal upscaling";
     readonly float[] defaults = values.Sliders.Select(s => s.Get()).ToArray();
@@ -27,7 +27,7 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
         () => config.CameraRotateSpeed, v => { config.CameraRotateSpeed = MathF.Round(v * 2) / 2; CameraRotateSpeedChanged?.Invoke(config.CameraRotateSpeed); },
         "0.#", Faithful: global::Meitou.Data.World.KenshiCamera.DefaultRotateSpeed);
     Slider[]? audioSliders;
-    /// <summary>The seven audio sliders of the original's options (docs/formats/settings.md); each writes <see cref="UserConfig.Audio"/> and calls <see cref="AudioChanged"/>.</summary>
+    /// <summary>The audio sliders of the original's options (docs/formats/settings.md); each writes <see cref="UserConfig.Audio"/> and calls <see cref="AudioChanged"/>.</summary>
     Slider[] AudioSliders => audioSliders ??= [
         Volume("Music volume", a => a.Music, (a, v) => a with { Music = v }),
         Volume("Ambient volume", a => a.Ambient, (a, v) => a with { Ambient = v }),
@@ -44,6 +44,11 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
             () => (config.Audio ??= new()).Voices,
             v => { config.Audio = (config.Audio ?? new()) with { Voices = (int)MathF.Round(v / 8) * 8 }; AudioChanged?.Invoke(); },
             "0", Text: v => v >= AudioSettings.MaxVoices ? "All" : $"{v:0}", Faithful: AudioSettings.MaxVoices, Meitou: AudioSettings.MeitouVoices),
+        // Meitou's hearing range (docs/audio.md "Hearing range"): a factor on every distance sounds are heard from.
+        new("Sound range", AudioSettings.MinRange, AudioSettings.MaxRange,
+            () => (config.Audio ??= new()).Range,
+            v => { config.Audio = (config.Audio ?? new()) with { Range = Math.Clamp(MathF.Round(v * 4) / 4, AudioSettings.MinRange, AudioSettings.MaxRange) }; AudioChanged?.Invoke(); },
+            "0.##", Text: v => $"{v:0.##}x", Faithful: 1, Meitou: AudioSettings.MeitouRange),
     ];
 
     Slider[]? gameplaySliders;
@@ -137,9 +142,9 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
     internal static string Label(string label) => Regex.Replace(label.Split('(')[0].Trim(), @"\s+0-\d+.*$", "")
         .Replace(" x", " multiplier", StringComparison.Ordinal).Replace(": error px", "", StringComparison.Ordinal);
 
-    static string Section(Slider s)
+    /// <summary>The page a Tab panel slider is on: Display, Advanced, or a Graphics sub-page (<see cref="GraphicsPages"/>).</summary>
+    internal static string Section(string label)
     {
-        string label = s.Label;
         if (label is "Time of day" or "Time speed") return "Advanced";
         if (label is "VSync" or "Full screen" or MetalPresetSlider || WorldFrame.UpscalerSliders.Contains(label) || label == WorldFrame.FilteringSlider || label == WorldFrame.TextureQualitySlider) return "Display";
         if (label.Contains("water", StringComparison.OrdinalIgnoreCase) || label.Contains("Reflection", StringComparison.Ordinal)) return "Water";
@@ -148,13 +153,13 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
         return "World";
     }
 
-    static string ToggleSection(Toggle toggle) => toggle.Label switch
+    internal static string ToggleSection(string label) => label switch
     {
         "Foliage ranges" or "Far impostors" or "Draw distances" or "Foliage levels" => "World",
         "Water" => "Water",
         "Haze" or "Shadows" or "Indirect light" or "Indoor GI" or "Light shafts" or "Night air" or "Planetshine" or "Night sky" or "Clouds" or "Cloud shadows" or "Cloud shadows in fog" => "Lighting",
         "Skin" => "Skin",
-        _ when toggle.Label.StartsWith("Shadow", StringComparison.Ordinal) => "Lighting",
+        _ when label.StartsWith("Shadow", StringComparison.Ordinal) => "Lighting",
         _ => "Effects",
     };
 
@@ -187,9 +192,9 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
     List<Entry> Entries()
     {
         string section = page == 1 ? GraphicsPages[graphicsPage] : Pages[page];
-        var result = values.Sliders.Where(s => s.Label is not ("Time of day" or "Time speed") && Section(s) == section).Select(SliderEntry).ToList();
+        var result = values.Sliders.Where(s => s.Label is not ("Time of day" or "Time speed") && Section(s.Label) == section).Select(SliderEntry).ToList();
         if (page == 1)
-            result.InsertRange(0, values.Toggles.Where(toggle => ToggleSection(toggle) == section)
+            result.InsertRange(0, values.Toggles.Where(toggle => ToggleSection(toggle.Label) == section)
                 .Select(toggle => new Entry(Label(toggle.Label), ToggleHint(toggle.Label), Toggle: toggle)).Prepend(LookEntry).Prepend(PresetEntry));
         // Graphics > Skin: after the switch, one row per person race of the loaded data (mods too), on or off against its default.
         if (page == 1 && section == "Skin")
@@ -238,6 +243,7 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
                 "Volume of the voices.",
                 "Average minutes of silence between pieces of biome music.",
                 "The most sounds heard at once: the loudest play, quieter ones wait silently and come back when they are loud enough. Lower it if big fights stutter; All mixes every sound.",
+                "How far away sounds are heard: 1x is the original, 4x hears fights, footsteps and machines four times as far. Higher values mix more sounds at once.",
             ];
             for (int i = 0; i < AudioSliders.Length; i++)
                 result.Add(new(AudioSliders[i].Label, hints[i], Slider: AudioSliders[i]));

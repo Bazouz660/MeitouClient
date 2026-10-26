@@ -38,12 +38,16 @@ public class LauncherSchemaTests
     }
 
     [Fact]
-    public void Each_graphics_key_is_one_of_the_Tab_panel_slider_labels_WorldFrame_names()
+    public void Each_graphics_key_is_one_of_the_Tab_panel_labels_WorldFrame_names()
     {
-        var fields = typeof(WorldFrame).GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static).Where(f => f.Name.EndsWith("Slider") || f.Name.EndsWith("Sliders"));
-        var labels = fields.SelectMany(f => f.GetValue(null) switch { string label => [label], string[] many => many, _ => Array.Empty<string>() }).ToHashSet();
+        var fields = typeof(WorldFrame).GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
+        HashSet<string> Labels(string suffix) => fields.Where(f => f.Name.EndsWith(suffix) || f.Name.EndsWith(suffix + "s"))
+            .SelectMany(f => f.GetValue(null) switch { string label => [label], string[] many => many, _ => Array.Empty<string>() }).ToHashSet();
+        var sliders = Labels("Slider");
+        var switches = Labels("Switch").Concat(WorldFrame.LiveSwitches(new WorldOptions(), () => null, () => null, () => null).Select(e => e.Name))
+            .Select(label => SettingsMenu.SwitchKeyPrefix + label).ToHashSet();
 
-        foreach (var s in All.Where(s => s.Graphics)) Assert.Contains(s.Key, labels);
+        foreach (var s in All.Where(s => s.Graphics)) Assert.Contains(s.Key, s.Kind == SettingKind.Toggle ? switches : sliders);
     }
 
     [Fact]
