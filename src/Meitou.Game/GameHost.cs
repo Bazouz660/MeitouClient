@@ -226,9 +226,8 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
     void ConfigurePlayerInterface(PlayerInterface ui)
     {
         ui.FixLoadButton = config.FixLoadButton;
-        // The region (BIOME_GROUP) under a point and the wind at the camera, for the biome banner and the prospecting window.
+        // The region (BIOME_GROUP) under a point, for the biome banner.
         ui.RegionAt = (x, z) => ActiveWeather?.World.RegionAt(x, z).Def is { } def ? (def.StringId, def.Name) : null;
-        ui.WindSpeed = () => ActiveWeather?.State.WindSpeed ?? 0;
         ui.BuildHost = MakeBuildServices();
         ui.FactionName = faction => faction >= 0 && faction == session.World.Player.Faction && session.World.Player.FactionName is { } renamed ? renamed : popData is { } d && faction >= 0 && faction < d.Factions.Count ? d.Factions[faction].Name : null;
         // The faction tab's list (docs/game/ui-screens.md "Faction tab"): every faction but the player's, the `not real` ones (engine choice: the original's filter is Unknown) and the
@@ -317,9 +316,8 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
         player.SpeedUnit = config.SpeedUnit;
         player.Floaters = config.Floaters;
         player.FixLoadButton = config.FixLoadButton;
-        // The region (BIOME_GROUP) under a point and the wind at the camera, for the biome banner and the prospecting window.
+        // The region (BIOME_GROUP) under a point, for the biome banner.
         player.RegionAt = (x, z) => gpu.Weather?.World.RegionAt(x, z).Def is { } def ? (def.StringId, def.Name) : null;
-        player.WindSpeed = () => gpu.Weather?.State.WindSpeed ?? 0;
         player.Markers = gpu.Markers ??= MarkerRenderer.Create(context, assets.Find);
         SetUpBlood(context);
         gpu.HoverOutline ??= new HoverOutlineRenderer(context);

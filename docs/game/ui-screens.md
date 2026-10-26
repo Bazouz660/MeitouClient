@@ -448,7 +448,7 @@ to Jobs; the saved `chase mode` flag is that switch (**Verified**, [perma-jobs](
 
 **Verified** (`MainBarGUI::vfunc_10` `140728d50`, the HUD's per-frame update; save `FUN_140728af0` / `FUN_140728c10`) unless noted. `BiomeTextPanel` (full width, 0.24 to 0.36 of the screen height, hidden in the layout)
 holds `BiomeTextBox` (`Kenshi_BannerTextFont`, centred, shadowed) between `BiomeNameTopLine` and `BiomeNameBottomLine`.
-- **Region.** The BIOME_GROUP of the area sector (64 x 64, `(c + 147465) / 4608` per axis, `FUN_1408f56b0`) under the camera pivot (`DAT_142133310 + 0x58`, **Observed** as the pivot). A group named `NONE` (bytes at `1416c4bf4`) or with id `18003-gamedata.base` never shows.
+- **Region.** The BIOME_GROUP of the area sector (64 x 64, `(c + 147465) / 4608` per axis, `FUN_1408f56b0`) under the camera pivot (`DAT_142133310 + 0x58`, `CameraClass::center`, KenshiLib 1ce4a16, **Observed**). A group named `NONE` (bytes at `1416c4bf4`) or with id `18003-gamedata.base` never shows.
 - **Track.** While the LoadingWindow is up (`FUN_1406e2100`) the stored group is only set to the one under the pivot (a load announces nothing). Else, each frame with dt the real frame time (`DAT_142133790`, [game-loop](game-loop.md#frame-clocks)): `hold -= dt`, `cooldown -= dt`.
 - **Show.** The group differs from the stored one, `cooldown <= 0` and `**(DAT_1421337c0 + 0x128)` is null (**Unknown** what that is): the text is the group's record name, `hold = 5`, `cooldown = 30`, the panel appears at alpha 0 and `New_Biome` is posted
   ([audio](../audio.md#interface)). The code also stores 480 when the group is the one shown before, then overwrites it (**Observed** dead store). Lines: the panel grows to the text height `ceil(0.65 h)` + 4 line heights; the top line
@@ -498,17 +498,20 @@ not through the order dispatcher: no `Right_Click`) and `Prospect_Click` is post
 - **Result** (`FUN_14048e9e0`): at 1.0 the window gets the spot, the prospector's science (`CharStats +0xe0`, raw) and name. `FUN_14049f180` shows `Kenshi_ProspectingWindow` centred, titled "Prospecting Results", posts `Prospect_Results`, and
   `FUN_14049d850` fills it. With s = science / 100:
   - `OverviewDatapanel1`: `Zone:` the group's name; `Altitude:` `{n} m`, the ground height at the spot (**Observed**, `FUN_1409b32f0`); `Prospector Skill:` the science as an int; `Area Size:` `int((s x 6000 + 2000) x 0.2) m`.
-  - `OverviewDatapanel2`: `Wind Speed:` `{x.x} mph` (wind speed x 0.22369362; the region lookup's position, the spot or the camera, is **Unknown**); `Environment:` the group's resources record `green`, `arid`, `swamp` (map keys 1, 2, 3, **Observed**) as `Green 40%`, `Arid 10%`... for those above 0 in `#afa68b`, the first on the label's line, `Dead` when none is.
+  - `OverviewDatapanel2`: `Wind Speed:` `{x.x} mph`, the current wind speed x 0.22369362 of the spot's weather region (`FUN_140785f50`: the spot's group, the same lookup as `Zone:`, its weather region at
+    +0x98, that region's weather instance's `windSpeed` +0x18; 0 without a group or region; layouts KenshiLib 1ce4a16, **Observed**), read once when the window fills: `FUN_14049d850`'s only caller is the show `FUN_14049f180`, a row click (`FUN_14049d4d0`) only redraws the map; `Environment:` the group's resources record `green`, `arid`, `swamp` (map keys 1, 2, 3, **Observed**) as `Green 40%`, `Arid 10%`... for those above 0 in `#afa68b`, the first on the label's line, `Dead` when none is.
   - `ResourcesList`: a `Kenshi_ProspectingWindowResourceLine` per resource in the order Water (5), Fertility (6), Stone (2), Iron (1), Copper (3); Carbon (4) is not listed. Caption the name, `ValueText` `int(100 x v)` with v = `uses_resources`
     ([buildings-production](buildings-production.md#resources)) at the spot, coloured `#a8b774` above 0.75, `#59231a` below 0.5, else `#140806`. The rows are radio `CheckboxButton`s, the first checked.
   - `Map` (`FUN_14049d850` sets it up, `FUN_14049cd60` draws it; constants from the disassembly): an image `int(s x 246 + 6)` pixels a side over the square of half-size `s x 6000 + 2000` units round the spot, rows from -Z, each pixel
     sampled at its cell's centre with the resources record of the spot's group (looked up once, `FUN_140a12ff0` reads the record it is passed). Ground: grey `(h - 500) / 9500 x 255` for terrain height h above 500, else black. Water, Fertility, Stone: where h >= 0 and `uses_resources` v > 0.01 (capped at 1), with a = (1 - v) v and g the
     grey, red `(1 - a) g + 255 a`, green `(1 - v²) g + 255 v²`, blue g (bytes B, G, R of `PF_R8G8B8` / `PF_A8R8G8B8`). Iron, Copper: each rock of the resource within 0.6 x the side of the spot paints its pixel (and the three to
-    +X/+Z when the image is over 40 wide) red 255 a, green 255 v², blue the grey there, v its own yield (`vfunc_92`) clamped to 0..1. Redrawn for the checked row. `CameraMarker` (`FUN_14048c970`) sits on the camera's point, turned
-    to its heading (the angle to the view direction, negative towards -X).
+    +X/+Z when the image is over 40 wide) red 255 a, green 255 v², blue the grey there, v its own yield (`vfunc_92`) clamped to 0..1. Redrawn for the checked row. `CameraMarker` (`FUN_14048c970`, every frame while the window shows, from `FUN_1406ea070`, and at the fill): centred
+    on the position (`Node::getPosition`) of the camera's centre node, the pivot it orbits (`DAT_142133310` is the `CameraClass`, +0x58 `center`), mapped through the map square to the image's pixels;
+    turned (`RotatingSkin::setAngle`) by the angle between `NEGATIVE_UNIT_Z` and the camera's facing (`FUN_1406ae860` on the player interface's camera +0x30: centre minus the camera's node position, y zeroed,
+    normalised), negative when the facing's x is below 0. **Verified** (disassembly); the class and field names KenshiLib 1ce4a16 (**Observed**).
 - The close button hides the window; hiding frees the rows (`FUN_14048d780`).
 
-Meitou: `ProspectOrder` makes `CharacterTask.Prospect` ([simulation](../simulation.md#prospecting)); the window is the faithful screen `prospect` in both UI modes; wind is the host's weather state at the camera (engine choice).
+Meitou: `ProspectOrder` makes `CharacterTask.Prospect` ([simulation](../simulation.md#prospecting)); the window is the faithful screen `prospect` in both UI modes; the report carries the wind and the map, the marker follows the camera's pivot and heading every frame.
 
 ### Selected building
 

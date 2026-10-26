@@ -65,7 +65,10 @@ public sealed partial class ProductionSystem
         prospectors = found;
     }
 
-    /// <summary>The window's content for a finished prospecting (<b>Verified</b>/<b>Observed</b> per docs/game/ui-screens.md "Prospecting"), read from the ground at the prospector's feet.</summary>
+    /// <summary>
+    /// The window's content for a finished prospecting (<b>Verified</b>/<b>Observed</b> per docs/game/ui-screens.md "Prospecting"), read from the ground at the prospector's feet; the wind is
+    /// the spot's weather region's at this moment (<c>FUN_140785f50</c>, read once when the window fills).
+    /// </summary>
     void PublishProspect(World world, CharacterCold prospector, System.Numerics.Vector3 at)
     {
         float skill = prospector.Stats?[StatsEnumerated.Science] ?? 0;
@@ -77,7 +80,8 @@ public sealed partial class ProductionSystem
         var found = new ProspectLine[ProspectResources.Length];
         for (int k = 0; k < found.Length; k++) found[k] = new(ProspectResources[k].Name, resources.Yield(ProspectResources[k].Resource, at));
         world.Prospected = new ProspectReport((world.Prospected?.Serial ?? 0) + 1, at, prospector.Name, (int)skill, resources.ZoneName(at.X, at.Z) ?? "", (int)at.Y,
-            (int)((skill * 0.01f * 6000 + 2000) * 0.2f), environment, found, SampleProspectMap(world, at, skill * 0.01f));
+            (int)((skill * 0.01f * 6000 + 2000) * 0.2f), environment, found, SampleProspectMap(world, at, skill * 0.01f),
+            world.Weather?.At(at.X, at.Z)?.WindSpeed ?? 0);
     }
 
     /// <summary>
