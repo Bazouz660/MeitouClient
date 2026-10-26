@@ -274,6 +274,8 @@ sealed partial class PlayerInterface
         "Charging" => "This battery is being charged.",
         "Draining" => "This battery is in use and being drained of its power.",
         "Stored" => "This battery is not in use.",
+        "Collecting" => "Rain is being collected.",
+        "Not Raining" => "It is not raining. Nothing to collect.",
         "Normal" => "Building is in good condition.",
         "Under construction" => "This machine is currently under construction.",
         "Broken" => "This machine has broken down as a result of damage. Send one of your engineers to repair it.",

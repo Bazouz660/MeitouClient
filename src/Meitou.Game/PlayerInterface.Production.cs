@@ -277,7 +277,8 @@ sealed partial class PlayerInterface
     static void AddEfficiencyLines(Meitou.Simulation.Production.EfficiencyView e, int resource, List<HudLine> stats, bool active = true)
     {
         float share = e.MaxOperators > 0 ? 1f / e.MaxOperators * e.Operators : 1;
-        float work = (active ? e.Health * e.Power : 0) * share * 100;
+        // Slot 109: a rain collector's is x the rain strength (FUN_140298470).
+        float work = (active ? e.Health * e.Power * (e.Rain ?? 1) : 0) * share * 100;
         float max = e.Yield * e.Rate;
         int total = (int)(max * work);
         // Slot 156: a rain collector's rain strength (FUN_14030b460, Bad at 0); else (FUN_14030a130) the rate, then the resource's loss or gain, in Bad when the yield is under 1.
@@ -419,6 +420,8 @@ sealed partial class PlayerInterface
             bad = m.Status == 1;
             stats.Add(new("Output:", $"{o.Name} {N(o.Count)}/{N(o.Capacity)}", MainColour));
         }
+        // RainCollectorBuilding slot 114 (FUN_140301410): unless the output is full, Collecting while it rains, else Not Raining.
+        if (m.Efficiency is { Rain: { } rain } && m.Status != 1) (status, bad) = rain > 0 ? ("Collecting", false) : ("Not Raining", true);
         if (m.Efficiency is { } e) AddClassLines(m, e, rich?.Resource ?? 0, stats, extended, e.Active, gun);
         // Power, in the original's words where it has them (GeneratorBuilding vfunc_114, vfunc_153); "No power" and "Low power" are Meitou's.
         if (m.Power is { } pw)

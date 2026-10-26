@@ -608,7 +608,9 @@ How a building gets selected: [ui-input](ui-input.md#building-picking-and-select
     Useable / Storage / Light / Research `FUN_140305d70` only the rate row, Turret `FUN_14030cb40` only `Max possible efficiency:` int(slot 119 × 100)%,
     RainCollector `FUN_14030b460` only `Rain strength:` int(r × 100)% (Main, Bad at r <= 0), r (`FUN_140298400`) = the `wetness` (WEATHER loader
     `FUN_1409de7b0`, +0x94) of the current weather of the region at the building when slot 59 is null or +0x240 is set and that weather's `affect type` is not 2
-    (acid), else 0.
+    (acid), else 0. RainCollector's slot 109 (`FUN_140298470`, **Verified**) is r × the common slot 109, so its Efficiency and its production (slot 150
+    `FUN_140298700` reads slot 109) are × r; Max efficiency is not. Its slot 114 (`FUN_140301410`): when not broken, complete and not output full (status 1),
+    `Collecting` (Good, "Rain is being collected.") while r > 0, else `Not Raining` (Bad, "It is not raining. Nothing to collect."); otherwise the common chain.
     Efficiency then adds `Damage:`, `Power:` (only for a consumer, `power output` < 0) and `Num workers:` (raw max = operators), each `OK` (Good) or `-`
     int((1 − kept) × rate × 100)% (Bad), and `Total:` the line's value (Main); Max efficiency adds only `Total:`. Slot 109 (`FUN_140296e00`) = 0 when slot 164
     fails, else the construction fraction (`FUN_140547200`, progress / target capped at 1) × granted / demand (1 without demand). Slot 164 (**Verified**) is

@@ -218,6 +218,10 @@ public sealed partial class ProductionSystem
         }
     }
 
-    /// <summary>The factor a machine's work is scaled by: its health, its power share and its research production multiplier.</summary>
-    float WorkFactor(World world, Machine m) => m.Health * m.Power * world.Research.Upgrade(m.Data.Id).ProductionMult;
+    /// <summary>
+    /// The factor a machine's work is scaled by: its health, its power share (slot 109, which slot 150 <c>FUN_140298700</c> reads virtually) and its research production multiplier. A rain
+    /// collector's slot 109 (<c>FUN_140298470</c>, <b>Verified</b>) is that times the rain strength, so it collects nothing while it does not rain.
+    /// </summary>
+    float WorkFactor(World world, Machine m) => m.Health * m.Power * world.Research.Upgrade(m.Data.Id).ProductionMult
+        * (m.Data.Function == MachineData.RainCollectorFunction ? m.Rain : 1);
 }
