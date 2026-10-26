@@ -13,11 +13,12 @@ public enum Dismemberment
 
 /// <summary>
 /// The new-game options and settings that change the body mechanics (docs/game/character-stats.md "New-game advanced options"). They are not part of the
-/// CONSTANTS record, so they are passed beside it. The defaults of the original are <b>Unknown</b> (zero in the exe image); 1 is the neutral value.
+/// CONSTANTS record, so they are passed beside it. The defaults are the original's (1, its reset <c>FUN_1403e75d0</c>).
 /// </summary>
 public sealed record BodyOptions
 {
-    public static BodyOptions Default { get; } = new();
+    /// <summary>A new instance each time: <see cref="Dismemberment"/> is changed on the running world's instance, which must not be a shared one.</summary>
+    public static BodyOptions Default => new();
 
     /// <summary><b>Hunger time</b> (0.25 to 8): multiplies <c>starvation time</c>; higher means slower hunger.</summary>
     public float HungerTime { get; init; } = 1;
@@ -25,5 +26,6 @@ public sealed record BodyOptions
     public float ChanceOfDeath { get; init; } = 1;
     /// <summary><b>Global damage multiplier</b> (0.5 to 4): scales combat XP (and damage, combat.md).</summary>
     public float GlobalDamageMultiplier { get; init; } = 1;
-    public Dismemberment Dismemberment { get; init; } = Dismemberment.Rare;
+    /// <summary>Settable: the original reads its global when a part is damaged, so a change on the Gameplay page reaches the running world at once.</summary>
+    public Dismemberment Dismemberment { get; set; } = Dismemberment.Rare;
 }

@@ -71,7 +71,8 @@ public static class SaveLoader
         // A renamed player faction (the CAMERA's name differs from the data's).
         world.Player.FactionName = camera.PlayerFactionName is { Length: > 0 } savedName && playerIndex >= 0 && savedName != data.Factions[playerIndex].Name ? savedName : null;
         world.Player.SquadAi = SquadAiKeys.Read(camera.Record);
-        world.Player.BanditsLoot = camera.Record.Bools.GetValueOrDefault("bl", true);
+        // The original's loader reads `bl` only from a save holding the advanced options (float `cod`; docs/game/character-stats.md).
+        world.Player.BanditsLoot = !camera.Record.Floats.ContainsKey("cod") || camera.Record.Bools.GetValueOrDefault("bl", true);
         BedSave.Read(camera.Record, world);
         LoadTownKnowledge(save, data, world.Player);
         LoadUniques(camera.Record, data, world.Uniques);

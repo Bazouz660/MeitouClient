@@ -135,6 +135,12 @@ public sealed class RagdollSystem : ITickSystem, IStateHashed, IRagdollState, IR
 
     // ---- the tick ----
 
+    /// <summary>
+    /// <c>Character::isRagdoll</c> (<c>FUN_1407d1440</c>): carried or whole-body ragdolled, the WHOLE or CARRY_MODE parts of <see cref="Wanted"/>; the simulation's rule, whether or not the host
+    /// has the rig to show it (the original needs a visual or death to ragdoll).
+    /// </summary>
+    internal static bool IsRagdoll(CharacterCold cold) => (Wanted(cold) & (RagdollPart.Whole | RagdollPart.CarryMode)) != 0;
+
     /// <summary>The parts that should be a ragdoll now (docs/game/ragdolls.md "Triggers").</summary>
     static RagdollPart Wanted(CharacterCold cold)
     {

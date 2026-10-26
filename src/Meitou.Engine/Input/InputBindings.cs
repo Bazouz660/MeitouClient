@@ -153,9 +153,9 @@ public sealed class InputBindings
         Set(InputAction.ToggleFps);   // Ctrl+F9 in the game (plain F9 is the game's quickload), so unbound here
         Set(InputAction.QuickSave, Key.F5);
         Set(InputAction.QuickLoad, Key.F9);
-        Set(InputAction.ToggleDebugMenu, Key.Insert);   // unbound in the game; F12 is Steam's screenshot key, so the profiler took F10
+        Set(InputAction.ToggleDebugMenu, Key.F10);
         Set(InputAction.ToggleStats, Key.F11);
-        Set(InputAction.CycleProfiler, Key.F10);
+        Set(InputAction.CycleProfiler, Key.F12);
         Set(InputAction.Quit, Key.Escape);
     }
 

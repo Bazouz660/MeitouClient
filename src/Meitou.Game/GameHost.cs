@@ -226,9 +226,8 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
     void ConfigurePlayerInterface(PlayerInterface ui)
     {
         ui.FixLoadButton = config.FixLoadButton;
-        // The region (BIOME_GROUP) under a point and the wind at the camera, for the biome banner and the prospecting window.
+        // The region (BIOME_GROUP) under a point, for the biome banner.
         ui.RegionAt = (x, z) => ActiveWeather?.World.RegionAt(x, z).Def is { } def ? (def.StringId, def.Name) : null;
-        ui.WindSpeed = () => ActiveWeather?.State.WindSpeed ?? 0;
         ui.BuildHost = MakeBuildServices();
         ui.FactionName = faction => faction >= 0 && faction == session.World.Player.Faction && session.World.Player.FactionName is { } renamed ? renamed : popData is { } d && faction >= 0 && faction < d.Factions.Count ? d.Factions[faction].Name : null;
         // The faction tab's list (docs/game/ui-screens.md "Faction tab"): every faction but the player's, the `not real` ones (engine choice: the original's filter is Unknown) and the
@@ -303,9 +302,10 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
         if (session.Bindings.Get(InputAction.Orbit).SequenceEqual([Binding.Of(EngineButton.Middle)])) session.Bindings.Set(InputAction.Orbit, EngineButton.Middle, EngineKey.LeftControl, EngineKey.RightControl);
         // F12 is the profiler now (as in the viewer); older saved configs took it for the screenshot.
         if (session.Bindings.Get(InputAction.Screenshot).SequenceEqual([Binding.Of(EngineKey.F12)])) session.Bindings.Set(InputAction.Screenshot, EngineKey.F8, EngineKey.PrintScreen);
-        // Steam takes F12 for its screenshot: the profiler moved to F10 and the debug menu to Insert; older saved configs had them on F12 and F10.
-        if (session.Bindings.Get(InputAction.CycleProfiler).SequenceEqual([Binding.Of(EngineKey.F12)])) session.Bindings.Set(InputAction.CycleProfiler, EngineKey.F10);
-        if (session.Bindings.Get(InputAction.ToggleDebugMenu).SequenceEqual([Binding.Of(EngineKey.F10)])) session.Bindings.Set(InputAction.ToggleDebugMenu, EngineKey.Insert);
+        // The profiler and debug menu were briefly on F10 and Insert; configs saved then go back to F12 and F10.
+        if (session.Bindings.Get(InputAction.CycleProfiler).SequenceEqual([Binding.Of(EngineKey.F10)])
+            && session.Bindings.Get(InputAction.ToggleDebugMenu).SequenceEqual([Binding.Of(EngineKey.Insert)]))
+        { session.Bindings.Set(InputAction.CycleProfiler, EngineKey.F12); session.Bindings.Set(InputAction.ToggleDebugMenu, EngineKey.F10); }
         // F9 is the game's quickload now (F5 quicksave); older saved configs took F9 for the fps counter, which is on Ctrl+F9 and unbound here.
         if (session.Bindings.Get(InputAction.ToggleFps).SequenceEqual([Binding.Of(EngineKey.F9)])) session.Bindings.Set(InputAction.ToggleFps);
         // Tab is the game's change_squad, not the settings (they open from the Esc menu); older saved configs bound Tab to them.
@@ -317,9 +317,8 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
         player.SpeedUnit = config.SpeedUnit;
         player.Floaters = config.Floaters;
         player.FixLoadButton = config.FixLoadButton;
-        // The region (BIOME_GROUP) under a point and the wind at the camera, for the biome banner and the prospecting window.
+        // The region (BIOME_GROUP) under a point, for the biome banner.
         player.RegionAt = (x, z) => gpu.Weather?.World.RegionAt(x, z).Def is { } def ? (def.StringId, def.Name) : null;
-        player.WindSpeed = () => gpu.Weather?.State.WindSpeed ?? 0;
         player.Markers = gpu.Markers ??= MarkerRenderer.Create(context, assets.Find);
         SetUpBlood(context);
         gpu.HoverOutline ??= new HoverOutlineRenderer(context);

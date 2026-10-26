@@ -26,4 +26,23 @@ public class NewGameSettingsTests
         var old = NewGameSettings.Read(new SaveCamera(new FcsRecord()));
         for (int i = 0; i < values.Length; i++) Assert.Equal(1, old[i]);
     }
+
+    [Fact]
+    public void ReadsTheOriginalsKeysAsItsLoaderDoes()
+    {
+        var camera = new SaveCamera(new FcsRecord());
+        camera.Record.Floats["ht"] = 8;
+        camera.Record.Bools["bl"] = false;
+        var withoutCod = NewGameSettings.Read(camera);
+        Assert.Equal(1, withoutCod[0]);
+        Assert.True(withoutCod.BanditsLoot);
+
+        camera.Record.Floats["cod"] = 2;
+        var loaded = NewGameSettings.Read(camera);
+        Assert.Equal(8, loaded[0]);
+        Assert.Equal(2, loaded[1]);
+        Assert.Equal(0, loaded[2]);
+        Assert.Equal(1, loaded[6]);
+        Assert.False(loaded.BanditsLoot);
+    }
 }

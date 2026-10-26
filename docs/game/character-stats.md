@@ -530,19 +530,25 @@ and a consumer that reads the same offset):
 
 **Observed**, UI constructor `FUN_1409151d0` and writer `FUN_140912f80` (nine floats copied to the globals at
 `142133578..142133598` when options are applied). The block is `GameplayOptions` (**KenshiLib 1ce4a16**: `+0x4 easyProspecting`,
-`+0x20 banditsLootPlayer`, `+0x21 animalsEat`, `+0x22 difficultHealing`); its loader `FUN_1403eef20` reads CAMERA bool `ep` into +0x4
-and `bl` into +0x20, defaulting +0x4 to 0 and +0x20, +0x21, +0x22 to 1 (**Verified**, decompile). The exe image holds zeros there, so defaults are set at game
-start, not statically readable (**Unknown**; the sliders' ranges are in the binding).
+`+0x20 banditsLootPlayer`, `+0x21 animalsEat`, `+0x22 difficultHealing`).
 
-| Option label | Global | Slider range | Effect found |
-| --- | --- | --- | --- |
-| Hunger time | 142133594 | 0.25 to 8 | multiplies `starvation time` |
-| Chance of death | 142133578 | 0.5 to 4 | multiplies the bleed rate (`FUN_140646140`) and the wound degeneration (`FUN_14064f5c0`); it does **not** touch starvation: the starvation time reads the *Hunger time* float, which is at +0x1c of this block (**Verified**: addresses of the slider bindings in `FUN_1409151d0` and the writer `FUN_140912f80`) |
-| Global damage multiplier | 142133580 | 0.5 to 4 | multiplies damage and combat XP ([combat.md](combat.md#global-tuning-the-constants-record)) |
-| Building speed / Research speed / Production speed | 142133584 / 14213358c / 142133590 | 0.5 to 2 | construction, research and production rates, [buildings-production.md](buildings-production.md#construction-tick) |
-| Bandits loot the player ("Makes life unfair"; CAMERA `bl`, default on) | 142133598 (byte) | checkbox | NPCs may loot the player's downed characters ([NPC looting](carry-loot.md#33-npc-looting)) |
-| Easy prospecting (no help text; CAMERA `ep`, default off) | 14213357c (byte) | checkbox | none: **Verified** that nothing reads it in 1.0.68 (the only RIP-relative references, by a scan of the exe's `.text`, are the writer `FUN_140912f80` and this UI; the struct's own methods load/save/reset `FUN_1403eef20`/`FUN_1403ee910`/`FUN_1403e75d0` and `getStarvationTimeInHours` `FUN_1403e7620` only copy it or read `+0x1c`). A dead option |
-| Number of nests multiplier | 142133588 | 0.5 to 4 | scales the nest count of the area spawner, [factions-squads-towns.md](factions-squads-towns.md#population-and-contents) (**Observed**: that doc's "global density float" `DAT_142133588` is this slider; [combat.md](combat.md#global-tuning-the-constants-record) lists the binding) |
+Saved per world only, in the save's CAMERA record (the "Key" column), never in `settings.cfg` (**Verified**, decompile: `saveGame`
+`FUN_140375360` calls the saver `FUN_1403ee910` on the globals, `loadGame` `FUN_140373f00` calls the loader `FUN_1403eef20` on them; the save list's
+preview `FUN_14047e390` reads a copy; key strings read from the exe at `1416ce7f0..1416ce810`; 6 original saves carry all ten keys, one with `ht` 8):
+- Reset (`FUN_1403e75d0`, new game) and loader start: every float 1, +0x4 0, +0x20 and +0x21 1, +0x22 0.
+- Without float `cod` the loader keeps those defaults and reads nothing. With it: `cod gdm ps rs bs` and bool `ep` are read
+  unconditionally (a missing one would read 0 / false), `ht`, `nnm`, `bl` and bool `heal` (into +0x22) only when present. No clamping.
+- The saver writes the seven floats and `ep`, `bl`; not `heal` (also a squad-toggle key) nor +0x21. Nothing reads +0x22.
+
+| Option label | Key | Global | Slider range | Effect found |
+| --- | --- | --- | --- | --- |
+| Hunger time | `ht` | 142133594 | 0.25 to 8 | multiplies `starvation time` |
+| Chance of death | `cod` | 142133578 | 0.5 to 4 | multiplies the bleed rate (`FUN_140646140`) and the wound degeneration (`FUN_14064f5c0`); it does **not** touch starvation: the starvation time reads the *Hunger time* float, which is at +0x1c of this block (**Verified**: addresses of the slider bindings in `FUN_1409151d0` and the writer `FUN_140912f80`) |
+| Global damage multiplier | `gdm` | 142133580 | 0.5 to 4 | multiplies damage and combat XP ([combat.md](combat.md#global-tuning-the-constants-record)) |
+| Building speed / Research speed / Production speed | `bs` / `rs` / `ps` | 142133584 / 14213358c / 142133590 | 0.5 to 2 | construction, research and production rates, [buildings-production.md](buildings-production.md#construction-tick) |
+| Bandits loot the player ("Makes life unfair"; default on) | bool `bl` | 142133598 (byte) | checkbox | NPCs may loot the player's downed characters ([NPC looting](carry-loot.md#33-npc-looting)) |
+| Easy prospecting (no help text; default off) | bool `ep` | 14213357c (byte) | checkbox | none: **Verified** that nothing reads it in 1.0.68 (the only RIP-relative references, by a scan of the exe's `.text`, are the writer `FUN_140912f80` and this UI; the struct's own methods load/save/reset `FUN_1403eef20`/`FUN_1403ee910`/`FUN_1403e75d0` and `getStarvationTimeInHours` `FUN_1403e7620` only copy it or read `+0x1c`). A dead option |
+| Number of nests multiplier | `nnm` | 142133588 | 0.5 to 4 | scales the nest count of the area spawner, [factions-squads-towns.md](factions-squads-towns.md#population-and-contents) (**Observed**: that doc's "global density float" `DAT_142133588` is this slider; [combat.md](combat.md#global-tuning-the-constants-record) lists the binding) |
 
 ### CONSTANTS used by this subsystem
 

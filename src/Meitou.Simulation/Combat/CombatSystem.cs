@@ -227,6 +227,7 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
         var cold = table.Cold(slot)!;
         cold.InCombat = false;
         cold.CombatRunning = false;
+        cold.RangedCombatMode = false;
         cold.TargetFleeingTime = 0;
         // The fight's end sheathes nothing (docs/game/combat.md "Fight lifecycle and orders", weapon away): the planner puts it away before a goal that needs it away
         // (the AI's UNEQUIP_WEAPON step), a player's character once it stops moving on an order (Act). A character without either sheathes now.

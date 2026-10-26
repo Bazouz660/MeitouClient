@@ -41,12 +41,13 @@ public sealed partial class CombatSystem
 
     /// <summary>
     /// The HUD's crossbow accuracy (the Current Skill line in ranged mode): the crossbow's deviation at 0 skill, the effective crossbows skill and the resulting deviation in degrees
-    /// (<see cref="RangedFormulas.Deviation"/>, as a shot takes it); null without a crossbow.
+    /// (<see cref="RangedFormulas.Deviation"/>, as a shot takes it); null without a crossbow. <paramref name="stat"/>: Crossbows, or Turrets when <see cref="CharacterCold.LastWeaponCategory"/>
+    /// is 7 (the crossbow's deviation with the Turrets level).
     /// </summary>
-    internal static (float Weapon, float Skill, float Deviation)? HudAccuracy(CharacterCold c)
+    internal static (float Weapon, float Skill, float Deviation)? HudAccuracy(CharacterCold c, StatsEnumerated stat = StatsEnumerated.Crossbows)
     {
         if (c is not { Fighter.Crossbow: { } x, Stats: not null, Medical: not null }) return null;
-        float skill = Eff(c, StatsEnumerated.Crossbows);
+        float skill = Eff(c, stat);
         return (x.Stats.AccuracyDeviation, skill, RangedFormulas.Deviation(x.Stats.AccuracyDeviation, skill, Eff(c, StatsEnumerated.Perception)));
     }
 

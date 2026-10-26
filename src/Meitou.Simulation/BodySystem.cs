@@ -261,9 +261,8 @@ public sealed class BodySystem(GameConstants constants, BodyOptions? options = n
     /// <summary>
     /// The numbers behind the information panel's extended lines (<c>FUN_140895350</c>, docs/game/ui-screens.md section 4). Toughness XP (<c>FUN_1408c5f40</c>, <b>Verified</b> in game, #82):
     /// 1, or 2 with the left arm crippled, plus 2 for the right arm, 2 while the blood-loss trauma flag is set, and 2 for the "Critical wounds" term, which tests the worst part's
-    /// fraction (at most 1) against 15 and so is always on: a whole character reads 3x. Strength XP is the carrying rate, or in combat mode (<c>Character::isInCombatMode(1, 1)</c>:
-    /// fighting, or a crossbow drawn in ranged mode) the weapon weight factor (CharStats <c>+0x184</c>, <see cref="XpService.WeaponWeightStrengthFactor"/> of the melee weapon) and with
-    /// fists (current weapon type 5) 1 - the encumbrance factor.
+    /// fraction (at most 1) against 15 and so is always on: a whole character reads 3x. Strength XP is the carrying rate here; the published HUD replaces it in combat mode
+    /// (<see cref="WithCombatMode"/>), which needs the fight and turret state of other characters.
     /// </summary>
     ExtendedStats ExtendedOf(CharacterCold cold, CharacterStats stats, RaceData race, MedicalState medical, float speed, float encumbrance, bool resting, bool carrying)
     {
@@ -271,12 +270,22 @@ public sealed class BodySystem(GameConstants constants, BodyOptions? options = n
         float toughness = XpService.ToughnessFactor(medical);
         bool rest = resting || medical.Unconscious || medical.Dead;
         float hunger = race.HungerRate * MedicalState.HungerSituationFactor(Constants, rest, false, encumbrance);
-        var fighter = cold.Fighter;
-        bool fighting = fighter is not null && (cold.InCombat || (cold.Orders & CharacterOrders.Ranged) != 0 && fighter.Crossbow is not null && cold.DrawnWeapon != Meitou.Data.Gameplay.WeaponKinds.None);
-        float strength = !fighting ? xp.StrengthCarryRate(encumbrance, carrying) : fighter!.Unarmed ? 1 - encumbrance
-            : xp.WeaponWeightStrengthFactor(fighter.Weapon!.Stats.Weight, stats.Strength, medical.StatMultiplier(Meitou.Data.Gameplay.Bodies.StatsEnumerated.Strength));
-        return new ExtendedStats(XpService.AthleticsRate(encumbrance, speed, runValue), strength, toughness,
-            MedicalState.KoPoint(Constants, stats.Toughness), speed, runValue, hunger, rest, fighting);
+        return new ExtendedStats(XpService.AthleticsRate(encumbrance, speed, runValue), xp.StrengthCarryRate(encumbrance, carrying), toughness,
+            MedicalState.KoPoint(Constants, stats.Toughness), speed, runValue, hunger, rest);
+    }
+
+    /// <summary>
+    /// The extended numbers as the HUD shows them (<c>FUN_140895350</c>): in combat mode (<c>Character::isInCombatMode(1, 1)</c>, <paramref name="combatMode"/>) Strength XP is CharStats
+    /// <c>+0x184</c>, <see cref="XpService.WeaponWeightStrengthFactor"/> of the drawn weapon's weight (<see cref="Combat.CombatSystem.HandWeight"/>, a crossbow's too), or with nothing
+    /// drawn (current weapon type 5) 1 - the encumbrance factor.
+    /// </summary>
+    internal ExtendedStats WithCombatMode(ExtendedStats x, CharacterCold cold, bool combatMode)
+    {
+        if (!combatMode || cold.Stats is not { } stats || cold.Medical is not { } medical) return x;
+        bool fists = Combat.CombatSystem.HandCategory(cold) == (int)Meitou.Data.Gameplay.Combat.WeaponCategory.Unarmed;
+        float rate = fists ? 1 - (cold.Fighter?.EncumbranceFactor ?? 1)
+            : xp.WeaponWeightStrengthFactor(Combat.CombatSystem.HandWeight(cold), stats.Strength, medical.StatMultiplier(Meitou.Data.Gameplay.Bodies.StatsEnumerated.Strength));
+        return x with { StrengthXp = rate, Fighting = true, Fists = fists };
     }
 
     /// <summary>

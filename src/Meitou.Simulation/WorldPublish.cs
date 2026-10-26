@@ -96,7 +96,7 @@ public sealed partial class World
                 Inventory = selected && cold!.Inventory is { } carried ? Items.InventoryText.Lines(carried) : [],
                 AllSkills = detailed && cold!.Stats is { } allStats ? Array.AsReadOnly(allStats.ToArray()) : [],
                 SkillXpMultipliers = detailed && cold!.Race is { } skillRace ? Array.AsReadOnly((float[])skillRace.StatMultipliers.Clone()) : [],
-                Hud = detailed && cold!.Medical is { } hudMed && cold.Race is { } hudRace && cold.Stats is { } hudStats ? HudOf(cold, hudMed, hudRace, hudStats, state[i], combat, bodyConstants, !Sight.Outdoors(i), Sight.Inside(i)) : null,
+                Hud = detailed && cold!.Medical is { } hudMed && cold.Race is { } hudRace && cold.Stats is { } hudStats ? HudOf(id, cold, hudMed, hudRace, hudStats, state[i], combat, bodyConstants, !Sight.Outdoors(i), Sight.Inside(i)) : null,
                 LimbBits = cold?.Medical?.LimbBits ?? 0,
                 HealthParts = detailed && cold!.Medical is { } health && cold.Race is { } anatomy ? Array.AsReadOnly(health.Parts.Select(p => new HealthPartView(p.Template.StringId, p.Template.Name, p.Flesh, p.Stun, p.Bandage, p.Rig, p.MaxHp, p.IsRobotic(anatomy)) { Vital = p.Template.Vital, Type = p.Template.Type }).ToArray()) : [],
                 ItemGrid = (selected || id == Player.OpenLoot || cold is { IsPlayer: true } && Player.InventoryShown.Contains(id)) && cold!.Inventory is { } grid ? new InventoryView(grid.Width, grid.Height, grid.Backpack?.Contents?.Width ?? 0, grid.Backpack?.Contents?.Height ?? 0,
@@ -121,6 +121,7 @@ public sealed partial class World
                 InBed = cold is { InSomething: Locks.HeldState.Bed },
                 StayingLow = cold?.Medical is { StayingLow: true, Prone: true, Crawling: false },
                 InCombat = cold?.InCombat ?? false,
+                CombatMode = cold is not null && combat?.IsInCombatMode(table, id, cold, true, true) == true,
                 FightsPlayer = cold is { IsPlayer: false, InCombat: true } && combat?.StateOf(id) is { TargetSlot: >= 0 and var fought } fight
                     && fought < state.Length && state[fought].Alive && state[fought].Generation == fight.TargetGeneration && table.Cold(fought) is { IsPlayer: true },
                 Shackled = cold?.Inventory is { } worn && worn.Items.Any(item => item.IsLocked && item.Section != "main"),
@@ -220,21 +221,28 @@ public sealed partial class World
     /// Perception in ranged mode with a crossbow, else Martial Arts unarmed or Attack and Defense with a melee weapon; then Strength, Dexterity, Toughness and, but
     /// in ranged mode, Dodge; the lines and their tooltips are <see cref="HudTips"/>'s.
     /// </summary>
-    HudView HudOf(CharacterCold cold, Bodies.MedicalState med, RaceData race, Bodies.CharacterStats stats, in CharacterHot hot, Combat.CombatSystem? combat,
+    HudView HudOf(CharacterId id, CharacterCold cold, Bodies.MedicalState med, RaceData race, Bodies.CharacterStats stats, in CharacterHot hot, Combat.CombatSystem? combat,
         Meitou.Data.Gameplay.GameConstants? constants, bool inBuilding, bool inside)
     {
-        var lines = HudTips.Lines(cold, med, stats, combat?.HudNumbers(cold), constants, inBuilding, inside);
+        // Movement +0x24 currentlyMoving: the current speed (+0xb8, the Athletics line's too) above 0.1 (CharMovement::update).
+        bool moving = hot.Velocity.X * hot.Velocity.X + hot.Velocity.Z * hot.Velocity.Z > 0.1f * 0.1f;
+        int mode = combat?.StatsDisplayMode(id, cold, moving) ?? (cold.Fighter is { Unarmed: false } ? 0 : 1);
+        var lines = HudTips.Lines(cold, med, stats, combat?.HudNumbers(cold), constants, inBuilding, inside, mode);
+        var extended = cold.Extended is { } x0 && systems.OfType<BodySystem>().FirstOrDefault() is { } bodies
+            ? bodies.WithCombatMode(x0, cold, combat?.IsInCombatMode(Characters, id, cold, true, true) == true) : cold.Extended;
         return new HudView(med.Blood, Bodies.MedicalState.BloodCapacity(race, stats.Strength, med.HasStatsObject, med.ScaleK, med.ScaleZ), med.Bleeding,
-            cold.Fighter?.EncumbranceFactor ?? 1, lines.AsReadOnly(), cold.Extended) { BleedRate = race.BleedRate, Fed = med.Fed, Robot = race.IsRobot,
-            ExtendedTips = cold.Extended is { } x ? HudTips.Extended(cold, med, race, stats, x, constants) : null, Skill = SkillLine(cold, med, race, stats, hot) };
+            cold.Fighter?.EncumbranceFactor ?? 1, lines.AsReadOnly(), extended) { BleedRate = race.BleedRate, Fed = med.Fed, Robot = race.IsRobot,
+            ExtendedTips = extended is { } x ? HudTips.Extended(cold, med, race, stats, x, constants) : null, Skill = SkillLine(id, cold, med, race, stats, hot, combat, mode) };
     }
 
     /// <summary>
     /// The state panel's "Current Skill" line (the HUD update's panel 3, docs/game/ui-screens.md section 4): the skill the job used this tick at its effective level with its
-    /// tooltip (<see cref="SkillTermsOf"/>); else in ranged mode with a crossbow its accuracy error; else, in a fight, the drawn melee weapon's class at its trained level with
-    /// its damage; else Stealth when sneaking, Athletics when moving faster than 9 units a second. Swimming replaces it with the swim speed. Picking a lock is Lockpicking.
+    /// tooltip (<see cref="SkillTermsOf"/>); else, with the stats display mode 2 or the ranged controller's combat mode, the crossbow's accuracy error; else, in a melee fight, the
+    /// class of the weapon in hand at its trained level with its damage; else Stealth when sneaking, Athletics when moving faster than 9 units a second. Swimming replaces it with
+    /// the swim speed. Picking a lock is Lockpicking.
     /// </summary>
-    CurrentSkillView? SkillLine(CharacterCold cold, Bodies.MedicalState med, RaceData race, Bodies.CharacterStats stats, in CharacterHot hot)
+    CurrentSkillView? SkillLine(CharacterId id, CharacterCold cold, Bodies.MedicalState med, RaceData race, Bodies.CharacterStats stats, in CharacterHot hot, Combat.CombatSystem? combat,
+        int mode)
     {
         float encumbrance = cold.Fighter?.EncumbranceFactor ?? 1;
         if (cold.WaterState == 3) return new(StatsEnumerated.Swimming, "Swimming", cold.SwimSpeed, Speed: true) { Swim = SwimTermsOf(cold, med, race, stats, encumbrance) };
@@ -244,20 +252,26 @@ public sealed partial class World
             var terms = SkillTermsOf(cold, med, stats, stat);
             return new(stat, null, MathF.Round(terms.Total), terms.Penalised, Terms: terms);
         }
-        // getGUIStatsDisplayMode 2 (ranged mode) or the ranged controller's combat mode (Meitou: in a fight with the crossbow drawn), with a crossbow.
-        bool aiming = (cold.Orders & CharacterOrders.Ranged) != 0
-            || cold.InCombat && cold.DrawnWeapon == Meitou.Data.Gameplay.HandHold.OfCategory((int)Meitou.Data.Gameplay.Combat.WeaponCategory.Bow).Weapon;
-        if (aiming && Combat.CombatSystem.HudAccuracy(cold) is { } aim)
-            return new(StatsEnumerated.Crossbows, "Accuracy Error:", aim.Deviation) { Accuracy = new(aim.Weapon, aim.Skill, aim.Deviation) };
-        if (cold.InCombat && !aiming && cold.Fighter is { } f)
+        // getGUIStatsDisplayMode 2 or the ranged controller's combat mode (a shooting fight, a manned turret; no target test), with a crossbow: its accuracy with Crossbows, or with
+        // Turrets when Character +0x3d8 (the last weapon category the HUD saw in a melee fight) is 7.
+        bool aiming = mode == 2 || Combat.CombatSystem.RangedCombatMode(cold);
+        if (aiming)
         {
-            string? label = f.WeaponSkill switch
+            var aimStat = cold.LastWeaponCategory == (int)Meitou.Data.Gameplay.Combat.WeaponCategory.Turret ? StatsEnumerated.Turrets : StatsEnumerated.Crossbows;
+            if (Combat.CombatSystem.HudAccuracy(cold, aimStat) is { } aim)
+                return new(aimStat, "Accuracy Error:", aim.Deviation) { Accuracy = new(aim.Weapon, aim.Skill, aim.Deviation) };
+        }
+        else if (combat?.MeleeCombatMode(id, cold) == true)
+        {
+            // The HUD writes Character +0x3d8 from the weapon in hand (getCurrentWeapon; the FISTS weapon with nothing drawn), then labels by it. The only writer besides the constructor,
+            // so this display state lives on the character; each character is published by one worker, so the write does not race.
+            cold.LastWeaponCategory = Combat.CombatSystem.HandCategory(cold);
+            var (label, skill) = cold.LastWeaponCategory switch
             {
-                StatsEnumerated.HeavyWeapons => "Heavy:", StatsEnumerated.Katanas => "Katana:", StatsEnumerated.Hackers => "Hacker:", StatsEnumerated.Sabres => "Sabre:",
-                StatsEnumerated.MartialArts => "Martial Arts:", StatsEnumerated.Polearms => "Polearm:", _ => null,
+                3 => ("Heavy:", StatsEnumerated.HeavyWeapons), 0 => ("Katana:", StatsEnumerated.Katanas), 4 => ("Hacker:", StatsEnumerated.Hackers), 1 => ("Sabre:", StatsEnumerated.Sabres),
+                5 => ("Martial Arts:", StatsEnumerated.MartialArts), 8 => ("Polearm:", StatsEnumerated.Polearms), _ => ((string?)null, StatsEnumerated.None),
             };
-            if (label is not null)
-                return new(f.WeaponSkill, label, (int)stats[f.WeaponSkill]) { Damage = systems.OfType<Combat.CombatSystem>().FirstOrDefault()?.HudDamage(cold) };
+            if (label is not null) return new(skill, label, (int)stats[skill]) { Damage = combat.HudDamage(cold) };
         }
         if ((cold.Orders & CharacterOrders.Sneak) != 0)
         {

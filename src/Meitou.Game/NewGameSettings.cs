@@ -4,21 +4,22 @@ using Meitou.Simulation;
 namespace Meitou.Game;
 
 /// <summary>
-/// Per-world difficulty options. The seven sliders are saved under Meitou keys (missing ones use neutral values); the two ticks under the original's CAMERA bools
-/// (<c>GameplayOptions</c> load <c>FUN_1403eef20</c>, docs/game/character-stats.md "New-game advanced options").
+/// Per-world difficulty options, saved under the original's CAMERA floats and bools, a missing key taking its default (<c>GameplayOptions</c> save <c>FUN_1403ee910</c>,
+/// load <c>FUN_1403eef20</c>, docs/game/character-stats.md "New-game advanced options").
 /// </summary>
 internal sealed record NewGameSettings
 {
+    /// <summary>A slider: CAMERA float key, label, range, help line.</summary>
     internal sealed record Option(string Key, string Label, float Min, float Max, int HelpLine);
     public static readonly Option[] Options =
     [
-        new("hunger", "Hunger time", .25f, 8, 557),
-        new("death", "Chance of death", .5f, 4, 558),
-        new("damage", "Global damage multiplier", .5f, 4, 559),
-        new("production", "Production speed", .5f, 2, 560),
-        new("research", "Research speed", .5f, 2, 561),
-        new("building", "Building speed", .5f, 2, 562),
-        new("nests", "Number of nests multiplier", .5f, 4, 563),
+        new("ht", "Hunger time", .25f, 8, 557),
+        new("cod", "Chance of death", .5f, 4, 558),
+        new("gdm", "Global damage multiplier", .5f, 4, 559),
+        new("ps", "Production speed", .5f, 2, 560),
+        new("rs", "Research speed", .5f, 2, 561),
+        new("bs", "Building speed", .5f, 2, 562),
+        new("nnm", "Number of nests multiplier", .5f, 4, 563),
     ];
     /// <summary>A tick under the sliders: CAMERA bool key, label, the loader's default, help line (-1: the original sets none).</summary>
     internal sealed record Tick(string Key, string Label, bool Default, int HelpLine);
@@ -55,14 +56,24 @@ internal sealed record NewGameSettings
     /// <summary>Writes the options into a save. <c>bl</c> is the world's too (<c>PlayerState.BanditsLoot</c>, which the capture writes): both hold the same value, and an import needs it here.</summary>
     public void Write(SaveCamera camera)
     {
-        for (int i = 0; i < Options.Length; i++) camera.Record.Floats["meitou difficulty " + Options[i].Key] = this[i];
+        for (int i = 0; i < Options.Length; i++) camera.Record.Floats[Options[i].Key] = this[i];
         for (int i = 0; i < Ticks.Length; i++) camera.Record.Bools[Ticks[i].Key] = ticks[i];
+        // Earlier Meitou builds saved the sliders under keys of their own; a save made from one of theirs drops them.
+        foreach (var key in camera.Record.Floats.Keys.Where(k => k.StartsWith("meitou difficulty ", StringComparison.Ordinal)).ToList()) camera.Record.Floats.Remove(key);
     }
+    /// <summary>
+    /// As the original's loader: without <c>cod</c> every option keeps its default; with it <c>cod gdm ps rs bs ep</c> are read as they are (a missing one is 0 / false),
+    /// <c>ht nnm bl</c> only when present. Values are not clamped.
+    /// </summary>
     public static NewGameSettings Read(SaveCamera camera)
     {
         var settings = new NewGameSettings();
-        for (int i = 0; i < Options.Length; i++) settings = settings.Set(i, camera.Record.Floats.GetValueOrDefault("meitou difficulty " + Options[i].Key, 1));
-        for (int i = 0; i < Ticks.Length; i++) settings = settings.SetTick(i, camera.Record.Bools.GetValueOrDefault(Ticks[i].Key, Ticks[i].Default));
+        var (floats, bools) = (camera.Record.Floats, camera.Record.Bools);
+        if (!floats.ContainsKey("cod")) return settings;
+        for (int i = 0; i < Options.Length; i++)
+            settings.values[i] = Options[i].Key is "ht" or "nnm" ? floats.GetValueOrDefault(Options[i].Key, 1) : floats.GetValueOrDefault(Options[i].Key);
+        settings.ticks[0] = bools.GetValueOrDefault("bl", true);
+        settings.ticks[1] = bools.GetValueOrDefault("ep");
         return settings;
     }
 }

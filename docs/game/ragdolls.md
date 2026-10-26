@@ -214,7 +214,7 @@ Freeze = every body put to sleep and updates skipped (`FUN_1407d1f70`), WHOLE on
 The frozen flag clears when a body wakes (`FUN_1407d2050`). `FUN_1407d4270` (reset timers, wake all
 with 0.4) runs when bone flags are applied and when a frozen ragdoll is carried. A root
 more than 200 below the terrain is lifted to it and frozen (`FUN_1407d4470`). Global flag
-`DAT_1421349c9` (meaning Unknown) disables freezing and buoyancy. No distance LOD or ragdoll count cap was found
+`DAT_1421349c9` (the paused flag, [game-loop](game-loop.md#speed-and-pause)) disables freezing and buoyancy. No distance LOD or ragdoll count cap was found
 (`DAT_142133080` is a live-actor counter only).
 
 ## Getting up

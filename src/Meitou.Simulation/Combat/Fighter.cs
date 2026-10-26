@@ -20,6 +20,8 @@ public sealed class Fighter
     public WeaponInstance? BackWeapon { get; init; }
     /// <summary>Whether <see cref="Weapon"/> is the <see cref="BackWeapon"/> (the renderer shows that one drawn).</summary>
     public bool WeaponIsBack => Weapon is { } w && w == BackWeapon;
+    /// <summary>The first weapon in the <c>hip</c> section, if any.</summary>
+    public WeaponInstance? HipWeapon => hip;
     /// <summary>
     /// The <c>length</c> of the weapon in hand, 0 for fists (CharStats +0x200: 0 from its constructor, set when a weapon is equipped; the original keeps the last weapon's length
     /// after it is put away, which is not modelled).

@@ -210,7 +210,7 @@ public sealed partial class ProductionSystem : ITickSystem
             }
             else foreach (var item in oc.Done) Drop(item);
         }
-        (m.PowerOn, m.GetsBattery, m.Charge) = (old.PowerOn, old.GetsBattery, old.Charge);
+        (m.PowerOn, m.GetsBattery, m.Charge, m.Broken) = (old.PowerOn, old.GetsBattery, old.Charge, old.Broken);
         world.Machines.Replace(m);
         sweep = true;
     }
@@ -569,6 +569,8 @@ public sealed partial class ProductionSystem : ITickSystem
             // A turret: manned, facing it; the combat system fires it (docs/simulation.md "Combat", turrets). Its gunner counts as an operator, so it draws its power.
             if (m.Data.Function == Meitou.Data.World.ObjectRanges.TurretFunction)
             {
+                // A broken turret makes manning impossible (Task_UseTurret FUN_1403474f0 -> AITaskSytem::taskImpossible): the job ends.
+                if (m.Broken) { End(table, i); continue; }
                 if (n.Velocity.X == 0 && n.Velocity.Z == 0) n.Yaw = FacingTo(n, site);
                 m.Operators++;
                 cold.Operating = true;

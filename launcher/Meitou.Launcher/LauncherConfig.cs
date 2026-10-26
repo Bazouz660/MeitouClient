@@ -57,6 +57,8 @@ public sealed class LauncherConfig
     /// <summary>A game release the user chose not to be offered as an update; a newer one is offered again.</summary>
     public string? SkippedVersion { get; set; }
     public string LaunchArguments { get; set; } = "";
+    /// <summary>Windows: start the game with Kenshi's Steam App ID (steam_appid.txt and SteamAppId), so Steam sees it as Kenshi.</summary>
+    public bool LaunchAsSteamKenshi { get; set; } = true;
     /// <summary>The locale code of the launcher and the game (also written to the Kenshi folder's settings.cfg <c>language</c>); the settings.cfg wins when it has one.</summary>
     public string Language { get; set; } = "en_GB";
     /// <summary>An installed launcher applies its own update at startup and restarts into it.</summary>

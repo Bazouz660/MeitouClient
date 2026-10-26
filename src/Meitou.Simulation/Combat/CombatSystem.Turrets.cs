@@ -128,6 +128,7 @@ public sealed partial class CombatSystem
         {
             if (n.Task != (byte)CharacterTask.Operate || !cold.Operating || cold.OperateSite is not { } id || world.Buildings.Find(id) is not { Complete: true } site
                 || catalog.Get(site.Record) is not { } gun) return null;
+            if (world.Machines.Find(id) is { Broken: true }) return null;   // broken: manning is impossible (Task_UseTurret ends)
             float e = 1;
             if (gun.IsConsumer) e = world.Machines.Find(id) is { } m ? m.HasPower ? m.Power : 0 : 0;
             return new Post(site.Id, site.Record, site.Position, TownBuildings.YawOf(site.Rotation), 1, e, world.Research.Upgrade(site.Record).ProductionMult);
@@ -166,6 +167,8 @@ public sealed partial class CombatSystem
             t.Efficiency = post.Efficiency;
             t.DamageMult = post.DamageMult;
             cold.Gunning = post.Key;
+            // Manning sets Character +0x198 to Turrets (11) every update (Task_UseTurret FUN_1403474f0), an NPC gunner's too: the HUD's Current Skill line.
+            cold.UseSkill(StatsEnumerated.Turrets, world.Tick);
             int generation = table.Previous[i].Generation;
             if (t.Gunner != i || t.GunnerGeneration != generation)
             {

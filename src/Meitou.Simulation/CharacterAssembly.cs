@@ -75,7 +75,7 @@ sealed class CharacterAssembly(PopulationData data)
         foreach (var section in new[] { "back", "hip" })
             foreach (var item in inventory.Items.Where(i => i.Section == section && i.Type == FcsRecordType.CROSSBOW))
                 if (crossbow is null && combat.Crossbow(item.Record) is { } x)
-                    crossbow = CrossbowInstance.Create(item.Level * 0.01f, x, combat.Constants, data.BodyOptions.GlobalDamageMultiplier);
+                    crossbow = CrossbowInstance.Create(item.Level * 0.01f, x, combat.Constants, data.BodyOptions.GlobalDamageMultiplier, item.UnitWeight, section == "back");
         var packRecord = inventory.Backpack is { } pack ? data.Db.Find(pack.Record) : null;
         float? backpackStealth = inventory.Backpack is not null ? packRecord?.GetFloat("stealth mult", 1) ?? 1 : null;
         // CONTAINER +0x238 (FUN_140763810): the raw athletics mult, the seed of the gear's smallest run factor.

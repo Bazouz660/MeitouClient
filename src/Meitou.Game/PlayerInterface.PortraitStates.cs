@@ -43,7 +43,7 @@ sealed partial class PlayerInterface
         if (Vector3.DistanceSquared(m.Position, eye) >= 1e6f && Vector3.DistanceSquared(m.Position, focus) >= 1e5f && !down && m.InCombat && m.Prison is null)
             s |= PortraitState.Hurt;
         if (dead || carried || m.InBed) s |= PortraitState.Faded;
-        if (m.InCombat) s |= PortraitState.Combat;
+        if (m.CombatMode) s |= PortraitState.Combat;
         if (m.Body is { Hunger: < 1.25f }) s |= PortraitState.Hunger;
         if (m.Shackled) s |= PortraitState.Slave;
         if (m.Prison is not null) s |= PortraitState.Prison;

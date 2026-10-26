@@ -28,7 +28,7 @@ pause with a tick ahead takes it at once (the picture jumps a tick, then the pau
 (`SettleAhead`); `ReplaceWorld` drops it. Display → World tick alongside drawing (`TickAhead`): Faithful never (the world, then the draw); Meitou, the default, once
 a tick takes 4 ms (`WorldSession.TickMs`, smoothed over about ten ticks) until it is under 2 ms (a tick ahead is slower, sharing the cores); Always
 every frame. Off whatever the setting in stills, the duel, recorded flights and the play benchmark (their ticks stay in step with the frame).
-The profiler's `tick ahead` row is its wall time; `outside ticks` leaves it out.
+F12's `tick ahead` row is its wall time; `outside ticks` leaves it out.
 
 **Verified** original clock: 1200/11 seconds per game hour ([game-loop.md](game/game-loop.md)).
 `BodySystem.HoursPerTick=11/36000`; the medical tick takes `TickSeconds` ([character-stats](game/character-stats.md#time)). Navmesh unload uses
@@ -55,7 +55,7 @@ Randomness: stateless `Rng.Hash(seed,entityKey,purpose,counter)`; changing purpo
 Worker partitions are `threads*2`, minimum 16 slots (game 32: 128 left a 500-character battle 3 partitions); one worker means caller execution.
 Async paths, navmesh and population results enter at tick boundaries; arrival timing is not
 repeatable in play. Determinism tests use synchronous services. `PathService` runs 2-4 threads (a quarter of the cores) and drops a
-request its character replaced before a thread took it up; the profiler's sim rows show the requests waiting.
+request its character replaced before a thread took it up; F12's sim rows show the requests waiting.
 
 `StateHash` is ordered, includes slot/generation/free-list and hashed subsystem state, normalizes
 negative zero, and is a diagnostic rather than gameplay work. Golden scenarios must agree at
@@ -1216,9 +1216,10 @@ Facts: [Prospecting](game/ui-screens.md#prospecting), [Task_Prospecting](game/ai
 - Each tick (`SlowWorld`, before the early returns) the progress grows by the tick's game seconds. At `ProspectSeconds` = 1 (**Verified**) the task ends (`Idle`) and a `ProspectReport` is published as `World.Prospected`: the
   prospector's name and science (raw stat), the spot (its position), the zone name and the crop coverages, and the five resource values from `ResourceField.Yield` at the spot. Another task (a move, an attack, a stop) or the character going down
   ends it with no report. The report is display only: nothing reads it, the state hash does not see it, a save does not hold it.
-- Map: the report carries `ProspectMap`, sampled once at the end (terrain height `IWalkability.TerrainHeight`, the field resources by `ResourceField.FieldYield` per cell with the spot's record, the rocks in range by `NodeYield`); the window colours it per checked row. The camera marker uses the camera target (the original reads a scene node, **Unknown** which).
+- Map: the report carries `ProspectMap`, sampled once at the end (terrain height `IWalkability.TerrainHeight`, the field resources by `ResourceField.FieldYield` per cell with the spot's record, the rocks in range by `NodeYield`); the window colours it per checked row. The report also carries the wind of the spot's region at that moment (`World.Weather.At`, 0 without weather). The window's camera marker is drawn each frame at the camera's
+  target (the strategy camera's pivot) and turned by the level direction from the eye to it.
 - Animation: the `medic` clip (`AnimationSystem.HeldClip`). HUD goal text "Prospecting". **Not modelled:** the progress bar over the character, the state field `+0x198`.
-- Engine choices: the nearest-to-pivot rule uses the selection (the original's iterates the player interface's list, **Observed**); wind is the host's weather state at the camera.
+- Engine choice: the nearest-to-pivot rule uses the selection (the original's iterates the player interface's list, **Observed**).
 
 ## Trade
 
@@ -1390,14 +1391,14 @@ while enemies come. A guard at its turret fires it ([Ranged](#ranged)).
 ## New-game difficulty
 
 `NewGameSettings` in the game host binds seven numeric options to each new world: body hunger/death/damage,
-production/research, construction and nest density. Defaults are neutral (1); ranges follow
-[researched bindings](game/character-stats.md#new-game-advanced-options-that-change-these-mechanics).
+production/research, construction and nest density. Defaults (1), ranges and save keys follow
+[the original](game/character-stats.md#new-game-advanced-options-that-change-these-mechanics).
 The two new-game panels share one modal screen; expanding raises the start panel, and its Begin/Cancel remain usable.
 Opening a fresh new-game dialog resets the draft; collapsing keeps it. Failed world replacement retains the running
-world's options and body factory. Saves carry seven `meitou difficulty <key>` CAMERA floats (hunger, death, damage,
-production, research, building, nests). Missing/nonfinite values use 1; out-of-range values clamp to the slider range.
-These are Meitou extensions; original difficulty save encoding is not implemented here. Saves without the extensions
-use neutral values. Under the sliders are the original's two ticks, saved under its own CAMERA bools: Bandits loot the player (`bl`, default on,
+world's options and body factory. Saves carry the original's CAMERA floats `ht cod gdm ps rs bs nnm`, so Meitou and
+original saves are interchangeable; loading follows the original's rules exactly (the
+[load rules](game/character-stats.md#new-game-advanced-options-that-change-these-mechanics), no clamping). `meitou difficulty <key>` floats of earlier Meitou saves are ignored and dropped on the next save.
+Under the sliders are the original's two ticks, saved under its own CAMERA bools: Bandits loot the player (`bl`, default on,
 `PlayerState.BanditsLoot`, set on a new world) and Easy prospecting (`ep`, default off, kept and saved only: the original never reads it).
 
 ## Saves
