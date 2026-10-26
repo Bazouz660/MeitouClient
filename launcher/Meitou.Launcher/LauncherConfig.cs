@@ -31,6 +31,9 @@ public sealed class LauncherConfig
 
     /// <summary>The user confirmed the install and Kenshi folders in the first-start dialog.</summary>
     public bool FoldersConfirmed { get; set; }
+    /// <summary>The graphics preset was chosen for the hardware once (the first version installed whose game can detect it), or did not need
+    /// to be (the game's settings were already saved); the Graphics page's Detect button runs it again.</summary>
+    public bool PresetDetected { get; set; }
     public string? KenshiPath { get; set; }
     public bool IncludePrereleases { get; set; }
     /// <summary>macOS only: <c>auto</c> (Vulkan when its loader exists, else Metal), <c>metal</c> or <c>vulkan</c>.

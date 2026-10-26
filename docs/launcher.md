@@ -156,12 +156,31 @@ The Graphics page (`GraphicsPage.cs`, `GameSettings.cs`) shows the settings the 
 `settings-schema.json` (`SettingsSchema`, Meitou.Core) and edits the data folder's `meitou.user.json` as a JSON tree, keeping every
 key it does not show. The game writes the schema (`--settings-schema <file>`, `LauncherSchema.cs`; `package-release.ps1` runs it
 for every zip) from the names it saves under: top-level `UserConfig` properties in camelCase (`fullScreen`, `vSync`, `fpsLimit`) and
-Tab panel sliders under `graphics` by label (`WorldFrame.*Slider`), with names and hints from the in-game menu. So a renamed or new
+every Tab panel slider and switch under `graphics` (a slider by label, `WorldFrame.*Slider`; a switch as `Meitou: <label>`, 1 on,
+0 off: the Faithful / Meitou switches and `WorldFrame.*Switch`), with names and hints from the in-game menu. So a renamed or new
 setting reaches the launcher with its release; the launcher knows none of them. A version without a schema (older), or with a newer
-`format`, gets no page.
+`format`, gets no page. Rows a computer lacks (tessellation, the Meitou shadows' filter) are listed anyway; the game ignores their keys.
 
-- A missing `graphics` key is the game's default for the mode ("Game default"); Default removes it, Reset graphics removes `graphics`
-  (sliders and Faithful / Meitou switches). A top-level Default writes the schema's `default`. Whole values are written as integers.
+- Each schema section is a tab: Display, then the game's Graphics sub-pages (World, Lighting, Water, Effects, Skin) as
+  `SettingsMenu.Section` / `ToggleSection` place them, switches first.
+- `presets` (null in older schemas: no row) is the Quality preset row over the top-level `graphicsPreset`. The game saves the preset its
+  settings sit at (Custom when none) and at start applies a saved one they do not sit at (not under `--low-end`, `--meitou` or `--faithful`), so a preset chosen in
+  the launcher takes effect on the next start; the rows show the old values until then. Changing a row the preset sets (`presets.keys`)
+  saves Custom, so the game keeps that change. No saved preset shows High without saved graphics, else Custom.
+- Detect (when `presets.detect` names the game's option, `--recommend-preset <file>`) runs the played version's game, which makes a
+  headless Vulkan device (the GPU it would pick), reads the memory and the cores, and writes `{ preset, summary, gpu, integrated,
+  videoMemoryMb, memoryMb, cores, problem }`; the launcher saves `preset` as above and shows `summary`. Without Vulkan (a Metal-only Mac)
+  the memory and cores decide alone. The thresholds (`HardwareProbe.Recommend`) are a judgement, **Unknown** whether they suit: integrated
+  GPU (Apple's: under 16 GB memory), under 3 GB video memory, 8 GB memory or 4 threads is Low; under 6 GB, 12 GB or 6 threads Medium;
+  under 10 GB video memory High; else Ultra. Observed: Intel Iris Xe (integrated) is Low, in 2.5 s.
+- The launcher detects once by itself (`PresetDetected` in `launcher.json`): when the version Play starts can detect and the game has no
+  graphics settings or preset saved yet, so the first start (or first install) of a fresh setup gets a preset; saved settings are kept.
+  A failed detection is tried again at the next start.
+- A missing `graphics` key is the game's default for the mode ("Game default"; a switch offers it as a third choice beside off and
+  on); Default removes it, Reset graphics removes `graphics` and `graphicsPreset`. A top-level Default writes the schema's `default`.
+  Whole values are written as integers.
+- A slider without `labels` takes a typed value (Enter or leaving the box; Esc restores): the suffix may stay, a comma is a decimal
+  point, the value is divided by `scale`, snapped to `step` and clamped; `offText` (Unlimited, Off) means the left end.
 - A slider marked `reversed` (texture quality, whose level 0 is Maximum) is drawn mirrored, so right is always the better end; the
   value written is unchanged. Older schemas lack the flag and show it unmirrored.
 - Read-only when the file is unreadable, or its `version` differs from the schema's `settingsVersion` (another layout: the keys may

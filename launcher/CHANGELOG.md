@@ -2,6 +2,17 @@
 
 Released with tags `launcher-v<version>` by `.github/workflows/launcher-release.yml`; each release needs its `## v<version>` section.
 
+## v1.4.0
+
+- The Graphics page has **every graphics setting** of the game's Tab panel, sliders and Faithful / Meitou switches,
+  on **tabs** like the game's pages: Display, World, Lighting, Water, Effects, Skin.
+- **Quality preset** (Low, Medium, High, Ultra): the game applies the one you pick when it next starts. Low is the same as
+  `--low-end`.
+- **Detect** picks the preset for your graphics card, memory and processor. A fresh install does this by itself once;
+  settings you already have are kept.
+- **Type a value** into a slider's box instead of dragging (Enter to set, Esc to undo).
+- Shows with game releases from the next one on.
+
 ## v1.3.2
 
 - **Launch as Kenshi on Steam** (Settings, Windows): turn it off to start the game without Steam treating it as Kenshi,

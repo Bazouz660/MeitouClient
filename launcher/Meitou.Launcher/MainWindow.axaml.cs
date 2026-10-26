@@ -625,6 +625,7 @@ public sealed partial class MainWindow : Window
         installedVersions = Releases.Installed();
         ShowPlay();
         ShowFooter();
+        _ = AutoDetectPresetAsync();
     }
 
     // The version picked to play (config.SelectedVersion) while it is installed; null plays the latest.

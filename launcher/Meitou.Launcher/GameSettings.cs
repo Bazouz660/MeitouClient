@@ -6,7 +6,7 @@ namespace Meitou.Launcher;
 /// <summary>
 /// The game's <c>meitou.user.json</c> in <see cref="LauncherConfig.DataDirectory"/> (the game's working directory), edited as a JSON tree
 /// so every key the launcher does not show stays as the game wrote it. Top-level keys are the game's <c>UserConfig</c> properties in
-/// camelCase; <c>graphics</c> holds the Tab panel's sliders by label (docs/launcher.md "Graphics").
+/// camelCase; <c>graphics</c> holds the Tab panel's sliders and switches by label (docs/launcher.md "Graphics").
 /// </summary>
 sealed class GameSettings
 {
@@ -40,11 +40,16 @@ sealed class GameSettings
 
     public bool? GetBool(string key) => root[key] is JsonValue v && v.TryGetValue(out bool b) ? b : null;
     public float? GetNumber(string key) => root[key] is JsonValue v && v.TryGetValue(out double d) ? (float)d : null;
+    public string? GetString(string key) => root[key] is JsonValue v && v.TryGetValue(out string? text) ? text : null;
     public void Set(string key, bool value) => root[key] = value;
+    public void Set(string key, string value) => root[key] = value;
     /// <summary>A whole value is written as an integer: the game reads its integer settings (the frame limit) strictly.</summary>
     public void Set(string key, float value) => root[key] = value == MathF.Round(value) && Math.Abs(value) < int.MaxValue ? JsonValue.Create((int)value) : JsonValue.Create(value);
 
-    /// <summary>A Tab panel slider's saved value; null when it was never saved (the game then uses the mode's default).</summary>
+    /// <summary>Whether any Tab panel slider or switch is saved.</summary>
+    public bool HasGraphics => root["graphics"] is JsonObject { Count: > 0 };
+
+    /// <summary>A Tab panel slider's saved value (a switch's: 1 on, 0 off); null when it was never saved (the game then uses the mode's default).</summary>
     public float? GetGraphics(string label) => root["graphics"] is JsonObject g && g[label] is JsonValue v && v.TryGetValue(out double d) ? (float)d : null;
 
     /// <summary>Saves a slider's value, or removes it (null) so the game falls back to its default.</summary>
@@ -59,8 +64,12 @@ sealed class GameSettings
         else g.Remove(label);
     }
 
-    /// <summary>Removes every saved slider and Faithful / Meitou switch.</summary>
-    public void ResetGraphics() => root.Remove("graphics");
+    /// <summary>Removes every saved slider and switch, and the saved preset (<paramref name="presetKey"/>).</summary>
+    public void ResetGraphics(string? presetKey)
+    {
+        root.Remove("graphics");
+        if (presetKey is not null) root.Remove(presetKey);
+    }
 
     /// <summary>Writes the file; a new one gets <paramref name="version"/>, the layout the keys were written in.</summary>
     public bool Save(int version)
