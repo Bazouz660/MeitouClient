@@ -398,6 +398,7 @@ public sealed partial class ProductionSystem : ITickSystem
         // A gunner holds "combatstance" (Verified, Task_UseTurret FUN_1403474f0), not its functionality's clip.
         cold.OperateClip = m.Data.Function == Meitou.Data.World.ObjectRanges.TurretFunction ? TurretClip : m.Data.Animation;
         cold.OperateTool = m.Data.Tool;
+        cold.OperateHungerRate = m.Data.HungerRate;
         cold.HaulSite = null;
         cold.HaulFetch = null;
         cold.Operating = false;

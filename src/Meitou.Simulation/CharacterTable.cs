@@ -386,6 +386,8 @@ public sealed class CharacterCold
     public string? OperateClip { get; set; }
     /// <summary>The ITEM the operator holds while its operate task runs (the functionality's <c>special tool</c>); derived, not hashed.</summary>
     public string? OperateTool { get; set; }
+    /// <summary>The machine's <see cref="Meitou.Data.Gameplay.Construction.MachineData.HungerRate"/> while its operate task runs; derived, not hashed.</summary>
+    public float OperateHungerRate { get; set; } = 1;
     /// <summary>The operator did work this tick (it plays <see cref="OperateClip"/>); derived, not hashed.</summary>
     public bool Operating { get; set; }
     /// <summary>The whole-body clip (an ANIMATION record name) a captor holds while it works a captive standing (<see cref="Kidnap.CaptiveSystem"/>: "chop down static", "eat", "medic"); null: none. Derived, not hashed.</summary>

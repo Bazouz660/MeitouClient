@@ -332,9 +332,12 @@ public sealed partial class MedicalState
         return flesh + bandage > 0 ? d * 0.25f : d;
     }
 
-    /// <summary>The hunger-rate situation factor (<c>FUN_1408837a0</c>): resting, knocked out or dead <c>bed hunger rate</c>; using a machine 0.8; else 1 + (1 - e) x <c>encumbrance hunger rate</c>.</summary>
-    public static float HungerSituationFactor(GameConstants c, bool resting, bool usingMachine, float encumbranceFactor) =>
-        resting ? c.BedHungerRate : usingMachine ? 0.8f : 1 + (1 - encumbranceFactor) * c.EncumbranceHungerRate;
+    /// <summary>
+    /// The hunger-rate situation factor (<c>FUN_1408837a0</c>): resting, knocked out or dead <c>bed hunger rate</c>; the AI flag (<paramref name="usingMachine"/>) 0.8; idle on a machine or chair its
+    /// functionality's <c>hunger rate</c>; else 1 + (1 - e) x <c>encumbrance hunger rate</c> (the original's rule moving or fighting; Meitou's idle without a machine too).
+    /// </summary>
+    public static float HungerSituationFactor(GameConstants c, bool resting, bool usingMachine, float encumbranceFactor, float? useRate = null) =>
+        resting ? c.BedHungerRate : usingMachine ? 0.8f : useRate ?? 1 + (1 - encumbranceFactor) * c.EncumbranceHungerRate;
 
     // ------------------------------------------------------------------ KO time
 

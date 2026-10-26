@@ -197,6 +197,7 @@ public sealed class BodySystem(GameConstants constants, BodyOptions? options = n
                 HungerFloor = HungerFloor(world, cold, medical),
                 HealMult = cold.InSomething == Locks.HeldState.Imprisoned ? 2 : 1,
                 PlayDead = i < playDead.Length && playDead[i],
+                UseHungerRate = UseHungerRate(cold, in n),
             };
             // The combat system's own context (hits) reads the encumbrance from the fighter, so it matches the one used here.
             if (cold.Fighter is { } fighter) fighter.EncumbranceFactor = encumbrance;
@@ -211,7 +212,7 @@ public sealed class BodySystem(GameConstants constants, BodyOptions? options = n
             {
                 xp.Sneaking(stats, race, ExposureOf(world, cold), world.TickSeconds);
             }
-            if (cold.IsPlayer || table.IdOf(i) == world.Player.Inspected) cold.Extended = ExtendedOf(cold, stats, race, medical, n.MaxSpeed, encumbrance, ctx.Resting, carrying);
+            if (cold.IsPlayer || table.IdOf(i) == world.Player.Inspected) cold.Extended = ExtendedOf(cold, stats, race, medical, n.MaxSpeed, encumbrance, ctx.Resting, carrying, ctx.UseHungerRate);
             n.Health = Math.Clamp(medical.Blood / MathF.Max(MedicalState.BloodCapacity(race, stats.Strength), 1) * 100, 0, 100);
             foreach (var e in events)
             {
@@ -266,12 +267,21 @@ public sealed class BodySystem(GameConstants constants, BodyOptions? options = n
     /// fraction (at most 1) against 15 and so is always on: a whole character reads 3x. Strength XP is the carrying rate here; the published HUD replaces it in combat mode
     /// (<see cref="WithCombatMode"/>), which needs the fight and turret state of other characters.
     /// </summary>
-    ExtendedStats ExtendedOf(CharacterCold cold, CharacterStats stats, RaceData race, MedicalState medical, float speed, float encumbrance, bool resting, bool carrying)
+    /// <summary>The functionality <c>hunger rate</c> of the machine a character works or the chair it sits on, while it stands still out of combat (<see cref="MedicalContext.UseHungerRate"/>); null otherwise.</summary>
+    static float? UseHungerRate(CharacterCold cold, in CharacterHot n)
+    {
+        if (cold.InCombat || n.Velocity.LengthSquared() > 1) return null;
+        if (n.Task == (byte)CharacterTask.Operate && cold.Operating) return cold.OperateHungerRate;
+        if (n.Task == (byte)CharacterTask.Rest && cold.Ai is { SitClip: not null } mind) return mind.SitHungerRate;
+        return null;
+    }
+
+    ExtendedStats ExtendedOf(CharacterCold cold, CharacterStats stats, RaceData race, MedicalState medical, float speed, float encumbrance, bool resting, bool carrying, float? useRate)
     {
         float runValue = Speed.RunValue(race, stats.Athletics);
         float toughness = XpService.ToughnessFactor(medical);
         bool rest = resting || medical.Unconscious || medical.Dead;
-        float hunger = race.HungerRate * MedicalState.HungerSituationFactor(Constants, rest, false, encumbrance);
+        float hunger = race.HungerRate * MedicalState.HungerSituationFactor(Constants, rest, false, encumbrance, useRate);
         return new ExtendedStats(XpService.AthleticsRate(encumbrance, speed, runValue), xp.StrengthCarryRate(encumbrance, carrying), toughness,
             MedicalState.KoPoint(Constants, stats.Toughness), speed, runValue, hunger, rest);
     }

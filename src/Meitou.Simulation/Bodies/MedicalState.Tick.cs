@@ -361,7 +361,7 @@ public sealed partial class MedicalState
         if (t <= 0) return;
         if (Fed <= 0)
         {
-            float situation = HungerSituationFactor(c, ctx.Resting || Unconscious, ctx.UsingMachine, ctx.EncumbranceFactor);
+            float situation = HungerSituationFactor(c, ctx.Resting || Unconscious, ctx.UsingMachine, ctx.EncumbranceFactor, ctx.UseHungerRate);
             Hunger -= hours / t * ctx.Race.HungerRate * situation;
         }
         else

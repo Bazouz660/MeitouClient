@@ -459,6 +459,7 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
         mind.Version = board.Version;
         mind.WanderRadius = 0;
         mind.SitClip = null;   // set again below while it stays on its chair
+        mind.SitHungerRate = 1;
         if (mind.WorkActive && behaviour != AiBehaviour.Work)
         {
             // It stopped working: the next pick is a new one and the work clip goes.
@@ -639,6 +640,7 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
                             n.Position = claimed.Position;
                             n.Yaw = claimed.Yaw;
                             mind.SitClip = claimed.SitClip;
+                            mind.SitHungerRate = claimed.HungerRate;
                         }
                         Become(table, slot, CharacterTask.Rest);
                     }

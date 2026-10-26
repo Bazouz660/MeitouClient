@@ -41,6 +41,9 @@ public readonly struct MedicalContext(GameConstants constants, BodyOptions optio
     /// <summary>Using a machine: the hunger rate factor is 0.8 (probably the BUILDING's <c>hunger rate</c>).</summary>
     public bool UsingMachine { get; init; }
 
+    /// <summary>Idle on a machine or a chair (not moving, not fighting): its functionality's <c>hunger rate</c> is the factor (CharStats <c>+0x178</c>, <c>FUN_1408837a0</c>, <b>Verified</b>); null: none.</summary>
+    public float? UseHungerRate { get; init; }
+
     /// <summary>Not safe to get up (<c>Character::isItSafeToGetUp</c> failing): a knockout that ends keeps the character down, playing dead (<see cref="MedicalState.PlayingDead"/>).</summary>
     public bool PlayDead { get; init; }
 

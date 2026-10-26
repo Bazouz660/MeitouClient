@@ -29,6 +29,8 @@ public readonly record struct HomeSpot(HomeSpotKind Kind, Vector3 Position, floa
     public int NodeType { get; init; } = -1;
     /// <summary>A chair's sitting clip: the ANIMATION record its functionality's <c>animation</c> names ("sitting chair", "sitting idle" for floor seats); null otherwise.</summary>
     public string? SitClip { get; init; }
+    /// <summary>The seat's functionality <c>hunger rate</c> (chairs 0.66, sit on floor 0.75; 1 by default).</summary>
+    public float HungerRate { get; init; } = 1;
     /// <summary>A bed's furniture (its BUILDING string id: its <c>output rate</c> is how fast it heals, docs/game/character-stats.md "Beds"); null otherwise.</summary>
     public string? Record { get; init; }
     /// <summary>A node a goal may stand at: neither a bed nor a seat.</summary>
@@ -209,6 +211,7 @@ public static class TownBuildings
                             spots.Add(new HomeSpot(HomeSpotKind.Chair, at, YawOf(rotation))
                             {
                                 SitClip = function.GetReferences("animation").Select(r => db.Find(r.TargetStringId)?.Name).FirstOrDefault(n => n is not null),
+                                HungerRate = function.GetFloat("hunger rate", 1),
                             });
                         }
                         if (function?.GetInt("function") is TableFunction or CorpseDisposalFunction or RefineryFunction) (faced ??= []).Add(at);

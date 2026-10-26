@@ -44,6 +44,8 @@ public sealed record MachineData
     public string Animation { get; init; } = "stonemine";
     /// <summary>The <c>special tool</c> ITEM operators hold in the <c>hands</c> point on the job (a mine's Pickaxe, a farm's Hoe); null for none.</summary>
     public string? Tool { get; init; }
+    /// <summary>The functionality's <c>hunger rate</c>: the operator's hunger factor while it works standing still (mines and sword training 1.2; 1 by default).</summary>
+    public float HungerRate { get; init; } = 1;
     public IReadOnlyList<RecipeInput> Inputs { get; init; } = [];
     public RecipeOutput? Output { get; init; }
     public FarmData? Farm { get; init; }
@@ -190,6 +192,7 @@ public sealed record MachineData
             TechLevel = function?.GetInt("tech level") ?? 0,
             Animation = function?.GetReferences("animation") is [var anim, ..] && db.Find(anim.TargetStringId) is { } clip ? clip.Name : "stonemine",
             Tool = function?.GetReferences("special tool") is [var tool, ..] ? tool.TargetStringId : null,
+            HungerRate = function?.GetFloat("hunger rate", 1) ?? 1,
             Inputs = inputs,
             Output = output,
             Farm = farm,

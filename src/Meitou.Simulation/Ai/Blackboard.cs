@@ -426,6 +426,8 @@ public sealed class AiMind
     public bool SeatUnreachable { get; set; }
     /// <summary>The sitting clip of the chair it sits on (<see cref="HomeSpot.SitClip"/>), for <see cref="AnimationSystem"/>; null when not seated. Follows from the goal and seat, so not hashed.</summary>
     public string? SitClip { get; set; }
+    /// <summary>That chair's functionality <c>hunger rate</c> (<see cref="HomeSpot.HungerRate"/>; 1 when not seated). Set with <see cref="SitClip"/>, so not hashed.</summary>
+    public float SitHungerRate { get; set; } = 1;
     /// <summary>
     /// The work goals' pick of building (<see cref="AiBehaviour.Work"/>): the number of picks made since it last stopped working, so the plan's finder and the act-out name the same
     /// building (the pick is a roll of this and the character), and whether it is working now.

@@ -434,10 +434,11 @@ stomach gets min(floor - hunger, 0.04). Nobody but the player has to feed anyone
 
 Drain and digestion (same function): stomach empty: hunger -= dt/T x race rate x situation (`FUN_1408837a0`:
 bed/KO/dead `bed hunger rate`; else in combat or moving (movement +0x24) 1 + (1 - e) `encumbrance hunger
-rate`; else using a machine 0.8; else CharStats +0x178, writer **Unknown**); with food: moved = min(stomach,
+rate`; else an AI flag (AI +0x300 -> +0x70) 0.8; else CharStats +0x178 `currentOperatingMachineHungerRate`, the used BUILDING_FUNCTIONALITY `hunger rate` (chairs 0.66,
+sit on floor 0.75, mines and sword training 1.2; **Verified** reader, writer **Observed**)); with food: moved = min(stomach,
 dt/T x slot 0x390 x `fed recovery rate mult` x race rate). Hunger is capped at 3 before the update. The tick
 is skipped while `DAT_142134690` +0x2f0 is set (**Unknown** flag). Meitou: `MedicalContext.HungerFloor`
-(`BodySystem.HungerFloor`; no floor in a world without data); Meitou keeps the factor 1 + (1 - e) rate when idle.
+(`BodySystem.HungerFloor`; no floor in a world without data); Meitou: a character standing still out of combat on a machine it works or a chair takes the functionality's rate; idle otherwise it keeps 1 + (1 - e) rate.
 
 ### Corpses
 
