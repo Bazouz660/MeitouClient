@@ -411,6 +411,10 @@ eat task, animation or player command (a right click on food does nothing, [ui-s
   Which orders and goals send an animal to a ground limb is **Unknown** (the data's animal goals "eating food on the ground" are typed IDLE, [animals](animals.md#ai-goals)); Meitou reaches the mouth only through the player's pickup order.
   Meitou (`FeedSystem.HoldInMouth`, `MouthDue`; `CharacterCold.Mouth`): as above. Engine choices: every animal has the `mouth` point; a held
   limb is neither saved nor carried across a load; it goes with the animal if the animal dies or is removed.
+- **Food on the ground** (**Verified**, decompile): `Character::setupAI` gives every animal of a player squad goal 259 EAT_FOOD_ON_GROUND (priority 3, weight 0.5; it drops race goal 230)
+  and every player character 243. 259's desire: 0 unless the character wants to eat now (needs food, stomach empty, hunger < 2.5) and medical hunger <= 2.4; then 1.0 with no food in
+  its inventory and no enemies, 0.1 with enemies only below 1.2. Finder `FUN_14099a930`: the nearest food it may eat (function 3, 15 for an animal or a race that lists it) on
+  the ground within 100 in its own location, accessible, passing the stealing check; else a sensed corpse within 100 with such food. Meitou (`FeedSystem.FetchFood`): the ground pass only.
 - Meitou: `FeedSystem` (checks every 30 ticks, engine choice), squad options `SquadAi.Feed` / `Share` (CAMERA
   bools `feed`, `share`, **Verified** reader `FUN_1403ebf50`; default on, **Unknown**).
 

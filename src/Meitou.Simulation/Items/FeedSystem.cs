@@ -65,6 +65,9 @@ public sealed class FeedSystem(ItemFactory items, FeedSettings? settings = null)
                 if (MouthDue(world, cold, med, playerSide)) EatFromMouth(world, i, cold, med, held);
                 continue;
             }
+            // Goal 259 Picking up food (every player animal has it, Character::setupAI): hungry with no food on it, it fetches food from the ground.
+            if (animal && playerSide && med.Fed <= 0 && med.Hunger <= FoodOnGroundBelow && cold.PickingUpItem is null && Best(own.Items, race, true) is null)
+                FetchFood(world, i, cold, race, med);
             if (animal && (options & SquadAi.Feed) == 0) continue;
             bool wants = playerSide || cold.SlaveState == 1 || med.Hunger < NpcWantsBelow;
             if (!wants || med.Fed > 0 || !(med.Hunger < HungryBelow)) continue;
@@ -75,6 +78,33 @@ public sealed class FeedSystem(ItemFactory items, FeedSettings? settings = null)
             if (food is null || from is null) continue;
             Eat(world, i, med, from, food);
         }
+    }
+
+    /// <summary>The hunger at or under which a player animal looks for food on the ground (259's desire, medical hunger <= 2.4, <b>Verified</b>), and under which it does so in a fight (1.2).</summary>
+    public const float FoodOnGroundBelow = 2.4f, FoodOnGroundInFight = 1.2f;
+    /// <summary>How far it looks (<c>FUN_14099a930</c>: squared distance 10000, <b>Verified</b>).</summary>
+    public const float FoodOnGroundRange = 100;
+
+    /// <summary>
+    /// 259 EAT_FOOD_ON_GROUND (<c>FUN_14099a930</c>, docs/game/ai-tasks.md): the nearest food item on the ground within <see cref="FoodOnGroundRange"/> it may eat (function 3, or 15 for an
+    /// animal), nobody else's (engine reading of the stealing check), not while fighting unless starving (the 0.1 desire); it walks there and picks it up, and eats it on a later look.
+    /// Engine choices: the original's pass 2 (a corpse with food) and same-location test are not done; an animal busy with a task is left alone.
+    /// </summary>
+    static void FetchFood(World world, int slot, CharacterCold cold, RaceData race, MedicalState med)
+    {
+        if (cold.InCombat && med.Hunger >= FoodOnGroundInFight || !cold.CarriedBy.IsNone || med.Incapacitated || world.Characters.Next[slot].Task is not ((byte)CharacterTask.Idle or (byte)CharacterTask.Follow)) return;
+        var at = world.Characters.Next[slot].Position;
+        GroundItem? best = null;
+        float d2best = FoodOnGroundRange * FoodOnGroundRange;
+        foreach (var g in world.GroundItems.All)
+        {
+            if (g.Item.ItemFunction is not (FoodFunction or RawFoodFunction) || g.Slot is not null || g.OwnedBy >= 0 && g.OwnedBy != cold.Faction) continue;
+            float d2 = Vector3.DistanceSquared(at, g.Position);
+            if (d2 < d2best) (best, d2best) = (g, d2);
+        }
+        if (best is null) return;
+        cold.PickingUpItem = best.Id;
+        if (MathF.Sqrt(d2best) > PlayerSystem.PickUpReach) MovementSystem.GoToFloor(world, slot, best.Position, SpeedMode.Run);
     }
 
     /// <summary>The <c>item function</c> of a limb: the one thing an animal picks up into its mouth (<c>FUN_14034f340</c>, item +0x124 = 0x11, Verified).</summary>
