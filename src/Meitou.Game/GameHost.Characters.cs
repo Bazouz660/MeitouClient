@@ -114,7 +114,12 @@ sealed partial class GameHost
                 position = Vector3.Lerp(found.Position, c.Position, alpha);
                 yaw = Meitou.Engine.Time.Interp.LerpAngle(DrawnYaw(found), DrawnYaw(c), alpha);
             }
-            position += CarriedOffset(c, yaw);
+            Quaternion? rotation = null;
+            if (c.Carry is { } carry)
+            {
+                yaw = CarrierYaw(current, c, yaw, alpha);
+                (position, rotation) = MixCarry(before?.Carry, carry, alpha).World(position, yaw);
+            }
             var poses = new CharacterPose[c.Animations.Count];
             for (int i = 0; i < poses.Length; i++)
             {
@@ -132,7 +137,7 @@ sealed partial class GameHost
             }
             list.Add(new CharacterInstance(DrawKey(c.Id), c.Appearance, position, yaw, poses)
             {
-                WeaponDrawn = c.WeaponDrawn, Scale = c.Scale, Hidden = hiddenIndoors.Contains(c.Id), FullRateAnimation = c.IsPlayer,
+                WeaponDrawn = c.WeaponDrawn, Scale = c.Scale, Hidden = hiddenIndoors.Contains(c.Id), FullRateAnimation = c.IsPlayer, Rotation = rotation,
                 Bones = Blend(before?.Ragdoll, c.Ragdoll, alpha, ref Slot(ref ragdollsBySlot, c.Id.Slot)),
             });
         }

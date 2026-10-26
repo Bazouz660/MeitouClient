@@ -209,7 +209,7 @@ public sealed partial class World : IDisposable
     }
 
     /// <summary>The character holds a line it wants to say to the player (<see cref="Dialogue.IDialogueSource.HasInterrupt"/>).</summary>
-    public bool WantsToTalk(CharacterId id) => dialogues is not null && dialogues.HasInterrupt(id);
+    public bool WantsToTalk(CharacterId id) => dialogues is not null && Characters.Phase == TablePhase.Outside && dialogues.HasInterrupt(id);
 
     /// <summary>Whether the character answers the player's Talk (the dialogue system finds event-1 dialogue for it, and with <paramref name="talker"/> given, a line of it passes now); the host asks between ticks.</summary>
     public bool CanTalk(CharacterId id, CharacterId? talker = null) => dialogues is not null && Characters.Phase == TablePhase.Outside && Characters.TryResolveNext(id, out int slot) && dialogues.CanTalk(this, slot, talker);

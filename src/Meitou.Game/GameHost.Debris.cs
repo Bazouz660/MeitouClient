@@ -135,7 +135,7 @@ sealed partial class GameHost
     /// <summary>Moves the pieces by <paramref name="dt"/> seconds of game time and hands the renderer this frame's list; those older than a corpse go.</summary>
     void UpdateDebris(World world, float dt)
     {
-        pieces.RemoveAll(p => world.Tick - p.Born >= BodySystem.CorpseTicks);
+        pieces.RemoveAll(p => world.Tick - p.Born >= BodySystem.CorpseTicksOf(world));
         gpu.DebrisPieces.Clear();
         AddBolts();
         if (pieces.Count == 0) return;

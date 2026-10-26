@@ -334,8 +334,9 @@ sealed partial class PlayerInterface
     {
         if (contextMenu is null) return false;
         var row = UiVisible ? MyGuiPresentation.HitTest(ArrangeUi(), p.X, p.Y) : null;
-        if (row is { Action: "meitou:context" }) { SoundForAction("context", row.Argument); ContextAction(row.Argument); }
-        else if (button == MouseButton.Right) CloseContextMenu();
+        if (row is { Action: "meitou:context" }) { SoundForAction("context", row.Argument); ContextAction(row.Argument); return true; }
+        if (button != MouseButton.Right) return false;   // another button's release still ends what its press began (a drag, a window move)
+        CloseContextMenu();
         return true;
     }
 

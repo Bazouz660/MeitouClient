@@ -88,7 +88,7 @@ public sealed class FleeSystem(FactionRelations relations, CombatSystem combat, 
     {
         if (!Relations.Contains(squad.Faction)) return;
         int size = 0;
-        bool fighting = false, leaderDown = true, held = false;
+        bool fighting = false, leaderDown = !squad.Leader.IsNone, held = false;   // a leader not in the table is down; a squad without one has none to lose
         standing.Clear();
         foreach (var m in squad.Members)
         {

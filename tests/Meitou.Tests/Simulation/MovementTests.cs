@@ -84,31 +84,30 @@ public class MovementTests
     }
 
     [Fact]
-    public void Turning_is_limited_and_a_reversal_turns_on_the_spot_before_running()
+    public void A_reversal_slows_through_a_stop_at_the_agents_acceleration_and_faces_the_motion()
     {
         using var w = Flat();
         var id = Add(w, new(0, 300, 0));
         w.Commands.Enqueue(new MoveOrder([id], new Vector3(0, 0, 400)) { Tick = 0 });
         w.RunTicks(30);
         Assert.Equal(0, w.Characters.Previous[id.Slot].Yaw, 0.01f);
-        // Straight back: no ground is gained until the heading is within 90 degrees of the way.
-        var before = Where(w, id);
+        // Straight back: the velocity changes by at most the agent's acceleration per tick, and the facing follows the motion.
         w.Commands.Enqueue(new MoveOrder([id], new Vector3(0, 0, -400)) { Tick = w.Tick });
-        float yaw = w.Characters.Previous[id.Slot].Yaw;
-        float maxStep = MovementSystem.TurnRate * w.TickSeconds + 1e-4f;
+        var v = w.Characters.Previous[id.Slot].Velocity;
+        float maxStep = MovementSystem.PathAcceleration(new CharacterCold()) * w.TickSeconds + 0.5f;
         int ticks = 0;
         do
         {
             w.RunTick();
-            float now = w.Characters.Previous[id.Slot].Yaw;
-            Assert.InRange(MathF.Abs(MathF.IEEERemainder(now - yaw, MathF.Tau)), 0, maxStep);
-            if (MathF.Abs(MathF.IEEERemainder(now - MathF.PI, MathF.Tau)) > MathF.PI / 2) Assert.True(Where(w, id).Z >= before.Z - 0.5f, "moved while facing away");
-            yaw = now;
-            Assert.True(++ticks < 30, $"never ran off: yaw {now}, at {Where(w, id)}");
+            var now = w.Characters.Previous[id.Slot];
+            Assert.InRange(Vector3.Distance(now.Velocity, v), 0, maxStep);
+            if (now.Velocity.Length() > 1) Assert.InRange(MathF.Abs(MathF.IEEERemainder(now.Yaw - MathF.Atan2(now.Velocity.X, now.Velocity.Z), MathF.Tau)), 0, 0.01f);
+            v = now.Velocity;
+            Assert.True(++ticks < 60, $"never ran off: velocity {v}");
         }
-        while (w.Characters.Previous[id.Slot].Velocity.Length() < 79);
-        // About a quarter second for half a turn at 720 degrees per second, then full speed.
-        Assert.InRange(ticks, 6, 10);
+        while (!(v.Z < -79));
+        // 80 units/s round to 80 the other way at 240 units/s per second: two thirds of a second.
+        Assert.InRange(ticks, 18, 24);
     }
 
     [Fact]
