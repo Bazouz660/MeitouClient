@@ -74,6 +74,26 @@ public sealed partial class LockSystem
         c.EnteringCage = null;
     }
 
+    /// <summary>
+    /// 256 Get out of cage (opportunistic; <c>Task_GetOutOfCage</c> with the escape flag, docs/game/ai-tasks.md "Arrest and prison rows"): an AI prisoner, awake, whose role list holds
+    /// the goal in its hours, walks out as soon as its cage is not effectively locked (<see cref="FixtureRegistry.GetOut"/> refuses a locked one; an unserved sentence makes it an escape).
+    /// </summary>
+    void OpportunisticEscapes(World world)
+    {
+        var table = world.Characters;
+        int hour = world.Hour;
+        foreach (var f in world.Fixtures.All)
+        {
+            if (f.Kind != FixtureKind.Cage || FixtureRegistry.IsFree(table, f) || f.Lock is { Locked: true } || !table.TryResolveNext(f.Occupant, out int s)) continue;
+            if (table.Cold(s) is not { IsImprisoned: true, IsPlayer: false, Medical.Incapacitated: false, Ai: { Squad: { Ai: { } board } squad } } c) continue;
+            var roles = board.Roles[(int)Ai.AiSystem.RoleOf(squad, f.Occupant, c)];
+            bool wants = false;
+            for (int g = 0; g < roles.Count && !wants; g++)
+                wants = roles[g].Task.Type == Meitou.Data.Gameplay.Ai.TaskType.GET_OUT_OF_CAGE_OPPORTUNISTIC && roles[g].InWindow(hour);
+            if (wants) world.Fixtures.GetOut(world, f.Occupant, Crimes);
+        }
+    }
+
     /// <summary>Each tick: a character in reach of the cage it was sent to lets its prisoner out or gets in; one given another order, downed or gone gives up.</summary>
     void CageWorkers(World world)
     {

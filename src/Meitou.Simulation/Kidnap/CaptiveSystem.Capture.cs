@@ -166,7 +166,9 @@ public sealed partial class CaptiveSystem
             if (table.Next[w].Task != (byte)CharacterTask.GoTo || Vector2.Distance(table.Next[w].Goal, to) > 5) MovementSystem.GoTo(table, w, to, SpeedMode.Walk);
             return true;
         }
-        if (!Down(cc) && j.Kind == CaptiveJobKind.Capture) return End(world, j, CaptiveEventKind.GaveUp);   // it got up
+        // It got up: a caged one is beaten down first (196 Beat prisoner, Task_KillPrisoner: B list 78 imprisoned, 5 weapon drawn; effect 7 target down) by an armed worker;
+        // any other is given up.
+        if (!Down(cc) && j.Kind == CaptiveJobKind.Capture && (!cc.IsImprisoned || combat is null || wc.Fighter is not { Unarmed: false })) return End(world, j, CaptiveEventKind.GaveUp);
         if (j.Phase == CaptivePhase.Walk)
         {
             var here = new Vector2(table.Next[w].Position.X, table.Next[w].Position.Z);
@@ -192,6 +194,16 @@ public sealed partial class CaptiveSystem
         // Capture at the captive: facing it, strip, then cuff.
         var face = table.Next[c].Position - table.Next[w].Position;
         if (face.X * face.X + face.Z * face.Z > 1e-4f) table.Next[w].Yaw = MathF.Atan2(face.X, face.Z);
+        if (!Down(cc))
+        {
+            // Beating it down: one blow per chop clip at 0.55 of it, as the kill; the KO ends it, a death ends the job.
+            if (wc.ActionClip != ChopClip) (wc.ActionClip, j.Time, j.Beats) = (ChopClip, 0, 0);
+            if (j.Time < (j.Beats + Settings.BlowAt) * MathF.Max(Settings.ChopSeconds, 0.1f)) return true;
+            j.Beats++;
+            if (combat!.Execute(world, w, c, j.Beats)) return Over(world, j, true);
+            if (Down(cc)) (wc.ActionClip, j.Time) = (ProcessClip, 0);
+            return true;
+        }
         if (j.Blows == 0)
         {
             if (j.Time < Settings.StripSeconds) return true;

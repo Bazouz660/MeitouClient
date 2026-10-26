@@ -834,14 +834,17 @@ failed walks mark the cage unreachable for the faction; its own faction's shut d
   not of the capturer's side (engine reading of the sensed-class masks), no slave (state 1), not law enforcement, trader or diplomat and not shackled. The capturer walks to it, strips the `hip` and
   `back` items into its inventory (0.8 s of `medic`), cuffs it (10 s, engine choice; locked stock `SHACKLES` put on, what it wore in that slot goes to its inventory; event 37) and has `KidnapSystem.Carry` lift
   it to a cage of its faction or an ally in range (goal 112 in the original; a capture starts only with one free, so no one is cuffed and left), where it is held as kidnapped and then enslaved by the processing jobs. **Carry** (168): the same for a downed slave of the
-  carrier's faction, without strip or cuff. A target a job gave up on is left alone for an hour (engine give-up list). **Observed** (probe, Rebirth, real data): a downed character of the player's faction
+  carrier's faction, without strip or cuff. A caged target that got up is beaten down first (196, an armed capturer: a `chop down static` blow per clip, `CombatSystem.Execute`), any other is given up. A target a job gave up on is left alone for an hour (engine give-up list). **Observed** (probe, Rebirth, real data): a downed character of the player's faction
   beside the garrison leader is stripped, shackled, carried to a cage and enslaved by the Cage Wardens in about 1250 ticks; its squad then remembers the capturer as captor. **Observed** (probe, Stoat, real data): the Slave Traders cuff a downed player character, cage it in a United Cities cage of the slave shop and enslave it in about 500 ticks.
+- **Liberate** (276): the nearest cage, in the town the worker stands in (else its squad's), of a faction neither its own nor allied, holding a live occupant that is not its
+  enemy. 3 s of `medic` at the cage (engine), then `FixtureRegistry.Release` (no crime is booked for an NPC liberator).
+- **Opportunistic escape** (256, `LockSystem.OpportunisticEscapes`): an AI prisoner with the goal in its hours walks out of a cage that is not locked (`FixtureRegistry.GetOut`).
 - **Shout** (188): a worker with slaves of its squad up and uncaged says event 38 at a random one and walks towards it for up to 8 s (or within 40); the same worker again after 0.5 to 1.5 x 120 game
   seconds (engine pacing).
 - **Work** (189, 190; `AiBehaviour.Work` in the AI, not a job: it competes by score like any goal): a worker of a town with a mine, research bench, refinery or crafting bench (BuildingFunction 1, 3, 4,
   10) walks to a random one (a pick of the character and `AiMind.WorkEpoch`, kept while it works there) to within 30 units, faces it and plays its functionality's clip (`stonemine` by default) as
   `ActionClip`. NPC towns run no machines here, so nothing is produced. **Observed** (probe, Rebirth, real data): 35 workers, slaves among them, stand at the mines of the Holy Nation's towns by day. The
-  Obedient Slave job (187) is the Slave role list of the owner's squad, which slave members already run.
+  Obedient Slave job (187) is the Slave role list of the owner's squad, which slave members already run; a slave in another squad runs the list of `CharacterCold.SlaveMaster`.
 - **Eaten**: a meal still awake gains toughness XP (`XpService.Continuous`, amount 10). **Process** (183) re-processes a slave of its side that does not look like one (no locked shackles and none of
   its owner's slave clothing; an owner without slave clothing never does).
 - **Status lines**: a slave or escaped slave selected shows the bounty panel with its status rows ("Slave" / "Escaped slave" and the owner's text, the player-character hints) in its tooltip, ahead of the

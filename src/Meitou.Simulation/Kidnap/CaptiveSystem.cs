@@ -26,6 +26,8 @@ public sealed record CaptiveSettings
     /// <summary>The length of the kill clip <c>chop down static</c> (the system builder passes the data's), and the share of it at which its blow lands (<b>Observed</b>: 0.55).</summary>
     public float ChopSeconds { get; init; } = 1.5f;
     public float BlowAt { get; init; } = 0.55f;
+    /// <summary>A liberator opens the cage after this long at it (<b>engine choice</b>: the release task's timing is not documented).</summary>
+    public float ReleaseSeconds { get; init; } = 3;
     /// <summary>The slave processing kneels this long before the captive is stripped and enslaved (<b>Observed</b>: 3 s, <c>Task_ProcessNewSlave</c>).</summary>
     public float ProcessSeconds { get; init; } = 3;
     /// <summary>Watching slaves (183) looks at the cages within this distance of the watcher (<b>Observed</b>: 180, <c>FUN_1408cd630</c>).</summary>
@@ -71,6 +73,8 @@ public enum CaptiveJobKind : byte
     Carry,
     /// <summary>Goal 188 (<c>Task_TalktoPlayer</c> with event 38): a slaver shouts at one of its slaves.</summary>
     Shout,
+    /// <summary>Goal 276 Liberating prisoners by way of 110 (<c>Task_ReleasePrisoner</c>): a prisoner of a faction not allied to the worker's is let out.</summary>
+    Liberate,
 }
 
 public enum CaptivePhase : byte { Walk, Work }
@@ -93,16 +97,18 @@ public sealed class CaptiveJob
     public int Walks { get; set; }
     /// <summary>Blows struck (kill); the game second of the next line (eat).</summary>
     public int Blows { get; set; }
+    /// <summary>Blows that beat an imprisoned captive down before a capture (196).</summary>
+    public int Beats { get; set; }
     public float NextBark { get; set; }
 
     internal void Hash(ref StateHasher h)
     {
         h.Add((int)Kind); h.Add(Worker); h.Add(Captive); h.Add(Rng.StableHash(Cage)); h.Add(Faction); h.Add(Site);
-        h.Add((int)Phase); h.Add(Time); h.Add(Age); h.Add(Walks); h.Add(Blows); h.Add(NextBark);
+        h.Add((int)Phase); h.Add(Time); h.Add(Age); h.Add(Walks); h.Add(Blows); h.Add(NextBark); if (Beats != 0) h.Add(Beats);
     }
 }
 
-public enum CaptiveEventKind { Started, Killed, Eaten, Enslaved, Gathered, Delivered, Caged, GaveUp, Captured, Shouted }
+public enum CaptiveEventKind { Started, Killed, Eaten, Enslaved, Gathered, Delivered, Caged, GaveUp, Captured, Shouted, Liberated }
 
 public readonly record struct CaptiveEvent(long Tick, CaptiveEventKind Kind, CaptiveJobKind Job, CharacterId Worker, CharacterId Captive);
 
@@ -235,6 +241,10 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
                 return ProcessTarget(world, slot, cold, site, watching: type == TaskType.SLAVE_WATCHING) is { } found
                     ? new CaptiveJob { Kind = CaptiveJobKind.Process, Worker = world.Characters.IdOf(slot), Captive = found.Occupant, Cage = found.Id, Faction = cold.Faction, Site = site }
                     : null;
+            case TaskType.LIBERATE_ALL_THE_PRISONERS:
+                return LiberateTarget(world, slot, cold, board) is { } freed
+                    ? new CaptiveJob { Kind = CaptiveJobKind.Liberate, Worker = world.Characters.IdOf(slot), Captive = freed.Occupant, Cage = freed.Id, Faction = cold.Faction, Site = freed.Site }
+                    : null;
             case TaskType.CAPTURE_NEW_SLAVES:
             case TaskType.CARRY_WOUNDED_SLAVES:
             case TaskType.WORK_THE_SLAVES:
@@ -356,6 +366,29 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
     }
 
     /// <summary>
+    /// The cage a liberator opens (276, <c>BuildingFinder_CagesToLiberate</c> <c>FUN_1408cf140</c>, <b>Observed</b>): a cage of a faction that is neither the worker's nor allied to it,
+    /// holding a live occupant that is not the worker's enemy and that no other job works; the nearest in the town the worker stands in, else its squad's town.
+    /// </summary>
+    Fixture? LiberateTarget(World world, int slot, CharacterCold cold, Blackboard board)
+    {
+        var table = world.Characters;
+        var at = table.Next[slot].Position;
+        int site = TownAt(data, at) is >= 0 and var here ? here : board.Town;
+        if (site < 0) return null;
+        Fixture? best = null;
+        float bestD = float.MaxValue;
+        foreach (var f in CagesOf(world, site))
+        {
+            if (f.Owner < 0 || f.Owner == cold.Faction || Allied(cold.Faction, f.Owner) || Taken(f.Id)) continue;
+            if (OccupantSlot(world, f) is not (>= 0 and var s) || Busy(table.IdOf(s))) continue;
+            if (data.Relations.Contains(cold.Faction) && AggroSystem.IsEnemy(data.Relations, cold.Faction, table.Cold(s)!.Faction)) continue;
+            float d = Vector2.DistanceSquared(new Vector2(at.X, at.Z), new Vector2(f.Position.X, f.Position.Z));
+            if (d < bestD) (best, bestD) = (f, d);
+        }
+        return best;
+    }
+
+    /// <summary>
     /// Whether a slave looks like one (the state <c>TARGET_LOOKS_LIKE_A_SLAVE</c> that processing makes true; the platoon's test <c>FUN_1405a6bb0</c> over the character's worn kit, <b>Observed</b>
     /// in outline). <b>Engine reading</b>: it wears locked shackles or any of its owner faction's <c>slave clothing</c>; the original's test also looks at the torso and leg slots one by one.
     /// </summary>
@@ -447,6 +480,13 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
                     world.Defer(new Dialogue.DialogueEvent(j.Captive, j.Worker, ScreamingTorture) { Tick = world.Tick + 1 });
                 }
                 return Eat(world, j, c, cc, dt) ? Over(world, j, true) : true;
+            }
+            case CaptiveJobKind.Liberate:
+            {
+                if (j.Time < Settings.ReleaseSeconds) return true;
+                world.Fixtures.Release(world, j.Captive);
+                Note(world, CaptiveEventKind.Liberated, j);
+                return End(world, j, null);
             }
             case CaptiveJobKind.Process:
             {
