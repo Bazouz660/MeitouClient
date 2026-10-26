@@ -1,4 +1,4 @@
-# Roadmap update: after each successful nightly or game release (and on demand), Claude Sonnet 5.5 updates site/src/data/roadmap.ts
+# Roadmap update: after each successful nightly or game release (and on demand), Claude Haiku 5.5 updates site/src/data/roadmap.ts
 # from the commits, issues, drift findings and play reports since the roadmap's as-of commit (.github/scripts/roadmap-update.mjs),
 # and the result is committed to master. A push by this workflow starts no other workflow, so it starts the site image itself, then
 # the drift check, whose "Roadmap out of date" issue then lists only what Claude left. Needs the ANTHROPIC_API_KEY secret (skipped without it). docs/play-reports.md, "Roadmap updates".
@@ -36,7 +36,7 @@ jobs:
       - run: npm ci
         working-directory: .github/scripts
 
-      - name: Ask Claude Sonnet 5.5 for edits
+      - name: Ask Claude Haiku 5.5 for edits
         id: update
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -67,7 +67,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -am "Roadmap updated by Claude Sonnet 5.5 after $(git rev-parse --short=8 HEAD)"
+          git commit -am "Roadmap updated by Claude Haiku 5.5 after $(git rev-parse --short=8 HEAD)"
           for i in 1 2 3; do
             git pull --rebase origin master && git push origin HEAD:master && exit 0
             sleep 10

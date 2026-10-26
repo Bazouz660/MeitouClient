@@ -1,4 +1,4 @@
-// Roadmap update: after a nightly or release, Claude Sonnet 5.5 reads the roadmap, what changed since its as-of commit (commits,
+// Roadmap update: after a nightly or release, Claude Haiku 5.5 reads the roadmap, what changed since its as-of commit (commits,
 // issues, the drift findings, play reports) and returns edits as structured output. This script applies them to
 // site/src/data/roadmap.ts line by line (ids, names and categories never change) and writes a summary for the commit.
 // The workflow commits the result to master. docs/play-reports.md, "Roadmap updates".
@@ -11,7 +11,7 @@ import { z } from 'zod';
 import { all } from './github.mjs';
 import { loadRoadmap, root } from '../../site/scripts/issue-forms.mjs';
 
-const MODEL = 'claude-sonnet-5-5';
+const MODEL = 'claude-haiku-5-5';
 const file = new URL('site/src/data/roadmap.ts', root);
 const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', maxBuffer: 64 << 20 }).trim();
 const data = await loadRoadmap();
@@ -93,16 +93,14 @@ if (process.env.EDITS_FILE) {
   edits = Edits.parse(JSON.parse(readFileSync(process.env.EDITS_FILE, 'utf8')));
 } else {
   const client = new Anthropic();
-  // High effort, streamed (the SDK requires it for a long request); a request the safety classifiers decline is re-run server-side
-  // on Anthropic's recommended fallback model. The answer is the JSON the output format constrains, checked against Edits here.
+  // High effort (Haiku defaults to medium), streamed (the SDK requires it for a long request). Haiku has no server-side fallback,
+  // so a classifier refusal fails the run below. The answer is the JSON the output format constrains, checked against Edits here.
   const stream = client.beta.messages.stream({
     model: MODEL,
     max_tokens: 64000,
     system,
     messages: [{ role: 'user', content: user }],
     output_config: { effort: 'high', format: betaZodOutputFormat(Edits) },
-    fallbacks: 'default',
-    betas: ['server-side-fallback-2026-07-01'],
   });
   const response = await stream.finalMessage();
   if (response.stop_reason !== 'end_turn') {
