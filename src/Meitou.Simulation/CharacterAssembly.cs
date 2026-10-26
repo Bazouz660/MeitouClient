@@ -189,6 +189,10 @@ sealed class CharacterAssembly(PopulationData data)
         if (AnimalData.From(record) is { } animal) (cold.Animal, cold.ShownAge) = (animal, age);
         cold.Inventory = data.Items.Build(record, cold.Appearance?.Loadout);
         if (!cold.IsPlayer && (data.PlayerFaction < 0 || cold.Faction != data.PlayerFaction)) data.Items.AddSpawnMoney(cold.Inventory, record, seed, Rng.Key(id));
+        // CHARACTER `wears uniform` (CharacterHuman::setupInventorySections, Verified read; Observed use): the armour it is made wearing is its faction's uniform.
+        if (record is { Type: Meitou.Data.Fcs.FcsRecordType.CHARACTER } && record.GetBool("wears uniform") && (uint)cold.Faction < (uint)data.Factions.Count)
+            foreach (var piece in cold.Inventory.Items)
+                if (piece.Type == Meitou.Data.Fcs.FcsRecordType.ARMOUR && piece.Section != "main") piece.Uniform = data.Factions[cold.Faction].Id;
         cold.Fighter = FighterOf(record, cold.Inventory, cold.Medical);
         cold.WaterFactor = raceData.WaterAvoidance * (cold.Faction == data.PlayerFaction && data.PlayerFaction >= 0 ? 0.5f : 1);
         cold.RoadPreference = data.RoadPreferenceOf(cold.Faction);
