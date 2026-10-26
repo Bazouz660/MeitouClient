@@ -47,7 +47,7 @@ public sealed partial class ProductionSystem
 
     /// <summary>
     /// The rock a natural id names: a BUILDING with <c>is foliage</c> whose machine is an operable mine of a <c>world resource mining</c>; with a rock source, one of that BUILDING must
-    /// stand within a unit of the position. Owned by no faction, complete.
+    /// stand within a unit of the position. Owned by no faction (-1: the original's <c>nofac</c> of its town NO_TOWN) until a player character works it; complete.
     /// </summary>
     BuildSite? Natural(string id)
     {
@@ -85,10 +85,15 @@ public sealed partial class ProductionSystem
     {
         if (instance is null) return null;
         if (world.Machines.Find(instance) is { } m)
-            return m.Data is { Function: MachineData.MineFunction or MachineData.NaturalMineFunction, Resource: not 0 and var r } ? new(instance, r, m.Yield) : null;
+            return m.Data is { Function: MachineData.MineFunction or MachineData.NaturalMineFunction, Resource: not 0 and var r } ? new(instance, r, m.Yield) { Owner = Natural(instance)?.Owner ?? -1, TownName = TownNameOf(world, Natural(instance)) } : null;
         if (Natural(instance) is not { } site || Data(site.Record) is not { Resource: not 0 and var resource } data) return null;
         if (!naturalYields.TryGetValue(instance, out float y)) naturalYields[instance] = y = resources.NodeYield(resource, site.Position);
-        // A rock nobody has mined yet: no machine, so nobody works it; whole, no power draw.
-        return new(instance, resource, y) { Efficiency = new(0, data.PowerOperators, 1, 1, data.IsConsumer, data.OutputRate * world.Research.Upgrade(data.Id).ProductionMult, y) };
+        // A rock nobody has mined yet: no machine, so nobody works it; whole, no power draw; research counts only for the player's buildings (FUN_14082ec70).
+        return new(instance, resource, y) { Owner = site.Owner, TownName = TownNameOf(world, site), Efficiency = new(0, data.PowerOperators, 1, 1, data.IsConsumer,
+            data.OutputRate * (site.Owner == world.Player.Faction ? world.Research.Upgrade(data.Id).ProductionMult : 1), y) };
     }
+
+    /// <summary>The name of the player town a worked rock joined (null: none, the original's NO_TOWN, which the panel's <c>Town:</c> line leaves out).</summary>
+    static string? TownNameOf(World world, BuildSite? site) =>
+        site is { Town: not 0 and var number } ? world.Buildings.Towns.FirstOrDefault(t => t.Number == number)?.Name : null;
 }

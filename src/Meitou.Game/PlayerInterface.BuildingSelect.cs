@@ -97,7 +97,8 @@ sealed partial class PlayerInterface
         var detail = session.CurrentSnapshot.InspectedBuilding is { } d && d.Instance == focus.Instance ? d : null;
         bool mine = player || detail is { Owned: true };
         if (focus.Type is { Length: > 0 } type) state.Add(new("Type:", type));
-        if ((focus.Town ?? site?.TownName) is { Length: > 0 } town) state.Add(new("Town:", town));
+        var inspected = session.CurrentSnapshot.InspectedRichness is { } ir && ir.Instance == focus.Instance ? ir : (Meitou.Simulation.Production.RichnessView?)null;
+        if ((focus.Town ?? site?.TownName ?? inspected?.TownName) is { Length: > 0 } town) state.Add(new("Town:", town));
         if (player && site is { LevelPlacement: null }) AddUpgradeLines(site, state);
         // The construction buttons (Building slot 117, FUN_1402fea10): Dismantle in BadBright, and while unfinished PAUSE CONSTRUCTION, captioned [PAUSED] in #777777 while paused.
         if (player && site is { LevelPlacement: null })
@@ -152,9 +153,11 @@ sealed partial class PlayerInterface
         }
         if (detail?.SalePrice is { } price)
             stats.Add(new("For sale:", Loc.Tr("c.{1,num}", price), GoodColour, GoodColour, Action: "meitou:building-buy", ButtonWidth: 0.4f));
-        // A rock names the player's faction as its owner (Observed: the original's name bar of an Iron Resource reads the player's faction).
-        bool rock = own && !player;
-        return (new(focus.Name, mine || rock ? FactionName?.Invoke(session.World.Player.Faction) ?? "" : focus.Owner ?? "", TitleColour, TitleColour), [.. state], [.. stats], status, bad, [.. extended]);
+        // A rock (slot 113): the player's faction once a player character has worked it, else its owner nofac's name ("No Faction"; its town NO_TOWN is explored, not secret).
+        string? owner = focus.Owner;
+        if (own && !player)
+            owner = inspected is { Owner: >= 0 and var by } ? FactionName?.Invoke(by) : RecordName?.Invoke(Meitou.Simulation.SquadManagement.DismissFallbackFaction);
+        return (new(focus.Name, mine ? FactionName?.Invoke(session.World.Player.Faction) ?? "" : owner ?? "", TitleColour, TitleColour), [.. state], [.. stats], status, bad, [.. extended]);
     }
 
     /// <summary>The upgrade chain of a BUILDING record and its build data (the panel's [UPGRADE] / [DOWNGRADE] and their tooltips); the host sets them.</summary>

@@ -42,7 +42,7 @@ public sealed class BuildSite
     /// <summary>The <see cref="PlayerTown.Number"/> of the player town it belongs to (the save's <c>town</c> handle); 0 for none.</summary>
     public int Town { get; set; }
     /// <summary>The owning faction, a position in the world's faction list.</summary>
-    public int Owner { get; init; }
+    public int Owner { get; set; }
     public required MaterialSlot[] Materials { get; set; }
     public float Progress { get; set; }
     public float Target { get; set; }

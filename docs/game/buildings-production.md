@@ -465,7 +465,8 @@ field prefixes by MiningResource: `iron`, `stone`, `copper`, `carbon`, `water`, 
   Copper, output 5, 72; both `stat used` 3, `stonemine`, special tool Pickaxe, `output per day`) with their own `output rate`
   (1.2, 1, rebirth.mod over the base's 0.45, 0.4), `max operators` (3, 2) and `build materials` (2, 3). So hand mining is `Task_OperateMachine` on the rock (**Observed**); the ore waits in
   the rock's output until the player takes it (**Observed** by the owner in play; no rock-specific transfer in the operate update). No
-  rock has a saved state in two saves (253 zone files, **Observed**).
+  rock has a saved state in two saves (253 zone files, **Observed**). Owner: `nofac` until a player character starts working it, then the player's
+  faction ([selected building](ui-screens.md#selected-building), Rocks).
 - A building that is not the player's (`FUN_140546dd0`: its owner's `+0x250`, the test also used by research
   upgrades and generator fuel) yields 0.5 where it would get 0; the player's yields 0.
 - The farm efficiency also reads the record's `arid`, `green`, `swamp` coverages (crop types 2, 1, 3).

@@ -638,8 +638,15 @@ How a building gets selected: [ui-input](ui-input.md#building-picking-and-select
     operating at {1}{2,num}% {3}of its full potential." ({1} `#492620`, {2} int(share × 100), {3} `#140806`), otherwise "This machine is working fine.".
     Generator (`FUN_140300b40`) and WindGenerator states run this word chain first and then override it. Meitou: the tooltip on its Working word (mines,
     rocks, machines with an output, consumers by their grant); generators read Meitou's "Running" (not an original building string), so the P > 0 branch is unused.
-  - Rocks (**Observed**, same screenshot): the name bar's right is the player's faction ("Nameless"), so the rock passes slot 113's owner-is-player branch (how it
-    gets that owner is **Unknown**); the medical rows are `Condition` 2, full: the target of `build materials` 2.
+  - Rocks (**Observed**, same screenshot): the name bar's right is the player's faction ("Nameless"); the medical rows are `Condition` 2, full: the target of
+    `build materials` 2. Owner (**Verified**, decompile): the foliage system (`FUN_1406d2410`, "building type") makes a rock with no owner, town NO_TOWN (the
+    town list's `noTown` +0x180f8, KenshiLib 1ce4a16; `TownNull`, constructor `FUN_140934fe0`: TOWN `NO_TOWN` "Nowhere", explored, owner `nofac` via
+    `FactionManager::getEmptyFaction` `FUN_1402e7b00`), so the factory gives it the town's faction `nofac` ("No Faction"). `Task_OperateMachine` slot 1
+    (`FUN_14035b430`, the task's start at the machine) on a building with `is foliage` (+0xc0), not a chair, run by a character of the player's faction (+0x250) sets
+    the building's faction to the character's (slot 20) unless it is already a player faction, and then, when the town at its position (`FUN_140928890`) is a
+    player's, its town to that one. So slot 113 reads "No Faction" (its town is explored, not secret) until a player character starts working the rock, then the
+    player's faction. Not saved (the original saves no rock). Meitou: `ProductionSystem` sets the rock's owner on arrival, its town by the outposts' radius
+    (`RichnessView.Owner` / `TownName`); `Town:` shows only that town.
   Meitou (`PlayerInterface.Production.cs`, `MachineSnapshot.Efficiency` and `Panel`): the lines per class as above, unmined rocks too (0 workers), the turret's
   section 7 in `ExtendedStatsText` while the panel is expanded; the turret's gun lines are not built; health is `Machine.Health` (progress / target),
   which also scales production (`WorkFactor`) and the sound efficiency; slot 164 is `Machine.Active` (a BF_LIGHT machine outdoors by day, from `World.Daytime`

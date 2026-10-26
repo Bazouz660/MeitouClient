@@ -553,6 +553,15 @@ public sealed partial class ProductionSystem : ITickSystem
                 continue;
             }
             if (!AtSite(n, site, m)) continue;
+            // A rock (an "is foliage" building) becomes the operator's faction's once a player character works it, and joins a player town whose area holds it (Task_OperateMachine
+            // slot 1, FUN_14035b430; the town by its radius here).
+            if (cold.Faction == world.Player.Faction && site.Owner != cold.Faction && IsNatural(site.Id))
+            {
+                site.Owner = cold.Faction;
+                var at = new System.Numerics.Vector2(site.Position.X, site.Position.Z);
+                site.Town = world.Buildings.Towns.Where(t => t.Owner == cold.Faction && System.Numerics.Vector2.Distance(new(t.Position.X, t.Position.Z), at) <= t.Radius)
+                    .OrderBy(t => System.Numerics.Vector2.DistanceSquared(new(t.Position.X, t.Position.Z), at)).Select(t => t.Number).FirstOrDefault();
+            }
             // A turret: manned, facing it; the combat system fires it (docs/simulation.md "Combat", turrets). Its gunner counts as an operator, so it draws its power.
             if (m.Data.Function == Meitou.Data.World.ObjectRanges.TurretFunction)
             {

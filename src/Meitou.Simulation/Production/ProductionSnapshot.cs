@@ -21,6 +21,10 @@ public readonly record struct RichnessView(string Instance, int Resource, float 
 {
     /// <summary>A rock nobody has mined yet: its efficiency lines (a mined rock's and a mine's are its machine's, <see cref="MachineSnapshot.Efficiency"/>).</summary>
     public EfficiencyView? Efficiency { get; init; }
+    /// <summary>A rock's owner faction: -1 (the original's <c>nofac</c>) until a player character has worked it, then the player's faction; -1 for a player's mine.</summary>
+    public int Owner { get; init; } = -1;
+    /// <summary>The player town a worked rock joined; null for none.</summary>
+    public string? TownName { get; init; }
 }
 
 /// <summary>
