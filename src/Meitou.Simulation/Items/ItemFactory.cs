@@ -28,6 +28,25 @@ public sealed class ItemFactory(GameDatabase db, GameConstants constants, Func<M
 
     string? CheapestFoodId() => cheapestFoodId.Value;
 
+    readonly Lazy<string?> moneyId = new(() => db.OfType(FcsRecordType.ITEM).Where(r => r.Name == Trading.Market.MoneyItemName)
+        .Select(r => r.StringId).OrderBy(id => id, StringComparer.Ordinal).FirstOrDefault());
+
+    /// <summary>
+    /// CHARACTER <c>money item prob</c> / <c>min</c> / <c>max</c> for a newly made character not of the player's faction (<c>RootObjectFactory::process</c>, <b>Verified</b>): when a roll in
+    /// [0, 1) is at most the prob (so the data's 80-100 always pass), a stack of the money item worth U[min, max] goes into the inventory; one that does not fit is lost.
+    /// </summary>
+    public void AddSpawnMoney(Inventory inventory, GameRecord? character, ulong seed, ulong key)
+    {
+        if (character is not { Type: FcsRecordType.CHARACTER } || moneyId.Value is not { } money) return;
+        float prob = character.GetFloat("money item prob", 0);
+        int min = character.GetInt("money item min", 0), max = character.GetInt("money item max", 0);
+        if (max <= 0 || max < min) return;
+        ulong h = Rng.Hash(seed, key, RngPurpose.Spawn, 0x4D6F_6E65_7949_746DUL);
+        if (Rng.Float(h) > prob) return;
+        int amount = min + (int)(Rng.Float(h ^ 0x9E37_79B9_7F4A_7C15UL) * (max - min + 1));
+        if (amount > 0 && Create(money, amount) is { } cats) inventory.Add(cats);
+    }
+
     readonly System.Collections.Concurrent.ConcurrentDictionary<string, Meitou.Data.Gameplay.Combat.ArmourData?> armourData = new();
 
     /// <summary>The weight function of an armour record that lists part coverage (null: it keeps its record weight).</summary>

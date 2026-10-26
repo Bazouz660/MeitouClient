@@ -176,7 +176,7 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
 
     public void SlowWorld(World world)
     {
-        if (world.Tick % Settings.CheckEveryTicks == 0) Stock(world);
+        if (world.Tick % Settings.CheckEveryTicks == 0) { Stock(world); PayWages(world); }
         if (!customer.IsNone)
         {
             if (!Resolve(world, out int c, out int t, out _)) Close(world);
@@ -189,6 +189,31 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
             else Hold(world, t);
         }
         RefreshView(world);
+    }
+
+
+    // CHARACTER `wages` (Character::giveBirth and Character::dailyUpdate, Verified): a character not of the player's faction with wages of 1 or more sets (not adds to) its squad's money
+    // to them when it is made and every day; with several waged members the last one wins. Engine choices: the day pass runs when the game day changes, members in squad order; "when
+    // made" is the first pass that sees the squad, except the squads already there at this system's first pass (a loaded game keeps its saved purses until the next day).
+    readonly Dictionary<string, int> wages = new(StringComparer.Ordinal);
+    readonly HashSet<int> paidSquads = [];
+    long wageDay = long.MinValue;
+
+    void PayWages(World world)
+    {
+        long day = (long)Math.Floor(world.GameHours / 24);
+        bool first = wageDay == long.MinValue, newDay = !first && day != wageDay;
+        wageDay = day;
+        foreach (var squad in world.Squads.All)
+        {
+            if (!paidSquads.Add(squad.Id) && !newDay || first) continue;
+            foreach (var id in squad.Members)
+            {
+                if (!world.Characters.TryResolveNext(id, out int s) || world.Characters.Cold(s) is not { } c || c.IsPlayer || data.PlayerFaction >= 0 && c.Faction == data.PlayerFaction) continue;
+                if (!wages.TryGetValue(c.RecordId, out int pay)) wages[c.RecordId] = pay = data.Db.Find(c.RecordId) is { Type: Meitou.Data.Fcs.FcsRecordType.CHARACTER } r ? r.GetInt("wages", 0) : 0;
+                if (pay >= 1) squad.Money = pay;
+            }
+        }
     }
 
     internal void RefreshView(World world) =>

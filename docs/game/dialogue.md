@@ -461,7 +461,7 @@ squad simply takes the speaker in, unless a target flag at +0x1d0 is set):
 | 47 SURRENDER_NON_HUMANS | members of the target's faction within 100 of the speaker whose race is not the speaker's (`FUN_14042ecd0`: the race or one of its sub-races, race +0x40 / +0x120) become slaves (`FUN_14032e590`: slave state 1, the owner handle stored) and remembered by its squad; the tests are only partly read (8 uses, Holy Nation) |
 | 40 ENSLAVE_TARGETS_CARRIED_PERSON | slavery ([carry-loot](carry-loot.md)) |
 | 28 SEPARATE_TO_MY_OWN_SQUAD | the speaker (the target when the speaker is of the player's faction), unless alone, gets a new platoon of its faction (`FUN_1407f4420`, the old one's template field `+0x108`) where it stands, its tasks cleared; the new squad copies the old one's memory (`FUN_1405e85e0`) |
-| 32 ASSIGN_BOUNTY | bounty += val0 for the speaker's faction, or books a pending crime |
+| 32 ASSIGN_BOUNTY | bounty += val0 for the speaker's faction; without an amount, a speaker whose CHARACTER has `assigns bounties` (59 base records) books the target's pending crime (`Character::canAssignBounties` `FUN_1405a4470`, **Verified**); others do nothing |
 | 33 CRIME_ALARM | the speaker marks the target hostile; the target's crime timer 30 s and "recently wanted"; with a town (speaker not hostile to its faction): Trespassing on a target with no crime pending inside the speaker's non-public home, then the [town alarm](economy.md#town-alarms) at the target for its pending crime ("Alarm raised", at most every 30 s), [economy 11.2](economy.md#112-how-a-bounty-is-gained) |
 | 35 INCREASE_FACTION_RANK | the speaker's faction's rank +1 while below val0 (0: no cap) (**Verified** by code) |
 | 36 LOCK_THIS_DIALOG | locks the current dialogue |

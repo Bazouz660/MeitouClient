@@ -188,6 +188,7 @@ sealed class CharacterAssembly(PopulationData data)
         cold.Medical = medical;
         if (AnimalData.From(record) is { } animal) (cold.Animal, cold.ShownAge) = (animal, age);
         cold.Inventory = data.Items.Build(record, cold.Appearance?.Loadout);
+        if (!cold.IsPlayer && (data.PlayerFaction < 0 || cold.Faction != data.PlayerFaction)) data.Items.AddSpawnMoney(cold.Inventory, record, seed, Rng.Key(id));
         cold.Fighter = FighterOf(record, cold.Inventory, cold.Medical);
         cold.WaterFactor = raceData.WaterAvoidance * (cold.Faction == data.PlayerFaction && data.PlayerFaction >= 0 ? 0.5f : 1);
         cold.RoadPreference = data.RoadPreferenceOf(cold.Faction);
