@@ -64,8 +64,8 @@ power  = powerScale · global (1.0) · effect
 - **Night flag, per light** (parts recursion `140553dc0`, builder `FUN_140815420`): `custom.x` = 1 when Building slot 59
   returns the null handle (type 0xb) or byte +0x240 is set. The light pass (`FUN_1402d8540`) draws a flagged light only
   while the daylight factor (`FUN_14066cb50`) is at most 0.1. +0x240 is `isOutsideFurniture` (KenshiLib 1ce4a16, **Observed**;
-  the factory `FUN_14057cc70` stores its last argument there). Meitou flags only BF_LIGHT buildings' lights, unless indoors (engine choice: the
-  original's flag covers every building's outdoor lights, campfires and turret lamps too; **Observed**).
+  the factory `FUN_14057cc70` stores its last argument there). So every building's outdoor lights (campfires, turret lamps, houses) are night-only.
+  Meitou (`WorldLights.FromPlaced`): every light is flagged unless its building is indoors (`WorldLights.IsIndoors`; exterior layout items never are).
 - **Slot 59** (`isIndoors`, KenshiLib 1ce4a16; Building override `FUN_140547530`): the null handle for a door (+0x1a0) or a building whose
   +0xf8 is clear; +0xf8 is the BUILDING's `is interior furniture` (`FUN_14029e0c0`). Else the building it stands in: the RootObject
   `isInsideBuilding` hand (+0x80, set by the constructor `FUN_14055ca90` from its interior layout's building or the indoors building

@@ -14,7 +14,7 @@ The game draws these lights in both looks, so this is not a Faithful / Meitou sw
   Interior lamps enter the grid only with a loaded owner mask (matched by the building prefix of their placement id). Their direct light is
   clipped to its convex footprint and height range with a0.5-unit surface tolerance (see [zones](formats/zones.md#interior-masks)).
   Masks above32 edges are unsupported; direct lamps have no occluder shadows within that hull.
-  - Night-only lamps (`WorldLightRule.Night`: the owner's functionality is BF_LIGHT) are left out while the daylight factor is above 0.1;
+  - Night-only lamps (`WorldLightRule.Night`: every building not indoors, [lights](formats/lights.md#when-a-light-is-on)) are left out while the daylight factor is above 0.1;
     the rest are always on. The `interiorlamps` switch (Meitou, default) keeps interior-layout lamps on by day too; Faithful: night only.
     Player lamps placed during play are not interior lamps. A placed building's lamps are scaled by its power share (`SetRuntimePower`) and left out at 0. World lamps
     take no power factor: the town buildings' power and on state are **Unknown** ([lights](formats/lights.md#when-a-light-is-on)).
@@ -55,6 +55,5 @@ The game draws these lights in both looks, so this is not a Faithful / Meitou sw
 
 ## Open
 
-- What Building slot 59 returns and what byte +0x240 is, which decide the night-only flag ([lights](formats/lights.md#when-a-light-is-on)).
 - The lights of weather effects are not in the list (formats/lights.md).
 - The Large Torch Post's light may sit about 25 units above its flame (scale applied twice, as in the exe); not checked in a picture yet.

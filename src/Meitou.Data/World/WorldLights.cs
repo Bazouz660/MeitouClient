@@ -22,9 +22,9 @@ public enum WorldLightEffect
 /// <summary>When the game shows a building's lights (docs/formats/lights.md, "When a light is on").</summary>
 public enum WorldLightRule
 {
-    /// <summary>A light building (<c>function</c> BF_LIGHT, lamp posts and wall lights): drawn only while the daylight factor is at most 0.1.</summary>
+    /// <summary>A light of a building outdoors (lamp posts, campfires, turret lamps, houses' own lights): drawn only while the daylight factor is at most 0.1.</summary>
     Night,
-    /// <summary>Any other building: shown and hidden with the building's on state (day and night alike); Unknown what that state is for town buildings.</summary>
+    /// <summary>A light of interior furniture standing in a building (slot 59 set): shown and hidden with the building's on state (day and night alike).</summary>
     WhenBuildingOn,
 }
 
@@ -132,11 +132,12 @@ public static class WorldLights
     public static bool IsIndoors(GameRecord building, bool inBuilding) => inBuilding && building.GetBool("is interior furniture");
 
     /// <summary>
-    /// A placed LIGHT instance as a <see cref="WorldLight"/>; <paramref name="powerOn"/> is the owner's state <c>power on</c>, if any. A BF_LIGHT building's lights are night-only unless
-    /// it is <paramref name="indoors"/> (<see cref="IsIndoors"/>).
+    /// A placed LIGHT instance as a <see cref="WorldLight"/>; <paramref name="powerOn"/> is the owner's state <c>power on</c>, if any. Every building's lights are night-only unless it is
+    /// <paramref name="indoors"/> (<see cref="IsIndoors"/>; the builder <c>FUN_140815420</c> flags a light when slot 59 is null or the building is outside furniture, which an exterior
+    /// layout item and a building outside never are indoors).
     /// </summary>
     public static WorldLight FromPlaced(PlacedLight p, bool interior, bool? powerOn = null, bool indoors = false) =>
-        FromRecord(p.Light, p.Position, p.Direction, p.Power, p.Function == LightFunction && !indoors ? WorldLightRule.Night : WorldLightRule.WhenBuildingOn, p.PlacementId, p.Owner.StringId,
+        FromRecord(p.Light, p.Position, p.Direction, p.Power, indoors ? WorldLightRule.WhenBuildingOn : WorldLightRule.Night, p.PlacementId, p.Owner.StringId,
             interior, p.Holder.Type == FcsRecordType.BUILDING_PART ? p.Holder.GetInt("building floor") : 0, powerOn);
 
     /// <summary>A LIGHT record at <paramref name="position"/> with its rolled <paramref name="power"/>; <paramref name="ownerId"/> is the record that carries it.</summary>
