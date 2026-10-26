@@ -126,14 +126,14 @@ public sealed class XpService(GameConstants constants, BodyOptions options)
         Continuous(stats, race, StatsEnumerated.Toughness, 1, 300);
 
     /// <summary>
-    /// Strength from carrying (<c>FUN_1408c60c0</c>, called by the movement tick): amount = (1 - e)^2 capped at 0.5, doubled unless in state 0xb (pass
-    /// <paramref name="doubled"/> = true for the usual case), times <c>xp rate strength from walking</c>, through the continuous entry.
+    /// Strength from carrying (<c>FUN_1408c60c0</c>, called by the movement tick): amount = (1 - e)^2 capped at 0.5, <paramref name="doubled"/> while the character carries something
+    /// (Character <c>+0x388</c>, the type of its <c>carryingObject</c> handle, is not 11 NULL_ITEM; KenshiLib 1ce4a16), times <c>xp rate strength from walking</c>, through the continuous entry.
     /// </summary>
-    public float StrengthFromCarrying(CharacterStats stats, RaceData race, float encumbranceFactor, float dtSeconds, bool doubled = true) =>
+    public float StrengthFromCarrying(CharacterStats stats, RaceData race, float encumbranceFactor, float dtSeconds, bool doubled) =>
         Continuous(stats, race, StatsEnumerated.Strength, dtSeconds, StrengthCarryRate(encumbranceFactor, doubled));
 
     /// <summary>The amount <see cref="StrengthFromCarrying"/> feeds the continuous entry, which the information panel shows as "Strength XP:" (<c>FUN_1408c60c0</c>; 0 when unencumbered).</summary>
-    public float StrengthCarryRate(float encumbranceFactor, bool doubled = true) =>
+    public float StrengthCarryRate(float encumbranceFactor, bool doubled) =>
         1 - encumbranceFactor <= 0 ? 0 : MathF.Min((1 - encumbranceFactor) * (1 - encumbranceFactor), 0.5f) * (doubled ? 2 : 1) * constants.XpRateStrengthFromWalking;
 
     /// <summary>What the information panel shows as "Athletics XP:" (<c>FUN_1408c5ec0</c>): the encumbrance factor, x1.5 above 80 % of the run value; <see cref="AthleticsFromRunning"/> scales it by <c>xp rate athletics</c>.</summary>

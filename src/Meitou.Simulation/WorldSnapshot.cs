@@ -28,7 +28,17 @@ public sealed record HealthPartView(string Id, string Name, float Flesh, float S
     public Meitou.Data.Gameplay.Bodies.BodyPartType Type { get; init; }
 }
 /// <summary>A line of the HUD's stats panel: the label, the value the character fights with and the value it would have unhurt (docs/game/ui-screens.md section 4).</summary>
-public readonly record struct HudStatLine(string Label, float Value, float Base);
+public readonly record struct HudStatLine(string Label, float Value, float Base)
+{
+    /// <summary>The line's tooltip rows (key, value; either may start with a <c>#rrggbb</c> colour tag), empty for none (<see cref="HudTips"/>).</summary>
+    public IReadOnlyList<(string Key, string Value)> Tip { get; init; } = [];
+}
+/// <summary>
+/// The tooltip rows of the information panel's extended lines (<c>FUN_140895350</c>, <see cref="HudTips"/>), and what the run speed's rows need, which the host builds in its speed
+/// unit: the stored athletics, the leg factor, the fitted legs' athletics factor and, while sneaking, the sneak speed cap in units per second.
+/// </summary>
+public sealed record ExtendedTips(IReadOnlyList<(string Key, string Value)> Athletics, IReadOnlyList<(string Key, string Value)> Strength,
+    IReadOnlyList<(string Key, string Value)> Toughness, IReadOnlyList<(string Key, string Value)> Hunger, float StoredAthletics, float LegFactor, float RoboticLegs, float? SneakCap);
 /// <summary>
 /// What the HUD shows of a selected character besides <see cref="BodyStatus"/> (docs/game/ui-screens.md section 4): the blood in units and its capacity, the bleeding
 /// rate, the encumbrance factor (1 unburdened) and the stats panel's lines.
@@ -41,12 +51,15 @@ public sealed record HudView(float Blood, float BloodCapacity, float Bleeding, f
     public float Fed { get; init; }
     /// <summary>The race's <c>is robot</c>: the medical panel has no Hunger row.</summary>
     public bool Robot { get; init; }
+    /// <summary>The extended lines' tooltips; null when <see cref="Extended"/> is.</summary>
+    public ExtendedTips? ExtendedTips { get; init; }
 }
 /// <summary>
 /// The information panel's extended lines (docs/game/ui-screens.md section 4): the XP rates as the fraction the panel shows as a percentage (Toughness as a plain multiplier),
 /// the KO point (negative HP), the run speed in units per second with the unhurt run value it is measured against, and the hunger rate as a multiple of the race's.
+/// <see cref="Resting"/>: in a bed or knocked out, which the hunger rate takes the bed rate for.
 /// </summary>
-public readonly record struct ExtendedStats(float AthleticsXp, float StrengthXp, float ToughnessXp, float KoPoint, float RunSpeed, float RunValue, float HungerRate);
+public readonly record struct ExtendedStats(float AthleticsXp, float StrengthXp, float ToughnessXp, float KoPoint, float RunSpeed, float RunValue, float HungerRate, bool Resting = false);
 public sealed record InventoryItemView(int Index, string Record, string Name, string Section, int X, int Y, int Width, int Height, int Quantity, float Weight, float Quality)
 {
     /// <summary>The item's material record (<c>material sid</c>; "" none), which picks its icon.</summary>

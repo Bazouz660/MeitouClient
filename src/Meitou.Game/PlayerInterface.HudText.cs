@@ -31,9 +31,15 @@ sealed partial class PlayerInterface
     /// <summary>
     /// A line of a text panel: label and value, each with its colour (null: the text default). With <paramref name="Action"/> the value is a <c>Kenshi_Button2</c> button (the
     /// DataPanel's button lines): over the right <paramref name="ButtonWidth"/> of the row (the original's width argument), or across the whole row when there is no label.
+    /// <paramref name="Rows"/>, when not empty, is a row tooltip (type 1) in place of the text one.
     /// </summary>
     internal readonly record struct HudLine(string Label, string Value, string? LabelColour = null, string? ValueColour = null, string? Tooltip = null, string? Action = null,
-        float ButtonWidth = 0.5f);
+        float ButtonWidth = 0.5f, IReadOnlyList<(string Key, string Value)>? Rows = null)
+    {
+        /// <summary>The line's tooltip user strings (the HUD's Fixed tooltip), null for none.</summary>
+        public Dictionary<string, string>? TipProperties => Rows is { Count: > 0 } rows ? UiTooltips.RowProperties(rows, "fixed")
+            : Tooltip is { Length: > 0 } tip ? UiTooltips.TextProperties(Loc.Tr(tip), "fixed") : null;
+    }
 
     /// <summary>A medical panel row: its name, the green, yellow and red layers' fractions, the number, the arrows, the robot layer and the row's tooltip (the <c>LifeBarNTooltip</c> widget).</summary>
     internal readonly record struct MedicalRow(string Name, float Green, float Yellow, float Red, string Value, string Arrows, bool Robot, string? Tooltip = null);
@@ -133,7 +139,7 @@ sealed partial class PlayerInterface
     {
         int value = (int)s.Value, change = value - (int)s.Base;
         string text = change == 0 ? value.ToString(CultureInfo.InvariantCulture) : change < 0 ? $"{value} ({change})" : $"{value} (+{change})";
-        return new HudLine(Loc.Tr(s.Label).ToUpperInvariant(), text, StatLabelColour, change < 0 ? BadColour : change > 0 ? GoodColour : null);
+        return new HudLine(Loc.Tr(s.Label).ToUpperInvariant(), text, StatLabelColour, change < 0 ? BadColour : change > 0 ? GoodColour : null, Rows: s.Tip);
     })];
 
     /// <summary>The unit of the run speed in the information panel (Interface settings; the game shows mph).</summary>
@@ -141,7 +147,7 @@ sealed partial class PlayerInterface
 
     /// <summary>
     /// The extended lines (shown when the information panel is expanded; <c>FUN_140895350</c>, docs/game/ui-screens.md section 4): the XP rates, the KO point, the run
-    /// speed in mph (units per second x 0.22369362; km/h x 0.36) with its change from the unhurt run value in brackets, and the hunger rate.
+    /// speed in mph (units per second x 0.22369362; km/h x 0.36) with its change from the unhurt run value in brackets (Bad either way, <c>FUN_140888fb0</c>), and the hunger rate.
     /// </summary>
     internal static HudLine[] ExtendedLines(CharacterSnapshot lead, SpeedUnit unit = SpeedUnit.Mph)
     {
@@ -151,11 +157,32 @@ sealed partial class PlayerInterface
         string suffix = unit == SpeedUnit.Kmh ? "km/h" : "mph";
         int speed = (int)MathF.Round(e.RunSpeed * factor), change = (int)MathF.Round((e.RunSpeed - e.RunValue) * factor);
         string run = change == 0 ? $"{speed} {suffix}" : change < 0 ? $"{speed} ({change}) {suffix}" : $"{speed} (+{change}) {suffix}";
-        return [new(Loc.Tr("Athletics XP:"), Percent(e.AthleticsXp)), new(Loc.Tr("Strength XP:"), Percent(e.StrengthXp)),
-            new(Loc.Tr("Toughness XP:"), ((int)e.ToughnessXp).ToString(CultureInfo.InvariantCulture) + "x"),
+        var tips = lead.Hud.ExtendedTips;
+        return [new(Loc.Tr("Athletics XP:"), Percent(e.AthleticsXp), Rows: tips?.Athletics), new(Loc.Tr("Strength XP:"), Percent(e.StrengthXp), Rows: tips?.Strength),
+            new(Loc.Tr("Toughness XP:"), ((int)e.ToughnessXp).ToString(CultureInfo.InvariantCulture) + "x", Rows: tips?.Toughness),
             new(Loc.Tr("KO point:"), ((int)e.KoPoint).ToString(CultureInfo.InvariantCulture), Tooltip: KoPointTip(e.KoPoint)),
-            new(Loc.Tr("Run speed:"), run, ValueColour: change < 0 ? BadColour : change > 0 ? GoodColour : null),
-            new(Loc.Tr("Hunger Rate:"), Percent(e.HungerRate))];
+            new(Loc.Tr("Run speed:"), run, ValueColour: change != 0 ? BadColour : null, Rows: tips is null ? null : RunTip(e, tips, lead.Hud.Encumbrance, change != 0 ? BadTag + run : run, factor, suffix)),
+            new(Loc.Tr("Hunger Rate:"), Percent(e.HungerRate), Rows: tips?.Hunger)];
+    }
+
+    const string BadTag = "#59231a", GoodTag = "#a8b774";
+
+    /// <summary>
+    /// The run speed's tooltip (<c>FUN_14088e780</c>, then <c>FUN_140895350</c>'s rows): the stored athletics, the run value, each loss (legs, encumbrance), the fitted legs, the top speed,
+    /// while sneaking its cap, and "Total:" with the line's own text. Speeds in the panel's unit (the original's mph); the speeds are truncated, the line's rounded.
+    /// </summary>
+    static List<(string Key, string Value)> RunTip(ExtendedStats e, ExtendedTips tips, float encumbrance, string total, float factor, string suffix)
+    {
+        string InUnit(float unitsPerSecond) => $"{Loc.Tr("{1,num}", (int)(unitsPerSecond * factor))} {suffix}";
+        var rows = new List<(string, string)> { (Loc.Tr("Athletics Skill:"), Loc.Tr("{1,num}", (int)tips.StoredAthletics)), (Loc.Tr("Max possible speed:"), InUnit(e.RunValue)) };
+        int legs = (int)((1 - tips.LegFactor) * 100), load = (int)((1 - Math.Clamp(encumbrance, 0, 1)) * 100), robotics = (int)((tips.RoboticLegs - 1) * 100);
+        if (legs > 0) rows.Add((Loc.Tr("Leg injury:"), BadTag + "-" + Loc.Tr("{1,num}%", legs)));
+        if (load > 0) rows.Add((Loc.Tr("Encumbrance:"), BadTag + "-" + Loc.Tr("{1,num}%", load)));
+        if (robotics != 0) rows.Add((Loc.Tr("Robotics:"), (robotics < 0 ? BadTag : GoodTag) + Loc.Tr(robotics > 0 ? "+{1,num}" : "{1,num}", robotics) + "%"));
+        rows.Add(("#afa68b" + Loc.Tr("Total speed:"), InUnit(e.RunSpeed)));
+        if (tips.SneakCap is { } cap) rows.Add((Loc.Tr("Stealth mode:"), BadTag + Loc.Tr("max:") + " " + Loc.Tr("{1,num}", (int)(cap * factor))));
+        rows.Add((Loc.Tr("Total:"), total));
+        return rows;
     }
 
     /// <summary>
@@ -179,6 +206,7 @@ sealed partial class PlayerInterface
         var valueProperties = valueFont is null ? labelProperties : Face(valueFont, valuePixels);
         for (int i = 0; i < lines.Count; i++)
         {
+            var tipProperties = lines[i].TipProperties;
             var row = new UiRect(area.X + area.Width * 0.03f, area.Y + i * rowHeight, area.Width * 0.93f, rowHeight);
             if (lines[i].Action is { } action)
             {
@@ -186,7 +214,7 @@ sealed partial class PlayerInterface
                 float width = Math.Clamp(lines[i].ButtonWidth, 0.1f, 1);
                 var button = lines[i].Label.Length == 0 ? row : row with { X = row.X + row.Width * (1 - width), Width = row.Width * width };
                 var buttonProperties = new Dictionary<string, string>(valueProperties) { ["TextAlign"] = "Center", ["TextColour"] = lines[i].ValueColour ?? MyGuiColours.InkText };
-                if (lines[i].Tooltip is { Length: > 0 } buttonTip) foreach (var pair in UiTooltips.TextProperties(Loc.Tr(buttonTip), "fixed")) buttonProperties[pair.Key] = pair.Value;
+                if (lines[i].TipProperties is { } buttonTip) foreach (var pair in buttonTip) buttonProperties[pair.Key] = pair.Value;
                 // Kenshi_Button2 is a template (kenshi_templates.xml) whose root widget has the Kenshi_Button1Skin skin.
                 controls.Add(new($"{panel}-button-{i}", "Button", button with { Y = button.Y + 1, Height = button.Height - 2 }, Loc.Tr(lines[i].Value), action, "Kenshi_Button1Skin", true,
                     buttonProperties, Vector4.Zero, Clip: host.Clip));
@@ -198,13 +226,13 @@ sealed partial class PlayerInterface
                 {
                     var textProperties = new Dictionary<string, string>(properties) { ["TextAlign"] = align, ["TextColour"] = colour ?? MyGuiColours.InkText };
                     // A line with a tooltip is a mouse target (the HUD's own tooltip, anchored on its panel).
-                    if (lines[i].Tooltip is { Length: > 0 } tip) foreach (var pair in UiTooltips.TextProperties(Loc.Tr(tip), "fixed")) textProperties[pair.Key] = pair.Value;
+                    if (tipProperties is not null) foreach (var pair in tipProperties) textProperties[pair.Key] = pair.Value;
                     // A value beside a label keeps out of the label's column: a long one (a French weather notice) is cut short instead of running over the label.
                     // A label beside a button keeps to its left: added after the button, a full-row label with a tooltip would take its clicks.
                     var box = part == "value" && lines[i].Label.Length > 0 ? row with { X = row.X + row.Width * 0.35f, Width = row.Width * 0.65f }
                         : lines[i].Action is not null ? row with { Width = row.Width * (1 - Math.Clamp(lines[i].ButtonWidth, 0.1f, 1)) } : row;
                     controls.Add(new($"{panel}-{part}-{i}", "TextBox", box, Loc.Tr(text), "", "Kenshi_TextboxStandardText", true,
-                        textProperties, Vector4.Zero, Pickable: lines[i].Tooltip is { Length: > 0 }, Clip: host.Clip));
+                        textProperties, Vector4.Zero, Pickable: tipProperties is not null, Clip: host.Clip));
                 }
         }
 

@@ -254,6 +254,17 @@ public sealed partial class MedicalState
     /// <summary>The product of the fitted leg prosthetics' multipliers for a stat (1 with none).</summary>
     public float LegItemFactor(StatsEnumerated stat) => ItemFactor(stat, legs: true);
 
+    /// <summary>A prosthetic is fitted to an arm or a leg (<c>FUN_140883690</c>: one of the four limb slots holds an item).</summary>
+    public bool HasProsthetics
+    {
+        get
+        {
+            foreach (var p in parts)
+                if (p.Limb == LimbState.Replaced && p.Replacement is not null && p.Template.Type is BodyPartType.Arm or BodyPartType.Leg) return true;
+            return false;
+        }
+    }
+
     float ItemFactor(StatsEnumerated stat, bool legs)
     {
         float f = 1;

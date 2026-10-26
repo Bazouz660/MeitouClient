@@ -211,7 +211,7 @@ public sealed class BodySystem(GameConstants constants, BodyOptions? options = n
                 var exposure = cold.StealthExposureTick >= world.Tick - (long)MathF.Ceiling(1 / world.TickSeconds) ? cold.StealthExposure : StealthExposure.Unobserved;
                 xp.Sneaking(stats, race, exposure, world.TickSeconds);
             }
-            if (cold.IsPlayer || table.IdOf(i) == world.Player.Inspected) cold.Extended = ExtendedOf(stats, race, medical, n.MaxSpeed, encumbrance, ctx.Resting);
+            if (cold.IsPlayer || table.IdOf(i) == world.Player.Inspected) cold.Extended = ExtendedOf(stats, race, medical, n.MaxSpeed, encumbrance, ctx.Resting, carrying);
             n.Health = Math.Clamp(medical.Blood / MathF.Max(MedicalState.BloodCapacity(race, stats.Strength), 1) * 100, 0, 100);
             foreach (var e in events)
             {
@@ -266,13 +266,14 @@ public sealed class BodySystem(GameConstants constants, BodyOptions? options = n
     /// fraction (at most 1) against 15 and so is always on: a whole character reads 3x. Strength XP is the carrying rate; what the original shows instead with a weapon in hand
     /// ("Weapon weight") is not modelled.
     /// </summary>
-    ExtendedStats ExtendedOf(CharacterStats stats, RaceData race, MedicalState medical, float speed, float encumbrance, bool resting)
+    ExtendedStats ExtendedOf(CharacterStats stats, RaceData race, MedicalState medical, float speed, float encumbrance, bool resting, bool carrying)
     {
         float runValue = Speed.RunValue(race, stats.Athletics);
         float toughness = XpService.ToughnessFactor(medical);
-        float hunger = race.HungerRate * MedicalState.HungerSituationFactor(Constants, resting || medical.Unconscious || medical.Dead, false, encumbrance);
-        return new ExtendedStats(XpService.AthleticsRate(encumbrance, speed, runValue), xp.StrengthCarryRate(encumbrance), toughness,
-            MedicalState.KoPoint(Constants, stats.Toughness), speed, runValue, hunger);
+        bool rest = resting || medical.Unconscious || medical.Dead;
+        float hunger = race.HungerRate * MedicalState.HungerSituationFactor(Constants, rest, false, encumbrance);
+        return new ExtendedStats(XpService.AthleticsRate(encumbrance, speed, runValue), xp.StrengthCarryRate(encumbrance, carrying), toughness,
+            MedicalState.KoPoint(Constants, stats.Toughness), speed, runValue, hunger, rest);
     }
 
     /// <summary>
@@ -288,7 +289,7 @@ public sealed class BodySystem(GameConstants constants, BodyOptions? options = n
         if (speed < 1) return;
         if (deepWater) xp.SwimmingInWater(stats, race, carrying, dt);
         else if (speed > n.WalkSpeed + 1) xp.AthleticsFromRunning(stats, race, encumbrance, speed / MathF.Max(n.MaxSpeed, 1), dt);
-        if (encumbrance < 1) xp.StrengthFromCarrying(stats, race, encumbrance, dt);
+        if (encumbrance < 1) xp.StrengthFromCarrying(stats, race, encumbrance, dt, carrying);
     }
 
     /// <summary>The <c>malnourished</c> squads' hunger floors (<see cref="HungerFloor"/>), by squad id; filled from the parallel phase.</summary>
