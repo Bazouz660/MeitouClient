@@ -44,7 +44,7 @@ body covers ends the walk short. A re-issued order within 2 units of the last go
 20 rad/s, 4 in the combat stance), animals `turn rate` × 0.1. Meitou: `MovementSystem.PathAcceleration`,
 `FinalArrive`, `GoalOccupied`. A walker out of combat keeps the agent's velocity vector (previous tick's `Velocity`), moving it toward path direction x wanted speed by at most a x dt, so a turn costs the speed the change of direction takes (no cos cut, no turning on the spot); its facing is its velocity's direction (the path direction while it starts; engine reading: facing the path direction while the velocity lags makes it slide sideways through turns) and the drawn body follows it ([animation](../animation.md), drawn facing), and a corner the velocity has carried past counts as reached. Fighters and direct followers keep the older turn cut (engine choice). Not yet: corner braking (its exact condition is Unknown) and animal `turn rate`. A reached waypoint is passed in the same tick.
 Combat/follow steering ramps15/s, with turning/backward/arrival caps. Combat-move-speed multiplier
-and water factors0.75/0.5/0.4 apply separately (`FUN_14065dba0`, by water state 1/2/3; Meitou does not apply them yet). No independent slope-speed term was found.
+and water factors 0.75/0.5/0.4 apply separately (`FUN_14065dba0`, by water state 1/2/3; Meitou scales the fight steering by the water factors, `MovementSystem`). No independent slope-speed term was found.
 
 ### Water states
 

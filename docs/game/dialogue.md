@@ -359,7 +359,7 @@ nearby player character (and stores it as the target). `B` = value > 0.
 | 35 SQUAD_SIZE, 37 NUM_BACKPACKS | S's squad: members / members with a backpack in the backpack slot (`FUN_1405cb320`) | Num3 |
 | 36 IS_PLAYER | S's faction is the player's | Bool |
 | 38 SQUAD_ONLY_ANIMALS, 43 SQUAD_IS_DOWN, 72 MIXED_GENDER_GROUP | S's squad | Bool |
-| 39 IS_OUTNUMBERED | S's counters (the object at S's `+0x650` + 0x28, Character slot 13 `FUN_1405c8700`): `+0x94` > `+0x4c` × 1.3, strict (**Observed**; what they count and who writes them **Unknown**, not built) | Bool |
+| 39 IS_OUTNUMBERED | S's counters (the object at S's `+0x650` + 0x28, Character slot 13 `FUN_1405c8700`): `+0x94` > `+0x4c` × 1.3, strict (**Observed**; the counts are `SensoryData` numEnemies and numConsciousAllies, [ragdolls](ragdolls.md); Meitou: `BodySystem.Senses`) | Bool |
 | 40 / 47 BOUNTY_AMOUNT_PERCEIVED / ACTUAL | S's bounty with Me's faction (perceived: only while recognised) | Num2 |
 | 45 IS_FEMALE | S's race is female | Bool |
 | 46 CARRYING_SOMEONE_TO_ENSLAVE | S carries a living adventurer, bandit, slave or civilian (false for value 0 too) | asymmetric |

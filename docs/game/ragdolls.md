@@ -157,7 +157,7 @@ player order gets it up (1 when sneaking), as does a thief's watcher noticing.
   core(f x (`numEnemies` + 10) x 0.075 x race[toughness]) ([character-stats](character-stats.md)) and event 0x19; else
   event 0x18. Without the order the get-up only says 0x17 / 0x18.
 - Meitou: `MedicalState.PlayingDead` (not saved): a knockout that ends while `MedicalContext.PlayDead` is set keeps the
-  character `Unconscious` (so everyone treats it as down) with no timer. `BodySystem.Schedule` sets it serially from the last
+  character `Unconscious` (so everyone treats it as down) with no timer. The get-up line (`DialogueSystem.SeeGettingUp`) is 23 / 25 / 24 by these counts. `BodySystem.Schedule` sets it serially from the last
   tick by `BodySystem.Senses` (enemies `CombatSystem.IsEnemyOf`, by distance within the vision range, 500 inside); a player
   order standing it up grants the toughness (`BodySystem.GotUpByOrder`); animals never play dead. Rechecked every 15 ticks
   (engine choice). `MedicalState.StandUp` ends it. Health header: `HudText.HealthWord`.

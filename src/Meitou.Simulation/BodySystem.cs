@@ -146,6 +146,7 @@ public sealed class BodySystem(GameConstants constants, BodyOptions? options = n
     /// </summary>
     internal void GotUpByOrder(World world, int slot, CharacterCold cold)
     {
+        cold.OrderedUp = true;
         if (world.SystemOf<Combat.CombatSystem>() is not { } combat || cold is not { Stats: { } stats, Race: { } race, Medical: { } medical }) return;
         var (enemies, neutrals, allies) = Senses(world, combat, slot, cold);
         if (enemies + neutrals >= 1 && allies == 0) xp.ToughnessFromGettingUp(stats, race, medical, enemies);

@@ -113,11 +113,13 @@ public sealed class SightMap
             Array.Resize(ref light, size);
             Array.Resize(ref floorOf, size);
             Array.Resize(ref probed, size);
+            Array.Resize(ref low, size);
         }
         for (int s = 0; s < count; s++)
         {
             int was = place[s];
             place[s] = -1;
+            low[s] = prev[s].Alive && table.Cold(s)?.Medical is { Prone: true };
             if (!prev[s].Alive || rooms.Count == 0) { onTop[s] = false; probed[s] = default; continue; }
             var c = table.Cold(s);
             var at = prev[s].Position;
@@ -158,6 +160,8 @@ public sealed class SightMap
     /// <summary>Where a character's overhead and floor queries were last made (<see cref="floorOf"/> -1: not asked yet there).</summary>
     readonly record struct Probe(Vector3 At, int Room, int Generation);
     Probe[] probed = [];
+    // Each character crawling or staying low at the last update (the sight test's ground posture).
+    bool[] low = [];
     int[] floorOf = [];
 
     /// <summary>The farthest the looker can see anyone this tick (<see cref="Range"/> with the brightest target and full ambient): a query radius.</summary>
@@ -264,6 +268,8 @@ public sealed class SightMap
     {
         float range = Range(looker, target, outdoor);
         if (!(range > 0)) return 0;
-        return stealth >= 0 ? AggroSystem.SneakVisibility(eye, yaw, at, range, stealth) : AggroSystem.Visibility(eye, yaw, at, range);
+        // A target crawling or staying low is half as visible (FUN_140852f70: ground posture x0.5, before the sneaking factors).
+        float posture = (uint)target < (uint)count && low[target] ? 0.5f : 1;
+        return stealth >= 0 ? AggroSystem.SneakVisibility(eye, yaw, at, range, stealth, posture) : AggroSystem.Visibility(eye, yaw, at, range, posture);
     }
 }

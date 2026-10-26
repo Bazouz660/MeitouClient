@@ -21,8 +21,8 @@ namespace Meitou.Simulation;
 /// <item>Paths: a character that wants one is flagged in Think; the Schedule step of the next tick asks the <see cref="PathService"/>;
 /// an answer is applied in a serial step, so a path is never read while it is replaced.</item>
 /// </list>
-/// Water states cap or replace the top speed (<see cref="WaterStateAt"/>, <see cref="Speed.InWater"/>). Not modelled yet (Unknown or later): slopes (the original has no slope penalty), the combat speed
-/// multiplier. Far trips take the roads in the path layer (<see cref="CharacterCold.RoadPreference"/>).
+/// Water states cap or replace the top speed (<see cref="WaterStateAt"/>, <see cref="Speed.InWater"/>). In water a fighter's footwork is scaled too (x0.75 / 0.5 / 0.4). Not modelled yet (Unknown or later): slopes (the original has no slope penalty), the RACE
+/// <c>combat move speed mult</c>. Far trips take the roads in the path layer (<see cref="CharacterCold.RoadPreference"/>).
 /// <item>Followers (the original's <c>Task_Follow</c>, docs/game/pathfinding.md "Squads travelling together"): a squad mate aims at its <see cref="Formation.Layout"/> slot turned
 /// onto a heading that eases toward the leader's, one second ahead of the leader; anyone else keeps a drawn 20..40 from its target. Its speed is the original's desired speed
 /// (<see cref="FollowSpeedFor"/>), capped by its top speed only (engine choice: the original's cap by speed mode is Unknown, and only this lets it settle in its slot). Within
@@ -579,6 +579,8 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
             if (steering)
             {
                 var v = Combat.CombatSteering.Velocity(world, Fights!, i, cold, cold.Steer!, n.MaxSpeed, cold.Animation?.Strafing ?? false, speed > 0.01f, out var face);
+                // In water the steering's caller scales it by the water state (x0.75 / 0.5 / 0.4 in states 1-3, FUN_14065dba0; docs/game/combat.md "Fight steering").
+                if (water > 0) v *= water switch { 1 => 0.75f, 2 => 0.5f, _ => 0.4f };
                 float vs = v.Length();
                 (dir, speed) = vs > 1e-4f ? (v / vs, vs) : (Vector2.Zero, 0f);
                 if (face != Vector2.Zero)

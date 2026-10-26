@@ -67,6 +67,13 @@ public sealed partial class DialogueSystem
             case 36: return Bool(s.IsPlayer || (world.Player.Faction >= 0 && sF == world.Player.Faction));
             case 37: return Num3(SquadOf(world, subjectId).Count(m => Cold(world, m)?.Inventory?.Backpack is not null));
             case 38: return Bool(SquadOf(world, subjectId).All(m => Cold(world, m)?.Fighter?.IsAnimal == true));
+            case 39:
+            {
+                // IS_OUTNUMBERED: S's sensed enemies above 1.3 x its sensed conscious allies, strict (SensoryData +0x94 numEnemies, +0x4c numConsciousAllies; the same counts as playing dead).
+                if (world.SystemOf<Combat.CombatSystem>() is not { } combat || !world.Characters.TryResolveNext(subjectId, out int ss)) return !b;
+                var (enemies, _, allies) = BodySystem.Senses(world, combat, ss, s);
+                return Bool(enemies > allies * 1.3f);
+            }
             case 40: return Num2(s.RecentlyWanted > 0 || s.Recognition >= 1 ? s.Bounties?.AmountFor(meF) ?? 0 : 0);
             case 41: return Bool(s.Medical is { Unconscious: true, Dead: false });
             case 43: return Bool(SquadOf(world, subjectId).All(m => Cold(world, m)?.Medical?.Incapacitated != false));

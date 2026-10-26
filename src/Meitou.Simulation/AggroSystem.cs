@@ -56,16 +56,16 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
     /// <summary>
     /// The original's sight test for an NPC looking at a character who is not sneaking or crawling, in full daylight with both lit alike (<c>FUN_140852f70</c>): the
     /// view factor v = (cos a - 0.2) / 0.8, a the angle between the looker's facing and the direction to the target (3D), and the target is seen when v is above 0.01
-    /// and the distance is at most R x v. Returns v when seen, else 0. A target at the looker's own position counts as seen straight ahead (an engine choice).
+    /// and the distance is at most R x v (v x <paramref name="posture"/>: 0.5 for a target crawling or on the ground, <c>FUN_140852f70</c>). Returns v when seen, else 0. A target at the looker's own position counts as seen straight ahead (an engine choice).
     /// </summary>
-    public static float Visibility(Vector3 eye, float yaw, Vector3 target, float range)
+    public static float Visibility(Vector3 eye, float yaw, Vector3 target, float range, float posture = 1)
     {
         var d = target - eye;
         float dist = d.Length();
         if (dist < 1e-3f) return 1;
         if (dist > range) return 0;
         float cos = (MathF.Sin(yaw) * d.X + MathF.Cos(yaw) * d.Z) / dist;
-        float v = (cos - ConeEdge) / (1 - ConeEdge);
+        float v = (cos - ConeEdge) / (1 - ConeEdge) * posture;
         return v > MinVisibility && dist <= range * v ? v : 0;
     }
 
@@ -73,13 +73,13 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
     /// The sight test for a sneaking target: the view factor v of <see cref="Visibility"/>'s cone, scaled by <see cref="Orders.SneakView"/>, must reach the distance
     /// (d at most R x v'). Returns v' when it does, else 0; in view, the target still has to fill the looker's spot meter (<see cref="Orders.SpotSeconds"/>).
     /// </summary>
-    public static float SneakVisibility(Vector3 eye, float yaw, Vector3 target, float range, float stealth)
+    public static float SneakVisibility(Vector3 eye, float yaw, Vector3 target, float range, float stealth, float posture = 1)
     {
         var d = target - eye;
         float dist = d.Length();
         if (dist < 1e-3f) return 1;
         if (dist > range) return 0;
-        float v = Orders.SneakView(((MathF.Sin(yaw) * d.X + MathF.Cos(yaw) * d.Z) / dist - ConeEdge) / (1 - ConeEdge), stealth);
+        float v = Orders.SneakView(((MathF.Sin(yaw) * d.X + MathF.Cos(yaw) * d.Z) / dist - ConeEdge) / (1 - ConeEdge) * posture, stealth);
         return v > MinVisibility && dist <= range * v ? v : 0;
     }
 
@@ -265,7 +265,13 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         public List<Spot>? Spots;
         public List<Sighting> Sightings;
         public EffectBuffer Effects;
+        /// <summary>Characters gathered this scan, and those taken past the cap (<see cref="GatherCap"/>, <see cref="GatherExtra"/>).</summary>
+        public int Gathered, Extra;
     }
+
+    /// <summary>The sensed-list gather (<c>FUN_14085a8d0</c>, <b>Verified</b> literals): up to 40 characters within range; past that, up to 20 more within 250.</summary>
+    public const int GatherCap = 40, GatherExtra = 20;
+    public const float GatherNear = 250;
 
     public void Act(World world, Partition part, EffectBuffer effects)
     {
@@ -399,6 +405,9 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         ref readonly var other = ref s.Table.Previous[slot];
         float d2 = Vector3.DistanceSquared(other.Position, s.Eye);
         if (d2 > s.Range * s.Range && d2 > NoiseFar * NoiseFar) return;
+        if (s.Gathered < GatherCap) s.Gathered++;
+        else if (s.Extra < GatherExtra && d2 <= GatherNear * GatherNear) s.Extra++;
+        else return;
         // A caged prisoner is nobody's target, an owned slave nobody's but its owner's enemies' (engine choice: the original's sensed-list filter is not decoded; town cages
         // hold enemies of their guards, and slaves of a hostile faction, such as Heng's Outlaws, stand among them).
         if (s.Table.Cold(slot) is not { Medical.Incapacitated: false, IsImprisoned: false } c || c.SlaveState == 1 && !IsEnemy(s.Relations, s.Faction, c.SlaveOwner)) return;

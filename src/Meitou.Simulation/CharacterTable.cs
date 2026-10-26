@@ -330,6 +330,8 @@ public sealed class CharacterCold
     /// <summary>The squad a slave obeys (the original's owner handle naming a platoon; -1 none): job 187 Obedient Slave runs that squad's <c>Slave AI Goals</c> (<see cref="Ai.AiSystem"/>).
     /// Runtime only (not saved, not hashed): set where the slave is made or sold.</summary>
     public int SlaveMaster { get; set; } = -1;
+    /// <summary>Stood up from playing dead on the player's order since it went down (<c>playerWantsMeToGetUp</c>): the get-up line may be event 25. Runtime only.</summary>
+    public bool OrderedUp { get; set; }
     /// <summary>The fixture this character is picking the lock of (<see cref="Locks.LockSystem"/>; null: none). Hashed only while set.</summary>
     public string? PickingLock { get; set; }
     /// <summary>The door this character is bashing in (<see cref="Locks.LockSystem"/>; null: none). Hashed only while set.</summary>

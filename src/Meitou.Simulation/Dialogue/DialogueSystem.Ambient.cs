@@ -162,13 +162,12 @@ public sealed partial class DialogueSystem
     // The characters that were down at the last look (the get-up events); hashed.
     readonly SortedSet<CharacterId> down = new(Comparer<CharacterId>.Create(CompareIds));
 
-    /// <summary>EV_GET_UP_PEACE, EV_GET_UP_FIGHT.</summary>
-    const int GetUpPeace = 23, GetUpFight = 24;
+    /// <summary>EV_GET_UP_PEACE, EV_GET_UP_FIGHT, EV_GET_UP_UNNECCESSARY_FIGHT.</summary>
+    const int GetUpPeace = 23, GetUpFight = 24, GetUpUnnecessaryFight = 25;
 
     /// <summary>
-    /// Getting up (<c>Task_GetUp</c>, <c>FUN_14033ca10</c>): a character that was down at the last look and is awake now fires event 24 with no target when enemies are about,
-    /// else 23. The original counts enemies on the character (its counters are not decoded): engine reading, fighting or a hostile awake character within sight. Its
-    /// event 25 branch (an unnecessary fight) is not built.
+    /// Getting up (<c>Task_GetUp</c>, <c>FUN_14033ca10</c> / <c>FUN_1408c6780</c>, docs/game/ragdolls.md): a character that was down at the last look and is awake now fires, with no target,
+    /// 23 when it senses no enemy or neutral (<see cref="BodySystem.Senses"/>); else, stood up on the player's order with no conscious ally sensed, 25; else 24.
     /// </summary>
     void SeeGettingUp(World world)
     {
@@ -180,7 +179,16 @@ public sealed partial class DialogueSystem
             if (medical.Dead) { down.Remove(id); continue; }
             if (medical.Incapacitated) { down.Add(id); continue; }
             if (!down.Remove(id)) continue;
-            Fire(world, id, CharacterId.None, c.InCombat || EnemyNear(world, i, c) ? GetUpFight : GetUpPeace);
+            bool ordered = c.OrderedUp;
+            c.OrderedUp = false;
+            int ev;
+            if (world.SystemOf<Combat.CombatSystem>() is { } combat)
+            {
+                var (enemies, neutrals, allies) = BodySystem.Senses(world, combat, i, c);
+                ev = enemies + neutrals == 0 ? GetUpPeace : ordered && allies == 0 ? GetUpUnnecessaryFight : GetUpFight;
+            }
+            else ev = c.InCombat || EnemyNear(world, i, c) ? GetUpFight : GetUpPeace;
+            Fire(world, id, CharacterId.None, ev);
         }
         down.RemoveWhere(id => !table.TryResolveNext(id, out _));
     }
