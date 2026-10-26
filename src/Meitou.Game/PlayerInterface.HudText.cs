@@ -137,7 +137,31 @@ sealed partial class PlayerInterface
         string value = skill.Speed
             ? $"{(int)(skill.Value * (unit == SpeedUnit.Kmh ? 0.36f : 0.22369362f))} {(unit == SpeedUnit.Kmh ? "km/h" : "mph")}"
             : ((int)skill.Value).ToString(CultureInfo.InvariantCulture);
-        return new(label, value, ValueColour: skill.Penalised ? BadColour : null);
+        return new(label, value, ValueColour: skill.Penalised ? BadColour : null, TooltipRows: skill.Terms is { } terms ? SkillTip(label, terms) : null);
+    }
+
+    /// <summary>
+    /// A skill's tooltip (<c>FUN_140890b00</c>): "{skill} skill:" and the trained level; each penalty above 0 as Bad <c>-n%</c> (Injuries, Hunger, Weather, Working in darkness,
+    /// Robotics; a Robotics bonus Good <c>+n%</c>, labelled "Limbs disabled:" without fitted robotics); the gear as a signed percentage; for strength the missing arm penalty; the total.
+    /// </summary>
+    static (string, string)[] SkillTip(string skill, SkillTerms t)
+    {
+        var rows = new List<(string, string)> { (Loc.Tr("{1} skill:", skill), ((int)t.Base).ToString(CultureInfo.InvariantCulture)) };
+        void Penalty(string label, int percent)
+        {
+            if (percent > 0) rows.Add((Loc.Tr(label), "#59231a-" + percent.ToString(CultureInfo.InvariantCulture) + "%"));
+        }
+        Penalty("Injuries:", t.Injuries);
+        Penalty("Hunger:", t.Hunger);
+        Penalty("Weather:", t.Weather);
+        Penalty("Working in darkness:", t.Darkness);
+        Penalty("Robotics:", t.Robotics);
+        if (t.Robotics < 0) rows.Add((Loc.Tr(t.HasRobotics ? "Robotics:" : "Limbs disabled:"), "#a8b774+" + (-t.Robotics).ToString(CultureInfo.InvariantCulture) + "%"));
+        if (t.Gear != 0)
+            rows.Add((Loc.Tr("Armour/equipment:"), (t.Gear > 0 ? "#59231a" : "#a8b774+") + (-t.Gear).ToString(CultureInfo.InvariantCulture) + "%"));
+        Penalty("Missing arm penalty:", t.MissingArm);
+        rows.Add((Loc.Tr("Total:"), ((int)t.Total).ToString(CultureInfo.InvariantCulture)));
+        return [.. rows];
     }
 
     /// <summary>

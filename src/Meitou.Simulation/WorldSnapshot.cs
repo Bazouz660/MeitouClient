@@ -47,9 +47,19 @@ public sealed record HudView(float Blood, float BloodCapacity, float Bleeding, f
 /// <summary>
 /// The state panel's "Current Skill" line (docs/game/ui-screens.md section 4): the skill the job uses, labelled by its stat name (<see cref="Label"/> null), or a fallback with its
 /// own label (the drawn weapon's class, Athletics, Stealth, Swimming). <see cref="Value"/> is the level, or for Swimming the swim speed in units per second (<see cref="Speed"/>);
-/// <see cref="Penalised"/> shows it Bad.
+/// <see cref="Penalised"/> shows it Bad; <see cref="Terms"/> is the job skill's tooltip breakdown.
 /// </summary>
-public readonly record struct CurrentSkillView(Meitou.Data.Gameplay.Bodies.StatsEnumerated Stat, string? Label, float Value, bool Penalised = false, bool Speed = false);
+public readonly record struct CurrentSkillView(Meitou.Data.Gameplay.Bodies.StatsEnumerated Stat, string? Label, float Value, bool Penalised = false, bool Speed = false,
+    SkillTerms? Terms = null);
+/// <summary>
+/// The breakdown of a skill's tooltip (<c>FUN_140890b00</c>, docs/game/ui-screens.md section 4): the trained level, then each penalty of the stat multiplier taken alone as
+/// (int)((1 - factor) x 100) percent (Robotics below 0 is a bonus), the missing arm penalty (strength only, 0 or 33: (int) of (1 - 0.66) x 100) and the effective level.
+/// </summary>
+public readonly record struct SkillTerms(float Base, int Injuries, int Hunger, int Weather, int Darkness, int Robotics, bool HasRobotics, int Gear, int MissingArm, float Total)
+{
+    /// <summary>The line is Bad when the six terms sum above 2 (the missing arm penalty is not counted).</summary>
+    public bool Penalised => Injuries + Hunger + Weather + Darkness + Robotics + Gear > 2;
+}
 /// <summary>
 /// The information panel's extended lines (docs/game/ui-screens.md section 4): the XP rates as the fraction the panel shows as a percentage (Toughness as a plain multiplier),
 /// the KO point (negative HP), the run speed in units per second with the unhurt run value it is measured against, and the hunger rate as a multiple of the race's.

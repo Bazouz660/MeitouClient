@@ -286,13 +286,21 @@ to Jobs; the saved `chase mode` flag is that switch (**Verified**, [perma-jobs](
     Then, alive, the "Current Skill" line (**Verified**: decompile of the HUD update `1405d4260` panel 3, 2026-10-26; vanilla screenshot "Labouring 1" while operating a machine):
     `Character +0x198 currentSkillUsing` (KenshiLib 1ce4a16), which the task updates set each tick (constants such as 4, 5, 6, 9, 0xb, or the machine's stat) and the HUD
     clears after reading it (unless `DAT_1421349c9`, meaning **Unknown**, likely pause). With a named stat: label its name from the editor table (`FUN_140888440`, no
-    colon), value the effective level `FUN_140884ac0(stat, 0)` as `{1,num=fix,p=0}`, Bad when `FUN_140890b00` (the tooltip builder) sums its penalty percentages
-    (injuries, hunger, weather, darkness, limbs, gear, missing arm) above 2. Otherwise, by `FUN_1408840d0`: 2 (aiming a ranged weapon) gives `Accuracy Error:` lines;
+    colon), value the effective level `FUN_140884ac0(stat, 0)` as `{1,num=fix,p=0}`. Its tooltip and colour come from `FUN_140890b00` (**Verified**, decompile; the
+    `getHealthStatModifier(stat, hunger, wounds, darkness, robotParts, weather, gear)` flags read from the outgoing stack slots, KenshiLib 1ce4a16): `{1} skill:` with the
+    trained level (`FUN_140884ac0(stat, 1)`); then each term of the stat multiplier `FUN_1406457e0` asked alone as p = (int)((1 - f) × 100), shown when p > 0 as Bad
+    `-p%`: `Injuries:` (wounds), `Hunger:`, `Weather:`, `Working in darkness:`, `Robotics:` (robot parts; p < 0 shows Good `+|p|%`, labelled `Limbs disabled:` when
+    `MedicalSystem::hasRobotics` `FUN_140883690` is false); `Armour/equipment:` (gear; not for strength or perception, perception shows its armour bonus instead) as
+    `FUN_140889320(-p)` (`+n` above 0, a sign colour from `FUN_14073fc00`) and `%`; for strength `Missing arm penalty:` -33% (0.66) with either arm disabled; `Total:`
+    the effective level truncated. It returns whether the six terms (not the missing arm) sum above 2: the line is Bad then. The `-`/`+` prefixes are the short
+    `.rdata` strings `DAT_14168901c` / `DAT_1416ba64c` (**Observed**: read as minus and plus from their use).
+    Otherwise, by `FUN_1408840d0`: 2 (aiming a ranged weapon) gives `Accuracy Error:` lines;
     in combat (`FUN_140436610(c, 1)`) the weapon class `+0x7b` gives `Heavy:` (3), `Katana:` (0), `Hacker:` (4), `Sabre:` (1), `Martial Arts:` (5), `Polearm:` (8) with
     the raw level and a Damage tooltip; with no label yet, `Stealth:` (`FUN_14088f900`) while sneaking, else `Athletics:` (raw level, CharStats +0x94) when the speed
     (+0x640 → +0xb8) is over 9 units a second (not the XP gate). Swimming (`FUN_1405c7fd0` 3) replaces it with "Swimming" and the swim speed in mph; Lockpicking (37)
     adds an "Imprisoned:" tooltip. Meitou (`World.SkillLine`, `CharacterCold.UseSkill`): the operating, training-dummy, turret, building, first-aid and lockpicking
-    jobs set the skill; penalised is the stat multiplier under 0.98; the ranged accuracy lines and the tooltips are not modelled.
+    jobs set the skill; the terms are `StatMultiplier.Compute` with one `StatUse` each (Limbs, Hunger, Stun, Light, DamageState, LimbItems with the fighter's gear factors).
+    Not modelled: the ranged accuracy lines, perception's armour-bonus row, and the fallback lines' tooltips (Damage, `FUN_14088e780` athletics, `FUN_14088f9a0` stealth).
     Extended (when expanded): Athletics XP, Strength XP, Toughness XP, KO point, Run speed, Hunger Rate.
     Extended values (**Verified**, decompile of `FUN_140895350`, 2026-10-14; Meitou: `BodySystem.ExtendedOf`, `PlayerInterface.ExtendedLines`):
     Athletics XP `{n}%` = (int)(100 × `FUN_1408c5ec0`): the encumbrance factor, ×1.5 when the current speed is over 80 % of the run value V (the `xp rate athletics` constant is applied elsewhere).

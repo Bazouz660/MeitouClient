@@ -248,8 +248,8 @@ public sealed partial class World
         var stat = cold.SkillInUseTick >= Tick - 1 ? cold.SkillInUse : PickBar(cold, hot.Task) is not null ? StatsEnumerated.Lockpicking : StatsEnumerated.None;
         if (stat != StatsEnumerated.None)
         {
-            float multiplier = med.StatMultiplier(stat);
-            return new(stat, null, MathF.Round(stats[stat] * multiplier), multiplier < 0.98f);
+            var terms = SkillTermsOf(cold, med, stats, stat);
+            return new(stat, null, MathF.Round(terms.Total), terms.Penalised, Terms: terms);
         }
         if (cold.InCombat && (cold.Orders & CharacterOrders.Ranged) == 0 && cold.Fighter is { } f)
         {
@@ -262,6 +262,22 @@ public sealed partial class World
         }
         if ((cold.Orders & CharacterOrders.Sneak) != 0) return new(StatsEnumerated.Stealth, "Stealth:", MathF.Round(Orders.Stealth(cold) * 100));
         return speed > 9 ? new(StatsEnumerated.Athletics, "Athletics:", (int)stats.Athletics) : null;
+    }
+
+    /// <summary>
+    /// A skill's tooltip terms (<c>FUN_140890b00</c>): the stat multiplier (<c>FUN_1406457e0</c>) asked for one term at a time, injuries (the limb term), hunger, weather (the dust
+    /// factor), darkness (the light term), robotics (fitted limbs and the disabled-arm 0.66) and, but for strength and perception, the worn gear; for strength the 0.66 of a
+    /// disabled arm again as the missing arm penalty. The total is the stat with every term.
+    /// </summary>
+    static SkillTerms SkillTermsOf(CharacterCold cold, Bodies.MedicalState med, Bodies.CharacterStats stats, StatsEnumerated stat)
+    {
+        var factors = (cold.Fighter?.Factors ?? Bodies.StatFactors.None) with { Stun = med.DustStatFactor };
+        int Term(Bodies.StatUse use) => (int)((1 - med.StatMultiplier(stat, use, factors)) * 100);
+        bool robotics = med.Parts.Any(p => p.Limb == Bodies.LimbState.Replaced && p.Replacement is not null);
+        int gear = stat is StatsEnumerated.Strength or StatsEnumerated.Perception ? 0 : Term(Bodies.StatUse.LimbItems);
+        int missingArm = stat == StatsEnumerated.Strength && med.Aggregates().EitherArmDisabled ? 33 : 0;
+        return new(stats[stat], Term(Bodies.StatUse.Limbs), Term(Bodies.StatUse.Hunger), Term(Bodies.StatUse.Stun), Term(Bodies.StatUse.Light), Term(Bodies.StatUse.DamageState),
+            robotics, gear, missingArm, stats[stat] * med.StatMultiplier(stat, Bodies.StatUse.All, factors));
     }
 
     static BodyStatus BodyOf(CharacterCold cold, Bodies.MedicalState med, RaceData race, byte task) => new(
