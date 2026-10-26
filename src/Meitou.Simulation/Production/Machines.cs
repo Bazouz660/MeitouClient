@@ -51,6 +51,8 @@ public sealed class FarmState(int plants)
     public int Plantings { get; set; }
     /// <summary>Plant rolls made so far, the roll counter of the harvest draws.</summary>
     public int Rolls { get; set; }
+    /// <summary>The game hour the farm last updated (the save's <c>save time</c>); NaN: not known yet.</summary>
+    public double LiveHours { get; set; } = double.NaN;
 }
 
 /// <summary>One queued craft (docs/game/buildings-production.md "Crafting"): what, its recipe, the work seconds it takes (hours x G/24), its progress 0..1 and its critical roll.</summary>

@@ -66,7 +66,7 @@ public static class MachineSave
         state.Floats["plant growth"] = f.Growth;
         state.Floats["plant death"] = f.Death;
         state.Floats["plant start"] = f.Start;
-        state.Floats["save time"] = (float)gameHours;
+        state.Floats["save time"] = (float)(double.IsNaN(f.LiveHours) ? gameHours : f.LiveHours);
         state.Ints["plants harvested"] = f.Harvested;
     }
 
@@ -168,6 +168,7 @@ public static class MachineSave
         f.Death = state.Floats.GetValueOrDefault("plant death");
         f.Start = state.Floats.GetValueOrDefault("plant start");
         f.Harvested = Math.Clamp(state.Ints.GetValueOrDefault("plants harvested"), 0, f.Plants.Length);
+        if (state.Floats.TryGetValue("save time", out float saved)) f.LiveHours = saved;
         for (int i = 0; i < f.Plants.Length; i++) f.Plants[i] = i < f.Harvested ? -10 : f.Growth;
     }
 }

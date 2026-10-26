@@ -1122,7 +1122,9 @@ crafting benches, generators and batteries. Facts: [production](game/buildings-p
   - Farms are harvested and cleared.
   - Research benches add to the research queue; crafting benches work their queue.
   - More characters than `max operators` are refused with "X is already in use.".
-  - Farms tick whether anyone is there; there is no offline catch-up on load.
+  - Farms tick whether anyone is there. Unloaded zones: the *Production far away* switch (Meitou on: farms, automatic machines and generator fuel
+    run everywhere; Faithful off: only in `World.ActiveZones`, and a farm back after over an hour runs `TimeSkip` from its `save time` stamp,
+    `FarmState.LiveHours`); facts in [unloaded zones](game/buildings-production.md#unloaded-zones).
 - **Rocks** (`ProductionSystem.Natural.cs`, UI `PlayerInterface.Rocks.cs`; facts in [resources](game/buildings-production.md#resources)). A foliage
   rock is a natural site, operated like a mine: a right click on it with characters selected is an `OperateOrder`, with Shift an Operating machine
   job. Its site id `natural:<BUILDING>@x,y,z` (the rock's position) is all the sim needs: the site is made from it (an `is foliage` BUILDING

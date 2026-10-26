@@ -27,6 +27,8 @@ public sealed class ProductionSettings
     public float TransferReach { get; init; } = 40;
     /// <summary>Operators empty a full output into storages and fill empty inputs from them (docs/simulation.md "Production"; engine option: the original's wording "put any excess materials ... into storage" is the Ditch items squad AI option's, <see cref="SquadAi.Ditch"/>).</summary>
     public bool AutoHaul { get; init; } = true;
+    /// <summary>Farms, automatic machines and generators work in unloaded zones too (Meitou default); false: they stop there and farms catch up when their zone loads again, as the game does (docs/game/buildings-production.md "Unloaded zones").</summary>
+    public bool UnloadedProduction { get; init; } = true;
     /// <summary>How far (X/Z) from its machine an operator hauls (engine choice; the original's limit is Unknown).</summary>
     public float HaulRange { get; init; } = 3000;
 }
@@ -69,6 +71,7 @@ public sealed partial class ProductionSystem : ITickSystem
         xp = new XpService(constants, options);
         resources = new ResourceField(db, biomes, nodes);
         this.nodes = nodes;
+        UnloadedProduction = Settings.UnloadedProduction;
     }
 
     public ProductionSystem(PopulationData data, ProductionSettings? settings = null)
@@ -77,6 +80,8 @@ public sealed partial class ProductionSystem : ITickSystem
     }
 
     public ProductionSettings Settings { get; }
+    /// <summary>See <see cref="ProductionSettings.UnloadedProduction"/>; the host sets it live.</summary>
+    public bool UnloadedProduction { get; set; }
     public ItemFactory Items => items;
     /// <summary>The construction system the engineer job (125) builds through; null: the job never runs.</summary>
     public ConstructionSystem? Construction { get; init; }
@@ -532,10 +537,16 @@ public sealed partial class ProductionSystem : ITickSystem
         if (world.Machines.Count == 0) return;
         float dt = world.TickSeconds;
         foreach (var m in world.Machines.All)
-            if (m.Farm is not null && Site(world, m.Site) is { Complete: true }) FarmTick(world, m, dt);
+        {
+            if (m.Farm is not { } farm || Site(world, m.Site) is not { Complete: true } site || !Live(world, m)) continue;
+            // A farm back in a loaded zone after over an hour catches up (Verified, FarmBuilding::loadFromSerialise FUN_1400e3de0).
+            if (!UnloadedProduction && world.GameHours - farm.LiveHours > 1) TimeSkip(world, m, (float)(world.GameHours - farm.LiveHours), site.Owner != world.Player.Faction);
+            farm.LiveHours = world.GameHours;
+            FarmTick(world, m, dt);
+        }
         // An automatic machine works with nobody at it, at skill factor 1 (Verified, ProductionBuilding::vfunc_28 calls slot 150 with no operator when +0x3a9 is clear).
         foreach (var m in world.Machines.All)
-            if (m.Data.IsAutomatic && m.Data.IsProducer && Site(world, m.Site) is { Complete: true }) ProduceStep(world, m, 1, dt);
+            if (m.Data.IsAutomatic && m.Data.IsProducer && Site(world, m.Site) is { Complete: true } && Live(world, m)) ProduceStep(world, m, 1, dt);
 
         var table = world.Characters;
         int contributions = 0;
@@ -683,6 +694,58 @@ public sealed partial class ProductionSystem : ITickSystem
         f.Death = 0;
         f.ClearProgress = 0;
         f.HarvestProgress = 0;
+    }
+
+    /// <summary>Whether a machine updates: always with <see cref="UnloadedProduction"/>, else only in an active zone (Verified, ZoneManager updates the buildings of its active zones only).</summary>
+    bool Live(World world, Machine m) =>
+        UnloadedProduction || world.ActiveZones is not { } active || active.Contains(Meitou.Data.World.WorldLayout.ZoneOf(m.Position.X, m.Position.Z));
+
+    /// <summary>
+    /// A farm's catch-up for <paramref name="h"/> unloaded game hours (<b>Verified</b>, <c>FarmBuilding::timeSkip</c>, docs/game/buildings-production.md "Unloaded zones"): the crop advances along its
+    /// cycle (growth, harvest time, death time) for the watered hours, then at the drought rate while its death grows; a completed cycle replants. An NPC farm ignores water.
+    /// </summary>
+    void TimeSkip(World world, Machine m, float h, bool ignoreWater)
+    {
+        var f = m.Farm!;
+        var fd = m.Data.Farm!;
+        float g = fd.GrowthTime / MathF.Max(m.Yield * m.Power, 1e-6f), cycle = g + fd.HarvestTime + fd.DeathTime;
+        if (cycle <= 0) return;
+        float p = f.Growth < 1 ? MathF.Max(f.Growth, 0) * g : f.Growth < 2 ? g + (f.Growth - 1) * fd.HarvestTime : g + fd.HarvestTime + f.Death * fd.DeathTime;
+        float perHour = m.WaterRate * (MachineData.DaySeconds / 24), water = float.MaxValue;
+        foreach (var input in m.Inputs) water = MathF.Min(water, input.Level + input.Count);
+        // The watered hours divide by h as well, as the game writes it.
+        float w = m.Inputs.Length == 0 || perHour <= 0 ? float.MaxValue : water / (perHour * h);
+        bool replant = false;
+        float death = 0;
+        if (ignoreWater || h <= w)
+        {
+            p += h;
+            replant = p > cycle;
+        }
+        else
+        {
+            p = (p + w) % cycle;
+            float dm = fd.DroughtMultiplier > 0 ? fd.DroughtMultiplier : 1e-8f;
+            p += (h - w) * dm;
+            death = fd.DroughtDeathTime > 0 ? (h - w) / fd.DroughtDeathTime : 0;
+            if (death > 1) { replant = true; death %= 1; }
+            replant |= p > cycle;
+        }
+        p %= cycle;
+        if (replant) Replant(world, m);
+        float growth = p < g ? p / g : p < g + fd.HarvestTime ? 1 + (p - g) / MathF.Max(fd.HarvestTime, 1e-6f) : 2;
+        float delta = growth - f.Growth;
+        for (int i = 0; i < f.Plants.Length; i++)
+            if (f.Plants[i] >= -1) f.Plants[i] = MathF.Min(f.Plants[i] + delta, MathF.Min(growth, 1));
+        f.Growth = growth;
+        f.Death = growth >= 2 ? (p - g - fd.HarvestTime) / MathF.Max(fd.DeathTime, 1e-6f) : death;
+        if (ignoreWater) return;
+        foreach (var input in m.Inputs)
+        {
+            float need = MathF.Min(w, h) * perHour - input.Level;
+            input.Level = 0;
+            if (need > 0) input.Count = Math.Max(0, input.Count - (int)MathF.Ceiling(need));
+        }
     }
 
     /// <summary>How ripe a farm is, 0..1 over its growth (the HUD's figure): the growth while growing, 1 once ripe.</summary>

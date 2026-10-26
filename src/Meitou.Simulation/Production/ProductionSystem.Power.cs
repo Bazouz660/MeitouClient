@@ -65,7 +65,7 @@ public sealed partial class ProductionSystem
             if (m.Data.IsGenerator)
             {
                 m.Status = (byte)(m.Demand > 0 ? 2 : 0);
-                if (m.Inputs.Length > 0 && m.PowerOn) BurnFuel(m, dt);
+                if (m.Inputs.Length > 0 && m.PowerOn && Live(world, m)) BurnFuel(m, dt);
             }
         foreach (var m in world.Machines.All)
         {

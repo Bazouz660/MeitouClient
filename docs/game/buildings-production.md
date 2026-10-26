@@ -586,6 +586,26 @@ harvest look `FUN_1400e4800`, replant `FUN_1400e48e0`, geometry `FUN_1400e4a20`,
   d / `death threshold` x 0.8; a static part has -0.1 r (darker) and no death tint. The mesh merges every plant's part mesh with its
   slot index (`BLENDINDICES`); slots are cumulative per part, capped at 127.
 
+### Unloaded zones
+
+**Verified** (decompile, `ZoneManager::updateRendertimeThread` / `ZoneMapContent::threadedUpdate`): buildings update only in active zones; an
+unloaded zone has no building objects. Farms, automatic machines and moving-part buildings update every pass, operated ones in a 10-per-pass
+rotation. No building but the farm reads a saved time, so mines, wells, refiners, generators, research and crafting stop unloaded and do not
+catch up.
+
+**Farm catch-up** (**Verified**, `FarmBuilding::loadFromSerialise` / `timeSkip`): the farm saves `save time` (game hours) when its zone unloads
+and on every save. On load, h = now - save time; if h > 1 and the farm is built, `timeSkip(h, ignoreWater = owner is not the player)`:
+- Cycle C = G (`growth time` / fertility) + `harvest time` + `death time`; position p from `plant growth` (0..1 over G, 1..2 over harvest time,
+  then `plant death` x death time).
+- Water m = min over inputs of level + item count; watered hours w = m / (consumption rate x h) (it divides by h too, as written).
+- h <= w or an NPC farm: p += h, death 0; a completed cycle replants.
+- Else p += w (wrapped), the other h - w hours grow at the drought multiplier (0: 1e-8) and death += (h - w) / `drought death time`, past 1
+  replanting.
+- A player farm then uses its water: the level is zeroed and whole items removed for w x rate - level.
+
+Meitou: the *Production far away* switch ([simulation](../simulation.md)); Faithful applies the above while running (a farm out of the active
+zones keeps its stamp and catches up when its zone is active again; generators burn no fuel unloaded).
+
 ## Research
 
 `ResearchBuilding::vfunc_150` (`FUN_14029b8d0`, **Observed**): an operator of a player-owned bench posts event 8 with
