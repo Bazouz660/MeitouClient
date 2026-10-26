@@ -141,6 +141,13 @@ public static class Enhancements
         new("blood", "Blood cells", "8 nearest", $"up to {TerrainDecalRenderer.MaxSlots}",
             blood ?? (() => false), setBlood ?? (_ => { }),
             $"the game draws the blood of only the 8 terrain cells (288 units square) nearest the camera, so a big battle's blood ends at a straight cell edge and the cells past it dry up unseen; Meitou draws every cell within Decal Range, up to {TerrainDecalRenderer.MaxSlots} (docs/game/blood-decals.md)"),
+        // The ground relief's settings are static (GroundRelief), so these two need no delegates. The labels are the saved keys of the on/off toggles they replace.
+        new("parallax", "Ground parallax", "off", "relief march",
+            () => GroundRelief.ParallaxActive, v => GroundRelief.ParallaxActive = v,
+            "the game's ground is flat, its normal maps only shading it; Meitou marches the view ray through a height made from each layer's normal map near the eye, and toward the sun for a self-shadow (docs/render-terrain.md \"Ground relief\")"),
+        new("displace", "Ground displacement (tessellation)", "off", "tessellated",
+            () => GroundRelief.DisplaceActive, v => GroundRelief.DisplaceActive = v,
+            "the game's ground is its height map's mesh; Meitou tessellates the ground near the eye and raises it by the same relief (needs tessellation shaders; visual only: characters walk on the undisplaced ground)"),
     ];
 
     /// <summary><c>--meitou</c> / <c>--faithful &lt;all|id,id...&gt;</c>: turns those switches to Meitou or to Faithful.</summary>

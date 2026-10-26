@@ -183,11 +183,9 @@ sealed class WorldOptions
         GrassDensity = LowEndGrassDensity;
         WaterReflection = 0;
         (ShadowsOff, ShadowFilter) = (true, 0);   // --shadow-range 0
-        Enhancements.Apply(Switches(this), "ao,aa,shadows,water", meitou: false);
+        Enhancements.Apply(Switches(this), "ao,aa,shadows,water,parallax,displace", meitou: false);
         Enhancements.Apply(Switches(this), "particles", meitou: true);
         GroundRelief.Quality = 0;
-        GroundRelief.ParallaxActive = false;
-        GroundRelief.DisplaceActive = false;
         GroundRelief.RefinePixels = 0;
         RockSmoothing.TessellateActive = false;
         Post.LightShafts = false;
@@ -248,7 +246,7 @@ sealed class WorldOptions
           --no-vsync               start with vsync off (uncapped; Tab slider)
           --grass-density <x>      grass blades x this (0.1-2, default 1; Tab slider)
           --camera-code <hex>      start at a camera code (Ctrl+C in the viewer copies one), the world loaded round it
-          --faithful <all|ao,dither,haze,aa,shadows,range,impostors,reach,water,particles,lod,gi,tonemap,shafts,heathaze,night,planetshine,stars,nightgrade,clouds,cloudshadows,cloudfog,interiorgi,charlod,skin,interiorlamps,icons,blood>   the game's look instead of Meitou's enhancements (default: all Meitou; --meitou <...> turns them back on; these ids also name the --ab switches)
+          --faithful <all|ao,dither,haze,aa,shadows,range,impostors,reach,water,particles,lod,gi,tonemap,shafts,heathaze,night,planetshine,stars,nightgrade,clouds,cloudshadows,cloudfog,interiorgi,charlod,skin,interiorlamps,icons,blood,parallax,displace>   the game's look instead of Meitou's enhancements (default: all Meitou; --meitou <...> turns them back on; these ids also name the --ab switches)
           --show-keys              start with the key list overlay open (toggle with F10)
           --play-shots             start flying the saved camera keys (the F2 timeline) on a loop
           --log-spikes             print a line for every frame whose GPU time is over 1.5 x the median: stage times (GPU, render thread) and what it uploaded or rebuilt
@@ -1030,8 +1028,6 @@ static class WorldFrame
     /// <summary>The Tab panel switches that are not Faithful / Meitou ones (saved as <c>Meitou: &lt;label&gt;</c> like those).</summary>
     public const string
         FifthCascadeSwitch = "Shadow cascade 5 (Meitou)",
-        GroundParallaxSwitch = "Ground parallax",
-        GroundDisplaceSwitch = "Ground displacement (tessellation)",
         RockSmoothingSwitch = "Rock smoothing (tessellation)",
         OutlineRefineSwitch = "Terrain outline refinement (tessellation)";
     /// <summary>The weather particles slider's position for the renderer's state: 0 off, 1 quarter, 2 half, 3 by sprite size (auto), 4 full size.</summary>
@@ -1230,12 +1226,12 @@ static class WorldFrame
         sliders.Add(new Slider(FilteringSlider, 0, 4, () => MathF.Log2(g.Sky.Gpu.Samplers.MaxAnisotropy), v => g.Sky.Gpu.Samplers.MaxAnisotropy = 1 << (int)MathF.Round(v), "0",
             Text: v => (1 << (int)MathF.Round(v)) + "x" + (MathF.Round(v) >= 3 ? " (as the game)" : "")));
         // The Faithful / Meitou switches as checkboxes (ticked: Meitou), the F-key toggles' state.
-        var toggles = switches?.Select(e => new Toggle(e.Name, () => e.IsMeitou, v => e.IsMeitou = v, () => e.IsMeitou ? e.Meitou : e.Faithful, Remaster: true, OnOff: e.Faithful is "off" or "none")).ToList();
+        // The displacement switch only where the device has tessellation shaders.
+        var toggles = switches?.Where(e => e.Id != "displace" || g.Sky.Gpu.HasTessellation).Select(e => new Toggle(e.Name, () => e.IsMeitou, v => e.IsMeitou = v, () => e.IsMeitou ? e.Meitou : e.Faithful, Remaster: true, OnOff: e.Faithful is "off" or "none")).ToList();
         if (fifthCascade is not null) (toggles ??= []).Add(fifthCascade);
-        (toggles ??= []).Add(new Toggle(GroundParallaxSwitch, () => GroundRelief.ParallaxActive, v => GroundRelief.ParallaxActive = v, OnOff: true));
+        toggles ??= [];
         if (g.Sky.Gpu.HasTessellation)
         {
-            toggles.Add(new Toggle(GroundDisplaceSwitch, () => GroundRelief.DisplaceActive, v => GroundRelief.DisplaceActive = v, OnOff: true));
             toggles.Add(new Toggle(RockSmoothingSwitch, () => RockSmoothing.TessellateActive, v => RockSmoothing.TessellateActive = v, OnOff: true));
             toggles.Add(new Toggle(OutlineRefineSwitch, () => GroundRelief.RefinePixels > 0, v => GroundRelief.RefinePixels = v ? GroundRelief.DefaultRefinePixels : 0, OnOff: true));
         }

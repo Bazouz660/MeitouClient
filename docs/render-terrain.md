@@ -20,7 +20,8 @@ where occluders justify it. A depth prepass is extra geometry, not automatically
 
 ## Ground relief
 
-Meitou look, not in the game (`GroundRelief`). Tab toggles "Ground parallax", "Ground displacement (tessellation)", "Terrain outline
+Meitou look, not in the game (`GroundRelief`). The parallax and the displacement are Faithful/Meitou switches `parallax` and
+`displace` (Tab "Ground parallax", "Ground displacement (tessellation)"; Faithful: flat ground, as the game). Tab toggles "Terrain outline
 refinement (tessellation)", "Rock smoothing (tessellation)"; sliders "Ground relief quality" (High by default; Medium and Low reduce
 the march; compiled into the colour programs, one set per quality made on first use: a uniform quality cost High 12% of the terrain's
 GPU time, **Verified** by swamp-low A/B), "Ground relief depth (cm, typical ground)" (default 40), "Ground displacement distance (m)" (100), "Ground parallax

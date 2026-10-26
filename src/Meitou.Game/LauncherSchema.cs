@@ -93,7 +93,7 @@ static class LauncherSchema
         foreach (var e in WorldFrame.LiveSwitches(new WorldOptions(), () => null, () => null, () => null))
             yield return Switch(e.Name, e.Faithful is "off" or "none" ? "Off" : $"Faithful: {e.Faithful}", $"Meitou: {e.Meitou}", e.IsMeitou);
         yield return Switch(WorldFrame.FifthCascadeSwitch, "Off", "On", true);
-        foreach (var label in new[] { WorldFrame.GroundParallaxSwitch, WorldFrame.GroundDisplaceSwitch, WorldFrame.RockSmoothingSwitch, WorldFrame.OutlineRefineSwitch })
+        foreach (var label in new[] { WorldFrame.RockSmoothingSwitch, WorldFrame.OutlineRefineSwitch })
             yield return Switch(label, "Off", "On", true);
     }
 

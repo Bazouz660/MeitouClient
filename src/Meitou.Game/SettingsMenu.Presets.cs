@@ -51,9 +51,9 @@ sealed partial class SettingsMenu
     ];
 
     /// <summary>The Meitou effects Low sets Faithful, as <c>--low-end</c> does; no preset turns a switch on.</summary>
-    static readonly string[] LowOffSwitches = ["Ambient occlusion", "Anti-aliasing", "Light shafts", "Water", "Shadows"];
-    /// <summary>The on/off effects Low turns off too (the ground relief and the tessellation's relief/rocks; they are not Faithful / Meitou switches).</summary>
-    static readonly string[] LowOffToggles = [WorldFrame.GroundParallaxSwitch, WorldFrame.GroundDisplaceSwitch, WorldFrame.OutlineRefineSwitch, WorldFrame.RockSmoothingSwitch];
+    static readonly string[] LowOffSwitches = ["Ambient occlusion", "Anti-aliasing", "Light shafts", "Water", "Shadows", "Ground parallax", "Ground displacement (tessellation)"];
+    /// <summary>The on/off effects Low turns off too (the tessellation's outline refinement and rocks; they are not Faithful / Meitou switches).</summary>
+    static readonly string[] LowOffToggles = [WorldFrame.OutlineRefineSwitch, WorldFrame.RockSmoothingSwitch];
     const string FifthCascade = WorldFrame.FifthCascadeSwitch;
 
     /// <summary>The Faithful / Meitou switches whose reading stays put when set (Indirect light without ray queries); the all switch ignores them.</summary>

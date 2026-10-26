@@ -274,7 +274,7 @@ sealed partial class GameHost
         // MEITOU_METAL_GROUND_RELIEF=0 disables it for an A/B.
         bool metalGroundRelief = Environment.GetEnvironmentVariable("MEITOU_METAL_GROUND_RELIEF") is not ("0" or "false");
         GroundRelief.Enabled = metalGroundRelief;
-        GroundRelief.ParallaxActive = metalGroundRelief;
+        GroundRelief.ParallaxActive &= metalGroundRelief;   // keeps --faithful parallax
         Console.WriteLine(metalGroundRelief
             ? "metal     ground relief on (MEITOU_METAL_GROUND_RELIEF=0 disables it)"
             : "metal     ground relief off (MEITOU_METAL_GROUND_RELIEF=0)");
