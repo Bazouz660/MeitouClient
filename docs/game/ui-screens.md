@@ -294,13 +294,18 @@ to Jobs; the saved `chase mode` flag is that switch (**Verified**, [perma-jobs](
     `FUN_140889320(-p)` (`+n` above 0, a sign colour from `FUN_14073fc00`) and `%`; for strength `Missing arm penalty:` -33% (0.66) with either arm disabled; `Total:`
     the effective level truncated. It returns whether the six terms (not the missing arm) sum above 2: the line is Bad then. The `-`/`+` prefixes are the short
     `.rdata` strings `DAT_14168901c` / `DAT_1416ba64c` (**Observed**: read as minus and plus from their use).
-    Otherwise, by `FUN_1408840d0`: 2 (aiming a ranged weapon) gives `Accuracy Error:` lines;
+    Otherwise, when `getGUIStatsDisplayMode` (`FUN_1408840d0`) is 2 (a crossbow in hand, CharStats `+0x129 rangedMode` set and movement `+0x640 → +0x24` clear) or the
+    ranged controller's `combatMode` (`+0x2f0 → +0x36`) is set, and `getRangedWeapon` (vtable `0x3d0`) gives a crossbow (**Observed**, decompile 2026-10-26; names KenshiLib 1ce4a16):
+    stat s = Turrets (11) when `lastUsedWeaponCategory` `+0x3d8` is 7 `SKILL_TURRET`, else Crossbows (35); D = the gun's (crossbow `+0x240`) deviation angle at
+    0.005 (s + perception), the shot's cone ([combat.md](combat.md) "Shot"). Line `Accuracy Error:` / `{D,p=2} degrees`; tooltip `Weapon Accuracy:` the gun's
+    `+0x10` deviation in degrees (after a short `.rdata` prefix `DAT_1416f3544`, **Unknown**), `Skill:` s's effective level `{p=0}`, `Resulting Accuracy Deviation:`
+    D degrees (both wrapped in the colour tag `DAT_141f49248`, **Unknown**). Else
     in combat (`FUN_140436610(c, 1)`) the weapon class `+0x7b` gives `Heavy:` (3), `Katana:` (0), `Hacker:` (4), `Sabre:` (1), `Martial Arts:` (5), `Polearm:` (8) with
     the raw level and a Damage tooltip; with no label yet, `Stealth:` (`FUN_14088f900`) while sneaking, else `Athletics:` (raw level, CharStats +0x94) when the speed
     (+0x640 → +0xb8) is over 9 units a second (not the XP gate). Swimming (`FUN_1405c7fd0` 3) replaces it with "Swimming" and the swim speed in mph; Lockpicking (37)
     adds an "Imprisoned:" tooltip. Meitou (`World.SkillLine`, `CharacterCold.UseSkill`): the operating, training-dummy, turret, building, first-aid and lockpicking
     jobs set the skill; the terms are `StatMultiplier.Compute` with one `StatUse` each (Limbs, Hunger, Stun, Light, DamageState, LimbItems with the fighter's gear factors).
-    Not modelled: the ranged accuracy lines, perception's armour-bonus row, and the fallback lines' tooltips (Damage, `FUN_14088e780` athletics, `FUN_14088f9a0` stealth).
+    Not modelled: the Accuracy Error lines, perception's armour-bonus row, and the fallback lines' tooltips (Damage, `FUN_14088e780` athletics, `FUN_14088f9a0` stealth).
     Extended (when expanded): Athletics XP, Strength XP, Toughness XP, KO point, Run speed, Hunger Rate.
     Extended values (**Verified**, decompile of `FUN_140895350`, 2026-10-14; Meitou: `BodySystem.ExtendedOf`, `PlayerInterface.ExtendedLines`):
     Athletics XP `{n}%` = (int)(100 × `FUN_1408c5ec0`): the encumbrance factor, ×1.5 when the current speed is over 80 % of the run value V (the `xp rate athletics` constant is applied elsewhere).
