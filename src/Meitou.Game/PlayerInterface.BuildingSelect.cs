@@ -47,9 +47,11 @@ sealed partial class PlayerInterface
     SelectedBuilding? PickBuilding(Vector2 pixel)
     {
         if (Ray(pixel) is not { } ray) return null;
-        // A visible bed inside a house selects its own panel, not the enclosing shell's doors and condition.
-        if (PickBed(pixel) is { } bed)
+        // A visible bed takes the click over the house around it, as a plain building is no right-click candidate (PickAt); a nearer object site or rock still wins.
+        if (PickBedAt(pixel) is { } bedHit && !(PickSiteAt(pixel) is { } before && before.Site.Id + "@bed0" != bedHit.Bed.Id && SiteIsObject(before.Site) && before.T < bedHit.T)
+            && !(PickRockAt(pixel) is { } stone && stone.T < bedHit.T))
         {
+            var bed = bedHit.Bed;
             if (session.CurrentSnapshot.Buildings.FirstOrDefault(s => bed.Id == s.Id + "@bed0") is { } bedSite)
                 return SiteBuilding(bedSite);
             return new(buildHost?.ItemName(bed.Record) ?? bed.Record, null, FactionName?.Invoke(bed.Owner), null,
@@ -110,8 +112,7 @@ sealed partial class PlayerInterface
         if (detail?.Bed is { } bed)
         {
             if (bed.Cost != 0)
-                state.Add(new("Cost to use:", bed.Cost < 0 ? Loc.Tr("Private") : $"({Loc.Tr("Pay c.{1,num}", bed.Cost)})",
-                    ValueColour: BadColour));
+                state.Add(new("Cost to use:", bed.Cost < 0 ? Loc.Tr("Private") : $"({Loc.Tr("Pay c.{1,num}", bed.Cost)})"));
             stats.Add(new("Healing bonus:", Loc.Tr("x{1,num}", bed.HealingBonus), MainColour));
         }
         if (player && site is { LevelPlacement: null }) AddUpgradeLines(site, state);

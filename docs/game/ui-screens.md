@@ -610,10 +610,9 @@ How a building gets selected: [ui-input](ui-input.md#building-picking-and-select
   `Private` or `Pay c.{1,num}` (beds), `Lock state:` Locked / Unlocked, `Lock complexity:` `Level {1,num}`, `Empty`; 6 `Healing bonus:`
   `x{1,num}` (beds), `Max Skill Level:` (training); 0xf `Money:`. Turrets, machines, generators and batteries have their own lines
   (`FUN_14030d620`, `FUN_140300090`, `FUN_140307bf0` ...: Working / No power / Out of resource / Output full, power, workers, fuel).
-  **Observed** (user's original-game Squin bar screenshot): left-clicking Camp Bed selects the bed, with its faction, Town,
-  Cost to use `(Pay c.100)`, Healing bonus `x4`, and Condition `1`; the enclosing Bar's door rows are absent.
-  Meitou selects a visible bed before its enclosing house and publishes its own inspection detail; rental cost reuses
-  `BedSystem.Cost`, healing bonus uses the bed record's `MachineData.OutputValue`. Free beds omit the cost row.
+  A town bed (**Observed**, original-game screenshot of a Squin bar): a left click selects the bed itself, not the bar; panel:
+  faction, Town, Cost to use `(Pay c.100)`, Healing bonus `x4`, Condition; no door rows. Value colours and the rows of a free bed
+  are **Unknown** (Meitou omits the cost row at 0).
 - **Richness** (**Observed**, ProductionBuilding slot 40 `FUN_1402ffeb0` section 6 calls slot 186 `getGUIFertility` `FUN_140309a40` first): for function 1 or 27 with a
   functionality, a line by `world resource mining`: 1 `Iron Quality:`, 2 `Stone Richness:`, 3 `Copper Quality:`, 4 `Carbon Quality:`, 5 `Water Available:`, 6
   `Ground Fertility:` (other: no label); value `{1,num}` of int(yield × 100) (slot 92, no `%`), coloured r = clamp(0.8 − y), g = clamp(0.8 y), b 0.1; tooltip "The

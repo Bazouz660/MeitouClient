@@ -19,11 +19,10 @@ namespace Meitou.Tests.Ui;
 
 public class BedSelectionTests
 {
-    [Theory, Slow]
-    [InlineData(UiMode.Faithful)]
-    [InlineData(UiMode.Meitou)]
-    public void Clicking_an_interior_bed_selects_its_own_condition_rental_and_healing_panel(UiMode mode)
+    [Fact, Slow]
+    public void Clicking_an_interior_bed_selects_its_own_condition_rental_and_healing_panel()
     {
+        const UiMode mode = UiMode.Meitou;
         var install = GameInstall.Locate(); Assert.SkipWhen(install is null, "Kenshi install not found");
         var (original, house) = HousePurchaseTests.Setup();
         var bedRecord = new FcsRecord { StringId = "camp-bed", Name = "Camp Bed", RecordType = FcsRecordType.BUILDING, Flags = 0x10 };

@@ -296,11 +296,8 @@ public sealed class BedSystem(PopulationData data, BedSettings? settings = null)
 
     internal BuildingDetail? DetailOf(World world, string? instance)
     {
-        if (instance is null) return null;
-        var bed = world.Fixtures.Find(instance);
-        if (bed is null && world.Buildings.Find(instance) is { LevelPlacement: null })
-            bed = world.Fixtures.Find(instance + "@bed0");
-        if (bed is not { Kind: FixtureKind.Bed } || data.Db.Find(bed.RecordId) is not { } record) return null;
+        // Town beds only: a bed the player built is a machine site (Site -1) and keeps the machine's panel.
+        if (instance is null || world.Fixtures.Find(instance) is not { Kind: FixtureKind.Bed, Site: >= 0 } bed || data.Db.Find(bed.RecordId) is not { } record) return null;
         string? town = bed.Site >= 0 && bed.Site < data.Sites.Count ? data.Sites[bed.Site].Town.Name : null;
         float healing = Meitou.Data.Gameplay.Construction.MachineData.From(data.Db, record)?.OutputValue ?? 1;
         return new BuildingDetail(instance, [], bed.Owner == world.Player.Faction)
