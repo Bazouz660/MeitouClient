@@ -13,9 +13,6 @@ namespace Meitou.Game;
 /// </summary>
 sealed partial class PlayerInterface
 {
-    /// <summary>The host's wind speed at the camera in the data's units (the window shows it times 0.22369362 as mph); null: calm.</summary>
-    public Func<float>? WindSpeed { get; set; }
-
     object? prospectWorld;
     long prospectSerial;
     ProspectReport? prospectReport;
@@ -83,8 +80,8 @@ sealed partial class PlayerInterface
             new("Prospector Skill:", N(r.Skill)),
             new("Area Size:", Loc.Tr("{1,num} m", r.AreaMetres)),
         ], row, pixels);
-        // The wind of the camera's region (140785f50) in mph; the environment lists its coverages, "Dead" when there are none, the first on the label's line.
-        double wind = Math.Round((WindSpeed?.Invoke() ?? 0) * 0.22369362f, 1);
+        // The wind of the spot's region when it finished (140785f50) in mph; the environment lists its coverages, "Dead" when there are none, the first on the label's line.
+        double wind = Math.Round(r.WindSpeed * 0.22369362f, 1);
         var panel = new List<HudLine> { new("Wind Speed:", Loc.Tr("{1,num} mph", wind)) };
         var environment = r.Environment.Count == 0 ? [Loc.Tr("Dead")] : r.Environment.Select(l => $"{Loc.Tr(l.Name)} {N(l.Percent)}%").ToArray();
         for (int i = 0; i < environment.Length; i++) panel.Add(new(i == 0 ? "Environment:" : "", environment[i], null, MainColour));
@@ -107,8 +104,8 @@ sealed partial class PlayerInterface
     }
 
     /// <summary>
-    /// The <c>Map</c> box shows the checked resource over the ground round the spot, and the layout's camera marker (hidden for this copy) sits on the camera's point turned to its view (<c>FUN_14048c970</c>),
-    /// a tenth of the box (the layout's size), cut to the box.
+    /// The <c>Map</c> box shows the checked resource over the ground round the spot, and the layout's camera marker (hidden for this copy) sits every frame on the camera's pivot (the original's
+    /// <c>CameraClass</c> centre node), turned by the level direction from the eye to the pivot (<c>FUN_14048c970</c>), a tenth of the box (the layout's size), cut to the box.
     /// </summary>
     void AddProspectMap(List<UiControl> controls, ProspectReport r)
     {
@@ -124,7 +121,7 @@ sealed partial class PlayerInterface
         controls[index] = box with { Properties = new Dictionary<string, string>(box.Properties) { ["ImageTexture"] = ProspectMapTexture } };
 
         var camera = session.Camera.Current;
-        var look = new Vector2(camera.Forward.X, camera.Forward.Z);
+        var look = new Vector2(camera.Target.X - camera.Eye.X, camera.Target.Z - camera.Eye.Z);
         float angle = look.LengthSquared() > 1e-8f ? MathF.Acos(Math.Clamp(-Vector2.Normalize(look).Y, -1, 1)) * (look.X < 0 ? -1 : 1) : 0;
         var b = box.Bounds;
         float w = b.Width * 0.106667f, h = b.Height * 0.106667f;

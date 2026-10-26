@@ -29,8 +29,9 @@ public readonly record struct ProspectLine(string Name, float Value)
 /// <param name="Environment">Green, Arid and Swamp, only those above 0 (empty: "Dead").</param>
 /// <param name="Resources">Water, Fertility, Stone, Iron, Copper in the window's order.</param>
 /// <param name="Map">The samples the window's map is drawn from (null: none taken).</param>
+/// <param name="WindSpeed">The current wind of the spot's weather region in units/s, 0 without one (the window shows it times 0.22369362 as mph).</param>
 public sealed record ProspectReport(long Serial, Vector3 Position, string Prospector, int Skill, string Zone, int Altitude, int AreaMetres,
-    IReadOnlyList<ProspectLine> Environment, IReadOnlyList<ProspectLine> Resources, ProspectMap? Map = null);
+    IReadOnlyList<ProspectLine> Environment, IReadOnlyList<ProspectLine> Resources, ProspectMap? Map = null, float WindSpeed = 0);
 
 /// <summary>
 /// The ground under the results window's map (<b>Verified</b>, <c>FUN_14049d850</c> / <c>FUN_14049cd60</c>, docs/game/ui-screens.md "Prospecting"): <see cref="Size"/> x <see cref="Size"/> samples over the
