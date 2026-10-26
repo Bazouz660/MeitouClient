@@ -48,6 +48,9 @@ public sealed class SavedCharacterLink
     public string? InWhat { get; set; }
     /// <summary>The whole-body ragdoll the save holds (<see cref="RagdollSave"/>), until the ragdoll system takes it; null: none.</summary>
     public SavedRagdoll? Ragdoll { get; set; }
+    /// <summary>The partner of a carry the save holds (the <c>carrying</c> handle) and whether this character is the carrier (the <c>carrying</c> bool), until <see cref="Carrying.CarrySystem"/> links them.</summary>
+    public Meitou.Data.Save.Hand CarryPartner { get; set; } = Meitou.Data.Save.Hand.Null;
+    public bool CarryIsCarrier { get; set; }
 }
 
 /// <summary>A player platoon of the save that is now a <see cref="Squad"/> in the world.</summary>

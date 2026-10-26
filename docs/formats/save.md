@@ -426,6 +426,10 @@ Slave state (**Observed**, `FUN_140626580` writes, `FUN_140626830` reads, in the
 `escap` bool (`+0xe8`, the escaped-prisoner flag), `disguiseblown` float and two short-keyed fields (`+0xe9`, `+0xea`); the owner is the `slaver` handle. Meitou (`Saving/SlaveSave`)
 reads and writes `slavestate`, and the owner as `meitou slave owner` (FACTION string id).
 
+Carry links (**Observed**, decompile: `FUN_1406280a0` writes, `FUN_140627b30` reads): the character state record has a bool `carrying` (true on the carrier) and a handle `carrying`
+(the partner, null when none), both always written. The reader links them when the partner resolves, else keeps the handle and links it later from the per-frame `FUN_140797ec0`
+(deferred until the partner is loaded). Meitou (`SaveCapture`, `CarrySystem.RestoreLinks`): the same keys; the link is made without a lift, checked every 20 ticks.
+
 Meitou (`Saving/HeldSave`): reads building keys from the zones' GAMESTATE_BUILDING records when the town registers and writes them back into
 them (the visited zones' files, [Zone files](#zone-files)); the save ids of generated interiors are not mapped, so interior cages and
 beds keep rolled state. `in what` resolves only to a placed building; Meitou-only keys `meitou in something` (int) / `meitou in what` (fixture id)

@@ -251,6 +251,12 @@ internal static class SavedCharacters
         cold.PortraitSerial = sc.GameState is { } portrait && portrait.Ints.TryGetValue("portrait_serial", out int serial) ? (uint)serial : (uint)sc.Handle.S;
         cold.Save.InSomething = cold.InSomething;
         cold.Save.InWhat = cold.InWhat;
+        // A carry under way (FUN_140627b30): linked once both are in the world (CarrySystem.RestoreLinks).
+        if (sc.GameState is { } carry)
+        {
+            cold.Save.CarryPartner = Hand.Read(carry, "carrying");
+            cold.Save.CarryIsCarrier = carry.Bools.GetValueOrDefault("carrying");
+        }
         // The body: the saved stats and medical state go to the body systems, the rest of the assembly (inventory, fighter) is made as for a new character.
         if (race is not null && stats is not null && medical is not null)
             assembly.AttachSaved(cold, race, stats, medical, p.Record, p.Inventory ?? (p.Items.Count > 0 ? SavedKit.ToInventory(p.Items, data.Items, notes, p.Record) : null),

@@ -144,6 +144,7 @@ public static partial class SaveCapture
     {
         public readonly Dictionary<CharacterId, Hand> Handles = [];
         public readonly List<(FcsRecord Record, SquadMemoryData? Data)> Targets = [];
+        public readonly List<(FcsRecord State, CharacterId Partner)> Carries = [];
     }
 
     [ThreadStatic] static MemoryPass? memoryPass;
@@ -159,6 +160,8 @@ public static partial class SaveCapture
         memoryPass = null;
         foreach (var (record, data) in pass.Targets)
             MemorySave.Write(record, data, id => pass.Handles.TryGetValue(id, out var hand) ? hand : null);
+        // The carry links (FUN_1406280a0 writes the partner's handle under `carrying`, the null one when it is not saved).
+        foreach (var (state, partner) in pass.Carries) (pass.Handles.TryGetValue(partner, out var hand) ? hand : Hand.Null).Write(state, "carrying");
     }
 
     // ------------------------------------------------------------------ factions and towns
@@ -416,6 +419,10 @@ public static partial class SaveCapture
             if (orders) Orders.Write(g, cold);
             if (orders && sc.Ai is { } ai) PermaJobSave.Write(ai, cold, world.Buildings, buildings, who => world.Characters.TryResolveNext(who, out int target) && world.Characters.Cold(target)?.Save is { } link2 ? link2.Source.Handle : Hand.Null);
             HeldSave.Write(g, cold, link, world.Fixtures, buildings);
+            // Carrying or carried: the bool says which, the partner's handle is written once every character has one.
+            g.Bools["carrying"] = !cold.Carrying.IsNone;
+            var partner = cold.Carrying.IsNone ? cold.CarriedBy : cold.Carrying;
+            if (partner.IsNone) Hand.Null.Write(g, "carrying"); else memoryPass?.Carries.Add((g, partner));
             // A world without ragdolls (headless) keeps what was read; a stale pose is not used where the character no longer lies.
             if (id.IsNone) RagdollSave.Write(g, null);
             else if (world.Systems.OfType<Ragdolls.RagdollSystem>().FirstOrDefault() is { } ragdolls) RagdollSave.Write(g, ragdolls.SaveState(id));

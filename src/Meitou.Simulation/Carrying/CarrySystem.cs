@@ -364,9 +364,43 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
                 case CharacterTask.StealthKo: Swing(world, table, i, dt); break;
             }
         }
+        if (world.Tick % RestoreEveryTicks == 0) RestoreLinks(world);
         LootWindow(world);
         KeepLinks(world);
         if (Settings.AutoEveryTicks > 0 && world.Tick % Settings.AutoEveryTicks == 0) { Rescue(world, table); Forage(world, table); Scavenge(world, table); }
+    }
+
+    // How often the saved carries still waiting for their partner are looked at (engine choice; the original checks its deferred link every frame, FUN_140797ec0).
+    const int RestoreEveryTicks = 20;
+
+    /// <summary>
+    /// The carries a save held (<see cref="Saving.SavedCharacterLink.CarryPartner"/>; docs/formats/save.md "Carry links"): a carrier whose partner is now in the world takes it up again at
+    /// once, without the lift. One waits while its partner is not loaded (the original's deferred link, <c>FUN_140797ec0</c>); either one dead or gone drops the link.
+    /// </summary>
+    void RestoreLinks(World world)
+    {
+        var table = world.Characters;
+        var next = table.Next;
+        Dictionary<(int C, int I), int>? bySave = null;
+        for (int i = 0; i < table.HighWater; i++)
+        {
+            if (!next[i].Alive || table.Cold(i) is not { Save: { CarryPartner.IsNull: false } link } cold) continue;
+            if (!link.CarryIsCarrier) { if (!cold.CarriedBy.IsNone) link.CarryPartner = Meitou.Data.Save.Hand.Null; continue; }   // the carrier's side links it
+            if (bySave is null)
+            {
+                bySave = [];
+                for (int s = 0; s < table.HighWater; s++)
+                    if (next[s].Alive && table.Cold(s)?.Save is { } other) bySave[(other.Source.Handle.C, other.Source.Handle.I)] = s;
+            }
+            var hand = link.CarryPartner;
+            if (!bySave.TryGetValue((hand.C, hand.I), out int b) || b == i) continue;
+            link.CarryPartner = Meitou.Data.Save.Hand.Null;
+            var body = table.Cold(b)!;
+            body.Save?.CarryPartner = Meitou.Data.Save.Hand.Null;
+            if (!cold.Carrying.IsNone || !body.CarriedBy.IsNone || cold.Medical is not { Incapacitated: false }) continue;
+            if (body.Medical is { Incapacitated: false } && Friendly(cold, body)) body.CarriedAwake = true;
+            Link(table, i, b);
+        }
     }
 
     void Lift(World world, CharacterTable table, int i, float dt)
