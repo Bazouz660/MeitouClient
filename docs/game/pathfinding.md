@@ -69,8 +69,8 @@ Disabled legs,
 body states and stealth modify distinct branches. Movement modes0 walk,1 cap55,2/3 cap999;
 mode3 follows group's slowest. The HUD sets them as character orders 2/1/0/0x10 → modes 0/1/2/3
 (Walk/Jog/Run/Group; **Verified**, character vtable slot 0x308 FUN_1405caa50, [ui-screens.md](ui-screens.md)). "Group"
-is the selection, not the squad: [speed groups](#squads-travelling-together); Meitou
-uses the squad members walking in mode3. FCS force-speed3 means NO_SPEED_CHANGE and remaps to4, not runtime
+is the selection, not the squad: [speed groups](#squads-travelling-together). Meitou keys the group to the
+selection given the order (`CharacterCold.SpeedGroup`); NPCs in mode3 take their squad's slowest. FCS force-speed3 means NO_SPEED_CHANGE and remaps to4, not runtime
 mode3. FCS `MoveSpeed` (editor enum, **Verified**): WALK 0, JOG 1, RUN 2, GROUPED 3, NO_SPEED_CHANGE 4. Follow/avoidance/formation use character footprint and previous neighbour state.
 Squad formations: [squads travelling together](#squads-travelling-together). Off-screen arrival remains unknown. Whether living characters block each other beyond the
 separation steering is **Unknown**; sitting characters are never pushed (**Observed** in play) (Meitou adds solid body contact: [simulation](../simulation.md#movement-and-paths)).

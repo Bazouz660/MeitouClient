@@ -204,6 +204,7 @@ public static class Orders
                 break;
             case RunSpeedCommand speed:
                 int? mode = null;
+                int group = -1;
                 foreach (var id in speed.Characters.Count > 0 ? speed.Characters : world.Player.Selection.ToArray())
                 {
                     if (!table.TryResolveNext(id, out int slot) || table.Cold(slot) is not { IsPlayer: true } cold) continue;
@@ -215,6 +216,9 @@ public static class Orders
                     }
                     mode ??= ((cold.RunSpeed + speed.Step) % SpeedMode.Count + SpeedMode.Count) % SpeedMode.Count;
                     cold.RunSpeed = (byte)mode.Value;
+                    // Group speed gives the characters set together one speed group (PlayerInterface::assignSpeedGroup), keyed by the first one.
+                    group = mode == SpeedMode.Group ? group < 0 ? slot : group : -1;
+                    cold.SpeedGroup = group;
                 }
                 break;
             case StandUpCommand stand:

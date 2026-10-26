@@ -332,6 +332,8 @@ public sealed class CharacterCold
     public int SlaveMaster { get; set; } = -1;
     /// <summary>Stood up from playing dead on the player's order since it went down (<c>playerWantsMeToGetUp</c>): the get-up line may be event 25. Runtime only.</summary>
     public bool OrderedUp { get; set; }
+    /// <summary>The player's speed group (<c>SpeedGroup</c>, made for the selection by Group speed: the first member's slot; -1 none). Runtime only.</summary>
+    public int SpeedGroup { get; set; } = -1;
     /// <summary>The fixture this character is picking the lock of (<see cref="Locks.LockSystem"/>; null: none). Hashed only while set.</summary>
     public string? PickingLock { get; set; }
     /// <summary>The door this character is bashing in (<see cref="Locks.LockSystem"/>; null: none). Hashed only while set.</summary>
