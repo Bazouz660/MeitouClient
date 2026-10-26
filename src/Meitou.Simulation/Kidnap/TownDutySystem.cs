@@ -309,7 +309,9 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
         if (d.Kind == TownDutyKind.Confiscate) return StepConfiscate(world, d, g, gc);
         if (d.Kind == TownDutyKind.Shoo) return StepShoo(world, d, g, gc);
         if (d.Kind == TownDutyKind.Ransack) return StepRansack(world, d, g);
-        if (!table.TryResolveNext(d.Body, out int b) || table.Cold(b) is not { Medical.Dead: false } body || body.IsImprisoned)
+        // A body that died on the way goes on into the cage only with 281 listed (112 needs !99 isCarriedDudeDead).
+        if (!table.TryResolveNext(d.Body, out int b) || table.Cold(b) is not { Medical: { } bodyMedical } body || body.IsImprisoned
+            || bodyMedical.Dead && !(d.Kind is TownDutyKind.Lift or TownDutyKind.Cage && gc.Carrying == d.Body && ListsDeadCage(world, gc, d.Member)))
         {
             carry.LetGo(world, g);
             return End(world, d);
@@ -320,7 +322,7 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
             if (gc.Carrying != d.Body) return End(world, d);   // fought off or pushed away: the body lies there for the next look
             var squad = world.Squads.Find(gc.SquadId);
             int role = squad is null ? 0 : (int)AiSystem.RoleOf(squad, d.Member, gc);
-            if (squad is not null && population.GoalDuty(world, squad, (AiRole)role, TaskType.FIND_CAGE_AND_PUT_IN) && Cage(world, gn.Position, d) is { } cage)
+            if (squad is not null && (bodyMedical.Dead ? ListsDeadCage(world, gc, d.Member) : population.GoalDuty(world, squad, (AiRole)role, TaskType.FIND_CAGE_AND_PUT_IN)) && Cage(world, gn.Position, d) is { } cage)
             {
                 (d.Kind, d.Target, d.Goal, d.Tries) = (TownDutyKind.Cage, cage.Id, Flat(cage.Position), 0);
                 MovementSystem.GoTo(table, g, d.Goal, SpeedMode.Free);
@@ -365,6 +367,10 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
         MovementSystem.GoTo(table, g, d.Goal, SpeedMode.Free);
         return true;
     }
+
+    /// <summary>Whether the carrier's package lists 281 FIND_CAGE_AND_PUT_DEADGUY_IN for its role (any carried body, dead included).</summary>
+    bool ListsDeadCage(World world, CharacterCold carrier, CharacterId id) =>
+        world.Squads.Find(carrier.SquadId) is { } s && population.GoalDuty(world, s, AiSystem.RoleOf(s, id, carrier), TaskType.FIND_CAGE_AND_PUT_DEADGUY_IN);
 
     /// <summary>The best free cage in the duty's town for the carrier (<see cref="FixtureRegistry.FindCage"/>'s weights), not another errand's.</summary>
     Fixture? Cage(World world, Vector3 at, TownDuty self)
