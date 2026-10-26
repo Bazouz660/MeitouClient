@@ -606,7 +606,10 @@ How a building gets selected: [ui-input](ui-input.md#building-picking-and-select
     under ground:` or `Ground Fertility:` with n = int((1 − yield) × rate × 100) shown as `+` −n% when n < 0, else −n% (`#59231a` when yield < 1, else `#140806`).
     Efficiency then adds `Damage:`, `Power:` (only for a consumer, `power output` < 0) and `Num workers:` (raw max = operators), each `OK` (Good) or `-`
     int((1 − kept) × rate × 100)% (Bad), and `Total:` the line's value (Main); Max efficiency adds only `Total:`. Slot 109 (`FUN_140296e00`) = 0 when slot 164
-    fails (**Unknown** what it tests), else the construction fraction (`FUN_140547200`, progress / target capped at 1) × granted / demand (1 without demand).
+    fails, else the construction fraction (`FUN_140547200`, progress / target capped at 1) × granted / demand (1 without demand). Slot 164 (**Verified**) is
+    `FUN_1400f6d50` (always true) on every class but LightBuilding, whose `FUN_140297890` is true when its slot 59 handle (`FUN_140547530`) is set (type not
+    0xb, the null handle; what it holds is **Unknown**, as for the [night flag](../formats/lights.md)), else only while it is not daytime (`FUN_14066cb20`,
+    sunrise < hour < sunset): a standalone light shows Efficiency 0% by day. The Damage and Power rows read their own values, not slot 109.
   - Who shows it (**Verified**, each class's slot 40): ProductionBuilding's `FUN_1402ffeb0` (also Generator, WindGenerator, RainCollector, Torture), Research
     `FUN_140309680` and Crafting `FUN_1402ff070` in section 6 as 155, 154, 153; Useable / Storage / Light `FUN_140304e90` in section 6 as 155 then 154, except
     `Healing bonus:` instead of both when slot 94 is 6 (BF_BED, **Observed** reading) and `Max Skill Level:` instead of 154 for class type 7 (training);
@@ -617,8 +620,9 @@ How a building gets selected: [ui-input](ui-input.md#building-picking-and-select
   - Rocks (**Observed**, same screenshot): the name bar's right is the player's faction ("Nameless"), so the rock passes slot 113's owner-is-player branch (how it
     gets that owner is **Unknown**); the medical rows are `Condition` 2, full: the target of `build materials` 2.
   Meitou (`PlayerInterface.Production.cs`, `MachineSnapshot.Efficiency`): Workers and Efficiency on every machine but farms, furnaces, beds (functions 6 and
-  25, engine reading), training dummies and turrets (no second stats panel drawn), unmined rocks too (0 workers); health is `Machine.Health` (progress / target;
-  the slot 164 gate not modelled), which also scales production (`WorkFactor`) and the sound efficiency. Mines and rocks get the header Output full / No workers /
+  25, engine reading), training dummies and turrets (no second stats panel drawn), unmined rocks too (0 workers); health is `Machine.Health` (progress / target),
+  which also scales production (`WorkFactor`) and the sound efficiency; the panel zeroes it for a BF_LIGHT machine by day (slot 164; every BF_LIGHT taken as
+  standalone, as Meitou's lights; display only, the sim has no clock and lights produce nothing). Mines and rocks get the header Output full / No workers /
   Working (plus the power words) and no `Output:` line; other machines keep Meitou's status words and `Output:` line.
 - **Window.** Selecting a complete building of the player's faction opens its window (Building slot 38 → `FUN_1406e6640`; one window per
   building, made on first use by slot 48). Classes from RTTI vtable names, layouts **Verified** (each layout string is referenced only by

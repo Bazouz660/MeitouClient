@@ -272,12 +272,13 @@ sealed partial class PlayerInterface
     /// The Efficiency and Max efficiency lines (slot 154 <c>FUN_140306050</c>, docs/game/ui-screens.md "Selected building", Production building): with share = operators / raw max
     /// (1 when 0), work = health x power x share x 100 and max = yield x rate, Efficiency is int(max x work)% (ink from work 90 up, else Bad) and Max efficiency int(max x 100)% (ink).
     /// Their tooltips are the slot 156 rows (Max possible efficiency; for a mine or rock, <paramref name="resource"/> under ground) and the losses, then Total.
+    /// <paramref name="active"/> false (slot 164: a light by day) zeroes work; the Damage and Power rows read their own values and stay as they are.
     /// </summary>
-    static void AddEfficiencyLines(Meitou.Simulation.Production.EfficiencyView e, int resource, List<HudLine> stats)
+    static void AddEfficiencyLines(Meitou.Simulation.Production.EfficiencyView e, int resource, List<HudLine> stats, bool active = true)
     {
         static string Pc(int v) => v.ToString(CultureInfo.InvariantCulture) + "%";
         float share = e.MaxOperators > 0 ? 1f / e.MaxOperators * e.Operators : 1;
-        float work = e.Health * e.Power * share * 100;
+        float work = (active ? e.Health * e.Power : 0) * share * 100;
         float max = e.Yield * e.Rate;
         int total = (int)(max * work);
         // Slot 156 (FUN_14030a130): the rate, then the resource's loss or gain, in Bad when the yield is under 1.
@@ -324,7 +325,8 @@ sealed partial class PlayerInterface
         if (m.Efficiency is { } e)
         {
             stats.Add(WorkersLine(e.Operators, e.MaxOperators));
-            AddEfficiencyLines(e, rich?.Resource ?? 0, stats);
+            // Slot 164 (LightBuilding FUN_140297890): a light works only while it is not daytime (all other classes: always), as Meitou's lights read every BF_LIGHT building as standalone.
+            AddEfficiencyLines(e, rich?.Resource ?? 0, stats, m.Function != Meitou.Data.World.WorldLights.LightFunction || !session.Clock.IsDaytime);
         }
         // Power, in the original's words where it has them (GeneratorBuilding vfunc_114, vfunc_153); "No power" and "Low power" are Meitou's.
         if (m.Power is { } pw)
