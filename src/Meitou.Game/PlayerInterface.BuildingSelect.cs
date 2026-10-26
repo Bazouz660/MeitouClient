@@ -47,6 +47,14 @@ sealed partial class PlayerInterface
     SelectedBuilding? PickBuilding(Vector2 pixel)
     {
         if (Ray(pixel) is not { } ray) return null;
+        // A visible bed inside a house selects its own panel, not the enclosing shell's doors and condition.
+        if (PickBed(pixel) is { } bed)
+        {
+            if (session.CurrentSnapshot.Buildings.FirstOrDefault(s => bed.Id == s.Id + "@bed0") is { } bedSite)
+                return SiteBuilding(bedSite);
+            return new(buildHost?.ItemName(bed.Record) ?? bed.Record, null, FactionName?.Invoke(bed.Owner), null,
+                null, bed.Id, bed.Position, null, Record: bed.Record);
+        }
         float limit = GroundHit(ray.Origin, ray.Direction) is { } groundPoint ? Vector3.Distance(ray.Origin, groundPoint) : 6000;
         float bestT = limit;
         SelectedBuilding? best = null;
@@ -98,7 +106,14 @@ sealed partial class PlayerInterface
         bool mine = player || detail is { Owned: true };
         if (focus.Type is { Length: > 0 } type) state.Add(new("Type:", type));
         var inspected = session.CurrentSnapshot.InspectedRichness is { } ir && ir.Instance == focus.Instance ? ir : (Meitou.Simulation.Production.RichnessView?)null;
-        if ((focus.Town ?? site?.TownName ?? inspected?.TownName) is { Length: > 0 } town) state.Add(new("Town:", town));
+        if ((focus.Town ?? site?.TownName ?? detail?.Bed?.Town ?? inspected?.TownName) is { Length: > 0 } town) state.Add(new("Town:", town));
+        if (detail?.Bed is { } bed)
+        {
+            if (bed.Cost != 0)
+                state.Add(new("Cost to use:", bed.Cost < 0 ? Loc.Tr("Private") : $"({Loc.Tr("Pay c.{1,num}", bed.Cost)})",
+                    ValueColour: BadColour));
+            stats.Add(new("Healing bonus:", Loc.Tr("x{1,num}", bed.HealingBonus), MainColour));
+        }
         if (player && site is { LevelPlacement: null }) AddUpgradeLines(site, state);
         // The construction buttons (Building slot 117, FUN_1402fea10): Dismantle in BadBright, and while unfinished PAUSE CONSTRUCTION, captioned [PAUSED] in #777777 while paused.
         if (player && site is { LevelPlacement: null })
@@ -133,7 +148,7 @@ sealed partial class PlayerInterface
             }
             var rich = session.CurrentSnapshot.InspectedRichness is { } r && r.Instance == focus.Instance ? r : (Meitou.Simulation.Production.RichnessView?)null;
             if (rich is { } richness) AddRichnessLine(richness, stats);
-            if (own && Machine(focus.SiteId) is { } machine) AddMachineLines(machine, stats, extended, ref status, ref bad, rich,
+            if (detail?.Bed is null && own && Machine(focus.SiteId) is { } machine) AddMachineLines(machine, stats, extended, ref status, ref bad, rich,
                 session.CurrentSnapshot.InspectedTurret is { } tp && tp.Instance == focus.Instance ? tp : null);
             else if (rich is { Efficiency: { } e } unmined)
             {
@@ -161,7 +176,7 @@ sealed partial class PlayerInterface
         string? owner = focus.Owner;
         if (own && !player)
             owner = inspected is { Owner: >= 0 and var by } ? FactionName?.Invoke(by) : RecordName?.Invoke(Meitou.Simulation.SquadManagement.DismissFallbackFaction);
-        return (new(focus.Name, mine ? FactionName?.Invoke(session.World.Player.Faction) ?? "" : owner ?? "", TitleColour, TitleColour), [.. state], [.. stats], status, bad, [.. extended]);
+        return (new(detail?.Bed?.Name ?? focus.Name, mine ? FactionName?.Invoke(session.World.Player.Faction) ?? "" : owner ?? "", TitleColour, TitleColour), [.. state], [.. stats], status, bad, [.. extended]);
     }
 
     /// <summary>The upgrade chain of a BUILDING record and its build data (the panel's [UPGRADE] / [DOWNGRADE] and their tooltips); the host sets them.</summary>
