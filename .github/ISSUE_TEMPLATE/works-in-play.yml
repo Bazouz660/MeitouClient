@@ -21,6 +21,7 @@ body:
         - "Sleep, beds, bed rent [sleep-beds-bed-rent]"
         - "First aid, splints, bleeding, knock-outs [first-aid-splints-bleeding-knock-outs]"
         - "Limbs, stumps, prosthetics [limbs-stumps-prosthetics]"
+        - "Carrying characters [carrying-characters]"
         - "Weather on characters [weather-on-characters]"
         - "Medical beds, skeleton repair, robot repair [medical-beds-skeleton-repair-robot-repair]"
         - "XP, stats, training dummies [xp-stats-training-dummies]"
