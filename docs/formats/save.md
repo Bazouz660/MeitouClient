@@ -94,7 +94,7 @@ editor-authored files. Original acceptance of a save synthesized from scratch is
 | `%LOCALAPPDATA%\kenshi\save\<name>\` | **Verified** (`save.log` paths, and the sample is there). Used when `settings.cfg` `User save location=1` (default 1) |
 | `<install>\save\<name>\` | Legacy location, when the key is 0. **Observed** (`FUN_1403e84f0`): if the key is missing from `settings.cfg` and the install-relative save folder already holds saves (`FUN_14036b680` lists saves; presumably in the install-relative folder, since the setting is not applied yet) the game keeps using the install folder (sets 0); otherwise 1. The UI text: "Save games to user directory instead of the kenshi install path" |
 | `settings.cfg` `continue=<name>` | The save the "Continue" button loads; written after every save (kind 1 in `FUN_14047c310`). Sample: `continue=wade` |
-| `settings.cfg` `autosaveindex` | Autosave slot counter (see [Autosave](#saveload-contract)); absent in the sample (no autosave happened) |
+| `settings.cfg` `autosaveindex` | Autosave slot counter (see [Autosave](#autosave-fun_14047be70)); absent in the sample (no autosave happened) |
 | `<install>\save.log` | Log of the save file system (**Verified**: the sample's saves are all logged). In the install folder even when saves are in the user folder |
 
 ### Folder layout
@@ -126,6 +126,13 @@ A queued request (kind at +0xA0 of the request object) is run on the next frame;
 | 2 | `SaveManager::loadGame` (`FUN_140373f00`) |
 | 3 | `SaveManager::importGame` (`FUN_140378a30`, flags in +0xA4): new world, keeps the player squads and parts of the chosen save ([import](#importing-a-game-savemanagerimportgame-fun_140378a30)) |
 | 4 | New game: sets the version string to "1.0.68", reloads the game data and starts the chosen NEW_GAME_STARTOFF |
+
+### Autosave (`FUN_14047be70`)
+
+Every frame from `GameWorld::vfunc_0` (**Verified**, decompile): while `Auto save` is on, no zone is loading and `DAT_142134690+0x298`
+is null, real dt adds to a timer (paused time not counted). Past `Auto save time (minutes)` x 60 it shows "Autosaving...", and the next
+frame saves slot `(autosaveindex + 1) mod 3` as `autosave<N>` and stores `autosaveindex` in `settings.cfg`. Meitou (`GameHost.Autosave`):
+the same, with the index in Meitou's user config and the slots beside its quicksave; the `+0x298` gate is not modelled.
 
 ### Importing a game (`SaveManager::importGame`, `FUN_140378a30`)
 
@@ -558,7 +565,7 @@ yet, is left out. Round trip checked with a throwaway probe (write, read, clear)
 - The roles of BIOMES `E<n>` instances (EffectHandler state fields), `_w_fog_a`, `TI day/dat0`, `towntime`, `ssct`, and whether MEDICAL `fed` / `KO` are the stomach buffer and the KO timer (the other MEDICAL floats are explained above).
 - Whether `loadGame` rejects or adapts to a `mods` list that differs from the current load order (nothing in the sample: single base-game save).
 - Prisoners, dead characters, bounties, trade and mission state, and player outposts: not present in an early-game sample. Player-built building and outpost keys are known from the code only ([zones](zones.md#placement-keys), [outposts](#player-outposts)).
-- The condition list of the autosave pause.
+- What `DAT_142134690+0x298` is (the autosave gate).
 - How relations, trust and `trustNeg` change during play (only the fresh-world values are explained), what the player faction (no relation table, but a `known` list and `global trust`) uses instead, and how the player table's `global trust` (`+0x14`) relates to the `+0x18` dialogue reads ([trust](#faction-trust-war-flags-bed-rent-and-turrets)). Which key the squad memory's shared player entry is saved under ([squad memory](#squad-memory)).
 - Why level buildings have a different target in the save than in the level list (179 of 6743 in four saves; in zone 19.29 two placements have swapped targets, same positions: a random variant pick is a guess).
 - Saves made by other game versions or with mods: layout of `mods` and unknown record types would show.

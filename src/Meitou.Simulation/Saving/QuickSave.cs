@@ -15,4 +15,10 @@ public static class QuickSave
 
     /// <summary>The folder of the quicksave under <paramref name="root"/> (default <see cref="DefaultRoot"/>).</summary>
     public static string Folder(string? root = null) => Path.Combine(root ?? DefaultRoot, Name);
+
+    /// <summary>The original's autosave slots, written in turn (<c>autosave0</c> to <c>autosave2</c>).</summary>
+    public const int AutosaveSlots = 3;
+
+    /// <summary>The folder of autosave slot <paramref name="index"/> under <paramref name="root"/> (default <see cref="DefaultRoot"/>).</summary>
+    public static string AutosaveFolder(int index, string? root = null) => Path.Combine(root ?? DefaultRoot, $"autosave{index}");
 }

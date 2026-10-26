@@ -18,6 +18,9 @@ namespace Meitou.Game;
 sealed partial class GameHost
 {
     bool quickSaveRequested, quickLoadRequested;
+    // The autosave (docs/formats/save.md "Autosave"): real seconds run unpaused since the last one, and a save announced this frame and written the next.
+    double autosaveSeconds;
+    bool autosaveDue;
     string? saveRequestedFolder, loadRequestedFolder, readingFolder;
     (string Folder, ImportOptions Options)? importRequested;
     Task? saveWrite;
@@ -113,11 +116,12 @@ sealed partial class GameHost
             RagdollEnvironment = ragdollGeometry,
         });
 
-    /// <summary>Once per frame, between ticks: the notices of the write worker, the requests of the keys, a finished read.</summary>
-    void HandleSaves()
+    /// <summary>Once per frame, between ticks: the notices of the write worker, the requests of the keys, the autosave, a finished read. <paramref name="realDt"/>: the frame's real seconds.</summary>
+    void HandleSaves(double realDt)
     {
         while (saveNotices.TryDequeue(out var notice)) player.Notice(notice.Text, notice.Error);
         PrintSavedLog();
+        Autosave(realDt);
         if (quickSaveRequested) { quickSaveRequested = false; QuickSaveNow(); }
         if (quickLoadRequested) { quickLoadRequested = false; BeginQuickLoad(); }
         if (saveRequestedFolder is { } to) { saveRequestedFolder = null; QuickSaveNow(to); }
@@ -129,6 +133,28 @@ sealed partial class GameHost
             var (data, from, options) = (popData!, loadedSave, CaptureOptions());
             (preparedBase, preparedFor) = (Task.Run(() => SaveCapture.PrepareBase(data, from, options)), from);
         }
+    }
+
+    /// <summary>
+    /// The original's autosave (<c>FUN_14047be70</c>, docs/formats/save.md "Autosave"): while <c>Auto save</c> is on and nothing loads, real time run unpaused adds up; past
+    /// <c>Auto save time (minutes)</c> it shows "Autosaving..." and the next frame writes the slot after the last one, <c>autosave0</c> to <c>autosave2</c> in turn.
+    /// </summary>
+    void Autosave(double realDt)
+    {
+        if (autosaveDue)
+        {
+            autosaveDue = false;
+            config.AutosaveIndex = (config.AutosaveIndex + 1) % QuickSave.AutosaveSlots;
+            config.Save();
+            QuickSaveNow(QuickSave.AutosaveFolder(config.AutosaveIndex));
+            return;
+        }
+        if (!Gameplay.AutoSave || Covered || session.Simulation.IsPaused || !session.World.Player.Exists || !SavesAvailable(out _)) return;
+        autosaveSeconds += realDt;
+        if (autosaveSeconds < Gameplay.AutoSaveMinutes * 60 || Busy()) return;
+        autosaveSeconds = 0;
+        autosaveDue = true;
+        player.Notice("Autosaving...");
     }
 
     /// <summary>Whether this run has a game to save and load: the population (so not <c>--no-population</c> or the sandbox).</summary>

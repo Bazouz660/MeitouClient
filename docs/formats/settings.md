@@ -144,7 +144,7 @@ into bus gains ([audio.md](../audio.md#volumes)). Meitou applies them at once fr
 | `Dismemberment` | int 0 … 2 | 1 | Dismemberment: Never = 0, Rare = 1, Frequent = 2 | The options page binds the drop-down to the global `DAT_142133504` (`FUN_1403f0260`), which the hit, degeneration and eaten code read when a part is damaged (`FUN_14064f300`, `FUN_14064f5c0`, `FUN_140650370`, `FUN_14029af90`), so a change applies at once (**Verified**, decompile). [combat.md](../game/combat.md), [character-stats.md](../game/character-stats.md) |
 | `civilians` | bool | 1 | none | Loaded and saved; **no reader found** (no instruction addresses its global other than the writer; an access through the block's base pointer would not show up, so **Unknown**) |
 | `Fast zone hopping` | bool | 0 | Fast zone hopping | Keeps a larger area loaded so switching between distant characters skips loading: a ring of one more zone round the box of each player character ([character-stats](../game/character-stats.md#corpses), FUN_140a0f640; storage `DAT_142133518`, **Verified**) |
-| `Auto save` | bool | 1 | Auto save | [save.md](save.md#saveload-contract) |
+| `Auto save` | bool | 1 | Auto save | [save.md](save.md#autosave-fun_14047be70) |
 | `Auto save time (minutes)` | float; slider 1 … 30 | 10 | Auto save time (minutes) | same |
 | `User save location` | bool | 1 (see save.md) | User Save Location | Saves in `%LOCALAPPDATA%\kenshi\save` (1) or the install (0); [save.md](save.md) |
 | `continue` | string | — | none | Save the "Continue" button loads; written after every save ([save.md](save.md)) |

@@ -1136,7 +1136,7 @@ sealed partial class GameHost
                 else if (!Covered) session.Advance(dt);
                 if (hud is not null)
                 {
-                    HandleSaves();
+                    HandleSaves(dt);
                     HandleNewGame();
                     HandleMainMenu();
                 }

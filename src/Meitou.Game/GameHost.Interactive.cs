@@ -531,7 +531,7 @@ sealed partial class GameHost
             if (profiler is not null) SimProfile(profiler, advanceMs);   // F12's sim row and its parts
             BenchLap(1);
             WorldNews();
-            HandleSaves();   // a quicksave or quickload asked for by a key: between ticks, none in flight
+            HandleSaves(frameDt);   // a quicksave or quickload asked for by a key, the autosave: between ticks, none in flight
             HandleNewGame();
             HandleMainMenu();
             StepSceneLoad();
