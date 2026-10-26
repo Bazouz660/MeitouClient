@@ -300,7 +300,7 @@ to Jobs; the saved `chase mode` flag is that switch (**Verified**, [perma-jobs](
       n = (int)((1 − f) × 100) > 0 with f the stat multiplier `FUN_1406457e0` with one flag set, `Injuries:` (limbs), `Hunger:`, `Weather:` (dust), `Working in darkness:` (light),
       each Bad `-n%`; `Robotics:` (limb items) Bad `-n%`, or for n < 0 Good `+|n|%` labelled `Limbs disabled:` when no limb slot holds an item (`FUN_140883690`); for strength
       `Missing arm penalty:` Bad `-33%` (int of (1 − 0.66) × 100) when either arm is disabled, for the other stats but perception `Armour/equipment:` signed −n `%` (gear flag)
-      when n ≠ 0, for perception the signed CharStats `+0x30` bonus when not 0; `Total:` the effective value.
+      when n ≠ 0, for perception the signed CharStats `+0x30` bonus when not 0 (Meitou has no perception gear bonus: no row); `Total:` the effective value.
     - Martial Arts: `Total equipment bonuses:` signed int CharStats `+0x2c`; `Indoors bonus:` `+8` indoors else `-`; `Weather penalty:` signed −(int)(dust × 10) or `-`;
       `Encumbrance penalty:` signed (int)−(0.8 (1 − e) × skill); `Strength XP:` (int)((1 − e) × 100)`%` (the label is the exe's); `Damage:` (int) the fists' damage (`FUN_1408868b0`).
       Value (int)(lerp(e, 0.2, 1) × (bonus + skill)), change bonus + the encumbrance term, bonus = `+0x2c` (+ the weapon indoors field `+0x28` indoors) − dust (`FUN_140884580`).

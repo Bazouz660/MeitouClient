@@ -43,8 +43,9 @@ static class HudTips
         bool ranged = (cold.Orders & CharacterOrders.Ranged) != 0 && fighter?.Crossbow is not null;
         if (ranged)
         {
-            lines.Add(Line("Crossbows:", StatsEnumerated.Crossbows) with { Tip = Breakdown(med, stats, factors, StatsEnumerated.Crossbows, "Crossbows") });
-            lines.Add(Line("Precision:", StatsEnumerated.FriendlyFire) with { Tip = Breakdown(med, stats, factors, StatsEnumerated.FriendlyFire, "Careful Shooting") });
+            // The gear's ranged factor as the breakdown's Total has it.
+            lines.Add(Line("Crossbows:", StatsEnumerated.Crossbows, factors.Ranged) with { Tip = Breakdown(med, stats, factors, StatsEnumerated.Crossbows, "Crossbows") });
+            lines.Add(Line("Precision:", StatsEnumerated.FriendlyFire, factors.Ranged) with { Tip = Breakdown(med, stats, factors, StatsEnumerated.FriendlyFire, "Careful Shooting") });
             lines.Add(Line("Perception:", StatsEnumerated.Perception) with { Tip = Breakdown(med, stats, factors, StatsEnumerated.Perception, "Perception") });
         }
         else if (fighter is null || fighter.Unarmed)
