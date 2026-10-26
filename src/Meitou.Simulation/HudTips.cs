@@ -209,7 +209,8 @@ static class HudTips
 
         // FUN_140895350's sneak row: t = max((s - 40) / 60, 0) of the stealth term s, which is in 0..1, then lerp(12, S, t), so the cap reads 12.
         float? sneak = (cold.Orders & CharacterOrders.Sneak) != 0 ? 12 + (x.RunSpeed - 12) * MathF.Max((Orders.Stealth(cold) - 40) / 60, 0) : null;
-        return new ExtendedTips(athletics, strength, toughness, hunger, stats.Athletics, Speed.LegFactor(med), med.LegItemFactor(StatsEnumerated.Athletics), sneak);
+        return new ExtendedTips(athletics, strength, toughness, hunger, stats.Athletics, Speed.LegFactor(med), med.LegItemFactor(StatsEnumerated.Athletics), sneak,
+            cold.Fighter?.AthleticsFactor ?? 1);
     }
 
     /// <summary>Medical <c>+0xa4 worstDamage</c>: the lowest part fraction, 1 without parts.</summary>

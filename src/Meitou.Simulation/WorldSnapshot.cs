@@ -37,10 +37,11 @@ public readonly record struct HudStatLine(string Label, float Value, float Base)
 }
 /// <summary>
 /// The tooltip rows of the information panel's extended lines (<c>FUN_140895350</c>, <see cref="HudTips"/>), and what the run speed's rows need, which the host builds in its speed
-/// unit: the stored athletics, the leg factor, the fitted legs' athletics factor and, while sneaking, the sneak speed cap in units per second.
+/// unit: the stored athletics, the leg factor, the fitted legs' athletics factor, while sneaking the sneak speed cap in units per second, and the gear's run factor (CharStats <c>+0x18</c>).
 /// </summary>
 public sealed record ExtendedTips(IReadOnlyList<(string Key, string Value)> Athletics, IReadOnlyList<(string Key, string Value)> Strength,
-    IReadOnlyList<(string Key, string Value)> Toughness, IReadOnlyList<(string Key, string Value)> Hunger, float StoredAthletics, float LegFactor, float RoboticLegs, float? SneakCap);
+    IReadOnlyList<(string Key, string Value)> Toughness, IReadOnlyList<(string Key, string Value)> Hunger, float StoredAthletics, float LegFactor, float RoboticLegs, float? SneakCap,
+    float Gear = 1);
 /// <summary>
 /// What the HUD shows of a selected character besides <see cref="BodyStatus"/> (docs/game/ui-screens.md section 4): the blood in units and its capacity, the bleeding
 /// rate, the encumbrance factor (1 unburdened) and the stats panel's lines.

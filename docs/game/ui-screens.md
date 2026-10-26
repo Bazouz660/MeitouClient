@@ -369,7 +369,7 @@ to Jobs; the saved `chase mode` flag is that switch (**Verified**, [perma-jobs](
     - Run speed (`FUN_14088e780`): `Athletics Skill:` the stored stat; `Max possible speed:` (int) V mph; `Leg injury:` / `Encumbrance:` Bad `-n%` when n > 0; `Armour/equipment:`
       `+n%` / `-n%` from CharStats `+0x18`; `Robotics:` signed (fitted legs' athletics factor − 1) `%`; `Total speed:` (Main key) (int) S mph. Then sneaking `Stealth mode:` Bad
       `max: N`, N = (int)(lerp(12, S, max((s − 40) / 60, 0)) × 0.2237) with s the stealth term (`FUN_140884850`, 0..1), so N is always (int)(12 × 0.2237) = 2; and `Total:` the
-      line's text. The line's bracket is Bad for both signs (`FUN_140888fb0`). Meitou: in the panel's speed unit, no `+0x18` gear row.
+      line's text. The line's bracket is Bad for both signs (`FUN_140888fb0`). Meitou: in the panel's speed unit.
     - Hunger Rate (`FUN_14088a2b0`): `Racial hunger rate:`, `Age:` when the age (slot 0x398) is not 1, as the size factor (slot 0x390, lerp(age, `scale min`, `scale max`)), `Encumbrance effect:` 1 + (1 − e) `encumbrance hunger rate` (always,
       though in a bed the rate uses the bed factor), `Resting/KO state:` `bed hunger rate` in a bed or KO or dead, then `Idle:` 0.80x (the flag the rate's 0.8 reads) or
       `Current work:` CharStats `+0x178 currentOperatingMachineHungerRate` when not 1 (not built).
