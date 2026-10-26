@@ -72,8 +72,9 @@ public sealed partial class AiSystem
     {
         // CannibalRetreatFromRaid slot 12 (FUN_140288630): not while the leader is in a town of its faction; then when a member carries someone.
         PackageClass.CannibalRetreat => world.Characters.IsAlive(squad.Leader) && LeaderTown(world, squad).Faction != squad.Faction && AnyCarrying(world, squad),
-        // Package_CannibalsAtHome slot 12 (FUN_140291ef0): in its home town (the original also in a town of a faction not hostile to it with buildings of a kind, Unknown).
-        PackageClass.CannibalsAtHome => board.Town >= 0 && LeaderTown(world, squad).Site == board.Town,
+        // Package_CannibalsAtHome slot 12 (FUN_140291ef0): in its home town, or in a town of a faction not hostile to it that has a bar (town vfunc 0x2d0 with BD_BAR).
+        PackageClass.CannibalsAtHome => LeaderTown(world, squad) is var (site, owner) && site >= 0
+            && (site == board.Town || !(squad.Faction >= 0 && owner >= 0 && data.Relations.IsHostile(squad.Faction, owner)) && Places(site).Bars.Count > 0),
         // PrisonerGathering slot 12 (FUN_1402872a0): an intact squad, and a town with prisoners to gather.
         PackageClass.PrisonerGathering => board.Intact && GatherTown(world, squad, package.Signal == 24) >= 0,
         // SlaverPrisonerShipping slot 12 (FUN_140288aa0): the squad has slaves.

@@ -864,7 +864,7 @@ A character's job list (the Orders menu's "Perma-Jobs"; class `OrdersReceiver`, 
     (+0x2f8) 0, i.e. not in a bed or cage. 273 Remove Intruder: `FUN_14099c250` (**Verified** by decompile; slot names KenshiLib 1ce4a16, **Observed**): only while the character's current town
     (vfunc 0x78 `getCurrentTownLocation`) passes town vfunc 0x2f0 (`Town`: +0x3b0 set, meaning **Unknown**; `TownBase`: false) and `FUN_1406211e0` (`Ownerships::isMyTown`: the town is
     `_homeTown` +0x30, `occupiedTown` +0x80, or of the Ownerships' faction +0x70); sensed (0x400e, 0x201) in the same town, not carried, unconscious (vfunc 0x30), special state not 2 (not
-    caged), `amInsideTownWalls` (vfunc 0x118) > 0 (inside a building: that building's value, a gate by the side it stands; outdoors a cached value whose writer was not traced, **Unknown**).
+    caged), `amInsideTownWalls` (vfunc 0x118) > 0 (inside a building: that building's value, a gate by the side it stands; outdoors the gate code the [gate-code pass](pathfinding.md#gate-codes) gives it).
     So an occupier removes intruders from the town it holds. Their companions 224 / 274 carry the body outside: `Task_TakeIntruderOutside` (**Verified** by decompile, slots 2/5/7 `FUN_1403355e0`/`FUN_14033da80`/`FUN_1403356e0`) walks
     to the point beyond the home building's first door (`Building` vfunc 0x3e0 → door +0x3bc, pushed out by a factor 1.1 of a reference vector, **Unknown**); its start (slot 2) ends the task
     without a home building and drops at once when nothing is carried; its update (slot 7) drops the body (`FUN_1405ce1e0`) once the walk is over or 5 game minutes (elapsed hours x 60 >= 5,
