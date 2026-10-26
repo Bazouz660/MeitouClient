@@ -311,6 +311,8 @@ public readonly record struct SkillSummary(float Attack, float Defence, float Do
 /// </summary>
 public sealed record WorldSnapshot(long Tick, IReadOnlyList<CharacterSnapshot> Characters)
 {
+    /// <summary>What the tutorial triggers ask of the player's characters (<see cref="Simulation.TutorialFacts"/>).</summary>
+    public TutorialFacts TutorialFacts { get; init; }
     /// <summary>Crossbow bolts in flight and stuck in the ground (the renderer may draw them; empty when there are none).</summary>
     public IReadOnlyList<ProjectileSnapshot> Projectiles { get; init; } = [];
     /// <summary>The open trade (null: none).</summary>
