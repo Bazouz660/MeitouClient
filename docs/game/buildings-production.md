@@ -462,7 +462,7 @@ field prefixes by MiningResource: `iron`, `stone`, `copper`, `carbon`, `water`, 
 - **Rocks are mined like mines** (**Verified** data, gamedata.base): the rock BUILDINGs reference the player mines'
   functionalities (Iron Resource → `Ore mine`: Raw Iron, output 5, `production mult` 64; Copper Resource → `copper mine`:
   Copper, output 5, 72; both `stat used` 3, `stonemine`, special tool Pickaxe, `output per day`) with their own `output rate`
-  (1.2, 1) and `max operators` (3, 2). So hand mining is `Task_OperateMachine` on the rock (**Observed**); the ore waits in
+  (1.2, 1, rebirth.mod over the base's 0.45, 0.4), `max operators` (3, 2) and `build materials` (2, 3). So hand mining is `Task_OperateMachine` on the rock (**Observed**); the ore waits in
   the rock's output until the player takes it (**Observed** by the owner in play; no rock-specific transfer in the operate update). No
   rock has a saved state in two saves (253 zone files, **Observed**).
 - A building that is not the player's (`FUN_140546dd0`: its owner's `+0x250`, the test also used by research

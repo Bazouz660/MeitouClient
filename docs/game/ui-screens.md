@@ -518,8 +518,8 @@ How a building gets selected: [ui-input](ui-input.md#building-picking-and-select
   simulation's), and in a town, for a record with an `interior` list, the Open to public toggle (`SetBuildingPublic`: a site's `BuildSite.Public`, a town building's flag in the fixtures,
   both saved as `is public day`; a town building set Private drops out of the town AI's wander and bar places). **Observed** (owner's original-game Longhouse screenshot): clicking its price opens a confirmation titled with the building name, asking `Do you want to buy this building for c.{1,num}?`, with Yes / No buttons. For sale and its confirmation use the [house purchase contract](../simulation.md#town-house-purchases). Not built: Dismantle of a town building the player owns, the original's other consumers of +0xc8 (**Unknown**).
 - **Workers** (`FUN_1403075b0`, **Verified** strings and branch): with raw `max operators` (+0x3ac) 0, `Workers:` `-` with the tooltip "This machine
-  is fully automatic." (wind generators); else `{1,num}/{2,num}` operators / +0x3ac, tooltip "The machine is fully staffed." / "The machine is under-staffed.",
-  the value in another colour when nobody operates it.
+  is fully automatic." (wind generators); else `{1,num}/{2,num}` operators / +0x3ac, tooltip "The machine is fully staffed." when equal, "The machine is
+  under-staffed." (Title tag) when fewer, none when more; the value `#140806`, `#59231a` (Bad) when nobody operates it and +0x3ac >= 1.
 - **Door** (DoorStuff slot 40 `FUN_140304120`), then the house's own lines of the same section: 4 `Door Condition`, the number int(progress) of the
   door's own construction state, tooltip "The door is in good condition." while that number is not negative, else "The door is damaged." (Title);
   6 `Open/Close:` with "The door is open / closed / broken" and `Security:` `Locked` / `Unlocked` and ` (lvl {1,num})`, with tooltips ([Tooltips](#tooltips)).
@@ -541,6 +541,24 @@ How a building gets selected: [ui-input](ui-input.md#building-picking-and-select
   richness of natural {1} present in this location. Anything over 50% is considered good.", {1} the resource's name (`FUN_140a0c300`: Iron, Stone, Copper, Carbon,
   Water, Fertility) lower-cased. No owner test: rocks, NPC and player mines, farms and wells. Meitou: the player's machines and rocks (before mining too,
   `WorldSnapshot.InspectedRichness`); a mine without a resource shows no line; town buildings are not covered.
+- **Production building** (**Verified** decompile of ProductionBuilding's slots, the strings `OK` / `-` / `+` read from the exe bytes; the formulas match the owner's
+  screenshot of a worked Iron Resource: Iron Quality 100, Workers 1/3, Efficiency 40%, Max efficiency 120%). Section 6 (`FUN_1402ffeb0`) is slot 186 (richness),
+  155 (Workers, `FUN_1403075b0`), 154 (`FUN_140306050`), 153 (power, `FUN_140307bf0`); section 4 is slot 114 (header word), 115 (Condition rows), 153.
+  - Slot 154 (shared by Storage, Research, Furnace, Crafting, Turret, Light, Generator, WindGenerator, RainCollector and Torture buildings; FarmBuilding has its
+    own `FUN_1400e2d50`, **Unknown**): share = operators / raw `max operators` (1 when 0), work = slot 109 (health × power) × share × 100, max = slot 119
+    (`FUN_140546d10`: yield slot 92 × `FUN_140297b70`, `output rate` +0x1a8 × the research production mult). `Efficiency:` int(max × work)`%`, value `#140806`
+    when work >= 90 else `#59231a`; `Max efficiency:` int(max × 100)`%` in `#140806`; labels Main. Both carry a rows tooltip that starts with slot 156
+    (`FUN_14030a130`): `Max possible efficiency:` int(rate × 100)% (Main) and, for function 1 / 27 with a resource, `Iron / Stone / Copper / Carbon / Water
+    under ground:` or `Ground Fertility:` with n = int((1 − yield) × rate × 100) shown as `+` −n% when n < 0, else −n% (`#59231a` when yield < 1, else `#140806`).
+    Efficiency then adds `Damage:`, `Power:` (only for a consumer, `power output` < 0) and `Num workers:` (raw max = operators), each `OK` (Good) or `-`
+    int((1 − kept) × rate × 100)% (Bad), and `Total:` the line's value (Main); Max efficiency adds only `Total:`.
+  - Slot 114 (`FUN_140300090`), first match, all but Working in Bad with a tooltip: Broken, Under construction, Switched off (off with demand), No power, Production
+    queue empty (status 3), Out of resource (status 0 and slot 149), Output full (status 1), No power (demand > 0, granted <= 0), No workers (raw max > 0,
+    nobody), Working (tooltip from slot 168, **Unknown**).
+  - Rocks (**Observed**, same screenshot): the name bar's right is the player's faction ("Nameless"), so the rock passes slot 113's owner-is-player branch (how it
+    gets that owner is **Unknown**); the medical rows are `Condition` 2, full: the target of `build materials` 2.
+  Meitou (`PlayerInterface.Production.cs`): these lines for mines and rocks (function 1 / 27 without a farm), unmined rocks too (0 workers), health 1, header Output
+  full / No workers / Working plus the power words; the `Output:` line is kept only for other machines; the other slot 154 classes keep Meitou's lines.
 - **Window.** Selecting a complete building of the player's faction opens its window (Building slot 38 → `FUN_1406e6640`; one window per
   building, made on first use by slot 48). Classes from RTTI vtable names, layouts **Verified** (each layout string is referenced only by
   the base constructor listed):

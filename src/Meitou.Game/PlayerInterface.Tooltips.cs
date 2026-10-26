@@ -274,6 +274,7 @@ sealed partial class PlayerInterface
         "No water" => "Out of water. Growth rate will be significantly reduced and your plants may die.",
         "Ready to harvest" => "Nobody is working at this farm at the present moment, you need to hurry up and harvest them before they die.",
         "No power" => "This machine needs electricity to function. You either need to build generators, or you are out of fuel / there is no wind.",
+        "No workers" => "Nobody is working at this machine at the present moment, so nothing is getting done.",
         _ => null,
     };
 

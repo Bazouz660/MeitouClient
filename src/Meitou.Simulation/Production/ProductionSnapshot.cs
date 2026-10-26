@@ -17,7 +17,17 @@ public readonly record struct FarmView(float Growth, float Death, int Harvested,
 /// The resource richness of the building the HUD shows (docs/game/ui-screens.md "Selected building"): a mine's or rock's <c>world resource mining</c> and its yield, for the stats
 /// panel's first line. Display only.
 /// </summary>
-public readonly record struct RichnessView(string Instance, int Resource, float Yield);
+public readonly record struct RichnessView(string Instance, int Resource, float Yield)
+{
+    /// <summary>
+    /// A mine's or rock's efficiency lines (<c>ProductionBuilding</c> slots 154 / 155), null for a farm: its operators over the raw <c>max operators</c>, the power factor (granted / demand, 1
+    /// without demand; health is always 1 here), whether it draws power, and the rate (<c>output rate</c> x the research production multiplier).
+    /// </summary>
+    public EfficiencyView? Efficiency { get; init; }
+}
+
+/// <summary>The inputs of a production building's efficiency lines (docs/game/ui-screens.md "Selected building", Efficiency).</summary>
+public readonly record struct EfficiencyView(int Operators, int MaxOperators, float Power, bool Consumer, float Rate);
 
 /// <summary>A crafting bench as the host shows it: the queue (the first is being made), the repeat toggle and the finished items waiting in its output.</summary>
 public sealed record CraftView(IReadOnlyList<(string Key, string Name, float Progress, float Hours)> Queue, bool Repeat, IReadOnlyList<InventoryItemView> Done);

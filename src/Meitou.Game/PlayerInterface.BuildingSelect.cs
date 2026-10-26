@@ -126,8 +126,16 @@ sealed partial class PlayerInterface
                 stats.Add(new(mine ? "" : "Security:", $"{Loc.Tr(locked ? "Locked" : "Unlocked")} ({Loc.Tr("lvl {1,num}", door.Level)})", MainColour, locked ? BadBrightColour : GoodColour,
                     door.Locked ? "The door is locked and will keep out intruders." : locked ? "The door will lock when it closes." : "The door is unlocked.", mine ? "meitou:building-locks" : null));
             }
-            if (session.CurrentSnapshot.InspectedRichness is { } rich && rich.Instance == focus.Instance) AddRichnessLine(rich, stats);
-            if (own && Machine(focus.SiteId) is { } machine) AddMachineLines(machine, stats, ref status, ref bad);
+            var rich = session.CurrentSnapshot.InspectedRichness is { } r && r.Instance == focus.Instance ? r : (Meitou.Simulation.Production.RichnessView?)null;
+            if (rich is { } richness) AddRichnessLine(richness, stats);
+            if (own && Machine(focus.SiteId) is { } machine) AddMachineLines(machine, stats, ref status, ref bad, rich);
+            else if (rich is { Efficiency: { } e } unmined)
+            {
+                // A rock nobody has mined yet has no machine; the original shows its lines all the same.
+                (status, bad) = ProductionStatus(0, e);
+                stats.Add(WorkersLine(e.Operators, e.MaxOperators));
+                AddEfficiencyLines(unmined, e, stats);
+            }
         }
         // Not on a player-built site under construction; an owned town house has it while being repaired too.
         if (mine && site is not { LevelPlacement: null, Complete: false } && (player ? site?.TownName : focus.Town) is { Length: > 0 } && (site?.Record ?? focus.Record) is { } record && DataOf(record) is { HasInterior: true })
@@ -143,7 +151,9 @@ sealed partial class PlayerInterface
         }
         if (detail?.SalePrice is { } price)
             stats.Add(new("For sale:", Loc.Tr("c.{1,num}", price), GoodColour, GoodColour, Action: "meitou:building-buy", ButtonWidth: 0.4f));
-        return (new(focus.Name, mine ? FactionName?.Invoke(session.World.Player.Faction) ?? "" : focus.Owner ?? "", TitleColour, TitleColour), [.. state], [.. stats], status, bad);
+        // A rock names the player's faction as its owner (Observed: the original's name bar of an Iron Resource reads the player's faction).
+        bool rock = own && !player;
+        return (new(focus.Name, mine || rock ? FactionName?.Invoke(session.World.Player.Faction) ?? "" : focus.Owner ?? "", TitleColour, TitleColour), [.. state], [.. stats], status, bad);
     }
 
     /// <summary>The upgrade chain of a BUILDING record and its build data (the panel's [UPGRADE] / [DOWNGRADE] and their tooltips); the host sets them.</summary>
@@ -199,7 +209,7 @@ sealed partial class PlayerInterface
     internal List<MedicalRow> BuildingRows(SelectedBuilding focus)
     {
         var rows = new List<MedicalRow>();
-        if (focus.SiteId is { } natural && Meitou.Simulation.Production.ProductionSystem.IsNatural(natural)) return rows;
+        // A rock has no site in the registry: its Condition is its record's target, complete (an Iron Resource's build materials 2).
         var door = FirstDoor(focus);
         if (door is { Record.Length: > 0 } && BuildTarget?.Invoke(door.Value.Record) is { } doorTarget)
             rows.Add(Bar(Loc.Tr("Door Condition"), 1, ((int)doorTarget).ToString(CultureInfo.InvariantCulture), "The door is in good condition."));

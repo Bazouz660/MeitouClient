@@ -247,12 +247,70 @@ sealed partial class PlayerInterface
     /// <summary>Miles per hour per world unit per second (the original's 0.22369362: a unit is a metre).</summary>
     const float MphPerUnit = 0.22369362f;
 
-    /// <summary>The stats lines of a selected machine: the farm's crop and growth, the output's progress, workers and the bench's tech level.</summary>
-    void AddMachineLines(MachineSnapshot m, List<HudLine> stats, ref string status, ref bool bad)
+    // More of the exe's static colour tags (with MainTag and TitleTag): tooltip texts carry them as text, so they are the tags, not the palette's colours.
+    const string InkTag = "#140806", BadTag = "#59231a", GoodTag = "#a8b774";
+
+    /// <summary>
+    /// The status word of a mine or rock (<c>ProductionBuilding</c> slot 114, <c>FUN_140300090</c>): Output full, then No workers while nobody works a machine that takes workers, else
+    /// Working. Its other words (Switched off, No power, Out of resource) come from the power lines or do not occur for a mine.
+    /// </summary>
+    static (string Status, bool Bad) ProductionStatus(byte machineStatus, Meitou.Simulation.Production.EfficiencyView e) =>
+        machineStatus == 1 ? ("Output full", true) : e.MaxOperators > 0 && e.Operators == 0 ? ("No workers", true) : ("Working", false);
+
+    /// <summary>
+    /// The Workers line (<c>FUN_1403075b0</c>): <c>-</c> for an automatic machine (raw <c>max operators</c> 0), else operators / max; the value in ink, Bad while nobody works it; the tooltip
+    /// "fully staffed" when they match, "under-staffed" (Title) below.
+    /// </summary>
+    static HudLine WorkersLine(int operators, int max)
+    {
+        if (max <= 0) return new("Workers:", "-", MainColour, Tooltip: "This machine is fully automatic.");
+        string? tip = operators == max ? Loc.Tr("The machine is fully staffed.") : operators < max ? TitleTag + Loc.Tr("The machine is under-staffed.") : null;
+        return new("Workers:", $"{operators.ToString(CultureInfo.InvariantCulture)}/{max.ToString(CultureInfo.InvariantCulture)}", MainColour, operators == 0 ? BadColour : null, tip);
+    }
+
+    /// <summary>
+    /// The Efficiency and Max efficiency lines of a mine or rock (<c>ProductionBuilding</c> slot 154 <c>FUN_140306050</c>, docs/game/ui-screens.md "Selected building"): with
+    /// share = operators / raw max (1 when 0), work = health x power x share x 100 and max = yield x rate, Efficiency is int(max x work)% (ink from work 90 up, else Bad) and Max efficiency
+    /// int(max x 100)% (ink). Their tooltips are the slot 156 rows (Max possible efficiency, the resource under ground) and the losses, then Total.
+    /// </summary>
+    static void AddEfficiencyLines(Meitou.Simulation.Production.RichnessView rich, Meitou.Simulation.Production.EfficiencyView e, List<HudLine> stats)
+    {
+        static string Pc(int v) => v.ToString(CultureInfo.InvariantCulture) + "%";
+        float share = e.MaxOperators > 0 ? 1f / e.MaxOperators * e.Operators : 1;
+        const float health = 1; // Meitou models no building damage.
+        float work = health * e.Power * share * 100;
+        float max = rich.Yield * e.Rate;
+        int total = (int)(max * work);
+        // Slot 156 (FUN_14030a130): the rate, then the resource's loss or gain, in Bad when the yield is under 1.
+        var head = new List<(string, string)> { (Loc.Tr("Max possible efficiency:"), MainTag + Pc((int)(e.Rate * 100))) };
+        string? under = rich.Resource switch { 1 => "Iron under ground:", 2 => "Stone under ground:", 3 => "Copper under ground:", 4 => "Carbon under ground:", 5 => "Water under ground:", 6 => "Ground Fertility:", _ => null };
+        if (under is not null)
+        {
+            int loss = (int)((1 - rich.Yield) * e.Rate * 100);
+            head.Add((Loc.Tr(under), (rich.Yield < 1 ? BadTag : InkTag) + (loss < 0 ? "+" : "") + Pc(-loss)));
+        }
+        string Loss(float kept) => kept >= 1 ? GoodTag + Loc.Tr("OK") : BadTag + "-" + Pc((int)((1 - kept) * e.Rate * 100));
+        var rows = new List<(string, string)>(head) { (Loc.Tr("Damage:"), Loss(health)) };
+        if (e.Consumer) rows.Add((Loc.Tr("Power:"), Loss(e.Power)));
+        rows.Add((Loc.Tr("Num workers:"), e.Operators == e.MaxOperators ? GoodTag + Loc.Tr("OK") : Loss(share)));
+        rows.Add((Loc.Tr("Total:"), MainTag + Pc(total)));
+        stats.Add(new("Efficiency:", Pc(total), MainColour, work >= 90 ? null : BadColour, TooltipRows: rows));
+        stats.Add(new("Max efficiency:", Pc((int)(max * 100)), MainColour, TooltipRows: [.. head, (Loc.Tr("Total:"), MainTag + Pc((int)(max * 100)))]));
+    }
+
+    /// <summary>The stats lines of a selected machine: the farm's crop and growth, the output's progress, workers and the bench's tech level; a mine's per <see cref="AddEfficiencyLines"/>.</summary>
+    void AddMachineLines(MachineSnapshot m, List<HudLine> stats, ref string status, ref bool bad, Meitou.Simulation.Production.RichnessView? rich = null)
     {
         string N(int v) => v.ToString(CultureInfo.InvariantCulture);
         string P(float v) => ((int)(Math.Clamp(v, 0, 1) * 100)).ToString(CultureInfo.InvariantCulture) + "%";
-        if (m.Farm is { } f)
+        // A mine or rock: section 6 after the richness is Workers (slot 155), Efficiency (154), then the power lines (153); the original has no Output line.
+        if (m.Farm is null && rich is { Efficiency: { } e } mine)
+        {
+            (status, bad) = ProductionStatus(m.Status, e);
+            stats.Add(WorkersLine(e.Operators, e.MaxOperators));
+            AddEfficiencyLines(mine, e, stats);
+        }
+        else if (m.Farm is { } f)
         {
             status = f.Status switch { FarmStatus.NoWater => "No water", FarmStatus.OutputFull => "Output full", FarmStatus.Harvest => "Ready to harvest", _ => "Growing" };
             bad = f.Status is FarmStatus.NoWater or FarmStatus.OutputFull;
@@ -297,6 +355,7 @@ sealed partial class PlayerInterface
             }
         }
         if (m.TechLevel > 0) stats.Add(new("Tech level:", N(m.TechLevel), MainColour));
+        if (rich is { Efficiency: not null } && m.Farm is null) return;
         // FUN_1403075b0: an automatic machine (raw max operators 0) reads "-".
         if (m.IsAutomatic) stats.Add(new("Workers:", "-", MainColour, Tooltip: "This machine is fully automatic."));
         else if (m.MaxOperators > 0) stats.Add(new("Workers:", $"{N(m.Operators)}/{N(m.MaxOperators)}", MainColour));
