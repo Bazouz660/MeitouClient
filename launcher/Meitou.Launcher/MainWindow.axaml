@@ -336,6 +336,15 @@
                 <TextBox Grid.Column="1" x:Name="ArgumentsBox" LostFocus="Arguments_LostFocus" />
               </Grid>
             </Border>
+            <Border x:Name="SteamRow" Classes="row">
+              <Grid ColumnDefinitions="*,Auto">
+                <StackPanel VerticalAlignment="Center">
+                  <TextBlock Classes="name" Text="Launch as Kenshi on Steam" />
+                  <TextBlock Classes="desc" Text="Steam sees the game as Kenshi: the overlay, play time and Steam's screenshot key. Needs the Steam copy of Kenshi." TextWrapping="Wrap" />
+                </StackPanel>
+                <CheckBox Grid.Column="1" x:Name="SteamBox" Click="Steam_Click" VerticalAlignment="Center" />
+              </Grid>
+            </Border>
             <!-- macOS: Auto prefers Vulkan when MoltenVK exists, else native Metal. No Homebrew is needed for Metal. -->
             <Border x:Name="RendererRow" Classes="row" IsVisible="False">
               <Grid ColumnDefinitions="*,460">

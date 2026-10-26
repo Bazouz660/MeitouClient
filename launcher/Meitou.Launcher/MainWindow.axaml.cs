@@ -58,6 +58,8 @@ public sealed partial class MainWindow : Window
         ModListBox.AddHandler(PointerReleasedEvent, ModList_PointerReleased, RoutingStrategies.Bubble, handledEventsToo: true);
         ModListBox.AddHandler(PointerCaptureLostEvent, (_, _) => EndDrag(), RoutingStrategies.Direct | RoutingStrategies.Bubble, handledEventsToo: true);
         ArgumentsBox.Text = config.LaunchArguments;
+        SteamRow.IsVisible = OperatingSystem.IsWindows();
+        SteamBox.IsChecked = config.LaunchAsSteamKenshi;
         RendererRow.IsVisible = OperatingSystem.IsMacOS();
         RendererMetalItem.IsVisible = MacSupport.MetalAvailable;
         if (!MacSupport.MetalAvailable && config.Renderer == "metal") config.Renderer = "auto";
@@ -975,6 +977,12 @@ public sealed partial class MainWindow : Window
         if (version is not null) Status($"Launcher {version} is available.");
     }
 
+    void Steam_Click(object? sender, RoutedEventArgs e)
+    {
+        config.LaunchAsSteamKenshi = SteamBox.IsChecked == true;
+        config.Save();
+    }
+
     void AutoUpdate_Click(object? sender, RoutedEventArgs e)
     {
         config.AutoUpdateLauncher = AutoUpdateBox.IsChecked == true;
@@ -1089,20 +1097,31 @@ public sealed partial class MainWindow : Window
         // ID is one an earlier launch left (the launcher closed before the game did), so this launch takes it over and removes it.
         var steamAppIdFiles = new List<string>();
         void RemoveSteamAppIds() { foreach (string file in steamAppIdFiles) TryDeleteSteamAppId(file); }
-        if (OperatingSystem.IsWindows() && File.Exists(Path.Combine(install.Root, "steam_api64.dll")))
+        string[] appIdFiles = [.. new[] { Path.Combine(start.WorkingDirectory, "steam_appid.txt"), Path.Combine(Path.GetDirectoryName(exe)!, "steam_appid.txt") }
+            .Distinct(StringComparer.OrdinalIgnoreCase)];
+        if (!config.LaunchAsSteamKenshi)
         {
-            string[] files = [.. new[] { Path.Combine(start.WorkingDirectory, "steam_appid.txt"), Path.Combine(Path.GetDirectoryName(exe)!, "steam_appid.txt") }
-                .Distinct(StringComparer.OrdinalIgnoreCase)];
+            // Off: no Kenshi ID anywhere (not one inherited from Steam, nor a file an earlier launch left), so the game's Steamworks init skips.
+            start.Environment.Remove("SteamAppId");
+            start.Environment.Remove("SteamGameId");
+            foreach (string file in appIdFiles)
+            {
+                try { if (File.Exists(file) && File.ReadAllText(file).Trim() == KenshiAppId) TryDeleteSteamAppId(file); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+            }
+        }
+        else if (OperatingSystem.IsWindows() && File.Exists(Path.Combine(install.Root, "steam_api64.dll")))
+        {
             // Any other ID in either place is the user's: write nothing then, so both places keep agreeing.
             bool appIdConflict = false;
-            foreach (string file in files)
+            foreach (string file in appIdFiles)
             {
                 try { if (File.Exists(file) && File.ReadAllText(file).Trim() != KenshiAppId) appIdConflict = true; }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { appIdConflict = true; }
             }
             if (!appIdConflict)
             {
-                foreach (string file in files)
+                foreach (string file in appIdFiles)
                 {
                     try
                     {
