@@ -265,7 +265,15 @@ sealed partial class PlayerInterface
     /// </summary>
     static string? BuildingStatusTip(string status, Meitou.Simulation.Production.MachineSnapshot? machine) => status switch
     {
-        "Working" => WorkingTip(machine?.Power),
+        "Working" => WorkingTip(machine),
+        "Switched off" => "This machine is switched off.",
+        "Out of fuel" => "It has ran out of fuel. Find some more fuel and fill it up.",
+        "No Wind" => "There is currently not enough wind to drive the machine.",
+        "Fully Charged" => "This battery is fully charged.",
+        "Empty" => "This battery is flat, it needs to be charged up.",
+        "Charging" => "This battery is being charged.",
+        "Draining" => "This battery is in use and being drained of its power.",
+        "Stored" => "This battery is not in use.",
         "Normal" => "Building is in good condition.",
         "Under construction" => "This machine is currently under construction.",
         "Broken" => "This machine has broken down as a result of damage. Send one of your engineers to repair it.",
@@ -281,12 +289,16 @@ sealed partial class PlayerInterface
 
     /// <summary>
     /// The Working word's tooltip (slot 168, <c>FUN_1403094b0</c>): with rated output P = power output + research above 0 the share is the output now over P, else with a demand the
-    /// granted share of it; at most 0.9 it names that share (Title tag, the whole percent, then ink), else, or with neither, "This machine is working fine.".
+    /// granted share of it; at most 0.9 it names that share (Title tag, the whole percent, then ink), else, or with neither, "This machine is working fine.". The output now of a
+    /// generator that reads Working is health x P (<c>FUN_140297760</c>), so its share is the health; a wind generator's is that x the blades' share, 0 when under 1 unit (<c>FUN_140297810</c>).
     /// </summary>
-    static string WorkingTip(Meitou.Simulation.Production.PowerView? power)
+    static string WorkingTip(Meitou.Simulation.Production.MachineSnapshot? machine)
     {
-        float? share = power switch
+        float health = machine?.Efficiency?.Health ?? 1;
+        float? share = machine?.Power switch
         {
+            { Kind: Meitou.Simulation.Production.PowerKind.Generator } when machine.Wind is { } w => w.Share * health * w.Rated < 1 ? 0 : w.Share * health,
+            { Kind: Meitou.Simulation.Production.PowerKind.Generator } => health,
             { Kind: Meitou.Simulation.Production.PowerKind.Consumer, Demand: > 0 } p => p.Granted / p.Demand,
             _ => null,
         };

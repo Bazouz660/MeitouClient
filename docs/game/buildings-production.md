@@ -652,7 +652,7 @@ and `power capacity` (battery store, "in seconds" per fcs.def), plus research ([
   is running at reduced efficiency due to damage." when the share is above 0 (so also in light wind) or "Currently not enough wind to generate any power".
   Section 6 (stats): `Wind Speed` `{1,num=fix,p=1} mph` of the region's wind at the building, tooltip "The current wind speed". Meitou
   (`PlayerInterface`): the same for the player's built wind generators, both bars in the yellow layer (the original's layer colours not seen), the rows after
-  the condition row (order **Observed**), state "Running" otherwise, no state tooltip.
+  the condition row (order **Observed**), the state words and tooltips per [ui-screens](ui-screens.md#selected-building) (slot 114).
 - **Demand** (`vfunc_163`, `FUN_140299630`): a consumer's |output + increase|, x operators / raw `max operators` when that is above 0, only while slot 164 holds (a
   lamp outdoors by day wants nothing); a farm (`FUN_1400df330`, **Verified**) always its whole |output + increase|, no operator share and not
   asking `power on` (Meitou keeps the `power on` test for farms, engine choice); a

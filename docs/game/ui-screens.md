@@ -652,8 +652,17 @@ How a building gets selected: [ui-input](ui-input.md#building-picking-and-select
     P > 0 gives share = slot 166 (output now; ProductionBuilding `FUN_1402976e0`: construction fraction × P while `power on` and not an empty battery) / P,
     else demand (slot 163) > 0 gives granted / demand, else none; a share at most 0.9 reads "This machine is working fine, but due to low power is only
     operating at {1}{2,num}% {3}of its full potential." ({1} `#492620`, {2} int(share × 100), {3} `#140806`), otherwise "This machine is working fine.".
-    Generator (`FUN_140300b40`) and WindGenerator states run this word chain first and then override it. Meitou: the tooltip on its Working word (mines,
-    rocks, machines with an output, consumers by their grant); generators read Meitou's "Running" (not an original building string), so the P > 0 branch is unused.
+    Generator (`FUN_140300b40`) and WindGenerator (`FUN_1403011e0`) states run this word chain first and then override it (a generator reaches Switched off,
+    No workers or Working: `FUN_140299370` is true for output > 0 without a store). Generator: `Out of fuel` (Bad, "It has ran out of fuel. Find some more fuel
+    and fill it up.") when slot 149, over any word; then, while `power on` and store +0x3c8 > 0 and the building's town has a grid (town slot 0x268): charge
+    +0x3c4 at least `FUN_140297650` (store + research, × the construction fraction) `Fully Charged` (Good, "This battery is fully charged."); charge <= 0
+    `Empty` (Bad, "This battery is flat, it needs to be charged up."); else the grid's charging flow +0x488 > 0 `Charging` (Good, "This battery is being
+    charged."), its draining flow +0x484 > 0 `Draining` ("This battery is in use and being drained of its power."), else `Stored` ("This battery is not in
+    use."). WindGenerator: `No Wind` (Bad, "There is currently not enough wind to drive the machine.") when it has no rotor or the rotor's speed
+    (`FUN_1404cbd90`) is <= 0, over any word. Slot 166 of a generator (`FUN_140297760`) = construction fraction × P while `power on`, not (slot 149 with a fuel
+    inventory) and not an empty store, else 0; a wind generator's (`FUN_140297810`) = rotor speed × that, 0 below 1. So a Working generator's tooltip share is
+    its construction fraction (wind: × the rotor speed). Meitou: the tooltip on every Working word (consumers by their grant, generators as above); the
+    battery words use the battery's own flow for the grid's.
   - Rocks (**Observed**, same screenshot): the name bar's right is the player's faction ("Nameless"); the medical rows are `Condition` 2, full: the target of
     `build materials` 2. Owner (**Verified**, decompile): the foliage system (`FUN_1406d2410`, "building type") makes a rock with no owner, town NO_TOWN (the
     town list's `noTown` +0x180f8, KenshiLib 1ce4a16; `TownNull`, constructor `FUN_140934fe0`: TOWN `NO_TOWN` "Nowhere", explored, owner `nofac` via

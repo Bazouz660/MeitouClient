@@ -424,23 +424,27 @@ sealed partial class PlayerInterface
         if (m.Power is { } pw)
         {
             string F(float v) => v.ToString("0.#", CultureInfo.InvariantCulture);
+            // The production chain (FUN_140300090) as far as a generator reaches it: Switched off (power on clear), No workers, else Working.
+            (string, bool) Chain(bool on) => !on ? ("Switched off", true) : m.Efficiency is { MaxOperators: > 0, Operators: 0 } ? ("No workers", true) : ("Working", false);
             if (pw.Kind == PowerKind.Battery)
             {
-                status = pw.Granted > 0 ? "Charging" : pw.Granted < 0 ? "Draining" : pw.Charge <= 0 ? "Empty" : "Stored";
-                bad = pw.Charge <= 0;
+                // GeneratorBuilding's state (FUN_140300b40): the chain, then, while switched on, the battery's own word: Fully Charged at the health-scaled store, Empty at 0, else
+                // Charging / Draining by the grid's flow (Meitou: the battery's own), else Stored.
+                float full = pw.Store * (m.Efficiency?.Health ?? 1);
+                (status, bad) = !pw.PowerOn ? Chain(false) : pw.Charge >= full ? ("Fully Charged", false) : pw.Charge <= 0 ? ("Empty", true)
+                    : pw.Granted > 0 ? ("Charging", false) : pw.Granted < 0 ? ("Draining", false) : ("Stored", false);
                 stats.Add(new("Charge:", P(pw.Store > 0 ? pw.Charge / pw.Store : 0), MainColour));
             }
             else if (m.Wind is { } wind)
             {
-                // WindGeneratorBuilding::getGUIState: the production state, then "No Wind" while the share is 0; getGUIPower section 6: the wind speed at the building.
-                status = wind.Share <= 0 ? "No Wind" : "Running";
-                bad = wind.Share <= 0;
+                // WindGeneratorBuilding's state (FUN_1403011e0): the chain, then "No Wind" while the blades do not turn; getGUIPower section 6: the wind speed at the building.
+                (status, bad) = wind.Share <= 0 ? ("No Wind", true) : Chain(wind.PowerOn);
                 stats.Add(new("Wind Speed", Loc.Tr("{1,num=fix,p=1} mph", wind.Speed * MphPerUnit), MainColour, Tooltip: "The current wind speed"));
             }
             else if (pw.Kind == PowerKind.Generator)
             {
-                status = pw.Fueled ? "Running" : "Out of fuel";
-                bad = !pw.Fueled;
+                // GeneratorBuilding's state (FUN_140300b40): the chain, then "Out of fuel" (slot 149) over any of it.
+                (status, bad) = pw.Fueled ? Chain(pw.PowerOn) : ("Out of fuel", true);
                 stats.Add(new("Power:", F(pw.Demand), MainColour));
                 if (m.Inputs.Count > 0) stats.Add(new("Fuel Consumption", P(pw.Usage), MainColour));
             }
