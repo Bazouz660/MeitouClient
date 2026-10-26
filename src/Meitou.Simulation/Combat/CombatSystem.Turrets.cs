@@ -99,6 +99,7 @@ public sealed partial class CombatSystem
         {
             if (n.Task != (byte)CharacterTask.Operate || !cold.Operating || cold.OperateSite is not { } id || world.Buildings.Find(id) is not { Complete: true } site
                 || catalog.Get(site.Record) is not { } gun) return null;
+            if (world.Machines.Find(id) is { Broken: true }) return null;   // broken: manning is impossible (Task_UseTurret ends)
             float e = 1;
             if (gun.IsConsumer) e = world.Machines.Find(id) is { } m ? m.HasPower ? m.Power : 0 : 0;
             return new Post(site.Id, site.Record, site.Position, TownBuildings.YawOf(site.Rotation), 1, e, world.Research.Upgrade(site.Record).ProductionMult);

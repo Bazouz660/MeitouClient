@@ -668,6 +668,11 @@ and `power capacity` (battery store, "in seconds" per fcs.def), plus research ([
   else `power on` and the town's generator output (`Town::vfunc_87` `+0x474`) above 0 or battery mode with batteries' output (`+0x480`) above 0. Town `+0x47c` is the consumers' total demand. The town panel also reads +0x484 / +0x488 (taken to be the batteries' drain / charging this frame) and +0x48c / +0x490 (their charge / capacity) (**Observed**, `FUN_140727380`; [Town panel](ui-screens.md#town-panel)); Meitou sums them per town (`TownPower`).
 - **Switch** (`FarmBuilding::vfunc_161`): flips `power on` (slot 99), then the `Generator` switch `On`/`Off` and `UI_Generator` on GUI object 110.
 - **Save** (building `vfunc_17`/`18`): bools `power on`, `gets battery`, `broken`; float `batterycharge`.
+- **Broken machines** (**Verified**, decompile and writer scan, 2026-10-26): `broken` is UseableStuff `+0x3b6` (`setBroken` `FUN_1400f6d10`, a no-op for plain buildings), set by every
+  dismantle step (`Building::addDismantleProgress` `FUN_1402a2860`), cleared by a build step that leaves progress above 0 (`addConstructionProgress` `FUN_1405595a0`), by setting progress above 0
+  (`FUN_140559ad0`) and by completion (`FUN_140562340`); also loaded (`FUN_1402a1750`). A broken turret cannot be manned ([combat](combat.md#turrets)). Its
+  other effects (production, the status text, REPAIR) are not traced here. Meitou: `Machine.Broken`, saved as `broken`, set and cleared by the dismantle, build, completion and ruin steps; only
+  turret manning reads it; town buildings have no machines, so an NPC town turret is never broken.
 - **Status strings** (`GeneratorBuilding::vfunc_114`): "Out of fuel", battery "Charging" / "Draining" / "Stored" / "Empty".
 - Data (**Verified**, probe): Small Generator 40, Generator II 100, Wind Generator 50, Small Wind 25, Wind II 100,
   Battery Bank 40 / capacity 60; Weapon Smith -8, refineries -10 to -40, Research Bench III-VI -10 to -30. Power

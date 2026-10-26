@@ -119,6 +119,11 @@ public sealed class Machine
     /// <summary>The save's <c>power on</c> (default on; no UI switch yet).</summary>
     public bool PowerOn { get; set; } = true;
     /// <summary>
+    /// The save's <c>broken</c> (UseableStuff <c>+0x3b6</c>, docs/game/buildings-production.md "Broken machines"): set by every dismantle step (<c>Building::addDismantleProgress</c>), cleared
+    /// by a build step that leaves progress above 0, by completion and by the ruin's first tick. A broken turret cannot be manned.
+    /// </summary>
+    public bool Broken { get; set; }
+    /// <summary>
     /// What the machine tells its sound emitter (docs/audio.md "Point emitters"): the exe's efficiency (<c>FarmBuilding::vfunc_108</c>) and whether it has power (<c>FUN_140299370</c>). Derived
     /// every tick for the host's display; not saved, not hashed.
     /// </summary>
@@ -147,6 +152,7 @@ public sealed class Machine
         h.Add(Yield);
         h.Add(Status);
         h.Add(Power); h.Add(Charge); h.Add(Granted);
+        if (Broken) h.Add(0x42726B6E);
         foreach (var i in Inputs) { h.Add(i.Count); h.Add(i.Level); }
         if (Output is { } o) { h.Add(o.Count); h.Add(o.Progress); }
         if (Storage is { } s) { h.Add(s.Items.Count); foreach (var item in s.Items) { h.Add(Rng.StableHash(item.Record)); h.Add(item.Quantity); h.Add(item.X); h.Add(item.Y); } }
