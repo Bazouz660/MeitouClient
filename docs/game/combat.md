@@ -472,7 +472,7 @@ values; trajectory, aim timing and obstruction uncertainties remain labelled.
   without one). The shared loader `FUN_14043baa0` reads `range`, `accuracy perfect skill`, `accuracy deviation at 0 skill`, `aim speed`, `shot speed` (≤ 0 → 1), `num shots`,
   `reload time min/max`, `barrel pos Y/Z`, `live ammo`, `reload anim`. `accuracy perfect skill` goes to gun `+0xc` (`accuracySkillRequired`, KenshiLib 1ce4a16) and is
   never read (**Observed**, 2026-10-26: no read of `+0xc` in any GunClass/GunClassPersonal/GunClassTurret method, the ranged controller or the HUD's accuracy lines;
-  the shot, the HUD and the turret tooltip all use `+0x10`, the deviation): dead data, so Meitou ignores it. Loaded shots start at 0 (saved as `current shots`, slots 20/21). GUN_DATA has no damage and no `ammo`
+  the shot, the HUD and the turret tooltip all use `+0x10`, the deviation; the tooltip's skill term differs, [ui-screens](ui-screens.md#selected-building) turret gun lines): dead data, so Meitou ignores it. Loaded shots start at 0 (saved as `current shots`, slots 20/21). GUN_DATA has no damage and no `ammo`
   field (fcs.def `[CROSSBOW,GUN_DATA]` vs `[CROSSBOW]`), so a turret never runs dry.
 - **Damage D** = the building's output value `+0x1a4` (**Verified**: loader `FUN_14029e460` = BUILDING `output rate` × functionality `production mult`, ÷ `max operators`
   when > 1; tooltip `FUN_14030d620` "Default damage:" shows Building slot 120 `FUN_140297b30` = `+0x1a4` × the research multiplier of a player-owned building (`FUN_14082ec70`,

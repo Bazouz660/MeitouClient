@@ -10,6 +10,13 @@ namespace Meitou.Simulation.Combat;
 public readonly record struct TurretView(string BuildingId, string GunId, Vector3 Position, float Yaw, Vector3? Aim, float[]? Angles = null);
 
 /// <summary>
+/// The gun numbers a selected turret's Stats 1 lines read (<c>GunClassTurret</c> slot 14 <c>FUN_14030d620</c>, docs/game/ui-screens.md "Production building"): the GUN_DATA <c>range</c>,
+/// <c>aim speed</c> and <c>accuracy deviation at 0 skill</c>, the mount factor M (gun slot 18), the height factor h from the building to its last aim point (gun <c>+0x118</c>, 1 before any),
+/// the last gunner's Turrets level x 0.01 (gun <c>+0x2c</c>, 0 for a turret never manned) and that gunner's perception level while it exists (null: none).
+/// </summary>
+public readonly record struct TurretPanelView(string Instance, float Range, float AimSpeed, float Deviation, float Mount, float Height, float UserSkill, float? Perception);
+
+/// <summary>
 /// The turrets (docs/game/combat.md "Turrets", docs/simulation.md "Combat", turrets). The original runs a turret through its gunner's ranged controller (<c>Task_UseTurret</c>
 /// <c>FUN_1403474f0</c> hands the controller the building and the Turrets skill, then ticks it): the controller picks the target, reloads, holds the aim and fires the building's
 /// gun, whose shots, turn and loaded harpoons live on the building. Here one serial step of the <see cref="Schedule"/> phase does the same for every manned turret, in key order:
@@ -47,6 +54,12 @@ public sealed partial class CombatSystem
         /// <summary>This tick's gunner efficiency e (health x power grant) and research damage multiplier.</summary>
         public float Efficiency = 1, DamageMult = 1;
         public bool Manned;
+        /// <summary>
+        /// The last gunner (the gun's user hand <c>+0x30</c>) and its Turrets level x 0.01 (<c>+0x2c</c>), both set by gun slot 16 <c>FUN_140446ef0</c> every frame the reload step runs and
+        /// on each shot; kept when the gunner leaves. Only the panel reads them (not hashed; the original does not save them).
+        /// </summary>
+        public int User = -1, UserGeneration;
+        public float UserSkill;
 
         public void Hash(ref StateHasher h)
         {
@@ -72,6 +85,22 @@ public sealed partial class CombatSystem
     /// <summary>The turret a character mans as of the last tick (its <see cref="CharacterCold.Gunning"/> key), for the snapshot; null when it mans none.</summary>
     public TurretView? TurretOf(string? key) =>
         key is not null && turrets.TryGetValue(key, out var t) ? new TurretView(t.Gun.BuildingId, t.Gun.Gun.StringId, t.Position, t.Yaw, t.Aim, [.. t.Angles]) : null;
+
+    /// <summary>
+    /// The gun numbers of the turret building <paramref name="instance"/> for its panel (<see cref="TurretPanelView"/>); a turret nobody has manned yet has the gun's fresh state.
+    /// Null for a building that is not a turret.
+    /// </summary>
+    public TurretPanelView? TurretPanelOf(World world, string? instance)
+    {
+        if (instance is null || TurretGuns is not { } catalog || world.Buildings.Find(instance) is not { } site || catalog.Get(site.Record) is not { } gun) return null;
+        var g = gun.Gun;
+        if (!turrets.TryGetValue(instance, out var t)) return new(instance, g.Range, g.AimSpeed, g.AccuracyDeviationAtZeroSkill, 1, 1, 0, null);
+        float? perception = null;
+        if (t.User >= 0 && t.User < world.Characters.HighWater && world.Characters.Previous[t.User].Generation == t.UserGeneration && world.Characters.Cold(t.User) is { Stats: not null, Medical: not null } user)
+            perception = Eff(user, StatsEnumerated.Perception);
+        float height = t.Aim is { } aim ? RangedFormulas.HeightFactor(t.Position.Y, aim.Y) : 1;
+        return new(instance, g.Range, g.AimSpeed, g.AccuracyDeviationAtZeroSkill, t.Mount, height, t.UserSkill, perception);
+    }
 
     void HashTurrets(ref StateHasher h)
     {
@@ -178,6 +207,7 @@ public sealed partial class CombatSystem
 
         int target = ChooseTurretTarget(world, t, g, cold);
         (t.Target, t.TargetGeneration) = target >= 0 ? (target, prev[target].Generation) : (-1, 0);
+        (t.User, t.UserGeneration, t.UserSkill) = (g, prev[g].Generation, Eff(cold, StatsEnumerated.Turrets) * 0.01f);
 
         // The reload (FUN_140437ce0): a skill blend of Turrets and dexterity, XP for both while it runs.
         bool loaded = TurretReload(t, cold, dt);

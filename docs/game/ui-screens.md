@@ -631,6 +631,21 @@ How a building gets selected: [ui-input](ui-input.md#building-picking-and-select
     `#140806` when slot 109 × 100 >= 90, else `#59231a`. Its tooltip has no slot 156 rows: `Damage:` and `Power:` (a consumer; granted / slot 163, which on a
     farm `FUN_1400df330` is |power output + research increase|, no operator share) as above, `No Water:` int((drought − 1) × 100)% (Bad) while out of water,
     `Total:`.
+  - Turret gun lines (**Observed**, `GunClassTurret` slot 14 `FUN_14030d620` section 6; the base `GunClass` `FUN_14030ce20` draws only section 4's `Loaded` bar;
+    suffixes `x` / `*` / `+` **Verified** exe bytes): P = gun slot 19 (0.8 e + 0.2, e = slot 109), M = slot 18 (mount), h = `FUN_140435f60` from the building to
+    gun `+0x118` (the last aim point, written with the building's `+0x4a8` by slot 5 `FUN_140435100`; 1 while it is 0), D = Building slot 120. Lines (labels Main,
+    value rounded half away from zero by `FUN_1409b32b0` except Damage, truncated): `Damage:` D·P·h·M; `Deviation:` u `*`; `Range:` P·range·h·M × 0.1 `m`;
+    `Aim speed:` P·`aim speed`·M `x`. u = max(0, lerp(t, deviation `+0x10`, 0)) (`FUN_1404351b0`), t = 50 × gun `+0x2c` + 50 × the user's perception level
+    (stat 24 with injuries, `FUN_140884ac0`; 0 without a user), where `+0x2c` = the Turrets level × 0.01 written by gun slot 16 (`FUN_140446ef0`, with the user hand
+    `+0x30`) every frame of the reload step (`FUN_140437ce0`) and on each shot; both stay when the gunner leaves. So t >= 1 for any user with perception and
+    the line reads 0 (the shot's own t is 0.005 × (skill + perception)). Tooltips, built only while the widget `FUN_14091ffc0` asks about is visible (which one
+    **Unknown**; Meitou always shows them): Damage `Default damage:` int D, then the shared rows, `Wall bonus:`, `Height advantage:`, `Total damage:`; Range
+    `Default range:` int(range × 0.1) m, shared, wall, height, `Total range:`; Aim speed `Default aim speed:` int `x`, shared, wall, `Total speed:` P × aim speed
+    (2 decimals, no M) `x`; Deviation `Base Accuracy Deviation:` (1 decimal `*`), `User Skill:` int(`+0x2c` × 100), `User Accuracy Deviation:` u (1 decimal `*`),
+    then the text "The amount of accuracy error, in degrees. Higher numbers are poor, 0 is perfect accuracy.". Shared rows: `Power supply:` int(min(1, granted
+    / demand) × 100)% (Bad) when below 1; `Condition:` int(construction fraction × 100)% (Good from 95, else Bad) when below 99. `Wall bonus:` `+` int((M −
+    0.99) × 100)% (Good when M > 1, else Bad: +1% without a wall); `Height advantage:` `+` int((h − 1) × 100)%. Section 3 adds `Height:` and `Height bonus:`
+    (`FUN_14030c2a0`), section 4 the gun's `Loaded` bar: not built in Meitou.
   - Slot 114 (`FUN_140300090`), first match, all but Working in Bad with a tooltip: Broken, Under construction, Switched off (off with demand), No power, Production
     queue empty (status 3), Out of resource (status 0 and slot 149), Output full (status 1), No power (demand > 0, granted <= 0), No workers (raw max > 0,
     nobody), Working with the tooltip of slot 168 (`FUN_1403094b0`, every class; **Verified**): P = `power output` + research increase (`FUN_1402976a0`);
@@ -651,7 +666,8 @@ How a building gets selected: [ui-input](ui-input.md#building-picking-and-select
     Not saved (the original saves no rock). Meitou: `ProductionSystem` sets the rock's owner on arrival, its town by the outposts' radius
     (`RichnessView.Owner` / `TownName`); `Town:` shows only that town.
   Meitou (`PlayerInterface.Production.cs`, `MachineSnapshot.Efficiency` and `Panel`): the lines per class as above, unmined rocks too (0 workers), the turret's
-  section 7 in `ExtendedStatsText` while the panel is expanded; the turret's gun lines are not built; health is `Machine.Health` (progress / target),
+  section 7 in `ExtendedStatsText` while the panel is expanded; the turret's gun lines from `WorldSnapshot.InspectedTurret` (`CombatSystem.TurretPanelOf`; a
+  player turret's M is 1 as in Meitou's shot); health is `Machine.Health` (progress / target),
   which also scales production (`WorkFactor`) and the sound efficiency; slot 164 is `Machine.Active` (a BF_LIGHT machine outdoors by day, from `World.Daytime`
   which the host sets from its clock, is inactive: no demand, efficiency 0; indoors = `is interior furniture` and a parent building). Mines and rocks get the header Output full / No workers /
   Working (plus the power words) and no `Output:` line; other machines keep Meitou's status words and `Output:` line.

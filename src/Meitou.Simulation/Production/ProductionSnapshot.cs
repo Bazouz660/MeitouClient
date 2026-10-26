@@ -105,6 +105,8 @@ public sealed record MachineSnapshot(string Site, string Record, IReadOnlyList<M
     public MachinePanel Panel { get; init; }
     /// <summary>The exe's output value <c>+0x1a4</c> (<see cref="MachineData.OutputValue"/>): a bed's Healing bonus, a training dummy's skill cap.</summary>
     public float OutputValue { get; init; }
+    /// <summary>The research multiplier of its building (<c>FUN_14082ec70</c>; the player's buildings only): <see cref="OutputValue"/> x this is Building slot 120, a turret's "Default damage".</summary>
+    public float Research { get; init; } = 1;
     /// <summary>A hydroponic farm (its FARM_DATA's <c>fertility effect</c> is 0, the exe's FarmBuilding <c>+0x558</c>): the only farms with an Efficiency line.</summary>
     public bool Hydroponic { get; init; }
 
@@ -128,7 +130,7 @@ public sealed record MachineSnapshot(string Site, string Record, IReadOnlyList<M
         var sound = m.Data.PowersEmitterEachFrame ? new MachineSound(m.Efficiency, m.HasPower && m.Efficiency > 0) : new MachineSound(0, true);
         return new MachineSnapshot(m.Site, m.Data.Id, inputs, output, storage, farm, m.Status, m.Operators, m.Data.MaxOperators) { Sound = sound, Rotation = m.Rotation, Wind = m.Data.IsWind ? new WindView(m.Wind, m.WindSpeed, m.Data.WindRotor, m.WindRated, m.PowerOn) : null, TechLevel = m.Data.IsResearch ? m.Data.TechLevel : 0, Operable = m.Data.Operable, IsAutomatic = m.Data.IsAutomatic, IsStorage = m.Data.IsStorage, Function = m.Data.Function, StorageLimitName = m.Data.StorageLimit is [var only] ? Name(only) : null, StorageCapacity = m.Data.StorageLimit is [_] ? (int)m.Data.StackBonusMult : 0, Craft = Crafting(m, items),
             Power = m.Data.IsConsumer || m.Data.IsGenerator || m.Data.IsBattery ? new PowerView(m.Data.IsBattery ? PowerKind.Battery : m.Data.IsGenerator ? PowerKind.Generator : PowerKind.Consumer, m.Demand, m.Granted, m.Usage, m.Charge, m.Store, m.Inputs.Length == 0 || Array.Exists(m.Inputs, i => i.Level > 0 || i.Count > 0)) : null,
-            Panel = PanelOf(m.Data), OutputValue = m.Data.OutputValue, Hydroponic = m.Data.Farm is { Indoor: true },
+            Panel = PanelOf(m.Data), OutputValue = m.Data.OutputValue, Research = m.ProductionMult, Hydroponic = m.Data.Farm is { Indoor: true },
             Efficiency = new(m.Operators, m.Data.PowerOperators, m.Health, m.Power, m.Data.IsConsumer, m.Data.OutputRate * m.ProductionMult, m.Yield)
             {
                 Starved = m.Farm is { Status: FarmStatus.NoWater }, Drought = m.Data.Farm?.DroughtMultiplier ?? 1,

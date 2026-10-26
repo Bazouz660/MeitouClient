@@ -325,10 +325,45 @@ sealed partial class PlayerInterface
     }
 
     /// <summary>
+    /// A turret's gun lines (<c>GunClassTurret</c> slot 14 <c>FUN_14030d620</c>, section 6; docs/game/ui-screens.md "Production building"): Damage, Deviation, Range and Aim speed, labels in Main,
+    /// each with its breakdown. P = 0.8 e + 0.2 (e = health x power), M the mount factor, h the height factor to the last aim point, D = output value x research. The suffixes are the exe's
+    /// literal <c>x</c> and <c>*</c>; "Wall bonus" is int((M - 0.99) x 100), so +1% with no wall (kept); the deviation's skill term is 50 x the Turrets level x 0.01 + 50 x perception, so any
+    /// gunner with perception shows 0 (kept); "Total speed" leaves out M while the line has it (kept).
+    /// </summary>
+    static void AddGunLines(MachineSnapshot m, Meitou.Simulation.Production.EfficiencyView e, Meitou.Simulation.Combat.TurretPanelView g, List<HudLine> stats)
+    {
+        static string I(float v) => ((int)v).ToString(CultureInfo.InvariantCulture);
+        static int Round(float v) => (int)MathF.Round(v, MidpointRounding.AwayFromZero);
+        static string R(float v) => Round(v).ToString(CultureInfo.InvariantCulture);
+        float condition = MathF.Min(e.Health, 1) * 100, supply = MathF.Min(e.Power, 1);
+        float p = Meitou.Simulation.Combat.TurretFormulas.PowerFactor(e.Health * e.Power), h = g.Height, mount = g.Mount, d = m.OutputValue * m.Research;
+        float damage = d * p * h * mount, range = p * g.Range * h * mount;
+        float deviation = MathF.Max(0, g.Deviation * (1 - (g.UserSkill * 50 + (g.Perception ?? 0) * 50)));
+        // The rows the three breakdowns share: Power supply below 1 (Bad), Condition below 99 (Good from 95), the wall bonus (Good above 1) and the height advantage.
+        var shared = new List<(string, string)>();
+        if (supply < 1) shared.Add((Loc.Tr("Power supply:"), BadTag + Pc((int)(supply * 100))));
+        if (condition < 99) shared.Add((Loc.Tr("Condition:"), (condition >= 95 ? GoodTag : BadTag) + Pc((int)condition)));
+        var wall = (Loc.Tr("Wall bonus:"), (mount > 1 ? GoodTag : BadTag) + "+" + Pc((int)((mount - 0.99f) * 100)));
+        var height = (Loc.Tr("Height advantage:"), "+" + Pc((int)((h - 1) * 100)));
+        static string Metres(int v) => Loc.Tr("{1,num} m", v);
+        stats.Add(new("Damage:", I(damage), MainColour,
+            TooltipRows: [(Loc.Tr("Default damage:"), I(d)), .. shared, wall, height, (Loc.Tr("Total damage:"), I(damage))]));
+        stats.Add(new("Deviation:", R(deviation) + "*", MainColour,
+            TooltipRows: [(Loc.Tr("Base Accuracy Deviation:"), g.Deviation.ToString("F1", CultureInfo.InvariantCulture) + "*"), (Loc.Tr("User Skill:"), I(g.UserSkill * 100)),
+                (Loc.Tr("User Accuracy Deviation:"), deviation.ToString("F1", CultureInfo.InvariantCulture) + "*"),
+                (Loc.Tr("The amount of accuracy error, in degrees. Higher numbers are poor, 0 is perfect accuracy."), "")]));
+        stats.Add(new("Range:", Metres(Round(range * 0.1f)), MainColour,
+            TooltipRows: [(Loc.Tr("Default range:"), Metres((int)(g.Range * 0.1f))), .. shared, wall, height, (Loc.Tr("Total range:"), Metres((int)(range * 0.1f)))]));
+        stats.Add(new("Aim speed:", R(p * g.AimSpeed * mount) + "x", MainColour,
+            TooltipRows: [(Loc.Tr("Default aim speed:"), I(g.AimSpeed) + "x"), .. shared, wall, (Loc.Tr("Total speed:"), (p * g.AimSpeed).ToString("F2", CultureInfo.InvariantCulture) + "x")]));
+    }
+
+    /// <summary>
     /// The Workers and Efficiency lines of a machine's class (slot 40, docs/game/ui-screens.md "Selected building"): Stats 1 (section 6) gets them in <paramref name="stats"/>, Stats 2
     /// (section 7, only a turret's) in <paramref name="extended"/>. <paramref name="active"/> is slot 164.
     /// </summary>
-    static void AddClassLines(MachineSnapshot m, Meitou.Simulation.Production.EfficiencyView e, int resource, List<HudLine> stats, List<HudLine> extended, bool active)
+    static void AddClassLines(MachineSnapshot m, Meitou.Simulation.Production.EfficiencyView e, int resource, List<HudLine> stats, List<HudLine> extended, bool active,
+        Meitou.Simulation.Combat.TurretPanelView? gun = null)
     {
         switch (m.Panel)
         {
@@ -350,7 +385,8 @@ sealed partial class PlayerInterface
                     Tooltip: "This is the maximum skill a person can train up to using this equipment. For anyone higher it is a waste of time."));
                 break;
             case MachinePanel.Turret:
-                // TurretBuilding slot 40 (FUN_14030c2a0): section 6 the gun's lines (not built) and Efficiency, section 7 Workers and Efficiency.
+                // TurretBuilding slot 40 (FUN_14030c2a0): section 6 the gun's lines and Efficiency, section 7 Workers and Efficiency.
+                if (gun is { } g) AddGunLines(m, e, g, stats);
                 AddEfficiencyLines(e, resource, stats, active);
                 extended.Add(WorkersLine(e.Operators, e.MaxOperators));
                 AddEfficiencyLines(e, resource, extended, active);
@@ -362,7 +398,8 @@ sealed partial class PlayerInterface
     /// The stats lines of a selected machine: the farm's crop and growth, the output's progress, then (section 6: slots 155, 154, 153) Workers and Efficiency per
     /// <see cref="AddEfficiencyLines"/>, the power lines, and the bench's tech level.
     /// </summary>
-    void AddMachineLines(MachineSnapshot m, List<HudLine> stats, List<HudLine> extended, ref string status, ref bool bad, Meitou.Simulation.Production.RichnessView? rich = null)
+    void AddMachineLines(MachineSnapshot m, List<HudLine> stats, List<HudLine> extended, ref string status, ref bool bad, Meitou.Simulation.Production.RichnessView? rich = null,
+        Meitou.Simulation.Combat.TurretPanelView? gun = null)
     {
         string N(int v) => v.ToString(CultureInfo.InvariantCulture);
         string P(float v) => ((int)(Math.Clamp(v, 0, 1) * 100)).ToString(CultureInfo.InvariantCulture) + "%";
@@ -382,7 +419,7 @@ sealed partial class PlayerInterface
             bad = m.Status == 1;
             stats.Add(new("Output:", $"{o.Name} {N(o.Count)}/{N(o.Capacity)}", MainColour));
         }
-        if (m.Efficiency is { } e) AddClassLines(m, e, rich?.Resource ?? 0, stats, extended, e.Active);
+        if (m.Efficiency is { } e) AddClassLines(m, e, rich?.Resource ?? 0, stats, extended, e.Active, gun);
         // Power, in the original's words where it has them (GeneratorBuilding vfunc_114, vfunc_153); "No power" and "Low power" are Meitou's.
         if (m.Power is { } pw)
         {
