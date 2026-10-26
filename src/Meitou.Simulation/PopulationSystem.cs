@@ -13,9 +13,9 @@ namespace Meitou.Simulation;
 /// <summary>Makes the drawable half of a character (rolled by <see cref="CharacterGenerator"/>); null when it cannot be made.</summary>
 
 /// <summary>
-/// Zone activation and town residents (docs/game/game-loop.md "Zones", factions-squads-towns.md 6.4). The camera's focus (a
-/// <see cref="FocusCommand"/>) activates every zone overlapping the box of +-340 units round it, plus a ring of one more zone when
-/// <c>Fast zone hopping</c> is on (<see cref="ZoneActivation"/>). A placed town in an active zone gets its resident squads (squad
+/// Zone activation and town residents (docs/game/game-loop.md "Update, threads and budget", factions-squads-towns.md 6.4). The active zones are the
+/// loaded ones (<see cref="RefreshLoaded"/>): the 3 x 3 block round the camera's focus (a <see cref="FocusCommand"/>) and the box of +-340 units round each
+/// player character, with a ring of one more zone when <c>Fast zone hopping</c> is on (<see cref="ZoneActivation"/>). A placed town in an active zone gets its resident squads (squad
 /// factory, then characters rolled by the generator); when its zone is no longer active for <see cref="PopulationSettings.UnloadGraceSeconds"/>
 /// its characters are removed (the original turns the squads into abstract "unloaded" ones, which the AI stage will do). The
 /// characters are built on a background thread when <see cref="PopulationSettings.Background"/> is set and taken in at the first tick
@@ -36,10 +36,12 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
     readonly BlockingCollection<Action>? work;
     readonly Thread? worker;
     Vector3? focus;
-    // The zones active as of the last look, and the set the next look fills (swapped, so a look allocates nothing; the host reads ActiveZones within a frame only).
+    // The zones active as of the last look (the loaded ones), and the set the next look fills (swapped, so a look allocates nothing; the host reads ActiveZones within a frame only).
     HashSet<ZoneCoordinate> active = [], spareActive = [];
-    readonly List<Vector3> foci = [];
-    // The original's loaded zones (ZoneLoad): the 3 x 3 block round the camera's centre zone, each kept this long after it was last asked for.
+    // The player's characters, whose box is asked for at each look, and the zones of that box (a scratch set).
+    readonly List<Vector3> players = [];
+    readonly HashSet<ZoneCoordinate> boxZones = [];
+    // The original's loaded zones (ZoneLoad): each zone with the tick until which its latest request keeps it loaded (RefreshLoaded).
     readonly Dictionary<ZoneCoordinate, long> loadedUntil = [];
     ZoneCoordinate? loadCentre;
 
@@ -102,7 +104,7 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
     public PopulationData Data => data;
     public PopulationSettings Settings => settings;
     public SiteStatus StatusOf(int site) => states[site].Status;
-    /// <summary>The zones active as of the last look.</summary>
+    /// <summary>The zones active as of the last look: the loaded zones (<see cref="RefreshLoaded"/>), where the squads, the items and the navmesh are kept.</summary>
     public IReadOnlyCollection<ZoneCoordinate> ActiveZones => active;
     public Vector3? Focus => focus;
 
@@ -138,7 +140,8 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
 
     /// <summary>
     /// The RACE <c>severed limbs</c> item of <paramref name="limb"/> on the ground, if the race has one for it (docs/game/character-stats.md "Limb replacements and robots"). The original drops it at the
-    /// limb's <c>bone name 2</c> and lets physics take it; here it lies flat beside the character on that side (an engine choice), turned by a roll of the tick.
+    /// limb's <c>bone name 2</c> and lets physics take it; here it lies flat beside the character on that side (an engine choice), turned by a roll of the tick, and the host
+    /// drops it from that bone's place (<see cref="FallSource"/>).
     /// </summary>
     void DropSeveredLimb(World world, int slot, CharacterCold cold, int limb)
     {
@@ -155,7 +158,9 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
         // On the ground under that spot (a drop beside a character on a slope or a step would otherwise hang at its feet's height), as an item dropped from the inventory.
         var at = hot.Position + right * (5 * side) + ahead * forward;
         at.Y = world.Walkability.GroundHeight(at.X, at.Z, hot.Position.Y);
-        world.GroundItems.Drop(item, at, yaw);
+        // The stump: the part of the limb's slot and its bone name 2 (BodyPartTemplate.BoneName2; FUN_14064edc0 reads it for the item's pose).
+        string? stump = cold.Medical?.Parts.FirstOrDefault(p => p.Template.LimbSlot == limb)?.Template.BoneName2;
+        world.GroundItems.Drop(item, at, yaw, stump is { Length: > 0 } bone ? new FallSource(world.Characters.IdOf(slot), bone, world.Tick) : null);
     }
 
     public void SlowWorld(World world)
@@ -241,42 +246,58 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
     }
 
     /// <summary>
-    /// The zones the original has loaded, which decide when a corpse goes (docs/game/character-stats.md "Corpses", <c>FUN_140a0f820</c>, <c>FUN_140a0f080</c>, <c>FUN_140a0b830</c>,
-    /// <b>Verified</b>): the block of one zone each side round a centre zone, asked for again at every look; the centre moves to the camera's zone only once the camera is more than
-    /// <see cref="ZoneActivation.RecentreDistance"/> from the centre zone's middle on either axis; a zone nobody asks for any more stays loaded <see cref="ZoneActivation.LoadedLingerSeconds"/>.
+    /// The zones the original has loaded (docs/game/character-stats.md "Corpses", <c>FUN_140a0f820</c>, <c>FUN_140a0f080</c>, <c>FUN_140a0b830</c>, <c>FUN_140a0f640</c>,
+    /// <b>Verified</b>), which decide what the squads, the corpses and the navmesh keep: the block of one zone each side round a centre zone, asked for again at every look (the
+    /// centre moves to the camera's zone only once the camera is more than <see cref="ZoneActivation.RecentreDistance"/> from the centre zone's middle on either axis; kept
+    /// <see cref="ZoneActivation.LoadedLingerSeconds"/> after), and the box round each player character (<see cref="ZoneActivation.Box"/>, a ring of one more zone when Fast zone
+    /// hopping is on; kept <see cref="ZoneActivation.BoxLingerSeconds"/> after). A zone stays loaded until the latest of its requests has run out.
     /// </summary>
     void RefreshLoaded(World world, Vector3 camera)
     {
         bool move = loadCentre is not { } c
             || MathF.Abs(camera.X - ZoneActivation.CentreOf(c).X) > ZoneActivation.RecentreDistance || MathF.Abs(camera.Z - ZoneActivation.CentreOf(c).Y) > ZoneActivation.RecentreDistance;
         if (move) loadCentre = WorldLayout.ZoneOf(camera.X, camera.Z);
-        long until = world.Tick + (long)Math.Ceiling(ZoneActivation.LoadedLingerSeconds / world.TickSeconds);
+        long now = world.Tick;
+        long until = now + (long)Math.Ceiling(ZoneActivation.LoadedLingerSeconds / world.TickSeconds);
         var centre = loadCentre!.Value;
         for (int x = centre.X - 1; x <= centre.X + 1; x++)
             for (int y = centre.Y - 1; y <= centre.Y + 1; y++)
-                if (x >= 0 && x < WorldLayout.ZoneCount && y >= 0 && y < WorldLayout.ZoneCount) loadedUntil[new ZoneCoordinate(x, y)] = until;
+                Ask(new ZoneCoordinate(x, y), until);
+        if (players.Count > 0)
+        {
+            long boxUntil = now + (long)Math.Ceiling(ZoneActivation.BoxLingerSeconds / world.TickSeconds);
+            boxZones.Clear();
+            foreach (var p in players) ZoneActivation.AddZonesAround(p, settings.FastZoneHopping ? 1 : 0, boxZones);
+            foreach (var zone in boxZones) Ask(zone, boxUntil);
+        }
         List<ZoneCoordinate>? gone = null;
-        foreach (var (zone, t) in loadedUntil) if (t < world.Tick) (gone ??= []).Add(zone);
+        foreach (var (zone, t) in loadedUntil) if (t < now) (gone ??= []).Add(zone);
         if (gone is not null) foreach (var zone in gone) loadedUntil.Remove(zone);
         world.LoadedZones = new HashSet<ZoneCoordinate>(loadedUntil.Keys);
     }
 
+    /// <summary>Keeps a zone of the grid loaded until <paramref name="until"/>, unless a later request already does.</summary>
+    void Ask(ZoneCoordinate zone, long until)
+    {
+        if (!zone.IsInsideGrid) return;
+        if (!loadedUntil.TryGetValue(zone, out long was) || was < until) loadedUntil[zone] = until;
+    }
+
     void RefreshZones(World world)
     {
-        // The player's characters activate the zones round them (game-loop.md "Zones": the player's faction); the camera focus does only without a player.
-        foci.Clear();
+        // The player's characters ask for the box round them (the player's faction, docs/game/character-stats.md "Corpses"); the camera focus centres the block, and alone it does without a player.
+        players.Clear();
         if (world.Player.Exists)
         {
             var prev = world.Characters.Previous;
             for (int i = 0; i < prev.Length; i++)
-                if (prev[i].Alive && world.Characters.Cold(i) is { IsPlayer: true }) foci.Add(prev[i].Position);
+                if (prev[i].Alive && world.Characters.Cold(i) is { IsPlayer: true }) players.Add(prev[i].Position);
         }
-        if (foci.Count == 0 && focus is { } camera) foci.Add(camera);
-        if (foci.Count == 0) return;
-        RefreshLoaded(world, focus ?? foci[0]);
+        if (players.Count == 0 && focus is null) return;
+        RefreshLoaded(world, focus ?? players[0]);
         (active, spareActive) = (spareActive, active);
         active.Clear();
-        foreach (var f in foci) ZoneActivation.AddZonesAround(f, settings.FastZoneHopping ? 1 : 0, active);
+        foreach (var zone in loadedUntil.Keys) active.Add(zone);
         world.VisitedZones.UnionWith(active);
         world.ActiveZones = active;
         long grace = (long)Math.Ceiling(settings.UnloadGraceSeconds / world.TickSeconds);

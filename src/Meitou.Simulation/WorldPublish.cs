@@ -240,7 +240,8 @@ public sealed partial class World
             ? bodies.WithCombatMode(x0, cold, combat?.IsInCombatMode(Characters, id, cold, true, true) == true) : cold.Extended;
         return new HudView(med.Blood, Bodies.MedicalState.BloodCapacity(race, stats.Strength, med.HasStatsObject, med.ScaleK, med.ScaleZ), med.Bleeding,
             cold.Fighter?.EncumbranceFactor ?? 1, lines.AsReadOnly(), extended) { BleedRate = race.BleedRate, Fed = med.Fed, Robot = race.IsRobot,
-            ExtendedTips = extended is { } x ? HudTips.Extended(cold, med, race, stats, x, constants) : null, Skill = SkillLine(id, cold, med, race, stats, hot, combat, mode) };
+            ExtendedTips = extended is { } x ? HudTips.Extended(cold, med, race, stats, x, constants) : null, Skill = SkillLine(id, cold, med, race, stats, hot, combat, mode),
+            KoPoint = constants is null ? null : Bodies.MedicalState.KoPoint(constants, stats.Toughness) };
     }
 
     /// <summary>

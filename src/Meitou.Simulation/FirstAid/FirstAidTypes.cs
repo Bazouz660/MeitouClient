@@ -9,7 +9,7 @@ public sealed record TreatOrder(IReadOnlyList<CharacterId> Medics, CharacterId P
 
 /// <summary>
 /// Orders the medics (the selection when the list is empty) to splint <see cref="Patient"/> with a splint kit (the original's verb "Splint", <c>SPLINT_ORDER</c>): walk to it, then splint
-/// part after part until none is left or the kit is used up. A patient among the medics splints itself; a medic without a kit refuses.
+/// part after part until none is left or the kit is used up. A patient among the medics splints itself; a medic without a splint kit in its own inventory or backpack refuses.
 /// </summary>
 public sealed record SplintOrder(IReadOnlyList<CharacterId> Medics, CharacterId Patient) : SimCommand;
 

@@ -10,17 +10,22 @@ using Meitou.Data.World;
 
 namespace Meitou.Simulation;
 
-/// <summary>Which zones a focus keeps active (docs/game/game-loop.md "Zones", Verified for the ring, Observed for the box).</summary>
+/// <summary>
+/// The zones the original keeps loaded (docs/game/character-stats.md "Corpses", <b>Verified</b>): the camera's 3 x 3 block and the box round the player's characters.
+/// </summary>
 public static class ZoneActivation
 {
-    /// <summary>Half the side of the box round the focus whose overlapping zones are activated.</summary>
+    /// <summary>Half the side of the box round each player character whose zones are asked for (<c>FUN_140a0f640</c>; its constant is 340.0, <b>Verified</b>).</summary>
     public const float Box = 340;
 
     /// <summary>The camera's distance from the centre zone's middle, per axis, past which the original's loaded block moves (0.9 zones, <c>FUN_140a0f820</c>, <b>Verified</b>).</summary>
     public const float RecentreDistance = 4147.2f;
 
-    /// <summary>How long a loaded zone stays loaded once nothing asks for it (the first of the zone's three timers, <c>FUN_140a0e570</c>, <b>Verified</b>: 4 s).</summary>
+    /// <summary>How long a zone of the camera's block stays loaded once nothing asks for it (timer index 0 of <c>FUN_140a0e570</c>, <b>Verified</b>: 4 s).</summary>
     public const float LoadedLingerSeconds = 4;
+
+    /// <summary>How long a zone of the player's box stays loaded once nothing asks for it (timer index 1: the table default, 6 s; docs/game/character-stats.md "Corpses").</summary>
+    public const float BoxLingerSeconds = 6;
 
     /// <summary>The middle of a zone, X and Z.</summary>
     public static Vector2 CentreOf(ZoneCoordinate zone)

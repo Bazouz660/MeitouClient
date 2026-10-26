@@ -58,6 +58,8 @@ public sealed record HudView(float Blood, float BloodCapacity, float Bleeding, f
     public ExtendedTips? ExtendedTips { get; init; }
     /// <summary>The state panel's "Current Skill" line (null: the line is empty).</summary>
     public CurrentSkillView? Skill { get; init; }
+    /// <summary>The KO point of every shown character (<c>MedicalState.KoPoint</c>): <see cref="Extended"/> has it only for the player and the inspected one. Null without game constants.</summary>
+    public float? KoPoint { get; init; }
 }
 /// <summary>
 /// The state panel's "Current Skill" line (docs/game/ui-screens.md section 4): the skill the job uses, labelled by its stat name (<see cref="Label"/> null), or a fallback with its

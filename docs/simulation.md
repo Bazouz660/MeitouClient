@@ -87,8 +87,8 @@ crime sees deeds and final positions/carry links. Game combat uses `SelfApproach
 
 ## Population
 
-`PopulationSystem`, `SquadFactory`, `CharacterAssembly`, `GeneratedAppearances`: activate zones
-around focus, gate spawning on navmesh readiness, create residents/bar/roaming/wild/nest squads,
+`PopulationSystem`, `SquadFactory`, `CharacterAssembly`, `GeneratedAppearances`: activate the loaded zones
+(the camera's 3 x 3 block and the box round the player's characters, [corpses](game/character-stats.md#corpses)), gate spawning on navmesh readiness, create residents/bar/roaming/wild/nest squads,
 and assemble race appearance, gear, stats and bodies. Counts, roles, offsets, caps, spawn weights
 and world-state gating follow [population research](game/factions-squads-towns.md).
 Missing references become `SquadPlan.Problems`; world states are answered live (`WorldStates`, see Campaigns under the off-screen tier). Residents are housed by the original's building rules with housemates and
@@ -361,8 +361,8 @@ Ground items: `World.GroundItems`, loose items: the save's (zone `1-itemlist`, r
 are not capped); published with a revision. A dropped limb lies 5 units to its side of the character, an item dropped from the inventory 3 units ahead, both at a random
 yaw and on the ground under that spot (`World.Walkability.GroundHeight`, not the character's own height). The original (`FUN_14064edc0`, **Verified** by decompile) makes the RACE `severed limbs`
 item of the cut slot (`SeveredLimbItem`, an `Item` subclass) at the character's `bone name 2` bone of that part: position and orientation from the bone, in-world mode set
-through the item's vfunc +0x228 (`FUN_14075d9b0`: stores them at `+0x48` / `+0xb0`, then `FUN_14075db20`, `FUN_14075e5d0`, which registers its physics body per the item's `persistent` key 1 to 3,
-**Observed**), and a physics body settles it (Havok; its collision shape and the fall are not read). Engine choice: no fall; the host lays a dropped item as it would rest
+through the item's vfunc +0x228 (`FUN_14075d9b0`; its vfunc +0x2d0 `FUN_14075d660` stores them at `+0x48` / `+0xb0`; then `FUN_14075db20` and `FUN_14075e5d0`, which creates the physics object and toggles it by the item's `persistent` key, 1 to 3 only (limbs: 0),
+**Observed**), and its PhysX object (a dynamic capsule from the item's `physics file`, [collision](formats/collision.md#item-physics)) falls from there. Engine choice: the host draws that fall (`GameHost.UpdateFalls`, display only; the simulation keeps the rest point): from the stump's bone (`bone name 2`, sampled once its character is drawn), free fall at 98.1 from rest, a drift to the rest point, then a 0.25 s tip; the placement comes on landing (none in the animation sandbox, where the piece stays drawn). Where the original's limb comes to rest is **Unknown**. Otherwise the host lays a dropped item as it would rest
 (`GameHost.LaidFlat`): its mesh bounds' thinnest axis up (the severed limb meshes are plain static meshes lying along +X, bounds read equal to their vertices, **Verified** on every `severed limbs` mesh of the install's
 merged data), its yaw, tilted to the terrain slope under it (the heights round the drop point over the item's own size; not on a building's floor, where the simulation's ground is used flat), and set down so that none of a
 5x5x5 lattice of points of its bounds is below the rendered terrain under it. A weapon, modelled along +Y, lies on the flat of its blade. Read items are drawn by their saved position and whole rotation. The host adds each as a runtime world-object
@@ -1173,7 +1173,7 @@ crafting benches, generators and batteries. Facts: [production](game/buildings-p
     - 58 Medic / 57 Robotics (`FirstAidSystem.HealSomeone`) and 250 Splint Rigging (`SplintSomeone`): the original's finders
       ([medic jobs](game/ai-tasks.md#medic-jobs)) over characters within sight (stand-in for the sensed list): score = need (untreated HP for
       the kits it has) × relation factor × nearness (1 - d²/1843²); the medic itself scores its need. 58 skips robot races. Splinting takes
-      only its own faction, at skill min(medic, kit quality). Engine: no same-building floor, the splint weight is 1, no give-up list.
+      only its own faction, at skill min(medic, kit quality), and needs a splint kit in the medic's own inventory or backpack (as the original, [kit search](game/character-stats.md#first-aid-update)); its weight is 0.1 ([splints](game/character-stats.md#splints)). Engine: no same-building floor, no give-up list.
     - 148 rescue: the carry pass (its own faction; with Rescue Allies also allied factions, `CarrySystem.Rescues`).
     - 238 Foraging animals (`CarrySystem.Forage`): the nearest downed, uncarried animal within sight holding items, not of its own faction
       (engine choice), is looted (take-all and butchering).

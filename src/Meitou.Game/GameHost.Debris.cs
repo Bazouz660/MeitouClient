@@ -3,6 +3,7 @@ using Meitou.Data.World;
 using Meitou.Rendering;
 using Meitou.Rendering.Gpu;
 using Meitou.Simulation;
+using Meitou.Simulation.Items;
 
 namespace Meitou.Game;
 
@@ -42,6 +43,27 @@ sealed partial class GameHost
 
     readonly List<Piece> pieces = [];
     readonly Dictionary<string, string[]> limbMeshes = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// The fall of a severed limb (<see cref="StartFall"/>; docs/formats/collision.md "Item physics": the original's item is a dynamic PhysX body made at the stump's bone with no
+    /// speed of its own, in the scene's gravity 98.1, tipping to rest on the ground). Its mesh's origin falls from <see cref="Start"/> (the stump, once sampled) to <see cref="Rest"/>'s
+    /// height, drifting at <see cref="Drift"/> (units/s), then turns from <see cref="Hanging"/> to <see cref="Lying"/> in <see cref="FallTipTime"/>, and the item is shown at rest.
+    /// </summary>
+    sealed class FallingLimb
+    {
+        public required GroundItemSnapshot Ground;
+        public required string Mesh;
+        public required FallSource Stump;
+        public required Vector3 Rest;
+        public required float RestY;
+        public required Quaternion Hanging, Lying;
+        public Vector3? Start;
+        public float Flight;
+        public Vector2 Drift;
+    }
+
+    readonly List<FallingLimb> falls = [];
+    const float FallGravity = 98.1f, FallTipTime = 0.25f, FallUnsampledSeconds = 2;
 
     /// <summary>A burst: blood all round and the pieces thrown.</summary>
     void Burst(in BloodMark m, World world)
@@ -138,6 +160,7 @@ sealed partial class GameHost
         pieces.RemoveAll(p => world.Tick - p.Born >= BodySystem.CorpseTicksOf(world));
         gpu.DebrisPieces.Clear();
         AddBolts();
+        UpdateFalls(world);
         if (pieces.Count == 0) return;
         int steps = Math.Clamp((int)MathF.Ceiling(dt * 60), 1, 8);
         float h = dt / steps;
@@ -146,6 +169,54 @@ sealed partial class GameHost
             for (int s = 0; s < steps && !p.Resting && h > 0; s++) Step(p, h);
             gpu.DebrisPieces.Add(new DebrisPiece(p.Mesh, p.Scale, p.Rotation, p.Position));
         }
+    }
+
+    /// <summary>
+    /// The severed limbs falling or tipping (docs/simulation.md "Ground items"), timed from the drop's tick by the shown tick and the sub-tick alpha, not by the frame's time, so a
+    /// picture taken n ticks after the cut shows the fall at that point (still while paused). The stump is sampled once its character is drawn; with no stump drawn after
+    /// <see cref="FallUnsampledSeconds"/> the item is set at rest. Landed, it becomes a ground item's placement; with no placement layer (the animation sandbox) the piece stays drawn.
+    /// </summary>
+    void UpdateFalls(World world)
+    {
+        double clock = session.ShownTick + session.SimulationAlpha;
+        float tick = world.TickSeconds;
+        for (int i = falls.Count - 1; i >= 0; i--)
+        {
+            var f = falls[i];
+            if (f.Start is null) SampleStump(f);
+            float elapsed = MathF.Max(0, (float)((clock - f.Stump.Tick) * tick));
+            bool landed = f.Start is null ? elapsed > FallUnsampledSeconds : elapsed >= f.Flight + FallTipTime;
+            if (landed && ActiveObjects is not null)
+            {
+                falls.RemoveAt(i);
+                ShowGround(f.Ground, f.Lying, f.RestY);
+                continue;
+            }
+            if (f.Start is not { } start)
+            {
+                if (landed) gpu.DebrisPieces.Add(new DebrisPiece(f.Mesh, 1, f.Lying, f.Rest));
+                continue;
+            }
+            if (elapsed < f.Flight)
+            {
+                var at = new Vector3(start.X + f.Drift.X * elapsed, start.Y - 0.5f * FallGravity * elapsed * elapsed, start.Z + f.Drift.Y * elapsed);
+                gpu.DebrisPieces.Add(new DebrisPiece(f.Mesh, 1, f.Hanging, at));
+            }
+            else
+            {
+                float s = Math.Min(1, (elapsed - f.Flight) / FallTipTime), eased = s * s * (3 - 2 * s);
+                gpu.DebrisPieces.Add(new DebrisPiece(f.Mesh, 1, Quaternion.Slerp(f.Hanging, f.Lying, eased), f.Rest));
+            }
+        }
+    }
+
+    /// <summary>Samples the stump's bone where its character is drawn now (the pose of the last frame); the flight and the drift follow from its height over the rest point.</summary>
+    void SampleStump(FallingLimb f)
+    {
+        if (gpu?.Characters is not { } characters || characters.BonePosition(DrawKey(f.Stump.Character), f.Stump.Bone) is not { } start) return;
+        f.Start = start;
+        f.Flight = MathF.Sqrt(2 * MathF.Max(start.Y - f.RestY, 0) / FallGravity);
+        f.Drift = f.Flight > 0 ? new Vector2(f.Rest.X - start.X, f.Rest.Z - start.Z) / f.Flight : Vector2.Zero;
     }
 
     readonly Dictionary<int, ProjectileSnapshot> boltsBefore = [];

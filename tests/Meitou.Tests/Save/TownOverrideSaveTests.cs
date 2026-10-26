@@ -73,7 +73,7 @@ public class TownOverrideSaveTests
         Assert.Equal((77, true, data.FactionIndex("20-t")), (door.Lock!.Level, door.Lock.Locked, door.Owner));
 
         // B takes over at the next load: the house is the level's again (a fresh roll, unlocked), the new faction's.
-        Focus(a, new Vector3(-50000, 0, -50000), 60);
+        Focus(a, new Vector3(-50000, 0, -50000), 180);   // the block's 4 s, then the 1 s grace
         states.Holding.UnionWith(["91-t", "92-t"]);
         Focus(a, SyntheticTown.Centre, 2);
         Assert.Equal("51-t", data.Sites[0].Replacement?.Id);

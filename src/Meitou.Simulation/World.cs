@@ -155,11 +155,11 @@ public sealed partial class World : IDisposable
     /// </summary>
     public HashSet<Meitou.Data.World.ZoneCoordinate> VisitedZones { get; } = [];
     /// <summary>
-    /// The zones active as of the population's last look (null before one, so no zone is judged inactive). The collection is the population's own and swapped by it: read within a tick only. Not hashed.
+    /// The zones active as of the population's last look, which are the loaded zones (null before one, so no zone is judged inactive): squads, loose items and the navmesh are kept there. The collection is the population's own and swapped by it: read within a tick only. Not hashed.
     /// </summary>
     public IReadOnlyCollection<Meitou.Data.World.ZoneCoordinate>? ActiveZones { get; set; }
     /// <summary>
-    /// The zones the original has loaded as of the population's last look (<see cref="PopulationSystem"/>, docs/game/character-stats.md "Corpses"; null before one): a corpse in a zone not in it
+    /// The zones the original has loaded as of the population's last look (<see cref="PopulationSystem"/>: the camera's block and the player's box; docs/game/character-stats.md "Corpses"; null before one): a corpse in a zone not in it
     /// is removed at once (<see cref="BodySystem"/>, "corpse unloaded"). Not hashed.
     /// </summary>
     public IReadOnlyCollection<Meitou.Data.World.ZoneCoordinate>? LoadedZones { get; set; }

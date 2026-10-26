@@ -35,10 +35,10 @@ public sealed partial class MedicalState
             {
                 p.Flesh -= bite;
                 p.Bandage -= bite;
-                CheckPart(i, ctx, events, inHitPath: false);
+                CheckPart(i, ctx, events, inHitPath: false, Standing);
                 return Dead && Cause == DeathCause.Eaten;
             }
-            if (limbLoss && limb && p.Limb is LimbState.Original or LimbState.Crushed && p.Template.Severance) Sever(i, ctx, events);
+            if (limbLoss && limb && p.Limb is LimbState.Original or LimbState.Crushed && p.Template.Severance) Sever(i, ctx, Standing, events);
         }
         if (EatenPasses > EatenPassesToDeath)
         {

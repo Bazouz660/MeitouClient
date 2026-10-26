@@ -162,8 +162,8 @@ public sealed partial class FirstAidSystem
     // ------------------------------------------------------------------ the finder
 
     /// <summary>
-    /// The Medic / Robotics finder (<c>FUN_14099f690</c>; 58 passes <paramref name="robotics"/> false, 57 true) and the Medic button's one look. Gates (engine): awake, not fighting, no fight in its
-    /// squad (the goal's desire <c>FUN_140998410</c>: 0.01 with enemies about, 0.1 while carrying someone, else 1). Returns the best patient's slot and score, -1 for none.
+    /// The Medic / Robotics finder (<c>FUN_14099f690</c>; 58 passes <paramref name="robotics"/> false, 57 true) and the Medic button's one look. Gates: awake and not fighting; an NPC medic
+    /// also waits while its squad fights (engine stand-in for the goal's desire <c>FUN_140998410</c>: 0.01 with enemies about, 0.1 while carrying someone, else 1). Returns the best patient's slot and score, -1 for none.
     /// <list type="number">
     /// <item><b>Allies</b> (sensed allies, not dead): not a robot race unless robotics; not carried by an enemy of the medic; not fighting; an NPC medic skips the maimed (<see cref="Maimed"/>). Score =
     /// <see cref="Need"/> x <see cref="Nearness"/>; the same faction always counts, another one at 0.1 and, for a player medic, only with Heal Allies; x 0.05 when another medic works on it.
@@ -180,7 +180,9 @@ public sealed partial class FirstAidSystem
         var next = table.Next;
         var cold = table.Cold(i)!;
         if (cold.Medical is not { Incapacitated: false } own || cold.Race is null || cold.Stats is null || cold.InCombat || cold.IsImprisoned) return (-1, 0);
-        if (cold.SquadId >= 0 && world.Squads.Find(cold.SquadId) is { } squad && Fighting(table, squad)) return (-1, 0);
+        // No fight in the squad: an NPC's stand-in for its goal's desire (FUN_140998410 is 0.01 with enemies about). The finder has no such test and the job list keeps any job
+        // whose desire is above 0 (FUN_14050e5b0), so a player's medic job and Medic order treat a downed mate while the squad fights.
+        if (!cold.IsPlayer && cold.SquadId >= 0 && world.Squads.Find(cold.SquadId) is { } squad && Fighting(table, squad)) return (-1, 0);
         bool organic = cold.Inventory is { } inv && Best(inv, ItemInfo.FirstAidKitFunction) is not null, robotic = cold.Inventory is { } inv2 && Best(inv2, ItemInfo.RobotKitFunction) is not null;
         bool healAllies = (world.Player.SquadAi & SquadAi.Heal) != 0;
         bool heals = Relations is { } rel && rel.Contains(cold.Faction) && rel.Factions[cold.Faction].HealsStrangers;
@@ -307,7 +309,7 @@ public sealed partial class FirstAidSystem
     }
 
     /// <summary>
-    /// The Splint Rigging finder (<c>FUN_14099e240</c>, <b>Verified</b>): X = min(medic skill, the best splint kit's quality) (no splint kit in its inventory or backpack: nothing); sensed allies not of a robot
+    /// The Splint Rigging finder (<c>FUN_14099e240</c>, <b>Verified</b>): X = min(medic skill, the quality of the splint kit it takes: its own inventory or backpack, the fewest charges; none: nothing); sensed allies not of a robot
     /// race, not carried by an enemy, of the medic's own faction only, whose <c>needsSplint</c>(X) holds weigh 0.1 x <see cref="Nearness"/> (x 0.05 when another medic works on it); the medic itself 0.1.
     /// </summary>
     bool SplintSomeone(World world, int i, List<(int Medic, int Patient)> taken)
@@ -316,9 +318,9 @@ public sealed partial class FirstAidSystem
         var next = table.Next;
         var cold = table.Cold(i)!;
         if (cold.Medical is not { Incapacitated: false } own || cold.Race is not { } ownRace || cold.Stats is not { } stats || cold.InCombat) return false;
-        if (cold.Inventory is null || Best(cold.Inventory, ItemInfo.SplintKitFunction) is not { } kit) return false;
+        if (OwnKit(cold, ItemInfo.SplintKitFunction) is not { } kit) return false;   // the medic's own kit, as the order and the splint use
         if (cold.SquadId >= 0 && world.Squads.Find(cold.SquadId) is { } squad && Fighting(table, squad)) return false;
-        float skill = MathF.Min(stats[StatsEnumerated.Medic] * own.StatMultiplier(StatsEnumerated.Medic), Items.Info(kit.Record)?.Quality ?? 0);
+        float skill = MathF.Min(stats[StatsEnumerated.Medic] * own.StatMultiplier(StatsEnumerated.Medic), Items.Info(kit.Item.Record)?.Quality ?? 0);
         float range = AggroSystem.RangeOf(cold, AggroSystem.OutdoorSight);
         int best = -1;
         float bestScore = 0;

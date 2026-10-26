@@ -67,7 +67,7 @@ public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions 
                     foreach (var id in Who(world, splint.Medics))
                         if (table.TryResolveNext(id, out int slot) && table.Cold(slot) is { Race: not null, Stats: not null } cold && CanAct(cold))
                         {
-                            if (FindKit(world, slot, cold, ItemInfo.SplintKitFunction) is null) world.Bark(id, "I don't have a splint kit.");
+                            if (OwnKit(cold, ItemInfo.SplintKitFunction) is null) world.Bark(id, "I don't have a splint kit.");   // the medic's own kit only (the original's kit search)
                             else Begin(world, slot, splint.Patient, CharacterTask.Idle, splint: true);
                         }
                     break;
@@ -327,8 +327,9 @@ public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions 
     void Splint(World world, int m, CharacterCold medicCold, MedicalState medical, CharacterStats stats, RaceData medicRace, MedicalState body, RaceData race)
     {
         var table = world.Characters;
-        if (FindKit(world, m, medicCold, ItemInfo.SplintKitFunction) is not { } kit)
+        if (OwnKit(medicCold, ItemInfo.SplintKitFunction) is not { } kit)
         {
+            Say(world, m, medicCold.TreatTarget, KitEmpty);   // the rig task's kit search finds none (FUN_14034ef20, event 22)
             End(table, m);
             return;
         }
@@ -376,6 +377,33 @@ public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions 
     }
 
     static int FunctionOf(bool robot) => robot ? ItemInfo.RobotKitFunction : ItemInfo.FirstAidKitFunction;
+
+    /// <summary>
+    /// The kit a medic uses for splints, from its own inventory only (the original's kit search, <c>FUN_14033c740</c> at vtable +0x38 of the splint and first aid tasks, <b>Verified</b>):
+    /// the main grid, else the worn backpack's contents; the item of the function with the fewest charges above zero (<see cref="Fewest"/>). Squad mates' kits are not searched.
+    /// </summary>
+    static (ItemInstance Item, Inventory Owner)? OwnKit(CharacterCold cold, int function)
+    {
+        if (cold.Inventory is not { } own) return null;
+        if (Fewest(own.Items, function) is { } main) return (main, own);
+        return Fewest(own.Backpack?.Contents?.Items, function) is { } worn ? (worn, own) : null;
+    }
+
+    /// <summary>
+    /// The item of the function with charges above zero and the fewest of them, the first of equals (<c>FUN_140746480</c>, <b>Verified</b>: the search starts at 99999, so an item with
+    /// 99999 charges or more never qualifies). Null when none.
+    /// </summary>
+    static ItemInstance? Fewest(IEnumerable<ItemInstance>? items, int function)
+    {
+        if (items is null) return null;
+        ItemInstance? best = null;
+        foreach (var item in items)
+        {
+            if (item.Type != FcsRecordType.ITEM || item.ItemFunction != function || item.Charges <= 0 || item.Charges >= 99999 || item.Quantity <= 0) continue;
+            if (best is null || item.Charges < best.Charges) best = item;
+        }
+        return best;
+    }
 
     /// <summary>The medic's own best kit of an <c>item function</c>, else a squad mate's within <see cref="FirstAidSettings.KitReach"/> (an engine choice).</summary>
     (ItemInstance Item, Inventory Owner)? FindKit(World world, int slot, CharacterCold cold, int function)

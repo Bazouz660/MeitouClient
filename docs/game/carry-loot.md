@@ -226,7 +226,7 @@ perception mark and +0x110 are not modelled.
 11. The **speed caps** of the `carrying left/right` movement clips (RACE `male/female carry ragdoll` are unused: [ragdolls](ragdolls.md)).
 12. `FUN_14079c600`, called when the player picks up a non-player character, and **`CharStats+0x12b`** (set by slot 97 order kind 0xc), which turns
     both rescue goals off.
-13. The terms and the random roll of `FUN_140644980` on the put-down path (section 2.2), and the relation test `FUN_1406b27b0` of "friendly".
+13. The put-down KO time: `FUN_140644980` has no roll and only the blood term (**Verified**, [character-stats](character-stats.md#cut-off-and-leg-loss)); Meitou's `PutDownKoSeconds` still uses the general terms (gap). The relation test `FUN_1406b27b0` of "friendly".
 
 ## Expression reference
 
