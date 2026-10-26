@@ -317,7 +317,7 @@ that activation menu-only; once the ruin becomes an unfinished construction site
 | Building | Pointer | Quick right click |
 |---|---|---|
 | not complete (+0x160, [construction](buildings-production.md#construction-state)) | `build` | 2 BUILD |
-| broken (slot 97: +0x3b6 machines, +0x3ec doors, never for plain buildings) | `spanner` | 95 REPAIR |
+| broken (slot 97: +0x3b6 machines, +0x3ec doors, never for plain buildings; a machine is broken only while unfinished, [broken machines](buildings-production.md#power), so only doors reach it) | `spanner` | 95 REPAIR |
 | door (+0x1a0) of an incomplete house (+0x368) | `build` | 2 BUILD on the house |
 | door | own: `lock` if its lock is locked, else `door`; another faction's: `lockpick` if locked (with a tooltip, text **Unknown**), else `door`; `spanner` below 90 % health | another faction's locked door without Alt: "Hold down the ALT key to pick the lock." and a move to the door; otherwise 72 OPEN_DOOR, or 73 CLOSE_DOOR when open (+0x380 = 1) |
 | function 18 (BF_FLUFF), or slot 107 (+0x198, meaning **Unknown**) is 7, 9 or 12, with an inventory (without one, or when `FUN_14004a0cf` refuses another faction's, only the selection runs) | `search` when own (or the owner faction has flag +0x1d0), else `scavenge` | 26 LOOT_TARGET; a shop (function 9) of another faction without Alt: "Hold down the ALT key to steal items" and 29 MOVE |

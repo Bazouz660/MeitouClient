@@ -673,9 +673,20 @@ and `power capacity` (battery store, "in seconds" per fcs.def), plus research ([
 - **Save** (building `vfunc_17`/`18`): bools `power on`, `gets battery`, `broken`; float `batterycharge`.
 - **Broken machines** (**Verified**, decompile and writer scan, 2026-10-26): `broken` is UseableStuff `+0x3b6` (`setBroken` `FUN_1400f6d10`, a no-op for plain buildings), set by every
   dismantle step (`Building::addDismantleProgress` `FUN_1402a2860`), cleared by a build step that leaves progress above 0 (`addConstructionProgress` `FUN_1405595a0`), by setting progress above 0
-  (`FUN_140559ad0`) and by completion (`FUN_140562340`); also loaded (`FUN_1402a1750`). A broken turret cannot be manned ([combat](combat.md#turrets)). Its
-  other effects (production, the status text, REPAIR) are not traced here. Meitou: `Machine.Broken`, saved as `broken`, set and cleared by the dismantle, build, completion and ruin steps; only
-  turret manning reads it; town buildings have no machines, so an NPC town turret is never broken.
+  (`FUN_140559ad0`) and by completion (`FUN_140562340`); also loaded (`FUN_1402a1750`). Every dismantle step also leaves the building incomplete (it drops to
+  target − 1 and clears +0x160 first), so a machine is broken only while unfinished. Readers (**Verified**, scan of `+0x3b6` and its getters, slot 97 `FUN_1400f6d00`
+  and slot 34 `FUN_1400f6d20` of the machine classes; plain, wall and gate buildings return 0):
+  - Slot 114: every class's chain asks slot 97 before completion (`FUN_140300090`; Building / Storage / Useable / Light / Research `FUN_1402fe040`; Turret
+    `FUN_1402fe430`; Crafting `FUN_1403016a0`; Farm `FUN_1400e0310`; RainCollector `FUN_140301410`): `Broken` (Bad) instead of Under construction; a
+    generator's, battery's or wind generator's own word is set after the chain and still wins ([ui-screens](ui-screens.md#selected-building), slot 114).
+  - `Task_UseTurret` (`FUN_1403474f0`): a broken turret cannot be manned ([combat](combat.md#turrets)); unfinished ones cannot be anyway.
+  - Context menu (`FUN_1407a6bc0`) and hover (`FUN_1407fc6e0`): 95 REPAIR / `spanner` only for a complete broken building, which never occurs (above).
+  - Locks (`FUN_140297d60`, `FUN_1402aa590`): a lock whose owner (+8) is broken counts as broken; for a cage or safe being dismantled.
+  - Slot 34 (RootObject "disabled": dead or unconscious characters, broken machines): the world-query filter `FUN_1407865d0` drops them (its users **Unknown**).
+  - Not read by production (slot 150 `FUN_140298700`, slot 109 `FUN_140296e00`), power (slots 163, 166, `FUN_140299370`), `Task_OperateMachine`, or the
+    engineers' finder (slot 101 `FUN_1400f6b70`: progress below target).
+  Meitou: `Machine.Broken`, saved as `broken`, set and cleared by the dismantle, build, completion and ruin steps; the header (`PlayerInterface.BuildingLines`) and
+  turret manning read it. The lock rule is not built: Meitou registers no lock of its own for a player-built cage or safe.
 - **Status strings** (`GeneratorBuilding::vfunc_114`): "Out of fuel", battery "Charging" / "Draining" / "Stored" / "Empty".
 - Data (**Verified**, probe): Small Generator 40, Generator II 100, Wind Generator 50, Small Wind 25, Wind II 100,
   Battery Bank 40 / capacity 60; Weapon Smith -8, refineries -10 to -40, Research Bench III-VI -10 to -30. Power

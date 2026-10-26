@@ -107,12 +107,15 @@ sealed partial class PlayerInterface
             if (!site.Complete) state.Add(site.Paused ? new("", Loc.Tr("[PAUSED]"), ValueColour: PausedColour, Action: "meitou:building-pause")
                 : new("", Loc.Tr("PAUSE CONSTRUCTION"), ValueColour: MainColour, Action: "meitou:building-pause"));
         }
-        if (site is { Destroyed: true }) { status = "Broken"; bad = true; }
+        // Slot 114 asks slot 97 (broken, +0x3b6) before completion: a machine being dismantled reads Broken, not Under construction. A generator's own word still comes after.
+        var unfinished = site is { Complete: false } && own ? Machine(focus.SiteId) : null;
+        if (site is { Destroyed: true } || unfinished is { Broken: true }) { status = "Broken"; bad = true; }
         else if (site is { Complete: false })
         {
             status = site.Dismantling ? "Being dismantled" : site.Paused ? "Paused" : "Under construction";
             bad = true;
         }
+        if (unfinished is not null && GeneratorWord(unfinished) is { } word) (status, bad) = word;
         else
         {
             if (FirstDoor(focus) is { } door)
