@@ -1,5 +1,4 @@
-| countA, then countA ids | the **active** list (manager +0x48: triggered, not dismissed; written first), empty in the sample |
-| countB, then countB ids | the **pending** list (manager +0x28, written second), 30 ids 4..33 in the sample; an id in neither list is finished (the sample: tutorials 0-3 seen) |# UI screens
+# UI screens
 
 Original MyGUI stack/resources/layouts, MainBar/Overview and menu/inventory/trade/dialogue/build/
 tutorial binary research. Catalog and named checks below. Current native compatibility:
@@ -1137,8 +1136,8 @@ the same layout, **Observed**). The file is written to `./__tutorials.data` in t
 |---|---|
 | magic | u32 0xBAAAAAAD (bytes AD AA AA BA) |
 | total | u32 = number of tutorial items held by the manager (34, equal to the top-level class count) |
-| countA, then countA ids | u32 list taken from the manager object at +0x48 (written first), empty in the sample |
-| countB, then countB ids | u32 list taken from the manager object at +0x28 (written second), 30 ids 4..33 in the sample |
+| countA, then countA ids | the **active** list (manager +0x48: triggered, not dismissed; written first), empty in the sample |
+| countB, then countB ids | the **pending** list (manager +0x28, written second), 30 ids 4..33 in the sample; an id in neither list is finished (the sample: tutorials 0-3 seen) |
 
 ### 8. Damage floaters
 
