@@ -518,6 +518,3 @@ docs/meitou-ui/reference/textures/
 
 # Rendered from the game's UI atlas by make-labels.ps1
 labels/
-
-# graphify knowledge graph (local tool output)
-graphify-out/
