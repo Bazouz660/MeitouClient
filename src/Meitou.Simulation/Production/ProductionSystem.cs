@@ -272,6 +272,11 @@ public sealed partial class ProductionSystem : ITickSystem
                 case QueueCraft craft: QueueCraft(world, craft); break;
                 case CancelCraft cancel: CancelCraft(world, cancel); break;
                 case RepeatCrafts repeat: if (world.Machines.Find(repeat.Site)?.Craft is { } state) { state.Repeat = repeat.Repeat; world.Machines.Touch(); } break;
+                case SetMachinePower set when world.Machines.Find(set.Site) is { } powered:
+                    if (set.PowerOn is { } on) powered.PowerOn = on;
+                    if (set.GetsBattery is { } battery && powered.Data.IsConsumer) powered.GetsBattery = battery;
+                    world.Machines.Touch();
+                    break;
             }
         }
     }

@@ -150,7 +150,7 @@ sealed partial class PlayerInterface
             var rich = session.CurrentSnapshot.InspectedRichness is { } r && r.Instance == focus.Instance ? r : (Meitou.Simulation.Production.RichnessView?)null;
             if (rich is { } richness) AddRichnessLine(richness, stats);
             if (detail?.Bed is null && own && Machine(focus.SiteId) is { } machine) AddMachineLines(machine, stats, extended, ref status, ref bad, rich,
-                session.CurrentSnapshot.InspectedTurret is { } tp && tp.Instance == focus.Instance ? tp : null);
+                session.CurrentSnapshot.InspectedTurret is { } tp && tp.Instance == focus.Instance ? tp : null, player);
             else if (rich is { Efficiency: { } e } unmined)
             {
                 // A rock nobody has mined yet has no machine; the original shows its lines all the same.
@@ -317,6 +317,13 @@ sealed partial class PlayerInterface
         {
             var selection = SelectedIds();
             Confirm("Dismantle", "Are you sure?", () => Say(new Meitou.Simulation.Construction.DismantleOrder(selection, id) { Tick = session.World.Tick }));
+        }
+        else if (action is "machine-power" or "machine-battery" && Machine(id) is { Power: { } pw } machine)
+        {
+            // A click flips the toggle, sets the Generator switch and posts UI_Generator (vfunc 161, FUN_140297a60).
+            bool on = action == "machine-power" ? !(machine.Wind?.PowerOn ?? pw.PowerOn) : !pw.GetsBattery;
+            Sound("UI_Generator", "Generator", on ? "On" : "Off");
+            Say(action == "machine-power" ? new Meitou.Simulation.Production.SetMachinePower(id, PowerOn: on) { Tick = session.World.Tick } : new Meitou.Simulation.Production.SetMachinePower(id, GetsBattery: on) { Tick = session.World.Tick });
         }
         else if (action == "building-pause" && site is { Complete: false }) Say(new Meitou.Simulation.Construction.PauseSite(id, !site.Paused) { Tick = session.World.Tick });
         else if (action == "building-doors") Say(new Meitou.Simulation.Locks.ToggleDoorsOrder(id) { Tick = session.World.Tick });

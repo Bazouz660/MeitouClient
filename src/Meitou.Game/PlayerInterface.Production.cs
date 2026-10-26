@@ -400,7 +400,7 @@ sealed partial class PlayerInterface
     /// <see cref="AddEfficiencyLines"/>, the power lines, and the bench's tech level.
     /// </summary>
     void AddMachineLines(MachineSnapshot m, List<HudLine> stats, List<HudLine> extended, ref string status, ref bool bad, Meitou.Simulation.Production.RichnessView? rich = null,
-        Meitou.Simulation.Combat.TurretPanelView? gun = null)
+        Meitou.Simulation.Combat.TurretPanelView? gun = null, bool own = false)
     {
         string N(int v) => v.ToString(CultureInfo.InvariantCulture);
         string P(float v) => ((int)(Math.Clamp(v, 0, 1) * 100)).ToString(CultureInfo.InvariantCulture) + "%";
@@ -446,6 +446,17 @@ sealed partial class PlayerInterface
                 if (pw.Granted < pw.Demand) { status = pw.Granted <= 0 ? "No power" : "Low power"; bad = true; }
                 stats.Add(new("Power:", $"{F(pw.Granted)}/{F(pw.Demand)}", MainColour, pw.Granted < pw.Demand ? BadColour : null));
             }
+        }
+        // getGUIPower section 6 on the player's machine with a power figure: a consumer's Battery toggle, then Power (FUN_140307bf0).
+        if (own && m.Power is { } toggled)
+        {
+            if (toggled.Kind == PowerKind.Consumer)
+                stats.Add(new("Battery", toggled.GetsBattery ? "On" : "Off", MainColour, toggled.GetsBattery ? GoodColour : BadBrightColour, Loc.Tr(toggled.GetsBattery
+                    ? "This machine will run off of battery power if the main generators should run low or break down."
+                    : "This machine will NOT run off of battery power if the main generators should run low or break down."), "meitou:machine-battery", ButtonWidth: 0.3f));
+            bool on = m.Wind?.PowerOn ?? toggled.PowerOn;
+            stats.Add(new("Power", on ? "On" : "Off", MainColour, on ? GoodColour : BadBrightColour, Loc.Tr(on ? "This machine is switched On" : "This machine is switched Off"),
+                "meitou:machine-power", ButtonWidth: 0.3f));
         }
         if (m.TechLevel > 0) stats.Add(new("Tech level:", N(m.TechLevel), MainColour));
     }

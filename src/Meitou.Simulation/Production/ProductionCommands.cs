@@ -61,3 +61,6 @@ public sealed record CancelCraft(string Site, int Index) : SimCommand;
 
 /// <summary>Sets a bench's repeat flag: a finished craft goes back to the end of the queue.</summary>
 public sealed record RepeatCrafts(string Site, bool Repeat) : SimCommand;
+
+/// <summary>A machine's Power toggle (<c>power on</c>) or, for a consumer, its Battery toggle (<c>gets battery</c>); null leaves one as it is.</summary>
+public sealed record SetMachinePower(string Site, bool? PowerOn = null, bool? GetsBattery = null) : SimCommand;
