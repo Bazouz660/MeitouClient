@@ -117,6 +117,8 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
         var distantDiffuse = textureCache.Get(distant.Diffuse, false);
         if (distantDiffuse is not null) distantDiffuse.KeepAllMips = true;   // its coordinates are the towns' own, not the mesh's: mip streaming leaves it
         distantMaterial = new ObjectMaterialSet([new ObjectPartMaterial(distant, distantDiffuse, null, null, null)]);
+        scaffoldGrid = textureCache.Get(ScaffoldTexture, false);
+        if (scaffoldGrid is not null) scaffoldGrid.KeepAllMips = true;   // drawn at every site, at its own tiling
         foreach (var t in objects.DistantTowns)
             towns.Add(new TownDraw { Town = t, Mesh = meshes.Get(t.MeshPath, distant: true), Centre = t.Position });
     }
@@ -223,6 +225,9 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
     /// </summary>
     public IReadOnlyDictionary<string, float>? Construction { get => construction; set => construction = value; }
     IReadOnlyDictionary<string, float>? construction;
+    /// <summary>The scaffold grid of the sites (the CONSTRUCTION unit <c>scaffold</c>, docs/formats/runtime-materials.md).</summary>
+    const string ScaffoldTexture = "construction.dds";
+    readonly WorldTexture? scaffoldGrid;
 
     /// <summary>One placement ghost: a building's parts laid out at the origin, drawn at <paramref name="World"/> (rotation, then position) in the tint of <paramref name="State"/>.</summary>
     public readonly record struct GhostDraw(IReadOnlyList<PlacedMesh> Parts, Matrix4x4 World, GhostState State);
@@ -1120,15 +1125,17 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
         // Spare instance-matrix component: room GI gain without splitting shared furniture batches (1), plus 2 when its building's lights are off, which darkens
         // its EMISSIVE materials (BuildingLodShaders).
         m.M34 = (IndoorFurniture(inst) ? 1 : 0) + (!depthPass && EmissiveDark is { } dark && dark(inst.Placed.ParentPlacementId ?? inst.Placed.PlacementId) ? 2 : 0);
-        // Another spare component, M44: 1, or for a construction site the height of its scaffold clip plane (BuildingLodShaders.ScaffoldBase + world Y).
+        // Another spare component, M44: 1, or for a construction site BuildingLodShaders.ScaffoldBase + its look's f, or a negative packed tint (PackTint).
+        // A site's M34 also carries its part's mesh top and the scaffold tiling (BuildingLodShaders.PackSite).
         bool site = false;
         bool highlight = HighlightSigns && !depthPass && !inst.Stand && inst.Placed.Owner.GetBool("is sign");
         if (construction is { Count: > 0 } && !inst.Stand && construction.TryGetValue(inst.Placed.ParentPlacementId ?? inst.Placed.PlacementId, out float built))
         {
-            float scaleY = new Vector3(m.M21, m.M22, m.M23).Length();
-            m.M44 = BuildingLodShaders.ScaffoldBase + m.M42 + 1.2f * Math.Clamp(built, 0f, 1f) * gpu.Top * scaleY;
+            m.M44 = BuildingLodShaders.ScaffoldBase + Math.Clamp(built, 0f, 1f);
+            m.M34 += BuildingLodShaders.PackSite(gpu.Top, inst.Placed.Owner.GetFloat("scaffolding tex scale"));
             site = true;
         }
+        else if (inst.Tint < 0) m.M44 = inst.Tint;
         // A map feature (CLIP_INTERIOR, docs/render-interior-cut.md) over a building's interior mask takes the cut; the rest keep the programs without it.
         bool cut = !depthPass && inst.Placed.Kind == PlacedKind.MapFeature && InteriorCut is { Active: true } mask && mask.Overlaps(inst.Centre, inst.Radius);
         if (!blend.IsBlending)
@@ -1461,6 +1468,7 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
             pc.Normal = Texture(d.Normal);
             pc.Diffuse2 = Texture(d.Diffuse2);
             pc.Normal2 = Texture(d.Normal2);
+            pc.Spare = (pc.Spare & 0xFFu) | (scaffoldGrid is { Key: not 0 } grid ? (Texture(grid.Key) + 1) << 8 : 0);
             var part = d.Part;
             bool solid = d.Solid && solidSegment != 0;
             ref var n = ref (depthPass ? ref part.DepthNative : ref (solid ? ref part.ColourSolidNative : ref part.ColourNative));

@@ -17,9 +17,10 @@ public sealed partial class WorldObjectRenderer
 
     /// <summary>
     /// A farm's plants (docs/game/buildings-production.md "Farm plants"): <paramref name="meshes"/> are its plant meshes (the same list keeps its instances),
-    /// <paramref name="transforms"/> where each is drawn now, null for one not drawn (harvested). Drawn like the building's parts, shadows included.
+    /// <paramref name="transforms"/> where each is drawn now, null for one not drawn (harvested), <paramref name="tints"/> each one's colour (death tint and
+    /// brightness). Drawn like the building's parts, shadows included.
     /// </summary>
-    public void SetFarmPlants(string site, IReadOnlyList<PlacedMesh> meshes, IReadOnlyList<Matrix4x4?> transforms)
+    public void SetFarmPlants(string site, IReadOnlyList<PlacedMesh> meshes, IReadOnlyList<Matrix4x4?> transforms, IReadOnlyList<Vector3> tints)
     {
         if (!farmSlots.TryGetValue(site, out var slot)) farmSlots[site] = slot = new();
         if (!ReferenceEquals(slot.Meshes, meshes))
@@ -36,10 +37,21 @@ public sealed partial class WorldObjectRenderer
             var inst = slot.Instances[i];
             inst.Placed = inst.Placed with { Transform = t };
             inst.Transform = t;
+            inst.Tint = PackTint(tints[i]);
             if (inst.Gpu is not { } gpu) continue;
             inst.Centre = Vector3.Transform(gpu.Centre, t);
             inst.Radius = gpu.Radius * new Vector3(t.M11, t.M12, t.M13).Length();
         }
+    }
+
+    /// <summary>
+    /// A tint for the instance matrix's spare M44 (<see cref="BuildingLodShaders"/> <c>instanceTint</c>): each channel in [0, <see cref="BuildingLodShaders.TintRange"/>] to 8 bits,
+    /// packed r + 256 g + 65536 b, stored as -(packed + 1) so it is exact in a float and below every other use of M44.
+    /// </summary>
+    internal static float PackTint(Vector3 c)
+    {
+        static int Q(float v) => (int)MathF.Round(Math.Clamp(v / BuildingLodShaders.TintRange, 0, 1) * 255);
+        return -(Q(c.X) + 256 * Q(c.Y) + 65536 * Q(c.Z) + 1);
     }
 
     /// <summary>A farm's plants are gone (the building is).</summary>

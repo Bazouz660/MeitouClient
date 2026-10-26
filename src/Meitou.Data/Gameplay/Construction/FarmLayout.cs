@@ -152,4 +152,17 @@ public static class FarmLayout
             cos * scale, 0, sin * scale, 0,
             position.X, position.Y + offset, position.Z, 1);
     }
+
+    /// <summary>
+    /// A plant mesh's colour (<c>farm_vs</c>): lerp(white, <c>death colour</c>, saturate(d / <c>death threshold</c> x 0.8)) plus 0.1 x the roll, for a
+    /// <see cref="FarmPart.Static"/> part white less 0.1 x the roll with no death tint.
+    /// </summary>
+    public static Vector3 Tint(FarmData farm, FarmPart part, float random, float death)
+    {
+        if (part.Static) return new Vector3(1 - 0.1f * random);
+        uint c = farm.DeathColour;
+        var dying = new Vector3((c >> 16) & 255, (c >> 8) & 255, c & 255) / 255f;
+        float t = farm.DeathThreshold > 0 ? Math.Clamp(death / farm.DeathThreshold * 0.8f, 0, 1) : 0;
+        return Vector3.Lerp(Vector3.One, dying, t) + new Vector3(0.1f * random);
+    }
 }

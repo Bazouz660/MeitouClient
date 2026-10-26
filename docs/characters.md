@@ -67,7 +67,10 @@ items flip their normal map's green (skin.hlsl), so their binormal is the opposi
 their darken and green flip are **Unknown**; Meitou applies neither (both keyed on `PartMaterial.Worn`).
 Worn items (template `Skinned`, `AppearanceBase::setupItemMaterial` `FUN_140536210`) write gloss = diffuse alpha × `glossMult`, metalness = colour
 map blue; nothing sets `glossMult` there and `Skinned_FP` has no default, so it is 0: worn clothing is matte (**Observed**: no setter in the function,
-no default in `skin.program`). Items attached with their own mesh (`StaticObject`) keep `glossMult` 1. Meitou: worn metalness is not applied (**gap**).
+no default in `skin.program`). Items attached with their own mesh (`StaticObject`) keep `glossMult` 1. Lighting (**Verified**, `deferred.hlsl` / `rtt.hlsl`, `lightingFunctions.hlsl`): specular colour = lerp(0.04, albedo, metalness),
+diffuse albedo x (1 - metalness), diffuse light x (1 - the specular colour's mean); the GGX Fresnel and Lazarov environment BRDF take that colour.
+Meitou: `atmoMetalness` in `kenshiLight` / `stageLight`, set from a worn item's colour map blue; other surfaces stay dielectric
+(objects' `metal_map` is not read).
 Skin tone, body normals/muscle/starvation, hair/beard overlays, dye/cloth/cutout and wet/dust inputs
 have separate parameters. Material runtime facts: [runtime-materials](formats/runtime-materials.md).
 Bone/positional sizes and face morph deltas apply before skinning; meshes with their own LOD or

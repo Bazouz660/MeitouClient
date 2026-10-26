@@ -244,6 +244,7 @@ static class CharacterShaders
             vec2 uv = vUv;
             vec3 albedo = vec3(0.72);
             float gloss = 0.2;
+            float metal = 0.0;                        // a worn item's metalness: its colour map's blue (skin.hlsl)
             vec4 nm = vec4(0.5, 0.5, 1.0, 0.5);
             bool swizzled = flag(f, 4u);
             bool cut = false;
@@ -313,6 +314,7 @@ static class CharacterShaders
                 // A worn item's material (the Skinned template, skin.hlsl) has glossMult 0: nothing sets it, so worn clothing is matte; an attached item with
                 // its own mesh (the StaticObject template) keeps 1.
                 gloss = flag(f, 16384u) ? 0.0 : d.a * m.shirtColour.w;
+                if (flag(f, 16384u) && flag(f, 1024u)) metal = cm.b;
             }
             if (cut) discard;
             // The game writes character albedo darkened: 0.7 for bodies, heads and hair (character.hlsl DARKEN), 0.8 for worn items (skin.hlsl); not its icons (rtticons.hlsl,
@@ -339,6 +341,7 @@ static class CharacterShaders
             vec3 colour;
             giInterior = vInterior != 0u;
             skinGeometric = smoothNormal; skinCurvature = curvature; skinShare = skin; skinAlbedo = albedo;
+            atmoMetalness = metal;
             if (view.fogDistance > 0.0 && uAtmoParams.x > 0.5) colour = kenshiLight(albedo, n, v, gloss, vWorld, skinDiffuse(n, smoothNormal, uAtmoLight.xyz, curvature, skin, albedo));
             // The editor's stage (CharacterRenderer.DrawStage, a fog distance of -2): the game's rtt.hlsl (AtmosphereShaders.stageLight); -3 the same unclamped (Meitou's stage and
             // portraits, which also take the Meitou skin; the game's stage keeps its plain N.L).

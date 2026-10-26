@@ -21,6 +21,7 @@ sealed partial class GameHost
         public readonly PlacedMesh[] Meshes = meshes;
         public readonly float Height = height;
         public readonly Matrix4x4?[] Transforms = new Matrix4x4?[meshes.Length];
+        public readonly Vector3[] Tints = new Vector3[meshes.Length];
         public (float Growth, float Death, int Harvested)? Shown;
     }
 
@@ -52,8 +53,9 @@ sealed partial class GameHost
                 var sub = look.Plants.Meshes[i];
                 float growth = sub.Plant < view.PlantGrowth.Count ? view.PlantGrowth[sub.Plant] : 0;
                 look.Transforms[i] = FarmLayout.Transform(look.Data.Parts[sub.Part], look.Plants.Positions[sub.Plant], sub.Random, growth, view.Death, look.Height);
+                look.Tints[i] = FarmLayout.Tint(look.Data, look.Data.Parts[sub.Part], sub.Random, view.Death);
             }
-            objects.SetFarmPlants(site.Id, look.Meshes, look.Transforms);
+            objects.SetFarmPlants(site.Id, look.Meshes, look.Transforms, look.Tints);
         }
         foreach (string id in farms.Keys.Where(id => !seen.Contains(id)).ToArray())
         {

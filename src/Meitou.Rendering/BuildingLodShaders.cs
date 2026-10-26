@@ -32,14 +32,20 @@ static class BuildingLodShaders
             out vec2 vRange;
             flat out float vInterior;
             flat out float vScaffold;
+            out float vBuildY;
+            flat out float vScaffoldTiling;
             #define uModel mat4(vec4(aInstance0.xyz, 0.0), vec4(aInstance1.xyz, 0.0), vec4(aInstance2.xyz, 0.0), vec4(aInstance3.xyz, 1.0))
             """);
         v = Replace(v, @"void\s+main\s*\(\s*\)\s*\{", """
             void main()
             {
                 vRange = vec2(aInstance0.w, aInstance1.w);
-                vInterior = aInstance2.w;
+                vInterior = mod(aInstance2.w, 4.0);
                 vScaffold = aInstance3.w;
+                // A site (BuildingLodShaders.PackSite): the vertex's height over its part's mesh top, and the scaffold tiling.
+                float site = floor(aInstance2.w / 4.0);
+                vBuildY = aPosition.y / max(mod(site, 4096.0) * 0.1, 0.1);
+                vScaffoldTiling = floor(site / 4096.0) / 16.0;
                 if ((uFadeMode & 1) == 1)
                 {
                     float fd = length((uModel * vec4(aPosition, 1.0)).xyz - uFadeEye);
@@ -61,7 +67,20 @@ static class BuildingLodShaders
             flat in float vScaffold;
             float gridLine(float v) { float f = fract(v); return min(f, 1.0 - f); }
             float ditherValue() { return fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715)))); }
+            vec3 instanceTint(float v) { float p = -v - 1.0; return vec3(mod(p, 256.0), mod(floor(p / 256.0), 256.0), floor(p / 65536.0)) * (1.275 / 255.0); }
             """);
+        // A negative spare M44 is a tint (a farm plant's, WorldObjectRenderer.PackTint).
+        // A site's grid lies over the built part too, until it fades from the top down past f = 0.8 (above 1 - 5 (f - 0.8) none).
+        f = Literal(f, "if (uUseVertexColour) albedo *= vColour.rgb;", """
+            if (uUseVertexColour) albedo *= vColour.rgb;
+            if (vScaffold < 0.0) albedo *= instanceTint(vScaffold);
+            if (vScaffold > 2.0)
+            {
+                vec4 grid = scaffoldGrid(uv);
+                albedo = mix(albedo, grid.rgb, 1.0 - (vScaffold - 10000.0 - 0.8) * 5.0 < vBuildY ? 0.0 : grid.a);
+            }
+            """);
+        f = Replace(f, @"void\s+main\s*\(\s*\)\s*\{", ScaffoldFunctions + "\nvoid main()\n{");
         if (solid) f = Replace(f, @"if\s*\(\s*uAlphaThreshold\s*>\s*0\.0\s*&&\s*alpha\s*<\s*uAlphaThreshold\s*\)\s*discard\s*;", "");
         else
             f = Replace(f, @"void\s+main\s*\(\s*\)\s*\{", """
@@ -113,18 +132,41 @@ static class BuildingLodShaders
     }
 
     /// <summary>
-    /// The scaffold clip of an unfinished building (docs/render-objects.md "Construction sites"): <c>vScaffold</c> is the instance matrix's spare M44, 1 for every
-    /// ordinary instance and <see cref="ScaffoldBase"/> plus the world height of the clip plane for a site. Above the plane only a scaffold grid is kept.
+    /// The scaffold of an unfinished building (docs/game/buildings-production.md "Construction look"): <c>vScaffold</c> is the instance matrix's spare M44, 1 for every
+    /// ordinary instance and <see cref="ScaffoldBase"/> plus the look's f for a site. Above 1.2 f of the part's mesh top only the grid (<c>construction.dds</c> at the
+    /// mesh coordinates x the tiling, alpha above 0.7) is kept; without the texture (not loaded) a procedural grid stands in.
     /// </summary>
     public const float ScaffoldBase = 10000;
 
+    /// <summary>
+    /// What a site adds to the instance's M34 (whose low two bits are its interior and lights flags): 4 x (the part's mesh top in decimetres, 1-4095, + 4096 x
+    /// round(16 x <c>scaffolding tex scale</c>), 0-255; 1 when the field is 0 or absent), exact in a float.
+    /// </summary>
+    public static float PackSite(float top, float tiling)
+    {
+        int t = Math.Clamp((int)MathF.Round(top * 10), 1, 4095);
+        int s = Math.Clamp((int)MathF.Round((tiling > 0 ? tiling : 1) * 16), 0, 255);
+        return 4 * (t + 4096 * s);
+    }
+    /// <summary>The largest tint channel <see cref="WorldObjectRenderer.PackTint"/> keeps (a plant's brightness goes to 1.1); <c>instanceTint</c> has the same number.</summary>
+    public const float TintRange = 1.275f;
+
+    /// <summary>The grid and its helpers (<c>uScaffold</c>: the push spare's upper bits, index + 1, 0 not loaded), at the tiled mesh coordinates (objects.hlsl).</summary>
+    const string ScaffoldFunctions = """
+            in float vBuildY;
+            flat in float vScaffoldTiling;
+            uniform sampler2D uScaffold;
+            vec4 scaffoldGrid(vec2 uv)
+            {
+                if ((uSurface >> 8u) != 0u) return texture(uScaffold, uv * vScaffoldTiling);
+                float cell = 0.12;
+                bool onGrid = gridLine(vWorld.y * cell) < 0.06 || gridLine((vWorld.x + vWorld.z) * cell) < 0.06 || gridLine((vWorld.x - vWorld.z) * cell) < 0.06;
+                return vec4(0.35, 0.3, 0.25, onGrid ? 1.0 : 0.0);
+            }
+        """;
+
     const string ScaffoldTest = """
-                if (vScaffold > 2.0 && vWorld.y > vScaffold - 10000.0)
-                {
-                    float cell = 0.12;
-                    bool onGrid = gridLine(vWorld.y * cell) < 0.06 || gridLine((vWorld.x + vWorld.z) * cell) < 0.06 || gridLine((vWorld.x - vWorld.z) * cell) < 0.06;
-                    if (!onGrid) discard;
-                }
+                if (vScaffold > 2.0 && (vScaffold - 10000.0) * 1.2 < vBuildY && scaffoldGrid(vUv * uTile).a <= 0.7) discard;
         """;
 
     /// <summary>
@@ -142,7 +184,7 @@ static class BuildingLodShaders
             flat in float vScaffold;
             float gridLine(float v) { float f = fract(v); return min(f, 1.0 - f); }
             """);
-        return Replace(f, @"void\s+main\s*\(\s*\)\s*\{", "void main()\n{\n    if (vRange.x > 0.5 || vRange.y <= 0.5) discard;\n" + ScaffoldTest);
+        return Replace(f, @"void\s+main\s*\(\s*\)\s*\{", "uniform uint uSurface;\n" + ScaffoldFunctions + "\nvoid main()\n{\n    if (vRange.x > 0.5 || vRange.y <= 0.5) discard;\n" + ScaffoldTest);
     }
 
     // ---- the native model (docs/renderer-native.md 3.3, step O) ----
@@ -184,6 +226,8 @@ static class BuildingLodShaders
         // The interior cut: the view's mask, for the draws of map features over it (fadeMode bit 2, WorldObjectRenderer.Batch.Cut).
         ["uInteriorCut"] = "(view.interiorCut != 0u && (pc.fadeMode & 2) != 0)",
         ["uSkinned"] = "false", ["uHasHead"] = "false",
+        // The scaffold grid (construction.dds): the push spare's upper bits hold its bindless index + 1 (WorldObjectRenderer.RecordDraws); read only when not 0.
+        ["uScaffold"] = "textures2D[max(pc.spare >> 8u, 1u) - 1u]",
         // Read only under uHasHead (never): any valid bindless entry.
         ["uHeadDiffuse"] = "textures2D[pc.diffuse]", ["uHeadNormal"] = "textures2D[pc.normal]",
     };

@@ -222,6 +222,14 @@ static class AtmosphereShaders
             float a0 = t.x * min(t.y, exp2(-9.28 * nv)) + t.z;
             return clamp(a0 + 0.04 * (t.w - a0), 0.0, 1.0);
         }
+        // The same for a specular colour of rf0 (LazarovEnvironmentBRDF).
+        vec3 kenshiEnvBrdf(float gloss, float nv, vec3 rf0)
+        {
+            vec4 t = vec4(1.0 / 0.96, 0.475, (0.0275 - 0.25 * 0.04) / 0.96, 0.25) * gloss + vec4(0.0, 0.0, (0.015 - 0.75 * 0.04) / 0.96, 0.75);
+            float a0 = t.x * min(t.y, exp2(-9.28 * nv)) + t.z;
+            return clamp(a0 + rf0 * (t.w - a0), 0.0, 1.0);
+        }
+        float atmoMetalness = 0.0;   // the surface's metalness (a worn item's colour map blue, CharacterShaders), set before kenshiLight / stageLight; 0 dielectric
         // The character editor's stage (a fog distance of -2): the game's rtt.hlsl (docs/characters.md "Character editor"): one punctual light of colour 0.6 (CalcPunctualLight: diffuse
         // pi * N.L * (1 - 0.04), GGX specular for roughness 1 - 0.99 * gloss, specular colour 0.04) plus the environment light of the irradiance and specular cubes
         // (CalcEnvironmentLight), times the exposure 0.5, stored as it is in an 8-bit target (UNORM, as the icons). l: towards the light, v: towards the eye.
@@ -230,6 +238,9 @@ static class AtmosphereShaders
         vec3 stageLight(vec3 albedo, vec3 n, vec3 v, vec3 l, float gloss, bool hdr, vec3 diffuseNl)
         {
             const float PI = 3.14159265;
+            vec3 specColour = mix(vec3(0.04), albedo, atmoMetalness);   // metalness as in kenshiLight (rtt.hlsl)
+            albedo *= 1.0 - atmoMetalness;
+            float fresnelDiffuse = clamp(1.0 - dot(specColour, vec3(1.0 / 3.0)), 0.0, 1.0);
             vec3 hv = normalize(v + l);
             float nl = clamp(dot(n, l), 0.0, 1.0), lh = clamp(dot(l, hv), 0.0, 1.0), nh = clamp(dot(n, hv), 0.0, 1.0), nv = clamp(dot(n, v), 0.0, 1.0);
             float rough = 1.0 - gloss * 0.99, alpha = rough * rough, alphaSqr = alpha * alpha;
@@ -237,15 +248,15 @@ static class AtmosphereShaders
             float D = alphaSqr / (PI * denom * denom);
             float fresnel = exp2((-5.55473 * lh - 6.98316) * lh);
             float k = alpha * 0.5, k2 = k * k, vis = 1.0 / (lh * lh * (1.0 - k2) + k2);
-            float sunSpecular = 0.6 * nl * D * (0.04 + 0.96 * fresnel) * vis / PI;
-            vec3 sunDiffuse = PI * diffuseNl * 0.6 * 0.96;
-            vec3 envDiffuse = atmoIrradiance(n) * 0.96;
+            vec3 sunSpecular = 0.6 * nl * D * (specColour + (1.0 - specColour) * fresnel) * vis / PI;
+            vec3 sunDiffuse = PI * diffuseNl * 0.6 * fresnelDiffuse;
+            vec3 envDiffuse = atmoIrradiance(n) * fresnelDiffuse;
             vec3 envSpecular = vec3(0.0);
             if (uAtmoMaps.y > 0.5)
             {
                 vec3 dominant = mix(n, reflect(-v, n), gloss * (sqrt(gloss) + rough));
                 vec4 r = textureLod(uAtmoSpecular, dominant, (1.0 - gloss) * 7.0);
-                envSpecular = kenshiEnvBrdf(gloss, nv) * r.rgb * r.a * 10.0;
+                envSpecular = kenshiEnvBrdf(gloss, nv, specColour) * r.rgb * r.a * 10.0;
             }
             vec3 lit = (albedo * (sunDiffuse + envDiffuse) + sunSpecular + envSpecular) * 0.5;
             return hdr ? lit : clamp(lit, 0.0, 1.0);
@@ -257,26 +268,30 @@ static class AtmosphereShaders
         bool giInterior = false;
         float atmoSelfShadow = 1.0;   // a surface's own shadow on the sun (the terrain's relief, GroundRelief), set before kenshiLight; 1 none
         float atmoShadowLift = 0.0;   // world units above the point the sun shadow is looked up from (a ground trough under its flat casters, GroundRelief)
-        // A dielectric surface lit as Kenshi's main lighting pass lights it: HDR colour. v: towards the eye.
+        // A surface lit as Kenshi's main lighting pass lights it (metalness atmoMetalness): HDR colour. v: towards the eye.
         // diffuseNl: the sun's diffuse term in place of the clamped N.L (the Meitou skin, CharacterShaders.skinDiffuse); the overload below passes N.L.
         vec3 kenshiLight(vec3 albedo, vec3 n, vec3 v, float gloss, vec3 world, vec3 diffuseNl)
         {
+            // Metalness (deferred.hlsl): the specular colour runs from 0.04 to the albedo, the diffuse albedo to black; diffuse light x (1 - the specular colour's mean).
+            vec3 specColour = mix(vec3(0.04), albedo, atmoMetalness);
+            albedo *= 1.0 - atmoMetalness;
+            float fresnelDiffuse = clamp(1.0 - dot(specColour, vec3(1.0 / 3.0)), 0.0, 1.0);
             vec4 am = atmoAmbientMapAt(world);
             vec3 l = uAtmoLight.xyz;
             vec3 sun = uAtmoSunLight * am.a * 2.0 * atmoCloudShadow(world) * kenshiShadow(world + vec3(0.0, atmoShadowLift, 0.0), n) * atmoSelfShadow;   // the sun shadow term (deferred.hlsl: lightColor * shadow)
             gloss = clamp(gloss, 0.0, 1.0);
             float roughness = 1.0 - gloss * 0.99, a = roughness * roughness, a2 = a * a;
             float nl = clamp(dot(n, l), 0.0, 1.0);
-            vec3 diffuse = ATMO_PI * diffuseNl * sun * {{F(1 - KenshiLighting.DielectricSpecular)}};
+            vec3 diffuse = ATMO_PI * diffuseNl * sun * fresnelDiffuse;
             vec3 h = normalize(v + l);
             float nh = clamp(dot(n, h), 0.0, 1.0), lh = clamp(dot(l, h), 0.0, 1.0);
             float denom = max(nh * nh * (a2 - 1.0) + 1.0, 1e-6);
             float D = a2 / (ATMO_PI * denom * denom);
             float fresnel = exp2((-5.55473 * lh - 6.98316) * lh);
             float k = a * 0.5, vis = 1.0 / (lh * lh * (1.0 - k * k) + k * k);
-            vec3 sunSpecular = sun * (nl * D * (0.04 * vis + 0.96 * fresnel * vis)) / ATMO_PI;
+            vec3 sunSpecular = sun * (nl * D * (specColour * vis + (1.0 - specColour) * fresnel * vis)) / ATMO_PI;
             float env = uAtmoLight.w;
-            vec3 envDiffuse = atmoIrradiance(n) * {{F(1 - KenshiLighting.DielectricSpecular)}} * am.rgb * env;
+            vec3 envDiffuse = atmoIrradiance(n) * fresnelDiffuse * am.rgb * env;
             // Meitou probe GI: the probes' irradiance (sky seen past the geometry, light bounced off it) in place of the sky's, and the sky's
             // reflection dimmed as much as the probes dim the sky (an occluded corner reflects no sky).
             float specularOcclusion = 1.0;
@@ -306,7 +321,7 @@ static class AtmosphereShaders
                 float nv = clamp(dot(v, n), 0.0, 1.0);
                 vec3 dominant = mix(n, reflect(-v, n), gloss * (sqrt(gloss) + roughness));
                 vec4 r = textureLod(uAtmoSpecular, dominant, (1.0 - gloss) * 7.0);
-                envSpecular = kenshiEnvBrdf(gloss, nv) * r.rgb * r.a * 10.0 * am.rgb * env * specularOcclusion;
+                envSpecular = kenshiEnvBrdf(gloss, nv, specColour) * r.rgb * r.a * 10.0 * am.rgb * env * specularOcclusion;
             }
             vec3 lit = albedo * (diffuse + envDiffuse) + sunSpecular + envSpecular;
             // The game's point and spot lights, lit like the sun (docs/render-lights.md); none while uLightGrid.w is 0.

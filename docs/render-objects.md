@@ -72,12 +72,13 @@ is ready; loaded neighbours retain their instances and GPU bindings, including w
 Host diff: [simulation.md](simulation.md#buildings).
 
 **Scaffold.** The original clips each part at `1.2 f` of its mesh height and draws the scaffold grid (`construction.dds`)
-above it ([construction look](game/buildings-production.md#construction-look)). Meitou's approximation: the part's
-instance matrix carries `M44` = `ScaffoldBase` (10000) + the world-space clip height (`f` and the mesh top from its bounds);
-`BuildingLodShaders` keeps pixels below it as the building and above it only a procedural world-space grid
-(cell 0.12, line 0.06), discarding the rest. The shadow pass clips the same. Differences: no `construction.dds`
-texture, no fade of a grid over the built part, and the clip is a world height, so a tilted site clips level.
-Sites always use the fading (discard-capable) batch.
+above it ([construction look](game/buildings-production.md#construction-look)). Meitou: the part's instance matrix carries
+`M44` = `ScaffoldBase` (10000) + `f`, and `M34` adds 4 x (the part's mesh top in decimetres + 4096 x round(16 x the building's
+`scaffolding tex scale`)) over its two flag bits (`BuildingLodShaders.PackSite`). The vertex shader passes mesh y / top; the
+fragment samples `construction.dds` (bindless index + 1 in the push spare's bits 8+) at the tiled mesh coordinates x the tiling,
+discards above `1.2 f` unless grid alpha > 0.7, and blends the grid over the albedo below `1 - 5 (f - 0.8)`. The shadow pass
+clips the same. Until the texture is resident a procedural world-space grid stands in. Not done: the grid's gloss 0.4 and
+normal blend. Sites always use the fading (discard-capable) batch.
 
 **Ghost.** `WorldObjectRenderer.SetGhosts(GhostDraw[])` draws a building's parts (laid out once at the origin, exterior
 only) at a transform, from the `ObjectStreamer.Loose` pseudo-zone (never streamed out, scanned each frame like the
@@ -89,7 +90,9 @@ recomputes its plants' transforms (`FarmLayout.Transform`) when the farm's growt
 ([farm plants](game/buildings-production.md#farm-plants)). `WorldObjectRenderer.SetFarmPlants` keeps one `Loose` instance per
 plant mesh (a `BuildingPart` of the farm building, its FARM_PART material) and draws the shown ones through `DrawReal`, shadows
 included. The original draws one merged mesh per farm with a `plantData` shader array; Meitou instances each plant (batched by
-mesh). Not drawn: the death tint and the per-plant brightness.
+mesh). Each plant's colour (`FarmLayout.Tint`, the death tint and brightness of
+[farm plants](game/buildings-production.md#farm-plants)) multiplies its albedo, packed into a negative spare `M44`
+(`WorldObjectRenderer.PackTint`: 8 bits per channel over [0, 1.275]).
 
 ## Doors
 

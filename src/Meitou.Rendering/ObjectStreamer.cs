@@ -45,6 +45,8 @@ sealed class ObjectStreamer(WorldObjects objects, ObjectMeshCache meshes) : IDis
         public ObjectMaterialSet? Materials;
         /// <summary>Whether it stands in a loaded building's interior, as last found (<c>WorldObjectRenderer.InInterior</c>); one object, so a view recorded on another thread reads it whole.</summary>
         public InteriorAnswer? Interior;
+        /// <summary>A colour its albedo is multiplied by (a farm plant's, <c>WorldObjectRenderer.SetFarmPlants</c>), packed by <c>WorldObjectRenderer.PackTint</c>; 0: none.</summary>
+        public float Tint;
     }
 
     /// <summary>
