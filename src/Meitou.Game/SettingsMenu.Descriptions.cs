@@ -126,6 +126,7 @@ sealed partial class SettingsMenu
         InputAction.ToggleFaction => "Open the faction page, or close it.",
         InputAction.ToggleResearch => "Open the research page, or close it.",
         InputAction.ToggleCrafting => "Open the crafting page, or close it.",
+        InputAction.ToggleHelp => "Open the Tutorials window, or close it.",
         InputAction.ChangeSquad => "Show the next squad in the squad bar.",
         InputAction.SelectAll => "Select the whole squad (Shift adds it to the selection).",
         InputAction.NextCharacter => "Select the next member of the character's squad.",

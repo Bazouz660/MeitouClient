@@ -59,6 +59,12 @@ sealed partial class PlayerInterface
         if (ReservedKeys.Contains(key)) return false;
         if (Bound(InputAction.ToggleInventory, key) || Bound(InputAction.ToggleCharacterStats, key))
         { ExecuteUiAction(Bound(InputAction.ToggleInventory, key) ? "inventory" : "stats", ""); return true; }
+        // toggle_help (F1, event 7): the Tutorials window (docs/game/ui-input.md section 6).
+        if (Bound(InputAction.ToggleHelp, key) && !TitleOpen && !EditorOpen)
+        {
+            if (faithfulScreens.IsOpen("tutorials")) faithfulScreens.Close("tutorials"); else faithfulScreens.Open("tutorials");
+            return true;
+        }
         // toggle_map / toggle_faction / toggle_research / toggle_crafting (M / unbound / T / Y) ask for overview tabs 0 / 1 / 2 / 3 (docs/game/ui-input.md section 6).
         // Pressing the key of the tab already showing closes the window (engine choice: the original's toggle rule is not traced).
         int? tab = Bound(InputAction.ToggleMap, key) ? 0 : Bound(InputAction.ToggleFaction, key) ? 1 : Bound(InputAction.ToggleResearch, key) ? 2 : Bound(InputAction.ToggleCrafting, key) ? 3 : null;
@@ -98,6 +104,7 @@ sealed partial class PlayerInterface
         else if (e.Screen == "dialogue") DialogueAction(e);
         else if (e.Screen == CharacterTradeScreen) CharacterTradeAction(e);
         else if (e.Screen == "prospect") ProspectScreenAction(e);
+        else if (e.Screen == "tutorials") TutorialsWindowAction(e);
         else if (e.Screen == TownScreen) TownAction(e);
         else if (e.Screen == "overview") { MapAction(e.Widget); ResearchAction(e); CraftAction(e); AiAction(e); SquadsAction(e); FactionAction(e); }
         else if (e.Screen is "building" or "bench" or "storage") MachineAction(e);
@@ -127,6 +134,7 @@ sealed partial class PlayerInterface
         else if (id == "dialogue") BindDialogueScreen(b);
         else if (id == CharacterTradeScreen) BindCharacterTradeScreen(b);
         else if (id == "prospect") BindProspectScreen(b);
+        else if (id == "tutorials") BindTutorialsWindow(b);
         else if (id == TownScreen) BindTownScreen(b);
         else if (id == "build") BindBuildScreen(b);
         else if (id is "building" or "bench" or "storage") BindMachineScreen(id, b);

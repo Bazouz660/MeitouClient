@@ -153,6 +153,7 @@ sealed partial class PlayerInterface
         PollBiome();
         PollNotice();
         PollProspect();
+        PollTutorials();
         var white = DebugOverlay.TextColour;
         var green = new Vector4(0.35f, 1f, 0.45f, 1f);
         var red = new Vector4(1f, 0.4f, 0.35f, 1f);

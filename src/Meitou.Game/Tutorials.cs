@@ -13,6 +13,8 @@ readonly record struct TutorialPoll
     public bool NeedsFirstAid { get; init; }
     public bool UnderAttack { get; init; }
     public int PcCount { get; init; }
+    /// <summary>The PCs, for the recruit tutorial's newest member.</summary>
+    public IReadOnlyList<Meitou.Simulation.CharacterId> Pcs { get; init; }
     public bool Stolen { get; init; }
     public bool AnyUnconscious { get; init; }
     public bool AnyConscious { get; init; }
@@ -66,6 +68,10 @@ sealed class TutorialManager
     readonly string path;
     double timer;
     int calm, recruits = -1;
+    HashSet<Meitou.Simulation.CharacterId>? recruitBase;
+
+    /// <summary>The recruit the hired-recruit tutorial found (its Select page waits for them to be selected); null: none.</summary>
+    public Meitou.Simulation.CharacterId? Recruit { get; private set; }
 
     public TutorialManager(string path)
     {
@@ -176,8 +182,10 @@ sealed class TutorialManager
             case 5: return Ended(4) && p.NeedsFirstAid;
             case 6: return p.UnderAttack;
             case 7:
-                if (recruits < 0) recruits = p.PcCount;
-                return p.PcCount > recruits;
+                if (recruits < 0) { recruits = p.PcCount; recruitBase = [.. p.Pcs ?? []]; }
+                if (p.PcCount <= recruits) return false;
+                Recruit = (p.Pcs ?? []).LastOrDefault(c => recruitBase?.Contains(c) != true);
+                return true;
             case 8: return p.Stolen;
             case 9: return p.AnyUnconscious;
             case 10: return p.AnyUnconscious && p.AnyConscious;
@@ -223,8 +231,9 @@ sealed class TutorialManager
         if (active.Contains(id)) return false;
         pending.Remove(id);
         active.Add(id);
-        Pages[id] = 0;
-        if (id == 7) recruits = -1;
+        // reset: page 0, except the recruit and prison items, whose own reset clears only their memory.
+        if (id == 7) (recruits, Recruit) = (-1, null);
+        else if (id is not (11 or 12)) Pages[id] = 0;
         dirty = true;
         return true;
     }

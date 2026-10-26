@@ -30,7 +30,7 @@ public enum InputAction
     /// <summary>The game's <c>toggle_bar</c> (F7, event 8): hides or shows the whole interface.</summary>
     ToggleInterface,
     /// <summary>The game's <c>toggle_inventory</c>, <c>toggle_stats</c>, <c>toggle_map</c>, <c>toggle_faction</c>, <c>toggle_research</c> and <c>toggle_crafting</c> (events 1..6): the windows.</summary>
-    ToggleInventory, ToggleCharacterStats, ToggleMap, ToggleFaction, ToggleResearch, ToggleCrafting,
+    ToggleInventory, ToggleCharacterStats, ToggleMap, ToggleFaction, ToggleResearch, ToggleCrafting, ToggleHelp,
     /// <summary>The game's <c>change_squad</c> (0x23), <c>select_all</c> (0x22), <c>character_next</c> / <c>character_prev</c> (0x26 / 0x27) and <c>focus_char</c> (0x11).</summary>
     ChangeSquad, SelectAll, NextCharacter, PreviousCharacter, FocusCharacter,
     /// <summary>The game's <c>stop_movement</c> (0x16) and <c>toggle_build</c> (10).</summary>
@@ -119,6 +119,7 @@ public sealed class InputBindings
         Set(InputAction.ToggleFaction);   // unbound in the game too
         Set(InputAction.ToggleResearch, Key.T);
         Set(InputAction.ToggleCrafting, Key.Y);
+        Set(InputAction.ToggleHelp, Key.F1);   // toggle_help: the Tutorials window
         Set(InputAction.ChangeSquad, Key.Tab);
         Set(InputAction.SelectAll, Key.Grave);
         Set(InputAction.NextCharacter, Key.RightBracket);

@@ -1,0 +1,249 @@
+using System.Globalization;
+using System.Numerics;
+using Meitou.Data.Ui;
+using Meitou.Simulation;
+using Meitou.Ui;
+
+namespace Meitou.Game;
+
+/// <summary>
+/// The tutorial panel and window (<c>TutorialGUI</c>, docs/game/ui-screens.md "Tutorials"): a line per active tutorial stacked up from the bottom of the top-left list
+/// panel (25 px x the UI scale each, the newest lowest), a new line flashing white for a second; its name opens the window on it, its X dismisses it. The window shows the
+/// item's current page with PREVIOUS, SKIP / CONTINUE / FINISH and DISMISS, and runs the page's own advance while it is open.
+/// </summary>
+sealed partial class PlayerInterface
+{
+    TutorialManager? tutorials;
+    TutorialCatalog tutorialTexts = TutorialCatalog.From([]);
+    MyGuiLayout? tutorialPanelLayout, tutorialLineLayout;
+    readonly Dictionary<int, float> tutorialFlashes = [];
+    int? tutorialShown;
+    long tutorialClock;
+    // The page's advance state: the 5 s timer, whether its condition was seen, and what its start remembered.
+    float tutorialTimer;
+    bool tutorialSeen, tutorialZoomed;
+    Vector3 tutorialCameraTarget;
+    float tutorialCameraDistance;
+    readonly HashSet<CharacterId> tutorialPrisoners = [];
+    readonly Dictionary<CharacterId, Vector3> tutorialLastPositions = [];
+
+    /// <summary>The list panel's share of the screen and a line's height in 1080p pixels (<c>Kenshi_TutorialPanel.layout</c>, <c>arrangeList</c>).</summary>
+    const float TutorialListWidth = 0.130208f, TutorialListHeight = 0.462963f, TutorialLineHeight = 25;
+    /// <summary>The advance timer of the camera, map, signs, first aid and lockpicking pages (real seconds).</summary>
+    const float TutorialWait = 5;
+
+    /// <summary>The host's tutorial manager (null: no tutorials).</summary>
+    public void ConfigureTutorials(TutorialManager? manager) => tutorials = manager;
+
+    /// <summary>Once a frame from the HUD: the manager's poll (new lines flash, <c>Thing_Complete</c>), the flashes fading and the shown page's advance.</summary>
+    void PollTutorials()
+    {
+        long now = System.Diagnostics.Stopwatch.GetTimestamp();
+        float dt = tutorialClock == 0 ? 0 : MathF.Min((float)System.Diagnostics.Stopwatch.GetElapsedTime(tutorialClock, now).TotalSeconds, 0.25f);
+        tutorialClock = now;
+        if (tutorials is not { } manager || TitleOpen || !session.World.Player.Exists) return;
+        if (!manager.Enabled) { tutorialShown = null; tutorialFlashes.Clear(); return; }
+        if (manager.Update(dt, () => TutorialPoll(false)) is { Count: > 0 } started)
+        {
+            foreach (int id in started) tutorialFlashes[id] = 1;
+            Sound("Thing_Complete");
+        }
+        foreach (int id in tutorialFlashes.Keys.ToArray())
+            if ((tutorialFlashes[id] -= dt) <= 0) tutorialFlashes.Remove(id);
+        if (tutorialShown is { } shown && !manager.Active.Contains(shown)) tutorialShown = null;
+        if (tutorialShown is { } open && TutorialAdvanced(open, dt)) NextTutorialPage(open);
+    }
+
+    TutorialPage PageOf(int id) => TutorialCatalog.Items[id].Pages[Math.Clamp(tutorials!.Pages[id], 0, TutorialCatalog.Items[id].Pages.Length - 1)];
+
+    /// <summary>A page's start: its advance state cleared, and what the original's start does (the selection dropped, the follow stopped, the windows closed).</summary>
+    void StartTutorialPage(int id)
+    {
+        (tutorialTimer, tutorialSeen, tutorialZoomed) = (0, false, false);
+        var view = session.Camera.Current;
+        (tutorialCameraTarget, tutorialCameraDistance) = (view.Target, view.Distance);
+        tutorialLastPositions.Clear();
+        switch (PageOf(id).Advance)
+        {
+            case TutorialAdvance.CharSelection or TutorialAdvance.RecruitSelect: Select([], false); break;
+            case TutorialAdvance.CenterChar: Follow = null; break;
+            case TutorialAdvance.Map: foreach (string screen in faithfulScreens.OpenScreens.ToArray()) faithfulScreens.Close(screen); break;
+            case TutorialAdvance.RecruitStats: faithfulScreens.Close("stats"); break;
+            case TutorialAdvance.Lockpicking: tutorialPrisoners.Clear(); break;
+        }
+    }
+
+    /// <summary>The shown page's advance test (docs/game/ui-screens.md "Tutorials", advance tests); the waits count real time while the window is open.</summary>
+    bool TutorialAdvanced(int id, float dt)
+    {
+        var snap = session.CurrentSnapshot;
+        var lead = Selected().FirstOrDefault();
+        bool Wait() { tutorialTimer += dt; return tutorialTimer >= TutorialWait; }
+        bool Tab(int tab) => faithfulScreens.IsOpen("overview") && faithfulScreens.GetTab("overview", "TabsMain") == tab;
+        switch (PageOf(id).Advance)
+        {
+            case TutorialAdvance.CameraControls:
+            {
+                var view = session.Camera.Current;
+                tutorialSeen |= view.Target.X != tutorialCameraTarget.X || view.Target.Z != tutorialCameraTarget.Z;
+                tutorialZoomed |= view.Distance != tutorialCameraDistance;
+                return tutorialSeen && tutorialZoomed && Wait();
+            }
+            case TutorialAdvance.CharSelection or TutorialAdvance.SelectCharacter: return lead is { IsPlayer: true };
+            case TutorialAdvance.CharMovement:
+            {
+                if (lead is null) return false;
+                bool moved = tutorialLastPositions.TryGetValue(lead.Id, out var before) && before != lead.Position;
+                tutorialLastPositions[lead.Id] = lead.Position;
+                return moved;
+            }
+            case TutorialAdvance.CenterChar: return Follow is not null;
+            case TutorialAdvance.Map: tutorialSeen |= Tab(0); return tutorialSeen && Wait();
+            case TutorialAdvance.Signs: tutorialSeen |= AltHeld; return tutorialSeen && Wait();
+            case TutorialAdvance.Medkiting:
+                tutorialSeen |= snap.Characters.Any(c => c.IsPlayer && c.Task == CharacterTask.Treat);
+                return tutorialSeen && Wait();
+            case TutorialAdvance.RecruitSelect: return tutorials!.Recruit is not { } recruit || lead?.Id == recruit;
+            case TutorialAdvance.RecruitStats: return faithfulScreens.IsOpen("stats");
+            case TutorialAdvance.SquadArrange: return Tab(4);
+            case TutorialAdvance.SelectUnconscious: return lead is { IsPlayer: true, Body: { Unconscious: true, PlayingDead: false } };
+            case TutorialAdvance.Lockpicking:
+                if (!tutorialSeen && snap.Characters.Any(c => c.IsPlayer && c.PickingLock))
+                {
+                    tutorialSeen = true;
+                    if (tutorialPrisoners.Count == 0)
+                        foreach (var c in snap.Characters)
+                            if (c.IsPlayer && c.Imprisoned) tutorialPrisoners.Add(c.Id);
+                }
+                return tutorialSeen && Wait();
+            // Engine reading: a prisoner of the set out of the cage (the original asks whether the cage's lock is open while they are still inside).
+            case TutorialAdvance.LockpickingSuccessful: return snap.Characters.Any(c => tutorialPrisoners.Contains(c.Id) && !c.Imprisoned);
+            case TutorialAdvance.CraftButton: return Tab(2) || Tab(3);
+            case TutorialAdvance.CraftTab: return Tab(3);
+            case TutorialAdvance.ProductionSelection:
+                return BuildingFocus() is { SiteId: { } site } && snap.Buildings.FirstOrDefault(b => b.Id == site) is { Complete: true } && Machine(site) is { Output: not null };
+            case TutorialAdvance.ConstructionMaterials:
+                return BuildingFocus() is { SiteId: { } built } && snap.Buildings.FirstOrDefault(b => b.Id == built) is { Complete: true };
+            default: return false;
+        }
+    }
+
+    void NextTutorialPage(int id)
+    {
+        if (tutorials!.Pages[id] >= TutorialCatalog.Items[id].Pages.Length - 1) { DismissTutorial(id); return; }
+        tutorials.Pages[id]++;
+        StartTutorialPage(id);
+    }
+
+    void DismissTutorial(int id)
+    {
+        if (tutorialShown == id) tutorialShown = null;
+        tutorialFlashes.Remove(id);
+        tutorials?.Dismiss(id);
+    }
+
+    /// <summary>The panel's buttons: <c>open:id</c> and <c>close:id</c> on a line, <c>prev</c> / <c>next</c> / <c>dismiss</c> / <c>hide</c> in the window.</summary>
+    void TutorialAction(string argument)
+    {
+        if (tutorials is null) return;
+        Sound("General_Click");
+        int colon = argument.IndexOf(':');
+        int id = colon > 0 && int.TryParse(argument.AsSpan(colon + 1), NumberStyles.None, CultureInfo.InvariantCulture, out int n) && n < TutorialManager.Names.Length ? n : -1;
+        if (argument.StartsWith("open:", StringComparison.Ordinal) && id >= 0) { tutorialShown = id; StartTutorialPage(id); }
+        else if (argument.StartsWith("close:", StringComparison.Ordinal) && id >= 0) DismissTutorial(id);
+        else if (tutorialShown is not { } shown) return;
+        else if (argument == "next") NextTutorialPage(shown);
+        else if (argument == "prev" && tutorials.Pages[shown] > 0) { tutorials.Pages[shown]--; StartTutorialPage(shown); }
+        else if (argument == "dismiss") DismissTutorial(shown);
+        else if (argument == "hide") tutorialShown = null;
+    }
+
+    /// <summary>The list's lines and, when one is open, the window, over the HUD.</summary>
+    void AddTutorialPanel(List<UiControl> controls)
+    {
+        if (tutorials is not { Enabled: true } manager || tutorialLineLayout is null || tutorialPanelLayout is null || !session.World.Player.Exists || EditorOpen) return;
+        float scale = Height / 1080f, lineHeight = MathF.Round(TutorialLineHeight * scale), width = MathF.Round(Width * TutorialListWidth);
+        float y = Height * TutorialListHeight;
+        var active = manager.Active;
+        for (int k = active.Count - 1; k >= 0; k--)
+        {
+            int id = active[k];
+            y -= lineHeight;
+            var b = new UiBindings { TemplateScale = scale };
+            b.Text["NameButton"] = tutorialTexts.Title(id);
+            string prefix = $"tutorial-{id}-";
+            foreach (var c in MyGuiPresentation.Arrange(tutorialLineLayout, (int)width, (int)lineHeight, b, uiResources.Layers))
+            {
+                var control = c with { Name = c.Name.Length > 0 ? prefix + c.Name : c.Name, Bounds = c.Bounds with { Y = c.Bounds.Y + y } };
+                if (c.Name == "NameButton") control = control with { Action = "meitou:tutorial", Argument = $"open:{id}" };
+                else if (c.Name == "CloseButton") control = control with { Action = "meitou:tutorial", Argument = $"close:{id}" };
+                controls.Add(control);
+            }
+            if (tutorialFlashes.TryGetValue(id, out float alpha))
+                controls.Add(new(prefix + "flash", "Widget", new(0, y, width, lineHeight), "", "", "", true, new Dictionary<string, string>(), new Vector4(1, 1, 1, alpha), Pickable: false));
+        }
+        if (tutorialShown is not { } shown) return;
+        var (title, pages) = TutorialCatalog.Items[shown];
+        int page = Math.Clamp(manager.Pages[shown], 0, pages.Length - 1);
+        bool last = page == pages.Length - 1;
+        var w = new UiBindings { TextHeight = c => uiPainter?.TextHeight(c, Height, StandardPixels) ?? 0 };
+        w.Hidden.Add("TooltipsPanel");
+        w.Text["TutorialWindow"] = tutorialTexts.TextAt(title);
+        w.Text["TutorialDescription"] = tutorialTexts.TextAt(pages[page].Line);
+        w.Text["PagingText"] = $"{page + 1} / {pages.Length}";
+        w.Text["NextTutorialButton"] = last ? "FINISH" : pages[page].Continue ? "CONTINUE" : "SKIP";
+        w.Text["DismissButton"] = "DISMISS";
+        if (last) w.Hidden.Add("DismissButton");
+        if (page == 0) w.Disabled.Add("PrevTutorialButton");
+        foreach (var c in MyGuiPresentation.Arrange(tutorialPanelLayout, Width, Height, w, uiResources.Layers))
+        {
+            string? argument = c.Name switch { "NextTutorialButton" => "next", "PrevTutorialButton" => "prev", "DismissButton" => "dismiss", _ => null };
+            var control = c with { Name = c.Name.Length > 0 ? "tutorial-window-" + c.Name : c.Name };
+            if (argument is not null) control = control with { Action = "meitou:tutorial", Argument = argument };
+            else if (c.Action.StartsWith("mygui:close", StringComparison.Ordinal)) control = control with { Action = "meitou:tutorial", Argument = "hide" };
+            else if (c.Name == "Root") control = control with { Pickable = false };
+            controls.Add(control);
+        }
+    }
+}
+
+/// <summary>The Tutorials window (F1, <c>Kenshi_TutorialsWindow</c>): every tutorial by title; a row's pages paged read-only; ACTIVATE puts it in the panel from its first page.</summary>
+sealed partial class PlayerInterface
+{
+    int tutorialsRow, tutorialsPage;
+
+    void BindTutorialsWindow(UiBindings b)
+    {
+        b.Text["Root"] = "TUTORIALS";
+        b.Lists["TutorialList"] = [.. TutorialCatalog.Items.Select((item, i) => new UiListItem(i.ToString(CultureInfo.InvariantCulture), tutorialTexts.TextAt(item.Title)))];
+        b.SelectedItems["TutorialList"] = tutorialsRow;
+        var pages = TutorialCatalog.Items[tutorialsRow].Pages;
+        tutorialsPage = Math.Clamp(tutorialsPage, 0, pages.Length - 1);
+        b.Text["TutorialDescription"] = tutorialTexts.TextAt(pages[tutorialsPage].Line);
+        b.Text["PagingText"] = $"{tutorialsPage + 1} / {pages.Length}";
+        b.Text["ActivateButton"] = "ACTIVATE";
+        b.Disabled.Remove("ActivateButton");
+        if (tutorialsPage > 0) b.Disabled.Remove("PrevTutorialButton");
+        if (tutorialsPage < pages.Length - 1) b.Disabled.Remove("NextTutorialButton");
+    }
+
+    void TutorialsWindowAction(MyGuiEvent e)
+    {
+        if (e.Widget == "TutorialList" && e.Action == "select" && int.TryParse(e.Text, NumberStyles.None, CultureInfo.InvariantCulture, out int row) && row < TutorialCatalog.Items.Length)
+        {
+            Sound("General_Click");
+            (tutorialsRow, tutorialsPage) = (row, 0);
+        }
+        else if (e.Widget == "PrevTutorialButton") { Sound("General_Click"); tutorialsPage--; }
+        else if (e.Widget == "NextTutorialButton") { Sound("General_Click"); tutorialsPage++; }
+        else if (e.Widget == "ActivateButton")
+        {
+            faithfulScreens.Close("tutorials");
+            if (tutorials?.Activate(tutorialsRow) == true)
+            {
+                tutorialFlashes[tutorialsRow] = 1;
+                Sound("Thing_Complete");
+            }
+        }
+    }
+}

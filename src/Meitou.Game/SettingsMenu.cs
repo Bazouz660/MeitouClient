@@ -117,6 +117,10 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
     public Action<bool>? GunnerFacingChanged { get; init; }
     /// <summary>Called when an off-screen switch changes (the config holds the new values).</summary>
     public Action? OffscreenChanged { get; init; }
+    /// <summary>The Tutorials option changed (the config holds it).</summary>
+    public Action<bool>? TutorialsChanged { get; init; }
+    /// <summary>The Reset Tutorials button.</summary>
+    public Action? ResetTutorials { get; init; }
     /// <summary>The door auto-close switch changed (<see cref="UserConfig.DoorsCloseBehind"/>).</summary>
     public Action<bool>? DoorsCloseChanged { get; init; }
     /// <summary>Applies a new camera rotation speed (<see cref="UserConfig.CameraRotateSpeed"/>) to the camera.</summary>
@@ -273,6 +277,9 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
             result.Add(new("Auto save", "Saves the game on its own every few minutes of unpaused play, into three slots in turn (autosave0 to autosave2).",
                 Toggle: new("Auto save", () => (config.Gameplay ??= new()).AutoSave, v => SetGameplay((config.Gameplay ?? new()) with { AutoSave = v }), OnOff: true)));
             result.Add(new(AutoSaveSlider.Label, "Minutes of unpaused play between autosaves (the game: 10).", Slider: AutoSaveSlider));
+            result.Add(new("Tutorials", "Shows the tutorial hints as you play (the game: on).",
+                Toggle: new("Tutorials", () => config.Tutorials != false, v => { config.Tutorials = v; TutorialsChanged?.Invoke(v); }, OnOff: true)));
+            result.Add(new("Reset Tutorials", "Every tutorial can show again, the ones already seen included.", Run: () => ResetTutorials?.Invoke()));
         }
         if (page == 7)
         {
@@ -577,6 +584,8 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
         config.HardwareMouse = false;
         CameraRotateSpeed.Set(global::Meitou.Data.World.KenshiCamera.DefaultRotateSpeed);
         config.EdgeScroll = true;
+        config.Tutorials = true;
+        TutorialsChanged?.Invoke(true);
         config.HoverOutline = true;
         config.SelectionRings = true;
         config.LuckyrenMode = false;

@@ -69,6 +69,10 @@ sealed partial class GameHost
                 session.Camera.Place(new Vector2(lead.X, lead.Z), view.Yaw, view.Pitch, view.Distance);
                 SettleNewWorld();
                 player.Notice($"Started {chosen.Name}");
+                // No tutorial file was read at start: the camera hints, queued (FUN_140872e00).
+                if (tutorials is { Fresh: true })
+                    foreach (string hint in (string[])["Hold middle mouse button to rotate the camera", "Use mouse wheel to zoom", "Now create your first character. Use the 'Confirm' button when finished."])
+                        player.Notice(hint);
                 pendingCreation = [.. spawned.Members];   // the start's characters are made in the editor first (docs/characters.md "Character editor")
                 return null;
             }));

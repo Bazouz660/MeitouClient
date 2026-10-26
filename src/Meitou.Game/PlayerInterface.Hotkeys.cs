@@ -14,7 +14,7 @@ sealed partial class PlayerInterface
     /// <summary>The actions handled by <see cref="Key"/> and <see cref="UiKey"/>: a key bound to one of them is the game's, not the cinema's numpad key.</summary>
     static readonly InputAction[] HotkeyActions =
     [
-        InputAction.ToggleInventory, InputAction.ToggleCharacterStats, InputAction.ToggleMap, InputAction.ToggleFaction, InputAction.ToggleResearch, InputAction.ToggleCrafting,
+        InputAction.ToggleInventory, InputAction.ToggleCharacterStats, InputAction.ToggleMap, InputAction.ToggleFaction, InputAction.ToggleResearch, InputAction.ToggleCrafting, InputAction.ToggleHelp,
         InputAction.ChangeSquad, InputAction.SelectAll, InputAction.NextCharacter, InputAction.PreviousCharacter, InputAction.FocusCharacter, InputAction.StopMovement,
         InputAction.ToggleBuild, InputAction.ToggleBlock, InputAction.ToggleHold, InputAction.TogglePassive, InputAction.ToggleJobs, InputAction.ToggleRanged,
         InputAction.ToggleSneak, InputAction.ToggleTaunt, InputAction.CycleRunSpeed, InputAction.Medic, InputAction.Rescue, InputAction.Prospect, InputAction.Rest, InputAction.PutDown,

@@ -1139,6 +1139,42 @@ the same layout, **Observed**). The file is written to `./__tutorials.data` in t
 | countA, then countA ids | the **active** list (manager +0x48: triggered, not dismissed; written first), empty in the sample |
 | countB, then countB ids | the **pending** list (manager +0x28, written second), 30 ids 4..33 in the sample; an id in neither list is finished (the sample: tutorials 0-3 seen) |
 
+- **Load** (**Verified**, `FUN_140974a50`): wrong magic is "Corrupted file" (treated as no file); ids outside 0..33 are skipped; items with an id at or
+  above the file's total go to pending. No file: everything pending, and the manager is *fresh*.
+
+**Manager** (**Verified**, decompile; KenshiLib 1ce4a16 names): 34 items, the id their position (`TutorialManager.Names`). Each frame (nothing while the
+`tutorials` option is off) the queued drops leave pending; every 2 real seconds each pending item's trigger is asked in order, and those that hold
+become active (a panel line that flashes, sound `Thing_Complete`); a change saves the file. The triggers (`TutorialManager.Holds`): 0-1 no
+character editor and not loading; 2 about 22 s of calm (no PC in combat mode, unconscious or in a bed or prison: the counter +2 per poll, above
+20); 3 item 2 ended and a PC in an outpost or town; 4 a PC needs first aid, 5 the same once 4 ended; 6 a PC in combat; 7 more PCs than at its first
+poll (the newest kept as the recruit); 8 stolen goods on a PC; 9 a PC knocked out, 10 one out and one awake; 11 a PC imprisoned by any faction
+but the Cannibals (`518-gamedata.base`), 12 by the Cannibals; 13 sneaking; 14 the steal pointer; 15 the selected NPC has a bounty; 16 PC hunger
+below 2; 17 a PC playing dead; 18 a player production building; 19 a PC slave; 20 a faction uniform on a PC; 21 a full machine; 22 the selected
+building is for sale; 23 a complete production building; 24 and 30 build mode is placing; 25 a complete crafting building; 26 the management
+screen on tab 3 unless a crafting building is complete (then it drops itself); 27 the same with tab 2 and a research bench; 28 a complete research
+bench; 29 a blueprint on a PC (quirk: any backpack wearer passes); 31 a player building at construction 0; 32 the prospecting window; 33 the
+selected character has a stump. Reset Tutorials: nothing active, all pending, the file deleted; pages are kept. ACTIVATE (Tutorials window) puts
+an item back from page 0 (the recruit and prison items only clear their memory).
+
+**Pages** (**Verified**: the item and page constructors; texts matched to `main.pot`): each page is a `kenshi/TutorialsData.cpp` source line, a
+skippable byte (Next reads SKIP when 0, CONTINUE when 1, FINISH on the last page) and its class; the table is `TutorialCatalog.Items`. Most pages
+wait for the button; 17 move on by themselves while the window shows them (`TutorialAdvance`): camera moved and zoomed then 5 s; a player
+character selected (the first page drops the selection); the selected character moves; the camera follows a character; the map tab seen then
+5 s; Alt (town signs) then 5 s; first aid given then 5 s; the recruit selected; the stats window; the squad tab (4); a knocked-out PC selected; a
+PC picking a cage lock then 5 s; a prisoner of that cage free; tab 2 or 3; tab 3; a complete production building selected; the selected
+construction complete. The 5 s count real time. Pages also set a pulsing yellow highlight over a HUD widget (`HighlightItem`, alpha 0.1-0.4 at
+0.4/s).
+
+**Panel** (**Verified**, `TutorialGUI`): the lines (`Kenshi_TutorialTooltipPanel`, 25 px x the UI scale) stack up from the bottom of a top-left list
+panel 0.130 x 0.463 of the screen, newest lowest; a new line flashes white, fading in 1 s. The name opens the window (`Kenshi_TutorialPanel`'s
+`TutorialWindow`, at its layout place, the top-left corner) on the item's current page; the X, DISMISS and FINISH dismiss it. New game with a
+fresh manager: three queued messages, "Hold middle mouse button to rotate the camera", "Use mouse wheel to zoom", "Now create your first character.
+Use the 'Confirm' button when finished." (every new game of the process). The Tutorials window (F1) lists all 34 by title, pages read-only.
+
+Meitou (`Tutorials.cs`, `PlayerInterface.Tutorials.cs` / `TutorialPanel.cs`, `TutorialCatalog`): as above, the file in the working directory.
+Engine readings: the cage page moves on when a prisoner of that cage is out of it (the original: the cage's lock is open while they are in it);
+"in a town" is a town radius holding a PC; the highlights are not drawn.
+
 ### 8. Damage floaters
 
 The options `floaters` (Off 0, Simple info 1 default, Full info 2; [settings](../formats/settings.md)) control the numbers that

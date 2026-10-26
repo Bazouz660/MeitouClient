@@ -129,6 +129,7 @@ public sealed partial class World
                 PickingLock = cold?.PickingLock is not null,
                 WorkingShackles = cold?.Shackles is { Work: Locks.ShackleWork.Pick or Locks.ShackleWork.Cut },
                 InBed = cold is { InSomething: Locks.HeldState.Bed },
+                Imprisoned = cold is { InSomething: Locks.HeldState.Imprisoned },
                 StayingLow = cold?.Medical is { StayingLow: true, Prone: true, Crawling: false },
                 InCombat = cold?.InCombat ?? false,
                 CombatMode = cold is not null && combat?.IsInCombatMode(table, id, cold, true, true) == true,

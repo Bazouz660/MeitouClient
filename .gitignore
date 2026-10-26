@@ -518,3 +518,6 @@ docs/meitou-ui/reference/textures/
 
 # Rendered from the game's UI atlas by make-labels.ps1
 labels/
+
+# Tutorial progress (written to the working directory, as the game does)
+__tutorials.data

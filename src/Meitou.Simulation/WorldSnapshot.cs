@@ -212,6 +212,8 @@ public sealed record CharacterSnapshot(CharacterId Id, CharacterAppearance? Appe
     public bool WorkingShackles { get; init; }
     /// <summary>Lying in a bed (<see cref="Locks.HeldState.Bed"/>).</summary>
     public bool InBed { get; init; }
+    /// <summary>Held in a cage or restraint (<see cref="CharacterCold.InSomething"/>).</summary>
+    public bool Imprisoned { get; init; }
     /// <summary>Crawling by choice (<see cref="Bodies.MedicalState.StayingLow"/>, not crippled): the context menu's Stand Up.</summary>
     public bool StayingLow { get; init; }
     /// <summary>In a fight (<see cref="CharacterCold.InCombat"/>).</summary>

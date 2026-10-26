@@ -22,6 +22,8 @@ sealed partial class GameHost
     double autosaveSeconds;
     bool autosaveDue;
     string? saveRequestedFolder, loadRequestedFolder, readingFolder;
+    // The tutorial manager (docs/game/ui-screens.md "Tutorials"), made with the interface; its file is in the working directory, as the game's.
+    TutorialManager? tutorials;
     // The save the game in play came from or was last written to: the load window cannot delete it.
     string? saveInUse;
     (string Folder, ImportOptions Options)? importRequested;

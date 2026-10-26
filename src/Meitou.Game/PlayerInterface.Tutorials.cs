@@ -16,10 +16,12 @@ sealed partial class PlayerInterface
         int faction = session.World.Player.Faction;
         bool unsettled = false, aid = false, attack = false, ko = false, awake = false, sneak = false, hungry = false, playingDead = false, slave = false;
         int pcs = 0;
+        var pcIds = new List<CharacterId>();
         foreach (var c in snap.Characters)
         {
             if (!c.IsPlayer || c.Body is { Dead: true }) continue;
             pcs++;
+            pcIds.Add(c.Id);
             bool down = c.Body is { Unconscious: true };
             unsettled |= c.CombatMode || down || c.InBed;
             aid |= c.Body is { NeedsAid: true };
@@ -54,6 +56,7 @@ sealed partial class PlayerInterface
             NeedsFirstAid = aid,
             UnderAttack = attack,
             PcCount = pcs,
+            Pcs = pcIds,
             Stolen = facts.Stolen,
             AnyUnconscious = ko,
             AnyConscious = awake,
