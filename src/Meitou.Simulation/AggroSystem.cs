@@ -272,6 +272,9 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         public Ai.AiStance Stance;
         /// <summary>A campaign squad's assault targets (<see cref="Squad.War"/>; none for others).</summary>
         public WarTargets War;
+        /// <summary>The faction a hired squad works for (<c>Contract_HiredAlly</c> 12, its employer's) or defends (<c>Contract_DefendPlayerBase</c> 15, the hirer's); -1: none. Its members are never enemies, nor, hired, its allies.</summary>
+        public int Employer;
+        public bool EmployerAllies;
         public Vector2 Home;
         public float HomeR2;
         public int Best;
@@ -329,6 +332,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
                 HoldPoint = Orders.HoldPointOf(cold, prev[i].Position),
                 Seed = world.Seed, Key = Rng.Key(new CharacterId(i, prev[i].Generation)), Tick = (ulong)world.Tick,
                 Stance = stance, War = war,
+                Employer = EmployerOf(world, cold, out bool allies), EmployerAllies = allies,
                 Home = cold.Ai?.Squad.HomeCentre ?? default, HomeR2 = cold.Ai is { } mind ? mind.Squad.HomeRadius * mind.Squad.HomeRadius : 0,
                 Spots = slots[i].Spots, Sightings = sightings ??= [], Effects = effects,
             };
@@ -423,6 +427,17 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         return 0;
     }
 
+    /// <summary>The faction <paramref name="cold"/>'s squad is contracted to (<see cref="Scan.Employer"/>): the contract target's (the hirer) for signals 12 and 15; -1 otherwise.</summary>
+    static int EmployerOf(World world, CharacterCold cold, out bool allies)
+    {
+        allies = false;
+        var table = world.Characters;
+        if (cold.Ai?.Squad.Ai is not { Contract.Signal: 12 or 15 } board || board.MissionTarget is not { IsNone: false } id || id.Slot >= table.HighWater
+            || table.Previous[id.Slot].Generation != id.Generation || table.Cold(id.Slot) is not { } h) return -1;
+        allies = board.Contract.Signal == 12;
+        return h.Faction;
+    }
+
     static void Visit(int slot, ref Scan s)
     {
         if (slot == s.Self) return;
@@ -438,10 +453,10 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         bool sneaking = (c.Orders & CharacterOrders.Sneak) != 0;
         // Wanted characters are the arrest system's (Crime.ArrestSystem): the police spot, fine or arrest them there.
         bool enemy = s.Stance != Ai.AiStance.Passive
-            && (IsEnemy(s.Relations, s.Faction, c.Faction) || s.Stance == Ai.AiStance.AggressiveNeutrals && IsNeutral(s.Relations, s.Faction, c.Faction) || WarEnemy(s.War, s.Faction, c.Faction, other.Position));
+            && (IsEnemy(s.Relations, s.Faction, c.Faction) || s.Stance == Ai.AiStance.AggressiveNeutrals && IsNeutral(s.Relations, s.Faction, c.Faction) || WarEnemy(s.War, s.Faction, c, other.Position));
         // A campaign force's member is sensed as NEUTRAL, not ENEMY (FUN_1408580d0 over FUN_140796240, docs/game/perception.md "Sense tags"): a raid walks up to talk first.
         // The looker still takes it when it attacks neutrals or its own campaign targets it; a TEMP_ENEMY tag (below) makes it an enemy again.
-        if (enemy && s.Stance != Ai.AiStance.AggressiveNeutrals && !WarEnemy(s.War, s.Faction, c.Faction, other.Position) && c.SquadId >= 0
+        if (enemy && s.Stance != Ai.AiStance.AggressiveNeutrals && !WarEnemy(s.War, s.Faction, c, other.Position) && c.SquadId >= 0
             && s.World.Squads.Find(c.SquadId) is { PlatoonId: >= 0 } force && s.World.Platoons.Find(force.PlatoonId)?.Campaign is not null) enemy = false;
         // The squads' temporary tags (FUN_14079c950, other faction only): the looker's squad holds TEMP_ENEMY on the target, or, for a player-faction looker, the target's squad on it,
         // makes an enemy; the looker's squad holding TEMP_ALLY on the target unmakes one.
@@ -452,6 +467,8 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
                 || s.World.Player.Faction == s.Faction && c.SquadId >= 0 && memory.HasShort(s.World, c.SquadId, new CharacterId(s.Self, s.Table.Previous[s.Self].Generation), Dialogue.MemoryTag.TempEnemy)) enemy = true;
             else if (enemy && s.Squad >= 0 && memory.HasShort(s.World, s.Squad, target, Dialogue.MemoryTag.TempAlly)) enemy = false;
         }
+        // A contract's employer (Contract_HiredAlly / Contract_DefendPlayerBase assessNeutral, and HiredAlly's assessEnemy for the employer's allies, Verified): TEMP_ALLY, not an enemy.
+        if (enemy && s.Employer >= 0 && (c.Faction == s.Employer || s.EmployerAllies && s.Relations.Contains(c.Faction) && s.Relations.IsAlly(s.Employer, c.Faction))) enemy = false;
         if (!enemy) return;
         // One it found no path to lately is never picked (isPathImpossible in the attack-on-sight finder's score, docs/game/combat.md "Target score"): else a guard shut in with its
         // enemy (a cage, a locked room) takes it as target again every look and never turns on anyone it can reach.
@@ -528,9 +545,12 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
     /// <summary>A character the AI put to bed or sat down (<see cref="Ai.AiBehaviour.Sleep"/>, <see cref="Ai.AiBehaviour.Sit"/>): unlike one resting by order, it can be roused into a fight.</summary>
     static bool AiSleeper(CharacterCold? cold) => cold?.Ai is { Behaviour: Ai.AiBehaviour.Sleep or Ai.AiBehaviour.Sit };
 
-    /// <summary>A campaign assault's extra enemy (<see cref="WarTargets"/>): of the target faction, or with <c>Everyone</c> anyone not of its own faction in the target town.</summary>
-    static bool WarEnemy(WarTargets war, int mine, int theirs, Vector3 at) =>
-        war.IsSet && theirs != mine && (theirs == war.Faction || war.Everyone && Vector2.DistanceSquared(new Vector2(at.X, at.Z), war.Centre) <= war.Radius * war.Radius);
+    /// <summary>
+    /// A campaign assault's extra enemy (<see cref="WarTargets"/>): of the target faction, or with <c>Everyone</c> anyone not of its own faction in the target town except animals and
+    /// bandits (<c>Package_WarAssault</c> assessNeutral <c>FUN_14028a3f0</c>, <b>Verified</b>; it also skips fake factions, and takes people outside every town too).
+    /// </summary>
+    static bool WarEnemy(WarTargets war, int mine, CharacterCold c, Vector3 at) =>
+        war.IsSet && c.Faction != mine && (c.Faction == war.Faction || war.Everyone && c.Fighter?.IsAnimal != true && c.NpcClass != FundamentalType.Bandit && Vector2.DistanceSquared(new Vector2(at.X, at.Z), war.Centre) <= war.Radius * war.Radius);
 
     public static bool IsEnemy(FactionRelations relations, int mine, int theirs) =>
         relations.Contains(theirs) && relations.IsHostile(mine, theirs) && !relations.Coexists(mine, theirs) && !relations.Coexists(theirs, mine);
