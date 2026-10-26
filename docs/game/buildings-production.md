@@ -655,7 +655,7 @@ and `power capacity` (battery store, "in seconds" per fcs.def), plus research ([
   the condition row (order **Observed**), the state words and tooltips per [ui-screens](ui-screens.md#selected-building) (slot 114).
 - **Demand** (`vfunc_163`, `FUN_140299630`): a consumer's |output + increase|, x operators / raw `max operators` when that is above 0, only while slot 164 holds (a
   lamp outdoors by day wants nothing); a farm (`FUN_1400df330`, **Verified**) always its whole |output + increase|, no operator share and not
-  asking `power on` (Meitou keeps the `power on` test for farms, engine choice); a
+  asking `power on` (Meitou the same); a
   battery's rate while below its capacity health x (capacity + increase) (`FUN_140297650`).
 - **Town frame** (`Town::vfunc_87`): consumers sorted by ascending demand (`FUN_140927350`); each takes
   min(demand, supply left / consumers left). Consumers left short with `gets battery` are counted; if batteries were in

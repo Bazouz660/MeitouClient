@@ -133,9 +133,9 @@ public sealed partial class ProductionSystem
             else if (m.Data.IsBattery) { m.Demand = m.PowerOn && m.Charge > 0 ? Rated(world, m) : 0; batteries += m.Demand; }
             else
             {
-                // A farm wants its whole draw whoever works it (FarmBuilding slot 163, FUN_1400df330: |power output + increase|).
+                // A farm wants its whole draw whoever works it and whether or not it is switched on (FarmBuilding slot 163, FUN_1400df330: |power output + increase|).
                 float share = m.Data.Farm is null && m.Data.PowerOperators > 0 ? (float)m.LastOperators / m.Data.PowerOperators : 1;
-                m.Demand = m.PowerOn && m.Active ? MathF.Abs(Rated(world, m)) * share : 0;
+                m.Demand = (m.Data.Farm is not null || m.PowerOn) && m.Active ? MathF.Abs(Rated(world, m)) * share : 0;
                 demandTotal += m.Demand;
                 consumers.Add(m);
             }
