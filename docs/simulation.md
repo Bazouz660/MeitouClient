@@ -310,7 +310,7 @@ member a slot by its faction's `squad formation` (`World.FactionFormations`, RAN
 turned onto `FollowHeading`, one second of the leader's travel ahead; anyone else (a follow order across squads, a contract's mission target) keeps
 20..40 from its target. `FollowSpeedFor` is the original's desired speed. Engine choices: it is capped by the top speed only (not the speed mode);
 a squad's slaves go with the head (Meitou's slave owner is a faction); CARAVAN side members are placed even without a SQUAD_2 member; the building-door
-aim (`ShutOutAim`) counts a building as shut when all its doors are locked and whole, and puts the door's points 10 either side of the leaf, outside away from the leader; within `DirectDistance` 50 it steers straight, farther, or for `FollowPathSeconds` 3 after a blocked step, it takes paths.
+aim (`ShutOutAim`) counts a building as shut when all its doors are locked and whole, and takes the outer of the door's points (15 either side of the leaf) as the side away from the leader; within `DirectDistance` 50 it steers straight, farther, or for `FollowPathSeconds` 3 after a blocked step, it takes paths.
 A `FollowOrder` (the context menu's Follow, order 31) makes a character follow another the same way (`CharacterCold.FollowOrder` replaces the leader; a leader following a squad mate makes that mate the formation's head) until a move order replaces it or the target is gone (then Idle); not saved.
 Body contact (engine choice): standing bodies are solid over `BodyShare` 0.6 of the footprint (2.4 for a human). After its step, each
 character takes half the overlap with each separation neighbour's last position (not one predicted from its velocity, which in a jam is wanted, not achieved), averaged over those it overlaps (a sum shakes a packed crowd); its own velocity into a body it already touches is dropped (pressing ranks would squash the front). A walker
@@ -801,6 +801,9 @@ every 15 ticks, by `PopulationSystem.GoalDuty` (facts: [ai-tasks](game/ai-tasks.
   built-up area on its side (farther out until walkable), put down; else put down. A body put down short of its goal is left alone for 2 game hours.
 - **243 Getting food**: a member holding no food walks to the nearest store with food in the town (a player town's complete storage, else an unlocked container) and takes one item.
   Meitou's NPCs are fed by their hunger floor, so the food is not eaten.
+- **158 / 283 Shooing** (`AI::findStrangersInMyBuilding`; 283 only while the home is private): the first character in the squad's home building that is neither allied nor an
+  enemy, not down, caged, its faction's slave or law enforcement, or (an NPC squad) a player character there not sneaking or spotted; the member walks at it and sends event 9
+  (17 to an enemy) every 5 s (engine pacing; the dialogue data escalates); after 25 game minutes, once the stranger is getting away, event 60 and done; over once it is out.
 - **131 Looting food** (`AI::findSomethingToLootFoodFrom`, shared with 243): a member holding no food in any town (not only its own) walks to the nearest such store, not a
   container of its own faction (engine reading of the own-shop skip), and takes every food item that fits (`Task_EmptyMachine` moves items while there is room).
 - **212 Confiscating goods** (`AI::findPrisonerWithContraband`): in its town, the first occupied cage (list order) whose prisoner carries a stolen item; at the cage it takes
@@ -1339,7 +1342,8 @@ package): the war classes (19, 20, 32) and 31, which run only in campaigns; the 
 goals the engine acts out. The think orders each tier's goals by score, leaves out one whose list A holds, and takes the first
 whose plan succeeds (`AiSystem.Choose`); `AiMind.Plan` holds it leaf first and `AiMind.Step` (hashed) its first step. The goal's
 act-out does the walk and the goal's own action; steps of their own are getting out of bed, sheathing and drawing a weapon (one think each),
-going home (19, the GoHome walk) and getting near a target (40, a walk to within 10). A plan
+going home (19, the GoHome walk), entering its home building (156, the same walk), leaving it (200, to A + (A − B) × 1.1 of the home's first door,
+the outer point taken as the side away from the building's origin, until outside) and getting near a target (40, a walk to within 10). A plan
 whose first step is neither the goal nor a step the engine carries out (`AiSystem.Carried`) fails. Engine choices:
 - Everyone plans with category 0x1; no character is squadless, so restricted rows (lockpicking, cutting, opening gates) never
   enter a plan. A row without a finder wants its effect for its own target. At most 64 nodes per search.
@@ -1349,7 +1353,7 @@ whose first step is neither the goal nor a step the engine carries out (`AiSyste
 - Finders: the spots, beds, seats, turrets and towns the act-outs already pick, at the floor point the walk ends on (`PlanContext.Find`); other finders find nothing,
   so such goals do not plan. Rows on the way have their `TaskProfiles` desire, else 1.
 - States (`PlanContext.Holds`): location, distance, bed, sitting, home (within 20 of the home), home town, town, weapon drawn, weapon carried
-  (`hasWeapon`) and carrying are evaluated; moving, getting up, arms, power, buildings, doors, gates, accessibility, machine slots and readiness are
+  (`hasWeapon`), carrying and inside the home building (107, `AI::iAmInsideTargetBuilding` for a non-building target) are evaluated; moving, getting up, arms, power, buildings, doors, gates, accessibility, machine slots and readiness are
   held true (movement and the lock-up round deal with doors; the bashers' `DoorPlan` evaluates them); every other state is false.
 
 Combat stances (`AiStance`, the most aggressive combat goal in its hours; none at all attacks on sight): PROTECT_OWN_SQUAD joins only

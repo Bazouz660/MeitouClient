@@ -25,7 +25,8 @@ public sealed partial class AiSystem
         or TaskType.TRAVEL_TO_TARGET_TOWN_FAST or TaskType.STAND_AT_NODE or TaskType.BUY_SHIT
         or TaskType.USE_BED or TaskType.USE_BED_ORDER or TaskType.USE_TURRET or TaskType.OPERATE_MACHINERY or TaskType.PRETEND_TO_OPERATE_MACHINERY or TaskType.UNEQUIP_WEAPON
         or TaskType.GET_OUT_OF_BED or TaskType.GET_OUT_OF_BED_IF_ITS_EMERGENCY or TaskType.GET_OUT_OF_BED_ONCE_HEALED
-        or TaskType.EQUIP_WEAPON or TaskType.EQUIP_CROSSBOW or TaskType.GO_HOMEBUILDING or TaskType.GET_NEAR_TO;
+        or TaskType.EQUIP_WEAPON or TaskType.EQUIP_CROSSBOW or TaskType.GO_HOMEBUILDING or TaskType.GET_NEAR_TO
+        or TaskType.ENTER_BUILDING or TaskType.LEAVE_BUILDING;
 
     /// <summary>
     /// One character's view for the <see cref="TaskPlanner"/> (one per worker thread, bound per think): its states (docs/simulation.md "Planner" lists the
@@ -116,6 +117,8 @@ public sealed partial class AiSystem
                 StateType.IS_CARRYING_SOMETHING => !cold.Carrying.IsNone,
                 StateType.isInBed => cold.InSomething == Locks.HeldState.Bed || (CharacterTask)Me.Task == CharacterTask.Rest && mind.Behaviour == AiBehaviour.Sleep,
                 StateType.IS_WORKING or StateType.IS_WORKING_PRETEND or StateType.using_target_turret or StateType.using_any_turret => Settled(target),
+                // AI::iAmInsideTargetBuilding (FUN_14059a4b0) for a target that is not a building: inside its home building (no home: held true).
+                StateType.I_AM_INSIDE_TARGET_BUILDING => board.Home is not { } inHome || world.Sight.BuildingOf(slot) == inHome.Key,
                 StateType.isAtHome => board.Home is not { } home || mind.HomeUnreachable || Vector2.DistanceSquared(Flat(Me.Position), Flat(home.Position)) <= HomeRadius * HomeRadius,
                 // Without a town it is never at its home town; its destination town (patrolling in town) is wherever it is.
                 StateType.isAtHomeTown => board.Town >= 0 && system.AtHomeTown(world, mind.Squad, board, world.Characters.IdOf(slot)),
@@ -139,7 +142,7 @@ public sealed partial class AiSystem
                     or StateType.AT_LOCATION_BUILDING_DOOR_INSIDE or StateType.AT_LOCATION_BUILDING_DOOR_OUTSIDE or StateType.DESTINATION_IS_ACCESSIBLE
                     or StateType.LOCATION_IS_ACCESSIBLE or StateType.DESTINATION_NOT_BLOCKED_BY_FORTIFICATIONS or StateType.AT_LOCATION_FORTIFICATION_GATE
                     or StateType.DOOR_IS_LOCKED_AND_IM_INSIDE or StateType.DOOR_IS_LOCKED_AND_IM_OUTSIDE or StateType.allDoorsLocked or StateType.isObjectMine
-                    or StateType.I_AM_INSIDE_TARGET_BUILDING or StateType.isAlly or StateType.crowdLimit8 or StateType.targetStandingStill
+                    or StateType.isAlly or StateType.crowdLimit8 or StateType.targetStandingStill
                     or StateType.isMachineOutputEmpty or StateType.hasBuildingMaterials or StateType.buildingHasBuildingMaterials => true,
                 _ => false,
             };

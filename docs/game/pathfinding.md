@@ -116,8 +116,8 @@ owner or in its platoon (`14033b160`); otherwise the aim is target + normalise(m
 (`14032ebd0`). Formation aim (`1403335c0`): heading H (task +0xa0) eases toward the leader's XZ direction (−X if zero) while the leader
 moves, H += (dir − H) × 0.5 × dt (`GameLoop_DtScaled`), aim = leader position + H × leader speed + slot rotated from −X onto H, so
 followers aim one second ahead of the leader. When the leader is inside a building the follower cannot enter, aim = A + (A − B) × 1.1 +
-rotated slot × 0.2 (A, B: door data +0x3bc / +0x3c8, two points either side of the doorway, initialised to the door's position by the `DoorStuff` constructor `14029fb40`; the
-side test `14059bf30` picks between them by gate code, so they are the door's two sides, **Observed**; which is outside is **Unknown**, the aim reads as "past the outer point").
+rotated slot × 0.2 (A, B: the door's two points, its leaf centre ± 15, [ai-tasks](ai-tasks.md) gate guards; 200 LEAVE_BUILDING walks to the same A + (A − B) × 1.1, so A is
+the outer one, **Observed**: the aim is 33 past the doorway outside).
 
 Each update, with d the XZ distance to the aim: under 1 the desired speed (movement +0xbc) is 0. While the leader moves it is
 d × max(0.1, 0.5 + 0.5 × dot(leader direction, own direction)): a follower that lags runs to catch up, one facing away slows. With the

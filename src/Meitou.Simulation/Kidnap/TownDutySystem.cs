@@ -26,7 +26,7 @@ public sealed record TownDutySettings
     public double RefuseHours { get; init; } = 2;
 }
 
-public enum TownDutyKind : byte { Lift, Out, Cage, Food, Confiscate, LootFood }
+public enum TownDutyKind : byte { Lift, Out, Cage, Food, Confiscate, LootFood, Shoo }
 
 /// <summary>One member's errand of the <see cref="TownDutySystem"/>: an intruder it lifts and carries out or to a cage, or a store it fetches food from.</summary>
 public sealed class TownDuty
@@ -41,11 +41,15 @@ public sealed class TownDuty
     /// <summary>The cage's fixture id, or the store's (a machine's site id, else a container's fixture id).</summary>
     public string? Target { get; set; }
     public int Tries { get; set; }
+    /// <summary>A shoo's start (game hours) and its next event (game seconds of the errand).</summary>
+    public double Since { get; set; }
+    public float Next { get; set; }
 
     internal void Hash(ref StateHasher h)
     {
         h.Add(Member); h.Add(Body); h.Add(Faction); h.Add(Town.Site); h.Add(Town.PlayerTown); h.Add((int)Kind); h.Add(Goal); h.Add(Tries);
         h.Add(Target is { } t ? Rng.StableHash(t) : 0UL);
+        if (Kind == TownDutyKind.Shoo) { h.Add(Since); h.Add(Next); }
     }
 }
 
@@ -101,7 +105,7 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
             if (!c.Carrying.IsNone) reserved.Add(c.Carrying);
             if (c is { Medical: { Unconscious: true, Dead: false } } && c.InSomething == HeldState.None && CarrySystem.CanBeLifted(c)) downed.Add(s);
         }
-        Span<int> intruders = stackalloc int[5], food = stackalloc int[5], confiscate = stackalloc int[5], loot = stackalloc int[5];
+        Span<int> intruders = stackalloc int[5], food = stackalloc int[5], confiscate = stackalloc int[5], loot = stackalloc int[5], shoo = stackalloc int[5];
         foreach (var squad in world.Squads.All)
         {
             if (squad.Ai is null || squad.Members.Count == 0) continue;
@@ -109,6 +113,7 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
             food.Fill(-1);
             confiscate.Fill(-1);
             loot.Fill(-1);
+            shoo.Fill(-1);
             foreach (var member in squad.Members)
             {
                 if (!table.TryResolveNext(member, out int slot) || !Free(world, slot) || Busy(member)) continue;
@@ -118,7 +123,15 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
                 if (food[role] < 0) food[role] = population.GoalDuty(world, squad, (AiRole)role, TaskType.AQUIRE_FOOD_AT_HOMEBASE) ? 1 : 0;
                 if (confiscate[role] < 0) confiscate[role] = population.GoalDuty(world, squad, (AiRole)role, TaskType.LOOT_STOLEN_GOODS) ? 1 : 0;
                 if (loot[role] < 0) loot[role] = population.GoalDuty(world, squad, (AiRole)role, TaskType.LOOT_FOOD_AND_STUFF) ? 1 : 0;
-                if (intruders[role] == 0 && food[role] == 0 && confiscate[role] == 0 && loot[role] == 0) continue;
+                if (shoo[role] < 0) shoo[role] = squad.HomeBuilding is not null && (population.GoalDuty(world, squad, (AiRole)role, TaskType.SHOO_STRANGERS_OUT_OF_MY_BUILDING)
+                    || squad.Ai is { HomePublic: false } && population.GoalDuty(world, squad, (AiRole)role, TaskType.SHOO_STRANGERS_OUT_OF_MY_BUILDING_IF_PRIVATE)) ? 1 : 0;
+                if (intruders[role] == 0 && food[role] == 0 && confiscate[role] == 0 && loot[role] == 0 && shoo[role] == 0) continue;
+                if (shoo[role] == 1 && Stranger(world, slot, cold, squad) is { IsNone: false } stranger)
+                {
+                    cold.Engaged = true;
+                    duties.Add(new TownDuty { Member = member, Body = stranger, Faction = cold.Faction, Town = AiSystem.TownAt(data, world, table.Next[slot].Position), Kind = TownDutyKind.Shoo, Since = world.GameHours });
+                    continue;
+                }
                 var at = table.Next[slot].Position;
                 var town = AiSystem.TownAt(data, world, at);
                 // 131 Looting food, in whatever town it is in (the original's target town, else the current one).
@@ -283,6 +296,7 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
         ref var gn = ref table.Next[g];
         if (d.Kind is TownDutyKind.Food or TownDutyKind.LootFood) return StepFood(world, d, g, gc);
         if (d.Kind == TownDutyKind.Confiscate) return StepConfiscate(world, d, g, gc);
+        if (d.Kind == TownDutyKind.Shoo) return StepShoo(world, d, g, gc);
         if (!table.TryResolveNext(d.Body, out int b) || table.Cold(b) is not { Medical.Dead: false } body || body.IsImprisoned)
         {
             carry.LetGo(world, g);
@@ -415,6 +429,80 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
         if (walking) return true;
         if (++d.Tries > Settings.Walks) return End(world, d);
         MovementSystem.GoTo(table, g, d.Goal, SpeedMode.Walk);
+        return true;
+    }
+
+    /// <summary>
+    /// <c>AI::findStrangersInMyBuilding</c> (<c>FUN_1408ced70</c>, goals 158 / 283): in the squad's home building, the first character (slot order, the original takes its sensed-list
+    /// order) neither of an allied faction nor an enemy, not down, dead or caged, not a slave of the shooer's faction and not law enforcement (AUTHORITY_FIGURE, engine reading); for an
+    /// NPC squad also any of the player's characters there that is not sneaking or that the shooer has spotted. Not one another errand shoos. None: none.
+    /// </summary>
+    CharacterId Stranger(World world, int slot, CharacterCold cold, Squad squad)
+    {
+        if (squad.HomeBuilding is not { } home) return CharacterId.None;
+        var table = world.Characters;
+        aggro ??= world.Systems.OfType<AggroSystem>().FirstOrDefault();
+        if (insidersTick != world.Tick)
+        {
+            insidersTick = world.Tick;
+            insiders.Clear();
+            for (int s = 0; s < table.HighWater; s++)
+                if (table.Next[s].Alive && world.Sight.BuildingOf(s) is { } key) (insiders.TryGetValue(key, out var list) ? list : insiders[key] = []).Add(s);
+        }
+        if (!insiders.TryGetValue(home.Key, out var inside)) return CharacterId.None;
+        foreach (int s in inside)
+        {
+            if (s == slot || table.Cold(s) is not { Medical.Incapacitated: false } c || c.IsImprisoned) continue;
+            if (c.SlaveState == 1 && c.SlaveOwner == cold.Faction) continue;
+            var id = table.IdOf(s);
+            if (duties.Any(o => o.Kind == TownDutyKind.Shoo && o.Body == id)) continue;
+            bool neutral = c.Faction != cold.Faction && !(data.Relations.Contains(cold.Faction) && data.Relations.Contains(c.Faction)
+                && (data.Relations.IsAlly(cold.Faction, c.Faction) || AggroSystem.IsEnemy(data.Relations, cold.Faction, c.Faction)));
+            if (neutral && c.NpcClass != Meitou.Data.Gameplay.FundamentalType.LawEnforcement) return id;
+            if (!cold.IsPlayer && c.IsPlayer && ((c.Orders & CharacterOrders.Sneak) == 0 || aggro?.Spotted(slot, id) == true)) return id;
+        }
+        return CharacterId.None;
+    }
+
+    AggroSystem? aggro;
+    // Who is inside each building, by building key, as of insidersTick (the shoo finder's pass).
+    readonly Dictionary<string, List<int>> insiders = new(StringComparer.Ordinal);
+    long insidersTick = -1;
+
+    /// <summary>Event 9 EV_SHOO_FROM_MY_BUILDING, 17 EV_INTRUDER_FOUND (for an enemy), 60 EV_GIVE_UP_CHASE (docs/game/dialogue.md "Enums").</summary>
+    const int ShooEvent = 9, IntruderFound = 17, GiveUpChase = 60;
+    /// <summary>Game seconds between shoo events (engine choice: the original re-sends on every update and its lines' own timers pace them).</summary>
+    const float ShooEverySeconds = 5;
+
+    /// <summary>
+    /// A shoo (161 <c>Task_TalktoPlayer</c> with the row event 9): the shooer walks at the stranger and sends it event 9 (17 when it is an enemy) every
+    /// <see cref="ShooEverySeconds"/>; the dialogue data does the rest (lines that follow, time out and turn violent). After 25 game minutes, once the stranger is getting away
+    /// (fleeing or walking off), it gives up with event 60. Over when the stranger is no longer in the home building, is down or caged.
+    /// </summary>
+    bool StepShoo(World world, TownDuty d, int g, CharacterCold gc)
+    {
+        var table = world.Characters;
+        var squad = world.Squads.Find(gc.SquadId);
+        if (squad?.HomeBuilding is not { } home || !table.TryResolveNext(d.Body, out int t) || table.Cold(t) is not { Medical.Incapacitated: false, IsImprisoned: false } tc
+            || world.Sight.BuildingOf(t) != home.Key)
+            return End(world, d);
+        ref var gn = ref table.Next[g];
+        var to = new Vector2(table.Next[t].Position.X, table.Next[t].Position.Z);
+        if (Vector2.Distance(Flat(gn.Position), to) > Dialogue.DialogueSystem.TalkReach && (gn.Task != (byte)CharacterTask.GoTo || Vector2.Distance(gn.Goal, to) > Dialogue.DialogueSystem.TalkReach))
+            MovementSystem.GoTo(table, g, to, SpeedMode.Walk);
+        d.Next -= world.TickSeconds;
+        if (d.Next <= 0)
+        {
+            d.Next = ShooEverySeconds;
+            bool enemy = data.Relations.Contains(gc.Faction) && data.Relations.Contains(tc.Faction) && AggroSystem.IsEnemy(data.Relations, gc.Faction, tc.Faction);
+            world.Defer(new Dialogue.DialogueEvent(d.Member, d.Body, enemy ? IntruderFound : ShooEvent) { Tick = world.Tick + 1 });
+        }
+        bool away = tc.Fleeing || table.Next[t].Task == (byte)CharacterTask.GoTo && Vector2.Distance(table.Next[t].Goal, Flat(gn.Position)) > Vector2.Distance(to, Flat(gn.Position));
+        if ((world.GameHours - d.Since) * 60 > 25 && away)
+        {
+            world.Defer(new Dialogue.DialogueEvent(d.Member, d.Body, GiveUpChase) { Tick = world.Tick + 1 });
+            return End(world, d);
+        }
         return true;
     }
 

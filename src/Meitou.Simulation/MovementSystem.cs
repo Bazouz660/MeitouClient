@@ -547,9 +547,9 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
         return Vector2.Dot(off, g.Direction) > 0 ? g.Speed * MathF.Max(0.8f, 1 - 0.001f * off.Length()) : g.Speed;
     }
 
-    // The door aim of a follower shut out (docs/game/pathfinding.md "Following"): the door's two points DoorDepth either side of the leaf (engine reading of door data +0x3bc / +0x3c8),
+    // The door aim of a follower shut out (docs/game/pathfinding.md "Following"): the door's two points DoorDepth either side of the leaf (door data +0x3bc / +0x3c8),
     // the aim 1.1 of their distance past the outer one, the formation slot shrunk to 0.2.
-    const float DoorDepth = 10, DoorPast = 1.1f, DoorSlotScale = 0.2f;
+    const float DoorDepth = 15, DoorPast = 1.1f, DoorSlotScale = 0.2f;
 
     /// <summary>
     /// Where a squad mate waits while its leader is inside a building it cannot enter (<c>1403335c0</c>; engine reading of "cannot enter": every door of the building locked and

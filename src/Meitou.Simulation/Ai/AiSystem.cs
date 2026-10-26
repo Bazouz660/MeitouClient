@@ -490,6 +490,14 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
                 // 19 Going home before the goal (43 Staying home and the like away from home): the walk home of the GoHome act-out.
                 behaviour = AiBehaviour.GoHome;
                 break;
+            case TaskType.ENTER_BUILDING:
+                // 156 Task_EnterBuilding: the walk into its home building (the GoHome walk), done once inside.
+                behaviour = AiBehaviour.GoHome;
+                break;
+            case TaskType.LEAVE_BUILDING when mind.Squad.Ai?.Home is { } leaving && world.Sight.BuildingOf(slot) == leaving.Key:
+                // 200 Task_LeaveBuilding: to 1.1 of the door's span past its outer point (A + (A - B) x 1.1) of the home's first door, until outside.
+                if (LeavePoint(world, leaving) is { } outside && !GoToSpot(world.Walkability, table, slot, mind, outside, GiveUp.Target, SpeedMode.Walk, slack: 10)) return;
+                break;
             case TaskType.GET_NEAR_TO when !mind.Plan[0].Target.IsNone:
                 // 40 Following to within 10 of the plan's target, then the goal's own act-out.
                 if (!GoToSpot(world.Walkability, table, slot, mind, Flat(mind.Plan[0].Target.Position), GiveUp.Target, SpeedMode.Walk, slack: 10)) return;
@@ -738,6 +746,24 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
     /// <see cref="AiSettings.PostSlack"/> where the spot must be exact (a turret's gun); <paramref name="height"/> is the floor the spot is on, so the path reaches a
     /// floor or walkway above the ground; a spot over a hole furniture cuts in that floor is walked to beside it, on the floor (<see cref="IWalkability.FloorNear"/>).
     /// </summary>
+    /// <summary>
+    /// Where 200 Task_LeaveBuilding walks (docs/game/ai-tasks.md): A + (A − B) × 1.1 of the building's first door with a known leaf, A and B its points 15 either side of the leaf
+    /// (engine reading of which is outer: the side away from the building's origin). Null: no door known.
+    /// </summary>
+    static Vector2? LeavePoint(World world, TownBuilding building)
+    {
+        foreach (var door in world.Fixtures.DoorsByBuilding[building.Key])
+        {
+            if (door.Spot is not { } s) continue;
+            var centre = new Vector2(s.Centre.X, s.Centre.Z);
+            var outward = new Vector2(s.Normal.X, s.Normal.Z);
+            if (Vector2.Dot(outward, centre - new Vector2(building.Position.X, building.Position.Z)) < 0) outward = -outward;
+            Vector2 a = centre + outward * 15, b = centre - outward * 15;
+            return a + (a - b) * 1.1f;
+        }
+        return null;
+    }
+
     bool GoToSpot(IWalkability walk, CharacterTable table, int slot, AiMind mind, Vector2 target, GiveUp giveUp, byte mode, float slack = 0, float? height = null)
     {
         if (height is { } spotY && walk.FloorNear(target.X, target.Y, spotY, FloorSlack) is { } onFloor) (target, height) = (Flat(onFloor), onFloor.Y);
