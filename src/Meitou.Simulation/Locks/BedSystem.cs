@@ -294,6 +294,18 @@ public sealed class BedSystem(PopulationData data, BedSettings? settings = null)
         return Math.Max(cost, 0);
     }
 
+    internal BuildingDetail? DetailOf(World world, string? instance)
+    {
+        // Town beds only: a bed the player built is a machine site (Site -1) and keeps the machine's panel.
+        if (instance is null || world.Fixtures.Find(instance) is not { Kind: FixtureKind.Bed, Site: >= 0 } bed || data.Db.Find(bed.RecordId) is not { } record) return null;
+        string? town = bed.Site >= 0 && bed.Site < data.Sites.Count ? data.Sites[bed.Site].Town.Name : null;
+        float healing = Meitou.Data.Gameplay.Construction.MachineData.From(data.Db, record)?.OutputValue ?? 1;
+        return new BuildingDetail(instance, [], bed.Owner == world.Player.Faction)
+        {
+            Bed = new(record.Name, town, Cost(world, bed, world.Player.Faction), healing),
+        };
+    }
+
     /// <summary>
     /// The rent paid by the character in <paramref name="slot"/> (the original's <c>FUN_1403576c0</c>, <b>Observed</b>); only the player's characters pay. -1: "This isn't mine", refused.
     /// Above 0: free when the player's faction paid for this bed less than <see cref="BedSettings.RentHours"/> ago; else "Can't afford c.{1} for bed rental." and refused, or the money

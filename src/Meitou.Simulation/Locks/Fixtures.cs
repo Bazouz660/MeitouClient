@@ -161,7 +161,11 @@ public readonly record struct DoorView(float Open, DoorMotion Motion, bool Locke
 public sealed record BuildingDetail(string Instance, IReadOnlyList<DoorDetail> Doors, bool Owned = false, bool? Public = null)
 {
     public long? SalePrice { get; init; }
+    public BedDetail? Bed { get; init; }
 }
+
+/// <summary>The selected bed's own panel data; cost uses the same faction rules as sleeping (-1 private, 0 free).</summary>
+public sealed record BedDetail(string Name, string? Town, int Cost, float HealingBonus);
 
 /// <summary>
 /// One door for the panel: open (open or opening: where it is heading), effectively locked, whether it wants its lock, its lock's level (0..100), whether the door is broken, and its

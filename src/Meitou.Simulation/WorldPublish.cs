@@ -56,6 +56,7 @@ public sealed partial class World
         var aggro = koSlot >= 0 ? systems.OfType<AggroSystem>().FirstOrDefault() : null;
         var talk = systems.OfType<Dialogue.DialogueSystem>().FirstOrDefault();
         var combat = systems.OfType<Combat.CombatSystem>().FirstOrDefault();
+        var beds = systems.OfType<Locks.BedSystem>().FirstOrDefault();
         var bodyConstants = systems.OfType<BodySystem>().FirstOrDefault()?.Constants;
         var population = systems.OfType<PopulationSystem>().FirstOrDefault()?.Data;
         float extraBloodLoss = systems.OfType<BodySystem>().FirstOrDefault()?.Constants.ExtraBloodLossFromBodyparts ?? 1;
@@ -164,7 +165,7 @@ public sealed partial class World
         PreviousSnapshot = Snapshot;
         Snapshot = new WorldSnapshot(Tick, list) { Projectiles = projectiles?.PublishProjectiles() ?? [], Trade = trades?.PublishTrade(), Conversation = dialogues?.PublishConversation(), CharacterTrade = dialogues?.PublishCharacterTrade(), Speech = PublishSpeech(), DialogueRequest = dialogues?.PublishRequest(), Towns = Player.Towns, Camps = Player.Camps, SquadAi = Player.SquadAi, PlayerSquads = PublishSquads(), ActiveSquad = Player.Squad, OpenLoot = Player.OpenLoot, LootOpener = Player.LootOpener,
             Held = Player.Held is { } held ? Items.HeldItemView.Of(held) : null, HeldSerial = Player.HeldSerial,
-            Buildings = Buildings.Published(), BuildingsRevision = Buildings.Revision, GroundItems = GroundItems.Published(), GroundItemsRevision = GroundItems.Revision, UnlockedBuildings = Research.Unlocked, Doors = Fixtures.PublishedDoors(), Containers = Fixtures.ContainerSpots, Beds = Fixtures.BedSpots, Cages = Fixtures.CageSpots(Characters), DoorPicks = Fixtures.DoorPicks, OwnedTownBuildings = Fixtures.OwnedProperties(Player.Faction), InspectedBuilding = Fixtures.DetailOf(Player.InspectedBuilding, Player.Faction), InspectedRichness = production?.RichnessOf(this, Player.InspectedBuilding), InspectedTurret = combat?.TurretPanelOf(this, Player.InspectedBuilding),
+            Buildings = Buildings.Published(), BuildingsRevision = Buildings.Revision, GroundItems = GroundItems.Published(), GroundItemsRevision = GroundItems.Revision, UnlockedBuildings = Research.Unlocked, Doors = Fixtures.PublishedDoors(), Containers = Fixtures.ContainerSpots, Beds = Fixtures.BedSpots, Cages = Fixtures.CageSpots(Characters), DoorPicks = Fixtures.DoorPicks, OwnedTownBuildings = Fixtures.OwnedProperties(Player.Faction), InspectedBuilding = beds?.DetailOf(this, Player.InspectedBuilding) ?? Fixtures.DetailOf(Player.InspectedBuilding, Player.Faction), InspectedRichness = production?.RichnessOf(this, Player.InspectedBuilding), InspectedTurret = combat?.TurretPanelOf(this, Player.InspectedBuilding),
             Machines = OpenContainerView() is { } container ?[.. production is null ? [] : Machines.Published(production.Items), container] : production is null ? [] : Machines.Published(production.Items), MachinesVersion = Machines.Version, Research = production?.ResearchView(this) ?? Production.ResearchSnapshot.Empty, Outposts = production?.OutpostView(this) ?? [],
             Crafts = production?.CraftsView(this) ?? Snapshot.Crafts };
     }
