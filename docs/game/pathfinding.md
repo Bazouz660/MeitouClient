@@ -48,8 +48,8 @@ and water factors0.75/0.5/0.4 apply separately (`FUN_14065dba0`, by water state 
   2 (waist) when 6g+Y <= 100, else 1 (shallow) only for a race with `swims` (race +0x79), otherwise 0. A carried character uses its carrier's.
 - Top speed S replaces the run speed: state 1 caps it at 45; in 2/3 a race that does **not** swim (skeletons, fishmen, robots) walks the bottom at 2 x race `walk speed`; a swimmer's
   state-2 speed is its `walk speed`, its state-3 speed the swim speed.
-- Swim speed = clamp(`swim speed mult` x swimming x 0.02, 6, 25) x leg x hunger x limb-item (all four limbs, stat 23) x encumbrance factors x 0.6 per unusable arm, at least 4; 1 with no usable
-  arm. A human swims at 6 whatever its skill.
+- Swim speed = lerp(`swim speed mult` x swimming x 0.02, 6, 25) (`FUN_140015b63` is (c - b) x a + b: 6 + 19 x, not clamped; 25 at swimming 50, 44 at 100) x leg x hunger x limb-item (all four limbs, stat 23) x encumbrance factors x 0.6 per unusable arm, at least 4; 1 with no usable
+  arm.
 - Training: in state 3 swimming gains 5 XP (10 carrying) per second instead of athletics.
 - Animation: category 4 (SWIMMING) records (`swim`, `swim carry`, `swim carry left`, `swim idle`) are the swimming clips; getting up in deep water plays `swim idle`.
 

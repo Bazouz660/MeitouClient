@@ -79,10 +79,13 @@ public static class Speed
     /// </summary>
     public static float WadingHeight(float terrainY, float size, bool swims) => swims ? MathF.Max(terrainY, WorldWater.Height - DeepWaterDepth * size) : terrainY;
 
-    /// <summary>The base swim speed before the body's factors (<c>FUN_140883e30</c>, the Swimming tooltip's "Max Swim Speed:"): swim speed mult x swimming x 0.02 clamped to [6, 25].</summary>
-    public static float SwimBase(RaceData race, CharacterStats stats) => Math.Clamp(race.SwimSpeedMult * stats[StatsEnumerated.Swimming] * 0.02f, 6, 25);
+    /// <summary>
+    /// The base swim speed before the body's factors (<c>FUN_140883e30</c>, the Swimming tooltip's "Max Swim Speed:"; <b>Verified</b>, decompile: the helper <c>FUN_140015b63</c> is
+    /// (c - b) x a + b): lerp(swim speed mult x swimming x 0.02, 6, 25) = 6 + 19 x, not clamped, so 25 at swimming 50 (mult 1) and 44 at 100.
+    /// </summary>
+    public static float SwimBase(RaceData race, CharacterStats stats) => 6 + (25 - 6) * (race.SwimSpeedMult * stats[StatsEnumerated.Swimming] * 0.02f);
 
-    /// <summary>The swim speed (<b>Verified</b>, <c>FUN_140885eb0</c>): swim speed mult x swimming x 0.02 clamped to [6, 25], x the leg, hunger, limb-item (all four limbs) and encumbrance factors, x 0.6 per unusable arm; at least 4, and 1 with no usable arm.</summary>
+    /// <summary>The swim speed (<b>Verified</b>, <c>FUN_140885eb0</c>): <see cref="SwimBase"/> x the leg, hunger, limb-item (all four limbs) and encumbrance factors, x 0.6 per unusable arm; at least 4, and 1 with no usable arm.</summary>
     public static float Swim(RaceData race, CharacterStats stats, MedicalState medical, float encumbranceFactor)
     {
         bool left = medical.ArmWorks(left: true), right = medical.ArmWorks(left: false);
