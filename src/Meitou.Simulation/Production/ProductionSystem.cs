@@ -808,6 +808,23 @@ public sealed partial class ProductionSystem : ITickSystem
     static bool Tended(Machine m) =>
         m.Farm is { Growth: < 1 } f && f.Death < m.Data.Farm!.DeathThreshold && m.Inputs.All(i => i.Rate <= 0 || i.Level + i.Count > 0);
 
+    /// <summary>
+    /// <c>FarmBuilding::eat</c> (<c>FUN_1400e5e60</c>, docs/game/ai-tasks.md "Eating crops"): adds <paramref name="amount"/> (the eater's age, 1, x the game seconds) to the eat accumulator; past 1
+    /// a plant is destroyed as a harvest takes it (<see cref="NextPlant"/>) and the accumulator restarts. False once no plant is left.
+    /// </summary>
+    public static bool EatCrop(FarmState f, float amount)
+    {
+        f.EatProgress += amount;
+        if (f.EatProgress <= 1) return f.Harvested < f.Plants.Length;
+        f.EatProgress = 0;
+        if (f.Harvested >= f.Plants.Length) return false;
+        NextPlant(f);
+        return true;
+    }
+
+    /// <summary>Whether animals may eat a farm (<c>AI::farmHasFood</c> <c>FUN_1408ca350</c>): grown past 0.4, dead under 0.9.</summary>
+    public static bool HasFood(FarmState f) => f.Growth > 0.4f && f.Death < 0.9f && f.Harvested < f.Plants.Length;
+
     /// <summary>A plant is done (<b>Observed</b>, <c>FUN_1400e4800</c>): its growth -10, one more harvested.</summary>
     static void NextPlant(FarmState f)
     {

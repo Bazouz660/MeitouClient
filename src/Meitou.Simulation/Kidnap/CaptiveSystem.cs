@@ -75,6 +75,10 @@ public enum CaptiveJobKind : byte
     Shout,
     /// <summary>Goal 276 Liberating prisoners by way of 110 (<c>Task_ReleasePrisoner</c>): a prisoner of a faction not allied to the worker's is let out.</summary>
     Liberate,
+    /// <summary>Goals 230 / 233 by way of 220 (<c>Task_EatPrisoner</c>): a dead or downed body on the ground eaten where it lies (no cage).</summary>
+    EatBody,
+    /// <summary>Goal 232 by way of 231 (<c>Task_EatingCrops</c>): a player farm eaten plant by plant (<see cref="CaptiveJob.Cage"/> holds the farm's site id).</summary>
+    EatCrops,
 }
 
 public enum CaptivePhase : byte { Walk, Work }
@@ -218,6 +222,17 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
                         break;
                     }
                 }
+                // The race's own AI Goals (Character::setupAI loads them for every NPC; their window is always open).
+                if (!cold.Engaged && cold.Ai is { RaceGoals: { Count: > 0 } raceGoals })
+                    foreach (var goal in raceGoals)
+                        if (TryStart(world, squad, board, slot, cold, goal.Task.Type) is { } job)
+                        {
+                            jobs.Add(job);
+                            cold.Engaged = true;
+                            Note(world, CaptiveEventKind.Started, job);
+                            started++;
+                            break;
+                        }
             }
         }
     }
@@ -235,6 +250,15 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
                 return site < 0 ? null : FateJob(world, slot, cold, board, site, CaptiveJobKind.Eat);
             case TaskType.EAT_A_RANDOM_CAGE_OCCUPANT_MEASURED_RATE:
                 return site < 0 || !KillDue(world, site, cold.Faction) ? null : FateJob(world, slot, cold, board, site, CaptiveJobKind.Eat);
+            case TaskType.EAT_A_RANDOM_DEAD_BODY:
+            case TaskType.EAT_A_RANDOM_KO_BODY:
+                return BodyToEat(world, slot, cold, dead: type == TaskType.EAT_A_RANDOM_DEAD_BODY) is >= 0 and var meal
+                    ? new CaptiveJob { Kind = CaptiveJobKind.EatBody, Worker = world.Characters.IdOf(slot), Captive = world.Characters.IdOf(meal), Cage = "", Faction = cold.Faction }
+                    : null;
+            case TaskType.FIND_CROPS_TO_EAT:
+                return CropsToEat(world, slot, cold, board) is { } farm
+                    ? new CaptiveJob { Kind = CaptiveJobKind.EatCrops, Worker = world.Characters.IdOf(slot), Captive = CharacterId.None, Cage = farm, Faction = cold.Faction }
+                    : null;
             case TaskType.NEW_SLAVE_PROCESSING:
             case TaskType.SLAVE_WATCHING:
                 if (site < 0 || cold.Carrying is { IsNone: false }) return null;
@@ -442,6 +466,8 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
         if (j.Age > Settings.GiveUpSeconds) return End(world, j, CaptiveEventKind.GaveUp);
         if (j.Kind is CaptiveJobKind.Gather or CaptiveJobKind.Deliver or CaptiveJobKind.CageSelf) return StepLogistics(world, j, w, wc);
         if (j.Kind is CaptiveJobKind.Capture or CaptiveJobKind.Carry or CaptiveJobKind.Shout) return StepSlaveWork(world, j, w, wc);
+        if (j.Kind == CaptiveJobKind.EatBody) return StepEatBody(world, j, w, wc);
+        if (j.Kind == CaptiveJobKind.EatCrops) return StepEatCrops(world, j, w, wc);
         var cage = world.Fixtures.Find(j.Cage);
         if (cage is null || !table.TryResolveNext(j.Captive, out int c) || table.Cold(c) is not { } cc || cc.InWhat != cage.Id || !cc.IsImprisoned || cc.Medical is not { Dead: false })
             return Over(world, j, table.TryResolveNext(j.Captive, out int gone) && table.Cold(gone)?.Medical is { Dead: true });
@@ -520,6 +546,132 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
         MovementSystem.GoTo(table, w, new Vector2(cage.Position.X, cage.Position.Z), SpeedMode.Walk);
         return true;
     }
+
+    /// <summary>
+    /// The meals of 230 and 233 (<c>AI::findCorpse_onGround</c> <c>FUN_1408cfde0</c> / <c>AI::findDeadOrKOBody_onGround</c> <c>FUN_1408ce680</c>, docs/game/ai-tasks.md), the nearest within the
+    /// eater's sight (engine reading of its sensed list): 230 a dead body of a <c>carriable</c> race lying down, for an animal eater not a robot and not of its own race; 233 a dead or
+    /// downed one not of an allied faction, not a robot and not of the eater's race. Not carried, not caged, and no other job's. -1: none.
+    /// </summary>
+    int BodyToEat(World world, int slot, CharacterCold cold, bool dead)
+    {
+        var table = world.Characters;
+        var next = table.Next;
+        var at = next[slot].Position;
+        float range = AggroSystem.RangeOf(cold, AggroSystem.OutdoorSight), best = range * range;
+        bool animal = cold.Fighter is { IsAnimal: true } || cold.Appearance?.Animal is not null;
+        int found = -1;
+        for (int s = 0; s < table.HighWater; s++)
+        {
+            if (s == slot || !next[s].Alive || table.Cold(s) is not { Medical: { } m, Race: { } race } body || !body.CarriedBy.IsNone || body.InSomething != Locks.HeldState.None) continue;
+            float d2 = Vector3.DistanceSquared(at, next[s].Position);
+            if (d2 > best) continue;
+            if (dead)
+            {
+                if (!m.Dead || !race.Carriable || animal && (race.IsRobot || race.StringId == cold.Race?.StringId)) continue;
+            }
+            else if (!m.Incapacitated || race.IsRobot || race.StringId == cold.Race?.StringId || Allied(cold.Faction, body.Faction)) continue;
+            var id = table.IdOf(s);
+            if (jobs.Any(o => o.Captive == id)) continue;
+            (found, best) = (s, d2);
+        }
+        return found;
+    }
+
+    /// <summary>
+    /// A meal on the ground (220 on a 230 / 233 target): the eater walks to the body, then eats it with the <c>eat</c> clip as a caged one is eaten (<see cref="Eat"/>), barking event 52. The
+    /// original's goal stays chosen while its finder still returns the body (TARGET_IS_EATEN is always false), so a corpse is eaten until <see cref="CaptiveSettings.GiveUpSeconds"/> ends
+    /// the job (engine choice); a living body until it dies. Carried away, caged or gone: over.
+    /// </summary>
+    bool StepEatBody(World world, CaptiveJob j, int w, CharacterCold wc)
+    {
+        var table = world.Characters;
+        if (!table.TryResolveNext(j.Captive, out int c) || table.Cold(c) is not { Medical: { } m, Race: { } } cc || !cc.CarriedBy.IsNone || cc.InSomething != Locks.HeldState.None
+            || !m.Dead && !m.Incapacitated)
+            return End(world, j, CaptiveEventKind.GaveUp);
+        ref var n = ref table.Next[w];
+        var body = table.Next[c].Position;
+        float d = Vector2.Distance(new Vector2(n.Position.X, n.Position.Z), new Vector2(body.X, body.Z));
+        if (j.Phase == CaptivePhase.Walk)
+        {
+            bool walking = n.Task == (byte)CharacterTask.GoTo;
+            if (d > Settings.Reach && !(!walking && j.Walks > 0 && d <= Settings.Slack))
+            {
+                if (walking) return true;
+                if (++j.Walks > Settings.Walks) return End(world, j, CaptiveEventKind.GaveUp);
+                MovementSystem.GoTo(table, w, new Vector2(body.X, body.Z), SpeedMode.Run);
+                return true;
+            }
+            MovementSystem.Stop(table, w);
+            j.Phase = CaptivePhase.Work;
+            j.Time = 0;
+            wc.DrawnWeapon = WeaponKinds.None;   // 220's B list: !hasWeaponEquipped
+            wc.ActionClip = EatClip;
+        }
+        var to = body - n.Position;
+        if (to.X * to.X + to.Z * to.Z > 1e-4f) n.Yaw = MathF.Atan2(to.X, to.Z);
+        if (j.Time >= j.NextBark)
+        {
+            j.NextBark = j.Time + Settings.BarkSeconds;
+            world.Defer(new Dialogue.DialogueEvent(j.Worker, j.Captive, EatingSounds) { Tick = world.Tick + 1 });
+        }
+        if (m.Dead) return true;
+        return Eat(world, j, c, cc, world.TickSeconds) ? End(world, j, CaptiveEventKind.Eaten) : true;
+    }
+
+    /// <summary>
+    /// The finder of 232 (<c>FUN_1408cb810</c>, docs/game/ai-tasks.md "Eating crops"): in the town the eater stands in, whose faction it does not get along with (engine reading of the
+    /// coexist test: an enemy by the relations), a farm with food (<see cref="Production.ProductionSystem.HasFood"/>) drawn uniformly at random. Only the player's farms are machines
+    /// in Meitou, so only a player town has any. Null: none.
+    /// </summary>
+    string? CropsToEat(World world, int slot, CharacterCold cold, Blackboard board)
+    {
+        var town = AiSystem.TownAt(data, world, world.Characters.Next[slot].Position);
+        if (town.PlayerTown <= 0 || world.Player.Faction < 0 || !data.Relations.Contains(cold.Faction) || !AggroSystem.IsEnemy(data.Relations, cold.Faction, world.Player.Faction)) return null;
+        List<string>? farms = null;
+        foreach (var m in world.Machines.All)
+            if (m.Farm is { } f && Production.ProductionSystem.HasFood(f) && world.Buildings.Find(m.Site) is { Complete: true } site && site.Town == town.PlayerTown
+                && !jobs.Any(o => o.Kind == CaptiveJobKind.EatCrops && o.Cage == m.Site))
+                (farms ??= []).Add(m.Site);
+        if (farms is null) return null;
+        return farms[Rng.Int(Rng.Hash(world.Seed, (ulong)Rng.Key(world.Characters.IdOf(slot)) ^ (ulong)world.Tick, RngPurpose.Slow, CropSalt), farms.Count)];
+    }
+
+    const ulong CropSalt = 0x4372_6F70_4561_7421;
+
+    /// <summary>
+    /// <c>Task_EatingCrops</c> (231): the eater walks to the farm, then each tick plays <c>eat</c>, is reported for crop theft (crime 14) against the farm's faction and eats
+    /// (<see cref="Production.ProductionSystem.EatCrop"/>, one plant per game second). It stops when the farm has no food left (the original's B list, 143) or the job grows old.
+    /// </summary>
+    bool StepEatCrops(World world, CaptiveJob j, int w, CharacterCold wc)
+    {
+        var table = world.Characters;
+        if (world.Machines.Find(j.Cage) is not { Farm: { } farm } || !Production.ProductionSystem.HasFood(farm) || world.Buildings.Find(j.Cage) is not { } site)
+            return End(world, j, null);
+        ref var n = ref table.Next[w];
+        float d = Vector2.Distance(new Vector2(n.Position.X, n.Position.Z), new Vector2(site.Position.X, site.Position.Z));
+        if (j.Phase == CaptivePhase.Walk)
+        {
+            bool walking = n.Task == (byte)CharacterTask.GoTo;
+            if (d > Settings.Reach + CropReach && !(!walking && j.Walks > 0 && d <= Settings.Slack + CropReach))
+            {
+                if (walking) return true;
+                if (++j.Walks > Settings.Walks) return End(world, j, CaptiveEventKind.GaveUp);
+                MovementSystem.GoTo(table, w, new Vector2(site.Position.X, site.Position.Z), SpeedMode.Run);
+                return true;
+            }
+            MovementSystem.Stop(table, w);
+            j.Phase = CaptivePhase.Work;
+            j.Time = 0;
+            wc.ActionClip = EatClip;
+        }
+        world.SystemOf<Crime.CrimeSystem>()?.SetPending(world, w, Crime.CrimeCode.CropTheft, world.Player.Faction, CharacterId.None, Crime.CrimeSystem.MinTimer);
+        if (!Production.ProductionSystem.EatCrop(farm, world.TickSeconds)) return End(world, j, null);
+        world.Machines.Touch();
+        return true;
+    }
+
+    // How near the farm's origin an eater stops (engine choice: the original walks to the farm's work point, getPositionMarker).
+    const float CropReach = 30;
 
     /// <summary>One update of a meal (<see cref="MedicalState.BeingEaten"/>, at the captive's own rate); true when the captive died of it or otherwise.</summary>
     bool Eat(World world, CaptiveJob j, int c, CharacterCold cc, float dt)

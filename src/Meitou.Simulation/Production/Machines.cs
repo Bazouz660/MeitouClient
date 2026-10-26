@@ -43,6 +43,8 @@ public sealed class FarmState(int plants)
     /// <summary><c>plants harvested</c>: also the plant worked next.</summary>
     public int Harvested { get; set; }
     public float HarvestProgress { get; set; }
+    /// <summary>Eating by animals (<c>FarmBuilding::eat</c>, the accumulator <c>+0x514</c>): past 1 a plant is destroyed. Not saved.</summary>
+    public float EatProgress { get; set; }
     public float ClearProgress { get; set; }
     public FarmStatus Status { get; set; } = FarmStatus.Growing;
     /// <summary>Plants replanted so far, the roll counter of the replanting draws.</summary>
@@ -178,6 +180,7 @@ public sealed class Machine
         {
             h.Add(f.Growth); h.Add(f.Death); h.Add(f.Start); h.Add(f.Harvested); h.Add(f.HarvestProgress); h.Add(f.ClearProgress); h.Add((byte)f.Status);
             foreach (var p in f.Plants) h.Add(p);
+            if (f.EatProgress != 0) h.Add(f.EatProgress);
         }
         if (Craft is { } c)
         {
