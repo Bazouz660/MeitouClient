@@ -640,7 +640,8 @@ and `power capacity` (battery store, "in seconds" per fcs.def), plus research ([
   generator; output < 0 a consumer. Function 5 without `consumes` is a wind generator, otherwise fuelled; batteries
   (23) share the generator class (factory `FUN_14057cc70`).
 - **Generator output** (`GeneratorBuilding::getPowerOutput`): health x (output + increase) when switched on (`power on`) and
-  fuelled ("Out of fuel" otherwise). A battery's output is its rate while it holds charge.
+  fuelled ("Out of fuel" otherwise); **Verified** `FUN_140297760`, health the construction fraction. A battery's output is the same health x rate while it holds charge,
+  and its capacity health x (capacity + increase) (`FUN_140297650`). Meitou the same (`ProductionSystem.Output`, `Capacity`).
 - **Wind generators** (**Verified**, decompiled): output = the share x the above, 0 when below 1 (`WindGeneratorBuilding::getPowerOutput`); the share
   (`PhysicsCollection::getWindRotationPower`) is the first ROTATION_WIND_SPEED part's wind share ([rotating parts](#rotating-parts)), 0 with none or without
   the building's physics collection (render entity) loaded. Meitou gives every built one its share from the scheduled wind of the weather region at the site.

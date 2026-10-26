@@ -19,16 +19,20 @@ public sealed partial class ProductionSystem
     readonly Dictionary<int, TownPower> townPower = [];
 
     float Rated(World world, Machine m) => m.Data.PowerOutput + world.Research.Upgrade(m.Data.Id).PowerIncrease;
-    float Capacity(World world, Machine m) => m.Data.PowerCapacity + world.Research.Upgrade(m.Data.Id).CapacityIncrease;
+    /// <summary>A battery's capacity now (<c>FUN_140297650</c>, <b>Verified</b>): the construction fraction x (capacity + research increase).</summary>
+    float Capacity(World world, Machine m) => m.Health * (m.Data.PowerCapacity + world.Research.Upgrade(m.Data.Id).CapacityIncrease);
 
     /// <summary>Whether a generator has fuel: no fuel sections (wind), or something left in one.</summary>
     static bool Fueled(Machine m) => m.Inputs.Length == 0 || Array.Exists(m.Inputs, i => i.Level > 0 || i.Count > 0);
 
-    /// <summary>A generator's output now (<c>GeneratorBuilding::getPowerOutput</c>): health x (output + increase), 0 out of fuel; wind x <see cref="Machine.Wind"/>, nothing below 1 (<c>WindGeneratorBuilding::getPowerOutput</c>).</summary>
+    /// <summary>
+    /// A generator's output now (slot 166, <c>FUN_140297760</c>, <b>Verified</b>): the construction fraction (<see cref="Machine.Health"/>) x (output + increase) while switched on, 0 out of fuel;
+    /// wind (<c>FUN_140297810</c>) x <see cref="Machine.Wind"/>, nothing below 1. A battery gives the same health-scaled figure while it holds charge.
+    /// </summary>
     float Output(World world, Machine m)
     {
         if (!m.PowerOn || !Fueled(m)) return 0;
-        float output = Rated(world, m);
+        float output = m.Health * Rated(world, m);
         if (m.Data.IsWind && (output *= m.Wind) < 1) return 0;
         return output;
     }
@@ -72,6 +76,14 @@ public sealed partial class ProductionSystem
             m.Efficiency = built ? Efficiency(world, m) : 0;
             m.HasPower = built && HasPower(world, m, Site(world, m.Site)!.Town);
             m.Rotation = !built ? 0 : m.Data.IsGenerator ? (m.PowerOn ? Output(world, m) * 0.01f : 0) : m.Efficiency;
+            if (m.Data.IsBattery)
+            {
+                // The battery's word reads its town grid's flows, not its own (FUN_140300b40).
+                TownPower grid = default;
+                m.OnGrid = site is not null && townPower.TryGetValue(site.Town, out grid);
+                m.GridCharging = grid.Charging > 0;
+                m.GridDraining = grid.Draining > 0;
+            }
         }
     }
 
@@ -130,7 +142,7 @@ public sealed partial class ProductionSystem
         {
             m.Granted = 0;
             if (m.Data.IsGenerator) supply += m.Demand = Output(world, m);
-            else if (m.Data.IsBattery) { m.Demand = m.PowerOn && m.Charge > 0 ? Rated(world, m) : 0; batteries += m.Demand; }
+            else if (m.Data.IsBattery) { m.Demand = m.PowerOn && m.Charge > 0 ? m.Health * Rated(world, m) : 0; batteries += m.Demand; }
             else
             {
                 // A farm wants its whole draw whoever works it and whether or not it is switched on (FarmBuilding slot 163, FUN_1400df330: |power output + increase|).

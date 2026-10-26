@@ -684,7 +684,7 @@ How a building gets selected: [ui-input](ui-input.md#building-picking-and-select
     (`FUN_1404cbd90`) is <= 0, over any word. Slot 166 of a generator (`FUN_140297760`) = construction fraction × P while `power on`, not (slot 149 with a fuel
     inventory) and not an empty store, else 0; a wind generator's (`FUN_140297810`) = rotor speed × that, 0 below 1. So a Working generator's tooltip share is
     its construction fraction (wind: × the rotor speed). Meitou: the tooltip on every Working word (consumers by their grant, generators as above); the
-    battery words use the battery's own flow for the grid's.
+    battery words read the town grid's flows (`Machine.GridCharging` / `GridDraining`, from `TownPower`).
   - Rocks (**Observed**, same screenshot): the name bar's right is the player's faction ("Nameless"); the medical rows are `Condition` 2, full: the target of
     `build materials` 2. Owner (**Verified**, decompile): the foliage system (`FUN_1406d2410`, "building type") makes a rock with no owner, town NO_TOWN (the
     town list's `noTown` +0x180f8, KenshiLib 1ce4a16; `TownNull`, constructor `FUN_140934fe0`: TOWN `NO_TOWN` "Nowhere", explored, owner `nofac` via

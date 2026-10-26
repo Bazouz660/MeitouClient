@@ -452,7 +452,7 @@ sealed partial class PlayerInterface
 
     /// <summary>
     /// The word a generator class sets over the common chain whatever that gave (finished or not, broken or not): GeneratorBuilding (<c>FUN_140300b40</c>) <c>Out of fuel</c> (slot 149),
-    /// then for a battery switched on Fully Charged at the health-scaled store, Empty at 0, else Charging / Draining by the grid's flow (Meitou: the battery's own), else Stored;
+    /// then for a battery switched on and on a town grid: Fully Charged at its store (health x capacity), Empty at 0, else Charging / Draining by the grid's flows, else Stored;
     /// WindGeneratorBuilding (<c>FUN_1403011e0</c>) <c>No Wind</c> while the blades do not turn. Null: the chain's word stands.
     /// </summary>
     static (string, bool)? GeneratorWord(MachineSnapshot m)
@@ -461,10 +461,10 @@ sealed partial class PlayerInterface
         if (m.Wind is { } wind) return wind.Share <= 0 ? ("No Wind", true) : null;
         if (pw.Kind == PowerKind.Battery)
         {
-            if (!pw.PowerOn) return null;
-            float full = pw.Store * (m.Efficiency?.Health ?? 1);
+            if (!pw.PowerOn || !pw.OnGrid) return null;
+            float full = pw.Store;
             return pw.Charge >= full ? ("Fully Charged", false) : pw.Charge <= 0 ? ("Empty", true)
-                : pw.Granted > 0 ? ("Charging", false) : pw.Granted < 0 ? ("Draining", false) : ("Stored", false);
+                : pw.GridCharging ? ("Charging", false) : pw.GridDraining ? ("Draining", false) : ("Stored", false);
         }
         return pw.Kind == PowerKind.Generator && !pw.Fueled ? ("Out of fuel", true) : null;
     }

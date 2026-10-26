@@ -112,6 +112,13 @@ public sealed class Machine
     public float Usage { get; set; }
     /// <summary>A battery's store in seconds at its rate (the save's <c>batterycharge</c>).</summary>
     public float Charge { get; set; }
+    /// <summary>
+    /// A battery's town grid this tick (the town's power object, slot 0x268): whether there is one, and whether its batteries charged (+0x488) or drained (+0x484) overall, which the battery's
+    /// header word reads (<c>FUN_140300b40</c>). Derived each tick; not saved, not hashed.
+    /// </summary>
+    public bool OnGrid { get; set; }
+    public bool GridCharging { get; set; }
+    public bool GridDraining { get; set; }
     /// <summary>A battery's capacity now (data + research), for the view.</summary>
     public float Store { get; set; }
     /// <summary>The save's <c>gets battery</c>: a consumer short of generator power draws from batteries (default on).</summary>
