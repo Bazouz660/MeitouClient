@@ -61,11 +61,18 @@ internal sealed record NewGameSettings
         // Earlier Meitou builds saved the sliders under keys of their own; a save made from one of theirs drops them.
         foreach (var key in camera.Record.Floats.Keys.Where(k => k.StartsWith("meitou difficulty ", StringComparison.Ordinal)).ToList()) camera.Record.Floats.Remove(key);
     }
+    /// <summary>
+    /// As the original's loader: without <c>cod</c> every option keeps its default; with it <c>cod gdm ps rs bs ep</c> are read as they are (a missing one is 0 / false),
+    /// <c>ht nnm bl</c> only when present. Values are not clamped.
+    /// </summary>
     public static NewGameSettings Read(SaveCamera camera)
     {
         var settings = new NewGameSettings();
-        for (int i = 0; i < Options.Length; i++) settings = settings.Set(i, camera.Record.Floats.GetValueOrDefault(Options[i].Key, 1));
-        for (int i = 0; i < Ticks.Length; i++) settings = settings.SetTick(i, camera.Record.Bools.GetValueOrDefault(Ticks[i].Key, Ticks[i].Default));
+        var (floats, bools) = (camera.Record.Floats, camera.Record.Bools);
+        if (!floats.ContainsKey("cod")) return settings;
+        for (int i = 0; i < Options.Length; i++)
+            settings.values[i] = Options[i].Key is "ht" or "nnm" ? floats.GetValueOrDefault(Options[i].Key, 1) : floats.GetValueOrDefault(Options[i].Key);
+        settings.ticks[0] = bools.GetValueOrDefault("bl", true);
+        settings.ticks[1] = bools.GetValueOrDefault("ep");
         return settings;
-    }
-}
+    }}

@@ -1395,9 +1395,8 @@ production/research, construction and nest density. Defaults (1), ranges and sav
 The two new-game panels share one modal screen; expanding raises the start panel, and its Begin/Cancel remain usable.
 Opening a fresh new-game dialog resets the draft; collapsing keeps it. Failed world replacement retains the running
 world's options and body factory. Saves carry the original's CAMERA floats `ht cod gdm ps rs bs nnm`, so Meitou and
-original saves are interchangeable. A missing or nonfinite value reads 1 (the original: 1 when `cod` is missing, else 0
-for a missing `gdm ps rs bs`; no real save lacks them); out-of-range values clamp to the slider range (the original keeps them).
-`meitou difficulty <key>` floats of earlier Meitou saves are ignored and dropped on the next save.
+original saves are interchangeable; loading follows the original's rules exactly (the
+[load rules](game/character-stats.md#new-game-advanced-options-that-change-these-mechanics), no clamping). `meitou difficulty <key>` floats of earlier Meitou saves are ignored and dropped on the next save.
 Under the sliders are the original's two ticks, saved under its own CAMERA bools: Bandits loot the player (`bl`, default on,
 `PlayerState.BanditsLoot`, set on a new world) and Easy prospecting (`ep`, default off, kept and saved only: the original never reads it).
 
