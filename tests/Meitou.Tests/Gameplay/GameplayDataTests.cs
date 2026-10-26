@@ -118,4 +118,23 @@ public class GameplayInstallTests
         var limp = new AnimationStance { LeftLeg = 20 };
         Assert.Contains("limp L lower", Names(AnimationArea.Lower, 14, limp));
     }
+
+    /// <summary>
+    /// The installed buildings give the stats panel's class inputs (docs/game/ui-screens.md "Selected building"): a Bed's Healing bonus x8 and a Training Dummy MkII's Max Skill Level 10
+    /// from the output value <c>+0x1a4</c>; only the hydroponic farm draws an Efficiency line; a Ceiling Lamp in a building is indoors (slot 59), a Light Post I never.
+    /// </summary>
+    [Fact, Slow]
+    public void The_installed_buildings_give_the_panel_class_inputs()
+    {
+        var db = InstallData.BaseGame;
+        Assert.SkipWhen(db is null, "Kenshi install not found");
+        Meitou.Data.Gameplay.Construction.MachineData Machine(string name) =>
+            Meitou.Data.Gameplay.Construction.MachineData.From(db!, db!.Records.Values.First(r => r.Type == FcsRecordType.BUILDING && r.Name == name))!;
+        Assert.Equal(8, Machine("Bed").OutputValue);
+        Assert.Equal(10, (int)Machine("Training Dummy MkII").OutputValue - 1);
+        Assert.True(Machine("Hydroponic Wheatstraw").Farm!.Indoor);
+        Assert.False(Machine("Wheat Farm S").Farm!.Indoor);
+        Assert.True(Machine("Ceiling Lamp") is { IsLight: true, InteriorFurniture: true });
+        Assert.True(Machine("Light Post I") is { IsLight: true, InteriorFurniture: false });
+    }
 }

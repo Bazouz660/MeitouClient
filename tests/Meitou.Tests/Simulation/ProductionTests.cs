@@ -241,6 +241,33 @@ public class ProductionTests
         Assert.Contains(rig.World.TakeMessages(), m => m == "Research complete: Test Study");
     }
 
+    /// <summary>
+    /// A rock (an <c>is foliage</c> iron mine) belongs to no faction until a player character starts working it, then to the player's faction (Task_OperateMachine slot 1,
+    /// docs/game/ui-screens.md "Selected building", Rocks).
+    /// </summary>
+    [Fact]
+    public void A_rock_becomes_the_players_once_a_player_character_works_it()
+    {
+        var db = Database();
+        var rockFn = Rec("89-t", FcsRecordType.BUILDING_FUNCTIONALITY, "Rock Mine");
+        rockFn.Ints["function"] = MachineData.MineFunction;
+        rockFn.Ints["world resource mining"] = ResourceField.IronResource;
+        rockFn.References["produces"] = [new FcsReference(Crop, 10, 0, 0)];
+        var rockRecord = Rec("90-t", FcsRecordType.BUILDING, "Test Rock");
+        rockRecord.Bools["is foliage"] = true;
+        rockRecord.References["functionality"] = [new FcsReference("89-t", 0, 0, 0)];
+        var file = new FcsFile();
+        file.Records.AddRange([rockFn, rockRecord]);
+        db.Apply(file, "rock.mod");
+        using var rig = new Rig(db, Constants, [Well]);
+        string rock = ProductionSystem.NaturalId("90-t", At + new Vector3(0, 0, 20));
+        Assert.Equal(-1, rig.Production.RichnessOf(rig.World, rock)!.Value.Owner);
+        var worker = rig.Add(0, StatsEnumerated.Labouring, Unit);
+        rig.World.Commands.Enqueue(new OperateOrder([worker], rock) { Tick = rig.World.Tick });
+        for (int t = 0; t < 300 && rig.World.Characters.Cold(worker.Slot)!.Operating == false; t++) rig.World.RunTick();
+        Assert.Equal(PlayerFaction, rig.Production.RichnessOf(rig.World, rock)!.Value.Owner);
+    }
+
     // ------------------------------------------------------------------ crafting
 
     /// <summary>
