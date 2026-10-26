@@ -14,6 +14,15 @@ public sealed partial class CombatSystem
     static bool Guarding(CharacterCold c) => c.Fighter!.Guarding || Orders.Has(c, CharacterOrders.Block);
 
     /// <summary>
+    /// The weapon's <c>indoors mod</c> (CharStats <c>+0x28</c>) while the fighter is in a building's indoor volume (<see cref="SightMap.Inside"/>; the original also asks a vfunc
+    /// <c>0x1e0</c> and the building's <c>+0xc2</c>, <b>Unknown</b>), else 0 (<c>FUN_1408844c0</c>, <c>FUN_1408862d0</c>; docs/game/combat.md "Indoors").
+    /// </summary>
+    static int IndoorsMod(World world, int i, Fighter f) => world.Sight.Inside(i) ? f.Weapon?.Stats.IndoorsMod ?? 0 : 0;
+
+    /// <summary>An attack bonus indoors (<c>FUN_1408844c0</c>): a positive bonus is dropped under a negative modifier, then the modifier is added.</summary>
+    static float IndoorsAttackBonus(float bonus, int mod) => (bonus > 0 && mod < 0 ? 0 : bonus) + mod;
+
+    /// <summary>
     /// A stat as the combat formulas read it: times the injury, hunger and light multiplier and the stats' read-time scale (an animal's age, docs/game/animals.md); crossbows and
     /// assassination also times the worn gear's factor (<see cref="Fighter.Factors"/>; the original's stat getter <c>FUN_140884ac0</c> asks for all of them). Dexterity's and the
     /// weapon skills' gear factors are applied by the formulas themselves (<see cref="Fighter.DexterityMult"/>, <see cref="Fighter.DamageOutput"/>).
@@ -346,8 +355,9 @@ public sealed partial class CombatSystem
         s.NextBlow = 1;
         s.LastOutcome = BlowOutcome.Missed;
         s.AttackFrom = prev[i].Position;
-        // Less the dust's "Weather penalty" (FUN_140643a30, docs/formats/weather.md "Effects on characters").
-        s.AttackSkill = Eff(cold, fighter.Unarmed ? StatsEnumerated.MartialArts : StatsEnumerated.MeleeAttack) + (fighter.Unarmed ? fighter.UnarmedBonus : fighter.AttackBonus + (fighter.Weapon?.Stats.AttackMod ?? 0))
+        // The bonus with the weapon's indoors modifier inside, less the dust's "Weather penalty" (FUN_140643a30, docs/formats/weather.md "Effects on characters").
+        s.AttackSkill = Eff(cold, fighter.Unarmed ? StatsEnumerated.MartialArts : StatsEnumerated.MeleeAttack)
+            + IndoorsAttackBonus(fighter.Unarmed ? fighter.UnarmedBonus : fighter.AttackBonus + (fighter.Weapon?.Stats.AttackMod ?? 0), IndoorsMod(world, i, fighter))
             - cold.Medical!.DustAttackPenalty;
     }
 
@@ -629,7 +639,7 @@ public sealed partial class CombatSystem
         float block, dodge = 0;
         if (fighter.CanBlock)
         {
-            float d = DefenceFormulas.Defence(meleeDefence, fighter.Weapon!.Stats.DefenceMod, true, fighter.DefenceBonus, Guarding(cold));
+            float d = DefenceFormulas.Defence(meleeDefence, fighter.Weapon!.Stats.DefenceMod, true, fighter.DefenceBonus + IndoorsMod(world, i, fighter), Guarding(cold));
             block = DefenceFormulas.BlockChance(d, attack.AttackSkill, combat);
         }
         else

@@ -28,6 +28,15 @@ A=1+0.05*max(0,s2-s1), B=1+0.05*max(0,s1-s2). Derived chance with k=B/A is1-1/(2
 elsek/2. General skill blend0.01*(0.6*stat+0.4*dexterity*m) feeds dodge/reload, with stat/gear
 and injury variants.
 
+### Indoors
+
+**Verified** (decompile): inside a building the weapon's `indoors mod` (CharStats `+0x28`) joins the equipment bonuses. The attack
+skill (`FUN_140884ee0` → `FUN_1408844c0`; fists `FUN_140884e00` → `FUN_140884580`) takes bonus `+0x20` (fists `+0x2c`), drops it to 0
+when it is positive and the modifier negative, adds the modifier, then subtracts the dust penalty; the block contest's defence
+(`FUN_1408862d0`) adds the modifier to `+0x24`. Inside means the character's location type is not 0xb (outdoors), vfunc `0x1e0` is
+false and the building's `+0xc2` is clear (the last two **Unknown**). Meitou: `CombatSystem.IndoorsMod`, inside = in a building's indoor
+volume (`SightMap.Inside`); fists carry no modifier.
+
 **Verified** (loader `FUN_140888ca0`, record reader `FUN_1406684c0`): techniques not `disabled` go to an attack
 list unless `is block` or `is dodge` (then the defence list), in data order. Each keeps a per-category table:
 `katanas` 0, `sabre` 1, `blunt` 2, `heavy weapons` 3, `hackers` 4, `unarmed` 5, `bow` 6, `polearm` 8; with
