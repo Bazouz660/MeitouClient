@@ -335,7 +335,8 @@ money, mark the entry claimed (it never pays twice) and show "Received c.{1} rew
 - **Raising** (`FUN_1409335e0(town, code, position, culprit, faction, raiser)`): nothing for code 0. Called only by DA 33 CRIME_ALARM (the
   target's pending crime code and victim faction, at the target) and a failed kidnap ([carry-loot](carry-loot.md#kidnapping): code 15, the
   victim's faction, at the kidnapper). The town keeps its alarms per code; one of the same code and faction is moved (position, building,
-  floor), else a new one is made (+0x24 = 8.0, **Unknown**; no expiry found). "Alarm raised" when the culprit is the player's, at most every 30 s.
+  floor), else a new one is made; both set `+0x24` = 8.0, a life in game seconds that the town update counts down (`FUN_14092bfe0`, `Town::periodicUpdate` dt), the alarm being
+  deleted below 0 whether answered or not (**Verified**). So an investigation ends about 8 game s after the last raise. "Alarm raised" when the culprit is the player's, at most every 30 s.
 - **Investigators**: goals 209 INVESTIGATE_ALARMS and 210 (the task's flag: only alarms of its own faction), Urgent, weight 0.1, 0-24 h, in 51
   packages of the merged load order (town and gate guards, police, shops, residents, throne rooms; **Verified** by probe). Row 209: effect
   !130 ALARMS_IN_THE_VICINITY, needs 86 atATown. Finder `FUN_14092a810(town, 0, 375, me, faction or 0)`: the nearest alarm of the

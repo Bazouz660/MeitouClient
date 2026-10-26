@@ -164,6 +164,8 @@ public sealed class TownAlarm
     public required CrimeCode Code { get; init; }
     public required int Faction { get; init; }
     public System.Numerics.Vector3 Position { get; set; }
+    /// <summary>Game seconds it still lives: <see cref="CrimeSystem.AlarmLife"/> at each raise, counted down by the town update; gone below 0.</summary>
+    public float Life { get; set; } = CrimeSystem.AlarmLife;
 }
 
 /// <summary>

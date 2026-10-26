@@ -183,6 +183,9 @@ public sealed partial class CrimeSystem(FactionRelations relations, CrimeSetting
         if (world.Tick % every != 0) return;
         Sweep(world, every * world.TickSeconds);
         if (alarms.Count > 0) Investigate(world, every * world.TickSeconds);
+        // Alarms die 8 game seconds after their last raise, whether answered or not (AlarmManager update FUN_14092bfe0, Verified).
+        for (int k = alarms.Count - 1; k >= 0; k--)
+            if ((alarms[k].Life -= every * world.TickSeconds) < 0) alarms.RemoveAt(k);
     }
 
     void Sweep(World world, float seconds)
@@ -390,7 +393,7 @@ public sealed partial class CrimeSystem(FactionRelations relations, CrimeSetting
 
     /// <summary>
     /// The alarm of <paramref name="town"/> raised at <paramref name="target"/> (<c>FUN_1409335e0</c>, <b>Observed</b>), for the crime <paramref name="code"/> against
-    /// <paramref name="faction"/>: nothing for code 0; "Alarm raised" at most every 30 s for the player's; the town keeps one alarm per code and faction, a new one moving it to the target.
+    /// <paramref name="faction"/>: nothing for code 0; "Alarm raised" at most every 30 s for the player's; the town keeps one alarm per code and faction, a new one moving it to the target and restarting its <see cref="AlarmLife"/>.
     /// The town's investigators answer it (<see cref="Investigate"/>).
     /// </summary>
     public void TownAlarm(World world, int target, int town, CrimeCode code, int faction)
@@ -407,6 +410,7 @@ public sealed partial class CrimeSystem(FactionRelations relations, CrimeSetting
             if (a.Town == town && a.Code == code && a.Faction == faction)
             {
                 a.Position = at;
+                a.Life = AlarmLife;
                 return;
             }
         alarms.Add(new TownAlarm { Town = town, Code = code, Faction = faction, Position = at });
@@ -482,11 +486,13 @@ public sealed partial class CrimeSystem(FactionRelations relations, CrimeSetting
     {
         if (alarms.Count == 0) return;
         hasher.Add(alarms.Count);
-        foreach (var a in alarms) { hasher.Add(a.Town); hasher.Add((int)a.Code); hasher.Add(a.Faction); hasher.Add(a.Position); }
+        foreach (var a in alarms) { hasher.Add(a.Town); hasher.Add((int)a.Code); hasher.Add(a.Faction); hasher.Add(a.Position); hasher.Add(a.Life); }
     }
 
     /// <summary>The crime timer DA 33 sets (the literal 30.0 passed to <c>FUN_140851f40</c>), and how often "Alarm raised" may be posted (real seconds in the original; game seconds here).</summary>
     public const float AlarmTimer = 30, AlarmPostSeconds = 30;
+    /// <summary>The game seconds a town alarm lives after its last raise (<c>FUN_1409335e0</c> sets 8.0, <b>Verified</b>).</summary>
+    public const float AlarmLife = 8;
     double lastAlarmHours = double.NegativeInfinity;
 
     /// <summary>The dialogue event the witness says at the culprit (<c>FUN_140854d10</c>'s switch on the crime code, docs/game/dialogue.md "Event sources").</summary>
