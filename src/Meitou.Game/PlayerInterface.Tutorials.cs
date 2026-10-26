@@ -63,7 +63,8 @@ sealed partial class PlayerInterface
             InPrison = facts.InPrison,
             InCannibalCage = facts.InCannibalCage,
             Sneaking = sneak,
-            StealCursor = PointerName == "steal",
+            // Engine reading of the steal pointer (cursor 0x15): Meitou has no such pointer; a selection over another faction's ground item.
+            StealCursor = SelectedIds().Count > 0 && !pointerOverUi && PickGroundItem(mouse) is { } item && snap.GroundItems.FirstOrDefault(g => g.Id == item) is { } ground && Stealing(ground),
             SelectedHasBounty = inspected is { IsPlayer: false, Bounties.Count: > 0 },
             Hungry = hungry,
             PlayingDead = playingDead,
@@ -80,7 +81,7 @@ sealed partial class PlayerInterface
             Blueprint = facts.Blueprint,
             UnstartedConstruction = unstarted,
             Prospecting = faithfulScreens.IsOpen("prospect"),
-            SelectedStump = inspected is { } who && Enumerable.Range(0, 4).Any(k => ((who.LimbBits >> (2 * k)) & 3) == (int)LimbState.Stump),
+            SelectedStump = (Selected().FirstOrDefault() ?? inspected) is { } who && Enumerable.Range(0, 4).Any(k => ((who.LimbBits >> (2 * k)) & 3) == (int)LimbState.Stump),
         };
     }
 }

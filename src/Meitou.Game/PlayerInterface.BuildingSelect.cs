@@ -150,7 +150,7 @@ sealed partial class PlayerInterface
             var rich = session.CurrentSnapshot.InspectedRichness is { } r && r.Instance == focus.Instance ? r : (Meitou.Simulation.Production.RichnessView?)null;
             if (rich is { } richness) AddRichnessLine(richness, stats);
             if (detail?.Bed is null && own && Machine(focus.SiteId) is { } machine) AddMachineLines(machine, stats, extended, ref status, ref bad, rich,
-                session.CurrentSnapshot.InspectedTurret is { } tp && tp.Instance == focus.Instance ? tp : null, player);
+                session.CurrentSnapshot.InspectedTurret is { } tp && tp.Instance == focus.Instance ? tp : null, mine);
             else if (rich is { Efficiency: { } e } unmined)
             {
                 // A rock nobody has mined yet has no machine; the original shows its lines all the same.

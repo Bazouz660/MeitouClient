@@ -24,7 +24,7 @@ sealed partial class GameHost
             session.ReplaceWorld(built.Systems);
             population = built.Population; aggro = built.Aggro; playerSquad = null;
             if (nav is not null) population!.ZoneGate = zone => nav.Walkability.World.Contains(zone);
-            loadedSave = null; preparedBase = null; worldEpoch++;
+            loadedSave = null; preparedBase = null; saveInUse = null; worldEpoch++;
             SettleNewWorld();
             DisposeTitleScene(); // re-read the latest Continue save after the campaign or its character appearances changed
             player.ShowMainMenu();
@@ -62,7 +62,7 @@ sealed partial class GameHost
                 popData = nextData; difficulty = nextDifficulty;
                 population = built.Population; aggro = built.Aggro; playerSquad = spawned;
                 if (nav is not null) population!.ZoneGate = zone => nav.Walkability.World.Contains(zone);
-                loadedSave = null; preparedBase = null; worldEpoch++;
+                loadedSave = null; preparedBase = null; saveInUse = null; worldEpoch++;
                 session.Clock.SetTime(Meitou.Engine.Time.GameClock.DefaultStartDay, Meitou.Engine.Time.GameClock.DefaultStartHour);
                 var lead = session.World.Characters.Previous[spawned!.Leader.Slot].Position;
                 var view = session.Camera.Current;

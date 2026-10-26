@@ -128,7 +128,7 @@ sealed partial class GameHost
         Autosave(realDt);
         if (quickSaveRequested) { quickSaveRequested = false; QuickSaveNow(); }
         if (quickLoadRequested) { quickLoadRequested = false; BeginQuickLoad(); }
-        if (saveRequestedFolder is { } to) { saveRequestedFolder = null; saveInUse = to; QuickSaveNow(to); }
+        if (saveRequestedFolder is { } to) { saveRequestedFolder = null; QuickSaveNow(to); }
         if (loadRequestedFolder is { } sourceFolder) { loadRequestedFolder = null; BeginQuickLoad(sourceFolder); }
         if (importRequested is { } import) { importRequested = null; BeginImport(import.Folder, import.Options); }
 
@@ -199,6 +199,7 @@ sealed partial class GameHost
         }
         double captureMs = watch.Elapsed.TotalMilliseconds;
         string folder = destination ?? QuickSave.Folder();
+        saveInUse = folder;
         saveWrite = Task.Run(() =>
         {
             try
