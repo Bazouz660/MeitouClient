@@ -22,6 +22,8 @@ sealed partial class GameHost
     double autosaveSeconds;
     bool autosaveDue;
     string? saveRequestedFolder, loadRequestedFolder, readingFolder;
+    // The save the game in play came from or was last written to: the load window cannot delete it.
+    string? saveInUse;
     (string Folder, ImportOptions Options)? importRequested;
     Task? saveWrite;
 
@@ -124,7 +126,7 @@ sealed partial class GameHost
         Autosave(realDt);
         if (quickSaveRequested) { quickSaveRequested = false; QuickSaveNow(); }
         if (quickLoadRequested) { quickLoadRequested = false; BeginQuickLoad(); }
-        if (saveRequestedFolder is { } to) { saveRequestedFolder = null; QuickSaveNow(to); }
+        if (saveRequestedFolder is { } to) { saveRequestedFolder = null; saveInUse = to; QuickSaveNow(to); }
         if (loadRequestedFolder is { } sourceFolder) { loadRequestedFolder = null; BeginQuickLoad(sourceFolder); }
         if (importRequested is { } import) { importRequested = null; BeginImport(import.Folder, import.Options); }
 
@@ -250,7 +252,7 @@ sealed partial class GameHost
         StartSceneLoad(player.TitleOpen,
             Stage("read", () => read = Task.Run(() => SaveGame.Load(folder))),
             Stage("build", () => SwapInSave(read!, interactive: true, out summary)),
-            Stage("finishing", () => { SettleNewWorld(); player.FollowSelected(); FinishLoadNotice(summary); return null; }));
+            Stage("finishing", () => { SettleNewWorld(); player.FollowSelected(); FinishLoadNotice(summary); saveInUse = folder; return null; }));
     }
 
     /// <summary>

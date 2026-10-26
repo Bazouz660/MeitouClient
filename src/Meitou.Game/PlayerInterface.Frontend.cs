@@ -93,6 +93,23 @@ sealed partial class PlayerInterface
         try { NewGameOptions = NewGameSettings.Read(new SaveGame(SaveFile.Read(File.ReadAllBytes(Path.Combine(slot.Folder, SaveFolder.QuickSaveName)))).Camera); }
         catch (Exception e) when (e is IOException or FormatException or ArgumentException or Meitou.Data.Fcs.FcsFormatException) { /* an unreadable save keeps the sliders as they are */ }
     }
+    /// <summary>Whether a save folder is the one the game in play came from or was last saved to (the host's).</summary>
+    public Func<string, bool>? SaveInUse { get; set; }
+    /// <summary>Deletes a save folder (the host's); returns an error to show, or null.</summary>
+    public Func<string, string?>? DeleteSave { get; set; }
+
+    /// <summary>The load window's Delete / Backspace (<b>Verified</b>, <c>LoadSaveWindow::keyPressed</c>): the save in use cannot be deleted; any other asks first.</summary>
+    void AskDeleteSave(SaveSlot slot)
+    {
+        if (SaveInUse?.Invoke(slot.Folder) == true) { Confirm("Delete Save", "This save file is currently in use and cannot be deleted", () => { }, "OK"); return; }
+        Confirm("Delete Save", "Are you sure you want to delete this save game?", () =>
+        {
+            if (DeleteSave?.Invoke(slot.Folder) is { } error) Notice(error, true);
+            RefreshSlots();
+            selectedSlot = null; slotInfo = null;
+        });
+    }
+
     void OpenSlots(string id)
     {
         RefreshSlots();

@@ -226,6 +226,12 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
     void ConfigurePlayerInterface(PlayerInterface ui)
     {
         ui.FixLoadButton = config.FixLoadButton;
+        ui.SaveInUse = folder => session.World.Player.Exists && saveInUse is { } used && string.Equals(Path.GetFullPath(used), Path.GetFullPath(folder), StringComparison.OrdinalIgnoreCase);
+        ui.DeleteSave = folder =>
+        {
+            try { Directory.Delete(folder, recursive: true); return null; }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return "Failed to delete save: " + e.Message; }
+        };
         // The region (BIOME_GROUP) under a point, for the biome banner.
         ui.RegionAt = (x, z) => ActiveWeather?.World.RegionAt(x, z).Def is { } def ? (def.StringId, def.Name) : null;
         ui.BuildHost = MakeBuildServices();
