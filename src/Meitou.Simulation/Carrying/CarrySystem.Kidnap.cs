@@ -76,6 +76,8 @@ public sealed partial class CarrySystem
         bool asleep = Asleep(table, b);
         int town = victim.SquadId >= 0 ? world.Squads.Find(victim.SquadId)?.Town ?? -1 : -1;
         Crimes?.TownAlarm(world, i, town, Crime.CrimeCode.Kidnapping, victim.Faction);
+        // The kidnapper is marked recently wanted (its status +0x110 = 250), so a looker who knows it recognises it at once.
+        if (table.Cold(i) is { } kidnapper) kidnapper.RecentlyWanted = Crime.CrimeSystem.RecentlyWantedSeconds;
         if (talk is not null && victim.SquadId >= 0) talk.Memory.Remember(world, victim.SquadId, kidnapperId, Dialogue.MemoryTag.Intruder);
         world.Defer(new Dialogue.DialogueEvent(victimId, kidnapperId, 8) { Tick = world.Tick + 1 });
         if (asleep)

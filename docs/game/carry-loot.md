@@ -197,13 +197,13 @@ arrival (vfunc 1, `FUN_14034ffa0`) first rolls:
   sense terms. Roll uniform 0..100; taken when roll <= chance.
 - **Taken**: a victim neither dead nor unconscious is knocked out for lerp(2, 300, kidnapper assassination x 0.01) s (raw stat); assassination
   XP 100; then the lift.
-- **Failed**: the victim perceives the kidnapper (a field of the kidnapper's, +0x110 = 250, **Unknown**); its town's alarm is raised at the
+- **Failed**: the victim perceives the kidnapper (the kidnapper's status `+0x110` = 250, the recently-wanted marker); its town's alarm is raised at the
   kidnapper (code 15, [town alarms](economy.md#town-alarms)); a sleeper (state 1) gets order 116 Getting out of bed; its squad tags the
   kidnapper TEMP ENEMY and long-term 1 (intruder) and says event 8 to it; assassination XP 300; the task ends; a sleeper wakes (state 0) and
   goes for the kidnapper (`Character::attackTarget`).
 
 Meitou (`CarrySystem.Kidnap.cs`, `PickUpOrder.Kidnap`): as above; asleep is lying in a bed or resting with the sleep behaviour; the
-perception mark and +0x110 are not modelled.
+perception mark is not modelled; `+0x110` is `CharacterCold.RecentlyWanted`.
 
 ## Unknowns
 
