@@ -1,4 +1,4 @@
-amount (2 if a + 2 if b) x20 if heard, times the exposure factor (then x0.7), 0 when unconscious-type or using something; a = the listener is its enemy, b = the sneaker is inside the listener's home (unless public and not locked up, or it is using something), else is a slave (`SensoryData::canHear` step 10, **Verified**). Not modelled |# Character stats and medical state
+# Character stats and medical state
 
 Kenshi1.0.68 research: CharStats/MedicalSystem binary functions, fcs.def and merged base records.
 Evidence scopes, stat IDs, race/part constants and activity tables are retained below.
@@ -332,7 +332,7 @@ offsets). Stats are `float`s inside `CharStats`. The number is what RACE `heal s
 | Strength from carrying | `FUN_1408c60c0` (from the movement tick `FUN_1408c6660`) | (1 - encumbrance factor)^2 capped at 0.5, x2 while carrying something (Character +0x388, the `carryingObject` handle's type, is not 11 NULL_ITEM; KenshiLib 1ce4a16, **Observed**; Meitou: carrying a character), x `xp rate strength from walking` (0.5) |
 | Athletics (running) | `FUN_1408c6660` | `FUN_1408c5ec0` (the encumbrance factor, x1.5 when the speed is over 80% of the character's maximum) x `xp rate athletics` (stored 0.5) via the generic entry; swimming (stat 23) gets 5, or 10 when carrying, while in water |
 | Stealth (sneaking) | `FUN_1408c65a0` (from the sense update `FUN_1408586d0`) | continuous entry into stat 16 with amount 0.2; 1.5 when observed (enemies about, Observed) and a watcher is noticing or detecting, 0.9 when observed but none is; x0.1 when not sneaking (called then only in some other states); 0 when KO'd or in a non-default state. Resets the exposure factor +0x174 to 1 (**Verified** literals) |
-| Stealth (heard check) | `FUN_1408c7330` (from hearing `FUN_140857500`) | generic entry, dt 1, amount (2 if flag a + 2 if flag b) x20 if flag c, times the exposure factor, which then x0.7; flags **Unknown**. Not modelled |
+| Stealth (heard check) | `FUN_1408c7330` (from hearing `FUN_140857500`) | generic entry, dt 1, amount (2 if a + 2 if b) x20 if heard, times the exposure factor (then x0.7), 0 when unconscious-type or using something; a = the listener is its enemy, b = the sneaker is inside the listener's home (unless public and not locked up, or it is using something), else is a slave (`SensoryData::canHear` step 10, **Verified**). Not modelled |
 | Lockpicking | `FUN_1408c62e0` | stat 37 gains 1.2 x `map[37]` on success, 0.24 x on failure |
 | Engineering | `FUN_1408c6250` | stat 5 gains `0.02 * dt * 0.75 * map[5] * 0.75` |
 | Medic | `FUN_1408c6130` | **Verified**: `dt / T * 0.75 * map[patient race's heal stat]` added straight to the stat (no core curve, no cap); T = lerp(`XP rate medic 1`, `XP rate medic 99`, skill x 0.01) (the ends' order from the field names; editor text "seconds of usage per point"); nothing when T <= 0 |
