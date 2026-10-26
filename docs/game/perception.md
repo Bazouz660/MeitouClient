@@ -18,6 +18,7 @@ relations: [factions](factions-squads-towns.md). Simulation senses/leash remain 
   carrier's, a caged or bedded one its building's, else its own handle `+0x80`, whose writer is not traced; type 0xb is
   outdoors). Looker and target must share it unless either is **on top**: slot 60, in a building and `+0xd5` set, from an
   upward physics query (mask `0x8079e00`, in the character update) finding nothing over it, i.e. a roof or roofless part.
+  A building whose BUILDING `enforce ceiling` is set (7) has nobody on top above floor 0 (`Character::threadedUpdatePeriodic` `FUN_1405d00b0`, **Verified**).
   The location compare (vfunc +0x10) is read as "same building". A physics ray (`FUN_1408533a0`, start 18 above the looker,
   blocked by anything more than 2 short of the target) runs in some branches.
 - **Light level** (`+0xd8`, `FUN_140a0af10`, `FUN_140a08da0`, **Verified** literals): set each update to the daylight factor;

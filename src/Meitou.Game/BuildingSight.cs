@@ -19,6 +19,8 @@ sealed class BuildingSight(GameInstall install, GameDatabase db, WorldLevelData 
     public IReadOnlyList<WorldLight> Lights(TownBuilding building) =>
         building.Resolved is { } r ? WorldLights.ForBuilding(db, levels, r, layouts) : [];
 
+    public bool EnforcesCeiling(TownBuilding building) => db.Find(building.BuildingId)?.GetBool("enforce ceiling") == true;
+
     /// <summary>A completed player building's lamps, placed as the renderer lights them (<c>GameHost.UpdateLamps</c>: its own lights, no interior layouts).</summary>
     public IReadOnlyList<WorldLight> SiteLights(Meitou.Simulation.Construction.BuildSite site)
     {

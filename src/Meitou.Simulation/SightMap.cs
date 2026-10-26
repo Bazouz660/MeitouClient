@@ -12,6 +12,8 @@ public interface ISightSource
     IReadOnlyList<WorldLight> Lights(TownBuilding building);
     /// <summary>A completed player building's lights (placed as the renderer lights them; none by default).</summary>
     IReadOnlyList<WorldLight> SiteLights(Construction.BuildSite site) => [];
+    /// <summary>BUILDING <c>enforce ceiling</c> (7 true): nobody on an upper floor of it is on top (<c>Character::threadedUpdatePeriodic</c>, <b>Verified</b>).</summary>
+    bool EnforcesCeiling(TownBuilding building) => false;
 }
 
 /// <summary>
@@ -42,7 +44,7 @@ public sealed class SightMap
 
     const float Cell = 500;
 
-    readonly record struct Room(string Key, InteriorVolume Volume);
+    readonly record struct Room(string Key, InteriorVolume Volume, bool EnforcesCeiling);
     readonly record struct Lamp(WorldLight Light, int Room);
 
     readonly HashSet<string> added = new(StringComparer.Ordinal);
@@ -80,7 +82,7 @@ public sealed class SightMap
         if (!building.Destroyed && source.Room(building) is { } volume)
         {
             room = rooms.Count;
-            rooms.Add(new Room(building.Key, volume));
+            rooms.Add(new Room(building.Key, volume, source.EnforcesCeiling(building)));
             roomOf[building.Key] = room;
             var min = new Vector2(volume.Footprint.Min(p => p.X), volume.Footprint.Min(p => p.Y));
             var max = new Vector2(volume.Footprint.Max(p => p.X), volume.Footprint.Max(p => p.Y));
@@ -145,8 +147,9 @@ public sealed class SightMap
                 var key = new Probe(at, r, prev[s].Generation);
                 if (r != was || probed[s] != key)
                 {
-                    onTop[s] = !rooms[r].Volume.Covered(at);
-                    floorOf[s] = -1;
+                    // A building that enforces its ceiling has nobody on top above its ground floor; elsewhere the overhead query decides.
+                    floorOf[s] = rooms[r].EnforcesCeiling ? rooms[r].Volume.FloorAt(at) : -1;
+                    onTop[s] = !(rooms[r].EnforcesCeiling && floorOf[s] != 0) && !rooms[r].Volume.Covered(at);
                     probed[s] = key;
                 }
             }
