@@ -151,6 +151,8 @@ public sealed record CharacterSnapshot(CharacterId Id, CharacterAppearance? Appe
     public bool RangedDrawn { get; init; }
     /// <summary>The melee weapon in hand is the back one (<see cref="Combat.Fighter.WeaponIsBack"/>): its drawn meshes show, the hip one's sheathed.</summary>
     public bool BackDrawn { get; init; }
+    /// <summary>A corpse with flies (<see cref="CharacterCold.HasFlies"/>): the host shows the Fly-Particle effect and plays the Corpse Flies ambient at it.</summary>
+    public bool HasFlies { get; init; }
     /// <summary>The bolts loaded in its crossbow (<see cref="CharacterCold.CrossbowShots"/>).</summary>
     public int CrossbowShots { get; init; }
     /// <summary>The bolts stuck in the character (<see cref="CharacterCold.StuckBolts"/>).</summary>

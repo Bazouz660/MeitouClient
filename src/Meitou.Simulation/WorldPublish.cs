@@ -90,6 +90,7 @@ public sealed partial class World
                 RangedDrawn = cold is not null && cold.DrawnWeapon != Meitou.Data.Gameplay.WeaponKinds.None
                     && cold.DrawnWeapon == Meitou.Data.Gameplay.HandHold.OfCategory((int)Meitou.Data.Gameplay.Combat.WeaponCategory.Bow).Weapon,
                 BackDrawn = cold?.Fighter?.WeaponIsBack ?? false,
+                HasFlies = cold?.HasFlies ?? false,
                 Name = cold?.Name ?? "",
                 SquadId = cold?.SquadId ?? -1,
                 IsPlayer = cold?.IsPlayer ?? false,
