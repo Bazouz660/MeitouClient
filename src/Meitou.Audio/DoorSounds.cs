@@ -68,7 +68,7 @@ public sealed class DoorSounds(WwisePlayer player)
         door.Broken = broken;
         if (before == motion && !breaks) return;
         var at = door.Last;
-        if (Vector3.DistanceSquared(at.Position, eye) > Range * Range) return;
+        if (player.HeardDistanceSquared(at.Position, eye) > Range * Range) return;
         player.SetPosition(door.Object, at.Position);
         player.SetSwitch("Door_Type", TypeNames[Math.Clamp(at.Type, 0, TypeNames.Length - 1)], door.Object);
         if (breaks)

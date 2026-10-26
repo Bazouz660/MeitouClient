@@ -57,6 +57,9 @@ sealed partial class GameHost
     /// is the biome), the eye its position; the hour is the game clock's. Not while the title screen is up: the game runs no camera update there, so the main
     /// theme is not stopped by an ambience event or the music bank's unload.
     /// </summary>
+    /// <summary>The ears above a character's feet when sounds are heard from it (units; a person is about 180 tall).</summary>
+    const float EarHeight = 160;
+
     void UpdateAudio(double realSeconds)
     {
         // The Audio settings' Sound voices slider (config.Audio.Voices) is applied by AudioSystem.Apply.
@@ -65,7 +68,9 @@ sealed partial class GameHost
         var eye = camera.Eye;
         var front = camera.Forward;
         var right = Vector3.Normalize(Vector3.Cross(front, Vector3.UnitY));
-        audio.SetListener(eye, front, Vector3.Cross(right, front));
+        // The Audio settings' Hear from switch: the listener and every distance limit move to the first selected character's ears; the camera keeps the orientation.
+        var ears = config.HearFromSelected && player.SelectedPosition is { } lead ? lead + Vector3.UnitY * EarHeight : eye;
+        audio.SetListener(ears, front, Vector3.Cross(right, front));
         audio.SetPaused(session.Simulation.IsPaused);
         var weather = ActiveWeather;
         var clock = session.Clock;
@@ -73,9 +78,9 @@ sealed partial class GameHost
         audio.Ambience.FixWindStop = config.FixWindStop;
         audio.Update(weather?.World.RegionAt(target.X, target.Z), weather?.State, clock.HourOfDay, clock.Sunrise, clock.Sunset,
             eye.Y - ActiveGround(eye.X, eye.Z), realSeconds);
-        UpdateWorldAudio(audio, target, eye);
-        UpdateCharacterAudio(audio, eye);
-        UpdateTurretAudio(audio, eye, realSeconds);
+        UpdateWorldAudio(audio, ears == eye ? target : ears, ears);
+        UpdateCharacterAudio(audio, ears);
+        UpdateTurretAudio(audio, ears, realSeconds);
     }
 
     /// <summary>The audio sliders changed in the settings menu: they apply at once.</summary>

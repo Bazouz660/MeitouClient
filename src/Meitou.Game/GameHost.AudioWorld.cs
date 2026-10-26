@@ -32,7 +32,8 @@ sealed partial class GameHost
     // The level's wind generators' emitters, told their blade's wind share each frame.
     readonly List<(PlacedEmitter Emitter, (float Min, float Max) Rotor)> levelWind = [];
 
-    /// <summary>Once a frame, after the ambience: <paramref name="pivot"/> is the camera's target (the game tests the building under it), <paramref name="eye"/> the camera's position (the emitters' distance).</summary>
+    /// <summary>Once a frame, after the ambience: <paramref name="pivot"/> is the camera's target (the game tests the building under it), <paramref name="eye"/> the camera's position (the emitters' distance);
+    /// both are the selected character's ears under the Audio settings' Hear from switch.</summary>
     void UpdateWorldAudio(AudioSystem sound, Vector3 pivot, Vector3 eye)
     {
         if (!ReferenceEquals(worldAudioFor, sound))

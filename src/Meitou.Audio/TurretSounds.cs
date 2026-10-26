@@ -83,7 +83,7 @@ public sealed class TurretSounds(WwisePlayer player)
 
     void Start(Turret t, Vector3 eye)
     {
-        if (Vector3.DistanceSquared(t.Mount.Position, eye) > Range * Range) return;
+        if (player.HeardDistanceSquared(t.Mount.Position, eye) > Range * Range) return;
         if (t.Object == 0)
         {
             t.Object = next++;

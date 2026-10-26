@@ -318,6 +318,9 @@ sealed partial class PlayerInterface(WorldSession session, Func<float, float, fl
     }
 
     /// <summary>Centres the camera on the lead selected character and follows it (after a load, which drops the follow).</summary>
+    /// <summary>Where the first selected character stands, or null with none selected.</summary>
+    public Vector3? SelectedPosition => Selected().FirstOrDefault() is { } lead ? lead.Position : null;
+
     public void FollowSelected()
     {
         if (Selected().FirstOrDefault() is { } lead) CentreOn(lead.Id);

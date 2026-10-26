@@ -438,7 +438,9 @@ parametric EQ (`0x69`), compressor (`0x6C`) and one effect `0x6E` (Unknown).
 
 - **Listener.** The game's `SetListenerPosition` call (`FUN_1406b0140`) puts the camera's up vector in the front slot and leaves the top slot unset (**Verified**
   by disassembly), so its 3D panning follows no real direction. Meitou's listener has the camera's true front and up (`AudioSystem.SetListener`); there is no
-  Faithful switch, since the game's behaviour is a broken orientation that cannot be reproduced (and no new option may be added).
+  Faithful switch, since the game's behaviour is a broken orientation that cannot be reproduced (and no new option may be added). The Audio settings' Hear from
+  switch (`UserConfig.HearFromSelected`, default Camera) moves the listener, the distance limits and the building test to 160 units above the first selected
+  character (the camera while none is); the orientation stays the camera's, so the pan matches the screen.
 - **Objects.** `WwisePlayer` registers an object on first use. A sound posted on an object remembers it; its position (`SetPosition`) is read each block
   (lock-protected). Object 0 is the default object and is never placed. An object never placed is heard at the listener. `UnregisterObject` ends its sounds.
   `SetSwitch` and `SetParameter` take an object (0 = global); a value set on an object wins over the global one. An object-scoped Stop (scope 3) only stops
@@ -485,6 +487,13 @@ hundreds of footsteps, swings and hits a second overran the audio thread (**Obse
 of mixing). Clips up to 20 s are decoded once and shared by their voices (`PcmCache`, up to 256 MB; longer clips, the music and anything past the budget
 stream as before): the same render takes 0.57 s, about 0.3 ms a sound once its clip is decoded. A capped voice on shared samples catches up by moving its place.
 
+### Hearing range
+
+Meitou's rule, the Audio settings' Sound range slider (`AudioSettings.Range`, meitou.user.json: 1 to 4 in steps of 0.25, Faithful 1, Meitou 2, which the viewer
+also uses). `WwisePlayer.Reach` divides every distance before it is read: the attenuation curves (dry, aux, low-pass) and the game-side limits
+(`WwisePlayer.HeardDistanceSquared`: character tracking and event limits, door and turret ranges, the AMBIENT_SOUND ranges). The pan uses the true
+distance. More reach means more objects and sounds at once, which the [voice cap](#voice-cap) bounds.
+
 ### API for event sources
 
 For a host that posts its own events (footsteps, combat, UI, voices, emitters), through `AudioSystem.Player` (a `WwisePlayer`):
@@ -517,7 +526,8 @@ main theme or the remembered biome music, seconds until the timer next posts it,
   (paused or speed 0): `Pause_Game` / `Resume_Game` post on object 100. `SFX_General_Bank` loads with the ambience banks.
   - **Audio sliders.** The settings menu's Audio page has the original's seven (`Music volume`, `Ambient volume`, `Footstep volume`, `Sfx volume`, `UI volume`, `VO volume`, `Music frequency`;
     [settings.md](formats/settings.md)), kept in `meitou.user.json` (`audio`); the first run takes them from the install's `settings.cfg`. They apply at once (`AudioSystem.Apply`),
-    where the original applies them when its options close. The viewer still reads `settings.cfg` once at start.
+    where the original applies them when its options close. Meitou adds Sound voices ([Voice cap](#voice-cap)), Sound range ([Hearing range](#hearing-range)) and Hear from (Listener, above).
+    The viewer still reads `settings.cfg` once at start.
   - **Title screen.** `StartMainTheme` when the world is up and the title is open (either UI mode: the faithful title or the Meitou game menu).
     While the title is open the host does not update the ambience or the music (**Unknown** whether the original's camera update runs there; if it did, its first biome call would unload the theme's bank), so no `Enter_` event or
     music-bank unload cuts the theme. A new game or a load posts `Create_or_Load_Game` (5 s fade) as it starts; `--new-game` and `--load` skip the

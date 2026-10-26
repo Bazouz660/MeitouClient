@@ -55,6 +55,15 @@ public sealed partial class WwisePlayer : IDisposable
     /// </summary>
     public int VoiceCap { get; set; } = AudioSettings.MeitouVoices;
 
+    /// <summary>
+    /// Meitou's hearing range (docs/audio.md "Hearing range", the Audio settings' Sound range slider): every attenuation curve and every game-side distance limit is read at the
+    /// distance divided by this, so 2 hears everything twice as far. 1 is the original. Set from any thread.
+    /// </summary>
+    public float Reach { get; set; } = 1;
+
+    /// <summary>The squared distance from <paramref name="eye"/> as the game's distance limits see it under <see cref="Reach"/>.</summary>
+    public float HeardDistanceSquared(Vector3 at, Vector3 eye) => Vector3.DistanceSquared(at, eye) / (Reach * Reach);
+
     /// <summary>The sounds the cap left silent in the last block.</summary>
     public int Silenced { get; private set; }
 
@@ -776,6 +785,7 @@ public sealed partial class WwisePlayer : IDisposable
                 (distance, pan) = Spatial.Locate(position, ears);
                 if (attenuation is not null)
                 {
+                    distance /= Player.Reach;
                     dry = Spatial.VolumeGain(attenuation.Curve(WwiseAttenuation.VolumeDry), distance);
                     send = Spatial.VolumeGain(attenuation.Curve(WwiseAttenuation.AuxUserDefined), distance);
                     if (attenuation.Curve(WwiseAttenuation.LowPass) is { } lp && lp.Points.Length > 0) lowPass += WwiseCurves.Evaluate(lp.Points, distance);

@@ -106,6 +106,8 @@ sealed class UserConfig
     /// <summary>The pointer at the screen's edge pans the strategy camera (the original's <c>Edge scrolling</c>, default on; Controls settings);
     /// null until first used, then taken from the install's settings.cfg.</summary>
     public bool? EdgeScroll { get; set; }
+    /// <summary>Sounds are heard from the first selected character instead of the camera (Audio settings; off, the default: the camera, as the game does).</summary>
+    public bool HearFromSelected { get; set; }
     /// <summary>The Windows cursor instead of the game's drawn pointer (the original's <c>hardware_mouse</c>, default off; Interface settings).</summary>
     public bool HardwareMouse { get; set; }
     /// <summary>Outline and tint the character under the cursor (Advanced settings; Meitou only, the game has none).</summary>

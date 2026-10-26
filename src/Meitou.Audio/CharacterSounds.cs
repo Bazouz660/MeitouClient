@@ -214,7 +214,7 @@ public sealed class CharacterSounds
     /// </summary>
     public void Update(ulong key, CharacterSoundProfile profile, Vector3 position, float yaw, float speed, ReadOnlySpan<SoundLayer> layers, CharacterLoop loop = CharacterLoop.None)
     {
-        float d2 = Vector3.DistanceSquared(position, camera);
+        float d2 = player.HeardDistanceSquared(position, camera);
         entries.TryGetValue(key, out var e);
         if (e is null)
         {
@@ -405,7 +405,7 @@ public sealed class CharacterSounds
     {
         if (!entries.TryGetValue(key, out var e)) return;
         if (group is not null && value is not null) player.SetSwitch(group, value, e.Object);
-        if (limit != 0 && Vector3.DistanceSquared(e.Position, camera) >= limit) return;
+        if (limit != 0 && player.HeardDistanceSquared(e.Position, camera) >= limit) return;
         if (eventName == "Character_Unlock_Success" && e.Loop == CharacterLoop.Unlock) e.Loop = CharacterLoop.None;
         player.Post(eventName, e.Object);
         Jobs++;
@@ -416,7 +416,7 @@ public sealed class CharacterSounds
     {
         if (!entries.TryGetValue(key, out var e)) return;
         player.SetSwitch("Armor_Worn", ArmourName(e.Profile.ArmourMaterial), e.Object);
-        if (Vector3.DistanceSquared(e.Position, camera) >= EventLimit) return;
+        if (player.HeardDistanceSquared(e.Position, camera) >= EventLimit) return;
         player.Post(lifted ? "Character_Pick_Up_Person" : "Character_Drop_Person", e.Object);
         Jobs++;
     }
@@ -429,7 +429,7 @@ public sealed class CharacterSounds
     bool Post(ulong key, string ev, float limit = EventLimit)
     {
         if (!entries.TryGetValue(key, out var e)) return false;
-        if (Vector3.DistanceSquared(LastPosition(e), camera) >= limit && limit != 0) return false;
+        if (player.HeardDistanceSquared(LastPosition(e), camera) >= limit && limit != 0) return false;
         player.Post(ev, e.Object);
         return true;
     }
@@ -469,7 +469,7 @@ public sealed class CharacterSounds
     void Impact(Entry e, string impacts, string ev = "Impact")
     {
         player.SetSwitch("Impacts", impacts, e.Object);
-        if (Vector3.DistanceSquared(LastPosition(e), camera) >= EventLimit) return;
+        if (player.HeardDistanceSquared(LastPosition(e), camera) >= EventLimit) return;
         player.Post(ev, e.Object);
         Impacts++;
     }
@@ -477,7 +477,7 @@ public sealed class CharacterSounds
     /// <summary>A person with 50 % (the random value's bit 8 clear) says <c>VO_Get_Hit</c>, an animal <c>VO_Creature_Take_Damage</c>.</summary>
     void PainVoice(Entry e)
     {
-        if ((random.Next() & 8) != 0 || Vector3.DistanceSquared(LastPosition(e), camera) >= EventLimit) return;
+        if ((random.Next() & 8) != 0 || player.HeardDistanceSquared(LastPosition(e), camera) >= EventLimit) return;
         player.Post(e.Profile.Animal ? "VO_Creature_Take_Damage" : "VO_Get_Hit", e.Object);
         Voices++;
     }
@@ -494,7 +494,7 @@ public sealed class CharacterSounds
     /// </summary>
     public void TurretShot(Vector3 at)
     {
-        if (Vector3.DistanceSquared(at, camera) >= EventLimit) return;
+        if (player.HeardDistanceSquared(at, camera) >= EventLimit) return;
         ulong id = pool[poolAt++ % pool.Length];
         player.SetPosition(id, at);
         player.SetSwitch("Weapons", "Turret", id);
@@ -508,7 +508,7 @@ public sealed class CharacterSounds
     /// </summary>
     public void WallBreak(Vector3 at, bool fix)
     {
-        if (Vector3.DistanceSquared(at, camera) >= EventLimit) return;
+        if (player.HeardDistanceSquared(at, camera) >= EventLimit) return;
         ulong id = pool[poolAt++ % pool.Length];
         player.SetPosition(id, at);
         if (fix) player.SetSwitch("Break", "Gate", id);
@@ -519,7 +519,7 @@ public sealed class CharacterSounds
     /// <summary>A bolt stuck in the ground at <paramref name="at"/>: <c>Impact</c> on a pooled object there, <c>Impacts</c> = the ground's name (<c>Stone</c> for anything the table lacks).</summary>
     public void BoltStuck(Vector3 at, int surface)
     {
-        if (Vector3.DistanceSquared(at, camera) >= EventLimit) return;
+        if (player.HeardDistanceSquared(at, camera) >= EventLimit) return;
         ulong id = pool[poolAt++ % pool.Length];
         player.SetPosition(id, at);
         player.SetSwitch("Impacts", SurfaceName(surface, false) is { Length: > 0 } name ? name : "Stone", id);
@@ -536,7 +536,7 @@ public sealed class CharacterSounds
     /// </summary>
     public void Burst(Vector3 at)
     {
-        float distance = Vector3.DistanceSquared(at, camera);
+        float distance = player.HeardDistanceSquared(at, camera);
         PointImpact(at, "Heavy_Hit");
         if (distance >= SquelchLimit) return;
         player.SetSwitch("Inventory_Items", "Meat", AudioSystem.GuiObject);
@@ -548,7 +548,7 @@ public sealed class CharacterSounds
 
     void PointImpact(Vector3 at, string impacts)
     {
-        if (Vector3.DistanceSquared(at, camera) >= EventLimit) return;
+        if (player.HeardDistanceSquared(at, camera) >= EventLimit) return;
         ulong id = pool[poolAt++ % pool.Length];
         player.SetPosition(id, at);
         player.SetSwitch("Impacts", impacts, id);

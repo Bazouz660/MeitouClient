@@ -98,7 +98,7 @@ public sealed class WorldEmitters(WwisePlayer player)
         foreach (var e in emitters.Values)
         {
             float range = e.Sound.Range;
-            float d2 = Vector3.DistanceSquared(e.Position, eye);
+            float d2 = player.HeardDistanceSquared(e.Position, eye);
             if (d2 < nearest)
             {
                 nearest = d2;
