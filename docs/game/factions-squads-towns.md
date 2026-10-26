@@ -385,8 +385,13 @@ Meitou: [ground items](../simulation.md#items-and-eating).
   304), while `read_roaming_population_n4` (`0x1408f98d0`) would set pool 2 to the faction's `roaming population` (no caller found:
   **Unknown** when it runs). `pop` is near the living members of the town's resident platoons (`is resident`) of the town's own faction:
   save 2 Squin 36 = 36, the Hub 12 vs 10, Stack 93 vs 95 (Squin without a Tech Hunters resident shop of 4).
-- **Town wipe** (**Observed**, `TownPopulationManager::vfunc_4`): roaming `pop` ≤ 3, ≤ 25 roaming living and no intact resident platoon
-  sets `ded`.
+- **Town wipe** (**Verified**, `TownPopulationManager::vfunc_4` `FUN_1408f7a80`): once started, roaming `pop` <= 3, <= 25 roaming living and no intact resident platoon
+  (more than 200 unresolvable handles in the set, or any at all, also keep it) sets `ded`, saved, never cleared. `setDead` is empty for towns (only nests remove themselves), so
+  nothing is shown; a dead town skips the remake pass at activation and its `regenerates` squads die. Meitou (`CheckTownWipes`, each roam check): resident = any town squad
+  or pinned platoon with a home; a town still loading is not judged.
+- **`regenerates`** (SQUAD_TEMPLATE, 18 true; `Platoon::declareDead`, **Verified**): when the last member dies and the home town is not `ded`, the platoon is not declared
+  dead but set to CM_REFRESH (remade on next activation). Meitou: a town squad that unloads with no one alive, or an empty pinned platoon at the town's load, is marked to
+  regenerate (whatever the budget).
 - **Nests** (`NestPopulationManager::vfunc_4`): pool 2 starts at 0.7 × `nest resident population` and grows as above. While the nest's
   zone is loaded it spawns one squad per tick (weight `max(0, v0 − existing) × faction wealth`; an entry passes when its size fits the free budget `floor(pop2)` − living, or
   the pool is empty and more than 4 are free, so a squad bigger than the budget can open a nest: `FUN_1408f7e80`, **Verified** by code) unless a

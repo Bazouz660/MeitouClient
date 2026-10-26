@@ -80,6 +80,7 @@ public sealed partial class PopulationSystem
         {
             EnsurePools(world);
             GrowPools(world);
+            CheckTownWipes(world);
             FillPools(world);
             TopUpNests(world);
             StepHomeless(world);

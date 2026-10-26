@@ -431,11 +431,14 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
             var stored = new StoredSquad { Name = squad.Name, HomeBuilding = squad.HomeBuilding, Shop = squad.Shop, NextHomeFillTick = squad.NextHomeFillTick, Package = squad.Ai?.Current?.Id, Ai = Saving.AiSave.Of(squad.Ai) ?? squad.SavedAi, Memory = Memory?.Take(squad.Id) };
             var at = Store(world, squad, stored);
             world.Squads.Remove(id);
-            if (stored.Members.Count == 0) continue;
+            // A squad with no one alive left is declared dead, unless its template `regenerates` and its town lives: then it is made afresh next time (CM_REFRESH).
+            bool refresh = stored.Members.Count == 0 && Regenerates(squad.TemplateId, site);
+            if (stored.Members.Count == 0 && !refresh) continue;
             world.Platoons.Add(new Platoon
             {
                 Id = world.Platoons.NextId(), Origin = site, TemplateId = squad.TemplateId, Faction = squad.Faction, Key = 0, Size = Math.Max(squad.SpawnSize, stored.Members.Count),
                 Position = at, Money = squad.Money, Package = stored.Package, Stored = stored,
+                Regenerate = refresh,
             });
         }
         Reset(state);

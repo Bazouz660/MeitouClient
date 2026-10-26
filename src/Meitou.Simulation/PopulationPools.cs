@@ -129,13 +129,57 @@ public sealed partial class PopulationSystem
         }
     }
 
+    /// <summary>The town wipe-out gates (<c>TownPopulationManager::vfunc_4</c>, <b>Verified</b>): a roaming pool over this many keeps the town, and so do more living roamers than <see cref="WipeRoamingLiving"/>.</summary>
+    public const float WipeRoamingPool = 3;
+    public const int WipeRoamingLiving = 25;
+
+    /// <summary>
+    /// Town wipe-out (<c>TownPopulationManager::vfunc_4</c> <c>FUN_1408f7a80</c>, docs/game/factions-squads-towns.md "Town wipe"): a started town that is not yet <c>ded</c>, whose roaming
+    /// pool is at most 3 and whose roaming platoons have at most 25 living, and none of whose resident squads (any with a home; engine reading of the resident pool) has anyone alive, is <c>ded</c> for good: it
+    /// remakes no depleted squads (<see cref="CheckRegeneration"/>) and its <c>regenerates</c> squads die. Nothing is posted (the town's <c>setDead</c> is empty).
+    /// </summary>
+    void CheckTownWipes(World world)
+    {
+        if (townPools.Length != data.Sites.Count) return;
+        var resident = new bool[data.Sites.Count];
+        var roamers = new int[data.Sites.Count];
+        foreach (var p in world.Platoons.All)
+        {
+            if (p.Origin < 0 || p.Origin >= resident.Length || p.Wild) continue;
+            if (p.Pinned)
+            {
+                if (p.Stored is not { HomeBuilding: null } && LivingOf(world, p) > 0) resident[p.Origin] = true;
+            }
+            else roamers[p.Origin] += LivingOf(world, p);
+        }
+        for (int s = 0; s < states.Length && s < resident.Length; s++)
+            foreach (int id in states[s].Squads)
+                if (world.Squads.Find(id) is { } squad && squad.HomeBuilding is not null && squad.Members.Any(m => Living(world, m))) resident[s] = true;
+        for (int s = 0; s < resident.Length; s++)
+        {
+            // A town coming into the world has neither its squads nor its platoons for a moment: not judged then.
+            if (s < states.Length && (states[s].Status == SiteStatus.Loading || states[s].Pending)) continue;
+            if (townPools[s] is not { Started: true, Ded: false } pools || resident[s] || pools.Roaming.Current > WipeRoamingPool || roamers[s] > WipeRoamingLiving) continue;
+            pools.Ded = true;
+            pools.DiedAt = (float)Hours(world);
+            if (townLog.Count >= 256) townLog.RemoveAt(0);
+            townLog.Add($"{data.Sites[s].Town.Name} wiped out");
+        }
+    }
+
+    /// <summary>SQUAD_TEMPLATE <c>regenerates</c> (<c>Platoon::declareDead</c>, <b>Verified</b>): a squad of it whose last member dies is not declared dead while its town is not <c>ded</c>; it is made afresh on its next activation.</summary>
+    bool Regenerates(Platoon p) => p.Pinned && TownAlive(p.Origin) && data.Db.Find(p.TemplateId)?.GetBool("regenerates") == true;
+    bool Regenerates(string templateId, int site) => TownAlive(site) && data.Db.Find(templateId)?.GetBool("regenerates") == true;
+    bool TownAlive(int site) => site >= 0 && site < townPools.Length && townPools[site] is not { Ded: true };
+
     /// <summary>
     /// The original's regeneration check at a town's load (<c>0x14092a020</c>): each of its own squads (in platoon id order) that lost at least 60 % of its size, while the
     /// losses so far fit the residents' current max less the living, is marked to be made afresh from its template when it next comes into the world.
     /// </summary>
     void CheckRegeneration(World world, int site)
     {
-        if (townPools[site] is not { } pools) return;
+        // A wiped-out town remakes nothing (TownBase::activate runs the pass only while it is not ded).
+        if (townPools[site] is not { Ded: false } pools) return;
         var own = new List<(Platoon P, int Size, int Living)>();
         int running = 0;
         foreach (var p in world.Platoons.All)
@@ -154,6 +198,8 @@ public sealed partial class PopulationSystem
         }
         foreach (var (p, size, living) in own)
         {
+            // A `regenerates` squad with no one left comes back whatever the budget (Platoon::declareDead).
+            if (living == 0 && size > 0 && Regenerates(p)) { p.Regenerate = true; continue; }
             int lost = size - living;
             if (lost <= 0 || lost < 0.6 * size || lost > pools.Residents.Current - running) continue;
             p.Regenerate = true;
