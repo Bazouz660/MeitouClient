@@ -104,7 +104,9 @@ them** (**Verified**: by code, the only spawn-near-own-town helper `FUN_1402dda6
 `special`, every `sqtime` is 0). A `UniquePlatoon` (`FUN_14057c6f0`: UNIQUE_SQUAD_TEMPLATE, or a saved PLATOON with `special`) adds a
 mission ticker (every 10 s pick a `missions` DIPLOMATIC_ASSAULTS entry by its `conditions`: `FUN_1409a7930`; not decoded), saves
 `missionTimer` and `missionRepeatsCount` per mission (slot 23), and on destruction unless kept tells the manager, which drops its handle and
-sets the timer to 2618.18 × `replacement time` / 24 (`FUN_1402de9b0`; unit **Unknown**).
+sets the timer to 2618.18 × `replacement time` / 24 (`FUN_1402de9b0`; 2618.18 is the seconds of a game day, so the unit is game hours, **Observed**). No UniquePlatoon is
+ever made in vanilla (special squads are never spawned, no shipped save has a `special` PLATOON), and SINGLE_DIPLOMATIC_ASSAULT `repeat timer hours min/max`, `delivery AI
+package`, `dialogue announce` are not strings in the exe (**Verified**): the whole mission path is dead, so Meitou only carries its records and save keys.
 
 ## Population and contents
 
@@ -260,7 +262,7 @@ included), else 0.025 (outside every town too).
 | caging | `Task_PutInSomething` `FUN_140358670`, after the bounty claim | kind = task `+0x7c`: 12 for the cage task, 9 (no row) for the bed (factory `FUN_14032ebd0`) against the putter's faction |
 | first aid | `FUN_140649a00`, `FUN_14064d800` | kind 8 to the medic's faction when the patient's medical `+0x161` (unconscious) or `+0x160` is set; in `FUN_140649a00` only on an update whose loop filled every wound |
 | ally witness | `FUN_140854d10` | a witness that regards the suspect as friendly (vfunc `0x3f0`) and sees it wrong its own faction: slot 4, -20 (skipped when the witness platoon's `+0x210` object has `+0xa8`); for every crime code but 2, 10, 11, 14, 16; repeats on each witness pass |
-| missions | `MissionClass` vfuncs `FUN_14039f580` / `FUN_14039f660` | trust (slot 6) and a direct add (slot 4) of the mission giver's faction about the player |
+| missions | `MissionClass` vfuncs `FUN_14039f580` / `FUN_14039f660` | trust (slot 6) and a direct add (slot 4) of the mission giver's faction about the player. **Dead in 1.0.68** (**Verified**): the only maker `FUN_14039f4b0` is reached only by an uncalled thunk, so the mission list is always empty and these never apply |
 | dialogue | `FUN_140680560` | DA 4 slot 4, DA 5 slot 9, DA 13 slot 8, DA 14 slot 7, always the **speaker's** faction about the target's ([dialogue](dialogue.md#effects)) |
 
 - No other caller of slot 7 or 8 was found: wars start and end only by dialogue (`FactionWarMgr` campaigns do not call them).
