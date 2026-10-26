@@ -76,8 +76,11 @@ sealed class CharacterAssembly(PopulationData data)
             foreach (var item in inventory.Items.Where(i => i.Section == section && i.Type == FcsRecordType.CROSSBOW))
                 if (crossbow is null && combat.Crossbow(item.Record) is { } x)
                     crossbow = CrossbowInstance.Create(item.Level * 0.01f, x, combat.Constants, data.BodyOptions.GlobalDamageMultiplier);
-        float? backpackStealth = inventory.Backpack is { } pack ? data.Db.Find(pack.Record)?.GetFloat("stealth mult", 1) ?? 1 : null;
-        var fighter = new Fighter(First("hip"), armour, backpackStealth) { BackWeapon = First("back"), Crossbow = crossbow };
+        var packRecord = inventory.Backpack is { } pack ? data.Db.Find(pack.Record) : null;
+        float? backpackStealth = inventory.Backpack is not null ? packRecord?.GetFloat("stealth mult", 1) ?? 1 : null;
+        // CONTAINER +0x238 (FUN_140763810): the raw athletics mult, the seed of the gear's smallest run factor.
+        float backpackAthletics = packRecord?.GetFloat("athletics mult", 1) ?? 1;
+        var fighter = new Fighter(First("hip"), armour, backpackStealth, backpackAthletics) { BackWeapon = First("back"), Crossbow = crossbow };
         if (medical is not null) fighter.SetArms(medical.ArmWorks(left: false), medical.ArmWorks(left: true));
         return fighter;
     }
@@ -185,7 +188,7 @@ sealed class CharacterAssembly(PopulationData data)
         cold.Fighter = FighterOf(record, cold.Inventory, cold.Medical);
         cold.WaterFactor = raceData.WaterAvoidance * (cold.Faction == data.PlayerFaction && data.PlayerFaction >= 0 ? 0.5f : 1);
         cold.RoadPreference = data.RoadPreferenceOf(cold.Faction);
-        hot.MaxSpeed = Speed.Run(raceData, stats, medical, 1);
+        hot.MaxSpeed = Speed.Run(raceData, stats, medical, 1, statsFactor: cold.Fighter?.AthleticsFactor ?? 1);
         // A start without a limb (CHARACTER `starting health`) shows its stump.
         if (Enumerable.Range(0, 4).Any(k => medical.LimbPart(k) is { Limb: not LimbState.Original })) RefreshEquipment(cold);
     }

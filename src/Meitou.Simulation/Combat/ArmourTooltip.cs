@@ -89,9 +89,7 @@ public static class ArmourTooltip
         Multiplier("Precision shooting effect", a.RangedSkillMult);
         Multiplier("Stealth effect", ArmourPiece.StealthOf(a, t));
         Multiplier("Dodge skill effect", a.DodgeMult);
-        // The class table's athletics column (medium 0.85 to 1, heavy 0.8 to 0.95, else 1); a hat, a body armour (slot 5) and slot 8 are forced to 1.
-        float athletics = a.Slot is 3 or 5 or 8 ? 1 : a.AthleticsMult * a.Class switch { ArmourClass.Medium => WeaponStats.Lerp(t, 0.85f, 1f), ArmourClass.Heavy => WeaponStats.Lerp(t, 0.8f, 0.95f), _ => 1f };
-        Multiplier("Athletics effect", athletics, hideNearOne: true);
+        Multiplier("Athletics effect", ArmourPiece.AthleticsOf(a, t), hideNearOne: true);
         // The class table's combat speed column (heavy 0.9 to 1, else 1); a hat is forced to 1.
         Multiplier("Combat speed effect", a.Slot == 3 ? 1 : a.CombatSpeedMult * (a.Class == ArmourClass.Heavy ? WeaponStats.Lerp(t, 0.9f, 1f) : 1f));
         Multiplier("Attack damage effect", a.DamageOutputMult);

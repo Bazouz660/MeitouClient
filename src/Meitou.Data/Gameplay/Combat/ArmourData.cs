@@ -30,6 +30,8 @@ public sealed record ArmourData
     public float CutIntoStun { get; init; }
     public float FistInjuryMult { get; init; } = 1;
     public int UnarmedBonus { get; init; }
+    /// <summary><c>perception bonus</c>: summed over the worn pieces into CharStats <c>+0x30</c> and added to the trained perception (docs/game/character-stats.md "Gear factors").</summary>
+    public int PerceptionBonus { get; init; }
     public int CombatAttackBonus { get; init; }
     public int CombatDefenceBonus { get; init; }
     public int CombatSkillBonus { get; init; }
@@ -106,6 +108,7 @@ public sealed record ArmourData
         CutIntoStun = RecordReading.Float(r, "cut into stun", 0),
         FistInjuryMult = RecordReading.Float(r, "fist injury mult", 1),
         UnarmedBonus = RecordReading.Int(r, "unarmed bonus", 0),
+        PerceptionBonus = RecordReading.Int(r, "perception bonus", 0),
         CombatAttackBonus = RecordReading.Int(r, "combat attk bonus", 0),
         CombatDefenceBonus = RecordReading.Int(r, "combat def bonus", 0),
         CombatSkillBonus = RecordReading.Int(r, "combat skill bonus", 0),

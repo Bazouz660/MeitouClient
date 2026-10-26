@@ -85,20 +85,33 @@ public sealed class Fighter
     /// <summary>Product of the pieces' <c>combat speed mult</c>: scales the speed attack animations play at.</summary>
     public float CombatSpeed { get; }
 
+    /// <summary>
+    /// The gear's run speed factor (CharStats <c>+0x18</c>, <c>FUN_140887030</c>, <b>Verified</b>): the largest piece factor (at least 1) times the smallest, the backpack's
+    /// <c>athletics mult</c> (1 without one) seeding the smallest; <see cref="Bodies.Speed.Run"/> scales the run speed by it.
+    /// </summary>
+    public float AthleticsFactor { get; }
+    /// <summary>Sum of the pieces' <c>perception bonus</c> (CharStats <c>+0x30</c>), added to the trained perception before its multiplier (<c>FUN_140884ac0</c>).</summary>
+    public int PerceptionBonus { get; }
+
     /// <param name="backpackStealth">The worn backpack's <c>stealth mult</c>, null without one (a negative value counts as 1).</param>
-    public Fighter(WeaponInstance? weapon, IEnumerable<ArmourPiece>? armour = null, float? backpackStealth = null)
+    /// <param name="backpackAthletics">The worn backpack's <c>athletics mult</c> (1 without one).</param>
+    public Fighter(WeaponInstance? weapon, IEnumerable<ArmourPiece>? armour = null, float? backpackStealth = null, float backpackAthletics = 1)
     {
         hip = weapon;
         this.armour = armour is null ? [] : [.. armour];
         backpack = backpackStealth is not null;
         float seed = backpackStealth is { } b ? b < 0 ? 1 : b : 1;
-        float def = 0, atk = 0, unarmed = 0, output = 1, dex = 1, dodge = seed, speed = 1, sneak = seed;
+        float def = 0, atk = 0, unarmed = 0, output = 1, dex = 1, dodge = seed, speed = 1, sneak = seed, runMax = 1, runMin = backpackAthletics;
+        int perception = 0;
         assassin = ranged = 1;
         foreach (var p in this.armour)
         {
             def += p.Data.CombatDefenceBonus;
             atk += p.Data.CombatAttackBonus;
             unarmed += p.Data.UnarmedBonus;
+            perception += p.Data.PerceptionBonus;
+            runMax = MathF.Max(runMax, p.Athletics);
+            runMin = MathF.Min(runMin, p.Athletics);
             output *= p.Data.DamageOutputMult;
             dex *= p.Data.DexterityMult;
             dodge *= p.Data.DodgeMult;
@@ -115,6 +128,8 @@ public sealed class Fighter
         dexterity = dex;
         dodgeMult = dodge;
         CombatSpeed = speed;
+        AthleticsFactor = runMax * runMin;
+        PerceptionBonus = perception;
     }
 
     /// <summary>Sets which arms work (<see cref="Weapon"/>); true when that changes the weapon in hand. Only in the owner's own Act or a serial phase.</summary>

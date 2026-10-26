@@ -271,7 +271,8 @@ public sealed partial class World
         float speed = MathF.Sqrt(hot.Velocity.X * hot.Velocity.X + hot.Velocity.Z * hot.Velocity.Z);
         if (speed <= 9) return null;
         return new(StatsEnumerated.Athletics, "Athletics:", (int)stats.Athletics) { Athletics = new((int)stats.Athletics, Bodies.Speed.RunValue(race, stats.Athletics),
-            (int)((1 - Bodies.Speed.LegFactor(med)) * 100), (int)((1 - encumbrance) * 100), (int)((med.LegItemFactor(StatsEnumerated.Athletics) - 1) * 100), hot.MaxSpeed) };
+            (int)((1 - Bodies.Speed.LegFactor(med)) * 100), (int)((1 - encumbrance) * 100), cold.Fighter?.AthleticsFactor ?? 1, (int)((med.LegItemFactor(StatsEnumerated.Athletics) - 1) * 100),
+            hot.MaxSpeed) };
     }
 
     /// <summary>
@@ -289,7 +290,8 @@ public sealed partial class World
 
     /// <summary>
     /// A skill's tooltip terms (<c>FUN_140890b00</c>): the stat multiplier (<c>FUN_1406457e0</c>) asked for one term at a time, injuries (the limb term), hunger, weather (the dust
-    /// factor), darkness (the light term), robotics (fitted limbs and the disabled-arm 0.66) and, but for strength and perception, the worn gear; for strength the 0.66 of a
+    /// factor), darkness (the light term), robotics (fitted limbs and the disabled-arm 0.66) and, but for strength and perception, the worn gear (perception has its armour bonus,
+    /// added to the level before the multiplier, instead); for strength the 0.66 of a
     /// disabled arm again as the missing arm penalty. The total is the stat with every term.
     /// </summary>
     static SkillTerms SkillTermsOf(CharacterCold cold, Bodies.MedicalState med, Bodies.CharacterStats stats, StatsEnumerated stat)
@@ -299,8 +301,9 @@ public sealed partial class World
         bool robotics = med.Parts.Any(p => p.Limb == Bodies.LimbState.Replaced && p.Replacement is not null);
         int gear = stat is StatsEnumerated.Strength or StatsEnumerated.Perception ? 0 : Term(Bodies.StatUse.LimbItems);
         int missingArm = stat == StatsEnumerated.Strength && med.Aggregates().EitherArmDisabled ? 33 : 0;
+        int bonus = Combat.CombatSystem.GearBonus(cold, stat);
         return new(stats[stat], Term(Bodies.StatUse.Limbs), Term(Bodies.StatUse.Hunger), Term(Bodies.StatUse.Stun), Term(Bodies.StatUse.Light), Term(Bodies.StatUse.DamageState),
-            robotics, gear, missingArm, stats[stat] * med.StatMultiplier(stat, Bodies.StatUse.All, factors));
+            robotics, gear, missingArm, (stats[stat] + bonus) * med.StatMultiplier(stat, Bodies.StatUse.All, factors), bonus);
     }
 
     static BodyStatus BodyOf(CharacterCold cold, Bodies.MedicalState med, RaceData race, byte task) => new(

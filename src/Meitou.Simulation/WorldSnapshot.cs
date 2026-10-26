@@ -84,9 +84,9 @@ public readonly record struct AccuracyTerms(float Weapon, float Skill, float Dev
 public readonly record struct StealthTerms(float Skill, float MaxSpeed, float XpRate, bool Carrying, bool Crawling, int Encumbrance, int Injuries, int Gear, int Robotics, float Total);
 /// <summary>
 /// The Athletics line's tooltip (<c>FUN_14088e780</c>): the trained level, the run value (units a second), the leg injury and encumbrance penalties, the fitted legs as a signed
-/// percentage and the top speed.
+/// percentage, the gear's run factor (CharStats <c>+0x18</c>, shown when not 1) and the top speed.
 /// </summary>
-public readonly record struct AthleticsTerms(float Skill, float MaxSpeed, int LegInjury, int Encumbrance, int Robotics, float TotalSpeed);
+public readonly record struct AthleticsTerms(float Skill, float MaxSpeed, int LegInjury, int Encumbrance, float Gear, int Robotics, float TotalSpeed);
 /// <summary>
 /// The Swimming line's tooltip (the HUD update): the trained level, the base swim speed, the injuries (legs and arms), hunger, encumbrance and limb items' penalties, both arms
 /// broken, and the current swim speed.
@@ -94,9 +94,11 @@ public readonly record struct AthleticsTerms(float Skill, float MaxSpeed, int Le
 public readonly record struct SwimTerms(float Skill, float MaxSpeed, int Injuries, int Hunger, int Encumbrance, int Robotics, bool BrokenArms, float Speed);
 /// <summary>
 /// The breakdown of a skill's tooltip (<c>FUN_140890b00</c>, docs/game/ui-screens.md section 4): the trained level, then each penalty of the stat multiplier taken alone as
-/// (int)((1 - factor) x 100) percent (Robotics below 0 is a bonus), the missing arm penalty (strength only, 0 or 33: (int) of (1 - 0.66) x 100) and the effective level.
+/// (int)((1 - factor) x 100) percent (Robotics below 0 is a bonus), the missing arm penalty (strength only, 0 or 33: (int) of (1 - 0.66) x 100), the effective level and, for
+/// perception, the armour's <c>perception bonus</c> (CharStats <c>+0x30</c>).
 /// </summary>
-public readonly record struct SkillTerms(float Base, int Injuries, int Hunger, int Weather, int Darkness, int Robotics, bool HasRobotics, int Gear, int MissingArm, float Total)
+public readonly record struct SkillTerms(float Base, int Injuries, int Hunger, int Weather, int Darkness, int Robotics, bool HasRobotics, int Gear, int MissingArm, float Total,
+    int ArmourBonus = 0)
 {
     /// <summary>The line is Bad when the six terms sum above 2 (the missing arm penalty is not counted).</summary>
     public bool Penalised => Injuries + Hunger + Weather + Darkness + Robotics + Gear > 2;

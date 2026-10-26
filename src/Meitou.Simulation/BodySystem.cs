@@ -202,7 +202,7 @@ public sealed class BodySystem(GameConstants constants, BodyOptions? options = n
             events ??= [];
             events.Clear();
             medical.Tick(world.TickSeconds, ctx, events);
-            n.MaxSpeed = Speed.Run(race, stats, medical, encumbrance);
+            n.MaxSpeed = Speed.Run(race, stats, medical, encumbrance, statsFactor: cold.Fighter?.AthleticsFactor ?? 1);
             cold.SwimSpeed = Speed.Swim(race, stats, medical, encumbrance);
             TrainOnTheMove(stats, race, medical, in n, cold.WaterState == 3, carrying, encumbrance, world.TickSeconds);
             if ((cold.Orders & CharacterOrders.Sneak) != 0 && !medical.Incapacitated)

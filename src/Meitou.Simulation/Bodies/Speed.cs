@@ -39,8 +39,8 @@ public static class Speed
     public static float HungerFactor(float hunger) => 0.5f + 0.5f * Math.Clamp(hunger - 1, 0, 1);
 
     /// <summary>
-    /// S = (V - 11) x leg factor x hunger factor x the fitted legs' athletics multipliers x encumbrance factor x <paramref name="statsFactor"/> (<c>CharStats+0x18</c>, 1 when
-    /// unknown) + 11, never below 11; shallow water caps it at 45. A crawler moves at <see cref="CrawlSpeed"/> or <see cref="StayingLowSpeed"/> instead.
+    /// S = (V - 11) x leg factor x hunger factor x the fitted legs' athletics multipliers x encumbrance factor x <paramref name="statsFactor"/> (the gear factor <c>CharStats+0x18</c>, 1 for
+    /// none, <see cref="Combat.Fighter.AthleticsFactor"/>) + 11, never below 11; shallow water caps it at 45. A crawler moves at <see cref="CrawlSpeed"/> or <see cref="StayingLowSpeed"/> instead.
     /// </summary>
     public static float Run(RaceData race, CharacterStats stats, MedicalState medical, float encumbranceFactor, bool shallowWater = false, float statsFactor = 1)
     {

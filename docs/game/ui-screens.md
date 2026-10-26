@@ -290,15 +290,17 @@ to Jobs; the saved `chase mode` flag is that switch (**Verified**, [perma-jobs](
     `getHealthStatModifier(stat, hunger, wounds, darkness, robotParts, weather, gear)` flags read from the outgoing stack slots, KenshiLib 1ce4a16): `{1} skill:` with the
     trained level (`FUN_140884ac0(stat, 1)`); then each term of the stat multiplier `FUN_1406457e0` asked alone as p = (int)((1 - f) × 100), shown when p > 0 as Bad
     `-p%`: `Injuries:` (wounds), `Hunger:`, `Weather:`, `Working in darkness:`, `Robotics:` (robot parts; p < 0 shows Good `+|p|%`, labelled `Limbs disabled:` when
-    `MedicalSystem::hasRobotics` `FUN_140883690` is false); `Armour/equipment:` (gear; not for strength or perception, perception shows its armour bonus instead) as
-    `FUN_140889320(-p)` (`+n` above 0, a sign colour from `FUN_14073fc00`) and `%`; for strength `Missing arm penalty:` -33% (0.66) with either arm disabled; `Total:`
+    `MedicalSystem::hasRobotics` `FUN_140883690` is false); `Armour/equipment:` (gear; not for strength or perception) as
+    `FUN_140889320(-p)` (`+n` above 0, else `n`, a sign colour from `FUN_14073fc00`) and `%`; for perception instead, when the armour's summed `perception bonus`
+    (the int CharStats `+0x30`, **Verified** disassembly `140891d1a`) is not 0, `Armour/equipment:` `FUN_140889320(bonus)` with no `%` (the effective perception
+    `FUN_140884ac0(0x18, 0)` is (trained + bonus) × multiplier); for strength `Missing arm penalty:` -33% (0.66) with either arm disabled; `Total:`
     the effective level truncated. It returns whether the six terms (not the missing arm) sum above 2: the line is Bad then. The `-`/`+` prefixes are the short
-    `.rdata` strings `DAT_14168901c` / `DAT_1416ba64c` (**Observed**: read as minus and plus from their use).
+    `.rdata` strings `DAT_14168901c` / `DAT_1416ba64c`, `-` and `+` (**Verified**, bytes, Ghidra `B_Bytes`, 2026-10-26).
     Otherwise, when `getGUIStatsDisplayMode` (`FUN_1408840d0`) is 2 (a crossbow in hand, CharStats `+0x129 rangedMode` set and movement `+0x640 → +0x24` clear) or the
     ranged controller's `combatMode` (`+0x2f0 → +0x36`) is set, and `getRangedWeapon` (vtable `0x3d0`) gives a crossbow (**Observed**, decompile 2026-10-26; names KenshiLib 1ce4a16):
     stat s = Turrets (11) when `lastUsedWeaponCategory` `+0x3d8` is 7 `SKILL_TURRET`, else Crossbows (35); D = the gun's (crossbow `+0x240`) deviation angle at
     0.005 (s + perception), the shot's cone ([combat.md](combat.md) "Shot"). Line `Accuracy Error:` / `{D,p=2} degrees`; tooltip `Weapon Accuracy:` the gun's
-    `+0x10` deviation in degrees (after a short `.rdata` prefix `DAT_1416f3544`, **Unknown**), `Skill:` s's effective level `{p=0}`, `Resulting Accuracy Deviation:`
+    `+0x10` deviation as `0-{p=2} degrees` (the prefix `DAT_1416f3544` is `0-`, **Verified** bytes), `Skill:` s's effective level `{p=0}`, `Resulting Accuracy Deviation:`
     D degrees (both wrapped in `DAT_141f49248`, the Main tag `#afa68b`, see Colour tags). Else
     in combat (`FUN_140436610(c, 1)`) the weapon class `+0x7b` gives `Heavy:` (3), `Katana:` (0), `Hacker:` (4), `Sabre:` (1), `Martial Arts:` (5), `Polearm:` (8) with
     the raw level and a Damage tooltip; with no label yet, `Stealth:` (`FUN_14088f900`) while sneaking, else `Athletics:` (raw level, CharStats +0x94) when the speed
@@ -307,13 +309,12 @@ to Jobs; the saved `chase mode` flag is that switch (**Verified**, [perma-jobs](
     jobs set the skill; the terms are `StatMultiplier.Compute` with one `StatUse` each (Limbs, Hunger, Stun, Light, DamageState, LimbItems with the fighter's gear factors).
     Fallback tooltips (**Verified**, decompile 2026-10-26): weapon class `Damage:` (int) of the blow's four terms (`FUN_1408868b0`). `Stealth:` value `FUN_140889710`(stored,
     s × 100): `v`, `v (d)` Bad, `v (+d)` Good; tooltip `FUN_14088f9a0`: `Stealth skill:`, `Max speed:` lerp(max(0, (s - 0.1) / 0.8), 12, top speed) mph, `XP rate:` CharStats
-    `+0x170` (the last sneaking XP amount, `FUN_1408c65a0`) %, `Carrying something:` Bad (value `DAT_1416f4450`, read as -25 %, **Observed**), `Crawling:` Good `+100%` (ends the
+    `+0x170` (the last sneaking XP amount, `FUN_1408c65a0`) %, `Carrying something:` Bad `-25%` (`DAT_1416f4450`, **Verified** bytes), `Crawling:` Good `+100%` (ends the
     list), else `Encumbrance:` -n %, `Injuries:` (medical `+0xb4` - 1) %, `Armour/equipment:` (CharStats `+0x3c` - 1) %, `Robotics:` the legs' stealth items, signed; `Total:` s × 100.
     `Athletics:` tooltip `FUN_14088e780`: `Athletics Skill:`, `Max possible speed:` the run value, `Leg injury:` (leg factor `FUN_140884970`), `Encumbrance:`, `Armour/equipment:`
-    (CharStats `+0x18` ≠ 1), `Robotics:` (legs, athletics), `Total speed:` (Main) the top speed. Swimming value: the swim speed `FUN_140885eb0` in mph; tooltip `Skill:`,
+    (the float CharStats `+0x18`: above 1 Good `+` (int)((f - 1) × 100) `%`, below 1 Bad `-` (int)((1 - f) × 100) `%`, so `+0%` can show; [character-stats.md](character-stats.md#gear-factors)), `Robotics:` (legs, athletics), `Total speed:` (Main) the top speed. Swimming value: the swim speed `FUN_140885eb0` in mph; tooltip `Skill:`,
     `Max Swim Speed:` (`FUN_140883e30`), then Bad label and value above 1 %: `Injuries` (leg factor × 0.6 per unusable arm), `Hunger`, `Encumbrance`, `Robotics` (the
-    four limbs' swimming items, signed), `2 Broken Arms!` (value `DAT_1416f346c`, **Unknown**), `Current Swim Speed:`. Meitou models them all; not modelled: perception's
-    armour-bonus row (no job uses perception; the bonus is not modelled), the athletics gear row (Meitou keeps `+0x18` at 1), the 2 Broken Arms value, the Turrets
+    four limbs' swimming items, signed), `2 Broken Arms!` (character `+0x5bd` and `+0x5be` both clear; Meitou: neither arm works), Bad `-99%` (`DAT_1416f346c`, **Verified** bytes), `Current Swim Speed:`. Meitou models them all (perception's bonus in `Fighter.PerceptionBonus`, `+0x18` in `Fighter.AthleticsFactor`); not modelled: the Turrets
     accuracy case (a manned turret shows its job skill first). Meitou's combat mode is a fight with the crossbow drawn. Max Swim Speed uses Meitou's `Speed.SwimBase`.
     Extended (when expanded): Athletics XP, Strength XP, Toughness XP, KO point, Run speed, Hunger Rate.
     Extended values (**Verified**, decompile of `FUN_140895350`, 2026-10-14; Meitou: `BodySystem.ExtendedOf`, `PlayerInterface.ExtendedLines`):

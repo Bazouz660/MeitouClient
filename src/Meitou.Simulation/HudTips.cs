@@ -40,7 +40,8 @@ static class HudTips
         float Eff(StatsEnumerated stat, StatUse use = StatUse.All) => Stored(stat) * med.StatMultiplier(stat, use, factors);
         int dust = (int)(med.DustInEffect * 10);
         bool defensive = (cold.Orders & CharacterOrders.Block) != 0;
-        HudStatLine Line(string label, StatsEnumerated stat, float factor = 1) => new(label, stats[stat] * med.StatMultiplier(stat) * factor, stats[stat]);
+        HudStatLine Line(string label, StatsEnumerated stat, float factor = 1) =>
+            new(label, (stats[stat] + Combat.CombatSystem.GearBonus(cold, stat)) * med.StatMultiplier(stat) * factor, stats[stat]);
         // An animal's age (slot 0x398) scales its fighting numbers (the stats multiplier, already in Stored); a person's is 1.
         var animal = cold.Animal;
         float age = animal is null ? 1 : stats.Scale;
@@ -56,7 +57,8 @@ static class HudTips
             // The gear's ranged factor as the breakdown's Total has it.
             lines.Add(Line("Crossbows:", StatsEnumerated.Crossbows, factors.Ranged) with { Tip = Breakdown(med, stats, factors, StatsEnumerated.Crossbows, "Crossbows") });
             lines.Add(Line("Precision:", StatsEnumerated.FriendlyFire, factors.Ranged) with { Tip = Breakdown(med, stats, factors, StatsEnumerated.FriendlyFire, "Careful Shooting") });
-            lines.Add(Line("Perception:", StatsEnumerated.Perception) with { Tip = Breakdown(med, stats, factors, StatsEnumerated.Perception, "Perception") });
+            lines.Add(Line("Perception:", StatsEnumerated.Perception) with { Tip = Breakdown(med, stats, factors, StatsEnumerated.Perception, "Perception",
+                Combat.CombatSystem.GearBonus(cold, StatsEnumerated.Perception)) });
         }
         else if ((fighter is null || fighter.Unarmed) && animal is null)
         {
@@ -140,9 +142,9 @@ static class HudTips
 
     /// <summary>
     /// A stat's breakdown (<c>FUN_140890b00</c>): the stored skill, a row per term of the stat multiplier that costs anything (injuries, hunger, weather, darkness, the fitted limbs, the
-    /// gear), for strength the missing-arm penalty instead of the gear, then the effective value.
+    /// gear), for strength the missing-arm penalty instead of the gear, for perception the armour's <paramref name="bonus"/> (added before the multiplier), then the effective value.
     /// </summary>
-    static List<(string, string)> Breakdown(MedicalState med, CharacterStats stats, StatFactors factors, StatsEnumerated stat, string name)
+    static List<(string, string)> Breakdown(MedicalState med, CharacterStats stats, StatFactors factors, StatsEnumerated stat, string name, int bonus = 0)
     {
         float stored = stats[stat] * stats.Scale;
         int Lost(StatUse use) => (int)((1 - med.StatMultiplier(stat, use, factors)) * 100);
@@ -156,9 +158,14 @@ static class HudTips
         {
             if (med.Aggregates().EitherArmDisabled) rows.Add((Loc.Tr("Missing arm penalty:"), Penalty((int)((1 - 0.66f) * 100))));
         }
-        else if (stat != StatsEnumerated.Perception && Lost(StatUse.LimbItems) is not 0 and var gear)
+        else if (stat == StatsEnumerated.Perception)
+        {
+            // FUN_140889320(bonus): +n Good or n Bad, no unit.
+            if (bonus != 0) rows.Add((Loc.Tr("Armour/equipment:"), Signed(bonus)));
+        }
+        else if (Lost(StatUse.LimbItems) is not 0 and var gear)
             rows.Add((Loc.Tr("Armour/equipment:"), Signed(-gear) + "%"));
-        rows.Add((Loc.Tr("Total:"), Int(stored * med.StatMultiplier(stat, StatUse.All, factors))));
+        rows.Add((Loc.Tr("Total:"), Int((stored + bonus) * med.StatMultiplier(stat, StatUse.All, factors))));
         return rows;
     }
 

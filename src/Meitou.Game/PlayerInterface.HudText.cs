@@ -162,11 +162,13 @@ sealed partial class PlayerInterface
     /// <summary>A penalty of <paramref name="percent"/> above 0 as Bad <c>-n%</c>.</summary>
     static string Minus(int percent) => TipBad + "-" + percent.ToString(CultureInfo.InvariantCulture) + "%";
     /// <summary>A signed change (<c>FUN_140889320</c>): <c>+n%</c> Good above 0, <c>-n%</c> Bad below.</summary>
-    static string Signed(int percent) => (percent > 0 ? TipGood + "+" : TipBad) + percent.ToString(CultureInfo.InvariantCulture) + "%";
+    static string Signed(int percent) => SignedNumber(percent) + "%";
+    /// <summary><c>FUN_140889320</c> alone: <c>+n</c> Good above 0, <c>n</c> Bad otherwise, no unit.</summary>
+    static string SignedNumber(int n) => (n > 0 ? TipGood + "+" : TipBad) + n.ToString(CultureInfo.InvariantCulture);
 
     /// <summary>The "Accuracy Error:" tooltip: the crossbow's own deviation, the skill and the resulting deviation (the last in Main).</summary>
     static (string, string)[] AccuracyTip(AccuracyTerms a) =>
-        [(Loc.Tr("Weapon Accuracy:"), Degrees(a.Weapon)), (Loc.Tr("Skill:"), MathF.Round(a.Skill).ToString(CultureInfo.InvariantCulture)),
+        [(Loc.Tr("Weapon Accuracy:"), "0-" + Degrees(a.Weapon)), (Loc.Tr("Skill:"), MathF.Round(a.Skill).ToString(CultureInfo.InvariantCulture)),
             (TipMain + Loc.Tr("Resulting Accuracy Deviation:"), TipMain + Degrees(a.Deviation))];
 
     /// <summary>The Stealth tooltip (<c>FUN_14088f9a0</c>); crawling (+100%) skips the penalties.</summary>
@@ -174,7 +176,7 @@ sealed partial class PlayerInterface
     {
         var rows = new List<(string, string)> { (Loc.Tr("Stealth skill:"), Num(s.Skill)), (Loc.Tr("Max speed:"), SpeedText(s.MaxSpeed, unit)),
             (Loc.Tr("XP rate:"), Num(s.XpRate * 100) + "%") };
-        if (s.Carrying) rows.Add((Loc.Tr("Carrying something:"), Minus(25)));
+        if (s.Carrying) rows.Add((Loc.Tr("Carrying something:"), TipBad + "-25%"));
         if (s.Crawling) rows.Add((Loc.Tr("Crawling:"), TipGood + "+100%"));
         else
         {
@@ -193,6 +195,9 @@ sealed partial class PlayerInterface
         var rows = new List<(string, string)> { (Loc.Tr("Athletics Skill:"), Num(a.Skill)), (Loc.Tr("Max possible speed:"), SpeedText(a.MaxSpeed, unit)) };
         if (a.LegInjury > 0) rows.Add((Loc.Tr("Leg injury:"), Minus(a.LegInjury)));
         if (a.Encumbrance > 0) rows.Add((Loc.Tr("Encumbrance:"), Minus(a.Encumbrance)));
+        // CharStats +0x18 on either side of 1, the sign from the factor (so +0% and -0% can show).
+        if (a.Gear > 1) rows.Add((Loc.Tr("Armour/equipment:"), TipGood + "+" + Num((a.Gear - 1) * 100) + "%"));
+        else if (a.Gear < 1) rows.Add((Loc.Tr("Armour/equipment:"), TipBad + "-" + Num((1 - a.Gear) * 100) + "%"));
         if (a.Robotics != 0) rows.Add((Loc.Tr("Robotics:"), Signed(a.Robotics)));
         rows.Add((TipMain + Loc.Tr("Total speed:"), SpeedText(a.TotalSpeed, unit)));
         return [.. rows];
@@ -210,7 +215,7 @@ sealed partial class PlayerInterface
         Penalty("Hunger", s.Hunger);
         Penalty("Encumbrance", s.Encumbrance);
         if (s.Robotics != 0) rows.Add((TipBad + Loc.Tr("Robotics"), Signed(-s.Robotics)));
-        if (s.BrokenArms) rows.Add((TipBad + Loc.Tr("2 Broken Arms!"), ""));
+        if (s.BrokenArms) rows.Add((TipBad + Loc.Tr("2 Broken Arms!"), TipBad + "-99%"));
         rows.Add((Loc.Tr("Current Swim Speed:"), SpeedText(s.Speed, unit)));
         return [.. rows];
     }
@@ -234,6 +239,7 @@ sealed partial class PlayerInterface
         if (t.Robotics < 0) rows.Add((Loc.Tr(t.HasRobotics ? "Robotics:" : "Limbs disabled:"), Signed(-t.Robotics)));
         if (t.Gear != 0)
             rows.Add((Loc.Tr("Armour/equipment:"), Signed(-t.Gear)));
+        if (t.ArmourBonus != 0) rows.Add((Loc.Tr("Armour/equipment:"), SignedNumber(t.ArmourBonus)));
         Penalty("Missing arm penalty:", t.MissingArm);
         rows.Add((Loc.Tr("Total:"), ((int)t.Total).ToString(CultureInfo.InvariantCulture)));
         return [.. rows];

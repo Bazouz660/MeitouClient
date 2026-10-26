@@ -27,7 +27,7 @@ public sealed partial class CombatSystem
     /// assassination also times the worn gear's factor (<see cref="Fighter.Factors"/>; the original's stat getter <c>FUN_140884ac0</c> asks for all of them). Dexterity's and the
     /// weapon skills' gear factors are applied by the formulas themselves (<see cref="Fighter.DexterityMult"/>, <see cref="Fighter.DamageOutput"/>).
     /// </summary>
-    static float Eff(CharacterCold c, StatsEnumerated stat) => c.Stats![stat] * c.Stats.Scale * c.Medical!.StatMultiplier(stat) * GearFactor(c, stat);
+    static float Eff(CharacterCold c, StatsEnumerated stat) => (c.Stats![stat] + GearBonus(c, stat)) * c.Stats.Scale * c.Medical!.StatMultiplier(stat) * GearFactor(c, stat);
 
     /// <summary>The HUD's "Damage:" figure of a melee fighter (the Current Skill line's tooltip): the sum of its blow's terms (<c>FUN_1408868b0</c>) against a human, unpowered.</summary>
     internal float HudDamage(CharacterCold c)
@@ -49,6 +49,9 @@ public sealed partial class CombatSystem
         float skill = Eff(c, StatsEnumerated.Crossbows);
         return (x.Stats.AccuracyDeviation, skill, RangedFormulas.Deviation(x.Stats.AccuracyDeviation, skill, Eff(c, StatsEnumerated.Perception)));
     }
+
+    /// <summary>The worn gear's bonus added to the trained level before the multiplier (<c>FUN_140884ac0</c>): the armour's <c>perception bonus</c> for perception, else 0.</summary>
+    internal static int GearBonus(CharacterCold c, StatsEnumerated stat) => stat == StatsEnumerated.Perception ? c.Fighter?.PerceptionBonus ?? 0 : 0;
 
     /// <summary>The worn gear's factor of a stat that <see cref="Eff"/> applies: <c>ranged skill mult</c> for crossbows, <c>asassination mult</c> for assassination, else 1.</summary>
     internal static float GearFactor(CharacterCold c, StatsEnumerated stat) => stat switch
