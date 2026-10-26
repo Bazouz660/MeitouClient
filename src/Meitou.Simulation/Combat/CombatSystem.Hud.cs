@@ -31,27 +31,30 @@ public sealed partial class CombatSystem
     /// <summary>
     /// <c>Character::isInCombatMode(melee, ranged)</c> (<c>FUN_140436610</c>, docs/game/ui-screens.md section 4 "Combat mode"): with <paramref name="melee"/> the melee fight's flag
     /// (<see cref="MeleeCombatMode"/>), with <paramref name="ranged"/> the ranged controller's <c>combatMode</c> (<see cref="RangedCombatMode"/>) while its current target is up
-    /// (not dead, unconscious, playing dead or carried).
+    /// (not down: <c>Character</c> slot 6 <c>FUN_1405c9e10</c>, dead or unconscious, ragdolled or carried (<see cref="Ragdolls.RagdollSystem.IsRagdoll"/>), playing dead or KO).
     /// </summary>
     internal bool IsInCombatMode(CharacterTable table, CharacterId id, CharacterCold cold, bool melee, bool ranged)
     {
         if (melee && MeleeCombatMode(id, cold)) return true;
-        if (!ranged || !RangedCombatMode(id, cold)) return false;
+        if (!ranged || !RangedCombatMode(cold)) return false;
         int target = -1, generation = 0;
         if (cold.Gunning is { } key) { if (turrets.TryGetValue(key, out var t)) (target, generation) = (t.Target, t.TargetGeneration); }
         else if (StateOf(id) is { TargetSlot: >= 0 } s) (target, generation) = (s.TargetSlot, s.TargetGeneration);
         return target >= 0 && table.TryResolveNext(new CharacterId(target, generation), out int slot) && table.Cold(slot) is { } tc
-            && tc.Medical is not ({ Incapacitated: true } or { PlayingDead: true }) && tc.CarriedBy.IsNone;
+            && tc.Medical is not ({ Incapacitated: true } or { PlayingDead: true }) && tc.CarriedBy.IsNone && !Ragdolls.RagdollSystem.IsRagdoll(tc);
     }
 
-    /// <summary>CombatClass <c>+0x130</c>: set by <c>initCombatMode</c> at a melee fight task's start, cleared at its end; Meitou: a fight that is not a shooting one.</summary>
+    /// <summary>
+    /// CombatClass <c>+0x130</c>: on from a melee fight task's start (<c>initCombatMode</c> mode 0) to its end (mode 2). Meitou's melee fight runs from the engagement or the switch from
+    /// the crossbow to the fight's end or the switch to the crossbow: in a fight that is not a shooting one.
+    /// </summary>
     internal bool MeleeCombatMode(CharacterId id, CharacterCold cold) => cold.InCombat && !StateOf(id).Ranged;
 
     /// <summary>
-    /// The ranged controller's <c>combatMode</c> (<c>+0x2f0 → +0x36</c>): set every update of the shooting task (<c>Task_RangedAttack</c>) and of turret manning (<c>Task_UseTurret</c>,
-    /// unless the turret is broken), cleared when either task ends; Meitou: a shooting fight, or manning a turret.
+    /// The ranged controller's <c>combatMode</c> (<c>+0x2f0 → +0x36</c>): set by every update of the shooting task (<c>Task_RangedAttack</c>) and of turret manning (<c>Task_UseTurret</c>,
+    /// which ends on a broken turret), cleared when either task ends: <see cref="CharacterCold.RangedCombatMode"/> (set by each shooting tick) or manning a turret this tick.
     /// </summary>
-    internal bool RangedCombatMode(CharacterId id, CharacterCold cold) => cold.Gunning is not null || cold.InCombat && StateOf(id).Ranged;
+    internal static bool RangedCombatMode(CharacterCold cold) => cold.Gunning is not null || cold.RangedCombatMode;
 
     /// <summary>
     /// <c>CharStats::getGUIStatsDisplayMode</c> (<c>FUN_1408840d0</c>): the weapon in hand, else the back section's, else the hip's; none is 1 (Martial Arts); a crossbow in ranged mode

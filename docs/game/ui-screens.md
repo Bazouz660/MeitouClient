@@ -304,19 +304,22 @@ to Jobs; the saved `chase mode` flag is that switch (**Verified**, [perma-jobs](
     [combat](combat.md#fight-lifecycle-and-orders)), or with `ranged` while the ranged controller's `combatMode` (`+0x2f0 → +0x36`) is set and its current target (hand `+0x48`)
     resolves to a character that is not down (slot 6 `FUN_1405c9e10`: dead, unconscious, ragdolled or carried, prone state playing dead or KO). `combatMode` is set by the
     controller's `setup` `FUN_140434570` on every update of `Task_RangedAttack` and of `Task_UseTurret` (not broken) and cleared only by `end` `FUN_140437470` from both tasks' end
-    (slot 3) and the constructor. Callers here: the portrait's flag 8, the melee branch below and Strength XP pass (1, 1); `getGUIStatsDisplayMode` passes (1, 0).
+    (slot 3) and the constructor; `Task_UseTurret`'s update on a broken turret calls `AITaskSytem::taskImpossible` (`FUN_14050c890`, via `14001953d`), which ends it. Callers here: the portrait's flag 8, the melee branch below and Strength XP pass (1, 1); `getGUIStatsDisplayMode` passes (1, 0).
     `getGUIStatsDisplayMode` `FUN_1408840d0`: the weapon in hand (`getCurrentWeapon` vtable `0x3c0`), else the first item of the back section, else of the hip (`FUN_140747e00` /
-    `FUN_140747c30`); none: 1; a crossbow with CharStats `+0x129 rangedMode` set and movement `+0x640 → +0x24 currentlyMoving` clear: 2; else 1 when in melee combat mode with
+    `FUN_140747c30`); none: 1; a crossbow with CharStats `+0x129 rangedMode` set and movement `+0x640 → +0x24 currentlyMoving` clear (written by `CharMovement::update` `14065ffa0`:
+    the current speed `+0xb8` above 0.1, on one path above 0, 0 when it stops): 2; else 1 when in melee combat mode with
     CharStats `+0x1f0 currentWeaponType` 5 (fists), else 0. The stats lines below follow it (1 Martial Arts, 2 the crossbow lines, 0 Attack and Defense).
-    Meitou (`CombatSystem.IsInCombatMode`, `StatsDisplayMode`): melee combat mode is a fight that is not a shooting one, `combatMode` a shooting fight or a manned turret (their
-    targets: the fight's, the turret's); moving is a non-zero horizontal velocity; ranged mode is the Ranged toggle, on for NPCs as in the combat code.
+    Meitou (`CombatSystem.IsInCombatMode`, `StatsDisplayMode`): melee combat mode runs from the engagement or the switch from the crossbow to the fight's end or the switch to the
+    crossbow (the melee task's boundaries); `combatMode` is `CharacterCold.RangedCombatMode`, set by each shooting tick and cleared at the fight's end or the switch to melee, or
+    manning a turret this tick (manning ends on a broken turret); the targets are the fight's and the turret's; down adds `RagdollSystem.IsRagdoll` (Meitou ragdolls a character
+    whole while incapacitated and in carry mode while carried); moving is a horizontal speed above 0.1; ranged mode is the Ranged toggle, on for NPCs as in the combat code.
     Otherwise, when the display mode is 2 or `combatMode` is set (no target test), and `getRangedWeapon` (vtable `0x3d0`) gives a crossbow (none: no line from here):
     stat s = Turrets (11) when `lastUsedWeaponCategory` `+0x3d8` is 7 `SKILL_TURRET`, else Crossbows (35); D = the gun's (crossbow `+0x240`) deviation angle at
     0.005 (s + perception), the shot's cone ([combat.md](combat.md) "Shot"). Line `Accuracy Error:` / `{D,p=2} degrees`; tooltip `Weapon Accuracy:` the gun's
     `+0x10` deviation as `0-{p=2} degrees` (the prefix `DAT_1416f3544` is `0-`, **Verified** bytes), `Skill:` s's effective level `{p=0}`, `Resulting Accuracy Deviation:`
     D degrees (both wrapped in `DAT_141f49248`, the Main tag `#afa68b`, see Colour tags). `+0x3d8` is written only by the Character constructor (0) and by the melee branch
     below, from the weapon in hand's `skill category` (Weapon `+0x234`), so s is Turrets only after a melee fight with a WEAPON of skill category 7, which no base-game WEAPON
-    has (**Verified**: writer scan; probe of the install's WEAPON records, categories 0-5, 8 and creature ones only); Meitou takes Crossbows. Else in melee combat mode
+    has (**Verified**: writer scan; probe of the install's WEAPON records, categories 0-5, 8 and creature ones only), so only a mod reaches it. Meitou keeps it as `CharacterCold.LastWeaponCategory` (display state, not saved: no loader writes it). Else in melee combat mode
     (`FUN_140436610(c, 1, 1)`; `combatMode` is clear here) `+0x3d8` is set from the weapon in hand (the FISTS WEAPON with nothing drawn, category 5) and gives `Heavy:` (3),
     `Katana:` (0), `Hacker:` (4), `Sabre:` (1), `Martial Arts:` (5), `Polearm:` (8), none for the rest, with the raw level and a Damage tooltip; with no label yet, `Stealth:` (`FUN_14088f900`) while sneaking, else `Athletics:` (raw level, CharStats +0x94) when the speed
     (+0x640 → +0xb8) is over 9 units a second (not the XP gate). Swimming (`FUN_1405c7fd0` 3) replaces it with "Swimming" and the swim speed in mph; Lockpicking (37)

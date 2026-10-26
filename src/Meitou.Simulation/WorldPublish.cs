@@ -224,7 +224,8 @@ public sealed partial class World
     HudView HudOf(CharacterId id, CharacterCold cold, Bodies.MedicalState med, RaceData race, Bodies.CharacterStats stats, in CharacterHot hot, Combat.CombatSystem? combat,
         Meitou.Data.Gameplay.GameConstants? constants, bool inBuilding, bool inside)
     {
-        bool moving = hot.Velocity.X != 0 || hot.Velocity.Z != 0;
+        // Movement +0x24 currentlyMoving: the current speed (+0xb8, the Athletics line's too) above 0.1 (CharMovement::update).
+        bool moving = hot.Velocity.X * hot.Velocity.X + hot.Velocity.Z * hot.Velocity.Z > 0.1f * 0.1f;
         int mode = combat?.StatsDisplayMode(id, cold, moving) ?? (cold.Fighter is { Unarmed: false } ? 0 : 1);
         var lines = HudTips.Lines(cold, med, stats, combat?.HudNumbers(cold), constants, inBuilding, inside, mode);
         var extended = cold.Extended is { } x0 && systems.OfType<BodySystem>().FirstOrDefault() is { } bodies
@@ -251,18 +252,21 @@ public sealed partial class World
             var terms = SkillTermsOf(cold, med, stats, stat);
             return new(stat, null, MathF.Round(terms.Total), terms.Penalised, Terms: terms);
         }
-        // getGUIStatsDisplayMode 2 or the ranged controller's combat mode (a shooting fight, a manned turret; no target test), with a crossbow. The original takes Turrets in place
-        // of Crossbows when Character +0x3d8 (the last weapon category the HUD saw in a melee fight) is 7, which no base-game WEAPON has: Crossbows always.
-        bool aiming = mode == 2 || combat?.RangedCombatMode(id, cold) == true;
+        // getGUIStatsDisplayMode 2 or the ranged controller's combat mode (a shooting fight, a manned turret; no target test), with a crossbow: its accuracy with Crossbows, or with
+        // Turrets when Character +0x3d8 (the last weapon category the HUD saw in a melee fight) is 7.
+        bool aiming = mode == 2 || Combat.CombatSystem.RangedCombatMode(cold);
         if (aiming)
         {
-            if (Combat.CombatSystem.HudAccuracy(cold) is { } aim)
-                return new(StatsEnumerated.Crossbows, "Accuracy Error:", aim.Deviation) { Accuracy = new(aim.Weapon, aim.Skill, aim.Deviation) };
+            var aimStat = cold.LastWeaponCategory == (int)Meitou.Data.Gameplay.Combat.WeaponCategory.Turret ? StatsEnumerated.Turrets : StatsEnumerated.Crossbows;
+            if (Combat.CombatSystem.HudAccuracy(cold, aimStat) is { } aim)
+                return new(aimStat, "Accuracy Error:", aim.Deviation) { Accuracy = new(aim.Weapon, aim.Skill, aim.Deviation) };
         }
         else if (combat?.MeleeCombatMode(id, cold) == true)
         {
-            // The weapon in hand's skill category (Character +0x3d8, which the HUD sets from it first).
-            var (label, skill) = Combat.CombatSystem.HandCategory(cold) switch
+            // The HUD writes Character +0x3d8 from the weapon in hand (getCurrentWeapon; the FISTS weapon with nothing drawn), then labels by it. The only writer besides the constructor,
+            // so this display state lives on the character; each character is published by one worker, so the write does not race.
+            cold.LastWeaponCategory = Combat.CombatSystem.HandCategory(cold);
+            var (label, skill) = cold.LastWeaponCategory switch
             {
                 3 => ("Heavy:", StatsEnumerated.HeavyWeapons), 0 => ("Katana:", StatsEnumerated.Katanas), 4 => ("Hacker:", StatsEnumerated.Hackers), 1 => ("Sabre:", StatsEnumerated.Sabres),
                 5 => ("Martial Arts:", StatsEnumerated.MartialArts), 8 => ("Polearm:", StatsEnumerated.Polearms), _ => ((string?)null, StatsEnumerated.None),

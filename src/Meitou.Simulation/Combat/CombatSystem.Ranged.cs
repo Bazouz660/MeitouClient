@@ -275,6 +275,7 @@ public sealed partial class CombatSystem : IProjectileSource
             {
                 // The fight is over: the controller stops (a reload in progress is abandoned; the bolts loaded stay loaded).
                 s.Ranged = false;
+                cold.RangedCombatMode = false;
                 s.RangedState = 0;
                 s.ReloadLeft = 0;
                 s.ClearTime = 0;
@@ -291,6 +292,7 @@ public sealed partial class CombatSystem : IProjectileSource
         bool want = can && rangedMode && !Orders.Has(cold, CharacterOrders.Block) && !ImmediateThreat(world, i) && (s.Ranged || s.AttackTech < 0);   // the Block order shoots no bolts either
         if (want == s.Ranged) return;
         s.Ranged = want;
+        if (!want) cold.RangedCombatMode = false;
         s.RangedState = want ? (byte)RangedStates.Aiming : (byte)0;
         s.Steady = want ? RangedFormulas.SteadyAim : 0;
         s.ReloadLeft = 0;
@@ -314,6 +316,7 @@ public sealed partial class CombatSystem : IProjectileSource
         int t = s.TargetSlot;
         // The shooting task's update sets Character +0x198 to Crossbows (35) every tick (Task_RangedAttack FUN_14033bfb0): the HUD's Current Skill line.
         cold.UseSkill(StatsEnumerated.Crossbows, world.Tick);
+        cold.RangedCombatMode = true;
 
         if (s.Loaded <= 0)
         {

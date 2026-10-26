@@ -93,7 +93,7 @@ public class RangedTests(ITestOutputHelper output)
         for (int t = 0; t < 60 && !combat.StateOf(shooter).Ranged; t++) world.RunTick();
         world.RunTick();
         Assert.True(combat.StateOf(shooter).Ranged);
-        Assert.True(combat.RangedCombatMode(shooter, cold));
+        Assert.True(CombatSystem.RangedCombatMode(cold));
         Assert.False(combat.MeleeCombatMode(shooter, cold));
         Assert.True(combat.IsInCombatMode(world.Characters, shooter, cold, true, true));
         Assert.False(combat.IsInCombatMode(world.Characters, shooter, cold, true, false));
