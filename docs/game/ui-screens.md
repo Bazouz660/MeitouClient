@@ -1,4 +1,5 @@
-# UI screens
+| countA, then countA ids | the **active** list (manager +0x48: triggered, not dismissed; written first), empty in the sample |
+| countB, then countB ids | the **pending** list (manager +0x28, written second), 30 ids 4..33 in the sample; an id in neither list is finished (the sample: tutorials 0-3 seen) |# UI screens
 
 Original MyGUI stack/resources/layouts, MainBar/Overview and menu/inventory/trade/dialogue/build/
 tutorial binary research. Catalog and named checks below. Current native compatibility:
@@ -1269,7 +1270,6 @@ Code: `UiTooltips` (data, layout), `PlayerInterface.Tooltips.cs` (hover runtime,
 ## Unknowns
 
 - The colour tests of the damage floaters (section 8).
-- Meaning of the two id lists in `__tutorials.data`.
 - Why the code looks up ten life bars while the layout has nine (`LifeBar10` is missing; the constructor `FUN_140726a70` looks up `LifeBar1`, `LifeBar2`, ... until one is missing); the medical panel's overall health h; where the stats labels' upper case and the default squad name come from.
 - Exact tab index of the AI tab and which layout widgets belong to which tab for tabs 4 to 6.
 - Trade, dialogue and research logic (other subsystems).

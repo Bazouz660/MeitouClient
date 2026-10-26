@@ -1,4 +1,4 @@
-# Character stats and medical state
+amount (2 if a + 2 if b) x20 if heard, times the exposure factor (then x0.7), 0 when unconscious-type or using something; a = the listener is its enemy, b = the sneaker is inside the listener's home (unless public and not locked up, or it is using something), else is a slave (`SensoryData::canHear` step 10, **Verified**). Not modelled |# Character stats and medical state
 
 Kenshi1.0.68 research: CharStats/MedicalSystem binary functions, fcs.def and merged base records.
 Evidence scopes, stat IDs, race/part constants and activity tables are retained below.
