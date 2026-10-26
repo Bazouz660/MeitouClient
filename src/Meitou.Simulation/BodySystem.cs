@@ -209,7 +209,7 @@ public sealed class BodySystem(GameConstants constants, BodyOptions? options = n
             {
                 xp.Sneaking(stats, race, ExposureOf(world, cold), world.TickSeconds);
             }
-            if (cold.IsPlayer || table.IdOf(i) == world.Player.Inspected) cold.Extended = ExtendedOf(stats, race, medical, n.MaxSpeed, encumbrance, ctx.Resting);
+            if (cold.IsPlayer || table.IdOf(i) == world.Player.Inspected) cold.Extended = ExtendedOf(cold, stats, race, medical, n.MaxSpeed, encumbrance, ctx.Resting, carrying);
             n.Health = Math.Clamp(medical.Blood / MathF.Max(MedicalState.BloodCapacity(race, stats.Strength), 1) * 100, 0, 100);
             foreach (var e in events)
             {
@@ -261,16 +261,22 @@ public sealed class BodySystem(GameConstants constants, BodyOptions? options = n
     /// <summary>
     /// The numbers behind the information panel's extended lines (<c>FUN_140895350</c>, docs/game/ui-screens.md section 4). Toughness XP (<c>FUN_1408c5f40</c>, <b>Verified</b> in game, #82):
     /// 1, or 2 with the left arm crippled, plus 2 for the right arm, 2 while the blood-loss trauma flag is set, and 2 for the "Critical wounds" term, which tests the worst part's
-    /// fraction (at most 1) against 15 and so is always on: a whole character reads 3x. Strength XP is the carrying rate; what the original shows instead with a weapon in hand
-    /// ("Weapon weight") is not modelled.
+    /// fraction (at most 1) against 15 and so is always on: a whole character reads 3x. Strength XP is the carrying rate, or in combat mode (<c>Character::isInCombatMode(1, 1)</c>:
+    /// fighting, or a crossbow drawn in ranged mode) the weapon weight factor (CharStats <c>+0x184</c>, <see cref="XpService.WeaponWeightStrengthFactor"/> of the melee weapon) and with
+    /// fists (current weapon type 5) 1 - the encumbrance factor.
     /// </summary>
-    ExtendedStats ExtendedOf(CharacterStats stats, RaceData race, MedicalState medical, float speed, float encumbrance, bool resting)
+    ExtendedStats ExtendedOf(CharacterCold cold, CharacterStats stats, RaceData race, MedicalState medical, float speed, float encumbrance, bool resting, bool carrying)
     {
         float runValue = Speed.RunValue(race, stats.Athletics);
         float toughness = XpService.ToughnessFactor(medical);
-        float hunger = race.HungerRate * MedicalState.HungerSituationFactor(Constants, resting || medical.Unconscious || medical.Dead, false, encumbrance);
-        return new ExtendedStats(XpService.AthleticsRate(encumbrance, speed, runValue), xp.StrengthCarryRate(encumbrance), toughness,
-            MedicalState.KoPoint(Constants, stats.Toughness), speed, runValue, hunger);
+        bool rest = resting || medical.Unconscious || medical.Dead;
+        float hunger = race.HungerRate * MedicalState.HungerSituationFactor(Constants, rest, false, encumbrance);
+        var fighter = cold.Fighter;
+        bool fighting = fighter is not null && (cold.InCombat || (cold.Orders & CharacterOrders.Ranged) != 0 && fighter.Crossbow is not null && cold.DrawnWeapon != Meitou.Data.Gameplay.WeaponKinds.None);
+        float strength = !fighting ? xp.StrengthCarryRate(encumbrance, carrying) : fighter!.Unarmed ? 1 - encumbrance
+            : xp.WeaponWeightStrengthFactor(fighter.Weapon!.Stats.Weight, stats.Strength, medical.StatMultiplier(Meitou.Data.Gameplay.Bodies.StatsEnumerated.Strength));
+        return new ExtendedStats(XpService.AthleticsRate(encumbrance, speed, runValue), strength, toughness,
+            MedicalState.KoPoint(Constants, stats.Toughness), speed, runValue, hunger, rest, fighting);
     }
 
     /// <summary>
@@ -290,7 +296,7 @@ public sealed class BodySystem(GameConstants constants, BodyOptions? options = n
         if (speed < 1) return;
         if (deepWater) xp.SwimmingInWater(stats, race, carrying, dt);
         else if (speed > n.WalkSpeed + 1) xp.AthleticsFromRunning(stats, race, encumbrance, speed / MathF.Max(n.MaxSpeed, 1), dt);
-        if (encumbrance < 1) xp.StrengthFromCarrying(stats, race, encumbrance, dt);
+        if (encumbrance < 1) xp.StrengthFromCarrying(stats, race, encumbrance, dt, carrying);
     }
 
     /// <summary>The <c>malnourished</c> squads' hunger floors (<see cref="HungerFloor"/>), by squad id; filled from the parallel phase.</summary>
