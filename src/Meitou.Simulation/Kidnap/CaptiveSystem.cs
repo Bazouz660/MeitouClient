@@ -79,6 +79,12 @@ public enum CaptiveJobKind : byte
     EatBody,
     /// <summary>Goal 232 by way of 231 (<c>Task_EatingCrops</c>): a player farm eaten plant by plant (<see cref="CaptiveJob.Cage"/> holds the farm's site id).</summary>
     EatCrops,
+    /// <summary>Goal 237 by way of 236 (<c>Task_WorshipTarget</c>): a fogman bows at a cage where someone is being eaten.</summary>
+    Worship,
+    /// <summary>Race goal 278 (<c>Task_DogLimbRunningPlay</c>): a dog sprints about with a limb in its mouth.</summary>
+    DogPlay,
+    /// <summary>Race goal 279: a dog runs after an ally with a limb in its mouth (<see cref="CaptiveJob.Captive"/>).</summary>
+    DogChase,
 }
 
 public enum CaptivePhase : byte { Walk, Work }
@@ -254,6 +260,21 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
             case TaskType.EAT_A_RANDOM_KO_BODY:
                 return BodyToEat(world, slot, cold, dead: type == TaskType.EAT_A_RANDOM_DEAD_BODY) is >= 0 and var meal
                     ? new CaptiveJob { Kind = CaptiveJobKind.EatBody, Worker = world.Characters.IdOf(slot), Captive = world.Characters.IdOf(meal), Cage = "", Faction = cold.Faction }
+                    : null;
+            case TaskType.FOGMAN_WORSHIP_VICTIM:
+                return cold.Carrying.IsNone && WorshipTarget(world, slot) is { } shrine
+                    ? new CaptiveJob { Kind = CaptiveJobKind.Worship, Worker = world.Characters.IdOf(slot), Captive = shrine.Occupant, Cage = shrine.Id, Faction = cold.Faction }
+                    : null;
+            case TaskType.ANIMAL_FETCH_A_LIMB:
+                if (cold.Fighter is { IsAnimal: true }) Fetch(world, slot, cold);
+                return null;
+            case TaskType.PLAY_BECAUSE_I_HAVE_A_LIMB_IN_MOUTH:
+                return cold.Fighter is { IsAnimal: true } && Plays(world, cold)
+                    ? new CaptiveJob { Kind = CaptiveJobKind.DogPlay, Worker = world.Characters.IdOf(slot), Captive = CharacterId.None, Cage = "", Faction = cold.Faction }
+                    : null;
+            case TaskType.CHASE_ALLY_DOGS_WITH_MOUTH_LIMBS:
+                return cold.Fighter is { IsAnimal: true } && Chases(world, cold) && MouthfulAlly(world, slot, cold) is >= 0 and var mouthful
+                    ? new CaptiveJob { Kind = CaptiveJobKind.DogChase, Worker = world.Characters.IdOf(slot), Captive = world.Characters.IdOf(mouthful), Cage = "", Faction = cold.Faction }
                     : null;
             case TaskType.FIND_CROPS_TO_EAT:
                 return CropsToEat(world, slot, cold, board) is { } farm
@@ -468,6 +489,9 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
         if (j.Kind is CaptiveJobKind.Capture or CaptiveJobKind.Carry or CaptiveJobKind.Shout) return StepSlaveWork(world, j, w, wc);
         if (j.Kind == CaptiveJobKind.EatBody) return StepEatBody(world, j, w, wc);
         if (j.Kind == CaptiveJobKind.EatCrops) return StepEatCrops(world, j, w, wc);
+        if (j.Kind == CaptiveJobKind.Worship) return StepWorship(world, j, w, wc);
+        if (j.Kind == CaptiveJobKind.DogPlay) return StepPlay(world, j, w, wc);
+        if (j.Kind == CaptiveJobKind.DogChase) return StepChase(world, j, w);
         var cage = world.Fixtures.Find(j.Cage);
         if (cage is null || !table.TryResolveNext(j.Captive, out int c) || table.Cold(c) is not { } cc || cc.InWhat != cage.Id || !cc.IsImprisoned || cc.Medical is not { Dead: false })
             return Over(world, j, table.TryResolveNext(j.Captive, out int gone) && table.Cold(gone)?.Medical is { Dead: true });

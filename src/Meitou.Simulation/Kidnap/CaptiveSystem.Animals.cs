@@ -1,0 +1,142 @@
+using System.Numerics;
+using Meitou.Data.Gameplay.Ai;
+using Meitou.Simulation.Locks;
+
+namespace Meitou.Simulation.Kidnap;
+
+// Fogman worship (237 / 236) and the dogs' limb play (277-279, from the races' AI Goals): docs/game/ai-tasks.md "Prisoner fate and slave rows", docs/simulation.md "Captives".
+public sealed partial class CaptiveSystem
+{
+    /// <summary>How near a worshipper bows (<c>Task_WorshipTarget</c>, <b>Verified</b>), the range of its bark timer in game seconds, and event 53 (worship).</summary>
+    public const float WorshipReach = 60, WorshipMin = 3, WorshipMax = 14;
+    const int WorshipEvent = 53;
+    public const string BowClip = "bowing";
+    /// <summary>The limb fetch's reach (<c>AI::findLimbOnGround</c>, squared 40000), and the play run's legs (<c>Task_DogLimbRunningPlay</c>): 1000 + 400 x rand, a new one under 200 left.</summary>
+    public const float FetchRange = 200, PlayLeg = 1000, PlayLegRandom = 400, PlayTurn = 200;
+    const ulong AnimalSalt = 0x416E_696D_616C_506C;
+
+    /// <summary>
+    /// <c>AI::findFogmanWorshipTarget</c> (<c>FUN_1408ce880</c>): in the town nearest the worshipper, the first cage (list order) whose occupant is being eaten. Null: none.
+    /// </summary>
+    Fixture? WorshipTarget(World world, int slot)
+    {
+        var at = world.Characters.Next[slot].Position;
+        int site = -1;
+        float best = float.MaxValue;
+        for (int s = 0; s < data.Sites.Count; s++)
+        {
+            float d = Vector2.DistanceSquared(new Vector2(at.X, at.Z), new Vector2(data.Sites[s].Position.X, data.Sites[s].Position.Z));
+            if (d < best) (best, site) = (d, s);
+        }
+        if (site < 0) return null;
+        foreach (var cage in CagesOf(world, site))
+            if (OccupantSlot(world, cage) >= 0 && jobs.Any(j => j.Kind == CaptiveJobKind.Eat && j.Captive == cage.Occupant && j.Phase == CaptivePhase.Work)) return cage;
+        return null;
+    }
+
+    /// <summary>
+    /// <c>Task_WorshipTarget</c> (236 on 237's target): farther than <see cref="WorshipReach"/> from the cage it walks there; within, it stops, faces it, bows, and every 3-14 game seconds
+    /// barks event 53 (with no target: the cage resolves to no character). The original never ends it while the cage stands; Meitou ends it once nobody is held there or the job grows old.
+    /// </summary>
+    bool StepWorship(World world, CaptiveJob j, int w, CharacterCold wc)
+    {
+        var table = world.Characters;
+        if (world.Fixtures.Find(j.Cage) is not { } cage || OccupantSlot(world, cage) < 0) return End(world, j, null);
+        ref var n = ref table.Next[w];
+        var to = new Vector2(cage.Position.X, cage.Position.Z);
+        if (Vector2.Distance(new Vector2(n.Position.X, n.Position.Z), to) > WorshipReach)
+        {
+            wc.ActionClip = null;
+            if (n.Task != (byte)CharacterTask.GoTo || Vector2.Distance(n.Goal, to) > WorshipReach) MovementSystem.GoTo(table, w, to, SpeedMode.Walk);
+            return true;
+        }
+        if (n.Task == (byte)CharacterTask.GoTo) MovementSystem.Stop(table, w);
+        var face = cage.Position - n.Position;
+        if (face.X * face.X + face.Z * face.Z > 1e-4f) n.Yaw = MathF.Atan2(face.X, face.Z);
+        wc.ActionClip = BowClip;
+        if (j.Time >= j.NextBark)
+        {
+            j.NextBark = j.Time + WorshipMin + (WorshipMax - WorshipMin) * Rng.Float(Rng.Hash(world.Seed, (ulong)Rng.Key(j.Worker), RngPurpose.Slow, AnimalSalt + (ulong)j.Blows++));
+            if (j.Blows > 1) world.Defer(new Dialogue.DialogueEvent(j.Worker, CharacterId.None, WorshipEvent) { Tick = world.Tick + 1 });
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// 277 Fetch (<c>AI::findLimbOnGround</c> <c>FUN_1409993a0</c>): an animal with nothing in its mouth (an adult only while its stomach is empty and its hunger at most 2.75) goes for the
+    /// nearest severed limb on the ground within <see cref="FetchRange"/> and picks it up into its mouth (<see cref="Items.FeedSystem.HoldInMouth"/>, through the pick-up walk). No job.
+    /// </summary>
+    static void Fetch(World world, int slot, CharacterCold cold)
+    {
+        if (cold.Mouth is not null || cold.PickingUpItem is not null || cold.Medical is not { } med) return;
+        if (cold.ShownAge > 0.9f && (med.Fed > 0 || med.Hunger > 2.75f)) return;
+        var at = world.Characters.Next[slot].Position;
+        Items.GroundItem? best = null;
+        float d2best = FetchRange * FetchRange;
+        foreach (var g in world.GroundItems.All)
+        {
+            if (g.Item.ItemFunction != Items.FeedSystem.LimbFunction || g.Slot is not null) continue;
+            float d2 = Vector3.DistanceSquared(at, g.Position);
+            if (d2 < d2best) (best, d2best) = (g, d2);
+        }
+        if (best is null) return;
+        cold.PickingUpItem = best.Id;
+        if (MathF.Sqrt(d2best) > PlayerSystem.PickUpReach) MovementSystem.GoToFloor(world, slot, best.Position, SpeedMode.Run);
+    }
+
+    /// <summary>278's desire (<c>AI::scoreDogPlaying</c>): an animal with something in its mouth, not an adult (over 0.95) or older dog (over 0.4) of the player's squads.</summary>
+    static bool Plays(World world, CharacterCold c) =>
+        c.Mouth is not null && !(PlayerSquad(world, c) && c.ShownAge > 0.4f);
+
+    /// <summary>279's desire (<c>AI::scoreDogPlayingChase</c>): any NPC animal; of the player's squads only one not adult (0.95).</summary>
+    static bool Chases(World world, CharacterCold c) => !PlayerSquad(world, c) || c.ShownAge <= 0.95f;
+
+    static bool PlayerSquad(World world, CharacterCold c) => c.IsPlayer || world.Player.Faction >= 0 && c.Faction == world.Player.Faction;
+
+    /// <summary>
+    /// <c>AI::findAllyAnimalWithFoodInMouth</c> (<c>FUN_14099ad40</c>): the first allied animal within sight, awake, with something in its mouth (slot order). -1: none.
+    /// </summary>
+    int MouthfulAlly(World world, int slot, CharacterCold cold)
+    {
+        var table = world.Characters;
+        var at = table.Next[slot].Position;
+        float range = AggroSystem.RangeOf(cold, AggroSystem.OutdoorSight);
+        for (int s = 0; s < table.HighWater; s++)
+        {
+            if (s == slot || !table.Next[s].Alive || table.Cold(s) is not { Mouth: not null, Medical.Incapacitated: false } c || c.Fighter is not { IsAnimal: true } || !Allied(cold.Faction, c.Faction)) continue;
+            if (Vector3.DistanceSquared(at, table.Next[s].Position) <= range * range) return s;
+        }
+        return -1;
+    }
+
+    /// <summary>
+    /// <c>Task_DogLimbRunningPlay</c> (278): while it holds the limb the dog sprints in random legs of 1000-1400, a new one when under 200 is left or it stopped. Over when its mouth is
+    /// empty (A !149) or the job grows old. Engine choice: the first leg too is random (the original runs it 80-180 past the centroid of who it senses, away from them).
+    /// </summary>
+    bool StepPlay(World world, CaptiveJob j, int w, CharacterCold wc)
+    {
+        if (wc.Mouth is null) return End(world, j, null);
+        var table = world.Characters;
+        ref var n = ref table.Next[w];
+        bool walking = n.Task == (byte)CharacterTask.GoTo;
+        if (walking && Vector2.Distance(new Vector2(n.Position.X, n.Position.Z), n.Goal) >= PlayTurn) return true;
+        ulong h = Rng.Hash(world.Seed, (ulong)Rng.Key(j.Worker), RngPurpose.Slow, AnimalSalt ^ (ulong)j.Walks++ << 8);
+        var dir = new Vector2(Rng.Float(h) * 2 - 1, Rng.Float(h ^ 0x9E3779B97F4A7C15) * 2 - 1);
+        dir = dir.LengthSquared() > 1e-6f ? Vector2.Normalize(dir) : Vector2.UnitX;
+        float leg = PlayLeg + PlayLegRandom * Rng.Float(h ^ 0x5851F42D4C957F2D);
+        MovementSystem.GoTo(table, w, new Vector2(n.Position.X, n.Position.Z) + dir * leg, SpeedMode.Run);
+        return true;
+    }
+
+    /// <summary>279 Limb Jealousy (44 / 253 / 40 Following to its target): the dog runs after the mouthful ally until near it (10); over when the ally's mouth is empty or the job grows old.</summary>
+    bool StepChase(World world, CaptiveJob j, int w)
+    {
+        var table = world.Characters;
+        if (!table.TryResolveNext(j.Captive, out int t) || table.Cold(t) is not { Mouth: not null }) return End(world, j, null);
+        ref var n = ref table.Next[w];
+        var to = new Vector2(table.Next[t].Position.X, table.Next[t].Position.Z);
+        if (Vector2.Distance(new Vector2(n.Position.X, n.Position.Z), to) > 10 && (n.Task != (byte)CharacterTask.GoTo || Vector2.Distance(n.Goal, to) > 20))
+            MovementSystem.GoTo(table, w, to, SpeedMode.Run);
+        return true;
+    }
+}
