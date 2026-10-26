@@ -623,7 +623,9 @@ Meitou: [simulation, captives](../simulation.md#captives).
 - **Obedient Slave** (187, flags 0x75, no lists; **Observed**, `FUN_14050e5b0`): a job whose type is 0xbb is not scored like the others. For a character in slave state 1 that is not
   sneaking (`Character::isStealthMode` `FUN_1405c9750`) and whose owner handle (`+0x328` of the slave's AI owner object) names a character (type 1) or a squad (0x5b), the job loads the owner platoon's
   Slave role list (role 4, tiers mask 0xe: `FUN_14026b790`) into the slave's own goal list (`+0x178`) and scores that with the normal scorer `FUN_14050df10`. So a slave runs its owner's
-  `Slave AI Goals`. Meitou: a member of its owner's squad in the Slave role does ([ai](ai.md#goal-loading)); a slave in another squad than its owner's, and a faction owner, are not modelled.
+  `Slave AI Goals`. Meitou: a member of its owner's squad in the Slave role does ([ai](ai.md#goal-loading)); a slave in another squad takes the Slave list of the squad it obeys
+  (`CharacterCold.SlaveMaster`: the owner squad of the squad factory's slaves, the slaver who bought or processed it, the arresting guard's squad, the receiver of a delivery;
+  runtime only, so a loaded slave obeys nobody until enslaved again). A faction owner with no squad, and player-faction slaves (the player drives them), are not modelled.
   The status tooltip tells the player: "Your character will have a permanent job assigned called [Obedient slave]. While this is active he will automatically work for his master."
 - **Shout** (188, `Task_TalktoPlayer`, slots 1 and 2 `FUN_14034c5a0` / `FUN_14034c7c0`): the event is the row's (TaskData `+0x130`: **Verified** 0x26 for 188, 0x27 for 194 and 218, 9 for 158 and 283).
   Start fires it at the target (`FUN_140684990`); each update walks to the target (vfunc `0x3b0`), repeats event 9, gives up after 25 minutes with event 60, and ends when the dialogue is free.

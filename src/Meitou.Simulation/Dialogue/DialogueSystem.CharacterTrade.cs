@@ -299,11 +299,11 @@ public sealed partial class DialogueSystem
     /// <summary>
     /// One character sold (<c>FUN_1406a7740</c>): it becomes the slaver faction's slave (state 1, "{1} has been enslaved" for a free player-faction character) and stays in its squad
     /// and faction; its squad remembers the customer as its captor (long-term tag 5 MY_CAPTOR, <b>Observed</b>); relations toward the player's faction: the slaver's +4, the sold one's
-    /// own -4. Not built: the obedient-slave order and the shackles the original puts on one wearing no locked armour.
+    /// own -4; it obeys the slaver's squad (job 187). Not built: the shackles the original puts on one wearing no locked armour.
     /// </summary>
     void Sell(World world, CharacterCold c, CharacterCold slaver, CharacterId customer)
     {
-        Locks.FixtureRegistry.Enslave(world, c, slaver.Faction);
+        Locks.FixtureRegistry.Enslave(world, c, slaver.Faction, slaver.SquadId);
         Memory.Remember(world, c.SquadId, customer, MemoryTag.Captor);
         ChangeTowardPlayer(world, slaver.Faction, 4);
         ChangeTowardPlayer(world, c.Faction, -4);

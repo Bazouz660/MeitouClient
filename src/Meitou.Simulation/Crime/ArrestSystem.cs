@@ -540,7 +540,7 @@ public sealed partial class ArrestSystem(CrimeSystem crimes, GameConstants const
                     if (!world.Fixtures.Imprison(world, a.Target, cage, constants.PrisonTime)) return ToCage(world, a, g, t);
                     Deeds?.Caged(world, g, t);
                     tc.Recognition = 0;
-                    if (a.Enslave) FixtureRegistry.Enslave(world, tc, a.Faction);
+                    if (a.Enslave) FixtureRegistry.Enslave(world, tc, a.Faction, table.Cold(g)?.SquadId ?? -1);
                     else if (tc.IsPlayer) world.Post($"{tc.Name} has been imprisoned by {Crimes.Factions.NameOf(a.Faction)}");
                     return End(world, a, ArrestEventKind.Jailed);
                 }

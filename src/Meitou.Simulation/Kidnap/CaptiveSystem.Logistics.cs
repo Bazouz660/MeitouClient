@@ -129,7 +129,7 @@ public sealed partial class CaptiveSystem
                 if (cage.Lock is { } l) l.Locked = false;
                 world.Fixtures.LiftOut(world, j.Captive, w);
                 cc.Escaped = false;
-                FixtureRegistry.Enslave(world, cc, wc.Faction);
+                FixtureRegistry.Enslave(world, cc, wc.Faction, wc.SquadId);
                 Join(world, j.Captive, cc, squad, SquadRole.Slave);
                 Note(world, CaptiveEventKind.Gathered, j);
                 return End(world, j, null);
@@ -178,13 +178,15 @@ public sealed partial class CaptiveSystem
                 || g.Task.Type == TaskType.GIVE_ALL_MY_SLAVES_TO_IF_ITS_AN_IMPORT_TOWN && site.Town.Type is TownType.Prison or TownType.SlaveCamp)) hands = true;
         if (!hands) return End(world, j, CaptiveEventKind.GaveUp);
         int owner = j.Site < data.SiteFactions.Count && data.SiteFactions[j.Site] >= 0 ? data.SiteFactions[j.Site] : wc.Faction;
-        if (Receiver(world, w, owner) is { } receiver) world.Defer(new Dialogue.DialogueEvent(j.Worker, receiver, SlaveDelivery) { Tick = world.Tick + 1 });
+        var receiver = Receiver(world, w, owner);
+        if (receiver is { } to) world.Defer(new Dialogue.DialogueEvent(j.Worker, to, SlaveDelivery) { Tick = world.Tick + 1 });
+        int master = receiver is { } by && table.Cold(by.Slot) is { } rc ? rc.SquadId : -1;
         foreach (int s in SlavesOf(world, squad).ToList())
         {
             var sc = table.Cold(s)!;
             var id = table.IdOf(s);
             Join(world, id, sc, NewSquad(world, sc, table.Next[s].Position), SquadRole.Leader);
-            FixtureRegistry.Enslave(world, sc, owner);
+            FixtureRegistry.Enslave(world, sc, owner, master);
             Fixture? best = null;
             float bestD = float.MaxValue;
             foreach (var f in CagesOf(world, j.Site))

@@ -222,7 +222,7 @@ public sealed partial class DialogueSystem
             if (!table.Next[i].Alive || table.Cold(i) is not { Medical.Dead: false } c || c.Faction != tc.Faction || c.SlaveState != 0) continue;
             if (c.Fighter?.IsAnimal == true || c.Appearance?.Animal is not null || c.Race is null || c.Race.StringId == race.StringId) continue;
             if (Vector3.DistanceSquared(table.Next[i].Position, at) > 100 * 100) continue;
-            Locks.FixtureRegistry.Enslave(world, c, mc.Faction);
+            Locks.FixtureRegistry.Enslave(world, c, mc.Faction, mc.SquadId);
             Memory.Remember(world, c.SquadId, me, MemoryTag.None);   // its squad remembers the speaker (the tag is not visible in the decompile; engine: none)
         }
     }

@@ -547,7 +547,7 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
     /// A squad's <c>slaves</c> (the squad factory's recursive slave squads, role 4; docs/game/factions-squads-towns.md "Squad factory"): each planned slave squad is made as a squad of its
     /// template's <c>faction</c> (else the owner's), every member a slave (state 1) of the owner squad's faction. <b>Engine choices</b>: they are made at the owner squad's spot; with a
     /// home building, each goes into a random free cage of it (their package's goal is Slave get in Cage, which Meitou does not act out), those left over stand by the owner squad.
-    /// Their obedience goals (Slave AI Goals) and work are not built.
+    /// Each obeys the owner squad (job 187: its Slave AI Goals, <see cref="CharacterCold.SlaveMaster"/>).
     /// </summary>
     void MakeSlaves(World world, BuiltSquad owner, Squad squad, TownSite site, float radius, SiteState state)
     {
@@ -573,7 +573,7 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
             foreach (var id in slaves.Members)
             {
                 if (table.Cold(id.Slot) is not { } c) continue;
-                (c.SlaveState, c.SlaveOwner) = (1, squad.Faction);
+                (c.SlaveState, c.SlaveOwner, c.SlaveMaster) = (1, squad.Faction, squad.Id);
                 if (cages.Count == 0) continue;
                 int pick = Rng.Int(Rng.Hash(world.Seed, ownerKey, RngPurpose.Spawn, SeedSalts.SlaveCage + (ulong)picks++), cages.Count);
                 world.Fixtures.Imprison(world, id, cages[pick]);

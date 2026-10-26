@@ -539,7 +539,7 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
         }
         assembly.RefreshEquipment(wc);
         world.Defer(new Dialogue.DialogueEvent(table.IdOf(w), table.IdOf(c), before ? RecapturedSlave : IntroducingNewSlave) { Tick = world.Tick + 1 });
-        FixtureRegistry.Enslave(world, cc, wc.Faction);
+        FixtureRegistry.Enslave(world, cc, wc.Faction, wc.SquadId);
     }
 
     /// <summary>The captive died or is gone: a death resets the town's kill timer (<c>FUN_140353990</c>, the end of both the kill and the meal).</summary>

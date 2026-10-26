@@ -807,7 +807,12 @@ public sealed partial class FixtureRegistry
     /// <summary>
     /// Makes a character <paramref name="owner"/>'s slave (state 1): "{1} has been enslaved" for one of the player's faction that was free (<c>FUN_1405a4940</c>, <b>Observed</b>).
     /// </summary>
-    public static void Enslave(World world, CharacterCold c, int owner) => SetSlave(world, c, 1, owner);
+    /// <paramref name="master"/>: the squad it obeys (<see cref="CharacterCold.SlaveMaster"/>), -1 to keep the one it has.
+    public static void Enslave(World world, CharacterCold c, int owner, int master = -1)
+    {
+        SetSlave(world, c, 1, owner);
+        if (master >= 0) c.SlaveMaster = master;
+    }
 
     /// <summary>Clears a character's slave state and owner (state 0) without DA 53's "Free!" (a slave bought free, <c>FUN_1406add20</c>).</summary>
     public static void ClearSlave(World world, CharacterCold c) => SetSlave(world, c, 0, -1);
@@ -839,6 +844,7 @@ public sealed partial class FixtureRegistry
         if (state == 2) c.RecentlyWanted = Crime.CrimeSystem.RecentlyWantedSeconds;
         c.SlaveState = state;
         c.SlaveOwner = state == 0 ? -1 : owner;
+        if (state == 0) c.SlaveMaster = -1;
     }
 
     static void Clear(CharacterCold c)

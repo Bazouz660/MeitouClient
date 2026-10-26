@@ -113,7 +113,7 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             // Cheapest test first: most characters are not due this tick.
             if ((world.Tick + i) % every != 0 && mind.Version == board.Version) continue;
             var id = table.IdOf(i);
-            var roles = board.Roles[(int)RoleOf(squad, id, cold)];
+            var roles = ObeyedRoles(world, squad, cold) ?? board.Roles[(int)RoleOf(squad, id, cold)];
             if (!ReferenceEquals(mind.StanceFrom, roles) || mind.StanceHour != hour)
             {
                 // The stance changes only with the role list (a package switch) and the hour.
@@ -143,6 +143,14 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             _ => false,
         };
     }
+
+    /// <summary>
+    /// Job 187 Obedient Slave (<c>FUN_14050e5b0</c>, docs/game/ai-tasks.md "Obedient Slave"): a slave (state 1) not sneaking, owned by another squad, takes that squad's
+    /// <c>Slave AI Goals</c> instead of its own lists. Null: it plans with its own squad's (a slave in its owner's squad already takes the Slave role there).
+    /// </summary>
+    static IReadOnlyList<AiGoal>? ObeyedRoles(World world, Squad squad, CharacterCold cold) =>
+        cold.SlaveState == 1 && cold.SlaveMaster >= 0 && cold.SlaveMaster != squad.Id && (cold.Orders & CharacterOrders.Sneak) == 0
+            && world.Squads.Find(cold.SlaveMaster) is { Ai: { } master } && master.Roles[(int)AiRole.Slave] is { Count: > 0 } list ? list : null;
 
     /// <summary>The role list a member takes (docs/game/ai.md "Goal loading"): the squad leader the leader's, else by its squad role.</summary>
     internal static AiRole RoleOf(Squad squad, CharacterId id, CharacterCold cold) =>

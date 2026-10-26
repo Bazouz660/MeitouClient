@@ -327,6 +327,9 @@ public sealed class CharacterCold
     public byte SlaveState { get; set; }
     /// <summary>The faction owning a slave or escaped slave (the original keeps a <c>slaver</c> handle; -1 none). Saved as <c>meitou slave owner</c>; hashed with <see cref="SlaveState"/>.</summary>
     public int SlaveOwner { get; set; } = -1;
+    /// <summary>The squad a slave obeys (the original's owner handle naming a platoon; -1 none): job 187 Obedient Slave runs that squad's <c>Slave AI Goals</c> (<see cref="Ai.AiSystem"/>).
+    /// Runtime only (not saved, not hashed): set where the slave is made or sold.</summary>
+    public int SlaveMaster { get; set; } = -1;
     /// <summary>The fixture this character is picking the lock of (<see cref="Locks.LockSystem"/>; null: none). Hashed only while set.</summary>
     public string? PickingLock { get; set; }
     /// <summary>The door this character is bashing in (<see cref="Locks.LockSystem"/>; null: none). Hashed only while set.</summary>
