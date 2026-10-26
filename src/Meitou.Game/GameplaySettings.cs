@@ -5,7 +5,7 @@ namespace Meitou.Game;
 
 /// <summary>
 /// The original's Gameplay options page (docs/formats/settings.md "Gameplay"): the population and difficulty sliders and the two drop-downs, with
-/// the game's slider ranges and missing-key defaults. All but <see cref="Dismemberment"/> apply to the running world; that one to the next world loaded.
+/// the game's slider ranges and missing-key defaults. All apply to the running world when changed.
 /// </summary>
 sealed record GameplaySettings(float SquadSize = 1, float Population = 1, float RaidSize = 1, float RaidFrequency = 1, int TownAttacks = 2,
     Dismemberment Dismemberment = Dismemberment.Rare)

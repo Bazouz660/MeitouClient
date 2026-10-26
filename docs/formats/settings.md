@@ -141,7 +141,7 @@ into bus gains ([audio.md](../audio.md#volumes)). Meitou applies them at once fr
 | `raidSizeMult` | float; slider 0.25 … 4 | 1 | Town raid events: size | same (FUN_1409c5ad0) |
 | `raidFrequencyMult` | float; slider 0.25 … 3 | 1 | Town raid events: frequency | same (FUN_1409c5740) |
 | `attacks` | int 0 … 5 | 2 | Town attacks frequency: Bombardment = 0, High = 1, Normal = 2, Fewer = 3, Rare = 4, Never = 5 | A faction's wait between passing-by assaults on the player's towns, uniform, in game hours (**Observed**: the elapsed-time helper `FUN_140791bf0` read as hours): 0, [6, 48), [32, 96), [72, 144), [130, 188); 5 stops them (`FUN_140286a70`, `FUN_140290450`; [ai.md](../game/ai.md#package-classes)) |
-| `Dismemberment` | int 0 … 2 | 1 | Dismemberment: Never = 0, Rare = 1, Frequent = 2 | [combat.md](../game/combat.md), [character-stats.md](../game/character-stats.md) |
+| `Dismemberment` | int 0 … 2 | 1 | Dismemberment: Never = 0, Rare = 1, Frequent = 2 | The options page binds the drop-down to the global `DAT_142133504` (`FUN_1403f0260`), which the hit, degeneration and eaten code read when a part is damaged (`FUN_14064f300`, `FUN_14064f5c0`, `FUN_140650370`), so a change applies at once (**Verified**, decompile). [combat.md](../game/combat.md), [character-stats.md](../game/character-stats.md) |
 | `civilians` | bool | 1 | none | Loaded and saved; **no reader found** (no instruction addresses its global other than the writer; an access through the block's base pointer would not show up, so **Unknown**) |
 | `Fast zone hopping` | bool | 0 | Fast zone hopping | Keeps a larger area loaded so switching between distant characters skips loading ([game-loop.md](../game/game-loop.md); FUN_140a0f640) |
 | `Auto save` | bool | 1 | Auto save | [save.md](save.md#saveload-contract) |
@@ -189,7 +189,7 @@ the game calls `Root::restoreConfig` / `saveConfig` (**Verified**), which use th
 | `harpoonLimit` | Not implemented |
 | `generate distant towns` | Not honoured: towns without a baked mesh are drawn from their buildings' distant meshes |
 | `mouse speed pan`, `mouse speed tilt` | The game's Controls page has one "Camera rotation speed" slider (2 … 50, default 6) setting both; kept in `meitou.user.json`, `settings.cfg` not read |
-| `Squad size multiplier`, `Global population multiplier`, `raidSizeMult`, `raidFrequencyMult`, `attacks`, `Dismemberment` | The game's Gameplay settings page, same ranges and defaults; kept in `meitou.user.json` (first run: this file). All but `Dismemberment` reach the running world at once (they act on squads, raids and assaults made afterwards); `Dismemberment` applies to the next world started or loaded |
+| `Squad size multiplier`, `Global population multiplier`, `raidSizeMult`, `raidFrequencyMult`, `attacks`, `Dismemberment` | The game's Gameplay settings page, same ranges and defaults; kept in `meitou.user.json` (first run: this file). All reach the running world at once (the population ones act on squads, raids and assaults made afterwards; `Dismemberment` on the next part damaged, through the world's `BodyOptions`) |
 | `npc range`, `mouse speed horizontal` / `vertical`, `invert *`, UI, audio, other gameplay keys | Not applicable / not implemented |
 
 ### Viewer: water reflection
