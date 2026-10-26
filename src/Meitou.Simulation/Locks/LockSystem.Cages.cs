@@ -74,6 +74,36 @@ public sealed partial class LockSystem
         c.EnteringCage = null;
     }
 
+    /// <summary>Whether the character's role list in its squad's running package holds one of the goals in its hours.</summary>
+    static bool Lists(Ai.Blackboard board, Squad squad, CharacterId id, CharacterCold c, int hour, Meitou.Data.Gameplay.Ai.TaskType a, Meitou.Data.Gameplay.Ai.TaskType b)
+    {
+        var roles = board.Roles[(int)Ai.AiSystem.RoleOf(squad, id, c)];
+        for (int g = 0; g < roles.Count; g++)
+            if (roles[g].Task.Type is var t && (t == a || t == b) && roles[g].InWindow(hour)) return true;
+        return false;
+    }
+
+    /// <summary>
+    /// 202 Escaping (docs/game/ai-tasks.md "Finders of the jobs"; <c>Task_TakeOffCuffs</c> 219 provides its !134 through 201 / 185 / 186), every <see cref="EscapeEveryTicks"/> ticks: an awake AI
+    /// character wearing locked shackles whose role list holds 202 sets to work on them, cutting with a tool, else picking (engine choice: the planner's pick among the three is
+    /// <b>Unknown</b>). Caged, it first needs the cage open (<see cref="OpportunisticEscapes"/>).
+    /// </summary>
+    void ShackleEscapes(World world)
+    {
+        if (world.Tick % EscapeEveryTicks != 0) return;
+        var table = world.Characters;
+        int hour = world.Hour;
+        for (int s = 0; s < table.HighWater; s++)
+        {
+            if (!table.Next[s].Alive || table.Cold(s) is not { IsImprisoned: false, IsPlayer: false, Shackles: null, Medical.Incapacitated: false, CarriedBy.IsNone: true, Ai: { Squad: { Ai: { } board } squad } } c
+                || WornShackles(c) is null || !Lists(board, squad, table.IdOf(s), c, hour, Meitou.Data.Gameplay.Ai.TaskType.TOTAL_ESCAPE, Meitou.Data.Gameplay.Ai.TaskType.TOTAL_ESCAPE)) continue;
+            c.PickingLock = null;
+            c.Shackles = new ShackleJob(table.IdOf(s), Lockpicking.BestTool(c) is null ? ShackleWork.Pick : ShackleWork.Cut);
+        }
+    }
+
+    const int EscapeEveryTicks = 30;
+
     /// <summary>
     /// 256 Get out of cage (opportunistic; <c>Task_GetOutOfCage</c> with the escape flag, docs/game/ai-tasks.md "Arrest and prison rows"): an AI prisoner, awake, whose role list holds
     /// the goal in its hours, walks out as soon as its cage is not effectively locked (<see cref="FixtureRegistry.GetOut"/> refuses a locked one; an unserved sentence makes it an escape).
@@ -86,11 +116,9 @@ public sealed partial class LockSystem
         {
             if (f.Kind != FixtureKind.Cage || FixtureRegistry.IsFree(table, f) || f.Lock is { Locked: true } || !table.TryResolveNext(f.Occupant, out int s)) continue;
             if (table.Cold(s) is not { IsImprisoned: true, IsPlayer: false, Medical.Incapacitated: false, Ai: { Squad: { Ai: { } board } squad } } c) continue;
-            var roles = board.Roles[(int)Ai.AiSystem.RoleOf(squad, f.Occupant, c)];
-            bool wants = false;
-            for (int g = 0; g < roles.Count && !wants; g++)
-                wants = roles[g].Task.Type == Meitou.Data.Gameplay.Ai.TaskType.GET_OUT_OF_CAGE_OPPORTUNISTIC && roles[g].InWindow(hour);
-            if (wants) world.Fixtures.GetOut(world, f.Occupant, Crimes);
+            // 256, or 202 TOTAL_ESCAPE, whose !79 the cage rows (133 / 207 / 256) provide once the cage is unlocked.
+            if (Lists(board, squad, f.Occupant, c, hour, Meitou.Data.Gameplay.Ai.TaskType.GET_OUT_OF_CAGE_OPPORTUNISTIC, Meitou.Data.Gameplay.Ai.TaskType.TOTAL_ESCAPE))
+                world.Fixtures.GetOut(world, f.Occupant, Crimes);
         }
     }
 
