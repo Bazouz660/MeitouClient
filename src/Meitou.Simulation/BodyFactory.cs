@@ -40,7 +40,9 @@ public sealed class BodyFactory(GameDatabase db)
             values = CharacterStats.FromGroups(character.GetInt("combat stats"), character.GetInt("unarmed stats"), character.GetInt("stealth stats"),
                 character.GetInt("ranged stats"), character.GetInt("strength"));
         else values = new float[StatsInfo.Count];
-        if (character is not null) randomise = character.GetFloat("stats randomise");
+        // The base game's field is an integer; retain float-only mod records as a fallback.
+        if (character is not null) randomise = character.Ints.TryGetValue("stats randomise", out int amount)
+            ? amount : character.GetFloat("stats randomise");
         var stats = CharacterStats.Create(values, data, randomise, worldSeed, characterKey);
         if (AnimalData.From(character) is { } animal)
         {

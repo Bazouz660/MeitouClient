@@ -11,6 +11,37 @@ namespace Meitou.Tests.Bodies;
 [Slow]
 public class BodyInstallTests
 {
+    [Theory]
+    [InlineData("11623-Dialogue (10).mod")]
+    [InlineData("14862-Dialogue.mod")]
+    public void Shek_guards_use_the_records_integer_randomisation_and_keep_saved_stats(string recordId)
+    {
+        var db = Database();
+        var character = db.Find(recordId)!;
+        Assert.Equal(10, character.GetInt("stats randomise"));
+        Assert.False(character.Floats.ContainsKey("stats randomise"));
+        var race = db.Find(character.GetReferences("race").First().TargetStringId)!;
+        var factory = new Meitou.Simulation.BodyFactory(db);
+        var a = factory.Create(race, character, 123, 1).Stats;
+        var b = factory.Create(race, character, 123, 2).Stats;
+        Assert.NotEqual(a[StatsEnumerated.MeleeAttack], b[StatsEnumerated.MeleeAttack]);
+        Assert.NotEqual(a[StatsEnumerated.Strength], b[StatsEnumerated.Strength]);
+        Assert.Equal(a.ToArray(), factory.Create(race, character, 123, 1).Stats.ToArray());
+        var baseline = CharacterStats.FromGroups(character.GetInt("combat stats"), character.GetInt("unarmed stats"),
+            character.GetInt("stealth stats"), character.GetInt("ranged stats"), character.GetInt("strength"));
+        var raceData = factory.Race(race);
+        foreach (var stat in new[] { StatsEnumerated.MeleeAttack, StatsEnumerated.Strength, StatsEnumerated.Toughness })
+        {
+            float multiplier = raceData.StatMultiplier(stat);
+            Assert.InRange(a[stat], Math.Max(0, baseline[(int)stat] - 10) * multiplier,
+                (baseline[(int)stat] + 10) * multiplier);
+        }
+        a[StatsEnumerated.MeleeAttack] += 7; // Trained values survive loading without a new spawn roll.
+        var saved = new Dictionary<string, float>();
+        a.WriteSave(saved);
+        Assert.Equal(a.ToArray(), CharacterStats.ReadSave(saved).ToArray());
+    }
+
     static GameDatabase? cached;
     static readonly Lock gate = new();
 
