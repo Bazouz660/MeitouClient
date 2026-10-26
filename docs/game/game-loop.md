@@ -14,7 +14,7 @@ The last global also changes during callbacks; AI thread can read different valu
 Real time drives autosave/zone-unload/physics kick; speed time drives weather/characters/world.
 
 **Verified** speed literals0,1,2,5; no3x. Pause remembers nonzero speed; requested pause and
-speed0 combine into paused state. Creation resumes1x. Paused clock/physics/factions stop;
+speed0 combine into paused state (GameWorld `+0x8b9`, `DAT_1421349c9`, set only by `FUN_140787d40`; **Verified** writer scan). Creation resumes1x. Paused clock/physics/factions stop;
 presentation refresh can continue. Wwise labels5x as x4 (**Observed**). **Verified** clock
 1200/11 real/game-speed seconds per game hour;24 hours/day, date/daylight from CONSTANTS.
 Save clock/camera values are records, not an inferred wall-time timestamp.

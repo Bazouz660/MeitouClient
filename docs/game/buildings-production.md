@@ -681,7 +681,7 @@ and `power capacity` (battery store, "in seconds" per fcs.def), plus research ([
 its holder's) is set gets one; function 0 becomes 6 (still). Fields: `rotation speed min/max` (degrees/s), `wind speed rotation min/max`
 (units/s), `rotation axis` (0 X, 1 Y, 2 Z, else none). Function 3 raises speed max and wind max to their mins; every other function rolls
 speed max x U(0.95, 1.05). Then the node turns by U(0, 2π) about the axis (both rolls from the building's generator). `wind speed rotation danger`
-is read and never used (no reader of its field among the rotor functions or the wind panel, the only caller of `getWindMillPart`). Each frame of a built building (`Building::update`, skipped while `DAT_1421349c9` is set) each part steps with
+is read and never used (no reader of its field among the rotor functions or the wind panel, the only caller of `getWindMillPart`). Each frame of a built building (`Building::update`, skipped while the game is paused, `DAT_1421349c9`, [game-loop](game-loop.md#speed-and-pause)) each part steps with
 dt = `DAT_142133798` (game dt, 0 paused); functions 1 to 3 then set the orientation to angle x axis, the angle counting from 0 (the start roll
 is lost once a part moves):
 - **1 CONSTANT**: speed max (fan blades, six-barrel). **2 OUTPUT**: (max − min) x the building's mult each frame (spinners, drills, looms).

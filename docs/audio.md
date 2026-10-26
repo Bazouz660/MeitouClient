@@ -136,7 +136,7 @@ power, `FUN_140258260` destroys), the building set-up `FUN_14055c240`, its loade
   its own (**Observed**, from the code paths).
 - **Power.** An emitter starts unpowered. One that has `needs power` waits for `FUN_140258c20(efficiency, powered)`; it also sets `Intensity` = efficiency × `efficiency multiplier` × 100 + `intensity` × 100 when the value changed,
   for an emitter in range. An emitter without `needs power` starts by distance alone. Only two places call it (**Verified**, the callers of `FUN_140258c20`; nothing else starts or stops an emitter but the distance update and the teardown):
-  - **Each frame**, `ProductionBuilding::vfunc_28` (the class of mines, wells, refineries, generators, batteries, wind generators, rain collectors and furnaces; skipped while the global flag `DAT_1421349c9` is set, **Unknown** what sets it):
+  - **Each frame**, `ProductionBuilding::vfunc_28` (the class of mines, wells, refineries, generators, batteries, wind generators, rain collectors and furnaces; skipped while the game is paused, `DAT_1421349c9` = GameWorld `+0x8b9`, [game-loop](game/game-loop.md#speed-and-pause)):
     efficiency = the building's slot 110, powered = `FUN_140299370` (has power) and efficiency above 0.
   - **Once**, `FarmBuilding::vfunc_72` (finishing construction, and `Zones_BuildBuilding` for a building with nothing left to build): powered, efficiency = slot 108, only if the emitter exists and the building is not yet marked complete.
     `FarmBuilding`, `CraftingBuilding` (the Medical Workbenches, Robotics and Skeleton Limb benches) and `ResearchBuilding` override `vfunc_28` without the call, as do other classes (the Peeler Machine), so their emitters are never told again.
