@@ -324,6 +324,8 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
         var table = world.Characters;
         var next = table.Next;
         SpeedGroups(world);
+        _ = world.Fixtures.DoorPicks;   // the door spots and the doors by building, for the followers of a leader shut in (Think reads them)
+        _ = world.Fixtures.DoorsByBuilding;
         for (int i = 0; i < next.Length; i++)
         {
             if (!next[i].Alive || (next[i].Flags & (ushort)MoveFlags.NeedPath) == 0) continue;
@@ -435,6 +437,7 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
                     }
                     cold.FollowHeading = heading;
                     slotPos = leadAt + heading * leadSpeed + Formation.ToWorld(slot, heading);
+                    if (ShutOutAim(world, leader.Slot, i, lead.Position, n.Position) is { } outside) slotPos = outside + Formation.ToWorld(slot, heading) * DoorSlotScale;
                 }
                 else
                 {
@@ -542,6 +545,34 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
         if (cold.SpeedGroup < 0 || !speedGroups.TryGetValue(cold.SpeedGroup, out var g)) return SlowestOfSquad(world, cold);
         var off = new Vector2(at.X, at.Z) - g.Centre;
         return Vector2.Dot(off, g.Direction) > 0 ? g.Speed * MathF.Max(0.8f, 1 - 0.001f * off.Length()) : g.Speed;
+    }
+
+    // The door aim of a follower shut out (docs/game/pathfinding.md "Following"): the door's two points DoorDepth either side of the leaf (engine reading of door data +0x3bc / +0x3c8),
+    // the aim 1.1 of their distance past the outer one, the formation slot shrunk to 0.2.
+    const float DoorDepth = 10, DoorPast = 1.1f, DoorSlotScale = 0.2f;
+
+    /// <summary>
+    /// Where a squad mate waits while its leader is inside a building it cannot enter (<c>1403335c0</c>; engine reading of "cannot enter": every door of the building locked and
+    /// whole): outside the door nearest to it, A + (A − B) × 1.1 with A the door's outer point and B its inner. Null when the leader is not shut in from it.
+    /// </summary>
+    static Vector2? ShutOutAim(World world, int leader, int self, Vector3 leaderAt, Vector3 at)
+    {
+        if (world.Sight.BuildingOf(leader) is not { } inside || world.Sight.BuildingOf(self) == inside) return null;
+        Locks.Fixture? nearest = null;
+        float best = float.MaxValue;
+        foreach (var door in world.Fixtures.DoorsByBuilding[inside])
+        {
+            if (door.Lock is not { EffectivelyLocked: true } || door.DoorBroken) return null;   // a way in
+            if (door.Spot is not { } spot) continue;
+            float d = Vector3.DistanceSquared(spot.Centre, at);
+            if (d < best) (best, nearest) = (d, door);
+        }
+        if (nearest?.Spot is not { } s) return null;
+        var outward = new Vector2(s.Normal.X, s.Normal.Z);
+        if (Vector2.Dot(outward, new Vector2(leaderAt.X - s.Centre.X, leaderAt.Z - s.Centre.Z)) > 0) outward = -outward;   // away from the leader inside
+        var centre = new Vector2(s.Centre.X, s.Centre.Z);
+        Vector2 a = centre + outward * DoorDepth, b = centre - outward * DoorDepth;
+        return a + (a - b) * DoorPast;
     }
 
     /// <summary>

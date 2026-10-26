@@ -67,6 +67,10 @@ public sealed partial class FixtureRegistry
     /// <summary>Every door, for the host's picking (<see cref="PublishedDoors"/> leaves closed unlocked town doors out); rebuilt (serial phases) only when a building registers or goes.</summary>
     public IReadOnlyList<DoorPick> DoorPicks => doorPicks ??= [.. all.Where(f => f.Kind == FixtureKind.Door).Select(f => new DoorPick(f.Id, f.Building, f.DoorIndex, f.Owner, DoorSpotOf(f)?.Centre ?? f.Position, DoorSpotOf(f)?.Slide ?? Vector3.Zero))];
 
+    /// <summary>The doors of each building, rebuilt with <see cref="DoorPicks"/> (both in the serial phases; read in parallel ones after).</summary>
+    public ILookup<string, Fixture> DoorsByBuilding => doorsByBuilding ??= all.Where(f => f.Kind == FixtureKind.Door).ToLookup(f => f.Building, StringComparer.Ordinal);
+    ILookup<string, Fixture>? doorsByBuilding;
+
     public int Count => all.Count;
     /// <summary>Every fixture, in registration order.</summary>
     public IReadOnlyList<Fixture> All => all;
@@ -82,7 +86,7 @@ public sealed partial class FixtureRegistry
         set
         {
             doors = value;
-            doorPicks = null;
+            doorPicks = null; doorsByBuilding = null;
             foreach (var b in buildings) SyncDoors(b);
         }
     }
@@ -150,7 +154,7 @@ public sealed partial class FixtureRegistry
         buildings.Add(b.Key);
         foreach (var f in list) { all.Add(f); byId[f.Id] = f; }
         containerSpots = null;
-        doorPicks = null;
+        doorPicks = null; doorsByBuilding = null;
         bedSpots = null; cageList = null;
         if (Saved?.GetValueOrDefault(b.Key) is { } state)
         {
@@ -204,7 +208,7 @@ public sealed partial class FixtureRegistry
         buildings.Add(site.Id);
         foreach (var f in list) { all.Add(f); byId[f.Id] = f; }
         containerSpots = null;
-        doorPicks = null;
+        doorPicks = null; doorsByBuilding = null;
         bedSpots = null; cageList = null;
         if (Saved?.GetValueOrDefault(site.Id) is { } state) Restore(StateKeys.Of(state), site.Id, list, level: false);
         SyncDoors(site.Id);
@@ -261,7 +265,7 @@ public sealed partial class FixtureRegistry
         buildings.Remove(buildingInstance);
         foreach (var f in list) { all.Remove(f); byId.Remove(f.Id); }
         containerSpots = null;
-        doorPicks = null;
+        doorPicks = null; doorsByBuilding = null;
         bedSpots = null; cageList = null;
         initialApplied.Remove(buildingInstance);
         doors?.SetDoorsBlocked(buildingInstance, false);
@@ -1014,7 +1018,7 @@ public sealed partial class FixtureRegistry
             d.GateCode = was.GateCode;
             if (d.Lock is { } l && was.Lock is { } wl) l.Locked = wl.Locked;
         }
-        doorPicks = null;
+        doorPicks = null; doorsByBuilding = null;
         SyncDoors(building);
     }
 

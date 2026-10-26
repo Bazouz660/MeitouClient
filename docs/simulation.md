@@ -310,7 +310,7 @@ member a slot by its faction's `squad formation` (`World.FactionFormations`, RAN
 turned onto `FollowHeading`, one second of the leader's travel ahead; anyone else (a follow order across squads, a contract's mission target) keeps
 20..40 from its target. `FollowSpeedFor` is the original's desired speed. Engine choices: it is capped by the top speed only (not the speed mode);
 a squad's slaves go with the head (Meitou's slave owner is a faction); CARAVAN side members are placed even without a SQUAD_2 member; the building-door
-aim is not done; within `DirectDistance` 50 it steers straight, farther, or for `FollowPathSeconds` 3 after a blocked step, it takes paths.
+aim (`ShutOutAim`) counts a building as shut when all its doors are locked and whole, and puts the door's points 10 either side of the leaf, outside away from the leader; within `DirectDistance` 50 it steers straight, farther, or for `FollowPathSeconds` 3 after a blocked step, it takes paths.
 A `FollowOrder` (the context menu's Follow, order 31) makes a character follow another the same way (`CharacterCold.FollowOrder` replaces the leader; a leader following a squad mate makes that mate the formation's head) until a move order replaces it or the target is gone (then Idle); not saved.
 Body contact (engine choice): standing bodies are solid over `BodyShare` 0.6 of the footprint (2.4 for a human). After its step, each
 character takes half the overlap with each separation neighbour's last position (not one predicted from its velocity, which in a jam is wanted, not achieved), averaged over those it overlaps (a sum shakes a packed crowd); its own velocity into a body it already touches is dropped (pressing ranks would squash the front). A walker
@@ -791,7 +791,8 @@ Arrests, the recognition meter and the marker are hashed only while set. What a 
 `Kidnap/TownDutySystem` (serial `SlowWorld`, after the kidnapping; with the population and the AI): goals of an AI squad's running package that no act-out covers, per member,
 every 15 ticks, by `PopulationSystem.GoalDuty` (facts: [ai-tasks](game/ai-tasks.md) "Finders of the jobs", [carry-loot 3.2](game/carry-loot.md#32-goals-and-their-target-finders)).
 - **273 Remove Intruder**: a free member standing in its home town, the town its occupation holds or a town of its faction lifts the nearest knocked-out character in that town's
-  built-up area (engine reading of `amInsideTownWalls`: a placed town's radius, a player town's farthest building from its centre), not carried or caged, not of its faction or an ally.
+  walls (`amInsideTownWalls` > 0: its [gate code](game/pathfinding.md#gate-codes) is a walled region, so an unwalled town removes none; where the codes are unknown, the built-up area: a
+  placed town's radius, a player town's farthest building from its centre), not carried or caged, not of its faction or an ally.
   Carrying it: with **112** listed, the best free cage in that town (the occupied town's cages are usable), where it is locked up as `Kidnapped`; else with **274** listed, 200 past the
   built-up area on its side (farther out until walkable), put down; else put down. A body put down short of its goal is left alone for 2 game hours.
 - **243 Getting food**: a member holding no food walks to the nearest store with food in the town (a player town's complete storage, else an unlocked container) and takes one item.
