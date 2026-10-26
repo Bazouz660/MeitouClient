@@ -176,6 +176,16 @@ public sealed class CharacterCold
     /// <summary>The character is in a fight (set by the combat system): the animation stance takes the combat clips.</summary>
     public bool InCombat { get; set; }
     /// <summary>
+    /// The crossbow controller's <c>combatMode</c> (<c>+0x2f0 → +0x36</c>, docs/game/ui-screens.md section 4 "Combat mode"): set by each shooting tick (the shooting task's update), cleared
+    /// when the shooting ends (the fight's end, or the switch to melee). Only the HUD reads it; not saved, not hashed.
+    /// </summary>
+    public bool RangedCombatMode { get; set; }
+    /// <summary>
+    /// Character <c>+0x3d8 lastUsedWeaponCategory</c>: the <c>skill category</c> of the weapon in hand, written only by the HUD while it shows the character in a melee fight (0 at
+    /// creation; no save key). At 7 the accuracy line takes Turrets. Display state: not saved, not hashed.
+    /// </summary>
+    public int LastWeaponCategory { get; set; }
+    /// <summary>
     /// The key of the turret the character mans this tick (set by the combat system's serial step, docs/simulation.md "Combat", turrets; null: none). Derived every tick; not saved, not hashed.
     /// </summary>
     public string? Gunning { get; set; }

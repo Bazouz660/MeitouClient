@@ -234,7 +234,7 @@ the user's base-game save atlas shows a near-frontal face.
 | 1 | the character is selected | the `BorderPanel` button's selected state |
 | 2 | the character is ≥ 1000 units from the camera and ≥ ~316 from the camera's focus, and either (a) it is not down (slot 6), the float at its AI `+0xb0` is > 0 and it is not imprisoned, or (b) `+0x279 & 7` | `Background` `Hurt` (red) instead of `Normal`, flashing |
 | 4 | dead or unconscious (slot 107: `+0x5bc` / `+0x5b9`), carried (`+0x3d4`), or in a bed (`+0x2f8 == 1`) | `PortraitImage` alpha 0.25 (faded); this also stops the flash |
-| 8 | in combat (`FUN_140436610(c, 1)`) | `BackOverlay` `Combat` |
+| 8 | in combat mode (`FUN_140436610(c, 1, 1)`, **Verified** disassembly `1404150bc`: a melee fight, or shooting or manning a turret at a target that is up; [Combat mode](#4-hud-mainbargui)) | `BackOverlay` `Combat` |
 | 0x80 | hunger (`+0x4b8`) < 1.25 | `BackOverlay` `Hunger`, only when not in combat |
 | 0x10 | the inventory holds, in section 9 or 5, an item whose slot 94 answers non-null (`FUN_1405c8a10`). Only `LockedArmour` overrides slot 94. The item loader makes a `LockedArmour` for ARMOUR with `is locked` (`FUN_140580750`). That is, shackles. | `FrontOverlay` `Slave` |
 | 0x20 | imprisoned (`+0x2f8 == 2`, cage or restraint) | `FrontOverlay` `Prison` (wins over Slave) |
@@ -284,8 +284,11 @@ to Jobs; the saved `chase mode` flag is that switch (**Verified**, [perma-jobs](
   - State lines: `State:` Dead / Locked (lvl: N) / Sleeping / Unconscious (Rebooting for skeletons) / Defensive / Normal (Bad for the bad ones);
     `Goal:` the AI goal package's name, else Aimless (Meitou: when the AI is not running the character, its movement task's name, e.g. Moving, Attacking, else Aimless); `Encumbrance:` (int)((1 - f) × 100) "%" with f the encumbrance factor in 0..1, Bad from 50 %.
     Then, alive, the "Current Skill" line (**Verified**: decompile of the HUD update `1405d4260` panel 3, 2026-10-26; vanilla screenshot "Labouring 1" while operating a machine):
-    `Character +0x198 currentSkillUsing` (KenshiLib 1ce4a16), which the task updates set each tick (constants such as 4, 5, 6, 9, 0xb, or the machine's stat) and the HUD
-    clears after reading it (unless `DAT_1421349c9`, meaning **Unknown**, likely pause). With a named stat: label its name from the editor table (`FUN_140888440`, no
+    `Character +0x198 currentSkillUsing` (KenshiLib 1ce4a16), which the task updates set each tick (constants such as 4, 5, 6, 9, 0xb, or the machine's stat; the shooting
+    task `Task_RangedAttack` `FUN_14033bfb0` 35 Crossbows, turret manning `Task_UseTurret` `FUN_1403474f0` 11 Turrets unless the turret is broken, **Verified** decompile) and the HUD
+    clears after reading it unless the game is paused (`DAT_1421349c9` = GameWorld `+0x8b9 paused`, KenshiLib 1ce4a16; sole writer `FUN_140787d40`, pause requested or speed 0,
+    zeroed by the GameWorld constructor `FUN_140874e70`: **Verified**, writer scan of the disassembly; [game-loop](game-loop.md#speed-and-pause)), so a paused game keeps the
+    last line. Meitou: the line holds a skill used in the last tick (`SkillInUseTick`); paused, no tick runs and it stays. With a named stat: label its name from the editor table (`FUN_140888440`, no
     colon), value the effective level `FUN_140884ac0(stat, 0)` as `{1,num=fix,p=0}`. Its tooltip and colour come from `FUN_140890b00` (**Verified**, decompile; the
     `getHealthStatModifier(stat, hunger, wounds, darkness, robotParts, weather, gear)` flags read from the outgoing stack slots, KenshiLib 1ce4a16): `{1} skill:` with the
     trained level (`FUN_140884ac0(stat, 1)`); then each term of the stat multiplier `FUN_1406457e0` asked alone as p = (int)((1 - f) × 100), shown when p > 0 as Bad
@@ -296,17 +299,32 @@ to Jobs; the saved `chase mode` flag is that switch (**Verified**, [perma-jobs](
     `FUN_140884ac0(0x18, 0)` is (trained + bonus) × multiplier); for strength `Missing arm penalty:` -33% (0.66) with either arm disabled; `Total:`
     the effective level truncated. It returns whether the six terms (not the missing arm) sum above 2: the line is Bad then. The `-`/`+` prefixes are the short
     `.rdata` strings `DAT_14168901c` / `DAT_1416ba64c`, `-` and `+` (**Verified**, bytes, Ghidra `B_Bytes`, 2026-10-26).
-    Otherwise, when `getGUIStatsDisplayMode` (`FUN_1408840d0`) is 2 (a crossbow in hand, CharStats `+0x129 rangedMode` set and movement `+0x640 → +0x24` clear) or the
-    ranged controller's `combatMode` (`+0x2f0 → +0x36`) is set, and `getRangedWeapon` (vtable `0x3d0`) gives a crossbow (**Observed**, decompile 2026-10-26; names KenshiLib 1ce4a16):
+    **Combat mode** (**Verified**: decompile, call-site disassembly and writer scans, 2026-10-26; names KenshiLib 1ce4a16). `Character::isInCombatMode(melee, ranged)` `FUN_140436610`
+    is true with `melee` while CombatClass `+0x130 combatModeActive` is set (only `initCombatMode` `FUN_1406659b0` writes it: on at a melee fight task's start, off at its end,
+    [combat](combat.md#fight-lifecycle-and-orders)), or with `ranged` while the ranged controller's `combatMode` (`+0x2f0 → +0x36`) is set and its current target (hand `+0x48`)
+    resolves to a character that is not down (slot 6 `FUN_1405c9e10`: dead, unconscious, ragdolled or carried, prone state playing dead or KO). `combatMode` is set by the
+    controller's `setup` `FUN_140434570` on every update of `Task_RangedAttack` and of `Task_UseTurret` (not broken) and cleared only by `end` `FUN_140437470` from both tasks' end
+    (slot 3) and the constructor; `Task_UseTurret`'s update on a broken turret calls `AITaskSytem::taskImpossible` (`FUN_14050c890`, via `14001953d`), which ends it. Callers here: the portrait's flag 8, the melee branch below and Strength XP pass (1, 1); `getGUIStatsDisplayMode` passes (1, 0).
+    `getGUIStatsDisplayMode` `FUN_1408840d0`: the weapon in hand (`getCurrentWeapon` vtable `0x3c0`), else the first item of the back section, else of the hip (`FUN_140747e00` /
+    `FUN_140747c30`); none: 1; a crossbow with CharStats `+0x129 rangedMode` set and movement `+0x640 → +0x24 currentlyMoving` clear (written by `CharMovement::update` `14065ffa0`:
+    the current speed `+0xb8` above 0.1, on one path above 0, 0 when it stops): 2; else 1 when in melee combat mode with
+    CharStats `+0x1f0 currentWeaponType` 5 (fists), else 0. The stats lines below follow it (1 Martial Arts, 2 the crossbow lines, 0 Attack and Defense).
+    Meitou (`CombatSystem.IsInCombatMode`, `StatsDisplayMode`): melee combat mode runs from the engagement or the switch from the crossbow to the fight's end or the switch to the
+    crossbow (the melee task's boundaries); `combatMode` is `CharacterCold.RangedCombatMode`, set by each shooting tick and cleared at the fight's end or the switch to melee, or
+    manning a turret this tick (manning ends on a broken turret); the targets are the fight's and the turret's; down adds `RagdollSystem.IsRagdoll` (Meitou ragdolls a character
+    whole while incapacitated and in carry mode while carried); moving is a horizontal speed above 0.1; ranged mode is the Ranged toggle, on for NPCs as in the combat code.
+    Otherwise, when the display mode is 2 or `combatMode` is set (no target test), and `getRangedWeapon` (vtable `0x3d0`) gives a crossbow (none: no line from here):
     stat s = Turrets (11) when `lastUsedWeaponCategory` `+0x3d8` is 7 `SKILL_TURRET`, else Crossbows (35); D = the gun's (crossbow `+0x240`) deviation angle at
     0.005 (s + perception), the shot's cone ([combat.md](combat.md) "Shot"). Line `Accuracy Error:` / `{D,p=2} degrees`; tooltip `Weapon Accuracy:` the gun's
     `+0x10` deviation as `0-{p=2} degrees` (the prefix `DAT_1416f3544` is `0-`, **Verified** bytes), `Skill:` s's effective level `{p=0}`, `Resulting Accuracy Deviation:`
-    D degrees (both wrapped in `DAT_141f49248`, the Main tag `#afa68b`, see Colour tags). Else
-    in combat (`FUN_140436610(c, 1)`) the weapon class `+0x7b` gives `Heavy:` (3), `Katana:` (0), `Hacker:` (4), `Sabre:` (1), `Martial Arts:` (5), `Polearm:` (8) with
-    the raw level and a Damage tooltip; with no label yet, `Stealth:` (`FUN_14088f900`) while sneaking, else `Athletics:` (raw level, CharStats +0x94) when the speed
+    D degrees (both wrapped in `DAT_141f49248`, the Main tag `#afa68b`, see Colour tags). `+0x3d8` is written only by the Character constructor (0) and by the melee branch
+    below, from the weapon in hand's `skill category` (Weapon `+0x234`), so s is Turrets only after a melee fight with a WEAPON of skill category 7, which no base-game WEAPON
+    has (**Verified**: writer scan; probe of the install's WEAPON records, categories 0-5, 8 and creature ones only), so only a mod reaches it. Meitou keeps it as `CharacterCold.LastWeaponCategory` (display state, not saved: no loader writes it). Else in melee combat mode
+    (`FUN_140436610(c, 1, 1)`; `combatMode` is clear here) `+0x3d8` is set from the weapon in hand (the FISTS WEAPON with nothing drawn, category 5) and gives `Heavy:` (3),
+    `Katana:` (0), `Hacker:` (4), `Sabre:` (1), `Martial Arts:` (5), `Polearm:` (8), none for the rest, with the raw level and a Damage tooltip; with no label yet, `Stealth:` (`FUN_14088f900`) while sneaking, else `Athletics:` (raw level, CharStats +0x94) when the speed
     (+0x640 → +0xb8) is over 9 units a second (not the XP gate). Swimming (`FUN_1405c7fd0` 3) replaces it with "Swimming" and the swim speed in mph; Lockpicking (37)
-    adds an "Imprisoned:" tooltip. Meitou (`World.SkillLine`, `CharacterCold.UseSkill`): the operating, training-dummy, turret, building, first-aid and lockpicking
-    jobs set the skill; the terms are `StatMultiplier.Compute` with one `StatUse` each (Limbs, Hunger, Stun, Light, DamageState, LimbItems with the fighter's gear factors).
+    adds an "Imprisoned:" tooltip. Meitou (`World.SkillLine`, `CharacterCold.UseSkill`): the operating, training-dummy, turret manning (any gunner, `TickTurrets`), shooting
+    (`TickRanged`), building, first-aid and lockpicking jobs set the skill; the terms are `StatMultiplier.Compute` with one `StatUse` each (Limbs, Hunger, Stun, Light, DamageState, LimbItems with the fighter's gear factors).
     Fallback tooltips (**Verified**, decompile 2026-10-26): weapon class `Damage:` (int) of the blow's four terms (`FUN_1408868b0`). `Stealth:` value `FUN_140889710`(stored,
     s × 100): `v`, `v (d)` Bad, `v (+d)` Good; tooltip `FUN_14088f9a0`: `Stealth skill:`, `Max speed:` lerp(max(0, (s - 0.1) / 0.8), 12, top speed) mph, `XP rate:` CharStats
     `+0x170` (the last sneaking XP amount, `FUN_1408c65a0`) %, `Carrying something:` Bad `-25%` (`DAT_1416f4450`, **Verified** bytes), `Crawling:` Good `+100%` (ends the
@@ -314,16 +332,15 @@ to Jobs; the saved `chase mode` flag is that switch (**Verified**, [perma-jobs](
     `Athletics:` tooltip `FUN_14088e780`: `Athletics Skill:`, `Max possible speed:` the run value, `Leg injury:` (leg factor `FUN_140884970`), `Encumbrance:`, `Armour/equipment:`
     (the float CharStats `+0x18`: above 1 Good `+` (int)((f - 1) × 100) `%`, below 1 Bad `-` (int)((1 - f) × 100) `%`, so `+0%` can show; [character-stats.md](character-stats.md#gear-factors)), `Robotics:` (legs, athletics), `Total speed:` (Main) the top speed. Swimming value: the swim speed `FUN_140885eb0` in mph; tooltip `Skill:`,
     `Max Swim Speed:` (`FUN_140883e30`), then Bad label and value above 1 %: `Injuries` (leg factor × 0.6 per unusable arm), `Hunger`, `Encumbrance`, `Robotics` (the
-    four limbs' swimming items, signed), `2 Broken Arms!` (character `+0x5bd` and `+0x5be` both clear; Meitou: neither arm works), Bad `-99%` (`DAT_1416f346c`, **Verified** bytes), `Current Swim Speed:`. Meitou models them all (perception's bonus in `Fighter.PerceptionBonus`, `+0x18` in `Fighter.AthleticsFactor`); not modelled: the Turrets
-    accuracy case (a manned turret shows its job skill first). Meitou's combat mode is a fight with the crossbow drawn. Max Swim Speed uses Meitou's `Speed.SwimBase`.
+    four limbs' swimming items, signed), `2 Broken Arms!` (character `+0x5bd` and `+0x5be` both clear; Meitou: neither arm works), Bad `-99%` (`DAT_1416f346c`, **Verified** bytes), `Current Swim Speed:`. Meitou models them all (perception's bonus in `Fighter.PerceptionBonus`, `+0x18` in `Fighter.AthleticsFactor`). Max Swim Speed uses Meitou's `Speed.SwimBase`.
     Extended (when expanded): Athletics XP, Strength XP, Toughness XP, KO point, Run speed, Hunger Rate.
     Extended values (**Verified**, decompile of `FUN_140895350`, 2026-10-14; Meitou: `BodySystem.ExtendedOf`, `PlayerInterface.ExtendedLines`):
     Athletics XP `{n}%` = (int)(100 × `FUN_1408c5ec0`): the encumbrance factor, ×1.5 when the current speed is over 80 % of the run value V (the `xp rate athletics` constant is applied elsewhere).
-    Strength XP `{n}%` = (int)(100 × `FUN_1408c60c0`), the carrying rate (includes `xp rate strength from walking`); in combat mode (`Character::isInCombatMode(1, 1)` `FUN_140436610`, KenshiLib 1ce4a16: fighting, or a ranged weapon ready) CharStats `+0x184 weaponWeightXPMult` (`calculateWeaponWeightXPMult` `FUN_1408838e0`) instead, or with fists (`+0x1f0 currentWeaponType` 5) 1 − the encumbrance factor (**Verified**, decompile; Meitou: `BodySystem.ExtendedOf`, the melee weapon's weight also for a drawn crossbow, engine choice).
+    Strength XP `{n}%` = (int)(100 × `FUN_1408c60c0`), the carrying rate (includes `xp rate strength from walking`); in combat mode (`FUN_140436610(c, 1, 1)`, above) CharStats `+0x184 weaponWeightXPMult` (`calculateWeaponWeightXPMult` `FUN_1408838e0`) instead, or with fists (`+0x1f0 currentWeaponType` 5) 1 − the encumbrance factor (**Verified**, decompile). `+0x184` is computed by `FUN_1408839a0` from the weight of the weapon in hand: `CharStats::setWeapon` `FUN_140897f30` (called by `drawWeapon`, sheathing and dropping) passes Item slot 74 (`+0x120`, for WEAPON and CROSSBOW alike `weight kg` × `weapon inventory weight mult` from the Weapon constructor `FUN_140898830`, which the crossbow's does not change), 0 with none, and `_recalculateStats` its copy `+0x228`; so a drawn crossbow trains by its own weight (`+0x1f0` is then 6) (**Verified**, disassembly). Meitou: `BodySystem.WithCombatMode`, `CombatSystem.HandWeight`.
     Toughness XP `{n}x` (the suffix is the `x` at `0x1416bc008`) = `FUN_1408c5f40` (**Verified**: decompile, and in game on vanilla 1.0.65 in issue #82, 2026-10-25): 1, but 2 with medical `+0x166 leftArmOk` clear, +2 with `+0x165 rightArmOk` clear, +2 while `+0x163 bloodlossTrauma` is set, +2 when `+0xa4 worstDamage` is under 15 (field names KenshiLib 1ce4a16). `worstDamage` is a fraction of at most 1 ([character-stats.md](character-stats.md#hunger-blood-and-parts)), so the last term is always on: a whole character reads `3x`, both arms crippled `6x`, a leg below zero adds nothing. Meitou: the same four terms (`BodySystem.ExtendedOf`).
     KO point = (int)`FUN_140643ae0` (negative HP, [character-stats.md](character-stats.md#hunger-blood-and-parts)). Run speed = the current top speed S × 0.22369362 (units per second to mph) rounded, `{S} (+{d}) mph` or `(-{d})` where d is S minus V in mph (Bad either way); plain when equal. Meitou adds an Interface setting "Speed units" (`UserConfig.SpeedUnit`, default mph): km/h multiplies by 0.36 instead. Hunger Rate `{n}%` = (int)(100 × `FUN_1408837a0`), the race's hunger rate × its situation factor.
-  - Stats lines: Martial Arts when unarmed; Crossbows, Precision, Perception with a crossbow in ranged mode; else Attack and Defense; then Strength,
-    Dexterity, Toughness and (not in ranged mode) Dodge. A value is the effective number, then its change in brackets: `{1} ({2})` all Bad when lower,
+  - Stats lines (by `getGUIStatsDisplayMode`, Combat mode above): Martial Arts (1); Crossbows, Precision, Perception (2); else Attack and Defense; then Strength,
+    Dexterity, Toughness and (not in mode 2) Dodge. A value is the effective number, then its change in brackets: `{1} ({2})` all Bad when lower,
     `{1} (+{2})` all Good when higher, plain when equal. The code passes the labels in mixed case ("Martial Arts:"); the original shows them upper case in
     a light colour (**Observed**, screenshot), from a source **Unknown**.
   - Stat tooltips (**Verified**: strings, row order and branches in the decompile of `FUN_140892120` (stats), `FUN_140895350` (extended), `FUN_140890b00`, `FUN_14088e780`,
@@ -355,7 +372,7 @@ to Jobs; the saved `chase mode` flag is that switch (**Verified**, [perma-jobs](
     - Run speed (`FUN_14088e780`): `Athletics Skill:` the stored stat; `Max possible speed:` (int) V mph; `Leg injury:` / `Encumbrance:` Bad `-n%` when n > 0; `Armour/equipment:`
       `+n%` / `-n%` from CharStats `+0x18`; `Robotics:` signed (fitted legs' athletics factor − 1) `%`; `Total speed:` (Main key) (int) S mph. Then sneaking `Stealth mode:` Bad
       `max: N`, N = (int)(lerp(12, S, max((s − 40) / 60, 0)) × 0.2237) with s the stealth term (`FUN_140884850`, 0..1), so N is always (int)(12 × 0.2237) = 2; and `Total:` the
-      line's text. The line's bracket is Bad for both signs (`FUN_140888fb0`). Meitou: in the panel's speed unit, no `+0x18` gear row.
+      line's text. The line's bracket is Bad for both signs (`FUN_140888fb0`). Meitou: in the panel's speed unit.
     - Hunger Rate (`FUN_14088a2b0`): `Racial hunger rate:`, `Age:` when the age (slot 0x398) is not 1, as the size factor (slot 0x390, lerp(age, `scale min`, `scale max`)), `Encumbrance effect:` 1 + (1 − e) `encumbrance hunger rate` (always,
       though in a bed the rate uses the bed factor), `Resting/KO state:` `bed hunger rate` in a bed or KO or dead, then `Idle:` 0.80x (the flag the rate's 0.8 reads) or
       `Current work:` CharStats `+0x178 currentOperatingMachineHungerRate` when not 1 (not built).

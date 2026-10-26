@@ -78,6 +78,57 @@ public class RangedTests(ITestOutputHelper output)
         Assert.True(world.Characters.Cold(shooter.Slot)!.Stats![StatsEnumerated.Crossbows] > 99.9f);
     }
 
+    /// <summary>
+    /// Combat mode (docs/game/ui-screens.md section 4 "Combat mode"): a shooting fight is the ranged controller's combatMode, not the melee flag, so isInCombatMode(1, 1) holds
+    /// while its target is up and (1, 0) does not; the shooting task sets Current Skill to Crossbows; the stats show the crossbow lines (mode 2) only while the shooter stands still.
+    /// </summary>
+    [Fact]
+    public void A_shooter_is_in_ranged_combat_mode_only_and_shows_the_crossbow_stats_while_still()
+    {
+        using var world = NewWorld(5, 1, out var combat);
+        var shooter = Put(world, Shooter(100, 100, 3), new Vector3(1000, 150, 1000));
+        var target = Put(world, Dummy(1, toughness: 100), new Vector3(1300, 150, 1000));
+        world.Commands.Enqueue(new AttackOrder([shooter], target) { Tick = 0 });
+        var cold = world.Characters.Cold(shooter.Slot)!;
+        for (int t = 0; t < 60 && !combat.StateOf(shooter).Ranged; t++) world.RunTick();
+        world.RunTick();
+        Assert.True(combat.StateOf(shooter).Ranged);
+        Assert.True(CombatSystem.RangedCombatMode(cold));
+        Assert.False(combat.MeleeCombatMode(shooter, cold));
+        Assert.True(combat.IsInCombatMode(world.Characters, shooter, cold, true, true));
+        Assert.False(combat.IsInCombatMode(world.Characters, shooter, cold, true, false));
+        Assert.Equal(StatsEnumerated.Crossbows, cold.SkillInUse);
+        Assert.Equal(2, combat.StatsDisplayMode(shooter, cold, moving: false));
+        Assert.Equal(0, combat.StatsDisplayMode(shooter, cold, moving: true));
+        // A target that is down ends ranged combat mode though the fight goes on.
+        world.Characters.Cold(target.Slot)!.CarriedBy = shooter;
+        Assert.False(combat.IsInCombatMode(world.Characters, shooter, cold, true, true));
+    }
+
+    /// <summary>
+    /// Strength XP in combat mode (calculateWeaponWeightXPMult, docs/game/ui-screens.md section 4): the weight of the weapon in hand, a drawn crossbow's own, and 1 - encumbrance
+    /// with nothing drawn; out of combat mode the carrying rate stays.
+    /// </summary>
+    [Fact]
+    public void Strength_xp_in_combat_mode_takes_the_drawn_weapons_weight_or_fists()
+    {
+        var bodies = new BodySystem(Meitou.Tests.Bodies.BodyFixtures.BaseGame);
+        var cold = Shooter(50, 50, 0);
+        cold.Fighter = new Fighter(cold.Fighter!.Weapon) { Crossbow = CrossbowInstance.Create(0, Ranger, Constants, 1, weight: 75), EncumbranceFactor = 0.6f };
+        float strength = cold.Stats!.Strength, mult = cold.Medical!.StatMultiplier(StatsEnumerated.Strength);
+        float Factor(float w) => 0.1f + Math.Clamp((w - strength * mult) / 20, 0, 1);
+        var x = new ExtendedStats(1, 0.3f, 3, -40, 30, 40, 1);
+        Assert.Equal(x, bodies.WithCombatMode(x, cold, false));
+        cold.DrawnWeapon = HandHold.OfCategory((int)WeaponCategory.Bow).Weapon;
+        Assert.Equal(Factor(75), bodies.WithCombatMode(x, cold, true).StrengthXp, 5);
+        cold.DrawnWeapon = HandHold.OfCategory(cold.Fighter.Weapon!.Data.SkillCategory).Weapon;
+        Assert.Equal(Factor(cold.Fighter.Weapon.Stats.Weight), bodies.WithCombatMode(x, cold, true).StrengthXp, 5);
+        cold.DrawnWeapon = WeaponKinds.None;
+        var fists = bodies.WithCombatMode(x, cold, true);
+        Assert.True(fists.Fists);
+        Assert.Equal(0.4f, fists.StrengthXp, 5);
+    }
+
     [Fact]
     public void A_shooter_running_dry_draws_its_melee_weapon_and_closes_in()
     {

@@ -29,9 +29,10 @@ static class HudTips
 
     /// <summary>
     /// The stats panel's lines (docs/game/ui-screens.md section 4), each with its tooltip. <paramref name="inBuilding"/>: in a building at all, on top included (the original's location
-    /// type is not 0xb); <paramref name="inside"/>: in its indoor volume (<see cref="SightMap.Inside"/>), which the indoors modifiers of the values need.
+    /// type is not 0xb); <paramref name="inside"/>: in its indoor volume (<see cref="SightMap.Inside"/>), which the indoors modifiers of the values need. <paramref name="displayMode"/>:
+    /// <c>getGUIStatsDisplayMode</c> (<see cref="CombatSystem.StatsDisplayMode"/>), 1 Martial Arts, 2 the crossbow lines, 0 Attack and Defense.
     /// </summary>
-    public static List<HudStatLine> Lines(CharacterCold cold, MedicalState med, CharacterStats stats, HudCombat? hc, GameConstants? constants, bool inBuilding, bool inside)
+    public static List<HudStatLine> Lines(CharacterCold cold, MedicalState med, CharacterStats stats, HudCombat? hc, GameConstants? constants, bool inBuilding, bool inside, int displayMode)
     {
         var fighter = cold.Fighter;
         var factors = (fighter?.Factors ?? StatFactors.None) with { Stun = med.DustStatFactor };
@@ -51,7 +52,7 @@ static class HudTips
         var lines = new List<HudStatLine>(7);
         if (animal is not null)
             lines.Add(new HudStatLine("Age:", age, age) { Text = Loc.Tr(AnimalData.AgeWord(age)), Tip = [(Loc.Tr("Stat Multiplier:"), Loc.Tr("{1,num=fix,p=2}x", age))] });
-        bool ranged = (cold.Orders & CharacterOrders.Ranged) != 0 && fighter?.Crossbow is not null;
+        bool ranged = displayMode == 2 && fighter?.Crossbow is not null;
         if (ranged)
         {
             // The gear's ranged factor as the breakdown's Total has it.
@@ -60,7 +61,7 @@ static class HudTips
             lines.Add(Line("Perception:", StatsEnumerated.Perception) with { Tip = Breakdown(med, stats, factors, StatsEnumerated.Perception, "Perception",
                 Combat.CombatSystem.GearBonus(cold, StatsEnumerated.Perception)) });
         }
-        else if ((fighter is null || fighter.Unarmed) && animal is null)
+        else if (displayMode == 1 && animal is null)
         {
             // FUN_140884e00 and FUN_140884680: the value lerp(e, 0.2, 1) x (bonus + skill), the change the bonus less 0.8 (1 - e) x skill. The bonus (FUN_140884580) takes the
             // weapon's indoors field like Attack's (0 for fists), while the row shows a flat +8 in any building.
@@ -178,10 +179,10 @@ static class HudTips
         if (x.RunSpeed > x.RunValue * 0.8f) athletics.Add((Loc.Tr("Full speed bonus:"), Good + "+50%"));
         athletics.Add((Loc.Tr("This is the rate at which your athletics skill is increasing while running."), ""));
 
-        // In combat mode the rate is the weapon weight factor, or 1 - e with fists; else the carrying rate, whose bonus row is halved while carrying.
+        // In combat mode the rate is the drawn weapon's weight factor, or 1 - e with nothing drawn (current weapon type 5); else the carrying rate, whose bonus row is halved while carrying.
         int rate = (int)(x.StrengthXp * 100);
         var strength = new List<(string, string)>();
-        if (x.Fighting) strength.Add((Loc.Tr(cold.Fighter is null || cold.Fighter.Unarmed ? "Encumbrance:" : "Weapon weight:"), Loc.Tr("{1,num}%", rate)));
+        if (x.Fighting) strength.Add((Loc.Tr(x.Fists ? "Encumbrance:" : "Weapon weight:"), Loc.Tr("{1,num}%", rate)));
         else
         {
             strength.Add((Loc.Tr("Encumbrance bonus:"), Loc.Tr("{1,num}%", carrying ? (int)(rate * 0.5f) : rate)));
@@ -208,7 +209,8 @@ static class HudTips
 
         // FUN_140895350's sneak row: t = max((s - 40) / 60, 0) of the stealth term s, which is in 0..1, then lerp(12, S, t), so the cap reads 12.
         float? sneak = (cold.Orders & CharacterOrders.Sneak) != 0 ? 12 + (x.RunSpeed - 12) * MathF.Max((Orders.Stealth(cold) - 40) / 60, 0) : null;
-        return new ExtendedTips(athletics, strength, toughness, hunger, stats.Athletics, Speed.LegFactor(med), med.LegItemFactor(StatsEnumerated.Athletics), sneak);
+        return new ExtendedTips(athletics, strength, toughness, hunger, stats.Athletics, Speed.LegFactor(med), med.LegItemFactor(StatsEnumerated.Athletics), sneak,
+            cold.Fighter?.AthleticsFactor ?? 1);
     }
 
     /// <summary>Medical <c>+0xa4 worstDamage</c>: the lowest part fraction, 1 without parts.</summary>

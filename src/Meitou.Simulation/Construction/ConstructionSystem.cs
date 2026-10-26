@@ -803,6 +803,7 @@ public sealed class ConstructionSystem : ITickSystem
         site.BuilderCounter++;
         float scaled = amount * Settings.BuildingSpeed * constants.BuildSpeed * Falloff[Math.Min(k, CounterCap)];
         site.Progress = site.Rate > 0 ? site.Progress + site.Rate * scaled : site.Target;
+        if (site.Progress > 0) SetBroken(world, site, false);
         world.Buildings.Touch();
         cold.UseSkill(StatsEnumerated.Engineering, world.Tick);
         if (cold.Stats is { } stats && cold.Race is { } race) xp.Engineering(stats, race, dt);
@@ -821,6 +822,7 @@ public sealed class ConstructionSystem : ITickSystem
         site.Ruined = false;
         world.Buildings.Changed();
         SyncChildren(world, site);
+        SetBroken(world, site, false);
         if (site.Owner == world.Player.Faction) world.Post(Loc.Tr("Building '{1}' construction complete.", site.Name));
     }
 
@@ -830,6 +832,7 @@ public sealed class ConstructionSystem : ITickSystem
         site.Complete = false;
         site.Ruined = true;
         site.Progress = 0.4f * site.Target;
+        if (site.Progress > 0) SetBroken(world, site, false);
         ulong key = Rng.StableHash(site.Id);
         for (int i = 0; i < site.Materials.Length; i++)
         {
@@ -998,6 +1001,15 @@ public sealed class ConstructionSystem : ITickSystem
         table.Next[slot].Task = (byte)CharacterTask.Build;
     }
 
+    /// <summary>
+    /// A machine's broken flag (UseableStuff <c>setBroken</c>, <c>+0x3b6</c>; plain buildings have none, docs/game/buildings-production.md "Broken machines"): every dismantle step sets it
+    /// (<c>Building::addDismantleProgress</c> <c>FUN_1402a2860</c>); a build step leaving progress above 0 (<c>FUN_1405595a0</c>) and completion (<c>FUN_140562340</c>) clear it.
+    /// </summary>
+    static void SetBroken(World world, BuildSite site, bool broken)
+    {
+        if (world.Machines.Find(site.Id) is { } m && m.Broken != broken) m.Broken = broken;
+    }
+
     // ------------------------------------------------------------------ dismantling
 
     void DismantleStep(World world, int slot, CharacterCold cold, BuildSite site, float dt)
@@ -1012,6 +1024,7 @@ public sealed class ConstructionSystem : ITickSystem
         float amount = dt * Lerp(0.05f, 4f, Math.Clamp(Engineering(cold), 0, 100) / 100) * 4;
         site.Progress = site.Rate > 0 ? site.Progress - amount * site.Rate : 0;
         site.Dismantling = true;
+        SetBroken(world, site, true);
         world.Buildings.Touch();
         SyncChildren(world, site);
         cold.UseSkill(StatsEnumerated.Engineering, world.Tick);

@@ -282,7 +282,7 @@ sealed partial class PlayerInterface
 
 
     /// <summary>
-    /// The run speed's tooltip (<c>FUN_14088e780</c>, then <c>FUN_140895350</c>'s rows): the stored athletics, the run value, each loss (legs, encumbrance), the fitted legs, the top speed,
+    /// The run speed's tooltip (<c>FUN_14088e780</c>, then <c>FUN_140895350</c>'s rows): the stored athletics, the run value, each loss (legs, encumbrance), the gear's run factor, the fitted legs, the top speed,
     /// while sneaking its cap, and "Total:" with the line's own text. Speeds in the panel's unit (the original's mph); the speeds are truncated, the line's rounded.
     /// </summary>
     static List<(string Key, string Value)> RunTip(ExtendedStats e, ExtendedTips tips, float encumbrance, string total, float factor, string suffix)
@@ -292,6 +292,9 @@ sealed partial class PlayerInterface
         int legs = (int)((1 - tips.LegFactor) * 100), load = (int)((1 - Math.Clamp(encumbrance, 0, 1)) * 100), robotics = (int)((tips.RoboticLegs - 1) * 100);
         if (legs > 0) rows.Add((Loc.Tr("Leg injury:"), BadTag + "-" + Loc.Tr("{1,num}%", legs)));
         if (load > 0) rows.Add((Loc.Tr("Encumbrance:"), BadTag + "-" + Loc.Tr("{1,num}%", load)));
+        // CharStats +0x18 on either side of 1, as the Athletics tooltip (so +0% and -0% can show).
+        if (tips.Gear > 1) rows.Add((Loc.Tr("Armour/equipment:"), GoodTag + "+" + Loc.Tr("{1,num}%", (int)((tips.Gear - 1) * 100))));
+        else if (tips.Gear < 1) rows.Add((Loc.Tr("Armour/equipment:"), BadTag + "-" + Loc.Tr("{1,num}%", (int)((1 - tips.Gear) * 100))));
         if (robotics != 0) rows.Add((Loc.Tr("Robotics:"), (robotics < 0 ? BadTag : GoodTag) + Loc.Tr(robotics > 0 ? "+{1,num}" : "{1,num}", robotics) + "%"));
         rows.Add(("#afa68b" + Loc.Tr("Total speed:"), InUnit(e.RunSpeed)));
         if (tips.SneakCap is { } cap) rows.Add((Loc.Tr("Stealth mode:"), BadTag + Loc.Tr("max:") + " " + Loc.Tr("{1,num}", (int)(cap * factor))));

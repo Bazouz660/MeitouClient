@@ -57,6 +57,7 @@ public static class MachineSave
         // The power keys (Observed, vfunc_17/18 of the building classes FUN_1402a14b0 / FUN_1402a1750).
         state.Bools["power on"] = m.PowerOn;
         state.Bools["gets battery"] = m.GetsBattery;
+        state.Bools["broken"] = m.Broken;
         if (m.Data.IsBattery) state.Floats["batterycharge"] = m.Charge;
         if (m.Output is { } o) state.Floats["production amount"] = o.Progress;
         for (int k = 0; k < m.Inputs.Length; k++) state.Floats["consumption amount-" + k.ToString(CultureInfo.InvariantCulture)] = m.Inputs[k].Level;
@@ -158,6 +159,7 @@ public static class MachineSave
         if (state.Floats.TryGetValue("resource mult", out float y)) m.Yield = y;
         m.PowerOn = state.Bools.GetValueOrDefault("power on", true);
         m.GetsBattery = state.Bools.GetValueOrDefault("gets battery", true);
+        m.Broken = state.Bools.GetValueOrDefault("broken");
         if (m.Data.IsBattery) m.Charge = Math.Max(0, state.Floats.GetValueOrDefault("batterycharge"));
         if (m.Output is { } o) o.Progress = state.Floats.GetValueOrDefault("production amount");
         for (int k = 0; k < m.Inputs.Length; k++) m.Inputs[k].Level = state.Floats.GetValueOrDefault("consumption amount-" + k.ToString(CultureInfo.InvariantCulture));
