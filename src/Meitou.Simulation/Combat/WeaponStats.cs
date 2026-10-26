@@ -41,7 +41,7 @@ public sealed class WeaponInstance(WeaponData data, WeaponStats stats)
     public StatsEnumerated Skill { get; } = SkillOf(data.SkillCategory);
 
     /// <summary>The weapon kind the animations and techniques are matched with.</summary>
-    public WeaponKinds Kind { get; } = KindOf(data.SkillCategory);
+    public WeaponKinds Kind { get; } = KindOf(data.AnimationCategory);
 
     public bool CanBlock => Data.CanBlock;
 

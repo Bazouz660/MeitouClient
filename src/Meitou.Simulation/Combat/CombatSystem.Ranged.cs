@@ -260,7 +260,7 @@ public sealed partial class CombatSystem : IProjectileSource
         return scan.Found;
     }
 
-    internal static WeaponKinds MeleeDrawn(Fighter f) => f.Weapon is { } w && !f.Unarmed ? HandHold.OfCategory(w.Data.SkillCategory).Weapon : WeaponKinds.None;
+    internal static WeaponKinds MeleeDrawn(Fighter f) => f.Weapon is { } w && !f.Unarmed ? HandHold.OfCategory(w.Data.AnimationCategory).Weapon : WeaponKinds.None;
 
     /// <summary>
     /// Chooses crossbow or melee for a fighting character that carries a crossbow (the planner's desires, docs/game/combat.md "Fight lifecycle and orders", melee or

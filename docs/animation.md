@@ -112,6 +112,10 @@ order (it knows clips by name only). Tie order: list order (engine choice). With
 
 ### Choosing candidates (`@ 14051d660`)
 
+A weapon animates as its WEAPON `skill category animation override` unless that is 21 (the default), else its `skill category` (`Sword::Sword` `+0x238`, **Verified**;
+9 base weapons override, e.g. cleavers, jittes, heavy polearms, the Topper); its skill stays its own. Meitou: `WeaponData.AnimationCategory` sets the weapon kind clips and
+techniques match.
+
 Verified (decompilation). Every selection (movement blend, idles, stumbles) runs the same filter over a list
 of definitions and gives each a weight; zero-weight ones are dropped:
 

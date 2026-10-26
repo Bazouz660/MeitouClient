@@ -61,6 +61,11 @@ public sealed record WeaponData
     public string Name { get; init; } = "";
     /// <summary><c>skill category</c> as the raw number (a creature attack has a number beyond <see cref="WeaponCategory.Polearms"/>).</summary>
     public int SkillCategory { get; init; }
+    /// <summary>
+    /// The category it animates as (<c>Sword::Sword</c> <c>+0x238</c>, <b>Verified</b>): <c>skill category animation override</c> unless that is 21 (the default), else <see cref="SkillCategory"/>. 9 base weapons
+    /// override (cleavers, jittes, heavy polearms, the Topper), so they take another class's clips and techniques while training their own skill.
+    /// </summary>
+    public int AnimationCategory { get; init; }
     public float CutDamageMultiplier { get; init; }
     public float BluntDamageMultiplier { get; init; }
     public float MinCutDamageMult { get; init; } = 1;
@@ -90,6 +95,7 @@ public sealed record WeaponData
         StringId = r.StringId,
         Name = r.Name,
         SkillCategory = RecordReading.Int(r, "skill category", (int)WeaponCategory.Unarmed),
+        AnimationCategory = RecordReading.Int(r, "skill category animation override", 21) is var over and not 21 ? over : RecordReading.Int(r, "skill category", (int)WeaponCategory.Unarmed),
         CutDamageMultiplier = RecordReading.Float(r, "cut damage multiplier", 1),
         BluntDamageMultiplier = RecordReading.Float(r, "blunt damage multiplier", 0),
         MinCutDamageMult = RecordReading.Float(r, "min cut damage mult", 1),
