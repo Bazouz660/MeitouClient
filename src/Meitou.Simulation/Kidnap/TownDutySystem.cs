@@ -26,7 +26,7 @@ public sealed record TownDutySettings
     public double RefuseHours { get; init; } = 2;
 }
 
-public enum TownDutyKind : byte { Lift, Out, Cage, Food, Confiscate, LootFood, Shoo }
+public enum TownDutyKind : byte { Lift, Out, Cage, Food, Confiscate, LootFood, Shoo, Ransack }
 
 /// <summary>One member's errand of the <see cref="TownDutySystem"/>: an intruder it lifts and carries out or to a cage, or a store it fetches food from.</summary>
 public sealed class TownDuty
@@ -105,7 +105,7 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
             if (!c.Carrying.IsNone) reserved.Add(c.Carrying);
             if (c is { Medical: { Unconscious: true, Dead: false } } && c.InSomething == HeldState.None && CarrySystem.CanBeLifted(c)) downed.Add(s);
         }
-        Span<int> intruders = stackalloc int[5], food = stackalloc int[5], confiscate = stackalloc int[5], loot = stackalloc int[5], shoo = stackalloc int[5];
+        Span<int> intruders = stackalloc int[5], food = stackalloc int[5], confiscate = stackalloc int[5], loot = stackalloc int[5], shoo = stackalloc int[5], ransack = stackalloc int[5];
         foreach (var squad in world.Squads.All)
         {
             if (squad.Ai is null || squad.Members.Count == 0) continue;
@@ -114,6 +114,7 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
             confiscate.Fill(-1);
             loot.Fill(-1);
             shoo.Fill(-1);
+            ransack.Fill(-1);
             foreach (var member in squad.Members)
             {
                 if (!table.TryResolveNext(member, out int slot) || !Free(world, slot) || Busy(member)) continue;
@@ -125,6 +126,16 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
                 if (loot[role] < 0) loot[role] = population.GoalDuty(world, squad, (AiRole)role, TaskType.LOOT_FOOD_AND_STUFF) ? 1 : 0;
                 if (shoo[role] < 0) shoo[role] = squad.HomeBuilding is not null && (population.GoalDuty(world, squad, (AiRole)role, TaskType.SHOO_STRANGERS_OUT_OF_MY_BUILDING)
                     || squad.Ai is { HomePublic: false } && population.GoalDuty(world, squad, (AiRole)role, TaskType.SHOO_STRANGERS_OUT_OF_MY_BUILDING_IF_PRIVATE)) ? 1 : 0;
+                if (ransack[role] < 0) ransack[role] = population.GoalDuty(world, squad, (AiRole)role, TaskType.RUN_AROUND_TOWN_LOOKING_FOR_PEOPLE) ? 1 : 0;
+                if (ransack[role] == 1 && RansackTarget(world, squad, slot) is { } raid)
+                {
+                    cold.Engaged = true;
+                    if (cold.Fighter is { } armed) cold.DrawnWeapon = Combat.CombatSystem.MeleeDrawn(armed);   // B: hasWeaponEquipped
+                    var goal = Flat(raid.Position);
+                    duties.Add(new TownDuty { Member = member, Faction = cold.Faction, Town = AiSystem.TownAt(data, world, raid.Position), Kind = TownDutyKind.Ransack, Target = raid.Key, Goal = goal });
+                    MovementSystem.GoTo(table, slot, goal, SpeedMode.Run);
+                    continue;
+                }
                 if (intruders[role] == 0 && food[role] == 0 && confiscate[role] == 0 && loot[role] == 0 && shoo[role] == 0) continue;
                 if (shoo[role] == 1 && Stranger(world, slot, cold, squad) is { IsNone: false } stranger)
                 {
@@ -297,6 +308,7 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
         if (d.Kind is TownDutyKind.Food or TownDutyKind.LootFood) return StepFood(world, d, g, gc);
         if (d.Kind == TownDutyKind.Confiscate) return StepConfiscate(world, d, g, gc);
         if (d.Kind == TownDutyKind.Shoo) return StepShoo(world, d, g, gc);
+        if (d.Kind == TownDutyKind.Ransack) return StepRansack(world, d, g);
         if (!table.TryResolveNext(d.Body, out int b) || table.Cold(b) is not { Medical.Dead: false } body || body.IsImprisoned)
         {
             carry.LetGo(world, g);
@@ -503,6 +515,37 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
             world.Defer(new Dialogue.DialogueEvent(d.Member, d.Body, GiveUpChase) { Tick = world.Tick + 1 });
             return End(world, d);
         }
+        return true;
+    }
+
+    /// <summary>
+    /// <c>AI::findRandomBuildingInTown</c> (<c>FUN_1408cb510</c>, goal 216): the squad's mission town (its blackboard's, else the campaign target it marches on), else the town the
+    /// member stands in; one of its standing buildings with an interior, drawn uniformly at random. Null: none.
+    /// </summary>
+    Meitou.Data.World.TownBuilding? RansackTarget(World world, Squad squad, int slot)
+    {
+        int site = squad.Ai is { MissionTown: >= 0 } b ? b.MissionTown : squad.Ai is { Destination: { Site: >= 0 } dest } ? dest.Site : AiSystem.TownAt(data, world, world.Characters.Next[slot].Position).Site;
+        if (site < 0) return null;
+        var rooms = data.Sites[site].Buildings.Where(x => !x.Destroyed && (x.InteriorLayout.Length > 0 || x.InteriorLayouts.Count > 0)).ToList();
+        if (rooms.Count == 0) return null;
+        return rooms[Rng.Int(Rng.Hash(world.Seed, (ulong)Rng.Key(world.Characters.IdOf(slot)) ^ (ulong)world.Tick, RngPurpose.Slow, RansackSalt), rooms.Count)];
+    }
+
+    const ulong RansackSalt = 0x5261_6E73_6163_6B21;
+
+    /// <summary>
+    /// 216 Ransacking town (156 into the drawn building, then <c>Task_PatrolTownViolent</c>, which only sets running): the member runs into the building; once inside (or when the walk
+    /// ends near it) the errand ends and the next look draws another, so the raiders run from building to building.
+    /// </summary>
+    bool StepRansack(World world, TownDuty d, int g)
+    {
+        var table = world.Characters;
+        ref var gn = ref table.Next[g];
+        bool walking = gn.Task == (byte)CharacterTask.GoTo;
+        if (world.Sight.BuildingOf(g) == d.Target || !walking && Vector2.Distance(Flat(gn.Position), d.Goal) <= Settings.CageSlack) return End(world, d);
+        if (walking) return true;
+        if (++d.Tries > Settings.Walks) return End(world, d);
+        MovementSystem.GoTo(table, g, d.Goal, SpeedMode.Run);
         return true;
     }
 

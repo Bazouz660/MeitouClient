@@ -184,6 +184,8 @@ public static class StandardSystems
             if (population is not null) systems.Add(kidnap = new Meitou.Simulation.Kidnap.KidnapSystem(data, population, carry, o.Kidnap) { Deeds = deeds });
             // Town goals of AI squads outside the act-outs (removing downed intruders, caging them, fetching food): after the kidnapping, with the same lift; nothing in the hash until one runs.
             if (population is not null && Has(StandardParts.Ai)) systems.Add(new Meitou.Simulation.Kidnap.TownDutySystem(data, population, carry));
+            // The zones' blood smell and the blood hunters (goal 176); nothing in the hash until a corpse has flies or someone bleeds.
+            if (Has(StandardParts.Ai)) systems.Add(new SmellSystem(data, population));
         }
         // The captives' fate and the slavers' logistics: right after the kidnapping (serial, like it); nothing in the hash until a job or a town's kill timer exists.
         Meitou.Simulation.Kidnap.CaptiveSystem? captives = null;

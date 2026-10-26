@@ -167,6 +167,8 @@ public sealed class CharacterCold
     public Meitou.Simulation.Items.Inventory? Inventory { get; set; }
     /// <summary>The tick it died at (-1: alive); the corpse decays 12 game hours later (<see cref="BodySystem.SlowWorld"/>, which holds the clock back while it is carried or held).</summary>
     public long DiedTick { get; set; } = -1;
+    /// <summary>A corpse with flies (docs/game/character-stats.md "Corpses": 4 game hours after death while the weather leaves characters alone); it smells of blood (<see cref="SmellSystem"/>).</summary>
+    public bool HasFlies { get; set; }
     /// <summary>Where the character came from in a loaded save, with the saved stats and medical state (null for a character the game made itself); see <c>Meitou.Simulation.Saving</c>.</summary>
     public Saving.SavedCharacterLink? Save { get; set; }
     /// <summary>The look was changed in the character editor (<see cref="Editing.EditCharacter"/>): a save writes its CHARACTER_APPEARANCE back.</summary>
@@ -578,6 +580,7 @@ public sealed class CharacterTable
             BodyHash.Add(ref hasher, k.Stats, k.Medical);
             if (k.Inventory is null) hasher.Add(-1); else k.Inventory.Hash(ref hasher);
             hasher.Add(k.DiedTick);
+            if (k.HasFlies) hasher.Add(0x466C6965);
             hasher.Add(k.InCombat);
             if (k.CombatRunning || k.TargetFleeingTime != 0) { hasher.Add(0x43527573); hasher.Add(k.CombatRunning); hasher.Add(k.TargetFleeingTime); }   // only while set, so worlds without fights hash as before
             if (k.Steer is { Active: true } steer) steer.Hash(ref hasher);

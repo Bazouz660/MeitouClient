@@ -164,6 +164,17 @@ is not the looker's ally becomes a target only when both tests pass:
 | A lone character running away | `Task_Runaway`'s desire is 1 only when character `+0x5b8` is set, else 0.001: a fallback the planner takes when nothing else answers SELF_PRESERVATION | **Verified** (literals), flow **Observed** | `FUN_1405a34e0`, `FUN_140599d20` |
 | Attack-on-sight area / post | ROAM_FAR: 6517 around the looker; HOLD_GROUND / STAY_CLOSE: R + 40 / R + 200 + R' around the centre of movement; Hold: 80 (140) / 60 / 40 | **Verified** (literals), flow **Observed** | `FUN_140597790`, `FUN_140598630` |
 
+## Blood smell
+
+**Verified** (decompile: `ZoneSmell` ctor `FUN_140a25b30`, `addSmell` `FUN_1405e83a0`, `periodicUpdate` `FUN_14090cef0`, `Smell::update` `FUN_1408f4740`). Every zone has two
+channels: blood (rise 1/60, decay 1/240 per second) and eggs (rise 1/240, decay 1/60). Sources post each periodic update: 1 a corpse with flies, 2 a bleeding character (bleed rate
+non-zero, body state 0), 3 eggs. Blood target = corpses + 0.25 per bleeder; position = the corpses' centroid, or the bleeders' when there are no corpses or at most 0.25 x the
+bleeders (that branch partly lost in the decompile, **Observed**). The value moves toward the target at the rates, clamped. Corpse flies: [character-stats](character-stats.md#corpses).
+176 HUNTING_BLOODSMELL (`AI::scoreHuntingBlood` `FUN_140794b60`, `Task_HuntingSmell`): animals only; the blackboard keeps a zone (`+0xf8`) while its blood is at least the animal's
+ANIMAL_CHARACTER `smell blood` (`smell eggs` is the eggs threshold); else the best of its zone and its active island's, x0.8 for a neighbour, x0.5 otherwise, above the threshold;
+desire 1 with one. The task runs (movement mode 2) to the smell's position; no end of its own. Data: "Smell Hunter" in the two Blood Hunter packages. SQUAD_TEMPLATE `blood smell mult`
+is read into the platoon's patrol settings; its consumer was not traced (**Unknown**).
+
 ## Unknowns
 
 - Slot 14 `+0xb4`, slot 60's `+0xd5`, the hearing re-roll factor, the meaning of

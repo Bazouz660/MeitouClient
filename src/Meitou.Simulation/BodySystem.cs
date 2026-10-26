@@ -350,12 +350,31 @@ public sealed class BodySystem(GameConstants constants, BodyOptions? options = n
                 // "corpse unloaded": a corpse in a zone of the map that is not active goes at once, carried or not (FUN_1405ccd90, after the decay test; Verified).
                 bool unloaded = world.LoadedZones is { } active && WorldLayout.ZoneOf(table.Next[i].Position.X, table.Next[i].Position.Z) is { X: >= 0 and < WorldLayout.ZoneCount, Y: >= 0 and < WorldLayout.ZoneCount } zone
                     && !active.Contains(zone);
-                if (!unloaded && world.Tick - cold.DiedTick <= CorpseTicksOf(world)) continue;
+                if (!unloaded && world.Tick - cold.DiedTick <= CorpseTicksOf(world))
+                {
+                    Flies(world, i, cold);
+                    continue;
+                }
                 var corpse = new CharacterId(i, table.Next[i].Generation);
                 world.Uniques.Left(corpse);
                 table.Remove(corpse);
             }
         }
+    }
+
+    /// <summary>Game hours after death before flies come (<c>FUN_1405ccd90</c>, <b>Verified</b> literal).</summary>
+    public const float FliesHours = 4;
+
+    /// <summary>
+    /// Corpse flies (<c>FUN_1405ccd90</c>, docs/game/character-stats.md "Corpses"): a corpse of a race that is not a robot gets them <see cref="FliesHours"/> after its death while the weather
+    /// there acts on no one (<see cref="Meitou.Data.World.WeatherAffecting.None"/>) and loses them while it does. A world without weather has none.
+    /// </summary>
+    static void Flies(World world, int slot, CharacterCold cold)
+    {
+        var at = world.Characters.Next[slot].Position;
+        bool calm = cold.Race is { IsRobot: false } && world.Weather?.At(at.X, at.Z) is { Affect: Meitou.Data.World.WeatherAffecting.None };
+        if (!calm) cold.HasFlies = false;
+        else if (!cold.HasFlies && (world.Tick - cold.DiedTick) * world.TickSeconds > FliesHours * World.SecondsPerGameHour) cold.HasFlies = true;
     }
 
     /// <summary>How far a burst character's gear falls (an engine choice).</summary>

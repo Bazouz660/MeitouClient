@@ -790,6 +790,14 @@ Arrests, the recognition meter and the marker are hashed only while set. What a 
   cannibal rule sends phase 2 at the third carrier), three are caged at the faction's Skinhouse HQ (it has three cages), the fourth, on the leader, is carried on towards the campaign's far home.
   A save and load keeps the three caged and `Kidnapped`; a second capture writes the same keys. Cannibal AI squads at home lift and cage a downed player character in about two seconds.
 
+### Blood smell
+
+`SmellSystem` (serial `SlowWorld`, every 30 ticks; facts: [perception](game/perception.md#blood-smell)): each zone's blood target is its corpses with flies plus 0.25 per bleeder, its
+position their centroid (the bleeders' when corpses are none or at most 0.25 of them); the value rises 1/60 and falls 1/240 per game second. Corpses get flies 4 game hours after
+death while the weather there acts on no one (`BodySystem.Flies`, `CharacterCold.HasFlies`; none in a world without weather). An animal squad whose package lists 176 hunts
+the zone with the best value (own x1, neighbour x0.8, other x0.5) above its ANIMAL_CHARACTER `smell blood`, keeps it while the value holds, and its members run to the
+position. Engine: every loaded zone is a candidate; a hunter stops within 50.
+
 ### Town duties
 
 `Kidnap/TownDutySystem` (serial `SlowWorld`, after the kidnapping; with the population and the AI): goals of an AI squad's running package that no act-out covers, per member,
@@ -804,6 +812,8 @@ every 15 ticks, by `PopulationSystem.GoalDuty` (facts: [ai-tasks](game/ai-tasks.
 - **158 / 283 Shooing** (`AI::findStrangersInMyBuilding`; 283 only while the home is private): the first character in the squad's home building that is neither allied nor an
   enemy, not down, caged, its faction's slave or law enforcement, or (an NPC squad) a player character there not sneaking or spotted; the member walks at it and sends event 9
   (17 to an enemy) every 5 s (engine pacing; the dialogue data escalates); after 25 game minutes, once the stranger is getting away, event 60 and done; over once it is out.
+- **216 Ransacking town** (`AI::findRandomBuildingInTown`): a member draws a random standing building with an interior in its mission town (blackboard, else the campaign's
+  destination, else where it stands), draws its weapon and runs into it; inside, the errand ends and the next look draws another.
 - **131 Looting food** (`AI::findSomethingToLootFoodFrom`, shared with 243): a member holding no food in any town (not only its own) walks to the nearest such store, not a
   container of its own faction (engine reading of the own-shop skip), and takes every food item that fits (`Task_EmptyMachine` moves items while there is room).
 - **212 Confiscating goods** (`AI::findPrisonerWithContraband`): in its town, the first occupied cage (list order) whose prisoner carries a stolen item; at the cage it takes

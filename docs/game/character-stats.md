@@ -444,7 +444,9 @@ is skipped while `DAT_142134690` +0x2f0 is set (**Unknown** flag). Meitou: `Medi
 **Verified** (decompile of `CharacterHuman::vfunc_29` `FUN_1405ccd90`, game clock `FUN_14066cc00` in hours). The
 death time is set on the first update as a corpse. A corpse neither carried (+0x3d4) nor in a bed or cage
 (+0x2f8 = 0) is destroyed ("corpse decayed") once more than 12 hours have passed; while held, the death time is
-kept at least now - 6, so it lies 6 more hours once let go. A corpse whose zone is not loaded is
+kept at least now - 6, so it lies 6 more hours once let go. Flies (**Verified**, same function): 4 game hours after death, while the area's weather has `affectCharactersType` 0 (none), the corpse of a non-robot race gets the effect
+`Fly-Particle` (`55393-Newwworld.mod`) and the ambient sound `Corpse Flies` (`95425-sfx.mod`) and posts blood smell type 1 each pass ([perception](perception.md#blood-smell));
+under a weather that affects characters it loses them. A corpse whose zone is not loaded is
 destroyed at once ("corpse unloaded"), carried or not: the zone is the 64 x 64 grid cell of the corpse's x/z (`FUN_140a08b20`, `FUN_140a08ae0`: ZoneMap record 0x168 bytes from `+200`
 of the zone manager) and "loaded" is its byte `+0xb1` (`FUN_140a090b0`; `+0xb0` = requested, `FUN_140a090d0`; `FUN_140a09360` = either). A position outside the grid is never removed.
 No other test: nothing in the original ties a corpse to its squad, so a platoon unloading or despawning does not delete its dead.
