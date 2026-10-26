@@ -1,4 +1,5 @@
 using Meitou.Data.World;
+using Meitou.Data.Gameplay.Construction;
 using Meitou.Simulation.Construction;
 
 namespace Meitou.Simulation.Production;
@@ -44,6 +45,8 @@ public sealed partial class ProductionSystem
         {
             m.Power = 1;
             if (m.Data.IsWind) (m.Wind, m.WindRated) = (WindShare(world, m), Rated(world, m));
+            if (m.Data.Function == MachineData.RainCollectorFunction)
+                m.Rain = world.Weather?.At(m.Position.X, m.Position.Z) is { Affect: not WeatherAffecting.Acid } here ? here.Wetness : 0;
             if (!m.Data.IsConsumer && !m.Data.IsGenerator && !m.Data.IsBattery) continue;
             if (Site(world, m.Site) is not { Complete: true } site) continue;
             if (!grids.TryGetValue(site.Town, out var grid)) grids[site.Town] = grid = [];
@@ -127,7 +130,8 @@ public sealed partial class ProductionSystem
             else if (m.Data.IsBattery) { m.Demand = m.PowerOn && m.Charge > 0 ? Rated(world, m) : 0; batteries += m.Demand; }
             else
             {
-                float share = m.Data.PowerOperators > 0 ? (float)m.LastOperators / m.Data.PowerOperators : 1;
+                // A farm wants its whole draw whoever works it (FarmBuilding slot 163, FUN_1400df330: |power output + increase|).
+                float share = m.Data.Farm is null && m.Data.PowerOperators > 0 ? (float)m.LastOperators / m.Data.PowerOperators : 1;
                 m.Demand = m.PowerOn ? MathF.Abs(Rated(world, m)) * share : 0;
                 demandTotal += m.Demand;
                 consumers.Add(m);

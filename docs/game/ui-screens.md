@@ -599,12 +599,16 @@ How a building gets selected: [ui-input](ui-input.md#building-picking-and-select
 - **Production building** (**Verified** decompile of ProductionBuilding's slots, the strings `OK` / `-` / `+` read from the exe bytes; the formulas match the owner's
   screenshot of a worked Iron Resource: Iron Quality 100, Workers 1/3, Efficiency 40%, Max efficiency 120%). Section 6 (`FUN_1402ffeb0`) is slot 186 (richness),
   155 (Workers, `FUN_1403075b0`), 154 (`FUN_140306050`), 153 (power, `FUN_140307bf0`); section 4 is slot 114 (header word), 115 (Condition rows), 153.
-  - Slot 154 (shared by Storage, Research, Furnace, Crafting, Turret, Light, Generator, WindGenerator, RainCollector and Torture buildings; FarmBuilding has its
-    own `FUN_1400e2d50`, **Unknown**): share = operators / raw `max operators` (1 when 0), work = slot 109 (health × power) × share × 100, max = slot 119
+  - Slot 154 (shared by Storage, Research, Furnace, Crafting, Turret, Light, Generator, WindGenerator, RainCollector and Torture buildings; farms below): share =
+    operators / raw `max operators` (1 when 0), work = slot 109 (health × power) × share × 100, max = slot 119
     (`FUN_140546d10`: yield slot 92 × `FUN_140297b70`, `output rate` +0x1a8 × the research production mult). `Efficiency:` int(max × work)`%`, value `#140806`
-    when work >= 90 else `#59231a`; `Max efficiency:` int(max × 100)`%` in `#140806`; labels Main. Both carry a rows tooltip that starts with slot 156
-    (`FUN_14030a130`): `Max possible efficiency:` int(rate × 100)% (Main) and, for function 1 / 27 with a resource, `Iron / Stone / Copper / Carbon / Water
-    under ground:` or `Ground Fertility:` with n = int((1 − yield) × rate × 100) shown as `+` −n% when n < 0, else −n% (`#59231a` when yield < 1, else `#140806`).
+    when work >= 90 else `#59231a`; `Max efficiency:` int(max × 100)`%` in `#140806`; labels Main. Both carry a rows tooltip that starts with slot 156:
+    ProductionBuilding's `FUN_14030a130` (also Farm, Furnace, Crafting, Generator, WindGenerator, Torture): `Max possible efficiency:` int(rate × 100)% (Main) and, for function 1 / 27 with a resource, `Iron / Stone / Copper / Carbon / Water
+    under ground:` or `Ground Fertility:` with n = int((1 − yield) × rate × 100) shown as `+` −n% when n < 0, else −n% (`#59231a` when yield < 1, else `#140806`);
+    Useable / Storage / Light / Research `FUN_140305d70` only the rate row, Turret `FUN_14030cb40` only `Max possible efficiency:` int(slot 119 × 100)%,
+    RainCollector `FUN_14030b460` only `Rain strength:` int(r × 100)% (Main, Bad at r <= 0), r (`FUN_140298400`) = the `wetness` (WEATHER loader
+    `FUN_1409de7b0`, +0x94) of the current weather of the region at the building when slot 59 is null or +0x240 is set and that weather's `affect type` is not 2
+    (acid), else 0.
     Efficiency then adds `Damage:`, `Power:` (only for a consumer, `power output` < 0) and `Num workers:` (raw max = operators), each `OK` (Good) or `-`
     int((1 − kept) × rate × 100)% (Bad), and `Total:` the line's value (Main); Max efficiency adds only `Total:`. Slot 109 (`FUN_140296e00`) = 0 when slot 164
     fails, else the construction fraction (`FUN_140547200`, progress / target capped at 1) × granted / demand (1 without demand). Slot 164 (**Verified**) is
@@ -612,16 +616,27 @@ How a building gets selected: [ui-input](ui-input.md#building-picking-and-select
     0xb, the null handle; what it holds is **Unknown**, as for the [night flag](../formats/lights.md)), else only while it is not daytime (`FUN_14066cb20`,
     sunrise < hour < sunset): a standalone light shows Efficiency 0% by day. The Damage and Power rows read their own values, not slot 109.
   - Who shows it (**Verified**, each class's slot 40): ProductionBuilding's `FUN_1402ffeb0` (also Generator, WindGenerator, RainCollector, Torture), Research
-    `FUN_140309680` and Crafting `FUN_1402ff070` in section 6 as 155, 154, 153; Useable / Storage / Light `FUN_140304e90` in section 6 as 155 then 154, except
-    `Healing bonus:` instead of both when slot 94 is 6 (BF_BED, **Observed** reading) and `Max Skill Level:` instead of 154 for class type 7 (training);
-    Turret `FUN_14030c2a0` in section 7 (155, 154); Furnace `FUN_14030b750` never.
+    `FUN_140309680` and Crafting `FUN_1402ff070` in section 6 as 155, 154, 153; Useable / Storage / Light `FUN_140304e90` (only with a town, `FUN_1400f6c20`) in
+    section 6 as 155 then 154, except for function 6 (BF_BED; slot 94 `FUN_1400f6b30` is the function +0x158, 27 for a mine whose `FUN_1405946f0` fails)
+    `Healing bonus:` `x{1,num}` of the float +0x1a4 instead of both, and for function 7 (BF_TRAINING, +0x158) `Max Skill Level:` int(+0x1a4) − 1 with the
+    tooltip "This is the maximum skill a person can train up to using this equipment. For anyone higher it is a waste of time." instead of 154; BF_SKELETON_BED
+    (25) gets both. +0x1a4 = `output rate` × `production mult` ÷ raw `max operators` when above 1 (`FUN_14029e460`; Bed 8, Camp Bed 4, dummies MkI–III 6/11/16
+    by the probe of the merged data). Turret `FUN_14030c2a0`: section 6 the gun's slot 14 lines then 154, section 7 (`ExtendedStatsText`) 155 then 154; Furnace
+    `FUN_14030b750` never (no call of slot 154 or 155).
+  - Farms (FarmBuilding slot 40 `FUN_1400e21a0` runs `FUN_1402ffeb0` first, so section 6 is its own 186, 155, 154, 153): Workers (`FUN_1400e0020`) is `-` with
+    "No workers required until the crop is ready to harvest." while grown (+0x518) is below 1, else the common line. Efficiency (`FUN_1400e2d50`) only on a farm
+    with +0x558 set, which the constructor `FUN_1400e8420` sets when the FARM_DATA's `fertility effect` is 0 (hydroponic and indoor farms): one line, no Max
+    efficiency, no operator share: `Efficiency:` int(max × slot 109 × 100), × the `drought multiplier` (+0x550) while the production state is 0 (out of water);
+    `#140806` when slot 109 × 100 >= 90, else `#59231a`. Its tooltip has no slot 156 rows: `Damage:` and `Power:` (a consumer; granted / slot 163, which on a
+    farm `FUN_1400df330` is |power output + research increase|, no operator share) as above, `No Water:` int((drought − 1) × 100)% (Bad) while out of water,
+    `Total:`.
   - Slot 114 (`FUN_140300090`), first match, all but Working in Bad with a tooltip: Broken, Under construction, Switched off (off with demand), No power, Production
     queue empty (status 3), Out of resource (status 0 and slot 149), Output full (status 1), No power (demand > 0, granted <= 0), No workers (raw max > 0,
     nobody), Working (tooltip from slot 168, **Unknown**).
   - Rocks (**Observed**, same screenshot): the name bar's right is the player's faction ("Nameless"), so the rock passes slot 113's owner-is-player branch (how it
     gets that owner is **Unknown**); the medical rows are `Condition` 2, full: the target of `build materials` 2.
-  Meitou (`PlayerInterface.Production.cs`, `MachineSnapshot.Efficiency`): Workers and Efficiency on every machine but farms, furnaces, beds (functions 6 and
-  25, engine reading), training dummies and turrets (no second stats panel drawn), unmined rocks too (0 workers); health is `Machine.Health` (progress / target),
+  Meitou (`PlayerInterface.Production.cs`, `MachineSnapshot.Efficiency` and `Panel`): the lines per class as above, unmined rocks too (0 workers), the turret's
+  section 7 in `ExtendedStatsText` while the panel is expanded; the turret's gun lines are not built; health is `Machine.Health` (progress / target),
   which also scales production (`WorkFactor`) and the sound efficiency; the panel zeroes it for a BF_LIGHT machine by day (slot 164; every BF_LIGHT taken as
   standalone, as Meitou's lights; display only, the sim has no clock and lights produce nothing). Mines and rocks get the header Output full / No workers /
   Working (plus the power words) and no `Output:` line; other machines keep Meitou's status words and `Output:` line.

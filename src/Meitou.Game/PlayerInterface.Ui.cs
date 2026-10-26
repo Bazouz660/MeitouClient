@@ -185,7 +185,7 @@ sealed partial class PlayerInterface
         // A selected building shows its status word in the medical header and its condition rows below it.
         if (buildingNow is not null)
         {
-            var (_, _, _, buildingStatus, bad) = BuildingLines(buildingNow);
+            var (_, _, _, buildingStatus, bad, _) = BuildingLines(buildingNow);
             b.Text["HealthText"] = buildingStatus;
             b.Properties["HealthText"] = new Dictionary<string, string> { ["TextAlign"] = "Center", ["TextColour"] = bad ? BadColour : MyGuiColours.InkText };
         }

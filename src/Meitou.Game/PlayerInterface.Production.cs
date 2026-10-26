@@ -276,13 +276,13 @@ sealed partial class PlayerInterface
     /// </summary>
     static void AddEfficiencyLines(Meitou.Simulation.Production.EfficiencyView e, int resource, List<HudLine> stats, bool active = true)
     {
-        static string Pc(int v) => v.ToString(CultureInfo.InvariantCulture) + "%";
         float share = e.MaxOperators > 0 ? 1f / e.MaxOperators * e.Operators : 1;
         float work = (active ? e.Health * e.Power : 0) * share * 100;
         float max = e.Yield * e.Rate;
         int total = (int)(max * work);
-        // Slot 156 (FUN_14030a130): the rate, then the resource's loss or gain, in Bad when the yield is under 1.
-        var head = new List<(string, string)> { (Loc.Tr("Max possible efficiency:"), MainTag + Pc((int)(e.Rate * 100))) };
+        // Slot 156: a rain collector's rain strength (FUN_14030b460, Bad at 0); else (FUN_14030a130) the rate, then the resource's loss or gain, in Bad when the yield is under 1.
+        var head = e.Rain is { } rain ? [(Loc.Tr("Rain strength:"), (rain > 0 ? MainTag : BadTag) + Pc((int)(rain * 100)))]
+            : new List<(string, string)> { (Loc.Tr("Max possible efficiency:"), MainTag + Pc((int)(e.Rate * 100))) };
         string? under = resource switch { 1 => "Iron under ground:", 2 => "Stone under ground:", 3 => "Copper under ground:", 4 => "Carbon under ground:", 5 => "Water under ground:", 6 => "Ground Fertility:", _ => null };
         if (under is not null)
         {
@@ -298,11 +298,71 @@ sealed partial class PlayerInterface
         stats.Add(new("Max efficiency:", Pc((int)(max * 100)), MainColour, TooltipRows: [.. head, (Loc.Tr("Total:"), MainTag + Pc((int)(max * 100)))]));
     }
 
+    static string Pc(int v) => v.ToString(CultureInfo.InvariantCulture) + "%";
+
+    /// <summary>
+    /// A farm's Workers line (FarmBuilding slot 155, <c>FUN_1400e0020</c>): until the crop has grown, <c>-</c> with "No workers required until the crop is ready to harvest.", then the
+    /// common line.
+    /// </summary>
+    static HudLine FarmWorkersLine(MachineSnapshot m, Meitou.Simulation.Production.EfficiencyView e) => m.Farm is { Growth: < 1 }
+        ? new("Workers:", "-", MainColour, Tooltip: "No workers required until the crop is ready to harvest.") : WorkersLine(e.Operators, e.MaxOperators);
+
+    /// <summary>
+    /// A hydroponic farm's one Efficiency line (FarmBuilding slot 154, <c>FUN_1400e2d50</c>; other farms draw none): int(max x health x power x 100), x the <c>drought multiplier</c> while
+    /// out of water, in ink when health x power reaches 0.9, else Bad. No operator share and no Max efficiency line; the tooltip has no slot 156 rows, only Damage, Power (a consumer),
+    /// <c>No Water:</c> (drought - 1, Bad) while out of water, and Total.
+    /// </summary>
+    static void AddFarmEfficiencyLine(Meitou.Simulation.Production.EfficiencyView e, List<HudLine> stats)
+    {
+        float work = e.Health * e.Power, max = e.Yield * e.Rate;
+        int total = (int)(work * max * 100 * (e.Starved ? e.Drought : 1));
+        string Loss(float kept) => kept >= 1 ? GoodTag + Loc.Tr("OK") : BadTag + "-" + Pc((int)((1 - kept) * max * 100));
+        var rows = new List<(string, string)> { (Loc.Tr("Damage:"), Loss(e.Health)) };
+        if (e.Consumer) rows.Add((Loc.Tr("Power:"), Loss(e.Power)));
+        if (e.Starved) rows.Add((Loc.Tr("No Water:"), BadTag + Pc((int)((e.Drought - 1) * 100))));
+        rows.Add((Loc.Tr("Total:"), MainTag + Pc(total)));
+        stats.Add(new("Efficiency:", Pc(total), MainColour, work * 100 >= 90 ? null : BadColour, TooltipRows: rows));
+    }
+
+    /// <summary>
+    /// The Workers and Efficiency lines of a machine's class (slot 40, docs/game/ui-screens.md "Selected building"): Stats 1 (section 6) gets them in <paramref name="stats"/>, Stats 2
+    /// (section 7, only a turret's) in <paramref name="extended"/>. <paramref name="active"/> is slot 164.
+    /// </summary>
+    static void AddClassLines(MachineSnapshot m, Meitou.Simulation.Production.EfficiencyView e, int resource, List<HudLine> stats, List<HudLine> extended, bool active)
+    {
+        switch (m.Panel)
+        {
+            case MachinePanel.Production:
+                stats.Add(WorkersLine(e.Operators, e.MaxOperators));
+                AddEfficiencyLines(e, resource, stats, active);
+                break;
+            case MachinePanel.Farm:
+                stats.Add(FarmWorkersLine(m, e));
+                if (m.Hydroponic) AddFarmEfficiencyLine(e, stats);
+                break;
+            case MachinePanel.Bed:
+                // UseableStuff slot 40 (FUN_140304e90) for BF_BED: the output value in place of both lines.
+                stats.Add(new("Healing bonus:", Loc.Tr("x{1,num}", m.OutputValue), MainColour));
+                break;
+            case MachinePanel.Training:
+                stats.Add(WorkersLine(e.Operators, e.MaxOperators));
+                stats.Add(new("Max Skill Level:", ((int)m.OutputValue - 1).ToString(CultureInfo.InvariantCulture), MainColour,
+                    Tooltip: "This is the maximum skill a person can train up to using this equipment. For anyone higher it is a waste of time."));
+                break;
+            case MachinePanel.Turret:
+                // TurretBuilding slot 40 (FUN_14030c2a0): section 6 the gun's lines (not built) and Efficiency, section 7 Workers and Efficiency.
+                AddEfficiencyLines(e, resource, stats, active);
+                extended.Add(WorkersLine(e.Operators, e.MaxOperators));
+                AddEfficiencyLines(e, resource, extended, active);
+                break;
+        }
+    }
+
     /// <summary>
     /// The stats lines of a selected machine: the farm's crop and growth, the output's progress, then (section 6: slots 155, 154, 153) Workers and Efficiency per
     /// <see cref="AddEfficiencyLines"/>, the power lines, and the bench's tech level.
     /// </summary>
-    void AddMachineLines(MachineSnapshot m, List<HudLine> stats, ref string status, ref bool bad, Meitou.Simulation.Production.RichnessView? rich = null)
+    void AddMachineLines(MachineSnapshot m, List<HudLine> stats, List<HudLine> extended, ref string status, ref bool bad, Meitou.Simulation.Production.RichnessView? rich = null)
     {
         string N(int v) => v.ToString(CultureInfo.InvariantCulture);
         string P(float v) => ((int)(Math.Clamp(v, 0, 1) * 100)).ToString(CultureInfo.InvariantCulture) + "%";
@@ -322,12 +382,8 @@ sealed partial class PlayerInterface
             bad = m.Status == 1;
             stats.Add(new("Output:", $"{o.Name} {N(o.Count)}/{N(o.Capacity)}", MainColour));
         }
-        if (m.Efficiency is { } e)
-        {
-            stats.Add(WorkersLine(e.Operators, e.MaxOperators));
-            // Slot 164 (LightBuilding FUN_140297890): a light works only while it is not daytime (all other classes: always), as Meitou's lights read every BF_LIGHT building as standalone.
-            AddEfficiencyLines(e, rich?.Resource ?? 0, stats, m.Function != Meitou.Data.World.WorldLights.LightFunction || !session.Clock.IsDaytime);
-        }
+        // Slot 164 (LightBuilding FUN_140297890): a light works only while it is not daytime (all other classes: always), as Meitou's lights read every BF_LIGHT building as standalone.
+        if (m.Efficiency is { } e) AddClassLines(m, e, rich?.Resource ?? 0, stats, extended, m.Function != Meitou.Data.World.WorldLights.LightFunction || !session.Clock.IsDaytime);
         // Power, in the original's words where it has them (GeneratorBuilding vfunc_114, vfunc_153); "No power" and "Low power" are Meitou's.
         if (m.Power is { } pw)
         {
@@ -359,10 +415,6 @@ sealed partial class PlayerInterface
             }
         }
         if (m.TechLevel > 0) stats.Add(new("Tech level:", N(m.TechLevel), MainColour));
-        if (m.Efficiency is not null) return;
-        // FUN_1403075b0: an automatic machine (raw max operators 0) reads "-".
-        if (m.IsAutomatic) stats.Add(new("Workers:", "-", MainColour, Tooltip: "This machine is fully automatic."));
-        else if (m.MaxOperators > 0) stats.Add(new("Workers:", $"{N(m.Operators)}/{N(m.MaxOperators)}", MainColour));
     }
 
     // ---- the overview's research tab ----

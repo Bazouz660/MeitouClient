@@ -81,6 +81,11 @@ public sealed record MachineData
     public (float Min, float Max)? WindRotor { get; init; }
     /// <summary>The BUILDING's raw <c>output rate</c> (the exe's <c>+0x1a8</c>), a factor of the efficiency its sound emitter is told (docs/audio.md "Point emitters"); 1 without one.</summary>
     public float OutputRate { get; init; } = 1;
+    /// <summary>
+    /// The exe's output value <c>+0x1a4</c> (<b>Verified</b>, loader <c>FUN_14029e460</c>): <c>output rate</c> x the functionality's <c>production mult</c>, / the raw <c>max operators</c>
+    /// when above 1. A bed's <c>Healing bonus</c>, a training dummy's skill cap, a turret's damage.
+    /// </summary>
+    public float OutputValue { get; init; } = 1;
     public bool IsBattery => PowerCapacity > 0;
     public bool IsGenerator => PowerOutput > 0 && !IsBattery;
     public bool IsConsumer => PowerOutput < 0;
@@ -198,6 +203,7 @@ public sealed record MachineData
             IsWind = wind,
             WindRotor = wind ? WindRotorOf(db, building, 0) : null,
             OutputRate = building.GetFloat("output rate", 1),
+            OutputValue = building.GetFloat("output rate", 1) * (function?.GetFloat("production mult", 1) ?? 1) / (rawOperators > 1 ? rawOperators : 1),
         };
     }
 }

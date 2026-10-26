@@ -2,8 +2,8 @@ using Meitou.Data.World;
 
 namespace Meitou.Simulation;
 
-/// <summary>The weather of the BIOME_GROUP region at a place: its current weather's <c>affect type</c>, the region's strength s, the region's acidic ground and water, and its wind speed (units/s).</summary>
-public readonly record struct WeatherHere(WeatherAffecting Affect, float Strength, float AcidicGround, float AcidicWater, float WindSpeed = 0);
+/// <summary>The weather of the BIOME_GROUP region at a place: its current weather's <c>affect type</c>, the region's strength s, the region's acidic ground and water, its wind speed (units/s) and the weather's <c>wetness</c>.</summary>
+public readonly record struct WeatherHere(WeatherAffecting Affect, float Strength, float AcidicGround, float AcidicWater, float WindSpeed = 0, float Wetness = 0);
 
 /// <summary>
 /// The weather the simulation reads (docs/formats/weather.md "Effects on characters"): the host's scheduler, which runs on the game clock and the world seed, and the

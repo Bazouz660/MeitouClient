@@ -373,10 +373,12 @@ sealed partial class PlayerInterface
         float row = 20 * Height / 1080f, sidePixels = StandardPixels;
         if (BuildingFocus() is { } focus)
         {
-            var (name, state, stats, _, _) = BuildingLines(focus);
+            var (name, state, stats, _, _, extended) = BuildingLines(focus);
             AddLines(controls, "NameText", [name], row, sidePixels);
             AddLines(controls, "StateText", state, row, sidePixels);
             AddLines(controls, "StatsText", stats, row, sidePixels);
+            // Section 7 ("Stats 2"): only a turret fills it (TurretBuilding slot 40: Workers and Efficiency).
+            if (infoExpanded) AddLines(controls, "ExtendedStatsText", extended, row, sidePixels);
             AddMedicalText(controls, sidePixels);
             return;
         }

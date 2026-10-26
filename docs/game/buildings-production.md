@@ -652,7 +652,8 @@ and `power capacity` (battery store, "in seconds" per fcs.def), plus research ([
   Section 6 (stats): `Wind Speed` `{1,num=fix,p=1} mph` of the region's wind at the building, tooltip "The current wind speed". Meitou
   (`PlayerInterface`): the same for the player's built wind generators, both bars in the yellow layer (the original's layer colours not seen), the rows after
   the condition row (order **Observed**), state "Running" otherwise, no state tooltip.
-- **Demand** (`vfunc_163`): a consumer's |output + increase|, x operators / raw `max operators` when that is above 0; a
+- **Demand** (`vfunc_163`, `FUN_140299630`): a consumer's |output + increase|, x operators / raw `max operators` when that is above 0, only while slot 164 holds (a
+  lamp outdoors by day wants nothing); a farm (`FUN_1400df330`, **Verified**) always its whole |output + increase|, no operator share; a
   battery's rate while below its capacity health x (capacity + increase) (`FUN_140297650`).
 - **Town frame** (`Town::vfunc_87`): consumers sorted by ascending demand (`FUN_140927350`); each takes
   min(demand, supply left / consumers left). Consumers left short with `gets battery` are counted; if batteries were in

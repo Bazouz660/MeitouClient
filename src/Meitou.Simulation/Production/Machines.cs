@@ -136,6 +136,11 @@ public sealed class Machine
     public float WindSpeed { get; set; }
     public float WindRated { get; set; }
     /// <summary>
+    /// A rain collector's rain strength (<c>FUN_140298400</c>): the <c>wetness</c> of the current weather of the region at the site unless that weather's <c>affect type</c> is acid
+    /// (2), 0 without weather; derived each tick for its panel.
+    /// </summary>
+    public float Rain { get; set; }
+    /// <summary>
     /// What its parts with <c>rotation function</c> ROTATION_OUTPUT turn by (<c>getOutputBasedRotationSpeedMult</c>, docs/game/buildings-production.md "Rotating parts"): a generator's output x 0.01
     /// while switched on, every other machine's <see cref="Efficiency"/>. Derived each tick for the host's display; not saved, not hashed.
     /// </summary>

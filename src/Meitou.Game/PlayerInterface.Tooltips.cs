@@ -372,7 +372,7 @@ sealed partial class PlayerInterface
         }
         if (BuildingFocus() is { } focus)
         {
-            var (_, _, _, status, _) = BuildingLines(focus);
+            var (_, _, _, status, _, _) = BuildingLines(focus);
             if (BuildingStatusTip(status, Machine(focus.SiteId)?.Farm is not null) is { } tip) Add("HealthText", tip);
         }
         else if (Lead()?.Body is { } body) Add("HealthText", HealthWordTip(body));

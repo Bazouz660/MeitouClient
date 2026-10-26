@@ -83,10 +83,11 @@ sealed partial class PlayerInterface
     /// Dismantle and PAUSE CONSTRUCTION buttons), the stats lines (the first door's Open/Close and Security, buttons on the player's own building; Open to public for another
     /// faction's) and the status word of the medical header. A house speaks through its first door as the original selects it as that door: the door's lines come first.
     /// </summary>
-    internal (HudLine Name, HudLine[] State, HudLine[] Stats, string Status, bool Bad) BuildingLines(SelectedBuilding focus)
+    internal (HudLine Name, HudLine[] State, HudLine[] Stats, string Status, bool Bad, HudLine[] Extended) BuildingLines(SelectedBuilding focus)
     {
         var state = new List<HudLine>();
         var stats = new List<HudLine>();
+        var extended = new List<HudLine>();
         string status = "Normal";
         bool bad = false;
         bool own = focus.SiteId is not null;
@@ -128,7 +129,7 @@ sealed partial class PlayerInterface
             }
             var rich = session.CurrentSnapshot.InspectedRichness is { } r && r.Instance == focus.Instance ? r : (Meitou.Simulation.Production.RichnessView?)null;
             if (rich is { } richness) AddRichnessLine(richness, stats);
-            if (own && Machine(focus.SiteId) is { } machine) AddMachineLines(machine, stats, ref status, ref bad, rich);
+            if (own && Machine(focus.SiteId) is { } machine) AddMachineLines(machine, stats, extended, ref status, ref bad, rich);
             else if (rich is { Efficiency: { } e } unmined)
             {
                 // A rock nobody has mined yet has no machine; the original shows its lines all the same.
@@ -153,7 +154,7 @@ sealed partial class PlayerInterface
             stats.Add(new("For sale:", Loc.Tr("c.{1,num}", price), GoodColour, GoodColour, Action: "meitou:building-buy", ButtonWidth: 0.4f));
         // A rock names the player's faction as its owner (Observed: the original's name bar of an Iron Resource reads the player's faction).
         bool rock = own && !player;
-        return (new(focus.Name, mine || rock ? FactionName?.Invoke(session.World.Player.Faction) ?? "" : focus.Owner ?? "", TitleColour, TitleColour), [.. state], [.. stats], status, bad);
+        return (new(focus.Name, mine || rock ? FactionName?.Invoke(session.World.Player.Faction) ?? "" : focus.Owner ?? "", TitleColour, TitleColour), [.. state], [.. stats], status, bad, [.. extended]);
     }
 
     /// <summary>The upgrade chain of a BUILDING record and its build data (the panel's [UPGRADE] / [DOWNGRADE] and their tooltips); the host sets them.</summary>
