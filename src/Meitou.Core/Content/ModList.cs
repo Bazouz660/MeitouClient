@@ -143,14 +143,15 @@ public sealed class ModInfo(string name, string path, ModSource source)
 {
     ModHeader? header;
     bool headerRead;
+    bool? nativePlugin;
 
     public string Name { get; } = name;
     public string Path { get; } = path;
     public ModSource Source { get; } = source;
     public string Folder => System.IO.Path.GetDirectoryName(Path)!;
 
-    /// <summary>An RE_Kenshi plugin mod: its data loads in Meitou, its DLLs do not.</summary>
-    public bool HasNativePlugin => File.Exists(System.IO.Path.Combine(Folder, ModList.NativePluginFile));
+    /// <summary>An RE_Kenshi plugin mod: its data loads in Meitou, its DLLs do not. Checked on first use.</summary>
+    public bool HasNativePlugin => nativePlugin ??= File.Exists(System.IO.Path.Combine(Folder, ModList.NativePluginFile));
 
     /// <summary>The <c>.mod</c> file's header, read on first use; null when it is unreadable.</summary>
     public ModHeader? Header

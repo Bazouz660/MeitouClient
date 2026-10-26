@@ -48,10 +48,21 @@
   <ItemGroup Condition="'$(RuntimeIdentifier)' == ''">
     <None Include="$(VpxRoot)/bin/vpx*.dll" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
-  <!-- On publish, the runtime's native libraries (Skia, HarfBuzz, ANGLE) go into the executable as native/<file> resources instead of next to it. -->
+  <!-- On publish, the runtime's native libraries (Skia, HarfBuzz, ANGLE) go into the executable as native/<file> resources instead of next to it.
+       Their names and hashes go in as the NativeLibraries metadata, so the launcher names their folder without hashing them at startup. -->
   <Target Name="EmbedNativeLibraries" AfterTargets="ResolvePackageAssets" Condition="'$(_IsPublishing)' == 'true' and '$(RuntimeIdentifier)' != ''">
     <ItemGroup>
-      <EmbeddedResource Include="@(NativeCopyLocalItems)" Condition="'%(Extension)' != '.pdb' and '%(Extension)' != '.dbg'" LogicalName="native/%(Filename)%(Extension)" WithCulture="false" Type="Non-Resx" />
+      <_NativeToEmbed Include="@(NativeCopyLocalItems)" Condition="'%(Extension)' != '.pdb' and '%(Extension)' != '.dbg'" />
+      <EmbeddedResource Include="@(_NativeToEmbed)" LogicalName="native/%(Filename)%(Extension)" WithCulture="false" Type="Non-Resx" />
+    </ItemGroup>
+    <GetFileHash Files="@(_NativeToEmbed)" Algorithm="SHA256" HashEncoding="hex">
+      <Output TaskParameter="Items" ItemName="_NativeHashed" />
+    </GetFileHash>
+    <ItemGroup>
+      <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+        <_Parameter1>NativeLibraries</_Parameter1>
+        <_Parameter2>@(_NativeHashed->'%(Filename)%(Extension)=%(FileHash)', ';')</_Parameter2>
+      </AssemblyAttribute>
     </ItemGroup>
   </Target>
   <Target Name="UnpublishNativeLibraries" AfterTargets="ComputeResolvedFilesToPublishList" Condition="'$(_IsPublishing)' == 'true' and '$(RuntimeIdentifier)' != ''">

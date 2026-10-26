@@ -40,7 +40,8 @@ items); the launcher never downloads or hosts mods.
   launcher adds that AOT can't compile (reflection `JsonSerializer`, for one) fails the build; JSON goes through `LauncherJson`.
 - Avalonia's native libraries (`libSkiaSharp`, `libHarfBuzzSharp`, on Windows ANGLE's `av_libglesv2`, on macOS
   `libAvaloniaNative`) can't be linked in, so the publish embeds them as `native/<file>` resources. `NativeLibraries.Load` (right
-  after Velopack's hooks) writes them once to `native/<16 hex of their SHA-256>/` in the data folder, loads them by full path and
+  after Velopack's hooks) writes them once to `native/<16 hex>/` in the data folder (a SHA-256 of the per-file hashes the build stores as the
+  `NativeLibraries` assembly metadata, so startup hashes no library), loads them by full path and
   points SkiaSharp's, HarfBuzzSharp's and Avalonia.Native's P/Invokes at them; ANGLE is then found by name as an already loaded
   module (Windows only: macOS dyld doesn't match a bare name to a loaded library, issue #16). Other `native/*` folders are deleted when not in use.
   Debug builds embed nothing and load them from beside the executable.
@@ -212,6 +213,8 @@ start the `settings.cfg` value wins. The launcher's labels come from the same `.
   Mods in a dependency cycle are kept at the end, where the original drops them. Mods not in `__mods.list` are new and start enabled.
 - Saving (Save, Play) writes `mods.cfg` (enabled `<name>.mod`, list order, CRLF) and `__mods.list` (every listed name, plus old
   names not on disk). These are the files the original game reads, so the mod list applies to it too.
+- Discovery and the header reads run off the UI thread while the window opens; until they finish (or when they fail) Save, Play
+  and the preset buttons refuse, so an unloaded list never overwrites `mods.cfg`.
 - A preset is a named, ordered list of names with enabled flags. Applying one reorders the list. Mods the preset doesn't name go
   to the end, disabled, and mods it names that aren't on disk are reported. Applying doesn't save.
 - A mod folder with `RE_Kenshi.json` is marked as a plugin mod whose DLLs Meitou ignores ([RE_Kenshi](formats/rekenshi.md)).

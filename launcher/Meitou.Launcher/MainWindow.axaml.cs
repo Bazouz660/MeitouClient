@@ -30,6 +30,8 @@ public sealed partial class MainWindow : Window
     ModRow? dragged;
     readonly Dictionary<Control, string> originalUiText = [];
     bool languageReady, populatingLanguages;
+    int modsLoad;
+    bool modsReady;
     static string Tr(string text) => LauncherText.Translate(text);
 
     const uint WS_CAPTION = 0x00C00000, WS_SYSMENU = 0x00080000, WS_MINIMIZEBOX = 0x00020000, WS_MAXIMIZEBOX = 0x00010000;
@@ -123,6 +125,7 @@ public sealed partial class MainWindow : Window
         }
         LauncherText.TranslateTree(this, originalUiText);
         foreach (var row in mods) row.LanguageChanged();
+        if (modsReady) ShowModCount();
         ShowReleases();
         PopulateLanguageOptions(install);
     }
@@ -440,24 +443,59 @@ public sealed partial class MainWindow : Window
 
     // ---- Mods ----
 
-    void LoadMods()
+    // Off the UI thread, so a large workshop folder does not hold up the window: listing the folders and reading every header (for the
+    // dependency order and the authors) is file work per mod. Until it is done the list is not saved (Play, presets), so a click
+    // meanwhile cannot write an empty mods.cfg. A later load (another Kenshi folder, Refresh) supersedes an unfinished one.
+    async void LoadMods()
     {
+        int load = ++modsLoad;
+        modsReady = false;
         mods.Clear();
-        if (install is not null)
-            foreach (var entry in ModList.LauncherOrder(install, ModList.Discover(install)))
-                mods.Add(new ModRow(entry.Mod, entry.Enabled));
+        ModsEmpty.IsVisible = false;
+        ModCount.Text = Tr("Loading");
+        var gameInstall = install;
+        List<ModEntry> entries;
+        try
+        {
+            entries = gameInstall is null ? [] : await Task.Run(() =>
+            {
+                var order = ModList.LauncherOrder(gameInstall, ModList.Discover(gameInstall));
+                // The rows show each mod's author and plugin note: read them here too, not on the UI thread.
+                foreach (var entry in order) { _ = entry.Mod.Header; _ = entry.Mod.HasNativePlugin; }
+                return order;
+            });
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            if (load != modsLoad) return;
+            ModCount.Text = "";
+            ModsEmpty.IsVisible = true;
+            ModsEmpty.Text = Loc.Format(Tr("Could not read the mods: {1}"), e.Message);
+            return;
+        }
+        if (load != modsLoad) return;
+        foreach (var entry in entries) mods.Add(new ModRow(entry.Mod, entry.Enabled));
         foreach (var row in mods) row.PropertyChanged += (_, _) => ShowModCount();
+        modsReady = true;
         ShowModCount();
         ModsEmpty.IsVisible = mods.Count == 0;
-        ModsEmpty.Text = install is null ? "Set the Kenshi folder in Settings to list its mods."
-            : "No mods found in Kenshi's mods folder or among its Steam workshop items.";
+        ModsEmpty.Text = Tr(gameInstall is null ? "Set the Kenshi folder in Settings to list its mods."
+            : "No mods found in Kenshi's mods folder or among its Steam workshop items.");
     }
 
     void ShowModCount() => ModCount.Text = mods.Count == 0 ? "No mods found" : $"{mods.Count(m => m.Enabled)} of {mods.Count} enabled";
 
+    // False while the list is loading or after it could not be read; Status says why.
+    bool ModsReady()
+    {
+        if (!modsReady) Status(ModsEmpty.IsVisible ? ModsEmpty.Text ?? "" : "The mod list is still loading; try again in a moment.");
+        return modsReady;
+    }
+
     bool SaveMods()
     {
         if (install is null) { Status("Set the Kenshi folder first (Settings)."); return false; }
+        if (!ModsReady()) return false;
         try
         {
             ModList.Save(install, mods.Select(m => new ModEntry(m.Mod, m.Enabled)));
@@ -583,6 +621,7 @@ public sealed partial class MainWindow : Window
     {
         var name = PresetName.Text?.Trim();
         if (string.IsNullOrEmpty(name)) { Status("Type a name for the preset."); return; }
+        if (!ModsReady()) return;
         config.Presets.RemoveAll(p => p.Name == name);
         config.Presets.Add(new ModPreset { Name = name, Mods = [.. mods.Select(m => new PresetMod { Name = m.Name, Enabled = m.Enabled })] });
         config.Save();
@@ -593,7 +632,7 @@ public sealed partial class MainWindow : Window
 
     void ApplyPreset_Click(object? sender, RoutedEventArgs e)
     {
-        if (PresetBox.SelectedItem is not ModPreset preset) return;
+        if (PresetBox.SelectedItem is not ModPreset preset || !ModsReady()) return;
         var byName = mods.ToDictionary(m => m.Name, StringComparer.Ordinal);
         var ordered = new List<ModRow>();
         var missing = new List<string>();

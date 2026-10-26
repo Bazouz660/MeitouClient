@@ -36,16 +36,11 @@ static class NativeLibraries
         });
         if (names.Length == 0) return;
 
-        // Named by content, so a launcher update with other libraries never overwrites ones a running launcher has loaded.
-        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        foreach (var name in names)
-        {
-            using var stream = assembly.GetManifestResourceStream(name)!;
-            hash.AppendData(System.Text.Encoding.UTF8.GetBytes(name));
-            var buffer = new byte[81920];
-            for (int read; (read = stream.Read(buffer)) > 0;) hash.AppendData(buffer, 0, read);
-        }
-        var directory = Path.Combine(LauncherConfig.DataDirectory, "native", Convert.ToHexStringLower(hash.GetHashAndReset())[..16]);
+        // Named by content, so a launcher update with other libraries never overwrites ones a running launcher has loaded. The build
+        // records each library's hash (the csproj's NativeLibraries metadata); without it, the names and sizes stand in.
+        var contents = assembly.GetCustomAttributes<AssemblyMetadataAttribute>().FirstOrDefault(a => a.Key == "NativeLibraries")?.Value
+            ?? string.Join(";", names.Select(n => { using var s = assembly.GetManifestResourceStream(n)!; return $"{n}={s.Length}"; }));
+        var directory = Path.Combine(LauncherConfig.DataDirectory, "native", Convert.ToHexStringLower(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(contents)))[..16]);
         Directory.CreateDirectory(directory);
 
         foreach (var name in names)
