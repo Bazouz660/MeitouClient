@@ -382,8 +382,7 @@ sealed partial class PlayerInterface
             bad = m.Status == 1;
             stats.Add(new("Output:", $"{o.Name} {N(o.Count)}/{N(o.Capacity)}", MainColour));
         }
-        // Slot 164 (LightBuilding FUN_140297890): a light works only while it is not daytime (all other classes: always), as Meitou's lights read every BF_LIGHT building as standalone.
-        if (m.Efficiency is { } e) AddClassLines(m, e, rich?.Resource ?? 0, stats, extended, m.Function != Meitou.Data.World.WorldLights.LightFunction || !session.Clock.IsDaytime);
+        if (m.Efficiency is { } e) AddClassLines(m, e, rich?.Resource ?? 0, stats, extended, e.Active);
         // Power, in the original's words where it has them (GeneratorBuilding vfunc_114, vfunc_153); "No power" and "Low power" are Meitou's.
         if (m.Power is { } pw)
         {

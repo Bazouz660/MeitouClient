@@ -123,7 +123,8 @@ sealed partial class GameHost
         }
         var placed = new List<PlacedLight>();
         WorldObjectLayout.Building(db, record, site.Id, site.Position, site.Rotation, new BuildingState { Identity = site.Id }, placed);
-        lamps.SetRuntime(site.Id, placed.Select(p => WorldLights.FromPlaced(p, interior: false)));
+        bool indoors = WorldLights.IsIndoors(record, site.Parent is not null);
+        lamps.SetRuntime(site.Id, placed.Select(p => WorldLights.FromPlaced(p, interior: false, indoors: indoors)));
     }
 
     /// <summary>A building's effects (a campfire's fire; docs/formats/lights.md "Effects on buildings") run while it is complete, as its lamps.</summary>

@@ -129,6 +129,12 @@ public sealed class Machine
     /// production multiplier. Derived each tick; not saved, not hashed.
     /// </summary>
     public float Health { get; set; } = 1;
+    /// <summary>
+    /// Building slot 59 (<c>isIndoors</c>) is set: its record is <c>is interior furniture</c> and it stands in a building; and slot 164: it works now (a light building outdoors only while
+    /// it is not daytime, every other always). An inactive machine draws no power and its efficiency is 0. Derived each tick; not saved, not hashed.
+    /// </summary>
+    public bool Indoors { get; set; }
+    public bool Active { get; set; } = true;
     public float ProductionMult { get; set; } = 1;
     /// <summary>A wind generator's share of its output: its blade's <see cref="Meitou.Data.World.RotorSpec.WindShare"/> of the wind at the site (derived each tick; not saved, not hashed).</summary>
     public float Wind { get; set; }

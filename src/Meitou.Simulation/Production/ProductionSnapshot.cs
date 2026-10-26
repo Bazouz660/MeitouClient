@@ -35,6 +35,8 @@ public readonly record struct EfficiencyView(int Operators, int MaxOperators, fl
     public float Drought { get; init; } = 1;
     /// <summary>A rain collector's <c>Rain strength:</c> (its slot 156 <c>FUN_14030b460</c>): the <c>wetness</c> of its region's weather, 0 under acid rain or indoors; null for other classes.</summary>
     public float? Rain { get; init; }
+    /// <summary>Slot 164: false for a light building outdoors by day, which works at 0 (<see cref="Machine.Active"/>).</summary>
+    public bool Active { get; init; } = true;
 }
 
 /// <summary>
@@ -126,7 +128,7 @@ public sealed record MachineSnapshot(string Site, string Record, IReadOnlyList<M
             Efficiency = new(m.Operators, m.Data.PowerOperators, m.Health, m.Power, m.Data.IsConsumer, m.Data.OutputRate * m.ProductionMult, m.Yield)
             {
                 Starved = m.Farm is { Status: FarmStatus.NoWater }, Drought = m.Data.Farm?.DroughtMultiplier ?? 1,
-                Rain = m.Data.Function == MachineData.RainCollectorFunction ? m.Rain : null,
+                Rain = m.Data.Function == MachineData.RainCollectorFunction ? m.Rain : null, Active = m.Active,
             } };
     }
 

@@ -127,6 +127,7 @@ public sealed class WorldSession : IDisposable
         if (aheadDone || Simulation.IsPaused) return;
         (heldPrevious, heldCurrent, held) = (World.PreviousSnapshot, World.Snapshot, true);
         World.GameHours = Clock.TotalHours;   // the tick's start, as SimulationTick sets it; the game clock moves when the tick falls due
+        World.Daytime = Clock.IsDaytime;
         runner ??= new TickRunner();
         runner.Start(World);
         running = true;
@@ -212,6 +213,7 @@ public sealed class WorldSession : IDisposable
     void SimulationTick(bool publish)
     {
         World.GameHours = Clock.TotalHours;
+        World.Daytime = Clock.IsDaytime;
         long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
         World.RunTick(publish);
         Measure(System.Diagnostics.Stopwatch.GetElapsedTime(t0).TotalMilliseconds);

@@ -86,6 +86,10 @@ public sealed record MachineData
     /// when above 1. A bed's <c>Healing bonus</c>, a training dummy's skill cap, a turret's damage.
     /// </summary>
     public float OutputValue { get; init; } = 1;
+    /// <summary>The BUILDING's <c>is interior furniture</c> (the exe's <c>+0xf8</c>): standing in a building it is indoors (Building slot 59 <c>isIndoors</c>).</summary>
+    public bool InteriorFurniture { get; init; }
+    /// <summary>A light building (BF_LIGHT 15): outdoors it works only while it is not daytime (LightBuilding slot 164).</summary>
+    public bool IsLight => Function == Meitou.Data.World.WorldLights.LightFunction;
     public bool IsBattery => PowerCapacity > 0;
     public bool IsGenerator => PowerOutput > 0 && !IsBattery;
     public bool IsConsumer => PowerOutput < 0;
@@ -204,6 +208,7 @@ public sealed record MachineData
             WindRotor = wind ? WindRotorOf(db, building, 0) : null,
             OutputRate = building.GetFloat("output rate", 1),
             OutputValue = building.GetFloat("output rate", 1) * (function?.GetFloat("production mult", 1) ?? 1) / (rawOperators > 1 ? rawOperators : 1),
+            InteriorFurniture = building.GetBool("is interior furniture"),
         };
     }
 }

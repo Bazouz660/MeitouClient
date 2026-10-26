@@ -612,9 +612,9 @@ How a building gets selected: [ui-input](ui-input.md#building-picking-and-select
     Efficiency then adds `Damage:`, `Power:` (only for a consumer, `power output` < 0) and `Num workers:` (raw max = operators), each `OK` (Good) or `-`
     int((1 − kept) × rate × 100)% (Bad), and `Total:` the line's value (Main); Max efficiency adds only `Total:`. Slot 109 (`FUN_140296e00`) = 0 when slot 164
     fails, else the construction fraction (`FUN_140547200`, progress / target capped at 1) × granted / demand (1 without demand). Slot 164 (**Verified**) is
-    `FUN_1400f6d50` (always true) on every class but LightBuilding, whose `FUN_140297890` is true when its slot 59 handle (`FUN_140547530`) is set (type not
-    0xb, the null handle; what it holds is **Unknown**, as for the [night flag](../formats/lights.md)), else only while it is not daytime (`FUN_14066cb20`,
-    sunrise < hour < sunset): a standalone light shows Efficiency 0% by day. The Damage and Power rows read their own values, not slot 109.
+    `FUN_1400f6d50` (always true) on every class but LightBuilding, whose `FUN_140297890` is true when slot 59 (`isIndoors`, KenshiLib 1ce4a16; [lights](../formats/lights.md#when-a-light-is-on))
+    is set, else only while it is not daytime (`FUN_14066cb20`, sunrise < hour < sunset): a lamp outdoors shows Efficiency 0% by day (and draws no power, slot
+    163 `FUN_140299630` asking slot 164 first). The Damage and Power rows read their own values, not slot 109.
   - Who shows it (**Verified**, each class's slot 40): ProductionBuilding's `FUN_1402ffeb0` (also Generator, WindGenerator, RainCollector, Torture), Research
     `FUN_140309680` and Crafting `FUN_1402ff070` in section 6 as 155, 154, 153; Useable / Storage / Light `FUN_140304e90` (only with a town, `FUN_1400f6c20`) in
     section 6 as 155 then 154, except for function 6 (BF_BED; slot 94 `FUN_1400f6b30` is the function +0x158, 27 for a mine whose `FUN_1405946f0` fails)
@@ -637,8 +637,8 @@ How a building gets selected: [ui-input](ui-input.md#building-picking-and-select
     gets that owner is **Unknown**); the medical rows are `Condition` 2, full: the target of `build materials` 2.
   Meitou (`PlayerInterface.Production.cs`, `MachineSnapshot.Efficiency` and `Panel`): the lines per class as above, unmined rocks too (0 workers), the turret's
   section 7 in `ExtendedStatsText` while the panel is expanded; the turret's gun lines are not built; health is `Machine.Health` (progress / target),
-  which also scales production (`WorkFactor`) and the sound efficiency; the panel zeroes it for a BF_LIGHT machine by day (slot 164; every BF_LIGHT taken as
-  standalone, as Meitou's lights; display only, the sim has no clock and lights produce nothing). Mines and rocks get the header Output full / No workers /
+  which also scales production (`WorkFactor`) and the sound efficiency; slot 164 is `Machine.Active` (a BF_LIGHT machine outdoors by day, from `World.Daytime`
+  which the host sets from its clock, is inactive: no demand, efficiency 0; indoors = `is interior furniture` and a parent building). Mines and rocks get the header Output full / No workers /
   Working (plus the power words) and no `Output:` line; other machines keep Meitou's status words and `Output:` line.
 - **Window.** Selecting a complete building of the player's faction opens its window (Building slot 38 → `FUN_1406e6640`; one window per
   building, made on first use by slot 48). Classes from RTTI vtable names, layouts **Verified** (each layout string is referenced only by

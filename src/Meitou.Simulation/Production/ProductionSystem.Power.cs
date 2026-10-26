@@ -44,9 +44,12 @@ public sealed partial class ProductionSystem
         foreach (var m in world.Machines.All)
         {
             m.Power = 1;
+            // Slot 59 (isIndoors): interior furniture standing in a building; slot 164: a light building outdoors works only while it is not daytime.
+            m.Indoors = m.Data.InteriorFurniture && Site(world, m.Site)?.Parent is not null;
+            m.Active = !m.Data.IsLight || m.Indoors || !world.Daytime;
             if (m.Data.IsWind) (m.Wind, m.WindRated) = (WindShare(world, m), Rated(world, m));
             if (m.Data.Function == MachineData.RainCollectorFunction)
-                m.Rain = world.Weather?.At(m.Position.X, m.Position.Z) is { Affect: not WeatherAffecting.Acid } here ? here.Wetness : 0;
+                m.Rain = !m.Indoors && world.Weather?.At(m.Position.X, m.Position.Z) is { Affect: not WeatherAffecting.Acid } here ? here.Wetness : 0;
             if (!m.Data.IsConsumer && !m.Data.IsGenerator && !m.Data.IsBattery) continue;
             if (Site(world, m.Site) is not { Complete: true } site) continue;
             if (!grids.TryGetValue(site.Town, out var grid)) grids[site.Town] = grid = [];
@@ -98,7 +101,7 @@ public sealed partial class ProductionSystem
             float rate = Rated(world, m);
             saturation = rate > 0 && m.Charge < Capacity(world, m) ? m.Granted / rate : 1;
         }
-        return share * m.Health * saturation * m.Yield * m.Data.OutputRate * m.ProductionMult;
+        return m.Active ? share * m.Health * saturation * m.Yield * m.Data.OutputRate * m.ProductionMult : 0;
     }
 
     /// <summary>
@@ -132,7 +135,7 @@ public sealed partial class ProductionSystem
             {
                 // A farm wants its whole draw whoever works it (FarmBuilding slot 163, FUN_1400df330: |power output + increase|).
                 float share = m.Data.Farm is null && m.Data.PowerOperators > 0 ? (float)m.LastOperators / m.Data.PowerOperators : 1;
-                m.Demand = m.PowerOn ? MathF.Abs(Rated(world, m)) * share : 0;
+                m.Demand = m.PowerOn && m.Active ? MathF.Abs(Rated(world, m)) * share : 0;
                 demandTotal += m.Demand;
                 consumers.Add(m);
             }

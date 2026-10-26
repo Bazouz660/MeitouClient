@@ -179,6 +179,11 @@ public sealed partial class World : IDisposable
     /// the clock before each tick (the clock can be set). An input like the commands, so not part of the state hash.
     /// </summary>
     public double GameHours { get; set; }
+    /// <summary>
+    /// Daytime (sunrise &lt; hour &lt; sunset, <c>FUN_14066cb20</c>): a host with a clock sets it with <see cref="GameHours"/>; false (night) without one. An input, not hashed. Light buildings
+    /// outdoors work only at night (docs/game/ui-screens.md "Selected building", slot 164).
+    /// </summary>
+    public bool Daytime { get; set; }
     /// <summary>The integer hour of day, 0 to 23 (the game's sky controller hour that the AI compares windows with).</summary>
     public int Hour => Math.Clamp((int)(((GameHours % 24) + 24) % 24), 0, 23);
     public float TickSeconds => Settings.TickSeconds;
