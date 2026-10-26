@@ -173,14 +173,26 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
             if (v == slot || reserved.Contains(world.Characters.IdOf(v)) || carry.Friendly(cold, world.Characters.Cold(v)!)) continue;
             var p = next[v].Position;
             float d2 = Vector2.DistanceSquared(at, Flat(p));
-            if (d2 > best2 || AiSystem.TownAt(data, world, p) != town || !BuiltUp(world, town, Flat(p))) continue;
+            if (d2 > best2 || AiSystem.TownAt(data, world, p) != town || !InsideWalls(world, town, p)) continue;
             (best, best2) = (v, d2);
         }
         return best;
     }
 
     /// <summary>
-    /// Whether a point is inside the town for the intruder finder (its <c>amInsideTownWalls</c>, which a town without walls cannot answer; <b>engine reading</b>): a placed town's radius, a player
+    /// The original's <c>amInsideTownWalls</c> &gt; 0 (docs/game/pathfinding.md "Gate codes"): the point's gate code is a walled region. Where the codes are not known (no navmesh labelled yet, off
+    /// the mesh, a headless world) the town's built-up area stands in (<see cref="BuiltUp"/>).
+    /// </summary>
+    bool InsideWalls(World world, CampaignTown town, Vector3 p)
+    {
+        locks ??= world.Systems.OfType<Locks.LockSystem>().FirstOrDefault();
+        return locks?.Regions?.CodeAt(p) is { } code and >= 0 ? code > 0 : BuiltUp(world, town, Flat(p));
+    }
+
+    Locks.LockSystem? locks;
+
+    /// <summary>
+    /// The intruder finder's stand-in for <c>amInsideTownWalls</c> where the gate codes are unknown (<b>engine reading</b>): a placed town's radius, a player
     /// town's farthest building from its centre. A body put down past it (<see cref="TownDutySettings.OutsideTown"/>) is not found again.
     /// </summary>
     bool BuiltUp(World world, CampaignTown town, Vector2 p) => Vector2.Distance(p, Centre(world, town)) <= Reach(world, town);
