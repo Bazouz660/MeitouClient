@@ -163,7 +163,8 @@ jobs:
           $body = @{ embeds = @(@{ title = "Meitou $env:VERSION"; url = $url; description = $text; color = 0xE0A030 }) } | ConvertTo-Json -Depth 4
           $bytes = [Text.Encoding]::UTF8.GetBytes($body)
           if ($bot) {
-            Invoke-RestMethod -Uri "https://discord.com/api/v10/channels/$env:CHANNEL/messages" -Method Post -Headers @{ Authorization = "Bot $env:BOT_TOKEN" } -ContentType 'application/json; charset=utf-8' -Body $bytes
+            # Discord's Cloudflare answers a bot call with a browser-like User-Agent (pwsh's default) with 40333 "internal network error".
+            Invoke-RestMethod -Uri "https://discord.com/api/v10/channels/$env:CHANNEL/messages" -Method Post -Headers @{ Authorization = "Bot $env:BOT_TOKEN" } -UserAgent 'DiscordBot (https://github.com/VlcekM/MeitouClient, 1.0)' -ContentType 'application/json; charset=utf-8' -Body $bytes
           } else {
             Invoke-RestMethod -Uri $env:WEBHOOK -Method Post -ContentType 'application/json; charset=utf-8' -Body $bytes
           }
