@@ -11,6 +11,23 @@ namespace Meitou.Tests.Bodies;
 [Slow]
 public class BodyInstallTests
 {
+    [Theory]
+    [InlineData("11623-Dialogue (10).mod")]
+    [InlineData("14862-Dialogue.mod")]
+    public void Shek_guards_roll_their_stats_from_the_records_integer_randomisation(string recordId)
+    {
+        var db = Database();
+        var character = db.Find(recordId)!;
+        Assert.Equal(10, character.GetInt("stats randomise"));
+        Assert.False(character.Floats.ContainsKey("stats randomise"));
+        var race = db.Find(character.GetReferences("race").First().TargetStringId)!;
+        var factory = new Meitou.Simulation.BodyFactory(db);
+        var a = factory.Create(race, character, 123, 1).Stats;
+        var b = factory.Create(race, character, 123, 2).Stats;
+        Assert.NotEqual(a[StatsEnumerated.MeleeAttack], b[StatsEnumerated.MeleeAttack]);
+        Assert.NotEqual(a[StatsEnumerated.Strength], b[StatsEnumerated.Strength]);
+    }
+
     static GameDatabase? cached;
     static readonly Lock gate = new();
 
