@@ -1390,14 +1390,14 @@ while enemies come. A guard at its turret fires it ([Ranged](#ranged)).
 ## New-game difficulty
 
 `NewGameSettings` in the game host binds seven numeric options to each new world: body hunger/death/damage,
-production/research, construction and nest density. Defaults are neutral (1); ranges follow
-[researched bindings](game/character-stats.md#new-game-advanced-options-that-change-these-mechanics).
+production/research, construction and nest density. Defaults (1), ranges and save keys follow
+[the original](game/character-stats.md#new-game-advanced-options-that-change-these-mechanics).
 The two new-game panels share one modal screen; expanding raises the start panel, and its Begin/Cancel remain usable.
 Opening a fresh new-game dialog resets the draft; collapsing keeps it. Failed world replacement retains the running
-world's options and body factory. Saves carry seven `meitou difficulty <key>` CAMERA floats (hunger, death, damage,
-production, research, building, nests). Missing/nonfinite values use 1; out-of-range values clamp to the slider range.
-These are Meitou extensions; original difficulty save encoding is not implemented here. Saves without the extensions
-use neutral values. Under the sliders are the original's two ticks, saved under its own CAMERA bools: Bandits loot the player (`bl`, default on,
+world's options and body factory. Saves carry the original's CAMERA floats `ht cod gdm ps rs bs nnm`, so Meitou and
+original saves are interchangeable; loading follows the original's rules exactly (the
+[load rules](game/character-stats.md#new-game-advanced-options-that-change-these-mechanics), no clamping). `meitou difficulty <key>` floats of earlier Meitou saves are ignored and dropped on the next save.
+Under the sliders are the original's two ticks, saved under its own CAMERA bools: Bandits loot the player (`bl`, default on,
 `PlayerState.BanditsLoot`, set on a new world) and Easy prospecting (`ep`, default off, kept and saved only: the original never reads it).
 
 ## Saves

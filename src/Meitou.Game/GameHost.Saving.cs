@@ -66,10 +66,14 @@ sealed partial class GameHost
     /// <summary>The Gameplay settings, first taken from the install's settings.cfg.</summary>
     GameplaySettings Gameplay => config.Gameplay ??= GameplaySettings.FromInstall(install);
 
-    /// <summary>Hands the Gameplay settings to the running world's systems (all but Dismemberment, which a world takes when it is built).</summary>
+    /// <summary>
+    /// Hands the Gameplay settings to the running world's systems. Dismemberment goes into the world's body options, which every system holds and reads when a part is
+    /// damaged, as the original reads its global.
+    /// </summary>
     void ApplyGameplay()
     {
         var gameplay = Gameplay;
+        if (popData is { } data) data.BodyOptions.Dismemberment = gameplay.Dismemberment;
         foreach (var population in session.World.Systems.OfType<Meitou.Simulation.PopulationSystem>())
             (population.Settings.SquadSizeMultiplier, population.Settings.PopulationMultiplier, population.Settings.RaidSizeMult, population.Settings.RaidFrequencyMult) =
                 (gameplay.SquadSize, gameplay.Population, gameplay.RaidSize, gameplay.RaidFrequency);
