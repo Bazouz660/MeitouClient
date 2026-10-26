@@ -154,7 +154,7 @@ public sealed partial class World
                 Stealth = sneaking ? watchers.Length == 0 ? StealthExposure.Unobserved : watchers.Max(w => w.Level) : null,
                 Light = sneaking ? Sight.Light(i) : 1,
                 Watchers = watchers,
-                Bar = cold is { IsPlayer: true } ? PickBar(cold, state[i].Task) : null,
+                Bar = cold is { IsPlayer: true } ? PickBar(cold, state[i].Task) ?? TrainBar(cold) : null,
                 Prison = cold is { IsImprisoned: true } ? new PrisonView(!(cold.InWhat is { } cageId && Fixtures.Find(cageId) is { } cage && cage.Lock is not { EffectivelyLocked: true }), cold.SentenceLength, cold.SentenceStart + cold.SentenceLength - GameHours) { CageOwner = cold.InWhat is { } owned && Fixtures.Find(owned) is { } jail ? jail.Owner : -1, CageId = cold.InWhat } : null,
                 Ragdoll = ragdolls?.Publish(id),
                 StealthKoChance = koSlot >= 0 && i != koSlot && cold is { IsPlayer: false } && Carrying.CarrySystem.CanBeKnockedOut(cold)
@@ -211,6 +211,14 @@ public sealed partial class World
         if (l is not { EffectivelyLocked: true }) return null;
         float chance = Locks.Lockpicking.RollChance(c, l.Level);
         return new TaskBar(FormattableString.Invariant($"Lockpicking (Chance {MathF.Round(chance * 100)}%)"), l.NextRoll > 0 ? Math.Clamp(l.PickTime / l.NextRoll, 0, 1) : 0);
+    }
+
+    /// <summary>The bar of Task_UseTrainingDummy (docs/game/ai-tasks.md "Finders of the jobs"): "Training", filled with the trained stat's fraction, while the user works the dummy.</summary>
+    TaskBar? TrainBar(CharacterCold c)
+    {
+        if (!c.Operating || c.OperateSite is not { } site || Machines.Find(site) is not { Data.IsTraining: true } m || c.Stats is not { } stats) return null;
+        float stat = stats[(StatsEnumerated)m.Data.Stat];
+        return new TaskBar("Training", stat - MathF.Floor(stat));
     }
 
     /// <summary>The sneaker's watchers of the last <see cref="AggroSystem.WatcherSeconds"/> that are still about, where they stand now.</summary>
