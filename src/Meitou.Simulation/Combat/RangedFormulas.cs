@@ -12,14 +12,18 @@ public sealed class CrossbowInstance(CrossbowData data, float quality, CrossbowS
     /// <summary>The quality fraction (0 to 1) the stats were lerped at: the item's level x 0.01.</summary>
     public float Quality { get; } = quality;
     public CrossbowStats Stats { get; } = stats;
+    /// <summary>The item weight (<c>weight kg</c> x <c>weapon inventory weight mult</c>, the Weapon constructor <c>FUN_140898830</c>; the crossbow keeps it).</summary>
+    public float Weight { get; init; }
+    /// <summary>In the <c>back</c> section (else the <c>hip</c>).</summary>
+    public bool AtBack { get; init; }
     /// <summary>Shots one reload fills the crossbow with (<c>num shots</c>).</summary>
     public int NumShots => Math.Max(Data.NumShots, 1);
     /// <summary>No <c>ammo</c> reference: the crossbow never runs dry.</summary>
     public bool InfiniteAmmo => Data.AmmoId.Length == 0;
 
     /// <summary>The gun of a CROSSBOW at quality fraction <paramref name="q"/> with the CONSTANTS <c>bow damage 1/99</c> and the global damage multiplier (<c>FUN_14043c180</c>).</summary>
-    public static CrossbowInstance Create(float q, CrossbowData data, CombatConstants constants, float globalDamageMultiplier) =>
-        new(data, q, data.At(q, constants, globalDamageMultiplier));
+    public static CrossbowInstance Create(float q, CrossbowData data, CombatConstants constants, float globalDamageMultiplier, float weight = 0, bool atBack = false) =>
+        new(data, q, data.At(q, constants, globalDamageMultiplier)) { Weight = weight, AtBack = atBack };
 }
 
 /// <summary>

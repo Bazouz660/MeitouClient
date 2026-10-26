@@ -84,6 +84,9 @@ public static class Orders
 
     public static bool Has(CharacterCold? cold, CharacterOrders order) => cold is not null && (cold.Orders & order) != 0;
 
+    /// <summary>The ranged mode (CharStats <c>+0x129</c>): the player's Ranged toggle for its characters, always on for an NPC (docs/game/combat.md "Fight lifecycle and orders").</summary>
+    public static bool RangedMode(CharacterCold cold) => !cold.IsPlayer || Has(cold, CharacterOrders.Ranged);
+
     /// <summary>Writes the orders and the run speed into a character's GAMESTATE_CHARACTER record.</summary>
     public static void Write(FcsRecord state, CharacterCold cold)
     {

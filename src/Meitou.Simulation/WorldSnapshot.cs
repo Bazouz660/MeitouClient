@@ -107,10 +107,10 @@ public readonly record struct SkillTerms(float Base, int Injuries, int Hunger, i
 /// The information panel's extended lines (docs/game/ui-screens.md section 4): the XP rates as the fraction the panel shows as a percentage (Toughness as a plain multiplier),
 /// the KO point (negative HP), the run speed in units per second with the unhurt run value it is measured against, and the hunger rate as a multiple of the race's.
 /// <see cref="Resting"/>: in a bed or knocked out, which the hunger rate takes the bed rate for. <see cref="Fighting"/>: in combat mode, where Strength XP is the weapon weight factor
-/// (1 - encumbrance with fists) instead of the carrying rate.
+/// of the drawn weapon, or with nothing drawn (<see cref="Fists"/>) 1 - encumbrance, instead of the carrying rate.
 /// </summary>
 public readonly record struct ExtendedStats(float AthleticsXp, float StrengthXp, float ToughnessXp, float KoPoint, float RunSpeed, float RunValue, float HungerRate, bool Resting = false,
-    bool Fighting = false);
+    bool Fighting = false, bool Fists = false);
 public sealed record InventoryItemView(int Index, string Record, string Name, string Section, int X, int Y, int Width, int Height, int Quantity, float Weight, float Quality)
 {
     /// <summary>The item's material record (<c>material sid</c>; "" none), which picks its icon.</summary>
@@ -205,8 +205,10 @@ public sealed record CharacterSnapshot(CharacterId Id, CharacterAppearance? Appe
     public bool InBed { get; init; }
     /// <summary>Crawling by choice (<see cref="Bodies.MedicalState.StayingLow"/>, not crippled): the context menu's Stand Up.</summary>
     public bool StayingLow { get; init; }
-    /// <summary>In a fight (<see cref="CharacterCold.InCombat"/>): the portrait's <c>Combat</c> overlay.</summary>
+    /// <summary>In a fight (<see cref="CharacterCold.InCombat"/>).</summary>
     public bool InCombat { get; init; }
+    /// <summary>In combat mode (<c>Character::isInCombatMode(1, 1)</c>, <see cref="Combat.CombatSystem.IsInCombatMode"/>): the portrait's <c>Combat</c> overlay.</summary>
+    public bool CombatMode { get; init; }
     /// <summary>An NPC whose fight's target is one of the player's characters, whatever its faction thinks of the player's (a robbery a dialogue line started, a retaliation).</summary>
     public bool FightsPlayer { get; init; }
     /// <summary>Wears locked armour (shackles, <see cref="Items.ItemInstance.IsLocked"/>): the portrait's <c>Slave</c> overlay.</summary>

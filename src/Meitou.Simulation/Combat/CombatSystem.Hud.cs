@@ -27,4 +27,60 @@ public sealed partial class CombatSystem
         }
         return new HudCombat(Rate(cold, true), Rate(cold, false), cut, blunt, fists.Cut + fists.Blunt, HitResolver.ToughnessResistance(tough, combat));
     }
+
+    /// <summary>
+    /// <c>Character::isInCombatMode(melee, ranged)</c> (<c>FUN_140436610</c>, docs/game/ui-screens.md section 4 "Combat mode"): with <paramref name="melee"/> the melee fight's flag
+    /// (<see cref="MeleeCombatMode"/>), with <paramref name="ranged"/> the ranged controller's <c>combatMode</c> (<see cref="RangedCombatMode"/>) while its current target is up
+    /// (not dead, unconscious, playing dead or carried).
+    /// </summary>
+    internal bool IsInCombatMode(CharacterTable table, CharacterId id, CharacterCold cold, bool melee, bool ranged)
+    {
+        if (melee && MeleeCombatMode(id, cold)) return true;
+        if (!ranged || !RangedCombatMode(id, cold)) return false;
+        int target = -1, generation = 0;
+        if (cold.Gunning is { } key) { if (turrets.TryGetValue(key, out var t)) (target, generation) = (t.Target, t.TargetGeneration); }
+        else if (StateOf(id) is { TargetSlot: >= 0 } s) (target, generation) = (s.TargetSlot, s.TargetGeneration);
+        return target >= 0 && table.TryResolveNext(new CharacterId(target, generation), out int slot) && table.Cold(slot) is { } tc
+            && tc.Medical is not ({ Incapacitated: true } or { PlayingDead: true }) && tc.CarriedBy.IsNone;
+    }
+
+    /// <summary>CombatClass <c>+0x130</c>: set by <c>initCombatMode</c> at a melee fight task's start, cleared at its end; Meitou: a fight that is not a shooting one.</summary>
+    internal bool MeleeCombatMode(CharacterId id, CharacterCold cold) => cold.InCombat && !StateOf(id).Ranged;
+
+    /// <summary>
+    /// The ranged controller's <c>combatMode</c> (<c>+0x2f0 → +0x36</c>): set every update of the shooting task (<c>Task_RangedAttack</c>) and of turret manning (<c>Task_UseTurret</c>,
+    /// unless the turret is broken), cleared when either task ends; Meitou: a shooting fight, or manning a turret.
+    /// </summary>
+    internal bool RangedCombatMode(CharacterId id, CharacterCold cold) => cold.Gunning is not null || cold.InCombat && StateOf(id).Ranged;
+
+    /// <summary>
+    /// <c>CharStats::getGUIStatsDisplayMode</c> (<c>FUN_1408840d0</c>): the weapon in hand, else the back section's, else the hip's; none is 1 (Martial Arts); a crossbow in ranged mode
+    /// while not moving (movement <c>+0x24</c>) is 2 (Crossbows, Precision, Perception); fists in hand (CharStats <c>+0x1f0</c> 5) in a melee fight is 1; else 0 (Attack, Defense).
+    /// </summary>
+    internal int StatsDisplayMode(CharacterId id, CharacterCold cold, bool moving)
+    {
+        if (cold.Fighter is not { } f) return 1;
+        bool? crossbow = cold.DrawnWeapon != WeaponKinds.None ? cold.DrawnWeapon == BowKind
+            : f.BackWeapon is not null ? false : f.Crossbow is { AtBack: true } ? true : f.HipWeapon is not null ? false : f.Crossbow is not null ? true : null;
+        if (crossbow is null) return 1;
+        if (crossbow.Value && Orders.RangedMode(cold) && !moving) return 2;
+        return MeleeCombatMode(id, cold) && HandCategory(cold) == (int)WeaponCategory.Unarmed ? 1 : 0;
+    }
+
+    static readonly WeaponKinds BowKind = HandHold.OfCategory((int)WeaponCategory.Bow).Weapon;
+
+    /// <summary>
+    /// CharStats <c>+0x1f0 currentWeaponType</c>: the <c>skill category</c> of the weapon in hand (<c>CharStats::setWeapon</c> <c>FUN_140897f30</c> at a draw), 6 for a crossbow, 5 when
+    /// nothing is drawn (fists).
+    /// </summary>
+    internal static int HandCategory(CharacterCold cold) =>
+        cold.DrawnWeapon == WeaponKinds.None ? (int)WeaponCategory.Unarmed : cold.DrawnWeapon == BowKind ? (int)WeaponCategory.Bow
+        : cold.Fighter?.Weapon?.Data.SkillCategory ?? (int)WeaponCategory.Unarmed;
+
+    /// <summary>
+    /// The weight <c>calculateWeaponWeightXPMult</c> (<c>FUN_1408838e0</c>) is given: the drawn weapon's item weight (<c>CharStats::setWeapon</c>, Item slot 74, <c>+0x120</c>), for a
+    /// crossbow its <c>weight kg</c> x <c>weapon inventory weight mult</c>.
+    /// </summary>
+    internal static float HandWeight(CharacterCold cold) =>
+        cold.DrawnWeapon == BowKind && cold.Fighter?.Crossbow is { } x ? x.Weight : cold.Fighter?.Weapon?.Stats.Weight ?? 0;
 }

@@ -137,6 +137,8 @@ public sealed partial class CombatSystem
             t.Efficiency = post.Efficiency;
             t.DamageMult = post.DamageMult;
             cold.Gunning = post.Key;
+            // Manning sets Character +0x198 to Turrets (11) every update (Task_UseTurret FUN_1403474f0), an NPC gunner's too: the HUD's Current Skill line.
+            cold.UseSkill(StatsEnumerated.Turrets, world.Tick);
             int generation = table.Previous[i].Generation;
             if (t.Gunner != i || t.GunnerGeneration != generation)
             {
