@@ -616,7 +616,7 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
                 continue;
             }
             if (n.Task != (byte)CharacterTask.Attack && cold.StaggeredUntil > world.Tick || cold.GettingUpUntil > world.Tick
-                || cold.Animation is { HoldsStill: true } && ((MoveFlags)n.Flags & MoveFlags.AnyPath) != 0)
+                || n.Task != (byte)CharacterTask.Attack && cold.Animation is { HoldsStill: true } && ((MoveFlags)n.Flags & MoveFlags.AnyPath) != 0)
             {
                 // A stagger outside a fight stops the movement while the stumble clip plays (Character::_startStumble), and getting up after a knockout in or out of
                 // one (Task_GetUp), and while a clip with <c>disables movement</c> plays (a bow, a reload; AnimationClass::isCurrentlyIncapableOfWaypointMovemode); the order's path is kept and resumed.

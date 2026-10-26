@@ -94,7 +94,7 @@ public sealed partial class DialogueSystem
                 // Without an amount only a speaker whose CHARACTER has `assigns bounties` books the target's pending crime (Character::canAssignBounties, Verified).
                 case DialogueActions.AssignBounty when tc is not null && mc is not null && effect.Value <= 0 && Arrests is { } booker
                     && data.Db.Find(mc.RecordId)?.GetBool("assigns bounties") == true && world.Characters.TryResolveNext(target, out int culprit):
-                    booker.Crimes.Book(world, culprit, mc.Faction, me);
+                    booker.Crimes.Book(world, culprit, booker.Crimes.Factions.BookingOf(mc.Faction), me);   // for the law faction (getLawEnforcementFaction)
                     break;
                 case DialogueActions.CrimeAlarm when tc is not null && mc is not null && Arrests is { } law
                     && world.Characters.TryResolveNext(me, out int alarmer) && world.Characters.TryResolveNext(target, out int alarmed):

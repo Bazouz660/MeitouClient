@@ -190,8 +190,9 @@ Meitou: a sleeper plays `CharacterCold.OperateClip` as a held clip at its `play 
 ### Clips that stop movement
 
 **Verified** (`AnimationClass::isCurrentlyIncapableOfWaypointMovemode` `@ 14051c870`, from `CharMovement::update`): while the current action clip has ANIMATION `disables movement`
-(`AnimationData+0x89`; 11 base clips: blows, `standing up 3`, `bowing`, the reload phases) the character cannot move along waypoints. Meitou: any wanted clip with the flag sets
-`CharacterAnimation.HoldsStill`, and `MovementSystem` then stops a character with a path, keeping it. `normalise` (layer flag `+0x5f`) is read by the original, its effect **Unknown**; not used.
+(`AnimationData+0x89`; 11 base clips, **Verified** by a probe of the base data: the hit reactions `back blow high/light/low`, `mid blow`, `mid blow drop`, `mid blow light`,
+`standing up 3`, `bowing`, `reload 1/2/3 phase`) the character cannot move along waypoints. Meitou: any wanted clip with the flag sets `CharacterAnimation.HoldsStill`, and
+`MovementSystem` then stops a character with a path, keeping it, except in the Attack task (as a stagger in a fight, whose clip moves the character itself). `normalise` (layer flag `+0x5f`) is read by the original, its effect **Unknown**; not used.
 
 ## Shape notation and factors
 
