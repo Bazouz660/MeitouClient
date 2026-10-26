@@ -220,6 +220,9 @@ path-facing branches set the heading at once (before, `Turn` at 4π rad/s, which
   The CombatClass constructor also clamps the CONSTANTS value to 1..5.
 - A slot is granted by `FUN_140666a30` and kept until the swing's last blow (`FUN_14060a590` → `FUN_140665910`).
   Hitting someone removes them from your own slots.
+- **Slot timers** (`AttackSlotManager::periodicUpdate` `FUN_140668000`, **Verified**; dt from the AI update, seconds, game or real **Observed** only): each held slot's timer
+  grows; past 5 s the holder keeps it only while it resolves and `isAttacking` the owner, past 20 s never. Quirk: the release always empties slot 0's hand and never resets slot i's
+  timer, so a stale holder in slot 1-4 keeps its slot and evicts slot 0's holder each update. Meitou holds a slot only for one swing (shorter than 5 s), so the timers never act.
 - **The answer to an ask** (`FUN_140666a30`, CombatClass vtable +0x28). `FUN_14060c670` calls it on the *target's* CombatClass with the asker, the
   asker's fighting stat (`FUN_140885e40`) and its +0x14c timer; the return value is the asker's planned next state (+0x1f4): 0 attack, 1 defend,
   5 circle. **Observed**, in order: target's fight task not running (+0x130) → 0; target attacking (state 0, or deciding with plan 0) while
