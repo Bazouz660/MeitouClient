@@ -134,7 +134,7 @@ sealed partial class PlayerInterface
                 // A rock nobody has mined yet has no machine; the original shows its lines all the same.
                 (status, bad) = ProductionStatus(0, e);
                 stats.Add(WorkersLine(e.Operators, e.MaxOperators));
-                AddEfficiencyLines(unmined, e, stats);
+                AddEfficiencyLines(e, unmined.Resource, stats);
             }
         }
         // Not on a player-built site under construction; an owned town house has it while being repaired too.

@@ -59,7 +59,10 @@ public sealed partial class ProductionSystem
             }
         foreach (var m in world.Machines.All)
         {
-            bool built = Site(world, m.Site) is { Complete: true };
+            var site = Site(world, m.Site);
+            bool built = site is { Complete: true };
+            m.Health = site is { Target: > 0 } s ? Math.Clamp(s.Progress / s.Target, 0, 1) : 1;
+            m.ProductionMult = world.Research.Upgrade(m.Data.Id).ProductionMult;
             m.Efficiency = built ? Efficiency(world, m) : 0;
             m.HasPower = built && HasPower(world, m, Site(world, m.Site)!.Town);
             m.Rotation = !built ? 0 : m.Data.IsGenerator ? (m.PowerOn ? Output(world, m) * 0.01f : 0) : m.Efficiency;
@@ -78,7 +81,7 @@ public sealed partial class ProductionSystem
     }
 
     /// <summary>
-    /// The efficiency a machine's sound emitter hears (<c>FarmBuilding::vfunc_108</c>, <b>Observed</b>): the share of its operators (1 when the data has no operator count) x health (1 here) x the
+    /// The efficiency a machine's sound emitter hears (<c>FarmBuilding::vfunc_108</c>, <b>Observed</b>): the share of its operators (1 when the data has no operator count) x health x the
     /// granted share of its demand (1 with no demand; for a battery, below its capacity, the share of its rate it is charging, negative while it drains) x the yield x the BUILDING's raw
     /// output rate x the research production multiplier. A wind generator hears its blade's wind share (<c>WindGeneratorBuilding::getSoundIntensity</c>, <b>Verified</b>): <see cref="Machine.Wind"/>.
     /// </summary>
@@ -92,7 +95,7 @@ public sealed partial class ProductionSystem
             float rate = Rated(world, m);
             saturation = rate > 0 && m.Charge < Capacity(world, m) ? m.Granted / rate : 1;
         }
-        return share * saturation * m.Yield * m.Data.OutputRate * world.Research.Upgrade(m.Data.Id).ProductionMult;
+        return share * m.Health * saturation * m.Yield * m.Data.OutputRate * m.ProductionMult;
     }
 
     /// <summary>
@@ -208,6 +211,6 @@ public sealed partial class ProductionSystem
         }
     }
 
-    /// <summary>The factor a machine's work is scaled by: its power share and its research production multiplier.</summary>
-    float WorkFactor(World world, Machine m) => m.Power * world.Research.Upgrade(m.Data.Id).ProductionMult;
+    /// <summary>The factor a machine's work is scaled by: its health, its power share and its research production multiplier.</summary>
+    float WorkFactor(World world, Machine m) => m.Health * m.Power * world.Research.Upgrade(m.Data.Id).ProductionMult;
 }

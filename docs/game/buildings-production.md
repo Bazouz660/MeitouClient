@@ -404,7 +404,8 @@ rock) makes output only while someone operates it.
   `FUN_14029e7b0`). So a building makes `output rate x production mult x P/2 x s` cycles per game day.
 - yield (slot 120 via offset `0x46c`): 1 without `world resource mining`; else the resource at the position
   ([resources](#resources)), at least 0.1 for a natural site; 0 becomes 0.5 for a building not the player's.
-- health x powerSat (slot 109): health `min(1, hp/max)`; powerSat the granted share of the demand, 1 with no demand.
+- health x powerSat (slot 109, `FUN_140296e00`, **Verified**): health the [construction state](#construction-state)'s progress / target capped at 1; powerSat
+  the granted share of the demand, 1 with no demand. Meitou: `Machine.Health`, 1 for rocks and a target of 0.
 - upgrade = the research `production mult` of the building ([research](#research)), default 1.
 
 **Recipes** (**Observed**, loader `FUN_14029e7b0`). Each `consumes` entry (item, v0, v1) is an input: section `in<k>`

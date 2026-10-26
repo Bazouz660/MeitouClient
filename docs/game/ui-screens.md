@@ -299,13 +299,22 @@ to Jobs; the saved `chase mode` flag is that switch (**Verified**, [perma-jobs](
     stat s = Turrets (11) when `lastUsedWeaponCategory` `+0x3d8` is 7 `SKILL_TURRET`, else Crossbows (35); D = the gun's (crossbow `+0x240`) deviation angle at
     0.005 (s + perception), the shot's cone ([combat.md](combat.md) "Shot"). Line `Accuracy Error:` / `{D,p=2} degrees`; tooltip `Weapon Accuracy:` the gun's
     `+0x10` deviation in degrees (after a short `.rdata` prefix `DAT_1416f3544`, **Unknown**), `Skill:` s's effective level `{p=0}`, `Resulting Accuracy Deviation:`
-    D degrees (both wrapped in the colour tag `DAT_141f49248`, **Unknown**). Else
+    D degrees (both wrapped in `DAT_141f49248`, the Main tag `#afa68b`, see Colour tags). Else
     in combat (`FUN_140436610(c, 1)`) the weapon class `+0x7b` gives `Heavy:` (3), `Katana:` (0), `Hacker:` (4), `Sabre:` (1), `Martial Arts:` (5), `Polearm:` (8) with
     the raw level and a Damage tooltip; with no label yet, `Stealth:` (`FUN_14088f900`) while sneaking, else `Athletics:` (raw level, CharStats +0x94) when the speed
     (+0x640 → +0xb8) is over 9 units a second (not the XP gate). Swimming (`FUN_1405c7fd0` 3) replaces it with "Swimming" and the swim speed in mph; Lockpicking (37)
     adds an "Imprisoned:" tooltip. Meitou (`World.SkillLine`, `CharacterCold.UseSkill`): the operating, training-dummy, turret, building, first-aid and lockpicking
     jobs set the skill; the terms are `StatMultiplier.Compute` with one `StatUse` each (Limbs, Hunger, Stun, Light, DamageState, LimbItems with the fighter's gear factors).
-    Not modelled: the Accuracy Error lines, perception's armour-bonus row, and the fallback lines' tooltips (Damage, `FUN_14088e780` athletics, `FUN_14088f9a0` stealth).
+    Fallback tooltips (**Verified**, decompile 2026-10-26): weapon class `Damage:` (int) of the blow's four terms (`FUN_1408868b0`). `Stealth:` value `FUN_140889710`(stored,
+    s × 100): `v`, `v (d)` Bad, `v (+d)` Good; tooltip `FUN_14088f9a0`: `Stealth skill:`, `Max speed:` lerp(max(0, (s - 0.1) / 0.8), 12, top speed) mph, `XP rate:` CharStats
+    `+0x170` (the last sneaking XP amount, `FUN_1408c65a0`) %, `Carrying something:` Bad (value `DAT_1416f4450`, read as -25 %, **Observed**), `Crawling:` Good `+100%` (ends the
+    list), else `Encumbrance:` -n %, `Injuries:` (medical `+0xb4` - 1) %, `Armour/equipment:` (CharStats `+0x3c` - 1) %, `Robotics:` the legs' stealth items, signed; `Total:` s × 100.
+    `Athletics:` tooltip `FUN_14088e780`: `Athletics Skill:`, `Max possible speed:` the run value, `Leg injury:` (leg factor `FUN_140884970`), `Encumbrance:`, `Armour/equipment:`
+    (CharStats `+0x18` ≠ 1), `Robotics:` (legs, athletics), `Total speed:` (Main) the top speed. Swimming value: the swim speed `FUN_140885eb0` in mph; tooltip `Skill:`,
+    `Max Swim Speed:` (`FUN_140883e30`), then Bad label and value above 1 %: `Injuries` (leg factor × 0.6 per unusable arm), `Hunger`, `Encumbrance`, `Robotics` (the
+    four limbs' swimming items, signed), `2 Broken Arms!` (value `DAT_1416f346c`, **Unknown**), `Current Swim Speed:`. Meitou models them all; not modelled: perception's
+    armour-bonus row (no job uses perception; the bonus is not modelled), the athletics gear row (Meitou keeps `+0x18` at 1), the 2 Broken Arms value, the Turrets
+    accuracy case (a manned turret shows its job skill first). Meitou's combat mode is a fight with the crossbow drawn. Max Swim Speed uses Meitou's `Speed.SwimBase`.
     Extended (when expanded): Athletics XP, Strength XP, Toughness XP, KO point, Run speed, Hunger Rate.
     Extended values (**Verified**, decompile of `FUN_140895350`, 2026-10-14; Meitou: `BodySystem.ExtendedOf`, `PlayerInterface.ExtendedLines`):
     Athletics XP `{n}%` = (int)(100 × `FUN_1408c5ec0`): the encumbrance factor, ×1.5 when the current speed is over 80 % of the run value V (the `xp rate athletics` constant is applied elsewhere).
@@ -564,14 +573,21 @@ How a building gets selected: [ui-input](ui-input.md#building-picking-and-select
     (`FUN_14030a130`): `Max possible efficiency:` int(rate × 100)% (Main) and, for function 1 / 27 with a resource, `Iron / Stone / Copper / Carbon / Water
     under ground:` or `Ground Fertility:` with n = int((1 − yield) × rate × 100) shown as `+` −n% when n < 0, else −n% (`#59231a` when yield < 1, else `#140806`).
     Efficiency then adds `Damage:`, `Power:` (only for a consumer, `power output` < 0) and `Num workers:` (raw max = operators), each `OK` (Good) or `-`
-    int((1 − kept) × rate × 100)% (Bad), and `Total:` the line's value (Main); Max efficiency adds only `Total:`.
+    int((1 − kept) × rate × 100)% (Bad), and `Total:` the line's value (Main); Max efficiency adds only `Total:`. Slot 109 (`FUN_140296e00`) = 0 when slot 164
+    fails (**Unknown** what it tests), else the construction fraction (`FUN_140547200`, progress / target capped at 1) × granted / demand (1 without demand).
+  - Who shows it (**Verified**, each class's slot 40): ProductionBuilding's `FUN_1402ffeb0` (also Generator, WindGenerator, RainCollector, Torture), Research
+    `FUN_140309680` and Crafting `FUN_1402ff070` in section 6 as 155, 154, 153; Useable / Storage / Light `FUN_140304e90` in section 6 as 155 then 154, except
+    `Healing bonus:` instead of both when slot 94 is 6 (BF_BED, **Observed** reading) and `Max Skill Level:` instead of 154 for class type 7 (training);
+    Turret `FUN_14030c2a0` in section 7 (155, 154); Furnace `FUN_14030b750` never.
   - Slot 114 (`FUN_140300090`), first match, all but Working in Bad with a tooltip: Broken, Under construction, Switched off (off with demand), No power, Production
     queue empty (status 3), Out of resource (status 0 and slot 149), Output full (status 1), No power (demand > 0, granted <= 0), No workers (raw max > 0,
     nobody), Working (tooltip from slot 168, **Unknown**).
   - Rocks (**Observed**, same screenshot): the name bar's right is the player's faction ("Nameless"), so the rock passes slot 113's owner-is-player branch (how it
     gets that owner is **Unknown**); the medical rows are `Condition` 2, full: the target of `build materials` 2.
-  Meitou (`PlayerInterface.Production.cs`): these lines for mines and rocks (function 1 / 27 without a farm), unmined rocks too (0 workers), health 1, header Output
-  full / No workers / Working plus the power words; the `Output:` line is kept only for other machines; the other slot 154 classes keep Meitou's lines.
+  Meitou (`PlayerInterface.Production.cs`, `MachineSnapshot.Efficiency`): Workers and Efficiency on every machine but farms, furnaces, beds (functions 6 and
+  25, engine reading), training dummies and turrets (no second stats panel drawn), unmined rocks too (0 workers); health is `Machine.Health` (progress / target;
+  the slot 164 gate not modelled), which also scales production (`WorkFactor`) and the sound efficiency. Mines and rocks get the header Output full / No workers /
+  Working (plus the power words) and no `Output:` line; other machines keep Meitou's status words and `Output:` line.
 - **Window.** Selecting a complete building of the player's faction opens its window (Building slot 38 → `FUN_1406e6640`; one window per
   building, made on first use by slot 48). Classes from RTTI vtable names, layouts **Verified** (each layout string is referenced only by
   the base constructor listed):

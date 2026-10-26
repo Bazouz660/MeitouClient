@@ -85,14 +85,10 @@ public sealed partial class ProductionSystem
     {
         if (instance is null) return null;
         if (world.Machines.Find(instance) is { } m)
-            return m.Data is { Function: MachineData.MineFunction or MachineData.NaturalMineFunction, Resource: not 0 and var r }
-                ? new(instance, r, m.Yield) { Efficiency = m.Data.Farm is null ? EfficiencyOf(world, m.Data, m.Operators, m.Power) : null } : null;
+            return m.Data is { Function: MachineData.MineFunction or MachineData.NaturalMineFunction, Resource: not 0 and var r } ? new(instance, r, m.Yield) : null;
         if (Natural(instance) is not { } site || Data(site.Record) is not { Resource: not 0 and var resource } data) return null;
         if (!naturalYields.TryGetValue(instance, out float y)) naturalYields[instance] = y = resources.NodeYield(resource, site.Position);
-        // A rock nobody has mined yet: no machine, so nobody works it and it has no power draw.
-        return new(instance, resource, y) { Efficiency = EfficiencyOf(world, data, 0, 1) };
+        // A rock nobody has mined yet: no machine, so nobody works it; whole, no power draw.
+        return new(instance, resource, y) { Efficiency = new(0, data.PowerOperators, 1, 1, data.IsConsumer, data.OutputRate * world.Research.Upgrade(data.Id).ProductionMult, y) };
     }
-
-    static EfficiencyView EfficiencyOf(World world, MachineData data, int operators, float power) =>
-        new(operators, data.PowerOperators, power, data.IsConsumer, data.OutputRate * world.Research.Upgrade(data.Id).ProductionMult);
 }

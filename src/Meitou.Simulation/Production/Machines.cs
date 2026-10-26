@@ -103,7 +103,7 @@ public sealed class Machine
     public int Operators { get; set; }
     /// <summary>Operators last tick: what a consumer's draw is scaled by (the grid runs after the operators, so its result applies one tick later).</summary>
     public int LastOperators { get; set; }
-    /// <summary>The power factor its work is scaled by: granted / demand for a consumer (1 with no demand), building health being 1 (docs/game/buildings-production.md "Power").</summary>
+    /// <summary>The power factor its work is scaled by: granted / demand for a consumer (1 with no demand); health is <see cref="Health"/> (docs/game/buildings-production.md "Power").</summary>
     public float Power { get; set; } = 1;
     /// <summary>A consumer's demand and the share granted, a generator's output, a battery's flow (+ charging, - draining).</summary>
     public float Demand { get; set; }
@@ -124,6 +124,12 @@ public sealed class Machine
     /// </summary>
     public float Efficiency { get; set; }
     public bool HasPower { get; set; }
+    /// <summary>
+    /// Building health, a factor of its work (the exe's slot 109, <c>FUN_140296e00</c>): construction progress / target capped at 1 (1 for a rock or a target of 0), and the research
+    /// production multiplier. Derived each tick; not saved, not hashed.
+    /// </summary>
+    public float Health { get; set; } = 1;
+    public float ProductionMult { get; set; } = 1;
     /// <summary>A wind generator's share of its output: its blade's <see cref="Meitou.Data.World.RotorSpec.WindShare"/> of the wind at the site (derived each tick; not saved, not hashed).</summary>
     public float Wind { get; set; }
     /// <summary>A wind generator's wind speed at the site (units/s) and its rated output (data + research), for its panel; derived each tick.</summary>

@@ -19,15 +19,16 @@ public readonly record struct FarmView(float Growth, float Death, int Harvested,
 /// </summary>
 public readonly record struct RichnessView(string Instance, int Resource, float Yield)
 {
-    /// <summary>
-    /// A mine's or rock's efficiency lines (<c>ProductionBuilding</c> slots 154 / 155), null for a farm: its operators over the raw <c>max operators</c>, the power factor (granted / demand, 1
-    /// without demand; health is always 1 here), whether it draws power, and the rate (<c>output rate</c> x the research production multiplier).
-    /// </summary>
+    /// <summary>A rock nobody has mined yet: its efficiency lines (a mined rock's and a mine's are its machine's, <see cref="MachineSnapshot.Efficiency"/>).</summary>
     public EfficiencyView? Efficiency { get; init; }
 }
 
-/// <summary>The inputs of a production building's efficiency lines (docs/game/ui-screens.md "Selected building", Efficiency).</summary>
-public readonly record struct EfficiencyView(int Operators, int MaxOperators, float Power, bool Consumer, float Rate);
+/// <summary>
+/// The inputs of a building's Workers and Efficiency lines (slots 155 / 154, docs/game/ui-screens.md "Selected building", Production building): its operators over the raw
+/// <c>max operators</c>, health (progress / target), the power factor (granted / demand, 1 without demand), whether it draws power, and the rate (<c>output rate</c> x the research
+/// production multiplier) and the yield (1 without a resource).
+/// </summary>
+public readonly record struct EfficiencyView(int Operators, int MaxOperators, float Health, float Power, bool Consumer, float Rate, float Yield);
 
 /// <summary>A crafting bench as the host shows it: the queue (the first is being made), the repeat toggle and the finished items waiting in its output.</summary>
 public sealed record CraftView(IReadOnlyList<(string Key, string Name, float Progress, float Hours)> Queue, bool Repeat, IReadOnlyList<InventoryItemView> Done);
@@ -78,6 +79,14 @@ public sealed record MachineSnapshot(string Site, string Record, IReadOnlyList<M
     public float Rotation { get; init; }
     /// <summary>A wind generator's wind (null for other machines).</summary>
     public WindView? Wind { get; init; }
+    /// <summary>
+    /// Its Workers and Efficiency lines' inputs: every class whose stats section calls slot 154 (production, research, crafting, storage, light and other useable buildings, generators,
+    /// rain collectors); null for a farm (its own lines), a furnace, a bed, a training dummy (Max Skill Level instead) and a turret (its second stats panel, not drawn).
+    /// </summary>
+    public EfficiencyView? Efficiency { get; init; }
+
+    /// <summary>The functions whose panels have no slot 154 lines (BF_BED, BF_TRAINING, BF_TURRET, BF_ITEM_FURNACE, BF_SKELETON_BED).</summary>
+    static bool ShowsEfficiency(MachineData d) => d.Farm is null && d.Function is not (6 or MachineData.TrainingFunction or 12 or MachineData.ItemFurnaceFunction or 25);
 
     internal static MachineSnapshot Of(Machine m, ItemFactory items)
     {
@@ -92,7 +101,8 @@ public sealed record MachineSnapshot(string Site, string Record, IReadOnlyList<M
         // The classes that update their emitter every frame tell it the efficiency and the power; the others powered it once, when built, with no operators (efficiency 0).
         var sound = m.Data.PowersEmitterEachFrame ? new MachineSound(m.Efficiency, m.HasPower && m.Efficiency > 0) : new MachineSound(0, true);
         return new MachineSnapshot(m.Site, m.Data.Id, inputs, output, storage, farm, m.Status, m.Operators, m.Data.MaxOperators) { Sound = sound, Rotation = m.Rotation, Wind = m.Data.IsWind ? new WindView(m.Wind, m.WindSpeed, m.Data.WindRotor, m.WindRated, m.PowerOn) : null, TechLevel = m.Data.IsResearch ? m.Data.TechLevel : 0, Operable = m.Data.Operable, IsAutomatic = m.Data.IsAutomatic, IsStorage = m.Data.IsStorage, Function = m.Data.Function, StorageLimitName = m.Data.StorageLimit is [var only] ? Name(only) : null, StorageCapacity = m.Data.StorageLimit is [_] ? (int)m.Data.StackBonusMult : 0, Craft = Crafting(m, items),
-            Power = m.Data.IsConsumer || m.Data.IsGenerator || m.Data.IsBattery ? new PowerView(m.Data.IsBattery ? PowerKind.Battery : m.Data.IsGenerator ? PowerKind.Generator : PowerKind.Consumer, m.Demand, m.Granted, m.Usage, m.Charge, m.Store, m.Inputs.Length == 0 || Array.Exists(m.Inputs, i => i.Level > 0 || i.Count > 0)) : null };
+            Power = m.Data.IsConsumer || m.Data.IsGenerator || m.Data.IsBattery ? new PowerView(m.Data.IsBattery ? PowerKind.Battery : m.Data.IsGenerator ? PowerKind.Generator : PowerKind.Consumer, m.Demand, m.Granted, m.Usage, m.Charge, m.Store, m.Inputs.Length == 0 || Array.Exists(m.Inputs, i => i.Level > 0 || i.Count > 0)) : null,
+            Efficiency = ShowsEfficiency(m.Data) ? new(m.Operators, m.Data.PowerOperators, m.Health, m.Power, m.Data.IsConsumer, m.Data.OutputRate * m.ProductionMult, m.Yield) : null };
     }
 
     static CraftView? Crafting(Machine m, ItemFactory items) => m.Craft is { } c

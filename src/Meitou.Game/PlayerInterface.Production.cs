@@ -269,28 +269,27 @@ sealed partial class PlayerInterface
     }
 
     /// <summary>
-    /// The Efficiency and Max efficiency lines of a mine or rock (<c>ProductionBuilding</c> slot 154 <c>FUN_140306050</c>, docs/game/ui-screens.md "Selected building"): with
-    /// share = operators / raw max (1 when 0), work = health x power x share x 100 and max = yield x rate, Efficiency is int(max x work)% (ink from work 90 up, else Bad) and Max efficiency
-    /// int(max x 100)% (ink). Their tooltips are the slot 156 rows (Max possible efficiency, the resource under ground) and the losses, then Total.
+    /// The Efficiency and Max efficiency lines (slot 154 <c>FUN_140306050</c>, docs/game/ui-screens.md "Selected building", Production building): with share = operators / raw max
+    /// (1 when 0), work = health x power x share x 100 and max = yield x rate, Efficiency is int(max x work)% (ink from work 90 up, else Bad) and Max efficiency int(max x 100)% (ink).
+    /// Their tooltips are the slot 156 rows (Max possible efficiency; for a mine or rock, <paramref name="resource"/> under ground) and the losses, then Total.
     /// </summary>
-    static void AddEfficiencyLines(Meitou.Simulation.Production.RichnessView rich, Meitou.Simulation.Production.EfficiencyView e, List<HudLine> stats)
+    static void AddEfficiencyLines(Meitou.Simulation.Production.EfficiencyView e, int resource, List<HudLine> stats)
     {
         static string Pc(int v) => v.ToString(CultureInfo.InvariantCulture) + "%";
         float share = e.MaxOperators > 0 ? 1f / e.MaxOperators * e.Operators : 1;
-        const float health = 1; // Meitou models no building damage.
-        float work = health * e.Power * share * 100;
-        float max = rich.Yield * e.Rate;
+        float work = e.Health * e.Power * share * 100;
+        float max = e.Yield * e.Rate;
         int total = (int)(max * work);
         // Slot 156 (FUN_14030a130): the rate, then the resource's loss or gain, in Bad when the yield is under 1.
         var head = new List<(string, string)> { (Loc.Tr("Max possible efficiency:"), MainTag + Pc((int)(e.Rate * 100))) };
-        string? under = rich.Resource switch { 1 => "Iron under ground:", 2 => "Stone under ground:", 3 => "Copper under ground:", 4 => "Carbon under ground:", 5 => "Water under ground:", 6 => "Ground Fertility:", _ => null };
+        string? under = resource switch { 1 => "Iron under ground:", 2 => "Stone under ground:", 3 => "Copper under ground:", 4 => "Carbon under ground:", 5 => "Water under ground:", 6 => "Ground Fertility:", _ => null };
         if (under is not null)
         {
-            int loss = (int)((1 - rich.Yield) * e.Rate * 100);
-            head.Add((Loc.Tr(under), (rich.Yield < 1 ? BadTag : InkTag) + (loss < 0 ? "+" : "") + Pc(-loss)));
+            int loss = (int)((1 - e.Yield) * e.Rate * 100);
+            head.Add((Loc.Tr(under), (e.Yield < 1 ? BadTag : InkTag) + (loss < 0 ? "+" : "") + Pc(-loss)));
         }
         string Loss(float kept) => kept >= 1 ? GoodTag + Loc.Tr("OK") : BadTag + "-" + Pc((int)((1 - kept) * e.Rate * 100));
-        var rows = new List<(string, string)>(head) { (Loc.Tr("Damage:"), Loss(health)) };
+        var rows = new List<(string, string)>(head) { (Loc.Tr("Damage:"), Loss(e.Health)) };
         if (e.Consumer) rows.Add((Loc.Tr("Power:"), Loss(e.Power)));
         rows.Add((Loc.Tr("Num workers:"), e.Operators == e.MaxOperators ? GoodTag + Loc.Tr("OK") : Loss(share)));
         rows.Add((Loc.Tr("Total:"), MainTag + Pc(total)));
@@ -298,18 +297,16 @@ sealed partial class PlayerInterface
         stats.Add(new("Max efficiency:", Pc((int)(max * 100)), MainColour, TooltipRows: [.. head, (Loc.Tr("Total:"), MainTag + Pc((int)(max * 100)))]));
     }
 
-    /// <summary>The stats lines of a selected machine: the farm's crop and growth, the output's progress, workers and the bench's tech level; a mine's per <see cref="AddEfficiencyLines"/>.</summary>
+    /// <summary>
+    /// The stats lines of a selected machine: the farm's crop and growth, the output's progress, then (section 6: slots 155, 154, 153) Workers and Efficiency per
+    /// <see cref="AddEfficiencyLines"/>, the power lines, and the bench's tech level.
+    /// </summary>
     void AddMachineLines(MachineSnapshot m, List<HudLine> stats, ref string status, ref bool bad, Meitou.Simulation.Production.RichnessView? rich = null)
     {
         string N(int v) => v.ToString(CultureInfo.InvariantCulture);
         string P(float v) => ((int)(Math.Clamp(v, 0, 1) * 100)).ToString(CultureInfo.InvariantCulture) + "%";
-        // A mine or rock: section 6 after the richness is Workers (slot 155), Efficiency (154), then the power lines (153); the original has no Output line.
-        if (m.Farm is null && rich is { Efficiency: { } e } mine)
-        {
-            (status, bad) = ProductionStatus(m.Status, e);
-            stats.Add(WorkersLine(e.Operators, e.MaxOperators));
-            AddEfficiencyLines(mine, e, stats);
-        }
+        // A mine or rock: the ProductionBuilding status word, and no Output line (the original has none).
+        if (m.Farm is null && rich is not null && m.Efficiency is { } mine) (status, bad) = ProductionStatus(m.Status, mine);
         else if (m.Farm is { } f)
         {
             status = f.Status switch { FarmStatus.NoWater => "No water", FarmStatus.OutputFull => "Output full", FarmStatus.Harvest => "Ready to harvest", _ => "Growing" };
@@ -323,6 +320,11 @@ sealed partial class PlayerInterface
             status = m.Status switch { 2 => "Working", 1 => "Output full", _ => "Idle" };
             bad = m.Status == 1;
             stats.Add(new("Output:", $"{o.Name} {N(o.Count)}/{N(o.Capacity)}", MainColour));
+        }
+        if (m.Efficiency is { } e)
+        {
+            stats.Add(WorkersLine(e.Operators, e.MaxOperators));
+            AddEfficiencyLines(e, rich?.Resource ?? 0, stats);
         }
         // Power, in the original's words where it has them (GeneratorBuilding vfunc_114, vfunc_153); "No power" and "Low power" are Meitou's.
         if (m.Power is { } pw)
@@ -355,7 +357,7 @@ sealed partial class PlayerInterface
             }
         }
         if (m.TechLevel > 0) stats.Add(new("Tech level:", N(m.TechLevel), MainColour));
-        if (rich is { Efficiency: not null } && m.Farm is null) return;
+        if (m.Efficiency is not null) return;
         // FUN_1403075b0: an automatic machine (raw max operators 0) reads "-".
         if (m.IsAutomatic) stats.Add(new("Workers:", "-", MainColour, Tooltip: "This machine is fully automatic."));
         else if (m.MaxOperators > 0) stats.Add(new("Workers:", $"{N(m.Operators)}/{N(m.MaxOperators)}", MainColour));
