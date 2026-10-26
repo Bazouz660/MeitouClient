@@ -50,7 +50,12 @@ sealed partial class PlayerInterface
         else if (biomeShown)
         {
             if (biomeHold > 0) biomeAlpha = MathF.Min(1, biomeAlpha + dt * 2);
-            else if ((biomeAlpha -= dt) < 0) biomeShown = false;
+            else if ((biomeAlpha -= dt) < 0)
+            {
+                biomeShown = false;
+                // On hiding the game tests the group's `arrival dialog`: squad banter (PlayerInterface::triggerAreaArrivalDialogue).
+                if (biomeGroup is { } arrived) Say(new Meitou.Simulation.Dialogue.AreaArrival(arrived) { Tick = session.World.Tick });
+            }
         }
         if (!blocked) biomeGroup = here.Id;
     }

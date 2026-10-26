@@ -263,6 +263,13 @@ DA 2 gives the squad leader task 102 with event 1 (`+0x264`) for a player-factio
 no base-data task uses the enums 102, 159 or 161. `isDialogDelivered` (109 / 110, evaluator `140792140`, **Verified**): true without a Dialogue object, else whether
 the event was delivered in the speaker's current town (the per-event map the conversation end increments).
 
+### Arrival banter
+
+**Verified** (`PlayerInterface::triggerAreaArrivalDialogue` `FUN_1407ffe40`, called when the biome banner hides, [ui-screens](ui-screens.md)): the active squad needs 2 members;
+candidates are members not unconscious, not carried, not in a bed or prison, not animals, not in combat mode, on screen and, for a BIOME_GROUP, not in a town. A member
+sensing an enemy (`numEnemies` > 0) stops it. With 2 or more candidates every candidate x every `arrival dialog` DIALOGUE is scored (`Dialogue::scoreCustomDialog`) and the best
+runs (`runCustomDialog`). Meitou (`DialogueSystem.Arrive`): the first dialogue, speaker and partner in squad order with a line win; "on screen" is not tested.
+
 ### Tokens
 
 `/NAME/` pairs are expanded until none is left (`FUN_14067a530`). Built in: `COST` (val0 of the line's first DA 8 or 9, else of its
