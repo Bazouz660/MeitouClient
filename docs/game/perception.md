@@ -83,9 +83,15 @@ Every player character within the 1.2e8 range gets the `Kenshi_CharacterNamePane
 
 Moving-state gate; ordinary noise lerp(speed fraction,350*f,600*f), stealth noise
 lerp(stealth,450*f,80), f = lerp(s,1,0.25) dust / lerp(s,1,0.75) rain or acid / 1, from the mover's weather (no
-protection term; **Verified**). Building/floor/squad
-branches halve or reject range. Probability ordinary0.75*(1-d²/N²), sneaking0.1 or0.05 times
-(1-stealth)*(1-d²/N²), alert doubles. Re-roll time and1000-unit special predicate unknown.
+protection term; **Verified**). `SensoryData::canHear` `FUN_140857500` (**Verified**), run only when sight failed, in order: both with the player: heard
+within 1000, nothing else; a target neither moving nor in combat mode: not heard; another interior than the listener: only in combat mode and with one of them outdoors
+(building to building never); another floor of the same building: only in combat mode, at most 1 apart, unless the building is cavernous (`+0xc2`); a per-pair
+cooldown of 2 s of 1x game time divided by the speed (so 2/speed² real s; paused never) returns the last answer. Range N x0.5 when the listener's StateBroadcast
+`+0xb4` (`isSleeping`, KenshiLib name **Observed**) is 0, x0.5 for another interior and x0.5 again when the building (the target's, else the listener's) has no open door.
+Chance 0.75 x (1 - d²/N²), sneaking (0.05 when `+0xb4` is 0, else 0.1) x (1 - stealth) x the same; x2 when the entry is alarmed. In combat mode in the same place and on
+the same floor any chance > 0 is a sure hearing; else a roll. A heard listener with `+0xb4` 1 drops it on a coin flip and, for a sneaking player target, says event 47
+ALMOST_WOKE_UP. Sneaking or crawling targets get stealth XP ([character-stats](character-stats.md)). Meitou (`AggroSystem.HearPlace`): the interior, floor, door and
+sure-hearing rules; not the cooldown, the `+0xb4` factors (which value an awake NPC holds is **Unknown**), the alarm doubling or event 47.
 Hearing does not imply ordinary visual cone/line-of-sight eligibility.
 
 ## Retreat and memory

@@ -102,6 +102,28 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
     /// <summary>The original's chance to hear a character at <paramref name="distance"/> with noise range <paramref name="noise"/>: 0.75 x (1 - d^2 / N^2), rolled each check.</summary>
     public static float HearChance(float distance, float noise) => noise > 0 && distance < noise ? HearOdds * (1 - distance * distance / (noise * noise)) : 0;
 
+    /// <summary>
+    /// The building rules of the hearing check (<c>SensoryData::canHear</c> <c>FUN_140857500</c> steps 3, 4, 6 and 8, <b>Verified</b>): the factor on the target's noise range, 0 when it
+    /// cannot be heard. Inside another building than the listener, or on another floor of the same one, it is heard only in combat mode; from one building into another never; across
+    /// floors at most one apart. Another interior halves the range, and again when the building (the target's, else the listener's) has no open door. <paramref name="sure"/>: in combat
+    /// mode in the listener's place and on its floor, heard whenever the chance is above 0. Engine: the floor test skips the original's cavernous-building exception.
+    /// </summary>
+    static float HearPlace(World world, int listener, int target, Vector3 listenerAt, Vector3 targetAt, bool combat, out bool sure)
+    {
+        sure = false;
+        var sight = world.Sight;
+        int a = sight.PlaceOf(listener), b = sight.PlaceOf(target);
+        if (a != b)
+        {
+            if (!combat || a >= 0 && b >= 0) return 0;
+            return sight.BuildingOf(b >= 0 ? target : listener) is { } building && !world.Fixtures.HasOpenDoor(building) ? 0.25f : 0.5f;
+        }
+        if (a >= 0 && sight.BuildingOf(listener) is { } same && sight.FloorAt(same, listenerAt) is var fa && sight.FloorAt(same, targetAt) is var fb && fa != fb)
+            return combat && Math.Abs(fa - fb) <= 1 ? 1 : 0;
+        sure = combat;
+        return 1;
+    }
+
     /// <summary>A character's daylight sight range R: <paramref name="sight"/> x its race's <c>vision range mult</c> x the weather's factor (<see cref="WeatherSystem.SightFactor"/>).</summary>
     public static float RangeOf(CharacterCold cold, float sight) => sight * (cold.Race?.VisionRangeMult ?? 1) * WeatherSystem.SightFactor(cold);
 
@@ -338,10 +360,12 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         {
             float d = Vector3.Distance(prev[i].Position, other.Position);
             float speed = new Vector2(other.Velocity.X, other.Velocity.Z).Length();
-            float p = stealth >= 0
-                ? speed > 0.01f ? Orders.SneakHearChance(d, Orders.SneakNoise(stealth, Noise(table, t)), stealth) : 0
-                : HearChance(d, NoiseRange(speed, other.MaxSpeed) * Noise(table, t));
-            sensed = p > 0 && Rng.Float(Rng.Hash(world.Seed, Rng.Key(new CharacterId(i, prev[i].Generation)), RngPurpose.ChaseSense, ((ulong)world.Tick << 20) ^ (ulong)(uint)t)) < p;
+            bool sure = false;
+            float place = tc is null ? 1 : HearPlace(world, i, t, prev[i].Position, other.Position, tc.InCombat, out sure);
+            float p = !(place > 0) ? 0 : stealth >= 0
+                ? speed > 0.01f ? Orders.SneakHearChance(d, Orders.SneakNoise(stealth, Noise(table, t)) * place, stealth) : 0
+                : HearChance(d, NoiseRange(speed, other.MaxSpeed) * Noise(table, t) * place);
+            sensed = p > 0 && (sure || Rng.Float(Rng.Hash(world.Seed, Rng.Key(new CharacterId(i, prev[i].Generation)), RngPurpose.ChaseSense, ((ulong)world.Tick << 20) ^ (ulong)(uint)t)) < p);
         }
         s.Sensed = sensed;
         if (!sensed) return;
@@ -459,10 +483,11 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         if (!seen)
         {
             float speed = new Vector2(other.Velocity.X, other.Velocity.Z).Length();
-            float p = stealth >= 0
-                ? speed > 0.01f ? Orders.SneakHearChance(MathF.Sqrt(d2), Orders.SneakNoise(stealth, Noise(s.Table, slot)), stealth) : 0
-                : HearChance(MathF.Sqrt(d2), NoiseRange(speed, other.MaxSpeed) * Noise(s.Table, slot));
-            if (!(p > 0) || Rng.Float(Rng.Hash(s.Seed, s.Key, RngPurpose.Sense, (s.Tick << 20) ^ (ulong)(uint)slot)) >= p) return;
+            float place = HearPlace(s.World, s.Self, slot, s.Table.Previous[s.Self].Position, other.Position, c.InCombat, out bool sure);
+            float p = !(place > 0) ? 0 : stealth >= 0
+                ? speed > 0.01f ? Orders.SneakHearChance(MathF.Sqrt(d2), Orders.SneakNoise(stealth, Noise(s.Table, slot)) * place, stealth) : 0
+                : HearChance(MathF.Sqrt(d2), NoiseRange(speed, other.MaxSpeed) * Noise(s.Table, slot) * place);
+            if (!(p > 0) || !sure && Rng.Float(Rng.Hash(s.Seed, s.Key, RngPurpose.Sense, (s.Tick << 20) ^ (ulong)(uint)slot)) >= p) return;
         }
         s.Best = slot;
         s.BestD2 = d2;
