@@ -645,8 +645,9 @@ How a building gets selected: [ui-input](ui-input.md#building-picking-and-select
     `FactionManager::getEmptyFaction` `FUN_1402e7b00`), so the factory gives it the town's faction `nofac` ("No Faction"). `Task_OperateMachine` slot 1
     (`FUN_14035b430`, the task's start at the machine) on a building with `is foliage` (+0xc0), not a chair, run by a character of the player's faction (+0x250) sets
     the building's faction to the character's (slot 20) unless it is already a player faction, and then, when the town at its position (`FUN_140928890`) is a
-    player's, its town to that one. So slot 113 reads the player's faction once a player character starts working the rock; before, "No Faction" (**Observed**:
-    that its NO_TOWN hand resolves through `FUN_1400f6c20` is inferred from the Useable slot 40's `!= noTown` test; NO_TOWN is explored, not secret).
+    player's, its town to that one. So slot 113 reads the player's faction once a player character starts working the rock; before, "No Faction" (**Verified**:
+    every class branch of the factory builds the town hand from the town's own handle, `FUN_1407925c0`, and NO_TOWN's is type 0xd, registered in
+    `DAT_142133fc8`, the registry `FUN_1400f6c20` → `FUN_1409f9100` asks for a type 0xd hand; NO_TOWN is explored, +0x181 = 1, and not secret).
     Not saved (the original saves no rock). Meitou: `ProductionSystem` sets the rock's owner on arrival, its town by the outposts' radius
     (`RichnessView.Owner` / `TownName`); `Town:` shows only that town.
   Meitou (`PlayerInterface.Production.cs`, `MachineSnapshot.Efficiency` and `Panel`): the lines per class as above, unmined rocks too (0 workers), the turret's
