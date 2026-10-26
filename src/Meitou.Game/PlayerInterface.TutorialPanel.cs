@@ -116,8 +116,8 @@ sealed partial class PlayerInterface
                             if (c.IsPlayer && c.Imprisoned) tutorialPrisoners.Add(c.Id);
                 }
                 return tutorialSeen && Wait();
-            // Engine reading: a prisoner of the set out of the cage (the original asks whether the cage's lock is open while they are still inside).
-            case TutorialAdvance.LockpickingSuccessful: return snap.Characters.Any(c => tutorialPrisoners.Contains(c.Id) && !c.Imprisoned);
+            // A prisoner of the set still in their cage, its lock open.
+            case TutorialAdvance.LockpickingSuccessful: return snap.Characters.Any(c => tutorialPrisoners.Contains(c.Id) && c.IsPlayer && c.CageOpen);
             case TutorialAdvance.CraftButton: return Tab(2) || Tab(3);
             case TutorialAdvance.CraftTab: return Tab(3);
             case TutorialAdvance.ProductionSelection:
@@ -245,5 +245,116 @@ sealed partial class PlayerInterface
                 Sound("Thing_Complete");
             }
         }
+    }
+}
+
+/// <summary>
+/// The tutorial highlight (<c>TutorialGUI</c>'s yellow box, <c>_setHightlightCoords</c>, docs/game/ui-screens.md "Tutorials"): the shown page's HUD part under a box of
+/// (0.909, 0.913, 0.125) whose alpha swings between 0.1 and 0.4 at 0.4 a second; a run page's box shows only while its condition holds.
+/// </summary>
+sealed partial class PlayerInterface
+{
+    static readonly Vector4 TutorialHighlightColour = new(0.909f, 0.913f, 0.125f, 1);
+    const float HighlightLow = 0.1f, HighlightHigh = 0.4f, HighlightRate = 0.4f;
+    float highlightAlpha, highlightDirection = 1;
+    TutorialHighlight highlightShown;
+    long highlightClock;
+
+    /// <summary>The highlight the shown page wants now, or none.</summary>
+    TutorialHighlight WantedHighlight()
+    {
+        if (tutorials is not { Enabled: true } || tutorialShown is not { } id) return TutorialHighlight.None;
+        var page = PageOf(id);
+        if (!page.Run) return page.Highlight;
+        var snap = session.CurrentSnapshot;
+        switch (page.Highlight)
+        {
+            case TutorialHighlight.BuildModePanelBuildings: return BuildModeOn && CurrentBuilding() is not null ? page.Highlight : TutorialHighlight.None;
+            case TutorialHighlight.PanelMedicalBarMaterials or TutorialHighlight.PanelMedicalBarCondition:
+            {
+                if (BuildingFocus() is not { } focus || snap.Buildings.FirstOrDefault(b => b.Id == focus.SiteId) is not { Complete: false }) return TutorialHighlight.None;
+                bool door = FirstDoor(focus) is not null;
+                return page.Highlight == TutorialHighlight.PanelMedicalBarMaterials
+                    ? door ? TutorialHighlight.PanelMedicalBarMaterialsBuilding : TutorialHighlight.PanelMedicalBarMaterials
+                    : door ? TutorialHighlight.PanelMedicalBarConditionBuilding : TutorialHighlight.PanelMedicalBarCondition;
+            }
+            default:   // the production building pages: the focus is a complete production building
+                return BuildingFocus() is { SiteId: { } site } && snap.Buildings.FirstOrDefault(b => b.Id == site) is { Complete: true } && Machine(site) is { Output: not null }
+                    ? page.Highlight : TutorialHighlight.None;
+        }
+    }
+
+    /// <summary>Where a highlight goes among this frame's controls (null: its part is not shown, so neither is the box).</summary>
+    static UiRect? HighlightBounds(TutorialHighlight h, IReadOnlyList<UiControl> controls)
+    {
+        UiRect? Named(string name) => controls.LastOrDefault(c => c.Name == name && c.Bounds.Width > 0)?.Bounds;
+        UiRect? Where(Func<UiControl, bool> test) => controls.LastOrDefault(c => test(c) && c.Bounds.Width > 0)?.Bounds;
+        // The medical panel's bars by index (FUN_1407229c0): the n-th bar is LifeBar{n + 1}.
+        UiRect? Bar(int index) => Named($"LifeBar{index + 1}");
+        UiRect? Line(string caption) => Named("StatsPanel") is { } panel
+            ? Where(c => c.Caption.TrimEnd(':') == caption && panel.Contains(c.Bounds.X + 1, c.Bounds.Y + 1)) : null;
+        return h switch
+        {
+            TutorialHighlight.Portraits => Named("SquadPanel"),
+            TutorialHighlight.PanelStats => Named("NamePanel"),
+            TutorialHighlight.PanelStatsBottom => Named("StatsPanel"),
+            TutorialHighlight.PanelStatsBottomPowerButton => Line("Power"),
+            TutorialHighlight.PanelStatsBottomWorkers => Line("Workers"),
+            TutorialHighlight.PanelMedical => Named("MedicalPanel"),
+            TutorialHighlight.PanelMedicalStatus => Named("StatusPanel"),
+            TutorialHighlight.PanelMedicalBarBody or TutorialHighlight.PanelMedicalBarPower or TutorialHighlight.PanelMedicalBarMaterials
+                or TutorialHighlight.PanelMedicalBarConditionBuilding => Bar(1),
+            TutorialHighlight.PanelMedicalBarLimbs => Bar(4),
+            TutorialHighlight.PanelMedicalBarBlood or TutorialHighlight.PanelMedicalBarCondition => Bar(0),
+            TutorialHighlight.PanelMedicalBarMaterialsBuilding => Bar(2),
+            TutorialHighlight.PanelGameSpeed => Named("SpeedButtonsPanel"),
+            TutorialHighlight.PanelTimeMoney => Named("TimeMoneyPanel"),
+            TutorialHighlight.ButtonBuild => Named("BuildPanel"),
+            TutorialHighlight.PanelBounty => Named("BountyPanel"),
+            TutorialHighlight.PanelMenuBar => Named("ShortcutsPanel"),
+            TutorialHighlight.PanelMenuBarSquad => Named("ShortcutSquadButton"),
+            TutorialHighlight.PanelMenuBarStats => Named("ShortcutStatsButton"),
+            TutorialHighlight.PanelMenuBarTech => Named("ShortcutTechButton"),
+            TutorialHighlight.PanelOrders => Named("OrdersPanel"),
+            TutorialHighlight.PanelOrdersCommands => Union(["OrdersBlockButton", "OrdersHoldButton", "OrdersPassiveButton", "OrdersChaseButton", "OrdersTauntButton", "OrdersRangedButton", "OrdersSneakButton"]),
+            TutorialHighlight.PanelOrdersJobs => Named("JobsPanel"),
+            TutorialHighlight.PanelOrdersJobRemove => controls.FirstOrDefault(c => c.Action == "meitou:job-remove")?.Bounds,
+            TutorialHighlight.PanelOrdersMedicButton => Named("OrdersMedicButton"),
+            TutorialHighlight.PanelOrdersRescueButton => Named("OrdersRescueButton"),
+            TutorialHighlight.MapscreenCraftTab => Where(c => c.Action == "mygui:tab:TabsMain:3"),
+            TutorialHighlight.MapscreenCraftTabItems => Named("CraftTab"),
+            TutorialHighlight.BuildingInventoryInput => Named("InputColumn"),
+            TutorialHighlight.BuildModePanelBuildings => Named("BuildingsList"),
+            _ => null,   // the obedience job row is not looked up
+        };
+
+        UiRect? Union(string[] names)
+        {
+            UiRect? all = null;
+            foreach (string name in names)
+                if (Named(name) is { } r)
+                    {
+                    if (all is not { } a) { all = r; continue; }
+                    float x = MathF.Min(a.X, r.X), y = MathF.Min(a.Y, r.Y);
+                    all = new UiRect(x, y, MathF.Max(a.X + a.Width, r.X + r.Width) - x, MathF.Max(a.Y + a.Height, r.Y + r.Height) - y);
+                }
+            return all;
+        }
+    }
+
+    /// <summary>Once a frame, over everything else: the box over the wanted part, its alpha swinging.</summary>
+    void AddTutorialHighlight(List<UiControl> controls)
+    {
+        long now = System.Diagnostics.Stopwatch.GetTimestamp();
+        float dt = highlightClock == 0 ? 0 : MathF.Min((float)System.Diagnostics.Stopwatch.GetElapsedTime(highlightClock, now).TotalSeconds, 0.25f);
+        highlightClock = now;
+        var wanted = WantedHighlight();
+        // startHighlight: a new item starts at alpha 0, rising; endHighlight resets.
+        if (wanted != highlightShown) (highlightShown, highlightAlpha, highlightDirection) = (wanted, 0, 1);
+        if (wanted == TutorialHighlight.None || HighlightBounds(wanted, controls) is not { } box) return;
+        highlightAlpha += highlightDirection * dt * HighlightRate;
+        if (highlightAlpha >= HighlightHigh) (highlightAlpha, highlightDirection) = (HighlightHigh, -1);
+        else if (highlightAlpha <= HighlightLow && highlightDirection < 0) (highlightAlpha, highlightDirection) = (HighlightLow, 1);
+        controls.Add(new("tutorial-highlight", "Widget", box, "", "", "", true, new Dictionary<string, string>(), TutorialHighlightColour with { W = highlightAlpha }, Pickable: false));
     }
 }

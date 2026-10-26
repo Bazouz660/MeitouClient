@@ -251,6 +251,7 @@ sealed partial class PlayerInterface
                     new Dictionary<string, string> { ["FontName"] = "Meitou_TitleFont", ["TextAlign"] = "Right VCenter" },
                     Vector4.Zero, new Vector4(0.89f, 0.84f, 0.71f, 1), TextScale: Height / 720f));
         }
+        if (hud) AddTutorialHighlight(controls);
         AddNotice(controls);
         AddInventoryDrag(controls);
         var nameTags = new List<UiControl>();   // the tags are on the original's Back layer: under every panel

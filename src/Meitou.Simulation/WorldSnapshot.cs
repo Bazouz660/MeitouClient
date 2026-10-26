@@ -214,6 +214,8 @@ public sealed record CharacterSnapshot(CharacterId Id, CharacterAppearance? Appe
     public bool InBed { get; init; }
     /// <summary>Held in a cage or restraint (<see cref="CharacterCold.InSomething"/>).</summary>
     public bool Imprisoned { get; init; }
+    /// <summary>Imprisoned in a cage whose lock is open (unlocked, broken or level 0): the escape tutorial's success.</summary>
+    public bool CageOpen { get; init; }
     /// <summary>Crawling by choice (<see cref="Bodies.MedicalState.StayingLow"/>, not crippled): the context menu's Stand Up.</summary>
     public bool StayingLow { get; init; }
     /// <summary>In a fight (<see cref="CharacterCold.InCombat"/>).</summary>

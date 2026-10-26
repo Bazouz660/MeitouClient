@@ -1172,8 +1172,13 @@ fresh manager: three queued messages, "Hold middle mouse button to rotate the ca
 Use the 'Confirm' button when finished." (every new game of the process). The Tutorials window (F1) lists all 34 by title, pages read-only.
 
 Meitou (`Tutorials.cs`, `PlayerInterface.Tutorials.cs` / `TutorialPanel.cs`, `TutorialCatalog`): as above, the file in the working directory.
-Engine readings: the cage page moves on when a prisoner of that cage is out of it (the original: the cage's lock is open while they are in it);
-"in a town" is a town radius holding a PC; the steal pointer (Meitou has none) is a selection over another faction's ground item; the highlights are not drawn.
+Highlight targets (**Verified**, `_setHightlightCoords`; Meitou finds them by widget name): portraits `SquadPanel`, stats `NamePanel`, its bottom `StatsPanel` and its
+"Power" / "Workers" lines, medical `MedicalPanel`, status `StatusPanel`, the bars `LifeBar{n+1}` (body 1, limbs 4, blood 0, power 1, materials 1 or 2 with a door,
+condition 0 or 1 with a door), `SpeedButtonsPanel`, `TimeMoneyPanel`, `BuildPanel`, `BountyPanel`, `ShortcutsPanel` and its squad / stats / tech buttons,
+`OrdersPanel`, the order buttons (commands), `JobsPanel` and the first job's X, the medic and rescue buttons, the management screen's tab 3 button and page,
+the building window's `InputColumn`, the build window's list. Engine readings: the commands box spans the seven order buttons, the crafting items box is the
+whole tab page, the obedience job row is not looked up, and a box follows its widget every frame;
+"in a town" is a town radius holding a PC; the steal pointer (Meitou has none) is a selection over another faction's ground item.
 
 ### 8. Damage floaters
 
