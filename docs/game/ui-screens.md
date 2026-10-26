@@ -660,8 +660,10 @@ How a building gets selected: [ui-input](ui-input.md#building-picking-and-select
     `Aim speed:` P·`aim speed`·M `x`. u = max(0, lerp(t, deviation `+0x10`, 0)) (`FUN_1404351b0`), t = 50 × gun `+0x2c` + 50 × the user's perception level
     (stat 24 with injuries, `FUN_140884ac0`; 0 without a user), where `+0x2c` = the Turrets level × 0.01 written by gun slot 16 (`FUN_140446ef0`, with the user hand
     `+0x30`) every frame of the reload step (`FUN_140437ce0`) and on each shot; both stay when the gunner leaves. So t >= 1 for any user with perception and
-    the line reads 0 (the shot's own t is 0.005 × (skill + perception)). Tooltips, built only while the widget `FUN_14091ffc0` asks about is visible (which one
-    **Unknown**; Meitou always shows them): Damage `Default damage:` int D, then the shared rows, `Wall bonus:`, `Height advantage:`, `Total damage:`; Range
+    the line reads 0 (the shot's own t is 0.005 × (skill + perception)). Tooltips are built only while the tooltip window is
+    showing (**Observed**: `FUN_14091ffc0` is getVisible on `+8` of the `ToolTip` object that `DAT_1421337c0` slot 14 returns, class built by `FUN_140920d10`), so
+    a hovered line first shows its empty list and the next panel refresh fills it. Meitou always builds the rows (a line without rows has no tooltip to
+    show, so the gate would hide them for good): Damage `Default damage:` int D, then the shared rows, `Wall bonus:`, `Height advantage:`, `Total damage:`; Range
     `Default range:` int(range × 0.1) m, shared, wall, height, `Total range:`; Aim speed `Default aim speed:` int `x`, shared, wall, `Total speed:` P × aim speed
     (2 decimals, no M) `x`; Deviation `Base Accuracy Deviation:` (1 decimal `*`), `User Skill:` int(`+0x2c` × 100), `User Accuracy Deviation:` u (1 decimal `*`),
     then the text "The amount of accuracy error, in degrees. Higher numbers are poor, 0 is perfect accuracy.". Shared rows: `Power supply:` int(min(1, granted

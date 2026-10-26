@@ -683,7 +683,9 @@ and `power capacity` (battery store, "in seconds" per fcs.def), plus research ([
   - `Task_UseTurret` (`FUN_1403474f0`): a broken turret cannot be manned ([combat](combat.md#turrets)); unfinished ones cannot be anyway.
   - Context menu (`FUN_1407a6bc0`) and hover (`FUN_1407fc6e0`): 95 REPAIR / `spanner` only for a complete broken building, which never occurs (above).
   - Locks (`FUN_140297d60`, `FUN_1402aa590`): a lock whose owner (+8) is broken counts as broken; for a cage or safe being dismantled.
-  - Slot 34 (RootObject "disabled": dead or unconscious characters, broken machines): the world-query filter `FUN_1407865d0` drops them (its users **Unknown**).
+  - Slot 34 (RootObject "disabled": dead or unconscious characters, broken machines): the world-query filter `FUN_1407865d0` drops them. Its users are **Unknown**: an exe scan
+    finds no E8/E9 call, RIP-relative or absolute reference to it except its thunk `14004b353`, and none to that thunk (likewise for its sibling `FUN_1407861a0`,
+    thunk `1400525e5`, the only caller of `FUN_140786100`), so it is reached indirectly, if at all.
   - Not read by production (slot 150 `FUN_140298700`, slot 109 `FUN_140296e00`), power (slots 163, 166, `FUN_140299370`), `Task_OperateMachine`, or the
     engineers' finder (slot 101 `FUN_1400f6b70`: progress below target).
   Meitou: `Machine.Broken`, saved as `broken`, set and cleared by the dismantle, build, completion and ruin steps; the header (`PlayerInterface.BuildingLines`) and
@@ -691,7 +693,8 @@ and `power capacity` (battery store, "in seconds" per fcs.def), plus research ([
 - **What damages a building** (**Verified**, decompile): hits go to slot 62, which is `FUN_1402972c0` (returns 1, no effect) for every UseableStuff class (machines,
   turrets, storages, lights) and `FUN_1400d20b0` (returns 0, no effect either) for plain and gate buildings; only WallBuilding (`FUN_14029d560`, [walls](#walls)) and doors (`FUN_14029d690`)
   lose health, a wall at 0 becoming destroyed (slot 104). Destroyed (+0x1a1) is otherwise set only from the level state `building ruined` (`FUN_14057f1f0`) and
-  a deferred main-thread message (0x10 in `FUN_1407b65b0`, its sender **Unknown**); the first build step on it ruins the building ([construction tick](#construction-tick)). Dismantle (slot 73, its
+  its own deferred replay: slot 104 (`FUN_140557280`) called while `FUN_14025c6d0(DAT_1421348a0)` holds queues message 0x10 (`FUN_140349be0` on
+  `DAT_142134110`) instead, replayed by `FUN_1407b65b0` from the GameWorld update `FUN_140786e30` (**Observed**, decompile), so it adds no source; the first build step on it ruins the building ([construction tick](#construction-tick)). Dismantle (slot 73, its
   only damage path for machines) is offered only when slot 79 (`FUN_14029c380`) holds: the owner is a player faction. So raids and fights never break a
   machine, and a town's own turret (owned by the town's faction) breaks only through a loaded `broken` (none set in the owner's six saves, **Observed**: no
   `broken` true in their zone files). `Task_UseTurret` asks only slot 107, a free place (slot 159) and slot 97, not completion or destroyed. Meitou: an NPC gunner does not man a town turret whose saved state has `broken` (`CombatSystem.Manning`); town buildings
