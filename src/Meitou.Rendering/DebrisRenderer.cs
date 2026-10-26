@@ -171,7 +171,7 @@ public sealed unsafe class DebrisRenderer : IDisposable
         this.find = find;
         frame = new NativeFrame(gpu);
         string vertex = NativeShaders.Port(Vertex, NativeShaders.Map(NativeOwn), PushMembers);
-        string fragment = NativeShaders.Port(Fragment, NativeShaders.Map(NativeOwn), PushMembers);
+        string fragment = Gi.GiResolveShaders.WithAlbedo(NativeShaders.Port(Fragment, NativeShaders.Map(NativeOwn), PushMembers));
         program = new NativeProg(gpu, frame, vertex, fragment, "debris");
         uint stride = (uint)Rendering.Vertex.Size;
         layout = program.Layout(

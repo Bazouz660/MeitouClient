@@ -71,8 +71,8 @@ is the dust storm: lerp(1, 0.5, v) while medical +0x148 = 1, v = medical +0x14c 
 the gear's protection), clamped 0..1 (`FUN_140648ef0`, which also posts "You are in a dust storm, it affects
 your accuracy in combat."). Meitou: `Fighter.Factors` / `Naked` / `StealthMult`, `ArmourPiece.Stealth` (the dust value is `MedicalState.DustStatFactor`,
 [weather](../formats/weather.md#effects-on-characters)); crossbow and assassination skills take their factor in `CombatSystem.Eff`,
-dexterity and damage output stay applied by the combat formulas (`DexterityMult`, `DamageOutput`, the latter
-to the whole packet where the original scales the weapon skill: **Observed** difference, not changed).
+dexterity and damage output stay applied by the combat formulas (`DexterityMult`, `DamageOutput`; **Verified** `FUN_1408868b0`: the latter scales the whole packet
+once, only when above 0 and not 1, and the weapon skill is read raw).
 
 ## Hunger, blood and parts
 
@@ -206,6 +206,14 @@ Weapon inventory weight multiplier0.5; backpack effect scales contents.
 for shots. Gear/container/map/crossbow/limb item types cap1. Other stacks use
 trunc(max(base,section-min)*section-mult); a section flag forces base1 (flag scope unknown).
 
+### First aid need score
+
+**Verified** (decompile of the aggregates `FUN_140644e60`, read through `scoreFirstAidNeed` `FUN_140643ca0`; constants read from the exe). Medical `+0xac` (organic) and `+0xa8` (robot) are recomputed with the other aggregates;
+a dead patient reads -0.1 (`DAT_1416bc158`). Per part pct = 100 / M x (flesh + bandage) (M as [part state](#per-part-state-medicalsystemhealthpartstatus)). Organic parts (no robot race, no fitted limb) and robotic ones are taken apart,
+each with the least pct over its vital parts (`+0x32`) and over all of them (the organic minimum is `worstDamage` +0xa4); each x 0.01, 1 above 0.999. need = max(0.5 x (1 - worst), 1 - worst vital). The blood term
+(1 - blood / max blood) x max(0, bleeding `+0x78` - 1.5 x extra blood loss from bodyparts) x 10 replaces it, for a robot race in the robot score and otherwise in the organic one, when larger and above 0.2. Everything bandaged
+is 0. The player's quick right click and the medic finders treat above 0.01 (`DAT_141682ad8`) as needing aid. Meitou: `MedicalState.FirstAidNeed`; the snapshot's `NeedsAid` / `NeedsRobotAid` are these tests, for every character.
+
 ### Splints
 
 **Verified** (disassembly of `FUN_140646400`, `FUN_140649d50`, `FUN_1405988e0`; Splint Kit records in gamedata.base). A splint kit is an
@@ -274,11 +282,11 @@ offsets). Stats are `float`s inside `CharStats`. The number is what RACE `heal s
 
 | Activity | Function | Effect (**Observed**) |
 | --- | --- | --- |
-| Hit landed (events 0 and 1) | `FUN_1408c6980` | `attack` (or `unarmed` when the stat-set kind at +0x1f0 is 5) gets 0.075 x skill-diff(vs opponent defence) x `map[2]`; the current weapon skill, `dexterity` (x `map[18]`) similarly; event 1 uses halves (0.5 and 0.4) |
-| Attack defended (event 2) | same | `defence` at 0.25 of base, weapon skill at 0.1 |
+| Hit landed (events 0 and 1) | `FUN_1408c6980` | **Verified** (decompile): `attack` (or `unarmed` when the stat-set kind at +0x1f0 is 5, still with the race's `map[2]`) gets 0.075 x skill-diff(own attack vs opponent defence) x `map[2]`; the current weapon skill (not for unarmed) gets 0.075 x skill-diff(skill x `map[20]` vs opponent defence), with no race factor in the gain; `dexterity` gets 0.075 x the attack's skill-diff x `map[18]` (unarmed too). Event 1 uses 0.5 (attack, dexterity) and 0.4 (weapon skill). Dexterity is also scaled by a CharStats factor from +0x19c/+0x1a0/+0x1a8 (`(+0x1a8 + +0x19c) / sum` when the sum is above 0, else 1; fields **Unknown**, Meitou uses 1) |
+| Attack defended (event 2) | same | **Verified**: `defence` at 0.25 of base with skill-diff(own defence x `map[19]` vs opponent attack) and no race factor in the gain; weapon skill at 0.1 (diff against the opponent's defence, Meitou uses the attack). No attack or dexterity gain |
 | Being hit (event 4) | same | `defence` 2.0 of base (**Verified**: the stat written is the CharStats slot +0x124, the same slot event 2 uses for `defence`, and [combat.md](character-stats.md#stats-and-xp) lists the same; `FUN_1408c6360` handles stat-set kind 5), and `toughness` = 0.075 x `xp rate toughness` (1.33) x skill-diff(own toughness vs damage) x `map[21]` |
-| Event 6 | same | the same attacker-side gains as event 2 (attack/unarmed 0.25, weapon skill 0.1) but no `defence` gain (meaning of event 6 not decoded) |
-| Strength tail of every event | same | `strength` rises by `core(0.075 * 0.55 * 2*xp rate strength * map[1])` scaled x0.4 for event 2, x0.1 for event 4, and by the weapon-weight factor below; for unarmed (kind 5) the weapon-weight factor is replaced by (1 - encumbrance factor) |
+| Event 6 | same | **Verified**: `attack`/`unarmed` 0.25 (`map[2]`) and weapon skill 0.1 against the opponent defence; no defence or dexterity gain (meaning of event 6 not decoded) |
+| Strength tail of every event | same | `strength` rises by `core(0.075 * 0.55 * 2*xp rate strength * map[1])` scaled x0.4 for event 2, x0.1 for event 4 (1 for events 0, 1 and 6, **Verified**), and by the weapon-weight factor below; for unarmed (kind 5) the weapon-weight factor is replaced by (1 - encumbrance factor) |
 | Toughness per damage received | `FUN_1408c68e0`, called from `FUN_140666780` | 0.075 x k x `xp rate toughness` x `map[21]`; k = 0.05 normally, 0.25 for damage kind 1, 0.5 for kind 5 (kind meanings not decoded) |
 | Toughness when knocked out | `FUN_1408c6720` (from the part damage `FUN_14064f300` when a hit knocks out, unless its fourth argument is set) | **Verified**: core(0.075 x `map[21]`) (`DAT_142134edc` = exp gain multiplier x 0.1, set in `FUN_1408c6980`) |
 | Toughness on an ordered get-up (`Task_GetUp` start `FUN_14033ca10`) | `FUN_1408c6780` | **Verified**: core(f x (n + 10) x 0.075 x `map[21]`), f the HUD's Toughness XP multiplier ([ui-screens.md](ui-screens.md#4-hud-mainbargui): 1, +1 left arm crippled, +2 right arm, +2 `bloodlossTrauma`, +2 always since `worstDamage` < 15), n the sensed `numEnemies` (SensoryData +0x94), only when the player ordered the get-up, something is sensed and no conscious ally ([ragdolls](ragdolls.md#playing-dead)); dialogue events 0x17 to 0x19. Meitou: `XpService.ToughnessFromGettingUp` (events not sent) |
@@ -395,12 +403,32 @@ is skipped while `DAT_142134690` +0x2f0 is set (**Unknown** flag). Meitou: `Medi
 **Verified** (decompile of `CharacterHuman::vfunc_29` `FUN_1405ccd90`, game clock `FUN_14066cc00` in hours). The
 death time is set on the first update as a corpse. A corpse neither carried (+0x3d4) nor in a bed or cage
 (+0x2f8 = 0) is destroyed ("corpse decayed") once more than 12 hours have passed; while held, the death time is
-kept at least now - 6, so it lies 6 more hours once let go. A corpse whose zone is loaded but not active is
+kept at least now - 6, so it lies 6 more hours once let go. A corpse whose zone is not loaded is
 destroyed at once ("corpse unloaded"), carried or not: the zone is the 64 x 64 grid cell of the corpse's x/z (`FUN_140a08b20`, `FUN_140a08ae0`: ZoneMap record 0x168 bytes from `+200`
-of the zone manager) and "active" is its byte `+0xb1` (`FUN_140a090b0`; `+0xb0` is a second flag, `FUN_140a090d0`). A position outside the grid is never removed. What sets `+0xb1` was not
-traced; it is read as the zone being active round a player character (**Observed**: the callers use it for "zone is live", e.g. the squad-leader pick `FUN_140792b90`).
-Meitou: `BodySystem.SlowWorld`; "active" is `World.ActiveZones`, the population's active set (the box of +-340 round each player character, [game-loop](game-loop.md)), unknown before the
-population's first look (then nothing is removed). Engine choice: the original's active set may differ from that box.
+of the zone manager) and "loaded" is its byte `+0xb1` (`FUN_140a090b0`; `+0xb0` = requested, `FUN_140a090d0`; `FUN_140a09360` = either). A position outside the grid is never removed.
+No other test: nothing in the original ties a corpse to its squad, so a platoon unloading or despawning does not delete its dead.
+
+**Which zones are loaded (Verified**, decompile of the zone manager, `DAT_1421349c0`): `+0xb1` is cleared by the unload `FUN_140a0a4f0` and set to 1 (with `+0xb0` = 0) for every zone of the load list
+when the manager's state machine (`+0x1681d8`, `FUN_140a0f820`) goes from 4 (loading) to 5 (done). The list is filled by `FUN_140a0f080` (activate zone map, radius r, timer index, timer):
+the zone and every neighbour within r. The camera feeds it, not the characters: `FUN_140a0f590` asks for r = 1 (the 3 x 3 block) round the **centre zone** `+0x1681d0`, which is the zone of the
+camera focus (`DAT_142134690`, the camera object's node at `+0x30`/`+0x58`) and moves only when the focus is more than 4147.2 (0.9 x 4608) from the centre zone's middle (record `+0xf8`/`+0x100`,
+set by `FUN_140a0b950` as origin + half of 4608) on x or z (`FUN_140a0f820`). Each request (`FUN_140a0e570`) re-arms one of three per-zone timers (`+0xc0`, `+0xc4`, `+0xc8`, indexed by the caller; defaults
+4, 6 and 5 s of real time, table `0x141748740`; a caller may pass its own); `FUN_140a0b830` counts them down by the real dt and unloads the zone (`FUN_140a0a4f0`) once all are 0, so a zone left by the
+camera stays 4 s. Buildings and objects also ask for their own zones (r = 0, index 2, 1 s: `FUN_140929b20`, `FUN_14092dbb0`), and a camera jump (`FUN_140872e00`) asks for the new place at once.
+A corpse is therefore removed when it is more than about a zone away from where the camera is, not when the player's characters leave it. Corpses are not written to a zone file.
+
+**Corpses in saves**: an NPC platoon keeps its dead in its character list (the death handler `FUN_1407a6200` moves only the player's dead out, into `__DEAD_SQUAD__`). Unloading a platoon
+(`FUN_1407ef4b0`) serialises the whole list with `FUN_1404ff410` (`char count` = the list's size, dead included, **Verified**), then destroys the characters (`FUN_1404feed0`); a save writes the same
+(`FUN_140372ef0`), so a save holds the dead with the medical `dead` flag (census: 8 dead of 49 wild characters). The platoon decides its own relevance (`FUN_1404febd0`): it stays active while the zone of its
+position (the mean of its non-dead members, `FUN_1404fed50`, else the last place) is loaded or requested, and goes after 4-5 s without. A platoon whose members are all dead is declared dead
+(`FUN_140797090`, `persistent` off, destroyed at its next unload). The character reader restores the `dead` flag; the death clock is not saved, so a restored corpse lies 12 hours from its first update
+(**Observed**: the make-from-record loop was not read; the writer and the first-update clock are **Verified**). A corpse that decays or is unloaded is destroyed and so leaves its platoon's list.
+**Loader (partly traced)**: `FUN_140795b30` (ActivePlatoon vtable `0x1416e2e08` slot 9) reads the platoon file (`platoon/<name>`) into the record, then calls slot 6 `FUN_14036d7e0` to make the characters from it and places them (`FUN_1405ca680`); slot 6 was not read yet, so whether a dead entry is skipped is still **Unknown**. `FUN_1404ffad0` (slot 4 step) makes characters from a template only when the platoon has none (`FUN_140583a10`, "createRandomSquad"). Platoon relevance: `FUN_1404febd0` keeps it while its zone is loaded or requested and inside the zone bounds trimmed by 170 on unloaded sides (`FUN_140a09770`); timer 4 s while relevant, 5 s with no zone record, counts down by game dt otherwise; an unloaded one activates after 2 s inside a ready zone (`FUN_1407ebf30`). Meitou still uses the +-340 box for this (open).
+Meitou: `SaveCapture` writes the dead members of the squads it writes, `SavedPopulation.Spawn` makes a save's dead members as corpses where they lay (the player's `__DEAD_SQUAD__` is still not made).
+Meitou: `BodySystem.SlowWorld` removes by `World.LoadedZones` (`PopulationSystem.RefreshLoaded`: the 3 x 3 block round the centre zone with the 0.9-zone recentre rule and the 4 s linger; the camera
+focus, else the first player character, null before the population's first look: nothing is removed). `World.ActiveZones` (box of +-340 round the player's characters) still decides what the population
+makes. Squad exits (`PopulationRoaming.Despawn`, a town or wild site unloading, `Store`) leave the dead lying (`RemoveMember`); before, they deleted them wherever they lay.
+The tick count of 12 hours follows `World.TickSeconds` (`BodySystem.CorpseTicksOf`). **Unknown**: whether a save holds corpses (Meitou's does not, and drops the saved dead on load).
 
 ### What a body part is
 
@@ -483,7 +511,8 @@ replaced, 3 crushed) and the fitted item (holder `FUN_1400cd3f0`; **Verified** b
   min(base - wear - item `dam`, base - wear). Remove: the item takes `dam` = base - wear - flesh, `wear`,
   `stun`; the part becomes base 5, flesh 5, wear/stun 0. On load the item is fitted keeping the saved part floats.
 - Sever (`FUN_14064edc0`) returns for a replaced slot; from state 0 or 3 it makes a stump, awards toughness,
-  drops the RACE `severed limbs` item of the slot at `bone name 2` and opens a wound.
+  drops the RACE `severed limbs` item of the slot at `bone name 2` (the first entry of that slot whose target resolved; a reference to a
+  missing record is skipped, and with no entry nothing drops: no default item) and opens a wound.
 - CHARACTER `starting health` (LOCATIONAL_DAMAGE, val0), applied to a new (not loaded) character (`FUN_140645ef0`, **Observed**): with
   M the part's maximum, val0 < -M makes the limb a stump (flesh 0, bandaged pool 5); else flesh = clamp(val0, -M, M) and the
   bandaged pool M - flesh. **Verified** by probe: Rock Bottom's `Naked dude` has Left Arm -150, a left-arm stump. Meitou ignores it on non-limbs.

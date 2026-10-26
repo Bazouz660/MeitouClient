@@ -50,6 +50,15 @@ internal sealed partial class CharacterRenderer
         return null;
     }
 
+    /// <summary>Where the bone <paramref name="bone"/> of the character <paramref name="key"/> is in the world, as last posed; null when it was not drawn in the world this frame or has no such bone. Render thread, after <see cref="Update"/>.</summary>
+    public Vector3? BonePosition(long key, string bone)
+    {
+        if (!states.TryGetValue(key, out var s) || s.Seen != updateStamp || !s.InWorld || s.Asset is not { IsIcon: false } asset || s.Posed < 0) return null;
+        if (asset.Rig.Handle(bone) is not int h || h >= s.Bones.Length) return null;
+        // The skin matrix carries a point of the binding pose to its posed place: the bone's binding position to where the bone is now.
+        return Vector3.Transform(asset.Rig.BindPosition[h], s.Bones[h] * s.World);
+    }
+
     public float? RayHit(long key, Vector3 origin, Vector3 direction)
     {
         if (!states.TryGetValue(key, out var s) || s.Seen != updateStamp || !s.InWorld || s.Asset is not { IsIcon: false } asset || s.Posed < 0) return null;

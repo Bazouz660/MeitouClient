@@ -310,7 +310,7 @@ internal static class SavedCharacters
         var list = new List<(SavedMember, SavedParts)>();
         foreach (var m in sp.Members)
         {
-            if (m.Gone || m.Dead) continue;
+            if (m.Gone || m.Dead) continue;   // a corpse made once is not made again (it lies in the world, or went with its zone)
             var p = m.Position is null ? Read(m.Source, sp.Name, data, appearances, races, parts, context.Log) : Again(m, data, races);
             if (p is null) continue;
             list.Add((m, p));
@@ -355,11 +355,8 @@ internal static class SavedCharacters
         var successor = hasLeader ? null : alive.FirstOrDefault(b => b.Parts.Look?.Animal is null).Member ?? alive.FirstOrDefault().Member;
         foreach (var (m, p) in built)
         {
-            if (p.Medical is { Dead: true })
-            {
-                m.Dead = true;
-                continue;
-            }
+            // A member dead in the save lies where it fell, as the original makes the whole list of a platoon (FUN_1404ff410 writes the dead with it); its 12 hours start on its first update.
+            bool corpse = p.Medical is { Dead: true };
             var at = m.Position ?? p.Source.Position;
             if (moved)
             {
@@ -368,8 +365,8 @@ internal static class SavedCharacters
                 at = new Vector3(x, walk.GroundHeight(x, z), z);
             }
             float yaw = m.Position is null ? SaveRotation.YawOf(p.Source.Rotation) : m.Yaw;
-            bool leads = p.Source.IsLeader || ReferenceEquals(m, successor);
-            var task = leads ? (sp.Pinned || sp.Wild is not null ? CharacterTask.Wander : CharacterTask.Idle) : CharacterTask.Follow;
+            bool leads = !corpse && (p.Source.IsLeader || ReferenceEquals(m, successor));
+            var task = corpse ? CharacterTask.Idle : leads ? (sp.Pinned || sp.Wild is not null ? CharacterTask.Wander : CharacterTask.Idle) : CharacterTask.Follow;
             var id = Make(world, p, sp.Name, squad, platoon.Faction, context.PlayerFaction, false, at, yaw, task, SpeedMode.Walk, data, assembly, context, m.Bounties, notes);
             // Made again after its platoon left the world: the save's ragdoll is from before that.
             if (m.Position is not null && world.Characters.Cold(id.Slot)?.Save is { } link) link.Ragdoll = null;
@@ -380,10 +377,16 @@ internal static class SavedCharacters
             if (UniqueCharacters.IsUnique(data.Db.Find(p.Source.RecordId))) world.Uniques.Bind(p.Source.RecordId, id);
             squad.Members.Add(id);
             if (leads && squad.Leader.IsNone) squad.Leader = id;
+            if (corpse) continue;
             made.Add((m, p.Source.SquadMemberType));
         }
         foreach (var n in notes) context.Log(n);
-        if (squad.Members.Count == 0) return null;
+        if (made.Count == 0)
+        {
+            // Only corpses: they lie there without a squad.
+            foreach (var id in squad.Members) if (world.Characters.Cold(id.Slot) is { } lying) lying.SquadId = -1;
+            return null;
+        }
         if (squad.Leader.IsNone) squad.Leader = SquadRegistry.Successor(squad.Members, world.Characters);
         // Its shop as it was when it left the world, else the save's (a fresh fill when the save has none).
         squad.Shop = sp.Shop ?? ShopSave.Read(world, squad, sp.Source.Record, data);

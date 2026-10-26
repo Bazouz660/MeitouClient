@@ -10,6 +10,22 @@ public sealed partial class CombatSystem
 {
     // ------------------------------------------------------------------ commit
 
+    /// <summary>
+    /// Whether a blocked blow rings as a parry and throws sparks (the take-hit <c>FUN_1404394f0</c>, outcome 5, <b>Verified</b>): not when the attacker fights with fists (weapon category 5)
+    /// and <c>FUN_140436980</c> is false. That test is true when the attacker's race is a robot (race byte +0x7c), or when the <i>defender's</i> own limb of the number the blow strikes with
+    /// (technique <c>limb N</c>: 0 left arm, 1 right arm, 2 left leg, 3 right leg, 4 weapon: never) is a fitted prosthetic (limb state 2): the original reads its own medical object there,
+    /// not the attacker's.
+    /// </summary>
+    static bool IsParry(CharacterCold attacker, CharacterCold defender, CombatTechnique tech, int blow)
+    {
+        if (!attacker.Fighter!.Unarmed || attacker.Race!.IsRobot) return true;
+        int limb = blow <= 1 ? tech.Limb1 : tech.Limb2;
+        if (limb is < 0 or > 3) return false;
+        foreach (var p in defender.Medical!.Parts)
+            if (p.Template.LimbSlot == limb && p.Limb == LimbState.Replaced) return true;
+        return false;
+    }
+
     public void Apply(World world, in Effect e)
     {
         if (e.Kind == FireEffect) { ApplyFire(world, e); return; }
@@ -26,7 +42,7 @@ public sealed partial class CombatSystem
         if (ac is null || dc is null || ac.Fighter is null || dc.Fighter is null || ac.Stats is null || dc.Stats is null || ac.Medical is null || dc.Medical is null || ac.Race is null || dc.Race is null) return;
         var tech = techniques[A.AttackTech];
         var prev = table.Previous;
-        int direction = tech.DirectionOf(blow);
+        int direction = HitOutcomes.Facing(tech.DirectionOf(blow), HitOutcomes.Behind(table.Previous[a].Position, table.Previous[d].Position, table.Previous[d].Yaw));
 
         // The defender was in the attack zone when the blow arrived (Strike); its own block or dodge decides the outcome.
         CombatTechnique? reaction = D.ReactTech >= 0 && !D.Down && now >= D.StunUntil ? techniques[D.ReactTech] : null;
@@ -47,7 +63,10 @@ public sealed partial class CombatSystem
                 D.Blocks++;
                 GainCombatXp(ac, dc, XpEvent.GlancingHit, XpEvent.Defended);
                 // A dodge technique that counts as a block (the base game's "Dodge back" rows are flagged both) is silent: it looks like a dodge, and the block impact sounds like a hit.
-                if (!techniques[D.ReactTech].IsDodge) Sound(world, SoundKind.Blocked, d, a, prev[d].Position, unarmed: ac.Fighter.Unarmed, robot: ac.Race.IsRobot);
+                bool parry = IsParry(ac, dc, tech, blow);
+                if (!techniques[D.ReactTech].IsDodge) Sound(world, SoundKind.Blocked, d, a, prev[d].Position, unarmed: !parry, robot: false);
+                // A parry throws sparks at the parrying weapon (FUN_1404394f0, IsParry); a fist blow of a plain hand-to-hand impact does not.
+                if (!techniques[D.ReactTech].IsDodge && parry) world.BlockSparks?.Enqueue(Id(world, d));
                 Stop(ref A, tech, blow);
                 Record(now, a, d, blow, outcome, -1, default, false, false);
                 return;
@@ -70,7 +89,7 @@ public sealed partial class CombatSystem
         float dex = Eff(ac, StatsEnumerated.Dexterity) * fighter.DexterityMult;
         float str = Eff(ac, StatsEnumerated.Strength);
         var packet = fighter.Unarmed
-            ? DamageFormulas.UnarmedPacket(skill, Eff(ac, StatsEnumerated.Toughness), str, fighter.Weapon, kind, dc.Race.StringId, fighter.DamageOutput, combat)
+            ? DamageFormulas.UnarmedPacket(UnarmedRating(ac, fighter), Eff(ac, StatsEnumerated.Toughness), str, fighter.Weapon, kind, dc.Race.StringId, fighter.DamageOutput, combat)
             : DamageFormulas.Packet(skill, dex, str, fighter.Weapon!, kind, dc.Race.StringId, fighter.DamageOutput, combat);
         packet = Powered(packet, tech, blow);
 
@@ -80,7 +99,6 @@ public sealed partial class CombatSystem
         var cover = new CoverRoll(world.Seed, Rng.Key(table.IdOf(d)), a, seq, blow);
         var (part, damage, absorbed) = HitResolver.LandDetailed(dc.Medical, ctx, packet, target.Armour, cover, toughness, tech.LowStrike, direction == 6, combat, events);
         FloatHit(world, d, dc, ac.IsPlayer, part, damage, absorbed);
-
         A.Landed++;
         D.Taken++;
         D.HitTick = now;
@@ -146,7 +164,11 @@ public sealed partial class CombatSystem
                 UnderAttackGettingUp(world, d, dc, counter);
                 return;
             }
-            if (dc.Gunning is null) Restart(world.Characters, d, dc);
+            if (dc.Gunning is null)
+            {
+                world.SystemOf<Carrying.CarrySystem>()?.Interrupted(world, d);   // a put-down is finished by the hit, a lift past its attach keeps the body
+                Restart(world.Characters, d, dc);
+            }
         }
         bool stumbling = D.StumbleClip >= 0 && now < D.StunUntil;
         D.HitHeavy = heavy && !stumbling;
@@ -161,6 +183,7 @@ public sealed partial class CombatSystem
             D.StumbleClip = clip.Clip;
             D.StumbleStart = now;
             D.StunUntil = now + Math.Max(1, (int)MathF.Ceiling(clip.Seconds / world.TickSeconds));
+            D.PauseUntil = 0;   // the stumble state (8) ends the pause (FUN_14060cf60 clears +0x144)
             dc.StaggeredUntil = D.StunUntil;
             D.ReadyTick = Math.Max(D.ReadyTick, D.StunUntil);
         }

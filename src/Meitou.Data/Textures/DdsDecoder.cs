@@ -63,6 +63,18 @@ public static class DdsDecoder
                         DecodeChannelBlock(src, channel);
                         for (int i = 0; i < 16; i++) block[i * 4 + 3] = channel[i];
                         break;
+                    case DdsFormat.Rxgb:
+                        DecodeColourBlock(src[8..], block, allowOneBitAlpha: false);
+                        DecodeChannelBlock(src, channel);
+                        for (int i = 0; i < 16; i++)
+                        {
+                            block[i * 4] = channel[i];   // red was stored in alpha
+                            block[i * 4 + 3] = 255;
+                        }
+                        break;
+                    case DdsFormat.Bc7:
+                        Bc7.DecodeBlock(src, block);
+                        break;
                     case DdsFormat.Bc4:
                         DecodeChannelBlock(src, channel);
                         for (int i = 0; i < 16; i++)

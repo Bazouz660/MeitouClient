@@ -28,7 +28,8 @@ public sealed class BodySystem(GameConstants constants, BodyOptions? options = n
     public const long CorpseTicks = (long)(CorpseHours / HoursPerTick);
     /// <summary>While a corpse is carried or held in a bed or cage its clock is kept at most this many game hours old (<c>FUN_1405ccd90</c>, <b>Verified</b> literal).</summary>
     public const float HeldCorpseHours = 6;
-    public const long HeldCorpseTicks = (long)(HeldCorpseHours / HoursPerTick);
+    /// <summary>The ticks 12 game hours take at this world's tick length (<see cref="World.SecondsPerGameHour"/>).</summary>
+    public static long CorpseTicksOf(World world) => (long)(CorpseHours * World.SecondsPerGameHour / world.TickSeconds);
 
     public GameConstants Constants { get; } = constants;
     public BodyOptions Options { get; } = options ?? BodyOptions.Default;
@@ -344,11 +345,11 @@ public sealed class BodySystem(GameConstants constants, BodyOptions? options = n
             else if (table.Next[i].Alive && table.Cold(i) is { DiedTick: >= 0 } cold)
             {
                 // A corpse that is carried or held in a bed or cage does not decay: its clock is kept at most 6 hours old, so it lies 6 more hours once let go.
-                if (!cold.CarriedBy.IsNone || cold.InSomething != Locks.HeldState.None) cold.DiedTick = Math.Max(cold.DiedTick, world.Tick - HeldCorpseTicks);
+                if (!cold.CarriedBy.IsNone || cold.InSomething != Locks.HeldState.None) cold.DiedTick = Math.Max(cold.DiedTick, world.Tick - (long)(HeldCorpseHours * World.SecondsPerGameHour / world.TickSeconds));
                 // "corpse unloaded": a corpse in a zone of the map that is not active goes at once, carried or not (FUN_1405ccd90, after the decay test; Verified).
-                bool unloaded = world.ActiveZones is { } active && WorldLayout.ZoneOf(table.Next[i].Position.X, table.Next[i].Position.Z) is { X: >= 0 and < WorldLayout.ZoneCount, Y: >= 0 and < WorldLayout.ZoneCount } zone
+                bool unloaded = world.LoadedZones is { } active && WorldLayout.ZoneOf(table.Next[i].Position.X, table.Next[i].Position.Z) is { X: >= 0 and < WorldLayout.ZoneCount, Y: >= 0 and < WorldLayout.ZoneCount } zone
                     && !active.Contains(zone);
-                if (!unloaded && world.Tick - cold.DiedTick <= CorpseTicks) continue;
+                if (!unloaded && world.Tick - cold.DiedTick <= CorpseTicksOf(world)) continue;
                 var corpse = new CharacterId(i, table.Next[i].Generation);
                 world.Uniques.Left(corpse);
                 table.Remove(corpse);

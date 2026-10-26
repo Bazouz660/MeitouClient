@@ -213,6 +213,18 @@ Same targets as picking; Task_CutLock / Task_BruteForceLock share the shackle ta
   at its node; AI movement flags 0x10 when `restrains movement` (pole), else 4. The cage's lock is set **locked** when the
   cage has one (all cages do). **Observed**: prisoners with a bounty for the cage owner get a sentence ([economy](economy.md#115-bail-and-sentence)).
   Unique characters are recorded separately.
+- **Facing in a cage** (**Verified** by decompile, `kenshi_x64.exe` 1.0.68): entering sets no orientation. The character update (`FUN_1405cf130`, every frame while
+  `Character+0x2f8 != 0`) resolves the prison handle (`FUN_1402676e0`) and, for state 2 (cage, pole, peeler: one path), places the character at the building's position
+  (vfunc 0x40, `FUN_1400d1e00`: Building+0x48) with the building's own orientation quaternion (vfunc 0xc0, `FUN_1400d1f00`: Building+0xb0) through `FUN_1405b1a30`, which
+  writes the animation object's position and orientation directly (no turn rate). So a prisoner faces the cage building's local +Z (Meitou: `Fixture.Yaw`, 0 along +Z), whatever
+  it faced before, also after a load; there is no door, node or direction-marker lookup (state 1, a bed, takes the `getPositionMarker` / `getDirectionMarkerQuat` path of "Lie spot"
+  below; no Building subclass overrides vfuncs 0x40 / 0xc0). The six `Node Use` nodes of the cage records play no part here. The same rule serves the pole and the Peeler Machine.
+  Meitou: `FixtureRegistry.HoldCaged` (from `LockSystem.SlowWorld`) puts every caged character back at the cage's position and yaw, so a prisoner that came from a save or was turned stands as the original does.
+  Axis chain (**Verified**): the character update stores the building's quaternion (Building+0xb0, plain orientation, no marker/-90 turn as for beds) into the animation object and its node; a character at the identity
+  orientation faces +Z (the portrait stage, `FUN_14084b890`; `human_male.mesh` head and toes extend to +Z, measured), so a prisoner faces the cage's local +Z, as `TownBuildings.YawOf` (yaw of Q applied to +Z) and
+  `CharacterRenderer` (`CreateRotationY(yaw)`) have it. The `cage1.mesh` (Prisoner Cage part `Cannibal Camp Cage`) lock box is a vertex cluster on its +Z wall (x ~ +4, z ~ +7, mid height; **Observed** from vertex positions),
+  and the Spiked Cage's `Cage_LOCK-ext-Node001` (5.6, 0, 13) looks along -Z (node yaw -85 deg, minus 90) at it: the door is on local +Z, so a prisoner faces the door. The part's `offset Z` (12) belongs to a
+  `is for position marker` part: it places the building's position marker (where characters use the cage), not the mesh. The mesh and the occupant both sit at the origin.
 - **Locked cage**: the occupant cannot leave; `Get out of cage` (133, 207) needs `!isDoorLocked`; tooltip shows the lock level
   or "The cage you are in is UNLOCKED. Nobody knows this but you" (`FUN_1405d4260`).
 - **Leaving** (`Task_GetOutOfCage`, `FUN_1403554b0`): restores AI flags and pose. It is an escape (crime 0xc Escaping Prison
@@ -301,8 +313,8 @@ character to one (`OpenContainerOrder`, reach 20) and opens a storage window at 
 ("It's locked."). Another faction's: pointer `lockpick` while locked, else `scavenge` (`search` for own or unowned ones); a locked one with Alt sends the walker to pick it (76 PICK_LOCK), without Alt "Hold down the ALT key to pick the lock." and a walk to it, as the original's right-click path (`FUN_1407fc6e0`); what is taken from it is marked stolen from its owner (no witness or crime test yet, engine gap). A building shop's stock containers each show their own part of the shop's stock (a rectangle of it, `Shop.ForBuilding`, `PlayerSystem.GridOf`; engine choice for where the original's containers keep it), its other containers their own contents: taking from a stock one is the theft of any other faction's container (the item is marked stolen from the container's owner), putting into it is refused ("That stock is the shop's."); without Alt another faction's gets the original's "Hold down the ALT key to steal items" and a walk, the menu's Loot (and Alt) steals at once. Items move with
 `PutInMachine` / `TakeFromMachine` addressed by the fixture id, within 60 of it ("Out of trading range.", [economy](economy.md#trading-range)). Contents are saved in Meitou's own GAMESTATE_BUILDING string `meitou container <layout index>` (the index of the fixture id; JSON list of items with cell, quality, level,
 material, maker, charge and a bag's contents; absent while empty; `Locks/ContainerSave.cs`), the original's interior ids being unmapped. Like the locks, only into building states the
-save already holds (zones visited), and the original ignores the key (**Unverified**). A lock on a stored shackle and prosthetic wear are not kept. Theft rolls
-([carry-loot](carry-loot.md)) for taking from another faction's container are not modelled.
+save already holds (zones visited), and the original ignores the key (**Unverified**). A lock on a stored shackle and prosthetic wear are not kept. The steal roll
+([economy](economy.md#fencing-stealing-and-smuggling)) for taking from another faction's container is not modelled.
 
 ## Player orders on locks
 

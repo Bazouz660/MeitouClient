@@ -124,7 +124,9 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
         var steer = cold.Steer ??= new SteerState();
         bool was = steer.Active;
         steer.Active = false;
-        if (cold.CombatRunning || st.Ranged || holding || st.Down) return false;
+        // A swing has no steering: the movement is animation driven (the attack start and every swing tick set the movement's lock, FUN_14065e240; CharMovement update
+        // FUN_14065ffa0 then moves it by the clip's root motion only), so it stands in its place (MovementSystem turns it, CombatSystem.SwingAim).
+        if (cold.CombatRunning || st.Ranged || holding || st.Down || st.AttackTech >= 0) return false;
         if (world.Tick >= steer.LineTick || steer.Target != t)
         {
             steer.LineClear = combat.SteersAt(world, i, t);
@@ -133,13 +135,14 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
         if (!steer.LineClear) return false;
         float r = CombatTuning.Footprint(cold);
         float reach = CombatTuning.StandGap(st.Reach, cold.Fighter?.WeaponLength ?? 0, false);
-        int around = st.AttackTech < 0 && st.ReactTech < 0 && !st.Engaged ? combat.FightersAt(world, t) : 0;
+        // The wait after its own swing is state 6 too, whether or not it is engaged (FUN_14060d6a0 forces it while +0x144 is set).
+        bool waiting = st.AttackTech < 0 && st.ReactTech < 0 && world.Tick < st.PauseUntil;
+        int around = st.AttackTech < 0 && st.ReactTech < 0 && (!st.Engaged || waiting) ? combat.FightersAt(world, t) : 0;
         // Swinging (AttackState), defending (CombatClassAI slot 12), engaged (attack start, state 5), else waiting (state 6).
-        var (near, far, through, limit) = st.AttackTech >= 0 ? (0.7f * r, reach * 0.5f, true, 200f)
-            : st.ReactTech >= 0 ? (r + 7.5f, r + 19, false, 16f)
-            : st.Engaged ? (1.4f * r, reach, !st.CircleState, 200f)
+        var (near, far, through, limit) = st.ReactTech >= 0 ? (r + 7.5f, r + 19, false, 16f)
+            : st.Engaged && !waiting ? (1.4f * r, reach, !st.CircleState, 200f)
             : (around * 0.25f + CombatTuning.CircleNear, 3 * around + CombatTuning.CircleFar, false, 200f);
-        (steer.Min, steer.Max) = CombatSteering.Band(near, far, r);
+        (steer.Min, steer.Max) = CombatSteering.Band(near, far, r * (cold.Medical?.ScaleK ?? 1));
         (steer.PowerThrough, steer.Limit, steer.Target) = (through, limit, t);
         if ((n.Flags & (ushort)MoveFlags.AnyPath) != 0)
         {
@@ -160,7 +163,7 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
     /// Lapses the path failures and, after a path request that found no way, adds <paramref name="target"/> (<see cref="CharacterCold.PathFailures"/>). A lapsed one is armed for another
     /// <see cref="PathFailureSeconds"/> while there is still no path to its target, else dropped (<c>AITaskSytem::update4Frame</c>, <b>Observed</b>; at most one dropped per call).
     /// </summary>
-    static void NotePathFailure(World world, int i, CharacterCold cold, CharacterId target)
+    internal static void NotePathFailure(World world, int i, CharacterCold cold, CharacterId target)
     {
         var failures = cold.PathFailures;
         long armed = world.Tick + (long)MathF.Ceiling(PathFailureSeconds / world.TickSeconds);
@@ -440,7 +443,7 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem
         task = table.Next[slot].Task;
         cold = table.Cold(slot)!;
         if (taken.Contains(slot) || task == (byte)CharacterTask.Attack) return false;
-        // a carrier or a carried mate does not answer (the original's engagement weight is 0 while carrying)
-        return cold is { Fighter.CanAttack: true, Fleeing: false, IsImprisoned: false, Medical.Incapacitated: false, Carrying.IsNone: true, CarriedBy.IsNone: true };
+        // a carried mate does not answer; a carrier does (no attack goal of the original's tests carrying, docs/game/carry-loot.md "A carrier in a fight")
+        return cold is { Fighter.CanAttack: true, Fleeing: false, IsImprisoned: false, Medical.Incapacitated: false, CarriedBy.IsNone: true };
     }
 }

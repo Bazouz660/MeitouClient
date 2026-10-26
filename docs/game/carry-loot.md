@@ -27,6 +27,48 @@ put-down and bed/cage placement are different state transitions. Bed/cage occupa
 must maintain both character and object links. Rescue target finders differ for squad/player/
 NPC/leader and available safe beds; do not turn every pickup into kidnapping.
 
+### A carried body's animation
+
+**Verified** (`FUN_1405ced90`, `FUN_140520500`, `FUN_14051fc60`, `FUN_1405203b0`; writers of the animation category `+0xf0` found: 0, 4 swimming, 5 grounded, never 3): the body's side of the attach is made for every carried
+body, **awake or not** (no consciousness test): it sets `+0x3d4`, clears the bed/restraint state, stops the layers (`FUN_14051c8d0`), and plays the record named `carry me` by name (`FUN_14051d510`, the character's
+special action `AnimationClass +0x228`). The per-frame update `FUN_140520500` with that action set plays it alone (`FUN_1405203b0` by name each frame) and skips the movement, idle and combat picks, so
+a conscious carried character holds the same `carry me` pose as a knocked-out one; category 3 (CARRIED) is only the record's own tag (the only record with `being carried`). Meitou: `AnimationSystem.Update` plays
+`carry me` for any carried body (it did so only for a downed one before, so an awake carried mate fell through to the standing picks, none of which fits `being carried`, and showed the binding pose), and
+a carried body plays no technique, stumble, lift or knock-out clip. Awake carrying exists for the player's standing squad mates (`CarrySystem.AwakeMate`).
+
+**Observed** (other carrier / body pairs; a Shek body on the human leader, the squad's carried mates): the placement formula above takes only the body's `Height` slider
+(0.5 where the race has no body file) and the carrier's attach bone, so a body of another race hangs by the same rule; no difference from it was found. The upper-body movement pick enforces the carrying flags on its
+candidates (`FUN_14051d660` flag argument 1 from `FUN_14051d8e0` for the upper list), so a carrier never plays the `limp L/R upper` clips (no `carrying left`): only `limp * lower` (lower picks skip the test) and
+`walk/jog carrying left` blend. The `hand2*` records of `gamedata.quack` (`hand2shoulder`, `hand2leftshoulder`, `hand2chest`, `hand2ribs`, `hand2stomach`, `hand2head`; layer overlay, not idle, `uses left/right arm`,
+`override L arm`, left leg 0..100) hold a hand to a body part; they are the injury holds ([animation](../animation.md#injury-holds)); a carrier plays only its carrying arm overlay, never a hold.
+
+### Lift and put-down timing
+
+**Verified** (decompile; constants read from the binary). The lift task starts (`FUN_14034f990`) by playing the whole-body clip `shoulder lift <side>` on the carrier at
+rate +1.0 (`FUN_1405203b0`; a clip plays at its record's `play speed`, which is **2** for `shoulder lift left/right`: the lift takes length / 2). Its update (`FUN_140354ff0`)
+reads the clip position as a fraction (`FUN_1405b4460`, state `+0x54`): once past **0.4** and not yet linked it makes the link (`FUN_14034fbe0`: `FUN_1405cff90` links and calls the attach
+`FUN_1405ced90`, the body plays `shoulder lift B` and the pick-up sound); the task is done at **0.95**. A link made at 0.4 persists whatever happens to the task.
+The put-down starts (`FUN_14034a230`) by playing the same clip at rate **-1.0** and its update (`FUN_1403504f0`) releases the body when the position falls below **0.2**.
+The put-down's **end handler** (`FUN_1403509f0`) always releases the body (`FUN_1405ce1e0`, ragdoll argument 1), stops both lift clips, and when the carrier does not regard the body as friendly
+applies the put-down KO (`FUN_140644980`, 0.01 x the carrier's assassination clamped 0.1..0.4): so a put-down ended early (a hit outside a fight ends the current task, [combat](combat.md))
+is finished at once, never restarted; a lift cut off before 0.4 plans again from its start. Meitou: `CarrySystem.LiftPlaySpeed` (the record's play speed), `CarrySystem.Interrupted`.
+
+**Verified** placement (decompile `FUN_1405cda20`, `FUN_1405b5980`, `FUN_1405b1a30`, constants read): node position = carrier node position + carrier rotation x the attach bone's model-space position
+(`FUN_1405b1ec0`) + the bone's world rotation x O; rotation = bone world rotation x 90 degrees about x x 14 degrees about z; O lerps by t = 2 x (Height - 80) x 0.025 from (-1.4, 0, 1) through (-1.9, -1, 2.6)
+to (-3, -0.4, 5), not clamped (Meitou `CarryPose` matches). The body's node is its feet origin, so a carried body's head hangs down in front of the carrier and its hips ride on the shoulder.
+Meitou draws the body on the carrier's **drawn** facing and the attach interpolated between ticks (`GameHost.CarrierYaw`, `MixCarry`). Measured (carry scene, a standing carrier): shoulder bone y 14.5, node y 17 to 20,
+carried pelvis 8 to 16, head 14 to 16 above the carrier's feet; a crawling carrier's shoulder is at 3 to 5 and so is its body.
+
+### A carrier in a fight
+
+**Verified** in `kenshi_x64.exe`: no attack goal's conditions test carrying (goals 4, 5, 16, 61, 227 in the task table; only Assault 101, Attacking Squad 248 and the static guards test `!IS_CARRYING_SOMETHING`),
+and the only combat-side read of the carrying flag (`+0x348`) is the steering update `FUN_140660dc0`, which lists the carried body with its carrier. The protect-allies desire
+(`FUN_140599b90`, goals 15 / 288) is x0.5 while carrying and 0 in stealth. So a carrier retaliates and fights on its own with the body on its shoulder; weapon choice reads only the
+medical arm bytes (not the carrying flag), and the carrying arm stays on the body because the carrying arm overlay plays every frame ([animation](../animation.md#a-carrier)). Other `+0x348` readers found in the
+exe: squad-level "someone carries" tests (`FUN_140288630`, `FUN_14028fdf0`, a crowd-control count), the walk-to-run rule (`FUN_140342a30`: a carrier walking runs, Meitou `MovementSystem`), the lift and
+put-down tasks, the FIND_BED desire and the Watching-slaves desire. **Verified** records: `carrying left arm only` (overlay, `override L arm`, every other bone deleted), `stand carrying left` (overlay, `override L arm`),
+`walk/jog carrying left` (upper, `override L arm`), `sword ready (carry)` (upper idle, carrying left, one weapon in hand).
+
 ## Theft and witnesses
 
 **Observed** pending crime stores code, victim faction/handle, timer and booked state. Own/lawless
@@ -34,7 +76,7 @@ factions and police/prisoner exemptions gate creation. Loot permission for downe
 slave/prisoner/bounty/bandit/police/diplomat/own-property branches, not just consciousness.
 **Verified** transfer callsites disagree: right-click conscious→Theft3, unpermitted down→Looting10;
 drag-drop unpermitted down-character→Theft3, other source→Looting10. Ordinary loot UI path unknown.
-Ground pickup can raise Theft inside another faction's building.
+Ground pickup can raise Theft inside another faction's building, and taking from another faction's container does (Theft by right-click, Looting by drag).
 
 **Observed** steal roll (`FUN_140794810`, chance `FUN_1407944d0`; virtual names KenshiLib 1ce4a16): both inventory transfers above and the give
 set their pending crime, then roll; caught refuses the move. Character owner (Loot, 26, on a sleeper, a playing-dead or a caged

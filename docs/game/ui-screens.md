@@ -899,6 +899,13 @@ unless marked; Meitou: `PlayerInterface.Squads.cs`, commands in `SquadManagement
   - Auto-add (`FUN_14074c8b0`): tops up stacks, then the first free spot row by row from the top, left to right, in limit-sized stacks. ARRANGE (`FUN_14070f740`, `General_Click`): every
     section (unless flagged) is emptied and re-added by auto-add (partial stacks merge) in a sorted order, pass 1 by the longest footprint side, pass 2 by area, pass 3 by width, all
     descending; the first pass where everything fits wins, else the old positions are restored.
+  - Loading a saved inventory (`FUN_14074c0e0`, **Verified** by decompile; the INVENTORY_STATE's items in file order): each item is looked up by its `section` name; it goes to its saved `inventory x` / `inventory y`
+    only if the section exists and accepts it (`FUN_14074bc30`), the footprint lies inside the section's width and height and `FUN_1407466f0` finds no item of that section overlapping it. Otherwise it is
+    auto-added to the inventory (`FUN_140745c80` to `FUN_14074bd20`: the sections that accept it, the backpack's last, each by `FUN_14074c8b0`), and when nothing has room it is not added (lost). No saved
+    cell is ever repaired by sliding. A CONTAINER's contents are a second INVENTORY_STATE read the same way into the bag's own grid, so the contents of a bag carried in `main` and of the worn one are
+    separate grids that both name their items' section `backpack_content`: a window lists only the worn backpack's (a count of cells from both would overlap), **Verified** on the siwa-test save
+    (Trak: 70 items, 18 of them in the Grand sac carried in `main`, the others in the worn bag; no overlap within a grid, 31 overlapping pairs in the save when both bags' items are listed together).
+  - Meitou (`SavedKit.Fill`): the same rules, the rejected items auto-added after the others are placed; `Inventory.Shown` is what the windows list (own items and the worn backpack's contents).
   - Trade: a drag buys or sells in place, asking the fence question as the right click does; the quantity is capped by what the payer can afford (the rest stays on the mouse);
     "You can't afford that." / "The shopkeeper can't afford that." with `gui_notrade` restore the stack; a caught stolen sale: "Got caught selling stolen item." / "Attempted smuggling!".
     Taking from a non-player CAMPING building (`building category`) is not stealing.
@@ -925,7 +932,8 @@ unless marked; Meitou: `PlayerInterface.Squads.cs`, commands in `SquadManagement
 - <a id="limbs-window"></a>**Limbs window** (`LimbsInventoryLayout` `FUN_1401573d0`, `Kenshi_LimbReplacementWindow`; **Verified** in the decompile unless marked; code `PlayerInterface.Inventory.cs`,
   `ArrangeLimbSlots`, `PlaceLimbsWindow`):
   - LIMBS is enabled once the character has a limb holder (made the first time a limb changes, `FUN_140645690`); it toggles the window (`FUN_14070d1e0`), with `Inventory_Open` / `_Close`.
-    Meitou: enabled while a limb is not the original (no limb returns to it).
+    Meitou: enabled while a limb is not the original (no limb returns to it). The loot window's LIMBS opens the looted body's limbs window the same way (**Observed** in the original by the owner); Meitou places it
+    in the window row and closes it with the loot.
   - Placed (`FUN_1406e4960`) with its right edge on the left edge of the inventory (its bag window when open), top at 5% of the smaller screen side; off the screen it goes to x 0 and
     pushes the inventory and bag right. Opened without a parent: it does not move with the inventory (**Observed**). Closing the inventory closes it (`FUN_1406e53d0`); Meitou also
     closes it when the inventory shows another character (the original's inventory is per character).
@@ -938,6 +946,12 @@ unless marked; Meitou: `PlayerInterface.Squads.cs`, commands in `SquadManagement
   someone else after pinning opens their inventory left of the pinned one; I on a pinned character raises their window; unpinning gives the window back to the selection (closes it when
   the inventory is already open); a pinned window has no bag or limbs window. A pinned window can still be dragged (**Observed** by the owner). The snapshot carries every pinned character's grid (`ShowInventoryCommand`).
   Esc while trading closes the trader and the character's windows in one press, whichever was clicked last (engine choice, as for loot).
+  The data panel is the same for every character window, the loot window and a pinned one (**Verified**: the window update `FUN_14070f3c0` calls the owner object's slot 40 (+0x140, `Character::vftable`, `FUN_1405d4260`, mask 0xf) with the window's DatapanelGUI, created by the layout `FUN_14014eee0` as `Character_Inventory:<name>` / `FUN_14014f570` for animals; the title is the owner's name). Meitou fills it for `inventory`, pinned and `loot` alike; the burden word of a body comes from the grid's `Burden` (a body has no HUD view).
+  **Which lines** (**Verified**, `FUN_1405d4260` disassembly, mask 0xf = 0x1405d42ef..0x1405d7455; status object S = Character slot 14 (`+0x70`), S+0 slave state): every character: `Total Weight:` and the burden row (blank label, value `-Weightless` ... `-Overloaded`, thresholds above). Then the character's faction (slot 11, `+0x58`): **not the player's** (faction `+0x250` null): only the trader lines when the character is a trader (`Money:`, `Merchant Info:`, `Prices:`, `Buys Stolen Goods`; Meitou: not built) and the panel ends, so a looted body or a stranger shows weight and burden only. **The player's faction**:
+  - `Disguise:` value = the uniform faction's name (S+0x108 non-null) in Main, else `None`; tooltip `Not currently in disguise.` at S+0x100 (disguise level) <= 0, else the rows `Clothing disguise:`, `In secure location:`, `Same faction:`, `Slave owner recognition:`, `Someone knows me personally:`, `Disguise blown:` (seconds, S+0x110) and `Total:` (level x 100). A second row follows with a 4-space label: `-` at level <= 0, else the percent (`{n}%` of S+0x100 x 100, Main) or `Blown!` (Bad) when S+0x110 > 0. Meitou has no disguise state: always `None` and `-`.
+  - `Slave of:` S+0 <= 0: value `-`, label and value Greyed, tooltip `You are a free person.`. S+0 > 0 (1 slave, 2 escaped; 3 ex-slave): the owner faction's name (S+0xe0, name at +0x1a8) in Bad, tooltip `The faction that owns you.`; **without an owner the line is not added**.
+  - `Looks like slave:` S+0 <= 0: `-` Greyed, tooltip `You are no slave.`. Else `{n}%` with n = int(S+0xf4 x 100), Bad when S+0xf4 > 0.1 (else the default colour); tooltip `How much you look like an escaped slave...` followed, for slave states, by the rows `Clothing:` (S+0xf0), `Minimum (Escaping):` / `Minimum (Ex-Slave):` (S+0xec set: 10 / 1 %, floors) and `Total:` (Meitou: the first text only).
+  - The level S+0xf4 (**Observed**, `FUN_1405a51e0`, run for a character of the player's faction; constants read from the binary): reset to 0; inventory sections by item-slot id 3, 5, 6, 9 (**Observed**: 3 hat, 5 body armour, 6 legs, 9 boots): section 3 empty + a character flag (`CharacterHuman` slot 124, anim-class field `+0xe8` -> `+0x168`, meaning **Unknown**) +0.4; section 5 empty +0.1, or a locked piece (item slot 94 non-null, shackles) +1; section 6 empty +0.1, a locked piece +1, a piece with `+0x244` = 6 (slave clothing, **Observed**) +0.5; section 9 holding a locked piece +1, no piece in an existing section +0.1. S+0xf0 = that sum; state 2 doubles it; state 3 (ex-slave) below 0.01 becomes 0.01 (S+0xec = 1), state 2 below 0.1 becomes 0.1 (S+0xec = 10); above 1 becomes 1. Meitou: `CaptiveSystem.LooksLikeSlaveLevel` (any locked worn item = 1; the flag taken as true; state 3 does not exist).
   The character parchment has separate label/value rows: Total Weight, a burden description, Disguise, Slave of, Looks like slave. **Unknown**: exact runtime sizing/rounding,
   burden description thresholds, and race/mod overrides of the pocket dimensions. Meitou uses 8 by 10 for new pockets and retains taller loaded inventories when saved items require it.
   Total Weight `W/M` (**Observed** in the exe, checked on three characters of the owner's save against the original): both truncated; M = strength × its injury multiplier +
@@ -1135,11 +1149,15 @@ Full info "separate numbers for each damage type". Built at the end of `MedicalS
   (1, 0.31, 0.31) when relation tests on the hit character and the camera's player succeed (red tested last, so it wins). Which
   tests these are (`FUN_140678830` with 3 or 4, `FUN_1407916d0`) is **Unknown**; guess: red for the player's side being hit.
 - Wall (building) damage uses the same label with a plain `{1,num}` number, random scatter of +-20 units (`FUN_14029d2b0`).
-- Rise speed, lifetime and fade are in the label manager's update (not found): **Unknown**. No healing floater exists among the
-  callers of `FUN_14073faf0` (**Observed**).
+- **Look and motion** (**Verified**, `ScreenLabel` update `FUN_1406ea9f0`, constants read from the binary): a plain MyGUI TextBox (template
+  `Kenshi_TextboxStandardText`, so no shadow) on the `Dialog` layer, font from a table by the creator's 4th argument (0 `Kenshi_FloaterFont_Small`,
+  1 `_Medium`, 2 `_Large`; `FUN_14157ff60`); a hit passes 1 when the option is Simple info, else 0. Its size is the text's plus 20 x the UI scale; its
+  top left goes to the screen point of the anchor. The anchor rises in world space at the speed table's entry by the 5th argument (0, 4, 8 units/s;
+  a hit passes 1: 4/s); past 8 units of rise the alpha is 1 - (rise - 8) x 0.25, and at 12 the label goes: 3 s in all. No healing floater exists
+  among the callers of `FUN_14073faf0` (**Observed**).
 
-Meitou: the Simple/Full text and the gate follow the above; floaters rise 30 px and fade over 1.4 s (engine choice). Colour: red
-when a player's character is hit, green when one lands the blow, else grey. No healing floater, as in the original.
+Meitou (`PlayerInterface.AddFloaters`): text, font, motion and fade as above; colour: red when a player's character is hit, green when one lands the
+blow, else grey (reading of the relation tests). No healing floater, as in the original.
 
 ### Tooltips
 
@@ -1242,7 +1260,7 @@ Code: `UiTooltips` (data, layout), `PlayerInterface.Tooltips.cs` (hover runtime,
 
 ## Unknowns
 
-- Rise, lifetime and fade of the damage floaters, and the colour tests (section 8).
+- The colour tests of the damage floaters (section 8).
 - Meaning of the two id lists in `__tutorials.data`.
 - Why the code looks up ten life bars while the layout has nine (`LifeBar10` is missing; the constructor `FUN_140726a70` looks up `LifeBar1`, `LifeBar2`, ... until one is missing); the medical panel's overall health h; where the stats labels' upper case and the default squad name come from.
 - Exact tab index of the AI tab and which layout widgets belong to which tab for tabs 4 to 6.

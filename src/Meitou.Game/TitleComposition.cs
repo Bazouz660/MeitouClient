@@ -61,6 +61,9 @@ sealed class TitleComposition
     public Vector3 Wanderer { get; }
     public float WandererYaw { get; }
     public CharacterAppearance Appearance { get; }
+
+    /// <summary>The saved character's body from its stats and hunger (null: the staged wanderer's own shape).</summary>
+    public BodyBuild? SavedBuild { get; init; }
     /// <summary>The road's three fight centres, projected onto the actual valley floor.</summary>
     public IReadOnlyList<Vector3> Fights { get; }
     /// <summary>The ruin moved left of the logo, for the title only (<see cref="FoliageRenderer.Shift"/>).</summary>
@@ -257,5 +260,5 @@ sealed class TitleComposition
 
     /// <summary>The wanderer, held in one frame of the relaxed idle: a still figure, as on the poster.</summary>
     public void Fill(CharacterDrawList list) =>
-        list.Add(new CharacterInstance(long.MinValue + 1, Appearance, Wanderer, WandererYaw, [new("idle_stand_confident", 0.5f, 1)]));
+        list.Add(new CharacterInstance(long.MinValue + 1, Appearance, Wanderer, WandererYaw, [new("idle_stand_confident", 0.5f, 1)]) { Build = SavedBuild });
 }

@@ -120,7 +120,7 @@ public sealed partial class PopulationSystem
         if (release) ReleaseUniques(world, p, killed);
         if (world.Squads.Find(p.SquadId) is { } squad)
         {
-            foreach (var m in squad.Members) world.Characters.Remove(m);
+            foreach (var m in squad.Members) RemoveMember(world, m);
             world.Squads.Remove(squad.Id);
         }
         if (p.Saved is { } saved)
@@ -325,7 +325,7 @@ public sealed partial class PopulationSystem
                 stored.Package = p.Package = squad.Ai?.Current?.Id ?? stored.Package;
                 p.Position = Store(world, squad, stored);
             }
-            foreach (var m in squad.Members) { world.Uniques.Left(m); table.Remove(m); }
+            foreach (var m in squad.Members) { world.Uniques.Left(m); RemoveMember(world, m); }
             world.Squads.Remove(squad.Id);
             p.State = PlatoonState.Unloaded;
             p.SquadId = -1;

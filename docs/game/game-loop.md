@@ -26,7 +26,7 @@ queued jobs and visibility updates matters. Helpers lock/copy pause/speed state;
 has its own budgets and races. Characters near/far/unloaded follow different update cadences;
 round-robin fairness and dt accumulation differ from updating every entity each rendered frame.
 
-Loaded zones near player drive active squad membership. **Observed** active platoon margin170,
+Loaded zones (3x3 round the camera's zone, [corpses](character-stats.md#corpses)) and the population's active zones near the player drive squad membership. **Observed** active platoon margin170,
 countdown held4s while relevant,5s without zone; release members outside zone or within600 of
 an outside-zone leader when irrelevant. Unloaded squads update abstract travel/AI, not detailed
 character rendering. Zone timers, player focus and hibernation are separate concepts.

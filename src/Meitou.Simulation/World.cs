@@ -155,10 +155,14 @@ public sealed partial class World : IDisposable
     /// </summary>
     public HashSet<Meitou.Data.World.ZoneCoordinate> VisitedZones { get; } = [];
     /// <summary>
-    /// The zones active as of the population's last look (null before one, so no zone is judged inactive). A corpse lying in a zone not in it is removed at once
-    /// (<see cref="BodySystem"/>, "corpse unloaded"). The collection is the population's own and swapped by it: read within a tick only. Not hashed.
+    /// The zones active as of the population's last look (null before one, so no zone is judged inactive). The collection is the population's own and swapped by it: read within a tick only. Not hashed.
     /// </summary>
     public IReadOnlyCollection<Meitou.Data.World.ZoneCoordinate>? ActiveZones { get; set; }
+    /// <summary>
+    /// The zones the original has loaded as of the population's last look (<see cref="PopulationSystem"/>, docs/game/character-stats.md "Corpses"; null before one): a corpse in a zone not in it
+    /// is removed at once (<see cref="BodySystem"/>, "corpse unloaded"). Not hashed.
+    /// </summary>
+    public IReadOnlyCollection<Meitou.Data.World.ZoneCoordinate>? LoadedZones { get; set; }
     /// <summary>The player's research: finished, queued, paid (docs/simulation.md "Production"); hashed once it changed in play.</summary>
     public Construction.ResearchState Research { get; } = new();
     /// <summary>The machines of the player's complete buildings: recipe slots, storage, farms (docs/simulation.md "Production").</summary>
@@ -203,6 +207,9 @@ public sealed partial class World : IDisposable
         dialogues ??= system as Dialogue.IDialogueSource;
         ragdolls ??= system as Ragdolls.IRagdollSource;
     }
+
+    /// <summary>The character holds a line it wants to say to the player (<see cref="Dialogue.IDialogueSource.HasInterrupt"/>).</summary>
+    public bool WantsToTalk(CharacterId id) => dialogues is not null && dialogues.HasInterrupt(id);
 
     /// <summary>Whether the character answers the player's Talk (the dialogue system finds event-1 dialogue for it, and with <paramref name="talker"/> given, a line of it passes now); the host asks between ticks.</summary>
     public bool CanTalk(CharacterId id, CharacterId? talker = null) => dialogues is not null && Characters.Phase == TablePhase.Outside && Characters.TryResolveNext(id, out int slot) && dialogues.CanTalk(this, slot, talker);

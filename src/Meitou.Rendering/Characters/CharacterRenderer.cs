@@ -162,6 +162,10 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
         public int PartBase;
         public CharState State;
         public bool Repose, WeaponDrawn, RangedDrawn, BackDrawn;
+        /// <summary>Posed this frame whatever the thinning (the player's, a ragdoll, a new asset or a first pose).</summary>
+        public bool MustPose;
+        /// <summary>How tall it is on screen, in pixels (its diameter over its distance by the view's pixels per radian): the thinning's priority.</summary>
+        public float Pixels;
         public int Shots;
         public IReadOnlyList<StuckBoltMesh> Bolts;
         /// <summary>The ragdoll's bones over the animation (null: none).</summary>
@@ -180,7 +184,7 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
         public Matrix4x4 World, PreviousWorld;
         public bool HasWorld;
         public long Posed = -1, Seen;
-        /// <summary>The pose-rate period the character was last seen in (<see cref="PoseRangeSteps"/>).</summary>
+        /// <summary>The pose-rate period the character was last seen in (<see cref="PosePixelSteps"/>).</summary>
         public long PoseBucket = long.MinValue;
         /// <summary>What the last update drew it with, for picking (<see cref="RayHit"/>): its asset, weapon, bounding sphere, and whether it is drawn in the world.</summary>
         public CharacterAsset? Asset;
@@ -195,11 +199,16 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
 
     readonly Dictionary<long, CharState> states = [];
     /// <summary>
-    /// Characters farther than these distances from the eye are posed at most 30, 15 and 7.5 times a second (a skipped frame holds the last palette), each on a
-    /// phase of its own so the poses spread over the frames; nearer ones every frame. A fight at the camera's pivot with the boom pulled out is thinned too: only
-    /// <see cref="CharacterInstance.FullRateAnimation"/> (the player's first characters and the selected one) keeps the full rate.
+    /// The thinning by size on screen (engine choice, a performance measure: the original poses every animated character every frame): a character at least as many pixels
+    /// tall as the first step is posed every frame, smaller ones at most 30, 15 and 7.5 times a second past each step (a skipped frame holds the last palette), each on a
+    /// phase of its own so the poses spread over the frames. At most <see cref="FullRateBudget"/> characters, the largest on screen first, take the full rate; the next
+    /// ones at least the second rate. <see cref="CharacterInstance.FullRateAnimation"/> (the player's first characters and the selected one) always keeps the full rate.
     /// </summary>
-    public float[] PoseRangeSteps { get; set; } = [120, 300, 600];
+    public float[] PosePixelSteps { get; set; } = [100, 50, 25];
+    /// <summary>The most characters posed at the full rate by their size alone (the nearest, largest first).</summary>
+    public int FullRateBudget { get; set; } = 48;
+    /// <summary>Pixels per radian of the view (<see cref="SetView"/>), for <see cref="Live.Pixels"/>.</summary>
+    float viewPixelsPerRadian = Meitou.Data.World.TerrainLod.ProjectionScale(1080, 50 * MathF.PI / 180);
     /// <summary>With fewer characters than this drawn in the world, none is thinned: every one is posed every frame.</summary>
     const int ThinFromCharacters = 100;
     /// <summary>The pose rate inside the first step's distance, halved past each step (in poses per second, a frame rate above it poses every frame).</summary>
@@ -207,20 +216,19 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
     /// <summary>The seconds the pose rates count in (the game's animation clock, which a recorded flight steps by its frame time, so a take poses the same however slowly
     /// it is drawn); null: the real time.</summary>
     public Func<double>? PoseClock { get; set; }
-    /// <summary>The culling radius of a person (<see cref="CharacterAsset.Radius"/>): a bigger body (an animal) takes the pose-rate distances that many times farther, as it fills as much of the screen there.</summary>
-    const float HumanRadius = 16;
 
     double poseSeconds;
 
-    int PoseInterval(float distance)
+    int PoseInterval(float pixels)
     {
         int interval = 1;
-        foreach (float range in PoseRangeSteps)
-            if (distance > range) interval *= 2;
+        foreach (float step in PosePixelSteps)
+            if (pixels < step) interval *= 2;
         return interval;
     }
 
     Live[] live = new Live[256];
+    int[] thinOrder = [];
     int liveCount;
     ActiveLayer[] layers = new ActiveLayer[1024];
     int layerCount;
@@ -236,6 +244,7 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
     {
         content.Textures.Mips.SetView(width, height, fieldOfView, Gpu.LodBias);
         content.LodPixelsPerRadian = Meitou.Data.World.TerrainLod.ProjectionScale(height, fieldOfView);   // the generated levels are placed by their deviation in rendered pixels
+        viewPixelsPerRadian = content.LodPixelsPerRadian;
         viewKnown = true;
     }
 
@@ -425,13 +434,10 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
             state.PreviousWorld = state.HasWorld ? state.World : l.World;
             (state.World, state.HasWorld) = (l.World, true);
             l.Bones = inst.Bones;
-            // A ragdoll is posed every frame: its bones move by physics, not by a clip the distance rule could thin out.
-            int interval = PoseInterval(Vector3.Distance(eye, centre) / MathF.Max(1, l.Radius / HumanRadius));
-            // In time, not frames (a slow frame rate must not thin the poses out further): a new pose each time the character's own clock enters a new period.
-            long bucket = interval == 1 ? updateStamp : (long)Math.Floor(poseSeconds * PoseRateHz / interval + unchecked((ulong)inst.Key * 0x9E3779B97F4A7C15UL) / 18446744073709551616.0);
-            // A new asset (other gear, another rig) is posed at once: its parts' attach matrices and its arrays' sizes come from it.
-            l.Repose = inst.FullRateAnimation || inst.Bones is not null || state.Posed < 0 || newAsset || bucket != state.PoseBucket;
-            state.PoseBucket = bucket;
+            // A ragdoll is posed every frame: its bones move by physics, not by a clip the thinning could thin out. A new asset (other gear, another rig) is posed at
+            // once: its parts' attach matrices and its arrays' sizes come from it. The rest are thinned by their size on screen after the gather (below).
+            l.MustPose = inst.FullRateAnimation || inst.Bones is not null || state.Posed < 0 || newAsset;
+            l.Pixels = 2 * l.Radius * viewPixelsPerRadian / MathF.Max(1, Vector3.Distance(eye, centre));
             l.LayerStart = layerCount;
             var rig = asset.Rig;
             if (inst.Poses is { } poses)
@@ -444,6 +450,26 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
         for (int i = 0; i < liveCount; i++) if (!live[i].PortraitOnly) inWorld++;
         if (inWorld < ThinFromCharacters)
             for (int i = 0; i < liveCount; i++) live[i].Repose = true;
+        else
+        {
+            // The largest on screen first: they keep the full rate up to the budget, the rest at least the second rate.
+            if (thinOrder.Length < liveCount) thinOrder = new int[Math.Max(liveCount, thinOrder.Length * 2)];
+            for (int i = 0; i < liveCount; i++) thinOrder[i] = i;
+            var order = thinOrder.AsSpan(0, liveCount);
+            var lives = live;
+            order.Sort((a, b) => lives[b].Pixels.CompareTo(lives[a].Pixels));
+            int full = 0;
+            foreach (int i in order)
+            {
+                ref var l = ref live[i];
+                int interval = PoseInterval(l.Pixels);
+                if (interval == 1 && full++ >= FullRateBudget) interval = 2;
+                // In time, not frames (a slow frame rate must not thin the poses out further): a new pose each time the character's own clock enters a new period.
+                long bucket = interval == 1 ? updateStamp : (long)Math.Floor(poseSeconds * PoseRateHz / interval + unchecked((ulong)l.Key * 0x9E3779B97F4A7C15UL) / 18446744073709551616.0);
+                l.Repose = l.MustPose || bucket != l.State.PoseBucket;
+                l.State.PoseBucket = bucket;
+            }
+        }
         Posed = 0;
         for (int i = 0; i < liveCount; i++) if (live[i].Repose) Posed++;
         if (updateStamp % 120 == 0) EvictStates();
@@ -480,7 +506,7 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
                     var scratch = rig.Rent();
                     scratch.Pose(asset.Shape, layerArray.AsSpan(l.LayerStart, l.LayerCount), state.Bones, l.Bones);
                     foreach (var part in asset.Parts)
-                        if (part.AttachIndex >= 0) state.Attach[part.AttachIndex] = part.Offset * scratch.BoneTransform(part.Bone);
+                        if (part.AttachIndex >= 0) state.Attach[part.AttachIndex] = scratch.TagTransform(part.Bone, part.Offset);
                     foreach (var lamp in asset.Lamps) state.Attach[lamp.AttachIndex] = lamp.Offset * scratch.BoneTransform(lamp.Bone);
                     rig.Return(scratch);
                     if (state.Posed < 0) { state.Bones.CopyTo(state.Previous, 0); state.Attach.CopyTo(state.PreviousAttach, 0); }

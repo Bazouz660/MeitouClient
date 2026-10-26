@@ -279,7 +279,7 @@ public sealed class CharacterAppearance
         if (loadout is not null && !options.Naked)
         {
             weapons.AddRange(loadout.Weapons.Select(w => (w.Weapon, w.Point, w.Model)));
-            if (loadout.Crossbow is { } bow) weapons.Add((bow.Weapon, bow.Point, null));
+            if (loadout.Crossbow is { } bow) weapons.Add((bow.Weapon, bow.Point, bow.Model));
         }
         else if (character is not null && !options.Naked)
         {
@@ -300,7 +300,7 @@ public sealed class CharacterAppearance
         int hipInHand = weapons.FindIndex(w => w.Weapon.Type == FcsRecordType.WEAPON && w.Point == "hip"), backInHand = weapons.FindIndex(w => w.Weapon.Type == FcsRecordType.WEAPON && w.Point == "back");
         int bowInHand = weapons.FindIndex(w => w.Weapon.Type == FcsRecordType.CROSSBOW);
         for (int i = 0; i < weapons.Count; i++)
-            if (weapons[i].Weapon.Type == FcsRecordType.CROSSBOW) result.AddCrossbow(weapons[i].Weapon, weapons[i].Point, drawable: i == bowInHand);
+            if (weapons[i].Weapon.Type == FcsRecordType.CROSSBOW) result.AddCrossbow(weapons[i].Weapon, weapons[i].Point, drawable: i == bowInHand, weapons[i].Model);
             else result.AddWeapon(weapons[i].Weapon, female, weapons[i].Point, drawn: options.WeaponDrawn && i == 0, backCount: 0, weapons[i].Model,
                 both: !options.WeaponDrawn && (i == hipInHand || i == backInHand), back: i == backInHand);
         var lightRoll = new Random(loadout?.Seed ?? options.Seed ?? 0);
@@ -408,7 +408,7 @@ public sealed class CharacterAppearance
             var shown = !both ? WeaponShown.Always : back ? WeaponShown.BackDrawn : WeaponShown.Drawn;
             Parts.Add(new CharacterPart { Record = weapon, Mesh = weapon.GetPath("bare sword"), Field = "bare sword", Mode = AttachMode.Bone, Slot = AttachSlot.Weapon, Point = "hands", Material = model, Shown = shown });
             if (weapon.GetPath("sheath") is { Length: > 0 } sheath)
-                Parts.Add(new CharacterPart { Record = weapon, Mesh = sheath, Field = "sheath", Mode = AttachMode.Bone, Slot = AttachSlot.Weapon, Point = slot, Shown = shown });
+                Parts.Add(new CharacterPart { Record = weapon, Mesh = sheath, Field = "sheath", Mode = AttachMode.Bone, Slot = AttachSlot.Weapon, Point = slot, Material = model, Shown = shown });
             if (!both) return;
         }
         // Mode-0 items fall back from "mesh female" to "mesh" (ogre-skeleton.md).
@@ -424,7 +424,7 @@ public sealed class CharacterAppearance
     /// draws (<paramref name="drawable"/>), the same in the <c>hands</c> point without the offset while shooting (<see cref="WeaponShown.RangedDrawn"/>): the original moves the
     /// whole crossbow there.
     /// </summary>
-    void AddCrossbow(GameRecord bow, string slot, bool drawable)
+    void AddCrossbow(GameRecord bow, string slot, bool drawable, GameRecord? model = null)
     {
         if (bow.GetPath("mesh") is not { Length: > 0 } mesh) { Notes.Add($"'{bow.Name}' has no mesh"); return; }
         var offset = new Vector3(0, 0, bow.GetFloat("equip offset", 1.2f));
@@ -440,7 +440,7 @@ public sealed class CharacterAppearance
             var point = hands ? "hands" : slot;
             var at = hands ? Vector3.Zero : offset;
             CharacterPart Part(string file, string field, int whenShots, Matrix4x4? local = null) =>
-                new() { Record = bow, Mesh = file, Field = field, Mode = AttachMode.Bone, Slot = AttachSlot.Weapon, Point = point, PointOffset = at, Shown = shown, ShownShots = whenShots, Local = local };
+                new() { Record = bow, Mesh = file, Field = field, Mode = AttachMode.Bone, Slot = AttachSlot.Weapon, Point = point, PointOffset = at, Shown = shown, ShownShots = whenShots, Local = local, Material = model };
             Parts.Add(Part(mesh, "mesh", 0));
             if (loaded.Length > 0) Parts.Add(Part(loaded, "extra mesh loaded", 1));
             if (unloaded.Length > 0) Parts.Add(Part(unloaded, "extra mesh unloaded", -1));

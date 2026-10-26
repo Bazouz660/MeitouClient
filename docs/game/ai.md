@@ -17,7 +17,7 @@ dialogue event and already-satisfied A. score=desire*weight*crowdFactor^n*m, n s
 mates, m1.25 for current type/target/second hand. Effect-state evaluation can scale positive
 desire. Sticky current task floors0.4 before commitment expiry, caps0.05 after; another owner
 condition can add1.25 when score<1 (unknown). Drop nonpositive candidates; B-satisfied/no-effect
-branch also drops. Resolve key ties by0.0001 increments. Desire, commitment and crowd factor per
+branch also drops. Candidates are keyed by score in an ordered map; while a key is taken the score gets +0.0001 (**Verified**, `FUN_14050df10`), so of equal scores the later-listed goal ranks first (tried highest first, `FUN_140510650`). The default task (IDLE, desire key 0.1, hours 0-100; set by `FUN_14050c030`) is no candidate: `FUN_140510ef0` tries it, at key 1.0, only after priorities 3, 2 and 1 all failed (**Observed**). Desire, commitment and crowd factor per
 type: [ai-tasks](ai-tasks.md#desire-and-commitment); exact A/B meanings remain unresolved.
 
 The planner (`TaskPathfinder`, [ai-tasks](ai-tasks.md#planner), Observed) chains rows from a goal's effect and unmet B states to the

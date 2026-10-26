@@ -136,20 +136,20 @@ verb 25 "First Aid" (pointer mode 1 `med`, [pointers](#mouse-pointers); Meitou's
 
 | Input | Effect |
 |---|---|
-| right click on one of the player's own characters with something to bandage | the selected characters treat it (`TreatOrder`); a lone selected character on itself treats itself |
+| right click on a character with something to bandage (own or not, as the menu's First Aid; the quick click only on the player's own) | the selected characters treat it (`TreatOrder`); a lone selected character on itself treats itself |
 | NUM7, `H` | Medic for the selection: each looks for a patient once; with Shift the medic job (58) is added to their lists |
 | `L` | the selection rests (sits down; **no binding in the original**); any move order or `R` ends it |
 
 | Input | Effect |
 |---|---|
 | Ctrl + right click on a knocked-out or dead character | the nearest selected character picks it up (`PickUpOrder`); on a body a selected character carries, puts it down (`PutDownOrder`) |
-| right click on one of the player's own downed characters with nothing to bandage | picks it up (as the original's quick right click; with something to bandage it is first aid, as above) |
+| right click on one of the player's own downed characters with nothing to bandage | picks it up ([quick right click](#quick-right-click-on-a-character)) |
 | Alt + right click on a knocked-out or dead character | the nearest selected character takes all that fits from its inventory and backpack (`LootOrder`; no window) |
 | right click on anyone else's knocked-out or dead character | the nearest selected walks over and its whole inventory opens in a second character window beside the inventory (worn gear in the equipment slots, its bag in a bag window): items are held with the mouse out of it or into it, onto equipment slots too (`OpenLootOrder`, [simulation](../simulation.md#carrying-rescue-and-looting); engine choice, the original's loot window is **Unknown**) |
 | left press on an item in an item window | lifts it onto the mouse (one unit of a stack; Shift or Ctrl: the whole stack); let go after a drag, or pressed again, it is placed, merged, swapped, given to the character under the pointer or dropped on the ground ([holding an item](ui-screens.md#6-inventory-trade-dialogue-build)); right click or Escape puts it back |
 | right click on an item in an open trade window | buys one unit of a stock item, or sells one unit of the customer's own item (Shift: the whole stack as far as money and room go); see [ui-screens](ui-screens.md#6-inventory-trade-dialogue-build) |
 | right click on an item while the inventory and another item window are open | one unit moves to the other window, where it first fits (stacks of it, then free cells), in both directions; Shift: the whole stack (**Observed**, release handler `FUN_140714a20`: the one-unit move `FUN_140713d20`, repeated while Shift is held until it fails; target order in [ui-screens](ui-screens.md#6-inventory-trade-dialogue-build)). Meitou: between the lead's inventory or bag and the shown machine (its inputs and output), storage, container, or the open loot (`PutInMachine` / `TakeFromMachine` / `TakeLootItem` / `PutLootItem` with a count, `InventoryCommands.MoveInto`) |
-| right click on an item with only the character's own windows open | a map item is read; money becomes cats; otherwise equipped, taken off, fitted on its stump or moved from the grid into the open bag (`QuickMoveItem`, [ui-screens](ui-screens.md#6-inventory-trade-dialogue-build)) |
+| right click on an item with only the character's own windows open | a map item is read; money becomes cats (also money taken out of a loot by a right click or a take-all, as when it is dropped into the player's window; Meitou `CarrySystem.TakeLoot`); otherwise equipped, taken off, fitted on its stump or moved from the grid into the open bag (`QuickMoveItem`, [ui-screens](ui-screens.md#6-inventory-trade-dialogue-build)) |
 | NUM8, `J` | Rescue for the selection: each looks for a body once; with Shift the rescue job (148) is added |
 | `K` | the selected carriers put their bodies down |
 
@@ -180,6 +180,48 @@ Meitou (`MarkerRenderer`) draws both passes after the tone map, so the colours s
 the near slice's scene depth, multisampled (up to 8×) and resolved over the picture: the mesh's rough band at the cone's widest part
 and the notch on the stem are in `position.mesh` itself; on every ground move, following the cursor each frame while the button steers, always on (settings.cfg is not read yet).
 
+### Quick right click on a character
+
+**Verified** (decompile of the hover and click handler `FUN_1407fb410`, called by the pick `FUN_140800250` for every character hit; helpers by their decompile, names from KenshiLib 1ce4a16). The pick
+takes the nearest character the ray meets and that decides: a character hit counts as handled, so a quick right click on one gives its order or **nothing, and never a move**. The handler sets the
+pointer every frame; the order goes out on the command release (`+0x2f3`) before the context menu's hold. The **lead** is the selected character nearest to the target (`FUN_1407f4ba0`; with
+nothing selected the player faction's character nearest to it, `FUN_1407f2f70`: the pointer shows, no order is given). With only animals selected (`+0x268`) the click does nothing. Left press: select (`FUN_1407f9000`).
+"Down" is vfunc `0x30` (`FUN_1405c9e10`): knocked out (`+0x5b9`), dead (`+0x5bc`), carried (`+0x3d4`), held by a limb or fight state (`FUN_1407d1440`) or crawling (vfunc `0x368` at least 3). Orders to **all** selected:
+5 (with 16 queued after it), 25, 60, 235; the rest go to the **nearest selected** one that is not down and not an animal (`FUN_1407fae70`). A body carried by a character of another faction than the player's: nothing, whatever it is.
+
+| Target (not carried by a non-player) | Pointer | Order |
+|---|---|---|
+| **Own**, dead (`+0x5bc`) | `search` | 26 loot |
+| own, organic need score above 0.01 (medical `+0xac`, [first aid need](character-stats.md#first-aid-need-score)) | `med` | 25 first aid (job 58 with Shift) |
+| own, else robot need above 0.01 (`+0xa8`) | `med` | 60 robot repair (job 57) |
+| own, else not down | none | none |
+| own, down, not carried (not the lead itself; the race's `carriable` flag `+0x7a` set) | `lift` | 68 lift |
+| own, carried by the lead | `lift` | 69 put down |
+| own, carried by another | none | none |
+| **Hostile** (`FUN_14079cbe0`, below), down | `search` | 26 |
+| hostile, standing, the lead sneaking (`FUN_1405c9750`) and the target not an animal: a slave (state 1) the lead is not an enemy of | `scavenge` | 26 |
+| hostile, standing, lead sneaking, else | `knockout` | 228 stealth KO |
+| hostile, standing, not sneaking, imprisoned (`+0x2f8` = 2), or fighting (`isInCombatMode`), or no talk | imprisoned `search`, else `attk` | 26, else 5 + 16 (235 for a lead on a turret) |
+| hostile, standing, not sneaking, not fighting, with a dialogue to give (`FUN_14067aa50`) and a campaign force's member (`FUN_140796240`) or a slave (`FUN_14067ac20`) | `s_talk` (8) while it holds a line for the player (Dialogue `+0xc8` = KenshiLib `playerInterruptionDialog`, **Verified**), else `talk` (7) | 12 |
+| **Other**, down (also carried by a player): bandit or slave class (`+0xdc` 8 / 6) or a not-real faction | `search` | 26 |
+| other, down, else | `scavenge` | 26 |
+| other, standing, the lead sneaking: imprisoned | `lockpick` | 76 then 201 |
+| other, standing, lead sneaking: a slave the lead is not an enemy of | `scavenge` | 26 |
+| other, standing, lead sneaking, else | `knockout` | 228 |
+| other, standing, not sneaking (or an animal), with a dialogue (`+0x280`, `FUN_14067aa50`) | `s_talk` / `talk` as above | 12 |
+| other, standing, no dialogue | none (`green` when the lead regards it as friendly, vfunc `0x3f0`: it is set first and stays) | none |
+
+**Hostile** (`FUN_14079cbe0`, **Verified**): never a character of the player's faction; the squad memory of the target holds the long-term enemy tag (4) on the active squad's leader; or it is targeting a
+player's character (its target handle `+0x650` AI vfunc `0x28`, or the second target handle (status object `+0x28`) while the float `+0xa0` beside it is above 0.1); or among the sensed ones it considers enemies there
+is one of the player's (sense bit 13, not ally, neutral or knocked out); else the player faction's relation to its faction is at most -30 (`FUN_1406b25d0`). Without a squad the answer is no.
+Sense-tag bits (**Verified**, the builder `FUN_1408580d0`): 0 ally (not enemy, friendly), 1 neutral, 2 enemy, 3 knocked out (carried or down), 4 dead, 5 / 6 slave state 1 / 2, 7 class 1 or 2, 9 prisoner,
+10 the looker's faction, 11 robot race, 12 the looker's current target, 13 the player's faction, 14 crawling, 15 carried. `FUN_140796240(c)` (**Verified**): the character's platoon is a campaign force of its faction (`Faction+0x88` is the `FactionWarMgr`, its `forces` map at `+0x30` is looked up by platoon, `FUN_140283500`; with the flag and NPC class 5 also a target-town list `+0x88`).
+`FUN_14067ac20`: the dialogue exists and the character is a slave (status +0 = 1) with something to say.
+**Order 12** (`Task_PlayerTalkto`, init `FUN_14034c5a0`, update `FUN_14034c7c0`, **Verified**): at once the player character's Dialogue fires the task's event (`TaskData +0x264`, default 1 PLAYER_TALK_TO_ME; an event 9 becomes 0x11 for an enemy target, `FUN_140335e00`) at the target (`FUN_140684990`); the update walks to the target (vfunc `0x3b0`) and the task ends once a conversation is open (`FUN_140671c60`). A shopkeeper's trade window is the reply DA_TRADE of that conversation ([economy](economy.md)): **order 12 on a trader walks over and talks, it does not open the trade at once.**
+
+Meitou (`PlayerInterface.QuickOrderFor`): the same table, with these reductions: `carriable` is not read; a campaign force's member is `CharacterSnapshot.WarParty` (platoon with a `Campaign`); `s_talk` is `World.WantsToTalk` (the dialogue system's `interrupts`); the lead's enemy test for a slave is the plain hostility test; a trader is talked to (`TalkOrder`; `OpenTrade` only when its keeper has no line to say). Hostility (`Hostile`): the faction hostile to the player's, or fighting a player's character. Ctrl / Alt over a downed character stay
+Meitou extras (the original has none; Alt there is Highlight).
+
 ### Mouse pointers
 
 **Verified** (read `data/gui/pointer/kenshi_pointers.xml`, `images/kenshi_images.xml`): 25 `ResourceImageSetPointer`s (default `arrow`, layer
@@ -196,7 +238,7 @@ hit with no walkable point sets `invalidmove` (`FUN_140800250`). Which other hov
 
 Meitou (`PlayerInterface.Pointer.cs`, engine choices): the window's own cursor is hidden and the pointer drawn last in the frame (not in
 screenshots or cinema takes). It follows the quick right-click order, so it never disagrees with the click: with a selection, over a
-non-hostile trader or a non-hostile character with a talk dialogue (`World.CanTalk`) `talk`, a hostile living character `attk` (also without a selection, red outline; any other non-hostile one: no quick order, `arrow`, white outline, a right click moves; hostile means a faction hostile to the player's or an NPC fighting one of the player's characters, e.g. escaped slaves robbing them after a dialogue line, whose quick attack is then defence, not an assault; the original's enemy test is **Unknown**), an own hurt character `med`, an own downed one `lift`, anyone else's downed one `search` (a right click opens its inventory), else a loose item (`pick_item`, a right click picks it up: [ground items](../simulation.md)); Ctrl over a downed character
+the [quick right click's table](#quick-right-click-on-a-character) (pointer given also without a selection, the lead then being the nearest of the player's characters): `talk`, `attk`, `knockout`, `med`, `lift`, `search`, `scavenge`, `lockpick`, `green`; a character with no order shows `arrow` with a white outline and a right click does nothing (hostility: [the table](#quick-right-click-on-a-character)), else a loose item (`pick_item`, a right click picks it up: [ground items](../simulation.md)); Ctrl over a downed character
 `lift`, Alt `search`; otherwise, over the interface, the settings panel or the loading screen, `arrow`. The free camera hides it (as mode 0's
 `invisible`). Interface → Hardware mouse (`HardwareMouse` in meitou.user.json, default off as the game's `hardware_mouse`; settings.cfg is
 not read) shows the Windows cursor instead, applied at once.
@@ -253,7 +295,7 @@ Meitou (`PlayerInterface.GroundItems.cs`): with the Highlight gating above, ever
 building, name only, coloured as above; a label picks like its item (pointer `pick_item`, right click picks it up, held a menu with Steal or Pick Up). Overlapping
 labels are stacked above the nearer one. No quantity. The owner (`GroundItem.OwnedBy`, `Saving/GroundItemSave`) is read once at load: the `ownedby` character's
 platoon faction, else the `insideBuilding` building's `owner faction ID` (also for the verb, engine choice), none for a `not real` faction; items dropped or
-placed in play have none. Picking up another faction's item marks it stolen from that faction (`StolenFrom`); no witness or crime yet.
+placed in play have none. Picking up another faction's item marks it stolen from that faction (`StolenFrom`); standing inside a building it also sets a pending Theft against the building's faction ([economy](economy.md#fencing-stealing-and-smuggling)).
 
 ### Hover outline
 
@@ -390,6 +432,16 @@ and a walk there). The right button's target, for the pointer and the click alik
   chance (`FUN_1407f65e0`): 76 (the lock's pick chance with the selection's lockpicking; a building's below `DAT_142133f28` shows 0), 201 (the shackles'
   lock), 228 ([stealth KO](combat.md#stealth-knock-out) chance), 246 (`FUN_140885600`); text `{1,num}%` clamped 0..100, colour (1 − p, p, 0). Without
   one the buttons span the row. The menu sits at the cursor, kept on screen.
+- **Open and close** (**Verified**, `FUN_1407a6bc0` `FUN_1407a7f10` `FUN_1407ac8c0` `FUN_140801630` decompiles; MyGUIEngine_x64.dll `WidgetInput::_riseMouseButtonReleased` disassembly): the menu opens on a held command button
+  and remembers it (`ContextMenuGUI` byte +0: 1 = the command button was held at `FUN_1407a6bc0(menu, 1)`, else the select button, as for the inventory's held item menu `FUN_140415630`). Each frame
+  `FUN_140801630` ends with the menu update `FUN_1407ac8c0`: **while that button is no longer held the menu hides** (`FUN_1407a6bc0(menu, 0, 0)` sets a hide flag +0x58 that empties the
+  captions and takes mouse focus off the widgets). So the menu is never open without its button held: **releasing the right button closes it**, wherever the cursor is. It appears with its
+  top left at the cursor (clamped to the screen, `DAT_142133474/478`), so a quick release finds the cursor on the title, which has no handler.
+  The row's handler `FUN_1407a7f10` is registered at Widget +0x130 = `WidgetInput` (Widget +0x80) member +0xb0 = **eventMouseButtonReleased** (pressed is +0x118, click +0x148): a release of **any button** over a row gives its
+  order (hold, drag onto a row, release; or a left press and release on a row while the right is held); it tests no button, clears the held flags (`DAT_142133464/466/46a`) and hides the menu.
+  A press elsewhere does nothing (the pick `FUN_140800250` returns while the menu shows). No Esc, outside-click or other path hides it: every caller of `FUN_1407a6bc0(.., 0)` is the dispatch's end (`FUN_1407fa650`), the medic order
+  `FUN_1407fac20`, the focus change `FUN_1406e91e0` (via `FUN_1407a7ef0`), an inventory item click `FUN_140413d80` and the update above.
+  Meitou: `PlayerInterface.ContextMenuRelease`.
 - **Click**: the order goes to the shared dispatch `FUN_1407fa650` with the menu's target, then the menu closes. The dispatch has **no Alt test**: the
   quick click's "Hold down the ALT key..." rules do not apply, so Loot on another faction's shop or container takes at once. With Shift the order becomes a
   job ([perma-jobs](ai-tasks.md#perma-jobs)); 26 with Shift on a building becomes 124 when the building has a production interface (slot 95), else

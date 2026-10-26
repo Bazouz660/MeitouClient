@@ -85,7 +85,7 @@ resolve reconstructs position from near/far depth; full-res apply depth-weights 
 Unflagged/background surfaces must remain unchanged. Every program drawing into the scene pass
 must write that target (`WithAlbedo`, `none` for unlit ones), including the GPU-indirect variants:
 an unwritten output is undefined (in practice the surface behind, whose GI then lands on the
-front fragment). Resolved surfaces currently lose the
+front fragment; seen on grass and on crossbow bolts, i.e. `DebrisRenderer`, until it used `WithAlbedo`). Resolved surfaces currently lose the
 per-fragment specular-occlusion term. Strong depth/normal discontinuities need rejection.
 Surface bit9 marks interiors; signed low-resolution depth preserves that class (0 empty, negative
 interior). Upsampling rejects the other class so the gain cannot bleed onto outdoor surfaces.

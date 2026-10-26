@@ -91,5 +91,7 @@ sealed partial class PlayerInterface
         if (id == "loot-bag") { b.Hidden.Add("CapacityText"); b.Hidden.Add("TypeText"); return; }
         b.Properties["datapanel"] = new Dictionary<string, string> { ["SkipCaption"] = "true" };
         if (body?.ItemGrid is { BagWidth: > 0, BagHeight: > 0 }) { b.Disabled.Remove("OpenBagButton"); b.Actions["OpenBagButton"] = "OpenBagButton"; }
+        // LIMBS opens the body's limbs window, as the inventory's does for its character (enabled by the same limb holder).
+        if (body is not null && HasLimbWindow(body)) { b.Disabled.Remove("LimbsButton"); b.Actions["LimbsButton"] = "LimbsButton"; }
     }
 }

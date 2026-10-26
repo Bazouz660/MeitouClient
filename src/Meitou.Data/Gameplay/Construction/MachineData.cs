@@ -98,7 +98,7 @@ public sealed record MachineData
     /// <summary>A training dummy (function 7, BF_TRAINING): its user trains <see cref="Stat"/> up to the cap <see cref="OutputRate"/> (the "Max Skill Level" of its panel is one less, docs/game/ai-tasks.md "Finders of the jobs").</summary>
     public bool IsTraining => Function == TrainingFunction && Stat > 0;
     /// <summary>A mine, well or refinery: inputs (if any) into one output (functions 1, 4 and 27, <b>Verified</b> enum; the stone and ore processors are 4).</summary>
-    public bool IsProducer => Function is MineFunction or RefineryFunction or NaturalMineFunction && Farm is null && Output is not null;
+    public bool IsProducer => Function is MineFunction or RefineryFunction or NaturalMineFunction or RainCollectorFunction && Farm is null && Output is not null;
     /// <summary>A crafting bench (function 10): its crafts lists.</summary>
     public CraftBench? Craft { get; init; }
     public bool IsCrafting => Craft is not null;

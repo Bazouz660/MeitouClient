@@ -336,7 +336,8 @@ Meitou: [ground items](../simulation.md#items-and-eating).
 - **Squads** (`FUN_14057f820`): `housemates` (v0, or Rand(v0, v1) when v1 > 0) first, then the squad. Platoon point: a
   random free node of NodeType 0 (SHOPKEEPER), else 2 (GUARD_POST), else 1 (GENERAL), else the building. Characters
   (`FUN_140583a10`): a GENERAL node, else SHOPKEEPER, at node + (0, 10, 0), else the platoon point. The squad's home is the building.
-- **Bar squads** (`FUN_1409fcd20`): n = v0 > 2 ? (int)(v1 x 0.005 x v0) : 0, then +1 per Rand(0, 100) <= v1, stopping
+- **Bar squads** (`FUN_1409fcd20`, **Verified** by decompile and constants): n = v0 > 2 ? (int)(v1 x 0.5 x 0.0099999998 x v0) : 0 (the second factor is the double nearest the
+  float 0.01, so v1 100, v0 4 gives 1, not 2), then +1 per Rand(0, 100) <= v1, stopping
   at the first failure, at most v0. Each at a random node of the town's node map (`FUN_14038b000`), else the town
   position; no home. That map (NodeList +0x50) is filled by `FUN_14038b650` with nodes the game creates itself next to objects
   (record `1186-gamedata.base`, "Node Guardpost", node type 2); which objects is **Unknown** (Meitou: GENERAL nodes of its bars).
@@ -375,8 +376,8 @@ Meitou: [ground items](../simulation.md#items-and-eating).
 - **Meetings**: nothing looks at other platoons; there is no off-screen combat. Off-screen outcomes are campaign phases and despawning.
 - **Pool growth** (`FUN_1408f4c20`): each pool's current max (`pop`) grows `+0.21818` per game hour (5.24 a day) up to its desired max
   (`popd`), for every town whether loaded or not; roaming grows only once residents are within 1 of full. Towns never spawn squads over
-  time by themselves (only nests call the pool spawner). Once per town load (`0x14092a020`) a squad that lost ≥ 60 % of its spawn size, if
-  the budget allows, is marked to be made afresh from its template on its next activation.
+  time by themselves (only nests call the pool spawner). Once per town load (`0x14092a020`, **Verified**) a squad that lost ≥ 0.6 × its spawn size (double compare), if
+  the budget allows, is marked to be made afresh from its template on its next activation. The same pass runs over the roaming pool (its own budget, shared running total) and a flag at `+0xd9` forces a resident squad's mark past both tests; neither is modelled (flag's source **Unknown**).
 - **Despawn cost**: a non-persistent squad that leaves while not intact is taken out of its pool, lowering `pop` by its living members.
 - **Town pools in saves** (**Observed**, saves 1, 2, wade): every town has `pop` = `popd`, `started` true when populated, `popd2` 0 (none of
   304), while `read_roaming_population_n4` (`0x1408f98d0`) would set pool 2 to the faction's `roaming population` (no caller found:

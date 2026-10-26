@@ -35,6 +35,8 @@ public interface IDialogueSource
     CharacterTradeView? PublishCharacterTrade() => null;
     /// <summary>The character answers the player's Talk (it has event-1 dialogue, and with <paramref name="talker"/> given, a line of it passes now).</summary>
     bool CanTalk(World world, int slot, CharacterId? talker = null);
+    /// <summary>The character holds a line it wants to say to the player (the original's Dialogue <c>playerInterruptionDialog</c>, +0xc8): its quick right click pointer is <c>s_talk</c>.</summary>
+    bool HasInterrupt(CharacterId npc) => false;
     /// <summary>The lines on show over characters' heads (speech bubbles).</summary>
     IReadOnlyList<SpeechBubble> PublishSpeech() => [];
 }

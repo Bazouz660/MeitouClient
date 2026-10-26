@@ -16,6 +16,19 @@ public static class ZoneActivation
     /// <summary>Half the side of the box round the focus whose overlapping zones are activated.</summary>
     public const float Box = 340;
 
+    /// <summary>The camera's distance from the centre zone's middle, per axis, past which the original's loaded block moves (0.9 zones, <c>FUN_140a0f820</c>, <b>Verified</b>).</summary>
+    public const float RecentreDistance = 4147.2f;
+
+    /// <summary>How long a loaded zone stays loaded once nothing asks for it (the first of the zone's three timers, <c>FUN_140a0e570</c>, <b>Verified</b>: 4 s).</summary>
+    public const float LoadedLingerSeconds = 4;
+
+    /// <summary>The middle of a zone, X and Z.</summary>
+    public static Vector2 CentreOf(ZoneCoordinate zone)
+    {
+        var (x, z) = WorldLayout.ZoneOrigin(zone);
+        return new Vector2((float)x + WorldLayout.ZoneSize / 2f, (float)z + WorldLayout.ZoneSize / 2f);
+    }
+
     /// <summary>Every zone overlapping the box of +-<see cref="Box"/> round <paramref name="p"/>, plus <paramref name="ring"/> more zones on every side (0 or 1, the <c>Fast zone hopping</c> setting).</summary>
     public static HashSet<ZoneCoordinate> ZonesAround(Vector3 p, int ring)
     {

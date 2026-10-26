@@ -48,6 +48,7 @@ sealed partial class PlayerInterface
     /// <summary>The character a character window shows: a pinned window's, the loot's body, else the inventory owner.</summary>
     CharacterSnapshot? WindowCharacter(string screen) =>
         IsLootScreen(screen) ? LootBody()
+        : screen == "limbs" ? LimbsCharacter()
         : pinnedInventories.TryGetValue(screen, out var pinned) ? session.CurrentSnapshot.Characters.FirstOrDefault(c => c.Id == pinned)
         : InventoryOwner();
 
@@ -119,7 +120,8 @@ sealed partial class PlayerInterface
     ItemOwner? WindowOf(string screen) => screen switch
     {
         _ when IsPinnedInventory(screen) => WindowCharacter(screen) is { } pinned ? ItemOwner.Of(pinned.Id) : null,
-        "inventory" or "bag" or "limbs" => InventoryOwner() is { } owner ? ItemOwner.Of(owner.Id) : null,
+        "inventory" or "bag" => InventoryOwner() is { } owner ? ItemOwner.Of(owner.Id) : null,
+        "limbs" => LimbsCharacter() is { } limbed ? ItemOwner.Of(limbed.Id) : null,
         "loot" or "loot-bag" => LootBody() is { } body ? ItemOwner.Of(body.Id) : null,
         "trader" => session.CurrentSnapshot.Trade is not null ? ItemOwner.Stock : null,
         "building" or "bench" or "storage" => shownMachine is { } site ? ItemOwner.AtSite(site) : null,
@@ -417,21 +419,31 @@ sealed partial class PlayerInterface
     /// </summary>
     static bool HasLimbWindow(CharacterSnapshot c) => c.LimbBits != 0;
 
-    /// <summary>LIMBS: opens the limbs window docked beside the inventory, or closes it when it is open (<c>FUN_14070d1e0</c>).</summary>
-    void ToggleLimbs()
+    /// <summary>The character the limbs window shows: the one it was opened for (the inventory's or the open loot's), else the inventory owner.</summary>
+    CharacterSnapshot? LimbsCharacter() =>
+        (!limbsOwner.IsNone ? session.CurrentSnapshot.Characters.FirstOrDefault(c => c.Id == limbsOwner) : null) ?? InventoryOwner();
+
+    /// <summary>
+    /// LIMBS (<c>FUN_14070d1e0</c>), on the inventory window or on the open loot's (<paramref name="who"/>, the looted body, as the original's loot window has the button too): opens
+    /// the limbs window for that character, or closes it when it is open for them.
+    /// </summary>
+    void ToggleLimbs(CharacterSnapshot? who = null)
     {
-        if (faithfulScreens.IsOpen("limbs")) { faithfulScreens.Close("limbs"); return; }
-        if (InventoryOwner() is not { } lead || !HasLimbWindow(lead)) return;
-        limbsOwner = lead.Id;
+        who ??= InventoryOwner();
+        bool open = faithfulScreens.IsOpen("limbs");
+        if (open) faithfulScreens.Close("limbs");
+        if (open && who?.Id == limbsOwner || who is null || !HasLimbWindow(who)) return;
+        limbsOwner = who.Id;
         faithfulScreens.Open("limbs");
         PlaceLimbsWindow();
     }
 
-    /// <summary>Once a frame: the limbs window closes with the inventory, or when the inventory shows another character.</summary>
+    /// <summary>Once a frame: the limbs window closes with the window of the character it shows (the inventory, or the open loot), or when that window shows another character.</summary>
     void SyncLimbsScreen()
     {
         if (!faithfulScreens.IsOpen("limbs")) return;
-        if (!faithfulScreens.IsOpen("inventory") || InventoryOwner()?.Id != limbsOwner) faithfulScreens.Close("limbs");
+        bool shown = faithfulScreens.IsOpen("inventory") && InventoryOwner()?.Id == limbsOwner || faithfulScreens.IsOpen("loot") && LootBody()?.Id == limbsOwner;
+        if (!shown) faithfulScreens.Close("limbs");
     }
 
     /// <summary>Once a frame: the bag window is open while the inventory is, the lead character wears a bag and left it open (<see cref="bagOpen"/>).</summary>

@@ -20,8 +20,8 @@ public static class RangedTuning
     public const float BodyHeight = 18;
     /// <summary>While closing in, the line of fire must be clear this long (seconds) before the shooter stops and aims again (<c>FUN_140438c70</c>'s 0.3 s, its ray flags <b>Unknown</b>).</summary>
     public const float ClearToAim = 0.3f;
-    /// <summary>Stuck bolts kept in the world, oldest dropped first (the settings' <c>harpoonLimit</c>; its value is not read here).</summary>
-    public const int StuckLimit = 50;
+    /// <summary>Stuck bolts kept in the world per bolt mesh: the settings' <c>harpoonLimit</c> default (60; the setting itself is not read here). Beyond it the one that flew longest goes (<c>FUN_14043acf0</c>).</summary>
+    public const int StuckLimit = 60;
     /// <summary>Spacing of the terrain samples along a line of fire and along a bolt's step (units).</summary>
     public const float TerrainStep = 20, FlightTerrainStep = 5;
     /// <summary>Length of the pieces a long line of fire is cut into for the neighbour grid (units).</summary>
@@ -46,6 +46,8 @@ public sealed partial class CombatSystem : IProjectileSource
         public float ShooterSkill;
         public Vector3 Position, Direction;
         public float Speed, RangeLeft, Damage, Avoidance;
+        /// <summary>Seconds in flight (the original's Harpoon +0x60): which stuck bolt goes first over the limit.</summary>
+        public float Flown;
         /// <summary>Stuck in the ground (a visual only: bolts are not recoverable, <b>Observed</b>).</summary>
         public bool Stuck;
         /// <summary>The last character it passed through (friendly fire avoided), so the next step does not test it again.</summary>
@@ -258,7 +260,7 @@ public sealed partial class CombatSystem : IProjectileSource
         return scan.Found;
     }
 
-    static WeaponKinds MeleeDrawn(Fighter f) => f.Weapon is { } w && !f.Unarmed ? HandHold.OfCategory(w.Data.SkillCategory).Weapon : WeaponKinds.None;
+    internal static WeaponKinds MeleeDrawn(Fighter f) => f.Weapon is { } w && !f.Unarmed ? HandHold.OfCategory(w.Data.SkillCategory).Weapon : WeaponKinds.None;
 
     /// <summary>
     /// Chooses crossbow or melee for a fighting character that carries a crossbow (the planner's desires, docs/game/combat.md "Fight lifecycle and orders", melee or
@@ -285,7 +287,8 @@ public sealed partial class CombatSystem : IProjectileSource
         }
         bool hasAmmo = x.InfiniteAmmo || Ammunition.Find(cold.Inventory, x.Data.AmmoId) is not null;
         // A crossbow (weapon category Bow) needs both arms (FUN_1407f2840, FUN_1409991d0); losing one puts it away (FUN_1405cc230) and the fight goes on in melee.
-        bool can = (s.Loaded > 0 || hasAmmo) && cold.Medical is not { BothArmsWork: false };
+        // The same gate needs the prone state (vfunc 0x368) 0: a crawler does not shoot, it fights with its ground attacks (docs/game/combat.md "Arms").
+        bool can = (s.Loaded > 0 || hasAmmo) && cold.Medical is not { BothArmsWork: false } && cold.Medical is not { Crawling: true };
         if (s.Dry == can) s.Dry = !can;
         // Ranged mode takes the crossbow however close the target is (between swings): melee is x0.1 against shooting's 1, and a threat within 40 refuses the shooting rows.
         bool rangedMode = Orders.RangedMode(cold);
@@ -472,12 +475,12 @@ public sealed partial class CombatSystem : IProjectileSource
         var prev = table.Previous;
         float dt = world.TickSeconds;
         var walk = world.Walkability;
-        int stuck = 0;
         for (int k = 0; k < projectiles.Count; k++)
         {
             var p = projectiles[k];
-            if (p.Stuck) { stuck++; continue; }
+            if (p.Stuck) continue;
             float step = p.Speed * dt;
+            p.Flown += dt;
             p.RangeLeft -= step;
             if (p.RangeLeft < 0)
             {
@@ -548,7 +551,7 @@ public sealed partial class CombatSystem : IProjectileSource
                         p.Stuck = true;
                         projectiles[k] = p;
                         Sound(world, SoundKind.BoltStuck, -1, p.Shooter, at);
-                        stuck++;
+                        k = TrimStuck(k, p.Mesh);
                     }
                     break;
                 }
@@ -558,13 +561,26 @@ public sealed partial class CombatSystem : IProjectileSource
             p.Position += seg;
             projectiles[k] = p;
         }
-        // Stuck bolts beyond the limit: the oldest go first (the list is in firing order).
-        for (int k = 0; k < projectiles.Count && stuck > RangedTuning.StuckLimit; k++)
-            if (projectiles[k].Stuck)
-            {
-                projectiles.RemoveAt(k--);
-                stuck--;
-            }
+    }
+
+    /// <summary>
+    /// A bolt of <paramref name="mesh"/> has just stuck at index <paramref name="k"/>: over <see cref="RangedTuning.StuckLimit"/> stuck bolts of that mesh, the one that flew longest
+    /// (the first of equals, the new bolt included) is removed (<c>FUN_14043acf0</c>). Returns the index the loop continues from.
+    /// </summary>
+    int TrimStuck(int k, string mesh)
+    {
+        int count = 0, worst = -1;
+        float longest = -1;
+        for (int j = 0; j < projectiles.Count; j++)
+        {
+            var q = projectiles[j];
+            if (!q.Stuck || q.Mesh != mesh) continue;
+            count++;
+            if (q.Flown > longest) { longest = q.Flown; worst = j; }
+        }
+        if (count <= RangedTuning.StuckLimit) return k;
+        projectiles.RemoveAt(worst);
+        return worst <= k ? k - 1 : k;
     }
 
     static Vector3 GroundNormal(IWalkability walk, float x, float z)

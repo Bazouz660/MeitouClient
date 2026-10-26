@@ -153,6 +153,27 @@ public sealed class Inventory(int width, int height)
         }
     }
 
+    /// <summary>
+    /// The items the windows list, each with its index in <see cref="All"/> (the number the drag tokens carry): this inventory's own and the worn backpack's contents. The contents of a
+    /// container carried in the grid are not listed (their cells would draw over the worn bag's in its window; the original opens only the worn backpack's grid).
+    /// </summary>
+    public IEnumerable<(int Index, ItemInstance Item)> Shown()
+    {
+        int index = 0;
+        var worn = Backpack;
+        foreach (var i in Items)
+        {
+            yield return (index++, i);
+            if (i.Contents is not { } bag) continue;
+            foreach (var inner in bag.All())
+            {
+                if (ReferenceEquals(i, worn)) yield return (index, inner);
+                index++;
+            }
+        }
+    }
+
+
     /// <summary>Removes one unit of an item (the whole item when it is the last), wherever it is.</summary>
     public bool RemoveOne(ItemInstance item)
     {

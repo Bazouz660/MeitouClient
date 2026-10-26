@@ -41,6 +41,32 @@ public sealed class CharacterRigs(GameDatabase db, Func<string, string?> findMes
         return rigs.GetOrAdd(path, p => new Lazy<SkeletonRig>(() => new SkeletonRig(OgreSkeletonReader.ReadFile(p)))).Value;
     }
 
+    readonly ConcurrentDictionary<string, Lazy<SkeletonRig>> linkedRigs = new(StringComparer.OrdinalIgnoreCase);
+    readonly ConcurrentDictionary<string, Lazy<OgreSkeleton?>> sources = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// The rig of the skeleton file <paramref name="name"/> linking <paramref name="animationFiles"/> (<see cref="AnimationFiles"/>, FCS paths in link order); a file
+    /// not in the install is left out, as the game links only the ones it finds. Null when the skeleton is not in the install.
+    /// </summary>
+    public SkeletonRig? Rig(string name, IReadOnlyList<string> animationFiles)
+    {
+        if (Rig(name) is not { } own) return null;
+        var found = animationFiles.Select(f => find(AnimationFiles.BareName(f))).OfType<string>().ToList();
+        if (found.Count == 0) return own;
+        return linkedRigs.GetOrAdd(find(name) + "|" + string.Join("|", found),
+            _ => new Lazy<SkeletonRig>(() => new SkeletonRig(own.Skeleton, [.. found.Select(Source)]))).Value;
+    }
+
+    /// <summary>The rig of the skeleton file <paramref name="name"/> as <paramref name="c"/>'s body links it: with its race's and record's animation files.</summary>
+    public SkeletonRig? Rig(string name, CharacterAppearance c) => Rig(name, AnimationFiles.Of(db, c.Race, c.Character ?? c.Animal, c.Female));
+
+    // A linked skeleton, read once per file whichever rigs link it; null when it cannot be read (the game logs and plays without it).
+    Lazy<OgreSkeleton?> Source(string path) => sources.GetOrAdd(path, p => new Lazy<OgreSkeleton?>(() =>
+    {
+        try { return OgreSkeletonReader.ReadFile(p); }
+        catch (Exception e) when (e is OgreFormatException or IOException or EndOfStreamException or InvalidDataException) { return null; }
+    }));
+
     /// <summary>The full path of a mesh file, or null.</summary>
     public string? FindMesh(string fcsPath) => findMesh(fcsPath);
 
@@ -59,7 +85,7 @@ public sealed class CharacterRigs(GameDatabase db, Func<string, string?> findMes
         var bodyPath = findMesh(c.BodyMesh);
         if (bodyPath is null) return null;
         SkeletonRig? rig;
-        try { rig = BodySkeletonName(bodyPath) is { } name ? Rig(name) : null; }
+        try { rig = BodySkeletonName(bodyPath) is { } name ? Rig(name, c) : null; }
         catch (Exception e) when (e is OgreFormatException or IOException or EndOfStreamException or InvalidDataException) { return null; }
         if (rig is null) return null;
         bool animal = c.Animal is not null;

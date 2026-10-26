@@ -704,7 +704,7 @@ vfunc 5 `FUN_14050caf0`). TaskData fields: +0x108 desire (a member function, nea
   g = min(its g, the node's g) and the node as parent; one already closed is accepted from there. A node repeated 4 times is reused, not made again.
 - **Result**: the accepted node's chain up to the root (stopping at a queued task) is the plan. Its value is the least desire on it (from 10); above 0,
   every node that acts or has an effect becomes a task (factory) in a new queue, leaf first. A failed plan clears the queue unless the root keeps it.
-- **Pick**: candidates are tried by key, highest first; the first whose plan has a value above 0 becomes current, a candidate whose plan fails has its
+- **Pick**: candidates are tried by key, highest first (a taken key is raised by 0.0001 until free, so a tie goes to the later-listed goal; **Verified**, `FUN_14050df10`); the first whose plan has a value above 0 becomes current, a candidate whose plan fails has its
   target cleared and the next is tried.
 - **Source order** (`AITaskSytem::chooseGoal` `FUN_140510ef0`, KenshiLib names, **Observed**): player orders (OrdersReceiver +0x38, `checkOrders`), jobs,
   urgent perma-jobs, priority-3 goals, other perma-jobs, priority-2 then priority-1 goals, the hold-position task; the first source that plans wins.
@@ -851,10 +851,7 @@ A character's job list (the Orders menu's "Perma-Jobs"; class `OrdersReceiver`, 
 - **Finders of the jobs** (**Verified** registrations in `FUN_140319a60`, finder thunks resolved; readings **Observed**; "sensed" = the
   character's sensed list `FUN_140853960(include, exclude)`, whose bits are **Unknown**):
   - 58 Medic / 57 Robotics: `FUN_14099f690` with a flag (58: 0, 57: 1; [Medic jobs](#medic-jobs)). Desire `FUN_140998410` (both, and 250).
-  - 250 Splint Rigging: `FUN_14099e240`: X = min(medic skill, the best splint kit's quality, own inventory or backpack; none: 0); sensed (1, 0x10)
-    of the medic's own faction only, not of a robot race, not in a give-up list, not carried (unless the carrier fails a test); weight =
-    `needsSplint`(X) (`FUN_140646400`, its returned weight **Unknown**) × the nearness of [Medic jobs](#medic-jobs) (that pass's extra flag reads
-    CharStats +0x12b); a patient in the squad's give-up list × 0.05; ≥ 0.95 is taken at once. The medic itself is a candidate.
+  - 250 Splint Rigging: `FUN_14099e240` ([Medic jobs](#medic-jobs)).
   - 16 Attacking enemies: `FUN_14059f3a0` ([Combat goals](#combat-goals)); it searches only while the AI's +0xbc (read as the count of sensed
     enemies) is nonzero, which is also the condition of the kind-2 job pass above.
   - 238 Foraging animals: `FUN_1408ce3a0`: the first sensed (0x18, 1) character that is down (`FUN_1407d1440`: carried, or ragdoll flags), an animal
@@ -893,29 +890,38 @@ A character's job list (the Orders menu's "Perma-Jobs"; class `OrdersReceiver`, 
 
 ### Medic jobs
 
-**Observed** (`FUN_14099f690`, `FUN_140998200`, `FUN_140998b90`, `FUN_1406b2460`, `FUN_140643ca0`; constants **Verified**).
-- Kits: organic (item function 1) and robot (12) in the medic's inventory or its backpack.
-- Candidates: sensed (1, 0x10); with flag 0 (job 58) not of a robot race (RACE byte +0x7c, `is robot`; the splint finder tests the same byte);
-  not in a give-up list; not carried (unless the carrier fails a test); not fighting (`Character::isInCombatMode` `FUN_140436610`(c, 1, 0)); and either the medic is of the player
-  faction or the patient is not injured in a way `FUN_140644170` reports and is seen or heard.
-- Need = (organic kit: the medical state's float +0xac) + (robot kit: +0xa8); a dead patient (+0x164) -0.1; an NPC medic counts both without kits
-  for an imprisoned patient or one it owns. Another faction's patient: × 0.8 when vfunc 0x3f0 holds, else × relation / 100 (own faction 100), at least
-  0.05 (0.01 for a player medic under a condition).
-- Nearness = 1 - d² / 3397386.5 (about 1843 units), clamped to at most 1, and at least 0.4 when both stand in the same building.
-- Score = need × nearness. The same faction always counts; another faction only when the score is at least 0.1 **and** the medic is not of the
-  player's faction or Heal Allies is on. A patient in the give-up list scores × 0.05; ≥ 0.001 and on the planner's target list is taken at once.
-  The medic itself scores its plain need. The highest wins; with none, a second pass looks again more widely.
-- **Second pass** (**Observed**, same function): sensed (0x420a, 0x14), not of a robot race (job 58), no vfunc 0x248, not `not real`. An
-  imprisoned candidate (+0x2f8 == 2) counts when its cage passes `FUN_14032eb40` (false) and an ownership test against the medic
-  (cage +0x58 vfunc 8), and it is not an obedient slave (state 1); any other candidate needs the medic's faction to say `heals strangers` and
-  vfunc 0x30. Both then need equal vfunc 0x118 and a different platoon (+0x1d8 vfunc 0x10 false); scored as the first pass. So NPC
-  guards patch up their prisoners, without a kit ([first aid update](character-stats.md#first-aid-update)).
+**Verified** (decompile of `FUN_14099f690` (Medic 58 passes 0, Robotics 57 passes 1, and the NPC `Medic` goal), `FUN_140998200` (need), `FUN_140998b90` (nearness), `FUN_140998410` (desire),
+`FUN_14099e240` (splint finder), `FUN_140646400`; constants read from the exe). Names from KenshiLib 1ce4a16: `Blackboard::howManyGuysWorkingOnThisSubTarget` (`FUN_1402690e0`), `isMySubTarget` (`FUN_140269190`),
+`isTargetMarkedForDeath` (`FUN_14032eb40`), `AITaskSytem.pathFailures` (+0x218, the "give-up list"), `Character::isAlly` / `isEnemy` (vfuncs `0x3f0` / `0x3e8`), `amInsideTownWalls` (`0x118`), `isIndoors` (`0x1d8`, a building
+hand), `isGettingEaten` (+0x279), `CharStats._holdPositionMode` (+0x12b).
+- **Kits**: any item of function 1 (organic) or 12 (robot) in the medic's inventory or its backpack (`FUN_14004b84e`); the splint finder wants function 2 and takes X = min(the medic's `medic` stat, the kit's quality).
+- **Desire** (`FUN_140998410`): 0.01 while the AI's `+0xb0` is above 0, else 0.05 while `+0xbc` is above 0 (both read as enemy counts, **Observed**), else 0.1 while the medic carries someone, else 1.
+- **Need** (`FUN_140998200`) of a patient for this medic: 0 while the patient's CombatClass `+0x130` is set (fighting). The kit test is on unless the medic is not of the player's faction and the patient is imprisoned or a chained
+  slave of the medic's faction (`FUN_14032e2a0`, which then counts without kits); the organic need score ([first aid need](character-stats.md#first-aid-need-score)) counts with an organic kit, the robot one with a robot kit.
+  Another faction's patient: x 0.8 when `isAlly` (relation 50 or more, the allied flag, squad memory), else x relation / 100, at least 0.05 (`DAT_141696c74`). The further floor of 0.01 for a player medic with a current
+  task (`FUN_140507b70`: its task list is not just GET_UP 65 / 52) is dead code: it needs a factor at or below 0, which the 0.05 minimum rules out.
+- **Nearness** (`FUN_140998b90`, flag = the medic's hold-position mode): 0 when the flag is set, the patient is over 40 units (1600 squared) from the medic and over 40 from its hold point `+0x130`; else 1 - d^2 / 3397386.5 (3D),
+  at most 1 and at least 0.4 when both are in the same building (vfunc `0x78`), else 0. The pass-1 and pass-2 calls pass no flag (an unset register, **Observed**); Meitou applies it everywhere.
+- **Pass 1, allies** (sensed entries with bit 0 ally, none of bit 4 dead): not of a robot race (`+0x7c`) unless job 57; not being eaten (`+0x279` & 7); not on the AI's path-failure list; not carried by an enemy of the medic; not
+  fighting (`isInCombatMode`); for a medic not of the player's faction the patient must not be maimed (`FUN_140644170`: a stump in a leg, or in both arms: limb states 1 at slots 2 / 3, or 0 and 1) and, when the medic stands in a
+  building, must be seen or heard (the entry's two flags). Score = need x nearness. The same faction always counts; another faction only at 0.1 or more and (the medic is not of the player's faction, or **Heal Allies** `DAT_142134690+0x110`).
+  The blackboard's sub-target list: when the score exceeds 0.001 and the pair (medic, patient) is on it, that patient is taken at once with score at least 0.95; a patient others work on (entries with another medic) x 0.05; x relation / 100 once more
+  when not an ally (never for an ally entry). The highest wins; then **the medic itself** at its plain need beats it when larger. A found patient ends the search.
+- **Pass 2, strangers** (sensed entries with any of neutral, knocked out, prisoner, crawling and none of enemy, dead): not of a robot race (job 58), not an animal (`0x248`), not being eaten, not of a not-real faction, not fighting. A free patient:
+  not a bandit-class one when the medic's class differs, not an enemy, passing `FUN_14059a670` (**Verified** to be DC 55 I_SHOULD_HELP_THIS_GUY, Meitou `DialogueSystem.Helps`: same NPC class, not for a traitorous or bandit medic, yes when friendly, honourable both or loved, never when hated),
+  seen or heard; it counts only when it is down (`0x30`) and the medic's **faction record says `heals strangers`**. An imprisoned patient (`+0x2f8` = 2): its cage must not be the blackboard's cage marked for death, the patient not a slave
+  (status +0 = 1), and the cage owned by the medic's squad home (ownerships `+0x38`); a patient with no cage passes. A chained slave owned by the medic's faction also counts (slave state under 2). Then the medic and the patient must share the town
+  (`amInsideTownWalls`) and the building (`isIndoors` hands equal; **the earlier reading "different platoon" was wrong**: the hand's vfunc `0x10` is not-equal and the test needs false). Score = need x nearness; unlike pass 1 a patient
+  others work on is skipped, not weighed. No 0.1 floor, no Heal Allies.
+- **Pass 3, owned slaves**: characters of the medic squad's ownerships that are chained slaves (state 1), sensed by the squad, not fighting, not a robot (job 58): need x nearness. **Pass 4**, only while no one was found and the medic is outdoors:
+  sensed carried (bit 15) patients, not a robot or animal, not eaten, seen or heard, whose carrier is of the medic's faction: need x nearness (flag = hold mode). **Pass 5**, after 3 and 4, when the medic stands in its squad's home building: the
+  occupants of its cages (function 8 buildings of that place): need x 0.25 flat (`DAT_141696c80`), taken when above the best so far. So NPC guards patch up their prisoners, without a kit.
+- **Splint finder** (`FUN_14099e240`): no splint kit: nothing. Sensed allies, not robot races, not path-failed, not carried by an enemy, of the **medic's own faction only**; weight = `needsSplint`(X) (`FUN_140646400`, **Verified** by disassembly:
+  0.1 when a part meets the [needsSplint test](character-stats.md#splints); -0.1 for a dead patient, else 0) x nearness (flag = hold mode) with the same sticky pair and x 0.05 rules; the medic itself at 0.1.
 - **NPCs run it as a goal**: the `Medic` AI_TASK (enum 58) is in the goal lists of most AI packages (Squad, Squad2 and Leader roles; e.g.
   `Guard building, residents`, `Guard town`, `Shop`, `Wandering from town to town`, the slaver packages; **Verified** by a data survey of the
   full load order, 2026-10-24).
-- Meitou: an idle NPC first tries the squad-mate rule (`FirstAidSystem.TreatSomeone`, engine stand-in for the first pass), then
-  `TreatPrisoner`: an occupied cage owned by its faction within sight (the ownership test read as owner faction = medic's), not its squad;
-  the `heals strangers` branch, vfunc 0x118 and the package's goal list are not modelled (every NPC runs it).
+- Meitou (`FirstAidSystem.FindPatient` / `SplintSomeone`, one finder for the player's jobs, the Medic button and idle NPCs): all five passes. Original data used: the path-failure list is `CharacterCold.PathFailures` (written by pursuits; the finder skips such patients; a treating medic does not note its own failed paths yet: calling `PursuitSystem.NotePathFailure` from `Schedule` made the medic drop its patient in a `--load` run, a stale `PathFailed` flag is the suspect, **Unknown**); `isAlly` is `DialogueSystem.RegardsFriendly`, `isEnemy` its squad memory tags (`EnemyMemory`) then the relation, `FUN_14059a670` is `DialogueSystem.Helps` (personality included); the cage marked for death is a Kill or Eat job of the medic's squad on that cage (`CaptiveSystem.Jobs`). Stand-ins left: "sensed" is the medic's sight range, "seen or heard" always holds, "the same town and building" is `SightMap.PlaceOf`, "the squad home" is any place a faction cage stands in, the slave test needs `Shackles`, the disguise faction of `isAlly` is not read, the sub-target list is the set of (medic, patient) pairs of running treatments, the goal's desire is "no fight in the squad".
 
 ## Squad AI options
 
@@ -923,7 +929,7 @@ The overview's AI tab, bytes of `DAT_142134690` (**Verified**: CAMERA writer `FU
 +0x111 `help`, +0x112 `rescue`, +0x113 `stay`, +0x114 `feed`, +0x115 `share`, +0x116 `sleep`, +0x117 `ditch`, +0x118 `sit`, +0x119 `eject`, +0x11a
 `shootfirst`. Captions and tooltips **Verified** in the exe. New-game values (**Observed**, 511 of the owner's saves): ditch, sleep, sit, share,
 feed, eject on; heal, help off (on in 4), rescue, stay, shootfirst off. Readers (**Verified** by decompile):
-- **Heal Allies** (+0x110): the medic finder's other-faction test ([Medic jobs](#medic-jobs)); "Characters with the medic job will also heal characters of allied factions".
+- **Heal Allies** (+0x110): the medic finder's other-faction test, pass 1 only ([Medic jobs](#medic-jobs)); "Characters with the medic job will also heal characters of allied factions".
 - **Help Allies** (+0x111): the protect-allies finders `FUN_14099ca10` (goals 15, 288) and `FUN_14099cf80` (sensed (1, 0x208), seen or heard): for a
   player-faction looker each fighting candidate's threat (`FUN_14099a190`) is × `FUN_1409b2380`(d², 10, 1000, 0.1); one of another faction is
   skipped with the option off and squared with it on. Result capped at 1.2.

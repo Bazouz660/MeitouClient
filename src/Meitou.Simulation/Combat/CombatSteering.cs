@@ -62,7 +62,7 @@ public static class CombatSteering
     /// </summary>
     public static (float Min, float Max) Band(float near, float far, float footprint)
     {
-        float m = 1.4f * footprint;
+        float m = 1.5f * footprint;
         float f = Math.Clamp(far - m, 0, 9999);
         float min = MathF.Max(MathF.Min(near - m, f), 1);
         return (min, MathF.Max(f, min + 5));
@@ -81,7 +81,7 @@ public static class CombatSteering
     /// <summary>The fighter's own draws (<c>setupCombatMovementVariables</c>): ENEMY_DIST 15 + 30u, ALLY_DIST 1.4r + 30u, and the dead zone's STOP and START.</summary>
     public static (float Enemy, float Ally, float Stop, float Start) Draws(ulong seed, ulong key, CharacterCold cold)
     {
-        float r = CombatTuning.Footprint(cold);
+        float r = CombatTuning.Footprint(cold) * (cold.Medical?.ScaleK ?? 1);
         float u(ulong k) => CombatRolls.Float(seed, key, CombatRoll.Steering, k);
         float stop = 3 + 3 * u(2), start = 30 + 3 * stop + 12 * u(3);
         if (cold.Fighter is { IsAnimal: false } f)
@@ -92,7 +92,7 @@ public static class CombatSteering
         }
         stop = Math.Clamp(stop, 0, 20);
         start = MathF.Max(MathF.Min(start, 90), stop + 10);
-        return (15 + 30 * u(0), 1.4f * r + 30 * u(1), stop, start);
+        return (15 + 30 * u(0), 1.5f * r + 30 * u(1), stop, start);
     }
 
     struct Push

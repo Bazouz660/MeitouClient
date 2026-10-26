@@ -1,6 +1,7 @@
 using System.Numerics;
 using Meitou.Rendering;
 using Meitou.Simulation;
+using Meitou.Data.Ui;
 
 namespace Meitou.Game;
 
@@ -9,15 +10,18 @@ sealed partial class PlayerInterface
 {
     /// <summary>The original's squared distance (4000 units) past which a hit shows no floater.</summary>
     const float FloaterRangeSquared = 1.6e7f;
-    const float FloaterSeconds = 1.4f, FloaterRise = 30, FloaterHeight = 15;
+    /// <summary>
+    /// The original's <c>ScreenLabel</c> (<c>FUN_1406ea9f0</c>, <b>Verified</b>): 15 units over the character, rising 4 world units a second (a hit's speed index 1 in the table 0, 4, 8),
+    /// fading from 8 units of rise (alpha 1 - (rise - 8) x 0.25) and gone at 12, so 3 s in all.
+    /// </summary>
+    const float FloaterHeight = 15, FloaterRiseSpeed = 4, FloaterFadeFrom = 8, FloaterGone = 12;
 
-    sealed record Live(CharacterId Target, string Text, Vector4 Colour, long Born, float Spread, float Row, FloaterMode Mode)
+    sealed record Live(CharacterId Target, string Text, Vector4 Colour, long Born, FloaterMode Mode)
     {
         public Vector3 Last { get; set; }
     }
 
     readonly List<Live> floaters = [];
-    int floaterCount;
 
     /// <summary>The "Show damage floaters" option; Off stops the world from queueing them.</summary>
     public FloaterMode Floaters
@@ -47,13 +51,11 @@ sealed partial class PlayerInterface
         {
             if (f.Kind == FloaterKind.Damage && Vector3.DistanceSquared(Eye, f.Position) >= FloaterRangeSquared) continue;
             if (FloaterText.Format(f, Floaters) is not { } text) continue;
-            // Blows landing together would print over each other: spread them side by side and in two rows.
-            int n = floaterCount++;
-            floaters.Add(new Live(f.Target, text, FloaterText.Colour(f), now, (n % 5 - 2) * 14, n % 2 * 12, Floaters) { Last = f.Position });
+            floaters.Add(new Live(f.Target, text, FloaterText.Colour(f), now, Floaters) { Last = f.Position });
         }
         // A long fast-forward queues many at once: only the newest are worth showing.
         if (floaters.Count > 24) floaters.RemoveRange(0, floaters.Count - 24);
-        floaters.RemoveAll(l => (now - l.Born) / (double)System.Diagnostics.Stopwatch.Frequency > FloaterSeconds);
+        floaters.RemoveAll(l => Rise(l, now) >= FloaterGone);
         if (floaters.Count == 0) return;
 
         var ids = floaters.Select(l => l.Target).ToHashSet();
@@ -61,15 +63,31 @@ sealed partial class PlayerInterface
             if (ids.Contains(c.Id))
                 foreach (var l in floaters)
                     if (l.Target == c.Id) l.Last = where(c);
+    }
+
+    static float Rise(Live l, long now) => (float)((now - l.Born) / (double)System.Diagnostics.Stopwatch.Frequency) * FloaterRiseSpeed;
+
+    /// <summary>
+    /// The floaters as the original draws them (<c>FUN_1406ea9f0</c>, <b>Verified</b>): a plain MyGUI text box (the <c>Kenshi_TextboxStandardText</c> template: no shadow) in
+    /// <c>Kenshi_FloaterFont_Medium</c> for Simple info, <c>Kenshi_FloaterFont_Small</c> for Full info, its top left at the screen point of the rising anchor, sized to the text plus
+    /// 20 pixels at the UI scale. Blows landing together print over each other, as in the original.
+    /// </summary>
+    void AddFloaters(List<UiControl> controls)
+    {
+        if (floaters.Count == 0) return;
+        long now = System.Diagnostics.Stopwatch.GetTimestamp();
+        float scale = Height / 1080f;
+        int n = 0;
         foreach (var l in floaters)
         {
-            float t = (float)((now - l.Born) / (double)System.Diagnostics.Stopwatch.Frequency / FloaterSeconds);
-            if (Project(l.Last + new Vector3(0, FloaterHeight, 0)) is not { } at) continue;
-            float scale = (l.Mode == FloaterMode.Simple ? 1.2f : 1f) * Math.Clamp(Height / 1080f, 0.75f, 1.5f);
-            float alpha = t < 0.6f ? 1 : 1 - (t - 0.6f) / 0.4f;
-            float x = at.X + l.Spread - o.MeasureText(l.Text, scale) / 2, y = at.Y - l.Row - FloaterRise * (1 - (1 - t) * (1 - t));
-            o.TextScaled(l.Text, x + 1, y + 1, new Vector4(0, 0, 0, 0.8f * alpha), scale);
-            o.TextScaled(l.Text, x, y, l.Colour with { W = l.Colour.W * alpha }, scale);
+            float rise = Rise(l, now);
+            if (rise >= FloaterGone || Project(l.Last + new Vector3(0, FloaterHeight + rise, 0)) is not { } at) continue;
+            float alpha = rise > FloaterFadeFrom ? 1 - (rise - FloaterFadeFrom) * 0.25f : 1;
+            controls.Add(new($"floater-{n++}", "TextBox", new(at.X, at.Y, 600 * scale, 40 * scale), l.Text, "", "", true,
+                new Dictionary<string, string>
+                {
+                    ["FontName"] = l.Mode == FloaterMode.Full ? "Kenshi_FloaterFont_Small" : "Kenshi_FloaterFont_Medium", ["TextAlign"] = "Left Top",
+                }, Vector4.Zero, l.Colour with { W = l.Colour.W * alpha }, Pickable: false));
         }
     }
 }

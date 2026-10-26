@@ -81,8 +81,8 @@ sealed partial class PlayerInterface(WorldSession session, Func<float, float, fl
         if (button == MouseButton.Right && !OverHud(p) && WallCancel()) return true;
         if (button == MouseButton.Left)
         {
+            if (contextMenu is not null) return true;   // an open menu takes no press: its rows act on the release, a press beside it does nothing (FUN_1407a7f10)
             if (UiMouseDown(p)) return true;
-            if (CloseContextMenu()) return true;   // a click beside the open menu only closes it
             if (OverHud(p)) return true;
             if (BuildClick()) return true;
             dragFrom = p;
@@ -92,6 +92,9 @@ sealed partial class PlayerInterface(WorldSession session, Func<float, float, fl
         if (button == MouseButton.Right && InventoryRightClick(p, shift)) return true;
         if (button == MouseButton.Right && CloseContextMenu()) return true;
         if (button == MouseButton.Right && MapRightDown(p)) return true;
+        // Held on a squad bar portrait: that member's context menu, as on the character in the world (no quick order from the portrait).
+        if (button == MouseButton.Right && SquadBarMemberAt(p) is { } member && session.CurrentSnapshot.Characters.FirstOrDefault(c => c.Id == member) is { } shown
+            && ContextPressOn(p, at => Menu(shown.Name, at, Verbs(shown)), null)) return true;
         if (button == MouseButton.Middle && UiVisible && MapPointerDown(p)) return true;
         if (button == MouseButton.Right && !OverHud(p))
         {
@@ -126,32 +129,91 @@ sealed partial class PlayerInterface(WorldSession session, Func<float, float, fl
     }
 
     /// <summary>
-    /// The order a quick right click on a character gives and the mouse pointer that shows it (PlayerInterface.Pointer.cs), or null when there is none (the ground
-    /// under it is then a move).
+    /// The order a quick right click on a character gives and the mouse pointer that shows it (PlayerInterface.Pointer.cs), or null when there is none: the click does nothing then (the
+    /// original treats any character hit as handled, so it does not move either). The target is the nearest character under the cursor, as the original's pick takes it; with nothing
+    /// selected the pointer is still given (<c>Do</c> is null). See <see cref="QuickOrderFor"/>.
     /// </summary>
-    (string Pointer, CharacterId Target, Action Do)? QuickOrder(Vector2 p)
+    (string Pointer, CharacterId Target, Action? Do)? QuickOrder(Vector2 p)
     {
-        if (SelectedIds() is not { Count: > 0 } selection) return null;
-        if (PickTrader(p) is { } trader && !Hostile(trader)) return ("talk", trader, () => Say(new Meitou.Simulation.Trading.OpenTrade(selection[0], trader) { Tick = session.World.Tick }));
-        // A non-hostile character with something to say is talked to (the same Talk as the context menu's).
-        if (PickTarget(p) is { } talkee && !Hostile(talkee) && session.World.CanTalk(talkee, selection[0]))
-            return ("talk", talkee, () => Say(new Meitou.Simulation.Dialogue.TalkOrder(selection[0], talkee) { Tick = session.World.Tick }));
-        // While sneaking, a right click on an NPC is a stealth knock-out (the original's tutorial: "right click on an NPC while sneaking").
-        // Only a hostile character is attacked this way; a neutral is left alone (the context menu still offers the attack).
-        if (PickTarget(p) is { } mark && Hostile(mark) && session.CurrentSnapshot.Characters.FirstOrDefault(c => c.Id == mark) is { StealthKoChance: not null })
-            return ("attk", mark, () => Say(new Meitou.Simulation.Carrying.StealthKoOrder(selection, mark) { Tick = session.World.Tick }));
-        // Fighting back at someone attacking the squad is defence, not an assault on its faction.
-        if (PickTarget(p) is { } victim && Hostile(victim))
-            return ("attk", victim, () => OrderOrJob(Meitou.Data.Gameplay.Ai.TaskType.MELEE_ATTACK, victim, () => Say(new Meitou.Simulation.Combat.AttackOrder(selection, victim)
+        if (PickWhereAt(p, _ => true) is not { } hit || session.CurrentSnapshot.Characters.FirstOrDefault(c => c.Id == hit.Id) is not { } target) return null;
+        return QuickOrderFor(target, SelectedIds());
+    }
+
+    /// <summary>The talk pointer: <c>s_talk</c> while the character holds a line for the player (Dialogue <c>playerInterruptionDialog</c> +0xc8, <c>FUN_1407fb410</c>), else <c>talk</c>.</summary>
+    string TalkPointer(CharacterSnapshot c) => session.World.WantsToTalk(c.Id) ? "s_talk" : "talk";
+
+    /// <summary>
+    /// The quick right click on <paramref name="c"/> (<c>FUN_1407fb410</c>, docs/game/ui-input.md "Quick right click"). The lead is the selected character nearest to it (with nothing selected the
+    /// nearest of the player's characters, which gives the pointer only). Own characters: dead, loot; needing first aid (organic need above 0.01) 25, else robot repair 60 (all the selection); down
+    /// and not carried, pick up (the nearest); carried by the lead, put down; carried by another, nothing. Others carried by a non-player: nothing. Hostile ones (<see cref="Hostile(CharacterSnapshot)"/>): down,
+    /// loot; standing and the lead sneaking, stealth KO (or loot of a slave); fighting or without a talk, attack (with a gunner on a turret, Shoot At); a prisoner, loot. Neutral ones: down, loot
+    /// (<c>search</c> pointer for a bandit, slave or not-real faction, else <c>scavenge</c>); standing and the lead sneaking, pick the shackles of a prisoner, loot a slave, else stealth KO; else talk
+    /// when it has something to say (a trader trades), otherwise nothing (<c>green</c> pointer when allied to the lead).
+    /// </summary>
+    (string Pointer, CharacterId Target, Action? Do)? QuickOrderFor(CharacterSnapshot c, IReadOnlyList<CharacterId> selection)
+    {
+        var characters = session.CurrentSnapshot.Characters;
+        CharacterSnapshot? lead = null;
+        float nearest = float.MaxValue;
+        foreach (var o in characters)
+        {
+            if (selection.Count > 0 ? !selection.Contains(o.Id) : !o.IsPlayer) continue;
+            float d = Vector3.DistanceSquared(o.Position, c.Position);
+            if (d < nearest) (lead, nearest) = (o, d);
+        }
+        if (lead is null) return null;
+        var world = session.World;
+        long tick = world.Tick;
+        bool give = selection.Count > 0;
+        Action? Do(Action a) => give ? a : null;
+        bool carried = !c.CarriedBy.IsNone;
+        if (carried && characters.FirstOrDefault(o => o.Id == c.CarriedBy) is not { IsPlayer: true }) return null;
+        bool dead = c.Body is { Dead: true }, down = dead || c.Body is { Unconscious: true } || carried;
+        var loot = Do(() => Say(new Meitou.Simulation.Carrying.OpenLootOrder([], c.Id) { Tick = tick }));
+        var id = c.Id;
+        if (c.IsPlayer)
+        {
+            if (dead) return ("search", id, loot);
+            if (c.Body is { NeedsAid: true })
             {
-                Tick = session.World.Tick, Picked = true, Defensive = session.CurrentSnapshot.Characters.FirstOrDefault(c => c.Id == victim) is { FightsPlayer: true },
-            })));
-        if (PickHurtAlly(p) is { } patient)
-            return ("med", patient, () => OrderOrJob(Meitou.Data.Gameplay.Ai.TaskType.FIRST_AID_ORDER, patient, () => Say(new Meitou.Simulation.FirstAid.TreatOrder(selection, patient) { Tick = session.World.Tick })));
-        if (PickDowned(p, ownOnly: true) is { } ally) return ("lift", ally, () => Say(new Meitou.Simulation.Carrying.PickUpOrder([], ally) { Tick = session.World.Tick }));
-        // Anyone else's knocked-out or dead body: the nearest walks over and its inventory opens to take from (Alt + right click takes all at once).
-        if (PickDowned(p) is { } body) return ("search", body, () => Say(new Meitou.Simulation.Carrying.OpenLootOrder([], body) { Tick = session.World.Tick }));
-        return null;
+                bool robot = c.Body is { NeedsRobotAid: true };
+                return ("med", id, Do(() => OrderOrJob(robot ? Meitou.Data.Gameplay.Ai.TaskType.FIRST_AID_ROBOT : Meitou.Data.Gameplay.Ai.TaskType.FIRST_AID_ORDER, id,
+                    () => Say(new Meitou.Simulation.FirstAid.TreatOrder(selection, id) { Tick = tick }))));
+            }
+            if (!down) return null;
+            if (!carried) return lead.Id == id ? null : ("lift", id, Do(() => Say(new Meitou.Simulation.Carrying.PickUpOrder([], id) { Tick = tick })));
+            return lead.Carrying == id ? ("lift", id, Do(() => Say(new Meitou.Simulation.Carrying.PutDownOrder([lead.Id]) { Tick = tick }))) : null;
+        }
+        bool sneaking = c.StealthKoChance is not null;
+        if (Hostile(c))
+        {
+            if (down) return ("search", id, loot);
+            if (sneaking)
+                return c.Slave is { State: 1 } ? ("scavenge", id, loot) : ("knockout", id, Do(() => Say(new Meitou.Simulation.Carrying.StealthKoOrder([lead.Id], id) { Tick = tick })));
+            if (c.Prison is not null) return ("search", id, loot);
+            if (c.InCombat || !(c.WarParty || c.Slave is { State: 1 }) || !world.CanTalk(id, lead.Id))
+            {
+                // Fighting back at someone attacking the squad is defence, not an assault on its faction.
+                bool defence = c.FightsPlayer;
+                return ("attk", id, Do(() =>
+                {
+                    if (lead.Turret is not null) Say(new Meitou.Simulation.Combat.ShootAtOrder(selection, id) { Tick = tick });
+                    else OrderOrJob(Meitou.Data.Gameplay.Ai.TaskType.MELEE_ATTACK, id, () => Say(new Meitou.Simulation.Combat.AttackOrder(selection, id) { Tick = tick, Picked = true, Defensive = defence }));
+                }));
+            }
+            return (TalkPointer(c), id, Do(() => Say(new Meitou.Simulation.Dialogue.TalkOrder(lead.Id, id) { Tick = tick })));
+        }
+        if (down) return (c.NoLootGuilt ? "search" : "scavenge", id, loot);
+        if (sneaking)
+        {
+            if (c.Prison is not null)
+                return ("lockpick", id, Do(() => { Say(new Meitou.Simulation.Locks.PickLockOrder([lead.Id], id) { Tick = tick }); Say(new Meitou.Simulation.Locks.ShackleOrder([lead.Id], id, Meitou.Simulation.Locks.ShackleWork.Pick) { Tick = tick }); }));
+            return c.Slave is { State: 1 } ? ("scavenge", id, loot) : ("knockout", id, Do(() => Say(new Meitou.Simulation.Carrying.StealthKoOrder([lead.Id], id) { Tick = tick })));
+        }
+        // Order 12 (Task_PlayerTalkto) walks over and starts the conversation, a trader's included: its trade window is a reply of that conversation (DA_TRADE).
+        if (world.CanTalk(id, lead.Id)) return (TalkPointer(c), id, Do(() => Say(new Meitou.Simulation.Dialogue.TalkOrder(lead.Id, id) { Tick = tick })));
+        if (c.IsTrader) return ("talk", id, Do(() => Say(new Meitou.Simulation.Trading.OpenTrade(lead.Id, id) { Tick = tick })));   // engine: a shop whose keeper has no line to say
+        return AlliedFaction?.Invoke(c.Faction) == true ? ("green", id, null) : null;
     }
 
     public void MouseMove(Vector2 p)
@@ -168,6 +230,7 @@ sealed partial class PlayerInterface(WorldSession session, Func<float, float, fl
     {
         mouse = p;
         EditorPointerUp(button);
+        if (ContextMenuRelease(button, p)) return;
         if (button == MouseButton.Left) { InventoryPointerUp(p); JobDragEnd(p); SquadPointerUp(p, shift); faithfulScreens.PointerUp(); mapDrag = null; }
         if (button == MouseButton.Middle) mapDrag = null;
         if (button == MouseButton.Right && MapRightUp(p)) return;

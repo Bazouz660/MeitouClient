@@ -203,7 +203,7 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
             }
             // One set of skeleton rigs for the ragdolls and the renderer, so a ragdoll starts from the drawn pose.
             characterRigs = CharacterRenderer.CreateRigs(gameDb, assets);
-            animationLengths = Meitou.Data.Gameplay.AnimationLengths.Load(install.Root, gameDb);   // with the animals' own skeletons
+            animationLengths = Meitou.Data.Gameplay.AnimationLengths.Load(install.Root, gameDb, name => assets.Find(name));   // with the animals' own skeletons and the animation files
             animationLibrary = Meitou.Data.Gameplay.AnimationLibrary.FromDatabase(gameDb);
             popData = data;
             townPlacements = towns;

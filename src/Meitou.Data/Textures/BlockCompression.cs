@@ -7,7 +7,7 @@ namespace Meitou.Data.Textures;
 /// </summary>
 public static class BlockCompression
 {
-    public static int BlockBytes(DdsFormat format) => format is DdsFormat.Bc1 or DdsFormat.Bc4 ? 8 : 16;
+    public static int BlockBytes(DdsFormat format) => format is DdsFormat.Bc1 or DdsFormat.Bc4 ? 8 : 16;   // Bc7 and Rxgb: 16
 
     public static int Bc1Size(int width, int height) => (width + 3) / 4 * ((height + 3) / 4) * 8;
     public static int Bc3Size(int width, int height) => (width + 3) / 4 * ((height + 3) / 4) * 16;

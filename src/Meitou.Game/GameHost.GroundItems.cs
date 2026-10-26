@@ -40,8 +40,9 @@ sealed partial class GameHost
     readonly Dictionary<string, OgreBounds?> groundBounds = [];
 
     /// <summary>
-    /// A dropped item as it would come to rest (engine choice; the original lets physics settle it): its mesh's thinnest bounds axis turned upright, then its yaw, resting its
-    /// lowest corner on the drop point's ground. A weapon (modelled along +Y) lies on the flat of its blade.
+    /// A dropped item as it would come to rest (engine choice; the original lets a physics body settle it): its mesh's thinnest bounds axis turned upright, then its yaw, then tilted to the
+    /// slope of the terrain under it, and set down so that no point of its bounds is below the ground at that point. A weapon (modelled along +Y) lies on the flat of its blade; a limb
+    /// on a slope lies along it instead of hanging by its downhill end. Where the simulation's ground is not the terrain (a floor of a building) the ground is flat at the drop point.
     /// </summary>
     (Quaternion Rotation, float Y) LaidFlat(GroundItemSnapshot g)
     {
@@ -62,13 +63,26 @@ sealed partial class GameHost
             : size.Z < size.Y ? Quaternion.CreateFromAxisAngle(Vector3.UnitX, -MathF.PI / 2)                           // Z up
             : Quaternion.Identity;
         var rotation = Quaternion.Normalize(Quaternion.Concatenate(flat, yaw));
-        float lowest = float.MaxValue;
-        for (int c = 0; c < 8; c++)
-        {
-            var corner = new Vector3((c & 1) == 0 ? box.Min.X : box.Max.X, (c & 2) == 0 ? box.Min.Y : box.Max.Y, (c & 4) == 0 ? box.Min.Z : box.Max.Z);
-            lowest = MathF.Min(lowest, Vector3.Transform(corner, rotation).Y);
-        }
-        return (rotation, g.Position.Y - lowest);
+        var at = g.Position;
+        // The terrain only where the drop point lies on it (a building's floor is flat for this).
+        bool onTerrain = MathF.Abs(ActiveGround(at.X, at.Z) - at.Y) < 3;
+        float Ground(float x, float z) => onTerrain ? ActiveGround(x, z) : at.Y;
+        float reach = MathF.Max(MathF.Max(size.X, size.Z) * 0.5f, 1);
+        var slope = Vector3.Normalize(new Vector3(Ground(at.X - reach, at.Z) - Ground(at.X + reach, at.Z), 2 * reach, Ground(at.X, at.Z - reach) - Ground(at.X, at.Z + reach)));
+        float tilt = MathF.Acos(Math.Clamp(slope.Y, -1, 1));
+        if (tilt > 1e-3f)
+            rotation = Quaternion.Normalize(Quaternion.Concatenate(rotation, Quaternion.CreateFromAxisAngle(Vector3.Normalize(Vector3.Cross(Vector3.UnitY, slope)), tilt)));
+        // Every point of a lattice over its bounds must be at or above the ground below it (a limb on a crest touches the crest, not only the dips round it).
+        float y = float.MinValue;
+        for (int i = 0; i < 5; i++)
+            for (int j = 0; j < 5; j++)
+                for (int k = 0; k < 5; k++)
+                {
+                    var local = box.Min + size * new Vector3(i, j, k) / 4;
+                    var w = Vector3.Transform(local, rotation);
+                    y = MathF.Max(y, Ground(at.X + w.X, at.Z + w.Z) - w.Y);
+                }
+        return (rotation, y);
     }
 
     void ForgetGroundItems()

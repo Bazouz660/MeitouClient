@@ -64,6 +64,12 @@ public sealed partial class World
     /// </summary>
     public System.Collections.Concurrent.ConcurrentQueue<SoundEvent>? Sounds { get => sounds; set => sounds = value; }
 
+    /// <summary>
+    /// The characters that parried a weapon blow, for the host's sparks at their weapon (docs/game/combat.md "Block sparks"); null (the default) records none. Display only:
+    /// nothing in the simulation reads it.
+    /// </summary>
+    public System.Collections.Concurrent.ConcurrentQueue<CharacterId>? BlockSparks { get; set; }
+
     /// <summary>Queues a sound-worthy happening for the host (nothing while <see cref="Sounds"/> is null); <paramref name="slot"/> is the character it happens to (-1 none). Display only.</summary>
     public void EmitSound(SoundKind kind, int slot, Vector3 at, string? item = null)
     {

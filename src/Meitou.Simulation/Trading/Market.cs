@@ -34,6 +34,8 @@ public sealed class Market
     public const string MoneyItemName = "Cats";
     /// <summary>The VENDOR_LIST whose items get a market factor in every town (found by name and type, as <c>Zones_TownSetup</c> does).</summary>
     public const string AllTradeGoods = "all trade goods";
+    /// <summary>The price factor of armour that is a faction's uniform, in both directions (<c>Armour::vfunc_81</c> <c>FUN_1408a9c20</c>, <b>Verified</b>: the constant 0.3 the loader writes itself, not a CONSTANTS field).</summary>
+    public const float UniformPriceMult = 0.3f;
 
     readonly PopulationData data;
     readonly ConcurrentDictionary<(string Record, float Quality, string Company), int> baseValues = new();
@@ -118,7 +120,7 @@ public sealed class Market
     /// The price of one unit (the item classes' slot 81, section 5), <paramref name="sell"/> true when the player sells it to <paramref name="trader"/>:
     /// <list type="bullet">
     /// <item>Weapons and crossbows: trunc(T x base), selling trunc(T x base x <c>loot price mult GEAR</c>). (A crossbow taking the weapon's slot is an engine reading: <b>Unknown</b>.)</item>
-    /// <item>Armour: the same with the factor applied to the base first. The player-made rows and the hard-coded 0.3 have no condition here (no crafting; <c>Armour+0x1e8</c> is <b>Unknown</b>).</item>
+    /// <item>Armour: the same with the factor applied to the base first (<c>loot price mult player armour</c> instead of GEAR when crafted by a smith, as a weapon's player row), then x 0.3 when it is a faction's uniform (<see cref="ItemInstance.Uniform"/>), buying or selling, then T.</item>
     /// <item>The money item: its record <c>value</c>, nothing else.</item>
     /// <item>Maps and blueprints: trunc(T x <c>value</c>), selling x <c>loot price mult</c> / <c>loot price mult GEAR</c>. A blueprint's value is its research's <c>money</c>
     /// (<b>Verified</b>, the <c>BlueprintItem</c> constructor); a map's stored price comes from places not traced, so the record's <c>value</c> is an engine stand-in.</item>
@@ -135,12 +137,13 @@ public sealed class Market
             case FcsRecordType.WEAPON or FcsRecordType.CROSSBOW:
             {
                 int stored = BaseValue(item);
-                return sell ? (int)(t * stored * k.LootPriceMultGear) : (int)(t * stored);
+                return sell ? (int)(t * stored * (item.Crafter.Length > 0 ? k.LootPriceMultPlayerWeapons : k.LootPriceMultGear)) : (int)(t * stored);
             }
             case FcsRecordType.ARMOUR:
             {
                 float v = BaseValue(item);
-                if (sell) v *= k.LootPriceMultGear;
+                if (sell) v *= item.Crafter.Length > 0 ? k.LootPriceMultPlayerArmour : k.LootPriceMultGear;
+                if (item.Uniform.Length > 0 && Items.Db.Find(item.Uniform) is { Type: FcsRecordType.FACTION }) v *= UniformPriceMult;
                 return (int)(t * v);
             }
             case FcsRecordType.MAP_ITEM or FcsRecordType.BLUEPRINT:

@@ -105,8 +105,8 @@ internal sealed class RagdollPhysics : IDisposable
     /// a whole tick of the fastest motion (engine choice; 20 m/s is a fall of 20 m, far more than any in the game, and only a joint gone wrong gets there).
     /// </summary>
     public const float MaxSpeed = 200, SpeculativeMargin = 8;
-    /// <summary>The fastest a body may turn, in radians per second: a limb 4 units long then moves its tip by 4 × 30 = 120 units/s at most, inside <see cref="MaxSpeed"/> (engine choice).</summary>
-    public const float MaxSpin = 30;
+    /// <summary>The fastest a body may turn, in radians per second: PhysX's default NX_MAX_ANGULAR_VELOCITY (7), which the game leaves: its bodies' own maximum is -1 (= the global one) and the SDK parameter is never set (docs/game/ragdolls.md "Limits of motion").</summary>
+    public const float MaxSpin = 7;
 
     /// <summary>The collidable of a ragdoll body of <paramref name="shape"/>.</summary>
     public static CollidableDescription Collidable(TypedIndex shape) => new(shape, SpeculativeMargin);

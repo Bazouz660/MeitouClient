@@ -155,7 +155,7 @@ public sealed partial class PopulationSystem
         foreach (var (p, size, living) in own)
         {
             int lost = size - living;
-            if (lost <= 0 || lost < 0.6f * size || lost > pools.Residents.Current - running) continue;
+            if (lost <= 0 || lost < 0.6 * size || lost > pools.Residents.Current - running) continue;
             p.Regenerate = true;
             running += lost;
         }

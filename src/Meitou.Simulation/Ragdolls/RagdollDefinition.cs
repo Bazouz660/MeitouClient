@@ -60,6 +60,10 @@ public sealed class RagdollJoint
     public float Low { get; init; }
     public float High { get; init; }
     public float Swing { get; init; }
+    /// <summary>A revolute joint's spring (the file's spring 1, flag set by the game's joint builder <c>@ 1401a81b0</c>): stiffness (torque per radian), damper (torque per rad/s) and the rest angle in radians; stiffness 0 when the joint has none.</summary>
+    public float SpringStiffness { get; init; }
+    public float SpringDamper { get; init; }
+    public float SpringTarget { get; init; }
     /// <summary>The axis in A's and B's frames (the hinge or twist axis).</summary>
     public Vector3 AxisA => Vector3.Transform(Vector3.UnitZ, BasisA);
     public Vector3 AxisB => Vector3.Transform(Vector3.UnitZ, BasisB);
@@ -152,6 +156,7 @@ public sealed class RagdollDefinition
                 Type = j.Type, A = a, B = b,
                 OffsetA = A.Inverse().Apply(anchor), OffsetB = B.Inverse().Apply(anchor),
                 BasisA = Quaternion.Normalize(Quaternion.Inverse(A.Rotation) * basis), BasisB = Quaternion.Normalize(Quaternion.Inverse(B.Rotation) * basis),
+                SpringStiffness = j.Type == PhysicsJointType.Revolute && j.Spring1 is { Spring: > 0 } ? j.Spring1.Value.Spring : 0, SpringDamper = j.Spring1?.Damper ?? 0, SpringTarget = (j.Spring1?.Target ?? 0) * deg,
                 Limits = j.LimitsOn, Low = Math.Min(j.Low, j.High) * deg, High = Math.Max(j.Low, j.High) * deg, Swing = Math.Clamp(j.Swing, 1, 179) * deg,
             });
             if (a < 64) joined[b] |= 1UL << a;

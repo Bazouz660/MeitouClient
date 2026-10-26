@@ -90,9 +90,14 @@ public sealed class SkeletonRig
     public readonly Vector3[] BindPosition = [], BindScale = [];
     public readonly Quaternion[] BindRotationInverse = [];
 
-    public SkeletonRig(OgreSkeleton skeleton)
+    // The skeletons the instance links (docs/animation.md, "Animation files"), read when a clip is first looked for past the own ones.
+    readonly IReadOnlyList<Lazy<OgreSkeleton?>> linked;
+
+    /// <param name="linked">The linked animation sources in link order: a clip the skeleton lacks is taken from the first that has it, its tracks applied by bone handle.</param>
+    public SkeletonRig(OgreSkeleton skeleton, IReadOnlyList<Lazy<OgreSkeleton?>>? linked = null)
     {
         Skeleton = skeleton;
+        this.linked = linked ?? [];
         BoneCount = skeleton.Bones.Count == 0 ? 0 : skeleton.Bones.Max(b => b.Handle) + 1;
         ByHandle = new OgreBone?[BoneCount];
         Parent = new int[BoneCount];
@@ -147,13 +152,18 @@ public sealed class SkeletonRig
     /// <summary>Handle of the bone called <paramref name="name"/>, or null.</summary>
     public int? Handle(string name) => handles.TryGetValue(name, out var h) ? h : null;
 
-    /// <summary>The animation called <paramref name="name"/> as arrays (null: the skeleton has none).</summary>
+    /// <summary>The animation called <paramref name="name"/> as arrays, the skeleton's own else the first linked source's (null: none has it).</summary>
     public AnimationClip? Clip(string name)
     {
         if (clips.TryGetValue(name, out var cached)) return cached;
-        var animation = Skeleton.Animations.FirstOrDefault(a => string.Equals(a.Name, name, StringComparison.OrdinalIgnoreCase));
+        var animation = Find(Skeleton, name);
+        for (int i = 0; animation is null && i < linked.Count; i++)
+            if (linked[i].Value is { } source) animation = Find(source, name);
         return clips[name] = animation is null ? null : Compile(animation);
     }
+
+    static OgreAnimation? Find(OgreSkeleton skeleton, string name) =>
+        skeleton.Animations.FirstOrDefault(a => string.Equals(a.Name, name, StringComparison.OrdinalIgnoreCase));
 
     AnimationClip Compile(OgreAnimation animation)
     {
@@ -250,6 +260,16 @@ public sealed class PoseScratch
     /// <summary>The posed derived (model-space) transform of a bone: scale, rotation, translation.</summary>
     public Matrix4x4 BoneTransform(int h) =>
         Matrix4x4.CreateScale(DerivedScale[h]) * Matrix4x4.CreateFromQuaternion(DerivedRotation[h]) * Matrix4x4.CreateTranslation(DerivedPosition[h]);
+
+    /// <summary>
+    /// An object attached to bone <paramref name="h"/> at <paramref name="offset"/> (rotation and translation): Kenshi's tag point takes the bone's rotation and position, its
+    /// offset scaled by the bone's Y scale like a child bone's, but not the bone's scale (docs/formats/ogre-skeleton.md "Binding worn meshes to the character"), so a weapon keeps its shape.
+    /// </summary>
+    public Matrix4x4 TagTransform(int h, Matrix4x4 offset)
+    {
+        offset.Translation *= DerivedScale[h].Y;
+        return offset * Matrix4x4.CreateFromQuaternion(DerivedRotation[h]) * Matrix4x4.CreateTranslation(DerivedPosition[h]);
+    }
 
     /// <summary>Poses the derived transforms; <paramref name="overrides"/> (null: none) replaces the model-space rotations of some bones afterwards, and their children follow.</summary>
     public void PoseDerived(BodyShapeData? shape, ReadOnlySpan<ActiveLayer> layers, BonePose? overrides = null)

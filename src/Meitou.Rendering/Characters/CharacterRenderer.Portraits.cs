@@ -217,7 +217,7 @@ internal sealed unsafe partial class CharacterRenderer
         {
             scratch.Pose(asset.Shape, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(portraitLayers), portraitBones);
             foreach (var part in asset.Parts)
-                if (part.AttachIndex >= 0) portraitAttach[part.AttachIndex] = part.Offset * scratch.BoneTransform(part.Bone);
+                if (part.AttachIndex >= 0) portraitAttach[part.AttachIndex] = scratch.TagTransform(part.Bone, part.Offset);
             return asset.HeadBone >= 0 ? scratch.BoneTransform(asset.HeadBone).Translation : new Vector3(0, asset.Height * 0.85f, 0);
         }
         finally { rig.Return(scratch); }

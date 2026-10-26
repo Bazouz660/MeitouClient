@@ -48,8 +48,9 @@ internal sealed partial class ZoneGeometryGatherer
             for (int i = 0; i < cols - 1; i++)
             {
                 int a = j * cols + i, b = a + 1, c = a + cols, d = c + 1;
-                Tri(a, c, b);
-                Tri(b, c, d);
+                // Cut from the cell's (i, j) corner to (i + 1, j + 1): the original's outlines follow this diagonal (docs/game/pathfinding.md, "Terrain").
+                Tri(a, c, d);
+                Tri(a, d, b);
             }
 
         void Tri(int p, int q, int r)

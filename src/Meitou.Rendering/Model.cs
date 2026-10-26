@@ -195,6 +195,12 @@ public sealed class Model
                 v.Weights = new Vector4(w[0], w[1], w[2], w[3]);
             }
             if (dropped > 0) warnings.Add($"submesh {s}: {dropped} bone assignments name bones past the skeleton's {boneCount} and were dropped");
+            // A vertex without assignments follows blend index 0 fully (Ogre's Mesh::compileBoneAssignments): the lowest bone the vertex data's assignments use
+            // (docs/formats/ogre-mesh.md "Bone assignments"), so a hair's unweighted cards move with its head.
+            int lowest = assignments.Where(a => a.BoneIndex < boneCount!.Value && a.BoneIndex < 256).Select(a => (int)a.BoneIndex).DefaultIfEmpty(-1).Min();
+            if (lowest >= 0)
+                for (int i = 0; i < n; i++)
+                    if (verts[i].Weights == Vector4.Zero) (verts[i].Bones, verts[i].Weights) = ((uint)lowest, new Vector4(1, 0, 0, 0));
         }
 
         return new ModelPart

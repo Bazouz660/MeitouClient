@@ -317,9 +317,13 @@ public sealed class NavQuery(NavWorld world, NavDoors? doors = null)
             var to = polys[i + 1];
             bool lw = true, rw = true;
             if (!FindPortal(from, to, out var l, out var r, out lw, out rw)) { l = r = World.Mesh(to.Zone).Centre(to.Polygon); }
-            // Pull in by the radius the ends that touch a wall (an obstacle or a drop), never past the middle; the other ends are open ground.
             var d = r - l;
             float len = MathF.Sqrt(d.X * d.X + d.Z * d.Z);
+            bool OnPortal(Vector3 p) => DistanceToLine(l, d, p) < 1e-3f && (p.X - l.X) * d.X + (p.Z - l.Z) * d.Z is var t && t >= 0 && t <= len * len;
+            // A start on the portal's own line (a point on a shared edge) already stands past it: the funnel from a point on its line is degenerate
+            // and swung out to the portal's end (Observed, Swamp Village stair foot: 153 for 83).
+            if (len > 1e-4f && portalsL.Count == 1 && OnPortal(c.Start)) continue;
+            // Pull in by the radius the ends that touch a wall (an obstacle or a drop), never past the middle; the other ends are open ground.
             if (len > 1e-4f)
             {
                 var u = d / len;

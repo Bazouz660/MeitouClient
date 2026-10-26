@@ -150,11 +150,13 @@ public static partial class SaveCapture
             foreach (int squadId in population.WildSquadsOf(site.Index))
             {
                 if (world.Squads.Find(squadId) is not { } squad || squad.Faction < 0 || squad.Faction >= data.Factions.Count) continue;
-                var alive = squad.Members.Where(m => table.IsAlive(m) && table.Cold(m.Slot) is { IsPlayer: false, DiedTick: < 0, Save: null }).ToList();
+                // The dead stay in the platoon's list as the original writes it (FUN_1404ff410, docs/game/character-stats.md "Corpses").
+                var every = squad.Members.Where(m => table.IsAlive(m) && table.Cold(m.Slot) is { IsPlayer: false, Save: null }).ToList();
+                var alive = every.Where(m => table.Cold(m.Slot)!.DiedTick < 0).ToList();
                 if (alive.Count == 0) continue;
                 var leader = alive.Contains(squad.Leader) ? squad.Leader : alive[0];
                 Write(site, squad.TemplateId, squad.Faction, squad.Money, squad.Ai?.Current?.Id,
-                    [.. alive.Select(id => (table.Cold(id.Slot)!, table.Previous[id.Slot].Position, table.Previous[id.Slot].Yaw, id, id == leader))], MemoryOf(world)?.Snapshot(squad.Id));
+                    [.. every.Select(id => (table.Cold(id.Slot)!, table.Previous[id.Slot].Position, table.Previous[id.Slot].Yaw, id, id == leader))], MemoryOf(world)?.Snapshot(squad.Id));
             }
             // Kept while the site is unloaded (the Meitou KeepWild switch): their characters as they were stored.
             foreach (var k in population.KeptWildOf(site.Index))

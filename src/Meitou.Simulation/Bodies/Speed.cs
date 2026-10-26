@@ -54,6 +54,12 @@ public static class Speed
     }
 
     /// <summary>
+    /// The speed of a crippled character and of a voluntary crawler (<b>Verified</b>, <c>FUN_140886460</c>: a final override after the water and sneak caps, 5.0 when crippled,
+    /// 7.0 at posture 1; docs/game/ragdolls.md "Forced crawl"). Meitou has no voluntary crawl yet.
+    /// </summary>
+    public const float Crippled = 5, VoluntaryCrawl = 7;
+
+    /// <summary>
     /// The water state 0..3 of a character standing (swimming at the surface counts as standing on the seabed below) at height <paramref name="standY"/>
     /// (<b>Verified</b>, <c>FUN_1405c7fd0</c>, docs/game/pathfinding.md "Water states"): 0 dry (also when standY + <see cref="WaterSlack"/> is above the water level), 3 deep
     /// (size x 15 + standY at or under the water level), 2 waist-deep (size x 6), else 1 for a race that <c>swims</c>, which is the only state the shallows have.

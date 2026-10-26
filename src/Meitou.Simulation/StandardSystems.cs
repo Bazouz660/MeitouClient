@@ -178,6 +178,7 @@ public static class StandardSystems
             carry = new Meitou.Simulation.Carrying.CarrySystem(data.Bodies.Constants, data.BodyOptions, o.AnimationLengths?.Of(Meitou.Simulation.Carrying.CarrySystem.LiftClip) ?? 1, o.Carry);
             if (Has(StandardParts.Aggro)) carry.Relations = data.Relations;
             carry.Assembly = new CharacterAssembly(data);
+            carry.Data = data;
             systems.Add(carry);
             // Raiders lifting the downed and carrying them to a cage of their faction: right after the carry system, whose lift and links it uses; it adds nothing to the hash until one runs.
             if (population is not null) systems.Add(kidnap = new Meitou.Simulation.Kidnap.KidnapSystem(data, population, carry, o.Kidnap) { Deeds = deeds });
@@ -206,6 +207,11 @@ public static class StandardSystems
             animation.Ragdolls = ragdolls;
             // The stealth knock-out swing lasts the length of the knockout record's clip.
             if (carry is not null && library.IndexOf(Meitou.Simulation.Carrying.CarrySystem.KnockoutClip) is >= 0 and var ko) carry.KnockoutSeconds = lengths.Of(library.Definitions[ko].Clip);
+            if (carry is not null && library.IndexOf(Meitou.Simulation.Carrying.CarrySystem.LiftClip) is >= 0 and var lift && lengths.Of(library.Definitions[lift].Clip) is > 0 and var liftLength)
+            {
+                carry.LiftPlaySpeed = library.Definitions[lift].PlaySpeed > 0 ? library.Definitions[lift].PlaySpeed : 1;
+                carry.LiftSeconds = liftLength / carry.LiftPlaySpeed;
+            }
             if (captives is not null && library.IndexOf(Meitou.Simulation.Kidnap.CaptiveSystem.ChopClip) is >= 0 and var chop) captives.ChopSeconds = lengths.Of(library.Definitions[chop].Clip);
         }
         if (Has(StandardParts.Feed)) systems.Add(new FeedSystem(data.Items, o.Feed));

@@ -706,12 +706,17 @@ public sealed partial class ProductionSystem : ITickSystem
         return true;
     }
 
-    /// <summary>The farm tick (<b>Observed</b>, <c>FarmBuilding::vfunc_28</c>), every tick whether anyone is there. Rain is not modelled (engine gap): water comes from the input only.</summary>
+    /// <summary>The factor of the rain's water (the exe's constant at <c>14168a254</c>, <b>Verified</b>).</summary>
+    const float RainWaterFactor = 3;
+
+    /// <summary>The farm tick (<b>Observed</b>, <c>FarmBuilding::vfunc_28</c>), every tick whether anyone is there. An outdoor farm's first input is rained on first: level += wetness x water rate x rate x dt x 3, at most 1 (<b>Verified</b>, <c>FUN_1400e5580</c>).</summary>
     void FarmTick(World world, Machine m, float dt)
     {
         var f = m.Farm!;
         var fd = m.Data.Farm!;
         float h = dt / (MachineData.DaySeconds / 24);
+        if (m.Inputs.Length > 0 && !fd.Indoor && world.Weather?.At(m.Position.X, m.Position.Z) is { Wetness: > 0 } rain)
+            m.Inputs[0].Level = MathF.Min(1, m.Inputs[0].Level + rain.Wetness * m.WaterRate * m.Inputs[0].Rate * dt * RainWaterFactor);
         bool watered = m.Inputs.Length == 0 || DrawWater(m, dt * m.WaterRate);
         float inc = h * m.Yield * m.Power / fd.GrowthTime;
         if (!watered) inc *= fd.DroughtMultiplier;

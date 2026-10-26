@@ -10,8 +10,15 @@ public static class CombatTuning
     /// 0.2 dodged; a swing that finds nobody in its attack zone keeps the 0.5 s deciding set (+0x148). A hit that finds no reaction clip still cancels the swing and waits <see cref="InterruptPause"/>.
     /// </summary>
     public const float HitPause = 0.6f, BlockedPause = 0.3f, DodgedPause = 0.2f, MissedPause = 0.5f, InterruptPause = 0.2f;
+    /// <summary>
+    /// The clip progress past which a swing is finished and the wait after it starts (<b>Verified</b>, 0.98 read from the binary: <c>FUN_14060a590</c> arms +0x144 once <c>FUN_1405b4c00</c> reports the clip done); the wait
+    /// runs only while no clip is busy (<c>FUN_1405b34b0</c>: progress under the technique's <c>acceptable end time</c>, a 0 there is never busy), so it starts at the later of the two. A data 0 (many mods) does not end the swing at once.
+    /// </summary>
+    public const float SwingFinished = 0.98f;
     /// <summary>Seconds between a staggered fighter's chances to break out of its hit reaction into a block (<b>Verified</b>, the original's +0x124).</summary>
     public const float BreakOutSeconds = 1.2f;
+    /// <summary>The swing progress window of the attackers a stumble break-out is rolled against (<b>Verified</b> constants 0.1 and 0.99, <c>FUN_1406085e0</c>).</summary>
+    public const float BreakOutFrom = 0.1f, BreakOutTo = 0.99f;
     /// <summary>Seconds without any defence after a defence roll found nothing (<b>Verified</b>, the original's +0x14c), and the wait after a block ends with nothing coming (+0x148, 0.2 s).</summary>
     public const float NoDefenceSeconds = 1.2f, AfterBlockPause = 0.2f;
     /// <summary>A swing is given up to defend while it is under this far through and a blow coming at the fighter is past this far (<b>Verified</b>, FUN_1406083d0(0.5, 0.5)).</summary>

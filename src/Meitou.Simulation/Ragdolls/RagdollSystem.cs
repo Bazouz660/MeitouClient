@@ -426,6 +426,31 @@ public sealed class RagdollSystem : ITickSystem, IStateHashed, IRagdollState, IR
         return lift <= MaxLift ? lift : 0;
     }
 
+    /// <summary>
+    /// A revolute joint's spring (docs/game/ragdolls.md "Joint springs"): a torque of stiffness x (angle - target) - damper x spin about the hinge, as the file's spring 1 sets it
+    /// (the head's neck joint, 10000 with no damper). As a servo on the hinge angle with the frequency and damping ratio of that spring on the joint's moving mass: the
+    /// inertia about the axis of the lighter body (a pinned body does not move; the other one does), omega = sqrt(k / I), ratio = damper / (2 sqrt(k I)).
+    /// </summary>
+    TwistServo HingeSpring(Ragdoll r, RagdollJoint j)
+    {
+        var shapes = Shapes(r.Definition);
+        float Inertia(int body, Vector3 axis)
+        {
+            var inverse = shapes[body].Inertia.InverseInertiaTensor;
+            float along = inverse.XX * axis.X * axis.X + inverse.YY * axis.Y * axis.Y + inverse.ZZ * axis.Z * axis.Z + 2 * (inverse.YX * axis.X * axis.Y + inverse.ZX * axis.X * axis.Z + inverse.ZY * axis.Y * axis.Z);
+            return along > 1e-9f ? 1 / along : 1;
+        }
+        float inertia = r.Dynamic[j.A] && r.Dynamic[j.B] ? 1 / (1 / Inertia(j.A, j.AxisA) + 1 / Inertia(j.B, j.AxisB)) : r.Dynamic[j.A] ? Inertia(j.A, j.AxisA) : Inertia(j.B, j.AxisB);
+        float omega = MathF.Sqrt(j.SpringStiffness / inertia);
+        float ratio = j.SpringDamper / (2 * MathF.Sqrt(j.SpringStiffness * inertia));
+        return new TwistServo
+        {
+            LocalBasisA = j.BasisA, LocalBasisB = j.BasisB, TargetAngle = j.SpringTarget,
+            SpringSettings = new SpringSettings(omega / (2 * MathF.PI), ratio),
+            ServoSettings = new ServoSettings(float.MaxValue, 0, float.MaxValue),
+        };
+    }
+
     void AddJoint(Ragdoll r, RagdollJoint j)
     {
         var a = r.Bodies[j.A]!.Value;
@@ -438,6 +463,7 @@ public sealed class RagdollSystem : ITickSystem, IStateHashed, IRagdollState, IR
                 r.Joints.Add(solver.Add(a, b, new Hinge { LocalOffsetA = j.OffsetA, LocalHingeAxisA = j.AxisA, LocalOffsetB = j.OffsetB, LocalHingeAxisB = j.AxisB, SpringSettings = spring }));
                 if (j.Limits)
                     r.Joints.Add(solver.Add(a, b, new TwistLimit { LocalBasisA = j.BasisA, LocalBasisB = j.BasisB, MinimumAngle = j.Low, MaximumAngle = j.High, SpringSettings = spring }));
+                if (j.SpringStiffness > 0) r.Joints.Add(solver.Add(a, b, HingeSpring(r, j)));
                 break;
             case PhysicsJointType.Spherical:
                 r.Joints.Add(solver.Add(a, b, new BallSocket { LocalOffsetA = j.OffsetA, LocalOffsetB = j.OffsetB, SpringSettings = spring }));
@@ -486,7 +512,7 @@ public sealed class RagdollSystem : ITickSystem, IStateHashed, IRagdollState, IR
         return shapes[definition] = made;
     }
 
-    /// <summary>Drives the pinned bodies to the animated pose over the tick (as velocities, so the joints and contacts feel the motion).</summary>
+    /// <summary>Sets the pinned bodies to the animated pose with no velocity, as the original does: the joints and contacts see the jump, not a speed.</summary>
     void Pin(Ragdoll r, RigidTransform[] animated, float dt)
     {
         for (int b = 0; b < r.Bodies.Length; b++)
@@ -494,19 +520,9 @@ public sealed class RagdollSystem : ITickSystem, IStateHashed, IRagdollState, IR
             if (r.Bodies[b] is not { } handle || r.Dynamic[b]) continue;
             var body = physics.Simulation.Bodies.GetBodyReference(handle);
             var target = animated[b];
-            var from = body.Pose;
-            var turn = Quaternion.Normalize(target.Rotation * Quaternion.Inverse(from.Orientation));
-            if (turn.W < 0) turn = -turn;
-            float angle = 2 * MathF.Acos(Math.Clamp(turn.W, -1, 1));
-            float s = MathF.Sqrt(MathF.Max(0, 1 - turn.W * turn.W));
-            var axis = s > 1e-5f ? new Vector3(turn.X, turn.Y, turn.Z) / s : Vector3.Zero;
-            // A jump too big for one tick (a teleport, a new carry) is not swept through the scene.
-            if (Vector3.DistanceSquared(target.Position, from.Position) > 400)
-            {
-                body.Pose = new RigidPose(target.Position, target.Rotation);
-                body.Velocity = default;
-            }
-            else body.Velocity = new BodyVelocity((target.Position - from.Position) / dt, axis * (angle / dt));
+            // The original sets the pose and zeroes both velocities (FUN_1407d1550 -> FUN_1401a9ea0 / FUN_1401a9f00): the joints see only the position jump.
+            body.Pose = new RigidPose(target.Position, target.Rotation);
+            body.Velocity = default;
             if (!body.Awake) body.Awake = true;
         }
         // Partial ragdolls are woken every frame (FUN_1407d3c00, wake 20).

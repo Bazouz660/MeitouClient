@@ -236,7 +236,10 @@ public sealed partial class PlayerSystem
     }
 
     /// <summary>Money (<see cref="MoneyFunction"/>) into the player's purse: "{N} cats added." (<c>FUN_140714a20</c>).</summary>
-    void Cash(World world, ItemInstance item, int units)
+    void Cash(World world, ItemInstance item, int units) => Cash(world, data, item, units);
+
+    /// <summary><paramref name="units"/> of the money item <paramref name="item"/> into the player's purse, "{N} cats added.", priced at the record's <c>value</c>.</summary>
+    internal static void Cash(World world, PopulationData? data, ItemInstance item, int units)
     {
         long cats = (long)(data?.Items.Info(item.Record)?.Value ?? 0) * units;
         world.Player.Money += cats;

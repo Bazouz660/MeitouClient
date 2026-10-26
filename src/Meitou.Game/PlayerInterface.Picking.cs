@@ -157,7 +157,7 @@ sealed partial class PlayerInterface
     {
         (Picked Kind, float T) best = (Picked.None, float.MaxValue);
         void Offer(Picked kind, float? t) { if (t is { } v && v < best.T) best = (kind, v); }
-        if (QuickOrder(p) is { } order) Offer(Picked.Character, PickWhereAt(p, c => c.Id == order.Target)?.T ?? 0);
+        if (QuickOrder(p) is { Do: not null } order) Offer(Picked.Character, PickWhereAt(p, c => c.Id == order.Target)?.T ?? 0);
         else if (PickWhereAt(p, _ => true) is { } any && session.CurrentSnapshot.Characters.FirstOrDefault(c => c.Id == any.Id) is { } held && Verbs(held).Count > 0)
             Offer(Picked.Character, any.T);   // no quick order, but a held click opens its menu
         Offer(Picked.GroundItem, PickGroundItemAt(p)?.T);

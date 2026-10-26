@@ -89,10 +89,13 @@ public sealed partial class PopulationSystem
         return new BuiltTown(site.Index, loadId, squads);
     }
 
+    /// <summary>The original's per-cent constant, the double nearest the float 0.01 (<c>0x141748288</c>), so exact products like 100 x 0.5 x 4 fall just under their integer as there.</summary>
+    const double BarShare = 0.009999999776482582;
+
     /// <summary>The number of squads a bar squad entry (v0 slots, v1 per cent) makes (see <see cref="BuildTown"/>).</summary>
     internal static int BarCount(int v0, int v1, ulong seed, ulong key)
     {
-        int n = v0 > 2 ? (int)(v1 * 0.5 * 0.01 * v0) : 0;
+        int n = v0 > 2 ? (int)(v1 * 0.5 * BarShare * v0) : 0;
         for (int roll = 0; n < v0; roll++)
         {
             if (Rng.Int(Rng.Hash(seed, key, RngPurpose.Spawn, SeedSalts.BarChance + (ulong)roll), 101) > v1) break;

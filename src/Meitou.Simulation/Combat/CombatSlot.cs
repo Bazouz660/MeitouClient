@@ -27,6 +27,11 @@ public struct CombatSlot
     public int ReactedSlot, ReactedSeq, ReactedBlow;
     /// <summary>The earliest tick a new attack may start, and the tick until which a hit reaction holds the character helpless.</summary>
     public int ReadyTick, StunUntil;
+    /// <summary>
+    /// Until when the post-swing pause holds it (the original's +0x144 wait in state 6, <c>FUN_14060d6a0</c>): it starts no attack and no defence, whoever swings at it, and
+    /// only a hit reaction ends it. Set only when the swing ran to its end; a swing stopped at a stop frame decides again at once.
+    /// </summary>
+    public int PauseUntil;
     /// <summary>Knocked out or dead (a copy of <c>MedicalState.Incapacitated</c> that other characters can read).</summary>
     public bool Down;
     /// <summary>Counters: blows thrown, hits landed, blows blocked or dodged by the target, hits taken, blocks, dodges made.</summary>
@@ -112,6 +117,7 @@ public struct CombatSlot
         h.Add(ReactedBlow);
         h.Add(ReadyTick);
         h.Add(StunUntil);
+        h.Add(PauseUntil);
         h.Add(Down);
         h.Add(Thrown);
         h.Add(Landed);

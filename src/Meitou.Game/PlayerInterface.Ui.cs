@@ -254,6 +254,7 @@ sealed partial class PlayerInterface
         AddNameTags(nameTags);
         AddTaskBars(nameTags);
         controls.InsertRange(0, nameTags);
+        AddFloaters(controls);   // the original's Dialog layer: over the panels
         AddSpeech(controls);
         AddBuildReadout(controls);
         AddContextMenu(controls);
@@ -386,9 +387,10 @@ sealed partial class PlayerInterface
             return;
         }
         if (panel == "build") { if (buildMode) faithfulScreens.Open("build"); else SetBuildMode(true); return; }
-        if (panel is not ("inventory" or "stats" or "limbs")) throw new ArgumentException("Unknown UI panel.", nameof(panel));
-        var control = ArrangeUi().First(c => c.Action == $"meitou:{(panel == "limbs" ? "inventory" : panel)}");
+        if (panel is not ("inventory" or "stats" or "limbs" or "bag")) throw new ArgumentException("Unknown UI panel.", nameof(panel));
+        var control = ArrangeUi().First(c => c.Action == $"meitou:{(panel is "limbs" or "bag" ? "inventory" : panel)}");
         uiHost.Dispatch(control);
         if (panel == "limbs") { limbsOwner = InventoryOwner()?.Id ?? CharacterId.None; faithfulScreens.Open("limbs"); PlaceLimbsWindow(); }
+        if (panel == "bag") ToggleBag();
     }
 }

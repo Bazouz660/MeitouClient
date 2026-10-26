@@ -84,6 +84,10 @@ public enum DdsFormat
     Bc4,
     /// <summary>BC5 / ATI2: 16-byte blocks, two interpolated channels (typically a normal map's X and Y).</summary>
     Bc5,
+    /// <summary>BC7 / BPTC (DXGI 97-99): 16-byte blocks, eight modes, high quality colour with alpha.</summary>
+    Bc7,
+    /// <summary>"RXGB": BC3 blocks whose red channel is stored in alpha (the xGBR normal-map swizzle); decoded as BC3 with R and A swapped and A = 255.</summary>
+    Rxgb,
     /// <summary>Uncompressed pixels with channel bit masks (<see cref="DdsFile.Masks"/>), 8 to 32 bits per pixel.</summary>
     Uncompressed,
 }

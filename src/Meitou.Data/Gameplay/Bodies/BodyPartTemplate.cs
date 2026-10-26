@@ -43,6 +43,9 @@ public sealed record BodyPartTemplate
     /// <summary><c>bone name</c> and <c>bone name 2</c>: the skeleton bones of the part (a bolt sticks in one, docs/game/combat.md "Bolt visuals").</summary>
     public string BoneName { get; init; } = "";
     public string BoneName2 { get; init; } = "";
+    /// <summary><c>pain anim</c>: the ANIMATION record (string id) a hurt character holds this part with, and the reference's first value, the health per cent under which it does (<c>FUN_14064a100</c>, docs/animation.md "Injury holds"); null when the record has none.</summary>
+    public string? PainAnim { get; init; }
+    public int PainThreshold { get; init; }
 
     public BodySide Side => CollapsePart is 4 or 0x20 ? BodySide.Left : CollapsePart is 2 or 0x10 ? BodySide.Right : BodySide.None;
 
@@ -81,5 +84,7 @@ public sealed record BodyPartTemplate
         KoMult = RecordReading.Float(r, "KO mult", 1),
         BoneName = r.GetString("bone name"),
         BoneName2 = r.GetString("bone name 2"),
+        PainAnim = r.GetReferences("pain anim").Select(x => x.TargetStringId).FirstOrDefault(),
+        PainThreshold = r.GetReferences("pain anim").Select(x => x.Values.Value0).FirstOrDefault(),
     };
 }

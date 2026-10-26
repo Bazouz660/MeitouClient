@@ -85,7 +85,7 @@ sealed class TitleBattle : IDisposable
             var poses = c.Animations.Select(layer =>
             {
                 var old = before.Animations.FirstOrDefault(p => p.Name == layer.Name);
-                return new CharacterPose(layer.Name, layer.Time >= old.Time ? old.Time + (layer.Time - old.Time) * alpha : layer.Time,
+                return new CharacterPose(layer.Name, old.Name is null ? layer.Time : GameHost.LayerTime(old, layer, alpha),
                     old.Weight + (layer.Weight - old.Weight) * alpha);
             }).ToArray();
             list.Add(new CharacterInstance(long.MinValue + 2 + i, c.Appearance, position,

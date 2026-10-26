@@ -199,10 +199,12 @@ public class FaithfulInteractionTests(ITestOutputHelper output)
             ui.Steer(); Assert.False(ui.ContextMenuOpen);   // not held long enough yet
             Thread.Sleep(TimeSpan.FromSeconds(PlayerInterface.ContextHoldSeconds + 0.05));
             ui.Steer(); Assert.True(ui.ContextMenuOpen);
-            ui.MouseUp(MouseButton.Right, at, false);
             Assert.Contains(ui.UiFrame, c => c.Name == "context-title" && c.Caption == "Stranger");
-            Assert.Equal(0, session.World.Commands.Count);   // the release after the hold gave no quick order
-            Click(ui, "context-verb-0");
+            Assert.Equal(0, session.World.Commands.Count);   // the hold gave no quick order
+            // The rows act on the release (the original's eventMouseButtonReleased): the held button let go over the first verb gives it and closes the menu.
+            var verb = Centre(ui.UiFrame.Last(c => c.Name == "context-verb-0"));
+            ui.MouseMove(verb);
+            ui.MouseUp(MouseButton.Right, verb, false);
             Assert.False(ui.ContextMenuOpen);
             Assert.Contains(session.World.Commands.TakeDue(long.MaxValue), c => c is Meitou.Simulation.Combat.AttackOrder a && a.Target == other);
         }

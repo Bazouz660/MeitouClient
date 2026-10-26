@@ -103,8 +103,8 @@ public sealed partial class CombatSystem
         var from = new Vector2(p.X, p.Z);
         float k = cold.Medical!.ScaleK, scale = WeaponStats.Lerp(k, 0.45f, 1), r = CombatTuning.Footprint(cold), length = cold.Fighter!.WeaponLength;
         var forward = new Vector2(MathF.Sin(prev[i].Yaw), MathF.Cos(prev[i].Yaw));
-        float moved = Vector2.Distance(from, new Vector2(s.AttackFrom.X, s.AttackFrom.Z));
-        float ahead = (length * 0.25f + r + MathF.Max(0, tech.AttackDistance - moved)) * scale;
+        float moved = Vector3.Distance(p, s.AttackFrom);
+        float ahead = (length * 0.25f + r + MathF.Max(-1, tech.AttackDistance - moved)) * scale;
         bool sweep = tech.DirectionOf(blow) is 2 or 3;   // CUT_LEFT, CUT_RIGHT
         float deep = length * 0.5f * scale;
         float back = MathF.Max(0, (ahead - k * r) * 0.5f);
@@ -139,7 +139,7 @@ public sealed partial class CombatSystem
         float Eff(StatsEnumerated stat) => stats[stat] * stats.Scale * medical.StatMultiplier(stat);
         float str = Eff(StatsEnumerated.Strength);
         var packet = Powered(fighter.Unarmed
-            ? DamageFormulas.UnarmedPacket(Eff(fighter.WeaponSkill), Eff(StatsEnumerated.Toughness), str, fighter.Weapon, TargetKind.Human, null, fighter.DamageOutput, combat)
+            ? DamageFormulas.UnarmedPacket(UnarmedRating(cold, fighter), Eff(StatsEnumerated.Toughness), str, fighter.Weapon, TargetKind.Human, null, fighter.DamageOutput, combat)
             : DamageFormulas.Packet(Eff(fighter.WeaponSkill), Eff(StatsEnumerated.Dexterity) * fighter.DexterityMult, str, fighter.Weapon!, TargetKind.Human, null, fighter.DamageOutput, combat), tech, blow);
         float f = 2 * packet.Blunt + 0.5f * packet.Cut;
         var found = buildingScratch;

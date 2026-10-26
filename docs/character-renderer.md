@@ -56,9 +56,11 @@ translucency (ears).
 uploads. Reuse appearances/content; replace only after ready and retire after GPU consumers.
 `CharacterTextureBudget` shares mip/VRAM pressure policy; unavailable content uses a stand-in.
 Loading readiness includes used textures deferred by memory pressure, not just queued decodes/uploads.
-Generated four-level reductions are always enabled; with 100+ characters drawn in the world, pose rates fall with distance from the eye (a fight at the
-camera's pivot is thinned too once the boom is out): past 120/300/600 units at most 30/15/7.5 poses/s (in time, the game's animation clock, each on its own phase), animal distances scaled by radius/16. `CharacterInstance.FullRateAnimation` bypasses
-distance throttling for presentation actors, the first 10 of the player's characters (squad bar, then the
+Generated four-level reductions are always enabled; with 100+ characters drawn in the world, pose rates fall with the character's size on screen
+(its diameter in pixels at the view's projection, so resolution and field of view count and big animals keep their rate farther): 100 px and more every
+frame, then at most 30/15/7.5 poses/s below 100/50/25 px (in time, the game's animation clock, each on its own phase); at most 48 characters, the largest first,
+take the full rate by size, the next ones at least 30/s (`CharacterRenderer.PosePixelSteps`, `FullRateBudget`; engine choices). `CharacterInstance.FullRateAnimation` bypasses
+the throttling for presentation actors, the first 10 of the player's characters (squad bar, then the
 other squads in order) and the first selected one (`PlayerInterface.FullRateCharacters`). Shadow LOD doubles choice with cascade floors.
 Clamp stored bounds to real mesh extent. Animation rendering does not independently integrate
 walk-loop root movement; simulation owns relocation. Quads/morph and motion buffers retain

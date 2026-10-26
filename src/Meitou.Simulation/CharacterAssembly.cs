@@ -112,6 +112,8 @@ sealed class CharacterAssembly(PopulationData data)
         fighter.Guarding = cold.Fighter?.Guarding ?? false;
         fighter.EncumbranceFactor = cold.Fighter?.EncumbranceFactor ?? 1;
         cold.Fighter = fighter;
+        // A weapon already drawn follows the new kit (a weapon picked up or put away in a fight, a limb fitted): a swing with the old hold would play with empty hands.
+        if (cold.DrawnWeapon != WeaponKinds.None && cold.DrawnWeapon != HandHold.OfCategory((int)WeaponCategory.Bow).Weapon) cold.DrawnWeapon = CombatSystem.MeleeDrawn(fighter);
         if (cold.Appearance is not { } look || look.Animal is not null) return;
         var body = look.Loadout?.Appearance.Record ?? look.Body?.Record;
         if (Saving.SavedKit.LoadoutOf(body, Saving.SavedKit.FromInventory(inventory), data.Db, look.Loadout?.Seed ?? 0) is { } kit)

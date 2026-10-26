@@ -30,30 +30,53 @@ public sealed partial class MedicalState
     float NextRoll(in MedicalContext ctx) => BodyRolls.Float(ctx.Seed, ctx.CharacterKey, BodyRolls.MedicalDomain, rollCounter++);
 
     /// <summary>
-    /// Chooses the part a blow lands on (<c>FUN_1406508d0</c>, <b>Observed</b>): among the parts not yet destroyed, weighted by hit weight times <see cref="HealthPart.HitMult"/>
-    /// (the weight alone for hit direction 6); a low strike excludes arms and head. Draws one roll from the character's stream. Returns -1 when no part qualifies.
+    /// Chooses the part a blow lands on (<c>FUN_1406508d0</c>, <b>Verified</b>): among the parts whose flesh is above -M (not stunned or rigged away) and that are not the stump of a limb,
+    /// weighted by hit weight times <see cref="HealthPart.HitMult"/> (the weight alone for hit direction 6); a low strike excludes arms and head. Draws one roll from the character's
+    /// stream. With no part eligible the last part of the body is taken. The chosen part's <see cref="HealthPart.HitMult"/> is then updated, before the damage lands:
+    /// 0 when its flesh is gone; else it gains 1 while under 4, or, with a negative health fraction, is held to 2 and gains 1 only while under 1.
+    /// Returns -1 only for a body without parts.
     /// </summary>
     public int ChoosePart(in MedicalContext ctx, bool lowStrike = false, bool directionSix = false)
     {
+        if (Parts.Count == 0) return -1;
         float total = 0;
         for (int i = 0; i < Parts.Count; i++) total += Weight(Parts[i], lowStrike, directionSix);
-        if (total <= 0) return -1;
-        float target = NextRoll(ctx) * total;
-        int last = -1;
-        for (int i = 0; i < Parts.Count; i++)
+        int chosen = Parts.Count - 1;
+        if (total > 0)
         {
-            float w = Weight(Parts[i], lowStrike, directionSix);
-            if (w <= 0) continue;
-            last = i;
-            if (target < w) return i;
-            target -= w;
+            float target = NextRoll(ctx) * total;
+            int last = -1;
+            chosen = -1;
+            for (int i = 0; i < Parts.Count; i++)
+            {
+                float w = Weight(Parts[i], lowStrike, directionSix);
+                if (w <= 0) continue;
+                last = i;
+                if (target < w) { chosen = i; break; }
+                target -= w;
+            }
+            if (chosen < 0) chosen = last;
         }
-        return last;
+        var p = Parts[chosen];
+        float cap = float.NegativeInfinity;
+        if (!Alive(p)) p.HitMult = 0;
+        else if (p.Fraction < 0)
+        {
+            cap = 1;
+            if (p.HitMult > 2) p.HitMult = 2;
+        }
+        else cap = 4;
+        if (p.HitMult < cap) p.HitMult += 1;
+        return chosen;
     }
+
+    /// <summary>A part a blow can still pick: its flesh is above -M, and it is not the stump of a limb.</summary>
+    static bool Alive(HealthPart p) => p.Flesh > -p.MaxHp;
 
     static float Weight(HealthPart p, bool lowStrike, bool directionSix)
     {
-        if (p.IsDestroyed) return 0;
+        if (!Alive(p)) return 0;
+        if (p.Limb == LimbState.Stump && p.Template.Type is BodyPartType.Leg or BodyPartType.Arm) return 0;
         if (lowStrike && p.Template.Type is BodyPartType.Arm or BodyPartType.Head) return 0;
         return p.HitWeight * (directionSix ? 1 : p.HitMult);
     }
@@ -62,7 +85,7 @@ public sealed partial class MedicalState
     /// Applies a blow to a part (<c>FUN_14064f300</c>): h falls by cut + pierce + blunt x <c>blunt permanent organ damage</c>; s rises by the rest of the blunt plus the extra
     /// stun; blood falls by (cut + pierce) x <c>immediate blood loss</c> x scale x race bleed rate; robots and prosthetics gain wear; a cut or pierce opens a wound. Then the
     /// part is checked: down (a vital one knocks the character out), destroyed (vital: death; other: severed, subject to the Dismemberment setting and to the owner having a stats object).
-    /// The part's <see cref="HealthPart.HitMult"/> is raised by 1 per hit (to 4; held to 2 when its fraction is negative, 0 when destroyed).
+    /// The part's <see cref="HealthPart.HitMult"/> is not touched here: <see cref="ChoosePart"/> updates it when it picks the part.
     /// </summary>
     public void ApplyHit(int part, in HitDamage hit, in MedicalContext ctx, List<MedicalEvent>? events = null)
     {
@@ -79,8 +102,6 @@ public sealed partial class MedicalState
         // The wound (FUN_1406508d0): strength max(cut, pierce) x bleed rate x scale, losing `bleeding clot rate` a second (TickBlood).
         // Opened whatever the race's bleed rate; a bloodless race's wounds drain nothing but still need first aid.
         if (MathF.Max(hit.Cut, hit.Pierce) > 0) wounds.Add(MathF.Max(hit.Cut, hit.Pierce) * c.BleedRate * hit.Scale);
-
-        p.HitMult = p.IsDestroyed ? 0 : p.Fraction < 0 ? MathF.Min(p.HitMult + 1, 2) : MathF.Min(p.HitMult + 1, 4);
 
         CheckPart(part, ctx, events, inHitPath: true);
         CheckBlood(ctx, events);

@@ -240,6 +240,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         /// <summary>The squad fights (<see cref="squadFights"/>; null without a combat system).</summary>
         public HashSet<(int Squad, int Slot)>? SquadFights;
         public Vector3 Eye;
+        public CharacterCold? Cold;
         public float Yaw, Range;
         /// <summary>The looker's outdoor sight (race multiplier applied) for the places and lights (<see cref="SightMap.Sees"/>); <see cref="Range"/> is the farthest it can see anyone.</summary>
         public float Outdoor;
@@ -284,7 +285,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
                 continue;
             }
             if (task is (byte)CharacterTask.Attack or (byte)CharacterTask.Treat || task == (byte)CharacterTask.Rest && !AiSleeper(table.Cold(i))) continue;
-            if (table.Cold(i) is not { InCombat: false, Fleeing: false, IsImprisoned: false, SlaveState: not 1, Fighter.CanAttack: true, Medical.Incapacitated: false, Carrying.IsNone: true } cold
+            if (table.Cold(i) is not { InCombat: false, Fleeing: false, IsImprisoned: false, SlaveState: not 1, Fighter.CanAttack: true, Medical.Incapacitated: false } cold
                 || !Relations.Contains(cold.Faction) || cold.IsPlayer && !HuntsEnemies(cold, task) && !HoldsGround(cold, task)) continue;
             var stance = cold.Ai?.Stance ?? Ai.AiStance.Aggressive;
             var war = cold.SquadId >= 0 && world.Squads.Find(cold.SquadId) is { War.IsSet: true } assaulting ? assaulting.War : WarTargets.None;
@@ -295,7 +296,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
             var scan = new Scan
             {
                 Table = table, Relations = Relations, World = world, Memory = Memory, Self = i, Faction = cold.Faction, Squad = cold.SquadId, SquadFights = Combat is null ? null : squadFights,
-                Eye = prev[i].Position, Yaw = prev[i].Yaw, Range = range, Outdoor = outdoor, Sight = world.Sight, Best = -1, BestD2 = float.MaxValue, BestScore = float.NegativeInfinity,
+                Eye = prev[i].Position, Cold = cold, Yaw = prev[i].Yaw, Range = range, Outdoor = outdoor, Sight = world.Sight, Best = -1, BestD2 = float.MaxValue, BestScore = float.NegativeInfinity,
                 Combat = Combat, Player = cold.IsPlayer, Hold = Orders.Holding(cold) && cold.Fighter.Crossbow is null, Prone = cold.Medical.Prone, Animal = cold.Fighter.IsAnimal,
                 HoldPoint = Orders.HoldPointOf(cold, prev[i].Position),
                 Seed = world.Seed, Key = Rng.Key(new CharacterId(i, prev[i].Generation)), Tick = (ulong)world.Tick,
@@ -415,6 +416,9 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
             else if (enemy && s.Squad >= 0 && memory.HasShort(s.World, s.Squad, target, Dialogue.MemoryTag.TempAlly)) enemy = false;
         }
         if (!enemy) return;
+        // One it found no path to lately is never picked (isPathImpossible in the attack-on-sight finder's score, docs/game/combat.md "Target score"): else a guard shut in with its
+        // enemy (a cage, a locked room) takes it as target again every look and never turns on anyone it can reach.
+        if (s.Cold is { } looker && PursuitSystem.PathImpossible(looker, new CharacterId(slot, other.Generation), (long)s.Tick)) return;
         // The AI's stances (docs/simulation.md "AI", Combat goals): the defensive one joins fights only, the territorial one keeps to its home.
         if (s.Stance == Ai.AiStance.Defensive && !c.InCombat) return;
         if (s.Stance == Ai.AiStance.ProtectSquad && (s.SquadFights is { } fights ? s.Squad < 0 || !fights.Contains((s.Squad, slot)) : !c.InCombat)) return;
@@ -559,8 +563,8 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         if (taken.Contains(slot) || !table.Next[slot].Alive) return false;
         byte task = table.Next[slot].Task;
         if (task is (byte)CharacterTask.Attack or (byte)CharacterTask.Treat || task == (byte)CharacterTask.Rest && !AiSleeper(table.Cold(slot))) return false;
-        return table.Cold(slot) is { InCombat: false, Fleeing: false, IsImprisoned: false, Fighter.CanAttack: true, Medical.Incapacitated: false, Carrying.IsNone: true, Gunning: null, Ai: null or { Behaviour: not Ai.AiBehaviour.Turret } } cold
-            // a carrier picks no fight (the original's engagement weight is 0 while carrying); a turret guard keeps to its turret (task 146: only a melee attacker takes it off)
+        return table.Cold(slot) is { InCombat: false, Fleeing: false, IsImprisoned: false, Fighter.CanAttack: true, Medical.Incapacitated: false, Gunning: null, Ai: null or { Behaviour: not Ai.AiBehaviour.Turret } } cold
+            // a carrier fights like anyone (docs/game/carry-loot.md "A carrier in a fight"); a turret guard keeps to its turret (task 146: only a melee attacker takes it off)
             && (!cold.IsPlayer || HuntsEnemies(cold, task) || HoldsGround(cold, task));
     }
 

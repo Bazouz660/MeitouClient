@@ -495,7 +495,8 @@ public static partial class SaveCapture
             {
                 var sc = platoon.Characters.FirstOrDefault(c => c.Handle.I == m.Slot);
                 if (sc is null) continue;
-                if (m.Gone)
+                // A corpse that decayed or was unloaded since it was made leaves its platoon's list, as the original's destroyed character does.
+                if (m.Gone || !m.Live.IsNone && !table.IsAlive(m.Live) && sc.Medical?.Bools.GetValueOrDefault("dead") == true)
                 {
                     builder.RemoveCharacter(platoon, sc);
                     continue;
@@ -613,10 +614,12 @@ public static partial class SaveCapture
                 roamer = world.Platoons.Find(squad.PlatoonId);
                 if (roamer is null || roamer.Saved is not null) continue;   // a save's platoon (WriteSavedNpcs)
             }
-            var alive = squad.Members.Where(m => table.IsAlive(m) && table.Cold(m.Slot) is { IsPlayer: false, DiedTick: < 0, Save: null }).ToList();
+            // The dead stay in the platoon's list as the original writes it (FUN_1404ff410, docs/game/character-stats.md "Corpses").
+            var every = squad.Members.Where(m => table.IsAlive(m) && table.Cold(m.Slot) is { IsPlayer: false, Save: null }).ToList();
+            var alive = every.Where(m => table.Cold(m.Slot)!.DiedTick < 0).ToList();
             if (alive.Count == 0) continue;
             var leader = alive.Contains(squad.Leader) ? squad.Leader : alive[0];
-            var members = alive.Select(id => (table.Cold(id.Slot)!, table.Previous[id.Slot].Position, table.Previous[id.Slot].Yaw, id, id == leader)).ToList();
+            var members = every.Select(id => (table.Cold(id.Slot)!, table.Previous[id.Slot].Position, table.Previous[id.Slot].Yaw, id, id == leader)).ToList();
             var sp = Write(squad.Town, squad.Faction, squad.TemplateId, squad.Money, roamer is { Pinned: false }, squad.HomeBuilding, roamer?.Package ?? squad.Ai?.Current?.Id, members, squad.Shop, ai: AiSave.Of(squad.Ai) ?? squad.SavedAi, memory: MemoryOf(world)?.Snapshot(squad.Id));
             if (roamer is not null) written[roamer.Id] = sp;
         }

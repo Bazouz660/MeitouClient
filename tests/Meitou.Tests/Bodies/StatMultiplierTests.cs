@@ -58,6 +58,7 @@ public class SpeedAndEncumbranceTests
         // the lower leg counts: a leg that is down crawls at 5 (not the floor of 11)
         m.Parts[RLeg].Flesh = -50;
         Assert.Equal(0f, Speed.LegFactor(m));
+        m.Tick(0.01f, Context());   // the crawl is the medical tick's flag: none before the first tick
         Assert.Equal(Speed.CrawlSpeed, Speed.Run(Human, stats, m, 1));
         // the unhurt shortcut
         Assert.Equal(80f, Speed.RunUnhurt(Human, 20));

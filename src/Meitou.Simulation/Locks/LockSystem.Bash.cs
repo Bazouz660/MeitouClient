@@ -108,7 +108,7 @@ public sealed partial class LockSystem
             float Eff(StatsEnumerated stat) => stats[stat] * stats.Scale * med.StatMultiplier(stat);
             float str = Eff(StatsEnumerated.Strength);
             var packet = f.Unarmed
-                ? DamageFormulas.UnarmedPacket(Eff(f.WeaponSkill), Eff(StatsEnumerated.Toughness), str, f.Weapon, TargetKind.Human, null, f.DamageOutput, k)
+                ? DamageFormulas.UnarmedPacket(DamageFormulas.UnarmedRating(stats[StatsEnumerated.MartialArts] * stats.Scale, f.UnarmedBonus, med.DustAttackPenalty, f.EncumbranceFactor), Eff(StatsEnumerated.Toughness), str, f.Weapon, TargetKind.Human, null, f.DamageOutput, k)
                 : DamageFormulas.Packet(Eff(f.WeaponSkill), Eff(StatsEnumerated.Dexterity) * f.DexterityMult, str, f.Weapon!, TargetKind.Human, null, f.DamageOutput, k);
             damage = BlowDamage(packet.Cut, packet.Blunt, f.IsAnimal);
         }

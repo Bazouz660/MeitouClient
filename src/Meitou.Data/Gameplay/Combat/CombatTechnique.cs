@@ -58,7 +58,7 @@ public sealed record CombatTechnique
     public float StrikeProgress(int blow) => ToProgress(blow <= 1 ? BlockedFrame1 : BlockedFrame2);
     /// <summary>The progress at which the animation stops when blow <paramref name="blow"/> is stopped (<c>anim stop frame</c>).</summary>
     public float StopProgress(int blow) => ToProgress(blow <= 1 ? StopFrame1 : StopFrame2);
-    /// <summary>The progress after which the next action may start (<c>acceptable end time</c>).</summary>
+    /// <summary>The clip progress under which a clip counts as busy (<c>acceptable end time</c>; 0 never is): the post-swing wait starts at the later of this and <c>CombatTuning.SwingFinished</c> (docs/game/combat.md "Pacing").</summary>
     public float EndProgress => ToProgress(AcceptableEndTime);
 
     float ToProgress(float frame) => Math.Clamp(NumFrames > 1 ? frame / NumFrames : frame, 0, 1);

@@ -332,7 +332,7 @@ public static class WorldObjectLayout
 
     /// <summary>
     /// A LIGHT instance in world space: its node hangs under the holder's node at the instance position × the building <c>scale</c>,
-    /// and a spot light points along the instance rotation applied to −Y (docs/formats/lights.md, "Placement").
+    /// and a spot light points along the instance rotation applied to −Y (docs/formats/lights.md, "Spot direction").
     /// </summary>
     static PlacedLight PlaceLight(Assembly a, GameRecord holder, Matrix4x4 holderNode, GameInstance instance, GameRecord light, float power)
     {

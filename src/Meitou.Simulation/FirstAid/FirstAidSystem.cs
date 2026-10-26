@@ -19,15 +19,14 @@ namespace Meitou.Simulation.FirstAid;
 /// <item><b>Rate</b> (<b>Observed</b>, character-stats.md): <c>lerp(1, 15, min(skill, kit quality) x 0.01) x medic speed mult</c> (x <c>robot medic speed mult</c> for a robot kit) per unit of <c>dt</c> on the first part with room (the next only once it fills), after any open wound is closed;
 /// the kit's <c>charges</c> fall by <c>lerp(medkit drain 99, medkit drain 1, (100 - skill) / 100) x dt</c> per wound step or part bandaged (bandaging drains only the player's kits; character-stats.md "First aid update"). The skill is the medic's <c>medic</c> (first aid kit) or <c>robotics</c> (robot kit) times
 /// the stat multiplier of injuries and hunger. <c>dt</c> is <b>game seconds</b> (<b>engine choice</b>, the unit is <b>Unknown</b>).</item>
-/// <item><b>Auto</b> (<c>SlowWorld</c>, every <see cref="FirstAidSettings.AutoEveryTicks"/> ticks, serial in slot order): an idle, wandering or following character with a kit treats the most
-/// hurt squad mate within reach (knocked-out ones first), when no one in its squad is fighting: NPCs (engine stand-in until stage 9). The player's characters run their medic, robotics and
-/// splint jobs instead, with the original's finders (<see cref="RunJobs"/>).</item>
+/// <item><b>Auto</b> (<c>SlowWorld</c>, every <see cref="FirstAidSettings.AutoEveryTicks"/> ticks, serial in slot order): an idle, wandering or following NPC looks for a patient with the original's
+/// Medic finder (<see cref="FindPatient"/>, FirstAidSystem.Finder.cs), as the player's characters do for their medic, robotics and splint jobs (<see cref="RunJobs"/>).</item>
 /// <item><b>Rest</b> (<see cref="CharacterTask.Rest"/>): <see cref="RestOrder"/>; <see cref="BodySystem"/> reads the task as <see cref="MedicalContext.Resting"/>. Lying in a bed is
 /// <see cref="Locks.BedSystem"/>'s (<see cref="CharacterTask.Sleep"/>); <see cref="BodySystem"/> gives it the bed's healing.</item>
 /// </list>
 /// Placed after the movement system (a later move order replaces a treatment, since it sets the task) and before the body system.
 /// </summary>
-public sealed class FirstAidSystem(GameConstants constants, BodyOptions options, ItemFactory items, FirstAidSettings? settings = null) : ITickSystem
+public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions options, ItemFactory items, FirstAidSettings? settings = null) : ITickSystem
 {
     /// <summary>The effect kind: one tick of treatment from the source (medic) on the target (patient).</summary>
     public const int EffectTreat = 1;
@@ -256,8 +255,8 @@ public sealed class FirstAidSystem(GameConstants constants, BodyOptions options,
         // The skill and trained stat: medic with a first aid kit, robotics with a robot repair kit; treating oneself x0.8 (FUN_14033c5a0, Task_FirstAid's kit phase).
         StatsEnumerated StatOf(bool robotKit) => robotKit ? StatsEnumerated.Robotics : StatsEnumerated.Medic;
         float SkillOf(bool robotKit) => stats[StatOf(robotKit)] * medical.StatMultiplier(StatOf(robotKit)) * (m == p ? 0.8f : 1);
-        // A medic not of the player's treats an imprisoned patient without a kit (Task_FirstAid FUN_1403563a0 skips the kit search; the chained-slave case is not modelled).
-        bool kitless = !medicCold.IsPlayer && patientCold.IsImprisoned;
+        // A medic not of the player's treats an imprisoned patient without a kit (Task_FirstAid FUN_1403563a0 skips the kit search; also for a chained slave of the medic's faction, FUN_14032e2a0).
+        bool kitless = !medicCold.IsPlayer && (patientCold.IsImprisoned || OwnedChained(medicCold, patientCold));
         var ctx = new MedicalContext(Constants, bodyOptions, race);
         // Open wounds are closed first, newest first, with a kit matching the patient's race (none: quality 5); nothing is bandaged meanwhile (FUN_14064d800). This drain is not gated.
         if (body.Wounds.Count > 0)
@@ -416,7 +415,7 @@ public sealed class FirstAidSystem(GameConstants constants, BodyOptions options,
             if (!Settings.AutoNpcs) continue;
             // Idle: no task, following, wandering or an implicit job.
             bool idle = next[i].Task is (byte)CharacterTask.Idle or (byte)CharacterTask.Wander or (byte)CharacterTask.Follow || cold.Implicit is not null;
-            if (idle && !TreatSomeone(world, i, taken)) TreatPrisoner(world, i, taken);
+            if (idle) HealSomeone(world, i, taken, robotics: false);
         }
     }
 
@@ -424,7 +423,7 @@ public sealed class FirstAidSystem(GameConstants constants, BodyOptions options,
     /// A player character's first aid jobs, in list order (docs/game/ai-tasks.md "Perma-jobs"): the first of Medic 58, Robotics 57 and Splint Rigging 250 that may start
     /// (<see cref="Production.PermaJobs.FreeFor"/>; all three run with the jobs switch off) and whose finder finds a patient starts the treatment.
     /// </summary>
-    void RunJobs(World world, int i, CharacterCold cold, HashSet<int> taken)
+    void RunJobs(World world, int i, CharacterCold cold, List<(int Medic, int Patient)> taken)
     {
         var task = (CharacterTask)world.Characters.Next[i].Task;
         for (int k = 0; k < cold.Jobs.Count; k++)
@@ -433,182 +432,6 @@ public sealed class FirstAidSystem(GameConstants constants, BodyOptions options,
             if (type is not (TaskType.JOB_MEDIC or TaskType.JOB_REPAIR_ROBOT or TaskType.SPLINT_JOB) || !Production.PermaJobs.FreeFor(cold, task, k)) continue;
             if (type == TaskType.SPLINT_JOB ? SplintSomeone(world, i, taken) : HealSomeone(world, i, taken, robotics: type == TaskType.JOB_REPAIR_ROBOT)) return;
         }
-    }
-
-    /// <summary>The live relation table (allied factions for <see cref="SquadAi.Heal"/>); null: other factions are never treated by a job.</summary>
-    public FactionRelations? Relations { get; set; }
-
-    /// <summary>
-    /// The square of the distance at which a job's patient weighs nothing (<c>FUN_140998b90</c>: the weight is 1 - d^2 / 3397386.5, about 1843 units, clamped to [0, 1];
-    /// <b>Verified</b> constant). The original raises it to at least 0.4 for a patient in the medic's building; Meitou does not (engine reduction).
-    /// </summary>
-    public const float PatientFalloff2 = 3397386.5f;
-
-    static float Nearness(float d2) => Math.Clamp(1 - d2 / PatientFalloff2, 0, 1);
-
-    /// <summary>
-    /// What a patient needs of a medic with these kits (<c>FUN_140998200</c>): the untreated damage an organic kit can bandage (with one) plus what a robot kit can (with one). The original
-    /// reads two cached floats of the medical state there; Meitou takes <see cref="MedicalState.BandageRoom"/> above <see cref="MedicalState.FirstAidThreshold"/> (engine reading).
-    /// </summary>
-    static float Need(MedicalState med, RaceData race, bool organic, bool robotic) =>
-        (organic && med.NeedsAid(race, false) ? med.BandageRoom(race, false) : 0) + (robotic && med.NeedsAid(race, true) ? med.BandageRoom(race, true) : 0);
-
-    /// <summary>
-    /// The medic and robotics jobs' finder for a player character (<c>FUN_14099f690</c>; 58 passes 0, 57 passes 1; docs/game/ai-tasks.md "Medic jobs"), and the Medic button's one
-    /// look. Candidates within the medic's sight (the stand-in for its sensed list): not carried, not fighting, still or down, not treated by another, not of a robot race unless
-    /// <paramref name="robotics"/>; of its faction, or with <see cref="SquadAi.Heal"/> of an allied one. Score = need x relation factor x nearness (<see cref="PatientFalloff2"/>); the
-    /// relation factor is 1 for its own faction, else the relation / 100, at least 0.05; another faction's patient needs a score of 0.1. The medic itself scores its plain need. The
-    /// highest score is treated; none: false. No fight may be on in its squad (engine rule, as <see cref="TreatSomeone"/>).
-    /// </summary>
-    bool HealSomeone(World world, int i, HashSet<int> taken, bool robotics)
-    {
-        var table = world.Characters;
-        var next = table.Next;
-        var cold = table.Cold(i)!;
-        if (cold.Medical is not { Incapacitated: false } own || cold.Race is not { } ownRace || cold.Stats is null || cold.Inventory is null || cold.InCombat) return false;
-        bool organic = Best(cold.Inventory, ItemInfo.FirstAidKitFunction) is not null, robotic = Best(cold.Inventory, ItemInfo.RobotKitFunction) is not null;
-        if (!organic && !robotic) return false;
-        if (cold.SquadId >= 0 && world.Squads.Find(cold.SquadId) is { } squad && Fighting(table, squad)) return false;
-        bool allies = (world.Player.SquadAi & SquadAi.Heal) != 0 && Relations is not null && Relations.Contains(cold.Faction);
-        float range = AggroSystem.RangeOf(cold, AggroSystem.OutdoorSight), still2 = Settings.StillSpeed * Settings.StillSpeed;
-        int best = -1;
-        float bestScore = 0;
-        for (int s = 0; s < table.HighWater; s++)
-        {
-            if (s == i || !next[s].Alive || taken.Contains(s) || table.Cold(s) is not { Medical: { Dead: false } med, Race: { } race } other) continue;
-            if (other.InCombat || !other.CarriedBy.IsNone || !robotics && race.IsRobot) continue;
-            float dx = next[s].Position.X - next[i].Position.X, dz = next[s].Position.Z - next[i].Position.Z, d2 = dx * dx + dz * dz;
-            if (d2 > range * range || !med.Incapacitated && Speed2(next[s].Velocity) > still2) continue;
-            bool same = other.Faction == cold.Faction;
-            if (!same && !(allies && Relations!.Contains(other.Faction) && Relations.IsAlly(cold.Faction, other.Faction))) continue;
-            float score = Need(med, race, organic, robotic) * (same ? 1 : MathF.Max(Relations!.Get(cold.Faction, other.Faction) * 0.01f, 0.05f)) * Nearness(d2);
-            if (!same && score < 0.1f || score <= bestScore) continue;
-            best = s;
-            bestScore = score;
-        }
-        if (!taken.Contains(i) && Need(own, ownRace, organic, robotic) > bestScore) best = i;
-        return best >= 0 && StartJob(world, i, best, taken, splint: false);
-    }
-
-    /// <summary>
-    /// The splint job's finder (<c>FUN_14099e240</c>): with skill X = min(medic skill, the best splint kit's quality) (no kit of its own: nothing), the nearest-weighted patient of its own
-    /// faction that <see cref="MedicalState.NeedsSplint"/> at X (robot races never do), not carried, not treated by another, scored by <see cref="Nearness"/>; the medic itself scores 1.
-    /// The original's need weight per patient is <b>Unknown</b>; Meitou uses 1.
-    /// </summary>
-    bool SplintSomeone(World world, int i, HashSet<int> taken)
-    {
-        var table = world.Characters;
-        var next = table.Next;
-        var cold = table.Cold(i)!;
-        if (cold.Medical is not { Incapacitated: false } own || cold.Race is not { } ownRace || cold.Stats is not { } stats || cold.InCombat) return false;
-        if (Best(cold.Inventory, ItemInfo.SplintKitFunction) is not { } kit) return false;
-        if (cold.SquadId >= 0 && world.Squads.Find(cold.SquadId) is { } squad && Fighting(table, squad)) return false;
-        float skill = MathF.Min(stats[StatsEnumerated.Medic] * own.StatMultiplier(StatsEnumerated.Medic), Items.Info(kit.Record)?.Quality ?? 0);
-        float range = AggroSystem.RangeOf(cold, AggroSystem.OutdoorSight), still2 = Settings.StillSpeed * Settings.StillSpeed;
-        int best = -1;
-        float bestScore = 0;
-        for (int s = 0; s < table.HighWater; s++)
-        {
-            if (s == i || !next[s].Alive || taken.Contains(s) || table.Cold(s) is not { Medical: { Dead: false } med, Race: { } race } other) continue;
-            if (other.Faction != cold.Faction || other.InCombat || !other.CarriedBy.IsNone || !med.NeedsSplint(race, skill)) continue;
-            float dx = next[s].Position.X - next[i].Position.X, dz = next[s].Position.Z - next[i].Position.Z, d2 = dx * dx + dz * dz;
-            if (d2 > range * range || !med.Incapacitated && Speed2(next[s].Velocity) > still2) continue;
-            float score = Nearness(d2);
-            if (score <= bestScore) continue;
-            best = s;
-            bestScore = score;
-        }
-        if (!taken.Contains(i) && own.NeedsSplint(ownRace, skill)) best = i;
-        return best >= 0 && StartJob(world, i, best, taken, splint: true);
-    }
-
-    /// <summary>Starts a job's treatment of <paramref name="patient"/>, going back afterwards to what the medic did before its job.</summary>
-    static bool StartJob(World world, int i, int patient, HashSet<int> taken, bool splint)
-    {
-        var next = world.Characters.Next;
-        var cold = world.Characters.Cold(i)!;
-        taken.Add(patient);
-        var resume = cold.Implicit is not null || cold.JobIndex >= 0 ? cold.ResumeTask : next[i].Task is (byte)CharacterTask.Wander or (byte)CharacterTask.Follow ? (CharacterTask)next[i].Task : CharacterTask.Idle;
-        Begin(world, i, new CharacterId(patient, next[patient].Generation), resume, splint);
-        return true;
-    }
-
-    /// <summary>The patients being treated now (by slot).</summary>
-    static HashSet<int> Treated(CharacterTable table)
-    {
-        var taken = new HashSet<int>();
-        for (int i = 0; i < table.HighWater; i++)
-            if (table.Next[i].Alive && table.Next[i].Task == (byte)CharacterTask.Treat && table.TryResolveNext(table.Cold(i)!.TreatTarget, out int busy)) taken.Add(busy);
-        return taken;
-    }
-
-    /// <summary>
-    /// One look for a patient (the medic job's pass, and the Medic button without Shift once): a medic with a kit and no fight in its squad treats the squad mate (or itself) within
-    /// <see cref="FirstAidSettings.AutoReach"/> that most needs it, downed first, then the least blood; true when it started.
-    /// </summary>
-    bool TreatSomeone(World world, int i, HashSet<int> taken)
-    {
-        var table = world.Characters;
-        var next = table.Next;
-        var cold = table.Cold(i)!;
-        if (cold.Medical is not { Incapacitated: false } || cold.Race is null || cold.Stats is null || cold.Inventory is null || cold.InCombat) return false;
-        bool organic = Best(cold.Inventory, ItemInfo.FirstAidKitFunction) is not null, robotic = Best(cold.Inventory, ItemInfo.RobotKitFunction) is not null;
-        if (!organic && !robotic) return false;
-        var squad = cold.SquadId >= 0 ? world.Squads.Find(cold.SquadId) : null;
-        if (squad is not null && Fighting(table, squad)) return false;
-        int best = -1;
-        (int Down, float Blood, float Distance) bestKey = default;
-        IEnumerable<CharacterId> candidates = squad is not null ? squad.Members : [table.IdOf(i)];
-        foreach (var id in candidates)
-        {
-            if (!table.TryResolveNext(id, out int s) || taken.Contains(s) || table.Cold(s) is not { Medical: { Dead: false } med, Race: { } race } other || other.InCombat) continue;
-            float distance = Gap(next[i], next[s]);
-            if (distance > Settings.AutoReach || (s != i && !med.Incapacitated && Speed2(next[s].Velocity) > Settings.StillSpeed * Settings.StillSpeed)) continue;   // a moving patient cannot be treated (targetStandingStill)
-            if (!(organic && med.NeedsAid(race, false)) && !(robotic && med.NeedsAid(race, true))) continue;
-            float capacity = MathF.Max(MedicalState.BloodCapacity(race, other.Stats?.Strength ?? 50), 1);
-            var key = (med.Incapacitated ? 0 : 1, med.Blood / capacity, distance);
-            if (best < 0 || key.CompareTo(bestKey) < 0)
-            {
-                best = s;
-                bestKey = key;
-            }
-        }
-        if (best < 0) return false;
-        taken.Add(best);
-        var resume = cold.Implicit is not null || cold.JobIndex >= 0 ? cold.ResumeTask : next[i].Task is (byte)CharacterTask.Wander or (byte)CharacterTask.Follow ? (CharacterTask)next[i].Task : CharacterTask.Idle;
-        Begin(world, i, new CharacterId(best, next[best].Generation), resume);
-        return true;
-    }
-
-    /// <summary>
-    /// The Medic goal's second pass for an NPC that found no patient (<c>FUN_14099f690</c>, docs/game/ai-tasks.md "Medic jobs"): a prisoner in a cage its faction owns, within its sight,
-    /// not of a robot race, not an obedient slave, not of its squad and not treated by another, scored by need x relation factor x nearness; the highest is treated, without a kit
-    /// (<see cref="Apply"/>). Need counts both kinds of damage, kit or not (<c>FUN_140998200</c>). True when it started.
-    /// </summary>
-    bool TreatPrisoner(World world, int i, HashSet<int> taken)
-    {
-        var table = world.Characters;
-        var next = table.Next;
-        var cold = table.Cold(i)!;
-        if (cold.Medical is not { Incapacitated: false } || cold.Stats is null || cold.InCombat) return false;
-        if (cold.SquadId >= 0 && world.Squads.Find(cold.SquadId) is { } squad && Fighting(table, squad)) return false;
-        float range = AggroSystem.RangeOf(cold, AggroSystem.OutdoorSight);
-        int best = -1;
-        float bestScore = 0;
-        foreach (var f in world.Fixtures.All)
-        {
-            if (f.Kind != FixtureKind.Cage || f.Owner != cold.Faction || FixtureRegistry.IsFree(table, f) || !table.TryResolveNext(f.Occupant, out int s)) continue;
-            if (s == i || taken.Contains(s) || table.Cold(s) is not { IsImprisoned: true, Medical: { Dead: false } med, Race: { IsRobot: false } race } other) continue;
-            if (other.SlaveState == 1 || other.SquadId >= 0 && other.SquadId == cold.SquadId) continue;
-            float dx = next[s].Position.X - next[i].Position.X, dz = next[s].Position.Z - next[i].Position.Z, d2 = dx * dx + dz * dz;
-            if (d2 > range * range) continue;
-            float relation = other.Faction == cold.Faction || Relations is null || !Relations.Contains(cold.Faction) || !Relations.Contains(other.Faction) ? 1 : MathF.Max(Relations.Get(cold.Faction, other.Faction) * 0.01f, 0.05f);
-            float score = Need(med, race, true, true) * relation * Nearness(d2);
-            if (score <= bestScore) continue;
-            best = s;
-            bestScore = score;
-        }
-        return best >= 0 && StartJob(world, i, best, taken, splint: false);
     }
 
     /// <summary>A fight is on in the squad: a member in combat or with an attack order.</summary>

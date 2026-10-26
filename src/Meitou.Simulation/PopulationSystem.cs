@@ -39,6 +39,9 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
     // The zones active as of the last look, and the set the next look fills (swapped, so a look allocates nothing; the host reads ActiveZones within a frame only).
     HashSet<ZoneCoordinate> active = [], spareActive = [];
     readonly List<Vector3> foci = [];
+    // The original's loaded zones (ZoneLoad): the 3 x 3 block round the camera's centre zone, each kept this long after it was last asked for.
+    readonly Dictionary<ZoneCoordinate, long> loadedUntil = [];
+    ZoneCoordinate? loadCentre;
 
     sealed class SiteState
     {
@@ -134,18 +137,25 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
     }
 
     /// <summary>
-    /// The RACE <c>severed limbs</c> item of <paramref name="limb"/> on the ground (docs/game/character-stats.md "Limb replacements and robots"). The original drops it at the
+    /// The RACE <c>severed limbs</c> item of <paramref name="limb"/> on the ground, if the race has one for it (docs/game/character-stats.md "Limb replacements and robots"). The original drops it at the
     /// limb's <c>bone name 2</c> and lets physics take it; here it lies flat beside the character on that side (an engine choice), turned by a roll of the tick.
     /// </summary>
     void DropSeveredLimb(World world, int slot, CharacterCold cold, int limb)
     {
-        if (cold.Race?.SeveredLimbs.FirstOrDefault(s => s.Slot == limb) is not { } severed || data.Items.Create(severed.TargetStringId) is not { } item) return;
+        // The first entry of the slot whose record exists (FUN_14064edc0: one whose target did not resolve is skipped, and with none nothing drops; the stump and wound stay).
+        ItemInstance? item = null;
+        foreach (var severed in cold.Race?.SeveredLimbs ?? [])
+            if (severed.Slot == limb && (item = data.Items.Create(severed.TargetStringId)) is not null) break;
+        if (item is null) return;
         ref readonly var hot = ref world.Characters.Next[slot];
         float side = limb is 0 or 2 ? -1 : 1, forward = limb < 2 ? 0.5f : -1.5f;
         var right = new Vector3(MathF.Cos(hot.Yaw), 0, -MathF.Sin(hot.Yaw));
         var ahead = new Vector3(MathF.Sin(hot.Yaw), 0, MathF.Cos(hot.Yaw));
         float yaw = Rng.Float(Rng.Hash(world.Seed, (ulong)slot, RngPurpose.Loot, (ulong)world.Tick)) * MathF.Tau;
-        world.GroundItems.Drop(item, hot.Position + right * (5 * side) + ahead * forward, yaw);
+        // On the ground under that spot (a drop beside a character on a slope or a step would otherwise hang at its feet's height), as an item dropped from the inventory.
+        var at = hot.Position + right * (5 * side) + ahead * forward;
+        at.Y = world.Walkability.GroundHeight(at.X, at.Z, hot.Position.Y);
+        world.GroundItems.Drop(item, at, yaw);
     }
 
     public void SlowWorld(World world)
@@ -230,6 +240,27 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
         static bool Near(ZoneCoordinate a, ZoneCoordinate b) => Math.Abs(a.X - b.X) <= 1 && Math.Abs(a.Y - b.Y) <= 1;
     }
 
+    /// <summary>
+    /// The zones the original has loaded, which decide when a corpse goes (docs/game/character-stats.md "Corpses", <c>FUN_140a0f820</c>, <c>FUN_140a0f080</c>, <c>FUN_140a0b830</c>,
+    /// <b>Verified</b>): the block of one zone each side round a centre zone, asked for again at every look; the centre moves to the camera's zone only once the camera is more than
+    /// <see cref="ZoneActivation.RecentreDistance"/> from the centre zone's middle on either axis; a zone nobody asks for any more stays loaded <see cref="ZoneActivation.LoadedLingerSeconds"/>.
+    /// </summary>
+    void RefreshLoaded(World world, Vector3 camera)
+    {
+        bool move = loadCentre is not { } c
+            || MathF.Abs(camera.X - ZoneActivation.CentreOf(c).X) > ZoneActivation.RecentreDistance || MathF.Abs(camera.Z - ZoneActivation.CentreOf(c).Y) > ZoneActivation.RecentreDistance;
+        if (move) loadCentre = WorldLayout.ZoneOf(camera.X, camera.Z);
+        long until = world.Tick + (long)Math.Ceiling(ZoneActivation.LoadedLingerSeconds / world.TickSeconds);
+        var centre = loadCentre!.Value;
+        for (int x = centre.X - 1; x <= centre.X + 1; x++)
+            for (int y = centre.Y - 1; y <= centre.Y + 1; y++)
+                if (x >= 0 && x < WorldLayout.ZoneCount && y >= 0 && y < WorldLayout.ZoneCount) loadedUntil[new ZoneCoordinate(x, y)] = until;
+        List<ZoneCoordinate>? gone = null;
+        foreach (var (zone, t) in loadedUntil) if (t < world.Tick) (gone ??= []).Add(zone);
+        if (gone is not null) foreach (var zone in gone) loadedUntil.Remove(zone);
+        world.LoadedZones = new HashSet<ZoneCoordinate>(loadedUntil.Keys);
+    }
+
     void RefreshZones(World world)
     {
         // The player's characters activate the zones round them (game-loop.md "Zones": the player's faction); the camera focus does only without a player.
@@ -242,6 +273,7 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
         }
         if (foci.Count == 0 && focus is { } camera) foci.Add(camera);
         if (foci.Count == 0) return;
+        RefreshLoaded(world, focus ?? foci[0]);
         (active, spareActive) = (spareActive, active);
         active.Clear();
         foreach (var f in foci) ZoneActivation.AddZonesAround(f, settings.FastZoneHopping ? 1 : 0, active);
@@ -396,7 +428,7 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
         {
             if (world.Squads.Find(id) is not { } squad) continue;
             ReleaseUniques(world, squad);
-            foreach (var m in squad.Members) table.Remove(m);
+            foreach (var m in squad.Members) RemoveMember(world, m);
             world.Squads.Remove(id);
         }
         Reset(state);

@@ -50,8 +50,10 @@ public sealed class ItemFactory(GameDatabase db, GameConstants constants, Func<M
     };
 
     /// <summary>A new instance of an item record (null for an unknown record). Food gets its charges scaled by <c>food quality mult</c>; weapons weigh <c>weapon inventory weight mult</c> of their weight.</summary>
-    public ItemInstance? Create(string recordId, int quantity = 1, float quality = 0)
+    public ItemInstance? Create(string? recordId, int quantity = 1, float quality = 0)
     {
+        // A reference to a record the data lacks (a mod's) has no id.
+        if (string.IsNullOrEmpty(recordId)) return null;
         if (Db.Find(recordId) is { Type: FcsRecordType.RESEARCH } research) return Blueprint(research, quantity, quality);
         return Info(recordId) is { } info ? Make(info, info.Type, quantity, quality) : null;
     }

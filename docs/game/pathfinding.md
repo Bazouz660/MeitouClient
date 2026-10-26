@@ -36,8 +36,13 @@ Havok paths, local steering and unloaded-platoon movement are distinct code path
 
 **Observed** S=max(11,(V-11)*leg*hunger*replacement*encumbrance*statScale+11),
 V=lerp(speedMin,speedMax,athletics/100)*(0.5+0.5*slot115). After the water states `FUN_140886460` overrides S: 7 while
-the posture is 1 (staying low), then 5 when medical `+0x160` (a leg down) is set (**Observed** literals; Meitou `Speed.Run`). Path agent sets top-speed velocity
-immediately; pathfind-acceleration brakes before corners, not a universal acceleration ramp.
+the posture is 1 (staying low), then 5 when medical `+0x160` (a leg down) is set (**Observed** literals; Meitou `Speed.Run`).
+**Verified** (nav agent `FUN_140147ca0` / `FUN_140147fd0`, `FUN_140144440`): the agent's velocity moves toward the wanted one by at most
+a × dt, a = RACE `pathfind acceleration` (Havok units, ×10 in world units; 24 for people, so about 0.2 s to full speed; 3 Murloc, 200 wasps),
+lerp(age, 3a, a); it brakes before corners and its last point to sqrt(2 a d) and snaps onto the goal, arriving within 1 unit; a goal another
+body covers ends the walk short. A re-issued order within 2 units of the last goal is ignored. Facing is instantaneous; the drawn node turns after it at a limited rate ([animation](../animation.md):
+20 rad/s, 4 in the combat stance), animals `turn rate` × 0.1. Meitou: `MovementSystem.PathAcceleration`,
+`FinalArrive`, `GoalOccupied`. A walker out of combat keeps the agent's velocity vector (previous tick's `Velocity`), moving it toward path direction x wanted speed by at most a x dt, so a turn costs the speed the change of direction takes (no cos cut, no turning on the spot); its facing is its velocity's direction (the path direction while it starts; engine reading: facing the path direction while the velocity lags makes it slide sideways through turns) and the drawn body follows it ([animation](../animation.md), drawn facing), and a corner the velocity has carried past counts as reached. Fighters and direct followers keep the older turn cut (engine choice). Not yet: corner braking (its exact condition is Unknown) and animal `turn rate`. A reached waypoint is passed in the same tick.
 Combat/follow steering ramps15/s, with turning/backward/arrival caps. Combat-move-speed multiplier
 and water factors0.75/0.5/0.4 apply separately (`FUN_14065dba0`, by water state 1/2/3; Meitou does not apply them yet). No independent slope-speed term was found.
 
@@ -146,7 +151,7 @@ A goal that cannot be reached is replaced by the reachable point nearest it in 3
 the walkway keeps corner pockets of 8..64 square units whose only exits are 3..8 wide between wall ends; nearest on the X/Z plane, a click there
 sent the walker to the ground beside the wall, 115..138 below; in 3D all such goals end on the walkway within 10. Cache key and unload rules: [simulation](../simulation.md#navmesh). Original Havok tiles are
 reference evidence, not a runtime dependency or proof of DotRecast polygon parity.
-**Terrain** as the original: every second heightmap sample (36 units), slope 40° per triangle. **Observed** (zone 20.32, `meitou-tools navmesh`):
+**Terrain** as the original: every second heightmap sample (36 units), slope 40° per triangle. The cell diagonal runs (i, j) to (i+1, j+1), in our grid's column/row order. **Observed** (`meitou-tools navmesh --compare`, zones 42.22, 20.32, 18.39): against the original tiles, the other diagonal left 7003 / 7052 / 5638 area units that only the original walks, this one 1991 / 4720 / 5387 (a per-parity checkerboard was worse in all three). The wrong diagonal cut the 40° steep-slope test into ragged one-triangle strips, with 2..7-wide portals between wall ends along slope bands and tile seams. **Observed** (zone 42.22, 200 goals within 700 of 49217,-42879, radius-4 `NavQuery.FindPath`): 72 reachable before, 162 after (radius 0: 178); starts 49700,-42500 and 49400,-43100 (150 goals each): 76 and 75 before, 140 and 102 after. The original tile edges carry no blocked flags (all `flags` 4, `edgeData` 0), and A* on the original mesh with the same clearance rule loses nothing at radius 4 (same goals reached at 0 and 4). The query's clearance rule is unchanged. The original's width limit is the build's `minCharacterWidth` 9 (table above); how its path request passes the footprint radius stays **Unknown**. **Observed** (zone 20.32, `meitou-tools navmesh`):
 at 18 units each right triangle (legs 18) near 40° was walkable or not on its own, and 2-unit cells kept every one, so cliff fringes were saw teeth
 and spikes; at 36 the outline matches `tile20.32.hkt`, terrain triangles drop 139k → 35k, polygons 15250 → 13602.
 
@@ -220,7 +225,7 @@ unjoined are linked (`Links`, not `Neighbours`) when they run opposite, share on
 lie within 1.5 of each other's line at both ends of the overlap, and are within climb + 0.5 there; A* portals for such links take the overlap
 with the door joins' 6 gap when no facing edge is within 0.2. **Observed** (zone 18.39, `meitou-tools navmesh`): the Swamp Village stair foot's edge
 (-62220,108,34088 → -62208,105,34086) against two edges meeting at (-62216,106,34086) joins both; the path (-62218,34080) → (-62216,34148)
-`--to-y 140` climbs through that vertex (length 83) instead of detouring to the tile line x−62208 (97).
+`--to-y 140` climbs through that vertex (length 83) instead of detouring to the tile line x−62208 (97). **Observed** (after the terrain diagonal change, the same path from z 34080 exactly on a polygon edge): 153, the funnel from a start on its first portal's line swung out to that portal's end; `NavQuery.Pull` drops a first portal the start lies on, 82.
 **Tile seams** (engine choice): tiles are rasterised with a 3-cell border from their neighbours (Recast `borderSize`), so contour
 vertices on a tile's edge are kept and those edges come out as portals. Without it Recast treats the edge as a wall and simplifies across
 it (error 1.3 cells): a strip one cell deep along the edge loses its edge vertex and the stitcher finds no edge on the line. **Observed**
@@ -304,7 +309,7 @@ Hub→Stack 34054; Squin→Admag at 0.8 walks 132184 for 26834 straight (short r
   exterior box.
   - **Terrain** (FUN_1403c16c0): the zone's height grid (FUN_140a08a20) as an N × N vertex grid over the zone, two
     triangles per cell, material −1. FUN_140a08a20 was not traced, but **Observed** (`tile20.32.hkt`): the cliff outlines step on every second
-    heightmap sample, a 36-unit grid (N 128) from the zone origin, cut diagonally as our grid (corner (i+1, j) to (i, j+1)); of the tile's 8642
+    heightmap sample, a 36-unit grid (N 128) from the zone origin, cut diagonally from (i, j) to (i+1, j+1) (see **Terrain** under "Own builder"); of the tile's 8642
     mesh-end vertices 2739 lie on a 36-unit line and 2740 on an 18-unit one (chance ~1600), so the odd samples are not used.
   - **Water** (FUN_1403c0250): one quad over the zone at the water level (from the node DAT_142135c48, 100 in the base game,
     [../formats/terrain.md](../formats/terrain.md)), material 3, only when the water level is above the lowest terrain

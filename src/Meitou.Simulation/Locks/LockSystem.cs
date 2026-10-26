@@ -94,6 +94,7 @@ public sealed partial class LockSystem(GameConstants constants, BodyOptions opti
 
     public void SlowWorld(World world)
     {
+        world.Fixtures.HoldCaged(world);
         Doors(world);
         Rounds(world);
         ShackleWorkers(world);

@@ -76,6 +76,33 @@ public sealed partial class DialogueSystem
         Memory.Flag(world, sc.SquadId, liberator, MemoryTag.TempAlly);
     }
 
+    /// <summary>The medic finders' slot 126 (<c>isAlly</c>, <see cref="RegardsFriendly(World, CharacterId, CharacterCold, CharacterId, CharacterCold)"/>) for two characters by slot.</summary>
+    public bool RegardsFriendly(World world, int a, int b)
+    {
+        var table = world.Characters;
+        return table.Cold(a) is { } ac && table.Cold(b) is { } bc && RegardsFriendly(world, table.IdOf(a), ac, table.IdOf(b), bc);
+    }
+
+    /// <summary>The medic finders' <c>FUN_14059a670</c> (DC 55, <see cref="Helps"/>) for two characters by slot.</summary>
+    public bool Helps(World world, int a, int b)
+    {
+        var table = world.Characters;
+        return table.Cold(a) is { } ac && table.Cold(b) is { } bc && Helps(world, table.IdOf(a), ac, table.IdOf(b), bc);
+    }
+
+    /// <summary>
+    /// What the squad memory says to slot 125 (<c>isEnemy</c>, <c>FUN_14079c950</c>): 1 when a's squad holds TEMP_ENEMY on b (or, for a player-faction a, b's squad on a), -1 when it holds TEMP_ALLY on b, else 0
+    /// (the faction relation decides). Another faction's squads only; the same faction is never an enemy.
+    /// </summary>
+    public int EnemyMemory(World world, int a, int b)
+    {
+        var table = world.Characters;
+        if (table.Cold(a) is not { } ac || table.Cold(b) is not { } bc || ac.Faction == bc.Faction) return 0;
+        var (ida, idb) = (table.IdOf(a), table.IdOf(b));
+        if (Memory.HasShort(world, ac.SquadId, idb, MemoryTag.TempEnemy) || (ac.IsPlayer || ac.Faction == world.Player.Faction) && Memory.HasShort(world, bc.SquadId, ida, MemoryTag.TempEnemy)) return 1;
+        return Memory.HasShort(world, ac.SquadId, idb, MemoryTag.TempAlly) ? -1 : 0;
+    }
+
     /// <summary>DC 52 I_LOVE_THIS_GUY (<c>FUN_140599590</c>): the squad's long-term tags on the character hold LIFESAVER or FREED_ME.</summary>
     bool Loves(World world, CharacterCold mc, CharacterId who) => (Memory.Find(world, mc.SquadId, who)?.Long & MemoryTag.LoveMask) is > 0;
 

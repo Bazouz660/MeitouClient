@@ -476,6 +476,10 @@ field prefixes by MiningResource: `iron`, `stone`, `copper`, `carbon`, `water`, 
   Mine 0 of 8; Ore Drill III (Automated) `resource mult` 0.5 (the not-player fallback). So NPCs work them (the town goal 43
   Staying home leads to 221 operating, [ai-tasks](ai-tasks.md#town-goals)). **Unknown:** what empties an NPC mine's output.
 
+- **Rain collector** (function 26, `RainCollectorBuilding`, vtable `1416eca48`; **Verified**, decompile): a ProductionBuilding that overrides slot 109 (health x power share, `FUN_140296e00`)
+  with `FUN_140298470` = that times the rain strength `FUN_140298400`: the current weather's `wetness` at the building (when the building is outdoors), 0 when the weather's
+  `affect type` is WA_ACID. So an automatic collector (`max operators` 0) makes its `produces` only in rain, in proportion to the wetness (Meitou: `Machine.Rain`). Its state text (`FUN_140301410`): "Rain is being collected." / "It is not raining. Nothing to collect."; stat row "Rain strength: {int(wetness x 100)}%" (`FUN_14030b460`); Meitou does not show them.
+
 ## Crafting
 
 Function 10, `CraftingBuilding` (**Observed** unless noted).
@@ -529,7 +533,10 @@ the [layout's plant count](#farm-plants), not `amount`.
   (`FUN_1400e4320`, `vfunc_91`); F is also the yield.
 - **Plants**: each has a growth g. Replant (`FUN_1400e48e0`): every g = -0.2 x U[0,1), `plant start` = their minimum,
   `plants harvested` 0, death d 0, clear progress 0, harvest progress 0, farm growth = `plant start`.
-- **Tick**, h = dt/(G/24): outdoors, rain fills each input level by `rain x w x dt x 3` (to 1 at most). Water draw
+- **Tick**, h = dt/(G/24): outdoors (the exe also tests a building flag at `+0x240`, meaning **Unknown**), rain fills the FIRST input's level by
+  `wetness x w x rate x dt x 3` (to 1 at most; **Verified**: `FUN_1400e5580`, the 3 at `14168a254`). `wetness` is the weather record's `wetness`
+  (0..1; the def field `+0x94` of the region's current weather at the farm, loader `FUN_1409de7b0`), not `rain intensity` and not times the weather's strength;
+  any weather counts, acid included. Meitou: `WeatherHere.Wetness`, `ProductionSystem.FarmTick`. Water draw
   (`FUN_1400df4c0`): an input whose level is below `w x dt` takes one item from its section, or fails (level 0); then
   level -= `w x dt`. Growth step `inc = h x F / growth time`, x `drought multiplier` when the draw failed, x health x
   powerSat when the building uses power. Farm growth < 1: each plant with -1 <= g < 1 gains inc; farm growth = the

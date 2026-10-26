@@ -6,11 +6,13 @@ Flag/caller/parameter tables retained. [Scripts](ogre-material.md), [characters]
 
 ## Builder contract
 
-**Verified decompiled** strip texture field directories; empty diffuse→white.dds, normal→flat.dds;
+**Verified decompiled** strip texture field directories (below); empty diffuse→white.dds, normal→flat.dds;
 DUAL normal2→flat.dds/metal2→black.dds, diffuse2 no default. Clone/cache template with textures,
 flags/extra integer/biome identity (exact name separators Observed, not pinned). Technique0/pass0
 sets texture UNIT names diffuseMap/normalMap/metalnessMap, not texture_alias; missing units log,
 not auto-create. Explicit flag-driven scaffold/dual/interior/dust units append as in table.
+
+**Verified** (`FUN_1409b4610`, used by the item mesh, material texture and colour map paths `FUN_140537690`, `FUN_140841a50`, `FUN_140536210`, `FUN_14044a0d0`): FCS file fields are cut to the text after the last `/` or `\`, so lookups are by bare name. **Verified** (OgreMain `ResourceGroup::addToIndex` `FUN_1802869a0`, `openResource` `0x18027f160`): a group keeps an exact-case index (a later registration overwrites) and, for case-insensitive archives, a lower-case one; `openResource` tries the exact-case name first. So `Boots.dds` (Expanded Vanilla Armor's Police boots) is not hidden by the `boots.dds` of vanilla and other mods, whichever mod registers later; Meitou's `OgreScriptResources.Find` follows this. **Observed** (the original, same mod list, compared by the user): the female "Mercenary Plated Chausses" draw Expanded Vanilla Armor's identically named, later-registered `Police/PlatePantsF.mesh` with the item's texture, as these rules predict and as Meitou does; the Police boots draw right.
 
 DOUBLESIDED disables hardware/software culling. Flags select shader defines and caster variant;
 not every material supports every flag. Parameters: tiling default(1,1,1) if either tile axis0;

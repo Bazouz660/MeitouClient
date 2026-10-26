@@ -63,7 +63,7 @@ public sealed record AnimationMask(string AnimationName, string? RecordName, str
     /// <summary>
     /// The mask of a COMBAT_TECHNIQUE (docs/animation.md "Startup preprocessing", <b>Verified</b>): a block that is not a dodge loses its lower-body tracks
     /// (the <c>delete below waist</c> set) and plays on the upper body; attacks and dodges keep every track. Kenshi also adds a clone of each block with
-    /// override bones on the right arm; which of the two plays is <b>Unknown</b>, this is the one without.
+    /// override bones on the right arm, which neither the defending state nor the stumble break-out asks for (docs/game/combat.md "Hit reactions"): this is the one they play.
     /// </summary>
     public static AnimationMask FromTechnique(GameRecord record)
     {

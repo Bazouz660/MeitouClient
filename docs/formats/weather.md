@@ -82,8 +82,8 @@ Particle fade comes from affectors, fog volumes from effect fade/lifecycle.
 within a region immediate; static map-feature units immortal. Missing particle images/materials
 fall back to white. Fog-volume ground movement and effect lights are not fully implemented.
 **Verified** plugin constructor default quota500; ash techniques total1550. Denser original ash
-remains unexplained. Gameplay effects: [Effects on characters](#effects-on-characters); a rain collector's rain strength is the weather's `wetness`
-([selected building](../game/ui-screens.md#selected-building); what it collects is untraced); generator wind: [rotating parts](../game/buildings-production.md#rotating-parts).
+remains unexplained. Gameplay effects: [Effects on characters](#effects-on-characters); a rain collector's rain strength and a farm's rain water are the weather's `wetness`
+([selected building](../game/ui-screens.md#selected-building), [farming](../game/buildings-production.md#farming)); generator wind: [rotating parts](../game/buildings-production.md#rotating-parts).
 
 ## Effects on characters
 

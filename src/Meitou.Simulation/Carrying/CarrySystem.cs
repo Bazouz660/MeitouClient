@@ -33,14 +33,19 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
 
     public CarrySettings Settings { get; } = settings ?? new CarrySettings();
     public GameConstants Constants { get; } = constants;
-    /// <summary>The length of the <c>shoulder lift left</c> clip in seconds (1 when the clip lengths are not known).</summary>
-    public float LiftSeconds { get; } = liftSeconds > 0 ? liftSeconds : 1;
+    /// <summary>How long the lift takes in seconds: the <c>shoulder lift left</c> clip's length over its <see cref="LiftPlaySpeed"/> (1 when the clip lengths are not known).</summary>
+    public float LiftSeconds { get; set; } = liftSeconds > 0 ? liftSeconds : 1;
+    /// <summary>The record's <c>play speed</c> (2 in the base data): the lift clip plays at this many clip seconds per second, forwards to lift and backwards to put down (<b>Verified</b>, docs/game/carry-loot.md "Lift and put-down timing").</summary>
+    public float LiftPlaySpeed { get; set; } = 1;
     /// <summary>The live relation table: with it an ally counts as friendly. Null: only the same faction does.</summary>
     public FactionRelations? Relations { get; set; }
     /// <summary>The crime system a player's looting is reported to (a pending Looting; null: no crimes).</summary>
     public Crime.CrimeSystem? Crimes { get; set; }
     /// <summary>Re-dresses a character whose worn gear the loot window moved (null: the looks and fighters stay).</summary>
     internal CharacterAssembly? Assembly { get; set; }
+
+    /// <summary>The game data, to price money taken out of a loot (<see cref="PlayerSystem.Cash(World, PopulationData?, ItemInstance, int)"/>); null: money moves as an item.</summary>
+    internal PopulationData? Data { get; set; }
     readonly BodyOptions bodyOptions = options;
     readonly List<LootEntry> loots = [];
 
@@ -187,12 +192,6 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
                     }
                     break;
                 }
-                case Combat.AttackOrder attack when !attack.Defensive:
-                    // An ordered attack: the carrier lets the body fall and fights (engine choice; the original forbids no attack while carrying, but has no carrying fighter either).
-                    foreach (var id in attack.Attackers)
-                        if (table.TryResolveNext(id, out int slot) && table.Cold(slot) is { Carrying.IsNone: false } c && table.TryResolveNext(c.Carrying, out int b))
-                            Unlink(world, slot, b, drop: true);
-                    break;
             }
         }
     }
@@ -218,6 +217,24 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         cold.LiftTime = 0;
         cold.ResumeTask = CharacterTask.Idle;
         return true;
+    }
+
+    /// <summary>
+    /// A hit outside a fight ended the character's task (<c>Character::_startStumble</c>, docs/game/combat.md "Stagger outside a fight"). The put-down's end handler
+    /// (<c>FUN_1403509f0</c>, <b>Verified</b>) always releases the body (and knocks it out again when the carrier does not regard it as friendly), so a put-down cut off by a hit is
+    /// finished at once, not started over; a lift already past its attach point (the link is made in the task's update at 0.4 of the clip) keeps the body. Serial phases.
+    /// </summary>
+    public void Interrupted(World world, int slot)
+    {
+        var table = world.Characters;
+        if (table.Cold(slot) is not { } cold) return;
+        byte task = table.Next[slot].Task;
+        if (task == (byte)CharacterTask.PutDown && !cold.Carrying.IsNone && table.TryResolveNext(cold.Carrying, out int body))
+        {
+            Unlink(world, slot, body, drop: false);
+            End(table, slot);
+        }
+        else if (task == (byte)CharacterTask.PickUp && !cold.Carrying.IsNone && cold.Carrying == cold.CarryTarget) End(table, slot);
     }
 
     /// <summary>Lets go of the carried body where the carrier stands, without the put-down knock-out (serial phases; the arrest system's put-in-cage). False when it carries nothing.</summary>
@@ -530,7 +547,9 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
             return;
         }
         int death = DeathUnits(victim.Inventory!);
+        int cashed = cold.Faction == player.Faction ? CashMoney(world, victim.Inventory!) : 0;
         var (taken, left) = TakeAll(bag, victim.Inventory!, Crime.CrimeSystem.IsLootTheft(cold, victim) ? victim.Faction : -1);
+        taken += cashed;
         Butcher(world, i, t, death);
         bool seen = Looted(world, table, i, t, taken, left, crime: true);
         if (cold.IsPlayer)
@@ -604,6 +623,17 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         int mark = item.StolenFrom, death = DeathUnits(from);
         if (Crime.CrimeSystem.IsLootTheft(cold, victim)) item.StolenFrom = victim.Faction;
         var owner = from.Items.Contains(item) ? from : from.Backpack?.Contents ?? from;
+        // Money taken by the player's own becomes cats, as when it is dropped into their window (PlayerSystem.Place, FUN_140714a20).
+        if (item.ItemFunction == PlayerSystem.MoneyFunction && cold.Faction == world.Player.Faction && Data is not null)
+        {
+            int units = take.Count > 0 ? Math.Min(take.Count, item.Quantity) : item.Quantity;
+            PlayerSystem.Cash(world, Data, item, units);
+            if (units >= item.Quantity) owner.Remove(item); else item.Quantity -= units;
+            item.StolenFrom = mark;
+            Butcher(world, i, t, death);
+            Seen(world, i, t, owner.Items.Contains(item) ? 1 : 0);
+            return;
+        }
         int moved = InventoryCommands.MoveInto(owner, item, take.Count, cold.Inventory!, take.BagFirst, out bool wear, cold.Race?.StringId);
         if (owner.Items.Contains(item)) item.StolenFrom = mark;   // what stays keeps its mark
         if (moved == 0)
@@ -698,6 +728,24 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
     /// (engine choice: the fighter's gear is fixed at spawn). Returns the items moved and the ones left. With <paramref name="stolenFrom"/> at 0 or above (a theft) what moves is marked
     /// stolen from that faction; what stays keeps its mark.
     /// </summary>
+    /// <summary>The money items of a loot's grid and bag into the player's purse (a take-all by the player's own); the number of stacks taken.</summary>
+    int CashMoney(World world, Inventory from)
+    {
+        if (Data is null) return 0;
+        int n = 0;
+        foreach (var holder in new[] { from, from.Backpack?.Contents })
+        {
+            if (holder is null) continue;
+            foreach (var item in holder.Items.Where(x => x.ItemFunction == PlayerSystem.MoneyFunction && (holder != from || x.Section == "main")).ToList())
+            {
+                PlayerSystem.Cash(world, Data, item, item.Quantity);
+                holder.Remove(item);
+                n++;
+            }
+        }
+        return n;
+    }
+
     public static (int Taken, int Left) TakeAll(Inventory into, Inventory from, int stolenFrom = -1)
     {
         var items = new List<ItemInstance>();

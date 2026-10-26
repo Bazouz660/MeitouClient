@@ -257,11 +257,32 @@ sealed partial class PlayerInterface
     {
         string weight = ((int)(lead.ItemGrid?.TotalWeight ?? 0)).ToString(CultureInfo.InvariantCulture);   // truncated, as the original prints it
         if (lead.ItemGrid?.CarryCapacity is { } capacity) weight += "/" + ((int)capacity).ToString(CultureInfo.InvariantCulture);
-        var (burdenWord, burdenColour) = BurdenText(lead.Hud?.Encumbrance ?? 1);
-        const string muted = "0.3 0.28 0.25";
-        AddLines(controls, "datapanel", animal ? [new("Total Weight:", weight), new("", burdenWord, ValueColour: burdenColour)]
-            : [new("Total Weight:", weight), new("", burdenWord, ValueColour: burdenColour), new("Disguise:", "None"), new("", ""),
-            new("Slave of:", "-", muted, muted), new("Looks like slave:", "-", muted, muted)], 20 * InventoryScale);
+        var (burdenWord, burdenColour) = BurdenText(lead.Hud?.Encumbrance ?? lead.ItemGrid?.Burden ?? 1);
+        AddLines(controls, "datapanel", InventorySummaryLines(lead, weight, burdenWord, burdenColour, animal), 20 * InventoryScale);
+    }
+
+    /// <summary>
+    /// The data panel's lines (<c>FUN_1405d4260</c> mask 0xf, called through Character slot 40 for the window's owner, <b>Verified</b> by disassembly, docs/game/ui-screens.md): Total Weight and the burden row
+    /// for every character; for a character of the player's faction also Disguise (no disguise: "None" and a "-" value on a blank-labelled row; the disguise percent is not simulated), Slave of
+    /// (free: "-" greyed; a slave or escaped slave: its owner faction's name in Bad, no line without an owner) and Looks like slave (free: "-" greyed; else the level in percent, Bad above 10 %).
+    /// A character of another faction has only the weight rows (and, for a trader, its money lines, not built).
+    /// </summary>
+    List<HudLine> InventorySummaryLines(CharacterSnapshot lead, string weight, string burdenWord, string? burdenColour, bool animal)
+    {
+        var lines = new List<HudLine> { new(Loc.Tr("Total Weight:"), weight), new("", burdenWord, ValueColour: burdenColour) };
+        if (animal || !lead.IsPlayer) return lines;
+        lines.Add(new(Loc.Tr("Disguise:"), Loc.Tr("None"), Tooltip: Loc.Tr("Not currently in disguise.")));
+        lines.Add(new("    ", "-"));
+        if (lead.Slave is not { } slave)
+        {
+            lines.Add(new(Loc.Tr("Slave of:"), "-", GreyColour, GreyColour, Loc.Tr("You are a free person.")));
+            lines.Add(new(Loc.Tr("Looks like slave:"), "-", GreyColour, GreyColour, Loc.Tr("You are no slave.")));
+            return lines;
+        }
+        if (slave.Owner.Length > 0) lines.Add(new(Loc.Tr("Slave of:"), slave.Owner, ValueColour: BadColour, Tooltip: Loc.Tr("The faction that owns you.")));
+        lines.Add(new(Loc.Tr("Looks like slave:"), Loc.Tr("{1,num}%", (int)(slave.Looks * 100)), ValueColour: slave.Looks > 0.1f ? BadColour : null,
+            Tooltip: Loc.Tr("How much you look like an escaped slave. Based on how you are dressed/undressed. Wearing shackles and rags is a big giveaway. Try to avoid hanging around too long near people who may recognise you.")));
+        return lines;
     }
 
     /// <summary>

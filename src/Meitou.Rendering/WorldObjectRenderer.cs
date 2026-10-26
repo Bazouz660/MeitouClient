@@ -128,6 +128,9 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
     public int DrawnInstances { get; private set; }
     /// <summary>Colour real building parts owned by a BUILDING with <c>is sign</c> yellow while the highlight action is held.</summary>
     public bool HighlightSigns { get; set; }
+
+    /// <summary>Whether a placement's EMISSIVE parts are dark now (its lights are off; <see cref="WorldLamps.EmissiveDark"/>); null: every one glows.</summary>
+    public Func<string, bool>? EmissiveDark { get; set; }
     public long DrawnTriangles { get; private set; }
     public int DrawCalls { get; private set; }
     /// <summary>Real instances the last <see cref="Draw"/> left out because of their part distance (<see cref="ObjectRanges.PartRenderingDistance"/>)
@@ -1114,8 +1117,9 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
         if (gpu.MinLevel > 0 && blend.Lower < gpu.MinLevel) coarseDraws++;
         if (gpu.MinLevel > 0) blend = new LodBlend(Math.Max(blend.Lower, gpu.MinLevel), Math.Max(blend.Upper, gpu.MinLevel), blend.T);
         var m = inst.Transform;
-        // Spare instance-matrix component: room GI gain without splitting shared furniture batches.
-        m.M34 = IndoorFurniture(inst) ? 1 : 0;
+        // Spare instance-matrix component: room GI gain without splitting shared furniture batches (1), plus 2 when its building's lights are off, which darkens
+        // its EMISSIVE materials (BuildingLodShaders).
+        m.M34 = (IndoorFurniture(inst) ? 1 : 0) + (!depthPass && EmissiveDark is { } dark && dark(inst.Placed.ParentPlacementId ?? inst.Placed.PlacementId) ? 2 : 0);
         // Another spare component, M44: 1, or for a construction site the height of its scaffold clip plane (BuildingLodShaders.ScaffoldBase + world Y).
         bool site = false;
         bool highlight = HighlightSigns && !depthPass && !inst.Stand && inst.Placed.Owner.GetBool("is sign");

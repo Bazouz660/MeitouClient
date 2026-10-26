@@ -159,15 +159,16 @@ is not the looker's ally becomes a target only when both tests pass:
 | Gather per update | up to 40 objects within R; at 40, up to 20 more within 250 | **Verified** (literals) | `FUN_14085a8d0`, `FUN_1407866d0` |
 | Update rate | with the AI, in the logic tick: 8 characters per frame in turn | **Observed** | [game-loop.md](game-loop.md#the-character-update-budget) |
 | Run away (Task_Runaway) | 2000 + 400 r away from the threats' centre, then hops of 1000 + 400 r; until no enemy sensed and nobody attacking | **Verified** (literals), flow **Observed** | `FUN_14034b440`, `FUN_140336820` |
-| Squad not intact (retreat package) | 4+ members: fewer than 20% (40% with the leader down) able; under 4: leader down | **Observed** | `FUN_14079acf0` |
-| FACTION `run away ratio of squad size` / `relative to enemy` | loaded into Faction +0xc / +0x10 (base data: 92 factions 0, others 0.2 to 0.5); no reader found | **Unknown** | `FUN_1407fe270` |
+| Squad not intact (retreat package) | 4+ members: fewer than 20% (40% with the leader down) able; under 4: leader down; no enemy counted; never while a member is imprisoned (`+0x2f8` 2) or carried by a non-ally (`FUN_14079ab40`). Meitou's `FleeSystem` trigger (the carried case is not modelled) | **Verified** (decompile `FUN_14079acf0`, `FUN_14079ab40`, `FUN_1407a5be0`) | `FUN_14079acf0` |
+| FACTION `run away ratio of squad size` / `relative to enemy` | loaded into Faction +0xc / +0x10 (base data: 92 factions 0, others 0.2 to 0.5); not read: a scan of the game logic (0x140200000-0x140a00000) for float loads at those offsets found none | **Observed** (negative) | `FUN_1407fe270` |
+| A lone character running away | `Task_Runaway`'s desire is 1 only when character `+0x5b8` is set, else 0.001: a fallback the planner takes when nothing else answers SELF_PRESERVATION | **Verified** (literals), flow **Observed** | `FUN_1405a34e0`, `FUN_140599d20` |
 | Attack-on-sight area / post | ROAM_FAR: 6517 around the looker; HOLD_GROUND / STAY_CLOSE: R + 40 / R + 200 + R' around the centre of movement; Hold: 80 (140) / 60 / 40 | **Verified** (literals), flow **Observed** | `FUN_140597790`, `FUN_140598630` |
 
 ## Unknowns
 
 - Slot 14 `+0xb4`, slot 60's `+0xd5`, the hearing re-roll factor, the meaning of
   character `+0x5b8` and `+0x504`.
-- Whether the run-away ratios (Faction +0xc / +0x10) are read at all.
+- Who writes character `+0x5b8` (Task_Runaway at full desire) and AI `+0xbc` (`isNoEnemiesInVicinity`); the update cadence of the squad-intact test.
 - The writer of a character's location handle `+0x80`; when can-see casts its physics ray; the building rules of can-hear;
   the alertness goal float and the +0x3f0 (green pointer) test of spotting.
 

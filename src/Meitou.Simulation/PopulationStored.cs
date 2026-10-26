@@ -32,12 +32,27 @@ public sealed partial class PopulationSystem
                 placed |= leads;
             }
             world.Uniques.Left(id);
-            table.Remove(id);
+            RemoveMember(world, id);
         }
         stored.Anchor = at;
         stored.StoredTick = world.Tick;
         stored.StoredHours = world.GameHours;
         return at;
+    }
+
+    /// <summary>
+    /// A squad's member leaves the world with its squad, except a corpse: the original destroys a corpse by its own update only, 12 game hours after death or when its zone is no
+    /// longer loaded (<c>FUN_1405ccd90</c>, docs/game/character-stats.md "Corpses"), so a squad going away leaves its dead lying (<see cref="BodySystem"/> removes them in time).
+    /// </summary>
+    static void RemoveMember(World world, CharacterId id)
+    {
+        var table = world.Characters;
+        if (table.TryResolveNext(id, out int slot) && table.Cold(slot) is { } cold && (cold.DiedTick >= 0 || cold.Medical is { Dead: true }))
+        {
+            cold.SquadId = -1;
+            return;
+        }
+        table.Remove(id);
     }
 
     /// <summary>Clears what a character's cold state holds only while it is in the world: paths, AI, carrying, treatment, combat and stealth state, a pending crime, jobs.</summary>

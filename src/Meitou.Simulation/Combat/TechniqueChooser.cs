@@ -158,16 +158,17 @@ public static class TechniqueChooser
 
     /// <summary>
     /// The defender's reaction (<c>FUN_140887970</c>, <b>Observed</b>), given the block roll and the pick roll. Candidates are the block or dodge techniques of the defender's weapon category
-    /// (<see cref="Fits"/>) and posture. A fighter with a weapon that can block rolls to block: on success the candidates are the techniques whose direction equals the blow's (the
-    /// base game's "Dodge back" rows are flagged as blocks too, so they are among them), on failure the block techniques of a different direction in the same class, never a dodge,
+    /// (<see cref="Fits"/>) and posture. A fighter with a weapon that can block rolls to block: on success the candidates are the block techniques that are not dodges (<b>Verified</b>,
+    /// the block pool needs <c>is dodge</c> 0, so the "Dodge back" rows flagged as blocks too are out) whose direction equals the blow's, on failure those of a different direction in the same class,
     /// so the blow passes. A fighter without one is dodge-capable only when the roll against <paramref name="dodgeChancePercent"/> succeeds, and then picks among the dodge techniques. The pick is
     /// weighted on <c>chance</c>. -1 when there is no reaction.
     /// </summary>
     public static int ChooseReaction(IReadOnlyList<CombatTechnique> all, int category, bool prone, bool canBlock, int blowDirection,
-        float blockChancePercent, float dodgeChancePercent, float chanceRoll, float pickRoll)
+        float blockChancePercent, float dodgeChancePercent, float chanceRoll, float pickRoll, bool stumbling = false)
     {
         ReactionPool pool;
-        if (canBlock) pool = chanceRoll * 100 < blockChancePercent ? ReactionPool.Facing : ReactionPool.WrongDirection;
+        if (stumbling) pool = ReactionPool.StumbleDodges;   // the break-out already rolled (FUN_1406085e0)
+        else if (canBlock) pool = chanceRoll * 100 < blockChancePercent ? ReactionPool.Facing : ReactionPool.WrongDirection;
         else if (chanceRoll * 100 < dodgeChancePercent) pool = ReactionPool.Dodges;
         else return -1;
         float total = 0;
@@ -195,14 +196,17 @@ public static class TechniqueChooser
         WrongDirection,
         /// <summary>A fighter without a blocking weapon that rolled a dodge: the dodge techniques.</summary>
         Dodges,
+        /// <summary>A stumbling fighter breaking out: the <c>is stumble dodge</c> rows (<b>Verified</b>, <c>FUN_140887970</c>), whatever its weapon.</summary>
+        StumbleDodges,
     }
 
     static float ReactionWeight(CombatTechnique t, int category, bool prone, ReactionPool pool, int blowDirection)
     {
-        if (t.Disabled || t.IsStumbleDodge || !(t.IsBlock || t.IsDodge) || !Fits(t, category) || t.IsProne != prone) return 0;
+        if (t.Disabled || t.IsStumbleDodge != (pool == ReactionPool.StumbleDodges) || !(t.IsBlock || t.IsDodge) || !Fits(t, category) || t.IsProne != prone) return 0;
         bool inPool = pool switch
         {
-            ReactionPool.Facing => t.IsBlock && t.AttackDirection1 == blowDirection,
+            ReactionPool.StumbleDodges => t.IsDodge,
+            ReactionPool.Facing => t.IsBlock && !t.IsDodge && t.AttackDirection1 == blowDirection,
             ReactionPool.WrongDirection => t.IsBlock && !t.IsDodge && t.AttackDirection1 != blowDirection && SameClass(t.AttackDirection1, blowDirection),
             _ => t.IsDodge,
         };

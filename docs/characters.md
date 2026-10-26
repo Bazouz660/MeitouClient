@@ -125,6 +125,12 @@ an unnamed root-chain bone (pelvis) is no limb (the original's fallback part ind
 Boots (slot 9, not `is locked`) on a character with exactly one fitted leg prosthetic lose that leg's half (`AppearanceBase_SetupItemMaterial`,
 **Observed**): left leg replaced collapses the x >= 0 half, right the x < 0 half. Meitou: `CharacterPart.HideSide`, instance flag bits 16-17.
 
+### Weapon parts and their material
+
+**Observed** (decompile: `FUN_1405d24b0` sheath attach, `FUN_140535e50` attach, `FUN_1405358a0` attachment object, `FUN_140536210` `setupItemMaterial`; `data/materials/deferred/skin.hlsl`): a weapon's `sheath` mesh is attached like `bare sword` and `mesh`: the attachment copies the weapon item's material record (the saved `material sid` model, `FUN_140535e50` takes the item and the mesh name), so the scabbard wears the same MATERIAL_SPECS_WEAPON model (grade) as the blade. Meitou gave the sheath no model and resolved it as an unowned mesh (the first model of the weapon's manufacturer: a Rusted Junk look on every graded sword); fixed, and the crossbow's model reaches its `mesh`, `extra mesh` and `live ammo` parts the same way. A weapon with no saved model keeps the resolver's choice (**Unknown** whether the original then picks one at random, `FUN_140840140`).
+
+**Verified** (`skin.hlsl`): worn items always `clip(normal.a - 0.6)`, so a normal map whose alpha is low (BC1 punch-through, atlas islands) hides those texels.
+
 ### Crossbows
 
 **Observed** (decompile: `FUN_1405dbd80`, `FUN_1405dbf80`, `FUN_140535d50`, `FUN_14043d120`, `FUN_140436080`, `FUN_1405cc820`):

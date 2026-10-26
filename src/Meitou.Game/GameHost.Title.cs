@@ -39,7 +39,11 @@ sealed partial class GameHost
     void EnsureTitleScene()
     {
         if (titleComposition is not null || scene.Database is not { } db) return;
-        titleComposition = new(install, db, scene.GroundAt, SandboxRecord(db), TitleSaveAppearance(db));
+        var saved = TitleSaveAppearance(db, out var stats, out float hunger);
+        // Its body from its saved stats and hunger, as the world publishes it (CharacterSnapshot.Build; FUN_140531820 skips robots).
+        var build = saved is { Race: var race } && stats is not null && race.GetBool("is robot") != true
+            ? Meitou.Data.Characters.CharacterShape.BuildFromStats(saved.Female, stats, static (stats, s) => stats[s], hunger) : (Meitou.Data.Characters.BodyBuild?)null;
+        titleComposition = new(install, db, scene.GroundAt, SandboxRecord(db), saved) { SavedBuild = build };
         if (popData is { } data && animationLengths is { } lengths && animationLibrary is { } library)
             titleBattle = TitleBattle.Create(data, scene.GroundAt, titleComposition.Fights, lengths, library);
         if (ActiveCharacters is { } characters)
@@ -52,8 +56,11 @@ sealed partial class GameHost
     }
 
     /// <summary>The first-created character in the player's first squad in the save Continue will load, drawn with its saved look and worn kit.</summary>
-    Meitou.Data.Characters.CharacterAppearance? TitleSaveAppearance(GameDatabase db)
+    /// <param name="stats">Its saved stats (null: unread).</param>
+    /// <param name="hunger">Its saved hunger (0 to 3).</param>
+    Meitou.Data.Characters.CharacterAppearance? TitleSaveAppearance(GameDatabase db, out Meitou.Simulation.Bodies.CharacterStats? stats, out float hunger)
     {
+        (stats, hunger) = (null, Meitou.Simulation.Bodies.MedicalState.MaxHunger);
         try
         {
             SaveGame? save = StartSave;
@@ -82,6 +89,8 @@ sealed partial class GameHost
             var platoon = character.Platoon;
             if (character is null) return null;
             int serial = character.Handle.S & 0x7FFFFFFF;
+            if (character.Stats is { } savedStats) stats = Meitou.Simulation.Bodies.CharacterStats.ReadSave(savedStats.Floats);
+            if (character.Medical?.Floats.TryGetValue("hung", out float saved) == true) hunger = saved;
             var items = character.Inventory is { } inventory && platoon?.File is { } file ? SaveInventory.Read(file, inventory) : [];
             if (items.Count > 0 && SavedKit.LoadoutOf(character.Appearance, items, db, serial) is { } exactKit &&
                 appearances.Create(character.RecordId, exactKit) is { } exact) return exact;

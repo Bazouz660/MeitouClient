@@ -105,8 +105,13 @@ bits on. So it lasts exactly while a leg is down; it does not knock out.
 - Posture ≠ 0 picks category 5 GROUNDED lower clips (`AnimHuman_LowerCombat` `FUN_14051fc60`); base data
   (rebirth.mod): `crawling move`, `crawl idle up` (any combat mode), `crawl idle down` (out of combat), `crawl use`.
 - Defence techniques must have `is prone` equal to posture ≠ 0 (`FUN_140887970`): a crawler has no block or
-  dodge (no prone one exists). The attack pick's test was not traced; the only prone techniques are
-  `ground attack L/R`, and Meitou's chooser applies the same rule to attacks (engine).
+  dodge (no prone one exists). The attack pick (`FUN_1408876d0`) applies the same test (**Observed**): a crawler
+  attacks only with `ground attack L/R`. Nothing in the fight code ends a crawler's fight.
+- Speed (`FUN_140886460`, **Verified**): a final override after the water and sneak caps, 5.0 crippled, 7.0 at posture 1. The crippled flag
+  (medical +0x160) is set only by the medical tick, so nobody is crippled before their first one (Meitou: `Speed.Crippled`, `MedicalState.Crawling`).
+- The get-up task (65, `FUN_14033ca10` / `FUN_140334a20`, **Verified**) of a character with posture > 0 ends at
+  once and sets posture 1 (voluntary crawl), which the medical tick does not turn back into 2. The planner's
+  `isTargetDown` (`FUN_14099a5a0`) counts posture ≥ 2 as down, `iAmProne` is posture ≠ 0.
 - Meitou: `HealthPart.LegDown`, `MedicalState.Crawling` (KO point cached each medical tick), `AnimationSystem.Crawl`
   (engine choices: `crawl use` replaces the medic clip; crawl legs weighed at no less than −100). The ×0.5
   sight factor for a crawler ([perception](perception.md)) is not applied to crawlers who are not sneaking.
@@ -176,9 +181,26 @@ marks each bone **pinned** (kinematic, follows animation) or **simulated** and c
 | CARRY_MODE, human | both Forearms, Head | the rest (animated carried pose) |
 | CARRY_MODE, animal | all but the carry bone | carry bone |
 
+**Verified** (decompile of `FUN_1405b8720`, the `+0x5a` carry flag branch): a carried human keeps its animated "carry me" pose and only the two forearms and the head are simulated; every other bone,
+legs included, is pinned to the animation. The carried body's scene node is **not** moved to a ragdoll body (`FUN_1407d3c00` takes the root-body position only for WHOLE or a carried animal): the
+carry placement of [carry-loot](carry-loot.md) sets it each frame. The pick-up attach (`FUN_1405ced90`) clears the active mask (`+0x2f8` = 0) and the CARRY_MODE request then rebuilds the ragdoll from the
+animated pose; put-down / drop (`FUN_1405ce9c0(0)`) requests CARRY_MODE off, the medical tick requests WHOLE again for a still-unconscious body. Meitou: `RagdollSystem` (`Simulates`, `Rebuild`) does the
+same; the limbs that swing are the forearms and the head, so a body's upper arms and legs follow only the `carry me` clip (`play speed` 0.006: almost still).
+
 Activating a simulated body: clear kinematic, ENERGY_SLEEP_TEST, linear damping 0.05, angular 0.01,
 sleep energy threshold 5.0, wake 0.4 if asleep. No joint motors or springs are set: a "powered"
 pose exists only as pinned kinematic bones.
+
+### Limits of motion and joint springs
+
+- **Verified** (`FUN_1401a8be0` body desc fill, constant read): a body's `maxAngularVelocity` is -1 (the SDK global), and `FUN_1407dbee0` sets only the SDK parameters 1, 2, 3, 5, 6 (skin width, the two
+  sleep thresholds, the two friction scalings), never `NX_MAX_ANGULAR_VELOCITY`; so every ragdoll body turns at PhysX 2.8's default global cap of 7 rad/s (**Observed**: the default's value is from the SDK
+  header, not from the binary). Meitou: `RagdollPhysics.MaxSpin` 7 (was 30, an engine choice): a swinging forearm or head cannot whip.
+- **Verified** (`FUN_1401a81b0`, the revolute branch): spring 1 enabled sets the revolute spring flag with the file's spring, damper and target (degrees); `hu_m_ragdoll_5` has one, on Head -> Neck
+  (10000, damper 0, target 0, [phs](../formats/phs.md)). The head is therefore held at the neck's pose by a stiff undamped spring (about 20 Hz on a 1-unit sphere of mass 1) and sags only a hundredth of a radian under its
+  weight; it does not flop to its limits. Meitou: `RagdollSystem.HingeSpring` (a Bepu `TwistServo` of the same frequency and damping ratio on the moving inertia).
+- **Verified** pinned bodies (`FUN_1407d1550` -> `FUN_1401a9ea0`, `FUN_1401a9f00`): a pinned body gets position and orientation **set** (separate setters, not a kinematic move) and its linear and angular velocity zeroed,
+  every frame; a joint to a simulated limb therefore sees only the position error of the jump, never the pinned body's speed. Meitou: `RagdollSystem.Pin` does the same (**Observed** in the sandbox carry scene: the joints stay stable, the forearms swing slightly more after the lift than with the velocity drive it replaced).
 
 ## Initial state
 

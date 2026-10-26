@@ -1,4 +1,5 @@
 using System.Numerics;
+using Meitou.Data.Gameplay;
 using Meitou.Data.Gameplay.Bodies;
 
 namespace Meitou.Simulation;
@@ -57,6 +58,7 @@ public sealed partial class World
         var combat = systems.OfType<Combat.CombatSystem>().FirstOrDefault();
         var bodyConstants = systems.OfType<BodySystem>().FirstOrDefault()?.Constants;
         var population = systems.OfType<PopulationSystem>().FirstOrDefault()?.Data;
+        float extraBloodLoss = systems.OfType<BodySystem>().FirstOrDefault()?.Constants.ExtraBloodLossFromBodyparts ?? 1;
         if (published.Length < state.Length) published = new CharacterSnapshot?[state.Length];
         var made = published;
         ParallelFor((state.Length + PublishChunk - 1) / PublishChunk, chunk =>
@@ -79,6 +81,7 @@ public sealed partial class World
             var watchers = sneaking ? WatchersOf(cold!) : [];
             return new CharacterSnapshot(id, cold?.Appearance, DrawnPosition(cold, state[i].Position), state[i].Yaw, cold?.Animation is { } anim && animations is not null ? animations.Publish(anim) : AnimationLayers.For(state[i].Animation, state[i].AnimationTime))
             {
+                DrawYaw = cold?.Animation is { HasDrawYaw: true } drawn ? drawn.DrawYaw : float.NaN,
                 Faction = cold?.Faction ?? -1,
                 WeaponDrawn = cold is not null && cold.DrawnWeapon != Meitou.Data.Gameplay.WeaponKinds.None,
                 CrossbowShots = cold?.CrossbowShots ?? 0,
@@ -100,13 +103,18 @@ public sealed partial class World
                 LimbBits = cold?.Medical?.LimbBits ?? 0,
                 HealthParts = detailed && cold!.Medical is { } health && cold.Race is { } anatomy ? Array.AsReadOnly(health.Parts.Select(p => new HealthPartView(p.Template.StringId, p.Template.Name, p.Flesh, p.Stun, p.Bandage, p.Rig, p.MaxHp, p.IsRobotic(anatomy)) { Vital = p.Template.Vital, Type = p.Template.Type }).ToArray()) : [],
                 ItemGrid = (selected || id == Player.OpenLoot || cold is { IsPlayer: true } && Player.InventoryShown.Contains(id)) && cold!.Inventory is { } grid ? new InventoryView(grid.Width, grid.Height, grid.Backpack?.Contents?.Width ?? 0, grid.Backpack?.Contents?.Height ?? 0,
-                    Array.AsReadOnly(grid.All().Select((item, index) => new InventoryItemView(index, item.Record, item.Name, item.Section, item.X, item.Y, item.Width, item.Height, item.Quantity, item.Weight, item.Quality) { Material = item.MaterialId, Charge = item.ChargeFraction, Company = item.CompanyId, Crafter = item.Crafter, Level = item.Level, Charges = item.Charges, MaxCharges = item.MaxCharges,
-                        StolenFrom = item.IsStolenFor(cold.Faction) ? item.StolenFrom : -1 }).ToArray()))
+                    Array.AsReadOnly(grid.Shown().Select(shown => new InventoryItemView(shown.Index, shown.Item.Record, shown.Item.Name, shown.Item.Section, shown.Item.X, shown.Item.Y, shown.Item.Width, shown.Item.Height, shown.Item.Quantity, shown.Item.Weight, shown.Item.Quality) { Material = shown.Item.MaterialId, Charge = shown.Item.ChargeFraction, Company = shown.Item.CompanyId, Crafter = shown.Item.Crafter, Level = shown.Item.Level, Charges = shown.Item.Charges, MaxCharges = shown.Item.MaxCharges,
+                        StolenFrom = shown.Item.IsStolenFor(cold.Faction) ? shown.Item.StolenFrom : -1 }).ToArray()))
                     { TotalWeight = grid.ContentWeight(), CarryCapacity = cold.Stats is { } strength && systems.OfType<BodySystem>().FirstOrDefault() is { } bodies
-                        ? Bodies.Encumbrance.WindowCapacity(bodies.Constants, strength.Strength, cold.Medical?.StatMultiplier(StatsEnumerated.Strength) ?? 1) : null } : null,
+                        ? Bodies.Encumbrance.WindowCapacity(bodies.Constants, strength.Strength, cold.Medical?.StatMultiplier(StatsEnumerated.Strength) ?? 1) : null,
+                        Burden = cold.Stats is { } bs && systems.OfType<BodySystem>().FirstOrDefault() is { } bb && grid.ContentWeight() is var bw && (bw > 0 || !cold.Carrying.IsNone)
+                        ? Bodies.Encumbrance.Factor(bb.Constants, bw, !cold.Carrying.IsNone, bs.Strength, cold.Medical?.StatMultiplier(StatsEnumerated.Strength) ?? 1) : 1 } : null,
                 Bounties = detailed && cold!.Bounties is not null ? Crime.CrimeSystem.Lines(cold, Tick, TickSeconds, LocalFaction(cold, state[i].Position, population)) : [],
-                Slave = detailed && cold!.SlaveState is 1 or 2 ? new SlaveView(cold.SlaveState, population is { Factions: { } factions } && (uint)cold.SlaveOwner < (uint)factions.Count ? factions[cold.SlaveOwner].Name : "") : null,
-                Body = cold?.Medical is { } med && cold.Race is { } race ? BodyOf(cold, med, race, state[i].Task) : null,
+                Slave = cold is { SlaveState: 1 or 2 } ? new SlaveView(cold.SlaveState, population is { Factions: { } factions } && (uint)cold.SlaveOwner < (uint)factions.Count ? factions[cold.SlaveOwner].Name : "",
+                    systems.OfType<Kidnap.CaptiveSystem>().FirstOrDefault()?.LooksLikeSlaveLevel(cold) ?? 0) : null,
+                NoLootGuilt = cold is { } guilt && (guilt.NpcClass is FundamentalType.Bandit or FundamentalType.Slave || population is { Factions: { } fl } && (uint)guilt.Faction < (uint)fl.Count && fl[guilt.Faction].NotReal),
+                WarParty = cold is { SquadId: >= 0 } warCold && Squads.Find(warCold.SquadId) is { PlatoonId: >= 0 } warSquad && Platoons.Find(warSquad.PlatoonId)?.Campaign is not null,
+                Body = cold?.Medical is { } med && cold.Race is { } race ? BodyOf(cold, med, race, state[i].Task, extraBloodLoss) : null,
                 // The original skips robots' appearances (FUN_140531820) and animals have none.
                 Build = cold is { Stats: { } buildStats, Medical: { } fed, Race.IsRobot: false, Appearance: { Animal: null } look }
                     ? Meitou.Data.Characters.CharacterShape.BuildFromStats(look.Female, buildStats, static (stats, s) => stats[s], fed.Hunger) : null,
@@ -320,11 +328,16 @@ public sealed partial class World
             robotics, gear, missingArm, (stats[stat] + bonus) * med.StatMultiplier(stat, Bodies.StatUse.All, factors), bonus);
     }
 
-    static BodyStatus BodyOf(CharacterCold cold, Bodies.MedicalState med, RaceData race, byte task) => new(
-        med.Blood / MathF.Max(Bodies.MedicalState.BloodCapacity(race, cold.Stats?.Strength ?? 50, med.HasStatsObject, med.ScaleK, med.ScaleZ), 1), WorstPart(med), med.Hunger, med.Unconscious, med.Dead,
-        cold.IsPlayer && (med.NeedsAid(race, false) || med.NeedsAid(race, true)),
-        task == (byte)CharacterTask.Treat ? CareKind.Treating : task == (byte)CharacterTask.Rest ? CareKind.Resting : CareKind.None, cold.MedicJob, cold.RescueJob,
-        cold.IsPlayer && med.NeedsSplint(race, 50), med.KoTimer, med.PlayingDead, med is { StayingLow: true, Prone: true, Crawling: false });
+    static BodyStatus BodyOf(CharacterCold cold, Bodies.MedicalState med, RaceData race, byte task, float extraBloodLoss)
+    {
+        // The quick right click's tests (FUN_1407fb410): the organic need score above 0.01 is first aid (order 25), else the robot one is robot repair (60).
+        float capacity = MathF.Max(Bodies.MedicalState.BloodCapacity(race, cold.Stats?.Strength ?? 50, med.HasStatsObject, med.ScaleK, med.ScaleZ), 1);
+        bool organic = med.FirstAidNeed(race, false, capacity, extraBloodLoss) > Bodies.MedicalState.AidNeedFloor;
+        bool robot = !organic && med.FirstAidNeed(race, true, capacity, extraBloodLoss) > Bodies.MedicalState.AidNeedFloor;
+        return new(med.Blood / capacity, WorstPart(med), med.Hunger, med.Unconscious, med.Dead, organic || robot,
+            task == (byte)CharacterTask.Treat ? CareKind.Treating : task == (byte)CharacterTask.Rest ? CareKind.Resting : CareKind.None, cold.MedicJob, cold.RescueJob,
+            med.NeedsSplint(race, 50), med.KoTimer, med.PlayingDead, med is { StayingLow: true, Prone: true, Crawling: false }, robot);
+    }
 
     /// <summary>The lowest part fraction (1 for a body without parts), the way <c>Enumerable.Min</c> reads floats: a NaN wins.</summary>
     static float WorstPart(Bodies.MedicalState med)

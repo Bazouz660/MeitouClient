@@ -23,7 +23,6 @@ sealed partial class PlayerInterface
     {
         if (!UiVisible) return false;
         if (key == Meitou.Engine.Input.Key.Escape && CancelInventoryDrag()) return true;
-        if (key == Meitou.Engine.Input.Key.Escape && CloseContextMenu()) return true;
         if (key == Meitou.Engine.Input.Key.Escape)
         {
             if (advancedOpen && faithfulScreens.OpenScreens.LastOrDefault() == "new-game") { advancedOpen = false; return true; }
@@ -101,6 +100,7 @@ sealed partial class PlayerInterface
         else if (e.Screen == "overview") { MapAction(e.Widget); ResearchAction(e); CraftAction(e); AiAction(e); SquadsAction(e); FactionAction(e); }
         else if (e.Screen is "building" or "bench" or "storage") MachineAction(e);
         else if (e.Screen == "loot" && e.Widget == "OpenBagButton") lootBagOpen = !lootBagOpen;
+        else if (e.Screen == "loot" && e.Widget == "LimbsButton") ToggleLimbs(LootBody());
         else if (e.Screen == "trader" && e.Widget == "ArrangeButton") Say(new Meitou.Simulation.Trading.ArrangeStock { Tick = session.World.Tick });
         else if (e.Screen is "inventory" or "bag" || IsPinnedInventory(e.Screen))
         {
@@ -116,7 +116,7 @@ sealed partial class PlayerInterface
         string screen = id;
         bool pinned = IsPinnedInventory(id);
         if (pinned) id = "inventory";   // a pinned window binds as the inventory, for its own character
-        var lead = pinned ? WindowCharacter(screen) : id is "inventory" or "bag" or "limbs" ? InventoryOwner() : Selected().FirstOrDefault();
+        var lead = pinned || id == "limbs" ? WindowCharacter(screen) : id is "inventory" or "bag" ? InventoryOwner() : Selected().FirstOrDefault();
         foreach (var button in layout.Widgets.Where(w => w.Type == "Button" && !w.Properties.ContainsKey("TemplateEvent"))) b.Disabled.Add(button.Name);
         if (BindFrontend(id, b)) return b;
         if (id == "editor") { BindEditor(b); return b; }
@@ -228,7 +228,7 @@ sealed partial class PlayerInterface
         if (bagWindow) ArrangeContainerGrid(id, controls, columns, rows);
         else if (id == "limbs") ArrangeLimbSlots(controls, lead);
         else ArrangeEquipmentGrid(controls, grid);
-        if (id == "inventory" || id == "loot" && IsAnimal(lead)) AddInventorySummary(controls, lead, animal: IsAnimal(lead));
+        if (id is "inventory" or "loot") AddInventorySummary(controls, lead, animal: IsAnimal(lead));
         foreach (var item in grid.Items.Where(i => bagWindow ? i.Section == "backpack_content" : id == "limbs" ? i.Section.EndsWith("_replace", StringComparison.Ordinal) : i.Section != "backpack_content"))
         {
             if (Lifted(Meitou.Simulation.Items.ItemOwner.Of(lead.Id), item.Index)) continue;

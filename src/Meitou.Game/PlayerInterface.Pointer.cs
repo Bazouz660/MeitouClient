@@ -29,10 +29,10 @@ sealed partial class PlayerInterface
     /// <summary>The outline colour for the order a pointer shows: attack red, treat green, talk gold, carry or loot blue, else white.</summary>
     static Vector4 PointerColour(string pointer) => pointer switch
     {
-        "attk" => new Vector4(1f, 0.3f, 0.22f, 1),
+        "attk" or "knockout" => new Vector4(1f, 0.3f, 0.22f, 1),
         "med" => new Vector4(0.4f, 1f, 0.5f, 1),
-        "talk" => new Vector4(1f, 0.82f, 0.4f, 1),
-        "lift" or "search" => new Vector4(0.45f, 0.75f, 1f, 1),
+        "talk" or "s_talk" => new Vector4(1f, 0.82f, 0.4f, 1),
+        "lift" or "search" or "scavenge" => new Vector4(0.45f, 0.75f, 1f, 1),
         _ => WhiteOutline,
     };
 
@@ -51,18 +51,8 @@ sealed partial class PlayerInterface
         var selection = SelectedIds();
         foreach (var c in session.CurrentSnapshot.Characters)
             if (c.Id != hover?.Id && Vector3.DistanceSquared(c.Position, centre) <= radius * radius)
-                list.Add((c.Id, PointerColour(selection.Count > 0 ? QuickPointer(c, selection[0]) : StandingHostile(c) ? "attk" : "arrow")));
+                list.Add((c.Id, PointerColour(QuickOrderFor(c, selection)?.Pointer ?? "arrow")));
         return list;
-    }
-
-    /// <summary><see cref="QuickOrder"/>'s pointer for <paramref name="c"/>, as if it alone were under the cursor.</summary>
-    string QuickPointer(CharacterSnapshot c, CharacterId selected)
-    {
-        if (c.IsPlayer) return c.Body is { Dead: false, NeedsAid: true } ? "med" : !c.CarriedBy.IsNone ? "search" : c.Body is { Dead: true } or { Unconscious: true } ? "lift" : "arrow";
-        if (c.Body is { Dead: true } or { Unconscious: true } || !c.CarriedBy.IsNone) return "search";
-        if (Hostile(c)) return "attk";
-        if (c.IsTrader) return "talk";
-        return session.World.CanTalk(c.Id, selected) ? "talk" : "arrow";
     }
 
     /// <summary>Another faction's hostile character on its feet (not downed, dead or carried): the attack pointer and red outline whatever is selected.</summary>
@@ -107,6 +97,7 @@ sealed partial class PlayerInterface
                     case Picked.Site when SitePointer(mouse) is { } siteMode: chosen = (siteMode, null); break;
                 }
         }
+        else if (QuickOrder(mouse) is { } over0) chosen = (over0.Pointer, over0.Target);   // nothing selected: the pointer only, as the original sets it before it looks for orders to give
         chosen.Target ??= PickWhere(mouse, _ => true);
         // A hostile character shows the attack pointer and the red outline even with nobody selected to send at it.
         if (chosen.Name == "arrow" && chosen.Target is { } over && snapshot.Characters.FirstOrDefault(c => c.Id == over) is { } overChar && StandingHostile(overChar))

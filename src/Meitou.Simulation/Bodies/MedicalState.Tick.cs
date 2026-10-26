@@ -85,6 +85,43 @@ public sealed partial class MedicalState
     /// <summary>Whether first aid with a kit of this type has something to do: <see cref="BandageRoom"/> above <see cref="FirstAidThreshold"/>. A dead patient needs none.</summary>
     public bool NeedsAid(RaceData race, bool robotKit) => !Dead && BandageRoom(race, robotKit) > FirstAidThreshold;
 
+    /// <summary>
+    /// The first aid need score the medic finders and the quick right click read (medical <c>+0xac</c> organic / <c>+0xa8</c> robot, KenshiLib <c>needsFirstAidScoreTotal_fleshy</c> / <c>_robot</c>;
+    /// the aggregates function <c>FUN_140644e60</c>, <b>Verified</b> by decompile; read through <c>scoreFirstAidNeed</c> <c>FUN_140643ca0</c>): -0.1 for a dead patient. Per part
+    /// pct = 100 / M x (flesh + bandage); the organic parts (no robot race, no fitted limb) and the robotic ones are taken apart, each with the minimum over its vital parts and over all of
+    /// them, scaled by 0.01 and set to 1 above 0.999. need = max(0.5 x (1 - worst), 1 - worst vital); the blood term (1 - blood / capacity) x max(0, bleeding - 1.5 x <paramref name="extraBloodLoss"/>) x 10
+    /// replaces it for the race's own kind of kit when larger and above 0.2. So 0 for a patient with everything bandaged.
+    /// </summary>
+    public float FirstAidNeed(RaceData race, bool robotKit, float capacity, float extraBloodLoss)
+    {
+        if (Dead) return -0.1f;
+        float vitalOrganic = 100, anyOrganic = 100, vitalRobot = 100, anyRobot = 100;
+        foreach (var p in parts)
+        {
+            float pct = 100f / p.MaxHp * (p.Flesh + p.Bandage);
+            if (!p.IsRobotic(race))
+            {
+                if (pct < vitalOrganic && p.IsVital) vitalOrganic = pct;
+                if (pct < anyOrganic) anyOrganic = pct;
+            }
+            else
+            {
+                if (pct < vitalRobot && p.IsVital) vitalRobot = pct;
+                if (pct < anyRobot) anyRobot = pct;
+            }
+        }
+        static float Scaled(float v) { float x = (float)((double)v * 0.01); return x > 0.999f ? 1 : x; }
+        float blood = (2f - (Blood / capacity + 1f)) * MathF.Max(0, Bleeding - extraBloodLoss * 1.5f) * 10f;
+        float organic = MathF.Max((2f - (Scaled(anyOrganic) + 1f)) * 0.5f, 2f - (Scaled(vitalOrganic) + 1f));
+        float robot = MathF.Max((2f - (Scaled(anyRobot) + 1f)) * 0.5f, 2f - (Scaled(vitalRobot) + 1f));
+        if (!race.IsRobot && organic < blood && blood > 0.2) organic = blood;
+        if (race.IsRobot && robot < blood && blood > 0.2) robot = blood;
+        return robotKit ? robot : organic;
+    }
+
+    /// <summary>The need above which a patient counts as needing first aid (<c>0.01</c>, the quick right click's and the medic finders' floor, <b>Verified</b>: <c>DAT_141682ad8</c>).</summary>
+    public const float AidNeedFloor = 0.01f;
+
     /// <summary>How much of a kit a treatment uses (<c>FUN_140644250</c>): lerp(<c>medkit drain 99</c>, <c>medkit drain 1</c>, (100 - skill) / 100) x dt, x <c>robot medic speed mult</c> for robot kits. An expert uses a kit 20 times slower than a beginner.</summary>
     public static float KitDrain(GameConstants c, float skill, float dt, bool robotKit)
     {

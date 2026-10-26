@@ -346,7 +346,10 @@ sealed partial class GameHost
     {
         Console.WriteLine($"load      {summary}");
         var missing = loadedSave?.MissingMods ?? [];
-        player.Notice(missing.Count == 0 ? (imported ? "Imported" : "Loaded") : $"Loaded; the save was made with mods not loaded now: {string.Join(", ", missing)}", missing.Count > 0);
+        // The message panel fits a line or two: it gives the count, the message log the names.
+        if (missing.Count == 0) player.Notice(imported ? "Imported" : "Loaded");
+        else player.Notice($"Loaded; the save was made with {missing.Count} mod(s) not loaded now (listed in the messages)", true,
+            $"Loaded; the save was made with mods not loaded now: {string.Join(", ", missing)}");
     }
 
     /// <summary>

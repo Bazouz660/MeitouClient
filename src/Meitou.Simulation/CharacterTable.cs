@@ -198,6 +198,16 @@ public sealed class CharacterCold
     public int FaceSlot { get; set; } = -1;
     /// <summary>The fight steering of a fighter in its footwork (<see cref="Combat.SteerState"/>; null until its first fight). Not saved; hashed while active.</summary>
     public Combat.SteerState? Steer { get; set; }
+    /// <summary>
+    /// The fight steering's speed (the original's steering +0x12c, <c>FUN_1402af1e0</c>): it grows by <see cref="MovementSystem.Acceleration"/> per second up to the top speed while
+    /// the character fights and is never reset, so a fighter that has got going keeps its pace through stops, new paths and the footwork (whose 18 caps the speed used, not this).
+    /// </summary>
+    public float SteerSpeed { get; set; }
+    /// <summary>
+    /// The nav agent's own speed along its path, moved toward the wanted one at <see cref="MovementSystem.PathAcceleration"/>. A turn slows the step it takes, not this, so
+    /// a walker taking a bend does not lose its pace bit by bit; 0 when it stands, lies or is held.
+    /// </summary>
+    public float AgentSpeed { get; set; }
     /// <summary>Seconds the fighter's target has been moving away out of a fight (the <see cref="PursuitSystem"/>'s fleeing check).</summary>
     public float TargetFleeingTime { get; set; }
     /// <summary>Its last path request came back with no way there (set by the <see cref="MovementSystem"/>, taken by the <see cref="PursuitSystem"/>).</summary>
@@ -565,6 +575,8 @@ public sealed class CharacterTable
             if (k.CombatRunning || k.TargetFleeingTime != 0) { hasher.Add(0x43527573); hasher.Add(k.CombatRunning); hasher.Add(k.TargetFleeingTime); }   // only while set, so worlds without fights hash as before
             if (k.Steer is { Active: true } steer) steer.Hash(ref hasher);
             if (k.PathFailures is { Count: > 0 } failures) { hasher.Add(0x50464C53); foreach (var (target, until) in failures) { hasher.Add(target.Slot); hasher.Add(target.Generation); hasher.Add(until); } }
+            if (k.SteerSpeed != 0) { hasher.Add(0x53746572); hasher.Add(k.SteerSpeed); }
+            if (k.AgentSpeed != 0) { hasher.Add(0x41676e74); hasher.Add(k.AgentSpeed); }
             if (k.Animation is { } anim) anim.Hash(ref hasher); else hasher.Add(-1);
             hasher.Add(k.Name.Length);
             // First aid state adds to the hash only while it is set, so worlds that never use it hash as before.

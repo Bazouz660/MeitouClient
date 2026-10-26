@@ -24,6 +24,10 @@ public sealed class OgreScriptResources
     // Group -> bare name -> path. Groups in ordinal order, as Ogre's std::map keeps them.
     readonly SortedDictionary<string, Dictionary<string, string>> groups = new(StringComparer.Ordinal);
 
+    // The same files by exact-case name (Ogre's case-sensitive index, which a lookup tries before the lower-case one: OgreMain ResourceGroupManager::openResource);
+    // a name registered later overwrites an earlier one, as in the other index.
+    readonly Dictionary<string, Dictionary<string, string>> exact = new(StringComparer.Ordinal);
+
     // resources.cfg folder relative to data/ -> group (later sections overwrite earlier ones); used to place mod folders.
     readonly Dictionary<string, string> folderGroups = new(StringComparer.OrdinalIgnoreCase);
     bool recursive;
@@ -125,9 +129,13 @@ public sealed class OgreScriptResources
     {
         var result = new OgreScriptResources { recursive = true, Root = Path.GetFullPath(directory) };
         var index = result.groups["General"] = new(StringComparer.OrdinalIgnoreCase);
+        var exactIndex = result.exact["General"] = new(StringComparer.Ordinal);
         result.Locations.Add(new OgreResourceLocation("General", "FileSystem", Path.GetFullPath(directory)));
         foreach (var file in Files(directory, "*", SearchOption.AllDirectories))
+        {
             index.TryAdd(Path.GetFileName(file), file);
+            exactIndex.TryAdd(Path.GetFileName(file), file);
+        }
         return result;
     }
 
@@ -137,13 +145,18 @@ public sealed class OgreScriptResources
     /// </summary>
     public string? Find(string name, string? group = null)
     {
-        if (group is not null && groups.TryGetValue(group, out var own) && own.TryGetValue(name, out var path))
+        if (group is not null && groups.TryGetValue(group, out var own) && Lookup(group, own, name) is { } path)
             return path;
-        foreach (var index in groups.Values)
-            if (index.TryGetValue(name, out path))
-                return path;
+        foreach (var (g, index) in groups)
+            if (Lookup(g, index, name) is { } found)
+                return found;
         return null;
     }
+
+    /// <summary>One group's index: the exact-case name first, then the case-insensitive one (<b>Verified</b> OgreMain <c>openResource</c>, <c>addToIndex</c>).</summary>
+    string? Lookup(string group, Dictionary<string, string> insensitive, string name) =>
+        exact.TryGetValue(group, out var sensitive) && sensitive.TryGetValue(name, out var hit) ? hit
+        : insensitive.TryGetValue(name, out hit) ? hit : null;
 
     public bool Contains(string name) => Find(name) is not null;
 
@@ -190,8 +203,13 @@ public sealed class OgreScriptResources
         }
         location = location with { Path = existing };
         Locations.Add(location);
+        if (!exact.TryGetValue(location.Group, out var exactIndex))
+            exact[location.Group] = exactIndex = new(StringComparer.Ordinal);
         foreach (var file in Files(location.Path, "*", SearchOption.TopDirectoryOnly))
+        {
             index[Path.GetFileName(file)] = file;
+            exactIndex[Path.GetFileName(file)] = file;
+        }
     }
 
     string GroupOf(string relativeFolder)

@@ -61,7 +61,7 @@ retain source scope; [animation](../animation.md) supplies slider/factor definit
 | Mode | Used for | What happens (`@ 14052d480`, `@ 14052bfa0`) |
 | --- | --- | --- |
 | 1, shared skeleton | ARMOUR (3), CONTAINER (46, backpacks), ATTACHMENT (6, hair/beards), LIMB_REPLACEMENT (111) | The item entity goes on the body's scene node and calls `Entity::shareSkeletonInstanceWith(body)`, with its own animation-state update turned off. |
-| 0, attach to bone | everything else (weapons etc.) | `Entity::attachObjectToBone(body, boneName, entity, orientation, position)`; the node under it gets scale `1 / body node scale` so the item isn't scaled with the character. A bone name the skeleton lacks falls back to the root bone (`@ 1406466a0`). |
+| 0, attach to bone | everything else (weapons etc.) | `Entity::attachObjectToBone(body, boneName, entity, orientation, position)`; the node under it gets scale `1 / body node scale` so the item isn't scaled with the character. The bone's own scale (body-shape bone size, scale keys) doesn't reach it either: **Verified** (OgreMain `TagPoint::updateFromParentImpl`, the same modified rule as `OldBone`) a tag point's derived scale is its own size × own scale, not inherited, and `TagPoint::updateNode` copies only its derived position and orientation to the item's node. A bone name the skeleton lacks falls back to the root bone (`@ 1406466a0`). |
 | 2 | ARMOUR/CONTAINER/ATTACHMENT records with neither `mesh` nor `mesh female` | No visible entity; only a physics attachment (CHARACTER_PHYSICS_ATTACHMENT `bone name`, `file male`/`file female`, `@ 140535f20`). |
 
 ## Open questions

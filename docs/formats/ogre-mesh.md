@@ -31,6 +31,11 @@ exceptions where structure is known. Current render conversion does not define t
 | `[MeshSerializer_v1.8]` | 1,460 | `MeshSerializerImpl_v1_8` |
 | `[MeshSerializer_v1.41]` | 77 | `MeshSerializerImpl_v1_41` (same as 1.8 except pose/morph data) |
 
+Mods also ship `[MeshSerializer_v1.40]` (`MeshSerializerImpl_v1_4`): 2,616 of 13,000 mod meshes in one large
+workshop set, all read by `OgreMeshReader` (**Verified**, whole-set parse). Same as 1.41 except the LOD chunk:
+no strategy-name string before the level count, and each level's value is the squared distance (Ogre takes its
+square root). No 1.40 file in that set has LOD, so that branch follows Ogre's source only.
+
 ### Chunks — layout/example
 
 ```
@@ -77,6 +82,13 @@ GEOMETRY (0x5000): uint vertexCount, then
 | `bone/bone_male.mesh`, `bone_female.mesh` | 28, 35 | `bone_` + face names, plus `bone_horns_curved`, `bone_horns_top_short`, `bone_horns_bottom_short`, `bone_horns_thick`, ... |
 | `stick_person/Stick_person*.mesh` (3) | 9 each | `stick_big_eyes`, `stick_long_antenna`, ... |
 | `human/` limb-stump meshes (6) | 23 or 29 | `0` ... `22` / `0` ... `28` |
+
+### Bone assignments
+
+**Verified** (OgreMain `Mesh::compileBoneAssignments` and `Mesh::buildIndexMap`, decompiled): each vertex data's blend indices go through an
+index map listing the bones its assignments use, ascending by handle. A vertex with no assignment gets weight 1 on blend index 0 (and 0 on the
+other slots), so it follows the lowest used bone fully. Hair is the common case: `FemaleHaircutsSamuraiPony.mesh` leaves 1161 of 2015 vertices
+unassigned and uses only the head bone, so they move with the head. Implemented in `Model.Build`.
 
 ## Open questions
 

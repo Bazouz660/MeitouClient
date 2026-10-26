@@ -45,6 +45,8 @@ chain from largest to smallest. Level *n* is `max(1, w >> n)` × `max(1, h >> n)
 | BC2 | `DXT2`, `DXT3`, DXGI 73–75 | 16 per block |
 | BC3 | `DXT4`, `DXT5`, DXGI 76–78 | 16 per block |
 | BC4 / BC5 | `ATI1`/`BC4U`, `ATI2`/`BC5U`, DXGI 79–80 / 82–83 | 8 / 16 per block |
+| BC7 | DXGI 97–99 (`BC7_TYPELESS` / `UNORM` / `UNORM_SRGB`, DX10 header) | 16 per block |
+| RXGB | FourCC `RXGB` | 16 per block; BC3 layout, red stored in alpha |
 | uncompressed | masks in the pixel format, or DXGI 27–29, 85–93, 115, 61, 65 | `w × h × bitCount / 8`, no row padding |
 
 The mip count is 1 unless `DDSD_MIPMAPCOUNT` is set and the count is non-zero (the same rule as Ogre's
@@ -61,6 +63,10 @@ DDS codec, Observed (source)).
   interpolated values (8 total); otherwise 4 interpolated values plus 0 and 255.
 - Interpolated values are rounded to nearest (the spec allows small hardware differences).
 - BC4 decodes to grey (R = G = B); BC5 to (R, G, 0) with alpha 255.
+- **RXGB**: decoded as BC3, then red = the alpha channel and alpha = 255 (the xGBR normal-map swizzle undone). CPU decode only (no GPU pass-through).
+- **BC7** (`Bc7.cs`, Verified): all 8 modes. GPU: passed through as `CompressedRgbaBptcUnorm` (Vulkan `BC7UnormBlock`, Metal `BC7RGBAUnorm`); sRGB variants are sampled as stored, like BC1–BC3.
+  Verified bit-exact against Pillow 12.1 on 385 workshop BC7 files and 4x4096 random blocks per mode. Partition/anchor tables were extracted from that decoder.
+  Observed: the installed workshop mods hold 385 BC7 and 2 RXGB files; the base game has none.
 
 ## Base game survey (Verified, `DdsReaderTests.Reads_every_base_game_dds`)
 

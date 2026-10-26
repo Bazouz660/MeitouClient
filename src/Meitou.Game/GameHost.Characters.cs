@@ -34,6 +34,22 @@ sealed partial class GameHost
         sentFocus = true;
     }
 
+    /// <summary>
+    /// A layer's clip time between two ticks: from the last tick's time towards this one's, by the shorter way round the clip, so a looping clip wrapping (forwards, or backwards
+    /// for the combat footwork clips whose play speed is negative) keeps moving through its end instead of holding or sweeping the whole clip in one tick. Without the clip's
+    /// length (0) a time that went back is shown as it is.
+    /// </summary>
+    internal static float LayerTime(in Meitou.Simulation.AnimationLayer old, in Meitou.Simulation.AnimationLayer layer, float alpha)
+    {
+        float delta = layer.Time - old.Time, length = layer.Length;
+        if (length > 0) { if (delta > length * 0.5f) delta -= length; else if (delta < -length * 0.5f) delta += length; }
+        else if (delta < 0) return layer.Time;
+        return old.Time + delta * alpha;
+    }
+
+    /// <summary>The facing a character is drawn at: its drawn body's, which follows the facing at a limited rate (<see cref="CharacterSnapshot.DrawYaw"/>).</summary>
+    static float DrawnYaw(CharacterSnapshot c) => float.IsNaN(c.DrawYaw) ? c.Yaw : c.DrawYaw;
+
     void IndexPrevious()
     {
         var previous = session.PreviousSnapshot;
@@ -48,8 +64,23 @@ sealed partial class GameHost
     {
         IndexPrevious();
         var at = previousById.TryGetValue(c.Id, out var before) ? Vector3.Lerp(before.Position, c.Position, session.SimulationAlpha) : c.Position;
-        return at + CarriedOffset(c, c.Yaw);
+        return at + (c.Carry is { } carry ? MixCarry(before?.Carry, carry, session.SimulationAlpha).World(Vector3.Zero, c.Yaw).Position : Vector3.Zero);
     }
+
+    /// <summary>The drawn facing of <paramref name="body"/>'s carrier between the last two snapshots (<paramref name="fallback"/> without it).</summary>
+    float CarrierYaw(WorldSnapshot now, CharacterSnapshot body, float fallback, float alpha)
+    {
+        foreach (var k in now.Characters)
+        {
+            if (k.Id != body.CarriedBy) continue;
+            return previousById.TryGetValue(k.Id, out var before) ? Meitou.Engine.Time.Interp.LerpAngle(DrawnYaw(before), DrawnYaw(k), alpha) : DrawnYaw(k);
+        }
+        return fallback;
+    }
+
+    /// <summary>A carried body's attach between two ticks (the carrier's pose moves on between them): offset and turn interpolated, so the body does not step at the tick rate.</summary>
+    static Meitou.Simulation.Carrying.CarryAttach MixCarry(Meitou.Simulation.Carrying.CarryAttach? before, Meitou.Simulation.Carrying.CarryAttach now, float alpha) =>
+        before is { } b ? new(Vector3.Lerp(b.Offset, now.Offset, alpha), Quaternion.Slerp(b.Rotation, now.Rotation, alpha)) : now;
 
     /// <summary>A carried body has its carrier's position; it is drawn at <see cref="CharacterSnapshot.Carry"/> from it, where its ragdoll is posed too.</summary>
     static Vector3 CarriedOffset(CharacterSnapshot c, float yaw) => c.Carry is { } carry ? carry.World(Vector3.Zero, yaw).Position : Vector3.Zero;
@@ -75,13 +106,13 @@ sealed partial class GameHost
         {
             if (c.Appearance is null) continue;
             var position = c.Position;
-            float yaw = c.Yaw;
+            float yaw = DrawnYaw(c);
             CharacterSnapshot? before = null;
             if (previousById.TryGetValue(c.Id, out var found))
             {
                 before = found;
                 position = Vector3.Lerp(found.Position, c.Position, alpha);
-                yaw = Meitou.Engine.Time.Interp.LerpAngle(found.Yaw, c.Yaw, alpha);
+                yaw = Meitou.Engine.Time.Interp.LerpAngle(DrawnYaw(found), DrawnYaw(c), alpha);
             }
             position += CarriedOffset(c, yaw);
             var poses = new CharacterPose[c.Animations.Count];
@@ -93,7 +124,7 @@ sealed partial class GameHost
                     foreach (var old in before.Animations)
                         if (old.Name == layer.Name)
                         {
-                            if (layer.Time >= old.Time) time = old.Time + (layer.Time - old.Time) * alpha;
+                            time = LayerTime(old, layer, alpha);
                             weight = old.Weight + (layer.Weight - old.Weight) * alpha;
                             break;
                         }
@@ -188,27 +219,32 @@ sealed partial class GameHost
         {
             if (c.Appearance is null || editing is { } edited && c.Id != edited) continue;
             var position = c.Position;
-            float yaw = c.Yaw;
+            float yaw = DrawnYaw(c);
             CharacterSnapshot? before = null;
             if (previousById.TryGetValue(c.Id, out var found))
             {
                 before = found;
                 position = Vector3.Lerp(found.Position, c.Position, alpha);
-                yaw = Meitou.Engine.Time.Interp.LerpAngle(found.Yaw, c.Yaw, alpha);
+                yaw = Meitou.Engine.Time.Interp.LerpAngle(DrawnYaw(found), DrawnYaw(c), alpha);
             }
             Quaternion? rotation = null;
-            if (c.Carry is { } carry) (position, rotation) = carry.World(position, yaw);
+            if (c.Carry is { } carry)
+            {
+                // The body hangs on its carrier's drawn shoulder: the carrier's drawn facing (it turns at a limited rate), not the simulation's.
+                yaw = CarrierYaw(current, c, yaw, alpha);
+                (position, rotation) = MixCarry(before?.Carry, carry, alpha).World(position, yaw);
+            }
             var poses = Slot(ref posesBySlot, c.Id.Slot) is { } kept && kept.Length == c.Animations.Count ? kept : posesBySlot[c.Id.Slot] = new CharacterPose[c.Animations.Count];
             for (int i = 0; i < poses.Length; i++)
             {
                 var layer = c.Animations[i];
                 float time = layer.Time, weight = layer.Weight;
-                // Between ticks the clip time and weight move on from the last snapshot (a wrap of a looping clip just shows the new time).
+                // Between ticks the clip time and weight move on from the last snapshot (a wrap of a looping clip goes through the wrap: LayerTime).
                 if (before is not null)
                     for (int k = 0; k < before.Animations.Count; k++)   // indexed: a foreach over the list's interface boxed an enumerator per layer per frame
                         if (before.Animations[k] is var old && old.Name == layer.Name)
                         {
-                            if (layer.Time >= old.Time) time = old.Time + (layer.Time - old.Time) * alpha;
+                            time = LayerTime(old, layer, alpha);
                             weight = old.Weight + (layer.Weight - old.Weight) * alpha;
                             break;
                         }

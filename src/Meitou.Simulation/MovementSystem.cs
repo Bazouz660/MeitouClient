@@ -28,8 +28,9 @@ namespace Meitou.Simulation;
 /// (<see cref="FollowSpeedFor"/>), capped by its top speed only (engine choice: the original's cap by speed mode is Unknown, and only this lets it settle in its slot). Within
 /// <see cref="DirectDistance"/> it steers straight at the aim, else it takes paths, and for <see cref="FollowPathSeconds"/> after a blocked step (engine choice). Not done: the
 /// original's aim outside a building the follower cannot enter, and its 50-100 hysteresis (practically nil).</item>
-/// <item>Turning (engine choice; the original's rate is Unknown): the heading a path is followed along turns at most <see cref="TurnRate"/>, and the
-/// speed is scaled by the cosine of what is left of the turn (none beyond 90 degrees), so a character turns about on the spot before it runs off.</item>
+/// <item>Turning: a walker out of combat faces the way it moves while its velocity follows the agent's acceleration (the original's model, Verified); its drawn
+/// body turns after the facing at a limited rate (<see cref="AnimationSystem.FollowFacing"/>). Fighters and direct followers keep the heading limit <see cref="TurnRate"/>
+/// and the cosine cut (engine choice).</item>
 /// Queued orders (<see cref="CharacterCold.OrderQueue"/>) and the formation (<see cref="Formation"/>) exist.
 /// </summary>
 public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
@@ -66,6 +67,18 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
             if (!walk.TryStand(from.X + leg.X * (d / length), from.Z + leg.Y * (d / length), y, out y)) return false;
         return true;
     }
+
+    /// <summary>
+    /// How near the last point of a path counts as arrived (<b>Verified</b>, the nav agent's <c>FUN_140144440</c>: 0.01 squared Havok units, 1 unit); the agent brakes into it
+    /// (<see cref="PathAcceleration"/>), so a walker stops on its goal rather than a stride short of it.
+    /// </summary>
+    public const float FinalArrive = 1;
+
+    /// <summary>
+    /// The nav agent's acceleration in units per second squared (<b>Verified</b>, <c>FUN_140147ca0</c>): the RACE <c>pathfind acceleration</c> (Havok units) x 10. A walker's speed moves toward the
+    /// wanted one by at most this x dt, and near its last point it is held to sqrt(2 x this x the distance left), so it stops there.
+    /// </summary>
+    public static float PathAcceleration(CharacterCold cold) => (cold.Race?.PathfindAcceleration ?? 24) * 10;
     /// <summary>The <see cref="CharacterCold.ArriveWithin"/> of a walk to a spot (engine choice: a barman stands at his node behind the counter, not a stride off it).</summary>
     public const float SpotArrive = 2;
     /// <summary>How fast a formation follower's heading eases toward its leader's, per second, while the leader moves (the original's 0.5).</summary>
@@ -532,6 +545,7 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
                 // Lying down (knocked out or dead): no steering, no pushing; the body system has already dropped the orders.
                 n.Velocity = Vector3.Zero;
                 n.Animation = 0;
+                cold.AgentSpeed = 0;
                 continue;
             }
             if (n.Task != (byte)CharacterTask.Attack && cold.StaggeredUntil > world.Tick || cold.GettingUpUntil > world.Tick)
@@ -539,6 +553,7 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
                 // A stagger outside a fight stops the movement while the stumble clip plays (Character::_startStumble), and getting up after a knockout in or out of
                 // one (Task_GetUp); the order's path is kept and resumed.
                 n.Velocity = Vector3.Zero;
+                cold.AgentSpeed = 0;
                 continue;
             }
             if (cold.IsImprisoned || cold.InSomething == Locks.HeldState.Bed && n.Task == (byte)CharacterTask.Sleep)
@@ -547,11 +562,13 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
                 // tick's inputs is already at its spot in Next.
                 n.Velocity = Vector3.Zero;
                 n.Flags = (ushort)(n.Flags & ~(ushort)MoveFlags.AnyPath);
+                cold.AgentSpeed = 0;
                 continue;
             }
             float speed = MathF.Sqrt(p.Velocity.X * p.Velocity.X + p.Velocity.Z * p.Velocity.Z);
             var dir = Vector2.Zero;
-            bool facing = false;
+            bool facing = false, agentWalk = false;
+            var wanted = Vector2.Zero;
             float desired = 0;
             bool finished = false, closing = false;
             int water = WaterStateAt(walk, p.Position, cold);
@@ -566,26 +583,41 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
                 (dir, speed) = vs > 1e-4f ? (v / vs, vs) : (Vector2.Zero, 0f);
                 if (face != Vector2.Zero)
                 {
+                    // The logical heading takes the look-at direction at once (combatMovementUpdate FUN_1402af1e0 writes the unit vector to the target into the movement's
+                    // heading +0xd0 every tick, docs/game/combat.md "Fight steering"); only the drawn body turns at a rate (AnimationSystem.FollowFacing).
                     facing = true;
-                    var heading = Turn(p.Yaw, face, 1, dt).Dir;
-                    n.Yaw = MathF.Atan2(heading.X, heading.Y);
+                    n.Yaw = MathF.Atan2(face.X, face.Y);
                 }
             }
             else if (((MoveFlags)n.Flags & MoveFlags.HasPath) != 0 && n.PathCursor < cold.Path.Length)
             {
-                var waypoint = cold.Path[n.PathCursor];
-                var to = new Vector2(waypoint.X - p.Position.X, waypoint.Z - p.Position.Z);
-                float dist = to.Length();
-                bool last = n.PathCursor == cold.Path.Length - 1;
-                closing = last && cold.ArriveWithin > 0 && dist <= ArriveRadius;
-                if (dist <= (last ? cold.ArriveWithin > 0 ? cold.ArriveWithin : ArriveRadius : ArriveRadius * 0.5f)
-                    && (last || dist <= CornerReach || CanCut(walk, p.Position, cold.Path[n.PathCursor + 1])))
+                // A waypoint reached is passed in the same tick: the walker heads on for the next one rather than standing a tick at each.
+                Vector3 waypoint;
+                Vector2 to;
+                float dist;
+                bool last, reached;
+                do
                 {
-                    n.PathCursor++;
-                    if (cold.BlockedRepaths != 0) cold.BlockedRepaths = 0;
-                    if (last) finished = true;
+                    waypoint = cold.Path[n.PathCursor];
+                    to = new Vector2(waypoint.X - p.Position.X, waypoint.Z - p.Position.Z);
+                    dist = to.Length();
+                    last = n.PathCursor == cold.Path.Length - 1;
+                    closing = last && cold.ArriveWithin > 0 && dist <= ArriveRadius;
+                    // The last point taken by another body: the walker stops short instead of pushing in (the original's agent, FUN_1401476f0).
+                    bool occupied = last && cold.ArriveWithin <= 0 && dist <= ArriveRadius && GoalOccupied(world, i, waypoint);
+                    reached = occupied || dist <= (last ? cold.ArriveWithin > 0 ? cold.ArriveWithin : FinalArrive : ArriveRadius * 0.5f)
+                        && (last || dist <= CornerReach || CanCut(walk, p.Position, cold.Path[n.PathCursor + 1]))
+                        // A corner the agent's velocity has carried past (it turns at its acceleration, not at once) is behind it, not circled.
+                        || !last && dist <= ArriveRadius && to.X * p.Velocity.X + to.Y * p.Velocity.Z < 0;
+                    if (reached)
+                    {
+                        n.PathCursor++;
+                        if (cold.BlockedRepaths != 0) cold.BlockedRepaths = 0;
+                        if (last) finished = true;
+                    }
                 }
-                else
+                while (reached && !last);
+                if (!reached)
                 {
                     dir = to / dist;
                     byte mode = cold.ModeOverride ?? n.Mode;
@@ -599,6 +631,9 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
                     if (cold.InCombat && !cold.CombatRunning && n.Task == (byte)CharacterTask.Attack) desired = MathF.Min(desired, Combat.CombatTuning.FootworkSpeed);
                     if (mode == SpeedMode.Group && cold.SpeedOverride <= 0 && n.Task != (byte)CharacterTask.Follow) desired = MathF.Min(desired, SlowestOfSquad(world, cold));
                     if ((cold.Orders & CharacterOrders.Sneak) != 0 && cold.SpeedOverride <= 0) desired = MathF.Min(desired, Orders.SneakSpeed(desired, Orders.Stealth(cold)));
+                    if (cold.Medical is { Crawling: true } && cold.CarriedBy.IsNone) desired = Bodies.Speed.Crippled;   // the final override, after water and sneaking
+                    // Braking into the last point, never past it.
+                    if (last) desired = MathF.Min(desired, MathF.Min(MathF.Sqrt(2 * PathAcceleration(cold) * dist), dist / dt));
                 }
                 // On the provisional part of a long route: ask again (the zones ahead may have loaded), following this one until the answer comes.
                 if (n.PathCursor >= cold.PathExact) Reroute(world, ref n, cold);
@@ -618,15 +653,18 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
                     dir = gap / dist;
                     desired = MathF.Min(MathF.Min(cold.FollowSpeed, top), dist / dt);
                     if ((cold.Orders & CharacterOrders.Sneak) != 0 && cold.SpeedOverride <= 0) desired = MathF.Min(desired, Orders.SneakSpeed(desired, Orders.Stealth(cold)));
+                    if (cold.Medical is { Crawling: true }) desired = MathF.Min(desired, Bodies.Speed.Crippled);
                 }
             }
 
+            if (!steering && n.Task == (byte)CharacterTask.Attack && Fights is not null && Fights.SwingAim(world, i, out var swingAim)) n.Yaw = MathF.Atan2(swingAim.X, swingAim.Y);   // a swing turns at once to its target (FUN_140666400, FUN_14060a590)
             if (steering) { }   // its velocity is the steering's
             else if (finished)
             {
                 n.Flags = (ushort)(n.Flags & ~(ushort)MoveFlags.HasPath);
                 n.PathCursor = 0;
                 speed = 0;
+                cold.AgentSpeed = 0;
                 // The end of an old path while the new one is on its way (an order given on the move) leaves the task to the new path.
                 bool replaced = ((MoveFlags)n.Flags & (MoveFlags.NeedPath | MoveFlags.Pending)) != 0;
                 if (!replaced && n.Task == (byte)CharacterTask.GoTo)
@@ -649,14 +687,43 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
             }
             else
             {
-                // A path is followed at the top speed at once (the nav agent sets its velocity to top speed x direction); the 15 / s ramp is the combat steering's.
-                speed = cold.InCombat && desired > speed ? MathF.Min(speed + Acceleration * dt, desired) : desired;
-                if (dir != Vector2.Zero && FaceOf(prev, n, cold) is { } face)
+                // A path is followed by the nav agent, whose speed moves toward the wanted one at its race's acceleration (PathAcceleration); a fighter goes at its
+                // steering speed, which ramps by 15 / s up to its top speed and is kept between ticks (CharacterCold.SteerSpeed), not restarted when a path ends.
+                if (cold.InCombat)
+                {
+                    cold.SteerSpeed = MathF.Min(cold.SteerSpeed + Acceleration * dt, MathF.Max(n.MaxSpeed, desired));
+                    speed = cold.AgentSpeed = MathF.Min(desired, cold.SteerSpeed);
+                }
+                else if (n.Task == (byte)CharacterTask.Follow && ((MoveFlags)n.Flags & MoveFlags.AnyPath) == 0) speed = cold.AgentSpeed = desired;   // a follower near its slot steers straight (mode 2)
+                else
+                {
+                    // The agent's velocity vector moves toward the wanted one (path direction x wanted speed) by at most acceleration x dt (FUN_140147ca0), so a
+                    // turn costs the speed the change of direction takes; the facing is the path direction, not the velocity's.
+                    var velocity = new Vector2(p.Velocity.X, p.Velocity.Z);
+                    var gap = dir * desired - velocity;
+                    float change = gap.Length(), most = PathAcceleration(cold) * dt;
+                    velocity = change <= most ? dir * desired : velocity + gap * (most / change);
+                    speed = cold.AgentSpeed = velocity.Length();
+                    wanted = dir;
+                    agentWalk = true;
+                    dir = speed > 1e-4f ? velocity / speed : Vector2.Zero;
+                }
+                if (agentWalk)
+                {
+                    // The facing is the way the agent moves (its velocity), at once: the body faces its motion through a turn instead of sliding sideways along the arc;
+                    // the drawn body follows the facing at its own rate (AnimationSystem.FollowFacing). Standing up to speed, it faces the path direction.
+                    var along = dir != Vector2.Zero ? dir : wanted;
+                    if (along != Vector2.Zero)
+                    {
+                        facing = true;
+                        n.Yaw = MathF.Atan2(along.X, along.Y);
+                    }
+                }
+                else if (dir != Vector2.Zero && FaceOf(prev, n, cold) is { } face)
                 {
                     // In its footwork a fighter walks its path whichever way it lies and turns to face its target (the side steps, docs/animation.md "Side steps").
                     facing = true;
-                    var heading = Turn(p.Yaw, face, 1, dt).Dir;
-                    n.Yaw = MathF.Atan2(heading.X, heading.Y);
+                    n.Yaw = MathF.Atan2(face.X, face.Y);
                 }
                 else if (dir != Vector2.Zero)
                 {
@@ -833,6 +900,28 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
     }
 
     /// <summary>Sitting (resting, on a chair or the floor, or on a seat it uses) with no path to follow: the original does not push sitters (Observed in play).</summary>
+    /// <summary>Whether another standing character's footprint covers <paramref name="goal"/> (last tick's positions).</summary>
+    static bool GoalOccupied(World world, int self, Vector3 goal)
+    {
+        var state = new OccupiedState { Table = world.Characters, Self = self, Goal = new Vector2(goal.X, goal.Z) };
+        world.Grid.Query(goal.X, goal.Z, 30, ref state, static (int other, ref OccupiedState s) =>
+        {
+            if (s.Found || other == s.Self || !s.Table.Previous[other].Alive || s.Table.Cold(other) is not { CarriedBy.IsNone: true } c) return;
+            var at = s.Table.Previous[other].Position;
+            float r = Combat.CombatTuning.Footprint(c);
+            if (Vector2.DistanceSquared(new Vector2(at.X, at.Z), s.Goal) < r * r) s.Found = true;
+        });
+        return state.Found;
+    }
+
+    struct OccupiedState
+    {
+        public CharacterTable Table;
+        public int Self;
+        public Vector2 Goal;
+        public bool Found;
+    }
+
     static bool Seated(in CharacterHot h, CharacterCold c) => ((MoveFlags)h.Flags & MoveFlags.HasPath) == 0
         && (h.Task == (byte)CharacterTask.Rest || h.Task == (byte)CharacterTask.Operate && c.Implicit == Meitou.Data.Gameplay.Ai.TaskType.SIT_AROUND);
 
@@ -849,11 +938,11 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
         return d.LengthSquared() > 1e-4f ? Vector2.Normalize(d) : null;
     }
 
-    public static (Vector2 Dir, float Speed) Turn(float yaw, Vector2 wanted, float speed, float dt)
+    public static (Vector2 Dir, float Speed) Turn(float yaw, Vector2 wanted, float speed, float dt, float rate = TurnRate)
     {
         float target = MathF.Atan2(wanted.X, wanted.Y);
         float delta = MathF.IEEERemainder(target - yaw, MathF.Tau);
-        float max = TurnRate * dt;
+        float max = rate * dt;
         float heading = MathF.Abs(delta) <= max ? target : yaw + MathF.CopySign(max, delta);
         float left = MathF.IEEERemainder(target - heading, MathF.Tau);
         return (new Vector2(MathF.Sin(heading), MathF.Cos(heading)), speed * MathF.Max(0, MathF.Cos(left)));

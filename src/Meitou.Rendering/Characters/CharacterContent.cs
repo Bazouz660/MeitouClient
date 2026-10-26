@@ -600,7 +600,7 @@ internal sealed class CharacterContent : IDisposable
         string? skeletonName;
         try { skeletonName = BodySkeletonName(bodyPath); }
         catch (Exception e) when (e is OgreFormatException or IOException or EndOfStreamException or InvalidDataException) { Messages.Add($"{c.BodyMesh}: {e.Message}"); return null; }
-        var rig = skeletonName is null ? null : Rig(skeletonName);
+        var rig = skeletonName is null ? null : Rigs.Rig(skeletonName, c);   // with the animation files it links (docs/animation.md)
         if (rig is null) { Messages.Add($"{c.BodyMesh} has no skeleton ({skeletonName})"); return null; }
         var body = Mesh(bodyPath, rig.BoneCount, shadowLevels: true, limbs: LimbHideOf(c, rig), close: close);
         if (body is null) return null;

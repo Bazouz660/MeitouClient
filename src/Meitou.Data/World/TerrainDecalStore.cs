@@ -168,8 +168,6 @@ public sealed class TerrainDecalStore
             var (w, h) = Texels(d);
             int half = (short)(int)(w * token.Size * 10);
             if (half == d.HalfWidth && (short)(int)(h * token.Size * 10) == d.HalfHeight) return;
-            // Meitou: grown in steps of a 25th of its size (and at the cap), not at every texel, so a battle's pools do not redraw their cells every tick.
-            if (token.Size < PoolMax && Math.Abs(half - d.HalfWidth) * 25 < d.HalfWidth) return;
             Regrow(d, token.At, token.Size);
             return;
         }
@@ -258,7 +256,7 @@ public sealed class TerrainDecalStore
 
     /// <summary>
     /// A pool <paramref name="d"/> (a cell's copy, centred on <paramref name="at"/>) grown to <paramref name="size"/>: each cell's copy is replaced where it lies in
-    /// the list, and the cells its larger corners now reach get one. A pool only grows, so no cell loses it, and the grown copy is drawn over the old one (<see cref="Appended"/>).
+    /// the list, and the cells its larger corners now reach get one. A pool only grows, so no cell loses it, and a cell that had it is drawn again (<see cref="CellRewrite"/>).
     /// </summary>
     void Regrow(TerrainDecal d, Vector2 at, float size)
     {
@@ -281,9 +279,14 @@ public sealed class TerrainDecalStore
             // The first pool at the place is the copy when it is this one (the same texture and turn); otherwise the list is searched.
             int at0 = cell.PoolAt(lx, lz);
             if (at0 >= 0 && !Same(cell.Decals[at0], old)) at0 = cell.Decals.FindIndex(x => x.Type == old.Type && Same(x, old) && x.LocalX == lx && x.LocalZ == lz);
-            if (at0 >= 0) cell.Decals[at0] = copy = copy with { Life = cell.Decals[at0].Life };
-            else { cell.Add(copy); Count++; }
-            Append(key, copy);
+            if (at0 >= 0)
+            {
+                // Meitou: a grown pool's cell is drawn again from its list (one pass a frame however often the pool grew), not with the larger copy over the old one: that stacked
+                // the pool's translucent edge a hundred times, hardening it, and showed a pop when the cell was redrawn later.
+                cell.Decals[at0] = copy with { Life = cell.Decals[at0].Life };
+                Rewrite(key);
+            }
+            else { cell.Add(copy); Count++; Append(key, copy); }
         }
 
         static bool Same(in TerrainDecal x, in TerrainDecal old) => x.Variant == old.Variant && x.Rotation == old.Rotation;

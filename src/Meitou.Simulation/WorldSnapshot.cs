@@ -15,12 +15,12 @@ public readonly record struct AnimationLayer(string Name, float Time, float Weig
 public enum CareKind { None, Treating, Resting }
 
 /// <summary>
-/// The health the interface shows: blood (0..1 of capacity), the worst body part (fraction of its maximum HP), hunger (3 fed .. 0 starving) and whether it is out cold or dead; for the player's
-/// characters also whether first aid has anything to bandage (<see cref="NeedsAid"/>) or a limb to splint (<see cref="NeedsSplint"/>, the menu's test with skill 50), what the character is
+/// The health the interface shows: blood (0..1 of capacity), the worst body part (fraction of its maximum HP), hunger (3 fed .. 0 starving) and whether it is out cold or dead; for every
+/// character also whether first aid has anything to bandage (<see cref="NeedsAid"/>) or a limb to splint (<see cref="NeedsSplint"/>, the menu's test with skill 50), what the character is
 /// doing (<see cref="Care"/>), its medic job switch and what is left of a knockout (<see cref="KoTimer"/>, the header's "Unconscious (N)").
 /// </summary>
 public readonly record struct BodyStatus(float Blood, float WorstPart, float Hunger, bool Unconscious, bool Dead, bool NeedsAid = false, CareKind Care = CareKind.None, bool MedicJob = false, bool RescueJob = false,
-    bool NeedsSplint = false, float KoTimer = 0, bool PlayingDead = false, bool StayingLow = false);
+    bool NeedsSplint = false, float KoTimer = 0, bool PlayingDead = false, bool StayingLow = false, bool NeedsRobotAid = false);
 public sealed record HealthPartView(string Id, string Name, float Flesh, float Stun, float Bandage, float Rig, float Maximum, bool Robotic)
 {
     /// <summary>The part's LOCATIONAL_DAMAGE <c>death</c> flag (head and torso) and its type (leg, arm...): the medical row's tooltip text (docs/game/ui-screens.md "Tooltips").</summary>
@@ -132,11 +132,15 @@ public sealed record InventoryView(int Width, int Height, int BagWidth, int BagH
 {
     public float? CarryCapacity { get; init; }
     public float TotalWeight { get; init; }
+    /// <summary>The holder's encumbrance factor (<see cref="Bodies.Encumbrance.Factor"/>, 1 unburdened): the window's burden word, for a looted body too (which has no HUD view).</summary>
+    public float Burden { get; init; } = 1;
 }
 
 /// <summary>A character as the renderer needs it after one tick; <c>Appearance</c> is null for one that is simulated but has nothing to draw (a failed build, a world without looks): the host shows a marker (docs/simulation.md, "Threading", step 8).</summary>
 public sealed record CharacterSnapshot(CharacterId Id, CharacterAppearance? Appearance, Vector3 Position, float Yaw, IReadOnlyList<AnimationLayer> Animations)
 {
+    /// <summary>The facing the body is drawn at (<see cref="CharacterAnimation.DrawYaw"/>: it follows <see cref="Yaw"/> at a limited rate); NaN when the character has none yet (draw <see cref="Yaw"/>).</summary>
+    public float DrawYaw { get; init; } = float.NaN;
     /// <summary>The owner faction (a position in the world's faction list; -1 none), for debug markers.</summary>
     public int Faction { get; init; } = -1;
     /// <summary>A weapon is in hand (<c>CharacterCold.DrawnWeapon</c>): the renderer shows the drawn weapon meshes instead of the sheathed one.</summary>
@@ -212,6 +216,10 @@ public sealed record CharacterSnapshot(CharacterId Id, CharacterAppearance? Appe
     public bool CombatMode { get; init; }
     /// <summary>An NPC whose fight's target is one of the player's characters, whatever its faction thinks of the player's (a robbery a dialogue line started, a retaliation).</summary>
     public bool FightsPlayer { get; init; }
+    /// <summary>Looting its body is no theft in the pointer's eyes (<c>search</c> instead of <c>scavenge</c>): it is a bandit or a slave (NPC class 8 / 6), or its faction is not real (<c>FUN_1407fb410</c>, docs/game/ui-input.md "Quick right click").</summary>
+    public bool NoLootGuilt { get; init; }
+    /// <summary>Its squad is a campaign force of its faction (<c>FactionWarMgr</c> has its platoon, <c>FUN_140796240</c>): a raiding or war party member the quick right click can still talk to.</summary>
+    public bool WarParty { get; init; }
     /// <summary>Wears locked armour (shackles, <see cref="Items.ItemInstance.IsLocked"/>): the portrait's <c>Slave</c> overlay.</summary>
     public bool Shackled { get; init; }
     /// <summary>Its worn shackles are locked (<see cref="Locks.LockSystem.WornShackles"/>): the context menu offers Unlock Shackles, Use Tools and Use Strength.</summary>
@@ -275,7 +283,8 @@ public readonly record struct PrisonView(bool Locked, float Sentence, double Hou
 }
 
 /// <summary>A slave's state (1 slave, 2 escaped slave; <c>SlaveStateEnum</c>) and the name of the faction that owns it ("someone" is the caller's word for none).</summary>
-public readonly record struct SlaveView(int State, string Owner);
+/// <summary>The slave state of a character (1 slave, 2 escaped), its owner faction's name and its "looks like a slave" level in 0..1 (<see cref="Kidnap.CaptiveSystem.LooksLikeSlaveLevel"/>).</summary>
+public readonly record struct SlaveView(int State, string Owner, float Looks = 0);
 
 /// <summary>
 /// A turret building being manned (<see cref="CharacterSnapshot.Turret"/>): its key (a <see cref="Meitou.Data.World.TownBuilding"/> key, or a player site's id) and BUILDING record, where it stands and

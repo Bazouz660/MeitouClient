@@ -450,14 +450,16 @@ Meitou's reading: [simulation, slave trading](../simulation.md#arrest-and-jail).
 
 - **The stolen predicate** `FUN_14079e550(item, 1)`: it reads two owner handles (`+0x140`, `+0x160`), a flag byte, and a type
   check against the type list `{2, 3, 4, 0x2e, 0x56, 0x66, 0x6b, 0x6f}`. What exactly makes an item "stolen" (the thief, the
-  owning faction vs. the holder's, expiry) and the second halving condition in `FUN_140793490` are not decoded. The `0.5`
-  stolen factor in `T` is therefore only roughly defined. *Partly resolved 2026-10-13* ([carry-loot.md 4.4](carry-loot.md#stolen-ownership)):
+  owning faction vs. the holder's, expiry) is not decoded. The `0.5`
+  stolen factor in `T` is therefore only roughly defined (the fence chance's own halvings are in [Fencing, stealing and smuggling](#fencing-stealing-and-smuggling)). *Partly resolved 2026-10-13* ([carry-loot.md 4.4](carry-loot.md#stolen-ownership)):
   `+0x140` is the owner the item was taken from, `+0x160` its current holder (a backpack's owner for a backpack); stolen = the from-owner is set,
   differs from the holder and is of another faction, unless the holder's faction is lawless; the type list is the lootable item kinds. Expiry and
   the halving condition remain open.
-- **The meaning of `Weapon/Armour+0x208`** (inferred as "crafted by the player" from the editor text of the two player rows; not shown by a writer).
-  `Armour+0x1e8` is the armour's `uniform` faction (**Observed**: `Gear::vfunc_76` reads the item state's `uniform` string into it; the
-  recruit join clears it), so a uniform sells at 0.3x. Meitou does not track uniforms yet.
+- **Uniform and crafter** (`Armour::vfunc_81` `FUN_1408a9c20`, `Weapon::vfunc_81` `FUN_1408a52f0`, **Verified**): `+0x1e8` is the faction a uniform piece belongs to (the item state's
+  `uniform` key, a FACTION id resolved through the faction manager; an unresolved id leaves it null), `+0x208` the length of the `crafter` string at `+0x1f8` (the item writer `FUN_140761c00` writes
+  `crafter` only when it is set). A uniform costs and sells at 0.3x (both directions, after the sale factor); a crafted piece takes `loot price mult player armour` / `player weapons` instead of GEAR
+  when sold. In the siwa-test save 3250 of 14448 item states (the commonest are armour) carry a `uniform` that resolves to a faction record (e.g. `defaultEmpireFactionSID`, the Hive, the Tech Hunters). Meitou: `ItemInstance.Uniform`
+  (read and written with the save key, `Market.UnitPrice`); a recruit join clearing it is **Observed** only (earlier reading, not re-checked).
 - **Whether the town being set up is already in the global town list `DAT_142134100` when its own market factors are rolled.**
   If it were, its distance to itself is 0, the spread `w` is 0 and its own `p` is 1.0, which would force every factor to 1.0 and
   make the feature inert; so either the town is added after setup or something not yet seen intervenes. The order of the list
@@ -508,6 +510,35 @@ Meitou's reading: [simulation, slave trading](../simulation.md#arrest-and-jail).
 - Restock: `+0x58 == 0`
 - Pending crimes, witnesses and the cage sentence: `+0x34 == 8`
 - Slaves, prisoners, animals: `buyValue = clamp( trunc( S + attack + D * k ) * RACE buy value, 1000, 20000 )`
+
+## Fencing, stealing and smuggling
+
+Character virtual slots (CharacterAnimal/CharacterHuman vtables, **Verified** by slot lookup): `0x190` fence attempt `FUN_140793770`, `0x290` loot permission `FUN_140793940`
+([carry-loot](carry-loot.md#theft-and-witnesses)), `0x298` steal attempt `FUN_140794810`, `0x2a8` smuggling check `FUN_140794e80`. Constants read from the exe: 1.0, 1.1, 0.4, 1.25, 0.5, 0.3, 2.25, 0.75, 1.5, 2.0, 0.98, 20, 80, 200.
+Roll convention: a `rand()` draw in [0, 1) against the chance p; the thief gets away when p >= the draw, so p >= 1 never fails.
+
+- **Fence chance** (`FUN_140793490(trader, item, thief)`, **Observed**, the early-outs read from the decompile). 1.0 (never caught) when the trader's faction is the player's, the item has no
+  owner, or the item's owner is the thief. When the owner is a character of another faction than the trader's: 1.0 when the trader's squad buys stolen goods (`+0xec`, via `FUN_140792830`, false for goods
+  stolen from that squad itself) or the owner's faction `fundamental type` is 8 (Bandit) or 9 (Adventurer); 1.1 when the trader's faction is not allied to the owner's (`FUN_1406b2630`) and the owner's
+  town is not the trader's town. Otherwise p = lerp(thievery/100, 0.4, 1.25), x0.5 when the owner's faction is the trader's, x0.5 again when the owner is the trader himself (Meitou keeps only
+  the item's faction: it lacks the second halving and reads "the owner's town is the trader's" as false, `TradeSystem.FenceOdds`).
+- **Fence attempt** (`FUN_140793770`, **Observed**): caught when p < the draw: dialogue event 8 on the trader and a pending Fencing (0xd) against the trader's faction with timer 30 (`FUN_140852e10`).
+  Thievery XP whenever p < 0.98 (and the trader is not imprisoned): the generic entry (dt 1) with 5 x 2 when the fence works, 20 x 2 when caught (`CrimeSystem.FenceXp`). Meitou: `TradeSystem.Caught`.
+- **Steal chance** (`FUN_1407944d0(thief, victim, item)`, **Observed**): 1.0 for a dead or knocked-out thief (`+0x5b9`, `+0x5bc`) or one in posture 3. A victim that is a character: p = 1.1 x thievery/100. A victim that is a
+  building's container: the watcher is the nearest conscious member (not dead, `+0x5bc` clear, posture below 3, on the thief's floor first) of the building owner's platoon (`FUN_140792ce0`; none: 1.0);
+  t = lerp(min(1, distance / 200), 0.5, 1) with the distance from the watcher to the building, x0.5 and an early 1.0 under a test of the watcher's and the container's building and of the
+  building's doors (`FUN_1405499a0`: no doors, or any door open) whose direction is **Unknown**; p = lerp(thievery/100 x t, 0.3, 2.25); a watcher that is dead, down, carried or imprisoned gives 1.0. A character victim: x0.75 for
+  an item whose byte `+0x129` is set and x0.75 again when its slot `0x2e0` answers true; a watcher other than the victim: x2 when in posture 3 (the finder never returns one), x1.5 on another floor.
+- **Steal attempt** (`FUN_140794810`, **Observed**): caught when p < the draw, which stops the move ("Got caught stealing.", code 8 of `FUN_14070f7e0`; the item stays). A caught thief wakes a victim lying down (posture 1 or 3), the
+  watcher fires event 8 (event 0x2f instead, and no crime, on a coin flip when the watcher's status is 1), a pending Theft (3) against the watcher's faction with timer 30 is set (`FUN_140852e10`) and the squad tags the thief
+  (kind 4). Thievery XP: 20 x 2 for a success and 80 x 2 for a catch, only when p < 0.98 and the thief's own pending timer (`+0x180`) is below 10 (so a catch gives none). **Not built** (Meitou has the pending crime only, below).
+- **Where a Theft is set** (`FUN_140852c80`, before the roll): taking from a container of another faction's building against the container owner's faction, code 3 on a right-click take
+  (`FUN_140713d20`, `FUN_140712490`; a Looting 10 when the owner is down and the loot permission fails) and code 10 on a drag out of the window (`FUN_140715560`, which sets 3 only for a downed character); and picking an item up from the ground (`FUN_14034f340`, **Observed**) while standing inside a building when the item's owner (a character, `ownedby`) is of another, real faction: against the faction of the
+  building the picker stands in, no roll, thievery XP 20 (generic entry with amount 20) once the item is in the bag. Meitou: the steal roll (`CrimeSystem.Steal`) and `StolePickUp`.
+- **Smuggling check** (`FUN_140794e80(trader, out, item)`, **Observed**; Meitou builds the refusal and event 8, `TradeSystem.Smuggling`, not the smuggler's answer or the UI text): for a trader of a non-player faction with a town, the item is illegal when the culture of the **town's faction**
+  (`Faction+0x90`, not the town's own culture) lists it. A trader that does not buy illegal goods (`+0xed` clear) refuses an illegal item: result 0, shown as "Attempted smuggling!" (code 0xf), with event 8 unless the item is the trader's own
+  stolen property; a legal item passes (1). A smuggler (`+0xed` set) answers 2 for a legal item and 1 for an illegal one (the answer 2 is read by no caller seen; "Smugglers only buy illegal goods." is code 0xe).
+  "What is that a uniform? I don't want that!" (code 0x10) is posted by a function not found (**Unknown**).
 
 ## Buyback during an open trade
 

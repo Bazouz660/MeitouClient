@@ -245,8 +245,12 @@ data probe): every root used for events 2, 3, 13, 18 and 66, every campaign anno
 **Sight** (`FUN_140859680`, **Observed**, partly read): event 3 fires for a seen character outside the player's faction too (an NPC of
 another squad); 66 and 67 need a player-faction target.
 
-**Timing** (`FUN_140685090`): a bubble lasts 2.0 + 0.12 × text length in dt units (presumably seconds); DA 12 sets a second timer
-(val0). Both run only while unpaused; the next line starts when both are below 0.
+**Timing** (`FUN_140685090`, `FUN_14067fd80`): showing a bubble sets timer `+0x230` = 2.0 + 0.12 × text length (both constants **Verified**,
+read from the exe); DA 12 sets the second timer `+0x234` (val0). Both lose the frame dt each update, only while the pause flag
+`DAT_1421349c9` is clear, and the next line starts once both are below 0 (**Verified**; the dt unit is **Unknown**). Updates do nothing
+while a state test on the owner (`FUN_1407d1440`) holds, unless the event is in the `DAT_141eeaecc` mask (**Observed**; Meitou drops a
+bubble whose speaker is not awake). The `repetition limit` check passes when the cooldown is 0, the line was never used (stored time
+−99.0, **Verified** constant) or now − last use ≥ the cooldown (`FUN_140678f30`).
 
 **End** (`FUN_140674830`): bubble and window closed, the per-event counter +1 with its time (read by DC 13), the event's last target
 stored, the squad blackboard notified for player conversations.

@@ -54,6 +54,8 @@ public sealed class ItemInstance
     public int Level { get; set; }
     /// <summary>The name of the smith who crafted the item at a bench (the save key <c>crafter</c>; empty: not crafted by the player's smith). The tooltip prints it with the player faction's name.</summary>
     public string Crafter { get; set; } = "";
+    /// <summary>The faction whose uniform the piece is (the save key <c>uniform</c>, the faction record id; empty: none): armour with one sells and buys at 0.3 of its price (<c>Armour+0x1e8</c>, <c>FUN_1408a9c20</c>, <b>Verified</b>).</summary>
+    public string Uniform { get; set; } = "";
     public int ItemFunction { get; set; }
     /// <summary>Quality 0 to 100 (clothing from the character's armour grade).</summary>
     public float Quality { get; set; }
@@ -110,7 +112,7 @@ public sealed class ItemInstance
     /// <summary>A copy of this item with another quantity (a stack split off; never used for a backpack, whose contents are not copied).</summary>
     public ItemInstance WithQuantity(int quantity) => new()
     {
-        Record = Record, Name = Name, Type = Type, EquipmentSection = EquipmentSection, IsLocked = IsLocked, WornOnlyBy = WornOnlyBy, WornNeverBy = WornNeverBy, MaterialId = MaterialId, CompanyId = CompanyId, Section = Section, X = X, Y = Y, Quantity = quantity, Level = Level, Crafter = Crafter,
+        Record = Record, Name = Name, Type = Type, EquipmentSection = EquipmentSection, IsLocked = IsLocked, WornOnlyBy = WornOnlyBy, WornNeverBy = WornNeverBy, MaterialId = MaterialId, CompanyId = CompanyId, Section = Section, X = X, Y = Y, Quantity = quantity, Level = Level, Crafter = Crafter, Uniform = Uniform,
         ItemFunction = ItemFunction, Quality = Quality, Charges = Charges, MaxCharges = MaxCharges, Width = Width, Height = Height, UnitWeight = baseWeight, DynamicWeight = DynamicWeight, StackLimit = StackLimit,
         IsFood = IsFood, ContentsFactor = ContentsFactor, StolenFrom = StolenFrom, Death = Death, Buyback = Buyback?.Take(quantity),
     };

@@ -359,8 +359,13 @@ stump; [held item](#items-and-eating), rules in [character-stats.md](game/charac
 Ground items: `World.GroundItems`, loose items: the save's (zone `1-itemlist`, read and written by `Saving/GroundItemSave`,
 [save.md](formats/save.md#zone-files)) and the severed limbs combat drops; at most `GroundItems.Limit` dropped in play (default 1024, up to 4096 by the Advanced setting "Dropped items kept"; the oldest of those goes; read ones
 are not capped); published with a revision. A dropped limb lies 5 units to its side of the character, an item dropped from the inventory 3 units ahead, both at a random
-yaw (the original drops them and lets physics settle them); the host lays a dropped item flat (`GameHost.LaidFlat`, engine choice: its mesh bounds' thinnest axis up, lowest corner on the
-ground, so a weapon, modelled along +Y, lies on its blade's flat); a read item is drawn by its saved position and whole rotation. The host adds each as a runtime world-object
+yaw and on the ground under that spot (`World.Walkability.GroundHeight`, not the character's own height). The original (`FUN_14064edc0`, **Verified** by decompile) makes the RACE `severed limbs`
+item of the cut slot (`SeveredLimbItem`, an `Item` subclass) at the character's `bone name 2` bone of that part: position and orientation from the bone, in-world mode set
+through the item's vfunc +0x228 (`FUN_14075d9b0`: stores them at `+0x48` / `+0xb0`, then `FUN_14075db20`, `FUN_14075e5d0`, which registers its physics body per the item's `persistent` key 1 to 3,
+**Observed**), and a physics body settles it (Havok; its collision shape and the fall are not read). Engine choice: no fall; the host lays a dropped item as it would rest
+(`GameHost.LaidFlat`): its mesh bounds' thinnest axis up (the severed limb meshes are plain static meshes lying along +X, bounds read equal to their vertices, **Verified** on every `severed limbs` mesh of the install's
+merged data), its yaw, tilted to the terrain slope under it (the heights round the drop point over the item's own size; not on a building's floor, where the simulation's ground is used flat), and set down so that none of a
+5x5x5 lattice of points of its bounds is below the rendered terrain under it. A weapon, modelled along +Y, lies on the flat of its blade. Read items are drawn by their saved position and whole rotation. The host adds each as a runtime world-object
 placement of its record's `ground mesh` / `mesh` (`GameHost.GroundItems`, `WorldObjectLayout.Item`). A right click on one (within 24 px of its
 projected middle, pointer `pick_item`) gives `PickUpItemOrder`: the nearest able selected character walks to it and, within 15 units
 (`PlayerSystem.PickUpReach`), puts it in its inventory (`Inventory.Add`), or when it does not fit, wears it in its free equipment slot (`InventoryCommands.TryEquip`); what does not fit
@@ -514,6 +519,7 @@ when the host passes `CharacterRigs` (the game does; tests and goldens do not). 
 - **Parts**: `Whole` when incapacitated, `CarryMode` when carried, a human's downed limbs by their
   LOCATIONAL_DAMAGE `collapse part` (not robotic ones). Bodies outside the mask are kinematic, driven
   by velocity to the animated pose. Animation holds its layers while the whole body is a ragdoll.
+- **Carried bodies**: `CarryMode` simulates the forearms and the head only, as the original does ([ragdolls](game/ragdolls.md#bodies-kinematic-or-simulated)); everything else follows the `carry me` clip. Ragdoll bodies turn at most 7 rad/s and the head's neck joint is sprung ([ragdolls](game/ragdolls.md#limits-of-motion-and-joint-springs)).
 - **Published pose**: `CharacterSnapshot.Ragdoll` (model-space `BonePose` overrides, weight for the
   get-up blend); the renderer poses with it. While `Whole`, the character's position follows the root.
 - **Scene**: 32-unit tiles round each moving ragdoll, terrain sampled every 2 units, plus building

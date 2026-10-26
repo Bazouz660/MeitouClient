@@ -1,0 +1,352 @@
+using System.Numerics;
+using Meitou.Data.Gameplay;
+using Meitou.Data.Gameplay.Ai;
+using Meitou.Data.Gameplay.Bodies;
+using Meitou.Simulation.Bodies;
+using Meitou.Simulation.Items;
+using Meitou.Simulation.Locks;
+
+namespace Meitou.Simulation.FirstAid;
+
+/// <summary>
+/// The medic finders of the original (docs/game/ai-tasks.md "Medic jobs"): <c>FUN_14099f690</c> for the Medic (58) and Robotics (57) jobs and the NPC <c>Medic</c> goal, <c>FUN_14099e240</c> for
+/// Splint Rigging (250). Both pick the patient with the highest score = need x nearness (x the relation factor, x 0.05 for a patient another medic already works on); the medic itself is a candidate
+/// at its plain need. Engine stand-ins, all because Meitou has no sensed list, no path-failure list and no town walls: "sensed" is the medic's sight range, "seen or heard" always holds,
+/// the give-up list (<c>AITaskSystem.pathFailures</c>, +0x218: targets the AI could not path to, kept 20 s at a time while still unreachable) is empty, the blackboard's marked-for-death cage is never
+/// set, "the same town and building" is <see cref="SightMap.PlaceOf"/>.
+/// </summary>
+public sealed partial class FirstAidSystem
+{
+    /// <summary>The live relation table; null: no faction is allied, hostile or related to another (a patient of another faction scores the 0.05 minimum).</summary>
+    public FactionRelations? Relations { get; set; }
+
+    /// <summary>
+    /// The square of the distance at which a patient weighs nothing (<c>FUN_140998b90</c>: 1 - d^2 / 3397386.5, about 1843 units, <b>Verified</b> constant, clamped to [floor, 1]); the floor is 0.4 for a
+    /// patient in the medic's own building and 0 otherwise.
+    /// </summary>
+    public const float PatientFalloff2 = 3397386.5f;
+
+    /// <summary>The nearness floor for a patient in the medic's building (<c>DAT_141696c90</c>, <b>Verified</b>).</summary>
+    const float SameBuildingNearness = 0.4f;
+    /// <summary>The hold-position leash: a medic on Hold weighs a patient farther than this (squared, <c>DAT_1416d4a28</c> 1600) from its hold point at 0.</summary>
+    const float HoldLeash2 = 1600;
+    /// <summary>The least score another faction's patient needs (<c>DAT_14168a318</c> as a double, <b>Verified</b>).</summary>
+    const float StrangerMinScore = 0.1f;
+    /// <summary>The weight of a patient another medic already works on (<c>DAT_141696c74</c>, <b>Verified</b>).</summary>
+    const float TakenWeight = 0.05f;
+    /// <summary>The weight of a caged prisoner of the pass for owned cages (<c>DAT_141696c80</c>, <b>Verified</b>).</summary>
+    const float CagedWeight = 0.25f;
+    /// <summary>The splint finder's need weight: <c>needsSplint</c> (<c>FUN_140646400</c>) returns 0.1 (<c>DAT_14167fad0</c>) when a part qualifies, -0.1 for a dead patient, else 0 (<b>Verified</b> by disassembly).</summary>
+    const float SplintWeight = 0.1f;
+
+    static float Speed2(in CharacterHot a) => a.Velocity.X * a.Velocity.X + a.Velocity.Z * a.Velocity.Z;
+
+    // ------------------------------------------------------------------ the pieces
+
+    /// <summary>"A regards B as friendly" (Character slot 126, <c>isAlly</c> <c>FUN_1407923d0</c>): the dialogue system's rule (same faction, squad memory tags, faction allies); without it the same faction or allied factions.</summary>
+    bool Allied(World world, int a, int b)
+    {
+        if (world.SystemOf<Dialogue.DialogueSystem>() is { } dialogue) return dialogue.RegardsFriendly(world, a, b);
+        var (ac, bc) = (world.Characters.Cold(a)!, world.Characters.Cold(b)!);
+        return ac.Faction == bc.Faction || Relations is { } r && r.Contains(ac.Faction) && r.Contains(bc.Faction) && r.IsAlly(ac.Faction, bc.Faction);
+    }
+
+    /// <summary>"A regards B as an enemy" (slot 125, <c>isEnemy</c> <c>FUN_14079c950</c>): the squad memory's TEMP_ENEMY / TEMP_ALLY tags first, else another faction hostile to it (relation -30 or less).</summary>
+    bool EnemyOf(World world, int a, int b)
+    {
+        var (ac, bc) = (world.Characters.Cold(a)!, world.Characters.Cold(b)!);
+        if (ac.Faction == bc.Faction) return false;
+        if (world.SystemOf<Dialogue.DialogueSystem>()?.EnemyMemory(world, a, b) is { } memory and not 0) return memory > 0;
+        return Relations is { } r && r.Contains(ac.Faction) && r.Contains(bc.Faction) && AggroSystem.IsEnemy(r, ac.Faction, bc.Faction);
+    }
+
+    /// <summary>The medic's <c>FUN_14059a670</c> (DC 55 I_SHOULD_HELP_THIS_GUY): same NPC class unless a bandit or traitorous, friendly, both honourable, loved; never hated.</summary>
+    bool Helps(World world, int a, int b)
+    {
+        if (world.SystemOf<Dialogue.DialogueSystem>() is { } dialogue) return dialogue.Helps(world, a, b);
+        var (ac, bc) = (world.Characters.Cold(a)!, world.Characters.Cold(b)!);
+        return ac.NpcClass == bc.NpcClass && ac.NpcClass != FundamentalType.Bandit || Allied(world, a, b);
+    }
+
+    /// <summary>
+    /// The medic squad's blackboard has the cage marked for death (<c>Blackboard.cageMarkedForDeath</c>, tested by <c>FUN_14032eb40</c>): a Kill or Eat job of one of the squad's members runs on it
+    /// (<see cref="Kidnap.CaptiveSystem.Jobs"/>).
+    /// </summary>
+    static bool MarkedForDeath(World world, int squad, string cage)
+    {
+        if (squad < 0 || world.SystemOf<Kidnap.CaptiveSystem>() is not { } captives) return false;
+        foreach (var j in captives.Jobs)
+            if (j.Kind is Kidnap.CaptiveJobKind.Kill or Kidnap.CaptiveJobKind.Eat && j.Cage == cage && world.Characters.Cold(j.Worker.Slot) is { } worker && worker.SquadId == squad) return true;
+        return false;
+    }
+
+    /// <summary>A chained slave of the medic's faction (<c>FUN_14032e2a0</c>: chained, owner faction the medic's).</summary>
+    static bool OwnedChained(CharacterCold medic, CharacterCold patient) => patient.SlaveState == 1 && patient.Shackles is not null && patient.SlaveOwner == medic.Faction;
+
+    /// <summary>The patient's need score for a kit type (<see cref="MedicalState.FirstAidNeed"/>); 0 for a body without a medical state.</summary>
+    float AidNeed(CharacterCold c, bool robotKit) =>
+        c.Medical is { } med && c.Race is { } race
+            ? med.FirstAidNeed(race, robotKit, MathF.Max(MedicalState.BloodCapacity(race, c.Stats?.Strength ?? 50, med.HasStatsObject, med.ScaleK, med.ScaleZ), 1), Constants.ExtraBloodLossFromBodyparts)
+            : 0;
+
+    /// <summary>
+    /// What a patient needs of this medic (<c>FUN_140998200</c>, <b>Verified</b>): 0 while the patient fights; the organic need counts with an organic kit, the robot need with a robot kit (both without
+    /// kits when the medic is not of the player's and the patient is imprisoned or its chained slave); a patient of another faction x 0.8 when allied, else x relation / 100, at least 0.05
+    /// (the original's further floor of 0.01 for a player medic needing a current task sits behind that minimum and never applies).
+    /// </summary>
+    float Need(World world, int medicSlot, int patientSlot, bool organicKit, bool robotKit)
+    {
+        CharacterCold medic = world.Characters.Cold(medicSlot)!, patient = world.Characters.Cold(patientSlot)!;
+        if (patient.InCombat) return 0;
+        bool kitless = !medic.IsPlayer && (patient.IsImprisoned || OwnedChained(medic, patient));
+        float need = 0;
+        if (kitless || organicKit) need += AidNeed(patient, false);
+        if (kitless || robotKit) need += AidNeed(patient, true);
+        if (medic.Faction != patient.Faction)
+        {
+            float factor = Allied(world, medicSlot, patientSlot) ? 0.8f : Relations is { } r && r.Contains(medic.Faction) && r.Contains(patient.Faction) ? r.Get(medic.Faction, patient.Faction) * 0.01f : 0;
+            need *= MathF.Max(factor, TakenWeight);
+        }
+        return need;
+    }
+
+    /// <summary>
+    /// The nearness of a patient (<c>FUN_140998b90</c>, <b>Verified</b>): 0 when the medic holds position and the patient is over 40 units from its hold point; else 1 - d^2 / <see cref="PatientFalloff2"/>
+    /// (3D), at most 1, at least 0.4 when both are in one building and 0 otherwise.
+    /// </summary>
+    float Nearness(World world, int medic, CharacterCold medicCold, int patient)
+    {
+        var next = world.Characters.Next;
+        var d = next[medic].Position - next[patient].Position;
+        float d2 = d.LengthSquared();
+        if ((medicCold.Orders & CharacterOrders.Hold) != 0 && d2 > HoldLeash2)
+        {
+            var hold = Orders.HoldPointOf(medicCold, next[medic].Position);
+            if (Vector2.DistanceSquared(hold, new Vector2(next[patient].Position.X, next[patient].Position.Z)) > HoldLeash2) return 0;
+        }
+        float floor = world.Sight.PlaceOf(medic) is >= 0 and var place && place == world.Sight.PlaceOf(patient) ? SameBuildingNearness : 0;
+        return MathF.Max(MathF.Min(1 - d2 / PatientFalloff2, 1), floor);
+    }
+
+    /// <summary>The medics working on a patient other than itself and the patient (<c>Blackboard::howManyGuysWorkingOnThisSubTarget</c>, <c>FUN_1402690e0</c>).</summary>
+    static int OthersOn(List<(int Medic, int Patient)> taken, int medic, int patient)
+    {
+        int n = 0;
+        foreach (var (m, p) in taken)
+            if (p == patient && m != medic && m != patient) n++;
+        return n;
+    }
+
+    /// <summary>The patient's injuries make an NPC medic pass it by (<c>FUN_140644170</c>, <b>Verified</b>): a stump on a leg, or on both arms.</summary>
+    static bool Maimed(MedicalState med)
+    {
+        int arms = 0;
+        foreach (var p in med.Parts)
+        {
+            if (p.Limb != LimbState.Stump) continue;
+            if (p.Template.Type == BodyPartType.Leg) return true;
+            if (p.Template.Type == BodyPartType.Arm) arms++;
+        }
+        return arms >= 2;
+    }
+
+    /// <summary>The patients being treated now as (medic, patient) slot pairs (the blackboard's sub-target list).</summary>
+    static List<(int Medic, int Patient)> Treated(CharacterTable table)
+    {
+        var taken = new List<(int, int)>();
+        for (int i = 0; i < table.HighWater; i++)
+            if (table.Next[i].Alive && table.Next[i].Task == (byte)CharacterTask.Treat && table.TryResolveNext(table.Cold(i)!.TreatTarget, out int busy)) taken.Add((i, busy));
+        return taken;
+    }
+
+    // ------------------------------------------------------------------ the finder
+
+    /// <summary>
+    /// The Medic / Robotics finder (<c>FUN_14099f690</c>; 58 passes <paramref name="robotics"/> false, 57 true) and the Medic button's one look. Gates (engine): awake, not fighting, no fight in its
+    /// squad (the goal's desire <c>FUN_140998410</c>: 0.01 with enemies about, 0.1 while carrying someone, else 1). Returns the best patient's slot and score, -1 for none.
+    /// <list type="number">
+    /// <item><b>Allies</b> (sensed allies, not dead): not a robot race unless robotics; not carried by an enemy of the medic; not fighting; an NPC medic skips the maimed (<see cref="Maimed"/>). Score =
+    /// <see cref="Need"/> x <see cref="Nearness"/>; the same faction always counts, another one at 0.1 and, for a player medic, only with Heal Allies; x 0.05 when another medic works on it.
+    /// The medic itself scores its plain need. The highest wins.</item>
+    /// <item><b>Strangers</b>, when pass 1 found nobody: sensed neutral, knocked-out, imprisoned or crawling ones that are no enemy; not an animal or a robot race, not of a not-real faction, not fighting.
+    /// A free one needs the medic's faction to <c>heal strangers</c>, to be down and to pass <c>FUN_14059a670</c> (same NPC class unless bandits, or allied); a prisoner needs a cage of the medic's
+    /// faction and not to be a slave; a chained slave of the medic's faction counts too. Same building and town; a patient another medic works on is skipped.</item>
+    /// <item><b>Owned slaves</b> in sight, <b>carried</b> patients of the medic's faction (outdoors), then <b>prisoners in the cages</b> of the medic's faction in its place at a flat 0.25.</item>
+    /// </list>
+    /// </summary>
+    (int Slot, float Score) FindPatient(World world, int i, List<(int Medic, int Patient)> taken, bool robotics)
+    {
+        var table = world.Characters;
+        var next = table.Next;
+        var cold = table.Cold(i)!;
+        if (cold.Medical is not { Incapacitated: false } own || cold.Race is null || cold.Stats is null || cold.InCombat || cold.IsImprisoned) return (-1, 0);
+        if (cold.SquadId >= 0 && world.Squads.Find(cold.SquadId) is { } squad && Fighting(table, squad)) return (-1, 0);
+        bool organic = cold.Inventory is { } inv && Best(inv, ItemInfo.FirstAidKitFunction) is not null, robotic = cold.Inventory is { } inv2 && Best(inv2, ItemInfo.RobotKitFunction) is not null;
+        bool healAllies = (world.Player.SquadAi & SquadAi.Heal) != 0;
+        bool heals = Relations is { } rel && rel.Contains(cold.Faction) && rel.Factions[cold.Faction].HealsStrangers;
+        float range = AggroSystem.RangeOf(cold, AggroSystem.OutdoorSight), range2 = range * range;
+        int best = -1;
+        float bestScore = 0;
+
+        // A patient the medic found no path to lately is left out (AITaskSytem::isPathImpossible, <c>pathFailures</c> +0x218, FUN_1405b0290).
+        bool Skip(int s, CharacterCold other) => s == i || !table.Next[s].Alive || PursuitSystem.PathImpossible(cold, table.IdOf(s), world.Tick) || other.Medical is not { Dead: false } || other.Race is null;
+        float Dist2(int s) { var d = table.Next[s].Position - table.Next[i].Position; return d.X * d.X + d.Y * d.Y + d.Z * d.Z; }
+        bool CarriedByEnemy(CharacterCold other) => !other.CarriedBy.IsNone && table.TryResolveNext(other.CarriedBy, out int c) && table.Cold(c) is { } carrier && EnemyOf(world, i, c);
+
+        // Pass 1: allies.
+        if (organic || robotic)
+            for (int s = 0; s < table.HighWater; s++)
+            {
+                if (!next[s].Alive || table.Cold(s) is not { } other || Skip(s, other)) continue;
+                if (!Allied(world, i, s) || EnemyOf(world, i, s) || other.Race!.IsRobot && !robotics || other.InCombat || CarriedByEnemy(other) || Dist2(s) > range2) continue;
+                if (!cold.IsPlayer && Maimed(other.Medical!)) continue;
+                float need = Need(world, i, s, organic, robotic);
+                if (need <= 0) continue;
+                float score = need * Nearness(world, i, cold, s);
+                bool same = other.Faction == cold.Faction;
+                if (!same && !(score >= StrangerMinScore && (!cold.IsPlayer || healAllies))) continue;
+                if (OthersOn(taken, i, s) > 0) score *= TakenWeight;
+                if (score > bestScore)
+                {
+                    best = s;
+                    bestScore = score;
+                }
+            }
+        float self = Need(world, i, i, organic, robotic);
+        if (bestScore < self)
+        {
+            best = i;
+            bestScore = self;
+        }
+        if (best >= 0) return (best, bestScore);
+
+        // Pass 2: strangers, prisoners, chained slaves.
+        bool ownsCages = false;
+        foreach (var f in world.Fixtures.All)
+            if (f.Kind == FixtureKind.Cage && f.Owner == cold.Faction) { ownsCages = true; break; }
+        if (heals || ownsCages || organic || robotic)
+            for (int s = 0; s < table.HighWater; s++)
+            {
+                if (!next[s].Alive || table.Cold(s) is not { } other || Skip(s, other)) continue;
+                if (other.Race!.IsRobot && !robotics || other.Animal is not null || other.InCombat || EnemyOf(world, i, s) || Dist2(s) > range2) continue;
+                if (Relations is { } r2 && r2.Contains(other.Faction) && r2.Factions[other.Faction].NotReal) continue;
+                bool down = other.Medical!.Incapacitated || !other.CarriedBy.IsNone;
+                if (Allied(world, i, s) && !down && !other.IsImprisoned) continue;   // sensed as an ally only: pass 1's
+                bool ok;
+                if (!other.IsImprisoned)
+                {
+                    if (other.NpcClass == FundamentalType.Bandit && other.NpcClass != cold.NpcClass) continue;
+                    if (!Helps(world, i, s)) continue;   // FUN_14059a670
+                    ok = heals && down;
+                }
+                else
+                {
+                    var (cage, owned) = CageOwnedBy(world, s, cold.Faction);
+                    ok = other.SlaveState != 1 && !(cage is not null && MarkedForDeath(world, cold.SquadId, cage)) && (cage is null || owned);
+                }
+                if (!ok && !OwnedChained(cold, other)) continue;
+                if (world.Sight.PlaceOf(i) != world.Sight.PlaceOf(s)) continue;
+                float need = Need(world, i, s, organic, robotic);
+                if (need <= 0) continue;
+                float score = need * Nearness(world, i, cold, s);
+                if (OthersOn(taken, i, s) > 0 || score <= bestScore) continue;
+                best = s;
+                bestScore = score;
+            }
+        if (best >= 0) return (best, bestScore);
+
+        // Pass 3: owned slaves in sight.
+        for (int s = 0; s < table.HighWater; s++)
+        {
+            if (!next[s].Alive || table.Cold(s) is not { } other || Skip(s, other) || !OwnedChained(cold, other)) continue;
+            if (other.Race!.IsRobot && !robotics || other.InCombat || Dist2(s) > range2) continue;
+            float need = Need(world, i, s, organic, robotic);
+            if (need <= 0) continue;
+            float score = need * Nearness(world, i, cold, s);
+            if (score > bestScore) { best = s; bestScore = score; }
+        }
+        // Pass 4: someone of its faction carries a patient, outdoors only.
+        if (best < 0 && world.Sight.PlaceOf(i) < 0)
+            for (int s = 0; s < table.HighWater; s++)
+            {
+                if (!next[s].Alive || table.Cold(s) is not { } other || Skip(s, other) || other.CarriedBy.IsNone || other.Animal is not null) continue;
+                if (other.Race!.IsRobot && !robotics || Dist2(s) > range2) continue;
+                if (!table.TryResolveNext(other.CarriedBy, out int c) || table.Cold(c)?.Faction != cold.Faction) continue;
+                float need = Need(world, i, s, organic, robotic);
+                if (need <= 0) continue;
+                float score = need * Nearness(world, i, cold, s);
+                if (score > bestScore) { best = s; bestScore = score; }
+            }
+
+        // Pass 5: prisoners in the cages of its faction in its own place, flat weight.
+        if (world.Sight.PlaceOf(i) is >= 0 and var home)
+            foreach (var f in world.Fixtures.All)
+            {
+                if (f.Kind != FixtureKind.Cage || f.Owner != cold.Faction || FixtureRegistry.IsFree(table, f) || !table.TryResolveNext(f.Occupant, out int s)) continue;
+                if (table.Cold(s) is not { } other || Skip(s, other) || world.Sight.PlaceOf(s) != home) continue;
+                float need = Need(world, i, s, organic, robotic) * CagedWeight;
+                if (need > bestScore) { best = s; bestScore = need; }
+            }
+        return best >= 0 ? (best, bestScore) : (-1, 0);
+    }
+
+    /// <summary>Whether the patient sits in a cage, and whether that cage is owned by <paramref name="faction"/> (the ownership test against the medic's squad home).</summary>
+    static (string? Cage, bool Owned) CageOwnedBy(World world, int patient, int faction)
+    {
+        var id = world.Characters.IdOf(patient);
+        foreach (var f in world.Fixtures.All)
+            if (f.Kind == FixtureKind.Cage && f.Occupant == id) return (f.Id, f.Owner == faction);
+        return (null, false);
+    }
+
+    /// <summary>Starts the Medic / Robotics job's (or an NPC's, or the button's) treatment of the best patient the finder gives; false when none.</summary>
+    bool HealSomeone(World world, int i, List<(int Medic, int Patient)> taken, bool robotics)
+    {
+        var (patient, _) = FindPatient(world, i, taken, robotics);
+        return patient >= 0 && StartJob(world, i, patient, taken, splint: false);
+    }
+
+    /// <summary>
+    /// The Splint Rigging finder (<c>FUN_14099e240</c>, <b>Verified</b>): X = min(medic skill, the best splint kit's quality) (no splint kit in its inventory or backpack: nothing); sensed allies not of a robot
+    /// race, not carried by an enemy, of the medic's own faction only, whose <c>needsSplint</c>(X) holds weigh 0.1 x <see cref="Nearness"/> (x 0.05 when another medic works on it); the medic itself 0.1.
+    /// </summary>
+    bool SplintSomeone(World world, int i, List<(int Medic, int Patient)> taken)
+    {
+        var table = world.Characters;
+        var next = table.Next;
+        var cold = table.Cold(i)!;
+        if (cold.Medical is not { Incapacitated: false } own || cold.Race is not { } ownRace || cold.Stats is not { } stats || cold.InCombat) return false;
+        if (cold.Inventory is null || Best(cold.Inventory, ItemInfo.SplintKitFunction) is not { } kit) return false;
+        if (cold.SquadId >= 0 && world.Squads.Find(cold.SquadId) is { } squad && Fighting(table, squad)) return false;
+        float skill = MathF.Min(stats[StatsEnumerated.Medic] * own.StatMultiplier(StatsEnumerated.Medic), Items.Info(kit.Record)?.Quality ?? 0);
+        float range = AggroSystem.RangeOf(cold, AggroSystem.OutdoorSight);
+        int best = -1;
+        float bestScore = 0;
+        for (int s = 0; s < table.HighWater; s++)
+        {
+            if (s == i || !next[s].Alive || PursuitSystem.PathImpossible(cold, table.IdOf(s), world.Tick) || table.Cold(s) is not { Medical: { Dead: false } med, Race: { } race } other) continue;
+            if (other.Faction != cold.Faction || race.IsRobot || !med.NeedsSplint(race, skill)) continue;
+            if (!other.CarriedBy.IsNone && table.TryResolveNext(other.CarriedBy, out int c) && table.Cold(c) is { } carrier && EnemyOf(world, i, c)) continue;
+            var d = next[s].Position - next[i].Position;
+            if (d.LengthSquared() > range * range) continue;
+            float score = SplintWeight * Nearness(world, i, cold, s);
+            if (OthersOn(taken, i, s) > 0) score *= TakenWeight;
+            if (score <= bestScore) continue;
+            best = s;
+            bestScore = score;
+        }
+        if (bestScore < SplintWeight && own.NeedsSplint(ownRace, skill)) best = i;
+        return best >= 0 && StartJob(world, i, best, taken, splint: true);
+    }
+
+    /// <summary>Starts a job's treatment of <paramref name="patient"/>, going back afterwards to what the medic did before its job.</summary>
+    static bool StartJob(World world, int i, int patient, List<(int Medic, int Patient)> taken, bool splint)
+    {
+        var next = world.Characters.Next;
+        var cold = world.Characters.Cold(i)!;
+        taken.Add((i, patient));
+        var resume = cold.Implicit is not null || cold.JobIndex >= 0 ? cold.ResumeTask : next[i].Task is (byte)CharacterTask.Wander or (byte)CharacterTask.Follow ? (CharacterTask)next[i].Task : CharacterTask.Idle;
+        Begin(world, i, new CharacterId(patient, next[patient].Generation), resume, splint);
+        return true;
+    }
+}

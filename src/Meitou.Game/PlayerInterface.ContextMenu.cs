@@ -1,14 +1,15 @@
 using System.Globalization;
 using System.Numerics;
 using Meitou.Data.Ui;
+using Meitou.Engine.Input;
 using Meitou.Simulation;
 
 namespace Meitou.Game;
 
 /// <summary>
 /// The context menu (the original's ContextMenuGUI, <c>Kenshi_ContextMenu</c>; docs/game/ui-input.md "Context menu verbs"): holding the command (right) button on a target for
-/// <see cref="ContextHoldSeconds"/> opens a menu of the orders the selection can give it, titled with its name; a quicker click gives the default order at once. A left click on a
-/// verb gives it; any other click, or Esc, closes the menu. The verbs carry the original's labels and are listed in the original's order-number order (<see cref="VerbOrders"/>);
+/// <see cref="ContextHoldSeconds"/> opens a menu of the orders the selection can give it, titled with its name; a quicker click gives the default order at once. The menu lives while that button is held: letting it go over a
+/// verb gives it, anywhere else closes the menu (<see cref="ContextMenuRelease"/>). The verbs carry the original's labels and are listed in the original's order-number order (<see cref="VerbOrders"/>);
 /// one method per target kind builds them: characters here, containers and doors below, sites in PlayerInterface.Build.cs, rocks in PlayerInterface.Rocks.cs.
 /// </summary>
 sealed partial class PlayerInterface
@@ -322,6 +323,20 @@ sealed partial class PlayerInterface
         if (contextPending is not { } pending) return;
         contextPending = null;
         pending.Quick?.Invoke();
+    }
+
+    /// <summary>
+    /// A mouse button let go while the menu is open (<c>FUN_1407a7f10</c>, <c>FUN_1407ac8c0</c>): a verb row under the cursor gives its order, whichever button it is (the row's
+    /// release handler tests none), and the menu closes. The menu opens on the held command button and closes when that button is let go, so the right release always ends it;
+    /// a left release over a row acts, elsewhere nothing (the menu stays while the command button is held). True when the event was the menu's.
+    /// </summary>
+    bool ContextMenuRelease(MouseButton button, Vector2 p)
+    {
+        if (contextMenu is null) return false;
+        var row = UiVisible ? MyGuiPresentation.HitTest(ArrangeUi(), p.X, p.Y) : null;
+        if (row is { Action: "meitou:context" }) { SoundForAction("context", row.Argument); ContextAction(row.Argument); }
+        else if (button == MouseButton.Right) CloseContextMenu();
+        return true;
     }
 
     void ContextAction(string argument)

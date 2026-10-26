@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Numerics;
 using Meitou.Audio;
 using Meitou.Data.Fcs;
 using Meitou.Data.Ogre;
@@ -34,7 +35,7 @@ sealed partial class GameHost
     void SetUpBlood(IGpuContext context)
     {
         gpu.Debris ??= new DebrisRenderer(context, gpu.Objects?.Resolver, assets.Find);   // made now: its shaders compile here, not at the first burst
-        gpu.Particles?.PrepareBursts(BurstSplash, BurstSpray);
+        gpu.Particles?.PrepareBursts(BurstSplash, BurstSpray, SparksSystem);
         if (gpu.Decals is not null || AudioSystem.Setting(install, "Blood", 1) == 0) return;
         var files = BloodTextureFiles(assets.Configured);
         decalStore = new TerrainDecalStore([.. files.Select(list => (IReadOnlyList<(int, int)>)[.. list.Select(DdsSize)])]);
@@ -53,6 +54,7 @@ sealed partial class GameHost
     {
         var world = session.World;
         world.Luckyren = config.LuckyrenMode;
+        UpdateBlockSparks(world);
         if (decalStore is null && !config.LuckyrenMode && pieces.Count == 0)
         {
             world.BloodMarks = null;
@@ -91,6 +93,27 @@ sealed partial class GameHost
         double clock = session.ShownTick + session.SimulationAlpha;   // the shown tick: one run ahead is not on screen yet
         UpdateDebris(world, (float)Math.Clamp((clock - debrisClock) * tick, 0, 0.5));
         debrisClock = clock;
+    }
+
+    /// <summary>The EFFECT `small- sparks1` (5463-nodes_furniture1_otto.mod) the original throws on a parry: its particle system.</summary>
+    const string SparksSystem = "kenshi_sparks";
+    readonly ConcurrentQueue<CharacterId> sparkQueue = new();
+
+    /// <summary>
+    /// Once a frame: the parries of the ticks since the last frame throw <see cref="SparksSystem"/> at the parrying character's <c>Bip01 Prop2</c> (its weapon), 0 or 1 unit higher
+    /// at random, when that character is drawn (the original's <c>FUN_1404394f0</c>: only for a character on screen; docs/game/combat.md "Block sparks").
+    /// </summary>
+    void UpdateBlockSparks(World world)
+    {
+        if (gpu.Particles is not { } particles || gpu.Characters is not { } characters)
+        {
+            world.BlockSparks = null;
+            return;
+        }
+        if (!ReferenceEquals(world.BlockSparks, sparkQueue)) { sparkQueue.Clear(); world.BlockSparks = sparkQueue; }
+        while (sparkQueue.TryDequeue(out var who))
+            if (characters.BonePosition(DrawKey(who), "Bip01 Prop2") is { } at)
+                particles.Burst(SparksSystem, at + new Vector3(0, bloodRandom.Next(2), 0), Quaternion.Identity, 0.1f);
     }
 
     /// <summary>

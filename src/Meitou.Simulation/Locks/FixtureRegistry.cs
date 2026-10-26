@@ -698,6 +698,23 @@ public sealed partial class FixtureRegistry
         return true;
     }
 
+    /// <summary>
+    /// Keeps every caged character at its cage's position and facing (the original's character update <c>FUN_1405cf130</c> sets both from the building every frame while the character
+    /// is held in one, docs/game/locks.md "Facing in a cage"): a prisoner that came from a save or a spawn, or turned by anything else, faces the cage's local +Z (its door side) again.
+    /// Serial phases only.
+    /// </summary>
+    public void HoldCaged(World world)
+    {
+        var table = world.Characters;
+        foreach (var f in cageList ??= [.. all.Where(x => x.Kind == FixtureKind.Cage)])
+        {
+            if (IsFree(table, f) || !table.TryResolveNext(f.Occupant, out int s) || table.Cold(s) is not { InSomething: HeldState.Imprisoned } c || c.InWhat != f.Id) continue;
+            ref var n = ref table.Next[s];
+            if (n.Position == f.Position && n.Yaw == f.Yaw) continue;
+            Hold(table, s, c, f.Position, f.Yaw);
+        }
+    }
+
     static void Hold(CharacterTable table, int slot, CharacterCold c, Vector3 at, float yaw)
     {
         table.Place(slot, at, yaw);

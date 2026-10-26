@@ -75,6 +75,9 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
     public const float EnemyVicinity = 1000;
     FactionRelations Relations => data.Relations;
 
+    /// <summary>The step that separates two candidates of the same score (the original's 0.0001).</summary>
+    const float TieStep = 1e-4f;
+
     static readonly TaskPriority[] Tiers = [TaskPriority.Urgent, TaskPriority.NonUrgent, TaskPriority.Fluff];
 
     public AiSettings Settings { get; } = settings ?? new AiSettings();
@@ -195,7 +198,10 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
                     if (profile.Commits) score = world.GameHours < mind.CommitUntil ? MathF.Max(score, 0.4f) : MathF.Min(score, 0.05f);
                 }
                 if (score <= 0) return;
-                // Highest first; a tie keeps the order the goals are listed in.
+                // Highest first. The original keys its candidates by score and, while the key is taken, adds 0.0001 (FUN_14050df10, Verified): of equal
+                // scores the goal listed later ranks first.
+                for (int k = 0; k < candidates.Count; k++)
+                    if (candidates[k].Score == score) { score += TieStep; k = -1; }
                 int at = candidates.Count;
                 while (at > 0 && candidates[at - 1].Score < score) at--;
                 candidates.Insert(at, (g, score, desire));
@@ -203,10 +209,11 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             // Index loops: a foreach over the interface would box an enumerator per list and pass.
             for (int k = 0; k < roles.Count; k++) Consider(roles[k]);
             for (int k = 0; k < race.Count; k++) Consider(race[k]);
-            Consider(Idle);
             for (int k = 0; k < candidates.Count; k++)
                 if (plans.TryPlan(candidates[k].Goal, candidates[k].Desire)) return candidates[k].Goal;
         }
+        // The default task (IDLE, weight 0.1) is no candidate of a tier: the chooser tries it only when every tier failed (FUN_140510ef0, Observed).
+        if (plans.TryPlan(Idle, Desire(world, TaskBehaviours.Of(Idle.Task.Type), Idle.Task.Type, TaskProfiles.Of(Idle.Task.Type), squad, board, mind, id, Idle.Task.Target))) return Idle;
         mind.Plan.Clear();
         return Idle;
     }

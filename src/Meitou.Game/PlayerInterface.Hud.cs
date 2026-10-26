@@ -31,11 +31,14 @@ sealed partial class PlayerInterface
     MyGuiLayout? messageLayout;
     string? messageClient;
 
-    /// <summary>Queues a message for the message panel ("Discovered {1}", "Saved", or an error text in red); each shows for 4 s in turn.</summary>
-    public void Notice(string text, bool error = false)
+    /// <summary>
+    /// Queues a message for the message panel ("Discovered {1}", "Saved", or an error text in red); each shows for 4 s in turn. <paramref name="logText"/>: a longer
+    /// text for the message log (the overview's messages) when the panel's line is a summary of it.
+    /// </summary>
+    public void Notice(string text, bool error = false, string? logText = null)
     {
         string line = Loc.Tr(text).ReplaceLineEndings(" ");
-        LogMessage("", line, MessageTone.System);
+        LogMessage("", logText?.ReplaceLineEndings(" ") ?? line, MessageTone.System);
         noticeQueue.Enqueue((line, error));
     }
 

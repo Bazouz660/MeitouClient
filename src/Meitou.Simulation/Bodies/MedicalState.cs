@@ -69,7 +69,9 @@ public sealed partial class MedicalState
     /// The KO point (<see cref="KoPoint"/>) the legs' collapse test uses, from the owner's toughness at the last <see cref="Tick"/> (0 before the first). Derived, not saved: the first tick
     /// after a load sets it again.
     /// </summary>
-    public float LegKoPoint { get; private set; }
+    public float LegKoPoint { get => legKoPoint; private set { legKoPoint = value; legKoKnown = true; } }
+    float legKoPoint;
+    bool legKoKnown;
 
     /// <summary>
     /// The original's forced crawl (posture 2, <c>FUN_140649320</c>, <b>Observed</b>): a conscious character with a stats object (not an animal) any of whose legs is down by
@@ -79,7 +81,9 @@ public sealed partial class MedicalState
     {
         get
         {
-            if (Incapacitated || !HasStatsObject) return false;
+            // The original's flag (medical +0x160) is only set by the medical tick: before the first one (KO point not yet known) nobody is crippled, where a KO point of 0
+            // would ground anyone with a leg merely below 0 (between 0 and the KO point a leg only limps).
+            if (Incapacitated || !HasStatsObject || !legKoKnown) return false;
             foreach (var p in parts) if (p.IsLeg && p.LegDown(LegKoPoint)) return true;
             return false;
         }

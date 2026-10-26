@@ -27,7 +27,7 @@ their cells and local places).
 
 **Verified** (`FUN_1408dce50`, `FUN_1408dc6b0`): random variant; angle = atan2(dir.x, dir.z), the
 texture's width axis along (sin, cos) and its height axis along (cos, −sin); half extents in world
-units = size × texels × 288 / 4096. Life starts at 99 (seconds; the medical and hit callers pass 99.0; the bleed pool's value is lost in the decompile, **Unknown**, we use 99).
+units = size × texels × 288 / 4096 (**Verified**: `FUN_1408dfaf0` sets the factor at `+0x1c0` to cell 288 × 0.5 × 1/2048 = 288/4096; the draw agrees, below). Life starts at 99 (seconds; the medical and hit callers pass 99.0; the bleed pool's value is lost in the decompile, **Unknown**, we use 99).
 
 Sources (`FUN_140652000` medical update, `FUN_140793b20` hit), all only with `Blood` on and the
 character out of the water (`FUN_1405c7fd0` = water state 0); colour = race `blood colour` (FCS
@@ -48,9 +48,15 @@ bloodless races, `bleed rate` 0). We emit no limb-sever splash.
 
 **Pool growth** (**Verified**, `FUN_1408dcfa0`): per character a token (place, size). Increment =
 bleeding × scaled frame dt × 0.2. No token: size = increment. Within √10 units (X/Z) of the token:
-size += increment / max(1, 10 × size), capped at 2. Farther: the token moves there, size =
-increment. The pool decal at the token's exact cell place is replaced when its stored half size
-changes; none there: a new pool with a random direction.
+size += increment / max(1, 10 × size), capped at 2 (a size past 2 is set to 2). Farther: the token
+moves there, size = increment. The pool decal at the token's exact cell place is replaced when its
+stored half size (size × texels × 10, a short) differs from the new one: removed from that cell and
+the cells its corners reach, then made again at the same turn (`FUN_1408dc6b0`, so at the end of
+each list); none there: a new pool with a random direction. The cap is **Verified** (float
+constants read from the exe: 2.0, 10.0, 0.2). A capped pool on a 512² texture is 2 × 512 × 288/4096 × 2
+= 144 units across (half a cell, about 15 characters), reached after 100 / bleeding seconds of standing
+still (from the growth rule), so a quickly bleeding body does reach it. One pool per character at a
+time, but a new one each time it stands more than √10 units from the last.
 
 ## Ageing and drawing
 
@@ -60,7 +66,8 @@ is removed unless its cell is on a texture now. The cells within `Decal Range` o
 to 8 `Kenshi_Decal_Texture_n` render targets of `Decal Resolution`² (Ogre format 0x1c, **Observed**
 to be `PF_R8G8B8A8` from Ogre's enum). A target is cleared to 0 when it gets a new cell; decals are
 drawn as quads (centre `lx·2/1000 − 1`, half sizes / 10240 in clip space, rotated by angle − π/2)
-with `texture × colour`, colour alpha = min(alpha, life), alpha-blended colour and additive alpha.
+with `texture × colour` (the unit quad runs −0.5..0.5, so its full width is the half size / 10240 of clip space, 2 clip = 288 units: the
+same 288/4096 per texel and size as the placing above, **Verified** by the two agreeing; our store keeps the half sizes ×10 as the game does), colour alpha = min(alpha, life), alpha-blended colour and additive alpha.
 The terrain draws the cell's nodes again with `TerrainBlood`: depth equal, the texture's colour
 alpha-blended over the G-buffer albedo, gloss kept. The game ranks the candidate cells by decal
 count and distance (**Observed**; we take the nearest). Consequence (**Observed**, vanilla battle
@@ -74,9 +81,10 @@ most 256 MB of them: 16 at 2048²), the array growing by 8 as more cells are nea
 game's 8. Expiry is unchanged (undrawn cells still age). Engine choices: the blood is mixed into the terrain colour shader's
 albedo before lighting (our terrain is forward-lit, no second pass); the cells are a texture array
 read by cell index. Marks more than 20 units above the ground are dropped (upper floors). A pool's
-decal is grown in steps of a 25th of its half size (and at the cap), not at every texel change, and in place
-in each cell's list. A cell's layer is cleared and drawn again only when decals leave the cell
-(`CellRewrite`); otherwise only the decals placed or grown since are drawn over it (`Appended`). The
+decal is grown whenever its stored half size changes (as the game does), in place in each cell's list. A cell's layer is cleared and drawn again
+when decals leave the cell or one of its pools grew (`CellRewrite`, once a frame however many ticks the pool grew in, so growth is as smooth as the
+frames); otherwise only the decals placed since are drawn over it (`Appended`). Growing pools used to be drawn over their old copy in 25th steps:
+that was visibly stepped, stacked the translucent edge dozens of times and popped when the cell was later redrawn. The
 original likely draws incrementally too (**Observed**, inferred: it clears only for a new cell and keeps a drawn cell's dead decals); a log past twice the cell's decals + 64 forces a redraw.
 A layer is one instanced draw (each decal's texture by bindless index, colour and alpha blended separately in one pass).
 The store finds a pool by a per-cell index of place → first pool there, not a list scan, and keeps each life as the store

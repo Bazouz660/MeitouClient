@@ -187,6 +187,9 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
         var tc = table.Cold(t)!;
         if (cold.Fighter is null || cold.Stats is null || cold.Medical is null || cold.Race is null || tc.Medical is null || cold.Medical.Incapacitated || tc.Medical.Incapacitated) return false;
         if (cold.IsImprisoned || !cold.CarriedBy.IsNone) return false;   // a prisoner or a carried mate does not fight (it may still be attacked: engine choice)
+        // A fighter turns on no one it found no path to lately unless the player picked it (isPathImpossible in every finder's score, docs/game/combat.md "Target score"): a mate
+        // that is called in on a sighting or an attack and cannot reach the enemy (a cage, a locked room) would otherwise stand at the nearest spot for ever.
+        if (!picked && PursuitSystem.PathImpossible(cold, target, now)) return false;
         ref var s = ref read[a];
         if (s.TargetSlot != t || s.TargetGeneration != target.Generation)
         {
@@ -199,6 +202,9 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
         s.PickTick = now + PickTicks(world, cold);
         s.SensedTick = now;
         s.ReadyTick = now;   // no wait before the first swing (startupState enters the attack at once)
+        // The fight's first path is asked for at once: the wait an idle or wandering character was in (3 to 10 s) is not the pursuit's repath timer (PursuitSystem), and left in
+        // it the fighter stood there until it ran out.
+        if (table.Next[a].Task != (byte)CharacterTask.Attack) table.Next[a].TaskTime = 0;
         table.Next[a].Task = (byte)CharacterTask.Attack;
         cold.InCombat = true;
         cold.DrawnWeapon = s.Ranged ? HandHold.OfCategory((int)WeaponCategory.Bow).Weapon : MeleeDrawn(cold.Fighter);

@@ -12,7 +12,8 @@ namespace Meitou.Simulation;
 /// </summary>
 public sealed class CharacterAnimation
 {
-    public const int MaxLayers = 8;
+    /// <summary>Room for the layers of one character (engine choice: the original's layer lists grow without a cap, <b>Verified</b> <c>@ 1405b5270</c>; this is far above the most a fight needs, 5 in the base game).</summary>
+    public const int MaxLayers = 16;
 
     /// <summary>One clip in play: the library index, its own time (seconds; unsynched clips only), its weight and the weight it is fading to.</summary>
     public struct Layer
@@ -27,6 +28,8 @@ public sealed class CharacterAnimation
     public int Count;
     /// <summary>Phase of the synched movement clips in cycles (0..1): the lower and the upper body, and a walk fading into a run, stay in step.</summary>
     public float Phase;
+    /// <summary>Cycles per second the phase advances: written whenever the lower movement blend is picked (<b>Verified</b> <c>@ 14051d8e0</c>, <c>@ 14051d000</c>), kept while no such pick runs (standing out of combat, a technique): the legs go on stepping through their fade-out.</summary>
+    public float PhaseRate;
     /// <summary>The idle chosen, and the seconds it still plays before another is chosen (-1 / 0: none yet).</summary>
     public int Idle = -1;
     public float IdleLeft;
@@ -49,6 +52,9 @@ public sealed class CharacterAnimation
     /// </summary>
     public bool Strafing;
     public float StrafeTimer, StrafeSpeed, StrafeShare;
+    /// <summary>The facing the body is drawn at (radians, as <c>CharacterHot.Yaw</c>) and whether it is set: it chases the character's facing at a limited rate (<see cref="AnimationSystem.FollowFacing"/>). Derived for drawing, not hashed.</summary>
+    public float DrawYaw;
+    public bool HasDrawYaw;
 
     /// <summary>
     /// The speed the animations see (docs/animation.md "Movement", <b>Verified</b>): of the last 8 samples, sorted, the 3 lowest and 3 highest dropped and the
@@ -84,6 +90,7 @@ public sealed class CharacterAnimation
             h.Add(Layers[i].Target);
         }
         h.Add(Phase);
+        h.Add(PhaseRate);
         h.Add(Idle);
         h.Add(IdleLeft);
         h.Add(Action);
@@ -115,8 +122,8 @@ public sealed class CharacterAnimation
 /// </summary>
 public sealed class AnimationSystem(AnimationLibrary library, AnimationLengths lengths, float blendRate = 4, CombatSystem? combat = null) : ITickSystem, IAnimationSource
 {
-    /// <summary>Speed below which a character stands.</summary>
-    public const float MovingSpeed = 1;
+    /// <summary>Speed below which a character stands: the original stands only at a filtered speed of exactly 0 (docs/animation.md); this only filters float noise.</summary>
+    public const float MovingSpeed = 0.05f;
     /// <summary>Getting up ends when <c>standing up 3</c> is this far through (<b>Verified</b>, <c>Task_GetUp</c>).</summary>
     public const float GetUpEnd = 0.86f;
 
@@ -139,6 +146,8 @@ public sealed class AnimationSystem(AnimationLibrary library, AnimationLengths l
     int DismantlingClip { get; } = library.IndexOf("stonemine");
     /// <summary>The carrier's lift clip (<c>shoulder lift left</c>, played backwards to put down) and a carried body's held pose (<c>carry me</c>, a category 3 record the library appends); -1 when the data has none.</summary>
     int LiftClip { get; } = library.IndexOf(Carrying.CarrySystem.LiftClip);
+    /// <summary>The overlay that holds a carrier's arm on the body (<c>carrying left arm only</c>: <c>override L arm</c>, every other bone deleted): <b>Verified</b>, <c>FUN_140520000</c> plays it every frame a character carries.</summary>
+    int CarryArmClip { get; } = library.IndexOf("carrying left arm only");
     int KnockoutClip { get; } = library.IndexOf(Carrying.CarrySystem.KnockoutClip);
     int CarriedClip { get; } = library.IndexOf(Carrying.CarrySystem.CarriedClip);
 
@@ -203,6 +212,14 @@ public sealed class AnimationSystem(AnimationLibrary library, AnimationLengths l
             var cold = table.Cold(i)!;
             var a = cold.Animation ??= new CharacterAnimation();
             var v = next[i].Velocity;
+            // The original's animation speed is the displacement the physics step really made (docs/animation.md "Speed the animations see"): a walker held by a wall,
+            // a crowd or a body it cannot pass keeps its commanded velocity here, so it is taken no faster than it moved (never faster than commanded).
+            float commanded = v.Length();
+            if (commanded > 0)
+            {
+                float moved = MathF.Sqrt((next[i].Position.X - prev[i].Position.X) * (next[i].Position.X - prev[i].Position.X) + (next[i].Position.Z - prev[i].Position.Z) * (next[i].Position.Z - prev[i].Position.Z)) / dt;
+                if (moved < commanded) v *= moved / commanded;
+            }
             float speed = v.Length();
             bool approaching = Approaching(table, i, cold);
             // In combat the speed is signed along the facing: backing off is negative and picks the clips with a negative move speed; the side speed drives the side steps.
@@ -219,7 +236,23 @@ public sealed class AnimationSystem(AnimationLibrary library, AnimationLengths l
             var ragdoll = Ragdolls is { } r ? new RagdollView(r.HasRagdoll(cold), r.WasWhole(id)) : default;
             var root = Update(a, cold, speed, dt, world.Seed, Rng.Key(id), world.Tick, wantedLower, wantedUpper, ViewOf(id, world.Tick, cold, dt), (CharacterTask)next[i].Task, ragdoll, approaching);
             if (root != Vector2.Zero) Relocate(world, i, ref next[i], root);
+            FollowFacing(a, next[i].Yaw, cold.InCombat && !approaching && cold.CarriedBy.IsNone, free: cold.CarriedBy.IsNone && cold.InSomething == Locks.HeldState.None && cold.Medical is not { Incapacitated: true }, dt);
         }
+    }
+
+    /// <summary>Radians per second the drawn body turns towards the character's facing in the combat stance and out of it (<b>Verified</b>, <c>AnimationClass</c> slot 8 <c>@ 1405b24e0</c>: a half-angle step of 2 x dt, 5 times that unless the stance flag is 1, taken as a rotation by 2 x the step).</summary>
+    public const float CombatDrawTurn = 4, DrawTurn = 20;
+
+    /// <summary>
+    /// The drawn body follows the facing (<paramref name="yaw"/>) by at most <see cref="CombatDrawTurn"/> (in the combat stance, <paramref name="combat"/>) or <see cref="DrawTurn"/> rad/s,
+    /// taking it at once while the character is not free (carried, held, down) or has no drawn facing yet (<b>Verified</b>: the original sets the node directly for an imprisoned
+    /// character; engine choice for the other states).
+    /// </summary>
+    internal static void FollowFacing(CharacterAnimation a, float yaw, bool combat, bool free, float dt)
+    {
+        if (!a.HasDrawYaw || !free) { a.DrawYaw = yaw; a.HasDrawYaw = true; return; }
+        float delta = MathF.IEEERemainder(yaw - a.DrawYaw, MathF.Tau), step = (combat ? CombatDrawTurn : DrawTurn) * dt;
+        a.DrawYaw = MathF.Abs(delta) <= step ? yaw : a.DrawYaw + MathF.CopySign(step, delta);
     }
 
     /// <summary>
@@ -362,12 +395,12 @@ public sealed class AnimationSystem(AnimationLibrary library, AnimationLengths l
         }
         a.WasDown = down;
         // The hit reaction the combat system picked (it holds the character helpless for the clip's length; see ChooseStumble).
-        if (!down && fight.StumbleClip >= 0 && fight.StumbleStart > a.SeenHit)
+        if (!down && !carried && fight.StumbleClip >= 0 && fight.StumbleStart > a.SeenHit)
         {
             a.SeenHit = fight.StumbleStart;
             StartAction(a, fight.StumbleClip, true);
         }
-        int technique = down ? -1 : fight.Technique;
+        int technique = down || carried ? -1 : fight.Technique;   // a carried body plays nothing but its held pose
         bool fullTechnique = technique >= 0 && Library.Definitions[technique].Area == AnimationArea.All;
         // A technique cuts a reaction or getting up short, and so does walking off (except a hit reaction, which moves the character itself).
         if (a.Action >= 0 && !down && (technique >= 0 || MathF.Abs(speed) >= MovingSpeed && !a.ActionIsStumble)) a.Action = -1;
@@ -383,11 +416,13 @@ public sealed class AnimationSystem(AnimationLibrary library, AnimationLengths l
         int legs = 0;   // the lower movement clips at the head of the list (the phase follows them)
         float legsShare = 1;   // their share of the legs (less while a side step plays)
         if (a.Action >= 0) wanted.Add((a.Action, 1));
+        // A carried body, awake or not: the attach (FUN_1405ced90) plays "carry me" by name as the character's action, and the update then plays that action alone (FUN_140520500,
+        // docs/game/carry-loot.md "A carried body"), so no movement, idle or technique pick runs.
+        else if (carried && CarriedClip >= 0) { wanted.Add((CarriedClip, 1)); a.Idle = -1; }
         else if (down)
         {
-            if (carried && CarriedClip >= 0) wanted.Add((CarriedClip, 1));
             // Down in a bed: its clip (the sleeper's), so it lies where a sleeper lies.
-            else if (inBed && HeldClip(CharacterTask.Sleep, cold) is >= 0 and var lain) wanted.Add((lain, 1));
+            if (inBed && HeldClip(CharacterTask.Sleep, cold) is >= 0 and var lain) wanted.Add((lain, 1));
             else if (LyingClip >= 0) wanted.Add((LyingClip, 1));
             a.Idle = -1;
         }
@@ -398,10 +433,14 @@ public sealed class AnimationSystem(AnimationLibrary library, AnimationLengths l
         else if (!fullTechnique)
         {
             moving = MathF.Abs(speed) >= MovingSpeed;
-            if (moving || stance.Combat) Library.Movement(AnimationArea.Lower, speed, stance, lower);
-            if (moving) Library.Movement(AnimationArea.Upper, speed, stance, upper);
+            // A block played standing outside the combat stance (a fighter held at a distance, a wait with the running flag): its upper-body clip has no lower-body tracks and
+            // no idle plays under a technique, so the legs would stay in the binding pose; they take the combat footwork's lower clip, as in the stance (engine choice).
+            bool blockStanding = !moving && !stance.Combat && technique >= 0;
+            if (moving || stance.Combat || blockStanding) Library.Movement(AnimationArea.Lower, speed, blockStanding ? stance with { Combat = true } : stance, lower);
+            // In combat the upper body plays no movement clip: it holds the guard (the original's combat pick has no upper movement pass, docs/animation.md).
+            if (moving && !stance.Combat) Library.Movement(AnimationArea.Upper, speed, stance, upper);
             moving = moving && (lower.Count > 0 || upper.Count > 0);
-            if (!moving && !(stance.Combat && lower.Count > 0)) lower.Clear();
+            if (!moving && !((stance.Combat || blockStanding) && lower.Count > 0)) lower.Clear();
             legs = lower.Count;
             // Side-stepping: the side-step clip takes |side| / (|side| + |forward|) of the legs from the walking clips (none while both together are under 1: standing).
             if (stance.Combat)
@@ -418,9 +457,7 @@ public sealed class AnimationSystem(AnimationLibrary library, AnimationLengths l
             if (moving)
             {
                 wanted.AddRange(upper);
-                // In combat no upper walk clip fits a weapon (the sword ones are combat NO): the arms keep the guard over the footwork (engine choice; the
-                // original's upper pick while moving in combat was not traced, docs/animation.md), not the bare shuffle with the blade between the legs.
-                if (upper.Count == 0 && stance.Combat && technique < 0) StandingIdle(a, stance, true, dt, seed, key, tick, wanted);
+                if (stance.Combat && technique < 0 && Library.CombatGuard(stance, speed) is >= 0 and var guard) { wanted.Add((guard, 1)); a.Idle = -1; }
             }
             else if (technique < 0 && HeldClip(task, cold) is >= 0 and var held) { wanted.Add((held, 1)); a.Idle = -1; }
             else if (technique < 0)
@@ -434,8 +471,12 @@ public sealed class AnimationSystem(AnimationLibrary library, AnimationLengths l
                     (a.Idle, a.IdleLeft) = (own, 0);
                     wanted.Add((own, 1));
                 }
+                else if (stance.Combat && lower.Count > 0)
+                {
+                    if (Library.CombatGuard(standing, speed) is >= 0 and var guard) wanted.Add((guard, 1));
+                    a.Idle = -1;
+                }
                 else StandingIdle(a, standing, lower.Count > 0, dt, seed, key, tick, wanted);
-                if (carrying && Library.CarryIdle(stance) is >= 0 and var arms) wanted.Add((arms, 1));
             }
         }
         if (technique >= 0)
@@ -444,21 +485,30 @@ public sealed class AnimationSystem(AnimationLibrary library, AnimationLengths l
             if (fullTechnique) wanted.Clear();
             wanted.Add((technique, 1));
         }
+        // A carrier (FUN_140520000, the arm overlay update every frame): the carrying arm's overlay clip whatever else plays, a technique included (docs/animation.md "A carrier").
+        // A character that carries nothing and stands holds its hurt parts (FUN_140520000 -> FUN_14051fe60, docs/animation.md "Injury holds").
+        if (!down && !carried)
+        {
+            if (stance.CarryingLeft && CarryArmClip >= 0) wanted.Add((CarryArmClip, 1));
+            else if (!stance.CarryingLeft && !stance.CarryingRight && !crawling && speed <= PainHoldMaxSpeed && !(cold is { WaterState: 3, Race.Swims: true })
+                && PainHold(a, cold, stance, wanted) is >= 0 and var hold) wanted.Add((hold, 1));
+        }
         // Lifting or putting down (the carry system's timing): the whole-body lift clip, forwards for a pick-up, backwards from its end for a put-down.
         int lift = -1;
         float liftTime = 0;
-        if (!down && LiftClip >= 0 && cold.LiftTime >= 0 && task is CharacterTask.PickUp or CharacterTask.PutDown)
+        if (!down && !carried && LiftClip >= 0 && cold.LiftTime >= 0 && task is CharacterTask.PickUp or CharacterTask.PutDown)
         {
             float length = Lengths.Of(Library.Definitions[LiftClip].Clip);
             lift = LiftClip;
-            liftTime = task == CharacterTask.PickUp ? MathF.Min(cold.LiftTime, length) : MathF.Max(length - cold.LiftTime, 0);
+            float played = cold.LiftTime * (Library.Definitions[LiftClip].PlaySpeed > 0 ? Library.Definitions[LiftClip].PlaySpeed : 1);   // the record's play speed (2)
+            liftTime = task == CharacterTask.PickUp ? MathF.Min(played, length) : MathF.Max(length - played, 0);
             wanted.Clear();
             wanted.Add((lift, 1));
             legs = 0;   // the lift is the whole body: no walking clips left to synch
             a.Idle = -1;
         }
         // A stealth knock-out swing (the carry system's timing): the whole-body knockout clip at x1.2.
-        else if (!down && KnockoutClip >= 0 && cold.LiftTime >= 0 && task == CharacterTask.StealthKo)
+        else if (!down && !carried && KnockoutClip >= 0 && cold.LiftTime >= 0 && task == CharacterTask.StealthKo)
         {
             lift = KnockoutClip;
             liftTime = MathF.Min(cold.LiftTime * Carrying.CarrySystem.KnockoutPlaySpeed, Lengths.Of(Library.Definitions[KnockoutClip].Clip));
@@ -549,25 +599,29 @@ public sealed class AnimationSystem(AnimationLibrary library, AnimationLengths l
             a.Layers[k].Target = weight;
         }
 
-        // The phase of the synched clips advances F x v x the weighted play speed of the lower movement clips, in cycles per second.
-        float cycles = 0;
-        for (int k = 0; k < legs; k++)
+        // The phase advances F x v x the weighted play speed of all the lower movement candidates (synched or not), in cycles per second; the rate is written only when that blend is
+        // picked and kept otherwise (Verified, @ 14051d8e0 / @ 14051d000), so a walk fading out after a stop goes on stepping at its last rate.
+        if (legs > 0)
         {
-            var (index, weight) = wanted[k];
-            var d = Library.Definitions[index];
-            if (d.Synchs && d.MoveSpeed != 0) cycles += weight * d.PlaySpeed;
+            float cycles = 0;
+            for (int k = 0; k < legs; k++)
+            {
+                var (index, weight) = wanted[k];
+                cycles += weight * Library.Definitions[index].PlaySpeed;
+            }
+            if (legsShare is > 0 and < 1) cycles /= legsShare;   // a side step thins the walking clips, not their stride
+            a.PhaseRate = a.Rate * speed * cycles;
         }
-        if (legsShare is > 0 and < 1) cycles /= legsShare;   // a side step thins the walking clips, not their stride
-        a.Phase += a.Rate * speed * cycles * dt;
+        a.Phase += a.PhaseRate * dt;
         a.Phase -= MathF.Floor(a.Phase);
 
-        float step = BlendRate * dt;
         int kept = 0;
         var root = Vector2.Zero;
         for (int k = 0; k < a.Count; k++)
         {
             ref var layer = ref a.Layers[k];
             var d = Library.Definitions[layer.Definition];
+            float step = BlendStep(d, layer.Target > 0, a.Rate, speed) * dt;
             layer.Weight = layer.Weight < layer.Target ? MathF.Min(layer.Weight + step, layer.Target) : MathF.Max(layer.Weight - step, layer.Target);
             float before = layer.Time;
             float length = lengths.Of(d.Clip);
@@ -593,6 +647,22 @@ public sealed class AnimationSystem(AnimationLibrary library, AnimationLengths l
     static bool IsStrafe(AnimationDefinition d) => d.Area == AnimationArea.Lower && d.MoveSpeed == 0 && d.StrafeSpeedMax > 0 && !d.Technique;
 
     static float Wrap(float time, float length) => length > 0 ? time - MathF.Floor(time / length) * length : 0;
+
+    /// <summary>
+    /// How fast a layer's weight moves, per second (docs/animation.md "Layer managers"): the CONSTANTS blend rate times its body half's factor (lower 2, upper and whole
+    /// body 1.25, overlay 1); a wanted layer moves at that times its play rate clamped to 0.5..10, one fading out at the plain rate.
+    /// </summary>
+    float BlendStep(AnimationDefinition d, bool wanted, float bodyRate, float speed)
+    {
+        float half = d.Area switch { AnimationArea.Lower => LowerBlend, AnimationArea.Overlay => OverlayBlend, _ => UpperBlend };
+        if (!wanted) return BlendRate * half;
+        // The play rate in clip seconds per second (a movement clip's follows the speed); a technique, an action or a lift runs on its own clock, taken as 1.
+        float play = d.MoveSpeed != 0 ? bodyRate * d.PlaySpeed * speed : d.PlaySpeed > 0 ? d.PlaySpeed : d.Technique || d.IsAction ? 1 : 0;
+        return BlendRate * half * Math.Clamp(play, MinPlayBlend, MaxPlayBlend);
+    }
+
+    /// <summary>The layer managers' blend factors (<b>Verified</b>, <c>@ 1406216b0</c>) and the clamp of a wanted layer's play rate (<c>@ 1405b5c30</c>).</summary>
+    const float LowerBlend = 2, UpperBlend = 1.25f, OverlayBlend = 1, MinPlayBlend = 0.5f, MaxPlayBlend = 10;
 
     /// <summary>An animal's clips with those its skeleton lacks taken out, and the fall and lying clip chosen (<see cref="PlanOf"/>).</summary>
     sealed record AnimalPlan(int[] Movement, IReadOnlyList<(int Index, float Weight)> Idles, int Fall, int Lying, AnimationLengths Lengths);
@@ -664,6 +734,48 @@ public sealed class AnimationSystem(AnimationLibrary library, AnimationLengths l
         return Settle(a, wanted, 0, -1, 0, technique, fight, v, dt, plan.Lengths, size, seed, key, tick);
     }
 
+    /// <summary>The forward speed over which the injury hold is not played (<c>FUN_140520000</c>: the constant at <c>141683170</c>).</summary>
+    const float PainHoldMaxSpeed = 50;
+
+    /// <summary>
+    /// The hurt-part hold the character plays now (<c>FUN_14064a100</c> builds the list, <c>FUN_140520000</c> and <c>FUN_14051fe60</c> pick; <b>Verified</b>, docs/animation.md "Injury holds"): the parts whose
+    /// health fraction is under their <c>pain anim</c> threshold per cent, the lowest fraction first; the first whose record the free arms allow wins: a record that uses the left arm
+    /// plays as is when the left arm is free and works, else as its <c>-R</c> mirror when the right arm is; a record that uses the right arm needs it free. An arm is busy while a
+    /// hand holds a weapon or an upper / whole-body layer uses it. -1: none.
+    /// </summary>
+    int PainHold(CharacterAnimation a, CharacterCold cold, in AnimationStance stance, List<(int Index, float Weight)> wanted)
+    {
+        if (cold.Medical is not { } medical) return -1;
+        bool leftBusy = stance.Left.Holds, rightBusy = stance.Right.Holds;
+        void Scan(int index, float weight)
+        {
+            var d = Library.Definitions[index];
+            if (weight <= 0 || d.Area is not (AnimationArea.Upper or AnimationArea.All)) return;
+            leftBusy |= d.UsesLeftArm;
+            rightBusy |= d.UsesRightArm;
+        }
+        foreach (var (index, weight) in wanted) Scan(index, weight);
+        for (int k = 0; k < a.Count; k++) Scan(a.Layers[k].Definition, a.Layers[k].Weight);
+        bool leftFree = !leftBusy && medical.ArmWorks(left: true), rightFree = !rightBusy && medical.ArmWorks(left: false);
+        var hurt = new List<(float Fraction, string Record)>();
+        foreach (var part in medical.PartSpan)
+        {
+            if (part.Template.PainAnim is not { } record || !(part.Fraction < part.Template.PainThreshold * 0.01f) || hurt.Any(h => h.Fraction == part.Fraction)) continue;
+            hurt.Add((part.Fraction, record));
+        }
+        hurt.Sort((x, y) => x.Fraction.CompareTo(y.Fraction));
+        foreach (var (_, record) in hurt)
+        {
+            int index = Library.IndexOfRecord(record);
+            if (index < 0) continue;
+            var d = Library.Definitions[index];
+            if (d.UsesRightArm && !rightFree) continue;
+            if (leftFree || !d.UsesLeftArm) return index;
+            if (rightFree && Library.IndexOf(d.Name + "-R") is >= 0 and var mirror) return mirror;
+        }
+        return -1;
+    }
+
     /// <summary>
     /// A standing character's idle: out of combat a whole-body idle, in combat an upper-body guard over the lower movement blend (<paramref name="legs"/>:
     /// the lower clips are already wanted), kept until its time is up and then drawn again by <c>idle chance</c>.
@@ -723,9 +835,13 @@ public sealed class AnimationSystem(AnimationLibrary library, AnimationLengths l
             if ((pick -= w) < 0) { chosen = index; break; }
         }
         var d = library.Definitions[chosen];
-        float seconds = lengths.Of(d.Clip) / (d.PlaySpeed > 0 ? d.PlaySpeed : 1);
+        // The stumble state lasts until the clip, at its record's play speed, is past StumbleEnd of its length (Verified, FUN_140435570 -> FUN_1405b3a40); no stat scales it.
+        float seconds = StumbleEnd * lengths.Of(d.Clip) / (d.PlaySpeed > 0 ? d.PlaySpeed : 1);
         return seconds > 0 ? (chosen, seconds) : null;
     }
+
+    /// <summary>The fraction of a stumble clip after which the stumble state ends (<c>DAT_14168db34</c>).</summary>
+    public const float StumbleEnd = 0.98f;
 
     /// <summary>What a character holds and does, as the clips' conditions read it; leg health in per cent weighs the limp clips.</summary>
     static AnimationStance StanceOf(CharacterCold cold)
@@ -785,34 +901,36 @@ public sealed class AnimationSystem(AnimationLibrary library, AnimationLengths l
 
     /// <summary>
     /// The layers to publish for a snapshot: the record name (the renderer finds its track masks by it), the clip time in seconds and the weight. The
-    /// weights are normalised as Kenshi's layers are (docs/animation.md "The three layers each frame"): the upper body (upper and whole-body clips) to a
-    /// total of at most 1, the lower body to at most 1 minus the whole-body clips' weight (actions and <c>all</c> clips; a block is played without its lower-body
-    /// tracks and keeps the legs' clips); overlays are left alone.
+    /// weights are normalised as Kenshi's layers are (docs/animation.md "Layer managers"): the upper body (upper and whole-body clips) to a total of 1, the
+    /// lower body to 1 minus the whole-body clips' weight (actions and <c>all</c> clips; a block is played without its lower-body tracks and keeps the legs'
+    /// clips); overlays are left alone. Within a body half the layers fading out keep their weights and the wanted ones fill what is left (scaled up as well as
+    /// down), so a cross-fade never lets the binding pose through; with only fading layers the total falls with them.
     /// </summary>
     public IReadOnlyList<AnimationLayer> Publish(CharacterAnimation a)
     {
         int visible = 0;
-        float upperTotal = 0, full = 0, lowerTotal = 0;
+        float upperWanted = 0, upperFading = 0, fullWanted = 0, fullFading = 0, lowerWanted = 0, lowerFading = 0;
         for (int k = 0; k < a.Count; k++)
         {
             var layer = a.Layers[k];
             if (layer.Weight <= 0) continue;
             visible++;
             var d = Library.Definitions[layer.Definition];
+            bool wanted = layer.Target > 0;
             switch (d.Area)
             {
-                case AnimationArea.Lower: lowerTotal += layer.Weight; break;
+                case AnimationArea.Lower: if (wanted) lowerWanted += layer.Weight; else lowerFading += layer.Weight; break;
                 case AnimationArea.Overlay: break;
                 default:
-                    upperTotal += layer.Weight;
-                    if (d.Area == AnimationArea.All || d.IsAction && !d.Technique) full += layer.Weight;   // a block keeps the legs' clips
+                    if (wanted) upperWanted += layer.Weight; else upperFading += layer.Weight;
+                    if (d.Area == AnimationArea.All || d.IsAction && !d.Technique) { if (wanted) fullWanted += layer.Weight; else fullFading += layer.Weight; }   // a block keeps the legs' clips
                     break;
             }
         }
         if (visible == 0) return [];
-        float upperScale = upperTotal > 1 ? 1 / upperTotal : 1;
-        float lowerRoom = MathF.Max(0, 1 - full * upperScale);
-        float lowerScale = lowerTotal > lowerRoom ? lowerRoom / lowerTotal : 1;
+        var (upperWantedScale, upperFadingScale) = Fill(upperWanted, upperFading, 1);
+        float lowerRoom = MathF.Max(0, 1 - fullWanted * upperWantedScale - fullFading * upperFadingScale);
+        var (lowerWantedScale, lowerFadingScale) = Fill(lowerWanted, lowerFading, lowerRoom);
         var list = new AnimationLayer[visible];   // the snapshot keeps its own copy, sized exactly
         int n = 0;
         for (int k = 0; k < a.Count; k++)
@@ -820,10 +938,28 @@ public sealed class AnimationSystem(AnimationLibrary library, AnimationLengths l
             var layer = a.Layers[k];
             if (layer.Weight <= 0) continue;
             var d = Library.Definitions[layer.Definition];
-            float scale = d.Area switch { AnimationArea.Lower => lowerScale, AnimationArea.Overlay => 1, _ => upperScale };
+            bool wanted = layer.Target > 0;
+            float scale = d.Area switch
+            {
+                AnimationArea.Lower => wanted ? lowerWantedScale : lowerFadingScale,
+                AnimationArea.Overlay => 1,
+                _ => wanted ? upperWantedScale : upperFadingScale,
+            };
             list[n++] = new AnimationLayer(d.Name, layer.Time, layer.Weight * scale) { Length = layer.Length, Definition = layer.Definition };
         }
         return list;
+    }
+
+    /// <summary>
+    /// The scales of a body half's wanted and fading layers for a total of <paramref name="total"/> (Kenshi's layer manager, <c>@ 1405b5c30</c>): the wanted are scaled up to fill
+    /// what the fading leave, then everything is scaled down if it is over the total.
+    /// </summary>
+    static (float Wanted, float Fading) Fill(float wanted, float fading, float total)
+    {
+        float wantedScale = wanted > 0 && total - fading > wanted ? (total - fading) / wanted : 1;
+        float sum = wanted * wantedScale + fading;
+        float down = sum > total && sum > 0 ? total / sum : 1;
+        return (wantedScale * down, down);
     }
 }
 

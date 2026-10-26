@@ -125,6 +125,26 @@ internal sealed class WorldLamps : IDisposable
         return false;
     }
 
+    // The lamps' indices by placement, rebuilt with the lamp list, and the daylight of the last update: for EmissiveDark.
+    Dictionary<string, List<int>> byPlacement = [];
+    float switchDaylight;
+
+    /// <summary>
+    /// Whether the EMISSIVE parts of placement <paramref name="placement"/> are dark now: it has lamps and none is switched on. The game's lights switch (Building slot 140,
+    /// <c>FUN_14029aa10</c>) sets every emissive part's <c>brightness</c> to 1 while on and 0 while off, and a building with no lights keeps 1 (docs/formats/lights.md,
+    /// "Emissive parts"). Night lamps are switched on when it is not daytime (daylight factor 0, slot 164), not at the light pass's 0.1.
+    /// </summary>
+    public bool EmissiveDark(string placement)
+    {
+        if (lamps is null || !byPlacement.TryGetValue(placement, out var list)) return false;
+        foreach (int i in list)
+        {
+            var l = lamps[i];
+            if (WorldLights.IsLit(l, l.Interior && InteriorAllDay ? 0 : switchDaylight > 0 ? 1 : 0) && PowerFactor(i) > 0) return false;
+        }
+        return true;
+    }
+
     /// <summary>Lamp <paramref name="i"/> of this frame: the world's and placed buildings', then <see cref="Moving"/>.</summary>
     WorldLight Lamp(int i) => i < lamps!.Length ? lamps[i] : Moving[i - lamps.Length];
 
@@ -139,6 +159,8 @@ internal sealed class WorldLamps : IDisposable
     public void Update(Vector3 eye, WorldObjectRenderer? objects = null, float daylight = 0)
     {
         slot = ctx.Frame.Slot;
+        switchDaylight = daylight;
+        if (objects is not null) objects.EmissiveDark ??= EmissiveDark;
         grid = default;
         InGrid = 0;
         emitters.Clear();
@@ -157,6 +179,13 @@ internal sealed class WorldLamps : IDisposable
             worldCount = kept.Length;
             lamps = runtime.Count == 0 ? world : [.. kept, .. runtime.Values.SelectMany(r => r)];
             runtimeChanged = false;
+            var index = new Dictionary<string, List<int>>(StringComparer.Ordinal);
+            for (int i = 0; i < lamps.Length; i++)
+            {
+                if (!index.TryGetValue(lamps[i].PlacementId, out var list)) index[lamps[i].PlacementId] = list = [];
+                list.Add(i);
+            }
+            byPlacement = index;
         }
         int count = lamps.Length + Moving.Count;
         if (count == 0) return;

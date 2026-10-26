@@ -64,6 +64,7 @@ public sealed partial class DialogueSystem
         mc.Fleeing = false;
         mc.Pending = null;
         mc.Jobs.Clear();   // an NPC's list, if any, does not carry over
+        if (mc.Inventory is { } kit) foreach (var piece in kit.All()) piece.Uniform = "";   // a recruit's clothes are no longer a faction's uniform (economy.md "Unknowns", Observed)
         mc.Save = null;   // written as a new member of the player's platoon; the save's old slot of it is removed
         table.Next[slot].Mode = SpeedMode.Free;   // the original's speed mode 2
         MovementSystem.Stop(table, slot);

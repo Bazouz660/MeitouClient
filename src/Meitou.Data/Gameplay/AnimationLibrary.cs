@@ -1,4 +1,5 @@
 using Meitou.Content;
+using Meitou.Data.Characters;
 using Meitou.Data.Fcs;
 using Meitou.Data.Ogre;
 
@@ -84,6 +85,9 @@ public sealed record AnimationDefinition
     public bool CarryingLeft { get; init; }
     public bool CarryingRight { get; init; }
     public bool BeingCarried { get; init; }
+    /// <summary><c>uses left arm</c> / <c>uses right arm</c> (record bytes <c>+0x9f</c> / <c>+0x9e</c>): the layer holds that arm, which the injury hold (<c>FUN_14051fe60</c>) and the carrying arm check.</summary>
+    public bool UsesLeftArm { get; init; }
+    public bool UsesRightArm { get; init; }
     public WeaponKinds Kinds { get; init; }
     public float LeftLegMin { get; init; }
     public float LeftLegMax { get; init; }
@@ -183,6 +187,8 @@ public sealed record AnimationDefinition
             CarryingLeft = r.GetBool("carrying left"),
             CarryingRight = r.GetBool("carrying right"),
             BeingCarried = r.GetBool("being carried"),
+            UsesLeftArm = r.GetBool("uses left arm"),
+            UsesRightArm = r.GetBool("uses right arm"),
             Kinds = kinds,
             LeftLegMin = r.GetFloat("L leg damage min"),
             LeftLegMax = r.GetFloat("L leg damage max"),
@@ -221,9 +227,7 @@ public sealed record AnimationDefinition
     {
         bool useLeft = left <= right;
         float health = useLeft ? left : right;
-        float min = useLeft ? LeftLegMin : RightLegMin, ideal = useLeft ? LeftLegIdeal : RightLegIdeal, max = useLeft ? LeftLegMax : RightLegMax;
-        if (min < 1) min = -101;
-        if (max > 99) max = 101;
+        float min = LegFloor(useLeft ? LeftLegMin : RightLegMin), ideal = useLeft ? LeftLegIdeal : RightLegIdeal, max = LegCeil(useLeft ? LeftLegMax : RightLegMax);
         return Ramp(health, min, ideal, max, false, false);
     }
 
@@ -238,8 +242,12 @@ public sealed record AnimationDefinition
         return max <= peak ? 1 : (max - v) / (max - peak);
     }
 
-    /// <summary>A leg range of 1000 .. 1000 is the records' "not used" (the limp clips constrain one leg only; <b>Observed</b>).</summary>
-    static bool Leg(float health, float min, float max) => min == 1000 && max == 1000 || health >= min && health <= max;
+    /// <summary>The loader's reading of a record's leg range (<b>Verified</b>, docs/animation.md "Choosing candidates"): a min under 1 is -101 and a max over 99 is 101, so a leg already below 0 (limping, not yet collapsed) still fits the records that say 0 .. 100.</summary>
+    public static float LegFloor(float min) => min < 1 ? -101 : min;
+    public static float LegCeil(float max) => max > 99 ? 101 : max;
+
+    /// <summary>A leg range of 1000 .. 1000 is the records' "not used" (the limp clips constrain one leg only; <b>Observed</b>); else the range as the loader reads it.</summary>
+    static bool Leg(float health, float min, float max) => min == 1000 && max == 1000 || health >= LegFloor(min) && health <= LegCeil(max);
 
     /// <summary>
     /// Whether the record can play for <paramref name="s"/>: the weapon in each hand (NO / YES / EITHER, and the held weapon's kind
@@ -250,13 +258,7 @@ public sealed record AnimationDefinition
     /// <summary><see cref="Fits"/> without the leg ranges (movement clips weigh the legs with <see cref="LegWeight"/> instead).</summary>
     public bool FitsExceptLegs(in AnimationStance s)
     {
-        static bool Hand(int wants, HandHold held, WeaponKinds kinds) => wants switch
-        {
-            0 => !held.Holds,
-            1 => held.Holds && (kinds & held.Weapon) != 0,
-            _ => true,
-        };
-        return Hand(WeaponLeft, s.Left, Kinds) && Hand(WeaponRight, s.Right, Kinds)
+        return (Area == AnimationArea.Lower || ArmsFit(s) && KindFits(s))
             && Mode(CombatMode, s.Combat) && Mode(StealthMode, s.Stealth)
             && Crouched == s.Crouched && Prone == s.Prone
             // The carrying booleans are tested on upper and overlay picks only (docs/animation.md): a carrier's legs walk with the ordinary lower clips.
@@ -264,12 +266,31 @@ public sealed record AnimationDefinition
     }
 
     /// <summary>
+    /// The arm check of the original (<c>FUN_14051d240</c>, <b>Verified</b>: it tests the layer index, 1 for upper <i>and</i> whole-body records, 2 overlay, and lets only the lower one
+    /// pass): <c>has weapon L</c> and <c>R</c> both YES mean exactly one hand holds a weapon, else each hand's YES / NO must match what it holds (EITHER passes). The lower layer is exempt.
+    /// </summary>
+    public bool ArmsFit(in AnimationStance s)
+    {
+        if (Area == AnimationArea.Lower) return true;
+        bool left = s.Left.Holds, right = s.Right.Holds;
+        if (WeaponLeft == 1 && WeaponRight == 1) return left != right;
+        return (WeaponLeft == 2 || WeaponLeft == (left ? 1 : 0)) && (WeaponRight == 2 || WeaponRight == (right ? 1 : 0));
+    }
+
+    /// <summary>The weapon type held must be one of the record's weapon kinds, for the upper, whole-body and overlay layers (<b>Verified</b>, the idle draw <c>@ 14051ec80</c>); fists (type 5) skip the test.</summary>
+    public bool KindFits(in AnimationStance s)
+    {
+        var held = s.Right.Holds ? s.Right.Weapon : s.Left.Holds ? s.Left.Weapon : WeaponKinds.Unarmed;
+        return held == WeaponKinds.Unarmed || (Kinds & held) != 0;
+    }
+
+    /// <summary>
     /// Whether the record can play as a character's own <c>idle stance</c> (the original's idle pick <c>FUN_14051f230</c>, <b>Verified</b> by decompilation,
-    /// docs/animation.md "Idle stance"): normal category, the combat and stealth modes fit, and the arm check, which passes for a whole-body record (layer
-    /// <c>all</c>); other layers take <see cref="Fits"/> (engine choice: that arm check was not decoded). The weapon kinds are not tested.
+    /// docs/animation.md "Idle stance"): normal category, the combat and stealth modes fit, and the arm check, so a character with a weapon in hand does not stand in the
+    /// stance of the empty-handed (it draws from the idle list: <c>stand 1 sword</c>). No other test (legs, kinds, carrying, posture).
     /// </summary>
     public bool FitsAsStance(in AnimationStance s) =>
-        Category == 0 && !s.BeingCarried && (Area == AnimationArea.All ? Mode(CombatMode, s.Combat) && Mode(StealthMode, s.Stealth) : Fits(s));
+        Category == 0 && !s.BeingCarried && Mode(CombatMode, s.Combat) && Mode(StealthMode, s.Stealth) && ArmsFit(s);
 
     static bool Mode(int wants, bool on) => wants switch { 0 => !on, 1 => on, _ => true };
 }
@@ -295,8 +316,8 @@ public sealed class AnimationLibrary
         for (int i = 0; i < all.Count; i++) if (all[i].Technique) techniques.TryAdd(all[i].Id, i);
         swimming = [.. Enumerable.Range(0, all.Count).Where(i => all[i].Category == SwimmingCategory && !all[i].Technique)];
         grounded = [.. Enumerable.Range(0, all.Count).Where(i => all[i].Category == GroundedCategory && !all[i].Technique)];
-        leftBounds = Bounds(all.SelectMany(d => new[] { d.LeftLegMin, d.LeftLegMax }));
-        rightBounds = Bounds(all.SelectMany(d => new[] { d.RightLegMin, d.RightLegMax }));
+        leftBounds = Bounds(all.SelectMany(d => new[] { d.LeftLegMin, d.LeftLegMax, AnimationDefinition.LegFloor(d.LeftLegMin), AnimationDefinition.LegCeil(d.LeftLegMax) }));
+        rightBounds = Bounds(all.SelectMany(d => new[] { d.RightLegMin, d.RightLegMax, AnimationDefinition.LegFloor(d.RightLegMin), AnimationDefinition.LegCeil(d.RightLegMax) }));
     }
 
     static float[] Bounds(IEnumerable<float> values) => [.. values.Where(v => !float.IsNaN(v)).Distinct().Order()];
@@ -366,6 +387,9 @@ public sealed class AnimationLibrary
                 .OrderBy(r => r.StringId, StringComparer.Ordinal)
                 .Select(AnimationDefinition.From)));
         library.BuildAnimals(db);
+        // The order the original lists ANIMATION records in: its per-type map of records by string id (GameDataContainer +0x90), a boost hash map filled in load order.
+        int rank = 0;
+        foreach (var id in BoostHashOrder.Of(db.OfType(FcsRecordType.ANIMATION).Select(r => r.StringId), BoostHashOrder.StringHash)) library.dataOrder[id] = rank++;
         return library;
     }
 
@@ -588,22 +612,44 @@ public sealed class AnimationLibrary
             for (int k = first; k < into.Count; k++) into[k] = (into[k].Index, into[k].Index == playing ? 0.25f : 1f);
     }
 
+    /// <summary>
+    /// The guard a fighter's upper body holds (<b>Verified</b>, the combat pick <c>AnimationClassHuman</c> slot 28 through <c>FUN_14051d660</c>): of <see cref="CombatIdles"/>, the one with the
+    /// highest candidate weight (speed weight x leg weight) at speed <paramref name="v"/>, the first in the original's list order on a tie (<see cref="DataOrder"/>), chosen again
+    /// every tick; -1 when there is none.
+    /// </summary>
+    public int CombatGuard(in AnimationStance stance, float v)
+    {
+        int best = -1;
+        float bestWeight = float.NegativeInfinity;
+        foreach (var (i, _) in CombatIdles(stance))
+        {
+            var d = all[i];
+            float w = d.SpeedWeight(v) * d.LegWeight(stance.LeftLeg, stance.RightLeg);
+            if (w > bestWeight || best >= 0 && w == bestWeight && DataOrder(i) < DataOrder(best)) (best, bestWeight) = (i, w);
+        }
+        return best;
+    }
+
+    readonly Dictionary<string, int> dataOrder = new(StringComparer.Ordinal);
+
+    /// <summary>A definition's place in the original's list of ANIMATION records (<see cref="BoostHashOrder"/>), for its "first in list order" ties; its index without one.</summary>
+    int DataOrder(int index) => dataOrder.TryGetValue(all[index].Id, out int rank) ? rank : int.MaxValue / 2 + index;
+
     readonly System.Collections.Concurrent.ConcurrentDictionary<AnimationStance, (int Index, float Weight)[]> combatIdles = new();
 
     /// <summary>
-    /// The idles of a character standing in combat: the upper-body <c>idle</c> clips (the guards, <c>MA idle1</c>) whose combat mode fits and whose weapon kinds
-    /// include the one in hand (fists: <c>unarmed</c>), by <c>idle chance</c>. <b>Observed</b> (docs/animation.md "Combat footwork"): the original picks from the
-    /// idle list by weapon type and carrying; its arm check was not decoded, so the hands' YES / NO fields are not tested (the guards want both hands).
+    /// The idles of a character standing in combat: the upper-body <c>idle</c> clips (the guards, <c>MA idle1</c>) that fit the stance: combat mode, arm check and weapon kinds
+    /// (<see cref="AnimationDefinition.ArmsFit"/>, <see cref="AnimationDefinition.KindFits"/>: the guards want exactly one hand armed), by <c>idle chance</c>. <b>Observed</b> (docs/animation.md "Combat upper body"): the original picks from the
+    /// idle list by weapon type and carrying.
     /// Without any, the whole-body idles that fit apart from the combat mode.
     /// </summary>
     public IReadOnlyList<(int Index, float Weight)> CombatIdles(in AnimationStance stance) => combatIdles.GetOrAdd(Canonical(stance), static (s, self) =>
     {
-        var held = s.Right.Holds ? s.Right.Weapon : s.Left.Holds ? s.Left.Weapon : WeaponKinds.Unarmed;
         var list = new List<(int, float)>();
         for (int i = 0; i < self.all.Count; i++)
         {
             var d = self.all[i];
-            if (d.Category == 0 && d.Idle && !d.IsAction && d.Area == AnimationArea.Upper && d.CombatMode != 0 && (d.Kinds & held) != 0) list.Add((i, Math.Max(d.IdleChance, 0)));
+            if (d.Category == 0 && d.Idle && !d.IsAction && d.Area == AnimationArea.Upper && d.CombatMode != 0 && d.FitsExceptLegs(s)) list.Add((i, Math.Max(d.IdleChance, 0)));
         }
         if (list.Count == 0)
             for (int i = 0; i < self.all.Count; i++)
@@ -681,66 +727,93 @@ public sealed class AnimationLengths
 
     /// <summary>
     /// The clips of every <c>*_skeleton.skeleton</c> under <c>data/character/meshes</c> (the first file to name a clip wins); with <paramref name="db"/> also the clips of
-    /// the skeleton each ANIMAL_CHARACTER's race's body mesh links (<see cref="For"/>), read in parallel, one table per skeleton file.
+    /// the skeleton each ANIMAL_CHARACTER's race's body mesh links (<see cref="For"/>), read in parallel, one table per skeleton file. With <paramref name="find"/> (a bare
+    /// file name to its full path, as the game's resource groups find it) the clips of the ANIMATION_FILE skeletons follow, in link order (<see cref="AnimationFiles"/>).
     /// </summary>
-    public static AnimationLengths Load(string installRoot, GameDatabase? db = null)
+    public static AnimationLengths Load(string installRoot, GameDatabase? db = null, Func<string, string?>? find = null)
     {
         var result = new AnimationLengths();
         var dir = Path.Combine(installRoot, "data", "character", "meshes");
         if (Directory.Exists(dir))
             foreach (var file in Directory.EnumerateFiles(dir, "*_skeleton.skeleton", SearchOption.AllDirectories).Order(StringComparer.Ordinal))
                 result.AddSkeleton(file);
-        if (db is not null) result.LoadAnimals(installRoot, db);
+        if (db is not null && find is not null) result.AddLinked(AnimationFiles.All(db), find);
+        if (db is not null) result.LoadAnimals(installRoot, db, find);
         return result;
+    }
+
+    /// <summary>Adds the clips of linked skeleton files (FCS paths, in link order), read in parallel; a file not found is left out, as the game links only the ones it finds.</summary>
+    void AddLinked(IReadOnlyList<string> files, Func<string, string?> find)
+    {
+        var paths = files.Select(f => find(AnimationFiles.BareName(f))).OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var read = new OgreSkeleton?[paths.Count];
+        Parallel.For(0, paths.Count, i => read[i] = TryRead(paths[i]));
+        foreach (var skeleton in read) if (skeleton is not null) AddSkeleton(skeleton);
+    }
+
+    static OgreSkeleton? TryRead(string file)
+    {
+        try { return OgreSkeletonReader.ReadFile(file); }
+        catch (Exception e) when (e is IOException or InvalidDataException or FcsFormatException or OgreFormatException or EndOfStreamException) { return null; }
     }
 
     /// <summary>Adds the clips of a skeleton file (a clip already known keeps its first length).</summary>
     void AddSkeleton(string file)
     {
-        try
+        if (TryRead(file) is { } skeleton) AddSkeleton(skeleton);
+    }
+
+    void AddSkeleton(OgreSkeleton skeleton)
+    {
+        var root = skeleton.Bones.FirstOrDefault(b => b.Name == "Bip01");
+        foreach (var a in skeleton.Animations)
         {
-            var skeleton = OgreSkeletonReader.ReadFile(file);
-            var root = skeleton.Bones.FirstOrDefault(b => b.Name == "Bip01");
-            foreach (var a in skeleton.Animations)
-            {
-                if (!lengths.TryAdd(a.Name, a.Length) || root is null) continue;
-                var track = a.Tracks.FirstOrDefault(t => t.Bone == root.Handle);
-                if (track is null || track.KeyFrames.Count == 0) continue;
-                roots[a.Name] = ([.. track.KeyFrames.Select(k => k.Time)], [.. track.KeyFrames.Select(k => new System.Numerics.Vector2(k.Translation.X, k.Translation.Z))]);
-            }
+            if (!lengths.TryAdd(a.Name, a.Length) || root is null) continue;
+            var track = a.Tracks.FirstOrDefault(t => t.Bone == root.Handle);
+            if (track is null || track.KeyFrames.Count == 0) continue;
+            roots[a.Name] = ([.. track.KeyFrames.Select(k => k.Time)], [.. track.KeyFrames.Select(k => new System.Numerics.Vector2(k.Translation.X, k.Translation.Z))]);
         }
-        catch (Exception e) when (e is IOException or InvalidDataException or FcsFormatException or OgreFormatException or EndOfStreamException) { }
     }
 
     /// <summary>
     /// Per race of an ANIMAL_CHARACTER: the race's <c>male mesh</c> (animal races name the same mesh for both), the skeleton that mesh links (read from the mesh file; looked
-    /// for beside it, then anywhere under <c>data</c>), and that skeleton's clips. Races sharing a skeleton share its table.
+    /// for beside it, then anywhere under <c>data</c>), and that skeleton's clips, then with <paramref name="find"/> those of the race's animation files (an animal is male:
+    /// <c>male animation</c>). Races sharing a skeleton and animation files share their table.
     /// </summary>
-    void LoadAnimals(string installRoot, GameDatabase db)
+    void LoadAnimals(string installRoot, GameDatabase db, Func<string, string?>? find)
     {
         var races = db.OfType(FcsRecordType.ANIMAL_CHARACTER)
             .SelectMany(a => a.GetReferences("race").Where(r => r.Values.Value0 > 0).Take(1).Select(r => db.Find(r.TargetStringId)))
             .OfType<GameRecord>().Where(r => r.Type == FcsRecordType.RACE).DistinctBy(r => r.StringId).ToList();
-        var skeletonOf = new System.Collections.Concurrent.ConcurrentDictionary<string, string?>(StringComparer.Ordinal);
-        Parallel.ForEach(races, race => skeletonOf[race.StringId] = SkeletonFile(installRoot, race.GetPath("male mesh")));
+        var keyOf = new System.Collections.Concurrent.ConcurrentDictionary<string, (string File, string[] Linked)?>(StringComparer.Ordinal);
+        Parallel.ForEach(races, race =>
+        {
+            var file = SkeletonFile(installRoot, race.GetPath("male mesh"), find);
+            string[] linked = file is null || find is null ? []
+                : [.. AnimationFiles.Of(db, race, null, female: false).Select(f => find(AnimationFiles.BareName(f))).OfType<string>()];
+            keyOf[race.StringId] = file is null ? null : (file, linked);
+        });
+        static string Key((string File, string[] Linked) k) => string.Join("|", [k.File, .. k.Linked]);
         var tables = new System.Collections.Concurrent.ConcurrentDictionary<string, AnimationLengths>(StringComparer.OrdinalIgnoreCase);
-        Parallel.ForEach(skeletonOf.Values.OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase), file =>
+        Parallel.ForEach(keyOf.Values.OfType<(string File, string[] Linked)>().DistinctBy(Key, StringComparer.OrdinalIgnoreCase), k =>
         {
             var table = new AnimationLengths();
-            table.AddSkeleton(file);
-            tables[file] = table;
+            table.AddSkeleton(k.File);
+            table.AddLinked(k.Linked, f => f);
+            tables[Key(k)] = table;
         });
         foreach (var race in races)
-            if (skeletonOf[race.StringId] is { } file && tables.TryGetValue(file, out var table)) species[race.StringId] = table;
+            if (keyOf[race.StringId] is { } k && tables.TryGetValue(Key(k), out var table)) species[race.StringId] = table;
     }
 
     /// <summary>The skeleton file a mesh (an FCS path) links: beside the mesh, else the first file of that name under <c>data</c>; null when either is missing.</summary>
-    static string? SkeletonFile(string installRoot, string fcsMesh)
+    static string? SkeletonFile(string installRoot, string fcsMesh, Func<string, string?>? find)
     {
         if (fcsMesh.Length == 0) return null;
         var mesh = GameFiles.Resolve(Path.Combine(installRoot, fcsMesh.Replace('\\', Path.DirectorySeparatorChar).TrimStart('.', Path.DirectorySeparatorChar)));
         try
         {
+            if (!File.Exists(mesh) && find?.Invoke(AnimationFiles.BareName(fcsMesh)) is { } found) mesh = found;   // a mod's mesh away from its FCS path (a workshop folder)
             if (!File.Exists(mesh)) return null;
             if (OgreMeshReader.ReadFile(mesh).SkeletonName is not { Length: > 0 } name) return null;
             var beside = GameFiles.Resolve(Path.Combine(Path.GetDirectoryName(mesh)!, name));

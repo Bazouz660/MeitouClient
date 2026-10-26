@@ -26,12 +26,18 @@ public static class SavedKit
         foreach (var s in items)
             if (s.Section == "main" && factory.Info(s.BaseId) is { } info) height = Math.Max(height, s.Y + Math.Max(info.Height, 1));
         var inventory = new Inventory(width, height);
-        Fill(inventory, items, factory, notes);
+        Fill(inventory, items, factory, notes, "main");
         return inventory;
     }
 
-    static void Fill(Inventory inventory, IReadOnlyList<SaveItem> items, ItemFactory factory, List<string>? notes)
+    /// <summary>
+    /// Restores the saved items of one inventory as the original's load does (<c>FUN_14074c0e0</c>, <b>Verified</b> by decompile, docs/game/ui-screens.md "Loading a saved inventory"): each item goes to its
+    /// saved section and cell; one whose cell lies outside the section, overlaps an item already placed (<c>FUN_1407466f0</c>) or whose section is occupied is auto-added instead
+    /// (<see cref="Inventory.Add"/> / <see cref="Inventory.AddTo"/>), and one that finds no room is lost. The rejected items are auto-added after the rest are placed (the bag is then known), an engine choice.
+    /// </summary>
+    static void Fill(Inventory inventory, IReadOnlyList<SaveItem> items, ItemFactory factory, List<string>? notes, string gridSection)
     {
+        List<ItemInstance>? rejected = null;
         foreach (var s in items)
         {
             if (ItemOf(s, factory) is not { } item)
@@ -39,9 +45,28 @@ public static class SavedKit
                 notes?.Add($"item {s.BaseId} is not in the game data; left out");
                 continue;
             }
-            if (s.Contents is { } contents && item.Contents is { } bag) Fill(bag, contents, factory, notes);
-            inventory.Items.Add(item);
+            if (s.Contents is { } contents && item.Contents is { } bag) Fill(bag, contents, factory, notes, "backpack_content");
+            if (Fits(inventory, item)) inventory.Items.Add(item);
+            else (rejected ??= []).Add(item);
         }
+        if (rejected is null) return;
+        foreach (var item in rejected)
+        {
+            string from = $"{item.Section} {item.X},{item.Y}";
+            bool added = gridSection == "main" ? inventory.Add(item) : inventory.AddTo(gridSection, item);
+            notes?.Add(added ? $"item {item.Record} did not fit at {from}; auto-added at {item.Section} {item.X},{item.Y}" : $"item {item.Record} did not fit at {from} and found no room; left out");
+        }
+    }
+
+    /// <summary>Whether a loaded item may take its saved place: inside its grid or slot and over no item placed there.</summary>
+    static bool Fits(Inventory inventory, ItemInstance item)
+    {
+        var (w, h) = item.Section is "main" or "backpack_content" ? (inventory.Width, inventory.Height) : InventoryCommands.SectionSize(item.Section);
+        if (item.Section is "main" or "backpack_content" or "back" or "hip")
+            return item.X >= 0 && item.Y >= 0 && item.X + item.Width <= w && item.Y + item.Height <= h && inventory.IsFree(item.Section, item.X, item.Y, item.Width, item.Height);
+        if (InventoryCommands.IsEquipmentSection(item.Section) || InventoryCommands.IsLimbSection(item.Section))
+            return !inventory.Items.Any(i => i.Section == item.Section);
+        return true;
     }
 
     /// <summary>A saved item as an instance (without a container's contents); null when the game data lacks its record.</summary>
@@ -59,6 +84,7 @@ public static class SavedKit
         item.MaterialId = s.MaterialId;
         item.CompanyId = s.CompanyId;
         item.Crafter = s.Crafter;
+        item.Uniform = s.Uniform;
         item.Charges = s.Charges;
         item.Death = s.Death;
         (item.LimbDamage, item.LimbWear, item.LimbStun) = (s.Damage, s.Wear, s.Stun);
@@ -78,7 +104,7 @@ public static class SavedKit
 
     internal static SaveItem FromItem(ItemInstance i) => new()
     {
-        BaseId = i.Record, MaterialId = i.MaterialId, CompanyId = i.CompanyId, Crafter = i.Crafter, Section = i.Section, X = i.X, Y = i.Y, Quantity = i.Quantity, Level = i.Level,
+        BaseId = i.Record, MaterialId = i.MaterialId, CompanyId = i.CompanyId, Crafter = i.Crafter, Uniform = i.Uniform, Section = i.Section, X = i.X, Y = i.Y, Quantity = i.Quantity, Level = i.Level,
         ItemFunction = i.ItemFunction, Quality = i.Quality, Charges = i.Charges, Source = i.Saved,
         Damage = i.LimbDamage, Wear = i.LimbWear, Stun = i.LimbStun, Death = i.Death,
         Lock = i.Lock is { } l ? new SaveItemLock(l.Level, l.EffectivelyLocked, l.Broken, l.Hardness) : null,
