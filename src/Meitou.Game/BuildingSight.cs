@@ -18,4 +18,14 @@ sealed class BuildingSight(GameInstall install, GameDatabase db, WorldLevelData 
 
     public IReadOnlyList<WorldLight> Lights(TownBuilding building) =>
         building.Resolved is { } r ? WorldLights.ForBuilding(db, levels, r, layouts) : [];
+
+    /// <summary>A completed player building's lamps, placed as the renderer lights them (<c>GameHost.UpdateLamps</c>: its own lights, no interior layouts).</summary>
+    public IReadOnlyList<WorldLight> SiteLights(Meitou.Simulation.Construction.BuildSite site)
+    {
+        if (db.Find(site.Record) is not { } record) return [];
+        var placed = new List<PlacedLight>();
+        WorldObjectLayout.Building(db, record, site.Id, site.Position, site.Rotation, new BuildingState { Identity = site.Id }, placed);
+        bool indoors = WorldLights.IsIndoors(record, site.Parent is not null);
+        return [.. placed.Select(p => WorldLights.FromPlaced(p, interior: false, indoors: indoors))];
+    }
 }

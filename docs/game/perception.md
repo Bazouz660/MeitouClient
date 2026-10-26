@@ -28,8 +28,8 @@ relations: [factions](factions-squads-towns.md). Simulation senses/leash remain 
   lights and characters' carried lights both count.
 
 Meitou (`SightMap`): every sight test (aggro, dialogue sightings, crime witnesses, bounty spotting, slave catching, loot witnesses) uses these
-rules. Rooms are the registered towns' buildings' `interior mask` volumes and lamps their lights (ruins, the player's
-buildings and carried lights are not counted); a lit lamp of another building's interior is not counted indoors (floors are
+rules. Rooms are the registered towns' buildings' `interior mask` volumes and lamps their lights, plus the lanterns characters carry
+(`CharacterAppearance.Lights` at the owner, its place and floor) and the lamps of completed player buildings (outdoor lights; ruins and the player's buildings have no room); a lit lamp of another building's interior is not counted indoors (floors are
 compared only within the character's building). With the `interiorlamps` switch on (Meitou, default) interior lamps count at
 any daylight, as the renderer draws them; off, night-only ones count at daylight <= 0.1 as in the game. No physics ray, no weather, no posture factor; the 0.75 / 0.5 light gate is
 evaluated every tick for everyone. The overhead and floor queries are redone only when a character moves (headless, Release:

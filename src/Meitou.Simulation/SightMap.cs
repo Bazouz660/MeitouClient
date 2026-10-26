@@ -10,6 +10,8 @@ public interface ISightSource
     InteriorVolume? Room(TownBuilding building);
     /// <summary>The building's lights, its interior and exterior layouts' included (<see cref="WorldLights.ForBuilding"/>).</summary>
     IReadOnlyList<WorldLight> Lights(TownBuilding building);
+    /// <summary>A completed player building's lights (placed as the renderer lights them; none by default).</summary>
+    IReadOnlyList<WorldLight> SiteLights(Construction.BuildSite site) => [];
 }
 
 /// <summary>
@@ -22,7 +24,8 @@ public interface ISightSource
 /// (x the spot cone) for a lamp of the character's own indoor state, and on its floor when both are inside; interior lamps lit at any daylight with <see cref="InteriorLampsAllDay"/>.
 /// An NPC keeps the bare daylight factor while it is 0.75 or more.</item>
 /// </list>
-/// Only the registered towns' buildings count (ruins and the player's buildings are outdoors); a character's carried lights are not counted.
+/// Rooms are the registered towns' buildings only (ruins and the player's buildings are outdoors); the lamps of completed player buildings and the lanterns characters
+/// carry (at their owner) light too.
 /// </summary>
 public sealed class SightMap
 {
@@ -48,6 +51,11 @@ public sealed class SightMap
     readonly Dictionary<(int, int), List<int>> roomCells = [];
     readonly List<Lamp> lamps = [];
     readonly Dictionary<(int, int), List<int>> lampCells = [];
+    // The completed player buildings' lamps, rebuilt when the building registry changes (outdoor lights, no room).
+    readonly List<Lamp> siteLamps = [];
+    readonly Dictionary<(int, int), List<int>> siteCells = [];
+    long sitesRevision = -1;
+    ISightSource? source;
 
     int[] place = [];
     bool[] onTop = [];
@@ -66,6 +74,7 @@ public sealed class SightMap
     /// <summary>Adds a town building's room and lamps once (when its town registers, <see cref="Locks.FixtureRegistry.RegisterSite"/>).</summary>
     public void Add(ISightSource source, TownBuilding building)
     {
+        this.source ??= source;
         if (building.Destroyed || !added.Add(building.Key)) return;
         int room = -1;
         if (!building.Destroyed && source.Room(building) is { } volume)
@@ -147,6 +156,14 @@ public sealed class SightMap
         for (int s = 0; s < count; s++)
             if (prev[s].Alive && table.Cold(s) is { CarriedBy.IsNone: false } c && table.TryResolveNext(c.CarriedBy, out int carrier) && carrier < count)
                 (place[s], onTop[s]) = (place[carrier], onTop[carrier]);
+        RefreshSites(world);
+        // The lights characters carry (lanterns; docs/formats/lights.md "Carried lanterns"), at their owner, lit as their night flag allows.
+        carried.Clear();
+        for (int s = 0; s < count; s++)
+            if (prev[s].Alive && table.Cold(s)?.Appearance is { Lights.Count: > 0 } look)
+                foreach (var cl in look.Lights)
+                    if (cl.Light.Intensity > 0 && cl.Light.Radius > 0 && WorldLights.IsLit(cl.Light, Daylight))
+                        carried.Add((s, cl.Light, prev[s].Position + new Vector3(0, cl.Light.Position.Y, 0)));
         brightest = 0;
         for (int s = 0; s < count; s++)
         {
@@ -163,6 +180,8 @@ public sealed class SightMap
     // Each character crawling or staying low at the last update (the sight test's ground posture).
     bool[] low = [];
     int[] floorOf = [];
+    // The carried lights of this update: owner slot, light, position.
+    readonly List<(int Owner, WorldLight Light, Vector3 At)> carried = [];
 
     /// <summary>The farthest the looker can see anyone this tick (<see cref="Range"/> with the brightest target and full ambient): a query radius.</summary>
     public float MaxRange(int looker, float outdoor)
@@ -185,30 +204,66 @@ public sealed class SightMap
         if (!player && Daylight >= NpcDaylight) return Daylight;
         if (Daylight > LitDaylight) return 1;
         float sum = 2 * Daylight;
-        if (!lampCells.TryGetValue((CellOf(at.X), CellOf(at.Z)), out var list)) return sum;
+        var cell = (CellOf(at.X), CellOf(at.Z));
+        bool lamped = lampCells.TryGetValue(cell, out var list), sited = siteCells.TryGetValue(cell, out var siteList);
+        if (!lamped && !sited && carried.Count == 0) return sum;
         bool inside = Inside(slot);
         int floor = 0;
         if (inside && (floor = floorOf[slot]) < 0) floor = floorOf[slot] = rooms[place[slot]].Volume.FloorAt(at);
-        foreach (int k in list)
+        foreach (int k in lamped ? list! : []) sum += Gain(lamps[k], slot, at, inside, floor);
+        foreach (int k in sited ? siteList! : []) sum += Gain(siteLamps[k], slot, at, inside, floor);
+        foreach (var (owner, l, p) in carried)
         {
-            var (l, room) = lamps[k];
-            if (!WorldLights.IsLit(l, l.Interior && InteriorLampsAllDay ? 0 : Daylight) || l.Interior != inside) continue;
-            // The original also matches the light's floor when both are inside; a lamp of another building's interior is taken as on another floor.
-            if (inside && (room != place[slot] || l.Floor != floor)) continue;
-            float d2 = Vector3.DistanceSquared(l.Position, at), r2 = l.Radius * l.Radius;
-            if (d2 > r2) continue;
-            float f = 1 - d2 / r2;
-            if (l.Type == WorldLightType.Spot)
-            {
-                var to = at - l.Position;
-                float len = to.Length();
-                float cos = len > 1e-4f ? Vector3.Dot(to / len, l.Direction) : 1;
-                float cosOuter = MathF.Cos(l.OuterAngle * 0.5f), cosInner = MathF.Cos(l.InnerAngle * 0.5f);
-                f *= Math.Clamp(cosInner != cosOuter ? (cos - cosOuter) / (cosInner - cosOuter) : cos >= cosOuter ? 1 : 0, 0, 1);
-            }
-            sum += LampGain * l.Intensity * f;
+            // Counted with the same indoor and floor rules as a building's light: the owner's place and floor stand in for the light's.
+            if (Inside(owner) != inside) continue;
+            if (inside && (place[owner] != place[slot] || FloorOf(owner, p) != floor)) continue;
+            float d2 = Vector3.DistanceSquared(p, at), r2 = l.Radius * l.Radius;
+            if (d2 <= r2) sum += LampGain * l.Intensity * (1 - d2 / r2);
         }
         return sum;
+    }
+
+    /// <summary>One lamp's share of a character's light (0 when it is off, of the other indoor state or floor, or out of reach).</summary>
+    float Gain(Lamp lamp, int slot, Vector3 at, bool inside, int floor)
+    {
+        var (l, room) = lamp;
+        if (!WorldLights.IsLit(l, l.Interior && InteriorLampsAllDay ? 0 : Daylight) || l.Interior != inside) return 0;
+        // The original also matches the light's floor when both are inside; a lamp of another building's interior is taken as on another floor.
+        if (inside && (room != place[slot] || l.Floor != floor)) return 0;
+        float d2 = Vector3.DistanceSquared(l.Position, at), r2 = l.Radius * l.Radius;
+        if (d2 > r2) return 0;
+        float f = 1 - d2 / r2;
+        if (l.Type == WorldLightType.Spot)
+        {
+            var to = at - l.Position;
+            float len = to.Length();
+            float cos = len > 1e-4f ? Vector3.Dot(to / len, l.Direction) : 1;
+            float cosOuter = MathF.Cos(l.OuterAngle * 0.5f), cosInner = MathF.Cos(l.InnerAngle * 0.5f);
+            f *= Math.Clamp(cosInner != cosOuter ? (cos - cosOuter) / (cosInner - cosOuter) : cos >= cosOuter ? 1 : 0, 0, 1);
+        }
+        return LampGain * l.Intensity * f;
+    }
+
+    /// <summary>Rebuilds the completed player buildings' lamps when the building registry changed (a level-placed building bought is a town building, already counted).</summary>
+    void RefreshSites(World world)
+    {
+        if (source is null || world.Buildings.Revision == sitesRevision) return;
+        sitesRevision = world.Buildings.Revision;
+        siteLamps.Clear();
+        siteCells.Clear();
+        foreach (var site in world.Buildings.All)
+        {
+            if (!site.Complete || site.Destroyed || site.LevelPlacement is not null) continue;
+            foreach (var l in source.SiteLights(site))
+            {
+                if (!(l.Intensity > 0) || !(l.Radius > 0)) continue;
+                int lamp = siteLamps.Count;
+                siteLamps.Add(new Lamp(l, -1));
+                for (int x = CellOf(l.Position.X - l.Radius); x <= CellOf(l.Position.X + l.Radius); x++)
+                    for (int z = CellOf(l.Position.Z - l.Radius); z <= CellOf(l.Position.Z + l.Radius); z++)
+                        Into(siteCells, (x, z), lamp);
+            }
+        }
     }
 
     bool Known(int slot) => (uint)slot < (uint)count;
