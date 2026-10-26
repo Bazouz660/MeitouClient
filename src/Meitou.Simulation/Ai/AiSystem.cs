@@ -473,6 +473,19 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             case TaskType.UNEQUIP_WEAPON:
                 table.Cold(slot)!.DrawnWeapon = WeaponKinds.None;
                 return;
+            case TaskType.EQUIP_WEAPON or TaskType.EQUIP_CROSSBOW:
+                // Task_EquipWeapon (6, 264): the weapon it carries comes out; the planner chose this step only with one in hand (B list 38, hasWeapon behind it).
+                var armed = table.Cold(slot)!;
+                if (armed.Fighter is { } fighter) armed.DrawnWeapon = Combat.CombatSystem.MeleeDrawn(fighter);
+                return;
+            case TaskType.GO_HOMEBUILDING:
+                // 19 Going home before the goal (43 Staying home and the like away from home): the walk home of the GoHome act-out.
+                behaviour = AiBehaviour.GoHome;
+                break;
+            case TaskType.GET_NEAR_TO when !mind.Plan[0].Target.IsNone:
+                // 40 Following to within 10 of the plan's target, then the goal's own act-out.
+                if (!GoToSpot(world.Walkability, table, slot, mind, Flat(mind.Plan[0].Target.Position), GiveUp.Target, SpeedMode.Walk, slack: 10)) return;
+                break;
         }
         if (mind.Resume)
         {

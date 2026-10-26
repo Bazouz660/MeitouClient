@@ -17,13 +17,15 @@ public sealed partial class AiSystem
 
     /// <summary>
     /// The steps the engine carries out besides a goal's own (docs/simulation.md "Planner"): moving and running (the goal's walk), travelling to the mission town (the
-    /// travel goal's walk), standing at a node, shopping, sleeping, manning a turret, operating or pretending to (sitting at the seat), sheathing and getting out of bed.
+    /// travel goal's walk), standing at a node, shopping, sleeping, manning a turret, operating or pretending to (sitting at the seat), sheathing and getting out of bed,
+    /// drawing a weapon, going home and getting near a target (walks of their own before the goal's act-out).
     /// A plan ending in another step fails.
     /// </summary>
     static bool Carried(TaskType step) => step is TaskType.MOVE_ON_FREE_WILL or TaskType.MOVE_ON_FREE_WILL_FAST or TaskType.TRAVEL_TO_TARGET_TOWN
         or TaskType.TRAVEL_TO_TARGET_TOWN_FAST or TaskType.STAND_AT_NODE or TaskType.BUY_SHIT
         or TaskType.USE_BED or TaskType.USE_BED_ORDER or TaskType.USE_TURRET or TaskType.OPERATE_MACHINERY or TaskType.PRETEND_TO_OPERATE_MACHINERY or TaskType.UNEQUIP_WEAPON
-        or TaskType.GET_OUT_OF_BED or TaskType.GET_OUT_OF_BED_IF_ITS_EMERGENCY or TaskType.GET_OUT_OF_BED_ONCE_HEALED;
+        or TaskType.GET_OUT_OF_BED or TaskType.GET_OUT_OF_BED_IF_ITS_EMERGENCY or TaskType.GET_OUT_OF_BED_ONCE_HEALED
+        or TaskType.EQUIP_WEAPON or TaskType.EQUIP_CROSSBOW or TaskType.GO_HOMEBUILDING or TaskType.GET_NEAR_TO;
 
     /// <summary>
     /// One character's view for the <see cref="TaskPlanner"/> (one per worker thread, bound per think): its states (docs/simulation.md "Planner" lists the
@@ -110,6 +112,7 @@ public sealed partial class AiSystem
                 StateType.isWithin50Meters => Distance(target) <= 50,
                 StateType.isNearTo => Distance(target) <= 10,
                 StateType.hasWeaponEquipped or StateType.hasWeaponEquipped_156 or StateType.hasWeaponEquipped_157 => cold.DrawnWeapon != WeaponKinds.None,
+                StateType.hasWeapon => cold.Fighter is { Weapon: not null, Unarmed: false },
                 StateType.IS_CARRYING_SOMETHING => !cold.Carrying.IsNone,
                 StateType.isInBed => cold.InSomething == Locks.HeldState.Bed || (CharacterTask)Me.Task == CharacterTask.Rest && mind.Behaviour == AiBehaviour.Sleep,
                 StateType.IS_WORKING or StateType.IS_WORKING_PRETEND or StateType.using_target_turret or StateType.using_any_turret => Settled(target),

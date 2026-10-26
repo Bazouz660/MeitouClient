@@ -1319,7 +1319,8 @@ package): the war classes (19, 20, 32) and 31, which run only in campaigns; the 
 `TaskPlanner` runs the original's search ([ai-tasks](game/ai-tasks.md#planner)) over `TaskDataTable` (all 253 rows) for the
 goals the engine acts out. The think orders each tier's goals by score, leaves out one whose list A holds, and takes the first
 whose plan succeeds (`AiSystem.Choose`); `AiMind.Plan` holds it leaf first and `AiMind.Step` (hashed) its first step. The goal's
-act-out does the walk and the goal's own action; steps of their own are getting out of bed and sheathing (one think each). A plan
+act-out does the walk and the goal's own action; steps of their own are getting out of bed, sheathing and drawing a weapon (one think each),
+going home (19, the GoHome walk) and getting near a target (40, a walk to within 10). A plan
 whose first step is neither the goal nor a step the engine carries out (`AiSystem.Carried`) fails. Engine choices:
 - Everyone plans with category 0x1; no character is squadless, so restricted rows (lockpicking, cutting, opening gates) never
   enter a plan. A row without a finder wants its effect for its own target. At most 64 nodes per search.
@@ -1328,8 +1329,8 @@ whose first step is neither the goal nor a step the engine carries out (`AiSyste
 - Only the step being carried out counts as queued, and only while it can run (Meitou's steps do not end on their own).
 - Finders: the spots, beds, seats, turrets and towns the act-outs already pick, at the floor point the walk ends on (`PlanContext.Find`); other finders find nothing,
   so such goals do not plan. Rows on the way have their `TaskProfiles` desire, else 1.
-- States (`PlanContext.Holds`): location, distance, bed, sitting, home (within 20 of the home), home town, town, weapon drawn and
-  carrying are evaluated; moving, getting up, arms, power, buildings, doors, gates, accessibility, machine slots and readiness are
+- States (`PlanContext.Holds`): location, distance, bed, sitting, home (within 20 of the home), home town, town, weapon drawn, weapon carried
+  (`hasWeapon`) and carrying are evaluated; moving, getting up, arms, power, buildings, doors, gates, accessibility, machine slots and readiness are
   held true (movement and the lock-up round deal with doors; the bashers' `DoorPlan` evaluates them); every other state is false.
 
 Combat stances (`AiStance`, the most aggressive combat goal in its hours; none at all attacks on sight): PROTECT_OWN_SQUAD joins only
