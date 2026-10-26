@@ -7,12 +7,10 @@ Movement/combat formulas belong to [pathfinding](pathfinding.md) and [combat](co
 
 ## Stats and XP
 
-**Verified** (installed base records, `BodyInstallTests.Shek_guards_use_the_records_integer_randomisation_and_keep_saved_stats`):
-CHARACTER `stats randomise` is an integer, including 10 for Hundred Guardian (`11623-Dialogue (10).mod`)
-and Shek Warrior (`14862-Dialogue.mod`); neither has a float entry. **Observed**: `fcs.def` describes it
-as the +/- starting-stat deviation. Meitou reads the integer first (float-only mods remain supported),
-uses the existing seeded per-character rolls, and restores saved trained stats without rerolling.
-The original's precise random distribution is **Unknown**; this fixes field reading, not that distribution.
+**Verified** (base records, `BodyInstallTests.Shek_guards_roll_their_stats_from_the_records_integer_randomisation`):
+CHARACTER `stats randomise` is an int (Hundred Guardian and Shek Warrior: 10, no float entry); `fcs.def` types it
+int, default 3, "+/- this amount". Meitou reads the int, falling back to a float for mods. The original's
+random distribution is **Unknown**.
 
 **Observed:** skills are floats, not discrete levels plus XP counters. Factory combines record
 values/randomness, race modifiers and derived stats. Core gain: `f=((cap-stat)/cap)^2`, cap101;
