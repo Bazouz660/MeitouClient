@@ -36,7 +36,7 @@ public sealed unsafe class MarkerRenderer : IDisposable
         void main()
         {
             gl_Position = uViewProjection * vec4(uOffset + (uRotation * vec4(aPos, 0.0)).xyz, 1.0);
-            vec3 normal = (uRotation * vec4(aNormal, 0.0)).xyz;
+            vec3 normal = normalize((uRotation * vec4(aNormal, 0.0)).xyz);
             vColour = vec4(uColour.rgb * (clamp(dot(normal, uSun), 0.0, 1.0) * 0.5 + 0.5), uColour.a);
         }
         """;
@@ -88,7 +88,7 @@ public sealed unsafe class MarkerRenderer : IDisposable
     GpuTexture? msColour, msDepth, resolved;
     int samples;
     // The vertex ranges of the two meshes in the buffer (count 0: the mesh is missing).
-    readonly (int First, int Count) marker, arrow;
+    readonly (int First, int Count) marker, arrow, ring;
 
     /// <summary>Where the movement marker stands (the ground point of the move order).</summary>
     public Vector3 At { get; set; }
@@ -96,12 +96,17 @@ public sealed unsafe class MarkerRenderer : IDisposable
     public float Strength { get; set; }
     /// <summary>This frame's stealth arrows, replaced whole each frame (empty: none; ignored without <c>arrow.mesh</c>).</summary>
     public Arrow[] Arrows { get; set; } = [];
+    /// <summary>Where the rotation marker (<c>rotate.mesh</c>, docs/game/ui-input.md) lies flat while the camera turns; null: not shown.</summary>
+    public Vector3? RotationAt { get; set; }
+    /// <summary>The rotation marker's scale (max(3, 0.06 x the camera's distance)).</summary>
+    public float RotationScale { get; set; } = 3;
 
-    MarkerRenderer(IGpuContext gpu, float[] data, (int, int) marker, (int, int) arrow)
+    MarkerRenderer(IGpuContext gpu, float[] data, (int, int) marker, (int, int) arrow, (int, int) ring)
     {
         this.gpu = gpu;
         this.marker = marker;
         this.arrow = arrow;
+        this.ring = ring;
         program = LegacyProgram.Create(gpu, Vertex, Fragment, "markers");
         segment = new NativeSegment(gpu, program, PrimitiveType.Triangles, "markers");
         viewProjection = program.Uniform("uViewProjection");
@@ -137,7 +142,8 @@ public sealed unsafe class MarkerRenderer : IDisposable
         var data = new List<float>();
         var marker = Append(data, find, "position.mesh", MarkerScale);
         var arrow = Append(data, find, "arrow.mesh", 1);
-        return data.Count == 0 ? null : new MarkerRenderer(gpu, [.. data], marker, arrow);
+        var ring = Append(data, find, "rotate.mesh", 1);
+        return data.Count == 0 ? null : new MarkerRenderer(gpu, [.. data], marker, arrow, ring);
     }
 
     /// <summary>Appends a mesh's triangles (position and normal, scaled) to <paramref name="data"/>: its vertex range there.</summary>
@@ -176,7 +182,7 @@ public sealed unsafe class MarkerRenderer : IDisposable
     }
 
     /// <summary>Whether anything is to be drawn this frame.</summary>
-    public bool Active => Strength > 0 && marker.Count > 0 || Arrows.Length > 0 && arrow.Count > 0;
+    public bool Active => Strength > 0 && marker.Count > 0 || Arrows.Length > 0 && arrow.Count > 0 || RotationAt is not null && ring.Count > 0;
 
     /// <summary>
     /// Draws over the finished <paramref name="picture"/> (after the tone map, so the colours come out as the material gives them, whatever the
@@ -227,6 +233,9 @@ public sealed unsafe class MarkerRenderer : IDisposable
                 var c = hidden ? Hidden : Visible;
                 Draw(cmd, marker, At - eye, Matrix4x4.Identity, new Vector4(c.X, c.Y, c.Z, c.W * Strength));
             }
+            // The rotation marker's colour has alpha 0: only its opaque visible pass shows.
+            if (!hidden && RotationAt is { } pivot && ring.Count > 0)
+                Draw(cmd, ring, pivot - eye, Matrix4x4.CreateScale(RotationScale), Visible);
             if (arrow.Count > 0)
                 foreach (var a in arrows)
                     Draw(cmd, arrow, a.At - eye, PointAlong(a.Direction), new Vector4(a.Colour, hidden ? ArrowHiddenAlpha : 1));

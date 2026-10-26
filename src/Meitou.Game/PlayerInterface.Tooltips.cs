@@ -522,7 +522,18 @@ sealed partial class PlayerInterface
             lines.Add(Row("Cutting damage", Fixed2(stats.CutMultiplier), TooltipTone.Main));
             lines.Add(Row("Blunt damage", Fixed2(stats.BluntMultiplier), TooltipTone.Main));
             lines.Add(Row("Blood loss", Fixed2(weapon.BleedMult), TooltipTone.Main));
-            if (weapon.ArmourPenetration * 100 != 0) lines.Add(Row("Armour penetration", Number(weapon.ArmourPenetration * 100) + "%", TooltipTone.Main));
+            // Signed percent rows (FUN_14079f650): (int) of the value truncated, none at 0, +N% Good or N% Bad.
+            void Signed(string label, float value)
+            {
+                int n = (int)value;
+                if (n != 0) lines.Add(Row(label, (n > 0 ? "+" : "") + n.ToString(CultureInfo.InvariantCulture) + "%", n > 0 ? TooltipTone.Good : TooltipTone.Bad));
+            }
+            Signed("Armour penetration", weapon.ArmourPenetration * 100);
+            Signed("Damage vs robots", (weapon.RobotDamageMult - 1) * 100);
+            Signed("Damage vs humans", (weapon.HumanDamageMult - 1) * 100);
+            Signed("Damage vs animals", (weapon.AnimalDamageMult - 1) * 100);
+            foreach (var (race, percent) in weapon.RaceDamage)
+                if (RecordName?.Invoke(race) is { Length: > 0 } raceName) Signed(Loc.Tr("Damage vs") + " " + raceName, percent - 100);
             if (stats.AttackMod != 0) lines.Add(Row("Attack bonus", stats.AttackMod.ToString(CultureInfo.InvariantCulture), stats.AttackMod < 0 ? TooltipTone.Bad : TooltipTone.Good));
             if (stats.DefenceMod != 0) lines.Add(Row("Defence bonus", stats.DefenceMod.ToString(CultureInfo.InvariantCulture), stats.DefenceMod < 0 ? TooltipTone.Bad : TooltipTone.Good));
             if (stats.IndoorsMod != 0) lines.Add(Row(stats.IndoorsMod < 0 ? "Indoors penalty" : "Indoors bonus", stats.IndoorsMod.ToString(CultureInfo.InvariantCulture), stats.IndoorsMod < 0 ? TooltipTone.Bad : TooltipTone.Good));

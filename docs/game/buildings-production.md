@@ -379,6 +379,14 @@ generators, `RainCollectorBuilding`; `ResearchBuilding` beside them. `BuildingFu
 3 COPPER, 4 CARBON, 5 WATER, 6 GROUND. A farm is function 1 with `world resource mining` 6 and a BUILDING `farm data`
 reference (FARM_DATA); a well is function 1 with resource 5 (**Verified**, probe: `farming wheat`, `well`).
 
+**Corpse machine label** (**Verified**, `Task_FeedCorpseIntoMachine` slot 3 `FUN_1403567a0`, disassembly; floats read from the exe): each time a body is fed in
+([job 136](ai-tasks.md)) and the task's target hand is a BUILDING (type 0) that resolves, the building's functionality (`UseableStuff` +0x400, KenshiLib 1ce4a16) `string`
+field, when not empty, floats as a [damage floater](ui-screens.md#8-damage-floaters) label: colour (0.7, 0.7, 0.7, alpha 0.8), font index 0 (`Kenshi_FloaterFont_Small`),
+rise index 1 (4 units/s, gone after 3 s), anchored at the building's position + (0, 5, 0). The text is the data field as loaded (`gamedata.pot` lists it for translation): vanilla
+`Cooking pot` (`2678-gamedata.base`) "Cooking!", `Corpse disposal` (`4004-gamedata.base`) "Incinerating", `Corpse disposal- shredder` (`1531904-rebirth.mod`) "Shredding"; no other
+BUILDING_FUNCTIONALITY in the install sets `string` (**Verified**, byte scan of `gamedata.base`, `Newwworld.mod`, `Dialogue.mod`, `rebirth.mod`).
+Meitou: `ProductionSystem.Incinerate` queues it as a `FloaterKind.Label` floater, so it shows only while damage floaters are on (engine choice).
+
 **Constants** (**Verified**, CONSTANTS loader `FUN_14086b2b0`): `production speed` P = 2, `research rate` 0.3,
 `research level increase rate` 1.3. G = the day length at speed 1, 2618.18 s (`FUN_14066cd50`, the exe's float); per-day
 data rates are divided by G, per-hour by G/24. dt = the scaled frame time. The option sliders (production `142133590`,
@@ -515,7 +523,7 @@ Function 10, `CraftingBuilding` (**Observed** unless noted).
   per queued k strings `current<k>` (item) and `currentExtraData<k>` (weapon model), float `current prog<k>`, int
   `crit<k>`; partly drawn items as `craft partial item sid <k>` / `val <k>` / `size` (Meitou does not write these).
 - **UI:** overview CraftTab (`CraftingStationsList`, `QueueItemsPanel`, `CraftQueue`, `QueueRepeat` "Repeat Queue",
-  `QueueDescriptionPanel1/2`); the building window's `CraftingPanel` (`CraftingName`, `QueueButton` "QUEUE...").
+  `QueueDescriptionPanel1/2`); the building window's `CraftingPanel` (`CraftingName`, `QueueButton` "QUEUE..."); its rows and slot ghosts: [Selected building](ui-screens.md#selected-building).
 - Example: Weapon Smith 2033, functionality 2035 (stat 7, tech level 25, consumes Iron Plates 5/100).
 
 ## Farming

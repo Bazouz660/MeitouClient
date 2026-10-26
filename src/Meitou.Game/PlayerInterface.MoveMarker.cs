@@ -27,6 +27,12 @@ sealed partial class PlayerInterface
         long now = System.Diagnostics.Stopwatch.GetTimestamp();
         float frame = markerFrame == 0 ? 0 : (float)System.Diagnostics.Stopwatch.GetElapsedTime(markerFrame, now).TotalSeconds;
         markerFrame = now;
+        if (Markers is null) return;
+        // The rotation marker: while the rotate button is held, 1 unit over the camera's pivot, flat, scaled max(3, 0.06 x distance) (FUN_1406b0f90).
+        var pose = session.Camera.Current;
+        bool turning = session.Bindings.Get(Meitou.Engine.Input.InputAction.Orbit).Any(session.Input.IsHeld);
+        Markers.RotationAt = turning ? pose.Target + Vector3.UnitY : null;
+        Markers.RotationScale = MathF.Max(3, pose.Distance * 0.06f);
         if (Markers is not { Strength: > 0 } marker) return;
         double speed = session.Simulation.Speed;
         marker.Strength = MathF.Max(0, marker.Strength - (speed > 0 ? frame * (float)speed : 0.01f));

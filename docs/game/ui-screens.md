@@ -733,6 +733,18 @@ sits centred under its label and progress bar (**Observed**, owner's screenshot 
 moves for a tall grid are **Unknown**. Meitou keeps the layout's top, centres the grid on the bar (a grid wider than the bar keeps the slot's left edge)
 and pushes the bar under an overlapping grid.
 
+Crafting window contents (**Verified**, `CraftingBuilding::updateInventoryWindow` `FUN_1402b6110` and the `BuildInventoryLayout` setters `FUN_14014db60` ... `FUN_14014e330`; field
+names KenshiLib 1ce4a16, **Observed**). Each `inN` and the `out` section get a plain `ImageBox` child made by the layout constructor (`FUN_140155f90`): top-left aligned, no mouse
+focus, alpha 0.35, depth 1, hidden; given an item it takes the item's icon texture and its footprint size (`inventory footprint width/height` x the cell size) and shows only
+while its section is empty, so a faded picture of the expected item fills the empty slot. Per input k: `InputNText` the ingredient's name (`-` with none); `InputNStatusText`
+"Empty!" (`#afa68b`) when the section is empty and its amount is 0, "OK" (Good) when empty with amount above 0 or when the first item there is the ingredient, else "Invalid item!" (Bad);
+`InputNProgressBar` the amount x 100 (0 with no ingredient); the ghost the ingredient's item, shown when the section is empty and the input is enabled. Output: with a current output
+entry (building +0x448: progress, record) whose progress is below 1, the `out` ghost is the Item held by the queue's front entry (`crafting` deque; each queued craft holds the
+ready-made Item it will produce; shown while `out` is empty), `OutputText` that Item's name, `OutputProgressBar` progress x 100 and `CraftingName` `#afa68b` + the entry record's
+name; otherwise ghost none, `OutputText` `-`, bar 0 and `CraftingName` `#afa68b` + an empty string. The layout's setup (`FUN_1401524f0`) writes "Nothing Queued" into
+`CraftingName` (so it shows only until the first update) and `OutputTitleText` the translated "Output" upper-cased.
+Meitou (`PlayerInterface.Production.cs`): these texts and ghosts for crafting benches; a section holds only its ingredient, so "Invalid item!" never shows; the output ghost is the queue front's item (its record and model).
+
 Opening (**Observed**, owner's screenshots of the original, 2026-10-24): selecting a machine, bench or storage shows its window alone, with no inventory.
 A right click that sends a character to a storage opens the character's inventory with the storage window beside it; once the inventory closes, the
 storage window is back where it stood (the screen's lower left). Meitou: the same for a window already shown alone, and a window the player closed
@@ -844,11 +856,21 @@ unless marked; Meitou: `PlayerInterface.Faction.cs`.
   int(relation) in BadBright below -30, `#a8b774` above 60, else Main; below 0 the left bar's width is its layout width × -relation / 100, kept
   right-aligned at the middle, above 0 the right bar's × relation / 100 from the middle (the other bar zero). The wheel over a line scrolls the panel.
 - `FactionInfoPanel` holds a DatapanelGUI ("mfactioninfo", `FUN_140494720`): `---Active Contracts---` (#444444) and the contract rows
-  (`FUN_1404927f0`: a "Renew" / "Manage Contract" button per contract and a `-----------` rule), then `---Upcoming Events---` (#444444) and the
-  rows of each entry of a list at `DAT_1421345b8` (`FUN_1407f2ef0`; what they are is **Unknown**).
+  (`FUN_1404927f0`), then `---Upcoming Events---` (#444444) and the events (`FUN_1407f2ef0`). **Verified** by decompile unless marked; class and field names KenshiLib 1ce4a16 (**Observed**).
+  - **Contracts** are AI packages of characters: a package that involves a player character registers (its character's hand, package id) in a static list (`FUN_140285ac0`).
+    Per entry, in list order: the character must still exist and run that package, else the entry is dropped; the package's `getGUIData` (vtable +0x70) writes the rows, and false drops
+    the entry. Only `Contract_HiredAlly` (`FUN_140294f40`: hired bodyguards) and `Contract_DefendPlayerBase` / `Campaign_DefendPlayerBase` (`FUN_1402953f0`) write rows: a heading
+    "Bodyguard Contract" / "Base Defence Contract" in `#492620` with the hired character's faction name (**Observed**: name at +0x1a8 of what its vfunc +0x58 returns); "-Protecting:" and the protected target's name (when it resolves); "-Expires in:"
+    and the time to the contract's expiry as below, both in `#afa68b`. A "Manage Contract" button keyed "Renew" is added when the package's `wantsRenewButton` (+0x80) is true, which no
+    1.0.68 class returns (all `xor al,al`), so no row has it. Each entry ends with a `-----------` rule.
+  - **Upcoming Events** (with the player-only flag set): for each faction of the list at `DAT_1421345b8`, its `FactionWarMgr` (`FUN_1407ac9c0`). When it has active campaigns or
+    queued campaign requests: a heading `#afa68b` `-{faction name}-`. Per active campaign whose target faction is a player faction (`isPlayer`) and whose phase is not 2 RETREATING or 3
+    VICTORY: the campaign's name in `#492620`, then `Target:` with `#afa68b` {target faction name}`- `{target's name, or `???` when it does not resolve}, then a spacer. Per queued request
+    (the player filter is not applied here): its campaign's `display name` and the time until it starts, both `#444444`. Times (`TimeOfDay::getTotalTimeString` `FUN_1407a6940`):
+    negative `Expired`, above 24 h `{1,num} Days, {2,num}hrs`, above 1 h `{1,num}hrs`, else `{1,num} mins` (rounding **Observed**).
 - Meitou: the name box takes typing; accepting it (Enter) or losing the key focus sends `RenameFactionCommand`, which takes a name no other faction of the data has and posts "This faction name already exists" otherwise (the original's message box and the empty-name rule are not built / **Unknown**; the 64-character cap is an engine choice). The name is `PlayerState.FactionName` (null = the data's "Nameless"), saved as the CAMERA `pfaction name`, the player platoons' faction name and read back on load when it differs from the data's; the GAMESTATE_FACTION record's own name is not rewritten. The lines for every faction but the player's, the `not real` ones and the template (engine
   choice for the unknown filters), sorted ignoring case, rebuilt each frame, line height from the layout's 0.0222 of the screen; the two headings
-  with nothing under them (no contracts or events are modelled).
+  under them `World.ActiveContracts` (one entry per hired squad, its package being the squad's) and `PopulationSystem.UpcomingEvents` (Meitou's phase 2 stands for RETREATING and VICTORY).
 
 ### Squads tab
 
@@ -1171,13 +1193,16 @@ panel 0.130 x 0.463 of the screen, newest lowest; a new line flashes white, fadi
 fresh manager: three queued messages, "Hold middle mouse button to rotate the camera", "Use mouse wheel to zoom", "Now create your first character.
 Use the 'Confirm' button when finished." (every new game of the process). The Tutorials window (F1) lists all 34 by title, pages read-only.
 
-Meitou (`Tutorials.cs`, `PlayerInterface.Tutorials.cs` / `TutorialPanel.cs`, `TutorialCatalog`): as above, the file in the working directory.
+Meitou (`Tutorials.cs`, `PlayerInterface.Tutorials.cs` / `TutorialPanel.cs`, `TutorialCatalog`): as above, the file in the working directory; with no Obedient Slave job no box is drawn.
 Highlight targets (**Verified**, `_setHightlightCoords`; Meitou finds them by widget name): portraits `SquadPanel`, stats `NamePanel`, its bottom `StatsPanel` and its
 "Power" / "Workers" lines, medical `MedicalPanel`, status `StatusPanel`, the bars `LifeBar{n+1}` (body 1, limbs 4, blood 0, power 1, materials 1 or 2 with a door,
 condition 0 or 1 with a door), `SpeedButtonsPanel`, `TimeMoneyPanel`, `BuildPanel`, `BountyPanel`, `ShortcutsPanel` and its squad / stats / tech buttons,
 `OrdersPanel`, the order buttons (commands), `JobsPanel` and the first job's X, the medic and rescue buttons, the management screen's tab 3 button and page,
 the building window's `InputColumn`, the build window's list. Engine readings: the commands box spans the seven order buttons, the crafting items box is the
-whole tab page, the obedience job row is not looked up, and a box follows its widget every frame;
+whole tab page, and a box follows its widget every frame;
+the obedience job row (item 28, **Verified** `_setHightlightCoords` `FUN_140972a50` case 0x1c; field names KenshiLib 1ce4a16, **Observed**): the first entry of the Jobs panel's order list
+(`OrdersPanel::orders`, the selected character's jobs in list order) whose Tasker's TaskData key is 187 (`_SLAVE_OBEDIENCE`, "Obedient Slave"); the box is that row's whole widget (the
+`OrdersItem` at the same index in `ordersItemBox`). No such job (or no row at that index): the target widget is set to none and no coordinates are written (whether a stale box then stays is **Unknown**).
 "in a town" is a town radius holding a PC; the steal pointer (Meitou has none) is a selection over another faction's ground item.
 
 ### 8. Damage floaters
@@ -1246,15 +1271,20 @@ Code: `UiTooltips` (data, layout), `PlayerInterface.Tooltips.cs` (hover runtime,
   `-Shots`, `-Quality`, ...; **Observed** from the string builders and the `-Weightless` burden rows). A weapon lists its class (`Katana` / `Sabre` / `Blunt weapon` / `Heavy weapons` / `Hacker` / `Crossbow` / `Polearm class`),
   `Cutting damage`, `Blunt damage`, `Blood loss`, `Armour penetration` (when not 0), `Attack bonus`, `Defence bonus`, `Indoors penalty` / `bonus` (Bad when negative, Good when positive, none at 0), the `Damage vs`
   robots / humans / animals / race rows, a `----------------` rule (#444444), then `Weight` as whole kg and the prices; no grade or quality row (**Verified**: the strings `FUN_1407b2a20`
-  references). A weapon's grade is its model (`material sid`), whose name the base game's tooltip shows on its own line under the item's name (**Observed** by the owner in game; Meitou colours it as the `[Model #]` row below) and crafting recipes put before it (`Mk I Fragment Axe`). Armour lists `Light` / `Medium` / `Heavy Armour Class`, the material, `{n} Grade`,
+  references).
+  **Signed percent rows** (**Verified**, `FUN_14079f650` and the weapon tooltip's call sites, disassembly; constants read from the exe): key `#140806` + `-` + the translated label; value
+  N = (int) of the float passed (truncated toward zero), skipped when N is 0; N > 0 `#a8b774` `+N%`, N < 0 `#59231a` `N%` (`{1,num}` formats N). Inputs, in this order:
+  `Armour penetration` = `armour penetration` x 100 (its own skip at 0); `Damage vs robots` / `humans` / `animals` = (`robot` / `human` / `animal damage mult` - 1) x 100, always
+  attempted; then per `race damage` reference of the WEAPON record, in list order, that resolves: `Damage vs {race name}` (label, a space, the record's name) = v0 - 100.
+  So a multiplier of 1.005 or a v0 of 100 gives no row. A weapon's grade is its model (`material sid`), whose name the base game's tooltip shows on its own line under the item's name (**Observed** by the owner in game; Meitou colours it as the `[Model #]` row below) and crafting recipes put before it (`Mk I Fragment Axe`). Armour lists `Light` / `Medium` / `Heavy Armour Class`, the material, `{n} Grade`,
   `[Weather Protections]`, the cut / blunt / harpoon resistances and the part coverage (`FUN_1407a1650`, `FUN_1407a33a0`). Map items add `[Right-click to learn new map locations]` and `Towns:` (`1407b4e50`).
   Value rows' key colour is `#140806` normally and `#afa68b` when `FUN_140710e10` returns non-null (a trade window?, **Unknown**).
   The second tooltip function (vtable +0x280; `FUN_14079f4d0` for most items, crossbow, prosthetic, container and blueprint overrides alike; **Observed**, decompile) adds one row after all of the above: the record's `description` in `#140806`, no blank row before it. A weapon's (`FUN_14079fe80`) adds the description, a blank row, `[Model ## {model}]` (MyGUI prints `##` as `#`) in the weapon's grade colour (`FUN_1401625c0`: level below 16, 36, 51, 66, up to 80, above 80; six colours), then with no crafter `[Manufactured by {company}]` (#afa68b) and the company's `company description` (#140806), or `[Crafted by {1}]` and `Crafted by the smith {1} of {2}.` (level below 45) / `A masterful weapon crafted by the renowned smith {1} of {2}.`; armour's is `FUN_1407a33a0`. Maps' and money's are **Unknown**.
 - **Meitou item rows:** name and stack count, `Buyback` while moving the item back would undo a transfer of the open trade (its condition in the original is **Unknown**), the grade line right under it (a weapon's model name in the `ItemGrade` colour of its `level`'s grade, armour's / crossbow's / prosthetic's `{n} Grade`; a brief tooltip puts the model before the name instead), the kind marker (`[Food]`, `Possibly Edible`, `[Book]`, `[Ammunition]`), food's `Nutrition` and `Ingredients`, `Stolen from:` / `Stolen`, for a weapon the class, `Cutting damage`, `Blunt damage` (the
-  stats' multipliers as two decimals, **Observed** reading), `Blood loss` (the record's bleed multiplier), `Armour penetration` (x 100 as a percentage), the attack, defence and indoors modifiers and the weight in whole kg;
+  stats' multipliers as two decimals, **Observed** reading), `Blood loss` (the record's bleed multiplier), the signed percent rows (`Armour penetration`, `Damage vs`), the attack, defence and indoors modifiers and the weight in whole kg;
   for armour the weight class; for a prosthetic (`FUN_1407a9080`, **Verified**) its grade (from its `level`), `-Max HP`, `-----STATS-----`, a row per stat multiplier not 1 at that level as int((m - 1) x 100) `+N%` / `N%`, `-Unarmed damage bonus` when not 0 and a `----------------` rule (Buyback and Stolen marks sit after the grade); the weight; `Value` and `Sell value` with the mark-up while trading (none on a buyback price, an exact refund), outside a trade the prices with no trader (no town or culture factor); `Avg. Price` for a trade item and, while trading, its `Price mark-up`; `Charges` and `Quality`
   as above (quality only when above 0 and not 100); last, every non-armour item's description, and a weapon's model, manufacturer or crafter rows (the model's colour by the six weapon level bands above; Meitou has five grade colours, Specialist and Masterwork share the last). **Not shown (Unknown data or format):** research artifact / unique flags, ammunition `Damage:` / `Shots`,
-  the `Damage vs` rows (their number format is in the helper `FUN_14079f650`, not read), armour weather protections and the grade-scaled skill lines (armour's other rows: `ArmourTooltip`, [Item tooltip](#6-inventory-trade-dialogue-build)), the race list of special food,
+  armour weather protections and the grade-scaled skill lines (armour's other rows: `ArmourTooltip`, [Item tooltip](#6-inventory-trade-dialogue-build)), the race list of special food,
   containers' and limbs' own rows (`FUN_1407aa090`, `FUN_1407a9080`).
 - **HUD texts** (**Verified**, the type 0 setter's callers `FUN_14072b540` and `FUN_14072d3b0`): per widget `OrdersBlockButton` (defensive mode, "gain 20 to his melee defense skill"), `OrdersHoldButton` ("HOLD POSITION ..."),
   `OrdersPassiveButton` ("In non-combat mode ..."), `OrdersChaseButton` (the Jobs toggle: "If this is disabled then the character won't do any of the jobs listed."), `OrdersTauntButton`, `OrdersRangedButton`,

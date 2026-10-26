@@ -133,7 +133,7 @@ public sealed partial class ProductionSystem
         bool arrived = site is not null ? AtSite(n, site, machine!) : Vector2.Distance(new Vector2(n.Position.X, n.Position.Z), goal) <= ErrandArrive;
         if (arrived)
         {
-            if (e.Kind == ErrandKind.Corpse) Incinerate(world, i, cold);
+            if (e.Kind == ErrandKind.Corpse) Incinerate(world, i, cold, site!, machine!);
             else Carry!.BeginPutDown(world, i);
             errands.Remove(id);
             return;
@@ -167,12 +167,14 @@ public sealed partial class ProductionSystem
     /// <summary>
     /// Feeds the carried body into the machine (<c>Task_FeedCorpseIntoMachine</c> slot 3, <b>Verified</b> by decompile): the carrier lets go of it and the character is removed from the world
     /// ("incinerated or cooked"), its items with it. The original plays the lift clip back first and the sound <c>Character_Drop_Person</c>; Meitou removes it at once.
+    /// The machine's functionality <c>string</c> floats up from 5 units over it (<c>FUN_1403567a0</c>).
     /// </summary>
-    void Incinerate(World world, int i, CharacterCold cold)
+    void Incinerate(World world, int i, CharacterCold cold, BuildSite site, Machine machine)
     {
         var table = world.Characters;
         var body = cold.Carrying;
         if (!Carry!.LetGo(world, i) || !table.IsAlive(body)) return;
+        if (machine.Data.Label.Length > 0) world.Floaters?.Enqueue(Floater.Label(site.Position + new Vector3(0, 5, 0), machine.Data.Label));
         givenUp.Remove(body);
         world.Uniques.Left(body);
         table.Remove(body);

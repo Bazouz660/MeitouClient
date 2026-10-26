@@ -16,7 +16,8 @@ sealed partial class PlayerInterface
     /// </summary>
     const float FloaterHeight = 15, FloaterRiseSpeed = 4, FloaterFadeFrom = 8, FloaterGone = 12;
 
-    sealed record Live(CharacterId Target, string Text, Vector4 Colour, long Born, FloaterMode Mode)
+    /// <summary>A floater on screen; <paramref name="Height"/> the units over its anchor it starts at (a machine label: 5, its point already over the building).</summary>
+    sealed record Live(CharacterId Target, string Text, Vector4 Colour, long Born, FloaterMode Mode, float Height = FloaterHeight)
     {
         public Vector3 Last { get; set; }
     }
@@ -51,7 +52,8 @@ sealed partial class PlayerInterface
         {
             if (f.Kind == FloaterKind.Damage && Vector3.DistanceSquared(Eye, f.Position) >= FloaterRangeSquared) continue;
             if (FloaterText.Format(f, Floaters) is not { } text) continue;
-            floaters.Add(new Live(f.Target, text, FloaterText.Colour(f), now, Floaters) { Last = f.Position });
+            // A machine label is in the small floater font (FUN_1403567a0) and starts at its own point.
+            floaters.Add(new Live(f.Target, text, FloaterText.Colour(f), now, f.Kind == FloaterKind.Label ? FloaterMode.Full : Floaters, f.Kind == FloaterKind.Label ? 0 : FloaterHeight) { Last = f.Position });
         }
         // A long fast-forward queues many at once: only the newest are worth showing.
         if (floaters.Count > 24) floaters.RemoveRange(0, floaters.Count - 24);
@@ -81,7 +83,7 @@ sealed partial class PlayerInterface
         foreach (var l in floaters)
         {
             float rise = Rise(l, now);
-            if (rise >= FloaterGone || Project(l.Last + new Vector3(0, FloaterHeight + rise, 0)) is not { } at) continue;
+            if (rise >= FloaterGone || Project(l.Last + new Vector3(0, l.Height + rise, 0)) is not { } at) continue;
             float alpha = rise > FloaterFadeFrom ? 1 - (rise - FloaterFadeFrom) * 0.25f : 1;
             controls.Add(new($"floater-{n++}", "TextBox", new(at.X, at.Y, 600 * scale, 40 * scale), l.Text, "", "", true,
                 new Dictionary<string, string>

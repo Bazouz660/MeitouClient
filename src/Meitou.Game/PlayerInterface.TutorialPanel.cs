@@ -285,7 +285,7 @@ sealed partial class PlayerInterface
     }
 
     /// <summary>Where a highlight goes among this frame's controls (null: its part is not shown, so neither is the box).</summary>
-    static UiRect? HighlightBounds(TutorialHighlight h, IReadOnlyList<UiControl> controls)
+    static UiRect? HighlightBounds(TutorialHighlight h, IReadOnlyList<UiControl> controls, int obedienceJob)
     {
         UiRect? Named(string name) => controls.LastOrDefault(c => c.Name == name && c.Bounds.Width > 0)?.Bounds;
         UiRect? Where(Func<UiControl, bool> test) => controls.LastOrDefault(c => test(c) && c.Bounds.Width > 0)?.Bounds;
@@ -325,7 +325,10 @@ sealed partial class PlayerInterface
             TutorialHighlight.MapscreenCraftTabItems => Named("CraftTab"),
             TutorialHighlight.BuildingInventoryInput => Named("InputColumn"),
             TutorialHighlight.BuildModePanelBuildings => Named("BuildingsList"),
-            _ => null,   // the obedience job row is not looked up
+            // The first Obedient Slave job's whole row (FUN_140972a50 case 0x1c); none: no box.
+            TutorialHighlight.PanelOrdersJobObedience => obedienceJob < 0 ? null
+                : Where(c => c.Properties.GetValueOrDefault("ListOwner") == "JobsPanel" && c.Argument == "job:" + obedienceJob.ToString(CultureInfo.InvariantCulture)),
+            _ => null,
         };
 
         UiRect? Union(string[] names)
@@ -351,7 +354,7 @@ sealed partial class PlayerInterface
         var wanted = WantedHighlight();
         // startHighlight: a new item starts at alpha 0, rising; endHighlight resets.
         if (wanted != highlightShown) (highlightShown, highlightAlpha, highlightDirection) = (wanted, 0, 1);
-        if (wanted == TutorialHighlight.None || HighlightBounds(wanted, controls) is not { } box) return;
+        if (wanted == TutorialHighlight.None || HighlightBounds(wanted, controls, obedienceJob) is not { } box) return;
         highlightAlpha += highlightDirection * dt * HighlightRate;
         if (highlightAlpha >= HighlightHigh) (highlightAlpha, highlightDirection) = (HighlightHigh, -1);
         else if (highlightAlpha <= HighlightLow && highlightDirection < 0) (highlightAlpha, highlightDirection) = (HighlightLow, 1);

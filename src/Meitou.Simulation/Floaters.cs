@@ -9,6 +9,8 @@ public enum FloaterKind : byte
     Damage,
     /// <summary>A line of text (<see cref="Floater.Part"/>), white: "Ate {1}" over a character that ate (<c>FUN_1405d0780</c>).</summary>
     Text,
+    /// <summary>A machine's label (<see cref="Floater.Part"/>) at a fixed point, grey: its functionality's <c>string</c> when a body is fed into it (<c>FUN_1403567a0</c>).</summary>
+    Label,
 }
 
 /// <summary>
@@ -25,6 +27,8 @@ public readonly record struct Floater(FloaterKind Kind, CharacterId Target, Vect
 
     public static Floater Text(CharacterId target, Vector3 position, string text) =>
         new(FloaterKind.Text, target, position, false, false, text, default, default);
+
+    public static Floater Label(Vector3 position, string text) => new(FloaterKind.Label, CharacterId.None, position, false, false, text, default, default);
 }
 
 public sealed partial class World

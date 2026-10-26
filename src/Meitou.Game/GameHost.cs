@@ -238,6 +238,12 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
         ui.FactionName = faction => faction >= 0 && faction == session.World.Player.Faction && session.World.Player.FactionName is { } renamed ? renamed : popData is { } d && faction >= 0 && faction < d.Factions.Count ? d.Factions[faction].Name : null;
         // The faction tab's list (docs/game/ui-screens.md "Faction tab"): every faction but the player's, the `not real` ones (engine choice: the original's filter is Unknown) and the
         // generation template, with the player's relation towards it.
+        // Its info panel's contracts and events, read from the live world as the list above is (a collection changed mid-read shows the panel empty for that frame).
+        ui.FactionInfo = () =>
+        {
+            try { return (session.World.ActiveContracts(ui.FactionName), population?.UpcomingEvents(session.World, ui.FactionName) ?? []); }
+            catch (InvalidOperationException) { return ([], []); }
+        };
         ui.FactionRelations = () => popData is { } d && session.World.Player.Faction is >= 0 and var own && d.Relations.Contains(own)
             ? [.. d.Relations.Factions.Select((f, i) => (f, i)).Where(p => p.i != own && !p.f.NotReal && p.f.Id != "GENERATION_TEMPLATE_FACTION").Select(p => (p.f.Name, d.Relations.Get(own, p.i)))]
             : [];

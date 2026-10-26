@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Numerics;
 using Meitou.Data.Ui;
+using Meitou.Simulation;
 using Meitou.Ui;
 
 namespace Meitou.Game;
@@ -15,6 +16,32 @@ sealed partial class PlayerInterface
 
     /// <summary>The factions the faction tab lists with the player's relation towards each (-100..100); null before a world with game data. The host sets it.</summary>
     public Func<IReadOnlyList<(string Name, float Relation)>>? FactionRelations { get; set; }
+    /// <summary>The info panel's Active Contracts and Upcoming Events rows (docs/game/ui-screens.md "Faction tab").</summary>
+    public Func<(IReadOnlyList<FactionInfoLine> Contracts, IReadOnlyList<FactionInfoLine> Events)>? FactionInfo { get; set; }
+
+    /// <summary>A contract or event row in the original's colours: names #492620, details and headings Main, queued campaigns Greyed.</summary>
+    static HudLine InfoLine(FactionInfoLine l)
+    {
+        string value = double.IsNaN(l.Hours) ? l.Value : TotalTime(l.Hours);
+        string? colour = l.Kind switch
+        {
+            FactionInfoKind.Name => MyGuiColours.Named("ContractName", "492620"),
+            FactionInfoKind.Queued => GreyColour,
+            FactionInfoKind.Heading or FactionInfoKind.Detail => MainColour,
+            _ => null,
+        };
+        return new(Loc.Tr(l.Label), value, colour, l.Kind == FactionInfoKind.Name ? colour : l.Kind == FactionInfoKind.Queued ? GreyColour : MainColour);
+    }
+
+    /// <summary>
+    /// A time left as <c>TimeOfDay::getTotalTimeString</c> (<c>FUN_1407a6940</c>) prints it: below 0 "Expired", above a day "{d} Days, {h}hrs", above an hour "{h}hrs", else
+    /// "{m} mins" (whole numbers; the original's rounding is Observed).
+    /// </summary>
+    static string TotalTime(double hours) =>
+        hours < 0 ? Loc.Tr("Expired")
+        : hours > 24 ? Loc.Tr("{1,num} Days, {2,num}hrs", (int)(hours / 24), (int)(hours % 24))
+        : hours > 1 ? Loc.Tr("{1,num}hrs", (int)hours)
+        : Loc.Tr("{1,num} mins", (int)(hours * 60));
 
     MyGuiLayout? relationsLineLayout;
     float relationsScroll;
@@ -61,8 +88,15 @@ sealed partial class PlayerInterface
         if (!FactionShown) return;
         var scale = Height / 1080f;
         if (controls.FirstOrDefault(c => c.Name == "FactionInfoPanel") is not null)
-            AddLines(controls, "FactionInfoPanel", [new(Loc.Tr("---Active Contracts---"), "", GreyColour), new("", ""), new(Loc.Tr("---Upcoming Events---"), "", GreyColour)],
-                20 * scale, StandardPixels);
+        {
+            var (contracts, events) = FactionInfo?.Invoke() ?? ([], []);
+            var lines = new List<HudLine> { new(Loc.Tr("---Active Contracts---"), "", GreyColour) };
+            lines.AddRange(contracts.Select(InfoLine));
+            lines.Add(new("", ""));
+            lines.Add(new(Loc.Tr("---Upcoming Events---"), "", GreyColour));
+            lines.AddRange(events.Select(InfoLine));
+            AddLines(controls, "FactionInfoPanel", lines, 20 * scale, StandardPixels);
+        }
         if (relationsLineLayout is null || controls.FirstOrDefault(c => c.Name == "RelationsPanel") is not { } panel) return;
         var factions = (FactionRelations?.Invoke() ?? []).OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase).ToList();
         var area = panel.Bounds;

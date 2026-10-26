@@ -287,12 +287,17 @@ sealed partial class PlayerInterface
     /// layout's hint. The job list (<see cref="Meitou.Simulation.Production.PermaJobs"/>, the medic and rescue jobs included)
     /// as "&lt;row text&gt;: &lt;building&gt;" (the original's row text is <b>Unknown</b>); rows are dragged to reorder.
     /// </summary>
+    /// <summary>The first Obedient Slave job of the jobs list (the tutorial highlight PanelOrdersJobObedience), -1: none.</summary>
+    int obedienceJob = -1;
+
     void BindJobs(UiBindings b, Meitou.Simulation.CharacterSnapshot? lead)
     {
+        obedienceJob = -1;
         var jobs = new List<UiListItem>();
         for (int i = 0; i < (lead?.Jobs.Count ?? 0); i++)
         {
             var job = lead!.Jobs[i];
+            if (job.Type == Meitou.Data.Gameplay.Ai.TaskType._SLAVE_OBEDIENCE && obedienceJob < 0) obedienceJob = i;
             string text = Loc.Tr(Meitou.Simulation.Production.PermaJobs.Text(job.Type) ?? job.Type.ToString());
             if (job.Site is { } id && session.CurrentSnapshot.Buildings.FirstOrDefault(s => s.Id == id) is { } site) text += ": " + SiteName(site);
             jobs.Add(new("job:" + i.ToString(CultureInfo.InvariantCulture), text));

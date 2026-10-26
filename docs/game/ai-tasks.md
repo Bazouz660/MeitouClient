@@ -885,7 +885,7 @@ A character's job list (the Orders menu's "Perma-Jobs"; class `OrdersReceiver`, 
     functionalities of `Four Cadavres` and the rebirth shredder, **Verified** data) among the character's buildings whose `UseableStuff` vfunc 0x4f0 holds, weight clamp(1 - d^2 / 2.097e7, 1e-5, 1) (`FUN_1409b2380`),
     x100 for the character's faction (else it must pass the ally test `FUN_140621230`), x100 when it stands in the home building, x1e-5 for a player-type squad member when the parent building's vfunc 0x290 is false;
     the heaviest wins. At the machine `Task_FeedCorpseIntoMachine` (136; slot 3 `FUN_1403567a0`, **Verified**) lets go of the body and kills/removes it ("incinerated or cooked"), plays `Armor_Worn` and
-    `Character_Drop_Person` and floats the functionality's `string` ("Incinération") over the machine.
+    `Character_Drop_Person` and floats the functionality's `string` over the machine ([corpse machine label](buildings-production.md#classes-and-functions)).
   - 45 Bodyguard, 31 Staying close and 97 Training have no finder: they act on the job's own target; 45 and 31 are goals (Task_Blank, rows above) on the job's character, the context menu gives
     them as "Follow" (31) and "Bodyguard" (45), the dispatcher always adds 45 as a job. 97 is `Task_UseTrainingDummy` (slots 1-3 `FUN_1403513a0`, `FUN_14035c1e0`, `FUN_140345570`; **Verified** by
     decompile): the dummy (function 7, BF_TRAINING; the animation event `Impact Dummy`, a "Training" progress bar for the player's characters) is operated through `UseableStuff` vfunc 0x4b0: with a

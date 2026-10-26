@@ -19,7 +19,7 @@ static class FloaterText
     /// </summary>
     public static string? Format(in Floater f, FloaterMode mode)
     {
-        if (f.Kind == FloaterKind.Text) return f.Part.Length > 0 ? f.Part : null;   // the eating text (Meitou draws it with the damage floaters, so it shows only while they are on)
+        if (f.Kind is FloaterKind.Text or FloaterKind.Label) return f.Part.Length > 0 ? f.Part : null;   // the eating text and machine labels (Meitou draws it with the damage floaters, so it shows only while they are on)
         if (mode == FloaterMode.Off) return null;
         var d = f.Damage;
         var a = f.Absorbed;
@@ -43,10 +43,13 @@ static class FloaterText
     }
 
     /// <summary>Red when a player's character is hit, green when one lands the blow (Meitou's reading of the original's two relation tints), else grey.</summary>
-    public static Vector4 Colour(in Floater f) => f.Kind == FloaterKind.Text ? White : f.TargetIsPlayer ? Red : f.SourceIsPlayer ? Green : Grey;
+    public static Vector4 Colour(in Floater f) => f.Kind == FloaterKind.Text ? White : f.Kind == FloaterKind.Label ? LabelGrey : f.TargetIsPlayer ? Red : f.SourceIsPlayer ? Green : Grey;
 
     /// <summary>The text floaters' colour: white at 0.9 alpha (<c>FUN_1405d0780</c>).</summary>
     public static readonly Vector4 White = new(1, 1, 1, 0.9f);
+
+    /// <summary>A machine label's colour: grey 0.7 at 0.8 alpha (<c>FUN_1403567a0</c>).</summary>
+    public static readonly Vector4 LabelGrey = new(0.7f, 0.7f, 0.7f, 0.8f);
 
     static string Whole(float v) => ((int)v).ToString(CultureInfo.InvariantCulture);
 }

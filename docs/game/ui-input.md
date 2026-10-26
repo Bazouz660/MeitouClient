@@ -174,12 +174,17 @@ a clone (`movemarker`) of `debug_marker`, pass 0 set to alpha blending (`setScen
 frame time `DAT_142133794` ([game-loop.md](game-loop.md#the-three-time-values): 1 s of game time, 0.01 a frame at speed 0) and hides it at
 t ≤ 0. Shown only with `Movement marker` ([settings.md](../formats/settings.md); global `DAT_142133511`, `Rotation marker` is `DAT_142133510`).
 The rotation marker shows while the camera rotate button is held and the option is on, scaled max(3, -z x 0.06) by the zoom node's z (camera update `FUN_1406b0f90`, **Verified**).
+It is an entity of `data/meshes/rotate.mesh` (made once by `FUN_1406b1480`, **Verified**; `CameraClass::rotationMarker`, KenshiLib 1ce4a16): a flat ring, bounds (-0.456, -0.013, -0.423) to
+(0.461, 0.012, 0.423) (**Verified**, the mesh's bounds chunk), on a scene node that is a child of the camera's `center` node (the pivot, which carries the pitch) at local (0, 1, 0)
+with `setInheritOrientation(false)`, so it lies flat in world axes about 1 unit above the pivot. Material: `UtilityT::getDebugMaterial` (`FUN_1409b7830`) with 0x9cb187 and its keep-pass-1
+flag: a clone `debug_#9cb187X` of `debug_marker` with fragment `colour` set from ARGB 0x009cb187 on both passes, i.e. (0.612, 0.694, 0.529) with alpha 0, so the alpha-blended
+behind-the-scene pass 1 adds nothing (**Observed** reading) and the visible part is the opaque pass 0.
 **Verified** against `data/materials/debug.material` and `materials/forward/basic.program` / `basic.hlsl`: `debug_marker` pass 0 is
 `depth_func less_equal`, pass 1 `depth_write off`, `depth_func greater`, `alpha_blend` (the part behind the scene); both `Basic_Lit_VP`
 (`NORMALS`: `rgb *= saturate(N·sun) * contrast + 1 - contrast`, contrast 0.5) and `Basic_FP` (`colour × vertex colour`).
 Meitou (`MarkerRenderer`) draws both passes after the tone map, so the colours show as given whatever the exposure, sorting fragments by
 the near slice's scene depth, multisampled (up to 8×) and resolved over the picture: the mesh's rough band at the cone's widest part
-and the notch on the stem are in `position.mesh` itself; on every ground move, following the cursor each frame while the button steers, always on (settings.cfg is not read yet).
+and the notch on the stem are in `position.mesh` itself; on every ground move, following the cursor each frame while the button steers, always on (settings.cfg is not read yet). The rotation marker is drawn in the visible pass only, while the Orbit binding is held, at the camera rig's target + (0, 1, 0), scaled max(3, 0.06 x distance) (the zoom node's z read as the rig distance), always on.
 
 ### Quick right click on a character
 

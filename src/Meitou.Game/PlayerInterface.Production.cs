@@ -1,6 +1,8 @@
 using System.Globalization;
 using System.Numerics;
+using Meitou.Data.Gameplay;
 using Meitou.Data.Ui;
+using Meitou.Rendering.Ui;
 using Meitou.Simulation;
 using Meitou.Simulation.Items;
 using Meitou.Simulation.Production;
@@ -111,7 +113,8 @@ sealed partial class PlayerInterface
         }
         if (m?.Craft is { } craft)
         {
-            b.Text["CraftingName"] = craft.Queue is [var (_, current, progress, _), ..] ? $"{current}  {(int)(progress * 100)}%" : "Nothing queued";
+            // CraftingBuilding::updateInventoryWindow: the current entry's name in #afa68b (an empty name with nothing current).
+            b.Text["CraftingName"] = "#afa68b" + (CraftCurrent(craft)?.Name ?? "");
             b.Disabled.Remove("QueueButton");
             b.Actions["QueueButton"] = "QueueButton";
         }
@@ -124,7 +127,13 @@ sealed partial class PlayerInterface
             if (k >= m.Inputs.Count) { b.Hidden.Add($"Input{n}Panel"); continue; }
             var input = m.Inputs[k];
             b.Text[$"Input{n}Text"] = input.Name;
-            b.Text[$"Input{n}StatusText"] = $"{input.Count.ToString(CultureInfo.InvariantCulture)}/{input.Capacity.ToString(CultureInfo.InvariantCulture)}";
+            if (m.Craft is not null)
+            {
+                // A crafting bench's input: "Empty!" for an empty section with nothing taken in, else "OK" (a section holds only its ingredient here, so never "Invalid item!").
+                bool empty = input.Count <= 0 && input.Fill <= 0;
+                b.Text[$"Input{n}StatusText"] = empty ? "#afa68b" + Loc.Tr("Empty!") : TipGood + Loc.Tr("OK");
+            }
+            else b.Text[$"Input{n}StatusText"] = $"{input.Count.ToString(CultureInfo.InvariantCulture)}/{input.Capacity.ToString(CultureInfo.InvariantCulture)}";
             b.Progress[$"Input{n}ProgressBar"] = input.Fill;
         }
         if (m.Output is { } output)
@@ -134,11 +143,30 @@ sealed partial class PlayerInterface
         }
         else if (m.Craft is { } done)
         {
-            b.Text["OutputText"] = done.Done is [var first, ..] ? $"{first.Name}\n{done.Done.Sum(d => d.Quantity).ToString(CultureInfo.InvariantCulture)}" : "";
-            b.Progress["OutputProgressBar"] = done.Queue is [var (_, _, p, _), ..] ? p : 0;
+            // The current entry's item name and progress, else "-" and 0.
+            var current = CraftCurrent(done);
+            b.Text["OutputText"] = current?.Name ?? "-";
+            b.Progress["OutputProgressBar"] = current?.Progress ?? 0;
         }
         else b.Hidden.Add("OutputColumn");
         if (m.Inputs.Count == 0) b.Hidden.Add("InputTitleText");
+    }
+
+    /// <summary>A bench's current craft: the queue's front while its progress is below 1 (docs/game/ui-screens.md "Selected building", crafting window); null: none.</summary>
+    static (string Key, string Name, float Progress, float Hours)? CraftCurrent(Meitou.Simulation.Production.CraftView craft) =>
+        craft.Queue is [var front, ..] && front.Progress < 1 ? front : null;
+
+    /// <summary>The faded picture of the item a slot expects (alpha 0.35), shown while the slot is empty.</summary>
+    void AddItemGhost(List<UiControl> controls, string name, UiRect area, string record, string material, UiRect? clip)
+    {
+        if (itemIcons?.Choose(record, material) is not { } choice || uiPainter is not { } painter) return;
+        Dictionary<string, string>? image = null;
+        if (choice is { Source: ItemIconSource.File, File: { } file } && painter.IconReady(file)) image = new() { ["ImageTexture"] = UiPainter.IconTexture(file) };
+        else if (choice.Source == ItemIconSource.Render && UiPainter.RenderedIconTexture(record, material, choice.Colour) is { } rendered && painter.RenderedIconReady(rendered))
+            image = new() { ["ImageTexture"] = rendered, ["ImageFlipV"] = "true" };
+        if (image is null) return;
+        image["Alpha"] = "0.35";
+        controls.Add(new($"{name}-ghost", "ImageBox", area, "", "", "", true, image, Vector4.Zero, Pickable: false, Clip: clip));
     }
 
     void AddMachineContent(string id, List<UiControl> controls)
@@ -186,6 +214,7 @@ sealed partial class PlayerInterface
                 for (int i = 0; i < controls.Count; i++)
                     if (controls[i].Name == bar || controls[i].Name == bar + "@track" || controls[i].Properties.GetValueOrDefault("TemplateOwner") == bar)
                         controls[i] = controls[i] with { Bounds = controls[i].Bounds with { Y = controls[i].Bounds.Y + dy }, Clip = clip };
+            if (view.Count <= 0 && m.Craft is not null) AddItemGhost(controls, $"machine-{name}", b, view.Item, "", clip);
             if (view.Count <= 0 || Lifted(ItemOwner.AtSite(m.Site), code)) return;
             AddItemCell(controls, $"machine-{name}", b, view.Item, "", view.Name, view.Count, null, "MachineItem", code, clip);
         }
@@ -196,6 +225,14 @@ sealed partial class PlayerInterface
             var ob = outSlot.Bounds;
             float side = MathF.Min(ob.Width, ob.Height);
             AddItemCell(controls, "machine-out", new(ob.X, ob.Y, side, side), made.Record, made.Material, made.Name, made.Quantity, null, "MachineItem", 8, outSlot.Clip);
+        }
+        else if (m.Craft is { Done: [] } craft && CraftCurrent(craft) is { } current && controls.FirstOrDefault(c => c.Name == "out") is { } emptyOut)
+        {
+            // The empty output shows the current craft's item, faded.
+            var ob = emptyOut.Bounds;
+            float side = MathF.Min(ob.Width, ob.Height);
+            string[] key = current.Key.Split('|');
+            AddItemGhost(controls, "machine-out", new(ob.X, ob.Y, side, side), key[0], key.Length > 1 ? key[1] : "", emptyOut.Clip);
         }
     }
 
