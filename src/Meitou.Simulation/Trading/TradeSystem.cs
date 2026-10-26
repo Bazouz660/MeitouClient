@@ -269,14 +269,16 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
                     ?? new Shop { Terms = terms };
                 Refill(world, squad, squad.Shop, template);
             }
-            else if (squad.HomeBuilding is { } home && HomeTemplateOf(squad.TemplateId) is { } contents) FillHome(world, squad, contents, home);
+            else if (squad.HomeBuilding is { } home && HomeTemplateOf(squad.TemplateId) is { } contents && ShopFiller.VendorLinks(contents, FactionRecord(squad.Faction)).Count > 0) FillHome(world, squad, contents, home);
         }
     }
+
+    Meitou.Data.GameRecord? FactionRecord(int faction) => (uint)faction < (uint)data.Factions.Count ? data.Db.Find(data.Factions[faction].Id) : null;
 
     SquadTemplate? HomeTemplateOf(string id)
     {
         if (!homeTemplates.TryGetValue(id, out var t))
-            homeTemplates[id] = t = data.Db.Find(id) is { } r && SquadFactory.IsTemplate(r) && SquadTemplate.From(r) is { IsTrader: false, Vendors.Count: > 0 } fill ? fill : null;
+            homeTemplates[id] = t = data.Db.Find(id) is { } r && SquadFactory.IsTemplate(r) && SquadTemplate.From(r) is { IsTrader: false } fill && (fill.Vendors.Count > 0 || fill.BuildingDesignation is 2 or 3 or 5 or 6 or 8 or 9 or 11) ? fill : null;
         return t;
     }
 
@@ -288,6 +290,7 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
     void FillHome(World world, Squad squad, SquadTemplate template, Meitou.Data.World.TownBuilding home)
     {
         if (world.Tick < squad.NextHomeFillTick) return;
+        bool first = squad.NextHomeFillTick == 0;
         squad.NextHomeFillTick = world.Tick + (long)(template.VendorsRefreshTime / BodySystem.HoursPerTick);
         var boxes = new List<Locks.Fixture>();
         foreach (var f in home.Fixtures)
@@ -295,7 +298,7 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
         if (boxes.Count == 0 || boxes.Any(b => b.Contents!.Items.Count > 0)) return;
         if (Shop.ForBuilding(home, new Trader(squad.Town, squad.Faction, template.BuyMult, template.BuysStolen, template.BuysIllegal)) is not { } merged) return;
         merged.Fills = (int)world.Tick;
-        ShopFiller.Fill(merged, template, Market(world), data, world.Seed, (ulong)squad.Id);
+        ShopFiller.Fill(merged, template, Market(world), data, world.Seed, (ulong)squad.Id, specials: first);
         foreach (var item in merged.Stock.Items)
             foreach (var box in boxes)
                 if (box.Contents!.Add(item)) break;
@@ -305,7 +308,7 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
 
     void Refill(World world, Squad squad, Shop shop, SquadTemplate template)
     {
-        squad.Money = ShopFiller.Fill(shop, template, Market(world), data, world.Seed, (ulong)squad.Id);
+        squad.Money = ShopFiller.Fill(shop, template, Market(world), data, world.Seed, (ulong)squad.Id, specials: shop.Fills == 0);
         // The building filler unlocks the stock containers it fills (FUN_14095b210).
         if (shop.Building is not null && squad.HomeBuilding is { } home)
             foreach (var f in home.Fixtures)

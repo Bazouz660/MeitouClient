@@ -166,8 +166,29 @@ public static class ShopFiller
     /// <summary>The armour grade chances when a faction has none (the editor's defaults, economy.md 9.2).</summary>
     static readonly int[] DefaultGradeChances = [50, 100, 50, 2, 0, 0];
 
-    /// <summary>Replaces the shop's stock and returns the new purse.</summary>
-    public static long Fill(Shop shop, SquadTemplate template, Market market, PopulationData data, ulong seed, ulong key)
+    /// <summary>
+    /// The vendor lists a squad's stock rolls from (<c>FUN_140958560</c>, <b>Verified</b>): the template's <c>vendors</c>; when it has none, by its building designation the owner FACTION's
+    /// 2 BARRACKS / 5 ARMOURY <c>item spawns armoury</c>, 3 BAR <c>item spawns bar</c>, 6 TREASURE <c>item spawns treasure</c>, 8 HQ <c>item spawns HQ</c>, 9 RESIDENTIAL
+    /// <c>item spawns resident</c>, 11 RESIDENTIAL_SMALL <c>item spawns resident small</c>; other designations none.
+    /// </summary>
+    public static IReadOnlyList<RecordLink> VendorLinks(SquadTemplate template, GameRecord? faction)
+    {
+        if (template.Vendors.Count > 0 || faction is null) return template.Vendors;
+        string? list = template.BuildingDesignation switch
+        {
+            2 or 5 => "item spawns armoury",
+            3 => "item spawns bar",
+            6 => "item spawns treasure",
+            8 => "item spawns HQ",
+            9 => "item spawns resident",
+            11 => "item spawns resident small",
+            _ => null,
+        };
+        return list is null ? [] : [.. faction.GetReferences(list).Select(r => new RecordLink(r.TargetStringId, r.Values.Value0, r.Values.Value1, r.Values.Value2))];
+    }
+
+    /// <summary>Replaces the shop's stock and returns the new purse; <paramref name="specials"/> (a squad's first fill) puts its template's special items in first.</summary>
+    public static long Fill(Shop shop, SquadTemplate template, Market market, PopulationData data, ulong seed, ulong key, bool specials = false)
     {
         var rng = new RandomStream(seed, Rng.Mix(key ^ ((ulong)shop.Fills << 40)), RngPurpose.Trade);
         shop.Fills++;
@@ -175,13 +196,13 @@ public static class ShopFiller
         int n = (int)MathF.Round((0.8f + 0.4f * rng.NextFloat()) * template.VendorsFillTotalAmount, MidpointRounding.AwayFromZero);
         if (shop.Building is not null) n = Math.Max(n, 1);   // the building filler makes at least one
 
+        var faction = (uint)shop.Terms.Faction < (uint)data.Factions.Count ? data.Db.Find(data.Factions[shop.Terms.Faction].Id) : null;
         var lists = new List<(VendorList List, int Weight)>();
-        foreach (var link in template.Vendors)
+        foreach (var link in VendorLinks(template, faction))
             if (data.Db.Find(link.Id) is { Type: FcsRecordType.VENDOR_LIST } record) lists.Add((VendorList.From(data.Db, record), link.V0 == 0 ? 100 : link.V0));
         long totalWeight = lists.Sum(l => (long)l.Weight);
         var town = market.SiteCulture(shop.Terms.Site);
         var own = market.FactionCulture(shop.Terms.Faction);
-        var faction = (uint)shop.Terms.Faction < (uint)data.Factions.Count ? data.Db.Find(data.Factions[shop.Terms.Faction].Id) : null;
 
         var units = new List<ItemInstance>();
         long cats = 0;
@@ -198,6 +219,7 @@ public static class ShopFiller
                 cats += list.MoneyItemMin + rng.NextInt(list.MoneyItemMax - list.MoneyItemMin + 1);
         }
 
+        if (specials) AddSpecials(shop, template.Id, data.Db, market);
         // Dearest first, ties by record id so the order never depends on anything but the data.
         foreach (var item in units.OrderByDescending(u => market.UnitPrice(u, false, shop.Terms, shop.Terms.Faction)).ThenBy(u => u.Record, StringComparer.Ordinal))
             shop.Stock.Add(item);
@@ -209,6 +231,26 @@ public static class ShopFiller
         if (vm < 1) return (long)Math.Clamp(0.25f * value, 3000, 25000) + cats;
         int spread = (int)(vm * 0.4);
         return vm - spread + rng.NextInt(2 * spread + 1) + cats;
+    }
+
+    /// <summary>
+    /// SQUAD_TEMPLATE <c>special items</c> (ITEM references), else <c>special map items</c> (MAP_ITEM), on a fill with specials (<c>FUN_140958740</c> from the shop refresh <c>FUN_14095b210</c>,
+    /// <b>Verified</b>): each entry's v0 items, in stacks of at most the item's stack limit, go into the stock before the vendor items; what fits nowhere is lost. Engine: the original
+    /// also marks them unique (<c>Item::isUnique</c>), which is not modelled.
+    /// </summary>
+    static void AddSpecials(Shop shop, string templateId, GameDatabase db, Market market)
+    {
+        if (db.Find(templateId) is not { } template) return;
+        var list = template.GetReferences("special items");
+        if (list.Count == 0) list = template.GetReferences("special map items");
+        foreach (var r in list)
+            for (int left = r.Values.Value0; left > 0;)
+            {
+                if (market.Items.Create(r.TargetStringId, 1) is not { } probe) break;
+                int stack = Math.Clamp(left, 1, Math.Max(probe.StackLimit, 1));
+                if (market.Items.Create(r.TargetStringId, stack) is { } item) shop.Stock.Add(item);
+                left -= stack;
+            }
     }
 
     internal static VendorEntry Pick(IReadOnlyList<VendorEntry> entries, ref RandomStream rng)
