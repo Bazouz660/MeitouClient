@@ -42,7 +42,11 @@ sealed partial class PlayerInterface
     }
 
     /// <summary>A medical panel row: its name, the green, yellow and red layers' fractions, the number, the arrows, the robot layer and the row's tooltip (the <c>LifeBarNTooltip</c> widget).</summary>
-    internal readonly record struct MedicalRow(string Name, float Green, float Yellow, float Red, string Value, string Arrows, bool Robot, string? Tooltip = null);
+    internal readonly record struct MedicalRow(string Name, float Green, float Yellow, float Red, string Value, string Arrows, bool Robot, string? Tooltip = null)
+    {
+        /// <summary>The splint layer's fraction (the green plus the splint, at most 1); shown only where it is beyond the green.</summary>
+        public float White { get; init; }
+    }
 
     /// <summary>
     /// The status panel's prison line (<c>FUN_1405d2da0</c>, docs/game/economy.md 11.5, <b>Observed</b>): the hours left rounded up, "FOREVER" for a sentence of 2000 hours or more,
@@ -430,8 +434,8 @@ sealed partial class PlayerInterface
 
     /// <summary>
     /// The medical panel (docs/game/ui-screens.md section 4): Blood first, the body parts, Hunger last, each a name centred on its bar, arrows at its right end and
-    /// its number in the value column. A part's bar is green to its health less stun, red behind it to its maximum less stun (the lost part shows red); blood is
-    /// green to its fraction of capacity; hunger (0..3) green to h - 2, yellow to h - 1, red to h.
+    /// its number in the value column. A part's bar is green to its flesh less stun, yellow to the bandage on top of that, red behind it to its maximum less stun (the lost
+    /// part shows red) and white past the green by the splint; blood is green to its fraction of capacity; hunger (0..3) green to h - 2, yellow to h - 1, red to h.
     /// </summary>
     void BindMedicalBars(UiBindings b, CharacterSnapshot? lead, IReadOnlyList<MedicalRow>? buildingRows = null)
     {
@@ -440,16 +444,17 @@ sealed partial class PlayerInterface
         if (buildingRows is null && lead?.Body is { } body)
         {
             var hud = lead.Hud;
+            float? koPoint = hud?.KoPoint ?? hud?.Extended?.KoPoint;
             float capacity = Math.Max(hud?.BloodCapacity ?? 1, 1e-3f), blood = hud?.Blood ?? body.Blood * capacity;
             // A run of '<', one per 0.05 of bleeding (at most 100).
             int bleed = Math.Min(100, (int)MathF.Ceiling(Math.Abs(hud?.Bleeding ?? 0) / 0.05f));
             rows.Add(new(Loc.Tr("Blood"), blood / capacity, 0, 0, ((int)MathF.Floor(blood + 0.1f)).ToString(CultureInfo.InvariantCulture), new string('<', bleed), false, BloodTip(hud?.BleedRate ?? 1)));
             foreach (var part in lead.HealthParts)
             {
-                float max = Math.Max(part.Maximum, 1e-3f), health = part.Flesh + part.Rig - part.Stun;
-                string arrows = health < -max ? "!!!   " : health < 0 ? "<<   " : "";
-                rows.Add(new(part.Name, health / max, (health + part.Bandage) / max, (max - part.Stun) / max, ((int)MathF.Floor(health + 0.1f)).ToString(CultureInfo.InvariantCulture), arrows, part.Robotic,
-                    PartTip(part, hud?.Extended?.KoPoint, body.Unconscious)));
+                // The original's row (FUN_14088a8f0): the green and the number are the flesh less the stun, the yellow adds the bandage, the white is the green plus the splint (rig x 0.01).
+                float max = Math.Max(part.Maximum, 1e-3f), health = part.Flesh - part.Stun, green = health / max;
+                rows.Add(new(part.Name, green, (health + part.Bandage) / max, (max - part.Stun) / max, ((int)MathF.Floor(health + 0.1f)).ToString(CultureInfo.InvariantCulture),
+                    PartArrows(part, koPoint), part.Robotic, PartTip(part, koPoint, body.Unconscious)) { White = Math.Clamp(green + part.Rig * 0.01f, 0f, 1f) });
             }
             float hunger = body.Hunger;
             // '>' digesting, '<!' below 2, none in a bed, else '<'. Robot races have no Hunger row.
@@ -461,9 +466,12 @@ sealed partial class PlayerInterface
         for (int i = 1; i <= 9; i++)
         {
             string name = $"LifeBar{i}";
-            b.Hidden.Add(name + "White"); b.Hidden.Add(name + "Crushed");
-            if (i > rows.Count) { b.Hidden.Add(name); b.Hidden.Add(name + "Value"); b.Hidden.Add(name + "Tooltip"); continue; }
+            b.Hidden.Add(name + "Crushed");
+            if (i > rows.Count) { b.Hidden.Add(name + "White"); b.Hidden.Add(name); b.Hidden.Add(name + "Value"); b.Hidden.Add(name + "Tooltip"); continue; }
             var r = rows[i - 1];
+            // The splint layer is drawn only where it reaches past the green (with no splint it would sit under the green).
+            if (r.White > Math.Max(r.Green, 0)) b.Progress[name + "White"] = r.White;
+            else b.Hidden.Add(name + "White");
             // The row's tooltip sits on its LifeBarNTooltip widget (FUN_1407228a0 sets a type 0 text there).
             if (r.Tooltip is { Length: > 0 } tip) b.Properties[name + "Tooltip"] = UiTooltips.TextProperties(tip, "fixed");
             else b.Hidden.Add(name + "Tooltip");

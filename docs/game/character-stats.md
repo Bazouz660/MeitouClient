@@ -123,16 +123,18 @@ max(cut, pierce) x `bleed rate` x0.1 x scale (`FUN_1406508d0`). Bleeding = (`ext
 (-(h+b) 0.002 each) + wounds) x ChanceOfDeath x 1.2 x race `bleed rate`, floored at 0; blood falls by it a second, then is
 clamped to capacity every tick, and with no bleeding recovers `blood recovery rate` x0.1 x race `heal rate` a second
 (`FUN_140652000`). The wound is opened whatever the race's `bleed rate` (no race read in `FUN_1406508d0`; a bloodless race
-gets wounds that drain nothing). The KO timer +0xa0 falls by dt.
+gets wounds that drain nothing). Bleeding has no per-part term but a stump's: a bandage never closes a wound (first aid closes
+the newest one first, see [First aid update](#first-aid-update)); a bandaged stump stops bleeding once h + b is back at 0.
+The KO timer +0xa0 falls by dt.
 
 **worstDamage** (medical `+0xa4`, KenshiLib 1ce4a16; **Verified** decompile of the aggregates `FUN_140644e60`): the minimum over the organic parts
 (no `robotLimb`, and a byte `+0x7c` clear on an object the part returns, by offset the race's `robot`, **Observed**) of (`flesh` + `bandaging`) / M (M = `_maxHealth` x `age` x `HPMult` - `wearDamage`), computed as a percentage and scaled back, set to 1 above 0.999;
 starts at 1.0 (constructor `FUN_1406409f0`). So it is at most 1 and under 0 only while a part is below zero. Read by the HUD's health word, the hunger
 word and the Toughness XP multiplier ([ui-screens.md](ui-screens.md#4-hud-mainbargui)). Meitou: no single field; `HealthPart.Fraction` is per part.
 
-**Verified** coma point=-lerp(10,85,toughness/100). **Observed** KO duration combines base20,
-vital/negative-part and missing-blood terms; leg loss adds a separate random KO, arm loss does
-not. Death: vital h-s<-M, blood<=-capacity or hunger<=0. Preserve KO/coma/death distinctions.
+**Verified** coma point=-lerp(10,85,toughness/100). **Verified** KO time of a blood or vital knock-out (`FUN_1406447d0`):
+base20 + the vital and negative-part terms + the missing-blood term. Leg loss uses only the blood term ([cut-off and leg loss](#cut-off-and-leg-loss)).
+Death: vital h-s<-M, blood<=-capacity or hunger<=0. Preserve KO/coma/death distinctions.
 
 **Observed** (decompile; names KenshiLib 1ce4a16). The KO point (`pointOfNoReturn`, `140643ae0`) is read only by
 `getCollapseStage` (`140644450`), the GUI and `AI::myLegsAreMessedUpButCouldBeFixed`. Knock-out:
@@ -155,6 +157,25 @@ not. Death: vital h-s<-M, blood<=-capacity or hunger<=0. Preserve KO/coma/death 
   against the KO point ([ragdolls](ragdolls.md)).
 - Save keys: `coma` = `+0x162`, `unconcious` = `+0x161`, `incapacitated` = `+0x160` (a leg-collapse part at stage > 0).
 - Meitou: `MedicalState.VitalPartsKeepDown`, `RestartKo`, the wake test `Blood >= 0`. The fresh-limb-loss case is not modelled.
+
+### Cut-off and leg loss
+
+**Verified** (decompile: `FUN_14064f300` blow, `FUN_14064f5c0` tick, `FUN_14064edc0` sever, `FUN_140644980` leg KO, `FUN_1409b1c10` roll):
+- A destroyed part that is not vital is cut off: a blow needs h-s+rig < -M, a tick h-s < -M (a worsening wound). A vital part kills instead.
+- Blow: Dismemberment >= Rare, a stats object, limb original or crushed. Tick: Frequent only, limb original only. A prosthetic is never cut off.
+- Sever: the part becomes a stump; blood -= (5 + 25 x U) after the KO below (the roll `FUN_1409b1c80(5, 30)`); toughness XP 300; LOST_LEG / LOST_ARM dialogue.
+- A leg (slot 2 or 3) cut off in posture 0 (conscious, not staying low, not crawling) is knocked out for
+  max(3, (2 x knockout time base + |capacity - blood| x k x 0.5) x (1 - toughness/100) x 4) x U, U uniform in [0, 1),
+  k = lerp(knockout mult 1, knockout mult 99, toughness/100). The 0.5 is 0.25 x 2; blood is read before the sever's loss; the
+  other parts' terms do not enter. Another posture: no KO.
+- A destroyed part not cut off (setting too low; a crushed limb met by a tick): no KO; the leg is down, so the character crawls at once (posture 2).
+- The put-down, stealth and shackle knock-outs call the same function with a factor and no roll (the blood term only, **Verified**).
+  Meitou's `PutDownKoSeconds` still uses the general terms: a gap ([carry-loot](carry-loot.md)).
+- The KO toughness XP (`FUN_1408c6720`) is paid only on the vital-part branch of `FUN_14064f300`, not for a leg or blood KO (**Verified**).
+  Meitou pays it for every KO event: a gap.
+- **Unknown**: the notify codes 0x46 (leg) and 0x47 (arm) and vtable slot 0x410 that `FUN_14064edc0` calls; the fifth argument of
+  `FUN_14064f300` (a blow is taken to sever under the setting rule).
+- Meitou: `MedicalState.ApplyHit`, `CheckPart`, `Sever(part, ctx, standing)`, `LegLossKo`, `Standing` (read before the blow, and before the tick's part loop).
 
 ## Aid, limbs and load
 
@@ -183,7 +204,12 @@ skill x 0.8 when treating oneself and q = min(skill, kit quality):
   slaves are not modelled. **Unknown**: whether a kit stored on the task earlier is still used then; what +0x330 code 11 is.
 - **Skill.** `Task_FirstAid` (`FUN_1403563a0`) runs a first aid kit phase, then (none left) a robot repair kit phase; the skill is
   CharStats +0x98 (`medic`) in the first, +0xdc (`robotics`) in the second, and the trained stat 9 or 6 likewise; the race's `heal
-  stat` is not read here.
+  stat` is not read here. Meitou also applies the injury/hunger stat multiplier; the decoded task reads the raw field (**Verified**,
+  `FUN_14033c5a0`, x0.8 for self): a difference left in place.
+- **Kit search** (**Verified**): vtable +0x38 of `Task_FirstAid` and `Task_FirstAidRig` is `FUN_14033c740` (the rig task passes
+  function 2). It searches the medic's main grid, else its worn backpack's contents (`FUN_1405cb320`: the item with slot id 12 at +0xb8,
+  type 46 CONTAINER; Meitou's `Backpack` is the `backpack_attach` section). `FUN_140746480`
+  takes the item of that function with 0 < charges < 99999 and the fewest charges (the first of equals). No squad mates, no buildings.
 - **Unknown**: while no wound is open but bleeding (medical +0x78) is positive, `FUN_14064d800` bandages an extra time and lowers it
   by q x 0.01 x dt; it is recomputed every medical tick, so Meitou leaves it out.
 - Meitou: `FirstAidSystem.Apply`, `MedicalState.CloseWound` / `Treat`; dt in game seconds (unit **Unknown**).
@@ -194,7 +220,8 @@ the HUD's yellow layer shows the treated damage awaiting passive recovery.
 
 **Observed** (play, 2026-10-21): a first-aid order (self included) given to a character without a medkit is refused before
 any movement or animation, with the bubble "I don't have a medkit." Whether a squad mate's kit nearby or a robot repair kit
-avoids the refusal is **Unknown** (Meitou accepts any kit `FindKit` would use).
+avoids the refusal: the kit search ([below](#first-aid-update)) reads only the medic's own inventory and backpack, so a squad
+mate's kit should not (**Observed**: the same vtable slot). Meitou's first-aid `FindKit` still accepts one within `KitReach` (engine choice, not changed).
 
 **Verified** carried person adds CONSTANTS weight30, independent of body/race/inventory.
 **Verified** in game (1.0.65, scripted harness, issue #45; strength -20..45, W 15/16.4/46.4 kg, torso wounds, hunger):
@@ -223,11 +250,16 @@ counts as health in the fraction, the down (h-s+rig<0) and sever tests, so a spl
   menu asks with X=50 (verb "Splint Injuries", task 249 "Splinting"), a medic with min(medic, kit quality). Robotic limbs are not excluded.
 - Update: t=min(medic skill, kit quality)*0.01, cap=1-trunc(t*-100), t in float and the product rounded to float, so quality 20 caps at 20 (**Verified**, `MULSS`/`CVTSD2SS` at 0x140649ddb..e1b). The first non-vital part in part order with h-s+rig<50, rig<s+b,
   rig<cap gets rig+=lerp(1,15,t)*medic speed mult*dt, clamped to s+b and cap; so only bandaged or stunned damage can be splinted.
-  The kit drains like a medkit only when rig was added; medic XP (stat 9) each update. Ends when no part qualifies.
+  The kit drains like a medkit only when rig was added (`FUN_140644250`, once per update, no faction test); medic XP (stat 9) each update
+  that a kit is held (`FUN_14034ef20`, **Verified**). Ends when no part qualifies.
 - No time decay and hits do not touch rig. **Observed** (`FUN_14064f5c0`): once h-s+rig>50, rig=max(0, 50-(h-s)).
-- Order 249 refuses without a kit ("I don't have a splint kit."). The job 250 "Splint Rigging" (finder `FUN_14099e240`, may pick the medic
+- Kit: the rig task takes a splint kit (function 2) from the medic's own inventory or backpack by the [kit search](#first-aid-update),
+  keeps it until empty, removes it then and searches again; with none left it says event 22 (**Verified**, `FUN_14034ef20`, `FUN_14032dff0`).
+- Order 249 refuses without such a kit ("I don't have a splint kit."). The job 250 "Splint Rigging" (finder `FUN_14099e240`, may pick the medic
   itself): [perma-jobs](ai-tasks.md#perma-jobs); Meitou runs it as a splint treatment (`FirstAidSystem.SplintSomeone`).
-- Meitou: `SplintOrder` (the Treat task with `TreatSplint`), `MedicalState.NeedsSplint` / `Splint`; dt in game seconds as for first aid.
+- Meitou: `SplintOrder` (the Treat task with `TreatSplint`), `MedicalState.NeedsSplint` / `Splint`, `FirstAidSystem.OwnKit` (own kit,
+  fewest charges); dt in game seconds as for first aid. Left as they are: Meitou's splint skill is `stat x StatMultiplier`, where the rig
+  task passes the raw CharStats+0x98 (**Verified**); XP only when rig is added.
 
 ### The stat list
 
@@ -410,12 +442,13 @@ No other test: nothing in the original ties a corpse to its squad, so a platoon 
 
 **Which zones are loaded (Verified**, decompile of the zone manager, `DAT_1421349c0`): `+0xb1` is cleared by the unload `FUN_140a0a4f0` and set to 1 (with `+0xb0` = 0) for every zone of the load list
 when the manager's state machine (`+0x1681d8`, `FUN_140a0f820`) goes from 4 (loading) to 5 (done). The list is filled by `FUN_140a0f080` (activate zone map, radius r, timer index, timer):
-the zone and every neighbour within r. The camera feeds it, not the characters: `FUN_140a0f590` asks for r = 1 (the 3 x 3 block) round the **centre zone** `+0x1681d0`, which is the zone of the
+the zone and every neighbour within r. The camera feeds it: `FUN_140a0f590` asks for r = 1 (the 3 x 3 block) round the **centre zone** `+0x1681d0`, which is the zone of the
 camera focus (`DAT_142134690`, the camera object's node at `+0x30`/`+0x58`) and moves only when the focus is more than 4147.2 (0.9 x 4608) from the centre zone's middle (record `+0xf8`/`+0x100`,
 set by `FUN_140a0b950` as origin + half of 4608) on x or z (`FUN_140a0f820`). Each request (`FUN_140a0e570`) re-arms one of three per-zone timers (`+0xc0`, `+0xc4`, `+0xc8`, indexed by the caller; defaults
 4, 6 and 5 s of real time, table `0x141748740`; a caller may pass its own); `FUN_140a0b830` counts them down by the real dt and unloads the zone (`FUN_140a0a4f0`) once all are 0, so a zone left by the
 camera stays 4 s. Buildings and objects also ask for their own zones (r = 0, index 2, 1 s: `FUN_140929b20`, `FUN_14092dbb0`), and a camera jump (`FUN_140872e00`) asks for the new place at once.
-A corpse is therefore removed when it is more than about a zone away from where the camera is, not when the player's characters leave it. Corpses are not written to a zone file.
+**The box (Verified**, decompile of `FUN_140a0f640`; constant `DAT_14174a100` = 340.0): every zone overlapping the box of +-340 round a point is asked for with radius r = the `Fast zone hopping` setting (`DAT_142133518`, the storage of that name registered by `FUN_1403eca90`; 1 when on, else 0) and timer index 1 (6 s). Its callers are the character frame update `FUN_1405cfd90` and the character update `FUN_1405c7b20`, each for a living character whose faction is the player's (`FUN_1407916d0`: the character's vtable `0x58` object, its faction (**Observed**), has `+0x250` set), so NPC characters ask for nothing. The unloaded platoon checks `FUN_1407ebf30` and the platoon step `FUN_1404ffad0` ask for the platoon's position on a similar faction test (**Observed**). Timer defaults (**Verified**, the floats of `0x141748740`, `...744`, `...748`): 4, 6, 5 s.
+A corpse is removed when no request holds its zone: the camera's block 4 s after it last covered the zone, the player's box 6 s after. Corpses are not written to a zone file.
 
 **Corpses in saves**: an NPC platoon keeps its dead in its character list (the death handler `FUN_1407a6200` moves only the player's dead out, into `__DEAD_SQUAD__`). Unloading a platoon
 (`FUN_1407ef4b0`) serialises the whole list with `FUN_1404ff410` (`char count` = the list's size, dead included, **Verified**), then destroys the characters (`FUN_1404feed0`); a save writes the same
@@ -423,11 +456,11 @@ A corpse is therefore removed when it is more than about a zone away from where 
 position (the mean of its non-dead members, `FUN_1404fed50`, else the last place) is loaded or requested, and goes after 4-5 s without. A platoon whose members are all dead is declared dead
 (`FUN_140797090`, `persistent` off, destroyed at its next unload). The character reader restores the `dead` flag; the death clock is not saved, so a restored corpse lies 12 hours from its first update
 (**Observed**: the make-from-record loop was not read; the writer and the first-update clock are **Verified**). A corpse that decays or is unloaded is destroyed and so leaves its platoon's list.
-**Loader (partly traced)**: `FUN_140795b30` (ActivePlatoon vtable `0x1416e2e08` slot 9) reads the platoon file (`platoon/<name>`) into the record, then calls slot 6 `FUN_14036d7e0` to make the characters from it and places them (`FUN_1405ca680`); slot 6 was not read yet, so whether a dead entry is skipped is still **Unknown**. `FUN_1404ffad0` (slot 4 step) makes characters from a template only when the platoon has none (`FUN_140583a10`, "createRandomSquad"). Platoon relevance: `FUN_1404febd0` keeps it while its zone is loaded or requested and inside the zone bounds trimmed by 170 on unloaded sides (`FUN_140a09770`); timer 4 s while relevant, 5 s with no zone record, counts down by game dt otherwise; an unloaded one activates after 2 s inside a ready zone (`FUN_1407ebf30`). Meitou still uses the +-340 box for this (open).
+**Loader (partly traced)**: `FUN_140795b30` (ActivePlatoon vtable `0x1416e2e08` slot 9) reads the platoon file (`platoon/<name>`) into the record, then calls slot 6 `FUN_14036d7e0` to make the characters from it and places them (`FUN_1405ca680`); slot 6 was not read yet, so whether a dead entry is skipped is still **Unknown**. `FUN_1404ffad0` (slot 4 step) makes characters from a template only when the platoon has none (`FUN_140583a10`, "createRandomSquad"). Platoon relevance: `FUN_1404febd0` keeps it while its zone is loaded or requested and inside the zone bounds trimmed by 170 on unloaded sides (`FUN_140a09770`); timer 4 s while relevant, 5 s with no zone record, counts down by game dt otherwise; an unloaded one activates after 2 s inside a ready zone (`FUN_1407ebf30`). Meitou's squads use the same loaded zones as the corpses (below), then `UnloadGraceSeconds`; the 170 trim is not built (open).
 Meitou: `SaveCapture` writes the dead members of the squads it writes, `SavedPopulation.Spawn` makes a save's dead members as corpses where they lay (the player's `__DEAD_SQUAD__` is still not made).
-Meitou: `BodySystem.SlowWorld` removes by `World.LoadedZones` (`PopulationSystem.RefreshLoaded`: the 3 x 3 block round the centre zone with the 0.9-zone recentre rule and the 4 s linger; the camera
-focus, else the first player character, null before the population's first look: nothing is removed). `World.ActiveZones` (box of +-340 round the player's characters) still decides what the population
-makes. Squad exits (`PopulationRoaming.Despawn`, a town or wild site unloading, `Store`) leave the dead lying (`RemoveMember`); before, they deleted them wherever they lay.
+Meitou: `BodySystem.SlowWorld` removes by `World.LoadedZones` (`PopulationSystem.RefreshLoaded`: the camera's 3 x 3 block with the 0.9-zone recentre rule and the 4 s linger, plus the box of the
+player's characters with the 6 s linger and the Fast zone hopping ring; null before the population's first look: nothing is removed). `World.ActiveZones` is that same set, which the population's
+squads, loose items and navmesh use (Meitou's choice to use it for all three). Squad exits (`PopulationRoaming.Despawn`, a town or wild site unloading, `Store`) leave the dead lying (`RemoveMember`); before, they deleted them wherever they lay.
 The tick count of 12 hours follows `World.TickSeconds` (`BodySystem.CorpseTicksOf`). **Unknown**: whether a save holds corpses (Meitou's does not, and drops the saved dead on load).
 
 ### What a body part is
@@ -481,7 +514,7 @@ the stomach comes first; the panel, splinting's "first part", the hit table and 
 | +0x40 | flesh HP **h** (may go negative, down to -3 M) |
 | +0x44 | **stun** s (blunt damage lands here) |
 | +0x48 | **bandaged pool** b: damage that has been treated and is waiting to be healed |
-| +0x4c | **rig** (save key `rig`): the splint, added to h - s by the fraction, the collapse and the sever tests ([Splints](#splints)) |
+| +0x4c | **rig** (save key `rig`): the splint, added to h - s by the fraction, the collapse and the sever tests ([Splints](#splints)); not in the medical row's arrows, number or tooltips, only its white layer, rig x 0.01 (**Verified** `FUN_14088a8f0`, [ui-screens](ui-screens.md#4-hud-mainbargui)) |
 | +0x50 | **wear** w (permanent loss of maximum, robots) |
 | +0x54 / +0x58 / +0x5c | base HP (ref value 1; forced to 5 for a stump) / multiplier (set by the constructor and rewritten each tick from the character slot-0x390 factor) / body scale (character slot 0x238) |
 | +0x60 | health fraction `((h - s) + extra) / M` |
@@ -512,7 +545,7 @@ replaced, 3 crushed) and the fitted item (holder `FUN_1400cd3f0`; **Verified** b
   `stun`; the part becomes base 5, flesh 5, wear/stun 0. On load the item is fitted keeping the saved part floats.
 - Sever (`FUN_14064edc0`) returns for a replaced slot; from state 0 or 3 it makes a stump, awards toughness,
   drops the RACE `severed limbs` item of the slot at `bone name 2` (the first entry of that slot whose target resolved; a reference to a
-  missing record is skipped, and with no entry nothing drops: no default item) and opens a wound.
+  missing record is skipped, and with no entry nothing drops: no default item) and opens a wound. The item takes that bone's pose and falls from it ([collision](../formats/collision.md#item-physics)).
 - CHARACTER `starting health` (LOCATIONAL_DAMAGE, val0), applied to a new (not loaded) character (`FUN_140645ef0`, **Observed**): with
   M the part's maximum, val0 < -M makes the limb a stump (flesh 0, bandaged pool 5); else flesh = clamp(val0, -M, M) and the
   bandaged pool M - flesh. **Verified** by probe: Rock Bottom's `Naked dude` has Left Arm -150, a left-arm stump. Meitou ignores it on non-limbs.

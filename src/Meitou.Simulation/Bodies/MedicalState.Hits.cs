@@ -90,6 +90,7 @@ public sealed partial class MedicalState
     public void ApplyHit(int part, in HitDamage hit, in MedicalContext ctx, List<MedicalEvent>? events = null)
     {
         if (Dead) return;
+        bool standing = Standing;   // the posture before the blow (a leg lost in it still counts from a standing start)
         var c = ctx.Constants;
         var race = ctx.Race;
         var p = Parts[part];
@@ -103,11 +104,11 @@ public sealed partial class MedicalState
         // Opened whatever the race's bleed rate; a bloodless race's wounds drain nothing but still need first aid.
         if (MathF.Max(hit.Cut, hit.Pierce) > 0) wounds.Add(MathF.Max(hit.Cut, hit.Pierce) * c.BleedRate * hit.Scale);
 
-        CheckPart(part, ctx, events, inHitPath: true);
+        CheckPart(part, ctx, events, inHitPath: true, standing);
         CheckBlood(ctx, events);
     }
 
-    void CheckPart(int index, in MedicalContext ctx, List<MedicalEvent>? events, bool inHitPath)
+    void CheckPart(int index, in MedicalContext ctx, List<MedicalEvent>? events, bool inHitPath, bool standing)
     {
         if (Dead) return;
         var p = Parts[index];
@@ -119,31 +120,43 @@ public sealed partial class MedicalState
         bool destroyed = inHitPath ? p.IsDestroyed : p.Flesh - p.Stun < -p.MaxHp;
         if (!destroyed) return;
         if (p.IsVital) { Die(DeathCause.VitalPart, events); return; }
+        // The cut-off rule (FUN_14064f300 for a blow, FUN_14064f5c0 for a tick, <b>Verified</b>): a blow needs the setting at Rare or more, a stats object and an original or
+        // crushed limb; the tick (a wound worsening) needs Frequent and an original limb. A prosthetic is never cut off (FUN_14064edc0 returns for a replaced slot).
         var setting = ctx.Options.Dismemberment;
-        bool allowed = inHitPath ? setting >= Dismemberment.Rare && ctx.HasStats && HasStatsObject : setting >= Dismemberment.Frequent;
-        // A prosthetic is never cut off (FUN_14064edc0 returns for a replaced slot); a crushed limb can be.
-        if (allowed && p.Limb is LimbState.Original or LimbState.Crushed && p.Template.Severance) Sever(index, ctx, events);
+        bool severs = inHitPath
+            ? (setting >= Dismemberment.Rare && ctx.HasStats && HasStatsObject && (p.Limb is LimbState.Original or LimbState.Crushed))
+            : (setting >= Dismemberment.Frequent && p.Limb == LimbState.Original);
+        if (severs && p.Template.Severance) Sever(index, ctx, standing, events);
     }
 
     /// <summary>
-    /// Cuts a limb off (<c>FUN_14064edc0</c>): the part becomes a stump (base HP 5), the character loses rand(5, 30) blood and gets a wound of strength <c>bleed rate</c> x 200;
-    /// a lost leg also knocks the character out a second time. The caller awards the toughness XP (<see cref="XpService.ToughnessFromLimbLoss"/>) and spawns the
+    /// Cuts a limb off (<c>FUN_14064edc0</c>, <b>Verified</b>): the part becomes a stump (base HP 5), the character loses rand(5, 30) blood and gets a wound of strength <c>bleed rate</c> x 200.
+    /// A leg lost while <paramref name="standing"/> (posture 0) also knocks the character out for <see cref="LegLossKo"/> times a uniform roll in [0, 1), the KO time set before the blood
+    /// is lost; a leg lost while crawling, staying low, or already out does not. The caller awards the toughness XP (<see cref="XpService.ToughnessFromLimbLoss"/>) and spawns the
     /// severed limb item from the race's <c>severed limbs</c>.
     /// </summary>
-    public void Sever(int part, in MedicalContext ctx, List<MedicalEvent>? events = null)
+    public void Sever(int part, in MedicalContext ctx, bool standing, List<MedicalEvent>? events = null)
     {
         var p = Parts[part];
         p.Limb = LimbState.Stump;
         p.Replacement = null;
+        if (standing && p.Template.LimbSlot is 2 or 3) ApplyKo(LegLossKo(ctx) * NextRoll(ctx), events);
         Blood -= 5 + 25 * NextRoll(ctx);
         wounds.Add(ctx.Constants.BleedRate * 200);
         events?.Add(new MedicalEvent(MedicalEventKind.PartSevered, part));
-        if (p.Template.LimbSlot is 2 or 3)
-        {
-            // The second KO after losing a leg (FUN_140644980): (2 x base + terms) x (1 - toughness / 100) x 4, at least 3, times a random number in [0, 1].
-            float t = (2 * ctx.Constants.KnockoutTimeBase + KoTerms(ctx)) * (1 - Math.Clamp(ctx.Toughness / 100, 0, 1)) * 4;
-            ApplyKo(MathF.Max(t, 3) * NextRoll(ctx), events);
-        }
+    }
+
+    /// <summary>
+    /// The leg-loss KO time before its roll (<c>FUN_140644980</c>, <b>Verified</b> by decompile): max(3, (2 x <c>knockout time base</c> + |capacity - blood| x k x 0.5) x (1 - toughness / 100) x 4),
+    /// k = lerp(<c>knockout mult 1</c>, <c>knockout mult 99</c>, toughness / 100). Only the missing blood enters it; the other parts' terms of <see cref="KoTerms"/> do not.
+    /// </summary>
+    public float LegLossKo(in MedicalContext ctx)
+    {
+        var c = ctx.Constants;
+        float t = Math.Clamp(ctx.Toughness / 100, 0, 1);
+        float k = c.KnockoutMult1 + (c.KnockoutMult99 - c.KnockoutMult1) * t;
+        float missingBlood = MathF.Abs(Capacity(ctx) - Blood) * k * 0.5f;
+        return MathF.Max(3, (2 * c.KnockoutTimeBase + missingBlood) * (1 - t) * 4);
     }
 
     /// <summary>
@@ -222,8 +235,8 @@ public sealed partial class MedicalState
 
     /// <summary>
     /// The KO time of a character put down by a non-friendly carrier, in seconds of character time: max(3, (2 x <c>knockout time base</c> + <see cref="KoTerms"/>) x <paramref name="factor"/> x 4),
-    /// the shape of the leg-loss KO (<c>FUN_140644980</c>) with the put-down factor in place of (1 - toughness) and no random roll (the notes give that function only the blood term and
-    /// no roll; which reading is right is <b>Unknown</b>, the doc's leg-loss reading is used).
+    /// with no random roll. <b>Gap</b>: the original's <c>FUN_140644980</c> (the function this follows) has only the blood term, not <see cref="KoTerms"/> (<b>Verified</b> by decompile;
+    /// docs/game/character-stats.md "Cut-off and leg loss"). Not changed here: the put-down, stealth and shackle knock-outs are not the leg task.
     /// </summary>
     public float PutDownKoSeconds(in MedicalContext ctx, float factor) => MathF.Max(3, (2 * ctx.Constants.KnockoutTimeBase + KoTerms(ctx)) * factor * 4);
 

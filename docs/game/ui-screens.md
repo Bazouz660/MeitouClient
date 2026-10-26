@@ -387,8 +387,11 @@ to Jobs; the saved `chase mode` flag is that switch (**Verified**, [perma-jobs](
   supplied original Metaru screenshot).
 - Medical rows (**Verified**, decompile): Blood (Oil for skeletons) first, then the body parts, Hunger last; each `LifeBarNDatapanel` gets the name centred
   and an arrow string right-aligned in Alert; the number goes in `LifeBarNValue`. Layers are sized as width fractions from the left (Grey is a full-width
-  background). Part (H health, S a deduction, D a pending amount, Mx its maximum): Green (H − S)/Mx, Yellow (H + D − S)/Mx, Red (Mx − S)/Mx, White
-  splint % × 0.01 + green, number floor(H − S + 0.1); arrows `<<   ` below 0 and degenerating, `<<!!   ` at the KO point, `!!!   ` destroyed. Blood:
+  background). Part (H flesh +0x40, S stun +0x44, D bandage +0x48, R rig +0x4c, Mx maximum; **Verified** `FUN_14088a8f0`): Green (H − S)/Mx, Yellow
+  (H + D − S)/Mx, Red (Mx − S)/Mx, White clamp(green + R × 0.01, 0, 1) with the unclamped green (drawn past the green only), number floor(H − S + 0.1).
+  Arrows, first match: destroyed (H + D − S ≤ −Mx) `!!!   `; H + D < 0: not vital and not robotic `<<   `, vital and below the KO point `<<!!   `
+  (none at or above it), robotic non-vital none; H + D ≥ 0 with Mx − H − D > 20 (not a robotic non-vital part) `<   `; else none. The rig is in none
+  of these tests, only in the white layer. Blood:
   green blood / capacity, number floor(blood + 0.1), arrows a run of `<`, ceil(|bleed rate| / 0.05) of them (at most 100). Hunger (0..3): number
   (int)(hunger × 100), Green hunger − 2, Yellow hunger − 1, Red hunger; arrows, first match: `>   ` stomach (+0x64) > 0 (digesting), `<!   `
   hunger < 2, none in a bed (character `inSomething` +0x2f8 = IN_BED), else `<   `. A `<<!!   ` branch for hunger < 1 sits after the < 2 test
@@ -1251,9 +1254,11 @@ Code: `UiTooltips` (data, layout), `PlayerInterface.Tooltips.cs` (hover runtime,
     malnutrition. Your stats and strength will be affected, you need to get some food as soon as possible.", Malnourished "... but you are fed and slowly
     recovering. Your stats and strength will be affected until you recover fully."; In Disguise "You are currently disguised as {1}"; Slightly Injured, Wounded
     and Normal "You are kind of healthy for now.". In a bed whose recovery rate is above 1: "\nRecovery rate: {1}x" appended.
-  - Meitou (`PlayerInterface.MedicalTips.cs`): the Blood row, the part texts without wear, kick and lost-limb lines (d is the bandage's pending healing, the KO
-    point the extended line's), the hunger texts without the stomach store (malnourished takes the Hungry word's sentence, starving the Starving word's: the stat
-    penalty and the pass-out threshold are not modelled), and the health words Meitou shows.
+  - Meitou (`PlayerInterface.MedicalTips.cs`, `PlayerInterface.HudText.cs`): the Blood row; the part texts and arrows (the tests above, with the KO
+    point of every shown character, `HudView.KoPoint`) without wear, kick and lost-limb lines (d is the bandage's pending healing); the hunger texts
+    without the stomach store (malnourished takes the Hungry word's sentence, starving the Starving word's: the stat penalty and the pass-out threshold
+    are not modelled); and the health words Meitou shows (its word fraction `WorstPart` is not the worstDamage above: it takes every part, stun and rig
+    in, **Observed** from `WorldPublish.cs`).
 - **Stats line tooltips:** the HUD stats and extended lines' row tooltips are described under [section 4](#4-hud-mainbargui) ("Stat tooltips").
 - **Other users:** the Overview's AI tab options (a Static tooltip in `AIToolTip`), map places (type 4), trade and inventory items. **Unknown** / not shown: the
   lockpick tooltip of a locked door, the medic and rescue allied-faction option texts.

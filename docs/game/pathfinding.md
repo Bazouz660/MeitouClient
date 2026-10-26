@@ -236,7 +236,7 @@ Kept area grows by 0.04..1.1% (zones 20.32, 21.32, 20.29, 18.35) while polygons 
 at ground level (edge middle within `SeedPruner.BorderGroundSlack` 30 of the terrain, or the water height over it; roofs and walkways
 crossing the border stay pruned), and cached that way. The original seeds a new zone from already built neighbours' border midpoints
 (order dependent) and ships every tile built, so a region going on into the next zone is kept wherever its seed is; Meitou loads zones
-alone (only those within 340 of a walker are active), so it cannot wait for the neighbours. **Observed** (scratch probe, original tile
+alone (only the loaded zones are active: the camera's 3 x 3 block and the 340 box of the player's characters, [corpses](character-stats.md#corpses)), so it cannot wait for the neighbours. **Observed** (scratch probe, original tile
 polygons vs Meitou's unpruned polygons sampled every 25 units): with own seeds alone Meitou kept 3.1 % of the shared area in 14.26
 (1 seed), 15.5 % in 25.13, 42 % in 26.14, 94..100 % elsewhere; with the border rule 98.9..99.9 % in all of 14.26, 13.26, 18.35, 19.29,
 20.32, 21.32, 25.13, 26.14, while area kept where the original has none rises to 3..5 % of the zone. When a zone loads, points on the

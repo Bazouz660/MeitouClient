@@ -185,6 +185,7 @@ public sealed partial class MedicalState
         float chance = ctx.Options.ChanceOfDeath;
         float hours = dt * GameHoursPerSecond;
         LegKoPoint = KoPoint(c, ctx.Toughness);
+        bool standing = Standing;   // the posture of the last update: a leg that goes down in the loop below still counts from a standing start
 
         // Part healing rates. In a bed (kinds 6 and 0x19) degeneration is 0 and the bed scales the organic or the robotic rate; state 2 doubles the organic rate (HealMult).
         float degMult = ctx.Bed != BedKind.None ? 0 : DegenerationMult(c, ctx.Toughness);
@@ -233,7 +234,7 @@ public sealed partial class MedicalState
             if (p.Rig > 0) p.Rig = MathF.Max(0, MathF.Min(p.Rig, 50 - (p.Flesh - p.Stun)));
             if (p.Stun > 0) p.Stun = MathF.Max(0, p.Stun - dtb * 0.05f * c.StunRecoveryRate * c.HealRateMult * r);
 
-            CheckPart(i, ctx, events, inHitPath: false);
+            CheckPart(i, ctx, events, inHitPath: false, standing);
         }
         if (Dead) return;
 

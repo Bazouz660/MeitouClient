@@ -97,6 +97,16 @@ consulted (`FUN_14065df80` reads only the group and the hit object).
 | 6 triangle mesh | the mesh's triangles (FUN_1403c0e80) |
 | 0 plane, 1 sphere, 7 height field | nothing |
 
+## Item physics
+
+ITEM records with `has collision` true and a `physics file` ending in `.xml` (`.xml` is tested by `FUN_140132570` on `DAT_14170f424`; **Verified**) get a PhysX object of class `SimplePhysXEntity` (**Verified** vtable) from that file. Built in `FUN_1407626e0` (entity callback) at the item's pose: position `+0x48`, orientation `+0xb0`.
+- Placed items (`+0x1d9` 0): raised, then a ray down (`FUN_1409b6a90`, mask `0xf07f9e04`, or `0x7f9e04` when `+0x13c` is 2) turns the up axis to the ground normal (**Verified**). Groups 28–31 (**Observed**).
+- Severed items (`+0x1d9` and `+0x1da` set by the sever, `FUN_14075d660` and `FUN_14075d9b0`): no ground snap, so they keep the bone's pose; group 3, or 4 when the item type is not 0xb (**Verified** the value written to the descriptor's `+0x70`; **Observed** that it is the group). The object is dynamic: the 4th argument of `FUN_1407e30d0` is `+0x1da == 0`, false here, and `FUN_1404cde30` sets its `+0x10` flag from it (**Observed**).
+- No velocity is written on this path (**Observed**: none in `FUN_1407626e0`, `FUN_1404cde30`, `FUN_14075e5d0`, `FUN_140763fa0`). The NxuStream actor loader is not read: its flags and any start velocity are **Unknown**.
+- The 28 `Severed …` ITEM records of rebirth.mod (`item function` 17, `persistent` 0, `weight kg` 1, `has collision` true; **Verified**) all name `data/character/meshes/human/arm_mesh_collision.xml` (**Verified**): one `NxActorDesc` "Capsule" with a body, capsule radius 0.691524 and height 5.464595, local pose rows `0 -1 0`, `0 0 -1`, `1 0 0` with translation `2 0 0`, body `mass` 1 and `angularDamping` 0.1. Values used as the file gives them (**Observed**: no unit conversion, as in the ragdoll files).
+- `persistent` 0 returns from `FUN_14075e5d0` before the parameter toggle (`FUN_140336d10`); 1 to 3 select a toggle or a position copy (control flow **Verified**; meaning **Unknown**).
+- Scene gravity 98.1 and the sleep thresholds are those of the ragdoll scene ([ragdolls](../game/ragdolls.md)); item material index 0 (**Observed** as the default material).
+
 ## Expression reference
 
 - File format: NxuStream2 XML: `sdkVersion="285"`; `nxuVersion="103"`; `PhysicsExport SDK="2.8.5"`; `LengthUnit Type="centimeters"`

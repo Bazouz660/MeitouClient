@@ -28,7 +28,8 @@ public class RoamingTests
         var travellers = w.Platoons.All.ToList();
         Assert.Equal(2, travellers.Count);
         Assert.All(travellers, p => Assert.Equal(PlatoonState.Loaded, p.State));
-        // The focus stays at the first town: the roamers walk out of it, then only their stand-ins go on.
+        // The camera moves a zone west of the first town (its block still holds the town): the roamers walk out of the block, then only their stand-ins go on.
+        w.Commands.Enqueue(new FocusCommand(new Vector3(-2000, 0, 2000)) { Tick = w.Tick });
         for (int i = 0; i < 40 && travellers.Any(p => p.State != PlatoonState.Unloaded); i++) w.RunTicks(150);
         Assert.All(travellers, p => Assert.Equal(PlatoonState.Unloaded, p.State));
         Assert.All(travellers, p => Assert.Equal(-1, p.SquadId));

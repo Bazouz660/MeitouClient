@@ -3,11 +3,18 @@ using System.Numerics;
 namespace Meitou.Simulation.Items;
 
 /// <summary>
+/// Where and when a severed limb falls from (docs/game/character-stats.md, docs/simulation.md "Ground items"): the character it was cut from, the bone of its stump
+/// (RACE-part <c>bone name 2</c>) and the tick of the drop. The simulation has no skeleton; the host draws the fall from that bone's place (display only, not hashed or saved).
+/// </summary>
+public readonly record struct FallSource(CharacterId Character, string Bone, long Tick);
+
+/// <summary>
 /// An item lying in the world, as the host draws it (docs/simulation.md "Ground items"): a saved one by its whole <see cref="Rotation"/>, a <see cref="Dropped"/> one turned by it
 /// about Y and laid flat on the ground by the host. <see cref="Type"/>, <see cref="Level"/> and <see cref="Quality"/> are the item's, for its label's grade colour, <see cref="OwnedBy"/> <see cref="GroundItem.OwnedBy"/>.
+/// <see cref="Fall"/> is set for a severed limb, which the host drops from its stump.
 /// </summary>
 public readonly record struct GroundItemSnapshot(int Id, string Record, string Name, Vector3 Position, Quaternion Rotation, bool Dropped,
-    Meitou.Data.Fcs.FcsRecordType Type = default, int Level = 0, float Quality = 0, int OwnedBy = -1);
+    Meitou.Data.Fcs.FcsRecordType Type = default, int Level = 0, float Quality = 0, int OwnedBy = -1, FallSource? Fall = null);
 
 /// <summary>One loose item: where it lies and how it is turned (a saved item's whole rotation, written back as read; a dropped one turned about Y).</summary>
 public sealed record GroundItem(int Id, ItemInstance Item, Vector3 Position, Quaternion Rotation)
@@ -21,6 +28,8 @@ public sealed record GroundItem(int Id, ItemInstance Item, Vector3 Position, Qua
     /// (label red, pick-up "Steal", the item marked stolen).
     /// </summary>
     public int OwnedBy { get; init; } = -1;
+    /// <summary>The stump a severed limb fell from (null: none, e.g. any other item).</summary>
+    public FallSource? Fall { get; init; }
 }
 
 /// <summary>
@@ -48,10 +57,10 @@ public sealed class GroundItems
     /// <summary>Bumped when an item is dropped, loaded or goes: the host diffs <see cref="Published"/> by id when it changes.</summary>
     public long Revision { get; private set; }
 
-    /// <summary>Drops an item made in play, turned <paramref name="yaw"/> about Y.</summary>
-    public void Drop(ItemInstance item, Vector3 position, float yaw)
+    /// <summary>Drops an item made in play, turned <paramref name="yaw"/> about Y; <paramref name="fall"/> is the stump a severed limb falls from.</summary>
+    public void Drop(ItemInstance item, Vector3 position, float yaw, FallSource? fall = null)
     {
-        items.Add(new GroundItem(nextId++, item, position, Quaternion.CreateFromAxisAngle(Vector3.UnitY, yaw)) { Dropped = true });
+        items.Add(new GroundItem(nextId++, item, position, Quaternion.CreateFromAxisAngle(Vector3.UnitY, yaw)) { Dropped = true, Fall = fall });
         for (int extra = items.Count(Capped) - limit; extra > 0; extra--) items.RemoveAt(items.FindIndex(Capped));
         Revision++;
     }
@@ -100,7 +109,7 @@ public sealed class GroundItems
     /// <summary>The items as published, made again only when <see cref="Revision"/> changed.</summary>
     internal IReadOnlyList<GroundItemSnapshot> Published()
     {
-        if (publishedAt != Revision) (published, publishedAt) = ([.. items.Select(i => new GroundItemSnapshot(i.Id, i.Item.Record, i.Item.Name, i.Position, i.Rotation, i.Dropped, i.Item.Type, i.Item.Level, i.Item.Quality, i.OwnedBy))], Revision);
+        if (publishedAt != Revision) (published, publishedAt) = ([.. items.Select(i => new GroundItemSnapshot(i.Id, i.Item.Record, i.Item.Name, i.Position, i.Rotation, i.Dropped, i.Item.Type, i.Item.Level, i.Item.Quality, i.OwnedBy, i.Fall))], Revision);
         return published;
     }
     IReadOnlyList<GroundItemSnapshot> published = [];

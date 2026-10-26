@@ -28,16 +28,35 @@ sealed partial class GameHost
         {
             ActiveObjects?.RemoveRuntime(GroundId(id));
             shownGround.Remove(id);
+            falls.RemoveAll(f => f.Ground.Id == id);
         }
         foreach (var g in snapshot.GroundItems)
         {
             if (!shownGround.Add(g.Id)) continue;
             var (rotation, y) = g.Dropped ? LaidFlat(g) : (g.Rotation, g.Position.Y);
-            ActiveObjects?.AddRuntime(new BuildingPlacement(WorldLayout.ZoneOf(g.Position.X, g.Position.Z), GroundId(g.Id), g.Record, g.Position, rotation, null, y) { Key = GroundId(g.Id) });
+            if (g.Fall is { } stump && StartFall(g, stump, rotation, y)) continue;   // shown once it has landed (UpdateFalls)
+            ShowGround(g, rotation, y);
         }
     }
 
+    /// <summary>The placement of a ground item: its record's mesh at its place, turned by <paramref name="rotation"/> and set at height <paramref name="y"/>.</summary>
+    void ShowGround(GroundItemSnapshot g, Quaternion rotation, float y) =>
+        ActiveObjects?.AddRuntime(new BuildingPlacement(WorldLayout.ZoneOf(g.Position.X, g.Position.Z), GroundId(g.Id), g.Record, g.Position, rotation, null, y) { Key = GroundId(g.Id) });
+
     readonly Dictionary<string, OgreBounds?> groundBounds = [];
+
+    /// <summary>The bounds of a record's item mesh (its ground mesh, else its mesh), read once; null when it has none.</summary>
+    OgreBounds? BoundsOf(string record)
+    {
+        if (groundBounds.TryGetValue(record, out var bounds)) return bounds;
+        bounds = null;
+        if (scene.Database?.Find(record) is { } item && assets.Find(WorldObjectLayout.ItemMesh(item)) is { } file)
+        {
+            try { bounds = OgreMeshReader.TryReadBounds(file, out var b) ? b : OgreMeshReader.ReadFile(file).Bounds; }
+            catch (Exception e) when (e is IOException or OgreFormatException) { }
+        }
+        return groundBounds[record] = bounds;
+    }
 
     /// <summary>
     /// A dropped item as it would come to rest (engine choice; the original lets a physics body settle it): its mesh's thinnest bounds axis turned upright, then its yaw, then tilted to the
@@ -47,17 +66,7 @@ sealed partial class GameHost
     (Quaternion Rotation, float Y) LaidFlat(GroundItemSnapshot g)
     {
         var yaw = new Quaternion(0, g.Rotation.Y, 0, g.Rotation.W);
-        if (!groundBounds.TryGetValue(g.Record, out var bounds))
-        {
-            bounds = null;
-            if (scene.Database?.Find(g.Record) is { } record && assets.Find(WorldObjectLayout.ItemMesh(record)) is { } file)
-            {
-                try { bounds = OgreMeshReader.TryReadBounds(file, out var b) ? b : OgreMeshReader.ReadFile(file).Bounds; }
-                catch (Exception e) when (e is IOException or OgreFormatException) { }
-            }
-            groundBounds[g.Record] = bounds;
-        }
-        if (bounds is not { } box) return (yaw, g.Position.Y + 0.5f);
+        if (BoundsOf(g.Record) is not { } box) return (yaw, g.Position.Y + 0.5f);
         var size = box.Max - box.Min;
         var flat = size.X <= size.Y && size.X <= size.Z ? Quaternion.CreateFromAxisAngle(Vector3.UnitZ, MathF.PI / 2)   // X up
             : size.Z < size.Y ? Quaternion.CreateFromAxisAngle(Vector3.UnitX, -MathF.PI / 2)                           // Z up
@@ -85,9 +94,33 @@ sealed partial class GameHost
         return (rotation, y);
     }
 
+    /// <summary>
+    /// A severed limb drops from its stump (docs/simulation.md "Ground items", docs/formats/collision.md "Item physics"): <see cref="UpdateFalls"/> lets it fall from the
+    /// stump's bone, sampled once its character is drawn, with gravity from rest, drifts it across to where the simulation put it and tips it flat on landing. Engine choice:
+    /// the drift and the hanging pose are not the original's physics. False when the item has no mesh to fall with (it is then shown at rest).
+    /// </summary>
+    bool StartFall(GroundItemSnapshot g, FallSource stump, Quaternion lying, float y)
+    {
+        if (scene.Database?.Find(g.Record) is not { } record || WorldObjectLayout.ItemMesh(record) is not { Length: > 0 } mesh) return false;
+        if (gpu.Debris?.Extent(mesh) is null) return false;   // the debris renderer draws only meshes it has loaded (its material: the record's)
+        // Hanging: the mesh's long axis down, turned by the item's yaw (the same yaw the rest pose keeps).
+        var yaw = new Quaternion(0, g.Rotation.Y, 0, g.Rotation.W);
+        var hang = BoundsOf(g.Record) is { } box ? Turn(LongAxis(box.Max - box.Min), -Vector3.UnitY) : Quaternion.Identity;
+        falls.Add(new FallingLimb
+        {
+            Ground = g, Mesh = mesh, Stump = stump, Rest = new Vector3(g.Position.X, y, g.Position.Z), RestY = y,
+            Hanging = Quaternion.Normalize(Quaternion.Concatenate(hang, yaw)), Lying = lying,
+        });
+        return true;
+    }
+
+    /// <summary>The axis of a box's longest extent (a unit vector).</summary>
+    static Vector3 LongAxis(Vector3 size) => size.X >= size.Y && size.X >= size.Z ? Vector3.UnitX : size.Y >= size.Z ? Vector3.UnitY : Vector3.UnitZ;
+
     void ForgetGroundItems()
     {
         shownGround.Clear();
+        falls.Clear();
         groundRevision = -1;
     }
 }

@@ -90,6 +90,12 @@ public sealed partial class MedicalState
     }
 
     /// <summary>
+    /// Posture 0 (<c>PS_NORMAL</c>, docs/game/ragdolls.md "Forced crawl"): conscious, neither staying low nor crawling. Only a standing character loses a leg into a knock-out
+    /// (<see cref="Sever"/>, <b>Verified</b>: the original tests the posture before it sets the knock-out). Read before a blow or a tick changes the legs.
+    /// </summary>
+    public bool Standing => !Unconscious && !StayingLow && !Crawling;
+
+    /// <summary>
     /// The voluntary crawl (posture 1 <c>PS_STAYING_LOW</c>, docs/game/ragdolls.md "Staying low"): set on waking while sneaking, cleared by a speed order, sneak off, Stand Up or a melee
     /// attack. Kept on the medical state beside <see cref="Crawling"/> so <see cref="Prone"/> reads both; not saved (the original's save key, if any, is <b>Unknown</b>).
     /// </summary>

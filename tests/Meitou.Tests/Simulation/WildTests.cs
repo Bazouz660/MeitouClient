@@ -136,7 +136,7 @@ public class WildTests(ITestOutputHelper output)
         int squads = pop.WildSites.Sum(s => pop.WildSquadsOf(s.Index).Count);
 
         world.Commands.Enqueue(new FocusCommand(new Vector3(-90000, 0, -90000)) { Tick = world.Tick });
-        world.RunTicks(150);
+        world.RunTicks(200);   // the block's 4 s, then the 2 s grace
         Assert.Equal(0, world.Characters.Count);
         Assert.Equal(keep ? squads : 0, pop.WildSites.Sum(s => pop.KeptWildOf(s.Index).Count));
 
@@ -173,7 +173,7 @@ public class WildTests(ITestOutputHelper output)
         Assert.Equal(PackageClass.OccupyTown, board.CurrentClass);
 
         world.Commands.Enqueue(new FocusCommand(new Vector3(-90000, 0, -90000)) { Tick = world.Tick });
-        world.RunTicks(150);
+        world.RunTicks(200);   // the block's 4 s, then the 2 s grace
         Assert.Equal(0, world.Characters.Count);
         Assert.Equal(1, pop.WildSites.Sum(s => pop.KeptWildOf(s.Index).Count));
 

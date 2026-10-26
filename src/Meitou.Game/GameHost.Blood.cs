@@ -60,6 +60,7 @@ sealed partial class GameHost
             world.BloodMarks = null;
             gpu.DebrisPieces.Clear();
             AddBolts();   // the bolts are drawn whatever the Blood setting
+            UpdateFalls(world);   // and the severed limbs falling
             return;
         }
         if (!ReferenceEquals(bloodFor, world)) BloodForNewWorld(null);

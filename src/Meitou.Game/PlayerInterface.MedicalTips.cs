@@ -15,14 +15,14 @@ sealed partial class PlayerInterface
         (rate > 1 ? "#59231a" : rate < 1 ? "#a8b774" : "") + Loc.Tr("Racial bleed rate multiplier: x{1,num=fix,p=2}", rate);
 
     /// <summary>
-    /// A body part's row. With h its health (flesh and rig), d the pending healing, s the stun and m the maximum: destroyed (h + d - s at or below -m) says so; below 0 a robotic limb
+    /// A body part's row. With h its flesh (no splint: the original's tests read it alone), d the pending healing, s the stun and m the maximum: destroyed (h + d - s at or below -m) says so; below 0 a robotic limb
     /// "does not degenerate", a vital part above the KO point is "dangerous" (death at -m; unconscious: regain consciousness before the KO point) and at it "critical", any other part
     /// "getting worse"; from 0 a part more than 20 short of m needs bandaging (robotic: plainly), less than 5 % short (healing and stun within 5) is okay or healing, else bandaging is not
     /// urgent. Under 60 left a line on what the damage affects follows. The original's wear lines (skeletons), the kick line and the lost-limb line are not modelled.
     /// </summary>
     static string PartTip(HealthPartView part, float? koPoint, bool unconscious)
     {
-        float h = part.Flesh + part.Rig, d = part.Bandage, s = part.Stun, m = part.Maximum;
+        float h = part.Flesh, d = part.Bandage, s = part.Stun, m = part.Maximum;
         string text;
         if (h + d - s <= -m)
             text = Loc.Tr(part.Vital ? "Your {1} is totally destroyed. It's probably the reason you are dead." : "Your {1} is totally destroyed. Lucky it's not something you need to live.", part.Name);
@@ -48,6 +48,23 @@ sealed partial class PlayerInterface
             if (affects is not null) text += "\n" + Loc.Tr(affects);
         }
         return text;
+    }
+
+    /// <summary>
+    /// A body part's arrows, the same section's row test (docs/game/ui-screens.md "Medical rows"; h, d, s, m and the KO point as in <see cref="PartTip"/>): "!!!" when destroyed;
+    /// below 0 (h + d) "&lt;&lt;" on a part that is neither vital nor robotic, "&lt;&lt;!!" on a vital one at or under the KO point (none above it); from 0, "&lt;" while more than 20
+    /// short of m (a robotic non-vital part excepted); else none. The bandage counts in the test, the splint does not.
+    /// </summary>
+    static string PartArrows(HealthPartView part, float? koPoint)
+    {
+        float h = part.Flesh, d = part.Bandage, s = part.Stun, m = part.Maximum;
+        if (h + d - s <= -m) return "!!!   ";
+        if (h + d < 0)
+        {
+            if (!part.Vital) return part.Robotic ? "" : "<<   ";
+            return koPoint is { } ko && h + d >= ko ? "" : "<<!!   ";
+        }
+        return (m - h) - d > 20 && !(!part.Vital && part.Robotic) ? "<   " : "";
     }
 
     /// <summary>

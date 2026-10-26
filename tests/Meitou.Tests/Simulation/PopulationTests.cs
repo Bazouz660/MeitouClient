@@ -33,7 +33,7 @@ public class PopulationTests
         world.Commands.Enqueue(new FocusCommand(new Vector3(-50000, 0, -50000)) { Tick = world.Tick });
         world.RunTicks(150);   // 5 s
         Assert.Equal(before, table.Count);
-        world.RunTicks(200);   // past 10 s
+        world.RunTicks(300);   // past 10 s once the 4 s the camera's block stays loaded have run out
         Assert.Equal(SiteStatus.Unloaded, population.StatusOf(0));
         Assert.Equal(0, table.Count);
         Assert.Equal(0, world.Squads.Count);
@@ -169,7 +169,7 @@ public class PopulationTests
         void Leave()
         {
             world.Commands.Enqueue(new FocusCommand(new Vector3(-50000, 0, -50000)) { Tick = world.Tick });
-            world.RunTicks(60);
+            world.RunTicks(180);   // the block's 4 s, then the 1 s grace
         }
         var site = data.Sites[0];
         int Patrols() => world.Squads.All.Count(s => s.TemplateId == "10-t");
@@ -222,7 +222,7 @@ public class PopulationTests
         Assert.Equal(("51-t", SiteStatus.Loading), (data.Sites[0].Replacement?.Id, population.StatusOf(0)));
 
         world.Commands.Enqueue(new FocusCommand(new Vector3(-50000, 0, -50000)) { Tick = world.Tick });
-        world.RunTicks(60);
+        world.RunTicks(180);   // the block's 4 s, then the 1 s grace
         Assert.Equal(SiteStatus.Unloaded, population.StatusOf(0));
         looks.Open.Set();
         world.RunTicks(2);
