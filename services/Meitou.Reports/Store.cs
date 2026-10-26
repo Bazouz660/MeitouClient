@@ -66,9 +66,14 @@ sealed class Store(NpgsqlDataSource db)
         return (int)(long)(await cmd.ExecuteScalarAsync())!;
     }
 
-    public async Task<List<RowSummary>> Summary(DateTimeOffset since)
+    /// <summary>The counts per row over the reports <paramref name="w"/> lets count (a Broken one dated by its build's release, else its own time).</summary>
+    public async Task<List<RowSummary>> Summary(Window w)
     {
         await using var cmd = db.CreateCommand("""
+            with releases as (select * from unnest($2::text[], $3::timestamptz[]) as t(build, published)),
+            counted as (
+                select r.* from reports r left join releases using (build)
+                where r.at >= $1 and (r.verdict = 'works' or $4::timestamptz is null or coalesce(published, r.at) >= $4))
             select row_id,
                    count(distinct reporter) filter (where verdict = 'works'),
                    count(distinct reporter) filter (where verdict = 'broken'),
@@ -76,9 +81,12 @@ sealed class Store(NpgsqlDataSource db)
                    (array_agg(verdict order by at desc))[1],
                    (array_agg(build order by at desc))[1],
                    max(at)
-            from reports where at >= $1 group by row_id order by row_id
+            from counted group by row_id order by row_id
             """);
-        cmd.Parameters.Add(new() { Value = since });
+        cmd.Parameters.Add(new() { Value = w.Since });
+        cmd.Parameters.Add(new() { Value = w.Builds, NpgsqlDbType = NpgsqlDbType.Array | NpgsqlDbType.Text });
+        cmd.Parameters.Add(new() { Value = w.Published, NpgsqlDbType = NpgsqlDbType.Array | NpgsqlDbType.TimestampTz });
+        cmd.Parameters.Add(new() { Value = (object?)w.NewestFull ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.TimestampTz });
         var list = new List<RowSummary>();
         await using var r = await cmd.ExecuteReaderAsync();
         while (await r.ReadAsync())

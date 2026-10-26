@@ -8,7 +8,7 @@ var builder = WebApplication.CreateBuilder(args);
 var config = Config.Load(builder.Configuration);
 builder.Services.AddSingleton(config);
 // The slim builder: the basic types and no reflection; TLS is opt-in there and the database is reached over it.
-builder.Services.AddSingleton(new NpgsqlSlimDataSourceBuilder(config.ConnectionString).EnableTransportSecurity().Build());
+builder.Services.AddSingleton(new NpgsqlSlimDataSourceBuilder(config.ConnectionString).EnableTransportSecurity().EnableArrays().Build());
 builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.TypeInfoResolverChain.Insert(0, ReportsJson.Default));
 builder.Services.AddSingleton<Store>();
 builder.Services.AddHttpClient();
@@ -30,17 +30,18 @@ app.UseRateLimiter();
 app.MapGet("/", () => "Meitou play reports. https://github.com/VlcekM/MeitouClient/tree/master/services/Meitou.Reports");
 app.MapGet("/health", () => Results.Ok());
 
-// Public: counts per row since the cutoff (reports older than two releases stop counting), for the roadmap page.
+// Public: counts per row since the cutoff (reports older than two releases stop counting, a Broken one once a full release is newer
+// than its build), for the roadmap page.
 app.MapGet("/summary", async (Store store, Roadmap roadmap, HttpResponse response) =>
 {
-    var since = await roadmap.Cutoff();
+    var window = await roadmap.Window();
     response.Headers.CacheControl = "public, max-age=60";
-    return new Summary(since, await store.Summary(since));
+    return new Summary(window.Since, await store.Summary(window));
 });
 
 // Public: the status changes the reports suggest; a person approves them on the roadmap.
 app.MapGet("/proposals", async (Store store, Roadmap roadmap) =>
-    Roadmap.Propose(await roadmap.Rows(), await store.Summary(await roadmap.Cutoff())));
+    Roadmap.Propose(await roadmap.Rows(), await store.Summary(await roadmap.Window())));
 
 // A report from the roadmap page (Turnstile when configured) or the launcher (may carry the end of log.txt).
 app.MapPost("/reports", async (HttpContext ctx, ReportBody body, Intake intake, IHttpClientFactory http) =>

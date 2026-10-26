@@ -15,8 +15,15 @@ sealed record GithubRelease(
     [property: JsonPropertyName("published_at")] DateTimeOffset? Published);
 
 /// <summary>
-/// The roadmap's rows (from the site, so reports can only name a real row) and the report cutoff: reports older than two full game
-/// releases stop counting, so the cutoff is when the release before the newest one came out.
+/// Which reports count: none from before <see cref="Since"/>, and a Broken one only while no full release came out after its build
+/// (<see cref="Builds"/> and <see cref="Published"/> pair each game release's version with its publish time; a build that is not a
+/// release, such as a self-built one, is dated by the report itself). <see cref="NewestFull"/> is null before any full release.
+/// </summary>
+sealed record Window(DateTimeOffset Since, DateTimeOffset? NewestFull, string[] Builds, DateTimeOffset[] Published);
+
+/// <summary>
+/// The roadmap's rows (from the site, so reports can only name a real row) and the report window: reports older than two full game
+/// releases stop counting, and a Broken report stops once a full release is newer than its build (the fix ships, or players report again).
 /// </summary>
 sealed partial class Roadmap(HttpClient http, Config config, ILogger<Roadmap> log)
 {
@@ -24,7 +31,7 @@ sealed partial class Roadmap(HttpClient http, Config config, ILogger<Roadmap> lo
     readonly SemaphoreSlim gate = new(1, 1);
     Dictionary<string, RoadmapRow> rows = [];
     DateTimeOffset rowsAt = DateTimeOffset.MinValue, releasesAt = DateTimeOffset.MinValue;
-    DateTimeOffset cutoff = DateTimeOffset.UtcNow.AddDays(-90);
+    Window window = new(DateTimeOffset.UtcNow.AddDays(-90), null, [], []);
 
     public async Task<IReadOnlyDictionary<string, RoadmapRow>> Rows()
     {
@@ -72,22 +79,26 @@ sealed partial class Roadmap(HttpClient http, Config config, ILogger<Roadmap> lo
     [System.Text.RegularExpressions.GeneratedRegex(@"^\s*\{\s*id:\s*""([^""]+)"",\s*system:\s*""((?:[^""\\]|\\.)*)"",\s*status:\s*""(\w+)""")]
     private static partial System.Text.RegularExpressions.Regex RowLine();
 
-    /// <summary>Reports made before this stop counting: the publish time of the second newest full game release (<c>v*</c>, not a pre-release).</summary>
-    public async Task<DateTimeOffset> Cutoff()
+    /// <summary>
+    /// The report window from the game releases (<c>v*</c> tags, the version after the <c>v</c>): reports made before the publish time of
+    /// the second newest full release (not a pre-release) stop counting, and a Broken one stops once the newest full release is newer than its build.
+    /// </summary>
+    public async Task<Window> Window()
     {
-        if (DateTimeOffset.UtcNow - releasesAt < ReleasesFor) return cutoff;
+        if (DateTimeOffset.UtcNow - releasesAt < ReleasesFor) return window;
         await gate.WaitAsync();
         try
         {
-            if (DateTimeOffset.UtcNow - releasesAt < ReleasesFor) return cutoff;
+            if (DateTimeOffset.UtcNow - releasesAt < ReleasesFor) return window;
             using var request = new HttpRequestMessage(HttpMethod.Get, $"https://api.github.com/repos/{config.Repo}/releases?per_page=100");
             request.Headers.UserAgent.ParseAdd("meitou-reports");
             using var response = await http.SendAsync(request);
             response.EnsureSuccessStatusCode();
-            var full = (await response.Content.ReadFromJsonAsync(ReportsJson.Default.ListGithubRelease) ?? [])
-                .Where(r => r.Tag.StartsWith('v') && !r.Prerelease && !r.Draft && r.Published is not null)
-                .OrderByDescending(r => r.Published).ToList();
-            cutoff = full.Count >= 2 ? full[1].Published!.Value : DateTimeOffset.MinValue;
+            var game = (await response.Content.ReadFromJsonAsync(ReportsJson.Default.ListGithubRelease) ?? [])
+                .Where(r => r.Tag.StartsWith('v') && !r.Draft && r.Published is not null).ToList();
+            var full = game.Where(r => !r.Prerelease).OrderByDescending(r => r.Published).ToList();
+            window = new(full.Count >= 2 ? full[1].Published!.Value : DateTimeOffset.MinValue, full.FirstOrDefault()?.Published,
+                game.Select(r => r.Tag[1..]).ToArray(), game.Select(r => r.Published!.Value).ToArray());
             releasesAt = DateTimeOffset.UtcNow;
         }
         catch (Exception e) when (e is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
@@ -96,7 +107,7 @@ sealed partial class Roadmap(HttpClient http, Config config, ILogger<Roadmap> lo
             releasesAt = DateTimeOffset.UtcNow - ReleasesFor + TimeSpan.FromMinutes(5);
         }
         finally { gate.Release(); }
-        return cutoff;
+        return window;
     }
 
     /// <summary>

@@ -24,6 +24,8 @@ chars, required for Broken), source `web|discord|launcher`, reporter, trusted, g
 - Reporter = HMAC-SHA256(`REPORTS_SALT`, IP or Discord user id), 24 hex: counts distinct people, stores nothing personal.
 - Limits: 10 posts per IP per 10 minutes, 30 reports per reporter per day; unknown row ids are refused (rows from `ROADMAP_URL`). Not the site itself: a container on cic cannot reach domains its own edge serves directly (DNS-only, like `meitou.kenshi.wiki`).
 - Counting window: reports before the publish time of the second newest full game release (`v*`, not pre-release) stop counting.
+  A Broken report also stops once the newest full release was published after its build (the build's own release time; a build
+  with no release, such as `Other`, is dated by the report), so shipping a fix clears it and a still broken row is reported again.
 - Rules (`GET /proposals`): Untested to Works on 3 distinct reporters or 1 trusted tester; any Broken flags the row for a look. A
   Broken that someone reproduces with steps is what moves Works to Bug, by hand.
 
