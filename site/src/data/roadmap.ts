@@ -13,7 +13,7 @@ export interface Category { id: string; name: string; blurb: string; rows: Row[]
 export interface Bug { id: string; seen: string; original: string; state: string; platform?: string; }
 export interface Fix { id: string; text: string; }
 
-export const asOf = { date: "2026-10-25", master: "f4a41faa" };
+export const asOf = { date: "2026-10-26", master: "11ba888f" };
 
 export const statuses: Record<Status, { label: string; desc: string }> = {
   "works": {
@@ -41,18 +41,18 @@ export const order: Status[] = ["works","untested","wip","bug","missing"];
 
 export const categories: Category[] = [
   { id: "startup", name: "Startup and saves", blurb: "New games, the main menu, loading and saving.", rows: [
-    { id: "load-an-original-kenshi-save", system: "Load an original Kenshi save", status: "works", note: "A large modded save with several bases loads and plays.", bugs: [] },
-    { id: "reaching-the-main-menu", system: "Reaching the main menu", status: "works", note: "Loads for most players; one player's PC crashes near the end of loading on recent nightlies; the maintainer suspects a GPU driver fault.", bugs: ["#55"] },
+    { id: "load-an-original-kenshi-save", system: "Load an original Kenshi save", status: "works", note: "A large modded save with several bases loads and plays.", bugs: ["#94"] },
+    { id: "reaching-the-main-menu", system: "Reaching the main menu", status: "works", note: "Loads for most players; the crash near the end of loading on one player's PC is fixed on master (#55).", bugs: [] },
     { id: "quicksave-and-quickload", system: "Quicksave and quickload", status: "works", note: "Saving and loading work; the crash once seen after a quickload and a jump to another base is fixed on master (#78).", bugs: [] },
     { id: "new-game-starts-and-advanced-options", system: "New-game starts and advanced options", status: "works", note: "Tested in play, works mostly: all starts, advanced options with the original help text. Since #75 a start also sets the faction relations, start town, discovered towns, squad, research and clock as the original (not seen in play yet). The Hive Exile start that defaulted to a human character is fixed on master (#62).", bugs: [] },
     { id: "import-game", system: "Import game", status: "works", note: "Tested in play: importing works. The squads afterwards are wrong: the first squad has no name, members show missing or black portraits, and one character is listed in two squads.", bugs: [] },
   ] },
   { id: "characters", name: "Characters", blurb: "Health, needs, stats, equipment and the character editor.", rows: [
-    { id: "character-editor", system: "Character editor", status: "untested", note: "Template rows, stats panel, camera and stance preview as the original.", bugs: [] },
+    { id: "character-editor", system: "Character editor", status: "untested", note: "Template rows, stats panel, camera and stance preview as the original.", bugs: ["#93"] },
     { id: "hunger-eating-starvation", system: "Hunger, eating, starvation", status: "works", note: "Tested in play: hunger, eating and starvation work.", bugs: [] },
     { id: "sleep-beds-bed-rent", system: "Sleep, beds, bed rent", status: "works", note: "Tested in play: characters sleep in beds. Bed rent and sleeping when injured not seen yet.", bugs: [] },
     { id: "first-aid-splints-bleeding-knock-outs", system: "First aid, splints, bleeding, knock-outs", status: "untested", note: "KO and blood rules recently matched to the original; the medic finder and quick right click follow the decoded rules. Open: losing a leg sends a character straight to crawling, where the original seems to knock it down for a few seconds first (not yet checked in the binary); a downed character, seen with a pack beast, sometimes vanishes until it gets up (not reproduced on flat ground, suspected ragdoll sinking under terrain); bandaged parts sometimes still show as getting worse; the Splint Injuries order does not use a splint kit; with Heal Allies on, a test medic once treated nobody, not even a downed squad mate (not re-checked).", bugs: [] },
-    { id: "limbs-stumps-prosthetics", system: "Limbs, stumps, prosthetics", status: "wip", note: "Fitting and removing prosthetics works in code; race equipment restrictions are absent. A severed limb is laid on the ground without the original's physics fall.", bugs: [] },
+    { id: "limbs-stumps-prosthetics", system: "Limbs, stumps, prosthetics", status: "wip", note: "Fitting and removing prosthetics works in code; race equipment restrictions are absent. A severed limb is laid on the ground without the original's physics fall.", bugs: ["#87"] },
     { id: "carrying-characters", system: "Carrying characters", status: "wip", note: "Lifting, the carry pose (downed or awake), the carrier's arm overlay, the carried body's arm and head physics and fighting while carrying follow the original; hurt characters hold the hurt part (hand to head, shoulder, chest). Open: a report of carried bodies sitting too low on the shoulder is not reproduced; the mirrored right-hand holds are untested.", bugs: [] },
     { id: "weather-on-characters", system: "Weather on characters", status: "untested", note: "Acid rain, acid water, fire, gas and dust affect characters; a roof shelters them.", bugs: [] },
     { id: "medical-beds-skeleton-repair-robot-repair", system: "Medical beds, skeleton repair, robot repair", status: "untested", note: "Bed healing rates and repair beds for skeletons.", bugs: [] },
@@ -95,7 +95,7 @@ export const categories: Category[] = [
     { id: "walls-gates-turrets-upgrades", system: "Walls, gates, turrets, upgrades", status: "works", note: "Tested in play: wall lines, gates, turrets and building upgrades work. New on master, not seen in play yet: raiders whose target is behind a locked gate walk to it and bash it open.", bugs: [] },
     { id: "crafting-and-production", system: "Crafting and production", status: "wip", note: "Queue, repeat and research gating in code; machines in NPC towns do not run.", bugs: [] },
     { id: "farms-and-wells", system: "Farms and wells", status: "wip", note: "No catch-up for time spent away; crops have no quality.", bugs: [] },
-    { id: "power-generators-and-batteries", system: "Power: generators and batteries", status: "wip", note: "Generators, fuel, batteries, town power sharing and wind generators turned by the region's wind are in code; generator health does not change output yet, and battery mode is not saved.", bugs: [] },
+    { id: "power-generators-and-batteries", system: "Power: generators and batteries", status: "wip", note: "Generators, fuel, batteries, town power sharing and wind generators turned by the region's wind are in code; generator and battery output and capacity scale with health on master; battery mode is not saved.", bugs: [] },
     { id: "hauling-and-storage", system: "Hauling and storage", status: "wip", note: "Works on an imported save. Crafted items are not hauled, and a hauling trip in progress is not saved.", bugs: [] },
     { id: "storage-windows-and-grids", system: "Storage windows and grids", status: "works", note: "Grid sized from the stored item, Max Capacity line, red when full.", bugs: [] },
   ] },
@@ -143,7 +143,9 @@ export const categories: Category[] = [
 ];
 
 export const bugs: Bug[] = [
-  { id: "#55", seen: "Crash near the end of main menu loading, on one player's PC (recent nightlies).", original: "Not applicable.", state: "Open issue; maintainer suspects a GPU driver fault" },
+  { id: "#94", seen: "Deleting loaded saves with the delete key does not work from the game start menu.", original: "Not applicable.", state: "Open issue" },
+  { id: "#93", seen: "Partmap and editors for races from mods seem not to work correctly.", original: "Not applicable.", state: "Open issue" },
+  { id: "#87", seen: "Restricted armour slots for races are not present.", original: "Not applicable.", state: "Open issue" },
   { id: "#17", seen: "Borderless full screen on macOS shows no window.", original: "Not applicable.", state: "Issue closed; last report says still broken", platform: "macOS" },
 ];
 
@@ -164,6 +166,7 @@ export const fixedSeen: Fix[] = [
 
 // Fixed on master, not yet seen in play.
 export const fixedUnseen: Fix[] = [
+  { id: "#55", text: "Crash just before finishing Main Menu loading on one player's PC" },
   { id: "#79", text: "A dead character the player still owns can be selected to see its stats" },
   { id: "#74", text: "Pick up is offered on squad members" },
   { id: "#70", text: "A character who dies is removed from its squad" },
