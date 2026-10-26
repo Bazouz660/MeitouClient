@@ -632,7 +632,12 @@ How a building gets selected: [ui-input](ui-input.md#building-picking-and-select
     `Total:`.
   - Slot 114 (`FUN_140300090`), first match, all but Working in Bad with a tooltip: Broken, Under construction, Switched off (off with demand), No power, Production
     queue empty (status 3), Out of resource (status 0 and slot 149), Output full (status 1), No power (demand > 0, granted <= 0), No workers (raw max > 0,
-    nobody), Working (tooltip from slot 168, **Unknown**).
+    nobody), Working with the tooltip of slot 168 (`FUN_1403094b0`, every class; **Verified**): P = `power output` + research increase (`FUN_1402976a0`);
+    P > 0 gives share = slot 166 (output now; ProductionBuilding `FUN_1402976e0`: construction fraction × P while `power on` and not an empty battery) / P,
+    else demand (slot 163) > 0 gives granted / demand, else none; a share at most 0.9 reads "This machine is working fine, but due to low power is only
+    operating at {1}{2,num}% {3}of its full potential." ({1} `#492620`, {2} int(share × 100), {3} `#140806`), otherwise "This machine is working fine.".
+    Generator (`FUN_140300b40`) and WindGenerator states run this word chain first and then override it. Meitou: the tooltip on its Working word (mines,
+    rocks, machines with an output, consumers by their grant); generators read Meitou's "Running" (not an original building string), so the P > 0 branch is unused.
   - Rocks (**Observed**, same screenshot): the name bar's right is the player's faction ("Nameless"), so the rock passes slot 113's owner-is-player branch (how it
     gets that owner is **Unknown**); the medical rows are `Condition` 2, full: the target of `build materials` 2.
   Meitou (`PlayerInterface.Production.cs`, `MachineSnapshot.Efficiency` and `Panel`): the lines per class as above, unmined rocks too (0 workers), the turret's

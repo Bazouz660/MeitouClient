@@ -263,12 +263,13 @@ sealed partial class PlayerInterface
     /// A selected building's status word (the medical header) and the tooltip the building classes give it (<b>Observed</b>: the strings of the <c>vfunc_114</c> status functions, a title
     /// followed by its text; the machine classes' words, Meitou applies them to every building).
     /// </summary>
-    static string? BuildingStatusTip(string status, bool farm) => status switch
+    static string? BuildingStatusTip(string status, Meitou.Simulation.Production.MachineSnapshot? machine) => status switch
     {
+        "Working" => WorkingTip(machine?.Power),
         "Normal" => "Building is in good condition.",
         "Under construction" => "This machine is currently under construction.",
         "Broken" => "This machine has broken down as a result of damage. Send one of your engineers to repair it.",
-        "Output full" when farm => "The output is full. Empty out the items and put them in a storage box or something.",
+        "Output full" when machine?.Farm is not null => "The output is full. Empty out the items and put them in a storage box or something.",
         "Output full" => "The machine output is full. Empty out the items and put them in a storage box or something.",
         "Growing" => "Your crops are growing nicely. You don't have to do anything.",
         "No water" => "Out of water. Growth rate will be significantly reduced and your plants may die.",
@@ -277,6 +278,22 @@ sealed partial class PlayerInterface
         "No workers" => "Nobody is working at this machine at the present moment, so nothing is getting done.",
         _ => null,
     };
+
+    /// <summary>
+    /// The Working word's tooltip (slot 168, <c>FUN_1403094b0</c>): with rated output P = power output + research above 0 the share is the output now over P, else with a demand the
+    /// granted share of it; at most 0.9 it names that share (Title tag, the whole percent, then ink), else, or with neither, "This machine is working fine.".
+    /// </summary>
+    static string WorkingTip(Meitou.Simulation.Production.PowerView? power)
+    {
+        float? share = power switch
+        {
+            { Kind: Meitou.Simulation.Production.PowerKind.Consumer, Demand: > 0 } p => p.Granted / p.Demand,
+            _ => null,
+        };
+        return share is <= 0.9f and { } s
+            ? Loc.Tr("This machine is working fine, but due to low power is only operating at {1}{2,num}% {3}of its full potential.", TitleTag, (int)(s * 100), InkTag)
+            : Loc.Tr("This machine is working fine.");
+    }
 
     // The colour tags of the bounty rows (kenshi_colours.xml Main, Title, Greyed; FUN_1405d2da0's static strings).
     const string MainTag = "#afa68b", TitleTag = "#492620", GreyTag = "#444444";
@@ -373,7 +390,7 @@ sealed partial class PlayerInterface
         if (BuildingFocus() is { } focus)
         {
             var (_, _, _, status, _, _) = BuildingLines(focus);
-            if (BuildingStatusTip(status, Machine(focus.SiteId)?.Farm is not null) is { } tip) Add("HealthText", tip);
+            if (BuildingStatusTip(status, Machine(focus.SiteId)) is { } tip) Add("HealthText", tip);
         }
         else if (Lead()?.Body is { } body) Add("HealthText", HealthWordTip(body));
     }
