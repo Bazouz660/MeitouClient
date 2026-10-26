@@ -243,7 +243,7 @@ public static class StandardSystems
         }
         Meitou.Simulation.Dialogue.DialogueSystem? talk = null;
         if (Has(StandardParts.Dialogue)) systems.Add(talk = new Meitou.Simulation.Dialogue.DialogueSystem(data, o.Dialogue, population));
-        if (deeds is not null && talk is not null) deeds.CagedHook = talk.Captured;   // a captive's squad remembers its captor (MY_CAPTOR)
+        if (deeds is not null && talk is not null) (deeds.CagedHook, deeds.Memory) = (talk.Captured, talk.Memory);   // a captive's squad remembers its captor (MY_CAPTOR), blows their tags
         if (talk is not null && population is not null) (population.Announcer, population.PendingTalk) = (talk.Announce, talk.HasInterrupt);
         if (talk is not null) talk.Arrests = arrest;
         if (weather is not null) weather.Talk = talk;

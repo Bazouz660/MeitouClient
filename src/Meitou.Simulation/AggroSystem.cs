@@ -415,6 +415,10 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         // Wanted characters are the arrest system's (Crime.ArrestSystem): the police spot, fine or arrest them there.
         bool enemy = s.Stance != Ai.AiStance.Passive
             && (IsEnemy(s.Relations, s.Faction, c.Faction) || s.Stance == Ai.AiStance.AggressiveNeutrals && IsNeutral(s.Relations, s.Faction, c.Faction) || WarEnemy(s.War, s.Faction, c.Faction, other.Position));
+        // A campaign force's member is sensed as NEUTRAL, not ENEMY (FUN_1408580d0 over FUN_140796240, docs/game/perception.md "Sense tags"): a raid walks up to talk first.
+        // The looker still takes it when it attacks neutrals or its own campaign targets it; a TEMP_ENEMY tag (below) makes it an enemy again.
+        if (enemy && s.Stance != Ai.AiStance.AggressiveNeutrals && !WarEnemy(s.War, s.Faction, c.Faction, other.Position) && c.SquadId >= 0
+            && s.World.Squads.Find(c.SquadId) is { PlatoonId: >= 0 } force && s.World.Platoons.Find(force.PlatoonId)?.Campaign is not null) enemy = false;
         // The squads' temporary tags (FUN_14079c950, other faction only): the looker's squad holds TEMP_ENEMY on the target, or, for a player-faction looker, the target's squad on it,
         // makes an enemy; the looker's squad holding TEMP_ALLY on the target unmakes one.
         if (s.Stance != Ai.AiStance.Passive && s.Memory is { } memory && c.Faction != s.Faction)

@@ -124,6 +124,7 @@ public sealed class FactionDeeds(FactionRelations relations, PopulationData? dat
     /// </summary>
     public void Blow(World world, int striker, int victim, bool down, bool dead, bool bolt = false, bool aimed = true)
     {
+        if (down || dead) Remember(world, striker, victim, dead);
         float x = Weight(world, victim);
         if (x == 0) return;
         if (dead) Apply(world, striker, victim, RelationEventKind.Killed, x);
@@ -143,6 +144,26 @@ public sealed class FactionDeeds(FactionRelations relations, PopulationData? dat
         // The same task makes the captive's squad remember the captor (long-term tag 5 MY_CAPTOR, FUN_140673a20 in FUN_140358670, Observed): the dialogue system's memory.
         CagedHook?.Invoke(world, captor, captive);
         Apply(world, captor, captive, RelationEventKind.Caged, Weight(world, captive));
+    }
+
+    /// <summary>The squads' memories the deeds write (the dialogue system's; null: none are written).</summary>
+    public Dialogue.SquadMemory? Memory { get; set; }
+
+    /// <summary>
+    /// The long-term tags of a downing or killing blow (<c>FUN_140673a20</c>, docs/game/factions-squads-towns.md 3.5, <b>Observed</b>): a death makes the victim's squad tag the striker
+    /// 9 KILLED_MY_FRIEND; when the victim's whole squad is now down (<c>FUN_140793160</c>), its squad tags the striker 7 DEFEATED_MY_SQUAD and the striker's squad tags the victim 8.
+    /// </summary>
+    void Remember(World world, int striker, int victim, bool dead)
+    {
+        var table = world.Characters;
+        if (Memory is not { } memory || table.Cold(striker) is not { } s || table.Cold(victim) is not { } v || v.SquadId < 0 || v.SquadId == s.SquadId) return;
+        var strikerId = table.IdOf(striker);
+        if (dead) memory.Remember(world, v.SquadId, strikerId, Dialogue.MemoryTag.KilledMyFriend);
+        if (world.Squads.Find(v.SquadId) is not { } squad) return;
+        foreach (var m in squad.Members)
+            if (table.TryResolveNext(m, out int ms) && table.Next[ms].Alive && table.Cold(ms) is { Medical.Incapacitated: false }) return;
+        memory.Remember(world, v.SquadId, strikerId, Dialogue.MemoryTag.DefeatedMySquad);
+        if (s.SquadId >= 0) memory.Remember(world, s.SquadId, table.IdOf(victim), Dialogue.MemoryTag.SquadLostToMe);
     }
 
     /// <summary>Called with the captor's and the captive's slots at every <see cref="Caged"/>, before the relation event (the dialogue system's squad memory: <c>MY_CAPTOR</c>).</summary>

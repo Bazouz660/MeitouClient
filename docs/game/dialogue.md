@@ -293,7 +293,7 @@ me, 5 captor, 6 friendly, 7 defeated my squad, 8 I beat his squad, 9 killed my f
   "met"; other events do not remember), DA 29 (5), the witness and relation deeds ([factions 3.5](factions-squads-towns.md#35-what-fires-relation-changes-observed-decompile)),
   event 13 (3 freed me, with short TEMP ALLY, unless the speaker squad holds captor: `FUN_140684990`, run before a line is chosen, only for a speaker that is awake), a cage put-in (`Task_PutInSomething`
   `FUN_140358670`: the prisoner's squad tags the putter 5 captor), and the slave windows (selling: the sold one's squad tags the customer 5; buying: the freed one's squad tags the buyer 3,
-  [economy 12](economy.md#12-slaves-prisoners-animals)). Meitou writes these (`DialogueSystem.Freed` / `Captured`, `FactionDeeds.CagedHook`, `CharacterTrade`); the witness and blow tags of
+  [economy 12](economy.md#12-slaves-prisoners-animals)). Meitou writes these (`DialogueSystem.Freed` / `Captured`, `FactionDeeds.CagedHook`, `CharacterTrade`); the blow tags 7, 8, 9 too (`FactionDeeds.Remember`); the witness tags of
   [factions 3.5](factions-squads-towns.md#35-what-fires-relation-changes-observed-decompile) are not written yet.
 - **Short-term write** (`FUN_140674300`): never TEMP ENEMY on the squad's own faction; a TEMP ALLY on a player character sets the bool;
   for a player character the squad's player entry takes the time. The character-level wrapper `FUN_1406744a0` also skips TEMP ENEMY on

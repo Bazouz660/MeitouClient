@@ -101,7 +101,7 @@ not be equated with the attack planner or discarded immediately after a lost sig
 entry has a tag word (entry +0x30 → +0x30): bit 0 SENSE_ALLY, 1 SENSE_NEUTRAL, 2 SENSE_ENEMY, 3 SENSE_KO, 14 SENSE_CRAWLING; others
 (5, 6, 7, 9, 10, 11, 12, 13, 15) are set from slave state, prisoner, own faction and carrying tests. The combat finders read it ([ai-tasks](ai-tasks.md#combat-goals)).
 - Not the looker's enemy (Character slot 125, `vfunc_125` at 0x3e8): ALLY when slot 126 (0x3f0) says ally, else NEUTRAL.
-- Enemy: NEUTRAL when `FUN_140796240` holds (**Unknown**), else ENEMY (unless the looker's platoon object lacks a sensor that accepts it).
+- Enemy: NEUTRAL when `FUN_140796240` holds (the target's platoon is a campaign force, [ui-input](ui-input.md); Meitou `AggroSystem` Visit), else ENEMY (unless the looker's platoon object lacks a sensor that accepts it).
 - **Slot 125** (`CharacterAnimal::vfunc_125`, shared by all characters): never the same faction. Across platoons the looker's squad's
   TEMP_ENEMY tag (or, for a looker whose faction has +0x250, the target's tag on it) makes an enemy and TEMP_ALLY prevents one. A disguise
   (uniform faction at +0x108 while +0x100 > 0.6 and +0x110 <= 0) stands in for the target's faction. A slave target: not when its owner

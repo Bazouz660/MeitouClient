@@ -270,7 +270,7 @@ included), else 0.025 (outside every town too).
 - `FUN_140673a20(self, other, tag)` (not a witness function) sets a long-term tag (`CharacterPerceptionTags_LongTerm`, read by DC 23) in
   `self`'s squad memory (`platoon+0x98`, `FUN_140673930`, time-stamped): 1 MY_INTRUDER (trespass), 5 MY_CAPTOR (cage), 7 / 8 (the victim's
   squad tags the striker DEFEATED_MY_SQUAD_ONCE and the striker's tags the victim SQUAD_LOST_TO_ME_ONCE, on a downing blow when
-  `FUN_140793160` finds the victim's squad all down), 9 KILLED_MY_FRIEND (death). Meitou keeps the memory ([dialogue](dialogue.md#squad-memory)) and writes 5 for cagings and arrests; the other deeds do not write it yet.
+  `FUN_140793160` finds the victim's squad all down), 9 KILLED_MY_FRIEND (death). Meitou keeps the memory ([dialogue](dialogue.md#squad-memory)) and writes 5 for cagings and arrests, 7, 8 and 9 for blows (`FactionDeeds.Remember`); trespass (1) is not written.
 
 Meitou: `FactionDeeds` (blows, cagings, first aid), `CrimeSystem` (the ally witness), `PlayerRelations.DeclareWar` / `EndWar` / `Add`
 (the messages); [simulation](../simulation.md#hostility-and-relations).
