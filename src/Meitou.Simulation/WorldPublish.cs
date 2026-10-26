@@ -96,7 +96,7 @@ public sealed partial class World
                 Inventory = selected && cold!.Inventory is { } carried ? Items.InventoryText.Lines(carried) : [],
                 AllSkills = detailed && cold!.Stats is { } allStats ? Array.AsReadOnly(allStats.ToArray()) : [],
                 SkillXpMultipliers = detailed && cold!.Race is { } skillRace ? Array.AsReadOnly((float[])skillRace.StatMultipliers.Clone()) : [],
-                Hud = detailed && cold!.Medical is { } hudMed && cold.Race is { } hudRace && cold.Stats is { } hudStats ? HudOf(cold, hudMed, hudRace, hudStats, combat, bodyConstants) : null,
+                Hud = detailed && cold!.Medical is { } hudMed && cold.Race is { } hudRace && cold.Stats is { } hudStats ? HudOf(cold, hudMed, hudRace, hudStats, combat, bodyConstants, !Sight.Outdoors(i), Sight.Inside(i)) : null,
                 LimbBits = cold?.Medical?.LimbBits ?? 0,
                 HealthParts = detailed && cold!.Medical is { } health && cold.Race is { } anatomy ? Array.AsReadOnly(health.Parts.Select(p => new HealthPartView(p.Template.StringId, p.Template.Name, p.Flesh, p.Stun, p.Bandage, p.Rig, p.MaxHp, p.IsRobotic(anatomy)) { Vital = p.Template.Vital, Type = p.Template.Type }).ToArray()) : [],
                 ItemGrid = (selected || id == Player.OpenLoot || cold is { IsPlayer: true } && Player.InventoryShown.Contains(id)) && cold!.Inventory is { } grid ? new InventoryView(grid.Width, grid.Height, grid.Backpack?.Contents?.Width ?? 0, grid.Backpack?.Contents?.Height ?? 0,
@@ -220,9 +220,10 @@ public sealed partial class World
     /// Perception in ranged mode with a crossbow, else Martial Arts unarmed or Attack and Defense with a melee weapon; then Strength, Dexterity, Toughness and, but
     /// in ranged mode, Dodge; the lines and their tooltips are <see cref="HudTips"/>'s.
     /// </summary>
-    static HudView HudOf(CharacterCold cold, Bodies.MedicalState med, RaceData race, Bodies.CharacterStats stats, Combat.CombatSystem? combat, Meitou.Data.Gameplay.GameConstants? constants)
+    static HudView HudOf(CharacterCold cold, Bodies.MedicalState med, RaceData race, Bodies.CharacterStats stats, Combat.CombatSystem? combat, Meitou.Data.Gameplay.GameConstants? constants,
+        bool inBuilding, bool inside)
     {
-        var lines = HudTips.Lines(cold, med, stats, combat?.HudNumbers(cold), constants);
+        var lines = HudTips.Lines(cold, med, stats, combat?.HudNumbers(cold), constants, inBuilding, inside);
         return new HudView(med.Blood, Bodies.MedicalState.BloodCapacity(race, stats.Strength, med.HasStatsObject, med.ScaleK, med.ScaleZ), med.Bleeding,
             cold.Fighter?.EncumbranceFactor ?? 1, lines.AsReadOnly(), cold.Extended) { BleedRate = race.BleedRate, Fed = med.Fed, Robot = race.IsRobot,
             ExtendedTips = cold.Extended is { } x ? HudTips.Extended(cold, med, race, stats, x, constants) : null };

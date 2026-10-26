@@ -8,7 +8,7 @@ namespace Meitou.Simulation;
 /// <summary>
 /// The HUD stats panel's lines with their tooltips (<c>FUN_140892120</c>) and the extended lines' tooltips (<c>FUN_140895350</c>), docs/game/ui-screens.md section 4 "Stat tooltips".
 /// Rows are (key, value) with the exe's inline colour tags: Bad <c>#59231a</c>, Good <c>#a8b774</c>, Main <c>#afa68b</c>, and the text default <c>#140806</c> for a signed 0.
-/// Meitou has no indoors flag, so the indoors rows show the original's "-".
+/// "-" stands where the original shows "-": a row that does not apply (outdoors, no dust).
 /// </summary>
 static class HudTips
 {
@@ -27,8 +27,11 @@ static class HudTips
     /// <summary>A multiplier <c>{x.xx}x</c> (<c>FUN_1408894f0</c>): above 1 Bad, below 1 Good, 1 plain.</summary>
     static string Mult(float x) => (x > 1 ? Bad : x < 1 ? Good : "") + Loc.Tr("{1,num=fix,p=2}x", x);
 
-    /// <summary>The stats panel's lines (docs/game/ui-screens.md section 4), each with its tooltip.</summary>
-    public static List<HudStatLine> Lines(CharacterCold cold, MedicalState med, CharacterStats stats, HudCombat? hc, GameConstants? constants)
+    /// <summary>
+    /// The stats panel's lines (docs/game/ui-screens.md section 4), each with its tooltip. <paramref name="inBuilding"/>: in a building at all, on top included (the original's location
+    /// type is not 0xb); <paramref name="inside"/>: in its indoor volume (<see cref="SightMap.Inside"/>), which the indoors modifiers of the values need.
+    /// </summary>
+    public static List<HudStatLine> Lines(CharacterCold cold, MedicalState med, CharacterStats stats, HudCombat? hc, GameConstants? constants, bool inBuilding, bool inside)
     {
         var fighter = cold.Fighter;
         var factors = (fighter?.Factors ?? StatFactors.None) with { Stun = med.DustStatFactor };
@@ -38,8 +41,15 @@ static class HudTips
         int dust = (int)(med.DustInEffect * 10);
         bool defensive = (cold.Orders & CharacterOrders.Block) != 0;
         HudStatLine Line(string label, StatsEnumerated stat, float factor = 1) => new(label, stats[stat] * med.StatMultiplier(stat) * factor, stats[stat]);
+        // An animal's age (slot 0x398) scales its fighting numbers (the stats multiplier, already in Stored); a person's is 1.
+        var animal = cold.Animal;
+        float age = animal is null ? 1 : stats.Scale;
+        var weapon = fighter?.Weapon?.Stats;
+        int indoorsMod = weapon?.IndoorsMod ?? 0;
 
-        var lines = new List<HudStatLine>(6);
+        var lines = new List<HudStatLine>(7);
+        if (animal is not null)
+            lines.Add(new HudStatLine("Age:", age, age) { Text = Loc.Tr(AnimalData.AgeWord(age)), Tip = [(Loc.Tr("Stat Multiplier:"), Loc.Tr("{1,num=fix,p=2}x", age))] });
         bool ranged = (cold.Orders & CharacterOrders.Ranged) != 0 && fighter?.Crossbow is not null;
         if (ranged)
         {
@@ -48,14 +58,15 @@ static class HudTips
             lines.Add(Line("Precision:", StatsEnumerated.FriendlyFire, factors.Ranged) with { Tip = Breakdown(med, stats, factors, StatsEnumerated.FriendlyFire, "Careful Shooting") });
             lines.Add(Line("Perception:", StatsEnumerated.Perception) with { Tip = Breakdown(med, stats, factors, StatsEnumerated.Perception, "Perception") });
         }
-        else if (fighter is null || fighter.Unarmed)
+        else if ((fighter is null || fighter.Unarmed) && animal is null)
         {
-            // FUN_140884e00 and FUN_140884680: the value lerp(e, 0.2, 1) x (bonus + skill), the change the bonus less 0.8 (1 - e) x skill.
+            // FUN_140884e00 and FUN_140884680: the value lerp(e, 0.2, 1) x (bonus + skill), the change the bonus less 0.8 (1 - e) x skill. The bonus (FUN_140884580) takes the
+            // weapon's indoors field like Attack's (0 for fists), while the row shows a flat +8 in any building.
             float ma = Eff(StatsEnumerated.MartialArts);
-            int gear = (int)(fighter?.UnarmedBonus ?? 0), bonus = gear - dust, encumbrance = (int)-(0.8f * (1 - e) * ma);
+            int gear = (int)(fighter?.UnarmedBonus ?? 0), bonus = Indoors(gear) - dust, encumbrance = (int)-(0.8f * (1 - e) * ma);
             int value = (int)((0.2f + 0.8f * e) * (bonus + ma)), change = bonus + encumbrance;
             // The original labels the encumbrance row of this tooltip "Strength XP:".
-            var tip = new List<(string, string)> { (Loc.Tr("Total equipment bonuses:"), Signed(gear)), (Loc.Tr("Indoors bonus:"), None),
+            var tip = new List<(string, string)> { (Loc.Tr("Total equipment bonuses:"), Signed(gear)), (Loc.Tr("Indoors bonus:"), inBuilding ? Signed(8) : None),
                 (Loc.Tr("Weather penalty:"), dust != 0 ? Signed(-dust) : None), (Loc.Tr("Encumbrance penalty:"), Signed(encumbrance)),
                 (Loc.Tr("Strength XP:"), Loc.Tr("{1,num}%", (int)((1 - e) * 100))) };
             if (hc is { } fists) tip.Add((Loc.Tr("Damage:"), Int(fists.UnarmedDamage)));
@@ -63,23 +74,29 @@ static class HudTips
         }
         else
         {
-            // FUN_1408844c0 / FUN_140884e80: the equipment bonus less the dust penalty, then the effective skill on top; the change is the bonus.
-            var weapon = fighter.Weapon!.Stats;
-            int gear = (int)(fighter.AttackBonus + weapon.AttackMod), change = gear - dust, value = (int)(change + Eff(StatsEnumerated.MeleeAttack));
+            // FUN_1408844c0 / FUN_140884e80: the equipment bonus (indoors with the weapon's indoors modifier) less the dust penalty, then the effective skill, times the age;
+            // the change is the bonus. An animal always shows Attack, and no Defense.
+            int gear = (int)((fighter?.AttackBonus ?? 0) + (weapon?.AttackMod ?? 0)), change = Indoors(gear) - dust, value = (int)(change * age + Eff(StatsEnumerated.MeleeAttack));
             lines.Add(new HudStatLine("Attack:", value, value - change)
             {
-                Tip = [(Loc.Tr("Total equipment bonuses:"), Signed(gear)), (Loc.Tr("Weapon indoors penalty:"), None), (Loc.Tr("Weather penalty:"), dust != 0 ? Signed(-dust) : None),
-                    (Loc.Tr("Base hit chance:"), Loc.Tr("{1,num}%", value))],
+                Tip = [(Loc.Tr("Total equipment bonuses:"), Signed(gear)), (Loc.Tr("Weapon indoors penalty:"), inside ? Signed(indoorsMod) : None),
+                    (Loc.Tr("Weather penalty:"), dust != 0 ? Signed(-dust) : None), (Loc.Tr("Base hit chance:"), Loc.Tr("{1,num}%", value))],
             });
-            // FUN_140884710 / FUN_140884f50: the defence bonus, +20 in defensive mode, then the effective skill on top.
-            int def = (int)(fighter.DefenceBonus + weapon.DefenceMod), defChange = def + (defensive ? 20 : 0);
-            int defValue = (int)(defChange + Eff(StatsEnumerated.MeleeDefence));
-            var defTip = new List<(string, string)> { (Loc.Tr("Total equipment bonuses:"), Signed(def)) };
-            if (defensive) defTip.Add((Loc.Tr("Defensive combat mode:"), Good + "+20"));
-            defTip.Add((Loc.Tr("Weapon indoors penalty:"), None));
-            defTip.Add((Loc.Tr("Your defense skill is your chance of blocking enemy attacks."), ""));
-            lines.Add(new HudStatLine("Defense:", defValue, defValue - defChange) { Tip = defTip });
+            if (animal is null)
+            {
+                // FUN_140884710 / FUN_140884f50: the defence bonus (+ the indoors modifier inside), +20 in defensive mode, then the effective skill on top.
+                int def = (int)((fighter?.DefenceBonus ?? 0) + (weapon?.DefenceMod ?? 0)), defChange = def + (inside ? indoorsMod : 0) + (defensive ? 20 : 0);
+                int defValue = (int)(defChange + Eff(StatsEnumerated.MeleeDefence));
+                var defTip = new List<(string, string)> { (Loc.Tr("Total equipment bonuses:"), Signed(def)) };
+                if (defensive) defTip.Add((Loc.Tr("Defensive combat mode:"), Good + "+20"));
+                defTip.Add((Loc.Tr("Weapon indoors penalty:"), inBuilding ? Signed(indoorsMod) : None));
+                defTip.Add((Loc.Tr("Your defense skill is your chance of blocking enemy attacks."), ""));
+                lines.Add(new HudStatLine("Defense:", defValue, defValue - defChange) { Tip = defTip });
+            }
         }
+
+        // The equipment bonus indoors: a positive bonus is dropped under an indoors penalty, then the modifier is added.
+        int Indoors(int bonus) => !inside ? bonus : (bonus > 0 && indoorsMod < 0 ? 0 : bonus) + indoorsMod;
 
         var strengthTip = new List<(string, string)>();
         if (cold.Extended is { } x) strengthTip.Add((Loc.Tr("Strength XP rate:"), Loc.Tr("{1,num}%", (int)(x.StrengthXp * 100))));
@@ -107,10 +124,10 @@ static class HudTips
 
         if (!ranged)
         {
-            // FUN_140885190: the dodge skill less the encumbrance and leg terms plus the gear's; the +20 of defensive mode needs a combat state (+0x1f0 == 5) not modelled.
+            // FUN_140885190: the dodge skill less the encumbrance and leg terms plus the gear's, +20 in defensive mode with fists (CharStats +0x1f0, the current weapon type, is 5).
             float dodge = Stored(StatsEnumerated.Dodge);
             float encumbrance = -(1 - Math.Clamp(e, 0.4f, 1)) * dodge, legs = -(1 - Math.Clamp(Speed.LegFactor(med), 0.5f, 1)) * dodge;
-            float gear = dodge * (fighter?.DodgeMult ?? 1) - dodge, total = dodge + encumbrance + legs + gear;
+            float gear = dodge * (fighter?.DodgeMult ?? 1) - dodge, total = dodge + encumbrance + legs + gear + (defensive && (fighter is null || fighter.Unarmed) ? 20 : 0);
             int value = (int)total, change = Round(total - dodge);
             var dodgeTip = new List<(string, string)> { (Loc.Tr("Dodge skill:"), Signed(Round(dodge))), (Loc.Tr("Encumbrance penalty:"), Signed(Round(encumbrance))),
                 (Loc.Tr("Leg injury penalty:"), Signed(Round(legs))), (Loc.Tr("Equipment penalty:"), Signed(Round(gear))) };
@@ -154,10 +171,15 @@ static class HudTips
         if (x.RunSpeed > x.RunValue * 0.8f) athletics.Add((Loc.Tr("Full speed bonus:"), Good + "+50%"));
         athletics.Add((Loc.Tr("This is the rate at which your athletics skill is increasing while running."), ""));
 
-        // The weapon-held branch ("Weapon weight:", CharStats +0x184) is not modelled: always the carrying rows.
+        // In combat mode the rate is the weapon weight factor, or 1 - e with fists; else the carrying rate, whose bonus row is halved while carrying.
         int rate = (int)(x.StrengthXp * 100);
-        var strength = new List<(string, string)> { (Loc.Tr("Encumbrance bonus:"), Loc.Tr("{1,num}%", carrying ? (int)(rate * 0.5f) : rate)) };
-        if (carrying) strength.Add((Loc.Tr("Carrying somebody:"), Good + "200%"));
+        var strength = new List<(string, string)>();
+        if (x.Fighting) strength.Add((Loc.Tr(cold.Fighter is null || cold.Fighter.Unarmed ? "Encumbrance:" : "Weapon weight:"), Loc.Tr("{1,num}%", rate)));
+        else
+        {
+            strength.Add((Loc.Tr("Encumbrance bonus:"), Loc.Tr("{1,num}%", carrying ? (int)(rate * 0.5f) : rate)));
+            if (carrying) strength.Add((Loc.Tr("Carrying somebody:"), Good + "200%"));
+        }
         strength.Add((Loc.Tr("This is the rate at which your strength is increasing."), ""));
 
         var arms = med.Aggregates();
@@ -169,6 +191,8 @@ static class HudTips
         toughness.Add((Loc.Tr("This is the rate at which your toughness increases when you get hurt."), ""));
 
         var hunger = new List<(string, string)> { (Loc.Tr("Racial hunger rate:"), Mult(race.HungerRate)) };
+        // An animal's age row (FUN_14088a2b0): when its age (slot 0x398) is not 1, the size factor (slot 0x390, lerp(age, scale min, scale max)).
+        if (cold.Animal is { } animal && stats.Scale != 1) hunger.Add((Loc.Tr("Age:"), Mult(animal.Scale(stats.Scale))));
         if (constants is not null)
         {
             hunger.Add((Loc.Tr("Encumbrance effect:"), Mult((1 - e) * constants.EncumbranceHungerRate + 1)));

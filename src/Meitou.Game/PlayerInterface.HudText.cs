@@ -137,6 +137,7 @@ sealed partial class PlayerInterface
     /// </summary>
     internal static HudLine[] StatsLines(CharacterSnapshot lead) => lead.Hud is not { } hud ? [] : [.. hud.Stats.Select(s =>
     {
+        if (s.Text is { } word) return new HudLine(Loc.Tr(s.Label).ToUpperInvariant(), word, StatLabelColour, Rows: s.Tip);
         int value = (int)s.Value, change = value - (int)s.Base;
         string text = change == 0 ? value.ToString(CultureInfo.InvariantCulture) : change < 0 ? $"{value} ({change})" : $"{value} (+{change})";
         return new HudLine(Loc.Tr(s.Label).ToUpperInvariant(), text, StatLabelColour, change < 0 ? BadColour : change > 0 ? GoodColour : null, Rows: s.Tip);

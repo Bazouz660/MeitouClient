@@ -286,7 +286,7 @@ to Jobs; the saved `chase mode` flag is that switch (**Verified**, [perma-jobs](
     Extended (when expanded): Athletics XP, Strength XP, Toughness XP, KO point, Run speed, Hunger Rate.
     Extended values (**Verified**, decompile of `FUN_140895350`, 2026-10-14; Meitou: `BodySystem.ExtendedOf`, `PlayerInterface.ExtendedLines`):
     Athletics XP `{n}%` = (int)(100 × `FUN_1408c5ec0`): the encumbrance factor, ×1.5 when the current speed is over 80 % of the run value V (the `xp rate athletics` constant is applied elsewhere).
-    Strength XP `{n}%` = (int)(100 × `FUN_1408c60c0`), the carrying rate (includes `xp rate strength from walking`); with a weapon in hand the original shows a "Weapon weight" figure from a field at `+0x184` instead (**Unknown**, Meitou keeps the carrying rate).
+    Strength XP `{n}%` = (int)(100 × `FUN_1408c60c0`), the carrying rate (includes `xp rate strength from walking`); in combat mode (`Character::isInCombatMode(1, 1)` `FUN_140436610`, KenshiLib 1ce4a16: fighting, or a ranged weapon ready) CharStats `+0x184 weaponWeightXPMult` (`calculateWeaponWeightXPMult` `FUN_1408838e0`) instead, or with fists (`+0x1f0 currentWeaponType` 5) 1 − the encumbrance factor (**Verified**, decompile; Meitou: `BodySystem.ExtendedOf`, the melee weapon's weight also for a drawn crossbow, engine choice).
     Toughness XP `{n}x` (the suffix is the `x` at `0x1416bc008`) = `FUN_1408c5f40` (**Verified**: decompile, and in game on vanilla 1.0.65 in issue #82, 2026-10-25): 1, but 2 with medical `+0x166 leftArmOk` clear, +2 with `+0x165 rightArmOk` clear, +2 while `+0x163 bloodlossTrauma` is set, +2 when `+0xa4 worstDamage` is under 15 (field names KenshiLib 1ce4a16). `worstDamage` is a fraction of at most 1 ([character-stats.md](character-stats.md#hunger-blood-and-parts)), so the last term is always on: a whole character reads `3x`, both arms crippled `6x`, a leg below zero adds nothing. Meitou: the same four terms (`BodySystem.ExtendedOf`).
     KO point = (int)`FUN_140643ae0` (negative HP, [character-stats.md](character-stats.md#hunger-blood-and-parts)). Run speed = the current top speed S × 0.22369362 (units per second to mph) rounded, `{S} (+{d}) mph` or `(-{d})` where d is S minus V in mph (Bad either way); plain when equal. Meitou adds an Interface setting "Speed units" (`UserConfig.SpeedUnit`, default mph): km/h multiplies by 0.36 instead. Hunger Rate `{n}%` = (int)(100 × `FUN_1408837a0`), the race's hunger rate × its situation factor.
   - Stats lines: Martial Arts when unarmed; Crossbows, Precision, Perception with a crossbow in ranged mode; else Attack and Defense; then Strength,
@@ -301,21 +301,21 @@ to Jobs; the saved `chase mode` flag is that switch (**Verified**, [perma-jobs](
       each Bad `-n%`; `Robotics:` (limb items) Bad `-n%`, or for n < 0 Good `+|n|%` labelled `Limbs disabled:` when no limb slot holds an item (`FUN_140883690`); for strength
       `Missing arm penalty:` Bad `-33%` (int of (1 − 0.66) × 100) when either arm is disabled, for the other stats but perception `Armour/equipment:` signed −n `%` (gear flag)
       when n ≠ 0, for perception the signed CharStats `+0x30` bonus when not 0 (Meitou has no perception gear bonus: no row); `Total:` the effective value.
-    - Martial Arts: `Total equipment bonuses:` signed int CharStats `+0x2c`; `Indoors bonus:` `+8` indoors else `-`; `Weather penalty:` signed −(int)(dust × 10) or `-`;
+    - Martial Arts: `Total equipment bonuses:` signed int CharStats `+0x2c`; `Indoors bonus:` `+8` in any building (location type not 0xb, on a roof too) else `-`; `Weather penalty:` signed −(int)(dust × 10) or `-`;
       `Encumbrance penalty:` signed (int)−(0.8 (1 − e) × skill); `Strength XP:` (int)((1 − e) × 100)`%` (the label is the exe's); `Damage:` (int) the fists' damage (`FUN_1408868b0`).
       Value (int)(lerp(e, 0.2, 1) × (bonus + skill)), change bonus + the encumbrance term, bonus = `+0x2c` (+ the weapon indoors field `+0x28` indoors) − dust (`FUN_140884580`).
-    - Attack: `Total equipment bonuses:` signed `+0x20`; `Weapon indoors penalty:` signed `+0x28` indoors else `-`; `Weather penalty:`; `Base hit chance:` the value `%`.
-      Value (int)(bonus + skill), change the bonus (`FUN_1408844c0`, `FUN_140884e80`). Defense (not for vfunc `0x248` set, which also adds `Age:` with a
-      `Stat Multiplier:` row, likely animals, **Unknown**): `Total equipment bonuses:` signed `+0x24`; `Defensive combat mode:` Good `+20` in defensive mode; `Weapon indoors penalty:`;
-      the row "Your defense skill is your chance of blocking enemy attacks."; value bonus + skill + 20 in defensive mode, change bonus (+20).
+    - Attack: `Total equipment bonuses:` signed `+0x20`; `Weapon indoors penalty:` signed `+0x28` (the weapon's `indoors mod`) indoors else `-`; `Weather penalty:`; `Base hit chance:` the value `%`.
+      Value (int)(bonus + skill), change the bonus (`FUN_1408844c0`, `FUN_140884e80`). Indoors (`+0x28` added to the bonus, a positive bonus first dropped under a negative modifier) is location type not 0xb, vfunc `0x1e0` false and the building's `+0xc2` clear (the last two **Unknown**; Meitou: in a building's indoor volume, `SightMap.Inside`). An animal (`Character::isAnimal` vfunc `0x248`) shows `Age:` first, its age word ([animals](animals.md#ageing)) with a
+      `Stat Multiplier:` `{age:0.00}x` row (slot 0x398), then Attack in place of Martial Arts, with the fighting values × the age, and no Defense. Defense: `Total equipment bonuses:` signed `+0x24`; `Defensive combat mode:` Good `+20` in defensive mode; `Weapon indoors penalty:` (in any building);
+      the row "Your defense skill is your chance of blocking enemy attacks."; value bonus (+ `+0x28` indoors) + skill + 20 in defensive mode, change bonus (+20).
     - Strength: `Strength XP rate:` `{n}%`; `Max carry weight:` (int)(effective strength + `encumbrance base`) with a `%` (the exe's format); `Blunt weapon damage:` (int)
       `FUN_140883c60`; the breakdown. Dexterity: `Attack speed:` / `Block speed:` `{x.xx}x` (CharStats `+0x188` / `+0x18c`), `Weapon cutting damage:` `{x.xx}` (`FUN_140883ba0`);
       the breakdown. Toughness (value plain): `Toughness XP rate:` `{n}x`, `Health KO point:`, `Wound degeneration speed:` `{x.xx}x`, `Damage resistance:` `{n}%`.
     - Dodge: d the dodge stat; `Dodge skill:` signed round(d); `Encumbrance penalty:` round(−(1 − clamp(e, 0.4, 1)) d); `Leg injury penalty:` round(−(1 − clamp(leg, 0.5, 1)) d)
-      (leg factor `FUN_140884970`); `Equipment penalty:` round(d × dodge mult − d); `Defensive mode:` `+20` in defensive mode; `-End total:` the sum, which adds the 20 only in
-      combat state `+0x1f0` = 5 (**Unknown**; Meitou never adds it). Value (int) of the sum, change round(sum − d).
+      (leg factor `FUN_140884970`); `Equipment penalty:` round(d × dodge mult − d); `Defensive mode:` `+20` in defensive mode; `-End total:` the sum, which adds the 20 only with
+      fists (CharStats `+0x1f0 currentWeaponType` 5, KenshiLib 1ce4a16). Value (int) of the sum, change round(sum − d).
     - Athletics XP: `Encumbrance penalty:` Bad `-{(1 − e) × 100}%` (also at 0); `Full speed bonus:` Good `+50%` above 0.8 V; "This is the rate at which your athletics skill is
-      increasing while running." Strength XP: `Encumbrance bonus:` the rate's percentage, halved while carrying; `Carrying somebody:` Good `200%` while carrying (Character
+      increasing while running." Strength XP: in combat mode `Weapon weight:` (or with fists `Encumbrance:`) the value's percentage; else `Encumbrance bonus:` the rate's percentage, halved while carrying; `Carrying somebody:` Good `200%` while carrying (Character
       `+0x388` not NULL_ITEM, which also doubles the rate); "This is the rate at which your strength is increasing." Toughness XP: `Crippled left arm:` Good `+1x`,
       `Crippled right arm:` `+2x`, `Blood loss trauma:` `+2x`, `Critical wounds:` `+2x` only while `worstDamage` is below 0 (the value's term is always on); "This is the rate at
       which your toughness increases when you get hurt."
@@ -323,9 +323,9 @@ to Jobs; the saved `chase mode` flag is that switch (**Verified**, [perma-jobs](
       `+n%` / `-n%` from CharStats `+0x18`; `Robotics:` signed (fitted legs' athletics factor − 1) `%`; `Total speed:` (Main key) (int) S mph. Then sneaking `Stealth mode:` Bad
       `max: N`, N = (int)(lerp(12, S, max((s − 40) / 60, 0)) × 0.2237) with s the stealth term (`FUN_140884850`, 0..1), so N is always (int)(12 × 0.2237) = 2; and `Total:` the
       line's text. The line's bracket is Bad for both signs (`FUN_140888fb0`). Meitou: in the panel's speed unit, no `+0x18` gear row.
-    - Hunger Rate (`FUN_14088a2b0`): `Racial hunger rate:`, the animal `Age:` factor when not 1 (not built), `Encumbrance effect:` 1 + (1 − e) `encumbrance hunger rate` (always,
+    - Hunger Rate (`FUN_14088a2b0`): `Racial hunger rate:`, `Age:` when the age (slot 0x398) is not 1, as the size factor (slot 0x390, lerp(age, `scale min`, `scale max`)), `Encumbrance effect:` 1 + (1 − e) `encumbrance hunger rate` (always,
       though in a bed the rate uses the bed factor), `Resting/KO state:` `bed hunger rate` in a bed or KO or dead, then `Idle:` 0.80x (the flag the rate's 0.8 reads) or
-      `Current work:` CharStats `+0x178` when not 1 (not built). Meitou indoors rows show `-`: no indoors flag.
+      `Current work:` CharStats `+0x178 currentOperatingMachineHungerRate` when not 1 (not built).
   - `HealthText` words in priority: Dead, BEING EATEN ALIVE!!, Dying, Unconscious (N) (N = (int) of the medical float `+0xa0`, the KO timer, taken
     only while it is &gt; 0; "Rebooting" for skeletons; `FUN_14088a8f0`), Recovery coma, Playing dead..., Blood loss KO, Bleeding out,
     Crippled, Crippled arm, Critical, Limb trauma, Staying low, Starving (hunger &lt; 1), Bleeding, disguise words; else by the overall health h:
@@ -1095,19 +1095,7 @@ Code: `UiTooltips` (data, layout), `PlayerInterface.Tooltips.cs` (hover runtime,
   - Meitou (`PlayerInterface.MedicalTips.cs`): the Blood row, the part texts without wear, kick and lost-limb lines (d is the bandage's pending healing, the KO
     point the extended line's), the hunger texts without the stomach store (malnourished takes the Hungry word's sentence, starving the Starving word's: the stat
     penalty and the pass-out threshold are not modelled), and the health words Meitou shows.
-- **Stats line tooltips** (**Observed**, `FUN_140892120` stats, `FUN_140895350` extended, `FUN_1405d4260` state): row tooltips with breakdowns. Labels seen:
-  `Total equipment bonuses:`, `Encumbrance penalty:`, `Weather penalty:`, `Weapon indoors penalty:`, `Indoors bonus:`, `Defensive mode:`, `Defensive combat mode:`,
-  `Leg injury penalty:`, `Equipment penalty:`, `Stat Multiplier:`, `Base hit chance:`, `Attack speed:`, `Block speed:`, `Damage:`, `Weapon cutting damage:`,
-  `Blunt weapon damage:`, `Damage resistance:`, `Max carry weight:`, `Health KO point:`, `Wound degeneration speed:`, `Dodge skill:`, `Careful Shooting`,
-  `Total:`, `-End total:`; the extended lines: Athletics XP (`Encumbrance penalty:`, `Full speed bonus:` when the speed is over 0.8 of the run value, then "This
-  is the rate at which your athletics skill is increasing while running."), Strength XP (`Encumbrance bonus:`, `Carrying somebody:`, or `Encumbrance:` /
-  `Weapon weight:`, then "This is the rate at which your strength is increasing."), Toughness XP (**Verified**, decompile and issue #82: `Crippled left arm: +1x` with
-  `leftArmOk` clear, `Crippled right arm: +2x` with `rightArmOk` clear, `Blood loss trauma: +2x` while `bloodlossTrauma` is set, `Critical wounds: +2x` only while
-  `worstDamage` &lt; 0, a part below zero; the multiplier itself counts that +2 always (its test is &lt; 15), so a whole character shows `3x` with no row; then "This is
-  the rate at which your toughness increases when you get hurt."), KO point (the single text "When an injury to a
-  body part goes below your KO point of {1,num} then you are down for good. Your body will enter a coma and won't regain consciousness until all critical body
-  parts have healed above 0."), Run speed (`Stealth mode:`, `Total:`, ...), Hunger Rate; Defense: "Your defense skill is your chance of blocking enemy attacks.".
-  Their values and order are not read. Meitou shows only the KO point's.
+- **Stats line tooltips:** the HUD stats and extended lines' row tooltips are described under [section 4](#4-hud-mainbargui) ("Stat tooltips").
 - **Other users:** the Overview's AI tab options (a Static tooltip in `AIToolTip`), map places (type 4), trade and inventory items. **Unknown** / not shown: the
   lockpick tooltip of a locked door, the medic and rescue allied-faction option texts.
 

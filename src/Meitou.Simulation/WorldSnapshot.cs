@@ -32,6 +32,8 @@ public readonly record struct HudStatLine(string Label, float Value, float Base)
 {
     /// <summary>The line's tooltip rows (key, value; either may start with a <c>#rrggbb</c> colour tag), empty for none (<see cref="HudTips"/>).</summary>
     public IReadOnlyList<(string Key, string Value)> Tip { get; init; } = [];
+    /// <summary>A word the line shows in place of the number (an animal's age), null for a number.</summary>
+    public string? Text { get; init; }
 }
 /// <summary>
 /// The tooltip rows of the information panel's extended lines (<c>FUN_140895350</c>, <see cref="HudTips"/>), and what the run speed's rows need, which the host builds in its speed
@@ -57,9 +59,11 @@ public sealed record HudView(float Blood, float BloodCapacity, float Bleeding, f
 /// <summary>
 /// The information panel's extended lines (docs/game/ui-screens.md section 4): the XP rates as the fraction the panel shows as a percentage (Toughness as a plain multiplier),
 /// the KO point (negative HP), the run speed in units per second with the unhurt run value it is measured against, and the hunger rate as a multiple of the race's.
-/// <see cref="Resting"/>: in a bed or knocked out, which the hunger rate takes the bed rate for.
+/// <see cref="Resting"/>: in a bed or knocked out, which the hunger rate takes the bed rate for. <see cref="Fighting"/>: in combat mode, where Strength XP is the weapon weight factor
+/// (1 - encumbrance with fists) instead of the carrying rate.
 /// </summary>
-public readonly record struct ExtendedStats(float AthleticsXp, float StrengthXp, float ToughnessXp, float KoPoint, float RunSpeed, float RunValue, float HungerRate, bool Resting = false);
+public readonly record struct ExtendedStats(float AthleticsXp, float StrengthXp, float ToughnessXp, float KoPoint, float RunSpeed, float RunValue, float HungerRate, bool Resting = false,
+    bool Fighting = false);
 public sealed record InventoryItemView(int Index, string Record, string Name, string Section, int X, int Y, int Width, int Height, int Quantity, float Weight, float Quality)
 {
     /// <summary>The item's material record (<c>material sid</c>; "" none), which picks its icon.</summary>
