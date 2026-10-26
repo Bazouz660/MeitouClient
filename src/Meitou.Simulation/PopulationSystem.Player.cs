@@ -58,7 +58,8 @@ public sealed partial class PopulationSystem
     /// Starts the player (a new game, before the first tick) as docs/game/ui-screens.md "New game" describes: their faction, their money and their squad,
     /// made from the start-off's <c>squad</c> list (a SQUAD_TEMPLATE is planned by the squad factory, a CHARACTER makes v0 members) as one squad of the
     /// player's faction, standing idle, selected for them, at <see cref="NewGameStart.ForceStartPos"/>'s place or a town drawn from the start's list (<see cref="StartPlace"/>). The start
-    /// research is applied (<see cref="Meitou.Data.Gameplay.Construction.ResearchGate.StartResearch"/>) and the start-off's <c>faction relations</c>; <c>force race</c>
+    /// research is applied (<see cref="Meitou.Data.Gameplay.Construction.ResearchGate.StartResearch"/>) and the start-off's <c>faction relations</c>, whose factions are known with
+    /// <see cref="PopulationData.KnownAtNewGame"/>'s; <c>force race</c>
     /// is kept as the races the character creation offers (<see cref="PlayerState.CreationRaces"/>). The characters' items are what the generator rolls for their
     /// look; their inventory is built like everybody's (<see cref="CharacterAssembly"/>).
     /// </summary>
@@ -129,6 +130,9 @@ public sealed partial class PopulationSystem
         // The first player squad reads like its platoon, the faction's name and 0 ("Nameless_0", docs/game/ui-screens.md "Squad tabs").
         squad.Name = $"{(data.Factions[data.PlayerFaction].Name is { Length: > 0 } f ? f : "Nameless")}_0";
         world.Player.Faction = data.PlayerFaction;
+        var known = data.KnownAtNewGame();
+        known.UnionWith(start.FactionRelations.Select(link => data.FactionIndex(link.Id)).Where(f => f >= 0));
+        world.Player.KnownFactions = known;
         world.Player.Money = start.Money;
         world.Research.Set(data.Db, Meitou.Data.Gameplay.Construction.ResearchGate.StartResearch(data.Db, start));
         world.Player.Squad = squad.Id;

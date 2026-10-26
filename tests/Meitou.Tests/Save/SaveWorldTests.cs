@@ -23,10 +23,10 @@ public class SaveWorldTests
     }
 
     /// <summary>A started game on the synthetic town: the player's squad of four, 500 cats.</summary>
-    static Game NewGame(ulong seed = 11, bool items = false)
+    static Game NewGame(ulong seed = 11, bool items = false, GameDatabase? db = null, GameDatabase? level = null)
     {
-        var db = SyntheticTown.Database(items: items);
-        var data = SyntheticTown.Data(db);
+        db ??= SyntheticTown.Database(items: items);
+        var data = SyntheticTown.Data(db, level: level);
         var walk = new OpenGroundWalkability(SyntheticTown.Ground);
         var systems = SyntheticTown.Standard(data, walk, StandardParts.Population | StandardParts.Player | StandardParts.Movement, new PopulationSettings { CheckEveryTicks = 1 });
         var population = systems.Population!;
@@ -82,5 +82,72 @@ public class SaveWorldTests
             Assert.NotNull(item.Saved);
         }
         finally { Directory.Delete(Path.GetDirectoryName(folder)!, recursive: true); }
+    }
+
+    [Fact]
+    public void The_factions_met_are_saved_as_the_known_list_and_an_import_without_relations_leaves_them_out()
+    {
+        // A mod lists Testfolk in the player faction's relations (known from the setup) and adds the Outsiders, met in play.
+        var db = SyntheticTown.Database();
+        var nameless = new FcsRecord { StringId = "204-gamedata.base", Flags = 0x11, Name = "Nameless", RecordType = FcsRecordType.FACTION };
+        nameless.References["relations"] = [new("20-t", 0, 0, 0)];
+        var mod = new FcsFile();
+        mod.Records.AddRange([nameless, SyntheticTown.Rec("21-t", FcsRecordType.FACTION, "Outsiders")]);
+        db.Apply(mod, "known.mod");
+        using var g = NewGame(db: db);
+        int folk = g.Data.FactionIndex("20-t"), outsiders = g.Data.FactionIndex("21-t");
+        Assert.Equal([folk], g.World.Player.KnownFactions);
+        g.World.Player.Meet(outsiders);
+        var save = SaveCapture.Capture(g.World, g.Data, new SaveClock(1, 12, 0));
+        Assert.Equal(["20-t", "21-t"], save.PlayerFaction!.Known);
+        // A load replaces the set with the list: Testfolk, left out of it, is not known after it. A faction the game data lacks (a mod no longer loaded) stays in the list.
+        save.PlayerFaction.Known = ["21-t", "99-gone"];
+        string folder = Path.Combine(Dir("known"), "slot");
+        try
+        {
+            save.Write(folder);
+            using var world2 = EmptyWorld();
+            var loaded = SaveLoader.Load(world2, SaveGame.Load(folder), g.Data);
+            Assert.Equal([outsiders], world2.Player.KnownFactions);
+            Assert.Equal(["99-gone", "21-t"], SaveCapture.Capture(world2, g.Data, new SaveClock(1, 12, 0), loaded).PlayerFaction!.Known);
+
+            // Without Relations the import starts from the setup's factions, and its next save keeps none of the save's list.
+            using var world3 = EmptyWorld();
+            var imported = SaveLoader.Load(world3, SaveImport.Filter(SaveGame.Load(folder), ImportOptions.Default & ~ImportOptions.Relations, g.Data), g.Data, new SaveLoadOptions { ResetRelations = true });
+            Assert.Equal([folk], world3.Player.KnownFactions);
+            Assert.Equal(["20-t"], SaveCapture.Capture(world3, g.Data, new SaveClock(1, 12, 0), imported).PlayerFaction!.Known);
+        }
+        finally { Directory.Delete(Path.GetDirectoryName(folder)!, recursive: true); }
+    }
+
+    [Fact]
+    public void A_new_game_starts_from_the_level_data_player_faction_state_instead_of_the_setup_and_adds_the_start_off_factions()
+    {
+        // A mod lists Testfolk in the player faction's relations (the setup's) and the Neighbours in the start-off's faction relations.
+        var db = SyntheticTown.Database();
+        var nameless = new FcsRecord { StringId = "204-gamedata.base", Flags = 0x11, Name = "Nameless", RecordType = FcsRecordType.FACTION };
+        nameless.References["relations"] = [new("20-t", 0, 0, 0)];
+        var start = new FcsRecord { StringId = "40-t", Flags = 0x11, Name = "Test start", RecordType = FcsRecordType.NEW_GAME_STARTOFF };
+        start.References["faction relations"] = [new("22-t", 50, 0, 0)];
+        var mod = new FcsFile();
+        mod.Records.AddRange([nameless, start, SyntheticTown.Rec("21-t", FcsRecordType.FACTION, "Outsiders"), SyntheticTown.Rec("22-t", FcsRecordType.FACTION, "Neighbours")]);
+        db.Apply(mod, "known.mod");
+        using var plain = NewGame(db: db);
+        int folk = plain.Data.FactionIndex("20-t"), outsiders = plain.Data.FactionIndex("21-t"), neighbours = plain.Data.FactionIndex("22-t");
+        Assert.Equal(new[] { folk, neighbours }.Order(), plain.World.Player.KnownFactions.Order());
+
+        // Its level data holds the player faction's state, which knows the Outsiders, and Testfolk's.
+        var player = SyntheticTown.Rec("1-level", FcsRecordType.GAMESTATE_FACTION, "Nameless");
+        player.Strings["gamedata stringID"] = "204-gamedata.base";
+        player.References["known"] = [new("21-t", 0, 0, 0)];
+        var other = SyntheticTown.Rec("2-level", FcsRecordType.GAMESTATE_FACTION, "Testfolk");
+        other.Strings["gamedata stringID"] = "20-t";
+        other.References["known"] = [new("20-t", 0, 0, 0)];
+        var levelFile = new FcsFile();
+        levelFile.Records.AddRange([player, other]);
+        var level = new GameDatabase();
+        level.Apply(levelFile, "leveldata.level");
+        using var modded = NewGame(db: db, level: level);
+        Assert.Equal(new[] { outsiders, neighbours }.Order(), modded.World.Player.KnownFactions.Order());
     }
 }

@@ -910,9 +910,10 @@ unless marked; Meitou: `PlayerInterface.Faction.cs`.
   player faction's name (+0x1a8); a taken one shows the message box "Faction Name" / "This faction name already exists" and the box reverts. While the box
   has the key focus the hotkeys are off (`DAT_142133440` = 0, back to 1 on focus loss).
 - `RelationsPanel` (ScrollView): one `Kenshi_FactionRelationsLine.layout` per faction (constructor `FUN_140491f60`: `FactionName` the faction's name,
-  `FactionValue`, `LeftBar` Hurt skin, `RightBar` LifeBar skin), made once per faction of the player faction's relation map (FactionRelations +0x78) that
-  passes `FUN_1407f4ac0` (present in a second map at FactionRelations +0x68, meaning **Unknown**), has its byte +0x1d0 clear (**Unknown**) and is not the
-  record `GENERATION_TEMPLATE_FACTION` (**Verified**: the string id of a FACTION in `gamedata.base`, named "generation template"). Every 2 s of real time
+  `FactionValue`, `LeftBar` Hurt skin, `RightBar` LifeBar skin), made once per faction of the player faction's relation map (Faction +0x78 →
+  FactionRelations +0x20; its own entry left out, `FUN_1406b2830`) that the player has met (`FUN_1407f4ac0`,
+  [factions met](factions-squads-towns.md#36-factions-met)), is not `not real` (Faction +0x1d0, `FUN_1407fe270`) and is not the record
+  `GENERATION_TEMPLATE_FACTION` (**Verified**: the string id of a FACTION in `gamedata.base`, named "generation template"). Every 2 s of real time
   (+0x58) the values refresh; new lines are sorted by faction name (insertion sort, comparator `FUN_1409b3cd0`, case rule **Unknown**) and stacked
   with 3 × a UI scale (`DAT_1421337ec`) between them, each the canvas's width (the view less its vertical bar). A line (`FUN_140499630`): the number
   int(relation) in BadBright below -30, `#a8b774` above 60, else Main; below 0 the left bar's width is its layout width × -relation / 100, kept
@@ -930,8 +931,8 @@ unless marked; Meitou: `PlayerInterface.Faction.cs`.
     VICTORY: the campaign's name in `#492620`, then `Target:` with `#afa68b` {target faction name}`- `{target's name, or `???` when it does not resolve}, then a spacer. Per queued request
     (the player filter is not applied here): its campaign's `display name` and the time until it starts, both `#444444`. Times (`TimeOfDay::getTotalTimeString` `FUN_1407a6940`):
     negative `Expired`, above 24 h `{1,num} Days, {2,num}hrs`, above 1 h `{1,num}hrs`, else `{1,num} mins`; days `floor(h/24)` with `(uint)h % 24` hours, hours `floor(h)`, minutes `floor(h x 60)` (**Verified**, decompiled `FUN_1407a6940`).
-- Meitou: the name box takes typing; accepting it (Enter) or losing the key focus sends `RenameFactionCommand`, which takes a name no other faction of the data has; a taken name opens the original's box instead (`FUN_140742130` with button mask 1, its first button "Ok", `PlayerInterface.MessageBox`), and the simulation still posts "This faction name already exists" for one the UI did not catch (the empty-name rule is **Unknown**, Meitou ignores an empty name; the 64-character cap is an engine choice). The name is `PlayerState.FactionName` (null = the data's "Nameless"), saved as the CAMERA `pfaction name`, the player platoons' faction name and read back on load when it differs from the data's; the GAMESTATE_FACTION record's own name is not rewritten. The lines for every faction but the player's, the `not real` ones and the template (engine
-  choice for the unknown filters), sorted ignoring case, rebuilt each frame, line height from the layout's 0.0222 of the screen; the two headings
+- Meitou: the name box takes typing; accepting it (Enter) or losing the key focus sends `RenameFactionCommand`, which takes a name no other faction of the data has; a taken name opens the original's box instead (`FUN_140742130` with button mask 1, its first button "Ok", `PlayerInterface.MessageBox`), and the simulation still posts "This faction name already exists" for one the UI did not catch (the empty-name rule is **Unknown**, Meitou ignores an empty name; the 64-character cap is an engine choice). The name is `PlayerState.FactionName` (null = the data's "Nameless"), saved as the CAMERA `pfaction name`, the player platoons' faction name and read back on load when it differs from the data's; the GAMESTATE_FACTION record's own name is not rewritten. The lines for every faction met but the player's, the `not real` ones and the template, sorted
+  ignoring case, rebuilt each frame, line height from the layout's 0.0222 of the screen; the two headings
   under them `World.ActiveContracts` (one entry per hired squad, its package being the squad's) and `PopulationSystem.UpcomingEvents` (Meitou's phase 2 stands for RETREATING and VICTORY).
 
 ### Squads tab

@@ -95,6 +95,20 @@ public sealed class PlayerState
         return true;
     }
 
+    /// <summary>
+    /// The factions the player has met (positions in the world's faction list; docs/game/factions-squads-towns.md "Factions met"): only these are listed in the faction tab. Replaced, never
+    /// changed in place. Not hashed: nothing in the simulation reads it. Saved as the player GAMESTATE_FACTION's <c>known</c> list.
+    /// </summary>
+    public IReadOnlySet<int> KnownFactions { get; set; } = new HashSet<int>();
+
+    /// <summary>Adds a faction to <see cref="KnownFactions"/> (none for a negative one); true when it was not known.</summary>
+    public bool Meet(int faction)
+    {
+        if (faction < 0 || KnownFactions.Contains(faction)) return false;
+        KnownFactions = new HashSet<int>(KnownFactions) { faction };
+        return true;
+    }
+
     internal void SeeDiscoveries()
     {
         if (Towns.Any(t => (t & TownKnowledge.Recent) != 0)) Towns = [.. Towns.Select(t => t & ~TownKnowledge.Recent)];
@@ -213,6 +227,8 @@ public sealed partial class PlayerSystem(PopulationData? data = null) : ITickSys
                     var selectable = select.Characters.Where(id =>
                         table.TryResolveNext(id, out int slot) && table.Cold(slot)!.IsPlayer).ToArray();
                     if (selectable.Length == 0) break;
+                    // Selecting meets the owner's faction (FUN_1407f7f20), here the player's.
+                    player.Meet(player.Faction);
                     // Picking one of your own shows them: the inspected character of another faction no longer takes the HUD.
                     player.Inspected = CharacterId.None;
                     if (!select.Additive) player.Selection.Clear();
@@ -230,6 +246,7 @@ public sealed partial class PlayerSystem(PopulationData? data = null) : ITickSys
                     break;
                 case InspectCommand inspect:
                     player.Inspected = inspect.Target;
+                    if (table.TryResolveNext(inspect.Target, out int inspected)) player.Meet(table.Cold(inspected)!.Faction);
                     break;
                 case ShowInventoryCommand show:
                     player.InventoryShown.Clear(); player.InventoryShown.AddRange(show.Targets);
@@ -243,6 +260,9 @@ public sealed partial class PlayerSystem(PopulationData? data = null) : ITickSys
                     break;
                 case InspectBuildingCommand building:
                     player.InspectedBuilding = building.Instance;
+                    // The original selects a building with a door as that door; Meitou keeps a building's owner on its doors and other fixtures.
+                    if (building.Instance is { } instance && world.Fixtures.OfBuilding(instance) is var fixtures)
+                        player.Meet((fixtures.FirstOrDefault(f => f.Kind == Locks.FixtureKind.Door) ?? fixtures.FirstOrDefault())?.Owner ?? -1);
                     break;
                 case StopCommand stop:
                     foreach (var id in stop.Characters.Count > 0 ? stop.Characters : player.Selection.ToArray())

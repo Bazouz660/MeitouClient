@@ -165,6 +165,7 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
 
     public void SlowWorld(World world)
     {
+        MeetFactions(world);
         if (world.Tick % settings.CheckEveryTicks != 0) return;
         world.Uniques.SeedPrisoners(data.Db);
         RefreshUniques(world);
@@ -188,7 +189,7 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
     readonly List<(Vector2 At, ZoneCoordinate Zone)> viewers = [];
 
     /// <summary>
-    /// Towns and camps a player character comes within <see cref="ExploreRange"/> of become discovered and explored; ones not yet discovered within
+    /// Towns and camps a player character comes within <see cref="ExploreRange"/> of become discovered and explored, and their faction known; ones not yet discovered within
     /// <see cref="DiscoverRangeOf"/> become discovered, with a "Discovered" message for a town (none for nests and camps). A character counts only for
     /// places within one zone of it: a place's own zone or, for a town, one of its <see cref="TownSite.Coverage"/> zones (docs/game/ui-screens.md "Map").
     /// </summary>
@@ -205,7 +206,10 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
         {
             if (site.Town.Type is TownType.NestMarker) continue;   // the original skips only type 8
             float d2 = NearestViewer(new(site.Position.X, site.Position.Z), site.Zone, site.Coverage), far = DiscoverRangeOf(site.Town.Type);
-            if (d2 < ExploreRange * ExploreRange) player.Know(site.Index, TownKnowledge.Discovered | TownKnowledge.Explored);
+            if (d2 < ExploreRange * ExploreRange)
+            {
+                if (player.Know(site.Index, TownKnowledge.Discovered | TownKnowledge.Explored) && site.Index < data.SiteFactions.Count) player.Meet(data.SiteFactions[site.Index]);
+            }
             else if (d2 < far * far && player.Know(site.Index, TownKnowledge.Discovered) && site.Town.Type != TownType.Nest)
                 world.Post(Loc.Tr("Discovered {1}", site.Town.UnexploredName is { Length: > 0 } unexplored ? unexplored : site.Town.Name));
         }
@@ -217,12 +221,56 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
             var flags = d2 < ExploreRange * ExploreRange ? TownKnowledge.Discovered | TownKnowledge.Explored : d2 < far * far ? TownKnowledge.Discovered : TownKnowledge.None;
             if (flags == TownKnowledge.None) continue;
             var faction = site.Faction >= 0 && site.Faction < data.Factions.Count ? data.Factions[site.Faction] : null;
+            if ((flags & TownKnowledge.Explored) != 0 && !player.Camps.Any(c => c.Site == w && (c.Known & TownKnowledge.Explored) != 0)) player.Meet(faction is null ? -1 : site.Faction);
             player.KnowCamp(new CampView(w, nest.Id, nest.Name, faction?.Id ?? nest.Faction ?? "", faction?.NotReal ?? false, new Vector3(centre.X, 0, centre.Y), flags), flags);
         }
         // A camp known from a save gets its place once its nest has loaded (never when the wild layout gives that site another nest).
         foreach (var camp in player.Camps)
             if (camp.Position is null && camp.Site >= 0 && camp.Site < wildCentres.Length && WildSites[camp.Site].Nest?.Id == camp.TownId && wildCentres[camp.Site] is { } c)
                 player.KnowCamp(camp with { Position = new Vector3(c.X, 0, c.Y) }, TownKnowledge.None);
+    }
+
+    /// <summary>A sense update that finds this many characters in sight range also takes everyone within <see cref="CrowdReach"/> (<c>FUN_1407866d0</c>).</summary>
+    const int CrowdCount = 40;
+    const float CrowdReach = 250;
+
+    Combat.CombatSystem? fights;
+    Locks.LockSystem? locks;
+
+    /// <summary>One of the player's characters whose sense update runs, so it meets factions: not unconscious, dead or carried (<c>FUN_140598c20</c>).</summary>
+    internal static bool MeetsFactions(CharacterCold c) => c is { IsPlayer: true, DiedTick: < 0, CarriedBy.IsNone: true } && c.Medical?.Incapacitated != true;
+
+    /// <summary>
+    /// The player's characters meet the factions round them (docs/game/factions-squads-towns.md "Factions met"; <c>FUN_14085a8d0</c>, <c>FUN_1408593d0</c>): on its turn (one tick in
+    /// <see cref="PopulationSettings.CheckEveryTicks"/>, by slot), each one not unconscious, dead or carried meets the faction of every character within its sight range on the ground plane,
+    /// seen or not, the dead, the down and animals too, and of its fight target. Not during the character creation. Inside town walls (a gate code above 0, docs/game/pathfinding.md
+    /// "Gate codes") 500 takes the place of the outdoor sight.
+    /// </summary>
+    void MeetFactions(World world)
+    {
+        if (!world.Player.Exists || world.Player.InCreation) return;
+        var table = world.Characters;
+        var prev = table.Previous;
+        fights ??= world.Systems.OfType<Combat.CombatSystem>().FirstOrDefault();
+        locks ??= world.Systems.OfType<Locks.LockSystem>().FirstOrDefault();
+        int every = Math.Max(1, settings.CheckEveryTicks);
+        for (int i = (int)(world.Tick % every); i < prev.Length; i += every)
+        {
+            if (!prev[i].Alive || table.Cold(i) is not { } cold || !MeetsFactions(cold)) continue;
+            var at = new Vector2(prev[i].Position.X, prev[i].Position.Z);
+            float range = (locks?.Regions?.CodeAt(prev[i].Position) > 0 ? SightMap.IndoorSight * WeatherSystem.SightFactor(cold) : AggroSystem.RangeOf(cold, AggroSystem.OutdoorSight))
+                * (0.5f + 0.5f * world.Sight.Daylight);
+            int found = 0;
+            for (int j = 0; j < prev.Length; j++)
+                if (prev[j].Alive && Vector2.DistanceSquared(at, new(prev[j].Position.X, prev[j].Position.Z)) < range * range) found++;
+            if (found >= CrowdCount) range = MathF.Max(range, CrowdReach);
+            for (int j = 0; j < prev.Length; j++)
+                if (j != i && prev[j].Alive && Vector2.DistanceSquared(at, new(prev[j].Position.X, prev[j].Position.Z)) < range * range && table.Cold(j) is { } other)
+                    world.Player.Meet(other.Faction);
+            if (fights?.StateOf(new CharacterId(i, prev[i].Generation)) is { TargetSlot: >= 0 and var t } fight && t < prev.Length && prev[t].Alive
+                && prev[t].Generation == fight.TargetGeneration && table.Cold(t) is { } target)
+                world.Player.Meet(target.Faction);
+        }
     }
 
     static (Vector2 At, ZoneCoordinate Zone) Viewer(Vector3 at) => (new(at.X, at.Z), WorldLayout.ZoneOf(at.X, at.Z));

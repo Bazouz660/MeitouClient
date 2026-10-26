@@ -449,7 +449,17 @@ public sealed partial class CombatSystem : IProjectileSource
             Passed = -1,
             Mesh = x.Data.LiveAmmoMesh,
         });
+        ShotAt(world, t, ac.Faction);
         Sound(world, SoundKind.Shot, a, -1, prev[a].Position);
+    }
+
+    /// <summary>
+    /// The target of a shot notices the shooter (<c>FUN_14043a730</c> → <c>FUN_140999d50</c>): one of the player's characters that senses meets the shooter's faction at once
+    /// (docs/game/factions-squads-towns.md "Factions met").
+    /// </summary>
+    static void ShotAt(World world, int target, int faction)
+    {
+        if (world.Characters.Cold(target) is { } cold && PopulationSystem.MeetsFactions(cold)) world.Player.Meet(faction);
     }
 
     // ------------------------------------------------------------------ schedule: the flight

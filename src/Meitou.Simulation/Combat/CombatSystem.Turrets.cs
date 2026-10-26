@@ -468,6 +468,7 @@ public sealed partial class CombatSystem
             Passed = -1,
             Mesh = gun.LiveAmmoMesh,
         });
+        ShotAt(world, target, cold.Faction);
         Sound(world, SoundKind.TurretShot, g, -1, muzzle);
     }
 }

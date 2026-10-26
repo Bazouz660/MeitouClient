@@ -189,7 +189,7 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
                     $"{buildings.Values.Sum(l => l.Sum(b => b.Spots.Count - b.Beds))} nodes in {buildings.Count} towns ({watch.ElapsedMilliseconds} ms)");
             }
             var data = Meitou.Simulation.PopulationData.Create(gameDb, towns, new Meitou.Simulation.GeneratedAppearances(gameDb, install.Root),
-                bodyOptions: Meitou.Simulation.Bodies.BodyOptions.Default with { Dismemberment = Gameplay.Dismemberment }, biomes: biomes, buildings: buildings, roads: levels?.Roads(), townZones: levels?.TownZones());
+                bodyOptions: Meitou.Simulation.Bodies.BodyOptions.Default with { Dismemberment = Gameplay.Dismemberment }, biomes: biomes, buildings: buildings, roads: levels?.Roads(), townZones: levels?.TownZones(), level: levels?.Level);
             if (levels is not null) data.Sight = new BuildingSight(install, gameDb, levels, scene.Objects?.Layouts ?? new Meitou.Data.World.BuildingLayouts(gameDb, levels.Interiors));
             if (nav is not null) nav.Walkability.Roads = data.Roads;   // one network for both: on-screen long routes take the roads as the off-screen squads do
             // The mineable rocks for ore mines, from the foliage placement (read through the renderer's layout cache when it has the zone).
@@ -238,7 +238,7 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
         ui.FactionName = faction => faction >= 0 && faction == session.World.Player.Faction && session.World.Player.FactionName is { } renamed ? renamed : popData is { } d && faction >= 0 && faction < d.Factions.Count ? d.Factions[faction].Name : null;
         // The rename's test (FUN_1402e7950, as RenameFactionCommand's): another faction of the data has the name.
         ui.FactionNameTaken = name => popData is { } fd && fd.Factions.Where((f, i) => i != session.World.Player.Faction).Any(f => f.Name == name);
-        // The faction tab's list (docs/game/ui-screens.md "Faction tab"): every faction but the player's, the `not real` ones (engine choice: the original's filter is Unknown) and the
+        // The faction tab's list (docs/game/ui-screens.md "Faction tab"): every faction the player has met but the player's, the `not real` ones and the
         // generation template, with the player's relation towards it.
         // Its info panel's contracts and events, read from the live world as the list above is (a collection changed mid-read shows the panel empty for that frame).
         ui.FactionInfo = () =>
@@ -246,8 +246,8 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
             try { return (session.World.ActiveContracts(ui.FactionName), population?.UpcomingEvents(session.World, ui.FactionName) ?? []); }
             catch (InvalidOperationException) { return ([], []); }
         };
-        ui.FactionRelations = () => popData is { } d && session.World.Player.Faction is >= 0 and var own && d.Relations.Contains(own)
-            ? [.. d.Relations.Factions.Select((f, i) => (f, i)).Where(p => p.i != own && !p.f.NotReal && p.f.Id != "GENERATION_TEMPLATE_FACTION").Select(p => (p.f.Name, d.Relations.Get(own, p.i)))]
+        ui.FactionRelations = () => popData is { } d && session.World.Player.Faction is >= 0 and var own && d.Relations.Contains(own) && session.CurrentSnapshot.KnownFactions is var known
+            ? [.. d.Relations.Factions.Select((f, i) => (f, i)).Where(p => p.i != own && known.Contains(p.i) && !p.f.NotReal && p.f.Id != "GENERATION_TEMPLATE_FACTION").Select(p => (p.f.Name, d.Relations.Get(own, p.i)))]
             : [];
         // A BUILDING's construction target (its Condition rows): the sum of its materials' required amounts.
         ui.BuildTarget = record => popData?.Db.Find(record) is { Type: Meitou.Data.Fcs.FcsRecordType.BUILDING } r

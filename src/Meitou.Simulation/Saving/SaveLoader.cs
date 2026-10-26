@@ -15,7 +15,10 @@ public sealed class SaveLoadOptions
     /// <summary>Put the save's relation table into <c>PopulationData.Relations</c> (it is one table shared by the data; a loaded game replaces its start values).</summary>
     public bool ApplyRelations { get; init; } = true;
 
-    /// <summary>Set the relation table to the FACTION records' start values first (an import without the save's relations; the table is shared by the data, so the last game's values would stay otherwise).</summary>
+    /// <summary>
+    /// Set the relation table to the FACTION records' start values first (an import without the save's relations; the table is shared by the data, so the last game's values would stay
+    /// otherwise), and the factions the player knows to those of the setup (<see cref="PopulationData.KnownAtSetup"/>) instead of the save's.
+    /// </summary>
     public bool ResetRelations { get; init; }
 
     /// <summary>
@@ -70,6 +73,9 @@ public static class SaveLoader
         world.Player.Money = camera.PlayerMoney;
         // A renamed player faction (the CAMERA's name differs from the data's).
         world.Player.FactionName = camera.PlayerFactionName is { Length: > 0 } savedName && playerIndex >= 0 && savedName != data.Factions[playerIndex].Name ? savedName : null;
+        // The factions met: the save's `known` list; those of the setup when the save has no player faction or an import leaves the relations out.
+        world.Player.KnownFactions = playerFaction is not null && !options.ResetRelations
+            ? new HashSet<int>(playerFaction.Known.Select(data.FactionIndex).Where(f => f >= 0)) : data.KnownAtSetup();
         world.Player.SquadAi = SquadAiKeys.Read(camera.Record);
         if (camera.Record.Bools.ContainsKey("ditch") && camera.Record.Ints.TryGetValue(SquadAiKeys.FormationKey, out int formation))
             SquadAiKeys.SetFormation(world, playerIndex, formation, data.Factions);
