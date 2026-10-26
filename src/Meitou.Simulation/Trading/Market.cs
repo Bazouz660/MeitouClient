@@ -21,7 +21,7 @@ public readonly record struct Trader(int Site, int Faction, float BuyMult = 1, b
 /// Item prices in play (docs/game/economy.md sections 5 to 7), over the world's data and seed. Pure: nothing here changes the world, so the UI and the trade system read the same prices.
 /// <list type="bullet">
 /// <item><b>Base value</b> (<see cref="BaseValue"/>): <see cref="ItemValue"/> with the category rows, at the item's quality (a weapon's or crossbow's quality is its model level, the
-/// <c>Gear +0x224</c> int of combat.md; armour's its <see cref="ItemInstance.Quality"/>) and, for a weapon, its manufacturer. The game stores it in weapons and armour when they are made; the
+/// <c>Gear +0x224</c> int of combat.md; armour's its level) and, for a weapon, its manufacturer. The game stores it in weapons and armour when they are made; the
 /// constants never change in a run, so computing it again gives the same number.</item>
 /// <item><b>Unit price</b> (<see cref="UnitPrice"/>, the item's slot 81) and <b>stack price</b> (<see cref="StackPrice"/>, slot 82), with the <c>sell</c> flag set when the player sells.</item>
 /// <item><b>Trader factor</b> (<see cref="TraderFactor"/>): <c>buy mult</c> x the culture price, halved for an item stolen from the player's faction (as read, section 6).</item>
@@ -59,8 +59,13 @@ public sealed class Market
     /// <summary>The culture of a faction (null: none).</summary>
     public TradeCulture? FactionCulture(int faction) => (uint)faction < (uint)factionCultures.Length ? factionCultures[faction] : null;
 
-    /// <summary>The weapon quality is the model level; everything else uses <see cref="ItemInstance.Quality"/>.</summary>
-    static float QualityOf(ItemInstance item) => item.Type is FcsRecordType.WEAPON or FcsRecordType.CROSSBOW ? item.Level : item.Quality;
+    /// <summary>The weapon quality is the model level; armour's is its level too (level 0: full, 100), not its saved `quality`; everything else uses <see cref="ItemInstance.Quality"/>.</summary>
+    static float QualityOf(ItemInstance item) => item.Type switch
+    {
+        FcsRecordType.WEAPON or FcsRecordType.CROSSBOW => item.Level,
+        FcsRecordType.ARMOUR => item.Level <= 0 ? 100 : item.Level,
+        _ => item.Quality,
+    };
 
     /// <summary><c>ItemValue(record, quality, 1, manufacturer)</c> of an item (0 for a record the data does not have).</summary>
     public int BaseValue(ItemInstance item) => baseValues.GetOrAdd((item.Record, QualityOf(item), item.CompanyId), static (key, m) =>
