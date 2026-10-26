@@ -365,15 +365,17 @@ sealed partial class GameHost
                 panelDrag = false;
                 if (KeyMap.Map(b) is { } button) session.Input.SetMouseButton(button, false);
             };
-            mouse.MouseMove += (_, p) =>
+            mouse.MouseMove += (m, p) =>
             {
                 session.Input.SetMousePosition(p.X, p.Y);
                 if (Covered) { lastMouse = p; return; }
                 if (PanelLive() && panel?.MouseMove(Pixels(p)) == true || panelDrag) { lastMouse = p; return; }
                 if (cinema.MouseMove(Pixels(p))) { lastMouse = p; return; }
-                player.MouseMove(Pixels(p));
+                bool hold = lastMouse is not null && OrbitHeld();
+                player.MouseMove(Pixels(hold ? lastMouse!.Value : p));
                 if (player.UiCapturesPointer || player.ModalOpen) { lastMouse = p; return; }
                 if (lastMouse is { } last) session.Input.AddMouseDelta(p.X - last.X, p.Y - last.Y);
+                if (hold) { HoldPointer(m, lastMouse!.Value); return; }
                 lastMouse = p;
             };
             mouse.Scroll += (m, wheel) =>
@@ -738,6 +740,16 @@ sealed partial class GameHost
         a.Held(InputAction.MoveUp) || a.Held(InputAction.MoveDown) || a.Held(InputAction.RotateLeft) || a.Held(InputAction.RotateRight) ||
         a.Held(InputAction.PitchUp) || a.Held(InputAction.PitchDown) || a.Held(InputAction.ZoomIn) || a.Held(InputAction.ZoomOut) ||
         a.Held(InputAction.Orbit) && a.MouseDelta != Vector2.Zero || a.Wheel != 0 || a.Pressed(InputAction.ToggleFreeCamera);
+
+    /// <summary>A key or button bound to Orbit (middle button or Ctrl by default) is down.</summary>
+    bool OrbitHeld() => session.Bindings.Get(InputAction.Orbit).Any(session.Input.IsHeld);
+
+    /// <summary>While the camera orbits the pointer stays where it was, as in the original: each movement turns the camera and the pointer is put back.</summary>
+    void HoldPointer(Silk.NET.Input.IMouse mouse, Vector2 anchor)
+    {
+        mouse.Position = anchor;
+        session.Input.SetMousePosition(anchor.X, anchor.Y);
+    }
 
     static void SaveScreenshot(GpuContext context, GpuTexture backbuffer, int width, int height)
     {

@@ -70,6 +70,9 @@ public sealed class InputState
         (down ? pending.ButtonPressed : pending.ButtonReleased)[i] = true;
     }
 
+    /// <summary>The binding's key or button is down as the host has reported so far (not as the last tick saw it).</summary>
+    public bool IsHeld(Binding b) => b.IsMouse ? buttonHeld[(int)b.Button] : keyHeld[(int)b.Key];
+
     /// <summary>Adds mouse movement since the last report.</summary>
     public void AddMouseDelta(float dx, float dy) => pending.MouseDelta += new Vector2(dx, dy);
 

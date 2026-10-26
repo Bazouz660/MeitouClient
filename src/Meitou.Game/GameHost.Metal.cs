@@ -916,15 +916,16 @@ sealed partial class GameHost
         }
         foreach (var mouse in input.Mice)
         {
-            mouse.MouseMove += (_, p) =>
+            mouse.MouseMove += (m, p) =>
             {
                 if (Covered) { lastMouse = p; return; }
-                var at = Pixels(p);
-                if (settings?.Visible == true) { settings.MouseMove(at); lastMouse = p; return; }
-                hud?.MouseMove(at);
+                if (settings?.Visible == true) { settings.MouseMove(Pixels(p)); lastMouse = p; return; }
+                bool hold = lastMouse is not null && OrbitHeld();
+                hud?.MouseMove(Pixels(hold ? lastMouse!.Value : p));
                 // The panels and their drags own the pointer: the camera must not also turn under them.
                 if (hud is { UiCapturesPointer: true }) { lastMouse = p; return; }
                 if (lastMouse is { } last) session.Input.AddMouseDelta(p.X - last.X, p.Y - last.Y);
+                if (hold) { HoldPointer(m, lastMouse!.Value); return; }
                 lastMouse = p;
             };
             mouse.MouseDown += (_, button) =>
