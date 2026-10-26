@@ -403,7 +403,7 @@ rock) makes output only while someone operates it.
 - outputRate = BUILDING `output rate` x functionality `production mult`; with `output per day`, / (2G) (loader
   `FUN_14029e7b0`). So a building makes `output rate x production mult x P/2 x s` cycles per game day.
 - yield (slot 120 via offset `0x46c`): 1 without `world resource mining`; else the resource at the position
-  ([resources](#resources)), at least 0.1 for a natural site; 0 becomes 0.5 for a building not the player's.
+  ([resources](#resources)), at least 0.1 for a natural site; for any other building 0 becomes 0.5 when it is not the player's (**Verified**, `FUN_14029c670`: the natural branch takes `FUN_140a12ff0` and the 0.1 floor, the other `FUN_140a13540` and the 0.5 rule).
 - health x powerSat (slot 109, `FUN_140296e00`, **Verified**): health the [construction state](#construction-state)'s progress / target capped at 1; powerSat
   the granted share of the demand, 1 with no demand. Meitou: `Machine.Health`, 1 for rocks and a target of 0.
 - upgrade = the research `production mult` of the building ([research](#research)), default 1.
@@ -468,7 +468,7 @@ field prefixes by MiningResource: `iron`, `stone`, `copper`, `carbon`, `water`, 
   rock has a saved state in two saves (253 zone files, **Observed**). Owner: `nofac` until a player character starts working it, then the player's
   faction ([selected building](ui-screens.md#selected-building), Rocks).
 - A building that is not the player's (`FUN_140546dd0`: its owner's `+0x250`, the test also used by research
-  upgrades and generator fuel) yields 0.5 where it would get 0; the player's yields 0.
+  upgrades and generator fuel) and is no natural site yields 0.5 where it would get 0; the player's yields 0 (Meitou: `ProductionSystem.Create`).
 - The farm efficiency also reads the record's `arid`, `green`, `swamp` coverages (crop types 2, 1, 3).
 - The prospecting window lists water, fertility, stone, iron and copper from `uses_resources` ([ui-screens](ui-screens.md#prospecting)).
 - **NPC mines** (**Observed**, two saves of one game): NPC towns' mines have production states; Quarry Mine A 14 of 16,

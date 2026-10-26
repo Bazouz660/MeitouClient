@@ -353,7 +353,7 @@ public sealed class ResourceField
 
     /// <summary>
     /// A rock's own yield (its natural site's, <c>FarmBuilding::vfunc_92</c>; <b>Observed</b>, <c>uses_world_resource_mining</c> -> <c>FUN_140a12ff0</c>): WATER and GROUND as
-    /// <see cref="Value"/>, STONE the stone noise x <c>stone mult</c> as <see cref="Yield"/>, the others the resources record's <c>&lt;p&gt; mult</c> where it stands; at least 0.1.
+    /// <see cref="Value"/>, STONE the stone noise x <c>stone mult</c> as <see cref="Yield"/>, the others the resources record's <c>&lt;p&gt; mult</c> where it stands; at least 0.1 (<b>Verified</b>, <c>FUN_14029c670</c>'s natural branch).
     /// </summary>
     public float NodeYield(int resource, System.Numerics.Vector3 at)
     {

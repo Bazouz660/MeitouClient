@@ -130,9 +130,13 @@ public sealed partial class ProductionSystem : ITickSystem
             m.WaterRate = farm.ConsumptionRate / MachineData.DaySeconds * (farm.Indoor ? 1 : resources.WaterUsage(p.X, p.Z));
             Replant(world, m);
         }
-        // A rock yields its own value, at least 0.1; a player's mine what the ground or the nearest rock gives, 0 for nothing (the original's 0.5 for nothing is for buildings not the
-        // player's; Observed, uses_world_resource_mining).
-        else if (data.Resource != 0) m.Yield = IsNatural(site.Id) ? resources.NodeYield(data.Resource, p) : resources.Yield(data.Resource, p);
+        // The yield (FUN_14029c670, Verified): a rock its own value, at least 0.1; any other building what the ground or the nearest rock gives, and 0 becomes 0.5 for one not the
+        // player's (FUN_140546dd0), so only the player's own mines can stand on nothing.
+        else if (data.Resource != 0)
+        {
+            m.Yield = IsNatural(site.Id) ? resources.NodeYield(data.Resource, p) : resources.Yield(data.Resource, p);
+            if (!IsNatural(site.Id) && m.Yield == 0 && site.Owner != world.Player.Faction) m.Yield = 0.5f;
+        }
         return m;
     }
 
