@@ -207,9 +207,7 @@ public sealed class BodySystem(GameConstants constants, BodyOptions? options = n
             TrainOnTheMove(stats, race, medical, in n, cold.WaterState == 3, carrying, encumbrance, world.TickSeconds);
             if ((cold.Orders & CharacterOrders.Sneak) != 0 && !medical.Incapacitated)
             {
-                // An exposure older than a second (a looker's scan interval with room to spare) has lapsed.
-                var exposure = cold.StealthExposureTick >= world.Tick - (long)MathF.Ceiling(1 / world.TickSeconds) ? cold.StealthExposure : StealthExposure.Unobserved;
-                xp.Sneaking(stats, race, exposure, world.TickSeconds);
+                xp.Sneaking(stats, race, ExposureOf(world, cold), world.TickSeconds);
             }
             if (cold.IsPlayer || table.IdOf(i) == world.Player.Inspected) cold.Extended = ExtendedOf(stats, race, medical, n.MaxSpeed, encumbrance, ctx.Resting);
             n.Health = Math.Clamp(medical.Blood / MathF.Max(MedicalState.BloodCapacity(race, stats.Strength), 1) * 100, 0, 100);
@@ -281,6 +279,10 @@ public sealed class BodySystem(GameConstants constants, BodyOptions? options = n
     /// swimming trains instead of athletics (<b>Verified</b>, <c>FUN_1408c6660</c>). Strength rises only when the load
     /// encumbers it, and only while it moves. The speed the stat sees is the velocity the movement system left this tick.
     /// </summary>
+    /// <summary>A sneaker's exposure for its stealth XP: an exposure older than a second (a looker's scan interval with room to spare) has lapsed.</summary>
+    internal static StealthExposure ExposureOf(World world, CharacterCold cold) =>
+        cold.StealthExposureTick >= world.Tick - (long)MathF.Ceiling(1 / world.TickSeconds) ? cold.StealthExposure : StealthExposure.Unobserved;
+
     void TrainOnTheMove(CharacterStats stats, RaceData race, MedicalState medical, in CharacterHot n, bool deepWater, bool carrying, float encumbrance, float dt)
     {
         if (medical.Incapacitated) return;

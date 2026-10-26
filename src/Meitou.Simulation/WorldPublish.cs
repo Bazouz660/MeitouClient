@@ -233,35 +233,65 @@ public sealed partial class World
         lines.Add(new("Toughness:", stats.Toughness, stats.Toughness));
         if (!ranged) lines.Add(Line("Dodge:", StatsEnumerated.Dodge, fighter?.DodgeMult ?? 1));
         return new HudView(med.Blood, Bodies.MedicalState.BloodCapacity(race, stats.Strength, med.HasStatsObject, med.ScaleK, med.ScaleZ), med.Bleeding,
-            fighter?.EncumbranceFactor ?? 1, lines.AsReadOnly(), cold.Extended) { BleedRate = race.BleedRate, Fed = med.Fed, Robot = race.IsRobot, Skill = SkillLine(cold, med, stats, hot) };
+            fighter?.EncumbranceFactor ?? 1, lines.AsReadOnly(), cold.Extended) { BleedRate = race.BleedRate, Fed = med.Fed, Robot = race.IsRobot, Skill = SkillLine(cold, med, race, stats, hot) };
     }
 
     /// <summary>
-    /// The state panel's "Current Skill" line (the HUD update's panel 3, docs/game/ui-screens.md section 4): the skill the job used this tick at its effective level, Bad when its
-    /// penalties pass 2 % (Meitou reads that as the stat multiplier under 0.98); else, in a fight, the drawn melee weapon's class at its trained level; else Athletics when moving
-    /// faster than 9 units a second, Stealth (the stealth term x 100) when sneaking. Swimming replaces it with the swim speed. Picking a lock is Lockpicking.
+    /// The state panel's "Current Skill" line (the HUD update's panel 3, docs/game/ui-screens.md section 4): the skill the job used this tick at its effective level with its
+    /// tooltip (<see cref="SkillTermsOf"/>); else in ranged mode with a crossbow its accuracy error; else, in a fight, the drawn melee weapon's class at its trained level with
+    /// its damage; else Stealth when sneaking, Athletics when moving faster than 9 units a second. Swimming replaces it with the swim speed. Picking a lock is Lockpicking.
     /// </summary>
-    CurrentSkillView? SkillLine(CharacterCold cold, Bodies.MedicalState med, Bodies.CharacterStats stats, in CharacterHot hot)
+    CurrentSkillView? SkillLine(CharacterCold cold, Bodies.MedicalState med, RaceData race, Bodies.CharacterStats stats, in CharacterHot hot)
     {
-        float speed = MathF.Sqrt(hot.Velocity.X * hot.Velocity.X + hot.Velocity.Z * hot.Velocity.Z);
-        if (cold.WaterState == 3) return new(StatsEnumerated.Swimming, "Swimming", speed, Speed: true);
+        float encumbrance = cold.Fighter?.EncumbranceFactor ?? 1;
+        if (cold.WaterState == 3) return new(StatsEnumerated.Swimming, "Swimming", cold.SwimSpeed, Speed: true) { Swim = SwimTermsOf(cold, med, race, stats, encumbrance) };
         var stat = cold.SkillInUseTick >= Tick - 1 ? cold.SkillInUse : PickBar(cold, hot.Task) is not null ? StatsEnumerated.Lockpicking : StatsEnumerated.None;
         if (stat != StatsEnumerated.None)
         {
             var terms = SkillTermsOf(cold, med, stats, stat);
             return new(stat, null, MathF.Round(terms.Total), terms.Penalised, Terms: terms);
         }
-        if (cold.InCombat && (cold.Orders & CharacterOrders.Ranged) == 0 && cold.Fighter is { } f)
+        // getGUIStatsDisplayMode 2 (ranged mode) or the ranged controller's combat mode (Meitou: in a fight with the crossbow drawn), with a crossbow.
+        bool aiming = (cold.Orders & CharacterOrders.Ranged) != 0
+            || cold.InCombat && cold.DrawnWeapon == Meitou.Data.Gameplay.HandHold.OfCategory((int)Meitou.Data.Gameplay.Combat.WeaponCategory.Bow).Weapon;
+        if (aiming && Combat.CombatSystem.HudAccuracy(cold) is { } aim)
+            return new(StatsEnumerated.Crossbows, "Accuracy Error:", aim.Deviation) { Accuracy = new(aim.Weapon, aim.Skill, aim.Deviation) };
+        if (cold.InCombat && !aiming && cold.Fighter is { } f)
         {
             string? label = f.WeaponSkill switch
             {
                 StatsEnumerated.HeavyWeapons => "Heavy:", StatsEnumerated.Katanas => "Katana:", StatsEnumerated.Hackers => "Hacker:", StatsEnumerated.Sabres => "Sabre:",
                 StatsEnumerated.MartialArts => "Martial Arts:", StatsEnumerated.Polearms => "Polearm:", _ => null,
             };
-            if (label is not null) return new(f.WeaponSkill, label, (int)stats[f.WeaponSkill]);
+            if (label is not null)
+                return new(f.WeaponSkill, label, (int)stats[f.WeaponSkill]) { Damage = systems.OfType<Combat.CombatSystem>().FirstOrDefault()?.HudDamage(cold) };
         }
-        if ((cold.Orders & CharacterOrders.Sneak) != 0) return new(StatsEnumerated.Stealth, "Stealth:", MathF.Round(Orders.Stealth(cold) * 100));
-        return speed > 9 ? new(StatsEnumerated.Athletics, "Athletics:", (int)stats.Athletics) : null;
+        if ((cold.Orders & CharacterOrders.Sneak) != 0)
+        {
+            float s = Orders.Stealth(cold);
+            int total = (int)(s * 100), trained = (int)stats[StatsEnumerated.Stealth];
+            float t = MathF.Max(0, (s - 0.1f) / 0.8f), top = hot.MaxSpeed;
+            return new(StatsEnumerated.Stealth, "Stealth:", total) { Base = trained, Stealth = new(trained, 12 + (top - 12) * t, Bodies.XpService.SneakRate(BodySystem.ExposureOf(this, cold)),
+                !cold.Carrying.IsNone, med.Prone, (int)((1 - encumbrance) * 100), (int)((med.StealthBodyFactor(stats[StatsEnumerated.Toughness] * stats.Scale) - 1) * 100),
+                (int)(((cold.Fighter?.StealthMult ?? 1) - 1) * 100), (int)((med.LegItemFactor(StatsEnumerated.Stealth) - 1) * 100), total) };
+        }
+        float speed = MathF.Sqrt(hot.Velocity.X * hot.Velocity.X + hot.Velocity.Z * hot.Velocity.Z);
+        if (speed <= 9) return null;
+        return new(StatsEnumerated.Athletics, "Athletics:", (int)stats.Athletics) { Athletics = new((int)stats.Athletics, Bodies.Speed.RunValue(race, stats.Athletics),
+            (int)((1 - Bodies.Speed.LegFactor(med)) * 100), (int)((1 - encumbrance) * 100), (int)((med.LegItemFactor(StatsEnumerated.Athletics) - 1) * 100), hot.MaxSpeed) };
+    }
+
+    /// <summary>
+    /// The Swimming line's tooltip (the HUD update): the trained level, the base swim speed (<see cref="Bodies.Speed.SwimBase"/>), the leg term with 0.6 per unusable arm, the hunger
+    /// term, the encumbrance and the limb items' factor (all four limbs) as percentages, whether both arms are broken, and the current swim speed.
+    /// </summary>
+    static SwimTerms SwimTermsOf(CharacterCold cold, Bodies.MedicalState med, RaceData race, Bodies.CharacterStats stats, float encumbrance)
+    {
+        bool left = med.ArmWorks(left: true), right = med.ArmWorks(left: false);
+        float legs = Bodies.Speed.LegFactor(med) * (left ? 1 : 0.6f) * (right ? 1 : 0.6f);
+        float items = med.LegItemFactor(StatsEnumerated.Swimming) * med.ArmItemFactor(StatsEnumerated.Swimming);
+        return new(stats[StatsEnumerated.Swimming], Bodies.Speed.SwimBase(race, stats), (int)((1 - legs) * 100), (int)((1 - Bodies.Speed.HungerFactor(med.Hunger)) * 100),
+            (int)((1 - encumbrance) * 100), (int)((1 - items) * 100), !left && !right, cold.SwimSpeed);
     }
 
     /// <summary>

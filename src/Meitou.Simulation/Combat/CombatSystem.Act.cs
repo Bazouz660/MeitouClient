@@ -20,6 +20,27 @@ public sealed partial class CombatSystem
     /// </summary>
     static float Eff(CharacterCold c, StatsEnumerated stat) => c.Stats![stat] * c.Stats.Scale * c.Medical!.StatMultiplier(stat) * GearFactor(c, stat);
 
+    /// <summary>The HUD's "Damage:" figure of a melee fighter (the Current Skill line's tooltip): the sum of its blow's terms (<c>FUN_1408868b0</c>) against a human, unpowered.</summary>
+    internal float HudDamage(CharacterCold c)
+    {
+        if (c is not { Fighter: { } f, Stats: not null, Medical: not null }) return 0;
+        float str = Eff(c, StatsEnumerated.Strength);
+        return (f.Unarmed
+            ? DamageFormulas.UnarmedPacket(Eff(c, f.WeaponSkill), Eff(c, StatsEnumerated.Toughness), str, f.Weapon, TargetKind.Human, null, f.DamageOutput, combat)
+            : DamageFormulas.Packet(Eff(c, f.WeaponSkill), Eff(c, StatsEnumerated.Dexterity) * f.DexterityMult, str, f.Weapon!, TargetKind.Human, null, f.DamageOutput, combat)).Sum;
+    }
+
+    /// <summary>
+    /// The HUD's crossbow accuracy (the Current Skill line in ranged mode): the crossbow's deviation at 0 skill, the effective crossbows skill and the resulting deviation in degrees
+    /// (<see cref="RangedFormulas.Deviation"/>, as a shot takes it); null without a crossbow.
+    /// </summary>
+    internal static (float Weapon, float Skill, float Deviation)? HudAccuracy(CharacterCold c)
+    {
+        if (c is not { Fighter.Crossbow: { } x, Stats: not null, Medical: not null }) return null;
+        float skill = Eff(c, StatsEnumerated.Crossbows);
+        return (x.Stats.AccuracyDeviation, skill, RangedFormulas.Deviation(x.Stats.AccuracyDeviation, skill, Eff(c, StatsEnumerated.Perception)));
+    }
+
     /// <summary>The worn gear's factor of a stat that <see cref="Eff"/> applies: <c>ranged skill mult</c> for crossbows, <c>asassination mult</c> for assassination, else 1.</summary>
     internal static float GearFactor(CharacterCold c, StatsEnumerated stat) => stat switch
     {

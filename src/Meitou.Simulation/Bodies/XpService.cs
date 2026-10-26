@@ -160,7 +160,10 @@ public sealed class XpService(GameConstants constants, BodyOptions options)
     /// the original's flags). The per-hearing-check gain of <c>FUN_1408c7330</c> is not modelled.
     /// </summary>
     public float Sneaking(CharacterStats stats, RaceData race, StealthExposure exposure, float dtSeconds) =>
-        Continuous(stats, race, StatsEnumerated.Stealth, dtSeconds, exposure switch { StealthExposure.Unobserved => 0.2f, StealthExposure.Near => 0.9f, _ => 1.5f });
+        Continuous(stats, race, StatsEnumerated.Stealth, dtSeconds, SneakRate(exposure));
+
+    /// <summary>The amount <see cref="Sneaking"/> feeds the continuous entry (<c>CharStats +0x170</c>, which the Stealth line's tooltip shows as "XP rate:").</summary>
+    public static float SneakRate(StealthExposure exposure) => exposure switch { StealthExposure.Unobserved => 0.2f, StealthExposure.Near => 0.9f, _ => 1.5f };
 
     /// <summary>Lockpicking (<c>FUN_1408c62e0</c>): 1.2 x race[37] on success, 0.24 x on failure, straight into the core curve.</summary>
     public float Lockpicking(CharacterStats stats, RaceData race, bool success) =>

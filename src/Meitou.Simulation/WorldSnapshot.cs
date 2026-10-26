@@ -47,10 +47,37 @@ public sealed record HudView(float Blood, float BloodCapacity, float Bleeding, f
 /// <summary>
 /// The state panel's "Current Skill" line (docs/game/ui-screens.md section 4): the skill the job uses, labelled by its stat name (<see cref="Label"/> null), or a fallback with its
 /// own label (the drawn weapon's class, Athletics, Stealth, Swimming). <see cref="Value"/> is the level, or for Swimming the swim speed in units per second (<see cref="Speed"/>);
-/// <see cref="Penalised"/> shows it Bad; <see cref="Terms"/> is the job skill's tooltip breakdown.
+/// <see cref="Penalised"/> shows it Bad. The tooltip: <see cref="Terms"/> for the job skill, else the fallback's own breakdown.
 /// </summary>
 public readonly record struct CurrentSkillView(Meitou.Data.Gameplay.Bodies.StatsEnumerated Stat, string? Label, float Value, bool Penalised = false, bool Speed = false,
-    SkillTerms? Terms = null);
+    SkillTerms? Terms = null)
+{
+    /// <summary>The trained level the value is compared with (Stealth: "{v} ({d})" Bad when lower, Good when higher); null shows the value alone.</summary>
+    public float? Base { get; init; }
+    /// <summary>A melee weapon class line's "Damage:" (its blow's terms summed).</summary>
+    public float? Damage { get; init; }
+    public AccuracyTerms? Accuracy { get; init; }
+    public StealthTerms? Stealth { get; init; }
+    public AthleticsTerms? Athletics { get; init; }
+    public SwimTerms? Swim { get; init; }
+}
+/// <summary>The "Accuracy Error:" line's tooltip: the crossbow's deviation at 0 skill, the effective skill and the resulting deviation, in degrees.</summary>
+public readonly record struct AccuracyTerms(float Weapon, float Skill, float Deviation);
+/// <summary>
+/// The Stealth line's tooltip (<c>FUN_14088f9a0</c>): the trained level, the sneaking top speed (units a second), the XP rate, carrying, crawling (+100%, which ends the list), then
+/// the encumbrance penalty, the body term, the gear and the fitted legs as signed percentages, and the total (the stealth term x 100).
+/// </summary>
+public readonly record struct StealthTerms(float Skill, float MaxSpeed, float XpRate, bool Carrying, bool Crawling, int Encumbrance, int Injuries, int Gear, int Robotics, float Total);
+/// <summary>
+/// The Athletics line's tooltip (<c>FUN_14088e780</c>): the trained level, the run value (units a second), the leg injury and encumbrance penalties, the fitted legs as a signed
+/// percentage and the top speed.
+/// </summary>
+public readonly record struct AthleticsTerms(float Skill, float MaxSpeed, int LegInjury, int Encumbrance, int Robotics, float TotalSpeed);
+/// <summary>
+/// The Swimming line's tooltip (the HUD update): the trained level, the base swim speed, the injuries (legs and arms), hunger, encumbrance and limb items' penalties, both arms
+/// broken, and the current swim speed.
+/// </summary>
+public readonly record struct SwimTerms(float Skill, float MaxSpeed, int Injuries, int Hunger, int Encumbrance, int Robotics, bool BrokenArms, float Speed);
 /// <summary>
 /// The breakdown of a skill's tooltip (<c>FUN_140890b00</c>, docs/game/ui-screens.md section 4): the trained level, then each penalty of the stat multiplier taken alone as
 /// (int)((1 - factor) x 100) percent (Robotics below 0 is a bonus), the missing arm penalty (strength only, 0 or 33: (int) of (1 - 0.66) x 100) and the effective level.

@@ -134,10 +134,80 @@ sealed partial class PlayerInterface
     static HudLine SkillLine(CurrentSkillView skill, SpeedUnit unit)
     {
         string label = skill.Label is { } own ? Loc.Tr(own) : EditorStatName(skill.Stat);
-        string value = skill.Speed
-            ? $"{(int)(skill.Value * (unit == SpeedUnit.Kmh ? 0.36f : 0.22369362f))} {(unit == SpeedUnit.Kmh ? "km/h" : "mph")}"
-            : ((int)skill.Value).ToString(CultureInfo.InvariantCulture);
-        return new(label, value, ValueColour: skill.Penalised ? BadColour : null, TooltipRows: skill.Terms is { } terms ? SkillTip(label, terms) : null);
+        string? colour = skill.Penalised ? BadColour : null;
+        string value = skill.Speed ? SpeedText(skill.Value, unit) : skill.Accuracy is not null ? Degrees(skill.Value) : Num(skill.Value);
+        if (skill.Base is { } trained && (int)skill.Value != (int)trained)
+        {
+            // FUN_140889710: the value and its change from the trained level, the whole text Bad when lower and Good when higher.
+            int change = (int)skill.Value - (int)trained;
+            value = change < 0 ? $"{(int)skill.Value} ({change})" : $"{(int)skill.Value} (+{change})";
+            colour = change < 0 ? BadColour : GoodColour;
+        }
+        (string, string)[]? tip = skill.Terms is { } terms ? SkillTip(label, terms) : skill.Accuracy is { } a ? AccuracyTip(a)
+            : skill.Damage is { } damage ? [(Loc.Tr("Damage:"), Num(damage))] : skill.Stealth is { } s ? StealthTip(s, unit)
+            : skill.Athletics is { } at ? AthleticsTip(at, unit) : skill.Swim is { } sw ? SwimTip(sw, unit) : null;
+        return new(label, value, ValueColour: colour, TooltipRows: tip);
+    }
+
+    const string TipBad = "#59231a", TipGood = "#a8b774", TipMain = "#afa68b";
+    static string Num(float v) => ((int)v).ToString(CultureInfo.InvariantCulture);
+    static string Degrees(float v) => v.ToString("0.00", CultureInfo.InvariantCulture) + Loc.Tr(" degrees");
+    static string SpeedText(float unitsPerSecond, SpeedUnit unit) =>
+        $"{(int)(unitsPerSecond * (unit == SpeedUnit.Kmh ? 0.36f : 0.22369362f))} {(unit == SpeedUnit.Kmh ? "km/h" : "mph")}";
+    /// <summary>A penalty of <paramref name="percent"/> above 0 as Bad <c>-n%</c>.</summary>
+    static string Minus(int percent) => TipBad + "-" + percent.ToString(CultureInfo.InvariantCulture) + "%";
+    /// <summary>A signed change (<c>FUN_140889320</c>): <c>+n%</c> Good above 0, <c>-n%</c> Bad below.</summary>
+    static string Signed(int percent) => (percent > 0 ? TipGood + "+" : TipBad) + percent.ToString(CultureInfo.InvariantCulture) + "%";
+
+    /// <summary>The "Accuracy Error:" tooltip: the crossbow's own deviation, the skill and the resulting deviation (the last in Main).</summary>
+    static (string, string)[] AccuracyTip(AccuracyTerms a) =>
+        [(Loc.Tr("Weapon Accuracy:"), Degrees(a.Weapon)), (Loc.Tr("Skill:"), MathF.Round(a.Skill).ToString(CultureInfo.InvariantCulture)),
+            (TipMain + Loc.Tr("Resulting Accuracy Deviation:"), TipMain + Degrees(a.Deviation))];
+
+    /// <summary>The Stealth tooltip (<c>FUN_14088f9a0</c>); crawling (+100%) skips the penalties.</summary>
+    static (string, string)[] StealthTip(StealthTerms s, SpeedUnit unit)
+    {
+        var rows = new List<(string, string)> { (Loc.Tr("Stealth skill:"), Num(s.Skill)), (Loc.Tr("Max speed:"), SpeedText(s.MaxSpeed, unit)),
+            (Loc.Tr("XP rate:"), Num(s.XpRate * 100) + "%") };
+        if (s.Carrying) rows.Add((Loc.Tr("Carrying something:"), Minus(25)));
+        if (s.Crawling) rows.Add((Loc.Tr("Crawling:"), TipGood + "+100%"));
+        else
+        {
+            if (s.Encumbrance > 0) rows.Add((Loc.Tr("Encumbrance:"), Minus(s.Encumbrance)));
+            if (s.Injuries < 0) rows.Add((Loc.Tr("Injuries:"), Signed(s.Injuries)));
+            if (s.Gear != 0) rows.Add((Loc.Tr("Armour/equipment:"), Signed(s.Gear)));
+            if (s.Robotics != 0) rows.Add((Loc.Tr("Robotics:"), Signed(s.Robotics)));
+        }
+        rows.Add((Loc.Tr("Total:"), Num(s.Total)));
+        return [.. rows];
+    }
+
+    /// <summary>The Athletics tooltip (<c>FUN_14088e780</c>).</summary>
+    static (string, string)[] AthleticsTip(AthleticsTerms a, SpeedUnit unit)
+    {
+        var rows = new List<(string, string)> { (Loc.Tr("Athletics Skill:"), Num(a.Skill)), (Loc.Tr("Max possible speed:"), SpeedText(a.MaxSpeed, unit)) };
+        if (a.LegInjury > 0) rows.Add((Loc.Tr("Leg injury:"), Minus(a.LegInjury)));
+        if (a.Encumbrance > 0) rows.Add((Loc.Tr("Encumbrance:"), Minus(a.Encumbrance)));
+        if (a.Robotics != 0) rows.Add((Loc.Tr("Robotics:"), Signed(a.Robotics)));
+        rows.Add((TipMain + Loc.Tr("Total speed:"), SpeedText(a.TotalSpeed, unit)));
+        return [.. rows];
+    }
+
+    /// <summary>The Swimming tooltip (the HUD update): penalties above 1 % in Bad, label and value.</summary>
+    static (string, string)[] SwimTip(SwimTerms s, SpeedUnit unit)
+    {
+        var rows = new List<(string, string)> { (Loc.Tr("Skill:"), Num(s.Skill)), (Loc.Tr("Max Swim Speed:"), SpeedText(s.MaxSpeed, unit)) };
+        void Penalty(string label, int percent)
+        {
+            if (percent > 1) rows.Add((TipBad + Loc.Tr(label), TipBad + percent.ToString(CultureInfo.InvariantCulture) + "%"));
+        }
+        Penalty("Injuries", s.Injuries);
+        Penalty("Hunger", s.Hunger);
+        Penalty("Encumbrance", s.Encumbrance);
+        if (s.Robotics != 0) rows.Add((TipBad + Loc.Tr("Robotics"), Signed(-s.Robotics)));
+        if (s.BrokenArms) rows.Add((TipBad + Loc.Tr("2 Broken Arms!"), ""));
+        rows.Add((Loc.Tr("Current Swim Speed:"), SpeedText(s.Speed, unit)));
+        return [.. rows];
     }
 
     /// <summary>
@@ -149,16 +219,16 @@ sealed partial class PlayerInterface
         var rows = new List<(string, string)> { (Loc.Tr("{1} skill:", skill), ((int)t.Base).ToString(CultureInfo.InvariantCulture)) };
         void Penalty(string label, int percent)
         {
-            if (percent > 0) rows.Add((Loc.Tr(label), "#59231a-" + percent.ToString(CultureInfo.InvariantCulture) + "%"));
+            if (percent > 0) rows.Add((Loc.Tr(label), Minus(percent)));
         }
         Penalty("Injuries:", t.Injuries);
         Penalty("Hunger:", t.Hunger);
         Penalty("Weather:", t.Weather);
         Penalty("Working in darkness:", t.Darkness);
         Penalty("Robotics:", t.Robotics);
-        if (t.Robotics < 0) rows.Add((Loc.Tr(t.HasRobotics ? "Robotics:" : "Limbs disabled:"), "#a8b774+" + (-t.Robotics).ToString(CultureInfo.InvariantCulture) + "%"));
+        if (t.Robotics < 0) rows.Add((Loc.Tr(t.HasRobotics ? "Robotics:" : "Limbs disabled:"), Signed(-t.Robotics)));
         if (t.Gear != 0)
-            rows.Add((Loc.Tr("Armour/equipment:"), (t.Gear > 0 ? "#59231a" : "#a8b774+") + (-t.Gear).ToString(CultureInfo.InvariantCulture) + "%"));
+            rows.Add((Loc.Tr("Armour/equipment:"), Signed(-t.Gear)));
         Penalty("Missing arm penalty:", t.MissingArm);
         rows.Add((Loc.Tr("Total:"), ((int)t.Total).ToString(CultureInfo.InvariantCulture)));
         return [.. rows];
