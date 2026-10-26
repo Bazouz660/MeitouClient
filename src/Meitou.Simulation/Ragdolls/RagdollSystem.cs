@@ -231,7 +231,11 @@ public sealed class RagdollSystem : ITickSystem, IStateHashed, IRagdollState, IR
         foreach (var id in order) if (ragdolls[id] is { Frozen: false, Mask: not RagdollPart.None }) Moving++;
         // The physics on the world's thread count (its own workers: the world's pool is idle in this serial phase).
         if (Moving > 0 && threads is null && world.Settings.Threads > 1) threads = new BepuUtilities.ThreadDispatcher(world.Settings.Threads);
-        if (Moving > 0) physics.Step(dt, threads);
+        if (Moving > 0)
+        {
+            foreach (var id in order) if (ragdolls[id] is { Frozen: false, Mask: not RagdollPart.None } floating) Buoy(world, floating, dt);
+            physics.Step(dt, threads);
+        }
         world.Profile.Part("rag step");
 
         // 3. Poses back, the whole body's position, freezing, publishing.
@@ -245,7 +249,8 @@ public sealed class RagdollSystem : ITickSystem, IStateHashed, IRagdollState, IR
             {
                 Surface(r, env);
                 ReadBack(r);
-                r.Age += dt;
+                // In water the freeze timer runs at half speed (with the buoyancy, Buoy).
+                r.Age += Afloat(world, r) ? dt * 0.5f : dt;
                 if ((r.Mask & RagdollPart.Whole) != 0)
                 {
                     var root = r.Pose[r.Definition.Root].Position;
@@ -574,6 +579,30 @@ public sealed class RagdollSystem : ITickSystem, IStateHashed, IRagdollState, IR
             if (v.Linear.LengthSquared() < StillLinear && v.Angular.LengthSquared() < StillAngular) still++;
         }
         return count == 0 ? 1 : still / (float)count;
+    }
+
+    /// <summary>A ragdoll of a race that <c>swims</c> (race byte <c>+0x79</c>) whose root is at or under the water level (docs/game/ragdolls.md "Bodies: kinematic or simulated").</summary>
+    static bool Afloat(World world, Ragdoll r) =>
+        r.Pose.Length > 0 && r.Pose[r.Definition.Root].Position.Y <= Meitou.Data.World.WorldWater.Height
+        && world.Characters.TryResolveNext(r.Id, out int slot) && world.Characters.Cold(slot)?.Race is { Swims: true };
+
+    /// <summary>
+    /// Buoyancy (<b>Observed</b>, the ragdoll update): while <see cref="Afloat"/>, each simulated body under the water level gets an upward acceleration of 98.1 + ln(level - y + 1),
+    /// which beats gravity, so the body floats up to the surface.
+    /// </summary>
+    void Buoy(World world, Ragdoll r, float dt)
+    {
+        if (!Afloat(world, r)) return;
+        float level = Meitou.Data.World.WorldWater.Height;
+        for (int b = 0; b < r.Bodies.Length; b++)
+        {
+            if (r.Bodies[b] is not { } handle || !r.Dynamic[b]) continue;
+            var body = physics.Simulation.Bodies[handle];
+            float y = body.Pose.Position.Y;
+            if (y > level) continue;
+            body.Velocity.Linear.Y += dt * (RagdollPhysics.Gravity + MathF.Log(level - y + 1));
+            body.Awake = true;
+        }
     }
 
     /// <summary>Freezes a settled ragdoll: the joints go and the bodies stay as still kinematic ones, which others still land on.</summary>

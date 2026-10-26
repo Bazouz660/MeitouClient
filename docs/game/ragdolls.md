@@ -222,7 +222,7 @@ Driver `FUN_1405b8180` (AnimationClass), update `FUN_1407d3c00`:
 - Partial (non-WHOLE) ragdolls are woken every frame (wake 20) and never freeze.
 - Water (only when byte `+0x79` of the character's race data is set): when the root is at or below
   y 100 (water level), each body below it gets an upward
-  acceleration 98.1 + ln(100 − y + 1), and the freeze timer runs at half speed.
+  acceleration 98.1 + ln(100 − y + 1), and the freeze timer runs at half speed. Meitou: `RagdollSystem.Buoy` (each body under the level; the original's "below it" read as below the water level).
 - Character simulation position `+0x48` = root body position while ragdolled or carried
   (`CharacterAnimal::vfunc_28` via `FUN_1407d16f0`): looting, carrying and AI distances use it.
 
@@ -265,5 +265,5 @@ human frozen after 61 ticks): save → load gives the same 13 body poses (offset
 - Exact condition of character slot 103 (group 4) and the downward-ray branch of `FUN_1407d2440`.
 - Which body is the root (RagdollAnimation `+0x48` key); likely the pelvis.
 - `FUN_1405ce9c0`'s branch for Character `+0x388` 1 / 0x5b (calls `FUN_1405b4fa0` on put-down).
-- Purpose of the linked Havok libraries; meaning of race-data byte `+0x79` (buoyancy gate).
+- Purpose of the linked Havok libraries.
 - Which LOCATIONAL_DAMAGE parts set HEAD in `collapse part` in the shipped data.
