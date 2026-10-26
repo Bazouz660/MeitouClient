@@ -622,7 +622,8 @@ How a building gets selected: [ui-input](ui-input.md#building-picking-and-select
     tooltip "This is the maximum skill a person can train up to using this equipment. For anyone higher it is a waste of time." instead of 154; BF_SKELETON_BED
     (25) gets both. +0x1a4 = `output rate` × `production mult` ÷ raw `max operators` when above 1 (`FUN_14029e460`; Bed 8, Camp Bed 4, dummies MkI–III 6/11/16
     by the probe of the merged data). Turret `FUN_14030c2a0`: section 6 the gun's slot 14 lines then 154, section 7 (`ExtendedStatsText`) 155 then 154; Furnace
-    `FUN_14030b750` never (no call of slot 154 or 155).
+    `FUN_14030b750` draws its own section 0xf (`Total Metals:`, the `Active:` toggle) and hands every other section to `FUN_1402ffeb0`, so 155, 154, 153 as a
+    production building.
   - Farms (FarmBuilding slot 40 `FUN_1400e21a0` runs `FUN_1402ffeb0` first, so section 6 is its own 186, 155, 154, 153): Workers (`FUN_1400e0020`) is `-` with
     "No workers required until the crop is ready to harvest." while grown (+0x518) is below 1, else the common line. Efficiency (`FUN_1400e2d50`) only on a farm
     with +0x558 set, which the constructor `FUN_1400e8420` sets when the FARM_DATA's `fertility effect` is 0 (hydroponic and indoor farms): one line, no Max
@@ -644,8 +645,9 @@ How a building gets selected: [ui-input](ui-input.md#building-picking-and-select
     `FactionManager::getEmptyFaction` `FUN_1402e7b00`), so the factory gives it the town's faction `nofac` ("No Faction"). `Task_OperateMachine` slot 1
     (`FUN_14035b430`, the task's start at the machine) on a building with `is foliage` (+0xc0), not a chair, run by a character of the player's faction (+0x250) sets
     the building's faction to the character's (slot 20) unless it is already a player faction, and then, when the town at its position (`FUN_140928890`) is a
-    player's, its town to that one. So slot 113 reads "No Faction" (its town is explored, not secret) until a player character starts working the rock, then the
-    player's faction. Not saved (the original saves no rock). Meitou: `ProductionSystem` sets the rock's owner on arrival, its town by the outposts' radius
+    player's, its town to that one. So slot 113 reads the player's faction once a player character starts working the rock; before, "No Faction" (**Observed**:
+    that its NO_TOWN hand resolves through `FUN_1400f6c20` is inferred from the Useable slot 40's `!= noTown` test; NO_TOWN is explored, not secret).
+    Not saved (the original saves no rock). Meitou: `ProductionSystem` sets the rock's owner on arrival, its town by the outposts' radius
     (`RichnessView.Owner` / `TownName`); `Town:` shows only that town.
   Meitou (`PlayerInterface.Production.cs`, `MachineSnapshot.Efficiency` and `Panel`): the lines per class as above, unmined rocks too (0 workers), the turret's
   section 7 in `ExtendedStatsText` while the panel is expanded; the turret's gun lines are not built; health is `Machine.Health` (progress / target),

@@ -46,9 +46,9 @@ public readonly record struct EfficiencyView(int Operators, int MaxOperators, fl
 /// <summary>
 /// Which Workers and Efficiency lines a building's stats panels draw (each class's slot 40, docs/game/ui-screens.md "Selected building", Production building): Workers, Efficiency and Max
 /// efficiency in Stats 1; a farm its own Workers and, hydroponic only, one Efficiency line; a bed (BF_BED) <c>Healing bonus</c> instead; a training dummy (BF_TRAINING) Workers and
-/// <c>Max Skill Level</c>; a turret Efficiency in Stats 1 and Workers and Efficiency in Stats 2; a furnace none.
+/// <c>Max Skill Level</c>; a turret Efficiency in Stats 1 and Workers and Efficiency in Stats 2; a furnace (its slot 40 hands every section but its own 0xf to the production one) the Production lines.
 /// </summary>
-public enum MachinePanel : byte { Production, Farm, Bed, Training, Turret, None }
+public enum MachinePanel : byte { Production, Farm, Bed, Training, Turret }
 
 /// <summary>A crafting bench as the host shows it: the queue (the first is being made), the repeat toggle and the finished items waiting in its output.</summary>
 public sealed record CraftView(IReadOnlyList<(string Key, string Name, float Progress, float Hours)> Queue, bool Repeat, IReadOnlyList<InventoryItemView> Done);
@@ -108,10 +108,10 @@ public sealed record MachineSnapshot(string Site, string Record, IReadOnlyList<M
     /// <summary>A hydroponic farm (its FARM_DATA's <c>fertility effect</c> is 0, the exe's FarmBuilding <c>+0x558</c>): the only farms with an Efficiency line.</summary>
     public bool Hydroponic { get; init; }
 
-    /// <summary>The panel of a machine's class: farms; BF_BED 6; BF_TRAINING 7; BF_TURRET 12; BF_ITEM_FURNACE 14 (none); every other class Production.</summary>
+    /// <summary>The panel of a machine's class: farms; BF_BED 6; BF_TRAINING 7; BF_TURRET 12; every other class (furnaces too) Production.</summary>
     static MachinePanel PanelOf(MachineData d) => d.Farm is not null ? MachinePanel.Farm : d.Function switch
     {
-        6 => MachinePanel.Bed, MachineData.TrainingFunction => MachinePanel.Training, 12 => MachinePanel.Turret, MachineData.ItemFurnaceFunction => MachinePanel.None, _ => MachinePanel.Production,
+        6 => MachinePanel.Bed, MachineData.TrainingFunction => MachinePanel.Training, 12 => MachinePanel.Turret, _ => MachinePanel.Production,
     };
 
     internal static MachineSnapshot Of(Machine m, ItemFactory items)
