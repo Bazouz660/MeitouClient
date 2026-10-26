@@ -264,8 +264,80 @@ public sealed partial class DialogueSystem
         }
     }
 
+    /// <summary>A town stalker's state (<c>Task_TownStalker</c>, 165): its victim, the waypoint past the town gate once picked, and whether it has harassed / found no gate.</summary>
+    sealed class Stalk(CharacterId target)
+    {
+        public CharacterId Target { get; } = target;
+        public Vector2? Waypoint { get; set; }
+        public bool Harassed { get; set; }
+        public bool NoGate { get; set; }
+    }
+
+    readonly SortedDictionary<CharacterId, Stalk> stalkers = new(Comparer<CharacterId>.Create(CompareIds));
+
+    /// <summary>EV_HARASSMENT, what a stalker opens on its victim outside town; how far past the gate it waits (<c>Task_TownStalker</c>, <b>Verified</b> constant).</summary>
+    const int Harassment = 26;
+    const float StalkPastGate = 300;
+
+    /// <summary>
+    /// DA_THUG_HUNTER (17, order 165 <c>Task_TownStalker</c>, docs/game/dialogue.md): in a town, the stalker waits <see cref="StalkPastGate"/> outside the town's first gate (on the line
+    /// from the town centre through it), facing its victim, while the victim is no farther from the centre than that point; with no gate it just stays. Once the victim is farther
+    /// out, or anywhere outside a town, it follows it and, once, when it is not talking, sends it event 26. It is done when, after that, neither is talking. Engine choices: re-aimed
+    /// every 15 ticks; the first gate is the town's first gate door in fixture order; the gate-code test on the gate's outside is not made.
+    /// </summary>
+    void StepStalkers(World world)
+    {
+        if (stalkers.Count == 0) return;
+        var table = world.Characters;
+        foreach (var (who, stalk) in stalkers.ToArray())
+        {
+            if (!table.TryResolveNext(who, out int s) || !Awake(table, s) || !table.TryResolveNext(stalk.Target, out int t) || !Awake(table, t)) { stalkers.Remove(who); Release(world, who); continue; }
+            bool talking = bubbles.Any(b => b.C.Npc == who || b.C.Player == who) || open?.Npc == who || open?.Player == who;
+            bool victimTalking = bubbles.Any(b => b.C.Npc == stalk.Target || b.C.Player == stalk.Target) || open?.Npc == stalk.Target || open?.Player == stalk.Target;
+            if (stalk.Harassed && !talking && !victimTalking) { stalkers.Remove(who); Release(world, who); continue; }
+            table.Cold(s)!.Engaged = true;   // the order holds it, not the AI
+            ref var sn = ref table.Next[s];
+            var victim = new Vector2(table.Next[t].Position.X, table.Next[t].Position.Z);
+            int site = Ai.AiSystem.TownAt(data, world, sn.Position).Site;
+            if (site >= 0 && !stalk.NoGate)
+            {
+                var centre = new Vector2(data.Sites[site].Position.X, data.Sites[site].Position.Z);
+                if (stalk.Waypoint is null)
+                {
+                    var gate = world.Fixtures.All.FirstOrDefault(f => f.Kind == Locks.FixtureKind.Door && f.IsGate && f.Site == site);
+                    if (gate is null) { stalk.NoGate = true; continue; }
+                    var g = new Vector2(gate.Position.X, gate.Position.Z);
+                    var outward = g - centre;
+                    stalk.Waypoint = g + (outward.LengthSquared() > 1e-6f ? Vector2.Normalize(outward) : Vector2.UnitX) * StalkPastGate;
+                }
+                var w = stalk.Waypoint.Value;
+                if (Vector2.Distance(victim, centre) <= Vector2.Distance(w, centre))
+                {
+                    if (world.Tick % 15 == 0 && Vector2.Distance(new Vector2(sn.Position.X, sn.Position.Z), w) > TalkReach && (sn.Task != (byte)CharacterTask.GoTo || Vector2.Distance(sn.Goal, w) > TalkReach))
+                        MovementSystem.GoTo(table, s, w, SpeedMode.Walk);
+                    else if (sn.Task != (byte)CharacterTask.GoTo)
+                    {
+                        var to = table.Next[t].Position - sn.Position;
+                        if (to.X * to.X + to.Z * to.Z > 1e-4f) sn.Yaw = MathF.Atan2(to.X, to.Z);
+                    }
+                    continue;
+                }
+            }
+            else if (site >= 0) continue;   // no gate: it only stays
+            // Outside: follow and harass.
+            if (!stalk.Harassed && !talking)
+            {
+                world.Defer(new DialogueEvent(who, stalk.Target, Harassment) { Tick = world.Tick + 1 });
+                stalk.Harassed = true;
+            }
+            if (world.Tick % 15 == 0 && Vector2.Distance(new Vector2(sn.Position.X, sn.Position.Z), victim) > TalkReach)
+                MovementSystem.GoTo(table, s, victim, SpeedMode.Walk);
+        }
+    }
+
     void HashActs(ref StateHasher hasher)
     {
         foreach (var (who, whom) in followers) { hasher.Add(who); hasher.Add(whom); }
+        foreach (var (who, stalk) in stalkers) { hasher.Add(who); hasher.Add(stalk.Target); hasher.Add(stalk.Harassed); hasher.Add(stalk.NoGate); if (stalk.Waypoint is { } w) hasher.Add(w); }
     }
 }

@@ -141,7 +141,7 @@ event is in a mask `DAT_141eeaecc`, contents **Unknown**), the owner is talking 
 Event 1 starts a [player conversation](#player-conversation), using a stored `interrupt` DIALOGUE instead of the event-1 list when one
 is pending. Every other event starts an [ambient conversation](#ambient-conversations).
 
-Sources (call sites): 1 the player's Talk order (task 12, after reaching the NPC; also tasks 102/159/161 when the package's event is
+Sources (call sites): 1 the player's Talk order (task 12, after reaching the NPC; also tasks 102/159/161 when the plan's event is
 0); 3, 27, 34, 59, 66, 67 perception (`FUN_140859680`); 10 `FUN_1408d0d90`; 11 torture; 15 `CharacterAnimal::vfunc_62`; 18-21 first
 aid (start: the medic 18 at the patient, the patient 19 back unless down; finish: 20 / 21 likewise; none when treating oneself);
 22 empty kit (`Task_FirstAidRig`, the medic at the patient); 23-25 getting up (`Task_GetUp`, no target: 24, or 23 when the character's two
@@ -255,10 +255,13 @@ bubble whose speaker is not awake). The `repetition limit` check passes when the
 **End** (`FUN_140674830`): bubble and window closed, the per-event counter +1 with its time (read by DC 13), the event's last target
 stored, the squad blackboard notified for player conversations.
 
-**AI tasks 102/159/161** (`Task_TalktoPlayer`): fire the AI package's event (0 means 1) at the target; event 9 repeats every update
-(17 while the target is in my building); gives up after 25 game minutes unreachable with event 60; done when the Dialogue is free.
+**AI tasks 102/159/161** (`Task_TalktoPlayer`, **Verified** decompile): fire `AITaskSytem+0x264` at the target (0 means 1), which the planner sets from the TaskData event of any
+row on the chosen plan (188: 38, 194 / 218: 39, 158 / 283: 9); event 9 repeats every update (17 at an enemy, or with blackboard `+0xe8` at a non-ally); walks at the target;
+after 25 game minutes, once the target is getting away (running, retreating, or moving away), gives up with event 60; done when the conversation has ended. 159 provides
+state 109 (with a walk first) for 188 / 194 / 218, 161 provides 110 (no walk) for 158 / 283.
 DA 2 gives the squad leader task 102 with event 1 (`+0x264`) for a player-faction target. **Verified** (probe, 124 AI_TASK records):
-no base-data task uses the enums 102, 159 or 161. The `isDialogDelivered` evaluator (world-state ids 109/110, `FUN_140610250`) is **Unknown**.
+no base-data task uses the enums 102, 159 or 161. `isDialogDelivered` (109 / 110, evaluator `140792140`, **Verified**): true without a Dialogue object, else whether
+the event was delivered in the speaker's current town (the per-event map the conversation end increments).
 
 ### Tokens
 
@@ -447,7 +450,7 @@ squad simply takes the speaker in, unless a target flag at +0x1d0 is set):
 | 12 FORCE_SPEECH_TIMER | the second speech timer (`+0x234`) = val0 ([Timing](#ambient-conversations)) |
 | 13 DECLARE_WAR, 14 END_WAR | the speaker's faction's table, slots 8 / 7, about the target's ([factions 3.4](factions-squads-towns.md#34-changing-relations-observed-the-event-table-cross-checked-with-the-dialogue-action-numbers)) |
 | 15 CLEAR_AI | the speaker platoon's AI object: `+0x130` = 1 and four lists emptied (what they hold **Unknown**) |
-| 16 FOLLOW_WHILE_TALKING, 17 THUG_HUNTER | tasks 164 ("Following and talking"), 165 ("Stalking") on the target |
+| 16 FOLLOW_WHILE_TALKING, 17 THUG_HUNTER | orders 164 ("Following and talking"), 165 ("Stalking", `Task_TownStalker`) given to the speaker on the target. 165 (**Verified**): in a town it waits 300 outside the town's first gate (gateway or wall with gate, outside gate code not > 0) on the line from the centre, facing the target, while the target is no farther from the centre; then (or outside any town) follows it and once sends event 26; done when both dialogues are free after that. Meitou: `DialogueSystem.StepStalkers` |
 | 34 RUN_AWAY | its tasks cleared, task 280 from the target, the squad tags the target AGGRESSOR |
 | 52 SUMMON_MY_SQUAD | every other member of the speaker's squad gets task 67 |
 | 19 REMEMBER_CHARACTER, 20 FLAG_TEMP_ALLY, 21 FLAG_TEMP_ENEMY | [squad memory](#squad-memory): long-term tag 0 / short-term 3 / 4 on the target |
