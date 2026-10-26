@@ -277,6 +277,9 @@ public sealed partial class FixtureRegistry
         return record.GetBool("has lock") ? FixtureKind.Container : null;
     }
 
+    static string? FirstClip(GameDatabase db, GameRecord functionality, string list) =>
+        functionality.GetReferences(list) is [var first, ..] ? db.Find(first.TargetStringId)?.Name : null;
+
     Fixture Make(World world, GameDatabase db, FixtureKind kind, string id, string building, GameRecord record, int site, int owner, FactionData? faction, Vector3 at, float yaw, int storageWidth = 0, int storageHeight = 0)
     {
         var functionality = TownBuildings.FunctionOf(db, record, functions);
@@ -284,6 +287,7 @@ public sealed partial class FixtureRegistry
         return new Fixture
         {
             Id = id, Building = building, Kind = kind, RecordId = record.StringId, Site = site, Owner = owner, Position = at, Yaw = yaw,
+            Clips = kind == FixtureKind.Cage && functionality is not null ? new CageClips(FirstClip(db, functionality, "animation"), FirstClip(db, functionality, "animation KO"), FirstClip(db, functionality, "animation dazed")) : default,
             Restrains = functionality?.GetBool("restrains movement") ?? false, UseRange = functionality is null ? 25 : FloatOf(functionality, "use range", 25),
             Contents = kind == FixtureKind.Container && storageWidth > 0 && storageHeight > 0 ? new Meitou.Simulation.Items.Inventory(storageWidth, storageHeight) { StackBonusMult = record.GetFloat("stackable bonus mult", 1) } : null,
             Lock = !locked ? null : new LockState { Level = RollLevel(world.Seed, id, faction, IntOf(record, "lock level bonus"), door: false), Hardness = FloatOf(record, "hardness") },
@@ -649,6 +653,7 @@ public sealed partial class FixtureRegistry
         if (c.InSomething != HeldState.None || !c.CarriedBy.IsNone || !c.Carrying.IsNone) return false;
         c.InSomething = HeldState.Imprisoned;
         c.InWhat = cage.Id;
+        c.CageClips = cage.Clips;
         c.Escaped = false;
         cage.Occupant = prisoner;
         if (cage.Lock is { } l) { l.Locked = true; l.PickTime = 0; l.NextRoll = LockState.FirstRoll; }

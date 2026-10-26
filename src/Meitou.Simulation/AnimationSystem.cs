@@ -383,7 +383,7 @@ public sealed class AnimationSystem(AnimationLibrary library, AnimationLengths l
         bool crawling = !carried && cold.Medical is { Prone: true };
         if (HoldsForRagdoll(a, down, carried, ragdoll)) return Vector2.Zero;
 
-        bool inBed = cold.InSomething == Locks.HeldState.Bed;
+        bool inBed = cold.InSomething == Locks.HeldState.Bed, inCage = cold.InSomething == Locks.HeldState.Imprisoned;
         if (down && !a.WasDown && !carried && !ragdoll.Has && !inBed) StartAction(a, fall, false);   // a ragdoll falls instead; one in a bed lies on
         if (carried) a.Action = -1;   // held on the shoulder: no falling or getting up
         // Waking with a leg down there is nothing to get up on: the original's get-up plays the crawl idle and ends at once (docs/game/ragdolls.md "Getting up").
@@ -425,7 +425,15 @@ public sealed class AnimationSystem(AnimationLibrary library, AnimationLengths l
         {
             // Down in a bed: its clip (the sleeper's), so it lies where a sleeper lies.
             if (inBed && HeldClip(CharacterTask.Sleep, cold) is >= 0 and var lain) wanted.Add((lain, 1));
+            // Out cold in a cage: its `animation KO` (the Cage's foetal; the out-of-combat pick @ 140520500, docs/animation.md "In a bed or a cage").
+            else if (inCage && cold.CageClips.Ko is { } ko && SitClipOf(ko) is >= 0 and var foetal) wanted.Add((foetal, 1));
             else if (LyingClip >= 0) wanted.Add((LyingClip, 1));
+            a.Idle = -1;
+        }
+        // Awake in a cage: its `animation dazed` with a leg down (engine reading of the original's dazed test), else its `animation` (the Cage's stand 1).
+        else if (inCage && technique < 0 && (crawling ? cold.CageClips.Dazed : cold.CageClips.Idle) is { } cageClip && SitClipOf(cageClip) is >= 0 and var caged)
+        {
+            wanted.Add((caged, 1));
             a.Idle = -1;
         }
         // In deep water a race that swims plays its swimming clips (category 4), the ordinary ones where none fits.

@@ -27,6 +27,9 @@ public sealed record BedSpot(string Id, string Record, Vector3 Position, int Own
 /// <c>sleepinbed</c>, <c>sleeponfloor</c>), the sum of its construction materials (the bed search weighs a bed that needs more than 1 three times) and its use nodes
 /// (null with fewer than 2: it is lain in at its own origin and facing).
 /// </summary>
+/// <summary>A cage's clips (ANIMATION names; null: none listed): standing in it, unconscious, dazed.</summary>
+public readonly record struct CageClips(string? Idle, string? Ko, string? Dazed);
+
 public readonly record struct BedData(int Function, string? Clip, float Materials, BedNode[]? Nodes = null);
 
 /// <summary>
@@ -123,6 +126,8 @@ public sealed class Fixture
 
     /// <summary>Cages: the functionality's <c>restrains movement</c> (pole, peeler). Cages and beds: <c>use range</c>, and who is in it.</summary>
     public bool Restrains { get; init; }
+    /// <summary>Cages: the functionality's <c>animation</c>, <c>animation KO</c> and <c>animation dazed</c> clips, entry 0 of each (<c>UseableStuff::UseableStuff</c>, <b>Verified</b>); derived from the data.</summary>
+    public CageClips Clips { get; init; }
     public float UseRange { get; init; }
     public CharacterId Occupant { get; set; } = CharacterId.None;
     /// <summary>Beds: its record's <see cref="BedData"/>; derived from the data, not hashed or saved.</summary>
