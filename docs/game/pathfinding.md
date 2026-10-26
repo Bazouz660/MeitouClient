@@ -386,7 +386,9 @@ Hub→Stack 34054; Squin→Admag at 0.8 walks 132184 for 26834 straight (short r
     in the interior pass was not traced (**Unknown**).
   - BUILDING `path mode` counts 92/84/304/123 for 0/1/2/3 (**Verified**, 603 records). Enum names (FCS `PathMode`, the
     editor's enum): 0 NAVMESH_IGNORE, 1 NAVMESH_PROJECTED, 2 NAVMESH_OBSTACLE (default), 3 NAVMESH_WALKABLE (**Verified**).
-    Other fields: `destroyed navmesh` (6 buildings, walls; the "Wall termites" check FUN_1402ef1f0 reads it, disabled in 1.0.68: [buildings-production](buildings-production.md#walls)),
+    Other fields: `destroyed navmesh` (6 buildings, walls; read by `Building::setDestroyed` `FUN_140557280`, which rebuilds the navmesh in the building's bounds when set,
+    **Verified**, and by the dead "Wall termites" check FUN_1402ef1f0: [buildings-production](buildings-production.md#walls)), `allow animals` (10 true; `Building::allowAnimals`, reader not traced),
+    `enforce ceiling` ([perception](perception.md#sight)), `inventory content name` (the title of its storage section in `BuildingContainerInventoryLayout::setupSections`, **Verified**),
     `build threshold` (19 buildings: below it a part is in a +14 group and drops out of the shape mask), `is gateway`
     (13), `max slope` (placement only, [buildings-production.md](buildings-production.md)).
 - **Generation settings** (FUN_1403c4a10 on an `hkaiNavMeshGenerationSettings`, 0x220 bytes, built by Havok's constructor

@@ -95,6 +95,10 @@ legacy layouts (types 5, 8, 9, 10, 13: the `.body` files and three `.bod2`), and
 | string | `head` (HEAD id), `hair style`, `beard` (ATTACHMENT ids, may be empty), `idle stance` (an animation name, e.g. `idle_stand_relax`) |
 | reference | `race` (RACE) |
 
+FACTION `faces weirdness` (0.2-1, most 0.5; `AppearanceBase::buildBody` `FUN_140539020`, **Verified** read): for a race without a fixed body and a character not in a
+player squad, floor(weirdness x 10) goes into the generated morph mesh's name (which seeds the face roll) and `AppearanceManager::randomPoses` draws the random morph offsets with it
+(**Observed** meaning: the strength of the faction NPCs' random face and body morphs). Not modelled (the name's form and the pose formula are **Unknown**).
+
 CHARACTER `race` overrides the body file's race (fcs.def "will override race in .body file"; the viewer
 follows this, not traced). The candidates (`Faction::chooseARace` `FUN_1407ff1a0`, **Verified** in outline): the squad template's
 `race override` (7 templates) when one is given, else the CHARACTER's `race`, else the faction's `races`; a weighted draw by the reference value. Meitou keeps a body file's race

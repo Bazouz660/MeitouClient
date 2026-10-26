@@ -173,6 +173,7 @@ a clone (`movemarker`) of `debug_marker`, pass 0 set to alpha blending (`setScen
 `colour` of pass 0 to (0.612, 0.694, 0.529, t) and of pass 1 to (0.306, 0.347, 0.2645, 0.6 t), then lowers t (1 at the click) by the scaled
 frame time `DAT_142133794` ([game-loop.md](game-loop.md#the-three-time-values): 1 s of game time, 0.01 a frame at speed 0) and hides it at
 t ≤ 0. Shown only with `Movement marker` ([settings.md](../formats/settings.md); global `DAT_142133511`, `Rotation marker` is `DAT_142133510`).
+The rotation marker shows while the camera rotate button is held and the option is on, scaled max(3, -z x 0.06) by the zoom node's z (camera update `FUN_1406b0f90`, **Verified**).
 **Verified** against `data/materials/debug.material` and `materials/forward/basic.program` / `basic.hlsl`: `debug_marker` pass 0 is
 `depth_func less_equal`, pass 1 `depth_write off`, `depth_func greater`, `alpha_blend` (the part behind the scene); both `Basic_Lit_VP`
 (`NORMALS`: `rgb *= saturate(N·sun) * contrast + 1 - contrast`, contrast 0.5) and `Basic_FP` (`colour × vertex colour`).
@@ -538,7 +539,7 @@ its exact name, else the shortest name containing the text. Replaces the game's 
 - Targets of events 1 and 2, inferred from the action names.
 - Building selection: the meaning of slot 107 (+0x198) and `FUN_14004a0cf` in the loot branch, the lockpick tooltip text,
   whether the renderer marks the selected building, and what clears the selection when the building is destroyed.
-- Press versus release timing of the command button, and the exact rotation marker condition.
+- Press versus release timing of the command button.
 - Whether a held, steering right click shows it again each order.
 - Conditions inside FUN_140917120 (which windows count as closable) and the meaning of the held/edge flags.
 - Box select handling of non-player squads and animals.

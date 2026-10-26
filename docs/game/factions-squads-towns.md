@@ -201,8 +201,9 @@ On the faction's FactionRelations object itself: +0x10 int rank, +0x18 float **g
 - **Verified** (probe of the merged data): only the Shinobi Thieves use it. Joining (`*You clasp hands* Welcome /BROTHER/...`) pays 10,000
   (DA 8), raises the rank to at most 1 (DA 35 val0 1) and relations +100 (DA 4); rank 0 lines turn the player away ("Talk to the boss",
   "I don't know you"), rank 1 lines open the shop and smuggling talk, and rank > 0 the free plastic surgeon.
-- The FACTION loader (`FUN_1407fe270`) reads strings `rank0`, `rank1`, ... into a list (Faction +0x18; rank titles, **Unknown** use); no
-  base FACTION has any. Ints `num ranks` / `num negative ranks` (1 on many factions) are not read there (**Unknown**).
+- The FACTION loader (`Faction::setup` `FUN_1407fe270`) reads strings `rank0`, `rank1`, ... while the key exists into `Faction::ranks` (+0x18), **Verified**: United Cities 8
+  (Foreigner .. General), Holy Nation 6, Shinobi Thieves 4; no reader of the titles exists (display data, **Observed**). `num ranks`, `num negative ranks` and `negative rank0`..`5`
+  are not strings in the exe: never read.
 - Meitou: `FactionRelations.Rank` / `RaiseRank`, loaded from and written to `rank`.
 
 ### 3.3 Thresholds (**Verified**: -30 and 50 appear in the predicate functions, in the threshold-message function `FUN_1406b28f0` and in the declare-war gate `FUN_1406b3000`; re-read independently)
@@ -294,6 +295,13 @@ Meitou: `FactionDeeds` (blows, cagings, first aid), `CrimeSystem` (the ally witn
 | `AI packages`, `blood smell mult`, `patrol approaches towns`, `force speed`, `personality`, `dialog *`, `nest`, ... | copied onto the platoon / its characters (`FUN_14057f4c0`, `read_AI_packages_n4`; the package system is in [ai.md](ai.md#other-records-that-touch-the-ai)) |
 | `building`, `building dislike`, `building designation`, `layout interior/exterior`, `public day/night`, `public beds`, `bed usage cost`, `sell home`, `building ruined`, `initial door state` | how the squad's home building is chosen and set up (resident squads) |
 | `vendors`, `is trader`, `vendor money`, `vendors fill total amount`, `vendors refresh time`, `buy mult`, `buys stolen`, `buys illegal`, `special items`, `special map items`, `*artifacts base value`, `regenerates` | shop and contents (section 8 for loot; the trading economy is in [economy.md](economy.md#shops-and-transactions)) |
+
+### Building swaps
+
+FACTION `buildings replacements` (BUILDINGS_SWAP, type 103, 40 records): `Faction::setup` builds one swap per record (`FUN_1407fd120`): a set of `to replace` BUILDINGs and
+a weighted choice of `replace with` (weight v0). `RootObjectFactory::createBuilding` asks `Faction::getBuildingReplacement` `FUN_1407f4770` (**Verified**) for buildings whose
+placement flag (`+0xa8`) wants it, with the placement's owner faction: the first set holding the building answers nothing when `replace with` is empty (the building is not made,
+e.g. "no carpets"), its one entry, or a weighted pick; no set: the building itself. Not modelled (the level builds every building as placed).
 
 ### Loose items in buildings
 
