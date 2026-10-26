@@ -506,6 +506,10 @@ main grid, weight and burden only, grid size from its `inventory w` / `inventory
   (`MemoryTag.Looted`). At the body (`Loot` task, `LiftTime` from arrival, `medic` clip) it takes after 8 s (animal 20): weapons when it has none equipped, food (functions 3, 15, the
   backpack's 3), and for a non-player-side or dead body, unless it is a Bandit or malnourished (floor < 2.8), every item and armour; a weaponless non-bandit grabs one weapon of a
   living player-side body at 0.8 s instead. Then the tag, and back to its task. Engine choices: nearest per pass, no Looting crime, the tag never expires, law enforcement confiscation not built.
+- **Unarmed NPCs** (`CarrySystem.Arm.cs`, goal 42 "Don't be unarmed" with step 8 FIND_WEAPON, `AI::findWeapon`): on the same cadence an NPC without a weapon, with a working arm,
+  whose package lists 42, goes for the nearest free ground weapon within 100 (in a town only an unowned or enemy-owned one) and picks it up, else a dead body with a weapon,
+  else a downed living non-ally with one (player side only with `BanditsLoot`, not one its squad loves), which it loots as above. Engine choices: the body loot takes
+  more than the weapon; the nearest body, not the sensed-list order; accessibility left to the walk.
 
 ## Ragdolls
 
