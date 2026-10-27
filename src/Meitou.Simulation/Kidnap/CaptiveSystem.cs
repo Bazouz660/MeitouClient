@@ -110,11 +110,16 @@ public sealed class CaptiveJob
     /// <summary>Blows that beat an imprisoned captive down before a capture (196).</summary>
     public int Beats { get; set; }
     public float NextBark { get; set; }
+    /// <summary>A job of one of the player's animals (<see cref="CaptiveSystem"/>'s race-goal run for them): a player order ends it. The worker's task and goal as the last step left them.</summary>
+    public bool PlayerSide { get; init; }
+    public byte LastTask { get; set; }
+    public System.Numerics.Vector2 LastGoal { get; set; }
 
     internal void Hash(ref StateHasher h)
     {
         h.Add((int)Kind); h.Add(Worker); h.Add(Captive); h.Add(Rng.StableHash(Cage)); h.Add(Faction); h.Add(Site);
         h.Add((int)Phase); h.Add(Time); h.Add(Age); h.Add(Walks); h.Add(Blows); h.Add(NextBark); if (Beats != 0) h.Add(Beats);
+        if (PlayerSide) { h.Add((int)LastTask); h.Add(LastGoal); }
     }
 }
 
@@ -169,24 +174,33 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
 
     public void SlowWorld(World world)
     {
+        var table = world.Characters;
         for (int k = 0; k < jobs.Count;)
         {
-            if (Step(world, jobs[k])) k++;
+            var j = jobs[k];
+            if (j.PlayerSide && Overridden(world, j)) { jobs.RemoveAt(k); continue; }
+            if (Step(world, j))
+            {
+                if (j.PlayerSide && table.TryResolveNext(j.Worker, out int w)) (j.LastTask, j.LastGoal) = (table.Next[w].Task, table.Next[w].Goal);
+                k++;
+            }
             else jobs.RemoveAt(k);
         }
         if (world.Tick % Math.Max(1, Settings.SweepEveryTicks) == 0)
         {
             ExpireWaits(world.GameHours);
             Sweep(world);
-            FetchForPlayerAnimals(world);
+            RunPlayerAnimalGoals(world);
         }
     }
 
     /// <summary>
-    /// The player's animals keep their race's <c>AI Goals</c> (<c>Character::setupAI</c>, docs/game/animals.md "AI goals"); of those, the limb fetch (277, <see cref="Fetch"/>) feeds them: the
-    /// limb goes into the mouth and is eaten (<see cref="Items.FeedSystem"/>). Engine choices: only an idle animal (no player order), and not the limb play and chase (278, 279).
+    /// The player's animals keep their race's <c>AI Goals</c> but 230 (<c>Character::setupAI</c>, docs/game/animals.md "AI goals"), run here in list order as the sweep runs an NPC's: the limb
+    /// fetch (277, <see cref="Fetch"/>; the limb goes into the mouth and is eaten, <see cref="Items.FeedSystem"/>), the limb play (278) and chase (279) by their player-side desires, and
+    /// eating a downed body not of an ally (233). Crop raiding (232) finds nothing for them: its farms are those of a town the eater does not get along with, and only the player's
+    /// farms are machines. Engine choices: only an idle animal (no player order) starts one, and a player order ends it (<see cref="CaptiveJob.PlayerSide"/>).
     /// </summary>
-    void FetchForPlayerAnimals(World world)
+    void RunPlayerAnimalGoals(World world)
     {
         if (world.Player.Faction < 0) return;
         var table = world.Characters;
@@ -195,8 +209,54 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
             if (!table.Next[s].Alive || table.Next[s].Task != (byte)CharacterTask.Idle || table.Cold(s) is not { Fighter.IsAnimal: true, Race: { } race } c || !PlayerSquad(world, c)) continue;
             if (c.Engaged || c.InCombat || c.Fleeing || c.OrderQueue.Count > 0 || !c.CarriedBy.IsNone || c.Medical is not { Incapacitated: false } || Busy(table.IdOf(s))) continue;
             foreach (var goal in data.Ai.RaceGoals(race.StringId))
-                if (goal.Task.Type == TaskType.ANIMAL_FETCH_A_LIMB) { Fetch(world, s, c); break; }
+            {
+                var id = table.IdOf(s);
+                CaptiveJob? job = null;
+                switch (goal.Task.Type)
+                {
+                    case TaskType.ANIMAL_FETCH_A_LIMB:
+                        if (c.Mouth is not null || c.PickingUpItem is not null) continue;
+                        Fetch(world, s, c);
+                        if (c.PickingUpItem is null) continue;
+                        break;
+                    case TaskType.PLAY_BECAUSE_I_HAVE_A_LIMB_IN_MOUTH when Plays(world, c):
+                        job = new CaptiveJob { Kind = CaptiveJobKind.DogPlay, Worker = id, Captive = CharacterId.None, Cage = "", Faction = c.Faction, PlayerSide = true };
+                        break;
+                    case TaskType.CHASE_ALLY_DOGS_WITH_MOUTH_LIMBS when Chases(world, c) && MouthfulAlly(world, s, c) is >= 0 and var mouthful:
+                        job = new CaptiveJob { Kind = CaptiveJobKind.DogChase, Worker = id, Captive = table.IdOf(mouthful), Cage = "", Faction = c.Faction, PlayerSide = true };
+                        break;
+                    case TaskType.EAT_A_RANDOM_KO_BODY when BodyToEat(world, s, c, dead: false) is >= 0 and var meal:
+                        job = new CaptiveJob { Kind = CaptiveJobKind.EatBody, Worker = id, Captive = table.IdOf(meal), Cage = "", Faction = c.Faction, PlayerSide = true };
+                        break;
+                    default:
+                        continue;
+                }
+                if (job is not null)
+                {
+                    (job.LastTask, job.LastGoal) = (table.Next[s].Task, table.Next[s].Goal);
+                    jobs.Add(job);
+                    c.Engaged = true;
+                    Note(world, CaptiveEventKind.Started, job);
+                }
+                break;
+            }
         }
+    }
+
+    /// <summary>
+    /// A player animal's job the player took over since its last step: its task changed other than a walk that ended, or it walks elsewhere. The job ends without stopping it, so the
+    /// order stands.
+    /// </summary>
+    static bool Overridden(World world, CaptiveJob j)
+    {
+        var table = world.Characters;
+        if (!table.TryResolveNext(j.Worker, out int w)) return false;
+        ref var n = ref table.Next[w];
+        byte go = (byte)CharacterTask.GoTo;
+        bool taken = n.Task == go ? j.LastTask != go || n.Goal != j.LastGoal : n.Task != j.LastTask && !(j.LastTask == go && n.Task == (byte)CharacterTask.Idle);
+        if (!taken && (table.Cold(w)?.OrderQueue.Count ?? 0) == 0) return false;
+        if (table.Cold(w) is { } wc) { wc.Engaged = false; wc.ActionClip = null; }
+        return true;
     }
 
     // ------------------------------------------------------------------ the sweep

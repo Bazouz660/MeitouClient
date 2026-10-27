@@ -408,7 +408,7 @@ eat task, animation or player command (a right click on food does nothing, [ui-s
   While the mouth is full, the character update (`FUN_1405dc650`) does nothing else about food (no auto-eat, no Feed Animals check), and t = game minutes since the stamp, f = slot 0x398
   (the age, [animals](animals.md#ageing)): an animal with f > 0.9 of the player's faction (`FACTION +0x250`) eats when the stomach (+0x4bc) is empty and hunger (+0x4b8) below 2.6, or at t > 15;
   any other eats when the stomach is empty and t > 45, or at t > 60 + 120 x (1 - f). Eating clears the mouth, the flag, and bites the limb (whole, 30).
-  Which orders and goals send an animal to a ground limb is **Unknown** (the data's animal goals "eating food on the ground" are typed IDLE, [animals](animals.md#ai-goals)); Meitou reaches the mouth only through the player's pickup order.
+  The goal that sends an animal to a ground limb is 277 (`AI::findLimbOnGround`, [ai-tasks](ai-tasks.md#prisoner-fate-and-slave-rows)); Meitou runs it, and the player's pickup order also fills the mouth.
   Meitou (`FeedSystem.HoldInMouth`, `MouthDue`; `CharacterCold.Mouth`): as above. Engine choices: every animal has the `mouth` point; a held
   limb is neither saved nor carried across a load; it goes with the animal if the animal dies or is removed.
 - **Food on the ground** (**Verified**, decompile): `Character::setupAI` gives every animal of a player squad goal 259 EAT_FOOD_ON_GROUND (priority 3, weight 0.5; it drops race goal 230)

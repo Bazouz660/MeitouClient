@@ -465,8 +465,9 @@ default): the turret step sets the gunner's yaw along the barrel every tick; off
 animals use faction hostility and carrying/damage rules where eligible. They age and grow, pack beasts spawn with their
 bag on, DA 48 sells them, and the context menu's Follow keeps any player character beside another
 ([animals](game/animals.md#ageing)). Player animals feed themselves: food on the ground (259, `FeedSystem.FetchFood`), food from their outpost's stores
-(243, also for people, `TownDutySystem.LookPlayerFood`, [rules](game/character-stats.md#eating)) and limbs (277, `CaptiveSystem.FetchForPlayerAnimals`); their other race
-goals (limb play and chase, corpses, crops) are not run. Unarmed humans use
+(243, also for people, `TownDutySystem.LookPlayerFood`, [rules](game/character-stats.md#eating)) and limbs (277); `CaptiveSystem.RunPlayerAnimalGoals` also runs their limb play and chase
+(278, 279) and eating downed non-allies (233) as [captive jobs](#captives) when idle, ended by any player order. Corpses (230) are dropped from the player's animals by the original;
+crops (232) find nothing for them (only the player's farms are machines, and the eater must not get along with the town). Unarmed humans use
 martial-arts category 5. [animals.md](game/animals.md), [characters.md](characters.md).
 
 ### Hostility and relations
@@ -872,7 +873,7 @@ failed walks mark the cage unreachable for the faction; its own faction's shut d
 - **Fogman worship** (237 / 236, `CaptiveJobKind.Worship`): in the town nearest it, the first cage whose occupant is being eaten (a running Eat job); within 60 it faces the cage,
   plays `bowing` and barks event 53 every 3-14 game s; ends once the cage is empty or the job grows old (the original runs on while the cage stands).
 - **Dogs' limb play** (race goals 277-279): 277 sends an animal with an empty mouth (an adult only when its stomach is empty and hunger at most 2.75) to the nearest limb within
-  200, which the pick-up takes into its mouth; 278 (a mouthful, not a player squad's dog over 0.4) sprints in random 1000-1400 legs while it holds it; 279 (any NPC animal, a player
+  200, which the pick-up takes into its mouth; 278 (a mouthful, not a player squad's adult over 0.95) sprints in random 1000-1400 legs while it holds it; 279 (any NPC animal, a player
   squad's only under 0.95) runs after the first allied animal in sight with something in its mouth. Engine: the play's first leg is random too.
 - **Crop raiding** (232, `CaptiveJobKind.EatCrops`): in a player town whose faction is its enemy (engine reading of the coexist test), a random farm with food; at it, `eat`, crime
   14 each tick, one plant per game second (`ProductionSystem.EatCrop`). NPC towns' farms are not machines in Meitou, so only the player's are eaten.

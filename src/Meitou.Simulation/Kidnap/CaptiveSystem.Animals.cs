@@ -84,9 +84,12 @@ public sealed partial class CaptiveSystem
         if (MathF.Sqrt(d2best) > PlayerSystem.PickUpReach) MovementSystem.GoToFloor(world, slot, best.Position, SpeedMode.Run);
     }
 
-    /// <summary>278's desire (<c>AI::scoreDogPlaying</c>): an animal with something in its mouth, not an adult (over 0.95) or older dog (over 0.4) of the player's squads.</summary>
+    /// <summary>
+    /// 278's desire (<c>AI::scoreDogPlaying</c> <c>FUN_140599720</c>, <b>Verified</b> by decompile): an animal with something in its mouth, 1.1, or 0.3 for one of the player's squads over age
+    /// 0.4; 0 for the player's adults (over 0.95). Any desire above 0 plays (it beats IDLE's 0.1).
+    /// </summary>
     static bool Plays(World world, CharacterCold c) =>
-        c.Mouth is not null && !(PlayerSquad(world, c) && c.ShownAge > 0.4f);
+        c.Mouth is not null && !(PlayerSquad(world, c) && c.ShownAge > 0.95f);
 
     /// <summary>279's desire (<c>AI::scoreDogPlayingChase</c>): any NPC animal; of the player's squads only one not adult (0.95).</summary>
     static bool Chases(World world, CharacterCold c) => !PlayerSquad(world, c) || c.ShownAge <= 0.95f;
