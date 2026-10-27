@@ -16,7 +16,7 @@
 
   <!-- Linux: the DLSS model and NGX's client library (libmeitou_ngx.so, tools/scripts/build-ngx-shim.sh) for Ngx.cs, the model in any version. -->
   <ItemGroup Condition="('$(MSBuildProjectName)' == 'Meitou.Game' or '$(MSBuildProjectName)' == 'Meitou.ModelViewer') and Exists('$(StreamlineRuntimePath)') and ('$(RuntimeIdentifier)' == '' or $(RuntimeIdentifier.StartsWith('linux-')))">
-    <None Include="$(StreamlineRuntimePath)/libnvidia-ngx-dlss.so.*;$(StreamlineRuntimePath)/libmeitou_ngx.so" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Never" />
+    <None Include="$(StreamlineRuntimePath)/libnvidia-ngx-dlss.so.*;$(StreamlineRuntimePath)/libmeitou_ngx*.so" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Never" />
   </ItemGroup>
 
 </Project>
