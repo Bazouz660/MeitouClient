@@ -34,11 +34,17 @@ public sealed partial class ProductionSystem
     /// <summary>
     /// A burning furnace's step (<c>FurnaceBuilding::operate</c> <c>FUN_140299fa0</c>, <b>Observed</b>; it needs no operator, so it runs with skill factor 1 like any automatic machine): the
     /// work amount of <see cref="ProduceStep"/> comes off the level and onto the output's progress; at level 0.001 or progress 0.999 the output gets (int) the grid's metal
-    /// (<see cref="FurnaceMetal"/>) Raw Iron, the grid is emptied and the furnace stops (<see cref="Incinerate"/>). Engine choice: iron beyond the output's capacity is lost.
+    /// (<see cref="FurnaceMetal"/>) Raw Iron, the grid is emptied and the furnace stops (<see cref="Incinerate"/>). Engine choice (the original's <c>operate</c> has no such test): while
+    /// the output cannot take the load's iron it holds, status 1 (output full), and goes on once there is room.
     /// </summary>
     void FurnaceStep(World world, Machine m, float dt)
     {
         if (m.Storage is not { } grid || m.Output is not { } output) return;
+        if (output.Count + Math.Max((int)FurnaceMetal(grid), 0) > output.Recipe.Capacity || output.Full)
+        {
+            m.Status = 1;
+            return;
+        }
         m.Status = 2;
         float amount = m.Yield * m.Data.Rate * WorkFactor(world, m) * dt * constants.ProductionSpeed * Settings.ProductionOption;
         if (amount == 0) return;
@@ -46,7 +52,7 @@ public sealed partial class ProductionSystem
         output.Progress += amount;
         if (m.BurnLevel > 0.001f && output.Progress < 0.999f) return;
         int iron = (int)FurnaceMetal(grid);
-        output.Count = Math.Min(output.Recipe.Capacity, output.Count + Math.Max(iron, 0));
+        output.Count += Math.Max(iron, 0);
         grid.Items.Clear();
         Incinerate(m);
         world.Machines.Touch();
