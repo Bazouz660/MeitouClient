@@ -57,11 +57,14 @@ public class CharacterGeneratorTests
         var heads = new HashSet<string>();
         var skins = new HashSet<Vector3>();
         var faces = new HashSet<int>();
+        var races = new HashSet<string>();
         int crossbows = 0;
         for (int seed = 0; seed < 60; seed++)
         {
             var l = CharacterGenerator.Generate(db, install.Root, "Dust Bandit", seed, faction: faction);
-            Assert.Equal("Greenlander", l.Race.Name);
+            // No race of its own and no body file: one of the faction's races (Faction::chooseARace), Shek among them.
+            Assert.Contains(l.Race.StringId, faction.GetReferences("races").Select(r => r.TargetStringId));
+            races.Add(l.Race.Name);
             Assert.False(l.Female); // female chance 0
             Assert.True(l.Generated);
 
@@ -85,18 +88,21 @@ public class CharacterGeneratorTests
                 Assert.Contains(w.Level, new[] { 5, 10 });
             }
 
-            // The faction's hairstyles allow only "No beard" among the beards.
-            Assert.Equal("No beard", db.Find(l.Appearance.BeardId!)!.Name);
+            // The faction's hairstyles allow only "No beard" among the beards (a race without beards has none).
+            if (l.Appearance.BeardId is { } beard) Assert.Equal("No beard", db.Find(beard)!.Name);
             Assert.Contains(l.Appearance.HairId!, faction.GetReferences("hairstyles").Select(r => r.TargetStringId));
 
-            // Sliders stay within mid ± variation; the face is one of "morph num" faces.
-            foreach (var r in limits.Ranges.Where(r => r.Target is null && r.Category is AppearanceCategory.Face or AppearanceCategory.Body))
-                Assert.InRange(l.Appearance.Get(r.Name, float.NaN), r.Mid - r.Variation, r.Mid + r.Variation);
+            // The sliders of a race with editor_data_human.xml stay within its mid ± variation; the face is one of "morph num" faces.
+            if (l.Race.GetPath("editor limits").EndsWith("editor_data_human.xml", StringComparison.OrdinalIgnoreCase))
+                foreach (var r in limits.Ranges.Where(r => r.Target is null && r.Category is AppearanceCategory.Face or AppearanceCategory.Body))
+                    Assert.InRange(l.Appearance.Get(r.Name, float.NaN), r.Mid - r.Variation, r.Mid + r.Variation);
             Assert.InRange(l.MorphIndex, 0, 4);
             heads.Add(l.Appearance.HeadId!);
             skins.Add(l.Appearance.SkinTone!.Value);
             faces.Add(l.MorphIndex);
         }
+        Assert.Contains("Greenlander", races);
+        Assert.True(races.Count >= 2);
         Assert.InRange(crossbows, 2, 20); // Junkbow: absolute chance 15
         Assert.True(heads.Count >= 3);
         Assert.True(skins.Count >= 10);

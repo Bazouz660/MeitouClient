@@ -106,6 +106,8 @@ public class GameDatabaseTests
         var files = order.Entries.Select(e => FcsReader.ReadFile(e.Path)).ToList();
         var defined = files.SelectMany(f => f.Records).Where(r => !r.IsModified).Select(r => r.StringId).ToHashSet();
         var everRemoved = files.SelectMany(f => f.Records).Where(r => r.IsRemoved).Select(r => r.StringId).ToHashSet();
+        // The gear blueprints' research is made at load, one <id>.TECH.1 per ARMOUR, CONTAINER and CROSSBOW (GameDatabase.AddGearBlueprints).
+        defined.UnionWith(db.Records.Values.Where(r => r.Type is FcsRecordType.ARMOUR or FcsRecordType.CONTAINER or FcsRecordType.CROSSBOW).Select(r => r.StringId + ".TECH.1"));
 
         // Every surviving record was defined somewhere; every defined record either survives or was removed.
         Assert.All(db.Records.Keys, id => Assert.Contains(id, defined));

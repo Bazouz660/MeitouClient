@@ -51,30 +51,36 @@ public class HubTests
         var entries = PopulationSystem.ResidentEntries(hub.Town, faction);
         Assert.NotEmpty(entries);
 
+        // The camera's 3 x 3 block of zones is loaded, so a neighbouring town gets its residents too: only the Hub's are counted.
+        var squads = world.Squads.All.Where(s => s.Town == hub.Index).ToList();
+        var squadIds = squads.Select(s => s.Id).ToHashSet();
         var centre = new Vector2(hub.Position.X, hub.Position.Z);
         float reach = hub.Town.SizeRadius * hub.Town.TownRadiusMult * 0.6f + 8 * 3 + 3 * 8;   // the placement radius plus the layout rows
         int expectedSquads = 0;
         foreach (var e in entries)
         {
             var t = SquadTemplate.From(db.Find(e.Id)!);
-            int made = world.Squads.All.Count(s => s.TemplateId == t.Id);
+            int made = squads.Count(s => s.TemplateId == t.Id);
             Assert.True(made <= e.V0, $"{t.Name}: {made} squads for a count of {e.V0}");
             expectedSquads += e.V0;
-            foreach (var s in world.Squads.All.Where(s => s.TemplateId == t.Id))
+            foreach (var s in squads.Where(s => s.TemplateId == t.Id))
             {
                 var (lo, hi) = Bounds(t);
                 Assert.InRange(s.Members.Count, lo, hi);
-                Assert.Equal(hub.Index, s.Town);
                 Assert.True(Vector2.Distance(new(s.Position.X, s.Position.Z), centre) <= hub.Town.SizeRadius * hub.Town.TownRadiusMult * 0.6f + 0.1f);
             }
         }
         expectedSquads += PopulationSystem.BarEntries(hub.Town, faction).Sum(e => e.V0);   // bar squads, each present by its chance
-        Assert.True(world.Squads.Count > 0 && world.Squads.Count <= expectedSquads);
-        foreach (var c in world.Characters.Previous)
+        Assert.True(squads.Count > 0 && squads.Count <= expectedSquads);
+        var previous = world.Characters.Previous;
+        int residents = 0;
+        for (int i = 0; i < previous.Length; i++)
         {
-            if (!c.Alive) continue;
-            Assert.True(Vector2.Distance(new(c.Position.X, c.Position.Z), centre) <= reach, "a resident stands within the town");
+            if (!previous[i].Alive || world.Characters.Cold(i) is not { } cold || !squadIds.Contains(cold.SquadId)) continue;
+            residents++;
+            Assert.True(Vector2.Distance(new(previous[i].Position.X, previous[i].Position.Z), centre) <= reach, "a resident stands within the town");
         }
+        Assert.Equal(squads.Sum(s => s.Members.Count), residents);
         Assert.Equal(world.Squads.All.Sum(s => s.Members.Count), world.Characters.Count);
     }
 
