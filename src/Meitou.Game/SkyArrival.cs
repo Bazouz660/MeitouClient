@@ -9,7 +9,7 @@ namespace Meitou.Game;
 /// </summary>
 sealed class SkyArrival(WorldCamera source, float hour, float speed = 1)
 {
-    internal const double HoldSeconds = 1, AscentSeconds = 3.4, DescentSeconds = 3, FadeOutSeconds = 0.3, FadeInSeconds = 1.4;
+    internal const double HoldSeconds = 0.5, SitSeconds = 1.2, AscentSeconds = 3.4, DescentSeconds = 3, FadeOutSeconds = 0.3, FadeInSeconds = 1.4;
     internal const float MinSpeed = 0.25f, MaxSpeed = 4;
     internal const float SkyPitch = -1.45f;
     /// <summary>How far above its view the destination's camera starts, so nothing near blocks the first look; and how far it orbits round on the way down.</summary>
@@ -22,6 +22,7 @@ sealed class SkyArrival(WorldCamera source, float hour, float speed = 1)
     float? destinationHour;
     Phase phase;
     double elapsed;
+    double age;
     bool covering;
 
     public bool AtStars => phase >= Phase.Stars;
@@ -29,6 +30,8 @@ sealed class SkyArrival(WorldCamera source, float hour, float speed = 1)
     public bool Arriving => phase == Phase.Arriving;
     /// <summary>How much of the frame is black, 0..1: drawn over the world while it warms up under it and as it fades in.</summary>
     public float Fade { get; private set; }
+    /// <summary>How far the title's wanderer has sat down, 0..1: from the flight's start, over <see cref="SitSeconds"/>.</summary>
+    public float Sit => Ease((float)(age / SitSeconds), 0.5f, 0.5f);
 
     /// <summary>The hour the flight runs forward to before it climbs; until it is known (a save still being read) the view holds at the source's.</summary>
     public void SetDestination(float destination)
@@ -36,15 +39,16 @@ sealed class SkyArrival(WorldCamera source, float hour, float speed = 1)
         if (destinationHour is null) destinationHour = destination;
     }
 
-    /// <summary>Seconds of the hour's run forward: the longer the way round, the longer it takes (a whole day 2.4 s at speed 1).</summary>
-    double TurnSeconds => destinationHour is { } to && ForwardHours(sourceHour, to) is var hours and > 0.05f ? 0.4 + hours / 12 : 0;
+    /// <summary>Seconds of the hour's run forward: the longer the way round, the longer it takes (a whole day 4.8 s at speed 1).</summary>
+    double TurnSeconds => destinationHour is { } to && ForwardHours(sourceHour, to) is var hours and > 0.05f ? 0.8 + hours / 6 : 0;
 
     public void Advance(double seconds)
     {
         seconds = Math.Max(0, seconds);
+        age += seconds * flightSpeed;
         Fade = covering ? Math.Min(1, Fade + (float)(seconds * flightSpeed / FadeOutSeconds))
             : phase == Phase.Arriving ? Math.Max(0, Fade - (float)(seconds * flightSpeed / FadeInSeconds)) : Fade;
-        // The hold is a wall-clock second whatever the speed.
+        // The hold is wall-clock time whatever the speed.
         elapsed += phase == Phase.Hold ? seconds : seconds * flightSpeed;
         switch (phase)
         {
@@ -85,7 +89,7 @@ sealed class SkyArrival(WorldCamera source, float hour, float speed = 1)
         float lift = phase switch { Phase.Ascent => Ease((float)(elapsed / AscentSeconds)), Phase.Stars => 1, _ => 0 };
         Place(camera, sourceEye, sourceYaw, float.Lerp(sourcePitch, SkyPitch, lift), sourceDistance, sourceFov);
         return phase == Phase.Turn
-            ? destinationHour is null ? sourceHour : ForwardHour(sourceHour, to, Ease(TurnSeconds > 0 ? (float)(elapsed / TurnSeconds) : 1))
+            ? destinationHour is null ? sourceHour : ForwardHour(sourceHour, to, Ease(TurnSeconds > 0 ? (float)(elapsed / TurnSeconds) : 1, 0.5f, 0.5f))
             : to;
     }
 
