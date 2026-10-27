@@ -146,12 +146,16 @@ Reset squad positions 0x1, Buildings 0x4, Research 0x8, Dead NPCs 0x10, Relation
 2. The old `quick.save` is read into the save container. The clock hour is set to 10, then step 8 overwrites the clock.
 3. Towns come from the level data as in a new game. **Buildings**: the save's towns of the player faction that were `discovered` and are not nests are loaded
    (the outposts the player made are in `GAMESTATE_TOWN_INSTANCE_LIST`, `FUN_140935120`, `FUN_1403722d0`); a player town inside another player town's radius is removed
-   (log "Town too close. Removing", `FUN_14092ae80`).
+   (`FUN_14092ae80`, also run by `loadGame`, **Verified** by decompile: in town-list order, each town owned by a player faction is set to the player faction, then the nearest
+   other town (XZ) that is not a NEST_MARKER (type 8) and is owned by the player faction is found; when this town's centre lies inside that town's radius (slot 0x2a0) it logs
+   "Town too close. Removing" and "Player town '...' withing boundaries of ...", is deleted and leaves the list, so of two such towns the earlier one goes. What becomes of its
+   buildings is **Unknown**).
 4. Always (`FUN_140372560`): every non-nest town of the save gives its `discovered` and `explored` to the new town; player towns are set discovered and explored. **Dead NPCs**
    also applies the save's `replacementTown`. No town at all logs "No towns loaded."
 5. **Buildings**, zone files (`FUN_140377710`; a save whose version is below 0x245 uses `FUN_140377d10`, not read): each `zone/*.zone` keeps only the building instances that are removal entries
    (empty target) or whose state is owned by the player faction; the others, the zone's loose items and every other record are not copied. A zone with a kept instance gets the
-   root bool `imported` = true and its file in the new working folder; the zone is marked as having a file (so it makes no residents). The owner test is on the state's owner string
+   root bool `imported` = true and its file in the new working folder; at load that bool sets `ZoneMapContent::newGameFirstTimeLoaded` (`+0xa8`, `FUN_1409ffad0`), so the zone
+   counts as fresh despite its file and its towns make their residents ([zone files](#zone-files)). The owner test is on the state's owner string
    (`FUN_140387dd0`; the exact key **Observed** as `owner faction ID`).
 6. **Dead NPCs**: the unique table is read again (`FUN_1409aa270`) keeping the entries that are not alive (state 0 dead, 2 imprisoned) with their player flag and handle; a
    non-player imprisoned entry whose handle test passes is unclaimed (polarity **Unknown**). Without the tick the table is empty at this point.
@@ -176,9 +180,12 @@ does), so the game runs with the nine difficulty globals as they stand, which ar
 
 Meitou (`SaveImport`, `GameHost.BeginImport`): the loaded save is cut down to the same parts in memory (`SaveImport.Filter`) and then loaded by `SaveLoader` as any save, so what the loader
 makes is what a load of that smaller save makes. Engine choices: the squads' `squad index` is renumbered from 0 in their old order; with Reset the members stand on a line 2 units apart at
-their squad's point, on the ground there (`PlaceOnGround`); a save without a player squad is refused instead of salvaged; imprisoned uniques not in the player's squads are dropped from the table
+their squad's point, on the ground there (`PlaceOnGround`); a save without a player squad is refused instead of salvaged (where the new working folder's `Nameless_0.platoon`
+comes from with no start applied is **Unknown**); imprisoned uniques not in the player's squads are dropped from the table
 (their characters are not carried) instead of tested by handle; the finished research of "off" is `_Default Start` only; the weather and decals start fresh; war states are dropped with
-the NPC platoons; the "too close" player-town test, the version-gated tick enabling of old saves (< 0.90.0) and the `imported` zone marker are not built. The relation table is shared by the
+the NPC platoons. A save older than 0.90.0 drops the reset, buildings, research and dead-NPC ticks (`SaveImport.AllowedFor`; the original's window disables and unticks them,
+`FUN_14047cee0`, comparing the CAMERA `version` packed as a << 24 | b << 12 | c, unparsable = 0). Not built: the "too close" player-town removal (a new outpost is made only with no player town within 5000, [outposts](../game/buildings-production.md#placement), far outside
+any radius, so only an edited save reaches it) and the `imported` marker (the NPC platoons are left out, so every town makes its residents anyway). The relation table is shared by the
 data, so an import without Relations first sets it back to the FACTION values (`FactionRelations.Reset`).
 
 ### Object handles and slot lists

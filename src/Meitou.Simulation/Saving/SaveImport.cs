@@ -48,6 +48,7 @@ public static class SaveImport
     {
         // Cut down in place; the views of a SaveGame (research, weather...) are only rebuilt by making a new one from the records, at the end.
         var player = game.PlayerFaction ?? throw new InvalidOperationException("The save has no player faction.");
+        options = AllowedFor(options, game.Camera.Version);
         string playerId = player.Id;
         var records = game.Quick.Records;
 
@@ -92,6 +93,26 @@ public static class SaveImport
         imported.UpdateDerived();
         return imported;
     }
+
+    /// <summary>The oldest save version whose reset, buildings, research and dead-NPC ticks the import window leaves live (<c>ImportGameMenu::vfunc_1</c> <c>FUN_14047cee0</c>).</summary>
+    public const int TicksFromVersion = 0 << 24 | 90 << 12 | 0;
+
+    /// <summary>
+    /// A save version as the import window compares it (<c>FUN_14047acf0</c>, <b>Verified</b> by decompile): "a.b.c" read as three integers, packed a &lt;&lt; 24 | b &lt;&lt; 12 | c; anything else
+    /// (an empty or "Ancient" version) is 0.
+    /// </summary>
+    public static int PackedVersion(string version)
+    {
+        var parts = version.Split('.');
+        return parts.Length >= 3 && int.TryParse(parts[0], out int a) && int.TryParse(parts[1], out int b) && int.TryParse(parts[2], out int c) ? (a << 12 | b) << 12 | c : 0;
+    }
+
+    /// <summary>
+    /// The ticks that apply to a save of <paramref name="version"/>: for one older than 0.90.0 the window disables and unticks Reset squad positions, Buildings, Research and Dead NPCs
+    /// (its row selection, <c>FUN_14047cee0</c>, <b>Verified</b> by disassembly), leaving Relations. Meitou applies the same mask here.
+    /// </summary>
+    public static ImportOptions AllowedFor(ImportOptions options, string version) =>
+        PackedVersion(version) < TicksFromVersion ? options & ~(ImportOptions.ResetPositions | ImportOptions.Buildings | ImportOptions.Research | ImportOptions.DeadNpcs) : options;
 
     /// <summary>Puts the squads of a save <see cref="Filter"/> moved to <see cref="ResetPosition"/> (and their members) on the ground there: the original's position has no height.</summary>
     public static void PlaceOnGround(SaveGame game, Func<float, float, float> groundAt)

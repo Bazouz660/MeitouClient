@@ -276,7 +276,10 @@ sealed partial class GameHost
         StartSceneLoad(player.TitleOpen,
             Stage("read", () => read = Task.Run(() =>
             {
-                var game = SaveImport.Filter(SaveGame.Load(folder), options, data);
+                var save = SaveGame.Load(folder);
+                // A save older than 0.90.0 imports without the reset, buildings, research and dead-NPC ticks (the window's rule).
+                options = SaveImport.AllowedFor(options, save.Camera.Version);
+                var game = SaveImport.Filter(save, options, data);
                 settings.Write(game.Camera);
                 return game;
             })),
