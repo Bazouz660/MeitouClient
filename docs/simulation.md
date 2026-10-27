@@ -1130,7 +1130,7 @@ crafting benches, generators and batteries. Facts: [production](game/buildings-p
   - Farms are harvested and cleared.
   - Research benches add to the research queue; crafting benches work their queue.
   - More characters than `max operators` are refused with "X is already in use.".
-  - Farms tick whether anyone is there. Unloaded zones: the *Production far away* switch (Meitou on: farms, automatic machines and generator fuel
+  - Farms tick whether anyone is there; rain tops up an outdoor farm's water (`FarmTick`, [farming](game/buildings-production.md#farming)). Unloaded zones: the *Production far away* switch (Meitou on: farms, automatic machines and generator fuel
     run everywhere; Faithful off: only in `World.ActiveZones`, and a farm back after over an hour runs `TimeSkip` from its `save time` stamp,
     `FarmState.LiveHours`); facts in [unloaded zones](game/buildings-production.md#unloaded-zones).
 - **Rocks** (`ProductionSystem.Natural.cs`, UI `PlayerInterface.Rocks.cs`; facts in [resources](game/buildings-production.md#resources)). A foliage
@@ -1255,7 +1255,6 @@ crafting benches, generators and batteries. Facts: [production](game/buildings-p
     description with the cost.
   - The original's verb names, row widgets and colours are **Unknown**.
 - **Engine gaps:**
-  - No rain filling farm water.
   - Furnaces do not burn. A quick right click on the player's furnace walks the selection there and opens its window
     (the original's 26 LOOT_TARGET); on the player's turret the nearest able selected character operates it (146 USE_TURRET, `UseTurretOrder`): it
     walks to its gunner spot (as for town turrets below), stands there facing it holding `combatstance`, counts as its operator (so it draws power) and the
@@ -1542,7 +1541,7 @@ Original-game unknowns are maintained in each linked subsystem reference; do not
 
 **Engine gaps** are listed where they apply, not here: [unique characters](#unique-characters) and [campaigns](#off-screen-tier),
 [ranged](#ranged) (bolts before a building's collision loads), [locks](#cages-beds-and-locks),
-[slavery](#arrest-and-jail), [kidnapping](#kidnapping), [buildings](#buildings) and walls, [production](#production) (turrets, furnaces, rain,
+[slavery](#arrest-and-jail), [kidnapping](#kidnapping), [buildings](#buildings) and walls, [production](#production) (turrets, furnaces,
 plants), [prospecting](#prospecting), [dialogue](#dialogue) (conditions on state Meitou lacks), [AI](#ai) (wars, prisoners, planner finders).
 Smuggling and stealing: [trade](#trade). UI: [faithful-ui-parity](faithful-ui-parity.md).
 

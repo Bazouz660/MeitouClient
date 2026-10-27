@@ -283,7 +283,7 @@ public sealed class BodySystem(GameConstants constants, BodyOptions? options = n
         bool rest = resting || medical.Unconscious || medical.Dead;
         float hunger = race.HungerRate * MedicalState.HungerSituationFactor(Constants, rest, false, encumbrance, useRate);
         return new ExtendedStats(XpService.AthleticsRate(encumbrance, speed, runValue), xp.StrengthCarryRate(encumbrance, carrying), toughness,
-            MedicalState.KoPoint(Constants, stats.Toughness), speed, runValue, hunger, rest);
+            MedicalState.KoPoint(Constants, stats.Toughness), speed, runValue, hunger, rest, WorkHungerRate: useRate);
     }
 
     /// <summary>
