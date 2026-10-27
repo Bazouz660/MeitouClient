@@ -186,18 +186,21 @@ public sealed partial class FixtureRegistry
 
     /// <summary>
     /// Registers the doors of a finished building of the player (<see cref="Construction.BuildSite"/>; engine: when it is complete, the lock rolled from its owner's faction) and takes
-    /// their state from a loaded save; a bed the player built is a bed fixture <c>&lt;site&gt;@bed0</c> at the site's origin and facing (the ones lain in bind to it). A building registered
-    /// already is left as it is.
+    /// their state from a loaded save; a bed the player built is a bed fixture <c>&lt;site&gt;@bed0</c> at the site's origin and facing (the ones lain in bind to it). A cage or a
+    /// <c>has lock</c> building (a safe) gets its own lock as a town one does (docs/game/locks.md "Lock object": the owner's <c>doors lock level</c>, unlocked); a safe's items stay the
+    /// machine's storage, so its fixture has no grid. A building registered already is left as it is.
     /// </summary>
     public void RegisterPlayerBuilding(World world, PopulationData data, Construction.BuildSite site)
     {
         if (byBuilding.ContainsKey(site.Id) || data.Db.Find(site.Record) is not { } record) return;
         var bed = BedDataOf(data.Db, record);
-        if (record.GetReferences("doors").Count == 0 && bed is null) return;
+        var own = Lockable(data.Db, record);
+        if (record.GetReferences("doors").Count == 0 && bed is null && own is null) return;
         var faction = site.Owner >= 0 && site.Owner < data.Factions.Count ? data.Factions[site.Owner] : null;
         var list = new List<Fixture>();
         float yaw = TownBuildings.YawOf(site.Rotation);
         AddDoors(world, data.Db, record, site.Id, -1, site.Owner, faction, site.Position, yaw, list);
+        if (own is { } kind) list.Add(Make(world, data.Db, kind, site.Id, site.Id, record, -1, site.Owner, faction, site.Position, yaw, host: record.StringId));
         if (bed is { } b)
             list.Add(new Fixture
             {
@@ -210,7 +213,7 @@ public sealed partial class FixtureRegistry
         containerSpots = null;
         doorPicks = null; doorsByBuilding = null;
         bedSpots = null; cageList = null;
-        if (Saved?.GetValueOrDefault(site.Id) is { } state) Restore(StateKeys.Of(state), site.Id, list, level: false);
+        if (Saved?.GetValueOrDefault(Meitou.Data.World.BuildingKey.Of(site.Zone, site.Id)) is { } state) Restore(StateKeys.Of(state), site.Id, list, level: false);
         SyncDoors(site.Id);
         if (bed is not null) Bind(world);
     }
@@ -280,13 +283,13 @@ public sealed partial class FixtureRegistry
     static string? FirstClip(GameDatabase db, GameRecord functionality, string list) =>
         functionality.GetReferences(list) is [var first, ..] ? db.Find(first.TargetStringId)?.Name : null;
 
-    Fixture Make(World world, GameDatabase db, FixtureKind kind, string id, string building, GameRecord record, int site, int owner, FactionData? faction, Vector3 at, float yaw, int storageWidth = 0, int storageHeight = 0)
+    Fixture Make(World world, GameDatabase db, FixtureKind kind, string id, string building, GameRecord record, int site, int owner, FactionData? faction, Vector3 at, float yaw, int storageWidth = 0, int storageHeight = 0, string host = "")
     {
         var functionality = TownBuildings.FunctionOf(db, record, functions);
         bool locked = kind != FixtureKind.Container || record.GetBool("has lock");
         return new Fixture
         {
-            Id = id, Building = building, Kind = kind, RecordId = record.StringId, Site = site, Owner = owner, Position = at, Yaw = yaw,
+            Id = id, Building = building, Kind = kind, RecordId = record.StringId, Site = site, Owner = owner, Position = at, Yaw = yaw, HostRecordId = host,
             Clips = kind == FixtureKind.Cage && functionality is not null ? new CageClips(FirstClip(db, functionality, "animation"), FirstClip(db, functionality, "animation KO"), FirstClip(db, functionality, "animation dazed")) : default,
             Restrains = functionality?.GetBool("restrains movement") ?? false, UseRange = functionality is null ? 25 : FloatOf(functionality, "use range", 25),
             Contents = kind == FixtureKind.Container && storageWidth > 0 && storageHeight > 0 ? new Meitou.Simulation.Items.Inventory(storageWidth, storageHeight) { StackBonusMult = record.GetFloat("stackable bonus mult", 1) } : null,

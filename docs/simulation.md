@@ -605,7 +605,7 @@ unload, hashed only once non-empty. Facts: [locks](game/locks.md), [economy 11.5
   a door that `wants lock` (gates) is left open, since closing would lock it and a locked gate shuts its building for every path.
   `AutoOpened`/`LastPass` are engine state, not saved (a loaded open door stays open), hashed only while set.
   The player's finished buildings register their doors (`RegisterPlayerBuilding`, site -1, unregistered when no longer finished;
-  keys written by `BuildingSave`); the site menu has Open/Close Doors (`ToggleDoorsOrder`) and Lock/Unlock Doors
+  keys written by `BuildingSave`), and a cage or `has lock` building its own lock ([player-built locks](game/locks.md#lock-object)); the site menu has Open/Close Doors (`ToggleDoorsOrder`) and Lock/Unlock Doors
   (`ToggleDoorLocksOrder`), the door panel's buttons for all doors at once. Any door: `DoorOrder` (a quick right click,
   [ui-input](game/ui-input.md)) walks the nearest selected to the leaf's near side (12 out, reach 20) and opens or closes it, or picks another
   faction's locked lock (`PickingLock` on the door; a door is worked from that spot). `WorldSnapshot.DoorPicks` lists every door's leaf for picking
@@ -646,7 +646,7 @@ unload, hashed only once non-empty. Facts: [locks](game/locks.md), [economy 11.5
   (`World.GameHours`) + `SentenceLength`; served when start + length <= now; no bounty with the cage owner: none (served).
 - **Lockpicking** (`Lockpicking`, serial; the player's order is in [Arrest and jail](#arrest-and-jail)): `Step` per task update (pending crime,
   timer on the lock, seeded roll by the lock's roll counter, XP), `Allowed` (min chance; engine: conscious, an arm, not
-  carried, not on a pole), `Break` (strength > 3 x hardness). Not built: cutting locks other than shackles.
+  carried, not on a pole), `Break` (strength > 3 x hardness); `CutLock` / `Break` also serve doors, containers and cages (Use Tools / Use Strength, `LockSystem.Force.cs`, [locks](game/locks.md#player-orders-on-locks)).
   A player character picking a lock or shackles at the lock gets the floating bar (`CharacterSnapshot.Bar`, drawn in the
   `Kenshi_ProgressBarPanel` layout just above the name tag; anchor engine choice). No bar for cutting.
 - **Bashing doors** (`LockSystem.Bash`, `DoorPlan`; rules in [locks](game/locks.md)): every 30 ticks an NPC attacking whose target is inside a building

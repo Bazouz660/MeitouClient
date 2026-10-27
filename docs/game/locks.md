@@ -58,6 +58,12 @@ houses, 20 swamp/old, 60 outposts), its bonus from the door's own record (**Obse
 `Zones_CreateDoor`). Shackles (`FUN_14089a440`): level = ARMOUR `lock level` clamped 0..100, hardness = ARMOUR `hardness`,
 locked at creation (no faction term).
 
+A player-built cage or safe goes through the same constructor (`FUN_1402a0900`, faction from the building's owner slot), so its lock rolls from the player's faction
+(`204-gamedata.base`, Nameless: `doors lock level` 75 ± its `lock level random`, plus e.g. the Safe's bonus 25) and starts unlocked (**Verified** by decompile: the constructor
+has no player case). Meitou
+(`FixtureRegistry.RegisterPlayerBuilding`): a fixture `<site>` with that roll once the building is finished (engine: doors likewise), a cage then working as a town one; a safe's
+fixture has no grid (its items are the machine's storage), so it gets no container verbs. Saved with the building's own lock keys (below).
+
 Save sample (autosave of the owner's game, 51 zone files): `lock lvl` values span 0..100 with most at 15..50 (**Observed**).
 
 ## Lockpicking (Task_PickLock 76, Task_PickLock_Shackles 201)
@@ -329,6 +335,8 @@ Building records in `zone/*.zone` (**Verified** keys by census of 51 zone files,
 as `lock lvl`, `locked`, `broken`, `hardness` (written for every functional building, lock or not); each door `i` with the
 suffix `i`: `state<i>`, `doa<i>`, `broken<i>`, `gatecode<i>`, `wants lock<i>`, and its lock `lock lvl<i>`, `locked<i>`,
 `hardness<i>`. `locked` is saved true only when the lock is effectively locked; on load, level and `locked` are taken only when the saved `lock lvl` is above 0.
+A machine (UseableStuff, e.g. a safe) writes its own `broken` after its base class's lock keys (`StorageBuilding::vfunc_17` `FUN_1402a14b0` calls `DoorStuff::vfunc_17` first,
+**Observed** by decompile), so the machine's flag wins the shared key and is read back into both; Meitou writes in the same order (`BuildingSave`, then `MachineSave`).
 Shackles: the item's INVENTORY_ITEM_STATE record carries the same four keys (`LockedArmour` vfunc 75 writes, 76 reads through
 `uses_locked_hardness`, **Observed**), with the same load rule.
 
