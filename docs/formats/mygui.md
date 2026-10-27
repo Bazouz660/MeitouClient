@@ -97,7 +97,7 @@ Sources: the configured Kenshi install's `data/gui/`, the existing
     Kenshi's 0 is not in 32-126, so the substitute is the `.notdef` box.
   - `TabWidth` is the tab's advance in pixels (0: eight spaces). `Distance` is the gap
     between glyphs in MyGUI's own texture (default 1): no layout effect. Inline `#RRGGBB`
-    colour codes are handled by `TextView` and are **not** implemented in Meitou.
+    colour codes are handled by `TextView` (Meitou: `MyGuiTextTags`, [Inline colour tags](../game/ui-screens.md#inline-colour-tags)).
 - Meitou draws text through `UiFont` (`src/Meitou.Rendering/Ui/`): FreeType 2.13.2 (via
   FreeTypeSharp), one face per file, one size per `UiFont`, glyphs rasterised into an atlas
   on demand (any code point, UTF-16 pairs as one), the atlas grows to 2048 square and then
@@ -190,7 +190,7 @@ rectangles are converted before issuing Vulkan scissors. **Verified** by
   keeps its full canvas behind a clipped viewport with wheel/arrow scrolling. This scaling policy is Meitou's approximation; the screenshot observations are in [UI screens](../game/ui-screens.md#6-inventory-trade-dialogue-build).
 - **Observed** in installed image sets: Group selects a texture and a two-component
   image size; Index selects a named frame sequence; Frame point gives the atlas
-  origin. Meitou currently draws the first frame. `Kenshi_TitleScreen` points at
+  origin. Meitou draws the first frame. The only multi-frame index, `Kenshi_LoadingImage` `dots` (4 frames, rate 1), is named by no layout and no exe string (**Observed**, grep). `Kenshi_TitleScreen` points at
   `title_screen1.dds`; map marker groups point into `Kenshi_UI.png`.
 - **Verified** against the installed `Kenshi_TextBoxEmptySkin` by the installed
   resource test: its SimpleText normal state declares colour `0 0 0` without an
