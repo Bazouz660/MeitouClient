@@ -79,12 +79,6 @@ sealed partial class PlayerInterface
         : squadSize < 2 ? Loc.Tr("You have passed out from starvation. You're all alone and going to die. Nobody cares.")
         : Loc.Tr("You have passed out from starvation. One of your squad mates will have to feed you or you're going to die.");
 
-    /// <summary>The health word's tooltip, as the original pairs them (Slightly Injured and Wounded keep the default text).</summary>
-    static string HealthWordTip(BodyStatus body) =>
-        Loc.Tr(body.Dead ? "Gone forever. RIP." : body.Unconscious ? "Knocked out cold." : body.Hunger < 1 ? "You are starving to death. Get some food fast."
-            : body.WorstPart >= 0.7f && body.Hunger < 2 ? "You are hungry and suffering from malnutrition. Your stats and strength will be affected, you need to get some food as soon as possible."
-            : "You are kind of healthy for now.");
-
     /// <summary>The KO point line's tooltip (<c>FUN_140895350</c>).</summary>
     static string KoPointTip(float koPoint) =>
         Loc.Tr("When an injury to a body part goes below your KO point of {1,num} then you are down for good. Your body will enter a coma and won't regain consciousness until all critical body parts have healed above 0.", (int)koPoint);

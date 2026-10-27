@@ -24,6 +24,8 @@ sealed partial class PlayerInterface
         Combat = 8,
         Slave = 0x10,
         Prison = 0x20,
+        /// <summary>Being eaten: the <c>Eaten</c> front overlay, over Prison and Slave.</summary>
+        Eaten = 0x40,
         Hunger = 0x80,
     }
 
@@ -32,16 +34,17 @@ sealed partial class PlayerInterface
 
     /// <summary>
     /// The original's flags (<c>FUN_140414dc0</c>). Its danger test reads a float of the character's AI that is not decoded (eating also waits while it is above 0); Meitou takes
-    /// "in a fight" for it. The <c>Eaten</c> flag (<c>+0x279 &amp; 7</c>, not decoded either) is not set.
+    /// "in a fight" for it. Being eaten (<c>+0x279 &amp; 7</c>, <see cref="BodyStatus.BeingEaten"/>) also flashes, and sets <c>Eaten</c>.
     /// </summary>
     PortraitState PortraitStateOf(CharacterSnapshot m, Vector3 eye, Vector3 focus)
     {
         var s = PortraitState.None;
         if (m.Selected) s |= PortraitState.Selected;
-        bool dead = m.Body is { Dead: true } or { Unconscious: true }, carried = !m.CarriedBy.IsNone;
+        bool dead = m.Body is { Dead: true } or { Unconscious: true }, carried = !m.CarriedBy.IsNone, eaten = m.Body is { BeingEaten: true };
         bool down = dead || carried;
-        if (Vector3.DistanceSquared(m.Position, eye) >= 1e6f && Vector3.DistanceSquared(m.Position, focus) >= 1e5f && !down && m.InCombat && m.Prison is null)
+        if (Vector3.DistanceSquared(m.Position, eye) >= 1e6f && Vector3.DistanceSquared(m.Position, focus) >= 1e5f && (!down && m.InCombat && m.Prison is null || eaten))
             s |= PortraitState.Hurt;
+        if (eaten) s |= PortraitState.Eaten;
         if (dead || carried || m.InBed) s |= PortraitState.Faded;
         if (m.CombatMode) s |= PortraitState.Combat;
         if (m.Body is { Hunger: < 1.25f }) s |= PortraitState.Hunger;
@@ -77,7 +80,7 @@ sealed partial class PlayerInterface
 
     static string BackOverlayName(PortraitState s) => (s & PortraitState.Combat) != 0 ? "Combat" : (s & PortraitState.Hunger) != 0 ? "Hunger" : "";
 
-    static string FrontOverlayName(PortraitState s) => (s & PortraitState.Prison) != 0 ? "Prison" : (s & PortraitState.Slave) != 0 ? "Slave" : "";
+    static string FrontOverlayName(PortraitState s) => (s & PortraitState.Eaten) != 0 ? "Eaten" : (s & PortraitState.Prison) != 0 ? "Prison" : (s & PortraitState.Slave) != 0 ? "Slave" : "";
 
     /// <summary>An image of the cell's <c>Kenshi_PortraitImage</c> set at <paramref name="alpha"/>.</summary>
     static UiControl PortraitImage(string name, UiRect bounds, string group, string image, float alpha = 1)

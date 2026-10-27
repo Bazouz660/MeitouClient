@@ -46,16 +46,9 @@ sealed partial class PlayerInterface
     {
         /// <summary>The splint layer's fraction (the green plus the splint, at most 1); shown only where it is beyond the green.</summary>
         public float White { get; init; }
+        /// <summary>The Crushed layer at full width: a stump or a crushed limb (the row setter <c>FUN_140721a70</c>'s limb states 1 and 3).</summary>
+        public bool Crushed { get; init; }
     }
-
-    /// <summary>
-    /// The status panel's prison line (<c>FUN_1405d2da0</c>, docs/game/economy.md 11.5, <b>Observed</b>): the hours left rounded up, "FOREVER" for a sentence of 2000 hours or more,
-    /// "Waiting to be released" once there is nothing left.
-    /// </summary>
-    internal static string PrisonText(PrisonView prison) =>
-        prison.Sentence >= 2000 ? $"{Loc.Tr("Imprisoned, sentence time remaining:")} {Loc.Tr("FOREVER")}"
-        : prison.Sentence > 0 && prison.HoursLeft > 0 ? $"{Loc.Tr("Imprisoned, sentence time remaining:")} {Loc.Plural("{1,num} hr", "{1,num} hrs", (long)Math.Ceiling(prison.HoursLeft), (long)Math.Ceiling(prison.HoursLeft))}"
-        : Loc.Tr("Waiting to be released");
 
     /// <summary>The goal line for a character the AI is not running (the player's orders, a fight, a job): what its movement task is, else Aimless.</summary>
     static string TaskText(CharacterTask task) => task switch
@@ -113,26 +106,35 @@ sealed partial class PlayerInterface
         return (head, text);
     }
 
-    /// <summary>The state lines (State, Goal, Encumbrance and, alive, the Current Skill line) of the selected character.</summary>
+    /// <summary>
+    /// The state lines (State, Goal, Encumbrance and, alive, the Current Skill line) of the selected character. The State line is the original's first match (<c>FUN_1405d4260</c>, docs/game/ui-screens.md
+    /// section 4): Dead; caged, the cage lock's "Locked (lvl: N)" or "(Unlocked...)" (no State line in a cage without a lock); Unconscious / Rebooting; Sleeping in a bed; Defensive; Normal; each
+    /// with its tooltip. The weather notice replaces it while it lasts. Not built: the ranged controller's Aiming... / Reloading... line.
+    /// </summary>
     static HudLine[] StateLines(CharacterSnapshot lead, SpeedUnit unit)
     {
         var body = lead.Body;
-        string state = body is { Dead: true } ? Loc.Tr("Dead") : body is { Unconscious: true } ? Loc.Tr("Unconscious") : (lead.Orders & CharacterOrders.Block) != 0 ? Loc.Tr("Defensive") : Loc.Tr("Normal");
-        string? colour = body is { Dead: true } or { Unconscious: true } ? BadColour : null;
-        if (body is not { Dead: true } && lead.Prison is { } prison)
-        {
-            state = PrisonText(prison);
-            colour = BadColour;
-        }
-        string? tooltip = null;
+        string? state, colour = null, tooltip = null;
+        if (body is { Dead: true }) (state, colour, tooltip) = (Loc.Tr("Dead"), BadColour, Loc.Tr("This guy is dead and gone."));
+        else if (lead.Prison is { } prison)
+            (state, colour, tooltip) = prison.LockLevel < 0 ? (null, null, null)
+                : prison.Locked ? (Loc.Tr("Locked (lvl: {1,num})", prison.LockLevel), BadColour, Loc.Tr("You are locked in a cage.\nThe lock has a difficulty level of {1,num}.", prison.LockLevel))
+                : (Loc.Tr("(Unlocked...)"), GoodColour, Loc.Tr("The cage you are in is UNLOCKED.\nNobody knows this but you, you can escape any time you want."));
+        else if (body is { Unconscious: true })
+            (state, colour, tooltip) = (Loc.Tr(lead.Hud?.Robot == true ? "Rebooting" : "Unconscious"), BadColour, Loc.Tr("This guy is unconscious and probably needs medical attention and rest."));
+        else if (lead.InBed) (state, tooltip) = (Loc.Tr("Sleeping"), Loc.Tr("Sleeping..."));
+        else if ((lead.Orders & CharacterOrders.Block) != 0)
+            (state, tooltip) = (Loc.Tr("Defensive"), Loc.Tr("In defensive combat mode the character will not even try to attack, focusing entirely on defense for a +20 skill bonus."));
+        else state = Loc.Tr("Normal");
         if (body is not { Dead: true } && lead.Prison is null && lead.WeatherNotice != WeatherNotice.None)
         {
             (state, tooltip) = WeatherText(lead.WeatherNotice, lead.WeatherNoticeProtection);
             colour = lead.WeatherNoticeProtection > 0.9f && lead.WeatherNotice is not (WeatherNotice.AcidWater or WeatherNotice.AcidFeet) ? GoodColour : BadColour;
         }
         int encumbrance = (int)((1 - Math.Clamp(lead.Hud?.Encumbrance ?? 1, 0, 1)) * 100);
-        HudLine[] lines = [new(Loc.Tr("State:"), state, ValueColour: colour, Tooltip: tooltip), new(Loc.Tr("Goal:"), lead.Activity ?? TaskText(lead.Task)),
+        HudLine[] rest = [new(Loc.Tr("Goal:"), lead.Activity ?? TaskText(lead.Task)),
             new(Loc.Tr("Encumbrance:"), encumbrance.ToString(CultureInfo.InvariantCulture) + "%", ValueColour: encumbrance >= 50 ? BadColour : null)];
+        HudLine[] lines = state is null ? rest : [new(Loc.Tr("State:"), state, ValueColour: colour, Tooltip: tooltip), .. rest];
         return body is { Dead: true } || lead.Hud?.Skill is not { } skill ? lines : [.. lines, SkillLine(skill, unit)];
     }
 
@@ -307,14 +309,58 @@ sealed partial class PlayerInterface
     }
 
     /// <summary>
-    /// The medical header's word (the original's list is longer; Meitou shows the states it models): Dead, Playing dead... (posture 3), Unconscious (N) with N the KO timer as (int) while it runs,
-    /// Staying low (posture 1), Starving below 1 hunger, then by the worst part h: Wounded below 0.7, Hungry below 2 hunger, Slightly Injured below 0.9, else Normal.
+    /// The parts' severity the health word reads (<c>FUN_14088a8f0</c>'s part loop, docs/game/ui-screens.md "Health word choice"; h, d, s, m and the KO point as in <see cref="PartTip"/>):
+    /// 3 a vital part under 0 and below the KO point, 2 any part under 0 (h + d) that is not destroyed, 1 a destroyed non-vital part, else 0; the highest over the parts.
     /// </summary>
-    internal static (string Text, string? Colour) HealthWord(BodyStatus body) =>
-        body.Dead ? (Loc.Tr("Dead"), (string?)BadColour) : body.PlayingDead ? (Loc.Tr("Playing dead..."), BadColour)
-        : body.Unconscious ? (body.KoTimer > 0 ? $"{Loc.Tr("Unconscious")} ({(int)body.KoTimer})" : Loc.Tr("Unconscious"), BadColour) : body.StayingLow ? (Loc.Tr("Staying low"), null)
-        : body.Hunger < 1 ? (Loc.Tr("Starving"), BadColour)
-        : body.WorstPart < 0.7f ? (Loc.Tr("Wounded"), BadColour) : body.Hunger < 2 ? (Loc.Tr("Hungry"), BadColour) : body.WorstPart < 0.9f ? (Loc.Tr("Slightly Injured"), BadColour) : (Loc.Tr("Normal"), null);
+    static int WoundSeverity(IReadOnlyList<HealthPartView> parts, float? koPoint)
+    {
+        int worst = 0;
+        foreach (var part in parts)
+        {
+            float h = part.Flesh, d = part.Bandage, s = part.Stun, m = part.Maximum;
+            if (h + d - s <= -m) { if (!part.Vital && worst == 0) worst = 1; }
+            else if (h + d < 0) worst = Math.Max(worst, part.Vital && !(koPoint is { } ko && h + d >= ko) ? 3 : 2);
+        }
+        return worst;
+    }
+
+    /// <summary>
+    /// The medical header's word, its colour and its tooltip, the original's first match (<c>FUN_14088a8f0</c>, docs/game/ui-screens.md "Health word choice"). Not built: the
+    /// <c>+0xf0</c> status texts, the disguise words and the bed's recovery rate line (Meitou models none of them).
+    /// </summary>
+    internal static (string Text, string? Colour, string Tip) HealthWord(CharacterSnapshot lead) => HealthWord(lead.Body!.Value, lead.Hud, lead.HealthParts);
+
+    /// <summary><see cref="HealthWord(CharacterSnapshot)"/> from the body, the HUD view (bleeding, stomach, robot race, KO point) and the part rows.</summary>
+    internal static (string Text, string? Colour, string Tip) HealthWord(BodyStatus body, HudView? hud = null, IReadOnlyList<HealthPartView>? parts = null)
+    {
+        bool robot = hud?.Robot ?? false;
+        int w = WoundSeverity(parts ?? [], hud?.KoPoint ?? hud?.Extended?.KoPoint);
+        float bleeding = hud?.Bleeding ?? 0;
+        (string, string?, string) Word(string word, string? colour, string tip) => (Loc.Tr(word), colour, Loc.Tr(tip));
+        if (body.Dead) return Word("Dead", BadColour, "Gone forever. RIP.");
+        if (body.BeingEaten) return Word("BEING EATEN ALIVE!!", BadColour, "Something is eating you alive! AAAAAAHHHHHHHHHH!!");
+        if (body.Blood <= 0 && w == 1) return Word("Dying", BadColour, "Severe limb damage has now led to critical blood loss. You will die without medical attention.");
+        if (w == 3) return Word("Dying", BadColour, "If you don't get medical attention, you will die.");
+        if (body.KoTimer > 0) return ($"{Loc.Tr(robot ? "Rebooting" : "Unconscious")} ({(int)body.KoTimer})", BadColour, Loc.Tr("Knocked out cold."));
+        if (body.Unconscious && body.Coma && w == 0)
+            return Word("Recovery coma", null, "You've suffered too much damage. You won't be getting up again until all critical body parts have recovered above 0.");
+        if (body.PlayingDead) return Word("Playing dead...", MainColour, "This person has regained consciousness but is staying down, waiting for all the enemies to leave the area.");
+        if (body.Blood <= 0 && body.Unconscious)
+            return bleeding > 0 ? Word("Bleeding out", BadColour, "Unconscious from blood loss and bleeding to death. Hope that the bleeding stops before it's too late.")
+                : Word("Blood loss KO", BadColour, "Unconscious from blood loss. It will recover over time, bed rest will help.");
+        if (body.Crawling) return Word("Crippled", BadColour, "Your legs are incapable of supporting you.");
+        if (body.RightArmDisabled && !body.Unconscious) return Word("Crippled arm", BadColour, "Your sword arm is crippled and you are unable to fight.");
+        if (w == 2) return Word("Critical", BadColour, "Critical injuries will continue to degenerate without medical attention.");
+        if (w == 1) return Word("Limb trauma", null, "One or more limbs have been seriously crippled by critical injury.");
+        if (body.StayingLow) return Word("Staying low", MainColour, "You are staying down, hoping to avoid drawing attention.");
+        if (body.Hunger < 1) return Word("Starving", BadColour, "You are starving to death. Get some food fast.");
+        if (bleeding > 0) return Word("Bleeding", null, "Losing blood, will collapse if blood goes below 0.");
+        if (body.WorstPart < 0.7f) return Word("Wounded", null, "You are kind of healthy for now.");
+        if (body.Hunger < 2)
+            return (hud?.Fed ?? 0) <= 0 ? Word("Hungry", BadColour, "You are hungry and suffering from malnutrition. Your stats and strength will be affected, you need to get some food as soon as possible.")
+                : Word("Malnourished", BadColour, "You are hungry and suffering from malnutrition, but you are fed and slowly recovering. Your stats and strength will be affected until you recover fully.");
+        return body.WorstPart < 0.9f ? Word("Slightly Injured", null, "You are kind of healthy for now.") : Word("Normal", null, "You are kind of healthy for now.");
+    }
 
     /// <summary>Adds a text panel's lines over the arranged widget <paramref name="panel"/>: one row per line, the label from 3 % of the width, the value right-aligned to 96 %.</summary>
     /// <summary>One row per line, the label left and the value right; the value takes <paramref name="valueFont"/> at <paramref name="valuePixels"/> when given.</summary>
@@ -451,10 +497,13 @@ sealed partial class PlayerInterface
             rows.Add(new(Loc.Tr("Blood"), blood / capacity, 0, 0, ((int)MathF.Floor(blood + 0.1f)).ToString(CultureInfo.InvariantCulture), new string('<', bleed), false, BloodTip(hud?.BleedRate ?? 1)));
             foreach (var part in lead.HealthParts)
             {
-                // The original's row (FUN_14088a8f0): the green and the number are the flesh less the stun, the yellow adds the bandage, the white is the green plus the splint (rig x 0.01).
+                // The original's row (FUN_14088a8f0): the green and the number are the flesh less the stun, the yellow adds the bandage, the white is the green plus the splint (rig x 0.01),
+                // none on a stump; a stump or a crushed limb shows the Crushed layer.
                 float max = Math.Max(part.Maximum, 1e-3f), health = part.Flesh - part.Stun, green = health / max;
+                bool stump = part.Limb == Meitou.Simulation.Bodies.LimbState.Stump;
                 rows.Add(new(part.Name, green, (health + part.Bandage) / max, (max - part.Stun) / max, ((int)MathF.Floor(health + 0.1f)).ToString(CultureInfo.InvariantCulture),
-                    PartArrows(part, koPoint), part.Robotic, PartTip(part, koPoint, body.Unconscious)) { White = Math.Clamp(green + part.Rig * 0.01f, 0f, 1f) });
+                    PartArrows(part, koPoint), part.Robotic, PartTip(part, koPoint, body.Unconscious))
+                    { White = stump ? 0 : Math.Clamp(green + part.Rig * 0.01f, 0f, 1f), Crushed = stump || part.Limb == Meitou.Simulation.Bodies.LimbState.Crushed });
             }
             float hunger = body.Hunger;
             // '>' digesting, '<!' below 2, none in a bed, else '<'. Robot races have no Hunger row.
@@ -466,9 +515,10 @@ sealed partial class PlayerInterface
         for (int i = 1; i <= 9; i++)
         {
             string name = $"LifeBar{i}";
-            b.Hidden.Add(name + "Crushed");
-            if (i > rows.Count) { b.Hidden.Add(name + "White"); b.Hidden.Add(name); b.Hidden.Add(name + "Value"); b.Hidden.Add(name + "Tooltip"); continue; }
+            if (i > rows.Count) { b.Hidden.Add(name + "Crushed"); b.Hidden.Add(name + "White"); b.Hidden.Add(name); b.Hidden.Add(name + "Value"); b.Hidden.Add(name + "Tooltip"); continue; }
             var r = rows[i - 1];
+            if (r.Crushed) b.Progress[name + "Crushed"] = 1;
+            else b.Hidden.Add(name + "Crushed");
             // The splint layer is drawn only where it reaches past the green (with no splint it would sit under the green).
             if (r.White > Math.Max(r.Green, 0)) b.Progress[name + "White"] = r.White;
             else b.Hidden.Add(name + "White");
@@ -484,9 +534,9 @@ sealed partial class PlayerInterface
             b.Properties[name + "Value"] = new Dictionary<string, string> { ["TextAlign"] = "Center", ["TextColour"] = MyGuiColours.InkText };
             medicalRows.Add((name, r.Name, r.Arrows));
         }
-        if (buildingRows is null && lead?.Body is { } status)
+        if (buildingRows is null && lead?.Body is not null)
         {
-            var (word, colour) = HealthWord(status);
+            var (word, colour, _) = HealthWord(lead);
             b.Text["HealthText"] = word;
             b.Properties["HealthText"] = new Dictionary<string, string> { ["TextAlign"] = "Center", ["TextColour"] = colour ?? MyGuiColours.InkText };
         }

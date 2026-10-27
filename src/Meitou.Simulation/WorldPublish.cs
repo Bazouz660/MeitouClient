@@ -119,7 +119,7 @@ public sealed partial class World
                 SkillXpMultipliers = detailed && cold!.Race is { } skillRace ? Array.AsReadOnly((float[])skillRace.StatMultipliers.Clone()) : [],
                 Hud = detailed && cold!.Medical is { } hudMed && cold.Race is { } hudRace && cold.Stats is { } hudStats ? HudOf(id, cold, hudMed, hudRace, hudStats, state[i], combat, bodyConstants, !Sight.Outdoors(i), Sight.Inside(i)) : null,
                 LimbBits = cold?.Medical?.LimbBits ?? 0,
-                HealthParts = detailed && cold!.Medical is { } health && cold.Race is { } anatomy ? Array.AsReadOnly(health.Parts.Select(p => new HealthPartView(p.Template.StringId, p.Template.Name, p.Flesh, p.Stun, p.Bandage, p.Rig, p.MaxHp, p.IsRobotic(anatomy)) { Vital = p.Template.Vital, Type = p.Template.Type }).ToArray()) : [],
+                HealthParts = detailed && cold!.Medical is { } health && cold.Race is { } anatomy ? Array.AsReadOnly(health.Parts.Select(p => new HealthPartView(p.Template.StringId, p.Template.Name, p.Flesh, p.Stun, p.Bandage, p.Rig, p.MaxHp, p.IsRobotic(anatomy)) { Vital = p.Template.Vital, Type = p.Template.Type, Limb = p.Limb }).ToArray()) : [],
                 ItemGrid = (selected || id == Player.OpenLoot || cold is { IsPlayer: true } && Player.InventoryShown.Contains(id)) && cold!.Inventory is { } grid ? new InventoryView(grid.Width, grid.Height, grid.Backpack?.Contents?.Width ?? 0, grid.Backpack?.Contents?.Height ?? 0,
                     Array.AsReadOnly(grid.Shown().Select(shown => new InventoryItemView(shown.Index, shown.Item.Record, shown.Item.Name, shown.Item.Section, shown.Item.X, shown.Item.Y, shown.Item.Width, shown.Item.Height, shown.Item.Quantity, shown.Item.Weight, shown.Item.Quality) { Material = shown.Item.MaterialId, Charge = shown.Item.ChargeFraction, Company = shown.Item.CompanyId, Crafter = shown.Item.Crafter, Level = shown.Item.Level, Charges = shown.Item.Charges, MaxCharges = shown.Item.MaxCharges,
                         StolenFrom = shown.Item.IsStolenFor(cold.Faction) ? shown.Item.StolenFrom : -1 }).ToArray()))
@@ -174,7 +174,8 @@ public sealed partial class World
                 Light = sneaking ? Sight.Light(i) : 1,
                 Watchers = watchers,
                 Bar = cold is { IsPlayer: true } ? PickBar(cold, state[i].Task) ?? TrainBar(cold) : null,
-                Prison = cold is { IsImprisoned: true } ? new PrisonView(!(cold.InWhat is { } cageId && Fixtures.Find(cageId) is { } cage && cage.Lock is not { EffectivelyLocked: true }), cold.SentenceLength, cold.SentenceStart + cold.SentenceLength - GameHours) { CageOwner = cold.InWhat is { } owned && Fixtures.Find(owned) is { } jail ? jail.Owner : -1, CageId = cold.InWhat } : null,
+                Prison = cold is { IsImprisoned: true } ? new PrisonView(!(cold.InWhat is { } cageId && Fixtures.Find(cageId) is { } cage && cage.Lock is not { EffectivelyLocked: true }), cold.SentenceLength, cold.SentenceStart + cold.SentenceLength - GameHours) { CageOwner = cold.InWhat is { } owned && Fixtures.Find(owned) is { } jail ? jail.Owner : -1, CageId = cold.InWhat,
+                    LockLevel = cold.InWhat is { } locked && Fixtures.Find(locked)?.Lock is { } cageLock ? cageLock.Level : -1 } : null,
                 Ragdoll = ragdolls?.Publish(id),
                 StealthKoChance = koSlot >= 0 && i != koSlot && cold is { IsPlayer: false } && Carrying.CarrySystem.CanBeKnockedOut(cold)
                     ? Carrying.CarrySystem.StealthKoChance(table.Cold(koSlot)!, cold, aggro?.Spotted(i, table.IdOf(koSlot)) == true) : null,
@@ -366,7 +367,8 @@ public sealed partial class World
         bool robot = !organic && med.FirstAidNeed(race, true, capacity, extraBloodLoss) > Bodies.MedicalState.AidNeedFloor;
         return new(med.Blood / capacity, WorstPart(med), med.Hunger, med.Unconscious, med.Dead, organic || robot,
             task == (byte)CharacterTask.Treat ? CareKind.Treating : task == (byte)CharacterTask.Rest ? CareKind.Resting : CareKind.None, cold.MedicJob, cold.RescueJob,
-            med.NeedsSplint(race, 50), med.KoTimer, med.PlayingDead, med is { StayingLow: true, Prone: true, Crawling: false }, robot);
+            med.NeedsSplint(race, 50), med.KoTimer, med.PlayingDead, med is { StayingLow: true, Prone: true, Crawling: false }, robot)
+            { BeingEaten = med.EatenCountdown > 0, Coma = med.Coma, Crawling = med.Crawling, RightArmDisabled = !med.ArmWorks(left: false) };
     }
 
     /// <summary>The lowest part fraction (1 for a body without parts), the way <c>Enumerable.Min</c> reads floats: a NaN wins.</summary>

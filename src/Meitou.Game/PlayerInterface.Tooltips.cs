@@ -443,7 +443,7 @@ sealed partial class PlayerInterface
             var (_, _, _, status, _, _) = BuildingLines(focus);
             if (BuildingStatusTip(status, Machine(focus.SiteId)) is { } tip) Add("HealthText", tip);
         }
-        else if (Lead()?.Body is { } body) Add("HealthText", HealthWordTip(body));
+        else if (Lead() is { Body: not null } lead) Add("HealthText", HealthWord(lead).Tip);
     }
 
     // ---- item tooltips (the Item classes' vfunc_79: FUN_1407ae130 and its callees) ----

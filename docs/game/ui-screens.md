@@ -234,7 +234,7 @@ the user's base-game save atlas shows a near-frontal face.
 | Flag | Set when | Shown as |
 | --- | --- | --- |
 | 1 | the character is selected | the `BorderPanel` button's selected state |
-| 2 | the character is ≥ 1000 units from the camera and ≥ ~316 from the camera's focus, and either (a) it is not down (slot 6), the float at its AI `+0xb0` is > 0 and it is not imprisoned, or (b) `+0x279 & 7` | `Background` `Hurt` (red) instead of `Normal`, flashing |
+| 2 | the character is ≥ 1000 units from the camera and ≥ ~316 from the camera's focus, and either (a) it is not down (slot 6), the float at its AI `+0xb0` is > 0 and it is not imprisoned, or (b) `+0x279 & 7` (being eaten, [Health word choice](#tooltips)) | `Background` `Hurt` (red) instead of `Normal`, flashing |
 | 4 | dead or unconscious (slot 107: `+0x5bc` / `+0x5b9`), carried (`+0x3d4`), or in a bed (`+0x2f8 == 1`) | `PortraitImage` alpha 0.25 (faded); this also stops the flash |
 | 8 | in combat mode (`FUN_140436610(c, 1, 1)`, **Verified** disassembly `1404150bc`: a melee fight, or shooting or manning a turret at a target that is up; [Combat mode](#4-hud-mainbargui)) | `BackOverlay` `Combat` |
 | 0x80 | hunger (`+0x4b8`) < 1.25 | `BackOverlay` `Hunger`, only when not in combat |
@@ -246,13 +246,13 @@ the user's base-game save atlas shows a near-frontal face.
   changes by direction × frame time × 2. At 0 the direction flips to +1, and at 1 it flips back to −1. That is a full 0 → 1 → 0 cycle
   every second. Without flag 2, or with flag 4, the alpha stays at 1.
 - **Unknown:** what the AI `+0xb0` float means. AI slot 25 (the eat desire, [eating](character-stats.md#eating)) also suppresses itself while it is > 0, so it reads as
-  "danger seen". Also unknown: what `+0x279 & 7` holds. Sections 9 and 5 are the ARMOUR `slot` values of the shackle records (`Prisoner Shackles` 9, `Hive Prisoner Shackles` 5; **Observed**).
+  "danger seen". Sections 9 and 5 are the ARMOUR `slot` values of the shackle records (`Prisoner Shackles` 9, `Hive Prisoner Shackles` 5; **Observed**).
 - A portrait is re-rendered when its flags change, when its character changes, or when PortraitData `+0x30` / `+0x58` is set.
 - A cell wider than 94 px switches `NameText` to a larger font.
 
 Meitou (`PlayerInterface.PortraitStates.cs`):
 - The serial is `CharacterCold.PortraitSerial`. It is read and written as `portrait_serial` (or taken from the handle's serial), and rolled at spawn otherwise.
-- "In danger" is taken to mean "in a fight". The `Eaten` flag is never set.
+- "In danger" is taken to mean "in a fight". Being eaten is `MedicalState.EatenCountdown` (the original's counter, set by each bite, one less per medical tick).
 - Shackles are worn ARMOUR with `is locked`, which the original makes a `LockedArmour`.
 The HUD stats labels (`StatsText`: MARTIAL ARTS ...) are drawn in the painted face, Sentencia at its resized 22 pt, 15.3 px at 1080 p
 (**Observed**: glyph shapes and widths in a base-game screenshot; [mygui.md](../formats/mygui.md) for the resize); Meitou uses
@@ -283,7 +283,13 @@ to Jobs; the saved `chase mode` flag is that switch (**Verified**, [perma-jobs](
   start, 93 % wide, aligned right), in `Kenshi_TextboxStandardText` (Exo2 SemiBold 20, default colour #140806, the palette's Secondary). Colours are
   inline `#rrggbb` from `data/gui/colours/kenshi_colours.xml`: Main #afa68b, Title #492620, Bad #59231a, BadBright #bf4834, Good #a8b774, Alert #000000.
   - Name: the character's name left and its faction's name right (the player's default faction name is "Nameless"), both Title.
-  - State lines: `State:` Dead / Locked (lvl: N) / Sleeping / Unconscious (Rebooting for skeletons) / Defensive / Normal (Bad for the bad ones);
+  - State lines: `State:` (**Verified**, `FUN_1405d4260` panel 3, value colour and tooltip): dead `Dead` Bad, "This guy is dead and gone."; imprisoned (`+0x2f8` = 2),
+    with `+0x308` clear (**Unknown**) and the cage's lock found: locked (`FUN_1402aa590`) `Locked (lvl: N)` Bad, "You are locked in a cage.\nThe lock has a difficulty level
+    of {1,num}.", else `(Unlocked...)` Good, "The cage you are in is UNLOCKED.\nNobody knows this but you, you can escape any time you want."; imprisoned otherwise: no State
+    line; unconscious `Unconscious` (`Rebooting` for a robot race) Bad, "This guy is unconscious and probably needs medical attention and rest."; in a bed (`+0x2f8` = 1)
+    `Sleeping`, "Sleeping..."; in ranged combat mode the ranged controller's line (`FUN_140438640`: `Aiming...` / `Reloading...` with the shots, `No Power!` Bad; Meitou:
+    not built); defensive `Defensive`, "In defensive combat mode the character will not even try to attack, focusing entirely on defense for a +20 skill bonus."; else
+    `Normal`. The weather notice also shows here ([weather](../formats/weather.md), **Observed**). Meitou: all but the ranged line;
     `Goal:` the AI goal package's name, else Aimless (Meitou: when the AI is not running the character, its movement task's name, e.g. Moving, Attacking, else Aimless); `Encumbrance:` (int)((1 - f) × 100) "%" with f the encumbrance factor in 0..1, Bad from 50 %.
     Then, alive, the "Current Skill" line (**Verified**: decompile of the HUD update `1405d4260` panel 3, 2026-10-26; vanilla screenshot "Labouring 1" while operating a machine):
     `Character +0x198 currentSkillUsing` (KenshiLib 1ce4a16), which the task updates set each tick (constants such as 4, 5, 6, 9, 0xb, or the machine's stat; the shooting
@@ -392,6 +398,9 @@ to Jobs; the saved `chase mode` flag is that switch (**Verified**, [perma-jobs](
   and an arrow string right-aligned in Alert; the number goes in `LifeBarNValue`. Layers are sized as width fractions from the left (Grey is a full-width
   background). Part (H flesh +0x40, S stun +0x44, D bandage +0x48, R rig +0x4c, Mx maximum; **Verified** `FUN_14088a8f0`): Green (H − S)/Mx, Yellow
   (H + D − S)/Mx, Red (Mx − S)/Mx, White clamp(green + R × 0.01, 0, 1) with the unclamped green (drawn past the green only), number floor(H − S + 0.1).
+  The row setter (`FUN_140721a70`, its arguments read from the call's disassembly at `14088c075`..`14088c0e1`, **Verified**) also takes a robot flag and the limb state
+  (`MedicalSystem::getLimbState`: 0 original, 1 stump, 2 replaced, 3 crushed): `Robot` is shown at the green's width when the race is robotic or the limb state is 2;
+  `Crushed` is shown at full width when the state is 1 or 3; a stump's White is 0.
   Arrows, first match: destroyed (H + D − S ≤ −Mx) `!!!   `; H + D < 0: not vital and not robotic `<<   `, vital and below the KO point `<<!!   `
   (none at or above it), robotic non-vital none; H + D ≥ 0 with Mx − H − D > 20 (not a robotic non-vital part) `<   `; else none. The rig is in none
   of these tests, only in the white layer. Blood:
@@ -1354,11 +1363,22 @@ Code: `UiTooltips` (data, layout), `PlayerInterface.Tooltips.cs` (hover runtime,
     malnutrition. Your stats and strength will be affected, you need to get some food as soon as possible.", Malnourished "... but you are fed and slowly
     recovering. Your stats and strength will be affected until you recover fully."; In Disguise "You are currently disguised as {1}"; Slightly Injured, Wounded
     and Normal "You are kind of healthy for now.". In a bed whose recovery rate is above 1: "\nRecovery rate: {1}x" appended.
+  - Health word choice (**Verified**, `FUN_14088a8f0` decompile; medical offsets as in [character-stats](character-stats.md)). The part rows first fold a severity w (max over
+    the parts): 1 a non-vital part destroyed (H + D − S ≤ −Mx; only from 0), 2 a part not destroyed with H + D < 0, 3 such a vital part below the KO point. Then, first match:
+    dead (`+0x164`) Dead; being eaten (Character `+0x279 & 7`: set to 7 by the being-eaten virtual `FUN_1404356f0`, counted down by one per character update
+    `FUN_1405d00b0`, cleared by the constructor) BEING EATEN ALIVE!!; blood (`+0x70`) ≤ 0 with w = 1 Dying (the blood-loss text); w = 3 Dying; KO timer (`+0xa0`) > 0
+    `Unconscious (N)` / `Rebooting (N)`, N = (int) timer; unconscious (`+0x161`) with the coma flag (`+0x162`) and w = 0 Recovery coma; posture 3 Playing dead...; blood ≤ 0
+    while unconscious: bleed rate (`+0x78`) > 0 Bleeding out, else Blood loss KO; a status title at `+0xf0` / text `+0x118` while `+0x148` is 2, 3 or 4 (**Unknown**, not
+    built); posture 2 Crippled; right arm not working (`+0x165`) while conscious Crippled arm; w = 2 Critical; w = 1 Limb trauma; posture 1 Staying low; hunger (`+0x60`) < 1
+    Starving; bleed rate > 0 Bleeding; the `+0xf0` status otherwise (**Unknown**); slave state above 1 or a disguise flag, with the discovery cooldown above 0: Disguise Blown! /
+    Discovered! (+ the cooldown line); a disguise (`FUN_1407c0520`) In Disguise; the worst-part fraction (`+0xa4`) < 0.7 Wounded; hunger < 2: Hungry, or Malnourished with
+    food in the stomach (`+0x64` > 0); fraction < 0.9 Slightly Injured; else Normal. Colours: Main (`#afa68b`) for Playing dead..., Staying low and In Disguise; none for
+    Recovery coma, Limb trauma, Bleeding, Wounded, Slightly Injured and Normal; Bad for the rest.
   - Meitou (`PlayerInterface.MedicalTips.cs`, `PlayerInterface.HudText.cs`): the Blood row; the part texts and arrows (the tests above, with the KO
     point of every shown character, `HudView.KoPoint`) without wear, kick and lost-limb lines (d is the bandage's pending healing); the hunger texts
     without the stomach store (malnourished takes the Hungry word's sentence, starving the Starving word's: the stat penalty and the pass-out threshold
-    are not modelled); and the health words Meitou shows (its word fraction `WorstPart` is not the worstDamage above: it takes every part, stun and rig
-    in, **Observed** from `WorldPublish.cs`).
+    are not modelled); the health word by the choice above (`PlayerInterface.HealthWord`; the fraction is `BodyStatus.WorstPart`, every part with stun and
+    rig in, **Observed** from `WorldPublish.cs`), without the `+0xf0` status, the disguise words and the bed's recovery rate line.
 - **Stats line tooltips:** the HUD stats and extended lines' row tooltips are described under [section 4](#4-hud-mainbargui) ("Stat tooltips").
 - **Other users:** the Overview's AI tab options (a Static tooltip in `AIToolTip`), map places (type 4), trade and inventory items. **Unknown** / not shown: the
   lockpick tooltip of a locked door, the medic and rescue allied-faction option texts.

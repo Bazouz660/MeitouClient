@@ -9,6 +9,12 @@ public sealed partial class MedicalState
     public const int EatenPassesToDeath = 5;
 
     /// <summary>
+    /// The original's being-eaten counter (Character <c>+0x279 &amp; 7</c>, <b>Verified</b>): 7 at every <see cref="BeingEaten"/> call (<c>FUN_1404356f0</c> sets it first), one less per
+    /// <see cref="Tick"/> (the character update <c>FUN_1405d00b0</c>). Above 0 the HUD's health word reads BEING EATEN ALIVE!! and the portrait shows Eaten. Not saved.
+    /// </summary>
+    public int EatenCountdown { get; private set; }
+
+    /// <summary>
     /// The eating rate of a character being eaten, per second (<c>FUN_140650370</c>, <b>Observed</b>): the eater passes 1, times lerp(2, 0.4, toughness x 0.01) (the CharStats toughness slot
     /// <c>+0x90</c> times the stat scale <c>+0x34</c>), or times 5 instead when a medical flag (<c>+0x164</c>, meaning <b>Unknown</b>) is set, which Meitou never sets.
     /// </summary>
@@ -24,6 +30,7 @@ public sealed partial class MedicalState
     /// </summary>
     public bool BeingEaten(float rate, float dt, in MedicalContext ctx, bool limbLoss, List<MedicalEvent>? events = null)
     {
+        EatenCountdown = 7;
         if (Dead || ctx.Race.IsRobot) return false;
         float bite = rate * dt;
         for (int i = parts.Length - 1; i >= 0; i--)

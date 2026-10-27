@@ -180,6 +180,7 @@ public sealed partial class MedicalState
     public void Tick(float dt, in MedicalContext ctx, List<MedicalEvent>? events = null)
     {
         if (Dead || dt <= 0) return;
+        if (EatenCountdown > 0) EatenCountdown--;
         var c = ctx.Constants;
         var race = ctx.Race;
         float chance = ctx.Options.ChanceOfDeath;

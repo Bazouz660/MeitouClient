@@ -20,9 +20,18 @@ public enum CareKind { None, Treating, Resting }
 /// doing (<see cref="Care"/>), its medic job switch and what is left of a knockout (<see cref="KoTimer"/>, the header's "Unconscious (N)").
 /// </summary>
 public readonly record struct BodyStatus(float Blood, float WorstPart, float Hunger, bool Unconscious, bool Dead, bool NeedsAid = false, CareKind Care = CareKind.None, bool MedicJob = false, bool RescueJob = false,
-    bool NeedsSplint = false, float KoTimer = 0, bool PlayingDead = false, bool StayingLow = false, bool NeedsRobotAid = false);
+    bool NeedsSplint = false, float KoTimer = 0, bool PlayingDead = false, bool StayingLow = false, bool NeedsRobotAid = false)
+{
+    /// <summary>The health word's other states (docs/game/ui-screens.md "Health word choice"): being eaten (<see cref="Bodies.MedicalState.EatenCountdown"/>), the recovery coma, the forced crawl (posture 2) and a right arm that does not work.</summary>
+    public bool BeingEaten { get; init; }
+    public bool Coma { get; init; }
+    public bool Crawling { get; init; }
+    public bool RightArmDisabled { get; init; }
+}
 public sealed record HealthPartView(string Id, string Name, float Flesh, float Stun, float Bandage, float Rig, float Maximum, bool Robotic)
 {
+    /// <summary>The part's limb state (stump, replaced, crushed; <see cref="Bodies.LimbState.Original"/> for a part that is no limb): the medical row's Crushed and Robot layers.</summary>
+    public Bodies.LimbState Limb { get; init; }
     /// <summary>The part's LOCATIONAL_DAMAGE <c>death</c> flag (head and torso) and its type (leg, arm...): the medical row's tooltip text (docs/game/ui-screens.md "Tooltips").</summary>
     public bool Vital { get; init; }
     public Meitou.Data.Gameplay.Bodies.BodyPartType Type { get; init; }
@@ -290,6 +299,8 @@ public readonly record struct PrisonView(bool Locked, float Sentence, double Hou
     /// <summary>The faction owning the cage it is in (-1 none) and the cage's fixture id.</summary>
     public int CageOwner { get; init; }
     public string? CageId { get; init; }
+    /// <summary>The cage lock's level, -1 when the character is in no cage with a lock (the State line's "Locked (lvl: N)").</summary>
+    public int LockLevel { get; init; } = -1;
 }
 
 /// <summary>A slave's state (1 slave, 2 escaped slave; <c>SlaveStateEnum</c>) and the name of the faction that owns it ("someone" is the caller's word for none).</summary>
