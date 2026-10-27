@@ -115,6 +115,7 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
     public Action<bool>? LateDefencesChanged { get; init; }
     /// <summary>Applies the turret gunner facing fix to the running combat system.</summary>
     public Action<bool>? GunnerFacingChanged { get; init; }
+    public Action<bool>? PunchReachChanged { get; init; }
     /// <summary>Called when an off-screen switch changes (the config holds the new values).</summary>
     public Action? OffscreenChanged { get; init; }
     /// <summary>The Tutorials option changed (the config holds it).</summary>
@@ -301,6 +302,9 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
             result.Add(new("Turret gunners turn", "A turret's gunner turns with the gun, facing where it aims. "
                 + "In the game the gunner keeps facing the turret, so once the gun swings toward a target the gunner looks off to the side.",
                 Toggle: new("Turret gunners turn", () => config.FixGunnerFacing, v => { config.FixGunnerFacing = v; GunnerFacingChanged?.Invoke(v); }, Remaster: true, OnOff: true)));
+            result.Add(new("Weak punch reach", "Fighters with martial arts of 20 or less throw their weak punch from a normal punching distance. "
+                + "The game's data gives it a negative reach, so they throw it only when nearly touching their target.",
+                Toggle: new("Weak punch reach", () => config.FixPunchReach, v => { config.FixPunchReach = v; PunchReachChanged?.Invoke(v); }, Remaster: true, OnOff: true)));
         }
         if (page == 4)
         {
@@ -577,6 +581,8 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
         player.FixLoadButton = config.FixLoadButton = true;
         config.FixGunnerFacing = true;
         GunnerFacingChanged?.Invoke(true);
+        config.FixPunchReach = true;
+        PunchReachChanged?.Invoke(true);
         OffscreenChanged?.Invoke();
         config.Audio = new();
         AudioChanged?.Invoke();

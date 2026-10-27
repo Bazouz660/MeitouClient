@@ -24,7 +24,7 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
     /// <summary>The <see cref="Effect.Kind"/> of a blow: <c>Arg</c> is the blow (1 or 2) and <c>Amount</c> the attacker's attack number.</summary>
     public const int BlowEffect = 1;
 
-    readonly CombatTechnique[] techniques;
+    readonly CombatTechnique[] techniques, asWritten;
     readonly CombatConstants combat;
     readonly GameConstants constants;
     readonly BodyOptions options;
@@ -38,6 +38,7 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
     public CombatSystem(IEnumerable<CombatTechnique> techniques, CombatConstants combat, GameConstants constants, BodyOptions options, AnimationLengths lengths, CombatOptions? settings = null)
     {
         this.techniques = [.. techniques];
+        asWritten = [.. this.techniques];
         this.combat = combat;
         this.constants = constants;
         this.options = options;
@@ -46,6 +47,7 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
         AttackSlots = Math.Max(1, Settings.AttackSlots ?? combat.MaxNumAttackSlots);
         LateDefences = Settings.LateDefences;
         GunnerFacesBarrel = Settings.GunnerFacesBarrel;
+        PunchReachFix = Settings.PunchReachFix;
         xp = new XpService(constants, options);
     }
 
@@ -59,6 +61,23 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
 
     /// <summary>A turret's gunner faces along the barrel as the gun turns (<see cref="CombatOptions.GunnerFacesBarrel"/>); off is the game's facing.</summary>
     public bool GunnerFacesBarrel { get; set; }
+
+    /// <summary>
+    /// A fist attack whose <c>attack distance</c> is negative but above -100 (base data: "ma badpunch", -4, the only punch up to martial arts 20) reads it as positive
+    /// (<see cref="CombatOptions.PunchReachFix"/>, Meitou fix; docs/game/combat.md "Attack technique choice"); off: as written, as the game does.
+    /// </summary>
+    public bool PunchReachFix
+    {
+        get => punchReachFix;
+        set
+        {
+            punchReachFix = value;
+            for (int t = 0; t < techniques.Length; t++)
+                techniques[t] = value && asWritten[t] is { IsBlock: false, IsDodge: false, AttackDistance: < 0 and > -100 } w && (w.Kinds & WeaponKinds.Unarmed) != 0
+                    ? w with { AttackDistance = -w.AttackDistance } : asWritten[t];
+        }
+    }
+    bool punchReachFix;
 
     /// <summary>The buildings' collision that stops bolts and lines of fire (the ragdolls' environment, <see cref="SolidHits"/>); null: the terrain only.</summary>
     public Ragdolls.IRagdollEnvironment? Buildings { get; set; }

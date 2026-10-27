@@ -71,7 +71,7 @@ list unless `is block` or `is dodge` (then the defence list), in data order. Eac
   Pick by cumulative weight (`FUN_1408a8c80`, `FUN_1409b1c80`).
 
 Consequences (base data): "Cut left static" (−999) is never an attack. Fists reach `attack distance` + 9, so
-"ma badpunch" (−4) needs a gap of 5 or less. An armed fighter beyond every weapon reach may kick or punch.
+"ma badpunch" (−4, the only punch up to martial arts 20) needs a gap of 5 or less. An armed fighter beyond every weapon reach may kick or punch.
 With L = 0 the attack zone (below) falls 2r short of the start gap, and a fist swing begun where the steering parks
 the fighter hits nobody (**Measured**, Meitou headless, base data: martial arts 100 against 5 Dust Bandits, 5 of 39
 swings landed with L = 0; with L = 18, 7 hits from 6 swings put all 5 down in 7.4 s).
@@ -79,6 +79,8 @@ swings landed with L = 0; with L = 18, 7 hits from 6 swings put all 5 down in 7.
 Meitou: `TechniqueChooser.ChooseAttack`. Engine readings: CharStats +0x2c is the gear's unarmed bonus; the injury
 term, +0x5b8 and part kind 1 are not modelled. Leg down means a leg part's flesh − stun + rig < 0. Plain mode means
 a target that is not fighting. Fists: `Fighter.Fists` (its length here, its multipliers in the packet). The gap is 3D.
+Meitou fix (Fixes page `Weak punch reach`, on by default; `CombatSystem.PunchReachFix`): a fist attack whose `attack distance` is
+below 0 and above −100 reads it as positive, so "ma badpunch" reaches a gap of 13 like the other basic punches; off is the game.
 
 ## Hit reactions
 

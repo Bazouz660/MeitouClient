@@ -46,4 +46,6 @@ public sealed record CombatOptions
     public bool LateDefences { get; init; }
     /// <summary>A turret's gunner faces along the barrel as the gun turns (Meitou fix); false: the game's facing, toward the turret.</summary>
     public bool GunnerFacesBarrel { get; init; }
+    /// <summary>A fist attack with a small negative attack distance ("ma badpunch") reads it as positive (Meitou fix); false: as written, as the game does.</summary>
+    public bool PunchReachFix { get; init; }
 }
