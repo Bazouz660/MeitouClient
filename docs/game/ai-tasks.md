@@ -757,7 +757,11 @@ vfunc 5 `FUN_14050caf0`). TaskData fields: +0x108 desire (a member function, nea
   yaw − 90° points at the nearest Shop Counter's side the node stands on (**Verified**, layouts placed by `TownBuildings`, compared with each counter's
   yaw; the rest are corner or odd-angled counters). The engine turns a character arriving at a node that way.
 - **118 Shopping** (`FUN_1409997f0`): a shop of the town selling an item on the character's shopping list (`FUN_1409fc070`), else a random shop
-  (`FUN_1409fc1b0`); factor 1 for a BF_SHOP building, 0.4 otherwise. Then 119 (`Task_Shopping`) at it.
+  (`FUN_1409fc1b0`); factor 1 for a BF_SHOP building, 0.4 otherwise. Then 119 (`Task_Shopping`) at it. Both finders scan the zone's
+  BF_SHELL_WITH_INTERIOR buildings; the random one keeps those of the character's town that are public (Building vfunc 82, the `public day`
+  flag), the list one those that are shops (vfunc 87, `Building::isAShop`: BF_SHOP furniture inside, residents, and public) and stock the item.
+  No faction, membership or hostility test (**Observed**, decompile), so a guild's public home with a counter (the Hub's Thieves Guild
+  Watchtower, `public day` true) draws the town's shoppers.
 - **214 Relaxing** (`FUN_140998d10`): the current package's own target (package vfunc 1); none: 0. Effect `IS_WORKING`, acted out by 87 Operating
   machine, i.e. using furniture there; with no free one the plan fails and another goal wins.
 - **Hang-around-bar package** (`Package_HangAroundBar`, start vfunc 6; **Observed**): its town is the squad's home town, else the nearest friendly one
