@@ -57,7 +57,7 @@ public static class Loc
 
     /// <summary>
     /// Substitutes <c>{N}</c>, <c>{N,num}</c> and <c>{N,num=fix,p=K}</c> (N is 1-based) with <paramref name="args"/>: <c>num</c> writes a number in the
-    /// language's culture, <c>fix</c> with <c>p</c> fixes the digits after the point. Text that is not a placeholder is kept.
+    /// language's culture, <c>fix</c> with <c>p</c> fixes the digits after the point, <c>p</c> alone keeps that many significant digits. Text that is not a placeholder is kept.
     /// </summary>
     public static string Format(string pattern, params object?[] args)
     {
@@ -97,6 +97,8 @@ public static class Loc
         }
         if (!num || value is not IFormattable number) return value.ToString() ?? "";
         if (fix && precision >= 0) return number.ToString("F" + precision.ToString(CultureInfo.InvariantCulture), culture);
+        // Without fix, p is the significant digits (the stream's general format).
+        if (precision > 0 && value is float or double or decimal) return number.ToString("G" + precision.ToString(CultureInfo.InvariantCulture), culture);
         return value is float or double or decimal ? number.ToString("#,0.######", culture) : number.ToString("N0", culture);
     }
 

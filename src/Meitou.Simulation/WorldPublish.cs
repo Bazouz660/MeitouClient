@@ -131,7 +131,7 @@ public sealed partial class World
                 Inventory = selected && cold!.Inventory is { } carried ? Items.InventoryText.Lines(carried) : [],
                 AllSkills = detailed && cold!.Stats is { } allStats ? Array.AsReadOnly(allStats.ToArray()) : [],
                 SkillXpMultipliers = detailed && cold!.Race is { } skillRace ? Array.AsReadOnly((float[])skillRace.StatMultipliers.Clone()) : [],
-                Hud = detailed && cold!.Medical is { } hudMed && cold.Race is { } hudRace && cold.Stats is { } hudStats ? HudOf(id, cold, hudMed, hudRace, hudStats, state[i], combat, bodyConstants, !Sight.Outdoors(i), Sight.Inside(i)) : null,
+                Hud = detailed && cold!.Medical is { } hudMed && cold.Race is { } hudRace && cold.Stats is { } hudStats ? HudOf(id, cold, hudMed, hudRace, hudStats, state[i], combat, bodyConstants, !Sight.Outdoors(i), Sight.Inside(i), population?.Db) : null,
                 LimbBits = cold?.Medical?.LimbBits ?? 0,
                 ClosedSlots = cold is null || !detailed ? [] : [.. ClosableSlots.Where(s => Items.InventoryCommands.SectionClosed(cold, s))],
                 HealthParts = detailed && cold!.Medical is { } health && cold.Race is { } anatomy ? Array.AsReadOnly(health.Parts.Select(p => new HealthPartView(p.Template.StringId, p.Template.Name, p.Flesh, p.Stun, p.Bandage, p.Rig, p.MaxHp, p.IsRobotic(anatomy)) { Vital = p.Template.Vital, Type = p.Template.Type, Limb = p.Limb }).ToArray()) : [],
@@ -280,7 +280,7 @@ public sealed partial class World
     /// in ranged mode, Dodge; the lines and their tooltips are <see cref="HudTips"/>'s.
     /// </summary>
     HudView HudOf(CharacterId id, CharacterCold cold, Bodies.MedicalState med, RaceData race, Bodies.CharacterStats stats, in CharacterHot hot, Combat.CombatSystem? combat,
-        Meitou.Data.Gameplay.GameConstants? constants, bool inBuilding, bool inside)
+        Meitou.Data.Gameplay.GameConstants? constants, bool inBuilding, bool inside, Meitou.Data.GameDatabase? db = null)
     {
         // Movement +0x24 currentlyMoving: the current speed (+0xb8, the Athletics line's too) above 0.1 (CharMovement::update).
         bool moving = hot.Velocity.X * hot.Velocity.X + hot.Velocity.Z * hot.Velocity.Z > 0.1f * 0.1f;
@@ -293,7 +293,7 @@ public sealed partial class World
             cold.Fighter?.EncumbranceFactor ?? 1, lines.AsReadOnly(), extended) { BleedRate = race.BleedRate, Fed = med.Fed, Robot = race.IsRobot,
             ExtendedTips = extended is { } x ? HudTips.Extended(cold, med, race, stats, x, constants) : null, Skill = SkillLine(id, cold, med, race, stats, hot, combat, mode),
             KoPoint = constants is null ? null : Bodies.MedicalState.KoPoint(constants, stats.Toughness),
-            StatReadouts = HudTips.StatsWindow(cold, med, race, stats, hc, constants) };
+            StatReadouts = HudTips.StatsWindow(cold, med, race, stats, hc, constants, db) };
     }
 
     /// <summary>

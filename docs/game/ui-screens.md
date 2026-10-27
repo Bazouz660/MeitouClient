@@ -820,10 +820,16 @@ and `Wound deterioration speed:` lerp(t, `degeneration mult 1`, `degeneration mu
 (int) `FUN_140643ae0`, label and value Main, `Amount of damage it takes to stagger you:` (int) t × `stumble damage max`. Dexterity (0x12) `Attack speed:` / `Block speed:` CharStats
 `+0x188` / `+0x18c` as `{x.xx}`. Dodge (0x20) `Dodge XP rate:` CharStats `+0x190` (the encumbrance factor) × 100 as a float `{1,num}%`. Athletics (0x11) `Max run speed:` (int) the
 run value V (`FUN_140883db0`, units per second, no unit), `Current run speed:` (int) CharStats `+0x17c`, `Athletics XP bonus:` (int)(`FUN_1408c5ec0`(stats, `+0x17c`) × 100) `%`.
-Swimming (0x17) `Max swim speed:` / `Current swim speed:` (int) `FUN_140883e30` / `FUN_140885eb0`. Other stats with values: Martial Arts `Affects damage`, Medic `First aid skills:`, Turrets and Crossbows `Accuracy:` / `Rate of fire:`, Precision `Friendly fire avoidance:`, Assassination `Stealthy
-knock-outs:`, Engineering `Building things:` / `Repairing things:`, Science `Research rate:`, Labouring `Mining:` / `Using machinery:`, Farming `Harvesting speed:` / `Harvesting yield:`,
-Cooking `Cooking:`, the smiths' crafting speeds and qualities (their formulas not decoded). Meitou (`HudTips.StatsWindow`, `PlayerInterface.AddStatDescription`): the
-Strength, Toughness, Dexterity, Dodge, Athletics and Swimming values beside the catalog's rows, matched by label; not Strength's combat XP rate.
+Swimming (0x17) `Max swim speed:` / `Current swim speed:` (int) `FUN_140883e30` / `FUN_140885eb0`. The other skills, from the effective level L (`FUN_140884ac0`) through `FUN_140889990`: the work rate R = lerp(L/100, 0.5, 1.4) (`FUN_1408852a0`, unclamped) as `{1,num,p=2}x`
+for Assassination `Stealthy knock-outs:`, Engineering `Building things:` / `Repairing things:`, Science `Research rate:`, Labouring `Mining:` / `Using machinery:`, Farming
+`Harvesting speed:`, Cooking `Cooking:` and the smiths' `Crafting weapons / armour / crossbows / crossbow bolts (speed):`; Medic (9) `First aid skills:` lerp(L/100, 1, 15) x
+`medic speed mult` (constant 0x16) as `{1,num,p=2}x`; Turrets (0xb) and Crossbows (0x23) `Accuracy:` and `Rate of fire:` both (int)((L + perception (0x18)) x 0.005 x 100) `%`
+(`FUN_140435160`); stat 0x24 `Friendly fire avoidance:` (int)(min(L x 0.015, 1) x 100) `%` (`FUN_140440300`); Farming `Harvesting yield:` (int)(clamp(lerp(L/100, 0.5, 2), 0,
+1) x 100) `%` (the farm curve `FUN_1400e40a0` without a farm); Martial Arts `Affects damage` the fists' damage as Strength's; `Weapon quality:` "[" + the name of the
+`PLAYER_WEAPONS` `weapon models` entry with the highest v0 above 0 and at or below L, else `913-gamedata.base`'s + "]" (`FUN_1408b0f90`); `Armour quality:` / `Crossbow quality:`
+"[" + grade + "]", the quality of tier (int)L (`FUN_14082e6b0`, no critical) named by `FUN_1408aa890` (below 11 Prototype, to 20 Shoddy, 40 Standard, 60 High, 80 Specialist,
+else Masterwork), so the tier's name. Precision (0x18), Thieving and Lockpicking rows have no values. Meitou (`HudTips.StatsWindow`, `PlayerInterface.AddStatDescription`): every
+value above beside the catalog's rows, matched by label; not Strength's combat XP rate.
 Medical body-part labels are larger than the stats body text. Meitou uses 16 em
 pixels at 1080 lines for medical labels, arrows and values, centred over the full
 bar height; sizing text to the inset datapanel shrinks it. Exact original font

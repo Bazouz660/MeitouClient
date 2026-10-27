@@ -149,7 +149,7 @@ static class HudTips
     /// base and current swim speeds. Rows without a number in the original (and Strength's combat XP rate, whose item slot is <b>Unknown</b>) have none here.
     /// </summary>
     public static Dictionary<StatsEnumerated, IReadOnlyList<StatReadout>> StatsWindow(CharacterCold cold, MedicalState med, RaceData race, CharacterStats stats, HudCombat? hc,
-        GameConstants? constants)
+        GameConstants? constants, Meitou.Data.GameDatabase? db = null)
     {
         float e = cold.Fighter?.EncumbranceFactor ?? 1;
         var factors = (cold.Fighter?.Factors ?? StatFactors.None) with { Stun = med.DustStatFactor };
@@ -184,7 +184,45 @@ static class HudTips
             result[StatsEnumerated.Athletics] = [new("Max run speed:", Int(run.RunValue)), new("Current run speed:", Int(run.RunSpeed)),
                 new("Athletics XP bonus:", Loc.Tr("{1,num}%", (int)(run.AthleticsXp * 100)))];
         result[StatsEnumerated.Swimming] = [new("Max swim speed:", Int(Speed.SwimBase(race, stats))), new("Current swim speed:", Int(Speed.Swim(race, stats, med, e)))];
+        // The skills, from the effective level L: work rates lerp(L/100, 0.5, 1.4) (FUN_1408852a0), aim (L + perception) x 0.5% (FUN_140435160).
+        float Eff(StatsEnumerated s) => stats[s] * stats.Scale * med.StatMultiplier(s, factors: factors);
+        string Rate(StatsEnumerated s) => Loc.Tr("{1,num,p=2}x", Lerp(Eff(s) * 0.01f, 0.5f, 1.4f));
+        string Aim(StatsEnumerated s) => Loc.Tr("{1,num}%", (int)((Eff(s) + Eff(StatsEnumerated.Perception)) * 0.005f * 100));
+        string Grade(StatsEnumerated s) => "[" + Loc.Tr(ArmourTooltip.GradeNames[CraftTier((int)Eff(s))]) + "]";
+        if (hc is { } m) result[StatsEnumerated.MartialArts] = [new("Affects damage", Int(m.UnarmedDamage))];
+        if (constants is not null) result[StatsEnumerated.Medic] = [new("First aid skills:", Loc.Tr("{1,num,p=2}x", Lerp(Eff(StatsEnumerated.Medic) * 0.01f, 1, 15) * constants.MedicSpeedMult))];
+        result[StatsEnumerated.Turrets] = [new("Accuracy:", Aim(StatsEnumerated.Turrets)), new("Rate of fire:", Aim(StatsEnumerated.Turrets))];
+        result[StatsEnumerated.Crossbows] = [new("Accuracy:", Aim(StatsEnumerated.Crossbows)), new("Rate of fire:", Aim(StatsEnumerated.Crossbows))];
+        result[StatsEnumerated.FriendlyFire] = [new("Friendly fire avoidance:", Loc.Tr("{1,num}%", (int)(Math.Min(Eff(StatsEnumerated.FriendlyFire) * 0.015f, 1) * 100)))];
+        result[StatsEnumerated.Assassination] = [new("Stealthy knock-outs:", Rate(StatsEnumerated.Assassination))];
+        result[StatsEnumerated.Engineering] = [new("Building things:", Rate(StatsEnumerated.Engineering)), new("Repairing things:", Rate(StatsEnumerated.Engineering))];
+        result[StatsEnumerated.Science] = [new("Research rate:", Rate(StatsEnumerated.Science))];
+        result[StatsEnumerated.Labouring] = [new("Mining:", Rate(StatsEnumerated.Labouring)), new("Using machinery:", Rate(StatsEnumerated.Labouring))];
+        result[StatsEnumerated.Farming] = [new("Harvesting speed:", Rate(StatsEnumerated.Farming)),
+            new("Harvesting yield:", Loc.Tr("{1,num}%", (int)(Math.Clamp(Lerp(Eff(StatsEnumerated.Farming) * 0.01f, 0.5f, 2), 0, 1) * 100)))];
+        result[StatsEnumerated.Cooking] = [new("Cooking:", Rate(StatsEnumerated.Cooking))];
+        var weapon = new List<StatReadout> { new("Crafting weapons (speed):", Rate(StatsEnumerated.SmithingWeapon)) };
+        if (db is not null && WeaponModel(db, Eff(StatsEnumerated.SmithingWeapon)) is { } model) weapon.Add(new("Weapon quality:", "[" + model + "]"));
+        result[StatsEnumerated.SmithingWeapon] = weapon;
+        result[StatsEnumerated.SmithingArmour] = [new("Crafting armour (speed):", Rate(StatsEnumerated.SmithingArmour)), new("Armour quality:", Grade(StatsEnumerated.SmithingArmour))];
+        result[StatsEnumerated.SmithingBow] = [new("Crafting crossbows (speed):", Rate(StatsEnumerated.SmithingBow)),
+            new("Crafting crossbow bolts (speed):", Rate(StatsEnumerated.SmithingBow)), new("Crossbow quality:", Grade(StatsEnumerated.SmithingBow))];
         return result;
+    }
+
+    /// <summary>The crafted-quality tier of an int skill (<c>FUN_14082e6b0</c> without a critical): one step each above 19, 39, 59 and 79.</summary>
+    static int CraftTier(int skill) => (skill > 19 ? 1 : 0) + (skill > 39 ? 1 : 0) + (skill > 59 ? 1 : 0) + (skill > 79 ? 1 : 0);
+
+    /// <summary>
+    /// The weapon model a weaponsmith of <paramref name="level"/> makes (<c>FUN_1408b0f90</c>): of <c>PLAYER_WEAPONS</c>' <c>weapon models</c>, the highest v0 above 0 and at or below
+    /// the level, else the record <c>913-gamedata.base</c>'s name.
+    /// </summary>
+    static string? WeaponModel(Meitou.Data.GameDatabase db, float level)
+    {
+        var best = (db.Find(Meitou.Data.Gameplay.Construction.CraftBench.PlayerWeapons)?.GetReferences("weapon models") ?? [])
+            .Select(r => (Record: db.Find(r.TargetStringId), Level: r.Values.Value0)).Where(m => m.Record is not null && m.Level > 0 && m.Level <= level)
+            .OrderByDescending(m => m.Level).FirstOrDefault();
+        return (best.Record ?? db.Find("913-gamedata.base"))?.Name;
     }
 
     /// <summary>
