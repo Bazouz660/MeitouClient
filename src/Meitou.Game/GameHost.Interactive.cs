@@ -643,6 +643,12 @@ sealed partial class GameHost
                     DrawWorld(size.X, size.Y);
                     tickAhead = false;
                 }
+                // The sky arrival's fade to and from black, over the world and under everything else.
+                if (skyArrival is { Fade: > 0 } fading && overlay is not null)
+                {
+                    overlay.Rect(0, 0, size.X, size.Y, new Vector4(0, 0, 0, fading.Fade));
+                    overlay.Flush(size.X, size.Y);
+                }
                 drawTotal += Stopwatch.GetElapsedTime(t0).TotalMilliseconds;
                 bool shot = screenshotRequested, take = takeFile is not null;
                 // The game's interface (markers, HUD, panels, debug overlays): hidden by F7, the cinema's clean picture and in recorded frames.
@@ -696,7 +702,7 @@ sealed partial class GameHost
                 {
                     loadingOverlay.Target = backbuffer;
                     if (skyArrival is null) loading.Draw(size.X, size.Y);
-                    else if (loading.Exiting || !skyArrival.Arriving && sceneLoad?.Clock.Elapsed.TotalSeconds >= 2)
+                    else if (loading.Exiting || skyArrival is { AtStars: true, Arriving: false } && sceneLoad?.Clock.Elapsed.TotalSeconds >= 2)
                         loading.Draw(size.X, size.Y, background: false);
                 }
                 // The mouse pointer over everything, as the original's Pointer layer; never in saved pictures. What the right button would do picks it,

@@ -3,41 +3,89 @@ using Meitou.Rendering;
 
 namespace Meitou.Game;
 
-/// <summary>Presentation-only flight through the sky; the simulation clock and camera rig never change.</summary>
+/// <summary>
+/// Presentation-only flight through the sky; the simulation clock and camera rig never change. The hour runs forward to the destination's, holds, the view
+/// pans up to the sky and waits there for the load; the destination fades in from black with the camera high over it, which comes down orbiting onto the view.
+/// </summary>
 sealed class SkyArrival(WorldCamera source, float hour, float speed = 1)
 {
-    internal const double AscentSeconds = 3.4, DescentSeconds = 2.4;
+    internal const double HoldSeconds = 1, AscentSeconds = 3.4, DescentSeconds = 3, FadeOutSeconds = 0.3, FadeInSeconds = 1.4;
     internal const float MinSpeed = 0.25f, MaxSpeed = 4;
     internal const float SkyPitch = -1.45f;
+    /// <summary>How far above its view the destination's camera starts, so nothing near blocks the first look; and how far it orbits round on the way down.</summary>
+    internal const float ArrivalHeight = 300, ArrivalSweep = 1.2f;
+    enum Phase { Turn, Hold, Ascent, Stars, Arriving }
     readonly Vector3 sourceEye = source.Eye;
     readonly float sourceYaw = source.Yaw, sourcePitch = source.Pitch, sourceDistance = source.Distance, sourceFov = source.FieldOfView;
     readonly float sourceHour = hour;
     readonly float flightSpeed = float.IsFinite(speed) ? Math.Clamp(speed, MinSpeed, MaxSpeed) : 1;
+    float? destinationHour;
+    Phase phase;
     double elapsed;
-    bool arriving;
+    bool covering;
 
-    public bool AtStars => elapsed >= AscentSeconds;
-    public bool Finished => arriving && elapsed >= DescentSeconds;
-    public bool Arriving => arriving;
-    public void Advance(double seconds) => elapsed += Math.Max(0, seconds) * flightSpeed;
-    public void Arrive() { arriving = true; elapsed = 0; }
-    public void Skip() => elapsed = arriving ? DescentSeconds : AscentSeconds;
+    public bool AtStars => phase >= Phase.Stars;
+    public bool Finished => phase == Phase.Arriving && elapsed >= DescentSeconds && Fade == 0;
+    public bool Arriving => phase == Phase.Arriving;
+    /// <summary>How much of the frame is black, 0..1: drawn over the world while it warms up under it and as it fades in.</summary>
+    public float Fade { get; private set; }
 
-    public float Apply(WorldCamera camera, float destinationHour, bool destinationReady = false)
+    /// <summary>The hour the flight runs forward to before it climbs; until it is known (a save still being read) the view holds at the source's.</summary>
+    public void SetDestination(float destination)
     {
-        float progress = (float)(elapsed / (arriving ? DescentSeconds : AscentSeconds));
-        float t = arriving ? Ease(progress, 0.3f, 0.15f) : Ease(progress);
-        if (!arriving)
+        if (destinationHour is null) destinationHour = destination;
+    }
+
+    /// <summary>Seconds of the hour's run forward: the longer the way round, the longer it takes (a whole day 2.4 s at speed 1).</summary>
+    double TurnSeconds => destinationHour is { } to && ForwardHours(sourceHour, to) is var hours and > 0.05f ? 0.4 + hours / 12 : 0;
+
+    public void Advance(double seconds)
+    {
+        seconds = Math.Max(0, seconds);
+        Fade = covering ? Math.Min(1, Fade + (float)(seconds * flightSpeed / FadeOutSeconds))
+            : phase == Phase.Arriving ? Math.Max(0, Fade - (float)(seconds * flightSpeed / FadeInSeconds)) : Fade;
+        // The hold is a wall-clock second whatever the speed.
+        elapsed += phase == Phase.Hold ? seconds : seconds * flightSpeed;
+        switch (phase)
         {
-            Place(camera, destinationReady ? camera.Eye : sourceEye, sourceYaw, float.Lerp(sourcePitch, SkyPitch, t), sourceDistance, sourceFov);
-            // Reach night halfway up, while the moons and foreground are still in view.
-            return NearestHour(sourceHour, 0, Ease((float)(elapsed / (AscentSeconds * 0.5))));
+            case Phase.Turn when destinationHour is null: elapsed = 0; break;
+            case Phase.Turn when elapsed >= TurnSeconds: (phase, elapsed) = (Phase.Hold, 0); break;
+            case Phase.Hold when elapsed >= HoldSeconds: (phase, elapsed) = (Phase.Ascent, 0); break;
+            case Phase.Ascent when elapsed >= AscentSeconds: (phase, elapsed) = (Phase.Stars, 0); break;
         }
-        var eye = camera.Eye;
-        float yaw = sourceYaw + MathF.IEEERemainder(camera.Yaw - sourceYaw, MathF.Tau) * t;
-        Place(camera, eye, yaw, float.Lerp(SkyPitch, camera.Pitch, t), camera.Distance, float.Lerp(sourceFov, camera.FieldOfView, t));
-        // Restore the destination lighting before terrain enters the frame.
-        return ForwardHour(0, destinationHour, Ease(Math.Min(t * 2, 1)));
+    }
+
+    /// <summary>The load is done and the destination warms up under the flight: the sky fades to black over it.</summary>
+    public void Cover() => covering = true;
+
+    public void Arrive() { phase = Phase.Arriving; elapsed = 0; covering = false; }
+
+    public void Skip()
+    {
+        if (phase == Phase.Arriving) (elapsed, Fade) = (DescentSeconds, 0);
+        else if (phase < Phase.Stars) (phase, elapsed) = (Phase.Stars, 0);
+    }
+
+    /// <summary>Places the camera for this frame and returns the hour to light it with. <paramref name="destinationReady"/>: the destination warms up under
+    /// the cover, so the camera already stands where the descent starts.</summary>
+    public float Apply(WorldCamera camera, float destination, bool destinationReady = false)
+    {
+        float to = destinationHour ?? destination;
+        if (phase == Phase.Arriving || destinationReady)
+        {
+            float t = phase == Phase.Arriving ? Ease((float)(elapsed / DescentSeconds), 0.3f, 0.2f) : 0;
+            // Orbit round the view's target onto its heading while coming down from above it, the look tipping from the sky to the view's pitch.
+            float yaw = camera.Yaw - ArrivalSweep * (1 - t), pitch = camera.Pitch;
+            var eye = camera.Target + new Vector3(MathF.Cos(pitch) * MathF.Sin(yaw), MathF.Sin(pitch), MathF.Cos(pitch) * MathF.Cos(yaw)) * camera.Distance
+                + Vector3.UnitY * ArrivalHeight * (1 - t);
+            Place(camera, eye, yaw, float.Lerp(SkyPitch, pitch, t), camera.Distance, float.Lerp(sourceFov, camera.FieldOfView, t));
+            return destination;
+        }
+        float lift = phase switch { Phase.Ascent => Ease((float)(elapsed / AscentSeconds)), Phase.Stars => 1, _ => 0 };
+        Place(camera, sourceEye, sourceYaw, float.Lerp(sourcePitch, SkyPitch, lift), sourceDistance, sourceFov);
+        return phase == Phase.Turn
+            ? destinationHour is null ? sourceHour : ForwardHour(sourceHour, to, Ease(TurnSeconds > 0 ? (float)(elapsed / TurnSeconds) : 1))
+            : to;
     }
 
     // Descent holds its cruising speed longer and brakes briefly at the end; ascent uses symmetric ramps.
@@ -51,11 +99,9 @@ sealed class SkyArrival(WorldCamera source, float hour, float speed = 1)
         if (t > 1 - endRamp) return 1 - endRamp * RampDistance((1 - t) / endRamp) / area;
         return (t - startRamp * 0.5f) / area;
     }
-    /// <summary>The hour <paramref name="t"/> of the way from <paramref name="from"/> to <paramref name="to"/> the shorter way round: a dawn title rewinds to midnight rather than running through the day.</summary>
-    internal static float NearestHour(float from, float to, float t) =>
-        (from + ((to - from + 36) % 24 - 12) * Math.Clamp(t, 0, 1) + 24) % 24;
+    static float ForwardHours(float from, float to) => (to - from + 24) % 24;
     internal static float ForwardHour(float from, float to, float t) =>
-        (from + ((to - from + 24) % 24) * Math.Clamp(t, 0, 1)) % 24;
+        (from + ForwardHours(from, to) * Math.Clamp(t, 0, 1)) % 24;
 
     internal static void Place(WorldCamera camera, Vector3 eye, float yaw, float pitch, float distance, float fov)
     {

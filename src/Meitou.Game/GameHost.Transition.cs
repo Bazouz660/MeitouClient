@@ -25,6 +25,8 @@ sealed partial class GameHost
     SceneLoad? sceneLoad;
     SkyArrival? skyArrival;
     float? presentationHour;
+    /// <summary>The hour of the save being read, set by the reading worker as soon as its CAMERA is read (NaN until then), for the sky arrival.</summary>
+    float readHour = float.NaN;
     bool warming;
     double smoothSeconds;
     double warmSeconds;
@@ -45,13 +47,15 @@ sealed partial class GameHost
 
     static (string Step, Func<Task?> Run, bool DuringAscent) Stage(string step, Func<Task?> run, bool duringAscent = false) => (step, run, duringAscent || step == "read");
 
-    void StartSceneLoad(bool mainMenuTransition, params (string Step, Func<Task?> Run, bool DuringAscent)[] stages)
+    void StartSceneLoad(bool mainMenuTransition, float? destinationHour, params (string Step, Func<Task?> Run, bool DuringAscent)[] stages)
     {
         if (sceneLoad is not null) return;
         sceneLoad = new();
         if (player.UiMode == Meitou.Data.Ui.UiMode.Meitou && (mainMenuTransition ? config.MainMenuTransitions : config.InGameTransitions))
             skyArrival = new(camera, presentationHour ?? (TitleVisible ? TitleHour : (float)session.Clock.HourOfDay),
                 mainMenuTransition ? config.MainMenuTransitionSpeed : config.InGameTransitionSpeed);
+        if (destinationHour is { } hour) skyArrival?.SetDestination(hour);
+        Volatile.Write(ref readHour, float.NaN);
         foreach (var stage in stages) sceneLoad.Stages.Enqueue(stage);
         loading?.Restart();
         loadingSteps = SceneSteps;
@@ -69,6 +73,8 @@ sealed partial class GameHost
             if (load.Waiting is { IsFaulted: true } failed) throw failed.Exception!.GetBaseException();
             if (!load.Stages.TryDequeue(out var stage))
             {
+                // The sky fades to black before the destination is drawn under it.
+                if (skyArrival is { Fade: < 1 } covering) { covering.Cover(); return; }
                 sceneLoad = null;
                 ReportLoading($"scene loaded in {load.Clock.Elapsed.TotalSeconds:0.0} s");
                 BeginWarm();
@@ -177,6 +183,7 @@ sealed partial class GameHost
     void AdvanceSkyArrival(double seconds)
     {
         if (skyArrival is not { } arrival) return;
+        if (Volatile.Read(ref readHour) is var hour && !float.IsNaN(hour)) arrival.SetDestination(hour);
         arrival.Advance(seconds);
         if (!arrival.Finished) return;
         skyArrival = null;

@@ -252,9 +252,11 @@ sealed partial class GameHost
         Task<SaveGame>? read = null;
         string summary = "";
         AudioGameStarts();
-        StartSceneLoad(player.TitleOpen,
-            Stage("read", () => read = Task.Run(() => SaveGame.Load(folder))),
-            Stage("build", () => SwapInSave(read!, interactive: true, out summary)),
+        PreparedSystems? prepared = null;
+        StartSceneLoad(player.TitleOpen, null,
+            Stage("read", () => read = Task.Run(() => SaveGame.Load(SaveFolder.Open(folder), ReadArrivalHour))),
+            Stage("systems", () => { prepared = PrepareSystems(read!, interactive: true); return null; }, duringAscent: true),
+            Stage("build", () => SwapInSave(read!, interactive: true, out summary, prepared: prepared)),
             Stage("finishing", () => { SettleNewWorld(); player.FollowSelected(); FinishLoadNotice(summary); saveInUse = folder; return null; }));
     }
 
@@ -271,26 +273,52 @@ sealed partial class GameHost
         var settings = player.NewGameOptions;
         var data = popData!;
         Task<SaveGame>? read = null;
+        PreparedSystems? prepared = null;
         string summary = "";
         AudioGameStarts();
-        StartSceneLoad(player.TitleOpen,
+        StartSceneLoad(player.TitleOpen, null,
             Stage("read", () => read = Task.Run(() =>
             {
-                var save = SaveGame.Load(folder);
+                var save = SaveGame.Load(SaveFolder.Open(folder), ReadArrivalHour);
                 // A save older than 0.90.0 imports without the reset, buildings, research and dead-NPC ticks (the window's rule).
                 options = SaveImport.AllowedFor(options, save.Camera.Version);
                 var game = SaveImport.Filter(save, options, data);
                 settings.Write(game.Camera);
                 return game;
             })),
+            Stage("systems", () => { prepared = PrepareSystems(read!, interactive: true); return null; }, duringAscent: true),
             // The squads moved to the reset place stand on its ground, whose navmesh is waited for.
             Stage("navmesh", () => (options & ImportOptions.ResetPositions) != 0 && read!.IsCompletedSuccessfully ? NavmeshAround(SaveImport.ResetPosition) : null),
             Stage("build", () =>
             {
                 if ((options & ImportOptions.ResetPositions) != 0 && nav is not null && read!.IsCompletedSuccessfully) SaveImport.PlaceOnGround(read.Result, nav.Walkability.GroundHeight);
-                return SwapInSave(read!, interactive: true, out summary, new SaveLoadOptions { Appearances = data.Appearances, ResetRelations = (options & ImportOptions.Relations) == 0 });
+                return SwapInSave(read!, interactive: true, out summary, new SaveLoadOptions { Appearances = data.Appearances, ResetRelations = (options & ImportOptions.Relations) == 0 }, prepared);
             }),
             Stage("finishing", () => { SettleNewWorld(); player.FollowSelected(); FinishLoadNotice(summary, imported: true); return null; }));
+    }
+
+    sealed record PreparedSystems(StandardSystemSet Built, PopulationData Data, NewGameSettings Difficulty);
+
+    /// <summary>The worker's hand-off of the save's hour to the sky arrival (GameHost.Transition.cs).</summary>
+    void ReadArrivalHour(SaveCamera saved) => Volatile.Write(ref readHour, saved.Hour + saved.Minute / 60f);
+
+    /// <summary>The systems of the world the save will be loaded into, with its difficulty: made apart from the swap, so a load builds them while the old
+    /// world still shows. Throws <see cref="SceneLoadFailed"/> when the save was not read.</summary>
+    PreparedSystems PrepareSystems(Task<SaveGame> read, bool interactive)
+    {
+        if (read.IsFaulted || read.IsCanceled)
+        {
+            Console.Error.WriteLine($"load      read failed: {read.Exception?.GetBaseException()}");
+            throw new SceneLoadFailed($"Load failed: {read.Exception?.GetBaseException().Message ?? "cancelled"}");
+        }
+        var nextDifficulty = NewGameSettings.Read(read.Result.Camera);
+        var nextData = nextDifficulty.Apply(popData!, Gameplay.Dismemberment);
+        try { return new(BuildSystems(interactive, nextData, nextDifficulty), nextData, nextDifficulty); }
+        catch (Exception e)
+        {
+            Console.Error.WriteLine($"load      failed: {e}");
+            throw new SceneLoadFailed($"Load failed: {e.Message}");
+        }
     }
 
     /// <summary>
@@ -298,21 +326,13 @@ sealed partial class GameHost
     /// navmesh of the zones round the player to wait for before the first tick (<see cref="SettleNewWorld"/>); throws <see cref="SceneLoadFailed"/> when the save does
     /// not load (the old world stays).
     /// </summary>
-    Task SwapInSave(Task<SaveGame> read, bool interactive, out string summary, SaveLoadOptions? loadOptions = null)
+    Task SwapInSave(Task<SaveGame> read, bool interactive, out string summary, SaveLoadOptions? loadOptions = null, PreparedSystems? prepared = null)
     {
-        if (read.IsFaulted || read.IsCanceled)
-        {
-            Console.Error.WriteLine($"load      read failed: {read.Exception?.GetBaseException()}");
-            throw new SceneLoadFailed($"Load failed: {read.Exception?.GetBaseException().Message ?? "cancelled"}");
-        }
         var watch = Stopwatch.StartNew();
         LoadedSave? loaded = null;
-        StandardSystemSet built;
-        var nextDifficulty = NewGameSettings.Read(read.Result.Camera);
-        var nextData = nextDifficulty.Apply(popData!, Gameplay.Dismemberment);
+        var (built, nextData, nextDifficulty) = prepared ?? PrepareSystems(read, interactive);
         try
         {
-            built = BuildSystems(interactive, nextData, nextDifficulty);
             var data = nextData;
             // A world that fails to load leaves the old one running (ReplaceWorld drops the half-made one).
             session.ReplaceWorld(built.Systems, world =>

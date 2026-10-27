@@ -81,14 +81,16 @@ the original title image and loading screen. Advanced settings persist two indep
 toggles in `meitou.user.json`, both on by default: `mainMenuTransitions` covers entering a new game/save
 from the main menu and returning to it; `inGameTransitions` covers save loads/new games during play.
 Each has a persisted speed slider (`mainMenuTransitionSpeed` / `inGameTransitionSpeed`, 0.25–4x, default 1.5x).
-Disabling either uses the regular loading screen and warm-up. Enabled scene loads in Meitou use `SkyArrival`: 3.4s ascent
-about a fixed eye (lighting takes the shorter way to midnight by halfway up, so the dawn title rewinds), a midnight
-sky hold, then 2.4s descent at the destination, both durations divided by the selected speed.
-Ascent ramps speed over its first/last40%; descent ramps up over30% and brakes over15%, keeping
-its cruising speed later into the reveal. Integrated smoothstep velocity brings
-angular velocity and acceleration to zero at both ends of each flight. Save reads and
-new-game system preparation overlap the ascent; world replacement waits until terrain is outside
-the view. Escape/Space skips the flight, never pending load work. Progress appears after 2s.
+Disabling either uses the regular loading screen and warm-up. Enabled scene loads in Meitou use `SkyArrival`, the load starting at once:
+the hour runs forward to the destination's (title: its morning; new game: the start hour; save: CAMERA `time hour`/`minute`, handed over by
+the reading worker as soon as `quick.save` is parsed), 0.4 s + 1 s per 12 h; a 1 s wall-clock hold; a 3.4 s ascent about the fixed eye to
+the sky at that hour (a day save shows day sky, not stars); a wait there for the load; a 0.3 s fade to black once its stages are done, under
+which the destination warms up; then a 3 s descent that fades in from black over its first 1.4 s, starting 300 units above the view and
+orbiting 1.2 rad round its target onto the view's heading. All but the hold are divided by the selected speed. Ascent ramps speed over its
+first/last 40%; descent ramps up over 30% and brakes over 20%. Integrated smoothstep velocity brings
+angular velocity and acceleration to zero at both ends of each flight. Save reads, the new world's systems and new-game
+system preparation overlap the flight; world replacement waits until terrain is outside
+the view. Escape/Space skips the flight, never pending load work. Progress appears in the sky after 2s.
 Camera/hour overrides belong to presentation; simulation does not advance during the flight,
 and weather scheduling uses the actual game hour. Sky-only frames avoid world callbacks while
 loading; warm-up renders the destination before descent. Errors drop the flight and restore UI.

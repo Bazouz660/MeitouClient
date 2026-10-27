@@ -18,7 +18,7 @@ sealed partial class GameHost
         if (!mainMenuRequested) return;
         mainMenuRequested = false;
         if (!SavesAvailable(out string why) || Busy()) { player.Notice(why.Length > 0 ? why : "Save or load still in progress", true); return; }
-        StartSceneLoad(mainMenuTransition: true, Stage("build", () =>
+        StartSceneLoad(mainMenuTransition: true, TitleHour, Stage("build", () =>
         {
             var built = BuildSystems(interactive: true);
             session.ReplaceWorld(built.Systems);
@@ -46,7 +46,7 @@ sealed partial class GameHost
         // A fresh seed per game, as the original rolls its names and squads anew each time (docs/characters.md "Names"); --seed keeps one.
         ulong seed = g.SeedGiven ? g.Seed : (ulong)Random.Shared.NextInt64(1, long.MaxValue);
         AudioGameStarts();
-        StartSceneLoad(player.TitleOpen,
+        StartSceneLoad(player.TitleOpen, (float)Meitou.Engine.Time.GameClock.DefaultStartHour,
             Stage("build", () =>
             {
                 built = BuildSystems(interactive: true, nextData, nextDifficulty);

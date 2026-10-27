@@ -51,10 +51,12 @@ public sealed partial class SaveGame
     /// <summary>Opens a save folder.</summary>
     public static SaveGame Load(string folder) => Load(SaveFolder.Open(folder));
 
-    public static SaveGame Load(SaveFolder folder)
+    /// <summary>Opens a save folder; <paramref name="cameraRead"/> is told the CAMERA as soon as <c>quick.save</c> is read, before the platoon and zone files.</summary>
+    public static SaveGame Load(SaveFolder folder, Action<SaveCamera>? cameraRead = null)
     {
         if (!folder.HasQuickSave) throw new FileNotFoundException($"'{folder.TopLayer}' has no {SaveFolder.QuickSaveName}.");
         var game = new SaveGame(folder.ReadQuickSave());
+        cameraRead?.Invoke(game.Camera);
         foreach (var platoon in game.Platoons)
         {
             if (platoon.FileName is not { } name) continue;
