@@ -212,11 +212,7 @@ public sealed partial class FirstAidSystem
     /// <item><b>Owned slaves</b> in sight, <b>carried</b> patients of the medic's faction (outdoors), then <b>prisoners in the cages</b> of the medic's faction in its place at a flat 0.25.</item>
     /// </list>
     /// </summary>
-    (int Slot, float Score) FindPatient(World world, int i, List<(int Medic, int Patient)> taken, bool robotics) =>
-        FindPatient(world, i, taken, robotics, useGrid: true);
-
-    /// <summary>Full scan retained as an equivalence oracle for tests.</summary>
-    internal (int Slot, float Score) FindPatient(World world, int i, List<(int Medic, int Patient)> taken, bool robotics, bool useGrid)
+    (int Slot, float Score) FindPatient(World world, int i, List<(int Medic, int Patient)> taken, bool robotics)
     {
         var table = world.Characters;
         var next = table.Next;
@@ -235,7 +231,7 @@ public sealed partial class FirstAidSystem
         List<int> candidates = patientCandidates;
         var previous = table.Previous;
         // The grid is last tick's snapshot: a medic that spawned or jumped since (a teleport into a cage) is searched by the full scan.
-        if (useGrid && (!previous[i].Alive || (previous[i].Position - origin).LengthSquared() > PatientGridJump * PatientGridJump)) useGrid = false;
+        bool useGrid = previous[i].Alive && (previous[i].Position - origin).LengthSquared() <= PatientGridJump * PatientGridJump;
         if (useGrid)
         {
             patientCandidates.Clear();
