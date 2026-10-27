@@ -46,7 +46,7 @@ sealed partial class GameHost
         // A fresh seed per game, as the original rolls its names and squads anew each time (docs/characters.md "Names"); --seed keeps one.
         ulong seed = g.SeedGiven ? g.Seed : (ulong)Random.Shared.NextInt64(1, long.MaxValue);
         AudioGameStarts();
-        StartSceneLoad(player.TitleOpen, (float)Meitou.Engine.Time.GameClock.DefaultStartHour,
+        StartSceneLoad(player.TitleOpen, null,
             Stage("build", () =>
             {
                 built = BuildSystems(interactive: true, nextData, nextDifficulty);
@@ -76,5 +76,6 @@ sealed partial class GameHost
                 pendingCreation = [.. spawned.Members];   // the start's characters are made in the editor first (docs/characters.md "Character editor")
                 return null;
             }));
+        skyArrival?.ClimbAtOnce();
     }
 }

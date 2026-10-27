@@ -24,6 +24,7 @@ sealed class SkyArrival(WorldCamera source, float hour, float speed = 1)
     double elapsed;
     double age;
     bool covering;
+    bool climbing;
 
     public bool AtStars => phase >= Phase.Stars;
     public bool Finished => phase == Phase.Arriving && elapsed >= DescentSeconds && Fade == 0;
@@ -31,7 +32,7 @@ sealed class SkyArrival(WorldCamera source, float hour, float speed = 1)
     /// <summary>How much of the frame is black, 0..1: drawn over the world while it warms up under it and as it fades in.</summary>
     public float Fade { get; private set; }
     /// <summary>How far the title's wanderer has sat down, 0..1: from the flight's start, over <see cref="SitSeconds"/>.</summary>
-    public float Sit => Ease((float)(age / SitSeconds), 0.5f, 0.5f);
+    public float Sit => climbing ? 0 : Ease((float)(age / SitSeconds), 0.5f, 0.5f);
 
     /// <summary>The hour the flight runs forward to before it climbs; until it is known (a save still being read) the view holds at the source's.</summary>
     public void SetDestination(float destination)
@@ -58,6 +59,9 @@ sealed class SkyArrival(WorldCamera source, float hour, float speed = 1)
             case Phase.Ascent when elapsed >= AscentSeconds: (phase, elapsed) = (Phase.Stars, 0); break;
         }
     }
+
+    /// <summary>A new game: straight up at the source's hour, no sitting down, hold or run of the hour (the start hour comes in under the black).</summary>
+    public void ClimbAtOnce() => (climbing, destinationHour, phase, elapsed) = (true, sourceHour, Phase.Ascent, 0);
 
     /// <summary>The load is done and the destination warms up under the flight: the sky fades to black over it.</summary>
     public void Cover() => covering = true;

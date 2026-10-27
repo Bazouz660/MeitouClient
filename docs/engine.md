@@ -82,7 +82,7 @@ toggles in `meitou.user.json`, both on by default: `mainMenuTransitions` covers 
 from the main menu and returning to it; `inGameTransitions` covers save loads/new games during play.
 Each has a persisted speed slider (`mainMenuTransitionSpeed` / `inGameTransitionSpeed`, 0.25–4x, default 1.5x).
 Disabling either uses the regular loading screen and warm-up. Enabled scene loads in Meitou use `SkyArrival`, the load starting at once:
-the hour runs forward to the destination's (title: its morning; new game: the start hour; save: CAMERA `time hour`/`minute`, handed over by
+the hour runs forward to the destination's (title: its morning; save: CAMERA `time hour`/`minute`, handed over by
 the reading worker as soon as `quick.save` is parsed), 0.8 s + 1 s per 6 h, accelerating over its first half and braking over the second, while
 the title's wanderer blends from standing into `sitting idle` over 1.8 s (the data has no sit-down clip); a 0.5 s wall-clock hold; a 3.4 s ascent about the fixed eye to
 the sky at that hour (a day save shows day sky, not stars); a wait there for the load; a 0.3 s fade to black once its stages are done, under
@@ -91,7 +91,8 @@ orbiting 1.2 rad round its target onto the view's heading. All but the hold are 
 first/last 40%; descent ramps up over 30% and brakes over 20%. Integrated smoothstep velocity brings
 angular velocity and acceleration to zero at both ends of each flight. Save reads, the new world's systems and new-game
 system preparation overlap the flight; world replacement waits until terrain is outside
-the view. Escape/Space skips the flight, never pending load work. Progress appears in the sky after 2s.
+the view. A new game climbs at once at the current hour: no sitting down, hold or hour run.
+Escape/Space skips the flight, never pending load work. Progress appears in the sky after 2s.
 Camera/hour overrides belong to presentation; simulation does not advance during the flight,
 and weather scheduling uses the actual game hour. Sky-only frames avoid world callbacks while
 loading; warm-up renders the destination before descent. Errors drop the flight and restore UI.
