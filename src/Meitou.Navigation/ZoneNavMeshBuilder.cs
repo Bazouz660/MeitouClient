@@ -94,6 +94,13 @@ internal static partial class ZoneNavMeshBuilder
 
         watch.Restart();
         SeedPruner.Prune(mesh, g, s);
+        // A ruin's floor outside its destroyed boundary lies under walls without collision: dropped, so no border closure or hull join keeps it again.
+        if (g.DestroyedOutline is { } outline)
+        {
+            for (int p = 0; p < mesh.PolygonCount; p++)
+                if (mesh.Kept[p]) { var c = mesh.Centre(p); mesh.Kept[p] = NavGeometry.InsideOutline(outline, new Vector2(c.X, c.Z)); }
+            mesh = mesh.WithoutPruned();
+        }
         times.Prune = watch.Elapsed.TotalMilliseconds;
         times.Total = total.Elapsed.TotalMilliseconds;
         times.Polygons = mesh.PolygonCount;
