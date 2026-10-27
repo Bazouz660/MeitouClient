@@ -109,6 +109,7 @@ sealed partial class PlayerInterface
         if (focus.Type is { Length: > 0 } type) state.Add(new("Type:", type));
         var inspected = session.CurrentSnapshot.InspectedRichness is { } ir && ir.Instance == focus.Instance ? ir : (Meitou.Simulation.Production.RichnessView?)null;
         if ((focus.Town ?? site?.TownName ?? detail?.Bed?.Town ?? inspected?.TownName) is { Length: > 0 } town) state.Add(new("Town:", town));
+        if (own && session.CurrentSnapshot.InspectedTurret is { } turret && turret.Instance == focus.Instance) AddHeightLines(turret, state);
         if (detail?.Bed is { } bed)
         {
             if (bed.Cost != 0)
@@ -221,6 +222,39 @@ sealed partial class PlayerInterface
     /// <summary>A BUILDING record's <c>power output</c> (the upgrade tooltip's Power change); the host sets it.</summary>
     public Func<string, int?>? PowerOutput { get; set; }
 
+    /// <summary>
+    /// A turret's section 3 rows (<c>FUN_14030c2a0</c>, <b>Observed</b> by disassembly): <c>Height:</c> int((building y - last aim y) x 0.1) m, "The turrets height above the last target we aimed
+    /// at."; <c>Height bonus:</c> "+" int((h - 1) x 100)% with the bonus text naming the height in the Title tag (the penalty text only for a negative h, which h never is). The original
+    /// leaves out Height for some buildings (slots 0x268 / 0x270 / 0x228, not decoded) and reads the ground under the building before any aim; Meitou shows it once the turret has aimed.
+    /// </summary>
+    static void AddHeightLines(Meitou.Simulation.Combat.TurretPanelView turret, List<HudLine> state)
+    {
+        string metres = Loc.Tr("{1,num} m", turret.HeightMetres ?? 0);
+        if (turret.HeightMetres is not null) state.Add(new("Height:", metres, Tooltip: Loc.Tr("The turrets height above the last target we aimed at.")));
+        string tip = turret.Height >= 0
+            ? Loc.Tr("The additional bonus to range, speed and power that resulted from having a height difference of {1} above the last target.", TitleTag + metres + InkTag)
+            : Loc.Tr("The additional penalty to range, speed and power that resulted from having a height difference of {1} below the last target.", TitleTag + metres + InkTag);
+        state.Add(new("Height bonus:", "+" + Loc.Tr("{1,num}%", (int)((turret.Height - 1) * 100)), ValueColour: turret.Height >= 0 ? GoodColour : BadColour, Tooltip: tip));
+    }
+
+    /// <summary>
+    /// The gun's <c>Loaded</c> bar (<c>GunClass</c> slot 14 <c>FUN_14030ce20</c> section 4, <b>Observed</b>): "{loaded}/{shots}", filled (loaded + 1 - the reload still to go) / shots; its rows
+    /// Base Reload Speed (the reload times, 2 decimals), User Skill and, with a gunner, User Reload Speed from the gunner's Crossbows level (stat 0x23, as the base class reads it).
+    /// </summary>
+    static MedicalRow LoadedRow(Meitou.Simulation.Combat.TurretPanelView g)
+    {
+        static string F2(float v) => v.ToString("F2", CultureInfo.InvariantCulture);
+        float fill = g.Shots > 0 ? Math.Clamp((g.Loaded + 1 - g.ReloadLeft) / g.Shots, 0, 1) : 0;
+        var tip = new List<string> { Loc.Tr("Base Reload Speed:") + " " + Loc.Tr("{1}-{2} seconds", F2(g.ReloadMin), F2(g.ReloadMax)),
+            Loc.Tr("User Skill:") + " " + ((int)(g.Crossbows ?? 0)).ToString(CultureInfo.InvariantCulture) };
+        if (g.Crossbows is { } level)
+        {
+            float time = Meitou.Simulation.Combat.RangedFormulas.ReloadTime(level * 0.01f, g.ReloadMin, g.ReloadMax);
+            tip.Add(Loc.Tr("User Reload Speed:") + " " + Loc.Tr((int)time == 1 ? "{1} second" : "{1} seconds", F2(time)));
+        }
+        return new(Loc.Tr("Loaded"), 0, fill, 0, $"{g.Loaded}/{g.Shots}", "", false, string.Join("\n", tip));
+    }
+
     /// <summary>The selected building's first door as the simulation publishes it, or null.</summary>
     Meitou.Simulation.Locks.DoorDetail? FirstDoor(SelectedBuilding focus) =>
         session.CurrentSnapshot.InspectedBuilding is { } detail && detail.Instance == focus.Instance && detail.Doors.Count > 0 ? detail.Doors[0] : null;
@@ -259,6 +293,7 @@ sealed partial class PlayerInterface
                 : "Power output is at maximum.";
             rows.Add(Bar(Loc.Tr("Power Output"), output / wind.Rated, ((int)output).ToString(CultureInfo.InvariantCulture), outputTip));
         }
+        if (site is { Complete: true } && session.CurrentSnapshot.InspectedTurret is { } gun && gun.Instance == focus.Instance) rows.Add(LoadedRow(gun));
         if (site is { Complete: false })
             foreach (var m in site.Materials)
             {

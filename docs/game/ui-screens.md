@@ -684,8 +684,14 @@ How a building gets selected: [ui-input](ui-input.md#building-picking-and-select
     (2 decimals, no M) `x`; Deviation `Base Accuracy Deviation:` (1 decimal `*`), `User Skill:` int(`+0x2c` × 100), `User Accuracy Deviation:` u (1 decimal `*`),
     then the text "The amount of accuracy error, in degrees. Higher numbers are poor, 0 is perfect accuracy.". Shared rows: `Power supply:` int(min(1, granted
     / demand) × 100)% (Bad) when below 1; `Condition:` int(construction fraction × 100)% (Good from 95, else Bad) when below 99. `Wall bonus:` `+` int((M −
-    0.99) × 100)% (Good when M > 1, else Bad: +1% without a wall); `Height advantage:` `+` int((h − 1) × 100)%. Section 3 adds `Height:` and `Height bonus:`
-    (`FUN_14030c2a0`), section 4 the gun's `Loaded` bar: not built in Meitou.
+    0.99) × 100)% (Good when M > 1, else Bad: +1% without a wall); `Height advantage:` `+` int((h − 1) × 100)%. Section 3 (`FUN_14030c2a0`, **Verified** by
+    disassembly, constants from exe bytes): `Height:` int((building y `+0x4c` - y) x 0.1) `{1,num} m` with y the gun's last aim `+0x11c`, or the ground under the building while it is 0,
+    "The turrets height above the last target we aimed at.", left out when slot 0x268 answers, or slot 0x270 answers and slot 0x228's byte is set (not decoded); `Height bonus:` `+`
+    int((h - 1) x 100)% with "The additional bonus to range, speed and power that resulted from having a height difference of {1} above the last target." ({1} the height text
+    between the Title and ink tags; the "penalty ... below" text only when h < 0, which h never is). Section 4 (base `GunClass` `FUN_14030ce20`, **Observed**): `Loaded` bar
+    `{1,num}/{2,num}` (gun `+0x20` loaded, `+0x1c` num shots), filled (loaded + 1 - `+0xe0`) / shots; rows `Base Reload Speed:` `{min}-{max} seconds` (`+0x24`, `+0x28`, 2 decimals),
+    `User Skill:`, and with a user `User Reload Speed:` from its stat 0x23 (Crossbows) through `FUN_140436010`. Meitou: `AddHeightLines` (Height once the turret has aimed),
+    `LoadedRow` (`+0xe0` read as the share of the running reload still to go, 1 while none runs; User Skill as the Crossbows level).
   - Slot 114 (`FUN_140300090`), first match, all but Working in Bad with a tooltip: Broken, Under construction, Switched off (off with demand), No power, Production
     queue empty (status 3), Out of resource (status 0 and slot 149), Output full (status 1), No power (demand > 0, granted <= 0), No workers (raw max > 0,
     nobody), Working with the tooltip of slot 168 (`FUN_1403094b0`, every class; **Verified**): P = `power output` + research increase (`FUN_1402976a0`);

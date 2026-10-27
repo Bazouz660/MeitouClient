@@ -13,8 +13,19 @@ public readonly record struct TurretView(string BuildingId, string GunId, Vector
 /// The gun numbers a selected turret's Stats 1 lines read (<c>GunClassTurret</c> slot 14 <c>FUN_14030d620</c>, docs/game/ui-screens.md "Production building"): the GUN_DATA <c>range</c>,
 /// <c>aim speed</c> and <c>accuracy deviation at 0 skill</c>, the mount factor M (gun slot 18), the height factor h from the building to its last aim point (gun <c>+0x118</c>, 1 before any),
 /// the last gunner's Turrets level x 0.01 (gun <c>+0x2c</c>, 0 for a turret never manned) and that gunner's perception level while it exists (null: none).
+/// For the Height rows (<c>FUN_14030c2a0</c> section 3) the height above the last aim point in metres (null before any aim); for the Loaded bar (<c>GunClass</c> slot 14 <c>FUN_14030ce20</c>
+/// section 4) the loaded and full shots, the share of the running reload still to go (1 while none runs), the GUN_DATA reload times and the gunner's Crossbows level (null: none).
 /// </summary>
-public readonly record struct TurretPanelView(string Instance, float Range, float AimSpeed, float Deviation, float Mount, float Height, float UserSkill, float? Perception);
+public readonly record struct TurretPanelView(string Instance, float Range, float AimSpeed, float Deviation, float Mount, float Height, float UserSkill, float? Perception)
+{
+    public int? HeightMetres { get; init; }
+    public int Loaded { get; init; }
+    public int Shots { get; init; } = 1;
+    public float ReloadLeft { get; init; } = 1;
+    public float ReloadMin { get; init; }
+    public float ReloadMax { get; init; }
+    public float? Crossbows { get; init; }
+}
 
 /// <summary>
 /// The turrets (docs/game/combat.md "Turrets", docs/simulation.md "Combat", turrets). The original runs a turret through its gunner's ranged controller (<c>Task_UseTurret</c>
@@ -94,12 +105,20 @@ public sealed partial class CombatSystem
     {
         if (instance is null || TurretGuns is not { } catalog || world.Buildings.Find(instance) is not { } site || catalog.Get(site.Record) is not { } gun) return null;
         var g = gun.Gun;
-        if (!turrets.TryGetValue(instance, out var t)) return new(instance, g.Range, g.AimSpeed, g.AccuracyDeviationAtZeroSkill, 1, 1, 0, null);
-        float? perception = null;
+        if (!turrets.TryGetValue(instance, out var t))
+            return new(instance, g.Range, g.AimSpeed, g.AccuracyDeviationAtZeroSkill, 1, 1, 0, null) { Shots = g.NumShots, ReloadMin = g.ReloadTimeMin, ReloadMax = g.ReloadTimeMax };
+        float? perception = null, crossbows = null;
         if (t.User >= 0 && t.User < world.Characters.HighWater && world.Characters.Previous[t.User].Generation == t.UserGeneration && world.Characters.Cold(t.User) is { Stats: not null, Medical: not null } user)
+        {
             perception = Eff(user, StatsEnumerated.Perception);
+            crossbows = user.Stats![StatsEnumerated.Crossbows];
+        }
         float height = t.Aim is { } aim ? RangedFormulas.HeightFactor(t.Position.Y, aim.Y) : 1;
-        return new(instance, g.Range, g.AimSpeed, g.AccuracyDeviationAtZeroSkill, t.Mount, height, t.UserSkill, perception);
+        return new(instance, g.Range, g.AimSpeed, g.AccuracyDeviationAtZeroSkill, t.Mount, height, t.UserSkill, perception)
+        {
+            HeightMetres = t.Aim is { } at ? (int)((site.Position.Y - at.Y) * 0.1f) : null, Loaded = t.Loaded, Shots = g.NumShots,
+            ReloadLeft = t.Reloading && t.ReloadTime > 0 ? t.ReloadLeft / t.ReloadTime : 1, ReloadMin = g.ReloadTimeMin, ReloadMax = g.ReloadTimeMax, Crossbows = crossbows,
+        };
     }
 
     void HashTurrets(ref StateHasher h)
