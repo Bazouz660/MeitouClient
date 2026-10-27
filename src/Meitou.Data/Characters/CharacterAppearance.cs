@@ -107,6 +107,7 @@ public sealed class CharacterAppearance
     public string? BodyNormalStrong { get; private init; }
     public string? BodyNormalSkinny { get; private init; }
     public string? BodyMask { get; private init; }
+    /// <summary>Race <c>part map male</c> / <c>part map female</c>: the image whose colours mark the body regions worn items' <c>hide parts</c> hide (<see cref="HiddenParts"/>).</summary>
     public string? PartMap { get; private init; }
     public GameRecord? Head { get; private init; }
     public GameRecord? Hair { get; private set; }
@@ -167,7 +168,7 @@ public sealed class CharacterAppearance
         }
         else if (bodyFile is not null)
         {
-            var path = Path.Combine(installRoot, bodyFile.Replace('\\', Path.DirectorySeparatorChar).TrimStart('.', Path.DirectorySeparatorChar));
+            var path = CharacterGenerator.Resolve(installRoot, bodyFile);
             try { body = AppearanceFile.Read(path); }
             catch (Exception e) when (e is IOException or FcsFormatException or UnauthorizedAccessException)
             {
@@ -249,6 +250,7 @@ public sealed class CharacterAppearance
         // fcs.def: "hide hair" (default true) is for hats only.
         bool hideHair = worn.Any(w => (AttachSlot)w.GetInt("slot", 5) == AttachSlot.Hat && w.GetBool("hide hair", true));
         bool hideBeard = worn.Any(w => w.GetBool("hide beard"));
+        foreach (var w in worn) result.HiddenParts |= w.GetInt("hide parts");
 
         var hair = body?.HairId is { } hairId ? db.Find(hairId) : character is null || body is null ? PickHair(db, race, AttachSlot.Hair, random) : null;
         var beard = body?.BeardId is { } beardId ? db.Find(beardId) : null;
@@ -342,6 +344,9 @@ public sealed class CharacterAppearance
     /// every limb that is not in its natural state and for every worn LIMB_REPLACEMENT, <c>uses_hide_parts</c>).
     /// </summary>
     public int HiddenLimbs { get; private set; }
+
+    /// <summary>The part-map regions the worn ARMOUR hides: the OR of their <c>hide parts</c> (bit per part-map colour, docs/characters.md "Hidden body parts").</summary>
+    public int HiddenParts { get; private set; }
 
     /// <summary>
     /// The non-natural limbs of <paramref name="limbs"/> (<c>FUN_1400d0190</c>, <c>uses_limb_replacement</c>): a stump shows the race's <c>limb replacement</c> entry whose
@@ -462,7 +467,7 @@ public sealed class CharacterAppearance
         {
             Character = Character, Animal = Animal, Race = Race, Female = Female, Body = Body, BodyFile = BodyFile, Loadout = Loadout,
             BodyMesh = BodyMesh, BodyTexture = BodyTexture, BodyNormal = BodyNormal, BodyNormalStrong = BodyNormalStrong, BodyNormalSkinny = BodyNormalSkinny, BodyMask = BodyMask, PartMap = PartMap, Head = Head, Hair = Hair,
-            Shape = Shape, Beard = Beard, SkinToneParameter = SkinToneParameter, HairColour = HairColour, HiddenLimbs = HiddenLimbs,
+            Shape = Shape, Beard = Beard, SkinToneParameter = SkinToneParameter, HairColour = HairColour, HiddenLimbs = HiddenLimbs, HiddenParts = HiddenParts,
         };
         copy.Parts.AddRange(Parts);
         copy.Parts.Add(new CharacterPart { Record = item, Mesh = mesh, Field = "mesh", Mode = AttachMode.Bone, Slot = AttachSlot.Weapon, Point = "hands" });
@@ -477,7 +482,7 @@ public sealed class CharacterAppearance
     {
         AttachmentPoints["hands"] = new AttachmentPoint("hands", "Bip01 Prop2", Vector3.Zero, Quaternion.Identity);
         if (race.GetPath("attachment points") is not { Length: > 0 } file) return;
-        var path = Path.Combine(installRoot, file.Replace('\\', Path.DirectorySeparatorChar).TrimStart('.', Path.DirectorySeparatorChar));
+        var path = CharacterGenerator.Resolve(installRoot, file);
         try
         {
             var phs = PhysicsAttachmentFile.ReadFile(path);

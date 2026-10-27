@@ -7,6 +7,7 @@ using Meitou.Data.Characters;
 using Meitou.Data.Fcs;
 using Meitou.Data.Gameplay;
 using Meitou.Data.Ogre;
+using Meitou.Data.Textures;
 using Meitou.Rendering.Gpu;
 
 namespace Meitou.Rendering.Characters;
@@ -187,7 +188,7 @@ internal sealed class CharacterContent : IDisposable
     readonly GameDatabase db;
     readonly MaterialResolver resolver;
     public WorldTextureCache Textures { get; }
-    readonly Dictionary<(string Path, int Bones, bool Close), LoadedMesh?> meshes = [];
+    readonly Dictionary<(string Path, int Bones, bool Close, string? PartMap), LoadedMesh?> meshes = [];
     public List<string> Messages { get; } = [];
     public long MeshBytes { get; private set; }
     public int MeshCount => meshes.Count;
@@ -259,11 +260,11 @@ internal sealed class CharacterContent : IDisposable
     static readonly Prepared Uploaded = new(null, []);
 
     /// <summary>The meshes prepared or being prepared, by the key of <see cref="meshes"/>; an uploaded one is left as <see cref="Uploaded"/> so no worker prepares it again.</summary>
-    readonly ConcurrentDictionary<(string Path, int Bones, bool Close), Lazy<Prepared>> prepared = new();
+    readonly ConcurrentDictionary<(string Path, int Bones, bool Close, string? PartMap), Lazy<Prepared>> prepared = new();
 
     /// <summary>The preparation of a mesh, made once (any thread; the first caller's level settings stand).</summary>
-    Lazy<Prepared> Prepare(string path, int? boneCount, float lodScale, bool shadowLevels, float pixelsPerRadian, LimbHide? limbs = null, bool close = false, bool icon = false) =>
-        prepared.GetOrAdd((path.ToLowerInvariant(), icon ? IconBones : boneCount ?? -1, close), _ => new Lazy<Prepared>(() => PrepareMesh(path, boneCount, lodScale, shadowLevels, pixelsPerRadian, limbs, close, icon)));
+    Lazy<Prepared> Prepare(string path, int? boneCount, float lodScale, bool shadowLevels, float pixelsPerRadian, LimbHide? limbs = null, bool close = false, bool icon = false, string? partMap = null) =>
+        prepared.GetOrAdd((path.ToLowerInvariant(), icon ? IconBones : boneCount ?? -1, close, partMap?.ToLowerInvariant()), _ => new Lazy<Prepared>(() => PrepareMesh(path, boneCount, lodScale, shadowLevels, pixelsPerRadian, limbs, close, icon, partMap)));
 
     /// <summary>The bone count an icon's mesh is kept under (<see cref="prepared"/>, <see cref="meshes"/>): its tangents are built the icon shader's way (<see cref="Model.Build"/>).</summary>
     const int IconBones = -2;
@@ -271,7 +272,7 @@ internal sealed class CharacterContent : IDisposable
     /// <summary>Reads a mesh file and makes its levels and index buffers (no GPU work, any thread): with its skinning weights for a skeleton of <paramref name="boneCount"/>
     /// bones (null: unskinned); its generated levels start <paramref name="lodScale"/> times farther than the rule gives. A <paramref name="close"/> mesh (the character editor's
     /// close-up) keeps only its full level: generating the others is nearly all of the time a mesh takes (a hair 1 to 2 s), and the editor shows one character up close.</summary>
-    static Prepared PrepareMesh(string path, int? boneCount, float lodScale, bool shadowLevels, float pixelsPerRadian, LimbHide? limbs, bool close, bool icon = false)
+    static Prepared PrepareMesh(string path, int? boneCount, float lodScale, bool shadowLevels, float pixelsPerRadian, LimbHide? limbs, bool close, bool icon = false, string? partMap = null)
     {
         var messages = new List<string>();
         try
@@ -279,7 +280,7 @@ internal sealed class CharacterContent : IDisposable
             var mesh = OgreMeshReader.ReadFile(path);
             var model = Model.Build(mesh, boneCount, gameBinormals: !icon, tangentSign: icon);
             var morphs = MeshMorphs.From(mesh, model, messages, Path.GetFileName(path));
-            if (limbs is not null) MarkLimbs(model, limbs);
+            if (limbs is not null || partMap is not null) MarkBody(model, limbs, partMap is null ? null : PartMapImage(partMap, messages));
             // Not an icon's: its colour is the mesh's own vertex colour (CharacterShaders.VertexColoured), and icons take no skin.
             if (!icon) MarkCurvature(model);
             foreach (var w in model.Warnings) messages.Add($"{Path.GetFileName(path)}: {w}");
@@ -321,11 +322,11 @@ internal sealed class CharacterContent : IDisposable
     }
 
     /// <summary>A mesh by file, uploaded the first time: prepared here unless a worker has done it (<see cref="Fetched"/>), or after waiting for the worker preparing it.</summary>
-    LoadedMesh? Mesh(string path, int? boneCount, float lodScale = 1, bool shadowLevels = false, LimbHide? limbs = null, bool close = false, bool icon = false)
+    LoadedMesh? Mesh(string path, int? boneCount, float lodScale = 1, bool shadowLevels = false, LimbHide? limbs = null, bool close = false, bool icon = false, string? partMap = null)
     {
-        var key = (path.ToLowerInvariant(), icon ? IconBones : boneCount ?? -1, close);
+        var key = (path.ToLowerInvariant(), icon ? IconBones : boneCount ?? -1, close, partMap?.ToLowerInvariant());
         if (meshes.TryGetValue(key, out var cached)) return cached;
-        var (ready, messages) = Prepare(path, boneCount, lodScale, shadowLevels, LodPixelsPerRadian, limbs, close, icon).Value;
+        var (ready, messages) = Prepare(path, boneCount, lodScale, shadowLevels, LodPixelsPerRadian, limbs, close, icon, partMap).Value;
         prepared[key] = new Lazy<Prepared>(Uploaded);
         Messages.AddRange(messages);
         return meshes[key] = ready is null ? null : Upload(ready);
@@ -367,7 +368,7 @@ internal sealed class CharacterContent : IDisposable
         // Asked again every frame while it waits: the first answer's reading is kept by item.
         if (iconReads.TryGetValue(item, out var started)) return started is null || started.IsValueCreated;
         string field = ItemIconStyle.MeshOf(item);
-        if (field.Length == 0 || FindMesh(field) is not { } path || meshes.ContainsKey((path.ToLowerInvariant(), IconBones, true))) { iconReads[item] = null; return true; }
+        if (field.Length == 0 || FindMesh(field) is not { } path || meshes.ContainsKey((path.ToLowerInvariant(), IconBones, true, null))) { iconReads[item] = null; return true; }
         var lazy = Prepare(path, null, 1, false, LodPixelsPerRadian, close: true, icon: true);
         iconReads[item] = lazy;
         if (lazy.IsValueCreated) return true;
@@ -450,6 +451,7 @@ internal sealed class CharacterContent : IDisposable
         var bodyPath = FindMesh(c.BodyMesh);
         if (bodyPath is null) return null;
         var parts = c.Parts.Select(p => (Path: FindMesh(p.Mesh), Shared: p.Mode == AttachMode.SharedSkeleton, Scale: PartLodScale(c, p))).Where(p => p.Path is not null).ToList();
+        var partMap = PartMapPath(c);
         float pixels = LodPixelsPerRadian;
         Interlocked.Increment(ref fetchesRunning);
         bool Fetch()
@@ -457,7 +459,7 @@ internal sealed class CharacterContent : IDisposable
             try
             {
                 if (BodySkeletonName(bodyPath) is not { } name || Rig(name) is not { } rig) return true;
-                _ = Prepare(bodyPath, rig.BoneCount, 1, true, pixels, LimbHideOf(c, rig), close).Value;
+                _ = Prepare(bodyPath, rig.BoneCount, 1, true, pixels, LimbHideOf(c, rig), close, partMap: partMap).Value;
                 foreach (var (path, shared, scale) in parts) _ = Prepare(path!, shared ? rig.BoneCount : null, scale, false, pixels, close: close).Value;
             }
             catch (Exception) { }   // a file that cannot be read: Build meets it again on the render thread and reports it
@@ -497,25 +499,67 @@ internal sealed class CharacterContent : IDisposable
         return new LimbHide(map, c.Female ? 14.1f : 13.83f, 8.6f);
     }
 
-    /// <summary>Writes each vertex's limb bit into its colour's Y (<c>FUN_140071f90</c>): the limb of its heaviest bone, when the vertex lies below that limb's height.</summary>
-    static void MarkLimbs(Model model, LimbHide hide)
+    /// <summary>The file of the race's part map (<see cref="CharacterAppearance.PartMap"/>), found as Ogre finds it (by name through the resource and mod folders); null without one.</summary>
+    string? PartMapPath(CharacterAppearance c) => c.PartMap is { } name ? assets.Find(name) : null;
+
+    /// <summary>
+    /// The part map's pixels (<c>FUN_140075600</c>, docs/characters.md "Hidden body parts"): null when it cannot be read, and for a DXT1 to DXT5 file, which the original
+    /// refuses ("is a dxt format. Convert this to png instead.").
+    /// </summary>
+    static RgbaImage? PartMapImage(string path, List<string> messages)
+    {
+        try
+        {
+            var texture = TextureLoader.LoadFile(path, allMips: false);
+            if (texture.Source?.Format is DdsFormat.Bc1 or DdsFormat.Bc2 or DdsFormat.Bc3) { messages.Add($"{Path.GetFileName(path)}: a part map in DXT format is not read (the original's rule)"); return null; }
+            return texture.Levels[0];
+        }
+        catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException or NotSupportedException or InvalidOperationException)
+        {
+            messages.Add($"{Path.GetFileName(path)}: {e.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Writes each body vertex's hide bits into its colour's Y (<c>FUN_140071f90</c>): bits 0 to 3 the limb of its heaviest bone, when the vertex lies below that limb's height;
+    /// from bit 4 the part-map bit of the texel under its UV (texel floor(size × uv), clamped; an exact colour of the table, alpha above 0; any other colour marks nothing).
+    /// </summary>
+    static void MarkBody(Model model, LimbHide? hide, RgbaImage? partMap)
     {
         foreach (var part in model.Parts)
             for (int i = 0; i < part.Vertices.Length; i++)
             {
                 ref var v = ref part.Vertices[i];
-                int bone = -1;
-                float best = 0;
-                for (int k = 0; k < 4; k++)
+                int bits = 0;
+                if (hide is not null)
                 {
-                    float w = v.Weights[k];
-                    if (w > best) { best = w; bone = (int)((v.Bones >> (8 * k)) & 0xFF); }
+                    int bone = -1;
+                    float best = 0;
+                    for (int k = 0; k < 4; k++)
+                    {
+                        float w = v.Weights[k];
+                        if (w > best) { best = w; bone = (int)((v.Bones >> (8 * k)) & 0xFF); }
+                    }
+                    int limb = (uint)bone < (uint)hide.LimbOfBone.Length ? hide.LimbOfBone[bone] : -1;
+                    if (limb >= 0 && v.Position.Y < (limb < 2 ? hide.ArmBelow : hide.LegBelow)) bits = 1 << limb;
                 }
-                int limb = (uint)bone < (uint)hide.LimbOfBone.Length ? hide.LimbOfBone[bone] : -1;
-                bool below = limb >= 0 && v.Position.Y < (limb < 2 ? hide.ArmBelow : hide.LegBelow);
-                v.Colour.Y = below ? 1 << limb : 0;
+                if (partMap is not null)
+                {
+                    int x = Math.Clamp((int)(partMap.Width * v.Uv.X), 0, partMap.Width - 1), y = Math.Clamp((int)(partMap.Height * v.Uv.Y), 0, partMap.Height - 1);
+                    var (r, g, b, a) = partMap[x, y];
+                    if (a > 0) bits |= PartBit(r << 16 | g << 8 | b) << 4;
+                }
+                v.Colour.Y = bits;
             }
     }
+
+    /// <summary>The part-map bit of a colour (docs/characters.md "Hidden body parts"); 0 for black and for a colour not in the table (the original logs it as invalid).</summary>
+    static int PartBit(int rgb) => rgb switch
+    {
+        0xFFFFFF => 0x1, 0xFF0000 => 0x2, 0x00FF00 => 0x4, 0x0000FF => 0x8, 0xFFFF00 => 0x10,
+        0xFF00FF => 0x20, 0x00FFFF => 0x40, 0xFF8000 => 0x80, 0x8000FF => 0x100, 0x008080 => 0x200, _ => 0,
+    };
 
     /// <summary>
     /// Writes each vertex's curvature (1 / radius, world units) into its colour's Z, for the Meitou skin (docs/character-renderer.md "Skin"): over the edges at the vertex,
@@ -602,7 +646,7 @@ internal sealed class CharacterContent : IDisposable
         catch (Exception e) when (e is OgreFormatException or IOException or EndOfStreamException or InvalidDataException) { Messages.Add($"{c.BodyMesh}: {e.Message}"); return null; }
         var rig = skeletonName is null ? null : Rigs.Rig(skeletonName, c);   // with the animation files it links (docs/animation.md)
         if (rig is null) { Messages.Add($"{c.BodyMesh} has no skeleton ({skeletonName})"); return null; }
-        var body = Mesh(bodyPath, rig.BoneCount, shadowLevels: true, limbs: LimbHideOf(c, rig), close: close);
+        var body = Mesh(bodyPath, rig.BoneCount, shadowLevels: true, limbs: LimbHideOf(c, rig), close: close, partMap: PartMapPath(c));
         if (body is null) return null;
 
         var asset = new CharacterAsset { Appearance = c, Rig = rig, Animal = c.Animal is not null };

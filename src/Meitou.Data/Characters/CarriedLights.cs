@@ -24,7 +24,7 @@ public static class CarriedLights
         if (attachment.GetReferences("light data") is not [var lightLink, ..] || db.Find(lightLink.TargetStringId) is not { Type: FcsRecordType.LIGHT } light) return null;
         string file = attachment.GetPath(female ? "file female" : "file male");
         if (file.Length == 0) file = attachment.GetPath("file male");
-        if (file.Length == 0 || Hanging(Path.Combine(installRoot, file.Replace('\\', Path.DirectorySeparatorChar).TrimStart('.', Path.DirectorySeparatorChar))) is not { } at) return null;
+        if (file.Length == 0 || Hanging(CharacterGenerator.Resolve(installRoot, file)) is not { } at) return null;
         // Power: brightness plus a roll in ±variance/2, as a building's lights (the original rolls when it creates the light).
         float power = light.GetFloat("brightness") + (random.NextSingle() - 0.5f) * light.GetFloat("variance");
         return new CarriedLight(attachment.GetString("bone name"),

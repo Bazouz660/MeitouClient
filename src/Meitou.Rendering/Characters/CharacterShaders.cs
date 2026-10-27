@@ -77,7 +77,7 @@ static class CharacterShaders
         layout(location = 1) in vec3 aNormal;
         layout(location = 2) in vec2 aUv;
         layout(location = 3) in vec4 aTangent;
-        layout(location = 4) in vec4 aColour;           // x: the vertex's morph slot as raw bits (0: none), y: the body vertex's limb bits (bit k: limb slot k), z: curvature (1 / radius)
+        layout(location = 4) in vec4 aColour;           // x: the vertex's morph slot as raw bits (0: none), y: the body vertex's hide bits (bit k: limb slot k, bit 4 + p: part-map part p), z: curvature (1 / radius)
         layout(location = 5) in uvec4 aBones;
         layout(location = 6) in vec4 aWeights;
         layout(location = 7) in vec4 aInstance0;
@@ -125,8 +125,10 @@ static class CharacterShaders
             vColour = aColour;   // an icon mesh's own vertex colours (a body's carry the morph slot and limb bits: only icons read them)
             vMaterial = aInstanceData.y;
             vInterior = aInstanceData.z & 1u;
-            // Hidden limbs (docs/characters.md "Hidden body parts"): the body's vertices of a limb whose bit 12 + k the instance carries; the fragments discard where it is above 0.
-            vHidden = ((uint(aColour.y + 0.5) & (aInstanceData.z >> 12)) & 15u) != 0u ? 1.0 : 0.0;
+            // Hidden limbs and parts (docs/characters.md "Hidden body parts"): the body's vertices of a limb whose bit 12 + k the instance carries, or of a part-map part whose
+            // bit 18 + p it carries (the vertex's limb bits 0-3, part bits from 4: CharacterContent.MarkBody); the fragments discard where it is above 0.
+            uint marks = uint(aColour.y + 0.5);
+            vHidden = ((marks & (aInstanceData.z >> 12) & 15u) | ((marks >> 4) & (aInstanceData.z >> 18) & 1023u)) != 0u ? 1.0 : 0.0;
             gl_Position = view.viewProjection * p;
             // Boots over one prosthetic leg (COLLAPSE_SIDE): flags bits 16-17, 1 collapses the x >= 0 half, 2 the x < 0 half.
             uint hideSide = (aInstanceData.z >> 16) & 3u;

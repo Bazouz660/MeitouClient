@@ -129,8 +129,14 @@ arm, 8.6 for a leg. Bones map to limbs through the race's `combat anatomy` LOCAT
 (an unnamed bone takes its nearest named ancestor's part); an arm (`body part type` 2) or leg (1) is the right one when `collapse part`
 & 0x12. `hiddenMask` (`uses_hide_parts`) = OR of worn items' `hide parts`, 1 << (`slot` - 38) per worn LIMB_REPLACEMENT, and bit 12 + k
 for every limb not in state 0 (`FUN_1400cd470`); `character.hlsl` clips where the interpolated flag is above 0. Meitou: the limb bits
-ride in the body vertices' colour Y, the mask in the instance flags (`CharacterContent.MarkLimbs`, `CharacterAppearance.HiddenLimbs`);
-an unnamed root-chain bone (pelvis) is no limb (the original's fallback part index 1 is **Unknown** in effect). Part-map bits are not built.
+ride in the body vertices' colour Y, the mask in the instance flags (`CharacterContent.MarkBody`, `CharacterAppearance.HiddenLimbs`);
+an unnamed root-chain bone (pelvis) is no limb (the original's fallback part index 1 is **Unknown** in effect). The part-map bit (**Verified** read, `FUN_140075600` / `FUN_140071f90`): the race's `part map male` / `part map female`
+image loaded by name through Ogre's resources; a DXT1-5 file is refused (logged "Convert this to png instead"), so no bits. Each body vertex samples the
+texel (clamp(int(W x u)), clamp(int(H x v))) at its UV; with alpha > 0 an exact table colour sets its bit, any other colour is logged as invalid and sets
+none. Meitou: `CharacterContent.MarkBody` (vertex colour Y: limb bits 0-3, part bits from 4), `CharacterAppearance.HiddenParts` in instance flags bits 18-27.
+Which region each colour marks is the race's own choice (data, not engine). **Observed** (scratch survey of `human_male`/`human_female` with
+`MaleMask_Default.png`/`FemaleMask_Default.png`): white the chest (Y 14-15), red shoulders and upper arms (13-15), green a hip band (11-13); robots' `robot_mask.png`
+is all red. 19 base ARMOURs use `hide parts` (coats 0x3, robes 0x5, plate jackets and skin suits 0x7, ninja rags 0x4).
 Boots (slot 9, not `is locked`) on a character with exactly one fitted leg prosthetic lose that leg's half (`AppearanceBase_SetupItemMaterial`,
 **Observed**): left leg replaced collapses the x >= 0 half, right the x < 0 half. Meitou: `CharacterPart.HideSide`, instance flag bits 16-17.
 
@@ -305,7 +311,7 @@ a line gated only by money or `DC_IS_RECRUITABLE`.
 ## Open questions
 
 - ~~Body-shape slider formulas~~, ~~`hide parts` bits~~, ~~`hide stump`~~, ~~`muscleBlend`~~: answered (animation.md
-  "Body shape sliders", "Hidden body parts" above). Left: which body region each part-map colour marks, and the
+  "Body shape sliders", "Hidden body parts" above). Left: the
   stats/nutrition fields listed in animation.md's open questions.
 - Random appearance details: the untraced part of the morph-face name, the faction flag that re-rolls the skin tone
   (and a body file's gender); extra hip copies; `RaceLimiter` rules.

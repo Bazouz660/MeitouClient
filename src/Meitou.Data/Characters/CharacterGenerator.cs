@@ -438,6 +438,11 @@ public static class CharacterGenerator
         return (int)h;
     }
 
-    static string Resolve(string installRoot, string fcsPath) =>
-        Path.Combine(installRoot, fcsPath.Replace('\\', Path.DirectorySeparatorChar).TrimStart('.', Path.DirectorySeparatorChar));
+    /// <summary>
+    /// The file a record's path names: under the install, or for <c>.\mods\Mod Name\x</c> in that mod's folder, which for a Workshop mod is its Workshop folder
+    /// (<see cref="Physics.CollisionPaths.Resolve"/>; #93: a Workshop race's editor limits were not found); the install-relative path when neither has it.
+    /// </summary>
+    internal static string Resolve(string installRoot, string fcsPath) =>
+        (Meitou.Content.GameInstall.IsValid(installRoot) ? Physics.CollisionPaths.Resolve(Meitou.Content.GameInstall.Open(installRoot), fcsPath) : null)
+        ?? Path.Combine(installRoot, fcsPath.Replace('\\', Path.DirectorySeparatorChar).TrimStart('.', Path.DirectorySeparatorChar));
 }
