@@ -642,7 +642,7 @@ sealed partial class PlayerInterface
             {
                 lines.Add(new("[" + Loc.Tr("Weather Protections") + "]", "", TooltipTone.Main));
                 string amount = Loc.Tr("{1,num}%", (int)(armour.WeatherProtectionAmount * 100));
-                foreach (var kind in armour.WeatherProtection.Where(k => k != Meitou.Data.World.WeatherAffecting.None).Distinct().Order())
+                foreach (var kind in armour.WeatherProtection.Distinct().Order())
                     lines.Add(new("-" + Loc.Tr(WeatherKindName(kind)), amount, TooltipTone.Good, TooltipTone.Good));
             }
         }
