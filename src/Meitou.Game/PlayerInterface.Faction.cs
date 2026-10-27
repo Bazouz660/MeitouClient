@@ -70,11 +70,18 @@ sealed partial class PlayerInterface
         if (e.Widget == FactionNameBox && e.Action == "text") factionDraft = e.Text;
     }
 
-    /// <summary>Once a frame: a draft whose box no longer has the key focus is sent as <see cref="RenameFactionCommand"/>.</summary>
+    /// <summary>Whether another faction already has a name (the host's data); null: the simulation alone decides.</summary>
+    public Func<string, bool>? FactionNameTaken { get; set; }
+
+    /// <summary>
+    /// Once a frame: a draft whose box no longer has the key focus is sent as <see cref="RenameFactionCommand"/>; a name another faction has opens the original's Ok box "Faction Name" /
+    /// "This faction name already exists" instead (<c>FUN_1404923d0</c>, button mask 1), and the box shows the old name again.
+    /// </summary>
     void UpdateFactionName()
     {
         if (factionDraft is not { } draft || faithfulScreens.Focus is { Screen: "overview", Widget: FactionNameBox }) return;
         factionDraft = null;
+        if (FactionNameTaken?.Invoke(draft.Trim()) == true) { MessageBox("Faction Name", "This faction name already exists"); return; }
         Say(new Meitou.Simulation.RenameFactionCommand(draft) { Tick = session.World.Tick });
     }
 

@@ -236,6 +236,8 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
         ui.RegionAt = (x, z) => ActiveWeather?.World.RegionAt(x, z).Def is { } def ? (def.StringId, def.Name) : null;
         ui.BuildHost = MakeBuildServices();
         ui.FactionName = faction => faction >= 0 && faction == session.World.Player.Faction && session.World.Player.FactionName is { } renamed ? renamed : popData is { } d && faction >= 0 && faction < d.Factions.Count ? d.Factions[faction].Name : null;
+        // The rename's test (FUN_1402e7950, as RenameFactionCommand's): another faction of the data has the name.
+        ui.FactionNameTaken = name => popData is { } fd && fd.Factions.Where((f, i) => i != session.World.Player.Faction).Any(f => f.Name == name);
         // The faction tab's list (docs/game/ui-screens.md "Faction tab"): every faction but the player's, the `not real` ones (engine choice: the original's filter is Unknown) and the
         // generation template, with the player's relation towards it.
         // Its info panel's contracts and events, read from the live world as the list above is (a collection changed mid-read shows the panel empty for that frame).

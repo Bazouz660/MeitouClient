@@ -37,7 +37,16 @@ sealed partial class PlayerInterface
         | (slotTicks[2] ? Meitou.Simulation.Saving.ImportOptions.Research : 0) | (slotTicks[3] ? Meitou.Simulation.Saving.ImportOptions.DeadNpcs : 0)
         | (slotTicks[4] ? Meitou.Simulation.Saving.ImportOptions.Relations : 0);
     /// <summary>The open message box: ButtonA confirms (captioned <c>Yes</c>), an optional middle choice (ButtonB), and the last button cancels (Esc presses it).</summary>
-    sealed record Confirmation(string Title, string Text, Action Confirm, string Yes = "YES", (string Caption, Action Act)? Middle = null, string Cancel = "CANCEL");
+    sealed record Confirmation(string Title, string Text, Action Confirm, string Yes = "YES", (string Caption, Action Act)? Middle = null, string Cancel = "CANCEL")
+    {
+        /// <summary>Only ButtonA, captioned Ok (the original's message box with button mask 1, <c>FUN_140742130</c>).</summary>
+        public bool OkOnly { get; init; }
+    }
+    /// <summary>A message box with only an Ok button.</summary>
+    void MessageBox(string title, string text)
+    {
+        confirmation = new(UpperTr(title), Loc.Tr(text), () => { }, UpperTr("Ok")) { OkOnly = true }; faithfulScreens.Open("message");
+    }
     Confirmation? confirmation;
     /// <summary>The game data (<see cref="ConfigureFrontend"/>; null without it).</summary>
     GameDatabase? gameData;
@@ -335,7 +344,8 @@ sealed partial class PlayerInterface
         {
             b.Text["Root"] = confirmation?.Title ?? ""; b.Text["MessageText"] = confirmation?.Text ?? "";
             b.Text["ButtonA"] = confirmation?.Yes ?? "YES";
-            if (confirmation?.Middle is { } middle) { Enable("ButtonA", "ButtonB", "ButtonC"); b.Text["ButtonB"] = middle.Caption; b.Text["ButtonC"] = confirmation?.Cancel ?? "CANCEL"; }
+            if (confirmation is { OkOnly: true }) { Enable("ButtonA"); b.Hidden.Add("ButtonB"); b.Hidden.Add("ButtonC"); }
+            else if (confirmation?.Middle is { } middle) { Enable("ButtonA", "ButtonB", "ButtonC"); b.Text["ButtonB"] = middle.Caption; b.Text["ButtonC"] = confirmation?.Cancel ?? "CANCEL"; }
             else { Enable("ButtonA", "ButtonB"); b.Hidden.Add("ButtonC"); b.Text["ButtonB"] = confirmation?.Cancel ?? "CANCEL"; }
             b.Properties["MessageText"] = new Dictionary<string, string> { ["Static"] = "true", ["WordWrap"] = "true" };
             b.Properties["ButtonA"] = new Dictionary<string, string> { ["DefaultAction"] = "true" };
