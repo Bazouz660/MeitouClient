@@ -71,6 +71,12 @@ sealed partial class PlayerInterface
         try { slots = saveSlots(); selectedSlot = slots.FirstOrDefault(); ReadSlotDetails(); }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { slots = []; selectedSlot = null; slotDetails = e.Message; }
     }
+    /// <summary>
+    /// The selected save is older than 0.90.0 (<see cref="Meitou.Simulation.Saving.SaveImport.AllowedFor"/>): the import window's row selection (<c>FUN_14047cee0</c>) unticks and disables Reset squad
+    /// positions, Buildings, Research and Dead NPCs, leaving Relations.
+    /// </summary>
+    bool OldImportSave => slotInfo is { } info && Meitou.Simulation.Saving.SaveImport.AllowedFor(Meitou.Simulation.Saving.ImportOptions.ResetPositions, info.Version) == 0;
+
     void ReadSlotDetails()
     {
         slotReadable = false;
@@ -117,6 +123,7 @@ sealed partial class PlayerInterface
         // The original's windows open with nothing selected and the info box empty (LoadSaveWindow, FUN_140480100), the ticks as their layout has them.
         else if (UiMode == UiMode.Faithful) { selectedSlot = null; slotInfo = null; }
         Array.Copy(new[] { false, true, true, true, true }, slotTicks, slotTicks.Length);
+        if (id == "import" && OldImportSave) Array.Fill(slotTicks, false, 0, 4);
         faithfulScreens.Open(id); if (id == "save") faithfulScreens.SetText(id, "SaveEditBox", selectedSlot?.Name ?? "");   // the selected save's name, ready to overwrite
     }
     bool HandleFrontendAction(MyGuiEvent e)
@@ -172,7 +179,7 @@ sealed partial class PlayerInterface
         {
             if (e.Screen == "import" && AdvancedAction(e)) return true;
             if (e.Widget == "CancelButton") { faithfulScreens.Close(e.Screen); advancedOpen = false; }
-            else if (Array.IndexOf(TickBoxes, e.Widget) is var tick and >= 0) slotTicks[tick] = !slotTicks[tick];
+            else if (Array.IndexOf(TickBoxes, e.Widget) is var tick and >= 0) { if (!(e.Screen == "import" && tick < 4 && OldImportSave)) slotTicks[tick] = !slotTicks[tick]; }
             else if (e.Widget == HideKenshiTick)
             {
                 hideKenshiSaves = !hideKenshiSaves;
@@ -189,6 +196,7 @@ sealed partial class PlayerInterface
             {
                 selectedSlot = slots.FirstOrDefault(s => s.Folder == e.Text); ReadSlotDetails();
                 if (e.Screen == "import" && advancedOpen) ReadSlotDifficulty();
+                if (e.Screen == "import" && OldImportSave) Array.Fill(slotTicks, false, 0, 4);
                 if (e.Screen == "save" && selectedSlot is { } slot) faithfulScreens.SetText("save", "SaveEditBox", slot.Name);
             }
             else if (e.Widget == "LoadButton" && selectedSlot is { } loadSlot)
@@ -296,7 +304,7 @@ sealed partial class PlayerInterface
             // The ticks each window has: load the reset one, import all five, save none.
             for (int t = 0; t < (id == "import" ? TickBoxes.Length : id == "load" ? 1 : 0); t++)
             {
-                Enable(TickBoxes[t]);
+                if (id == "import" && t < 4 && OldImportSave) b.Disabled.Add(TickBoxes[t]); else Enable(TickBoxes[t]);
                 b.Properties[TickBoxes[t]] = new Dictionary<string, string> { ["StateSelected"] = slotTicks[t] ? "true" : "false", ["Checked"] = slotTicks[t] ? "true" : "false" };
             }
             if (id == "load" && UiMode == UiMode.Meitou)
