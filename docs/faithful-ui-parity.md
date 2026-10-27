@@ -57,7 +57,8 @@ Deliberate differences from the original:
 
 `FaithfulInteractionTests.EveryWidgetTheFaithfulModeFillsExistsInTheOriginalLayout` [Slow] binds the HUD and every faithful screen against the installed layouts. It
 fails on any text, action, list or progress bound to a widget the layout lacks. It also prints the absent widgets that are only hidden or styled, and the named widgets
-that keep their editor caption, which is the list of original text the mode does not fill yet (about 50, mostly button labels such as "ARRANGE").
+that keep their editor caption (about 150): the static labels the original also shows as laid out ("ARRANGE", "BLOCK", "HEAD"), plus fields the test's state leaves
+empty (the outpost panel, the biome, dialogue names, the character trade window), which the mode fills when that state exists.
 
 ## Gameplay backends
 
