@@ -1141,7 +1141,7 @@ unless marked; Meitou: `PlayerInterface.Squads.cs`, commands in `SquadManagement
 - **Disabled slots** (red `disabled` state; the section's byte `+0xd0`, `FUN_14014e3d0`): `CharacterHuman::validateInventorySections` (`FUN_1406218f0`, **Observed**) enables every
   section, then disables and empties `shirt` for a race with `no shirts`, `head` with `no hats`, and `boots` with `no shoes` or while both legs' `getLimbState` is set (lost or
   replaced; worn boots are taken off first). The other `InventorySection::setEnabled` callers are the furnace, crafting benches and animals. Meitou:
-  `InventoryCommands.SectionClosed`, `CharacterSnapshot.ClosedSlots`, drawn disabled and refusing drops (worn items are not taken off).
+  `InventoryCommands.SectionClosed`, `CharacterSnapshot.ClosedSlots`, drawn disabled and refusing drops and every automatic equip (`TryEquip`, `Transfer`, `MoveInto`: trade, pick-up, loot, scavenge, storage, slave clothing; worn items are not taken off).
 - **Unknown**: the trader window's panel lines beyond Money.
 - Item placement failure messages (FUN_14070f7e0; the checks behind them are in [economy.md](economy.md#shops-and-transactions)): Out of trading range; No room for that item; You can't
   afford that; The shopkeeper can't afford that; That's not for sale; Got caught stealing; Smugglers only buy

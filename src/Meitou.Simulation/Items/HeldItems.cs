@@ -619,7 +619,7 @@ public sealed partial class PlayerSystem
         bool Step(ItemInstance unit)
         {
             if (worn) return root.AddTo("main", unit) || (bag?.AddTo("backpack_content", unit) ?? false);
-            if (InventoryCommands.TryEquip(root, unit, cold.Race?.StringId)) return true;
+            if (InventoryCommands.TryEquip(root, unit, cold)) return true;
             if (unit.Type == FcsRecordType.CONTAINER && unit.Contents is not null && from == "main" && !root.Items.Exists(i => i.Section == "backpack_attach"))
             {
                 (unit.Section, unit.X, unit.Y) = ("backpack_attach", 0, 0);
