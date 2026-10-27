@@ -383,9 +383,9 @@ sealed partial class PlayerInterface
     }
 
     /// <summary>Adds a text panel's lines over the arranged widget <paramref name="panel"/>: one row per line, the label from 3 % of the width, the value right-aligned to 96 %.</summary>
-    /// <summary>One row per line, the label left and the value right; the value takes <paramref name="valueFont"/> at <paramref name="valuePixels"/> when given.</summary>
+    /// <summary>One row per line from <paramref name="top"/> down, the label left and the value right; the value takes <paramref name="valueFont"/> at <paramref name="valuePixels"/> when given.</summary>
     static void AddLines(List<UiControl> controls, string panel, IReadOnlyList<HudLine> lines, float rowHeight, float? fontPixels = null, string font = "Kenshi_StandardFont_Medium",
-        string? valueFont = null, float? valuePixels = null)
+        string? valueFont = null, float? valuePixels = null, float top = 0)
     {
         if (controls.FirstOrDefault(c => c.Name == panel) is not { } host) return;
         var area = host.Bounds;
@@ -394,7 +394,7 @@ sealed partial class PlayerInterface
         for (int i = 0; i < lines.Count; i++)
         {
             var tipProperties = lines[i].TipProperties;
-            var row = new UiRect(area.X + area.Width * 0.03f, area.Y + i * rowHeight, area.Width * 0.93f, rowHeight);
+            var row = new UiRect(area.X + area.Width * 0.03f, area.Y + top + i * rowHeight, area.Width * 0.93f, rowHeight);
             if (lines[i].Action is { } action)
             {
                 // The button holds the value; the row's label (if any) stays text on its left.

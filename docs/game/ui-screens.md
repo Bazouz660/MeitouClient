@@ -918,8 +918,8 @@ unless marked; Meitou: `PlayerInterface.Faction.cs`.
   with 3 × a UI scale (`DAT_1421337ec`) between them, each the canvas's width (the view less its vertical bar). A line (`FUN_140499630`): the number
   int(relation) in BadBright below -30, `#a8b774` above 60, else Main; below 0 the left bar's width is its layout width × -relation / 100, kept
   right-aligned at the middle, above 0 the right bar's × relation / 100 from the middle (the other bar zero). The wheel over a line scrolls the panel.
-- `FactionInfoPanel` holds a DatapanelGUI ("mfactioninfo", `FUN_140494720`): `---Active Contracts---` (#444444) and the contract rows
-  (`FUN_1404927f0`), then `---Upcoming Events---` (#444444) and the events (`FUN_1407f2ef0`). **Verified** by decompile unless marked; class and field names KenshiLib 1ce4a16 (**Observed**).
+- `FactionInfoPanel` holds a DatapanelGUI ("mfactioninfo", `FUN_140494720`): `---Active Contracts---` (#444444), then the contract rows (`FUN_1404927f0`), which first clear the
+  panel (its vfunc +8), so the heading never shows (**Observed** in a base screenshot: the panel starts with Upcoming Events); then `---Upcoming Events---` (#444444) and the events (`FUN_1407f2ef0`). **Verified** by decompile unless marked; class and field names KenshiLib 1ce4a16 (**Observed**).
   - **Contracts** are AI packages of characters: a package that involves a player character registers (its character's hand, package id) in a static list (`FUN_140285ac0`).
     Per entry, in list order: the character must still exist and run that package, else the entry is dropped; the package's `getGUIData` (vtable +0x70) writes the rows, and false drops
     the entry. Only `Contract_HiredAlly` (`FUN_140294f40`: hired bodyguards) and `Contract_DefendPlayerBase` / `Campaign_DefendPlayerBase` (`FUN_1402953f0`) write rows: a heading
@@ -932,8 +932,8 @@ unless marked; Meitou: `PlayerInterface.Faction.cs`.
     (the player filter is not applied here): its campaign's `display name` and the time until it starts, both `#444444`. Times (`TimeOfDay::getTotalTimeString` `FUN_1407a6940`):
     negative `Expired`, above 24 h `{1,num} Days, {2,num}hrs`, above 1 h `{1,num}hrs`, else `{1,num} mins`; days `floor(h/24)` with `(uint)h % 24` hours, hours `floor(h)`, minutes `floor(h x 60)` (**Verified**, decompiled `FUN_1407a6940`).
 - Meitou: the name box takes typing; accepting it (Enter) or losing the key focus sends `RenameFactionCommand`, which takes a name no other faction of the data has; a taken name opens the original's box instead (`FUN_140742130` with button mask 1, its first button "Ok", `PlayerInterface.MessageBox`), and the simulation still posts "This faction name already exists" for one the UI did not catch (the empty-name rule is **Unknown**, Meitou ignores an empty name; the 64-character cap is an engine choice). The name is `PlayerState.FactionName` (null = the data's "Nameless"), saved as the CAMERA `pfaction name`, the player platoons' faction name and read back on load when it differs from the data's; the GAMESTATE_FACTION record's own name is not rewritten. The lines for every faction met but the player's, the `not real` ones and the template, sorted
-  ignoring case, rebuilt each frame, line height from the layout's 0.0222 of the screen; the two headings
-  under them `World.ActiveContracts` (one entry per hired squad, its package being the squad's) and `PopulationSystem.UpcomingEvents` (Meitou's phase 2 stands for RETREATING and VICTORY).
+  ignoring case, rebuilt each frame on the view's Client, line height from the layout's 0.0222 of the screen; the info rows from 0.03 of the panel down: the contracts
+  `World.ActiveContracts` (one entry per hired squad, its package being the squad's), the Upcoming Events heading and `PopulationSystem.UpcomingEvents` (Meitou's phase 2 stands for RETREATING and VICTORY).
 
 ### Research tab
 
@@ -945,7 +945,7 @@ Overview tab 2 (`ResearchTab`), part of `ManagementScreen` (constructor `FUN_140
 - `BlueprintsAvailablePanel` holds a DatapanelGUI of `DataPanelLine_Research` lines (`FUN_1406f9220`, KenshiLib 1ce4a16 name), one per available research of the category, by
   name (**Observed**). A line: a `Kenshi_Button1` frame from 1 % of the panel's width, 98 % wide (less 12 % when it has an X button), 0.97 U tall at 0.15 U down its slot; the name
   from 3 % and the time right-aligned in 94 %; a `Kenshi_LifeBarSkin` bar ("green") from 2 %, 0.2 of the frame down and 0.6 of it tall, progress x 0.88 of the panel wide (`FUN_1406ff560`).
-  Name and time in Main when `Research::checkRequirements_andQueue` holds and the bench level suffices, else Bad (#59231a). At 1080 lines the frame is 29 px on a 35 px pitch
+  Name and time in Main when `Research::checkRequirements_andQueue` holds and the bench level suffices, else Bad (#59231a); Meitou reads the first as "the benches can pay it" (engine guess). At 1080 lines the frame is 29 px on a 35 px pitch
   (**Observed**); Meitou uses that, the slot's DatapanelGUI unit U is **Unknown**.
 - **Time** (`FUN_140831550`): the research's hours over the current rate (when above 0) x (1 - its progress share), rounded up to at least 1; "<" before it under an hour;
   "{1,num} hr" / "{1,num} hrs"; the description adds " (at 1x rate)" when the rate is 0.

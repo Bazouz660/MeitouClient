@@ -16,7 +16,7 @@ sealed partial class PlayerInterface
 
     /// <summary>The factions the faction tab lists with the player's relation towards each (-100..100); null before a world with game data. The host sets it.</summary>
     public Func<IReadOnlyList<(string Name, float Relation)>>? FactionRelations { get; set; }
-    /// <summary>The info panel's Active Contracts and Upcoming Events rows (docs/game/ui-screens.md "Faction tab").</summary>
+    /// <summary>The info panel's contract and Upcoming Events rows (docs/game/ui-screens.md "Faction tab").</summary>
     public Func<(IReadOnlyList<FactionInfoLine> Contracts, IReadOnlyList<FactionInfoLine> Events)>? FactionInfo { get; set; }
 
     /// <summary>A contract or event row in the original's colours: names #492620, details and headings Main, queued campaigns Greyed.</summary>
@@ -94,15 +94,15 @@ sealed partial class PlayerInterface
     {
         if (!FactionShown) return;
         var scale = Height / 1080f;
-        if (controls.FirstOrDefault(c => c.Name == "FactionInfoPanel") is not null)
+        if (controls.FirstOrDefault(c => c.Name == "FactionInfoPanel") is { } info)
         {
+            // The contracts clear the panel before their rows (FUN_1404927f0), so the Active Contracts heading written before them never shows.
             var (contracts, events) = FactionInfo?.Invoke() ?? ([], []);
-            var lines = new List<HudLine> { new(Loc.Tr("---Active Contracts---"), "", GreyColour) };
-            lines.AddRange(contracts.Select(InfoLine));
-            lines.Add(new("", ""));
+            var lines = contracts.Select(InfoLine).ToList();
             lines.Add(new(Loc.Tr("---Upcoming Events---"), "", GreyColour));
             lines.AddRange(events.Select(InfoLine));
-            AddLines(controls, "FactionInfoPanel", lines, 20 * scale, StandardPixels);
+            // A DatapanelGUI's rows start 0.03 of its height down (AddDatapanel).
+            AddLines(controls, "FactionInfoPanel", lines, 20 * scale, StandardPixels, top: 0.03f * info.Bounds.Height);
         }
         if (relationsLineLayout is null || controls.FirstOrDefault(c => c.Name == "RelationsPanel") is not { } panel) return;
         var factions = (FactionRelations?.Invoke() ?? []).OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase).ToList();
