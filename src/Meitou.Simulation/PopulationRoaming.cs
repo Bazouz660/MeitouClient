@@ -221,13 +221,22 @@ public sealed partial class PopulationSystem
     /// The slave camp a kept stand-in ships its slaves to, -1 when it does not (docs/simulation.md "Captives", off screen): its package is a shipping one (signal 11 or 28, whose
     /// <c>unloaded func</c> is 5 TRAVEL_TARGET in the data) and someone of it is a living slave (state 1). The original's unloaded TRAVEL_TARGET heads for the package's mission target
     /// and does not move inside it (docs/game/factions-squads-towns.md "Off-screen world"): the camp chosen when the package started (kept in <see cref="Platoon.Target"/> as the
-    /// squad unloads), else the nearest slave camp not hostile to it, the loaded package's rule. A save's platoon (no stored squad) is not shipped. Any thread: reads the data and this platoon only.
+    /// squad unloads), else the nearest slave camp not hostile to it, the loaded package's rule. A save's platoon not made yet reads its members from the save (slave role, <c>slavestate</c>
+    /// 1, not dead). Any thread: reads the data and this platoon only.
     /// </summary>
     int ShippingCamp(Platoon p)
     {
-        if (p.Package is not { } id || p.Stored is not { } stored || !IsShipping(id)) return -1;
+        if (p.Package is not { } id || !IsShipping(id)) return -1;
         bool slaves = false;
-        foreach (var m in stored.Members) if (m.Cold is { SlaveState: 1, Role: (int)SquadRole.Slave, Medical.Dead: false }) { slaves = true; break; }
+        if (p.Stored is { } stored)
+        {
+            foreach (var m in stored.Members) if (m.Cold is { SlaveState: 1, Role: (int)SquadRole.Slave, Medical.Dead: false }) { slaves = true; break; }
+        }
+        else if (p.Saved is { } saved)
+        {
+            foreach (var m in saved.Members)
+                if (!m.Dead && !m.Gone && m.Source.SquadMemberType == (int)SquadRole.Slave && m.Source.GameState?.Ints.GetValueOrDefault(Saving.SlaveSave.StateKey) == 1) { slaves = true; break; }
+        }
         if (!slaves) return -1;
         if (p.Target >= 0 && p.Target < data.Sites.Count && data.Sites[p.Target].Town.Type == TownType.SlaveCamp) return p.Target;
         int best = -1;
