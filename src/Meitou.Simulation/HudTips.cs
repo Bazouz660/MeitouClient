@@ -145,10 +145,13 @@ static class HudTips
     /// The numbers of the stats window's "Stats Affected" rows (<c>FUN_1408b1250</c>, docs/game/ui-screens.md "Stats window"), for the three attributes that have them. Strength: the
     /// carry weight (int)(effective strength + <c>encumbrance base</c>) kg, the walking strength XP rate (<c>FUN_1408c60c0</c>) and the fists' damage; Toughness: damage resistance,
     /// the fists' damage, the toughness XP rate, the knockout time and wound deterioration lerps over t = toughness x scale / 100 (unclamped), the KO point and the stagger damage;
-    /// Dexterity: the attack and block play rates. Rows without a number in the original (and Strength's combat XP rate, whose item slot is <b>Unknown</b>) have none here.
+    /// Dexterity: the attack and block play rates; Dodge: the encumbrance factor as the XP rate; Athletics: the run value, the current speed and the Athletics XP rate; Swimming: the
+    /// base and current swim speeds. Rows without a number in the original (and Strength's combat XP rate, whose item slot is <b>Unknown</b>) have none here.
     /// </summary>
-    public static Dictionary<StatsEnumerated, IReadOnlyList<StatReadout>> StatsWindow(CharacterCold cold, MedicalState med, CharacterStats stats, HudCombat? hc, GameConstants? constants)
+    public static Dictionary<StatsEnumerated, IReadOnlyList<StatReadout>> StatsWindow(CharacterCold cold, MedicalState med, RaceData race, CharacterStats stats, HudCombat? hc,
+        GameConstants? constants)
     {
+        float e = cold.Fighter?.EncumbranceFactor ?? 1;
         var factors = (cold.Fighter?.Factors ?? StatFactors.None) with { Stun = med.DustStatFactor };
         float t = stats.Toughness * stats.Scale * 0.01f;
         static float Lerp(float t, float a, float b) => (b - a) * t + a;
@@ -175,6 +178,12 @@ static class HudTips
         var result = new Dictionary<StatsEnumerated, IReadOnlyList<StatReadout>> { [StatsEnumerated.Strength] = strength, [StatsEnumerated.Toughness] = toughness };
         if (hc is { } d)
             result[StatsEnumerated.Dexterity] = [new("Attack speed:", Loc.Tr("{1,num=fix,p=2}", d.AttackRate)), new("Block speed:", Loc.Tr("{1,num=fix,p=2}", d.BlockRate))];
+        // CharStats +0x190 (the encumbrance factor) x 100 as a float number.
+        result[StatsEnumerated.Dodge] = [new("Dodge XP rate:", Loc.Tr("{1,num}%", e * 100))];
+        if (cold.Extended is { } run)
+            result[StatsEnumerated.Athletics] = [new("Max run speed:", Int(run.RunValue)), new("Current run speed:", Int(run.RunSpeed)),
+                new("Athletics XP bonus:", Loc.Tr("{1,num}%", (int)(run.AthleticsXp * 100)))];
+        result[StatsEnumerated.Swimming] = [new("Max swim speed:", Int(Speed.SwimBase(race, stats))), new("Current swim speed:", Int(Speed.Swim(race, stats, med, e)))];
         return result;
     }
 

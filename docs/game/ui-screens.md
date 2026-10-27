@@ -817,11 +817,12 @@ function with w the weapon item's slot `0x248` (the hand's, else the first of `h
 (int)(`FUN_140644770` × 100) `%`, `Martial arts damage`, `Toughness current XP rate:` `{1,num}` of `FUN_1408c5f40`, `Knockout time:` lerp(t, `knockout mult 1`, `knockout mult 99`)
 and `Wound deterioration speed:` lerp(t, `degeneration mult 1`, `degeneration mult 99`), both `{x.xx}x` with t = toughness × CharStats `+0x34` / 100 unclamped, `Knockout point:`
 (int) `FUN_140643ae0`, label and value Main, `Amount of damage it takes to stagger you:` (int) t × `stumble damage max`. Dexterity (0x12) `Attack speed:` / `Block speed:` CharStats
-`+0x188` / `+0x18c` as `{x.xx}`. Other stats with values: Martial Arts `Affects damage`, Dodge `Dodge XP rate:`, Athletics `Max run speed:` / `Current run speed:` / `Athletics XP
-bonus:`, Swimming the two swim speeds, Medic `First aid skills:`, Turrets and Crossbows `Accuracy:` / `Rate of fire:`, Precision `Friendly fire avoidance:`, Assassination `Stealthy
+`+0x188` / `+0x18c` as `{x.xx}`. Dodge (0x20) `Dodge XP rate:` CharStats `+0x190` (the encumbrance factor) × 100 as a float `{1,num}%`. Athletics (0x11) `Max run speed:` (int) the
+run value V (`FUN_140883db0`, units per second, no unit), `Current run speed:` (int) CharStats `+0x17c`, `Athletics XP bonus:` (int)(`FUN_1408c5ec0`(stats, `+0x17c`) × 100) `%`.
+Swimming (0x17) `Max swim speed:` / `Current swim speed:` (int) `FUN_140883e30` / `FUN_140885eb0`. Other stats with values: Martial Arts `Affects damage`, Medic `First aid skills:`, Turrets and Crossbows `Accuracy:` / `Rate of fire:`, Precision `Friendly fire avoidance:`, Assassination `Stealthy
 knock-outs:`, Engineering `Building things:` / `Repairing things:`, Science `Research rate:`, Labouring `Mining:` / `Using machinery:`, Farming `Harvesting speed:` / `Harvesting yield:`,
 Cooking `Cooking:`, the smiths' crafting speeds and qualities (their formulas not decoded). Meitou (`HudTips.StatsWindow`, `PlayerInterface.AddStatDescription`): the
-Strength, Toughness and Dexterity values beside the catalog's rows, matched by label; not Strength's combat XP rate.
+Strength, Toughness, Dexterity, Dodge, Athletics and Swimming values beside the catalog's rows, matched by label; not Strength's combat XP rate.
 Medical body-part labels are larger than the stats body text. Meitou uses 16 em
 pixels at 1080 lines for medical labels, arrows and values, centred over the full
 bar height; sizing text to the inset datapanel shrinks it. Exact original font

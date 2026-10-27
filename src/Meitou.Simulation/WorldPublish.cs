@@ -278,7 +278,7 @@ public sealed partial class World
             cold.Fighter?.EncumbranceFactor ?? 1, lines.AsReadOnly(), extended) { BleedRate = race.BleedRate, Fed = med.Fed, Robot = race.IsRobot,
             ExtendedTips = extended is { } x ? HudTips.Extended(cold, med, race, stats, x, constants) : null, Skill = SkillLine(id, cold, med, race, stats, hot, combat, mode),
             KoPoint = constants is null ? null : Bodies.MedicalState.KoPoint(constants, stats.Toughness),
-            StatReadouts = HudTips.StatsWindow(cold, med, stats, hc, constants) };
+            StatReadouts = HudTips.StatsWindow(cold, med, race, stats, hc, constants) };
     }
 
     /// <summary>
