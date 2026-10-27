@@ -254,7 +254,7 @@ path-facing branches set the heading at once (before, `Turn` at 4π rad/s, which
 - **Target score** (`AI::chooseBestAttackTarget` `FUN_14059e300`). Skips ragdolls (`Character::isRagdoll`), candidates the leave-alone test
   `FUN_1408569a0` passes, allies by faction (`FUN_1406b2630`, unless the candidate is a slave) and impossible-path candidates. Leave alone: for
   an NPC chooser, a candidate it does not remember as an attacker and whose faction is not an enemy, when the candidate has diplomatic status
-  (`Character::isDiplomaticStatus`) or is in a war campaign whose +0xc0 is 0; for a player chooser, a candidate not aware of it, conscious,
+  (`Character::isDiplomaticStatus`: NPC class Diplomat, [ui-screens](ui-screens.md#4-hud-mainbargui)) or is in a war campaign whose +0xc0 is 0; for a player chooser, a candidate not aware of it, conscious,
   of another faction, while the chooser mans no turret, whose intended target is nobody, or who has no aggression towards it, or whose target
   is not the chooser's ally (and an obedient slave leaves alone its master's allies). So player characters never pick an unaware bystander. Weights are CharStats fields that `CharStats::init` sets
   to the same constants for every character (**Verified** literals; not saved, no other writer found; names KenshiLib 1ce4a16): `STUBBOURNESS`

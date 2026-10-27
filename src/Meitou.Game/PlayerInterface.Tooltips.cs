@@ -391,6 +391,7 @@ sealed partial class PlayerInterface
         { Kind: StatusKind.Kidnapped } => new(Loc.Tr("Kidnapped"), "", TitleColour),
         { Kind: StatusKind.Crime } crime => new(Loc.Tr("Committing Crime!"), Loc.Tr("{1,num}", crime.Timer), TitleColour, TitleColour),
         { Kind: StatusKind.EscapedPrisoner } => new(Loc.Tr("Escaped Prisoner"), "", TitleColour),
+        { Kind: StatusKind.Diplomatic } => new(Loc.Tr("Diplomatic Status"), "", TitleColour),
         _ => lead.Slave is { } slave ? new(Loc.Tr(slave.State == 2 ? "Escaped slave" : "Slave"), "", TitleColour) : null,
     };
 
@@ -407,6 +408,7 @@ sealed partial class PlayerInterface
             StatusKind.Kidnapped => Loc.Tr("This character has been kidnapped, law enforcers will try to help"),
             StatusKind.EscapedPrisoner => Loc.Tr("This character broke out of prison, if he gets spotted by any guards he is in trouble. Leave town to clear this status. Expires in {1}",
                 Loc.Tr(EscapedExpiry == 1 ? "{1,num} hr" : "{1,num} hrs", EscapedExpiry)),
+            StatusKind.Diplomatic => Loc.Tr("This is a special person with diplomatic importance. Anyone who attacks this guy will be in serious trouble with his faction."),
             _ when status.Timer <= 3 => Loc.Tr("This character is currently committing {1}, make sure nobody witnesses it.", Loc.Tr(status.Crime)),
             _ when status.Bounty < 1 => Loc.Tr("This character has been caught committing {1}! He might end up with a bounty on his head if he can't vanish.", Loc.Tr(status.Crime)),
             _ => Loc.Tr("This character has been caught committing {1}! He might end up with a bounty on his head if he can't vanish. Current bounty is c.{2,num}", Loc.Tr(status.Crime), status.Bounty),

@@ -433,7 +433,7 @@ public interface IProjectileSource
 public sealed record SquadView(int Id, string Name, IReadOnlyList<CharacterId> Members);
 
 /// <summary>Which status line a character's bounty panel shows (<c>FUN_1405d4260</c>, <b>Observed</b>).</summary>
-public enum StatusKind : byte { Leader, WarLeader, Kidnapped, Crime, EscapedPrisoner }
+public enum StatusKind : byte { Leader, WarLeader, Kidnapped, Crime, EscapedPrisoner, Diplomatic }
 
 /// <summary>A status line: for <see cref="StatusKind.Crime"/> the crime's name, its pending timer and the local faction's bounty.</summary>
 public readonly record struct StatusView(StatusKind Kind, string Crime = "", int Timer = 0, int Bounty = 0);

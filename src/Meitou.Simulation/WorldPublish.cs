@@ -38,14 +38,15 @@ public sealed partial class World
 
     /// <summary>
     /// The status line of the bounty panel (<c>FUN_1405d4260</c>, <b>Observed</b>, docs/game/ui-screens.md section 4), first match: the leader of a campaign's leader platoon
-    /// (<c>Character::isLeadingAWarCampaign</c>): War Leader for a hostile campaign (<c>CampaignData::_isHostile</c>), else Leader; kidnapped; for a free character a pending crime, then
-    /// the escaped-prisoner flag. The original's Diplomatic Status between kidnapped and the crime is not built (its test was not decoded).
+    /// (<c>Character::isLeadingAWarCampaign</c>): War Leader for a hostile campaign (<c>CampaignData::_isHostile</c>), else Leader; kidnapped; Diplomatic Status for an NPC class Diplomat
+    /// (<c>Character::isDiplomaticStatus</c> without its biome test, <b>Verified</b> by disassembly); for a free character a pending crime, then the escaped-prisoner flag.
     /// </summary>
     StatusView? StatusOf(CharacterId id, CharacterCold c, Vector3 at, PopulationData? data)
     {
         if (c.SquadId >= 0 && Squads.Find(c.SquadId) is { PlatoonId: >= 0 } squad && squad.Leader == id && Platoons.Find(squad.PlatoonId) is { Campaign: { } inst } platoon && inst.Leader == platoon.Id)
             return new(systems.OfType<PopulationSystem>().FirstOrDefault()?.CampaignOf(inst.CampaignId)?.IsHostile == true ? StatusKind.WarLeader : StatusKind.Leader);
         if (c.Kidnapped) return new(StatusKind.Kidnapped);
+        if (c.NpcClass == FundamentalType.Diplomat) return new(StatusKind.Diplomatic);
         if (c.SlaveState != 0) return null;
         if (c.Pending is { } crime)
             return new(StatusKind.Crime, Crime.CrimeTable.Name(crime.Code), (int)crime.Timer, c.Bounties is null ? 0 : Crime.CrimeSystem.Lines(c, Tick, TickSeconds, LocalFaction(c, at, data)).FirstOrDefault(b => b.Local).Amount);

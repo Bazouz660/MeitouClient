@@ -424,12 +424,14 @@ to Jobs; the saved `chase mode` flag is that switch (**Verified**, [perma-jobs](
 - Status entry (section 0x10 of the same builder, **Observed** by decompile), first match: the leader of its campaign (`Character::isLeadingAWarCampaign` `FUN_1409c4b10`: its platoon's leader and the campaign's
   leader) "War Leader" ("This is the Commander in charge of an entire army.") when `CampaignData::_isHostile` (+0x12, KenshiLib 1ce4a16), else "Leader" ("This is the leader of this group.");
   kidnapped (Character slot 0x350) "Kidnapped" ("This character has been kidnapped, law enforcers will try to help"); `isDiplomaticStatus` `FUN_140796240` "Diplomatic Status" ("This is a special
-  person with diplomatic importance...", its test not decoded); then for slave state 0: a pending crime (Character `+0x148` code, `+0x180` timer) "Committing Crime!" with int(timer), text
+  person with diplomatic importance. Anyone who attacks this guy will be in serious trouble with his faction."; `isDiplomaticStatus(factorInBiome)`, **Verified** by disassembly: the
+  character's NPC type (state broadcast `+0x1a0` -> `+0xdc`, KenshiLib `NPCType`) is 5 OT_DIPLOMAT (the CHARACTER `NPC class`), and with the flag also
+  `FactionWarMgr::isBiomeHomeTerritory` for the biome at its position; this entry passes 0, as do four of the other five callers); then for slave state 0: a pending crime (Character `+0x148` code, `+0x180` timer) "Committing Crime!" with int(timer), text
   "This character is currently committing {1}, make sure nobody witnesses it." while timer <= 3, else "...has been caught committing {1}! He might end up with a bounty on his head if he
   can't vanish." plus " Current bounty is c.{2,num}" with the local faction's bounty (`getActualBounty`) above 0; the escaped flag (`+0xe8`) "Escaped Prisoner", text "... Leave town to
   clear this status. Expires in {1}" with `{1,num} hr(s)` of the constant 99999; a bounty: the bounty entry; else the slave states above. Crime, escaped and slave entries list the bounty rows
   (`FUN_1405d1400`) before their text. "Imprisoned:" belongs to the Lockpicking section. Meitou: `World.StatusOf`, `PlayerInterface.StatusLine` / `StatusRows` / `SlaveRows` (slave hints for
-  player characters only; engine choice); the entry's title is the `BountyText` line; Diplomatic Status and Ex-slave are not built.
+  player characters only; engine choice); the entry's title is the `BountyText` line; Diplomatic Status is `CharacterCold.NpcClass` Diplomat; Ex-slave is not built.
 - Bounty panel (`FUN_1405d2da0`, **Observed**; colour strings **Verified**: their static initialisers `FUN_14158a2a0` `#afa68b` Main, `FUN_14158a320` `#492620` Title,
   `FUN_14158a460` `#444444` Greyed). The *local faction* (`FUN_140852010`): while imprisoned (`+0x2f8 == 2`) the owner of the cage at `+0x300`, else the faction of the
   status object's `+0x88` (**Unknown**; Meitou: the town the character stands in, nearest whose radius holds it).
