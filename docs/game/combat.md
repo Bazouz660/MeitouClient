@@ -60,19 +60,25 @@ list unless `is block` or `is dodge` (then the defence list), in data order. Eac
 - f = product over blows. `limb` 4 (weapon) 1; 0 left arm, 1 right arm: 0.001 if not working (+0x5be / +0x5bd).
   Legs 2/3: prone → technique out; flag +0x5b8 or a leg part down → ×0.25. A missing limb
   (`MedicalSystem::getLimbState` `FUN_140643b30` = 1 STUMP, **Verified**; 0 original, 2 replaced, 3 crushed) → 0.001. No blow above 0.01 → 0.
-- Reach R = `attack distance` + L/2, L = weapon `length` (CharStats +0x200). Fists never armed: L = 0. The max R of
+- Reach R = `attack distance` + L/2, L = weapon `length` (CharStats +0x200). The max R of
   filtered techniques, at least 1, is CharStats +0x150. A technique needs gap ≤ R.
+- **Fists' L** (**Observed**, decompile): a person's fists are a WEAPON item (`FUN_14062acf0`: its race's `fists lv1`
+  reference, else the `FISTS` record), made the current weapon with nothing in hand (`FUN_1405e58d0`); the weapon bind
+  (`FUN_140897f30`, which has a category 5 branch) writes +0x200 from the bound weapon's `length`. Base data: `FISTS` and
+  the robots' fists (`53668-rebirth.mod`) are 18 long; no other race has `fists lv1`.
 - Weight: c = min(a, b)/max(a, b), a = gap + 3, b = k·(`attack distance` + L/4) + 3. Multiply by f, by 0.02 under
   `attack distance min vs static`, by 0.2 for the previous technique unless the target is in state 8, and by `chance`.
   Pick by cumulative weight (`FUN_1408a8c80`, `FUN_1409b1c80`).
 
-Consequences (base data): "Cut left static" (−999) is never an attack. A never-armed person cannot use
-"ma badpunch" (−4) and has no attack below martial arts 5. An armed fighter beyond every weapon reach may kick
-or punch.
+Consequences (base data): "Cut left static" (−999) is never an attack. Fists reach `attack distance` + 9, so
+"ma badpunch" (−4) needs a gap of 5 or less. An armed fighter beyond every weapon reach may kick or punch.
+With L = 0 the attack zone (below) falls 2r short of the start gap, and a fist swing begun where the steering parks
+the fighter hits nobody (**Measured**, Meitou headless, base data: martial arts 100 against 5 Dust Bandits, 5 of 39
+swings landed with L = 0; with L = 18, 7 hits from 6 swings put all 5 down in 7.4 s).
 
 Meitou: `TechniqueChooser.ChooseAttack`. Engine readings: CharStats +0x2c is the gear's unarmed bonus; the injury
 term, +0x5b8 and part kind 1 are not modelled. Leg down means a leg part's flesh − stun + rig < 0. Plain mode means
-a target that is not fighting. Fists keep L = 0 (the original keeps the last weapon's length). The gap is 3D.
+a target that is not fighting. Fists: `Fighter.FistsLength` (no fists item; its multipliers are not applied). The gap is 3D.
 
 ## Hit reactions
 

@@ -23,10 +23,11 @@ public sealed class Fighter
     /// <summary>The first weapon in the <c>hip</c> section, if any.</summary>
     public WeaponInstance? HipWeapon => hip;
     /// <summary>
-    /// The <c>length</c> of the weapon in hand, 0 for fists (CharStats +0x200: 0 from its constructor, set when a weapon is equipped; the original keeps the last weapon's length
-    /// after it is put away, which is not modelled).
+    /// The <c>length</c> of the weapon in hand, <see cref="FistsLength"/> for fists (CharStats +0x200, set from the weapon bound, the fists item with nothing in hand).
     /// </summary>
-    public float WeaponLength => Weapon?.Data.Length ?? 0;
+    public float WeaponLength => Weapon?.Data.Length ?? FistsLength;
+    /// <summary>The length of a person's fists item (its race's <c>fists lv1</c> WEAPON, else <c>FISTS</c>: 18 in the base game); 0 when not set.</summary>
+    public float FistsLength { get; init; }
     readonly WeaponInstance? hip;
     bool rightArm = true, leftArm = true;
     /// <summary>The crossbow carried in a weapon section (back or hip), if any: the ranged weapon (docs/simulation.md "Combat", ranged). The melee <see cref="Weapon"/> stays what it was.</summary>

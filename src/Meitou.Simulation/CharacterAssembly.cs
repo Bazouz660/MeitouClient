@@ -56,9 +56,9 @@ sealed class CharacterAssembly(PopulationData data)
 
     /// <summary>
     /// The weapons (the first of the hip and of the back section; quality the level x 0.01; which is in hand goes by the arms, <see cref="Fighter.Weapon"/>) and the worn armour
-    /// (quality / 100), docs/simulation.md "Combat".
+    /// (quality / 100), docs/simulation.md "Combat". The fists' length is the race's <c>fists lv1</c> WEAPON's, else <c>FISTS</c>' (docs/game/combat.md "Attack technique choice").
     /// </summary>
-    Fighter MakeFighter(Inventory inventory, MedicalState? medical)
+    Fighter MakeFighter(Inventory inventory, MedicalState? medical, string? raceId)
     {
         var combat = data.Combat;
         WeaponInstance? First(string section)
@@ -81,7 +81,9 @@ sealed class CharacterAssembly(PopulationData data)
         float? backpackStealth = inventory.Backpack is not null ? packRecord?.GetFloat("stealth mult", 1) ?? 1 : null;
         // CONTAINER +0x238 (FUN_140763810): the raw athletics mult, the seed of the gear's smallest run factor.
         float backpackAthletics = packRecord?.GetFloat("athletics mult", 1) ?? 1;
-        var fighter = new Fighter(First("hip"), armour, backpackStealth, backpackAthletics) { BackWeapon = First("back"), Crossbow = crossbow };
+        string fistsId = (raceId is null ? null : data.Db.Find(raceId))?.GetReferences("fists lv1").Select(r => r.TargetStringId).FirstOrDefault() ?? "FISTS";
+        var fistsLength = (combat.Weapon(fistsId) ?? combat.Weapon("FISTS"))?.Length ?? 0;
+        var fighter = new Fighter(First("hip"), armour, backpackStealth, backpackAthletics) { BackWeapon = First("back"), Crossbow = crossbow, FistsLength = fistsLength };
         if (medical is not null) fighter.SetArms(medical.ArmWorks(left: false), medical.ArmWorks(left: true));
         return fighter;
     }
@@ -104,12 +106,13 @@ sealed class CharacterAssembly(PopulationData data)
         return new Fighter(weapon) { IsAnimal = true };
     }
 
-    Fighter FighterOf(GameRecord? record, Inventory inventory, MedicalState? medical) => AnimalData.From(record) is { } animal ? MakeAnimalFighter(animal) : MakeFighter(inventory, medical);
+    Fighter FighterOf(GameRecord? record, Inventory inventory, MedicalState? medical, string? raceId) =>
+        AnimalData.From(record) is { } animal ? MakeAnimalFighter(animal) : MakeFighter(inventory, medical, raceId);
 
     public void RefreshEquipment(CharacterCold cold)
     {
         if (cold.Inventory is not { } inventory) return;
-        var fighter = FighterOf(data.Db.Find(cold.RecordId), inventory, cold.Medical);
+        var fighter = FighterOf(data.Db.Find(cold.RecordId), inventory, cold.Medical, cold.Race?.StringId);
         fighter.Guarding = cold.Fighter?.Guarding ?? false;
         fighter.EncumbranceFactor = cold.Fighter?.EncumbranceFactor ?? 1;
         cold.Fighter = fighter;
@@ -150,7 +153,7 @@ sealed class CharacterAssembly(PopulationData data)
                 (fitted.Section, fitted.X, fitted.Y) = (Meitou.Data.Gameplay.Bodies.LimbReplacement.SlotOf(k), 0, 0);
                 carried.Items.Add(fitted);
             }
-        cold.Fighter = FighterOf(record, cold.Inventory, cold.Medical);
+        cold.Fighter = FighterOf(record, cold.Inventory, cold.Medical, cold.Race?.StringId);
         cold.WaterFactor = race.WaterAvoidance * (cold.Faction == data.PlayerFaction && data.PlayerFaction >= 0 ? 0.5f : 1);
         cold.RoadPreference = data.RoadPreferenceOf(cold.Faction);
     }
@@ -193,7 +196,7 @@ sealed class CharacterAssembly(PopulationData data)
         if (record is { Type: Meitou.Data.Fcs.FcsRecordType.CHARACTER } && record.GetBool("wears uniform") && (uint)cold.Faction < (uint)data.Factions.Count)
             foreach (var piece in cold.Inventory.Items)
                 if (piece.Type == Meitou.Data.Fcs.FcsRecordType.ARMOUR && piece.Section != "main") piece.Uniform = data.Factions[cold.Faction].Id;
-        cold.Fighter = FighterOf(record, cold.Inventory, cold.Medical);
+        cold.Fighter = FighterOf(record, cold.Inventory, cold.Medical, cold.Race?.StringId);
         cold.WaterFactor = raceData.WaterAvoidance * (cold.Faction == data.PlayerFaction && data.PlayerFaction >= 0 ? 0.5f : 1);
         cold.RoadPreference = data.RoadPreferenceOf(cold.Faction);
         hot.MaxSpeed = Speed.Run(raceData, stats, medical, 1, statsFactor: cold.Fighter?.AthleticsFactor ?? 1);
