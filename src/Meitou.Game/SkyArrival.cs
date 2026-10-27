@@ -67,13 +67,14 @@ sealed class SkyArrival(WorldCamera source, float hour, float speed = 1)
     }
 
     /// <summary>Places the camera for this frame and returns the hour to light it with. <paramref name="destinationReady"/>: the destination warms up under
-    /// the cover, so the camera already stands where the descent starts.</summary>
+    /// the black, seen from where the descent lands (what streams and is waited for is what the view will show).</summary>
     public float Apply(WorldCamera camera, float destination, bool destinationReady = false)
     {
         float to = destinationHour ?? destination;
-        if (phase == Phase.Arriving || destinationReady)
+        if (destinationReady && phase != Phase.Arriving) return destination;
+        if (phase == Phase.Arriving)
         {
-            float t = phase == Phase.Arriving ? Ease((float)(elapsed / DescentSeconds), 0.3f, 0.2f) : 0;
+            float t = Ease((float)(elapsed / DescentSeconds), 0.3f, 0.2f);
             // Orbit round the view's target onto its heading while coming down from above it, the look tipping from the sky to the view's pitch.
             float yaw = camera.Yaw - ArrivalSweep * (1 - t), pitch = camera.Pitch;
             var eye = camera.Target + new Vector3(MathF.Cos(pitch) * MathF.Sin(yaw), MathF.Sin(pitch), MathF.Cos(pitch) * MathF.Cos(yaw)) * camera.Distance
