@@ -71,6 +71,13 @@ public sealed class UiTextBuffer(string text = "")
         Commit(before);
     }
 
+    /// <summary>Puts the caret at <paramref name="index"/> (clamped), keeping the selection's other end when <paramref name="extend"/> (a pointer drag), else clearing it (a click).</summary>
+    public void Place(int index, bool extend = false)
+    {
+        Caret = Math.Clamp(index, 0, Text.Length);
+        if (!extend) anchor = Caret;
+    }
+
     public void Key(UiEditKey key, bool extend = false)
     {
         switch (key)

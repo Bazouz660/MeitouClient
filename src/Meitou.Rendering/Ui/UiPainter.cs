@@ -17,6 +17,8 @@ public sealed partial class UiPainter : IDisposable
     readonly MyGuiResources resources;
     readonly Func<string, string?> resolve;
     DebugOverlay? standardFont, paintedFont, titleFont;
+    /// <summary>The one-line edit boxes the last <see cref="Draw"/> laid out: where each one's text starts and how it was measured, for <see cref="EditCaretAt"/>.</summary>
+    readonly List<(UiRect Box, DebugOverlay Font, float Scale, float X, string Text)> editBoxes = [];
     readonly Dictionary<UiFontKey, DebugOverlay> uiFonts = [];
     readonly Dictionary<string, MyGuiTrueTypeFont?> fontSpecs = new(StringComparer.Ordinal);
     readonly Dictionary<(string Path, float Size, float Resolution), float> fontSizes = [];
@@ -199,6 +201,7 @@ public sealed partial class UiPainter : IDisposable
         bool owns = pass is null;
         pass ??= (overlayPass ??= new DebugOverlay.OverlayPass(overlay.Gpu, width, height)).Reset(width, height);
         using var owned = owns ? pass : null;
+        editBoxes.Clear();
         foreach (var c in controls)
         {
             var b = c.Bounds;
@@ -394,6 +397,7 @@ public sealed partial class UiPainter : IDisposable
             {
                 float textWidth = font.MeasureText(line, scale);
                 float x = textArea.X + (align.Contains("Right", StringComparison.Ordinal) ? textArea.Width - textWidth : HasWord(align, "Center", "HCenter") ? (textArea.Width - textWidth) / 2 : 0);
+                if (c.Type == "EditBox" && lines.Count == 1) editBoxes.Add(new(clip.Intersect(b), font, scale, x, line));
                 if (new Meitou.Data.Ui.UiRect(x, y, textWidth, font.LineHeight * scale).Intersect(textClip).Width > 0)
                 {
                     if (c.Properties.GetValueOrDefault("TextShadow") == "true") font.TextScaled(line, x + 1, y + 1, new(0, 0, 0, textColour.W), scale);
@@ -629,6 +633,25 @@ public sealed partial class UiPainter : IDisposable
     /// Draws the mouse pointer <paramref name="name"/> (kenshi_pointers.xml) with its hot spot on <paramref name="mouse"/>, in screen pixels as MyGUI does; nothing for an unknown name.
     /// Called last in a frame: the original's <c>Pointer</c> layer is above every other.
     /// </summary>
+    /// <summary>
+    /// The text index nearest <paramref name="p"/> in the one-line edit box under it as the last <see cref="Draw"/> laid it out (the gap between two characters closest to the pointer);
+    /// null when no edit box was drawn there. The screen host places the caret with it.
+    /// </summary>
+    public int? EditCaretAt(Vector2 p)
+    {
+        for (int i = editBoxes.Count - 1; i >= 0; i--)
+        {
+            var (box, font, scale, x, text) = editBoxes[i];
+            if (!box.Contains(p.X, p.Y)) continue;
+            int best = 0;
+            float distance = MathF.Abs(p.X - x);
+            for (int k = 1; k <= text.Length; k++)
+                if (MathF.Abs(p.X - (x + font.MeasureText(text[..k], scale))) is var d && d < distance) { best = k; distance = d; }
+            return best;
+        }
+        return null;
+    }
+
     public void DrawPointer(string name, Vector2 mouse, int width, int height, DebugOverlay.OverlayPass? pass = null)
     {
         if (!pointers.TryGetValue(name, out var pointer)) pointers[name] = pointer = MyGuiPointers.Resolve(resources, name);

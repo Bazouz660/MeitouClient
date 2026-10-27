@@ -176,7 +176,12 @@ public sealed partial class MyGuiScreenHost(MyGuiResources resources)
             }
             return true;
         }
-        if (c.Type == "EditBox" && c.Properties.GetValueOrDefault("Static") != "true") { FocusEdit(id, c); return true; }
+        if (c.Type == "EditBox" && c.Properties.GetValueOrDefault("Static") != "true")
+        {
+            FocusEdit(id, c);
+            if (CaretAt?.Invoke(p) is { } at) { edit!.Place(at); selecting = true; }
+            return true;
+        }
         focus = null; edit = null;
         if (c.Type == "Button") { Activated?.Invoke(new(id, c.Name, c.Action)); return true; }
         var root = frame.First(f => f.Id == id).Controls.FirstOrDefault(n => n.Type == "Window");
@@ -186,12 +191,17 @@ public sealed partial class MyGuiScreenHost(MyGuiResources resources)
     }
     public bool PointerMove(Vector2 p)
     {
+        if (selecting && edit is not null && CaretAt?.Invoke(p) is { } at) { edit.Place(at, extend: true); return true; }
         if (MoveWidget(p)) return true;
         if (drag is not { } d) return false;
         DragWindow(d, p);
         return true;
     }
-    public void PointerUp() { drag = null; ReleaseWidget(); }
+    public void PointerUp() { drag = null; selecting = false; ReleaseWidget(); }
+
+    /// <summary>The text index under the pointer in the one-line edit box the renderer last drew there (null: none); a press places the caret, a drag selects (Meitou: MyGUI does both).</summary>
+    public Func<Vector2, int?>? CaretAt { get; set; }
+    bool selecting;
 
     public bool Wheel(Vector2 p, float steps)
     {
