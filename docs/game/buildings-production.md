@@ -402,6 +402,11 @@ research `14213358c`) default **Unknown**; 1 below.
 `amount = yield x outputRate x upgrade x dt x P x health x powerSat x s x option`. Several operators add up.
 Neither it nor the output add (`vfunc_184` `FUN_1402984b0`) tests the owner. An operated building (the player's, an NPC town's or a
 rock) makes output only while someone operates it.
+- **Another faction's machine** (**Observed**, decompile): the player may operate it. The menu offers 87 / 152 on it unless it is `destroyed` (+0x1a1,
+  KenshiLib 1ce4a16; [ui-input](ui-input.md#context-menu-verbs)); `Task_OperateMachine`'s start (`FUN_14035b430`) only asks `tryOperate` (slot `0x4f8`:
+  `UseableStuff` `FUN_1400f8030`, `CraftingBuilding` `FUN_1402b5bf0`: refused when `dontNeedWorkRightNow` or every operator slot is taken), no owner test;
+  for a foliage building (a rock) of no player owner it then makes the player's faction its owner. The output stays in the machine, so taking it is looting
+  another faction's inventory (26). Meitou: not built, NPC town buildings are not `Machine`s ([simulation](../simulation.md#production)).
 - **Automatic machines** (**Verified**, decompile): +0x3ac (`numOperatorsMax`, KenshiLib 1ce4a16) is the BUILDING's `max operators`
   unless below 0, then the functionality's (`FUN_1402a3750`); +0x3a9 "has operators" = that value is neither 0 nor from two negatives.
   With +0x3a9 clear, `ProductionBuilding::vfunc_28` (each frame) calls slot 150 itself with no operator and s = 1, so the machine
