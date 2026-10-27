@@ -867,7 +867,7 @@ unless marked; Meitou: `PlayerInterface.Faction.cs`.
     queued campaign requests: a heading `#afa68b` `-{faction name}-`. Per active campaign whose target faction is a player faction (`isPlayer`) and whose phase is not 2 RETREATING or 3
     VICTORY: the campaign's name in `#492620`, then `Target:` with `#afa68b` {target faction name}`- `{target's name, or `???` when it does not resolve}, then a spacer. Per queued request
     (the player filter is not applied here): its campaign's `display name` and the time until it starts, both `#444444`. Times (`TimeOfDay::getTotalTimeString` `FUN_1407a6940`):
-    negative `Expired`, above 24 h `{1,num} Days, {2,num}hrs`, above 1 h `{1,num}hrs`, else `{1,num} mins` (rounding **Observed**).
+    negative `Expired`, above 24 h `{1,num} Days, {2,num}hrs`, above 1 h `{1,num}hrs`, else `{1,num} mins`; days `floor(h/24)` with `(uint)h % 24` hours, hours `floor(h)`, minutes `floor(h x 60)` (**Verified**, decompiled `FUN_1407a6940`).
 - Meitou: the name box takes typing; accepting it (Enter) or losing the key focus sends `RenameFactionCommand`, which takes a name no other faction of the data has and posts "This faction name already exists" otherwise (the original's message box and the empty-name rule are not built / **Unknown**; the 64-character cap is an engine choice). The name is `PlayerState.FactionName` (null = the data's "Nameless"), saved as the CAMERA `pfaction name`, the player platoons' faction name and read back on load when it differs from the data's; the GAMESTATE_FACTION record's own name is not rewritten. The lines for every faction but the player's, the `not real` ones and the template (engine
   choice for the unknown filters), sorted ignoring case, rebuilt each frame, line height from the layout's 0.0222 of the screen; the two headings
   under them `World.ActiveContracts` (one entry per hired squad, its package being the squad's) and `PopulationSystem.UpcomingEvents` (Meitou's phase 2 stands for RETREATING and VICTORY).
@@ -1193,7 +1193,7 @@ panel 0.130 x 0.463 of the screen, newest lowest; a new line flashes white, fadi
 fresh manager: three queued messages, "Hold middle mouse button to rotate the camera", "Use mouse wheel to zoom", "Now create your first character.
 Use the 'Confirm' button when finished." (every new game of the process). The Tutorials window (F1) lists all 34 by title, pages read-only.
 
-Meitou (`Tutorials.cs`, `PlayerInterface.Tutorials.cs` / `TutorialPanel.cs`, `TutorialCatalog`): as above, the file in the working directory; with no Obedient Slave job no box is drawn.
+Meitou (`Tutorials.cs`, `PlayerInterface.Tutorials.cs` / `TutorialPanel.cs`, `TutorialCatalog`): as above, the file in the working directory; with no Obedient Slave job no box is drawn (engine choice; the original leaves a stale box, below).
 Highlight targets (**Verified**, `_setHightlightCoords`; Meitou finds them by widget name): portraits `SquadPanel`, stats `NamePanel`, its bottom `StatsPanel` and its
 "Power" / "Workers" lines, medical `MedicalPanel`, status `StatusPanel`, the bars `LifeBar{n+1}` (body 1, limbs 4, blood 0, power 1, materials 1 or 2 with a door,
 condition 0 or 1 with a door), `SpeedButtonsPanel`, `TimeMoneyPanel`, `BuildPanel`, `BountyPanel`, `ShortcutsPanel` and its squad / stats / tech buttons,
@@ -1202,7 +1202,7 @@ the building window's `InputColumn`, the build window's list. Engine readings: t
 whole tab page, and a box follows its widget every frame;
 the obedience job row (item 28, **Verified** `_setHightlightCoords` `FUN_140972a50` case 0x1c; field names KenshiLib 1ce4a16, **Observed**): the first entry of the Jobs panel's order list
 (`OrdersPanel::orders`, the selected character's jobs in list order) whose Tasker's TaskData key is 187 (`_SLAVE_OBEDIENCE`, "Obedient Slave"); the box is that row's whole widget (the
-`OrdersItem` at the same index in `ordersItemBox`). No such job (or no row at that index): the target widget is set to none and no coordinates are written (whether a stale box then stays is **Unknown**).
+`OrdersItem` at the same index in `ordersItemBox`). No such job (or no row at that index): the target widget is set to none and no coordinates are written, yet `startHighlight` (`FUN_140974260`) still shows the box and fades it in, and `update` (`FUN_1409767b0`) only ties its visibility to a non-null target, so the box pulses at the previous highlight's coordinates (**Verified**, decompiled). The original sets coordinates only when a highlight starts (and from the stats panel page's hook `FUN_140982b50`), not every frame.
 "in a town" is a town radius holding a PC; the steal pointer (Meitou has none) is a selection over another faction's ground item.
 
 ### 8. Damage floaters

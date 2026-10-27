@@ -35,7 +35,7 @@ sealed partial class PlayerInterface
 
     /// <summary>
     /// A time left as <c>TimeOfDay::getTotalTimeString</c> (<c>FUN_1407a6940</c>) prints it: below 0 "Expired", above a day "{d} Days, {h}hrs", above an hour "{h}hrs", else
-    /// "{m} mins" (whole numbers; the original's rounding is Observed).
+    /// "{m} mins" (each part floored, the day branch's hours as (uint)h % 24).
     /// </summary>
     static string TotalTime(double hours) =>
         hours < 0 ? Loc.Tr("Expired")
