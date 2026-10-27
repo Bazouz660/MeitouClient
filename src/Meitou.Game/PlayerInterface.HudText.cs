@@ -109,7 +109,7 @@ sealed partial class PlayerInterface
     /// <summary>
     /// The state lines (State, Goal, Encumbrance and, alive, the Current Skill line) of the selected character. The State line is the original's first match (<c>FUN_1405d4260</c>, docs/game/ui-screens.md
     /// section 4): Dead; caged, the cage lock's "Locked (lvl: N)" or "(Unlocked...)" (no State line in a cage without a lock); Unconscious / Rebooting; Sleeping in a bed; Defensive; Normal; each
-    /// with its tooltip. The weather notice replaces it while it lasts. Not built: the ranged controller's Aiming... / Reloading... line.
+    /// with its tooltip; the ranged controller's line comes between Sleeping and Defensive. The weather notice replaces it while it lasts.
     /// </summary>
     static HudLine[] StateLines(CharacterSnapshot lead, SpeedUnit unit)
     {
@@ -123,6 +123,10 @@ sealed partial class PlayerInterface
         else if (body is { Unconscious: true })
             (state, colour, tooltip) = (Loc.Tr(lead.Hud?.Robot == true ? "Rebooting" : "Unconscious"), BadColour, Loc.Tr("This guy is unconscious and probably needs medical attention and rest."));
         else if (lead.InBed) (state, tooltip) = (Loc.Tr("Sleeping"), Loc.Tr("Sleeping..."));
+        else if (lead.RangedLine is { } ranged)
+            // FUN_140438640: "Aiming..." / "Reloading..." and " [loaded/shots]"; an unpowered gun's "No Power!" (Bad) replaces the word.
+            (state, colour) = (Loc.Tr(ranged.NoPower ? "No Power!" : ranged.Reloading ? "Reloading..." : "Aiming...")
+                + $" [{ranged.Loaded.ToString(CultureInfo.InvariantCulture)}/{ranged.Shots.ToString(CultureInfo.InvariantCulture)}]", ranged.NoPower ? BadColour : null);
         else if ((lead.Orders & CharacterOrders.Block) != 0)
             (state, tooltip) = (Loc.Tr("Defensive"), Loc.Tr("In defensive combat mode the character will not even try to attack, focusing entirely on defense for a +20 skill bonus."));
         else state = Loc.Tr("Normal");
@@ -325,10 +329,14 @@ sealed partial class PlayerInterface
     }
 
     /// <summary>
-    /// The medical header's word, its colour and its tooltip, the original's first match (<c>FUN_14088a8f0</c>, docs/game/ui-screens.md "Health word choice"). Not built: the
-    /// <c>+0xf0</c> status texts, the disguise words and the bed's recovery rate line (Meitou models none of them).
+    /// The medical header's word, its colour and its tooltip, the original's first match (<c>FUN_14088a8f0</c>, docs/game/ui-screens.md "Health word choice"), and alive in a bed
+    /// that heals faster, "\nRecovery rate: {1}x" after the tooltip. Not built: the <c>+0xf0</c> status texts and the disguise words (Meitou models neither).
     /// </summary>
-    internal static (string Text, string? Colour, string Tip) HealthWord(CharacterSnapshot lead) => HealthWord(lead.Body!.Value, lead.Hud, lead.HealthParts);
+    internal static (string Text, string? Colour, string Tip) HealthWord(CharacterSnapshot lead)
+    {
+        var (text, colour, tip) = HealthWord(lead.Body!.Value, lead.Hud, lead.HealthParts);
+        return lead.BedRecoveryRate is { } rate && !lead.Body.Value.Dead ? (text, colour, tip + "\n" + Loc.Tr("Recovery rate: {1}x", rate)) : (text, colour, tip);
+    }
 
     /// <summary><see cref="HealthWord(CharacterSnapshot)"/> from the body, the HUD view (bleeding, stomach, robot race, KO point) and the part rows.</summary>
     internal static (string Text, string? Colour, string Tip) HealthWord(BodyStatus body, HudView? hud = null, IReadOnlyList<HealthPartView>? parts = null)

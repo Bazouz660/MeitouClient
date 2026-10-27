@@ -47,6 +47,12 @@ public sealed class BodySystem(GameConstants constants, BodyOptions? options = n
     /// AI asleep at its home's bed spot the bed fixture there. Its kind is the functionality's <c>function</c> (6 BF_BED, 25 BF_SKELETON_BED) and its factor the
     /// Building's <c>+0x3c0</c>: <c>output rate</c> x <c>production mult</c> x the research production multiplier. None outside a bed.
     /// </summary>
+    /// <summary>
+    /// The health word tooltip's "Recovery rate: {1}x" (<c>FUN_14088a8f0</c>): in a bed (state 1) of class 6 whose rate is above 1, that rate; null otherwise. A repair bed has none.
+    /// </summary>
+    public float? BedRecoveryRate(World world, CharacterCold cold, in CharacterHot n) =>
+        cold.InSomething == Locks.HeldState.Bed && BedOf(world, cold, in n) is (BedKind.Bed, var factor) && factor > 1 ? factor : null;
+
     (BedKind Kind, float Factor) BedOf(World world, CharacterCold cold, in CharacterHot n)
     {
         if (db is null) return (BedKind.None, 1);

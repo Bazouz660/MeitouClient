@@ -577,6 +577,11 @@ sealed partial class PlayerInterface
             if (machine.IsStorage)
                 verbs.Add(("Inventory", () => { if (SlowModifier) Say(new Meitou.Simulation.Production.AddJob(selection, Meitou.Data.Gameplay.Ai.TaskType.OPERATE_STORAGE, site.Id) { Tick = session.World.Tick }); else OpenStorage(site); }));
             else if (machine.Function == MachineData.ItemFurnaceFunction) verbs.Add(("Inventory", () => OpenStorage(site)));
+            // A corpse machine (function 11) offers Corpse Disposal (136): with Shift the Corpse disposal job (137 and its finder 138), else the carried corpses go in.
+            if (own && machine.Function == Meitou.Data.World.TownBuildings.CorpseDisposalFunction)
+                verbs.Add(("Corpse Disposal", () => Say(SlowModifier
+                    ? (Meitou.Simulation.SimCommand)new Meitou.Simulation.Production.AddJob(selection, Meitou.Data.Gameplay.Ai.TaskType.FEED_CORPSE_INTO_MACHINE, site.Id) { Tick = session.World.Tick }
+                    : new Meitou.Simulation.Production.DisposeCorpseOrder(selection, site.Id) { Tick = session.World.Tick })));
             if (machine.Function == Meitou.Data.World.ObjectRanges.TurretFunction)
                 verbs.Add(("Man Turret", () => Say(SlowModifier
                     ? (Meitou.Simulation.SimCommand)new Meitou.Simulation.Production.AddJob(selection, Meitou.Data.Gameplay.Ai.TaskType.USE_TURRET, site.Id) { Tick = session.World.Tick }

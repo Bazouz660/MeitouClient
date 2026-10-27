@@ -278,6 +278,12 @@ public sealed record CharacterSnapshot(CharacterId Id, CharacterAppearance? Appe
     public PrisonView? Prison { get; init; }
     /// <summary>The town turret this character stands at the gun of (the AI's turret goals, arrived and idle); null when it mans none. Read-only, for the host's turret sounds.</summary>
     public MannedTurret? Turret { get; init; }
+    /// <summary>A selected or inspected character's ranged controller State line (<see cref="Combat.CombatSystem.RangedLineOf"/>); null otherwise.</summary>
+    public Combat.RangedLineView? RangedLine { get; init; }
+    /// <summary>A selected or inspected character's bed recovery rate above 1 (<see cref="BodySystem.BedRecoveryRate"/>); null otherwise.</summary>
+    public float? BedRecoveryRate { get; init; }
+    /// <summary>Another faction's character, down or asleep, in one of the player's buildings (<see cref="Production.ProductionSystem.InPlayerBuilding"/>): the menu's Throw out of home.</summary>
+    public bool InPlayerBuilding { get; init; }
     /// <summary>The hostile NPCs that noticed or detected this sneaking player character in the last 4 s.</summary>
     public IReadOnlyList<WatcherView> Watchers { get; init; } = [];
     /// <summary>

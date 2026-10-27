@@ -24,6 +24,12 @@ public sealed record AddOrderJob(IReadOnlyList<CharacterId> Characters, Meitou.D
 /// </summary>
 public sealed record UseTurretOrder(IReadOnlyList<CharacterId> Characters, string Site) : SimCommand;
 
+/// <summary>
+/// The original's order 136 FEED_CORPSE_INTO_MACHINE without Shift (Corpse Disposal on a corpse machine): each of the characters carrying a dead body takes it to an incinerator as the
+/// corpse disposal job does. <b>Engine reading</b>: the order's condition 99 is taken as carrying a dead body, and the body goes to the nearest free incinerator, as the job's.
+/// </summary>
+public sealed record DisposeCorpseOrder(IReadOnlyList<CharacterId> Characters, string Site) : SimCommand;
+
 /// <summary>Takes the job at <paramref name="Index"/> off a character's job list (the list's X button).</summary>
 public sealed record RemoveJob(CharacterId Character, int Index) : SimCommand;
 

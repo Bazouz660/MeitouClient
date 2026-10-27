@@ -171,6 +171,10 @@ public sealed partial class World
                     : cold is { Ai: { Behaviour: Ai.AiBehaviour.Turret, Squad.Ai: { } board } } && (CharacterTask)state[i].Task == CharacterTask.Idle && Ai.AiSystem.Holds(state[i], cold)
                     && board.TurretClaims.TryGetValue(i, out int claimed) && (uint)claimed < (uint)board.Turrets.Count && board.Turrets[claimed] is { Turret: { } post } building
                     ? new MannedTurret(building.Key, building.BuildingId, post.Position, post.Yaw, post.GunId) : null,
+                RangedLine = detailed && cold is not null ? combat?.RangedLineOf(this, id, cold) : null,
+                InPlayerBuilding = cold is { IsPlayer: false } && cold.Faction != Player.Faction && (cold.Medical is { Unconscious: true } || Carrying.CarrySystem.Asleep(table, i))
+                    && production?.InPlayerBuilding(this, state[i].Position) == true,
+                BedRecoveryRate = detailed && cold is { InSomething: Locks.HeldState.Bed } ? systems.OfType<BodySystem>().FirstOrDefault()?.BedRecoveryRate(this, cold, in state[i]) : null,
                 Stealth = sneaking ? watchers.Length == 0 ? StealthExposure.Unobserved : watchers.Max(w => w.Level) : null,
                 Light = sneaking ? Sight.Light(i) : 1,
                 Watchers = watchers,

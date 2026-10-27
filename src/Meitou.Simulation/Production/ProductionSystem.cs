@@ -264,6 +264,7 @@ public sealed partial class ProductionSystem : ITickSystem
                 case ProspectOrder prospect: ProspectBegin(world, prospect); break;
                 case AddJob add: AddJobs(world, add); break;
                 case AddOrderJob add: AddOrderJobs(world, add); break;
+                case DisposeCorpseOrder dispose: DisposeCarried(world, dispose); break;
                 case RemoveJob remove: RemoveJobAt(world, remove); break;
                 case MoveJob move: MoveJobTo(world, move); break;
                 case PutInMachine put: Put(world, put); break;

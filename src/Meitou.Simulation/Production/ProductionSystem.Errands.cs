@@ -89,6 +89,18 @@ public sealed partial class ProductionSystem
         }
     }
 
+    /// <summary>The Corpse Disposal order (<see cref="DisposeCorpseOrder"/>): a corpse errand for each player character that carries a dead body.</summary>
+    void DisposeCarried(World world, DisposeCorpseOrder order)
+    {
+        var table = world.Characters;
+        foreach (var id in order.Characters)
+        {
+            if (!table.TryResolveNext(id, out int i) || table.Cold(i) is not { IsPlayer: true } cold || cold.Carrying.IsNone) continue;
+            if (!table.TryResolveNext(cold.Carrying, out int b) || table.Cold(b)?.Medical is not { Dead: true }) continue;
+            errands[id] = new Errand { Kind = ErrandKind.Corpse, Body = cold.Carrying };
+        }
+    }
+
     /// <summary>The bodies being lifted or carried now.</summary>
     static HashSet<CharacterId> Lifted(CharacterTable table)
     {
@@ -268,6 +280,9 @@ public sealed partial class ProductionSystem
         }
         return best is { } found ? (found, OutsideGoal(world, site, at, kind)) : null;
     }
+
+    /// <summary>A point lies in one of the player's complete buildings with doors (<see cref="EnclosedAt"/>): the context menu's Throw out of home.</summary>
+    public bool InPlayerBuilding(World world, Vector3 at) => EnclosedAt(world, at) is not null;
 
     /// <summary>The player's complete building with doors whose footprint holds a point (the nearest by origin), or null.</summary>
     BuildSite? EnclosedAt(World world, Vector3 at)

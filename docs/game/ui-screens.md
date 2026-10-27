@@ -287,9 +287,14 @@ to Jobs; the saved `chase mode` flag is that switch (**Verified**, [perma-jobs](
     with `+0x308` clear (**Unknown**) and the cage's lock found: locked (`FUN_1402aa590`) `Locked (lvl: N)` Bad, "You are locked in a cage.\nThe lock has a difficulty level
     of {1,num}.", else `(Unlocked...)` Good, "The cage you are in is UNLOCKED.\nNobody knows this but you, you can escape any time you want."; imprisoned otherwise: no State
     line; unconscious `Unconscious` (`Rebooting` for a robot race) Bad, "This guy is unconscious and probably needs medical attention and rest."; in a bed (`+0x2f8` = 1)
-    `Sleeping`, "Sleeping..."; in ranged combat mode the ranged controller's line (`FUN_140438640`: `Aiming...` / `Reloading...` with the shots, `No Power!` Bad; Meitou:
-    not built); defensive `Defensive`, "In defensive combat mode the character will not even try to attack, focusing entirely on defense for a +20 skill bonus."; else
-    `Normal`. The weather notice also shows here ([weather](../formats/weather.md), **Observed**). Meitou: all but the ranged line;
+    `Sleeping`, "Sleeping..."; the ranged controller's line while `FUN_140436610(c, 0, 1)` holds (controller `+0x36` set, the one that also gates its tick, and its target
+    hand `+0x50` resolving to an object whose slot `0x30` is false, meaning **Unknown**): `FUN_140438640` takes the gun (`FUN_1404345c0`: the character's crossbow's, else the
+    turret building's `+0x440` through the controller's building handle) and writes `Aiming...` (reloading flag `+0x80` clear; set only while a reload runs, `FUN_140437ce0`)
+    or `Reloading...`, then ` [{loaded}/{shots}]` (gun `+0x20`, `+0x1c`); when the gun's power object (slot `0xc8`) reports none (its slot `0xe8`), `No Power!` in Bad with the
+    same suffix replaces it. The row is a progress line (DataPanel type 0xb, `FUN_1406fe170`) filled 0 while aiming and by gun `+0xe0` (the share of the reload still to go)
+    while reloading; no tooltip. Meitou: the text without the fill, from a manned turret's gun (No Power!: a power consumer whose machine has no power) else the crossbow while
+    it has a target (`CombatSystem.RangedLineOf`); defensive `Defensive`, "In defensive combat mode the character will not even try to attack, focusing entirely on defense for a +20 skill bonus."; else
+    `Normal`. The weather notice also shows here ([weather](../formats/weather.md), **Observed**). Meitou: all of them;
     `Goal:` the AI goal package's name, else Aimless (Meitou: when the AI is not running the character, its movement task's name, e.g. Moving, Attacking, else Aimless); `Encumbrance:` (int)((1 - f) × 100) "%" with f the encumbrance factor in 0..1, Bad from 50 %.
     Then, alive, the "Current Skill" line (**Verified**: decompile of the HUD update `1405d4260` panel 3, 2026-10-26; vanilla screenshot "Labouring 1" while operating a machine):
     `Character +0x198 currentSkillUsing` (KenshiLib 1ce4a16), which the task updates set each tick (constants such as 4, 5, 6, 9, 0xb, or the machine's stat; the shooting
@@ -1366,7 +1371,7 @@ Code: `UiTooltips` (data, layout), `PlayerInterface.Tooltips.cs` (hover runtime,
     "Losing blood, will collapse if blood goes below 0."; Disguise Blown! / Discovered! with "Cooldown {1,num} second(s)"; Hungry "You are hungry and suffering from
     malnutrition. Your stats and strength will be affected, you need to get some food as soon as possible.", Malnourished "... but you are fed and slowly
     recovering. Your stats and strength will be affected until you recover fully."; In Disguise "You are currently disguised as {1}"; Slightly Injured, Wounded
-    and Normal "You are kind of healthy for now.". In a bed whose recovery rate is above 1: "\nRecovery rate: {1}x" appended.
+    and Normal "You are kind of healthy for now.".
   - Health word choice (**Verified**, `FUN_14088a8f0` decompile; medical offsets as in [character-stats](character-stats.md)). The part rows first fold a severity w (max over
     the parts): 1 a non-vital part destroyed (H + D − S ≤ −Mx; only from 0), 2 a part not destroyed with H + D < 0, 3 such a vital part below the KO point. Then, first match:
     dead (`+0x164`) Dead; being eaten (Character `+0x279 & 7`: set to 7 by the being-eaten virtual `FUN_1404356f0`, counted down by one per character update
@@ -1374,15 +1379,20 @@ Code: `UiTooltips` (data, layout), `PlayerInterface.Tooltips.cs` (hover runtime,
     `Unconscious (N)` / `Rebooting (N)`, N = (int) timer; unconscious (`+0x161`) with the coma flag (`+0x162`) and w = 0 Recovery coma; posture 3 Playing dead...; blood ≤ 0
     while unconscious: bleed rate (`+0x78`) > 0 Bleeding out, else Blood loss KO; a status title at `+0xf0` / text `+0x118` while `+0x148` is 2, 3 or 4 (**Unknown**, not
     built); posture 2 Crippled; right arm not working (`+0x165`) while conscious Crippled arm; w = 2 Critical; w = 1 Limb trauma; posture 1 Staying low; hunger (`+0x60`) < 1
-    Starving; bleed rate > 0 Bleeding; the `+0xf0` status otherwise (**Unknown**); slave state above 1 or a disguise flag, with the discovery cooldown above 0: Disguise Blown! /
-    Discovered! (+ the cooldown line); a disguise (`FUN_1407c0520`) In Disguise; the worst-part fraction (`+0xa4`) < 0.7 Wounded; hunger < 2: Hungry, or Malnourished with
+    Starving; bleed rate > 0 Bleeding; the `+0xf0` status otherwise (**Unknown**); then the character's slave/disguise record (Character `+0x1a0`, its `+0` the slave state of
+    the save's `slavestate`, `+0x100` the disguise level, `+0x108` the faction disguised as, `+0x110` the discovery cooldown in seconds): slave state above 1 or level above 0,
+    with the cooldown above 0: Disguise Blown! (state below 2, "You've been discovered, somebody has seen through your disguise.") / Discovered! (escaped slave, "...noticed that
+    you are an escaped slave."), both Bad, the tooltip plus "\n" and a Main `Cooldown {1,num} second(s)` with (int) cooldown; cooldown 0 and level above 0.6 (`FUN_1407c0520`)
+    In Disguise, tooltip "You are currently disguised as {1}" with that faction's name (empty without one); the worst-part fraction (`+0xa4`) < 0.7 Wounded; hunger < 2: Hungry, or Malnourished with
     food in the stomach (`+0x64` > 0); fraction < 0.9 Slightly Injured; else Normal. Colours: Main (`#afa68b`) for Playing dead..., Staying low and In Disguise; none for
-    Recovery coma, Limb trauma, Bleeding, Wounded, Slightly Injured and Normal; Bad for the rest.
+    Recovery coma, Limb trauma, Bleeding, Wounded, Slightly Injured and Normal; Bad for the rest. Alive, in a bed (state 1) whose object is of class 6 (not a repair bed) and whose
+    rate (its slot `0x3c0`) is above 1, "\nRecovery rate: {1}x" (plain number) follows any tooltip.
   - Meitou (`PlayerInterface.MedicalTips.cs`, `PlayerInterface.HudText.cs`): the Blood row; the part texts and arrows (the tests above, with the KO
     point of every shown character, `HudView.KoPoint`) without wear, kick and lost-limb lines (d is the bandage's pending healing); the hunger texts
     without the stomach store (malnourished takes the Hungry word's sentence, starving the Starving word's: the stat penalty and the pass-out threshold
     are not modelled); the health word by the choice above (`PlayerInterface.HealthWord`; the fraction is `BodyStatus.WorstPart`, every part with stun and
-    rig in, **Observed** from `WorldPublish.cs`), without the `+0xf0` status, the disguise words and the bed's recovery rate line.
+    rig in, **Observed** from `WorldPublish.cs`) and the bed's recovery rate (the bed's healing factor, `BodySystem.BedRecoveryRate`), without the `+0xf0` status and the
+    disguise words (the simulation has no disguise level or discovery cooldown).
 - **Stats line tooltips:** the HUD stats and extended lines' row tooltips are described under [section 4](#4-hud-mainbargui) ("Stat tooltips").
 - **Other users:** the Overview's AI tab options (a Static tooltip in `AIToolTip`), map places (type 4), trade and inventory items. **Unknown** / not shown: the
   lockpick tooltip of a locked door, the medic and rescue allied-faction option texts.
