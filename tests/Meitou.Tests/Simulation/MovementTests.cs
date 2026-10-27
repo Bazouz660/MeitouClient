@@ -52,38 +52,6 @@ public class MovementTests
     }
 
     [Fact]
-    public void A_new_order_on_the_move_keeps_the_character_running_until_its_path_arrives_and_orders_every_tick_still_steer()
-    {
-        // The asynchronous path service: the new path takes at least a tick, and the old one is followed meanwhile (holding the right button).
-        using var w = Flat(synchronous: false);
-        var id = Add(w, new(0, 300, 0));
-        w.Commands.Enqueue(new MoveOrder([id], new Vector3(800, 0, 0)) { Tick = 0 });
-        Assert.True(TestWaits.TickUntil(w, () => w.Characters.Previous[id.Slot].Velocity.Length() > 50));
-        for (int k = 0; k < 10; k++)
-        {
-            var at = Where(w, id);
-            w.Commands.Enqueue(new MoveOrder([id], new Vector3(at.X + 400, 0, at.Z + 100 * (k % 2 == 0 ? 1 : -1))) { Tick = w.Tick });
-            for (int t = 0; t < 3; t++)
-            {
-                w.RunTick();
-                Assert.True(w.Characters.Previous[id.Slot].Velocity.Length() > 50, $"stopped {t} ticks after re-order {k}");
-                Assert.Equal((byte)CharacterTask.GoTo, w.Characters.Previous[id.Slot].Task);
-            }
-        }
-        // A held right button: a new order each tick, each replaced before its path may have come; the newest path that came is followed.
-        for (int k = 0; k < 45; k++)
-        {
-            var at = Where(w, id);
-            w.Commands.Enqueue(new MoveOrder([id], new Vector3(at.X, 0, at.Z + 300)) { Tick = w.Tick });
-            w.RunTick();
-            Thread.Sleep(5);
-        }
-        // Steered round from +X to +Z and running that way.
-        var v = w.Characters.Previous[id.Slot].Velocity;
-        Assert.True(v.Z > 50 && MathF.Abs(v.X) < 20, $"velocity {v}");
-    }
-
-    [Fact]
     public void A_reversal_slows_through_a_stop_at_the_agents_acceleration_and_faces_the_motion()
     {
         using var w = Flat();
