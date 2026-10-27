@@ -251,7 +251,8 @@ sealed partial class PlayerInterface
             var area = slot.Bounds;
             if (item.Section == gridSection && columns > 0 && rows > 0) area = new(area.X + item.X * area.Width / columns, area.Y + item.Y * area.Height / rows, item.Width * area.Width / columns, item.Height * area.Height / rows);
             else area = new(area.X + item.X * InventoryCell, area.Y + item.Y * InventoryCell, item.Width * InventoryCell, item.Height * InventoryCell);
-            AddItemCell(controls, $"inventory-item-{item.Index}", area, item.Record, item.Material, item.Name, item.Quantity, ItemTip.Of(item, SellTip(lead.Id, item.Index), MapItemCaption(item.Record)), "InventoryItem", item.Index, slot.Bounds.Intersect(slot.Clip ?? slot.Bounds), charge: item.Charge);
+            // The name carries the character: the loot window's cells would otherwise take over the same names' tooltips in the player's window.
+            AddItemCell(controls, $"inventory-item-{lead.Id}-{item.Index}", area, item.Record, item.Material, item.Name, item.Quantity, ItemTip.Of(item, SellTip(lead.Id, item.Index), MapItemCaption(item.Record)), "InventoryItem", item.Index, slot.Bounds.Intersect(slot.Clip ?? slot.Bounds), charge: item.Charge);
         }
     }
     readonly List<(string Text, MessageTone Tone)> uiMessages = [];
