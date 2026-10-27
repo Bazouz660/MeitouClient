@@ -174,8 +174,15 @@ it is not part of target eligibility.
   `+0xe0` (a slave's owner faction) is the target's faction; false when the looter's squad has a love tag on it (long & 0xc), true with a hate tag (& 0x2b0); true when the target is dead.
 - **Start**: flags `animal` (target vfunc `0x248`), `notPlayerSide` (target's faction is not the player's, or the target is dead; cleared when looter vfunc `0x68` `+0x90` > 0,
   **Unknown**), `foodOnly` (looter of NPC class 8, or its hunger floor, slot 0x348 ([free food](character-stats.md#free-food)), below 2.8), `wantsWeapon` (the looter has no weapon,
-  `AI::hasWeapon`, and the target has one). A law-enforcement looter (`isLawEnforcement`) confiscates stolen goods instead (not decoded further). An animal target posts
+  `AI::hasWeapon`, and the target has one). A law-enforcement looter (`Character::isLawEnforcement` `FUN_140599600`: not of a bandit faction, and NPC class 1, or class 2 whose
+  status `+0x88` is its town's) sets a confiscate flag (`+0x82`) and clears `notPlayerSide` and `foodOnly` instead, then skips the crime part ([confiscation](#confiscation)). An animal target posts
   "{1} is butchering {2} for meat!!" when the target's faction is the player's.
+- **Looting crime** (same start, every other looter; `BountyManager::setCrime` `FUN_140852c80`, **Observed**): code 10 Looting against the target's faction (victim the target)
+  when the looter has any bounty (`getActualBounty(ledger, 0)` > 0) or is NPC class 8. Then with `notPlayerSide` or `foodOnly` the looter says event 33 LOOTING_EVERYTHING at the
+  target and gets the same Looting unless `Character::isItOkForMeToLoot(looter, target, no item)` (vfunc `0x290`, `FUN_140793940`) allows it; else with `wantsWeapon` it says
+  event 32 LOOTING_WEAPON_ONLY, and its Looting test sits behind `AI::hasWeapon(looter)`, which `wantsWeapon` rules out, so it never fires. The setter's own refusals apply
+  (police-like culprit, own or lawless victim faction). **isItOkForMeToLoot** with no item: yes for a non-character, a slave or escaped slave (`isSlave` 1 / 2), the looter's
+  own slave (`isMySlave`), a target with any bounty or of NPC class 8, a looter of NPC class 1, 2 or 5; otherwise no (the item branch, own-faction property, needs an item).
 - **Update**: plays `medic` (start: `squat T`, `medic`); a timer adds the frame time. With neither `foodOnly` nor `notPlayerSide`, past 0.8 s: a `wantsWeapon` looter takes one
   weapon of the target's hip and back sections and is done. Otherwise the take comes past 8 s (an animal target: 20 s):
   1. Weapons (item type 2) of the target's inventory, when the looter has no weapon equipped (`Inventory::hasWeaponEquipped`) or the target is imprisoned; a weapon whose

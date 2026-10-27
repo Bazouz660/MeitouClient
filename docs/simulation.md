@@ -508,7 +508,8 @@ main grid, weight and burden only, grid size from its `inventory w` / `inventory
   `PlayerState.BanditsLoot` (CAMERA `bl`, default on), only whom `shouldIScrewThisGuyOver` allows (classes, love/hate tags), not one its squad tagged short-term 6
   (`MemoryTag.Looted`). At the body (`Loot` task, `LiftTime` from arrival, `medic` clip) it takes after 8 s (animal 20): weapons when it has none equipped, food (functions 3, 15, the
   backpack's 3), and for a non-player-side or dead body, unless it is a Bandit or malnourished (floor < 2.8), every item and armour; a weaponless non-bandit grabs one weapon of a
-  living player-side body at 0.8 s instead. Then the tag, and back to its task. Engine choices: nearest per pass, no Looting crime, the tag never expires, law enforcement confiscation not built.
+  living player-side body at 0.8 s instead. Then the tag, and back to its task. On arrival it says event 33 or 32 and may get a pending Looting (`CrimeSystem.NpcLooting`,
+  [looting crime](game/carry-loot.md#33-npc-looting)), which its witnesses answer as any NPC culprit's ([crimes](#crimes-and-bounties)). Engine choices: nearest per pass, the tag never expires, law enforcement confiscation not built.
 - **Unarmed NPCs** (`CarrySystem.Arm.cs`, goal 42 "Don't be unarmed" with step 8 FIND_WEAPON, `AI::findWeapon`): on the same cadence an NPC without a weapon, with a working arm,
   whose package lists 42, goes for the nearest free ground weapon within 100 (in a town only an unowned or enemy-owned one) and picks it up, else a dead body with a weapon,
   else a downed living non-ally with one (player side only with `BanditsLoot`, not one its squad loves), which it loots as above. Engine choices: the body loot takes
@@ -559,7 +560,8 @@ Witness sight: the original's sight test with places and light ([perception](gam
 sneaking culprit is seen only once the witness's spot meter is full ([perception](game/perception.md#spotting-a-sneaker);
 meters kept by `CrimeSystem`, not saved).
 NPC culprits (engine choices): an NPC's non-defensive attack order, and each of its landed blows, sets a pending Assault (not an
-animal's; the victim may be a player character), never booked. A police-like witness not fighting re-fires event 41 at it every
+animal's; the victim may be a player character), and an NPC looter its Looting ([NPC looting](#carrying-rescue-and-looting)); neither is booked
+(other codes are refused for NPCs). A police-like witness not fighting re-fires the witness event (41 for an Assault, 42 for a Looting) at it every
 sweep, since the guards' lines (e.g. "Shek guard witness crime": DA 29, 33, 6) need it within 260 and not running. So a town's
 guards turn on hungry bandits (Starving Bandits, -10 to all: not hostile, so no aggro target) attacking someone there.
 Trespassing (`Trespasses`, [economy 11.2](game/economy.md#112-how-a-bounty-is-gained)): a player character inside

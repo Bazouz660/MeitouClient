@@ -72,7 +72,7 @@ public sealed partial class CrimeSystem(FactionRelations relations, CrimeSetting
     public bool SetPending(World world, int culprit, CrimeCode code, int victimFaction, CharacterId victim, float timer)
     {
         var c = world.Characters.Cold(culprit);
-        if (c is null || !c.IsPlayer && code != CrimeCode.Assault || IsPoliceLike(world, c) || victimFaction == c.Faction || Factions.Lawless(victimFaction)) return false;
+        if (c is null || !c.IsPlayer && code is not (CrimeCode.Assault or CrimeCode.Looting) || IsPoliceLike(world, c) || victimFaction == c.Faction || Factions.Lawless(victimFaction)) return false;
         timer = MathF.Max(timer, MinTimer);
         if (c.Pending is { } p && p.Code != code && code == CrimeCode.Assault)
         {
@@ -120,10 +120,38 @@ public sealed partial class CrimeSystem(FactionRelations relations, CrimeSetting
     /// Whether the player's taking from a downed character is a theft: the permission test of <see cref="Loot"/> (<c>FUN_140793940</c>, <b>Observed</b>). The carry system marks what such a
     /// loot takes as stolen from the victim's faction (<see cref="Items.ItemInstance.StolenFrom"/>).
     /// </summary>
-    public static bool IsLootTheft(CharacterCold looter, CharacterCold victim) =>
-        looter.IsPlayer && !victim.IsPlayer
-        && victim.NpcClass is not (FundamentalType.Slave or FundamentalType.Bandit) && victim.Bounties is not { Any: true }
-        && looter.NpcClass is not (FundamentalType.LawEnforcement or FundamentalType.Military or FundamentalType.Diplomat);
+    public static bool IsLootTheft(CharacterCold looter, CharacterCold victim) => looter.IsPlayer && !victim.IsPlayer && !LootAllowed(looter, victim);
+
+    /// <summary>
+    /// <c>Character::isItOkForMeToLoot</c> (<c>FUN_140793940</c>, <b>Observed</b>) asked with no item: yes when the victim is a slave or escaped slave (slave state 1 or 2; Meitou also
+    /// takes <c>NPC class</c> SLAVE), a bandit or has any bounty, or the looter is LAW_ENFORCEMENT, MILITARY or DIPLOMAT. The original's "my slave" test is covered by the slave state.
+    /// </summary>
+    public static bool LootAllowed(CharacterCold looter, CharacterCold victim) =>
+        victim.SlaveState is 1 or 2 || victim.NpcClass is FundamentalType.Slave or FundamentalType.Bandit || victim.Bounties is { Any: true }
+        || looter.NpcClass is FundamentalType.LawEnforcement or FundamentalType.Military or FundamentalType.Diplomat;
+
+    /// <summary>
+    /// An NPC starting to loot a body (<c>Task_Loot_AI</c> start, <c>FUN_140355ad0</c>, <b>Observed</b>; not for a police-like looter, which confiscates instead): a pending Looting against
+    /// the victim's faction when the looter has any bounty or is a bandit (<c>NPC class</c> 8); then, when it takes more than one weapon (<paramref name="everything"/>: food only, or a body
+    /// that is not the player's side or is dead), event 33 LOOTING_EVERYTHING at the victim and a pending Looting unless <see cref="LootAllowed"/>; else, when it is after a weapon,
+    /// event 32 LOOTING_WEAPON_ONLY (the original's crime test there needs the looter to hold a weapon, which it never does on that path).
+    /// </summary>
+    public void NpcLooting(World world, int looter, int victim, bool everything, bool wantsWeapon)
+    {
+        var table = world.Characters;
+        if (table.Cold(looter) is not { } l || table.Cold(victim) is not { } v || IsPoliceLike(world, l)) return;
+        var victimId = table.IdOf(victim);
+        if (l.Bounties is { Any: true } || l.NpcClass == FundamentalType.Bandit) SetPending(world, looter, CrimeCode.Looting, v.Faction, victimId, MinTimer);
+        if (everything)
+        {
+            world.Defer(new Dialogue.DialogueEvent(table.IdOf(looter), victimId, LootingEverythingEvent) { Tick = world.Tick + 1 });
+            if (!LootAllowed(l, v)) SetPending(world, looter, CrimeCode.Looting, v.Faction, victimId, MinTimer);
+        }
+        else if (wantsWeapon) world.Defer(new Dialogue.DialogueEvent(table.IdOf(looter), victimId, LootingWeaponEvent) { Tick = world.Tick + 1 });
+    }
+
+    /// <summary>The dialogue events an NPC looter says at the body (<b>Verified</b> literals in <c>FUN_140355ad0</c>): 32 LOOTING_WEAPON_ONLY, 33 LOOTING_EVERYTHING.</summary>
+    public const int LootingWeaponEvent = 32, LootingEverythingEvent = 33;
 
     /// <summary>
     /// A landed hit between <paramref name="attacker"/> and <paramref name="defender"/> (the game's hit outcome <c>FUN_140665fa0</c>, <b>Observed</b>): when exactly one of them is

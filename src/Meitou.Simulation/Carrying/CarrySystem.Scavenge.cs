@@ -109,14 +109,15 @@ public sealed partial class CarrySystem
         var cold = table.Cold(i)!;
         var victim = table.Cold(t)!;
         bool animal = victim.Fighter?.IsAnimal ?? victim.Appearance?.Animal is not null;
+        bool notPlayerSide = !PlayerSide(world, victim) || victim.Medical!.Dead;
+        bool foodOnly = cold.NpcClass == FundamentalType.Bandit || cold.Medical is { } own && world.SystemOf<BodySystem>() is { } bodies && bodies.HungerFloor(world, cold, own) < FoodOnlyFloor;
         if (cold.LiftTime < 0)
         {
             cold.LiftTime = 0;
+            Crimes?.NpcLooting(world, i, t, notPlayerSide || foodOnly, !HasWeapon(cold) && HasWeapon(victim));
             if (animal && PlayerSide(world, victim)) world.Post($"{cold.Name} is butchering {victim.Name} for meat!!");
         }
         cold.LiftTime += dt;
-        bool notPlayerSide = !PlayerSide(world, victim) || victim.Medical!.Dead;
-        bool foodOnly = cold.NpcClass == FundamentalType.Bandit || cold.Medical is { } own && world.SystemOf<BodySystem>() is { } bodies && bodies.HungerFloor(world, cold, own) < FoodOnlyFloor;
         int death = DeathUnits(victim.Inventory!);
         int moved;
         if (!foodOnly && !notPlayerSide && !animal && cold.LiftTime > NpcWeaponGrabSeconds && !HasWeapon(cold) && HasWeapon(victim))
@@ -124,7 +125,7 @@ public sealed partial class CarrySystem
         else if (cold.LiftTime > (animal ? NpcLootAnimalSeconds : NpcLootSeconds)) moved = NpcTake(cold, victim, notPlayerSide && !foodOnly);
         else return;
         Butcher(world, i, t, death);
-        Looted(world, table, i, t, moved, 0);
+        Looted(world, table, i, t, moved, 0, crime: false);   // the crime was set at the start (CrimeSystem.NpcLooting)
         if (cold.SquadId >= 0) world.SystemOf<DialogueSystem>()?.Memory.Flag(world, cold.SquadId, table.IdOf(t), MemoryTag.Looted);
         End(table, i);
     }
