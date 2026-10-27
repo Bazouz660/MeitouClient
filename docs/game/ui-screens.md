@@ -568,8 +568,8 @@ How a building gets selected: [ui-input](ui-input.md#building-picking-and-select
     buildings."; items in an inventory: "There are still items in the inventory, they will be lost.\nAre you sure you want to destroy this building?" (a
     research building with items refuses: "You cannot delete this building while there are still items in its inventory.\nPrecious research artifacts and
     stuff, don't lose them."); furniture: "Dismantling this building will destroy all furniture.\nDo you want to continue?"; else the message box
-    "Dismantle" / "Are you sure?". Yes (`LAB_14002b666`: a jump to slot 86 `Building::confirmDismantle` `FUN_14054fea0`, answer 2; **Observed**): the interior object's furniture goes
-    (`FUN_14054f4d0`), then slot 73 (`addDismantleProgress`) with `FLT_MAX`, so it is dismantled at once with the [refund](buildings-production.md#work-distance); then
+    "Dismantle" / "Are you sure?". Yes (`LAB_14002b666`: a jump to slot 86 `Building::confirmDismantle` `FUN_14054fea0`, answer 2; **Observed**): the interior object's buildings are destroyed
+    (`FUN_14054f4d0(+0x1f0, 1)`, by its string `_destroyAllInternalBuildings`), then slot 73 (`addDismantleProgress`) with `FLT_MAX`, so it is dismantled at once with the [refund](buildings-production.md#work-distance); then
     slot 25, each building of `FUN_14054b9d0`'s list is destroyed ("Building::confirmDismantle"), the selection is cleared if it held it, and the town update `FUN_14054d080` runs. Pause is slot 85 (`FUN_140546f40`): flips
     the paused byte, `General_Click`.
   - 6: `Open to public:` (label Main) coloured `Public` (Good) / `Private` (Bad) for another faction's building; for the player's own building (owner

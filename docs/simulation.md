@@ -970,7 +970,7 @@ optional), `EdgeGap` (site, point -> gap to its footprint hull; the host's).
   (the selection when the list is empty). Dismantling is refused with the original's texts while a site stands in the
   site ("I have to dismantle the furniture first." for interior furniture and nodes, else "I have to unmount the
   buildings first."). `CancelSite` removes an incomplete site with nothing delivered, else posts "Dismantle it to get the
-  materials back."; `PauseSite` sets `Paused` (only the auto-job skips it). `PlaceBuildings`, `CancelSite` and `PauseSite`
+  materials back."; `PauseSite` sets `Paused` (only the auto-job skips it). `PlaceBuildings`, `CancelSite`, `ConfirmDismantle` and `PauseSite`
   also apply while paused (`ApplyPausedInterfaceCommands`).
 - `Schedule`: a worker walks to the site like a medic to a patient (goal = site XZ, free speed, asked again after a wait
   when the path failed). It has arrived within the [work distance](game/buildings-production.md#work-distance) (`SiteReach`:

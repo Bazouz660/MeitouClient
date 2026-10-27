@@ -175,7 +175,7 @@ it is not part of target eligibility.
 - **Start**: flags `animal` (target vfunc `0x248`), `notPlayerSide` (target's faction is not the player's, or the target is dead; cleared when looter vfunc `0x68` `+0x90` > 0,
   **Unknown**), `foodOnly` (looter of NPC class 8, or its hunger floor, slot 0x348 ([free food](character-stats.md#free-food)), below 2.8), `wantsWeapon` (the looter has no weapon,
   `AI::hasWeapon`, and the target has one). A law-enforcement looter (`Character::isLawEnforcement` `FUN_140599600`: not of a bandit faction, and NPC class 1, or class 2 whose
-  status `+0x88` is its town's) sets a confiscate flag (`+0x82`) and clears `notPlayerSide` and `foodOnly` instead, then skips the crime part (**Confiscation** below). An animal target posts
+  status `+0x88` is set and equals `Character::getOwnerships` `+0x30`, meaning **Unknown**; Meitou: `CrimeSystem.IsPoliceLike`) sets a confiscate flag (`+0x82`) and clears `notPlayerSide` and `foodOnly` instead, then skips the crime part (**Confiscation** below). An animal target posts
   "{1} is butchering {2} for meat!!" when the target's faction is the player's.
 - **Looting crime** (same start, every other looter; `BountyManager::setCrime` `FUN_140852c80`, **Observed**): code 10 Looting against the target's faction (victim the target)
   when the looter has any bounty (`getActualBounty(ledger, 0)` > 0) or is NPC class 8. Then with `notPlayerSide` or `foodOnly` the looter says event 33 LOOTING_EVERYTHING at the
