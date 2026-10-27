@@ -183,6 +183,8 @@ public sealed record CharacterSnapshot(CharacterId Id, CharacterAppearance? Appe
     public IReadOnlyList<Crime.BountyLine> Bounties { get; init; } = [];
     /// <summary>Slave (state 1) or escaped slave (state 2) and its owner's name, for the status lines of the bounty panel's tooltip (docs/game/ui-screens.md section 4); null otherwise.</summary>
     public SlaveView? Slave { get; init; }
+    /// <summary>The status line ahead of the bounty (docs/game/ui-screens.md section 4, <c>FUN_1405d4260</c>): campaign leader, kidnapped, committing a crime, escaped prisoner; null for none.</summary>
+    public StatusView? Status { get; init; }
     /// <summary>A selected character's trained stats (the host formats them); null for the others and for a character without stats.</summary>
     public SkillSummary? Skills { get; init; }
     public IReadOnlyList<float> AllSkills { get; init; } = [];
@@ -418,3 +420,9 @@ public interface IProjectileSource
 
 /// <summary>One of the player's squads as the squad tabs and the squads screen show it.</summary>
 public sealed record SquadView(int Id, string Name, IReadOnlyList<CharacterId> Members);
+
+/// <summary>Which status line a character's bounty panel shows (<c>FUN_1405d4260</c>, <b>Observed</b>).</summary>
+public enum StatusKind : byte { Leader, WarLeader, Kidnapped, Crime, EscapedPrisoner }
+
+/// <summary>A status line: for <see cref="StatusKind.Crime"/> the crime's name, its pending timer and the local faction's bounty.</summary>
+public readonly record struct StatusView(StatusKind Kind, string Crime = "", int Timer = 0, int Bounty = 0);

@@ -380,6 +380,43 @@ sealed partial class PlayerInterface
         return [(TitleTag + Loc.Tr(escaped ? "Escaped slave" : "Slave"), ""), (MainTag + text.TrimEnd(), "")];
     }
 
+    /// <summary>
+    /// The bounty panel's line for a status (<c>FUN_1405d4260</c>, <b>Observed</b>): its title in the Title colour (a pending crime's with its timer as the value), a slave's "Slave" or
+    /// "Escaped slave"; null for a character with only a bounty (the Bounty line).
+    /// </summary>
+    static HudLine? StatusLine(CharacterSnapshot lead) => lead.Status switch
+    {
+        { Kind: StatusKind.Leader } => new(Loc.Tr("Leader"), "", TitleColour),
+        { Kind: StatusKind.WarLeader } => new(Loc.Tr("War Leader"), "", TitleColour),
+        { Kind: StatusKind.Kidnapped } => new(Loc.Tr("Kidnapped"), "", TitleColour),
+        { Kind: StatusKind.Crime } crime => new(Loc.Tr("Committing Crime!"), Loc.Tr("{1,num}", crime.Timer), TitleColour, TitleColour),
+        { Kind: StatusKind.EscapedPrisoner } => new(Loc.Tr("Escaped Prisoner"), "", TitleColour),
+        _ => lead.Slave is { } slave ? new(Loc.Tr(slave.State == 2 ? "Escaped slave" : "Slave"), "", TitleColour) : null,
+    };
+
+    /// <summary>
+    /// A status line's tooltip text (<c>FUN_1405d4260</c>, <b>Observed</b>): a pending crime timed above 3 was caught ("... Current bounty is c.N" with a local bounty), else it is still
+    /// unseen; an escaped prisoner's expiry is the exe's constant 99999 hours.
+    /// </summary>
+    static List<(string Key, string Value)> StatusRows(StatusView status)
+    {
+        string text = status.Kind switch
+        {
+            StatusKind.Leader => Loc.Tr("This is the leader of this group."),
+            StatusKind.WarLeader => Loc.Tr("This is the Commander in charge of an entire army."),
+            StatusKind.Kidnapped => Loc.Tr("This character has been kidnapped, law enforcers will try to help"),
+            StatusKind.EscapedPrisoner => Loc.Tr("This character broke out of prison, if he gets spotted by any guards he is in trouble. Leave town to clear this status. Expires in {1}",
+                Loc.Tr(EscapedExpiry == 1 ? "{1,num} hr" : "{1,num} hrs", EscapedExpiry)),
+            _ when status.Timer <= 3 => Loc.Tr("This character is currently committing {1}, make sure nobody witnesses it.", Loc.Tr(status.Crime)),
+            _ when status.Bounty < 1 => Loc.Tr("This character has been caught committing {1}! He might end up with a bounty on his head if he can't vanish.", Loc.Tr(status.Crime)),
+            _ => Loc.Tr("This character has been caught committing {1}! He might end up with a bounty on his head if he can't vanish. Current bounty is c.{2,num}", Loc.Tr(status.Crime), status.Bounty),
+        };
+        return [(MainTag + text, "")];
+    }
+
+    /// <summary>The hours the escaped-prisoner text names: the exe passes a constant (<c>FUN_1405d4260</c>, <b>Observed</b>).</summary>
+    const int EscapedExpiry = 99999;
+
     /// <summary>Gives the HUD's widgets their tooltips (user strings through the bindings, which the arranged controls merge) and the selected building's status word its own.</summary>
     void BindTooltips(UiBindings b)
     {
@@ -390,10 +427,10 @@ sealed partial class PlayerInterface
             b.Properties[name] = properties;
         }
         foreach (var (widget, text) in HudTips) Add(widget, text);
-        if (Lead() is { } wanted && (wanted.Bounties.Count > 0 || wanted.Slave is not null))
+        if (Lead() is { } wanted && (wanted.Bounties.Count > 0 || wanted.Slave is not null || wanted.Status is not null))
         {
-            var rows = wanted.Slave is { } slave ? SlaveRows(slave, wanted.IsPlayer) : [];
-            if (wanted.Bounties.Count > 0) rows.AddRange(BountyRows(wanted.Bounties, wanted.Prison, UiMode == UiMode.Meitou));
+            var rows = wanted.Status is { } status ? StatusRows(status) : wanted.Slave is { } slave ? SlaveRows(slave, wanted.IsPlayer) : [];
+            if (wanted.Bounties.Count > 0 && wanted.Status is not { Kind: StatusKind.Leader or StatusKind.WarLeader or StatusKind.Kidnapped }) rows.AddRange(BountyRows(wanted.Bounties, wanted.Prison, UiMode == UiMode.Meitou));
             foreach (string name in new[] { "BountyPanel", "BountyText" })
             {
                 var properties = b.Properties.TryGetValue(name, out var existing) ? new Dictionary<string, string>(existing) : [];

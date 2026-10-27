@@ -36,6 +36,22 @@ public sealed partial class World
         c.IsImprisoned ? c.InWhat is { } cage && Fixtures.Find(cage) is { } f ? f.Owner : -1
         : data is not null && data.TownAt(at) is >= 0 and var site && site < data.SiteFactions.Count ? data.SiteFactions[site] : -1;
 
+    /// <summary>
+    /// The status line of the bounty panel (<c>FUN_1405d4260</c>, <b>Observed</b>, docs/game/ui-screens.md section 4), first match: the leader of a campaign's leader platoon
+    /// (<c>Character::isLeadingAWarCampaign</c>): War Leader for a hostile campaign (<c>CampaignData::_isHostile</c>), else Leader; kidnapped; for a free character a pending crime, then
+    /// the escaped-prisoner flag. The original's Diplomatic Status between kidnapped and the crime is not built (its test was not decoded).
+    /// </summary>
+    StatusView? StatusOf(CharacterId id, CharacterCold c, Vector3 at, PopulationData? data)
+    {
+        if (c.SquadId >= 0 && Squads.Find(c.SquadId) is { PlatoonId: >= 0 } squad && squad.Leader == id && Platoons.Find(squad.PlatoonId) is { Campaign: { } inst } platoon && inst.Leader == platoon.Id)
+            return new(systems.OfType<PopulationSystem>().FirstOrDefault()?.CampaignOf(inst.CampaignId)?.IsHostile == true ? StatusKind.WarLeader : StatusKind.Leader);
+        if (c.Kidnapped) return new(StatusKind.Kidnapped);
+        if (c.SlaveState != 0) return null;
+        if (c.Pending is { } crime)
+            return new(StatusKind.Crime, Crime.CrimeTable.Name(crime.Code), (int)crime.Timer, c.Bounties is null ? 0 : Crime.CrimeSystem.Lines(c, Tick, TickSeconds, LocalFaction(c, at, data)).FirstOrDefault(b => b.Local).Amount);
+        return c.Escaped ? new(StatusKind.EscapedPrisoner) : null;
+    }
+
     /// <summary>Slots a publish job takes at a time: the characters are made on the worker pool, each one reading only the tick's state.</summary>
     const int PublishChunk = 256;
     CharacterSnapshot?[] published = [];
@@ -114,6 +130,7 @@ public sealed partial class World
                 Bounties = detailed && cold!.Bounties is not null ? Crime.CrimeSystem.Lines(cold, Tick, TickSeconds, LocalFaction(cold, state[i].Position, population)) : [],
                 Slave = cold is { SlaveState: 1 or 2 } ? new SlaveView(cold.SlaveState, population is { Factions: { } factions } && (uint)cold.SlaveOwner < (uint)factions.Count ? factions[cold.SlaveOwner].Name : "",
                     systems.OfType<Kidnap.CaptiveSystem>().FirstOrDefault()?.LooksLikeSlaveLevel(cold) ?? 0) : null,
+                Status = detailed ? StatusOf(id, cold!, state[i].Position, population) : null,
                 NoLootGuilt = cold is { } guilt && (guilt.NpcClass is FundamentalType.Bandit or FundamentalType.Slave || population is { Factions: { } fl } && (uint)guilt.Faction < (uint)fl.Count && fl[guilt.Faction].NotReal),
                 WarParty = cold is { SquadId: >= 0 } warCold && Squads.Find(warCold.SquadId) is { PlatoonId: >= 0 } warSquad && Platoons.Find(warSquad.PlatoonId)?.Campaign is not null,
                 Body = cold?.Medical is { } med && cold.Race is { } race ? BodyOf(cold, med, race, state[i].Task, extraBloodLoss) : null,

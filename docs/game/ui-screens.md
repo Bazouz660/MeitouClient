@@ -410,8 +410,16 @@ to Jobs; the saved `chase mode` flag is that switch (**Verified**, [perma-jobs](
   automatically work for his master. You can remove this job, but beware of the consequences...", for 2 and 3 "Keep your [Looks Like A Slave] level as low as possible, wear clothing or disguises and
   find a plastic surgeon to restore your hair. Don't get spotted." (3: "... You should be safe if you stay out of towns."). For state 2 and 3 the same tooltip adds rows "Situation:" ("Undiscovered" when the
   status `+0x110` is 0 or less, else "Seen!"), "Looks like a slave:" (`+0xf4` x 100 %) and "Time remaining:" (`FUN_140598b10` hours); the free-person text ("You are a free person.", "You are no slave.",
-  "The faction that owns you.") belongs to the player's disguise tooltip. Other rows of the builder: "Leader", "War Leader", "Kidnapped", "Escaped Prisoner", "Committing Crime!", "Imprisoned:"
-  (not built). Meitou: `PlayerInterface.SlaveRows` (the hints for player characters only; engine choice).
+  "The faction that owns you.") belongs to the player's disguise tooltip.
+- Status entry (section 0x10 of the same builder, **Observed** by decompile), first match: the leader of its campaign (`Character::isLeadingAWarCampaign` `FUN_1409c4b10`: its platoon's leader and the campaign's
+  leader) "War Leader" ("This is the Commander in charge of an entire army.") when `CampaignData::_isHostile` (+0x12, KenshiLib 1ce4a16), else "Leader" ("This is the leader of this group.");
+  kidnapped (Character slot 0x350) "Kidnapped" ("This character has been kidnapped, law enforcers will try to help"); `isDiplomaticStatus` `FUN_140796240` "Diplomatic Status" ("This is a special
+  person with diplomatic importance...", its test not decoded); then for slave state 0: a pending crime (Character `+0x148` code, `+0x180` timer) "Committing Crime!" with int(timer), text
+  "This character is currently committing {1}, make sure nobody witnesses it." while timer <= 3, else "...has been caught committing {1}! He might end up with a bounty on his head if he
+  can't vanish." plus " Current bounty is c.{2,num}" with the local faction's bounty (`getActualBounty`) above 0; the escaped flag (`+0xe8`) "Escaped Prisoner", text "... Leave town to
+  clear this status. Expires in {1}" with `{1,num} hr(s)` of the constant 99999; a bounty: the bounty entry; else the slave states above. Crime, escaped and slave entries list the bounty rows
+  (`FUN_1405d1400`) before their text. "Imprisoned:" belongs to the Lockpicking section. Meitou: `World.StatusOf`, `PlayerInterface.StatusLine` / `StatusRows` / `SlaveRows` (slave hints for
+  player characters only; engine choice); the entry's title is the `BountyText` line; Diplomatic Status and Ex-slave are not built.
 - Bounty panel (`FUN_1405d2da0`, **Observed**; colour strings **Verified**: their static initialisers `FUN_14158a2a0` `#afa68b` Main, `FUN_14158a320` `#492620` Title,
   `FUN_14158a460` `#444444` Greyed). The *local faction* (`FUN_140852010`): while imprisoned (`+0x2f8 == 2`) the owner of the cage at `+0x300`, else the faction of the
   status object's `+0x88` (**Unknown**; Meitou: the town the character stands in, nearest whose radius holds it).
