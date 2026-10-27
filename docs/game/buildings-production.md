@@ -218,9 +218,12 @@ shows the first failing message in this order (**Verified** unless marked):
   outpost there. A global flag (`DAT_142134690+0x298`, meaning **Unknown**) skips all of this.
 - **The outpost** (**Verified**, `FUN_140934e10`): a `Town` made from the TOWN `player_town_template` (base data: name
   "Your Outpost", type 1, `town radius mult` 1, no faction), owned by the player faction, named "Your Outpost",
-  `public` false, `plevel` 0, added to the player-town list (town manager +0x68) that the save writes
+  `public` false, `plevel` 0, `discovered` and `explored` (+0x180/+0x181, KenshiLib 1ce4a16 `TownBase`), added to the player-town list (town manager +0x68) that the save writes
   ([player outposts](../formats/save.md#player-outposts)). On load (`FUN_14092ae80`) a player-faction town within the
   radius of another player town is removed with "Player town '<a>' withing boundaries of <b>".
+  No residents: the template lists none, and the resident pick (`Town::chooseResidents` `FUN_1409370d0`, from the building
+  `default resident` / `residents override`) runs from `ZoneManager::loadPhase2` (`FUN_140a0e760`) only for towns whose faction
+  lacks the player flag (FACTION `+0x250`) (**Verified** by decompile and its only caller).
 - **Centre and radius** (**Verified** by decompile, `Town::reassessTownPosition` `FUN_1405488f0`, via `TownList::reassessTownPositions`
   `FUN_14054d080`; called on placement commit `FUN_1404d72a0`, dismantle `FUN_1402a2860` / `FUN_14054fea0` and town merge
   `FUN_140931840`): a player town's centre (+0x48) becomes a weighted mean of its buildings' position markers (two building

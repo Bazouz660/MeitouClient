@@ -33,6 +33,8 @@ sealed partial class PlayerInterface
     public Func<IReadOnlyList<TownSite>>? MapTowns { get; set; }
     /// <summary>A faction (by string id) as the map shows it, null when unknown; the host sets it.</summary>
     public Func<string?, MapFaction?>? MapFactionOf { get; set; }
+    /// <summary>A faction's string id by its index (an outpost's owner), null when unknown; the host sets it.</summary>
+    public Func<int, string?>? MapFactionId { get; set; }
     /// <summary>The names of the towns a map item (by record id) would reveal now, null for an item that is not a map; the host sets it.</summary>
     public Func<string, IReadOnlyList<string>?>? MapItemTowns { get; set; }
 
@@ -206,6 +208,9 @@ sealed partial class PlayerInterface
         foreach (var camp in snapshot.Camps)
             if ((camp.Known & TownKnowledge.Discovered) != 0 && camp.Position is { } at)
                 Place("map-camp-" + camp.Site, TownType.Nest, camp.Name, "", camp.FactionId, at, camp.Known);
+        // The player's outposts: TOWN player_town_template (type 1), in the same town list, made discovered and explored (FUN_140934e10).
+        foreach (var outpost in snapshot.Outposts)
+            Place("map-outpost-" + outpost.Number, TownType.Outpost, outpost.Name, "", MapFactionId?.Invoke(outpost.Owner), outpost.Position, TownKnowledge.Discovered | TownKnowledge.Explored);
 
         // The player's characters, hidden at the least zoom level.
         if (level > 0)

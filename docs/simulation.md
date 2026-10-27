@@ -893,8 +893,8 @@ failed walks mark the cage unreachable for the faction; its own faction's shut d
 
 Player construction contract (Faithful UI). Facts: [construction](game/buildings-production.md#construction),
 [placement](game/buildings-production.md#placement), [build menu](game/buildings-production.md#build-menu),
-[build tasks](game/ai-tasks.md#build-tasks), [save keys](formats/zones.md#placement-keys). Not built: outpost
-residents, the map marker (raids on outposts: [campaigns](#off-screen-tier)), the door x3 rule ("Wall termites" is disabled in the original).
+[build tasks](game/ai-tasks.md#build-tasks), [save keys](formats/zones.md#placement-keys). Outposts have no
+residents in the original ([the outpost](game/buildings-production.md#placement)) and are on the [map](game/ui-screens.md#map); raids on them: [campaigns](#off-screen-tier). Not built: the door x3 rule ("Wall termites" is disabled in the original).
 Damage: melee blows on walls and doors (`CombatSystem.ApplyZoneBuildings`, the original's only damage,
 [repair](game/buildings-production.md#work-distance)). Production, power and research: [Production](#production).
 

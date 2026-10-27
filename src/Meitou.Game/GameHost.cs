@@ -270,6 +270,7 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
             var standing = town == mine ? MapStanding.Player : d.Relations.IsAlly(mine, town) ? MapStanding.Ally : relation < -30 ? MapStanding.Enemy : MapStanding.Neutral;
             return new MapFaction(faction.Name, relation, standing, faction.NotReal);
         };
+        ui.MapFactionId = faction => popData is { } d && faction >= 0 && faction < d.Factions.Count ? d.Factions[faction].Id : null;
         ui.ArmourOf = record => popData?.Combat.Armour(record);
         ui.RecordName = id => popData?.Db.Find(id)?.Name;
         ui.PlayerFactionName = () => ui.FactionName?.Invoke(session.World.Player.Faction) ?? "";
