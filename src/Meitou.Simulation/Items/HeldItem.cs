@@ -45,7 +45,7 @@ public sealed record HeldItemView(string Record, string Name, string Material, M
     public string[] WornOnlyBy { get; init; } = [];
     public string[] WornNeverBy { get; init; } = [];
     /// <summary>Whether a character of the RACE <paramref name="race"/> may wear it (null: no wearer).</summary>
-    public bool WearableBy(string? race) => ItemInstance.Wearable(WornOnlyBy, WornNeverBy, race);
+    public bool WearableBy(string? race, bool animal = false) => ItemInstance.Wearable(WornOnlyBy, WornNeverBy, race, animal);
 }
 
 /// <summary>

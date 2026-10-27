@@ -958,8 +958,8 @@ unless marked; Meitou: `PlayerInterface.Squads.cs`, commands in `SquadManagement
   - Meitou (`PlayerInterface.Inventory.cs`, `Items/HeldItems.cs`): the held item is world state (`PlayerState.Held`, commands `LiftItem`, `PlaceHeld`, `GiveHeld`, `DropHeld`,
     `ReturnHeld`; [simulation](../simulation.md#items-and-eating)). Engine choices: the release places only after the pointer moved at least 5 px since the press (a click keeps the item for the
     next press); right click or Escape puts it back; a stock item goes only into the customer's windows and the customer's own items onto the stock; give range 1000 (60 for an item out of
-    a non-player window) from the window's owner; let go over a squad bar portrait, it is given to that member (same range and room rules; its own portrait puts it back). Not built: the race check, section item-count caps, "That's not for sale." (no trader character window), "Got caught stealing." and
-    "Attempted smuggling!" (looting's witness test stands in), CAMPING buildings.
+    a non-player window) from the window's owner; let go over a squad bar portrait, it is given to that member (same range and room rules; its own portrait puts it back). Race limits: `ItemInstance.WearableBy` (an animal only with its race listed). Not built: section item-count caps, "That's not for sale." (no trader character window),
+    CAMPING buildings.
 - **Observed** in the original Metaru screenshot supplied on 2026-10-15: inventory
   icons have translucent black rectangular backings covering their cell footprints;
   empty clothing cells are pale. Emptiness alone does not establish the red/disabled

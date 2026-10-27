@@ -43,7 +43,8 @@ public sealed record ItemInfo(string Id, string Name, FcsRecordType Type)
     public float EncumbranceEffect { get; init; } = 1;
     /// <summary>
     /// Who may wear it (the original's <c>RaceLimiter</c>, <c>FUN_140763150</c>, <b>Verified</b> by decompile): a non-empty <c>races</c> list names the only races, and then <c>races exclude</c>
-    /// is not read; otherwise <c>races exclude</c> names the races that may not. RACE string ids; empty: anyone.
+    /// is not read; otherwise <c>races exclude</c> names the races that may not. RACE string ids; empty: anyone but an animal, which needs its race in <c>races</c>
+    /// (<c>RaceLimiter::canEquip</c> <c>FUN_140593f00</c> and <c>Limiter::canEquip</c> <c>FUN_1405936b0</c>, <b>Verified</b> by decompile; checked by sections other than type 7, <c>FUN_14074bc30</c>).
     /// </summary>
     public string[] WornOnlyBy { get; init; } = [];
     public string[] WornNeverBy { get; init; } = [];

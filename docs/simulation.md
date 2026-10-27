@@ -1533,7 +1533,7 @@ level's counts as bought (saved again) and is applied before the fixtures are ma
 Original-game unknowns are maintained in each linked subsystem reference; do not infer parity from our determinism tests.
 
 **Engine gaps** are listed where they apply, not here: [unique characters](#unique-characters) and [campaigns](#off-screen-tier),
-[items](#items-and-eating) (race restrictions), [ranged](#ranged) (bolts before a building's collision loads), [locks](#cages-beds-and-locks),
+[ranged](#ranged) (bolts before a building's collision loads), [locks](#cages-beds-and-locks),
 [slavery](#arrest-and-jail), [kidnapping](#kidnapping), [buildings](#buildings) and walls, [production](#production) (turrets, furnaces, rain,
 plants), [prospecting](#prospecting), [dialogue](#dialogue) (conditions on state Meitou lacks), [AI](#ai) (wars, prisoners, planner finders).
 Smuggling and stealing: [trade](#trade). UI: [faithful-ui-parity](faithful-ui-parity.md).
