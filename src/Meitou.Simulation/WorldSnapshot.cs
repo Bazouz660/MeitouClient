@@ -366,6 +366,8 @@ public sealed record WorldSnapshot(long Tick, IReadOnlyList<CharacterSnapshot> C
     public IReadOnlyList<TownKnowledge> Towns { get; init; } = [];
     /// <summary>The camps and nests the player knows (<see cref="PlayerState.Camps"/>).</summary>
     public IReadOnlyList<CampView> Camps { get; init; } = [];
+    /// <summary>The factions the player has met (<see cref="PlayerState.KnownFactions"/>).</summary>
+    public IReadOnlySet<int> KnownFactions { get; init; } = NoFactions;
     /// <summary>The squad AI options (<see cref="PlayerState.SquadAi"/>).</summary>
     public SquadAi SquadAi { get; init; } = SquadAi.Defaults;
     /// <summary>The player's squads in order (<see cref="SquadManagement.PlayerSquads"/>), each with its members in squad order (the first leads).</summary>
@@ -421,6 +423,7 @@ public sealed record WorldSnapshot(long Tick, IReadOnlyList<CharacterSnapshot> C
     static readonly IReadOnlyDictionary<(string Building, int Door), Locks.DoorView> NoDoors = new Dictionary<(string Building, int Door), Locks.DoorView>();
 
     static readonly IReadOnlySet<string> EmptySet = new HashSet<string>(StringComparer.Ordinal);
+    static readonly IReadOnlySet<int> NoFactions = new HashSet<int>();
 
     // After the statics above: static initializers run in textual order, and the property defaults read them.
     public static readonly WorldSnapshot Empty = new(-1, []);

@@ -166,7 +166,7 @@ public static class SaveImport
         }
     }
 
-    /// <summary>The factions' state: with "Relations" the relation tables and ranks stay, without them the factions start from their FACTION records. War states never stay (their campaigns name platoons this world lacks).</summary>
+    /// <summary>The factions' state: with "Relations" the relation tables, ranks and the factions met stay, without them the factions start from their FACTION records. War states never stay (their campaigns name platoons this world lacks).</summary>
     static void FilterFactions(SaveGame game, ImportOptions options)
     {
         if ((options & ImportOptions.Relations) != 0) return;
@@ -175,6 +175,7 @@ public static class SaveImport
             f.SetRelations([]);
             f.Rank = 0;
         }
+        if (game.PlayerFaction is { } player) player.Known = [];
     }
 
     /// <summary>

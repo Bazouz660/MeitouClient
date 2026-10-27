@@ -278,6 +278,52 @@ included), else 0.025 (outside every town too).
 Meitou: `FactionDeeds` (blows, cagings, first aid), `CrimeSystem` (the ally witness), `PlayerRelations.DeclareWar` / `EndWar` / `Add`
 (the messages); [simulation](../simulation.md#hostility-and-relations).
 
+### 3.6 Factions met
+
+**Observed** (decompile). The player faction's relation object (`PlayerFactionRelations`, RTTI) keeps a set of factions at +0x68; the faction tab
+lists only those ([ui-screens](ui-screens.md#faction-tab)). `FUN_1407f7e90` adds one (none for null):
+- When the factions are set up (`FUN_1406b40d0`, the player faction only): each faction its FACTION `relations` list names (base data: Dust Bandits
+  alone, **Observed** by a probe of the merged data).
+- On a new game (`FUN_140872e00`): each faction of the start-off's `faction relations`.
+- A town or nest explored (`FUN_14092f6b0`, [map](ui-screens.md#map)): its owner.
+- A player-faction character's sense update (`FUN_14085a8d0` → `FUN_14085a070` → `FUN_1408593d0`): the faction of everyone
+  [gathered](perception.md#summary) but itself and of those its squad saw or noticed lately (`FUN_140860900`), seen or not. Characters sensed before
+  are reassessed too, at any distance, with the faction they had when last seen or heard (`FUN_1408580d0`). Noticing someone (`FUN_140858f40`) makes
+  it sensed: whom the character attacks (`FUN_1405cb0a0`); whoever shoots at it, at each shot (`FUN_14043a730` → `FUN_140999d50`; aiming alone does
+  not, `FUN_1404371f0`), and on a hit by a bolt meant for it (`FUN_1404380e0`) while it is not fighting (`FUN_140439c90`); a melee attacker as it
+  starts an attack on it (`FUN_1402b4570`), or as it makes it its target if, for a player-faction character, the two are on one floor, in the same
+  building or both outside, with a line of sight (`FUN_140665580`, `FUN_140665650`; both `FUN_140999f00` via `FUN_1405c9290`); the attacker it picks
+  to fight for itself or someone it senses (`FUN_14099c3b0`, below); the target of some of its dialogue actions (`FUN_140680560`); a failed
+  knocker-out or kidnapper (`FUN_14034cd80`, `FUN_14034ffa0`, `FUN_1403552d0`), or a kidnapper, not its ally, that puts it down while it is
+  conscious (`FUN_1405ce1e0`). That pick is the target finder of the GOAP task 13 "Attacking attackers of" (`FUN_140319a60`). The planner tries the
+  task (`FUN_14051bae0`) when the character's self-preservation goal, which every character has (`FUN_140621b70`), needs the aggression towards it
+  to end, when a protect goal finds an ally or squadmate in need (`FUN_14099ca10`, `FUN_14099d510`), and for goals that require it, such as
+  following or guarding someone; player characters plan it without an order (`FUN_14061d350`, `FUN_1405e59b0`). The finder runs in full
+  (`FUN_14060f460` → `FUN_14060f1d0`), its answer kept per task and subject until the caches are emptied at the start and end of each AI update
+  (`FUN_1405112b0`). The update runs for 8 characters a frame in turn ([game loop](game-loop.md#the-character-update-budget)), never in the
+  character editor; a carried or unconscious one only lets its senses fade (`FUN_140859220`; the get-up test `FUN_140598c20` fails for both), a dead
+  one has no update.
+- Selecting an object (`FUN_1407f7f20`, which inserts it itself, none for no owner; only when it was not selected, a building with a door as that
+  door): its owner, at any distance.
+- A reset (`FUN_14036cb80` → `FUN_1407fa4e0`, before every new game, load and import) empties it. A new game and a load then set the factions up and
+  replace the set with the `known` list of the player's GAMESTATE_FACTION (`FUN_1409ef230` → `FUN_14036f2e0` → `FUN_1406b5190`; an id no faction has
+  is dropped): on a new game the level data's, before the start-off's factions are added (none in the base game's level files, **Observed**), on a
+  load the save's. Without one the setup's stay. An import replaces it only with Relations (`FUN_1409ef4e0`). Saved as that record's reference list
+  `known` (`FUN_1406b3c80`, values 0).
+
+Meitou: `PlayerState.KnownFactions`, saved as `known` in faction order after the ids the game data lacks (kept, where a load drops them: **engine
+choice**). A new game starts from the `known` list of the level data's player faction state when there is one, the only field of it read
+(`PopulationData.KnownAtNewGame`). `PopulationSystem.MeetFactions` runs each player character's update every 15 ticks by slot and counts a
+character's current faction and the fight target while there is one; a shot at one that senses meets the shooter's at once (`CombatSystem.ShotAt`,
+crossbows and turrets); inside town walls is Meitou's gate code above 0 at the character's position now, not a kept value (all **engine choice**). The sight range is
+perception's R ([perception](perception.md#summary)): 500 inside town walls, else 1500 x race `vision range mult`, both x lerp(daylight, 0.5, 1) and x weather.
+Not modelled: reassessing those sensed before (other than the fight target), the squad's shared list, the attacker `FUN_14099c3b0` picks, and a shot
+at one that is down (the original keeps the shooter sensed while it fades, `FUN_140859220`, and meets it if the character gets up first); the other
+ways to notice someone are taken to act within the sight range the pass covers (**engine reading**). Selecting meets a faction too: `SelectCommand`
+the player's, `InspectCommand` the character's, `InspectBuildingCommand` the owner of the building's first door, else of its first fixture (a
+building with no fixtures is left out). A save whose `known` list is empty (older Meitou saves wrote one) loads the setup's and the owners of the towns and
+camps it has explored (**engine choice**).
+
 ### 4. Squad templates
 
 | Field | Meaning in the exe |

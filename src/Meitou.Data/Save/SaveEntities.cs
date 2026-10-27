@@ -42,6 +42,13 @@ public sealed class SaveFaction(FcsRecord record, FcsRecord? war)
     /// <summary>The player's faction has a <c>known</c> list and no relation table.</summary>
     public bool IsPlayer => Record.References.ContainsKey("known") || !Record.Strings.ContainsKey("relationSID0");
 
+    /// <summary>The player faction's <c>known</c> list: the FACTION ids of the factions the player has met (docs/game/factions-squads-towns.md "Factions met"); empty when there is none.</summary>
+    public IReadOnlyList<string> Known
+    {
+        get => [.. (Record.References.GetValueOrDefault("known") ?? []).Select(r => r.TargetStringId)];
+        set => Record.References["known"] = [.. value.Select(id => new FcsReference(id, 0, 0, 0))];
+    }
+
     /// <summary>The relation table, in the order of its counter <c>k</c> (<c>relation&lt;k&gt;</c>, <c>trust&lt;k&gt;</c>, <c>trustNeg&lt;k&gt;</c>, <c>relationSID&lt;k&gt;</c>).</summary>
     public IReadOnlyList<SaveRelation> Relations
     {

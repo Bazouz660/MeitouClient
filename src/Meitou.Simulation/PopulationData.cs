@@ -247,6 +247,19 @@ public sealed class PopulationData
         return index.GetValueOrDefault(id, -1);
     }
 
+    /// <summary>
+    /// The factions the player knows once the factions are set up (<c>FUN_1406b40d0</c>; docs/game/factions-squads-towns.md "Factions met"): those the player faction's FACTION <c>relations</c>
+    /// list names.
+    /// </summary>
+    public HashSet<int> KnownAtSetup() => PlayerFaction < 0 ? [] : [.. Factions[PlayerFaction].Relations.Keys.Select(FactionIndex).Where(f => f >= 0)];
+
+    /// <summary>
+    /// The factions a new game's player knows before the start-off's are added (<c>FUN_1409ef230</c>; docs/game/factions-squads-towns.md "Factions met"): the <c>known</c> list of the
+    /// level data's GAMESTATE_FACTION of the player faction (the last when several name it), else <see cref="KnownAtSetup"/>.
+    /// </summary>
+    public HashSet<int> KnownAtNewGame() => levelKnown is { } level ? [.. level] : KnownAtSetup();
+    IReadOnlyList<int>? levelKnown;
+
     static Dictionary<string, int> BuildFactionIndex(IReadOnlyList<FactionData> factions)
     {
         var index = new Dictionary<string, int>(factions.Count, StringComparer.Ordinal);
@@ -275,8 +288,10 @@ public sealed class PopulationData
 
     /// <param name="buildings">The towns' buildings by placement id (<see cref="TownBuildings.Build"/>), for the AI's homes; null: none.</param>
     /// <param name="townZones">The zones each town's level state lists, by placement id (<see cref="WorldLevelData.TownZones"/>), for discovery; null: none.</param>
+    /// <param name="level">The merged level files (<see cref="WorldLevelData.Level"/>), for the player faction's state a new game starts from (<see cref="KnownAtNewGame"/>); null: none.</param>
     public static PopulationData Create(GameDatabase db, IEnumerable<TownPlacement> placements, IAppearanceSource? appearances = null, BodyOptions? bodyOptions = null, BiomeMap? biomes = null,
-        IReadOnlyDictionary<string, List<TownBuilding>>? buildings = null, IEnumerable<RoadPath>? roads = null, IReadOnlyDictionary<string, List<ZoneCoordinate>>? townZones = null)
+        IReadOnlyDictionary<string, List<TownBuilding>>? buildings = null, IEnumerable<RoadPath>? roads = null, IReadOnlyDictionary<string, List<ZoneCoordinate>>? townZones = null,
+        GameDatabase? level = null)
     {
         var sites = new List<TownSite>();
         foreach (var p in placements)
@@ -301,6 +316,8 @@ public sealed class PopulationData
             Db = db, Sites = sites, Factions = factions, Appearances = appearances, Biomes = biomes, Roads = roads is null ? null : new RoadNetwork(roads), BodyOptions = bodyOptions ?? BodyOptions.Default, PlayerFaction = player,
             Relations = relations,
             SiteFactions = [.. sites.Select(s => s.Town.Faction is { } fid ? byId.GetValueOrDefault(fid, -1) : -1)],
+            levelKnown = player >= 0 && level?.OfType(FcsRecordType.GAMESTATE_FACTION).LastOrDefault(s => s.GetString("gamedata stringID") == factions[player].Id) is { } state
+                ? [.. state.GetReferences("known").Select(r => byId.GetValueOrDefault(r.TargetStringId, -1)).Where(f => f >= 0)] : null,
         };
     }
 

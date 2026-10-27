@@ -133,10 +133,10 @@ static class SyntheticTown
         return db;
     }
 
-    public static PopulationData Data(GameDatabase db, Meitou.Simulation.Bodies.BodyOptions? options = null) =>
+    public static PopulationData Data(GameDatabase db, Meitou.Simulation.Bodies.BodyOptions? options = null, GameDatabase? level = null) =>
         PopulationData.Create(db, db.Find("31-t") is null
             ? [new TownPlacement("inst", "30-t", Centre, null)]
-            : [new TownPlacement("inst", "30-t", Centre, null), new TownPlacement("inst2", "31-t", Far, null)], bodyOptions: options);
+            : [new TownPlacement("inst", "30-t", Centre, null), new TownPlacement("inst2", "31-t", Far, null)], bodyOptions: options, level: level);
 
     public static float Ground(float x, float z) => 300;
 

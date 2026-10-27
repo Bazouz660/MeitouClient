@@ -102,6 +102,7 @@ public static partial class SaveCapture
         }
 
         UpdateFactions(game, data, loaded);
+        WriteKnownFactions(game, data, world.Player);
         WriteTownKnowledge(builder, data, world.Player);
         if (world.Systems.OfType<PopulationSystem>().FirstOrDefault() is { } pools) WriteTownPools(game, data, pools);
         WriteTownReplacements(game, data);
@@ -281,6 +282,16 @@ public static partial class SaveCapture
             }
             if (changed) f.SetRelations(updated);
         }
+    }
+
+    /// <summary>
+    /// The player faction's <c>known</c> list (on the record a load reads it from, <see cref="SaveGame.PlayerFaction"/>): the factions met, in faction order, after the ids the game
+    /// data does not have (kept, as their faction states are).
+    /// </summary>
+    static void WriteKnownFactions(SaveGame game, PopulationData data, PlayerState player)
+    {
+        if (game.PlayerFaction is not { } mine) return;
+        mine.Known = [.. mine.Known.Where(id => data.FactionIndex(id) < 0), .. player.KnownFactions.Order().Select(f => data.Factions[f].Id)];
     }
 
     // ------------------------------------------------------------------ the player's platoons
