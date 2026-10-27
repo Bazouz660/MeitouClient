@@ -279,7 +279,8 @@ sealed partial class PlayerInterface
             foreach (var (name, section) in SectionsOf(over.Screen))
                 if (controls.LastOrDefault(c => c.Name == name && c.Bounds.Contains(point.X, point.Y) && (c.Clip?.Contains(point.X, point.Y) ?? true)
                         && c.Properties.GetValueOrDefault("State") != "disabled") is { } slot)
-                    return Spot(window, section, slot, topLeft, h);
+                    // A furnace's in1 grid is its storage, the sim's "main".
+                    return Spot(window, name == "in1" && window.Holder == ItemHolder.Site && FurnaceGrid(Machine(window.Site)) is not null ? "main" : section, slot, topLeft, h);
         return none with { Kind = DropKind.Window, Window = window };
     }
 

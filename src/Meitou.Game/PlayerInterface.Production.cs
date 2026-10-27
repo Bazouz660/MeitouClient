@@ -124,6 +124,19 @@ sealed partial class PlayerInterface
         for (int k = 0; k < 2; k++)
         {
             string n = (k + 1).ToString(CultureInfo.InvariantCulture);
+            if (k == 0 && FurnaceGrid(m) is { } fg)
+            {
+                // A furnace's one input is its 12 x 7 grid (FurnaceBuilding::setupFromData), drawn in in1 by AddMachineContent; its label, status and bar are an engine choice (left empty).
+                b.Text["Input1Text"] = "";
+                b.Text["Input1StatusText"] = "";
+                b.Hidden.Add("Input1ProgressBar");
+                // Widen and deepen the window to hold the grid, measured off the last frame's slot (the original's sizing is Unknown).
+                if (faithfulScreens.LastFrame.FirstOrDefault(f => f.Id == "building")?.Controls is { } last && last.FirstOrDefault(c => c.Type == "Window") is { } win
+                    && last.FirstOrDefault(c => c.Name == "in1") is { } in1)
+                    b.Positions["Root"] = new(0, 0, Math.Max(win.Bounds.Width, in1.Bounds.X - win.Bounds.X + fg.Width * InventoryCell + 20 * InventoryScale),
+                        Math.Max(win.Bounds.Height, in1.Bounds.Y - win.Bounds.Y + fg.Height * InventoryCell + 60 * InventoryScale));
+                continue;
+            }
             if (k >= m.Inputs.Count) { b.Hidden.Add($"Input{n}Panel"); continue; }
             var input = m.Inputs[k];
             b.Text[$"Input{n}Text"] = input.Name;
@@ -149,8 +162,11 @@ sealed partial class PlayerInterface
             b.Progress["OutputProgressBar"] = current?.Progress ?? 0;
         }
         else b.Hidden.Add("OutputColumn");
-        if (m.Inputs.Count == 0) b.Hidden.Add("InputTitleText");
+        if (m.Inputs.Count == 0 && FurnaceGrid(m) is null) b.Hidden.Add("InputTitleText");
     }
+
+    /// <summary>A furnace's item grid (its <c>in1</c> section, kept as the machine's storage); null for any other machine.</summary>
+    static Meitou.Simulation.InventoryView? FurnaceGrid(MachineSnapshot? m) => m is { Furnace: not null, Inputs.Count: 0, Storage: { } grid } ? grid : null;
 
     /// <summary>A bench's current craft: the queue's front while its progress is below 1 (docs/game/ui-screens.md "Selected building", crafting window); null: none.</summary>
     static (string Key, string Name, float Progress, float Hours)? CraftCurrent(Meitou.Simulation.Production.CraftView craft) =>
@@ -219,6 +235,24 @@ sealed partial class PlayerInterface
             AddItemCell(controls, $"machine-{name}", b, view.Item, "", view.Name, view.Count, null, "MachineItem", code, clip);
         }
         for (int k = 0; k < Math.Min(2, m.Inputs.Count); k++) Slot($"in{k + 1}", $"Input{k + 1}ProgressBar", m.Inputs[k], 10 + k);
+        if (FurnaceGrid(m) is { } fg && m.Furnace is { } burn)
+        {
+            // The furnace's grid in in1, its items the storage's (picked up as storage items); disabled while it burns (InventorySection::setEnabled(!active)).
+            Slot("in1", "Input1ProgressBar", new Meitou.Simulation.Production.MachineSlotView("", "", 0, 0, 0, fg.Width, fg.Height), -1);
+            int gi = controls.FindIndex(c => c.Name == "in1");
+            if (gi >= 0)
+            {
+                var g = controls[gi];
+                if (burn.Burning) controls[gi] = g with { Properties = new Dictionary<string, string>(g.Properties) { ["State"] = "disabled" } };
+                foreach (var item in fg.Items)
+                {
+                    if (Lifted(ItemOwner.AtSite(m.Site), 1000 + item.Index)) continue;
+                    AddItemCell(controls, $"machine-item-{item.Index}",
+                        new(g.Bounds.X + item.X * InventoryCell, g.Bounds.Y + item.Y * InventoryCell, item.Width * InventoryCell, item.Height * InventoryCell),
+                        item.Record, item.Material, item.Name, item.Quantity, ItemTip.Of(item), "MachineItem", 1000 + item.Index, g.Clip, charge: item.Charge);
+                }
+            }
+        }
         if (m.Output is { } output) Slot("out", "OutputProgressBar", output, 8);
         else if (m.Craft is { Done: [var made, ..] } && controls.FirstOrDefault(c => c.Name == "out") is { } outSlot && !Lifted(ItemOwner.AtSite(m.Site), 8))
         {

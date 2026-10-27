@@ -476,7 +476,7 @@ Melting), functionality Furnace: `max operators` 0 (so automatic: `ProductionBui
 - **Save**: no override of the producer's keys, so `active` is not saved (a loaded furnace is off); the level is `consumption amount-0`, the progress `production amount`.
 
 Meitou (`ProductionSystem.Furnace.cs`): the grid is the machine's `Storage` (saved as section `in1`), `Machine.Burning` / `BurnLevel`, the `IncinerateFurnace` command and the panel rows
-on the player's furnace; engine choices: a weapon's weight is its inventory unit weight, iron past the output's capacity is lost, the status returns to 0 when it stops, the button plays `General_Click`.
+on the player's furnace; its window draws the grid in the `in1` slot (disabled while on); engine choices: the window grows to fit the grid (original sizing **Unknown**), the input label and bar are left empty, a weapon's weight is its inventory unit weight, iron past the output's capacity is lost, the status returns to 0 when it stops, the button plays `General_Click`.
 
 ### Resources
 

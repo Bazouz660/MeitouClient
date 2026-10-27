@@ -106,7 +106,7 @@ public sealed partial class CrimeSystem(FactionRelations relations, CrimeSetting
 
     /// <summary>
     /// Items taken from a downed character (the carry system's take-all): Looting (code 10, the right-click transfer's code for a downed owner, <b>Verified</b> call site) unless the game's
-    /// permission test (<c>FUN_140793940</c>, <b>Observed</b>) allows it: the victim is a slave (here: <c>NPC class</c> SLAVE), a bandit, or has any bounty; or the taker is LAW_ENFORCEMENT,
+    /// permission test (<c>FUN_140793940</c>, <b>Observed</b>) allows it: the victim is a slave (<c>NPC class</c> SLAVE, or slave state 1 or 2; see <see cref="LootAllowed"/>), a bandit, or has any bounty; or the taker is LAW_ENFORCEMENT,
     /// MILITARY or DIPLOMAT.
     /// </summary>
     public void Loot(World world, int looter, int victim)
