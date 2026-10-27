@@ -339,6 +339,9 @@ original), a homeless one counts as one of the squads of the sector it stands in
 `FUN_1408f6c80`, but a loaded one starts in the sector at the origin and is moved later, so for a while its real sector may spawn beside it; engine choice: bound at once).
 A nest squad more than 3 nest radii from its nest wanders where it stands (engine choice: saves hold nest squads kilometres away). On save the wild squads the
 population made are written as new platoons: a nest's with `basetown` = its TOWN and `hometown` = the nest's handle, a homeless one with neither, `sqt` 2.
+NPC squads of no town, platoon or wild site (a dismissed character's, a slave bought free or handed over, one separated by dialogue) are written the same way as homeless
+platoons with `persistent` true (as the original's dismissed platoon; engine choice for the others), so they load as homeless wild platoons of the sector they stand in
+(counted among its squads); a save's platoon with `persistent` set is never despawned off screen (`PopulationRoaming.Kept`, as the original keeps persistent platoons).
 **Observed** (headless, saves 2, wade, 1, the player moved next to each wild platoon): 41 of 49, 10 of 10, 67 of 67 saved wild characters made (the rest dead in the
 save), each at its saved position (0 units off); a held nest or sector made only its remainder; a Meitou save → load gives the same wild characters at the same places
 (78, 10, 96) and no fresh wild squads.
@@ -528,8 +531,11 @@ yet, is left out. Round trip checked with a throwaway probe (write, read, clear)
   address are the payment function and the static constructor and destructor), so the original forgets it on load. Meitou writes the payments less than 24 game hours old on
   the CAMERA as `meitou rent bed<i>` (string, the bed's fixture id) and `meitou rent hours<i>` (float, absolute game hour) (`Saving/BedSave`).
 - **Turrets**: a turret building saves the building base, the machine keys (`batterycharge`, `gets battery`, `power on`, `broken`; `FUN_1402a14b0` / `FUN_1402a1750`)
-  and the `mounted` handle (the wall it stands on; `FUN_1402a1c80` / `FUN_1402a1e30`, vtable slots 17 / 18 of `TurretBuilding`). Reload, aim and the rotation error are
-  **not** saved (**Observed**: no other key is written), so a loaded turret starts with fresh reload and aim state and re-acquires its target; Meitou writes none of the turret keys beyond the building's own (the `mounted` link included) and adds no key.
+  and the `mounted` handle (the wall it stands on; `FUN_1402a1c80` / `FUN_1402a1e30`, vtable slots 17 / 18 of `TurretBuilding`), which then calls its gun's slot 20 / 21
+  (`GunClass::serialise` `FUN_1404390a0` / `loadFromSerialise` `FUN_140439140`): int `current shots` (the gun's `+0x20` loaded harpoons) into the same state, read back as
+  min(saved, `+0x1c` the gun's shots), a missing key as 0 (**Verified** by decompile). The reload timer (the gunner's controller), aim and rotation error are **not** saved,
+  so a loaded turret keeps its harpoons, starts a fresh reload and re-acquires its target. Meitou writes `current shots` for each turret manned since loading (the others keep the
+  loaded value; `CombatSystem.WriteTurretShots`) and a turret's first manning reads it (capped at max(`num shots`, 1)); it writes no `mounted` link and adds no key.
 
 ### Cross-checks against base data (the sample vs `GameDatabase` of the four base files)
 

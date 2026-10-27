@@ -93,9 +93,10 @@ public sealed partial class PopulationSystem
 
     /// <summary>
     /// Whether a platoon out of the world keeps its characters: by the Meitou switches (<see cref="KeepWild"/> for a save's wild one, else <see cref="KeepRoamers"/>), and always
-    /// while it occupies a town, as the original makes an occupier persistent (docs/game/ai.md "Package classes").
+    /// while it occupies a town, as the original makes an occupier persistent (docs/game/ai.md "Package classes"), or when a save's platoon is <c>persistent</c> (the original
+    /// never removes one, docs/game/factions-squads-towns.md "Object model": e.g. a dismissed character's squad).
     /// </summary>
-    bool Kept(Platoon p) => (p.Wild ? KeepWild : KeepRoamers) || Ai.AiSystem.Occupies(data.Ai, p.Package);
+    bool Kept(Platoon p) => (p.Wild ? KeepWild : KeepRoamers) || Ai.AiSystem.Occupies(data.Ai, p.Package) || p.Saved?.Source.Record.Bools.GetValueOrDefault("persistent") == true;
 
     readonly List<Platoon> movers = [];
     /// <summary>Stand-ins one worker job steps (engine choice: a job costs more than a few stand-ins).</summary>

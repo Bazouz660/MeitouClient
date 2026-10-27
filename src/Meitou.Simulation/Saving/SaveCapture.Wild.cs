@@ -118,7 +118,8 @@ public static partial class SaveCapture
         var table = world.Characters;
         var factions = new Dictionary<string, SaveFaction>(StringComparer.Ordinal);
         foreach (var f in game.Factions) factions.TryAdd(f.Id, f);
-        void Write(WildSite site, string templateId, int factionIndex, long money, string? package, List<(CharacterCold Cold, Vector3 Position, float Yaw, CharacterId Id, bool Leader)> members, SquadMemoryData? memory = null)
+        void Write(WildSite? site, string templateId, int factionIndex, long money, string? package, List<(CharacterCold Cold, Vector3 Position, float Yaw, CharacterId Id, bool Leader)> members, SquadMemoryData? memory = null,
+            bool persistent = false)
         {
             var faction = data.Factions[factionIndex];
             factions.TryGetValue(faction.Id, out var state);
@@ -127,8 +128,8 @@ public static partial class SaveCapture
             var record = platoon.Record;
             record.Ints["sqt"] = 2;
             // Not persistent, but while it occupies a town (the original's occupation makes its platoon persistent, docs/game/ai.md "Package classes").
-            record.Bools["persistent"] = Ai.AiSystem.Occupies(data.Ai, package);
-            if (site.Kind == WildKind.Nest && site.Nest is { } nest && nests.TryGetValue(site.Index, out var hand))
+            record.Bools["persistent"] = persistent || Ai.AiSystem.Occupies(data.Ai, package);
+            if (site is { Kind: WildKind.Nest, Nest: { } nest } && nests.TryGetValue(site.Index, out var hand))
             {
                 record.Strings["basetown"] = nest.Id;
                 hand.Write(record, "hometown");
@@ -166,6 +167,20 @@ public static partial class SaveCapture
                 Write(site, k.TemplateId, k.Faction, k.Money, k.Stored.Package,
                     [.. k.Stored.Members.Select((m, i) => (m.Cold, m.Position, m.Yaw, CharacterId.None, m.Leader || !hasLeader && i == 0))], k.Stored.Memory);
             }
+        }
+        // NPC squads of no town, platoon or wild site: a dismissed character's "Wandering Squad" (the original's FUN_14048fa30 makes it a persistent platoon, which saveGame
+        // writes like any other), a slave bought free or handed over, one separated by dialogue. Written homeless and persistent; loaded again they are homeless wild platoons.
+        var wild = new HashSet<int>();
+        foreach (var site in population.WildSites) wild.UnionWith(population.WildSquadsOf(site.Index));
+        foreach (var squad in world.Squads.All)
+        {
+            if (squad.Town >= 0 || squad.PlatoonId >= 0 || squad.Dead || wild.Contains(squad.Id) || squad.Faction == world.Player.Faction || squad.Faction < 0 || squad.Faction >= data.Factions.Count) continue;
+            var every = squad.Members.Where(m => table.IsAlive(m) && table.Cold(m.Slot) is { IsPlayer: false, Save: null }).ToList();
+            var alive = every.Where(m => table.Cold(m.Slot)!.DiedTick < 0).ToList();
+            if (alive.Count == 0) continue;
+            var leader = alive.Contains(squad.Leader) ? squad.Leader : alive[0];
+            Write(null, squad.TemplateId, squad.Faction, squad.Money, squad.Ai?.Current?.Id,
+                [.. every.Select(id => (table.Cold(id.Slot)!, table.Previous[id.Slot].Position, table.Previous[id.Slot].Yaw, id, id == leader))], MemoryOf(world)?.Snapshot(squad.Id), persistent: true);
         }
     }
 

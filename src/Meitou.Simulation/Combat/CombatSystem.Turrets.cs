@@ -121,6 +121,29 @@ public sealed partial class CombatSystem
         };
     }
 
+    /// <summary>The GAMESTATE_BUILDING int that holds a turret gun's loaded harpoons (<c>GunClass::serialise</c> <c>FUN_1404390a0</c>, called by <c>TurretBuilding::serialise</c>).</summary>
+    public const string ShotsKey = "current shots";
+
+    /// <summary>The saved-state key of a turret: a player building's zone and id, a town building's own key.</summary>
+    static string SaveKeyOf(World world, string key) => world.Buildings.Find(key) is { } site ? BuildingKey.Of(site.Zone, site.Id) : key;
+
+    /// <summary>
+    /// The harpoons a turret first manned since loading starts with: its building's saved <see cref="ShotsKey"/> capped at the gun's shots (<c>GunClass::loadFromSerialise</c>
+    /// <c>FUN_140439140</c>: min(saved, <c>+0x1c</c>); a missing key reads 0). Meitou's cap is the reload's <c>max(num shots, 1)</c> and it floors at 0.
+    /// </summary>
+    static int SavedShots(World world, string key, TurretGun gun) =>
+        world.Fixtures.Saved?.GetValueOrDefault(SaveKeyOf(world, key)) is { } state && state.Ints.TryGetValue(ShotsKey, out int shots) ? Math.Clamp(shots, 0, Math.Max(gun.Gun.NumShots, 1)) : 0;
+
+    /// <summary>
+    /// Writes the loaded harpoons of every turret manned since loading into its building's state (<paramref name="buildings"/>, by <see cref="BuildingKey"/>); the others keep the
+    /// loaded record's value. The reload, aim and turn are not saved, as in the original.
+    /// </summary>
+    public void WriteTurretShots(World world, IReadOnlyDictionary<string, Meitou.Data.Fcs.FcsRecord> buildings)
+    {
+        foreach (var t in turrets.Values)
+            if (buildings.TryGetValue(SaveKeyOf(world, t.Key), out var state)) state.Ints[ShotsKey] = t.Loaded;
+    }
+
     void HashTurrets(ref StateHasher h)
     {
         // Only once a turret has been manned, so worlds without gunners hash as before.
@@ -182,6 +205,7 @@ public sealed partial class CombatSystem
             {
                 if (TurretGuns.Get(post.BuildingId) is not { } gun) continue;
                 turrets[post.Key] = t = new TurretState(post.Key, gun, post.Position, post.Yaw, post.Mount);
+                t.Loaded = SavedShots(world, post.Key, gun);
             }
             // One gunner a turret (max operators 1): the lowest slot.
             if (t.Manned) continue;

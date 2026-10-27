@@ -71,7 +71,6 @@ The ones that limit these screens:
 | Trade | Smuggling ([Trade](simulation.md#trade)) |
 | Dialogue | Conditions on state Meitou lacks answer "no" ([Dialogue](simulation.md#dialogue)) |
 | Build, machines | Furnaces do not burn, rain does not fill farm water ([Production](simulation.md#production)) |
-| Squads, faction | Dismissed squads are not saved ([Squads tab](game/ui-screens.md#squads-tab)) |
 | New game | The seven numeric options are Meitou-encoded ([New-game difficulty](simulation.md#new-game-difficulty)) |
 | Import | The salvage of a save without a squad, the "town too close" removal, the old-save tick disabling ([rules](formats/save.md#importing-a-game-savemanagerimportgame-fun_140378a30)) |
 

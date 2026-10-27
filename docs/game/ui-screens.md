@@ -907,7 +907,8 @@ unless marked; Meitou: `PlayerInterface.Squads.cs`, commands in `SquadManagement
   (`FUN_140493cb0` → `FUN_1407f3440`, which renumbers +0x1f2).
 - Dropped on `DismissCharPanel`: with one character in the faction "Cannot dismiss the only remaining character in the faction." (title "Dismiss
   character"), else "Dismiss character '{1}'?". Yes (`FUN_14048fa30`): deselected, faction `1233-gamedata.base` (Tech Hunters; else `nofac`), a new
-  persistent platoon of `5006-squad.mod` ("Wandering Squad") whose AI packages it runs. Meitou's dismissed squad is not written to saves yet (it has no town).
+  persistent platoon of `5006-squad.mod` ("Wandering Squad") whose AI packages it runs (the factory `FUN_1407f4420`'s third argument 1 is the persistent flag, **Observed**),
+  so `saveGame` writes it with every platoon. Meitou saves it as a homeless persistent platoon ([save](../formats/save.md#wild-and-nest-platoons-meitou-mapping)).
 - Meitou: a portrait clicked without dragging selects the character (engine choice); a box is dragged by its frame.
 
 ## 6. Inventory, trade, dialogue, build

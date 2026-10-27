@@ -619,7 +619,7 @@ values; trajectory, aim timing and obstruction uncertainties remain labelled.
 - **NPC turret goals** 149/222/234 have list A `isNoEnemiesInVicinity` (with the `*` flag): done, so not chosen, while no enemy is near ([ai-tasks](ai-tasks.md#perma-jobs)).
 - **Unknown:** the meaning of target slots 0x360/0x368 and `FUN_1405ca6f0`; the facing `+0x458`'s writer; how far "vicinity" is; whether `+0x464` resets when the gunner leaves.
 
-- **Save** (**Observed**): a turret saves its building and machine keys and the `mounted` handle only; the aim error, rotation and reload state are not saved ([save](../formats/save.md#faction-trust-war-flags-bed-rent-and-turrets)).
+- **Save** (**Verified**, decompile): a turret saves its building and machine keys, the `mounted` handle and its gun's int `current shots` (loaded harpoons, capped at the gun's shots on load); the aim error, rotation and reload timer are not saved ([save](../formats/save.md#faction-trust-war-flags-bed-rent-and-turrets)).
 
 Meitou ([simulation](../simulation.md#ranged)): `CombatSystem.Turrets.cs`, `TurretGun`, `TurretFormulas`. The indoor weight takes the gunner's building and floor for the turret's (engine reading).
 
