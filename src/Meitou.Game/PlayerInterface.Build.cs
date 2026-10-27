@@ -573,9 +573,14 @@ sealed partial class PlayerInterface
         {
             if (machine.IsStorage)
                 verbs.Add(("Auto-Haul", () => Say(new Meitou.Simulation.Production.AddJob(selection, Meitou.Data.Gameplay.Ai.TaskType.OPERATE_STORAGE, site.Id) { Tick = session.World.Tick })));
-            if (machine.IsStorage || machine.Function == MachineData.ItemFurnaceFunction) verbs.Add(("Inventory", () => OpenStorage(site)));
+            // With Shift the dispatch turns Inventory (26) on a storage into Hauling to (124) and Man Turret (146) into Turret guard (234) (FUN_1407fa650, docs/game/ui-input.md "Click").
+            if (machine.IsStorage)
+                verbs.Add(("Inventory", () => { if (SlowModifier) Say(new Meitou.Simulation.Production.AddJob(selection, Meitou.Data.Gameplay.Ai.TaskType.OPERATE_STORAGE, site.Id) { Tick = session.World.Tick }); else OpenStorage(site); }));
+            else if (machine.Function == MachineData.ItemFurnaceFunction) verbs.Add(("Inventory", () => OpenStorage(site)));
             if (machine.Function == Meitou.Data.World.ObjectRanges.TurretFunction)
-                verbs.Add(("Man Turret", () => Say(new Meitou.Simulation.Production.UseTurretOrder(selection, site.Id) { Tick = session.World.Tick })));
+                verbs.Add(("Man Turret", () => Say(SlowModifier
+                    ? (Meitou.Simulation.SimCommand)new Meitou.Simulation.Production.AddJob(selection, Meitou.Data.Gameplay.Ai.TaskType.USE_TURRET, site.Id) { Tick = session.World.Tick }
+                    : new Meitou.Simulation.Production.UseTurretOrder(selection, site.Id) { Tick = session.World.Tick })));
         }
         if (site.LevelPlacement is null) verbs.Add(("Dismantle", () => Say(new DismantleOrder(selection, site.Id) { Tick = session.World.Tick })));
         if (site.LevelPlacement is null && !site.Complete && site.Progress <= 0 && site.Materials.All(m => m.Delivered <= 0))
