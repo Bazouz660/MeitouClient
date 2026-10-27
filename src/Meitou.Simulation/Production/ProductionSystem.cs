@@ -373,6 +373,9 @@ public sealed partial class ProductionSystem : ITickSystem
             float off = Vector2.Distance(new Vector2(n.Position.X, n.Position.Z), spot);
             return off <= Ai.AiSystem.TurretSlack || ((n.Flags & (ushort)MoveFlags.AnyPath) == 0 && off <= Ai.AiSystem.TurretSlack + Settings.SettleReach);
         }
+        // A rock: inside its bounds box scaled 1.2, or within its use range of the box's centre (the original measures to its position marker; a rock's origin can lie off its pile).
+        if (naturalBounds.TryGetValue(site.Id, out var rock))
+            return rock.Touches(n.Position) || SiteReach.Within(n, Vector2.Distance(new Vector2(n.Position.X, n.Position.Z), rock.Flat), m.Data.UseRange);
         // The machine's use range (UseableStuff::getReachRange).
         return SiteReach.Within(n, GapTo(site, n.Position), m.Data.UseRange);
     }

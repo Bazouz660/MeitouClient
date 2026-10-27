@@ -31,6 +31,15 @@ public sealed partial class ProductionSystem
             var nearest = Vector3.Transform(local, Transform);
             return Vector2.Distance(at, new Vector2(nearest.X, nearest.Z));
         }
+
+        /// <summary>Whether <paramref name="from"/> is inside the bounds box scaled 1.2 about its middle (taken at the box's height), else inside the bounds circle scaled 1.2.</summary>
+        public bool Touches(Vector3 from)
+        {
+            if (Shape is not { } shape || !Matrix4x4.Invert(Transform, out var inverse)) return Vector2.Distance(new Vector2(from.X, from.Z), Flat) < 1.2f * Radius;
+            var local = Vector3.Transform(new Vector3(from.X, Centre.Y, from.Z), inverse);
+            Vector3 mid = (shape.Min + shape.Max) / 2, half = 1.2f * (shape.Max - shape.Min) / 2;
+            return MathF.Abs(local.X - mid.X) <= half.X && MathF.Abs(local.Z - mid.Z) <= half.Z;
+        }
     }
 
     readonly Dictionary<string, RockBounds> naturalBounds = new(StringComparer.Ordinal);
