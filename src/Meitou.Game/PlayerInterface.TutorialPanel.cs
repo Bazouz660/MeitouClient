@@ -170,11 +170,21 @@ sealed partial class PlayerInterface
             int id = active[k];
             y -= lineHeight;
             var b = new UiBindings { TemplateScale = scale };
+            // The layout's root is 250 x 25 in pixels; the list sizes it to the panel's width and the scaled line height (arrangeList).
+            // Its children keep their pixel margins: NameButton stretches, CloseButton (Right VStretch) stays 27 px at the right end.
+            if (tutorialLineLayout.Roots.FirstOrDefault() is { } root) b.Positions[root.Name] = new(0, 0, width, lineHeight);
+            b.Positions["NameButton"] = new(0, 0, width - 25, lineHeight);
+            b.Positions["CloseButton"] = new(width - 27, 0, 27, lineHeight);
             b.Text["NameButton"] = tutorialTexts.Title(id);
             string prefix = $"tutorial-{id}-";
             foreach (var c in MyGuiPresentation.Arrange(tutorialLineLayout, (int)width, (int)lineHeight, b, uiResources.Layers))
             {
-                var control = c with { Name = c.Name.Length > 0 ? prefix + c.Name : c.Name, Bounds = c.Bounds with { Y = c.Bounds.Y + y } };
+                // Arranged at the top of the screen: the clip moves down with the bounds, else it hides the whole line.
+                var control = c with
+                {
+                    Name = c.Name.Length > 0 ? prefix + c.Name : c.Name, Bounds = c.Bounds with { Y = c.Bounds.Y + y },
+                    Clip = c.Clip is { } clip ? clip with { Y = clip.Y + y } : null,
+                };
                 if (c.Name == "NameButton") control = control with { Action = "meitou:tutorial", Argument = $"open:{id}" };
                 else if (c.Name == "CloseButton") control = control with { Action = "meitou:tutorial", Argument = $"close:{id}" };
                 controls.Add(control);
