@@ -199,14 +199,17 @@ sealed partial class PlayerInterface
         session.CurrentSnapshot.Trade is { } trade && trade.Customer == owner ? trade.Goods.FirstOrDefault(g => g.Index == index) : null;
 
     /// <summary>
-    /// The fencing prompt beside a stolen item of the customer's held over the stock (<c>FUN_140712920</c>, <b>Observed</b> by decompile): stolen from the trader's own faction, "Fencing chance:"
-    /// and the chance in the Bad colour; stolen from anyone else and the trader buys stolen goods, "Stolen goods?" and "No problem!" in the Good colour; otherwise nothing.
+    /// The fencing prompt beside an item of the customer's held over the stock (<c>FUN_140712920</c>, <b>Observed</b> by decompile). An illegal good first: "ILLEGAL GOODS!" and "NO!" in the Bad
+    /// colour, or for a trader that buys illegal goods "Illegal goods?" and "No problem!" in the Good colour. Else a stolen one: stolen from the trader's own faction, "Fencing chance:" and the
+    /// chance in the Bad colour; stolen from anyone else and the trader buys stolen goods, "Stolen goods?" and "No problem!" in the Good colour; otherwise nothing.
     /// </summary>
     void AddFencePrompt(List<UiControl> controls)
     {
         if (held is not { } item || session.CurrentSnapshot.Trade is not { } trade || item.From != ItemOwner.Of(trade.Customer)
-            || faithfulScreens.HitTest(mouse) is not { Screen: "trader" } || trade.Held is not { Stolen: true } goods) return;
-        (string Label, string Value, string Colour)? prompt = goods.FenceChance is { } chance ? ("Fencing chance:", $"{(int)(chance * 100)}%", BadColour)
+            || faithfulScreens.HitTest(mouse) is not { Screen: "trader" } || trade.Held is not { } goods) return;
+        (string Label, string Value, string Colour)? prompt = goods.Illegal ? (trade.BuysIllegal ? ("Illegal goods?", "No problem!", GoodColour) : ("ILLEGAL GOODS!", "NO!", BadColour))
+            : !goods.Stolen ? null
+            : goods.FenceChance is { } chance ? ("Fencing chance:", $"{(int)(chance * 100)}%", BadColour)
             : trade.BuysStolen ? ("Stolen goods?", "No problem!", GoodColour) : null;
         if (prompt is not { } p) return;
         float scale = InventoryScale, width = 240 * scale, height = 34 * scale;

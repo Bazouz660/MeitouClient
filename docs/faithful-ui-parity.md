@@ -67,10 +67,10 @@ The ones that limit these screens:
 
 | Screen | Backend gaps |
 | --- | --- |
-| Trade | Smuggling and stealing other than looting ([Trade](simulation.md#trade)) |
+| Trade | Smuggling ([Trade](simulation.md#trade)) |
 | Dialogue | Conditions on state Meitou lacks answer "no" ([Dialogue](simulation.md#dialogue)) |
-| Build, machines | Furnaces do not burn, plants are not drawn ([Buildings](simulation.md#buildings), [Production](simulation.md#production)) |
-| Squads, faction | Dismissed squads are not saved ([Squads tab](game/ui-screens.md#squads-tab)); the faction cannot be renamed (its rule in [Faction tab](game/ui-screens.md#faction-tab)) |
+| Build, machines | Furnaces do not burn, rain does not fill farm water ([Production](simulation.md#production)) |
+| Squads, faction | Dismissed squads are not saved ([Squads tab](game/ui-screens.md#squads-tab)) |
 | Inventory | Race constraints ([Items and eating](simulation.md#items-and-eating)); the blueprint tooltip's known / bench-level states and unlock lists ([Blueprints](game/buildings-production.md#blueprints)) |
 | New game | The seven numeric options are Meitou-encoded ([New-game difficulty](simulation.md#new-game-difficulty)) |
 | Import | The salvage of a save without a squad, the "town too close" removal, the old-save tick disabling ([rules](formats/save.md#importing-a-game-savemanagerimportgame-fun_140378a30)) |
