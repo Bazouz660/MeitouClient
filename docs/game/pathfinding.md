@@ -173,7 +173,15 @@ the original keeps a mesh in each destroyed seedless interior, on its ground flo
 Y1571..1578, Bughouse `4937-` 32 faces at Y1608..1619). Meitou's largest region there can be wall tops (Bughouse: 149 polygons at Y1710..1757
 under the ruined roof) or an upper floor (Stationhouse `4-`, Y1703). Engine choice: keep every region whose lowest point is within
 `SeedPruner.DestroyedFloorBand` (40) of the interior's lowest polygon; upper storeys there are 60+ higher. Without it, squatters housed in
-these nodeless ruins stood on the terrain under their floors. The island has no door join, as in the original.
+these nodeless ruins stood on the terrain under their floors.
+**Destroyed boundary** (**Observed**, data): a ruin's walls (`Exterior_UPPER_Destroyed`) have no collision and its roof part, which holds the
+walls' collision, is not laid out; its `destroyed boundary` is a closed ring of vertical faces (L-House `Storm_House_04_interior_destroyed_COL`: 40 faces,
+local Y −47..86) round the floor, the doorway and the steps outside it. Rasterised as faces it only drew thin cuts, so the floor under the walls stayed
+meshed and walkers crossed the walls. Engine choice: the ring cut halfway up outlines the floor; polygons whose centre is outside it are dropped from the
+interior (so neither the border closure nor a join keeps them), and the rest joins the exterior as a doorless interior, which happens only at the
+doorway, where the ring reaches the hull. **Observed** (scratch probe, zones 19..21 × 31..33): all 19 Hub ruins have a boundary; floor points inside
+each outline reached from the street 39/39 for the L-House `4645-Newwworld-INGAME` (−51987, 4605), 23 of 34 in the six Small Shacks, all or all but 2
+elsewhere; before, none. Whether the original joins ruins the same way is **Unknown**; in the original, walkers enter that L-House (user report).
 **Doors**: every part of a `doors`-list building is group 5. **Observed** (35 door records): only
 `Defensive Gate level 4/5 Door` lack `is door`, yet open in game; without the rule Squin was sealed.
 **Entrance seeds** (engine choice): cross the door's width axis. An exterior seed stands on the highest walkable surface at its marker at most
@@ -211,7 +219,8 @@ edges face: a raised sill reached by steps (~47..52°) that cross the hull, whos
 `29-rebirth-INGAME`, door Y365..380; Y418 for `27-`, door Y430..441) and upper part the interior's, meeting on the hull's edge.
 **Observed** (zone 18.35, scratch probe): both rooms reached from the street; no other door in 18.35, 19.29, 20.29, 20.32, 21.32, 21.42 needs it.
 **Doorless interiors** (engine choice): an intact building with an interior mask and no `doors` (an open doorway) links its interior's open edges
-to the exterior's that run along them within `NavInteriors.HullJoinDistance` (2.5; both are cut on the hull's line); destroyed ones stay islands.
+to the exterior's that run along them within `NavInteriors.HullJoinDistance` (2.5; both are cut on the hull's line); so do destroyed ones with a
+`destroyed boundary` (above); those without stay islands.
 **Observed** (zone 7.30, Hive Village, `meitou-tools navmesh`, issue #71): the Hive Commune Huts had no door join, so no path from the street
 reached their floors; with it all five in 7.30 (and `48-` with 7.31 loaded) are reached and left through the hut's doorway; no join in 20.32, 21.32,
 18.35, 19.29, 24.27, 9 in 10.31 (Hive Commune Huts). How the original joins them is **Unknown** (its interior jobs end in a stitch, below).

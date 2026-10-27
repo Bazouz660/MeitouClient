@@ -104,11 +104,25 @@ internal sealed partial class ZoneGeometryGatherer
         float side = MathF.Ceiling(MathF.Max(hi.X - lo.X, hi.Y - lo.Y) / tileWorld) * tileWorld;
         // Over the high border the box is moved back to end on it (over the low one it starts on it already).
         var boxMin = new Vector2(crossHighX && !crossLowX ? hi.X - side : lo.X, crossHighZ && !crossLowZ ? hi.Y - side : lo.Y);
+        // A destroyed building's "destroyed boundary" (fcs.def: navmesh cutter for a destroyed interior) is a ring of walls round the ruin's floor, its doorway
+        // and steps; cut halfway up, it outlines the floor.
+        var boundary = site.Destroyed && site.Record.GetPath("destroyed boundary") is { Length: > 0 } boundaryPath ? collision.Get(boundaryPath) : null;
+        List<(Vector2 A, Vector2 B)>? outline = null;
+        if (boundary is not null)
+        {
+            outline = [];
+            foreach (var shape in boundary.Shapes)
+            {
+                var pts = shape.Vertices.Select(v => Vector3.Transform(v, node)).ToArray();
+                outline.AddRange(NavGeometry.Slice(pts, shape.Indices, (pts.Min(p => p.Y) + pts.Max(p => p.Y)) / 2));
+            }
+            if (outline.Count < 3) outline = null;
+        }
         var g = new ZoneGeometry
         {
             Zone = site.Zone, ZoneMin = boxMin, ZoneMax = boxMin + new Vector2(side), Margin = 8, InteriorHull = hull, InteriorOf = site.Placement.Key,
-            ClippedAtBorder = crossLowX || crossLowZ || crossHighX || crossHighZ, InteriorDestroyed = site.Destroyed,
-            InteriorDoorless = !site.Destroyed && !site.Record.GetReferences("doors").Any(),
+            ClippedAtBorder = crossLowX || crossLowZ || crossHighX || crossHighZ, InteriorDestroyed = site.Destroyed, DestroyedOutline = outline,
+            InteriorDoorless = site.Destroyed ? outline is not null : !site.Record.GetReferences("doors").Any(),
         };
 
         uint mask = site.Destroyed ? DestroyedInteriorGroupMask : InteriorGroupMask;
@@ -130,9 +144,9 @@ internal sealed partial class ZoneGeometryGatherer
             AddBuilding(g, record, b.Key, position, b.Rotation, destroyed, new InteriorContext(site.Placement.Key, destroyed, mask, Own: false));
         }
 
-        // A destroyed building's "destroyed boundary" cuts its interior (fcs.def: navmesh cutter for a destroyed interior).
-        if (site.Destroyed && site.Record.GetPath("destroyed boundary") is { Length: > 0 } boundary && collision.Get(boundary) is { } cutter)
-            foreach (var shape in cutter.Shapes) AddShape(g, shape, node, 0, carve: false);
+        // Its walls cut the interior too.
+        if (boundary is not null)
+            foreach (var shape in boundary.Shapes) AddShape(g, shape, node, 0, carve: false);
 
         AddOutsideCarvers(g, hull.Polygon);
 

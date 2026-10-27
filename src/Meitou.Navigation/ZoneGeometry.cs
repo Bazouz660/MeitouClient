@@ -108,7 +108,12 @@ internal sealed class ZoneGeometry
     /// </summary>
     public bool InteriorDestroyed { get; init; }
     /// <summary>
-    /// For the interior of an intact building without doors (an open doorway, e.g. the Hive Commune Hut): joined to the exterior wherever their edges meet
+    /// For the interior of a destroyed building with a <c>destroyed boundary</c>: that wall ring's cross-section, the outline of the ruin's floor (its ruined walls
+    /// have no collision); only polygons inside it are kept (docs/game/pathfinding.md, "Destroyed interiors").
+    /// </summary>
+    public List<(Vector2 A, Vector2 B)>? DestroyedOutline { get; init; }
+    /// <summary>
+    /// For the interior of an intact building without doors (an open doorway, e.g. the Hive Commune Hut), or of a ruin with a <see cref="DestroyedOutline"/>: joined to the exterior wherever their edges meet
     /// on the hull's line (docs/game/pathfinding.md, "Door joins").
     /// </summary>
     public bool InteriorDoorless { get; init; }

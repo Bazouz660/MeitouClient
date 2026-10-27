@@ -28,6 +28,35 @@ internal static class NavGeometry
         return true;
     }
 
+    /// <summary>The cross-section of a triangle mesh at height <paramref name="y"/> on (X, Z): one segment per triangle the plane cuts.</summary>
+    public static List<(Vector2 A, Vector2 B)> Slice(Vector3[] points, int[] indices, float y)
+    {
+        var segments = new List<(Vector2, Vector2)>();
+        Span<Vector2> cut = stackalloc Vector2[3];
+        for (int t = 0; t + 2 < indices.Length; t += 3)
+        {
+            int n = 0;
+            for (int e = 0; e < 3; e++)
+            {
+                var a = points[indices[t + e]]; var b = points[indices[t + (e + 1) % 3]];
+                if ((a.Y < y) == (b.Y < y)) continue;
+                float f = (y - a.Y) / (b.Y - a.Y);
+                cut[n++] = new Vector2(a.X + (b.X - a.X) * f, a.Z + (b.Z - a.Z) * f);
+            }
+            if (n == 2) segments.Add((cut[0], cut[1]));
+        }
+        return segments;
+    }
+
+    /// <summary>Whether a point lies inside closed outlines given as loose segments (even-odd rule).</summary>
+    public static bool InsideOutline(List<(Vector2 A, Vector2 B)> segments, Vector2 point)
+    {
+        bool inside = false;
+        foreach (var (a, b) in segments)
+            if ((a.Y > point.Y) != (b.Y > point.Y) && point.X < a.X + (b.X - a.X) * (point.Y - a.Y) / (b.Y - a.Y)) inside = !inside;
+        return inside;
+    }
+
     /// <summary>How far a point is outside a convex polygon (0 inside), either winding.</summary>
     public static float DistanceOutsideConvex(Vector2[] polygon, Vector2 point)
     {
