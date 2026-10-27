@@ -125,7 +125,8 @@ original's table (CHARACTER → claimed, live character, state 1/0/2, player fla
   save already has them).
 - **Save**: CAMERA `usedUniques*` as the original (claimed entries; prisoners derived again). Handles are the written character's for player
   squads, else the loaded save's, else null (NPC handles are not tracked back from the writer).
-- **Not built**: FACTION `special squads` (the original never spawns them), `UniquePlatoon` missions. Import is built ([save.md](formats/save.md#importing-a-game-savemanagerimportgame-fun_140378a30)).
+- **Not built**, dead in the original: FACTION `special squads` (never spawned) and the `UniquePlatoon` missions that only they would run
+  ([special squads](game/factions-squads-towns.md#unique-characters), **Verified**). Import is built ([save.md](formats/save.md#importing-a-game-savemanagerimportgame-fun_140378a30)).
 
 ### Off-screen tier
 
