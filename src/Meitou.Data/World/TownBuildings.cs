@@ -72,6 +72,8 @@ public sealed record TownBuilding(string InstanceId, string BuildingId, string N
     public bool IsGate { get; init; }
     /// <summary><c>links together</c>: a wall.</summary>
     public bool IsWall { get; init; }
+    /// <summary>The record lists <c>interior</c> references (the original's <c>Building::setup</c> makes <c>myInterior</c> only then).</summary>
+    public bool HasInterior { get; init; }
     /// <summary>The level-data state's <c>destroyed</c>: a ruin, which has no doors (docs/game/locks.md "Doors").</summary>
     public bool Destroyed { get; init; }
     /// <summary>The level data's <c>residents template</c> of its state (a SQUAD_TEMPLATE id; empty when none).</summary>
@@ -248,6 +250,7 @@ public static class TownBuildings
                 CanHouse = record.GetBool("is wall gate") || record.GetReferences("interior").Count > 0 && !record.GetBool("links together"),
                 IsGate = record.GetBool("is wall gate"),
                 IsWall = record.GetBool("links together"),
+                HasInterior = record.GetReferences("interior").Count > 0,
                 Destroyed = resolved.Destroyed,
                 Turret = turret,
                 ResidentsTemplate = state?.GetString("residents template") ?? "",

@@ -459,7 +459,7 @@ Meitou: [ground items](../simulation.md#items-and-eating).
   fails. Sectors a town stands in never enter the pick: `Town::setup` (`FUN_1409353c0`) sets sector byte +0x30 for every sector of the
   town's zone list (or of its position), +0x31 when the Town int at +0xd8 is 1 (its type, **Observed**), and the pick, the spot fallbacks `FUN_1408f6350` / `FUN_1408fc1a0` and
   the patrol's town branch (below) read it (**Verified**, decompile; which town types run `setup` is **Unknown**). Meitou gives a sector
-  in a town's zone list (else its position's zone) weight 0. So a loaded sector is refilled as its squads die or walk out (**Verified** by code). The squad is given a home town: the
+  in a town's zone list (else its position's zone) weight 0, re-read each refill so town overrides apply. So a loaded sector is refilled as its squads die or walk out (**Verified** by code). The squad is given a home town: the
   sector's own town when its faction is the squad's, else the faction's nearest town, or its nearest nest when that is 9216 nearer, none
   beyond 50000 (`createRandomUnloadedSquad` → `Ownerships::setHomeTown`, KenshiLib 1ce4a16 names; **Verified** by code). It tethers the
   patrol (below). Saved homeless platoons have no `basetown`/`hometown` ([save.md](../formats/save.md)); whether the home is saved
@@ -485,10 +485,10 @@ Meitou: [ground items](../simulation.md#items-and-eating).
   Town +0xc0) and, for a town with a building list (vtable +0x2f0: Town +0x3b0 set), takes `Town::getPositionOutsideTownGates(200)`
   (`FUN_140929560`): one pass over the building list, returning at the first entry that is either a gateway (`isGate`) with
   `amInsideTownWalls` 0 and a door (`getDoor`), whose door point +0x3bc is moved 200 along a normalised direction (its origin is dropped
-  by the decompile; outward from the town is **Observed** from the name), or a wall (`isAWall`) with Building +0x1f0 set, whose position
+  by the decompile; outward from the town is **Observed** from the name), or a wall (`isAWall`) whose BUILDING record has `interior` references (`myInterior` +0x1f0, created only then by `Building::setup` `FUN_140551b20`; **Verified**, decompile), whose position
   is moved the same way; neither: the town position. A town without buildings: a door point of the object under the town position
   (`FUN_1409b2ab0`, a ray from 1000 above), else the position. So bandits never aim inside a walled town, the Hub included (its two
-  `Defensive Gate IV` are ruins in the level data; a ruin has no door ([locks](locks.md#doors)), so the wall branch applies; **Observed**).
+  `Defensive Gate IV` are ruins in the level data; a ruin has no door ([locks](locks.md#doors)), so the wall branch applies, skipping the first wall, a `Defensive Wall IV Connector` without `interior`; **Observed**).
   The move: `CharMovement::setPatrolInput` (`FUN_14065eaa0`, vtable +0xa0) in mode 3 (a `PatrolInfo` with a biome group) draws the point
   above and sends the character to it exactly; it redraws (up to 10 times) only a point whose ground is present and below 95 when the
   byte at +0x79 of the object at Character +0x2e0 is set (a race flag, water below 95: **Observed**), else accepts it (**Verified**). The
@@ -500,7 +500,7 @@ Meitou: [ground items](../simulation.md#items-and-eating).
   point is picked within 500 of the last (`FUN_1407ee790`).
   Meitou (`PopulationHomeless.PatrolPoint`): the weights above with n the homeless squads standing in the zone and 10 for an empty active
   one (engine choice), the tether, re-pick within 500; with no neighbour, a point of the home's sector, else of its own (engine choice).
-  A drawn town's point is the outside point above (`OutsideTown`: the first non-ruined `is wall gate` or `links together` building, its origin
+  A drawn town's point is the outside point above (`OutsideTown`: the first non-ruined `is wall gate` building with gate code 0 or unknown (unknown = outside, engine choice) or `links together` building with `interior` references, its origin
   moved 200 outward from the town position); the squad mills a 50 disc round it and re-picks within 100 (origin, outward and both radii: engine choices).
   `patrol approaches towns` is set on 933 of 961 squad templates of the merged load order, the Starving Bandit and Dust Bandit roamers
   among them, so their patrols target NPC towns as above; no other town check was found (**Verified**, record dump).

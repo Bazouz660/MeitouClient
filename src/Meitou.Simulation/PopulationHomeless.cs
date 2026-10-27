@@ -212,23 +212,27 @@ public sealed partial class PopulationSystem
                 total += w;
                 if (Rng.Float(Roll()) * total < w) pick = s;   // a running weighted pick
             }
-            if (pick is not null) return (OutsideTown(pick), true);
+            if (pick is not null) return (OutsideTown(world, pick), true);
         }
         var (minX, minZ, maxX, maxZ) = WeatherAreas.CellRect(tx, tz);
         return PlaceInSector(minX, minZ, maxX, maxZ, squad.Faction, world.Seed, key, world.Walkability, []) is { } spot ? (spot, false) : null;
     }
 
     /// <summary>
-    /// A town's patrol waypoint (<c>Town::getPositionOutsideTownGates(200)</c>): the first of its buildings, in list order, that is a gate with a door (not a ruin) or a
-    /// wall, moved <see cref="TownPointOffset"/> outward from the town's position; the town's position when there is none. The original moves the gate's door point and
-    /// its direction is Observed; the building's origin and the outward direction are engine readings.
+    /// A town's patrol waypoint (<c>Town::getPositionOutsideTownGates(200)</c>): the first of its buildings, in list order, that is a gate with a door (not a ruin)
+    /// outside the town walls (gate code 0, or unknown) or a wall with <c>interior</c> references, moved <see cref="TownPointOffset"/> outward from the town's
+    /// position; the town's position when there is none. The original moves the gate's door point and its direction is Observed; the building's origin and the
+    /// outward direction are engine readings.
     /// </summary>
-    Vector2 OutsideTown(TownSite town)
+    Vector2 OutsideTown(World world, TownSite town)
     {
         var centre = new Vector2(town.Position.X, town.Position.Z);
+        locks ??= world.Systems.OfType<Locks.LockSystem>().FirstOrDefault();
         foreach (var b in town.Buildings)
         {
-            if (!(b.IsGate && !b.Destroyed || b.IsWall)) continue;
+            // Engine choice: an unknown gate code (off the navmesh, or no gate regions) counts as outside the walls.
+            bool gate = b.IsGate && !b.Destroyed && !(locks?.Regions?.CodeAt(b.Position) > 0);
+            if (!(gate || b.IsWall && b.HasInterior)) continue;
             var at = new Vector2(b.Position.X, b.Position.Z);
             var d = at - centre;
             return d.LengthSquared() > 0 ? at + Vector2.Normalize(d) * TownPointOffset : centre;
@@ -320,6 +324,7 @@ public sealed partial class PopulationSystem
             load += OwnTown(site) ? Math.Min(held, 2) : held;
         }
         if (sectors.Count == 0 || load >= target) return;
+        var towns = TownZones();
         var weights = new float[sectors.Count];
         for (int k = 0; k < sectors.Count; k++)
         {
@@ -329,7 +334,7 @@ public sealed partial class PopulationSystem
             float w = MathF.Max(0, share + 1 - here);
             if (here == 0) w = (w + 1) * 2;
             // A sector at its share is drawn and passed over in the original; it never makes one. A town's sector never enters the pick.
-            weights[k] = here < share && !TownZones().Contains(site.Zone) ? w : 0;
+            weights[k] = here < share && !towns.Contains(site.Zone) ? w : 0;
         }
         ulong key = Rng.Mix(SeedSalts.HomelessRefill ^ (ulong)world.Tick);
         int picked = Pick(weights, Rng.Hash(world.Seed, key, RngPurpose.Spawn, 0));
@@ -357,22 +362,20 @@ public sealed partial class PopulationSystem
         return NearestTown(new Vector2((minX + maxX) / 2, (minZ + maxZ) / 2), out _) is { } town && WorldLayout.ZoneOf(town.Position.X, town.Position.Z) == site.Zone;
     }
 
-    HashSet<ZoneCoordinate>? townZones;
-
     /// <summary>
     /// The zones a town stands in (<c>Town::setup</c>'s sector flag +0x30): each town's zone list, else its position's zone. Nest markers and points of interest are left out,
     /// as in the patrol's town draw (which town types run <c>setup</c> is Unknown).
+    /// Built afresh on each refill pass, so it follows town overrides (<see cref="TownSite.Replacement"/>).
     /// </summary>
     HashSet<ZoneCoordinate> TownZones()
     {
-        if (townZones is not null) return townZones;
-        townZones = [];
+        HashSet<ZoneCoordinate> zones = [];
         foreach (var s in data.Sites)
         {
             if (s.Town.Type is TownType.NestMarker or TownType.PointOfInterest or TownType.Null) continue;
-            if (s.Coverage.Count > 0) townZones.UnionWith(s.Coverage);
-            else townZones.Add(WorldLayout.ZoneOf(s.Position.X, s.Position.Z));
+            if (s.Coverage.Count > 0) zones.UnionWith(s.Coverage);
+            else zones.Add(WorldLayout.ZoneOf(s.Position.X, s.Position.Z));
         }
-        return townZones;
+        return zones;
     }
 }
