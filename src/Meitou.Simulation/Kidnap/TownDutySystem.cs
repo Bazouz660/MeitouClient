@@ -99,30 +99,43 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
     }
 
     /// <summary>
-    /// 243 Getting food for the player's side (<c>Character::setupAI</c> gives it to every character of the player's faction; desire AI slot 26, <b>Verified</b> by decompile): an animal
-    /// only while the squad option Feed Animals is on; only in a town of its own faction (slot 24: the player's outposts; the rule for another faction's town, town slot <c>0x2c0</c>, is
-    /// <b>Unknown</b> and left out); then the 259 desire (slot 25): stomach empty, hunger at most 2.4, no food it would bite on it, not fighting unless hunger is below 1.2. It walks to
-    /// the nearest store of the town owned by its faction with food in it and takes one item, which the eating rule then eats. Engine choices: only an idle character (no player
-    /// order; a Follow is left alone), the occupied-town branch of slot 24 left out.
+    /// 243 Getting food for the player's side (<c>Character::setupAI</c> gives it to every character of the player's faction; desire AI slots 26, 24, 25, <b>Verified</b> by decompile): an
+    /// animal only while the squad option Feed Animals is on; only in a town (slot 24), and in one of another faction only while the player's faction is resident there (town slot 88:
+    /// the town's owner or its <c>factionsResidentHere</c>, which takes the player's faction when a player character stands in a building of the player's in that town; Meitou: the
+    /// player owns a house there, <see cref="FixtureRegistry.OwnsPropertyIn"/>). In a town with occupiers while it senses an enemy: inside the walls it wants food whatever its hunger
+    /// (desire 0.2), outside them in a town with gates not at all; else the 259 desire (slot 25): stomach empty, hunger at most 2.4, no food it would bite on it, not fighting unless
+    /// hunger is below 1.2. It walks to the nearest store of the town owned by its faction with food in it and takes one item, which the eating rule then eats. Engine choices: only an
+    /// idle character (no player order; a Follow is left alone).
     /// </summary>
     void LookPlayerFood(World world)
     {
         int faction = world.Player.Faction;
-        if (faction < 0 || world.Buildings.Towns.Count == 0) return;
+        if (faction < 0) return;
         foodWaits.RemoveAll(w => w.Until <= world.GameHours);
         var table = world.Characters;
         bool feedAnimals = (world.Player.SquadAi & SquadAi.Feed) != 0;
+        bool occupations = world.Squads.All.Any(q => q.Ai is { CurrentClass: PackageClass.OccupyTown });
         for (int s = 0; s < table.HighWater; s++)
         {
             if (!table.Next[s].Alive || table.Next[s].Task != (byte)CharacterTask.Idle) continue;
             if (table.Cold(s) is not { Medical: { Dead: false, Incapacitated: false } med, Race: { } race } c || !(c.IsPlayer || c.Faction == faction)) continue;
             bool animal = !med.HasStatsObject;
-            if (animal && !feedAnimals || med.Fed > 0 || med.Hunger > FeedSystem.FoodOnGroundBelow || c.InCombat && med.Hunger >= FeedSystem.FoodOnGroundInFight) continue;
+            if (animal && !feedAnimals) continue;
+            bool hungry = med.Fed <= 0 && med.Hunger <= FeedSystem.FoodOnGroundBelow && !(c.InCombat && med.Hunger >= FeedSystem.FoodOnGroundInFight);
+            if (!hungry && !occupations) continue;
             if (c.Engaged || c.Fleeing || c.PickingUpItem is not null || c.OrderQueue.Count > 0 || !c.CarriedBy.IsNone || c.InSomething != HeldState.None || Busy(table.IdOf(s))) continue;
             if (FeedSystem.CarriesFood(c, race, animal) || foodWaits.Exists(w => w.Member == table.IdOf(s))) continue;
             var at = table.Next[s].Position;
             var town = AiSystem.TownAt(data, world, at);
-            if (town.PlayerTown <= 0 || world.Buildings.FindTown(town.PlayerTown) is not { } outpost || outpost.Owner != c.Faction) continue;
+            if (town == CampaignTown.None) continue;
+            int owner = town.PlayerTown > 0 ? world.Buildings.FindTown(town.PlayerTown)?.Owner ?? -1 : town.Site < data.SiteFactions.Count ? data.SiteFactions[town.Site] : -1;
+            if (owner != c.Faction && owner != faction && !world.Fixtures.OwnsPropertyIn(town.Site, faction)) continue;
+            if (occupations && AiSystem.Occupied(world, town) && SensesEnemy(world, s, c))
+            {
+                if (InsideWalls(world, town, at)) hungry = true;
+                else if (HasGates(world, town)) continue;
+            }
+            if (!hungry) continue;
             if (Store(world, at, town, owner: c.Faction, animal: animal) is not var (id, spot)) continue;
             c.Engaged = true;
             duties.Add(new TownDuty { Member = table.IdOf(s), Faction = c.Faction, Town = town, Kind = TownDutyKind.Food, Target = id, Goal = spot, PlayerSide = true });
@@ -276,6 +289,25 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
     }
 
     Locks.LockSystem? locks;
+
+    /// <summary>The original's <c>SensoryData::numEnemies</c> &gt; 0 (<see cref="BodySystem.Senses"/>).</summary>
+    static bool SensesEnemy(World world, int slot, CharacterCold c) =>
+        world.SystemOf<Combat.CombatSystem>() is { } combat && BodySystem.Senses(world, combat, slot, c).Enemies > 0;
+
+    readonly Dictionary<string, Meitou.Data.GameRecord?> gateFunctions = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// <c>Town::hasGates</c> (slot 94, Town <c>+0x3b0</c> set; 0 for TownBase), <b>engine reading</b>: a gate (<see cref="Meitou.Data.World.TownBuildings.IsGate"/>) among the town's level buildings, or a
+    /// complete one among a player town's sites.
+    /// </summary>
+    bool HasGates(World world, CampaignTown town)
+    {
+        if (town.Site >= 0)
+            return data.Sites[town.Site].Buildings.Any(b => data.Db.Find(b.BuildingId) is { } r && Meitou.Data.World.TownBuildings.IsGate(data.Db, r, gateFunctions));
+        foreach (var site in world.Buildings.All)
+            if (site.Town == town.PlayerTown && site.Complete && data.Db.Find(site.Record) is { } r && Meitou.Data.World.TownBuildings.IsGate(data.Db, r, gateFunctions)) return true;
+        return false;
+    }
 
     /// <summary>
     /// The intruder finder's stand-in for <c>amInsideTownWalls</c> where the gate codes are unknown (<b>engine reading</b>): a placed town's radius, a player

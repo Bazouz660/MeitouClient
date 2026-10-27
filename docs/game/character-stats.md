@@ -417,9 +417,13 @@ eat task, animation or player command (a right click on food does nothing, [ui-s
   the ground within 100 in its own location, accessible, passing the stealing check; else a sensed corpse within 100 with such food. Meitou (`FeedSystem.FetchFood`): the ground pass only.
 - **Food from storage** (**Verified**, decompile; registration of 243 in `FUN_140319a60`, desire `AI` slot 26 → 24 → 25): 243's desire is 0 for an animal while a global
   byte (`DAT_142134690+0x114`) is clear, the byte the eating rule `FUN_1405d29c0` tests for animals, so the squad option Feed Animals (**Observed**: writer not traced); 0 outside a town (status `+0x88`); 0 in a town of another faction unless town slot
-  `0x2c0`(player faction) holds (meaning **Unknown**); in a town with occupiers (`+0x128`) 0.2 or 0 by tests not decoded (**Unknown**); else 259's desire (slot 25, above). The
-  finder and the take (244, one item): [ai-tasks](ai-tasks.md#arrest-and-prison-rows). Meitou (`TownDutySystem.LookPlayerFood`): idle player-side characters in their own outpost,
-  a store owned by their faction; the occupied and other-faction branches are left out.
+  88 (`+0x2c0`) holds for the player faction: the town's owner (`+0x10`) or a member of its `factionsResidentHere` set (`+0xe8`, KenshiLib 1ce4a16). Slot 24 itself adds the player
+  faction to that set when a player-faction character stands indoors (`isIndoors` hand) in a building owned by a player faction in a town that is not one. In a town with occupiers
+  (`+0x128`, the size of the `occupiers` set) while the character senses an enemy (`SensoryData::numEnemies` > 0): 0.2 inside the walls (`amInsideTownWalls` > 0), whatever its
+  hunger; else 0 when the town has gates (`Town::hasGates`, `+0x3b0` set; always false for TownBase); else 259's desire (slot 25, above). **Verified**, decompile of `AI::vfunc_24`
+  `FUN_14059bbd0` and the Town slots. Whether the resident set is saved is **Unknown**. The finder and the take (244, one item): [ai-tasks](ai-tasks.md#arrest-and-prison-rows).
+  Meitou (`TownDutySystem.LookPlayerFood`): idle player-side characters, a store owned by their faction in their own town or one where the player owns a house (engine reading of
+  the resident set, not tied to having stood in it); the occupied branch as above, gates read as a gate building in the town.
 - Meitou: `FeedSystem` (checks every 30 ticks, engine choice), squad options `SquadAi.Feed` / `Share` (CAMERA
   bools `feed`, `share`, **Verified** reader `FUN_1403ebf50`; default on, **Unknown**).
 

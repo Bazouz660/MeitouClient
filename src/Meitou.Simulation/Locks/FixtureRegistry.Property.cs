@@ -38,6 +38,15 @@ public sealed partial class FixtureRegistry
 
     public int? PropertyOwner(string building) => properties.TryGetValue(building, out var p) ? p.Owner : null;
 
+    /// <summary>Whether <paramref name="faction"/> owns a house in the town site <paramref name="site"/> (a registered site's properties only).</summary>
+    public bool OwnsPropertyIn(int site, int faction)
+    {
+        if (site < 0 || faction < 0) return false;
+        foreach (var p in properties.Values)
+            if (p.Site == site && p.Owner == faction) return true;
+        return false;
+    }
+
     public bool OwnsBuilding(string building, int faction) => faction >= 0 &&
         (properties.TryGetValue(building, out var p) ? p.Owner == faction : OfBuilding(building).Any(f => f.Owner == faction));
 
