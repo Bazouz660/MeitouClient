@@ -273,6 +273,8 @@ public sealed class BodySystem(GameConstants constants, BodyOptions? options = n
         if (cold.InCombat || n.Velocity.LengthSquared() > 1) return null;
         if (n.Task == (byte)CharacterTask.Operate && cold.Operating) return cold.OperateHungerRate;
         if (n.Task == (byte)CharacterTask.Rest && cold.Ai is { SitClip: not null } mind) return mind.SitHungerRate;
+        // An NPC worker at its town building (AiBehaviour.Work, at its work clip), which the original works through Task_OperateMachine.
+        if (cold.Ai is { WorkActive: true, WorkClip: { } clip } worker && cold.ActionClip == clip) return worker.WorkHungerRate;
         return null;
     }
 

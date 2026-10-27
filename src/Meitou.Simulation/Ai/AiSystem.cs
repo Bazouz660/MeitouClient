@@ -355,6 +355,15 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
         data.Db.Find(id)?.GetReferences("functionality") is [var link, ..] && data.Db.Find(link.TargetStringId)?.GetReferences("animation") is [var anim, ..]
             && data.Db.Find(anim.TargetStringId) is { } clip ? clip.Name : "stonemine");
 
+    readonly System.Collections.Concurrent.ConcurrentDictionary<string, float> workHungerRates = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// The hunger rate of a worker at a building: its functionality's <c>hunger rate</c> (1 without one), which <c>Task_OperateMachine</c>'s set-up (<c>FUN_14035b430</c>, <b>Verified</b>) writes
+    /// to the operator's CharStats <c>+0x178</c> for the real (87) and the pretend (221) act-out alike.
+    /// </summary>
+    float WorkHungerRateOf(TownBuilding b) => workHungerRates.GetOrAdd(b.BuildingId, id =>
+        data.Db.Find(id)?.GetReferences("functionality") is [var link, ..] && data.Db.Find(link.TargetStringId) is { } function ? function.GetFloat("hunger rate", 1) : 1);
+
     /// <summary>
     /// The building a worker works at (the finders of goals 189 / 190: a random building of the town with a function in <see cref="WorkFunctions"/>, slot 2 of the building finder
     /// <c>FUN_1409fb020</c>); the roll is the character's and its <paramref name="epoch"/> of picks (<see cref="AiMind.WorkEpoch"/>), so asking twice names the same one. Null: the town has none.
@@ -587,6 +596,7 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
                     {
                         mind.Target = new Vector3(building.Position.X, float.NaN, building.Position.Z);
                         mind.WorkClip = WorkClipOf(building);
+                        mind.WorkHungerRate = WorkHungerRateOf(building);
                     }
                 }
                 if (mind.Target is not { } working) Become(table, slot, CharacterTask.Idle);
