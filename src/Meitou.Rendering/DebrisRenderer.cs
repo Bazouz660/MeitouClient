@@ -331,15 +331,16 @@ public sealed unsafe class DebrisRenderer : IDisposable
     }
 }
 
-/// <summary>The C# side of <see cref="DebrisRenderer.PushMembers"/> (std430 push constants, 128 bytes).</summary>
+/// <summary>The C# side of <see cref="DebrisRenderer.PushMembers"/> (std430 push constants, 128 bytes): each vec3 starts on 16 bytes, a scalar may
+/// fill the fourth word after one.</summary>
 [StructLayout(LayoutKind.Explicit, Size = 128)]
 struct DebrisPush
 {
     [FieldOffset(0)] public Matrix4x4 Model;
     [FieldOffset(64)] public Vector3 SunColour;
-    [FieldOffset(76)] public Vector3 AmbientSky;
-    [FieldOffset(88)] public Vector3 AmbientGround;
-    [FieldOffset(100)] public uint Diffuse;
-    [FieldOffset(104)] public int Textured;
-    [FieldOffset(108)] public float AlphaThreshold;
+    [FieldOffset(80)] public Vector3 AmbientSky;
+    [FieldOffset(96)] public Vector3 AmbientGround;
+    [FieldOffset(108)] public uint Diffuse;
+    [FieldOffset(112)] public int Textured;
+    [FieldOffset(116)] public float AlphaThreshold;
 }
