@@ -238,7 +238,11 @@ sealed partial class PlayerInterface
         int columns = bagWindow ? grid.BagWidth : grid.Width, rows = bagWindow ? grid.BagHeight : grid.Height;
         if (bagWindow) ArrangeContainerGrid(id, controls, columns, rows);
         else if (id == "limbs") ArrangeLimbSlots(controls, lead);
-        else ArrangeEquipmentGrid(controls, grid);
+        else
+        {
+            ArrangeEquipmentGrid(controls, grid);
+            CloseSlots(controls, lead);
+        }
         if (id is "inventory" or "loot") AddInventorySummary(controls, lead, animal: IsAnimal(lead));
         foreach (var item in grid.Items.Where(i => bagWindow ? i.Section == "backpack_content" : id == "limbs" ? i.Section.EndsWith("_replace", StringComparison.Ordinal) : i.Section != "backpack_content"))
         {

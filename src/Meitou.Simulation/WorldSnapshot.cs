@@ -207,6 +207,8 @@ public sealed record CharacterSnapshot(CharacterId Id, CharacterAppearance? Appe
     public IReadOnlyList<HealthPartView> HealthParts { get; init; } = [];
     /// <summary>The limbs' states (<c>MedicalState.LimbBits</c>: limb slot k's <c>LimbState</c> in bits 2k..2k+1; 0 when every limb is the original).</summary>
     public int LimbBits { get; init; }
+    /// <summary>The equipment sections disabled for the character (<see cref="Items.InventoryCommands.SectionClosed"/>; empty for most).</summary>
+    public IReadOnlyList<string> ClosedSlots { get; init; } = [];
     /// <summary>The HUD's numbers for a selected character (null for the others).</summary>
     public HudView? Hud { get; init; }
     public InventoryView? ItemGrid { get; init; }

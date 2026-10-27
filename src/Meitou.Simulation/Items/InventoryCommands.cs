@@ -10,6 +10,18 @@ public sealed record ArrangeInventory(CharacterId Character) : SimCommand;
 public static class InventoryCommands
 {
     public static bool IsEquipmentSection(string section) => section is "back" or "hip" or "shirt" or "head" or "legs" or "boots" or "armour" or "belt" or "backpack_attach";
+
+    /// <summary>
+    /// An equipment section disabled for <paramref name="wearer"/> (<c>CharacterHuman::validateInventorySections</c> <c>FUN_1406218f0</c>, <b>Observed</b>; drawn red, it takes nothing):
+    /// <c>head</c> for a race with <c>no hats</c>, <c>shirt</c> with <c>no shirts</c>, <c>boots</c> with <c>no shoes</c> or while neither leg is the original (both lost or replaced).
+    /// </summary>
+    public static bool SectionClosed(CharacterCold? wearer, string section) => wearer?.Race is { } race && section switch
+    {
+        "head" => race.NoHats,
+        "shirt" => race.NoShirts,
+        "boots" => race.NoShoes || wearer.Medical is { } m && m.LimbPart(2) is { Limb: not Bodies.LimbState.Original } && m.LimbPart(3) is { Limb: not Bodies.LimbState.Original },
+        _ => false,
+    };
     public static bool IsMovableSection(string section) => section is "main" or "backpack_content" || IsEquipmentSection(section);
     /// <summary>A fitted prosthetic's section (<see cref="Meitou.Data.Gameplay.Bodies.LimbReplacement.SlotOf"/>): the limbs window's slots; not traded, not saved with the inventory.</summary>
     public static bool IsLimbSection(string section) => LimbSlotOf(section) >= 0;

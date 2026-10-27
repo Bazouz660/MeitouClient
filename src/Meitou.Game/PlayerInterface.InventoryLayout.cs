@@ -143,6 +143,16 @@ sealed partial class PlayerInterface
         faithfulScreens.SetOffset(id, faithfulScreens.GetOffset(id) + new Vector2(x - other.X, own.Y - other.Y));
     }
 
+    /// <summary>The equipment slots disabled for the character (<see cref="CharacterSnapshot.ClosedSlots"/>): the skin's disabled (red) tile, and drops find no section there.</summary>
+    static void CloseSlots(List<UiControl> controls, CharacterSnapshot lead)
+    {
+        foreach (string section in lead.ClosedSlots)
+        {
+            int index = controls.FindIndex(c => c.Name == section);
+            if (index >= 0) controls[index] = controls[index] with { Properties = new Dictionary<string, string>(controls[index].Properties) { ["State"] = "disabled" } };
+        }
+    }
+
     void ArrangeEquipmentGrid(List<UiControl> controls, InventoryView grid)
     {
         foreach (string section in new[] { "main", "backpack_attach", "back", "hip", "shirt", "head", "legs", "boots", "armour", "belt" })

@@ -1132,8 +1132,11 @@ unless marked; Meitou: `PlayerInterface.Squads.cs`, commands in `SquadManagement
 - **Burden row** under Total Weight (**Verified**, `FUN_1405d4260`): by the carry speed factor, >= 0.95 `-Weightless`, >= 0.75 `-Lightweight`, >= 0.5 `-Moderate` (Main), >= 0.1 `-Heavy`,
   else `-Overloaded` (both Bad). The same function gives a trading character's panel its name, `Money:`, `Merchant Info:`, `Prices:` +/-N % and `Buys Stolen Goods` lines.
 - Colour tags in code (**Verified**, static initialisers `FUN_14158a...`): #afa68b, #140806, #492620, #59231a, #bf4834, #a8b774, #444444, #777777, #14ffdc. The strings `DAT_141f49248` + 0x28 k (k = 0..8; initialisers `FUN_14158a2a0` + 0x40 k, **Verified** 2026-10-23) are #afa68b, #140806, #492620, #59231a, #bf4834, #a8b774, #a8b774 again, #444444, #777777.
-- **Unknown**: when an equipment slot is disabled (its red `disabled` state; the slot's enabled flag is the section's byte `+0xd0`, `FUN_14014e3d0`, set by the `enabled` argument of the section's creation (KenshiLib `Inventory::initialiseNewSection`), whose callers are not traced; both trade screenshots show red empty clothing
-  slots), the trader window's panel lines beyond Money.
+- **Disabled slots** (red `disabled` state; the section's byte `+0xd0`, `FUN_14014e3d0`): `CharacterHuman::validateInventorySections` (`FUN_1406218f0`, **Observed**) enables every
+  section, then disables and empties `shirt` for a race with `no shirts`, `head` with `no hats`, and `boots` with `no shoes` or while both legs' `getLimbState` is set (lost or
+  replaced; worn boots are taken off first). The other `InventorySection::setEnabled` callers are the furnace, crafting benches and animals. Meitou:
+  `InventoryCommands.SectionClosed`, `CharacterSnapshot.ClosedSlots`, drawn disabled and refusing drops (worn items are not taken off).
+- **Unknown**: the trader window's panel lines beyond Money.
 - Item placement failure messages (FUN_14070f7e0; the checks behind them are in [economy.md](economy.md#shops-and-transactions)): Out of trading range; No room for that item; You can't
   afford that; The shopkeeper can't afford that; That's not for sale; Got caught stealing; Smugglers only buy
   illegal goods. Stealing and fencing chance text: FUN_140712920. Item icon: FUN_140711200.
