@@ -17,6 +17,44 @@ namespace Meitou.Simulation.FirstAid;
 /// </summary>
 public sealed partial class FirstAidSystem
 {
+    // Leave a full cell of slack for each actor: both the medic and candidate can move between
+    // the grid snapshot and the positions scored by this finder.
+    const float PatientGridMargin = 200;
+    /// <summary>The most a character may have moved since the grid snapshot for the margin to hold (each of the medic and the patient: 50 + 50 inside the 200).</summary>
+    const float PatientGridJump = 50;
+    readonly List<int> patientCandidates = [];
+
+    // What one automatic sweep (SlowWorld) works out once instead of for every medic: nothing it reads changes while the sweep runs (a treatment only sets a task).
+    bool sweeping;
+    readonly List<int> sweepFresh = [];
+    readonly HashSet<int> sweepCageFactions = [];
+
+    /// <summary>
+    /// Starts a sweep: the slots the grid snapshot cannot place (spawned, removed, or moved farther than <see cref="PatientGridJump"/> since it was taken: one pass over the table
+    /// instead of one per medic) and the factions that own a cage (one pass over the fixtures instead of one per medic).
+    /// </summary>
+    internal void BeginSweep(World world)
+    {
+        var table = world.Characters;
+        var previous = table.Previous;
+        var next = table.Next;
+        sweepFresh.Clear();
+        for (int s = 0; s < previous.Length; s++)
+            if (previous[s].Alive != next[s].Alive || (previous[s].Position - next[s].Position).LengthSquared() > PatientGridJump * PatientGridJump) sweepFresh.Add(s);
+        sweepCageFactions.Clear();
+        for (int k = 0; k < world.Fixtures.All.Count; k++)
+            if (world.Fixtures.All[k] is { Kind: FixtureKind.Cage } cage) sweepCageFactions.Add(cage.Owner);
+        sweeping = true;
+    }
+
+    internal void EndSweep() => sweeping = false;
+
+    struct CandidateCollector(List<int> slots)
+    {
+        public List<int> Slots = slots;
+        public static void Add(int slot, ref CandidateCollector collector) => collector.Slots.Add(slot);
+    }
+
     /// <summary>The live relation table; null: no faction is allied, hostile or related to another (a patient of another faction scores the 0.05 minimum).</summary>
     public FactionRelations? Relations { get; set; }
 
@@ -174,7 +212,11 @@ public sealed partial class FirstAidSystem
     /// <item><b>Owned slaves</b> in sight, <b>carried</b> patients of the medic's faction (outdoors), then <b>prisoners in the cages</b> of the medic's faction in its place at a flat 0.25.</item>
     /// </list>
     /// </summary>
-    (int Slot, float Score) FindPatient(World world, int i, List<(int Medic, int Patient)> taken, bool robotics)
+    (int Slot, float Score) FindPatient(World world, int i, List<(int Medic, int Patient)> taken, bool robotics) =>
+        FindPatient(world, i, taken, robotics, useGrid: true);
+
+    /// <summary>Full scan retained as an equivalence oracle for tests.</summary>
+    internal (int Slot, float Score) FindPatient(World world, int i, List<(int Medic, int Patient)> taken, bool robotics, bool useGrid)
     {
         var table = world.Characters;
         var next = table.Next;
@@ -189,6 +231,31 @@ public sealed partial class FirstAidSystem
         bool healAllies = (world.Player.SquadAi & SquadAi.Heal) != 0;
         bool heals = Relations is { } rel && rel.Contains(cold.Faction) && rel.Factions[cold.Faction].HealsStrangers;
         float range = AggroSystem.RangeOf(cold, AggroSystem.OutdoorSight), range2 = range * range;
+        var origin = next[i].Position;   // the range gate first in both passes: it is the cheapest test and drops nearly every character of the big save before the path, ally and enemy tests
+        List<int> candidates = patientCandidates;
+        var previous = table.Previous;
+        // The grid is last tick's snapshot: a medic that spawned or jumped since (a teleport into a cage) is searched by the full scan.
+        if (useGrid && (!previous[i].Alive || (previous[i].Position - origin).LengthSquared() > PatientGridJump * PatientGridJump)) useGrid = false;
+        if (useGrid)
+        {
+            patientCandidates.Clear();
+            var collector = new CandidateCollector(patientCandidates);
+            world.Grid.Query(previous[i].Position.X, previous[i].Position.Z, range + PatientGridMargin, ref collector, CandidateCollector.Add);
+            // What the snapshot cannot place: a character spawned, removed or moved farther than the margin allows since it was taken (spawns, teleports into a
+            // cage or an interior) is added by its slot; every other one moved less than PatientGridJump, inside the margin.
+            if (sweeping) patientCandidates.AddRange(sweepFresh);
+            else
+                for (int s = 0; s < previous.Length; s++)
+                    if (previous[s].Alive != next[s].Alive || (previous[s].Position - next[s].Position).LengthSquared() > PatientGridJump * PatientGridJump) patientCandidates.Add(s);
+            patientCandidates.Sort();
+            for (int k = patientCandidates.Count - 1; k > 0; k--)
+                if (patientCandidates[k] == patientCandidates[k - 1]) patientCandidates.RemoveAt(k);
+        }
+        else
+        {
+            patientCandidates.Clear();
+            for (int s = 0; s < table.HighWater; s++) patientCandidates.Add(s);
+        }
         int best = -1;
         float bestScore = 0;
 
@@ -199,9 +266,9 @@ public sealed partial class FirstAidSystem
 
         // Pass 1: allies.
         if (organic || robotic)
-            for (int s = 0; s < table.HighWater; s++)
+            foreach (int s in candidates)
             {
-                if (!next[s].Alive || table.Cold(s) is not { } other || Skip(s, other)) continue;
+                if (!next[s].Alive || (next[s].Position - origin).LengthSquared() > range2 || table.Cold(s) is not { } other || Skip(s, other)) continue;
                 if (!Allied(world, i, s) || EnemyOf(world, i, s) || other.Race!.IsRobot && !robotics || other.InCombat || CarriedByEnemy(other) || Dist2(s) > range2) continue;
                 if (!cold.IsPlayer && Maimed(other.Medical!)) continue;
                 float need = Need(world, i, s, organic, robotic);
@@ -226,12 +293,14 @@ public sealed partial class FirstAidSystem
 
         // Pass 2: strangers, prisoners, chained slaves.
         bool ownsCages = false;
-        foreach (var f in world.Fixtures.All)
-            if (f.Kind == FixtureKind.Cage && f.Owner == cold.Faction) { ownsCages = true; break; }
+        if (sweeping) ownsCages = sweepCageFactions.Contains(cold.Faction);
+        else
+            for (int k = 0; k < world.Fixtures.All.Count; k++)
+                if (world.Fixtures.All[k] is { Kind: FixtureKind.Cage } cage && cage.Owner == cold.Faction) { ownsCages = true; break; }
         if (heals || ownsCages || organic || robotic)
-            for (int s = 0; s < table.HighWater; s++)
+            foreach (int s in candidates)
             {
-                if (!next[s].Alive || table.Cold(s) is not { } other || Skip(s, other)) continue;
+                if (!next[s].Alive || (next[s].Position - origin).LengthSquared() > range2 || table.Cold(s) is not { } other || Skip(s, other)) continue;
                 if (other.Race!.IsRobot && !robotics || other.Animal is not null || other.InCombat || EnemyOf(world, i, s) || Dist2(s) > range2) continue;
                 if (Relations is { } r2 && r2.Contains(other.Faction) && r2.Factions[other.Faction].NotReal) continue;
                 bool down = other.Medical!.Incapacitated || !other.CarriedBy.IsNone;
@@ -260,10 +329,10 @@ public sealed partial class FirstAidSystem
         if (best >= 0) return (best, bestScore);
 
         // Pass 3: owned slaves in sight.
-        for (int s = 0; s < table.HighWater; s++)
+        foreach (int s in candidates)
         {
-            if (!next[s].Alive || table.Cold(s) is not { } other || Skip(s, other) || !OwnedChained(cold, other)) continue;
-            if (other.Race!.IsRobot && !robotics || other.InCombat || Dist2(s) > range2) continue;
+            if (!next[s].Alive || Dist2(s) > range2 || table.Cold(s) is not { } other || Skip(s, other) || !OwnedChained(cold, other)) continue;
+            if (other.Race!.IsRobot && !robotics || other.InCombat) continue;
             float need = Need(world, i, s, organic, robotic);
             if (need <= 0) continue;
             float score = need * Nearness(world, i, cold, s);
@@ -271,10 +340,10 @@ public sealed partial class FirstAidSystem
         }
         // Pass 4: someone of its faction carries a patient, outdoors only.
         if (best < 0 && world.Sight.PlaceOf(i) < 0)
-            for (int s = 0; s < table.HighWater; s++)
+            foreach (int s in candidates)
             {
-                if (!next[s].Alive || table.Cold(s) is not { } other || Skip(s, other) || other.CarriedBy.IsNone || other.Animal is not null) continue;
-                if (other.Race!.IsRobot && !robotics || Dist2(s) > range2) continue;
+                if (!next[s].Alive || Dist2(s) > range2 || table.Cold(s) is not { } other || Skip(s, other) || other.CarriedBy.IsNone || other.Animal is not null) continue;
+                if (other.Race!.IsRobot && !robotics) continue;
                 if (!table.TryResolveNext(other.CarriedBy, out int c) || table.Cold(c)?.Faction != cold.Faction) continue;
                 float need = Need(world, i, s, organic, robotic);
                 if (need <= 0) continue;

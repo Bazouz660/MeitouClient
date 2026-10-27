@@ -431,20 +431,25 @@ public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions 
         var table = world.Characters;
         var next = table.Next;
         var taken = Treated(table);
-        for (int i = 0; i < table.HighWater; i++)
+        BeginSweep(world);
+        try
         {
-            if (!next[i].Alive) continue;
-            var cold = table.Cold(i)!;
-            if (cold.IsPlayer)
+            for (int i = 0; i < table.HighWater; i++)
             {
-                if (cold.Jobs.Count > 0) RunJobs(world, i, cold, taken);
-                continue;
+                if (!next[i].Alive) continue;
+                var cold = table.Cold(i)!;
+                if (cold.IsPlayer)
+                {
+                    if (cold.Jobs.Count > 0) RunJobs(world, i, cold, taken);
+                    continue;
+                }
+                if (!Settings.AutoNpcs) continue;
+                // Idle: no task, following, wandering or an implicit job.
+                bool idle = next[i].Task is (byte)CharacterTask.Idle or (byte)CharacterTask.Wander or (byte)CharacterTask.Follow || cold.Implicit is not null;
+                if (idle) HealSomeone(world, i, taken, robotics: false);
             }
-            if (!Settings.AutoNpcs) continue;
-            // Idle: no task, following, wandering or an implicit job.
-            bool idle = next[i].Task is (byte)CharacterTask.Idle or (byte)CharacterTask.Wander or (byte)CharacterTask.Follow || cold.Implicit is not null;
-            if (idle) HealSomeone(world, i, taken, robotics: false);
         }
+        finally { EndSweep(); }
     }
 
     /// <summary>
