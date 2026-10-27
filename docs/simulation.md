@@ -463,7 +463,9 @@ default): the turret step sets the gunner's yaw along the barrel every tick; off
 `ANIMAL_CHARACTER`, animal body/stats/size/fists and creature techniques come from typed data;
 animals use faction hostility and carrying/damage rules where eligible. They age and grow, pack beasts spawn with their
 bag on, DA 48 sells them, and the context menu's Follow keeps any player character beside another
-([animals](game/animals.md#ageing)). Not built: the player animals' feeding goals (player characters have no AI). Unarmed humans use
+([animals](game/animals.md#ageing)). Player animals feed themselves: food on the ground (259, `FeedSystem.FetchFood`), food from their outpost's stores
+(243, also for people, `TownDutySystem.LookPlayerFood`, [rules](game/character-stats.md#eating)) and limbs (277, `CaptiveSystem.FetchForPlayerAnimals`); their other race
+goals (limb play and chase, corpses, crops) are not run. Unarmed humans use
 martial-arts category 5. [animals.md](game/animals.md), [characters.md](characters.md).
 
 ### Hostility and relations

@@ -415,6 +415,11 @@ eat task, animation or player command (a right click on food does nothing, [ui-s
   and every player character 243. 259's desire: 0 unless the character wants to eat now (needs food, stomach empty, hunger < 2.5) and medical hunger <= 2.4; then 1.0 with no food in
   its inventory and no enemies, 0.1 with enemies only below 1.2. Finder `FUN_14099a930`: the nearest food it may eat (function 3, 15 for an animal or a race that lists it) on
   the ground within 100 in its own location, accessible, passing the stealing check; else a sensed corpse within 100 with such food. Meitou (`FeedSystem.FetchFood`): the ground pass only.
+- **Food from storage** (**Verified**, decompile; registration of 243 in `FUN_140319a60`, desire `AI` slot 26 → 24 → 25): 243's desire is 0 for an animal while a global
+  byte (`DAT_142134690+0x114`) is clear, the byte the eating rule `FUN_1405d29c0` tests for animals, so the squad option Feed Animals (**Observed**: writer not traced); 0 outside a town (status `+0x88`); 0 in a town of another faction unless town slot
+  `0x2c0`(player faction) holds (meaning **Unknown**); in a town with occupiers (`+0x128`) 0.2 or 0 by tests not decoded (**Unknown**); else 259's desire (slot 25, above). The
+  finder and the take (244, one item): [ai-tasks](ai-tasks.md#arrest-and-prison-rows). Meitou (`TownDutySystem.LookPlayerFood`): idle player-side characters in their own outpost,
+  a store owned by their faction; the occupied and other-faction branches are left out.
 - Meitou: `FeedSystem` (checks every 30 ticks, engine choice), squad options `SquadAi.Feed` / `Share` (CAMERA
   bools `feed`, `share`, **Verified** reader `FUN_1403ebf50`; default on, **Unknown**).
 

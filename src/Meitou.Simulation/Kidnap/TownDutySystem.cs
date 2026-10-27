@@ -44,12 +44,15 @@ public sealed class TownDuty
     /// <summary>A shoo's start (game hours) and its next event (game seconds of the errand).</summary>
     public double Since { get; set; }
     public float Next { get; set; }
+    /// <summary>A food run of a character of the player's side (243 from <c>Character::setupAI</c>): a player order ends it without being undone.</summary>
+    public bool PlayerSide { get; init; }
 
     internal void Hash(ref StateHasher h)
     {
         h.Add(Member); h.Add(Body); h.Add(Faction); h.Add(Town.Site); h.Add(Town.PlayerTown); h.Add((int)Kind); h.Add(Goal); h.Add(Tries);
         h.Add(Target is { } t ? Rng.StableHash(t) : 0UL);
         if (Kind == TownDutyKind.Shoo) { h.Add(Since); h.Add(Next); }
+        if (PlayerSide) h.Add(0x50534964);
     }
 }
 
@@ -74,6 +77,8 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
     readonly HashSet<CharacterId> reserved = [];
     // Bodies put down short of their goal: left alone until this game hour, in the order they were put down.
     readonly List<(CharacterId Body, double Until)> refused = [];
+    // Player-side characters whose last food run found no room for the item: no new run until this game hour.
+    readonly List<(CharacterId Member, double Until)> foodWaits = [];
 
     public TownDutySettings Settings { get; } = settings ?? new TownDutySettings();
     public IReadOnlyList<TownDuty> Duties => duties;
@@ -85,7 +90,43 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
             if (Step(world, duties[k])) k++;
             else duties.RemoveAt(k);
         }
-        if (world.Tick % Math.Max(1, Settings.LookEveryTicks) == 0) Look(world);
+        if (world.Tick % Math.Max(1, Settings.LookEveryTicks) == 0)
+        {
+            Look(world);
+            LookPlayerFood(world);
+        }
+    }
+
+    /// <summary>
+    /// 243 Getting food for the player's side (<c>Character::setupAI</c> gives it to every character of the player's faction; desire AI slot 26, <b>Verified</b> by decompile): an animal
+    /// only while the squad option Feed Animals is on; only in a town of its own faction (slot 24: the player's outposts; the rule for another faction's town, town slot <c>0x2c0</c>, is
+    /// <b>Unknown</b> and left out); then the 259 desire (slot 25): stomach empty, hunger at most 2.4, no food it would bite on it, not fighting unless hunger is below 1.2. It walks to
+    /// the nearest store of the town owned by its faction with food in it and takes one item, which the eating rule then eats. Engine choices: only an idle character (no player
+    /// order; a Follow is left alone), the occupied-town branch of slot 24 left out.
+    /// </summary>
+    void LookPlayerFood(World world)
+    {
+        int faction = world.Player.Faction;
+        if (faction < 0 || world.Buildings.Towns.Count == 0) return;
+        foodWaits.RemoveAll(w => w.Until <= world.GameHours);
+        var table = world.Characters;
+        bool feedAnimals = (world.Player.SquadAi & SquadAi.Feed) != 0;
+        for (int s = 0; s < table.HighWater; s++)
+        {
+            if (!table.Next[s].Alive || table.Next[s].Task != (byte)CharacterTask.Idle) continue;
+            if (table.Cold(s) is not { Medical: { Dead: false, Incapacitated: false } med, Race: { } race } c || !(c.IsPlayer || c.Faction == faction)) continue;
+            bool animal = !med.HasStatsObject;
+            if (animal && !feedAnimals || med.Fed > 0 || med.Hunger > FeedSystem.FoodOnGroundBelow || c.InCombat && med.Hunger >= FeedSystem.FoodOnGroundInFight) continue;
+            if (c.Engaged || c.Fleeing || c.PickingUpItem is not null || c.OrderQueue.Count > 0 || !c.CarriedBy.IsNone || c.InSomething != HeldState.None || Busy(table.IdOf(s))) continue;
+            if (FeedSystem.CarriesFood(c, race, animal) || foodWaits.Exists(w => w.Member == table.IdOf(s))) continue;
+            var at = table.Next[s].Position;
+            var town = AiSystem.TownAt(data, world, at);
+            if (town.PlayerTown <= 0 || world.Buildings.FindTown(town.PlayerTown) is not { } outpost || outpost.Owner != c.Faction) continue;
+            if (Store(world, at, town, owner: c.Faction, animal: animal) is not var (id, spot)) continue;
+            c.Engaged = true;
+            duties.Add(new TownDuty { Member = table.IdOf(s), Faction = c.Faction, Town = town, Kind = TownDutyKind.Food, Target = id, Goal = spot, PlayerSide = true });
+            MovementSystem.GoTo(table, s, spot, SpeedMode.Walk);
+        }
     }
 
     // ------------------------------------------------------------------ the look
@@ -271,9 +312,10 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
 
     /// <summary>
     /// The nearest store of the town with food in it (<c>BuildingFinder_LootFoodAndStuff</c>, its filter only partly read: buildings with an inventory holding food): a complete player storage
-    /// of the player town, or a container that is not locked inside the town. Its id and where the member walks.
+    /// of the player town, or a container that is not locked inside the town. Its id and where the member walks. With <paramref name="owner"/> (a player-side run) only stores of that
+    /// faction; for an <paramref name="animal"/> raw food counts too and a store inside another building is skipped (the finder's animal tests).
     /// </summary>
-    (string Id, Vector2 Spot)? Store(World world, Vector3 at, CampaignTown town, int looter = -1)
+    (string Id, Vector2 Spot)? Store(World world, Vector3 at, CampaignTown town, int looter = -1, int owner = -1, bool animal = false)
     {
         var here = Flat(at);
         (string, Vector2)? best = null;
@@ -281,19 +323,23 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
         if (town.PlayerTown > 0)
             foreach (var m in world.Machines.All)
             {
-                if (m.Storage is not { } s || !s.Items.Any(i => i.IsFood) || world.Buildings.Find(m.Site) is not { Complete: true } site || site.Town != town.PlayerTown) continue;
+                if (m.Storage is not { } s || !s.Items.Any(i => Edible(i, animal)) || world.Buildings.Find(m.Site) is not { Complete: true } site || site.Town != town.PlayerTown) continue;
+                if (owner >= 0 && site.Owner != owner || animal && site.Parent is not null) continue;
                 float d = Vector2.DistanceSquared(here, Flat(site.Position));
                 if (d < bestD) (best, bestD) = ((m.Site, Flat(site.Position)), d);
             }
         foreach (var f in world.Fixtures.All)
         {
-            if (looter >= 0 && f.Owner == looter) continue;
-            if (f.Contents is not { } c || f.Lock is { EffectivelyLocked: true } || !c.Items.Any(i => i.IsFood) || AiSystem.TownAt(data, world, f.Position) != town) continue;
+            if (looter >= 0 && f.Owner == looter || owner >= 0 && f.Owner != owner) continue;
+            if (f.Contents is not { } c || f.Lock is { EffectivelyLocked: true } || !c.Items.Any(i => Edible(i, animal)) || AiSystem.TownAt(data, world, f.Position) != town) continue;
             float d = Vector2.DistanceSquared(here, Flat(f.Position));
             if (d < bestD) (best, bestD) = ((f.Id, Flat(f.Position)), d);
         }
         return best;
     }
+
+    /// <summary>Food the finder looks for: <c>item function</c> 3, for an animal also raw food (15).</summary>
+    static bool Edible(ItemInstance item, bool animal) => item.IsFood || animal && item.ItemFunction == FeedSystem.RawFoodFunction;
 
     Inventory? StoreInventory(World world, string id) => world.Machines.Find(id)?.Storage ?? world.Fixtures.Find(id)?.Contents;
 
@@ -385,12 +431,20 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
         ref var gn = ref table.Next[g];
         if (d.Target is not { } id || StoreInventory(world, id) is not { } store || gc.Inventory is not { } into) return End(world, d);
         bool walking = gn.Task == (byte)CharacterTask.GoTo;
+        // A player order (a walk elsewhere, any other task) wins: the run ends and leaves it be.
+        if (d.PlayerSide && (walking ? gn.Goal != d.Goal : gn.Task != (byte)CharacterTask.Idle))
+        {
+            gc.Engaged = false;
+            return false;
+        }
         if (Vector2.Distance(Flat(gn.Position), d.Goal) <= Settings.Arrive || !walking && Vector2.Distance(Flat(gn.Position), d.Goal) <= Settings.CageSlack)
         {
             MovementSystem.Stop(table, g);
             if (d.Kind == TownDutyKind.LootFood)
                 foreach (var item in store.Items.Where(i => i.IsFood).ToList()) InventoryCommands.MoveInto(store, item, 0, into, bagFirst: true, out _);   // Task_EmptyMachine: while there is room
-            else if (store.Items.FirstOrDefault(i => i.IsFood) is { } item) InventoryCommands.MoveInto(store, item, 1, into, bagFirst: false, out _);
+            else if (store.Items.FirstOrDefault(i => Edible(i, d.PlayerSide && gc.Medical is { HasStatsObject: false })) is { } item
+                && InventoryCommands.MoveInto(store, item, 1, into, bagFirst: false, out _) == 0 && d.PlayerSide)
+                foodWaits.Add((d.Member, world.GameHours + Settings.RefuseHours));   // no room for it: not again for a while
             world.Machines.Touch();
             return End(world, d);
         }
@@ -579,11 +633,16 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
 
     public void Hash(ref StateHasher hasher)
     {
-        if (duties.Count == 0 && refused.Count == 0) return;   // only while one runs, so worlds without them hash as before
+        if (duties.Count == 0 && refused.Count == 0 && foodWaits.Count == 0) return;   // only while one runs, so worlds without them hash as before
         hasher.Add(0x546F776E);
         hasher.Add(duties.Count);
         foreach (var d in duties) d.Hash(ref hasher);
         hasher.Add(refused.Count);
         foreach (var (body, until) in refused) { hasher.Add(body); hasher.Add(until); }
+        if (foodWaits.Count > 0)
+        {
+            hasher.Add(foodWaits.Count);
+            foreach (var (member, until) in foodWaits) { hasher.Add(member); hasher.Add(until); }
+        }
     }
 }

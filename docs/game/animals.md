@@ -142,7 +142,8 @@ is set; the player faction's lists "Protect allies"), then:
 Animal races list their feeding goals (**Verified**, probe): goats, bulls, garru, turtles "eating food on the ground"; bonedogs and boneyard wolves
 also "eating corpses" and the three limb games; beak things and spiders "eating any bodies"; raptors "eating crops". The ANIMAL_CHARACTER's own
 `AI Goals` (Follow leader on Pet Dog, Settler's Pup, Cornelius) is not read: the exe's only references to the string are this function and the two
-package loaders (**Observed**).
+package loaders (**Observed**). 243's desire and what Meitou runs of these for the player's animals: [eating](character-stats.md#eating),
+[simulation](../simulation.md#animals).
 
 ## Following
 
@@ -179,7 +180,7 @@ Meitou: `DialogueSystem` `CharacterTradeKind.AnimalBuying`; the town test is `Sq
 
 No breeding was found: "egg", "eggs", "pregnant", "mother" and "baby" are not strings of the exe (whole-string search), and the only `female chance` readers are the character
 factories, which roll the look's gender (`FUN_140581770`, `FUN_1402e2b50`; **Observed**). `smell eggs` is stored and has a getter whose callers
-were not traced. Eggs are not built.
+were not traced. So the original has no egg laying, and Meitou builds none.
 
 ## Not found
 

@@ -178,6 +178,24 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
         {
             ExpireWaits(world.GameHours);
             Sweep(world);
+            FetchForPlayerAnimals(world);
+        }
+    }
+
+    /// <summary>
+    /// The player's animals keep their race's <c>AI Goals</c> (<c>Character::setupAI</c>, docs/game/animals.md "AI goals"); of those, the limb fetch (277, <see cref="Fetch"/>) feeds them: the
+    /// limb goes into the mouth and is eaten (<see cref="Items.FeedSystem"/>). Engine choices: only an idle animal (no player order), and not the limb play and chase (278, 279).
+    /// </summary>
+    void FetchForPlayerAnimals(World world)
+    {
+        if (world.Player.Faction < 0) return;
+        var table = world.Characters;
+        for (int s = 0; s < table.HighWater; s++)
+        {
+            if (!table.Next[s].Alive || table.Next[s].Task != (byte)CharacterTask.Idle || table.Cold(s) is not { Fighter.IsAnimal: true, Race: { } race } c || !PlayerSquad(world, c)) continue;
+            if (c.Engaged || c.InCombat || c.Fleeing || c.OrderQueue.Count > 0 || !c.CarriedBy.IsNone || c.Medical is not { Incapacitated: false } || Busy(table.IdOf(s))) continue;
+            foreach (var goal in data.Ai.RaceGoals(race.StringId))
+                if (goal.Task.Type == TaskType.ANIMAL_FETCH_A_LIMB) { Fetch(world, s, c); break; }
         }
     }
 

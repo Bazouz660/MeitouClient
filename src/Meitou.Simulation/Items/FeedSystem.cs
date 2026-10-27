@@ -162,6 +162,9 @@ public sealed class FeedSystem(ItemFactory items, FeedSettings? settings = null)
         return (null, null);
     }
 
+    /// <summary>Whether a character holds food it would bite in its own items (the "no food on it" test of the 243 / 259 desires, <c>FUN_1403344c0</c>).</summary>
+    internal static bool CarriesFood(CharacterCold cold, RaceData race, bool animal) => cold.Inventory is { } own && Best(own.Items, race, animal) is not null;
+
     /// <summary>The bite of <c>FUN_140748d70</c>: raw food the race eats first, then food.</summary>
     static ItemInstance? Best(List<ItemInstance> items, RaceData race, bool animal) =>
         Best(items, RawFoodFunction, r => animal || race.SpecialFood.Contains(r)) ?? Best(items, FoodFunction, null);
