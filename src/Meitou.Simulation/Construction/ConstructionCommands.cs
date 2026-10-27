@@ -14,6 +14,9 @@ public sealed record BuildOrder(IReadOnlyList<CharacterId> Characters, string Si
 /// <summary>Player order 96 Dismantle: the characters work <see cref="Site"/> down to 0, then it is removed with the refund.</summary>
 public sealed record DismantleOrder(IReadOnlyList<CharacterId> Characters, string Site) : SimCommand;
 
+/// <summary>The selection panel's Dismantle once confirmed (<c>Building::confirmDismantle</c>): the player's site is dismantled at once, its furniture destroyed.</summary>
+public sealed record ConfirmDismantle(string Site) : SimCommand;
+
 /// <summary>Removes a site with nothing delivered at once (engine); a site with deliveries needs <see cref="DismantleOrder"/>.</summary>
 public sealed record CancelSite(string Site) : SimCommand;
 

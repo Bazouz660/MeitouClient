@@ -561,13 +561,16 @@ How a building gets selected: [ui-input](ui-input.md#building-picking-and-select
     with power, `Power` with the `power output` change (Good, Bad when negative); without a target the line is removed (`FUN_1406fd460`). With a
     downgrade target while the construction state is not complete, `[DOWNGRADE]` (Main) with the tooltip `Downgrade To:` name. WallBuilding's
     slot 116 (`FUN_1402ff760`) has only the upgrade, keyed `Upgradeable to:`. Then the construction buttons (slot 117 `FUN_1402fea10`, shown when slot 79 `FUN_14029c380` is
-    true: the owner is the player's faction and the building's +0xc0 byte is clear, with an exception for `creates player town` buildings not read in
-    full): a full-row button `Dismantle` (caption BadBright) and, while the construction state is not complete, `PAUSE CONSTRUCTION` (Main), captioned
+    true, **Observed**: the owner is the player's faction and `isFoliage` (+0xc0, KenshiLib 1ce4a16) is clear; then true when the building it is furniture of (slot `0x438`) is
+    the player's; else false only for a building with no such parent (slot `0x1d8` handle of type 11) whose town (slot 15) exists, is not the player's and whose record has
+    `creates player town`): a full-row button `Dismantle` (caption BadBright) and, while the construction state is not complete, `PAUSE CONSTRUCTION` (Main), captioned
     `[PAUSED]` (#777777) while paused. Dismantle is slot 84 (`FUN_14054db30`, `General_Click`): "You cannot delete this building while it has mounted
     buildings."; items in an inventory: "There are still items in the inventory, they will be lost.\nAre you sure you want to destroy this building?" (a
     research building with items refuses: "You cannot delete this building while there are still items in its inventory.\nPrecious research artifacts and
     stuff, don't lose them."); furniture: "Dismantling this building will destroy all furniture.\nDo you want to continue?"; else the message box
-    "Dismantle" / "Are you sure?". What the confirmation's callback (`LAB_14002b666`) does is **Unknown**. Pause is slot 85 (`FUN_140546f40`): flips
+    "Dismantle" / "Are you sure?". Yes (`LAB_14002b666`: a jump to slot 86 `Building::confirmDismantle` `FUN_14054fea0`, answer 2; **Observed**): the interior object's furniture goes
+    (`FUN_14054f4d0`), then slot 73 (`addDismantleProgress`) with `FLT_MAX`, so it is dismantled at once with the [refund](buildings-production.md#work-distance); then
+    slot 25, each building of `FUN_14054b9d0`'s list is destroyed ("Building::confirmDismantle"), the selection is cleared if it held it, and the town update `FUN_14054d080` runs. Pause is slot 85 (`FUN_140546f40`): flips
     the paused byte, `General_Click`.
   - 6: `Open to public:` (label Main) coloured `Public` (Good) / `Private` (Bad) for another faction's building; for the player's own building (owner
     +0x250 set) with an interior object (+0x1f0, **Verified** `FUN_140301840`; `FUN_140551b20` creates it only when the BUILDING's `interior` list is
@@ -599,13 +602,14 @@ How a building gets selected: [ui-input](ui-input.md#building-picking-and-select
   state name is only its layout's generic one ("Shop") from its first vendor list ("Medical and travel supplies"); the Faithful UI keeps "Shop".
   Meitou (`PlayerInterface.BuildingSelect.cs`): the header word (Normal, Broken, or a site's construction state); the condition rows as above, the bar
   in the yellow layer, a finished building's progress being its target (Meitou models no building damage) and the target of a world building or door
-  the sum of its BUILDING record's materials; the player's own site gets Dismantle (after "Are you sure?" the selection dismantles it, `DismantleOrder`,
-  engine choice for the unknown callback) and PAUSE CONSTRUCTION (`PauseSite`); the first door's lines come before the house's (Meitou does not focus the
+  the sum of its BUILDING record's materials; the player's own site gets Dismantle (the furniture text when anything stands in it, else "Are you sure?"; Yes dismantles it at once, `ConfirmDismantle`;
+  the mounted refusal comes from the simulation; no inventory warning, as its items drop) and PAUSE CONSTRUCTION (`PauseSite`); the first door's lines come before the house's (Meitou does not focus the
   door object). Open to public is the state's `is public day` / `is public night` for the time of day (**Observed** reading), for another faction's
   buildings. A building of the player's (its site, or a town building whose fixtures the player's faction owns, `BuildingDetail.Owned`) gets the
   buttons: the door lines as full-row buttons, `[UPGRADE]` / `[DOWNGRADE]` on a site (`UpgradeSite` / `DowngradeSite`, same scope as the
   simulation's), and in a town, for a record with an `interior` list, the Open to public toggle (`SetBuildingPublic`: a site's `BuildSite.Public`, a town building's flag in the fixtures,
-  both saved as `is public day`; a town building set Private drops out of the town AI's wander and bar places). **Observed** (owner's original-game Longhouse screenshot): clicking its price opens a confirmation titled with the building name, asking `Do you want to buy this building for c.{1,num}?`, with Yes / No buttons. For sale and its confirmation use the [house purchase contract](../simulation.md#town-house-purchases). Not built: Dismantle of a town building the player owns, the original's other consumers of +0xc8 (**Unknown**).
+  both saved as `is public day`; a town building set Private drops out of the town AI's wander and bar places). **Observed** (owner's original-game Longhouse screenshot): clicking its price opens a confirmation titled with the building name, asking `Do you want to buy this building for c.{1,num}?`, with Yes / No buttons. For sale and its confirmation use the [house purchase contract](../simulation.md#town-house-purchases). Not built: Dismantle of a town building the player owns (the original shows it by the slot 79 rule above, so not for a `creates player town` record in another faction's
+  town; Meitou keeps level buildings and cannot yet remove one, nor save it removed), the original's other consumers of +0xc8 (**Unknown**).
 - **Workers** (`FUN_1403075b0`, **Verified** strings and branch): with raw `max operators` (+0x3ac) 0, `Workers:` `-` with the tooltip "This machine
   is fully automatic." (wind generators); else `{1,num}/{2,num}` operators / +0x3ac, tooltip "The machine is fully staffed." when equal, "The machine is
   under-staffed." (Title tag) when fewer, none when more; the value `#140806`, `#59231a` (Bad) when nobody operates it and +0x3ac >= 1.

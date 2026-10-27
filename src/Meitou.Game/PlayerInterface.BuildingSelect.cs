@@ -350,8 +350,10 @@ sealed partial class PlayerInterface
         }
         if (action == "building-dismantle" && site?.LevelPlacement is null)
         {
-            var selection = SelectedIds();
-            Confirm("Dismantle", "Are you sure?", () => Say(new Meitou.Simulation.Construction.DismantleOrder(selection, id) { Tick = session.World.Tick }));
+            // Slot 84 (FUN_14054db30): with furniture in it the furniture warning, else "Are you sure?"; Yes dismantles it at once (Building::confirmDismantle).
+            bool furnished = session.CurrentSnapshot.Buildings.Any(b => b.Parent == id);
+            Confirm("Dismantle", furnished ? "Dismantling this building will destroy all furniture.\nDo you want to continue?" : "Are you sure?",
+                () => Say(new Meitou.Simulation.Construction.ConfirmDismantle(id) { Tick = session.World.Tick }));
         }
         else if (action is "machine-power" or "machine-battery" && Machine(id) is { Power: { } pw } machine)
         {

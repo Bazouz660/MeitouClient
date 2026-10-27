@@ -185,6 +185,9 @@ public sealed class ConstructionSystem : ITickSystem
                             Begin(world, slot, site, CharacterTask.Dismantle, CharacterTask.Idle);
                     break;
                 }
+                case ConfirmDismantle confirm:
+                    if (Root(reg, reg.Find(confirm.Site)) is { LevelPlacement: null } doomed && doomed.Owner == world.Player.Faction) DismantleAtOnce(world, doomed);
+                    break;
                 case CancelSite cancel:
                     if (Root(reg, reg.Find(cancel.Site)) is not { Complete: false, LevelPlacement: null } cancelled) break;
                     if (cancelled.Deliverable > 0) world.Post("Dismantle it to get the materials back.");
@@ -1035,6 +1038,35 @@ public sealed class ConstructionSystem : ITickSystem
             if (c.WallParent == site.Id) Refund(world, c);   // nothing unless a save from before the link gave it materials
         world.EmitSound(SoundKind.DismantleDone, slot, world.Characters.Next[slot].Position);
         Remove(world, site);
+    }
+
+    /// <summary>The selection panel's refusal while other buildings are mounted on the site (<b>Verified</b> string, slot 84 <c>FUN_14054db30</c>).</summary>
+    public const string MountedRefusal = "You cannot delete this building while it has mounted buildings.";
+
+    /// <summary>
+    /// The panel's Dismantle after its confirmation (<c>Building::confirmDismantle</c> <c>FUN_14054fea0</c>, <b>Observed</b>): refused with <see cref="MountedRefusal"/> while a building
+    /// other than furniture stands in it (the panel's own test, engine reading: Meitou's mounted buildings are the non-furniture children); otherwise its furniture is destroyed (no
+    /// refund) and the dismantle step runs with an endless amount (slot 73 with <c>FLT_MAX</c>), so the site goes at once with the usual refund.
+    /// </summary>
+    void DismantleAtOnce(World world, BuildSite site)
+    {
+        var reg = world.Buildings;
+        var children = reg.All.Where(o => o.Parent == site.Id).ToList();
+        if (children.Any(o => Data(o.Record) is not ({ IsInteriorFurniture: true } or { IsNode: true })))
+        {
+            world.Post(MountedRefusal);
+            return;
+        }
+        foreach (var furniture in children) Remove(world, furniture);
+        site.Complete = false;
+        site.Progress = 0;
+        site.Dismantling = true;
+        SetBroken(world, site, true);
+        Refund(world, site);
+        foreach (var c in reg.All)
+            if (c.WallParent == site.Id) Refund(world, c);
+        Remove(world, site);
+        world.Buildings.Touch();
     }
 
     /// <summary>
