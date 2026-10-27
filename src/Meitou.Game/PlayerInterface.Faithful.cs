@@ -86,6 +86,7 @@ sealed partial class PlayerInterface
         if (!faithfulScreens.Contains(p) && SquadBarWheel(p, steps)) return true;
         if (SquadsWheel(p, steps)) return true;
         if (FactionWheel(p, steps)) return true;
+        if (ResearchWheel(p, steps)) return true;
         return EditorWheel(p, steps) || faithfulScreens.Wheel(p, steps);
     }
     void FaithfulAction(MyGuiEvent e)

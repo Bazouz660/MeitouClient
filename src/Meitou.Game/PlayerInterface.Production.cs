@@ -569,13 +569,14 @@ sealed partial class PlayerInterface
         b.SelectedItems["ResearchTypeList"] = researchCategory is null ? -1 : categories.IndexOf(researchCategory);
         if (research.BenchLevel <= 0) b.Text["ResearchBenchMessage"] = Loc.Tr("You currently have no research facilities. Build a research bench and assign someone to work there.");
         else b.Hidden.Add("ResearchBenchMessage");
+        IndentLabel(b, "lbResearchDescription");
         if (faithfulScreens.GetTab("overview", "TabsMain") == ResearchTab)
             b.Text["Root"] = Loc.Tr("RESEARCH - LEVEL {1,num} (CURRENT RATE: {2,num=fix,p=2}x)", research.BenchLevel, research.Rate);
     }
 
     void ResearchAction(MyGuiEvent e)
     {
-        if (e.Widget == "ResearchTypeList" && e.Action == "select") researchCategory = e.Text;
+        if (e.Widget == "ResearchTypeList" && e.Action == "select") { if (e.Text != researchCategory) researchScroll = 0; researchCategory = e.Text; }
         else if (e.Action.StartsWith("research-queue:", StringComparison.Ordinal))
         {
             researchFocus = e.Action[15..];
@@ -621,10 +622,13 @@ sealed partial class PlayerInterface
             var area = blueprints.Bounds;
             var clip = area.Intersect(blueprints.Clip ?? area);
             var rows = research.Available.Where(r => r.Category == researchCategory).OrderBy(r => r.Name, StringComparer.Ordinal).ToList();
+            researchArea = clip;
+            researchScroll = Math.Clamp(researchScroll, 0, Math.Max(0, rows.Count * pitch + 0.15f * unit - area.Height));
+            researchStep = pitch;
             for (int i = 0; i < rows.Count; i++)
             {
                 var r = rows[i];
-                float top = area.Y + i * pitch + 0.15f * unit, height = 0.97f * unit;
+                float top = area.Y + i * pitch + 0.15f * unit - researchScroll, height = 0.97f * unit;
                 var colour = MyGuiColours.Parse(r.BenchTooLow || !r.Affordable ? BadColour : MainColour, ink);
                 controls.Add(new($"research-row-{i}", "Button", new(area.X + 0.01f * w, top, 0.98f * w, height), "", "research-queue:" + r.Id, "Kenshi_Button1Skin", true,
                     new Dictionary<string, string>(), Vector4.Zero, Pickable: true, Clip: clip));
@@ -645,15 +649,43 @@ sealed partial class PlayerInterface
                     $"{name}  {(int)(progress * 100)}%", "research-cancel:" + qid, "", true, face, Vector4.Zero, TextColour: i == 0 ? new(0.66f, 0.72f, 0.45f, 1) : ink,
                     HoverColour: new(1, 0.4f, 0.3f, 1), Pickable: true, Clip: queue.Bounds));
             }
-        var hovered = controls.LastOrDefault(c => c.Name.StartsWith("research-row-", StringComparison.Ordinal) && c.Action.Length > 0 && c.Bounds.Contains(mouse.X, mouse.Y))?.Action;
+        var hovered = controls.LastOrDefault(c => c.Name.StartsWith("research-row-", StringComparison.Ordinal) && c.Action.Length > 0 && c.Bounds.Contains(mouse.X, mouse.Y)
+            && c.Clip?.Contains(mouse.X, mouse.Y) != false)?.Action;
         string? focus = hovered is { Length: > 15 } h ? h[15..] : researchFocus;
         if (focus is null || research.Available.FirstOrDefault(r => r.Id == focus) is not { Id: not null } option) return;
-        AddLines(controls, "ResearchDescriptionPanel1", ResearchDescription(option, research.Rate), line);
+        DatapanelLines(controls, "ResearchDescriptionPanel1", ResearchDescription(option, research.Rate));
         if (option.Description.Length > 0 && controls.FirstOrDefault(c => c.Name == "ResearchDescriptionPanel2") is { } text)
             controls.Add(new("research-description", "EditBox", text.Bounds, option.Description, "", "", true,
                 new Dictionary<string, string> { ["FontName"] = "Kenshi_StandardFont_Medium", ["WordWrap"] = "true", ["MultiLine"] = "true", ["Static"] = "true", ["TextAlign"] = "Left Top" },
                 Vector4.Zero, TextColour: ink, Pickable: false, Clip: text.Bounds));
     }
+
+    /// <summary>How far the blueprint rows are scrolled, their pitch and the panel they scroll in (the DatapanelGUI's own ScrollView in the original).</summary>
+    float researchScroll, researchStep;
+    UiRect researchArea;
+
+    /// <summary>The wheel over the blueprint rows scrolls them a row per notch; clamped when the rows are laid out.</summary>
+    bool ResearchWheel(Vector2 p, float steps)
+    {
+        if (!faithfulScreens.IsOpen("overview") || faithfulScreens.GetTab("overview", "TabsMain") != ResearchTab || researchStep <= 0 || !researchArea.Contains(p.X, p.Y)) return false;
+        researchScroll -= MathF.Sign(steps) * researchStep;
+        return true;
+    }
+
+    /// <summary>A description DatapanelGUI's lines (<see cref="AddDatapanel"/>'s geometry): rows of 0.94 / (int)(55 x its height / the screen's) of its height from 0.03 of it down.</summary>
+    void DatapanelLines(List<UiControl> controls, string panel, IReadOnlyList<HudLine> lines)
+    {
+        if (controls.FirstOrDefault(c => c.Name == panel) is not { } host) return;
+        float view = host.Bounds.Height;
+        AddLines(controls, panel, lines, 0.94f / Math.Max(1, (int)(55 * view / Math.Max(1, Height))) * view, top: 0.03f * view);
+    }
+
+    /// <summary>
+    /// The DESCRIPTION captions over the research and crafting panels sit at the tab's left edge in the layout; Meitou insets them 8 px at 1080 lines to line up with the panel's
+    /// text (engine choice: the base game draws them flush with the frame).
+    /// </summary>
+    void IndentLabel(UiBindings b, string name) =>
+        b.Properties[name] = new Dictionary<string, string> { ["TextAlign"] = "Left VCenter", ["TextPadding"] = $"{(8 * Height / 1080f).ToString(CultureInfo.InvariantCulture)} 0 0 0" };
 
     /// <summary>
     /// The description's lines (<c>FUN_140495e00</c>): the name in Title with "lvl {n}"; "ETA:" in Title with the time left; "Needs research bench level {n}" in Bad when the bench is too low;

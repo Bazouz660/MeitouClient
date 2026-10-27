@@ -37,6 +37,7 @@ sealed partial class PlayerInterface
         bool repeat = stations.FirstOrDefault(s => s.Site == craftStation)?.Craft?.Repeat == true;
         b.Actions["QueueRepeat"] = "QueueRepeat";
         b.Properties["QueueRepeat"] = new Dictionary<string, string> { ["Checked"] = repeat ? "true" : "false", ["StateSelected"] = repeat ? "true" : "false" };
+        IndentLabel(b, "lbCraftingDescription");
     }
 
     void CraftAction(MyGuiEvent e)
@@ -96,6 +97,6 @@ sealed partial class PlayerInterface
         if (option.Level > 0) lines.Add(new("Level:", option.Level.ToString(CultureInfo.InvariantCulture), MainColour));
         foreach (var (item, per) in option.Inputs) lines.Add(new(item, per.ToString("0.##", CultureInfo.InvariantCulture), MainColour));
         if (!option.Unlocked) lines.Add(new("Needs research", "", BadColour));
-        AddLines(controls, "QueueDescriptionPanel1", lines, line);
+        DatapanelLines(controls, "QueueDescriptionPanel1", lines);
     }
 }
