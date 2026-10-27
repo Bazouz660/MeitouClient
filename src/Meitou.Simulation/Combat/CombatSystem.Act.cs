@@ -35,7 +35,7 @@ public sealed partial class CombatSystem
         if (c is not { Fighter: { } f, Stats: not null, Medical: not null }) return 0;
         float str = Eff(c, StatsEnumerated.Strength);
         return (f.Unarmed
-            ? DamageFormulas.UnarmedPacket(Eff(c, f.WeaponSkill), Eff(c, StatsEnumerated.Toughness), str, f.Weapon, TargetKind.Human, null, f.DamageOutput, combat)
+            ? DamageFormulas.UnarmedPacket(Eff(c, f.WeaponSkill), Eff(c, StatsEnumerated.Toughness), str, f.FistsItem, TargetKind.Human, null, f.DamageOutput, combat)
             : DamageFormulas.Packet(Eff(c, f.WeaponSkill), Eff(c, StatsEnumerated.Dexterity) * f.DexterityMult, str, f.Weapon!, TargetKind.Human, null, f.DamageOutput, combat)).Sum;
     }
 

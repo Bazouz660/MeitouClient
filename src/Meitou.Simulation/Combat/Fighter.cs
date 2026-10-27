@@ -23,11 +23,16 @@ public sealed class Fighter
     /// <summary>The first weapon in the <c>hip</c> section, if any.</summary>
     public WeaponInstance? HipWeapon => hip;
     /// <summary>
-    /// The <c>length</c> of the weapon in hand, <see cref="FistsLength"/> for fists (CharStats +0x200, set from the weapon bound, the fists item with nothing in hand).
+    /// The <c>length</c> of the weapon in hand, the <see cref="Fists"/>' for fists (CharStats +0x200, set from the weapon bound, the fists item with nothing in hand).
     /// </summary>
-    public float WeaponLength => Weapon?.Data.Length ?? FistsLength;
-    /// <summary>The length of a person's fists item (its race's <c>fists lv1</c> WEAPON, else <c>FISTS</c>: 18 in the base game); 0 when not set.</summary>
-    public float FistsLength { get; init; }
+    public float WeaponLength => Weapon?.Data.Length ?? Fists?.Data.Length ?? 0;
+    /// <summary>
+    /// A person's fists item (its race's <c>fists lv1</c> WEAPON, else <c>FISTS</c>: 18 long in the base game): its length, kind and race multipliers, bleed and
+    /// penetration are a fist blow's; null when not set (fists then have length 0 and multipliers 1).
+    /// </summary>
+    public WeaponInstance? Fists { get; init; }
+    /// <summary>The item a fist blow's packet reads its multipliers from: the weapon in hand (an animal's), else the <see cref="Fists"/>.</summary>
+    public WeaponInstance? FistsItem => Weapon ?? Fists;
     readonly WeaponInstance? hip;
     bool rightArm = true, leftArm = true;
     /// <summary>The crossbow carried in a weapon section (back or hip), if any: the ranged weapon (docs/simulation.md "Combat", ranged). The melee <see cref="Weapon"/> stays what it was.</summary>

@@ -78,7 +78,7 @@ swings landed with L = 0; with L = 18, 7 hits from 6 swings put all 5 down in 7.
 
 Meitou: `TechniqueChooser.ChooseAttack`. Engine readings: CharStats +0x2c is the gear's unarmed bonus; the injury
 term, +0x5b8 and part kind 1 are not modelled. Leg down means a leg part's flesh − stun + rig < 0. Plain mode means
-a target that is not fighting. Fists: `Fighter.FistsLength` (no fists item; its multipliers are not applied). The gap is 3D.
+a target that is not fighting. Fists: `Fighter.Fists` (its length here, its multipliers in the packet). The gap is 3D.
 
 ## Hit reactions
 

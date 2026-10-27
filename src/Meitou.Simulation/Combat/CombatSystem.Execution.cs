@@ -26,7 +26,7 @@ public sealed partial class CombatSystem
         float skill = Eff(ac, fighter.WeaponSkill);
         float str = Eff(ac, StatsEnumerated.Strength);
         var packet = fighter.Unarmed
-            ? DamageFormulas.UnarmedPacket(UnarmedRating(ac, fighter), Eff(ac, StatsEnumerated.Toughness), str, fighter.Weapon, kind, race.StringId, fighter.DamageOutput, combat)
+            ? DamageFormulas.UnarmedPacket(UnarmedRating(ac, fighter), Eff(ac, StatsEnumerated.Toughness), str, fighter.FistsItem, kind, race.StringId, fighter.DamageOutput, combat)
             : DamageFormulas.Packet(skill, Eff(ac, StatsEnumerated.Dexterity) * fighter.DexterityMult, str, fighter.Weapon!, kind, race.StringId, fighter.DamageOutput, combat);
         var ctx = MakeContext(world, d, dc);
         var events = hitEvents;
