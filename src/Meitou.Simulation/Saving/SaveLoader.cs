@@ -73,9 +73,6 @@ public static class SaveLoader
         world.Player.Money = camera.PlayerMoney;
         // A renamed player faction (the CAMERA's name differs from the data's).
         world.Player.FactionName = camera.PlayerFactionName is { Length: > 0 } savedName && playerIndex >= 0 && savedName != data.Factions[playerIndex].Name ? savedName : null;
-        // The factions met: the save's `known` list; those of the setup when the save has no player faction or an import leaves the relations out.
-        world.Player.KnownFactions = playerFaction is not null && !options.ResetRelations
-            ? new HashSet<int>(playerFaction.Known.Select(data.FactionIndex).Where(f => f >= 0)) : data.KnownAtSetup();
         world.Player.SquadAi = SquadAiKeys.Read(camera.Record);
         if (camera.Record.Bools.ContainsKey("ditch") && camera.Record.Ints.TryGetValue(SquadAiKeys.FormationKey, out int formation))
             SquadAiKeys.SetFormation(world, playerIndex, formation, data.Factions);
@@ -83,6 +80,7 @@ public static class SaveLoader
         world.Player.BanditsLoot = !camera.Record.Floats.ContainsKey("cod") || camera.Record.Bools.GetValueOrDefault("bl", true);
         BedSave.Read(camera.Record, world);
         LoadTownKnowledge(save, data, world.Player);
+        world.Player.KnownFactions = KnownFactions(playerFaction, data, world.Player, options);
         LoadUniques(camera.Record, data, world.Uniques);
 
         // Building locks and doors are taken from the zones when their town registers; held characters name their bed or cage by building instance.
@@ -178,6 +176,23 @@ public static class SaveLoader
             int state = camera.Ints.GetValueOrDefault($"usedUniquesState{k}", 1);
             uniques.Load(id, state is >= 0 and <= 2 ? (UniqueState)state : UniqueState.Alive, camera.Bools.GetValueOrDefault($"usedUniquesPlayer{k}"), Hand.Read(camera, $"usedUniques{k}handle"));
         }
+    }
+
+    /// <summary>
+    /// The factions met (docs/game/factions-squads-towns.md "Factions met"): the save's <c>known</c> list; those of the setup when the save has no player faction or an import leaves
+    /// the relations out. An empty list (older Meitou saves wrote one; the original's always holds the setup's) takes the setup's and the owners of the towns and camps explored
+    /// (engine choice). After the town knowledge is loaded.
+    /// </summary>
+    static HashSet<int> KnownFactions(SaveFaction? playerFaction, PopulationData data, PlayerState player, SaveLoadOptions options)
+    {
+        if (playerFaction is null || options.ResetRelations) return data.KnownAtSetup();
+        if (playerFaction.Known.Count > 0) return [.. playerFaction.Known.Select(data.FactionIndex).Where(f => f >= 0)];
+        var known = data.KnownAtSetup();
+        for (int s = 0; s < player.Towns.Length && s < data.SiteFactions.Count; s++)
+            if ((player.Towns[s] & TownKnowledge.Explored) != 0 && data.SiteFactions[s] >= 0) known.Add(data.SiteFactions[s]);
+        foreach (var camp in player.Camps)
+            if ((camp.Known & TownKnowledge.Explored) != 0 && data.FactionIndex(camp.FactionId) is var f and >= 0) known.Add(f);
+        return known;
     }
 
     /// <summary>The towns' <c>discovered</c>, <c>explored</c> and <c>recently discovered</c> bools, matched to the placed towns by instance id.</summary>

@@ -150,4 +150,55 @@ public class SaveWorldTests
         using var modded = NewGame(db: db, level: level);
         Assert.Equal(new[] { outsiders, neighbours }.Order(), modded.World.Player.KnownFactions.Order());
     }
+
+    [Fact]
+    public void A_player_character_meets_the_factions_in_sight_range_and_an_inspected_one_at_any_distance()
+    {
+        // A mod adds the Outsiders and the Neighbours, neither known at the start.
+        var db = SyntheticTown.Database();
+        var mod = new FcsFile();
+        mod.Records.AddRange([SyntheticTown.Rec("21-t", FcsRecordType.FACTION, "Outsiders"), SyntheticTown.Rec("22-t", FcsRecordType.FACTION, "Neighbours")]);
+        db.Apply(mod, "known.mod");
+        using var g = NewGame(db: db);
+        int outsiders = g.Data.FactionIndex("21-t"), neighbours = g.Data.FactionIndex("22-t");
+        g.World.Commands.Enqueue(new Meitou.Simulation.Editing.FinishCreation { Tick = g.World.Tick });
+        g.World.RunTicks(1);
+        Assert.DoesNotContain(outsiders, g.World.Player.KnownFactions);
+        Assert.DoesNotContain(neighbours, g.World.Player.KnownFactions);
+
+        var population = g.World.Systems.OfType<PopulationSystem>().Single();
+        var at = g.World.Characters.Previous[g.Squad.Leader.Slot].Position;
+        population.SpawnSandbox(g.World, "2-t", new Vector2(at.X + 300, at.Z), player: false, faction: outsiders);
+        var far = population.SpawnSandbox(g.World, "2-t", new Vector2(at.X + 40000, at.Z), player: false, faction: neighbours);
+        g.World.RunTicks(2);
+        Assert.Contains(outsiders, g.World.Player.KnownFactions);
+        Assert.DoesNotContain(neighbours, g.World.Player.KnownFactions);
+
+        g.World.Commands.Enqueue(new InspectCommand(far) { Tick = g.World.Tick });
+        g.World.RunTicks(1);
+        Assert.Contains(neighbours, g.World.Player.KnownFactions);
+    }
+
+    [Fact]
+    public void A_save_with_an_empty_known_list_loads_the_setup_factions_and_the_owners_of_the_towns_explored()
+    {
+        using var g = NewGame();
+        g.World.RunTicks(1);
+        int home = g.Data.SiteFactions[0];
+        Assert.True(home >= 0);
+        g.World.Player.Know(0, TownKnowledge.Discovered | TownKnowledge.Explored);
+        var save = SaveCapture.Capture(g.World, g.Data, new SaveClock(1, 12, 0), null, new SaveCaptureOptions { Placements = [new TownPlacement("inst", "30-t", SyntheticTown.Centre, null)] });
+        save.PlayerFaction!.Known = [];
+        string folder = Path.Combine(Dir("known-empty"), "slot");
+        try
+        {
+            save.Write(folder);
+            using var world2 = EmptyWorld();
+            SaveLoader.Load(world2, SaveGame.Load(folder), g.Data);
+            var expected = g.Data.KnownAtSetup();
+            expected.Add(home);
+            Assert.Equal(expected.Order(), world2.Player.KnownFactions.Order());
+        }
+        finally { Directory.Delete(Path.GetDirectoryName(folder)!, recursive: true); }
+    }
 }

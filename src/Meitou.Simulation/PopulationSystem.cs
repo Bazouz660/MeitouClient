@@ -261,7 +261,8 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
             float range = (locks?.Regions?.CodeAt(prev[i].Position) > 0 ? SightMap.IndoorSight * WeatherSystem.SightFactor(cold) : AggroSystem.RangeOf(cold, AggroSystem.OutdoorSight))
                 * (0.5f + 0.5f * world.Sight.Daylight);
             int found = 0;
-            for (int j = 0; j < prev.Length; j++)
+            // The count includes the character itself, as the grid lookup's does.
+            for (int j = 0; j < prev.Length && found < CrowdCount; j++)
                 if (prev[j].Alive && Vector2.DistanceSquared(at, new(prev[j].Position.X, prev[j].Position.Z)) < range * range) found++;
             if (found >= CrowdCount) range = MathF.Max(range, CrowdReach);
             for (int j = 0; j < prev.Length; j++)

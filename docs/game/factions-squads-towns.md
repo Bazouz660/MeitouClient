@@ -315,12 +315,14 @@ Meitou: `PlayerState.KnownFactions`, saved as `known` in faction order after the
 choice**). A new game starts from the `known` list of the level data's player faction state when there is one, the only field of it read
 (`PopulationData.KnownAtNewGame`). `PopulationSystem.MeetFactions` runs each player character's update every 15 ticks by slot and counts a
 character's current faction and the fight target while there is one; a shot at one that senses meets the shooter's at once (`CombatSystem.ShotAt`,
-crossbows and turrets); inside town walls is Meitou's gate code above 0 at the character's position now, not a kept value (all **engine choice**).
+crossbows and turrets); inside town walls is Meitou's gate code above 0 at the character's position now, not a kept value (all **engine choice**). The sight range is
+perception's R ([perception](perception.md#summary)): 500 inside town walls, else 1500 x race `vision range mult`, both x lerp(daylight, 0.5, 1) and x weather.
 Not modelled: reassessing those sensed before (other than the fight target), the squad's shared list, the attacker `FUN_14099c3b0` picks, and a shot
 at one that is down (the original keeps the shooter sensed while it fades, `FUN_140859220`, and meets it if the character gets up first); the other
 ways to notice someone are taken to act within the sight range the pass covers (**engine reading**). Selecting meets a faction too: `SelectCommand`
 the player's, `InspectCommand` the character's, `InspectBuildingCommand` the owner of the building's first door, else of its first fixture (a
-building with no fixtures is left out).
+building with no fixtures is left out). A save whose `known` list is empty (older Meitou saves wrote one) loads the setup's and the owners of the towns and
+camps it has explored (**engine choice**).
 
 ### 4. Squad templates
 
