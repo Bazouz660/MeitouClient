@@ -9,7 +9,7 @@ namespace Meitou.Game;
 /// </summary>
 sealed class SkyArrival(WorldCamera source, float hour, float speed = 1)
 {
-    internal const double HoldSeconds = 0.5, SitSeconds = 1.2, AscentSeconds = 3.4, DescentSeconds = 3, FadeOutSeconds = 0.3, FadeInSeconds = 1.4;
+    internal const double HoldSeconds = 0.5, SitSeconds = 1.8, AscentSeconds = 3.4, DescentSeconds = 3, FadeOutSeconds = 0.3, FadeInSeconds = 1.4;
     internal const float MinSpeed = 0.25f, MaxSpeed = 4;
     internal const float SkyPitch = -1.45f;
     /// <summary>How far above its view the destination's camera starts, so nothing near blocks the first look; and how far it orbits round on the way down.</summary>
