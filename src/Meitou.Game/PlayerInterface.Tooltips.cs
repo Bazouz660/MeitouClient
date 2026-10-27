@@ -492,6 +492,44 @@ sealed partial class PlayerInterface
     }
 
     /// <summary>
+    /// A blueprint's state and Tech Level rows (<c>FUN_1407ab430</c>, <b>Observed</b> by decompile): finished before, "Research already known" (Title); a research <c>level</c> above the bench
+    /// level (<c>uses_level</c>), "Needs research bench level {1,num}" (BadBright); requirements met, "Right-click to learn tech" (Title), else "Cannot learn this yet" (BadBright). Then
+    /// <c>Tech Level</c> (ink) with the level (Main).
+    /// </summary>
+    IEnumerable<TooltipLine> BlueprintRows(Meitou.Data.GameRecord research)
+    {
+        var state = session.CurrentSnapshot.Research;
+        int level = research.GetInt("level");
+        yield return state.Known.Contains(research.StringId) ? new(Loc.Tr("Research already known"), "", TooltipTone.Title)
+            : level > state.BenchLevel ? new(Loc.Tr("Needs research bench level {1,num}", level), "", TooltipTone.BadBright)
+            : state.RequirementsMet.Contains(research.StringId) ? new(Loc.Tr("Right-click to learn tech"), "", TooltipTone.Title)
+            : new(Loc.Tr("Cannot learn this yet"), "", TooltipTone.BadBright);
+        yield return new(Loc.Tr("Tech Level"), level.ToString(CultureInfo.InvariantCulture), TooltipTone.Ink, TooltipTone.Main);
+    }
+
+    /// <summary>
+    /// A blueprint's requirement and unlock rows after the prices (<c>FUN_1407ab430</c>, <c>FUN_14079a890</c>, <b>Observed</b>): <c>Requirements:</c> with each <c>requirements</c> record's name,
+    /// cyan when finished and BadBright when not (the original packs the first into one row and the rest, ", "-joined, into a second; Meitou gives each its own row, one tone per value),
+    /// then a row per <c>enable buildings</c>, <c>enable weapon type</c>, <c>enable weapon model</c>, <c>enable armour</c> and <c>enable item</c> reference with the name in Good.
+    /// </summary>
+    IEnumerable<TooltipLine> UnlockRows(Meitou.Data.GameRecord research)
+    {
+        var known = session.CurrentSnapshot.Research.Known;
+        bool first = true;
+        foreach (var req in research.GetReferences("requirements"))
+        {
+            if (RecordName?.Invoke(req.TargetStringId) is not { Length: > 0 } name) continue;
+            bool done = known.Contains(req.TargetStringId) || session.CurrentSnapshot.UnlockedBuildings.Contains(req.TargetStringId);
+            yield return new(first ? Loc.Tr("Requirements:") : "", name, TooltipTone.Default, done ? TooltipTone.Cyan : TooltipTone.BadBright);
+            first = false;
+        }
+        foreach (var (field, label) in new[] { ("enable buildings", "New Building:"), ("enable weapon type", "New Weapon Class:"), ("enable weapon model", "New Weapons Grade:"),
+            ("enable armour", "New Armour Type:"), ("enable item", "New Items:") })
+            foreach (var r in research.GetReferences(field))
+                if (RecordName?.Invoke(r.TargetStringId) is { Length: > 0 } name) yield return new(Loc.Tr(label), name, TooltipTone.Default, TooltipTone.Good);
+    }
+
+    /// <summary>
     /// The rows of an item's tooltip, in the order the item classes write them (<b>Observed</b>, decompile of <c>FUN_1407ae130</c>, the weapon and armour functions): the name (with the stack
     /// count), kind markers, the stolen mark, the class's own rows, the weight, then the prices while trading, the charges and the quality. A row's label carries a leading hyphen as the
     /// original's do (docs/game/ui-screens.md "Tooltips"). What Meitou has no data for is left out (listed there).
@@ -502,8 +540,8 @@ sealed partial class PlayerInterface
         var type = record?.Type;
         // A weapon's grade is its model ("Mk I"), shown under the name in the colour of its level's grade; a brief tooltip puts it before the name ("Mk I Fragment Axe").
         string? model = type == Meitou.Data.Fcs.FcsRecordType.WEAPON && t.Material.Length > 0 && RecordName?.Invoke(t.Material) is { Length: > 0 } m ? m : null;
-        // A blueprint is titled with its research (BlueprintItem's first tooltip function, FUN_1407ab430): the name, "Research Blueprint", how a right click goes. The original's
-        // known / bench-level states and the unlock lists are not shown.
+        // A blueprint is titled with its research (BlueprintItem's first tooltip function, FUN_1407ab430): the name, "Research Blueprint", its state and Tech Level (BlueprintRows);
+        // the requirement and unlock rows follow the prices.
         var research = ItemRecordOf?.Invoke(t.Company) is { Type: Meitou.Data.Fcs.FcsRecordType.RESEARCH } r ? r : null;
         string name = research?.Name ?? (t.Brief && model is not null ? model + " " + t.Name : t.Name);
         var lines = new List<TooltipLine> { new(t.Quantity > 1 ? $"{name} ({t.Quantity})" : name, "", TooltipTone.Title) };
@@ -511,8 +549,8 @@ sealed partial class PlayerInterface
         if (t.Brief) return lines;
         if (research is not null)
         {
-            lines.Add(new(Loc.Tr("Research Blueprint"), "", TooltipTone.Main));
-            lines.Add(new(Loc.Tr("Right-click to learn tech"), "", TooltipTone.Cyan));
+            lines.Add(new(Loc.Tr("Research Blueprint"), "", TooltipTone.Title));
+            lines.AddRange(BlueprintRows(research));
         }
         // Every grade line (weapon model, armour, crossbow, prosthetic) goes right under the name, as in the original.
         if (model is not null) lines.Add(new(model, "", GradeTone(WeaponGrade(t.Level))));
@@ -604,6 +642,7 @@ sealed partial class PlayerInterface
             lines.Add(new("-Value", "c." + Money(prices.Value), TooltipTone.Ink, TooltipTone.Ink));
             lines.Add(new("-Sell value", "c." + Money(prices.Sell), TooltipTone.Ink, TooltipTone.Ink));
         }
+        if (research is not null) lines.AddRange(UnlockRows(research));
         // A trade item's average price follows the prices, in and out of a trade; while trading, the mark-up of the town and trader factors, Bad above 1 and Good below (FUN_1407ae130).
         if (type == Meitou.Data.Fcs.FcsRecordType.ITEM && PricesOf?.Invoke(t) is { Average: { } average })
         {

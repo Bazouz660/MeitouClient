@@ -165,6 +165,9 @@ public sealed record ResearchSnapshot(int TechLevel, int BenchLevel, IReadOnlyLi
 {
     /// <summary>How many researches have been finished (counting repeats): the host plays the notification when it grows.</summary>
     public int Finished { get; init; }
+    /// <summary>The researches finished at least once and those whose requirements are met (a blueprint's tooltip state, <c>FUN_1407ab430</c>).</summary>
+    public IReadOnlySet<string> Known { get; init; } = new HashSet<string>();
+    public IReadOnlySet<string> RequirementsMet { get; init; } = new HashSet<string>();
     public static ResearchSnapshot Empty { get; } = new(1, 0, [], 0, []);
 }
 

@@ -1044,7 +1044,10 @@ public sealed partial class ProductionSystem : ITickSystem
                 Description = r.Description,
                 Cost = state.Paid.Contains(r.Id, StringComparer.Ordinal) ? [] : [.. r.CostAt(state.Times(r.Id)).Select(c => (items.Info(c.Item)?.Name ?? c.Item, c.Count))],
             }).ToArray();
-        return publishedResearch = new ResearchSnapshot(state.TechLevel, state.BenchLevel, queue, state.Rate, available) { Finished = state.Completed.Count };
+        return publishedResearch = new ResearchSnapshot(state.TechLevel, state.BenchLevel, queue, state.Rate, available) {
+            Finished = state.Completed.Count, Known = state.Completed.ToHashSet(StringComparer.Ordinal),
+            RequirementsMet = allResearch.Where(r => Met(world, r)).Select(r => r.Id).ToHashSet(StringComparer.Ordinal),
+        };
     }
 
     // ------------------------------------------------------------------ items in and out
