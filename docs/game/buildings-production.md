@@ -462,8 +462,9 @@ Melting), functionality Furnace: `max operators` 0 (so automatic: `ProductionBui
   (`stackingBonusMin` 10, mult 1), level 0, rate 1. Slots 183 / 184 / 185 (input and output updates, rate limit) are empty, so the producer's draw does not run.
 - **Active** (`incinerate` `FUN_140299790`, `+0x490`, **Observed**): the panel's button. Off with an empty grid: nothing. Off otherwise: on, level 1, output progress 0. On: off,
   level and progress 0, the items stay. The grid's section is disabled while on (`InventorySection::setEnabled(!active)`), then slot `0x318(active)`.
-- **Burn** (`operate` slot 150, `FUN_140299fa0`, **Observed**): only while on, with an output and an input; state 2; amount as [production](#production) (power share x slot `0x538`
-  when `+0x3bc` > 0, **Unknown** meaning, 0 for the Item Furnace); level -= amount, progress += amount; at level <= 0.001 or progress >= 0.999 the output gets (int) the grid's metal of
+- **Burn** (`operate` slot 150, `FUN_140299fa0`, **Observed**): only while on, with an output and an input; state 2; amount as [production](#production) (x slot 167 when `+0x3bc` > 0:
+  `+0x3bc` is the BUILDING's `power output`, made positive when `power capacity` > 0, and slot 167 is the generator's load share `GeneratorBuilding::vfunc_167` but 1 for the
+  furnace's class (`FUN_1400f6d60`), so the term changes nothing; **Verified**, decompile of `FUN_14029e460` and the vtables); level -= amount, progress += amount; at level <= 0.001 or progress >= 0.999 the output gets (int) the grid's metal of
   Raw Iron (one `addItem` of that quantity), the grid is emptied (`clearAllItems`) and the furnace turns off. So a whole load burns in 1 / (0.25 x P x option) seconds at full health, whatever it holds.
 - **Metal** (`getInputValue` slot 180, `FUN_1402a5f40`; constants **Verified** by disassembly): ITEM with `ingredients`: iron x quantity x 0.5; ARMOUR of `material type` 2 or 3
   (chain, plate): total coverage x 0.01 x (1 - `fabrics amount`) x 2, other armour 0; WEAPON: `getItemWeightSingle` (`+0x120`) x 0.2, within 0.5..5; anything else 0.
