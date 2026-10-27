@@ -162,8 +162,14 @@ public sealed record MachineSnapshot(string Site, string Record, IReadOnlyList<M
 public readonly record struct ResearchOption(string Id, string Name, string Category, int Level, float Hours, bool Affordable, bool BenchTooLow, float Progress)
 {
     public string Description { get; init; } = "";
-    /// <summary>The items paid at queue time (empty once paid).</summary>
-    public IReadOnlyList<(string Name, int Count)> Cost { get; init; } = [];
+    /// <summary>The items paid at queue time (empty once paid), each with whether the research benches hold enough of it.</summary>
+    public IReadOnlyList<(string Name, int Count, bool Held)> Cost { get; init; } = [];
+    /// <summary>Its cost was paid already, so queuing it is free.</summary>
+    public bool Paid { get; init; }
+    /// <summary>The RESEARCH it requires by name, each finished or in the queue (the description's colours).</summary>
+    public IReadOnlyList<(string Name, bool Finished, bool Queued)> Requirements { get; init; } = [];
+    /// <summary>The records it unlocks by name, with their <see cref="Meitou.Data.Gameplay.Construction.ResearchData.UnlockFields"/> field.</summary>
+    public IReadOnlyList<(string Field, string Name)> Unlocks { get; init; } = [];
 }
 
 /// <summary>The research state as the host shows it (docs/simulation.md "Production", Research).</summary>

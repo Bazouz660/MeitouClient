@@ -235,6 +235,8 @@ Code: `UiDocument.Widgets.cs` (layout), `MyGuiScreenHost.Widgets.cs` (input). **
   sits by `CanvasAlign` (centred when unset; `Default` = Left Top); bar page 16 px, wheel 50 px (vertical first). MyGUI re-reads the sizes once per update, Meitou iterates to the fixed point.
   The source passes the cross-axis view size as ViewPage (as read); Meitou pages by the view along the axis (**Unknown** which is intended). Children of the client are placed against the scrolled canvas.
   A screen that scrolls a view itself lists it in `NativeScroll` (the map). Without a canvas nothing scrolls and the bars hide: the Overview's `RelationsPanel` (no `CanvasSize` in the layout) loses its static bars.
+- **ItemBox** (**Observed**: the base game's empty crafting queue and squad boxes show no bars; MyGUI 3.2's ItemBox derives `ScrollViewBase`): laid out as a ScrollView, so its bars show only when a
+  bound canvas overflows the client; with none (every ItemBox Meitou fills itself) both are hidden.
 - **Template clients** (**Observed**, the title's credits): a template's `Client` part takes the layout's children only for the widgets that set it as
   their client (windows, views, edit boxes, lists); a plain Widget, TextBox, ImageBox or Button keeps its children itself (`MyGuiTemplates`).
 - **Lines and long text** (**Observed**, the save list at 1440 lines): a list with a `SkinLine` lays its lines across the whole client and the

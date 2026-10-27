@@ -272,7 +272,7 @@ sealed partial class PlayerInterface
 
     void MachineAction(MyGuiEvent e)
     {
-        if (e.Screen == "bench" && e.Widget == "ResearchButton") { faithfulScreens.Open("overview"); faithfulScreens.SetTab("overview", "TabsMain", 2); }
+        if (e.Screen == "bench" && e.Widget == "ResearchButton") { faithfulScreens.Open("overview"); faithfulScreens.SetTab("overview", "TabsMain", ResearchTab); }
         else if (e.Screen == "building" && e.Widget == "QueueButton" && shownMachine is not null) OpenCraftTab(shownMachine);
     }
 
@@ -558,18 +558,19 @@ sealed partial class PlayerInterface
         return pw.Kind == PowerKind.Generator && !pw.Fueled ? ("Out of fuel", true) : null;
     }
 
-    // ---- the overview's research tab ----
+    // ---- the overview's research tab (docs/game/ui-screens.md "Research tab") ----
 
     void BindResearchTab(UiBindings b)
     {
         var research = session.CurrentSnapshot.Research;
-        var categories = research.Available.Select(r => r.Category).Distinct(StringComparer.Ordinal).ToList();
+        var categories = research.Available.Select(r => r.Category).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToList();
         if (researchCategory is null || !categories.Contains(researchCategory)) researchCategory = categories.FirstOrDefault();
         b.Lists["ResearchTypeList"] = [.. categories.Select(c => new UiListItem(c, c))];
         b.SelectedItems["ResearchTypeList"] = researchCategory is null ? -1 : categories.IndexOf(researchCategory);
-        string message = research.BenchLevel <= 0 ? "Research needs a research bench." : research.Queue.Count == 0 ? "Nothing being researched." : "";
-        if (message.Length > 0) b.Text["ResearchBenchMessage"] = message;
+        if (research.BenchLevel <= 0) b.Text["ResearchBenchMessage"] = Loc.Tr("You currently have no research facilities. Build a research bench and assign someone to work there.");
         else b.Hidden.Add("ResearchBenchMessage");
+        if (faithfulScreens.GetTab("overview", "TabsMain") == ResearchTab)
+            b.Text["Root"] = Loc.Tr("RESEARCH - LEVEL {1,num} (CURRENT RATE: {2,num=fix,p=2}x)", research.BenchLevel, research.Rate);
     }
 
     void ResearchAction(MyGuiEvent e)
@@ -583,25 +584,57 @@ sealed partial class PlayerInterface
         else if (e.Action.StartsWith("research-cancel:", StringComparison.Ordinal)) Say(new CancelResearch(e.Action[16..]) { Tick = session.World.Tick });
     }
 
-    /// <summary>The blueprint rows, the queue rows and the description, drawn into the research tab's panels.</summary>
+    /// <summary>
+    /// A research's time left as <c>FUN_140831550</c> writes it: its hours over the current rate (when there is one) times the share still to do, rounded up to at least 1, "&lt;" before it
+    /// under an hour, "{n} hr" / "{n} hrs"; with <paramref name="rateNote"/> and no rate " (at 1x rate)" after it.
+    /// </summary>
+    static string ResearchTime(float hours, float progress, float rate, bool rateNote)
+    {
+        float left = (rate > 0 ? hours / rate : hours) * (1 - progress);
+        int whole = Math.Max(1, (int)MathF.Ceiling(left));
+        string text = (left < 1 ? "<" : "") + Loc.Tr(whole == 1 ? "{1,num} hr" : "{1,num} hrs", whole);
+        return rateNote && rate == 0 ? text + " " + Loc.Tr("(at 1x rate)") : text;
+    }
+
+    /// <summary>The description's caption for each <see cref="Meitou.Data.Gameplay.Construction.ResearchData.UnlockFields"/> field (<c>FUN_140495e00</c>).</summary>
+    static readonly Dictionary<string, string> UnlockCaptions = new(StringComparer.Ordinal)
+    {
+        ["enable buildings"] = "New Building:", ["enable weapon type"] = "New Weapon Class:", ["enable weapon model"] = "New Weapons Grade:", ["enable armour"] = "New Armour Type:",
+        ["enable item"] = "New Items:", ["enable crossbow"] = "New Crossbows:", ["enable backpack"] = "New Backpacks:", ["enable robotics"] = "New Robot Limbs:",
+    };
+
+    /// <summary>
+    /// The blueprint rows (<c>DataPanelLine_Research</c>, <c>FUN_1406f9220</c>): a <c>Kenshi_Button1</c> frame across 98 % of the panel, the name from 3 % and the time right-aligned to 97 %,
+    /// in Main when it can be queued, else Bad, and a green bar over the frame for the progress kept; then the queue rows and the hovered or last clicked research's description.
+    /// </summary>
     void AddResearchContent(List<UiControl> controls)
     {
-        if (faithfulScreens.GetTab("overview", "TabsMain") != 2) return;
+        if (faithfulScreens.GetTab("overview", "TabsMain") != ResearchTab) return;
         var research = session.CurrentSnapshot.Research;
         var face = new Dictionary<string, string> { ["FontName"] = "Kenshi_StandardFont_Medium", ["TextAlign"] = "Left VCenter" };
         float line = MathF.Max(18, 24 * InventoryScale);
         var ink = new Vector4(0.86f, 0.82f, 0.71f, 1);
         if (controls.FirstOrDefault(c => c.Name == "BlueprintsAvailablePanel") is { } blueprints)
         {
-            var rows = research.Available.Where(r => r.Category == researchCategory).OrderBy(r => r.Level).ThenBy(r => r.Name, StringComparer.Ordinal).ToList();
+            // The row unit U as the base game draws it at 1080 lines (Observed): a 29 px frame 0.15 U down a 35 px pitch.
+            float unit = 30.5f * Height / 1080f, pitch = 1.15f * unit, w = blueprints.Bounds.Width;
+            var area = blueprints.Bounds;
+            var clip = area.Intersect(blueprints.Clip ?? area);
+            var rows = research.Available.Where(r => r.Category == researchCategory).OrderBy(r => r.Name, StringComparer.Ordinal).ToList();
             for (int i = 0; i < rows.Count; i++)
             {
                 var r = rows[i];
-                bool queued = research.Queue.Any(q => q.Id == r.Id);
-                string caption = $"{r.Name}  ({Loc.Tr("lvl {1,num}", r.Level)})" + (r.Progress > 0 ? $"  {(int)(r.Progress * 100)}%" : "");
-                var colour = queued ? new Vector4(0.6f, 0.6f, 0.6f, 1) : r.BenchTooLow || !r.Affordable ? new Vector4(0.75f, 0.35f, 0.3f, 1) : ink;
-                controls.Add(new($"research-row-{i}", "Button", new(blueprints.Bounds.X + 6, blueprints.Bounds.Y + i * line, blueprints.Bounds.Width - 12, line), caption,
-                    queued ? "" : "research-queue:" + r.Id, "", !queued, face, Vector4.Zero, TextColour: colour, HoverColour: new(0, 1, 0, 1), Pickable: true, Clip: blueprints.Bounds));
+                float top = area.Y + i * pitch + 0.15f * unit, height = 0.97f * unit;
+                var colour = MyGuiColours.Parse(r.BenchTooLow || !r.Affordable ? BadColour : MainColour, ink);
+                controls.Add(new($"research-row-{i}", "Button", new(area.X + 0.01f * w, top, 0.98f * w, height), "", "research-queue:" + r.Id, "Kenshi_Button1Skin", true,
+                    new Dictionary<string, string>(), Vector4.Zero, Pickable: true, Clip: clip));
+                if (r.Progress > 0)
+                    controls.Add(new($"research-row-{i}-bar", "Widget", new(area.X + 0.02f * w, top + 0.2f * height, Math.Clamp(r.Progress, 0, 1) * 0.88f * w, 0.6f * height), "", "",
+                        "Kenshi_LifeBarSkin", true, new Dictionary<string, string>(), Vector4.Zero, Pickable: false, Clip: clip));
+                var label = new UiRect(area.X + 0.03f * w, top, 0.94f * w, height);
+                controls.Add(new($"research-row-{i}-name", "TextBox", label, r.Name, "", "", true, face, Vector4.Zero, TextColour: colour, Pickable: false, Clip: clip));
+                controls.Add(new($"research-row-{i}-time", "TextBox", label, ResearchTime(r.Hours, r.Progress, research.Rate, false), "", "", true,
+                    new Dictionary<string, string>(face) { ["TextAlign"] = "Right VCenter" }, Vector4.Zero, TextColour: colour, Pickable: false, Clip: clip));
             }
         }
         if (controls.FirstOrDefault(c => c.Name == "ResearchQueueList") is { } queue)
@@ -612,20 +645,36 @@ sealed partial class PlayerInterface
                     $"{name}  {(int)(progress * 100)}%", "research-cancel:" + qid, "", true, face, Vector4.Zero, TextColour: i == 0 ? new(0.66f, 0.72f, 0.45f, 1) : ink,
                     HoverColour: new(1, 0.4f, 0.3f, 1), Pickable: true, Clip: queue.Bounds));
             }
-        var hovered = controls.LastOrDefault(c => c.Name.StartsWith("research-row-", StringComparison.Ordinal) && c.Bounds.Contains(mouse.X, mouse.Y))?.Action;
+        var hovered = controls.LastOrDefault(c => c.Name.StartsWith("research-row-", StringComparison.Ordinal) && c.Action.Length > 0 && c.Bounds.Contains(mouse.X, mouse.Y))?.Action;
         string? focus = hovered is { Length: > 15 } h ? h[15..] : researchFocus;
         if (focus is null || research.Available.FirstOrDefault(r => r.Id == focus) is not { Id: not null } option) return;
-        var lines = new List<HudLine>
-        {
-            new(option.Name, ""),
-            new("Level:", option.Level.ToString(CultureInfo.InvariantCulture), MainColour, option.BenchTooLow ? BadColour : null),
-            new("Time:", $"{option.Hours.ToString("0.#", CultureInfo.InvariantCulture)} h", MainColour),
-        };
-        foreach (var (item, count) in option.Cost) lines.Add(new(item, count.ToString(CultureInfo.InvariantCulture), MainColour, option.Affordable ? null : BadColour));
-        AddLines(controls, "ResearchDescriptionPanel1", lines, line);
+        AddLines(controls, "ResearchDescriptionPanel1", ResearchDescription(option, research.Rate), line);
         if (option.Description.Length > 0 && controls.FirstOrDefault(c => c.Name == "ResearchDescriptionPanel2") is { } text)
             controls.Add(new("research-description", "EditBox", text.Bounds, option.Description, "", "", true,
                 new Dictionary<string, string> { ["FontName"] = "Kenshi_StandardFont_Medium", ["WordWrap"] = "true", ["MultiLine"] = "true", ["Static"] = "true", ["TextAlign"] = "Left Top" },
                 Vector4.Zero, TextColour: ink, Pickable: false, Clip: text.Bounds));
+    }
+
+    /// <summary>
+    /// The description's lines (<c>FUN_140495e00</c>): the name in Title with "lvl {n}"; "ETA:" in Title with the time left; "Needs research bench level {n}" in Bad when the bench is too low;
+    /// a "Cost:" line per item ("{item} x{n}", Good when the benches hold it, else Bad), or "[Paid]" in Good; "Requirements:" with the first required research and a line below with the
+    /// rest (Greyed finished, Good queued, else Bad; "-" for none); one line per unlocked record under its field's caption, in Good.
+    /// </summary>
+    static List<HudLine> ResearchDescription(ResearchOption option, float rate)
+    {
+        var lines = new List<HudLine>
+        {
+            new(option.Name, Loc.Tr("lvl {1,num}", option.Level), TitleColour),
+            new(Loc.Tr("ETA:"), ResearchTime(option.Hours, option.Progress, rate, true), TitleColour),
+        };
+        if (option.BenchTooLow) lines.Add(new(Loc.Tr("Needs research bench level {1,num}", option.Level), "", BadColour));
+        if (option.Paid) lines.Add(new(Loc.Tr("Cost:"), "[" + Loc.Tr("Paid") + "]", null, GoodColour));
+        else foreach (var (item, count, held) in option.Cost) lines.Add(new(Loc.Tr("Cost:"), $"{item} x{count.ToString(CultureInfo.InvariantCulture)}", null, held ? GoodColour : BadColour));
+        static string Requirement((string Name, bool Finished, bool Queued) r) => Tag(r.Finished ? GreyColour : r.Queued ? GoodColour : BadColour) + r.Name.Replace("#", "##", StringComparison.Ordinal);
+        var required = option.Requirements;
+        lines.Add(new(Loc.Tr("Requirements:"), required.Count == 0 ? "-" : Requirement(required[0]) + (required.Count > 1 ? ", " : "")));
+        if (required.Count > 1) lines.Add(new("", string.Join(", ", required.Skip(1).Select(Requirement))));
+        foreach (var (field, name) in option.Unlocks) lines.Add(new(Loc.Tr(UnlockCaptions.GetValueOrDefault(field, field)), name, null, GoodColour));
+        return lines;
     }
 }

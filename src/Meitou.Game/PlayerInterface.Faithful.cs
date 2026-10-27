@@ -169,7 +169,10 @@ sealed partial class PlayerInterface
         }
         else if (id == "overview")
         {
-            b.Text["Root"] = "OVERVIEW";
+            // The window's caption is the selected tab's name (FUN_14049bf90); the research tab writes its level and rate over it (BindResearchTab).
+            var tabs = layout.Find("TabsMain")?.Children.Where(w => w.Type == "TabItem").ToArray() ?? [];
+            int shown = faithfulScreens.GetTab("overview", "TabsMain");
+            b.Text["Root"] = shown >= 0 && shown < tabs.Length ? Loc.Tr(tabs[shown].Properties.GetValueOrDefault("Caption") ?? "") : "OVERVIEW";
             foreach (string name in new[] { "MapCenterButton", "MapZoomInButton", "MapZoomOutButton" }) { b.Disabled.Remove(name); b.Actions[name] = name; }
             foreach (var tab in layout.Widgets.Where(w => w.Type == "TabItem")) b.Properties[tab.Name] = new Dictionary<string, string> { ["Visible"] = "true" };
             BindFactionTab(b);
@@ -309,8 +312,6 @@ sealed partial class PlayerInterface
             jobs.Add(new("job:" + i.ToString(CultureInfo.InvariantCulture), text));
         }
         b.Lists["JobsPanel"] = jobs;
-        // A few rows never overflow the box, and MyGUI shows an ItemBox's scroll bars only on overflow.
-        foreach (var bar in faithfulHud.Find("JobsPanel")?.Children.Where(w => w.Type == "ScrollBar") ?? []) b.HiddenWidgets.Add(bar);
         if (jobs.Count > 0) b.Hidden.Add("JobsPanelInfo");
         else b.Text["JobsPanelInfo"] = Loc.Tr("[No jobs assigned]") + "\n" + Loc.Tr("[To add jobs, hold shift key when giving an order]");
     }

@@ -106,7 +106,8 @@ sealed partial class PlayerInterface
         }
         if (relationsLineLayout is null || controls.FirstOrDefault(c => c.Name == "RelationsPanel") is not { } panel) return;
         var factions = (FactionRelations?.Invoke() ?? []).OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase).ToList();
-        var area = panel.Bounds;
+        // The lines go on the scroll view's client (Kenshi_ScrollView: 10 px inside the frame at the template's scale), not on its frame.
+        var area = controls.FirstOrDefault(c => c.Properties.GetValueOrDefault("TemplateOwner") == panel.Name && c.Properties.GetValueOrDefault("TemplatePart") == "Client")?.Bounds ?? panel.Bounds;
         var clip = panel.Clip is { } outer ? area.Intersect(outer) : area;
         var root = relationsLineLayout.Roots.FirstOrDefault();
         float lineHeight = root is null ? 24 * scale : root.Position.RelativeTo(new(0, 0, Width, Height), root.RealPosition).Height;

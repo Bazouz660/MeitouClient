@@ -675,7 +675,7 @@ to `FUN_140836b70`: contribution k of the frame is x 0.6^k (counter `+0x174`, cl
   at `14171dd08` is "paid", **Verified** by the exe bytes).
 - **UI**: the overview window's ResearchTab (`ResearchTypeList`, `ResearchQueueList`, `ResearchBenchMessage`, description
   panels); the bench's `Kenshi_InventoryResearchWindow` (`ResearchButton`); HUD `ResearchProgressBar`; header
-  "RESEARCH - LEVEL {1} (CURRENT RATE: {2}x)" (`FUN_140494af0`).
+  caption "RESEARCH - LEVEL {1} (CURRENT RATE: {2}x)" (`FUN_140494af0`); see [Research tab](ui-screens.md#research-tab).
 
 ### Blueprints
 

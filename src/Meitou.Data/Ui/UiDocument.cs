@@ -108,7 +108,8 @@ public static partial class MyGuiPresentation
                         new Dictionary<string, string> { ["Checked"] = i == selected ? "true" : "false", ["FontName"] = "Kenshi_PaintedTextFont_Medium", ["TextAlign"] = "Center" }, default, Clip: clip));
                 if (pages.Length > 0) Visit(pages[captions is null ? selected : 0], bounds, childClip, enabled, alpha);
             }
-            else if (w.Type == "ScrollView") VisitScrollView(result, bindings, w, props, bounds, childClip, enabled, alpha, Visit);
+            // An ItemBox scrolls like a ScrollView (MyGUI 3.2 ItemBox derives ScrollViewBase): its bars show only when a bound canvas overflows the client.
+            else if (w.Type is "ScrollView" or "ItemBox") VisitScrollView(result, bindings, w, props, bounds, childClip, enabled, alpha, Visit);
             else foreach (var child in w.Children) Visit(child, ChildParent(props, bounds), childClip, enabled, alpha);
             if (trackSkin is not null && result.FindLastIndex(c => c.Properties.GetValueOrDefault("TemplateOwner") == w.Name && c.Properties.GetValueOrDefault("TemplatePart") == "TrackPlace") is var place and >= 0)
             {

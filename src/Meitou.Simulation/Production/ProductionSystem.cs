@@ -1054,7 +1054,13 @@ public sealed partial class ProductionSystem : ITickSystem
                 state.Partial.TryGetValue(r.Id, out float s) ? Math.Clamp(s / (r.Hours(constants, Settings.ResearchOption) * (MachineData.DaySeconds / 24)), 0, 1) : 0)
             {
                 Description = r.Description,
-                Cost = state.Paid.Contains(r.Id, StringComparer.Ordinal) ? [] : [.. r.CostAt(state.Times(r.Id)).Select(c => (items.Info(c.Item)?.Name ?? c.Item, c.Count))],
+                Paid = state.Paid.Contains(r.Id, StringComparer.Ordinal),
+                Cost = state.Paid.Contains(r.Id, StringComparer.Ordinal) ? []
+                    : [.. r.CostAt(state.Times(r.Id)).Select(c => (items.Info(c.Item)?.Name ?? c.Item, c.Count, CountInBenches(world, c.Item) >= c.Count))],
+                // The description lists the RESEARCH requirements only (FUN_140495e00 looks them up as type 21).
+                Requirements = [.. r.Requirements.Select(db.Find).Where(q => q is { Type: FcsRecordType.RESEARCH })
+                    .Select(q => (q!.Name, state.IsDone(q.StringId), state.IsQueued(q.StringId)))],
+                Unlocks = [.. r.Unlocks.Select(u => (u.Field, db.Find(u.Id)?.Name)).Where(u => u.Name is not null).Select(u => (u.Field, u.Name!))],
             }).ToArray();
         return publishedResearch = new ResearchSnapshot(state.TechLevel, state.BenchLevel, queue, state.Rate, available) {
             Finished = state.Completed.Count, Known = state.Completed.ToHashSet(StringComparer.Ordinal),

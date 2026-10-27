@@ -935,6 +935,29 @@ unless marked; Meitou: `PlayerInterface.Faction.cs`.
   ignoring case, rebuilt each frame, line height from the layout's 0.0222 of the screen; the two headings
   under them `World.ActiveContracts` (one entry per hired squad, its package being the squad's) and `PopulationSystem.UpcomingEvents` (Meitou's phase 2 stands for RETREATING and VICTORY).
 
+### Research tab
+
+Overview tab 2 (`ResearchTab`), part of `ManagementScreen` (constructor `FUN_14049f5b0`, refresh `FUN_140495e00` every 0.5 s while shown). **Verified** by decompile unless marked
+(2026-10-27); strings read from the exe. Meitou: `PlayerInterface.Production.cs`; the research rules are in [buildings-production](buildings-production.md#research).
+- **Caption**: a tab change sets the window's caption to the tab's name (`FUN_14049bf90`); on this tab `FUN_140494af0` replaces it with "RESEARCH - LEVEL {1,num} (CURRENT RATE:
+  {2,num=fix,p=2}x)", the manager's `+0x170` (**Observed**: LEVEL 0 with no bench, so the bench level, not the tech level) and its current rate.
+- `ResearchTypeList`: the categories of the available research, alphabetical (**Observed**, base screenshot: Core, Crafting, Defence, Electrics, ...).
+- `BlueprintsAvailablePanel` holds a DatapanelGUI of `DataPanelLine_Research` lines (`FUN_1406f9220`, KenshiLib 1ce4a16 name), one per available research of the category, by
+  name (**Observed**). A line: a `Kenshi_Button1` frame from 1 % of the panel's width, 98 % wide (less 12 % when it has an X button), 0.97 U tall at 0.15 U down its slot; the name
+  from 3 % and the time right-aligned in 94 %; a `Kenshi_LifeBarSkin` bar ("green") from 2 %, 0.2 of the frame down and 0.6 of it tall, progress x 0.88 of the panel wide (`FUN_1406ff560`).
+  Name and time in Main when `Research::checkRequirements_andQueue` holds and the bench level suffices, else Bad (#59231a). At 1080 lines the frame is 29 px on a 35 px pitch
+  (**Observed**); Meitou uses that, the slot's DatapanelGUI unit U is **Unknown**.
+- **Time** (`FUN_140831550`): the research's hours over the current rate (when above 0) x (1 - its progress share), rounded up to at least 1; "<" before it under an hour;
+  "{1,num} hr" / "{1,num} hrs"; the description adds " (at 1x rate)" when the rate is 0.
+- `ResearchBenchMessage`: "You currently have no research facilities. Build a research bench and assign someone to work there." When it shows is **Unknown** (Meitou: bench level 0).
+- **Description** (`ResearchDescriptionPanel1`, the research text in `...Panel2`), the hovered or clicked research: the name in Title with "lvl {1,num}"; "ETA:" in Title with
+  the time; "Needs research bench level {1,num}" in Bad when the bench is too low (`FUN_140830a30`); unpaid (`Research::hasPaidFor`), per `cost` item "Cost:" with
+  "{item} x{n}" in Good when the benches hold it (`hasArtifact`), else Bad; paid, "Cost:" with "[Paid]" in Good; "Requirements:" with the first required RESEARCH and a
+  label-less line below with the rest, joined by ", " (#444444 finished, Good queued, else Bad; "-" for none); then one line per record of `enable buildings`, `enable weapon type`,
+  `enable weapon model`, `enable armour`, `enable item`, `enable crossbow`, `enable backpack`, `enable robotics`, labelled "New Building:", "New Weapon Class:", "New Weapons
+  Grade:", "New Armour Type:", "New Items:", "New Crossbows:", "New Backpacks:", "New Robot Limbs:", the name in Good (`FUN_14048ebc0`).
+- Meitou: `ResearchQueueList` rows are plain text (the original's `TechItemViewData` cells are **Unknown**); a click on a line queues it, on a queue row takes it off.
+
 ### Squads tab
 
 Overview tab 4 (`SquadsTab`), class `SquadManagementScreen` (RTTI; constructor `FUN_14049b7c0`, box `FUN_1404a15c0`). **Observed** (decompile, 2026-10-19)

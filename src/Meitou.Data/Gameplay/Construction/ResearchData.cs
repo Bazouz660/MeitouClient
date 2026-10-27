@@ -34,6 +34,13 @@ public sealed record ResearchData
     public int PowerIncrease { get; init; }
     public int CapacityIncrease { get; init; }
 
+    /// <summary>The records it unlocks, field by field in <see cref="UnlockFields"/> order (the research window's description, <c>FUN_140495e00</c>).</summary>
+    public IReadOnlyList<(string Field, string Id)> Unlocks { get; init; } = [];
+
+    /// <summary>The <c>enable</c> fields the research window lists, in its order (<b>Verified</b>, <c>FUN_140495e00</c>).</summary>
+    public static readonly string[] UnlockFields =
+        ["enable buildings", "enable weapon type", "enable weapon model", "enable armour", "enable item", "enable crossbow", "enable backpack", "enable robotics"];
+
     /// <summary>The <c>enable</c> list of each craft kind (fcs.def, <b>Verified</b>); weapon types and models both unlock weapons.</summary>
     public static readonly (string Field, CraftKind Kind)[] EnableFields =
     [
@@ -78,6 +85,7 @@ public sealed record ResearchData
         PowerIncrease = r.GetInt("power increase"),
         CapacityIncrease = r.GetInt("power capacity increase"),
         EnableCrafts = [.. EnableFields.SelectMany(e => r.GetReferences(e.Field).Select(l => (e.Kind, l.TargetStringId, l.Values.Value0)))],
+        Unlocks = [.. UnlockFields.SelectMany(f => r.GetReferences(f).Select(l => (f, l.TargetStringId)))],
     };
 
     /// <summary>Every RESEARCH record, in the database's order.</summary>
