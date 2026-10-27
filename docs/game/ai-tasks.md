@@ -938,7 +938,11 @@ hand), `isGettingEaten` (+0x279), `CharStats._holdPositionMode` (+0x12b).
 
 The overview's AI tab, bytes of `DAT_142134690` (**Verified**: CAMERA writer `FUN_1403eb710` / reader `FUN_1403ebf50`, key per byte): +0x110 `heal`,
 +0x111 `help`, +0x112 `rescue`, +0x113 `stay`, +0x114 `feed`, +0x115 `share`, +0x116 `sleep`, +0x117 `ditch`, +0x118 `sit`, +0x119 `eject`, +0x11a
-`shootfirst`. Captions and tooltips **Verified** in the exe. New-game values (**Observed**, 511 of the owner's saves): ditch, sleep, sit, share,
+`shootfirst`. Captions and tooltips **Verified** in the exe. The AI tab (`FUN_140494ce0`, **Verified**) has nine tick lines (all but `stay` and `eject`, which no
+line shows) and a last line "Follow Formation", a `DataPanelLine_DropBox` (`Kenshi_ComboBox`, right edge at 0.97 of the panel; its size **Unknown**) with Random (0), Military (2),
+Caravan (1) in that order, tooltip "Formation used when squad members are following a leader", bound to the player faction's FACTION `squad formation`; a change marks every
+player squad for a new layout ([squads travelling together](pathfinding.md#squads-travelling-together)). The CAMERA int `formation` holds it, read only when the record has
+`ditch`. Meitou: `SquadFormationCommand` sets `World.FactionFormations` (the movement rebuilds the slots when the type changes). New-game values (**Observed**, 511 of the owner's saves): ditch, sleep, sit, share,
 feed, eject on; heal, help off (on in 4), rescue, stay, shootfirst off. Readers (**Verified** by decompile):
 - **Heal Allies** (+0x110): the medic finder's other-faction test, pass 1 only ([Medic jobs](#medic-jobs)); "Characters with the medic job will also heal characters of allied factions".
 - **Help Allies** (+0x111): the protect-allies finders `FUN_14099ca10` (goals 15, 288) and `FUN_14099cf80` (sensed (1, 0x208), seen or heard): for a

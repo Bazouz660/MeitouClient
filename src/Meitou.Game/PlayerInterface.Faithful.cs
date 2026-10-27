@@ -178,6 +178,7 @@ sealed partial class PlayerInterface
             BindSquadsTab(b);
             BindResearchTab(b);
             BindCraftTab(b);
+            BindFormation(b);
             // Editor preview markers are unrelated to the current camera and orders.
             b.Hidden.Add("CameraMarker"); b.Hidden.Add("MovemementMarker");
             b.NativeScroll.Add("MapScrollView");   // the map pans and zooms itself (PlayerInterface.Map.cs); the canvas is not the layout's 4096 px

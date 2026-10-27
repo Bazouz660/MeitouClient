@@ -267,6 +267,9 @@ public sealed partial class PlayerSystem(PopulationData? data = null) : ITickSys
                 case SquadAiCommand option:
                     player.SquadAi = option.On ? player.SquadAi | option.Option : player.SquadAi & ~option.Option;
                     break;
+                case SquadFormationCommand formation:
+                    SquadAiKeys.SetFormation(world, player.Faction, (int)formation.Formation, data?.Factions);
+                    break;
                 case OrdersCommand or RunSpeedCommand or StandUpCommand:
                     Orders.Apply(world, command);
                     break;
@@ -350,6 +353,12 @@ public enum SquadAi : ushort
 /// <summary>Turns a squad AI option on or off.</summary>
 public sealed record SquadAiCommand(SquadAi Option, bool On) : SimCommand;
 
+/// <summary>
+/// The AI tab's Follow Formation: the player faction's <c>squad formation</c> (<c>FUN_140494ce0</c> binds its combo to the FACTION record's value; the movement rebuilds the slots,
+/// as the original's change handler marks every player squad).
+/// </summary>
+public sealed record SquadFormationCommand(SquadFormation Formation) : SimCommand;
+
 /// <summary>The squad AI options' CAMERA bools (<b>Verified</b>, the camera record writer <c>FUN_1403eb710</c> and reader <c>FUN_1403ebf50</c>: the byte each key holds).</summary>
 public static class SquadAiKeys
 {
@@ -372,6 +381,23 @@ public static class SquadAiKeys
             if (camera.Bools.TryGetValue(key, out bool on)) options = on ? options | option : options & ~option;
         return options;
     }
+
+    /// <summary>The CAMERA int holding the player faction's <c>squad formation</c> (<b>Verified</b>: the same writer and reader; read only when the record has <c>ditch</c>).</summary>
+    public const string FormationKey = "formation";
+
+    /// <summary>Sets <paramref name="faction"/>'s formation in <see cref="World.FactionFormations"/> (made from <paramref name="factions"/> when the population has not set it yet).</summary>
+    public static void SetFormation(World world, int faction, int formation, IReadOnlyList<Meitou.Data.Gameplay.FactionData>? factions)
+    {
+        var list = world.FactionFormations?.ToArray() ?? factions?.Select(f => f.SquadFormation).ToArray();
+        if (list is null || (uint)faction >= (uint)list.Length) return;
+        list[faction] = formation;
+        world.FactionFormations = list;
+    }
+
+    /// <summary>The player faction's formation as the AI tab and the save see it: the population's list, else the data's value, else RANDOM.</summary>
+    public static int FormationOf(World world, int faction, IReadOnlyList<Meitou.Data.Gameplay.FactionData>? factions) =>
+        world.FactionFormations is { } list && (uint)faction < (uint)list.Count ? list[faction]
+        : factions is not null && (uint)faction < (uint)factions.Count ? factions[faction].SquadFormation : (int)SquadFormation.Random;
 }
 
 /// <summary>Rules of the squad AI options that other systems ask (docs/game/ai-tasks.md "Squad AI options").</summary>

@@ -88,6 +88,7 @@ public static partial class SaveCapture
         camera.SetMods(options.DataFiles);
         if (data.PlayerFaction >= 0) camera.PlayerFactionName = world.Player.FactionName ?? data.Factions[data.PlayerFaction].Name;
         SquadAiKeys.Write(camera.Record, world.Player.SquadAi);
+        camera.Record.Ints[SquadAiKeys.FormationKey] = SquadAiKeys.FormationOf(world, world.Player.Faction, data.Factions);
         camera.Record.Bools["bl"] = world.Player.BanditsLoot;
         BedSave.Write(camera.Record, world);
         camera.Record.Strings[SaveLoader.SeedKey] = world.Seed.ToString(System.Globalization.CultureInfo.InvariantCulture);

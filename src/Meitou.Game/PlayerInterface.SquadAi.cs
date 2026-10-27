@@ -40,6 +40,46 @@ sealed partial class PlayerInterface
                 new Dictionary<string, string>(UiTooltips.TextProperties(AiOptionRows[i].Tip, "static:AIToolTip")) { ["Checked"] = ticked ? "true" : "false", ["StateSelected"] = ticked ? "true" : "false", ["FontName"] = "Kenshi_PaintedTextFont_Medium", ["TextAlign"] = "Center" },
                 Vector4.Zero, Pickable: true, Clip: panel.Bounds));
         }
+        AddFormationRow(controls, panel.Bounds, AiOptionRows.Length * line, line - 4);
+    }
+
+    /// <summary>The Follow Formation items in the original's order (<c>FUN_140494ce0</c>: Random 0, Military 2, Caravan 1).</summary>
+    static readonly (SquadFormation Formation, string Caption)[] FormationItems = [(SquadFormation.Random, "Random"), (SquadFormation.Military, "Military"), (SquadFormation.Caravan, "Caravan")];
+    const string FormationCombo = "FormationCombo";
+    /// <summary>Where the formation combo box was put into the overview layout (fractions of <c>AIOptions</c>); it is put there again when the panel's size moves it.</summary>
+    string? formationComboPlace;
+
+    /// <summary>
+    /// The AI tab's last line (<c>FUN_140494ce0</c>, a <c>DataPanelLine_DropBox</c>): "Follow Formation" with a <c>Kenshi_ComboBox</c> right-aligned at 0.97 of the panel's width, its tooltip
+    /// "Formation used when squad members are following a leader" in <c>AIToolTip</c>. The combo is a widget of the overview layout (the screen runs its popup); its width, 0.35 of the panel,
+    /// is an engine choice (the original's size is <b>Unknown</b>).
+    /// </summary>
+    void AddFormationRow(List<UiControl> controls, UiRect panel, float top, float height)
+    {
+        if (panel.Height <= 0 || panel.Width <= 0) return;
+        const float Width = 0.35f;
+        float y = top / panel.Height, h = height / panel.Height;
+        controls.Add(new("ai-formation-label", "TextBox", new(panel.X + 6, panel.Y + top, panel.Width * (0.97f - Width) - 6, height), Loc.Tr("Follow Formation"), "", "Kenshi_TextboxStandardText", true,
+            new Dictionary<string, string>(UiTooltips.TextProperties("Formation used when squad members are following a leader", "static:AIToolTip")) { ["TextAlign"] = "Left VCenter" },
+            Vector4.Zero, Pickable: true, Clip: panel));
+        string place = string.Create(CultureInfo.InvariantCulture, $"{y:0.0000} {h:0.0000}");
+        if (place == formationComboPlace) return;
+        formationComboPlace = place;
+        var layout = faithfulScreens.Layout("overview");
+        // The screen's layout is expanded already (its expansion stops at resolved templates), so the combo's template is expanded on its own first.
+        var combo = MyGuiTemplates.Expand(new MyGuiLayout(layout.Version, [new MyGuiWidget("ComboBox", FormationCombo, "Kenshi_ComboBox", "", "Left Top", new(0.97f - Width, y, Width, h), true,
+            new Dictionary<string, string> { ["ReadOnly"] = "true" }, new Dictionary<string, string>(), [])]), uiResources).Roots[0];
+        MyGuiWidget Put(MyGuiWidget w) => w.Name == "AIOptions" ? w with { Children = [.. w.Children.Where(c => c.Name != FormationCombo), combo] } : w with { Children = [.. w.Children.Select(Put)] };
+        faithfulScreens.Replace("overview", layout with { Roots = [.. layout.Roots.Select(Put)] });
+    }
+
+    /// <summary>The combo's items and the player faction's formation (<see cref="SquadAiKeys.FormationOf"/>), once the combo is in the layout.</summary>
+    void BindFormation(UiBindings b)
+    {
+        if (formationComboPlace is null) return;
+        int current = SquadAiKeys.FormationOf(session.World, session.World.Player.Faction, null);
+        b.Lists[FormationCombo] = [.. FormationItems.Select(f => new UiListItem(((int)f.Formation).ToString(CultureInfo.InvariantCulture), Loc.Tr(f.Caption)))];
+        b.SelectedItems[FormationCombo] = Array.FindIndex(FormationItems, f => (int)f.Formation == current);
     }
 
     /// <summary>
@@ -70,6 +110,12 @@ sealed partial class PlayerInterface
 
     void AiAction(MyGuiEvent e)
     {
+        if (e.Widget == FormationCombo && e.Action == "select")
+        {
+            if (int.TryParse(e.Text, CultureInfo.InvariantCulture, out int formation) && Enum.IsDefined((SquadFormation)formation))
+                Say(new SquadFormationCommand((SquadFormation)formation) { Tick = session.World.Tick });
+            return;
+        }
         if (!e.Action.StartsWith("ai-option:", StringComparison.Ordinal) || !int.TryParse(e.Action.AsSpan(10), CultureInfo.InvariantCulture, out int i) || (uint)i >= (uint)AiOptionRows.Length) return;
         var option = AiOptionRows[i].Option;
         Say(new SquadAiCommand(option, (session.CurrentSnapshot.SquadAi & option) == 0) { Tick = session.World.Tick });
