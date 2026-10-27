@@ -7,7 +7,7 @@ namespace Meitou.Launcher;
 
 /// <summary>
 /// The first-start dialog over the main window: the install folder and the Kenshi folder, prefilled with the current (or detected)
-/// ones.
+/// ones, and on Windows whether to launch as Kenshi on Steam.
 /// </summary>
 public sealed partial class SetupOverlay : UserControl
 {
@@ -25,6 +25,8 @@ public sealed partial class SetupOverlay : UserControl
         InitializeComponent();
         InstallBox.Text = LauncherConfig.InstallDirectory;
         ShowKenshi(found, found?.Root ?? config.KenshiPath);
+        SteamRow.IsVisible = OperatingSystem.IsWindows();
+        SteamBox.IsChecked = config.LaunchAsSteamKenshi;
         RendererRow.IsVisible = OperatingSystem.IsMacOS();
         RendererMetalItem.IsVisible = MacSupport.MetalAvailable;
         if (!MacSupport.MetalAvailable && config.Renderer == "metal") config.Renderer = "auto";
@@ -125,6 +127,7 @@ public sealed partial class SetupOverlay : UserControl
         if (install is not null) config.KenshiPath = install.Root;
         if (RendererBox.SelectedItem is ComboBoxItem { Tag: string renderer } && renderer is "auto" or "metal" or "vulkan")
             config.Renderer = renderer;
+        if (OperatingSystem.IsWindows()) config.LaunchAsSteamKenshi = SteamBox.IsChecked == true;
         config.FoldersConfirmed = true;
         config.Save();
         Confirmed?.Invoke(install);

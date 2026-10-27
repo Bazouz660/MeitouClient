@@ -1,7 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="Meitou.Launcher.SetupOverlay">
-  <!-- First start, over the main window: where to install versions and where Kenshi is, both prefilled. -->
+  <!-- First start, over the main window: where to install versions and where Kenshi is, both prefilled; on Windows, whether Steam sees Kenshi. -->
   <Border Classes="plate" Width="680" HorizontalAlignment="Center" VerticalAlignment="Center" Padding="20,16">
     <StackPanel>
       <Border Classes="header" Margin="0,0,0,10">
@@ -32,6 +32,15 @@
           </DockPanel>
         </StackPanel>
       </Border>
+      <Border x:Name="SteamRow" Classes="row" IsVisible="False">
+        <Grid ColumnDefinitions="*,Auto">
+          <StackPanel VerticalAlignment="Center">
+            <TextBlock Classes="name" Text="Launch as Kenshi on Steam" />
+            <TextBlock Classes="desc" Text="Steam sees the game as Kenshi: the overlay, play time and Steam's screenshot key. Needs the Steam copy of Kenshi." TextWrapping="Wrap" />
+          </StackPanel>
+          <CheckBox Grid.Column="1" x:Name="SteamBox" VerticalAlignment="Center" />
+        </Grid>
+      </Border>
       <Border x:Name="RendererRow" Classes="row" IsVisible="False">
         <StackPanel Spacing="6">
           <TextBlock Classes="name" Text="Renderer" />
@@ -51,7 +60,7 @@
           <TextBlock Text="Continue" Foreground="{StaticResource Secondary}" />
         </Button>
         <TextBlock x:Name="Problem" Classes="warn" VerticalAlignment="Center" TextWrapping="Wrap" Margin="0,0,12,0"
-                   Text="The renderer and folders can be changed later in Settings. You can install Meitou now and add Kenshi afterwards." />
+                   Text="These can be changed later in Settings. You can install Meitou now and add Kenshi afterwards." />
       </DockPanel>
     </StackPanel>
   </Border>

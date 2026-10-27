@@ -433,6 +433,7 @@ public sealed partial class MainWindow : Window
             SetupHost.IsVisible = false;
             SetupHost.Child = null;
             InstallPathBox.Text = LauncherConfig.InstallDirectory;
+            SteamBox.IsChecked = config.LaunchAsSteamKenshi;
             RefreshInstalled();
             ShowReleases();
             UseKenshi(chosen);
