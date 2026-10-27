@@ -10,10 +10,11 @@ namespace Meitou.Simulation;
 /// <list type="bullet">
 /// <item><b>Patrols</b> (<c>Task_Patrol</c>, <c>FUN_1408fc730</c>): a squad whose leader acts out a PATROL goal outside a patrol-class package walks from sector to
 /// sector of its biome group: a neighbouring sector (the four diagonal or the four straight ones, a coin flip), a random point in it, or with <c>patrol approaches
-/// towns</c> sometimes a town of it; within 500 of the point it picks the next. Neighbours are weighted by how crowded they are (<see cref="SectorWeight"/>); the walk is the squad's
-/// wander round the point (<see cref="Squad.HomeCentre"/>, <see cref="PopulationSettings.HomelessHomeRadius"/>).</item>
+/// towns</c> sometimes a town of it, aimed 200 outside its gate or wall (<see cref="OutsideTown"/>); near the point it picks the next. Neighbours are weighted by how
+/// crowded they are (<see cref="SectorWeight"/>); the walk is the squad's wander round the point (<see cref="Squad.HomeCentre"/>: <see cref="PopulationSettings.HomelessHomeRadius"/>
+/// and <see cref="PatrolArrive"/> for a sector point, <see cref="TownPointRadius"/> and <see cref="TownPointArrive"/> for a town's).</item>
 /// <item><b>Refill</b> (area tick <c>FUN_1408f9240</c>): while the loaded sectors hold fewer squads than the sum of P × <c>homeless spawn amount</c>, one sector
-/// below its own share makes one squad. Engine choice: the loaded sectors are one island.</item>
+/// below its own share and with no town in it makes one squad. Engine choice: the loaded sectors are one island.</item>
 /// <item><b>Sectors by place</b>: a squad belongs to the sector it stands in (<see cref="Refile"/>), so one that walks out of the loaded sectors leaves the world
 /// (after a grace and away from the player, <see cref="MayRefile"/>)
 /// (kept by its new sector with <see cref="KeepWild"/>, up to that sector's count) and its old sector is refilled, while the total stays bounded.</item>
@@ -21,8 +22,8 @@ namespace Meitou.Simulation;
 /// </summary>
 public sealed partial class PopulationSystem
 {
-    /// <summary>Each patrolling homeless squad's point and how many it has picked, by squad id.</summary>
-    readonly Dictionary<int, (Vector2 Point, int Picks)> homelessPatrols = [];
+    /// <summary>Each patrolling homeless squad's point, how many it has picked and the distance to the point at which it picks the next, by squad id.</summary>
+    readonly Dictionary<int, (Vector2 Point, int Picks, float Arrive)> homelessPatrols = [];
     readonly Dictionary<string, bool> approachesTowns = new(StringComparer.Ordinal);
     readonly HashSet<int> patrolSeen = [];
     /// <summary>The homeless squads standing in each zone (living leader), counted at the start of each patrol pass for <see cref="SectorWeight"/>.</summary>
@@ -30,8 +31,17 @@ public sealed partial class PopulationSystem
     /// <summary>Each homeless squad's home sector, its patrol's tether (<see cref="HomeCell"/>; null: none), by squad id.</summary>
     readonly Dictionary<int, (int X, int Z)?> homelessHomes = [];
 
-    /// <summary>The distance to its point at which a patrol picks the next (<c>FUN_1407ee790</c>, the off-screen step; the loaded rule is taken to match).</summary>
+    /// <summary>The distance to a sector point at which a patrol picks the next (<c>FUN_1407ee790</c>, the off-screen step; the loaded rule is taken to match).</summary>
     const float PatrolArrive = 500;
+
+    /// <summary>
+    /// The wander radius and the arrive distance of a town point (<see cref="OutsideTown"/>). The original sends the character to that exact point and draws the next
+    /// once the move has ended (<c>CharMovement::setPatrolInput</c> mode 3), so the squad stops outside the town; the small mill and arrive are engine choices that keep
+    /// it there rather than milling a 300 disc into the town.
+    /// </summary>
+    const float TownPointRadius = 50, TownPointArrive = 100;
+    /// <summary>How far outside its gate or wall a patrol aims at a town (<c>Town::getPositionOutsideTownGates(200)</c>).</summary>
+    const float TownPointOffset = 200;
 
     void StepHomeless(World world)
     {
@@ -74,11 +84,11 @@ public sealed partial class PopulationSystem
                 patrolSeen.Add(id);
                 var at = new Vector2(table.Previous[slot].Position.X, table.Previous[slot].Position.Z);
                 homelessPatrols.TryGetValue(id, out var patrol);
-                if (patrol.Picks > 0 && Vector2.DistanceSquared(at, patrol.Point) > PatrolArrive * PatrolArrive) continue;
+                if (patrol.Picks > 0 && Vector2.DistanceSquared(at, patrol.Point) > patrol.Arrive * patrol.Arrive) continue;
                 if (PatrolPoint(world, squad, site, at, patrol.Picks) is not { } next) continue;
-                homelessPatrols[id] = (next, patrol.Picks + 1);
-                squad.HomeCentre = next;
-                squad.HomeRadius = settings.HomelessHomeRadius;
+                homelessPatrols[id] = (next.Point, patrol.Picks + 1, next.Town ? TownPointArrive : PatrolArrive);
+                squad.HomeCentre = next.Point;
+                squad.HomeRadius = next.Town ? TownPointRadius : settings.HomelessHomeRadius;
             }
         }
         foreach (var (id, from, to) in refiles) Refile(world, id, from, to);
@@ -156,9 +166,10 @@ public sealed partial class PopulationSystem
 
     /// <summary>
     /// The next point of a patrol from <paramref name="at"/> (<c>FUN_1408fc730</c>): a neighbouring sector of the group by <see cref="SectorWeight"/>, then in it a town (a player's at even odds with
-    /// weight 1, another's at 1 in 4 with weight 0.2) when the template approaches towns, else a placed spot (<c>FUN_1408f50d0</c>); null when none is found.
+    /// weight 1, another's at 1 in 4 with weight 0.2) when the template approaches towns, whose point is <see cref="OutsideTown"/> (<c>Town</c> true), else a placed spot
+    /// (<c>FUN_1408f50d0</c>); null when none is found.
     /// </summary>
-    Vector2? PatrolPoint(World world, Squad squad, WildSite site, Vector2 at, int picks)
+    (Vector2 Point, bool Town)? PatrolPoint(World world, Squad squad, WildSite site, Vector2 at, int picks)
     {
         var biomes = data.Biomes!;
         int group = site.Group;
@@ -201,10 +212,28 @@ public sealed partial class PopulationSystem
                 total += w;
                 if (Rng.Float(Roll()) * total < w) pick = s;   // a running weighted pick
             }
-            if (pick is not null) return new Vector2(pick.Position.X, pick.Position.Z);
+            if (pick is not null) return (OutsideTown(pick), true);
         }
         var (minX, minZ, maxX, maxZ) = WeatherAreas.CellRect(tx, tz);
-        return PlaceInSector(minX, minZ, maxX, maxZ, squad.Faction, world.Seed, key, world.Walkability, []);
+        return PlaceInSector(minX, minZ, maxX, maxZ, squad.Faction, world.Seed, key, world.Walkability, []) is { } spot ? (spot, false) : null;
+    }
+
+    /// <summary>
+    /// A town's patrol waypoint (<c>Town::getPositionOutsideTownGates(200)</c>): the first of its buildings, in list order, that is a gate with a door (not a ruin) or a
+    /// wall, moved <see cref="TownPointOffset"/> outward from the town's position; the town's position when there is none. The original moves the gate's door point and
+    /// its direction is Observed; the building's origin and the outward direction are engine readings.
+    /// </summary>
+    Vector2 OutsideTown(TownSite town)
+    {
+        var centre = new Vector2(town.Position.X, town.Position.Z);
+        foreach (var b in town.Buildings)
+        {
+            if (!(b.IsGate && !b.Destroyed || b.IsWall)) continue;
+            var at = new Vector2(b.Position.X, b.Position.Z);
+            var d = at - centre;
+            return d.LengthSquared() > 0 ? at + Vector2.Normalize(d) * TownPointOffset : centre;
+        }
+        return centre;
     }
 
     /// <summary>
@@ -257,8 +286,8 @@ public sealed partial class PopulationSystem
 
     /// <summary>
     /// The area tick's homeless branch (<c>FUN_1408f9240</c>): when the loaded sectors' squads (a sector with its own town counts at most 2) are below the sum of their
-    /// shares, one sector is drawn by weight max(0, share + 1 − standing), halved with its own town, (w + 1) × 2 when nobody stands in it; one below its share makes
-    /// one squad (built on the population thread), else the next draw.
+    /// shares, one sector is drawn by weight max(0, share + 1 − standing), (w + 1) × 2 when nobody stands in it, and 0 when a town stands in it (<see cref="TownZones"/>);
+    /// one below its share makes one squad (built on the population thread), else the next draw.
     /// </summary>
     void RefillSectors(World world)
     {
@@ -298,9 +327,9 @@ public sealed partial class PopulationSystem
             float share = settings.PopulationMultiplier * groups[site.Group].HomelessSpawnAmount;
             int here = standing.GetValueOrDefault(site.Zone);
             float w = MathF.Max(0, share + 1 - here);
-            if (OwnTown(site)) w *= 0.5f;
             if (here == 0) w = (w + 1) * 2;
-            weights[k] = here < share ? w : 0;   // a sector at its share is drawn and passed over in the original; it never makes one
+            // A sector at its share is drawn and passed over in the original; it never makes one. A town's sector never enters the pick.
+            weights[k] = here < share && !TownZones().Contains(site.Zone) ? w : 0;
         }
         ulong key = Rng.Mix(SeedSalts.HomelessRefill ^ (ulong)world.Tick);
         int picked = Pick(weights, Rng.Hash(world.Seed, key, RngPurpose.Spawn, 0));
@@ -326,5 +355,24 @@ public sealed partial class PopulationSystem
     {
         var (minX, minZ, maxX, maxZ) = WeatherAreas.CellRect(site.Zone.X, site.Zone.Y);
         return NearestTown(new Vector2((minX + maxX) / 2, (minZ + maxZ) / 2), out _) is { } town && WorldLayout.ZoneOf(town.Position.X, town.Position.Z) == site.Zone;
+    }
+
+    HashSet<ZoneCoordinate>? townZones;
+
+    /// <summary>
+    /// The zones a town stands in (<c>Town::setup</c>'s sector flag +0x30): each town's zone list, else its position's zone. Nest markers and points of interest are left out,
+    /// as in the patrol's town draw (which town types run <c>setup</c> is Unknown).
+    /// </summary>
+    HashSet<ZoneCoordinate> TownZones()
+    {
+        if (townZones is not null) return townZones;
+        townZones = [];
+        foreach (var s in data.Sites)
+        {
+            if (s.Town.Type is TownType.NestMarker or TownType.PointOfInterest or TownType.Null) continue;
+            if (s.Coverage.Count > 0) townZones.UnionWith(s.Coverage);
+            else townZones.Add(WorldLayout.ZoneOf(s.Position.X, s.Position.Z));
+        }
+        return townZones;
     }
 }
