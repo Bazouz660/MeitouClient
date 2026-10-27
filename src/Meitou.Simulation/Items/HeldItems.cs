@@ -138,7 +138,7 @@ public sealed partial class PlayerSystem
         if (world.SystemOf<Production.ProductionSystem>()?.Reach(world, lift.Actor, site, out _) is not { } m) return;
         if (t.Section == "main")
         {
-            if (m.Storage is not { } storage || storage.Items.ElementAtOrDefault(t.Index) is not { } item || !Matches(item, t, section: false)) return;
+            if (m.Storage is not { } storage || m.Closed || storage.Items.ElementAtOrDefault(t.Index) is not { } item || !Matches(item, t, section: false)) return;
             Hold(world, lift, Split(storage, item, lift.Whole), storage, "main", item.X, item.Y);
         }
         else if (t.Section == "out" && m.Craft is { } craft)
@@ -185,7 +185,7 @@ public sealed partial class PlayerSystem
                 if (place.Section != "main") return null;
                 if (ContainerFor(world, into.Site, held.Actor, out var opener) is { } container)
                     return opener is not null && world.Player.OpenContainer == into.Site && PlayerSystem.ShopOf(world, container) is null ? new(PlayerSystem.GridOf(world, container), PlayerSystem.GridOf(world, container), "main", PlayerSystem.GridOf(world, container).Width, PlayerSystem.GridOf(world, container).Height, null, container, null) : null;
-                return world.SystemOf<Production.ProductionSystem>()?.Reach(world, held.Actor, into.Site, out _) is { Storage: { } storage } m
+                return world.SystemOf<Production.ProductionSystem>()?.Reach(world, held.Actor, into.Site, out _) is { Storage: { } storage, Closed: false } m
                     ? new(storage, storage, "main", storage.Width, storage.Height, null, null, m) : null;
         }
     }

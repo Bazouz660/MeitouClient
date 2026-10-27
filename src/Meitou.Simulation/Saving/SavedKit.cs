@@ -102,9 +102,12 @@ public static class SavedKit
     /// <summary>The inventory as saved items, a container with its contents; each keeps the record it was read from (<see cref="ItemInstance.Saved"/>).</summary>
     public static List<SaveItem> FromInventory(Inventory inventory) => [.. inventory.Items.Where(i => !InventoryCommands.IsLimbSection(i.Section)).Select(FromItem)];
 
-    internal static SaveItem FromItem(ItemInstance i) => new()
+    internal static SaveItem FromItem(ItemInstance i) => FromItem(i, i.Section);
+
+    /// <summary>A saved item written under <paramref name="section"/> (a machine grid whose original section name is not Meitou's <c>main</c>).</summary>
+    internal static SaveItem FromItem(ItemInstance i, string section) => new()
     {
-        BaseId = i.Record, MaterialId = i.MaterialId, CompanyId = i.CompanyId, Crafter = i.Crafter, Uniform = i.Uniform, Section = i.Section, X = i.X, Y = i.Y, Quantity = i.Quantity, Level = i.Level,
+        BaseId = i.Record, MaterialId = i.MaterialId, CompanyId = i.CompanyId, Crafter = i.Crafter, Uniform = i.Uniform, Section = section, X = i.X, Y = i.Y, Quantity = i.Quantity, Level = i.Level,
         ItemFunction = i.ItemFunction, Quality = i.Quality, Charges = i.Charges, Source = i.Saved,
         Damage = i.LimbDamage, Wear = i.LimbWear, Stun = i.LimbStun, Death = i.Death,
         Lock = i.Lock is { } l ? new SaveItemLock(l.Level, l.EffectivelyLocked, l.Broken, l.Hardness) : null,

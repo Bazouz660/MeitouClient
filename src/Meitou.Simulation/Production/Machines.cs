@@ -167,6 +167,17 @@ public sealed class Machine
     /// while switched on, every other machine's <see cref="Efficiency"/>. Derived each tick for the host's display; not saved, not hashed.
     /// </summary>
     public float Rotation { get; set; }
+    /// <summary>
+    /// An item furnace's <c>active</c> (FurnaceBuilding <c>+0x490</c>): it is burning its grid (<see cref="Storage"/>), which is closed meanwhile. Not saved (the original's save keeps
+    /// no such key, so a loaded furnace is idle).
+    /// </summary>
+    public bool Burning { get; set; }
+    /// <summary>An item furnace's input level (1 when it starts burning, down to 0; the save's <c>consumption amount-0</c>).</summary>
+    public float BurnLevel { get; set; }
+    /// <summary>A burning furnace's grid takes and gives nothing (<c>InventorySection::setEnabled</c> off).</summary>
+    public bool Closed => Burning && Data.IsFurnace;
+    /// <summary>An item furnace's grid metal (<see cref="ProductionSystem.FurnaceMetal"/>), for its panel; derived each tick, not saved, not hashed.</summary>
+    public float Metal { get; set; }
 
     internal void Hash(ref StateHasher h)
     {
@@ -175,6 +186,7 @@ public sealed class Machine
         h.Add(Status);
         h.Add(Power); h.Add(Charge); h.Add(Granted);
         if (Broken) h.Add(0x42726B6E);
+        if (Data.IsFurnace) { h.Add(Burning ? 1 : 0); h.Add(BurnLevel); }
         foreach (var i in Inputs) { h.Add(i.Count); h.Add(i.Level); }
         if (Output is { } o) { h.Add(o.Count); h.Add(o.Progress); }
         if (Storage is { } s) { h.Add(s.Items.Count); foreach (var item in s.Items) { h.Add(Rng.StableHash(item.Record)); h.Add(item.Quantity); h.Add(item.X); h.Add(item.Y); } }

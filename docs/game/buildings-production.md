@@ -454,6 +454,30 @@ an operator stay at a growing farm with water, and Meitou plays the clip there.
 | 23 BATTERY | battery 0.00125 |
 | 26 RAIN_COLLECTOR | 48 |
 
+### Item furnace
+
+`FurnaceBuilding` (function 14; KenshiLib 1ce4a16 names, bodies checked in our exe). Base data (**Verified**, probe): Item Furnace (`3959-gamedata.base`, research Weapon
+Melting), functionality Furnace: `max operators` 0 (so automatic: `ProductionBuilding::vfunc_28` runs it with s = 1), `production mult` 0.25, `produces` Raw Iron 2000, no `consumes`.
+- **Grid** (**Verified**, `setupFromData` `FUN_14029f980`): with no `consumes` it adds one input, section `in1` (bytes at `141694a78`), 12 x 7, no slot limit, stacks at least 10
+  (`stackingBonusMin` 10, mult 1), level 0, rate 1. Slots 183 / 184 / 185 (input and output updates, rate limit) are empty, so the producer's draw does not run.
+- **Active** (`incinerate` `FUN_140299790`, `+0x490`, **Observed**): the panel's button. Off with an empty grid: nothing. Off otherwise: on, level 1, output progress 0. On: off,
+  level and progress 0, the items stay. The grid's section is disabled while on (`InventorySection::setEnabled(!active)`), then slot `0x318(active)`.
+- **Burn** (`operate` slot 150, `FUN_140299fa0`, **Observed**): only while on, with an output and an input; state 2; amount as [production](#production) (power share x slot `0x538`
+  when `+0x3bc` > 0, **Unknown** meaning, 0 for the Item Furnace); level -= amount, progress += amount; at level <= 0.001 or progress >= 0.999 the output gets (int) the grid's metal of
+  Raw Iron (one `addItem` of that quantity), the grid is emptied (`clearAllItems`) and the furnace turns off. So a whole load burns in 1 / (0.25 x P x option) seconds at full health, whatever it holds.
+- **Metal** (`getInputValue` slot 180, `FUN_1402a5f40`; constants **Verified** by disassembly): ITEM with `ingredients`: iron x quantity x 0.5; ARMOUR of `material type` 2 or 3
+  (chain, plate): total coverage x 0.01 x (1 - `fabrics amount`) x 2, other armour 0; WEAPON: `getItemWeightSingle` (`+0x120`) x 0.2, within 0.5..5; anything else 0.
+  Iron (`getIronAmountInItem` `FUN_1402a5750`, **Verified** by disassembly): over the record's `ingredients`, Raw Iron (`1866-gamedata.base`, a literal) adds its v0 x 0.01, any other
+  ingredient its own iron, recursively, not times its amount. Total coverage (`FUN_14082fd80`, **Observed**): the run-time int `total coverage` = the sum of the armour's
+  `part coverage` v0, the entry `101-gamedata.quack` x 1.5 (truncated), 100 when 0.
+- **Panel** (`getGUIData` slot 40, `FUN_14030b750`, **Observed**): section 0xf is its own, every other section the producer's. `Total Metals:` int(metal x 10) x 0.1, Good from 1,
+  else Bad; `Active:` a `Kenshi_Button2` line `OFF` (Main) / `ON` (Good), tooltip "Warning:" "Switching on will incinerate the entire inventory!".
+- **Hauling**: `canHaveSomeOfThese` (slot 148, `FUN_14029cbc0`) accepts only `item function` 17 (severed limbs), so the AI's haulers bring it nothing else. Default task 26 LOOT_TARGET.
+- **Save**: no override of the producer's keys, so `active` is not saved (a loaded furnace is off); the level is `consumption amount-0`, the progress `production amount`.
+
+Meitou (`ProductionSystem.Furnace.cs`): the grid is the machine's `Storage` (saved as section `in1`), `Machine.Burning` / `BurnLevel`, the `IncinerateFurnace` command and the panel rows
+on the player's furnace; engine choices: a weapon's weight is its inventory unit weight, iron past the output's capacity is lost, the status returns to 0 when it stops, the button plays `General_Click`.
+
 ### Resources
 
 (**Observed**, `uses_world_resource_mining` `FUN_14029c670`, `uses_resources` `FUN_140a13540`,

@@ -1128,7 +1128,7 @@ crafting benches, generators and batteries. Facts: [production](game/buildings-p
   - **Observed** with the vanilla map: only the central biomes give farming ground.
 - **Operating.** `OperateOrder` sets `CharacterTask.Operate`. The character walks within the building's `use range` ([work
   distance](game/buildings-production.md#work-distance)) and works it every tick; work is scaled by its skill factor and trains the stat.
-  - Producers make output from their inputs.
+  - Producers make output from their inputs. An item furnace burns its grid into Raw Iron while its Active button is on ([item furnace](game/buildings-production.md#item-furnace)).
   - Farms are harvested and cleared.
   - Research benches add to the research queue; crafting benches work their queue.
   - More characters than `max operators` are refused with "X is already in use.".
@@ -1242,7 +1242,7 @@ crafting benches, generators and batteries. Facts: [production](game/buildings-p
   sights a player turret gunner also takes dangerous neutrals at weight 0.6).
 - **Saves** (`Saving/MachineSave`, `ResearchSave`). Each building's production and farm keys go into its
   GAMESTATE_BUILDING. Items go into an INVENTORY_STATE `<site>-inventory`, listed first by the building, with sections
-  `in<k>`, `out` and `main`.
+  `in<k>`, `out` and `main` (a furnace's grid `in1`).
   - A loaded farm's plants all take its growth.
   - The original's reading of these inventories is unverified: no sample holds a working player building.
 - **UI** (Faithful, `PlayerInterface.Production.cs`).
@@ -1257,7 +1257,7 @@ crafting benches, generators and batteries. Facts: [production](game/buildings-p
     description with the cost.
   - The original's verb names, row widgets and colours are **Unknown**.
 - **Engine gaps:**
-  - Furnaces do not burn. A quick right click on the player's furnace walks the selection there and opens its window
+  - A quick right click on the player's furnace walks the selection there and opens its window
     (the original's 26 LOOT_TARGET); on the player's turret the nearest able selected character operates it (146 USE_TURRET, `UseTurretOrder`): it
     walks to its gunner spot (as for town turrets below), stands there facing it holding `combatstance`, counts as its operator (so it draws power) and the
     combat system fires it ([Ranged](#ranged)); one gunner, engine choice; someone else at it: "is already in use".
@@ -1543,7 +1543,7 @@ Original-game unknowns are maintained in each linked subsystem reference; do not
 
 **Engine gaps** are listed where they apply, not here: [unique characters](#unique-characters) and [campaigns](#off-screen-tier),
 [ranged](#ranged) (bolts before a building's collision loads), [locks](#cages-beds-and-locks),
-[slavery](#arrest-and-jail), [kidnapping](#kidnapping), [buildings](#buildings) and walls, [production](#production) (turrets, furnaces,
+[slavery](#arrest-and-jail), [kidnapping](#kidnapping), [buildings](#buildings) and walls, [production](#production) (turrets,
 plants), [prospecting](#prospecting), [dialogue](#dialogue) (conditions on state Meitou lacks), [AI](#ai) (wars, prisoners, planner finders).
 Smuggling and stealing: [trade](#trade). UI: [faithful-ui-parity](faithful-ui-parity.md).
 

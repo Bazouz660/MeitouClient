@@ -360,6 +360,11 @@ sealed partial class PlayerInterface
             Sound("UI_Generator", "Generator", on ? "On" : "Off");
             Say(action == "machine-power" ? new Meitou.Simulation.Production.SetMachinePower(id, PowerOn: on) { Tick = session.World.Tick } : new Meitou.Simulation.Production.SetMachinePower(id, GetsBattery: on) { Tick = session.World.Tick });
         }
+        else if (action == "machine-incinerate" && Machine(id) is { Furnace: not null })
+        {
+            Sound("General_Click");   // engine choice: the button's own sound is not traced
+            Say(new Meitou.Simulation.Production.IncinerateFurnace(id) { Tick = session.World.Tick });
+        }
         else if (action == "building-pause" && site is { Complete: false }) Say(new Meitou.Simulation.Construction.PauseSite(id, !site.Paused) { Tick = session.World.Tick });
         else if (action == "building-doors") Say(new Meitou.Simulation.Locks.ToggleDoorsOrder(id) { Tick = session.World.Tick });
         else if (action == "building-locks") Say(new Meitou.Simulation.Locks.ToggleDoorLocksOrder(id) { Tick = session.World.Tick });

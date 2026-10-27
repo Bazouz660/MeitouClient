@@ -18,6 +18,8 @@ public static class MachineSave
 {
     const string StateSuffix = "-S23";
     const string InventorySuffix = "-inventory";
+    /// <summary>The item furnace's input section (<b>Verified</b>, <c>FurnaceBuilding::setupFromData</c>), Meitou's storage grid of a furnace.</summary>
+    const string FurnaceSection = "in1";
 
     /// <summary>Writes every machine into its building's state (after <see cref="BuildingSave.Write"/>).</summary>
     public static void Write(SaveGame game, World world)
@@ -61,6 +63,7 @@ public static class MachineSave
         if (m.Data.IsBattery) state.Floats["batterycharge"] = m.Charge;
         if (m.Output is { } o) state.Floats["production amount"] = o.Progress;
         for (int k = 0; k < m.Inputs.Length; k++) state.Floats["consumption amount-" + k.ToString(CultureInfo.InvariantCulture)] = m.Inputs[k].Level;
+        if (m.Data.IsFurnace) state.Floats["consumption amount-0"] = m.BurnLevel;   // its one input, the burn level
         if (m.Craft is { } c) WriteCraft(state, c);
         if (m.Farm is not { } f) return;
         state.Floats["plant growth"] = f.Growth;
@@ -96,7 +99,7 @@ public static class MachineSave
             if (m.Inputs[k].Count > 0) list.Add(new SaveItem { BaseId = m.Inputs[k].Item, Section = "in" + k.ToString(CultureInfo.InvariantCulture), Quantity = m.Inputs[k].Count });
         if (m.Output is { Count: > 0 } o) list.Add(new SaveItem { BaseId = o.Recipe.Item, Section = "out", Quantity = o.Count });
         if (m.Craft is { } c) list.AddRange(c.Done.Select(SavedKit.FromItem));
-        if (m.Storage is { } s) list.AddRange(SavedKit.FromInventory(s));
+        if (m.Storage is { } s) list.AddRange(m.Data.IsFurnace ? s.Items.Select(i => SavedKit.FromItem(i, FurnaceSection)) : SavedKit.FromInventory(s));
         return list;
     }
 
@@ -133,6 +136,7 @@ public static class MachineSave
             if (m.Storage is { } grid && storage.Count > 0)
                 foreach (var item in SavedKit.ToInventory(storage, factory).Items)
                 {
+                    if (m.Data.IsFurnace) item.Section = "main";   // its in1 is Meitou's storage grid
                     // A grid that is now smaller (a storage sized from its one item) gets an item that no longer fits at the next free cell, as the original's loader does.
                     bool fits = item.X >= 0 && item.Y >= 0 && item.X + item.Width <= grid.Width && item.Y + item.Height <= grid.Height && grid.IsFree(item.Section, item.X, item.Y, item.Width, item.Height);
                     if (fits || grid.Add(item) is false && item.Quantity > 0) grid.Items.Add(item);
@@ -163,6 +167,7 @@ public static class MachineSave
         if (m.Data.IsBattery) m.Charge = Math.Max(0, state.Floats.GetValueOrDefault("batterycharge"));
         if (m.Output is { } o) o.Progress = state.Floats.GetValueOrDefault("production amount");
         for (int k = 0; k < m.Inputs.Length; k++) m.Inputs[k].Level = state.Floats.GetValueOrDefault("consumption amount-" + k.ToString(CultureInfo.InvariantCulture));
+        if (m.Data.IsFurnace) m.BurnLevel = state.Floats.GetValueOrDefault("consumption amount-0");
         if (m.Farm is not { } f || !state.Floats.ContainsKey("plant growth")) return;
         f.Growth = state.Floats.GetValueOrDefault("plant growth");
         f.Death = state.Floats.GetValueOrDefault("plant death");

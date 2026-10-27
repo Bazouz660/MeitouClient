@@ -103,6 +103,8 @@ public sealed record MachineData
     public bool IsTraining => Function == TrainingFunction && Stat > 0;
     /// <summary>A mine, well or refinery: inputs (if any) into one output (functions 1, 4 and 27, <b>Verified</b> enum; the stone and ore processors are 4).</summary>
     public bool IsProducer => Function is MineFunction or RefineryFunction or NaturalMineFunction or RainCollectorFunction && Farm is null && Output is not null;
+    /// <summary>An item furnace (function 14, <c>FurnaceBuilding</c>): burns the items of its input grid into its output (docs/game/buildings-production.md "Item furnace").</summary>
+    public bool IsFurnace => Function == ItemFurnaceFunction && Output is not null;
     /// <summary>A crafting bench (function 10): its crafts lists.</summary>
     public CraftBench? Craft { get; init; }
     public bool IsCrafting => Craft is not null;

@@ -122,7 +122,8 @@ public sealed partial class ProductionSystem : ITickSystem
             Position = site.Position,
             Inputs = [.. data.Inputs.Select(i => new InputSlot(i))],
             Output = data.Output is { } o ? new OutputSlot(o) : null,
-            Storage = data.HasInventory ? new Inventory(data.StorageWidth, data.StorageHeight) { StackBonusMult = data.StackBonusMult, Limited = data.StorageLimit.Count > 0 } : null,
+            Storage = data.HasInventory ? new Inventory(data.StorageWidth, data.StorageHeight) { StackBonusMult = data.StackBonusMult, Limited = data.StorageLimit.Count > 0 }
+                : data.IsFurnace ? FurnaceGrid() : null,
             Farm = data.Farm is { } fd ? new FarmState(Meitou.Data.Gameplay.Construction.FarmLayout.Count(fd)) : null,
             Craft = data.IsCrafting ? new CraftState() : null,
         };
@@ -275,6 +276,10 @@ public sealed partial class ProductionSystem : ITickSystem
                 case SetMachinePower set when world.Machines.Find(set.Site) is { } powered:
                     if (set.PowerOn is { } on) powered.PowerOn = on;
                     if (set.GetsBattery is { } battery && powered.Data.IsConsumer) powered.GetsBattery = battery;
+                    world.Machines.Touch();
+                    break;
+                case IncinerateFurnace burn when world.Machines.Find(burn.Site) is { Data.IsFurnace: true } furnace && Site(world, burn.Site) is { Complete: true } lit && lit.Owner == world.Player.Faction:
+                    Incinerate(furnace);
                     world.Machines.Touch();
                     break;
             }
@@ -552,6 +557,12 @@ public sealed partial class ProductionSystem : ITickSystem
         // An automatic machine works with nobody at it, at skill factor 1 (Verified, ProductionBuilding::vfunc_28 calls slot 150 with no operator when +0x3a9 is clear).
         foreach (var m in world.Machines.All)
             if (m.Data.IsAutomatic && m.Data.IsProducer && Site(world, m.Site) is { Complete: true } && Live(world, m)) ProduceStep(world, m, 1, dt);
+            else if (m.Data.IsFurnace && m.Storage is { } grid)
+            {
+                if (m.Burning && Site(world, m.Site) is { Complete: true } && Live(world, m)) FurnaceStep(world, m, dt);
+                float metal = FurnaceMetal(grid);
+                if (metal != m.Metal) { m.Metal = metal; world.Machines.Touch(); }
+            }
 
         var table = world.Characters;
         int contributions = 0;
@@ -1155,7 +1166,7 @@ public sealed partial class ProductionSystem : ITickSystem
         }
         else
         {
-            if (m.Storage is not { } storage || item.Contents is not null && item.Section == "backpack_attach") return;
+            if (m.Storage is not { } storage || m.Closed || item.Contents is not null && item.Section == "backpack_attach") return;
             if (m.Data.IsStorage && !m.Data.Accepts(item.Record, item.Type))
             {
                 world.Post($"{m.Data.Name} does not take {item.Name}.");
@@ -1187,7 +1198,7 @@ public sealed partial class ProductionSystem : ITickSystem
         var root = cold.Inventory!;
         if (take.Slot == -1)
         {
-            if (m.Storage is not { } storage || take.Index < 0 || take.Index >= storage.Items.Count) return;
+            if (m.Storage is not { } storage || m.Closed || take.Index < 0 || take.Index >= storage.Items.Count) return;
             // What does not fit stays in the storage.
             if (InventoryCommands.MoveInto(storage, storage.Items[take.Index], take.Count, root, take.BagFirst, out bool worn, cold.Race?.StringId) > 0) world.Machines.Touch();
             if (worn) Assembly?.RefreshEquipment(cold);

@@ -76,6 +76,9 @@ public readonly record struct MachineSound(float Efficiency, bool Powered);
 /// </summary>
 public readonly record struct WindView(float Share, float Speed, (float Min, float Max)? Range, float Rated, bool PowerOn);
 
+/// <summary>An item furnace's panel (<c>FurnaceBuilding::getGUIData</c> section 0xf): whether it burns (<see cref="Machine.Burning"/>) and its grid's metal (<c>Total Metals:</c>).</summary>
+public readonly record struct FurnaceView(bool Burning, float Metal);
+
 /// <summary>A machine of a complete player building after a tick (docs/simulation.md "Production"); <see cref="Site"/> is the building's instance id.</summary>
 public sealed record MachineSnapshot(string Site, string Record, IReadOnlyList<MachineSlotView> Inputs, MachineSlotView? Output, InventoryView? Storage, FarmView? Farm, byte Status, int Operators, int MaxOperators)
 {
@@ -117,6 +120,8 @@ public sealed record MachineSnapshot(string Site, string Record, IReadOnlyList<M
     public bool Broken { get; init; }
     /// <summary>A hydroponic farm (its FARM_DATA's <c>fertility effect</c> is 0, the exe's FarmBuilding <c>+0x558</c>): the only farms with an Efficiency line.</summary>
     public bool Hydroponic { get; init; }
+    /// <summary>An item furnace's state (null for other machines).</summary>
+    public FurnaceView? Furnace { get; init; }
 
     /// <summary>The panel of a machine's class: farms; BF_BED 6; BF_TRAINING 7; BF_TURRET 12; every other class (furnaces too) Production.</summary>
     static MachinePanel PanelOf(MachineData d) => d.Farm is not null ? MachinePanel.Farm : d.Function switch
@@ -139,6 +144,7 @@ public sealed record MachineSnapshot(string Site, string Record, IReadOnlyList<M
         return new MachineSnapshot(m.Site, m.Data.Id, inputs, output, storage, farm, m.Status, m.Operators, m.Data.MaxOperators) { Sound = sound, Rotation = m.Rotation, Wind = m.Data.IsWind ? new WindView(m.Wind, m.WindSpeed, m.Data.WindRotor, m.WindRated, m.PowerOn) : null, TechLevel = m.Data.IsResearch ? m.Data.TechLevel : 0, Operable = m.Data.Operable, IsAutomatic = m.Data.IsAutomatic, IsStorage = m.Data.IsStorage, Function = m.Data.Function, StorageLimitName = m.Data.StorageLimit is [var only] ? Name(only) : null, StorageCapacity = m.Data.StorageLimit is [_] ? (int)m.Data.StackBonusMult : 0, Craft = Crafting(m, items),
             Power = m.Data.IsConsumer || m.Data.IsGenerator || m.Data.IsBattery ? new PowerView(m.Data.IsBattery ? PowerKind.Battery : m.Data.IsGenerator ? PowerKind.Generator : PowerKind.Consumer, m.Demand, m.Granted, m.Usage, m.Charge, m.Store, m.Inputs.Length == 0 || Array.Exists(m.Inputs, i => i.Level > 0 || i.Count > 0), m.PowerOn, m.GetsBattery) { OnGrid = m.OnGrid, GridCharging = m.GridCharging, GridDraining = m.GridDraining } : null,
             Panel = PanelOf(m.Data), OutputValue = m.Data.OutputValue, Research = m.ProductionMult, Broken = m.Broken, Hydroponic = m.Data.Farm is { Indoor: true },
+            Furnace = m.Data.IsFurnace ? new FurnaceView(m.Burning, m.Metal) : null,
             Efficiency = new(m.Operators, m.Data.PowerOperators, m.Health, m.Power, m.Data.IsConsumer, m.Data.OutputRate * m.ProductionMult, m.Yield)
             {
                 Starved = m.Farm is { Status: FarmStatus.NoWater }, Drought = m.Data.Farm?.DroughtMultiplier ?? 1,

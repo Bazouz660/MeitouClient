@@ -496,6 +496,13 @@ sealed partial class PlayerInterface
                 "meitou:machine-power", ButtonWidth: 0.3f));
         }
         if (m.TechLevel > 0) stats.Add(new("Tech level:", N(m.TechLevel), MainColour));
+        // FurnaceBuilding::getGUIData section 0xf (FUN_14030b750): Total Metals (one decimal, Good from 1), then the Active button with its warning.
+        if (m.Furnace is { } furnace)
+        {
+            stats.Add(new("Total Metals:", ((int)(furnace.Metal * 10) / 10f).ToString("0.#", CultureInfo.InvariantCulture), MainColour, furnace.Metal >= 1 ? GoodColour : BadColour));
+            if (own) stats.Add(new("Active:", furnace.Burning ? "ON" : "OFF", MainColour, furnace.Burning ? GoodColour : MainColour,
+                Loc.Tr("Warning:") + " " + Loc.Tr("Switching on will incinerate the entire inventory!"), "meitou:machine-incinerate", ButtonWidth: 0.4f));
+        }
     }
 
     /// <summary>
