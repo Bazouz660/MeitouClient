@@ -456,7 +456,10 @@ Meitou: [ground items](../simulation.md#items-and-eating).
   0.5 × imprisoned/dead, clamped to [0, 2] for a sector by a town) is compared with `FUN_1408f5ca0`, the sum of P × `homeless spawn
   amount` over the loaded zones of the island; while below, one sector is picked by weight max(0, P × amount + 1 − load), halved by a town,
   (w + 1) × 2 when empty, and one squad is made there (`FUN_1408f8060`) if its count is below P × amount, retrying other sectors when that
-  fails. So a loaded sector is refilled as its squads die or walk out (**Verified** by code). The squad is given a home town: the
+  fails. Sectors a town stands in never enter the pick: `Town::setup` (`FUN_1409353c0`) sets sector byte +0x30 for every sector of the
+  town's zone list (or of its position), +0x31 when the Town int at +0xd8 is 1 (its type, **Observed**), and the pick, the spot fallbacks `FUN_1408f6350` / `FUN_1408fc1a0` and
+  the patrol's town branch (below) read it (**Verified**, decompile; which town types run `setup` is **Unknown**). Meitou gives a sector
+  in a town's zone list (else its position's zone) weight 0, re-read each refill so town overrides apply. So a loaded sector is refilled as its squads die or walk out (**Verified** by code). The squad is given a home town: the
   sector's own town when its faction is the squad's, else the faction's nearest town, or its nearest nest when that is 9216 nearer, none
   beyond 50000 (`createRandomUnloadedSquad` → `Ownerships::setHomeTown`, KenshiLib 1ce4a16 names; **Verified** by code). It tethers the
   patrol (below). Saved homeless platoons have no `basetown`/`hometown` ([save.md](../formats/save.md)); whether the home is saved
@@ -473,15 +476,32 @@ Meitou: [ground items](../simulation.md#items-and-eating).
      is `blood smell mult` read from the template's bool fields, so it is always 0 (**Observed**). With a home town, × 5 when the
      sector's Chebyshev distance d from the home's sector equals near or far, × 10 between, × 0 outside: a homed patrol stays within one
      sector of its home's sector, and homeless squads have one (above).
-  3. With `patrol approaches towns` and towns in the drawn sector (`TownList::getTownsInArea`), each player town enters at even odds
-     with weight 1 and each other town at 1 in 4 with weight 0.2; a drawn town's `getPositionForWaypoint` is the target (a cached point:
-     in front of a gate near the centre, or the centre; **Observed**). Else a placed spot in that sector (`FUN_1408f50d0`); with no
-     neighbour, `FUN_1408fc1a0` takes the first active sector of the group (not the player's, no town, fewer than 2 excluded platoons)
-     where a spot is placed, else a random sector of the group; it ignores the tether.
-  A loaded patrol draws again whenever its move order is re-issued (the task's update, once the move has ended); the order's radius is
-  1250 (**Observed**). Off screen a new point is picked within 500 of the last (`FUN_1407ee790`). Meitou: the weights above with n the
-  homeless squads standing in the zone and 10 for an empty active one (engine choice), the tether, re-pick within 500, the town's centre;
-  with no neighbour, a point of the home's sector, else of its own (engine choice).
+  3. With `patrol approaches towns` and the drawn sector's town flag +0x30 (above), the towns in it (`TownList::getTownsInArea`): each
+     player town enters at even odds with weight 1 and each other town at 1 in 4 with weight 0.2, hostility unchecked; a drawn town's
+     `getPositionForWaypoint` (`TownBase`, `FUN_140927120`, vtable +0x38) is the target. Else a placed spot in that sector
+     (`FUN_1408f50d0`); with no neighbour, `FUN_1408fc1a0` takes the first active sector of the group (no town flag, fewer than 2
+     excluded platoons) where a spot is placed, else a random sector of the group; it ignores the tether.
+  **The town waypoint is outside the town** (**Verified**, decompile): `getPositionForWaypoint` caches its point (`TownPositionCacher`,
+  Town +0xc0) and, for a town with a building list (vtable +0x2f0: Town +0x3b0 set), takes `Town::getPositionOutsideTownGates(200)`
+  (`FUN_140929560`): one pass over the building list, returning at the first entry that is either a gateway (`isGate`) with
+  `amInsideTownWalls` 0 and a door (`getDoor`), whose door point +0x3bc is moved 200 along a normalised direction (its origin is dropped
+  by the decompile; outward from the town is **Observed** from the name), or a wall (`isAWall`) whose BUILDING record has `interior` references (`myInterior` +0x1f0, created only then by `Building::setup` `FUN_140551b20`; **Verified**, decompile), whose position
+  is moved the same way; neither: the town position. A town without buildings: a door point of the object under the town position
+  (`FUN_1409b2ab0`, a ray from 1000 above), else the position. So bandits never aim inside a walled town, the Hub included (its two
+  `Defensive Gate IV` are ruins in the level data; a ruin has no door ([locks](locks.md#doors)), so the wall branch applies, skipping the first wall, a `Defensive Wall IV Connector` without `interior`; **Observed**).
+  The move: `CharMovement::setPatrolInput` (`FUN_14065eaa0`, vtable +0xa0) in mode 3 (a `PatrolInfo` with a biome group) draws the point
+  above and sends the character to it exactly; it redraws (up to 10 times) only a point whose ground is present and below 95 when the
+  byte at +0x79 of the object at Character +0x2e0 is set (a race flag, water below 95: **Observed**), else accepts it (**Verified**). The
+  1250 in `FUN_1405c6b30` is the order's scatter radius, used only by other modes: there the destination is jittered ±radius/2 in X/Z, and
+  a point with a building within 300 is rejected (retry, up to 10) unless that building is public, or its owner is the mover's ally or the
+  player faction, and it lies in the mover's own town (**Observed**, decompile; the earlier "radius 1250 (Observed)" reading was wrong).
+  A loaded patrol draws again when the task's update finds the move ended (`FUN_1405c6b30` mode 1 returns unless the mover reports
+  idle, reached or failed), so the squad walks up to 200 outside the gate, stops, and turns to the next sector or town. Off screen a new
+  point is picked within 500 of the last (`FUN_1407ee790`).
+  Meitou (`PopulationHomeless.PatrolPoint`): the weights above with n the homeless squads standing in the zone and 10 for an empty active
+  one (engine choice), the tether, re-pick within 500; with no neighbour, a point of the home's sector, else of its own (engine choice).
+  A drawn town's point is the outside point above (`OutsideTown`: the first non-ruined `is wall gate` building with gate code 0 or unknown (unknown = outside, engine choice) or `links together` building with `interior` references, its origin
+  moved 200 outward from the town position); the squad mills a 50 disc round it and re-picks within 100 (origin, outward and both radii: engine choices).
   `patrol approaches towns` is set on 933 of 961 squad templates of the merged load order, the Starving Bandit and Dust Bandit roamers
   among them, so their patrols target NPC towns as above; no other town check was found (**Verified**, record dump).
 - **Traders**: restocked only while active, when the clock passes the platoon's `inventory refresh time`; an unloaded one catches up at
@@ -641,8 +661,8 @@ every message {1} is the campaign's name and {2} the target town's (the cancel m
   `replacement time` (constant 2618.18 from `FUN_14066cd50`), UNIQUE_SQUAD_TEMPLATE `persistent` use and `missions` (DIPLOMATIC_ASSAULTS),
   the polarity of the import handle test; other readers of `unique` (`FUN_14067b070` dialogue conditions, `FUN_1407609e0` / `FUN_140761550`) not opened.
 - Town overrides: what sets the ZoneManager +8 byte; the buildinglist entry field tested in `FUN_1409fe340` ([town overrides](#town-overrides)).
-- Whether the 1250 radius of the proximity helper is squared.
-- Patrol routes: the patrol tasks (`Task_Patrol`, `Task_PatrolTown`, `GoOutOnPatrol*`) were not decoded here (class mapping: [ai-tasks.md](ai-tasks.md#tasktype-to-task-class); packages: [ai.md](ai.md#signal-functions-and-the-package-classes)); no fixed route data
+- The direction of the town waypoint's 200 offset and which town types run `Town::setup` ([patrol task](#off-screen-world)).
+- Patrol routes: `Task_PatrolTown` and `GoOutOnPatrol*` were not decoded here (`Task_Patrol` is above; class mapping: [ai-tasks.md](ai-tasks.md#tasktype-to-task-class); packages: [ai.md](ai.md#signal-functions-and-the-package-classes)); no fixed route data
   was found in FCS records (squad templates only name `AI packages`; `patrol approaches towns` is a bool).
 
 ## Expression reference

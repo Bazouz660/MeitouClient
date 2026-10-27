@@ -215,9 +215,11 @@ Implemented (`PopulationRoaming.cs`):
   - **Homeless squads** (`PopulationHomeless.cs`; [original rules](game/factions-squads-towns.md#off-screen-world)): every 2 s a squad whose
     leader patrols (a PATROL goal, outside a patrol-class package's town route; a homeless squad has no town, so its patrol package walks here too: the
     Border Zone's starving bandits) walks to its patrol point (its home centre, homeless radius) and picks the
-    next within 500. A squad belongs to the sector it stands in: one that walks into an unloaded sector leaves the world (after the roaming
+    next within 500; a town drawn with `patrol approaches towns` is aimed 200 outside its first gate that is not a ruin with gate code 0 or unknown (unknown = outside, engine choice) or wall with `interior` references, milled round (50) and left
+    within 100, so bandits stop outside the Hub ([patrol task](game/factions-squads-towns.md#off-screen-world)).
+    A squad belongs to the sector it stands in: one that walks into an unloaded sector leaves the world (after the roaming
     10 s grace outside the active zones, ≥ 1382.4 from every player character), kept there with
-    `KeepWild` up to that sector's count, else dropped. The area tick refills the loaded sectors, all taken as one island (engine choice).
+    `KeepWild` up to that sector's count, else dropped. The area tick refills the loaded sectors, all taken as one island (engine choice). Sectors a town stands in (re-read each refill) are never refilled.
     **Observed** (headless, Fog Islands, one zone loaded): a fogman squad walks a sector a few minutes; leaving, a fresh one is made.
 
 Implemented (`PopulationCampaigns.cs`; [original rules](game/factions-squads-towns.md#campaigns),
