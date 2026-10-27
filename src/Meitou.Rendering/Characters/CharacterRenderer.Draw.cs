@@ -89,9 +89,13 @@ internal sealed unsafe partial class CharacterRenderer
     /// <summary>Room masks used to give indoor characters the same indirect-light gain as their surroundings.</summary>
     internal WorldObjectRenderer? InteriorObjects { get; set; }
 
-    /// <summary>Draws the characters seen from <paramref name="eye"/> through <paramref name="frustum"/> into the open pass.</summary>
-    public void Draw(Matrix4x4 viewProjection, Vector3 eye, Vector4[] frustum, Vector3 light, Vector3 fogColour, float fogDistance) =>
-        DrawView(new ViewConstants { ViewProjection = viewProjection, Eye = eye, LightDir = light, FogColour = fogColour, FogDistance = fogDistance }, eye, frustum);
+    /// <summary>
+    /// Draws the characters seen from <paramref name="eye"/> through <paramref name="frustum"/> into the open pass. <paramref name="relative"/>, when the caller has it, is the
+    /// same view-projection for positions relative to the eye (the view's rotation only): exact, where one made from <paramref name="viewProjection"/> carries the rounding of
+    /// the eye's world position (<see cref="DrawView"/>).
+    /// </summary>
+    public void Draw(Matrix4x4 viewProjection, Vector3 eye, Vector4[] frustum, Vector3 light, Vector3 fogColour, float fogDistance, Matrix4x4? relative = null) =>
+        DrawView(new ViewConstants { ViewProjection = viewProjection, Eye = eye, LightDir = light, FogColour = fogColour, FogDistance = fogDistance }, eye, frustum, relative: relative);
 
     /// <summary>
     /// Draws the characters' depth for a shadow cascade (<see cref="CharacterShaders.DepthFragment"/>); levels chosen from <paramref name="lodEye"/>, never finer than
@@ -136,15 +140,17 @@ internal sealed unsafe partial class CharacterRenderer
         for (int k = 0; k < views; k++) depthViews[k] = default;
     }
 
-    void DrawView(in ViewConstants worldView, Vector3 eye, Vector4[] frustum, float lodFloor = 0, float minRadius = 0, ViewBatches? prepared = null)
+    void DrawView(in ViewConstants worldView, Vector3 eye, Vector4[] frustum, float lodFloor = 0, float minRadius = 0, ViewBatches? prepared = null, Matrix4x4? relative = null, Matrix4x4? previousRelative = null)
     {
         var cpu = Stopwatch.StartNew();
         // Drawn relative to the view's eye (the vertex program adds it back for the shading): skinned in world floats, an animated vertex far from
         // the origin (the Hub, tens of thousands of units out) rounds to a different step every frame and the character visibly jiggles.
+        // The view-projection for those positions is the caller's rotation-only one when it has it: FromOrigin can cancel the eye's coordinates exactly, but not the rounding
+        // already in a matrix built with them (about 0.004 units at 50000, a different error every frame: 0.3 px at the closest zoom, and as much noise in the velocity).
         var origin = worldView.Eye;
         var view = worldView;
-        view.ViewProjection = FromOrigin(origin, worldView.ViewProjection);
-        view.PreviousViewProjection = FromOrigin(origin, worldView.PreviousViewProjection);
+        view.ViewProjection = relative ?? FromOrigin(origin, worldView.ViewProjection);
+        view.PreviousViewProjection = previousRelative ?? FromOrigin(origin, worldView.PreviousViewProjection);
         DrawCalls = 0;
         DrawnTriangles = 0;
         Array.Clear(LevelParts);
