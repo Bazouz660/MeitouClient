@@ -467,6 +467,17 @@ sealed partial class PlayerInterface
 
     static string Number(float v) => v.ToString("0.#", CultureInfo.InvariantCulture);
 
+    /// <summary>A weather kind's name in item tooltips (<c>FUN_140796480</c>).</summary>
+    static string WeatherKindName(Meitou.Data.World.WeatherAffecting kind) => kind switch
+    {
+        Meitou.Data.World.WeatherAffecting.DustStorm => "Duststorms",
+        Meitou.Data.World.WeatherAffecting.Acid => "Acid",
+        Meitou.Data.World.WeatherAffecting.Burning => "Burning",
+        Meitou.Data.World.WeatherAffecting.Gas => "Gas",
+        Meitou.Data.World.WeatherAffecting.Rain => "Rain",
+        _ => "None",
+    };
+
     /// <summary>
     /// A prosthetic's rows (<c>FUN_1407a9080</c>, <b>Verified</b> in the decompile): the grade of its level in the grade colour, <c>-Max HP</c>, the <c>-----STATS-----</c> header, a row
     /// per stat whose multiplier at that level is not 1 (<see cref="Meitou.Data.Gameplay.Bodies.LimbReplacement.Multiplier"/>) as int((m - 1) x 100) percent with its sign, a bonus in
@@ -626,6 +637,14 @@ sealed partial class PlayerInterface
             weightText = armour is not null ? ((int)unitWeight).ToString(CultureInfo.InvariantCulture) + " kg"
                 : (t.Quantity > 1 ? $"{t.Quantity} x " : "") + Number(unitWeight) + " kg" + (t.Quantity > 1 ? $" ({Number(t.Weight)} kg)" : "");
             lines.Add(Row("Weight", weightText));
+            // "[Weather Protections]" (Main), then per weather kind of the piece's set, in kind order, "-{kind}" and its weather protection amount as a whole percent, both Good (FUN_1407a1650).
+            if (armour is { WeatherProtection.Count: > 0 })
+            {
+                lines.Add(new("[" + Loc.Tr("Weather Protections") + "]", "", TooltipTone.Main));
+                string amount = Loc.Tr("{1,num}%", (int)(armour.WeatherProtectionAmount * 100));
+                foreach (var kind in armour.WeatherProtection.Where(k => k != Meitou.Data.World.WeatherAffecting.None).Distinct().Order())
+                    lines.Add(new("-" + Loc.Tr(WeatherKindName(kind)), amount, TooltipTone.Good, TooltipTone.Good));
+            }
         }
         if (t.Trade is { } trade)
         {
