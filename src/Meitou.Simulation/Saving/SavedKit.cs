@@ -12,8 +12,8 @@ namespace Meitou.Simulation.Saving;
 /// </summary>
 public static class SavedKit
 {
-    /// <summary>The sections a worn ARMOUR sits in (the save's names; docs/formats/save.md).</summary>
-    static readonly HashSet<string> Worn = new(StringComparer.Ordinal) { "head", "shirt", "armour", "legs", "boots" };
+    /// <summary>The sections a worn ARMOUR sits in (the save's names; docs/formats/save.md). <c>belt</c> takes the ARMOUR with <c>slot</c> 14 (mods put masks, goggles and robes there).</summary>
+    static readonly HashSet<string> Worn = new(StringComparer.Ordinal) { "head", "shirt", "armour", "legs", "boots", "belt" };
 
     /// <summary>
     /// The items as an inventory, at their saved sections and cells. Items whose record the game data lacks are left out and named in <paramref name="notes"/>. The main

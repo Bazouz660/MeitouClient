@@ -51,6 +51,11 @@ vests/backpacks, hair-hidden/part-map flags, stumps and missing limbs are not or
 checkboxes. Weapon inventory choice, equipped/drawn location and sheath/back/hip attach bone
 are separate; .phs attachment points are data. Part scales/transforms must follow skeletal axes.
 
+Worn ARMOUR is drawn from the inventory sections `head`, `shirt`, `armour`, `legs`, `boots` and `belt` (`SavedKit.Worn`); the section follows the
+record's `slot` (3 hat, 8 shirt, 5 body, 6 legs, 9 boots, 14 belt). **Observed** (merged data of a modded install): mods put masks, goggles and
+robes in slot 14 (845 ARMOUR records, 632 with a mesh), so a worn belt-slot ARMOUR must be drawn like any other (it was dropped until fixed: no goggles
+or mask showed). A worn ITEM in `belt` (lanterns) shows only its light (`Loadout.Carried`); whether the original also draws an ITEM's own `mesh` there is **Unknown**.
+
 **Verified** (decompilation, `AppearanceBase::setupItemMaterial` `FUN_140536210`): an attached item without a material record whose type is
 LIMB_REPLACEMENT (111) gets the appearance's body material (its textures, skin tone and stat-driven normal blend). The races' stumps
 (`Human Left Arm Stump` and the others in `Newwworld.mod`, mesh material `default`, no texture fields) are drawn so; prosthetics have a
