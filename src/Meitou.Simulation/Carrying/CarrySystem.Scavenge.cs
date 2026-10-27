@@ -109,8 +109,10 @@ public sealed partial class CarrySystem
         var cold = table.Cold(i)!;
         var victim = table.Cold(t)!;
         bool animal = victim.Fighter?.IsAnimal ?? victim.Appearance?.Animal is not null;
-        bool notPlayerSide = !PlayerSide(world, victim) || victim.Medical!.Dead;
-        bool foodOnly = cold.NpcClass == FundamentalType.Bandit || cold.Medical is { } own && world.SystemOf<BodySystem>() is { } bodies && bodies.HungerFloor(world, cold, own) < FoodOnlyFloor;
+        // A law-enforcement looter confiscates: no food-only or not-player-side take (the start clears both).
+        bool police = Crimes?.IsPoliceLike(world, cold) == true;
+        bool notPlayerSide = !police && (!PlayerSide(world, victim) || victim.Medical!.Dead);
+        bool foodOnly = !police && (cold.NpcClass == FundamentalType.Bandit || cold.Medical is { } own && world.SystemOf<BodySystem>() is { } bodies && bodies.HungerFloor(world, cold, own) < FoodOnlyFloor);
         if (cold.LiftTime < 0)
         {
             cold.LiftTime = 0;
@@ -120,14 +122,52 @@ public sealed partial class CarrySystem
         cold.LiftTime += dt;
         int death = DeathUnits(victim.Inventory!);
         int moved;
+        if (police && !animal)
+        {
+            if (cold.LiftTime <= ConfiscateSeconds) return;
+            moved = Confiscate(cold, victim);
+            Looted(world, table, i, t, moved, 0, crime: false);
+            // Tagged only when it found nothing to take.
+            if (moved == 0 && cold.SquadId >= 0) world.SystemOf<DialogueSystem>()?.Memory.Flag(world, cold.SquadId, table.IdOf(t), MemoryTag.Looted);
+            End(table, i);
+            return;
+        }
         if (!foodOnly && !notPlayerSide && !animal && cold.LiftTime > NpcWeaponGrabSeconds && !HasWeapon(cold) && HasWeapon(victim))
             moved = Take(cold, victim, victim.Inventory!.Items.Where(x => x.Type == FcsRecordType.WEAPON && x.Section is "hip" or "back").Take(1).ToList());
         else if (cold.LiftTime > (animal ? NpcLootAnimalSeconds : NpcLootSeconds)) moved = NpcTake(cold, victim, notPlayerSide && !foodOnly);
         else return;
         Butcher(world, i, t, death);
         Looted(world, table, i, t, moved, 0, crime: false);   // the crime was set at the start (CrimeSystem.NpcLooting)
-        if (cold.SquadId >= 0) world.SystemOf<DialogueSystem>()?.Memory.Flag(world, cold.SquadId, table.IdOf(t), MemoryTag.Looted);
+        if (!police && cold.SquadId >= 0) world.SystemOf<DialogueSystem>()?.Memory.Flag(world, cold.SquadId, table.IdOf(t), MemoryTag.Looted);
         End(table, i);
+    }
+
+    /// <summary>Seconds at the body before a law-enforcement looter confiscates (<b>Observed</b>, <c>Task_Loot_AI</c> update: the 0.8 s branch).</summary>
+    public const float ConfiscateSeconds = 0.8f;
+
+    /// <summary>
+    /// A law-enforcement looter's take (<c>Task_Loot_AI</c> update with the confiscate flag, <c>Inventory::getAllStolenItems(inventory, false)</c>; <b>Observed</b>): one unit of each item of
+    /// the victim's own inventory (worn gear included, not what is inside its backpack) that is stolen for it, in list order, into the looter's inventory; the first that does not fit
+    /// stays and ends the take. Returns the items moved.
+    /// </summary>
+    public int Confiscate(CharacterCold looter, CharacterCold victim)
+    {
+        var from = victim.Inventory!;
+        var into = looter.Inventory!;
+        int moved = 0;
+        bool worn = false, wear = false;
+        foreach (var item in from.Items.Where(x => x.IsStolenFor(victim.Faction)).ToList())
+        {
+            if (item.LockedOn || !InventoryCommands.IsMovableSection(item.Section)) continue;
+            bool gear = InventoryCommands.IsEquipmentSection(item.Section);
+            if (InventoryCommands.MoveInto(from, item, 1, into, bagFirst: false, out bool equipped, looter.Race?.StringId) == 0) break;
+            moved++;
+            worn |= gear;
+            wear |= equipped;
+        }
+        if (worn) Assembly?.RefreshEquipment(victim);
+        if (wear) Assembly?.RefreshEquipment(looter);
+        return moved;
     }
 
     /// <summary>

@@ -175,7 +175,7 @@ it is not part of target eligibility.
 - **Start**: flags `animal` (target vfunc `0x248`), `notPlayerSide` (target's faction is not the player's, or the target is dead; cleared when looter vfunc `0x68` `+0x90` > 0,
   **Unknown**), `foodOnly` (looter of NPC class 8, or its hunger floor, slot 0x348 ([free food](character-stats.md#free-food)), below 2.8), `wantsWeapon` (the looter has no weapon,
   `AI::hasWeapon`, and the target has one). A law-enforcement looter (`Character::isLawEnforcement` `FUN_140599600`: not of a bandit faction, and NPC class 1, or class 2 whose
-  status `+0x88` is its town's) sets a confiscate flag (`+0x82`) and clears `notPlayerSide` and `foodOnly` instead, then skips the crime part ([confiscation](#confiscation)). An animal target posts
+  status `+0x88` is its town's) sets a confiscate flag (`+0x82`) and clears `notPlayerSide` and `foodOnly` instead, then skips the crime part (**Confiscation** below). An animal target posts
   "{1} is butchering {2} for meat!!" when the target's faction is the player's.
 - **Looting crime** (same start, every other looter; `BountyManager::setCrime` `FUN_140852c80`, **Observed**): code 10 Looting against the target's faction (victim the target)
   when the looter has any bounty (`getActualBounty(ledger, 0)` > 0) or is NPC class 8. Then with `notPlayerSide` or `foodOnly` the looter says event 33 LOOTING_EVERYTHING at the
@@ -190,6 +190,14 @@ it is not part of target eligibility.
   2. Food: items of type 4 with `item function` 3, then 15, repeated until none moves; then the same from the target's worn backpack (function 3).
   3. With `notPlayerSide` and not `foodOnly`: every item (type 4) and armour (type 3), and every item of the backpack.
   An item goes into the looter's inventory, else its worn backpack, else back. Then the looter's squad tags the target short-term 6 (`FUN_1406744a0`) and the task ends.
+- **Confiscation** (the update with the confiscate flag, **Observed**): an animal target waits the 20 s and gets the take above (weapons, food); otherwise past 0.8 s
+  `Inventory::getAllStolenItems(target's inventory, includeUnknown 0)` (`FUN_140748bc0`: the inventory's whole item list, then its equipped weapons and armour, each passing
+  `InventoryItemBase::isStolen(item, 0)`; the target's own inventory, `Character::getInventory` slot 44 = `+0x2e8`, so not its backpack's contents) and each in turn:
+  `removeItemDontDestroy_returnsItem(item, 1, true)` (Inventory slot 5: one unit split off a stack, the whole item when it is the last), `addItem` into the looter's
+  inventory; a unit that does not fit goes back and ends the loop. Taken items get `Item::notifyTheftFrom(target)` (slot 106, `FUN_140792800`: calls slot `0x2b0` only when the
+  item's owner handle `+0x140` is of type 11 NULL_ITEM, read as "no owner"; a stolen item has one, so nothing changes). Nothing found: the short-term tag 6; something found: no tag. It acts out goal 212 Confiscating goods ([ai-tasks](ai-tasks.md#arrest-and-prison-rows)) and goal 177 for a
+  law-enforcement looter. Base data (**Verified**, probe): 212 is listed only by "addon- law enforcement" (and its "- no freeing prisoners" variant), inherited by the police,
+  guard-town and police-station packages. Illegal (culture-listed) goods are not part of it: no confiscation of them was found.
 - **Bandits loot the player** is the new-game option at block `+0x20`, saved as CAMERA bool `bl` (**Verified**: the reader `FUN_1403eef20` reads key `bl` into `+0x20`, the writer
   `FUN_140912f80` copies `+0x20` to `142133598`; the reader's default is 1, and `bl` is true in the owner's three readable original saves).
 

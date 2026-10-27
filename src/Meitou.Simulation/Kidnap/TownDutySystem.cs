@@ -41,7 +41,7 @@ public sealed class TownDuty
     /// <summary>The cage's fixture id, or the store's (a machine's site id, else a container's fixture id).</summary>
     public string? Target { get; set; }
     public int Tries { get; set; }
-    /// <summary>A shoo's start (game hours) and its next event (game seconds of the errand).</summary>
+    /// <summary>A shoo's start (game hours) and its next event (game seconds of the errand); a confiscation's seconds at the cage.</summary>
     public double Since { get; set; }
     public float Next { get; set; }
     /// <summary>A food run of a character of the player's side (243 from <c>Character::setupAI</c>): a player order ends it without being undone.</summary>
@@ -53,6 +53,7 @@ public sealed class TownDuty
         h.Add(Target is { } t ? Rng.StableHash(t) : 0UL);
         if (Kind == TownDutyKind.Shoo) { h.Add(Since); h.Add(Next); }
         if (PlayerSide) h.Add(0x50534964);
+        if (Kind == TownDutyKind.Confiscate) h.Add(Next);
     }
 }
 
@@ -465,37 +466,30 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
         foreach (var f in world.Fixtures.All)
         {
             if (f.Kind != FixtureKind.Cage || FixtureRegistry.IsFree(table, f) || !table.TryResolveNext(f.Occupant, out int s) || duties.Any(o => o.Body == f.Occupant)) continue;
-            if (table.Cold(s)?.Inventory is not { } inv || !inv.All().Any(i => i.StolenFrom >= 0) || AiSystem.TownAt(data, world, f.Position) != town) continue;
+            if (table.Cold(s) is not { Inventory: { } inv } c || !inv.Items.Any(i => i.IsStolenFor(c.Faction)) || AiSystem.TownAt(data, world, f.Position) != town) continue;
             return (f, f.Occupant);
         }
         return (null, CharacterId.None);
     }
 
     /// <summary>
-    /// A confiscation (212; its effect is row 3 "Collecting item" acted out by <c>Task_Loot_AI</c>): at the cage the guard takes the prisoner's stolen items, its worn armour first, as
-    /// many as fit. Engine choice: only the stolen items (whether the original's loot take is limited to them is <b>Unknown</b>).
+    /// A confiscation (212; its effect is row 3 "Collecting item" acted out by <c>Task_Loot_AI</c>, whose law-enforcement branch it is, <b>Observed</b>): at the cage the guard waits
+    /// <see cref="CarrySystem.ConfiscateSeconds"/>, then takes one unit of each stolen item of the prisoner (<see cref="CarrySystem.Confiscate"/>). Engine choice: every 212 runner
+    /// confiscates (the base data lists 212 only in the law-enforcement add-on packages).
     /// </summary>
     bool StepConfiscate(World world, TownDuty d, int g, CharacterCold gc)
     {
         var table = world.Characters;
         ref var gn = ref table.Next[g];
         var cage = d.Target is { } id ? world.Fixtures.Find(id) : null;
-        if (cage is null || cage.Occupant != d.Body || !table.TryResolveNext(d.Body, out int p) || table.Cold(p)?.Inventory is not { } from || gc.Inventory is not { } into) return End(world, d);
+        if (cage is null || cage.Occupant != d.Body || !table.TryResolveNext(d.Body, out int p) || table.Cold(p)?.Inventory is null || gc.Inventory is null) return End(world, d);
         bool walking = gn.Task == (byte)CharacterTask.GoTo;
         float gap = Vector2.Distance(Flat(gn.Position), d.Goal);
         if (gap <= cage.UseRange + Settings.CageReach || !walking && gap <= Settings.CageSlack)
         {
             MovementSystem.Stop(table, g);
-            bool worn = false;
-            foreach (var item in from.Items.Where(i => i.StolenFrom >= 0).OrderBy(i => InventoryCommands.IsEquipmentSection(i.Section) ? 0 : 1).ToList())
-            {
-                if (item.LockedOn) continue;
-                worn |= InventoryCommands.IsEquipmentSection(item.Section);
-                InventoryCommands.MoveInto(from, item, 0, into, bagFirst: true, out _);
-            }
-            if (from.Backpack?.Contents is { } bag)
-                foreach (var item in bag.Items.Where(i => i.StolenFrom >= 0).ToList()) InventoryCommands.MoveInto(bag, item, 0, into, bagFirst: true, out _);
-            if (worn) carry.Assembly?.RefreshEquipment(table.Cold(p)!);
+            if ((d.Next += world.TickSeconds) <= CarrySystem.ConfiscateSeconds) return true;
+            carry.Confiscate(gc, table.Cold(p)!);
             return End(world, d);
         }
         if (walking) return true;

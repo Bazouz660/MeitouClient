@@ -509,7 +509,7 @@ main grid, weight and burden only, grid size from its `inventory w` / `inventory
   (`MemoryTag.Looted`). At the body (`Loot` task, `LiftTime` from arrival, `medic` clip) it takes after 8 s (animal 20): weapons when it has none equipped, food (functions 3, 15, the
   backpack's 3), and for a non-player-side or dead body, unless it is a Bandit or malnourished (floor < 2.8), every item and armour; a weaponless non-bandit grabs one weapon of a
   living player-side body at 0.8 s instead. Then the tag, and back to its task. On arrival it says event 33 or 32 and may get a pending Looting (`CrimeSystem.NpcLooting`,
-  [looting crime](game/carry-loot.md#33-npc-looting)), which its witnesses answer as any NPC culprit's ([crimes](#crimes-and-bounties)). Engine choices: nearest per pass, the tag never expires, law enforcement confiscation not built.
+  [looting crime](game/carry-loot.md#33-npc-looting)), which its witnesses answer as any NPC culprit's ([crimes](#crimes-and-bounties)). A police-like looter (`CrimeSystem.IsPoliceLike`) confiscates instead: past 0.8 s one unit of each stolen item of the body's inventory (`CarrySystem.Confiscate`), tagging it only when there was none. Engine choices: nearest per pass, the tag never expires.
 - **Unarmed NPCs** (`CarrySystem.Arm.cs`, goal 42 "Don't be unarmed" with step 8 FIND_WEAPON, `AI::findWeapon`): on the same cadence an NPC without a weapon, with a working arm,
   whose package lists 42, goes for the nearest free ground weapon within 100 (in a town only an unowned or enemy-owned one) and picks it up, else a dead body with a weapon,
   else a downed living non-ally with one (player side only with `BanditsLoot`, not one its squad loves), which it loots as above. Engine choices: the body loot takes
@@ -822,8 +822,8 @@ every 15 ticks, by `PopulationSystem.GoalDuty` (facts: [ai-tasks](game/ai-tasks.
   destination, else where it stands), draws its weapon and runs into it; inside, the errand ends and the next look draws another.
 - **131 Looting food** (`AI::findSomethingToLootFoodFrom`, shared with 243): a member holding no food in any town (not only its own) walks to the nearest such store, not a
   container of its own faction (engine reading of the own-shop skip), and takes every food item that fits (`Task_EmptyMachine` moves items while there is room).
-- **212 Confiscating goods** (`AI::findPrisonerWithContraband`): in its town, the first occupied cage (list order) whose prisoner carries a stolen item; at the cage it takes
-  the stolen items, worn ones first, as many as fit (engine choice: only those; the original's loot take may take more, **Unknown**).
+- **212 Confiscating goods** (`AI::findPrisonerWithContraband`): in its town, the first occupied cage (list order) whose prisoner's inventory (not its bag) holds an item stolen for it; at the cage it waits 0.8 s and
+  confiscates as a police looter does ([NPC looting](#carrying-rescue-and-looting)); engine choice: whatever the runner's class (base data: only law-enforcement packages list 212).
 - Occupiers' **36 / 37** town goals walk to a random complete building of the player town (`AiSystem.OccupiedSpot`; the original's target is **Unknown**).
 - Engine choices: sight `AggroSystem.OutdoorSight`, arrival 40 (a cage: its `use range` + 15), 4 short walks before giving up; nothing is hashed until one runs.
 - **Observed** (headless, an owner save, Starving Bandits occupying an outpost whose buildings reach 253 from its centre): the knocked-out player character lying 566 out is left alone; moved
