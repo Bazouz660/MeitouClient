@@ -767,7 +767,9 @@ Arrests, the recognition meter and the marker are hashed only while set. What a 
   does nothing otherwise; a slave bought free out of a squad of others leads a new "Wandering Squad" (`SquadManagement.DismissTemplate`, as a dismissed character) of its faction, or a new player squad for
   one of the player's; event 51 fires after it is out of its cage; the window closes when the slaver or the customer is no longer awake. It is neither saved nor hashed.
 - Not built: task 133 as such (Meitou walks a bought caged
-  slave out of its open cage to within 15 units of the buyer; the original task's destination is **Unknown**), the obedient-slave order (187) and the shackles put on a sold character; DA 48 (animals).
+  slave out of its open cage to within 15 units of the buyer; the original task's destination is **Unknown**); DA 48 (animals). A sold character obeys the slaver's squad (187) and is chained: `Character::setChainedMode` (`FUN_14032e590`,
+**Verified** by decompile) puts the ARMOUR `SHACKLES` (boots) on one wearing no locked shackles, `SHACKLES-BODY` when its boots section is disabled (Meitou: the race's `no shoes`),
+what it wore there going into its inventory (engine choice; `DialogueSystem.Chain`). Its other callers (a dialogue action, `FUN_1405dbd80`, `FUN_1405dc310`, `FUN_140583a10`) are not traced.
 
 
 ## Kidnapping

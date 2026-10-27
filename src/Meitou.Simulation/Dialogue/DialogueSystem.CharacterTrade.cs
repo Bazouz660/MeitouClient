@@ -299,14 +299,37 @@ public sealed partial class DialogueSystem
     /// <summary>
     /// One character sold (<c>FUN_1406a7740</c>): it becomes the slaver faction's slave (state 1, "{1} has been enslaved" for a free player-faction character) and stays in its squad
     /// and faction; its squad remembers the customer as its captor (long-term tag 5 MY_CAPTOR, <b>Observed</b>); relations toward the player's faction: the slaver's +4, the sold one's
-    /// own -4; it obeys the slaver's squad (job 187). Not built: the shackles the original puts on one wearing no locked armour.
+    /// own -4; it obeys the slaver's squad (job 187) and is chained (<see cref="Chain"/>).
     /// </summary>
     void Sell(World world, CharacterCold c, CharacterCold slaver, CharacterId customer)
     {
         Locks.FixtureRegistry.Enslave(world, c, slaver.Faction, slaver.SquadId);
+        Chain(c);
         Memory.Remember(world, c.SquadId, customer, MemoryTag.Captor);
         ChangeTowardPlayer(world, slaver.Faction, 4);
         ChangeTowardPlayer(world, c.Faction, -4);
+    }
+
+    CharacterAssembly? chainAssembly;
+
+    /// <summary>
+    /// <c>Character::setChainedMode</c> (<c>FUN_14032e590</c>, <b>Verified</b> by decompile): a character wearing no locked shackles gets a new pair, <c>SHACKLES</c> (Prisoner Shackles, boots)
+    /// while its boots section is enabled, else <c>SHACKLES-BODY</c> (Hive Prisoner Shackles, body; Meitou reads a disabled boots section as the race's <c>no shoes</c>), worn and locked
+    /// (the ARMOUR's lock). What it wore in that slot goes into its inventory (engine choice, as <see cref="Locks.LockSystem"/>'s putting on).
+    /// </summary>
+    void Chain(CharacterCold c)
+    {
+        if (c.Inventory is not { } inv || Locks.LockSystem.WornShackles(c) is not null) return;
+        if (data.Items.Create(c.Race?.NoShoes == true ? "SHACKLES-BODY" : Kidnap.CaptiveSystem.ShacklesRecord, 1) is not { } shackles) return;
+        if (inv.Items.FirstOrDefault(i => i.Section == shackles.EquipmentSection) is { } worn)
+        {
+            var (section, x, y) = (worn.Section, worn.X, worn.Y);
+            inv.Items.Remove(worn);
+            worn.Section = "main";
+            if (!inv.Add(worn)) { (worn.Section, worn.X, worn.Y) = (section, x, y); inv.Items.Add(worn); }
+        }
+        if (!Items.InventoryCommands.TryEquip(inv, shackles)) return;
+        (chainAssembly ??= new CharacterAssembly(data)).RefreshEquipment(c);
     }
 
     void ChangeTowardPlayer(World world, int faction, int amount)
