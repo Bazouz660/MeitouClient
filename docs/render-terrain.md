@@ -24,10 +24,10 @@ Meitou look, not in the game (`GroundRelief`). The parallax and the displacement
 `displace` (Tab "Ground parallax", "Ground displacement (tessellation)"; Faithful: flat ground, as the game). Tab toggles "Terrain outline
 refinement (tessellation)", "Rock smoothing (tessellation)"; sliders "Ground relief quality" (High by default; Medium and Low reduce
 the march; compiled into the colour programs, one set per quality made on first use: a uniform quality cost High 12% of the terrain's
-GPU time, **Verified** by swamp-low A/B), "Ground relief depth (cm, typical ground)" (default 40), "Ground displacement distance (m)" (100), "Ground parallax
+GPU time, **Verified** by swamp-low A/B), "Ground relief depth (cm, typical ground)" (default 30), "Ground displacement distance (m)" (100), "Ground parallax
 distance (m)" (60); viewer K toggles the parallax. The other values are tuned constants, expressed at a 20 cm reference depth and
-settable for a run with the viewer's `--relief Name=value`: target slope 0.2, scale follow 0.5, max depth 80 cm (160 at the default
-40), cliff scale 1, overlay relief 1, self-shadow 0.6, tessellation detail 0.5, refinement 0.5 px, tilt 0.5, broad cut 2 m.
+settable for a run with the viewer's `--relief Name=value`: target slope 0.2, scale follow 0.5, max depth 80 cm (120 at the default
+30), cliff scale 1, overlay relief 1, self-shadow 0.6, tessellation detail 0.5, refinement 0.5 px, tilt 0.5, broad cut 2 m.
 
 **Heights** (`NormalHeight.FromNormals`, at load, ≤512², an R8 array, one slice per pair slot; no readable normal map: flat, out
 of the relief). The normal map's slopes (`dh/du = x/z`, `dh/dv = -y/z` in the terrain tangent frame) are integrated by FFT
@@ -49,7 +49,7 @@ slot as `1 / (512 × steepness)` (R32F). That depth, as a multiple of 20 cm, is 
 flat, coarse ones not metres deep), capped at the max depth, times the depth slider over the 20 cm reference; the cliff's times the cliff
 scale. **Observed** (field tour): the integrated range or normal-map strength as the depth made broad noise deep
 (`BurntWoodLike`, `SharpblockLoop`) and fine textures flat or spiky; this rule gives at 20 cm e.g. `WadiGravel` 13–15 cm,
-`Rocksurface01` 13 cm, `BurntWoodLike` 29 cm, `SharpblockLoop` 30 cm (twice that at the default 40).
+`Rocksurface01` 13 cm, `BurntWoodLike` 29 cm, `SharpblockLoop` 30 cm (1.5× that at the default 30).
 
 **Composite.** Every ground layer adds material; the relief height keeps the heaviest ground layers (base, grass, slope, dirt,
 road) by how much of the pixel each shows, from the blend map, overlay window and slope per pixel, not per patch, so neighbouring
