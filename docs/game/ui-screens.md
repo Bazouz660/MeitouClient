@@ -814,7 +814,8 @@ Help text is available from the installed [gettext catalog](../formats/gettext.m
 `0x142133dd0`): the left panel is a DataPanel of label/value rows, `Stats Affected:` and `Ways To Train:` in Main, each row label "-" + the text; most rows have no value.
 Values: Strength (1) `Max carry weight:` `{1,num} kg` = (int)(strength × its multiplier `FUN_140338090` + `encumbrance base`), `Strength XP rate (walking):` (int)(`FUN_1408c60c0`
 × 100) `%`, `Martial arts damage` (int) the fists' four damage terms (`FUN_1408868b0`), `Strength XP rate (combat):` (int)(`FUN_1408c5ec0`(stats, w) × 100) `%`, the Athletics XP
-function with w the weapon item's slot `0x248` (the hand's, else the first of `hip` / `back`; 0 without), whose meaning is **Unknown**. Toughness (0x15) `Damage resistance:`
+function (CharStats `+0x190` clamped at 0, x1.5 when w > 0.8 x the run value V) with w the weapon's `getItemWeightSingle` (item slot `0x248`, `+0x120`; the hand's weapon, else the first of
+`hip` / `back`; 0 without), so heavy weapons train at 1.5x (**Verified**, decompile and the KenshiLib slot). Toughness (0x15) `Damage resistance:`
 (int)(`FUN_140644770` × 100) `%`, `Martial arts damage`, `Toughness current XP rate:` `{1,num}` of `FUN_1408c5f40`, `Knockout time:` lerp(t, `knockout mult 1`, `knockout mult 99`)
 and `Wound deterioration speed:` lerp(t, `degeneration mult 1`, `degeneration mult 99`), both `{x.xx}x` with t = toughness × CharStats `+0x34` / 100 unclamped, `Knockout point:`
 (int) `FUN_140643ae0`, label and value Main, `Amount of damage it takes to stagger you:` (int) t × `stumble damage max`. Dexterity (0x12) `Attack speed:` / `Block speed:` CharStats
@@ -829,7 +830,7 @@ for Assassination `Stealthy knock-outs:`, Engineering `Building things:` / `Repa
 `PLAYER_WEAPONS` `weapon models` entry with the highest v0 above 0 and at or below L, else `913-gamedata.base`'s + "]" (`FUN_1408b0f90`); `Armour quality:` / `Crossbow quality:`
 "[" + grade + "]", the quality of tier (int)L (`FUN_14082e6b0`, no critical) named by `FUN_1408aa890` (below 11 Prototype, to 20 Shoddy, 40 Standard, 60 High, 80 Specialist,
 else Masterwork), so the tier's name. Precision (0x18), Thieving and Lockpicking rows have no values. Meitou (`HudTips.StatsWindow`, `PlayerInterface.AddStatDescription`): every
-value above beside the catalog's rows, matched by label; not Strength's combat XP rate.
+value above beside the catalog's rows, matched by label.
 Medical body-part labels are larger than the stats body text. Meitou uses 16 em
 pixels at 1080 lines for medical labels, arrows and values, centred over the full
 bar height; sizing text to the inset datapanel shrinks it. Exact original font

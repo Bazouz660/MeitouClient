@@ -146,7 +146,7 @@ static class HudTips
     /// carry weight (int)(effective strength + <c>encumbrance base</c>) kg, the walking strength XP rate (<c>FUN_1408c60c0</c>) and the fists' damage; Toughness: damage resistance,
     /// the fists' damage, the toughness XP rate, the knockout time and wound deterioration lerps over t = toughness x scale / 100 (unclamped), the KO point and the stagger damage;
     /// Dexterity: the attack and block play rates; Dodge: the encumbrance factor as the XP rate; Athletics: the run value, the current speed and the Athletics XP rate; Swimming: the
-    /// base and current swim speeds. Rows without a number in the original (and Strength's combat XP rate, whose item slot is <b>Unknown</b>) have none here.
+    /// base and current swim speeds. Rows without a number in the original have none here.
     /// </summary>
     public static Dictionary<StatsEnumerated, IReadOnlyList<StatReadout>> StatsWindow(CharacterCold cold, MedicalState med, RaceData race, CharacterStats stats, HudCombat? hc,
         GameConstants? constants, Meitou.Data.GameDatabase? db = null)
@@ -173,6 +173,12 @@ static class HudTips
             toughness.Add(new("Knockout time:", Loc.Tr("{1,num=fix,p=2}", Lerp(t, constants.KnockoutMult1, constants.KnockoutMult99)) + "x"));
             toughness.Add(new("Knockout point:", Int(MedicalState.KoPoint(constants, stats.Toughness)), Main: true));
             toughness.Add(new("Wound deterioration speed:", Loc.Tr("{1,num=fix,p=2}", Lerp(t, constants.DegenerationMult1, constants.DegenerationMult99)) + "x"));
+        }
+        if (cold.Extended is { } r)
+        {
+            // FUN_1408c5ec0 with the weapon's unit weight (item slot 0x248): the encumbrance factor, x1.5 when that weight is above 0.8 x the run value.
+            float weight = CombatWeapon(cold)?.UnitWeight ?? 0;
+            strength.Add(new("Strength XP rate (combat):", Loc.Tr("{1,num}%", (int)(Math.Max(e, 0) * (weight > 0.8f * r.RunValue ? 1.5f : 1) * 100))));
         }
         if (hc is { } s) toughness.Add(new("Amount of damage it takes to stagger you:", Int(s.Stagger)));
         var result = new Dictionary<StatsEnumerated, IReadOnlyList<StatReadout>> { [StatsEnumerated.Strength] = strength, [StatsEnumerated.Toughness] = toughness };
@@ -208,6 +214,14 @@ static class HudTips
         result[StatsEnumerated.SmithingBow] = [new("Crafting crossbows (speed):", Rate(StatsEnumerated.SmithingBow)),
             new("Crafting crossbow bolts (speed):", Rate(StatsEnumerated.SmithingBow)), new("Crossbow quality:", Grade(StatsEnumerated.SmithingBow))];
         return result;
+    }
+
+    /// <summary>The weapon Strength's combat XP rate weighs: the one in hand, else the first of <c>hip</c> and <c>back</c>.</summary>
+    static Items.ItemInstance? CombatWeapon(CharacterCold cold)
+    {
+        if (cold.Inventory?.Items is not { } items) return null;
+        Items.ItemInstance? In(string section) => items.FirstOrDefault(i => i.Section == section && i.Type == Meitou.Data.Fcs.FcsRecordType.WEAPON);
+        return cold.Fighter is { Weapon: not null } f ? In(f.WeaponIsBack ? "back" : "hip") : In("hip") ?? In("back");
     }
 
     /// <summary>The crafted-quality tier of an int skill (<c>FUN_14082e6b0</c> without a critical): one step each above 19, 39, 59 and 79.</summary>
