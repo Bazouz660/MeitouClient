@@ -288,7 +288,9 @@ units when no road path is active, with w from the character's faction `road pre
 after over 16 navmesh failures it falls back to the road route ("trying road network"). Nameless has 0.3, so player squads take roads too.
 Ours: the long route asks `RoadNetwork.Route` first (`NavAgent.RoadPreference`, `CharacterCold.RoadPreference`, kept on recruit/dismiss);
 when taken, the legs to and from the road are terrain-grid routes (engine choice) and the navmesh part reaches at most `RoadHandover`
-(1500) along it, so bends are not cut. Not built: the rule for a trip within one loaded block (navmesh only), the failure fallback.
+(1500) along it, so bends are not cut. Not built: the road try for a trip over 1000 within one loaded block (Meitou: navmesh only) and the road fallback after 16 navmesh
+failures (Meitou: the nearest reachable point and a straight tail). Both would send every such walker's request through `RoadNetwork.Route` on the path threads; left out until a
+measurement shows the cost, since most in-town trips exceed 1000 units.
 **Observed** (scratch harness, nothing loaded): Hub→Squin 17657 straight walks 25522 at 0.3 (99 % within 400 of a road; 43 % at 0);
 Hub→Stack 34054; Squin→Admag at 0.8 walks 132184 for 26834 straight (short road `length` values, as off screen).
 

@@ -792,6 +792,9 @@ Arrests, the recognition meter and the marker are hashed only while set. What a 
   without a cage in range and cages the same way, its home its squad's home town, which the retreat package walks the squad to (130 TRAVEL_TO_TARGET_TOWN_FAST as going home at a run, [Captives](#captives)).
 - What happens to the captive next: [Captives](#captives).
 - **Not built**: lifting sleepers from beds, kidnapping as a crime for witnesses, a carrier's platoon unloading with an NPC victim (the carry is dropped when the platoon is stored).
+  The original's unload test (`ActivePlatoon::unloadCheck` `FUN_1404febd0`, **Verified** by decompile) holds a platoon loaded while a member carries (Character `+0x348`) a player-faction
+  character (`+0x380` hand, `HandleManager::isPlayerFaction`), its 4.5 s countdown reset to 4, which Meitou's zones following a carried player character match; with an NPC load it
+  unloads as usual. What `Platoon::deactivate` then does with the carry and the victim's own platoon is **Unknown** (a save writes the link as `carrying`, `FUN_140627b30`).
 - **Observed** (headless, real data, `raidFrequencyMult` 1000): the Skin Bandits' "skin bandit standard raid small" against an outpost with four weak player characters: all four are lifted once down (the
   cannibal rule sends phase 2 at the third carrier), three are caged at the faction's Skinhouse HQ (it has three cages), the fourth, on the leader, is carried on towards the campaign's far home.
   A save and load keeps the three caged and `Kidnapped`; a second capture writes the same keys. Cannibal AI squads at home lift and cage a downed player character in about two seconds.
@@ -897,8 +900,10 @@ failed walks mark the cage unreachable for the faction; its own faction's shut d
   nearest slave camp not hostile to it) and stays there, the original's TRAVEL_TARGET rule ([off-screen world](game/factions-squads-towns.md#off-screen-world)); the handover
   waits for it to load (`PopulationSystem.ShippingCamp`); a save's travelling platoon not made yet ships too, its slaves read from the save (slave role, `slavestate` 1). Not
   shipped off screen: wild ones (a save's homeless platoons and the squads `KeepWild` keeps), which their sector makes again where they stood, so they stay there as other wild squads.
-- Not built: goal 112 as such (captives are carried by the kidnapping system), the real operation of NPC town machines by
-  workers, short-term tag 6 of the strip.
+- Not built: goal 112 as such (captives are carried by the kidnapping system), short-term tag 6 of the strip, and the real operation of NPC town machines by
+  workers: it would need a `Machine` (recipe, input and output inventories, progress) for every level building with a functionality, made when its town registers, and their
+  states written into the zone files' GAMESTATE_BUILDING as the original's are; production would also feed the shops' stock, whose origin from machines is **Unknown**. Left out
+  for now: workers act out the work (clip, hunger rate) with no output.
 
 ## Buildings
 
