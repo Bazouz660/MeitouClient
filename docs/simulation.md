@@ -900,7 +900,8 @@ failed walks mark the cage unreachable for the faction; its own faction's shut d
 - **Shipping off screen**: the shipping squads are town roaming squads and homeless spawns (base data), so the original despawns them as they leave (Faithful). A kept stand-in
   (`KeepRoamers`) whose package is a shipping one (TRAVEL_TARGET, [ai](game/ai.md#unknowns)) with a living slave goes on at 25 to the camp its package chose (none chosen: the
   nearest slave camp not hostile to it) and stays there, the original's TRAVEL_TARGET rule ([off-screen world](game/factions-squads-towns.md#off-screen-world)); the handover
-  waits for it to load (`PopulationSystem.ShippingCamp`); a save's travelling platoon not made yet ships too, its slaves read from the save (slave role, `slavestate` 1). Not
+  waits for it to load (`PopulationSystem.ShippingCamp`); a save's travelling platoon not made yet ships too, its slaves read from the save (slave role, `slavestate` 1), to the nearest
+  such camp (the save's mission town is not read). Not
   shipped off screen: wild ones (a save's homeless platoons and the squads `KeepWild` keeps), which their sector makes again where they stood, so they stay there as other wild squads.
 - Not built: goal 112 as such (captives are carried by the kidnapping system), short-term tag 6 of the strip, and the real operation of NPC town machines by
   workers: it would need a `Machine` (recipe, input and output inventories, progress) for every level building with a functionality, made when its town registers, and their
