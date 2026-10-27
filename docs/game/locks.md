@@ -46,8 +46,9 @@ fields in the door constructor `FUN_14029fb40`, the functional-building construc
 | +0x20 | locked flag |
 | +0x21 | broken flag |
 
-**Effectively locked** = locked flag set, broken flag clear, owner not destroyed (owner virtual +0x308) and level >= 1
-(`FUN_140297d60` and every consumer; **Verified**). A broken or level-0 lock is open whatever its flag.
+**Effectively locked** = locked flag set, broken flag clear, owner not broken (owner virtual +0x308, slot 97: a machine's `broken` +0x3b6, a door's
++0x3ec, 0 for plain buildings) and level >= 1 (`FUN_140297d60` and every consumer; **Verified**). A broken or level-0 lock is open whatever its flag.
+Meitou: `LockState.EffectivelyLocked` with `OwnerBroken` (a player cage or safe being dismantled, whose fixture stays registered while its machine is broken); doors test `DoorBroken` beside it.
 
 Creation (**Verified**, `FUN_14029d860`): level = FACTION `doors lock level` + uniform int in [-r, r] (r = `lock level random`)
 + the BUILDING record's `lock level bonus`, then clamped (doors: values below 2 become 1; buildings: below 0 becomes 0) and

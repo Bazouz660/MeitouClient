@@ -188,7 +188,7 @@ public sealed partial class FixtureRegistry
     /// Registers the doors of a finished building of the player (<see cref="Construction.BuildSite"/>; engine: when it is complete, the lock rolled from its owner's faction) and takes
     /// their state from a loaded save; a bed the player built is a bed fixture <c>&lt;site&gt;@bed0</c> at the site's origin and facing (the ones lain in bind to it). A cage or a
     /// <c>has lock</c> building (a safe) gets its own lock as a town one does (docs/game/locks.md "Lock object": the owner's <c>doors lock level</c>, unlocked); a safe's items stay the
-    /// machine's storage, so its fixture has no grid. A building registered already is left as it is.
+    /// machine's storage, so its fixture has no grid; while its machine is broken (being dismantled) that lock counts as broken. A building registered already is left as it is.
     /// </summary>
     public void RegisterPlayerBuilding(World world, PopulationData data, Construction.BuildSite site)
     {
@@ -200,7 +200,12 @@ public sealed partial class FixtureRegistry
         var list = new List<Fixture>();
         float yaw = TownBuildings.YawOf(site.Rotation);
         AddDoors(world, data.Db, record, site.Id, -1, site.Owner, faction, site.Position, yaw, list);
-        if (own is { } kind) list.Add(Make(world, data.Db, kind, site.Id, site.Id, record, -1, site.Owner, faction, site.Position, yaw, host: record.StringId));
+        if (own is { } kind)
+        {
+            var made = Make(world, data.Db, kind, site.Id, site.Id, record, -1, site.Owner, faction, site.Position, yaw, host: record.StringId);
+            if (made.Lock is { } l) l.OwnerBroken = world.Machines.Find(site.Id)?.Broken == true;
+            list.Add(made);
+        }
         if (bed is { } b)
             list.Add(new Fixture
             {

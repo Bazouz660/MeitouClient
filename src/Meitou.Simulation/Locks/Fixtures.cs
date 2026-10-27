@@ -69,9 +69,14 @@ public sealed class LockState
     public float PickTime { get; set; }
     public float NextRoll { get; set; } = FirstRoll;
     public int Rolls { get; set; }
+    /// <summary>
+    /// The owner's broken flag (the lock's owner +8, its slot 97, <c>FUN_140297d60</c>): a player cage or safe being dismantled (<see cref="Production.Machine.Broken"/>). Derived from the
+    /// machine, so not saved or hashed. A door's own broken flag is checked by its callers (<see cref="Fixture.DoorBroken"/>).
+    /// </summary>
+    public bool OwnerBroken { get; set; }
 
-    /// <summary>Locked flag set, not broken and level at least 1 (the owner's destruction is not modelled): a broken or level-0 lock is open whatever its flag.</summary>
-    public bool EffectivelyLocked => Locked && !Broken && Level >= 1;
+    /// <summary>Locked flag set, neither it nor its owner broken and level at least 1: a broken or level-0 lock is open whatever its flag.</summary>
+    public bool EffectivelyLocked => Locked && !Broken && !OwnerBroken && Level >= 1;
 
     internal void Hash(ref StateHasher h)
     {

@@ -1006,11 +1006,13 @@ public sealed class ConstructionSystem : ITickSystem
 
     /// <summary>
     /// A machine's broken flag (UseableStuff <c>setBroken</c>, <c>+0x3b6</c>; plain buildings have none, docs/game/buildings-production.md "Broken machines"): every dismantle step sets it
-    /// (<c>Building::addDismantleProgress</c> <c>FUN_1402a2860</c>); a build step leaving progress above 0 (<c>FUN_1405595a0</c>) and completion (<c>FUN_140562340</c>) clear it.
+    /// (<c>Building::addDismantleProgress</c> <c>FUN_1402a2860</c>); a build step leaving progress above 0 (<c>FUN_1405595a0</c>) and completion (<c>FUN_140562340</c>) clear it. A cage's
+    /// or safe's own lock follows it (<see cref="Locks.LockState.OwnerBroken"/>).
     /// </summary>
     static void SetBroken(World world, BuildSite site, bool broken)
     {
         if (world.Machines.Find(site.Id) is { } m && m.Broken != broken) m.Broken = broken;
+        if (world.Fixtures.Find(site.Id)?.Lock is { } own) own.OwnerBroken = broken;
     }
 
     // ------------------------------------------------------------------ dismantling

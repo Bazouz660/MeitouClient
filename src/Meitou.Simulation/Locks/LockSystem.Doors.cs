@@ -170,26 +170,30 @@ public sealed partial class LockSystem
         if (world.Tick % WalkerEveryTicks == 0) OpenForWalkers(world);
     }
 
-    /// <summary>The player's finished buildings have their doors registered; a building no longer finished (dismantled, ruined) loses them.</summary>
+    /// <summary>
+    /// The player's finished buildings have their doors registered; a building no longer finished (dismantled, ruined) loses them, except a machine being dismantled (its broken flag,
+    /// docs/game/buildings-production.md "Broken machines"), which the original keeps standing: a cage or safe of it stays, its lock counting as broken.
+    /// </summary>
     void SyncPlayerBuildings(World world)
     {
         var reg = world.Buildings;
         if (reg.Revision == buildingsRevision) return;
         buildingsRevision = reg.Revision;
         var fixtures = world.Fixtures;
+        bool Standing(Construction.BuildSite site) => site.Complete || site.Upgrading || world.Machines.Find(site.Id)?.Broken == true;
         // An upgraded or downgraded building keeps its doors while it is built, and gets the new record's: their state carries over by door index.
         var carried = new Dictionary<string, Fixture[]>(StringComparer.Ordinal);
         foreach (var b in fixtures.Buildings.ToArray())
             if (fixtures.OfBuilding(b) is [{ Site: -1 } first, ..] list)
             {
                 var site = reg.Find(b);
-                if (site is { Destroyed: false } && (site.Complete || site.Upgrading) && first.HostRecordId == site.Record) continue;
+                if (site is { Destroyed: false } && Standing(site) && first.HostRecordId == site.Record) continue;
                 if (site is { Destroyed: false, Upgrading: true } or { Destroyed: false, Complete: true }) carried[b] = [.. list];
                 fixtures.Unregister(b);
             }
         if (reg.Count == 0 || world.Systems.OfType<PopulationSystem>().FirstOrDefault()?.Data is not { } data) return;
         foreach (var site in reg.All)
-            if ((site.Complete || site.Upgrading) && !site.Destroyed)
+            if (Standing(site) && !site.Destroyed)
             {
                 fixtures.RegisterPlayerBuilding(world, data, site);
                 if (carried.Remove(site.Id, out var old)) fixtures.CarryDoors(site.Id, old);
