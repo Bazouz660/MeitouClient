@@ -200,13 +200,15 @@ public sealed partial class PlayerSystem
 
     /// <summary>
     /// The stolen mark a held item gets when it goes to <paramref name="taker"/>'s faction: from a loot that is a theft (<see cref="Crime.CrimeSystem.IsLootTheft"/>) the body's faction, from
-    /// another faction's container that faction (engine choice, as the container's take), else unchanged.
+    /// another faction's container that faction (engine choice, as the container's take), else unchanged. Handed to its owner's faction it loses the mark (the engine clears the owner when
+    /// the item goes to its owner or a member of the owner's faction).
     /// </summary>
     static int MarkFor(World world, HeldItem held, CharacterCold? taker)
     {
         var item = held.Item;
         var table = world.Characters;
         if (taker is null) return item.StolenFrom;
+        if (item.StolenFrom >= 0 && item.StolenFrom == taker.Faction) return -1;
         if (held.From.Holder == ItemHolder.Character && table.TryResolveNext(held.From.Character, out int v) && table.Cold(v) is { IsPlayer: false } victim
             && table.TryResolveNext(held.Actor, out int a) && Crime.CrimeSystem.IsLootTheft(table.Cold(a)!, victim)) return victim.Faction;
         if (held.From.Holder == ItemHolder.Site && world.Fixtures.Find(held.From.Site) is { Owner: >= 0 } box && box.Owner != taker.Faction) return box.Owner;
