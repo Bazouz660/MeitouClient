@@ -889,7 +889,12 @@ failed walks mark the cage unreachable for the faction; its own faction's shut d
   bounty rows (`CharacterSnapshot.Slave`, `PlayerInterface.SlaveRows`; [ui-screens, information panel](game/ui-screens.md#4-hud-mainbargui)). Ex-slave (state 3), "Looks like a slave", "Situation" and "Time remaining" rows are not built.
 - **Squad memory**: a caged captive's squad remembers the captor (5, through `FactionDeeds.CagedHook`), a freed prisoner's squad the liberator (3 and TEMP ALLY, event 13), a sold slave's squad the customer
   (5), a bought one's the buyer (3).
-- Not built: the off-screen side of shipping (a platoon unloaded on the way keeps its usual roaming), goal 112 as such (captives are carried by the kidnapping system), the real operation of machines by
+- **Shipping off screen**: the shipping squads are town roaming squads and homeless spawns (base data), so the original despawns them as they leave (Faithful). A kept stand-in
+  (`KeepRoamers`) whose package is a shipping one (TRAVEL_TARGET, [ai](game/ai.md#unknowns)) with a living slave goes on at 25 to the camp its package chose (none chosen: the
+  nearest slave camp not hostile to it) and stays there, the original's TRAVEL_TARGET rule ([off-screen world](game/factions-squads-towns.md#off-screen-world)); the handover
+  waits for it to load (`PopulationSystem.ShippingCamp`). Not shipped off screen: a save's platoon read back (its members' slave state is not looked at), and homeless
+  ones kept by `KeepWild`, which stay where they were as other wild squads.
+- Not built: goal 112 as such (captives are carried by the kidnapping system), the real operation of machines by
   workers, short-term tag 6 of the strip.
 
 ## Buildings

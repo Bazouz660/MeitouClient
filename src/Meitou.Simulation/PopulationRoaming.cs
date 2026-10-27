@@ -137,6 +137,16 @@ public sealed partial class PopulationSystem
     void StandIn(World world, Platoon p, float dt)
     {
         if (p.Pinned || p.Wild || p.Campaign is not null) return;   // a town's own saved squad, or a wild one, stays where it was; a campaign moves its own
+        if (ShippingCamp(p) is >= 0 and var camp)
+        {
+            // Shipping slaves: on to the camp, then it stays there; the slaves are handed over once it loads (Deliver 192).
+            p.Target = camp;
+            p.Point = null;
+            var at = SiteCentre(camp);
+            float left = Vector2.Distance(p.Position, at);
+            if (left > settings.RoamArrivalRadius) Travel(p, at, MathF.Min(TravelTargetSpeed, StandInSpeedCap) * dt);
+            return;
+        }
         if (p.WaitLeft > 0)
         {
             p.WaitLeft -= dt;
@@ -206,6 +216,38 @@ public sealed partial class PopulationSystem
         };
         return MathF.Min(speed, StandInSpeedCap);
     }
+
+    /// <summary>
+    /// The slave camp a kept stand-in ships its slaves to, -1 when it does not (docs/simulation.md "Captives", off screen): its package is a shipping one (signal 11 or 28, whose
+    /// <c>unloaded func</c> is 5 TRAVEL_TARGET in the data) and someone of it is a living slave (state 1). The original's unloaded TRAVEL_TARGET heads for the package's mission target
+    /// and does not move inside it (docs/game/factions-squads-towns.md "Off-screen world"): the camp chosen when the package started (kept in <see cref="Platoon.Target"/> as the
+    /// squad unloads), else the nearest slave camp not hostile to it, the loaded package's rule. A save's platoon (no stored squad) is not shipped. Any thread: reads the data and this platoon only.
+    /// </summary>
+    int ShippingCamp(Platoon p)
+    {
+        if (p.Package is not { } id || p.Stored is not { } stored || !IsShipping(id)) return -1;
+        bool slaves = false;
+        foreach (var m in stored.Members) if (m.Cold is { SlaveState: 1, Role: (int)SquadRole.Slave, Medical.Dead: false }) { slaves = true; break; }
+        if (!slaves) return -1;
+        if (p.Target >= 0 && p.Target < data.Sites.Count && data.Sites[p.Target].Town.Type == TownType.SlaveCamp) return p.Target;
+        int best = -1;
+        float bestD = float.MaxValue;
+        foreach (var site in data.Sites)
+        {
+            if (site.Town.Type != TownType.SlaveCamp || site.Index >= data.SiteFactions.Count) continue;
+            int f = data.SiteFactions[site.Index];
+            if (f >= 0 && p.Faction >= 0 && data.Relations.Contains(f) && data.Relations.Contains(p.Faction) && data.Relations.IsHostile(f, p.Faction)) continue;
+            float d = Vector2.DistanceSquared(p.Position, SiteCentre(site.Index));
+            if (d < bestD) (best, bestD) = (site.Index, d);
+        }
+        return best;
+    }
+
+    /// <summary>A shipping package (signal 11 or 28) whose off-screen job is TRAVEL_TARGET (<c>unloaded func</c> 5, as all four in the base data).</summary>
+    bool IsShipping(string package) => data.Ai.Package(package) is { Signal: 11 or 28, Unloaded: (int)Ai.PlatoonJob.TravelTarget };
+
+    /// <summary>The original's TRAVEL_TARGET speed off screen without a campaign (docs/game/factions-squads-towns.md "Off-screen world").</summary>
+    const float TravelTargetSpeed = 25;
 
     /// <summary>The original unloaded mover's top speed (its constructor's 70; no other writer found, Observed).</summary>
     public const float StandInSpeedCap = 70;
@@ -308,6 +350,7 @@ public sealed partial class PopulationSystem
         else if (world.Tick >= p.UnloadAtTick)
         {
             if (squad.Ai?.Current is { } running) p.Package = running.Id;
+            if (p.Package is { } shipping && IsShipping(shipping) && squad.Ai is { MissionTown: >= 0 and var mission }) p.Target = mission;   // the camp it ships to (ShippingCamp)
             // Faithful: a platoon the original does not keep (not a town's own, not in a campaign, not occupying) is despawned as it leaves; a save's wild one by the wild switch.
             if (!Kept(p) && !p.Pinned && p.Campaign is null)
             {
