@@ -330,7 +330,7 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
         {
             if (!next[i].Alive || (next[i].Flags & (ushort)MoveFlags.NeedPath) == 0) continue;
             var cold = table.Cold(i)!;
-            // The goal's floor: the height the order was given at, else the character's own (a wander or follow goal on its level).
+            // The goal's floor: the height the order was given at (a follower's leader on another storey), else the character's own (a wander or follow goal on its level).
             float nearY = cold.GoalHeightAt == next[i].Goal && !float.IsNaN(cold.GoalHeight) ? cold.GoalHeight : next[i].Position.Y;
             var to = new Vector3(next[i].Goal.X, world.Walkability.GroundHeight(next[i].Goal.X, next[i].Goal.Y, nearY), next[i].Goal.Y);
             cold.PathRequest = Paths.Submit(new CharacterId(i, next[i].Generation), next[i].Position, to, cold.FootprintRadius,
@@ -425,6 +425,7 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
                 bool moving = leadSpeed > StandingSpeed;
                 var here = new Vector2(n.Position.X, n.Position.Z);
                 Vector2 slotPos;
+                bool shutOut = false;
                 if (squad is not null && squad.FormationSlots.TryGetValue(self, out var slot) && squad.Members.Contains(leader))
                 {
                     // A squad mate: its slot turned onto its eased heading, one second of the leader's travel ahead of the leader.
@@ -437,7 +438,7 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
                     }
                     cold.FollowHeading = heading;
                     slotPos = leadAt + heading * leadSpeed + Formation.ToWorld(slot, heading);
-                    if (ShutOutAim(world, leader.Slot, i, lead.Position, n.Position) is { } outside) slotPos = outside + Formation.ToWorld(slot, heading) * DoorSlotScale;
+                    if (ShutOutAim(world, leader.Slot, i, lead.Position, n.Position) is { } outside) (slotPos, shutOut) = (outside + Formation.ToWorld(slot, heading) * DoorSlotScale, true);
                 }
                 else
                 {
@@ -446,12 +447,17 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
                     off = off.LengthSquared() > 1e-6f ? Vector2.Normalize(off) : -leadDir;
                     slotPos = leadAt + off * PlainDistance(world.Seed, self, leader);
                 }
-                float away = Vector2.Distance(here, slotPos);
+                // A leader on another storey (the Hub Storm House's roof above it): the follower's own floor under its slot would be "there", so it takes a path to the leader
+                // itself, on the leader's floor, and the climb counts in its distance (engine choice; the original's Task_Follow on stacked floors is Unknown).
+                float climb = MathF.Abs(lead.Position.Y - n.Position.Y);
+                bool otherFloor = !shutOut && climb > FloorSlack && MathF.Abs(world.Walkability.GroundHeight(leadAt.X, leadAt.Y, n.Position.Y) - lead.Position.Y) > FloorSlack;
+                if (otherFloor) slotPos = leadAt;
+                float away = Vector2.Distance(here, slotPos) + (otherFloor ? climb : 0);
                 cold.FollowSpeed = FollowSpeedFor(away, moving, leadDir, new Vector2(MathF.Sin(prev[i].Yaw), MathF.Cos(prev[i].Yaw)));
                 n.Mode = lead.Mode;
                 n.TaskTime -= dt;
                 if (cold.FollowPathTime > 0) cold.FollowPathTime = MathF.Max(cold.FollowPathTime - dt, 0);
-                if (away < DirectDistance && cold.FollowPathTime <= 0)
+                if (away < DirectDistance && !otherFloor && cold.FollowPathTime <= 0)
                 {
                     // Near its aim: Move steers it straight there (a path it had is dropped).
                     n.Goal = slotPos;
@@ -467,6 +473,7 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
                     && (!busy || Vector2.DistanceSquared(slotPos, n.Goal) > 20 * 20))
                 {
                     n.Goal = slotPos;
+                    if (otherFloor) (cold.GoalHeight, cold.GoalHeightAt) = (lead.Position.Y, slotPos);
                     n.Flags |= (ushort)MoveFlags.NeedPath;
                     n.TaskTime = RepathSeconds;
                 }

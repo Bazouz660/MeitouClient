@@ -124,6 +124,9 @@ d × max(0.1, 0.5 + 0.5 × dot(leader direction, own direction)): a follower tha
 leader standing: under 20 → 0, 20-50 → 10-20, 50-200 → 20-30, 200-500 → 30-999 (each linear in d², clamped). Speed 0 stops. Under 50
 it steers straight (movement mode 2 MOVE_DIRECTION, desired motion toward the aim, move limit √d); from 50 to 100 it keeps that only
 while it moved more than its speed² since the last update; otherwise it paths to the aim. Followers copy an allied leader's sneaking.
+Stacked floors are **Unknown**. Engine choice: a follower whose own floor under the leader is over 20 off the leader's height paths to
+the leader on its floor, d plus the height gap (**Observed**: "guys b stuck" save, Dust Bandits squad under its boss on the Hub Storm
+House roof storey, stood "Following leader" on the floors below).
 
 **Speed groups** (Group speed, mode 3). `PlayerInterface::assignSpeedGroup` / `useSpeedGroup` give the selected characters one shared
 `SpeedGroup`; nothing else creates one (**Observed**: no other callers), so NPC squads never use it. `SpeedGroup::getSpeed` (`1407f5740`),
