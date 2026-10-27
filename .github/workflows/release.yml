@@ -1,5 +1,5 @@
 # Manual release (nightlies: nightly.yml): builds the game and the world viewer (meitou-viewer), self-contained, for Windows, Linux and macOS
-# (tools/scripts/package-release.ps1; the Windows zip with NVIDIA DLSS/Streamline and AMD FidelityFX next to the exes), tags the commit
+# (tools/scripts/package-release.ps1; the Windows zip with NVIDIA DLSS/Streamline and AMD FidelityFX next to the exes, the Linux zip with NVIDIA's DLSS model and NGX client library), tags the commit
 # v<version> and publishes a GitHub release with one Meitou-<version>-<rid>.zip per runtime (docs/launcher.md), never a pre-release (only nightlies are) and never marked Latest
 # (that is the newest full launcher release, launcher-release.yml).
 name: Release
@@ -68,7 +68,7 @@ jobs:
       matrix:
         include:
           - { rid: win-x64, os: windows-latest }
-          - { rid: linux-x64, os: ubuntu-latest }
+          - { rid: linux-x64, os: ubuntu-22.04 }
           - { rid: osx-x64, os: macos-latest }
           - { rid: osx-arm64, os: macos-latest }
     runs-on: ${{ matrix.os }}

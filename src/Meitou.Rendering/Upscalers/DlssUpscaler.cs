@@ -77,7 +77,7 @@ public sealed unsafe class DlssUpscaler : IUpscaler
     }
 
     /// <summary>DLSS's mode for a render scale (its presets: DLAA 1, quality 1/1.5, balanced 1/1.72, performance 1/2, ultra performance 1/3).</summary>
-    static readonly uint Preset = uint.TryParse(Environment.GetEnvironmentVariable("MEITOU_DLSS_PRESET"), out var p) ? p : 0;
+    static uint Preset => VendorUpscalers.DlssPreset;
 
     static uint Mode(float scale) => scale switch
     {

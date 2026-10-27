@@ -4,7 +4,8 @@ MeitouClient is licensed under the GNU General Public License, version 3 or (at 
 (see [LICENSE](LICENSE)), with the following additional permission.
 
 If you modify this Program, or any covered work, by linking or combining it with the NVIDIA DLSS runtime
-libraries (for example `nvngx_dlss.dll`, `nvngx_dlssd.dll`, `nvngx_dlssg.dll` and the NVIDIA-signed Streamline
+libraries (for example `nvngx_dlss.dll`, `nvngx_dlssd.dll`, `nvngx_dlssg.dll`, `libnvidia-ngx-dlss.so`, `libmeitou_ngx.so` (NVIDIA's NGX
+client library from the DLSS SDK, linked unchanged) and the NVIDIA-signed Streamline
 plugins that load them), or a modified version of those libraries, containing parts covered by the terms of the
 NVIDIA RTX SDKs license agreement, the licensors of this Program grant you additional permission to convey the
 resulting work. Corresponding Source for a non-source form of such a combination shall not include the source code

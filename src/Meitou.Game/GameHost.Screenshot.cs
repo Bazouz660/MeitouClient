@@ -149,8 +149,9 @@ sealed partial class GameHost
     unsafe int Screenshot()
     {
         VulkanDisplay.RayTracing = o.WantsRayTracing;
-        using var display = new VulkanDisplay(null, vsync: false, streamline: true);
+        using var display = new VulkanDisplay(null, vsync: false, dlss: true);
         streamline = display.Streamline;
+        ngx = display.Ngx;
         Boot(display, interactive: false);
         PrepareStill(display.Context);
         var context = display.Context;

@@ -218,7 +218,7 @@ public sealed unsafe class VulkanDevice : IDisposable
     /// <summary>The native image's usage flags (Vulkan's): the vendor upscalers ask for them.</summary>
     public ImageUsageFlags NativeUsage(GpuTexture texture) => TextureAt(texture.Index).Allocation?.Usage ?? 0;
 
-    /// <summary>The native view (Vulkan's): the Streamline (DLSS) path needs the handle itself, and that path is NVIDIA's.</summary>
+    /// <summary>The native view (Vulkan's): the DLSS paths (Streamline, NGX) need the handle itself, and those paths are NVIDIA's.</summary>
     public ImageView NativeView(GpuTexture texture, int level = 0, int layer = 0) => ViewAt(View(texture, level, 1, layer, 1, GpuViewType.Texture2D, default).Index);
     public int FramesInFlight => options.FramesInFlight;
 
