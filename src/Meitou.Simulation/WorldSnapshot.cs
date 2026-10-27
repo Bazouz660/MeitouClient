@@ -196,6 +196,8 @@ public sealed record CharacterSnapshot(CharacterId Id, CharacterAppearance? Appe
     public IReadOnlyList<Crime.BountyLine> Bounties { get; init; } = [];
     /// <summary>Slave (state 1) or escaped slave (state 2) and its owner's name, for the status lines of the bounty panel's tooltip (docs/game/ui-screens.md section 4); null otherwise.</summary>
     public SlaveView? Slave { get; init; }
+    /// <summary>The disguise of one of the player's characters while it has a level or a blown cooldown (<see cref="Crime.ArrestSystem"/>); null otherwise.</summary>
+    public DisguiseView? Disguise { get; init; }
     /// <summary>The status line ahead of the bounty (docs/game/ui-screens.md section 4, <c>FUN_1405d4260</c>): campaign leader, kidnapped, committing a crime, escaped prisoner; null for none.</summary>
     public StatusView? Status { get; init; }
     /// <summary>A selected character's trained stats (the host formats them); null for the others and for a character without stats.</summary>
@@ -316,6 +318,12 @@ public readonly record struct PrisonView(bool Locked, float Sentence, double Hou
 /// <summary>A slave's state (1 slave, 2 escaped slave; <c>SlaveStateEnum</c>) and the name of the faction that owns it ("someone" is the caller's word for none).</summary>
 /// <summary>The slave state of a character (1 slave, 2 escaped), its owner faction's name and its "looks like a slave" level in 0..1 (<see cref="Kidnap.CaptiveSystem.LooksLikeSlaveLevel"/>).</summary>
 public readonly record struct SlaveView(int State, string Owner, float Looks = 0);
+
+/// <summary>
+/// A disguise for the data panel and the health word (docs/game/ui-screens.md "Which lines"): the clothing level, the uniform faction's name, the blown cooldown (seconds), whether it
+/// works, and the tooltip's factors (secure location, the looker marks).
+/// </summary>
+public readonly record struct DisguiseView(float Level, string Faction, float Blown, bool Works, bool Secure, bool SameFaction, bool SlaveOwner, bool KnowsMe);
 
 /// <summary>
 /// A turret building being manned (<see cref="CharacterSnapshot.Turret"/>): its key (a <see cref="Meitou.Data.World.TownBuilding"/> key, or a player site's id) and BUILDING record, where it stands and

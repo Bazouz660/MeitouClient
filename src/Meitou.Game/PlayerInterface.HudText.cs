@@ -334,12 +334,12 @@ sealed partial class PlayerInterface
     /// </summary>
     internal static (string Text, string? Colour, string Tip) HealthWord(CharacterSnapshot lead)
     {
-        var (text, colour, tip) = HealthWord(lead.Body!.Value, lead.Hud, lead.HealthParts);
+        var (text, colour, tip) = HealthWord(lead.Body!.Value, lead.Hud, lead.HealthParts, lead.Disguise, lead.Slave?.State ?? 0);
         return lead.BedRecoveryRate is { } rate && !lead.Body.Value.Dead ? (text, colour, tip + "\n" + Loc.Tr("Recovery rate: {1}x", rate)) : (text, colour, tip);
     }
 
     /// <summary><see cref="HealthWord(CharacterSnapshot)"/> from the body, the HUD view (bleeding, stomach, robot race, KO point) and the part rows.</summary>
-    internal static (string Text, string? Colour, string Tip) HealthWord(BodyStatus body, HudView? hud = null, IReadOnlyList<HealthPartView>? parts = null)
+    internal static (string Text, string? Colour, string Tip) HealthWord(BodyStatus body, HudView? hud = null, IReadOnlyList<HealthPartView>? parts = null, DisguiseView? disguise = null, int slaveState = 0)
     {
         bool robot = hud?.Robot ?? false;
         int w = WoundSeverity(parts ?? [], hud?.KoPoint ?? hud?.Extended?.KoPoint);
@@ -363,6 +363,18 @@ sealed partial class PlayerInterface
         if (body.StayingLow) return Word("Staying low", MainColour, "You are staying down, hoping to avoid drawing attention.");
         if (body.Hunger < 1) return Word("Starving", BadColour, "You are starving to death. Get some food fast.");
         if (bleeding > 0) return Word("Bleeding", null, "Losing blood, will collapse if blood goes below 0.");
+        // The slave and disguise record: blown (or an escaped slave discovered) while the cooldown runs, else a working disguise.
+        if (disguise is { } d)
+        {
+            if ((slaveState > 1 || d.Level > 0) && d.Blown > 0)
+            {
+                int secs = (int)d.Blown;
+                string cooldown = "\n" + MainTag + Loc.Tr(secs == 1 ? "Cooldown {1,num} second" : "Cooldown {1,num} seconds", secs);
+                return slaveState < 2 ? (Loc.Tr("Disguise Blown!"), BadColour, Loc.Tr("You've been discovered, somebody has seen through your disguise.") + cooldown)
+                    : (Loc.Tr("Discovered!"), BadColour, Loc.Tr("You've been discovered, somebody has noticed that you are an escaped slave.") + cooldown);
+            }
+            if (d.Works) return (Loc.Tr("In Disguise"), MainColour, Loc.Tr("You are currently disguised as {1}", d.Faction));
+        }
         if (body.WorstPart < 0.7f) return Word("Wounded", null, "You are kind of healthy for now.");
         if (body.Hunger < 2)
             return (hud?.Fed ?? 0) <= 0 ? Word("Hungry", BadColour, "You are hungry and suffering from malnutrition. Your stats and strength will be affected, you need to get some food as soon as possible.")

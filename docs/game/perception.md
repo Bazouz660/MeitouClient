@@ -79,6 +79,33 @@ colours: seen if any watcher detects, almost seen if any notices, else hidden, a
 Every player character within the 1.2e8 range gets the `Kenshi_CharacterNamePanel` over its head (name in `Kenshi_StandardFont_Large` with shadow, selected: white in [brackets], else #b3b3b3 (**Observed**); the icon only while sneaking); NPCs get none
 (**Observed** in the original, not verified against `FUN_1406e8100`).
 
+## Disguise
+
+State on the character's status object (Character `+0x1a0`): level `+0x100`, uniform faction `+0x108`, armour stigma `+0x104`, blown cooldown `+0x110`.
+- **Uniforms**: an item's `Gear::isUniform` faction (`+0x1e8`, KenshiLib 1ce4a16), saved as the item's `uniform` string (the faction's id; `Gear::_serialise`). Clothing a
+  CHARACTER with `wears uniform` is made with gets its faction ([economy](economy.md); Meitou `CharacterAssembly`, `ItemInstance.Uniform`).
+- **Level** (`AI::vfunc_9` `FUN_1405a51e0`, **Observed**; run for the player's faction): reset to 0; a uniform hat (attach slot 3) +0.4; a uniform body armour (5) +0.4, its
+  faction replacing the hat's; uniform legs (6) of that faction +0.2. The faction (`+0x108`) is the last uniform piece's. No body armour, no legs, a body of another uniform than the
+  hat (or none) or legs of another uniform: the level x 0.1. So a full set is 1.0, hat and body 0.8.
+- **Works** (`FUN_1407c0520`, **Verified**): level > 0.6 and cooldown <= 0; then the sense tags take the uniform faction for the character's ([sense tags](#sense-tags-who-is-an-enemy)).
+- **Seeing through** (`SensoryData::disguiseMods` `FUN_140856f00`, **Observed**; literals **Verified**): per looker and frame, nothing when the looker is asleep, the target is
+  farther than 400, or two flags (looker slot `0x248`, target `+0x3d4`) or target `+0x2f8` = 2 are set (**Unknown** meanings). A working disguise starts the check with m = level and
+  b = 5 (two other branches: an escaped / ex-slave with m = 1 - looks-like-slave and b = 1, and an undisguised character the looker's faction has crimes on with m = 1, b = 5;
+  [economy](economy.md) 11.8). Then x 0.5 when the looker's squad has a grudge on it (long tag & 0x2b0, mark 2), x 0.6 when the uniform is the looker's faction's (mark 0), x 0.5
+  when the looker's faction owns it as a slave (mark 1), x 0.75 inside the walls of a town that is not public, x 2 unless the looker stands in a town (no nest) of a real faction other
+  than the player's that it is not hostile to; k = lerp(stealth, 1, 2) x m x those (stealth = the raw stat / 100). a = 40 k + b feeds the spot meter of [spotting a sneaker](#spotting-a-sneaker)
+  (`FUN_140856cb0` with a and 4a: T = lerp(v, 5a, a) x lerp(f, 4, 1)), the same per-looker map. Once it is full (or the cooldown already runs), and the looker is awake, not
+  an ally: no crimes of the looker's faction on the target sets the cooldown to 250; else the looker fires event 44 BOUNTY_SPOTTED. The marks are 14 s entries the data panel's
+  tooltip reads.
+- **Cooldown**: the same field crimes set ("recently wanted", 250 from a witnessed or booked crime, [economy](economy.md) 11.2); counted down by dt (`AI::updateStateBroadcast`
+  `FUN_1405a4ae0`); saved as `disguiseblown` (`FUN_140626580`, **Verified**).
+- Not traced: `sellingUniformDetectionCheck` (selling a uniform, `CRIME_UNIFORM_THEFT`), event `EV_I_SEE_UNIFORM_IMPOSTER`, the dialogue gates of "regards as enemy".
+
+Meitou (`ArrestSystem.Disguise.cs`, every spot sweep): the level and faction from the worn head, armour and legs; lookers are awake NPCs not of the player's faction within 400 that see
+the character (`SightMap.Sees`), with their own meter per pair (not shared with the sneak meters, engine choice), alertness 0.5; the town tests read the town the point stands in
+(engine reading of the status object's hysteresis), inside the walls by the gate regions. The slave and bounty branches stay the arrest system's (a working disguise hides the bounty
+from its spotting); `AggroSystem` and the arrest spotting take `ArrestSystem.SeenFaction`.
+
 ## Hearing
 
 Moving-state gate; ordinary noise lerp(speed fraction,350*f,600*f), stealth noise

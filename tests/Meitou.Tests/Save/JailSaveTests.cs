@@ -23,7 +23,7 @@ public class JailSaveTests
     // The house stands in its own zone and is known at run time by its key there (BuildingKey).
     static readonly ZoneCoordinate HouseZone = WorldLayout.ZoneOf(HouseAt.X, HouseAt.Z);
     static readonly string HouseKey = BuildingKey.Of(HouseZone, "house");
-    static readonly string[] CharacterKeys = [CrimeSave.EscapedKey, CrimeSave.RecentlyWantedKey, CrimeSave.RecognitionKey, HeldSave.MeitouState, HeldSave.MeitouWhat];
+    static readonly string[] CharacterKeys = [CrimeSave.EscapedKey, CrimeSave.OldRecentlyWantedKey, CrimeSave.RecognitionKey, HeldSave.MeitouState, HeldSave.MeitouWhat];
     static readonly SaveCaptureOptions Options = new() { Placements = [new TownPlacement("inst", "30-t", SyntheticTown.Centre, null)] };
 
     /// <summary>The synthetic town with a house of one door that has a cage in its interior (<c>house/0</c>).</summary>

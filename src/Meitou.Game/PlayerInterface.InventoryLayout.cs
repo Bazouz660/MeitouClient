@@ -271,8 +271,7 @@ sealed partial class PlayerInterface
     {
         var lines = new List<HudLine> { new(Loc.Tr("Total Weight:"), weight), new("", burdenWord, ValueColour: burdenColour) };
         if (animal || !lead.IsPlayer) return lines;
-        lines.Add(new(Loc.Tr("Disguise:"), Loc.Tr("None"), Tooltip: Loc.Tr("Not currently in disguise.")));
-        lines.Add(new("    ", "-"));
+        lines.AddRange(DisguiseLines(lead.Disguise));
         if (lead.Slave is not { } slave)
         {
             lines.Add(new(Loc.Tr("Slave of:"), "-", GreyColour, GreyColour, Loc.Tr("You are a free person.")));
@@ -283,6 +282,43 @@ sealed partial class PlayerInterface
         lines.Add(new(Loc.Tr("Looks like slave:"), Loc.Tr("{1,num}%", (int)(slave.Looks * 100)), ValueColour: slave.Looks > 0.1f ? BadColour : null,
             Tooltip: Loc.Tr("How much you look like an escaped slave. Based on how you are dressed/undressed. Wearing shackles and rags is a big giveaway. Try to avoid hanging around too long near people who may recognise you.")));
         return lines;
+    }
+
+    /// <summary>
+    /// The Disguise row and the blank-labelled row under it (<c>FUN_1405d4260</c>, <b>Verified</b> strings, docs/game/ui-screens.md "Which lines"): the uniform faction's name (Main), else
+    /// "None"; the tooltip "Not currently in disguise." at level 0, else the rows Clothing disguise (level %, Good), In secure location -25%, Same faction -40%, Slave owner recognition
+    /// -50%, Someone knows me personally -80% (Bad, each multiplying the total), Disguise blown (seconds, Bad, total 0) and Total (Main). The second row: "-" at level 0, else the
+    /// level in percent (Main) or Blown! (Bad) while blown.
+    /// </summary>
+    static IEnumerable<HudLine> DisguiseLines(DisguiseView? disguise)
+    {
+        if (disguise is not { Level: > 0 } d)
+        {
+            yield return new(Loc.Tr("Disguise:"), Loc.Tr("None"), Tooltip: Loc.Tr("Not currently in disguise."));
+            yield return new("    ", "-");
+            yield break;
+        }
+        float total = d.Level * 100;
+        var rows = new List<(string, string)> { (Loc.Tr("Clothing disguise:"), $"{GoodTag}{Loc.Tr("{1,num}", (int)total)}%") };
+        void Factor(bool on, string label, string text, float mult)
+        {
+            if (!on) return;
+            total *= mult;
+            rows.Add((Loc.Tr(label), BadTag + text));
+        }
+        Factor(d.Secure, "In secure location:", "-25%", 0.75f);
+        Factor(d.SameFaction, "Same faction:", "-40%", 0.6f);
+        Factor(d.SlaveOwner, "Slave owner recognition:", "-50%", 0.5f);
+        Factor(d.KnowsMe, "Someone knows me personally:", "-80%", 0.2f);
+        if (d.Blown > 0)
+        {
+            total = 0;
+            int secs = (int)d.Blown;
+            rows.Add((Loc.Tr("Disguise blown:"), BadTag + Loc.Tr(secs == 1 ? "{1,num} sec" : "{1,num} secs", secs)));
+        }
+        rows.Add((Loc.Tr("Total:"), $"{MainTag}{Loc.Tr("{1,num}", (int)total)}%"));
+        yield return new(Loc.Tr("Disguise:"), d.Faction.Length > 0 ? d.Faction : Loc.Tr("None"), ValueColour: d.Faction.Length > 0 ? MainColour : null, TooltipRows: rows);
+        yield return d.Blown > 0 ? new("    ", Loc.Tr("Blown!"), ValueColour: BadColour) : new("    ", Loc.Tr("{1,num}%", (int)(d.Level * 100)), ValueColour: MainColour);
     }
 
     /// <summary>

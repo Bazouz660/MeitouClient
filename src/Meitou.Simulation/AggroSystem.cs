@@ -451,9 +451,11 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         // hold enemies of their guards, and slaves of a hostile faction, such as Heng's Outlaws, stand among them).
         if (s.Table.Cold(slot) is not { Medical.Incapacitated: false, IsImprisoned: false } c || c.SlaveState == 1 && !IsEnemy(s.Relations, s.Faction, c.SlaveOwner)) return;
         bool sneaking = (c.Orders & CharacterOrders.Sneak) != 0;
-        // Wanted characters are the arrest system's (Crime.ArrestSystem): the police spot, fine or arrest them there.
+        // Wanted characters are the arrest system's (Crime.ArrestSystem): the police spot, fine or arrest them there. A working disguise stands in for the target's faction
+        // (slot 125, docs/game/perception.md "Sense tags"; Crime.ArrestSystem.SeenFaction).
+        int seenAs = Crime.ArrestSystem.SeenFaction(c);
         bool enemy = s.Stance != Ai.AiStance.Passive
-            && (IsEnemy(s.Relations, s.Faction, c.Faction) || s.Stance == Ai.AiStance.AggressiveNeutrals && IsNeutral(s.Relations, s.Faction, c.Faction) || WarEnemy(s.War, s.Faction, c, other.Position));
+            && (IsEnemy(s.Relations, s.Faction, seenAs) || s.Stance == Ai.AiStance.AggressiveNeutrals && IsNeutral(s.Relations, s.Faction, seenAs) || WarEnemy(s.War, s.Faction, c, other.Position));
         // A campaign force's member is sensed as NEUTRAL, not ENEMY (FUN_1408580d0 over FUN_140796240, docs/game/perception.md "Sense tags"): a raid walks up to talk first.
         // The looker still takes it when it attacks neutrals or its own campaign targets it; a TEMP_ENEMY tag (below) makes it an enemy again.
         if (enemy && s.Stance != Ai.AiStance.AggressiveNeutrals && !WarEnemy(s.War, s.Faction, c, other.Position) && c.SquadId >= 0

@@ -313,11 +313,19 @@ public sealed class CharacterCold
     public float SentenceLength { get; set; }
     /// <summary>
     /// The original's "recently wanted" marker (status <c>+0x110</c>, set to 250 by a booking or a witnessed crime, docs/game/economy.md 11.2/11.8): while above 0 a looker recognises
-    /// the bounty at once. Game seconds counting down (<b>engine</b>: its decrement is Unknown). <see cref="Crime.CrimeSystem"/>; hashed only while set.
+    /// the bounty at once. Game seconds counting down by dt (<c>AI::updateStateBroadcast</c> <c>FUN_1405a4ae0</c>, <b>Observed</b>); the same field is the disguise's blown cooldown (saved as <c>disguiseblown</c>). <see cref="Crime.CrimeSystem"/>; hashed only while set.
     /// </summary>
     public float RecentlyWanted { get; set; }
     /// <summary>The bounty recognition meter (economy.md 11.8; <b>engine</b>: one per target, not per looker): fires at 1. <see cref="Crime.ArrestSystem"/>; hashed only while set.</summary>
     public float Recognition { get; set; }
+    /// <summary>
+    /// The clothing disguise (status <c>+0x100</c>, docs/game/perception.md "Disguise"): 0..1, recomputed for the player's characters by <see cref="Crime.ArrestSystem"/>; with
+    /// <see cref="DisguiseFaction"/> the uniform's faction (status <c>+0x108</c>, -1 none). Hashed only while set.
+    /// </summary>
+    public float DisguiseLevel { get; set; }
+    public int DisguiseFaction { get; set; } = -1;
+    /// <summary>Seconds left on the disguise tooltip's three marks (same faction, slave owner, someone knows me; 14 s from the last looker that applied one). Runtime only, not hashed.</summary>
+    public float[]? DisguiseMarks { get; set; }
     /// <summary>The escaped-prisoner flag (status <c>+0xe8</c>, docs/game/locks.md "Cages and beds"): left a cage before the sentence was served. Hashed only while set.</summary>
     public bool Escaped { get; set; }
     /// <summary>Held in a cage by a kidnapper (<see cref="Kidnap.KidnapSystem"/>), not sentenced: no sentence is ever served, no bail is offered, getting out is no crime. Saved as <c>meitou kidnapped</c>. Hashed only while set.</summary>
@@ -626,6 +634,7 @@ public sealed class CharacterTable
             // The arrest state adds to the hash only while set, so worlds without it hash as before.
             if (k.RecentlyWanted > 0) { hasher.Add(0x52576E74); hasher.Add(k.RecentlyWanted); }
             if (k.Recognition > 0) { hasher.Add(0x5265636F); hasher.Add(k.Recognition); }
+            if (k.DisguiseLevel > 0) { hasher.Add(0x44697367); hasher.Add(k.DisguiseLevel); hasher.Add(k.DisguiseFaction); }
             if (k.Escaped) hasher.Add(0x45736361);
             if (k.Kidnapped) hasher.Add(0x4B64706E);
             if (k.SlaveState != 0) { hasher.Add(0x536C7653); hasher.Add(k.SlaveState); hasher.Add(k.SlaveOwner); }

@@ -13,8 +13,8 @@ public sealed record ArrestSettings
     /// <summary>A looker recognises a bounty within this distance (the original's 160000 squared, economy.md 11.8, <b>Observed</b>).</summary>
     public float SpotRange { get; init; } = 400;
     /// <summary>
-    /// Game seconds of being seen that fill the recognition meter (<b>engine</b>: the original's rate <c>5 + 40 k</c> with k from 1 to 2 is not decoded to seconds; read here as 45 s,
-    /// k = 1). A booked or witnessed crime skips it (<see cref="CharacterCold.RecentlyWanted"/>).
+    /// Game seconds of being seen that fill the recognition meter (<b>engine</b>: the original runs the per-looker spot meter with a = 5 + 40 k, docs/game/perception.md "Disguise", which bounties do
+    /// not use here; read as 45 s). A booked or witnessed crime skips it (<see cref="CharacterCold.RecentlyWanted"/>).
     /// </summary>
     public float RecognitionSeconds { get; init; } = 45;
     /// <summary>A guard fining a character talks within this distance; the fine lapses into an arrest when the target gets farther than <see cref="FineLeash"/> or after <see cref="FineSeconds"/>.</summary>
@@ -157,7 +157,11 @@ public sealed partial class ArrestSystem(CrimeSystem crimes, GameConstants const
             if (StepSpotting(world, spottings[k])) k++;
             else spottings.RemoveAt(k);
         }
-        if (world.Tick % Math.Max(1, Settings.SpotEveryTicks) == 0) Spot(world, Math.Max(1, Settings.SpotEveryTicks) * world.TickSeconds);
+        if (world.Tick % Math.Max(1, Settings.SpotEveryTicks) == 0)
+        {
+            Disguise(world, Math.Max(1, Settings.SpotEveryTicks) * world.TickSeconds);
+            Spot(world, Math.Max(1, Settings.SpotEveryTicks) * world.TickSeconds);
+        }
         for (int k = 0; k < arrests.Count;)
         {
             if (Step(world, arrests[k])) k++;
@@ -236,7 +240,8 @@ public sealed partial class ArrestSystem(CrimeSystem crimes, GameConstants const
                 float d2 = Vector3.DistanceSquared(next[w].Position, at);
                 if (d2 > range2) continue;
                 int bounty = c.Bounties?.Of(wc.Faction) is { Claimed: false } e ? e.Amount : 0;
-                bool spots = bounty > 0 && bounty >= SpotThreshold(wc.NpcClass);
+                // A working disguise hides the bounty: only a looker that sees through it recognises it (Disguise; disguiseMods' bounty branch needs no disguise level).
+                bool spots = bounty > 0 && bounty >= SpotThreshold(wc.NpcClass) && SeenFaction(c) == c.Faction;
                 bool escapee = c.Escaped && Crimes.IsPoliceLike(world, wc) && InOwnTown(world, w);
                 bool hunts = HuntsFor(wc, c);
                 if (!spots && !escapee && !hunts) continue;
@@ -604,6 +609,7 @@ public sealed partial class ArrestSystem(CrimeSystem crimes, GameConstants const
     public void Hash(ref StateHasher hasher)
     {
         HashBounties(ref hasher);
+        HashDisguise(ref hasher);
         if (spottings.Count > 0)
         {
             hasher.Add(0x53706F74);
