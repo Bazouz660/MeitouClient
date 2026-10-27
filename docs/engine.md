@@ -33,6 +33,9 @@ responsive. On Wayland the window is shown and its first configure taken before 
 preserve world on failure. Gameplay warm-up waits for nearby population, terrain, scenery, character
 assets and used textures (including deferred loads), then <40ms frames for0.5s (max5s for frame pacing).
 After 5s of continuous `VramGuard` pressure, content it holds back is no longer waited for (it cannot load until the use falls).
+A game's warm-up waits only for the characters within 3000 units of the camera's focus (`CharacterRenderer.LoadingFocus`, `LoadingReach`); the rest are prepared once
+the screen lifts. The original's loaded zones (the camera's 3 x 3 block) can hold hundreds of NPCs, whose meshes' generated levels are made on every load (no disk
+cache). **Observed** (a Great Desert save near Heng, RTX 4090): 479 looks pending and a 130 s wait before this rule, 35 and 40 s with it.
 Population builds are queued/applied at frame boundaries without advancing game time, AI or movement;
 navmesh-gated spawns are retried while loading. Warm-up and the flight hold the simulation paused.
 The Faithful title does not wait: its picture is opaque, so the start ends with the splash ([ui-screens](game/ui-screens.md#splash)) and the boot.

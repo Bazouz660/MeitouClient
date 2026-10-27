@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Numerics;
 
 namespace Meitou.Game;
 
@@ -129,8 +130,11 @@ sealed partial class GameHost
         // A ready character mesh alone is insufficient: finish terrain, scenery and deferred textures too.
         // Content readiness has no pacing timeout that can expose missing NPCs or white stand-ins.
         bool populationReady = TitleVisible || session.World.PreparePopulation(session.Camera.Current.Target);
+        // A game's view waits for the characters round the camera's focus only (CharacterRenderer.LoadingFocus); the rest are prepared once the screen lifts.
+        var focus = session.Camera.Current.Target;
+        if (!TitleVisible && gpu.Characters is { } near) near.LoadingFocus = new Vector2(focus.X, focus.Z);
         bool charactersReady = gpu.Characters is not { } characters || !characters.ContentPending &&
-            session.CurrentSnapshot.Characters.All(c => c.Appearance is null || characters.IsPrepared(c.Appearance));
+            session.CurrentSnapshot.Characters.All(c => c.Appearance is null || !InLoadingReach(c) || characters.IsPrepared(c.Appearance));
         bool sceneReady = TitleVisible ? TitleSceneReady : populationReady && charactersReady &&
             gpu.Streamer is not { Idle: false } && !(gpu.Objects?.Pending > 0) && !(gpu.Foliage?.Pending > 0);
         guardSeconds = gpu.Guard is { Pressure: true } ? guardSeconds + seconds : 0;
@@ -145,6 +149,7 @@ sealed partial class GameHost
             // A new game shows the character editor before the world: the loading screen lifts once the squad is drawable, no sky arrival, and the world's own warm-up
             // runs when the editor closes (ResumeAfterCreation).
             (warming, skyArrival, presentationHour) = (false, null, null);
+            if (gpu.Characters is { } editorCharacters) editorCharacters.LoadingFocus = null;
             loading?.Finish();
             ReportLoading($"the squad was ready in {warmSeconds:0.0} s; the editor opens first");
             return;
@@ -156,7 +161,7 @@ sealed partial class GameHost
             {
                 nextWarmReport = warmSeconds + 5;
                 int pendingLooks = gpu.Characters is { } characterRenderer
-                    ? TitleVisible ? characterRenderer.PendingLoads : session.CurrentSnapshot.Characters.Count(c => c.Appearance is { } appearance && !characterRenderer.IsPrepared(appearance))
+                    ? TitleVisible ? characterRenderer.PendingLoads : session.CurrentSnapshot.Characters.Count(c => c.Appearance is { } appearance && InLoadingReach(c) && !characterRenderer.IsPrepared(appearance))
                     : 0;
                 Console.WriteLine($"loading   {(TitleVisible ? "menu" : "game")} still preparing: terrain {(gpu.Streamer?.Idle == false ? "pending" : "ready")}, objects {gpu.Objects?.Pending ?? 0}{(gpu.Objects is { Pending: > 0 } po ? $" ({po.PendingDetail})" : "")}, foliage {gpu.Foliage?.Pending ?? 0}{(gpu.Foliage is { Pending: > 0 } pf ? $" ({pf.PendingDetail})" : "")}, population {(populationReady ? "ready" : "pending")}, characters {((TitleVisible ? TitleCharactersReady : charactersReady) ? "ready" : $"pending ({pendingLooks} looks; {gpu.Characters?.PendingLoads ?? 0} assets/textures)")}");
             }
@@ -175,10 +180,15 @@ sealed partial class GameHost
         // A machine that cannot draw the view at the smooth pace is let in after WarmLimit seconds of ready content, on the title as in play.
         if ((TitleVisible ? smoothSeconds < TitleSmoothRun : smoothSeconds < SmoothRun) && readySeconds < WarmLimit) return;
         warming = false;
+        if (gpu.Characters is { } world) world.LoadingFocus = null;
         loading?.Finish();
         skyArrival?.Arrive();
         ReportLoading($"the view warmed up in {warmSeconds:0.0} s");
     }
+
+    /// <summary>Whether a character is one the loading screen waits for (within the renderer's <see cref="Meitou.Rendering.Characters.CharacterRenderer.LoadingReach"/> of its focus).</summary>
+    bool InLoadingReach(Meitou.Simulation.CharacterSnapshot c) => gpu.Characters is not { LoadingFocus: { } f } r
+        || Vector2.DistanceSquared(new Vector2(c.Position.X, c.Position.Z), f) <= r.LoadingReach * r.LoadingReach;
 
     void AdvanceSkyArrival(double seconds)
     {
