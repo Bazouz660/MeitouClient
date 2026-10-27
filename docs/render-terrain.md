@@ -32,14 +32,16 @@ settable for a run with the viewer's `--relief Name=value`: target slope 0.2, sc
 **Heights** (`NormalHeight.FromNormals`, at load, ≤512², an R8 array, one slice per pair slot; no readable normal map: flat, out
 of the relief). The normal map's slopes (`dh/du = x/z`, `dh/dv = -y/z` in the terrain tangent frame) are integrated by FFT
 (Frankot–Chellappa), below 2 cycles a tile dropped, scaled to the 1st–99th percentiles. A slope field splits into a gradient part
-(what a surface makes) and a curl part (what none makes; noise splits evenly): the frame is the shader's, turned a quarter,
-mirrored (green flipped) or both, whichever has the highest `(g − c)/(g + c)` (by at least 0.1 over the shader's); a turned
-frame's height is turned to rise where the diffuse is bright. Each half-octave band is kept by its own `(g − c)/(g + c)` (a Wiener
-gain, the noise measured from the curl) and times `(cycles / 2)^tilt`, weighing broad shapes down against the detail.
-**Observed** (the 132 pairs the biomes use, 512²): 102 in the shader's frame, 22 mirrored (`Sand01bc_n`, `canyonrock_N`,
-`Cliffs01_n`, `DesertSandLoop03_NML`), 3 turned (`Fractured_Rock_NML`, `SandRippLoop_NML`), 5 both (`Sands_NML`,
-`Sand01bc_Grey_NML`), scoring about 0 in the shader's frame and 0.7–0.99 in theirs (the game shades them in its own frame
-regardless). Grass and mulch (`GrasZ`, `Branch_Mulch`) are largely non-integrable and come out nearly flat; gravels lose their
+(what a surface makes) and a curl part (what none makes; noise splits evenly); each half-octave band is kept by its own
+`(g − c)/(g + c)` (a Wiener gain, the noise measured from the curl) and times `(cycles / 2)^tilt`, weighing broad shapes down against
+the detail. Always in the terrain shader's frame, the one the game lights the normal map in, also for maps authored in another:
+integrated in their own (mirrored or turned, where they are far more integrable), their bumps faced the sun where the lighting put
+shade. **Observed** (Great Desert dunes at 50240, −50298, 12:35, displacement on: correlation at the ripples' scale between the
+picture's brightness and the depth-rebuilt normal's N·L): −0.63 with `DesertSandLoop03_NML` integrated mirrored, +0.62 in the
+shader's frame; a mesa without such layers +0.50 either way. Layers more integrable in another frame (`(g − c)/(g + c)`, shader's
+then theirs): `DesertSandLoop03_NML` 0.25 / 0.89, `Sands_NML` 0.16 / 0.92, `Bedded_Sandstone_NML` 0.66 / 0.86,
+`Geobased_Rockloop_NML` 0.28 / 0.72, `Lichen_Rock_NML` 0.15 / 0.61, `Grass-Space_Z_NML` 0.04 / 0.75, `ScarredRock_NML` 0.05 / 0.72,
+`Whitestone_Floor_NML` 0.07 / 0.78, `Sand01bc_Grey_NML` −0.30 / 0.60: their bands keep that much less, the last few nearly flat. Grass and mulch (`GrasZ`, `Branch_Mulch`) are largely non-integrable and come out nearly flat; gravels lose their
 broad bands; cobbles and pebbles (`RoadLoop01`, `River_Pebbles`) keep all. Lit by a low sun, the heights match the normal maps'
 own lighting at a median correlation of 0.88. The game's terrain normal maps are BC1 2048².
 

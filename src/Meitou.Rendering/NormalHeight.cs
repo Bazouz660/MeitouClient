@@ -3,8 +3,8 @@ namespace Meitou.Rendering;
 /// <summary>
 /// A height map recovered from a tiling normal map (docs/render-terrain.md, "Ground relief"): the normal's slopes integrated in the frequency domain
 /// (Frankot–Chellappa), exact for a periodic texture up to a constant. The slopes are read in the terrain shader's tangent frame (tangent along world -X,
-/// binormal along +Z, texture u along +X and v along +Z: dh/du = x / z, dh/dv = -y / z) or, where the normal map is far more integrable so, in that
-/// frame turned a quarter or mirrored (<see cref="NormalFrame"/>: a quarter of the game's ground normal maps are authored so). A slope field splits into
+/// binormal along +Z, texture u along +X and v along +Z: dh/du = x / z, dh/dv = -y / z), the frame the game lights them in, also where a normal map is
+/// authored in another (mirrored or turned; read so, its height would rise where the lighting puts a hollow). A slope field splits into
 /// a gradient part (along the frequency: what a surface makes) and a curl part (across it: what no surface makes); noise splits evenly between them, so
 /// in each half-octave band (g − c) / (g + c) of their energies is the share of the band that is surface, and the band is kept by that much (the Wiener
 /// gain with the noise measured from the curl). The lowest frequencies (under two cycles a tile) are dropped; a tilt weighs the broad shapes down
@@ -12,17 +12,11 @@ namespace Meitou.Rendering;
 /// </summary>
 public static class NormalHeight
 {
-    /// <summary>How much more integrable ((g - c) / (g + c) over every frequency) another frame must be than the shader's before it is taken.</summary>
-    public const float FrameMargin = 0.1f;
-
     /// <summary>
     /// An R8 height (rows top first) from an RGBA8 normal map of <paramref name="size"/>² texels (a power of two), and its steepness: its root-mean-square
-    /// slope per texel, the height range counted as 1 (<see cref="Steepness"/>). A half turn only flips the height, so integrability cannot tell up from
-    /// down: the shader frame and its mirror (the green channel flipped, the other common convention) keep their sign; a turned frame's height is turned
-    /// so it rises where <paramref name="colour"/> (the layer's RGBA8 diffuse at the same size) is bright: dark crevices. <paramref name="tilt"/>: each
-    /// frequency also times (cycles a tile / 2)^tilt (0: none).
+    /// slope per texel, the height range counted as 1 (<see cref="Steepness"/>). <paramref name="tilt"/>: each frequency also times (cycles a tile / 2)^tilt (0: none).
     /// </summary>
-    public static byte[] FromNormals(byte[] rgba, int size, out float steepness, byte[]? colour = null, float tilt = 0)
+    public static byte[] FromNormals(byte[] rgba, int size, out float steepness, float tilt = 0)
     {
         int count = size * size;
         float[] pRe = new float[count], pIm = new float[count], qRe = new float[count], qIm = new float[count];
@@ -36,36 +30,7 @@ public static class NormalHeight
         Fft2(pRe, pIm, size, false);
         Fft2(qRe, qIm, size, false);
 
-        // Each frame's integrability over every frequency from two cycles.
-        Span<double> g = stackalloc double[4], c = stackalloc double[4];
-        for (int row = 0; row < size; row++)
-        {
-            int fy = row <= size / 2 ? row : row - size;
-            for (int col = 0; col < size; col++)
-            {
-                int fx = col <= size / 2 ? col : col - size, i = row * size + col;
-                if (fx * fx + fy * fy < 4) continue;
-                float r = MathF.Sqrt(fx * fx + fy * fy), ux = fx / r, uy = fy / r;
-                for (int f = 0; f < 4; f++)
-                {
-                    var (aRe, aIm, bRe, bIm) = Slopes((NormalFrame)f, pRe[i], pIm[i], qRe[i], qIm[i]);
-                    double gRe = ux * aRe + uy * bRe, gIm = ux * aIm + uy * bIm, cRe = -uy * aRe + ux * bRe, cIm = -uy * aIm + ux * bIm;
-                    g[f] += gRe * gRe + gIm * gIm;
-                    c[f] += cRe * cRe + cIm * cIm;
-                }
-            }
-        }
-        Span<float> score = stackalloc float[4];
-        int best = 0;
-        for (int f = 0; f < 4; f++)
-        {
-            score[f] = g[f] + c[f] > 0 ? (float)((g[f] - c[f]) / (g[f] + c[f])) : 0;
-            if (score[f] > score[best]) best = f;
-        }
-        if (score[best] < score[0] + FrameMargin) best = 0;
-        var frame = (NormalFrame)best;
-
-        // Each half-octave band's surface share in that frame.
+        // Each half-octave band's surface share.
         int bands = (int)Math.Ceiling(2 * Math.Log2(size)) + 1;
         double[] bandG = new double[bands], bandC = new double[bands];
         for (int row = 0; row < size; row++)
@@ -76,8 +41,7 @@ public static class NormalHeight
                 int fx = col <= size / 2 ? col : col - size, i = row * size + col;
                 if (fx * fx + fy * fy < 4) continue;
                 float r = MathF.Sqrt(fx * fx + fy * fy), ux = fx / r, uy = fy / r;
-                var (aRe, aIm, bRe, bIm) = Slopes(frame, pRe[i], pIm[i], qRe[i], qIm[i]);
-                double gRe = ux * aRe + uy * bRe, gIm = ux * aIm + uy * bIm, cRe = -uy * aRe + ux * bRe, cIm = -uy * aIm + ux * bIm;
+                double gRe = ux * pRe[i] + uy * qRe[i], gIm = ux * pIm[i] + uy * qIm[i], cRe = -uy * pRe[i] + ux * qRe[i], cIm = -uy * pIm[i] + ux * qIm[i];
                 int j = Math.Clamp((int)Math.Round(2 * Math.Log2(r)) - 2, 0, bands - 1);
                 bandG[j] += gRe * gRe + gIm * gIm;
                 bandC[j] += cRe * cRe + cIm * cIm;
@@ -95,8 +59,7 @@ public static class NormalHeight
                 int fx = col <= size / 2 ? col : col - size, i = row * size + col;
                 if (fx * fx + fy * fy < 4) { pRe[i] = pIm[i] = 0; continue; }
                 float r = MathF.Sqrt(fx * fx + fy * fy), ux = fx / r, uy = fy / r;
-                var (aRe, aIm, bRe, bIm) = Slopes(frame, pRe[i], pIm[i], qRe[i], qIm[i]);
-                float gRe = ux * aRe + uy * bRe, gIm = ux * aIm + uy * bIm;
+                float gRe = ux * pRe[i] + uy * qRe[i], gIm = ux * pIm[i] + uy * qIm[i];
                 float t = Math.Clamp(2 * MathF.Log2(r) - 2, 0, bands - 1);
                 int j0 = (int)t, j1 = Math.Min(j0 + 1, bands - 1);
                 float gain = (gains[j0] + (gains[j1] - gains[j0]) * (t - j0)) * MathF.Pow(r / 2, tilt), k = 2 * MathF.PI * r / size;
@@ -104,8 +67,6 @@ public static class NormalHeight
             }
         }
         Fft2(pRe, pIm, size, true);
-        if (frame is NormalFrame.Turned or NormalFrame.MirroredTurned && colour is not null && Covariance(pRe, colour) < 0)
-            for (int i = 0; i < count; i++) pRe[i] = -pRe[i];
         var height = Scaled(pRe);
         steepness = Steepness(height, size);
         return height;
@@ -133,27 +94,6 @@ public static class NormalHeight
 
     /// <summary>The scale <see cref="Steepness"/> is measured at, in texels (of a 512² height: features about 1/128 of the tile).</summary>
     public const int SteepnessStep = 4;
-
-    /// <summary>A frequency's slopes (along u, along v) read in <paramref name="frame"/> from the shader frame's.</summary>
-    static (float ARe, float AIm, float BRe, float BIm) Slopes(NormalFrame frame, float pRe, float pIm, float qRe, float qIm) => frame switch
-    {
-        NormalFrame.Turned => (-qRe, -qIm, pRe, pIm),
-        NormalFrame.Mirrored => (pRe, pIm, -qRe, -qIm),
-        NormalFrame.MirroredTurned => (qRe, qIm, pRe, pIm),
-        _ => (pRe, pIm, qRe, qIm),
-    };
-
-    /// <summary>The covariance of <paramref name="values"/> with an RGBA8 image's luminance.</summary>
-    static double Covariance(float[] values, byte[] rgba)
-    {
-        double sumV = 0, sumL = 0, sumVL = 0;
-        for (int i = 0; i < values.Length; i++)
-        {
-            double l = 0.2126 * rgba[i * 4] + 0.7152 * rgba[i * 4 + 1] + 0.0722 * rgba[i * 4 + 2];
-            sumV += values[i]; sumL += l; sumVL += values[i] * l;
-        }
-        return sumVL / values.Length - sumV / values.Length * (sumL / values.Length);
-    }
 
     /// <summary>0..255 between the 1st and 99th percentiles, so a few deep pits do not flatten the rest.</summary>
     static byte[] Scaled(float[] values)
@@ -214,7 +154,3 @@ public static class NormalHeight
         }
     }
 }
-
-/// <summary>The tangent frame a normal map is read in (<see cref="NormalHeight"/>): the terrain shader's, turned a quarter, mirrored (the green
-/// channel flipped), or both.</summary>
-public enum NormalFrame { Assumed, Turned, Mirrored, MirroredTurned }
