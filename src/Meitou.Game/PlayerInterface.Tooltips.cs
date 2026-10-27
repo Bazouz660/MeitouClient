@@ -594,6 +594,12 @@ sealed partial class PlayerInterface
         else if (function == 16) lines.Add(new("[Ammunition]", "", TooltipTone.Main));
         if (t.StolenFrom >= 0)
             lines.Add(FactionName?.Invoke(t.StolenFrom) is { Length: > 0 } owner ? new("Stolen from:", owner, TooltipTone.Bad, TooltipTone.Bad) : new("Stolen", "", TooltipTone.Bad));
+        if (function == 16)
+        {
+            // Ammunition (FUN_1407ae130, Verified by disassembly): Damage = the item's quality x 0.01 then "x"; Shots = the charges left / the full charge, each truncated.
+            lines.Add(new("Damage:", (t.Quality * 0.01f).ToString("G6", CultureInfo.InvariantCulture) + "x", TooltipTone.Main, TooltipTone.Main));
+            lines.Add(new("-Shots", $"{(int)t.Charges}/{(int)t.MaxCharges}", TooltipTone.Main, TooltipTone.Main));
+        }
         string weightText;
         if (type == Meitou.Data.Fcs.FcsRecordType.WEAPON && combat?.Weapon(t.Record) is { } weapon)
         {
