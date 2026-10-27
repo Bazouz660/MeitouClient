@@ -69,7 +69,11 @@ public sealed record HudView(float Blood, float BloodCapacity, float Bleeding, f
     public CurrentSkillView? Skill { get; init; }
     /// <summary>The KO point of every shown character (<c>MedicalState.KoPoint</c>): <see cref="Extended"/> has it only for the player and the inspected one. Null without game constants.</summary>
     public float? KoPoint { get; init; }
+    /// <summary>The stats window's "Stats Affected" numbers by stat (<see cref="HudTips.StatsWindow"/>); stats without numbers are absent.</summary>
+    public IReadOnlyDictionary<Meitou.Data.Gameplay.Bodies.StatsEnumerated, IReadOnlyList<StatReadout>>? StatReadouts { get; init; }
 }
+/// <summary>A stats window row's English label (as the exe writes it, without the leading "-"), its value and whether the row is in Main (the label and value of "Knockout point:").</summary>
+public readonly record struct StatReadout(string Label, string Value, bool Main = false);
 /// <summary>
 /// The state panel's "Current Skill" line (docs/game/ui-screens.md section 4): the skill the job uses, labelled by its stat name (<see cref="Label"/> null), or a fallback with its
 /// own label (the drawn weapon's class, Athletics, Stealth, Swimming). <see cref="Value"/> is the level, or for Swimming the swim speed in units per second (<see cref="Speed"/>);

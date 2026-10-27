@@ -112,8 +112,16 @@ sealed partial class PlayerInterface
         }
         Line("stat-description-title", StatLabel(stat), TitleColour, 18);
         Line("stat-affected-heading", statHelp.TextAt(681), MainColour);
+        // The rows' numbers (FUN_1408b1250, HudView.StatReadouts), matched to the catalog's rows by their label, right-aligned on the row.
+        var readouts = lead?.Hud?.StatReadouts?.GetValueOrDefault(stat) ?? [];
         for (int i = 0; i < help.Affected.Count; i++)
-            Line($"stat-affected-{i}", "-" + help.Affected[i].TrimEnd(':'), MyGuiColours.InkText);
+        {
+            var readout = readouts.FirstOrDefault(r => Loc.Tr(r.Label) == help.Affected[i]);
+            string ink = readout.Main ? MainColour : MyGuiColours.InkText;
+            if (readout.Value is { Length: > 0 } number)
+                Text($"stat-affected-value-{i}", new(left.Bounds.X + 19 * scale, y, left.Bounds.Width - 27 * scale, row), number, ink, 14, leftClip, "Right Top");
+            Line($"stat-affected-{i}", "-" + help.Affected[i].TrimEnd(':'), ink);
+        }
         Line("stat-training-heading", statHelp.TextAt(684), MainColour);
         for (int i = 0; i < help.Training.Count; i++)
             Line($"stat-training-{i}", "-" + help.Training[i], MyGuiColours.InkText);

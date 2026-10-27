@@ -8,7 +8,11 @@ namespace Meitou.Simulation.Combat;
 /// The combat numbers the HUD's stats tooltips show (<c>FUN_140892120</c>, docs/game/ui-screens.md section 4): the attack and block play rates (CharStats <c>+0x188</c> / <c>+0x18c</c>),
 /// the weapon's cut and blunt damage at the fighter's skills (<c>FUN_140883ba0</c>, <c>FUN_140883c60</c>; fists' for an unarmed fighter) and the fists' cut plus blunt (<c>FUN_1408868b0</c>).
 /// </summary>
-public readonly record struct HudCombat(float AttackRate, float BlockRate, float Cut, float Blunt, float UnarmedDamage, float Resistance);
+public readonly record struct HudCombat(float AttackRate, float BlockRate, float Cut, float Blunt, float UnarmedDamage, float Resistance)
+{
+    /// <summary>The damage it takes to stagger the fighter (<see cref="DamageFormulas.StumbleThreshold"/>, <c>FUN_140884020</c>).</summary>
+    public float Stagger { get; init; }
+}
 
 public sealed partial class CombatSystem
 {
@@ -25,7 +29,8 @@ public sealed partial class CombatSystem
             cut = DamageFormulas.Cut(skill, dex, fighter.Weapon!.Stats, combat);
             blunt = DamageFormulas.Blunt(skill, str, fighter.Weapon.Stats, combat);
         }
-        return new HudCombat(Rate(cold, true), Rate(cold, false), cut, blunt, fists.Cut + fists.Blunt, HitResolver.ToughnessResistance(tough, combat));
+        return new HudCombat(Rate(cold, true), Rate(cold, false), cut, blunt, fists.Cut + fists.Blunt, HitResolver.ToughnessResistance(tough, combat))
+            { Stagger = DamageFormulas.StumbleThreshold(tough, combat) };
     }
 
     /// <summary>

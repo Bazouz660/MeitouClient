@@ -270,13 +270,15 @@ public sealed partial class World
         // Movement +0x24 currentlyMoving: the current speed (+0xb8, the Athletics line's too) above 0.1 (CharMovement::update).
         bool moving = hot.Velocity.X * hot.Velocity.X + hot.Velocity.Z * hot.Velocity.Z > 0.1f * 0.1f;
         int mode = combat?.StatsDisplayMode(id, cold, moving) ?? (cold.Fighter is { Unarmed: false } ? 0 : 1);
-        var lines = HudTips.Lines(cold, med, stats, combat?.HudNumbers(cold), constants, inBuilding, inside, mode);
+        var hc = combat?.HudNumbers(cold);
+        var lines = HudTips.Lines(cold, med, stats, hc, constants, inBuilding, inside, mode);
         var extended = cold.Extended is { } x0 && systems.OfType<BodySystem>().FirstOrDefault() is { } bodies
             ? bodies.WithCombatMode(x0, cold, combat?.IsInCombatMode(Characters, id, cold, true, true) == true) : cold.Extended;
         return new HudView(med.Blood, Bodies.MedicalState.BloodCapacity(race, stats.Strength, med.HasStatsObject, med.ScaleK, med.ScaleZ), med.Bleeding,
             cold.Fighter?.EncumbranceFactor ?? 1, lines.AsReadOnly(), extended) { BleedRate = race.BleedRate, Fed = med.Fed, Robot = race.IsRobot,
             ExtendedTips = extended is { } x ? HudTips.Extended(cold, med, race, stats, x, constants) : null, Skill = SkillLine(id, cold, med, race, stats, hot, combat, mode),
-            KoPoint = constants is null ? null : Bodies.MedicalState.KoPoint(constants, stats.Toughness) };
+            KoPoint = constants is null ? null : Bodies.MedicalState.KoPoint(constants, stats.Toughness),
+            StatReadouts = HudTips.StatsWindow(cold, med, stats, hc, constants) };
     }
 
     /// <summary>

@@ -287,13 +287,13 @@ to Jobs; the saved `chase mode` flag is that switch (**Verified**, [perma-jobs](
     with `+0x308` clear (**Unknown**) and the cage's lock found: locked (`FUN_1402aa590`) `Locked (lvl: N)` Bad, "You are locked in a cage.\nThe lock has a difficulty level
     of {1,num}.", else `(Unlocked...)` Good, "The cage you are in is UNLOCKED.\nNobody knows this but you, you can escape any time you want."; imprisoned otherwise: no State
     line; unconscious `Unconscious` (`Rebooting` for a robot race) Bad, "This guy is unconscious and probably needs medical attention and rest."; in a bed (`+0x2f8` = 1)
-    `Sleeping`, "Sleeping..."; the ranged controller's line while `FUN_140436610(c, 0, 1)` holds (controller `+0x36` set, the one that also gates its tick, and its target
-    hand `+0x50` resolving to an object whose slot `0x30` is false, meaning **Unknown**): `FUN_140438640` takes the gun (`FUN_1404345c0`: the character's crossbow's, else the
+    `Sleeping`, "Sleeping..."; the ranged controller's line while `Character::isInCombatMode(0, 1)` holds (`FUN_140436610`: controller `+0x36` set and its target not down,
+    see "Combat mode"): `FUN_140438640` takes the gun (`FUN_1404345c0`: the character's crossbow's, else the
     turret building's `+0x440` through the controller's building handle) and writes `Aiming...` (reloading flag `+0x80` clear; set only while a reload runs, `FUN_140437ce0`)
     or `Reloading...`, then ` [{loaded}/{shots}]` (gun `+0x20`, `+0x1c`); when the gun's power object (slot `0xc8`) reports none (its slot `0xe8`), `No Power!` in Bad with the
     same suffix replaces it. The row is a progress line (DataPanel type 0xb, `FUN_1406fe170`) filled 0 while aiming and by gun `+0xe0` (the share of the reload still to go)
-    while reloading; no tooltip. Meitou: the text without the fill, from a manned turret's gun (No Power!: a power consumer whose machine has no power) else the crossbow while
-    it has a target (`CombatSystem.RangedLineOf`); defensive `Defensive`, "In defensive combat mode the character will not even try to attack, focusing entirely on defense for a +20 skill bonus."; else
+    while reloading; no tooltip. Meitou: the text without the fill, from a manned turret's gun (No Power!: a power consumer whose machine has no power) else the crossbow
+    (`CombatSystem.RangedLineOf`); defensive `Defensive`, "In defensive combat mode the character will not even try to attack, focusing entirely on defense for a +20 skill bonus."; else
     `Normal`. The weather notice also shows here ([weather](../formats/weather.md), **Observed**). Meitou: all of them;
     `Goal:` the AI goal package's name, else Aimless (Meitou: when the AI is not running the character, its movement task's name, e.g. Moving, Attacking, else Aimless); `Encumbrance:` (int)((1 - f) × 100) "%" with f the encumbrance factor in 0..1, Bad from 50 %.
     Then, alive, the "Current Skill" line (**Verified**: decompile of the HUD update `1405d4260` panel 3, 2026-10-26; vanilla screenshot "Labouring 1" while operating a machine):
@@ -808,6 +808,20 @@ the full bottom width. Exact runtime resizing and race/mod variants are **Unknow
 Stats Affected and Ways To Train headings with bullet rows. The right starts with
 a thin Next Level bar and percentage, followed by Description and wrapped prose.
 Help text is available from the installed [gettext catalog](../formats/gettext.md).
+
+**Stats Affected numbers** (**Verified** decompile of `FUN_1408b1250`, one branch per stat; constants from the loader `FUN_14086b2b0`, which writes them as floats from
+`0x142133dd0`): the left panel is a DataPanel of label/value rows, `Stats Affected:` and `Ways To Train:` in Main, each row label "-" + the text; most rows have no value.
+Values: Strength (1) `Max carry weight:` `{1,num} kg` = (int)(strength × its multiplier `FUN_140338090` + `encumbrance base`), `Strength XP rate (walking):` (int)(`FUN_1408c60c0`
+× 100) `%`, `Martial arts damage` (int) the fists' four damage terms (`FUN_1408868b0`), `Strength XP rate (combat):` (int)(`FUN_1408c5ec0`(stats, w) × 100) `%`, the Athletics XP
+function with w the weapon item's slot `0x248` (the hand's, else the first of `hip` / `back`; 0 without), whose meaning is **Unknown**. Toughness (0x15) `Damage resistance:`
+(int)(`FUN_140644770` × 100) `%`, `Martial arts damage`, `Toughness current XP rate:` `{1,num}` of `FUN_1408c5f40`, `Knockout time:` lerp(t, `knockout mult 1`, `knockout mult 99`)
+and `Wound deterioration speed:` lerp(t, `degeneration mult 1`, `degeneration mult 99`), both `{x.xx}x` with t = toughness × CharStats `+0x34` / 100 unclamped, `Knockout point:`
+(int) `FUN_140643ae0`, label and value Main, `Amount of damage it takes to stagger you:` (int) t × `stumble damage max`. Dexterity (0x12) `Attack speed:` / `Block speed:` CharStats
+`+0x188` / `+0x18c` as `{x.xx}`. Other stats with values: Martial Arts `Affects damage`, Dodge `Dodge XP rate:`, Athletics `Max run speed:` / `Current run speed:` / `Athletics XP
+bonus:`, Swimming the two swim speeds, Medic `First aid skills:`, Turrets and Crossbows `Accuracy:` / `Rate of fire:`, Precision `Friendly fire avoidance:`, Assassination `Stealthy
+knock-outs:`, Engineering `Building things:` / `Repairing things:`, Science `Research rate:`, Labouring `Mining:` / `Using machinery:`, Farming `Harvesting speed:` / `Harvesting yield:`,
+Cooking `Cooking:`, the smiths' crafting speeds and qualities (their formulas not decoded). Meitou (`HudTips.StatsWindow`, `PlayerInterface.AddStatDescription`): the
+Strength, Toughness and Dexterity values beside the catalog's rows, matched by label; not Strength's combat XP rate.
 Medical body-part labels are larger than the stats body text. Meitou uses 16 em
 pixels at 1080 lines for medical labels, arrows and values, centred over the full
 bar height; sizing text to the inset datapanel shrinks it. Exact original font

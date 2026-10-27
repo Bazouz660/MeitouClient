@@ -142,6 +142,43 @@ static class HudTips
     }
 
     /// <summary>
+    /// The numbers of the stats window's "Stats Affected" rows (<c>FUN_1408b1250</c>, docs/game/ui-screens.md "Stats window"), for the three attributes that have them. Strength: the
+    /// carry weight (int)(effective strength + <c>encumbrance base</c>) kg, the walking strength XP rate (<c>FUN_1408c60c0</c>) and the fists' damage; Toughness: damage resistance,
+    /// the fists' damage, the toughness XP rate, the knockout time and wound deterioration lerps over t = toughness x scale / 100 (unclamped), the KO point and the stagger damage;
+    /// Dexterity: the attack and block play rates. Rows without a number in the original (and Strength's combat XP rate, whose item slot is <b>Unknown</b>) have none here.
+    /// </summary>
+    public static Dictionary<StatsEnumerated, IReadOnlyList<StatReadout>> StatsWindow(CharacterCold cold, MedicalState med, CharacterStats stats, HudCombat? hc, GameConstants? constants)
+    {
+        var factors = (cold.Fighter?.Factors ?? StatFactors.None) with { Stun = med.DustStatFactor };
+        float t = stats.Toughness * stats.Scale * 0.01f;
+        static float Lerp(float t, float a, float b) => (b - a) * t + a;
+        var strength = new List<StatReadout>();
+        if (constants is not null)
+            strength.Add(new("Max carry weight:", Loc.Tr("{1,num} kg", (int)(stats[StatsEnumerated.Strength] * stats.Scale
+                * med.StatMultiplier(StatsEnumerated.Strength, StatUse.Hunger | StatUse.Limbs | StatUse.DamageState | StatUse.LimbItems, factors) + constants.EncumbranceBase))));
+        if (cold.Extended is { } x) strength.Add(new("Strength XP rate (walking):", Loc.Tr("{1,num}%", (int)(x.StrengthXp * 100))));
+        var toughness = new List<StatReadout>();
+        if (hc is { } c)
+        {
+            strength.Add(new("Martial arts damage", Int(c.UnarmedDamage)));
+            toughness.Add(new("Damage resistance:", Loc.Tr("{1,num}%", (int)(c.Resistance * 100))));
+            toughness.Add(new("Martial arts damage", Int(c.UnarmedDamage)));
+        }
+        toughness.Add(new("Toughness current XP rate:", Loc.Tr("{1,num}", XpService.ToughnessFactor(med))));
+        if (constants is not null)
+        {
+            toughness.Add(new("Knockout time:", Loc.Tr("{1,num=fix,p=2}", Lerp(t, constants.KnockoutMult1, constants.KnockoutMult99)) + "x"));
+            toughness.Add(new("Knockout point:", Int(MedicalState.KoPoint(constants, stats.Toughness)), Main: true));
+            toughness.Add(new("Wound deterioration speed:", Loc.Tr("{1,num=fix,p=2}", Lerp(t, constants.DegenerationMult1, constants.DegenerationMult99)) + "x"));
+        }
+        if (hc is { } s) toughness.Add(new("Amount of damage it takes to stagger you:", Int(s.Stagger)));
+        var result = new Dictionary<StatsEnumerated, IReadOnlyList<StatReadout>> { [StatsEnumerated.Strength] = strength, [StatsEnumerated.Toughness] = toughness };
+        if (hc is { } d)
+            result[StatsEnumerated.Dexterity] = [new("Attack speed:", Loc.Tr("{1,num=fix,p=2}", d.AttackRate)), new("Block speed:", Loc.Tr("{1,num=fix,p=2}", d.BlockRate))];
+        return result;
+    }
+
+    /// <summary>
     /// A stat's breakdown (<c>FUN_140890b00</c>): the stored skill, a row per term of the stat multiplier that costs anything (injuries, hunger, weather, darkness, the fitted limbs, the
     /// gear), for strength the missing-arm penalty instead of the gear, for perception the armour's <paramref name="bonus"/> (added before the multiplier), then the effective value.
     /// </summary>

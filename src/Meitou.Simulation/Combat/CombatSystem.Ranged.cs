@@ -706,19 +706,19 @@ public sealed partial class CombatSystem : IProjectileSource
     public const float ShotSeconds = 0.3f;
 
     /// <summary>
-    /// The ranged controller's State line (<c>FUN_140438640</c>, shown while <c>FUN_140436610</c> finds the controller active with a target): the gun of the turret the character mans,
-    /// else its crossbow; null when neither has a target. <b>Engine reading</b> of the target test: the original's check on the target object (its slot <c>0x30</c>) is <b>Unknown</b>.
+    /// The ranged controller's State line (<c>FUN_140438640</c>, shown while <c>Character::isInCombatMode(0, 1)</c> holds, <see cref="IsInCombatMode"/>): the gun of the turret the
+    /// character mans, else its crossbow; null otherwise.
     /// </summary>
     public RangedLineView? RangedLineOf(World world, CharacterId id, CharacterCold cold)
     {
+        if (!IsInCombatMode(world.Characters, id, cold, false, true)) return null;
         if (cold.Gunning is { } key && turrets.TryGetValue(key, out var t))
         {
-            if (!t.Manned || t.Target < 0) return null;
             bool noPower = t.Gun.IsConsumer && world.Machines.Find(key) is not { HasPower: true };
             return new(t.Reloading, t.Loaded, Math.Max(t.Gun.Gun.NumShots, 1), t.Reloading && t.ReloadTime > 0 ? t.ReloadLeft / t.ReloadTime : 0, noPower);
         }
         var s = StateOf(id);
-        if (!s.Ranged || s.TargetSlot < 0 || cold.Fighter?.Crossbow is not { } x) return null;
+        if (cold.Fighter?.Crossbow is not { } x) return null;
         // The controller's reloading flag (+0x80, FUN_140437ce0) is set only while a reload runs: a dry crossbow stays at Aiming.
         bool reloading = s.RangedState == (byte)RangedStates.Reloading && s.ReloadLeft > 0;
         return new(reloading, s.Loaded, x.NumShots, reloading && s.ReloadTime > 0 ? s.ReloadLeft / s.ReloadTime : 0, false);
