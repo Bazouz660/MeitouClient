@@ -298,7 +298,8 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
     /// <summary>
     /// The towns' places for the AI's squads (serial, on the package cadence). A bar is a building whose residents' template has <c>building designation</c> BAR
     /// (the original's hang-around-bar package picks one of those in the home town, docs/game/ai-tasks.md "Town goals", Observed); a shop one whose residents
-    /// trade (<see cref="SquadTemplate.HasShop"/>; the original's shopping looks for BF_SHOP furniture inside, which Meitou does not read: engine choice).
+    /// trade (<see cref="SquadTemplate.HasShop"/>; the original's shopping looks for BF_SHOP furniture inside, which Meitou does not read: engine choice),
+    /// and public, as the original's shop finders require.
     /// Residents are the squads living there, else the level data's <c>residents template</c>; the layout flags <c>is bar</c> / <c>is shop</c> count too.
     /// A building is public as its residents' template's <c>public day</c> (the original writes it over the home's flag), else as its level state's
     /// <c>is public day</c>, else public (engine choice: the original's default is Unknown); a town building the player owns as its Open to public toggle once set
@@ -334,7 +335,7 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
                 if (b.ResidentsTemplate.Length > 0) Note(b, TemplateOf(b.ResidentsTemplate).Template);
             bool IsPublic(TownBuilding b) => world.Fixtures.PublicOf(b.Key) ?? (publicFlag.TryGetValue(b, out bool open) ? open : b.LevelState?.GetBool("is public day", true) ?? true);
             var wander = buildings.Where(b => IsPublic(b) && b.Spots.Any(IsGeneralNode)).GroupBy(b => b.Zone).ToDictionary(g => g.Key, g => g.ToArray());
-            places[site] = new(wander, [.. buildings.Where(b => b.IsShop || shops.Contains(b))], [.. buildings.Where(b => (b.IsBar || bars.Contains(b)) && IsPublic(b))],
+            places[site] = new(wander, [.. buildings.Where(b => (b.IsShop || shops.Contains(b)) && IsPublic(b))], [.. buildings.Where(b => (b.IsBar || bars.Contains(b)) && IsPublic(b))],
                 [.. buildings.Where(b => b.IsOutdoorTable)], [.. buildings.Where(b => !b.Destroyed && b.Function is >= 0 and var fn && (WorkFunctions >> fn & 1) != 0)]);
         }
     }
