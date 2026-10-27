@@ -163,6 +163,26 @@ sealed partial class PlayerInterface
         }
         else b.Hidden.Add("OutputColumn");
         if (m.Inputs.Count == 0 && FurnaceGrid(m) is null) b.Hidden.Add("InputTitleText");
+        if (m is { Inputs.Count: 0, Craft: null, Output: not null } && FurnaceGrid(m) is null) OutputOnlyGeometry(b);
+    }
+
+    /// <summary>
+    /// Engine choice for a machine with only an output (a mined rock): the layout's empty input column and crafting row are dropped, the output column takes the
+    /// window's width and the window shrinks around it, its output panel kept near the layout's size (the original's window is the full layout, mostly empty).
+    /// </summary>
+    void OutputOnlyGeometry(UiBindings b)
+    {
+        const float WidthPart = 0.52f, HeightPart = 0.6f;
+        var layout = faithfulScreens.Layout("building");
+        b.Hidden.Add("CraftingPanel");
+        b.Hidden.Add("InputColumn");
+        b.Positions["Root"] = new(0, 0, 0.208854f * Width * WidthPart, 0.398148f * Height * HeightPart);
+        float x = 0.0126582f / WidthPart, w = 1 - 2 * x, titles = 0.0909091f / HeightPart;
+        if (layout.Find("TitlesPanel") is { } t) b.RelativePositions[t] = new(x, 0, w, titles);
+        if (layout.Find("OutputTitleText") is { } ot) b.RelativePositions[ot] = new(0, 0, 1, 1);
+        if (layout.Find("InputOutputPanel") is { } io) b.RelativePositions[io] = new(x, titles, w, 1 - titles - 0.03f);
+        if (layout.Find("OutputColumn") is { } oc) b.RelativePositions[oc] = new(0, 0, 1, 1);
+        if (layout.Find("OutputPanel") is { } op) b.RelativePositions[op] = new(0, 0, 1, 1);
     }
 
     /// <summary>A furnace's item grid (its <c>in1</c> section, kept as the machine's storage); null for any other machine.</summary>
