@@ -576,7 +576,9 @@ the [layout's plant count](#farm-plants), not `amount`.
 - **Setup**: water rate w = `consumption rate`/G x the biome group's `farm water usage` (Desert 8, most 1, Floodlands 0.1);
   harvest and clear rates / G; harvest time at least 1e-6; indoor = `fertility effect` 0; every input's rate is 1.
   Fertility factor F = `1 - (1 - f) x fertility effect`, 0 when f <= `minimum fertility`, f the GROUND resource
-  (`FUN_1400e4320`, `vfunc_91`); F is also the yield.
+  (`FUN_1400e4320`, `vfunc_91`); F is also the yield. Both the water usage and F apply to indoor farms too, with no indoor branch
+  (**Verified**, `FUN_1400e8420`): their effect 0 gives F = 1 unless the ground is at or below the minimum (the shipped indoor
+  FARM_DATA have `minimum fertility` -1, so never).
 - **Plants**: each has a growth g. Replant (`FUN_1400e48e0`): every g = -0.2 x U[0,1), `plant start` = their minimum,
   `plants harvested` 0, death d 0, clear progress 0, harvest progress 0, farm growth = `plant start`.
 - **Tick**, h = dt/(G/24): outdoors (the exe also tests a building flag at `+0x240`, meaning **Unknown**), rain fills the FIRST input's level by

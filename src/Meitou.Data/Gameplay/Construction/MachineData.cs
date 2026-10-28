@@ -255,7 +255,10 @@ public sealed record FarmData
     public float Arid { get; init; }
     public float Green { get; init; }
     public float Swamp { get; init; }
-    /// <summary>An indoor farm (<c>fertility effect</c> 0): fertility and biome do not matter (<b>Observed</b>, ctor <c>FUN_1400e8420</c>).</summary>
+    /// <summary>
+    /// An indoor farm (<c>fertility effect</c> 0): the ground counts only at or below <c>minimum fertility</c>, the crop match is 1; the biome's water usage still applies
+    /// (<b>Verified</b>, ctor <c>FUN_1400e8420</c>, <c>FUN_1400e4320</c>).
+    /// </summary>
     public bool Indoor => FertilityEffect == 0;
 
     public static FarmData From(GameDatabase db, GameRecord r) => new()

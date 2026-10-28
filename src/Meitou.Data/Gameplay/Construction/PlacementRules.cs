@@ -81,7 +81,7 @@ public static class PlacementRules
         if (machine is null || !field.HasMap) return null;
         if (machine.Farm is { } farm)
         {
-            float fertility = farm.FertilityFactor(farm.Indoor ? 1 : Math.Clamp(field.Value(MachineData.GroundResource, at.X, at.Y, at.Z), 0, 1));
+            float fertility = farm.FertilityFactor(Math.Clamp(field.Value(MachineData.GroundResource, at.X, at.Y, at.Z), 0, 1));
             return new(MachineData.GroundResource, fertility, fertility * field.CropMatch(farm, at.X, at.Z), farm.Indoor ? [] : Environment(field.Coverage(at.X, at.Z)));
         }
         if (machine.Resource == 0 || machine.Function == MachineData.NaturalMineFunction) return null;

@@ -62,6 +62,8 @@ public class ProductionTests
         benchFn.Ints["tech level"] = 1;
         var farmData = Rec("83-t", FcsRecordType.FARM_DATA, "Test Crop");
         farmData.Ints["amount"] = 4;
+        // An indoor crop (fertility effect 0) whose minimum fertility the bare test ground (0) clears, as the shipped indoor farms' -1.
+        farmData.Floats["minimum fertility"] = -1;
         foreach (var (key, value) in new[] { ("growth time", 1f), ("harvest time", 48f), ("death time", 8f), ("consumption rate", 24f), ("harvest rate", 256f), ("clear rate", 500f), ("output per plant", 2f), ("green", 1f) })
             farmData.Floats[key] = value;
         var farm = Building(Farm, "Test Farm", "81-t");

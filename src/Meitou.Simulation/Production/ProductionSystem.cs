@@ -130,10 +130,11 @@ public sealed partial class ProductionSystem : ITickSystem
         var p = site.Position;
         if (data.Farm is { } farm)
         {
-            float fertility = farm.Indoor ? 1 : resources.Value(MachineData.GroundResource, p.X, p.Y, p.Z);
+            // Indoor farms too (FUN_1400e8420): their fertility effect 0 makes the ground matter only at or below the minimum, and the biome's water usage applies.
+            float fertility = resources.Value(MachineData.GroundResource, p.X, p.Y, p.Z);
             m.Yield = farm.FertilityFactor(fertility);
             m.CropMatch = resources.CropMatch(farm, p.X, p.Z);
-            m.WaterRate = farm.ConsumptionRate / MachineData.DaySeconds * (farm.Indoor ? 1 : resources.WaterUsage(p.X, p.Z));
+            m.WaterRate = farm.ConsumptionRate / MachineData.DaySeconds * resources.WaterUsage(p.X, p.Z);
             Replant(world, m);
         }
         // The yield (FUN_14029c670, Verified): a rock its own value, at least 0.1; any other building what the ground or the nearest rock gives, and 0 becomes 0.5 for one not the
