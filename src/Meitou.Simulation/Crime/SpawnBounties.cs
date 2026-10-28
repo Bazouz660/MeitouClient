@@ -33,9 +33,14 @@ public static class SpawnBounties
         else foreach (var r in refs) Add(data.FactionIndex(r.TargetStringId));
         return ledger;
 
-        void Add(int faction)
+        // Each listed faction books under its legal system, else itself when it books bounties, else nowhere (FUN_140853e20 keys by FUN_140852010; the original's null key is never read).
+        void Add(int listed)
         {
-            if (faction < 0 || faction >= data.Factions.Count) return;
+            if (listed < 0 || listed >= data.Factions.Count) return;
+            var fd = data.Factions[listed];
+            int faction = fd.LegalSystem is { } legal ? data.FactionIndex(legal) : -1;
+            if (faction < 0) faction = fd.BooksBounties ? listed : -1;
+            if (faction < 0) return;
             var entry = (ledger ??= new BountyLedger()).Get(faction, data.Factions[faction].Name);
             entry.Amount += value;
             entry.RaisedTick = tick;
