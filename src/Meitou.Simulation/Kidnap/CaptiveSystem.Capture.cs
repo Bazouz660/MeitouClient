@@ -9,8 +9,9 @@ namespace Meitou.Simulation.Kidnap;
 /// <summary>
 /// The slavers' dealings with the downed and with their slaves at work (docs/game/ai-tasks.md "Prisoner fate and slave rows" and "Slave work, shout and capture"; docs/simulation.md "Captives"):
 /// <list type="bullet">
-/// <item><b>Capture</b> (167 "Capturing slave", finder <c>FUN_1408cdd00</c>, <b>Observed</b>): the nearest downed, uncarried, uncaged character in sight that is no animal, not of the capturer's
-/// faction or an ally (<b>engine reading</b> of the sensed-class masks), no slave already (slave state 1), of NPC class other than law enforcement, trader and diplomat, and not in shackles. The
+/// <item><b>Capture</b> (167 "Capturing slave", finder <c>FUN_1408cdd00</c>, <b>Observed</b>): the nearest downed (<see cref="Down"/>: a crawler out of combat mode too), uncarried, uncaged character
+/// in sight that is no animal, not of the capturer's faction or an ally (<b>engine reading</b> of the sensed-class masks), no slave already (slave state 1), of NPC class other than law
+/// enforcement, trader and diplomat, not maimed, and not in shackles (engine guard). The
 /// capturer walks to it, strips its weapons (the <c>hip</c> and <c>back</c> sections go to the capturer, after 0.8 s of <c>medic</c>, <c>Task_StripWeapons</c>), cuffs it
 /// (<c>Task_CuffTarget</c>: a "Restraining" bar, <c>medic</c>, event 37 to the captive when it is full; the shackles are an <b>engine choice</b>, their source in the original is <b>Unknown</b>)
 /// and carries it to a cage of its faction (goal 112 in the original, here <see cref="KidnapSystem.Carry"/>).</item>
@@ -59,7 +60,24 @@ public sealed partial class CaptiveSystem
         shoutUntil.RemoveAll(e => e.Until <= now);
     }
 
-    static bool Down(CharacterCold c) => c.Medical is { Incapacitated: true, Dead: false };
+    /// <summary>
+    /// Down for the capture and carry finders (<c>FUN_1408cdd00</c> / <c>FUN_1408cdf50</c>, <b>Verified</b>): alive, and unconscious or, out of combat mode, crawling or staying low (the
+    /// KO and CRAWLING sense tags); the dead are excluded by the finders' tag mask.
+    /// </summary>
+    static bool Down(CharacterCold c) => c.Medical is { Dead: false } m && (m.Unconscious || (m.Crawling || m.StayingLow) && !c.InCombat);
+
+    /// <summary>Maimed (<c>FUN_140644170</c>, <b>Verified</b>): a leg is a stump, or both arms are. The capture finder leaves such a character.</summary>
+    static bool Maimed(Bodies.MedicalState m)
+    {
+        int arms = 0;
+        foreach (var p in m.Parts)
+        {
+            if (p.Limb != Bodies.LimbState.Stump) continue;
+            if (p.Template.LimbSlot is 2 or 3) return true;
+            if (p.Template.LimbSlot is 0 or 1) arms++;
+        }
+        return arms >= 2;
+    }
 
     // ------------------------------------------------------------------ finders
 
@@ -75,8 +93,9 @@ public sealed partial class CaptiveSystem
     }
 
     /// <summary>
-    /// The nearest character the capturer takes (see the class remarks): within its sight, down (alive: engine choice, the original's finder also takes the dead), uncarried and uncaged, no
-    /// animal, not already a job's or given up; for a capture not of its own side, no slave of state 1, not law enforcement, trader or diplomat, not shackled; for a carry a slave of its faction.
+    /// The nearest character the capturer takes (see the class remarks): within its sight, <see cref="Down"/>, uncarried and uncaged, no animal, not already a job's or given up; for a
+    /// capture not of its own side, no slave of state 1, not law enforcement, trader or diplomat, not <see cref="Maimed"/>, not shackled (an engine guard so it is never cuffed twice);
+    /// for a carry a slave of its faction that is not just staying low (the carry finder refuses posture 1).
     /// </summary>
     int NearestDown(World world, int slot, CharacterCold me, bool capture)
     {
@@ -100,8 +119,8 @@ public sealed partial class CaptiveSystem
         if (!c.CarriedBy.IsNone || c.InSomething != HeldState.None || c.IsImprisoned || c.Fighter is { IsAnimal: true } || c.Appearance?.Animal is not null || c.Race is null) return false;
         var id = table.IdOf(v);
         if (Busy(id) || Waiting(givenUp, id, world.GameHours) || Kidnap is { } k && k.Abductions.Any(a => a.Victim == id)) return false;
-        if (!capture) return c.SlaveState != 0 && c.SlaveOwner == me.Faction;
-        if (c.SlaveState == 1 || c.NpcClass is FundamentalType.LawEnforcement or FundamentalType.Trader or FundamentalType.Diplomat || LockSystem.WornShackles(c) is not null) return false;
+        if (!capture) return c.SlaveState != 0 && c.SlaveOwner == me.Faction && c.Medical is not { Unconscious: false, Crawling: false, StayingLow: true };
+        if (c.SlaveState == 1 || c.NpcClass is FundamentalType.LawEnforcement or FundamentalType.Trader or FundamentalType.Diplomat || Maimed(c.Medical!) || LockSystem.WornShackles(c) is not null) return false;
         return c.Faction != me.Faction && !Allied(me.Faction, c.Faction);
     }
 
