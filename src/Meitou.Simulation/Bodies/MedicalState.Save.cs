@@ -36,6 +36,24 @@ public sealed partial class MedicalState
     /// <summary>
     /// The int <c>limbs</c> (<c>FUN_1400cfb50</c>, docs/formats/save.md "Limbs"): the <see cref="LimbState"/> of limb slot k in bits 2k..2k+1.
     /// </summary>
+    /// <summary>
+    /// The blood each of the first 8 parts shows on the body (<c>FUN_140530b30</c>, docs/game/blood-decals.md): 1 - clamp((flesh - stun + bandage) / (base x multiplier x scale - wear), 0, 1),
+    /// byte k = part k scaled to 0..255 (a part with no maximum shows none).
+    /// </summary>
+    public static ulong BloodAmounts(MedicalState state)
+    {
+        ulong bits = 0;
+        for (int k = 0; k < 8 && k < state.Parts.Count; k++)
+        {
+            var p = state.Parts[k];
+            float max = p.MaxHp;
+            if (!(max > 0)) continue;
+            float amount = 1 - Math.Clamp((p.Flesh - p.Stun + p.Bandage) / max, 0f, 1f);
+            bits |= (ulong)Math.Clamp((int)MathF.Round(amount * 255), 0, 255) << (8 * k);
+        }
+        return bits;
+    }
+
     public int LimbBits
     {
         get

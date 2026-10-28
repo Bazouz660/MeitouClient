@@ -11,7 +11,14 @@ namespace Meitou.Rendering;
 /// One loose mesh in the world: its file, its size and where it is (rotation and translation, the mesh's middle at the translation); <paramref name="Stretch"/> lengthens
 /// it along its own z (a bolt in flight).
 /// </summary>
-public readonly record struct DebrisPiece(string Mesh, float Scale, Quaternion Rotation, Vector3 Position, float Stretch = 1);
+public readonly record struct DebrisPiece(string Mesh, float Scale, Quaternion Rotation, Vector3 Position, float Stretch = 1, LimbLook? Limb = null);
+
+/// <summary>
+/// How a severed limb is drawn (the original's <c>SeveredLimb</c> material, docs/game/blood-decals.md "On the body and on severed limbs"): the item's MATERIAL record's texture map and
+/// skin-tone mask (bare file names), the skin tone (<c>severed_limb_fs</c>: albedo x (1 - tone x mask), 0 = untinted) and the race's blood colour. Equal diffuse maps share
+/// a loaded mesh.
+/// </summary>
+public sealed record LimbLook(string Diffuse, string? Mask, Vector3 SkinTone, Vector3 BloodColour, string? Race = null, bool SkinDefault = true);
 
 /// <summary>
 /// Loose meshes thrown about by the host (luckyren Mode's bones and limbs, docs/game/luckyren.md): each a static mesh, centred on its bounds, textured with
@@ -27,18 +34,25 @@ public sealed unsafe class DebrisRenderer : IDisposable
         layout(location = 0) in vec3 aPos;
         layout(location = 1) in vec3 aNormal;
         layout(location = 2) in vec2 aUv;
+        layout(location = 3) in vec4 aColour;   // z: the curvature a limb's skin takes (CharacterContent.MarkCurvature)
         uniform mat4 uViewProjection;   // from the camera-relative world
         uniform mat4 uModel;            // to the camera-relative world
         uniform vec3 uEye;
         out vec3 vWorld;
         out vec3 vNormal;
         out vec2 vUv;
+        out vec3 vLocal;       // the mesh's own position and normal (a severed limb's blood mapping)
+        out vec3 vObjNormal;
+        out float vCurvature;
         void main()
         {
             vec4 p = uModel * vec4(aPos, 1.0);
             vWorld = p.xyz + uEye;
             vNormal = mat3(uModel) * aNormal;
             vUv = aUv;
+            vLocal = aPos;
+            vObjNormal = aNormal;
+            vCurvature = aColour.z;
             gl_Position = uViewProjection * p;
         }
         """;
@@ -47,25 +61,61 @@ public sealed unsafe class DebrisRenderer : IDisposable
         in vec3 vWorld;
         in vec3 vNormal;
         in vec2 vUv;
+        in vec3 vLocal;
+        in vec3 vObjNormal;
+        in float vCurvature;
         out vec4 fragColour;
         uniform sampler2D uDiffuse;
+        uniform sampler2D uLimbMask;     // a severed limb (uTextured 2): its skin-tone mask (unused: the cut character's skin tone is not kept),
+        uniform sampler2D uBlood;        // the blood splatter map,
+        uniform sampler2D uSkinTable;    // the Meitou skin scattering table (SkinScattering; the push word 0: the skin is off),
+        uniform uint uLimbSkin;          // its bindless index,
+        uniform uint uLimbBlood;         // the blood colour as 8-bit RGB
         uniform int uTextured;
-        uniform float uAlphaThreshold;   // > 0: the diffuse alpha is a cut-out, and the gloss fixed
+        uniform float uAlphaThreshold;   // > 0: the diffuse alpha is a cut-out, and the gloss fixed; a limb: the mesh's centre x (its own space)
         uniform vec3 uEye;
         uniform vec3 uLightDir;
         uniform vec3 uSunColour;
         uniform vec3 uAmbientSky;
         uniform vec3 uAmbientGround;
+        // The Meitou skin's sun term (CharacterShaders.skinDiffuse, docs/character-renderer.md "Skin"): the pre-integrated table at the surface's curvature, read per channel,
+        // the light it adds over plain N.L in the skin's own saturated hue. A limb is all bare skin (share 1); the table is 64 x 64 (SkinScattering), 1 / radius in world units
+        // times 0.3 (SkinScatterScale / (100 mm x MaxInverseRadiusMm)).
+        vec3 skinDiffuse(vec3 n, vec3 geometric, vec3 l, float curvature, vec3 albedo)
+        {
+            float lambert = clamp(dot(n, l), 0.0, 1.0);
+            vec3 nl = vec3(dot(normalize(mix(n, geometric, 0.6)), l), dot(normalize(mix(n, geometric, 0.3)), l), dot(n, l));
+            vec3 u = (nl * 0.5 + 0.5) * 0.984375 + 0.0078125;
+            float v = sqrt(clamp(curvature * 0.3, 0.0, 1.0)) * 0.984375 + 0.0078125;
+            vec3 s = vec3(textureLod(uSkinTable, vec2(u.r, v), 0.0).r, textureLod(uSkinTable, vec2(u.g, v), 0.0).g, textureLod(uSkinTable, vec2(u.b, v), 0.0).b);
+            float extra = max(max(s.r, max(s.g, s.b)) - lambert, 0.0);
+            vec3 hue = albedo / max(max(albedo.r, max(albedo.g, albedo.b)), 1e-3);
+            return vec3(lambert) + extra * hue * hue;
+        }
         void main()
         {
+            bool limb = uTextured == 2;
+            float cut = limb ? 0.0 : uAlphaThreshold;
             vec4 base = uTextured != 0 ? texture(uDiffuse, vUv) : vec4(0.78, 0.72, 0.62, 0.3);
-            if (uAlphaThreshold > 0.0 && base.a < uAlphaThreshold) discard;
-            float gloss = uAlphaThreshold > 0.0 ? 0.3 : clamp(base.a, 0.0, 1.0);
+            if (cut > 0.0 && base.a < cut) discard;
+            float gloss = cut > 0.0 ? 0.3 : clamp(base.a, 0.0, 1.0);
+            if (limb)
+            {
+                // character.hlsl severed_limb_fs: the blood (bloody.png x the race's colour, the cut end, at negative x, solid), then the
+                // body's darkening.
+                vec3 bloodColour = vec3(float((uLimbBlood >> 16) & 255u), float((uLimbBlood >> 8) & 255u), float(uLimbBlood & 255u)) / 255.0;
+                float x = (vLocal.x + uAlphaThreshold) * 0.3;
+                float turn = atan(vObjNormal.y, vObjNormal.z) / 3.14159265359 * 0.5;
+                if (vObjNormal.z < 0.0) turn = turn > 0.0 ? turn - 0.5 : turn + 0.5;
+                vec4 blood = texture(uBlood, vec2(x, turn)) * vec4(bloodColour, 1.0);
+                blood.a += max(-x * 2.0, 0.0);
+                base.rgb = mix(base.rgb, blood.rgb, min(blood.a, 1.0)) * 0.7;
+            }
             vec3 n = normalize(vNormal);
             if (!gl_FrontFacing) n = -n;
             vec3 v = normalize(uEye - vWorld);
             vec3 colour;
-            if (uAtmoParams.x > 0.5) colour = kenshiLight(base.rgb, n, v, gloss, vWorld);
+            if (uAtmoParams.x > 0.5) colour = limb && uLimbSkin != 0u ? kenshiLight(base.rgb, n, v, gloss, vWorld, skinDiffuse(n, n, uAtmoLight.xyz, vCurvature, base.rgb)) : kenshiLight(base.rgb, n, v, gloss, vWorld);
             else
             {
                 vec3 ambient = mix(uAmbientGround, uAmbientSky, 0.5 + 0.5 * n.y);
@@ -80,11 +130,15 @@ public sealed unsafe class DebrisRenderer : IDisposable
     const string PushMembers = """
         mat4 model;
         vec3 sunColour;
+        uint limbMask;
         vec3 ambientSky;
+        uint limbBlood;
         vec3 ambientGround;
         uint diffuse;
         int textured;
         float alphaThreshold;
+        uint limbSkin;
+        uint limbBloodColour;
         """;
 
     /// <summary>The uniforms whose native form is not in <see cref="NativeShaders.Map"/>: the model and the simple-sky fallback.</summary>
@@ -95,6 +149,7 @@ public sealed unsafe class DebrisRenderer : IDisposable
         ["uSunColour"] = "pc.sunColour",
         ["uAmbientSky"] = "pc.ambientSky",
         ["uAmbientGround"] = "pc.ambientGround",
+        ["uLimbMask"] = "textures2D[pc.limbMask]", ["uBlood"] = "textures2D[pc.limbBlood]", ["uLimbSkin"] = "pc.limbSkin", ["uSkinTable"] = "textures2D[pc.limbSkin]", ["uLimbBlood"] = "pc.limbBloodColour",
     };
 
     /// <summary>A loaded diffuse texture and its stable bindless entry. The sampler can change with the upscaler's LOD bias; the index
@@ -150,6 +205,10 @@ public sealed unsafe class DebrisRenderer : IDisposable
         public readonly DeviceBuffer Vertices = vertices, Indices = indices;
         public readonly (uint First, uint Count, int VertexOffset, DebrisTexture? Diffuse, float AlphaThreshold)[] Parts = parts;
         public readonly Vector3 Extent = extent;
+        /// <summary>A severed limb's: its skin-tone mask, the mesh's bounds middle in its own space (the vertices are moved by it).</summary>
+        public DebrisTexture? Mask;
+        public bool Limb;
+        public Vector3 Centre;
     }
 
     readonly IGpuContext gpu;
@@ -158,7 +217,7 @@ public sealed unsafe class DebrisRenderer : IDisposable
     readonly NativeFrame frame;
     readonly NativeProg program;
     readonly VertexLayout layout;
-    readonly GpuBufferBinding[] bindings = new GpuBufferBinding[3];
+    readonly GpuBufferBinding[] bindings = new GpuBufferBinding[4];
     readonly Dictionary<string, Mesh?> meshes = new(StringComparer.OrdinalIgnoreCase);
     readonly Dictionary<string, DebrisTexture?> textures = new(StringComparer.OrdinalIgnoreCase);
 
@@ -179,6 +238,7 @@ public sealed unsafe class DebrisRenderer : IDisposable
             new LegacyProgram.Attribute(default, InternalFormat.Rgb32f, stride, false),
             new LegacyProgram.Attribute(default, InternalFormat.Rgb32f, stride, false),
             new LegacyProgram.Attribute(default, InternalFormat.RG32f, stride, false),
+            new LegacyProgram.Attribute(default, InternalFormat.Rgba32f, stride, false),
         ]);
         // The native model's bindless table is what keeps the full atmosphere inside Metal's direct-sampler budget.
         if (program.P.Info.FragmentReflection is { } reflection)
@@ -189,13 +249,22 @@ public sealed unsafe class DebrisRenderer : IDisposable
     /// Half the size of <paramref name="mesh"/>'s bounds along its own axes, loading it (null when it is missing or unreadable). Textured as
     /// <paramref name="materialOf"/> when given (a mesh no record names, sharing another's material), else as itself; the first load decides.
     /// </summary>
-    public Vector3? Extent(string mesh, string? materialOf = null) => Load(mesh, materialOf)?.Extent;
+    public Vector3? Extent(string mesh, string? materialOf = null, LimbLook? limb = null) => Load(mesh, materialOf, limb)?.Extent;
+
+    /// <summary>The middle of <paramref name="mesh"/>'s bounds in its own space (where its origin lies from the middle, which is what a piece's position names); loads it like <see cref="Extent"/>.</summary>
+    public Vector3? Centre(string mesh, LimbLook? limb = null) => Load(mesh, null, limb)?.Centre;
+
+    DebrisTexture? bloodMap;
+
+    static uint Pack(Vector3 c) => (uint)(Math.Clamp((int)MathF.Round(c.X * 255), 0, 255) << 16 | Math.Clamp((int)MathF.Round(c.Y * 255), 0, 255) << 8 | Math.Clamp((int)MathF.Round(c.Z * 255), 0, 255));
+
+    static string Key(string mesh, LimbLook? limb) => limb is null ? mesh : mesh + "|" + limb.Diffuse;
 
     /// <summary>
     /// Draws <paramref name="pieces"/> in the open scene pass (a guest): depth tested and written, back faces culled, colour only.
     /// <paramref name="sliceViewProjection"/> is the slice's (absolute world to clip), <paramref name="frustum"/> its planes.
     /// </summary>
-    public void Draw(ReadOnlySpan<DebrisPiece> pieces, Matrix4x4 sliceViewProjection, Vector3 eye, Vector4[] frustum, in WorldLighting light)
+    public void Draw(ReadOnlySpan<DebrisPiece> pieces, Matrix4x4 sliceViewProjection, Vector3 eye, Vector4[] frustum, in WorldLighting light, Func<LimbLook, uint>? skinTable = null)
     {
         if (pieces.IsEmpty) return;
         var cmd = gpu.BeginGuest("debris");
@@ -216,8 +285,11 @@ public sealed unsafe class DebrisRenderer : IDisposable
         // argument buffer must already name them when the encoder takes it.
         var standIn = gpu.StandIn2D;
         foreach (var piece in pieces)
-            if (meshes.TryGetValue(piece.Mesh, out var known) && known is not null)
+            if (meshes.TryGetValue(Key(piece.Mesh, piece.Limb), out var known) && known is not null)
+            {
                 foreach (var part in known.Parts) _ = part.Diffuse?.Index;
+                if (known.Limb) { _ = known.Mask?.Index; _ = (bloodMap ??= Texture("bloody.png"))?.Index; if (piece.Limb is { } first) _ = skinTable?.Invoke(first); }
+            }
 
         // The view block carries the camera-relative projection/eye and the light direction; the frame block carries the atmosphere.
         var view = new ViewConstants
@@ -240,9 +312,9 @@ public sealed unsafe class DebrisRenderer : IDisposable
         foreach (var piece in pieces)
         {
             // Only meshes loaded before (Extent): nothing is uploaded inside the pass.
-            if (!meshes.TryGetValue(piece.Mesh, out var mesh) || mesh is null || !FrustumTests.SphereVisible(frustum, piece.Position, mesh.Extent.Length() * piece.Scale * MathF.Max(piece.Stretch, 1))) continue;
+            if (!meshes.TryGetValue(Key(piece.Mesh, piece.Limb), out var mesh) || mesh is null || !FrustumTests.SphereVisible(frustum, piece.Position, mesh.Extent.Length() * piece.Scale * MathF.Max(piece.Stretch, 1))) continue;
             var m = Matrix4x4.CreateScale(piece.Scale, piece.Scale, piece.Scale * piece.Stretch) * Matrix4x4.CreateFromQuaternion(piece.Rotation) * Matrix4x4.CreateTranslation(piece.Position - eye);
-            for (int k = 0; k < 3; k++) bindings[k] = new GpuBufferBinding(mesh.Vertices.Handle, (ulong)(k * 12));
+            for (int k = 0; k < 4; k++) bindings[k] = new GpuBufferBinding(mesh.Vertices.Handle, (ulong)(k == 3 ? 48 : k * 12));
             cmd.BindVertexBuffers(0, bindings);
             cmd.BindIndexBuffer(new GpuBufferBinding(mesh.Indices.Handle, 0), IndexKind.U32);
             foreach (var part in mesh.Parts)
@@ -252,6 +324,16 @@ public sealed unsafe class DebrisRenderer : IDisposable
                 push.Diffuse = part.Diffuse is { } diffuse ? diffuse.CachedIndex : standIn;
                 push.Textured = part.Diffuse is null ? 0 : 1;
                 push.AlphaThreshold = part.AlphaThreshold;
+                if (mesh.Limb && piece.Limb is { } look)
+                {
+                    // A severed limb (see the fragment): the diffuse map, the mask and the blood map, the colours packed, the mesh's centre x in place of the cut-out.
+                    push.Textured = 2;
+                    push.AlphaThreshold = mesh.Centre.X;
+                    push.LimbMask = mesh.Mask?.CachedIndex ?? standIn;
+                    push.LimbBlood = bloodMap?.CachedIndex ?? standIn;
+                    push.LimbSkin = skinTable?.Invoke(look) ?? 0;
+                    push.LimbBloodColour = Pack(look.BloodColour);
+                }
                 cmd.PushConstants(program.P, GpuStage.Vertex | GpuStage.Fragment, in push);
                 cmd.DrawIndexed(part.Count, 1, part.First, part.VertexOffset);
             }
@@ -259,25 +341,27 @@ public sealed unsafe class DebrisRenderer : IDisposable
         gpu.EndGuest(cmd);
     }
 
-    Mesh? Load(string file, string? materialOf)
+    Mesh? Load(string file, string? materialOf, LimbLook? limb = null)
     {
-        if (meshes.TryGetValue(file, out var known)) return known;
+        string key = Key(file, limb);
+        if (meshes.TryGetValue(key, out var known)) return known;
         Mesh? mesh = null;
         try
         {
-            if (find(Path.GetFileName(file.Replace('\\', '/'))) is { } path) mesh = Build(file, materialOf ?? file, OgreMeshReader.ReadFile(path));
+            if (find(Path.GetFileName(file.Replace('\\', '/'))) is { } path) mesh = Build(file, materialOf ?? file, OgreMeshReader.ReadFile(path), limb);
         }
         catch (Exception e) when (e is IOException or InvalidDataException or NotSupportedException)
         {
             Console.Error.WriteLine($"debris mesh skipped: {file}: {e.Message}");
         }
-        meshes[file] = mesh;
+        meshes[key] = mesh;
         return mesh;
     }
 
-    Mesh? Build(string file, string materialOf, OgreMesh ogre)
+    Mesh? Build(string file, string materialOf, OgreMesh ogre, LimbLook? limb)
     {
         var built = Model.Build(ogre, null);
+        if (limb is not null) Characters.CharacterContent.MarkCurvature(built);   // a limb's skin scatters light by its curvature
         if (built.Parts.Count == 0) return null;
         var centre = built.Center;
         var vertices = new List<Vertex>();
@@ -285,9 +369,9 @@ public sealed unsafe class DebrisRenderer : IDisposable
         var parts = new List<(uint, uint, int, DebrisTexture?, float)>();
         foreach (var part in built.Parts)
         {
-            var material = resolver?.Candidates(materialOf, new OgreSubMesh { MaterialName = part.MaterialName }).FirstOrDefault();
+            var material = limb is null ? resolver?.Candidates(materialOf, new OgreSubMesh { MaterialName = part.MaterialName }).FirstOrDefault() : null;
             float threshold = material is { Alpha: AlphaSource.DiffuseAlpha } ? MathF.Max(material.AlphaThreshold, 0.5f) : 0;
-            parts.Add(((uint)indices.Count, (uint)part.Indices.Length, vertices.Count, Texture(material?.Diffuse), threshold));
+            parts.Add(((uint)indices.Count, (uint)part.Indices.Length, vertices.Count, Texture(limb is null ? material?.Diffuse : limb.Diffuse), threshold));
             foreach (var v in part.Vertices) vertices.Add(v with { Position = v.Position - centre });
             indices.AddRange(part.Indices);
         }
@@ -298,7 +382,9 @@ public sealed unsafe class DebrisRenderer : IDisposable
             batch.Write(vb, 0, MemoryMarshal.AsBytes(CollectionsMarshal.AsSpan(vertices)));
             batch.Write(ib, 0, MemoryMarshal.AsBytes(CollectionsMarshal.AsSpan(indices)));
         }
-        return new Mesh(vb, ib, [.. parts], (built.Max - built.Min) / 2);
+        var result = new Mesh(vb, ib, [.. parts], (built.Max - built.Min) / 2) { Centre = centre };
+        if (limb is not null) (result.Limb, result.Mask) = (true, limb.Mask is null ? null : Texture(limb.Mask));
+        return result;
     }
 
     DebrisTexture? Texture(string? name)
@@ -308,7 +394,10 @@ public sealed unsafe class DebrisRenderer : IDisposable
         DebrisTexture? texture = null;
         try
         {
-            if (find(name) is { } path) texture = new DebrisTexture(gpu, SampledImage.FromDds(gpu, DdsReader.ReadFile(path), repeat: true, "debris " + name));
+            if (find(name) is { } path)
+                texture = new DebrisTexture(gpu, path.EndsWith(".png", StringComparison.OrdinalIgnoreCase)
+                    ? SampledImage.Rgba8(gpu, TextureLoader.LoadFile(path, false).Levels[0], repeat: true, mipmaps: true, "debris " + name)
+                    : SampledImage.FromDds(gpu, DdsReader.ReadFile(path), repeat: true, "debris " + name));
         }
         catch (Exception e) when (e is IOException or InvalidDataException or NotSupportedException)
         {
@@ -343,4 +432,8 @@ struct DebrisPush
     [FieldOffset(108)] public uint Diffuse;
     [FieldOffset(112)] public int Textured;
     [FieldOffset(116)] public float AlphaThreshold;
+    [FieldOffset(76)] public uint LimbMask;
+    [FieldOffset(92)] public uint LimbBlood;
+    [FieldOffset(120)] public uint LimbSkin;
+    [FieldOffset(124)] public uint LimbBloodColour;
 }

@@ -53,6 +53,7 @@ sealed partial class GameHost
     {
         public required GroundItemSnapshot Ground;
         public required string Mesh;
+        public LimbLook? Look;
         public required FallSource Stump;
         public required Vector3 Rest;
         public required float RestY;
@@ -161,6 +162,7 @@ sealed partial class GameHost
         gpu.DebrisPieces.Clear();
         AddBolts();
         UpdateFalls(world);
+        AddRestingLimbs();
         if (pieces.Count == 0) return;
         int steps = Math.Clamp((int)MathF.Ceiling(dt * 60), 1, 8);
         float h = dt / steps;
@@ -186,26 +188,27 @@ sealed partial class GameHost
             if (f.Start is null) SampleStump(f);
             float elapsed = MathF.Max(0, (float)((clock - f.Stump.Tick) * tick));
             bool landed = f.Start is null ? elapsed > FallUnsampledSeconds : elapsed >= f.Flight + FallTipTime;
-            if (landed && ActiveObjects is not null)
+            if (landed)
             {
                 falls.RemoveAt(i);
-                ShowGround(f.Ground, f.Lying, f.RestY);
+                RestLimb(f.Ground, f.Lying, f.RestY);
                 continue;
             }
             if (f.Start is not { } start)
             {
-                if (landed) gpu.DebrisPieces.Add(new DebrisPiece(f.Mesh, 1, f.Lying, f.Rest));
+                if (landed) gpu.DebrisPieces.Add(new DebrisPiece(f.Mesh, 1, f.Lying, LimbMiddle(f.Mesh, f.Look, f.Lying, f.Rest), 1, f.Look));
                 continue;
             }
             if (elapsed < f.Flight)
             {
                 var at = new Vector3(start.X + f.Drift.X * elapsed, start.Y - 0.5f * FallGravity * elapsed * elapsed, start.Z + f.Drift.Y * elapsed);
-                gpu.DebrisPieces.Add(new DebrisPiece(f.Mesh, 1, f.Hanging, at));
+                gpu.DebrisPieces.Add(new DebrisPiece(f.Mesh, 1, f.Hanging, LimbMiddle(f.Mesh, f.Look, f.Hanging, at), 1, f.Look));
             }
             else
             {
                 float s = Math.Min(1, (elapsed - f.Flight) / FallTipTime), eased = s * s * (3 - 2 * s);
-                gpu.DebrisPieces.Add(new DebrisPiece(f.Mesh, 1, Quaternion.Slerp(f.Hanging, f.Lying, eased), f.Rest));
+                var turned = Quaternion.Slerp(f.Hanging, f.Lying, eased);
+                gpu.DebrisPieces.Add(new DebrisPiece(f.Mesh, 1, turned, LimbMiddle(f.Mesh, f.Look, turned, f.Rest), 1, f.Look));
             }
         }
     }

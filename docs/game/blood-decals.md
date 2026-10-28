@@ -100,14 +100,25 @@ characters carry blood on their skin, not only on the ground.
   `albedo = lerp(albedo, tex × bloodColour, saturate(tex.a - 1 + amount))`. The map is a cylinder projection in the part's own space:
   u = height along the mesh Y × the race's `blood vertical`, v = angle round Y (atan2(normal.x, normal.z) / 2π, shifted half a turn where
   normal.z < 0) × `blood horizontal` (human: 0.15 and 1). `amount` is per body part, `bloodAmount[8]` (the first 8 parts), written by
-  `FUN_140530b30` as 1 − clamp((flesh − stun + rig) / (base × mult × scale − wear), 0, 1): a damaged part is bloodier, a part far below zero is
-  fully covered. **Unknown**: which part index each vertex of a stump mesh carries, the exact `bloodColour` alpha.
+  `FUN_140530b30` as 1 − clamp((flesh − stun + bandage) / (base × mult × scale − wear), 0, 1) (the +0x48 field is the bandage, not the rig): a damaged part is bloodier, a part far below zero is
+  fully covered. Only `Character_VP` (bodies) defines `BLOOD` among the people's programs; worn clothing (`skin.program`) has none, animals have their own (`creature.hlsl`).
+  **Unknown**: the part index a stump mesh's vertices carry, the exact `bloodColour` alpha, the animals' mapping.
 - A severed limb item draws with the `SeveredLimb` material (`FUN_1400cf490`, cloned as `Limb_<name>`): textures from the item's MATERIAL record
   (`texture map`, `normal map`, `color map` = skin-tone mask; the human's are the female body's), shader `severed_limb_fs`: skin-tone mask tint
   (a vec4 stored on the item), then blood with the same texture, `bloodColour` (a vec4 on the item) and an extra alpha of
   max(−2 × 0.3 × mesh x, 0), so the cut end (negative x) is solid blood. Its mapping: u = 0.3 × x, v = the angle round X (atan2(normal.y, normal.z)).
 
-**Meitou**: the stump of a limb-replacement item on a body is drawn at full amount (`CharacterShaders.Bloody`, `PartMaterial.Bloody`,
-`CharacterContent.ItemMaterial`), as the part of a severed limb is far below its health. Not done: the per-part damage blood on the rest of
-the body, and the ground limb. The dropped limb is drawn by the generic object path (`DebrisRenderer` while it falls), which shows it
-**untextured white** (**Observed**, sandbox render) and without blood.
+
+**Meitou**
+- Body: `CharacterContent.BodyBlood` gives a person's body material the race's blood colour (`blood colour`), scales (`blood horizontal`, `blood vertical`) and `bloody.png`
+  (none for animals and bloodless races, `bleed rate` 0). `MedicalState.BloodAmounts` publishes the first 8 parts' amounts (`CharacterSnapshot.BloodAmounts`), the host hands them
+  to the renderer (`CharacterInstance.Blood`), which writes them as exact integers in the w of the body instance's matrix rows (`CharacterRenderer.WithBlood`); the vertex program
+  reads its vertex's part (colour Y bits 16-19, `CharacterContent.MarkBody`) and passes the amount on. **Observed**: a vertex's part is the part claimed by its heaviest bone or its
+  nearest named ancestor (as the hidden limbs are, `LimbHideOf`), numbered in the health parts' order (`BodyPartTemplate.MedicalOrder`, the order `bloodAmount` is indexed in). The
+  race's `combat anatomy` order is a different one: numbering by it put the left arm's blood on the head (sandbox render).
+- Stump: a limb-replacement item without a material wears the body material at the full amount (`BloodFull`): a severed part is far below its health.
+- Fallen limb: `GameHost.SeveredLimbs` draws a race's `severed limbs` items with the debris renderer, falling and at rest, instead of as a world object: the MATERIAL record's
+  texture map, the race's blood colour, blood with the cut end solid, and the Meitou skin's scattering (the same table and rule per race as the body; the curvature baked by
+  `CharacterContent.MarkCurvature`). Not carried: the cut character's skin tone (the original keeps it on the item), the normal map; a limb as a debris piece casts no shadow.
+- **Observed** (sandbox, a dressed character): a stump under a coat or trousers is not visible at all; the blood shows on a bare stump and on a fallen limb. The ground limb of the
+  sandbox is white without a material because the sandbox has no world-object layer, so the debris path (no material) drew it.

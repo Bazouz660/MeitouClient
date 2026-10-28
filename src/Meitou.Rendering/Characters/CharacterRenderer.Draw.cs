@@ -262,7 +262,7 @@ internal sealed unsafe partial class CharacterRenderer
                 }
                 bool twoSided = part.Material.DoubleSided;
                 uint hidden = (part.IsBody && l.Asset.Appearance is { } look ? (uint)look.HiddenLimbs << 12 | (uint)(look.HiddenParts & 0x3FF) << 18 : 0u) | (uint)part.HideSide << 16;
-                var instance = new CharInstance { Model = model, BoneBase = (uint)l.BoneBase, Material = (uint)part.Material.Slot, Flags = (interior ? 1u : 0u) | hidden, MorphBase = part.Morphed ? l.Asset.MorphBase : 0 };
+                var instance = new CharInstance { Model = part.IsBody ? WithBlood(model, l.Blood) : model, BoneBase = (uint)l.BoneBase, Material = (uint)part.Material.Slot, Flags = (interior ? 1u : 0u) | hidden, MorphBase = part.Morphed ? l.Asset.MorphBase : 0 };
                 if (motionPass)
                 {
                     var previousWorld = Relative(l.State.PreviousWorld, origin);
@@ -403,7 +403,7 @@ internal sealed unsafe partial class CharacterRenderer
                 uint hidden = (part.IsBody && l.Asset.Appearance is { } look ? (uint)look.HiddenLimbs << 12 | (uint)(look.HiddenParts & 0x3FF) << 18 : 0u) | (uint)part.HideSide << 16;
                 var instance = new CharInstance
                 {
-                    Model = f.Model, BoneBase = (uint)l.BoneBase, Material = (uint)part.Material.Slot, Flags = (l.Interior ? 1u : 0u) | hidden,
+                    Model = part.IsBody ? WithBlood(f.Model, l.Blood) : f.Model, BoneBase = (uint)l.BoneBase, Material = (uint)part.Material.Slot, Flags = (l.Interior ? 1u : 0u) | hidden,
                     MorphBase = part.Morphed ? l.Asset.MorphBase : 0, PreviousModel = motion ? f.PreviousModel : default,
                 };
                 // In a shadow map hair is a silhouette, so it takes the rule's own distances there (its levels start CharacterContent.HairLodScale times farther for the picture).
@@ -551,6 +551,18 @@ internal sealed unsafe partial class CharacterRenderer
         n.Elements = new GpuBufferBinding(part.Indices.Handle, 0, part.Indices.Size);
         n.SegA = n.SegB = 0;
         n.PipeA = n.PipeB = null;
+    }
+
+    /// <summary>
+    /// The matrix with the body's blood amounts in the w of its four rows (the vertex program reads only their xyz): two parts a float, part 2j in the low byte and part 2j + 1 in the next of
+    /// row j's w, as an exact integer (CharacterShaders: <c>vBloodAmount</c>).
+    /// </summary>
+    static Matrix4x4 WithBlood(Matrix4x4 m, ulong blood)
+    {
+        if (blood == 0) return m;
+        static float Pair(ulong b, int j) => (float)((b >> (16 * j)) & 0xFFFF);
+        m.M14 = Pair(blood, 0); m.M24 = Pair(blood, 1); m.M34 = Pair(blood, 2); m.M44 = Pair(blood, 3);
+        return m;
     }
 
     readonly JobPool<DrawJob> drawJobs = new();

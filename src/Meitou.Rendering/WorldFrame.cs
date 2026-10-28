@@ -1597,7 +1597,7 @@ static class WorldFrame
             gpu.Terrain.DrawDeferred();   // the terrain colour where nothing nearer covers it (the depth is in from the draw above)
             if (nearSlice && gpu.Debris is { } debris)
             {
-                debris.Draw(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(gpu.DebrisPieces), viewProjection, eye, frustum, light);
+                debris.Draw(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(gpu.DebrisPieces), viewProjection, eye, frustum, light, look => gpu.Characters is { } chars && chars.SkinOn(look.Race, look.SkinDefault) ? chars.SkinTable : 0);
                 if (gpu.BoltPieces.Count > 0) debris.Draw(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(gpu.BoltPieces), viewProjection, eye, frustum, light);
             }
             StageClock.Lap(6);

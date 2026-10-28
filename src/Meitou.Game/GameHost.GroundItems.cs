@@ -29,11 +29,19 @@ sealed partial class GameHost
             ActiveObjects?.RemoveRuntime(GroundId(id));
             shownGround.Remove(id);
             falls.RemoveAll(f => f.Ground.Id == id);
+            restLimbs.Remove(id);
         }
         foreach (var g in snapshot.GroundItems)
         {
             if (!shownGround.Add(g.Id)) continue;
             var (rotation, y) = g.Dropped ? LaidFlat(g) : (g.Rotation, g.Position.Y);
+            if (LimbLookOf(g.Record) is not null)
+            {
+                // A severed limb is drawn by the debris renderer (its SeveredLimb look: skin tone and blood), falling and at rest.
+                if (g.Fall is { } cut && StartFall(g, cut, rotation, y)) continue;
+                RestLimb(g, rotation, y);
+                continue;
+            }
             if (g.Fall is { } stump && StartFall(g, stump, rotation, y)) continue;   // shown once it has landed (UpdateFalls)
             ShowGround(g, rotation, y);
         }
@@ -102,13 +110,13 @@ sealed partial class GameHost
     bool StartFall(GroundItemSnapshot g, FallSource stump, Quaternion lying, float y)
     {
         if (scene.Database?.Find(g.Record) is not { } record || WorldObjectLayout.ItemMesh(record) is not { Length: > 0 } mesh) return false;
-        if (gpu.Debris?.Extent(mesh) is null) return false;   // the debris renderer draws only meshes it has loaded (its material: the record's)
+        if (gpu.Debris?.Extent(mesh, null, LimbLookOf(g.Record)) is null) return false;   // the debris renderer draws only meshes it has loaded
         // Hanging: the mesh's long axis down, turned by the item's yaw (the same yaw the rest pose keeps).
         var yaw = new Quaternion(0, g.Rotation.Y, 0, g.Rotation.W);
         var hang = BoundsOf(g.Record) is { } box ? Turn(LongAxis(box.Max - box.Min), -Vector3.UnitY) : Quaternion.Identity;
         falls.Add(new FallingLimb
         {
-            Ground = g, Mesh = mesh, Stump = stump, Rest = new Vector3(g.Position.X, y, g.Position.Z), RestY = y,
+            Ground = g, Mesh = mesh, Look = LimbLookOf(g.Record), Stump = stump, Rest = new Vector3(g.Position.X, y, g.Position.Z), RestY = y,
             Hanging = Quaternion.Normalize(Quaternion.Concatenate(hang, yaw)), Lying = lying,
         });
         return true;
@@ -121,6 +129,7 @@ sealed partial class GameHost
     {
         shownGround.Clear();
         falls.Clear();
+        restLimbs.Clear();
         groundRevision = -1;
     }
 }

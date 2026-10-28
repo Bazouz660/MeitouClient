@@ -77,6 +77,12 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
         }
     }
     bool skinShading = true;
+
+    /// <summary>The skin scattering table's bindless index while the Skin switch is on, else 0 (a severed limb's skin: <see cref="DebrisRenderer"/>).</summary>
+    public uint SkinTable => SkinShading ? skinScattering.Index : 0;
+
+    /// <summary>Whether the skin shading applies to the race <paramref name="race"/> (RACE string id): the Skin page's choice, else <paramref name="byDefault"/>.</summary>
+    public bool SkinOn(string? race, bool byDefault) => race is not null && skinRaces is not null && skinRaces.TryGetValue(race, out bool chosen) ? chosen : byDefault;
     readonly SkinScattering skinScattering;
 
     /// <summary>
@@ -162,6 +168,8 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
         public int PartBase;
         public CharState State;
         public bool Repose, WeaponDrawn, RangedDrawn, BackDrawn;
+        /// <summary>The blood of its first 8 body parts, a byte each (<see cref="CharacterInstance.Blood"/>).</summary>
+        public ulong Blood;
         /// <summary>Posed this frame whatever the thinning (the player's, a ragdoll, a new asset or a first pose).</summary>
         public bool MustPose;
         /// <summary>How tall it is on screen, in pixels (its diameter over its distance by the view's pixels per radian): the thinning's priority.</summary>
@@ -434,6 +442,7 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
             state.PreviousWorld = state.HasWorld ? state.World : l.World;
             (state.World, state.HasWorld) = (l.World, true);
             l.Bones = inst.Bones;
+            l.Blood = inst.Blood;
             // A ragdoll is posed every frame: its bones move by physics, not by a clip the thinning could thin out. A new asset (other gear, another rig) is posed at
             // once: its parts' attach matrices and its arrays' sizes come from it. The rest are thinned by their size on screen after the gather (below).
             l.MustPose = inst.FullRateAnimation || inst.Bones is not null || state.Posed < 0 || newAsset;
@@ -671,7 +680,7 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
         if (m.Worn) flags |= CharacterShaders.Worn;
         if (m.Skin && SkinFor(m)) flags |= CharacterShaders.Skin;
         if (m.VertexColoured) flags |= CharacterShaders.VertexColoured;
-        if (m.Bloody && has[CharacterShaders.SlotBlood]) flags |= CharacterShaders.Bloody;
+        if (m.Bloody && has[CharacterShaders.SlotBlood]) flags |= CharacterShaders.Bloody | (m.BloodFull ? CharacterShaders.BloodFull : 0);
         // Textures assigned but not resident yet: a hair's diffuse (its cut-out), a clipped item's normal map, the head's maps.
         if (m.Shading == CharacterShaders.ShadeHair && m.Tex[CharacterShaders.SlotDiffuse] is not null && !has[CharacterShaders.SlotDiffuse]
             || m.ClipOnNormalAlpha && m.Tex[CharacterShaders.SlotNormal] is not null && !has[CharacterShaders.SlotNormal])
