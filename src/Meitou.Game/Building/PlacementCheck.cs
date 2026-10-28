@@ -141,7 +141,8 @@ public static class PlacementCheck
         if (parent is not null) return PlacementFailure.None;
         var bounds = q.Services.Footprint(b.Id)?.Bounds ?? (new Vector2(-4), new Vector2(4));
         float slope = SlopeDegrees(q.Services.Ground, at, q.Yaw, bounds, out float normalY);
-        if (normalY < SteepestNormalY || b.MaxSlope > 0 && slope > b.MaxSlope) return PlacementFailure.NotLevel;
+        // max slope fails a ghost only when it matches the slope (FUN_1404daa20, Verified); any other is only refused by the steepness test.
+        if (normalY < SteepestNormalY || b.MatchSlope && b.MaxSlope > 0 && slope > b.MaxSlope) return PlacementFailure.NotLevel;
         return PlacementFailure.None;
     }
 
