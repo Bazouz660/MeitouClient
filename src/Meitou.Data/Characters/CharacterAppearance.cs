@@ -41,6 +41,8 @@ public sealed record CharacterPart
     public int ShownShots { get; init; }
     /// <summary>The material the item was made with, if chosen (MATERIAL_SPECS_CLOTHING of clothing, MATERIAL_SPECS_WEAPON model of a weapon).</summary>
     public GameRecord? Material { get; init; }
+    /// <summary>The COLOR_DATA a worn item is dyed with (<see cref="Gameplay.ItemColours.Shown"/>); null: undyed.</summary>
+    public GameRecord? Colour { get; init; }
     /// <summary>When the part shows: always, or only while the weapon in hand is sheathed or drawn (the first weapon's meshes).</summary>
     public WeaponShown Shown { get; init; }
     /// <summary>
@@ -56,8 +58,8 @@ public sealed record CharacterPart
 /// </summary>
 public enum WeaponShown : byte { Always, Sheathed, Drawn, RangedSheathed, RangedDrawn, BackSheathed, BackDrawn }
 
-/// <summary>A clothing texture layered onto the body (ARMOUR <c>vest texture</c>; character.hlsl "vest").</summary>
-public sealed record BodyLayer(GameRecord Record, string Diffuse, string? Normal, string? ColourMap);
+/// <summary>A clothing texture layered onto the body (ARMOUR <c>vest texture</c>; character.hlsl "vest"), dyed with <paramref name="Colour"/> as the item's meshes are.</summary>
+public sealed record BodyLayer(GameRecord Record, string Diffuse, string? Normal, string? ColourMap, GameRecord? Colour = null);
 
 /// <summary>Where a bone-attached part sits: a bone and an offset from it in the bone's binding frame.</summary>
 public sealed record AttachmentPoint(string Name, string Bone, Vector3 Position, Quaternion Rotation);
@@ -98,6 +100,8 @@ public sealed class CharacterAppearance
     public string? BodyFile { get; private init; }
     /// <summary>The rolled character this was built from (with <see cref="CharacterOptions.Seed"/> or <see cref="CharacterOptions.Loadout"/>).</summary>
     public Loadout? Loadout { get; private init; }
+    /// <summary>The FACTION it was made in (the generator's, else the CHARACTER's own <c>faction</c>): its <c>color</c> is the uniform scheme.</summary>
+    public GameRecord? Faction { get; private init; }
 
     /// <summary>Race <c>male mesh</c> / <c>female mesh</c>, or CHARACTER <c>mesh</c>.</summary>
     public string BodyMesh { get; private init; } = "";
@@ -157,6 +161,7 @@ public sealed class CharacterAppearance
         Random? random = null;
         var notes = new List<string>();
         GameRecord? character = record.Type == FcsRecordType.CHARACTER ? record : null;
+        faction ??= loadout?.Faction ?? character?.GetReferences("faction").Select(r => db.Find(r.TargetStringId)).FirstOrDefault(f => f is { Type: FcsRecordType.FACTION });
 
         // Body file (.bod2). CHARACTER "body": empty = random body.
         AppearanceFile? body = loadout?.Appearance;
@@ -194,6 +199,7 @@ public sealed class CharacterAppearance
         var result = new CharacterAppearance
         {
             Character = character, Race = race, Female = female, Body = body, BodyFile = bodyFile, Loadout = loadout,
+            Faction = faction,
             BodyMesh = bodyMesh,
             BodyTexture = FilePath(race, $"body texture {g}"), BodyNormal = FilePath(race, $"nm {g}"),
             BodyNormalStrong = FilePath(race, $"nm {g} strong"), BodyNormalSkinny = FilePath(race, $"nm {g} skinny"),
@@ -210,14 +216,17 @@ public sealed class CharacterAppearance
         // Equipment: CHARACTER lists (unless naked) plus --equip, then hair/beard unless a worn item hides them.
         var items = new List<GameRecord>();
         var materials = new Dictionary<GameRecord, GameRecord>();
+        // A loadout item's colour is its instance's (null: none, the scheme applies); any other item is new, coloured by its record.
+        var colours = new Dictionary<GameRecord, GameRecord?>();
         if (loadout is not null && !options.Naked)
         {
             foreach (var c in loadout.Clothing)
             {
                 items.Add(c.Record);
                 if (c.Material is { } m) materials[c.Record] = m;
+                colours[c.Record] = c.Colour;
             }
-            if (loadout.Backpack is { } pack) items.Add(pack.Record);
+            if (loadout.Backpack is { } pack) { items.Add(pack.Record); colours[pack.Record] = pack.Colour; }
         }
         else if (character is not null && !options.Naked)
         {
@@ -261,9 +270,10 @@ public sealed class CharacterAppearance
 
         foreach (var attachment in new[] { result.Hair, result.Beard })
             if (attachment is not null) result.AddWorn(attachment, female, worn);
-        foreach (var item in worn) result.AddWorn(item, female, worn, materials.GetValueOrDefault(item));
+        GameRecord? Dye(GameRecord item) => Gameplay.ItemColours.Shown(db, item, colours.TryGetValue(item, out var own) ? own : Gameplay.ItemColours.Of(db, item), character, faction);
+        foreach (var item in worn) result.AddWorn(item, female, worn, materials.GetValueOrDefault(item), Dye(item));
         foreach (var item in items.Where(i => i.Type is FcsRecordType.ATTACHMENT or FcsRecordType.CONTAINER))
-            result.AddWorn(item, female, worn);
+            result.AddWorn(item, female, worn, colour: Dye(item));
         foreach (var item in items.Where(i => i.Type == FcsRecordType.LIMB_REPLACEMENT))
             result.AddLimb(item, female);
         if (loadout is not null)
@@ -375,7 +385,7 @@ public sealed class CharacterAppearance
             Parts.Add(new CharacterPart { Record = limb, Mesh = mesh, Field = field, Mode = AttachMode.SharedSkeleton });
     }
 
-    void AddWorn(GameRecord item, bool female, List<GameRecord> worn, GameRecord? material = null)
+    void AddWorn(GameRecord item, bool female, List<GameRecord> worn, GameRecord? material = null, GameRecord? colour = null)
     {
         AttachSlot? slot = item.Type == FcsRecordType.ATTACHMENT ? (AttachSlot)item.GetInt("attach slot", (int)AttachSlot.Hair)
             : item.Ints.ContainsKey("slot") ? (AttachSlot)item.GetInt("slot") : null;
@@ -393,14 +403,14 @@ public sealed class CharacterAppearance
             }
             string vest = female ? " female" : "";
             if (item.GetPath("vest texture" + vest) is { Length: > 0 } diffuse)
-                BodyLayers.Add(new BodyLayer(item, diffuse, FilePath(item, "vest normalmap" + vest), FilePath(item, "vest colormap" + vest)));
+                BodyLayers.Add(new BodyLayer(item, diffuse, FilePath(item, "vest normalmap" + vest), FilePath(item, "vest colormap" + vest), colour));
         }
         if (mesh.Length == 0)
         {
             if (female && item.GetPath("mesh").Length > 0) Notes.Add($"[Appearance] No female mesh for '{item.Name}'");
             return;
         }
-        Parts.Add(new CharacterPart { Record = item, Mesh = mesh, Field = field, Mode = AttachMode.SharedSkeleton, Slot = slot, Material = material });
+        Parts.Add(new CharacterPart { Record = item, Mesh = mesh, Field = field, Mode = AttachMode.SharedSkeleton, Slot = slot, Material = material, Colour = colour });
     }
 
     /// <param name="both">Both sets: the sheathed mesh tagged <see cref="WeaponShown.Sheathed"/>, the drawn ones <see cref="WeaponShown.Drawn"/> (a renderer that follows the fight);
@@ -465,7 +475,7 @@ public sealed class CharacterAppearance
         if (item.GetPath("mesh") is not { Length: > 0 } mesh) return this;
         var copy = new CharacterAppearance
         {
-            Character = Character, Animal = Animal, Race = Race, Female = Female, Body = Body, BodyFile = BodyFile, Loadout = Loadout,
+            Character = Character, Animal = Animal, Race = Race, Female = Female, Body = Body, BodyFile = BodyFile, Loadout = Loadout, Faction = Faction,
             BodyMesh = BodyMesh, BodyTexture = BodyTexture, BodyNormal = BodyNormal, BodyNormalStrong = BodyNormalStrong, BodyNormalSkinny = BodyNormalSkinny, BodyMask = BodyMask, PartMap = PartMap, Head = Head, Hair = Hair,
             Shape = Shape, Beard = Beard, SkinToneParameter = SkinToneParameter, HairColour = HairColour, HiddenLimbs = HiddenLimbs, HiddenParts = HiddenParts,
         };

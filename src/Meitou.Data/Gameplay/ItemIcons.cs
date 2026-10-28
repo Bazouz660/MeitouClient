@@ -29,19 +29,20 @@ public sealed class ItemIcons(GameDatabase database, Func<string, string?> resol
         record.Type == FcsRecordType.WEAPON || record.GetBool("auto icon image", record.Type is FcsRecordType.ITEM or FcsRecordType.CROSSBOW or FcsRecordType.NEST_ITEM);
 
     /// <summary>
-    /// The icon of an item of record <paramref name="record"/> made of <paramref name="material"/> (the instance's <c>material sid</c>, "" for none). A drawn kind takes the game's saved
+    /// The icon of an item of record <paramref name="record"/> made of <paramref name="material"/> (the instance's <c>material sid</c>, "" for none) dyed with <paramref name="colour"/> (its
+    /// <c>color sid</c>; "" for none, or no instance: the record's own). A drawn kind takes the game's saved
     /// picture when there is one, else <see cref="ItemIconSource.Render"/> (when the record has a mesh to draw); the others their <c>icon</c> file, else <c>default_icon.png</c>.
     /// </summary>
-    public ItemIconChoice Choose(string record, string material)
+    public ItemIconChoice Choose(string record, string material, string colour = "")
     {
         if (database.Find(record) is not { } r) return default;
         if (Renders(r))
         {
             var spec = MaterialOf(database, r, material);
-            string colour = ColourOf(database, r, spec)?.StringId ?? "";
+            string dye = ColourOf(database, r, spec, colour)?.StringId ?? "";
             // An item with no material of its own is drawn with its first; Meitou's saved pictures are named by that one.
-            if (cache.Find(record, material.Length > 0 ? material : spec?.StringId ?? "", colour) is { } saved) return new(ItemIconSource.File, saved);
-            return ItemIconStyle.MeshOf(r).Length > 0 ? new(ItemIconSource.Render, Colour: colour) : default;
+            if (cache.Find(record, material.Length > 0 ? material : spec?.StringId ?? "", dye) is { } saved) return new(ItemIconSource.File, saved);
+            return ItemIconStyle.MeshOf(r).Length > 0 ? new(ItemIconSource.Render, Colour: dye) : default;
         }
         if (StaticIconOf(r) is { Length: > 0 } icon && resolve(icon) is { } file) return new(ItemIconSource.File, file);
         return resolve("default_icon.png") is { } fallback ? new(ItemIconSource.File, fallback) : default;
@@ -56,12 +57,12 @@ public sealed class ItemIcons(GameDatabase database, Func<string, string?> resol
     }
 
     /// <summary>
-    /// The COLOR_DATA an icon is dyed with: the item's own <c>color</c>, when its <c>dont colorise</c> is false and <paramref name="material"/> has a <c>color map</c> (the game's rule).
-    /// The game dyes with the instance's colour, which <c>ItemInstance</c> does not carry; the record's stands in for it.
+    /// The COLOR_DATA an icon is dyed with: the instance's colour <paramref name="colourId"/> (empty: the record's own <c>color</c>, what a new item has), when the item's
+    /// <c>dont colorise</c> is false and <paramref name="material"/> has a <c>color map</c> (the game's rule).
     /// </summary>
-    public static GameRecord? ColourOf(GameDatabase db, GameRecord item, GameRecord? material) =>
+    public static GameRecord? ColourOf(GameDatabase db, GameRecord item, GameRecord? material, string colourId = "") =>
         material?.GetPath("color map") is { Length: > 0 } && !item.GetBool("dont colorise")
-            ? item.GetReferences("color").Select(r => db.Find(r.TargetStringId)).FirstOrDefault(c => c is { Type: FcsRecordType.COLOR_DATA })
+            ? colourId.Length > 0 ? db.Find(colourId) is { Type: FcsRecordType.COLOR_DATA } own ? own : null : ItemColours.Of(db, item)
             : null;
 }
 

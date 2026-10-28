@@ -552,6 +552,7 @@ yet, is left out. Round trip checked with a throwaway probe (write, read, clear)
 | `GAMESTATE_BUILDING.owner faction ID` | 1496 of 1496 resolve to FACTION (one value is `nofac`, which is itself a FACTION record id), plus 25 suffixed `owner faction ID<k>` keys, all resolving |
 | INSTANCE_COLLECTION targets in zones | BUILDING 1496, ITEM_PLACEMENT_GROUP 526 (the 1496 equals the GAMESTATE_BUILDING count) |
 | `INVENTORY_ITEM_STATE.base data sid` | all 2181 resolve: ARMOUR 891, ITEM 1018, WEAPON 230, CROSSBOW 14, CONTAINER 26, MAP_ITEM 2 |
+| `INVENTORY_ITEM_STATE.color sid` | the instance's COLOR_DATA or ""; how it is set: [clothing colours](../characters.md#clothing-colours) |
 | `MEDICAL_STATE.sid<k>` | 1610 of 1610 resolve to LOCATIONAL_DAMAGE |
 | `TOWN` states | 304 of 304 instances match base town placements; `trade goods` are 75 ITEM records |
 | Strings that do **not** resolve | `company sid` / `material sid` values with a `.TECH.<n>` suffix (17: research the engine makes at start, [blueprints](../game/buildings-production.md#blueprints)), `GAMESTATE_TOWN.instance` (instance ids, not records), BIOMES `E<n>` instance targets (numbers) |

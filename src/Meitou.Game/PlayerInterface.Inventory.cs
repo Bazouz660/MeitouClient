@@ -383,7 +383,7 @@ sealed partial class PlayerInterface
                 controls.Add(new("held-target", "Widget", spot.Area, "", "", "", true, new Dictionary<string, string>(), new Vector4(1, 1, 1, 0.5f), Pickable: false, Clip: spot.Clip));
             float cell = InventoryCell;
             AddItemCell(controls, "held-item", new(mouse.X - heldGrab.X * cell, mouse.Y - heldGrab.Y * cell, h.Width * cell, h.Height * cell),
-                h.Record, h.Material, h.Name, h.Quantity, null, "HeldItem", 0, null, pickable: false, charge: h.Charge);
+                h.Record, h.Material, h.Name, h.Quantity, null, "HeldItem", 0, null, pickable: false, charge: h.Charge, colour: h.Colour);
         }
         AddFencePrompt(controls);
     }

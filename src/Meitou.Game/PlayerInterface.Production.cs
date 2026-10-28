@@ -221,7 +221,7 @@ sealed partial class PlayerInterface
                 AddItemCell(controls, $"machine-item-{item.Index}",
                     new(area.X + item.X * area.Width / grid.Width, area.Y + item.Y * area.Height / grid.Height, item.Width * area.Width / grid.Width, item.Height * area.Height / grid.Height),
                     item.Record, item.Material, item.Name, item.Quantity, ItemTip.Of(item), "MachineItem", 1000 + item.Index,
-                    slot.Bounds.Intersect(slot.Clip ?? slot.Bounds), charge: item.Charge);
+                    slot.Bounds.Intersect(slot.Clip ?? slot.Bounds), charge: item.Charge, colour: item.Colour);
             }
             return;
         }
@@ -269,7 +269,7 @@ sealed partial class PlayerInterface
                     if (Lifted(ItemOwner.AtSite(m.Site), 1000 + item.Index)) continue;
                     AddItemCell(controls, $"machine-item-{item.Index}",
                         new(g.Bounds.X + item.X * InventoryCell, g.Bounds.Y + item.Y * InventoryCell, item.Width * InventoryCell, item.Height * InventoryCell),
-                        item.Record, item.Material, item.Name, item.Quantity, ItemTip.Of(item), "MachineItem", 1000 + item.Index, g.Clip, charge: item.Charge);
+                        item.Record, item.Material, item.Name, item.Quantity, ItemTip.Of(item), "MachineItem", 1000 + item.Index, g.Clip, charge: item.Charge, colour: item.Colour);
                 }
             }
         }
@@ -278,7 +278,7 @@ sealed partial class PlayerInterface
         {
             var ob = outSlot.Bounds;
             float side = MathF.Min(ob.Width, ob.Height);
-            AddItemCell(controls, "machine-out", new(ob.X, ob.Y, side, side), made.Record, made.Material, made.Name, made.Quantity, null, "MachineItem", 8, outSlot.Clip);
+            AddItemCell(controls, "machine-out", new(ob.X, ob.Y, side, side), made.Record, made.Material, made.Name, made.Quantity, null, "MachineItem", 8, outSlot.Clip, colour: made.Colour);
         }
         else if (m.Craft is { Done: [] } craft && CraftCurrent(craft) is { } current && controls.FirstOrDefault(c => c.Name == "out") is { } emptyOut)
         {

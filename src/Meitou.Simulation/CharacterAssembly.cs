@@ -110,6 +110,20 @@ sealed class CharacterAssembly(PopulationData data)
     Fighter FighterOf(GameRecord? record, Inventory inventory, MedicalState? medical, string? raceId) =>
         AnimalData.From(record) is { } animal ? MakeAnimalFighter(animal) : MakeFighter(inventory, medical, raceId);
 
+    /// <summary>The FACTION record of the character's faction (null: none or not in the data).</summary>
+    GameRecord? FactionRecord(CharacterCold cold) => (uint)cold.Faction < (uint)data.Factions.Count ? data.Db.Find(data.Factions[cold.Faction].Id) : null;
+
+    /// <summary>
+    /// Gives what the character has on (any item outside the main grid and the bag) without a colour the wearer's scheme, which it keeps (<c>AppearanceBase::createAttachedObject</c>,
+    /// docs/characters.md "Clothing colours"): the CHARACTER's <c>color</c>, else its current faction's.
+    /// </summary>
+    void Dye(CharacterCold cold, Inventory inventory)
+    {
+        if (cold.Animal is not null || ItemColours.Scheme(data.Db, data.Db.Find(cold.RecordId), FactionRecord(cold)) is not { } scheme) return;
+        foreach (var item in inventory.Items)
+            if (item.ColourId.Length == 0 && item.Section != "main") item.ColourId = scheme.StringId;
+    }
+
     public void RefreshEquipment(CharacterCold cold)
     {
         if (cold.Inventory is not { } inventory) return;
@@ -119,9 +133,10 @@ sealed class CharacterAssembly(PopulationData data)
         cold.Fighter = fighter;
         // A weapon already drawn follows the new kit (a weapon picked up or put away in a fight, a limb fitted): a swing with the old hold would play with empty hands.
         if (cold.DrawnWeapon != WeaponKinds.None && cold.DrawnWeapon != HandHold.OfCategory((int)WeaponCategory.Bow).Weapon) cold.DrawnWeapon = CombatSystem.MeleeDrawn(fighter);
+        Dye(cold, inventory);
         if (cold.Appearance is not { } look || look.Animal is not null) return;
         var body = look.Loadout?.Appearance.Record ?? look.Body?.Record;
-        if (Saving.SavedKit.LoadoutOf(body, Saving.SavedKit.FromInventory(inventory), data.Db, look.Loadout?.Seed ?? 0) is { } kit)
+        if (Saving.SavedKit.LoadoutOf(body, Saving.SavedKit.FromInventory(inventory), data.Db, look.Loadout?.Seed ?? 0, FactionRecord(cold)) is { } kit)
         {
             Saving.SavedKit.SetLimbs(kit, cold.Medical, data.Db);
             if (data.Appearances?.Create(cold.RecordId, kit) is { } updated) cold.Appearance = updated;
@@ -147,6 +162,7 @@ sealed class CharacterAssembly(PopulationData data)
             medical.SetAnimalBody(animal.Scale(age), animal.HpMult);
         }
         cold.Inventory = inventory ?? data.Items.Build(record, cold.Appearance?.Loadout);
+        Dye(cold, cold.Inventory);
         // Fitted prosthetics show in the limbs window: their items sit in the inventory's limb sections (saved apart, SavedLimbs).
         for (int k = 0; k < 4 && cold.Inventory is { } carried; k++)
             if (medical.LimbPart(k)?.ReplacementItem is { } fitted && !carried.Items.Contains(fitted))
@@ -197,6 +213,7 @@ sealed class CharacterAssembly(PopulationData data)
         if (record is { Type: Meitou.Data.Fcs.FcsRecordType.CHARACTER } && record.GetBool("wears uniform") && (uint)cold.Faction < (uint)data.Factions.Count)
             foreach (var piece in cold.Inventory.Items)
                 if (piece.Type == Meitou.Data.Fcs.FcsRecordType.ARMOUR && piece.Section != "main") piece.Uniform = data.Factions[cold.Faction].Id;
+        Dye(cold, cold.Inventory);
         cold.Fighter = FighterOf(record, cold.Inventory, cold.Medical, cold.Race?.StringId);
         cold.WaterFactor = raceData.WaterAvoidance * (cold.Faction == data.PlayerFaction && data.PlayerFaction >= 0 ? 0.5f : 1);
         cold.RoadPreference = data.RoadPreferenceOf(cold.Faction);

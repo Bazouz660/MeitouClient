@@ -131,6 +131,8 @@ public sealed record InventoryItemView(int Index, string Record, string Name, st
 {
     /// <summary>The item's material record (<c>material sid</c>; "" none), which picks its icon.</summary>
     public string Material { get; init; } = "";
+    /// <summary>The COLOR_DATA it is dyed with (<see cref="Items.ItemInstance.ColourId"/>; "" none), which also picks its icon.</summary>
+    public string Colour { get; init; } = "";
     /// <summary>How full the item is (0 to 1, <see cref="Items.ItemInstance.ChargeFraction"/>); null: no charge bar.</summary>
     public float? Charge { get; init; }
     /// <summary>The item's manufacturer record (<c>company sid</c>; "" none), its model level and its charges (what the tooltip shows).</summary>

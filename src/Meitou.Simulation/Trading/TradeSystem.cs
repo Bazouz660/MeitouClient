@@ -38,6 +38,8 @@ public sealed record TradeItemView(int Index, string Record, string Name, string
     public bool Container { get; init; }
     /// <summary>The item's material record ("" none), which picks its icon.</summary>
     public string Material { get; init; } = "";
+    /// <summary>The COLOR_DATA it is dyed with (<see cref="Items.ItemInstance.ColourId"/>), which picks its icon.</summary>
+    public string Colour { get; init; } = "";
     /// <summary>How full the item is (0 to 1); null: no charge bar.</summary>
     public float? Charge { get; init; }
     /// <summary>The item's manufacturer record (<c>company sid</c>; "" none), model level and charges, and the trader factor of its price (<c>FUN_14079e6d0</c>, 1: none).</summary>
@@ -657,7 +659,7 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
                 item.Quality, Price(m, item, item.Quantity, sell, shop.Terms, holder), Price(m, item, 1, sell, shop.Terms, holder), stolen)
             {
                 Buyback = buyback, Container = item.Contents is not null,
-                Material = item.MaterialId, Charge = item.ChargeFraction, Value = value, SellValue = sellValue, Weight = item.Weight, PriceFactor = m.TraderFactor(item, shop.Terms, holder),
+                Material = item.MaterialId, Colour = item.ColourId, Charge = item.ChargeFraction, Value = value, SellValue = sellValue, Weight = item.Weight, PriceFactor = m.TraderFactor(item, shop.Terms, holder),
                 MarketFactor = m.MarketFactor(shop.Terms.Site, item.Record), Company = item.CompanyId, Level = item.Level, Charges = item.Charges, MaxCharges = item.MaxCharges, StolenFrom = stolen ? item.StolenFrom : -1,
                 FenceChance = sell && stolen && item.StolenFrom == squad.Faction ? Math.Clamp(FenceChance(thievery, true), 0, 1) : null,
                 FenceOdds = sell && stolen && !shop.Terms.BuysStolen && FenceOdds(thievery, item, squad.Faction, shop.Terms) is < 1 and var odds ? Math.Max(odds, 0) : null,

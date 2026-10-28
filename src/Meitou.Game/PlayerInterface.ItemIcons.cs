@@ -20,14 +20,14 @@ sealed partial class PlayerInterface
 
     /// <summary>
     /// An item icon filling <paramref name="area"/> with its quantity in the corner, or a name while the icon loads. <paramref name="tip"/> is what its hover tooltip lists (the name only when null).
-    /// The transparent text control handles picking and carries <paramref name="property"/>.
+    /// The transparent text control handles picking and carries <paramref name="property"/>; <paramref name="colour"/> is the item's <c>color sid</c>.
     /// </summary>
-    void AddItemCell(List<UiControl> controls, string name, UiRect area, string record, string material, string itemName, int quantity, ItemTip? tip, string property, int index, UiRect? clip, bool pickable = true, float? charge = null)
+    void AddItemCell(List<UiControl> controls, string name, UiRect area, string record, string material, string itemName, int quantity, ItemTip? tip, string property, int index, UiRect? clip, bool pickable = true, float? charge = null, string colour = "")
     {
         itemTips[name] = tip ?? ItemTip.NameOnly(record, material, itemName, quantity);
         string count = quantity > 1 ? quantity.ToString(CultureInfo.InvariantCulture) : "";
         Dictionary<string, string>? image = null;
-        if (itemIcons?.Choose(record, material) is { } choice && uiPainter is { } painter)
+        if (itemIcons?.Choose(record, material, colour) is { } choice && uiPainter is { } painter)
         {
             if (choice is { Source: ItemIconSource.File, File: { } file } && painter.IconReady(file))
                 image = new() { ["ImageTexture"] = UiPainter.IconTexture(file) };

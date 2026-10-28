@@ -99,6 +99,8 @@ public sealed class ItemFactory(GameDatabase db, GameConstants constants, Func<M
         {
             Record = info.Id,
             Name = info.Name,
+            // A new item takes its record's colour (Item::Item, docs/characters.md "Clothing colours").
+            ColourId = ItemColours.Of(Db, Db.Find(info.Id))?.StringId ?? "",
             Type = type,
             EquipmentSection = info.Type is FcsRecordType.ARMOUR or FcsRecordType.ITEM && Db.Find(info.Id) is { } worn ? SectionOf(worn) : "",
             WornOnlyBy = info.WornOnlyBy,
@@ -151,11 +153,13 @@ public sealed class ItemFactory(GameDatabase db, GameConstants constants, Func<M
                 {
                     cloth.Section = SectionOf(c.Record);
                     cloth.MaterialId = c.Material?.StringId ?? "";
+                    if (c.Colour is { } colour) cloth.ColourId = colour.StringId;
                     inventory.Items.Add(cloth);
                 }
             if (loadout.Backpack is { } b && Create(b.Record.StringId, 1, b.Quality) is { } pack)
             {
                 pack.Section = "backpack_attach";
+                if (b.Colour is { } colour) pack.ColourId = colour.StringId;
                 inventory.Items.Add(pack);
             }
             if (loadout.Crossbow is { } x) AddWeapon(inventory, x);

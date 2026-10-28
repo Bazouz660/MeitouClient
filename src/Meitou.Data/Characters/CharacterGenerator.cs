@@ -67,9 +67,10 @@ public static class CharacterGenerator
         if (bodyFile is not null) appearance = bodyFile;
         else (appearance, morph) = RollAppearance(db, installRoot, character, faction, race, isFemale, rng, notes);
 
+        faction ??= character?.GetReferences("faction").Select(r => db.Find(r.TargetStringId)).FirstOrDefault(f => f is { Type: FcsRecordType.FACTION });
         var loadout = new Loadout
         {
-            Seed = seed, Character = character, Race = race, Female = isFemale, Appearance = appearance,
+            Seed = seed, Character = character, Faction = faction, Race = race, Female = isFemale, Appearance = appearance,
             Generated = bodyFile is null, MorphIndex = morph,
         };
         loadout.Notes.AddRange(notes);
@@ -248,10 +249,12 @@ public static class CharacterGenerator
 
     static void RollEquipment(GameDatabase db, GameRecord character, GameRecord race, MsvcRandom rng, Loadout loadout)
     {
+        // Put on new, an item keeps its record's colour, else takes the wearer's scheme (docs/characters.md "Clothing colours").
+        GameRecord? Colour(GameRecord item) => Gameplay.ItemColours.Of(db, item) ?? Gameplay.ItemColours.Scheme(db, character, loadout.Faction);
         // Backpack: entries with val0 > 0; val1 is an absolute chance (out of 100).
         var pack = PickAbsolute(rng, character.GetReferences("backpack").Where(r => r.Values.Value0 > 0)
             .Select(r => (db.Find(r.TargetStringId), (float)r.Values.Value1)).Where(p => p.Item1 is not null && RaceAllowed(p.Item1, race)));
-        if (pack is not null) loadout.Backpack = new LoadoutItem(pack);
+        if (pack is not null) loadout.Backpack = new LoadoutItem(pack) { Colour = Colour(pack) };
 
         // Clothing, one per slot in the game's order; race flags drop hats, shirts and shoes.
         int grade = character.GetInt("armour grade", 1), upgrade = character.GetInt("armour upgrade chance", 5);
@@ -275,7 +278,7 @@ public static class CharacterGenerator
             int up = grade < 5 && rng.Int(0, 100) < upgrade ? 1 : 0;
             var material = PickRelative(rng, item.GetReferences("material")
                 .Select(r => (db.Find(r.TargetStringId), r.Values.Value1 == 0 ? 100f : r.Values.Value1)));
-            loadout.Clothing.Add(new LoadoutItem(item) { Quality = QualityOfGrade(grade + up), Material = material });
+            loadout.Clothing.Add(new LoadoutItem(item) { Quality = QualityOfGrade(grade + up), Material = material, Colour = Colour(item) });
         }
 
         // Crossbow: entries with val0 > 0, val1 an absolute chance. Shown on the back (viewer choice).

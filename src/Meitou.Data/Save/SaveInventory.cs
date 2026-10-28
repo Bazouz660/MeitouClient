@@ -5,7 +5,7 @@ namespace Meitou.Data.Save;
 
 /// <summary>
 /// One item of a saved inventory: an INVENTORY_ITEM_STATE (docs/formats/save.md), with what the engine models. <see cref="Source"/> is the record it was read from, so
-/// the keys the engine does not model (<c>color sid</c>, <c>uniform</c>, <c>unique</c>, <c>death</c>, the <c>ownedby</c> and <c>insideBuilding</c> handles) survive a round trip.
+/// the keys the engine does not model (<c>unique</c>, <c>death</c>, the <c>ownedby</c> and <c>insideBuilding</c> handles) survive a round trip.
 /// </summary>
 public sealed class SaveItem
 {
@@ -16,6 +16,8 @@ public sealed class SaveItem
     public string Crafter { get; init; } = "";
     /// <summary>The <c>uniform</c> key: the id of the faction whose uniform the item is (empty: none).</summary>
     public string Uniform { get; init; } = "";
+    /// <summary>The <c>color sid</c> key: the COLOR_DATA the item is dyed with (empty: none; docs/characters.md "Clothing colours").</summary>
+    public string ColourId { get; init; } = "";
     public string Section { get; init; } = "main";
     public int X { get; init; }
     public int Y { get; init; }
@@ -77,6 +79,7 @@ public static class SaveInventory
         CompanyId = r.Strings.GetValueOrDefault("company sid", ""),
         Crafter = r.Strings.GetValueOrDefault("crafter", ""),
         Uniform = r.Strings.GetValueOrDefault("uniform", ""),
+        ColourId = r.Strings.GetValueOrDefault("color sid", ""),
         Section = r.Strings.GetValueOrDefault("section", "main"),
         X = r.Ints.GetValueOrDefault("inventory x"),
         Y = r.Ints.GetValueOrDefault("inventory y"),
@@ -111,7 +114,7 @@ public static class SaveInventory
 
     /// <summary>
     /// The INVENTORY_ITEM_STATE of an item: a copy of its <see cref="SaveItem.Source"/> when it has one (the keys the engine does not model kept), else the key set every
-    /// real item record has (null handles, no colour or uniform), with the modelled keys written over.
+    /// real item record has (null handles, empty colour and uniform), with the modelled keys written over.
     /// </summary>
     internal static FcsRecord ItemRecord(SaveItem item)
     {
@@ -135,6 +138,7 @@ public static class SaveInventory
         r.Strings["material sid"] = item.MaterialId;
         r.Strings["company sid"] = item.CompanyId;
         r.Strings["uniform"] = item.Uniform;
+        r.Strings["color sid"] = item.ColourId;
         if (item.Crafter.Length > 0) r.Strings["crafter"] = item.Crafter;   // written only when not empty, as the original
         r.Strings["section"] = item.Section;
         r.Strings["base data sid"] = item.BaseId;

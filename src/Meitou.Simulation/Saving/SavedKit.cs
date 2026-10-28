@@ -85,6 +85,8 @@ public static class SavedKit
         item.CompanyId = s.CompanyId;
         item.Crafter = s.Crafter;
         item.Uniform = s.Uniform;
+        // "" keeps the record's colour the factory gave: saves from before Meitou kept colours wrote "" for every item.
+        if (s.ColourId.Length > 0) item.ColourId = s.ColourId;
         item.Charges = s.Charges;
         item.Death = s.Death;
         (item.LimbDamage, item.LimbWear, item.LimbStun) = (s.Damage, s.Wear, s.Stun);
@@ -107,7 +109,7 @@ public static class SavedKit
     /// <summary>A saved item written under <paramref name="section"/> (a machine grid whose original section name is not Meitou's <c>main</c>).</summary>
     internal static SaveItem FromItem(ItemInstance i, string section) => new()
     {
-        BaseId = i.Record, MaterialId = i.MaterialId, CompanyId = i.CompanyId, Crafter = i.Crafter, Uniform = i.Uniform, Section = section, X = i.X, Y = i.Y, Quantity = i.Quantity, Level = i.Level,
+        BaseId = i.Record, MaterialId = i.MaterialId, CompanyId = i.CompanyId, Crafter = i.Crafter, Uniform = i.Uniform, ColourId = i.ColourId, Section = section, X = i.X, Y = i.Y, Quantity = i.Quantity, Level = i.Level,
         ItemFunction = i.ItemFunction, Quality = i.Quality, Charges = i.Charges, Source = i.Saved,
         Damage = i.LimbDamage, Wear = i.LimbWear, Stun = i.LimbStun, Death = i.Death,
         Lock = i.Lock is { } l ? new SaveItemLock(l.Level, l.EffectivelyLocked, l.Broken, l.Hardness) : null,
@@ -128,7 +130,7 @@ public static class SavedKit
     {
         var copy = new Loadout
         {
-            Seed = loadout.Seed, Character = loadout.Character, Race = loadout.Race, Female = loadout.Female, Appearance = loadout.Appearance, Generated = loadout.Generated,
+            Seed = loadout.Seed, Character = loadout.Character, Faction = loadout.Faction, Race = loadout.Race, Female = loadout.Female, Appearance = loadout.Appearance, Generated = loadout.Generated,
             MorphIndex = loadout.MorphIndex, Backpack = loadout.Backpack, Crossbow = loadout.Crossbow,
         };
         copy.Clothing.AddRange(loadout.Clothing);
@@ -154,7 +156,7 @@ public static class SavedKit
         if (file.RaceId is not { } raceId || db.Find(raceId) is not { } race) return null;
         var loadout = new Loadout
         {
-            Seed = rolled.Seed, Character = rolled.Character, Race = race, Female = file.Female, Appearance = file, Generated = true,
+            Seed = rolled.Seed, Character = rolled.Character, Faction = rolled.Faction, Race = race, Female = file.Female, Appearance = file, Generated = true,
             MorphIndex = appearance!.Ints.GetValueOrDefault("morph index", -1), Backpack = rolled.Backpack, Crossbow = rolled.Crossbow,
         };
         loadout.Clothing.AddRange(rolled.Clothing);
@@ -166,16 +168,16 @@ public static class SavedKit
     /// <summary>
     /// The loadout a saved character is drawn from: its CHARACTER_APPEARANCE (race, sex, head, hair, beard, skin, sliders: the body-file keys) and what it wears: ARMOUR in the
     /// clothing sections, the backpack, the weapons and crossbow at <c>hip</c> and <c>back</c> (company = manufacturer, material = model). Null without an appearance record
-    /// or a race. <paramref name="seed"/> only names it (nothing is rolled).
+    /// or a race. <paramref name="seed"/> only names it (nothing is rolled); <paramref name="faction"/> is the wearer's (its uniform scheme).
     /// </summary>
-    public static Loadout? LoadoutOf(FcsRecord? appearance, IReadOnlyList<SaveItem> items, GameDatabase db, int seed)
+    public static Loadout? LoadoutOf(FcsRecord? appearance, IReadOnlyList<SaveItem> items, GameDatabase db, int seed, GameRecord? faction = null)
     {
         if (appearance is null) return null;
         var file = new AppearanceFile { Record = appearance };
         if (file.RaceId is not { } raceId || db.Find(raceId) is not { } race) return null;
         var loadout = new Loadout
         {
-            Seed = seed, Race = race, Female = file.Female, Appearance = file, Generated = true,
+            Seed = seed, Faction = faction, Race = race, Female = file.Female, Appearance = file, Generated = true,
             MorphIndex = appearance.Ints.GetValueOrDefault("morph index", -1),
         };
         foreach (var s in items)
@@ -183,11 +185,11 @@ public static class SavedKit
             if (db.Find(s.BaseId) is not { } record) continue;
             GameRecord? Find(string id) => id.Length > 0 ? db.Find(id) : null;
             if (record.Type == FcsRecordType.ARMOUR && Worn.Contains(s.Section))
-                loadout.Clothing.Add(new LoadoutItem(record) { Quality = (int)s.Quality, Material = Find(s.MaterialId) });
+                loadout.Clothing.Add(new LoadoutItem(record) { Quality = (int)s.Quality, Material = Find(s.MaterialId), Colour = Find(s.ColourId) });
             else if (s.Section == "backpack_attach")
-                loadout.Backpack = new LoadoutItem(record) { Quality = (int)s.Quality };
+                loadout.Backpack = new LoadoutItem(record) { Quality = (int)s.Quality, Colour = Find(s.ColourId) };
             else if (s.Section == "belt" && record.Type == FcsRecordType.ITEM)
-                loadout.Carried.Add(new LoadoutItem(record));
+                loadout.Carried.Add(new LoadoutItem(record) { Colour = Find(s.ColourId) });
             else if (s.Section is "hip" or "back" && record.Type is FcsRecordType.WEAPON or FcsRecordType.CROSSBOW)
             {
                 var weapon = new LoadoutWeapon(record) { Section = s.Section, Row = s.Y, Level = s.Level, Manufacturer = Find(s.CompanyId), Model = Find(s.MaterialId) };

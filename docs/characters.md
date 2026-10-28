@@ -146,6 +146,21 @@ Boots (slot 9, not `is locked`) on a character with exactly one fitted leg prost
 
 **Verified** (`skin.hlsl`): worn items always `clip(normal.a - 0.6)`, so a normal map whose alpha is low (BC1 punch-through, atlas islands) hides those texels.
 
+### Clothing colours
+
+Each item instance carries a COLOR_DATA (save key `color sid`). **Observed** (decompile, KenshiLib 1ce4a16 names: `Item::Item`, `AppearanceBase::createAttachedObject`
+`FUN_1405358a0`, `Character::getUniformColorScheme`, `Faction::getFactionColorScheme` from `Character::createComponents`):
+- A new item takes its record's first `color` reference.
+- Put on (attached) without a colour, it takes the wearer's scheme, CHARACTER `color`, else the faction's `color`, and keeps it. A looted uniform keeps its first wearer's colours.
+- Drawn: an ARMOUR or CONTAINER (the types fcs.def gives the field) whose `dont colorise` is true (default; every base record stores it) shows no colour, but its colour is still stored.
+
+**Observed** in the owner's 9 saves (scratch probe of platoon files, worn ARMOUR): of 27,230 coloured pieces, 17,866 have the
+platoon faction's scheme, 7,634 the `color` of some CHARACTER (the wearer's record was not matched), 1,632 their record's own, 98 other (looted, mod colours). No uncoloured worn piece is in a faction with
+a scheme. 31 of 103 base FACTIONs have one; 42 of 142 ARMOUR records have `dont colorise` false.
+Meitou: `ItemColours`, `ItemInstance.ColourId` (factory: the record's; `CharacterAssembly.Dye`: the scheme, for any item outside the main grid), `LoadoutItem.Colour`,
+`CharacterPart.Colour`. Whether the scheme follows a faction change (a recruit) is **Unknown**. Meitou uses the current faction. A vest texture (body layer) takes
+its item's colour like the meshes (the shader has one shirt colour: the first dyed vest's); the original's vest colour source is **Unknown**.
+
 ### Crossbows
 
 **Observed** (decompile: `FUN_1405dbd80`, `FUN_1405dbf80`, `FUN_140535d50`, `FUN_14043d120`, `FUN_140436080`, `FUN_1405cc820`):

@@ -136,7 +136,7 @@ public sealed record MachineSnapshot(string Site, string Record, IReadOnlyList<M
         MachineSlotView? output = m.Output is { } o ? new MachineSlotView(o.Recipe.Item, Name(o.Recipe.Item), o.Count, o.Recipe.Capacity, Math.Clamp(o.Progress, 0, 1), items.Info(o.Recipe.Item)?.Width ?? 1, items.Info(o.Recipe.Item)?.Height ?? 1) : null;
         InventoryView? storage = m.Storage is { } s ? new InventoryView(s.Width, s.Height, 0, 0,
             Array.AsReadOnly(s.Items.Select((item, index) => new InventoryItemView(index, item.Record, item.Name, "main", item.X, item.Y, item.Width, item.Height, item.Quantity, item.Weight, item.Quality)
-                { Material = item.MaterialId, Charge = item.ChargeFraction }).ToArray())) : null;
+                { Material = item.MaterialId, Colour = item.ColourId, Charge = item.ChargeFraction }).ToArray())) : null;
         FarmView? farm = m.Farm is { } f && m.Data.Farm is { } fd
             ? new FarmView(f.Growth, f.Death, f.Harvested, f.Plants.Length, f.Status, m.Yield, m.CropMatch, ProductionSystem.Ripeness(f)) { PlantGrowth = [.. f.Plants] } : null;
         // The classes that update their emitter every frame tell it the efficiency and the power; the others powered it once, when built, with no operators (efficiency 0).
@@ -154,7 +154,7 @@ public sealed record MachineSnapshot(string Site, string Record, IReadOnlyList<M
 
     static CraftView? Crafting(Machine m, ItemFactory items) => m.Craft is { } c
         ? new CraftView([.. c.Queue.Select(j => (j.Option.Key, j.Recipe.Name, Math.Clamp(j.Progress, 0, 1), j.Recipe.Hours))], c.Repeat,
-            [.. c.Done.Select((item, index) => new InventoryItemView(index, item.Record, item.Name, "out", 0, 0, item.Width, item.Height, item.Quantity, item.Weight, item.Quality) { Material = item.MaterialId })])
+            [.. c.Done.Select((item, index) => new InventoryItemView(index, item.Record, item.Name, "out", 0, 0, item.Width, item.Height, item.Quantity, item.Weight, item.Quality) { Material = item.MaterialId, Colour = item.ColourId })])
         : null;
 }
 

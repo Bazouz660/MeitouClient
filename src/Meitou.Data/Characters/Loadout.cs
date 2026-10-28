@@ -7,6 +7,8 @@ public sealed record LoadoutItem(GameRecord Record)
     public int Quality { get; init; }
     /// <summary>The MATERIAL_SPECS_CLOTHING picked from the item's <c>material</c> list, if any.</summary>
     public GameRecord? Material { get; init; }
+    /// <summary>The COLOR_DATA the instance carries (its <c>color sid</c>, <see cref="Gameplay.ItemColours"/>); null: none yet, the wearer's scheme applies.</summary>
+    public GameRecord? Colour { get; init; }
 }
 
 /// <summary>A carried weapon (or crossbow): which record, how it was made, and where it hangs.</summary>
@@ -42,6 +44,8 @@ public sealed class Loadout
 {
     public required int Seed { get; init; }
     public GameRecord? Character { get; init; }
+    /// <summary>The FACTION it was rolled for (null: the CHARACTER's own); its <c>color</c> is the uniform scheme of what it puts on.</summary>
+    public GameRecord? Faction { get; init; }
     public required GameRecord Race { get; init; }
     public required bool Female { get; init; }
     /// <summary>The body file, or a generated CHARACTER_APPEARANCE (<see cref="Generated"/>) when the CHARACTER has none.</summary>

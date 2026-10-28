@@ -733,8 +733,8 @@ internal sealed class CharacterContent : IDisposable
     PartMaterial BodyMaterial(CharacterAppearance c)
     {
         string f = c.Female ? " female" : "";
-        // Shirt colour for vest colour masks: the CHARACTER's colour record (dyes of the faction are not followed).
-        var colour = c.Character?.GetReferences("color").Select(r => db.Find(r.TargetStringId)).FirstOrDefault(x => x is not null);
+        // Shirt colour for vest colour masks: the first dyed vest's colour, as its meshes would be (the shader has one; the original's vest colour source is Unknown).
+        var colour = c.BodyLayers.Take(3).Select(l => l.Colour).FirstOrDefault(x => x is not null);
         var m = new PartMaterial
         {
             Shading = CharacterShaders.ShadeBody, Description = $"RACE '{c.Race.Name}' body",
@@ -762,7 +762,7 @@ internal sealed class CharacterContent : IDisposable
             m.Tex[CharacterShaders.SlotVest + 3 * i + 1] = Texture(layer.Normal, true);
             m.Tex[CharacterShaders.SlotVest + 3 * i + 2] = Texture(layer.ColourMap, true);
             m.VestCount = i + 1;
-            m.VestColoured[i] = layer.ColourMap is not null && m.HasShirtColour;
+            m.VestColoured[i] = layer.ColourMap is not null && layer.Colour is not null;
         }
         m.Swizzled = true;
         return m;
@@ -791,8 +791,8 @@ internal sealed class CharacterContent : IDisposable
         m.Shading = CharacterShaders.ShadeItem;
         bool worn = part.Mode == AttachMode.SharedSkeleton;
         m.Worn = worn;
-        // Clothing: MATERIAL_SPECS_CLOTHING from "material" (female: "material female" if set), likeliest first; dye from
-        // the item's "color" COLOR_DATA (else the CHARACTER's, unless "dont colorise").
+        // Clothing: MATERIAL_SPECS_CLOTHING from "material" (female: "material female" if set), likeliest first; dye the part's colour
+        // (CharacterPart.Colour: the instance's, else the wearer's scheme, none for "dont colorise").
         var refs = item.GetReferences(c.Female && item.GetReferences("material female").Count > 0 ? "material female" : "material");
         var spec = refs.OrderByDescending(r => r.Values.Value0).Select(r => db.Find(r.TargetStringId))
             .FirstOrDefault(s => s is { Type: FcsRecordType.MATERIAL_SPECS_CLOTHING or FcsRecordType.MATERIAL_SPEC or FcsRecordType.MATERIAL_SPECS_WEAPON });
@@ -801,9 +801,7 @@ internal sealed class CharacterContent : IDisposable
             spec = chosen;
         if (spec is not null)
         {
-            var dye = item.GetReferences("color").Select(r => db.Find(r.TargetStringId)).FirstOrDefault(x => x is not null);
-            if (dye is null && !item.GetBool("dont colorise", true))
-                dye = c.Character?.GetReferences("color").Select(r => db.Find(r.TargetStringId)).FirstOrDefault(x => x is not null);
+            var dye = part.Colour;
             bool dyed = dye is not null && Tex(spec, "color map") is not null;
             m.Description = $"{spec.Type} '{spec.Name}'" + (dyed ? $", dye '{dye!.Name}'" : "");
             m.Tex[CharacterShaders.SlotDiffuse] = Texture(Tex(spec, "texture map"), false);
