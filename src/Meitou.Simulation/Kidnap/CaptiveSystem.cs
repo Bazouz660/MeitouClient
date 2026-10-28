@@ -793,7 +793,8 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
         // original's unnamed conscious test (vfunc 0x358).
         if (cc.Stats is { } stats && !medical.Incapacitated) xp.Continuous(stats, cc.Race!, StatsEnumerated.Toughness, dt, EatToughnessXp);
         float rate = MedicalState.EatRate(cc.Stats?.Toughness ?? 0, cc.Stats?.Scale ?? 1);
-        bool eaten = medical.BeingEaten(rate, dt, ctx, data.BodyOptions.Dismemberment != Dismemberment.Never, events);
+        bool vampiric = table.TryResolveNext(j.Worker, out int w) && table.Cold(w)?.Race is { Vampiric: true };
+        bool eaten = medical.BeingEaten(rate, dt, ctx, data.BodyOptions.Dismemberment != Dismemberment.Never, events, vampiric);
         foreach (var e in events)
         {
             if (e.Kind is MedicalEventKind.Died or MedicalEventKind.KnockedOut) MovementSystem.Stop(table, c);

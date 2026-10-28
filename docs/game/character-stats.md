@@ -611,7 +611,7 @@ and a consumer that reads the same offset):
 | `stats good<N>`, `stats bad<N>` | x1.2 / x0.8 for the listed stat numbers | map at +0xa0 | all XP code |
 | `weather immunity<N>` | WeatherAffecting kinds ignored | set at +0xe0 | weather |
 | `special food` | extra ITEMs the race can eat | set at +0x00 | eating |
-| `vampiric` | "when eating, sucks nutrition instead of eating limbs" (editor text) | +0x7d | eating |
+| `vampiric` | "when eating, sucks nutrition instead of eating limbs" (editor text). **Verified** (`FUN_1404356f0` passes the EATER's flag to `FUN_140650370`): no part is eaten; each update d = rate x dt x 0.5 (rate as for limbs), the victim's hunger level (+0x60) loses d x 0.01 and its blood (+0x70) d x 0.07; at hunger -0.5 the eaten-pass count (death past 5) starts. Robots are untouched. Meitou: `MedicalState.BeingEaten` (no starvation death while being eaten) | +0x7d | eating |
 | `combat anatomy`, `severed limbs`, `limb replacement` | body parts, dropped limbs per slot, default prosthetics | references | see above |
 
 

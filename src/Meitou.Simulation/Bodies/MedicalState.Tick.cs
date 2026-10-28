@@ -244,7 +244,8 @@ public sealed partial class MedicalState
         CheckBlood(ctx, events);
         if (Dead) return;
 
-        if (Hunger <= 0) { Die(DeathCause.Starvation, events); return; }
+        // Not while being eaten: a vampiric meal drains the hunger level to -0.5 before it kills (whether the original's own update lets it pass 0 is Unknown).
+        if (Hunger <= 0 && EatenCountdown <= 0) { Die(DeathCause.Starvation, events); return; }
 
         // Starvation passes the character out below a toughness-dependent point; after waking, a grace period (game hours) keeps it from happening at once.
         starveGrace = MathF.Max(0, starveGrace - hours);
