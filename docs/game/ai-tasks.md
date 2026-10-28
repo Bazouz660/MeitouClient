@@ -734,9 +734,10 @@ vfunc 5 `FUN_14050caf0`). TaskData fields: +0x108 desire (a member function, nea
   that are seen or heard (entry +0x38 / +0x39), drops those whose faction the looker's coexists with (`FUN_1406b23c0`) and keeps those passing `FUN_140598630` and `FUN_140599f30` (the post
   and area tests, [perception](perception.md#the-attack-on-sight-tests)); `FUN_14059e300` picks the target. Factor 1 with a target, else 0. This is the attack on sight.
 - 144 TERRITORIAL_AGGRESSION_BUT_DONT_LEAVE_HOME ("Home territory aggression", finder `FUN_14059fd70`, **Verified** stub): SENSE_ENEMY
-  entries (mask 4, 0x208) within 1.3 x the home town's radius (`FUN_140926d50`, factor `DAT_14169bb40`), or outside it in the looker's own building (the
+  entries (mask 4, 0x208) within 1.3 x the home town's radius (`FUN_140926d50`, factor `DAT_14169bb40` = 1.3, read-only; ground-plane squared distance, strict; a
+  NEST_MARKER home contains nobody), or outside it in the looker's own building (**Observed**: the enemy's and the looker's building hands match, the looker's not null; the
   looker indoors), skipping a slave whose owner's faction is an ally (a slave of a neutral or enemy owner is a target); with no home town it is
-  `FUN_14059fa70` (the same mask and tests, no circle). Meitou: a squad with no home radius has no circle. 21 ATTACK_ENEMIES_AND_NEUTRALS
+  `FUN_14059fa70` (the same mask and tests, no circle). Meitou: the squad's town (`Blackboard.Town`) and `TownData.Radius`. 21 ATTACK_ENEMIES_AND_NEUTRALS
   (`FUN_14059f720`) takes mask 6 (neutral or enemy, 0x308) and drops a faction the looker's coexists with (one way, neutrals too); `FUN_1408569a0`
   then drops, for an NPC looker not hostile to the target's faction and without TEMP_ENEMY on it, a campaign force's member (and a target whose squad
   record +0xc0 is 0, meaning **Unknown**, not modelled).

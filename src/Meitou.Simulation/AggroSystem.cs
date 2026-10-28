@@ -305,6 +305,23 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
     /// <summary>The fights, for <see cref="Ai.AiStance.ProtectSquad"/> (null: that stance joins any fighting enemy, as <see cref="Ai.AiStance.Defensive"/>).</summary>
     public CombatSystem? Combat { get; set; }
 
+    /// <summary>The towns, for the <see cref="Ai.AiStance.Territorial"/> home circle (null: no circle, it attacks on sight).</summary>
+    public PopulationData? Towns { get; set; }
+
+    /// <summary>
+    /// The territorial circle (<c>FUN_140926d50</c> from <c>FUN_14059fd70</c>, <b>Verified</b>): the squad's home town's point and (1.3 x its radius)²; -1 for a nest marker or a
+    /// zero-radius town, which contains nobody; 0 without a home town (no circle).
+    /// </summary>
+    (Vector2 Centre, float R2) Territory(CharacterCold cold)
+    {
+        if (Towns is not { } towns || cold.Ai?.Squad.Ai is not { Town: >= 0 } board || board.Town >= towns.Sites.Count) return (default, 0);
+        var site = towns.Sites[board.Town];
+        float r = TerritoryScale * site.Town.Radius;
+        return (new Vector2(site.Position.X, site.Position.Z), site.Town.Type == TownType.NestMarker || r <= 0 ? -1 : r * r);
+    }
+
+    const float TerritoryScale = 1.3f;
+
     /// <summary>
     /// The squads' memories (the dialogue system's): a squad's short-term TEMP_ENEMY tag on a character of another faction makes it an enemy of every member whatever the relations say, and
     /// TEMP_ALLY unmakes an enemy (<c>FUN_14079c950</c>, docs/game/dialogue.md "Squad memory"). Null: relations only.
@@ -416,8 +433,8 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         /// <summary>The faction a hired squad works for (<c>Contract_HiredAlly</c> 12, its employer's) or defends (<c>Contract_DefendPlayerBase</c> 15, the hirer's); -1: none. Its members are never enemies, nor, hired, its allies.</summary>
         public int Employer;
         public bool EmployerAllies;
-        public Vector2 Home;
-        public float HomeR2;
+        /// <summary>The territorial circle (R2 0: none, -1: contains nobody).</summary>
+        public (Vector2 Centre, float R2) Home;
         public int Best;
         public float BestD2;
         /// <summary>The best target's score (<see cref="Combat.TargetScore"/>).</summary>
@@ -499,7 +516,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
             Seed = world.Seed, Key = Rng.Key(new CharacterId(i, prev[i].Generation)), Tick = (ulong)world.Tick,
             Stance = stance, War = war,
             Employer = EmployerOf(world, cold, out bool allies), EmployerAllies = allies,
-            Home = cold.Ai?.Squad.HomeCentre ?? default, HomeR2 = cold.Ai is { } mind ? mind.Squad.HomeRadius * mind.Squad.HomeRadius : 0,
+            Home = stance == Ai.AiStance.Territorial ? Territory(cold) : default,
             Spots = slots[i].Spots, Heard = slots[i].Heard, Sightings = effects is null ? null! : sightings ??= [], Effects = effects!,
         };
     }
@@ -684,7 +701,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         if (s.Stance == Ai.AiStance.Defensive && !c.InCombat) return;
         if (s.Stance == Ai.AiStance.ProtectSquad && (s.SquadFights is { } fights ? s.Squad < 0 || !fights.Contains((s.Squad, slot)) : !c.InCombat)) return;
         // Territorial (144, FUN_14059fd70, Verified): without a home circle it attacks on sight; outside the circle only one in the looker's own building.
-        if (s.Stance == Ai.AiStance.Territorial && s.HomeR2 > 0 && Vector2.DistanceSquared(new Vector2(other.Position.X, other.Position.Z), s.Home) > s.HomeR2
+        if (s.Stance == Ai.AiStance.Territorial && s.Home.R2 != 0 && !(Vector2.DistanceSquared(new Vector2(other.Position.X, other.Position.Z), s.Home.Centre) < s.Home.R2)
             && (s.World.Sight.BuildingOf(s.Self) is not { } inside || s.World.Sight.BuildingOf(slot) != inside)) return;
         // The target score (Combat.TargetScore; Taunt and Passive weigh in there), after the Hold post test for a holding looker. Strictly better only: the grid visits a cell's
         // slots in ascending order, so a tie keeps the lower slot within a cell; across cells the order is the grid's fixed one.
