@@ -464,9 +464,14 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem
     }
 
     /// <summary>Whether a character comes to another's defence: a player's character only without an order and not Passive (<c>scoreProtectAllies</c> is 0 when Passive).</summary>
+    /// <remarks>
+    /// scoreProtectAllies (<c>FUN_140599b90</c>, <b>Verified</b>) is 0 for anyone Passive or sneaking out of a fight, player or NPC: neither comes to a defence. A player's character also
+    /// only without an order.
+    /// </remarks>
     static bool CanFight(CharacterTable table, int slot, HashSet<int> taken) =>
         Able(table, slot, taken, out var cold, out byte task)
-        && (!cold.IsPlayer || (task == (byte)CharacterTask.Idle || cold.Guarding && task == (byte)CharacterTask.Follow) && (cold.Orders & CharacterOrders.Passive) == 0);
+        && (cold.Orders & CharacterOrders.Passive) == 0 && ((cold.Orders & CharacterOrders.Sneak) == 0 || cold.InCombat)
+        && (!cold.IsPlayer || task == (byte)CharacterTask.Idle || cold.Guarding && task == (byte)CharacterTask.Follow);
 
     /// <summary>A mate is protected only against an attacker within this of it (<c>AI::findAttackerOf</c>, docs/game/combat.md "Fight lifecycle and orders").</summary>
     public const float ProtectReach = 150;
