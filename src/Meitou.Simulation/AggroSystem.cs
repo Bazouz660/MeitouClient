@@ -44,6 +44,10 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
     public const int SightEffect = 1;
     /// <summary>The <see cref="Effect.Kind"/> of a hostile looker's exposure of a sneaker: <c>Target</c> is the sneaker, <c>Amount</c> its <see cref="StealthExposure"/>.</summary>
     public const int ExposureEffect = 2;
+    /// <summary>The <see cref="Effect.Kind"/> of a sleeper that nearly woke at a sneaking player-side character's noise: <c>Target</c> is the sneaker (event <see cref="AlmostWokeUpEvent"/>).</summary>
+    public const int AlmostWokeEffect = 3;
+    /// <summary>The dialogue event a sleeper says when it nearly wakes at a sneaking player (ALMOST_WOKE_UP, docs/game/dialogue.md).</summary>
+    public const int AlmostWokeUpEvent = 47;
     const byte NoTask = 0xFF;
 
     /// <summary>The original's vision range outdoors before the race multiplier (<c>FUN_140851bc0</c>: race <c>vision range mult</c> x 1500; 500 flat inside a building).</summary>
@@ -113,11 +117,13 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
     /// <summary>
     /// Whether <paramref name="listener"/> hears <paramref name="target"/> this look (<c>SensoryData::canHear</c> <c>FUN_140857500</c>, docs/game/perception.md "Hearing"), asked only
     /// when sight failed. Both of the player's side: heard within <see cref="PlayerHearRange"/>, nothing else. Else a target neither moving nor in combat mode is not heard; the
-    /// building rules (<see cref="HearPlace"/>) scale the noise range; a sneaking target makes the sneaking noise, any other the ordinary one (350 at rest); in combat mode in the
-    /// listener's place and floor any chance is a sure hearing, else <paramref name="roll"/> (the look's hash) is rolled against it. <paramref name="stealth"/>: the target's
-    /// stealth when it sneaks, else below 0.
+    /// building rules (<see cref="HearPlace"/>) scale the noise range, halved for an awake listener (the original's StateBroadcast <c>+0xb4</c> 0; a sleeper,
+    /// <see cref="Carrying.CarrySystem.Asleep"/>, hears at full range); a sneaking target makes the sneaking noise, any other the ordinary one (350 at rest); in combat mode in the
+    /// listener's place and floor any chance is a sure hearing, else <paramref name="roll"/> (the look's hash) is rolled against it, and a sleeper drops what it heard on a coin
+    /// flip, then saying <see cref="AlmostWokeUpEvent"/> when the target is a sneaking player-side character (emitted as <see cref="AlmostWokeEffect"/>). <paramref name="stealth"/>:
+    /// the target's stealth when it sneaks, else below 0.
     /// </summary>
-    static bool Hears(World world, CharacterTable table, int listener, int target, float stealth, ulong roll)
+    static bool Hears(World world, CharacterTable table, int listener, int target, float stealth, ulong roll, EffectBuffer effects)
     {
         ref readonly var me = ref table.Previous[listener];
         ref readonly var other = ref table.Previous[target];
@@ -130,12 +136,22 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         bool sure = false;
         float place = tc is null ? 1 : HearPlace(world, listener, target, me.Position, other.Position, combat, out sure);
         if (!(place > 0)) return false;
+        bool asleep = Carrying.CarrySystem.Asleep(table, listener);
+        if (!asleep) place *= AwakeHearing;
         float d = MathF.Sqrt(d2);
         float p = stealth >= 0
             ? Orders.SneakHearChance(d, Orders.SneakNoise(stealth, Noise(table, target)) * place, stealth)
             : HearChance(d, NoiseRange(speed, other.MaxSpeed) * Noise(table, target) * place);
-        return p > 0 && (sure || Rng.Float(roll) < p);
+        if (!(p > 0)) return false;
+        if (sure) return true;
+        if (Rng.Float(roll) >= p) return false;
+        if (!asleep || Rng.Float(Rng.Mix(roll + 1)) >= 0.5f) return true;
+        if (stealth >= 0 && PlayerSide(world, tc)) effects.Emit(listener, target, AlmostWokeEffect, 0);
+        return false;
     }
+
+    /// <summary>The factor on the noise range an awake listener hears (<c>FUN_140857500</c>: x0.5 while StateBroadcast <c>+0xb4</c> is 0, Verified constant).</summary>
+    public const float AwakeHearing = 0.5f;
 
     /// <summary>
     /// The building rules of the hearing check (<c>SensoryData::canHear</c> <c>FUN_140857500</c> steps 3, 4, 6 and 8, <b>Verified</b>): the factor on the target's noise range, 0 when it
@@ -347,7 +363,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
             byte task = next[i].Task;
             if (task == (byte)CharacterTask.Attack && slots[i].ChaseStart >= 0)
             {
-                SenseQuarry(world, table, i, ref slots[i]);
+                SenseQuarry(world, table, i, ref slots[i], effects);
                 continue;
             }
             if (task is (byte)CharacterTask.Attack or (byte)CharacterTask.Treat || task == (byte)CharacterTask.Rest && !AiSleeper(table.Cold(i))) continue;
@@ -383,7 +399,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
     /// target with its stealth but without the spot meter (engine choice), else heard by the noise roll. Own senses only: whether squad-shared sightings count is not decoded.
     /// Writes only the chaser's own slot.
     /// </summary>
-    void SenseQuarry(World world, CharacterTable table, int i, ref Slot s)
+    void SenseQuarry(World world, CharacterTable table, int i, ref Slot s, EffectBuffer effects)
     {
         if (Combat is null) return;
         var prev = table.Previous;
@@ -396,7 +412,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         float outdoor = RangeOf(cold, Settings.SightRange);
         bool sensed = outdoor > 0 && world.Sight.Sees(i, t, prev[i].Position, prev[i].Yaw, other.Position, outdoor, stealth) > 0;
         if (!sensed)
-            sensed = Hears(world, table, i, t, stealth, Rng.Hash(world.Seed, Rng.Key(new CharacterId(i, prev[i].Generation)), RngPurpose.ChaseSense, ((ulong)world.Tick << 20) ^ (ulong)(uint)t));
+            sensed = Hears(world, table, i, t, stealth, Rng.Hash(world.Seed, Rng.Key(new CharacterId(i, prev[i].Generation)), RngPurpose.ChaseSense, ((ulong)world.Tick << 20) ^ (ulong)(uint)t), effects);
         s.Sensed = sensed;
         if (!sensed) return;
         s.SensedTick = world.Tick;
@@ -530,7 +546,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
             seen = full && v > 0;
         }
         else seen = s.Sight.Sees(s.Self, slot, s.Eye, s.Yaw, other.Position, s.Outdoor) > 0;
-        if (!seen && !Hears(s.World, s.Table, s.Self, slot, stealth, Rng.Hash(s.Seed, s.Key, RngPurpose.Sense, (s.Tick << 20) ^ (ulong)(uint)slot))) return;
+        if (!seen && !Hears(s.World, s.Table, s.Self, slot, stealth, Rng.Hash(s.Seed, s.Key, RngPurpose.Sense, (s.Tick << 20) ^ (ulong)(uint)slot), s.Effects)) return;
         s.Best = slot;
         s.BestD2 = d2;
         s.BestScore = score;
@@ -595,6 +611,11 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
             if (sneaker.StealthExposureTick != world.Tick || level > sneaker.StealthExposure) sneaker.StealthExposure = level;
             sneaker.StealthExposureTick = world.Tick;
             if (level >= StealthExposure.Noticed) Watch(world, sneaker, world.Characters.IdOf(e.Source), level);
+            return;
+        }
+        if (e.Kind == AlmostWokeEffect)
+        {
+            world.Defer(new Dialogue.DialogueEvent(world.Characters.IdOf(e.Source), world.Characters.IdOf(e.Target), AlmostWokeUpEvent) { Tick = world.Tick + 1 });
             return;
         }
         if (e.Kind != SightEffect) return;

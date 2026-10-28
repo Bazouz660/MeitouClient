@@ -114,13 +114,14 @@ protection term; **Verified**). `SensoryData::canHear` `FUN_140857500` (**Verifi
 within 1000, nothing else; a target neither moving nor in combat mode: not heard; another interior than the listener: only in combat mode and with one of them outdoors
 (building to building never); another floor of the same building: only in combat mode, at most 1 apart, unless the building is cavernous (`+0xc2`); a per-pair
 cooldown of 2 s of 1x game time divided by the speed (so 2/speed² real s; paused never) returns the last answer. Range N x0.5 when the listener's StateBroadcast
-`+0xb4` (`isSleeping`, KenshiLib name **Observed**) is 0, x0.5 for another interior and x0.5 again when the building (the target's, else the listener's) has no open door.
+`+0xb4` (`isSleeping`, KenshiLib name **Observed**) is 0 (awake: only the sleep tasks set it, to 1 or 2 by Task_SleepOnFloor `FUN_140348170`, to 1 by
+`FUN_140347950` and `FUN_140357d00`, and their exits reset it to 0, **Verified** writer scan), x0.5 for another interior and x0.5 again when the building (the target's, else the listener's) has no open door.
 Chance 0.75 x (1 - d²/N²), sneaking (0.05 when `+0xb4` is 0, else 0.1) x (1 - stealth) x the same; x2 when the entry is alarmed. In combat mode in the same place and on
 the same floor any chance > 0 is a sure hearing; else a roll. A heard listener with `+0xb4` 1 drops it on a coin flip and, for a sneaking player target, says event 47
 ALMOST_WOKE_UP. Sneaking or crawling targets get stealth XP ([character-stats](character-stats.md)). Meitou (`AggroSystem.Hears`, one test for the
 attack-on-sight look and the chaser's look): the player pair (player faction only: `FUN_140856bc0`'s owner path for slaves and pets is not modelled), the moving or combat-mode
-gate (a fighter standing still makes noise 350 f), the interior, floor, door and sure-hearing rules; not the cooldown, the `+0xb4` factors (which value an awake NPC holds is
-**Unknown**), the alarm doubling or event 47.
+gate (a fighter standing still makes noise 350 f), the interior, floor, door and sure-hearing rules, the awake halving and the sleeper's coin flip with event 47 (asleep =
+`CarrySystem.Asleep`, in a bed or resting with the sleep behaviour; 1 and 2 are not told apart); not the cooldown, the alarm doubling, or the sneaking 0.05.
 Hearing does not imply ordinary visual cone/line-of-sight eligibility.
 
 ## Retreat and memory
