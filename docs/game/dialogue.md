@@ -367,7 +367,7 @@ nearby player character (and stores it as the target). `B` = value > 0.
 | 18 TARGET_LAST_SEEN_X_HOURS_AGO | hours since Me's squad last noted S ([memory](#squad-memory)), 9999.99 never; `who` 0 asks about Me itself | Num2 |
 | 19 IS_LEADER | S leads its squad | Bool |
 | 20 MET_TARGET_BEFORE | Me's squad memory has an entry for S | Bool |
-| 21 / 22 WEAKER / STRONGER_THAN_ME | status float `+0x90` (Character `+0x1a0`): 21 is Me's > S's × 1.5, 22 is S's > Me's × 1.5, strict (**Observed**, re-read in `FUN_140676950`); what the float rates and who writes it is **Unknown**, not built | Bool |
+| 21 / 22 WEAKER / STRONGER_THAN_ME | status float `+0x90` (Character `+0x1a0`): 21 is Me's > S's × 1.5, 22 is S's > Me's × 1.5, strict (**Observed**, re-read in `FUN_140676950`). The float is written every update by `FUN_140852a30`: (strength x stat scale + melee attack rating `FUN_140884ee0` + defence rating `FUN_140886290`) / 3, x 0.1 for a non-animal with no weapon equipped (**Observed**; Meitou `CombatSystem.Rating`, computed when asked) | Bool |
 | 24 IS_ALLY / 25 IS_ENEMY | relation ≥ 50 (or allied, or own) / ≤ −30 and not own | Bool |
 | 27 BROKEN_LEG, 28 BROKEN_ARM, 29 DAMAGED_HEAD (< 0.2), 30/42 NEARLY_KO (< 0.1), 41 IS_KO, 44 IS_DEAD | S's body | Bool |
 | 31 IN_A_NON_PLAYER_TOWN | S in a town not owned by the player | Bool |

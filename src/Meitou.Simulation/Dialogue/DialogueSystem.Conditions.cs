@@ -30,6 +30,12 @@ public sealed partial class DialogueSystem
         switch (dc.Condition)
         {
             case 6 or 15 or 34 or 51: return true;
+            // WEAKER_THAN_ME / STRONGER_THAN_ME: the combat ratings, strictly more than 1.5 times (FUN_140676950).
+            case 21 or 22 when world.Characters.TryResolveNext(me, out int ms) && world.Characters.TryResolveNext(subjectId, out int ss):
+            {
+                float mine = Combat.CombatSystem.Rating(world, ms), theirs = Combat.CombatSystem.Rating(world, ss);
+                return Bool(dc.Condition == 21 ? mine > theirs * 1.5f : theirs > mine * 1.5f);
+            }
             case 1: return Num2(sF == meF ? 100 : relations.Contains(meF) && relations.Contains(sF) ? (int)relations.Get(meF, sF) : 0);
             case 2: return Num2(world.Player.Money);
             case 3: return Num2((int)relations.GlobalTrust(sF));   // S's faction's global trust (FactionRelations +0x18, FUN_140671530)
