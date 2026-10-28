@@ -30,12 +30,14 @@ static class CharacterShaders
         // Skin that scatters light (the Meitou skin switch, docs/character-renderer.md "Skin"): a person's body, not a robot's.
         Skin = 1 << 18,
         // An icon whose mesh has vertex colours (the game's RTTIcons_Coloured): they multiply the albedo.
-        VertexColoured = 1 << 19;
+        VertexColoured = 1 << 19,
+        // Blood on the surface (character.hlsl "Bloodyness"): the part is covered at full amount (a severed limb's stump), docs/game/blood-decals.md "On the body".
+        Bloody = 1 << 20;
     // Shading modes.
     public const uint ShadeItem = 0, ShadeBody = 1, ShadeHair = 2;
     // Texture slots (CharacterMaterialRecord.Tex).
     public const int SlotDiffuse = 0, SlotNormal = 1, SlotColourMap = 2, SlotHeadDiffuse = 3, SlotHeadNormal = 4, SlotHeadMask = 5, SlotBodyMask = 6,
-        SlotHairOverlay = 7, SlotBeardOverlay = 8, SlotVest = 9, SlotBlendNormal = 18, Slots = 19;
+        SlotHairOverlay = 7, SlotBeardOverlay = 8, SlotVest = 9, SlotBlendNormal = 18, SlotBlood = 19, Slots = 20;
 
     const string PushMembers = """
             vec3 flatColour;
@@ -100,6 +102,7 @@ static class CharacterShaders
         out float vHidden;
         //MOTION_OUT
         out vec4 vColour;
+        out vec4 vBlood;        // the blood mapping of character.hlsl (cylinder projection of the part in its own space), before the race scale
 
         void main()
         {
@@ -123,6 +126,9 @@ static class CharacterShaders
             vTangent = vec4(n * aTangent.xyz, aTangent.w);
             vUv = aUv;
             vColour = aColour;   // an icon mesh's own vertex colours (a body's carry the morph slot and limb bits: only icons read them)
+            // character.hlsl: x = height along the mesh's Y, y = angle round it (atan2(normal.x, normal.z) / 2pi), z = the angle shifted by half a turn (the wrap), w = normal.z.
+            float turn = atan(aNormal.x, aNormal.z) / 3.14159265359 * 0.5;
+            vBlood = vec4(aPosition.y, turn, turn > 0.0 ? turn - 0.5 : turn + 0.5, aNormal.z);
             vMaterial = aInstanceData.y;
             vInterior = aInstanceData.z & 1u;
             // Hidden limbs and parts (docs/characters.md "Hidden body parts"): the body's vertices of a limb whose bit 12 + k the instance carries, or of a part-map part whose
@@ -190,6 +196,7 @@ static class CharacterShaders
         flat in uint vInterior;
         in float vHidden;
         in vec4 vColour;
+        in vec4 vBlood;
         layout(location = 0) out vec4 fragColour;
 
         bool flag(uint f, uint bit) { return (f & bit) != 0u; }
@@ -317,6 +324,14 @@ static class CharacterShaders
                 // its own mesh (the StaticObject template) keeps 1.
                 gloss = flag(f, 16384u) ? 0.0 : d.a * m.shirtColour.w;
                 if (flag(f, 16384u) && flag(f, 1024u)) metal = cm.b;
+            }
+            if (flag(f, 1048576u))
+            {
+                // character.hlsl "Bloodyness" at the full blood amount: the splatter map (bloody.png, wrapped) tinted with the race's blood colour, laid over the
+                // albedo by its alpha. colour1.rgb: the blood colour; colour2.xy: the race's `blood horizontal` and `blood vertical`.
+                vec2 bc = vec2(vBlood.x * m.colour2.y, (vBlood.w < 0.0 ? vBlood.z : vBlood.y) * m.colour2.x);
+                vec4 blood = tex(m.tex[19], bc) * vec4(m.colour1.rgb, 1.0);
+                albedo = mix(albedo, blood.rgb, clamp(blood.a, 0.0, 1.0));
             }
             if (cut) discard;
             // The game writes character albedo darkened: 0.7 for bodies, heads and hair (character.hlsl DARKEN), 0.8 for worn items (skin.hlsl); not its icons (rtticons.hlsl,

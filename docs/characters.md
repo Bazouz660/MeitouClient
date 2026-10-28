@@ -59,7 +59,7 @@ or mask showed). A worn ITEM in `belt` (lanterns) shows only its light (`Loadout
 **Verified** (decompilation, `AppearanceBase::setupItemMaterial` `FUN_140536210`): an attached item without a material record whose type is
 LIMB_REPLACEMENT (111) gets the appearance's body material (its textures, skin tone and stat-driven normal blend). The races' stumps
 (`Human Left Arm Stump` and the others in `Newwworld.mod`, mesh material `default`, no texture fields) are drawn so; prosthetics have a
-material. Meitou: `CharacterContent.ItemMaterial` (they were untextured, white, before).
+material. Meitou: `CharacterContent.ItemMaterial` (they were untextured, white, before). Stumps also get the body blood layer ([blood-decals.md](game/blood-decals.md#on-the-body-and-on-severed-limbs)).
 
 ## Shading, poses and LOD
 

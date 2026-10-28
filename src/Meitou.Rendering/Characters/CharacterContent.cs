@@ -115,6 +115,8 @@ internal sealed class PartMaterial
     public float GlossMult = 1;
     /// <summary>An icon whose mesh has vertex colours: they multiply the albedo (the game's <c>RTTIcons_Coloured</c>).</summary>
     public bool VertexColoured;
+    /// <summary>Covered in blood at the full amount (a stump): <see cref="Colour1"/> holds the blood colour, <see cref="Colour2"/> x and y the race's <c>blood horizontal</c> and <c>blood vertical</c>.</summary>
+    public bool Bloody;
     /// <summary>The body's normal blend weight towards <see cref="CharacterShaders.SlotBlendNormal"/> (the original's <c>muscleBlend</c>).</summary>
     public float MuscleBlend;
     /// <summary>The record last written for it and the renderer's material epoch it holds for (<see cref="CharacterRenderer"/>); 0 after a field above changed: written again.</summary>
@@ -825,6 +827,14 @@ internal sealed class CharacterContent : IDisposable
         {
             var body = BodyMaterial(c);
             body.Description = $"RACE '{c.Race.Name}' body (stump '{item.Name}')";
+            // A severed part is far below its health, so the original's per-part blood amount (FUN_140530b30) is 1: the stump is covered in blood (docs/game/blood-decals.md "On the body").
+            if (c.Race.GetInt("blood colour", 0x800000) is var bloodColour && c.Animal is null && c.Race.GetFloat("bleed rate", 1) > 0)
+            {
+                body.Bloody = true;
+                body.Colour1 = new Vector4(CharacterAppearance.Rgb(bloodColour & 0xFFFFFF), 1);
+                body.Colour2 = new Vector4(c.Race.GetFloat("blood horizontal", 1), c.Race.GetFloat("blood vertical", 0.15f), 0, 0);
+                body.Tex[CharacterShaders.SlotBlood] = Texture("bloody.png", false);
+            }
             return body;
         }
         // A weapon of a generated loadout: its manufacturer's model.

@@ -91,3 +91,23 @@ The store finds a pool by a per-cell index of place → first pool there, not a 
 clock's expiry time, so ageing visits only cells with a decal due. Decals
 are saved and loaded as stored (`SaveDecals`, TERRAIN_DECALS in [save.md](../formats/save.md#folder-and-state-mapping));
 the bleed tokens are not, so a pool under a still-bleeding character starts anew after a load.
+
+## On the body and on severed limbs
+
+**Verified** (shader sources `data/materials/deferred/character.hlsl`, `skin.hlsl`, `character.material`; exe `FUN_140530b30`, `FUN_1400cf490`):
+characters carry blood on their skin, not only on the ground.
+- Body and worn-item shaders (`BLOOD` define) lay `bloody.png` (256², RGBA splatter, `materials/`) over the albedo before the darkening:
+  `albedo = lerp(albedo, tex × bloodColour, saturate(tex.a - 1 + amount))`. The map is a cylinder projection in the part's own space:
+  u = height along the mesh Y × the race's `blood vertical`, v = angle round Y (atan2(normal.x, normal.z) / 2π, shifted half a turn where
+  normal.z < 0) × `blood horizontal` (human: 0.15 and 1). `amount` is per body part, `bloodAmount[8]` (the first 8 parts), written by
+  `FUN_140530b30` as 1 − clamp((flesh − stun + rig) / (base × mult × scale − wear), 0, 1): a damaged part is bloodier, a part far below zero is
+  fully covered. **Unknown**: which part index each vertex of a stump mesh carries, the exact `bloodColour` alpha.
+- A severed limb item draws with the `SeveredLimb` material (`FUN_1400cf490`, cloned as `Limb_<name>`): textures from the item's MATERIAL record
+  (`texture map`, `normal map`, `color map` = skin-tone mask; the human's are the female body's), shader `severed_limb_fs`: skin-tone mask tint
+  (a vec4 stored on the item), then blood with the same texture, `bloodColour` (a vec4 on the item) and an extra alpha of
+  max(−2 × 0.3 × mesh x, 0), so the cut end (negative x) is solid blood. Its mapping: u = 0.3 × x, v = the angle round X (atan2(normal.y, normal.z)).
+
+**Meitou**: the stump of a limb-replacement item on a body is drawn at full amount (`CharacterShaders.Bloody`, `PartMaterial.Bloody`,
+`CharacterContent.ItemMaterial`), as the part of a severed limb is far below its health. Not done: the per-part damage blood on the rest of
+the body, and the ground limb. The dropped limb is drawn by the generic object path (`DebrisRenderer` while it falls), which shows it
+**untextured white** (**Observed**, sandbox render) and without blood.
