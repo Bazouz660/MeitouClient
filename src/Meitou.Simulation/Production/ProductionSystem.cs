@@ -245,8 +245,16 @@ public sealed partial class ProductionSystem : ITickSystem
                 case OperateOrder order:
                 {
                     var site = Site(world, order.Site);
-                    if (site is not { Complete: true } || (Ensure(world, site) is not { } machine) || !(machine.Data.Operable || machine.Data.IsTraining)) break;
+                    if (site is not { Complete: true } || (Ensure(world, site) is not { } machine)) break;
                     var table = world.Characters;
+                    // On a storage it is one haul trip there (order 124 without Shift, FUN_1407fa650's one-shot dispatch), no job.
+                    if (machine.Data.IsStorage && !machine.Data.Operable)
+                    {
+                        foreach (var id in Who(world, order.Characters))
+                            if (table.TryResolveNext(id, out int hauler) && table.Cold(hauler) is { IsPlayer: true } hc && Able(hc)) StartHaulTrip(world, hauler, site, machine);
+                        break;
+                    }
+                    if (!(machine.Data.Operable || machine.Data.IsTraining)) break;
                     foreach (var id in Who(world, order.Characters))
                     {
                         if (!table.TryResolveNext(id, out int slot) || table.Cold(slot) is not { IsPlayer: true } cold || !Able(cold)) continue;

@@ -572,7 +572,10 @@ sealed partial class PlayerInterface
         if (site.Complete && Machine(site.Id) is { } machine)
         {
             if (machine.IsStorage)
-                verbs.Add(("Auto-Haul", () => Say(new Meitou.Simulation.Production.AddJob(selection, Meitou.Data.Gameplay.Ai.TaskType.OPERATE_STORAGE, site.Id) { Tick = session.World.Tick })));
+                // Order 124: one haul trip, with Shift the Hauling to job (FUN_1407fa650).
+                verbs.Add(("Auto-Haul", () => Say(SlowModifier
+                    ? (Meitou.Simulation.SimCommand)new Meitou.Simulation.Production.AddJob(selection, Meitou.Data.Gameplay.Ai.TaskType.OPERATE_STORAGE, site.Id) { Tick = session.World.Tick }
+                    : new Meitou.Simulation.Production.OperateOrder(selection, site.Id) { Tick = session.World.Tick })));
             // With Shift the dispatch turns Inventory (26) on a storage into Hauling to (124) and Man Turret (146) into Turret guard (234) (FUN_1407fa650, docs/game/ui-input.md "Click").
             if (machine.IsStorage)
                 verbs.Add(("Inventory", () => { if (SlowModifier) Say(new Meitou.Simulation.Production.AddJob(selection, Meitou.Data.Gameplay.Ai.TaskType.OPERATE_STORAGE, site.Id) { Tick = session.World.Tick }); else OpenStorage(site); }));

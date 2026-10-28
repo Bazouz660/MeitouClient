@@ -2,7 +2,7 @@ using Meitou.Simulation.Items;
 
 namespace Meitou.Simulation.Production;
 
-/// <summary>Sends characters (the selection when empty) to work a complete player building: operate a well, harvest a farm, research at a bench.</summary>
+/// <summary>Sends characters (the selection when empty) to work a complete player building: operate a well, harvest a farm, research at a bench; on a storage, one haul trip there.</summary>
 public sealed record OperateOrder(IReadOnlyList<CharacterId> Characters, string Site) : SimCommand;
 
 /// <summary>
