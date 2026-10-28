@@ -103,13 +103,15 @@ public sealed class Fighter
 
     /// <param name="backpackStealth">The worn backpack's <c>stealth mult</c>, null without one (a negative value counts as 1).</param>
     /// <param name="backpackAthletics">The worn backpack's <c>athletics mult</c> (1 without one).</param>
-    public Fighter(WeaponInstance? weapon, IEnumerable<ArmourPiece>? armour = null, float? backpackStealth = null, float backpackAthletics = 1)
+    /// <param name="backpackSkill">The worn backpack's <c>combat skill bonus</c> (0 without one): it seeds both the attack and the defence bonus sums (<c>FUN_140887030</c>, <b>Verified</b>).</param>
+    /// <param name="backpackSpeed">The worn backpack's <c>combat speed mult</c> (1 without one): it seeds the combat speed product.</param>
+    public Fighter(WeaponInstance? weapon, IEnumerable<ArmourPiece>? armour = null, float? backpackStealth = null, float backpackAthletics = 1, int backpackSkill = 0, float backpackSpeed = 1)
     {
         hip = weapon;
         this.armour = armour is null ? [] : [.. armour];
         backpack = backpackStealth is not null;
         float seed = backpackStealth is { } b ? b < 0 ? 1 : b : 1;
-        float def = 0, atk = 0, unarmed = 0, output = 1, dex = 1, dodge = seed, speed = 1, sneak = seed, runMax = 1, runMin = backpackAthletics;
+        float def = backpackSkill, atk = backpackSkill, unarmed = 0, output = 1, dex = 1, dodge = seed, speed = backpackSpeed, sneak = seed, runMax = 1, runMin = backpackAthletics;
         int perception = 0;
         assassin = ranged = 1;
         foreach (var p in this.armour)

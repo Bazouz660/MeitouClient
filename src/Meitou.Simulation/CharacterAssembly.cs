@@ -84,7 +84,7 @@ sealed class CharacterAssembly(PopulationData data)
         string fistsId = (raceId is null ? null : data.Db.Find(raceId))?.GetReferences("fists lv1").Select(r => r.TargetStringId).FirstOrDefault() ?? "FISTS";
         // A fist blow reads only the item's record (multipliers, bleed, penetration, length), so its quality does not matter.
         var fists = (combat.Weapon(fistsId) ?? combat.Weapon("FISTS")) is { } fistsData ? WeaponInstance.Create(1, fistsData, null, null, combat.Constants) : null;
-        var fighter = new Fighter(First("hip"), armour, backpackStealth, backpackAthletics) { BackWeapon = First("back"), Crossbow = crossbow, Fists = fists };
+        var fighter = new Fighter(First("hip"), armour, backpackStealth, backpackAthletics, packRecord?.GetInt("combat skill bonus", 0) ?? 0, packRecord?.GetFloat("combat speed mult", 1) ?? 1) { BackWeapon = First("back"), Crossbow = crossbow, Fists = fists };
         if (medical is not null) fighter.SetArms(medical.ArmWorks(left: false), medical.ArmWorks(left: true));
         return fighter;
     }

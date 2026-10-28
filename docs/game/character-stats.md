@@ -67,7 +67,10 @@ CLOTH and LEATHER 1..1, CHAIN 0.3..0.7, METAL_PLATE 0.1..0.8; GEAR_CLOTH and LIG
 HEAVY 0..0.4. **Verified** (same disassembly, 2026-10-26): CharStats +0x18, the run speed factor (`Speed.Run`,
 the Athletics tooltip's gear row), is max(1, largest piece factor) x min(backpack, smallest piece factor), the
 backpack's raw `athletics mult` (CONTAINER +0x238; +0x240 `combat speed mult`, +0x244 `combat skill bonus`,
-+0x248 `stealth mult`, all from `FUN_140763810`) or 1 without one. A piece's factor (ARMOUR +0x248): lerp(t,
++0x248 `stealth mult`, all from `FUN_140763810`) or 1 without one. The backpack (back slot, type CONTAINER, `FUN_1405cb320`) also seeds the
+gear totals (`FUN_140887030`, **Verified**): its `combat skill bonus` starts both the attack and the defence bonus sums (CharStats +0x20 / +0x24;
+0 without one) and its `combat speed mult` the combat speed product (+0x1c; 1 without one); each armour piece adds or multiplies on top
+(vanilla: Large Backpack -10 / x0.8, Medium -5 / x0.9, Small -2 / x0.95). Meitou: the `Fighter` constructor. A piece's factor (ARMOUR +0x248): lerp(t,
 class column +0x10) x `athletics mult`, 1 for `slot` 3, 5 and 8; column +0x10 is GEAR_CLOTH and LIGHT 1..1,
 MEDIUM 0.85..1, HEAVY 0.8..0.95. `perception bonus` is an int (ARMOUR +0x254); the effective perception
 `FUN_140884ac0(0x18, 0)` is (trained + CharStats +0x30) x the stat multiplier. Meitou: `Fighter.AthleticsFactor`,
