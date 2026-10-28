@@ -752,6 +752,8 @@ sealed partial class GameHost
             if (!display.VSync && fpsLimit > 0) Limit(frame, now, 1.0 / fpsLimit);
         }
         WritePlayBench(window.FramebufferSize);
+        // A save still being written finishes before the game closes (the original's quit waits while its save manager is busy, FUN_14082b6e0, Verified).
+        try { saveWrite?.Wait(); } catch (AggregateException) { }
         SaveSettings();
         // Collect the last frames' GPU timestamps and print the --log-spikes run summary: the game's own one-shot runs
         // otherwise dispose the profiler before the frame ring has delivered them.
