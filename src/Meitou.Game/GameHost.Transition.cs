@@ -54,7 +54,7 @@ sealed partial class GameHost
         sceneLoad = new();
         if (player.UiMode == Meitou.Data.Ui.UiMode.Meitou && (mainMenuTransition ? config.MainMenuTransitions : config.InGameTransitions))
             skyArrival = new(camera, presentationHour ?? (TitleVisible ? TitleHour : (float)session.Clock.HourOfDay),
-                mainMenuTransition ? config.MainMenuTransitionSpeed : config.InGameTransitionSpeed);
+                mainMenuTransition ? config.MainMenuTransitionSpeed : config.InGameTransitionSpeed, immediate: !TitleVisible);
         if (destinationHour is { } hour) skyArrival?.SetDestination(hour);
         Volatile.Write(ref readHour, float.NaN);
         foreach (var stage in stages) sceneLoad.Stages.Enqueue(stage);
