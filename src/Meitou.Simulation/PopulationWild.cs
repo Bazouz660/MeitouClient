@@ -228,6 +228,8 @@ public sealed partial class PopulationSystem
             {
                 markers = [.. data.Sites.Where(s => s.Town.Type == TownType.NestMarker
                     && WeatherAreas.CellOf(s.Position.X, s.Position.Z) is var (cx, cz) && biomes.GroupOf(cx, cz) == g)];
+                // A marker within 2500 (3D) of its nearest town (by XZ) is never used (FUN_1408f6350).
+                markers.RemoveAll(m => NearestTown(data, new Vector2(m.Position.X, m.Position.Z), out _) is { } town && Vector3.DistanceSquared(m.Position, town.Position) < MarkerTownGap * MarkerTownGap);
                 count = Math.Min(count, markers.Count);
             }
             // The roll runs in a fixed order as for a world without a save and leaves out each roll whose nest the save holds (a saved nest stands at one of its spots,
@@ -533,7 +535,12 @@ public sealed partial class PopulationSystem
         return topUp >= 0 ? new BuiltWild(site.Index, loadId, centre, squads, Rolls: 1, TopUp: true) : new BuiltWild(site.Index, loadId, centre, squads);
     }
 
-    TownSite? NearestTown(Vector2 p, out float distance)
+    /// <summary>How near a town a nest marker may not be used (<b>Verified</b>, 6,250,000 squared in <c>FUN_1408f6350</c>).</summary>
+    const float MarkerTownGap = 2500;
+
+    TownSite? NearestTown(Vector2 p, out float distance) => NearestTown(data, p, out distance);
+
+    static TownSite? NearestTown(PopulationData data, Vector2 p, out float distance)
     {
         TownSite? best = null;
         distance = float.MaxValue;
