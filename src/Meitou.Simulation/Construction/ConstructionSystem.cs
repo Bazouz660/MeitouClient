@@ -774,8 +774,8 @@ public sealed class ConstructionSystem : ITickSystem
         }
     }
 
-    static float Engineering(CharacterCold cold) =>
-        (cold.Stats?[StatsEnumerated.Engineering] ?? 0) * (cold.Medical?.StatMultiplier(StatsEnumerated.Engineering) ?? 1);
+    /// <summary>The stored Engineering stat, with no medical multiplier: build and dismantle read the raw value (<b>Verified</b>, <c>FUN_14034a440</c>, <c>FUN_1403518c0</c>).</summary>
+    static float Engineering(CharacterCold cold) => cold.Stats?[StatsEnumerated.Engineering] ?? 0;
 
     static float Lerp(float a, float b, float t) => a + (b - a) * t;
 

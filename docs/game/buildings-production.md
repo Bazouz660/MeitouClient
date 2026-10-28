@@ -40,7 +40,8 @@ Iron Plates x7, Copper x3).
 **Verified** (`Task_Build` update `FUN_14034a440`, event dispatcher `FUN_1407b65b0` case 11, `FUN_1405595a0`):
 
 1. Each update of a builder whose site is not stalled pushes a type-11 event `(building, amount)` with
-   `amount = lerp(0.3, 2.0, clamp(engineering, 0, 100) / 100) * dt`, `dt` = the character's update time
+   `amount = lerp(0.3, 2.0, clamp(engineering, 0, 100) / 100) * dt`, engineering the raw stored stat (CharStats +0xcc, no
+   effective-stat multiplier; dismantle reads it the same way, **Verified** `FUN_14034a440`, `FUN_1403518c0`), `dt` = the character's update time
    (`Character+0xc4`, game-speed-scaled seconds). The builder gains engineering XP (`FUN_1408c6250`, [stats](character-stats.md)).
 2. The dispatcher calls Building slot 70 with that amount. Slot 70 scales it by the *Building speed* option
    (`142133584`, 0.5..2) and CONSTANTS `build speed` (`g_Constants+0x168`, 6 in the base game), then by `0.75^k`

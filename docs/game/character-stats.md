@@ -27,7 +27,7 @@ L=lerp(l0,1,limb), m=H*L; optional light factor lerp(p0,1,clamp(2.5*P,0,1)); out
 clamp(lerp(f0,1,m),0,1), then requested limb-item/gear factors. **Verified** (decompile): P is the
 character's light level (Character +0xd8, [perception](perception.md#sight); the multiplier also sets
 +0xdc, the resample request), so crafting, science, perception and crossbows suffer in the dark and a
-light of 0.4 or more costs nothing. Limb aggregates: A best arm, Hd head, T lowest torso health
+light of 0.4 or more costs nothing. Building and dismantling read the raw Engineering instead (no multiplier, `FUN_14034a440`, `FUN_1403518c0`). Limb aggregates: A best arm, Hd head, T lowest torso health
 fraction. Perception/friendly-fire add the dust storm factor ([gear factors](#gear-factors)). Table
 preserves each stat row; fall-through matters. Limb-item product includes0.66 if either arm disabled.
 **Verified** in game (#46: `CharStats::getStat` with and without the multiplier, new games, hunger 3 to 1.0,
