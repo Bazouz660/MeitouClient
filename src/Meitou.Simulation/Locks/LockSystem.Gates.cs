@@ -36,24 +36,32 @@ public sealed partial class LockSystem
         return state == 0 ? 1 : state;
     }
 
+    readonly object gateGraphLock = new();
+
+    // Built on first use; the combat step asks from its workers (CombatSystem.ImmediateThreat), so the graph is built under a lock and published whole.
     Dictionary<int, List<(int To, int State, GateLink Gate)>> GateGraph(World world)
     {
-        if (gateGraph is not null) return gateGraph;
-        gateGraph = [];
-        if (Regions is null) return gateGraph;
-        foreach (var gate in Regions.Gates)
+        if (Volatile.Read(ref gateGraph) is { } built) return built;
+        lock (gateGraphLock)
         {
-            if (gate.Codes.Length < 2) continue;
-            int state = GateState(world.Fixtures, gate.Building);
-            for (int i = 0; i < gate.Codes.Length; i++)
-                for (int j = 0; j < gate.Codes.Length; j++)
+            if (gateGraph is { } raced) return raced;
+            var graph = new Dictionary<int, List<(int To, int State, GateLink Gate)>>();
+            if (Regions is not null)
+                foreach (var gate in Regions.Gates)
                 {
-                    if (i == j) continue;
-                    if (!gateGraph.TryGetValue(gate.Codes[i], out var list)) gateGraph[gate.Codes[i]] = list = [];
-                    list.Add((gate.Codes[j], state, gate));
+                    if (gate.Codes.Length < 2) continue;
+                    int state = GateState(world.Fixtures, gate.Building);
+                    for (int i = 0; i < gate.Codes.Length; i++)
+                        for (int j = 0; j < gate.Codes.Length; j++)
+                        {
+                            if (i == j) continue;
+                            if (!graph.TryGetValue(gate.Codes[i], out var list)) graph[gate.Codes[i]] = list = [];
+                            list.Add((gate.Codes[j], state, gate));
+                        }
                 }
+            Volatile.Write(ref gateGraph, graph);
+            return graph;
         }
-        return gateGraph;
     }
 
     /// <summary>

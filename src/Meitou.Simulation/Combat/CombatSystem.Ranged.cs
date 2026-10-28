@@ -237,25 +237,34 @@ public sealed partial class CombatSystem : IProjectileSource
     {
         public CombatSlot[] Read;
         public CharacterTable Table;
-        public int Self, SelfGeneration;
+        public int Self, SelfGeneration, Faction;
+        public World World;
+        public Locks.LockSystem? Locks;
         public bool Found;
     }
 
     /// <summary>
-    /// A threat within <see cref="RetaliationSystem.ImmediateReach"/>: a standing fighter whose target the character is, by centre distance (the planner's
-    /// <c>iAmBeingMeleeAttacked immediate</c>, Character +0x2b0, docs/game/combat.md "Fight lifecycle and orders").
+    /// A threat within <see cref="RetaliationSystem.ImmediateReach"/> (the planner's <c>iAmBeingMeleeAttacked immediate</c>, Character +0x2b0, recomputed by
+    /// <c>FUN_1404378f0</c>, <b>Verified</b>; docs/game/combat.md "Fight lifecycle and orders"): a fighter of another faction whose target the character is, by centre
+    /// distance, not down (staying low or crawling still count), not in a bed or cage, not carried, and not behind a gate that is not open between them
+    /// (<c>FUN_140598450</c>, <see cref="Locks.LockSystem.NotBlocked"/>). The original's "getting up" byte (+0x278) is not modelled.
     /// </summary>
     bool ImmediateThreat(World world, int self)
     {
         var prev = world.Characters.Previous;
-        var scan = new ThreatScan { Read = read, Table = world.Characters, Self = self, SelfGeneration = prev[self].Generation };
+        if (world.Characters.Cold(self) is not { } me) return false;
+        var scan = new ThreatScan { Read = read, Table = world.Characters, Self = self, SelfGeneration = prev[self].Generation, Faction = me.Faction, World = world, Locks = Locks };
         world.Grid.Query(prev[self].Position.X, prev[self].Position.Z, RetaliationSystem.ImmediateReach, ref scan, static (int other, ref ThreatScan st) =>
         {
             if (st.Found || other == st.Self) return;
             ref readonly var o = ref st.Read[other];
             if (o.TargetSlot != st.Self || o.TargetGeneration != st.SelfGeneration || o.Down) return;
-            var d = st.Table.Previous[other].Position - st.Table.Previous[st.Self].Position;
-            if (d.X * d.X + d.Z * d.Z <= RetaliationSystem.ImmediateReach * RetaliationSystem.ImmediateReach) st.Found = true;
+            if (st.Table.Cold(other) is not { } c || c.Faction == st.Faction || c.InSomething != global::Meitou.Simulation.Locks.HeldState.None || !c.CarriedBy.IsNone) return;
+            var at = st.Table.Previous[other].Position;
+            var d = at - st.Table.Previous[st.Self].Position;
+            if (d.X * d.X + d.Z * d.Z > RetaliationSystem.ImmediateReach * RetaliationSystem.ImmediateReach) return;
+            if (st.Locks is { } locks && !locks.NotBlocked(st.World, st.Table.Previous[st.Self].Position, at)) return;
+            st.Found = true;
         });
         return scan.Found;
     }
