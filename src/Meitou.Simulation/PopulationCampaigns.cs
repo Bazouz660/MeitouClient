@@ -652,7 +652,8 @@ public sealed partial class PopulationSystem : IStateHashed
     }
 
     /// <summary>
-    /// The due requests (<c>FUN_1409cb310</c>'s request pass): a gone target is redirected, else delayed 5-10 h (dropped after 10); a failed world-state or leader gate drops it;
+    /// The due requests (<c>FUN_1409cb310</c>'s request pass): a gone target (missing, or a player town occupied for a non-hostile campaign or not active) is redirected, the start
+    /// waiting for the next run, else delayed 5-10 h (dropped after 10); a failed world-state or leader gate drops it;
     /// else a start, tried each run up to 100 times (no chance, cooldown, range or population gate).
     /// </summary>
     void UpdateRequests(World world, WarManager m, double now)
@@ -666,16 +667,18 @@ public sealed partial class PopulationSystem : IStateHashed
                 m.Requests.RemoveAt(i--);
                 continue;
             }
-            if (!Exists(world, r.Target))
+            // Gone: no such town, or a player town that is occupied (for a non-hostile campaign) or not active. A redirected request starts at the next run.
+            if (!Exists(world, r.Target) || r.Target.PlayerTown > 0 && (!c.IsHostile && Ai.AiSystem.Occupied(world, r.Target) || !TownActive(world, r.Target)))
             {
-                if (FindTarget(world, m.Faction, c, r.Enemy, out var retarget, out _)) r.Target = retarget;
-                else
+                if (FindTarget(world, m.Faction, c, r.Enemy, out var retarget, out _))
                 {
-                    ulong roll = Rng.Hash(world.Seed, (ulong)m.Faction << 32 | (uint)i, RngPurpose.Campaign, BitConverter.DoubleToUInt64Bits(r.Due) ^ SeedSalts.CampaignRetry);
-                    r.Due += 5 + Rng.Float(roll) * 5;
-                    if (++r.Delays > 10) m.Requests.RemoveAt(i--);
+                    r.Target = retarget;
                     continue;
                 }
+                ulong roll = Rng.Hash(world.Seed, (ulong)m.Faction << 32 | (uint)i, RngPurpose.Campaign, BitConverter.DoubleToUInt64Bits(r.Due) ^ SeedSalts.CampaignRetry);
+                r.Due += 5 + Rng.Float(roll) * 5;
+                if (++r.Delays > 10) m.Requests.RemoveAt(i--);
+                continue;
             }
             if (!WorldStatesPass(world, c))
             {

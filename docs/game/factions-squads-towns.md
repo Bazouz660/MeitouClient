@@ -570,7 +570,8 @@ target faction. A weighted list [v0, v1, v2] fires one entry when uniform[0,100)
 (**Verified** for dialogue by disassembly, **Observed** for the rest). `faction override` hands the request to that faction; a duplicate
 (same campaign and target) pending or active is dropped. Due requests check only world states and the leader (no chance, range, cooldown
 or population); a failed start retries each run, up to 100 times; a gone target is redirected or delayed 5-10 h, at most 10 times
-(**Observed**). Requests can aim at NPC towns. A requested campaign joins the receiving faction's list for good.
+(**Observed**). Gone (**Verified**, `FUN_1409cb310`): the town does not resolve, or it is a player town that has occupiers while the
+campaign is not hostile, or that is not active (slot 70); a redirected request does nothing more that run and starts at the next. Requests can aim at NPC towns. A requested campaign joins the receiving faction's list for good.
 
 **Phases** (`CampaignInstance::vfunc_10`, every war-manager run, loaded or not; times are game hours since the phase began):
 - Any phase but ended: the leader platoon loaded with every member down → defeat.
