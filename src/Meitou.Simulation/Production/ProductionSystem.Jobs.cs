@@ -130,7 +130,7 @@ public sealed partial class ProductionSystem
         {
             if (cold.Implicit == TaskType.DITCH_ALL_RESOURCES && cold.HaulTo is { } keep) return (TaskType.DITCH_ALL_RESOURCES, keep);
             if (cold.OrderQueue.Count == 0 && cold.Inventory is { } inv
-                && NearestSite(world, at, Settings.HaulRange, (_, m) => m.Data.IsStorage && m.Storage is not null && inv.All().Any(item => Takes(world, m, item))) is { } store)
+                && NearestSite(world, at, Settings.HaulRange, (_, m) => m.Data.IsStorage && m.Storage is not null && Ditchable(inv).Any(item => Stores(m, item))) is { } store)
                 return (TaskType.DITCH_ALL_RESOURCES, store);
         }
         // Sleep and Sit not while holding position (FUN_1402b2b90).
@@ -222,7 +222,7 @@ public sealed partial class ProductionSystem
         {
             var site = Site(world, siteId)!;
             var m = Ensure(world, site)!;
-            if (type == TaskType.DITCH_ALL_RESOURCES) StartHaulTrip(world, slot, site, m);
+            if (type == TaskType.DITCH_ALL_RESOURCES) StartHaulTrip(world, slot, site, m, ditch: true);
             else Begin(world, slot, site, m);
         }
         cold.JobIndex = -1;
@@ -393,8 +393,34 @@ public sealed partial class ProductionSystem
 
     /// <summary>A carried item a "Hauling to" job takes to its storage: a loose stack of something a player machine makes (not the character's own kit), that the storage takes and has room for.</summary>
     static bool Takes(World world, Machine store, Items.ItemInstance item) =>
-        item.Section is "main" or "backpack_content" && !item.LockedOn && item.Contents is null && store.Data.Accepts(item.Record, item.Type) && Fits(store.Storage!, item)
-        && world.Machines.All.Any(s => !s.Data.IsStorage && s.Output?.Recipe.Item == item.Record);
+        Stores(store, item) && world.Machines.All.Any(s => !s.Data.IsStorage && s.Output?.Recipe.Item == item.Record);
+
+    /// <summary>A loose stack (not the character's own kit) the storage takes and has room for.</summary>
+    static bool Stores(Machine store, Items.ItemInstance item) =>
+        item.Section is "main" or "backpack_content" && !item.LockedOn && item.Contents is null && store.Data.Accepts(item.Record, item.Type) && Fits(store.Storage!, item);
+
+    /// <summary>
+    /// What 242 Ditch all resources carries off (finder <c>FUN_1405a59a0</c>, its item collection <c>FUN_140749490</c>, <b>Verified</b>): ITEMs with <c>item function</c> 0 or 15, and food
+    /// (function 3) but the first, in inventory order.
+    /// </summary>
+    static IEnumerable<Items.ItemInstance> Ditchable(Items.Inventory inv)
+    {
+        bool fed = false;
+        foreach (var item in inv.All())
+        {
+            if (item.Type != Meitou.Data.Fcs.FcsRecordType.ITEM) continue;
+            if (item.ItemFunction == Meitou.Simulation.Items.FeedSystem.FoodFunction)
+            {
+                if (fed) yield return item;
+                fed = true;
+            }
+            else if (item.ItemFunction is 0 or Meitou.Simulation.Items.FeedSystem.RawFoodFunction) yield return item;
+        }
+    }
+
+    /// <summary>What a hauler puts into the storage: for a ditch run what <see cref="Ditchable"/> lists and the storage takes, else what <see cref="Takes"/> allows.</summary>
+    static IEnumerable<Items.ItemInstance> Delivered(World world, Items.Inventory inv, Machine store, bool ditch) =>
+        ditch ? Ditchable(inv).Where(i => Stores(store, i)) : inv.All().Where(i => Takes(world, store, i));
 
     /// <summary>The player's complete machine (not a storage) nearest a storage within <see cref="ProductionSettings.HaulRange"/> whose output holds items the storage takes (ties: the lower site id).</summary>
     string? HaulSource(World world, BuildSite storage, Machine store)
@@ -450,7 +476,7 @@ public sealed partial class ProductionSystem
     }
 
     /// <summary>A <see cref="CharacterTask.Haul"/> trip to a storage: what the character already carries for it goes there first; else it fetches a machine's output.</summary>
-    void StartHaulTrip(World world, int slot, BuildSite storage, Machine store)
+    void StartHaulTrip(World world, int slot, BuildSite storage, Machine store, bool ditch = false)
     {
         var table = world.Characters;
         var cold = table.Cold(slot)!;
@@ -460,7 +486,7 @@ public sealed partial class ProductionSystem
         n.Task = (byte)CharacterTask.Haul;
         n.Mode = SpeedMode.Free;
         n.TaskTime = 0;
-        bool carries = cold.Inventory is { } inv && inv.All().Any(i => Takes(world, store, i));
+        bool carries = cold.Inventory is { } inv && Delivered(world, inv, store, ditch).Any();
         cold.HaulSite = carries ? storage.Id : HaulSource(world, storage, store);
         cold.HaulTo = storage.Id;
         sweep = true;
@@ -488,11 +514,11 @@ public sealed partial class ProductionSystem
                 output.Count -= moved;
                 world.Machines.Touch();
             }
-            if (inv.All().Any(i => Takes(world, store, i))) cold.HaulSite = storeId;
+            if (Delivered(world, inv, store, cold.Implicit == TaskType.DITCH_ALL_RESOURCES).Any()) cold.HaulSite = storeId;
             else End(table, slot);
             return;
         }
-        foreach (var item in inv.All().Where(i => Takes(world, store, i)).ToList())
+        foreach (var item in Delivered(world, inv, store, cold.Implicit == TaskType.DITCH_ALL_RESOURCES).ToList())
         {
             inv.Remove(item);
             if (store.Storage!.Add(item)) continue;
