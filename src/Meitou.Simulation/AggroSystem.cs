@@ -448,8 +448,10 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         else if (s.Extra < GatherExtra && d2 <= GatherNear * GatherNear) s.Extra++;
         else return;
         // A caged prisoner is nobody's target, an owned slave nobody's but its owner's enemies' (engine choice: the original's sensed-list filter is not decoded; town cages
-        // hold enemies of their guards, and slaves of a hostile faction, such as Heng's Outlaws, stand among them).
-        if (s.Table.Cold(slot) is not { Medical.Incapacitated: false, IsImprisoned: false } c || c.SlaveState == 1 && !IsEnemy(s.Relations, s.Faction, c.SlaveOwner)) return;
+        // hold enemies of their guards, and slaves of a hostile faction, such as Heng's Outlaws, stand among them). The territorial stance (144, FUN_14059fd70, Verified)
+        // skips a slave only when the looker's faction is allied with its owner.
+        if (s.Table.Cold(slot) is not { Medical.Incapacitated: false, IsImprisoned: false } c) return;
+        if (c.SlaveState == 1 && (s.Stance == Ai.AiStance.Territorial ? s.Relations.Contains(c.SlaveOwner) && s.Relations.IsAlly(s.Faction, c.SlaveOwner) : !IsEnemy(s.Relations, s.Faction, c.SlaveOwner))) return;
         bool sneaking = (c.Orders & CharacterOrders.Sneak) != 0;
         // Wanted characters are the arrest system's (Crime.ArrestSystem): the police spot, fine or arrest them there. A working disguise stands in for the target's faction
         // (slot 125, docs/game/perception.md "Sense tags"; Crime.ArrestSystem.SeenFaction).
@@ -457,8 +459,9 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         bool enemy = s.Stance != Ai.AiStance.Passive
             && (IsEnemy(s.Relations, s.Faction, seenAs) || s.Stance == Ai.AiStance.AggressiveNeutrals && IsNeutral(s.Relations, s.Faction, seenAs) || WarEnemy(s.War, s.Faction, c, other.Position));
         // A campaign force's member is sensed as NEUTRAL, not ENEMY (FUN_1408580d0 over FUN_140796240, docs/game/perception.md "Sense tags"): a raid walks up to talk first.
-        // The looker still takes it when it attacks neutrals or its own campaign targets it; a TEMP_ENEMY tag (below) makes it an enemy again.
-        if (enemy && s.Stance != Ai.AiStance.AggressiveNeutrals && !WarEnemy(s.War, s.Faction, c, other.Position) && c.SquadId >= 0
+        // A looker that attacks neutrals too still drops it unless it is hostile to its faction (FUN_1408569a0, Verified); its own campaign's targets stay, and a TEMP_ENEMY
+        // tag (below) makes it an enemy again.
+        if (enemy && (s.Stance != Ai.AiStance.AggressiveNeutrals || !IsEnemy(s.Relations, s.Faction, seenAs)) && !WarEnemy(s.War, s.Faction, c, other.Position) && c.SquadId >= 0
             && s.World.Squads.Find(c.SquadId) is { PlatoonId: >= 0 } force && s.World.Platoons.Find(force.PlatoonId)?.Campaign is not null) enemy = false;
         // The squads' temporary tags (FUN_14079c950, other faction only): the looker's squad holds TEMP_ENEMY on the target, or, for a player-faction looker, the target's squad on it,
         // makes an enemy; the looker's squad holding TEMP_ALLY on the target unmakes one.
@@ -478,7 +481,9 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         // The AI's stances (docs/simulation.md "AI", Combat goals): the defensive one joins fights only, the territorial one keeps to its home.
         if (s.Stance == Ai.AiStance.Defensive && !c.InCombat) return;
         if (s.Stance == Ai.AiStance.ProtectSquad && (s.SquadFights is { } fights ? s.Squad < 0 || !fights.Contains((s.Squad, slot)) : !c.InCombat)) return;
-        if (s.Stance == Ai.AiStance.Territorial && Vector2.DistanceSquared(new Vector2(other.Position.X, other.Position.Z), s.Home) > s.HomeR2) return;
+        // Territorial (144, FUN_14059fd70, Verified): without a home circle it attacks on sight; outside the circle only one in the looker's own building.
+        if (s.Stance == Ai.AiStance.Territorial && s.HomeR2 > 0 && Vector2.DistanceSquared(new Vector2(other.Position.X, other.Position.Z), s.Home) > s.HomeR2
+            && (s.World.Sight.BuildingOf(s.Self) is not { } inside || s.World.Sight.BuildingOf(slot) != inside)) return;
         // The target score (Combat.TargetScore; Taunt and Passive weigh in there), after the Hold post test for a holding looker. Strictly better only: the grid visits a cell's
         // slots in ascending order, so a tie keeps the lower slot within a cell; across cells the order is the grid's fixed one. A sneaker that scores lower still gets its spot meter.
         float score = Score(ref s, slot, c, d2) ?? float.NegativeInfinity;
@@ -540,9 +545,12 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
     /// and neither lists the other in <c>coexistence</c> (engine choice: the flag's effect in the original is <b>Unknown</b>, so either side's is enough).
     /// Same faction and allies are never enemies (an ally is at 50 or above, so not hostile).
     /// </summary>
-    /// <summary>Neither an ally (nor the same faction) nor hostile: whom ATTACK_ENEMIES_AND_NEUTRALS adds to the enemies.</summary>
+    /// <summary>
+    /// Neither an ally (nor the same faction) nor hostile, and not a faction the looker's coexists with (one way, FUN_14059f720 over FUN_1406b23c0, Verified): whom
+    /// ATTACK_ENEMIES_AND_NEUTRALS adds to the enemies.
+    /// </summary>
     public static bool IsNeutral(FactionRelations relations, int mine, int theirs) =>
-        relations.Contains(theirs) && !relations.IsAlly(mine, theirs) && !relations.IsHostile(mine, theirs);
+        relations.Contains(theirs) && !relations.IsAlly(mine, theirs) && !relations.IsHostile(mine, theirs) && !relations.Coexists(mine, theirs);
 
     /// <summary>A character the AI put to bed or sat down (<see cref="Ai.AiBehaviour.Sleep"/>, <see cref="Ai.AiBehaviour.Sit"/>): unlike one resting by order, it can be roused into a fight.</summary>
     static bool AiSleeper(CharacterCold? cold) => cold?.Ai is { Behaviour: Ai.AiBehaviour.Sleep or Ai.AiBehaviour.Sit };
