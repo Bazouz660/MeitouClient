@@ -163,7 +163,7 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
                 if (table.Cold(found)!.InSomething == Locks.HeldState.Bed) world.Fixtures.LeaveBed(world, id);   // an order gets a sleeper up
                 slots.Add(found);
             }
-            var targets = Formation.Place([.. slots.Select(s => new Vector2(table.Next[s].Position.X, table.Next[s].Position.Z))], new Vector2(order.Target.X, order.Target.Z));
+            var targets = Formation.Scatter(slots.Count, new Vector2(order.Target.X, order.Target.Z));
             for (int k = 0; k < slots.Count; k++)
             {
                 int slot = slots[k];

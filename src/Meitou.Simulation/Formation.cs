@@ -10,7 +10,7 @@ public readonly record struct FormationMember(CharacterId Id, int Role, bool Ani
 
 /// <summary>
 /// Where a squad's followers keep station (<see cref="Layout"/>, the original's <c>Blackboard::buildFormation</c>, docs/game/pathfinding.md "Squads travelling together")
-/// and where the characters of a move order end up (<see cref="Place"/>, engine choice: the original's move-order spread is not researched).
+/// and where the characters of a move order end up (<see cref="Scatter"/>, the original's ground-click spread; <see cref="Place"/> is the older grid, kept for its test).
 /// </summary>
 public static class Formation
 {
@@ -205,6 +205,34 @@ public static class Formation
         }
         return at;
     }
+
+    /// <summary>
+    /// The targets of a ground-click move order of <paramref name="count"/> characters (order 0x1d in <c>FUN_1407f9e20</c>, <b>Verified</b>): the C runtime's rand is seeded with the
+    /// count; the first character goes to the point, every other one to point + (sin a, cos a) x r on X/Z, with r = u x sqrt(60 x count) + 5 and then a = u x 2 pi, each u a fresh
+    /// rand() / 32767. Meitou replays the MSVC generator (state x 214013 + 2531011, output bits 16 to 30), so the spread is a pure function of the count and the point.
+    /// </summary>
+    public static Vector2[] Scatter(int count, Vector2 target)
+    {
+        var result = new Vector2[count];
+        uint state = (uint)count;
+        float Next()
+        {
+            state = state * 214013 + 2531011;
+            return ((state >> 16) & 0x7fff) / 32767f;
+        }
+        float reach = MathF.Sqrt(ScatterArea * count);
+        for (int i = 0; i < count; i++)
+        {
+            if (i == 0) { result[i] = target; continue; }
+            float r = Next() * reach + ScatterMin;
+            float a = Next() * 2 * MathF.PI;
+            result[i] = target + new Vector2(MathF.Sin(a), MathF.Cos(a)) * r;
+        }
+        return result;
+    }
+
+    /// <summary>The ground-click spread's area per character (sqrt(60 x count)) and least distance from the point (<c>DAT_141685340</c> = 5).</summary>
+    const float ScatterArea = 60, ScatterMin = 5;
 
     /// <summary>
     /// One target per character, in the order of <paramref name="positions"/> (X/Z where they stand now). One character goes to the

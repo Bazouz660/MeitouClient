@@ -851,7 +851,7 @@ decompile unless marked; Meitou's adapter is `PlayerInterface.Map.cs`.
 - **Mouse:** left or middle press pans with the `hand` cursor, no threshold; release ends it. Right press does nothing; right **release** inside the view
   orders the selection to move (task 0x1d, the shared order dispatcher `1407f9e20`) to the point under the cursor, clamped to the image, Y = max(terrain,
   100). Shift is read but not used (no queueing); a town marker takes clicks like the map under it. Extra selected characters get a random offset
-  rand·√(60·count)+5 around the point (Meitou leaves spreading to its move order).
+  rand·√(60·count)+5 around the point (Meitou: `Formation.Scatter`, see [ui-input](ui-input.md)).
 - **Zoom:** scale = on-screen pixels per canvas pixel, from fit-the-whole-map (min(view w, h)/4096, the start) to 1.5 × UI scale. Buttons add or
   subtract the least scale about the centre; the wheel adds 0.000625 per wheel unit (0.075 a notch) about the cursor. Zoom level 0 below 0.4 × UI
   scale, 1 up to 0.75 ×, else 2. Markers keep their pixel size. Opening the map and the centre button centre on the camera focus.
