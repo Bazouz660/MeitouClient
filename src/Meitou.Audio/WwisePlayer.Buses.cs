@@ -10,18 +10,19 @@ namespace Meitou.Audio;
 public sealed partial class WwisePlayer
 {
     // Offsets set by actions, keyed by (target node or bus, game object; 0 for the global scope), fading to their target value.
-    readonly OffsetTable volumeOffsets = new(), pitchOffsets = new(), lowPassOffsets = new(), busVolumes = new();
+    readonly OffsetTable volumeOffsets = new(decibels: true), pitchOffsets = new(), lowPassOffsets = new(), busVolumes = new(decibels: true);
     readonly Dictionary<uint, AuxBusState> auxBuses = [];
 
     /// <summary>
-    /// A value in dB (or cents, or low-pass units) set by an action: it moves to its target over the action's fade time in a straight line and an
-    /// entry that has fallen back to 0 is dropped. Entries are looked up by (target, game object).
+    /// A value in dB (or cents, or low-pass units) set by an action: it moves to its target over the action's fade time and an entry that has fallen
+    /// back to 0 is dropped. Entries are looked up by (target, game object). A dB value moves in a straight line in linear gain (Wwise's transitions on
+    /// volumes, docs/audio.md "Pause and speed"): a reset from −96 dB over 3 s is at −6 dB half way, not at −48 dB. The others move straight in their units.
     /// </summary>
-    sealed class OffsetTable
+    sealed class OffsetTable(bool decibels = false)
     {
         sealed class Entry
         {
-            public float Value, Target, Rate;
+            public float Value, Start, Target, Seconds, Elapsed;
         }
 
         readonly Dictionary<(uint Id, ulong Object), Entry> entries = [];
@@ -31,17 +32,18 @@ public sealed partial class WwisePlayer
         public void Set(uint id, ulong gameObject, float target, float seconds)
         {
             if (!entries.TryGetValue((id, gameObject), out var e)) entries[(id, gameObject)] = e = new Entry();
-            e.Target = target;
-            if (seconds <= 0) e.Value = target;
-            e.Rate = seconds > 0 ? Math.Abs(target - e.Value) / seconds : 0;
+            Start(e, target, seconds);
         }
 
         public void Reset(uint id, ulong gameObject, float seconds)
         {
-            if (!entries.TryGetValue((id, gameObject), out var e)) return;
-            e.Target = 0;
-            if (seconds <= 0) e.Value = 0;
-            e.Rate = seconds > 0 ? Math.Abs(e.Value) / seconds : 0;
+            if (entries.TryGetValue((id, gameObject), out var e)) Start(e, 0, seconds);
+        }
+
+        static void Start(Entry e, float target, float seconds)
+        {
+            (e.Start, e.Target, e.Seconds, e.Elapsed) = (e.Value, target, Math.Max(seconds, 0), 0);
+            if (seconds <= 0) e.Value = target;
         }
 
         public void Advance(double dt)
@@ -52,8 +54,11 @@ public sealed partial class WwisePlayer
             {
                 if (e.Value != e.Target)
                 {
-                    float step = e.Rate * (float)dt;
-                    e.Value = e.Value < e.Target ? Math.Min(e.Target, e.Value + step) : Math.Max(e.Target, e.Value - step);
+                    e.Elapsed += (float)dt;
+                    float t = e.Seconds > 0 ? Math.Min(e.Elapsed / e.Seconds, 1) : 1;
+                    e.Value = t >= 1 ? e.Target
+                        : decibels ? GainToDb(float.Lerp(WwiseCurves.DbToGain(e.Start), WwiseCurves.DbToGain(e.Target), t))
+                        : float.Lerp(e.Start, e.Target, t);
                 }
                 if (e.Value == 0 && e.Target == 0) (gone ??= []).Add(key);
             }
@@ -73,6 +78,9 @@ public sealed partial class WwisePlayer
         {
             foreach (var key in entries.Keys.Where(k => k.Object == gameObject).ToList()) entries.Remove(key);
         }
+
+        /// <summary>A linear gain in dB, −96 (the floor <see cref="WwiseCurves.DbToGain"/> reads as silence) at or below 10^(−96/20).</summary>
+        static float GainToDb(float gain) => gain <= 1.5849e-5f ? -96 : 20 * MathF.Log10(gain);
     }
 
     /// <summary>An auxiliary bus: the stereo input its senders add to, the bypass state of its effect slots and the reverbs it runs.</summary>

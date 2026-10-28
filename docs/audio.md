@@ -79,7 +79,10 @@ Traced 2026-10-17 from the audio manager (`AudioSystemGlobal`: biome music `FUN_
   they last and how the day/night switch behaves: [wwise-bnk.md Music](formats/wwise-bnk.md#music).
 - **Pause and speed.** `Pause_Game` / `Resume_Game` (`FUN_140787d40`, on object 100, when paused or speed 0 flips) duck the SFX bus
   `59927CD0` to −96 dB and the ambience bus `95836E4C` by −9 dB (1 s), and reset both (3 s); the music bus `BA70EAC8` (child of the master
-  bus, −4 dB) is not touched, so music plays on through pause. Game speed sets the state `Game_Speed` (`C2E2475B`) to `Normal` / `x2` /
+  bus, −4 dB) is not touched, so music plays on through pause. All four actions use fade curve 4 (linear; `SFX_General_Bank`, dumped with
+  `meitou-tools audio`). Volume fades run straight in linear gain, not in dB (Wwise's transitions on dB properties; **Observed** from the
+  Wwise runtime's documented behaviour, not checked in the exe): half way through the 3 s reset the SFX bus is at −6 dB, where a dB ramp
+  would still be at −48 dB and leave hits near-silent for seconds after every unpause. Game speed sets the state `Game_Speed` (`C2E2475B`) to `Normal` / `x2` /
   `x4` at speeds 1 / 2 / 5 (`FUN_140787e40`, `FUN_140787fb0`); only `SFX_Bank` and `SFX_General_Bank` use it, so speed does not affect music.
 - **Not in the game:** combat or danger music, stingers, intensity parameters, indoor rules for music, focus-loss muting
   (`MuteBackgroundMusic` is never called): no such strings or calls in the exe. **Radio:** `Radio_On` (`D272B88E`: stops the biome music
