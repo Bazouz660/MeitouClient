@@ -256,8 +256,8 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
             ];
             for (int i = 0; i < AudioSliders.Length; i++)
                 result.Add(new(AudioSliders[i].Label, hints[i], Slider: AudioSliders[i]));
-            result.Add(new("Hear from", "Where sounds are heard from: the camera, or the first selected character (the camera while none is selected).",
-                Toggle: new("Hear from", () => config.HearFromSelected, v => config.HearFromSelected = v, Text: () => config.HearFromSelected ? "Selected character" : "Camera")));
+            result.Add(new("Hear from", "Camera: you hear the world where the camera is. Character: you hear it where your first selected character stands (from the camera while nobody is selected).",
+                Toggle: new("Hear from", () => config.HearFromSelected, v => config.HearFromSelected = v, Text: () => config.HearFromSelected ? "Character" : "Camera")));
         }
         if (page == 6)
         {
