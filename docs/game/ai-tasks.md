@@ -861,8 +861,9 @@ A character's job list (the Orders menu's "Perma-Jobs"; class `OrdersReceiver`, 
   0 HOLD_GROUND: + 40 instead, with an extra term **Unknown**. Other values: false. Standing order FAR sets ROAM_FAR (EDX = 2 in the disassembly) and clears the centre target.
 - **Implicit jobs** (**Verified**, `FUN_14050e5b0` after the list, only for a character with a squad (+0x250), the switch on and not sneaking
   (`FUN_1405c9750`)): lowest keys for the squad AI options at `DAT_142134690` (the overview's AI tab), each kept when its task's desire is above 0:
-  +0x117 "Ditch items" → 242 "Ditching resources" (only with an empty task queue +0x60); then, unless three tests hold (`FUN_1402b2b90` on the
-  character's +0x450, its byte +0x348, `FUN_1407f4d20`, a set lookup; meanings **Unknown**), +0x116 "Sleep when injured" → 257 "Getting out of
+  +0x117 "Ditch items" → 242 "Ditching resources" (only with an empty task queue +0x60); then, unless one of three tests holds (`FUN_1402b2b90`
+  on the character's +0x450: hold position +0x12b on and not sneaking, **Verified**; byte +0x348, carrying someone; `FUN_1407f4d20`, a set lookup
+  read as "selected by the player", **Observed**, not modelled), +0x116 "Sleep when injured" → 257 "Getting out of
   bed once healed" above 153 "Go home and go to bed", and +0x118 "Sit when idle" → 275 "Sitting around" (its task is built with a float 0.5 where the others pass 1, meaning **Unknown**).
   Tooltips (**Verified**, `FUN_140005e11`): ditch puts excess carried materials into storage when idle; sleep goes to bed when injured and idle;
   sit takes chairs and benches at home. The injury threshold of 153 is **Unknown**; its target finder is the bed search (**Verified**, [locks](locks.md#beds)). Saved as CAMERA bools ([save](../formats/save.md)).

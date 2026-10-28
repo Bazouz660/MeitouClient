@@ -110,8 +110,8 @@ public sealed partial class ProductionSystem
     public const float SeatRange = 600;
 
     /// <summary>
-    /// The implicit job of a character whose list has none to run (docs/game/ai-tasks.md "Perma-jobs": the original's lowest keys, in this order), with the jobs switch on and not a
-    /// slave. <see cref="SquadAi.Ditch"/>: carried items a storage takes go there (242; only with no queued orders). <see cref="SquadAi.Sleep"/>: an injured character lies in the bed
+    /// The implicit job of a character whose list has none to run (docs/game/ai-tasks.md "Perma-jobs": the original's lowest keys, in this order), with the jobs switch on, not
+    /// sneaking and not a slave; Sleep and Sit not while it holds position. <see cref="SquadAi.Ditch"/>: carried items a storage takes go there (242; only with no queued orders). <see cref="SquadAi.Sleep"/>: an injured character lies in the bed
     /// the bed search finds (153, whose target finder it is, <b>Verified</b>; <see cref="Locks.FixtureRegistry.FindBed"/>) until healed (then 257 gets it up). <see cref="SquadAi.Sit"/>: a free
     /// chair (275). The one it is on is kept while it holds (a bed within <see cref="Locks.FixtureRegistry.BedSearchRange"/>). Distances are from where it idles, its squad leader when it
     /// follows, so a follower gets up when the leader walks off.
@@ -121,7 +121,8 @@ public sealed partial class ProductionSystem
         var table = world.Characters;
         var cold = table.Cold(slot)!;
         var options = world.Player.SquadAi;
-        if ((cold.Orders & CharacterOrders.Jobs) == 0 || cold.SlaveState != 0 || options == SquadAi.None) return null;
+        // None while sneaking (FUN_1405c9750; a fighting character is not Able anyway).
+        if ((cold.Orders & CharacterOrders.Jobs) == 0 || (cold.Orders & CharacterOrders.Sneak) != 0 || cold.SlaveState != 0 || options == SquadAi.None) return null;
         var at = table.Next[slot].Position;
         if (idle == CharacterTask.Follow && cold.SquadId >= 0 && world.Squads.Find(cold.SquadId)?.Leader is { IsNone: false } leader && leader.Slot != slot && table.IsAlive(leader))
             at = table.Next[leader.Slot].Position;
@@ -132,6 +133,8 @@ public sealed partial class ProductionSystem
                 && NearestSite(world, at, Settings.HaulRange, (_, m) => m.Data.IsStorage && m.Storage is not null && inv.All().Any(item => Takes(world, m, item))) is { } store)
                 return (TaskType.DITCH_ALL_RESOURCES, store);
         }
+        // Sleep and Sit not while holding position (FUN_1402b2b90).
+        if (Orders.Holding(cold)) return null;
         if ((options & SquadAi.Sleep) != 0 && Injured(cold) && Beds is not null)
         {
             if (cold.Implicit == TaskType.GO_HOME_AND_GO_TO_BED && cold.OperateSite is { } bed && world.Fixtures.Find(bed) is { } kept
