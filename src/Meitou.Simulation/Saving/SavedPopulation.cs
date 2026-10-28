@@ -111,6 +111,38 @@ public sealed class SavedPopulation
     public Dictionary<(int C, int CS), int> TownSites { get; } = [];
     /// <summary>Platoon handles (container and serial) to the world's platoon made for them, for the war states' <c>p&lt;i&gt;</c> and <c>leader c&lt;i&gt;</c>.</summary>
     public Dictionary<(int C, int CS), int> PlatoonIds { get; } = [];
+    /// <summary>
+    /// Items made from the save whose <c>ownedby</c> names a character of another faction than their holder's (docs/game/economy.md "Fencing, stealing and smuggling"): stolen from that
+    /// faction at once, and from the character itself once it is in the world (<see cref="ResolveOwners"/>).
+    /// </summary>
+    readonly List<(ItemInstance Item, Hand Owner, StolenMark Interim)> owners = [];
+
+    /// <summary>Marks the items of a character just made whose saved <c>ownedby</c> names a character of the save of another faction than <paramref name="holderFaction"/>.</summary>
+    internal void NoteOwners(Inventory inventory, int holderFaction, PopulationData data)
+    {
+        foreach (var item in inventory.All())
+        {
+            if (item.Saved is not { } r || Hand.Read(r, "ownedby") is not { Type: (int)FcsRecordType.CHARACTER } h || Handles.Character(h) is not { } owner) continue;
+            int faction = data.FactionIndex(owner.Platoon.FactionId);
+            if (faction < 0 || faction == holderFaction) continue;
+            item.Mark = StolenMark.OfFaction(faction);
+            lock (owners) owners.Add((item, h, item.Mark));
+        }
+    }
+
+    /// <summary>Gives each noted item whose owner is now in the world the whole mark (the owner and its squad); one whose mark changed since is dropped from the list.</summary>
+    internal void ResolveOwners(World world)
+    {
+        lock (owners)
+            owners.RemoveAll(o =>
+            {
+                if (o.Item.Mark != o.Interim) return true;
+                if (CharacterOf(o.Owner) is not { } id || !world.Characters.TryResolveNext(id, out int slot) || world.Characters.Cold(slot) is not { } cold) return false;
+                (o.Item.Mark, o.Item.OwnerFromSave) = (StolenMark.Of(cold, id), true);
+                return true;
+            });
+    }
+
     /// <summary>Lines for the host's log (each platoon made, characters left out); taken by <see cref="TakeLog"/>.</summary>
     readonly List<string> log = [];
     internal void Log(string line) { lock (log) log.Add(line); }
@@ -263,6 +295,8 @@ internal static class SavedCharacters
                 sc.GameState is { } aged && aged.Floats.TryGetValue("age", out float age) ? age : 1);
         else if (race is not null)
             notes?.Add($"{platoonName}: {cold.Name} has no stats or medical state that could be read; it has no body in the world.");
+        // What it holds that was stolen (the save's `ownedby`).
+        if (cold.Inventory is { } carried) context.NoteOwners(carried, faction, data);
         return world.Characters.Spawn(hot, cold, world.Tick);
     }
 
@@ -406,6 +440,7 @@ internal static class SavedCharacters
             (sp.Memory, sp.MemorySet) = (null, false);
         }
         sp.Touched = true;
+        context.ResolveOwners(world);
         context.Log($"{sp.Name} ({name}, {(sp.Pinned ? "town" : sp.Wild is { } wild ? (wild == WildKind.Nest ? "nest" : "homeless") : "roaming")}): {squad.Members.Count} saved character(s) at {world.Characters.Next[squad.Leader.Slot].Position.X:0}, {world.Characters.Next[squad.Leader.Slot].Position.Z:0}");
         return squad;
     }

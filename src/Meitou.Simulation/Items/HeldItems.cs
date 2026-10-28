@@ -199,20 +199,20 @@ public sealed partial class PlayerSystem
     };
 
     /// <summary>
-    /// The stolen mark a held item gets when it goes to <paramref name="taker"/>'s faction: from a loot that is a theft (<see cref="Crime.CrimeSystem.IsLootTheft"/>) the body's faction, from
+    /// The stolen mark a held item gets when it goes to <paramref name="taker"/>'s faction: from a loot that is a theft (<see cref="Crime.CrimeSystem.IsLootTheft"/>) the body (its faction, itself and its squad), from
     /// another faction's container that faction (engine choice, as the container's take), else unchanged. Handed to its owner's faction it loses the mark (the engine clears the owner when
     /// the item goes to its owner or a member of the owner's faction).
     /// </summary>
-    static int MarkFor(World world, HeldItem held, CharacterCold? taker)
+    static StolenMark MarkFor(World world, HeldItem held, CharacterCold? taker)
     {
         var item = held.Item;
         var table = world.Characters;
-        if (taker is null) return item.StolenFrom;
-        if (item.StolenFrom >= 0 && item.StolenFrom == taker.Faction) return -1;
+        if (taker is null) return item.Mark;
+        if (item.StolenFrom >= 0 && item.StolenFrom == taker.Faction) return StolenMark.None;
         if (held.From.Holder == ItemHolder.Character && table.TryResolveNext(held.From.Character, out int v) && table.Cold(v) is { IsPlayer: false } victim
-            && table.TryResolveNext(held.Actor, out int a) && Crime.CrimeSystem.IsLootTheft(table.Cold(a)!, victim)) return victim.Faction;
-        if (held.From.Holder == ItemHolder.Site && world.Fixtures.Find(held.From.Site) is { Owner: >= 0 } box && box.Owner != taker.Faction) return box.Owner;
-        return item.StolenFrom;
+            && table.TryResolveNext(held.Actor, out int a) && Crime.CrimeSystem.IsLootTheft(table.Cold(a)!, victim)) return StolenMark.Of(victim, table.IdOf(v));
+        if (held.From.Holder == ItemHolder.Site && world.Fixtures.Find(held.From.Site) is { Owner: >= 0 } box && box.Owner != taker.Faction) return StolenMark.OfFaction(box.Owner);
+        return item.Mark;
     }
 
     /// <summary>
@@ -319,9 +319,9 @@ public sealed partial class PlayerSystem
         int limit = target.Columns == 0 ? 1 : target.Grid.LimitOf(item);
         // Leaving its window for another owner's: no longer a death item, maybe stolen. Put back on a refusal; the units that stay on the mouse keep the old marks.
         bool changes = into != held.From, death = item.Death;
-        int mark = item.StolenFrom;
-        if (changes) (item.Death, item.StolenFrom) = (false, MarkFor(world, held, target.Owner));
-        void Undo(ItemInstance i) => (i.Death, i.StolenFrom) = (death, mark);
+        var mark = item.Mark;
+        if (changes) (item.Death, item.Mark) = (false, MarkFor(world, held, target.Owner));
+        void Undo(ItemInstance i) => (i.Death, i.Mark) = (death, mark);
         // The units the trade lets through (all of them outside a trade); 0: refused, put back.
         int Exchange(int units, bool all)
         {
@@ -453,18 +453,19 @@ public sealed partial class PlayerSystem
         if (Caught(world, held, Crime.CrimeSystem.TakeKind.Give)) { ReturnHeldItem(world); return; }
         var item = held.Item;
         bool death = item.Death;
-        int mark = item.StolenFrom, before = item.Quantity;
-        (item.Death, item.StolenFrom) = (false, MarkFor(world, held, taker));
+        var mark = item.Mark;
+        int before = item.Quantity;
+        (item.Death, item.Mark) = (false, MarkFor(world, held, taker));
         bool all = into.Add(item);
         if (item.Quantity == before)
         {
-            (item.Death, item.StolenFrom) = (death, mark);
+            (item.Death, item.Mark) = (death, mark);
             world.Post("No room for that item.");
             ReturnHeldItem(world);
             return;
         }
         if (all) player.Held = null;
-        else (item.Death, item.StolenFrom) = (death, mark);
+        else (item.Death, item.Mark) = (death, mark);
         LeftLoot(world, held, death);
         if (held.From.Holder == ItemHolder.Site) world.Machines.Touch();
     }

@@ -607,7 +607,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         }
         int death = DeathUnits(victim.Inventory!);
         int cashed = cold.Faction == player.Faction ? CashMoney(world, victim.Inventory!) : 0;
-        var (taken, left) = TakeAll(bag, victim.Inventory!, Crime.CrimeSystem.IsLootTheft(cold, victim) ? victim.Faction : -1);
+        var (taken, left) = TakeAll(bag, victim.Inventory!, Crime.CrimeSystem.IsLootTheft(cold, victim) ? StolenMark.Of(victim, world.Characters.IdOf(t)) : null);
         taken += cashed;
         Butcher(world, i, t, death);
         bool seen = Looted(world, table, i, t, taken, left, crime: true);
@@ -679,8 +679,9 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         // The right click's crime and the steal roll (the owner watching unless down); caught, the item stays.
         if (!victim.IsPlayer && Crimes?.Pickpocket(world, i, t, item, Crime.CrimeSystem.TakeKind.RightClick) == true) return;
         bool worn = InventoryCommands.IsEquipmentSection(item.Section);
-        int mark = item.StolenFrom, death = DeathUnits(from);
-        if (Crime.CrimeSystem.IsLootTheft(cold, victim)) item.StolenFrom = victim.Faction;
+        var mark = item.Mark;
+        int death = DeathUnits(from);
+        if (Crime.CrimeSystem.IsLootTheft(cold, victim)) item.Mark = StolenMark.Of(victim, table.IdOf(t));
         var owner = from.Items.Contains(item) ? from : from.Backpack?.Contents ?? from;
         // Money taken by the player's own becomes cats, as when it is dropped into their window (PlayerSystem.Place, FUN_140714a20).
         if (item.ItemFunction == PlayerSystem.MoneyFunction && cold.Faction == world.Player.Faction && Data is not null)
@@ -688,13 +689,13 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
             int units = take.Count > 0 ? Math.Min(take.Count, item.Quantity) : item.Quantity;
             PlayerSystem.Cash(world, Data, item, units);
             if (units >= item.Quantity) owner.Remove(item); else item.Quantity -= units;
-            item.StolenFrom = mark;
+            item.Mark = mark;
             Butcher(world, i, t, death);
             Seen(world, i, t, owner.Items.Contains(item) ? 1 : 0);
             return;
         }
         int moved = InventoryCommands.MoveInto(owner, item, take.Count, cold.Inventory!, take.BagFirst, out bool wear, cold);
-        if (owner.Items.Contains(item)) item.StolenFrom = mark;   // what stays keeps its mark
+        if (owner.Items.Contains(item)) item.Mark = mark;   // what stays keeps its mark
         if (moved == 0)
         {
             if (cold.IsPlayer) world.Post($"{cold.Name} has no room for {item.Name}.");
@@ -805,7 +806,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         return n;
     }
 
-    public static (int Taken, int Left) TakeAll(Inventory into, Inventory from, int stolenFrom = -1)
+    public static (int Taken, int Left) TakeAll(Inventory into, Inventory from, StolenMark? stolen = null)
     {
         var items = new List<ItemInstance>();
         foreach (var item in from.Items)
@@ -816,9 +817,9 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         int taken = 0, left = 0;
         foreach (var item in items)
         {
-            int mark = item.StolenFrom;
+            var mark = item.Mark;
             bool death = item.Death;
-            if (stolenFrom >= 0) item.StolenFrom = stolenFrom;
+            if (stolen is { } s) item.Mark = s;
             item.Death = false;
             if (into.Add(item))
             {
@@ -827,7 +828,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
             }
             else
             {
-                item.StolenFrom = mark;
+                item.Mark = mark;
                 item.Death = death;
                 left++;
             }

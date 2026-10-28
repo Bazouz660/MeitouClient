@@ -107,15 +107,30 @@ public static class SavedKit
 
     internal static SaveItem FromItem(ItemInstance i) => FromItem(i, i.Section);
 
-    /// <summary>A saved item written under <paramref name="section"/> (a machine grid whose original section name is not Meitou's <c>main</c>).</summary>
-    internal static SaveItem FromItem(ItemInstance i, string section) => new()
+    /// <summary>
+    /// The saved items whose <c>ownedby</c> names a character (<see cref="ItemInstance.Owner"/>) while a save is captured: the capture writes the owner's handle on each once every character
+    /// has one (null: not capturing).
+    /// </summary>
+    [ThreadStatic] internal static List<(SaveItem Item, CharacterId Owner)>? OwnerNotes;
+
+    /// <summary>
+    /// A saved item written under <paramref name="section"/> (a machine grid whose original section name is not Meitou's <c>main</c>). Its <c>ownedby</c> is the robbed character's handle, the null
+    /// handle when the owner read from the save was cleared since, else the record's own.
+    /// </summary>
+    internal static SaveItem FromItem(ItemInstance i, string section)
     {
-        BaseId = i.Record, MaterialId = i.MaterialId, CompanyId = i.CompanyId, Crafter = i.Crafter, Uniform = i.Uniform, ColourId = i.ColourId, Section = section, X = i.X, Y = i.Y, Quantity = i.Quantity, Level = i.Level,
-        ItemFunction = i.ItemFunction, Quality = i.Quality, Charges = i.Charges, Source = i.Saved,
-        Damage = i.LimbDamage, Wear = i.LimbWear, Stun = i.LimbStun, Death = i.Death, Unique = i.Unique,
-        Lock = i.Lock is { } l ? new SaveItemLock(l.Level, l.EffectivelyLocked, l.Broken, l.Hardness) : null,
-        Contents = i.Contents is { } bag ? FromInventory(bag) : null,
-    };
+        var saved = new SaveItem
+        {
+            BaseId = i.Record, MaterialId = i.MaterialId, CompanyId = i.CompanyId, Crafter = i.Crafter, Uniform = i.Uniform, ColourId = i.ColourId, Section = section, X = i.X, Y = i.Y, Quantity = i.Quantity, Level = i.Level,
+            ItemFunction = i.ItemFunction, Quality = i.Quality, Charges = i.Charges, Source = i.Saved,
+            Damage = i.LimbDamage, Wear = i.LimbWear, Stun = i.LimbStun, Death = i.Death, Unique = i.Unique,
+            Lock = i.Lock is { } l ? new SaveItemLock(l.Level, l.EffectivelyLocked, l.Broken, l.Hardness) : null,
+            Contents = i.Contents is { } bag ? FromInventory(bag) : null,
+            OwnedBy = !i.Owner.IsNone || i.OwnerFromSave ? Hand.Null : null,
+        };
+        if (!i.Owner.IsNone) OwnerNotes?.Add((saved, i.Owner));
+        return saved;
+    }
 
     /// <summary>Puts the non-natural limbs of <paramref name="medical"/> (stumps, prosthetics, crushed) into <paramref name="loadout"/>.</summary>
     public static void SetLimbs(Loadout loadout, Bodies.MedicalState? medical, GameDatabase db)

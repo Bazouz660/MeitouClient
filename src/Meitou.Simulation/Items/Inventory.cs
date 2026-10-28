@@ -112,7 +112,7 @@ public sealed class Inventory(int width, int height)
         if (limit <= 1) return false;
         foreach (var other in into.Items)
         {
-            if (ReferenceEquals(other, item) || other.Record != item.Record || other.Quality != item.Quality || other.StolenFrom != item.StolenFrom || other.Death != item.Death || other.Unique != item.Unique || other.Contents is not null
+            if (ReferenceEquals(other, item) || other.Record != item.Record || other.Quality != item.Quality || other.Mark != item.Mark || other.Death != item.Death || other.Unique != item.Unique || other.Contents is not null
                 || (section is null ? other.Section is not ("main" or "backpack_content") : other.Section != section)) continue;
             var (kept, coming) = (other.Buyback, item.Buyback);
             if (kept is null ? coming is not null && !dropReceipt : coming is null || !kept.Joins(coming)) continue;
