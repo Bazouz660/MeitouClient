@@ -310,7 +310,7 @@ public sealed partial class FirstAidSystem
                 }
                 else
                 {
-                    var (cage, owned) = CageOwnedBy(world, s, cold.Faction);
+                    var (cage, owned) = CageOwnedBy(world, s, cold.Faction, HomeKey(world, cold));
                     ok = other.SlaveState != 1 && !(cage is not null && MarkedForDeath(world, cold.SquadId, cage)) && (cage is null || owned);
                 }
                 if (!ok && !OwnedChained(cold, other)) continue;
@@ -347,26 +347,32 @@ public sealed partial class FirstAidSystem
                 if (score > bestScore) { best = s; bestScore = score; }
             }
 
-        // Pass 5: prisoners in the cages of its faction in its own place, flat weight.
-        if (world.Sight.PlaceOf(i) is >= 0 and var home)
-            foreach (var f in world.Fixtures.All)
+        // Pass 5 (FUN_14099f690, Verified): standing inside its squad's home building, the prisoners in that building's cages, flat weight; no other test on them.
+        if (HomeKey(world, cold) is { } homeKey && world.Sight.BuildingOf(i) == homeKey)
+            foreach (var f in world.Fixtures.OfBuilding(homeKey))
             {
-                if (f.Kind != FixtureKind.Cage || f.Owner != cold.Faction || FixtureRegistry.IsFree(table, f) || !table.TryResolveNext(f.Occupant, out int s)) continue;
-                if (table.Cold(s) is not { } other || Skip(s, other) || world.Sight.PlaceOf(s) != home) continue;
+                if (f.Kind != FixtureKind.Cage || FixtureRegistry.IsFree(table, f) || !table.TryResolveNext(f.Occupant, out int s) || table.Cold(s) is null) continue;
                 float need = Need(world, i, s, organic, robotic) * CagedWeight;
                 if (need > bestScore) { best = s; bestScore = need; }
             }
         return best >= 0 ? (best, bestScore) : (-1, 0);
     }
 
-    /// <summary>Whether the patient sits in a cage, and whether that cage is owned by <paramref name="faction"/> (the ownership test against the medic's squad home).</summary>
-    static (string? Cage, bool Owned) CageOwnedBy(World world, int patient, int faction)
+    /// <summary>
+    /// Whether the patient sits in a cage, and whether that cage stands in the medic squad's home building <paramref name="homeKey"/> (<c>FUN_14099f690</c>, <b>Verified</b>: the cage's
+    /// building against the squad's home hand). A squad without a home (the player's: its shared home is <b>Unknown</b>) falls back to the cage's owner being <paramref name="faction"/>.
+    /// </summary>
+    static (string? Cage, bool Owned) CageOwnedBy(World world, int patient, int faction, string? homeKey)
     {
         var id = world.Characters.IdOf(patient);
         foreach (var f in world.Fixtures.All)
-            if (f.Kind == FixtureKind.Cage && f.Occupant == id) return (f.Id, f.Owner == faction);
+            if (f.Kind == FixtureKind.Cage && f.Occupant == id) return (f.Id, homeKey is not null ? f.Building == homeKey : f.Owner == faction);
         return (null, false);
     }
+
+    /// <summary>The key of the medic squad's home building (the one it was given, else its squad's); null without one.</summary>
+    static string? HomeKey(World world, CharacterCold cold) =>
+        world.Squads.Find(cold.SquadId) is { } squad ? (squad.Ai?.OwnHome ?? squad.HomeBuilding)?.Key : null;
 
     /// <summary>Starts the Medic / Robotics job's (or an NPC's, or the button's) treatment of the best patient the finder gives; false when none.</summary>
     bool HealSomeone(World world, int i, List<(int Medic, int Patient)> taken, bool robotics)
