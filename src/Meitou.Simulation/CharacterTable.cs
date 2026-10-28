@@ -260,6 +260,11 @@ public sealed class CharacterCold
     public bool KnockoutHeard { get; set; }
     /// <summary>The <see cref="CharacterTask.PickUp"/> is a kidnap (<see cref="Carrying.PickUpOrder.Kidnap"/>): the lift rolls <see cref="Carrying.CarrySystem.KidnapChance"/> first.</summary>
     public bool Kidnapping { get; set; }
+    /// <summary>
+    /// The <see cref="CharacterTask.PickUp"/> may snatch a body from another carrier (the original's Task_LiftSomething <c>+0x79</c>, set for task types 213, 225 and 240): the player's
+    /// pick-up order. Runtime only; hashed with the task.
+    /// </summary>
+    public bool Snatching { get; set; }
     /// <summary>The rescue job (148 <c>FIND_AND_RESCUE_IF_THERES_BEDS</c>, NUM8) is in <see cref="Jobs"/>: an idle character picks up a downed member of its faction by itself.</summary>
     public bool RescueJob => Jobs.Exists(j => j.Type == Meitou.Data.Gameplay.Ai.TaskType.FIND_AND_RESCUE_IF_THERES_BEDS);
     /// <summary>The orders panel's toggles (<see cref="Simulation.Orders"/>); the player's characters only.</summary>
@@ -623,7 +628,7 @@ public sealed class CharacterTable
             if (!k.Carrying.IsNone) { hasher.Add(0x43617272); hasher.Add(k.Carrying); }
             if (!k.CarriedBy.IsNone) { hasher.Add(0x42726E65); hasher.Add(k.CarriedBy); }
             if (k.CarriedAwake) hasher.Add(0x4177616B);
-            if (c.Task is (byte)CharacterTask.PickUp or (byte)CharacterTask.PutDown or (byte)CharacterTask.Loot or (byte)CharacterTask.StealthKo) { hasher.Add(k.CarryTarget); hasher.Add(k.LiftTime); hasher.Add((int)k.ResumeTask); if (c.Task == (byte)CharacterTask.StealthKo) hasher.Add(k.KnockoutHeard); if (k.Kidnapping) hasher.Add(0x4B69646E); }
+            if (c.Task is (byte)CharacterTask.PickUp or (byte)CharacterTask.PutDown or (byte)CharacterTask.Loot or (byte)CharacterTask.StealthKo) { hasher.Add(k.CarryTarget); hasher.Add(k.LiftTime); hasher.Add((int)k.ResumeTask); if (c.Task == (byte)CharacterTask.StealthKo) hasher.Add(k.KnockoutHeard); if (k.Kidnapping) hasher.Add(0x4B69646E); if (k.Snatching) hasher.Add(0x536E6174); }
             // Orders add to the hash only while set, so worlds without them hash as before.
             if (k.Orders != CharacterOrders.None) { hasher.Add(0x4F726473); hasher.Add((int)k.Orders); }
             if (k.RunSpeed != SpeedMode.Free) { hasher.Add(0x52756E53); hasher.Add((int)k.RunSpeed); }

@@ -82,6 +82,17 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
     public static bool CanBeLifted(World world, CharacterCold cold) => CanBeLifted(cold) || InOpenCage(world, cold) is not null || AwakeMate(cold);
 
     /// <summary>One of the player's own characters, awake, of a <c>carriable</c> race, free, carrying no one and not carried.</summary>
+    /// <summary>A down body of a <c>carriable</c> race that someone else carries: what a snatching lift (<see cref="CharacterCold.Snatching"/>) may take from its carrier.</summary>
+    static bool Snatchable(CharacterCold cold) => cold is { Medical.Incapacitated: true, Race.Carriable: true, IsImprisoned: false } && !cold.CarriedBy.IsNone;
+
+    /// <summary>Whether the lift of the carrier in <paramref name="carrier"/> may still take the body in <paramref name="body"/>: <see cref="CanBeLifted(World, CharacterCold)"/>, or a snatch from another carrier.</summary>
+    static bool Liftable(World world, int carrier, int body)
+    {
+        var table = world.Characters;
+        var b = table.Cold(body)!;
+        return CanBeLifted(world, b) || table.Cold(carrier)!.Snatching && Snatchable(b) && b.CarriedBy != table.IdOf(carrier);
+    }
+
     static bool AwakeMate(CharacterCold cold) =>
         cold is { IsPlayer: true, Medical.Incapacitated: false, Race.Carriable: true, IsImprisoned: false } && cold.Carrying.IsNone && cold.CarriedBy.IsNone;
 
@@ -141,11 +152,14 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
             switch (command)
             {
                 case PickUpOrder order:
-                    if (!table.TryResolveNext(order.Target, out int body) || !(CanBeLifted(world, table.Cold(body)!) || order.Kidnap && CanBeKidnapped(table, body))) break;
-                    if (Nearest(table, Who(world, order.Carriers), body, s => s != body && CanCarry(table.Cold(s)!)) is int carrier)
+                    // The order's lift (225 Lifting/Snatching Order) may take a body another carries; a kidnap (246) may not.
+                    if (!table.TryResolveNext(order.Target, out int body)
+                        || !(CanBeLifted(world, table.Cold(body)!) || order.Kidnap && CanBeKidnapped(table, body) || !order.Kidnap && Snatchable(table.Cold(body)!))) break;
+                    if (Nearest(table, Who(world, order.Carriers), body, s => s != body && CanCarry(table.Cold(s)!) && table.Cold(s)!.Carrying != order.Target) is int carrier)
                     {
                         Begin(table, carrier, order.Target, CharacterTask.PickUp, CharacterTask.Idle);
                         table.Cold(carrier)!.Kidnapping = order.Kidnap;
+                        table.Cold(carrier)!.Snatching = !order.Kidnap;
                     }
                     break;
                 case LootOrder loot:
@@ -290,6 +304,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         cold.LiftTime = -1;
         cold.ResumeTask = resume;
         cold.Kidnapping = false;
+        cold.Snatching = false;
     }
 
     /// <summary>Ends a pick-up, put-down or loot (serial phases): back to the task before it.</summary>
@@ -323,7 +338,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
             var cold = table.Cold(i)!;
             bool lifting = n.Task == (byte)CharacterTask.PickUp;
             if (cold.Medical is not { Incapacitated: false } || cold.InCombat || !table.TryResolveNext(cold.CarryTarget, out int t)
-                || (lifting ? cold.LiftTime < 0 && !(CanCarry(cold) && (CanBeLifted(world, table.Cold(t)!) || cold.Kidnapping && CanBeKidnapped(table, t))) : !(Opening(world, i) ? Openable(table, t) : CanBeLooted(table.Cold(t)!))))
+                || (lifting ? cold.LiftTime < 0 && !(CanCarry(cold) && (Liftable(world, i, t) || cold.Kidnapping && CanBeKidnapped(table, t))) : !(Opening(world, i) ? Openable(table, t) : CanBeLooted(table.Cold(t)!))))
             {
                 if (!(lifting && cold.LiftTime >= 0)) End(table, i);   // a lift under way is finished or broken off in SlowWorld
                 continue;
@@ -431,7 +446,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         if (!attached && cold.LiftTime > CarrySettings.AttachAt * LiftSeconds)
         {
             // The body is attached once, at 0.4 of the clip, if it can still be lifted and is still near (the reach was tested when the clip started).
-            if (!table.TryResolveNext(cold.CarryTarget, out int b) || !CanCarry(cold) || !CanBeLifted(world, table.Cold(b)!)
+            if (!table.TryResolveNext(cold.CarryTarget, out int b) || !CanCarry(cold) || !Liftable(world, i, b)
                 || Gap(table.Next[i], table.Next[b]) > 2 * ReachOf(world, table.Cold(b)!))   // pushed about while lifting: some slack, not a pick-up from afar
             {
                 End(table, i);
@@ -446,6 +461,8 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
             // Out of a bed: the attach clears the state (carry-loot.md, Character +0x2f8).
             if (table.Cold(b)!.InSomething == Locks.HeldState.Bed) world.Fixtures.LeaveBed(world, cold.CarryTarget);
             var body = table.Cold(b)!;
+            // A snatch: the body's carrier lets go of it first (FUN_14034fbe0's unlink, as a drop: no put-down knock-out).
+            if (table.TryResolveNext(body.CarriedBy, out int holder)) Unlink(world, holder, b, drop: true);
             if (body.Medical is { Incapacitated: false } && Friendly(cold, body))
             {
                 // A squad mate lifted awake: it leaves its fight and task and rides until put down.
