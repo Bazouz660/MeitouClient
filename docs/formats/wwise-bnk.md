@@ -388,7 +388,7 @@ codebooks and the end) into one block of packed codebooks in `.rdata` (about 72 
 that shape (a run of 200+ increasing pointers at most 8000 bytes apart) and accepts it only if every entry parses to exactly its span.
 So it is read from the user's install, never shipped, and no exe build's offsets are hardcoded. **Verified** on the Steam exe
 (36,718,592 bytes): one such table, 598 codebooks (**Observed**; every ambience WEM decodes against it). Other builds (GOG, older
-versions): **Unknown**; one player's non-Steam install found no table, so a failure logs the exe's size, sections and longest pointer run.
+versions): **Unknown**; a GOG install found no table in `.data` (before the scan was widened), so a failure logs the exe's size, sections and longest pointer run.
 
 ### Audio packets
 
