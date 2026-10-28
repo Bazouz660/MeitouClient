@@ -3,6 +3,29 @@
 What changed in each release, newest first. The release workflow copies the section of the version it builds into the GitHub release
 notes and refuses to release a version without one: add a `## vX.Y.Z` section with one `- ` line per change before running it.
 
+## v0.16.0
+
+- Sky arrival: new games and loads fly in from the sky, the hour running forward to the destination's
+- Autosave on by default: every 10 min of unpaused play, three rotating slots, with a toggle and slider on the Gameplay page
+- Disguises: uniform level, lookers seeing through it, the uniform faction in aggro, panel rows; blown disguises are saved
+- Stats window shows every skill's Stats Affected values as the original (work rates, aim, first aid, yield, smithing, dodge and more)
+- Inventory: race and lost-limb slot limits drawn red and refusing drops; closed slots also refuse trade, loot and storage equips (#98)
+- Stolen items lose their owner mark when handed to the owner's faction; slaves are chained when sold
+- Fists reach and hit with the FISTS item's length and multipliers; Fixes setting for the original's weak punch reach (on by default)
+- First aid: leg-loss knock-out, splint kits, medics in a fight; kidnappers keep and cage their captives
+- Power: generator and battery output scale with health; rain collectors produce with the rain; broken machines read Broken
+- Player animals chase, play and race to downed bodies; travelling platoons with slaves ship them to a camp
+- Faction tab lists only the factions you have met; Diplomat status entry; faction rename refuses taken names
+- Homeless patrols stop outside town gates; shoppers only pick public shops; followers path up to a leader on another storey
+- Import: saves older than 0.90.0 disable Reset, Buildings, Research and Dead NPCs
+- Launcher 1.4.0: Graphics tabs with every setting, quality presets with hardware Detect; Launch as Kenshi on Steam on first start (Windows)
+- Linux: DLSS through NVIDIA's NGX client; camera rotation locks the pointer; Alt+Enter and primary-monitor fixes (#96)
+- Graphics: ground parallax and displacement as Faithful/Meitou switches, default ground relief depth 30 cm
+- Overview, research, tutorials, faction panel and machine windows laid out as the original
+- Fix body parts showing through worn hide parts and mod race editor files in Workshop folders (#93)
+- Fix walkers passing through Hub ruin walls, bolts and gibs losing their texture, and the loot window overwriting the player's tooltips
+- Fix interior bed selection and the rotation marker showing in the free camera
+
 ## v0.15.1
 
 - macOS: native Metal renderer on Apple silicon, chosen by the launcher (Auto, Metal or Vulkan via MoltenVK); no Homebrew needed for Metal
