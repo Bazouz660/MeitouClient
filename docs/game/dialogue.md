@@ -190,7 +190,9 @@ child's (`FUN_1406ad9d0`).
    `my subrace`. Each list is OR within itself. The four squad tests count only the target and members the speaker perceives
    (`FUN_140855960`, **Observed** in `FUN_140678f30`); Meitou reads "perceives" as within the speaker's sight range.
 6. `repetition limit`: fails while now − last use is below the cooldown.
-7. `target is type`: the target's NPC class (OT_SLAVE also matches a target in slave state 1/2 and then **skips steps 8-9**).
+7. `target is type`: no target fails; otherwise the target's NPC class must equal the value. OT_SLAVE (6) instead accepts slave
+   state 1/2 (slave, escaped) or class 6, and an accepted OT_SLAVE line returns at once, **skipping steps 8-9** (**Verified**:
+   `FUN_140678f30`, slave state from `FUN_1405c8aa0`).
 8. `chance permanent` below 99: a roll made once per character and line, then cached.
 9. The DC list in order ([Conditions](#conditions)).
 

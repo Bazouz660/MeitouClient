@@ -150,7 +150,11 @@ public sealed partial class DialogueSystem
         if (node.CooldownHours > 0 && lastUse.TryGetValue(node.StringId, out double last) && world.GameHours - last < node.CooldownHours) return false;
         if (node.TargetIsType > 0)
         {
-            if (tc is null || (int)tc.NpcClass != node.TargetIsType) return false;
+            if (tc is null) return false;
+            // Slave (6) also takes a target whose slave state is slave or escaped, and an accepted
+            // slave line is final: chance permanent and the conditions are not looked at.
+            if (node.TargetIsType == 6) return tc.SlaveState is 1 or 2 || (int)tc.NpcClass == 6;
+            if ((int)tc.NpcClass != node.TargetIsType) return false;
         }
         if (node.ChancePermanent < 99)
         {
