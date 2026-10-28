@@ -5,7 +5,7 @@ namespace Meitou.Data.Save;
 
 /// <summary>
 /// One item of a saved inventory: an INVENTORY_ITEM_STATE (docs/formats/save.md), with what the engine models. <see cref="Source"/> is the record it was read from, so
-/// the keys the engine does not model (<c>color sid</c>, <c>uniform</c>, <c>unique</c>, <c>death</c>, the <c>ownedby</c> and <c>insideBuilding</c> handles) survive a round trip.
+/// the keys the engine does not model (<c>color sid</c>, the <c>ownedby</c> and <c>insideBuilding</c> handles) survive a round trip.
 /// </summary>
 public sealed class SaveItem
 {
@@ -30,6 +30,8 @@ public sealed class SaveItem
     public float Stun { get; init; }
     /// <summary>The <c>death</c> bool: a death item still on its owner (docs/game/animals.md "Death items").</summary>
     public bool Death { get; init; }
+    /// <summary>The <c>unique</c> bool, written only when set (<c>FUN_1407609e0</c>): a town's artifact (docs/game/economy.md "Artifacts").</summary>
+    public bool Unique { get; init; }
     /// <summary>Shackles' lock (LockedArmour, docs/game/locks.md "Save keys"): <c>lock lvl</c>, <c>locked</c>, <c>broken</c>, <c>hardness</c>; null for other items.</summary>
     public SaveItemLock? Lock { get; init; }
     /// <summary>A container's contents (the INVENTORY_STATE its one instance names); null for other items.</summary>
@@ -89,6 +91,7 @@ public static class SaveInventory
         Wear = r.Floats.GetValueOrDefault("wear"),
         Stun = r.Floats.GetValueOrDefault("stun"),
         Death = r.Bools.GetValueOrDefault("death"),
+        Unique = r.Bools.GetValueOrDefault("unique"),
         Lock = r.Ints.TryGetValue("lock lvl", out int lockLevel) ? new SaveItemLock(lockLevel, r.Bools.GetValueOrDefault("locked"), r.Bools.GetValueOrDefault("broken"), r.Floats.GetValueOrDefault("hardness")) : null,
         Contents = contents,
         Source = r,
@@ -132,6 +135,8 @@ public static class SaveInventory
             Hand.Null.Write(r, "ownedby");
         }
         r.Bools["death"] = item.Death;
+        if (item.Unique) r.Bools["unique"] = true;
+        else r.Bools.Remove("unique");
         r.Strings["material sid"] = item.MaterialId;
         r.Strings["company sid"] = item.CompanyId;
         r.Strings["uniform"] = item.Uniform;

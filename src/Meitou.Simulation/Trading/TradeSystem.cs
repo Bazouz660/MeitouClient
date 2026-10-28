@@ -258,20 +258,78 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
         foreach (var squad in world.Squads.All)
         {
             if (squad.Faction >= 0 && (squad.Faction == world.Player.Faction || squad.Faction == data.PlayerFaction)) continue;
+            bool living = Living(world, squad);
+            if (squad.Shop is { Building: not null } closing && !living)
+            {
+                // Nobody of the squad is left alive: its stock goes back into its containers, which keep it, as the original's containers hold the stock (artifacts included).
+                GiveBack(world, closing, all: true);
+                squad.Shop = null;
+                continue;
+            }
             if (squad.Shop is { } shop)
             {
                 if (world.Tick < shop.NextRestockTick || TemplateOf(squad.TemplateId) is not { } again) continue;
                 Refill(world, squad, shop, again);
             }
-            else if (TemplateOf(squad.TemplateId) is { } template)
+            else if (living && TemplateOf(squad.TemplateId) is { } template)
             {
                 var terms = new Trader(squad.Town, squad.Faction, template.BuyMult, template.BuysStolen, template.BuysIllegal);
                 // A housed trader whose template makes no prisoner or slave squads keeps a building shop when its home has stock containers (the squad factory, Observed).
                 squad.Shop = (squad.HomeBuilding is { } home && template.Prisoners.Count == 0 && template.Slaves.Count == 0 ? Shop.ForBuilding(home, terms) : null)
                     ?? new Shop { Terms = terms };
+                TakeContents(world, squad.Shop);
                 Refill(world, squad, squad.Shop, template);
             }
             else if (squad.HomeBuilding is { } home && HomeTemplateOf(squad.TemplateId) is { } contents && ShopFiller.VendorLinks(contents, FactionRecord(squad.Faction)).Count > 0) FillHome(world, squad, contents, home);
+        }
+    }
+
+    /// <summary>
+    /// A new building shop's stock containers hand what they hold (a town's artifacts) to the stock, each into its own rectangle (in the original the stock is what they hold,
+    /// docs/game/economy.md "Artifacts").
+    /// </summary>
+    static void TakeContents(World world, Shop shop)
+    {
+        for (int k = 0; k < shop.Containers.Count; k++)
+        {
+            if (world.Fixtures.Find(shop.Containers[k]) is not { Contents: { } grid } || grid.Items.Count == 0) continue;
+            var region = shop.Stock.Regions![k];
+            foreach (var item in grid.Items)
+            {
+                item.X += region.X;
+                item.Y += region.Y;
+                shop.Stock.Items.Add(item);
+            }
+            grid.Items.Clear();
+        }
+    }
+
+    /// <summary>Whether someone of the squad is alive.</summary>
+    static bool Living(World world, Squad squad)
+    {
+        var table = world.Characters;
+        foreach (var m in squad.Members)
+            if (table.TryResolveNext(m, out int slot) && table.Cold(slot) is { DiedTick: < 0 }) return true;
+        return false;
+    }
+
+    /// <summary>
+    /// A building shop whose squad is dropped, made afresh or all dead hands its unique items (artifacts; with <paramref name="all"/>, its whole stock) back to their containers,
+    /// which keep them for the next shop, as the original's containers keep them until taken (docs/game/economy.md "Artifacts").
+    /// </summary>
+    internal static void GiveBack(World world, Shop shop, bool all = false)
+    {
+        if (shop.Stock.Regions is not { } regions) return;
+        for (int k = 0; k < shop.Containers.Count; k++)
+        {
+            if (world.Fixtures.Find(shop.Containers[k]) is not { Contents: { } grid }) continue;
+            foreach (var item in shop.Stock.Items.Where(i => (all || i.Unique) && regions[k].Holds(i)).ToList())
+            {
+                shop.Stock.Items.Remove(item);
+                (item.X, item.Y) = (item.X - regions[k].X, item.Y - regions[k].Y);
+                if (grid.IsFree("main", item.X, item.Y, item.Width, item.Height)) grid.Items.Add(item);
+                else grid.AddTo("main", item);
+            }
         }
     }
 
@@ -287,7 +345,7 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
     /// <summary>
     /// A housed squad with <c>vendors</c> that is no trader (a resident's <c>house contents</c>): the building filler fills its home's storage containers as a trader's (the squad factory
     /// <c>FUN_140583a10</c> tests <c>vendors</c>, not <c>is trader</c>, <b>Observed</b>), unlocking them; here each unit goes into the first container with room and what fits nowhere is
-    /// lost. Engine choice: again every <c>vendors refresh time</c> hours, but only while every container is empty (a loaded save keeps what they hold); the purse is not touched.
+    /// lost. Engine choice: again every <c>vendors refresh time</c> hours, but only while the containers hold nothing but unique items (a loaded save keeps what they hold); the purse is not touched.
     /// </summary>
     void FillHome(World world, Squad squad, SquadTemplate template, Meitou.Data.World.TownBuilding home)
     {
@@ -297,7 +355,7 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
         var boxes = new List<Locks.Fixture>();
         foreach (var f in home.Fixtures)
             if (f.HoldsShopStock && world.Fixtures.Find(f.Id) is { Contents: not null } box) boxes.Add(box);
-        if (boxes.Count == 0 || boxes.Any(b => b.Contents!.Items.Count > 0)) return;
+        if (boxes.Count == 0 || boxes.Any(b => b.Contents!.Items.Any(i => !i.Unique))) return;
         if (Shop.ForBuilding(home, new Trader(squad.Town, squad.Faction, template.BuyMult, template.BuysStolen, template.BuysIllegal)) is not { } merged) return;
         merged.Fills = (int)world.Tick;
         ShopFiller.Fill(merged, template, Market(world), data, world.Seed, (ulong)squad.Id, specials: first);

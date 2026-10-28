@@ -24,7 +24,8 @@ public sealed partial class PopulationSystem
     }
 
     /// <summary>
-    /// Houses the town's resident entries in its buildings and builds their squads into <paramref name="squads"/>; returns the town's bars (for the bar squads).
+    /// Houses the town's resident entries in its buildings and builds their squads into <paramref name="squads"/>, each building with its template into <paramref name="homes"/>; returns
+    /// the town's bars (for the bar squads).
     /// Order of the buildings: a seeded shuffle (the original's is its handles' serials, which are random). Steps:
     /// <list type="number">
     /// <item>priorities 5 down to 0: first (<b>engine choice</b>) a building whose level-data state names a template of this priority keeps it while the entry has
@@ -37,7 +38,7 @@ public sealed partial class PopulationSystem
     /// </list>
     /// </summary>
     List<TownBuilding> HouseResidents(TownSite site, List<RecordLink> table, FactionData? faction, int factionIndex, ulong seed, IWalkability walk,
-        List<BuiltSquad> squads)
+        List<BuiltSquad> squads, List<(TownBuilding Building, SquadTemplate Template)> homes)
     {
         string? player = data.PlayerFaction >= 0 ? data.Factions[data.PlayerFaction].Id : null;
         var order = site.Buildings.Where(b => b.CanHouse && (player is null || b.OwnerFactionId != player)).ToList();
@@ -117,6 +118,7 @@ public sealed partial class PopulationSystem
                 if (BuildOne(template, factionIndex, faction, key, seed, at) is { } one) squads.Add(one with { NearY = nearY, Home = b });
             }
         }
+        homes.AddRange(housed);
         return [.. housed.Where(x => x.Template.BuildingDesignation == DesignationBar || x.Building.IsBar).Select(x => x.Building)];
     }
 

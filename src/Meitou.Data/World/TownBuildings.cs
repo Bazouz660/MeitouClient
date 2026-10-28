@@ -68,6 +68,11 @@ public sealed record TownBuilding(string InstanceId, string BuildingId, string N
     /// <c>links together</c> (a wall), or an <c>is wall gate</c> gate.
     /// </summary>
     public bool CanHouse { get; init; }
+    /// <summary>
+    /// It has <c>interior</c> parts and its interior layout, when the level data names one, places at least one object (the original's interior holding internal buildings,
+    /// docs/game/economy.md "Artifacts"; one the level data does not name the original generates on first load, and Meitou counts it).
+    /// </summary>
+    public bool Furnished { get; init; }
     /// <summary><c>is wall gate</c>: a town gate, housing only resident entries that name it in <c>building</c>.</summary>
     public bool IsGate { get; init; }
     /// <summary><c>links together</c>: a wall.</summary>
@@ -184,7 +189,7 @@ public static class TownBuildings
                     record.GetReferences("gun turret").Select(r => r.TargetStringId).FirstOrDefault() ?? "", MountedOn(instances, state))
                 : null;
             var spots = new List<HomeSpot>();
-            bool shop = false, bar = false;
+            bool shop = false, bar = false, furnished = record.GetReferences("interior").Count > 0;
             if (layouts is not null && state is not null)
             {
                 if (layouts.Find(record, state.GetString("exterior layout name")) is { } exterior)
@@ -192,6 +197,8 @@ public static class TownBuildings
                     shop = exterior.GetInt("is shop") != 0;
                     bar = exterior.GetInt("is bar") != 0;
                 }
+                // A named layout the data lacks gives the original an interior with no objects.
+                if (state.GetString("interior layout name").Length > 0) furnished = false;
                 if (layouts.Find(record, state.GetString("interior layout name"), exterior: false) is { } interior)
                 {
                     int index = 0;
@@ -231,6 +238,7 @@ public static class TownBuildings
                         }
                         index++;
                     }
+                    furnished = index > 0;
                     int slot = 0;
                     foreach (var group in layouts.ItemGroups(interior))
                     {
@@ -248,6 +256,7 @@ public static class TownBuildings
             {
                 OwnerFactionId = owner, Fixtures = fixtures ?? [], ItemSlots = itemSlots ?? [], Zone = b.Zone, Resolved = resolved,
                 CanHouse = record.GetBool("is wall gate") || record.GetReferences("interior").Count > 0 && !record.GetBool("links together"),
+                Furnished = furnished,
                 IsGate = record.GetBool("is wall gate"),
                 IsWall = record.GetBool("links together"),
                 HasInterior = record.GetReferences("interior").Count > 0,

@@ -179,11 +179,11 @@ public static class InventoryCommands
         type is FcsRecordType.WEAPON or FcsRecordType.ARMOUR or FcsRecordType.CONTAINER or FcsRecordType.MAP_ITEM or FcsRecordType.CROSSBOW or FcsRecordType.LIMB_REPLACEMENT;
 
     /// <summary>
-    /// Whether a held item joins the stack it is dropped on (<c>FUN_140715560</c>): same record (so type), material and quality, of a type that stacks; Meitou also keeps stolen and death
-    /// items apart, as <see cref="Inventory.Add"/> does.
+    /// Whether a held item joins the stack it is dropped on (<c>FUN_140715560</c>): same record (so type), material and quality, of a type that stacks; Meitou also keeps stolen, death
+    /// and unique items apart, as <see cref="Inventory.Add"/> does.
     /// </summary>
     public static bool Stackable(ItemInstance a, ItemInstance b) => !NeverStacks(a.Type) && a.Record == b.Record && a.MaterialId == b.MaterialId && a.Quality == b.Quality
-        && a.StolenFrom == b.StolenFrom && a.Death == b.Death && a.Contents is null && b.Contents is null;
+        && a.StolenFrom == b.StolenFrom && a.Death == b.Death && a.Unique == b.Unique && a.Contents is null && b.Contents is null;
 
     /// <summary>
     /// Moves <paramref name="units"/> of <paramref name="from"/> onto the stack <paramref name="into"/>. Partial charges combine: a stack is full units and one partly used one (its

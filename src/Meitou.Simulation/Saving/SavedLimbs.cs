@@ -34,7 +34,7 @@ static class SavedLimbs
             items[slot] = new SaveItem
             {
                 BaseId = item.BaseId, MaterialId = item.MaterialId, CompanyId = item.CompanyId, Section = LimbReplacement.SlotOf(slot), Quantity = 1, Level = item.Level,
-                ItemFunction = item.ItemFunction, Quality = item.Quality, Charges = item.Charges, Source = item.Source,
+                ItemFunction = item.ItemFunction, Quality = item.Quality, Charges = item.Charges, Unique = item.Unique, Source = item.Source,
             };
         }
         SaveLimbs.Write(file, medical, state.LimbBits, items);

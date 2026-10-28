@@ -96,7 +96,7 @@ character: within `PlayerSystem.GiveRange` 1000 of its window's owner, `StealRan
 - **Restock** (`ActivePlatoon::vfunc_4` calls `FUN_1404ff5e0(platoon, 0)` once `inventory refresh time` passes): the home branch skips a building whose interior object's `+0x10` is set
   (meaning **Unknown**); the first fill passes 1 and never skips.
 - Meitou, non-traders (`TradeSystem.FillHome`, engine choices): the stock rolls as a building shop's, then each unit goes into the first stock container with room (their own grids and
-  stack bonus), what fits nowhere is lost, the containers are unlocked, the purse is untouched; refilled every `vendors refresh time` only while every container is empty.
+  stack bonus), what fits nowhere is lost, the containers are unlocked, the purse is untouched; refilled every `vendors refresh time` only while the containers hold nothing but unique items ([artifacts](#artifacts)).
 - **Containers** (`FUN_1409562f0`): the home's interior objects whose functionality is 2 BF_RESOURCE_STORAGE, 9 BF_SHOP or 13 BF_GENERAL_STORAGE and that have an inventory.
   The filler unlocks their locks, sorts them (key **Unknown**), optionally clears them, puts special items first, then the vendor items; what fits nowhere is destroyed.
 - **Special items** (`FUN_140958740`, **Verified**): on a refresh with specials, the template's `special items` (ITEM, 34 templates), else `special map items` (MAP_ITEM, 10): v0 of each,
@@ -110,6 +110,71 @@ character: within `PlayerSystem.GiveRange` 1000 of its window's owner, `StealRan
   (**Verified**, kenshi_x64.exe decompile: 9-byte function, constant return). It scales only shop stock count, purse and nest spawn weight; no price reads it.
 - Meitou (`Shop.ForBuilding`, engine choices): the stock is the shop's one inventory in which each stock container's grid is a rectangle of its own (`Inventory.Regions`, packed by maximal rectangles, the lowest of four orders; an item never spans two), the trade window shows them all with the cells outside every container greyed (a drop there: "No room for that item."), a container's window only its own. The money stack goes to the purse, r is symmetric,
   stock is saved on the platoon as squad shops' ([save keys](../formats/save.md#npc-platoons-meitou-mapping); the original keeps it in the containers, zone file). Observed with real data (Squin, 2026-10-24): 3 to 13 rows more than the packed size (geometry: 300 random orders found none lower), e.g. the Bughouse armour shop 18 x 274 for 271.
+
+## Artifacts
+
+**Verified** by decompile (`FUN_1400b90a0`, `FUN_140931a90` and the functions named below); the base data by probe.
+
+**The towns' lists** (`FUN_1400b90a0`, run once the towns exist in a new game and in an [import](../formats/save.md#importing-a-game-savemanagerimportgame-fun_140378a30)).
+From the first ARTIFACTS record (base game: one, `44877-rebirth.mod`):
+- `items` (ITEM): v0 units each, level 0. These are the item artifacts; the rest are gear.
+- `armours` (ARMOUR): v0 units at level 80; `armours hq`: at level 95.
+- `crossbows`, `robotics`: v0 units at level 95 and v1 units at level 80, each when above 0.
+- `weapons` (MATERIAL_SPECS_WEAPON, a model): the WEAPON_MANUFACTURER other than `PLAYER_WEAPONS` whose `weapon models` lists it (the last one in data order); one artifact per
+  WEAPON of its `weapon types`, each with the entry's v0 units, the model as material, the manufacturer as maker and the manufacturer's v0 for the model as level.
+- In `items`, `armours`, `armours hq` and `weapons` the units are read by the entry's position among the entries whose record exists.
+
+Base data: `items` Ancient Science Book 160, Engineering Research 30, AI Core 37; 29 + 24 armours, 6 crossbows, 16 limbs, 7 models (Catun No.1-3, Mk I-III, Edge Type 1) giving
+223 weapons of 1 unit. An artifact's value is the [item value](#item-value) at its level without the sale multipliers (a weapon with its maker's `price mod`).
+
+A town takes item artifacts when its TOWN `item artifacts max value` is not 0, those whose value lies in [`item artifacts min value`, max]; gear likewise by `gear artifacts min` /
+`max value`. Types 0 (nest), 8 (nest marker) and 10 take none. Base data: 32 towns with an item range, 71 with a gear range (37 of the 106 ruins have one or both). Towns are ordered
+by max, min, TOWN string id, then position x and z; artifacts by value, then the item, part 1 and part 2 string ids (one with the part
+before one without; two without it compare equal), then level.
+
+- **Gear** (a boost 1.60 `mt19937` seeded 11667085): first each gear town in order takes one unit of the first gear artifact in order that its range holds. Then every gear artifact,
+  in order, gives each remaining unit to one of the towns whose range holds it, picked by `uniform_int` over them. One no town holds is dropped.
+- **Items** (no randomness): an item artifact's units are spread over its towns in order by their max: with average = (sum of the maxima) / units and a balance starting at -1,
+  before each unit a negative balance moves on to the next town (adding its max), and each unit takes the average off the balance. One no town holds is logged
+  ("Can't find any towns for artifact: <name>") and dropped. A weighted pick of leftover units follows but is reached only by an entry of fewer than 0 units, which never ends (as does a gear entry of 0).
+
+A town's list holds (item, part 1, part 2, level, units), its gear first, an artifact given to it again added to the same entry. It is saved in its GAMESTATE_TOWN (`FUN_1403709d0`,
+read by `FUN_14036fc30`): int `artifacts count`, then per entry k the strings `artifact_<k>_itm`, `artifact_<k>_mat` (part 1), `artifact_<k>_man` (part 2) and the ints
+`artifact_<k>_lvl`, `artifact_<k>_qty`; a load adds the entries whose item exists. An import keeps the states of the player's towns only (with Buildings), so the others start empty
+and the player's keep their entries and get more.
+
+**Distribution** (`FUN_140931a90`), the last step of the resident chooser (`FUN_1409370d0`). `FUN_140a0e760` runs that, once every newly active zone has loaded, for each
+town not owned by the player that has a building in a zone made for the first time; a town with an empty list does nothing.
+1. Its candidates (`FUN_1408cba20` over the town's loaded zones, `FUN_1408d10f0`): its buildings with an interior holding at least one object, not the player's, whose resident template
+   has a non-zero SQUAD_TEMPLATE `item artifacts base value` (for items) or `gear artifacts base value` (gear), ordered by that value, highest first. With none at all the list
+   is kept.
+2. Each unit of each entry is made as an item at the entry's level (a weapon of the entry's maker and model) and flagged unique; the list is emptied. Items are ordered by value,
+   highest first.
+3. A new `mt19937(11667085)`: each item, items then gear, goes to a building picked by `uniform_int` among the first ones whose base value is at least the item's; with none it is
+   destroyed (debug log "[Town] Artifact '<name>' has no building to be put in. Value: <v>").
+4. In each building given items, its containers are its interior objects of function 2, 9 or 13 with an inventory: each one's first section is emptied (items destroyed, unique ones
+   too), and they are ordered by their lock's level, highest first. The building's items, highest value first, go one by one into a container picked by `uniform_int` among the
+   first 1, 2, 4, ... (doubling per item, at most all); one that does not fit tries the others in an order shuffled (MSVC 2010 `random_shuffle`) by a copy of the generator taken
+   after step 3. Then each container holding something is locked. What is placed nowhere is destroyed.
+
+Ties (equal base values, item values or lock levels) and the order in which the buildings draw follow memory addresses.
+
+**Afterwards.** The resident chooser only records each building's squads (`FUN_14057f4c0` makes no characters); a squad is built when it first loads (`FUN_1404ffad0`), and only
+then does a shop stock its home ([building shops](#building-shops-observed-decompile)), on top of the artifacts. That fill and every restock (`FUN_14095b9d0`) clear their containers with
+`FUN_14074a5b0`, which spares unique items, so artifacts stay until taken; the distribution's clear (`FUN_140749c20`) spares nothing. The trade window lists the first section of every
+interior object with an inventory of the trader's home (`FUN_140953850`, `FUN_1409528d0`), unique items included: a shop sells its artifacts. An item's flag is saved as the bool
+`unique`, written only when set (`FUN_1407609e0` / `FUN_140761550`).
+
+**Meitou** (`Artifacts`, `PopulationSystem.Artifacts.cs`): the lists are made for a new game and an import (`SaveImport.Filter` writes them into the town states), kept per town,
+saved and read back with the keys above, and given out when a town makes its residents. Engine choices: the candidates are all the town's buildings with `interior` parts whose interior layout,
+when the level data names one, places an object, and whose template Meitou housed there ([town residents](factions-squads-towns.md#town-residents)); ties keep the buildings' placement order, the entries' order and the containers' layout order, and the buildings
+draw in placement order; an entry of 0 or fewer units is skipped. A building whose interior layout the level data does not name has no interior in Meitou (the original
+generates one on first load, which is not modelled), so what it is given is held for it instead, as is what goes to a building in another town's centre zone not visited yet (no save writes its containers then): saved in its town's state as `meitou held artifacts count` and, per entry k,
+`meitou held artifact_<k>_bld` (the building, `TownBuilding.Key`) with the list's other fields. Items flagged unique (`ItemInstance.Unique`) do not stack with others; a shop
+fill and `FillHome` keep them, and a building shop takes its containers' items into its stock when it is made and gives its unique items back to them when its squad is
+dropped or made afresh; once nobody of its squad is alive the shop closes and its whole stock goes back into the containers, which a save keeps with the building. Not modelled: the shop fill's container choice and relocking,
+so the containers of a stocked home end up unlocked after its first fill; and an import of a save that has no state for a placed town (a mod's town added since) gives that town
+no artifacts, as Meitou adds no state for a town a loaded save lacks. Tests: `ArtifactTests`, `TownArtifactTests`.
 
 ## Crimes, bounties and prisoners
 
@@ -485,7 +550,6 @@ Meitou's reading: [simulation, slave trading](../simulation.md#arrest-and-jail).
   `(0,100,0)`) is read for clothing, armour and weapon entries (`FUN_140956ba0` / `FUN_1409555d0` read them; "val0 is relative
   chance" per the editor, but 472 entries have (0, 100, 0)). It follows the NPC clothing rule in [characters.md](../characters.md)
   that quantity 0 never spawns, but this was not re-verified for shops.
-- **The artifact placement** (`ArtifactTown`, which squad carries which artifact) beyond the six field readers.
 - **How a pending crime's timer counts down** (`+0x90`; set by `FUN_140851f40` / `FUN_140852e10`, the decrement was not found), and so how long an unseen crime stays pending.
 - **Whether CHARACTER `money min` / `money max`** exist in the data and are unused (the editor lists `money`; not found
   being read for NPC purses).

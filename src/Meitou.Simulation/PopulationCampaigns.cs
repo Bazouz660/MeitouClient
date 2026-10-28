@@ -1177,10 +1177,11 @@ public sealed partial class PopulationSystem : IStateHashed
 
     // ---- state hash ----
 
-    /// <summary>The war managers once any faction has started or queued a campaign, and the kept wild squads while there are any (so worlds without either hash as before).</summary>
+    /// <summary>The war managers once any faction has started or queued a campaign, the kept wild squads while there are any and the towns' artifacts while any are left (so worlds without them hash as before).</summary>
     public void Hash(ref StateHasher h)
     {
         HashWars(ref h);
+        HashArtifacts(ref h);
         foreach (var (site, kept) in keptWild)
         {
             h.Add(site);

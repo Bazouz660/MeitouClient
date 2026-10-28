@@ -81,6 +81,9 @@ public sealed record SquadTemplate
     public bool BuysStolen { get; init; }
     /// <summary><c>buys illegal</c>: a smuggler.</summary>
     public bool BuysIllegal { get; init; }
+    /// <summary><c>item artifacts base value</c> and <c>gear artifacts base value</c>: the most an artifact given to the squad's home may be worth (0: none; docs/game/economy.md "Artifacts").</summary>
+    public int ItemArtifactsBaseValue { get; init; }
+    public int GearArtifactsBaseValue { get; init; }
 
     /// <summary>A squad with a shop: <see cref="IsTrader"/> and at least one vendor list.</summary>
     public bool HasShop => IsTrader && Vendors.Count > 0;
@@ -136,6 +139,8 @@ public sealed record SquadTemplate
             BuyMult = RecordReading.Float(r, "buy mult", 1),
             BuysStolen = RecordReading.Bool(r, "buys stolen", false),
             BuysIllegal = RecordReading.Bool(r, "buys illegal", false),
+            ItemArtifactsBaseValue = r.GetInt("item artifacts base value"),
+            GearArtifactsBaseValue = r.GetInt("gear artifacts base value"),
         };
     }
 
