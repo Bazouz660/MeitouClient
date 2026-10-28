@@ -183,7 +183,7 @@ public static class InventoryCommands
     /// and unique items apart, as <see cref="Inventory.Add"/> does.
     /// </summary>
     public static bool Stackable(ItemInstance a, ItemInstance b) => !NeverStacks(a.Type) && a.Record == b.Record && a.MaterialId == b.MaterialId && a.Quality == b.Quality
-        && a.StolenFrom == b.StolenFrom && a.Death == b.Death && a.Unique == b.Unique && a.Contents is null && b.Contents is null;
+        && a.Mark == b.Mark && a.Death == b.Death && a.Unique == b.Unique && a.Contents is null && b.Contents is null;
 
     /// <summary>
     /// Moves <paramref name="units"/> of <paramref name="from"/> onto the stack <paramref name="into"/>. Partial charges combine: a stack is full units and one partly used one (its

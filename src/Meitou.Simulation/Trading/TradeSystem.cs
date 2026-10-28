@@ -57,7 +57,7 @@ public sealed record TradeItemView(int Index, string Record, string Name, string
     public long SellValue { get; init; }
     /// <summary>The stack's weight in kg.</summary>
     public float Weight { get; init; }
-    /// <summary>A stolen good of the customer's that was stolen from the shop's own faction: the chance a sale goes through unnoticed (the fencing prompt's number); null otherwise.</summary>
+    /// <summary>A stolen good of the customer's that was stolen from the shop's own faction: the chance a sale goes through unnoticed (<see cref="TradeSystem"/>'s fence odds, the hover box's number); null otherwise.</summary>
     public float? FenceChance { get; init; }
     /// <summary>
     /// A stolen good of the customer's that a shop which is no fence would buy only with a risk: the chance (0 to 1, below 1) a sale goes through unnoticed, whoever it was stolen from
@@ -107,8 +107,9 @@ public sealed class TradeSettings
 /// <item><b>Trading</b> (the trade window <c>FUN_140715560</c>, <b>Observed</b>): a purchase is priced by <see cref="Market.StackPrice"/> without the sell flag, a sale with it; when the payer
 /// cannot afford the stack the number of units it can afford moves instead, none: "You can't afford that." (3) or "The shopkeeper can't afford that." (4). What does not fit: "No room for
 /// that item." (2). The cats move between the player's purse and the shop's.</item>
-/// <item><b>Fencing</b> (8.4, <b>Observed</b>): a stolen item sold to a shop that is not a knowing fence (<c>buys stolen</c>) is caught unless a roll is below
-/// lerp(thievery / 100, 0.4, 1.25), halved when the item was stolen from the shop's own faction (never caught when it was stolen from a bandit or adventurer faction, or from one the shop's faction is not allied to, <see cref="FenceOdds"/>); the seller trains thievery either way; caught: "Got caught selling stolen item." (9), the sale is refused and the seller gets a
+/// <item><b>Fencing</b> (8.4, <b>Observed</b>): a stolen item sold to a shop that is not a knowing fence (<c>buys stolen</c>; a knowing fence only for goods stolen from its own squad) is caught unless a roll is below
+/// lerp(thievery / 100, 0.4, 1.25), halved when the item was stolen from the shop's own faction and again from its own squad (never caught when it was stolen from a bandit or adventurer faction, or from one the shop's faction is
+/// not allied to whose home town is not the trader's, <see cref="FenceOdds"/>); the seller trains thievery either way; caught: "Got caught selling stolen item." (9), the sale is refused and the seller gets a
 /// pending Fencing crime against the shop's faction, booked at once with the shopkeeper as the witness. The prompt that shows the chance is the UI's. An illegal item (the culture of the town's faction) is refused by a trader that does not buy illegal goods:
 /// "Attempted smuggling!" (<see cref="Smuggling"/>); the rest of the smuggling rules (the trader's answer for a smuggler, read by no caller seen) are not built.</item>
 /// </list>
@@ -198,7 +199,8 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
 
     // CHARACTER `wages` (Character::giveBirth and Character::dailyUpdate, Verified): a character not of the player's faction with wages of 1 or more sets (not adds to) its squad's money
     // to them when it is made and every day; with several waged members the last one wins. Engine choices: the day pass runs when the game day changes, members in squad order; "when
-    // made" is the first pass that sees the squad, except the squads already there at this system's first pass (a loaded game keeps its saved purses until the next day).
+    // made" is the first pass that sees the squad, except the squads already there at this system's first pass and a squad of characters back from a save or from out of the world
+    // (Squad.Restored: giveBirth pays only a character made without saved state, so a loaded game keeps its saved purses until the next day).
     readonly Dictionary<string, int> wages = new(StringComparer.Ordinal);
     readonly HashSet<int> paidSquads = [];
     long wageDay = long.MinValue;
@@ -210,7 +212,8 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
         wageDay = day;
         foreach (var squad in world.Squads.All)
         {
-            if (!paidSquads.Add(squad.Id) && !newDay || first) continue;
+            bool appeared = paidSquads.Add(squad.Id);
+            if (first || !newDay && (!appeared || squad.Restored)) continue;
             foreach (var id in squad.Members)
             {
                 if (!world.Characters.TryResolveNext(id, out int s) || world.Characters.Cold(s) is not { } c || c.IsPlayer || data.PlayerFaction >= 0 && c.Faction == data.PlayerFaction) continue;
@@ -442,7 +445,7 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
     {
         if (!Resolve(world, out int c, out int t, out var shop)) return false;
         var squad = world.Squads.Find(world.Characters.Cold(t)!.SquadId)!;
-        if (!item.IsStolenFor(world.Characters.Cold(c)!.Faction) || shop!.Terms.BuysStolen || !Caught(world, c, item, squad, shop.Terms)) return Smuggling(world, c, item, shop!.Terms);
+        if (!item.IsStolenFor(world.Characters.Cold(c)!.Faction) || !Fences(item, squad, shop!.Terms) || !Caught(world, c, t, item, squad, shop.Terms)) return Smuggling(world, c, item, shop!.Terms);
         world.Post("Got caught selling stolen item.");
         if (Crimes is { } crimes && crimes.SetPending(world, c, Crime.CrimeCode.Fencing, squad.Faction, trader, Crime.CrimeSystem.MinTimer))
             crimes.Book(world, c, squad.Faction, trader);
@@ -549,7 +552,7 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
             world.Post("The shopkeeper can't afford that.");
             return;
         }
-        if (item.IsStolenFor(cold.Faction) && !shop.Terms.BuysStolen && Caught(world, c, item, squad, shop.Terms))
+        if (item.IsStolenFor(cold.Faction) && Fences(item, squad, shop.Terms) && Caught(world, c, t, item, squad, shop.Terms))
         {
             world.Post("Got caught selling stolen item.");
             if (Crimes is { } crimes && crimes.SetPending(world, c, Crime.CrimeCode.Fencing, squad.Faction, trader, Crime.CrimeSystem.MinTimer))
@@ -581,13 +584,20 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
 
     /// <summary>
     /// The chance a shop that is no fence lets a stolen item through (8.4, <c>FUN_140793490</c>): lerp(thievery / 100, 0.4, 1.25) of the seller, halved when the item was stolen from the
-    /// shop's faction; 1 or more never gets caught. The roll is the seller's and the tick's.
+    /// shop's faction and halved again when it was stolen from the shop's own squad; 1 or more never gets caught. The roll is the seller's and the tick's.
     /// </summary>
-    public static float FenceChance(float thievery, bool stolenFromShopFaction)
+    public static float FenceChance(float thievery, bool stolenFromShopFaction, bool stolenFromShopSquad = false)
     {
         float p = 0.4f + (1.25f - 0.4f) * (thievery / 100f);
-        return stolenFromShopFaction ? p * 0.5f : p;
+        if (stolenFromShopFaction) p *= 0.5f;
+        return stolenFromShopSquad ? p * 0.5f : p;
     }
+
+    /// <summary>
+    /// Whether the shop's squad asks about and rolls on a stolen good at all (<c>FUN_140792830</c>, <b>Observed</b>): always, unless it buys stolen goods; a squad that does only for goods
+    /// stolen from one of its own members (the item's owner handle names the squad's platoon).
+    /// </summary>
+    static bool Fences(ItemInstance item, Squad shopSquad, Trader terms) => !terms.BuysStolen || item.OwnerSquad >= 0 && item.OwnerSquad == shopSquad.Id;
 
     /// <summary>The odds <c>FUN_140793490</c> answers for goods nobody looks for (<c>DAT_14169bb44</c>, <b>Verified</b>: 1.1).</summary>
     const float NeverCaught = 1.1f;
@@ -596,25 +606,36 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
     bool Allied(int a, int b) => a == b || data.Relations.Contains(a) && data.Relations.Contains(b) && data.Relations.IsAlly(a, b);
 
     /// <summary>
-    /// The chance a shop that is no fence lets the seller's stolen item through (<c>FUN_140793490</c>, <b>Observed</b>): 1 or more, never caught, for a shop that buys stolen goods, for goods stolen
-    /// from a bandit or adventurer faction, and for goods stolen from a faction that is neither the shop's, nor allied to it, nor in the shop's town (the victim's town is not tracked:
-    /// read here as another town); else <see cref="FenceChance"/>.
+    /// The chance the trader (slot <paramref name="trader"/>) lets the seller's stolen item through (<c>FUN_140793490</c>, <b>Observed</b>). With the robbed character known
+    /// (<see cref="ItemInstance.Owner"/>): 1 when it is gone or of the seller's own squad, and its faction now is the one tested. Of another faction than the shop's: 1 for a shop that buys stolen
+    /// goods (<see cref="Fences"/>) and for a bandit or adventurer faction; 1.1 (never caught) when the shop's faction is not allied to it and the owner's squad's home town is not the town the trader
+    /// stands in (an item with no known owner has no home town). Else <see cref="FenceChance"/>, halved for the shop's faction and again for the shop's own squad.
     /// </summary>
-    float FenceOdds(float thievery, ItemInstance item, int shopFaction, Trader terms)
+    float FenceOdds(World world, float thievery, ItemInstance item, int seller, int trader, Squad shopSquad, Trader terms)
     {
+        var table = world.Characters;
         int from = item.StolenFrom;
+        CampaignTown? home = null;
+        if (!item.Owner.IsNone)
+        {
+            if (!table.TryResolveNext(item.Owner, out int o) || table.Cold(o) is not { } owner) return 1;
+            if (item.OwnerSquad == table.Cold(seller)!.SquadId) return 1;
+            from = owner.Faction;
+            home = world.Squads.Find(owner.SquadId) is { Town: >= 0 } squad ? CampaignTown.OfSite(squad.Town) : CampaignTown.None;
+        }
+        int shopFaction = shopSquad.Faction;
         if (from != shopFaction && from >= 0)
         {
-            if (terms.BuysStolen || data.Relations.Factions[from].FundamentalType is FundamentalType.Bandit or FundamentalType.Adventurer) return 1;
-            if (!Allied(shopFaction, from)) return NeverCaught;
+            if (!Fences(item, shopSquad, terms) || data.Relations.Factions[from].FundamentalType is FundamentalType.Bandit or FundamentalType.Adventurer) return 1;
+            if (!Allied(shopFaction, from) && home != Ai.AiSystem.TownAt(data, world, table.Next[trader].Position)) return NeverCaught;
         }
-        return FenceChance(thievery, from == shopFaction);
+        return FenceChance(thievery, from == shopFaction, item.OwnerSquad >= 0 && item.OwnerSquad == shopSquad.Id);
     }
 
-    bool Caught(World world, int seller, ItemInstance item, Squad shopSquad, Trader terms)
+    bool Caught(World world, int seller, int trader, ItemInstance item, Squad shopSquad, Trader terms)
     {
         var cold = world.Characters.Cold(seller)!;
-        float p = FenceOdds(cold.Stats?[StatsEnumerated.Thieving] ?? 0, item, shopSquad.Faction, terms);
+        float p = FenceOdds(world, cold.Stats?[StatsEnumerated.Thieving] ?? 0, item, seller, trader, shopSquad, terms);
         bool caught = p < 1 && Rng.Float(Rng.Hash(world.Seed, Rng.Key(world.Characters.IdOf(seller)), RngPurpose.Trade, (ulong)world.Tick)) >= p;
         // The seller trains thievery whenever the odds are below 0.98 (<c>FUN_140793770</c>): 5 x 2 for a fence that works, 20 x 2 for one that is caught.
         if (p < Crime.CrimeSystem.FenceXpBelow) Crimes?.TrainThievery(world, seller, caught ? Crime.CrimeSystem.FenceCaughtXp : Crime.CrimeSystem.FenceXp);
@@ -719,8 +740,8 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
                 Buyback = buyback, Container = item.Contents is not null,
                 Material = item.MaterialId, Colour = item.ColourId, Charge = item.ChargeFraction, Value = value, SellValue = sellValue, Weight = item.Weight, PriceFactor = m.TraderFactor(item, shop.Terms, holder),
                 MarketFactor = m.MarketFactor(shop.Terms.Site, item.Record), Company = item.CompanyId, Level = item.Level, Charges = item.Charges, MaxCharges = item.MaxCharges, StolenFrom = stolen ? item.StolenFrom : -1,
-                FenceChance = sell && stolen && item.StolenFrom == squad.Faction ? Math.Clamp(FenceChance(thievery, true), 0, 1) : null,
-                FenceOdds = sell && stolen && !shop.Terms.BuysStolen && FenceOdds(thievery, item, squad.Faction, shop.Terms) is < 1 and var odds ? Math.Max(odds, 0) : null,
+                FenceChance = sell && stolen && item.StolenFrom == squad.Faction && Fences(item, squad, shop.Terms) ? Math.Clamp(FenceOdds(world, thievery, item, c, t, squad, shop.Terms), 0, 1) : null,
+                FenceOdds = sell && stolen && Fences(item, squad, shop.Terms) && FenceOdds(world, thievery, item, c, t, squad, shop.Terms) is < 1 and var odds ? Math.Max(odds, 0) : null,
                 Illegal = sell && (uint)shop.Terms.Site < (uint)data.SiteFactions.Count && m.FactionCulture(data.SiteFactions[shop.Terms.Site]) is { } culture && culture.Illegal.Contains(item.Record),
             };
         }

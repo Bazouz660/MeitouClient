@@ -43,6 +43,20 @@ public sealed partial class PopulationSystem
     bool Ready(Platoon p) =>
         ZoneGate is not { } gate || gate(p.Pinned && p.Origin >= 0 ? data.Sites[p.Origin].Zone : WorldLayout.ZoneOf(p.Position.X, p.Position.Y));
 
+    /// <summary>
+    /// The activation dwell (<c>FUN_1407ebf30</c>): with its zone ready, a platoon outside the zone's box (<see cref="ZoneActivation.TrimmedBox"/>, trim 170) waits 2 s again, inside
+    /// it counts <paramref name="dt"/> down; true once below 0. A zone not ready changes nothing.
+    /// </summary>
+    bool Dwelt(Platoon p, float dt)
+    {
+        if (!Ready(p)) return false;
+        var zone = WorldLayout.ZoneOf(p.Position.X, p.Position.Y);   // the zone at the platoon's own position, as the original
+        var (minX, minZ, maxX, maxZ) = ZoneActivation.TrimmedBox(zone, active.Contains, ZoneActivation.ActivationTrim);
+        if (p.Position.X < minX || p.Position.X > maxX || p.Position.Y < minZ || p.Position.Y > maxZ) p.DwellLeft = 2;
+        else p.DwellLeft -= dt;
+        return p.DwellLeft < 0;
+    }
+
     // ---- the look at the roaming squads, in the slow phase ----
 
     void StepRoaming(World world)
@@ -69,7 +83,7 @@ public sealed partial class PopulationSystem
                         Despawn(world, p);
                         break;
                     }
-                    if (p.State == PlatoonState.Unloaded && Wanted(p) && Ready(p)) Activate(world, p);
+                    if (p.State == PlatoonState.Unloaded && Dwelt(p, dt) && Wanted(p)) Activate(world, p);
                     break;
                 case PlatoonState.Loaded:
                     StepLoaded(world, p, dt);
@@ -385,6 +399,7 @@ public sealed partial class PopulationSystem
             foreach (var m in squad.Members) { world.Uniques.Left(m); RemoveMember(world, m); }
             world.Squads.Remove(squad.Id);
             p.State = PlatoonState.Unloaded;
+            p.DwellLeft = 5;
             p.SquadId = -1;
             p.UnloadAtTick = -1;
             return;

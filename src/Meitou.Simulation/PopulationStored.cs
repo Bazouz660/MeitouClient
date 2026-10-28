@@ -68,6 +68,7 @@ public sealed partial class PopulationSystem
         c.DrawnWeapon = default;
         c.ModeOverride = null;
         c.SpeedOverride = 0;
+        c.PaceCap = null;
         c.InCombat = false;
         c.Fleeing = false;
         c.Engaged = false;
@@ -122,6 +123,7 @@ public sealed partial class PopulationSystem
             Town = town,
             PlatoonId = platoonId,
             Pinned = stored.Pinned && town >= 0,
+            Restored = true,
             Position = new Vector3(position.X, world.Walkability.GroundHeight(position.X, position.Y), position.Y),
             HomeCentre = homeCentre,
             HomeRadius = homeRadius,

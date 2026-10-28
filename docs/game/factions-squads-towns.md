@@ -168,7 +168,11 @@ itself (`FUN_1404febd0`) and after 4 s outside every loaded zone (`FUN_1406bab60
 copied into an in-memory record container, no file written) when its `persistent` flag (+0x115) is set or it is in a live campaign, else it is destroyed
 (`FUN_1406ba9d0`). Town residents are made persistent (`FUN_14057f820`, with `sqt` 1); pool refills, homeless squads and `FUN_1409c4150` are not. A
 non-persistent unloaded platoon is activated after 60 s (`FUN_1407ee790`) and then destroyed, so it lasts about 64 s out of range. An unloaded platoon
-becomes active after 2 s inside a ready zone (`FUN_1407ebf30`), its characters rebuilt from the kept records; at game load each PLATOON is made active or
+becomes active through a dwell timer (+0x78, **Verified** `FUN_1407ebf30`, `FUN_1407ef040`): 5 s when it becomes unloaded; while the zone at its
+position is ready, outside the zone's box the timer is set to 2 s, inside it counts down, and the platoon activates below 0. The box
+(`FUN_140a09770`) is the zone's bounds widened by 10, each side facing one of the four neighbours that exists and is neither loaded nor requested
+moved in by 170 (about 178.5 for the stand-in stop test). Its characters are rebuilt from the kept records (Meitou: not at game load, which
+activates at once behind the loading screen); at game load each PLATOON is made active or
 unloaded by its zone (`FUN_1407f85f0`). `declareDead` (`FUN_140797090`) clears `persistent` (destroyed at its next unload, its PLATOON record deleted by
 `FUN_1407ec5e0`). No distance, age or emptiness rule removes a persistent platoon. A wiped-out town refills only through its pools, with non-persistent squads;
 no path re-running the initial resident placement was found (**Unknown** whether one exists).
@@ -634,8 +638,9 @@ campaign is not hostile, or that is not active (slot 70); a redirected request d
   point (seeded with slots + 1 points within ±100; slots 5, or N + 1 past N platoons) and drops its oldest while longer than N; follower i's
   point is i × slots × 150 / N back along it. Whether followers steer to it or to the leader platoon's position is **Unknown** (the task
   prefers the handle's). Task 215 (`Task_TravelToMissionTarget_ArmyFormation`): followers 100 or more from their point JOG, closer keep a
-  straight move at it at the leader's current speed (× 0.9 under 70) and never wander (**Verified**, `FUN_140349e70`; Meitou: the leader's
-  speed mode, no 0.9); the leader uses `travel speed loaded` while every intact platoon (loaded, or unloaded on job 5/6) is within
+  straight move at it at the leader's current speed (× 0.9 under 70) and never wander (**Verified**, `FUN_140349e70`; Meitou: the squad leader takes the
+  campaign leader's speed mode, capped by `CharacterCold.PaceCap` = the campaign leader's velocity now, × 0.9 under 70, cleared at 100 or more,
+  on leaving the campaign and while fighting; reading the speed value as the velocity is an engine reading); the leader uses `travel speed loaded` while every intact platoon (loaded, or unloaded on job 5/6) is within
   6000, else stops within 8294.4 of its target (plain distance), else walks. Speed modes: WALK default, JOG 55, RUN and GROUPED 999 (no
   cap), NO_SPEED_CHANGE unchanged.
 - Announcement (task 129 in the pt1 leader package, **Verified**): "{1} has arrived at {2}" once; task 129 needs the leader not down (!101)

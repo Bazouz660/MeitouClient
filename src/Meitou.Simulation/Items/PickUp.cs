@@ -66,7 +66,8 @@ namespace Meitou.Simulation
                     continue;
                 }
                 // Another faction's item is stolen from it (the "Steal" pick-up); what stays on the ground keeps its old mark.
-                int before = item.Item.Quantity, mark = item.Item.StolenFrom;
+                int before = item.Item.Quantity;
+                var mark = item.Item.Mark;
                 if (item.OwnedBy >= 0 && item.OwnedBy != c.Faction) item.Item.StolenFrom = item.OwnedBy;
                 // What does not fit stays on the ground (Inventory.Add leaves it in the item); gear that does not fit is worn when its slot is free.
                 bool wear = false;
@@ -80,7 +81,7 @@ namespace Meitou.Simulation
                 }
                 else
                 {
-                    item.Item.StolenFrom = mark;
+                    item.Item.Mark = mark;
                     // Task_Pickup sounds when any of the stack went in.
                     if (item.Item.Quantity < before) world.EmitSound(SoundKind.PickedUp, s, next[s].Position);
                     world.Post($"{c.Name}: Not enough room in my inventory");

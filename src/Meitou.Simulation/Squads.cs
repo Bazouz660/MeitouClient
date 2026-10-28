@@ -44,6 +44,11 @@ public sealed class Squad
     public bool Dead { get; init; }
     /// <summary>Back from its town's time unloaded: its members' minds take up their schedule where it puts them (<see cref="PopulationSettings.ResidentSchedule"/>); cleared once they have minds.</summary>
     public bool Resume { get; set; }
+    /// <summary>
+    /// Its members came back from a save or from their time out of the world (kept characters), not made now: their <c>wages</c> do not set its purse when it appears, as
+    /// <c>Character::giveBirth</c> pays them only to a character made without saved state (<c>FUN_14062b210</c>, docs/game/economy.md "Wages"). Not saved or hashed.
+    /// </summary>
+    public bool Restored { get; init; }
     /// <summary>How many it was made with (its town's regeneration measures losses against it; not part of the state).</summary>
     public int SpawnSize { get; set; }
     public List<CharacterId> Members { get; } = [];

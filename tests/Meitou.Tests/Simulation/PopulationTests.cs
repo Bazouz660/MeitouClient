@@ -38,9 +38,9 @@ public class PopulationTests
         Assert.Equal(0, table.Count);
         Assert.Equal(0, world.Squads.Count);
 
-        // Coming back loads them again (slots are reused with new generations).
+        // Coming back loads them again (slots are reused with new generations) once the unloaded platoons' 5 s activation dwell has run.
         world.Commands.Enqueue(new FocusCommand(SyntheticTown.Centre) { Tick = world.Tick });
-        world.RunTicks(2);
+        world.RunTicks(170);
         Assert.Equal(before, table.Count);
         Assert.Contains(table.Previous.ToArray(), c => c.Alive && c.Generation > 0);
     }
@@ -164,7 +164,7 @@ public class PopulationTests
         void Visit()
         {
             world.Commands.Enqueue(new FocusCommand(SyntheticTown.Centre) { Tick = world.Tick });
-            world.RunTicks(2);
+            world.RunTicks(170);   // past the unloaded platoons' 5 s activation dwell
         }
         void Leave()
         {

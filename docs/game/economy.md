@@ -83,7 +83,9 @@ character: within `PlayerSystem.GiveRange` 1000 of its window's owner, `StealRan
 - Shop squads with no such member (8 in the probe load order: bank, armory UC, holy Armoury, holy General storage, farm shop UC, Crab Man Shop, Shop bar black desert, Cannibal
   hunter hq) cannot be bought from in the original either (**Observed**, owner's play); their stock is only in their home's containers.
 - **Wages** (CHARACTER `wages`, 108 non-zero; `Character::giveBirth` / `Character::dailyUpdate`, **Verified**): a character not of the player's faction with wages >= 1 *sets* its squad's money to them
-  when made and every day (the last waged member wins). Meitou (`TradeSystem.PayWages`): on each game-day change, and once for a squad first seen after the system's first pass.
+  when made and every day (the last waged member wins). "Made" is a character born without saved state: `giveBirth` (`FUN_14062b210`) skips the wages, like the bounty
+  roll and `slave`, when it is given one (**Observed**, decompile), so a character coming back from a save or from out of the world keeps its squad's purse. Meitou
+  (`TradeSystem.PayWages`): on each game-day change, and once for a squad first seen after the system's first pass unless it is `Squad.Restored`.
 - **Spawn money** (CHARACTER `money item prob` / `min` / `max`; `RootObjectFactory::process`, **Verified**): a newly made non-player character gets money items worth U[min, max]
   when a [0, 1) roll is at most prob (so 80-100 always pass); what does not fit is lost. Meitou: one stack of the `Cats` item (`ItemFactory.AddSpawnMoney`).
 
@@ -593,11 +595,22 @@ Character virtual slots (CharacterAnimal/CharacterHuman vtables, **Verified** by
 ([carry-loot](carry-loot.md#theft-and-witnesses)), `0x298` steal attempt `FUN_140794810`, `0x2a8` smuggling check `FUN_140794e80`. Constants read from the exe: 1.0, 1.1, 0.4, 1.25, 0.5, 0.3, 2.25, 0.75, 1.5, 2.0, 0.98, 20, 80, 200.
 Roll convention: a `rand()` draw in [0, 1) against the chance p; the thief gets away when p >= the draw, so p >= 1 never fails.
 
-- **Fence chance** (`FUN_140793490(trader, item, thief)`, **Observed**, the early-outs read from the decompile). 1.0 (never caught) when the trader's faction is the player's, the item has no
-  owner, or the item's owner is the thief. When the owner is a character of another faction than the trader's: 1.0 when the trader's squad buys stolen goods (`+0xec`, via `FUN_140792830`, false for goods
-  stolen from that squad itself) or the owner's faction `fundamental type` is 8 (Bandit) or 9 (Adventurer); 1.1 when the trader's faction is not allied to the owner's (`FUN_1406b2630`) and the owner's
-  town is not the trader's town. Otherwise p = lerp(thievery/100, 0.4, 1.25), x0.5 when the owner's faction is the trader's, x0.5 again when the owner is the trader himself (Meitou keeps only
-  the item's faction: it lacks the second halving and reads "the owner's town is the trader's" as false, `TradeSystem.FenceOdds`).
+- **Owner tests** (**Observed**, decompile and the handle layout): the item's owner handle (`ownedby`, item vfunc 0x2a8 = item+0x140) is compared by its `C` (+0xc) and `CS` (+0x10) with an
+  object's own handle (+0x64, +0x68). A character's `C`/`CS` are its platoon's container ([save.md](../formats/save.md#object-handles-and-slot-lists)), so each test asks whether the owner is in
+  that platoon. `FUN_140792830(squad, item)` ("does not fence it"): false when the squad does not buy stolen goods (`+0xec`), else false only when the owner is in that squad (`C` and `CS`).
+- **Fence chance** (`FUN_140793490(trader, item, thief)`, **Observed**). 1.0 (never caught) when the trader's faction is the player's (faction +0x250), the item has no owner, the owner is in
+  the thief's platoon (`C` only), or the owner is not a character (type 1 or 0x22) that still resolves. When the owner's faction is not the trader's: 1.0 when the trader's squad does not fence
+  it (`FUN_140792830`) or the owner's faction `fundamental type` is 8 (Bandit) or 9 (Adventurer); 1.1 when the trader's faction is not allied to the owner's (`FUN_1406b2630`) and the owner's
+  home town (vfunc 0x98, `Ownerships::_homeTown` +0x30) is not the town the trader is in (vfunc 0x78, `getCurrentTownLocation`). Otherwise p = lerp(thievery/100, 0.4, 1.25), x0.5 when the
+  owner's faction is the trader's, x0.5 again when the owner is in the trader's platoon (`C` only).
+  Meitou (`TradeSystem.FenceOdds`): the owner is `ItemInstance.Owner` with the squad it was in when robbed (`OwnerSquad`, standing for `C`/`CS`), set where taking from a character is a
+  theft (`CarrySystem`, `HeldItems`). A mark from a container or the ground names only a faction: no owner early-out applies and the home-town test reads it as another town (what the
+  original's handle is there is **Unknown**). The trader's town is `AiSystem.TownAt`, the owner's home town its squad's `Town`. Saved as the robbed character's handle in `ownedby` (the
+  null handle when that character is not saved); loading marks an item whose `ownedby` names a character of another faction than its holder's as stolen from that faction, and from the
+  character once it is in the world (`SavedPopulation.NoteOwners`).
+- **Prompt and roll** (`FUN_140715290`, `FUN_140793770`, **Observed**): both skip an item whose owner is in the seller's platoon, that the trader's squad does not fence, or whose owner does
+  not resolve to a character; so a shop that buys stolen goods asks and rolls only for goods stolen from its own squad. Meitou: `TradeSystem.Fences`; the prompt and the hover box
+  ([ui-screens](ui-screens.md)) show the same p the roll uses.
 - **Fence attempt** (`FUN_140793770`, **Observed**): caught when p < the draw: dialogue event 8 on the trader and a pending Fencing (0xd) against the trader's faction with timer 30 (`FUN_140852e10`).
   Thievery XP whenever p < 0.98 (and the trader is not imprisoned): the generic entry (dt 1) with 5 x 2 when the fence works, 20 x 2 when caught (`CrimeSystem.FenceXp`). Meitou: `TradeSystem.Caught`.
 - **Steal chance** (`FUN_1407944d0(thief, victim, item)`, **Observed**): 1.0 for a dead or knocked-out thief (`+0x5b9`, `+0x5bc`) or one in posture 3. A victim that is a character: p = 1.1 x thievery/100. A victim that is a

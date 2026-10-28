@@ -1150,10 +1150,10 @@ public sealed partial class ProductionSystem : ITickSystem
         var item = storage.Items[take.Index];
         if (world.SystemOf<Crime.CrimeSystem>() is { } crimes && world.Characters.TryResolveNext(take.Character, out int thief)
             && crimes.Steal(world, thief, container, Crime.CrimeCode.Theft)) return;
-        int mark = item.StolenFrom;
+        var mark = item.Mark;
         if (container.Owner >= 0 && container.Owner != cold.Faction) item.StolenFrom = container.Owner;
         int moved = InventoryCommands.MoveInto(storage, item, take.Count, cold.Inventory!, take.BagFirst, out bool worn, cold);
-        if (storage.Items.Contains(item)) item.StolenFrom = mark;   // what stayed keeps its mark
+        if (storage.Items.Contains(item)) item.Mark = mark;   // what stayed keeps its mark
         if (worn) Assembly?.RefreshEquipment(cold);
         if (moved > 0) world.Machines.Touch();
     }

@@ -79,6 +79,7 @@ public static partial class SaveCapture
         var game = builder.Game;
         var camera = game.Camera;
         memoryPass = new MemoryPass();
+        SavedKit.OwnerNotes = memoryPass.Owners;
 
         camera.Day = clock.Day;
         camera.Hour = clock.Hour;
@@ -152,6 +153,7 @@ public static partial class SaveCapture
         public readonly Dictionary<CharacterId, Hand> Handles = [];
         public readonly List<(FcsRecord Record, SquadMemoryData? Data)> Targets = [];
         public readonly List<(FcsRecord State, CharacterId Partner)> Carries = [];
+        public readonly List<(SaveItem Item, CharacterId Owner)> Owners = [];
     }
 
     [ThreadStatic] static MemoryPass? memoryPass;
@@ -169,6 +171,10 @@ public static partial class SaveCapture
             MemorySave.Write(record, data, id => pass.Handles.TryGetValue(id, out var hand) ? hand : null);
         // The carry links (FUN_1406280a0 writes the partner's handle under `carrying`, the null one when it is not saved).
         foreach (var (state, partner) in pass.Carries) (pass.Handles.TryGetValue(partner, out var hand) ? hand : Hand.Null).Write(state, "carrying");
+        // Stolen items name the robbed character (`ownedby`); one not saved leaves the null handle the item was written with.
+        SavedKit.OwnerNotes = null;
+        foreach (var (item, owner) in pass.Owners)
+            if (item.Written is { } record && pass.Handles.TryGetValue(owner, out var hand)) hand.Write(record, "ownedby");
     }
 
     // ------------------------------------------------------------------ factions and towns
