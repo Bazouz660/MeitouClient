@@ -247,7 +247,6 @@ public sealed partial class LockSystem : IStateHashed
             }
             else if (houseLocked.Contains(building))
             {
-                if (!world.Fixtures.AllDoorsLocked(building)) { houseLocked.Remove(building); continue; }   // opened or broken meanwhile
                 if (any < 0 || Busy(table.IdOf(any))) continue;
                 StartDoors(world, any, RoundKind.UnlockDoors, building, Extent(home));
                 started++;
@@ -422,6 +421,11 @@ public sealed partial class LockSystem : IStateHashed
                 f.Motion = DoorMotion.Closed;   // locking closes the door first
                 f.OpenAmount = 0;
                 world.Fixtures.SetLocked(f, true);
+                // Each locked door of the home whose lock is the worker's faction's sets the house flag while no door of it is open or opening (Task_LockDoor's
+                // FUN_1407933a0, Verified): one locked door is enough, the others may just be closed.
+                if (r.Building is { } home && worker.Faction == f.Owner
+                    && !world.Fixtures.OfBuilding(home).Any(d => d.Kind == FixtureKind.Door && d.Motion is DoorMotion.Open or DoorMotion.Opening))
+                    houseLocked.Add(home);
                 break;
             case RoundKind.UnlockDoors:
                 world.Fixtures.SetLocked(f, false);
@@ -432,7 +436,7 @@ public sealed partial class LockSystem : IStateHashed
         }
     }
 
-    /// <summary>Ends a round: the worker goes back to its routine; an unfinished release falls back to the system (<paramref name="fallback"/>), a finished door round sets or clears the house flag.</summary>
+    /// <summary>Ends a round: the worker goes back to its routine; an unfinished release falls back to the system (<paramref name="fallback"/>), a finished unlock round clears the house flag (each locked door sets it, <see cref="Apply"/>).</summary>
     bool End(World world, Round r, bool fallback, bool done = false)
     {
         var table = world.Characters;
@@ -446,8 +450,7 @@ public sealed partial class LockSystem : IStateHashed
             world.Fixtures.Release(world, r.Prisoner, cage.Owner, Crimes);
         if (done && r.Building is { } b)
         {
-            if (r.Kind == RoundKind.LockDoors) houseLocked.Add(b);
-            else if (r.Kind == RoundKind.UnlockDoors) houseLocked.Remove(b);
+            if (r.Kind == RoundKind.UnlockDoors) houseLocked.Remove(b);
         }
         return false;
     }

@@ -187,7 +187,7 @@ Same targets as picking; Task_CutLock / Task_BruteForceLock share the shackle ta
 - **Owner lock/unlock** (77/79/162/198, 78/80/140; B list `isObjectMine`): progress 0.3 per game second, so 3.3 s; ends with
   `Character_Lock` / `Character_Unlock_Success`. Locking closes the door first. No skill or level involved (**Verified**).
 - **Residents** (`allDoorsLocked` 87, `FUN_140596bd0`): true when the character is in bed, or its squad's "house locked" flag
-  is set (squad AI object +0xe8, saved `homelok`; set by Task_LockDoor and Task_CloseDoor (a door with a working lock) when no door of the home is open, cleared by unlocking, picking or a
+  is set (squad AI object +0xe8, saved `homelok`; set by Task_LockDoor at each door it locks whose lock is the worker's faction's, and Task_CloseDoor (a door with a working lock), when no door of the home is open or opening (`FUN_1407933a0`, **Verified**: one locked door is enough); cleared by unlocking, picking or a
   non-player opening a door), else when the home building has no door that is open, broken or effectively unlocked
   (`FUN_1408cb1c0`, which also returns that door as the next target). Base AI_PACKAGE hours (**Verified** data):
 
