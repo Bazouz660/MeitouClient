@@ -21,7 +21,7 @@ public static class RangedTuning
     /// <summary>While closing in, the line of fire must be clear this long (seconds) before the shooter stops and aims again (<c>FUN_140438c70</c>'s 0.3 s, its ray flags <b>Unknown</b>).</summary>
     public const float ClearToAim = 0.3f;
     /// <summary>The settings' <c>harpoonLimit</c> default and range (<see cref="CombatSystem.StuckLimit"/> is the live value).</summary>
-    public const int DefaultStuckLimit = 60, MinStuckLimit = 10, MaxStuckLimit = 500;
+    public const int DefaultStuckLimit = 60, MinStuckLimit = 10, MaxStuckLimit = 10000;
     /// <summary>Spacing of the terrain samples along a line of fire and along a bolt's step (units).</summary>
     public const float TerrainStep = 20, FlightTerrainStep = 5;
     /// <summary>Length of the pieces a long line of fire is cut into for the neighbour grid (units).</summary>

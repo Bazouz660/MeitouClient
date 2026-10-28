@@ -68,7 +68,7 @@ export const categories: Category[] = [
   ] },
   { id: "combat", name: "Combat", blurb: "Melee, ranged weapons, stealth and turrets.", rows: [
     { id: "melee-techniques-attack-slots-blocking", system: "Melee: techniques, attack slots, blocking", status: "works", note: "Tested in play: melee combat works. Attack choice, the five-fighter engaged list and circling follow the decoded rules. Fists now reach with the FISTS weapon's length and take its multipliers (martial artists no longer swing short), on master. Open: allies sometimes stand by instead of joining a fight to defend their allies.", bugs: [] },
-    { id: "crossbows-and-turrets", system: "Crossbows and turrets", status: "wip", note: "Quick right click on a turret fixed on master; turrets show Height rows and a Loaded bar, and loaded harpoons are saved. The harpoon limit setting works (Advanced page).", bugs: [] },
+    { id: "crossbows-and-turrets", system: "Crossbows and turrets", status: "wip", note: "Quick right click on a turret fixed on master; turrets show Height rows and a Loaded bar, and loaded harpoons are saved.", bugs: [] },
     { id: "stealth-and-sneak-knock-outs", system: "Stealth and sneak knock-outs", status: "wip", note: "Hearing follows the original's interior, floor and door rules. Stealth XP from being heard is not modelled.", bugs: [] },
   ] },
   { id: "economy", name: "Economy", blurb: "Mining, trade, looting, theft, locks and bounties.", rows: [
