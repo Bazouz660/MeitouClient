@@ -257,7 +257,7 @@ public class CarryTests
         Say(new MoveOrder([p1], new Vector3(1300, 0, 2300)) { Tick = 200 });
         Say(new PutDownOrder([p1]) { Tick = 500 });
         Say(new LootOrder([p2], down1) { Tick = 600 });
-        Say(new PickUpOrder([p2], down3) { Tick = 720 });   // the body p3 dropped when it went down
+        Say(new PickUpOrder([p2], down3) { Tick = 720 });
         var hashes = new List<ulong>();
         int ran = 0;
         var carried = new SortedSet<string>(StringComparer.Ordinal);
@@ -273,8 +273,9 @@ public class CarryTests
             hashes.Add(rig.World.StateHash());
         }
         string happened = $"carried {string.Join(", ", carried)}; loots {string.Join(", ", rig.Carry.Loots.Select(l => $"{l.Taken}/{l.Left}{(l.Witnessed ? " seen" : "")}"))}; relation {relations.Get(0, 1)}";
-        // The script lifts (p1 a townsman, p3 by its rescue job, p2 the body p3 dropped, an NPC its leader), loots in sight of the townsfolk (the relation stays 10) and loots an emptied body.
-        Assert.Equal("carried 3.0<-0.0, 5.0<-1.0, 5.0<-2.0, 6.0<-7.0; loots 4/0 seen, 0/0; relation 10", happened);
+        // The script lifts (p1 a townsman, p2 a downed mate, an NPC its leader; p3's rescue job finds no bed in this bedless world, so it lifts no one), loots in sight of the
+        // townsfolk (the relation stays 10) and loots an emptied body.
+        Assert.Equal("carried 3.0<-0.0, 5.0<-1.0, 6.0<-7.0; loots 4/0 seen, 0/0; relation 10", happened);
         return hashes;
     }
 }

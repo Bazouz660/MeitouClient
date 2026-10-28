@@ -888,16 +888,16 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
     }
 
     /// <summary>
+    /// The desire of 148 Find and rescue if there's beds (<c>FUN_1405994c0</c>, <b>Verified</b>): 0 with the Hold order (the raw flag) or while carrying, else the bed search's factor (a
+    /// bed must be found for the rescuer: <see cref="Locks.FixtureRegistry.FindBed"/>, which keeps the bed it lies in). Also gates the one-shot Rescue order (engine reading).
+    /// </summary>
+    bool MayRescue(World world, int slot, CharacterCold cold) =>
+        (cold.Orders & CharacterOrders.Hold) == 0 && cold.Carrying.IsNone && world.Fixtures.FindBed(world, slot, Relations) is not null;
+
+    /// <summary>
     /// One look for a body (the rescue job's pass, and the Rescue button without Shift once): with no fight in its squad, the character picks up the nearest knocked-out member of
     /// its faction within its sight that nobody else lifts; true when it started.
     /// </summary>
-    /// <summary>
-    /// The desire of 148 Find and rescue if there's beds (<c>FUN_1405994c0</c>, <b>Verified</b>): 0 with the Hold order (the raw flag) or while carrying, else the bed search's factor (a
-    /// bed must be found for the rescuer). Not modelled yet: asking <see cref="Locks.FixtureRegistry.FindBed"/> here made the carry scenario differ between thread counts (cause not traced).
-    /// </summary>
-    bool MayRescue(World world, int slot, CharacterCold cold) =>
-        (cold.Orders & CharacterOrders.Hold) == 0 && cold.Carrying.IsNone;
-
     bool RescueSomeone(World world, int i, HashSet<int> taken)
     {
         var table = world.Characters;
