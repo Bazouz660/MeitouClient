@@ -2,6 +2,7 @@ using System.Diagnostics;
 using Meitou.Rendering.Gpu.Core;
 using Silk.NET.Vulkan;
 using Silk.NET.Vulkan.Extensions.KHR;
+using Meitou.Rendering.Upscalers;
 using VkSemaphore = Silk.NET.Vulkan.Semaphore;
 
 namespace Meitou.Rendering.Gpu;
@@ -34,6 +35,10 @@ public sealed unsafe class VulkanPresenter : IDisposable
     /// <summary>Presents through this function instead of the driver's <c>vkQueuePresentKHR</c> (Streamline's proxy, which it must see every frame).</summary>
     public delegate* unmanaged<Queue, PresentInfoKHR*, Result> PresentFunction { get; set; }
     bool vsync, stale = true;
+
+    /// <summary>AMD's frame-interpolation swapchain, when the Frame generation setting is on and it works: the swapchain is created, acquired from and presented through it
+    /// (no frame is generated yet). Null for the plain swapchain; set to null again, with a log line, when it fails.</summary>
+    public FfxSwapchain? FrameGeneration { get; set; }
 
     /// <summary>What the frame is drawn into (RGBA8, the window's framebuffer size; made again when the size changes): valid after <see cref="BeginFrame"/>.</summary>
     public GpuTexture? Backbuffer { get; private set; }
@@ -77,7 +82,9 @@ public sealed unsafe class VulkanPresenter : IDisposable
         // The semaphore of this frame slot: its previous use was waited on by the slot's previous submission, whose fence BeginFrame waited for.
         var semaphore = acquired[device.Frames.Slot];
         long acquireStart = Stopwatch.GetTimestamp();
-        var r = khr.AcquireNextImage(device.Device, swapchain, ulong.MaxValue, semaphore, default, ref imageIndex);
+        Result r;
+        if (FrameGeneration is { } fg) fixed (uint* pi = &imageIndex) r = fg.Acquire(device.Device, swapchain, ulong.MaxValue, semaphore, default, pi);
+        else r = khr.AcquireNextImage(device.Device, swapchain, ulong.MaxValue, semaphore, default, ref imageIndex);
         AcquireTicks += Stopwatch.GetTimestamp() - acquireStart;
         if (r is Result.ErrorOutOfDateKhr) { stale = true; acquiredImage = false; return true; }   // draw anyway; nothing is shown
         if (r is not (Result.Success or Result.SuboptimalKhr)) VulkanException.Check(r, "vkAcquireNextImageKHR");
@@ -128,7 +135,10 @@ public sealed unsafe class VulkanPresenter : IDisposable
         };
         Result r;
         long presentStart = Stopwatch.GetTimestamp();
-        lock (device.QueueLock) r = PresentFunction != null ? PresentFunction(device.GraphicsQueue, &info) : khr.QueuePresent(device.GraphicsQueue, &info);
+        // The frame-interpolation layer takes the device's queue lock itself where it submits on the game queue (its submit function); holding it here
+        // while the layer waits for its presenter thread could deadlock against that.
+        if (FrameGeneration is { } fg) r = fg.Present(device.GraphicsQueue, &info);
+        else lock (device.QueueLock) r = PresentFunction != null ? PresentFunction(device.GraphicsQueue, &info) : khr.QueuePresent(device.GraphicsQueue, &info);
         PresentTicks += Stopwatch.GetTimestamp() - presentStart;
         StageClock.Lap(StageClock.DriverWait, gpuTimestamp: false);
         if (r is Result.ErrorOutOfDateKhr or Result.SuboptimalKhr) stale = true;
@@ -174,20 +184,52 @@ public sealed unsafe class VulkanPresenter : IDisposable
         uint count = Math.Max(caps.MinImageCount + 1, 3);
         if (caps.MaxImageCount > 0) count = Math.Min(count, caps.MaxImageCount);
         var old = swapchain;
+        bool layer = FrameGeneration is not null;
         var info = new SwapchainCreateInfoKHR
         {
             SType = StructureType.SwapchainCreateInfoKhr,
             Surface = surface, MinImageCount = count, ImageFormat = chosen.Format, ImageColorSpace = chosen.ColorSpace,
-            ImageExtent = extent, ImageArrayLayers = 1, ImageUsage = ImageUsageFlags.TransferDstBit | ImageUsageFlags.ColorAttachmentBit,
+            ImageExtent = extent, ImageArrayLayers = 1, ImageUsage = ImageUsageFlags.TransferDstBit | ImageUsageFlags.ColorAttachmentBit
+                | (layer ? ImageUsageFlags.TransferSrcBit : 0),
             ImageSharingMode = SharingMode.Exclusive, PreTransform = caps.CurrentTransform, CompositeAlpha = CompositeAlphaFlagsKHR.OpaqueBitKhr,
             PresentMode = mode, Clipped = true, OldSwapchain = old,
         };
-        VulkanException.Check(khr.CreateSwapchain(device.Device, &info, null, out swapchain), "vkCreateSwapchainKHR");
-        if (old.Handle != 0) khr.DestroySwapchain(device.Device, old, null);
+        if (FrameGeneration is { } fg)
+        {
+            bool ok;
+            string? why;
+            try { ok = fg.Create(info, old, out swapchain, out why); }
+            catch (Exception e) { (ok, why, swapchain) = (false, e.Message, default); }
+            if (ok) Console.WriteLine($"frame generation  swapchain made through the FFX layer ({fg.QueueLayout})");
+            else
+            {
+                // Back to the plain swapchain: the layer (and the swapchain it made) goes first. Nothing is in flight (WaitIdle above).
+                Console.WriteLine($"frame generation  unavailable, plain swapchain instead: {why}");
+                try { fg.Dispose(); } catch (Exception e) { Console.WriteLine($"frame generation  {e.Message}"); }
+                FrameGeneration = null;
+                old = default;
+                info.OldSwapchain = default;
+                info.ImageUsage = ImageUsageFlags.TransferDstBit | ImageUsageFlags.ColorAttachmentBit;
+            }
+        }
+        if (FrameGeneration is null)
+        {
+            VulkanException.Check(khr.CreateSwapchain(device.Device, &info, null, out swapchain), "vkCreateSwapchainKHR");
+            if (old.Handle != 0) khr.DestroySwapchain(device.Device, old, null);
+        }
         uint imageCount = 0;
-        khr.GetSwapchainImages(device.Device, swapchain, ref imageCount, null);
-        images = new Image[imageCount];
-        fixed (Image* pi = images) khr.GetSwapchainImages(device.Device, swapchain, ref imageCount, pi);
+        if (FrameGeneration is { } fgi)
+        {
+            VulkanException.Check(fgi.GetImages(device.Device, swapchain, &imageCount, null), "vkGetSwapchainImagesKHR (FFX)");
+            images = new Image[imageCount];
+            fixed (Image* pi = images) VulkanException.Check(fgi.GetImages(device.Device, swapchain, &imageCount, pi), "vkGetSwapchainImagesKHR (FFX)");
+        }
+        else
+        {
+            khr.GetSwapchainImages(device.Device, swapchain, ref imageCount, null);
+            images = new Image[imageCount];
+            fixed (Image* pi = images) khr.GetSwapchainImages(device.Device, swapchain, ref imageCount, pi);
+        }
         foreach (var s in rendered) vk.DestroySemaphore(device.Device, s, null);
         rendered = new VkSemaphore[imageCount];
         for (int i = 0; i < rendered.Length; i++) rendered[i] = NewSemaphore();
@@ -204,6 +246,7 @@ public sealed unsafe class VulkanPresenter : IDisposable
         Backbuffer = null;
         foreach (var s in rendered) vk.DestroySemaphore(device.Device, s, null);
         foreach (var s in acquired) vk.DestroySemaphore(device.Device, s, null);
-        if (swapchain.Handle != 0) khr.DestroySwapchain(device.Device, swapchain, null);
+        if (FrameGeneration is { } fg) { fg.Dispose(); FrameGeneration = null; }   // destroys the swapchain it made
+        else if (swapchain.Handle != 0) khr.DestroySwapchain(device.Device, swapchain, null);
     }
 }

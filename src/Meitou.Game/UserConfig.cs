@@ -40,6 +40,9 @@ sealed class UserConfig
     /// <summary>Frames per second when vsync is off; 0 = unlimited. Engine default 150.</summary>
     public int FpsLimit { get; set; } = 150;
     public bool VSync { get; set; }
+    /// <summary>Frame generation (FSR 3): the swapchain goes through AMD's frame-interpolation layer (Windows and Proton, needs <c>amd_fidelityfx_vk.dll</c>; read at start-up). Off by default;
+    /// for now the layer only presents the rendered frames, no frame is generated.</summary>
+    public bool FrameGeneration { get; set; }
     /// <summary>The Metal display default: MetalFX balanced (temporal at 0.50); Native is used when MetalFX is unavailable.</summary>
     public MetalUpscalerMode MetalUpscaler { get; set; } = MetalUpscalerMode.Temporal;
     /// <summary>The Metal render scale; the default 0.50 is the balanced profile. The Metal settings panel edits it live.</summary>

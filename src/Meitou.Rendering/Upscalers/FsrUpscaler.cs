@@ -88,7 +88,7 @@ public sealed unsafe class FsrUpscaler : IUpscaler
         return null;
     }
 
-    static IEnumerable<string> Candidates()
+    internal static IEnumerable<string> Candidates()
     {
         if (Environment.GetEnvironmentVariable("MEITOU_FFX_PATH") is { Length: > 0 } env)
             yield return Directory.Exists(env) ? Path.Combine(env, LibraryName) : env;

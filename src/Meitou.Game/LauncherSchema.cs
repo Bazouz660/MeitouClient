@@ -113,6 +113,9 @@ static class LauncherSchema
                     Default = defaults.VSync ? 1 : 0 },
                 new() { Key = Key(nameof(UserConfig.FpsLimit)), Kind = SettingKind.Slider, Name = "Frame limit", Description = "Frames per second when VSync is off.",
                     Default = defaults.FpsLimit, Shown = defaults.FpsLimit, Min = 0, Max = 360, Step = 5, Suffix = " fps", OffBelow = 1, OffText = "Unlimited" },
+                .. (OperatingSystem.IsWindows() ? (SettingDescription[])[new() { Key = Key(nameof(UserConfig.FrameGeneration)), Kind = SettingKind.Toggle, Name = "Frame generation (FSR 3)",
+                    Description = "Presents through AMD's FSR 3 frame-interpolation layer (needs amd_fidelityfx_vk.dll; not with DLSS). For now it only presents the rendered frames. Takes effect at start-up.",
+                    Default = defaults.FrameGeneration ? 1 : 0, On = "On", Off = "Off" }] : []),
                 // Null defaults below: the game's value depends on the Faithful / Meitou mode and the computer until the setting is saved.
                 .. sliders.Where(s => SettingsMenu.Section(s.Key) == "Display"),
             ],

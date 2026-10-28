@@ -64,6 +64,9 @@ public sealed unsafe class VulkanDevice : IDisposable
 
     public Queue GraphicsQueue { get; private set; }
     public uint GraphicsFamily { get; private set; }
+    /// <summary>Further queues of the graphics family (index 1.. of the family), as many as <see cref="VulkanDeviceOptions.ExtraGraphicsQueues"/> asked for and the family offers; empty by default.
+    /// Only their users submit on them (frame generation's swapchain, through its own locks), not the device.</summary>
+    public Queue[] ExtraQueues { get; private set; } = [];
     public Queue TransferQueue { get; private set; }
     public uint TransferFamily { get; private set; }
     public bool HasDedicatedTransfer { get; private set; }
@@ -999,9 +1002,13 @@ public sealed unsafe class VulkanDevice : IDisposable
             }
         }
         float prio = 1f;
+        // 1 + the extra queues the family offers (priorities all 1).
+        uint graphicsQueues = 1 + (uint)Math.Min(Math.Max(options.ExtraGraphicsQueues, 0), (int)fams[GraphicsFamily].QueueCount - 1);
+        var prios = stackalloc float[(int)graphicsQueues];
+        for (int i = 0; i < graphicsQueues; i++) prios[i] = 1f;
         var qcis = stackalloc DeviceQueueCreateInfo[2];
         uint qn = 0;
-        qcis[qn++] = new DeviceQueueCreateInfo { SType = StructureType.DeviceQueueCreateInfo, QueueFamilyIndex = GraphicsFamily, QueueCount = 1, PQueuePriorities = &prio };
+        qcis[qn++] = new DeviceQueueCreateInfo { SType = StructureType.DeviceQueueCreateInfo, QueueFamilyIndex = GraphicsFamily, QueueCount = graphicsQueues, PQueuePriorities = prios };
         if (HasDedicatedTransfer)
         {
             qcis[qn++] = new DeviceQueueCreateInfo { SType = StructureType.DeviceQueueCreateInfo, QueueFamilyIndex = TransferFamily, QueueCount = 1, PQueuePriorities = &prio };
@@ -1030,6 +1037,15 @@ public sealed unsafe class VulkanDevice : IDisposable
 
         Vk.GetDeviceQueue(Device, GraphicsFamily, 0, out var gq);
         GraphicsQueue = gq;
+        if (graphicsQueues > 1)
+        {
+            ExtraQueues = new Queue[graphicsQueues - 1];
+            for (uint i = 1; i < graphicsQueues; i++)
+            {
+                Vk.GetDeviceQueue(Device, GraphicsFamily, i, out var eq);
+                ExtraQueues[i - 1] = eq;
+            }
+        }
         if (HasDedicatedTransfer)
         {
             Vk.GetDeviceQueue(Device, TransferFamily, 0, out var tq);

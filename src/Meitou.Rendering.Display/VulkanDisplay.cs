@@ -29,6 +29,9 @@ public sealed unsafe class VulkanDisplay : IDisposable
     /// <summary>The window's vsync (<see cref="VulkanPresenter.VSync"/>; the swapchain is remade at the next frame). Always off without a window.</summary>
     public bool VSync { get => presenter?.VSync ?? false; set { if (presenter is not null) presenter.VSync = value; } }
 
+    /// <summary>True while the swapchain goes through AMD's frame-interpolation layer (the Frame generation setting, when it could be honoured; false after a fallback).</summary>
+    public bool FrameGeneration => presenter?.FrameGeneration is not null;
+
     /// <summary>Streamline (DLSS), when <c>dlss</c> asked for it and it loaded; shut down before the device.</summary>
     public Streamline? Streamline { get; }
     /// <summary>NGX (DLSS on Linux), when <c>dlss</c> asked for it and its client library and the DLSS model loaded; shut down before the device.</summary>
@@ -41,7 +44,7 @@ public sealed unsafe class VulkanDisplay : IDisposable
     public static bool RayTracing { get; set; }
 
     /// <summary>A window created from <paramref name="options"/> (its Vulkan surface; shown), or headless when <paramref name="options"/> is null.</summary>
-    public VulkanDisplay(WindowOptions? options, bool vsync, bool dlss = false)
+    public VulkanDisplay(WindowOptions? options, bool vsync, bool dlss = false, bool frameGeneration = false)
     {
         var (validation, sync, gpu) = VulkanDeviceOptions.FromEnvironment();
         validationRequested = validation == true;
@@ -66,6 +69,18 @@ public sealed unsafe class VulkanDisplay : IDisposable
             if (Ngx is null) Console.WriteLine($"upscaler  {why}");
             else Ngx.Apply(deviceOptions);
         }
+        // Frame generation (FSR 3): the swapchain goes through AMD's layer, which needs more graphics queues (FfxSwapchain). Windows and Proton only.
+        bool wantLayer = false;
+        if (frameGeneration && options is not null)
+        {
+            string? why = null;
+            if (!OperatingSystem.IsWindows()) why = "the FFX library is Windows-only here";
+            else if (Streamline is { DlssSupported: true }) why = "Streamline (DLSS) owns the present";
+            else if (!FfxSwapchain.LibraryLoads(out _, out why)) { }
+            else wantLayer = true;
+            if (!wantLayer) Console.WriteLine($"frame generation  unavailable: {why}");
+            else deviceOptions.ExtraGraphicsQueues = FfxSwapchain.WantedExtraQueues;
+        }
         if (options is not null)
         {
             Window = Silk.NET.Windowing.Window.Create(options.Value with { API = GraphicsAPI.DefaultVulkan, VSync = false });
@@ -81,7 +96,16 @@ public sealed unsafe class VulkanDisplay : IDisposable
         Device = VulkanDevice.Create(deviceOptions);
         Console.WriteLine($"vulkan    {Device.DeviceName}");
         Context = new GpuContext(Device);
-        if (options is not null) presenter = new VulkanPresenter(Context, vsync) { PresentFunction = Streamline is { DlssSupported: true } s ? s.PresentProxy : null };
+        if (options is not null)
+        {
+            presenter = new VulkanPresenter(Context, vsync) { PresentFunction = Streamline is { DlssSupported: true } s ? s.PresentProxy : null };
+            if (wantLayer)
+            {
+                var layer = FfxSwapchain.TryCreate(Device, out var why);
+                if (layer is null) Console.WriteLine($"frame generation  unavailable: {why}");
+                else presenter.FrameGeneration = layer;
+            }
+        }
     }
 
     /// <summary>The two moons as the window's icon (the embedded 256 x 256 RGBA); a window system that refuses it keeps the default.</summary>
