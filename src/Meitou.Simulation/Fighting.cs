@@ -231,6 +231,8 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem
     int[] alertSlot = [], alertGeneration = [];
     bool[] alerted = [], justAlerted = [];
 
+    readonly List<(int Foe, List<CharacterId> Joiners)> byFoe = [];
+
     public void SlowWorld(World world)
     {
         var table = world.Characters;
@@ -327,7 +329,19 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem
                     && !Orders.HoldPost(next[ds].Position, Orders.HoldPointOf(dc, next[ds].Position), from, next[a].Velocity, st.Down, t == ds)) defenders.RemoveAt(k);
             }
             if (defenders.Count == 0) continue;
-            world.Defer(new AttackOrder(defenders, attacker) { Tick = world.Tick + 1, Defensive = true });
+            // Each one joining the attacked character's fight takes the attacker AI::findAttackerOf scores best for it (FUN_14099c3b0, Verified): grouped by that
+            // attacker, in the order first chosen. The attacked character itself answers this attacker.
+            byFoe.Clear();
+            foreach (var d in defenders)
+            {
+                int foe = d.Slot == t ? a : combat.BestAttackerOf(world, t, d.Slot);
+                if (foe < 0) foe = a;
+                int at = byFoe.FindIndex(g => g.Foe == foe);
+                if (at < 0) byFoe.Add((foe, [d]));
+                else byFoe[at].Joiners.Add(d);
+            }
+            foreach (var (foe, joiners) in byFoe)
+                world.Defer(new AttackOrder(joiners, new CharacterId(foe, next[foe].Generation)) { Tick = world.Tick + 1, Defensive = true });
         }
     }
 

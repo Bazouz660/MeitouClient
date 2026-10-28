@@ -54,6 +54,39 @@ public sealed partial class CombatSystem
         return q.Best;
     }
 
+    /// <summary>
+    /// <c>AI::findAttackerOf</c> (<c>FUN_14099c3b0</c>, <b>Verified</b>) for a character joining <paramref name="subject"/>'s fight: of those fighting the subject, and the
+    /// subject's own target while it fights, the best by <see cref="TargetScore"/> for <paramref name="looker"/>; for a looker other than the subject only those within
+    /// <see cref="RetaliationSystem.ProtectReach"/> of the subject, and never one the looker counts as an ally (the subject's own target also only when either side is
+    /// the other's enemy). -1 when none. The finder's sense tests and its fallback to the subject's threats are left out (an attacker is put in the senses of whom it attacks).
+    /// </summary>
+    public int BestAttackerOf(World world, int subject, int looker)
+    {
+        var table = world.Characters;
+        var prev = table.Previous;
+        if ((uint)subject >= (uint)prev.Length || table.Cold(looker) is not { Fighter: { } fighter, Medical: { } medical } cold) return -1;
+        var q = new Choice { Self = looker, Current = -1, Cold = cold, Player = cold.IsPlayer, Prone = medical.Prone, Animal = fighter.IsAnimal, Best = -1, BestScore = float.NegativeInfinity };
+        bool Joinable(int c)
+        {
+            if (table.Cold(c) is not { } tc) return false;
+            if (looker != subject)
+            {
+                var gap = table.Previous[c].Position - table.Previous[subject].Position;
+                if (gap.X * gap.X + gap.Z * gap.Z > RetaliationSystem.ProtectReach * RetaliationSystem.ProtectReach) return false;
+            }
+            return Relations is not { } r || !(r.Contains(tc.Faction) && r.Contains(cold.Faction) && r.IsAlly(cold.Faction, tc.Faction));
+        }
+        int generation = prev[subject].Generation;
+        foreach (var (_, _, _, a) in index.AttackersOf(subject))
+            if (read[a].TargetGeneration == generation && Joinable(a)) Consider(world, ref q, a, looker != subject);
+        int own = read[subject].TargetSlot;
+        if (own >= 0 && own != looker && (uint)own < (uint)prev.Length && prev[own].Generation == read[subject].TargetGeneration && Joinable(own)
+            && table.Cold(own) is { } oc && Relations is { } rel
+            && (AggroSystem.IsEnemy(rel, cold.Faction, oc.Faction) || AggroSystem.IsEnemy(rel, oc.Faction, cold.Faction)))
+            Consider(world, ref q, own, looker != subject);
+        return q.Best;
+    }
+
     void Consider(World world, ref Choice q, int c, bool protect)
     {
         var table = world.Characters;

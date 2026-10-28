@@ -751,7 +751,9 @@ vfunc 5 `FUN_14050caf0`). TaskData fields: +0x108 desire (a member function, nea
   (`FUN_14099c3b0`, **Observed**): the protected one's attackers that it or the looker senses, within 150 of it (outdoors), are taken when either regards
   the other an enemy (slot 125) or the attacker's AI +0x2a4 equals the goal target's id (meaning **Unknown**, read as "it is attacking the protected one"),
   and never one the looker regards an ally (slot 126). On that reading relations do not matter (a neutral attacking an ally is fought), which agrees with
-  the owner's report that the original's guards fight skimmers. Gate guards (`Gate guard -no turrets`
+  the owner's report that the original's guards fight skimmers. Candidates (`FUN_1405cb150`): the subject's attackers plus its own target while it fights;
+  only when that list is empty its threats. All passing ones go to `chooseBestAttackTarget` (`FUN_14059e300`, the target score): the best is taken
+  (**Verified**). Meitou: `CombatSystem.BestAttackerOf` picks each joiner's attacker (the sense tests and the threats fallback left out). Gate guards (`Gate guard -no turrets`
   and those inheriting it) list 15, `Gate guard stay in town -no turrets` 288 (**Verified**, package dump).
 - 32 SELF_PRESERVATION: every character's urgent goal (`Character::setupAI`); desire AI slot 17, provider 13 (finder `AI::findAttackerOf`) or 35;
   rows 4 / 262 desires are slots 53 / 54. Details: [combat](combat.md#fight-lifecycle-and-orders).
