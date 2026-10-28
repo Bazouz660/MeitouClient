@@ -189,7 +189,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
                     {
                         if (!table.TryResolveNext(id, out int slot) || table.Cold(slot) is not { IsPlayer: true } cold) continue;
                         if (taken is null) Production.PermaJobs.Add(cold, Meitou.Data.Gameplay.Ai.TaskType.FIND_AND_RESCUE_IF_THERES_BEDS, Production.PermaJob.Untargeted(Meitou.Data.Gameplay.Ai.TaskType.FIND_AND_RESCUE_IF_THERES_BEDS));
-                        else if (Free(table, slot)) RescueSomeone(world, slot, taken);
+                        else if (Free(table, slot) && MayRescue(world, slot, cold)) RescueSomeone(world, slot, taken);
                     }
                     break;
                 }
@@ -855,6 +855,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
             // Free, or on a list job below the rescue job (which ranks above it).
             int rescue = cold.Jobs.FindIndex(j => j.Type == Meitou.Data.Gameplay.Ai.TaskType.FIND_AND_RESCUE_IF_THERES_BEDS);
             if (!Free(table, i) && !(cold.JobIndex > rescue && cold is { Fleeing: false } && CanCarry(cold))) continue;
+            if (!MayRescue(world, i, cold)) continue;
             RescueSomeone(world, i, taken);
         }
         if (Settings.RescueNpcLeaders) RescueLeaders(world, table, taken);
@@ -873,6 +874,13 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
     /// One look for a body (the rescue job's pass, and the Rescue button without Shift once): with no fight in its squad, the character picks up the nearest knocked-out member of
     /// its faction within its sight that nobody else lifts; true when it started.
     /// </summary>
+    /// <summary>
+    /// The desire of 148 Find and rescue if there's beds (<c>FUN_1405994c0</c>, <b>Verified</b>): 0 with the Hold order (the raw flag) or while carrying, else the bed search's factor (a
+    /// bed must be found for the rescuer). Not modelled yet: asking <see cref="Locks.FixtureRegistry.FindBed"/> here made the carry scenario differ between thread counts (cause not traced).
+    /// </summary>
+    bool MayRescue(World world, int slot, CharacterCold cold) =>
+        (cold.Orders & CharacterOrders.Hold) == 0 && cold.Carrying.IsNone;
+
     bool RescueSomeone(World world, int i, HashSet<int> taken)
     {
         var table = world.Characters;
@@ -884,7 +892,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         for (int s = 0; s < table.HighWater; s++)
         {
             if (s == i || !next[s].Alive || taken.Contains(s)) continue;
-            if (table.Cold(s) is not { Medical: { Unconscious: true, Dead: false } } other || !Rescues(world, cold, other) || !CanBeLifted(other)) continue;
+            if (table.Cold(s) is not { Medical: { Unconscious: true, Dead: false } } other || other.InSomething != Locks.HeldState.None || !Rescues(world, cold, other) || !CanBeLifted(other)) continue;
             float d2 = Vector2.DistanceSquared(new Vector2(next[i].Position.X, next[i].Position.Z), new Vector2(next[s].Position.X, next[s].Position.Z));
             if (d2 <= best2 && (best < 0 || d2 < best2)) { best = s; best2 = d2; }
         }
@@ -901,7 +909,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         foreach (var squad in world.Squads.All)
         {
             if (!table.TryResolveNext(squad.Leader, out int l) || taken.Contains(l)) continue;
-            if (table.Cold(l) is not { IsPlayer: false, Medical: { Unconscious: true, Dead: false } } leader || !CanBeLifted(leader) || Fighting(table, squad)) continue;
+            if (table.Cold(l) is not { IsPlayer: false, Medical: { Unconscious: true, Dead: false } } leader || leader.InSomething != Locks.HeldState.None || !CanBeLifted(leader) || Fighting(table, squad)) continue;
             int best = -1;
             float best2 = float.MaxValue;
             foreach (var m in squad.Members)

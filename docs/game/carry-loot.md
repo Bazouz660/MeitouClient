@@ -135,7 +135,7 @@ finders resolved from the thunks in the exe's bytes):
 | Goal | Desire | Finder | Follow-up |
 | --- | --- | --- | --- |
 | `FIND_AND_RESCUE` 105 | `140599480` (exe bytes): 0 if CharStats `+0x12b` is set or the character carries, else 1 | `FUN_1408cd550` | - |
-| `FIND_AND_RESCUE_IF_THERES_BEDS` 148 | `FUN_1405994c0`: 0 if CharStats `+0x12b` or carrying, else the bed search `FUN_1408cfe00(..., 1)` | `FUN_1408cd550` | 148, then **106** `FIND_BED_AND_PUT_IN` |
+| `FIND_AND_RESCUE_IF_THERES_BEDS` 148 | `FUN_1405994c0`: 0 if CharStats `+0x12b` (Hold) or carrying, else the bed search `FUN_1408cfe00(..., 1)` (Meitou: the Hold and carrying tests; the bed test is not applied yet, see `CarrySystem.MayRescue`; a body already in a bed is not lifted again) | `FUN_1408cd550` | 148, then **106** `FIND_BED_AND_PUT_IN` |
 | `FIND_AND_RESCUE_LEADER` 142 | - | `FUN_140598540`: the squad leader (`platoon +0xa0`) when it is not the character itself and not dead | - |
 | `FIND_BED_AND_PUT_IN` 106 | `FUN_1405a0d50`: 2 while carrying a body the carrier regards as friendly, whose slot `0x248` is null, that (for a police carrier, `FUN_140599600`) has no bounty with the carrier's faction, whose faction is not hostile to the carrier's (`FUN_1406b26d0`) and not in its town's list `FUN_140599390`; else 0 | none | - |
 | `CARRY_WOUNDED_SLAVES` 168 | - | `FUN_1408cdf50` | - |
