@@ -1061,6 +1061,7 @@ sealed partial class GameHost
 
         var clock = Stopwatch.StartNew();
         double last = 0, fpsWindow = 0, titleTimer = 0, traceAt = 0, nativeAt = 0, lastWait = 0, lastRecord = 0;
+        double fpsWindowWait = 0;   // the counter window's seconds spent waiting (the drawable, the limiter)
         int frames = 0, fpsFrames = 0;
         string fpsText = "";
         bool trace = Environment.GetEnvironmentVariable("MEITOU_METAL_TRACE") == "1";
@@ -1116,13 +1117,15 @@ sealed partial class GameHost
             loadBar.Update(faithfulUi ? PendingLoads() : 0);
             if (hud is not null) hud.LoadBar = loadBar;
             if (loading is not null) (loading.LoadBar, loading.Faithful) = (loadBar, faithfulUi);
-            // The counter is the mean over the last quarter second, so one late frame does not read as a drop.
+            // The counter is the mean over the last quarter second, so one late frame does not read as a drop; then a frame's work
+            // (its time without the waits) and its whole time in brackets.
             fpsWindow += dt;
             fpsFrames++;
             if (fpsWindow >= 0.25)
             {
-                fpsText = $"{fpsFrames / fpsWindow:0} fps";
-                fpsWindow = 0;
+                fpsText = string.Create(CultureInfo.InvariantCulture,
+                    $"{fpsFrames / fpsWindow:0} fps  {Math.Max(0, fpsWindow - fpsWindowWait) * 1000 / fpsFrames:0.0} ms ({fpsWindow * 1000 / fpsFrames:0.0} ms)");
+                fpsWindow = fpsWindowWait = 0;
                 fpsFrames = 0;
             }
             bool ctrlHeld = false, altHeld = false, highlighting = false;
@@ -1252,7 +1255,10 @@ sealed partial class GameHost
             }
             // A live resize can leave the layer without a drawable for a moment: wait for the next one instead of spinning
             // the main thread (the window would stop responding to its own resize).
-            if (!ctx.BeginFrame())
+            long beginAt = Stopwatch.GetTimestamp();
+            bool began = ctx.BeginFrame();
+            fpsWindowWait += Stopwatch.GetElapsedTime(beginAt).TotalSeconds;
+            if (!began)
             {
                 if (gpuCapture is not null)
                 {
@@ -1525,7 +1531,12 @@ sealed partial class GameHost
             }
             // The Vulkan loop's cap: only without vsync (vsync already paces the present); the same 30 fps cap in
             // both comparison runs isolates tearing from the much higher uncapped frame rate.
-            if (!display.VSync && fpsLimit > 0) Limit(clock, frameStart, 1.0 / fpsLimit);
+            if (!display.VSync && fpsLimit > 0)
+            {
+                long limitAt = Stopwatch.GetTimestamp();
+                Limit(clock, frameStart, 1.0 / fpsLimit);
+                fpsWindowWait += Stopwatch.GetElapsedTime(limitAt).TotalSeconds;
+            }
             if (g.QuitAfter is { } quitAfter && now >= quitAfter) break;
         }
         void SaveSettings()
