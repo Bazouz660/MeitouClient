@@ -133,7 +133,20 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
     }
     readonly HashSet<CharacterAppearance> pendingLooks = new(ReferenceEqualityComparer.Instance);
     /// <summary>Current appearances still being prepared/uploaded, or textures still being loaded. Failed assets count as finished.</summary>
-    public bool ContentPending => Draws.Items.Any(c => !assets.ContainsKey(c.Appearance)) || content.Textures.PendingCount > 0 || content.Textures.UnresidentUsedCount > 0;
+    public bool ContentPending => Draws.Items.Any(c => !Deferred(c) && !assets.ContainsKey(c.Appearance)) || content.Textures.PendingCount > 0 || content.Textures.UnresidentUsedCount > 0;
+
+    /// <summary>
+    /// While set (a game's loading screen): only the characters within <see cref="LoadingReach"/> of this point (x, z) are prepared and counted by <see cref="ContentPending"/>; the
+    /// rest wait until it is cleared. The original's loaded zones (the camera's 3 x 3 block) can hold hundreds of NPCs, and preparing every one of their meshes (their
+    /// generated levels: up to seconds each) kept the screen up two minutes for a view that shows a few dozen.
+    /// </summary>
+    public Vector2? LoadingFocus { get; set; }
+    /// <summary>How far from <see cref="LoadingFocus"/> the loading screen's characters reach (world units).</summary>
+    public float LoadingReach { get; set; } = 3000;
+
+    /// <summary>Whether <paramref name="c"/> waits for the loading screen to lift (<see cref="LoadingFocus"/>).</summary>
+    bool Deferred(in CharacterInstance c) =>
+        LoadingFocus is { } f && Vector2.DistanceSquared(new Vector2(c.Position.X, c.Position.Z), f) > LoadingReach * LoadingReach;
     /// <summary>The appearance was uploaded or failed with a diagnostic; either completes its loading request.</summary>
     public bool IsPrepared(CharacterAppearance appearance) => assets.ContainsKey(appearance);
     /// <summary>Start preparing a scene's essential characters ahead of the world streaming queue (render thread).</summary>
@@ -390,6 +403,7 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
             var inst = items[i];
             if (!assets.TryGetValue(inst.Appearance, out var asset))
             {
+                if (Deferred(inst)) continue;
                 // Interactive: the files are read and the meshes prepared on a worker first (CharacterContent.Fetched), then a few a frame are uploaded.
                 if (LoadBudget > 0 && (!content.Fetched(inst.Appearance) || built >= LoadBudget || buildMs >= BuildBudgetMs)) continue;
                 long buildStart = Stopwatch.GetTimestamp();

@@ -431,7 +431,7 @@ public sealed unsafe class TerrainTextures : IDisposable
                 var d = LoadLayer(assets, pair.Diffuse, layerSize, true, [128, 128, 128, 60], local);
                 var n = LoadLayer(assets, pair.Normal, layerSize, false, [128, 128, 255, 255], local);
                 float steep = 0;
-                var h = GroundRelief.Enabled ? LoadHeight(assets, pair.Normal, pair.Diffuse, HeightSize, out steep) : null;
+                var h = GroundRelief.Enabled ? LoadHeight(assets, pair.Normal, HeightSize, out steep) : null;
                 foreach (var m in local) problems.Enqueue(m);
                 result = new Decoded(pair, d, n, h, steep);
             }
@@ -640,16 +640,15 @@ public sealed unsafe class TerrainTextures : IDisposable
 
     /// <summary>
     /// The height levels of a layer for <see cref="GroundRelief"/>, R8 with mips: its normal map decoded at <paramref name="size"/>² and integrated
-    /// (<see cref="NormalHeight.FromNormals"/>, its diffuse telling a turned frame's up), and <paramref name="steep"/> 1 / (side × the height's steepness):
+    /// (<see cref="NormalHeight.FromNormals"/>, in the frame the game lights it in), and <paramref name="steep"/> 1 / (side × the height's steepness):
     /// the depth, as a fraction of the tile, that gives a root-mean-square slope of 1. Null for a normal map that is missing or cannot be read (the layer
     /// stays flat).
     /// </summary>
-    static byte[][]? LoadHeight(AssetLocator assets, string? normalName, string? diffuseName, int size, out float steep)
+    static byte[][]? LoadHeight(AssetLocator assets, string? normalName, int size, out float steep)
     {
         steep = 0;
         if (ReadImage(assets, normalName, size) is not { } normals) return null;
-        var diffuse = ReadImage(assets, diffuseName, size) is { } d ? Resize(d, size) : null;
-        var height = NormalHeight.FromNormals(Resize(normals, size), size, out float steepness, diffuse, GroundRelief.Tilt);
+        var height = NormalHeight.FromNormals(Resize(normals, size), size, out float steepness, GroundRelief.Tilt);
         steep = steepness > 0 ? 1 / (size * steepness) : 0;
         var levels = new byte[(int)Math.Log2(size) + 1][];
         levels[0] = height;
