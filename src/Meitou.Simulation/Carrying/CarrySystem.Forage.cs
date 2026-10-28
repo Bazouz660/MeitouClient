@@ -10,8 +10,9 @@ public sealed partial class CarrySystem
     /// <summary>
     /// The foraging job (238 "Foraging animals", finder <c>FUN_1408ce3a0</c>), every <see cref="CarrySettings.AutoEveryTicks"/> ticks (serial, slot order): a player character with the
     /// job, free for it (<see cref="PermaJobs.FreeFor"/>, which also wants the jobs switch on), able to carry and with no fight in its squad, loots (<see cref="CharacterTask.Loot"/>: the
-    /// walk, the take-all and the butchering) the nearest downed animal within its sight that is not carried, not looted by another and has something in its inventory. The finder's
-    /// faction test (a character vfunc, or the animal's faction flag +0x1d0) is <b>Unknown</b>; Meitou leaves the forager's own faction's animals alone (engine choice).
+    /// walk, the take-all and the butchering) the nearest downed animal within its sight that is not carried, not looted by another and holds an item one of the forager's
+    /// faction's complete storages accepts (<see cref="StoreFor"/>). The finder's faction test (a character vfunc, or the animal's faction flag +0x1d0) is <b>Unknown</b>; Meitou
+    /// leaves the forager's own faction's animals alone (engine choice).
     /// </summary>
     void Forage(World world, CharacterTable table)
     {
@@ -31,12 +32,26 @@ public sealed partial class CarrySystem
                 if (s == i || !next[s].Alive || taken.Contains(s) || table.Cold(s) is not { } animal || animal.Faction == cold.Faction) continue;
                 if (!(animal.Fighter?.IsAnimal ?? animal.Appearance?.Animal is not null) || !CanBeLooted(animal) || !animal.CarriedBy.IsNone || !animal.Inventory!.All().Any()) continue;
                 float d2 = Vector2.DistanceSquared(at, new Vector2(next[s].Position.X, next[s].Position.Z));
-                if (d2 <= best2 && (best < 0 || d2 < best2)) { best = s; best2 = d2; }
+                if (d2 <= best2 && (best < 0 || d2 < best2) && StoreFor(world, cold, next[i].Position, animal)) { best = s; best2 = d2; }
             }
             if (best < 0) continue;
             taken.Add(best);
             Begin(table, i, table.IdOf(best), CharacterTask.Loot, cold.JobIndex >= 0 || cold.Implicit is not null ? cold.ResumeTask : (CharacterTask)next[i].Task);
         }
+    }
+
+    /// <summary>
+    /// Whether an item of <paramref name="animal"/> (its inventory, then its backpack's) has somewhere to go (<c>FUN_140998950</c> over <c>FUN_14059acd0</c>, <b>Verified</b>
+    /// decompile): a complete storage building of the forager's faction within the AI's range (<see cref="Construction.ConstructionSystem.SourceRangeSquared"/>, 3D) that takes it
+    /// (<see cref="Meitou.Data.Gameplay.Construction.MachineData.Accepts"/>, engine stand-in for its <c>canHaveSomeOfThese</c>: free room is not tested).
+    /// </summary>
+    static bool StoreFor(World world, CharacterCold forager, Vector3 at, CharacterCold animal)
+    {
+        foreach (var item in animal.Inventory!.All())
+            foreach (var m in world.Machines.All)
+                if (m.Data.IsStorage && m.Storage is not null && m.Data.Accepts(item.Record, item.Type) && Vector3.DistanceSquared(m.Position, at) <= Construction.ConstructionSystem.SourceRangeSquared
+                    && world.Buildings.Find(m.Site) is { Complete: true } site && site.Owner == forager.Faction) return true;
+        return false;
     }
 
     /// <summary>The bodies being looted now (by slot).</summary>

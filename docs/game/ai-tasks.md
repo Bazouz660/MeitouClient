@@ -895,7 +895,9 @@ A character's job list (the Orders menu's "Perma-Jobs"; class `OrdersReceiver`, 
     enemies) is nonzero, which is also the condition of the kind-2 job pass above.
   - 238 Foraging animals: `FUN_1408ce3a0`: the first sensed (0x18, 1) character that is down (`FUN_1407d1440`: carried, or ragdoll flags), an animal
     (vfunc 0x248), not carried, passes a character vfunc 0x3e8 test or has faction flag +0x1d0 (**Unknown**), is in no give-up list, and holds an
-    item `FUN_140998950` accepts (inventory, then backpack). Effect 148 → looting.
+    item that has a store (`FUN_140998950`, inventory then backpack, over `FUN_14059acd0`, **Verified** decompile): a complete building with a production interface of
+    the forager's faction (a player-side forager: any player-faction building) within the AI's range mode (ROAM_FAR: squared 4.2467e7) whose `canHaveSomeOfThese` takes
+    it, the nearest. Effect 148 → looting. Meitou `CarrySystem.StoreFor`: storages only, `MachineData.Accepts` for the slot test (free room not tested).
   - 223 Remove Home Intruder: `FUN_14099c110`: the first sensed (0x400e, 0x201) character, not carried, inside a building whose handle equals the home building hand of the character's
     Ownerships (+0x38; `Hand` vfunc 0x10 is "not equal", so the test `== 0` means equal; for the player faction the Ownerships is one shared object whose home is **Unknown**), down (vfunc 0x30), special state
     (+0x2f8) 0, i.e. not in a bed or cage. 273 Remove Intruder: `FUN_14099c250` (**Verified** by decompile; slot names KenshiLib 1ce4a16, **Observed**): only while the character's current town
