@@ -1624,7 +1624,7 @@ static class WorldFrame
             {
                 host.Close();
                 float tanY = MathF.Tan(camera.FieldOfView * 0.5f);
-                gpu.Decals!.RecordSurfaces(post.SceneColour, post.SceneDepth, near, far, rotation, tanY * aspect, tanY, eye);
+                gpu.Decals!.RecordSurfaces(post.SceneColour, post.SceneDepth, near, far, rotation, tanY * aspect, tanY, eye, new Vector2(2 * jitter.X / rw, 2 * jitter.Y / rh));
                 host.Open(6, post.WithShadingRate(post.SceneTargets));
                 StageClock.Lap(StageClock.Blood, "blood surfaces");
             }

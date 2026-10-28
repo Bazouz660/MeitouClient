@@ -39,6 +39,7 @@ public sealed unsafe partial class TerrainDecalRenderer
             vec3 up; float tanY;
             vec3 back; uint depth;
             vec2 planes; uint terrainDepth; uint staticDepth;
+            vec2 jitter;
         } pc;
         void main()
         {
@@ -46,7 +47,7 @@ public sealed unsafe partial class TerrainDecalRenderer
             vCentre = aCentre; vShape = aShape; vColour = aColour; vSprite = aSprite;
             vec3 c = aCentre.xyz;
             float R = aCentre.w;
-            vec3 v = vec3(dot(c, pc.right), dot(c, pc.up), -dot(c, pc.back));   // view space, looking down -z
+            vec3 v = vec3(dot(c, pc.right), dot(c, pc.up), dot(c, pc.back));   // view space, looking down -z
             float z = -v.z;
             vec2 lo = vec2(-1.0), hi = vec2(1.0);
             if (z - R > 0.2)
@@ -56,7 +57,7 @@ public sealed unsafe partial class TerrainDecalRenderer
                 lo = max(min(min(a, b), min(d, e)) / tn, vec2(-1.0));
                 hi = min(max(max(a, b), max(d, e)) / tn, vec2(1.0));
             }
-            gl_Position = vec4(mix(lo, hi, q), 0.0, 1.0);
+            gl_Position = vec4(mix(lo, hi, q) + pc.jitter, 0.0, 1.0);
         }
         """;
 
@@ -72,16 +73,21 @@ public sealed unsafe partial class TerrainDecalRenderer
             vec3 up; float tanY;
             vec3 back; uint depth;
             vec2 planes; uint terrainDepth; uint staticDepth;
+            vec2 jitter;
         } pc;
 
-        float linearDepth(float d) { return pc.planes.x * pc.planes.y / (pc.planes.y - d * (pc.planes.y - pc.planes.x)); }
+        // The depth along the view axis from a stored depth: the scene's depth is the projection's 0..1 depth moved to the clip space's 0.5..1 range (2d - 1 undoes it, as
+        // the fog volumes and the GI resolve read it).
+        float linearDepth(float stored) { float zd = 2.0 * stored - 1.0; return pc.planes.x * pc.planes.y / (pc.planes.y - zd * (pc.planes.y - pc.planes.x)); }
 
-        // The surface point under a depth texel, relative to the eye (as the SSAO rebuilds it), and its linear depth.
+        // The surface point under a depth texel, relative to the eye, and its linear depth. The depth was drawn with the projection moved by the jitter: the texel's ray
+        // is the unjittered one at its centre less that move.
         vec3 posAt(ivec2 t, vec2 size, out float z)
         {
             t = clamp(t, ivec2(0), ivec2(size) - 1);
             z = linearDepth(texelFetch(textures2D[pc.depth], t, 0).r);
-            vec2 xy = ((vec2(t) + 0.5) / size * 2.0 - 1.0) * vec2(pc.tanX, pc.tanY) * z;
+            vec2 uvn = (vec2(t) + 0.5) / size * 2.0 - 1.0 - pc.jitter;
+            vec2 xy = uvn * vec2(pc.tanX, pc.tanY) * z;
             return xy.x * pc.right + xy.y * pc.up - z * pc.back;
         }
 
@@ -161,6 +167,7 @@ public sealed unsafe partial class TerrainDecalRenderer
         public uint Depth;
         public Vector2 Planes;
         public uint TerrainDepth, StaticDepth;
+        public Vector2 Jitter;
     }
 
     static readonly VertexLayout SurfaceRows = new(
@@ -349,7 +356,7 @@ public sealed unsafe partial class TerrainDecalRenderer
     /// <paramref name="far"/>). <paramref name="rotation"/> is the view without its translation. Between the scene's passes: the host is closed, and
     /// <see cref="CaptureTerrainDepth"/> ran this frame.
     /// </summary>
-    internal void RecordSurfaces(GpuTexture colour, GpuTexture depth, float near, float far, Matrix4x4 rotation, float tanX, float tanY, Vector3 eye)
+    internal void RecordSurfaces(GpuTexture colour, GpuTexture depth, float near, float far, Matrix4x4 rotation, float tanX, float tanY, Vector3 eye, Vector2 jitterNdc)
     {
         if (!surfacesOn || surfaces.Count == 0 || terrainDepth is null || terrainDepthFrame != gpu.Frame.Number || staticDepthFrame != gpu.Frame.Number) return;
         RegisterSprites();
@@ -411,7 +418,7 @@ public sealed unsafe partial class TerrainDecalRenderer
         var push = new SurfacePush
         {
             Right = new Vector3(rotation.M11, rotation.M21, rotation.M31), TanX = tanX, Up = new Vector3(rotation.M12, rotation.M22, rotation.M32), TanY = tanY, Back = back,
-            Depth = surfaceDepthIndex, Planes = new Vector2(near, far), TerrainDepth = terrainDepthIndex, StaticDepth = staticDepthIndex,
+            Depth = surfaceDepthIndex, Planes = new Vector2(near, far), TerrainDepth = terrainDepthIndex, StaticDepth = staticDepthIndex, Jitter = jitterNdc,
         };
         cmd.PushConstants(program, GpuStage.Vertex | GpuStage.Fragment, in push);
         Span<GpuBufferBinding> buffers = [new(rows.Handle, rows.Offset), new(rows.Handle, rows.Offset + 16), new(rows.Handle, rows.Offset + 32), new(rows.Handle, rows.Offset + 48)];
