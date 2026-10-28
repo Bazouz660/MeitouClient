@@ -276,8 +276,8 @@ public sealed class BedSystem(PopulationData data, BedSettings? settings = null)
     /// <summary>
     /// What a character of <paramref name="faction"/> pays to use a bed (the original's <c>FUN_140330ab0</c>, <b>Observed</b>): 0 for a bed of no faction, of a faction that counts it as an
     /// ally (its own included) or of a <c>fundamental type</c> 8 (bandit) faction, and for a bed standing on its own; else the bed's house must be public for beds (its resident squad's
-    /// <c>public beds</c>, or a bar: its <c>building designation</c> is BD_BAR), or -1 (not to be used); then the squad's <c>bed usage cost</c>, x4 for a skeleton bed. The town-type and
-    /// two further tests of the original are not modelled.
+    /// <c>public beds</c>, or a bar: its <c>building designation</c> is BD_BAR), or -1 (not to be used); then the squad's <c>bed usage cost</c>, x4 for a skeleton bed. Before the public-beds
+    /// test the bed must pass <see cref="MayUse"/> (<c>canIUseThisBuilding</c>), else -1. The town-type test of the original is not modelled.
     /// </summary>
     public int Cost(World world, Fixture bed, int faction)
     {
@@ -285,6 +285,7 @@ public sealed class BedSystem(PopulationData data, BedSettings? settings = null)
         if (owner < 0 || owner == faction || !bed.Indoors) return 0;
         if (data.Relations.Contains(owner) && data.Relations.Contains(faction) && data.Relations.IsAlly(owner, faction)) return 0;
         if (owner < data.Factions.Count && data.Factions[owner].FundamentalType == FundamentalType.Bandit) return 0;
+        if (!MayUse(world, bed, faction)) return -1;
         Squad? residents = null;
         foreach (var squad in world.Squads.All)
             if ((squad.Ai?.OwnHome ?? squad.HomeBuilding)?.Key == bed.Building) { residents = squad; break; }
@@ -292,6 +293,19 @@ public sealed class BedSystem(PopulationData data, BedSettings? settings = null)
         int cost = template.GetInt("bed usage cost");
         if (bed.Bed.Function == Meitou.Data.World.TownBuildings.SkeletonBedFunction) cost *= 4;
         return Math.Max(cost, 0);
+    }
+
+    /// <summary>
+    /// <c>Ownerships::canIUseThisBuilding</c> for an indoor bed of a faction that is not an ally (<c>FUN_140621230</c>, <b>Verified</b>, docs/game/locks.md): false when the bed's faction is
+    /// hostile to <paramref name="faction"/>; else true only when its building is public (its <c>public day</c> flag; unknown counts as public) and <paramref name="faction"/> is real. The
+    /// original's occupied-town and home-town clauses read the user's squad, which the rent does not have here (engine reading: not applied).
+    /// </summary>
+    bool MayUse(World world, Fixture bed, int faction)
+    {
+        int owner = bed.Owner;
+        if (faction < 0) return true;
+        if (data.Relations.Contains(owner) && data.Relations.Contains(faction) && data.Relations.IsHostile(faction, owner)) return false;
+        return world.Fixtures.PublicOf(bed.Building) != false && !(faction < data.Factions.Count && data.Factions[faction].NotReal);
     }
 
     internal BuildingDetail? DetailOf(World world, string? instance)
