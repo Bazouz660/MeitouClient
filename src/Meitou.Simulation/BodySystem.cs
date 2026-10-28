@@ -216,9 +216,14 @@ public sealed class BodySystem(GameConstants constants, BodyOptions? options = n
             // Movement XP only for the player's faction and not while fight steering or swinging (FUN_140660dc0, Verified; Meitou: not on the Attack task).
             if ((cold.IsPlayer || world.Player.Faction >= 0 && cold.Faction == world.Player.Faction) && n.Task != (byte)CharacterTask.Attack)
                 TrainOnTheMove(stats, race, medical, in n, cold.WaterState == 3, carrying, encumbrance, world.TickSeconds);
-            if ((cold.Orders & CharacterOrders.Sneak) != 0 && !medical.Incapacitated)
+            // Sneak XP (FUN_1408586d0 / FUN_1408c65a0, Verified): the player's faction only, not in a bed or cage or carried, while moving, and only with someone about; a watcher
+            // of the last 4 s gives the noticed rate. The original also pays x0.1 to a sneaker standing still that a hostile targets (not modelled: none then).
+            if ((cold.Orders & CharacterOrders.Sneak) != 0 && !medical.Incapacitated && (cold.IsPlayer || world.Player.Faction >= 0 && cold.Faction == world.Player.Faction)
+                && cold.InSomething == Locks.HeldState.None && cold.CarriedBy.IsNone && n.Velocity.X * n.Velocity.X + n.Velocity.Z * n.Velocity.Z > SneakMoving * SneakMoving)
             {
-                xp.Sneaking(stats, race, ExposureOf(world, cold), world.TickSeconds);
+                var exposure = ExposureOf(world, cold);
+                if (exposure < StealthExposure.Noticed && Watched(world, cold)) exposure = StealthExposure.Noticed;
+                if (exposure != StealthExposure.Unobserved || SomeoneAbout(world, i)) xp.Sneaking(stats, race, exposure, world.TickSeconds);
             }
             if (cold.IsPlayer || table.IdOf(i) == world.Player.Inspected) cold.Extended = ExtendedOf(cold, stats, race, medical, n.MaxSpeed, encumbrance, ctx.Resting, carrying, ctx.UseHungerRate);
             n.Health = Math.Clamp(medical.Blood / MathF.Max(MedicalState.BloodCapacity(race, stats.Strength), 1) * 100, 0, 100);
@@ -319,6 +324,44 @@ public sealed class BodySystem(GameConstants constants, BodyOptions? options = n
     /// <summary>A sneaker's exposure for its stealth XP: an exposure older than a second (a looker's scan interval with room to spare) has lapsed.</summary>
     internal static StealthExposure ExposureOf(World world, CharacterCold cold) =>
         cold.StealthExposureTick >= world.Tick - (long)MathF.Ceiling(1 / world.TickSeconds) ? cold.StealthExposure : StealthExposure.Unobserved;
+
+    /// <summary>The speed above which a sneaker counts as moving for its XP (engine stand-in for the movement's moving flag).</summary>
+    const float SneakMoving = 0.1f;
+
+    /// <summary>A watcher of the last <see cref="AggroSystem.WatcherSeconds"/> that noticed or detected it and is alive and not carried (the original's watcher list scan).</summary>
+    static bool Watched(World world, CharacterCold cold)
+    {
+        if (cold.Watchers is not { Count: > 0 } list) return false;
+        long lapse = world.Tick - (long)MathF.Ceiling(AggroSystem.WatcherSeconds / world.TickSeconds);
+        var table = world.Characters;
+        foreach (var w in list)
+            if (w.Tick >= lapse && w.Level >= StealthExposure.Noticed && table.TryResolveNext(w.Looker, out int s) && table.Cold(s) is { CarriedBy.IsNone: true }) return true;
+        return false;
+    }
+
+    struct AboutScan
+    {
+        public CharacterTable Table;
+        public int Self, PlayerFaction;
+        public bool Found;
+    }
+
+    /// <summary>
+    /// Someone the sneaker senses (the original's sensed enemies and neutrals, <b>engine stand-in</b>): a conscious, uncarried character not of the player's faction within
+    /// <see cref="AggroSystem.OutdoorSight"/>.
+    /// </summary>
+    static bool SomeoneAbout(World world, int slot)
+    {
+        var at = world.Characters.Next[slot].Position;
+        var scan = new AboutScan { Table = world.Characters, Self = slot, PlayerFaction = world.Player.Faction };
+        world.Grid.Query(at.X, at.Z, AggroSystem.OutdoorSight, ref scan, static (int other, ref AboutScan st) =>
+        {
+            if (st.Found || other == st.Self || !st.Table.Previous[other].Alive || st.Table.Cold(other) is not { IsPlayer: false } c) return;
+            if (c.Faction == st.PlayerFaction || c.Medical is { Incapacitated: true } || !c.CarriedBy.IsNone) return;
+            st.Found = true;
+        });
+        return scan.Found;
+    }
 
     void TrainOnTheMove(CharacterStats stats, RaceData race, MedicalState medical, in CharacterHot n, bool deepWater, bool carrying, float encumbrance, float dt)
     {
