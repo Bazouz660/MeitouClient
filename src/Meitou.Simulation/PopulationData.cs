@@ -174,6 +174,7 @@ public sealed class PopulationData
         return copy;
     }
     Dictionary<string, int>? factionIndex;
+    Dictionary<string, int>? templateFaction;
 
     readonly Dictionary<int, IReadOnlyList<TownBuilding>> turrets = [];
     /// <summary>
@@ -245,6 +246,34 @@ public sealed class PopulationData
     {
         var index = LazyInitializer.EnsureInitialized(ref factionIndex, () => BuildFactionIndex(Factions));
         return index.GetValueOrDefault(id, -1);
+    }
+
+    /// <summary>The faction <c>Wildlife</c> (<c>3943-gamedata.base</c>): a spawned squad's faction when nothing else gives one (<c>FUN_1408fe6b0</c>); -1 when absent.</summary>
+    public int WildlifeFaction => FactionIndex("3943-gamedata.base");
+
+    /// <summary>
+    /// The first faction, in load order, whose <c>squads</c> or <c>squad default</c> lists the squad template (<c>FUN_1402e7d10</c>), or -1. The map is built once.
+    /// </summary>
+    public int FactionOfTemplate(string templateId)
+    {
+        var map = LazyInitializer.EnsureInitialized(ref templateFaction, () =>
+        {
+            var m = new Dictionary<string, int>(StringComparer.Ordinal);
+            for (int f = 0; f < Factions.Count; f++)
+                foreach (var link in Factions[f].Squads.Concat(Factions[f].SquadDefault)) m.TryAdd(link.Id, f);
+            return m;
+        });
+        return map.GetValueOrDefault(templateId, -1);
+    }
+
+    /// <summary>
+    /// The spawn faction of a squad template (<c>FUN_1408fe6b0</c>): the template's own <c>faction</c> (Wildlife when it does not resolve); without one the owning town's
+    /// (<paramref name="town"/>, when there is a town), else the first faction listing the template; failing those Wildlife.
+    /// </summary>
+    public int SpawnFactionOf(SquadTemplate template, int? town = null)
+    {
+        int f = template.Faction is { } named ? FactionIndex(named) : town ?? FactionOfTemplate(template.Id);
+        return f >= 0 ? f : WildlifeFaction;
     }
 
     /// <summary>

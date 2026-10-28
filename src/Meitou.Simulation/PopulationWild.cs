@@ -526,7 +526,7 @@ public sealed partial class PopulationSystem
             if (e < 0) break;
             counts[e]++;
             var template = SquadTemplate.From(data.Db.Find(group.HomelessSpawns[e].Id)!);
-            int faction = template.Faction is { } tf ? data.FactionIndex(tf) : -1;
+            int faction = data.SpawnFactionOf(template);
             if (PlaceInSector(minX, minZ, maxX, maxZ, faction, seed, key, walk, players) is not { } spot) continue;
             if (BuildOne(template, faction, faction >= 0 ? data.Factions[faction] : null, key, seed, spot) is { } one) squads.Add(one);
         }
@@ -618,7 +618,7 @@ public sealed partial class PopulationSystem
             if (!budget.Place) break;
             counts[e]++;
             var template = templates[e]!;
-            int faction = template.Faction is { } tf && data.FactionIndex(tf) is var ti and >= 0 ? ti : site.Faction;
+            int faction = data.SpawnFactionOf(template, site.Nest is not null ? site.Faction : null);
             Vector2? spot = null;
             for (int t = 0; t < 12 && spot is null; t++)
             {

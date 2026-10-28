@@ -334,7 +334,7 @@ camps it has explored (**engine choice**).
 | `animals` / `animals2` (ANIMAL_CHARACTER, v0, v1, v2 = age 0..100) | animal members, 5.1 |
 | `slaves`, `prisoners` (SQUAD_TEMPLATE) | whole squads created recursively, 5.2 |
 | `housemates` (SQUAD_TEMPLATE, min, max) | further squads spawned with this one (`FUN_14057f820`) |
-| `faction` | owner faction; if absent the spawn code asks the owning town's faction, else searches every faction's `squads` / `squad default` for the template (`FUN_1402e7d10`), else falls back to the faction `Wildlife` (`3943-gamedata.base`) (**Observed**, `SpawnInfoList::vfunc_0` = `FUN_1408fe6b0`) |
+| `faction` | owner faction; if absent the spawn code asks the owning town's faction, else with no town takes the first faction in load order whose `squads` or `squad default` lists the template (`FUN_1402e7d10`); when that gives nothing, or a named faction does not resolve, the faction `Wildlife` (`3943-gamedata.base`) (**Verified**, `SpawnInfoList::vfunc_0` = `FUN_1408fe6b0`; Meitou `PopulationData.SpawnFactionOf`) |
 | `world state` | AND gate for the spawn |
 | `roaming military` | forces squad mode 2 ("roaming") even with a home town |
 | `dont multiply` | exempts the template from the *Squad size multiplier* setting |
