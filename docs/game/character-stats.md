@@ -178,7 +178,7 @@ Death: vital h-s<-M, blood<=-capacity or hunger<=0. Preserve KO/coma/death disti
   other parts' terms do not enter. Another posture: no KO.
 - A destroyed part not cut off (setting too low; a crushed limb met by a tick): no KO; the leg is down, so the character crawls at once (posture 2).
 - The put-down, stealth and shackle knock-outs call the same function with a factor and no roll (the blood term only, **Verified**).
-  Meitou's `PutDownKoSeconds` still uses the general terms: a gap ([carry-loot](carry-loot.md)).
+  Meitou: `MedicalState.KoBlood`, used by the leg loss and `PutDownKoSeconds` ([carry-loot](carry-loot.md)).
 - The KO toughness XP (`FUN_1408c6720`) is paid only on the vital-part branch of `FUN_14064f300`, not for a leg or blood KO (**Verified**).
   Meitou pays it for every KO event: a gap.
 - **Unknown**: the notify codes 0x46 (leg) and 0x47 (arm) and vtable slot 0x410 that `FUN_14064edc0` calls; the fifth argument of

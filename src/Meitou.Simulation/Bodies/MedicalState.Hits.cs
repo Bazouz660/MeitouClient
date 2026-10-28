@@ -150,13 +150,19 @@ public sealed partial class MedicalState
     /// The leg-loss KO time before its roll (<c>FUN_140644980</c>, <b>Verified</b> by decompile): max(3, (2 x <c>knockout time base</c> + |capacity - blood| x k x 0.5) x (1 - toughness / 100) x 4),
     /// k = lerp(<c>knockout mult 1</c>, <c>knockout mult 99</c>, toughness / 100). Only the missing blood enters it; the other parts' terms of <see cref="KoTerms"/> do not.
     /// </summary>
-    public float LegLossKo(in MedicalContext ctx)
+    public float LegLossKo(in MedicalContext ctx) => KoBlood(ctx, 1 - Math.Clamp(ctx.Toughness / 100, 0, 1));
+
+    /// <summary>
+    /// <c>FUN_140644980</c> (<b>Verified</b>): max(3, (2 x <c>knockout time base</c> + |capacity - blood| x k x 0.5) x <paramref name="factor"/> x 4), k = lerp(<c>knockout mult 1</c>,
+    /// <c>knockout mult 99</c>, toughness / 100).
+    /// </summary>
+    float KoBlood(in MedicalContext ctx, float factor)
     {
         var c = ctx.Constants;
         float t = Math.Clamp(ctx.Toughness / 100, 0, 1);
         float k = c.KnockoutMult1 + (c.KnockoutMult99 - c.KnockoutMult1) * t;
         float missingBlood = MathF.Abs(Capacity(ctx) - Blood) * k * 0.5f;
-        return MathF.Max(3, (2 * c.KnockoutTimeBase + missingBlood) * (1 - t) * 4);
+        return MathF.Max(3, (2 * c.KnockoutTimeBase + missingBlood) * factor * 4);
     }
 
     /// <summary>
@@ -234,11 +240,10 @@ public sealed partial class MedicalState
     public static float PutDownKoFactor(float assassination) => 0.1f + 0.3f * Math.Clamp(assassination / 100, 0, 1);
 
     /// <summary>
-    /// The KO time of a character put down by a non-friendly carrier, in seconds of character time: max(3, (2 x <c>knockout time base</c> + <see cref="KoTerms"/>) x <paramref name="factor"/> x 4),
-    /// with no random roll. <b>Gap</b>: the original's <c>FUN_140644980</c> (the function this follows) has only the blood term, not <see cref="KoTerms"/> (<b>Verified</b> by decompile;
-    /// docs/game/character-stats.md "Cut-off and leg loss"). Not changed here: the put-down, stealth and shackle knock-outs are not the leg task.
+    /// The KO time of a character put down by a non-friendly carrier, knocked out by stealth or shackled, in seconds of character time, with no random roll: <see cref="KoBlood"/> with the
+    /// caller's <paramref name="factor"/> (<c>FUN_140644980</c>, <b>Verified</b>: the one KO-time function of leg loss, put-down, stealth and shackles).
     /// </summary>
-    public float PutDownKoSeconds(in MedicalContext ctx, float factor) => MathF.Max(3, (2 * ctx.Constants.KnockoutTimeBase + KoTerms(ctx)) * factor * 4);
+    public float PutDownKoSeconds(in MedicalContext ctx, float factor) => KoBlood(ctx, factor);
 
     /// <summary>Knocks the character out for <paramref name="seconds"/> seconds of character time from outside the medical rules (a drug, a scripted event); a longer running KO is kept.</summary>
     public void KnockOut(float seconds, List<MedicalEvent>? events = null) => ApplyKo(seconds, events);
