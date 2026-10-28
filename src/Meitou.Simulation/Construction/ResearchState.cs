@@ -37,7 +37,10 @@ public sealed class ResearchState
     public IReadOnlyDictionary<string, float> Partial => partial;
     /// <summary>The manager's tech level: 1, raised to L + 1 by each finished level upgrade of level L (<b>Observed</b>, <c>FUN_140830880</c>).</summary>
     public int TechLevel { get; private set; } = 1;
-    /// <summary>The highest <c>tech level</c> of the player's complete research benches (set by the production system each tick; not saved, not hashed).</summary>
+    /// <summary>
+    /// The highest <c>tech level</c> the player's complete research benches reached: raised by the production system, never lowered, 0 again on <see cref="Set(GameDatabase, IEnumerable{string}, IEnumerable{ValueTuple{string, float}}, IEnumerable{string}, IEnumerable{ValueTuple{string, float}})"/>
+    /// (<c>FUN_140834390</c>; not saved, not hashed).
+    /// </summary>
     public int BenchLevel { get; internal set; }
     /// <summary>The research rate of the last tick: the sum of the bench contributions after the 0.6 falloff (the window's CURRENT RATE).</summary>
     public float Rate { get; internal set; }
@@ -59,6 +62,7 @@ public sealed class ResearchState
     public void Set(GameDatabase db, IEnumerable<string> ids, IEnumerable<(string Id, float Seconds)> queued, IEnumerable<string> paidIds, IEnumerable<(string Id, float Seconds)> kept)
     {
         completed.Clear();
+        BenchLevel = 0;
         // A repeatable research is listed once per time it was finished (engine reading: the save format of repetitions is Unknown); extra listings are dropped.
         foreach (var id in ids)
             if (Times(id) < RepetitionsOf(db, id)) completed.Add(id);

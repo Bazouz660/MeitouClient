@@ -1165,7 +1165,7 @@ crafting benches, generators and batteries. Facts: [production](game/buildings-p
   inputs, output, or storage cells.
 - **Research** (`Construction/ResearchState`). A queue paid at queue time from the benches' storage; a paid id is never
   charged again.
-  - Bench level is the best complete bench's `tech level`.
+  - Bench level is the best `tech level` a complete player bench reached; it never falls (0 again on a load).
   - Several operators add with the 0.6^k falloff.
   - Partial progress is kept off the queue (in memory only).
   - Blueprints ([rules](game/buildings-production.md#blueprints)): `GameDatabase.AddGearBlueprints` makes the `.TECH.1` research after loading;

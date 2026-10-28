@@ -662,7 +662,8 @@ to `FUN_140836b70`: contribution k of the frame is x 0.6^k (counter `+0x174`, cl
 0.95, 1.0, 1.05, 1.1 (I to VI); functionality `tech level` 1 to 6; power 0, 0, -10, -15, -25, -30 (**Verified**, probe).
 - **Levels** (**Observed**): the manager's tech level starts 1; each finished `is level upgrade` research of `level` L
   raises it to L+1 (`FUN_140830880`). A complete player bench raises the bench level to its `tech level`
-  (`FUN_14029be00` -> `FUN_140834390`). Available (`FUN_1408333b0`): not `blueprint only`, not finished or queued,
+  (`FUN_14029be00` -> `FUN_140834390`); it only rises: losing the best bench does not lower it, only the manager's constructor and the
+  research load zero it (**Verified**, `FUN_140834390`, `FUN_140836cb0`, `FUN_1408360f0`). Available (`FUN_1408333b0`): not `blueprint only`, not finished or queued,
   `level` <= tech level, requirements met (a RESEARCH finished, a BUILDING unlocked; `FUN_140830490`, engine reading
   of a garbled decompile), grouped by `category`.
 - **Queue** (`FUN_1408348a0`): needs `level` <= bench level (`FUN_140830a30` names the missing level) and the cost

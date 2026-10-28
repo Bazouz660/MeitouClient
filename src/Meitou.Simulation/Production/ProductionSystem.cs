@@ -549,9 +549,10 @@ public sealed partial class ProductionSystem : ITickSystem
         {
             m.LastOperators = m.Operators;
             m.Operators = 0;
-            if (m.Data.IsResearch && Site(world, m.Site) is { Complete: true }) bench = Math.Max(bench, m.Data.TechLevel);
+            if (m.Data.IsResearch && Site(world, m.Site) is { Complete: true } site && site.Owner == world.Player.Faction) bench = Math.Max(bench, m.Data.TechLevel);
         }
-        if (bench != research.BenchLevel)
+        // Raise-only (FUN_140834390): losing the best bench does not lower the level; it starts at 0 with the research state and on a load.
+        if (bench > research.BenchLevel)
         {
             research.BenchLevel = bench;
             publishedResearch = null;
