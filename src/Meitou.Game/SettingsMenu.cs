@@ -367,7 +367,7 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
         return result;
     }
 
-    static string ActionLabel(InputAction action) => Regex.Replace(action.ToString(), "([a-z0-9])([A-Z])", "$1 $2");
+    static string ActionLabel(InputAction action) => Regex.Replace(action.ToString(), "(?<=[a-z0-9])(?=[A-Z])|(?<=[a-z])(?=[0-9])", " ");
     Func<string>? pendingAction;
     string confirmation = "";
 

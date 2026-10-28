@@ -1062,6 +1062,9 @@ msgstr "Exibe o próximo esquadrão na barra de esquadrões."
 msgid "Select the whole squad (Shift adds it to the selection)."
 msgstr "Seleciona todo o esquadrão (Shift adiciona seus membros à seleção)."
 
+msgid "Select this member of the squad bar (Shift adds them to the selection; press twice to centre on them)."
+msgstr "Seleciona este membro da barra de esquadrão (Shift o adiciona à seleção; pressione duas vezes para centralizar a câmera nele)."
+
 msgid "Select the next member of the character's squad."
 msgstr "Seleciona o próximo integrante do esquadrão do personagem."
 
@@ -1320,6 +1323,36 @@ msgstr "Todas as correções estão desativadas, como na versão original do jog
 msgid "Select All"
 msgstr "Selecionar todos"
 
+msgid "Select Member 1"
+msgstr "Selecionar membro 1"
+
+msgid "Select Member 2"
+msgstr "Selecionar membro 2"
+
+msgid "Select Member 3"
+msgstr "Selecionar membro 3"
+
+msgid "Select Member 4"
+msgstr "Selecionar membro 4"
+
+msgid "Select Member 5"
+msgstr "Selecionar membro 5"
+
+msgid "Select Member 6"
+msgstr "Selecionar membro 6"
+
+msgid "Select Member 7"
+msgstr "Selecionar membro 7"
+
+msgid "Select Member 8"
+msgstr "Selecionar membro 8"
+
+msgid "Select Member 9"
+msgstr "Selecionar membro 9"
+
+msgid "Select Member 10"
+msgstr "Selecionar membro 10"
+
 msgid "Move Forward"
 msgstr "Mover para a frente"
 
@@ -1371,13 +1404,13 @@ msgstr "Acelerar o tempo"
 msgid "Time Slower"
 msgstr "Desacelerar o tempo"
 
-msgid "Speed1"
+msgid "Speed 1"
 msgstr "Velocidade 1"
 
-msgid "Speed2"
+msgid "Speed 2"
 msgstr "Velocidade 2"
 
-msgid "Speed3"
+msgid "Speed 3"
 msgstr "Velocidade 3"
 
 msgid "Screenshot"

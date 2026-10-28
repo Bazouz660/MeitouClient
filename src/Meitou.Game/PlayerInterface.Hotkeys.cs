@@ -6,11 +6,13 @@ namespace Meitou.Game;
 
 /// <summary>
 /// The game view's hotkeys (docs/game/ui-input.md sections 4 and 6): each goes through the rebinding table (<see cref="InputBindings"/>), so the settings' Controls page
-/// rebinds them. The number keys stay fixed (the game's select_0..9). The orders hotkeys run the orders panel's own button actions, as the game's handler
-/// <c>FUN_1407226e0</c> calls the buttons' handlers.
+/// rebinds them. The orders hotkeys run the orders panel's own button actions, as the game's handler <c>FUN_1407226e0</c> calls the buttons' handlers.
 /// </summary>
 sealed partial class PlayerInterface
 {
+    /// <summary>select_0..9: the squad bar's members by position.</summary>
+    static readonly InputAction[] SelectMemberActions = [.. Enumerable.Range(0, 10).Select(i => InputAction.SelectMember1 + i)];
+
     /// <summary>The actions handled by <see cref="Key"/> and <see cref="UiKey"/>: a key bound to one of them is the game's, not the cinema's numpad key.</summary>
     static readonly InputAction[] HotkeyActions =
     [
@@ -18,6 +20,7 @@ sealed partial class PlayerInterface
         InputAction.ChangeSquad, InputAction.SelectAll, InputAction.NextCharacter, InputAction.PreviousCharacter, InputAction.FocusCharacter, InputAction.StopMovement,
         InputAction.ToggleBuild, InputAction.ToggleBlock, InputAction.ToggleHold, InputAction.TogglePassive, InputAction.ToggleJobs, InputAction.ToggleRanged,
         InputAction.ToggleSneak, InputAction.ToggleTaunt, InputAction.CycleRunSpeed, InputAction.Medic, InputAction.Rescue, InputAction.Prospect, InputAction.Rest, InputAction.PutDown,
+        .. SelectMemberActions,
     ];
 
     /// <summary>Whether <paramref name="key"/> is one of <paramref name="action"/>'s bindings.</summary>
@@ -35,13 +38,13 @@ sealed partial class PlayerInterface
 
     public void Key(EngineKey key, bool shift)
     {
-        // select_0..8 on 1..9 and select_9 on 0 (events 100..109): the active squad's members; a second press within half a second centres on the member.
-        if (key is >= EngineKey.D0 and <= EngineKey.D9)
+        // select_0..9 (events 100..109, keys 1..9 and 0 by default): the active squad's members; a second press within half a second centres on the member.
+        if (Array.FindIndex(SelectMemberActions, a => Bound(a, key)) is var member and >= 0)
         {
             long now = System.Diagnostics.Stopwatch.GetTimestamp();
             bool doubleTap = key == lastSelectKey && System.Diagnostics.Stopwatch.GetElapsedTime(lastSelectAt, now).TotalSeconds <= DoubleTapSeconds;
             (lastSelectKey, lastSelectAt) = (doubleTap ? default : key, now);
-            SelectMember(key == EngineKey.D0 ? 9 : key - EngineKey.D1, shift, doubleTap);
+            SelectMember(member, shift, doubleTap);
             return;
         }
         bool free = session.Camera.IsFree;
