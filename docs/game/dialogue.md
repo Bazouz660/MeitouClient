@@ -261,7 +261,8 @@ stored, the squad blackboard notified for player conversations.
 
 **AI tasks 102/159/161** (`Task_TalktoPlayer`, **Verified** decompile): fire `AITaskSytem+0x264` at the target (0 means 1), which the planner sets from the TaskData event of any
 row on the chosen plan (188: 38, 194 / 218: 39, 158 / 283: 9); event 9 repeats every update (17 at an enemy, or with blackboard `+0xe8` at a non-ally); walks at the target;
-after 25 game minutes, once the target is getting away (running, retreating, or moving away), gives up with event 60; done when the conversation has ended. 159 provides
+after 25 game minutes, once the target is getting away (`FUN_140331ee0`: its task is 35 or 127, or a move order (29) to a non-zero spot farther
+from the NPC than the target stands), resets its plan (`FUN_1405074a0`), ends the task and fires event 60; until then it walks on; done when the conversation has ended. 159 provides
 state 109 (with a walk first) for 188 / 194 / 218, 161 provides 110 (no walk) for 158 / 283.
 DA 2 gives the squad leader task 102 with event 1 (`+0x264`) for a player-faction target. **Verified** (probe, 124 AI_TASK records):
 no base-data task uses the enums 102, 159 or 161. `isDialogDelivered` (109 / 110, evaluator `140792140`, **Verified**): true without a Dialogue object, else whether

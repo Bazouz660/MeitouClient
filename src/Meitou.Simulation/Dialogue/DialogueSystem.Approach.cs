@@ -30,7 +30,8 @@ public sealed partial class DialogueSystem
 
     /// <summary>
     /// The NPC approaches (serial): it walks to the target and, in talk range (<see cref="InTalkRange"/>) while no conversation is open, fires event 1 at it (the player's
-    /// conversation window opens with it); it gives up after 25 game minutes with event 60 at the target; a target or NPC gone or down ends it.
+    /// conversation window opens with it); after 25 game minutes it gives up (plan dropped, event 60 at the target) once the target is getting away, else it walks on; a
+    /// target or NPC gone or down ends it.
     /// </summary>
     void StepApproaches(World world)
     {
@@ -48,8 +49,11 @@ public sealed partial class DialogueSystem
                 if (open?.Npc != a.Npc) Release(world, a.Npc);
                 continue;
             }
-            if (!done && world.GameHours >= a.GiveUpHours)
+            if (!done && world.GameHours >= a.GiveUpHours && GettingAway(table, n, t))
             {
+                // The NPC drops its plan and the approach, and event 60 fires.
+                if (table.Cold(n)?.Ai is { } mind) { mind.Plan.Clear(); mind.Goal = null; mind.Version = -1; }
+                MovementSystem.Stop(table, n);
                 world.Defer(new DialogueEvent(a.Npc, a.Target, GiveUpChase) { Tick = world.Tick + 1 });
                 done = true;
             }
@@ -65,6 +69,19 @@ public sealed partial class DialogueSystem
             table.Cold(n)!.Engaged = true;
             if (nh.Task != (byte)CharacterTask.GoTo || Vector2.Distance(nh.Goal, to) > TalkReach) MovementSystem.GoTo(table, n, to, SpeedMode.Free);
         }
+    }
+
+    /// <summary>
+    /// Whether the target is getting away from the NPC (<c>FUN_140331ee0</c>): it runs away (task 35 or 127), or it walks to a move goal farther from the NPC than it stands.
+    /// </summary>
+    static bool GettingAway(CharacterTable table, int npc, int target)
+    {
+        var tc = table.Cold(target);
+        if (tc is { Fleeing: true } || tc?.Ai?.Step is Meitou.Data.Gameplay.Ai.TaskType.RUN_AWAY or Meitou.Data.Gameplay.Ai.TaskType.RUN_AWAY_HOMETOWN) return true;
+        ref readonly var tn = ref table.Next[target];
+        if (tn.Task != (byte)CharacterTask.GoTo || tn.Goal == Vector2.Zero) return false;
+        var me = new Vector2(table.Next[npc].Position.X, table.Next[npc].Position.Z);
+        return Vector2.DistanceSquared(tn.Goal, me) > Vector2.DistanceSquared(new Vector2(tn.Position.X, tn.Position.Z), me);
     }
 
     void HashApproaches(ref StateHasher hasher)
