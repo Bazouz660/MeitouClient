@@ -123,7 +123,8 @@ Task ids and AI conditions: [ai-tasks](ai-tasks.md#build-tasks). Engineer job (*
 lists, effect 2 and the finder `FUN_140999060`, which ignores the job's target and runs `BuildingFinderForEngineers`
 (`FUN_1409a6900`, `FUN_1409a6c10`) from the character's position. Candidates are
 buildings of the character's owner that are not blacklisted, dismantled, holding dismantle work (+0x168 > 0) or paused,
-and not (slot 0x2f0 = 19 and destroyed, slot 0x330 = +0x1a1); an incomplete building (or one needing repair, slot 0x328)
+and not (slot 0x2f0 = 19 SHELL_WITH_INTERIOR and destroyed, slot 0x330 = +0x1a1: any other destroyed building stays a candidate and the
+engineer's first touch ruins it, clearing the flag); an incomplete building (or one needing repair, slot 0x328)
 is a candidate, a complete one contributes its mounted children that need work. Score `max(2 (1 - d^2 / 9000^2),
 0.0001)` (d 3D), x0.5 when slot 89 is set, / (n + 1) with n = characters already working it; a stalled site the
 character has no material for (condition 50 false) is multiplied by the planner cost of the 115 finder (`FUN_14060f1d0`)

@@ -122,6 +122,14 @@ public sealed class ConstructionSystem : ITickSystem
         return list;
     }
 
+    /// <summary>BuildingFunction 19 SHELL_WITH_INTERIOR (a house): its functionality's <c>function</c>.</summary>
+    const int ShellWithInterior = 19;
+    readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> shells = new(StringComparer.Ordinal);
+
+    /// <summary>Whether a BUILDING record is a shell with interior (its functionality's <c>function</c> 19); read once.</summary>
+    bool IsShell(string record) => shells.GetOrAdd(record, id =>
+        db.Find(id) is { } r && TownBuildings.FunctionOf(db, r, []) is { } f && f.GetInt("function") == ShellWithInterior);
+
     /// <summary>The build data of a BUILDING record (null for any other record); read once.</summary>
     public BuildingBuildData? Data(string record)
     {
@@ -1118,7 +1126,7 @@ public sealed class ConstructionSystem : ITickSystem
 
     /// <summary>
     /// The site the engineer job (125) works next (<b>Verified</b>, <c>BuildingFinderForEngineers</c> <c>FUN_1409a6900</c> / <c>FUN_1409a6c10</c>): the character's faction's unfinished or
-    /// damaged, unpaused, not destroyed, not dismantled sites; score <c>max(2 (1 - d^2/9000^2), 0.0001) / (n + 1)</c>, d the 3D distance, n the others working it; the highest wins (the first on a tie). A stalled site the
+    /// damaged, unpaused, not dismantled sites, not a destroyed house (function 19; any other destroyed building is ruined by the engineer's first touch); score <c>max(2 (1 - d^2/9000^2), 0.0001) / (n + 1)</c>, d the 3D distance, n the others working it; the highest wins (the first on a tie). A stalled site the
     /// character carries nothing for counts only when <see cref="Source"/> finds a material. Null: none.
     /// </summary>
     public BuildSite? EngineerSite(World world, int slot)
@@ -1132,7 +1140,7 @@ public sealed class ConstructionSystem : ITickSystem
         float bestScore = 0;
         foreach (var site in reg.All)
         {
-            if (!site.NeedsWork || site.Paused || site.Destroyed || site.Dismantling || site.WallParent is not null || site.Owner != cold.Faction) continue;
+            if (!site.NeedsWork || site.Paused || site.Destroyed && IsShell(site.Record) || site.Dismantling || site.WallParent is not null || site.Owner != cold.Faction) continue;
             if (site.Stalled && !Carries(cold, site) && Source(world, slot, cold, site) is null) continue;
             float d2 = Vector3.DistanceSquared(at, site.Position);
             float score = MathF.Max(2 * (1 - d2 / (9000f * 9000f)), 0.0001f) / (Workers(table, site.Id, slot) + 1);
