@@ -117,8 +117,10 @@ cooldown of 2 s of 1x game time divided by the speed (so 2/speed² real s; pause
 `+0xb4` (`isSleeping`, KenshiLib name **Observed**) is 0, x0.5 for another interior and x0.5 again when the building (the target's, else the listener's) has no open door.
 Chance 0.75 x (1 - d²/N²), sneaking (0.05 when `+0xb4` is 0, else 0.1) x (1 - stealth) x the same; x2 when the entry is alarmed. In combat mode in the same place and on
 the same floor any chance > 0 is a sure hearing; else a roll. A heard listener with `+0xb4` 1 drops it on a coin flip and, for a sneaking player target, says event 47
-ALMOST_WOKE_UP. Sneaking or crawling targets get stealth XP ([character-stats](character-stats.md)). Meitou (`AggroSystem.HearPlace`): the interior, floor, door and
-sure-hearing rules; not the cooldown, the `+0xb4` factors (which value an awake NPC holds is **Unknown**), the alarm doubling or event 47.
+ALMOST_WOKE_UP. Sneaking or crawling targets get stealth XP ([character-stats](character-stats.md)). Meitou (`AggroSystem.Hears`, one test for the
+attack-on-sight look and the chaser's look): the player pair (player faction only: `FUN_140856bc0`'s owner path for slaves and pets is not modelled), the moving or combat-mode
+gate (a fighter standing still makes noise 350 f), the interior, floor, door and sure-hearing rules; not the cooldown, the `+0xb4` factors (which value an awake NPC holds is
+**Unknown**), the alarm doubling or event 47.
 Hearing does not imply ordinary visual cone/line-of-sight eligibility.
 
 ## Retreat and memory
