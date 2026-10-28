@@ -120,6 +120,8 @@ public sealed partial class PopulationSystem : IStateHashed
     public const float CampaignSpawnRadius = 700;
     /// <summary>Distance at which an unloaded follower stops behind its leader (engine choice).</summary>
     public const float CampaignFollowDistance = 100;
+    /// <summary>Inside this distance of its trail point a follower goes at <see cref="CampaignPaceFactor"/> x the leader's speed (<b>Verified</b>, 70 and 0.9, <c>FUN_140349e70</c>).</summary>
+    public const float CampaignPaceDistance = 70, CampaignPaceFactor = 0.9f;
 
     /// <summary>The war managers, one per faction in faction order (empty before the first look).</summary>
     public IReadOnlyList<WarManager> Wars => wars ?? [];
@@ -556,7 +558,12 @@ public sealed partial class PopulationSystem : IStateHashed
     {
         p.Campaign = null;
         p.CampaignGoal = null;
-        if (world.Squads.Find(p.SquadId) is { } assaulting) assaulting.War = WarTargets.None;
+        if (world.Squads.Find(p.SquadId) is { } assaulting)
+        {
+            assaulting.War = WarTargets.None;
+            foreach (var m in assaulting.Members)
+                if (world.Characters.TryResolveNext(m, out int ms)) world.Characters.Cold(ms)!.PaceCap = null;
+        }
         p.Target = p.Origin;
         p.GoingHome = true;
         p.WaitLeft = 0;
@@ -1170,6 +1177,8 @@ public sealed partial class PopulationSystem : IStateHashed
         var table = world.Characters;
         squad.War = AssaultTargets(world, p.Campaign!, p.Campaign!.Leader == p.Id);
         if (p.CampaignGoal is not { } goal || !table.TryResolveNext(squad.Leader, out int slot)) return;
+        var cold = table.Cold(slot)!;
+        cold.PaceCap = null;   // set again below while it trails at the leader's pace
         if (p.Campaign!.Leader == p.Id) TryAnnounce(world, p.Campaign, squad.Leader, table.Next[slot].Position);
         // Retreating, members the column does not move (a carrier, whom the AI leaves alone) mill round their own town again, not round the raid target the squad last
         // milled at, so a kidnapper takes its captive home (engine choice; the arrival below still mills them round the goal).
@@ -1202,10 +1211,14 @@ public sealed partial class PopulationSystem : IStateHashed
         // 6000, else it waits near the target or walks.
         var inst = p.Campaign;
         byte mode = SpeedMode.Run;
-        // Inside 100 the original sets the leader's current speed (x 0.9 inside 70); engine stand-in: the campaign leader's speed mode.
+        // Inside 100 a follower takes the campaign leader's current speed, x 0.9 inside 70 (FUN_140349e70): its leader's mode and, as a cap, the leader's speed now.
         if (!leads && d < CampaignFollowDistance && world.Platoons.Find(inst.Leader) is { } head && world.Squads.Find(head.SquadId) is { } headSquad
             && table.TryResolveNext(headSquad.Leader, out int hs))
+        {
             mode = table.Next[hs].Mode;
+            var v = table.Next[hs].Velocity;
+            cold.PaceCap = new Vector2(v.X, v.Z).Length() * (d < CampaignPaceDistance ? CampaignPaceFactor : 1);
+        }
         if (leads)
         {
             mode = LoadedMode(CampaignOf(inst.CampaignId)?.TravelSpeedLoaded ?? MoveSpeed.Run, n.Mode);

@@ -725,6 +725,7 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
                     if (cold.InCombat && !cold.CombatRunning && n.Task == (byte)CharacterTask.Attack) desired = MathF.Min(desired, Combat.CombatTuning.FootworkSpeed);
                     if (mode == SpeedMode.Group && cold.SpeedOverride <= 0 && n.Task != (byte)CharacterTask.Follow) desired = MathF.Min(desired, GroupSpeed(world, i, cold, p.Position));
                     if ((cold.Orders & CharacterOrders.Sneak) != 0 && cold.SpeedOverride <= 0) desired = MathF.Min(desired, Orders.SneakSpeed(desired, Orders.Stealth(cold)));
+                    if (cold.PaceCap is { } pace && n.Task == (byte)CharacterTask.GoTo && !cold.InCombat) desired = MathF.Min(desired, pace);   // a campaign follower near its trail point
                     if (cold.Medical is { Crawling: true } && cold.CarriedBy.IsNone) desired = Bodies.Speed.Crippled;   // the final override, after water and sneaking
                     // Braking into the last point, never past it.
                     if (last) desired = MathF.Min(desired, MathF.Min(MathF.Sqrt(2 * PathAcceleration(cold) * dist), dist / dt));

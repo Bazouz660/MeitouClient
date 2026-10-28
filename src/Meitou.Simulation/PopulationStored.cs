@@ -68,6 +68,7 @@ public sealed partial class PopulationSystem
         c.DrawnWeapon = default;
         c.ModeOverride = null;
         c.SpeedOverride = 0;
+        c.PaceCap = null;
         c.InCombat = false;
         c.Fleeing = false;
         c.Engaged = false;
