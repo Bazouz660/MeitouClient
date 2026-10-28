@@ -48,4 +48,6 @@ public sealed record CombatOptions
     public bool GunnerFacesBarrel { get; init; }
     /// <summary>A fist attack with a small negative attack distance ("ma badpunch") reads it as positive (Meitou fix); false: as written, as the game does.</summary>
     public bool PunchReachFix { get; init; }
+    /// <summary>Most bolts left stuck in the world per bolt mesh (the original's <c>harpoonLimit</c> setting, 10 to 500).</summary>
+    public int StuckLimit { get; init; } = RangedTuning.DefaultStuckLimit;
 }

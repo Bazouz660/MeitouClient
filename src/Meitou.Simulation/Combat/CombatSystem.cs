@@ -48,6 +48,7 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
         LateDefences = Settings.LateDefences;
         GunnerFacesBarrel = Settings.GunnerFacesBarrel;
         PunchReachFix = Settings.PunchReachFix;
+        StuckLimit = Math.Clamp(Settings.StuckLimit, RangedTuning.MinStuckLimit, RangedTuning.MaxStuckLimit);
         xp = new XpService(constants, options);
     }
 
@@ -55,6 +56,9 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
 
     /// <summary>How many enemies may melee one target at once, before the target race's <c>extra attack slots</c>: CONSTANTS <c>max num attack slots</c> (1, Faithful) unless a setting changes it.</summary>
     public int AttackSlots { get; set; }
+
+    /// <summary>Stuck bolts kept in the world per bolt mesh (the settings' <c>harpoonLimit</c>, <see cref="CombatOptions.StuckLimit"/>): past it the one that flew longest goes (<c>FUN_14043acf0</c>).</summary>
+    public int StuckLimit { get; set; }
 
     /// <summary>A late but successfully rolled dodge or block still counts (<see cref="CombatOptions.LateDefences"/>); off is the game's rule.</summary>
     public bool LateDefences { get; set; }
