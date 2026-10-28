@@ -115,6 +115,8 @@ internal sealed class PartMaterial
     public float GlossMult = 1;
     /// <summary>An icon whose mesh has vertex colours: they multiply the albedo (the game's <c>RTTIcons_Coloured</c>).</summary>
     public bool VertexColoured;
+    /// <summary>Takes blood (<see cref="CharacterShaders.Bloody"/>; <see cref="BloodFull"/>: the whole mesh at the full amount, a stump): <see cref="Colour1"/> holds the blood colour, <see cref="Colour2"/> x and y the race's <c>blood horizontal</c> and <c>blood vertical</c>.</summary>
+    public bool Bloody, BloodFull;
     /// <summary>The body's normal blend weight towards <see cref="CharacterShaders.SlotBlendNormal"/> (the original's <c>muscleBlend</c>).</summary>
     public float MuscleBlend;
     /// <summary>The record last written for it and the renderer's material epoch it holds for (<see cref="CharacterRenderer"/>); 0 after a field above changed: written again.</summary>
@@ -470,7 +472,7 @@ internal sealed class CharacterContent : IDisposable
     }
 
     /// <summary>Which bone handle belongs to which limb slot (-1: none) and the bind-pose heights below which a limb's vertices are its hideable part.</summary>
-    internal sealed record LimbHide(int[] LimbOfBone, float ArmBelow, float LegBelow);
+    internal sealed record LimbHide(int[] LimbOfBone, float ArmBelow, float LegBelow, int[] PartOfBone);
 
     /// <summary>
     /// The limb map of a person's body (<c>read_part_map</c> <c>FUN_140075600</c>, docs/characters.md "Hidden body parts"): each LOCATIONAL_DAMAGE of the race's <c>combat anatomy</c>
@@ -481,22 +483,27 @@ internal sealed class CharacterContent : IDisposable
     {
         if (c.Animal is not null) return null;
         var claimed = new Dictionary<string, int>(StringComparer.Ordinal);
-        foreach (var r in c.Race.GetReferences("combat anatomy"))
+        var claimedPart = new Dictionary<string, int>(StringComparer.Ordinal);   // the same bones to the part's index in the health parts' order (MedicalState.Create: BodyPartTemplate.MedicalOrder, stable)
+        var anatomy = c.Race.GetReferences("combat anatomy").Select(r => db.Find(r.TargetStringId)).Where(p => p is { Type: FcsRecordType.LOCATIONAL_DAMAGE }).Select(p => p!).ToList();
+        var rank = anatomy.Select((p, i) => (p, i)).OrderBy(x => Meitou.Data.Gameplay.Bodies.BodyPartTemplate.From(x.p).MedicalOrder).Select((x, k) => (x.i, k)).ToDictionary(x => x.i, x => x.k);
+        for (int partIndex = 0; partIndex < anatomy.Count; partIndex++)
         {
-            if (db.Find(r.TargetStringId) is not { Type: FcsRecordType.LOCATIONAL_DAMAGE } part) continue;
+            var part = anatomy[partIndex];
             bool right = (part.GetInt("collapse part") & 0x12) != 0;
             int limb = part.GetInt("body part type") switch { 2 => right ? 1 : 0, 1 => right ? 3 : 2, _ => -1 };
             foreach (var key in new[] { "bone name", "bone name 2", "bone name 3" })
-                if (part.GetString(key) is { Length: > 0 } bone) claimed.TryAdd(bone, limb);
+                if (part.GetString(key) is { Length: > 0 } bone) { claimed.TryAdd(bone, limb); claimedPart.TryAdd(bone, rank[partIndex]); }
         }
         var bones = rig.Skeleton.Bones;
         var byHandle = bones.ToDictionary(b => (int)b.Handle);
         var map = new int[bones.Count == 0 ? 0 : bones.Max(b => b.Handle) + 1];
         Array.Fill(map, -1);
+        var partMap = new int[map.Length];
+        Array.Fill(partMap, -1);
         foreach (var b in bones)
             for (var x = b; x is not null; x = x.Parent is { } p && byHandle.TryGetValue(p, out var parent) ? parent : null)
-                if (claimed.TryGetValue(x.Name, out int limb)) { map[b.Handle] = limb; break; }
-        return new LimbHide(map, c.Female ? 14.1f : 13.83f, 8.6f);
+                if (claimed.TryGetValue(x.Name, out int limb)) { (map[b.Handle], partMap[b.Handle]) = (limb, claimedPart[x.Name]); break; }
+        return new LimbHide(map, c.Female ? 14.1f : 13.83f, 8.6f, partMap);
     }
 
     /// <summary>The file of the race's part map (<see cref="CharacterAppearance.PartMap"/>), found as Ogre finds it (by name through the resource and mod folders); null without one.</summary>
@@ -543,6 +550,9 @@ internal sealed class CharacterContent : IDisposable
                     }
                     int limb = (uint)bone < (uint)hide.LimbOfBone.Length ? hide.LimbOfBone[bone] : -1;
                     if (limb >= 0 && v.Position.Y < (limb < 2 ? hide.ArmBelow : hide.LegBelow)) bits = 1 << limb;
+                    // The part of the heaviest bone (the blood amounts are the first 8 parts', FUN_140530b30): bits 16 to 19, its index + 1.
+                    int owner = (uint)bone < (uint)hide.PartOfBone.Length ? hide.PartOfBone[bone] : -1;
+                    if ((uint)owner < 8) bits |= (owner + 1) << 16;
                 }
                 if (partMap is not null)
                 {
@@ -566,7 +576,7 @@ internal sealed class CharacterContent : IDisposable
     /// the mean of how far the normal turns per unit of length, then averaged over the vertices that share its position (a UV seam must not show). Baked per vertex and
     /// interpolated, it is smooth across triangles; a screen-space estimate is constant per triangle and drew the low-poly faceting in red.
     /// </summary>
-    static void MarkCurvature(Model model)
+    internal static void MarkCurvature(Model model)
     {
         foreach (var part in model.Parts)
         {
@@ -730,6 +740,16 @@ internal sealed class CharacterContent : IDisposable
     /// <summary>A body texture by file (bordered, as the body's own), streamed in like the rest.</summary>
     public WorldTexture? BodyTexture(string? name) => Texture(name, true);
 
+    /// <summary>The body blood layer (docs/game/blood-decals.md "On the body and on severed limbs"): the race's blood colour and scales and the splatter map; none for an animal or a bloodless race.</summary>
+    void BodyBlood(PartMaterial m, CharacterAppearance c)
+    {
+        if (c.Animal is not null || c.Race.GetFloat("bleed rate", 1) <= 0) return;
+        m.Bloody = true;
+        m.Colour1 = new Vector4(CharacterAppearance.Rgb(c.Race.GetInt("blood colour", 0x800000) & 0xFFFFFF), 1);
+        m.Colour2 = new Vector4(c.Race.GetFloat("blood horizontal", 1), c.Race.GetFloat("blood vertical", 0.15f), 0, 0);
+        m.Tex[CharacterShaders.SlotBlood] = Texture("bloody.png", false);
+    }
+
     PartMaterial BodyMaterial(CharacterAppearance c)
     {
         string f = c.Female ? " female" : "";
@@ -765,6 +785,7 @@ internal sealed class CharacterContent : IDisposable
             m.VestColoured[i] = layer.ColourMap is not null && m.HasShirtColour;
         }
         m.Swizzled = true;
+        BodyBlood(m, c);
         return m;
     }
 
@@ -825,6 +846,8 @@ internal sealed class CharacterContent : IDisposable
         {
             var body = BodyMaterial(c);
             body.Description = $"RACE '{c.Race.Name}' body (stump '{item.Name}')";
+            // A severed part is far below its health, so the original's per-part blood amount (FUN_140530b30) is 1: the stump is covered in blood (docs/game/blood-decals.md "On the body").
+            body.BloodFull = body.Bloody;
             return body;
         }
         // A weapon of a generated loadout: its manufacturer's model.

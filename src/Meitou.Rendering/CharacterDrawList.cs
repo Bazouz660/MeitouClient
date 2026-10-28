@@ -39,6 +39,8 @@ public readonly record struct CharacterInstance(long Key, CharacterAppearance Ap
     public float Blend { get; init; }
     /// <summary>The stat-driven body (bone bulk, the body normal blend); null keeps the appearance's own.</summary>
     public Meitou.Data.Characters.BodyBuild? Build { get; init; }
+    /// <summary>The blood each of the first 8 body parts shows, a byte each (<c>CharacterSnapshot.BloodAmounts</c>).</summary>
+    public ulong Blood { get; init; }
 }
 
 /// <summary>

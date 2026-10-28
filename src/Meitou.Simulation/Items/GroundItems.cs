@@ -4,9 +4,9 @@ namespace Meitou.Simulation.Items;
 
 /// <summary>
 /// Where and when a severed limb falls from (docs/game/character-stats.md, docs/simulation.md "Ground items"): the character it was cut from, the bone of its stump
-/// (RACE-part <c>bone name 2</c>) and the tick of the drop. The simulation has no skeleton; the host draws the fall from that bone's place (display only, not hashed or saved).
+/// (RACE-part <c>bone name 2</c>), the tick of the drop and the cut character's skin tone (the tint the original keeps on the item, <c>FUN_1400ced10</c>: 1 - the appearance's <c>Skin Tone</c>; not saved, so a limb loaded from a save has none). The simulation has no skeleton; the host draws the fall from that bone's place (display only, not hashed or saved).
 /// </summary>
-public readonly record struct FallSource(CharacterId Character, string Bone, long Tick);
+public readonly record struct FallSource(CharacterId Character, string Bone, long Tick, Vector3 SkinTone = default);
 
 /// <summary>
 /// An item lying in the world, as the host draws it (docs/simulation.md "Ground items"): a saved one by its whole <see cref="Rotation"/>, a <see cref="Dropped"/> one turned by it
