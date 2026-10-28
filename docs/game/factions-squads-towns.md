@@ -443,7 +443,9 @@ Meitou: [ground items](../simulation.md#items-and-eating).
 - **Town wipe** (**Verified**, `TownPopulationManager::vfunc_4` `FUN_1408f7a80`): once started, roaming `pop` <= 3, <= 25 roaming living and no intact resident platoon
   (more than 200 unresolvable handles in the set, or any at all, also keep it) sets `ded`, saved, never cleared. `setDead` is empty for towns (only nests remove themselves), so
   nothing is shown; a dead town skips the remake pass at activation and its `regenerates` squads die. Meitou (`CheckTownWipes`, each roam check): resident = any town squad
-  or pinned platoon with a home; a town still loading is not judged.
+  or pinned platoon with a home; a town still loading is not judged. The check runs only while the zone at the town's position is loaded
+  (zone byte +0xb1, **Verified** `FUN_1408f6760`); the wipe gates have no faction test, so Meitou keeping player-faction towns is an
+  engine choice (the town list's caller was not read).
 - **`regenerates`** (SQUAD_TEMPLATE, 18 true; `Platoon::declareDead`, **Verified**): when the last member dies and the home town is not `ded`, the platoon is not declared
   dead but set to CM_REFRESH (remade on next activation). Meitou: a town squad that unloads with no one alive, or an empty pinned platoon at the town's load, is marked to
   regenerate (whatever the budget).

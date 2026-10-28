@@ -136,7 +136,7 @@ public sealed partial class PopulationSystem
     public const int WipeRoamingLiving = 25;
 
     /// <summary>
-    /// Town wipe-out (<c>TownPopulationManager::vfunc_4</c> <c>FUN_1408f7a80</c>, docs/game/factions-squads-towns.md "Town wipe"): a started town that is not yet <c>ded</c>, whose roaming
+    /// Town wipe-out (<c>TownPopulationManager::vfunc_4</c> <c>FUN_1408f7a80</c>, docs/game/factions-squads-towns.md "Town wipe"): a started town in a loaded zone that is not yet <c>ded</c>, whose roaming
     /// pool is at most 3 and whose roaming platoons have at most 25 living, and none of whose resident squads (any with a home; engine reading of the resident pool) has anyone alive, is <c>ded</c> for good: it
     /// remakes no depleted squads (<see cref="CheckRegeneration"/>) and its <c>regenerates</c> squads die. Nothing is posted (the town's <c>setDead</c> is empty).
     /// </summary>
@@ -161,7 +161,10 @@ public sealed partial class PopulationSystem
         {
             // A town coming into the world has neither its squads nor its platoons for a moment: not judged then.
             if (s < states.Length && (states[s].Status == SiteStatus.Loading || states[s].Pending)) continue;
-            // A town of the player's faction is the player's to keep (as the repopulation and remake passes leave it alone).
+            // Judged only while the zone at the town's position is loaded (zone byte +0xb1, FUN_1408f6760).
+            if (world.LoadedZones is { } loaded && !loaded.Contains(Meitou.Data.World.WorldLayout.ZoneOf(data.Sites[s].Position.X, data.Sites[s].Position.Z))) continue;
+            // Engine choice: a town of the player's faction is kept (as the repopulation and remake passes leave it alone); the original's wipe gates have no faction test,
+            // though the town list's caller of them was not read.
             if (data.SiteFactions[s] is >= 0 and var owner && owner == PlayerFactionOf(world)) continue;
             if (townPools[s] is not { Started: true, Ded: false } pools || resident[s] || pools.Roaming.Current > WipeRoamingPool || roamers[s] > WipeRoamingLiving) continue;
             pools.Ded = true;
