@@ -623,7 +623,8 @@ or population); a failed start retries each run, up to 100 times; a gone target 
   the leader (× 0.9 under 70); the leader uses `travel speed loaded` while every intact platoon (loaded, or unloaded on job 5/6) is within
   6000, else stops within 8294.4 of its target (plain distance), else walks. Speed modes: WALK default, JOG 55, RUN and GROUPED 999 (no
   cap), NO_SPEED_CHANGE unchanged.
-- Announcement (task 129 in the pt1 leader package, **Verified**): "{1} has arrived at {2}" once; with the leader within 2500 of the camera
+- Announcement (task 129 in the pt1 leader package, **Verified**): "{1} has arrived at {2}" once; task 129 needs the leader not down (!101)
+  and at the package target (131 `atPackageTarget`, [TaskData](ai-tasks.md); its radius is **Unknown**, Meitou uses the 0.8 × radius arrival); with the leader within 2500 of the camera
   and a target-faction member within 2500 of it, `dialog announcement` fires as event 2 ANNOUNCEMENT with no target; phase 0 then waits on
   the leader's event-2 state (which state: **Unknown**). Talking to a campaign member (event 1) is refused without a pending `interrupt`.
   "Invasion with demands" (data): the announcement sets the negotiation as `interrupt`; paying 2000 (DA 8 + DA 38) retreats and requests it

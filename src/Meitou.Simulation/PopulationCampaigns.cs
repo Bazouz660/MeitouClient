@@ -1048,10 +1048,14 @@ public sealed partial class PopulationSystem : IStateHashed
     /// <summary>The announcement needs the leader within this of the camera and a target-faction member within this of the leader (<b>Verified</b>, task 129).</summary>
     const float AnnounceRange = 2500;
 
-    /// <summary>A loaded leader in phase 0 says its campaign's <c>dialog announcement</c> once, with the camera and a target-faction member within 2500 of it.</summary>
+    /// <summary>
+    /// A loaded leader in phase 0 that has arrived at the target (task 129 needs state 131 <c>atPackageTarget</c>; Meitou: <see cref="CampaignInstance.ArrivedAt"/>) and is not
+    /// down (!101) says its campaign's <c>dialog announcement</c> once, with the camera and a target-faction member within 2500 of it.
+    /// </summary>
     void TryAnnounce(World world, CampaignInstance inst, CharacterId leader, Vector3 at)
     {
-        if (inst.Phase != 0 || inst.AnnouncedAt >= 0 || Announcer is null || inst.Enemy < 0 || CampaignOf(inst.CampaignId)?.DialogAnnouncement is not { } announcement) return;
+        if (inst.Phase != 0 || inst.ArrivedAt < 0 || inst.AnnouncedAt >= 0 || Announcer is null || inst.Enemy < 0 || CampaignOf(inst.CampaignId)?.DialogAnnouncement is not { } announcement) return;
+        if (!world.Characters.TryResolveNext(leader, out int ls) || !world.Characters.Next[ls].Alive || world.Characters.Cold(ls)?.Medical?.Incapacitated == true) return;
         if (focus is not { } camera || Vector2.DistanceSquared(new Vector2(at.X, at.Z), new Vector2(camera.X, camera.Z)) > AnnounceRange * AnnounceRange) return;
         var table = world.Characters;
         bool heard = false;
