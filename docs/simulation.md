@@ -110,9 +110,9 @@ ticks, game hours, AI, movement or roaming timers; readiness includes navmesh-ga
 
 The original's rules: [unique characters](game/factions-squads-towns.md#unique-characters). `World.Uniques` (`UniqueCharacters.cs`) is the
 original's table (CHARACTER → claimed, live character, state 1/0/2, player flag), changed in serial phases only and hashed once it has an entry.
-- **Create gate** in `SpawnSquad` (serial, so two squads built at once cannot both make one): a free unique human member is claimed and made; a
-  claimed one gets its first `unique replacement spawn` (look rolled then) or nobody, and the first member left leads. Animals are not gated, as
-  the original (unique pets such as Settler's Pup can repeat). The player's and sandbox squads skip the gate.
+- **Create gate** in `SpawnSquad` (serial, so two squads built at once cannot both make one): a free unique member is claimed and made; a
+  claimed one gets its first `unique replacement spawn` (look rolled then) or nobody, and the first member left leads. Animals go through the
+  same gate (the original's `animals` / `animals2` loops call it, `FUN_140583a10`; six base ANIMAL_CHARACTERs are unique, e.g. Settler's Pup). The player's and sandbox squads skip the gate.
 - **Handles**: bound whenever a unique enters the world (made, stored or saved squads re-made), which also claims it (engine choice: the original
   records only the handle there); dropped when a squad is stored or a corpse removed.
 - **State**: deaths in the combat commit (player flag when the killer is the player's); a refresh at every population look marks the dead, the

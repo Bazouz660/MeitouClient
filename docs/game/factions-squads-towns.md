@@ -62,7 +62,8 @@ and `bar squads` (33). Two UNIQUE_SQUAD_TEMPLATEs exist (`General Epson Army`, `
 | player | the player was involved (killed, imprisoned, holds it) |
 
 **Transitions** (**Verified** by code unless marked):
-- Create (`FUN_1405836e0`, used by `FUN_140583a10` for `leader`, `choosefrom list`, `squad` and `squad2` alike): a claimed unique is replaced by
+- Create (`FUN_1405836e0`, used by `FUN_140583a10` for `leader`, `choosefrom list`, `squad`, `squad2`, `animals` and `animals2` alike, **Verified**; the
+  `unique` bool is read with no record-type test, so the six unique base ANIMAL_CHARACTERs are gated too): a claimed unique is replaced by
   its first `unique replacement spawn` (created without the gate, recorded by slot 16 like any unique if it is one; all 13 targets are
   non-unique except `Protector Of The Flame`, which names itself, so it can be duplicated), or by nobody; a free one is claimed (handle
   reset) and created.

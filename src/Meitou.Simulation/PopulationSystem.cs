@@ -734,7 +734,8 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
     /// <summary>
     /// The unique-character gate (<c>FUN_1405836e0</c>, docs/game/factions-squads-towns.md "Unique characters") on the members of a squad about to be made, in the serial
     /// phase so two squads planned at once cannot both make one: a free unique is claimed and made; a claimed one (made elsewhere, dead) is replaced by its first
-    /// <c>unique replacement spawn</c> (not gated, with a look rolled now) or by nobody. Animals are not gated. When the leader is gone the first member left leads.
+    /// <c>unique replacement spawn</c> (not gated, with a look rolled now; an animal keeps its look) or by nobody. The <c>animals</c> lists go through the same gate (<c>FUN_140583a10</c>). When the leader is
+    /// gone the first member left leads.
     /// </summary>
     List<BuiltMember> GateUniques(World world, BuiltSquad built, int squadId)
     {
@@ -742,7 +743,7 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
         for (int i = 0; i < built.Members.Count; i++)
         {
             var member = built.Members[i];
-            if (member.Plan.IsAnimal || data.Db.Find(member.Plan.RecordId) is not { } record || !UniqueCharacters.IsUnique(record)
+            if (data.Db.Find(member.Plan.RecordId) is not { } record || !UniqueCharacters.IsUnique(record)
                 || world.Uniques.TryClaim(member.Plan.RecordId))
             {
                 gated?.Add(member);
@@ -753,7 +754,7 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
             if (replacements.Count == 0 || data.Db.Find(replacements[0].TargetStringId) is null) continue;
             string replacement = replacements[0].TargetStringId;
             string? faction = built.Faction >= 0 && built.Faction < data.Factions.Count ? data.Factions[built.Faction].Id : null;
-            var look = data.Appearances?.Create(replacement, faction, (int)(Rng.Hash(world.Seed, Rng.StableHash(replacement) ^ (ulong)squadId << 32, RngPurpose.Spawn, SeedSalts.MemberLook + (ulong)i) & 0x7FFFFFFF));
+            var look = member.Plan.IsAnimal ? member.Appearance : data.Appearances?.Create(replacement, faction, (int)(Rng.Hash(world.Seed, Rng.StableHash(replacement) ^ (ulong)squadId << 32, RngPurpose.Spawn, SeedSalts.MemberLook + (ulong)i) & 0x7FFFFFFF));
             gated.Add(new BuiltMember(member.Plan with { RecordId = replacement }, look));
         }
         if (gated is null) return built.Members;
