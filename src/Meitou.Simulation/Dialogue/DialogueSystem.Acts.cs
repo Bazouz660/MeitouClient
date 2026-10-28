@@ -83,6 +83,13 @@ public sealed partial class DialogueSystem
         return table.Cold(a) is { } ac && table.Cold(b) is { } bc && RegardsFriendly(world, table.IdOf(a), ac, table.IdOf(b), bc);
     }
 
+    /// <summary>The loot finder's <c>FUN_14059a7b0</c> (DC 54, <see cref="ScrewOver(World, CharacterId, CharacterCold, CharacterId, CharacterCold)"/>) for two characters by slot.</summary>
+    public bool ScrewOver(World world, int a, int b)
+    {
+        var table = world.Characters;
+        return table.Cold(a) is { } ac && table.Cold(b) is { } bc && ScrewOver(world, table.IdOf(a), ac, table.IdOf(b), bc);
+    }
+
     /// <summary>The medic finders' <c>FUN_14059a670</c> (DC 55, <see cref="Helps"/>) for two characters by slot.</summary>
     public bool Helps(World world, int a, int b)
     {

@@ -70,7 +70,7 @@ public sealed partial class CarrySystem
                 if (body.Faction != cold.Faction && d2 <= dead2) (dead, dead2) = (s, d2);
                 continue;
             }
-            if (d2 > down2 || Friendly(cold, body) || PlayerSide(world, body) && !world.Player.BanditsLoot || !ScrewsOver(world, cold, body, table.IdOf(s), memory)) continue;
+            if (d2 > down2 || PlayerSide(world, body) && !world.Player.BanditsLoot || !ScrewsOver(world, slot, cold, s, body, memory)) continue;
             (down, down2) = (s, d2);
         }
         return dead >= 0 ? dead : down;
@@ -79,17 +79,18 @@ public sealed partial class CarrySystem
     static bool PlayerSide(World world, CharacterCold c) => c.IsPlayer || world.Player.Faction >= 0 && c.Faction == world.Player.Faction;
 
     /// <summary>
-    /// <c>Character::shouldIScrewThisGuyOver</c> (<c>FUN_14059a7b0</c>, <b>Observed</b>), each rule overriding the ones before: yes when either is of NPC class Bandit; no for the same class; yes for
-    /// a Military looter; no when it regards the target as friendly (vfunc <c>0x3f0</c>, <b>Unknown</b>; engine reading); no for a Law enforcement looter; no when its squad loves the target, yes
-    /// when it hates it; yes when the target is dead. The slave-owner rule (status <c>+0xe0</c>) is not modelled.
+    /// <c>Character::shouldIScrewThisGuyOver</c> (<c>FUN_14059a7b0</c>, <b>Verified</b>), the only test of a downed body in the loot finder (no friendliness filter before it): the dialogue
+    /// system's DC 54 (personality, slave owner; docs/game/dialogue.md). Without it: yes when either is a bandit; no for the same class; no when friendly; yes when the looter's
+    /// slave owner is the target's faction; no when its squad loves the target, yes when it hates it; yes when the target is dead.
     /// </summary>
-    bool ScrewsOver(World world, CharacterCold looter, CharacterCold target, CharacterId targetId, SquadMemory? memory)
+    bool ScrewsOver(World world, int looterSlot, CharacterCold looter, int targetSlot, CharacterCold target, SquadMemory? memory)
     {
+        if (world.SystemOf<Dialogue.DialogueSystem>() is { } dialogue) return dialogue.ScrewOver(world, looterSlot, targetSlot);
+        var targetId = world.Characters.IdOf(targetSlot);
         bool yes = looter.NpcClass == FundamentalType.Bandit || target.NpcClass == FundamentalType.Bandit;
         if (looter.NpcClass == target.NpcClass) yes = false;
-        if (looter.NpcClass == FundamentalType.Military) yes = true;
         if (Friendly(looter, target)) yes = false;
-        if (looter.NpcClass == FundamentalType.LawEnforcement) yes = false;
+        if (looter.SlaveOwner >= 0 && looter.SlaveOwner == target.Faction) yes = true;
         if (memory?.Find(world, looter.SquadId, targetId) is { } known)
         {
             if ((known.Long & MemoryTag.LoveMask) != 0) yes = false;

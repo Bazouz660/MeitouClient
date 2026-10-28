@@ -168,9 +168,10 @@ it is not part of target eligibility.
   reachable (`AI::isDestinationAccessible`, `destinationNotBlockedByFortifications`), not in the squad's give-up list, and not short-term tagged 6 by the looter's squad
   (`FUN_140678960(c, target, 6)`, [squad memory](dialogue.md#squad-memory)); the first match wins (sensed-list order, **Unknown**). Pass 1: mask 0x10 / 0 (read as the dead). Pass 2: masks 0x4008 / 0x11 (the kidnap finder's,
   read as other factions' downed) and also: the target's faction is not the player's (`FACTION +0x250`) unless the global **Bandits loot the player** (`142133598`) is set, and
-  `shouldIScrewThisGuyOver(looter, target)` (`FUN_14059a7b0`).
-- **shouldIScrewThisGuyOver**, in order (later lines override): true when either is of NPC class 8 (Bandit; status `+0xdc`); false when both have the same class; true when the
-  looter is class 2 (Military); false when looter vfunc `0x3f0`(target, 1) holds (**Unknown**); false when the looter is class 1 (Law enforcement); true when the looter's status
+  `shouldIScrewThisGuyOver(looter, target)` (`FUN_14059a7b0`), with no friendliness filter before it (**Verified**, `FUN_14099ae10`).
+- **shouldIScrewThisGuyOver** (= dialogue condition 54, [dialogue](dialogue.md#conditions); **Verified**), in order (later lines override): true when either is of NPC class 8
+  (Bandit; status `+0xdc`); false when both have the same class; true when the looter's personality (status `+0xd8`, not the class) is 2 traitorous; false when looter vfunc
+  `0x3f0`(target, 1), "regards as friendly", holds; false when the personality is 1 honourable; true when the looter's status
   `+0xe0` (a slave's owner faction) is the target's faction; false when the looter's squad has a love tag on it (long & 0xc), true with a hate tag (& 0x2b0); true when the target is dead.
 - **Start**: flags `animal` (target vfunc `0x248`), `notPlayerSide` (target's faction is not the player's, or the target is dead; cleared when looter vfunc `0x68` `+0x90` > 0,
   **Unknown**), `foodOnly` (looter of NPC class 8, or its hunger floor, slot 0x348 ([free food](character-stats.md#free-food)), below 2.8), `wantsWeapon` (the looter has no weapon,
