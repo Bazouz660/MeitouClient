@@ -23,7 +23,9 @@ public sealed partial class CombatSystem
     /// <summary>
     /// A fighter's target choice (<c>CombatClassAI::chooseAttackTarget</c>, scored by <see cref="TargetScore"/>): its current target (when <paramref name="keep"/>), the ones
     /// fighting it, and, unless it is Passive, the ones fighting its squad mates within <see cref="RetaliationSystem.JoinRange"/> (engine reading of the protectee's attackers:
-    /// every mate counts). Every candidate fights someone of its side, so the leave-alone test holds. Reads the last tick's state only; -1 when none qualifies.
+    /// every mate counts). Every candidate fights someone of its side, so the leave-alone test holds. When none of them qualifies, the enemies it senses now
+    /// (<see cref="AggroSystem.SensedEnemies"/>, the original's <c>FUN_14059fa70</c>; the aggro mode it is gated on is taken as 0, aggressive). Reads the last tick's state only;
+    /// -1 when none qualifies.
     /// </summary>
     int ChooseTarget(World world, int i, in CombatSlot s, CharacterCold cold, bool keep)
     {
@@ -51,8 +53,17 @@ public sealed partial class CombatSystem
                     if (read[a].TargetGeneration == m.Generation) Consider(world, ref q, a, read[ms].TargetSlot != a);
             }
         }
+        if (q.Best < 0 && world.SystemOf<AggroSystem>() is { } aggro)
+        {
+            var found = sensedEnemies ??= [];
+            found.Clear();
+            aggro.SensedEnemies(world, i, cold, found);
+            foreach (int c in found) Consider(world, ref q, c, false);
+        }
         return q.Best;
     }
+
+    [ThreadStatic] static List<int>? sensedEnemies;
 
     /// <summary>
     /// <c>AI::findAttackerOf</c> (<c>FUN_14099c3b0</c>, <b>Verified</b>) for a character joining <paramref name="subject"/>'s fight: of those fighting the subject, and the

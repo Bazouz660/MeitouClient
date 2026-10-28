@@ -413,6 +413,8 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         /// <summary>The looker's hearing memory (<see cref="Slot.Heard"/>), written during the query and stored back after it.</summary>
         public List<HeardPair>? Heard;
         public List<Sighting> Sightings;
+        /// <summary>Set for the fallback finder (<see cref="SensedEnemies"/>): the accepted enemies go here, and nothing is scored, metered, rolled or emitted.</summary>
+        public List<int>? Found;
         public EffectBuffer Effects;
         /// <summary>Characters gathered this scan, and those taken past the cap (<see cref="GatherCap"/>, <see cref="GatherExtra"/>).</summary>
         public int Gathered, Extra;
@@ -448,25 +450,58 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
             if (stance == Ai.AiStance.Passive || !hasEnemy[cold.Faction] && stance != Ai.AiStance.AggressiveNeutrals && !war.IsSet && !(Memory?.AnyTempEnemy(cold.SquadId) ?? false)) continue;
             float outdoor = RangeOf(cold, Settings.SightRange);
             if (!(outdoor > 0)) continue;
-            float range = world.Sight.MaxRange(i, outdoor);
-            var scan = new Scan
-            {
-                Table = table, Relations = Relations, World = world, Memory = Memory, Self = i, Faction = cold.Faction, Squad = cold.SquadId, SquadFights = Combat is null ? null : squadFights,
-                Eye = prev[i].Position, Cold = cold, Yaw = prev[i].Yaw, Range = range, Outdoor = outdoor, Sight = world.Sight, Best = -1, BestD2 = float.MaxValue, BestScore = float.NegativeInfinity,
-                Combat = Combat, Player = cold.IsPlayer, Hold = Orders.Holding(cold) && cold.Fighter.Crossbow is null, HoldPost = Orders.Holding(cold) && !Orders.RangedExempt(cold), Prone = cold.Medical.Prone, Animal = cold.Fighter.IsAnimal,
-                HoldPoint = Orders.HoldPointOf(cold, prev[i].Position),
-                Seed = world.Seed, Key = Rng.Key(new CharacterId(i, prev[i].Generation)), Tick = (ulong)world.Tick,
-                Stance = stance, War = war,
-                Employer = EmployerOf(world, cold, out bool allies), EmployerAllies = allies,
-                Home = cold.Ai?.Squad.HomeCentre ?? default, HomeR2 = cold.Ai is { } mind ? mind.Squad.HomeRadius * mind.Squad.HomeRadius : 0,
-                Spots = slots[i].Spots, Heard = slots[i].Heard, Sightings = sightings ??= [], Effects = effects,
-            };
+            var scan = NewScan(world, i, cold, stance, war, outdoor, effects);
             scan.Sightings.Clear();
-            world.Grid.Query(scan.Eye.X, scan.Eye.Z, MathF.Max(range, NoiseFar), ref scan, Visit);
+            world.Grid.Query(scan.Eye.X, scan.Eye.Z, MathF.Max(scan.Range, NoiseFar), ref scan, Visit);
             slots[i].Heard = scan.Heard;
             if (scan.Best >= 0) effects.Emit(i, scan.Best, SightEffect, MathF.Sqrt(scan.BestD2));
             if (scan.Spots is not null || scan.Sightings.Count > 0) slots[i].Spots = AdvanceSpots(scan.Spots, scan.Sightings, every * world.TickSeconds, table);
         }
+    }
+
+    Scan NewScan(World world, int i, CharacterCold cold, Ai.AiStance stance, WarTargets war, float outdoor, EffectBuffer? effects)
+    {
+        var prev = world.Characters.Previous;
+        return new Scan
+        {
+            Table = world.Characters, Relations = Relations, World = world, Memory = Memory, Self = i, Faction = cold.Faction, Squad = cold.SquadId, SquadFights = Combat is null ? null : squadFights,
+            Eye = prev[i].Position, Cold = cold, Yaw = prev[i].Yaw, Range = world.Sight.MaxRange(i, outdoor), Outdoor = outdoor, Sight = world.Sight, Best = -1, BestD2 = float.MaxValue,
+            BestScore = float.NegativeInfinity, Combat = Combat, Player = cold.IsPlayer, Hold = Orders.Holding(cold) && cold.Fighter!.Crossbow is null,
+            HoldPost = Orders.Holding(cold) && !Orders.RangedExempt(cold), Prone = cold.Medical!.Prone, Animal = cold.Fighter!.IsAnimal, HoldPoint = Orders.HoldPointOf(cold, prev[i].Position),
+            Seed = world.Seed, Key = Rng.Key(new CharacterId(i, prev[i].Generation)), Tick = (ulong)world.Tick,
+            Stance = stance, War = war,
+            Employer = EmployerOf(world, cold, out bool allies), EmployerAllies = allies,
+            Home = cold.Ai?.Squad.HomeCentre ?? default, HomeR2 = cold.Ai is { } mind ? mind.Squad.HomeRadius * mind.Squad.HomeRadius : 0,
+            Spots = slots[i].Spots, Heard = slots[i].Heard, Sightings = effects is null ? null! : sightings ??= [], Effects = effects!,
+        };
+    }
+
+    /// <summary>
+    /// The sensed-enemy finder a fighter's target choice falls back on when its lists give nobody (<c>FUN_14059fa70</c> from <c>chooseAttackTarget</c> <c>FUN_140666ee0</c>,
+    /// docs/game/combat.md "Target selection"): appends to <paramref name="into"/>, in the grid's order, whom fighter <paramref name="i"/>'s attack-on-sight look takes for an
+    /// enemy (the stances aside: they are its goals' tests, not the finder's) and senses now: in view (a sneaker once its spot meter is full) or heard within the hearing
+    /// cooldown. Read only (no meter, exposure or roll), and it reads the fights from the combat state, not the cold rows: any thread during Act.
+    /// </summary>
+    internal void SensedEnemies(World world, int i, CharacterCold cold, List<int> into)
+    {
+        if (i >= slots.Length || cold is not { Fighter: not null, Medical: not null } || !Relations.Contains(cold.Faction)) return;
+        var stance = cold.Ai?.Stance ?? Ai.AiStance.Aggressive;
+        var war = cold.SquadId >= 0 && world.Squads.Find(cold.SquadId) is { War.IsSet: true } assaulting ? assaulting.War : WarTargets.None;
+        if (stance == Ai.AiStance.Passive || !hasEnemy[cold.Faction] && stance != Ai.AiStance.AggressiveNeutrals && !war.IsSet && !(Memory?.AnyTempEnemy(cold.SquadId) ?? false)) return;
+        float outdoor = RangeOf(cold, Settings.SightRange);
+        if (!(outdoor > 0)) return;
+        var scan = NewScan(world, i, cold, stance, war, outdoor, null);
+        scan.Found = into;
+        world.Grid.Query(scan.Eye.X, scan.Eye.Z, MathF.Max(scan.Range, NoiseFar), ref scan, Visit);
+    }
+
+    /// <summary>Whether the fallback finder's looker senses <paramref name="slot"/> now: in view (a sneaker once its spot meter is full), or heard at its last check within the cooldown.</summary>
+    static bool SensedNow(ref Scan s, int slot, in CharacterHot other, bool sneaking, float stealth)
+    {
+        if (sneaking ? SpotOf(s.Spots, slot, other.Generation) > 1 && s.Sight.Sees(s.Self, slot, s.Eye, s.Yaw, other.Position, s.Outdoor, stealth) > 0
+            : s.Sight.Sees(s.Self, slot, s.Eye, s.Yaw, other.Position, s.Outdoor) > 0) return true;
+        int k = FindHeard(s.Heard, slot, other.Generation);
+        return k >= 0 && s.Heard![k] is { Heard: true, Checked: >= 0 } h && s.World.Tick - h.Checked < CooldownTicks(s.World);
     }
 
     /// <summary>
@@ -595,6 +630,11 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         // One it found no path to lately is never picked (isPathImpossible in the attack-on-sight finder's score, docs/game/combat.md "Target score"): else a guard shut in with its
         // enemy (a cage, a locked room) takes it as target again every look and never turns on anyone it can reach.
         if (s.Cold is { } looker && PursuitSystem.PathImpossible(looker, new CharacterId(slot, other.Generation), (long)s.Tick)) return;
+        if (s.Found is { } found)
+        {
+            if (SensedNow(ref s, slot, other, sneaking, sneaking ? Orders.Stealth(c) : -1)) found.Add(slot);
+            return;
+        }
         // The AI's stances (docs/simulation.md "AI", Combat goals): the defensive one joins fights only, the territorial one keeps to its home.
         if (s.Stance == Ai.AiStance.Defensive && !c.InCombat) return;
         if (s.Stance == Ai.AiStance.ProtectSquad && (s.SquadFights is { } fights ? s.Squad < 0 || !fights.Contains((s.Squad, slot)) : !c.InCombat)) return;
