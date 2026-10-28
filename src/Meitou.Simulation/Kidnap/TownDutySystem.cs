@@ -65,7 +65,8 @@ public sealed class TownDuty
 /// or a town of its faction (<c>Ownerships::isMyTown</c>, KenshiLib names); the intruder is knocked out, in that town, not carried or caged, and (an engine reading of the sensed-list classes)
 /// not of the member's faction or an ally. The original's last test, <c>amInsideTownWalls</c>, is read as the town's built-up area (<see cref="BuiltUp"/>). The member lifts it, then</item>
 /// <item><b>112 Find and put in cage</b>, while the package lists it: the best free cage in the town (the original's finder; an occupier may use the occupied town's, its use test passing
-/// for that town, <c>FUN_140621230</c>), where the intruder is locked up (no sentence, as a kidnapping); else</item>
+/// for that town, <c>FUN_140621230</c>), where the intruder is locked up with the put-in's usual sentence (from a bounty with the cage owner's faction,
+/// docs/game/economy.md 11.5; none: served, so the jailer frees it); else</item>
 /// <item><b>274 Throwing out</b> (<c>Task_TakeIntruderOutsideTown</c>): carried past the town's built-up area (<see cref="TownDutySettings.OutsideTown"/>) on the member's side and put down.</item>
 /// <item><b>243 Getting food</b> (finder <c>FUN_1408cb650</c>, <c>BuildingFinder_LootFoodAndStuff</c>; then 244 <c>Task_grabOneFood</c>): a member holding no food walks to the nearest store with
 /// food in the town and takes one item of it (the goal holds while it has food, list A <c>gotAFoodItem</c>). The town the original's finder searches is read as the one the member stands in.</item>
@@ -427,7 +428,6 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
                 MovementSystem.Stop(table, g);
                 carry.LetGo(world, g);
                 if (!world.Fixtures.Imprison(world, d.Body, cage, 1, d.Member)) return End(world, d);
-                body.Kidnapped = true;
                 if (body.IsPlayer) world.Post($"{body.Name} has been locked in a cage by {data.Factions[d.Faction].Name}");
                 return End(world, d);
             }
