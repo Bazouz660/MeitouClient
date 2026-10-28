@@ -294,7 +294,7 @@ New player characters start with Jobs and Ranged enabled. Jobs gates the job lis
 defaults, including explicit false values. Jobs is GAMESTATE_AI `jobs` ([perma-jobs](game/ai-tasks.md#perma-jobs)); Meitou's older `meitou jobs enabled` is read, not written.
 Sneak: sneaking speed cap and clips, quieter, smaller view factor; a hostile looker sees the sneaker only once its
 spot meter fills ([perception](game/perception.md#spotting-a-sneaker)); the exposure feeds stealth XP.
-Ranged (on for every NPC): a crossbow carrier takes the crossbow at any distance and melees only when dry, in Block, or with a threat
+Ranged (on for every NPC): a crossbow carrier takes the crossbow at any distance (Block too) and melees only when dry or with a threat
 (anyone targeting it) within 40; off, it never shoots. Taunt and Passive act through the target score (`Combat.TargetScore`: Taunt +2 and its crowd term ×0.35,
 Passive −1), which both the aggro look and the fighters' re-pick use.
 New games select the squad's first member. The game host also selects the first member after

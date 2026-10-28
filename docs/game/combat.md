@@ -450,7 +450,8 @@ Readers: Block (`isDefensiveMode`: +0x128 and prone state 0) feeds the block cha
 +20 defence), makes the ask answer 0 and runs the state-5 timer. Hold (`holdPositionMode`: +0x12b, not sneaking) feeds the post test
 `AI::isTargetInRangeForHOLDMode_hostiles` ([perception](perception.md#the-attack-on-sight-tests)), the score's ×0.01, the 0.3 s re-pick and
 the melee desire. Passive and Taunt act through the desires and the target score above; Ranged through the shooting desire and the shooting
-gate ([ranged](#unknowns-of-the-ranged-path)).
+gate ([ranged](#unknowns-of-the-ranged-path)). Neither reads Block, so a Block character with Ranged on still shoots (**Verified**: no +0x128 read in the
+shooting desire `FUN_140598260` or the gate `FUN_1407f2840`; no ranged routine found among the other readers, **Observed**).
 
 
 ## Combat stance

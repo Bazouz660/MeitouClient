@@ -302,7 +302,8 @@ public sealed partial class CombatSystem : IProjectileSource
         if (s.Dry == can) s.Dry = !can;
         // Ranged mode takes the crossbow however close the target is (between swings): melee is x0.1 against shooting's 1, and a threat within 40 refuses the shooting rows.
         bool rangedMode = Orders.RangedMode(cold);
-        bool want = can && rangedMode && !Orders.Has(cold, CharacterOrders.Block) && !ImmediateThreat(world, i) && (s.Ranged || s.AttackTech < 0);   // the Block order shoots no bolts either
+        // Block does not stop it: neither the shooting desire (FUN_140598260) nor the gate reads isDefensiveMode.
+        bool want = can && rangedMode && !ImmediateThreat(world, i) && (s.Ranged || s.AttackTech < 0);
         if (want == s.Ranged) return;
         s.Ranged = want;
         if (!want) cold.RangedCombatMode = false;
