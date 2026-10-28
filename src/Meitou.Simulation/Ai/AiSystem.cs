@@ -191,8 +191,13 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
         var race = mind.RaceGoals;
         var candidates = Candidates;
         var plans = PlanContext.Local.Bind(this, world, slot, mind, board);
+        // While a goal it committed to is running, only a tier above that goal's priority may take over; if none plans, the goal and its plan stay
+        // (FUN_140510ef0 in committed mode, Verified).
+        var committed = mind.Goal is { } running && mind.Plan.Count > 0 && TaskProfiles.Of(running.Task.Type).Commits && world.GameHours < mind.CommitUntil
+            ? running : null;
         foreach (var tier in Tiers)
         {
+            if (committed is not null && tier <= committed.Task.Priority) break;
             candidates.Clear();
             void Consider(AiGoal g)
             {
@@ -223,6 +228,7 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             for (int k = 0; k < candidates.Count; k++)
                 if (plans.TryPlan(candidates[k].Goal, candidates[k].Desire)) return candidates[k].Goal;
         }
+        if (committed is not null) return committed;
         // The default task (IDLE, weight 0.1) is no candidate of a tier: the chooser tries it only when every tier failed (FUN_140510ef0, Observed).
         if (plans.TryPlan(Idle, Desire(world, TaskBehaviours.Of(Idle.Task.Type), Idle.Task.Type, TaskProfiles.Of(Idle.Task.Type), squad, board, mind, id, Idle.Task.Target))) return Idle;
         mind.Plan.Clear();

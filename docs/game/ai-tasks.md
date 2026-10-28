@@ -719,6 +719,9 @@ vfunc 5 `FUN_14050caf0`). TaskData fields: +0x108 desire (a member function, nea
   target cleared and the next is tried.
 - **Source order** (`AITaskSytem::chooseGoal` `FUN_140510ef0`, KenshiLib names, **Observed**): player orders (OrdersReceiver +0x38, `checkOrders`), jobs,
   urgent perma-jobs, priority-3 goals, other perma-jobs, priority-2 then priority-1 goals, the hold-position task; the first source that plans wins.
+  **Committed mode** (**Verified**, the chooser's second argument, set by `FUN_140511130` while a committing current goal's commitment runs): only
+  sources above the running goal's priority (+0x20c) are tried (none above 2; priority-3 only at 2; priority-3 and -2 at 1); if none plans, the
+  chooser returns and the running goal keeps its plan. Without a current goal the mode is off.
   Goals sit in per-priority lists (`taskPriority`: 1 fluff, 2 non-urgent, 3 urgent, 4 obedience). Orders are queued at priority 3. Consequences for
   fights: [combat](combat.md#fight-lifecycle-and-orders).
 
