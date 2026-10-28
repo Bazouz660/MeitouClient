@@ -1201,7 +1201,8 @@ crafting benches, generators and batteries. Facts: [production](game/buildings-p
   (remap, duplicate refusal, companion, switch on); `RemoveJob` is the list's X. Every `JobCheckTicks` 10 (staggered by slot) a player character
   that is idle (no task, following or wandering, as for the medic job) or on a job takes the first job that is not blocked, so a higher job takes over as soon as it can run and a blocked one passes
   to the next; a job whose site (or the engineer finder's pick) is `JobRangeSq` 4.246733e7 (≈ 6517, 3D) or more from the character is skipped
-  ([range](game/ai-tasks.md#perma-jobs); players are treated as ROAM_FAR and the home-town exception is left out); an order replaces the job's task, and the list resumes once the character is idle. A job that ends returns the
+  ([range](game/ai-tasks.md#perma-jobs); players are treated as ROAM_FAR and the home-town exception is left out), as is every job but Bodyguard / Staying close while the
+  character gets up (`GettingUpUntil`), and Operating machine, Turret guard and Training without a working arm; an order replaces the job's task, and the list resumes once the character is idle. A job that ends returns the
   character to the following or wandering it took it from. The lists also run with no machine while a site `NeedsWork` or a job follows a character. The production pick runs the
   jobs below; first aid, carry and aggro passes run others (further below):
   - 97 Training (Shift + right click on a training dummy, function 7, or the "Training" verb): the Operate task at the dummy; `Train` raises the building's `stat used` by the capped continuous

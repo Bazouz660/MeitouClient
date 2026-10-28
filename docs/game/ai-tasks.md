@@ -851,7 +851,9 @@ A character's job list (the Orders menu's "Perma-Jobs"; class `OrdersReceiver`, 
   `FUN_14050c8e0`); or desire × target finder is 0. Type 187 (Obedient Slave) has a slave-state branch of its own.
 - **Range** (**Verified** by decompile of `FUN_1405a3370`, `FUN_140599f30`, `FUN_140597790`, `AI::AI` `FUN_1406236d0`; names KenshiLib 1ce4a16,
   **Observed**): a job's walk is planned through rows 1 Moving / 67 Running, whose list B needs 27 `isMovementAllowed`, so a job whose target fails
-  it cannot be planned and is skipped. One-shot orders walk through 29 Move order, which lacks 27, so they reach any distance.
+  it cannot be planned and is skipped (so is every walking job while the character gets up). One-shot orders walk through 29 Move order, which lacks
+  27, so they reach any distance. State 38 `hasOneWorkingArm` (list B of 87, 97, 146, 234) has no providing row, so those jobs are skipped by a
+  character with no working arm.
   `AI::isMovementAllowed`: false while the character's +0x278 byte is set (KenshiLib `isCurrentlyGettingUp`); a target object goes to `isTargetInRangeForOrders(RootObject*)`:
   true when the target's `getCurrentTownLocation` is the platoon's `Ownerships::_homeTown` (for the player faction **Unknown**, see 223 below), else
   the position test below, else true for a character of type 1 that is attacking (`CombatClass::isAttacking` in (0, 1)). Position test

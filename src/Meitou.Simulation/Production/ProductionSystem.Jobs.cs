@@ -246,12 +246,17 @@ public sealed partial class ProductionSystem
     /// </summary>
     public const float JobRangeSq = 4.246733e7f;
 
-    /// <summary>A job of the list that may run now: Meitou runs its type, the jobs switch is on (or the type ignores it), its target is within <see cref="JobRangeSq"/>, and it is not blocked.</summary>
+    /// <summary>
+    /// A job of the list that may run now: Meitou runs its type, the jobs switch is on (or the type ignores it), the character is not getting up, its target is within
+    /// <see cref="JobRangeSq"/>, and it is not blocked.
+    /// </summary>
     bool Runnable(World world, int slot, CharacterCold cold, int k)
     {
         var job = cold.Jobs[k];
         if (job.Type is TaskType.BODYGUARD or TaskType.STAY_CLOSE_TO_TARGET) return FollowedBy(world, slot, cold, k) is not null;
         if (!PermaJobs.Runs(job.Type) || ((cold.Orders & CharacterOrders.Jobs) == 0 && !PermaJobs.IgnoresSwitch(job.Type))) return false;
+        // The walk to a job needs state 27, false while the character gets up (FUN_1405a3370).
+        if (cold.GettingUpUntil > world.Tick) return false;
         var at = world.Characters.Next[slot].Position;
         // The engineer job ignores its target: its finder picks any site (the original's row 125 finder, docs/game/buildings-production.md "Builders and dismantle"); a pick out of range fails the job.
         if (job.Type == TaskType.JOB_BUILDER) return Construction?.EngineerSite(world, slot) is { } pick && Vector3.DistanceSquared(at, pick.Position) < JobRangeSq;
@@ -299,16 +304,16 @@ public sealed partial class ProductionSystem
         {
             case TaskType.OPERATE_MACHINERY:
                 if (!m.Data.Operable) return true;
-                if (OperatorsOf(world, id) - (cold.OperateSite == id ? 1 : 0) >= m.Data.MaxOperators) return true;
+                if (OperatorsOf(world, id) - (cold.OperateSite == id ? 1 : 0) >= m.Data.MaxOperators || !HasWorkingArm(cold)) return true;
                 return !HasWork(world, site, m, cold);
             case TaskType.MAN_A_TURRET_PLAYER_JOB:
                 // Turret guard (234, the job a Shift order to man a turret becomes): the building is a turret no one else mans.
-                if (m.Data.Function != Meitou.Data.World.ObjectRanges.TurretFunction) return true;
+                if (m.Data.Function != Meitou.Data.World.ObjectRanges.TurretFunction || !HasWorkingArm(cold)) return true;
                 return OperatorsOf(world, id) - (cold.OperateSite == id ? 1 : 0) >= m.Data.MaxOperators;
             case TaskType.USE_TRAINING_DUMMY:
                 // Training (97): a dummy with a place free for a character with an arm that works (the row's state 38; the rest of its conditions, 73, is Unknown). It goes on at the cap, as the original's has no end.
                 if (!m.Data.IsTraining || OperatorsOf(world, id) - (cold.OperateSite == id ? 1 : 0) >= m.Data.MaxOperators) return true;
-                return cold.Medical is null || !(cold.Medical.ArmWorks(left: true) || cold.Medical.ArmWorks(left: false));
+                return !HasWorkingArm(cold);
             case TaskType.OPERATE_AUTOMATIC_MACHINERY:
                 return !m.Data.IsAutomatic || !m.Data.IsProducer || !AutoWork(world, site, m, cold, fetch: true);
             case TaskType.OPERATE_STORAGE:
@@ -321,6 +326,9 @@ public sealed partial class ProductionSystem
                 return true;
         }
     }
+
+    /// <summary>State 38 <c>hasOneWorkingArm</c>, which rows 87, 97, 146 and 234 need and no row provides, so the job cannot run without it.</summary>
+    static bool HasWorkingArm(CharacterCold cold) => cold.Medical is { } m && (m.ArmWorks(left: true) || m.ArmWorks(left: false));
 
     /// <summary>
     /// A machine an operator can work (the original's start conditions of task 87: output not full, inputs not empty, power; docs/game/ai-tasks.md): it has power, and a bench a queued
