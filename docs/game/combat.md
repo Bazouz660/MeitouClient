@@ -521,7 +521,10 @@ which its next update (`FUN_14050d920` → `FUN_14050d7d0`) consumes by dropping
 - **Nothing left** (`Task_MeleeAttack` update): the task ends when the fight task stopped (`FUN_1405c9750`), or when all hold:
   the senses (Character vfunc `0x68`) count no enemies (`numEnemies` +0x94 = 0) and no threat to allies (`totalThreatLevelAllies` +0x8c ≤ 0,
   [threats](#fight-lifecycle-and-orders)), nobody is engaged on the character (engaged list + overflow 0),
-  the fight has no target (`+0x2a0` none), and the task's own target is gone or fails its vfunc `0x30` test.
+  the fight has no target (`+0x2a0` none), and the task's own target is gone or down (its vfunc `0x30` true; **Verified** decompile of `FUN_14034ca40`).
+  The immediate end above is `CombatClassAI` update `FUN_14060d6a0` (**Verified**: the dropped target equals the task's target and refocus `+0x2e8` is clear).
+  Meitou keeps no task target apart from the fight target, so it does neither: a fighter whose target is lost chooses again at once and leaves the fight when nobody
+  qualifies (`CombatSystem.Act`). Ending at the task target's fall, and otherwise staying targetless until this test passes, needs that task target first.
 - **Path chase give-up** (`ChaseMode`, a base of `Task_MeleeAttack` at task `+0x78`): checked only while the fight is in
   state 11, the path chase that `CombatClassAI::vfunc_9` enters from state 10 when the navmesh line to the target is
   blocked, the two are in different places, or the 2 s chase timer runs ([Combat stance](#combat-stance)). Any other
