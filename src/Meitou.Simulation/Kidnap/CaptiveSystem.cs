@@ -1,4 +1,5 @@
 using System.Numerics;
+using Meitou.Data.Fcs;
 using Meitou.Data.Gameplay;
 using Meitou.Data.Gameplay.Ai;
 using Meitou.Data.Gameplay.Bodies;
@@ -810,9 +811,10 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
     }
 
     /// <summary>
-    /// The processing of a new slave once the kneel is over (<c>Task_ProcessNewSlave</c>, <b>Observed</b>): the captive's weapons and armour go to the worker (its inventory, else the ground;
-    /// engine choice for the original's storage), locked shackles stay on; its faction's <c>slave clothing</c> is put on where the slot is free; event 35, or 37 for one that was a
-    /// slave before, from the worker to it; it becomes the worker's faction's slave.
+    /// The processing of a new slave once the kneel is over (<c>Task_ProcessNewSlave</c>, <b>Verified</b>): every item of the whole inventory of record type WEAPON, then ARMOUR, ITEM and
+    /// CONTAINER goes to the worker (its inventory, else the ground; engine choice for the original's storage), except locked ones and ARMOUR whose <c>stigma</c> is 6 (slave garments); a
+    /// backpack goes with its content. Only when the captive's legs slot is empty is it dressed: each of its faction's <c>slave clothing</c> it does not wear already. Event 35, or 37 for
+    /// one that was a slave before, from the worker to it; it becomes the worker's faction's slave.
     /// </summary>
     void Process(World world, int w, CharacterCold wc, int c, CharacterCold cc)
     {
@@ -820,22 +822,31 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
         bool before = cc.SlaveOwner >= 0 || cc.SlaveState != 0;
         if (cc.Inventory is { } inv)
         {
-            foreach (var item in inv.Items.ToList())
-            {
-                if (item.LockedOn || item.Section is not ("back" or "hip" or "shirt" or "head" or "legs" or "boots" or "armour" or "belt")) continue;
-                inv.Items.Remove(item);
-                item.Section = "main";
-                if (wc.Inventory is not { } into || !into.Add(item)) world.GroundItems.Drop(item, table.Next[c].Position, 0);
-            }
-            if (data.Factions is { } factions && (uint)wc.Faction < (uint)factions.Count && data.Db.Find(factions[wc.Faction].Id) is { } faction)
+            foreach (var type in Stripped)
+                foreach (var item in inv.Items.ToList())
+                {
+                    if (item.Type != type || item.LockedOn || type == FcsRecordType.ARMOUR && data.Db.Find(item.Record)?.GetInt("stigma", 0) == SlaveStigma) continue;
+                    inv.Items.Remove(item);
+                    item.Section = "main";
+                    if (wc.Inventory is not { } into || !into.Add(item)) world.GroundItems.Drop(item, table.Next[c].Position, 0);
+                }
+            if (!inv.Items.Any(i => i.Section == "legs") && data.Factions is { } factions && (uint)wc.Faction < (uint)factions.Count && data.Db.Find(factions[wc.Faction].Id) is { } faction)
                 foreach (var link in faction.GetReferences("slave clothing"))
+                {
+                    if (inv.Items.Any(i => i.Record == link.TargetStringId && Items.InventoryCommands.IsEquipmentSection(i.Section))) continue;
                     if (data.Items.Create(link.TargetStringId, 1) is { } clothing) Items.InventoryCommands.TryEquip(inv, clothing, cc);
+                }
             assembly.RefreshEquipment(cc);
         }
         assembly.RefreshEquipment(wc);
         world.Defer(new Dialogue.DialogueEvent(table.IdOf(w), table.IdOf(c), before ? RecapturedSlave : IntroducingNewSlave) { Tick = world.Tick + 1 });
         FixtureRegistry.Enslave(world, cc, wc.Faction, wc.SquadId);
     }
+
+    /// <summary>The record types a new slave is stripped of, in the original's order.</summary>
+    static readonly FcsRecordType[] Stripped = [FcsRecordType.WEAPON, FcsRecordType.ARMOUR, FcsRecordType.ITEM, FcsRecordType.CONTAINER];
+    /// <summary>The ARMOUR <c>stigma</c> of slave garments, which processing leaves on.</summary>
+    const int SlaveStigma = 6;
 
     /// <summary>The captive died or is gone: a death resets the town's kill timer (<c>FUN_140353990</c>, the end of both the kill and the meal).</summary>
     bool Over(World world, CaptiveJob j, bool died)
