@@ -98,6 +98,7 @@ sealed partial class GameHost
     /// <summary>The world is drawn under the loading screen until its frames run smoothly.</summary>
     void BeginWarm()
     {
+        if (gpu.Characters is { } characters) characters.LoadingFocus = null;   // an earlier warm-up cut short may have left it
         if (loading is null) { skyArrival?.Arrive(); return; }
         // The Metal host draws its own frames and has no Vulkan loading display to measure a warm-up with: let the loading screen
         // slide away and start the sky's descent at once.
@@ -123,6 +124,7 @@ sealed partial class GameHost
         {
             if (loading is { SplashPlaying: true }) return;
             warming = false;
+            if (gpu.Characters is { } titleCharacters) titleCharacters.LoadingFocus = null;
             loading?.Finish();
             ReportLoading("the Faithful title shows");
             return;

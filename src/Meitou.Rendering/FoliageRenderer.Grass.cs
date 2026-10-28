@@ -34,17 +34,25 @@ public sealed unsafe partial class FoliageRenderer
     const int GrassSlotCapacity = 32768;
     /// <summary>The largest <see cref="GrassStoreScale"/>: 1.28 GB of blades, a grass distance of about 2.8 times the default.</summary>
     const int MaxGrassStoreScale = 8;
-    int grassStoreScale;
+    /// <summary>The share of the device's memory budget a larger store may take (an 11 GB card fits the largest, an 8 GB one 6 times the default).</summary>
+    const ulong GrassStoreBudgetShare = 8;
+    /// <summary>The scale the store has, and the last one <see cref="VramGuard.Allows"/> refused (not asked again until the setting wants more).</summary>
+    int grassStoreScale, grassStoreRefused;
 
     /// <summary>
     /// How many times the default store a grass distance needs: the pages in reach grow with the square of the distance, so x 2 needs 4 (640 MB);
-    /// at most <see cref="MaxGrassStoreScale"/>, at least 1 (a shorter distance keeps the default store).
+    /// at most <see cref="MaxGrassStoreScale"/> and 1 / <see cref="GrassStoreBudgetShare"/> of the memory budget, at least 1 (a shorter distance
+    /// keeps the default store). Pages past a smaller store wait for room (<see cref="TryQueuePage"/>).
     /// </summary>
-    static int GrassStoreScale(float grassRange) => (int)Math.Ceiling(Math.Clamp(grassRange * grassRange / (DefaultGrassRange * DefaultGrassRange), 1, MaxGrassStoreScale));
+    int GrassStoreScale(float grassRange, ulong budget)
+    {
+        int fits = budget > 0 ? (int)Math.Clamp(budget / GrassStoreBudgetShare / GrassArenaBytes, 1, MaxGrassStoreScale) : MaxGrassStoreScale;
+        return Math.Min((int)Math.Ceiling(Math.Clamp(grassRange * grassRange / (DefaultGrassRange * DefaultGrassRange), 1, MaxGrassStoreScale)), fits);
+    }
 
     void InitGrassStore(IGpuContext gpu)
     {
-        grassStoreScale = GrassStoreScale(GrassRangeSetting);
+        grassStoreScale = GrassStoreScale(GrassRangeSetting, gpu.VideoMemoryBudget);
         grassStore = new FoliageGrassGpu(gpu, GrassArenaBytes * (ulong)grassStoreScale, GrassSlotCapacity * grassStoreScale);
         grassMeshCpu = ArenaMesh(grassProgram);
         grassMeshMotionCpu = ArenaMesh(grassMotionProgram);
@@ -60,11 +68,19 @@ public sealed unsafe partial class FoliageRenderer
     /// A grass distance raised past what the store holds (<see cref="GrassStoreScale"/>) replaces it with a larger one: every page is dropped and made
     /// again, nearest first. The store never shrinks while running (a lowered setting keeps it), so a slider drag rebuilds it at most a few times.
     /// The old store is disposed once the frames in flight are done with it; its pages' ranges are not given back to it (<see cref="GrassBuffer.Store"/>).
+    /// The guard (<see cref="VramGuard.Allows"/>) is asked for the new store while the old one is still held; refused, the store stays as it is.
     /// </summary>
     void GrowGrassStore()
     {
-        int scale = GrassStoreScale(GrassRangeSetting);
-        if (scale <= grassStoreScale) return;
+        if (GrassStoreScale(GrassRangeSetting, 0) is var wanted && (wanted <= grassStoreScale || wanted <= grassStoreRefused)) return;
+        int scale = GrassStoreScale(GrassRangeSetting, guard is { BudgetBytes: > 0 } g ? (ulong)g.BudgetBytes : Gpu.VideoMemoryBudget);
+        if (scale <= grassStoreScale) { grassStoreRefused = wanted; return; }   // the budget caps it where it is
+        if (guard is { } vram && !vram.Allows(GrassArenaBytes * (ulong)scale))
+        {
+            grassStoreRefused = wanted;
+            Console.WriteLine($"foliage   grass store not grown to {GrassArenaBytes * (ulong)scale >> 20} MB: memory budget (VramGuard)");
+            return;
+        }
         foreach (var state in zones.Values)
         {
             foreach (var page in state.Pages.Values)
