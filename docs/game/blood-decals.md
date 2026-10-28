@@ -131,3 +131,15 @@ characters carry blood on their skin, not only on the ground.
   (clearly visible only amplified).
 - **Observed** (sandbox, a dressed character): a stump under a coat or trousers is not visible at all; the blood shows on a bare stump and on a fallen limb. The ground limb of the
   sandbox is white without a material because the sandbox has no world-object layer, so the debris path (no material) drew it.
+
+## Blood on surfaces (Meitou)
+
+The `bloodsurfaces` switch (Meitou, default; Faithful: terrain only, as the game): the same marks also land on walls, buildings, rocks and other static objects. **Observed** (Hub battle, sandbox screenshots), not a game behaviour.
+`TerrainDecalRenderer.Surfaces`:
+
+- Each mark is also kept with its 3D place (upper floors included: the terrain path drops marks 20 units above the ground), aged with the same 99 s life (not saved), at most 1024 kept, the 512 nearest within `Decal Range` drawn. A pool grows by the store's rule, kept apart.
+- Drawn as a screen-space decal after the opaque scene, before the characters and the water, so they never take blood: a sphere round the decal's square, each scene pixel in it rebuilt from the near slice's depth, its normal from the depth's slope, the texture projected along that normal. The result multiplies the lit scene colour.
+- Pools, drips and smears only on up-facing pixels (normal Y > 0.8) within 0.4 units of the mark's height. Splashes are centred 0.9 above the feet (above the terrain under the mark on the ground) and take any surface facing the mark, fading over the outer 45 % of the radius.
+- The terrain keeps its cells' blood: the depth is copied after the terrain's draw and a pixel still at that depth is skipped (a height-map test failed: the terrain LOD departs from the height map by up to the pixel error). A second copy after the static objects, before the foliage, skips every pixel nearer than it (grass, trees, debris sway or move; the decal would slide over them). Any mesh drawn with the static objects but animated (rotors, doors) is still decorated.
+- Cost, **Observed** (Hub battle with about 100 surface decals in view, 2560x1440, Vulkan, wall-clock per frame): +0.35 ms (6.88 to 7.24 ms), two extra depth copies and pass splits plus the pass. Low impact.
+- **Unknown**: building interiors and floors were not checked in a screenshot (the sandbox fights were outdoors against a staircase); a floor level with the terrain within 2 cm of its depth would be treated as terrain.

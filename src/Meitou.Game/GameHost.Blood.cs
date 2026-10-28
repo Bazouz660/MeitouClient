@@ -41,6 +41,8 @@ sealed partial class GameHost
         decalStore = new TerrainDecalStore([.. files.Select(list => (IReadOnlyList<(int, int)>)[.. list.Select(DdsSize)])]);
         gpu.Decals = TerrainDecalRenderer.Create(context, files);
         gpu.Decals.Meitou = o.MeitouBlood;
+        gpu.Decals.GroundHeight = (x, z) => gpu.Terrain.HeightAt(x, z);
+        gpu.Decals.Surfaces = o.MeitouBloodSurfaces;
         gpu.Decals.Resolution = (int)AudioSystem.Setting(install, "Decal Resolution", 1024, 512, 2048);
         gpu.Decals.Range = AudioSystem.Setting(install, "Decal Range", 1000, 0, 5000);
         gpu.DecalStore = decalStore;
@@ -74,9 +76,10 @@ sealed partial class GameHost
                 continue;
             }
             if (decalStore is not { } store) continue;
-            if (m.Position.Y > gpu.Terrain.HeightAt(m.Position.X, m.Position.Z) + BloodAboveGround) continue;
             uint opaque = 0xFF000000 | Abgr(m.Colour);
             long who = (long)(uint)m.Who.Slot << 32 | (uint)m.Who.Generation;
+            if (gpu.Decals is { Surfaces: true } surfaces) SurfaceMark(surfaces, m, who, opaque, tick);   // the walls, floors and objects too, upper floors included
+            if (m.Position.Y > gpu.Terrain.HeightAt(m.Position.X, m.Position.Z) + BloodAboveGround) continue;
             switch (m.Kind)
             {
                 case BloodMarkKind.Pool: store.Bleed(who, m.Position, m.Amount, tick, opaque, bloodRandom); break;
@@ -89,11 +92,29 @@ sealed partial class GameHost
         }
         long ticks = world.Tick - bloodTick;
         bloodTick = world.Tick;
-        if (ticks > 0 && decalStore is { } aging && gpu.Decals is { } decals) aging.Age(ticks * tick, decals.Drawn);
+        if (ticks > 0 && decalStore is { } aging && gpu.Decals is { } decals)
+        {
+            aging.Age(ticks * tick, decals.Drawn);
+            decals.AgeSurfaces(ticks * tick);
+        }
         // The pieces move by the game time between frames, the tick count plus the simulation's alpha, so they fly smoothly at the display rate, not in tick steps.
         double clock = session.ShownTick + session.SimulationAlpha;   // the shown tick: one run ahead is not on screen yet
         UpdateDebris(world, (float)Math.Clamp((clock - debrisClock) * tick, 0, 0.5));
         debrisClock = clock;
+    }
+
+    /// <summary>One mark as the <c>bloodsurfaces</c> switch's decals (<see cref="TerrainDecalRenderer.Surfaces"/>); the same marks and sizes as the terrain's.</summary>
+    void SurfaceMark(TerrainDecalRenderer surfaces, BloodMark m, long who, uint opaque, float tick)
+    {
+        switch (m.Kind)
+        {
+            case BloodMarkKind.Pool: surfaces.BleedSurface(who, m.Position, m.Amount, tick, opaque, bloodRandom); break;
+            case BloodMarkKind.Smear:
+                surfaces.AddSurface(TerrainDecalType.Smear, m.Position, m.Direction, 0.2f, (uint)(Math.Clamp(m.Amount, 0, 1) * 255) << 24 | Abgr(m.Colour), bloodRandom);
+                break;
+            case BloodMarkKind.Drip: surfaces.AddSurface(TerrainDecalType.Pool, m.Position, m.Direction, m.Amount, opaque, bloodRandom); break;
+            case BloodMarkKind.Splash: surfaces.AddSurface(TerrainDecalType.Splash, m.Position, m.Direction, m.Amount, opaque, bloodRandom); break;
+        }
     }
 
     /// <summary>The EFFECT `small- sparks1` (5463-nodes_furniture1_otto.mod) the original throws on a parry: its particle system.</summary>
@@ -132,6 +153,7 @@ sealed partial class GameHost
         debrisClock = session.ShownTick + session.SimulationAlpha;
         if (decalStore is not { } store) return;
         store.Clear();
+        gpu?.Decals?.ClearSurfaces();
         world.BloodMarks = bloodQueue;
         if (saved is not null) store.Load(SaveDecals.Read(saved));
     }
