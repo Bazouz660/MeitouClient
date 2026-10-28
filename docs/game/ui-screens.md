@@ -283,6 +283,11 @@ to Jobs; the saved `chase mode` flag is that switch (**Verified**, [perma-jobs](
   and `ExtendedStatsText` are empty widgets in which the code builds a list of lines, each a label (from 3 % of the width, 96 % wide) and a value (same
   start, 93 % wide, aligned right), in `Kenshi_TextboxStandardText` (Exo2 SemiBold 20, default colour #140806, the palette's Secondary). Colours are
   inline `#rrggbb` from `data/gui/colours/kenshi_colours.xml`: Main #afa68b, Title #492620, Bad #59231a, BadBright #bf4834, Good #a8b774, Alert #000000.
+- Text ink and UI mods: in the base game the text colour of `Kenshi_TextboxStandardText`, `Kenshi_EditBoxStandardText`, `Kenshi_TextboxStandardText_Large`
+  and the `SimpleText` part of `Kenshi_GenericTextBoxSkin`, `...FlatSkin` and `...FlatSmallSkin` is #140806, the palette's Secondary (**Verified**, read from
+  `data/gui/templates/kenshi_templates.xml` and `skins/kenshi_skins.xml`). The "Palette UI" mods (Dracula, Catppuccin, Tokyo Night, ...) recolour these
+  templates and skins together with a dark `Kenshi_UI.png` but leave Secondary unchanged (**Observed**, PR #114). Meitou's code-drawn text therefore takes the
+  colour of the template it sits on when that differs from #140806, else the palette's Secondary, so palette-only mods still apply (`MyGuiColours.TemplateInk`).
   - Name: the character's name left and its faction's name right (the player's default faction name is "Nameless"), both Title.
   - State lines: `State:` (**Verified**, `FUN_1405d4260` panel 3, value colour and tooltip): dead `Dead` Bad, "This guy is dead and gone."; imprisoned (`+0x2f8` = 2),
     with `+0x308` clear (**Unknown**) and the cage's lock found: locked (`FUN_1402aa590`) `Locked (lvl: N)` Bad, "You are locked in a cage.\nThe lock has a difficulty level
