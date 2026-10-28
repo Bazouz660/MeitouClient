@@ -59,12 +59,12 @@ public sealed class ResearchState
     public void Set(GameDatabase db, IEnumerable<string> ids, IEnumerable<(string Id, float Seconds)> queued, IEnumerable<string> paidIds, IEnumerable<(string Id, float Seconds)> kept)
     {
         completed.Clear();
-        // A repeatable research is listed once per time it was finished (engine reading: the save format of repetitions is Unknown).
+        // A repeatable research is listed once per time it was finished (engine reading: the save format of repetitions is Unknown); extra listings are dropped.
         foreach (var id in ids)
-            if (Times(id) <= RepeatsOf(db, id)) completed.Add(id);
+            if (Times(id) < RepetitionsOf(db, id)) completed.Add(id);
         queue.Clear();
         foreach (var (id, s) in queued)
-            if (db.Find(id) is { Type: FcsRecordType.RESEARCH } && Times(id) <= RepeatsOf(db, id) && queue.TrueForAll(q => q.Id != id)) queue.Add(new ResearchItem(id, s));
+            if (db.Find(id) is { Type: FcsRecordType.RESEARCH } && Times(id) < RepetitionsOf(db, id) && queue.TrueForAll(q => q.Id != id)) queue.Add(new ResearchItem(id, s));
         paid.Clear();
         foreach (var id in paidIds)
             if (!paid.Contains(id, StringComparer.Ordinal)) paid.Add(id);
@@ -106,12 +106,12 @@ public sealed class ResearchState
     /// <summary>Finishes one research (nothing when it has no repetition left): it leaves the queue and its unlocks apply; a repeatable one is charged again next time (engine reading).</summary>
     public bool Complete(GameDatabase db, string id)
     {
-        int repeats = RepeatsOf(db, id);
-        if (Times(id) > repeats) return false;
+        int repetitions = RepetitionsOf(db, id);
+        if (Times(id) >= repetitions) return false;
         completed.Add(id);
         queue.RemoveAll(q => q.Id == id);
         partial.Remove(id);
-        if (repeats > 0) paid.Remove(id);
+        if (repetitions > 1) paid.Remove(id);
         Refresh(db);
         Touch();
         return true;
@@ -123,7 +123,7 @@ public sealed class ResearchState
         int n = 0;
         foreach (var record in db.Records.Values)
             if (record.Type == FcsRecordType.RESEARCH)
-                for (int repeats = RepeatsOf(db, record.StringId); Times(record.StringId) <= repeats; n++) completed.Add(record.StringId);
+                for (int repetitions = RepetitionsOf(db, record.StringId); Times(record.StringId) < repetitions; n++) completed.Add(record.StringId);
         if (n == 0) return 0;
         queue.Clear();
         partial.Clear();
@@ -142,7 +142,7 @@ public sealed class ResearchState
         return n;
     }
     /// <summary>Every repetition is finished.</summary>
-    public bool Exhausted(GameDatabase db, string id) => Times(id) > RepeatsOf(db, id);
+    public bool Exhausted(GameDatabase db, string id) => Times(id) >= RepetitionsOf(db, id);
     /// <summary>The finished research's <c>improve buildings</c> by BUILDING record.</summary>
     public IReadOnlyDictionary<string, BuildingUpgrade> Upgrades { get; private set; } = new Dictionary<string, BuildingUpgrade>();
     public BuildingUpgrade Upgrade(string building) => Upgrades.GetValueOrDefault(building, BuildingUpgrade.None);
@@ -150,7 +150,8 @@ public sealed class ResearchState
     /// <summary>The crafts the finished research unlocks (kind and record; a weapon type or model by its own id).</summary>
     public IReadOnlySet<(CraftKind Kind, string Id)> UnlockedCrafts { get; private set; } = new HashSet<(CraftKind, string)>();
 
-    static int RepeatsOf(GameDatabase db, string id) => db.Find(id) is { Type: FcsRecordType.RESEARCH } r ? Math.Max(0, r.GetInt("repeats")) : 0;
+    /// <summary>How many times a research can be finished in all: its <c>repeats</c>, at least 1 (<b>Verified</b>, <c>FUN_140834b70</c>).</summary>
+    static int RepetitionsOf(GameDatabase db, string id) => db.Find(id) is { Type: FcsRecordType.RESEARCH } r ? Math.Max(1, r.GetInt("repeats")) : 1;
     public bool IsQueued(string id) => queue.Exists(q => q.Id == id);
 
     internal void Enqueue(string id)

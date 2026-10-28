@@ -556,7 +556,7 @@ Function 10, `CraftingBuilding` (**Observed** unless noted).
   (`uses_weapon_crafts_weapon_models`; which model is **Unknown**, Meitou takes the best at or below the skill).
 - **Research** `enable item`, `enable armour`, `enable weapon type`, `enable weapon model`, `enable crossbow`,
   `enable backpack`, `enable robotics` unlock crafts, v0 = the repetition that does it; `repeats` and `repeat mult`
-  (cost x mult per repetition). Whether a craft no research lists is available from the start is **Unknown** (Meitou: yes).
+  ([Research](#research) repetitions). Whether a craft no research lists is available from the start is **Unknown** (Meitou: yes).
 - **Save** (GAMESTATE_BUILDING, `vfunc_17`/`18` `FUN_1402b8440` / `FUN_1402b8ab0`): float `num crafts`, bool `repeat`,
   per queued k strings `current<k>` (item) and `currentExtraData<k>` (weapon model), float `current prog<k>`, int
   `crit<k>`; partly drawn items as `craft partial item sid <k>` / `val <k>` / `size` (Meitou does not write these).
@@ -666,9 +666,14 @@ to `FUN_140836b70`: contribution k of the frame is x 0.6^k (counter `+0x174`, cl
   `level` <= tech level, requirements met (a RESEARCH finished, a BUILDING unlocked; `FUN_140830490`, engine reading
   of a garbled decompile), grouped by `category`.
 - **Queue** (`FUN_1408348a0`): needs `level` <= bench level (`FUN_140830a30` names the missing level) and the cost
-  paid (`FUN_1408343c0`): `cost` items (x `repeat mult` per repeat, `FUN_1408320a0`) summed over the inventories of the
+  paid (`FUN_1408343c0`): `cost` items (of the repetition, below) summed over the inventories of the
   player's research benches near the player (`FUN_14082e750`, `FUN_14082e810`), then removed; a paid id is remembered and
   never charged again. Partial progress is kept when an item leaves the queue.
+- **Repetitions** (**Verified**, loader `FUN_140834b70`, `FUN_1408320a0`; Meitou `ResearchData.CostAt` / `TimeAt`, `ResearchState`): a research
+  with `repeats` R > 1 gets copies "name 2" .. "name R" (repetition j = 1 .. R-1) beside the base (j = 0), so it is finished max(1, R)
+  times in all. Repetition j has factor f = max(1, `repeat mult`^(j-1)) (1 for j = 0 and 1); each `cost` count c becomes
+  max(trunc(c x f), c + j) and `time` trunc(time x f), which the hours above read. Mult 2, c 10: 10, 11, 20, 40, 80. How the
+  copies' `requirements` chain (`FUN_1400b61b0`) and how a save names a copy are **Unknown** (Meitou counts finishes per base id).
 - **Complete** (`FUN_140834550`): leaves the queue, joins the finished set, `improve buildings` applied
   (`FUN_140831a60`, the research's own fields for each listed building: `production mult` replaces the building's, so the
   last finished wins; `power increase` and `power capacity increase` add; lookup `FUN_14082ec70`, default 1, 0, 0), lists

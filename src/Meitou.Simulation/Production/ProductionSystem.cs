@@ -938,7 +938,7 @@ public sealed partial class ProductionSystem : ITickSystem
             research.Dequeue(item.Id);
             return false;
         }
-        if (item.Seconds > data.Hours(constants, Settings.ResearchOption) * (MachineData.DaySeconds / 24))
+        if (item.Seconds > data.Hours(constants, Settings.ResearchOption, world.Research.Times(data.Id)) * (MachineData.DaySeconds / 24))
         {
             research.Complete(db, item.Id);
             publishedResearch = null;
@@ -1051,10 +1051,10 @@ public sealed partial class ProductionSystem : ITickSystem
         machinesVersion = world.Machines.Version;
         allResearch ??= ResearchData.LoadAll(db);
         var state = world.Research;
-        var queue = state.Queue.Select(q => (q.Id, Research(q.Id)?.Name ?? q.Id, Research(q.Id) is { } d ? Math.Clamp(q.Seconds / (d.Hours(constants, Settings.ResearchOption) * (MachineData.DaySeconds / 24)), 0, 1) : 0)).ToArray();
+        var queue = state.Queue.Select(q => (q.Id, Research(q.Id)?.Name ?? q.Id, Research(q.Id) is { } d ? Math.Clamp(q.Seconds / (d.Hours(constants, Settings.ResearchOption, state.Times(q.Id)) * (MachineData.DaySeconds / 24)), 0, 1) : 0)).ToArray();
         var available = allResearch.Where(r => Available(world, r))
-            .Select(r => new ResearchOption(r.Id, r.Name, r.Category, r.Level, r.Hours(constants, Settings.ResearchOption), Affordable(world, r), r.Level > state.BenchLevel,
-                state.Partial.TryGetValue(r.Id, out float s) ? Math.Clamp(s / (r.Hours(constants, Settings.ResearchOption) * (MachineData.DaySeconds / 24)), 0, 1) : 0)
+            .Select(r => new ResearchOption(r.Id, r.Name, r.Category, r.Level, r.Hours(constants, Settings.ResearchOption, state.Times(r.Id)), Affordable(world, r), r.Level > state.BenchLevel,
+                state.Partial.TryGetValue(r.Id, out float s) ? Math.Clamp(s / (r.Hours(constants, Settings.ResearchOption, state.Times(r.Id)) * (MachineData.DaySeconds / 24)), 0, 1) : 0)
             {
                 Description = r.Description,
                 Paid = state.Paid.Contains(r.Id, StringComparer.Ordinal),
