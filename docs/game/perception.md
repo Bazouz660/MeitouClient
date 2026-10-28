@@ -202,8 +202,9 @@ is not the looker's ally becomes a target only when both tests pass:
 
 **Verified** (decompile: `ZoneSmell` ctor `FUN_140a25b30`, `addSmell` `FUN_1405e83a0`, `periodicUpdate` `FUN_14090cef0`, `Smell::update` `FUN_1408f4740`). Every zone has two
 channels: blood (rise 1/60, decay 1/240 per second) and eggs (rise 1/240, decay 1/60). Sources post each periodic update: 1 a corpse with flies, 2 a bleeding character (bleed rate
-non-zero, body state 0), 3 eggs. Blood target = corpses + 0.25 per bleeder; position = the corpses' centroid, or the bleeders' when there are no corpses or at most 0.25 x the
-bleeders (that branch partly lost in the decompile, **Observed**). The value moves toward the target at the rates, clamped. Corpse flies: [character-stats](character-stats.md#corpses).
+non-zero, body state 0), 3 eggs. The zone update (`FUN_14090cef0`, **Verified** by disassembly) accumulates only kinds 1 and 3, so bleeders count for nothing: blood target =
+corpses (the 0.25 bleeder share multiplies a count that stays 0); position = the corpses' centroid, else the zero vector (a hunter still on such a zone runs to the world origin
+until the value falls below its threshold). A zone record is freed when its zone is not loaded and both channels' targets are 0 (`FUN_1408f85f0`). The value moves toward the target at the rates, clamped. Corpse flies: [character-stats](character-stats.md#corpses).
 176 HUNTING_BLOODSMELL (`AI::scoreHuntingBlood` `FUN_140794b60`, `Task_HuntingSmell`): animals only; the blackboard keeps a zone (`+0xf8`) while its blood is at least the animal's
 ANIMAL_CHARACTER `smell blood` (`smell eggs` is the eggs threshold); else the best of its zone and its active island's, x0.8 for a neighbour, x0.5 otherwise, above the threshold;
 desire 1 with one. The task runs (movement mode 2) to the smell's position; no end of its own. Data: "Smell Hunter" in the two Blood Hunter packages. SQUAD_TEMPLATE `blood smell mult`
