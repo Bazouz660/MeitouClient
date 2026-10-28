@@ -131,16 +131,12 @@ sealed partial class GameHost
     }
 
     /// <summary>
-    /// The highest floor up to the viewed one of the buildings in the interior view at (x, z), or null: the strategy camera's pivot rides on it, so a followed
-    /// character's floor stays the view's centre when panning lets go of it. Engine limit: other buildings are not ground to the camera (the game's rays hit them too).
+    /// The highest building floor at (x, z) that the strategy camera's pivot rides on, or null (docs/formats/camera.md "Height"): every building's ground floor, and a building
+    /// in the interior view's floors up to the viewed one, so a followed character's floor stays the view's centre when panning lets go of it.
     /// </summary>
-    float? CameraFloor(float x, float z)
-    {
-        float? best = null;
-        foreach (var b in viewed)
-            if (interiorView.TryGetValue(b.PlacementId, out int floor) && b.FloorHeightAt(x, z, floor) is { } y && (best is null || y > best)) best = y;
-        return best;
-    }
+    float? CameraFloor(float x, float z) => ActiveObjects?.FloorHeightAt(x, z, cameraFloorOf ??= key => interiorView.GetValueOrDefault(key));
+
+    Func<string, int>? cameraFloorOf;
 
     /// <summary>How far (units) outside the indoor hull a character still counts as inside (engine choice: the feet stand on the floor at the hull's bottom).</summary>
     const float InsideMargin = 2;

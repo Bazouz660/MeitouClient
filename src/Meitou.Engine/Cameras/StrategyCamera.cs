@@ -16,7 +16,7 @@ namespace Meitou.Engine.Cameras;
 /// a pitch step is refused when the real view direction's y is already at or below -0.92 (down) or at or above 0.2 (up), checked before
 /// the step (here a step is cut into pieces of at most <see cref="CameraSettings.MaxPitchSubStep"/>, each checked, so a big mouse jump
 /// overshoots no more than a key step);</item>
-/// <item>height: the pivot never goes below the ground at it or the lowest ground under the camera, is raised until the eye clears the ground
+/// <item>height: the pivot never goes below the ground at it (the pivot ground: buildings' floors too) or the lowest ground under the camera, is raised until the eye clears the ground
 /// under it by <c>min(0.2 · boom, 20) + 10</c> (the view is not tilted for it) and closes on that height at ten times the gap per second.</item>
 /// </list>
 /// </summary>
@@ -29,7 +29,7 @@ public sealed class StrategyCamera
 
     const float DegreesToRadians = MathF.PI / 180;
 
-    readonly Func<float, float, float> ground;
+    readonly Func<float, float, float> ground, pivotGround;
     readonly CameraSettings settings;
     readonly SmoothedInput yawInput = new(KenshiCamera.YawSmoothing, KenshiCamera.SmoothingFrames);
     readonly SmoothedInput pitchInput = new(KenshiCamera.PitchSmoothing, KenshiCamera.SmoothingFrames);
@@ -37,9 +37,12 @@ public sealed class StrategyCamera
     float heightGoal;
     float heightSpeed;
 
-    public StrategyCamera(Func<float, float, float> ground, CameraSettings? settings = null)
+    /// <param name="ground">The ground under the eye.</param>
+    /// <param name="pivotGround">The ground under the pivot (the game's pivot ray also hits buildings' floors, its eye ray does not raise the eye for them); the eye's by default.</param>
+    public StrategyCamera(Func<float, float, float> ground, CameraSettings? settings = null, Func<float, float, float>? pivotGround = null)
     {
         this.ground = ground;
+        this.pivotGround = pivotGround ?? ground;
         this.settings = settings ?? new CameraSettings();
         Pitch = KenshiCamera.InitialPitchDegrees * MathF.PI / 180;
         Distance = KenshiCamera.InitialDistance;
@@ -201,7 +204,7 @@ public sealed class StrategyCamera
     float HeightGoal(float y)
     {
         var eye = CameraState.EyeFor(new Vector3(PivotXZ.X, y, PivotXZ.Y), Yaw, Pitch, Distance);
-        float groundAtPivot = ground(PivotXZ.X, PivotXZ.Y);
+        float groundAtPivot = pivotGround(PivotXZ.X, PivotXZ.Y);
         float groundAtEye = ground(eye.X, eye.Z);
         float drop = MathF.Min(0, groundAtEye - y);   // a pivot above the ground under the eye comes down to it ...
         float required = groundAtEye + KenshiCamera.EyeClearance(Distance);
@@ -213,7 +216,7 @@ public sealed class StrategyCamera
     /// <summary>Puts the pivot at its goal height at once (a placement, not a frame).</summary>
     void SettleHeight()
     {
-        pivotY = ground(PivotXZ.X, PivotXZ.Y);
+        pivotY = pivotGround(PivotXZ.X, PivotXZ.Y);
         for (int i = 0; i < 3; i++) pivotY = HeightGoal(pivotY);
         heightGoal = pivotY;
         heightSpeed = 0;

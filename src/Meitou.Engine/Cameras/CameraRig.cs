@@ -23,19 +23,22 @@ public sealed class CameraRig
     readonly Func<float, float, float> ground;
 
     /// <summary>
-    /// The height the strategy camera keeps above: the ground or the sea, whichever is higher, raised by <see cref="Floors"/> (the game's ground rays also hit
-    /// buildings' floors up to the viewed one, docs/formats/camera.md "Height").
+    /// The height the strategy camera's pivot keeps above: the ground or the sea, whichever is higher, raised by <see cref="Floors"/> (the game's pivot ray also hits
+    /// buildings' floors; the eye keeps above the ground and the sea only, docs/formats/camera.md "Height").
     /// </summary>
     public float GroundAt(float x, float z) => Floors?.Invoke(x, z) is { } floor ? MathF.Max(ground(x, z), floor) : ground(x, z);
 
-    /// <summary>The highest building floor at a point that the strategy camera rides on, or null (set by the host; the free camera keeps to the ground).</summary>
+    /// <summary>The height the strategy camera's eye keeps above: the ground or the sea, whichever is higher.</summary>
+    public float EyeGroundAt(float x, float z) => ground(x, z);
+
+    /// <summary>The highest building floor at a point that the strategy camera's pivot rides on, or null (set by the host; the free camera keeps to the ground).</summary>
     public Func<float, float, float?>? Floors { get; set; }
 
     public CameraRig(Func<float, float, float> ground, CameraSettings? settings = null)
     {
         this.ground = ground;
         Settings = settings ?? new CameraSettings();
-        Strategy = new StrategyCamera(GroundAt, Settings);
+        Strategy = new StrategyCamera(ground, Settings, GroundAt);
         Free = new FreeCamera(ground, Settings);
         states = new Interpolated<CameraState>(Strategy.State, CameraState.Lerp);
     }

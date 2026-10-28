@@ -71,15 +71,22 @@ not the game speed, so the camera works while the game is paused. Several inputs
   `mouse speed tilt · input · dt · invertY` degrees (12° per second from a key at 6); with invert Y on (the default) `,` and mouse
   down both make the view steeper (the camera rises). The limits are the pitch limits above, checked before each step.
 - **Rotating** pins the pointer where the drag began (restored each frame) and shows the marker, scaled `min(0.06 · boom, 3)`.
-- **Height** (mode "free", no tracked character): from the pivot and the eye, ground heights are found by rays (terrain, and
-  buildings with the floors up to the viewed one) and the water surface (a node at the sea height) is the lowest ground. The pivot's
+- **Height** (mode "free", no tracked character): the pivot's ground is the terrain raised by a ray from 3000 above the pivot straight
+  down with mask `0x200`, plus `0x400`/`0x800`/`0x1000` when the viewed floor is ≥ 1/2/3 (**Verified**, bits counted in
+  `FUN_1406aecc0`): collision groups 9..9+viewed floor, every loaded building's ordinary parts (wall tops, gate decks and roofs of
+  floor-0 parts included), no stairs, doors, furniture or unwalkable roofs. When the hit object answers a virtual check (vtable
+  +0x330, unknown) the ray is cast again with `0x200` only; the hit building is remembered and, when the ray misses, a radius-40 sweep
+  keeps the pivot on it; a second ray, 100 above, mask `0x4000` (group 14), also raises it (all **Observed**). The eye's ground is
+  the terrain and group 14 only: its building ray (`0x200`.., from 1000 above) can only lower it, gated by `FUN_1409b6d00`
+  (**Unknown**). The water surface (a node at the sea height) is the lowest ground of both. The pivot's
   goal is its height after coming down to the ground under the eye if that is lower (never below the ground at the pivot), then
   **raised by the shortfall until the eye is `min(0.2 · boom, 20) + 10` above the ground under it**: the pivot rises, the view
   direction is not touched. The pivot then closes on its goal: a gap of 0.1 or less at once, else at **10 × the gap per second**, the
   speed taken when the goal changes (a moving goal is followed with a lag of about 0.1 s). A pivot or eye starting inside geometry
-  leaves the height alone (**Observed**). Placing the camera finds the goal at once. Engine: only the buildings in the interior view
-  (a player character inside) are ground, their floor and stairs surfaces up to the viewed floor (no roofs), so panning off a
-  followed character indoors keeps the pivot on its floor.
+  leaves the height alone (**Observed**). Placing the camera finds the goal at once. Engine: every building's floor-0 ordinary parts
+  within 400 units are the pivot's ground, and a building in the interior view's parts up to the viewed floor (others stay at floor
+  0, the +0x330 re-cast read as "not the viewed building"); the highest at the point, without the 3000 cap, the sweep, the group-14
+  ray or the eye's lowering ray. A building's collision is read on a worker, so the first frames near it keep to the terrain.
 - **Default keys** (`controls.cfg`): `camera_forward` W, Up; `camera_back` S, Down; `camera_left` A, Left; `camera_right` D, Right;
   `camera_rotate_left` Q; `camera_rotate_right` E; `camera_tilt+` `,`; `camera_tilt-` `.`; `camera_zoom_in` Home; `camera_zoom_out`
   End; `mouse_rotate` Left Control or Mouse3; `toggle_fps_camera` `;`; `focus_char` F (held flags and events:

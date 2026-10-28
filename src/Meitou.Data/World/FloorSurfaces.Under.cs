@@ -22,7 +22,7 @@ public sealed partial class FloorSurfaces
     }
 
     /// <summary>
-    /// The height of the highest floor or stairs triangle at (<paramref name="x"/>, <paramref name="z"/>) on floors up to <paramref name="floor"/>, or null:
+    /// The height of the highest ordinary part's triangle (no stairs) at (<paramref name="x"/>, <paramref name="z"/>) on floors up to <paramref name="floor"/>, or null:
     /// the building's ground for the strategy camera (docs/formats/camera.md "Height").
     /// </summary>
     public float? HighestUpTo(float x, float z, int floor)
@@ -31,7 +31,7 @@ public sealed partial class FloorSurfaces
         var q = new Vector2(x, z);
         foreach (var s in surfaces)
         {
-            if (s.Floor > floor || q.X < s.Min.X || q.Y < s.Min.Y || q.X > s.Max.X || q.Y > s.Max.Y || s.YMax <= best) continue;
+            if (s.Floor > floor || s.Stairs || q.X < s.Min.X || q.Y < s.Min.Y || q.X > s.Max.X || q.Y > s.Max.Y || s.YMax <= best) continue;
             for (int i = 0; i + 2 < s.Corners.Length; i += 3)
                 if (HeightAt(s.Corners[i], s.Corners[i + 1], s.Corners[i + 2], q) is { } y && y > best) best = y;
         }

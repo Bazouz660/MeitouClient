@@ -1174,7 +1174,7 @@ sealed partial class GameHost
                 if (skyArrival is null && hud is not null && !TitleVisible && (tour.Active || !session.Camera.IsFree && !tourHolds))
                 {
                     var clearEye = camera.Eye;
-                    float shortfall = session.Camera.GroundAt(clearEye.X, clearEye.Z) +
+                    float shortfall = session.Camera.EyeGroundAt(clearEye.X, clearEye.Z) +
                         Meitou.Data.World.KenshiCamera.EyeClearance(camera.Distance) - clearEye.Y;
                     if (shortfall > 0) camera.Target += new Vector3(0, shortfall, 0);
                 }

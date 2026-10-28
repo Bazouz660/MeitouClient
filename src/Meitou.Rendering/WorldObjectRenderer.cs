@@ -898,6 +898,9 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
     /// </summary>
     public int FloorMaterialUnder(Vector3 feet, bool inside) => objects.Floors.MaterialUnder(feet, inside);
 
+    /// <summary>The highest ordinary floor part of any building at a point, on floors up to <paramref name="floorOf"/> of its placement key; null for none or still being made (docs/formats/camera.md "Height").</summary>
+    public float? FloorHeightAt(float x, float z, Func<string, int> floorOf) => objects.Floors.HighestFloorAt(x, z, floorOf);
+
     /// <summary>The loaded mask of a building or one of its layout objects (building id / item id).</summary>
     internal InteriorVolume? InteriorFor(string placementId)
     {

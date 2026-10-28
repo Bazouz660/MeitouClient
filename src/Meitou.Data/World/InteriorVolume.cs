@@ -139,9 +139,6 @@ public sealed record InteriorVolume(string PlacementId, Vector2[] Footprint, flo
     /// </summary>
     public int FloorAt(Vector3 feet) => floors?.Value.FloorAt(feet) ?? 0;
 
-    /// <summary>The highest floor or stairs surface at (<paramref name="x"/>, <paramref name="z"/>) on floors up to <paramref name="floor"/>, or null (<see cref="FloorSurfaces.HighestUpTo"/>).</summary>
-    public float? FloorHeightAt(float x, float z, int floor) => floors?.Value.HighestUpTo(x, z, floor);
-
     // The interior mask collision's triangles in world space (three corners each): the indoor space itself, concave where the building is.
     Vector3[] maskCorners = [];
 

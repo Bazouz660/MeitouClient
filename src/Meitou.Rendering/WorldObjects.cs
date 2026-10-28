@@ -153,7 +153,7 @@ sealed class WorldObjects : IDisposable
     /// <summary>Changes whenever a runtime placement is added or removed: what <see cref="Floors"/> listed before is stale.</summary>
     internal int PlacementVersion => placementVersion;
 
-    /// <summary>The building floors under the characters' feet (the footstep surface, docs/audio.md "Surface"); used from the main thread.</summary>
+    /// <summary>The building floors under the characters' feet (the footstep surface, docs/audio.md "Surface") and under the camera; used from the main thread.</summary>
     internal BuildingFloors Floors => floors ??= new BuildingFloors(this);
 
     /// <summary>
@@ -174,6 +174,7 @@ sealed class WorldObjects : IDisposable
             var node = WorldObjectLayout.InstanceTransform(position, b.Rotation, new Vector3(scale > 0 ? scale : 1));
             result.Add(new BuildingFloor
             {
+                Key = b.Key,
                 Position = position,
                 Interior = record.GetInt("interior material", 3),
                 Exterior = record.GetInt("exterior material", 2),

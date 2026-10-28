@@ -581,7 +581,7 @@ sealed partial class GameHost
             if (skyArrival is null && !TitleVisible && (tour.Active || !session.Camera.IsFree && !cinemaHolds))
             {
                 var eye = camera.Eye;
-                float shortfall = session.Camera.GroundAt(eye.X, eye.Z) + Meitou.Data.World.KenshiCamera.EyeClearance(camera.Distance) - eye.Y;
+                float shortfall = session.Camera.EyeGroundAt(eye.X, eye.Z) + Meitou.Data.World.KenshiCamera.EyeClearance(camera.Distance) - eye.Y;
                 if (shortfall > 0) camera.Target += new Vector3(0, shortfall, 0);
             }
             var size = window.FramebufferSize;
