@@ -296,8 +296,9 @@ public sealed partial class CombatSystem : IProjectileSource
         }
         bool hasAmmo = x.InfiniteAmmo || Ammunition.Find(cold.Inventory, x.Data.AmmoId) is not null;
         // A crossbow (weapon category Bow) needs both arms (FUN_1407f2840, FUN_1409991d0); losing one puts it away (FUN_1405cc230) and the fight goes on in melee.
-        // The same gate needs the prone state (vfunc 0x368) 0: a crawler does not shoot, it fights with its ground attacks (docs/game/combat.md "Arms").
-        bool can = (s.Loaded > 0 || hasAmmo) && cold.Medical is not { BothArmsWork: false } && cold.Medical is not { Crawling: true };
+        // The same gate needs the posture (vfunc 0x368) 0: staying low or crawling it does not shoot (docs/game/combat.md "Arms"); and the shooting rows want !me swim (139): not
+        // while swimming (water state 3).
+        bool can = (s.Loaded > 0 || hasAmmo) && cold.Medical is not { BothArmsWork: false } && cold.Medical is not { Prone: true } && cold.WaterState != 3;
         if (s.Dry == can) s.Dry = !can;
         // Ranged mode takes the crossbow however close the target is (between swings): melee is x0.1 against shooting's 1, and a threat within 40 refuses the shooting rows.
         bool rangedMode = Orders.RangedMode(cold);
