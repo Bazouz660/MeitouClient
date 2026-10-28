@@ -219,16 +219,16 @@ public sealed partial class LockSystem : IStateHashed
         {
             if (rounds.Count >= MaxRounds || started >= MaxNewRounds) return;
             if (squad.Ai is not { } board) continue;
-            int lockUp = -1, outside = -1, warden = -1, any = -1;
+            int lockUp = -1, outside = -1, warden = -1, opener = -1;
             bool inside155 = false, from197 = false, cages = false;
             foreach (var m in squad.Members)
             {
                 if (!table.TryResolveNext(m, out int s) || table.Cold(s) is not { } c) continue;
                 bool free = Free(world, s);
-                if (free && any < 0) any = s;
                 if (HasGoal(world, s, c, TaskType.LOCK_ALL_MY_DOORS, hour)) { inside155 = true; if (free && lockUp < 0) lockUp = s; }
                 if (HasGoal(world, s, c, TaskType.LOCK_ALL_MY_DOORS_FROM_OUTSIDE, hour)) { from197 = true; if (free && outside < 0) outside = s; }
                 if (HasGoal(world, s, c, TaskType.LOCK_ALL_THE_CAGES, hour)) { cages = true; if (free && warden < 0) warden = s; }
+                if (free && opener < 0 && HasGoal(world, s, c, TaskType.OPEN_UP_SHOP_DOORS, hour)) opener = s;
             }
             if (cages && warden >= 0 && board.Town >= 0) LockCages(world, squad, board, warden, ref started);
             if (board.OwnHome is not { } home || world.Fixtures.DoorOwner(home.Key) < 0 || world.Fixtures.OwnsBuilding(home.Key, world.Player.Faction) || Targeted(home.Key)) continue;
@@ -245,10 +245,10 @@ public sealed partial class LockSystem : IStateHashed
                 StartDoors(world, worker, RoundKind.LockDoors, building, extent);
                 started++;
             }
-            else if (houseLocked.Contains(building))
+            else if (houseLocked.Contains(building))   // 86 Opening up (finder FUN_1408cb360): only a member whose package lists it, in its hours
             {
-                if (any < 0 || Busy(table.IdOf(any))) continue;
-                StartDoors(world, any, RoundKind.UnlockDoors, building, Extent(home));
+                if (opener < 0 || Busy(table.IdOf(opener))) continue;
+                StartDoors(world, opener, RoundKind.UnlockDoors, building, Extent(home));
                 started++;
             }
         }

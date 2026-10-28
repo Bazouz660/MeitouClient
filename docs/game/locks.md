@@ -200,6 +200,10 @@ Same targets as picking; Task_CutLock / Task_BruteForceLock share the shackle ta
 | Storage Guard, Slaver Storage Guard | 197 Lock all the doors - stay outside | 23-7 |
 | Cage Warden (and copy) | 195 Lock all my cages | 22-24 (leader), 19-21 (squad) |
 
+- **Opening up** (86 `OPEN_UP_SHOP_DOORS`, Task_Blank, finder `FUN_1408cb360`, **Verified** decompile): the building the character stands in when
+  its owner matches the AI's (an owner test, **Observed**), else its home; the target is the first door that is closed and not opening (the plan unlocks, then opens it). With none left
+  the finder clears the squad's "house locked" flag. A = !87, so it scores only while the home counts as locked. Only squads whose packages list
+  86 open up (base data: Civilian, Shop, Shop-24hr, Slaver and Storage Guard leaders, among others); the rest stay locked.
 - **Initial door state** (`FUN_140553210`, when the home building is assigned to a squad; **Verified**): CLOSED -> unlocked, not
   broken, closed; OPEN -> unlocked, open; LOCKED -> locked, closed; BROKEN -> lock broken, door broken. Saved buildings keep
   their saved values. The gate on building +0xa8 that allows it is **Unknown** (presumably "not restored from a save").
