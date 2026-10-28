@@ -406,8 +406,8 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem
     /// <summary>
     /// PROTECT_ALLIES (15, 288; finder <c>FUN_14099ca10</c>, achieved by 13 "Attacking attackers of", docs/game/ai-tasks.md "Combat goals"): an NPC with the goal that sees a
     /// fighting character of its own or an allied faction (relation 50 or more) attacks that character's attacker when the attacker is not its ally, whatever their relation, so
-    /// neutrals count too. Engine reductions: the defender must be in the protector's sight test (the original also counts heard ones), a gunner stays at its turret, and 288's
-    /// town limit is not modelled.
+    /// neutrals count too. Engine reductions: the defender is sensed when seen (sight test) or within <see cref="AggroSystem.NoiseFar"/> in the protector's place (a fight
+    /// is heard for sure), a gunner stays at its turret, and 288's town limit is not modelled.
     /// </summary>
     void ProtectAllies(World world, CharacterTable table, int slot, int attacker, List<CharacterId> defenders, HashSet<int> taken)
     {
@@ -419,9 +419,11 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem
         {
             if (s == attacker || s == slot || !next[s].Alive || table.Cold(s) is not { Ai.ProtectsAllies: true, Gunning: null } c
                 || !relations.IsAlly(c.Faction, ally.Faction) || relations.IsAlly(c.Faction, foe.Faction)) continue;
-            float range = AggroSystem.RangeOf(c, AggroSystem.OutdoorSight);
-            if (Vector3.DistanceSquared(next[s].Position, at) > range * range || !CanFight(table, s, taken)
-                || !(world.Sight.Sees(s, slot, next[s].Position, next[s].Yaw, at, range) > 0)) continue;
+            float range = AggroSystem.RangeOf(c, AggroSystem.OutdoorSight), d2 = Vector3.DistanceSquared(next[s].Position, at);
+            if (d2 > MathF.Max(range * range, AggroSystem.NoiseFar * AggroSystem.NoiseFar) || !CanFight(table, s, taken)) continue;
+            // Seen, or heard: a fight in the protector's own place within the farthest noise is heard for sure (AggroSystem's hearing rule).
+            bool heard = d2 <= AggroSystem.NoiseFar * AggroSystem.NoiseFar && world.Sight.PlaceOf(s) == world.Sight.PlaceOf(slot);
+            if (!heard && !(d2 <= range * range && world.Sight.Sees(s, slot, next[s].Position, next[s].Yaw, at, range) > 0)) continue;
             defenders.Add(new CharacterId(s, next[s].Generation));
             taken.Add(s);
         }

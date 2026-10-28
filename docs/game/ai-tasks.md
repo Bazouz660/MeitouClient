@@ -743,7 +743,8 @@ vfunc 5 `FUN_14050caf0`). TaskData fields: +0x108 desire (a member function, nea
   needs the global +0x111 and squares the weight ([HelpAllies](../simulation.md#hostility-and-relations)). Achieved by 13 "Attacking attackers of"
   (`FUN_14099c3b0`, **Observed**): the protected one's attackers that it or the looker senses, within 150 of it (outdoors), are taken when either regards
   the other an enemy (slot 125) or the attacker's AI +0x2a4 equals the goal target's id (meaning **Unknown**, read as "it is attacking the protected one"),
-  and never one the looker regards an ally (slot 126). So relations do not matter: a neutral attacking an ally is fought. Gate guards (`Gate guard -no turrets`
+  and never one the looker regards an ally (slot 126). On that reading relations do not matter (a neutral attacking an ally is fought), which agrees with
+  the owner's report that the original's guards fight skimmers. Gate guards (`Gate guard -no turrets`
   and those inheriting it) list 15, `Gate guard stay in town -no turrets` 288 (**Verified**, package dump).
 - 32 SELF_PRESERVATION: every character's urgent goal (`Character::setupAI`); desire AI slot 17, provider 13 (finder `AI::findAttackerOf`) or 35;
   rows 4 / 262 desires are slots 53 / 54. Details: [combat](combat.md#fight-lifecycle-and-orders).
