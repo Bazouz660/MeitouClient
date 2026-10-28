@@ -99,6 +99,26 @@ public sealed class SquadMemory
         if (tempEnemySquads.Contains(from)) tempEnemySquads.Add(to);
     }
 
+    /// <summary>
+    /// Short-term tags fade (<c>FUN_1406724e0</c>, the platoon slow step): an entry whose whole hours since its last write exceed 6 loses all its short tags;
+    /// its long tags and time stay. The squad's player TEMP_ALLY flag is not touched.
+    /// </summary>
+    public void Age(World world)
+    {
+        List<int>? lost = null;
+        foreach (var ((squad, _), e) in entries)
+            if (e.Short != 0 && (int)(world.GameHours - e.Time) > 6)
+            {
+                if ((e.Short >> MemoryTag.TempEnemy & 1) != 0) (lost ??= []).Add(squad);
+                e.Short = 0;
+            }
+        foreach (var e in player.Values)
+            if (e.Short != 0 && (int)(world.GameHours - e.Time) > 6) e.Short = 0;
+        if (lost is null) return;
+        foreach (int squad in lost)
+            if (!entries.Any(kv => kv.Key.Squad == squad && (kv.Value.Short >> MemoryTag.TempEnemy & 1) != 0)) tempEnemySquads.Remove(squad);
+    }
+
     /// <summary>Whether the squad holds a TEMP_ENEMY tag on any character (the aggro scan skips the per-target lookup for squads that do not).</summary>
     public bool AnyTempEnemy(int squad) => squad >= 0 && tempEnemySquads.Contains(squad);
 

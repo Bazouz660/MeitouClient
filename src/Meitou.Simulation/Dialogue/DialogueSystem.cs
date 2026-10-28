@@ -171,6 +171,7 @@ public sealed partial class DialogueSystem : ITickSystem, IStateHashed, IDialogu
     {
         ExpireSpeech(world);
         KeepCharacterTrade(world);
+        Memory.Age(world);
         if (bubbles.Count > 0) StepBubbles(world);
         if (Settings.AmbientEvents && world.Tick % Settings.AmbientEveryTicks == 0) { SeeOthers(world); SeeGettingUp(world); }
         if (approaches.Count > 0) StepApproaches(world);
