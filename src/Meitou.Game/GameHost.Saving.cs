@@ -257,7 +257,7 @@ sealed partial class GameHost
             Stage("read", () => read = Task.Run(() => SaveGame.Load(SaveFolder.Open(folder), ReadArrivalHour))),
             Stage("systems", () => { prepared = PrepareSystems(read!, interactive: true); return null; }, duringAscent: true),
             Stage("build", () => SwapInSave(read!, interactive: true, out summary, prepared: prepared)),
-            Stage("finishing", () => { SettleNewWorld(); player.FollowSelected(); FinishLoadNotice(summary); saveInUse = folder; return null; }));
+            Stage("finishing", () => { SettleNewWorld(); player.FollowSelected(); FinishLoadNotice(summary); PauseAfterLoad(); saveInUse = folder; return null; }));
     }
 
     /// <summary>
@@ -294,7 +294,7 @@ sealed partial class GameHost
                 if ((options & ImportOptions.ResetPositions) != 0 && nav is not null && read!.IsCompletedSuccessfully) SaveImport.PlaceOnGround(read.Result, nav.Walkability.GroundHeight);
                 return SwapInSave(read!, interactive: true, out summary, new SaveLoadOptions { Appearances = data.Appearances, ResetRelations = (options & ImportOptions.Relations) == 0 }, prepared);
             }),
-            Stage("finishing", () => { SettleNewWorld(); player.FollowSelected(); FinishLoadNotice(summary, imported: true); return null; }));
+            Stage("finishing", () => { SettleNewWorld(); player.FollowSelected(); FinishLoadNotice(summary, imported: true); PauseAfterLoad(); return null; }));
     }
 
     sealed record PreparedSystems(StandardSystemSet Built, PopulationData Data, NewGameSettings Difficulty);
@@ -404,6 +404,12 @@ sealed partial class GameHost
         if (missing.Count == 0) player.Notice(imported ? "Imported" : "Loaded");
         else player.Notice($"Loaded; the save was made with {missing.Count} mod(s) not loaded now (listed in the messages)", true,
             $"Loaded; the save was made with mods not loaded now: {string.Join(", ", missing)}");
+    }
+
+    /// <summary>A save loaded from the menus starts paused with <see cref="UserConfig.PauseOnLoad"/> (a player pause: the speed buttons resume it).</summary>
+    void PauseAfterLoad()
+    {
+        if (config.PauseOnLoad && session.Simulation.Speed != 0) session.Simulation.TogglePause();
     }
 
     /// <summary>
