@@ -37,12 +37,14 @@ public sealed class SitePools
     public bool Ded { get; set; }
     public float DiedAt { get; set; }
 
-    /// <summary>Both pools as the original grows them (<c>FUN_1408f6760</c>): residents, then roaming once the residents are within 1 of full.</summary>
+    /// <summary>
+    /// Both pools as the original grows them (<c>FUN_1408f6760</c>): residents, then roaming once the residents are within 1 of full. A roaming pool not grown keeps its stamp,
+    /// so the time it waited is credited when it grows again (<b>Verified</b>, <c>FUN_1408f4c20</c>).
+    /// </summary>
     public void Grow(double nowHours)
     {
         Residents.Grow(nowHours);
         if (Residents.Current >= Residents.Desired - 1) Roaming.Grow(nowHours);
-        else Roaming.Stamp = nowHours;
     }
 
     /// <summary>Reads a town state's pool keys (<c>pop</c>, <c>popd</c>, <c>pop2</c>, <c>popd2</c>, <c>started</c>, <c>ded</c>, <c>tod</c>), stamped at <paramref name="nowHours"/>.</summary>

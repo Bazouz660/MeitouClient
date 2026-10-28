@@ -431,7 +431,8 @@ Meitou: [ground items](../simulation.md#items-and-eating).
     `length` (not its polyline; `weight` unread), the A* heuristic the straight distance to the goal, and `hidden` never read by routing (**Verified**).
 - **Meetings**: nothing looks at other platoons; there is no off-screen combat. Off-screen outcomes are campaign phases and despawning.
 - **Pool growth** (`FUN_1408f4c20`): each pool's current max (`pop`) grows `+0.21818` per game hour (5.24 a day) up to its desired max
-  (`popd`), for every town whether loaded or not; roaming grows only once residents are within 1 of full. Towns never spawn squads over
+  (`popd`), for every town whether loaded or not; roaming grows only once residents are within 1 of full, and
+  keeps its time stamp meanwhile, so the waiting time is credited when it next grows (**Verified**, `FUN_1408f6760`, `FUN_1408f4c20`). Towns never spawn squads over
   time by themselves (only nests call the pool spawner). Once per town load (`0x14092a020`, **Verified**) a squad that lost ≥ 0.6 × its spawn size (double compare), if
   the budget allows, is marked to be made afresh from its template on its next activation. The same pass runs over the roaming pool (its own budget, shared running total) and a flag at `+0xd9` forces a resident squad's mark past both tests; neither is modelled (flag's source **Unknown**).
 - **Despawn cost**: a non-persistent squad that leaves while not intact is taken out of its pool, lowering `pop` by its living members.

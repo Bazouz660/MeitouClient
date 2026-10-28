@@ -193,7 +193,7 @@ Implemented (`PopulationRoaming.cs`):
   0.08-0.1 ms per look. Not measured in the viewer's bench harness, which does not run the population.
 - **Pools** (`PopulationPools.cs`): every town and nest has the original's two pools (residents `pop`/`popd`, roaming `pop2`/`popd2`),
   read from the save's town and nest states and written back, with `started`, `ded`, `tod`; the hour they last grew is not saved (set at load,
-  as the original). Every 2 s (60 ticks) they grow 0.21818 per game hour up to the desired max (roaming only once residents are within 1 of full), for every
+  as the original). Every 2 s (60 ticks) they grow 0.21818 per game hour up to the desired max (roaming only once residents are within 1 of full, then credited the time it waited), for every
   town with pools (the save's from the first look, a new one once made) and the save's nests from load (a rolled nest from its first load), loaded or not. Growth is not state-hashed (as the population's other site state).
   - **Towns**: one made from its data counts its resident squads (those with a home; bar squads not, engine choice after the census) into `pop`
     and `popd` and is `started`; a started town never makes residents again, even with every squad dead (it holds what is left). Town roaming
