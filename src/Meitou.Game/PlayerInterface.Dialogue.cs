@@ -18,6 +18,7 @@ sealed partial class PlayerInterface
     static readonly Vector4 ChoiceColour = new(0xb3 / 255f, 0xb3 / 255f, 0xb3 / 255f, 1), ChoiceHover = new(0, 1, 0, 1);
     bool conversationShown, conversationEndSent;
     long dialogueRequestHandled;
+    string? dialogueText;
 
     /// <summary>Opens the panel when a conversation opens, closes it when it ends, ends the conversation when the player closed the panel; runs a finished conversation's request.</summary>
     void SyncDialogueScreen()
@@ -60,9 +61,10 @@ sealed partial class PlayerInterface
         b.Text["PlayerName"] = talk.PlayerName;
         b.Text["NpcDialog"] = talk.Text;
         b.Properties["NpcDialog"] = new Dictionary<string, string> { ["Static"] = "true", ["WordWrap"] = "true", ["TextAlign"] = "Left Top" };
-        // The choices are drawn as buttons and the NPC frame grows to its text, so the two boxes' template scroll bars would only be empty tracks.
-        foreach (var name in new[] { "NpcDialog", "PlayerDialog" })
-            foreach (var bar in faithfulScreens.Layout("dialogue").Find(name)?.Children.Where(w => w.Type == "ScrollBar") ?? []) b.HiddenWidgets.Add(bar);
+        // A line longer than the NPC box scrolls under the EditBox's own bar (the original grows the frame instead); each new line starts at the top.
+        if (talk.Text != dialogueText) { dialogueText = talk.Text; faithfulScreens.SetScroll("dialogue", "NpcDialog", 0); }
+        // The choices are drawn as buttons, so the player box's template scroll bar would only be an empty track.
+        foreach (var bar in faithfulScreens.Layout("dialogue").Find("PlayerDialog")?.Children.Where(w => w.Type == "ScrollBar") ?? []) b.HiddenWidgets.Add(bar);
         b.NativeScroll.Add("PlayerDialog");   // the choices are drawn against the box, not scrolled by its canvas
         b.Text["MoneyLabelText"] = "Money:";
         b.Text["MoneyAmountText"] = "c." + talk.PlayerMoney.ToString("N0", CultureInfo.InvariantCulture);
