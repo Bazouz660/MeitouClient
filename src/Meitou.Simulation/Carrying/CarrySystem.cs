@@ -93,8 +93,9 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
     float ReachOf(World world, CharacterCold body) =>
         body.IsImprisoned && body.InWhat is { } id && world.Fixtures.Find(id) is { } cage ? MathF.Max(Settings.Reach, cage.UseRange + Locks.LockSystem.Reach) : Settings.Reach;
 
-    /// <summary>A character that may be looted: knocked out or dead, with an inventory (the bedded and imprisoned that the original's <c>isItemLootable</c> also takes are opened as a pickpocket, <see cref="CanBePickpocketed"/>).</summary>
-    public static bool CanBeLooted(CharacterCold cold) => cold is { Medical.Incapacitated: true, Inventory: not null };
+    /// <summary>A character that may be looted: knocked out, dead, playing dead or carried, with an inventory (the bedded and imprisoned that the original's <c>isItemLootable</c> also takes are opened as a pickpocket, <see cref="CanBePickpocketed"/>).</summary>
+    /// <remarks>isItemLootable's down test (<c>FUN_14059dcc0</c> over <c>FUN_1405c9e10</c>, <b>Verified</b>): out, playing dead or carried; a crawler is not down.</remarks>
+    public static bool CanBeLooted(CharacterCold cold) => cold is { Inventory: not null } && (cold.Medical is { Incapacitated: true } or { PlayingDead: true } || !cold.CarriedBy.IsNone);
 
     /// <summary>
     /// A character whose inventory an <see cref="OpenLootOrder"/> may open: a lootable one, or one of the player's own standing (the original's Trade, verb 26, on a player character;
