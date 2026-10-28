@@ -116,12 +116,15 @@ within 1000, nothing else; a target neither moving nor in combat mode: not heard
 cooldown of 2 s of 1x game time divided by the speed (so 2/speed² real s; paused never) returns the last answer. Range N x0.5 when the listener's StateBroadcast
 `+0xb4` (`isSleeping`, KenshiLib name **Observed**) is 0 (awake: only the sleep tasks set it, to 1 or 2 by Task_SleepOnFloor `FUN_140348170`, to 1 by
 `FUN_140347950` and `FUN_140357d00`, and their exits reset it to 0, **Verified** writer scan), x0.5 for another interior and x0.5 again when the building (the target's, else the listener's) has no open door.
-Chance 0.75 x (1 - d²/N²), sneaking (0.05 when `+0xb4` is 0, else 0.1) x (1 - stealth) x the same; x2 when the entry is alarmed. In combat mode in the same place and on
+Chance 0.75 x (1 - d²/N²), sneaking (0.05 when `+0xb4` is 0, else 0.1) x (1 - stealth) x the same; x2 while the pair's alarm runs (5 s, set by
+the forced sense `FUN_140858f40` with its alarm flag: the perceive-and-tag `FUN_1405cb0a0` of DA_MASSIVE_ALARM and AI tasks, the drop of a carried body `FUN_1405ce1e0`,
+a bolt's victim `FUN_140999d50`; counted down in `FUN_1408593d0`, **Verified**). In combat mode in the same place and on
 the same floor any chance > 0 is a sure hearing; else a roll. A heard listener with `+0xb4` 1 drops it on a coin flip and, for a sneaking player target, says event 47
 ALMOST_WOKE_UP. Sneaking or crawling targets get stealth XP ([character-stats](character-stats.md)). Meitou (`AggroSystem.Hears`, one test for the
 attack-on-sight look and the chaser's look): the player pair (player faction only: `FUN_140856bc0`'s owner path for slaves and pets is not modelled), the moving or combat-mode
 gate (a fighter standing still makes noise 350 f), the interior, floor, door and sure-hearing rules, the awake halving and the sleeper's coin flip with event 47 (asleep =
-`CarrySystem.Asleep`, in a bed or resting with the sleep behaviour; 1 and 2 are not told apart); not the cooldown, the alarm doubling, or the sneaking 0.05.
+`CarrySystem.Asleep`, in a bed or resting with the sleep behaviour; 1 and 2 are not told apart), the cooldown (2 s of simulated time, game speed not applied; per-listener
+list `AggroSystem.Slot.Heard`) and the alarm doubling (set only by DA_MASSIVE_ALARM through `AggroSystem.Alarm`; the other alarm sources are not wired); not the sneaking 0.05.
 Hearing does not imply ordinary visual cone/line-of-sight eligibility.
 
 ## Retreat and memory

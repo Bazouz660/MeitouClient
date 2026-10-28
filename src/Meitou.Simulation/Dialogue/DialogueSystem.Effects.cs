@@ -200,6 +200,9 @@ public sealed partial class DialogueSystem
     /// <summary>The arrest system the bounty desk's effects pay and hand over through (<c>DA_PAY_BOUNTY</c>, <c>DA_ARREST_TARGETS_CARRIED_PERSON</c>); null: they do nothing.</summary>
     public Crime.ArrestSystem? Arrests { get; set; }
 
+    /// <summary>The attack-on-sight system a massive alarm alarms each member's hearing of the target through (<see cref="AggroSystem.Alarm"/>); null: no alarm.</summary>
+    public AggroSystem? Aggro { get; set; }
+
     /// <summary>
     /// <c>give item</c> (<c>FUN_140680560</c>): each listed item made and put into the target's inventory, val0 2..49 its stack count, and "Received &lt;name&gt;" posted. What does not fit
     /// is dropped at the target's feet (engine choice; the original's add has no such case in this code).

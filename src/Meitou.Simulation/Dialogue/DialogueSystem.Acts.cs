@@ -221,7 +221,7 @@ public sealed partial class DialogueSystem
 
     /// <summary>
     /// DA_MASSIVE_ALARM (56): when the speaker is in a town, every member of its faction's squads tags the target TEMP_ENEMY, fires event 66 at it and goes for it (task 29 to its
-    /// position; Meitou: an attack order). Engine: only loaded squads.
+    /// position; Meitou: an attack order), and its hearing of the target is alarmed for 5 s (<c>FUN_1405cb0a0</c> over <c>FUN_140858f40</c>). Engine: only loaded squads.
     /// </summary>
     void MassiveAlarm(World world, CharacterId me, CharacterCold mc, CharacterId target, CharacterCold tc)
     {
@@ -235,6 +235,7 @@ public sealed partial class DialogueSystem
             {
                 if (!table.TryResolveNext(m, out int s) || !Awake(table, s) || table.Cold(s) is not { IsPlayer: false } c) continue;
                 FlagFrom(world, c, m, target, tc, MemoryTag.TempEnemy);
+                Aggro?.Alarm(world, m, target);
                 world.Defer(new DialogueEvent(m, target, 66) { Tick = world.Tick + 1 });
                 if (c.Fighter?.CanAttack == true) fighters.Add(m);
             }

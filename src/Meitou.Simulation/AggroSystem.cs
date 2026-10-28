@@ -120,10 +120,11 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
     /// building rules (<see cref="HearPlace"/>) scale the noise range, halved for an awake listener (the original's StateBroadcast <c>+0xb4</c> 0; a sleeper,
     /// <see cref="Carrying.CarrySystem.Asleep"/>, hears at full range); a sneaking target makes the sneaking noise, any other the ordinary one (350 at rest); in combat mode in the
     /// listener's place and floor any chance is a sure hearing, else <paramref name="roll"/> (the look's hash) is rolled against it, and a sleeper drops what it heard on a coin
-    /// flip, then saying <see cref="AlmostWokeUpEvent"/> when the target is a sneaking player-side character (emitted as <see cref="AlmostWokeEffect"/>). <paramref name="stealth"/>:
-    /// the target's stealth when it sneaks, else below 0.
+    /// flip, then saying <see cref="AlmostWokeUpEvent"/> when the target is a sneaking player-side character (emitted as <see cref="AlmostWokeEffect"/>). After the building
+    /// rules a pair checked less than <see cref="HearCooldownSeconds"/> ago gets the last answer (<paramref name="heard"/>, the listener's own list), and an alarmed pair doubles
+    /// the chance. <paramref name="stealth"/>: the target's stealth when it sneaks, else below 0.
     /// </summary>
-    static bool Hears(World world, CharacterTable table, int listener, int target, float stealth, ulong roll, EffectBuffer effects)
+    static bool Hears(World world, CharacterTable table, int listener, int target, float stealth, ulong roll, EffectBuffer effects, ref List<HeardPair>? heard)
     {
         ref readonly var me = ref table.Previous[listener];
         ref readonly var other = ref table.Previous[target];
@@ -136,22 +137,90 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         bool sure = false;
         float place = tc is null ? 1 : HearPlace(world, listener, target, me.Position, other.Position, combat, out sure);
         if (!(place > 0)) return false;
+        int k = FindHeard(heard, target, other.Generation);
+        var pair = k >= 0 ? heard![k] : new HeardPair { Target = target, Generation = other.Generation, Checked = -1 };
+        if (pair.Checked >= 0 && world.Tick - pair.Checked < CooldownTicks(world)) return pair.Heard;
+        pair.Checked = world.Tick;
+        pair.Heard = Roll(world, table, listener, target, stealth, roll, effects, d2, speed, place, sure, world.Tick < pair.AlarmUntil);
+        if (k >= 0) heard![k] = pair;
+        else (heard ??= []).Add(pair);
+        return pair.Heard;
+    }
+
+    /// <summary>The noise range and the roll of <see cref="Hears"/>, past its gates and cooldown.</summary>
+    static bool Roll(World world, CharacterTable table, int listener, int target, float stealth, ulong roll, EffectBuffer effects, float d2, float speed, float place, bool sure, bool alarmed)
+    {
+        ref readonly var other = ref table.Previous[target];
         bool asleep = Carrying.CarrySystem.Asleep(table, listener);
         if (!asleep) place *= AwakeHearing;
         float d = MathF.Sqrt(d2);
         float p = stealth >= 0
             ? Orders.SneakHearChance(d, Orders.SneakNoise(stealth, Noise(table, target)) * place, stealth)
             : HearChance(d, NoiseRange(speed, other.MaxSpeed) * Noise(table, target) * place);
+        if (alarmed) p *= AlarmHearing;
         if (!(p > 0)) return false;
         if (sure) return true;
         if (Rng.Float(roll) >= p) return false;
         if (!asleep || Rng.Float(Rng.Mix(roll + 1)) >= 0.5f) return true;
-        if (stealth >= 0 && PlayerSide(world, tc)) effects.Emit(listener, target, AlmostWokeEffect, 0);
+        if (stealth >= 0 && PlayerSide(world, table.Cold(target))) effects.Emit(listener, target, AlmostWokeEffect, 0);
         return false;
     }
 
     /// <summary>The factor on the noise range an awake listener hears (<c>FUN_140857500</c>: x0.5 while StateBroadcast <c>+0xb4</c> is 0, Verified constant).</summary>
     public const float AwakeHearing = 0.5f;
+
+    /// <summary>
+    /// How long a listener keeps its last answer on a target before it checks again (<c>FUN_140857500</c>'s per-target time map: 2 s of 1x game time divided by the game speed).
+    /// Engine: 2 s of simulated time, the speed not applied.
+    /// </summary>
+    public const float HearCooldownSeconds = 2;
+    /// <summary>How long a pair stays alarmed (<c>FUN_140858f40</c> sets the sense entry's timer to 5 s, Verified) and the factor on the hearing chance meanwhile (x2, Verified).</summary>
+    public const float AlarmSeconds = 5, AlarmHearing = 2;
+
+    static long CooldownTicks(World world) => (long)MathF.Round(HearCooldownSeconds / world.TickSeconds);
+
+    /// <summary>A listener's hearing memory of one target: the tick of its last full check (-1: none), its answer, and the tick its alarm runs out.</summary>
+    struct HeardPair
+    {
+        public int Target, Generation;
+        public long Checked, AlarmUntil;
+        public bool Heard;
+    }
+
+    /// <summary>Drops the pairs whose target is gone or that neither hold an answer within the cooldown nor an alarm (null when none is left).</summary>
+    static List<HeardPair>? PruneHeard(List<HeardPair> heard, World world)
+    {
+        long cooldown = CooldownTicks(world);
+        var prev = world.Characters.Previous;
+        for (int k = heard.Count - 1; k >= 0; k--)
+        {
+            var x = heard[k];
+            if (!prev[x.Target].Alive || prev[x.Target].Generation != x.Generation || (x.Checked < 0 || world.Tick - x.Checked >= cooldown) && world.Tick >= x.AlarmUntil) heard.RemoveAt(k);
+        }
+        return heard.Count > 0 ? heard : null;
+    }
+
+    static int FindHeard(List<HeardPair>? heard, int target, int generation)
+    {
+        if (heard is null) return -1;
+        for (int k = 0; k < heard.Count; k++) if (heard[k].Target == target && heard[k].Generation == generation) return k;
+        return -1;
+    }
+
+    /// <summary>
+    /// Alarms <paramref name="listener"/> about <paramref name="target"/> for <see cref="AlarmSeconds"/> (<c>FUN_140858f40</c> with its alarm flag, which the perceive-and-tag step
+    /// <c>FUN_1405cb0a0</c> of a massive alarm passes): it hears that target twice as easily meanwhile. Serial phases only.
+    /// </summary>
+    public void Alarm(World world, CharacterId listener, CharacterId target)
+    {
+        var prev = world.Characters.Previous;
+        if (listener.Slot >= slots.Length || slots[listener.Slot].Generation != listener.Generation || target.Slot >= world.Characters.HighWater || prev[target.Slot].Generation != target.Generation) return;
+        ref var heard = ref slots[listener.Slot].Heard;
+        long until = world.Tick + (long)MathF.Round(AlarmSeconds / world.TickSeconds);
+        int k = FindHeard(heard, target.Slot, target.Generation);
+        if (k >= 0) heard![k] = heard[k] with { AlarmUntil = until };
+        else (heard ??= []).Add(new HeardPair { Target = target.Slot, Generation = target.Generation, Checked = -1, AlarmUntil = until });
+    }
 
     /// <summary>
     /// The building rules of the hearing check (<c>SensoryData::canHear</c> <c>FUN_140857500</c> steps 3, 4, 6 and 8, <b>Verified</b>): the factor on the target's noise range, 0 when it
@@ -189,6 +258,8 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         public bool Sensed;
         /// <summary>The looker's spot meters on sneaking characters, in target slot order (null: none); written by its own partition only.</summary>
         public List<Spot>? Spots;
+        /// <summary>The listener's hearing cooldowns and alarms, in the order first met (null: none); written by its own partition only, or by <see cref="Alarm"/> in a serial phase.</summary>
+        public List<HeardPair>? Heard;
     }
 
     /// <summary>
@@ -339,6 +410,8 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         public Vector2 HoldPoint;
         /// <summary>The looker's spot meters (read only during the query) and the sneakers it sees this scan.</summary>
         public List<Spot>? Spots;
+        /// <summary>The looker's hearing memory (<see cref="Slot.Heard"/>), written during the query and stored back after it.</summary>
+        public List<HeardPair>? Heard;
         public List<Sighting> Sightings;
         public EffectBuffer Effects;
         /// <summary>Characters gathered this scan, and those taken past the cap (<see cref="GatherCap"/>, <see cref="GatherExtra"/>).</summary>
@@ -360,6 +433,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         for (int i = first; i < part.End; i += every)
         {
             if (!prev[i].Alive || i >= slots.Length) continue;
+            if (slots[i].Heard is { } heard) slots[i].Heard = PruneHeard(heard, world);
             byte task = next[i].Task;
             if (task == (byte)CharacterTask.Attack && slots[i].ChaseStart >= 0)
             {
@@ -385,10 +459,11 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
                 Stance = stance, War = war,
                 Employer = EmployerOf(world, cold, out bool allies), EmployerAllies = allies,
                 Home = cold.Ai?.Squad.HomeCentre ?? default, HomeR2 = cold.Ai is { } mind ? mind.Squad.HomeRadius * mind.Squad.HomeRadius : 0,
-                Spots = slots[i].Spots, Sightings = sightings ??= [], Effects = effects,
+                Spots = slots[i].Spots, Heard = slots[i].Heard, Sightings = sightings ??= [], Effects = effects,
             };
             scan.Sightings.Clear();
             world.Grid.Query(scan.Eye.X, scan.Eye.Z, MathF.Max(range, NoiseFar), ref scan, Visit);
+            slots[i].Heard = scan.Heard;
             if (scan.Best >= 0) effects.Emit(i, scan.Best, SightEffect, MathF.Sqrt(scan.BestD2));
             if (scan.Spots is not null || scan.Sightings.Count > 0) slots[i].Spots = AdvanceSpots(scan.Spots, scan.Sightings, every * world.TickSeconds, table);
         }
@@ -412,7 +487,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         float outdoor = RangeOf(cold, Settings.SightRange);
         bool sensed = outdoor > 0 && world.Sight.Sees(i, t, prev[i].Position, prev[i].Yaw, other.Position, outdoor, stealth) > 0;
         if (!sensed)
-            sensed = Hears(world, table, i, t, stealth, Rng.Hash(world.Seed, Rng.Key(new CharacterId(i, prev[i].Generation)), RngPurpose.ChaseSense, ((ulong)world.Tick << 20) ^ (ulong)(uint)t), effects);
+            sensed = Hears(world, table, i, t, stealth, Rng.Hash(world.Seed, Rng.Key(new CharacterId(i, prev[i].Generation)), RngPurpose.ChaseSense, ((ulong)world.Tick << 20) ^ (ulong)(uint)t), effects, ref s.Heard);
         s.Sensed = sensed;
         if (!sensed) return;
         s.SensedTick = world.Tick;
@@ -546,7 +621,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
             seen = full && v > 0;
         }
         else seen = s.Sight.Sees(s.Self, slot, s.Eye, s.Yaw, other.Position, s.Outdoor) > 0;
-        if (!seen && !Hears(s.World, s.Table, s.Self, slot, stealth, Rng.Hash(s.Seed, s.Key, RngPurpose.Sense, (s.Tick << 20) ^ (ulong)(uint)slot), s.Effects)) return;
+        if (!seen && !Hears(s.World, s.Table, s.Self, slot, stealth, Rng.Hash(s.Seed, s.Key, RngPurpose.Sense, (s.Tick << 20) ^ (ulong)(uint)slot), s.Effects, ref s.Heard)) return;
         s.Best = slot;
         s.BestD2 = d2;
         s.BestScore = score;
@@ -808,6 +883,15 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
                     hasher.Add(p.Target);
                     hasher.Add(p.Generation);
                     hasher.Add(p.Value);
+                }
+            if (s.Heard is { } heard)   // only while a listener remembers a hearing check or an alarm
+                foreach (var h in heard)
+                {
+                    hasher.Add(h.Target);
+                    hasher.Add(h.Generation);
+                    hasher.Add(h.Checked);
+                    hasher.Add(h.AlarmUntil);
+                    hasher.Add(h.Heard);
                 }
         }
         hasher.Add(Started);
