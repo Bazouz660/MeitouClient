@@ -87,7 +87,7 @@ public sealed unsafe partial class FoliageRenderer
         }
         grassFull = false;
         Gpu.DeferDelete(old.Dispose);
-        Messages.Add($"grass store grown to {GrassArenaBytes * (ulong)scale >> 20} MB for grass distance x {GrassRangeSetting / DefaultGrassRange:0.##}");
+        Console.WriteLine($"foliage   grass store grown to {GrassArenaBytes * (ulong)scale >> 20} MB for grass distance x {GrassRangeSetting / DefaultGrassRange:0.##}");
     }
 
     bool grassDisposing;
