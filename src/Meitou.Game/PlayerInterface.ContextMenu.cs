@@ -121,6 +121,9 @@ sealed partial class PlayerInterface
         if (prison.Locked)
         {
             if (!down) verbs.Add(("Pick Lock", () => Say(new Meitou.Simulation.Locks.PickLockOrder(selection, id) { Tick = session.World.Tick })));
+            // The player's own cage frees its prisoner while locked too (the release unlocks it).
+            if (!selection.Contains(id) && target.CarriedBy.IsNone && prison.CageOwner == session.World.Player.Faction)
+                verbs.Add(("Set Free", () => Say(new Meitou.Simulation.Locks.SetFreeOrder([], id) { Tick = session.World.Tick })));
         }
         else if (selection.Contains(id)) { if (!down) verbs.Add(("Escape", () => Say(new Meitou.Simulation.Locks.GetOutOrder([id]) { Tick = session.World.Tick }))); }
         else if (target.CarriedBy.IsNone)

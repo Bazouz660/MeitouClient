@@ -21,7 +21,8 @@ public sealed partial class LockSystem
     void SetFreeInput(World world, SetFreeOrder order)
     {
         var table = world.Characters;
-        if (!table.TryResolveNext(order.Prisoner, out int p) || table.Cold(p) is not { IsImprisoned: true, InWhat: { } where } || world.Fixtures.Find(where) is not { } cage) return;
+        if (!table.TryResolveNext(order.Prisoner, out int p) || table.Cold(p) is not { IsImprisoned: true, InWhat: { } where } pc || world.Fixtures.Find(where) is not { } cage) return;
+        if (!Conscious(pc)) return;
         int best = NearestWorker(world, order.Characters, cage);
         if (best < 0) return;
         var walker = table.Cold(best)!;
@@ -29,6 +30,12 @@ public sealed partial class LockSystem
         walker.Freeing = order.Prisoner;
         MovementSystem.GoToFloor(world, best, cage.Position, walker.RunSpeed);
     }
+
+    /// <summary>
+    /// Set Free's precondition 125 TARGET_IS_CONSCIOUS (<c>FUN_14099a480</c>, <b>Verified</b>; no row provides it): the prisoner is not dead, unconscious or carried. A ragdolled prisoner
+    /// also fails in the original (not modelled apart from the knock-out).
+    /// </summary>
+    static bool Conscious(CharacterCold c) => c.Medical is not { Incapacitated: true } && c.CarriedBy.IsNone;
 
     void GetInInput(World world, GetInCageOrder order)
     {
@@ -158,7 +165,9 @@ public sealed partial class LockSystem
             }
             var prisoner = c.Freeing;
             c.Freeing = CharacterId.None;
-            if (cage.Lock is { EffectivelyLocked: true }) { if (c.IsPlayer) world.Post($"{c.Name}: It's locked."); continue; }
+            // A locked cage of its own faction is opened by the release itself (Task_ReleasePrisoner clears the lock, Verified); another faction's must be opened first.
+            if (cage.Lock is { EffectivelyLocked: true } && cage.Owner != c.Faction) { if (c.IsPlayer) world.Post($"{c.Name}: It's locked."); continue; }
+            if (!table.TryResolveNext(prisoner, out int ps) || table.Cold(ps) is not { } pc || !Conscious(pc)) continue;
             // Letting a prisoner out of another faction's cage is the crime of lifting it out (FixtureRegistry.LiftOut): a pending code 7 against the cage's owner.
             if (cage.Owner >= 0 && cage.Owner != c.Faction) Crimes?.SetPending(world, s, CrimeCode.Terrorism, cage.Owner, prisoner, CrimeSystem.MinTimer);
             if (world.Fixtures.Release(world, prisoner, c.Faction, Crimes)) world.EmitSound(SoundKind.Unlocked, s, next[s].Position);

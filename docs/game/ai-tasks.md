@@ -514,7 +514,7 @@ from the decompile and agree with this table, except that the decompile shows no
 | 122 | `hasTools` |
 | 123 | `IS_WORKING` |
 | 124 | `isTargetEscapee` |
-| 125 | `TARGET_IS_CONSCIOUS` |
+| 125 | `TARGET_IS_CONSCIOUS` (`FUN_14099a480`, **Verified**): a character target not down (carried, ragdolled), unconscious or dead; a non-character target true, none false; no row provides it |
 | 126 | `AT_LOCATION_BUILDING_DOOR_OUTSIDE` |
 | 127 | `DOOR_IS_LOCKED_AND_IM_OUTSIDE` |
 | 128 | `isAlly` |

@@ -47,7 +47,8 @@ sealed partial class PlayerInterface
             verbs.Add(("Use Tools", () => Say(new ForceLockOrder([], cage.Id, LockForce.Tools) { Tick = session.World.Tick })));
             verbs.Add(("Use Strength", () => Say(new ForceLockOrder([], cage.Id, LockForce.Strength) { Tick = session.World.Tick })));
         }
-        if (occupied) verbs.Add(("Set Free", () => Say(new SetFreeOrder([], cage.Occupant) { Tick = session.World.Tick })));
+        // Set Free (110): from the player's own cage whether locked or not (the release unlocks it), from another faction's only unlocked (ui-input.md cage rows).
+        if (occupied && (!cage.Locked || cage.Owner == session.World.Player.Faction)) verbs.Add(("Set Free", () => Say(new SetFreeOrder([], cage.Occupant) { Tick = session.World.Tick })));
         else if (!cage.Locked)
         {
             var carriers = Carriers();
