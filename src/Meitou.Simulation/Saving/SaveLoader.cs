@@ -336,6 +336,7 @@ public static class SaveLoader
             State = PlatoonState.Unloaded,
             Package = package?.Id, Job = job,
             Saved = sp,
+            Imprisoned = platoon.Record.Bools.GetValueOrDefault("imprisoned"),
         };
         world.Platoons.Add(p);
         if (!platoon.Handle.IsNull) context.PlatoonIds.TryAdd((platoon.Handle.C, platoon.Handle.CS), p.Id);
@@ -416,6 +417,7 @@ public static class SaveLoader
             State = PlatoonState.Unloaded,
             Package = package?.Id, Job = job,
             Saved = sp,
+            Imprisoned = platoon.Record.Bools.GetValueOrDefault("imprisoned"),
         };
         world.Platoons.Add(p);
         sp.PlatoonId = p.Id;

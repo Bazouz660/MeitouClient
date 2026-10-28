@@ -137,6 +137,7 @@ public sealed partial class PopulationSystem
     void StandIn(World world, Platoon p, float dt)
     {
         if (p.Pinned || p.Wild || p.Campaign is not null) return;   // a town's own saved squad, or a wild one, stays where it was; a campaign moves its own
+        if (p.Imprisoned) return;   // a platoon left with a member caged stays put (FUN_1407ee790)
         if (ShippingCamp(p) is >= 0 and var camp)
         {
             // Shipping slaves: on to the camp, then it stays there; the slaves are handed over once it loads (Deliver 192).
@@ -358,6 +359,7 @@ public sealed partial class PopulationSystem
         else if (p.UnloadAtTick < 0) p.UnloadAtTick = world.Tick + (long)Math.Ceiling((p.Pinned ? settings.UnloadGraceSeconds : settings.RoamUnloadGraceSeconds) / world.TickSeconds);
         else if (world.Tick >= p.UnloadAtTick)
         {
+            p.Imprisoned = squad.Members.Any(m => table.TryResolveNext(m, out int ms) && table.Cold(ms)!.IsImprisoned);
             if (squad.Ai?.Current is { } running) p.Package = running.Id;
             if (p.Package is { } shipping && IsShipping(shipping) && squad.Ai is { MissionTown: >= 0 and var mission }) p.Target = mission;   // the camp it ships to (ShippingCamp)
             // Faithful: a platoon the original does not keep (not a town's own, not in a campaign, not occupying) is despawned as it leaves; a save's wild one by the wild switch.

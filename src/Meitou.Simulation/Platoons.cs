@@ -72,6 +72,11 @@ public sealed class Platoon
     public CampaignInstance? Campaign { get; set; }
     /// <summary>The platoon's intact flag (+0x100, <c>FUN_1407ac7b0</c>): the squad-intact rule, refreshed while loaded and kept as it was at unload. Not saved.</summary>
     public bool IntactFlag { get; set; } = true;
+    /// <summary>
+    /// The platoon's <c>imprisoned</c> (+0x1f1, <b>Verified</b>, <c>FUN_1407ef4b0</c>): set at each unload to whether a member is held in a cage or restraint, else the save's value;
+    /// while set its stand-in neither travels nor takes a job (<c>FUN_1407ee790</c>).
+    /// </summary>
+    public bool Imprisoned { get; set; }
     /// <summary>Where its campaign sends it (the target for the leader platoon, the leader for the others; set each population look).</summary>
     public Vector2? CampaignGoal { get; set; }
     /// <summary>The roads it takes off screen to <see cref="RouteGoal"/> (null: straight there; <see cref="PopulationSystem"/> roads), and the next point of it. Not saved: worked out again.</summary>

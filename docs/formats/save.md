@@ -428,7 +428,8 @@ same 124 files.
 Key types **Verified** by a census of the owner's five saves (every platoon and zone file): building `lock lvl` int, `locked` / `broken` bool, `hardness`
 float; door i `state<i>` int (0/1), `doa<i>` float, `broken<i>` / `locked<i>` / `wants lock<i>` bool, `gatecode<i>` int (-1..6), `lock lvl<i>` int,
 `hardness<i>` float; character `in something` int (0 8135, 1 1159, 2 218), `in what` handle (type 0 BUILDING when set, else 11; prisoners' point at
-generated interior buildings, e.g. `19765-zone39.16-INGAME-S23`), `sentence` int and `psts` float (0 in every sample); platoon `imprisoned` bool.
+generated interior buildings, e.g. `19765-zone39.16-INGAME-S23`), `sentence` int and `psts` float (0 in every sample); platoon `imprisoned` bool (+0x1f1: whether a member was caged when the platoon last unloaded, read
+back at load; **Verified**, `FUN_1407ef4b0`, `FUN_140372ef0`, `FUN_1407ed0f0`).
 Meanings: [locks](../game/locks.md#save-keys), [economy 11.5](../game/economy.md#115-bail-and-sentence) (`sentence` = start in game hours, `psts` = length).
 Dialogue locks (**Observed**, `Character::serialise` writer `FUN_140679900`, reader `FUN_14067f780`): character pairs `lok0`, `lok1`, ..., string = DIALOGUE
 string id, bool of the same key = locked ([dialogue](../game/dialogue.md#memory-and-saves)); Meitou reads and writes them (`Saving/DialogueSave`), and reads `personality` when above 0.

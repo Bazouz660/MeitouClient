@@ -413,7 +413,8 @@ Meitou: [ground items](../simulation.md#items-and-eating).
   spawn / wipe (`TownList::vfunc_4`); the area tick every 2 s (new nests, homeless squads), sector housekeeping every 10 s. Each unloaded
   step measures its own elapsed game time, and growth and campaign timers read the game clock, so no rate depends on these periods.
 - **Unloaded step** (`UnloadedPlatoon::vfunc_2`, `0x1407ee790`): activation test, the 60 s orphan timer, then (not the player's, not
-  imprisoned, not at a loading zone's edge) the job: a campaign's if the war manager holds the platoon, else the package's `unloaded func`
+  imprisoned: the platoon flag +0x1f1, set at each unload to whether a member is in state 2 and saved as `imprisoned`, **Verified**
+  `FUN_1407ef4b0`, `FUN_1407ee790`; not at a loading zone's edge) the job: a campaign's if the war manager holds the platoon, else the package's `unloaded func`
   ([ai.md](ai.md)); job 0 becomes 2 for a non-persistent platoon and 4 (GOHOME) for a persistent one. No character data is read or changed:
   no healing, needs or fights (**Observed**).
   - GOHOME: to the home only once within 2000, else to the object of a platoon handle (+0xb8, meaning **Unknown**) at 55.

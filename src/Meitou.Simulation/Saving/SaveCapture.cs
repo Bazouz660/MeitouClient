@@ -367,9 +367,7 @@ public static partial class SaveCapture
                 }
                 written[id] = WriteCharacter(builder, world, data, options, clock, buildings, races, platoon, sc, id, playerFactionId, squad.Leader == id, orders: true);
             }
-            // The platoon's `imprisoned` (meaning Observed): set while a member is in a cage, cleared when the save had it and none is.
-            bool caged = alive.Any(m => table.Cold(m.Slot)!.IsImprisoned);
-            if (caged || platoon.Record.Bools.ContainsKey("imprisoned")) platoon.Record.Bools["imprisoned"] = caged;
+            // The platoon's `imprisoned` is set only when it unloads (FUN_1407ef4b0), which these squads do not: the record keeps the save's value.
             SetCharCount(platoon);
         }
 
