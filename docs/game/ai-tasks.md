@@ -410,7 +410,7 @@ from the decompile and agree with this table, except that the decompile shows no
 | 2 | `isBuildingComplete` |
 | 3 | `isSubjectInInventory` |
 | 4 | `hasWeapon` |
-| 5 | `hasWeaponEquipped` |
+| 5 | `hasWeaponEquipped`: a weapon in hand that is not ranged (`FUN_140596a30`, **Verified**) |
 | 6 | `isNoEnemiesInVicinity` |
 | 7 | `isTargetDown` |
 | 12 | `isAlliesFighting` |
@@ -544,7 +544,7 @@ from the decompile and agree with this table, except that the decompile shows no
 | 153 | `FINAL_GOT_A_KIDNAP_VICTIM` |
 | 154 | `FINAL_FOUND_AND_PUT_CARRIED_IN_A_CAGE` |
 | 155 | `iHaveSomeSlaves` |
-| 156 | `hasWeaponEquipped` |
+| 156 | `hasWeaponEquipped`: a ranged weapon in hand (`FUN_140596a70`, **Verified**); 6 Equipping weapon draws only melee, 264 Equipping crossbow only ranged, else the hand is emptied (`FUN_140346c30`) |
 | 157 | `hasWeaponEquipped` |
 | 158 | `iAmBeingMeleeAttacked immediate` |
 | 159 | `iAmBeingMeleeAttacked general` |

@@ -112,7 +112,10 @@ public sealed partial class AiSystem
                 StateType.isWithin10Meters => Distance(target) <= 10,
                 StateType.isWithin50Meters => Distance(target) <= 50,
                 StateType.isNearTo => Distance(target) <= 10,
-                StateType.hasWeaponEquipped or StateType.hasWeaponEquipped_156 or StateType.hasWeaponEquipped_157 => cold.DrawnWeapon != WeaponKinds.None,
+                // 5: a weapon in hand that is not ranged; 156: a ranged one (FUN_140596a30 / FUN_140596a70, Verified); 157's evaluator is an undecoded stub.
+                StateType.hasWeaponEquipped => cold.DrawnWeapon != WeaponKinds.None && cold.DrawnWeapon != BowHold,
+                StateType.hasWeaponEquipped_156 => cold.DrawnWeapon == BowHold,
+                StateType.hasWeaponEquipped_157 => cold.DrawnWeapon != WeaponKinds.None,
                 StateType.hasWeapon => cold.Fighter is { Weapon: not null, Unarmed: false },
                 StateType.IS_CARRYING_SOMETHING => !cold.Carrying.IsNone,
                 StateType.isInBed => cold.InSomething == Locks.HeldState.Bed || (CharacterTask)Me.Task == CharacterTask.Rest && mind.Behaviour == AiBehaviour.Sleep,

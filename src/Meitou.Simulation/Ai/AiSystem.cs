@@ -504,9 +504,10 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
                 table.Cold(slot)!.DrawnWeapon = WeaponKinds.None;
                 return;
             case TaskType.EQUIP_WEAPON or TaskType.EQUIP_CROSSBOW:
-                // Task_EquipWeapon (6, 264): the weapon it carries comes out; the planner chose this step only with one in hand (B list 38, hasWeapon behind it).
+                // Task_EquipBestWeapon (6 melee only, 264 ranged only; FUN_140346c30, Verified): the matching weapon it carries comes out, else the hand is emptied.
                 var armed = table.Cold(slot)!;
-                if (armed.Fighter is { } fighter) armed.DrawnWeapon = Combat.CombatSystem.MeleeDrawn(fighter);
+                if (armed.Fighter is { } fighter)
+                    armed.DrawnWeapon = mind.Step == TaskType.EQUIP_WEAPON ? Combat.CombatSystem.MeleeDrawn(fighter) : fighter.Crossbow is not null ? BowHold : WeaponKinds.None;
                 return;
             case TaskType.GO_HOMEBUILDING:
                 // 19 Going home before the goal (43 Staying home and the like away from home): the walk home of the GoHome act-out.
@@ -766,6 +767,9 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
         world.Characters.Cold(slot)?.InSomething == Locks.HeldState.Bed
         || board.Home is not null && !mind.HomeUnreachable && BedSpotOf(board, mind) is not null
         || SpareBed(world, board, mind, slot) is not null;
+
+    /// <summary>The hand hold of a drawn crossbow.</summary>
+    static readonly WeaponKinds BowHold = HandHold.OfCategory((int)Meitou.Data.Gameplay.Combat.WeaponCategory.Bow).Weapon;
 
     static Vector2 Flat(Vector3 p) => new(p.X, p.Z);
 
