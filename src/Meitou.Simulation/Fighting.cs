@@ -456,7 +456,7 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem
             if (d2 > MathF.Max(range * range, AggroSystem.NoiseFar * AggroSystem.NoiseFar) || !CanFight(table, s, taken)) continue;
             // Seen, or heard: a fight in the protector's own place within the farthest noise is heard for sure (AggroSystem's hearing rule).
             bool heard = d2 <= AggroSystem.NoiseFar * AggroSystem.NoiseFar && world.Sight.PlaceOf(s) == world.Sight.PlaceOf(slot);
-            if (!heard && !(d2 <= range * range && world.Sight.Sees(s, slot, next[s].Position, next[s].Yaw, at, range) > 0)) continue;
+            if (!heard && !(d2 <= range * range && world.Sight.Sees(s, slot, next[s].Position, at, range) > 0)) continue;
             defenders.Add(new CharacterId(s, next[s].Generation));
             taken.Add(s);
         }

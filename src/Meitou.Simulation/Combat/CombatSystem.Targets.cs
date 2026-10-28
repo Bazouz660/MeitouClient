@@ -155,7 +155,7 @@ public sealed partial class CombatSystem
         float outdoor = AggroSystem.RangeOf(cold, SenseRange);
         float range = world.Sight.MaxRange(i, outdoor);
         if (Vector3.DistanceSquared(prev[c].Position, prev[i].Position) > range * range) return false;
-        return (tc.Orders & CharacterOrders.Sneak) == 0 || world.Sight.Sees(i, c, prev[i].Position, prev[i].Yaw, prev[c].Position, outdoor, Orders.Stealth(tc)) > 0;
+        return (tc.Orders & CharacterOrders.Sneak) == 0 || world.Sight.Sees(i, c, prev[i].Position, prev[c].Position, outdoor, Orders.Stealth(tc)) > 0;
     }
 
     /// <summary>The original's sense-age unit in seconds (hours x 3600 / 33 x 0.5, <see cref="AggroSystem.GiveUpSenseSeconds"/> = 12 of them).</summary>

@@ -44,7 +44,7 @@ public sealed partial class DialogueSystem
         {
             if (o == slot || !Awake(table, o) || table.Cold(o) is not { } oc || !data.Relations.Contains(oc.Faction) || !AggroSystem.IsEnemy(data.Relations, c.Faction, oc.Faction)) continue;
             var there = table.Next[o].Position;
-            if (Vector3.DistanceSquared(at, there) <= range * range && world.Sight.Sees(slot, o, at, table.Next[slot].Yaw, there, range) > 0) return true;
+            if (Vector3.DistanceSquared(at, there) <= range * range && world.Sight.Sees(slot, o, at, there, range) > 0) return true;
         }
         return false;
     }

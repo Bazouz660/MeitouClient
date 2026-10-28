@@ -112,7 +112,7 @@ public sealed partial class DialogueSystem
             {
                 var pc = table.Cold(p)!;
                 float stealth = (pc.Orders & CharacterOrders.Sneak) != 0 ? Orders.Stealth(pc) : -1;
-                if (world.Sight.Sees(i, p, table.Next[i].Position, table.Next[i].Yaw, table.Next[p].Position, outdoor, stealth) <= 0) continue;
+                if (world.Sight.Sees(i, p, table.Next[i].Position, table.Next[p].Position, outdoor, stealth) <= 0) continue;
                 sees.Add((i, p));
                 squadSees.Add((nc.SquadId, p));
             }

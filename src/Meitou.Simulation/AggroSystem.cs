@@ -421,7 +421,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         public HashSet<(int Squad, int Slot)>? SquadFights;
         public Vector3 Eye;
         public CharacterCold? Cold;
-        public float Yaw, Range;
+        public float Range;
         /// <summary>The looker's outdoor sight (race multiplier applied) for the places and lights (<see cref="SightMap.Sees"/>); <see cref="Range"/> is the farthest it can see anyone.</summary>
         public float Outdoor;
         public SightMap Sight;
@@ -510,7 +510,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         return new Scan
         {
             Table = world.Characters, Relations = Relations, World = world, Memory = Memory, Self = i, Faction = cold.Faction, Squad = cold.SquadId, SquadFights = Combat is null ? null : squadFights,
-            Eye = prev[i].Position, Cold = cold, Yaw = prev[i].Yaw, Range = world.Sight.MaxRange(i, outdoor), Outdoor = outdoor, Sight = world.Sight, Best = -1, BestD2 = float.MaxValue,
+            Eye = prev[i].Position, Cold = cold, Range = world.Sight.MaxRange(i, outdoor), Outdoor = outdoor, Sight = world.Sight, Best = -1, BestD2 = float.MaxValue,
             BestScore = float.NegativeInfinity, Combat = Combat, Player = cold.IsPlayer, Hold = Orders.Holding(cold) && cold.Fighter?.Crossbow is null,
             HoldPost = Orders.Holding(cold) && !Orders.RangedExempt(cold), Prone = cold.Medical?.Prone == true, Animal = cold.Fighter?.IsAnimal == true, HoldPoint = Orders.HoldPointOf(cold, prev[i].Position),
             Seed = world.Seed, Key = Rng.Key(new CharacterId(i, prev[i].Generation)), Tick = (ulong)world.Tick,
@@ -543,8 +543,8 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
     /// <summary>Whether the fallback finder's looker senses <paramref name="slot"/> now: in view (a sneaker once its spot meter is full), or heard at its last check within the cooldown.</summary>
     static bool SensedNow(ref Scan s, int slot, in CharacterHot other, bool sneaking, float stealth)
     {
-        if (sneaking ? SpotOf(s.Spots, slot, other.Generation) > 1 && s.Sight.Sees(s.Self, slot, s.Eye, s.Yaw, other.Position, s.Outdoor, stealth) > 0
-            : s.Sight.Sees(s.Self, slot, s.Eye, s.Yaw, other.Position, s.Outdoor) > 0) return true;
+        if (sneaking ? SpotOf(s.Spots, slot, other.Generation) > 1 && s.Sight.Sees(s.Self, slot, s.Eye, other.Position, s.Outdoor, stealth) > 0
+            : s.Sight.Sees(s.Self, slot, s.Eye, other.Position, s.Outdoor) > 0) return true;
         int k = FindHeard(s.Heard, slot, other.Generation);
         return k >= 0 && s.Heard![k] is { Heard: true, Checked: >= 0 } h && s.World.Tick - h.Checked < CooldownTicks(s.World);
     }
@@ -565,7 +565,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         var tc = table.Cold(t);
         float stealth = tc is not null && (tc.Orders & CharacterOrders.Sneak) != 0 ? Orders.Stealth(tc) : -1;
         float outdoor = RangeOf(cold, Settings.SightRange);
-        bool sensed = outdoor > 0 && world.Sight.Sees(i, t, prev[i].Position, prev[i].Yaw, other.Position, outdoor, stealth) > 0;
+        bool sensed = outdoor > 0 && world.Sight.Sees(i, t, prev[i].Position, other.Position, outdoor, stealth) > 0;
         if (!sensed)
             sensed = Hears(world, table, i, t, stealth, Rng.Hash(world.Seed, Rng.Key(new CharacterId(i, prev[i].Generation)), RngPurpose.ChaseSense, ((ulong)world.Tick << 20) ^ (ulong)(uint)t), effects, ref s.Heard);
         s.Sensed = sensed;
@@ -656,7 +656,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         bool full = false;
         if (sneaking && s.Found is null && c.Faction != s.Faction && !(s.Player && c.IsPlayer))
         {
-            v = s.Sight.Sees(s.Self, slot, s.Eye, s.Yaw, other.Position, s.Outdoor, stealth);
+            v = s.Sight.Sees(s.Self, slot, s.Eye, other.Position, s.Outdoor, stealth);
             full = SpotOf(s.Spots, slot, other.Generation) > 1;
             if (v > 0) s.Sightings.Add(new Sighting(slot, other.Generation, Orders.SpotSeconds(v, stealth)));
             if (d2 <= s.Range * s.Range)
@@ -709,7 +709,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         if (!(score > s.BestScore)) return;
         bool seen;
         if (sneaking) seen = full && v > 0;
-        else seen = s.Sight.Sees(s.Self, slot, s.Eye, s.Yaw, other.Position, s.Outdoor) > 0;
+        else seen = s.Sight.Sees(s.Self, slot, s.Eye, other.Position, s.Outdoor) > 0;
         if (!seen && !Hears(s.World, s.Table, s.Self, slot, stealth, Rng.Hash(s.Seed, s.Key, RngPurpose.Sense, (s.Tick << 20) ^ (ulong)(uint)slot), s.Effects, ref s.Heard)) return;
         s.Best = slot;
         s.BestD2 = d2;

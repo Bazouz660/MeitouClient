@@ -82,7 +82,7 @@ public sealed partial class ArrestSystem
                 if (w == s || !next[w].Alive || next[w].Task == (byte)CharacterTask.Rest) continue;
                 if (table.Cold(w) is not { IsPlayer: false, IsImprisoned: false, Medical.Incapacitated: false, CarriedBy.IsNone: true } wc || wc.Faction == player || !Crimes.Relations.Contains(wc.Faction)) continue;
                 if (Vector3.DistanceSquared(next[w].Position, at) > DisguiseRange * DisguiseRange) continue;
-                float v = world.Sight.Sees(w, s, next[w].Position, next[w].Yaw, at, DisguiseRange);
+                float v = world.Sight.Sees(w, s, next[w].Position, at, DisguiseRange);
                 if (v <= 0) continue;
                 var key = (table.IdOf(w), target);
                 seen.Add(key);

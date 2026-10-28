@@ -245,7 +245,7 @@ public sealed partial class ArrestSystem(CrimeSystem crimes, GameConstants const
                 bool escapee = c.Escaped && Crimes.IsPoliceLike(world, wc) && InOwnTown(world, w);
                 bool hunts = HuntsFor(wc, c);
                 if (!spots && !escapee && !hunts) continue;
-                float v = world.Sight.Sees(w, s, next[w].Position, next[w].Yaw, at, Settings.SpotRange, sneaking ? stealth : -1);
+                float v = world.Sight.Sees(w, s, next[w].Position, at, Settings.SpotRange, sneaking ? stealth : -1);
                 if (v <= 0) continue;
                 if (escapee && FreeGuard(world, w) && d2 < escapeD2) (escapeGuard, escapeD2) = (w, d2);
                 if (hunts)
@@ -300,7 +300,7 @@ public sealed partial class ArrestSystem(CrimeSystem crimes, GameConstants const
             if (table.Cold(w) is not { IsPlayer: false, IsImprisoned: false, Medical.Incapacitated: false, CarriedBy.IsNone: true, SlaveState: 0 } wc || wc.Faction != c.SlaveOwner) continue;
             float d2 = Vector3.DistanceSquared(next[w].Position, at), range = AggroSystem.RangeOf(wc, AggroSystem.OutdoorSight);
             if (d2 > range * range || !InTownOf(world, w, next[w].Position)) continue;
-            float v = world.Sight.Sees(w, s, next[w].Position, next[w].Yaw, at, range, sneaking ? stealth : -1);
+            float v = world.Sight.Sees(w, s, next[w].Position, at, range, sneaking ? stealth : -1);
             if (v <= 0) continue;
             if (c.SlaveState == 1 && (LockSystem.WornShackles(c) is null || !InTownOf(world, w, at))) FixtureRegistry.TagEscaped(world, c);
             if (c.SlaveState == 2 && d2 < catcherD2 && (Crimes.IsPoliceLike(world, wc) || wc.NpcClass == FundamentalType.Slaver) && FreeGuard(world, w)) (catcher, catcherD2) = (w, d2);

@@ -193,7 +193,7 @@ is not the looker's ally becomes a target only when both tests pass:
 | Vision range inside a building | 500 (no race multiplier) | **Verified** (literal) | `FUN_140851bc0`, `FUN_140852f70` |
 | Night | range x lerp(daylight, 0.5, 1): half at night | **Verified** (literals), daylight factor in [game-loop.md](game-loop.md#frame-clocks) | `FUN_140851bc0` |
 | Weather (dust storm / other affecting weather) | range x lerp(s(1 - P), 1, 0.4 / 0.75), unclamped | **Verified** (decompile) | `FUN_140851bc0` |
-| View cone | factor v = (cos a - 0.2) / 0.8; nothing beyond a = 78.5 degrees | **Verified** (literals) | `FUN_140852f70` |
+| View cone | factor v = (cos a - 0.2) / 0.8; nothing beyond a = 78.5 degrees; a measured from the drawn facing (AnimationClass slot 0xc0 on Character +0x448: a stored +0x330 vector when non-zero, else the drawn node's direction), which lags the commanded one | **Verified** (literals; the slot reads +0x330, else node +0xd0); that +0xd0 is the drawn forward **Observed**; +0x330's writer **Unknown** | `FUN_140852f70`, `FUN_1405b22d0`; Meitou `SightMap` (`CharacterAnimation.DrawYaw`) |
 | Seen when | v > 0.01 and d <= lerp(light, 0.2 or 0.4, 1) x contrast x R x v | **Observed** (control flow), constants **Verified** | `FUN_140852f70`, `FUN_140857b10` |
 | Sneaking / crawling target | v x0.5 crawling; x0.75 or x0.5 sneaking; x lerp(stealth, 1, 0.6) | **Verified** (literals) | `FUN_140852f70`; Meitou `SightMap.Sees` (crawling or staying low) |
 | Spot time of a sneaker | lerp(v, 0.5 + 5 s, 0.5) x lerp(f, 4, 1) s; meter > 1 = seen; forgets at dt / 260 | **Verified** (literals), flow **Observed** | `FUN_140856cb0`, `FUN_140853aa0` |

@@ -290,10 +290,10 @@ public sealed partial class CrimeSystem(FactionRelations relations, CrimeSetting
             float range = AggroSystem.RangeOf(wc, Settings.Sight);
             if (sneaking)
             {
-                float v = world.Sight.Sees(w, culprit, next[w].Position, next[w].Yaw, at, range, stealth);
+                float v = world.Sight.Sees(w, culprit, next[w].Position, at, range, stealth);
                 if (v <= 0 || !Spotted(world, w, culpritId)) continue;
             }
-            else if (world.Sight.Sees(w, culprit, next[w].Position, next[w].Yaw, at, range) <= 0) continue;
+            else if (world.Sight.Sees(w, culprit, next[w].Position, at, range) <= 0) continue;
             if (body is not null && !Friendly(wf, c.Faction) && Friendly(wf, body.Faction))
                 SetPending(world, culprit, CrimeCode.Kidnapping, body.Faction, c.Carrying, KidnapTimer);
             if (premises is { } house && Trespasses(world, wc, c, house)) SetPending(world, culprit, CrimeCode.Trespassing, wf, table.IdOf(w), MinTimer);
@@ -493,7 +493,7 @@ public sealed partial class CrimeSystem(FactionRelations relations, CrimeSetting
             for (int c = 0; c < table.HighWater; c++)
             {
                 if (c == i || !next[c].Alive || table.Cold(c) is not { Pending: { } p, Medical.Incapacitated: false } cc || Friendly(cold.Faction, cc.Faction) || !Friendly(cold.Faction, p.VictimFaction)) continue;
-                if (Vector3.DistanceSquared(next[c].Position, next[i].Position) > range * range || world.Sight.Sees(i, c, next[i].Position, next[i].Yaw, next[c].Position, range) <= 0) continue;
+                if (Vector3.DistanceSquared(next[c].Position, next[i].Position) > range * range || world.Sight.Sees(i, c, next[i].Position, next[c].Position, range) <= 0) continue;
                 world.SystemOf<Dialogue.DialogueSystem>()?.TagEnemy(world, i, c);
                 world.Defer(new Combat.AttackOrder([table.IdOf(i)], table.IdOf(c)) { Tick = world.Tick + 1 });
                 break;

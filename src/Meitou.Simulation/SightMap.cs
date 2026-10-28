@@ -125,12 +125,14 @@ public sealed class SightMap
             Array.Resize(ref floorOf, size);
             Array.Resize(ref probed, size);
             Array.Resize(ref low, size);
+            Array.Resize(ref facing, size);
         }
         for (int s = 0; s < count; s++)
         {
             int was = place[s];
             place[s] = -1;
             low[s] = prev[s].Alive && table.Cold(s)?.Medical is { Prone: true };
+            facing[s] = table.Cold(s)?.Animation is { HasDrawYaw: true } drawn ? drawn.DrawYaw : prev[s].Yaw;
             if (!prev[s].Alive || rooms.Count == 0) { onTop[s] = false; probed[s] = default; continue; }
             var c = table.Cold(s);
             var at = prev[s].Position;
@@ -182,6 +184,8 @@ public sealed class SightMap
     Probe[] probed = [];
     // Each character crawling or staying low at the last update (the sight test's ground posture).
     bool[] low = [];
+    /// <summary>Each character's sight-cone forward: its drawn facing (<see cref="CharacterAnimation.DrawYaw"/>), else its facing.</summary>
+    float[] facing = [];
     int[] floorOf = [];
     // The carried lights of this update: owner slot, light, position.
     readonly List<(int Owner, WorldLight Light, Vector3 At)> carried = [];
@@ -319,15 +323,16 @@ public sealed class SightMap
     }
 
     /// <summary>
-    /// The whole sight test of a looker at <paramref name="eye"/> facing <paramref name="yaw"/> on the character in <paramref name="target"/> at <paramref name="at"/>: the view
+    /// The whole sight test of a looker at <paramref name="eye"/>, its cone along its drawn facing as the schedule phase found it (FUN_140852f70 reads the drawn node), on the character in <paramref name="target"/> at <paramref name="at"/>: the view
     /// factor (<see cref="AggroSystem.Visibility"/>, or <see cref="AggroSystem.SneakVisibility"/> with the target's <paramref name="stealth"/> when it sneaks) within <see cref="Range"/>.
     /// </summary>
-    public float Sees(int looker, int target, Vector3 eye, float yaw, Vector3 at, float outdoor, float stealth = -1)
+    public float Sees(int looker, int target, Vector3 eye, Vector3 at, float outdoor, float stealth = -1)
     {
         float range = Range(looker, target, outdoor);
         if (!(range > 0)) return 0;
         // A target crawling or staying low is half as visible (FUN_140852f70: ground posture x0.5, before the sneaking factors).
         float posture = (uint)target < (uint)count && low[target] ? 0.5f : 1;
+        float yaw = (uint)looker < (uint)count ? facing[looker] : 0;
         return stealth >= 0 ? AggroSystem.SneakVisibility(eye, yaw, at, range, stealth, posture) : AggroSystem.Visibility(eye, yaw, at, range, posture);
     }
 }
