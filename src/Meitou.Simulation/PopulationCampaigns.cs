@@ -963,21 +963,15 @@ public sealed partial class PopulationSystem : IStateHashed
         return p.IntactFlag;
     }
 
-    static bool SquadIntact(World world, Squad squad)
+    /// <summary>The squad-intact rule (<see cref="Ai.SquadIntact"/>, <c>FUN_14079acf0</c>): a campaign platoon is not a persistent one with a home.</summary>
+    bool SquadIntact(World world, Squad squad)
     {
         var table = world.Characters;
+        if (Ai.SquadIntact.Held(table, squad, data.Relations)) return true;
         int up = 0;
-        bool leaderDown = true;
         foreach (var m in squad.Members)
-        {
-            if (!table.TryResolveNext(m, out int s) || !table.Next[s].Alive || table.Cold(s) is not { } c) continue;
-            if (c.IsImprisoned) return true;
-            bool down = c.Medical is { Incapacitated: true };
-            if (m == squad.Leader) leaderDown = down;
-            if (!down) up++;
-        }
-        int size = squad.Members.Count;
-        return size < FleeSystem.MinSquadForRatio ? !leaderDown : up >= size * (leaderDown ? FleeSystem.LeaderDownRatio : FleeSystem.IntactRatio);
+            if (table.TryResolveNext(m, out int s) && table.Next[s].Alive && table.Cold(s)?.Medical is not { Incapacitated: true }) up++;
+        return Ai.SquadIntact.Decide(up, squad.Members.Count, !squad.Leader.IsNone, Ai.SquadIntact.Down(table, squad.Leader), persistentHome: false);
     }
 
     /// <summary>The player's characters in a town (XZ, its radius): (in all, up).</summary>

@@ -8,9 +8,8 @@ namespace Meitou.Simulation;
 /// NPC squads running away from a lost fight (docs/simulation.md "Fleeing"; the original's facts in docs/game/perception.md "Fleeing"). All work is serial
 /// (<c>SlowWorld</c>), in slot and squad-id order, so it is the same at any thread count.
 /// <list type="bullet">
-/// <item><b>When</b> (the original's squad-intact test, <c>FUN_14079acf0</c>; docs/game/perception.md "Fleeing"): every <see cref="CheckEveryTicks"/> ticks an NPC squad in a fight breaks
-/// when, with fewer than <see cref="MinSquadForRatio"/> members, its leader is down, or, with more, those still able to fight are fewer than <see cref="IntactRatio"/> of the squad
-/// (<see cref="LeaderDownRatio"/> with the leader down). The FACTION run-away ratios are loaded by the original but never read, and no enemy is counted.</item>
+/// <item><b>When</b> (the original's squad-intact test, <see cref="Ai.SquadIntact"/>; docs/game/perception.md "Fleeing"): every <see cref="CheckEveryTicks"/> ticks an NPC squad in a
+/// fight breaks when it is not intact. The FACTION run-away ratios are loaded by the original but never read, and no enemy is counted.</item>
 /// <item><b>How</b> (the original's <c>Task_Runaway</c>, Observed): each member still standing stops fighting and runs at full speed to a point
 /// <see cref="FirstRun"/> + up to <see cref="RunSpread"/> units from the centre of the enemies it can see, on the far side of it; when it gets there (or within
 /// <see cref="Arrived"/> of it, or its path fails) it runs <see cref="Hop"/> + up to <see cref="RunSpread"/> units in a random direction.</item>
@@ -27,9 +26,6 @@ public sealed class FleeSystem(FactionRelations relations, CombatSystem combat, 
     public const float FirstRun = 2000, RunSpread = 400;
     /// <summary>Its later hops: 1000 + 400 x random, in a random direction, when the last one ended or is within 200 units of its end.</summary>
     public const float Hop = 1000, Arrived = 200;
-    /// <summary>The squad-intact test's figures (<c>FUN_14079acf0</c>, <b>Verified</b> literals): squads of at least 4 compare those able to fight with 0.2 of the squad (0.4 with the leader down).</summary>
-    public const int MinSquadForRatio = 4;
-    public const float IntactRatio = 0.2f, LeaderDownRatio = 0.4f;
 
     public FactionRelations Relations { get; } = relations;
     /// <summary>The sight range R before the race multiplier, for the enemies counted and the safety test (the <see cref="AggroSettings.SightRange"/> of the game).</summary>
@@ -88,26 +84,22 @@ public sealed class FleeSystem(FactionRelations relations, CombatSystem combat, 
     {
         if (!Relations.Contains(squad.Faction)) return;
         int size = 0;
-        bool fighting = false, leaderDown = !squad.Leader.IsNone, held = false;   // a leader not in the table is down; a squad without one has none to lose
+        bool fighting = false;
         standing.Clear();
         foreach (var m in squad.Members)
         {
             if (!table.TryResolveNext(m, out int s) || table.Cold(s) is not { } c) continue;
             if (c.IsPlayer || c.Fleeing) return;
             size++;
-            held |= c.IsImprisoned;
             bool down = c.Medical is { Incapacitated: true };
-            if (m == squad.Leader) leaderDown = down;
             if (down || c.Fighter is null) continue;
             standing.Add(s);
             if (c.InCombat || table.Next[s].Task == (byte)CharacterTask.Attack) fighting = true;
         }
-        // A member in a cage or restraint keeps the squad intact (FUN_14079ab40, Verified; its other case, a member carried off by a non-ally, is not modelled).
-        if (!fighting || standing.Count == 0 || held) return;
-        // The squad-intact test (FUN_14079acf0, docs/game/perception.md "Fleeing"): under MinSquadForRatio members it holds while the leader stands; from that many,
-        // while those able to fight are at least IntactRatio of the squad (LeaderDownRatio with the leader down). No enemy is counted.
-        bool breaks = size < MinSquadForRatio ? leaderDown : standing.Count < size * (leaderDown ? LeaderDownRatio : IntactRatio);
-        if (!breaks) return;
+        // The squad-intact test (Ai.SquadIntact, FUN_14079acf0, docs/game/perception.md "Fleeing"): a member caged or carried off by a non-ally keeps it intact; else it
+        // needs a leader and someone able; under 4 members it holds while the leader is up, from 4 while those able to fight are a share of the squad. No enemy is counted.
+        if (!fighting || standing.Count == 0 || Ai.SquadIntact.Held(table, squad, Relations)) return;
+        if (Ai.SquadIntact.Decide(standing.Count, size, !squad.Leader.IsNone, Ai.SquadIntact.Down(table, squad.Leader), persistentHome: false)) return;
         Broken++;
         foreach (int s in standing)
         {

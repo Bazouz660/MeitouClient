@@ -1300,19 +1300,17 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
     }
 
     /// <summary>
-    /// The intact rule of docs/game/perception.md 7.3 (Observed): able members are alive and not down; a squad of fewer than 4 is intact while its leader is up
-    /// (while retreating, while anyone is up); a bigger one while at least 0.2 of its size is able (0.4 when the leader is down).
+    /// Whether the squad is intact (<see cref="SquadIntact"/>, <c>FUN_14079acf0</c>, Verified): never while it lacks a member held in a cage or carried off by a non-ally.
+    /// Persistent with a home stands for a town's resident squad with its own building (engine reading of the platoon's persistent flag and home holder).
     /// </summary>
-    static bool IsIntact(World world, Squad squad, Blackboard board)
+    bool IsIntact(World world, Squad squad, Blackboard board)
     {
         var table = world.Characters;
+        if (SquadIntact.Held(table, squad, data.Relations)) return true;
         int able = 0;
         foreach (var m in squad.Members)
             if (table.TryResolveNext(m, out int s) && table.Cold(s)!.Medical is not { Incapacitated: true }) able++;
-        bool leaderDown = squad.Leader.IsNone || !table.TryResolveNext(squad.Leader, out int ls) || table.Cold(ls)!.Medical is { Incapacitated: true };
-        int size = Math.Max(board.Size, 1);
-        if (size < 4) return board.CurrentClass == PackageClass.Retreat ? able > 0 : !leaderDown;
-        return able >= size * (leaderDown ? 0.4f : 0.2f);
+        return SquadIntact.Decide(able, Math.Max(board.Size, 1), !squad.Leader.IsNone, SquadIntact.Down(table, squad.Leader), squad.Town >= 0 && board.OwnHome is not null);
     }
 
     /// <summary>A running patrol moves on when its leader reaches the route point; the members think again at once.</summary>
