@@ -48,6 +48,22 @@ public static class MyGuiColours
         for (int i = 0; i < parts.Length; i++) if (!float.TryParse(parts[i], NumberStyles.Float, CultureInfo.InvariantCulture, out n[i]) || !float.IsFinite(n[i])) return fallback;
         return new(n[0], n[1], n[2], parts.Length == 4 ? n[3] : 1);
     }
+    /// <summary>
+    /// The text colour a widget made from layout resource <paramref name="template"/> gets, as "r g b": the template's own <c>TextColour</c> property, else the normal-state colour of its skin's text part
+    /// (a mod such as a Palette UI recolours both together with the window's background); null when the data names none.
+    /// </summary>
+    public static string? TemplateText(MyGuiResources resources, string template)
+    {
+        if (!resources.Templates.TryGetValue(template, out var resource) || resource.Element("Widget") is not { } root) return null;
+        var own = root.Elements("Property").FirstOrDefault(p => (string?)p.Attribute("key") == "TextColour")?.Attribute("value")?.Value;
+        if (own is not null && Parse(own, default) != default) return own;
+        if (!resources.Skins.TryGetValue((string?)root.Attribute("skin") ?? "", out var skin)) return null;
+        string? colour = null;
+        foreach (var part in skin.Parts.Where(p => p.Type is "SimpleText" or "EditText"))
+            colour = part.StateProperties?.GetValueOrDefault("normal")?.GetValueOrDefault("colour") ?? colour;
+        return colour;
+    }
+
     public static Vector4 Text(MyGuiResources resources, UiControl control, string state, Vector4 fallback)
     {
         // A text-only button (no background to tint) shows its hover colour on the text: dialogue choices, research and crafting lists.

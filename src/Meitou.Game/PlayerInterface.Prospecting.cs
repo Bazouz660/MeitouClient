@@ -73,18 +73,22 @@ sealed partial class PlayerInterface
         if (prospectReport is not { } r) return;
         float row = 20 * Height / 1080f, pixels = StandardPixels;
         string N(int v) => v.ToString(CultureInfo.InvariantCulture);
+        // The ink of the window's text comes from its templates (the overview lines are Kenshi_TextboxStandardText, the resource values Kenshi_GenericTextBoxFlatSmall), which a UI mod
+        // recolours with the window's skin; the fixed palette ink is only the fallback.
+        string labelInk = MyGuiColours.TemplateText(uiResources, "Kenshi_TextboxStandardText") ?? MyGuiColours.InkText;
+        string valueInk = MyGuiColours.TemplateText(uiResources, "Kenshi_GenericTextBoxFlatSmall") ?? MyGuiColours.InkText;
         AddLines(controls, "OverviewDatapanel1",
         [
             new("Zone:", r.Zone, TitleColour, TitleColour),
-            new("Altitude:", Loc.Tr("{1,num} m", r.Altitude)),
-            new("Prospector Skill:", N(r.Skill)),
-            new("Area Size:", Loc.Tr("{1,num} m", r.AreaMetres)),
+            new("Altitude:", Loc.Tr("{1,num} m", r.Altitude), labelInk, labelInk),
+            new("Prospector Skill:", N(r.Skill), labelInk, labelInk),
+            new("Area Size:", Loc.Tr("{1,num} m", r.AreaMetres), labelInk, labelInk),
         ], row, pixels);
         // The wind of the spot's region when it finished (140785f50) in mph; the environment lists its coverages, "Dead" when there are none, the first on the label's line.
         double wind = Math.Round(r.WindSpeed * 0.22369362f, 1);
-        var panel = new List<HudLine> { new("Wind Speed:", Loc.Tr("{1,num} mph", wind)) };
+        var panel = new List<HudLine> { new("Wind Speed:", Loc.Tr("{1,num} mph", wind), labelInk, labelInk) };
         var environment = r.Environment.Count == 0 ? [Loc.Tr("Dead")] : r.Environment.Select(l => $"{Loc.Tr(l.Name)} {N(l.Percent)}%").ToArray();
-        for (int i = 0; i < environment.Length; i++) panel.Add(new(i == 0 ? "Environment:" : "", environment[i], null, MainColour));
+        for (int i = 0; i < environment.Length; i++) panel.Add(new(i == 0 ? "Environment:" : "", environment[i], labelInk, MainColour));
         AddLines(controls, "OverviewDatapanel2", panel, row, pixels);
 
         AddProspectMap(controls, r);
@@ -97,7 +101,7 @@ sealed partial class PlayerInterface
             bool checkedRow = i == prospectRow;
             controls.Add(new($"prospect-row-{i}", "Button", new(area.X, area.Y, area.Width * 0.662835f, area.Height), line.Name, "prospect-row:" + N(i), "Kenshi_TickButton1Skin", true,
                 new Dictionary<string, string> { ["Checked"] = checkedRow ? "true" : "false", ["StateSelected"] = checkedRow ? "true" : "false", ["TextAlign"] = "Center" }, Vector4.Zero, Pickable: true, Clip: list.Bounds));
-            string colour = line.Value > 0.75f ? GoodColour : line.Value < 0.5f ? BadColour : MyGuiColours.InkText;
+            string colour = line.Value > 0.75f ? GoodColour : line.Value < 0.5f ? BadColour : valueInk;
             controls.Add(new($"prospect-value-{i}", "TextBox", new(area.X + area.Width * 0.724138f, area.Y, area.Width * 0.275862f, area.Height), N(line.Percent), "", "Kenshi_GenericTextBoxFlatSmall", true,
                 new Dictionary<string, string> { ["TextAlign"] = "Center", ["TextColour"] = colour }, Vector4.Zero, Pickable: false, Clip: list.Bounds));
         }
