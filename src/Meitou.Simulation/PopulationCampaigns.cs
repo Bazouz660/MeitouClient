@@ -953,9 +953,32 @@ public sealed partial class PopulationSystem : IStateHashed
     /// <summary>A loaded platoon with every member down (dead or out).</summary>
     static bool AllDown(World world, Platoon p) => world.Squads.Find(p.SquadId) is not { } squad || !squad.Members.Any(m => Up(world, m));
 
-    /// <summary>The intact flag (engine choice for the original's, <b>Unknown</b>): loaded, someone up; else someone alive (its last state off screen).</summary>
-    bool Intact(World world, Platoon p) =>
-        p.State == PlatoonState.Loaded ? !AllDown(world, p) : LivingOf(world, p) > 0;
+    /// <summary>
+    /// The platoon's intact flag (<b>Verified</b>, <c>FUN_1407ac7b0</c>): while loaded the squad-intact rule (<c>FUN_1407a5be0</c>, docs/game/perception.md: a member held keeps it
+    /// intact; under 4 members the leader is up; else at least 20 % up, 40 % with the leader down), stored; unloaded, the value it had at unload.
+    /// </summary>
+    bool Intact(World world, Platoon p)
+    {
+        if (p.State == PlatoonState.Loaded && world.Squads.Find(p.SquadId) is { } squad) p.IntactFlag = SquadIntact(world, squad);
+        return p.IntactFlag;
+    }
+
+    static bool SquadIntact(World world, Squad squad)
+    {
+        var table = world.Characters;
+        int up = 0;
+        bool leaderDown = true;
+        foreach (var m in squad.Members)
+        {
+            if (!table.TryResolveNext(m, out int s) || !table.Next[s].Alive || table.Cold(s) is not { } c) continue;
+            if (c.IsImprisoned) return true;
+            bool down = c.Medical is { Incapacitated: true };
+            if (m == squad.Leader) leaderDown = down;
+            if (!down) up++;
+        }
+        int size = squad.Members.Count;
+        return size < FleeSystem.MinSquadForRatio ? !leaderDown : up >= size * (leaderDown ? FleeSystem.LeaderDownRatio : FleeSystem.IntactRatio);
+    }
 
     /// <summary>The player's characters in a town (XZ, its radius): (in all, up).</summary>
     (int All, int Up) PlayersIn(World world, CampaignTown t)

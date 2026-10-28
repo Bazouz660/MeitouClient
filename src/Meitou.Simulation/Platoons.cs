@@ -70,6 +70,8 @@ public sealed class Platoon
     /// screen and led to <see cref="CampaignGoal"/> while loaded, out of the roaming pools.
     /// </summary>
     public CampaignInstance? Campaign { get; set; }
+    /// <summary>The platoon's intact flag (+0x100, <c>FUN_1407ac7b0</c>): the squad-intact rule, refreshed while loaded and kept as it was at unload. Not saved.</summary>
+    public bool IntactFlag { get; set; } = true;
     /// <summary>Where its campaign sends it (the target for the leader platoon, the leader for the others; set each population look).</summary>
     public Vector2? CampaignGoal { get; set; }
     /// <summary>The roads it takes off screen to <see cref="RouteGoal"/> (null: straight there; <see cref="PopulationSystem"/> roads), and the next point of it. Not saved: worked out again.</summary>

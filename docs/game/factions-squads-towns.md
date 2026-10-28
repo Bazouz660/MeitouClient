@@ -584,7 +584,8 @@ campaign is not hostile, or that is not active (slot 70); a redirected request d
   (**Verified**, `FUN_1409c70f0`; Meitou reads the town's door fixtures, a broken door as open);
   while > 2 player characters hold the town, more than half up, nothing else is checked; DEFEND_TOWN after 12 h when no hostile campaign
   against the player runs; TRADER_VISIT after 1 h unless trading (**Observed**). Then any key: defeat when < 20 % of its platoons are
-  intact (the flag is recomputed only while loaded).
+  intact (the platoon flag +0x100, `FUN_1407ac7b0`: the squad-intact rule of [perception](perception.md) `FUN_1407a5be0`, recomputed only
+  while loaded and kept from unload; its initial value and the overriding +0x1f0 are **Unknown**, Meitou starts it true).
 - 2 ended: removed after 3 h (platoons unmapped).
 - Unloaded no fight starts, so an unloaded assault always wins at 4 h: a message and its follow-up, nothing happens to the town (the
   earlier "an empty outpost falls" reading was this).
