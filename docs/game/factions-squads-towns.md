@@ -362,11 +362,12 @@ e.g. "no carpets"), its one entry, or a weighted pick; no set: the building itse
 - A placed group is one item slot at its object's position and rotation, with a handle to its item and a respawn deadline in game hours (0 at start). Each update with no
   item: once the clock reaches the deadline (and a test on the building's town `+0x1d8`, **Unknown**) it makes one. With an item whose handle is still a WEAPON, ARMOUR,
   ITEM, CONTAINER, NEST_ITEM, MAP_ITEM, CROSSBOW or LIMB_REPLACEMENT that is not taken: nothing. Otherwise the handle clears and the deadline becomes now + an int in
-  [min, max] hours.
+  [min, max] hours. The slot's state is the spawned object's handle type (`FUN_140547ed0`), so a BLUEPRINT (0x5a) is let go on the next update and the slot fills again at
+  the deadline though the blueprint still lies there (Meitou `ItemSlots.Kept`: it lies as a loose item from the start).
 - Making one: a weighted pick over the group's lists (a roll in [0, total weight) against running sums); a WEAPON pick takes a manufacturer from `weapon manufacturers`
   and the weapon is made by it. Every item gets the quality of a weighted grade (0..5 -> 5, 20, 40, 60, 80, 95); the grade weights' source is **Unknown** (the item-list
   object is cached per group record and a value of the building, probably its faction). The item gets a value of the group (**Observed**: likely the owner faction) and is put
-  at the slot. BLUEPRINT and MAP_ITEM picks get extra bookkeeping (**Unknown**).
+  at the slot. A picked BLUEPRINT or MAP_ITEM record is also taken out of the group's pool (`FUN_140969100` from `FUN_1409540d0`); how it comes back is **Unknown** (not built).
 - Saved per group (in its generated interior): `base data sid`, `floornum`, `isInsideBuilding` handle, `is inside building`, `respawn time`, then its item.
 
 Meitou: [ground items](../simulation.md#items-and-eating).

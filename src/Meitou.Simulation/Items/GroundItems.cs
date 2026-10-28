@@ -67,8 +67,11 @@ public sealed class GroundItems
 
     static bool Capped(GroundItem i) => i.Item.Saved is null && i.Slot is null;
 
-    /// <summary>Lays a slot's item (<see cref="ItemSlots"/>) on the ground, turned <paramref name="yaw"/> about Y and laid flat as a dropped one (no limit); returns its id.</summary>
-    public int Place(ItemInstance item, Vector3 position, float yaw, string slot, int owner)
+    /// <summary>
+    /// Lays a slot's item (<see cref="ItemSlots"/>) on the ground, turned <paramref name="yaw"/> about Y and laid flat as a dropped one (no limit while it keeps
+    /// <paramref name="slot"/>; null: a loose item at once); returns its id.
+    /// </summary>
+    public int Place(ItemInstance item, Vector3 position, float yaw, string? slot, int owner)
     {
         items.Add(new GroundItem(nextId, item, position, Quaternion.CreateFromAxisAngle(Vector3.UnitY, yaw)) { Dropped = true, Slot = slot, OwnedBy = owner });
         Revision++;

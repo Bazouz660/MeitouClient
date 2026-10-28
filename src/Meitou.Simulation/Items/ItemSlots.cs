@@ -14,6 +14,7 @@ namespace Meitou.Simulation.Items;
 /// <list type="bullet">
 /// <item>A slot starts empty and due, so it fills as soon as its zone is active. An empty slot whose time has come and whose zone is active gets one item; when that item leaves
 /// the ground (picked up, used up), the next is due an int in [<c>min respawn time</c>, <c>max respawn time</c>] game hours later (the original's timer, <b>Verified</b>).</item>
+/// <item>A placed item of a type the slot does not keep (<see cref="Kept"/>: a blueprint) is a loose item at once, and the slot is due again after the same timer.</item>
 /// <item>The item is a weighted pick from the group's lists (as <see cref="ShopFiller"/>'s); armour's quality is <see cref="CharacterGenerator.QualityOfGrade"/> of a grade rolled from the
 /// owner faction's armour chances (the map is <b>Verified</b>, the grade's source an <b>engine</b> reading); a weapon gets a manufacturer from the group's and a model.</item>
 /// <item>It lies at the slot laid flat, turned as the slot or at random (<c>random yaw</c>), owned by the building's faction (<see cref="GroundItem.OwnedBy"/>: taking it is stealing).</item>
@@ -97,7 +98,7 @@ public sealed class ItemSlots
         {
             if (g.Slot is not null || g.Item.Saved is null || MathF.Abs(g.Position.Y - slot.Position.Y) > 10) continue;
             if (Vector2.DistanceSquared(new(g.Position.X, g.Position.Z), new(slot.Position.X, slot.Position.Z)) > ClaimReach * ClaimReach) continue;
-            foreach (var e in group.Items.Entries) if (e.Id == g.Item.Record) return g.Id;
+            foreach (var e in group.Items.Entries) if (e.Id == g.Item.Record && Kept(e.Type)) return g.Id;
         }
         return null;
     }
@@ -128,15 +129,27 @@ public sealed class ItemSlots
             {
                 if (s.Item < 0 || lying.Contains(s.Item)) continue;
                 s.Item = -1;
-                var group = Group(data.Db, s.GroupId)!;
-                int lo = Math.Max(group.MinRespawnHours, 0), hi = Math.Max(group.MaxRespawnHours, lo);
-                s.DueAt = world.GameHours + lo + Rng.Int(Rng.Hash(world.Seed, Rng.StableHash(s.Id), RngPurpose.Loot, (ulong)s.Made << 1 | 1), hi - lo + 1);
+                s.DueAt = NextDue(world, Group(data.Db, s.GroupId)!, s);
             }
         }
         foreach (var s in all)
             if (s.Item < 0 && world.GameHours >= s.DueAt && active.Contains(s.Zone)) Fill(world, data, s);
         seenRevision = world.GroundItems.Revision;
     }
+
+    /// <summary>When an emptied slot is due again: now plus a whole number of hours in the group's [min, max] respawn hours (<c>FUN_140549e60</c>).</summary>
+    static double NextDue(World world, ItemPlacementGroup group, Slot s)
+    {
+        int lo = Math.Max(group.MinRespawnHours, 0), hi = Math.Max(group.MaxRespawnHours, lo);
+        return world.GameHours + lo + Rng.Int(Rng.Hash(world.Seed, Rng.StableHash(s.Id), RngPurpose.Loot, (ulong)s.Made << 1 | 1), hi - lo + 1);
+    }
+
+    /// <summary>
+    /// The item types a slot keeps while they lie in it (<c>FUN_140549e60</c>, <b>Verified</b>): ITEM, WEAPON, ARMOUR, CONTAINER, NEST_ITEM, MAP_ITEM, CROSSBOW, LIMB_REPLACEMENT.
+    /// Any other (a BLUEPRINT) is let go at once: the slot is due again after the respawn time whether or not the item still lies there.
+    /// </summary>
+    static bool Kept(FcsRecordType type) => type is FcsRecordType.ITEM or FcsRecordType.WEAPON or FcsRecordType.ARMOUR or FcsRecordType.CONTAINER or FcsRecordType.NEST_ITEM
+        or FcsRecordType.MAP_ITEM or FcsRecordType.CROSSBOW or FcsRecordType.LIMB_REPLACEMENT;
 
     void Fill(World world, PopulationData data, Slot s)
     {
@@ -160,7 +173,10 @@ public sealed class ItemSlots
             item.Level = made.Level;
         }
         float yaw = group.RandomYaw ? rng.NextFloat() * MathF.Tau : s.Yaw;
-        s.Item = world.GroundItems.Place(item, s.Position, yaw, s.Id, s.Owner);
+        bool kept = Kept(entry.Type);
+        int placed = world.GroundItems.Place(item, s.Position, yaw, kept ? s.Id : null, s.Owner);
+        if (kept) s.Item = placed;
+        else s.DueAt = NextDue(world, group, s);
     }
 
     public void Hash(ref StateHasher h)
