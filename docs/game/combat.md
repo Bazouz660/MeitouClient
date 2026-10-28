@@ -622,7 +622,7 @@ values; trajectory, aim timing and obstruction uncertainties remain labelled.
   avoidance min(1, 0.015 FF); `Attack` on the building's object; the target is told it is attacked (`FUN_140999d50`). The harpoon is a bolt of the gunner (hit `FUN_140439c90`, [Bolt visuals](#bolt-visuals)).
 - **Target choice** (`FUN_140437f40`, `FUN_1404374d0`, score `FUN_140435d70`): the preferred/current target is kept if it still scores and equals the order's; else every
   sensed character (list category 4, mask 0x210) scores s = (f·g)² with g = 1 − d/(k × range) (k 1), f 1 (0.1 for slot 0x360, ×0.1 for slot 0x368; slot 0x368 > 0 is 0 for a gunner not of
-  the player's faction); dead, `+0x2f8` ≠ 0 or `+0x3d4` (carried) → 0; out of range → 0.001; then × weight (slot 6), × 1.5 when `FUN_1405ca6f0`, + 0.1 when it is the
+  the player's faction); down for any gunner (slot 0x30: out, dead, ragdolled, carried, posture ≥ 3), `+0x2f8` ≠ 0 or `+0x3d4` (carried) → 0, and an ordered target that scores 0 is dropped (**Verified**; Meitou `CombatSystem.ScoresZero`); out of range → 0.001; then × weight (slot 6), × 1.5 when `FUN_1405ca6f0`, + 0.1 when it is the
   current target; × 0.1 when its sense entry is not seen, × 1.5 for the current; best above 1e-6. None: with the player's **Shoot first** option (`DAT_142134690 +0x11a`) a player gunner takes
   sensed characters of fundamental type 0 or 8 or a default-hostile faction (k 0.6); an NPC gunner takes default-hostile ones it is aware of (`FUN_14099b820`) and those fighting a member
   of its own group. An unseen chosen target is looked at (slot 0x3b0).

@@ -357,7 +357,7 @@ public sealed partial class CombatSystem
         // Shoot At: the ordered target is kept while it lives and is free (out of range or blocked, the turret waits).
         if (!gc.TurretTarget.IsNone)
         {
-            if (table.TryResolveNext(gc.TurretTarget, out int ordered) && prev[ordered].Alive && table.Cold(ordered) is { Medical.Dead: false, IsImprisoned: false } oc0 && oc0.CarriedBy.IsNone) return ordered;
+            if (table.TryResolveNext(gc.TurretTarget, out int ordered) && prev[ordered].Alive && !ScoresZero(world, gc, table.Cold(ordered))) return ordered;
             gc.TurretTarget = CharacterId.None;
         }
         var found = turretCandidates ??= [];
@@ -371,12 +371,13 @@ public sealed partial class CombatSystem
         float Score(int o, float rangeFactor)
         {
             var oc = table.Cold(o);
-            if (oc?.Medical is not { } med || med.Dead || !oc.CarriedBy.IsNone || oc.IsImprisoned) return 0;
-            bool down = med.Incapacitated;
-            if (down && !gc.IsPlayer) return 0;
+            if (ScoresZero(world, gc, oc)) return 0;
+            var med = oc!.Medical!;
             var there = table.Previous[o].Position;
             float distance = Vector3.Distance(at, there);
-            float s = TurretFormulas.Closeness(distance, range, rangeFactor, down);
+            // x0.1 for a crippled target and x0.1 more for one not upright (FUN_140435d70, Verified; "crippled" is the engine reading of vfunc 0x360: crawling or unable to attack).
+            float f = (med.Crawling || oc.Fighter is { CanAttack: false } ? 0.1f : 1) * (med.Prone ? 0.1f : 1);
+            float s = TurretFormulas.Closeness(distance, range, rangeFactor, f);
             if (distance >= rangeFactor * range) return s;
             s *= TurretFormulas.Arc(facing, there - t.Position, Indoors(world, g, o));
             if (s <= 0) return 0;
@@ -471,4 +472,11 @@ public sealed partial class CombatSystem
         ShotAt(world, target, cold.Faction);
         Sound(world, SoundKind.TurretShot, g, -1, muzzle);
     }
+    /// <summary>
+    /// A target every turret scores 0 (<c>FUN_140435d70</c>, <b>Verified</b>): down for every gunner (out, dead, playing dead, carried), in a bed or cage, and for a gunner not of the
+    /// player's faction one that is not upright. An ordered target that scores 0 is dropped (<c>FUN_140437f40</c>).
+    /// </summary>
+    static bool ScoresZero(World world, CharacterCold gunner, CharacterCold? target) =>
+        target?.Medical is not { } med || med.Incapacitated || med.PlayingDead || !target.CarriedBy.IsNone || target.InSomething != global::Meitou.Simulation.Locks.HeldState.None
+        || !(gunner.IsPlayer || world.Player.Faction >= 0 && gunner.Faction == world.Player.Faction) && med.Prone;
 }
