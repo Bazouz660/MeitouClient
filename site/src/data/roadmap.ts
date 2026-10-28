@@ -13,7 +13,7 @@ export interface Category { id: string; name: string; blurb: string; rows: Row[]
 export interface Bug { id: string; seen: string; original: string; state: string; platform?: string; }
 export interface Fix { id: string; text: string; }
 
-export const asOf = { date: "2026-10-28", master: "34a40fe8" };
+export const asOf = { date: "2026-10-28", master: "5a9b2380" };
 
 export const statuses: Record<Status, { label: string; desc: string }> = {
   "works": {
@@ -120,7 +120,7 @@ export const categories: Category[] = [
     { id: "towns-change-after-a-leader-falls", system: "Towns change after a leader falls", status: "untested", note: "A town takes its override when its zone loads, by the original's rule, its zone reset (buildings, item slots, loose items) and new residents; saved.", bugs: [] },
   ] },
   { id: "audio", name: "Audio", blurb: "Sound and music.", rows: [
-    { id: "sound-and-music", system: "Sound and music", status: "works", note: "Heard on the Windows build, native Linux and macOS, with the Steam copy and with the GOG copy of Kenshi.", bugs: [] },
+    { id: "sound-and-music", system: "Sound and music", status: "works", note: "Heard on the Windows build, native Linux and macOS, with the Steam copy and with the GOG copy of Kenshi.", bugs: ["#113"] },
   ] },
   { id: "interface", name: "Interface", blurb: "Windows, tooltips, pause, text and input.", rows: [
     { id: "game-speed-and-pause", system: "Game speed and pause", status: "works", note: "Pause and the 1x, 2x and 5x speeds; tested in play. Orders and interface actions given while paused work on master (#73).", bugs: [] },
@@ -143,6 +143,7 @@ export const categories: Category[] = [
 ];
 
 export const bugs: Bug[] = [
+  { id: "#113", seen: "Sound doesn't play.", original: "Not checked.", state: "Open issue" },
   { id: "#111", seen: "Hub defensive walls clip into the Shinobi Thieves Tower.", original: "Not checked.", state: "Open issue" },
   { id: "#108", seen: "UI flickering.", original: "Not checked.", state: "Open issue" },
   { id: "#104", seen: "An NPC tooltip shows the unresolved name \"Pacifier /GENNAME/\".", original: "Not checked.", state: "Open issue" },
