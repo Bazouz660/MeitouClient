@@ -386,9 +386,9 @@ public sealed class AnimationSystem(AnimationLibrary library, AnimationLengths l
         bool inBed = cold.InSomething == Locks.HeldState.Bed, inCage = cold.InSomething == Locks.HeldState.Imprisoned;
         if (down && !a.WasDown && !carried && !ragdoll.Has && !inBed) StartAction(a, fall, false);   // a ragdoll falls instead; one in a bed lies on
         if (carried) a.Action = -1;   // held on the shoulder: no falling or getting up
-        // Waking with a leg down there is nothing to get up on: the original's get-up plays the crawl idle and ends at once (docs/game/ragdolls.md "Getting up").
-        // Waking in a bed it lies on (engine choice).
-        else if (!down && a.WasDown && (crawling || inBed)) a.Action = -1;
+        // Waking with a leg down there is nothing to get up on, and one staying low does not stand: the original's get-up ends with the bone blend and the posture's idle
+        // follows (docs/game/ragdolls.md "Getting up"). Waking in a bed it lies on (engine choice).
+        else if (!down && a.WasDown && (crawling || inBed || cold.Medical is { StayingLow: true })) a.Action = -1;
         else if (!down && a.WasDown)
         {
             StartAction(a, getUp, false);

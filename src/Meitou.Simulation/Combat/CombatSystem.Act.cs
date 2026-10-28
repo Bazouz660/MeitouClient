@@ -147,12 +147,21 @@ public sealed partial class CombatSystem
             }
             // A leg down replaces it with the forced crawl (posture 2), which ends standing.
             if (cold.Medical.Crawling) cold.Medical.StayingLow = false;
-            // Waking: it gets up for GetUpSeconds (Task_GetUp), less wanted as a target and left alone by a hit while its fight is off.
+            // Waking: it gets up (Task_GetUp, docs/game/ragdolls.md "Getting up"), less wanted as a target and left alone by a hit while its fight is off. Standing up takes
+            // GetUpSeconds; one staying low or crawling (posture above 0) is held only while its bones blend out of a whole-body ragdoll, else not at all (FUN_140334a20).
             if (s.Down && !cold.Medical.Incapacitated && GetUpSeconds > 0)
             {
-                // It neither walks, works nor fights until it stands (Task_GetUp holds the character).
-                cold.GettingUpUntil = now + (int)MathF.Ceiling(GetUpSeconds / dt);
-                cold.StaggeredUntil = Math.Max(cold.StaggeredUntil, cold.GettingUpUntil);
+                float hold = cold.Medical.StayingLow || cold.Medical.Crawling
+                    ? world.SystemOf<Ragdolls.RagdollSystem>()?.WasWhole(table.IdOf(i)) == true ? Ragdolls.RagdollSystem.GetUpBlend : 0
+                    : GetUpSeconds;
+                // It neither walks, works nor fights until then (Task_GetUp holds the character).
+                if (hold > 0)
+                {
+                    cold.GettingUpUntil = now + (int)MathF.Ceiling(hold / dt);
+                    cold.StaggeredUntil = Math.Max(cold.StaggeredUntil, cold.GettingUpUntil);
+                }
+                // The get-up's start puts the Hold point where it wakes (FUN_14033ca10).
+                if (Orders.Has(cold, CharacterOrders.Hold)) cold.HoldPoint = new Vector2(prev[i].Position.X, prev[i].Position.Z);
             }
             s.Down = cold.Medical.Incapacitated;
             if (s.Down)

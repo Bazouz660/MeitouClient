@@ -248,7 +248,13 @@ more than 200 below the terrain is lifted to it and frozen (`FUN_1407d4470`). Gl
 - `FUN_1407d36e0` → `FUN_1407d3130`: heading = root→`Bip01 Head` direction flattened to the ground
   (rotation from +Z); each bone blends from its ragdoll pose to the clip's first key over 0.75 s
   (`FUN_1407d28e0`: nlerp rotation, lerp translation), then the bones return to animation.
-- The task ends when the clip passes 0.86, or at once when crawling.
+- The task ends (**Verified** decompile of `FUN_140334a20`) once the ragdoll blend object (AnimationClass `+0x2f0`) is absent or its blending
+  flag (`+0x61`, `FUN_1407d1400`) is clear, and either the task's posture flag (`+0x78`, set at the start from posture > 0) is set or the clip
+  passed 0.86. So a waker staying low or crawling (tasks 52) is let go when the 0.75 s blend ends, at once without one; posture 0 (65) stands
+  through the clip. Its end clears `+0x278` (getting up) and sets the posture (vfunc 0x370).
+- The start (when it found a clip) copies the character's position into the Hold point (CharStats `+0x130`, **Verified** `FUN_14033ca10`).
+- Meitou (`CombatSystem.Act`): a waker staying low or crawling is held `RagdollSystem.GetUpBlend` after a whole-body ragdoll, else not at all,
+  and plays no standing-up clip (`AnimationSystem`); the Hold point is moved where it wakes while Hold is on.
 
 ## Saves
 
