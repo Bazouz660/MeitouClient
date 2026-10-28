@@ -17,6 +17,8 @@ Our custom navmesh generator also got a bunch of improvements - see attached scr
 
 # Slavery is in
 
+*(almost fully, but I always wanted to say it like this)*
+
 And we finally managed to find out and implement the base game's rules around bandit pathing, and they should no longer beat your ass while you hide in populated towns.
 
 And, as usual, **much more!**
