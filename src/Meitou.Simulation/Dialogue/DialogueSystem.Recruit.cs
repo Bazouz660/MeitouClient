@@ -93,7 +93,7 @@ public sealed partial class DialogueSystem
         {
             if (id == me || !table.TryResolveNext(id, out int s) || table.Cold(s) is not { SlaveState: not 0, Medical.Dead: false } slave) continue;
             byte state = slave.SlaveState;
-            if (slave.IsImprisoned) world.Fixtures.Release(world, id);   // it clears the slave state; restored below
+            if (slave.IsImprisoned) world.Fixtures.Release(world, id);
             if (tc.IsPlayer || tc.Faction == world.Player.Faction)
             {
                 if (PlayerHeads(world) >= data.Bodies.Constants.MaxFactionSize || !JoinPlayer(world, s, tc)) break;

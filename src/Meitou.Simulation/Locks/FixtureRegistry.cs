@@ -740,7 +740,8 @@ public sealed partial class FixtureRegistry
     }
 
     /// <summary>
-    /// Frees a prisoner (Task_ReleasePrisoner, economy.md 11.5, <b>Observed</b>): the cage is unlocked and emptied, the state and sentence cleared; when the releaser's faction books
+    /// Frees a prisoner (Task_ReleasePrisoner, economy.md 11.5, <b>Observed</b>): the cage is unlocked and emptied, the state and sentence cleared (not the slave state: a slave released
+    /// by a faction other than the player's becomes that faction's slave); when the releaser's faction books
     /// bounties its entry and the jail's (the cage owner's) are erased. A player-faction prisoner gets "{1} has been released from prison.". The prisoner stays where it stands
     /// (getting out of the cage is the caller's walk). False when the character is not imprisoned.
     /// </summary>
@@ -762,7 +763,9 @@ public sealed partial class FixtureRegistry
         }
         Clear(c);
         c.Escaped = false;
-        SetSlave(world, c, 0, -1);   // a release or bail frees a slave (FUN_1406add20, FUN_1406ae170)
+        // The release leaves slavery as it is (FUN_1403570a0 never sets the slave state; bail and buy-free clear it themselves, Verified); a releaser that is not the player's
+        // takes a slave over (FUN_14032e430: the owner changes, the state stays).
+        if (releaserFaction >= 0 && releaserFaction != world.Player.Faction && c.SlaveState >= 1) c.SlaveOwner = releaserFaction;
         if (c.IsPlayer) world.Post(Loc.Tr("{1} has been released from prison.", c.Name));
         return true;
     }

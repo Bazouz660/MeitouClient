@@ -203,7 +203,7 @@ public class KidnapTests
     }
 
     [Fact]
-    public void A_slave_serves_no_sentence_escapes_as_an_escaped_slave_is_reenslaved_by_its_owners_cage_and_freed_by_a_release_and_the_save_keeps_it()
+    public void A_slave_serves_no_sentence_escapes_as_an_escaped_slave_is_reenslaved_by_its_owners_cage_stays_one_through_a_release_and_the_save_keeps_it()
     {
         var data = ArrestTests.Town();
         using var world = new SimWorld(new WorldSettings { PublishSnapshots = false }, new OpenGroundWalkability((_, _) => 150));
@@ -234,10 +234,12 @@ public class KidnapTests
         SlaveSave.Read(record, loaded, data);
         Assert.Equal((2, city), (loaded.SlaveState, loaded.SlaveOwner));
 
-        // Caged again by an owner: a slave again; a release frees it.
+        // Caged again by an owner: a slave again; a release leaves it one (FUN_1403570a0 never sets the slave state), bail's clear frees it (FUN_1406ae170).
         Assert.True(world.Fixtures.Imprison(world, slave, cage));
         Assert.Equal((1, city), (cold.SlaveState, cold.SlaveOwner));
         Assert.True(world.Fixtures.Release(world, slave));
+        Assert.Equal((1, city), (cold.SlaveState, cold.SlaveOwner));
+        FixtureRegistry.ClearSlave(world, cold);
         Assert.Equal((0, -1), (cold.SlaveState, cold.SlaveOwner));
         SlaveSave.Write(record, cold, data);
         Assert.False(record.Strings.ContainsKey(SlaveSave.OwnerKey));

@@ -144,6 +144,7 @@ public sealed partial class ArrestSystem
         }
         world.Post($"{table.Cold(payer)!.Name} paid a bail of c.{price} for {pc.Name}");
         world.Fixtures.Release(world, prisoner);
+        Locks.FixtureRegistry.ClearSlave(world, pc);   // bail frees a slave (FUN_1406ae170)
         pc.Recognition = 0;
         Note(world, ArrestEventKind.Bailed, table.IdOf(payer), prisoner, cage.Owner, price);
     }
