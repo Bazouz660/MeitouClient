@@ -173,9 +173,11 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
                 case AttackOrder order:
                 {
                     // The order itself changes no relation (the original's relation events come from the blows, Deeds); an attack that is not self-defence is an assault.
+                    // Whether the victim is in melee combat mode is read before the order engages anyone.
+                    bool victimFighting = table.TryResolveNext(order.Target, out int vs) && table.Cold(vs) is { } vc && IsInCombatMode(table, order.Target, vc, melee: true, ranged: false);
                     foreach (var id in order.Attackers)
                         if (Engage(world, table, id, order.Target, now, order.Picked) && !order.Defensive && Crimes is { } crimes && table.TryResolveNext(order.Target, out int victimSlot))
-                            crimes.Assault(world, id.Slot, victimSlot);
+                            crimes.Assault(world, id.Slot, victimSlot, victimFighting);
                     break;
                 }
                 case ShootAtOrder shoot:
