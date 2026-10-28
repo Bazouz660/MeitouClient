@@ -18,9 +18,12 @@ public sealed partial class ProductionSystem
     /// <summary>Per town, the grid's totals after the last tick (the town panel's power and battery bars, <see cref="TownPower"/>). Not saved.</summary>
     readonly Dictionary<int, TownPower> townPower = [];
 
-    float Rated(World world, Machine m) => m.Data.PowerOutput + world.Research.Upgrade(m.Data.Id).PowerIncrease;
+    /// <summary>The research upgrade of the machine's building: the player's only (<c>FUN_14082ec70</c>).</summary>
+    BuildingUpgrade UpgradeOf(World world, Machine m) => world.Research.Upgrade(world, m.Data.Id, Site(world, m.Site)?.Owner ?? -1);
+
+    float Rated(World world, Machine m) => m.Data.PowerOutput + UpgradeOf(world, m).PowerIncrease;
     /// <summary>A battery's capacity now (<c>FUN_140297650</c>, <b>Verified</b>): the construction fraction x (capacity + research increase).</summary>
-    float Capacity(World world, Machine m) => m.Health * (m.Data.PowerCapacity + world.Research.Upgrade(m.Data.Id).CapacityIncrease);
+    float Capacity(World world, Machine m) => m.Health * (m.Data.PowerCapacity + UpgradeOf(world, m).CapacityIncrease);
 
     /// <summary>Whether a generator has fuel: no fuel sections (wind), or something left in one.</summary>
     static bool Fueled(Machine m) => m.Inputs.Length == 0 || Array.Exists(m.Inputs, i => i.Level > 0 || i.Count > 0);
@@ -72,7 +75,7 @@ public sealed partial class ProductionSystem
             var site = Site(world, m.Site);
             bool built = site is { Complete: true };
             m.Health = site is { Target: > 0 } s ? Math.Clamp(s.Progress / s.Target, 0, 1) : 1;
-            m.ProductionMult = world.Research.Upgrade(m.Data.Id).ProductionMult;
+            m.ProductionMult = UpgradeOf(world, m).ProductionMult;
             m.Efficiency = built ? Efficiency(world, m) : 0;
             m.HasPower = built && HasPower(world, m, Site(world, m.Site)!.Town);
             m.Rotation = !built ? 0 : m.Data.IsGenerator ? (m.PowerOn ? Output(world, m) * 0.01f : 0) : m.Efficiency;
@@ -234,6 +237,6 @@ public sealed partial class ProductionSystem
     /// The factor a machine's work is scaled by: its health, its power share (slot 109, which slot 150 <c>FUN_140298700</c> reads virtually) and its research production multiplier. A rain
     /// collector's slot 109 (<c>FUN_140298470</c>, <b>Verified</b>) is that times the rain strength, so it collects nothing while it does not rain.
     /// </summary>
-    float WorkFactor(World world, Machine m) => m.Health * m.Power * world.Research.Upgrade(m.Data.Id).ProductionMult
+    float WorkFactor(World world, Machine m) => m.Health * m.Power * UpgradeOf(world, m).ProductionMult
         * (m.Data.Function == MachineData.RainCollectorFunction ? m.Rain : 1);
 }

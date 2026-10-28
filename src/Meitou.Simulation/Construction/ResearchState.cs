@@ -150,6 +150,8 @@ public sealed class ResearchState
     /// <summary>The finished research's <c>improve buildings</c> by BUILDING record.</summary>
     public IReadOnlyDictionary<string, BuildingUpgrade> Upgrades { get; private set; } = new Dictionary<string, BuildingUpgrade>();
     public BuildingUpgrade Upgrade(string building) => Upgrades.GetValueOrDefault(building, BuildingUpgrade.None);
+    /// <summary>The upgrade of a building owned by <paramref name="owner"/>: only the player's buildings have one, others the default (<b>Verified</b>, <c>FUN_14082ec70</c>).</summary>
+    public BuildingUpgrade Upgrade(World world, string building, int owner) => owner >= 0 && owner == world.Player.Faction ? Upgrade(building) : BuildingUpgrade.None;
 
     /// <summary>The crafts the finished research unlocks (kind and record; a weapon type or model by its own id).</summary>
     public IReadOnlySet<(CraftKind Kind, string Id)> UnlockedCrafts { get; private set; } = new HashSet<(CraftKind, string)>();

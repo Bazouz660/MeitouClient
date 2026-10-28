@@ -99,7 +99,7 @@ public sealed partial class ProductionSystem
         if (!naturalYields.TryGetValue(instance, out float y)) naturalYields[instance] = y = resources.NodeYield(resource, site.Position);
         // A rock nobody has mined yet: no machine, so nobody works it; whole, no power draw; research counts only for the player's buildings (FUN_14082ec70).
         return new(instance, resource, y) { Owner = site.Owner, TownName = TownNameOf(world, site), Efficiency = new(0, data.PowerOperators, 1, 1, data.IsConsumer,
-            data.OutputRate * (site.Owner == world.Player.Faction ? world.Research.Upgrade(data.Id).ProductionMult : 1), y) };
+            data.OutputRate * world.Research.Upgrade(world, data.Id, site.Owner).ProductionMult, y) };
     }
 
     /// <summary>The name of the player town a worked rock joined (null: none, the original's NO_TOWN, which the panel's <c>Town:</c> line leaves out).</summary>

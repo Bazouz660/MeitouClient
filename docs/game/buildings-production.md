@@ -427,7 +427,9 @@ rock) makes output only while someone operates it.
   ([resources](#resources)), at least 0.1 for a natural site; for any other building 0 becomes 0.5 when it is not the player's (**Verified**, `FUN_14029c670`: the natural branch takes `FUN_140a12ff0` and the 0.1 floor, the other `FUN_140a13540` and the 0.5 rule).
 - health x powerSat (slot 109, `FUN_140296e00`, **Verified**): health the [construction state](#construction-state)'s progress / target capped at 1; powerSat
   the granted share of the demand, 1 with no demand. Meitou: `Machine.Health`, 1 for rocks and a target of 0.
-- upgrade = the research `production mult` of the building ([research](#research)), default 1.
+- upgrade = the research `production mult` of the building ([research](#research)), default 1. The upgrade lookup (`production mult`,
+  `power increase`, `power capacity increase`) answers only for the player's buildings (owner with the player pointer +0x250, `FUN_140546dd0`);
+  any other gets the default 1, 0, 0 (**Verified**, `FUN_14082ec70`).
 
 **Recipes** (**Observed**, loader `FUN_14029e7b0`). Each `consumes` entry (item, v0, v1) is an input: section `in<k>`
 of the building's inventory limited to v0, a level float (starts 0) and a rate v1/100. Each cycle the inputs lose

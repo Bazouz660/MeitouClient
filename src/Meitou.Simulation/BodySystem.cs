@@ -67,7 +67,7 @@ public sealed class BodySystem(GameConstants constants, BodyOptions? options = n
                     return ((BedKind)f.GetInt("function"), bed.GetFloat("output rate", 1) * f.GetFloat("production mult", 1));
             return (BedKind.Bed, bed.GetFloat("output rate", 1));
         });
-        return (kind, factor * world.Research.Upgrade(fixture.RecordId).ProductionMult);
+        return (kind, factor * world.Research.Upgrade(world, fixture.RecordId, fixture.Owner).ProductionMult);
     }
 
     /// <summary>
