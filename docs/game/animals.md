@@ -15,7 +15,9 @@ Bonedog/Garru/Bull/Leviathan/spider/crab and other creatures have distinct clips
 
 Animal faction/hostility/run-away ratio applies ordinary relations; smell/egg behaviours were not found
 ([below](#breeding-and-eggs)). Race carriable gate governs lifting (Leviathan excluded in
-survey), not an invented mass threshold. Death items ([below](#death-items)), backpack and natural weapon are record inputs.
+survey), not an invented mass threshold. The Skimmers faction (`56098-rebirth.mod`, not real) lists no relations and default 0, so it is
+neutral to every town; its solo hunters (package `animal patrol aggressive`) attack through ATTACK_ENEMIES_AND_NEUTRALS, and
+guards answer only through their protect goals ([combat goals](ai-tasks.md#combat-goals); **Verified** by probe of the merged base data). Death items ([below](#death-items)), backpack and natural weapon are record inputs.
 Appearance uses animal mesh/fur/body scale; race-specific animation names and bounds matter.
 Pose/LOD distances can scale by animal size in engine, not original scheduler proof.
 

@@ -165,17 +165,20 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
     /// </summary>
     internal static AiStance StanceOf(AiMind mind, IReadOnlyList<AiGoal> roles, int hour)
     {
-        bool any = false;
+        bool any = false, allies = false;
         var stance = AiStance.Passive;
         void Take(AiGoal g)
         {
             if (TaskBehaviours.StanceOf(g.Task.Type) is not { } s) return;
             any = true;
-            if (g.InWindow(hour) && s > stance) stance = s;
+            if (!g.InWindow(hour)) return;
+            if (s > stance) stance = s;
+            allies |= g.Task.Type is TaskType.PROTECT_ALLIES or TaskType.PROTECT_ALLIES_STAY_IN_TOWN;
         }
         for (int k = 0; k < roles.Count; k++) Take(roles[k]);
         for (int k = 0; k < mind.RaceGoals.Count; k++) Take(mind.RaceGoals[k]);
         mind.HasCombatGoals = any;
+        mind.ProtectsAllies = allies;
         return any ? stance : AiStance.Aggressive;
     }
 

@@ -448,6 +448,8 @@ public sealed class AiMind
     public CharacterId FollowTarget { get; set; } = CharacterId.None;
     /// <summary>Whether its lists hold any combat goal at all (else the stance stays the old default).</summary>
     public bool HasCombatGoals { get; set; }
+    /// <summary>Whether a PROTECT_ALLIES goal (15 or 288) is in its lists and hours: it defends allies of other squads against any attacker (<see cref="RetaliationSystem"/>).</summary>
+    public bool ProtectsAllies { get; set; }
     /// <summary>The role list and hour <see cref="Stance"/> was worked out for (a cache; the stance itself is hashed).</summary>
     internal IReadOnlyList<AiGoal>? StanceFrom { get; set; }
     internal int StanceHour { get; set; } = -1;

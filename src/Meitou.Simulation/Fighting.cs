@@ -226,7 +226,7 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem
     /// <summary>How near a mate must be to join (engine choice: the original's only limit is that the joiner senses the mate, up to its sight range).</summary>
     public const float JoinRange = 250;
 
-    readonly List<int> guards = [], players = [];
+    readonly List<int> guards = [], players = [], protectors = [];
     /// <summary>Per attacker slot: the target (slot, generation) it last took and whether that target has been alerted (<see cref="CombatSystem.Alerts"/>).</summary>
     int[] alertSlot = [], alertGeneration = [];
     bool[] alerted = [], justAlerted = [];
@@ -278,11 +278,13 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem
         // The bodyguards and the player's characters, in slot order, for Guards and HelpAllies (each looked through the whole table per attacker before).
         guards.Clear();
         players.Clear();
+        protectors.Clear();
         for (int s = 0; s < table.HighWater; s++)
         {
             if (!next[s].Alive || table.Cold(s) is not { } c) continue;
             if (c.Guarding) guards.Add(s);
             if (c.IsPlayer) players.Add(s);
+            if (c.Ai is { ProtectsAllies: true }) protectors.Add(s);
         }
         var taken = new HashSet<int>();
         for (int a = 0; a < table.HighWater; a++)
@@ -307,7 +309,11 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem
             var gap = next[a].Position - next[t].Position;
             bool fights = combat.StateOf(new CharacterId(t, next[t].Generation)).TargetSlot >= 0 || defenders.Count > 0;
             if (gap.X * gap.X + gap.Z * gap.Z <= ProtectReach * ProtectReach && (table.Cold(a)?.SquadId is not { } foeSquad || foeSquad < 0 || foeSquad != table.Cold(t)?.SquadId))
+            {
                 JoinMates(world, table, t, defenders, taken, fights ? CanProtectFighter : CanProtect);
+                // Protect allies: NPCs of any squad that see an allied defender fighting come to it (a town's guards to a resident a neutral animal attacks).
+                if (fights) ProtectAllies(world, table, t, a, defenders, taken);
+            }
             // Bodyguards of the attacked character come too (Bodyguard, order 45).
             Guards(world, table, t, a, defenders, taken, guards);
             // Allies come to a defender that is already fighting too.
@@ -392,6 +398,30 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem
             if (!next[s].Alive || table.Cold(s) is not { IsPlayer: true } c || c.Faction == ally.Faction || !relations.Contains(c.Faction) || !relations.IsAlly(c.Faction, ally.Faction)) continue;
             var d = next[s].Position - at;
             if (d.X * d.X + d.Z * d.Z > JoinRange * JoinRange || !CanFight(table, s, taken)) continue;
+            defenders.Add(new CharacterId(s, next[s].Generation));
+            taken.Add(s);
+        }
+    }
+
+    /// <summary>
+    /// PROTECT_ALLIES (15, 288; finder <c>FUN_14099ca10</c>, achieved by 13 "Attacking attackers of", docs/game/ai-tasks.md "Combat goals"): an NPC with the goal that sees a
+    /// fighting character of its own or an allied faction (relation 50 or more) attacks that character's attacker when the attacker is not its ally, whatever their relation, so
+    /// neutrals count too. Engine reductions: the defender must be in the protector's sight test (the original also counts heard ones), a gunner stays at its turret, and 288's
+    /// town limit is not modelled.
+    /// </summary>
+    void ProtectAllies(World world, CharacterTable table, int slot, int attacker, List<CharacterId> defenders, HashSet<int> taken)
+    {
+        if (protectors.Count == 0 || combat.Relations is not { } relations || table.Cold(slot) is not { } ally || table.Cold(attacker) is not { } foe
+            || !relations.Contains(ally.Faction) || !relations.Contains(foe.Faction)) return;
+        var next = table.Next;
+        var at = next[slot].Position;
+        foreach (int s in protectors)
+        {
+            if (s == attacker || s == slot || !next[s].Alive || table.Cold(s) is not { Ai.ProtectsAllies: true, Gunning: null } c
+                || !relations.IsAlly(c.Faction, ally.Faction) || relations.IsAlly(c.Faction, foe.Faction)) continue;
+            float range = AggroSystem.RangeOf(c, AggroSystem.OutdoorSight);
+            if (Vector3.DistanceSquared(next[s].Position, at) > range * range || !CanFight(table, s, taken)
+                || !(world.Sight.Sees(s, slot, next[s].Position, next[s].Yaw, at, range) > 0)) continue;
             defenders.Add(new CharacterId(s, next[s].Generation));
             taken.Add(s);
         }
