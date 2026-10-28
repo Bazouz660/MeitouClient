@@ -366,6 +366,16 @@ public sealed partial class PopulationSystem
     }
 
     /// <summary>
+    /// A town's roamer leaves the world for good (<c>FUN_1406bab60</c> -> <c>FUN_140796b30</c>, <b>Verified</b>): one not intact and not regenerating takes its living members out of its
+    /// town's roaming pool, only while the pool is above 0 and with no floor.
+    /// </summary>
+    void PayRoamerDespawn(World world, Platoon p, Squad squad)
+    {
+        if (p.Regenerate || p.Origin < 0 || p.Origin >= townPools.Length || townPools[p.Origin] is not { } pools || Intact(world, p)) return;
+        if (pools.Roaming.Current > 0) pools.Roaming.Current -= squad.Members.Count(m => Living(world, m));
+    }
+
+    /// <summary>
     /// A nest's squads leave the world: one that lost someone (engine choice for "not intact") takes its living members out of the pool (<c>FUN_140796b30</c>, the
     /// original's despawn of a damaged squad it does not keep).
     /// </summary>

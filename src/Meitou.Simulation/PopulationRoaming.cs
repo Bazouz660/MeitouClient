@@ -363,6 +363,7 @@ public sealed partial class PopulationSystem
             // Faithful: a platoon the original does not keep (not a town's own, not in a campaign, not occupying) is despawned as it leaves; a save's wild one by the wild switch.
             if (!Kept(p) && !p.Pinned && p.Campaign is null)
             {
+                PayRoamerDespawn(world, p, squad);
                 Despawn(world, p);
                 return;
             }
