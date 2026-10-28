@@ -623,8 +623,9 @@ campaign is not hostile, or that is not active (slot 70); a redirected request d
   unloaded step above. Loaded (`GatherAndMove`, **Verified**): each run the leader's trail gains its position when over 150 from the newest
   point (seeded with slots + 1 points within ±100; slots 5, or N + 1 past N platoons) and drops its oldest while longer than N; follower i's
   point is i × slots × 150 / N back along it. Whether followers steer to it or to the leader platoon's position is **Unknown** (the task
-  prefers the handle's). Task 215 (`Task_TravelToMissionTarget_ArmyFormation`): followers 100 or more from their point JOG, closer match
-  the leader (× 0.9 under 70); the leader uses `travel speed loaded` while every intact platoon (loaded, or unloaded on job 5/6) is within
+  prefers the handle's). Task 215 (`Task_TravelToMissionTarget_ArmyFormation`): followers 100 or more from their point JOG, closer keep a
+  straight move at it at the leader's current speed (× 0.9 under 70) and never wander (**Verified**, `FUN_140349e70`; Meitou: the leader's
+  speed mode, no 0.9); the leader uses `travel speed loaded` while every intact platoon (loaded, or unloaded on job 5/6) is within
   6000, else stops within 8294.4 of its target (plain distance), else walks. Speed modes: WALK default, JOG 55, RUN and GROUPED 999 (no
   cap), NO_SPEED_CHANGE unchanged.
 - Announcement (task 129 in the pt1 leader package, **Verified**): "{1} has arrived at {2}" once; task 129 needs the leader not down (!101)

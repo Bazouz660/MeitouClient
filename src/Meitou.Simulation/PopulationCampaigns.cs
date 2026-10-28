@@ -1188,7 +1188,10 @@ public sealed partial class PopulationSystem : IStateHashed
         bool leads = p.Campaign!.Leader == p.Id;
         float arrive = leads ? settings.RoamArrivalRadius : CampaignFollowDistance;
         ref var n = ref table.Next[slot];
-        if (Vector2.Distance(p.Position, goal) <= arrive)
+        float d = Vector2.Distance(p.Position, goal);
+        // A travelling follower (task 215) never mills: inside 100 of its trail point it keeps walking straight at it at the leader's pace (FUN_140349e70); only the
+        // arrival at the target (phase 1) mills.
+        if (d <= arrive && (leads || p.Campaign.Phase == 1))
         {
             if (n.Task == (byte)CharacterTask.GoTo)
             {
@@ -1205,6 +1208,10 @@ public sealed partial class PopulationSystem : IStateHashed
         // 6000, else it waits near the target or walks.
         var inst = p.Campaign;
         byte mode = SpeedMode.Run;
+        // Inside 100 the original sets the leader's current speed (x 0.9 inside 70); engine stand-in: the campaign leader's speed mode.
+        if (!leads && d < CampaignFollowDistance && world.Platoons.Find(inst.Leader) is { } head && world.Squads.Find(head.SquadId) is { } headSquad
+            && table.TryResolveNext(headSquad.Leader, out int hs))
+            mode = table.Next[hs].Mode;
         if (leads)
         {
             mode = LoadedMode(CampaignOf(inst.CampaignId)?.TravelSpeedLoaded ?? MoveSpeed.Run, n.Mode);
