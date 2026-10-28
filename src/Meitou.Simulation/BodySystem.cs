@@ -213,7 +213,9 @@ public sealed class BodySystem(GameConstants constants, BodyOptions? options = n
             medical.Tick(world.TickSeconds, ctx, events);
             n.MaxSpeed = Speed.Run(race, stats, medical, encumbrance, statsFactor: cold.Fighter?.AthleticsFactor ?? 1);
             cold.SwimSpeed = Speed.Swim(race, stats, medical, encumbrance);
-            TrainOnTheMove(stats, race, medical, in n, cold.WaterState == 3, carrying, encumbrance, world.TickSeconds);
+            // Movement XP only for the player's faction and not while fight steering or swinging (FUN_140660dc0, Verified; Meitou: not on the Attack task).
+            if ((cold.IsPlayer || world.Player.Faction >= 0 && cold.Faction == world.Player.Faction) && n.Task != (byte)CharacterTask.Attack)
+                TrainOnTheMove(stats, race, medical, in n, cold.WaterState == 3, carrying, encumbrance, world.TickSeconds);
             if ((cold.Orders & CharacterOrders.Sneak) != 0 && !medical.Incapacitated)
             {
                 xp.Sneaking(stats, race, ExposureOf(world, cold), world.TickSeconds);
@@ -322,11 +324,19 @@ public sealed class BodySystem(GameConstants constants, BodyOptions? options = n
     {
         if (medical.Incapacitated) return;
         float speed = MathF.Sqrt(n.Velocity.X * n.Velocity.X + n.Velocity.Z * n.Velocity.Z);
-        if (speed < 1) return;
-        if (deepWater) xp.SwimmingInWater(stats, race, carrying, dt);
-        else if (speed > n.WalkSpeed + 1) xp.AthleticsFromRunning(stats, race, encumbrance, speed / MathF.Max(n.MaxSpeed, 1), dt);
+        // One gate, speed above 2 (FUN_140660dc0, Verified): walking trains too. In deep water only swimming (FUN_1408c6660).
+        if (speed <= MoveXpSpeed) return;
+        if (deepWater)
+        {
+            xp.SwimmingInWater(stats, race, carrying, dt);
+            return;
+        }
+        xp.AthleticsFromRunning(stats, race, encumbrance, speed, Speed.RunValue(race, stats.Athletics), dt);
         if (encumbrance < 1) xp.StrengthFromCarrying(stats, race, encumbrance, dt, carrying);
     }
+
+    /// <summary>The speed above which moving trains (<c>DAT_141682ad0</c>).</summary>
+    const float MoveXpSpeed = 2;
 
     /// <summary>The <c>malnourished</c> squads' hunger floors (<see cref="HungerFloor"/>), by squad id; filled from the parallel phase.</summary>
     readonly ConcurrentDictionary<int, float> squadFloors = new();

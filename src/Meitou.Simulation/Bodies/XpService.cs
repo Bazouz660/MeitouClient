@@ -147,12 +147,12 @@ public sealed class XpService(GameConstants constants, BodyOptions options)
         MathF.Max(encumbranceFactor, 0) * (runValue * 0.8f < speed ? 1.5f : 1);
 
     /// <summary>
-    /// Athletics from running (<c>FUN_1408c6660</c>): the encumbrance factor (x1.5 when the speed is over 80% of the character's maximum) times
-    /// <c>xp rate athletics</c> through the continuous entry.
+    /// Athletics from moving (<c>FUN_1408c6660</c>, <c>FUN_1408c5ec0</c>, <b>Verified</b>): <see cref="AthleticsRate"/> (x1.5 when the speed is over 80% of the run value
+    /// <paramref name="runValue"/>, not the current maximum) times <c>xp rate athletics</c> through the continuous entry.
     /// </summary>
-    public float AthleticsFromRunning(CharacterStats stats, RaceData race, float encumbranceFactor, float speedFractionOfMax, float dtSeconds)
+    public float AthleticsFromRunning(CharacterStats stats, RaceData race, float encumbranceFactor, float speed, float runValue, float dtSeconds)
     {
-        float amount = encumbranceFactor * (speedFractionOfMax > 0.8f ? 1.5f : 1) * constants.XpRateAthletics;
+        float amount = AthleticsRate(encumbranceFactor, speed, runValue) * constants.XpRateAthletics;
         return Continuous(stats, race, StatsEnumerated.Athletics, dtSeconds, amount);
     }
 
