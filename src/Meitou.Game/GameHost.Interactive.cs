@@ -729,19 +729,20 @@ sealed partial class GameHost
                     if (cursorMode != windowCursor) pointerMouse.Cursor.CursorMode = windowCursor = cursorMode;
                     if (!config.HardwareMouse && !freeLook) player.DrawPointer(pointerWorld ? player.PointerName : "arrow", pointerAt, size.X, size.Y);
                 }
-                uiLayer.Composite(backbuffer);
-                display.Present();
+                // World and interface into the top-down picture the window shows (and a screenshot reads).
+                var finalPicture = uiLayer.Composite(backbuffer);
+                display.Present(finalPicture);
                 profiler?.EndFrame();
                 BenchLap(7);
                 PlayBenchRendered(Stopwatch.GetElapsedTime(t0).TotalMilliseconds, display.Context.Pipelines.LatePipelines);
                 if (display.Context.GpuFrameMs > 0) { gpuSum += display.Context.GpuFrameMs; gpuSamples++; }
                 statsFrames++;
-                if (takeFile is not null) { FramebufferCapture.SavePng(display.Context, backbuffer, takeFile, size.X, size.Y); cinema.FrameDone(); }
-                else if (shot) SaveScreenshot(display.Context, backbuffer, size.X, size.Y);
+                if (takeFile is not null) { FramebufferCapture.SavePng(display.Context, finalPicture ?? backbuffer, takeFile, size.X, size.Y, topDown: finalPicture is not null); cinema.FrameDone(); }
+                else if (shot) SaveScreenshot(display.Context, finalPicture ?? backbuffer, size.X, size.Y, topDown: finalPicture is not null);
                 if (feedbackShot)
                 {
                     player.ShotWithoutMenus = false;
-                    FeedbackCaptured(FramebufferCapture.ReadPicture(display.Context, backbuffer, size.X, size.Y), size.X, size.Y);
+                    FeedbackCaptured(FramebufferCapture.ReadPicture(display.Context, finalPicture ?? backbuffer, size.X, size.Y, topDown: finalPicture is not null), size.X, size.Y);
                 }
             }
             statsTimer += dt;
@@ -849,10 +850,10 @@ sealed partial class GameHost
         session.Input.SetMousePosition(anchor.X, anchor.Y);
     }
 
-    static void SaveScreenshot(GpuContext context, GpuTexture backbuffer, int width, int height)
+    static void SaveScreenshot(GpuContext context, GpuTexture picture, int width, int height, bool topDown = false)
     {
         var file = Path.Combine(Directory.CreateDirectory(@"C:\Temp").FullName, $"meitou-{DateTime.Now:yyyyMMdd-HHmmss}.png");
-        FramebufferCapture.SavePng(context, backbuffer, file, width, height);
+        FramebufferCapture.SavePng(context, picture, file, width, height, topDown);
         Console.WriteLine($"saved     {file}");
     }
 

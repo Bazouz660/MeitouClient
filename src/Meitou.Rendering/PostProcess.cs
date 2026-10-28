@@ -1075,11 +1075,12 @@ public sealed unsafe partial class PostProcess : IDisposable, IWorldPostChain
         float dt = (float)frameClock.Elapsed.TotalSeconds;
         frameClock.Restart();
         // post-merge: the motion, the upscalers' depth and the water's reactivity in one dispatch (the vendor upscalers take the last two; TAA only the motion target).
+        // The depth image is made with TAA too (one more R32F store per pixel; the kernel has the value already): frame generation takes motion and depth whatever upscales.
         var external = ExternalFor(Options.Upscale.Kind);
         bool merged = MergeVelocity && MergeSupported;
         PrepareSunMotion();
-        if (merged) VelocityMerged(motion!, external is null ? null : upscaleDepth!, external is null || WaterHeight is null ? null : reactive!, cleanColour: external is not null);
-        else Velocity(motion!, 0);
+        if (merged) VelocityMerged(motion!, upscaleDepth!, external is null || WaterHeight is null ? null : reactive!, cleanColour: external is not null);
+        else { Velocity(motion!, 0); if (external is null) Velocity(upscaleDepth!, 1); }
         if (ObjectMotion is { } objectMotion)
         {
             // The guests' host (the grass's motion): the motion target loaded, red and green written, no depth, culling or blending.

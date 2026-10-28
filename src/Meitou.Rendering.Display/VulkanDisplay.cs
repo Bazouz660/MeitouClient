@@ -102,10 +102,11 @@ public sealed unsafe class VulkanDisplay : IDisposable
     /// <summary>Starts a frame of the given size; false when nothing can be shown (a minimised window): skip drawing.</summary>
     public bool BeginFrame(int width, int height) => presenter?.BeginFrame(width, height) ?? width > 0 && height > 0;
 
-    /// <summary>Shows the frame (headless: just submits it). The backbuffer stays intact until the next frame, so a screenshot of it is read after this.</summary>
-    public void Present()
+    /// <summary>Shows the frame (headless: just submits it). The backbuffer stays intact until the next frame, so a screenshot of it is read after this.
+    /// With <paramref name="topDown"/> the window shows that finished picture (row 0 the top) instead of the flipped backbuffer.</summary>
+    public void Present(Meitou.Rendering.Gpu.GpuTexture? topDown = null)
     {
-        if (presenter is not null) presenter.Present();
+        if (presenter is not null) presenter.Present(topDown);
         else Context.EndFrame();
     }
 

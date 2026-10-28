@@ -86,11 +86,12 @@ public sealed unsafe class VulkanPresenter : IDisposable
         return true;
     }
 
-    /// <summary>Copies the backbuffer into the swapchain image (flipped), submits the frame and presents it.</summary>
-    public void Present()
+    /// <summary>Copies the backbuffer into the swapchain image (flipped), or <paramref name="topDown"/> (a finished picture whose row 0 is the top) as it is,
+    /// submits the frame and presents it.</summary>
+    public void Present(GpuTexture? topDown = null)
     {
         StageClock.BeginSubmission();
-        if (!acquiredImage || Backbuffer is not { } src) { ctx.EndFrame(); return; }
+        if (!acquiredImage || (topDown ?? Backbuffer) is not { } src) { ctx.EndFrame(); return; }
         var dst = images[imageIndex];
         int w = src.Desc.Width, h = src.Desc.Height;
         var list = (CommandList)ctx.BeginNative("present");
@@ -105,9 +106,10 @@ public sealed unsafe class VulkanPresenter : IDisposable
         };
         blit.SrcOffsets[0] = new Offset3D(0, 0, 0);
         blit.SrcOffsets[1] = new Offset3D(w, h, 1);
-        // Flipped: row 0 (the bottom) goes to the swapchain's last row.
-        blit.DstOffsets[0] = new Offset3D(0, (int)extent.Height, 0);
-        blit.DstOffsets[1] = new Offset3D((int)extent.Width, 0, 1);
+        // The backbuffer is bottom-up: flipped, its row 0 (the bottom) goes to the swapchain's last row. A top-down picture keeps its order.
+        bool flip = topDown is null;
+        blit.DstOffsets[0] = new Offset3D(0, flip ? (int)extent.Height : 0, 0);
+        blit.DstOffsets[1] = new Offset3D((int)extent.Width, flip ? 0 : (int)extent.Height, 1);
         vk.CmdBlitImage(cb, ctx.Device.NativeImage(src), ImageLayout.General, dst, ImageLayout.TransferDstOptimal, 1, &blit, Filter.Nearest);
         Barrier(cb, dst, ImageLayout.TransferDstOptimal, ImageLayout.PresentSrcKhr, PipelineStageFlags2.BlitBit, AccessFlags2.TransferWriteBit,
             PipelineStageFlags2.BottomOfPipeBit, AccessFlags2.None);

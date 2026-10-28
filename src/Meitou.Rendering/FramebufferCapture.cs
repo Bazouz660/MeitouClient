@@ -14,21 +14,21 @@ namespace Meitou.Rendering;
 /// </summary>
 public static unsafe class FramebufferCapture
 {
-    public static void SavePng(GpuContext ctx, GpuTexture target, string path, int w, int h)
+    public static void SavePng(GpuContext ctx, GpuTexture target, string path, int w, int h, bool topDown = false)
     {
-        var picture = ReadPicture(ctx, target, w, h);
+        var picture = ReadPicture(ctx, target, w, h, topDown);
         var dir = Path.GetDirectoryName(Path.GetFullPath(path));
         if (dir is not null) Directory.CreateDirectory(dir);
         PngWriter.Write(path, w, h, picture);
     }
 
     /// <summary>The target as a picture: RGBA8 rows from the top, alpha opaque.</summary>
-    public static byte[] ReadPicture(GpuContext ctx, GpuTexture target, int w, int h)
+    public static byte[] ReadPicture(GpuContext ctx, GpuTexture target, int w, int h, bool topDown = false)
     {
         var pixels = Read(ctx, target, w, h);
-        // The picture's rows start at the bottom (the GL convention it is drawn with); PNG rows at the top. Also force opaque alpha.
+        // The picture's rows start at the bottom (the GL convention it is drawn with; not when topDown); PNG rows at the top. Also force opaque alpha.
         var flipped = new byte[pixels.Length];
-        for (int y = 0; y < h; y++) pixels.AsSpan((h - 1 - y) * w * 4, w * 4).CopyTo(flipped.AsSpan(y * w * 4));
+        for (int y = 0; y < h; y++) pixels.AsSpan((topDown ? y : h - 1 - y) * w * 4, w * 4).CopyTo(flipped.AsSpan(y * w * 4));
         for (int i = 3; i < flipped.Length; i += 4) flipped[i] = 255;
         return flipped;
     }
