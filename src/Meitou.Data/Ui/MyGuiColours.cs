@@ -75,8 +75,10 @@ public static class MyGuiColours
 
     static MyGuiResources? inkOwner;
     static readonly Dictionary<string, string?> inkCache = new(StringComparer.Ordinal);
+    static readonly Vector4 gameSecondary = Parse(Hex("140806"), default);
     /// <summary>
-    /// The ink of the text that sits on <paramref name="template"/> (a template or skin name): <see cref="TemplateText"/>, else the palette's <see cref="InkText"/>. The lookup is cached per name
+    /// The ink of the text that sits on <paramref name="template"/> (a template or skin name): <see cref="TemplateText"/> when a skin mod recoloured it (it differs from the game's
+    /// Secondary), else the palette's <see cref="InkText"/>, so a mod that changes only the palette (Dark UI) still recolours the text. The lookup is cached per name
     /// (these run every frame), and the cache is dropped when the resources change.
     /// </summary>
     public static string TemplateInk(MyGuiResources resources, string template)
@@ -85,7 +87,12 @@ public static class MyGuiColours
         lock (inkCache)
         {
             if (!ReferenceEquals(inkOwner, resources)) { inkCache.Clear(); inkOwner = resources; }
-            if (!inkCache.TryGetValue(template, out found)) inkCache[template] = found = TemplateText(resources, template);
+            if (!inkCache.TryGetValue(template, out found))
+            {
+                found = TemplateText(resources, template);
+                if (found is not null && Vector3.DistanceSquared(Parse(found, default).AsVector3(), gameSecondary.AsVector3()) < 1e-5f) found = null;
+                inkCache[template] = found;
+            }
         }
         return found ?? InkText;
     }
