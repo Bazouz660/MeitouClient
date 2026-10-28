@@ -451,7 +451,11 @@ parametric EQ (`0x69`), compressor (`0x6C`) and one effect `0x6E` (Unknown).
 - **Attenuation.** The node's [attenuation](formats/wwise-bnk.md#attenuation-14) gives the dry gain (curve 0 at the distance, linear gain − 1 as for
   RTPC curves; zero beyond the last point), the low-pass (curve 3) and, only for a placed object with a front, the cone (full inside the inner angle,
   the outside volume and low-pass beyond the outer, linear between). Measured by rendering: a sound 100 / 200 / 300 / 500 units away fell by about
-  8 / 18 / 26 dB / to silence against the one at the listener, and was louder on the side it was placed. The game never sets an orientation, so cones are inert there.
+  8 / 18 / 26 dB / to silence against the one at the listener, and was louder on the side it was placed. The emitters (AMBIENT_SOUND) are placed with a zero orientation, so cones are inert there.
+  **Characters** (`FUN_1405cfd90` copies the position and a facing vector into the object's placement, **Verified** by disassembly; what Wwise does with that vector, whose second
+  orientation slot looks unset like the listener's, is **Unknown**): the impact sounds (the hit and parry variants of `Impact`) use attenuation `2E5501C5`, the only one with a cone, 90° / 245°
+  and −6 dB with no low-pass. Logged in a sandbox fight (listener 150 to 180 units away), a blow's dry gain was 0.30 for a fighter facing away from the listener (angle 150°),
+  0.40 at 86° and 0.55 facing it, at the same distance: half the amplitude on and off. Meitou places characters without a front (engine choice), so no sound has a cone.
 
 ### Reverb and aux buses
 

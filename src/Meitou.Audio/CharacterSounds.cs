@@ -246,7 +246,8 @@ public sealed class CharacterSounds
             }
         }
         e.Position = position;
-        player.SetPosition(e.Object, position, new Vector3(MathF.Sin(yaw), 0, MathF.Cos(yaw)));
+        // No front: the attenuation cone of the impact sounds (90 / 245 degrees, -6 dB) would halve a blow on a fighter facing away from the listener (docs/audio.md "Attenuation").
+        player.SetPosition(e.Object, position);
         if (d2 < SpeedLimit && MathF.Abs(speed - e.Speed) > 0.01f)
         {
             e.Speed = speed;
