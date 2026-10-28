@@ -44,8 +44,11 @@ public sealed partial class AiSystem
         int slot;
         readonly List<PlanStep> scratch = [];
 
-        /// <summary>Everyone plans with the first category, the one nearly every row is in (engine choice: which one a character uses is Unknown, docs/game/ai-tasks.md "Planner").</summary>
-        public int Category => 0x1;
+        /// <summary>
+        /// The task repertoire it plans with (<c>FUN_14060e840</c>, <b>Verified</b>; docs/game/ai-tasks.md "Planner"): a prisoner in a cage that restrains movement (pole, peeler) the
+        /// 'chained' one (0x10), in another cage the 'imprisoned' one (4); everyone else the 'human' one (1). The crippled (0x40), platoon (2) and animal repertoires are not modelled.
+        /// </summary>
+        public int Category => world.Characters.Cold(slot) is { IsImprisoned: true, InWhat: { } cage } ? world.Fixtures.Find(cage) is { Restrains: true } ? 0x10 : 0x4 : 0x1;
         public bool Squadless => false;
 
         public PlanContext Bind(AiSystem s, World w, int at, AiMind m, Blackboard b)
