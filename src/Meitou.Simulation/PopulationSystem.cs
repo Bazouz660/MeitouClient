@@ -110,6 +110,7 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
 
     public void Inputs(World world, IReadOnlyList<SimCommand> commands)
     {
+        EnsureArtifacts(world);
         world.FactionFormations ??= [.. data.Factions.Select(f => f.SquadFormation)];
         foreach (var c in commands)
         {
@@ -482,7 +483,11 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
             world.Squads.Remove(id);
             // A squad with no one alive left is declared dead, unless its template `regenerates` and its town lives: then it is made afresh next time (CM_REFRESH).
             bool refresh = stored.Members.Count == 0 && Regenerates(squad.TemplateId, site);
-            if (stored.Members.Count == 0 && !refresh) continue;
+            if (stored.Members.Count == 0 && !refresh)
+            {
+                if (squad.Shop is { } shop) Trading.TradeSystem.GiveBack(world, shop);
+                continue;
+            }
             world.Platoons.Add(new Platoon
             {
                 Id = world.Platoons.NextId(), Origin = site, TemplateId = squad.TemplateId, Faction = squad.Faction, Key = 0, Size = Math.Max(squad.SpawnSize, stored.Members.Count),
@@ -554,6 +559,7 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
             MakeSlaves(world, built, squad, site, radius, state);
         }
         if (town.Squads.Count > 0) MadeTown(world, town.Site, town.Squads.Where(s => s.Home is not null).Select(s => s.Members.Count));
+        GiveArtifacts(world, town);
         int housed = town.Squads.Count(s => s.Home is not null);
         if (townLog.Count >= 256) townLog.RemoveAt(0);   // nobody reads it in a headless world
         townLog.Add($"{site.Town.Name}: {town.Squads.Count} squad(s), {town.Squads.Sum(s => s.Members.Count)} characters; {housed} at home in " +

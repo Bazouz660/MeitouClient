@@ -102,6 +102,11 @@ public sealed class ItemInstance
     /// it from a live owner that is down butchers the owner, and it stops being one when it leaves the owner's inventory. Its stack does not merge with ordinary units.
     /// </summary>
     public bool Death { get; set; }
+    /// <summary>
+    /// The original's <c>Item::isUnique</c> (the save's <c>unique</c>), set on a town's artifacts (docs/game/economy.md "Artifacts"): a shop's fills and restocks leave it in place. It stacks
+    /// only with other unique items (engine choice).
+    /// </summary>
+    public bool Unique { get; set; }
     /// <summary>A worn backpack's contents (null for other items).</summary>
     public Inventory? Contents { get; init; }
     /// <summary>The factor of the contents' weight (a bag's <c>encumbrance effect</c>).</summary>
@@ -114,7 +119,7 @@ public sealed class ItemInstance
     {
         Record = Record, Name = Name, Type = Type, EquipmentSection = EquipmentSection, IsLocked = IsLocked, WornOnlyBy = WornOnlyBy, WornNeverBy = WornNeverBy, MaterialId = MaterialId, CompanyId = CompanyId, Section = Section, X = X, Y = Y, Quantity = quantity, Level = Level, Crafter = Crafter, Uniform = Uniform,
         ItemFunction = ItemFunction, Quality = Quality, Charges = Charges, MaxCharges = MaxCharges, Width = Width, Height = Height, UnitWeight = baseWeight, DynamicWeight = DynamicWeight, StackLimit = StackLimit,
-        IsFood = IsFood, ContentsFactor = ContentsFactor, StolenFrom = StolenFrom, Death = Death, Buyback = Buyback?.Take(quantity),
+        IsFood = IsFood, ContentsFactor = ContentsFactor, StolenFrom = StolenFrom, Death = Death, Unique = Unique, Buyback = Buyback?.Take(quantity),
     };
 
     /// <summary>Whether the item is stolen while held by a character of <paramref name="holderFaction"/> (carry-loot.md 4.4: the from-owner is set and of another faction).</summary>

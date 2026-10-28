@@ -87,6 +87,7 @@ public static class SavedKit
         item.Uniform = s.Uniform;
         item.Charges = s.Charges;
         item.Death = s.Death;
+        item.Unique = s.Unique;
         (item.LimbDamage, item.LimbWear, item.LimbStun) = (s.Damage, s.Wear, s.Stun);
         if (s.Lock is { } l && item.Lock is { } lockState)
         {
@@ -109,7 +110,7 @@ public static class SavedKit
     {
         BaseId = i.Record, MaterialId = i.MaterialId, CompanyId = i.CompanyId, Crafter = i.Crafter, Uniform = i.Uniform, Section = section, X = i.X, Y = i.Y, Quantity = i.Quantity, Level = i.Level,
         ItemFunction = i.ItemFunction, Quality = i.Quality, Charges = i.Charges, Source = i.Saved,
-        Damage = i.LimbDamage, Wear = i.LimbWear, Stun = i.LimbStun, Death = i.Death,
+        Damage = i.LimbDamage, Wear = i.LimbWear, Stun = i.LimbStun, Death = i.Death, Unique = i.Unique,
         Lock = i.Lock is { } l ? new SaveItemLock(l.Level, l.EffectivelyLocked, l.Broken, l.Hardness) : null,
         Contents = i.Contents is { } bag ? FromInventory(bag) : null,
     };
