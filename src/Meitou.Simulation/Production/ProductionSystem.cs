@@ -741,12 +741,12 @@ public sealed partial class ProductionSystem : ITickSystem
         float g = fd.GrowthTime / MathF.Max(m.Yield * m.Power, 1e-6f), cycle = g + fd.HarvestTime + fd.DeathTime;
         if (cycle <= 0) return;
         float p = f.Growth < 1 ? MathF.Max(f.Growth, 0) * g : f.Growth < 2 ? g + (f.Growth - 1) * fd.HarvestTime : g + fd.HarvestTime + f.Death * fd.DeathTime;
-        float perHour = m.WaterRate * (MachineData.DaySeconds / 24), water = float.MaxValue;
+        float rate = m.WaterRate, water = float.MaxValue;
         foreach (var input in m.Inputs) water = MathF.Min(water, input.Level + input.Count);
-        // The watered hours divide by h as well, as the game writes it.
-        float w = m.Inputs.Length == 0 || perHour <= 0 ? float.MaxValue : water / (perHour * h);
+        // The watered share mixes the per-second water rate with the skipped game hours and divides by h as well, as the game writes it (FUN_1400df6e0).
+        float w = m.Inputs.Length == 0 ? float.MaxValue : rate > 0 ? water / (rate * h) : h;
         bool replant = false;
-        float death = 0;
+        float death = 0, saved = f.Death;
         if (ignoreWater || h <= w)
         {
             p += h;
@@ -757,7 +757,8 @@ public sealed partial class ProductionSystem : ITickSystem
             p = (p + w) % cycle;
             float dm = fd.DroughtMultiplier > 0 ? fd.DroughtMultiplier : 1e-8f;
             p += (h - w) * dm;
-            death = fd.DroughtDeathTime > 0 ? (h - w) / fd.DroughtDeathTime : 0;
+            // The drought adds to the death already there (and with no drought time leaves it).
+            death = fd.DroughtDeathTime > 0 ? saved + (h - w) / fd.DroughtDeathTime : saved;
             if (death > 1) { replant = true; death %= 1; }
             replant |= p > cycle;
         }
@@ -768,13 +769,21 @@ public sealed partial class ProductionSystem : ITickSystem
         for (int i = 0; i < f.Plants.Length; i++)
             if (f.Plants[i] >= -1) f.Plants[i] = MathF.Min(f.Plants[i] + delta, MathF.Min(growth, 1));
         f.Growth = growth;
-        f.Death = growth >= 2 ? (p - g - fd.HarvestTime) / MathF.Max(fd.DeathTime, 1e-6f) : death;
+        // A position in the death phase adds its remainder to the death.
+        f.Death = growth >= 2 ? death + (p - g - fd.HarvestTime) / MathF.Max(fd.DeathTime, 1e-6f) : death;
         if (ignoreWater) return;
         foreach (var input in m.Inputs)
         {
-            float need = MathF.Min(w, h) * perHour - input.Level;
+            float need = w * rate * input.Rate - input.Level;
             input.Level = 0;
-            if (need > 0) input.Count = Math.Max(0, input.Count - (int)MathF.Ceiling(need));
+            if (need <= 0) continue;
+            if (input.Count <= need) input.Count = 0;
+            else
+            {
+                float whole = MathF.Floor(need);
+                input.Count -= (int)whole;
+                input.Level = 1 - (need - whole);
+            }
         }
     }
 

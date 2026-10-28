@@ -733,8 +733,8 @@ public class ProductionTests
         Assert.Equal(own, field.Yield(ResourceField.IronResource, rocks[0].Position));
     }
 
-    /// <summary>The farm catch-up (docs/game/buildings-production.md "Unloaded zones"): watered, the crop moves on h hours and the water is used; dry, only the watered hours
-    /// (water / (rate x h)) count in full and the rest grows at the drought multiplier while the death rises.</summary>
+    /// <summary>The farm catch-up (docs/game/buildings-production.md "Farm catch-up"): watered, the crop moves on h hours and w x rate water is used; dry, only the watered hours
+    /// (water / (rate x h), the per-second rate with the game hours, as the game mixes them) count in full and the rest grows at the drought multiplier while the death rises.</summary>
     [Fact]
     public void A_farm_catches_up_its_unloaded_hours_watered_or_in_drought()
     {
@@ -746,18 +746,19 @@ public class ProductionTests
             var copy = new Machine
             {
                 Site = m.Site, Position = m.Position, Data = m.Data with { Farm = m.Data.Farm! with { DroughtMultiplier = 0.5f, DroughtDeathTime = 100 } },
-                Inputs = m.Inputs, Farm = new FarmState(4), WaterRate = 24 / MachineData.DaySeconds,   // one water per hour
+                Inputs = m.Inputs, Farm = new FarmState(4), WaterRate = 1,
             };
             (m.Inputs[0].Level, m.Inputs[0].Count) = (level, count);
             return copy;
         }
 
-        // Watered: 10 water lasts 10 / (1 x 0.5) = 20 h, more than the 0.5 h away; growth 0.5 of the 1 h growth time, one whole water drawn for 0.5.
+        // Watered: 10 water gives w = 10 / (1 x 2) = 5, more than the 2 h away; the 1 h growth time and 1 h of the 48 h harvest time pass; 5 water drawn, the level full.
         var wet = Copy(0, 10);
-        rig.Production.TimeSkip(rig.World, wet, 0.5f, false);
-        Assert.Equal(0.5f, wet.Farm!.Growth, 4);
+        rig.Production.TimeSkip(rig.World, wet, 2, false);
+        Assert.Equal(1 + 1 / 48f, wet.Farm!.Growth, 4);
         Assert.Equal(0, wet.Farm.Death);
-        Assert.Equal(9, wet.Inputs[0].Count);
+        Assert.Equal(5, wet.Inputs[0].Count);
+        Assert.Equal(1, wet.Inputs[0].Level);
 
         // Dry: 0.2 water over 4 h counts 0.2 / (1 x 4) = 0.05 h; the other 3.95 h at half speed reach 0.05 + 1.975 = 2.025 h of the cycle: ripening,
         // 1 + 1.025 / 48 of the harvest time; the death 3.95 / 100. The water left is less than it needs: the level empties.

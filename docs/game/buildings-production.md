@@ -652,11 +652,13 @@ catch up.
 and on every save. On load, h = now - save time; if h > 1 and the farm is built, `timeSkip(h, ignoreWater = owner is not the player)`:
 - Cycle C = G (`growth time` / fertility) + `harvest time` + `death time`; position p from `plant growth` (0..1 over G, 1..2 over harvest time,
   then `plant death` x death time).
-- Water m = min over inputs of level + item count; watered hours w = m / (consumption rate x h) (it divides by h too, as written).
+- Water m = min over inputs of level + item count; watered hours w = m / (rate x h), rate the per-second water rate (+0x534, as the live
+  tick uses it) and h in game hours (it mixes the units and divides by h too, as written; w = h with no rate).
 - h <= w or an NPC farm: p += h, death 0; a completed cycle replants.
-- Else p += w (wrapped), the other h - w hours grow at the drought multiplier (0: 1e-8) and death += (h - w) / `drought death time`, past 1
-  replanting.
-- A player farm then uses its water: the level is zeroed and whole items removed for w x rate - level.
+- Else p += w (wrapped), the other h - w hours grow at the drought multiplier (0: 1e-8) and, with a drought death time, death += (h - w) / `drought death time` (added to the saved death), past 1
+  replanting and keeping the fraction; watered, the death is first zeroed. A position left in the death phase then adds its remainder / death time.
+- A player farm then uses its water, per input: need = w x rate x the input's amount - level, the level zeroed; need > 0 removes the whole
+  stack when it holds no more than need, else floor(need) items with the level 1 - frac(need) (**Verified**, `FUN_1400df6e0`).
 
 Meitou: the *Production far away* switch ([simulation](../simulation.md)); Faithful applies the above while running (a farm out of the active
 zones keeps its stamp and catches up when its zone is active again; generators burn no fuel unloaded).
