@@ -111,7 +111,7 @@ bits on. So it lasts exactly while a leg is down; it does not knock out (the cut
   (medical +0x160) is set only by the medical tick, so nobody is crippled before their first one (Meitou: `Speed.Crippled`, `MedicalState.Crawling`).
 - The get-up task (65, `FUN_14033ca10` / `FUN_140334a20`, **Verified**) of a character with posture > 0 ends at
   once and sets posture 1 (voluntary crawl), which the medical tick does not turn back into 2. The planner's
-  `isTargetDown` (`FUN_14099a5a0`) counts posture ≥ 2 as down, `iAmProne` is posture ≠ 0.
+  `isTargetDown` (`FUN_14099a5a0`, **Verified**) counts as down: no target, carried, unconscious, dead, in a bed or cage, or posture ≥ 2 (a non-character target is up); `iAmProne` is posture ≠ 0. Meitou: `ProductionSystem.TargetDown` (Staying close).
 - Meitou: `HealthPart.LegDown`, `MedicalState.Crawling` (KO point cached each medical tick), `AnimationSystem.Crawl`
   (engine choices: `crawl use` replaces the medic clip; crawl legs weighed at no less than −100). The ×0.5
   sight factor for a crawler ([perception](perception.md)) is not applied to crawlers who are not sneaking.

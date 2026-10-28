@@ -277,6 +277,12 @@ public sealed partial class ProductionSystem
     /// The character a Bodyguard (45) or Staying close (31) job follows (the row has no finder: it acts on the job's own target, docs/game/ai-tasks.md "Finders of the jobs"): the job's character,
     /// found again from its saved handle after a load, alive and not the follower itself; for Staying close also standing (the row's state 7, <c>!isTargetDown</c>). Null: the job is blocked.
     /// </summary>
+    /// <summary>
+    /// isTargetDown (state 7, <c>FUN_14099a5a0</c>, <b>Verified</b>): gone, carried, unconscious or dead, in a bed or cage, or crawling or playing dead (posture 2 or more; staying low is up).
+    /// </summary>
+    static bool TargetDown(CharacterCold? c) =>
+        c is null || !c.CarriedBy.IsNone || c.Medical is { Incapacitated: true } or { Crawling: true } or { PlayingDead: true } || c.InSomething != Locks.HeldState.None;
+
     static CharacterId? FollowedBy(World world, int slot, CharacterCold cold, int k)
     {
         var table = world.Characters;
@@ -289,7 +295,7 @@ public sealed partial class ProductionSystem
             if (!target.IsNone) cold.Jobs[k] = job with { Character = target };
         }
         if (target.IsNone || target.Slot == slot || !table.TryResolveNext(target, out int t)) return null;
-        return job.Type == TaskType.STAY_CLOSE_TO_TARGET && table.Cold(t) is { Medical.Incapacitated: true } ? null : target;
+        return job.Type == TaskType.STAY_CLOSE_TO_TARGET && TargetDown(table.Cold(t)) ? null : target;
     }
 
     /// <summary>
