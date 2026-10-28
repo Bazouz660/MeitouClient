@@ -303,7 +303,10 @@ Same targets as picking; Task_CutLock / Task_BruteForceLock share the shackle ta
   the list that is not in the squad's give-up list (`FUN_1402690e0` count below 1) and that `UseableStuff` vfunc 0x4f0 (a place free) accepts is the target, passed over only when the squad's home is
   not the building the character is in (+0x128 hand compare, **Unknown**) and the bed's field behind vfunc 0x228 +0x28 is above 1 (**Unknown**, read as a price). The order inside a list is
   that of a set of pointers (steps 1 to 3), so it is not reproducible. Meitou: `FixtureRegistry.FindBedNpc` takes the first free bed of the squad's home building, else the nearest free bed of its
-  town (engine choices for steps 2 to 4 and the order); nothing in Meitou calls it for an NPC yet (NPC sleepers go to the home spot of their mind).
+  town (engine choices for steps 2 to 4 and the order). The search is the target finder of 153 / 239 Go home go to bed: its factor is 0 when it finds no bed
+  (**Verified**), so a character without a bed does not want the goal and the next one is chosen. Meitou: a sleeper whose home has bed spots takes one of them;
+  without (homeless, or a home with no bed) `AiSystem.SpareBed` runs the search (a squad without a town: own or allied beds within the bed search range,
+  engine choice); with no bed found the goal's desire is 0. Only 175 Sleep on floor rests without a bed.
   The finders' allies test (`FUN_1408ca5d0`, **Verified** by decompile) passes a building of the finder's faction or one `canIUseThisBuilding` accepts, which
   includes the town the squad occupies ([economy](economy.md)), so a homeless occupier sleeps in the occupied town's beds. Meitou: `AiSystem.OccupiedBed`, the
   member index's (round robin) complete BF_BED of the occupied town not held outside the squad (engine choice for the order).

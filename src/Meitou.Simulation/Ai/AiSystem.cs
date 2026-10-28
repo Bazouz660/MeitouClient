@@ -246,6 +246,8 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
     float Desire(World world, AiBehaviour behaviour, TaskType type, TaskProfile profile, Squad squad, Blackboard board, AiMind mind, CharacterId self, TaskTargetType targeting)
     {
         if (behaviour == AiBehaviour.None) return 0;
+        // Going to bed: the bed search is its target finder, whose factor is 0 when it finds no bed (FUN_1408cfe00, Verified), so the goal is not wanted.
+        if (type is TaskType.GO_HOME_AND_GO_TO_BED or TaskType.GO_HOME_AND_GO_TO_BED_SECURE && !HasBed(world, board, mind, self.Slot)) return 0;
         float desire = profile.Desire switch
         {
             TaskProfiles.Random => 0.01f + 0.4f * Rng.Float(Rng.Hash(world.Seed, Rng.Key(self), RngPurpose.Think, SeedSalts.AiDesire ^ (ulong)world.Tick << 9 ^ (ulong)type)),
@@ -573,14 +575,14 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             case AiBehaviour.Post:
             case AiBehaviour.Sleep:
             case AiBehaviour.GoHome:
-                // An occupier without a home sleeps in a bed of the town it holds.
-                var occupied = behaviour == AiBehaviour.Sleep && board.Home is null && !mind.HomeUnreachable ? OccupiedBed(world, board, mind, slot) : null;
-                var (target, home, floor, facing) = occupied is not null ? (Flat(occupied.Position), true, occupied.Position.Y, (float?)null) : SpotFor(mind, board, behaviour, type);
+                // Going to bed without a bed spot at home: an occupier's bed of the town it holds, else the NPC bed search.
+                var spare = behaviour == AiBehaviour.Sleep && type is TaskType.GO_HOME_AND_GO_TO_BED or TaskType.GO_HOME_AND_GO_TO_BED_SECURE ? SpareBed(world, board, mind, slot) : null;
+                var (target, home, floor, facing) = spare is not null ? (Flat(spare.Position), true, spare.Position.Y, (float?)null) : SpotFor(mind, board, behaviour, type);
                 if (GoToSpot(world.Walkability, table, slot, mind, target, home ? GiveUp.Home : GiveUp.Post, type is TaskType.RUN_AWAY_HOMETOWN or TaskType.TRAVEL_TO_TARGET_TOWN_FAST ? SpeedMode.Run : SpeedMode.Walk, height: floor))
                 {
                     Become(table, slot, behaviour == AiBehaviour.Sleep ? CharacterTask.Rest : CharacterTask.Idle);
                     // At its home's bed: the serial step lies it in (Task_UseBed via 98 Sleeping); resting on the floor stays the fallback when no bed is free.
-                    if (behaviour == AiBehaviour.Sleep && home && floor is not null && (occupied?.Id ?? BedSpotOf(board, mind)) is { } bed)
+                    if (behaviour == AiBehaviour.Sleep && home && floor is not null && (spare?.Id ?? BedSpotOf(board, mind)) is { } bed)
                     {
                         mind.BedAt = bed;
                         Interlocked.Exchange(ref bedding, 1);
@@ -738,6 +740,32 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
         foreach (var s in home.Spots) if (s.Kind == HomeSpotKind.Bed) count++;
         return count == 0 ? null : $"{home.Key}@bed{(mind.MemberIndex % count).ToString(System.Globalization.CultureInfo.InvariantCulture)}";
     }
+
+    /// <summary>
+    /// The bed a sleeper whose home has no bed spot goes to (153/239 Go home go to bed, docs/game/locks.md "Bed search, other characters"): an occupier's bed of the
+    /// town it holds, else the NPC bed search (a free bed of its home building, else of its town). A squad without a town takes only its own or an ally's beds within
+    /// <see cref="Locks.FixtureRegistry.BedSearchRange"/>, standing in for the original's allied BF_BED buildings in the zones around it (engine choice for the range).
+    /// Null for a home with bed spots (<see cref="SpotFor"/> picks one) or when no bed is found.
+    /// </summary>
+    Locks.Fixture? SpareBed(World world, Blackboard board, AiMind mind, int slot)
+    {
+        if (board.Home is not null && !mind.HomeUnreachable && BedSpotOf(board, mind) is not null) return null;
+        if (board.Home is null && !mind.HomeUnreachable && OccupiedBed(world, board, mind, slot) is { } occupied) return occupied;
+        if (world.Characters.Cold(slot) is not { } self) return null;
+        if (mind.Squad.Town >= 0) return world.Fixtures.FindBed(world, slot, data.Relations);
+        var at = Flat(world.Characters.Next[slot].Position);
+        float r2 = Locks.FixtureRegistry.BedSearchRange * Locks.FixtureRegistry.BedSearchRange;
+        var relations = data.Relations;
+        return world.Fixtures.FindBed(world, slot, relations, f =>
+            Vector2.DistanceSquared(at, Flat(f.Position)) > r2
+            || f.Owner != self.Faction && !(f.Owner >= 0 && relations.Contains(f.Owner) && relations.Contains(self.Faction) && relations.IsAlly(f.Owner, self.Faction)));
+    }
+
+    /// <summary>Whether a sleeper has a bed to go to: lying in one, a bed spot of its home, or a <see cref="SpareBed"/>.</summary>
+    bool HasBed(World world, Blackboard board, AiMind mind, int slot) =>
+        world.Characters.Cold(slot)?.InSomething == Locks.HeldState.Bed
+        || board.Home is not null && !mind.HomeUnreachable && BedSpotOf(board, mind) is not null
+        || SpareBed(world, board, mind, slot) is not null;
 
     static Vector2 Flat(Vector3 p) => new(p.X, p.Z);
 
