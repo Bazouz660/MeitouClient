@@ -167,7 +167,7 @@ over the terrain, and its height is the goal's floor (engine choice). "Outside t
 **Observed** (user, screenshots of the original): a click on the Longhouse's roof end at viewed floor 0 or 3, the character outside, walks onto it (floor 1). **Observed** (JC2, zone 20.29, scratch probe): a ray onto Defensive
 Wall II `16-Newwworld-INGAME` gave Y 1218 (terrain 1103); before, the goal resolved to the blocked ground under the wall.
 
-**Spread** (**Verified**, order 0x1d in `FUN_1407f9e20`): `srand(selection count)`; the selection's lead goes to the point, every other character to point + (sin a, 0, cos a) x r with r = u x √(60 x count) + 5 (`DAT_141685340`), then a = u x 2π, each u = rand() scaled to [0, 1] (`FUN_1409b1c10`). Meitou: `Formation.Scatter` (the MSVC generator replayed, lead = first in the order's list).
+**Spread** (**Verified**, order 0x1d in `FUN_1407f9e20`): `srand(selection count)`; the selection's lead goes to the point, every other character to point + (sin a, 0, cos a) x r with r = u x √(60 x count) + 5 (`DAT_141685340`), then a = u x 2π, each u = rand() / 32768 (`FUN_1409b1c10`, `DAT_141742b48`). Meitou: `Formation.Scatter` (the MSVC generator replayed, lead = first in the order's list).
 
 **Observed** (decompile): a ground move order shows an entity of `position.mesh` (a downward cone over a flat ring, 0.29 × 1.56 units)
 scaled 8 on its scene node, at the ray's ground point (the terrain-click handler FUN_140800250, show FUN_1407f2660). Built in FUN_1407f9530:

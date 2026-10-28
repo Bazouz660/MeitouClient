@@ -209,7 +209,7 @@ public static class Formation
     /// <summary>
     /// The targets of a ground-click move order of <paramref name="count"/> characters (order 0x1d in <c>FUN_1407f9e20</c>, <b>Verified</b>): the C runtime's rand is seeded with the
     /// count; the first character goes to the point, every other one to point + (sin a, cos a) x r on X/Z, with r = u x sqrt(60 x count) + 5 and then a = u x 2 pi, each u a fresh
-    /// rand() / 32767. Meitou replays the MSVC generator (state x 214013 + 2531011, output bits 16 to 30), so the spread is a pure function of the count and the point.
+    /// rand() / 32768 (<c>DAT_141742b48</c>). Meitou replays the MSVC generator (state x 214013 + 2531011, output bits 16 to 30), so the spread is a pure function of the count and the point.
     /// </summary>
     public static Vector2[] Scatter(int count, Vector2 target)
     {
@@ -218,7 +218,7 @@ public static class Formation
         float Next()
         {
             state = state * 214013 + 2531011;
-            return ((state >> 16) & 0x7fff) / 32767f;
+            return ((state >> 16) & 0x7fff) / 32768f;
         }
         float reach = MathF.Sqrt(ScatterArea * count);
         for (int i = 0; i < count; i++)
