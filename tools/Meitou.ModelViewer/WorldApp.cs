@@ -272,7 +272,7 @@ static partial class WorldApp
         Meitou.Audio.AudioSystem? audio = null;
         bool statsVisible = false, fpsVisible = false;
         string fpsText = "";
-        double fpsWindowMs = 0;
+        double fpsWindowMs = 0, fpsWindowWaitMs = 0;   // the window's time, and that spent waiting (the frame fence, the swapchain, the present)
         int fpsWindowFrames = 0;
         var stats = new List<string>();
         var keyItems = DebugOverlay.KeyItems(WorldOptions.Usage);
@@ -494,7 +494,10 @@ static partial class WorldApp
         {
             if (gpu is null) return;
             var size = window.FramebufferSize;
-            if (!display.BeginFrame(size.X, size.Y)) return; // minimized, or not yet shown at its maximized size
+            long beginAt = Stopwatch.GetTimestamp();
+            bool began = display.BeginFrame(size.X, size.Y);
+            fpsWindowWaitMs += Stopwatch.GetElapsedTime(beginAt).TotalMilliseconds;
+            if (!began) return; // minimized, or not yet shown at its maximized size
             var context = display.Context;
             // The chain and the overlays draw into the window's backbuffer (made again when the size changes).
             var backbuffer = display.Backbuffer!;
@@ -550,13 +553,14 @@ static partial class WorldApp
             queryIndex = (queryIndex + 1) % timers.Length;
             frames++;
             frameMaxMs = Math.Max(frameMaxMs, frameClock.Elapsed.TotalMilliseconds);
-            // The counter: the mean over the last tenth of a second, so a single late frame doesn't read as a drop.
+            // The counter: the mean over the last tenth of a second, so a single late frame doesn't read as a drop; then a frame's work
+            // (its time without the waits) and its whole time in brackets.
             fpsWindowMs += frameClock.Elapsed.TotalMilliseconds;
             fpsWindowFrames++;
             if (fpsWindowMs >= 100)
             {
-                fpsText = $"{fpsWindowFrames * 1000 / fpsWindowMs:0} fps";
-                fpsWindowMs = 0;
+                fpsText = $"{fpsWindowFrames * 1000 / fpsWindowMs:0} fps  {Math.Max(0, fpsWindowMs - fpsWindowWaitMs) / fpsWindowFrames:0.0} ms ({fpsWindowMs / fpsWindowFrames:0.0} ms)";
+                fpsWindowMs = fpsWindowWaitMs = 0;
                 fpsWindowFrames = 0;
             }
             frameClock.Restart();
@@ -591,7 +595,9 @@ static partial class WorldApp
             // Over everything: the letterbox, and the timeline editor (F6) or the cinema status line.
             if (overlay is not null) cinema.Draw(overlay, size.X, size.Y, shot);
             StageClock.Phase("overlays");
+            long presentAt = Stopwatch.GetTimestamp();
             display.Present();
+            fpsWindowWaitMs += Stopwatch.GetElapsedTime(presentAt).TotalMilliseconds;
             profiler?.EndFrame();
             SmokeTest.Frame();
             if (takeFile is not null)

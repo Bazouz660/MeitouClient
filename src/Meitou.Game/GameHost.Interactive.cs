@@ -161,7 +161,7 @@ sealed partial class GameHost
         var stats = new List<string>();
         bool statsVisible = false, fpsVisible = false;
         string fpsText = "";
-        double fpsWindow = 0;
+        double fpsWindow = 0, fpsWindowWait = 0;   // the window's seconds, and those spent waiting (the frame fence, the swapchain, the present, the limiter)
         int fpsWindowFrames = 0;
         // The cinematic camera (docs/viewer.md "Cinematic camera", F6 its editor): while it flies, previews or cuts to a key it holds the drawn
         // camera and the rig's state is not applied; the first camera input after that hands the camera back to the rig (CameraRig.TakeOver).
@@ -503,13 +503,15 @@ sealed partial class GameHost
                 menuLongestFrame = Math.Max(menuLongestFrame, dt);
                 if (dt > 0.1) menuSlowFrames++;
             }
-            // The counter: the mean over the last tenth of a second, so a single late frame doesn't read as a drop.
+            // The counter: the mean over the last tenth of a second, so a single late frame doesn't read as a drop; then a frame's work
+            // (its time without the waits) and its whole time in brackets.
             fpsWindow += dt;
             fpsWindowFrames++;
             if (fpsWindow >= 0.1)
             {
-                fpsText = $"{fpsWindowFrames / fpsWindow:0} fps";
-                fpsWindow = 0;
+                fpsText = string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                    $"{fpsWindowFrames / fpsWindow:0} fps  {Math.Max(0, fpsWindow - fpsWindowWait) * 1000 / fpsWindowFrames:0.0} ms ({fpsWindow * 1000 / fpsWindowFrames:0.0} ms)");
+                fpsWindow = fpsWindowWait = 0;
                 fpsWindowFrames = 0;
             }
             // While the cinema records, every frame is exactly one frame of its rate, for the simulation too (the take plays at game speed
@@ -619,7 +621,10 @@ sealed partial class GameHost
             else
                 gpu.HoverKeys = outlining && pointerWorld && player.HoverTarget is { } hover ? [(DrawKey(hover.Id), hover.Colour)] : [];
             BenchLap(5);
-            if (display.BeginFrame(size.X, size.Y))
+            long beginAt = Stopwatch.GetTimestamp();
+            bool began = display.BeginFrame(size.X, size.Y);
+            fpsWindowWait += Stopwatch.GetElapsedTime(beginAt).TotalSeconds;
+            if (began)
             {
                 BenchLap(6);
                 long t0 = Stopwatch.GetTimestamp();
@@ -716,7 +721,9 @@ sealed partial class GameHost
                     if (cursorMode != windowCursor) pointerMouse.Cursor.CursorMode = windowCursor = cursorMode;
                     if (!config.HardwareMouse && !freeLook) player.DrawPointer(pointerWorld ? player.PointerName : "arrow", pointerAt, size.X, size.Y);
                 }
+                long presentAt = Stopwatch.GetTimestamp();
                 display.Present();
+                fpsWindowWait += Stopwatch.GetElapsedTime(presentAt).TotalSeconds;
                 profiler?.EndFrame();
                 BenchLap(7);
                 PlayBenchRendered(Stopwatch.GetElapsedTime(t0).TotalMilliseconds, display.Context.Pipelines.LatePipelines);
@@ -749,7 +756,12 @@ sealed partial class GameHost
                 if (audio is not null) Console.WriteLine($"audio     characters: {CharacterAudioStats()}, {UiAudioStats()}");
                 if (menuFrames > 0) Console.WriteLine($"menu      {menuFrames} visible frames in {menuFrameSeconds:0.0} s: {menuFrames / menuFrameSeconds:0} fps, {menuSlowFrames} frames over 100 ms, longest {menuLongestFrame * 1000:0.0} ms");
                 Console.WriteLine($"smoke     {totalFrames} frames in {now:0.0} s: {totalFrames / now:0} fps on average, {session.Ticks.TotalTicks} control ticks, {session.Simulation.TotalTicks} simulation ticks, game time {session.Clock.TimeText}"); quit = true; }
-            if (!display.VSync && fpsLimit > 0) Limit(frame, now, 1.0 / fpsLimit);
+            if (!display.VSync && fpsLimit > 0)
+            {
+                long limitAt = Stopwatch.GetTimestamp();
+                Limit(frame, now, 1.0 / fpsLimit);
+                fpsWindowWait += Stopwatch.GetElapsedTime(limitAt).TotalSeconds;
+            }
         }
         WritePlayBench(window.FramebufferSize);
         // A save still being written finishes before the game closes (the original's quit waits while its save manager is busy, FUN_14082b6e0, Verified).

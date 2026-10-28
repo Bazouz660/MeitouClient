@@ -1,14 +1,15 @@
 using Meitou.Content;
 using Meitou.Simulation.Bodies;
+using Meitou.Simulation.Combat;
 
 namespace Meitou.Game;
 
 /// <summary>
-/// The original's Gameplay options page (docs/formats/settings.md "Gameplay"): the population and difficulty sliders, the two drop-downs and the autosave, with
+/// The original's Gameplay options page (docs/formats/settings.md "Gameplay"): the population and difficulty sliders, the two drop-downs and the autosave, plus the harpoon limit, with
 /// the game's slider ranges and missing-key defaults. All apply to the running world when changed.
 /// </summary>
 sealed record GameplaySettings(float SquadSize = 1, float Population = 1, float RaidSize = 1, float RaidFrequency = 1, int TownAttacks = 2,
-    Dismemberment Dismemberment = Dismemberment.Rare, bool AutoSave = true, float AutoSaveMinutes = 10)
+    Dismemberment Dismemberment = Dismemberment.Rare, bool AutoSave = true, float AutoSaveMinutes = 10, int HarpoonLimit = RangedTuning.DefaultStuckLimit)
 {
     public const float MinSquadSize = 0.5f, MaxSquadSize = 3, MinPopulation = 0.5f, MaxPopulation = 4,
         MinRaidSize = 0.25f, MaxRaidSize = 4, MinRaidFrequency = 0.25f, MaxRaidFrequency = 3, MinAutoSaveMinutes = 1, MaxAutoSaveMinutes = 30;
@@ -39,6 +40,7 @@ sealed record GameplaySettings(float SquadSize = 1, float Population = 1, float 
             TownAttacks: (int)Get("attacks", 2, 0, 5),
             Dismemberment: (Dismemberment)(int)Get("Dismemberment", 1, 0, 2),
             AutoSave: Get("Auto save", 1, 0, 1) != 0,
-            AutoSaveMinutes: Get("Auto save time (minutes)", 10, MinAutoSaveMinutes, MaxAutoSaveMinutes));
+            AutoSaveMinutes: Get("Auto save time (minutes)", 10, MinAutoSaveMinutes, MaxAutoSaveMinutes),
+            HarpoonLimit: (int)Get("harpoonLimit", RangedTuning.DefaultStuckLimit, RangedTuning.MinStuckLimit, RangedTuning.MaxStuckLimit));
     }
 }

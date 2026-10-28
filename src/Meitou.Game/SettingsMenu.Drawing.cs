@@ -223,7 +223,7 @@ sealed partial class SettingsMenu
         else if (entry is { Segmented: true, Choice: { } sides })
             Segmented(R(860, y + (row - 22) / 2, 240, 22), sides.Current(), sides.Choose, "All Faithful", "All Meitou");
         else if (entry.Toggle is { } toggle)
-            Button(toggle.Get() ? "On" : "Off", R(976, buttonY, 124, 26), () => toggle.Set(!toggle.Get()), toggle.Get(), clip: viewport);
+            Button(toggle.Text?.Invoke() ?? (toggle.Get() ? "On" : "Off"), R(976, buttonY, 124, 26), () => toggle.Set(!toggle.Get()), toggle.Get(), clip: viewport);
         else if (entry.Choice is { } choice)
         {
             var options = choice.Options();

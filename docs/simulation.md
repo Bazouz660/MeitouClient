@@ -13,7 +13,8 @@ accumulate `realDt*speed`, speeds 0/1/2/5. Budget `6*speed` ticks per frame; exc
 `AchievedSpeed` reports slowdown. Control ticks precede simulation ticks; a speed change applies
 to the entire frame. `WorldSession` rejects unequal world/clock tick lengths, owns snapshots,
 clocks, input and camera, and disposes systems/services. Of a frame's ticks only the last two publish
-a snapshot (`RunTick(publish)`), the pair the host interpolates between.
+a snapshot (`RunTick(publish)`), the pair the host interpolates between. Advanced → Pause after loading (`PauseOnLoad`, default off, as in Faithful:
+the game runs a loaded save at once, [game loop](game/game-loop.md)) pauses the speed after a menu load or import; `--load` runs.
 
 ### Tick ahead
 
@@ -565,7 +566,7 @@ remaining uncertainties: [economy.md](game/economy.md). Expiry is paused while i
 [Arrest and jail](#arrest-and-jail).
 Witness sight: the original's sight test with places and light ([perception](game/perception.md#sight), `SightMap`); a
 sneaking culprit is seen only once the witness's spot meter is full ([perception](game/perception.md#spotting-a-sneaker);
-meters kept by `CrimeSystem`, not saved).
+the aggro scan's meters, kept for every NPC looker, not saved).
 NPC culprits (engine choices): an NPC's non-defensive attack order, and each of its landed blows, sets a pending Assault (not an
 animal's; the victim may be a player character), and an NPC looter its Looting ([NPC looting](#carrying-rescue-and-looting)); neither is booked
 (other codes are refused for NPCs). A police-like witness not fighting re-fires the witness event (41 for an Assault, 42 for a Looting) at it every

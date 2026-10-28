@@ -20,8 +20,8 @@ public static class RangedTuning
     public const float BodyHeight = 18;
     /// <summary>While closing in, the line of fire must be clear this long (seconds) before the shooter stops and aims again (<c>FUN_140438c70</c>'s 0.3 s, its ray flags <b>Unknown</b>).</summary>
     public const float ClearToAim = 0.3f;
-    /// <summary>Stuck bolts kept in the world per bolt mesh: the settings' <c>harpoonLimit</c> default (60; the setting itself is not read here). Beyond it the one that flew longest goes (<c>FUN_14043acf0</c>).</summary>
-    public const int StuckLimit = 60;
+    /// <summary>The settings' <c>harpoonLimit</c> default and range (<see cref="CombatSystem.StuckLimit"/> is the live value).</summary>
+    public const int DefaultStuckLimit = 60, MinStuckLimit = 10, MaxStuckLimit = 10000;
     /// <summary>Spacing of the terrain samples along a line of fire and along a bolt's step (units).</summary>
     public const float TerrainStep = 20, FlightTerrainStep = 5;
     /// <summary>Length of the pieces a long line of fire is cut into for the neighbour grid (units).</summary>
@@ -486,7 +486,7 @@ public sealed partial class CombatSystem : IProjectileSource
     /// <summary>
     /// Advances every bolt one tick, in the order they were fired (serial, against the last tick's positions, which is what the grid holds; <c>FUN_1404380e0</c>):
     /// a straight line while range is left, then the nose pitching down 8 degrees a second; the first body or the ground on the step is hit. A friend in the way is
-    /// passed with the shooter's avoidance chance; the ground or a building sticks the bolt (a grazing hit on the ground drops it). Stuck bolts stay up to <see cref="RangedTuning.StuckLimit"/>.
+    /// passed with the shooter's avoidance chance; the ground or a building sticks the bolt (a grazing hit on the ground drops it). Stuck bolts stay up to <see cref="StuckLimit"/>.
     /// </summary>
     void FlyProjectiles(World world)
     {
@@ -584,7 +584,7 @@ public sealed partial class CombatSystem : IProjectileSource
     }
 
     /// <summary>
-    /// A bolt of <paramref name="mesh"/> has just stuck at index <paramref name="k"/>: over <see cref="RangedTuning.StuckLimit"/> stuck bolts of that mesh, the one that flew longest
+    /// A bolt of <paramref name="mesh"/> has just stuck at index <paramref name="k"/>: over <see cref="StuckLimit"/> stuck bolts of that mesh, the one that flew longest
     /// (the first of equals, the new bolt included) is removed (<c>FUN_14043acf0</c>). Returns the index the loop continues from.
     /// </summary>
     int TrimStuck(int k, string mesh)
@@ -598,7 +598,7 @@ public sealed partial class CombatSystem : IProjectileSource
             count++;
             if (q.Flown > longest) { longest = q.Flown; worst = j; }
         }
-        if (count <= RangedTuning.StuckLimit) return k;
+        if (count <= StuckLimit) return k;
         projectiles.RemoveAt(worst);
         return worst <= k ? k - 1 : k;
     }

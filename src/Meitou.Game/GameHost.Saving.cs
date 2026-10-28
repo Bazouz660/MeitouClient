@@ -85,6 +85,7 @@ sealed partial class GameHost
             (population.Settings.SquadSizeMultiplier, population.Settings.PopulationMultiplier, population.Settings.RaidSizeMult, population.Settings.RaidFrequencyMult) =
                 (gameplay.SquadSize, gameplay.Population, gameplay.RaidSize, gameplay.RaidFrequency);
         foreach (var ai in session.World.Systems.OfType<Meitou.Simulation.Ai.AiSystem>()) ai.Settings.TownAttacks = gameplay.TownAttacks;
+        foreach (var combat in session.World.Systems.OfType<Meitou.Simulation.Combat.CombatSystem>()) combat.StuckLimit = gameplay.HarpoonLimit;
     }
 
     /// <summary>The system list and its order are <see cref="StandardSystems"/>'(docs/simulation.md "Threading"); built again for each world.</summary>
@@ -111,7 +112,7 @@ sealed partial class GameHost
             // The duel replays exactly: its paths are answered inside the tick, never on a thread whose timing differs from lap to lap.
             SynchronousPaths = !interactive || IsDuel,
             // The duel prints what its measured lap holds (MeasureLap).
-            Combat = new Meitou.Simulation.Combat.CombatOptions { SelfApproach = false, TickMedical = false, RecordLog = IsDuel, AttackSlots = Math.Clamp(config.AttackSlots, 1, 5), LateDefences = config.LateDefences, GunnerFacesBarrel = config.FixGunnerFacing, PunchReachFix = config.FixPunchReach },
+            Combat = new Meitou.Simulation.Combat.CombatOptions { SelfApproach = false, TickMedical = false, RecordLog = IsDuel, AttackSlots = Math.Clamp(config.AttackSlots, 1, 5), StuckLimit = Gameplay.HarpoonLimit, LateDefences = config.LateDefences, GunnerFacesBarrel = config.FixGunnerFacing, PunchReachFix = config.FixPunchReach },
             DoorsCloseBehind = config.DoorsCloseBehind,
             AnimationLengths = animationLengths,
             AnimationLibrary = animationLibrary,
@@ -257,7 +258,7 @@ sealed partial class GameHost
             Stage("read", () => read = Task.Run(() => SaveGame.Load(SaveFolder.Open(folder), ReadArrivalHour))),
             Stage("systems", () => { prepared = PrepareSystems(read!, interactive: true); return null; }, duringAscent: true),
             Stage("build", () => SwapInSave(read!, interactive: true, out summary, prepared: prepared)),
-            Stage("finishing", () => { SettleNewWorld(); player.FollowSelected(); FinishLoadNotice(summary); saveInUse = folder; return null; }));
+            Stage("finishing", () => { SettleNewWorld(); player.FollowSelected(); FinishLoadNotice(summary); PauseAfterLoad(); saveInUse = folder; return null; }));
     }
 
     /// <summary>
@@ -294,7 +295,7 @@ sealed partial class GameHost
                 if ((options & ImportOptions.ResetPositions) != 0 && nav is not null && read!.IsCompletedSuccessfully) SaveImport.PlaceOnGround(read.Result, nav.Walkability.GroundHeight);
                 return SwapInSave(read!, interactive: true, out summary, new SaveLoadOptions { Appearances = data.Appearances, ResetRelations = (options & ImportOptions.Relations) == 0 }, prepared);
             }),
-            Stage("finishing", () => { SettleNewWorld(); player.FollowSelected(); FinishLoadNotice(summary, imported: true); return null; }));
+            Stage("finishing", () => { SettleNewWorld(); player.FollowSelected(); FinishLoadNotice(summary, imported: true); PauseAfterLoad(); return null; }));
     }
 
     sealed record PreparedSystems(StandardSystemSet Built, PopulationData Data, NewGameSettings Difficulty);
@@ -404,6 +405,12 @@ sealed partial class GameHost
         if (missing.Count == 0) player.Notice(imported ? "Imported" : "Loaded");
         else player.Notice($"Loaded; the save was made with {missing.Count} mod(s) not loaded now (listed in the messages)", true,
             $"Loaded; the save was made with mods not loaded now: {string.Join(", ", missing)}");
+    }
+
+    /// <summary>A save loaded from the menus starts paused with <see cref="UserConfig.PauseOnLoad"/> (a player pause: the speed buttons resume it).</summary>
+    void PauseAfterLoad()
+    {
+        if (config.PauseOnLoad && session.Simulation.Speed != 0) session.Simulation.TogglePause();
     }
 
     /// <summary>

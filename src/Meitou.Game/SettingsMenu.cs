@@ -79,6 +79,10 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
         config.AttackSlots = Math.Clamp((int)MathF.Round(v), 1, 5);
         AttackSlotsChanged?.Invoke(config.AttackSlots);
     }, "0", Faithful: UserConfig.FaithfulAttackSlots, Meitou: UserConfig.MeitouAttackSlots);
+    Slider? harpoonLimitSlider;
+    Slider HarpoonLimitSlider => harpoonLimitSlider ??= new("Harpoon limit", global::Meitou.Simulation.Combat.RangedTuning.MinStuckLimit, global::Meitou.Simulation.Combat.RangedTuning.MaxStuckLimit, () => (config.Gameplay ??= new()).HarpoonLimit,
+        v => SetGameplay((config.Gameplay ?? new()) with { HarpoonLimit = Math.Clamp((int)MathF.Round(v), global::Meitou.Simulation.Combat.RangedTuning.MinStuckLimit, global::Meitou.Simulation.Combat.RangedTuning.MaxStuckLimit) }), "0", Logarithmic: true,
+        Faithful: global::Meitou.Simulation.Combat.RangedTuning.DefaultStuckLimit);
     Slider? groundItemsSlider;
     Slider GroundItemsSlider => groundItemsSlider ??= new("Dropped items kept", 16, global::Meitou.Simulation.Items.GroundItems.MaxLimit, () => config.GroundItemLimit,
         v => config.GroundItemLimit = Math.Clamp((int)MathF.Round(v), 1, global::Meitou.Simulation.Items.GroundItems.MaxLimit), "0", Logarithmic: true,
@@ -256,8 +260,8 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
             ];
             for (int i = 0; i < AudioSliders.Length; i++)
                 result.Add(new(AudioSliders[i].Label, hints[i], Slider: AudioSliders[i]));
-            result.Add(new("Hear from", "Where sounds are heard from: the camera, or the first selected character (the camera while none is selected).",
-                Toggle: new("Hear from", () => config.HearFromSelected, v => config.HearFromSelected = v, Text: () => config.HearFromSelected ? "Selected character" : "Camera")));
+            result.Add(new("Hear from", "Camera: you hear the world where the camera is. Character: you hear it where your first selected character stands (from the camera while nobody is selected).",
+                Toggle: new("Hear from", () => config.HearFromSelected, v => config.HearFromSelected = v, Text: () => config.HearFromSelected ? "Character" : "Camera")));
         }
         if (page == 6)
         {
@@ -309,6 +313,7 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
         if (page == 4)
         {
             result.Add(new(AttackSlotsSlider.Label, "How many enemies may swing at one character at once (the game: 1, plus its race's extra slots); the others wait at reach or circle.", Slider: AttackSlotsSlider));
+            result.Add(new(HarpoonLimitSlider.Label, "How many bolts and harpoons stay stuck in the ground and buildings, per kind of bolt; past it the one that flew longest disappears (the game: 60).", Slider: HarpoonLimitSlider));
             result.Add(new("Late dodges and blocks", "Balance change: a dodge or block that succeeds its roll but starts a moment late still works, "
                 + "instead of failing as in the game. Makes skilled fighters much harder to wear down when several enemies attack at once.",
                 Toggle: new("Late dodges and blocks", () => config.LateDefences, v => { config.LateDefences = v; LateDefencesChanged?.Invoke(v); }, Remaster: true, OnOff: true)));
@@ -329,6 +334,8 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
                 Toggle: new("Production far away", () => config.UnloadedProduction, v => { config.UnloadedProduction = v; OffscreenChanged?.Invoke(); }, Remaster: true, OnOff: true)));
             result.Add(new("Doors close behind", "A door someone opened by walking through it closes again a few seconds after the last person went through. In the game doors stay open.",
                 Toggle: new("Doors close behind", () => config.DoorsCloseBehind, v => { config.DoorsCloseBehind = v; DoorsCloseChanged?.Invoke(v); }, Remaster: true, OnOff: true)));
+            result.Add(new("Pause after loading", "A save starts paused once it has loaded, so nothing happens before you look around. In the game it runs at once.",
+                Toggle: new("Pause after loading", () => config.PauseOnLoad, v => config.PauseOnLoad = v, Remaster: true, OnOff: true)));
             result.Add(new("Hover outline", "Outline and tint the character under the cursor, in the colour of what a right click would do.",
                 Toggle: new("Hover outline", () => config.HoverOutline, v => config.HoverOutline = v, Remaster: true, OnOff: true)));
             result.Add(new("Selection rings", "Draw the green ring on the ground under each selected character.",
@@ -577,6 +584,7 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
         config.KeepRoamers = config.OffscreenFights = config.OffscreenHealing = config.CampaignAncestorsOnce = config.KeepWild = config.ResidentSchedule = config.UnloadedProduction = true;
         config.DoorsCloseBehind = true;
         DoorsCloseChanged?.Invoke(true);
+        config.PauseOnLoad = false;
         config.FixDoorBreak = config.FixAmbienceSuffix = config.FixWindStop = true;
         player.FixLoadButton = config.FixLoadButton = true;
         config.FixGunnerFacing = true;
