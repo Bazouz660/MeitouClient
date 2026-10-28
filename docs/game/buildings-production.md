@@ -419,8 +419,10 @@ rock) makes output only while someone operates it.
   Battery Bank, storages and lights (functionality 0).
 - s = `lerp(stat/100, 0.5, 1.4)` of the effective stat `stat used` (`FUN_1408852a0`; 1 without an operator; the lerp
   helper `FUN_140015b63` is `a + (b - a) t`).
-- outputRate = BUILDING `output rate` x functionality `production mult`; with `output per day`, / (2G) (loader
-  `FUN_14029e7b0`). So a building makes `output rate x production mult x P/2 x s` cycles per game day.
+- outputRate = BUILDING `output rate` x functionality `production mult` (research benches too), with `output per day` / (2G)
+  (production buildings only, `FUN_14029e7b0`), then / the raw `max operators` (+0x3ac) when above 1, for every function
+  (**Verified**, `FUN_14029e460`, `FUN_14029e7b0`, `FUN_1402b9aa0`). Each operator adds its share, so a full crew makes
+  `output rate x production mult x P/2 x s` cycles per game day; a building whose own `max operators` is 0 is never divided.
 - yield (slot 120 via offset `0x46c`): 1 without `world resource mining`; else the resource at the position
   ([resources](#resources)), at least 0.1 for a natural site; for any other building 0 becomes 0.5 when it is not the player's (**Verified**, `FUN_14029c670`: the natural branch takes `FUN_140a12ff0` and the 0.1 floor, the other `FUN_140a13540` and the 0.5 rule).
 - health x powerSat (slot 109, `FUN_140296e00`, **Verified**): health the [construction state](#construction-state)'s progress / target capped at 1; powerSat

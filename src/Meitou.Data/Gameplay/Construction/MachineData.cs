@@ -30,8 +30,8 @@ public sealed record MachineData
     /// <summary>How many characters may work it at once: the BUILDING's <c>max operators</c>, else the functionality's (at least 1).</summary>
     public int MaxOperators { get; init; } = 1;
     /// <summary>
-    /// The work per second at skill factor 1, before P: BUILDING <c>output rate</c> x functionality <c>production mult</c>, / (2G) when <c>output per day</c> (<b>Observed</b>, loader <c>FUN_14029e7b0</c>).
-    /// For a research bench it is the bench's <c>output rate</c>.
+    /// The work per second of one operator at skill factor 1, before P: BUILDING <c>output rate</c> x functionality <c>production mult</c>, / (2G) when <c>output per day</c>
+    /// (not for research), / the raw <c>max operators</c> when above 1, so a full crew makes one rate (<b>Verified</b>, loaders <c>FUN_14029e460</c>, <c>FUN_14029e7b0</c>).
     /// </summary>
     public float Rate { get; init; }
     /// <summary><c>use range</c>: how near an operator works.</summary>
@@ -152,10 +152,10 @@ public sealed record MachineData
         int fn = function?.GetInt("function", -1) ?? -1;
         var farm = building.GetReferences("farm data") is [var farmLink, ..] && db.Find(farmLink.TargetStringId) is { Type: FcsRecordType.FARM_DATA } fd ? FarmData.From(db, fd) : null;
         float rate = building.GetFloat("output rate", 1);
-        if (fn != ResearchFunction && function is not null)
+        if (function is not null)
         {
             rate *= function.GetFloat("production mult", 1);
-            if (function.GetBool("output per day")) rate /= 2 * DaySeconds;
+            if (fn != ResearchFunction && function.GetBool("output per day")) rate /= 2 * DaySeconds;
         }
         var inputs = new List<RecipeInput>();
         RecipeOutput? output = null;
@@ -170,9 +170,10 @@ public sealed record MachineData
         int rawOperators = maxOperators >= 0 ? maxOperators : function?.GetInt("max operators", -1) ?? -1;
         bool wind = fn == GeneratorFunction && inputs.Count == 0;
         if (maxOperators <= 0) maxOperators = Math.Max(1, function?.GetInt("max operators", 1) ?? 1);
+        // Every machine's rate is shared by its operators: / the raw max operators when above 1, so a machine whose BUILDING says 0 is never divided (Verified, FUN_14029e460,
+        // FUN_14029e7b0, FUN_1402b9aa0; each operator then adds the divided rate).
+        if (rawOperators > 1) rate /= rawOperators;
         var craft = function is not null ? CraftBench.From(db, function) : null;
-        // A crafting bench's rate is shared by its operators (Observed, FUN_1402b9aa0).
-        if (craft is not null && maxOperators > 1) rate /= maxOperators;
         // A bench gets a section per ingredient of its widest recipe when it lists fewer (engine choice: the original's section count for such benches is Unknown).
         if (craft is not null && !craft.OverridesIngredients)
         {
