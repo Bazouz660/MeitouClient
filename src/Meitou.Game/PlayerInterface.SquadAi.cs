@@ -84,11 +84,12 @@ sealed partial class PlayerInterface
 
     /// <summary>
     /// Gives an order on a character, or with Shift held the job it becomes (the original's order dispatcher <c>FUN_1407fa650</c>; docs/game/ai-tasks.md "Perma-jobs"): First Aid,
-    /// Splint Injuries, an attack and a loot become Medic (Robotics on a robot), Splint Rigging, Attacking enemies and Foraging animals.
+    /// Splint Injuries, an attack (Attack Unprovoked too) and a loot become Medic (Robotics on a robot), Splint Rigging, Attacking enemies and Foraging animals. Bodyguard is always the
+    /// job, Shift or not (the dispatcher adds 45 as a job at once).
     /// </summary>
     void OrderOrJob(Meitou.Data.Gameplay.Ai.TaskType ordered, CharacterId target, Action order)
     {
-        if (SlowModifier && Meitou.Simulation.Production.PermaJobs.JobOf(ordered) is not null)
+        if ((SlowModifier || ordered == Meitou.Data.Gameplay.Ai.TaskType.BODYGUARD) && Meitou.Simulation.Production.PermaJobs.JobOf(ordered) is not null)
             Say(new Meitou.Simulation.Production.AddOrderJob(SelectedIds(), ordered, target) { Tick = session.World.Tick });
         else order();
     }
@@ -97,6 +98,7 @@ sealed partial class PlayerInterface
     static readonly Dictionary<string, Meitou.Data.Gameplay.Ai.TaskType> JobVerbs = new()
     {
         ["Attack Target"] = Meitou.Data.Gameplay.Ai.TaskType.MELEE_ATTACK,
+        ["Attack Unprovoked"] = Meitou.Data.Gameplay.Ai.TaskType.UNPROVOKED_FOCUSED_MELEE_ATTACK,
         ["First Aid"] = Meitou.Data.Gameplay.Ai.TaskType.FIRST_AID_ORDER,
         ["Splint Injuries"] = Meitou.Data.Gameplay.Ai.TaskType.SPLINT_ORDER,
         ["Loot"] = Meitou.Data.Gameplay.Ai.TaskType.LOOT_TARGET,
