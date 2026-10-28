@@ -166,6 +166,9 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         return false;
     }
 
+    /// <summary>A looker's faction attacks a freed target on sight for the relations only below this default relation (<c>FUN_14079c950</c>: strictly below -30, Verified constant).</summary>
+    public const int FreedHostility = -30;
+
     /// <summary>The factor on the noise range an awake listener hears (<c>FUN_140857500</c>: x0.5 while StateBroadcast <c>+0xb4</c> is 0, Verified constant).</summary>
     public const float AwakeHearing = 0.5f;
 
@@ -608,8 +611,12 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         // Wanted characters are the arrest system's (Crime.ArrestSystem): the police spot, fine or arrest them there. A working disguise stands in for the target's faction
         // (slot 125, docs/game/perception.md "Sense tags"; Crime.ArrestSystem.SeenFaction).
         int seenAs = Crime.ArrestSystem.SeenFaction(c);
+        // A freed prisoner (Freed, FUN_14079c950's last test, Observed) attacks no one for the relations alone, and is attacked so only by a looker of a faction that is not real
+        // or below -30 by default.
+        bool hostile = IsEnemy(s.Relations, s.Faction, seenAs) && s.Cold is not { Freed: true }
+            && (!c.Freed || s.Relations.Factions[s.Faction] is { } mine && (mine.NotReal || mine.DefaultRelation < FreedHostility));
         bool enemy = s.Stance != Ai.AiStance.Passive
-            && (IsEnemy(s.Relations, s.Faction, seenAs) || s.Stance == Ai.AiStance.AggressiveNeutrals && IsNeutral(s.Relations, s.Faction, seenAs) || WarEnemy(s.War, s.Faction, c, other.Position));
+            && (hostile || s.Stance == Ai.AiStance.AggressiveNeutrals && IsNeutral(s.Relations, s.Faction, seenAs) || WarEnemy(s.War, s.Faction, c, other.Position));
         // A campaign force's member is sensed as NEUTRAL, not ENEMY (FUN_1408580d0 over FUN_140796240, docs/game/perception.md "Sense tags"): a raid walks up to talk first.
         // A looker that attacks neutrals too still drops it unless it is hostile to its faction (FUN_1408569a0, Verified); its own campaign's targets stay, and a TEMP_ENEMY
         // tag (below) makes it an enemy again.

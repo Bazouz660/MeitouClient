@@ -331,6 +331,12 @@ public sealed class CharacterCold
     /// <summary>Held in a cage by a kidnapper (<see cref="Kidnap.KidnapSystem"/>), not sentenced: no sentence is ever served, no bail is offered, getting out is no crime. Saved as <c>meitou kidnapped</c>. Hashed only while set.</summary>
     public bool Kidnapped { get; set; }
     /// <summary>
+    /// Let out of a cage by a releaser or a paid bail (the original's status <c>+0xea</c>, set by <c>Task_ReleasePrisoner</c> and <c>FUN_1406ae170</c>): no faction attacks it on
+    /// sight for the relations alone unless it is not real or below -30 by default, and it attacks no one so (<see cref="AggroSystem"/>). The original drops it only while the
+    /// recently-wanted marker's bytes are all zero, which a booked prisoner's never are again, and on load: runtime only (not saved); hashed while set.
+    /// </summary>
+    public bool Freed { get; set; }
+    /// <summary>
     /// The original's slave state (status <c>+0</c>, saved as <c>slavestate</c>; <c>FUN_1405a4940</c>): 0 free, 1 slave, 2 escaped slave. A slave's sentence is never served.
     /// <see cref="Locks.FixtureRegistry.Enslave"/>; hashed only while set.
     /// </summary>
@@ -637,6 +643,7 @@ public sealed class CharacterTable
             if (k.DisguiseLevel > 0) { hasher.Add(0x44697367); hasher.Add(k.DisguiseLevel); hasher.Add(k.DisguiseFaction); }
             if (k.Escaped) hasher.Add(0x45736361);
             if (k.Kidnapped) hasher.Add(0x4B64706E);
+            if (k.Freed) hasher.Add(0x46726564);
             if (k.SlaveState != 0) { hasher.Add(0x536C7653); hasher.Add(k.SlaveState); hasher.Add(k.SlaveOwner); }
             if (k.PickingLock is { } pick) { hasher.Add(0x5069636B); hasher.Add(Rng.StableHash(pick)); }
             if (k.Bashing is { } bash) { hasher.Add(0x42617368); hasher.Add(Rng.StableHash(bash)); hasher.Add(k.BashTime); if (k.BashOrdered) hasher.Add(0x4F726473); }
