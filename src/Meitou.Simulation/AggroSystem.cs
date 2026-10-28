@@ -223,6 +223,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         var next = table.Next;
         if (present.Length != Relations.Count) { present = new bool[Relations.Count]; hasEnemy = new bool[Relations.Count]; }
         Array.Clear(present);
+        sneakers.Clear();
         for (int i = 0; i < n; i++)
         {
             int generation = next[i].Alive ? next[i].Generation : -1;
@@ -230,6 +231,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
             if (generation >= 0 && table.Cold(i) is { Medical: not null } c && Relations.Contains(c.Faction))
             {
                 present[c.Faction] = true;
+                if ((c.Orders & CharacterOrders.Sneak) != 0 && !c.Medical.Incapacitated) sneakers.Add(next[i].Position);
             }
         }
         // Which factions have an enemy among the factions present: a peaceful crowd skips its looks. Worked out again only when the set changes.
@@ -245,6 +247,20 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
                 if (IsEnemy(Relations, f, g)) { hasEnemy[f] = true; break; }
         }
     }
+
+    /// <summary>Where the awake sneaking characters stand this tick (read only during the looks): a looker that picks no fights looks only when one is in its range.</summary>
+    readonly List<Vector3> sneakers = [];
+
+    bool SneakerWithin(Vector3 eye, float range)
+    {
+        foreach (var p in sneakers) if (Vector3.DistanceSquared(p, eye) <= range * range) return true;
+        return false;
+    }
+
+    /// <summary>An NPC that keeps spot meters without picking fights: awake, not fighting, not held (carried, caged, in bed or asleep), not attacking or treating.</summary>
+    static bool Watches(CharacterCold c, byte task) =>
+        c is { IsPlayer: false, InCombat: false, IsImprisoned: false, Medical.Incapacitated: false } && c.CarriedBy.IsNone && c.InSomething != Locks.HeldState.Bed
+        && c.Ai is not { Behaviour: Ai.AiBehaviour.Sleep } && task is not ((byte)CharacterTask.Attack or (byte)CharacterTask.Treat);
 
     bool[] present = [], presentBefore = [], hasEnemy = [];
     long changesBefore = -1;
@@ -290,6 +306,8 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         public List<Spot>? Spots;
         public List<Sighting> Sightings;
         public EffectBuffer Effects;
+        /// <summary>A looker that picks no fights: the scan only fills its spot meters on sneakers.</summary>
+        public bool SneakOnly;
         /// <summary>Characters gathered this scan, and those taken past the cap (<see cref="GatherCap"/>, <see cref="GatherExtra"/>).</summary>
         public int Gathered, Extra;
     }
@@ -315,26 +333,31 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
                 SenseQuarry(world, table, i, ref slots[i]);
                 continue;
             }
-            if (task is (byte)CharacterTask.Attack or (byte)CharacterTask.Treat || task == (byte)CharacterTask.Rest && !AiSleeper(table.Cold(i))) continue;
-            if (table.Cold(i) is not { InCombat: false, Fleeing: false, IsImprisoned: false, SlaveState: not 1, Fighter.CanAttack: true, Medical.Incapacitated: false } cold
-                || !Relations.Contains(cold.Faction) || cold.IsPlayer && !HuntsEnemies(cold, task) && !HoldsGround(cold, task)) continue;
+            if (table.Cold(i) is not { } cold) continue;
             var stance = cold.Ai?.Stance ?? Ai.AiStance.Aggressive;
             var war = cold.SquadId >= 0 && world.Squads.Find(cold.SquadId) is { War.IsSet: true } assaulting ? assaulting.War : WarTargets.None;
-            if (stance == Ai.AiStance.Passive || !hasEnemy[cold.Faction] && stance != Ai.AiStance.AggressiveNeutrals && !war.IsSet && !(Memory?.AnyTempEnemy(cold.SquadId) ?? false)) continue;
+            bool targets = task is not ((byte)CharacterTask.Attack or (byte)CharacterTask.Treat) && !(task == (byte)CharacterTask.Rest && !AiSleeper(cold))
+                && cold is { InCombat: false, Fleeing: false, IsImprisoned: false, SlaveState: not 1, Fighter.CanAttack: true, Medical.Incapacitated: false }
+                && Relations.Contains(cold.Faction) && !(cold.IsPlayer && !HuntsEnemies(cold, task) && !HoldsGround(cold, task))
+                && stance != Ai.AiStance.Passive && (hasEnemy[cold.Faction] || stance == Ai.AiStance.AggressiveNeutrals || war.IsSet || (Memory?.AnyTempEnemy(cold.SquadId) ?? false));
+            // Every awake NPC keeps spot meters on the sneakers it sees, not only those it would fight (the original's per-looker SpottingPeopleMgr): they feed the crime
+            // witnesses, the stealth knock-out and the sneaker's arrows. One that picks no fights looks for sneakers only.
+            if (!targets && (sneakers.Count == 0 || !Watches(cold, task))) continue;
             float outdoor = RangeOf(cold, Settings.SightRange);
             if (!(outdoor > 0)) continue;
             float range = world.Sight.MaxRange(i, outdoor);
+            if (!targets && !SneakerWithin(prev[i].Position, range)) continue;
             var scan = new Scan
             {
                 Table = table, Relations = Relations, World = world, Memory = Memory, Self = i, Faction = cold.Faction, Squad = cold.SquadId, SquadFights = Combat is null ? null : squadFights,
                 Eye = prev[i].Position, Cold = cold, Yaw = prev[i].Yaw, Range = range, Outdoor = outdoor, Sight = world.Sight, Best = -1, BestD2 = float.MaxValue, BestScore = float.NegativeInfinity,
-                Combat = Combat, Player = cold.IsPlayer, Hold = Orders.Holding(cold) && cold.Fighter.Crossbow is null, Prone = cold.Medical.Prone, Animal = cold.Fighter.IsAnimal,
+                Combat = Combat, Player = cold.IsPlayer, Hold = Orders.Holding(cold) && cold.Fighter?.Crossbow is null, Prone = cold.Medical?.Prone == true, Animal = cold.Fighter?.IsAnimal == true,
                 HoldPoint = Orders.HoldPointOf(cold, prev[i].Position),
                 Seed = world.Seed, Key = Rng.Key(new CharacterId(i, prev[i].Generation)), Tick = (ulong)world.Tick,
                 Stance = stance, War = war,
                 Employer = EmployerOf(world, cold, out bool allies), EmployerAllies = allies,
                 Home = cold.Ai?.Squad.HomeCentre ?? default, HomeR2 = cold.Ai is { } mind ? mind.Squad.HomeRadius * mind.Squad.HomeRadius : 0,
-                Spots = slots[i].Spots, Sightings = sightings ??= [], Effects = effects,
+                Spots = slots[i].Spots, Sightings = sightings ??= [], Effects = effects, SneakOnly = !targets,
             };
             scan.Sightings.Clear();
             world.Grid.Query(scan.Eye.X, scan.Eye.Z, MathF.Max(range, NoiseFar), ref scan, Visit);
@@ -451,6 +474,19 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         // hold enemies of their guards, and slaves of a hostile faction, such as Heng's Outlaws, stand among them).
         if (s.Table.Cold(slot) is not { Medical.Incapacitated: false, IsImprisoned: false } c || c.SlaveState == 1 && !IsEnemy(s.Relations, s.Faction, c.SlaveOwner)) return;
         bool sneaking = (c.Orders & CharacterOrders.Sneak) != 0;
+        // A sneaking target is harder to see and to hear (the Sneak order; docs/game/perception.md "Sight", "Spotting a sneaker" and "Hearing"): in view it fills the
+        // looker's spot meter, whether or not the looker would fight it, and counts as seen only once the meter was full before this scan. Not a looker's own side.
+        float stealth = sneaking ? Orders.Stealth(c) : -1, v = 0;
+        bool full = false;
+        if (sneaking && c.Faction != s.Faction && !(s.Player && c.IsPlayer))
+        {
+            v = s.Sight.Sees(s.Self, slot, s.Eye, s.Yaw, other.Position, s.Outdoor, stealth);
+            full = SpotOf(s.Spots, slot, other.Generation) > 1;
+            if (v > 0) s.Sightings.Add(new Sighting(slot, other.Generation, Orders.SpotSeconds(v, stealth)));
+            if (d2 <= s.Range * s.Range)
+                s.Effects.Emit(s.Self, slot, ExposureEffect, (float)(full && v > 0 ? StealthExposure.Detected : v > 0 ? StealthExposure.Noticed : StealthExposure.Near));
+        }
+        if (s.SneakOnly) return;
         // Wanted characters are the arrest system's (Crime.ArrestSystem): the police spot, fine or arrest them there. A working disguise stands in for the target's faction
         // (slot 125, docs/game/perception.md "Sense tags"; Crime.ArrestSystem.SeenFaction).
         int seenAs = Crime.ArrestSystem.SeenFaction(c);
@@ -480,24 +516,11 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         if (s.Stance == Ai.AiStance.ProtectSquad && (s.SquadFights is { } fights ? s.Squad < 0 || !fights.Contains((s.Squad, slot)) : !c.InCombat)) return;
         if (s.Stance == Ai.AiStance.Territorial && Vector2.DistanceSquared(new Vector2(other.Position.X, other.Position.Z), s.Home) > s.HomeR2) return;
         // The target score (Combat.TargetScore; Taunt and Passive weigh in there), after the Hold post test for a holding looker. Strictly better only: the grid visits a cell's
-        // slots in ascending order, so a tie keeps the lower slot within a cell; across cells the order is the grid's fixed one. A sneaker that scores lower still gets its spot meter.
+        // slots in ascending order, so a tie keeps the lower slot within a cell; across cells the order is the grid's fixed one.
         float score = Score(ref s, slot, c, d2) ?? float.NegativeInfinity;
-        bool better = score > s.BestScore;
-        if (!better && !sneaking) return;
-        // A sneaking target is harder to see and to hear (the Sneak order; docs/game/perception.md "Sight", "Spotting a sneaker" and "Hearing"): in view it fills the
-        // looker's spot meter and counts as seen only once the meter was full before this scan.
-        float stealth = sneaking ? Orders.Stealth(c) : -1;
+        if (!(score > s.BestScore)) return;
         bool seen;
-        if (sneaking)
-        {
-            float v = s.Sight.Sees(s.Self, slot, s.Eye, s.Yaw, other.Position, s.Outdoor, stealth);
-            bool full = SpotOf(s.Spots, slot, other.Generation) > 1;
-            if (v > 0) s.Sightings.Add(new Sighting(slot, other.Generation, Orders.SpotSeconds(v, stealth)));
-            if (d2 <= s.Range * s.Range)
-                s.Effects.Emit(s.Self, slot, ExposureEffect, (float)(full && v > 0 ? StealthExposure.Detected : v > 0 ? StealthExposure.Noticed : StealthExposure.Near));
-            if (!better) return;
-            seen = full && v > 0;
-        }
+        if (sneaking) seen = full && v > 0;
         else seen = s.Sight.Sees(s.Self, slot, s.Eye, s.Yaw, other.Position, s.Outdoor) > 0;
         if (!seen)
         {

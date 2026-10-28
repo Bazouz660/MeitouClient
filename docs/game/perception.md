@@ -71,9 +71,10 @@ and stealth x 5). Each looker keeps a meter per target (`SensoryData::SpottingPe
   panel's right in colour (0.942, 0.806, 0.341) (**Verified**, `Kenshi_CharacterNamePanel.layout`). The tag state is set alongside: 3 seen, 2 almost seen, 1 hidden.
 - Stealth XP: see [character-stats](character-stats.md#levelling-xp).
 
-Meitou: meters only for hostile/police lookers the aggro scan runs, no line-of-sight ray, f = 0.5, dt = the scan interval,
-a meter decays also when the target is out of range (the original's rule there is **Unknown**). Crime witnesses keep the
-same meters on a sneaking culprit in `CrimeSystem` (any faction, not just hostile lookers). A sneaking player
+Meitou: `AggroSystem` keeps one meter per looker and sneaker for every awake NPC of another faction (one that picks no fights
+looks for sneakers only, when one is in range; not in bed, asleep, carried, caged or fighting), no line-of-sight ray, f = 0.5,
+dt = the scan interval; a meter decays also when the target is out of range (the original's rule there is **Unknown**). Crime
+witnesses and the stealth knock-out read the same meters. A sneaking player
 character gets the arrows (`MarkerRenderer`, both passes like the movement marker, lit by the sun; no green) and the original's stealth icon left of its name in the tag
 colours: seen if any watcher detects, almost seen if any notices, else hidden, and the light-level icon from its `SightMap` light.
 Every player character within the 1.2e8 range gets the `Kenshi_CharacterNamePanel` over its head (name in `Kenshi_StandardFont_Large` with shadow, selected: white in [brackets], else #b3b3b3 (**Observed**); the icon only while sneaking); NPCs get none
