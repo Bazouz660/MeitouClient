@@ -984,15 +984,22 @@ public sealed partial class ProductionSystem : ITickSystem
 
     /// <summary>The research the player may queue now (<b>Observed</b>, <c>FUN_1408333b0</c>): not blueprint-only, not exhausted (every repetition done) or queued, <c>level</c> within the tech level, requirements met.</summary>
     public bool Available(World world, ResearchData r) =>
-        !r.BlueprintOnly && !world.Research.Exhausted(db, r.Id) && !world.Research.IsQueued(r.Id) && r.Level <= world.Research.TechLevel && Met(world, r);
+        !r.BlueprintOnly && !world.Research.Exhausted(db, r.Id) && !world.Research.IsQueued(r.Id) && r.Level <= world.Research.TechLevel && Met(world, r.Requirements, lenient: true);
 
-    bool Met(World world, ResearchData r)
+    bool Met(World world, ResearchData r) => Met(world, r.Requirements, lenient: false);
+
+    /// <summary>
+    /// The requirement check (<b>Verified</b>, <c>FUN_140832fa0</c>): a RESEARCH must be finished, any other record unlocked. <paramref name="lenient"/> (the research list) also
+    /// passes an unmet one whose own <c>requirements</c> are all met strictly (one level; none passes); blueprint learning is strict.
+    /// </summary>
+    bool Met(World world, IEnumerable<string> requirements, bool lenient)
     {
-        foreach (var req in r.Requirements)
+        foreach (var req in requirements)
         {
             var record = db.Find(req);
             if (record is null) continue;
-            if (record.Type == FcsRecordType.RESEARCH ? !world.Research.IsDone(req) : !world.Research.IsUnlocked(req)) return false;
+            if (record.Type == FcsRecordType.RESEARCH ? world.Research.IsDone(req) : world.Research.IsUnlocked(req)) continue;
+            if (!lenient || !Met(world, record.GetReferences("requirements").Select(l => l.TargetStringId), lenient: false)) return false;
         }
         return true;
     }
@@ -1076,7 +1083,7 @@ public sealed partial class ProductionSystem : ITickSystem
             }).ToArray();
         return publishedResearch = new ResearchSnapshot(state.TechLevel, state.BenchLevel, queue, state.Rate, available) {
             Finished = state.Completed.Count, Known = state.Completed.ToHashSet(StringComparer.Ordinal),
-            RequirementsMet = allResearch.Where(r => Met(world, r)).Select(r => r.Id).ToHashSet(StringComparer.Ordinal),
+            RequirementsMet = allResearch.Where(r => Met(world, r.Requirements, lenient: true)).Select(r => r.Id).ToHashSet(StringComparer.Ordinal),
         };
     }
 
