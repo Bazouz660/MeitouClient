@@ -116,7 +116,7 @@ sealed partial class GameHost
         var hang = BoundsOf(g.Record) is { } box ? Turn(LongAxis(box.Max - box.Min), -Vector3.UnitY) : Quaternion.Identity;
         falls.Add(new FallingLimb
         {
-            Ground = g, Mesh = mesh, Look = LimbLookOf(g.Record), Stump = stump, Rest = new Vector3(g.Position.X, y, g.Position.Z), RestY = y,
+            Ground = g, Mesh = mesh, Look = ToneOf(LimbLookOf(g.Record), g), Stump = stump, Rest = new Vector3(g.Position.X, y, g.Position.Z), RestY = y,
             Hanging = Quaternion.Normalize(Quaternion.Concatenate(hang, yaw)), Lying = lying,
         });
         return true;

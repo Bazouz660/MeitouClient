@@ -26,12 +26,12 @@ sealed partial class GameHost
     void RestLimb(GroundItemSnapshot g, Quaternion rotation, float y)
     {
         if (scene.Database?.Find(g.Record) is not { } item || WorldObjectLayout.ItemMesh(item) is not { Length: > 0 } mesh || LimbLookOf(g.Record) is not { } look) { ShowGround(g, rotation, y); return; }
-        restLimbs[g.Id] = new RestingLimb(mesh, look, rotation, new Vector3(g.Position.X, y, g.Position.Z));
+        restLimbs[g.Id] = new RestingLimb(mesh, ToneOf(look, g)!, rotation, new Vector3(g.Position.X, y, g.Position.Z));
     }
 
     /// <summary>
     /// The look of a ground item that is a race's <c>severed limbs</c> entry (null for any other item): its MATERIAL record's texture map and colour map (the skin-tone mask), the race's blood
-    /// colour. The skin tone the original keeps on the item (the cut character's) is not carried by our ground items: none is applied (the mask then has no effect).
+    /// colour and its normal map. The skin tone comes with the cut (<see cref="ToneOf"/>).
     /// </summary>
     LimbLook? LimbLookOf(string record)
     {
@@ -51,15 +51,17 @@ sealed partial class GameHost
                 var spec = item.GetReferences("material").Select(r => db.Find(r.TargetStringId)).FirstOrDefault(r => r is not null);
                 string? Name(string key) => spec?.GetPath(key) is { Length: > 0 } p ? Path.GetFileName(p.Replace('\\', '/')) : null;
                 if (Name("texture map") is { } diffuse)
-                    look = new LimbLook(diffuse, Name("color map"), Vector3.Zero, CharacterAppearance.Rgb(owner.GetInt("blood colour", 0x800000) & 0xFFFFFF), owner.StringId, Meitou.Rendering.Characters.CharacterRenderer.SkinByDefault(owner));
+                    look = new LimbLook(diffuse, Name("color map"), Vector3.Zero, CharacterAppearance.Rgb(owner.GetInt("blood colour", 0x800000) & 0xFFFFFF), owner.StringId, Meitou.Rendering.Characters.CharacterRenderer.SkinByDefault(owner), Name("normal map"));
             }
         }
         return limbLooks[record] = look;
     }
 
-    /// <summary>The position of a piece whose mesh's origin is at <paramref name="origin"/> (a piece's position is its bounds' middle).</summary>
-    Vector3 LimbMiddle(string mesh, LimbLook? look, Quaternion rotation, Vector3 origin) =>
-        gpu.Debris?.Centre(mesh, look) is { } centre ? origin + Vector3.Transform(centre, rotation) : origin;
+    /// <summary>The look with the skin tone of the character the limb was cut from (<see cref="FallSource.SkinTone"/>; none for a limb read from a save).</summary>
+    static LimbLook? ToneOf(LimbLook? look, GroundItemSnapshot g) => look is null ? null : look with { SkinTone = g.Fall?.SkinTone ?? default };
+
+    /// <summary>The position of a limb's piece: its mesh's origin (a limb keeps the mesh's own space, <see cref="DebrisRenderer"/>; the other pieces are centred on their bounds).</summary>
+    static Vector3 LimbMiddle(string mesh, LimbLook? look, Quaternion rotation, Vector3 origin) => origin;
 
     void AddRestingLimbs()
     {

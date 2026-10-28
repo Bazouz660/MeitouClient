@@ -107,6 +107,12 @@ characters carry blood on their skin, not only on the ground.
   (`texture map`, `normal map`, `color map` = skin-tone mask; the human's are the female body's), shader `severed_limb_fs`: skin-tone mask tint
   (a vec4 stored on the item), then blood with the same texture, `bloodColour` (a vec4 on the item) and an extra alpha of
   max(−2 × 0.3 × mesh x, 0), so the cut end (negative x) is solid blood. Its mapping: u = 0.3 × x, v = the angle round X (atan2(normal.y, normal.z)).
+  **Verified** (`FUN_1400ced10`, the item's setup from the cut character, called by `FUN_14064edc0`; `FUN_1400cf490` hands the values to the entity): the item keeps a vec4 skin tone at
+  `+0x1f4` (shader `skinTone`, custom parameter 2) = 1 − the character's appearance `Skin Tone` colour per channel, i.e. the body shader's `skintone` (our `SkinToneParameter`); a vec4
+  blood colour at `+0x204` (custom 3) = the race's `blood colour` as ARGB, alpha 1.0; and at `+0x1e8` the size of the character's forearm (arm slots) or calf (leg slots) bone, which
+  `FUN_1400cf490` sets as the item node's scale (**Unknown** whether that follows the body shape in play; we draw the limb at scale 1). The fragment is `albedo × (1 − skinTone × colourMap.r)`,
+  then the blood, × 0.7, with the normal map on the frame (tangent, cross(tangent, normal) × tangent.w, normal) (DXT5, x in alpha, z rebuilt). The `1-itemlist` save keeps no state for an
+  item (save.md), so the tint is not saved: **Unknown** what a limb loaded from a save shows (we apply none).
 
 
 **Meitou**
@@ -119,6 +125,9 @@ characters carry blood on their skin, not only on the ground.
 - Stump: a limb-replacement item without a material wears the body material at the full amount (`BloodFull`): a severed part is far below its health.
 - Fallen limb: `GameHost.SeveredLimbs` draws a race's `severed limbs` items with the debris renderer, falling and at rest, instead of as a world object: the MATERIAL record's
   texture map, the race's blood colour, blood with the cut end solid, and the Meitou skin's scattering (the same table and rule per race as the body; the curvature baked by
-  `CharacterContent.MarkCurvature`). Not carried: the cut character's skin tone (the original keeps it on the item), the normal map; a limb as a debris piece casts no shadow.
+  `CharacterContent.MarkCurvature`), the cut character's skin tone through the colour map (`FallSource.SkinTone`, set in `PopulationSystem.DropSeveredLimb`, not saved: a limb read from a
+  save has none) and the MATERIAL's normal map on the mesh's own tangents (`Model.Build` `tangentSign`). A limb piece sits at its mesh's origin and keeps the mesh's own space (the blood
+  mapping reads x). A limb as a debris piece casts no shadow. **Observed** (sandbox, a light and a red-tinted character): the limb matches the body it came from; the skin normal map is faint
+  (clearly visible only amplified).
 - **Observed** (sandbox, a dressed character): a stump under a coat or trousers is not visible at all; the blood shows on a bare stump and on a fallen limb. The ground limb of the
   sandbox is white without a material because the sandbox has no world-object layer, so the debris path (no material) drew it.

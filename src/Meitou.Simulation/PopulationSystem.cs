@@ -160,7 +160,7 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
         at.Y = world.Walkability.GroundHeight(at.X, at.Z, hot.Position.Y);
         // The stump: the part of the limb's slot and its bone name 2 (BodyPartTemplate.BoneName2; FUN_14064edc0 reads it for the item's pose).
         string? stump = cold.Medical?.Parts.FirstOrDefault(p => p.Template.LimbSlot == limb)?.Template.BoneName2;
-        world.GroundItems.Drop(item, at, yaw, stump is { Length: > 0 } bone ? new FallSource(world.Characters.IdOf(slot), bone, world.Tick) : null);
+        world.GroundItems.Drop(item, at, yaw, stump is { Length: > 0 } bone ? new FallSource(world.Characters.IdOf(slot), bone, world.Tick, cold.Appearance?.SkinToneParameter ?? default) : null);
     }
 
     public void SlowWorld(World world)
