@@ -26,7 +26,12 @@ recording; workers record immutable draw jobs, never upload/allocate or mutate r
 ## Grass
 
 Worker-built 576-unit pages (8x8 per zone) use placement density and terrain rules from research.
-Near pages draw blades; ranges and paging determine coverage. Sway is held for deterministic
+Near pages draw blades; ranges and paging determine coverage. The blades live in one store (`FoliageGrassGpu`), 160 MB and 32768 slots at
+the default grass distance (x 8 the layer ranges), times the distance ratio squared rounded up, at most 8 (x 2: 640 MB); raising the setting
+past it builds a larger store and makes every page again (`GrowGrassStore`), lowering it keeps the store until restart. A page that finds the
+store full keeps its blades and waits; while full, one waiting page a frame is tried. **Observed** (save siwa-test4, x 2 in the 160 MB
+store): retrying every waiting page each frame cost 15.8 ms of the render thread (trace: `BufferArena.Allocate` and the release of the
+partial allocation), and the pages past the store were never drawn. Sway is held for deterministic
 screenshots unless deliberately stepped. `grass-velocity` supplies sway motion only where screen
 motion warrants it; camera reprojection handles the rest. Incorrect previous phase/camera/depth
 causes temporal ghosting. Keep blade motion consistent between colour/depth/velocity views.
