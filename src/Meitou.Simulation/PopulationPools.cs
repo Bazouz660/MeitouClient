@@ -235,6 +235,15 @@ public sealed partial class PopulationSystem
             Position = p.Position, Money = p.Money, Package = p.Package, Stored = new StoredSquad { Name = data.Db.Find(p.TemplateId)?.Name ?? p.TemplateId, HomeBuilding = home },
             State = PlatoonState.Loaded,
         };
+        // The old squad's building shop (kept when it left the world, else a save's) leaves its artifacts in its containers for the fresh one's.
+        var oldShop = p.Stored?.Shop ?? (p.Saved is { } saved
+            ? saved.Shop ?? Saving.ShopSave.Read(world, new Squad { Id = -1, TemplateId = p.TemplateId, Faction = p.Faction, Town = p.Origin, HomeBuilding = home }, saved.Source.Record, data)
+            : null);
+        if (oldShop is not null)
+        {
+            world.Fixtures.RegisterSite(world, data, p.Origin);   // the containers, if the town has not loaded them yet (once)
+            Trading.TradeSystem.GiveBack(world, oldShop);
+        }
         var squad = SpawnSquad(world, built with { Home = home }, site, radius, platoonId: fresh.Id, pinned: true);
         squad.Money = p.Money;
         fresh.SquadId = squad.Id;

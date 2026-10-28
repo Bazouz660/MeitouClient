@@ -26,6 +26,14 @@ CharacterShaders set0 bindings: bones6, materials7 (persistent), morphs8, previo
 slots. CharacterLayoutTests pins CPU/GLSL layouts. Push depthIndex is near-depth bindless index
 for motion,0 otherwise. Camera-relative transforms preserve precision; previous bone/transform
 state must match motion history. Skin/body/head/hair/item modes share world lighting/haze.
+The colour and motion views use the near slice's rotation-only view-projection (`WorldFrame` passes it, jittered and unjittered; the
+previous frame's is moved by the eye difference in double), not the world one with the eye's position cancelled afterwards
+(`FromOrigin`, still used by the other views): the world matrix's translation already holds the eye's rounding.
+**Observed** (sandbox hero spawned at x = -50874, `--upscaler off`, camera locked on the leader at the minimum boom 10, CPU replay of the
+renderer's matrix path): the look-at point projected 0.2 px (range -0.07 to +0.32) off the screen centre, a different error each
+frame, against 0.000 near the origin; the world matrix applied to world positions steps by 0.25 px. Its previous-frame twin put the same
+noise into the characters' velocity (median of a walker's vectors, second difference 0.39 to 0.25 px in x with the rotation-only
+matrix). The error scales with 1/boom and with the distance from the origin; terrain and objects still use world matrices.
 Head uses UV+(0,1); dye/vest/overlays and cutout rules come from research. Same-instance caster
 pass preserves alpha coverage. Face morphs and body shape precede skinning.
 

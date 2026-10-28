@@ -15,6 +15,14 @@ public sealed class FoliageRandom
 
     public FoliageRandom(uint seed) => Seed(seed);
 
+    /// <summary>A generator in the same state, which then draws on its own.</summary>
+    public FoliageRandom Clone()
+    {
+        var copy = new FoliageRandom(0) { index = index, Count = Count };
+        state.CopyTo(copy.state, 0);
+        return copy;
+    }
+
     /// <summary>Number of 32-bit results drawn since the last seed.</summary>
     public int Count { get; private set; }
 

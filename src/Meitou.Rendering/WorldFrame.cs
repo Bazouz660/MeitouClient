@@ -1561,12 +1561,16 @@ static class WorldFrame
             if (nearSlice) post.SetNearSlice(near, far, camera.FieldOfView, aspect);
             var viewProjection = view * Jitter.Apply(camera.Projection(aspect, near, far), jitter, rw, rh);
             var frustum = WorldCamera.FrustumPlanes(viewProjection);
+            // The characters' view-projection for positions relative to the eye: the rotation only, exact (the matrix above, with the eye's world position in its translation,
+            // has lost the digits far from the origin: CharacterRenderer.DrawView).
+            var relativeProjection = rotation * Jitter.Apply(camera.Projection(aspect, near, far), jitter, rw, rh);
+            var relativeUnjittered = rotation * camera.Projection(aspect, near, far);
             if (nearSlice && post.Temporal && gpu.Foliage is { } swaying)
             {
                 post.ObjectMotion ??= swaying.DrawGrassMotion;
                 swaying.SetMotionCamera(viewProjection, view * camera.Projection(aspect, near, far), eye, frustum);
             }
-            if (nearSlice) gpu.Characters?.AttachMotion(post, gpu.Foliage, viewProjection, view * camera.Projection(aspect, near, far), eye, frustum);
+            if (nearSlice) gpu.Characters?.AttachMotion(post, gpu.Foliage, viewProjection, view * camera.Projection(aspect, near, far), eye, frustum, relativeProjection, relativeUnjittered);
             host.Stage(6);
             var fogCull = gpu.FogVolumes;
             gpu.Terrain.FogCull = fogCull;
@@ -1593,7 +1597,7 @@ static class WorldFrame
             gpu.Terrain.DrawDeferred();   // the terrain colour where nothing nearer covers it (the depth is in from the draw above)
             if (nearSlice && gpu.Debris is { } debris)
             {
-                debris.Draw(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(gpu.DebrisPieces), viewProjection, eye, frustum, light);
+                debris.Draw(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(gpu.DebrisPieces), viewProjection, eye, frustum, light, look => gpu.Characters is { } chars && chars.SkinOn(look.Race, look.SkinDefault) ? chars.SkinTable : 0);
                 if (gpu.BoltPieces.Count > 0) debris.Draw(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(gpu.BoltPieces), viewProjection, eye, frustum, light);
             }
             StageClock.Lap(6);
@@ -1603,7 +1607,7 @@ static class WorldFrame
             if (nearSlice && gpu.Characters is { } characters)
             {
                 host.Stage(StageClock.Characters);
-                characters.Draw(viewProjection, eye, frustum, light.SunDirection, light.FogColour, light.FogDistance);
+                characters.Draw(viewProjection, eye, frustum, light.SunDirection, light.FogColour, light.FogDistance, relativeProjection);
                 post.CharactersDrawn = characters.DrawnCharacters > 0;
                 StageClock.Lap(StageClock.Characters);   // the colour draw; the motion draw (post chain, upscalers only) laps itself in
             }

@@ -151,7 +151,7 @@ Reset squad positions 0x1, Buildings 0x4, Research 0x8, Dead NPCs 0x10, Relation
    "Town too close. Removing" and "Player town '...' withing boundaries of ...", is deleted and leaves the list, so of two such towns the earlier one goes. What becomes of its
    buildings is **Unknown**).
 4. Always (`FUN_140372560`): every non-nest town of the save gives its `discovered` and `explored` to the new town; player towns are set discovered and explored. **Dead NPCs**
-   also applies the save's `replacementTown`. No town at all logs "No towns loaded."
+   also applies the save's `replacementTown`. No town at all logs "No towns loaded." Then the towns get their [artifacts](../game/economy.md#artifacts) as in a new game.
 5. **Buildings**, zone files (`FUN_140377710`; a save whose version is below 0x245 uses `FUN_140377d10`, not read): each `zone/*.zone` keeps only the building instances that are removal entries
    (empty target) or whose state is owned by the player faction; the others, the zone's loose items and every other record are not copied. A zone with a kept instance gets the
    root bool `imported` = true and its file in the new working folder; at load that bool sets `ZoneMapContent::newGameFirstTimeLoaded` (`+0xa8`, `FUN_1409ffad0`), so the zone
@@ -255,7 +255,7 @@ The CAMERA's sky transition is written as finished (`sky updating` false, both t
 | --- | --- | --- |
 | Game time, clock, sky transition, weather and season per region | `quick.save` CAMERA, BIOMES | **Verified** present |
 | Factions: relations, trust, prosperity, rank, war campaigns | `quick.save` | **Verified** (present in the sample); Meitou-only `meitou global trust`, `meitou war<k>` ([trust and war](#faction-trust-war-flags-bed-rent-and-turrets)); int `rank` on each non-player faction ([faction rank](../game/factions-squads-towns.md#32-faction-rank)); campaigns: [WAR_SAVESTATE](#war_savestate-type-9-faction-campaigns). Special squads in GAMESTATE_FACTION: `sq<i>` (UNIQUE_SQUAD_TEMPLATE id), float `sqtime<i>` (replacement timer), handle list `<i>:sq list` (live UniquePlatoons) (`FUN_1402deea0` / `FUN_1402df0c0`; `sq`/`sqtime` **Verified** in 9 saves: United Cities and Dust Bandits, `sqtime0` 0; `:sq list` from code only, empty or absent in every sample); PLATOON bool `special` marks a UniquePlatoon, which adds `missionTimer` and `missionRepeatsCount` ([special squads](../game/factions-squads-towns.md#unique-characters)) |
-| Town state (discovery, population, trade goods, artifacts, nests) | `quick.save` | **Verified** (present in the sample); town placements, names and shop lists come from `leveldata.level` |
+| Town state (discovery, population, trade goods, [artifacts](../game/economy.md#artifacts), nests) | `quick.save` | **Verified** (present in the sample); town placements, names and shop lists come from `leveldata.level` |
 | Squads and all character state (stats, wounds, inventory, appearance, AI) | `.platoon` | **Verified** (present in the sample) |
 | Buildings' state, generated interiors, loose items, item placement groups ([keys](../game/factions-squads-towns.md#loose-items-in-buildings)) | `.zone` | **Verified** for visited zones |
 | Locks and doors (`lock lvl`, `locked`, `state<i>`, `wants lock<i>`, ...), cage/bed occupancy (`in something`, `in what`) | `.zone`, `.platoon` | **Verified** keys: [locks](../game/locks.md#save-keys) |

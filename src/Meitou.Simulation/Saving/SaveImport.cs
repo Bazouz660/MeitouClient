@@ -72,6 +72,7 @@ public static class SaveImport
         FilterUniques(game, keep, options, data);
         FilterFactions(game, options);
         FilterTowns(game, playerId, options);
+        AddArtifacts(game, data);
         FilterZones(game, playerId, options);
 
         // The weather and the terrain decals are the new world's; the research is the start's unless it is imported.
@@ -217,6 +218,18 @@ public static class SaveImport
             var gone = dropped.Select(r => r.StringId).ToHashSet(StringComparer.Ordinal);
             list.Instances.RemoveAll(i => i.States.Count > 0 && gone.Contains(i.States[0]));
         }
+    }
+
+    /// <summary>
+    /// The towns get their artifacts as in a new game (docs/game/economy.md "Artifacts"): a town of the player's kept whole adds them to its saved list, the others had theirs cut.
+    /// </summary>
+    static void AddArtifacts(SaveGame game, PopulationData data)
+    {
+        var states = new Dictionary<string, FcsRecord>(StringComparer.Ordinal);
+        foreach (var town in game.Towns) if (!town.IsNest && town.Instance.Length > 0) states.TryAdd(town.Instance, town.Record);
+        foreach (var (site, list) in PopulationSystem.PlanArtifacts(data))
+            if (states.TryGetValue(data.Sites[site].InstanceId, out var state))
+                PopulationSystem.WriteArtifacts(state, [.. PopulationSystem.ReadArtifacts(state, data.Db), .. list]);
     }
 
     /// <summary>

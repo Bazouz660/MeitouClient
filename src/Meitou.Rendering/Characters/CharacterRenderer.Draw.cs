@@ -89,9 +89,13 @@ internal sealed unsafe partial class CharacterRenderer
     /// <summary>Room masks used to give indoor characters the same indirect-light gain as their surroundings.</summary>
     internal WorldObjectRenderer? InteriorObjects { get; set; }
 
-    /// <summary>Draws the characters seen from <paramref name="eye"/> through <paramref name="frustum"/> into the open pass.</summary>
-    public void Draw(Matrix4x4 viewProjection, Vector3 eye, Vector4[] frustum, Vector3 light, Vector3 fogColour, float fogDistance) =>
-        DrawView(new ViewConstants { ViewProjection = viewProjection, Eye = eye, LightDir = light, FogColour = fogColour, FogDistance = fogDistance }, eye, frustum);
+    /// <summary>
+    /// Draws the characters seen from <paramref name="eye"/> through <paramref name="frustum"/> into the open pass. <paramref name="relative"/>, when the caller has it, is the
+    /// same view-projection for positions relative to the eye (the view's rotation only): exact, where one made from <paramref name="viewProjection"/> carries the rounding of
+    /// the eye's world position (<see cref="DrawView"/>).
+    /// </summary>
+    public void Draw(Matrix4x4 viewProjection, Vector3 eye, Vector4[] frustum, Vector3 light, Vector3 fogColour, float fogDistance, Matrix4x4? relative = null) =>
+        DrawView(new ViewConstants { ViewProjection = viewProjection, Eye = eye, LightDir = light, FogColour = fogColour, FogDistance = fogDistance }, eye, frustum, relative: relative);
 
     /// <summary>
     /// Draws the characters' depth for a shadow cascade (<see cref="CharacterShaders.DepthFragment"/>); levels chosen from <paramref name="lodEye"/>, never finer than
@@ -136,15 +140,17 @@ internal sealed unsafe partial class CharacterRenderer
         for (int k = 0; k < views; k++) depthViews[k] = default;
     }
 
-    void DrawView(in ViewConstants worldView, Vector3 eye, Vector4[] frustum, float lodFloor = 0, float minRadius = 0, ViewBatches? prepared = null)
+    void DrawView(in ViewConstants worldView, Vector3 eye, Vector4[] frustum, float lodFloor = 0, float minRadius = 0, ViewBatches? prepared = null, Matrix4x4? relative = null, Matrix4x4? previousRelative = null)
     {
         var cpu = Stopwatch.StartNew();
         // Drawn relative to the view's eye (the vertex program adds it back for the shading): skinned in world floats, an animated vertex far from
         // the origin (the Hub, tens of thousands of units out) rounds to a different step every frame and the character visibly jiggles.
+        // The view-projection for those positions is the caller's rotation-only one when it has it: FromOrigin can cancel the eye's coordinates exactly, but not the rounding
+        // already in a matrix built with them (about 0.004 units at 50000, a different error every frame: 0.3 px at the closest zoom, and as much noise in the velocity).
         var origin = worldView.Eye;
         var view = worldView;
-        view.ViewProjection = FromOrigin(origin, worldView.ViewProjection);
-        view.PreviousViewProjection = FromOrigin(origin, worldView.PreviousViewProjection);
+        view.ViewProjection = relative ?? FromOrigin(origin, worldView.ViewProjection);
+        view.PreviousViewProjection = previousRelative ?? FromOrigin(origin, worldView.PreviousViewProjection);
         DrawCalls = 0;
         DrawnTriangles = 0;
         Array.Clear(LevelParts);
@@ -256,7 +262,7 @@ internal sealed unsafe partial class CharacterRenderer
                 }
                 bool twoSided = part.Material.DoubleSided;
                 uint hidden = (part.IsBody && l.Asset.Appearance is { } look ? (uint)look.HiddenLimbs << 12 | (uint)(look.HiddenParts & 0x3FF) << 18 : 0u) | (uint)part.HideSide << 16;
-                var instance = new CharInstance { Model = model, BoneBase = (uint)l.BoneBase, Material = (uint)part.Material.Slot, Flags = (interior ? 1u : 0u) | hidden, MorphBase = part.Morphed ? l.Asset.MorphBase : 0 };
+                var instance = new CharInstance { Model = part.IsBody ? WithBlood(model, l.Blood) : model, BoneBase = (uint)l.BoneBase, Material = (uint)part.Material.Slot, Flags = (interior ? 1u : 0u) | hidden, MorphBase = part.Morphed ? l.Asset.MorphBase : 0 };
                 if (motionPass)
                 {
                     var previousWorld = Relative(l.State.PreviousWorld, origin);
@@ -397,7 +403,7 @@ internal sealed unsafe partial class CharacterRenderer
                 uint hidden = (part.IsBody && l.Asset.Appearance is { } look ? (uint)look.HiddenLimbs << 12 | (uint)(look.HiddenParts & 0x3FF) << 18 : 0u) | (uint)part.HideSide << 16;
                 var instance = new CharInstance
                 {
-                    Model = f.Model, BoneBase = (uint)l.BoneBase, Material = (uint)part.Material.Slot, Flags = (l.Interior ? 1u : 0u) | hidden,
+                    Model = part.IsBody ? WithBlood(f.Model, l.Blood) : f.Model, BoneBase = (uint)l.BoneBase, Material = (uint)part.Material.Slot, Flags = (l.Interior ? 1u : 0u) | hidden,
                     MorphBase = part.Morphed ? l.Asset.MorphBase : 0, PreviousModel = motion ? f.PreviousModel : default,
                 };
                 // In a shadow map hair is a silhouette, so it takes the rule's own distances there (its levels start CharacterContent.HairLodScale times farther for the picture).
@@ -545,6 +551,18 @@ internal sealed unsafe partial class CharacterRenderer
         n.Elements = new GpuBufferBinding(part.Indices.Handle, 0, part.Indices.Size);
         n.SegA = n.SegB = 0;
         n.PipeA = n.PipeB = null;
+    }
+
+    /// <summary>
+    /// The matrix with the body's blood amounts in the w of its four rows (the vertex program reads only their xyz): two parts a float, part 2j in the low byte and part 2j + 1 in the next of
+    /// row j's w, as an exact integer (CharacterShaders: <c>vBloodAmount</c>).
+    /// </summary>
+    static Matrix4x4 WithBlood(Matrix4x4 m, ulong blood)
+    {
+        if (blood == 0) return m;
+        static float Pair(ulong b, int j) => (float)((b >> (16 * j)) & 0xFFFF);
+        m.M14 = Pair(blood, 0); m.M24 = Pair(blood, 1); m.M34 = Pair(blood, 2); m.M44 = Pair(blood, 3);
+        return m;
     }
 
     readonly JobPool<DrawJob> drawJobs = new();

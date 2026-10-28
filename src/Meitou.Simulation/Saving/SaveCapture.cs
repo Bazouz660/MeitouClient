@@ -104,7 +104,11 @@ public static partial class SaveCapture
         UpdateFactions(game, data, loaded);
         WriteKnownFactions(game, data, world.Player);
         WriteTownKnowledge(builder, data, world.Player);
-        if (world.Systems.OfType<PopulationSystem>().FirstOrDefault() is { } pools) WriteTownPools(game, data, pools);
+        if (world.Systems.OfType<PopulationSystem>().FirstOrDefault() is { } pools)
+        {
+            WriteTownPools(game, data, pools);
+            WriteTownArtifacts(game, data, world, pools);
+        }
         WriteTownReplacements(game, data);
         // The zone files of the zones visited since (before the locks, the player's buildings and the home handles, which write into them).
         ZoneSave.WriteVisited(game, world, data, options.Levels);
@@ -232,6 +236,15 @@ public static partial class SaveCapture
                 pools.Write(town.Record);
                 town.Record.Bools["started"] = pools.Started;
             }
+    }
+
+    /// <summary>Each placed town's artifacts still to be given out into its state (docs/game/economy.md "Artifacts").</summary>
+    static void WriteTownArtifacts(SaveGame game, PopulationData data, World world, PopulationSystem population)
+    {
+        var sites = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var s in data.Sites) if (s.InstanceId.Length > 0) sites.TryAdd(s.InstanceId, s.Index);
+        foreach (var town in game.Towns)
+            if (!town.IsNest && sites.TryGetValue(town.Instance, out int site)) PopulationSystem.WriteArtifacts(town.Record, population.ArtifactsOf(world, site));
     }
 
     /// <summary>Each placed town's <c>replacementTown</c> (the TOWN in its place, "" none) and, while replaced, its <c>faction</c>, into its state.</summary>

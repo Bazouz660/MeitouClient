@@ -13,7 +13,7 @@ export interface Category { id: string; name: string; blurb: string; rows: Row[]
 export interface Bug { id: string; seen: string; original: string; state: string; platform?: string; }
 export interface Fix { id: string; text: string; }
 
-export const asOf = { date: "2026-10-28", master: "86ae196c" };
+export const asOf = { date: "2026-10-28", master: "ec927b5b" };
 
 export const statuses: Record<Status, { label: string; desc: string }> = {
   "works": {
@@ -92,7 +92,7 @@ export const categories: Category[] = [
     { id: "building-damage-and-repair", system: "Building damage and repair", status: "untested", note: "As in the original, only melee blows damage buildings: walls, gates and doors. A wall hit to 0 becomes a ruin; walkers no longer pass through ruin walls (on master). Repair and Engineer jobs restore them. Play report: broken doors offer no repair and engineers do not repair them.", bugs: [] },
     { id: "naming-an-outpost-its-map-marker-buying-town-buildings", system: "Naming an outpost, its map marker, buying town buildings", status: "wip", note: "Buying a town house works and its owner is saved; outposts can be renamed from the town panel, and a bought ruined house can be restored through construction jobs (#63, not seen in play yet); player outposts show on the world map (on master). Furniture cannot be placed inside a bought town house (also after repairing it, per a play report).", bugs: [] },
     { id: "blueprints", system: "Blueprints", status: "untested", note: "Shops stock blueprints (research, armour, crossbows); right-clicking one in your own inventory learns its research. Not seen in play yet.", bugs: [] },
-    { id: "walls-gates-turrets-upgrades", system: "Walls, gates, turrets, upgrades", status: "works", note: "Tested in play: wall lines, gates, turrets and building upgrades work. New on master, not seen in play yet: raiders whose target is behind a locked gate walk to it and bash it open.", bugs: [] },
+    { id: "walls-gates-turrets-upgrades", system: "Walls, gates, turrets, upgrades", status: "works", note: "Tested in play: wall lines, gates, turrets and building upgrades work. New on master, not seen in play yet: raiders whose target is behind a locked gate walk to it and bash it open.", bugs: ["#111"] },
     { id: "crafting-and-production", system: "Crafting and production", status: "wip", note: "Queue, repeat and research gating in code; the item furnace burns items into raw iron, and powered machines have Power and Battery toggles (on master); machines in NPC towns do not run. Play report: crafting stations make no sound while working.", bugs: [] },
     { id: "farms-and-wells", system: "Farms and wells", status: "wip", note: "Catch-up for time spent away only in Faithful mode (production far away switch, on master); crops have no quality.", bugs: [] },
     { id: "power-generators-and-batteries", system: "Power: generators and batteries", status: "wip", note: "Generators, fuel, batteries, town power sharing and wind generators turned by the region's wind are in code; generator and battery output and capacity scale with health on master; battery mode is not saved.", bugs: [] },
@@ -143,6 +143,8 @@ export const categories: Category[] = [
 ];
 
 export const bugs: Bug[] = [
+  { id: "#111", seen: "Hub defensive walls clip into the Shinobi Thieves Tower.", original: "Not checked.", state: "Open issue" },
+  { id: "#108", seen: "UI flickering.", original: "Not checked.", state: "Open issue" },
   { id: "#104", seen: "An NPC tooltip shows the unresolved name \"Pacifier /GENNAME/\".", original: "Not checked.", state: "Open issue" },
   { id: "#17", seen: "Borderless full screen on macOS shows no window.", original: "Not applicable.", state: "Issue closed; last report says still broken", platform: "macOS" },
 ];

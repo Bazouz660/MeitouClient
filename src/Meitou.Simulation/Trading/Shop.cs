@@ -187,12 +187,13 @@ public static class ShopFiller
         return list is null ? [] : [.. faction.GetReferences(list).Select(r => new RecordLink(r.TargetStringId, r.Values.Value0, r.Values.Value1, r.Values.Value2))];
     }
 
-    /// <summary>Replaces the shop's stock and returns the new purse; <paramref name="specials"/> (a squad's first fill) puts its template's special items in first.</summary>
+    /// <summary>Replaces the shop's stock but its unique items and returns the new purse; <paramref name="specials"/> (a squad's first fill) puts its template's special items in first.</summary>
     public static long Fill(Shop shop, SquadTemplate template, Market market, PopulationData data, ulong seed, ulong key, bool specials = false)
     {
         var rng = new RandomStream(seed, Rng.Mix(key ^ ((ulong)shop.Fills << 40)), RngPurpose.Trade);
         shop.Fills++;
-        shop.Stock.Items.Clear();
+        // The fills clear everything but unique items (docs/game/economy.md "Artifacts").
+        shop.Stock.Items.RemoveAll(i => !i.Unique);
         int n = (int)MathF.Round((0.8f + 0.4f * rng.NextFloat()) * template.VendorsFillTotalAmount, MidpointRounding.AwayFromZero);
         if (shop.Building is not null) n = Math.Max(n, 1);   // the building filler makes at least one
 
@@ -223,7 +224,8 @@ public static class ShopFiller
         // Dearest first, ties by record id so the order never depends on anything but the data.
         foreach (var item in units.OrderByDescending(u => market.UnitPrice(u, false, shop.Terms, shop.Terms.Faction)).ThenBy(u => u.Record, StringComparer.Ordinal))
             shop.Stock.Add(item);
-        long value = shop.Stock.All().Sum(i => market.StackPrice(i, false, shop.Terms, shop.Terms.Faction));
+        // The purse counts what this fill made, not the unique items it kept (FUN_14095b210 sums its new stock only).
+        long value = shop.Stock.All().Where(i => !i.Unique).Sum(i => market.StackPrice(i, false, shop.Terms, shop.Terms.Faction));
         if (shop.Building is null) return (long)Math.Clamp(0.25f * value, 3000, 25000) + cats;
         // A building shop's purse (FUN_14095b210): vendor money with a roll from -0.4 x it (the roll's upper bound is not shown by the decompile; engine: +0.4 x it), else the
         // squad rule.
