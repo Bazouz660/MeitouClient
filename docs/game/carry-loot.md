@@ -187,7 +187,8 @@ it is not part of target eligibility.
 - **Update**: plays `medic` (start: `squat T`, `medic`); a timer adds the frame time. With neither `foodOnly` nor `notPlayerSide`, past 0.8 s: a `wantsWeapon` looter takes one
   weapon of the target's hip and back sections and is done. Otherwise the take comes past 8 s (an animal target: 20 s):
   1. Weapons (item type 2) of the target's inventory, when the looter has no weapon equipped (`Inventory::hasWeaponEquipped`) or the target is imprisoned; a weapon whose
-     slots the looter has all filled is left.
+     slot-type sections of the looter all hold something (none counts as all) is left, unless the looter is police or the target imprisoned; checked
+     per weapon after each move (**Verified**, `FUN_140342de0` mode 2; Meitou: back and hip).
   2. Food: items of type 4 with `item function` 3, then 15, repeated until none moves; then the same from the target's worn backpack (function 3).
   3. With `notPlayerSide` and not `foodOnly`: every item (type 4) and armour (type 3), and every item of the backpack.
   An item goes into the looter's inventory, else its worn backpack, else back. Then the looter's squad tags the target short-term 6 (`FUN_1406744a0`) and the task ends.

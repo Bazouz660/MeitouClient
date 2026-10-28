@@ -172,7 +172,8 @@ public sealed partial class CarrySystem
     }
 
     /// <summary>
-    /// The take (<c>FUN_14034d930</c> / <c>FUN_140342de0</c>): the body's weapons when the looter has none equipped (the original also from an imprisoned body, which the finder never picks here); its food (<c>item function</c> 3, then 15),
+    /// The take (<c>FUN_14034d930</c> / <c>FUN_140342de0</c>): the body's weapons when the looter has none equipped, each only while a weapon section of the looter is empty (the original
+    /// also from an imprisoned body, which the finder never picks here); its food (<c>item function</c> 3, then 15),
     /// then its backpack's food; with <paramref name="everything"/> also every item and armour of it and every item of its backpack. Returns the items moved.
     /// </summary>
     int NpcTake(CharacterCold looter, CharacterCold victim, bool everything)
@@ -180,7 +181,11 @@ public sealed partial class CarrySystem
         var from = victim.Inventory!;
         var bag = from.Backpack?.Contents;
         var items = new List<ItemInstance>();
-        if (!WeaponEquipped(looter)) items.AddRange(from.Items.Where(x => x.Type == FcsRecordType.WEAPON));
+        int moved = 0;
+        // One weapon at a time, each only while one of the looter's weapon sections is still empty (FUN_140342de0 mode 2; its police and imprisoned exceptions never reach here).
+        if (!WeaponEquipped(looter))
+            foreach (var weapon in from.Items.Where(x => x.Type == FcsRecordType.WEAPON).ToList())
+                if (WeaponSectionFree(looter)) moved += Take(looter, victim, [weapon]);
         foreach (int function in (ReadOnlySpan<int>)[FeedSystem.FoodFunction, FeedSystem.RawFoodFunction])
             items.AddRange(from.Items.Where(x => x.Type == FcsRecordType.ITEM && x.ItemFunction == function));
         if (bag is not null) items.AddRange(bag.Items.Where(x => x.Type == FcsRecordType.ITEM && x.ItemFunction == FeedSystem.FoodFunction));
@@ -189,8 +194,14 @@ public sealed partial class CarrySystem
             items.AddRange(from.Items.Where(x => x.Type is FcsRecordType.ITEM or FcsRecordType.ARMOUR && !items.Contains(x)));
             if (bag is not null) items.AddRange(bag.Items.Where(x => x.Type == FcsRecordType.ITEM && !items.Contains(x)));
         }
-        return Take(looter, victim, items);
+        return moved + Take(looter, victim, items);
     }
+
+    /// <summary>One of the looter's weapon sections (back, hip; not those its race closes) holds nothing.</summary>
+    static bool WeaponSectionFree(CharacterCold looter) =>
+        looter.Inventory is { } inv && WeaponSections.Any(s => !InventoryCommands.SectionClosed(looter, s) && !inv.Items.Any(i => i.Section == s));
+
+    static readonly string[] WeaponSections = ["back", "hip"];
 
     /// <summary>Moves <paramref name="items"/> of the body (its inventory or backpack) to the looter: its inventory (equipping where a slot is free), else its backpack; what fits nowhere stays.</summary>
     int Take(CharacterCold looter, CharacterCold victim, List<ItemInstance> items)
