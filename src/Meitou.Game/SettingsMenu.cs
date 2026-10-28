@@ -579,7 +579,7 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
         config.KeepRoamers = config.OffscreenFights = config.OffscreenHealing = config.CampaignAncestorsOnce = config.KeepWild = config.ResidentSchedule = config.UnloadedProduction = true;
         config.DoorsCloseBehind = true;
         DoorsCloseChanged?.Invoke(true);
-        config.PauseOnLoad = true;
+        config.PauseOnLoad = false;
         config.FixDoorBreak = config.FixAmbienceSuffix = config.FixWindStop = true;
         player.FixLoadButton = config.FixLoadButton = true;
         config.FixGunnerFacing = true;
