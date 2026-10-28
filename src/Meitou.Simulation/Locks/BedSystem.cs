@@ -93,17 +93,14 @@ public sealed class BedSystem(PopulationData data, BedSettings? settings = null)
             {
                 case UseBedOrder use:
                 {
+                    // Order 258 goes to every selected character (FUN_1407f9e20 has no gate for it, Verified); the bed takes one, the later arrivals are refused there.
                     if (world.Fixtures.Find(use.Bed) is not { Kind: FixtureKind.Bed } bed) break;
-                    int best = -1;
-                    float bestD = float.MaxValue;
                     foreach (var id in Who(world, use.Characters))
                     {
                         if (!table.TryResolveNext(id, out int s) || table.Cold(s) is not { } c || !CanWalk(c) || !c.Carrying.IsNone) continue;
-                        if (c.InSomething == HeldState.Bed && c.InWhat == bed.Id) { best = -1; break; }   // one of them lies in it already
-                        float d = Vector3.DistanceSquared(table.Next[s].Position, bed.Position);
-                        if (d < bestD) (best, bestD) = (s, d);
+                        if (c.InSomething == HeldState.Bed && c.InWhat == bed.Id) continue;   // lies in it already
+                        StartSleep(world, s, bed, fixedBed: true);
                     }
-                    if (best >= 0) StartSleep(world, best, bed, fixedBed: true);
                     break;
                 }
                 case PutInBedOrder put:
