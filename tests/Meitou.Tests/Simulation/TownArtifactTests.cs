@@ -19,7 +19,7 @@ public class TownArtifactTests
 {
     static readonly Vector3 VaultAt = SyntheticTown.Centre + new Vector3(0, 0, 100), HutAt = SyntheticTown.Centre + new Vector3(0, 0, -100);
     static readonly ZoneCoordinate VaultZone = WorldLayout.ZoneOf(VaultAt.X, VaultAt.Z), HutZone = WorldLayout.ZoneOf(HutAt.X, HutAt.Z);
-    static readonly string VaultKey = BuildingKey.Of(VaultZone, "vault"), HutKey = BuildingKey.Of(HutZone, "hut");
+    static readonly string VaultKey = BuildingKey.Of(VaultZone, "vault");
     static readonly SaveCaptureOptions Options = new() { Placements = [new TownPlacement("inst", "30-t", SyntheticTown.Centre, null)] };
 
     /// <summary>
@@ -88,7 +88,7 @@ public class TownArtifactTests
     static List<Fixture> Chests(SimWorld world) => [.. world.Fixtures.OfBuilding(VaultKey).Where(f => f.Contents is not null)];
 
     [Fact]
-    public void A_town_gives_its_artifacts_to_its_homes_when_it_makes_its_residents_and_holds_those_of_a_home_without_an_interior()
+    public void A_town_gives_its_artifacts_to_its_homes_when_it_makes_its_residents_and_loses_those_of_a_home_without_an_interior()
     {
         var data = Data();
         using var world = World(data);
@@ -97,8 +97,7 @@ public class TownArtifactTests
         Visit(world, 2);
 
         Assert.Empty(population.ArtifactsOf(world, 0));
-        // The core is worth more than the vault takes, so it is the hut's, held for it; each book is drawn between the two homes (boost's draws on mt19937(11667085): the vault).
-        Assert.Equal([new HeldArtifact(HutKey, new ArtifactStack("core-t", "", "", 0, 1))], population.HeldArtifactsOf(world, 0));
+        // The core is worth more than the vault takes, so it is the hut's, which has no interior and loses it; each book is drawn between the two homes (boost's draws on mt19937(11667085): the vault).
         var chests = Chests(world);
         var books = chests.SelectMany(c => c.Contents!.Items).ToList();
         Assert.Equal(3, books.Sum(b => b.Quantity));
@@ -114,7 +113,6 @@ public class TownArtifactTests
         var population = world.Systems.OfType<PopulationSystem>().Single();
         Visit(world, 2);
         Assert.Equal([new ArtifactStack("book-t", "", "", 0, 3), new ArtifactStack("core-t", "", "", 0, 1)], population.ArtifactsOf(world, 0));
-        Assert.Empty(population.HeldArtifactsOf(world, 0));
         Assert.All(Chests(world), c => Assert.Empty(c.Contents!.Items));
     }
 
@@ -215,7 +213,7 @@ public class TownArtifactTests
     }
 
     [Fact]
-    public void The_lists_and_held_artifacts_are_saved_and_loaded_and_an_import_gives_the_towns_new_ones()
+    public void The_lists_are_saved_and_loaded_and_an_import_gives_the_towns_new_ones()
     {
         var data = Data();
         using var world = World(data, StandardParts.Player);
@@ -223,8 +221,7 @@ public class TownArtifactTests
         Visit(world, 2);
         var save = SaveCapture.Capture(world, data, new SaveClock(1, 12, 0), null, Options);
         var state = save.Towns.Single(t => t.Instance == "inst").Record;
-        Assert.Equal((0, 1), (state.Ints["artifacts count"], state.Ints["meitou held artifacts count"]));
-        Assert.Equal((HutKey, "core-t", 1), (state.Strings["meitou held artifact_0_bld"], state.Strings["meitou held artifact_0_itm"], state.Ints["meitou held artifact_0_qty"]));
+        Assert.Equal(0, state.Ints["artifacts count"]);
 
         string folder = Path.Combine(Temp("artifacts"), QuickSave.Name);
         try
@@ -234,12 +231,10 @@ public class TownArtifactTests
             SaveLoader.Load(loaded, SaveGame.Load(folder), data);
             var population = loaded.Systems.OfType<PopulationSystem>().Single();
             Assert.Empty(population.ArtifactsOf(loaded, 0));
-            Assert.Equal([new HeldArtifact(HutKey, new ArtifactStack("core-t", "", "", 0, 1))], population.HeldArtifactsOf(loaded, 0));
 
-            // An import: a town of another faction is cut and gets a new list; one of the player's kept whole adds the new list to its own and keeps what it holds.
+            // An import: a town of another faction is cut and gets a new list; one of the player's kept whole adds the new list to its own.
             var other = SaveImport.Filter(SaveGame.Load(folder), ImportOptions.Default, data).Towns.Single(t => t.Instance == "inst").Record;
             Assert.Equal([new ArtifactStack("book-t", "", "", 0, 3), new ArtifactStack("core-t", "", "", 0, 1)], PopulationSystem.ReadArtifacts(other, data.Db));
-            Assert.False(other.Ints.ContainsKey("meitou held artifacts count"));
             var game = SaveGame.Load(folder);
             var mine = game.Towns.Single(t => t.Instance == "inst").Record;
             (mine.Strings["faction"], mine.Bools["discovered"]) = ("204-gamedata.base", true);
@@ -247,7 +242,6 @@ public class TownArtifactTests
             var kept = SaveImport.Filter(game, ImportOptions.Default, data).Towns.Single(t => t.Instance == "inst").Record;
             Assert.Equal([new ArtifactStack("core-t", "", "", 0, 2), new ArtifactStack("book-t", "", "", 0, 3), new ArtifactStack("core-t", "", "", 0, 1)],
                 PopulationSystem.ReadArtifacts(kept, data.Db));
-            Assert.Equal(1, kept.Ints["meitou held artifacts count"]);
         }
         finally { Directory.Delete(Path.GetDirectoryName(folder)!, recursive: true); }
     }

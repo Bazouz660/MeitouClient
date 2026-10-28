@@ -8,18 +8,14 @@ using Meitou.Simulation.Items;
 
 namespace Meitou.Simulation;
 
-/// <summary>An artifact given to a building Meitou has no interior for, kept for it (<see cref="TownBuilding.Key"/>).</summary>
-public readonly record struct HeldArtifact(string Building, ArtifactStack Stack);
-
 /// <summary>
 /// The towns' artifacts (docs/game/economy.md "Artifacts"): each town's list, made for a new game (<see cref="Artifacts.Plan"/>) or read from a loaded save's town states, and given
 /// out into the town's buildings when it makes its residents.
 /// </summary>
 public sealed partial class PopulationSystem
 {
-    /// <summary>Each site's artifacts still to be given out, and those held for its buildings without an interior (null until <see cref="EnsureArtifacts"/>).</summary>
+    /// <summary>Each site's artifacts still to be given out (null until <see cref="EnsureArtifacts"/>).</summary>
     List<ArtifactStack>[]? townArtifacts;
-    List<HeldArtifact>[]? heldArtifacts;
     PriceConstants? prices;
 
     /// <summary>The artifacts still to be given out at <paramref name="site"/>: empty once given, or for none.</summary>
@@ -29,28 +25,17 @@ public sealed partial class PopulationSystem
         return (uint)site < (uint)townArtifacts!.Length ? townArtifacts[site] : [];
     }
 
-    /// <summary>The artifacts given to buildings of <paramref name="site"/> that have no interior in Meitou (one the original generates; docs/game/economy.md "Artifacts").</summary>
-    public IReadOnlyList<HeldArtifact> HeldArtifactsOf(World world, int site)
-    {
-        EnsureArtifacts(world);
-        return (uint)site < (uint)heldArtifacts!.Length ? heldArtifacts[site] : [];
-    }
-
     /// <summary>The lists, once: a loaded save's town states, else (a new game) the towns' share of the data's artifacts.</summary>
     void EnsureArtifacts(World world)
     {
         if (townArtifacts is not null) return;
         townArtifacts = new List<ArtifactStack>[data.Sites.Count];
-        heldArtifacts = new List<HeldArtifact>[data.Sites.Count];
-        for (int i = 0; i < townArtifacts.Length; i++) (townArtifacts[i], heldArtifacts[i]) = ([], []);
+        for (int i = 0; i < townArtifacts.Length; i++) townArtifacts[i] = [];
         if (world.Saved is { } saved)
         {
             foreach (var site in data.Sites)
                 if (site.InstanceId.Length > 0 && saved.TownStates.TryGetValue(site.InstanceId, out var state))
-                {
                     townArtifacts[site.Index] = ReadArtifacts(state, data.Db);
-                    heldArtifacts[site.Index] = [.. ReadList(state, data.Db, HeldCountKey, HeldPrefix)];
-                }
             return;
         }
         foreach (var (site, list) in PlanArtifacts(data)) townArtifacts[site] = list;
@@ -61,72 +46,48 @@ public sealed partial class PopulationSystem
         Artifacts.Plan(data.Db, data.Sites.Select(s => new ArtifactTown(s.Index, s.Record, s.Position)));
 
     const string ArtifactCountKey = "artifacts count", ArtifactPrefix = "artifact_";
-    /// <summary>Meitou's own keys for the held artifacts: <c>meitou held artifacts count</c>, then per entry the town list's fields and <c>_bld</c>, the building.</summary>
-    const string HeldCountKey = "meitou held artifacts count", HeldPrefix = "meitou held artifact_";
 
-    static string Key(string prefix, int k, string field) => prefix + k.ToString(CultureInfo.InvariantCulture) + "_" + field;
+    static string Key(int k, string field) => ArtifactPrefix + k.ToString(CultureInfo.InvariantCulture) + "_" + field;
 
     /// <summary>A town state's list (<c>artifacts count</c>, <c>artifact_&lt;k&gt;_itm/mat/man/lvl/qty</c>): the entries whose item the data has; a part it lacks is none.</summary>
-    internal static List<ArtifactStack> ReadArtifacts(FcsRecord state, GameDatabase db) => [.. ReadList(state, db, ArtifactCountKey, ArtifactPrefix).Select(h => h.Stack)];
-
-    static IEnumerable<HeldArtifact> ReadList(FcsRecord state, GameDatabase db, string countKey, string prefix)
+    internal static List<ArtifactStack> ReadArtifacts(FcsRecord state, GameDatabase db)
     {
-        int count = state.Ints.GetValueOrDefault(countKey);
+        var list = new List<ArtifactStack>();
+        int count = state.Ints.GetValueOrDefault(ArtifactCountKey);
         for (int k = 0; k < count; k++)
         {
-            string item = state.Strings.GetValueOrDefault(Key(prefix, k, "itm"), "");
+            string item = state.Strings.GetValueOrDefault(Key(k, "itm"), "");
             if (db.Find(item) is null) continue;
-            string Part(string field) => state.Strings.GetValueOrDefault(Key(prefix, k, field), "") is var id && db.Find(id) is not null ? id : "";
-            yield return new HeldArtifact(state.Strings.GetValueOrDefault(Key(prefix, k, "bld"), ""),
-                new ArtifactStack(item, Part("mat"), Part("man"), state.Ints.GetValueOrDefault(Key(prefix, k, "lvl")), state.Ints.GetValueOrDefault(Key(prefix, k, "qty"))));
+            string Part(string field) => state.Strings.GetValueOrDefault(Key(k, field), "") is var id && db.Find(id) is not null ? id : "";
+            list.Add(new ArtifactStack(item, Part("mat"), Part("man"), state.Ints.GetValueOrDefault(Key(k, "lvl")), state.Ints.GetValueOrDefault(Key(k, "qty"))));
         }
+        return list;
     }
 
     /// <summary>Writes <paramref name="list"/> as the town state's list, replacing the one it had.</summary>
-    internal static void WriteArtifacts(FcsRecord state, IReadOnlyList<ArtifactStack> list) =>
-        WriteList(state, ArtifactCountKey, ArtifactPrefix, [.. list.Select(s => new HeldArtifact("", s))]);
-
-    /// <summary>Writes the held artifacts into the town state, replacing those it had; nothing while there are none.</summary>
-    internal static void WriteHeldArtifacts(FcsRecord state, IReadOnlyList<HeldArtifact> list)
+    internal static void WriteArtifacts(FcsRecord state, IReadOnlyList<ArtifactStack> list)
     {
-        if (list.Count > 0) WriteList(state, HeldCountKey, HeldPrefix, list);
-        else
-        {
-            state.Ints.Remove(HeldCountKey);
-            RemoveKeys(state, HeldPrefix);
-        }
-    }
-
-    static void WriteList(FcsRecord state, string countKey, string prefix, IReadOnlyList<HeldArtifact> list)
-    {
-        RemoveKeys(state, prefix);
-        state.Ints[countKey] = list.Count;
+        foreach (var key in state.Strings.Keys.Where(k => k.StartsWith(ArtifactPrefix, StringComparison.Ordinal)).ToList()) state.Strings.Remove(key);
+        foreach (var key in state.Ints.Keys.Where(k => k.StartsWith(ArtifactPrefix, StringComparison.Ordinal)).ToList()) state.Ints.Remove(key);
+        state.Ints[ArtifactCountKey] = list.Count;
         for (int k = 0; k < list.Count; k++)
         {
-            var (building, s) = list[k];
-            if (building.Length > 0) state.Strings[Key(prefix, k, "bld")] = building;
-            state.Strings[Key(prefix, k, "itm")] = s.Item;
-            state.Strings[Key(prefix, k, "mat")] = s.Part1;
-            state.Strings[Key(prefix, k, "man")] = s.Part2;
-            state.Ints[Key(prefix, k, "lvl")] = s.Level;
-            state.Ints[Key(prefix, k, "qty")] = s.Units;
+            var s = list[k];
+            state.Strings[Key(k, "itm")] = s.Item;
+            state.Strings[Key(k, "mat")] = s.Part1;
+            state.Strings[Key(k, "man")] = s.Part2;
+            state.Ints[Key(k, "lvl")] = s.Level;
+            state.Ints[Key(k, "qty")] = s.Units;
         }
     }
 
-    static void RemoveKeys(FcsRecord state, string prefix)
-    {
-        foreach (var key in state.Strings.Keys.Where(k => k.StartsWith(prefix, StringComparison.Ordinal)).ToList()) state.Strings.Remove(key);
-        foreach (var key in state.Ints.Keys.Where(k => k.StartsWith(prefix, StringComparison.Ordinal)).ToList()) state.Ints.Remove(key);
-    }
-
-    /// <summary>An artifact made for the distribution: its value, the item and the entry it was made from.</summary>
-    readonly record struct MadeArtifact(uint Value, ItemInstance Item, ArtifactStack Stack);
+    /// <summary>An artifact made for the distribution: its value and the item.</summary>
+    readonly record struct MadeArtifact(uint Value, ItemInstance Item);
 
     /// <summary>
     /// Gives a town's artifacts out into the buildings it housed residents in, as the original's distribution (docs/game/economy.md "Artifacts"); a town with no building that takes
     /// them keeps its list. Engine choices: ties and the buildings' turns follow the town's building order, the candidates are those Meitou housed a template in, and what goes to a
-    /// building whose interior the level data does not name (the original generates one, Meitou has none) or that stands in another town's unvisited centre zone is held for it
-    /// instead of placed.
+    /// building whose interior the level data does not name (the original generates one, Meitou has none) is lost.
     /// </summary>
     void GiveArtifacts(World world, BuiltTown town)
     {
@@ -159,7 +120,7 @@ public sealed partial class PopulationSystem
         {
             uint value = (uint)Artifacts.ValueOf(data.Db, s, prices);
             for (int u = 0; u < s.Units; u++)
-                if (MakeArtifact(s) is { } item) (item.Type == FcsRecordType.ITEM ? items : gear).Add(new MadeArtifact(value, item, s with { Units = 1 }));
+                if (MakeArtifact(s) is { } item) (item.Type == FcsRecordType.ITEM ? items : gear).Add(new MadeArtifact(value, item));
         }
         list.Clear();
 
@@ -185,12 +146,6 @@ public sealed partial class PopulationSystem
         foreach (var b in site.Buildings)
         {
             if (!given.TryGetValue(b, out var mine)) continue;
-            // No interior in Meitou, or in another town's centre zone that no save writes yet (Spawn leaves it unvisited): held, so a save keeps them.
-            if (b.InteriorLayout.Length == 0 || !world.VisitedZones.Contains(b.Zone))
-            {
-                Hold(heldArtifacts![town.Site], b.Key, mine.OrderByDescending(m => m.Value));
-                continue;
-            }
             var boxes = new List<(int Lock, Locks.Fixture Box)>();
             foreach (var f in b.Fixtures)
                 if (f.HoldsShopStock && world.Fixtures.Find(f.Id) is { Contents: { } grid } box)
@@ -222,17 +177,6 @@ public sealed partial class PopulationSystem
         }
     }
 
-    /// <summary>Adds the units to the building's held entries, onto an entry of the same item, parts and level.</summary>
-    static void Hold(List<HeldArtifact> held, string building, IEnumerable<MadeArtifact> made)
-    {
-        foreach (var m in made)
-        {
-            int at = held.FindIndex(h => h.Building == building && (h.Stack with { Units = 0 }) == (m.Stack with { Units = 0 }));
-            if (at >= 0) held[at] = held[at] with { Stack = held[at].Stack with { Units = held[at].Stack.Units + 1 } };
-            else held.Add(new HeldArtifact(building, m.Stack));
-        }
-    }
-
     /// <summary>One unit of an entry as an item flagged unique: armour at its level as quality, a weapon of its maker and model, a crossbow or limb at its level.</summary>
     ItemInstance? MakeArtifact(ArtifactStack s)
     {
@@ -248,30 +192,23 @@ public sealed partial class PopulationSystem
         return item;
     }
 
-    /// <summary>The lists while any town has artifacts left or held (so worlds without hash as before).</summary>
+    /// <summary>The lists while any town has artifacts left (so worlds without hash as before).</summary>
     void HashArtifacts(ref StateHasher h)
     {
-        if (townArtifacts is null || heldArtifacts is null || townArtifacts.All(l => l.Count == 0) && heldArtifacts.All(l => l.Count == 0)) return;
+        if (townArtifacts is null || townArtifacts.All(l => l.Count == 0)) return;
         for (int site = 0; site < townArtifacts.Length; site++)
         {
-            if (townArtifacts[site].Count == 0 && heldArtifacts[site].Count == 0) continue;
+            if (townArtifacts[site].Count == 0) continue;
             h.Add(site);
             h.Add(townArtifacts[site].Count);
-            foreach (var s in townArtifacts[site]) HashStack(ref h, s);
-            foreach (var (building, s) in heldArtifacts[site])
+            foreach (var s in townArtifacts[site])
             {
-                h.Add(Rng.StableHash(building));
-                HashStack(ref h, s);
+                h.Add(Rng.StableHash(s.Item));
+                h.Add(Rng.StableHash(s.Part1));
+                h.Add(Rng.StableHash(s.Part2));
+                h.Add(s.Level);
+                h.Add(s.Units);
             }
         }
-    }
-
-    static void HashStack(ref StateHasher h, ArtifactStack s)
-    {
-        h.Add(Rng.StableHash(s.Item));
-        h.Add(Rng.StableHash(s.Part1));
-        h.Add(Rng.StableHash(s.Part2));
-        h.Add(s.Level);
-        h.Add(s.Units);
     }
 }

@@ -169,8 +169,8 @@ interior object with an inventory of the trader's home (`FUN_140953850`, `FUN_14
 saved and read back with the keys above, and given out when a town makes its residents. Engine choices: the candidates are all the town's buildings with `interior` parts whose interior layout,
 when the level data names one, places an object, and whose template Meitou housed there ([town residents](factions-squads-towns.md#town-residents)); ties keep the buildings' placement order, the entries' order and the containers' layout order, and the buildings
 draw in placement order; an entry of 0 or fewer units is skipped. A building whose interior layout the level data does not name has no interior in Meitou (the original
-generates one on first load, which is not modelled), so what it is given is held for it instead, as is what goes to a building in another town's centre zone not visited yet (no save writes its containers then): saved in its town's state as `meitou held artifacts count` and, per entry k,
-`meitou held artifact_<k>_bld` (the building, `TownBuilding.Key`) with the list's other fields. Items flagged unique (`ItemInstance.Unique`) do not stack with others; a shop
+generates one on first load, which is not modelled), so what it is given is lost; what goes to a building in another town's centre zone is placed, but a save made before
+that zone is visited writes no file for it, so loses it. Items flagged unique (`ItemInstance.Unique`) do not stack with others; a shop
 fill and `FillHome` keep them, and a building shop takes its containers' items into its stock when it is made and gives its unique items back to them when its squad is
 dropped or made afresh; once nobody of its squad is alive the shop closes and its whole stock goes back into the containers, which a save keeps with the building. Not modelled: the shop fill's container choice and relocking,
 so the containers of a stocked home end up unlocked after its first fill; and an import of a save that has no state for a placed town (a mod's town added since) gives that town
