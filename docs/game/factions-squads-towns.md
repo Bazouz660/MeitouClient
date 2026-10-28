@@ -168,7 +168,11 @@ itself (`FUN_1404febd0`) and after 4 s outside every loaded zone (`FUN_1406bab60
 copied into an in-memory record container, no file written) when its `persistent` flag (+0x115) is set or it is in a live campaign, else it is destroyed
 (`FUN_1406ba9d0`). Town residents are made persistent (`FUN_14057f820`, with `sqt` 1); pool refills, homeless squads and `FUN_1409c4150` are not. A
 non-persistent unloaded platoon is activated after 60 s (`FUN_1407ee790`) and then destroyed, so it lasts about 64 s out of range. An unloaded platoon
-becomes active after 2 s inside a ready zone (`FUN_1407ebf30`), its characters rebuilt from the kept records; at game load each PLATOON is made active or
+becomes active through a dwell timer (+0x78, **Verified** `FUN_1407ebf30`, `FUN_1407ef040`): 5 s when it becomes unloaded; while the zone at its
+position is ready, outside the zone's box the timer is set to 2 s, inside it counts down, and the platoon activates below 0. The box
+(`FUN_140a09770`) is the zone's bounds widened by 10, each side facing one of the four neighbours that exists and is neither loaded nor requested
+moved in by 170 (about 178.5 for the stand-in stop test). Its characters are rebuilt from the kept records (Meitou: not at game load, which
+activates at once behind the loading screen); at game load each PLATOON is made active or
 unloaded by its zone (`FUN_1407f85f0`). `declareDead` (`FUN_140797090`) clears `persistent` (destroyed at its next unload, its PLATOON record deleted by
 `FUN_1407ec5e0`). No distance, age or emptiness rule removes a persistent platoon. A wiped-out town refills only through its pools, with non-persistent squads;
 no path re-running the initial resident placement was found (**Unknown** whether one exists).

@@ -122,6 +122,7 @@ public sealed partial class PopulationSystem
             Town = town,
             PlatoonId = platoonId,
             Pinned = stored.Pinned && town >= 0,
+            Restored = true,
             Position = new Vector3(position.X, world.Walkability.GroundHeight(position.X, position.Y), position.Y),
             HomeCentre = homeCentre,
             HomeRadius = homeRadius,

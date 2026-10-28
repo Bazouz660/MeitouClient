@@ -77,6 +77,11 @@ public sealed class Platoon
     /// while set its stand-in neither travels nor takes a job (<c>FUN_1407ee790</c>).
     /// </summary>
     public bool Imprisoned { get; set; }
+    /// <summary>
+    /// The unloaded platoon's activation dwell (+0x78, <c>FUN_1407ebf30</c>, <b>Verified</b>): 5 s when it becomes unloaded, 2 s again whenever it stands outside its zone's
+    /// activation box; inside, it counts down and the platoon activates once it is below 0. Not saved (a loaded platoon starts at 5).
+    /// </summary>
+    public float DwellLeft { get; set; } = 5;
     /// <summary>Where its campaign sends it (the target for the leader platoon, the leader for the others; set each population look).</summary>
     public Vector2? CampaignGoal { get; set; }
     /// <summary>The roads it takes off screen to <see cref="RouteGoal"/> (null: straight there; <see cref="PopulationSystem"/> roads), and the next point of it. Not saved: worked out again.</summary>

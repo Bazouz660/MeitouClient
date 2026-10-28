@@ -313,7 +313,7 @@ public class AiTests(ITestOutputHelper output)
                 save.Write(folder);
                 using var b = Town(1, out _, data, null);
                 Meitou.Simulation.Saving.SaveLoader.Load(b, Meitou.Data.Save.SaveGame.Load(folder), data);
-                b.RunTicks(50);
+                b.RunTicks(170);   // past the unloaded platoon's 5 s activation dwell
                 var board = Assert.Single(b.Squads.All, s => s.Ai?.Contract is not null).Ai!;
                 Assert.Equal(("115-t", "113-t"), (board.Contract!.Id, board.Replacement?.Id));
                 Assert.Equal((float)end, (float)board.ContractEnd);

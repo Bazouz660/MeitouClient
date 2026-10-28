@@ -198,7 +198,8 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
 
     // CHARACTER `wages` (Character::giveBirth and Character::dailyUpdate, Verified): a character not of the player's faction with wages of 1 or more sets (not adds to) its squad's money
     // to them when it is made and every day; with several waged members the last one wins. Engine choices: the day pass runs when the game day changes, members in squad order; "when
-    // made" is the first pass that sees the squad, except the squads already there at this system's first pass (a loaded game keeps its saved purses until the next day).
+    // made" is the first pass that sees the squad, except the squads already there at this system's first pass and a squad of characters back from a save or from out of the world
+    // (Squad.Restored: giveBirth pays only a character made without saved state, so a loaded game keeps its saved purses until the next day).
     readonly Dictionary<string, int> wages = new(StringComparer.Ordinal);
     readonly HashSet<int> paidSquads = [];
     long wageDay = long.MinValue;
@@ -210,7 +211,8 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
         wageDay = day;
         foreach (var squad in world.Squads.All)
         {
-            if (!paidSquads.Add(squad.Id) && !newDay || first) continue;
+            bool appeared = paidSquads.Add(squad.Id);
+            if (first || !newDay && (!appeared || squad.Restored)) continue;
             foreach (var id in squad.Members)
             {
                 if (!world.Characters.TryResolveNext(id, out int s) || world.Characters.Cold(s) is not { } c || c.IsPlayer || data.PlayerFaction >= 0 && c.Faction == data.PlayerFaction) continue;
