@@ -449,7 +449,7 @@ squad simply takes the speaker in, unless a target flag at +0x1d0 is set):
 | 2 TALK_TO_LEADER | a player target: the speaker's squad leader gets task 102 on the target |
 | 3 / 18 JOIN_SQUAD_WITH_EDIT / FAST | the speaker joins the target's squad (player: recruited, its package becomes `dialogue package player`; 3 opens the editor, [characters](../characters.md)) |
 | 4 AFFECT_RELATIONS, 5 AFFECT_REPUTATION | speaker's faction toward the target's: relation += val0 (clamp ±100) / the speaker's faction's global trust += val0, no clamp, whoever the target is (slot 9, `FUN_1406b2530`) |
-| 6 ATTACK_CHASE_FOREVER, 55 ATTACK_STAY_NEAR_HOME, 57 ATTACK_IF_NO_COEXIST | the speaker perceives the target as an enemy (`FUN_140858f40`), its squad tags it TEMP ENEMY (`FUN_1406744a0`); task 101 (55: 248); 57 only without coexistence |
+| 6 ATTACK_CHASE_FOREVER, 55 ATTACK_STAY_NEAR_HOME, 57 ATTACK_IF_NO_COEXIST | the speaker notices a character target (`FUN_140858f40`), is stopped with its task queue cleared (`FUN_1405c8330`), its squad tags the target TEMP ENEMY (`FUN_1406744a0`); task 101 (55: 248) goes to the speaker alone (`FUN_1405d20d0` without its squad fan-out): mates join only through the tag and their own enemy scan (**Verified**, `FUN_140680560`); 57 only without coexistence |
 | 7 GO_HOME | its tasks cleared, task 19 with the target, the squad tags the target AGGRESSOR |
 | 8 TAKE_MONEY | the target's faction pays val0, no balance check ("Paid c.{1}") |
 | 9 GIVE_MONEY | the target's faction gets val0 |

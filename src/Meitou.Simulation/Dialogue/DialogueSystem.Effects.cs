@@ -265,20 +265,17 @@ public sealed partial class DialogueSystem
         else if (who.SquadId >= 0 && world.Squads.Find(who.SquadId) is { } squad) squad.Money = Math.Max(0, squad.Money + amount);
     }
 
-    /// <summary>The speaker and the awake members of its squad near the target attack it from the next tick (DA_ATTACK_CHASE_FOREVER's task 101 on the target's squad, engine reading).</summary>
+    /// <summary>
+    /// The speaker alone is stopped (orders cleared) and attacks the target from the next tick (DA 6/55/57, docs/game/dialogue.md).
+    /// Its squad mates are not ordered: they follow through the TEMP ENEMY tag the caller writes.
+    /// </summary>
     static void Attack(World world, CharacterId me, CharacterId target)
     {
         var table = world.Characters;
-        if (!table.TryResolveNext(target, out int t)) return;
-        var at = table.Next[t].Position;
-        var fighters = new List<CharacterId>();
-        foreach (var m in SquadOf(world, me))
-        {
-            if (!table.TryResolveNext(m, out int s) || !table.Next[s].Alive || table.Cold(s) is not { IsPlayer: false, IsImprisoned: false, Medical.Incapacitated: false, Fighter.CanAttack: true } mc) continue;
-            float r = 2 * AggroSystem.RangeOf(mc, AggroSystem.OutdoorSight);
-            if (m == me || Vector3.DistanceSquared(table.Next[s].Position, at) <= r * r) fighters.Add(m);
-        }
-        if (fighters.Count > 0) world.Defer(new Combat.AttackOrder(fighters, target) { Tick = world.Tick + 1 });
+        if (!table.TryResolveNext(target, out _) || !table.TryResolveNext(me, out int s) || !table.Next[s].Alive) return;
+        MovementSystem.Stop(table, s);
+        if (table.Cold(s) is { IsPlayer: false, IsImprisoned: false, Medical.Incapacitated: false, Fighter.CanAttack: true })
+            world.Defer(new Combat.AttackOrder([me], target) { Tick = world.Tick + 1 });
     }
 
     /// <summary>
