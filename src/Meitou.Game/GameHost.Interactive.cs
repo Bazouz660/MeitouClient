@@ -485,6 +485,7 @@ sealed partial class GameHost
                     strategy: actions.Pressed(InputAction.ToggleFreeCamera));
             }
         };
+        Meitou.Rendering.UiLayer? uiLayer = null;
         double drawTotal = 0, gpuSum = 0, statsTimer = 0;
         int gpuSamples = 0, statsFrames = 0;
         long statsTicks = 0;
@@ -632,7 +633,10 @@ sealed partial class GameHost
                 // The chain and the panel draw into the window's backbuffer (made again when the size changes).
                 var backbuffer = display.Backbuffer!;
                 gpu.Post!.Target = backbuffer;
-                if (overlay is not null) overlay.Target = backbuffer;
+                // The interface draws into a transparent layer of its own, laid over the backbuffer just before the present.
+                uiLayer ??= new Meitou.Rendering.UiLayer(display.Context);
+                var uiTarget = uiLayer.Clear(size.X, size.Y);
+                if (overlay is not null) overlay.Target = uiTarget;
                 profiler?.BeginFrame();
                 // A scene load draws only the loading screen; the warm-up draws whole frames under it (the first frames of a new place build what it needs).
                 bool covered = Covered, sceneLoading = sceneLoad is not null;
@@ -710,7 +714,7 @@ sealed partial class GameHost
                 // The loading screen over the whole frame while a scene loads or the world warms up.
                 if (covered && loading is not null && loadingOverlay is not null)
                 {
-                    loadingOverlay.Target = backbuffer;
+                    loadingOverlay.Target = uiTarget;
                     if (skyArrival is null) loading.Draw(size.X, size.Y);
                     else if (loading.Exiting || skyArrival is { AtStars: true, Arriving: false } && sceneLoad?.Clock.Elapsed.TotalSeconds >= 2)
                         loading.Draw(size.X, size.Y, background: false);
@@ -725,6 +729,7 @@ sealed partial class GameHost
                     if (cursorMode != windowCursor) pointerMouse.Cursor.CursorMode = windowCursor = cursorMode;
                     if (!config.HardwareMouse && !freeLook) player.DrawPointer(pointerWorld ? player.PointerName : "arrow", pointerAt, size.X, size.Y);
                 }
+                uiLayer.Composite(backbuffer);
                 display.Present();
                 profiler?.EndFrame();
                 BenchLap(7);
@@ -780,6 +785,7 @@ sealed partial class GameHost
         player.DisposeUi();
         EndLoadingScreen();
         overlay?.Dispose();
+        uiLayer?.Dispose();
         DisposeTitleScene();
         gpu.Dispose();
         silkInput.Dispose();
