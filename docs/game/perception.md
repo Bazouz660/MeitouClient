@@ -167,7 +167,7 @@ is not the looker's ally becomes a target only when both tests pass:
   `AI::setCenterOfMovement`, which every player order calls with its point (`Character::addOrder`) and which in
   HOLD_GROUND / STAY_CLOSE also installs the hold-position task 30 / 31. The radii are the constructor's (`AI::AI`: meiDistance 18, tolerance 5; no other writer found), so HOLD_GROUND reaches 63 and STAY_CLOSE 223.
 - **Post** (`AI::isTargetInRangeForHOLDMode_hostiles` `FUN_140598630`): only for a character on Hold (`CharStats::holdPositionMode`
-  `FUN_1402b2b90`: CharStats +0x12b and not sneaking) that is not `FUN_1407f2840` (a ranged-weapon test): a target slower than 2 (movement
+  `FUN_1402b2b90`: CharStats +0x12b and not sneaking) that is not `FUN_1407f2840` (**Verified**: Ranged toggle on, posture 0, and manning a turret, or both arms working with a ranged weapon in hand or on the back; Meitou `Orders.RangedExempt`): a target slower than 2 (movement
   +0xb8), or in its own state > 1, must be within 40 of the looker; a target more than 80 from the hold point
   (CharStats +0x130, set when Hold is turned on and to a ground move's destination while on Hold; 140 when the target is fighting and
   faces it) must be within 60 of the looker.

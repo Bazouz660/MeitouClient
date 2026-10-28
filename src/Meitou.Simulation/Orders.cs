@@ -87,6 +87,15 @@ public static class Orders
     /// <summary>The ranged mode (CharStats <c>+0x129</c>): the player's Ranged toggle for its characters, always on for an NPC (docs/game/combat.md "Fight lifecycle and orders").</summary>
     public static bool RangedMode(CharacterCold cold) => !cold.IsPlayer || Has(cold, CharacterOrders.Ranged);
 
+    /// <summary>
+    /// Whether a holding character's attack on sight skips the Hold post test (<c>FUN_1407f2840</c> in <c>isTargetInRangeForHOLDMode_hostiles</c>, <b>Verified</b>): in
+    /// <see cref="RangedMode"/>, upright (not staying low or crawling), and manning a turret, or with both arms working and a crossbow in hand or on its back (a crossbow on the
+    /// hip does not count). The original's last test, a virtual of the character for the weapon type, is not decoded and is taken as true.
+    /// </summary>
+    public static bool RangedExempt(CharacterCold cold) =>
+        RangedMode(cold) && cold.Medical is { Prone: false } medical
+        && (cold.Gunning is not null || medical.BothArmsWork && cold.Fighter?.Crossbow is { } x && (x.AtBack || cold.DrawnWeapon == Meitou.Data.Gameplay.HandHold.OfCategory((int)Meitou.Data.Gameplay.Combat.WeaponCategory.Bow).Weapon));
+
     /// <summary>Writes the orders and the run speed into a character's GAMESTATE_CHARACTER record.</summary>
     public static void Write(FcsRecord state, CharacterCold cold)
     {

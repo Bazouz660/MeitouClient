@@ -284,7 +284,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         /// <summary>The combat state the score reads (null: hand-built worlds without one, every candidate counts as unfought).</summary>
         public Combat.CombatSystem? Combat;
         /// <summary>The looker: one of the player's, on Hold (and its hold point), crawling, an animal.</summary>
-        public bool Player, Hold, Prone, Animal;
+        public bool Player, Hold, HoldPost, Prone, Animal;
         public Vector2 HoldPoint;
         /// <summary>The looker's spot meters (read only during the query) and the sneakers it sees this scan.</summary>
         public List<Spot>? Spots;
@@ -328,7 +328,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
             {
                 Table = table, Relations = Relations, World = world, Memory = Memory, Self = i, Faction = cold.Faction, Squad = cold.SquadId, SquadFights = Combat is null ? null : squadFights,
                 Eye = prev[i].Position, Cold = cold, Yaw = prev[i].Yaw, Range = range, Outdoor = outdoor, Sight = world.Sight, Best = -1, BestD2 = float.MaxValue, BestScore = float.NegativeInfinity,
-                Combat = Combat, Player = cold.IsPlayer, Hold = Orders.Holding(cold) && cold.Fighter.Crossbow is null, Prone = cold.Medical.Prone, Animal = cold.Fighter.IsAnimal,
+                Combat = Combat, Player = cold.IsPlayer, Hold = Orders.Holding(cold) && cold.Fighter.Crossbow is null, HoldPost = Orders.Holding(cold) && !Orders.RangedExempt(cold), Prone = cold.Medical.Prone, Animal = cold.Fighter.IsAnimal,
                 HoldPoint = Orders.HoldPointOf(cold, prev[i].Position),
                 Seed = world.Seed, Key = Rng.Key(new CharacterId(i, prev[i].Generation)), Tick = (ulong)world.Tick,
                 Stance = stance, War = war,
@@ -523,7 +523,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
     {
         ref readonly var other = ref s.Table.Previous[slot];
         var fight = s.Combat?.StateOf(new CharacterId(slot, other.Generation)) ?? Meitou.Simulation.Combat.CombatSlot.Fresh(other.Generation);
-        if (s.Hold && !Orders.HoldPost(s.Eye, s.HoldPoint, other.Position, other.Velocity, false, fight.TargetSlot == s.Self)) return null;
+        if (s.HoldPost && !Orders.HoldPost(s.Eye, s.HoldPoint, other.Position, other.Velocity, false, fight.TargetSlot == s.Self)) return null;
         var candidate = new Meitou.Simulation.Combat.TargetCandidate
         {
             Staggered = fight.StumbleClip >= 0 && (int)s.Tick < fight.StunUntil,
