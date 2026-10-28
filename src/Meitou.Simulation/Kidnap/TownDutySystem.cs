@@ -69,7 +69,8 @@ public sealed class TownDuty
 /// docs/game/economy.md 11.5; none: served, so the jailer frees it); else</item>
 /// <item><b>274 Throwing out</b> (<c>Task_TakeIntruderOutsideTown</c>): carried past the town's built-up area (<see cref="TownDutySettings.OutsideTown"/>) on the member's side and put down.</item>
 /// <item><b>243 Getting food</b> (finder <c>FUN_1408cb650</c>, <c>BuildingFinder_LootFoodAndStuff</c>; then 244 <c>Task_grabOneFood</c>): a member holding no food walks to the nearest store with
-/// food in the town and takes one item of it (the goal holds while it has food, list A <c>gotAFoodItem</c>). The town the original's finder searches is read as the one the member stands in.</item>
+/// food in the town and takes one item of it (the goal holds while it has food, list A <c>gotAFoodItem</c>). The town the original's finder searches is read as the one the member stands in;
+/// it need not be the squad's own, and a player-side member takes only from its faction's stores.</item>
 /// </list>
 /// </summary>
 public sealed class TownDutySystem(PopulationData data, PopulationSystem population, CarrySystem carry, TownDutySettings? settings = null) : ITickSystem, IStateHashed
@@ -209,8 +210,9 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
                     MovementSystem.GoTo(table, slot, lootSpot, SpeedMode.Walk);
                     continue;
                 }
-                if (town.IsNone || !MyTown(world, squad, town)) continue;
-                if (intruders[role] == 1 && downed.Count > 0 && Intruder(world, slot, cold, town) is >= 0 and var body
+                if (town.IsNone) continue;
+                bool mine = MyTown(world, squad, town);
+                if (mine && intruders[role] == 1 && downed.Count > 0 && Intruder(world, slot, cold, town) is >= 0 and var body
                     && carry.BeginPickUp(world, slot, table.IdOf(body), CharacterTask.Idle))
                 {
                     cold.Engaged = true;
@@ -218,7 +220,7 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
                     duties.Add(new TownDuty { Member = member, Body = table.IdOf(body), Faction = cold.Faction, Town = town, Kind = TownDutyKind.Lift });
                     continue;
                 }
-                if (confiscate[role] == 1 && Contraband(world, town) is var (cage, prisoner) && cage is not null)
+                if (mine && confiscate[role] == 1 && Contraband(world, town) is var (cage, prisoner) && cage is not null)
                 {
                     cold.Engaged = true;
                     var goal = Flat(cage.Position);
@@ -226,7 +228,8 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
                     MovementSystem.GoTo(table, slot, goal, SpeedMode.Walk);
                     continue;
                 }
-                if (food[role] == 1 && !HoldsFood(cold) && Store(world, at, town) is var (id, spot))
+                // 243 needs no own town (FUN_1408cb650); a player-side member takes only from its own faction's stores (FUN_1408dac20).
+                if (food[role] == 1 && !HoldsFood(cold) && Store(world, at, town, owner: cold.Faction == world.Player.Faction ? cold.Faction : -1) is var (id, spot))
                 {
                     cold.Engaged = true;
                     duties.Add(new TownDuty { Member = member, Faction = cold.Faction, Town = town, Kind = TownDutyKind.Food, Target = id, Goal = spot });
