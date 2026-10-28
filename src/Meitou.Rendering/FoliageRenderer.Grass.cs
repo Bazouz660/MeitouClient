@@ -82,6 +82,26 @@ public sealed unsafe partial class FoliageRenderer
         state.GrassZone = -1;
     }
 
+    /// <summary>The store had no room for the last page tried (<see cref="TryQueuePage"/>), and whether a page was tried while it was full this frame.</summary>
+    bool grassFull, grassTriedFull;
+
+    /// <summary>
+    /// <see cref="QueuePage"/>, but while the store is full only one page a frame is tried; the others keep their blades and wait. Every page tried
+    /// in a full store scans the arena's free list under its lock and gives back what it took: with a longer grass distance than the store holds
+    /// (the Ultra tier's x 2, four times the pages) thousands of pages were retried every frame, 15 ms of the render thread.
+    /// </summary>
+    void TryQueuePage(ZoneState state, int key, GrassPage page, float[][] blades, int[][] prefixes)
+    {
+        if (grassFull && grassTriedFull)
+        {
+            if (page.PendingBlades is null) grassStore.Misses++;
+            (page.PendingBlades, page.PendingPrefixes) = (blades, prefixes);
+            return;
+        }
+        grassTriedFull |= grassFull;
+        grassFull = !QueuePage(state, key, page, blades, prefixes);
+    }
+
     /// <summary>
     /// A generated grass page into the store: its blade ranges and slots now (all or none: without room the blades wait in the page and
     /// <see cref="UpdateGrass"/> tries again, <see cref="FoliageGrassGpu.Misses"/>), then the blades in steps of about 512 KB so no frame holds

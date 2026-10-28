@@ -156,7 +156,9 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
     /// <summary>settings.cfg <c>foliage range</c>, <c>grass range</c> and <c>grass density</c> (the game's defaults are 1; the viewer draws
     /// foliage 4x and grass 8x as far by default).</summary>
     public float RangeSetting { get; set; } = Env("MEITOU_FOLIAGE_RANGE", 4);
-    public float GrassRangeSetting { get; set; } = Env("MEITOU_GRASS_RANGE", 8);
+    public float GrassRangeSetting { get; set; } = Env("MEITOU_GRASS_RANGE", DefaultGrassRange);
+    /// <summary>The "Grass draw distance x" setting's default.</summary>
+    public const float DefaultGrassRange = 8;
     public float GrassDensitySetting { get; set; } = 1;
     /// <summary>The Meitou <c>grass-velocity</c> switch (docs/render-foliage.md "Grass motion vectors"): the motion pass redraws only the swaying blades near enough to move by <see cref="GrassVelocityPixels"/> a frame (<see cref="GrassMotionReach"/>); off redraws all of them.</summary>
     public bool GrassVelocityCull { get; set; } = true;
@@ -250,6 +252,12 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
 
     /// <summary>Requested work: layouts, grass, meshes, textures and impostors, including used textures deferred by memory pressure.</summary>
     public int Pending => runningWhole + runningFar + zonesWaiting + grassWaiting + decoding.Count + uploads.Count + lodRunning + lodWaiting + textures.PendingCount + textures.UnresidentUsedCount + zones.Values.Sum(z => z.GrassRunning) + ImpostorPending;
+
+    /// <summary>
+    /// <see cref="Pending"/> as a loading screen waits for it: the grass only within the range the default grass distance gives (<see cref="DefaultGrassRange"/>). A longer
+    /// setting's farther pages (four times the grass at twice the distance, a minute and more of generation) grow in, nearest first, once the screen lifts.
+    /// </summary>
+    public int LoadingPending => Pending - grassWaiting - zones.Values.Sum(z => z.GrassRunning) + grassNear;
 
     /// <summary>What <see cref="Pending"/> is made of, for the loading log.</summary>
     public string PendingDetail => $"layouts {runningWhole + runningFar + zonesWaiting}, grass {grassWaiting + zones.Values.Sum(z => z.GrassRunning)}, meshes {decoding.Count} decoding {uploads.Count} upload steps, lods {lodRunning + lodWaiting}, textures {textures.PendingCount} loading {textures.UnresidentUsedCount} deferred, impostors {ImpostorPending}";
@@ -757,18 +765,20 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
     /// <summary>Grass pages generating at once, over all zones.</summary>
     const int MaxGrassJobs = 12;
     readonly List<(float Distance, ZoneState State, int Key)> grassWanted = [];
-    int zonesWaiting, grassWaiting;
+    int zonesWaiting, grassWaiting, grassNear;
 
     void UpdateGrass(Vector3 eye)
     {
         grassWanted.Clear();
+        grassNear = 0;
+        grassTriedFull = false;
         NearestMissingGrass = float.PositiveInfinity;
         int inFlight = 0;
         foreach (var state in zones.Values) inFlight += state.GrassRunning;
         foreach (var state in zones.Values)
         {
             if (!state.Ready || state.Ground is null || state.Patches.Count == 0) continue;
-            float range = state.Patches.Max(GrassRange);
+            float range = state.Patches.Max(GrassRange), near = range * Math.Min(1, DefaultGrassRange / GrassRangeSetting);
             if (state.Pages.Count == 0 && ZoneDistance(state.Zone, eye) > range + PageSize) continue;
             for (int pz = 0; pz < PagesPerZone; pz++)
                 for (int px = 0; px < PagesPerZone; px++)
@@ -780,7 +790,11 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
                     if (page?.Buffers is null && d < range * 0.8f) NearestMissingGrass = Math.Min(NearestMissingGrass, d);   // not sinking yet: would be seen
                     if (page is null)
                     {
-                        if (d < range + PageSize * 0.5f) grassWanted.Add((d, state, key));
+                        if (d < range + PageSize * 0.5f)
+                        {
+                            grassWanted.Add((d, state, key));
+                            if (d < near) grassNear++;
+                        }
                         continue;
                     }
                     if (page.Job is null && d > range + PageSize * 2)
@@ -788,14 +802,15 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
                         FreePage(page);
                         state.Pages.Remove(key);
                     }
+                    else if (page.Job is { IsCompleted: false } && d < near) grassNear++;
                     else if (page.Job is { IsCompleted: true } job)
                     {
                         state.GrassRunning--;
                         page.Job = null;
                         var result = job.Result;
-                        QueuePage(state, key, page, result.Blades, result.Prefixes);
+                        TryQueuePage(state, key, page, result.Blades, result.Prefixes);
                     }
-                    else if (page.PendingBlades is not null) QueuePage(state, key, page, page.PendingBlades, page.PendingPrefixes!);   // no room last time
+                    else if (page.PendingBlades is not null) TryQueuePage(state, key, page, page.PendingBlades, page.PendingPrefixes!);   // no room last time
                 }
         }
         // Missing pages nearest first, a bounded number at a time. Pages hold the blades of the highest density setting,

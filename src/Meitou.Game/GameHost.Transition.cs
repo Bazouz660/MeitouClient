@@ -136,7 +136,7 @@ sealed partial class GameHost
         bool charactersReady = gpu.Characters is not { } characters || !characters.ContentPending &&
             session.CurrentSnapshot.Characters.All(c => c.Appearance is null || !InLoadingReach(c) || characters.IsPrepared(c.Appearance));
         bool sceneReady = TitleVisible ? TitleSceneReady : populationReady && charactersReady &&
-            gpu.Streamer is not { Idle: false } && !(gpu.Objects?.Pending > 0) && !(gpu.Foliage?.Pending > 0);
+            gpu.Streamer is not { Idle: false } && !(gpu.Objects?.Pending > 0) && !(gpu.Foliage?.LoadingPending > 0);
         guardSeconds = gpu.Guard is { Pressure: true } ? guardSeconds + seconds : 0;
         if (!sceneReady && guardSeconds >= GuardWait && (TitleVisible || populationReady))
         {
@@ -163,7 +163,7 @@ sealed partial class GameHost
                 int pendingLooks = gpu.Characters is { } characterRenderer
                     ? TitleVisible ? characterRenderer.PendingLoads : session.CurrentSnapshot.Characters.Count(c => c.Appearance is { } appearance && InLoadingReach(c) && !characterRenderer.IsPrepared(appearance))
                     : 0;
-                Console.WriteLine($"loading   {(TitleVisible ? "menu" : "game")} still preparing: terrain {(gpu.Streamer?.Idle == false ? "pending" : "ready")}, objects {gpu.Objects?.Pending ?? 0}{(gpu.Objects is { Pending: > 0 } po ? $" ({po.PendingDetail})" : "")}, foliage {gpu.Foliage?.Pending ?? 0}{(gpu.Foliage is { Pending: > 0 } pf ? $" ({pf.PendingDetail})" : "")}, population {(populationReady ? "ready" : "pending")}, characters {((TitleVisible ? TitleCharactersReady : charactersReady) ? "ready" : $"pending ({pendingLooks} looks; {gpu.Characters?.PendingLoads ?? 0} assets/textures)")}");
+                Console.WriteLine($"loading   {(TitleVisible ? "menu" : "game")} still preparing: terrain {(gpu.Streamer?.Idle == false ? "pending" : "ready")}, objects {gpu.Objects?.Pending ?? 0}{(gpu.Objects is { Pending: > 0 } po ? $" ({po.PendingDetail})" : "")}, foliage {gpu.Foliage?.LoadingPending ?? 0}{(gpu.Foliage is { LoadingPending: > 0 } pf ? $" ({pf.PendingDetail})" : "")}, population {(populationReady ? "ready" : "pending")}, characters {((TitleVisible ? TitleCharactersReady : charactersReady) ? "ready" : $"pending ({pendingLooks} looks; {gpu.Characters?.PendingLoads ?? 0} assets/textures)")}");
             }
             return;
         }
