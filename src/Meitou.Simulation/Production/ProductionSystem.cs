@@ -853,14 +853,14 @@ public sealed partial class ProductionSystem : ITickSystem
     }
 
     /// <summary>
-    /// One operator's work on a farm (<b>Observed</b>, <c>FarmBuilding::vfunc_150</c>): a ripe crop is harvested plant by plant (<c>P x dt x s x harvest rate</c>, each plant rolling its
-    /// <c>output per plant</c> against the efficiency), a dead one cleared (<c>clear rate</c>).
+    /// One operator's work on a farm (<b>Observed</b>, <c>FarmBuilding::vfunc_150</c>): a ripe crop is harvested plant by plant (<c>health x powerSat x P x dt x s x harvest rate</c>,
+    /// each plant rolling its <c>output per plant</c> against the efficiency), a dead one cleared (<c>clear rate</c>, the same factors; slot 109, <b>Verified</b> <c>FUN_1400e59e0</c>).
     /// </summary>
     bool HarvestStep(World world, Machine m, float farming, float s, float dt)
     {
         var f = m.Farm!;
         var fd = m.Data.Farm!;
-        float work = constants.ProductionSpeed * dt * s;
+        float work = m.Health * m.Power * constants.ProductionSpeed * dt * s;
         if (f.Growth >= 1 && f.Death < fd.DeathThreshold && f.Harvested < f.Plants.Length)
         {
             if (m.Output is not { } output) return false;
