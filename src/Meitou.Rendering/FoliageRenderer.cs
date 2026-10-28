@@ -399,6 +399,8 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
         public ArenaRange Range;
         public uint FirstBlade;
         public int Slot = -1;
+        /// <summary>The store <see cref="Range"/> and <see cref="Slot"/> are in: a store replaced by a larger one (<see cref="GrowGrassStore"/>) is not given them back.</summary>
+        public FoliageGrassGpu? Store;
         public int Count;
         /// <summary>The patch the cached textures and count belong to (<see cref="Patch"/>): its sprite and colour map looked up once, and the
         /// blades shown at <see cref="ShownDensity"/>.</summary>
@@ -751,6 +753,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
         if (grassDisposing) return;
         foreach (var b in buffers)
         {
+            if (b.Store != grassStore) continue;
             if (b.Slot >= 0) grassStore.FreeSlot(b.Slot);
             if (!b.Range.IsEmpty) grassStore.FreeBlades(b.Range);
             b.Slot = -1;
@@ -769,6 +772,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
 
     void UpdateGrass(Vector3 eye)
     {
+        GrowGrassStore();
         grassWanted.Clear();
         grassNear = 0;
         grassTriedFull = false;

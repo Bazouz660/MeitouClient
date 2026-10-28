@@ -29,13 +29,23 @@ public sealed unsafe partial class FoliageRenderer
 
     bool GpuGrassActive => GpuGrass && grassGpuProgram is not null;
 
-    /// <summary>Bytes of the blade arena (160 MB) and slots of the cull table.</summary>
+    /// <summary>Bytes of the blade arena (160 MB) and slots of the cull table at the default grass distance; <see cref="GrassStoreScale"/> times them for a longer one.</summary>
     const ulong GrassArenaBytes = 160ul << 20;
     const int GrassSlotCapacity = 32768;
+    /// <summary>The largest <see cref="GrassStoreScale"/>: 1.28 GB of blades, a grass distance of about 2.8 times the default.</summary>
+    const int MaxGrassStoreScale = 8;
+    int grassStoreScale;
+
+    /// <summary>
+    /// How many times the default store a grass distance needs: the pages in reach grow with the square of the distance, so x 2 needs 4 (640 MB);
+    /// at most <see cref="MaxGrassStoreScale"/>, at least 1 (a shorter distance keeps the default store).
+    /// </summary>
+    static int GrassStoreScale(float grassRange) => (int)Math.Ceiling(Math.Clamp(grassRange * grassRange / (DefaultGrassRange * DefaultGrassRange), 1, MaxGrassStoreScale));
 
     void InitGrassStore(IGpuContext gpu)
     {
-        grassStore = new FoliageGrassGpu(gpu, GrassArenaBytes, GrassSlotCapacity);
+        grassStoreScale = GrassStoreScale(GrassRangeSetting);
+        grassStore = new FoliageGrassGpu(gpu, GrassArenaBytes * (ulong)grassStoreScale, GrassSlotCapacity * grassStoreScale);
         grassMeshCpu = ArenaMesh(grassProgram);
         grassMeshMotionCpu = ArenaMesh(grassMotionProgram);
         if (!grassStore.Kernels) return;
@@ -44,6 +54,40 @@ public sealed unsafe partial class FoliageRenderer
         grassMotionGpuProgram = new NativeProg(gpu, grassFrame, FoliageGrassShaders.GrassMotionVertexGpu(), FoliageGrassShaders.GrassMotionFragmentGpu(), "foliage grass motion gpu");
         grassMeshGpu = ArenaMesh(grassGpuProgram);
         grassMeshMotionGpu = ArenaMesh(grassMotionGpuProgram);
+    }
+
+    /// <summary>
+    /// A grass distance raised past what the store holds (<see cref="GrassStoreScale"/>) replaces it with a larger one: every page is dropped and made
+    /// again, nearest first. The store never shrinks while running (a lowered setting keeps it), so a slider drag rebuilds it at most a few times.
+    /// The old store is disposed once the frames in flight are done with it; its pages' ranges are not given back to it (<see cref="GrassBuffer.Store"/>).
+    /// </summary>
+    void GrowGrassStore()
+    {
+        int scale = GrassStoreScale(GrassRangeSetting);
+        if (scale <= grassStoreScale) return;
+        foreach (var state in zones.Values)
+        {
+            foreach (var page in state.Pages.Values)
+            {
+                page.Dropped = true;
+                (page.PendingBlades, page.PendingPrefixes, page.Buffers) = (null, null, null);
+            }
+            state.Pages.Clear();
+            state.GrassRunning = 0;   // their jobs finish unread
+        }
+        var old = grassStore;
+        grassStoreScale = scale;
+        grassStore = new FoliageGrassGpu(Gpu, GrassArenaBytes * (ulong)scale, GrassSlotCapacity * scale) { Misses = old.Misses };
+        grassMeshCpu = ArenaMesh(grassProgram);
+        grassMeshMotionCpu = ArenaMesh(grassMotionProgram);
+        if (grassGpuProgram is not null && grassMotionGpuProgram is not null)
+        {
+            grassMeshGpu = ArenaMesh(grassGpuProgram);
+            grassMeshMotionGpu = ArenaMesh(grassMotionGpuProgram);
+        }
+        grassFull = false;
+        Gpu.DeferDelete(old.Dispose);
+        Messages.Add($"grass store grown to {GrassArenaBytes * (ulong)scale >> 20} MB for grass distance x {GrassRangeSetting / DefaultGrassRange:0.##}");
     }
 
     bool grassDisposing;
@@ -116,6 +160,7 @@ public sealed unsafe partial class FoliageRenderer
         {
             var b = buffers[i] = new GrassBuffer { Count = blades[i].Length / FoliageGrassField.Stride, Prefixes = prefixes[i] };
             if (b.Count == 0) continue;
+            b.Store = store;
             b.Range = store.AllocateBlades(b.Count);
             if (b.Range.IsEmpty) { room = false; break; }
             b.FirstBlade = FoliageGrassGpu.FirstBlade(b.Range);
