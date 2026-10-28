@@ -222,6 +222,23 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
 /// </summary>
 public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem
 {
+    /// <summary>The towns, for the slave-defender gate (<see cref="SlaveHelpAllowed"/>); null: no gate.</summary>
+    public PopulationData? Towns { get; set; }
+
+    /// <summary>
+    /// Whether a helper may come to the defence of a slave or escaped slave (<c>FUN_140997e80</c> in the protect-allies finder, <b>Verified</b>): its faction is a bandit one, or it
+    /// stands in no town, or that town's owner books no bounties (a lawful town's people leave slaves to their fate).
+    /// </summary>
+    bool SlaveHelpAllowed(World world, CharacterCold helper, Vector3 at)
+    {
+        if (Towns is not { } data || combat.Relations is not { } relations) return true;
+        if (relations.Contains(helper.Faction) && relations.Factions[helper.Faction].FundamentalType == Meitou.Data.Gameplay.FundamentalType.Bandit) return true;
+        var town = Ai.AiSystem.TownAt(data, world, at);
+        if (town.Site < 0) return true;
+        int owner = town.Site < data.SiteFactions.Count ? data.SiteFactions[town.Site] : -1;
+        return !(relations.Contains(owner) && relations.Factions[owner].BooksBounties);
+    }
+
     public const int CheckEveryTicks = 15;
     /// <summary>How near a mate must be to join (engine choice: the original's only limit is that the joiner senses the mate, up to its sight range).</summary>
     public const float JoinRange = 250;
@@ -410,6 +427,7 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem
         foreach (int s in players)
         {
             if (!next[s].Alive || table.Cold(s) is not { IsPlayer: true } c || c.Faction == ally.Faction || !relations.Contains(c.Faction) || !relations.IsAlly(c.Faction, ally.Faction)) continue;
+            if (ally.SlaveState is 1 or 2 && !SlaveHelpAllowed(world, c, next[s].Position)) continue;
             var d = next[s].Position - at;
             if (d.X * d.X + d.Z * d.Z > JoinRange * JoinRange || !CanFight(table, s, taken)) continue;
             defenders.Add(new CharacterId(s, next[s].Generation));
@@ -433,6 +451,7 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem
         {
             if (s == attacker || s == slot || !next[s].Alive || table.Cold(s) is not { Ai.ProtectsAllies: true, Gunning: null } c
                 || !relations.IsAlly(c.Faction, ally.Faction) || relations.IsAlly(c.Faction, foe.Faction)) continue;
+            if (ally.SlaveState is 1 or 2 && !SlaveHelpAllowed(world, c, next[s].Position)) continue;
             float range = AggroSystem.RangeOf(c, AggroSystem.OutdoorSight), d2 = Vector3.DistanceSquared(next[s].Position, at);
             if (d2 > MathF.Max(range * range, AggroSystem.NoiseFar * AggroSystem.NoiseFar) || !CanFight(table, s, taken)) continue;
             // Seen, or heard: a fight in the protector's own place within the farthest noise is heard for sure (AggroSystem's hearing rule).

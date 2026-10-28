@@ -746,7 +746,9 @@ vfunc 5 `FUN_14050caf0`). TaskData fields: +0x108 desire (a member function, nea
   hand +0x208); else it falls back to a hand list at +0x2f8. Achieved by 13 "Attacking attackers of" (list A `!16, !39, !12*`).
 - 15 / 288 PROTECT_ALLIES ("Protect allies", "protect allies - dont leave town"; finder `FUN_14099ca10` at +0x160 for both, **Verified** registration):
   the same shape as 143 over the sensed entries tagged SENSE_ALLY (mask 1, 0x208; same faction or relation >= 50) that are seen or heard, scored by
-  `FUN_14099a190` (nonzero while that ally's AI holds a target). An ally of another faction counts for an NPC looker; only a player-faction looker
+  `FUN_14099a190` (nonzero while that ally's AI holds a target). A slave or escaped slave (status int 1 or 2) is defended only when the looker passes `FUN_140997e80`
+  (**Verified**, latched once a pass): its faction is a bandit one (fundamental type 8), or it is in no town, or that town's owner books no bounties (Meitou:
+  `RetaliationSystem.SlaveHelpAllowed`). An ally of another faction counts for an NPC looker; only a player-faction looker
   needs the global +0x111 and squares the weight ([HelpAllies](../simulation.md#hostility-and-relations)). Achieved by 13 "Attacking attackers of"
   (`FUN_14099c3b0`, **Observed**): the protected one's attackers that it or the looker senses, within 150 of it (outdoors), are taken when either regards
   the other an enemy (slot 125) or the attacker's AI +0x2a4 equals the goal target's id (meaning **Unknown**, read as "it is attacking the protected one"),
