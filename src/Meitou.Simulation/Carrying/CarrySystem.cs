@@ -196,12 +196,19 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         }
     }
 
-    /// <summary>Starts a pick-up of <paramref name="body"/> by the character in <paramref name="carrier"/> (serial phases; the arrest and kidnap systems' lift), going back to <paramref name="resume"/> afterwards: false when it cannot carry or the body cannot be lifted.</summary>
-    public bool BeginPickUp(World world, int carrier, CharacterId body, CharacterTask resume = CharacterTask.Idle)
+    /// <summary>
+    /// Starts a pick-up of <paramref name="body"/> by the character in <paramref name="carrier"/> (serial phases; the arrest and kidnap systems' lift), going back to <paramref name="resume"/>
+    /// afterwards: false when it cannot carry or the body cannot be lifted. With <paramref name="kidnap"/> a sleeper may be taken too (<see cref="CanBeKidnapped"/>): the lift is then
+    /// a kidnap, which rolls on arrival.
+    /// </summary>
+    public bool BeginPickUp(World world, int carrier, CharacterId body, CharacterTask resume = CharacterTask.Idle, bool kidnap = false)
     {
         var table = world.Characters;
-        if (!table.TryResolveNext(body, out int b) || b == carrier || table.Cold(carrier) is not { } c || !CanCarry(c) || !CanBeLifted(table.Cold(b)!)) return false;
+        if (!table.TryResolveNext(body, out int b) || b == carrier || table.Cold(carrier) is not { } c || !CanCarry(c)) return false;
+        bool asleep = !CanBeLifted(table.Cold(b)!);
+        if (asleep && !(kidnap && CanBeKidnapped(table, b))) return false;
         Begin(table, carrier, body, CharacterTask.PickUp, resume);
+        c.Kidnapping = asleep;
         return true;
     }
 

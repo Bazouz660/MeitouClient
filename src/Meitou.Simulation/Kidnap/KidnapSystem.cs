@@ -76,7 +76,7 @@ public readonly record struct KidnapEvent(long Tick, KidnapEventKind Kind, Chara
 /// free cage in the home town, or three failed walks: it drops the victim (<b>engine choice</b>; the original's give-up rule is Unknown).</item>
 /// </list>
 /// A marching carrier (a campaign's, or a squad's that lists a cannibal retreat package, which then needs no cage in range to lift) cages in the first town of its faction with a free cage and gives up only in its home town (<see cref="Abduction.HomeSite"/>).
-/// What the captors then do with the captive is <see cref="CaptiveSystem"/>'s. Not built: kidnapping a sleeper out of a bed, the witnesses' kidnapping crime.
+/// What the captors then do with the captive is <see cref="CaptiveSystem"/>'s. Not built: the witnesses' kidnapping crime.
 /// </summary>
 public sealed class KidnapSystem(PopulationData data, PopulationSystem population, CarrySystem carry, KidnapSettings? settings = null) : ITickSystem, IStateHashed
 {
@@ -96,14 +96,16 @@ public sealed class KidnapSystem(PopulationData data, PopulationSystem populatio
     // ------------------------------------------------------------------ the finder
 
     /// <summary>
-    /// Whether the character in <paramref name="slot"/> may be kidnapped by one of <paramref name="faction"/> (the finder of goal 132, carry-loot.md 3.2): alive, down, of a carriable race,
-    /// not carried, caged or in a bed, not an animal; and not of the faction or an ally of it (<b>engine reading</b> of the sensed-class masks).
+    /// Whether the character in <paramref name="slot"/> may be kidnapped by one of <paramref name="faction"/> (the finder of goal 132, carry-loot.md 3.2, <c>FUN_1408cd2d0</c> with the
+    /// bed allowed, <b>Verified</b>): alive, of a carriable race, not carried, not an animal, and either lying in a bed (awake or not: the lift is then a kidnap that rolls) or down and
+    /// not caged; and not of the faction or an ally of it (<b>engine reading</b> of the sensed-class masks).
     /// </summary>
     public bool IsVictim(World world, int slot, int faction)
     {
         var table = world.Characters;
-        if (!table.Next[slot].Alive || table.Cold(slot) is not { Race: { Carriable: true }, Medical: { Incapacitated: true, Dead: false } } c) return false;
-        if (c.IsImprisoned || !c.CarriedBy.IsNone || c.InSomething != HeldState.None || c.Fighter is { IsAnimal: true }) return false;
+        if (!table.Next[slot].Alive || table.Cold(slot) is not { Race: { Carriable: true }, Medical: { Dead: false } medical } c) return false;
+        if (c.IsImprisoned || !c.CarriedBy.IsNone || c.Fighter is { IsAnimal: true }) return false;
+        if (c.InSomething == HeldState.Bed ? !CarrySystem.CanBeKidnapped(table, slot) && !medical.Incapacitated : !medical.Incapacitated || c.InSomething != HeldState.None) return false;
         var relations = data.Relations;
         return c.Faction != faction && !(relations.Contains(faction) && relations.Contains(c.Faction) && relations.IsAlly(faction, c.Faction));
     }
@@ -129,7 +131,7 @@ public sealed class KidnapSystem(PopulationData data, PopulationSystem populatio
         var cold = table.Cold(slot)!;
         if (CageFor(world, table.Next[v].Position, cold.Faction, null) is null) return false;
         var task = (CharacterTask)table.Next[slot].Task;
-        if (!carry.BeginPickUp(world, slot, victim, task is CharacterTask.Wander or CharacterTask.Follow ? task : CharacterTask.Idle)) return false;
+        if (!carry.BeginPickUp(world, slot, victim, task is CharacterTask.Wander or CharacterTask.Follow ? task : CharacterTask.Idle, kidnap: true)) return false;
         cold.Engaged = true;
         abductions.Add(new Abduction { Carrier = table.IdOf(slot), Victim = victim, Faction = cold.Faction });
         return true;
@@ -158,7 +160,8 @@ public sealed class KidnapSystem(PopulationData data, PopulationSystem populatio
         for (int s = 0; s < table.HighWater; s++)
         {
             if (table.Next[s].Alive && table.Next[s].Task == (byte)CharacterTask.PickUp && table.Cold(s)!.CarryTarget is { IsNone: false } target) reserved.Add(target);
-            if (table.Next[s].Alive && table.Cold(s) is { Medical: { Incapacitated: true, Dead: false }, Race.Carriable: true } c && !c.IsImprisoned && c.CarriedBy.IsNone) victims.Add(s);
+            if (table.Next[s].Alive && table.Cold(s) is { Medical.Dead: false, Race.Carriable: true } c && !c.IsImprisoned && c.CarriedBy.IsNone
+                && (c.Medical.Incapacitated || c.InSomething == HeldState.Bed)) victims.Add(s);
         }
         if (victims.Count == 0) return;
         Span<int> duty = stackalloc int[5];
@@ -184,7 +187,7 @@ public sealed class KidnapSystem(PopulationData data, PopulationSystem populatio
                 if (!campaign && !retreats && CageFor(world, table.Next[victim].Position, cold.Faction, null) is null) continue;
                 int homeSite = campaign ? (inst!.Home.Site is >= 0 and var h && h < data.SiteFactions.Count && data.SiteFactions[h] == cold.Faction ? h : -1)
                     : retreats ? squad.Ai!.Town : -1;
-                if (!carry.BeginPickUp(world, slot, victimId, ResumeOf(table.Next[slot].Task, campaign || retreats))) continue;
+                if (!carry.BeginPickUp(world, slot, victimId, ResumeOf(table.Next[slot].Task, campaign || retreats), kidnap: true)) continue;
                 cold.Engaged = true;
                 reserved.Add(victimId);
                 abductions.Add(new Abduction { Carrier = member, Victim = victimId, Faction = cold.Faction, Marching = campaign || retreats, HomeSite = homeSite });
@@ -244,7 +247,7 @@ public sealed class KidnapSystem(PopulationData data, PopulationSystem populatio
                 }
                 if (gn.Task == (byte)CharacterTask.PickUp) return true;
                 // The lift ended without the body (fought off, pushed away): again while it is down and free, a few times.
-                if (++a.Tries > Settings.LiftTries || !tc.CarriedBy.IsNone || !IsVictim(world, t, a.Faction) || !carry.BeginPickUp(world, g, a.Victim, ResumeOf(gn.Task, a.Marching))) return End(world, a, KidnapEventKind.GaveUp);
+                if (++a.Tries > Settings.LiftTries || !tc.CarriedBy.IsNone || !IsVictim(world, t, a.Faction) || !carry.BeginPickUp(world, g, a.Victim, ResumeOf(gn.Task, a.Marching), kidnap: true)) return End(world, a, KidnapEventKind.GaveUp);
                 return true;
             }
             case KidnapPhase.Carry:
