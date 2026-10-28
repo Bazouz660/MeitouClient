@@ -158,7 +158,7 @@ public sealed partial class LockSystem
             foreach (var (building, origin, radius, door, spot) in shut)
             {
                 if (Vector2.Distance(target, origin) > radius || Vector2.Distance(me, origin) <= radius) continue;
-                if (doorPlan.PlansBash(world, Combat, s, t, building, door, spot))
+                if (doorPlan.PlansBash(world, Combat, s, t, building, door, spot, this))
                 {
                     c.Bashing = door.Id;
                     c.BashTime = 0;

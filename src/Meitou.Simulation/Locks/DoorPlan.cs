@@ -28,6 +28,7 @@ sealed class DoorPlan : IPlanWorld
     Fixture door = null!;
     DoorSpot spot;
     float aggressive;
+    LockSystem? locks;
     readonly List<PlanStep> plan = [];
 
     public int Category => 0x1;
@@ -36,9 +37,9 @@ sealed class DoorPlan : IPlanWorld
     /// <summary>
     /// Plans row 4 for attacker <paramref name="s"/> at <paramref name="t"/>, shut in <paramref name="shutIn"/> behind its main door; true when the plan bashes it.
     /// </summary>
-    public bool PlansBash(World w, CombatSystem? fights, int s, int t, string shutIn, Fixture mainDoor, DoorSpot mainSpot)
+    public bool PlansBash(World w, CombatSystem? fights, int s, int t, string shutIn, Fixture mainDoor, DoorSpot mainSpot, LockSystem? gates = null)
     {
-        (world, combat, me, foe, building, door, spot) = (w, fights, s, t, shutIn, mainDoor, mainSpot);
+        (world, combat, me, foe, building, door, spot, locks) = (w, fights, s, t, shutIn, mainDoor, mainSpot, gates);
         cold = w.Characters.Cold(s)!;
         aggressive = AggressiveTowards(w, fights, cold, shutIn, mainSpot.Centre);
         if (TaskDataTable.Of(TaskType.MELEE_ATTACK) is not { } row) return false;
@@ -93,8 +94,9 @@ sealed class DoorPlan : IPlanWorld
                 && r.Get(cold.Faction, world.Fixtures.DoorOwner(building)) >= FactionRelations.AllyThreshold,
             // Task_BashDoor wants a weapon; an animal's natural one counts.
             StateType.hasWeaponEquipped => cold.Fighter is { } f && (f.IsAnimal || !f.Unarmed),
-            StateType.isMovementAllowed or StateType.LOCATION_IS_ACCESSIBLE or StateType.DESTINATION_NOT_BLOCKED_BY_FORTIFICATIONS
-                or StateType.isReadyForAction or StateType.crowdLimit8 => true,
+            // 90 is evaluated for house doors as for gates (FUN_140597160, Verified): the walk to the door or the foe must not lie behind a gate that is not open.
+            StateType.DESTINATION_NOT_BLOCKED_BY_FORTIFICATIONS => locks is null || locks.NotBlocked(world, n.Position, atBuilding ? spot.Centre : world.Characters.Next[foe].Position),
+            StateType.isMovementAllowed or StateType.LOCATION_IS_ACCESSIBLE or StateType.isReadyForAction or StateType.crowdLimit8 => true,
             _ => false,
         };
         return value == condition.Holds;
