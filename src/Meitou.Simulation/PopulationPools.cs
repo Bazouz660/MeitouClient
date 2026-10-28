@@ -296,41 +296,49 @@ public sealed partial class PopulationSystem
     public const float NestGuardRadius = 1250;
 
     /// <summary>
-    /// Loaded nests make one more squad when their pool has room (built on the population thread, one per look at most): not a wiped-out nest, not one with a player
-    /// character within <see cref="NestGuardRadius"/> (it is only weighed then, so a nest left with nothing to make is still found wiped out).
+    /// One nest a tick, in turn over every nest (<c>TownList::vfunc_4</c>'s nest cursor, <b>Verified</b>; the original's frame is the tick here): when loaded and its pool has room it makes
+    /// one more squad (built on the population thread): not a wiped-out nest, not one with a player character within <see cref="NestGuardRadius"/> (it is only weighed then, so a nest
+    /// left with nothing to make is still found wiped out). The turn is the tick modulo the nest count, so it needs no saved cursor.
     /// </summary>
-    void TopUpNests(World world)
+    void TopUpNest(World world)
     {
         if (wildSites is null) return;
-        Vector2[]? players = null;
-        foreach (int i in wildLoaded)
+        if (nests is null || nestsOf != wildSites.Count)
         {
-            var site = wildSites[i];
-            var state = wildStates[i];
-            if (site.Kind != WildKind.Nest || state.Status != SiteStatus.Loaded || state.Pending || !active.Contains(site.Zone)) continue;   // held only by a squad away
-            var centre = wildCentres[i] ?? site.Spots[0];
-            var pools = NestPools(world, site);
-            if (pools.Ded) continue;
-            players ??= PlayerSpots(world);
-            bool guarded = false;
-            foreach (var at in players)
-                if (Vector2.DistanceSquared(at, centre) < NestGuardRadius * NestGuardRadius) { guarded = true; break; }
-            var budget = new NestBudget((int)MathF.Floor(pools.Roaming.Current), NestLiving(world, i, state), TemplateCounts(world, site, state), state.Made, 4, 1, !guarded, centre);
-            if (budget.Members >= budget.Cap)
-            {
-                // Full: nothing to make. A pool spent below one member with no one left alive can make nothing again: wiped out.
-                if (budget.Members == 0) CheckWipe(world, site, state);
-                continue;
-            }
-            state.Pending = true;
-            long loadId = state.LoadId;
-            ulong seed = world.Seed;
-            var walk = world.Walkability;
-            var spots = players;
-            if (work is null) SpawnWild(world, BuildNest(site, loadId, seed, walk, spots, budget));
-            else work.Add(() => builtWild.Enqueue(BuildNest(site, loadId, seed, walk, spots, budget)));
+            nests = [.. Enumerable.Range(0, wildSites.Count).Where(i => wildSites[i].Kind == WildKind.Nest)];
+            nestsOf = wildSites.Count;
         }
+        if (nests.Length == 0) return;
+        int i = nests[(int)(world.Tick % nests.Length)];
+        if (!wildLoaded.Contains(i)) return;
+        var site = wildSites[i];
+        var state = wildStates[i];
+        if (site.Kind != WildKind.Nest || state.Status != SiteStatus.Loaded || state.Pending || !active.Contains(site.Zone)) return;   // held only by a squad away
+        var centre = wildCentres[i] ?? site.Spots[0];
+        var pools = NestPools(world, site);
+        if (pools.Ded) return;
+        var players = PlayerSpots(world);
+        bool guarded = false;
+        foreach (var at in players)
+            if (Vector2.DistanceSquared(at, centre) < NestGuardRadius * NestGuardRadius) { guarded = true; break; }
+        var budget = new NestBudget((int)MathF.Floor(pools.Roaming.Current), NestLiving(world, i, state), TemplateCounts(world, site, state), state.Made, 4, 1, !guarded, centre);
+        if (budget.Members >= budget.Cap)
+        {
+            // Full: nothing to make. A pool spent below one member with no one left alive can make nothing again: wiped out.
+            if (budget.Members == 0) CheckWipe(world, site, state);
+            return;
+        }
+        state.Pending = true;
+        long loadId = state.LoadId;
+        ulong seed = world.Seed;
+        var walk = world.Walkability;
+        var spots = players;
+        if (work is null) SpawnWild(world, BuildNest(site, loadId, seed, walk, spots, budget));
+        else work.Add(() => builtWild.Enqueue(BuildNest(site, loadId, seed, walk, spots, budget)));
     }
+
+    int[]? nests;
+    int nestsOf;
 
     /// <summary>Squads per entry of a nest's <c>roaming squads</c> it has now: in the world (the dead ones too, while they lie there) and the save's held ones.</summary>
     int[] TemplateCounts(World world, WildSite site, SiteState state)

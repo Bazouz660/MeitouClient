@@ -167,6 +167,7 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
     public void SlowWorld(World world)
     {
         MeetFactions(world);
+        TopUpNest(world);
         if (world.Tick % settings.CheckEveryTicks != 0) return;
         world.Uniques.SeedPrisoners(data.Db);
         RefreshUniques(world);

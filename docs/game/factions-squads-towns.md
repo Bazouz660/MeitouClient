@@ -460,7 +460,7 @@ Meitou: [ground items](../simulation.md#items-and-eating).
   dead but set to CM_REFRESH (remade on next activation). Meitou: a town squad that unloads with no one alive, or an empty pinned platoon at the town's load, is marked to
   regenerate (whatever the budget).
 - **Nests** (`NestPopulationManager::vfunc_4`): pool 2 starts at 0.7 × `nest resident population` and grows as above. While the nest's
-  zone is loaded it spawns one squad per tick (weight `max(0, v0 − existing) × faction wealth`; an entry passes when its size fits the free budget `floor(pop2)` − living, or
+  zone is loaded it spawns one squad per visit, and it is visited once every N frames, N = every nest in the list, loaded or not (`TownList::vfunc_4`'s nest cursor, **Verified**) (weight `max(0, v0 − existing) × faction wealth`; an entry passes when its size fits the free budget `floor(pop2)` − living, or
   the pool is empty and more than 4 are free, so a squad bigger than the budget can open a nest: `FUN_1408f7e80`, **Verified** by code) unless a
   player-faction unit is within 1250. With no candidate and no intact squad the nest is `ded` ("wiped out", game hour stored as `tod`,
   **Observed**) and never spawns again. New nests come only from the area tick, up to `num nests` per biome group; whether a dead nest

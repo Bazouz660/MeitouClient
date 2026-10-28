@@ -96,7 +96,6 @@ public sealed partial class PopulationSystem
             GrowPools(world);
             CheckTownWipes(world);
             FillPools(world);
-            TopUpNests(world);
             StepHomeless(world);
             if (OffscreenFights) Fights(world);
         }

@@ -205,8 +205,8 @@ Implemented (`PopulationRoaming.cs`):
     new kept platoon (the old one's characters are dropped; a save's leaves the save). A template whose members are all by chance gets up to
     8 rolls. **Observed** (headless): new game, Hub squatters 1 of 3 left → 2 fresh; save 2, Squin's Town Guard 2 of 5 → 4 fresh; both the
     same after save and load.
-  - **Nests**: the pool starts at 0.7 × `nest resident population` (or the save's `pop2`); a load fills it to `floor(pop2)` members; every 2 s
-    a loaded nest with room makes one squad (rolls keyed after the load's), unless a player character is within 1250, then it only weighs.
+  - **Nests**: the pool starts at 0.7 × `nest resident population` (or the save's `pop2`); a load fills it to `floor(pop2)` members; one nest a tick in turn (tick mod nest count; the tick stands in for the original's frame),
+    so each every N ticks, N = all nests: a loaded one with room makes one squad (rolls keyed after the load's), unless a player character is within 1250, then it only weighs.
     An entry must fit the free budget, except while the pool is empty with more than 4 free (the Fog Deathyard's `Fog hive nest`, expected
     size 1 + (12 + 24) / 2 = 19, against a budget of floor(0.7 × 25) = 17). A roll that finds no entry (all weights 0 or none fits the free budget) with no squad of the nest left alive sets `ded` for good, `tod`,
     and posts "<nest> has been wiped out" (engine choice: "intact" = someone alive); so does a pool spent below one member with no one alive. A squad that lost someone takes its living out of `pop2`
