@@ -160,12 +160,7 @@ public sealed class ConstructionSystem : ITickSystem
                     foreach (var id in Who(world, order.Characters))
                         if (table.TryResolveNext(id, out int slot) && table.Cold(slot) is { IsPlayer: true } cold && Able(cold))
                         {
-                            if (site.LevelPlacement is not null && site.Destroyed)
-                            {
-                                Ruin(world, site);
-                                site.Destroyed = false;
-                                world.Fixtures.RestoreTownShell(world, site);
-                            }
+                            if (site.LevelPlacement is not null) Touch(world, site);
                             if (site.Stalled && !Carries(cold, site) && Source(world, slot, cold, site) is null)
                                 world.Bark(id, Loc.Tr("I don't have any building materials."));
                             Begin(world, slot, site, CharacterTask.Build, CharacterTask.Idle);
@@ -728,17 +723,14 @@ public sealed class ConstructionSystem : ITickSystem
                 s.Dismantling = false;
                 reg.Touch();
             }
-            if (s is { Destroyed: true, Ruined: false, LevelPlacement: null })
+            // Nothing ruins a destroyed building by itself (only a builder's or a delivery's first touch, Touch). A destroyed attached piece of a standing wall follows
+            // its wall again (what the original does with it is Unknown).
+            if (s is { Destroyed: true, WallParent: { } wp } && reg.Find(wp) is { Destroyed: false } wall)
             {
-                Ruin(world, s);
-                if (s.WallParent is null) SyncChildren(world, s);
-                else if (reg.Find(s.WallParent) is { } wall)
-                {
-                    // A destroyed attached piece follows its wall again (what the original does with it is Unknown).
-                    s.Destroyed = s.Ruined = false;
-                    s.Complete = wall.Complete;
-                    s.Progress = Share(wall, s);
-                }
+                s.Destroyed = s.Ruined = false;
+                s.Complete = wall.Complete;
+                s.Progress = Share(wall, s);
+                reg.Changed();
             }
         }
         var table = world.Characters;
@@ -782,6 +774,7 @@ public sealed class ConstructionSystem : ITickSystem
     void BuildStep(World world, int slot, CharacterCold cold, BuildSite site, float dt)
     {
         var table = world.Characters;
+        Touch(world, site);
         if (!site.NeedsWork)
         {
             End(table, slot);
@@ -827,6 +820,26 @@ public sealed class ConstructionSystem : ITickSystem
         SyncChildren(world, site);
         SetBroken(world, site, false);
         if (site.Owner == world.Player.Faction) world.Post(Loc.Tr("Building '{1}' construction complete.", site.Name));
+    }
+
+    /// <summary>
+    /// A builder's or a delivery's touch (Building slot 70, <c>FUN_1405595a0</c>, from the build event and the add-materials task): a destroyed building is ruined (<see cref="Ruin"/>)
+    /// and is no longer destroyed; a purchased town ruin gets its shell back; attached wall pieces follow.
+    /// </summary>
+    void Touch(World world, BuildSite site)
+    {
+        if (!site.Destroyed) return;
+        Ruin(world, site);
+        site.Destroyed = false;
+        if (site.LevelPlacement is not null) world.Fixtures.RestoreTownShell(world, site);
+        SyncChildren(world, site);
+        foreach (var c in world.Buildings.All)
+            if (c.WallParent == site.Id && c.Destroyed)
+            {
+                c.Destroyed = c.Ruined = false;
+                c.Complete = site.Complete;
+                c.Progress = Share(site, c);
+            }
     }
 
     /// <summary>The first tick on a destroyed building (<b>Verified</b>, <c>FUN_1405595a0</c>): no longer complete, progress 0.4 x target, each delivered amount floor(delivered x U[0.3, 0.5) + 0.5).</summary>
@@ -988,6 +1001,7 @@ public sealed class ConstructionSystem : ITickSystem
     void DeliverStep(World world, int slot, CharacterCold cold, BuildSite site, float dt)
     {
         var table = world.Characters;
+        Touch(world, site);
         cold.BuildBar += dt * BarRate;
         if (cold.BuildBar < 1) return;
         cold.BuildBar = 0;

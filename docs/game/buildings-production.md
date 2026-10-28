@@ -65,7 +65,10 @@ engineering factor (it equals an engineering 41.2 builder). Meitou should run th
 
 Destroyed buildings (**Verified**, `FUN_1405595a0`): the first tick on a building with +0x1a1 set clears complete, sets
 progress to 0.4 x target, sets each delivered amount to `floor(delivered x U[0.3, 0.5) + 0.5)` and calls slot 104
-(`FUN_140557280`, destroyed off: navmesh/doors restored, **Observed**).
+(`FUN_140557280`, destroyed off: navmesh/doors restored, **Observed**). That transition lives only in Building slot 70, whose callers are the
+build event 11 (`FUN_1407b65b0`), the add-materials task with amount 0 (`FUN_140348870`), save import (amount FLT_MAX, which skips it),
+placement, the wall forwarding and finish helpers; the per-frame refresh (slot 28 `FUN_1405626a0`) never calls it. So nothing ruins a building
+by itself: it stays destroyed, complete, until a builder or a delivery touches it (**Verified**, decompile; Meitou `ConstructionSystem.Touch`).
 
 Save import (**Verified**, slot 18 `FUN_140552b70`): when importing, a building whose faction is not the player's has
 `destroyed` cleared, every delivered set to required and is completed at once (slot 70 with FLT_MAX).
