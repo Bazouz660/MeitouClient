@@ -147,6 +147,10 @@ public sealed class BuildingFootprints
         return result;
     }
 
+    /// <summary>The triangles of a collision file in its own space (an item's <c>physics file</c>), unscaled; empty when it is not in the install or cannot be read.</summary>
+    public IReadOnlyList<(Vector3[] Vertices, int[] Indices)> File(string recordPath) =>
+        collision.Get(recordPath) is { } prepared ? [.. prepared.Shapes.Select(s => (s.Vertices, s.Indices))] : [];
+
     readonly ConcurrentDictionary<string, BuildingFootprint?> plots = new(StringComparer.Ordinal);
 
     /// <summary>
@@ -177,7 +181,7 @@ public sealed class BuildingFootprints
     /// <summary>Whether a BUILDING is a farm (it names a <c>farm data</c>): the level buildings without collision that a click still selects, by their <see cref="Plot"/>.</summary>
     bool IsFarm(string buildingId) => db.Find(buildingId)?.GetReferences("farm data") is [_, ..];
 
-    Task<BuildingFootprint?> Request(string buildingId) => byRecord.GetOrAdd(buildingId, id => Task.Run(() => Compute(id)));
+    Task<BuildingFootprint?> Request(string buildingId) => byRecord.GetOrAdd(buildingId, static (id, self) => Task.Run(() => self.Compute(id)), this);   // a static factory: nothing allocated on a hit
 
     BuildingFootprint? Compute(string buildingId)
     {

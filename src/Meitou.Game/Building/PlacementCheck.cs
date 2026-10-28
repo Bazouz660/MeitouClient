@@ -32,12 +32,16 @@ public sealed class PlacementServices
     public float WaterLevel { get; init; } = 98;
     /// <summary>A BUILDING's collision footprint; null while it is read, or when it has none.</summary>
     public required Func<string, BuildingFootprint?> Footprint { get; init; }
+    /// <summary>A BUILDING's collision footprint, read now if it was not yet; null when it has none.</summary>
+    public Func<string, BuildingFootprint?> FootprintNow { get; init; } = _ => null;
     /// <summary>The level data's buildings round a point (X, Z) within a radius, with their footprints in the world (those read so far).</summary>
     public required Func<Vector2, float, IEnumerable<PlacedFootprint>> StaticAround { get; init; }
     /// <summary>The level data's pickable buildings along a ray (origin, direction, length) with their record footprints; empty without level data.</summary>
     public Func<Vector3, Vector3, float, IEnumerable<PlacedBuilding>> StaticAlong { get; init; } = (_, _, _) => [];
     /// <summary>The collision triangles of a building record in its own space (a click on a building is tested against them); empty without level data.</summary>
     public Func<string, IReadOnlyList<(Vector3[] Vertices, int[] Indices)>> CollisionMesh { get; init; } = _ => [];
+    /// <summary>The triangles of a collision file by its record path (an item's <c>physics file</c>), in its own space; empty when it is not in the install.</summary>
+    public Func<string, IReadOnlyList<(Vector3[] Vertices, int[] Indices)>> CollisionFile { get; init; } = _ => [];
     /// <summary>A building without collision's pick stand-in (<see cref="BuildingFootprints.Plot"/>): a click on the ground inside it selects the building. Never a placement footprint.</summary>
     public Func<string, BuildingFootprint?> Plot { get; init; } = _ => null;
     /// <summary>Where a ray (origin, direction, length) first meets a loaded building's floor at or below the viewed floor, and that floor; null for none.</summary>

@@ -30,11 +30,15 @@ sealed partial class GameHost
             shownGround.Remove(id);
             falls.RemoveAll(f => f.Ground.Id == id);
             restLimbs.Remove(id);
+            groundPoses.Remove(id);
+            hiddenGround.Remove(id);
+            groundFloors.Remove(id);
         }
         foreach (var g in snapshot.GroundItems)
         {
             if (!shownGround.Add(g.Id)) continue;
             var (rotation, y) = g.Dropped ? LaidFlat(g) : (g.Rotation, g.Position.Y);
+            groundPoses[g.Id] = (new Vector3(g.Position.X, y, g.Position.Z), rotation);
             if (LimbLookOf(g.Record) is not null)
             {
                 // A severed limb is drawn by the debris renderer (its SeveredLimb look: skin tone and blood), falling and at rest.
@@ -50,6 +54,70 @@ sealed partial class GameHost
     /// <summary>The placement of a ground item: its record's mesh at its place, turned by <paramref name="rotation"/> and set at height <paramref name="y"/>.</summary>
     void ShowGround(GroundItemSnapshot g, Quaternion rotation, float y) =>
         ActiveObjects?.AddRuntime(new BuildingPlacement(WorldLayout.ZoneOf(g.Position.X, g.Position.Z), GroundId(g.Id), g.Record, g.Position, rotation, null, y) { Key = GroundId(g.Id) });
+
+    /// <summary>
+    /// The ground items above the shown floor of a building in the interior view (game: <c>FUN_1409fb540</c>, as a character there): not picked and without a label; the renderer leaves
+    /// their placements out (<c>WorldObjectRenderer.StandsAbove</c>), a limb's debris is left out here.
+    /// </summary>
+    readonly HashSet<int> hiddenGround = [];
+
+    /// <summary>By ground item, the building in the view it was last found in, where it was drawn then and the floor it lies on there (<see cref="UpdateGroundVisibility"/>).</summary>
+    readonly Dictionary<int, (InteriorVolume Building, Vector3 At, int Floor)> groundFloors = [];
+
+    /// <summary>
+    /// After the interior view each frame: which ground items are above their building's shown floor (as <see cref="AboveViewedFloor"/>). An item's floor is worked out again only
+    /// when it is drawn somewhere else or found in another building: a still item stays on its floor, only the shown floor changes.
+    /// </summary>
+    void UpdateGroundVisibility()
+    {
+        hiddenGround.Clear();
+        foreach (var (id, pose) in groundPoses)
+        {
+            if (ViewedAt(pose.At) is not { } inView) continue;
+            int shown = interiorView[inView.PlacementId];
+            if (shown >= 3) continue;
+            if (!groundFloors.TryGetValue(id, out var known) || !ReferenceEquals(known.Building, inView) || known.At != pose.At)
+                groundFloors[id] = known = (inView, pose.At, inView.FloorAt(pose.At));
+            if (known.Floor > shown) hiddenGround.Add(id);
+        }
+    }
+
+    /// <summary>Where each shown ground item is drawn (a falling limb: where it comes to rest), for <see cref="GroundShape"/>.</summary>
+    readonly Dictionary<int, (Vector3 At, Quaternion Rotation)> groundPoses = [];
+    readonly Dictionary<(string Record, bool File), IReadOnlyList<(Vector3[] Vertices, int[] Indices)>> groundShapes = [];
+
+    /// <summary>
+    /// What the pointer's ray meets of a ground item, where it is drawn (docs/game/ui-input.md "Building picking and selection"): its record's collision as the original makes it
+    /// (<c>FUN_1407626e0</c>, <b>Verified</b>): a weapon's or a severed limb's <c>physics file</c> when that names an <c>.xml</c>, otherwise its mesh's bounds box. Null without
+    /// <c>has collision</c> (it is then picked only by its label).
+    /// </summary>
+    (IReadOnlyList<(Vector3[] Vertices, int[] Indices)> Mesh, Vector3 At, Quaternion Rotation)? GroundShape(GroundItemSnapshot g)
+    {
+        if (!groundPoses.TryGetValue(g.Id, out var pose) || GroundCollisionOf(g.Record) is not { } collision) return null;
+        bool file = collision.Xml is not null && (collision.Weapon || g.Fall is not null);
+        if (!groundShapes.TryGetValue((g.Record, file), out var mesh))
+            groundShapes[(g.Record, file)] = mesh = file ? player.BuildHost?.Placement.CollisionFile(collision.Xml!) ?? [] : BoundsOf(g.Record) is { } box ? Box(box.Min, box.Max) : [];
+        return mesh.Count == 0 ? null : (mesh, pose.At, pose.Rotation);
+    }
+
+    readonly Dictionary<string, (bool Weapon, string? Xml)?> groundCollision = [];
+
+    /// <summary>What <see cref="GroundShape"/> reads of a record, once: whether it is a WEAPON and its <c>physics file</c> when that names an <c>.xml</c>; null without <c>has collision</c>.</summary>
+    (bool Weapon, string? Xml)? GroundCollisionOf(string record)
+    {
+        if (groundCollision.TryGetValue(record, out var known)) return known;
+        if (scene.Database?.Find(record) is not { } item) return null;   // not kept: the database may not be loaded yet
+        string physics = item.GetPath("physics file");
+        return groundCollision[record] = item.GetBool("has collision") ? (item.Type == Meitou.Data.Fcs.FcsRecordType.WEAPON, physics.Contains(".xml") ? physics : null) : null;
+    }
+
+    /// <summary>The twelve triangles of a box.</summary>
+    static IReadOnlyList<(Vector3[] Vertices, int[] Indices)> Box(Vector3 min, Vector3 max)
+    {
+        var v = new Vector3[8];
+        for (int i = 0; i < 8; i++) v[i] = new((i & 1) == 0 ? min.X : max.X, (i & 2) == 0 ? min.Y : max.Y, (i & 4) == 0 ? min.Z : max.Z);
+        return [(v, [0, 1, 3, 0, 3, 2, 4, 6, 7, 4, 7, 5, 0, 4, 5, 0, 5, 1, 2, 3, 7, 2, 7, 6, 0, 2, 6, 0, 6, 4, 1, 5, 7, 1, 7, 3])];
+    }
 
     readonly Dictionary<string, OgreBounds?> groundBounds = [];
 
@@ -130,6 +198,9 @@ sealed partial class GameHost
         shownGround.Clear();
         falls.Clear();
         restLimbs.Clear();
+        groundPoses.Clear();
+        hiddenGround.Clear();
+        groundFloors.Clear();
         groundRevision = -1;
     }
 }

@@ -131,7 +131,8 @@ sealed partial class PlayerInterface
     }
 
     /// <summary>
-    /// A caged character: Talk To (12) and Loot (26). Meitou cannot point at a cage, so the cage's own verbs come here (engine stand-ins): Pick Lock its locked cage (the prisoner its own, a mate from outside), and
+    /// A caged character: Talk To (12) and Loot (26). Meitou points at an occupied cage with occupant selection as its occupant and shows one menu, so the cage's own verbs come here
+    /// (engine stand-ins for the original's cage menu beside the occupant's): Pick Lock its locked cage (the prisoner its own, a mate from outside), and
     /// once it is open Escape (207, the prisoner when selected; an escape unless served) or Pick Up (225, a mate lifts it out; out of another faction's cage a crime, locks.md "Cages and beds").
     /// </summary>
     void PrisonerVerbs(List<(string, Action)> verbs, CharacterSnapshot target, PrisonView prison, IReadOnlyList<CharacterId> selection, bool down)

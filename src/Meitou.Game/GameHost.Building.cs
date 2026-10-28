@@ -228,7 +228,9 @@ sealed partial class GameHost
             {
                 Ground = ActiveGround,
                 Footprint = footprints.Of,
+                FootprintNow = footprints.Wait,
                 CollisionMesh = footprints.Mesh,
+                CollisionFile = footprints.File,
                 Plot = footprints.Plot,
                 PartBounds = footprints.PartBounds,
                 LinkedAround = (centre, radius) => footprints.LinkedAround(centre, radius, (x, z) => ActiveGround((float)x, (float)z)),

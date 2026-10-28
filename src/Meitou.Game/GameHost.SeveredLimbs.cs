@@ -65,8 +65,8 @@ sealed partial class GameHost
 
     void AddRestingLimbs()
     {
-        foreach (var r in restLimbs.Values)
-            if (gpu.Debris?.Extent(r.Mesh, null, r.Look) is not null)
+        foreach (var (id, r) in restLimbs)
+            if (!hiddenGround.Contains(id) && gpu.Debris?.Extent(r.Mesh, null, r.Look) is not null)
                 gpu.DebrisPieces.Add(new DebrisPiece(r.Mesh, 1, r.Rotation, LimbMiddle(r.Mesh, r.Look, r.Rotation, r.Origin), 1, r.Look));
     }
 }

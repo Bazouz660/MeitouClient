@@ -469,6 +469,11 @@ sealed partial class GameHost
             hud.BuildingMoveHit = (origin, direction, distance) => objects?.MoveHit(origin, direction, viewedFloor, distance);
             hud.SurfaceMoveHit = SurfaceMoveHit;
             hud.ClosedBuildingHit = (origin, direction, distance) => objects?.ClosedBuildingHit(origin, direction, distance);
+            hud.HiddenInWorld = hiddenIndoors.Contains;
+            hud.ShownInteriorHit = (origin, direction, distance) => objects?.ShownInteriorHit(origin, direction, distance);
+            hud.AboveViewedFloor = AboveViewedFloor;
+            hud.GroundItemShape = GroundShape;
+            hud.GroundItemHidden = hiddenGround.Contains;
             hoverOutline = new HoverOutlineRenderer(ctx);
             moveMarker = MarkerRenderer.Create(ctx, assets.Find);
             hud.Markers = moveMarker;

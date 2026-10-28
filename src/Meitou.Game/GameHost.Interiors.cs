@@ -68,6 +68,7 @@ sealed partial class GameHost
             // Strictly inside (no margin): one on the doorstep stays drawn.
             else if (objects.InteriorAt(at, ref InteriorMemo(c.Id.Slot)) is { } closed && objects.Construction?.ContainsKey(closed.PlacementId) != true) hiddenIndoors.Add(c.Id);
         }
+        UpdateGroundVisibility();
     }
 
     // By character slot, the last answer of the test above (asked again once the character moves; a slot's new character only inherits a place's answer).
@@ -78,6 +79,9 @@ sealed partial class GameHost
         if (slot >= interiorMemos.Length) Array.Resize(ref interiorMemos, Math.Max(slot + 1, interiorMemos.Length * 2));
         return ref interiorMemos[slot];
     }
+
+    /// <summary>Whether a place is above the shown floor of a building in the interior view, so what stands there is not drawn (as a character there).</summary>
+    bool AboveViewedFloor(System.Numerics.Vector3 at) => ViewedAt(at) is { } inView && interiorView[inView.PlacementId] is var shown && shown < 3 && inView.FloorAt(at) > shown;
 
     /// <summary>The viewed or held-open building <paramref name="at"/> is in (a loop: a lambda here made a closure and a delegate per character per frame).</summary>
     InteriorVolume? ViewedAt(System.Numerics.Vector3 at)

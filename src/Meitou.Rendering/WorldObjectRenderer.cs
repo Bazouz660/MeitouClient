@@ -743,6 +743,19 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
     }
 
     /// <summary>
+    /// The nearest distance along the ray at which it meets the collision of a building in <see cref="InteriorView"/> on a floor it shows (as <see cref="MoveHit"/>), within
+    /// <paramref name="maxDistance"/>: what lies beyond is not pointed at (game: the pick's walk ends at such a building's hit, <c>FUN_140800250</c>). Null when none is in the way.
+    /// </summary>
+    public float? ShownInteriorHit(Vector3 origin, Vector3 direction, float maxDistance)
+    {
+        float? best = null;
+        foreach (var zone in streamer.AllZones)
+            foreach (var room in zone.Interiors)
+                if (InteriorView.TryGetValue(room.PlacementId, out int floor) && room.MoveHit(origin, direction, floor, best ?? maxDistance) is { } hit) best = hit.Distance;
+        return best;
+    }
+
+    /// <summary>
     /// Whether the instance stands in a loaded building's interior (<see cref="InteriorAt"/>), kept on it until the interiors or its place change: every view
     /// (the camera's, each shadow cascade's, the reflection's) asks it of each piece of furniture.
     /// </summary>
@@ -772,13 +785,13 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
     }
 
     /// <summary>
-    /// Whether a building of its own (a turret on a wall, furniture the player placed) stands above the viewed floor of a building in the interior view, by where it
-    /// stands in that building's hull: it is hidden with that floor (game: FUN_1409fb540 hides objects above their building's floor, as the host does for characters).
+    /// Whether a building of its own (a turret on a wall, furniture the player placed) or an item lying loose stands above the viewed floor of a building in the interior view, by
+    /// where it stands in that building's hull: it is hidden with that floor (game: furniture by FUN_140547140 / FUN_14054a8f0, loose items by FUN_1409fb540, as the host does for characters).
     /// </summary>
     bool StandsAbove(ObjectStreamer.Instance inst)
     {
         var p = inst.Placed;
-        if (InteriorView.Count == 0 || AllFloors || p.Kind != PlacedKind.BuildingPart || p.ParentPlacementId is not null || InteriorView.ContainsKey(p.PlacementId)) return false;
+        if (InteriorView.Count == 0 || AllFloors || p.Kind is not (PlacedKind.BuildingPart or PlacedKind.Item) || p.ParentPlacementId is not null || InteriorView.ContainsKey(p.PlacementId)) return false;
         var answer = InteriorOf(inst);
         return answer.Building is { } building && InteriorView.TryGetValue(building, out int floor) && answer.Floor > floor;
     }
