@@ -264,8 +264,16 @@ public sealed class CharacterCold
     public bool RescueJob => Jobs.Exists(j => j.Type == Meitou.Data.Gameplay.Ai.TaskType.FIND_AND_RESCUE_IF_THERES_BEDS);
     /// <summary>The orders panel's toggles (<see cref="Simulation.Orders"/>); the player's characters only.</summary>
     public CharacterOrders Orders { get; set; } = CharacterOrders.Jobs;
-    /// <summary>The point the Hold order holds (CharStats +0x130): where Hold was turned on, then each ground move's destination while on Hold; null: where it stands (not saved).</summary>
+    /// <summary>
+    /// The point the Hold order holds (CharStats +0x130): where Hold was turned on, then, while on Hold, the destination of the running ground move order (its own or a queued
+    /// one; <see cref="OrderMove"/>); null: where it stands (not saved).
+    /// </summary>
     public System.Numerics.Vector2? HoldPoint { get; set; }
+    /// <summary>
+    /// The running <see cref="CharacterTask.GoTo"/> is the player's ground move order or a queued one (the original's Task_Move flag <c>+0x95</c>, set for tasks 29 and 40 only):
+    /// cleared by any other <see cref="MovementSystem.GoTo"/>. Runtime only.
+    /// </summary>
+    public bool OrderMove { get; set; }
     /// <summary>The tick its stumble clip ends (combat's StunUntil, set at each interrupting hit): until then it neither walks nor works (docs/game/combat.md "Stagger outside a fight").</summary>
     public long StaggeredUntil { get; set; }
     /// <summary>The tick its get-up after a knockout ends (<see cref="Combat.CombatSystem.GetUpSeconds"/> from waking; Character +0x278 isCurrentlyGettingUp).</summary>

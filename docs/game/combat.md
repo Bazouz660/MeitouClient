@@ -409,8 +409,9 @@ Meitou (`CombatSystem.HasSlot` / `MayJoin`, `Fighting.Steer`):
   ([ask](#attack-slots-and-circling)). It also stops being its attackers' threat and leaves their engaged lists, so once their 1 s pick timer
   runs out they keep it only through the sensed-enemy fallback or a focused order, then chase it ([leaving](#leaving-a-fight)). Each blow
   that lands on it on the way staggers it (below). `Task_Move` start resets the clip and turns off root-motion tracking
-  (`CharMovement::trackAnimationMovement`); it zeroes the Hold point (CharStats +0x130), which its update sets to the move's
-  destination while on Hold, so Hold follows the last ground move. Once the order is done the goals run again: with a
+  (`CharMovement::trackAnimationMovement`); it zeroes the Hold point (CharStats +0x130), which its update (`FUN_140354600`, **Verified**) sets to the
+  move's destination on every step while the move runs, for tasks 29 and 40 only (flag `+0x95`), Hold on and not sneaking (`FUN_1402b2b90`) and a ground-point target,
+  so Hold follows the last ground move, a queued one from its start (Meitou `CharacterCold.OrderMove`). Once the order is done the goals run again: with a
   threat left, Self preservation restarts a fight on `findAttackerOf`'s pick; without one, Idleness sheathes. A right click on an enemy is
   order 5 (focused); on anything else, that target's quick verb.
 - **Stagger outside a fight** (`Character::_startStumble` `FUN_1404391f0`, from every landed blow). A shackled defender is knocked out
@@ -439,7 +440,7 @@ Meitou (`CombatSystem.HasSlot` / `MayJoin`, `Fighting.Steer`):
 | 5, 6, 7 | aggressive / defensive / evasive | AI +0x2b8 (no reader found) |
 | 8, 9 | far / near | manoeuvre mode: 8 ROAM_FAR (centre target cleared), 9 STAY_CLOSE (centre at its position) |
 | 11 | Block (`DEFENSIVE_COMBAT`) | CharStats +0x128 (set only with vfunc 0x250, KenshiLib `isHuman`) |
-| 12 | Hold | +0x12b; on: hold point +0x130 = position and goal 16 added (priority 3); off: goal 16 removed |
+| 12 | Hold | +0x12b; on: hold point +0x130 = position (a running order move's update overwrites it with its destination) and goal 16 added (priority 3); off: goal 16 removed |
 | 13 | Passive | +0x12c |
 | 14 | Taunt | +0x12a |
 | 15 | Jobs (`CHASE`) | `OrdersReceiver::setJobsEnabled` |

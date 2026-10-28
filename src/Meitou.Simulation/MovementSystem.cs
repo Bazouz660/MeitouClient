@@ -178,7 +178,7 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
                     continue;
                 }
                 GoToFloor(world, slot, new Vector3(target.X, order.Target.Y, target.Y), cold.RunSpeed);
-                if ((cold.Orders & CharacterOrders.Hold) != 0) cold.HoldPoint = target;   // Task_Move sets the hold point to its destination while on Hold
+                cold.OrderMove = true;
             }
         }
         foreach (var squad in world.Squads.All) RefreshFormation(world, squad);
@@ -254,6 +254,7 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
         ref var n = ref table.Next[slot];
         var cold = table.Cold(slot)!;
         cold.OrderQueue.Clear();
+        cold.OrderMove = false;
         cold.ArriveWithin = 0;
         cold.BlockedRepaths = 0;
         n.Task = (byte)CharacterTask.GoTo;
@@ -653,6 +654,9 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
                 cold.AgentSpeed = 0;
                 continue;
             }
+            // An order move on Hold makes its destination the hold point on every step (Task_Move update FUN_140354600, Verified): a queued move as it starts, and over
+            // the position Hold was turned on at mid-walk.
+            if (n.Task == (byte)CharacterTask.GoTo && cold.OrderMove && Orders.Holding(cold)) cold.HoldPoint = n.Goal;
             float speed = MathF.Sqrt(p.Velocity.X * p.Velocity.X + p.Velocity.Z * p.Velocity.Z);
             var dir = Vector2.Zero;
             bool facing = false, agentWalk = false;
