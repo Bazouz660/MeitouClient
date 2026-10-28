@@ -506,7 +506,7 @@ sealed partial class PlayerInterface
         b.Text["GenderText"] = draft.Race.GetBool("single gender") ? "-" : draft.Female ? "Female" : "Male";
         b.Text["CharIndexText"] = $"{s.Index + 1}/{s.Characters.Count}";
         b.Text["DescriptionPanelText"] = draft.Race.GetString("description");
-        b.Properties["DescriptionPanelText"] = new Dictionary<string, string> { ["Static"] = "true", ["WordWrap"] = "true", ["TextAlign"] = "Left Top", ["TextColour"] = MyGuiColours.InkText };
+        b.Properties["DescriptionPanelText"] = new Dictionary<string, string> { ["Static"] = "true", ["WordWrap"] = "true", ["TextAlign"] = "Left Top", ["TextColour"] = MyGuiColours.TemplateInk(uiResources, "Kenshi_WordWrap") };
         b.Properties["NameText"] = new Dictionary<string, string> { ["DefaultAction"] = "false" };
         b.Properties["ConfirmButton"] = new Dictionary<string, string> { ["DefaultAction"] = "true" };
         BindEditorRows(b, draft, s.Tab);

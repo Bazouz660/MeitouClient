@@ -70,10 +70,12 @@ sealed partial class PlayerInterface
         if (!advancedOpen || controls.FirstOrDefault(c => c.Name == "advanced-Datapanel") is not { } panel) return;
         float s = Height / 1080f;
         var area = panel.Bounds;
-        Dictionary<string, string> Text(string align = "Left VCenter") => new()
+        // The labels sit on Kenshi_GenericTextBoxFlatSkin, the help panel on Kenshi_GenericTextBoxSkin; the value boxes' skin names no text colour, so they keep the palette ink.
+        string labelInk = MyGuiColours.TemplateInk(uiResources, "Kenshi_GenericTextBoxFlatSkin");
+        Dictionary<string, string> Text(string align = "Left VCenter", bool value = false) => new()
         {
             ["FontName"] = "Kenshi_StandardFont_Medium", ["FontPixels"] = Math.Max(8, (int)(14 * s)).ToString(CultureInfo.InvariantCulture),
-            ["TextColour"] = MyGuiColours.InkText, ["TextAlign"] = align,
+            ["TextColour"] = value ? MyGuiColours.InkText : labelInk, ["TextAlign"] = align,
         };
         int sliders = NewGameSettings.Options.Length;
         float row = area.Height / (sliders + NewGameSettings.Ticks.Length), labelWidth = area.Width * .46f, arrow = 24 * s, valueWidth = 48 * s;
@@ -92,7 +94,7 @@ sealed partial class PlayerInterface
             controls.Add(new($"advanced-track-{i}", "Widget", track, "", $"advanced-slider:{i}", "Kenshi_SliderSkin", true, new Dictionary<string, string> { ["Slider"] = "true" }, Vector4.Zero, Pickable: true));
             float t = (NewGameOptions[i] - option.Min) / (option.Max - option.Min);
             controls.Add(new($"advanced-knob-{i}", "Button", new(track.X + t * track.Width - 6 * s, y + (row - 28 * s) / 2, 12 * s, 28 * s), "", "", "Kenshi_SliderButtonSkin", true, new Dictionary<string, string>(), Vector4.Zero, Pickable: false));
-            controls.Add(new($"advanced-value-{i}", "TextBox", new(right + arrow, y + 4 * s, valueWidth, row - 8 * s), NewGameOptions[i].ToString("0.##", CultureInfo.InvariantCulture), "", "Kenshi_SpeedTextboxSkin", true, Text("Center"), Vector4.Zero, Pickable: false));
+            controls.Add(new($"advanced-value-{i}", "TextBox", new(right + arrow, y + 4 * s, valueWidth, row - 8 * s), NewGameOptions[i].ToString("0.##", CultureInfo.InvariantCulture), "", "Kenshi_SpeedTextboxSkin", true, Text("Center", true), Vector4.Zero, Pickable: false));
         }
         // The ticks under the sliders (FUN_1409151d0: "Bandits loot the player", "Easy prospecting"), the box at the right end of the row.
         for (int i = 0; i < NewGameSettings.Ticks.Length; i++)
@@ -111,7 +113,7 @@ sealed partial class PlayerInterface
                 : advancedHelp >= sliders && advancedHelp < sliders + NewGameSettings.Ticks.Length ? NewGameSettings.Ticks[advancedHelp - sliders].HelpLine : -1;
             string help = helpLine >= 0 ? advancedHelpCatalog.TextAt(helpLine) : "";
             var view = new UiRect(footer.Bounds.X + 8 * s, footer.Bounds.Y + 8 * s, footer.Bounds.Width - 16 * s, footer.Bounds.Height - 16 * s);
-            var text = new Dictionary<string, string> { ["FontName"] = "Kenshi_StandardFont_Medium", ["TextColour"] = MyGuiColours.InkText, ["TextAlign"] = "Left Top", ["WordWrap"] = "true" };
+            var text = new Dictionary<string, string> { ["FontName"] = "Kenshi_StandardFont_Medium", ["TextColour"] = MyGuiColours.TemplateInk(uiResources, "Kenshi_GenericTextBoxSkin"), ["TextAlign"] = "Left Top", ["WordWrap"] = "true" };
             var shown = new UiControl("advanced-help", "TextBox", view, help, "", "", true, text, Vector4.Zero, Pickable: false, Clip: view.Intersect(footer.Bounds));
             // A help text taller than the panel scrolls, with a vertical bar shown only then (the original's description box does so).
             float bar = 17 * s, content = uiPainter?.TextHeight(shown with { Bounds = view with { Width = view.Width - bar } }, Height, StandardPixels) ?? 0;

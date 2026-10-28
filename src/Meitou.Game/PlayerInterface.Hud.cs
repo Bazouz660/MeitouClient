@@ -93,7 +93,7 @@ sealed partial class PlayerInterface
         foreach (var w in messageLayout.Widgets.Where(w => w != root)) b.Properties[w.Name] = new Dictionary<string, string> { ["NeedMouse"] = "false" };
         // The EditBox's alignment is its text's, which the template's client draws.
         if (messageClient is not null)
-            b.Properties[messageClient] = new Dictionary<string, string> { ["NeedMouse"] = "false", ["TextAlign"] = "Center", ["TextColour"] = shown.Error ? BadColour : MyGuiColours.InkText };
+            b.Properties[messageClient] = new Dictionary<string, string> { ["NeedMouse"] = "false", ["TextAlign"] = "Center", ["TextColour"] = shown.Error ? BadColour : MyGuiColours.TemplateInk(uiResources, "Kenshi_WordWrapEmpty_StandardText_Large") };
         controls.AddRange(MyGuiPresentation.Arrange(messageLayout, Width, Height, b, uiResources.Layers).Select(c => c with { Pickable = false }));
     }
 

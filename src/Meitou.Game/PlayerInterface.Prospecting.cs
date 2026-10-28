@@ -75,8 +75,8 @@ sealed partial class PlayerInterface
         string N(int v) => v.ToString(CultureInfo.InvariantCulture);
         // The ink of the window's text comes from its templates (the overview lines are Kenshi_TextboxStandardText, the resource values Kenshi_GenericTextBoxFlatSmall), which a UI mod
         // recolours with the window's skin; the fixed palette ink is only the fallback.
-        string labelInk = MyGuiColours.TemplateText(uiResources, "Kenshi_TextboxStandardText") ?? MyGuiColours.InkText;
-        string valueInk = MyGuiColours.TemplateText(uiResources, "Kenshi_GenericTextBoxFlatSmall") ?? MyGuiColours.InkText;
+        string labelInk = MyGuiColours.TemplateInk(uiResources, "Kenshi_TextboxStandardText");
+        string valueInk = MyGuiColours.TemplateInk(uiResources, "Kenshi_GenericTextBoxFlatSmall");
         AddLines(controls, "OverviewDatapanel1",
         [
             new("Zone:", r.Zone, TitleColour, TitleColour),

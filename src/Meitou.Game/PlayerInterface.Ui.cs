@@ -190,7 +190,7 @@ sealed partial class PlayerInterface
         {
             var (_, _, _, buildingStatus, bad, _) = BuildingLines(buildingNow);
             b.Text["HealthText"] = buildingStatus;
-            b.Properties["HealthText"] = new Dictionary<string, string> { ["TextAlign"] = "Center", ["TextColour"] = bad ? BadColour : MyGuiColours.InkText };
+            b.Properties["HealthText"] = new Dictionary<string, string> { ["TextAlign"] = "Center", ["TextColour"] = bad ? BadColour : MyGuiColours.TemplateInk(uiResources, "Kenshi_TextboxStandardText") };
         }
         BindJobs(b, own);
         BindSquadTabs(b);
