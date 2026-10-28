@@ -31,6 +31,8 @@ public sealed unsafe class VulkanDisplay : IDisposable
 
     /// <summary>True while the swapchain goes through AMD's frame-interpolation layer (the Frame generation setting, when it could be honoured; false after a fallback).</summary>
     public bool FrameGeneration => presenter?.FrameGeneration is not null;
+    /// <summary>The frame-interpolation layer itself (null for the plain swapchain); frame generation is configured on top of it.</summary>
+    public FfxSwapchain? FrameGenerationLayer => presenter?.FrameGeneration;
 
     /// <summary>Streamline (DLSS), when <c>dlss</c> asked for it and it loaded; shut down before the device.</summary>
     public Streamline? Streamline { get; }

@@ -487,6 +487,8 @@ sealed partial class GameHost
             }
         };
         Meitou.Rendering.UiLayer? uiLayer = null;
+        Meitou.Rendering.Upscalers.FrameGeneration? frameGen = null;
+        bool frameGenTried = false;
         double drawTotal = 0, gpuSum = 0, statsTimer = 0;
         int gpuSamples = 0, statsFrames = 0;
         long statsTicks = 0;
@@ -634,6 +636,16 @@ sealed partial class GameHost
                 // The chain and the panel draw into the window's backbuffer (made again when the size changes).
                 var backbuffer = display.Backbuffer!;
                 gpu.Post!.Target = backbuffer;
+                // Frame generation (the setting, when the FFX layer is in use): made on the first frame; wanted except under the loading screen and for saved pictures.
+                if (frameGen is not null && display.FrameGenerationLayer is null) { frameGen.Dispose(); frameGen = null; }   // the layer fell back to the plain swapchain
+                if (!frameGenTried && display.FrameGenerationLayer is { } fgLayer)
+                {
+                    frameGenTried = true;
+                    frameGen = Meitou.Rendering.Upscalers.FrameGeneration.TryCreate(display.Context, fgLayer, out var fgWhy);
+                    if (frameGen is null) Console.WriteLine($"frame generation  unavailable: {fgWhy}");
+                }
+                frameGen?.BeginFrame(!Covered && !screenshotRequested && !feedbackShotRequested && takeFile is null, size.X, size.Y);
+                gpu.Post!.FrameGen = frameGen;
                 // The interface draws into a transparent layer of its own, laid over the backbuffer just before the present.
                 uiLayer ??= new Meitou.Rendering.UiLayer(display.Context);
                 var uiTarget = uiLayer.Clear(size.X, size.Y);
@@ -730,8 +742,10 @@ sealed partial class GameHost
                     if (cursorMode != windowCursor) pointerMouse.Cursor.CursorMode = windowCursor = cursorMode;
                     if (!config.HardwareMouse && !freeLook) player.DrawPointer(pointerWorld ? player.PointerName : "arrow", pointerAt, size.X, size.Y);
                 }
-                // World and interface into the top-down picture the window shows (and a screenshot reads).
-                var finalPicture = uiLayer.Composite(backbuffer);
+                // World and interface into the top-down picture the window shows (and a screenshot reads). With frame generation on this frame the window shows the
+                // world alone (the backbuffer, flipped by the present) and the layer lays the interface over every frame, generated ones too.
+                bool generating = frameGen is not null && frameGen.Finish(uiTarget);
+                var finalPicture = generating ? null : uiLayer.Composite(backbuffer);
                 display.Present(finalPicture);
                 profiler?.EndFrame();
                 BenchLap(7);
@@ -751,7 +765,7 @@ sealed partial class GameHost
             {
                 // Once a second: the frame, the simulation, then the renderer's lines.
                 stats.Clear();
-                stats.Add($"{statsFrames / statsTimer:0} fps ({(display.VSync ? "vsync" : fpsLimit > 0 ? $"limit {fpsLimit}" : "uncapped")}), gpu {(gpuSamples > 0 ? $"{gpuSum / gpuSamples:0.00}" : "-")} ms");
+                stats.Add($"{statsFrames / statsTimer:0} fps rendered{(frameGen is { Enabled: true } ? ", x2 shown with frame generation" : "")} ({(display.VSync ? "vsync" : fpsLimit > 0 ? $"limit {fpsLimit}{(frameGen is { Enabled: true } ? " shown" : "")}" : "uncapped")}), gpu {(gpuSamples > 0 ? $"{gpuSum / gpuSamples:0.00}" : "-")} ms");
                 long ticks = session.Simulation.TotalTicks - statsTicks;
                 statsTicks = session.Simulation.TotalTicks;
                 stats.Add($"simulation  {ticks / statsTimer:0} ticks/s, {session.CurrentSnapshot.Characters.Count} characters, dropped {session.Simulation.DroppedTicks} ticks in all");
@@ -772,7 +786,8 @@ sealed partial class GameHost
                 Console.WriteLine($"smoke     {totalFrames} frames in {now:0.0} s: {totalFrames / now:0} fps on average, {session.Ticks.TotalTicks} control ticks, {session.Simulation.TotalTicks} simulation ticks, game time {session.Clock.TimeText}"); quit = true; }
             if (!display.VSync && fpsLimit > 0)
             {
-                Limit(frame, now, 1.0 / fpsLimit);
+                // The limit is on presented frames: with frame generation on every rendered frame brings a generated one, so the render rate is half of it.
+                Limit(frame, now, (frameGen is { Enabled: true } ? 2.0 : 1.0) / fpsLimit);
             }
         }
         WritePlayBench(window.FramebufferSize);
@@ -787,6 +802,8 @@ sealed partial class GameHost
         player.DisposeUi();
         EndLoadingScreen();
         overlay?.Dispose();
+        if (gpu.Post is { } postChain) postChain.FrameGen = null;
+        frameGen?.Dispose();   // before the display: it configures the layer's swapchain
         uiLayer?.Dispose();
         DisposeTitleScene();
         gpu.Dispose();

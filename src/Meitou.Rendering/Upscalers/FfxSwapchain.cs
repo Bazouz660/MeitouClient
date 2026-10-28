@@ -17,7 +17,7 @@ namespace Meitou.Rendering.Upscalers;
 /// </summary>
 public sealed unsafe class FfxSwapchain : IDisposable
 {
-    const ulong CreateSwapchainType = 0x40001, QueryFunctionsType = 0x40005;
+    const ulong CreateSwapchainType = 0x40001, RegisterUiType = 0x40002, QueryFunctionsType = 0x40005;
     /// <summary>Graphics-family queues beyond the first that this wants: present, image acquire and (when the family has it) async compute.</summary>
     public const int WantedExtraQueues = 3;
     /// <summary>The fewest extra queues it works with: present and image acquire; the async compute role then shares the present queue.</summary>
@@ -33,6 +33,7 @@ public sealed unsafe class FfxSwapchain : IDisposable
         public SwapchainCreateInfoKHR CreateInfo;
         public QueueInfo GameQueue, AsyncComputeQueue, PresentQueue, ImageAcquireQueue;
     }
+    [StructLayout(LayoutKind.Sequential)] struct RegisterUiDesc { public ApiHeader Header; public FfxApi.Resource Ui; public uint Flags; }
     [StructLayout(LayoutKind.Sequential)]
     struct FunctionsQuery
     {
@@ -44,6 +45,7 @@ public sealed unsafe class FfxSwapchain : IDisposable
     readonly delegate* unmanaged<nint*, void*, void*, uint> createContext;
     readonly delegate* unmanaged<nint*, void*, uint> destroyContext;
     readonly delegate* unmanaged<nint*, void*, uint> query;
+    readonly delegate* unmanaged<nint*, void*, uint> configure;
     // The create desc and the swapchain handle it points to stay valid as long as the context (ffx_api.h).
     readonly CreateDesc* desc;
     readonly SwapchainKHR* swapchainSlot;
@@ -83,6 +85,7 @@ public sealed unsafe class FfxSwapchain : IDisposable
         createContext = (delegate* unmanaged<nint*, void*, void*, uint>)NativeLibrary.GetExport(library, "ffxCreateContext");
         destroyContext = (delegate* unmanaged<nint*, void*, uint>)NativeLibrary.GetExport(library, "ffxDestroyContext");
         query = (delegate* unmanaged<nint*, void*, uint>)NativeLibrary.GetExport(library, "ffxQuery");
+        configure = (delegate* unmanaged<nint*, void*, uint>)NativeLibrary.GetExport(library, "ffxConfigure");
         desc = (CreateDesc*)NativeMemory.AllocZeroed((nuint)sizeof(CreateDesc));
         swapchainSlot = (SwapchainKHR*)NativeMemory.AllocZeroed((nuint)sizeof(SwapchainKHR));
     }
@@ -120,6 +123,25 @@ public sealed unsafe class FfxSwapchain : IDisposable
     [UnmanagedCallersOnly] static Result SubmitPresent(uint count, SubmitInfo* submits, Fence fence) => Submit(presentQueue, PresentLock, count, submits, fence);
     [UnmanagedCallersOnly] static Result SubmitAcquire(uint count, SubmitInfo* submits, Fence fence) => Submit(acquireQueue, AcquireLock, count, submits, fence);
 
+    /// <summary>The swapchain the layer made last (changes on a resize or a vsync change); what the frame-generation context is configured with.</summary>
+    public SwapchainKHR Swapchain { get; private set; }
+    /// <summary>The swapchain's colour format as FfxApiSurfaceFormat (B8G8R8A8 or R8G8B8A8 UNORM).</summary>
+    public uint SurfaceFormat { get; private set; }
+
+    /// <summary>
+    /// Registers (or, with a null <paramref name="ui"/>, removes) the interface picture the layer lays over every presented image, rendered and generated:
+    /// premultiplied alpha, copied by the layer at the present into a buffer of its own (so the next frame may overwrite it). The layer forgets it at each
+    /// present, so this is called every frame. The image must be top-down like the presented one and have TransferSrc usage.
+    /// </summary>
+    internal bool RegisterUi(FfxApi.Resource? ui)
+    {
+        if (context == 0) return false;
+        const uint PremulAlpha = 1 << 0, InternalDoubleBuffering = 1 << 1;
+        var d = new RegisterUiDesc { Header = new ApiHeader { Type = RegisterUiType }, Ui = ui ?? default, Flags = ui is null ? 0 : PremulAlpha | InternalDoubleBuffering };
+        nint c = context;
+        return configure(&c, &d) == 0;
+    }
+
     /// <summary>One line on the queues handed over, for the log.</summary>
     public string QueueLayout => $"game = graphics queue 0, present = queue 1, image acquire = queue 2, async compute = {(computeQueue.Handle == presentQueue.Handle ? "the present queue" : "queue 3")} (family {device.GraphicsFamily})";
 
@@ -132,6 +154,7 @@ public sealed unsafe class FfxSwapchain : IDisposable
     {
         swapchain = default;
         info.OldSwapchain = default;
+        SurfaceFormat = info.ImageFormat == Format.R8G8B8A8Unorm ? FfxApi.FormatR8G8B8A8Unorm : FfxApi.FormatB8G8R8A8Unorm;
         if (context == 0)
         {
             *swapchainSlot = old;
@@ -161,7 +184,7 @@ public sealed unsafe class FfxSwapchain : IDisposable
             getImages = (delegate* unmanaged<Device, SwapchainKHR, uint*, Image*, Result>)q.GetImages;
             acquire = (delegate* unmanaged<Device, SwapchainKHR, ulong, Semaphore, Fence, uint*, Result>)q.Acquire;
             present = (delegate* unmanaged<Queue, PresentInfoKHR*, Result>)q.Present;
-            swapchain = *swapchainSlot;
+            swapchain = Swapchain = *swapchainSlot;
             why = null;
             return swapchain.Handle != 0 || Fail(out why, "the context made no swapchain");
         }
@@ -169,7 +192,7 @@ public sealed unsafe class FfxSwapchain : IDisposable
         var created2 = default(SwapchainKHR);
         var r = replaceCreate(device.Device, &info, null, &created2, context);
         if (r != Result.Success) { why = $"the replacement vkCreateSwapchainKHR returned {r}"; return false; }
-        swapchain = created2;
+        swapchain = Swapchain = created2;
         why = null;
         return true;
 

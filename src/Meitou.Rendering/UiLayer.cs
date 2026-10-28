@@ -57,7 +57,7 @@ public sealed class UiLayer : IDisposable
         if (texture is null || texture.Desc.Width != width || texture.Desc.Height != height)
         {
             texture?.Dispose();   // released after the frames in flight
-            texture = gpu.CreateTexture(new TextureDesc(InternalFormat.Rgba8, width, height, Use: TextureUse.ColourTarget | TextureUse.Sampled, Name: "ui layer"));
+            texture = gpu.CreateTexture(new TextureDesc(InternalFormat.Rgba8, width, height, Use: TextureUse.ColourTarget | TextureUse.Sampled | TextureUse.TransferSrc, Name: "ui layer"));
         }
         var cmd = gpu.BeginNative("ui layer clear");
         cmd.BeginRendering(new RenderingDesc(new RenderTarget(texture.Attachment(), LoadOp.Clear, default), default, width, height));

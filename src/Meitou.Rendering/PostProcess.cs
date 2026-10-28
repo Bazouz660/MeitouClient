@@ -1150,8 +1150,23 @@ public sealed unsafe partial class PostProcess : IDisposable, IWorldPostChain
             ActiveUpscaler = width == displayWidth && height == displayHeight ? "taa" : $"taa {width}x{height}";
         }
         historyValid = true;
+        // Frame generation takes the depth and the motion this frame made, whatever upscaled (TAA, FSR); the vendor segment is closed above or no segment is open.
+        if (FrameGen is { Wanted: true } frameGen && upscaleDepth is not null && motion is not null)
+        {
+            CloseSegment();
+            frameGen.Prepare(new Upscalers.FrameGenInputs
+            {
+                Depth = upscaleDepth.Texture, Motion = motion.Texture, RenderWidth = width, RenderHeight = height, JitterPixels = JitterPixels,
+                Near = UpscaleNear, Far = UpscaleFar, FieldOfView = fovNow, DeltaSeconds = Math.Clamp(dt, 0.001f, 0.25f), Reset = reset,
+                Eye = eyeNow, Right = new Vector3(viewRotation.M11, viewRotation.M21, viewRotation.M31), Up = new Vector3(viewRotation.M12, viewRotation.M22, viewRotation.M32),
+                Forward = -new Vector3(viewRotation.M13, viewRotation.M23, viewRotation.M33),
+            });
+        }
         return output;
     }
+
+    /// <summary>Frame generation (the Frame generation setting, when the FFX swapchain layer is in use): the host sets it each frame; the chain hands it the depth and the motion.</summary>
+    public Upscalers.FrameGeneration? FrameGen { get; set; }
 
     /// <summary>The water plane's height when water is drawn (for the upscalers' reactive mask), else null.</summary>
     public float? WaterHeight { get; set; }
