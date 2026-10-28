@@ -74,13 +74,13 @@ public class HousePurchaseTests
     [InlineData("sale")]
     [InlineData("town")]
     [InlineData("inside")]
-    [InlineData("ally")]
+    [InlineData("hostile")]
     public void Invalid_purchases_do_not_take_money_or_change_ownership(string reason)
     {
         var (data, house) = Setup(sale: reason != "sale", townType: reason == "town" ? 4 : 2, inside: reason == "inside");
         using var world = World(data);
         world.Player.Faction = data.PlayerFaction; world.Player.Money = reason == "money" ? 12799 : 20000;
-        if (reason == "ally") data.Relations.Set(data.FactionIndex("owner"), data.PlayerFaction, 100);
+        if (reason == "hostile") data.Relations.Set(data.FactionIndex("owner"), data.PlayerFaction, -100);
         world.Fixtures.RegisterSite(world, data, 0);
         long money = world.Player.Money;
         world.Commands.Enqueue(new BuyBuilding(house.Key, reason == "price" ? 1 : 12800) { Tick = 0 }); world.RunTick();

@@ -65,7 +65,7 @@ public sealed partial class FixtureRegistry
         if (player < 0 || !properties.TryGetValue(building, out var p) || p.Owner < 0 || p.Owner == player || p.Purchased) return null;
         var data = p.Data;
         if (data.Sites[p.Site].Town.Type is not (TownType.Outpost or TownType.Town or TownType.Village)
-            || data.SiteFactions[p.Site] == player || data.Relations.IsAlly(p.Owner, player)) return null;
+            || data.SiteFactions[p.Site] == player || data.Relations.IsHostile(p.Owner, player)) return null;
         var saved = Saved?.GetValueOrDefault(building);
         var state = p.Building.LevelState;
         bool sale = saved?.Bools.TryGetValue("sell home", out bool savedSale) == true ? savedSale
