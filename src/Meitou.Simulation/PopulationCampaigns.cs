@@ -796,7 +796,8 @@ public sealed partial class PopulationSystem : IStateHashed
                     case CampaignKey.AssaultTown:
                         if (hours > 4) won = true;
                         else if (PlayersHold(world, inst.Target)) return false;
-                        else if (inst.FightStart >= 0 && now - inst.FightStart > 0.2 && (!AnyFighting(world, inst) || !PlayersStanding(world, inst.Target))) won = true;
+                        else if (inst.FightStart >= 0 && now - inst.FightStart > 0.2 && (!AnyFighting(world, inst) || !PlayersStanding(world, inst.Target))
+                            && DoorsOpen(world, inst.Target) && !WallsLockedUp(world, inst.Target)) won = true;
                         break;
                     case CampaignKey.DefendTown:
                         won = hours > 12 && !HostileAgainstPlayer(world);
@@ -981,6 +982,25 @@ public sealed partial class PopulationSystem : IStateHashed
     }
 
     bool PlayersStanding(World world, CampaignTown t) => PlayersIn(world, t).Up > 0;
+
+    /// <summary>The door fixtures of a town's buildings (a placed town's by site, a player town's by its buildings).</summary>
+    static IEnumerable<Locks.Fixture> TownDoors(World world, CampaignTown t) => world.Fixtures.All.Where(f => f.Kind == Locks.FixtureKind.Door
+        && (t.Site >= 0 ? f.Site == t.Site : t.PlayerTown > 0 && world.Buildings.Find(f.Building) is { } b && b.Town == t.PlayerTown));
+
+    /// <summary>Town slot 92 (<c>FUN_1408cc930</c>): no house door of the town is closed (a broken one counts as open); true without any.</summary>
+    static bool DoorsOpen(World world, CampaignTown t) => TownDoors(world, t).All(f => f.IsGate || f.DoorBroken || f.Motion != Locks.DoorMotion.Closed);
+
+    /// <summary>Town slot 96 (<c>FUN_140929820</c>): the town has a gate and none of its gates is open (a broken one counts as open).</summary>
+    static bool WallsLockedUp(World world, CampaignTown t)
+    {
+        bool any = false;
+        foreach (var gate in TownDoors(world, t).Where(f => f.IsGate))
+        {
+            if (gate.DoorBroken || gate.Motion == Locks.DoorMotion.Open) return false;
+            any = true;
+        }
+        return any;
+    }
 
     /// <summary>Some faction runs a hostile campaign against the player (a defence ends only when none does).</summary>
     bool HostileAgainstPlayer(World world)

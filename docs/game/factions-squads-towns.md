@@ -579,7 +579,9 @@ campaign is not hostile, or that is not active (slot 70); a redirected request d
   {2}", and phase 1, or straight to ended without victory or defeat when there is no `pt2 AI leader`. A loaded, non-hostile, non-DEFEND
   campaign within 1.8 × radius of a town with hostile occupiers (+0x128) is defeated at once (a trader or ally does not walk into an occupied town).
 - 1 at target: victory when the leader is back in its home town (two null towns compare equal); else by `key`: ASSAULT_TOWN wins after
-  4 h, earlier 0.2 h after its first fight once the fight or the standing player characters are gone and the town's buildings test passes;
+  4 h, earlier 0.2 h after its first fight once the fight or the standing player characters are gone and the target town has every house door open (Town slot 92 `FUN_1408cc930`:
+  no building with an interior has a closed door) and its walls are not locked up (slot 96 `FUN_140929820`: at least one gate, all closed)
+  (**Verified**, `FUN_1409c70f0`; Meitou reads the town's door fixtures, a broken door as open);
   while > 2 player characters hold the town, more than half up, nothing else is checked; DEFEND_TOWN after 12 h when no hostile campaign
   against the player runs; TRADER_VISIT after 1 h unless trading (**Observed**). Then any key: defeat when < 20 % of its platoons are
   intact (the flag is recomputed only while loaded).
