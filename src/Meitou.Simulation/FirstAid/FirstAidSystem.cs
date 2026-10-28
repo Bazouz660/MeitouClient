@@ -405,10 +405,13 @@ public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions 
         return best;
     }
 
-    /// <summary>The medic's own best kit of an <c>item function</c>, else a squad mate's within <see cref="FirstAidSettings.KitReach"/> (an engine choice).</summary>
+    /// <summary>
+    /// The medic's own kit of an <c>item function</c> by the original's search (<see cref="OwnKit"/>: main grid, then the worn backpack; fewest charges above zero), else a squad mate's
+    /// within <see cref="FirstAidSettings.KitReach"/> by the same rule (an engine choice: the original searches only the medic's own).
+    /// </summary>
     (ItemInstance Item, Inventory Owner)? FindKit(World world, int slot, CharacterCold cold, int function)
     {
-        if (cold.Inventory is { } own && Best(own, function) is { } mine) return (mine, own);
+        if (OwnKit(cold, function) is { } mine) return mine;
         if (cold.SquadId < 0 || world.Squads.Find(cold.SquadId) is not { } squad) return null;
         var table = world.Characters;
         var here = table.Next[slot].Position;
@@ -418,7 +421,7 @@ public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions 
             if (m.Slot == slot || !table.TryResolveNext(m, out int s) || table.Cold(s) is not { Inventory: { } mates, Medical: { Dead: false } }) continue;
             var d = table.Next[s].Position - here;
             if (d.X * d.X + d.Z * d.Z > reach2) continue;
-            if (Best(mates, function) is { } found) return (found, mates);
+            if (OwnKit(table.Cold(s)!, function) is { } found) return found;
         }
         return null;
     }
