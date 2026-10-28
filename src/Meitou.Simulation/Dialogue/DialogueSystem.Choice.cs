@@ -56,9 +56,9 @@ public sealed partial class DialogueSystem
         }
     }
 
-    /// <summary>+2 when the target's race is in the line's <c>target race</c> (<c>FUN_140671bb0</c>).</summary>
+    /// <summary>+2 when the target's race, or one of its RACE_GROUP, is in the line's <c>target race</c> (<c>FUN_140671bb0</c>).</summary>
     int RaceBonus(World world, DialogueNode node, CharacterId target) =>
-        node.TargetRace.Count > 0 && Cold(world, target)?.Race is { } race && node.TargetRace.Contains(race.StringId) ? 2 : 0;
+        node.TargetRace.Count > 0 && Cold(world, target)?.Race is { } race && dialogue.RaceMatches(race.StringId, node.TargetRace) ? 2 : 0;
 
     /// <summary>Who says <paramref name="node"/> (<c>FUN_140672bf0</c>); false: nobody (the line is skipped).</summary>
     bool SpeakerOf(World world, Conversation c, DialogueNode node, out CharacterId speaker)
@@ -69,10 +69,23 @@ public sealed partial class DialogueSystem
             Talker.Target => c.Player,
             Talker.TargetIfPlayer => Cold(world, c.Player) is { IsPlayer: true } ? c.Player : CharacterId.None,
             Talker.Interjector1 or Talker.Interjector2 or Talker.Interjector3 => c.Interjectors[node.Speaker - Talker.Interjector1],
-            Talker.TargetWithRace => Known(world, c.Npc, c.Player).FirstOrDefault(m => Cold(world, m)?.Race is { } r && node.TargetRace.Contains(r.StringId)),
+            Talker.TargetWithRace => WithRace(world, node, c.Player),
             _ => CharacterId.None,
         };
         return !speaker.IsNone;
+    }
+
+    /// <summary>
+    /// T_TARGET_WITH_RACE (<c>FUN_140672bf0</c>): for each listed race in turn, the first member of the target's squad (in squad order, perceived or not) whose race matches it.
+    /// </summary>
+    CharacterId WithRace(World world, DialogueNode node, CharacterId target)
+    {
+        if (target.IsNone) return CharacterId.None;
+        var squad = SquadOf(world, target);
+        foreach (string listed in node.TargetRace)
+            foreach (var m in squad)
+                if (Cold(world, m)?.Race is { } r && dialogue.RaceMatches(r.StringId, listed)) return m;
+        return CharacterId.None;
     }
 
     /// <summary>
@@ -144,8 +157,8 @@ public sealed partial class DialogueSystem
         if (node.TargetHasItemFunction.Count > 0 && !Known(world, me, other).Any(m => Cold(world, m)?.Inventory?.All()
             .Any(i => node.TargetHasItemFunction.Contains(data.Db.Find(i.Record)?.GetInt("item function") ?? -1)) == true)) return false;
         if (node.TargetHasItem.Count > 0 && !Known(world, me, other).Any(m => Cold(world, m)?.Inventory?.All().Any(i => node.TargetHasItem.Contains(i.Record)) == true)) return false;
-        if (node.TargetRace.Count > 0 && !Known(world, me, other).Any(m => Cold(world, m)?.Race is { } r && node.TargetRace.Contains(r.StringId))) return false;
-        if (node.MyRace.Count > 0 && (mc.Race is null || !node.MyRace.Contains(mc.Race.StringId))) return false;
+        if (node.TargetRace.Count > 0 && !Known(world, me, other).Any(m => Cold(world, m)?.Race is { } r && dialogue.RaceMatches(r.StringId, node.TargetRace))) return false;
+        if (node.MyRace.Count > 0 && (mc.Race is null || !dialogue.RaceMatches(mc.Race.StringId, node.MyRace))) return false;
         if (node.MySubrace.Count > 0 && (mc.Race is null || !node.MySubrace.Contains(mc.Race.StringId))) return false;
         if (node.CooldownHours > 0 && lastUse.TryGetValue(node.StringId, out double last) && world.GameHours - last < node.CooldownHours) return false;
         if (node.TargetIsType > 0)

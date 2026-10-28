@@ -94,7 +94,8 @@ public sealed partial class DialogueSystem
             case 64: return Bool(Locks.LockSystem.WornShackles(s) is not null);
             case 60: return Bool(Position(world, me) is { } here && NearestTownOf(sF, here) is { } d && d <= 23040);
             case 63: return Bool(s.IsImprisoned && s.InWhat is { } cage && world.Fixtures.Find(cage)?.Lock is { EffectivelyLocked: true });
-            case 65: return Bool(s.Race is not null && s.Race.StringId == mc.Race?.StringId);
+            // Same RACE_GROUP (two races in no group also count as the same).
+            case 65: return Bool(s.Race is not null && mc.Race is not null && dialogue.RaceGroupOf(s.Race.StringId)?.Group == dialogue.RaceGroupOf(mc.Race.StringId)?.Group);
             case 66: return Bool(s.IsPlayer && world.Player.Money >= (s.Bounties?.AmountFor(meF) ?? 0));
             case 67: return Bool((s.Orders & CharacterOrders.Sneak) != 0 && !s.InCombat);
             case 68: return Bool(world.Characters.TryResolveNext(subjectId, out int indoors) && world.Sight.BuildingOf(indoors) is not null);

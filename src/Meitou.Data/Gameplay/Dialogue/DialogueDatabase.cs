@@ -157,6 +157,38 @@ public sealed class DialogueDatabase(GameDatabase db)
 
     public GameDatabase Db => db;
 
+    Dictionary<string, (string Group, string[] Races)>? raceGroups;
+
+    /// <summary>
+    /// The RACE_GROUP a race belongs to and the group's races (the game's race loader, <c>FUN_140430070</c>): each group's <c>races</c> in data order,
+    /// a race listed by several groups keeping the last. Null: the race is in no group.
+    /// </summary>
+    public (string Group, string[] Races)? RaceGroupOf(string raceId)
+    {
+        var map = Volatile.Read(ref raceGroups);
+        if (map is null)
+        {
+            map = new(StringComparer.Ordinal);
+            foreach (var g in db.OfType(FcsRecordType.RACE_GROUP))
+            {
+                string[] races = [.. g.GetReferences("races").Select(r => r.TargetStringId)];
+                foreach (string r in races) map[r] = (g.StringId, races);
+            }
+            Volatile.Write(ref raceGroups, map);
+        }
+        return map.TryGetValue(raceId, out var group) ? group : null;
+    }
+
+    /// <summary>
+    /// A dialogue race test (<c>FUN_14042ecd0</c>): the race is listed, or a race of its RACE_GROUP is.
+    /// </summary>
+    public bool RaceMatches(string raceId, IReadOnlySet<string> listed) =>
+        listed.Contains(raceId) || (RaceGroupOf(raceId) is { } g && g.Races.Any(listed.Contains));
+
+    /// <summary><see cref="RaceMatches(string, IReadOnlySet{string})"/> against a single listed race.</summary>
+    public bool RaceMatches(string raceId, string listed) =>
+        raceId == listed || (RaceGroupOf(raceId) is { } g && g.Races.Contains(listed));
+
     /// <summary>The node of a dialogue record; null when it is none (or its name marks it <c>Unfinished</c>, which the game skips).</summary>
     public DialogueNode? Node(string id)
     {

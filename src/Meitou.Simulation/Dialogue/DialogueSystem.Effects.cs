@@ -217,7 +217,7 @@ public sealed partial class DialogueSystem
 
     /// <summary>
     /// <c>DA_SURRENDER_NON_HUMANS</c> (47, <c>FUN_140680560</c>): the target faction's characters within 100 of the speaker, not animals, whose race is not the speaker's
-    /// (<c>FUN_14042ecd0</c>: its race or one of its sub-races; engine reading: the same RACE record) become slaves owned by the speaker's faction (<c>FUN_14032e590</c>), and each
+    /// (<c>FUN_14042ecd0</c>: the speaker's race is the member's own or one of the member's RACE_GROUP) become slaves owned by the speaker's faction (<c>FUN_14032e590</c>), and each
     /// one's squad remembers the speaker. Their squads are left as they are (what follows is not read).
     /// </summary>
     void SurrenderNonHumans(World world, CharacterId me, CharacterCold mc, CharacterCold tc)
@@ -228,7 +228,7 @@ public sealed partial class DialogueSystem
         for (int i = 0; i < table.HighWater; i++)
         {
             if (!table.Next[i].Alive || table.Cold(i) is not { Medical.Dead: false } c || c.Faction != tc.Faction || c.SlaveState != 0) continue;
-            if (c.Fighter?.IsAnimal == true || c.Appearance?.Animal is not null || c.Race is null || c.Race.StringId == race.StringId) continue;
+            if (c.Fighter?.IsAnimal == true || c.Appearance?.Animal is not null || c.Race is null || dialogue.RaceMatches(c.Race.StringId, race.StringId)) continue;
             if (Vector3.DistanceSquared(table.Next[i].Position, at) > 100 * 100) continue;
             Locks.FixtureRegistry.Enslave(world, c, mc.Faction, mc.SquadId);
             Memory.Remember(world, c.SquadId, me, MemoryTag.None);   // its squad remembers the speaker (the tag is not visible in the decompile; engine: none)

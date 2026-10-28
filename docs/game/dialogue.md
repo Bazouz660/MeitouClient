@@ -187,7 +187,9 @@ child's (`FUN_1406ad9d0`).
    packages), `is character` (the speaker's record), `target carrying character` (someone in the target's squad carries a listed
    character; recorded as interjector), `world state` (all equal their bool), `target has item type` / `target has item` (the target's
    squad members' inventories and backpacks), `target race` (the target, else a squad member, recorded as interjector), `my race`,
-   `my subrace`. Each list is OR within itself. The four squad tests count only the target and members the speaker perceives
+   `my subrace`. Each list is OR within itself. The race tests (`my race`, `target race`, the +2 below, T_TARGET_WITH_RACE, DA 47) match
+   a race when the listed RACE is that race or any race of its RACE_GROUP (`FUN_14042ecd0`; the group's `races` set race +0x120, a race in
+   two groups keeps the last loaded, `FUN_140430070`); `my subrace` is an exact RACE compare (**Verified**, decompile). The four squad tests count only the target and members the speaker perceives
    (`FUN_140855960`, **Observed** in `FUN_140678f30`); Meitou reads "perceives" as within the speaker's sight range.
 6. `repetition limit`: fails while now − last use is below the cooldown.
 7. `target is type`: no target fails; otherwise the target's NPC class must equal the value. OT_SLAVE (6) instead accepts slave
@@ -200,8 +202,8 @@ child's (`FUN_1406ad9d0`).
 
 `FUN_140672bf0`: T_ME and T_WHOLE_SQUAD the owner (how WHOLE_SQUAD fans out is **Unknown**); T_TARGET the target; T_TARGET_IF_PLAYER
 the target if it is a player-faction character, else the line is skipped; T_INTERJECTOR1-3 the stored interjectors; T_TARGET_WITH_RACE
-the first member of the target's squad whose race is in `target race` (the original applies no perception test here; Meitou picks only
-from perceived members, as in the line check).
+for each listed `target race` in turn, the first member of the target's squad (squad order, no perception test) whose race matches it
+(**Verified**, `FUN_140672bf0`).
 
 Interjectors (`FUN_140679bc0`): members of the **owner's own squad**, awake, not the owner, not an animal, not talking, not already an
 interjector, passing the node's check as speaker. A `dumb` character qualifies only when the node's `is character` lists it (fcs.def
@@ -387,7 +389,7 @@ nearby player character (and stores it as the target). `B` = value > 0.
 | 59 IS_SLAVE (state 1/2), 62 IS_ESCAPED_SLAVE (state > 1), 61 TARGET_IS_SLAVE_OF_MY_FACTION | S's slave state | Bool |
 | 60 HAS_A_BASE_NEARBY | a town of S's faction within 23040 of Me | Bool |
 | 63 IS_IN_LOCKED_CAGE, 64 WEARING_LOCKED_SHACKLES | S's lock | Bool |
-| 65 IS_SAME_RACE_AS_ME | S's race group = Me's | Bool |
+| 65 IS_SAME_RACE_AS_ME | S's RACE_GROUP = Me's (race +0x120; two races in no group compare equal, **Verified** `FUN_140676950`) | Bool |
 | 66 CAN_AFFORD_BOUNTY | S is a player character and the player's money ≥ its bounty | Bool |
 | 68 IS_INDOORS | S's building handle is set (slot 59 `FUN_1405ce020`: its carrier's, its bed's or cage's building, else the one it stands in) | Bool |
 | 69 HAS_ILLEGAL_ITEM | members of S's squad that are S or that Me perceives (`FUN_140855960`) carry an item of the set at `+0x100` of Me's town's faction (else Me's faction) (`FUN_140745f70`, any quantity); each carrier found (its first such item) posts "{1} has been discovered smuggling {2}" and is recorded as interjector (Meitou: not recorded); the result is the 0/1 found. **Observed** (KenshiLib 1ce4a16: Faction +0x90 `tradeCulture`, its `illegalItems` set at +0x68, the tree head 8 further): the set is the faction culture's `illegal goods`; base data: Holy Nation lists Hashish and the forbidden books its gate guards' lines name (DIALOGUE 52700, event 1; Shek gate guard 9553, event 1; Empire gate guard 9521, event 3) | Num2 on 0/1 |
@@ -469,7 +471,7 @@ squad simply takes the speaker in, unless a target flag at +0x1d0 is set):
 | 25 TAG_ESCAPED_SLAVE | the target's slave state 2, its AI reset (9 uses) |
 | 53 REMOVE_SLAVE_STATUS | a target in shackles or slave state: "Free!" floated in green over it and `Character_Unlock_Success`; slave state 0, AI reset, worn shackles unlocked (2 uses) |
 | 24 GIVE_TARGET_MY_SLAVES | the characters on the speaker platoon's slave list are let out of their cages (if imprisoned) and join the target's platoon (`FUN_14032e430`) (5 uses) |
-| 47 SURRENDER_NON_HUMANS | members of the target's faction within 100 of the speaker whose race is not the speaker's (`FUN_14042ecd0`: the race or one of its sub-races, race +0x40 / +0x120) become slaves (`FUN_14032e590`: slave state 1, the owner handle stored) and remembered by its squad; the tests are only partly read (8 uses, Holy Nation) |
+| 47 SURRENDER_NON_HUMANS | members of the target's faction within 100 of the speaker whose race does not match the speaker's (`FUN_14042ecd0`: the same race or one of the member's RACE_GROUP) become slaves (`FUN_14032e590`: slave state 1, the owner handle stored) and remembered by its squad; the tests are only partly read (8 uses, Holy Nation) |
 | 40 ENSLAVE_TARGETS_CARRIED_PERSON | slavery ([carry-loot](carry-loot.md)) |
 | 28 SEPARATE_TO_MY_OWN_SQUAD | the speaker (the target when the speaker is of the player's faction), unless alone, gets a new platoon of its faction (`FUN_1407f4420`, the old one's template field `+0x108`) where it stands, its tasks cleared; the new squad copies the old one's memory (`FUN_1405e85e0`) |
 | 32 ASSIGN_BOUNTY | bounty += val0 for the speaker's faction; without an amount, a speaker whose CHARACTER has `assigns bounties` (59 base records) books the target's pending crime (`Character::canAssignBounties` `FUN_1405a4470`, **Verified**); others do nothing |
