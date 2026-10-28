@@ -455,6 +455,19 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
                 float away = Vector2.Distance(here, slotPos) + (otherFloor ? climb : 0);
                 cold.FollowSpeed = FollowSpeedFor(away, moving, leadDir, new Vector2(MathF.Sin(prev[i].Yaw), MathF.Cos(prev[i].Yaw)));
                 n.Mode = lead.Mode;
+                // Task_Follow sets the follower's sneaking each update (FUN_14033b350, Verified): on while the leader sneaks out of a fight and the follower counts it an ally (here:
+                // the same faction, as squad mates are), off otherwise; dropping it also stands it up. A leader that follows someone itself may change its own flag in this same
+                // parallel pass, so its followers are left as they are (engine choice, keeps the step deterministic).
+                if (lead.Task != (byte)CharacterTask.Follow && table.Cold(leader.Slot) is { } leaderCold)
+                {
+                    bool sneak = (leaderCold.Orders & CharacterOrders.Sneak) != 0 && !leaderCold.InCombat && leaderCold.Faction == cold.Faction;
+                    if (sneak) cold.Orders |= CharacterOrders.Sneak;
+                    else if ((cold.Orders & CharacterOrders.Sneak) != 0)
+                    {
+                        cold.Orders &= ~CharacterOrders.Sneak;
+                        if (cold.Medical is { } med) med.StayingLow = false;
+                    }
+                }
                 n.TaskTime -= dt;
                 if (cold.FollowPathTime > 0) cold.FollowPathTime = MathF.Max(cold.FollowPathTime - dt, 0);
                 if (away < DirectDistance && !otherFloor && cold.FollowPathTime <= 0)
