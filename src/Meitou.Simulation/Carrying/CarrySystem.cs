@@ -745,7 +745,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
     {
         if (OpenLootPair(world) is not var (i, t)) return;
         var victim = world.Characters.Cold(t)!;
-        if (death && victim.Medical is { Dead: false, Incapacitated: true } medical)
+        if (death && victim.Medical is { Dead: false } medical && IsDown(victim))
         {
             medical.Butcher();
             world.Post($"{victim.Name} has been butchered");
@@ -762,14 +762,21 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
     }
 
     /// <summary>
-    /// A live, down body that had <paramref name="before"/> units of death items and now has fewer is butchered: it dies, "{name} has been butchered" (<c>FUN_14075e7e0</c>, docs/game/animals.md
+    /// <c>Character</c> slot 6 <c>isDown</c> (<c>FUN_1405c9e10</c>, <b>Verified</b>): dead or unconscious, playing dead or KO (posture 3 or more), carried or ragdolled
+    /// (<see cref="Ragdolls.RagdollSystem.IsRagdoll"/>). A crawler (posture 1, 2) is not down.
+    /// </summary>
+    public static bool IsDown(CharacterCold cold) =>
+        cold.Medical is { Incapacitated: true } or { PlayingDead: true } || !cold.CarriedBy.IsNone || Ragdolls.RagdollSystem.IsRagdoll(cold);
+
+    /// <summary>
+    /// A live, down body (<see cref="IsDown"/>: also a carried awake one) that had <paramref name="before"/> units of death items and now has fewer is butchered: it dies, "{name} has been butchered" (<c>FUN_14075e7e0</c>, docs/game/animals.md
     /// "Death items"; posted when the looter or the body is the player's, engine choice).
     /// </summary>
     void Butcher(World world, int looter, int body, int before)
     {
         var table = world.Characters;
         var victim = table.Cold(body)!;
-        if (victim.Medical is not { Dead: false, Incapacitated: true } medical || DeathUnits(victim.Inventory!) >= before) return;
+        if (victim.Medical is not { Dead: false } medical || !IsDown(victim) || DeathUnits(victim.Inventory!) >= before) return;
         medical.Butcher();
         if (table.Cold(looter)!.IsPlayer || victim.IsPlayer) world.Post($"{victim.Name} has been butchered");
     }
