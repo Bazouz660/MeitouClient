@@ -30,7 +30,7 @@ public sealed partial class CombatSystem
             cut = DamageFormulas.Cut(skill, dex, fighter.Weapon!.Stats, combat);
             blunt = DamageFormulas.Blunt(skill, str, fighter.Weapon.Stats, combat);
         }
-        return new HudCombat(Rate(cold, true), Rate(cold, false), cut, blunt, HudDamage(world, slot, cold), HitResolver.ToughnessResistance(tough, combat))
+        return new HudCombat(Rate(world, slot, cold, true), Rate(world, slot, cold, false), cut, blunt, HudDamage(world, slot, cold), HitResolver.ToughnessResistance(tough, combat))
             { Stagger = DamageFormulas.StumbleThreshold(tough, combat) };
     }
 

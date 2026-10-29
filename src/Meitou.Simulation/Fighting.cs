@@ -76,7 +76,7 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
         // (by slot when dead behind), for the chaser to pass the runner rather than push it along.
         var goal = new Vector2(next[t].Position.X, next[t].Position.Z);
         float lead = fleeing && cold.Fighter is not null && cold.Stats is not null && cold.Medical is not null
-            ? (1 - combat.AttackRate(cold)) * CombatTuning.LeadSlope + CombatTuning.LeadBase : 0;
+            ? (1 - combat.AttackRate(world, i, cold)) * CombatTuning.LeadSlope + CombatTuning.LeadBase : 0;
         var level = next[t].Position + tv * MathF.Min(lead, CombatTuning.AimLeadSeconds) - n.Position;
         bool behind = lead > 0 && tv.X * level.X + tv.Z * level.Z > 0;
         // A crossbowman walks only while closing in (out of range or the line of fire blocked); aiming and reloading it stands.

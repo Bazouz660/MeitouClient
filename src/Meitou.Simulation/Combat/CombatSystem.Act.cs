@@ -92,27 +92,48 @@ public sealed partial class CombatSystem
     /// capped at 4, with t = 0.01 (0.6 dexterity + 0.4 skill) (attack, or defence with the bonuses); dodges 1. G = (0.5 + 0.5 min(1, e + 0.5) (1 - f)) x the gear's
     /// <c>combat speed mult</c>, e the encumbrance factor and f the weapon-weight-over-strength factor of the strength XP.
     /// </summary>
-    float PlayRate(CharacterCold cold, CombatTechnique tech, bool attack)
+    float PlayRate(World world, int slot, CharacterCold cold, CombatTechnique tech, bool attack)
     {
         if (!attack && (tech.IsDodge || !tech.IsBlock)) return 1;
-        return Rate(cold, attack);
+        return Rate(world, slot, cold, attack);
     }
 
     /// <summary>The attack play rate of a fighter (its <see cref="PlayRate"/> for any attack; CharStats +0x188 in the original), which the chase lead also reads.</summary>
-    public float AttackRate(CharacterCold cold) => Rate(cold, true);
+    public float AttackRate(World world, int slot, CharacterCold cold) => Rate(world, slot, cold, true);
 
-    float Rate(CharacterCold cold, bool attack)
+    /// <summary>
+    /// The attack rating (<c>FUN_140884ee0</c>, <b>Verified</b>): unarmed, the fist rating; else the trained melee attack (no injury or hunger multiplier, times the stats' scale) plus the
+    /// gear's attack bonus and the weapon's attack mod with the indoors modifier inside, less the dust penalty.
+    /// </summary>
+    internal static float AttackRating(World world, int slot, CharacterCold c, Fighter f) => f.Unarmed ? UnarmedRating(world, slot, c, f)
+        : Trained(c, StatsEnumerated.MeleeAttack) + IndoorsAttackBonus(f.AttackBonus + (f.Weapon?.Stats.AttackMod ?? 0), IndoorsMod(world, slot, f)) - c.Medical!.DustAttackPenalty;
+
+    /// <summary>
+    /// The defence rating (<c>FUN_140886290</c> → <c>FUN_140884f50</c>, <b>Verified</b>): unarmed, the fist rating; else the trained melee defence (no injury or hunger multiplier) plus the
+    /// gear's defence bonus, the weapon's defence mod, the indoors modifier inside and, with <paramref name="guard"/> (the function's flag), 20 when guarding. The block contest's defence
+    /// (<see cref="DefenceFormulas.Defence"/>) is the same sum.
+    /// </summary>
+    internal static float DefenceRating(World world, int slot, CharacterCold c, Fighter f, bool guard = true) => f.Unarmed ? UnarmedRating(world, slot, c, f)
+        : Trained(c, StatsEnumerated.MeleeDefence) + f.DefenceBonus + (f.Weapon?.Stats.DefenceMod ?? 0) + IndoorsMod(world, slot, f) + (guard && Guarding(c) ? 20 : 0);
+
+    /// <summary>A trained level as the combat ratings read it (CharStats <c>+0x120</c>, <c>+0x124</c>): the stored level times the stats' read-time scale, no multiplier.</summary>
+    static float Trained(CharacterCold c, StatsEnumerated stat) => c.Stats![stat] * c.Stats.Scale;
+
+    /// <summary>
+    /// The attack and block play rates (CharStats <c>+0x188</c> / <c>+0x18c</c>, <c>FUN_1408866b0</c> → <c>FUN_140883a80</c>, <b>Verified</b>): from dexterity and the
+    /// <see cref="AttackRating"/> or <see cref="DefenceRating"/>; both x 0.8 while swimming (water state 3, <c>FUN_1405c7fd0</c>).
+    /// </summary>
+    float Rate(World world, int slot, CharacterCold cold, bool attack)
     {
         var fighter = cold.Fighter!;
         float weight = fighter.Unarmed ? 0 : fighter.Weapon!.Stats.Weight;
         float f = Math.Clamp(xp.WeaponWeightStrengthFactor(weight, cold.Stats![StatsEnumerated.Strength], cold.Medical!.StatMultiplier(StatsEnumerated.Strength)), 0, 1);
         float g = (0.5f + 0.5f * MathF.Min(1, fighter.EncumbranceFactor + 0.5f) * (1 - f)) * fighter.CombatSpeed;
         float dex = Eff(cold, StatsEnumerated.Dexterity) * fighter.DexterityMult;
-        float skill = attack
-            ? fighter.Unarmed ? Eff(cold, StatsEnumerated.MartialArts) : Eff(cold, StatsEnumerated.MeleeAttack) + fighter.Weapon!.Stats.AttackMod
-            : Eff(cold, StatsEnumerated.MeleeDefence) + fighter.DefenceBonus + (fighter.Weapon?.Stats.DefenceMod ?? 0) + (Guarding(cold) ? 20 : 0);
+        float skill = attack ? AttackRating(world, slot, cold, fighter) : DefenceRating(world, slot, cold, fighter);
         float t = 0.01f * (0.6f * dex + 0.4f * skill);
-        return attack ? MathF.Min(1.2f, WeaponStats.Lerp(t, 0.8f, 1.2f) * g) : MathF.Min(4f, WeaponStats.Lerp(t, 0.6f, 4f) * g);
+        float swim = cold.WaterState == 3 ? 0.8f : 1;
+        return swim * (attack ? MathF.Min(1.2f, WeaponStats.Lerp(t, 0.8f, 1.2f) * g) : MathF.Min(4f, WeaponStats.Lerp(t, 0.6f, 4f) * g));
     }
 
     public void Act(World world, Partition part, EffectBuffer effects)
@@ -399,15 +420,13 @@ public sealed partial class CombatSystem
         s.AttackTech = pick;
         s.LastTech = pick;
         s.AttackStart = now;
-        s.AttackTicks = Ticks(tech, PlayRate(cold, tech, attack: true), dt, cold);
+        s.AttackTicks = Ticks(tech, PlayRate(world, i, cold, tech, attack: true), dt, cold);
         s.AttackEnd = now + Math.Max(1, (int)MathF.Ceiling(Math.Max(tech.EndProgress, CombatTuning.SwingFinished) * s.AttackTicks));
         s.NextBlow = 1;
         s.LastOutcome = BlowOutcome.Missed;
         s.AttackFrom = prev[i].Position;
         // The bonus with the weapon's indoors modifier inside, less the dust's "Weather penalty" (FUN_140643a30, docs/formats/weather.md "Effects on characters"); unarmed, the fist rating.
-        s.AttackSkill = fighter.Unarmed ? UnarmedRating(world, i, cold, fighter)
-            : Eff(cold, StatsEnumerated.MeleeAttack) + IndoorsAttackBonus(fighter.AttackBonus + (fighter.Weapon?.Stats.AttackMod ?? 0), IndoorsMod(world, i, fighter))
-            - cold.Medical!.DustAttackPenalty;
+        s.AttackSkill = AttackRating(world, i, cold, fighter);
     }
 
     /// <summary>
@@ -545,8 +564,7 @@ public sealed partial class CombatSystem
             var aim = prev[t].Position + (tc.InCombat ? Vector3.Zero : prev[t].Velocity * CombatTuning.AimLeadSeconds);
             to = aim - prev[i].Position;
             if (!(to.Length() > 8)) return false;
-            float defence = target.Unarmed ? UnarmedRating(world, t, tc, target)
-                : Eff(tc, StatsEnumerated.MeleeDefence) + target.DefenceBonus + (target.Weapon?.Stats.DefenceMod ?? 0) + (Guarding(tc) ? 20 : 0);
+            float defence = DefenceRating(world, t, tc, target);
             float window = MathF.Max(0.6f * (20 - (defence - s.AttackSkill)) / 20, MathF.Max(0.1f, (4 - FightersAt(world, t)) / 3f));
             if (!(SwingProgress(in s, now) < window)) return false;
         }
@@ -767,7 +785,7 @@ public sealed partial class CombatSystem
         if (reconsider && s.ReactTech >= 0 && techniques[s.ReactTech].AttackDirection1 == direction) return;
 
         var fighter = cold.Fighter!;
-        float meleeDefence = Eff(cold, StatsEnumerated.MeleeDefence);
+        float meleeDefence = Trained(cold, StatsEnumerated.MeleeDefence);
         ulong counter = CombatRolls.BlowCounter(attacker, attack.AttackSeq, blow, 0);
         float chanceRoll = CombatRolls.Float(world.Seed, key, CombatRoll.Block, counter);
         float pickRoll = CombatRolls.Float(world.Seed, key, CombatRoll.Reaction, counter);
@@ -793,7 +811,7 @@ public sealed partial class CombatSystem
             return;
         }
         var reaction = techniques[pick];
-        int ticks = Ticks(reaction, PlayRate(cold, reaction, attack: false), dt, cold);
+        int ticks = Ticks(reaction, PlayRate(world, i, cold, reaction, attack: false), dt, cold);
         // The reaction is timed so that it is at its "blocked frame" when the blow arrives; with less lead time it starts at once and is less far along,
         // With LateDefences (Meitou balance choice, docs/simulation.md "Combat") never too little for the roll it passed to count: a late one joins its clip partway.
         int strike = first;
