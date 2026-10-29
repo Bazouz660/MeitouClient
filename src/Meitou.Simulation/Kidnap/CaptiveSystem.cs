@@ -150,7 +150,7 @@ public readonly record struct CaptiveEvent(long Tick, CaptiveEventKind Kind, Cap
 /// </list>
 /// The jobs and the kill timers are not saved (the original keeps the timers in a global map it does not save, <b>Observed</b>); hashed only while any exist.
 /// </summary>
-public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? combat, CaptiveSettings? settings = null) : ITickSystem, IStateHashed
+public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? combat, CaptiveSettings? settings = null) : ITickSystem, IStateHashed, IDecisionOwner
 {
     readonly List<CaptiveJob> jobs = [];
     readonly List<CaptiveEvent> log = [];
@@ -195,11 +195,11 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
     }
 
     /// <summary>
-    /// The player's animals keep their race's <c>AI Goals</c> but 230 (<c>Character::setupAI</c>, docs/game/animals.md "AI goals"), run here in list order as the sweep runs an NPC's: the limb
-    /// fetch (277, <see cref="Fetch"/>; the limb goes into the mouth and is eaten, <see cref="Items.FeedSystem"/>), the limb play (278) and chase (279) by their player-side desires, and
-    /// eating a downed body not of an ally (233). Crop raiding (232) finds nothing for them: its farms are those of a town the eater does not get along with, and only the player's
-    /// farms are machines. Engine choices: only an idle animal starts one, and not while an order of its wins the decision step (a blocked order falls through,
-    /// <see cref="PlayerOrders.Wins"/>); an order that runs ends it (<see cref="CaptiveJob.PlayerSide"/>).
+    /// The player's animals keep their race's <c>AI Goals</c> but 230 (<c>Character::setupAI</c>, docs/game/animals.md "AI goals"): the limb fetch (277, <see cref="Fetch"/>; the limb goes
+    /// into the mouth and is eaten, <see cref="Items.FeedSystem"/>), the limb play (278) and chase (279) by their player-side desires, and eating a downed body not of an ally (233). Crop
+    /// raiding (232) finds nothing for them: its farms are those of a town the eater does not get along with, and only the player's farms are machines. A player character's are the decision
+    /// step's (<see cref="RaceGoals"/>: priority 3 at step 4, priority 2 at step 6); this pass runs them in list order for the other animals of the player's faction, idle only (engine).
+    /// An order that runs ends one (<see cref="CaptiveJob.PlayerSide"/>).
     /// </summary>
     void RunPlayerAnimalGoals(World world)
     {
@@ -207,41 +207,140 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
         var table = world.Characters;
         for (int s = 0; s < table.HighWater; s++)
         {
-            if (!table.Next[s].Alive || table.Next[s].Task != (byte)CharacterTask.Idle || table.Cold(s) is not { Fighter.IsAnimal: true, Race: { } race } c || !PlayerSquad(world, c)) continue;
-            if (c.Engaged || c.InCombat || c.Fleeing || PlayerOrders.Wins(world, s) || !c.CarriedBy.IsNone || c.Medical is not { Incapacitated: false } || Busy(table.IdOf(s))) continue;
-            foreach (var goal in data.Ai.RaceGoals(race.StringId))
-            {
-                var id = table.IdOf(s);
-                CaptiveJob? job = null;
-                switch (goal.Task.Type)
-                {
-                    case TaskType.ANIMAL_FETCH_A_LIMB:
-                        if (c.Mouth is not null || c.PickingUpItem is not null) continue;
-                        Fetch(world, s, c);
-                        if (c.PickingUpItem is null) continue;
-                        break;
-                    case TaskType.PLAY_BECAUSE_I_HAVE_A_LIMB_IN_MOUTH when Plays(world, c):
-                        job = new CaptiveJob { Kind = CaptiveJobKind.DogPlay, Worker = id, Captive = CharacterId.None, Cage = "", Faction = c.Faction, PlayerSide = true };
-                        break;
-                    case TaskType.CHASE_ALLY_DOGS_WITH_MOUTH_LIMBS when Chases(world, c) && MouthfulAlly(world, s, c) is >= 0 and var mouthful:
-                        job = new CaptiveJob { Kind = CaptiveJobKind.DogChase, Worker = id, Captive = table.IdOf(mouthful), Cage = "", Faction = c.Faction, PlayerSide = true };
-                        break;
-                    case TaskType.EAT_A_RANDOM_KO_BODY when BodyToEat(world, s, c, dead: false) is >= 0 and var meal:
-                        job = new CaptiveJob { Kind = CaptiveJobKind.EatBody, Worker = id, Captive = table.IdOf(meal), Cage = "", Faction = c.Faction, PlayerSide = true };
-                        break;
-                    default:
-                        continue;
-                }
-                if (job is not null)
-                {
-                    (job.LastTask, job.LastGoal) = (table.Next[s].Task, table.Next[s].Goal);
-                    jobs.Add(job);
-                    c.Engaged = true;
-                    Note(world, CaptiveEventKind.Started, job);
-                }
-                break;
-            }
+            if (!table.Next[s].Alive || table.Next[s].Task != (byte)CharacterTask.Idle || table.Cold(s) is not { Fighter.IsAnimal: true } c || !PlayerSquad(world, c) || DecisionSystem.Decides(c)) continue;
+            if (!FreeForRaceGoal(world, s, c)) continue;
+            if (PickRaceGoal(world, s, c, null, firstInList: true) is { } pick) StartRaceGoal(world, s, c, pick);
         }
+    }
+
+    IReadOnlyList<AiGoal> RaceGoalsOf(CharacterCold c) => c.Race is { } race ? data.Ai.RaceGoals(race.StringId) : [];
+
+    /// <summary>A player animal's race goal: its type, desire x the entry's weight, and its target (a body's or a mouthful ally's slot, a limb).</summary>
+    readonly record struct RaceGoal(TaskType Type, float Score, int Target, GroundItem? Limb);
+
+    /// <summary>Not engaged, fighting, fleeing, carried, down, or another captive job's.</summary>
+    bool FreeForRaceGoal(World world, int s, CharacterCold c) =>
+        !c.Engaged && !c.InCombat && !c.Fleeing && c.CarriedBy.IsNone && c.Medical is { Incapacitated: false } && !Busy(world.Characters.IdOf(s));
+
+    /// <summary>
+    /// The race goal of priority <paramref name="priority"/> (any: null) the animal would run now (a pure read): the first that can in list order (<paramref name="firstInList"/>), else the
+    /// best desire x weight, a tie to the later-listed (<c>FUN_14050df10</c>). Desires: 277 1 with a limb found, 278 <see cref="PlayDesire"/>, 279 <see cref="ChaseDesire"/> with a mouthful
+    /// ally, 233 1 with a body.
+    /// </summary>
+    RaceGoal? PickRaceGoal(World world, int s, CharacterCold c, TaskPriority? priority, bool firstInList)
+    {
+        if (c is not { Fighter.IsAnimal: true, Race: { } race }) return null;
+        RaceGoal? best = null;
+        foreach (var goal in data.Ai.RaceGoals(race.StringId))
+        {
+            if (priority is { } p && goal.Task.Priority != p) continue;
+            float desire = 0;
+            int target = -1;
+            GroundItem? limb = null;
+            switch (goal.Task.Type)
+            {
+                case TaskType.ANIMAL_FETCH_A_LIMB when LimbFor(world, s, c) is { } found:
+                    (desire, limb) = (1, found);
+                    break;
+                case TaskType.PLAY_BECAUSE_I_HAVE_A_LIMB_IN_MOUTH:
+                    desire = PlayDesire(world, c);
+                    break;
+                case TaskType.CHASE_ALLY_DOGS_WITH_MOUTH_LIMBS when ChaseDesire(world, c) > 0 && MouthfulAlly(world, s, c) is >= 0 and var mouthful:
+                    (desire, target) = (ChaseDesire(world, c), mouthful);
+                    break;
+                case TaskType.EAT_A_RANDOM_KO_BODY when BodyToEat(world, s, c, dead: false) is >= 0 and var meal:
+                    (desire, target) = (1, meal);
+                    break;
+            }
+            if (!(desire > 0)) continue;
+            var pick = new RaceGoal(goal.Task.Type, desire * goal.Weight, target, limb);
+            if (firstInList) return pick;
+            if (best is null || pick.Score >= best.Value.Score) best = pick;
+        }
+        return best;
+    }
+
+    void StartRaceGoal(World world, int s, CharacterCold c, RaceGoal pick)
+    {
+        var table = world.Characters;
+        CaptiveJobKind? kind = pick.Type switch
+        {
+            TaskType.PLAY_BECAUSE_I_HAVE_A_LIMB_IN_MOUTH => CaptiveJobKind.DogPlay,
+            TaskType.CHASE_ALLY_DOGS_WITH_MOUTH_LIMBS => CaptiveJobKind.DogChase,
+            TaskType.EAT_A_RANDOM_KO_BODY => CaptiveJobKind.EatBody,
+            _ => null,
+        };
+        if (kind is not { } k)
+        {
+            if (pick.Limb is { } limb) Fetch(world, s, c, limb);
+            return;
+        }
+        var job = new CaptiveJob { Kind = k, Worker = table.IdOf(s), Captive = pick.Target >= 0 ? table.IdOf(pick.Target) : CharacterId.None, Cage = "", Faction = c.Faction, PlayerSide = true };
+        (job.LastTask, job.LastGoal) = (table.Next[s].Task, table.Next[s].Goal);
+        jobs.Add(job);
+        c.Engaged = true;
+        Note(world, CaptiveEventKind.Started, job);
+    }
+
+    public void RegisterSources(DecisionSystem decisions)
+    {
+        decisions.Register(new RaceGoals(this, TaskPriority.Urgent));
+        decisions.Register(new RaceGoals(this, TaskPriority.NonUrgent));
+    }
+
+    /// <summary>
+    /// A player animal's race goals of one priority (<c>Character::setupAI</c> adds the race's <c>AI Goals</c> to a player-faction animal, after 243): priority 3 at step 4, weighed with the
+    /// other goals, priority 2 at step 6 before 14 Idleness. The best desire x weight starts (<see cref="PickRaceGoal"/>); it runs while its job does (the fetch: while its pick-up walk does).
+    /// </summary>
+    sealed class RaceGoals(CaptiveSystem owner, TaskPriority priority) : IDecisionSource
+    {
+        (long Tick, int Slot, RaceGoal Goal) picked = (-1, -1, default);
+
+        public string Name => $"Race goals (priority {(int)priority})";
+        public DecisionStep Step => priority == TaskPriority.Urgent ? DecisionStep.Goals : DecisionStep.Fallback;
+        /// <summary>Step 4: after 243 (<c>setupAI</c>'s order); step 6: with the priority-2 goals, before the priority-1 ones.</summary>
+        public int Key => priority == TaskPriority.Urgent ? 250 : 1000 + (int)TaskType.EAT_A_RANDOM_KO_BODY;
+
+        public DecisionCheck CanRun(World world, int slot)
+        {
+            var cold = world.Characters.Cold(slot)!;
+            if (cold is not { Fighter.IsAnimal: true, Race: not null }) return DecisionCheck.No("not an animal");
+            if (Running(world, slot, cold) is { } type) return PriorityOf(cold, type) == priority ? DecisionCheck.Runs : DecisionCheck.No("another race goal runs");
+            if (!owner.FreeForRaceGoal(world, slot, cold)) return DecisionCheck.No("busy");
+            if (owner.PickRaceGoal(world, slot, cold, priority, firstInList: false) is not { } pick) return DecisionCheck.No("none holds");
+            picked = (world.Tick, slot, pick);
+            return DecisionCheck.Run;
+        }
+
+        public float Desire(World world, int slot)
+        {
+            var cold = world.Characters.Cold(slot)!;
+            if (Running(world, slot, cold) is { } type) return owner.PickRaceGoal(world, slot, cold, priority, firstInList: false) is { } now && now.Type == type ? now.Score : 1;
+            return picked.Tick == world.Tick && picked.Slot == slot ? picked.Goal.Score : 0;
+        }
+
+        public void Start(World world, int slot)
+        {
+            if (picked.Tick == world.Tick && picked.Slot == slot) owner.StartRaceGoal(world, slot, world.Characters.Cold(slot)!, picked.Goal);
+        }
+
+        /// <summary>The race goal the animal runs: its player-side job's, or the limb fetch's pick-up walk.</summary>
+        TaskType? Running(World world, int slot, CharacterCold cold)
+        {
+            var id = world.Characters.IdOf(slot);
+            foreach (var j in owner.jobs)
+                if (j.Worker == id && j.PlayerSide)
+                    return j.Kind switch
+                    {
+                        CaptiveJobKind.DogPlay => TaskType.PLAY_BECAUSE_I_HAVE_A_LIMB_IN_MOUTH,
+                        CaptiveJobKind.DogChase => TaskType.CHASE_ALLY_DOGS_WITH_MOUTH_LIMBS,
+                        _ => TaskType.EAT_A_RANDOM_KO_BODY,
+                    };
+            return cold.PickingUpItem is not null && cold.Running is { Row: TaskType.ANIMAL_FETCH_A_LIMB } ? TaskType.ANIMAL_FETCH_A_LIMB : null;
+        }
+
+        TaskPriority? PriorityOf(CharacterCold cold, TaskType type) =>
+            owner.RaceGoalsOf(cold).FirstOrDefault(g => g.Task.Type == type)?.Task.Priority;
     }
 
     /// <summary>

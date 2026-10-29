@@ -177,7 +177,7 @@ the owner's pure `IOrderOwner.CanRun`: `Run`, `Blocked` with its failure text, o
 - After `Give` the decision step ([below](#decision-step)) asks the front again as its source 1: a blocked one falls through to goals and jobs there.
 - `PlayerOrders.Holds` (a pure read): the character holds an order, running, waiting or queued (the original's count `+0x60`; a front whose task ended is not counted). The
   implicit ditch job 242 runs only without one ([perma-jobs](game/ai-tasks.md#perma-jobs)). `PlayerOrders.Wins` (pure): the front runs or can start, so source 1 wins; the
-  player animals' race goals (`CaptiveSystem.RunPlayerAnimalGoals`) start only without one, and one that runs ends them (a blocked order no longer holds them back).
+  player animals' race-goal jobs (`CaptiveJob.PlayerSide`) end once one runs or can start (a blocked order does not end them).
 - A row needing no melee threat (`PlayerOrders.NeedsNoThreat`: `!158` in list B, of the orders only 146 Turret gunner) is blocked while `CombatSystem.ImmediateThreat` holds; at a
   decision its running order ends (`TaskEnd.Stopped`) and waits unstarted, so the gunner falls through to self-defence and mans the turret again once the threat is gone (S3).
   A running Loot order (26) ends (`TaskEnd.Done`) at a decision while a threat is within 40 (`Task_Loot_Order`'s update, [combat](game/combat.md#fight-lifecycle-and-orders)).
@@ -206,7 +206,8 @@ only (`ApplyPausedInterfaceCommands`; the bit stays for the next tick).
      effect is planned through 146, `!158`). 187 Obedient Slave is not modelled for player characters; what fills the original's list `+0x70` is **Unknown** (Q1).
   4. Priority-3 goals: 32 Self preservation (`RetaliationSystem`, weight 1: the attacker this tick that took the character as target and alerted it, within 181.7, not shooting at a gunner,
      passing a holder's post test; desire 1 within 40, else 0.7; a deferred defence, row 13); 243 Getting food (`TownDutySystem`, weight 0.5, the [eating](game/character-stats.md#eating)
-     desire; a food run); 259 Picking up food (`FeedSystem`, animals, weight 0.5; a walk to food on the ground); 16 attack on sight while on Hold (`AggroSystem`, weight **Unknown**, 1
+     desire; a food run); a player animal's priority-3 race goals (`CaptiveSystem.RaceGoals`: 277 limb fetch 1, 278 limb play and 279 chase by their desires, x the race entry's
+     weight); 259 Picking up food (`FeedSystem`, animals, weight 0.5; a walk to food on the ground); 16 attack on sight while on Hold (`AggroSystem`, weight **Unknown**, 1
      here, listed last as Hold adds it; the enemy this tick's look or a squad mate's found; desire 0 while Passive, sneaking outside a fight or not standing; a deferred fight, row 16).
      **Engine**: joining a squad mate's defence (`JoinMates`) or, with Help Allies, an ally's (`HelpAllies`), `RetaliationSystem.JoinFight`: how the original's player character joins is
      **Unknown** (Q2); offered by the retaliation pass, today's rule (idle or a bodyguard following, not Passive, not sneaking outside a fight) as its condition, desire 0.6 (below Self
@@ -220,7 +221,7 @@ only (`ApplyPausedInterfaceCommands`; the bit stays for the next tick).
      a treatment runs until it ends), carry (148, 238; `FindRescue` with the bed search, `FindForage`), beds (106; a carried non-hostile body and a bed), aggro (16; the enemy the look
      offered this tick, the row's desire). Finders are asked only up to the first job that runs. Then the implicit jobs (`ProductionSystem.ImplicitJobs`, the squad AI options' lowest
      keys): over idling, a standing task or a job's task, the pick of `ImplicitPick` starts, runs while it is the one the character is on, and an implicit job that no longer holds ends.
-  6. 14 Idleness (priority 1, every character's): a player character stands idle, its routine (player characters neither wander nor follow a leader by themselves). It runs over
+  6. The priority-2 goals: a player animal's race goal 233 (eating a downed body, `CaptiveSystem.RaceGoals`). Then 14 Idleness (priority 1, every character's): a player character stands idle, its routine (player characters neither wander nor follow a leader by themselves). It runs over
      idling, a fight, and any task a plan still runs (an order's, a goal's, an engine act-out's: those end by their own rules); a wander or follow no plan runs is given up for it. So a
      task that ends (`TaskEnd.Done`) leaves the character idle and the step re-decides (the job, goal or order it lands on, else idleness), where the original re-plans; nothing resumes.
      The default task (`+0x190`, tried after the priority-1 goals) is never reached: Meitou models no manoeuvre mode but ROAM_FAR, whose default task is idleness
@@ -639,8 +640,8 @@ default): the turret step sets the gunner's yaw along the barrel every tick; off
 animals use faction hostility and carrying/damage rules where eligible. They age and grow, pack beasts spawn with their
 bag on, DA 48 sells them, and the context menu's Follow keeps any player character beside another
 ([animals](game/animals.md#ageing)). Player animals feed themselves: food on the ground (259, `FeedSystem.GroundFood`), food from their outpost's stores
-(243, also for people, `TownDutySystem.FoodWant`, [rules](game/character-stats.md#eating); both decision-step goals for player characters) and limbs (277); `CaptiveSystem.RunPlayerAnimalGoals` also runs their limb play and chase
-(278, 279) and eating downed non-allies (233) as [captive jobs](#captives) when idle and no order wins, ended by an order that runs. Corpses (230) are dropped from the player's animals by the original;
+(243, also for people, `TownDutySystem.FoodWant`, [rules](game/character-stats.md#eating); both decision-step goals for player characters) and their race goals: limbs (277), limb play and chase
+(278, 279) and eating downed non-allies (233) as [captive jobs](#captives) (`CaptiveSystem.RaceGoals`: decision-step goals, priority 3 at step 4, 233 priority 2 at step 6, by the original's desires x the entry's weight), ended by an order that runs. Corpses (230) are dropped from the player's animals by the original;
 crops (232) find nothing for them (only the player's farms are machines, and the eater must not get along with the town). Unarmed humans use
 martial-arts category 5. [animals.md](game/animals.md), [characters.md](characters.md).
 
