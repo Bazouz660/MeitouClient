@@ -169,12 +169,28 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
     internal static string ToggleSection(string label) => label switch
     {
         "Foliage ranges" or "Far impostors" or "Draw distances" or "Foliage levels" => "World",
+        // Beside the ground relief's sliders (World), which hide while these are off (ReliefSliderShown).
+        "Ground parallax" or "Ground displacement (tessellation)" or WorldFrame.RockSmoothingSwitch or WorldFrame.OutlineRefineSwitch => "World",
         "Water" => "Water",
         "Haze" or "Shadows" or "Indirect light" or "Indoor GI" or "Light shafts" or "Night air" or "Planetshine" or "Night sky" or "Clouds" or "Cloud shadows" or "Cloud shadows in fog" => "Lighting",
         "Skin" => "Skin",
         _ when label.StartsWith("Shadow", StringComparison.Ordinal) => "Lighting",
         _ => "Effects",
     };
+
+    /// <summary>False for a ground relief slider whose effect is off: quality and depth need the parallax or the displacement, each distance its own.
+    /// The displacement counts only where its switch is offered (tessellation; not on Metal).</summary>
+    bool ReliefSliderShown(string label)
+    {
+        bool displace = GroundRelief.DisplaceActive && values.Toggles.Any(t => t.Label == "Ground displacement (tessellation)");
+        return label switch
+        {
+            WorldFrame.GroundReliefQualitySlider or WorldFrame.GroundReliefDepthSlider => GroundRelief.ParallaxActive || displace,
+            WorldFrame.GroundParallaxDistanceSlider => GroundRelief.ParallaxActive,
+            WorldFrame.GroundDisplaceDistanceSlider => displace,
+            _ => true,
+        };
+    }
 
     Entry SliderEntry(Slider slider)
     {
@@ -205,7 +221,7 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
     List<Entry> Entries()
     {
         string section = page == 1 ? GraphicsPages[graphicsPage] : Pages[page];
-        var result = values.Sliders.Where(s => s.Label is not ("Time of day" or "Time speed") && Section(s.Label) == section).Select(SliderEntry).ToList();
+        var result = values.Sliders.Where(s => s.Label is not ("Time of day" or "Time speed") && Section(s.Label) == section && ReliefSliderShown(s.Label)).Select(SliderEntry).ToList();
         if (page == 1)
             result.InsertRange(0, values.Toggles.Where(toggle => ToggleSection(toggle.Label) == section)
                 .Select(toggle => new Entry(Label(toggle.Label), ToggleHint(toggle.Label), Toggle: toggle)).Prepend(LookEntry).Prepend(PresetEntry));
