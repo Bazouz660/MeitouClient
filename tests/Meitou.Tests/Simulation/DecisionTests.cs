@@ -173,6 +173,76 @@ public class DecisionTests
         Assert.Contains($"5 Jobs [0] {(int)TaskType.OPERATE_MACHINERY}: jobs switch off", rig.Cold(f).Decision!.Lines);
     }
 
+    /// <summary>A plain material (item function 0) for the implicit ditch job 242 (Ditch items, on in a new game) to carry to the rig's store.</summary>
+    static void GiveWater(TaskStartTests.Rig rig) =>
+        Assert.True(rig.Cold(rig.Fighter).Inventory!.Add(new ItemInstance { Record = "50-t", Name = "Water", Type = Meitou.Data.Fcs.FcsRecordType.ITEM, Quantity = 1 }));
+
+    static bool Ditching(CharacterCold cold) => cold.Running is { Implicit: true, Row: TaskType.DITCH_ALL_RESOURCES };
+
+    /// <summary>
+    /// An implicit job beats idleness (step 5 after the list, before step 6): an idle character carrying a material takes it to the store, and stands idle once it has none.
+    /// Catches implicit jobs that wait for a schedule pass or a yield, or idleness that wins over them.
+    /// </summary>
+    [Fact]
+    public void An_implicit_job_beats_idleness()
+    {
+        using var rig = Quiet();
+        var f = rig.Fighter;
+        GiveWater(rig);
+        RunUntil(rig, () => Ditching(rig.Cold(f)), 2 * ProductionSystem.JobCheckTicks + 2, "ditching the water");
+        Assert.Equal(CharacterTask.Haul, rig.Task(f));
+        Assert.Equal("Implicit jobs", rig.Cold(f).Decision!.Winner);
+        RunUntil(rig, () => rig.Task(f) == CharacterTask.Idle && rig.Cold(f).Decision is { Winner: "14 Idleness" }, 1200, "idle once the water is stored");
+        Assert.DoesNotContain(rig.Cold(f).Inventory!.All(), i => i.Record == "50-t");
+    }
+
+    /// <summary>
+    /// A list job beats an implicit job: a character ditching its water is taken off the trip by the operate job given to it, and is not sent back while it operates. Catches an implicit
+    /// job that outranks the list or comes back over a running list job.
+    /// </summary>
+    [Fact]
+    public void A_list_job_beats_an_implicit_job()
+    {
+        using var rig = Quiet();
+        var f = rig.Fighter;
+        GiveWater(rig);
+        RunUntil(rig, () => Ditching(rig.Cold(f)), 2 * ProductionSystem.JobCheckTicks + 2, "ditching the water");
+        rig.Say(new AddJob([f], TaskType.OPERATE_MACHINERY, rig.WellSite) { Tick = rig.World.Tick });
+        RunUntil(rig, () => rig.Task(f) == CharacterTask.Operate, 2 * ProductionSystem.JobCheckTicks + 2, "the operate job taking over");
+        Assert.Equal("Jobs", rig.Cold(f).Decision!.Winner);
+        for (int t = 0; t < 3 * ProductionSystem.JobCheckTicks; t++)
+        {
+            rig.World.RunTick();
+            Assert.False(Ditching(rig.Cold(f)), "back to ditching while the operate job runs");
+        }
+        Assert.Equal(CharacterTask.Operate, rig.Task(f));
+    }
+
+    /// <summary>
+    /// After a fight a holder stands at its post (step 6: 14 Idleness; the Hold toggle sets no default task, docs/game/ai-tasks.md "Precedence"): a character on Hold defends itself from an
+    /// attacker beside it, and once the attacker is down it stands idle where it fought, near its hold point, which is unchanged. Catches a holder that walks off, follows or wanders after
+    /// its fight, or a fight's end that leaves it on a stale task.
+    /// </summary>
+    [Fact]
+    public void After_a_fight_a_holder_stands_idle_at_its_post()
+    {
+        using var rig = Quiet();
+        var f = rig.Fighter;
+        rig.Say(new OrdersCommand([f], CharacterOrders.Hold, On: true) { Tick = rig.World.Tick });
+        rig.World.RunTick();
+        var post = rig.Cold(f).HoldPoint!.Value;
+        var foe = Attacker(rig);
+        RunUntil(rig, () => rig.Task(f) == CharacterTask.Attack, 120, "fighting back");
+        rig.Cold(foe).Medical!.KnockOut(6000);
+        RunUntil(rig, () => rig.Task(f) != CharacterTask.Attack && !rig.Cold(f).InCombat, 600, "the fight's end");
+        rig.World.RunTicks(3 * ProductionSystem.JobCheckTicks);
+        Assert.Equal(CharacterTask.Idle, rig.Task(f));
+        Assert.Equal("14 Idleness", rig.Cold(f).Decision!.Winner);
+        Assert.Equal(post, rig.Cold(f).HoldPoint);
+        var at = rig.World.Characters.Next[f.Slot].Position;
+        Assert.True(Vector2.Distance(post, new Vector2(at.X, at.Z)) <= Orders.HoldReach, $"{Vector2.Distance(post, new Vector2(at.X, at.Z)):0} from its hold point");
+    }
+
     /// <summary>
     /// The urgent job pass (step 3, before Self preservation): a gunner on the Turret guard job (234) that senses an enemy keeps manning its turret while that enemy closes in to attack it, and
     /// fights it only once it is within 40 (146 needs !158). Catches a turret job that gives way to Self preservation as a plain job, or that never does.
