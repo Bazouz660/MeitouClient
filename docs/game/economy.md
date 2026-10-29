@@ -597,6 +597,8 @@ Meitou's reading: [simulation, slave trading](../simulation.md#arrest-and-jail).
   `weapon manufacturers`), `armours` / `clothing` ARMOUR, `containers` CONTAINER, `blueprints` RESEARCH (a blueprint item), `crossbows` CROSSBOW, `robotics`
   LIMB_REPLACEMENT, `maps` MAP_ITEM; `armour blueprints` / `crossbow blueprints` / `backpack blueprints` name gear and give its `<id>.TECH.1` research's blueprint
   (skipped when missing), never the gear. Merged base data: `armour blueprints` 318, `blueprints` 141, `crossbow blueprints` 20, `backpack blueprints` 0 entries.
+  A `weapons` entry is stocked only when it is a `weapon types` entry of one of the list's `weapon manufacturers` (**Verified**, `FUN_140956ba0`: the types of every listed
+  manufacturer form a set, a weapon outside it logs "No valid manufacturer found for weapon" and is dropped, an empty set skips the whole weapons branch); other lists are not gated.
 - **The FACTION field names of the armour vendor quality chances** (`armors 0..5` in section 9.2): read as the ints `armors 0` .. `armors 5`, falling back to the editor defaults; not
   checked against the data.
 - **Opening a trade**: Meitou opens it within 30 units; the original's opening distance is not traced (the item check is in [Trading range](#trading-range)).
