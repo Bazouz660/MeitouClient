@@ -475,8 +475,8 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
 
     /// <summary>
     /// Where a town goal goes (docs/game/ai-tasks.md "Town goals"): wandering in town, a random general node of a random public building of the town in the walker's
-    /// zone (Observed; the original draws from all of those and finds nothing in one without such a node, Meitou draws from those with one); shopping, a random shop of the town that sells what its list wants
-    /// (<see cref="ShopFor"/>), at a general node in it, else at it; the wanderer, the nearest town. Null when there is none.
+    /// zone (Observed; the original draws from all of those and finds nothing in one without such a node, Meitou draws from those with one); shopping, a random shop of the town that sells what its list wants,
+    /// else a random public building (<see cref="ShopFor"/>): a shop at a general node in it, else at it, any other building at its origin; the wanderer, the nearest town that is no nest marker. Null when there is none.
     /// </summary>
     Vector3? TargetFor(World world, CharacterId self, AiBehaviour behaviour, int town, AiMind mind)
     {
