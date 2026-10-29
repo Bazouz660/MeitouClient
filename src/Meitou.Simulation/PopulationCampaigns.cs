@@ -71,9 +71,8 @@ public sealed class CampaignRequest
     public double Due { get; set; }
     public CampaignTown Target { get; set; }
     public CampaignTown Home { get; set; }
-    /// <summary>Starts tried (at most 100) and delays for a gone target (at most 10).</summary>
-    public int Attempts { get; set; }
-    public int Delays { get; set; }
+    /// <summary>The one counter (+0x58, <b>Verified</b> <c>FUN_1409cb310</c>; not saved) of the delays for a gone target and the starts tried: the request goes above 10 on a delay, above 100 on a start.</summary>
+    public int Tries { get; set; }
 }
 
 /// <summary>A campaign a faction knows (<c>poss*</c>): its last start, the <c>repeat limit</c> clock (0: never started).</summary>
@@ -667,8 +666,8 @@ public sealed partial class PopulationSystem : IStateHashed
 
     /// <summary>
     /// The due requests (<c>FUN_1409cb310</c>'s request pass): a gone target (missing, or a player town occupied for a non-hostile campaign or not active) is redirected, the start
-    /// waiting for the next run, else delayed 5-10 h (dropped after 10); a failed world-state or leader gate drops it;
-    /// else a start, tried each run up to 100 times (no chance, cooldown, range or population gate).
+    /// waiting for the next run, else delayed 5-10 h; a failed world-state or leader gate drops it; else a start, tried each run (no chance, cooldown, range or population gate).
+    /// Delays and starts share one counter (<see cref="CampaignRequest.Tries"/>): dropped when a delay takes it above 10, or a failed start above 100.
     /// </summary>
     void UpdateRequests(World world, WarManager m, double now)
     {
@@ -691,7 +690,7 @@ public sealed partial class PopulationSystem : IStateHashed
                 }
                 ulong roll = Rng.Hash(world.Seed, (ulong)m.Faction << 32 | (uint)i, RngPurpose.Campaign, BitConverter.DoubleToUInt64Bits(r.Due) ^ SeedSalts.CampaignRetry);
                 r.Due += 5 + Rng.Float(roll) * 5;
-                if (++r.Delays > 10) m.Requests.RemoveAt(i--);
+                if (++r.Tries > 10) m.Requests.RemoveAt(i--);
                 continue;
             }
             if (!WorldStatesPass(world, c))
@@ -701,7 +700,7 @@ public sealed partial class PopulationSystem : IStateHashed
             }
             // A start only appends requests (the ally help), so i still points at r.
             var result = Start(world, m, c, r.Target, r.Home, now);
-            if (result != StartResult.Weak || ++r.Attempts >= 100) m.Requests.RemoveAt(i--);
+            if (result != StartResult.Weak || ++r.Tries > 100) m.Requests.RemoveAt(i--);
         }
     }
 
@@ -1313,7 +1312,7 @@ public sealed partial class PopulationSystem : IStateHashed
             {
                 h.Add(Rng.StableHash(r.CampaignId));
                 h.Add(r.Due);
-                h.Add(r.Attempts);
+                h.Add(r.Tries);
             }
         }
     }

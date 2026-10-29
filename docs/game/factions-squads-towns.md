@@ -615,8 +615,8 @@ that +0x88 is the current town **Observed**, as `FUN_14028a3f0` reads it); Meito
 target faction. A weighted list [v0, v1, v2] fires one entry when uniform[0,100) < Σ v2 (v2 = percent), due after uniform[v0, v1) hours
 (**Verified** for dialogue by disassembly, **Observed** for the rest). `faction override` hands the request to that faction; a duplicate
 (same campaign and target) pending or active is dropped. Due requests check only world states and the leader (no chance, range, cooldown
-or population); a failed start retries each run, up to 100 times; a gone target is redirected or delayed 5-10 h, at most 10 times
-(**Observed**). Gone (**Verified**, `FUN_1409cb310`): the town does not resolve, or it is a player town that has occupiers while the
+or population); a failed start retries each run; a gone target is redirected or delayed 5-10 h; delays and starts share one counter (+0x58, **Verified**, `FUN_1409cb310`): a delay drops the request when the counter is then above 10, a start when it is then above 100 (101 start tries when never delayed)
+(the 5-10 h delay is **Observed**). Gone (**Verified**, `FUN_1409cb310`): the town does not resolve, or it is a player town that has occupiers while the
 campaign is not hostile, or that is not active (slot 70); a redirected request does nothing more that run and starts at the next. Requests can aim at NPC towns. A requested campaign joins the receiving faction's list for good.
 
 **Phases** (`CampaignInstance::vfunc_10`, every war-manager run, loaded or not; times are game hours since the phase began):
