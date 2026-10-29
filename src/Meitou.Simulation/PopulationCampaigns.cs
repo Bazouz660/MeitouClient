@@ -178,10 +178,10 @@ public sealed partial class PopulationSystem : IStateHashed
         return town is null ? default : new Vector2(town.Position.X, town.Position.Z);
     }
 
-    /// <summary>A town's radius: the TOWN's <c>size radius</c> × its multiplier; a player town's own (<see cref="Construction.PlayerTown.Radius"/>, 2500 when it is gone).</summary>
+    /// <summary>A town's radius (<c>Town::getRadius</c>, <b>Verified</b> <c>FUN_140926eb0</c>): a placed town's <see cref="TownData.Radius"/> (<c>town radius mult</c> × its type base); a player town's own (<see cref="Construction.PlayerTown.Radius"/>, 2500 when it is gone).</summary>
     float RadiusOf(World world, CampaignTown t)
     {
-        if (t.Site >= 0) return data.Sites[t.Site].Town.SizeRadius * data.Sites[t.Site].Town.TownRadiusMult;
+        if (t.Site >= 0) return data.Sites[t.Site].Town.Radius;
         return world.Buildings.FindTown(t.PlayerTown)?.Radius ?? 2500;
     }
 
@@ -199,8 +199,8 @@ public sealed partial class PopulationSystem : IStateHashed
         foreach (var site in data.Sites)
         {
             if (site.Town.Type is TownType.NestMarker or TownType.Null) continue;
-            float r = site.Town.SizeRadius * site.Town.TownRadiusMult;
-            if (r > 0 && Vector2.DistanceSquared(at, SiteCentre(site.Index)) <= r * r) return CampaignTown.OfSite(site.Index);
+            float r = site.Town.Radius;
+            if (r > 0 &&Vector2.DistanceSquared(at, SiteCentre(site.Index)) <= r * r) return CampaignTown.OfSite(site.Index);
         }
         foreach (var town in world.Buildings.Towns)
         {
@@ -778,7 +778,9 @@ public sealed partial class PopulationSystem : IStateHashed
                     Defeat(world, m, c, inst, now);
                     return false;
                 }
-                if (Vector2.Distance(leader.Position, CentreOf(world, inst.Target)) > 0.8f * RadiusOf(world, inst.Target)) return false;
+                // Strictly inside 0.8 x the radius (FUN_140926d50); a nest marker, whose radius is 0, is never inside.
+                float arrival = 0.8f * RadiusOf(world, inst.Target);
+                if (Vector2.DistanceSquared(leader.Position, CentreOf(world, inst.Target)) >= arrival * arrival) return false;
                 if (inst.ArrivedAt < 0)
                 {
                     world.Post(Loc.Tr("{1} has arrived at {2}", c.DisplayName, NameOf(world, inst.Target)));
