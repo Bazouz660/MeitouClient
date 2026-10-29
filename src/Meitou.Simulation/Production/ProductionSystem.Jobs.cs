@@ -139,11 +139,11 @@ public sealed partial class ProductionSystem
         if ((options & SquadAi.Ditch) != 0)
         {
             // The 242 entry is rebuilt every pass (FUN_14050e5b0): the trip goes on only while no order is queued and its storage still takes something carried.
-            if (on == TaskType.DITCH_ALL_RESOURCES && cold.HaulTo is { } keep && cold.OrderQueue.Count == 0 && cold.Inventory is { } held
+            if (on == TaskType.DITCH_ALL_RESOURCES && cold.HaulTo is { } keep && !PlayerOrders.Holds(world, slot) && cold.Inventory is { } held
                 && Site(world, keep) is { Complete: true } keptSite && keptSite.Owner == world.Player.Faction
                 && Ensure(world, keptSite) is { } keptStore && keptStore.Data.IsStorage && keptStore.Storage is not null && Ditchable(held).Any(item => Stores(keptStore, item)))
                 return (TaskType.DITCH_ALL_RESOURCES, keep);
-            if (cold.OrderQueue.Count == 0 && cold.Inventory is { } inv
+            if (!PlayerOrders.Holds(world, slot) && cold.Inventory is { } inv
                 && NearestSite(world, at, Settings.HaulRange, (_, m) => m.Data.IsStorage && m.Storage is not null && Ditchable(inv).Any(item => Stores(m, item))) is { } store)
                 return (TaskType.DITCH_ALL_RESOURCES, store);
         }

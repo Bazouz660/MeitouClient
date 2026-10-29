@@ -10,7 +10,7 @@ public enum LockForce : byte { Tools, Strength, Smash }
 /// Force the lock of a door or container (<see cref="Fixture.Id"/>): the nearest of the characters (the selection when empty) who may walks to it and cuts it (Task_CutLock, needs a tool),
 /// breaks it by strength (Task_BruteForceLock) or, for a door, bashes it with its weapon (Task_BashDoor).
 /// </summary>
-public sealed record ForceLockOrder(IReadOnlyList<CharacterId> Characters, string Fixture, LockForce Force) : SimCommand;
+public sealed record ForceLockOrder(IReadOnlyList<CharacterId> Characters, string Fixture, LockForce Force) : OrderCommand;
 
 /// <summary>
 /// The player's orders to cut, break or bash a lock (docs/game/locks.md "Cutting and breaking"): the same rules as the shackle versions, on a fixture's lock. The pending crime of every
@@ -48,7 +48,7 @@ public sealed partial class LockSystem
                 if (world.Fixtures.DoorSpotOf(fixture) is null) return;
                 break;
         }
-        StartWork(world, best, CharacterTask.GoTo, RowOf(order.Force), fixture.Id, detail: order.Force);
+        StartWork(world, best, CharacterTask.GoTo, RowOf(order.Force), fixture.Id, detail: order.Force, queued: order.Queued);
     }
 
     /// <summary>Each tick: a character in reach of the lock it was ordered to force cuts or breaks it; one given another order, downed or gone gives up.</summary>
@@ -71,7 +71,7 @@ public sealed partial class LockSystem
                 if (Redirected(next[s], at, reach)) c.ForcingLock = null;
                 continue;
             }
-            if (next[s].Task == (byte)CharacterTask.GoTo) TaskStart.Stand(table, s);
+            if (next[s].Task == (byte)CharacterTask.GoTo) AtWork(world, s);
             if (c.Force == LockForce.Strength)
             {
                 c.ForcingLock = null;

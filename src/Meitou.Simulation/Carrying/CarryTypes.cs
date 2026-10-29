@@ -4,26 +4,26 @@ namespace Meitou.Simulation.Carrying;
 /// Orders one of the carriers (the selection when the list is empty) to pick <see cref="Target"/> up: the nearest one that can carry walks to it and lifts it onto its left shoulder
 /// (the original's <c>LIFT_PERSON_PLAYER_ORDER</c>, context menu verb "Pick Up"). The target must be knocked out or dead, of a <c>carriable</c> race and not carried already.
 /// </summary>
-public sealed record PickUpOrder(IReadOnlyList<CharacterId> Carriers, CharacterId Target) : SimCommand
+public sealed record PickUpOrder(IReadOnlyList<CharacterId> Carriers, CharacterId Target) : OrderCommand
 {
     /// <summary>The verb was Kidnap (246, <c>Task_Kidnapping</c>): a sleeping target may be taken too, and the lift rolls <see cref="CarrySystem.KidnapChance"/> first.</summary>
     public bool Kidnap { get; init; }
 }
 
 /// <summary>Orders the carriers (the selection when the list is empty) that carry someone to set it down where they stand (the original's <c>PUT_DOWN_OBJECT</c>, "Put Down").</summary>
-public sealed record PutDownOrder(IReadOnlyList<CharacterId> Carriers) : SimCommand;
+public sealed record PutDownOrder(IReadOnlyList<CharacterId> Carriers) : OrderCommand;
 
 /// <summary>
 /// Orders one of the looters (the selection when the list is empty) to loot <see cref="Target"/>, a knocked-out or dead character: the nearest walks to it and takes everything from
 /// its inventory and backpack that fits its own (a take-all; worn gear stays, the loot window takes it). Looting someone of another faction in sight of its members is a theft.
 /// </summary>
-public sealed record LootOrder(IReadOnlyList<CharacterId> Looters, CharacterId Target) : SimCommand;
+public sealed record LootOrder(IReadOnlyList<CharacterId> Looters, CharacterId Target) : OrderCommand;
 
 /// <summary>
 /// As <see cref="LootOrder"/>, but in reach the looter opens <see cref="Target"/>'s inventory in a window (<see cref="PlayerState.OpenLoot"/>) instead of taking all: items are then taken one at a
 /// time (<see cref="TakeLootItem"/>). Closed with <see cref="Items.CloseContainer"/>, or when the looter walks off, goes down, or the body comes round or is lifted.
 /// </summary>
-public sealed record OpenLootOrder(IReadOnlyList<CharacterId> Looters, CharacterId Target) : SimCommand;
+public sealed record OpenLootOrder(IReadOnlyList<CharacterId> Looters, CharacterId Target) : OrderCommand;
 
 /// <summary>
 /// A right click on an item of the open loot (<see cref="Item"/>: worn gear and the bag's contents included, <see cref="Items.Inventory.All"/> order): <see cref="Count"/> units (0: until one
@@ -47,7 +47,7 @@ public sealed record PutLootItem(CharacterId Character, Items.InventoryItemToken
 /// Orders one of the attackers (the selection when the list is empty) to knock <see cref="Target"/> out from behind (the original's order 228, verb "Stealth KO", <c>Task_StealthKO</c>):
 /// the nearest sneaking one that can act creeps up behind it and swings; the roll (<see cref="CarrySystem.StealthKoChance"/>) decides between a knock-out and a fight.
 /// </summary>
-public sealed record StealthKoOrder(IReadOnlyList<CharacterId> Attackers, CharacterId Target) : SimCommand;
+public sealed record StealthKoOrder(IReadOnlyList<CharacterId> Attackers, CharacterId Target) : OrderCommand;
 
 /// <summary>A stealth knock-out swing that was rolled: the target was knocked out (<see cref="Success"/>) or turned on the attacker; <see cref="NoXp"/>: a miss that gave no XP.</summary>
 public readonly record struct StealthKoEntry(long Tick, CharacterId Attacker, CharacterId Target, float Chance, bool Success, bool NoXp = false);
@@ -57,7 +57,7 @@ public readonly record struct StealthKoEntry(long Tick, CharacterId Attacker, Ch
 /// "Perma-jobs"): with <see cref="Job"/> (Shift) it is added to their job lists (with its companion 106), where an idle character picks up the nearest downed member of
 /// its faction by itself; else each looks for one once.
 /// </summary>
-public sealed record RescueJobCommand(IReadOnlyList<CharacterId> Characters, bool Job = true) : SimCommand;
+public sealed record RescueJobCommand(IReadOnlyList<CharacterId> Characters, bool Job = true) : OrderCommand;
 
 /// <summary>The numbers of <see cref="CarrySystem"/>: the clip fractions are the original's (<b>Observed</b>), the rest engine choices (docs/game/carry-loot.md, docs/simulation.md "Carrying").</summary>
 public sealed class CarrySettings

@@ -40,7 +40,7 @@ public sealed class ConstructionSettings
 /// </list>
 /// Placed after the carry system and before combat. Everything here is serial and reads only the world's state and the command order.
 /// </summary>
-public sealed class ConstructionSystem : ITickSystem, ITaskOwner, ITaskHandler
+public sealed class ConstructionSystem : ITickSystem, ITaskOwner, ITaskHandler, IOrderOwner
 {
     /// <summary>The delivery bar fills at this much per second (<b>Verified</b>, <c>Task_AddMaterialsToBuilding</c>: 5 s).</summary>
     public const float BarRate = 0.2f;
@@ -143,19 +143,51 @@ public sealed class ConstructionSystem : ITickSystem, ITaskOwner, ITaskHandler
 
     static IReadOnlyList<CharacterId> Who(World world, IReadOnlyList<CharacterId> ids) => ids.Count > 0 ? ids : world.Player.Selection.ToArray();
 
-    void OrderBuild(World world, IReadOnlyList<CharacterId> who, BuildSite? target)
+    void OrderBuild(World world, IReadOnlyList<CharacterId> who, BuildSite? target, bool queued)
     {
         // Build and Repair are both Task_Build: an unfinished site is built, a damaged one (progress below its target) repaired; a whole building has nothing to do.
         if (target is not { NeedsWork: true } site || site.Owner != world.Player.Faction) return;
         var table = world.Characters;
         foreach (var id in who)
-            if (table.TryResolveNext(id, out int slot) && table.Cold(slot) is { IsPlayer: true } cold && Able(cold) && TaskStart.Eligible(world, cold, TaskType.BUILD) && HasWorkingArm(cold))
-            {
-                if (site.LevelPlacement is not null) Touch(world, site);
-                if (site.Stalled && !Carries(cold, site) && Source(world, slot, cold, site) is null)
-                    world.Bark(id, Loc.Tr("I don't have any building materials."));
-                Start(world, slot, new TaskRequest(CharacterTask.Build, TaskType.BUILD, TaskSource.Order) { Site = site.Id });
-            }
+            if (table.TryResolveNext(id, out int slot)) PlayerOrders.Give(world, slot, new OrderEntry(TaskType.BUILD, this) { Site = site.Id }, queued);
+    }
+
+    /// <summary>
+    /// The site orders: building 2 (a site of the player's that needs work), repairing 95 (a door of the player's that needs work) and demolishing 96 (a whole building of the player's that nothing
+    /// blocks); else the order leaves the queue. A player character that can work (<see cref="Able"/>), and for 2 has a working arm (state 38).
+    /// </summary>
+    OrderCheck IOrderOwner.CanRun(World world, int slot, OrderEntry order)
+    {
+        var cold = world.Characters.Cold(slot)!;
+        var reg = world.Buildings;
+        if (!cold.IsPlayer || order.Site is not { } id) return OrderCheck.Gone;
+        switch (order.Row)
+        {
+            case TaskType.REPAIR:
+                if (world.Fixtures.Find(id) is not { Kind: Locks.FixtureKind.Door } door || door.Owner != world.Player.Faction || !DoorNeedsWork(door)) return OrderCheck.Gone;
+                return Able(cold) ? OrderCheck.Run : OrderCheck.Blocked();
+            case TaskType.DISMANTLE:
+                if (reg.Find(id) is not { LevelPlacement: null } doomed || doomed.Owner != world.Player.Faction || Blocker(reg, doomed) is not null) return OrderCheck.Gone;
+                return Able(cold) ? OrderCheck.Run : OrderCheck.Blocked();
+            default:
+                if (reg.Find(id) is not { NeedsWork: true } site || site.Owner != world.Player.Faction) return OrderCheck.Gone;
+                return Able(cold) && HasWorkingArm(cold) ? OrderCheck.Run : OrderCheck.Blocked();
+        }
+    }
+
+    void IOrderOwner.Start(World world, int slot, OrderEntry order)
+    {
+        if (order.Row != TaskType.BUILD)
+        {
+            Start(world, slot, new TaskRequest(order.Row == TaskType.DISMANTLE ? CharacterTask.Dismantle : CharacterTask.Build, order.Row, TaskSource.Order) { Site = order.Site });
+            return;
+        }
+        var site = world.Buildings.Find(order.Site!)!;
+        var cold = world.Characters.Cold(slot)!;
+        if (site.LevelPlacement is not null) Touch(world, site);
+        if (site.Stalled && !Carries(cold, site) && Source(world, slot, cold, site) is null)
+            world.Bark(world.Characters.IdOf(slot), Loc.Tr("I don't have any building materials."));
+        Start(world, slot, new TaskRequest(CharacterTask.Build, TaskType.BUILD, TaskSource.Order) { Site = site.Id });
     }
 
     public void Inputs(World world, IReadOnlyList<SimCommand> commands)
@@ -176,18 +208,17 @@ public sealed class ConstructionSystem : ITickSystem, ITaskOwner, ITaskHandler
                     foreach (int number in placed.Select(s => s.Town).Distinct())
                         if (reg.FindTown(number) is { } town) ReassessTown(world, town);
                     // Confirm ends by sending the selection to build the last building created (FUN_1404d72a0: order 2 through FUN_1407f9e20, Shift ignored).
-                    if (placed.Count > 0) OrderBuild(world, world.Player.Selection.ToArray(), Root(reg, placed[^1]));
+                    if (placed.Count > 0) OrderBuild(world, world.Player.Selection.ToArray(), Root(reg, placed[^1]), queued: false);
                     break;
                 }
                 case BuildOrder order when world.Fixtures.Find(order.Site) is { Kind: Locks.FixtureKind.Door } door:
                     // Order 95 on a broken door (FUN_1407fc6e0): a door is a building of its own, repaired by build work (a damaged but standing one takes it too, engine reading).
                     if (door.Owner != world.Player.Faction || !DoorNeedsWork(door)) break;
                     foreach (var id in Who(world, order.Characters))
-                        if (table.TryResolveNext(id, out int slot) && table.Cold(slot) is { IsPlayer: true } cold && Able(cold))
-                            Start(world, slot, new TaskRequest(CharacterTask.Build, TaskType.REPAIR, TaskSource.Order) { Site = door.Id });
+                        if (table.TryResolveNext(id, out int slot)) PlayerOrders.Give(world, slot, new OrderEntry(TaskType.REPAIR, this) { Site = door.Id }, order.Queued);
                     break;
                 case BuildOrder order:
-                    OrderBuild(world, Who(world, order.Characters), Root(reg, reg.Find(order.Site)));
+                    OrderBuild(world, Who(world, order.Characters), Root(reg, reg.Find(order.Site)), order.Queued);
                     break;
                 case DismantleOrder order:
                 {
@@ -198,8 +229,7 @@ public sealed class ConstructionSystem : ITickSystem, ITaskOwner, ITaskHandler
                         break;
                     }
                     foreach (var id in Who(world, order.Characters))
-                        if (table.TryResolveNext(id, out int slot) && table.Cold(slot) is { IsPlayer: true } cold && Able(cold))
-                            Start(world, slot, new TaskRequest(CharacterTask.Dismantle, TaskType.DISMANTLE, TaskSource.Order) { Site = site.Id });
+                        if (table.TryResolveNext(id, out int slot)) PlayerOrders.Give(world, slot, new OrderEntry(TaskType.DISMANTLE, this) { Site = site.Id }, order.Queued);
                     break;
                 }
                 case ConfirmDismantle confirm:

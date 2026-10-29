@@ -14,13 +14,13 @@ public sealed record ToggleDoorLocksOrder(string Building) : SimCommand;
 /// open one (72 OPEN_DOOR / 73 CLOSE_DOOR; a locked one: "It's locked."). Another faction's locked door: with <see cref="PickLock"/> (Alt) its lock is picked (76 PICK_LOCK), else the
 /// hint and a walk to it.
 /// </summary>
-public sealed record DoorOrder(IReadOnlyList<CharacterId> Characters, string Door, bool PickLock = false) : SimCommand;
+public sealed record DoorOrder(IReadOnlyList<CharacterId> Characters, string Door, bool PickLock = false) : OrderCommand;
 
 /// <summary>
 /// The context menu's Lock (77) or Unlock (140) on one of the player's doors (<c>FUN_1407a6bc0</c>): the nearest of the characters (the selection when empty) walks to it and works the lock for
 /// <see cref="LockSystem.LockWorkSeconds"/> (Task_LockDoor / Task_UnlockDoor); not the panel's instant toggle (<see cref="ToggleDoorLocksOrder"/>).
 /// </summary>
-public sealed record DoorLockOrder(IReadOnlyList<CharacterId> Characters, string Door, bool Lock) : SimCommand;
+public sealed record DoorLockOrder(IReadOnlyList<CharacterId> Characters, string Door, bool Lock) : OrderCommand;
 
 /// <summary>A character's running <see cref="DoorLockOrder"/>: the door, whether it is being locked, and the game seconds worked at it.</summary>
 public sealed class DoorLockJob(string door, bool locking)
@@ -131,7 +131,7 @@ public sealed partial class LockSystem
         }
         if (best < 0) return;
         if (barred && !order.PickLock) world.Post("Hold down the ALT key to pick the lock.");
-        StartWork(world, best, CharacterTask.GoTo, row, door.Id);
+        StartWork(world, best, CharacterTask.GoTo, row, door.Id, queued: order.Queued);
     }
 
     void DoorLockInput(World world, DoorLockOrder order)
@@ -147,7 +147,7 @@ public sealed partial class LockSystem
             float d = Vector2.Distance(Flat(table.Next[s].Position), WorkSpot(world, door, Flat(table.Next[s].Position)).At);
             if (d < bestDistance) (best, bestDistance) = (s, d);
         }
-        if (best >= 0) StartWork(world, best, CharacterTask.GoTo, row, door.Id);
+        if (best >= 0) StartWork(world, best, CharacterTask.GoTo, row, door.Id, queued: order.Queued);
     }
 
     /// <summary>
@@ -180,7 +180,7 @@ public sealed partial class LockSystem
             {
                 // Arrived: stand and start. A move order given since the arrival is a new goal, not this walk.
                 if (job.Work > 0) { c.DoorJob = null; continue; }
-                TaskStart.Stand(table, s);
+                AtWork(world, s);
             }
             if (c.StaggeredUntil > world.Tick) continue;   // a stagger interrupts the work
             job.Work += world.TickSeconds;
@@ -216,7 +216,7 @@ public sealed partial class LockSystem
             if (Redirected(n, at, reach)) player.DoorTarget = null;
             return;
         }
-        if (n.Task == (byte)CharacterTask.GoTo) TaskStart.Stand(table, s);
+        if (n.Task == (byte)CharacterTask.GoTo) AtWork(world, s);
         player.DoorTarget = null;
         if (door.Motion is DoorMotion.Open or DoorMotion.Opening) { if (door.Motion == DoorMotion.Open) FixtureRegistry.CloseDoor(door); }
         else if (door.Lock is { EffectivelyLocked: true }) world.Post($"{c.Name}: It's locked.");

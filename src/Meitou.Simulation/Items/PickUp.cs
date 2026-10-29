@@ -3,7 +3,7 @@ using System.Numerics;
 namespace Meitou.Simulation.Items
 {
     /// <summary>Pick up a ground item (<see cref="GroundItems"/> id): the nearest of the characters (the selection when empty) who may walks to it and puts it in its inventory.</summary>
-    public sealed record PickUpItemOrder(IReadOnlyList<CharacterId> Characters, int Item) : SimCommand;
+    public sealed record PickUpItemOrder(IReadOnlyList<CharacterId> Characters, int Item) : OrderCommand;
 }
 
 namespace Meitou.Simulation
@@ -12,7 +12,7 @@ namespace Meitou.Simulation
     /// Picking up loose items (docs/simulation.md "Ground items"): walk to the item, then into the inventory (<see cref="Items.Inventory.Add"/>), or a message when it has no room. The
     /// pick-up and the walk to a container start through <see cref="TaskStart.Start"/> as row 3 "Collecting item", which the player system handles.
     /// </summary>
-    public sealed partial class PlayerSystem : ITaskOwner, ITaskHandler
+    public sealed partial class PlayerSystem : ITaskOwner, ITaskHandler, IOrderOwner
     {
         public void RegisterTasks(TaskHandlers tasks) => tasks.Register(Meitou.Data.Gameplay.Ai.TaskType.PICKUP, this);
 
@@ -52,12 +52,20 @@ namespace Meitou.Simulation
             if (world.Player.OpeningContainer is not null && world.Player.ContainerWalker == table.IdOf(slot)) world.Player.OpeningContainer = null;
         }
 
+        /// <summary>The act-out a pick-up or a container's opening works in where the character stands (<see cref="CharacterTask.Idle"/>) is done once the item is taken or the container opened.</summary>
+        bool ITaskHandler.Done(World world, int slot, CharacterTask task)
+        {
+            var table = world.Characters;
+            if (table.Next[slot].Task != (byte)task) return true;
+            return task == CharacterTask.Idle && table.Cold(slot)!.PickingUpItem is null && !(world.Player.OpeningContainer is not null && world.Player.ContainerWalker == table.IdOf(slot));
+        }
+
         /// <summary>A walker takes the item within this distance of it (an engine choice).</summary>
         public const float PickUpReach = 15;
 
         static Vector2 Flat(Vector3 p) => new(p.X, p.Z);
 
-        static void PickUpInput(World world, Items.PickUpItemOrder order)
+        void PickUpInput(World world, Items.PickUpItemOrder order)
         {
             if (world.GroundItems.Find(order.Item) is not { } item) return;
             var table = world.Characters;
@@ -70,12 +78,30 @@ namespace Meitou.Simulation
                 float d = Vector2.Distance(Flat(table.Next[s].Position), Flat(item.Position));
                 if (d < bestDistance) (best, bestDistance) = (s, d);
             }
-            if (best < 0) return;
-            // Within reach it takes the item where it stands.
-            TaskStart.Start(world, best, new TaskRequest(bestDistance > PickUpReach ? CharacterTask.GoTo : CharacterTask.Idle, Meitou.Data.Gameplay.Ai.TaskType.PICKUP, TaskSource.Order)
+            if (best >= 0) PlayerOrders.Give(world, best, new OrderEntry(Meitou.Data.Gameplay.Ai.TaskType.PICKUP, this) { Point = item.Position, Detail = order.Item }, order.Queued);
+        }
+
+        /// <summary>
+        /// Collecting an item (row 3) or opening, picking or walking to a container: the item or container is still there (else the order leaves the queue), and a player character that is awake,
+        /// not caged or carried and has an inventory takes it.
+        /// </summary>
+        OrderCheck IOrderOwner.CanRun(World world, int slot, OrderEntry order)
+        {
+            var c = world.Characters.Cold(slot)!;
+            if (!c.IsPlayer || (order.Detail is int item ? world.GroundItems.Find(item) is null : world.Fixtures.Find(order.Site!) is not { Contents: not null })) return OrderCheck.Gone;
+            return c is { Medical.Incapacitated: false, Inventory: not null, IsImprisoned: false } && c.CarriedBy.IsNone ? OrderCheck.Run : OrderCheck.Blocked();
+        }
+
+        /// <summary>A pick-up walks to the item, or within reach takes it where the character stands; a container order walks to it or opens it (<see cref="StartContainer"/>).</summary>
+        void IOrderOwner.Start(World world, int slot, OrderEntry order)
+        {
+            if (order.Detail is not int item)
             {
-                Point = item.Position, Detail = order.Item,
-            });
+                StartContainer(world, slot, order);
+                return;
+            }
+            bool far = Vector2.Distance(Flat(world.Characters.Next[slot].Position), Flat(order.Point)) > PickUpReach;
+            TaskStart.Start(world, slot, new TaskRequest(far ? CharacterTask.GoTo : CharacterTask.Idle, Meitou.Data.Gameplay.Ai.TaskType.PICKUP, TaskSource.Order) { Point = order.Point, Detail = item });
         }
 
         /// <summary>Each tick: a walker in reach takes its item; one whose item is gone, who was given another goal or stopped, or who is down gives up.</summary>

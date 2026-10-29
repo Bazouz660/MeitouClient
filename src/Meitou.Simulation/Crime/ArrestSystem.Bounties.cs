@@ -34,7 +34,7 @@ public sealed class Hunt
     }
 }
 
-public sealed partial class ArrestSystem
+public sealed partial class ArrestSystem : IOrderOwner
 {
     /// <summary>Bounty hunters go after a bounty above this (their "bounty spotted" dialogues answer only <c>b &gt; 4000</c>, economy.md 11.8, <b>Verified</b> by probe).</summary>
     public const int HuntLimit = 4000;
@@ -55,7 +55,7 @@ public sealed partial class ArrestSystem
             {
                 case PayBailOrder bail: PayBail(world, bail.Prisoner); break;
                 case PutInCageOrder put:
-                    foreach (var id in put.Carriers.Count > 0 ? put.Carriers : world.Player.Selection.ToArray()) StartCaging(world, id, put.Cage);
+                    foreach (var id in put.Carriers.Count > 0 ? put.Carriers : world.Player.Selection.ToArray()) StartCaging(world, id, put.Cage, put.Queued);
                     break;
             }
         }
@@ -157,15 +157,38 @@ public sealed partial class ArrestSystem
 
     // ------------------------------------------------------------------ putting a captive in a cage, and the claim
 
-    void StartCaging(World world, CharacterId carrier, string? chosen = null)
+    void StartCaging(World world, CharacterId carrier, string? chosen, bool queued)
     {
         var table = world.Characters;
-        if (Carry is null || !table.TryResolveNext(carrier, out int s) || table.Cold(s) is not { IsPlayer: true, IsImprisoned: false, Medical.Incapacitated: false, Carrying.IsNone: false } c) return;
+        if (Carry is null || !table.TryResolveNext(carrier, out int s) || table.Cold(s) is not { IsPlayer: true, Carrying.IsNone: false }) return;
+        PlayerOrders.Give(world, s, new OrderEntry(TaskType.PUT_IN_CAGE, this) { Site = chosen }, queued);
+    }
+
+    /// <summary>The cage a put-in-cage order takes its body to: the one it named while free and nobody else's goal, else the nearest such one in reach; the carrier's own caging is no rival.</summary>
+    Fixture? CageFor(World world, int s, CharacterCold c, string? chosen)
+    {
+        var carrier = world.Characters.IdOf(s);
+        var own = cagings.Find(k => k.Carrier == carrier);
+        return chosen is not null
+            ? world.Fixtures.Find(chosen) is { Kind: FixtureKind.Cage } picked && FixtureRegistry.IsFree(world.Characters, picked) && !Reserved(picked, null) && !cagings.Exists(k => k.Carrier != carrier && k.Cage == picked.Id) ? picked : null
+            : FindCageFor(world, s, c, own);
+    }
+
+    /// <summary>Put in prison 108 needs a player character carrying someone (else it leaves the queue), awake and free, and a free cage ("no free cage nearby", posted).</summary>
+    OrderCheck IOrderOwner.CanRun(World world, int slot, OrderEntry order)
+    {
+        if (Carry is null || world.Characters.Cold(slot) is not { IsPlayer: true, Carrying.IsNone: false } c) return OrderCheck.Gone;
+        if (c is not { IsImprisoned: false, Medical.Incapacitated: false }) return OrderCheck.Blocked();
+        return CageFor(world, slot, c, order.Site) is null ? OrderCheck.Blocked($"{c.Name}: no free cage nearby", posted: true) : OrderCheck.Run;
+    }
+
+    void IOrderOwner.Start(World world, int slot, OrderEntry order)
+    {
+        var c = world.Characters.Cold(slot)!;
+        var cage = CageFor(world, slot, c, order.Site)!;
+        var carrier = world.Characters.IdOf(slot);
         cagings.RemoveAll(k => k.Carrier == carrier);
-        var cage = chosen is not null ? world.Fixtures.Find(chosen) is { Kind: FixtureKind.Cage } picked && FixtureRegistry.IsFree(table, picked) && !Reserved(picked, null) && !cagings.Exists(k => k.Cage == picked.Id) ? picked : null
-            : FindCageFor(world, s, c, null);
-        if (cage is null) { world.Post($"{c.Name}: no free cage nearby"); return; }
-        TaskStart.Start(world, s, new TaskRequest(CharacterTask.GoTo, TaskType.PUT_IN_CAGE, TaskSource.Order) { Site = cage.Id, Target = c.Carrying });
+        TaskStart.Start(world, slot, new TaskRequest(CharacterTask.GoTo, TaskType.PUT_IN_CAGE, TaskSource.Order) { Site = cage.Id, Target = c.Carrying });
     }
 
     public void RegisterTasks(TaskHandlers tasks) => tasks.Register(TaskType.PUT_IN_CAGE, this);

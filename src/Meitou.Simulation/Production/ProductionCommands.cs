@@ -3,7 +3,7 @@ using Meitou.Simulation.Items;
 namespace Meitou.Simulation.Production;
 
 /// <summary>Sends characters (the selection when empty) to work a complete player building: operate a well, harvest a farm, research at a bench; on a storage, one haul trip there.</summary>
-public sealed record OperateOrder(IReadOnlyList<CharacterId> Characters, string Site) : SimCommand;
+public sealed record OperateOrder(IReadOnlyList<CharacterId> Characters, string Site) : OrderCommand;
 
 /// <summary>
 /// Gives characters (the selection when empty) the job an order of <paramref name="Type"/> on a player building becomes, at the end of their job lists (the original's Shift with an order;
@@ -22,13 +22,13 @@ public sealed record AddOrderJob(IReadOnlyList<CharacterId> Characters, Meitou.D
 /// The original's order 146 USE_TURRET on a complete turret of the player's (function 12): the nearest of the characters (the selection when empty) that can act operates it, standing at
 /// its gunner spot (<see cref="Ai.AiSystem.TurretSpot"/>); the combat system fires it (docs/simulation.md "Production", "Combat").
 /// </summary>
-public sealed record UseTurretOrder(IReadOnlyList<CharacterId> Characters, string Site) : SimCommand;
+public sealed record UseTurretOrder(IReadOnlyList<CharacterId> Characters, string Site) : OrderCommand;
 
 /// <summary>
 /// The original's order 136 FEED_CORPSE_INTO_MACHINE without Shift (Corpse Disposal on a corpse machine): each of the characters carrying a dead body takes it to an incinerator as the
 /// corpse disposal job does. <b>Engine reading</b>: the order's condition 99 is taken as carrying a dead body, and the body goes to the nearest free incinerator, as the job's.
 /// </summary>
-public sealed record DisposeCorpseOrder(IReadOnlyList<CharacterId> Characters, string Site) : SimCommand;
+public sealed record DisposeCorpseOrder(IReadOnlyList<CharacterId> Characters, string Site) : OrderCommand;
 
 /// <summary>Takes the job at <paramref name="Index"/> off a character's job list (the list's X button).</summary>
 public sealed record RemoveJob(CharacterId Character, int Index) : SimCommand;

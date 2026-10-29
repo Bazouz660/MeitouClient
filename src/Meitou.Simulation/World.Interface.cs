@@ -4,30 +4,29 @@ public sealed partial class World
 {
     /// <summary>
     /// Applies the interface's commands between ticks while paused, without advancing time or running simulation phases: selection, order toggles, job lists, crafting and
-    /// research queues, squads, inventory, open-shop transactions, building settings, and movement, combat, first-aid and door/cage orders (they set the
-    /// characters' tasks; nobody moves or fights until the next tick).
+    /// research queues, squads, inventory, open-shop transactions, building settings, the Stop order and every order (<see cref="OrderCommand"/>: each goes into its characters'
+    /// queues through the one order path, <see cref="PlayerOrders.Give"/>, and sets their tasks; nobody moves or fights until the next tick).
     /// </summary>
     public void ApplyPausedInterfaceCommands()
     {
         if (Characters.Phase != TablePhase.Outside) throw new InvalidOperationException("interface commands require a tick boundary");
-        var due = Commands.TakeDue(Tick, c => c is SelectCommand or OrdersCommand or RunSpeedCommand or StandUpCommand or SquadCommand or SquadAiCommand or SquadFormationCommand or RenameFactionCommand or SeenDiscoveriesCommand
-            or Production.AddJob or Production.AddOrderJob or Production.RemoveJob or Production.MoveJob or FirstAid.MedicJobCommand { Job: true } or Carrying.RescueJobCommand { Job: true }
+        var due = Commands.TakeDue(Tick, c => c is OrderCommand or StopCommand or SelectCommand or OrdersCommand or RunSpeedCommand or StandUpCommand or SquadCommand or SquadAiCommand
+            or SquadFormationCommand or RenameFactionCommand or SeenDiscoveriesCommand
+            or Production.AddJob or Production.AddOrderJob or Production.RemoveJob or Production.MoveJob
             or Production.QueueCraft or Production.CancelCraft or Production.RepeatCrafts or Production.QueueResearch or Production.CancelResearch
             or Items.CloseContainer or Locks.BuyBuilding or Construction.UpgradeSite or Construction.DowngradeSite or Construction.SetBuildingPublic or InspectCommand or InspectBuildingCommand or ShowInventoryCommand or Items.HeldCommand or Items.QuickMoveItem or Items.ReadMapItem or Items.ArrangeInventory
             or Carrying.TakeLootItem or Carrying.PutLootItem or Production.PutInMachine or Production.TakeFromMachine
             or Trading.BuyItem or Trading.SellItem or Trading.ArrangeStock or Trading.CloseTrade or Dialogue.DialogueChoice or Dialogue.EndConversation or Dialogue.ConfirmCharacterTrade or Dialogue.CloseCharacterTrade
             or Construction.PlaceBuildings or Construction.CancelSite or Construction.ConfirmDismantle or Construction.PauseSite or Editing.EditCharacter or Editing.FinishCreation
-            or MoveOrder or FollowOrder or StopCommand or FirstAid.TreatOrder or FirstAid.SplintOrder or FirstAid.RestOrder or Combat.AttackOrder or Combat.ShootAtOrder
-            or Locks.PickLockOrder or Locks.GetOutOrder or Locks.ShackleOrder or Locks.PutShacklesOrder or Locks.ToggleDoorsOrder or Locks.ToggleDoorLocksOrder
-            or Locks.DoorOrder or Locks.DoorLockOrder or Locks.SetFreeOrder or Locks.GetInCageOrder);
+            or Locks.ToggleDoorsOrder or Locks.ToggleDoorLocksOrder);
         if (due.Count == 0) return;
         Characters.BeginTick();
         Characters.Phase = TablePhase.Inputs;
         try
         {
+            // The systems that take these commands: every order's owner, and the others' handlers.
             foreach (var system in systems)
-                if (system is PlayerSystem or Carrying.CarrySystem or Production.ProductionSystem or Trading.TradeSystem or Construction.ConstructionSystem or Dialogue.DialogueSystem
-                    or FirstAid.FirstAidSystem or Locks.LockSystem or MovementSystem or Combat.CombatSystem)
+                if (system is IOrderOwner or PlayerSystem or Trading.TradeSystem or Dialogue.DialogueSystem or Combat.CombatSystem)
                     system.Inputs(this, due);
         }
         finally

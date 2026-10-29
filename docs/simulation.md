@@ -7,7 +7,7 @@ below do not claim original-game parity. Retain Verified/Observed/Unknown scopes
 ## Time model
 
 Control: 30 Hz real time, input/UI/camera continue while paused. The interface's own commands (selection, order toggles, run speed, job lists,
-crafting/research queues, squads, inventory, shops, building settings, movement/combat/first-aid/door/cage orders) apply between ticks while paused
+crafting/research queues, squads, inventory, shops, building settings, the Stop order and every order, [order queue](#order-queue)) apply between ticks while paused
 (`World.ApplyPausedInterfaceCommands`); orders only set tasks, nobody moves or fights until the next tick. Simulation: 1/30 s game time;
 accumulate `realDt*speed`, speeds 0/1/2/5. Budget `6*speed` ticks per frame; excess is dropped and
 `AchievedSpeed` reports slowdown. Engine choice: the original instead caps the real frame time at 0.05 s before the speed
@@ -113,7 +113,8 @@ the task it goes back to are the new start's); the provenance is recorded in `Ch
 target, site, tick, resume task); the act-out starts.
 `TaskStart.End(world, slot, reason)` ends a task and drops its provenance: `TaskEnd.Stopped` from outside the act-out (the Stop order, a squad mate lifted awake: then idle);
 `TaskEnd.Done` the act-out's own end (a treatment, carry, site's or machine's work, haul trip, prospecting, a job's follow: the handler lets go, then the character takes up
-`RunningTask.Resume`; engine, until the decision step re-decides on this trigger). Walks (lock, cage, door, bed, item work) end by standing; their provenance then no longer runs the task. Each `CharacterTask` has one
+`RunningTask.Resume`; engine, until the decision step re-decides on this trigger). Walks (bed, item work) end by standing; their provenance then no longer runs the task. A lock order's worker (lock, shackle, cage, door, force work)
+stands at its work and its provenance runs `Idle` from then (`LockSystem.AtWork`), so the next start ends the work through the lock handler (a move order given at a cage walks away). Each `CharacterTask` has one
 `ITaskHandler` (Start, End, Done), registered by its system (`ITaskOwner`) in `World.Tasks`, an open list later code may add to or replace; a task without one is set as is. Owners: movement
 (GoTo, Follow, Idle, Wander), combat (Attack), first aid (Treat, Rest), carry (PickUp, PutDown, Loot, StealthKo), production (Operate, Haul, Prospect), construction (Build, Dismantle,
 DeliverMaterials, FetchMaterials), beds (Sleep). A row may have its own handler, which takes that row's starts and ends whatever its act-out (the task before is ended through its running row's
@@ -154,6 +155,31 @@ delivering, fetching and dismantling are steps of one act-out (`TaskStart.ActOut
   does any more) leaves `InCombat` and the fight target set. `CombatSystem.Act` does not read the task: the character keeps its target and
   re-picks, blocks and dodges, draws, and swings whenever a technique reaches the target; `PursuitSystem` and `CombatSystem.Move` steer only an `Attack` task, so the new task's walk
   moves it. The fight ends only when `Act` loses the target, and `EndFight` then leaves the other task alone.
+
+### Order queue
+
+Each character's `CharacterCold.OrderQueue` (`OrderQueue`, the original's `+0x40` deque; [precedence](game/ai-tasks.md#precedence)) holds its orders as `OrderEntry` (row,
+owning `IOrderOwner`, target, site, point, owner detail): the front is the order in hand. Every order command (`OrderCommand`) goes through `PlayerOrders.Give`: without `Queued`
+(Shift) the queue is cleared first, as `addOrder`; the order is queued; at the front it starts through its owner when `PlayerOrders.CanRun` says so (the row's repertoire, then
+the owner's pure `IOrderOwner.CanRun`: `Run`, `Blocked` with its failure text, or `Gone` when its target or site no longer fits the verb).
+- A blocked front shows its text (a bark, or a posted message) and stays queued; the character's task is left alone, so its jobs, goals and reactions go on (S5). `Gone` pops it.
+- `PlayerOrders.Runs`: the front started and its task's provenance is an order's that runs the task (a move also needs `OrderMove`) and the handler is not `Done`. Lock work and item or
+  container work done in place (`Idle`) report `Done` once the character holds no work.
+- A front whose task ended leaves the queue (a move's arrival in the character's own partition, `PlayerOrders.Arrived`, which also starts a queued move at once as the move-only
+  queue did; `TaskEnd.Done`; else `PlayerOrders.Step` after the inputs) and the next is tried at once. An interrupted move drops the queue (as `GoTo`/`Stop` dropped queued moves),
+  so does `TaskEnd.Stopped`; a start from another source replacing the running front pops it (a follow row's fight step does not).
+- **Engine** stand-in for the replan triggers until the decision step: every `ProductionSystem.JobCheckTicks` a blocked front is tried again, silently, unless the character fights.
+- `PlayerOrders.Holds` (a pure read): the character holds an order, running, waiting or queued (the original's count `+0x60`; a front whose task ended is not counted). The
+  implicit ditch job 242 runs only without one ([perma-jobs](game/ai-tasks.md#perma-jobs)).
+- A row needing no melee threat (`PlayerOrders.NeedsNoThreat`: `!158` in list B, of the orders only 146 Turret gunner) is blocked while `CombatSystem.ImmediateThreat` holds; on
+  the same beat its running order ends (`TaskEnd.Stopped`) and waits unstarted, so the gunner falls through to self-defence and mans the turret again once the threat is gone (S3).
+- Group orders keep their pickers (the nearest or first character that can run it: pick up, loot, stealth KO, the turret, item pick-up, containers, lock work); only that character
+  gets the order, none when nobody can run it. Per-character orders (move, follow, attack, first aid, splint, rest, the Medic and Rescue buttons, put down, operate, haul, prospect,
+  build, repair, dismantle, beds, put in cage) queue blocked for whoever cannot run them.
+- Not queued (they act at once): Shoot At (sets the turret's target), Get Out, Dispose Corpse (an errand), Talk and trade (their approach is a deferred `MoveOrder`), Stop (clears the queue).
+- Every `OrderCommand` also applies while paused (`World.ApplyPausedInterfaceCommands`, through every `IOrderOwner`'s inputs).
+- Not saved (a gap: the original saves the deque as `tjob<i>`, [perma-jobs](game/ai-tasks.md#perma-jobs)); hashed as the move-only queue was while it holds only
+  that (nothing, a started order alone, started moves), else under its own mark.
 
 ## Systems and their order
 

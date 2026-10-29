@@ -425,7 +425,8 @@ Meitou (`CombatSystem.HasSlot` / `MayJoin`, `Fighting.Steer`):
   drops to Idleness or is ordered to such a job.
 - **Orders beat goals.** `AITaskSytem::chooseGoal` tries, in order: the player's order queue (`checkOrders`, OrdersReceiver +0x38), jobs, urgent
   perma-jobs, priority-3 goals (Self preservation, Hold's goal 16, package goals), the other perma-jobs, priority 2 then 1 goals, the hold-position
-  task. So a character with an order does not defend itself: a hit staggers it (below) and the queue's first order then runs again; one on a job
+  task. So a character with an order does not defend itself: a hit staggers it (below) and the queue's first order then runs again, unless its row needs no melee threat
+  (146 Turret gunner's `!158`: that plan fails, the order stays queued and Self preservation runs; [precedence](ai-tasks.md#precedence)); one on a job
   (not urgent) does ([precedence](ai-tasks.md#precedence)).
   `Character::addOrder` without Shift clears the order queue and the jobs, sets the AI's centre of movement to the order
   point ([area](perception.md#the-attack-on-sight-tests)), queues the order at priority 3 and replans at once.

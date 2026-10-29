@@ -170,9 +170,11 @@ public static class TaskStart
         if (!Eligible(world, cold, request.Row)) return StartResult.NotEligible;
         var current = (CharacterTask)table.Next[slot].Task;
         var handler = world.Tasks.Of(request.Task, request.Row);
+        bool step = cold.Running is { } kept && Step(kept, current, request);
+        PlayerOrders.Replacing(world, slot, request, step);
         if (request.Task != CharacterTask.Attack) world.Tasks.Of(CharacterTask.Attack)?.End(world, slot, CharacterTask.Attack, TaskEnd.Replaced);
         if (current != CharacterTask.Attack && world.Tasks.Of(cold, current) is { } before && (current != request.Task || before != handler)) before.End(world, slot, current, TaskEnd.Replaced);
-        cold.Running = cold.Running is { } running && Step(running, current, request)
+        cold.Running = step && cold.Running is { } running
             ? running with { Task = request.Task, Tick = world.Tick }
             : new RunningTask(request.Task, request.Row, request.Source, request.Job, request.Target, request.Site, world.Tick) { Resume = request.Resume, Implicit = request.Implicit };
         if (handler is not null) handler.Start(world, slot, request);
@@ -316,6 +318,7 @@ public static class TaskStart
         var table = world.Characters;
         if (table.Phase == TablePhase.Parallel) throw new InvalidOperationException("tasks end in the serial phases only");
         var cold = table.Cold(slot)!;
+        PlayerOrders.Ending(world, slot, reason);
         var current = (CharacterTask)table.Next[slot].Task;
         var resume = cold.Running is { } run && run.Runs(current) ? run.Resume : CharacterTask.Idle;
         if (reason != TaskEnd.Done) world.Tasks.Of(CharacterTask.Attack)?.End(world, slot, CharacterTask.Attack, reason);

@@ -66,7 +66,7 @@ public class TaskStartTests
     /// a downed NPC, an awake NPC, a second enemy and a prisoner; the player's well, an unfinished shed, a bed, an empty cage and the prisoner's locked one, and an item on the ground; the
     /// movement, first aid, body, carry, bed, construction, production, combat, crime, arrest and lock systems in the game's order.
     /// </summary>
-    sealed class Rig : IDisposable
+    internal sealed class Rig : IDisposable
     {
         public SimWorld World { get; }
         public CombatSystem Combat { get; }
@@ -153,7 +153,7 @@ public class TaskStartTests
     public static TheoryData<string> Orders => ["move", "follow", "bodyguard", "stop", "first aid", "splint", "rest", "medic", "pick up", "kidnap", "loot", "open inventory", "stealth ko", "put down",
         "operate", "prospect", "build", "dismantle", "use bed", "put in bed", "pick lock", "set free", "get in cage", "force lock", "pick up item", "put in cage", "attack"];
 
-    static (SimCommand Order, CharacterTask Task) Order(Rig rig, string name, long tick)
+    internal static (SimCommand Order, CharacterTask Task) Order(Rig rig, string name, long tick)
     {
         var f = rig.Fighter;
         SimCommand order = name switch
