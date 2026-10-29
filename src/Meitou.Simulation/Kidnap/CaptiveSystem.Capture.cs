@@ -152,7 +152,7 @@ public sealed partial class CaptiveSystem
                 bool capture = type == TaskType.CAPTURE_NEW_SLAVES;
                 int v = NearestDown(world, slot, cold, capture);
                 // No cage to take it to: not started, so no one is cuffed and left (engine; the carry, goal 112, needs a free cage as the arrest goal does).
-                return v < 0 || !Kidnap.HasCage(world, table.Next[v].Position, cold.Faction) ? null : new CaptiveJob
+                return v < 0 || !Kidnap.HasCage(world, table.Next[v].Position, cold) ? null : new CaptiveJob
                 {
                     Kind = capture ? CaptiveJobKind.Capture : CaptiveJobKind.Carry, Worker = worker, Captive = table.IdOf(v), Cage = "", Faction = cold.Faction,
                 };

@@ -305,10 +305,11 @@ Same targets as picking; Task_CutLock / Task_BruteForceLock share the shackle ta
   `canIUseThisBuilding` (below; the gatherer `FUN_140a00690`). So an **allied** faction's bed (relation to the player >= 50, e.g. the Shinobi Thieves after
   joining, +100) is taken when no own bed is free; a merely neutral faction's never is (**Verified** by decompile, `FUN_1408cfe00`, `FUN_1406b2630`).
 - **canIUseThisBuilding** (`Ownerships::canIUseThisBuilding` `FUN_140621230(ownerships, building, character)`, **Verified** by decompile, names KenshiLib
-  1ce4a16): true with no squad faction, for the occupied town's buildings or the squad's own faction's; true for a cage (function 8) when the character
-  passes `FUN_1405c8aa0` (**Unknown**); false when the building's faction counts the squad's as an enemy, or the building has an inventory; outdoors, true in
+  1ce4a16): true with no squad faction, for the occupied town's buildings or the squad's own faction's; true for a cage (function 8) when the character passed in has a non-zero
+  slave state (`FUN_1405c8aa0`, the status object's `slavestate`; the cage chooser `FUN_1408d0770` passes its carrier, the gatherer `FUN_140a00690` passes none, so a candidate list has dropped
+  such cages before the clause counts); false when the building's faction counts the squad's as an enemy, or the building has an inventory; outdoors, true in
   the squad's home town; indoors, true when the parent building `isPublic`, the squad's faction is real and the building's is not the player's; else
-  ally(building's faction → squad's).
+  ally(building's faction → squad's, `FUN_1406b2630`; the enemy test is `FUN_1406b26d0`, both read the building faction's own table). Used by the cage finder ([economy 11.7](economy.md#117-arrest)) and the bed search. Meitou: `FixtureRegistry.CanUse`, the occupied-town and home-town clauses read the carrier's squad; the slave-state clause is not modelled.
 - **Bed search, other characters** (**Verified** by decompile, order of the steps; what the building lists hold is **Observed**): a target already set is kept. The candidate list
   is built from the first step that yields a bed: (1) the beds (interior furniture of function 6, `FUN_14054d4f0`) of the home building (the squad's Ownerships +0x38 hand); (2) with the squad type
   (status +0xdc) not 4, those of the nearest "designated" building (`BuildingFinderNearestAllies_Designated`, kind 2; its per-building test `FUN_1408dac20` reads the building's designation record (vfunc 0x160), its faction, a shop test, a give-up test and an occupancy count `FUN_1403344c0`

@@ -129,7 +129,7 @@ public sealed class KidnapSystem(PopulationData data, PopulationSystem populatio
         if (!table.TryResolveNext(victim, out int v) || !FreeKidnapper(world, slot) || Busy(table.IdOf(slot))) return false;
         foreach (var a in abductions) if (a.Victim == victim) return false;
         var cold = table.Cold(slot)!;
-        if (CageFor(world, table.Next[v].Position, cold.Faction, null) is null) return false;
+        if (CageFor(world, table.Next[v].Position, cold, null) is null) return false;
         var task = (CharacterTask)table.Next[slot].Task;
         if (!carry.BeginPickUp(world, slot, victim, task is CharacterTask.Wander or CharacterTask.Follow ? task : CharacterTask.Idle, kidnap: true)) return false;
         cold.Engaged = true;
@@ -184,7 +184,7 @@ public sealed class KidnapSystem(PopulationData data, PopulationSystem populatio
                 bool campaign = inst is not null;
                 // A squad with a cannibal retreat package (signals 1, 25) carries its captive home: the package starts once a member carries someone outside a town of its faction.
                 bool retreats = !campaign && squad.Ai is { } board && board.Packages.Any(p => PackageClasses.Of(p.Package.Signal) == PackageClass.CannibalRetreat);
-                if (!campaign && !retreats && CageFor(world, table.Next[victim].Position, cold.Faction, null) is null) continue;
+                if (!campaign && !retreats && CageFor(world, table.Next[victim].Position, cold, null) is null) continue;
                 int homeSite = campaign ? (inst!.Home.Site is >= 0 and var h && h < data.SiteFactions.Count && data.SiteFactions[h] == cold.Faction ? h : -1)
                     : retreats ? squad.Ai!.Town : -1;
                 if (!carry.BeginPickUp(world, slot, victimId, ResumeOf(table.Next[slot].Task, campaign || retreats), kidnap: true)) continue;
@@ -262,7 +262,7 @@ public sealed class KidnapSystem(PopulationData data, PopulationSystem populatio
                 if ((world.Tick + g) % Math.Max(1, Settings.LookEveryTicks) != 0) return true;
                 int town = TownOf(world, gn.Position, gc.Faction);
                 if (a.Marching && town < 0) return true;
-                if (CageFor(world, gn.Position, gc.Faction, a) is { } found) return ToCage(world, a, g, found);
+                if (CageFor(world, gn.Position, gc, a) is { } found) return ToCage(world, a, g, found);
                 bool giveUp = a.Marching ? a.HomeSite < 0 || town == a.HomeSite : a.Time > Settings.PatienceSeconds;
                 return giveUp ? Drop(world, a, g) : true;
             }
@@ -305,27 +305,21 @@ public sealed class KidnapSystem(PopulationData data, PopulationSystem populatio
     static CharacterTask ResumeOf(byte task, bool marching) =>
         task is (byte)CharacterTask.Wander or (byte)CharacterTask.Follow ? (CharacterTask)task : marching ? CharacterTask.Wander : CharacterTask.Idle;
 
-    /// <summary>Whether a free cage a carrier of <paramref name="faction"/> may use is in range of <paramref name="at"/> (see <see cref="CageFor"/>).</summary>
-    public bool HasCage(World world, Vector3 at, int faction) => CageFor(world, at, faction, null) is not null;
+    /// <summary>Whether a free cage <paramref name="carrier"/> may use is in range of <paramref name="at"/> (see <see cref="CageFor"/>).</summary>
+    public bool HasCage(World world, Vector3 at, CharacterCold carrier) => CageFor(world, at, carrier, null) is not null;
 
     /// <summary>
-    /// A free cage of <paramref name="faction"/> or an ally within range of <paramref name="at"/> (the original's weights, <see cref="FixtureRegistry.FindCage"/>, which prefer its own x100), not another
-    /// abduction's; its town's fixtures are registered first when <paramref name="at"/> is in one (a town no one has loaded has its cages all the same). The original takes another faction's cage when
-    /// it is "usable" (economy.md 11.7, test not decoded): <b>engine reading</b>, an ally's is (Stoat's slave shop cages are the United Cities', its slavers the Slave Traders).
+    /// A free cage <paramref name="carrier"/> may use within range of <paramref name="at"/> (<see cref="FixtureRegistry.FindCage"/>: the original's weights, its own faction's x100, any other faction's only
+    /// when <see cref="FixtureRegistry.CanUse"/> passes), not another abduction's; its town's fixtures are registered first when <paramref name="at"/> is in one (a town no one has loaded has its
+    /// cages all the same).
     /// </summary>
-    Fixture? CageFor(World world, Vector3 at, int faction, Abduction? self)
+    Fixture? CageFor(World world, Vector3 at, CharacterCold carrier, Abduction? self)
     {
-        int site = TownOf(world, at, faction);
+        int site = TownOf(world, at, carrier.Faction);
         if (site >= 0) world.Fixtures.RegisterSite(world, data, site);
         float range2 = Settings.CageRange * Settings.CageRange;
         var here = new Vector2(at.X, at.Z);
-        return world.Fixtures.FindCage(world, at, faction, null, f => !Usable(f.Owner, faction) || Vector2.DistanceSquared(here, new Vector2(f.Position.X, f.Position.Z)) > range2 || Reserved(f, self));
-    }
-
-    bool Usable(int owner, int faction)
-    {
-        var relations = data.Relations;
-        return owner == faction || owner >= 0 && relations.Contains(owner) && relations.Contains(faction) && relations.IsAlly(faction, owner);
+        return world.Fixtures.FindCage(world, carrier, at, null, f => Vector2.DistanceSquared(here, new Vector2(f.Position.X, f.Position.Z)) > range2 || Reserved(f, self));
     }
 
     bool Reserved(Fixture f, Abduction? self)
@@ -364,7 +358,7 @@ public sealed class KidnapSystem(PopulationData data, PopulationSystem populatio
     {
         var table = world.Characters;
         a.Cage = null;
-        if (++a.Tries > Settings.CageWalks || CageFor(world, table.Next[g].Position, a.Faction, a) is not { } cage) return Drop(world, a, g);
+        if (++a.Tries > Settings.CageWalks || CageFor(world, table.Next[g].Position, table.Cold(g)!, a) is not { } cage) return Drop(world, a, g);
         return ToCage(world, a, g, cage);
     }
 

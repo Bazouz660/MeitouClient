@@ -646,11 +646,13 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
     bool ListsDeadCage(World world, CharacterCold carrier, CharacterId id) =>
         world.Squads.Find(carrier.SquadId) is { } s && population.GoalDuty(world, s, AiSystem.RoleOf(s, id, carrier), TaskType.FIND_CAGE_AND_PUT_DEADGUY_IN);
 
-    /// <summary>The best free cage in the duty's town for the carrier (<see cref="FixtureRegistry.FindCage"/>'s weights), not another errand's.</summary>
+    /// <summary>The best free cage in the duty's town for the carrier (<see cref="FixtureRegistry.FindCage"/>'s weights, its squad's home x100), not another errand's.</summary>
     Fixture? Cage(World world, Vector3 at, TownDuty self)
     {
+        if (!world.Characters.TryResolveNext(self.Member, out int slot) || world.Characters.Cold(slot) is not { } carrier) return null;
         if (self.Town.Site >= 0) world.Fixtures.RegisterSite(world, data, self.Town.Site);
-        return world.Fixtures.FindCage(world, at, self.Faction, null, f => AiSystem.TownAt(data, world, f.Position) != self.Town || duties.Any(o => !ReferenceEquals(o, self) && o.Target == f.Id));
+        var squad = world.Squads.Find(carrier.SquadId);
+        return world.Fixtures.FindCage(world, carrier, at, (squad?.Ai?.OwnHome ?? squad?.HomeBuilding)?.Key, f => AiSystem.TownAt(data, world, f.Position) != self.Town || duties.Any(o => !ReferenceEquals(o, self) && o.Target == f.Id));
     }
 
     bool StepFood(World world, TownDuty d, int g, CharacterCold gc)

@@ -156,6 +156,8 @@ public sealed partial class FixtureRegistry
         containerSpots = null;
         doorPicks = null; doorsByBuilding = null;
         bedSpots = null; cageList = null;
+        usableData ??= data;
+        levelPublic[b.Key] = Saved?.GetValueOrDefault(b.Key) is { } savedState ? savedState.Bools.GetValueOrDefault("is public day", true) : b.LevelState?.GetBool("is public day", true) ?? true;
         if (Saved?.GetValueOrDefault(b.Key) is { } state)
         {
             Restore(StateKeys.Of(state), b.Key, list, level: false);
@@ -526,22 +528,31 @@ public sealed partial class FixtureRegistry
         f.Occupant.IsNone || !table.TryResolveNext(f.Occupant, out int s) || table.Cold(s) is not { } held || held.InWhat != f.Id || held.InSomething == HeldState.None;
 
     /// <summary>
-    /// The cage a carrier of <paramref name="faction"/> at <paramref name="at"/> puts a captive in (the original's finder, economy.md 11.7, <b>Observed</b>): every free cage weighs
-    /// clamp(1 - d^2 / 4608^2, 1e-5, 1), x100 when of the carrier's faction, x100 when in <paramref name="home"/> (a building instance id); the highest wins, the first registered on a
-    /// tie. The usability and police tests of the original are not modelled; <paramref name="skip"/> leaves out reserved cages, and <see cref="Reachable"/> the ones the carrier
-    /// cannot get to. Null when none is free.
+    /// The cage <paramref name="carrier"/> at <paramref name="at"/> puts a captive in (the original's finder <c>FUN_1408d0770</c>, economy.md 11.7, <b>Verified</b>): every free cage weighs
+    /// clamp(1 - d^2 / 4608^2, 1e-5, 1), x100 when of the carrier's faction (any other must pass <see cref="CanUse"/> or is left out), x100 when in <paramref name="home"/> (a building instance id),
+    /// and x1e-5 for a law enforcer (<see cref="Crime.CrimeSystem.IsPoliceLike"/>) when the cage stands inside a building that is not open to the public (<see cref="IsPublic"/>); the highest
+    /// wins, the first registered on a tie. <paramref name="skip"/> leaves out reserved cages, and <see cref="Reachable"/> the ones the carrier cannot get to. Null when none is free.
     /// </summary>
-    public Fixture? FindCage(World world, Vector3 at, int faction, string? home = null, Func<Fixture, bool>? skip = null)
+    public Fixture? FindCage(World world, CharacterCold carrier, Vector3 at, string? home = null, Func<Fixture, bool>? skip = null)
     {
         Fixture? best = null;
         float bestWeight = 0;
+        int faction = carrier.Faction;
+        bool police = false, policeKnown = false;
         foreach (var f in all)
         {
             if (f.Kind != FixtureKind.Cage || !IsFree(world.Characters, f) || !Reachable(world, f, faction) || skip?.Invoke(f) == true) continue;
+            bool own = faction >= 0 && f.Owner == faction;
+            if (!own && !CanUse(world, carrier, f)) continue;
             float d2 = Vector2.DistanceSquared(new Vector2(at.X, at.Z), new Vector2(f.Position.X, f.Position.Z));
             float w = Math.Clamp(1 - d2 / (CageSearchScale * CageSearchScale), 1e-5f, 1);
-            if (faction >= 0 && f.Owner == faction) w *= 100;
+            if (own) w *= 100;
             if (home is not null && f.Building == home) w *= 100;
+            if (f.Id != f.Building && !IsPublic(f.Building))
+            {
+                if (!policeKnown) (police, policeKnown) = (world.SystemOf<CrimeSystem>()?.IsPoliceLike(world, carrier) == true, true);
+                if (police) w *= NotPublicPolice;
+            }
             if (w > bestWeight) (best, bestWeight) = (f, w);
         }
         return best;

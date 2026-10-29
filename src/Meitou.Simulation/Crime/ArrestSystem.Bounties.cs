@@ -168,7 +168,7 @@ public sealed partial class ArrestSystem
     Fixture? FindCageFor(World world, int s, CharacterCold c, Caging? self)
     {
         var at = world.Characters.Next[s].Position;
-        var cage = world.Fixtures.FindCage(world, at, c.Faction, null, f => Reserved(f, null) || cagings.Exists(k => !ReferenceEquals(k, self) && k.Cage == f.Id));
+        var cage = world.Fixtures.FindCage(world, c, at, null, f => Reserved(f, null) || cagings.Exists(k => !ReferenceEquals(k, self) && k.Cage == f.Id));
         float r = Settings.CageSearchRange;
         return cage is not null && Vector2.DistanceSquared(new Vector2(at.X, at.Z), new Vector2(cage.Position.X, cage.Position.Z)) <= r * r ? cage : null;
     }
