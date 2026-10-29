@@ -98,9 +98,9 @@ public sealed partial class CarrySystem
             if (!n.Alive || n.Task != (byte)CharacterTask.StealthKo) continue;
             var cold = table.Cold(i)!;
             if (cold.LiftTime >= 0) continue;   // swinging: SlowWorld has it
-            // A fighting target does not cancel the walk (only its sensing the attacker does, FUN_14034cd80); the roll's fight zero is in Strike.
-            if (cold.Medical is not { Incapacitated: false } || cold.InCombat || !table.TryResolveNext(cold.CarryTarget, out int t) || table.Cold(t) is not { } target
-                || !CanBeKnockedOut(target) || Aggro?.Spotted(t, table.IdOf(i)) == true)
+            // Only the target's sensing the attacker cancels the walk (FUN_14034cd80, no combat-state test of either side: orders beat goals); the roll's fight zero is in Strike.
+            if (cold.Medical is not { Incapacitated: false } || !table.TryResolveNext(cold.CarryTarget, out int t) || table.Cold(t) is not { } target
+                || !CanBeKnockedOut(target) || Senses(world, table, t, i))
             {
                 End(table, i);
                 continue;
@@ -132,6 +132,17 @@ public sealed partial class CarrySystem
         }
     }
 
+    /// <summary>
+    /// <c>FUN_140855830</c>: the target's sense entry for the attacker has its seen flag. Stand-in: its spot meter on the attacker is full (<see cref="AggroSystem.Spotted"/>), or it fights the
+    /// attacker (a fighter has the enemy in sight). Checked every tick, in every state, by the original's update; a hit cancels the task silently.
+    /// </summary>
+    bool Senses(World world, CharacterTable table, int target, int attacker)
+    {
+        var attackerId = table.IdOf(attacker);
+        return Aggro?.Spotted(target, attackerId) == true
+            || world.SystemOf<Combat.CombatSystem>()?.StateOf(table.IdOf(target)) is { } fight && fight.TargetSlot == attacker && fight.TargetGeneration == attackerId.Generation;
+    }
+
     static void Face(ref CharacterHot n, in CharacterHot target)
     {
         float dx = target.Position.X - n.Position.X, dz = target.Position.Z - n.Position.Z;
@@ -147,6 +158,12 @@ public sealed partial class CarrySystem
         float before = cold.LiftTime;
         cold.LiftTime += dt;
         if (cold.Medical is not { Incapacitated: false } || !table.TryResolveNext(cold.CarryTarget, out int t) || table.Cold(t) is not { } target)
+        {
+            End(table, i);
+            return;
+        }
+        // A target that senses the attacker cancels the swing too, every tick before the roll: silently, no "Failed!", event or XP (FUN_14034cd80).
+        if (Senses(world, table, t, i))
         {
             End(table, i);
             return;
@@ -183,7 +200,7 @@ public sealed partial class CarrySystem
         bool noXp = !success && target.InCombat && aware;
         if (!noXp && cold.Stats is { } stats && cold.Race is { } race)
         {
-            float f = target.IsImprisoned ? 0.07f : table.Next[t].Task == (byte)CharacterTask.Rest || target.Ai is { Behaviour: Ai.AiBehaviour.Sleep } ? 0.5f : 1;
+            float f = target.IsImprisoned ? 0.07f : Asleep(table, t) ? 0.5f : 1;
             (xp ??= new XpService(Constants, bodyOptions)).Continuous(stats, race, StatsEnumerated.Assassination, 1, f * (success ? 100 : 300));
         }
         if (success)
