@@ -76,6 +76,7 @@ sealed partial class PlayerInterface(WorldSession session, Func<float, float, fl
         mouse = p;
         (pressShift, pressCtrl) = (shift, ctrl);
         HideTooltip();   // a press captures the mouse, which hides a tooltip (MyGUI)
+        if (button == MouseButton.Left && FeedbackButtonDown(p)) return true;
         if (EditorPointerDown(button, p)) return true;
         if (button == MouseButton.Right && CancelInventoryDrag()) return true;
         if (button == MouseButton.Right && !OverHud(p) && WallCancel()) return true;

@@ -19,6 +19,8 @@ sealed partial class PlayerInterface
     static readonly HashSet<string> FeedbackShotHides = ["menu", "message", "save", "load", "import", "new-game", "file", FeedbackScreen];
 
     MyGuiLayout? feedbackButtonLayout;
+    /// <summary>Where the last arranged frame put the button (empty: not shown).</summary>
+    UiRect feedbackButtonBounds;
     bool feedbackShot = true, feedbackSave = true, feedbackLog, feedbackHasShot, feedbackStatusError;
     string? feedbackSaveMissing;
     string feedbackStatus = "";
@@ -63,19 +65,20 @@ sealed partial class PlayerInterface
     /// <summary>The button at the top right, over everything; left out of the feedback screenshot and while the form is open.</summary>
     void AddFeedbackButton(List<UiControl> controls)
     {
+        feedbackButtonBounds = default;
         if (feedbackButtonLayout is null || ShotWithoutMenus || faithfulScreens.IsOpen(FeedbackScreen)) return;
         float scale = Height / 1080f, w = 150 * scale, h = 36 * scale;
         var b = new UiBindings();
-        b.Positions[FeedbackButton] = new(Width - w - 8 * scale, 8 * scale, w, h);
+        b.Positions[FeedbackButton] = feedbackButtonBounds = new(Width - w - 8 * scale, 8 * scale, w, h);
         b.Text[FeedbackButton] = UpperCaption("Feedback");
         b.Actions[FeedbackButton] = "feedback-open";
         controls.AddRange(MyGuiPresentation.Arrange(feedbackButtonLayout, Width, Height, b, uiResources.Layers));
     }
 
-    /// <summary>A press on the feedback button: the host takes the screenshot on the next frame and then opens the form.</summary>
-    bool FeedbackButtonDown(IReadOnlyList<UiControl> controls, System.Numerics.Vector2 p)
+    /// <summary>A press on the feedback button, before anything else (it is over every screen): the host takes the screenshot on the next frame and then opens the form.</summary>
+    bool FeedbackButtonDown(System.Numerics.Vector2 p)
     {
-        if (controls.LastOrDefault(c => c.Name == FeedbackButton) is not { } button || !button.Bounds.Contains(p.X, p.Y)) return false;
+        if (!UiVisible || !feedbackButtonBounds.Contains(p.X, p.Y)) return false;
         Sound("General_Click");
         ScreenAction?.Invoke(new(FeedbackScreen, FeedbackButton, "feedback-open"));
         return true;
@@ -94,8 +97,12 @@ sealed partial class PlayerInterface
     public FeedbackForm FeedbackValues() => new(faithfulScreens.GetText(FeedbackScreen, FeedbackTitleBox).Trim(), faithfulScreens.GetText(FeedbackScreen, FeedbackBodyBox).Trim(),
         feedbackShot && feedbackHasShot, feedbackSave && feedbackSaveMissing is null, feedbackLog);
 
-    /// <summary>The send's progress or why it failed, under the ticks.</summary>
-    public void FeedbackProgress(string text, bool error = false) => (feedbackStatus, feedbackStatusError) = (text, error);
+    /// <summary>The send's progress or why it failed, under the ticks (a failure also as a notice once the form is closed).</summary>
+    public void FeedbackProgress(string text, bool error = false)
+    {
+        (feedbackStatus, feedbackStatusError) = (text, error);
+        if (error && !faithfulScreens.IsOpen(FeedbackScreen)) Notice($"Feedback not sent: {text}", true);   // the form was closed while it sent
+    }
 
     /// <summary>The issue is open: the form closes, emptied, and a message thanks the player (its first button copies the link).</summary>
     public void FeedbackSent(int number, string url)

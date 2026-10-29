@@ -42,7 +42,7 @@ static class FeedbackSender
                 await p.SaveWritten!;
                 status("Zipping the save...");
                 zip = Path.Combine(temp!, "save.zip");
-                await Task.Run(() => ZipFile.CreateFromDirectory(p.SaveFolder, zip, CompressionLevel.SmallestSize, includeBaseDirectory: true));
+                await Task.Run(() => ZipFile.CreateFromDirectory(p.SaveFolder, zip, CompressionLevel.Optimal, includeBaseDirectory: true));
                 long size = new FileInfo(zip).Length;
                 if (size > SaveMax) return new(0, null, $"The save is {Mb(size)} zipped, over the 95 MB limit. Untick it to send without it.");
             }

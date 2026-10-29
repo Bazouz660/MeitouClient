@@ -276,7 +276,6 @@ sealed partial class PlayerInterface
     {
         if (!UiVisible) return false;
         var controls = ArrangeUi();
-        if (FeedbackButtonDown(controls, p)) return true;
         if (InventoryPointerDown(p)) return true;
         if (MapPointerDown(p)) return true;
         if (SquadPointerDown(p)) return true;
