@@ -289,6 +289,10 @@ Same targets as picking; Task_CutLock / Task_BruteForceLock share the shackle ta
   instances at local Z +11.18 / -11.05 (+12.18 / -12.05), the second turned 180°; Old, Camp and Fish Bed have none. `sleepinbed` holds `Bip01` at about
   (-11.8, 6.7, -1.5) in model space (`gotobed` moves it there from the origin), so from a node the pelvis lands on the mattress centre. Meitou:
   `FixtureRegistry.LieSpot`, also applied to a sleeper bound on load (engine choice); bad nodes are not modelled.
+  The marker `+0x26c` is the building's position plus its orientation applied to the `offset X/Y/Z` x scale of a part flagged `is for position marker` (`FUN_14055f6e0`, **Verified**; the mesh is not
+  offset), else the construction position. Of the 12 flagged base parts (`bed`, `camp_bed1_part`, two Cannibal cages, five `stone processor`s, three training dummies) only `camp_bed1_part`
+  (offset Y 1) belongs to a bed with fewer than 2 nodes (`bed` has two), so a Camp Bed's lie spot is 1 x scale above its origin in the original. Meitou lies it at the origin (not applied: a
+  one-unit rise, next to `World.BedLift`). The cages' marker (offset Z 12) is not their occupant's place, see "Facing in a cage".
   Heights (**Verified**, base game probe of the clips and `bed1.mesh` / `camp_bed1.mesh` bounds): `sleepinbed` holds `Bip01` 6.7 above the spot, `Bed`'s mesh
   top is 7.36; `Camp Bed` plays `sleeponfloor` (`Bip01` 1.46) on a mesh 1.73 high. Drawn there, the body sinks into the mattress; Meitou draws a sleeper 1.5
   higher (`World.BedLift`, engine choice). How the original avoids the sinking is **Unknown**.
