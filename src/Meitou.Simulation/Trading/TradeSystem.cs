@@ -103,7 +103,7 @@ public sealed class TradeSettings
 /// <list type="bullet">
 /// <item><b>Shops</b>: a squad made from a template with <c>is trader</c> and vendor lists gets a <see cref="Shop"/> when it appears (the game's first fill at squad creation), filled by
 /// <see cref="ShopFiller"/>, with the purse in <see cref="Squad.Money"/>; it restocks every <c>vendors refresh time</c> game hours (9.3). Squads of the player's faction never get one.
-/// A housed one whose template has no <c>prisoners</c> or <c>slaves</c> gets a building shop when its home has stock containers (<see cref="Shop.ForBuilding"/>).</item>
+/// A housed one gets a building shop when its home has stock containers (<see cref="Shop.ForBuilding"/>).</item>
 /// <item><b>Trading</b> (the trade window <c>FUN_140715560</c>, <b>Observed</b>): a purchase is priced by <see cref="Market.StackPrice"/> without the sell flag, a sale with it; when the payer
 /// cannot afford the stack the number of units it can afford moves instead, none: "You can't afford that." (3) or "The shopkeeper can't afford that." (4). What does not fit: "No room for
 /// that item." (2). The cats move between the player's purse and the shop's.</item>
@@ -279,8 +279,8 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
             else if (living && TemplateOf(squad.TemplateId) is { } template)
             {
                 var terms = new Trader(squad.Town, squad.Faction, template.BuyMult, template.BuysStolen, template.BuysIllegal);
-                // A housed trader whose template makes no prisoner or slave squads keeps a building shop when its home has stock containers (the squad factory, Observed).
-                squad.Shop = (squad.HomeBuilding is { } home && template.Prisoners.Count == 0 && template.Slaves.Count == 0 ? Shop.ForBuilding(home, terms) : null)
+                // A housed trader keeps a building shop when its home has stock containers, whether or not it made prisoner or slave squads (FUN_140583a10 / FUN_1404ff5e0, Observed); without containers the squad shop stays (Meitou fallback, the original stocks nothing).
+                squad.Shop = (squad.HomeBuilding is { } home ? Shop.ForBuilding(home, terms) : null)
                     ?? new Shop { Terms = terms };
                 TakeContents(world, squad.Shop);
                 Refill(world, squad, squad.Shop, template);

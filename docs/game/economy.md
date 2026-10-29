@@ -117,8 +117,10 @@ Goal 118/119 shoppers: the sale is `FUN_14074a630`, called by [`FUN_1409a14b0`](
 ### Building shops (**Observed**, decompile)
 
 - **Which** (squad factory `FUN_140583a10`): a squad whose template has vendor lists (`FUN_140959420`, **Verified**: its `vendors`, else by its building designation the owner
-  FACTION's 2/5 `item spawns armoury`, 3 `bar`, 6 `treasure`, 8 `HQ`, 9 `resident`, 11 `resident small` (`FUN_140958560`); `is trader` is not tested; Meitou `ShopFiller.VendorLinks`) with a home building that made no
-  prisoner or slave squads is filled by `FUN_14095b210` into its home; any other by `FUN_1404ff5e0`, which fills a squad stock only for `is trader` and otherwise the home's containers.
+  FACTION's 2/5 `item spawns armoury`, 3 `bar`, 6 `treasure`, 8 `HQ`, 9 `resident`, 11 `resident small` (`FUN_140958560`); `is trader` is not tested; Meitou `ShopFiller.VendorLinks`) with a home building is filled by
+  `FUN_14095b210` into its home; one that also made prisoner or slave squads goes through `FUN_1404ff5e0(squad, 1)` instead, whose branch is chosen by the home handle's type (**Verified**): no home (0xb) fills a squad
+  stock only for `is trader`; a home building (0) never makes a squad stock, it fills the home's containers (`FUN_14095b9d0`) and returns, retried next update, when the building or its interior is missing. So a housed
+  trader with prisoners stocks its home like one without (Meitou `TradeSystem.Stock`; **Unknown**: what the filler does for a building with no containers, so Meitou keeps a squad shop for it).
   A faction test (`+0x250 == 0`, meaning **Unknown**) gates both. So a resident without `is trader` (e.g. `flotsam refuge`, vendors `house contents`) gets its home's containers stocked.
 - **Restock** (`ActivePlatoon::vfunc_4` calls `FUN_1404ff5e0(platoon, 0)` once `inventory refresh time` passes): the home branch skips a building whose interior object's `+0x10` is set
   (meaning **Unknown**); the first fill passes 1 and never skips.
