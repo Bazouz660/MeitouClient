@@ -274,16 +274,26 @@ sealed partial class PlayerInterface
     }
 
     /// <summary>
-    /// The pick-up verb (<c>FUN_140796f80</c>, docs/game/ui-input.md "Context menu verbs"): Pick Up (225) for a target that regards the lead as friendly, is not a trader (its squad template's
-    /// flag) and is not in a campaign force, and for a caged character, else Kidnap (246), which shows the chance column (<c>Character::getKidnappingChance</c>) and gives the kidnap order (a
-    /// sleeper too; the roll on arrival, docs/game/carry-loot.md "Kidnapping"). Not read: the original's tests of the target's owner object, its +0xf0 list and the AI state 8.
+    /// The pick-up verb (<c>FUN_140796f80</c>, docs/game/ui-input.md "Context menu verbs"): Pick Up (225) unless every gate passes for Kidnap (246): the target is of another faction than the
+    /// lead, stands in a town of a faction that is not the player's, is of a real faction, does not regard the lead as friendly (or is a trader squad's member or in a campaign force), has no bounty
+    /// with its town's law and is no Bandit, and is not caged. Kidnap shows the chance column (<c>Character::getKidnappingChance</c>) and gives the kidnap order (a sleeper too; the roll on
+    /// arrival, docs/game/carry-loot.md "Kidnapping").
     /// </summary>
     (string, Action) PickUpVerb(CharacterSnapshot target)
     {
         var id = target.Id;
-        bool friendly = Selected().LastOrDefault() is { } lead && session.World.VerbFactsOf(lead.Id, id) is { RegardsLead: true, SquadTrader: false } && !target.WarParty;
-        if (friendly || target.Prison is not null) return ("Pick Up", () => Say(new Meitou.Simulation.Carrying.PickUpOrder([], id) { Tick = session.World.Tick }));
-        return (WithChance("Kidnap", target.KidnapChance ?? 100), () => Say(new Meitou.Simulation.Carrying.PickUpOrder([], id) { Tick = session.World.Tick, Kidnap = true }));
+        if (target.Prison is null && Selected().LastOrDefault() is { } lead && KidnapOffered(lead, target))
+            return (WithChance("Kidnap", target.KidnapChance ?? 100), () => Say(new Meitou.Simulation.Carrying.PickUpOrder([], id) { Tick = session.World.Tick, Kidnap = true }));
+        return ("Pick Up", () => Say(new Meitou.Simulation.Carrying.PickUpOrder([], id) { Tick = session.World.Tick }));
+    }
+
+    /// <summary>The pick-up verb's Kidnap branch (<c>FUN_140796f80</c>); without the world's facts (no population) it is not offered.</summary>
+    bool KidnapOffered(CharacterSnapshot lead, CharacterSnapshot target)
+    {
+        if (target.Faction == lead.Faction || session.World.VerbFactsOf(lead.Id, target.Id) is not { } facts) return false;
+        if (facts.Town != Meitou.Simulation.TownOwnership.Other || facts.NotReal) return false;
+        if (facts.RegardsLead && !facts.SquadTrader && !target.WarParty) return false;
+        return facts.Bounty < 1 && !facts.Bandit;
     }
 
     /// <summary>
