@@ -250,6 +250,7 @@ public sealed class DialogueDatabase(GameDatabase db)
         }
         var byEvent = new Dictionary<int, List<DialogueNode>>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
+        var packageIds = new HashSet<string>(StringComparer.Ordinal);
         void Add(int ev, string dialogue)
         {
             if (ev <= 0 || ev == 100 || ev > DialogueEvents.Max || Node(dialogue) is not { IsRoot: true } node) return;
@@ -259,6 +260,7 @@ public sealed class DialogueDatabase(GameDatabase db)
         void Package(string id)
         {
             if (!seen.Add(id) || db.Find(id) is not { Type: FcsRecordType.DIALOGUE_PACKAGE } p || p.Name.Contains("Unfinished", StringComparison.Ordinal)) return;
+            packageIds.Add(id);   // an Unfinished package is neither a package of the character nor followed (FUN_14067fab0)
             foreach (var parent in p.GetReferences("inheritsFrom")) Package(parent.TargetStringId);
             foreach (var d in p.GetReferences("dialogs"))
             {
@@ -270,7 +272,7 @@ public sealed class DialogueDatabase(GameDatabase db)
         foreach (var p in packages) Package(p.TargetStringId);
         foreach (var d in Refs(character, "dialogue")) Add(DialogueEvents.PlayerTalkToMe, d.TargetStringId);
         var sorted = byEvent.ToDictionary(kv => kv.Key, kv => (IReadOnlyList<DialogueNode>)[.. kv.Value.OrderByDescending(n => n.ListScore)]);
-        return new DialogueSet(sorted, seen);
+        return new DialogueSet(sorted, packageIds);
     }
 
     DialogueNode Build(GameRecord record, List<DialogueNode> built)
@@ -295,7 +297,7 @@ public sealed class DialogueDatabase(GameDatabase db)
         node.Monologue = record.GetBool("monologue");
 
         var conditions = new List<DialogueCondition>();
-        int tagConditions = 0;
+        int tagConditions = 0, requiredTags = 0;
         foreach (var c in record.GetReferences("conditions"))
         {
             if (db.Find(c.TargetStringId) is not { } a) continue;
@@ -304,6 +306,7 @@ public sealed class DialogueDatabase(GameDatabase db)
             if (dc is DialogueConditions.PersonalityTag or DialogueConditions.HasTag)
             {
                 tagConditions++;
+                if (c.Values.Value0 == 1) requiredTags++;
                 if (tag is < 0 or > 31) continue;
                 uint bit = 1u << tag;
                 bool required = c.Values.Value0 == 1;
@@ -353,7 +356,7 @@ public sealed class DialogueDatabase(GameDatabase db)
         if (node.Locked) score += 2;
         foreach (var set in new[] { node.InTownOf, node.MyFaction, node.TargetFaction, node.TargetRace }) if (set.Count > 0) score += 2;
         if (itemTyped) score += 2;
-        score += 2 * node.TargetHasItem.Count + 2 * node.WorldStates.Count + conditions.Count + 2 * tagConditions;
+        score += 2 * node.TargetHasItem.Count + 2 * node.WorldStates.Count + conditions.Count + tagConditions + requiredTags;
         if (node.ChancePermanent < 99) score++;
         if (node.TargetIsType > 0) score++;
         if (node.Interjection) score += 2;

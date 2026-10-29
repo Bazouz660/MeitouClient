@@ -26,10 +26,11 @@ FACTION_CAMPAIGN `dialog announcement` 121, AI_PACKAGE `contract end talk passiv
 
 ### DIALOGUE_PACKAGE
 
-- `inheritsFrom` (457 refs) merges first, recursively, a visited set stopping loops (`FUN_14067fab0`).
+- `inheritsFrom` (457 refs) merges first, recursively (`FUN_14067fab0`, **Verified**: no visited check, so a loop would never end; Meitou keeps one).
 - `dialogs`: each of the reference's val0, val1, val2 that is non-zero and not 100 is an `EventTriggerEnum` the dialogue answers
   (**Verified** by probe: 2586 refs, 127 with val1 and 30 with val2 set, all valid event numbers; 17 have val0 0).
-- A package or DIALOGUE whose name contains `Unfinished` is skipped (`FUN_14067e220`; 9 packages, 24 dialogues).
+- A package or DIALOGUE whose name contains `Unfinished` is skipped (`FUN_14067e220`; 9 packages, 24 dialogues). An Unfinished package is also not in the
+  character's package set (what `has package` tests) and its parents are not followed (**Verified**, `FUN_14067fab0`: the name test comes before the insert and the recursion).
 
 ### DIALOGUE and DIALOGUE_LINE
 
@@ -174,7 +175,7 @@ descends into such a line's children instead is **Unknown**).
 
 Computed at load: +1 speaker not T_ME, + `score bonus`, +2 `locked`, +2 for each non-empty `in town of` / `my faction` /
 `target faction` / `target race`, +2 when the first `target has item type` reference resolves (**Verified**, `FUN_14067b070`: only that one is read), +2 each `target has item` and each `world state` entry, +1 each condition
-(+1 more for a tag condition), +1 `chance permanent` below 99, +1 `target is type` above 0, +2 interjection node, +1 speaker 3-6. At
+(+1 more only for a required tag condition, DC 23 / 26 with val0 1; a forbidden one scores 1, **Verified**, `FUN_14067b070`), +1 `chance permanent` below 99, +1 `target is type` above 0, +2 interjection node, +1 speaker 3-6. At
 choice time +2 when the target's race is in `target race` (`FUN_140671bb0`). A root's effective score is its own plus its best
 child's (`FUN_1406ad9d0`).
 
