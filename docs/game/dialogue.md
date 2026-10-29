@@ -488,7 +488,10 @@ squad simply takes the speaker in, unless a target flag at +0x1d0 is set):
   data). The three CONSTANTS limits sit side by side: `max squad size` (20), `max squads` (10), `max faction size`; the HUD's
   "{1,num}/{2,num}" counters show the faction and squad counts against the first and last.
 - **Which squad**: the character leaves its platoon and the player faction's member add (`Faction::vfunc_5` → `FUN_1406b9c60`) puts it
-  into the player's active squad (`FUN_1407f5520`: the cached selection squad, else the faction's first platoon), or, when that squad
+  into the player's active squad (`FUN_1407f5520`, **Verified**: the cached squad `+0x2a8`, else the platoon of the first selected object,
+  else the faction's first platoon `+0x218`, or its second when the first is the squad of the dead, the handle at `+0x2c8` that
+  `FUN_1407f4960` fills with `__DEAD_SQUAD__` (**Observed**: the handle compare is vfunc 8); none when there is only the dead one. The
+  talker's own squad is never a fallback. Meitou: `DialogueSystem.ActiveSquad`, the dead squad is never in `SquadManagement.PlayerSquads`), or, when that squad
   already holds `max squad size` members, into a new platoon of the SQUAD_TEMPLATE "blank squad" (`FUN_1407f4420`: made, added to the
   faction's platoon list at +0x210/+0x218). No `max squads` check there.
 - **Before the loop**, when the active squad's count plus the recruits exceeds `max squad size` and the faction already has `max squads`
