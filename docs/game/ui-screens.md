@@ -1016,7 +1016,10 @@ unless marked; Meitou: `PlayerInterface.Squads.cs`, commands in `SquadManagement
   the last squad: "You must have at least one squad.".
 - Portrait drop (`FUN_14049b050`, accept test `FUN_14048caf0`; Shift = `DAT_142133449`): into another squad only below `max squad size` unless Shift is held;
   on a member with Shift the two swap places (`FUN_140792e60` within a squad); otherwise the character goes in at that place, at the end on empty space
-  (`FUN_140796620`). The squad's first member is its leader (role 2; whoever led before gets role 0). A squad box dropped in the list takes that place
+  (`FUN_140796620`). The squad's first member is its leader (role 2; whoever led before gets role 0). **Verified** (`FUN_140796620`, `FUN_140792e60`): a put at
+  place k, and a swap of places i and j, set the member type to 0 on every member from k to the end (i to j), so a Squad2 or Slave member dropped there, and those
+  shifted behind it, become plain members (place 0 goes to the leader path); removal from the source squad changes no types. A cross-squad swap is two puts in the
+  original (**Observed**: the source's member put into the target, the decompile passes no index, so the end is assumed; the target's member put at the source place); Meitou swaps the two places and resets just those. A squad box dropped in the list takes that place
   (`FUN_140493cb0` → `FUN_1407f3440`, which renumbers +0x1f2).
 - Dropped on `DismissCharPanel`: with one character in the faction "Cannot dismiss the only remaining character in the faction." (title "Dismiss
   character"), else "Dismiss character '{1}'?". Yes (`FUN_14048fa30`): deselected, faction `1233-gamedata.base` (Tech Hunters; else `nofac`), a new

@@ -237,13 +237,20 @@ public static class SquadManagement
         if (move.Swap && atMember)
         {
             var other = target.Members[move.Index];
-            if (source == target) (source.Members[from], source.Members[move.Index]) = (other, move.Character);
+            if (source == target)
+            {
+                (source.Members[from], source.Members[move.Index]) = (other, move.Character);
+                ResetRoles(table, source, Math.Min(from, move.Index), Math.Max(from, move.Index));
+            }
             else
             {
                 source.Members[from] = other;
                 target.Members[move.Index] = move.Character;
                 Join(table, other, source);
                 Join(table, move.Character, target);
+                // Engine choice: the original's cross-squad swap is two puts (FUN_140796620), which reset the roles from the put place on; here the two swapped places.
+                ResetRoles(table, source, from, from);
+                ResetRoles(table, target, move.Index, move.Index);
             }
         }
         else
@@ -252,6 +259,7 @@ public static class SquadManagement
             int at = move.Index < 0 || move.Index > target.Members.Count ? target.Members.Count : move.Index;
             target.Members.Insert(at, move.Character);
             if (source != target) Join(table, move.Character, target);
+            ResetRoles(table, target, at, target.Members.Count - 1);
         }
         Relead(table, source);
         if (source != target) Relead(table, target);
@@ -286,6 +294,16 @@ public static class SquadManagement
         from.Leader = CharacterId.None;
         if (into.Leader.IsNone && into.Members.Count > 0) into.Leader = into.Members[0];
         world.Squads.Remove(from.Id);
+    }
+
+    /// <summary>
+    /// A put or swap resets the member type of the places <paramref name="first"/> to <paramref name="last"/> to 0 (<c>FUN_140796620</c>, <c>FUN_140792e60</c>), so a Squad2 or Slave
+    /// member dropped there, and whoever shifted behind it, becomes a plain member. Place 0 is left to <see cref="Relead"/>.
+    /// </summary>
+    static void ResetRoles(CharacterTable table, Squad squad, int first, int last)
+    {
+        for (int i = Math.Max(first, 1); i <= last && i < squad.Members.Count; i++)
+            if (table.TryResolveNext(squad.Members[i], out int slot)) table.Cold(slot)!.Role = (int)SquadRole.Squad1;
     }
 
     /// <summary>The first member leads (role 2), the one that led before goes back to role 0 (<c>FUN_140796620</c> / <c>FUN_140792e60</c>: index 0 is made the leader).</summary>
