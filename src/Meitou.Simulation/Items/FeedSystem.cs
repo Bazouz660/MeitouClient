@@ -126,14 +126,14 @@ public sealed class FeedSystem(ItemFactory items, FeedSettings? settings = null)
     }
 
     /// <summary>
-    /// Whether the limb in the mouth is eaten now (<c>FUN_1405dc650</c>, <b>Verified</b>; minutes are game minutes since it was taken, f the animal's age <see cref="CharacterCold.ShownAge"/>).
+    /// Whether the limb in the mouth is eaten now (<c>FUN_1405dc650</c>, <b>Verified</b>; minutes are game minutes since it was taken, f the animal's live age <see cref="CharacterCold.Age"/>).
     /// An adult (f above 0.9) of the player's side eats it at once when its stomach is empty and its hunger below 2.6, else after 15 minutes; any other animal after 45 minutes with an empty
     /// stomach, else after 60 + 120 x (1 - f) minutes.
     /// </summary>
     static bool MouthDue(World world, CharacterCold cold, MedicalState med, bool playerSide)
     {
         double minutes = (world.Tick - cold.MouthSinceTick) * BodySystem.HoursPerTick * 60;
-        float f = cold.ShownAge;
+        float f = cold.Age;
         if (f > 0.9f && playerSide) return med.Fed <= 0 && med.Hunger < 2.6f || minutes > 15;
         return med.Fed <= 0 && minutes > 45 || minutes > (1 - f) * 120 + 60;
     }

@@ -130,8 +130,10 @@ public sealed class CharacterCold
     /// <see cref="BodySystem"/> grows it (docs/game/animals.md "Ageing").
     /// </summary>
     public Meitou.Data.Gameplay.Bodies.AnimalData? Animal { get; set; }
-    /// <summary>The age an animal's drawn size was last refreshed at (the original's <c>+0x6fc</c>): the size the renderer shows is lerp(this, scale min, scale max). Follows from the age: not hashed.</summary>
+    /// <summary>The age an animal's drawn size was last refreshed at (the original's <c>+0x6fc</c>, the step gate of the look refresh only: no gameplay reader): the size the renderer shows is lerp(this, scale min, scale max). Follows from the age: not hashed.</summary>
     public float ShownAge { get; set; } = 1;
+    /// <summary>The live age gameplay reads (the original's <c>CharacterAnimal+0x700</c>, vtable slot 0x398): <see cref="Bodies.CharacterStats.Scale"/>, 1 without stats.</summary>
+    public float Age => Stats?.Scale ?? 1;
     /// <summary>
     /// The bolts stuck in the character (docs/game/combat.md "Bolt visuals"): shown on their bones until first aid has nothing left to bandage. A visual: not hashed, not saved
     /// (the original keeps them in its appearance only).

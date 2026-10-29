@@ -121,8 +121,12 @@ moving an item out of its inventory clears it, and a loot take (or an item moved
   records all have it, people 1, animals 0.00002 .. 2.07). Loading an animal below 0.99 rebuilds its look (`FUN_140627b30`).
 - Age word (slot 0x3a0, `FUN_1408882b0`): below 0.4 "Pup", below 0.6 "Teen", up to 1.1 "Adult", above "Elder".
 
-Meitou: `BodySystem.Age` grows `CharacterStats.Scale` and resets the body's size each tick, `CharacterCold.ShownAge` is `+0x6fc` (the drawn
-size), the save writes and reads `age`.
+- `+0x6fc` is only the step gate of that look refresh (**Verified**: the decompile reads it only in `FUN_1405cdf00` and sets it in the constructor
+  `FUN_1405c8150`). Gameplay reads the live age (slot 0x398, `FUN_1405e2010` returns `+0x700`): the mouth-food update `FUN_1405dc650`, the dog-play scores
+  `FUN_140599720` / `FUN_140599800` and the limb finder `FUN_1409993a0`.
+
+Meitou: `BodySystem.Age` grows `CharacterStats.Scale` (`CharacterCold.Age`, what gameplay reads) and resets the body's size each tick, `CharacterCold.ShownAge`
+is `+0x6fc` (the drawn size only; it is not refreshed above 0.95, unlike the original), the save writes and reads `age`.
 
 ## Pack animals
 

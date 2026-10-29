@@ -69,7 +69,7 @@ public sealed partial class CaptiveSystem
     static void Fetch(World world, int slot, CharacterCold cold)
     {
         if (cold.Mouth is not null || cold.PickingUpItem is not null || cold.Medical is not { } med) return;
-        if (cold.ShownAge > 0.9f && (med.Fed > 0 || med.Hunger > 2.75f)) return;
+        if (cold.Age > 0.9f && (med.Fed > 0 || med.Hunger > 2.75f)) return;
         var at = world.Characters.Next[slot].Position;
         Items.GroundItem? best = null;
         float d2best = FetchRange * FetchRange;
@@ -89,10 +89,10 @@ public sealed partial class CaptiveSystem
     /// 0.4; 0 for the player's adults (over 0.95). Any desire above 0 plays (it beats IDLE's 0.1).
     /// </summary>
     static bool Plays(World world, CharacterCold c) =>
-        c.Mouth is not null && !(PlayerSquad(world, c) && c.ShownAge > 0.95f);
+        c.Mouth is not null && !(PlayerSquad(world, c) && c.Age > 0.95f);
 
     /// <summary>279's desire (<c>AI::scoreDogPlayingChase</c>): any NPC animal; of the player's squads only one not adult (0.95).</summary>
-    static bool Chases(World world, CharacterCold c) => !PlayerSquad(world, c) || c.ShownAge <= 0.95f;
+    static bool Chases(World world, CharacterCold c) => !PlayerSquad(world, c) || c.Age <= 0.95f;
 
     static bool PlayerSquad(World world, CharacterCold c) => c.IsPlayer || world.Player.Faction >= 0 && c.Faction == world.Player.Faction;
 
