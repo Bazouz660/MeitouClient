@@ -364,7 +364,11 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
             case TaskType.NEW_SLAVE_PROCESSING:
             case TaskType.SLAVE_WATCHING:
                 // The slot-61 desire of 183 / 260 (and 167) for a goal without a target: 1 while not carrying and in posture 0, else 0.
-                if (site < 0 || cold.Carrying is { IsNone: false } || cold.Medical is { Standing: false }) return null;
+                if (cold.Carrying is { IsNone: false } || cold.Medical is { Standing: false }) return null;
+                // 183 first takes a free or escaped slave in sight, with no cage and no town (FUN_1408cd630).
+                if (type == TaskType.SLAVE_WATCHING && FreeSlaveToProcess(world, slot, cold) is >= 0 and var loose)
+                    return new CaptiveJob { Kind = CaptiveJobKind.Process, Worker = world.Characters.IdOf(slot), Captive = world.Characters.IdOf(loose), Cage = "", Faction = cold.Faction, Site = site };
+                if (site < 0) return null;
                 return ProcessTarget(world, slot, cold, site, watching: type == TaskType.SLAVE_WATCHING) is { } found
                     ? new CaptiveJob { Kind = CaptiveJobKind.Process, Worker = world.Characters.IdOf(slot), Captive = found.Occupant, Cage = found.Id, Faction = cold.Faction, Site = site }
                     : null;
@@ -508,15 +512,51 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
                 // The cage must be on the watcher's floor and in its building (two outdoor parties have the same, null, handle) and within 180 in 3D (FUN_1408cd630).
                 if (world.Sight.FloorAt(f.Building, f.Position) != world.Sight.FloorOf(slot, at) || (world.Sight.HasRoom(f.Building) ? f.Building : null) != world.Sight.BuildingOf(slot)
                     || Vector3.DistanceSquared(at, f.Position) > Settings.WatchRange * Settings.WatchRange) continue;
-                // An owner who is no ally leaves it alone; a slave of an allied owner that still looks one too, while one that does not (its kit taken off or never put on) or that
-                // escaped (state 2) is processed again; without an owner it always is (FUN_1408ca3d0).
-                if (c.SlaveOwner >= 0 && (!Allied(cold.Faction, c.SlaveOwner) || c.SlaveState == 1 && LooksLikeSlave(c))) continue;
+                // A slave of an allied owner that still looks one is left alone, as is any of an owner who is no ally; the rest are processed (FUN_1408ca3d0).
+                if (!NeedsProcessing(cold, c)) continue;
             }
             else if (c.SlaveState != 0 || c.Medical is { Incapacitated: true }) continue;
             return f;
         }
         return null;
     }
+
+    /// <summary>
+    /// The first pass of the watchers' finder (183, <c>FUN_1408cd630</c>, <b>Verified</b>): the nearest (engine reading of the sensed list, as the capture finder's) live character in sight
+    /// in slave state 1 or 2 that is free (not carried, caged or held), no animal, not another job's or given up, and <see cref="NeedsProcessing"/>. No distance bound, no cage. -1: none.
+    /// </summary>
+    int FreeSlaveToProcess(World world, int slot, CharacterCold me)
+    {
+        var scan = new FreeScan { System = this, World = world, Self = slot, Me = me, Best = -1, BestD2 = float.MaxValue };
+        var p = world.Characters.Next[slot].Position;
+        world.Grid.Query(p.X, p.Z, AggroSystem.RangeOf(me, AggroSystem.OutdoorSight), ref scan, static (int v, ref FreeScan st) =>
+        {
+            var table = st.World.Characters;
+            if (v == st.Self || !table.Next[v].Alive || table.Cold(v) is not { SlaveState: not 0, Medical: { Dead: false }, Race: not null } c || !c.CarriedBy.IsNone || c.InSomething != HeldState.None
+                || c.Fighter is { IsAnimal: true } || c.Appearance?.Animal is not null) return;
+            var id = table.IdOf(v);
+            if (st.System.Busy(id) || st.System.Waiting(st.System.givenUp, id, st.World.GameHours) || !st.System.NeedsProcessing(st.Me, c)) return;
+            float d2 = Vector3.DistanceSquared(table.Next[st.Self].Position, table.Next[v].Position);
+            if (d2 < st.BestD2 || d2 == st.BestD2 && v < st.Best) (st.Best, st.BestD2) = (v, d2);
+        });
+        return scan.Best;
+    }
+
+    struct FreeScan
+    {
+        public CaptiveSystem System;
+        public World World;
+        public int Self;
+        public CharacterCold Me;
+        public int Best;
+        public float BestD2;
+    }
+
+    /// <summary>
+    /// The watchers' needs-processing test (<c>FUN_1408ca3d0</c>, <b>Verified</b>) for a live character that is no animal and not carried: one without an owner needs it; one whose owner is no ally
+    /// of the watcher does not; one of an allied owner does unless it is a slave in state 1 that <see cref="LooksLikeSlave"/> (the state stands for the original's flag <c>0x3e0</c>, <b>Unknown</b>).
+    /// </summary>
+    bool NeedsProcessing(CharacterCold watcher, CharacterCold c) => c.SlaveOwner < 0 || Allied(watcher.Faction, c.SlaveOwner) && !(c.SlaveState == 1 && LooksLikeSlave(c));
 
     /// <summary>
     /// The cage a liberator opens (276, <c>BuildingFinder_CagesToLiberate</c> <c>FUN_1408cf140</c>, <b>Observed</b>): a cage of a faction that is neither the worker's nor allied to it,
@@ -600,6 +640,7 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
         if (j.Kind == CaptiveJobKind.Worship) return StepWorship(world, j, w, wc);
         if (j.Kind == CaptiveJobKind.DogPlay) return StepPlay(world, j, w, wc);
         if (j.Kind == CaptiveJobKind.DogChase) return StepChase(world, j, w);
+        if (j.Kind == CaptiveJobKind.Process && j.Cage.Length == 0) return StepProcessLoose(world, j, w, wc);
         var cage = world.Fixtures.Find(j.Cage);
         if (cage is null || !table.TryResolveNext(j.Captive, out int c) || table.Cold(c) is not { } cc || cc.InWhat != cage.Id || !cc.IsImprisoned || cc.Medical is not { Dead: false })
             return Over(world, j, table.TryResolveNext(j.Captive, out int gone) && table.Cold(gone)?.Medical is { Dead: true });
@@ -655,6 +696,46 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
             }
         }
         return true;
+    }
+
+    /// <summary>
+    /// A watcher's job on a slave out of a cage (<see cref="FreeSlaveToProcess"/>): walks to it, kneels <see cref="CaptiveSettings.ProcessSeconds"/> and processes it (<see cref="Process"/>).
+    /// The job ends when the slave is carried off, caged, dead or no longer a slave; one that walks off during the kneel is walked after (engine choice).
+    /// </summary>
+    bool StepProcessLoose(World world, CaptiveJob j, int w, CharacterCold wc)
+    {
+        var table = world.Characters;
+        if (!table.TryResolveNext(j.Captive, out int c) || table.Cold(c) is not { Medical: { Dead: false }, SlaveState: not 0 } cc || !cc.CarriedBy.IsNone || cc.InSomething != HeldState.None)
+            return End(world, j, CaptiveEventKind.GaveUp);
+        ref var n = ref table.Next[w];
+        var to = new Vector2(table.Next[c].Position.X, table.Next[c].Position.Z);
+        float d = Vector2.Distance(new Vector2(n.Position.X, n.Position.Z), to);
+        if (j.Phase == CaptivePhase.Work && d > Settings.Reach * 2) (j.Phase, wc.ActionClip) = (CaptivePhase.Walk, null);
+        if (j.Phase == CaptivePhase.Walk)
+        {
+            bool walking = n.Task == (byte)CharacterTask.GoTo;
+            if (d > Settings.Reach && !(!walking && j.Walks > 0 && d <= Settings.Slack))
+            {
+                if (walking && Vector2.Distance(n.Goal, to) <= 5) return true;
+                if (!walking && ++j.Walks > Settings.Walks)
+                {
+                    SetWait(givenUp, j.Captive, world.GameHours + Settings.GiveUpHours);
+                    return End(world, j, CaptiveEventKind.GaveUp);
+                }
+                MovementSystem.GoTo(table, w, to, SpeedMode.Walk);
+                return true;
+            }
+            MovementSystem.Stop(table, w);
+            j.Phase = CaptivePhase.Work;
+            j.Time = 0;
+            wc.ActionClip = ProcessClip;
+        }
+        var face = table.Next[c].Position - n.Position;
+        if (face.X * face.X + face.Z * face.Z > 1e-4f) n.Yaw = MathF.Atan2(face.X, face.Z);
+        if (j.Time < Settings.ProcessSeconds) return true;
+        Process(world, w, wc, c, cc);
+        Note(world, CaptiveEventKind.Enslaved, j);
+        return End(world, j, null);
     }
 
     /// <summary>
