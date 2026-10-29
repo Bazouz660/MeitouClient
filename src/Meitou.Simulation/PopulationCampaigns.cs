@@ -341,18 +341,32 @@ public sealed partial class PopulationSystem : IStateHashed
     }
 
     /// <summary>
-    /// Whether a town is active (Town vtable slot 70, <c>FUN_140929eb0</c>, Observed): a zone of it is loaded, and for a player town one of the player's characters is in it
-    /// (here: within its radius, whose zone the character keeps loaded). So raids and redirects aim only at a player town the player is at.
+    /// Whether a town is active (Town vtable slot 70, <c>FUN_140929eb0</c>, <b>Verified</b>): a zone of it is loaded, and for a town of the player's faction a member of the faction's
+    /// platoons has it as its current town (<c>Character</c> slot 15, the AI's rule <see cref="Ai.AiSystem.TownAt"/>: the nearest town whose radius holds it, so a nearer town
+    /// takes precedence). So raids and redirects aim only at a player town the player is at. The loaded-zone test of a player town is not made: the member standing in it keeps
+    /// its own zone loaded (the town's zone list is not modelled).
     /// </summary>
     bool TownActive(World world, CampaignTown t)
-    {        if (t.Site >= 0) return active.Contains(data.Sites[t.Site].Zone);
-        var at = CentreOf(world, t);
-        float r = RadiusOf(world, t);
-        var prev = world.Characters.Previous;
-        for (int i = 0; i < prev.Length; i++)
-            if (prev[i].Alive && world.Characters.Cold(i) is { IsPlayer: true } && Vector2.DistanceSquared(new Vector2(prev[i].Position.X, prev[i].Position.Z), at) <= r * r) return true;
-        return false;
+    {
+        if (t.Site >= 0)
+        {
+            if (!active.Contains(data.Sites[t.Site].Zone)) return false;
+            if (PlayerFactionOf(world) is not (>= 0 and var player) || data.SiteFactions[t.Site] != player) return true;
+        }
+        if (presentTick != world.Tick)
+        {
+            // The towns the player's characters are in, worked out once a tick (serial).
+            presentTick = world.Tick;
+            presentTowns.Clear();
+            var prev = world.Characters.Previous;
+            for (int i = 0; i < prev.Length; i++)
+                if (prev[i].Alive && world.Characters.Cold(i) is { IsPlayer: true } && Ai.AiSystem.TownAt(data, world, prev[i].Position) is { IsNone: false } here) presentTowns.Add(here);
+        }
+        return presentTowns.Contains(t);
     }
+
+    long presentTick = -1;
+    readonly HashSet<CampaignTown> presentTowns = [];
 
     /// <summary>
     /// A player town's level (Town +0x388, the save's <c>plevel</c>; <c>FUN_14048c200</c>, Verified by code, recomputed by the original when towns merge and at other

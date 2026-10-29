@@ -584,8 +584,11 @@ to now + 6 h and, only if the faction has no active campaign and no pending requ
   linear from 1 to 0 between; f × `raidFrequencyMult` unless `ignores chance mults`; c = `chance per day` × 0.25 × f (**Verified**).
 - Target (`CampaignData::vfunc_0`): only towns of the player faction, those in the faction's `biomes` (BIOME_GROUP), else any player town;
   dropped when Town slot 70 is false, when the town has hostile occupiers (+0x128) and the campaign is not hostile, or in the faction's `no-go zones`
-  unless `ignores nogo zones`. Slot 70 (`FUN_140929eb0`, **Observed**: zone flag `FUN_140a09360` read as loaded): a zone of the town is loaded and, for a
-  player town, a player character's town is it; so rolls (and redirects) only aim at a player town the player is at. +0x128 is the count of the town's
+  unless `ignores nogo zones`. Slot 70 (`FUN_140929eb0`, **Verified**; the zone flag `FUN_140a09360` is read as loaded, **Observed**): the town's zone list has a loaded zone (else the zone at
+  the town's cell), and, for a town whose faction is the player's, some member of the faction's loaded platoons has this town as its current town (Character slot 15 `FUN_1405c89b0`: the
+  `+0x88` of the object at Character `+0x1a0`, the field the AI's current-town rule `FUN_1402688d0` writes from the leader, [ai](ai.md#package-classes)); a town of another faction is active when the zone test
+  passes. So rolls (and redirects) only aim at a player town the player is at. Meitou: `TownActive`, the AI's `TownAt` (nearest town whose radius holds the character) for each
+  player character, no zone test for a player town (its zone list is not modelled; the character keeps its own zone loaded). +0x128 is the count of the town's
   occupier set (+0x118, filled by [Package_OccupyTown](ai.md#package-classes); **Verified**: the town panel's "Hostile Occupiers:" line, `FUN_140922e60`).
 - Player town level (+0x388, `FUN_14048c200`, **Verified** by code; 0 for a new outpost; recomputed when towns merge, `FUN_140931840`, and in `FUN_1404d1870`):
   over the town's player buildings H = with an interior (Building +0x1f0) that are neither parts nor gateways, T = turrets (BF 12), G = gates (BF 21), R = the

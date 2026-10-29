@@ -108,7 +108,8 @@ A slave's Slave role list runs through the Obedient Slave job (187): [role lists
   +0x60 can start, +0x68 finished, +0x90 may hand over to `Leads to` (base: yes; a finished package whose `Leads to` is refused fails its slot), +0x18 speed
   mode (base 4, PassingByTownAssault 2, Refugee and DefendPlayerBase 1). Package fields: +0x8 `mission town`, +0x28 `mission target`, +0x48 `mission employer` (saved under these keys).
 - Blackboard current town (+0x138, `FUN_1402688d0`, before the choice): the leader's town, else the nearest town (any type but nest markers) whose radius
-  (`FUN_140926d50` × 1) holds the platoon; entering one sets the arrival hour (+0x140) and fires the leader's ENTER_TOWN (49).
+  (`FUN_140926d50` × 1) holds the platoon; entering one sets the arrival hour (+0x140) and fires the leader's ENTER_TOWN (49). The leader's own town is the `+0x88` of the
+  object at Character `+0x1a0`; Character slot 15 (`FUN_1405c89b0`) reads that field for any member (Town slot 70 compares it, [campaigns](factions-squads-towns.md#campaigns)).
 - **Package_HangAroundBar** (17/26): can start in its home town, or in a town not hostile to it that has bars (`vfunc 0x2d0` kind 3); finished in a player town
   that is not `is public` (the squad not the player's) or when it can no longer start. So a bar package runs where the squad is.
 - **Package_WanderingTrader** (16): start draws the stay W = uniform[5, 8) h, state 0 and the next town with the chooser `FUN_14092c5e0` (faction = own, from the
