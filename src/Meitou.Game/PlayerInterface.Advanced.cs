@@ -7,7 +7,11 @@ namespace Meitou.Game;
 
 sealed partial class PlayerInterface
 {
-    internal NewGameSettings NewGameOptions { get; private set; } = new();
+    /// <summary>
+    /// The New game window's advanced options. Plain globals in the original (set to the defaults once at start-up, rewritten when a save is loaded, by the
+    /// import window and by the options window): opening the window keeps the last edit or the last loaded save's values (docs/game/character-stats.md).
+    /// </summary>
+    internal NewGameSettings NewGameOptions { get; set; } = new();
     bool advancedOpen;
     /// <summary>The option whose help the panel shows: the last one under the pointer, kept while the panel is open (so the pointer can reach the help's scroll bar); -1: none.</summary>
     int advancedHelp = -1;

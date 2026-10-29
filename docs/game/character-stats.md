@@ -628,7 +628,10 @@ and a consumer that reads the same offset):
 Saved per world only, in the save's CAMERA record (the "Key" column), never in `settings.cfg` (**Verified**, decompile: `saveGame`
 `FUN_140375360` calls the saver `FUN_1403ee910` on the globals, `loadGame` `FUN_140373f00` calls the loader `FUN_1403eef20` on them; the save list's
 preview `FUN_14047e390` reads a copy; key strings read from the exe at `1416ce7f0..1416ce810`; 6 original saves carry all ten keys, one with `ht` 8):
-- Reset (`FUN_1403e75d0`, new game) and loader start: every float 1, +0x4 0, +0x20 and +0x21 1, +0x22 0.
+- Defaults (`FUN_1403e75d0`, the struct's default setter) and loader start: every float 1, +0x4 0, +0x20 and +0x21 1, +0x22 0. **Verified** (callers of `FUN_1403e75d0`): the
+  globals get the defaults once, from the start-up initialiser `FUN_14037dce0`; the other callers (`FUN_14047b480`, `FUN_140914c40` Continue, `FUN_14047f4a0`) run it on a local copy
+  and `FUN_1403829c0` on an embedded one, and a new game (`FUN_14047c310` kind 4) does not touch the globals. So the New game window (`FUN_1409151d0` binds its sliders to the globals)
+  keeps the last edit, the import window's pick or the last loaded save's values; Meitou: `PlayerInterface.NewGameOptions`, set from the save in `SwapInSave`.
 - Without float `cod` the loader keeps those defaults and reads nothing. With it: `cod gdm ps rs bs` and bool `ep` are read
   unconditionally (a missing one would read 0 / false), `ht`, `nnm`, `bl` and bool `heal` (into +0x22) only when present. No clamping.
 - The saver writes the seven floats and `ep`, `bl`; not `heal` (also a squad-toggle key) nor +0x21. Nothing reads +0x22.

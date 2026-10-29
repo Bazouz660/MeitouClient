@@ -356,6 +356,7 @@ sealed partial class GameHost
         }
         popData = nextData;
         difficulty = nextDifficulty;
+        player.NewGameOptions = nextDifficulty;   // the New game window then shows the loaded save's options (the original loads them into its globals)
         population = built.Population;
         aggro = built.Aggro;
         if (nav is not null) population!.ZoneGate = zone => nav.Walkability.World.Contains(zone);

@@ -130,6 +130,7 @@ against French 1440-line screenshots. Every caption the code sets is the catalog
   "Difficulty:", "Cash:", "Play Style:" (not upper-cased) with the record's `difficulty`, "c."`money`, `style` as stored (French keeps "Default",
   "RPG"), then `description` as a wrapped line. Rows: pitch 0.94 / max(1, (int)(40 x panel height / screen height)) of the panel, from 0.03 of
   it; label at 3 % of the width, 96 % wide; value right-aligned in 93 %. First start "1980-gamedata.base" (Wanderer); the arrows wrap.
+  The window's Advanced options keep their values between openings and after a load (**Verified**, [character-stats.md](character-stats.md#new-game-advanced-options-that-change-these-mechanics)).
 - **Load, save, import**: title "Load game" / "Save game" / "Import game"; buttons "Load", "Save", "Import", "Cancel"; column headers "Name" (fill)
   and "Date" (180 screen pixels, so 1440-line dates are cut off) and "Reset squad positions", not upper-cased. Rows: every folder holding
   `quick.save`, its name as is; the date is the folder's last write in the user's short date and time with seconds; newest first, names compared

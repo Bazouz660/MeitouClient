@@ -147,7 +147,7 @@ sealed partial class PlayerInterface
             switch (e.Widget)
             {
                 case "ResumeButton": faithfulScreens.Close("menu"); break;
-                case "NewGameButton": if (!wasOpen) { NewGameOptions = new(); advancedOpen = false; faithfulScreens.Open("new-game"); } break;
+                case "NewGameButton": if (!wasOpen) { advancedOpen = false; faithfulScreens.Open("new-game"); } break;
                 case "SaveGameButton": OpenSlots("save"); break;
                 case "LoadGameButton": if (!(title && wasOpen)) OpenSlots("load"); break;
                 case "ImportGameButton": if (!wasOpen) { advancedOpen = false; OpenSlots("import"); } break;
