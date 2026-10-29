@@ -87,6 +87,12 @@ public interface IPackageRules
 /// <summary>A guarded gate: its door leaf's centre at the leaf's foot, the unit X/Z way through it pointing away from the town, and half the leaf's width.</summary>
 public readonly record struct GatePost(TownBuilding Building, Vector3 Door, Vector2 Out, float HalfWidth);
 
+/// <summary>A seat a member sitting around claimed: the piece <paramref name="Index"/> (<see cref="TownBuilding.SeatAt"/>) of <paramref name="Building"/>.</summary>
+public readonly record struct SeatClaim(TownBuilding Building, int Index)
+{
+    public HomeSpot Spot => Building.SeatAt(Index);
+}
+
 /// <summary>
 /// A squad's AI state (docs/game/ai.md "Blackboard update"): its packages by slot, the package running and the role lists it loaded, a contract package that
 /// overrides the slots, and what the running package needs: a home building, a patrol route. Changed only in <see cref="AiSystem"/>'s serial step; the members' think reads it.
@@ -133,6 +139,8 @@ public sealed class Blackboard
     public Dictionary<int, int> TurretClaims { get; } = [];
     /// <summary>The seat of the bar (<see cref="Home"/> under a bar package) each relaxing member's slot claimed, as the last serial step found it (derived, not hashed).</summary>
     public Dictionary<int, HomeSpot> SeatClaims { get; } = [];
+    /// <summary>The furniture each member sitting around (275) claimed (a seat of <see cref="TownBuilding.SeatAt"/> numbering, in any building the finder allows), as the last serial step found it (derived, not hashed).</summary>
+    public Dictionary<int, SeatClaim> SitClaims { get; } = [];
     /// <summary>The gate the squad guards (its home when that is a gate, else for a gate guard goal the town's gate nearest the squad), as the last serial step found it (derived, not hashed); null: none, or its door's place not known.</summary>
     public GatePost? Gate { get; set; }
     public TownBuilding? OwnHome { get; set; }

@@ -888,7 +888,11 @@ vfunc 5 `FUN_14050caf0`). TaskData fields: +0x108 desire (a member function, nea
     or the character is held by such a character). Slot 0 of the finder (`FUN_1408cebe0`) keeps pieces the squad may use (`FUN_140621230`), not on the character's avoid set, with
     a floor-reachability test; the first whose owner faction is the character's or the squad's and that no one else claimed (`FUN_1402690e0` < 1) is the target; none: 0.
     The list order is the zone map's (arbitrary); the usability and avoid-set details are **Unknown**.
-  - Meitou: no seat claimed means the goal is not wanted; a squad does not sit where it stands.
+  - Pieces: BF_CHAIR and BF_THRONE are sat on ("Chairs" below), BF_TRAINING (the dummy, function 7) is pretend-operated. 43's finder is the `Indoors` variant of the same class (vtable
+    slot 5 `FUN_1408cbad0` lists the home's interior), so 43 takes training furniture and chairs but no throne (mask 0x2049a); 275's is the plain one, whose town scan also reaches furniture
+    inside buildings (**Observed**: the bar-table finder, same scan, tests "inside the bar").
+  - Meitou (`AiSystem.ClaimSitting`): no piece claimed means the goal is not wanted; a squad does not sit where it stands. Claims a free chair, throne or (not for the player's side) training
+    dummy of the home building, the first in seat order (`TownBuilding.SeatAt`: the layout's chairs, then `Furniture`); a dummy is stood at, facing its way.
 - Chairs (**Verified**, BUILDING_FUNCTIONALITY records of gamedata.base / rebirth.mod / the install's mods, dumped): BuildingFunction 17 BF_CHAIR
   `chair`, `chair-fixed`, `chair-fixed 180` (animation "sitting chair"; Stool, Old Stool, Bench, Sitting Box) and `sit on floor (no chair)`
   ("sitting idle"; Sitting Pillow, Sitting spot (invisible)); 24 BF_THRONE `throne chair` ("sitting chair"); all `max operators` 1.

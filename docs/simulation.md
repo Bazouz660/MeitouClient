@@ -1436,9 +1436,11 @@ A gate's residents are made at the gate guard's spot (engine choice), not the ga
 Defensive Gates is inside the wall about 110 along it from the opening; headless (no door gate, no leaf) they
 are made at the origin and keep that post. Seats are the home's
 interior furniture with a CHAIR functionality (`HomeSpotKind.Chair`; never a standing node), free
-in that building this pass; relaxing falls back to a bar node, then a general node, sitting around
-has none and is not wanted without a chair (the original finds nothing without a town furniture to sit at, so a homeless squad does not sit where it stands), staying home without one stands at home (engine choice: the original's
-43 operates home furniture, chairs among it, [ai-tasks](game/ai-tasks.md#town-goals); a given-up seat is tried again when the goal is renewed). A seated character
+in that building this pass; relaxing falls back to a bar node, then a general node, staying home without one stands at home (engine choice: the original's
+43 operates home furniture, chairs among it, [ai-tasks](game/ai-tasks.md#town-goals); a given-up seat is tried again when the goal is renewed). Sitting around (275)
+claims on its own (`Blackboard.SitClaims`, `AiSystem.ClaimSitting`): a free chair, throne (BF_THRONE, `HomeSpotKind.ThroneSeat`, sat on like a chair) or, for a character not on the
+player's side, training dummy (BF_TRAINING, `HomeSpotKind.Training`, stood at) of the home; the throne and dummy pieces are `TownBuilding.Furniture`. It is not wanted
+without one, so a homeless squad does not sit where it stands. A seated character
 is put on the seat's origin with no offset, facing the seat's way ([ai-tasks](game/ai-tasks.md) "Sitting"), and plays the functionality's clip ("sitting chair", pillows
 "sitting idle"). A town's bars and shops are
 the buildings whose residents (the squads living there, else the level data's `residents template`)
@@ -1456,7 +1458,7 @@ town, 600 ticks): characters on the ground under a building floor went from 278 
 homeless squads placed under unmeshed platforms. The Storm House's upper storey (+66) is on the navmesh except under its beds, whose
 spots therefore stand on the floor below (Observed, 2026-10-18 probe). Engine choices: patrolling town acts as
 wandering (its task class is undecoded); a committed goal chosen again after its commitment ran out
-starts over with a new target; training and throne furniture of 275's mask are not used; shops stand customers at a general
+starts over with a new target; shops stand customers at a general
 node, else a guard post, else any node; a home or seat given up
 after three failed walks is tried again when a new goal is taken up, and a member that gave its seat up
 leaves it to the next; a member keeps its seat while it still relaxes or sits (every squad's kept seats are reserved before any claims), so a

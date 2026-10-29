@@ -296,7 +296,7 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             AiBehaviour.Work => Places(board.Town).Workplaces.Count > 0 ? 1 : 0,
             // Relaxing needs a free seat of the package's bar, sitting around a free chair of the home (claimed in <see cref="ClaimSeats"/>); the original's finder returns 0 without one (FUN_1408caf00).
             AiBehaviour.Relax => board.BarTable >= 0 && board.SeatClaims.ContainsKey(self.Slot) && !mind.SeatUnreachable ? 1 : 0,
-            AiBehaviour.Sit => board.SeatClaims.ContainsKey(self.Slot) && !mind.SeatUnreachable ? 1 : 0,
+            AiBehaviour.Sit => board.SitClaims.ContainsKey(self.Slot) && !mind.SeatUnreachable ? 1 : 0,
             AiBehaviour.ToTown => TownAt(world.Characters.Previous[self.Slot].Position) >= 0 ? 0 : 1,
             // To the package's mission town while not in it.
             AiBehaviour.Travel => board.RefugeeTarget >= 0 ? 1 : board.Destination.IsNone ||CurrentTown(world, world.Characters.Previous[self.Slot].Position) == board.Destination ? 0 : 1,
@@ -756,10 +756,18 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
                 break;
             case AiBehaviour.Relax:
             case AiBehaviour.Sit:
-                // At its claimed seat (a chair, else a node).
-                if (board.SeatClaims.TryGetValue(slot, out var claimed))
+                // At its claimed seat (a chair or throne, else a node; a training dummy is stood at).
+                HomeSpot claimed = default;
+                bool claim;
+                if (type == TaskType.SIT_AROUND)
                 {
-                    bool chair = claimed.Kind == HomeSpotKind.Chair;
+                    claim = board.SitClaims.TryGetValue(slot, out var sitting);
+                    if (claim) claimed = sitting.Spot;
+                }
+                else claim = board.SeatClaims.TryGetValue(slot, out claimed);
+                if (claim)
+                {
+                    bool chair = claimed.Kind is HomeSpotKind.Chair or HomeSpotKind.ThroneSeat;
                     // Already on its chair (moved onto it below, off the floor point the walk ended at).
                     bool seated = chair && n.Task == (byte)CharacterTask.Rest && !mind.Walking
                         && Vector2.DistanceSquared(Flat(n.Position), Flat(claimed.Position)) < 1 && MathF.Abs(n.Position.Y - claimed.Position.Y) <= FloorSlack;
@@ -773,7 +781,8 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
                             mind.SitClip = claimed.SitClip;
                             mind.SitHungerRate = claimed.HungerRate;
                         }
-                        Become(table, slot, CharacterTask.Rest);
+                        else if (claimed.Kind == HomeSpotKind.Training) n.Yaw = claimed.Yaw;
+                        Become(table, slot, claimed.Kind == HomeSpotKind.Training ? CharacterTask.Idle : CharacterTask.Rest);
                     }
                 }
                 break;
@@ -1117,6 +1126,7 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             squad.Resume = false;
             ClaimTurrets(world, board, squad);
             ClaimSeats(world, board, squad);
+            ClaimSitting(world, board, squad);
             FindGate(world, board, squad);
         }
         if (merges.Count > 0) ApplyMerges(world);
@@ -1216,9 +1226,9 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
     /// Gives the members whose role list has relaxing (under a bar package), sitting around or staying home open at this hour a seat of their <see cref="Blackboard.Home"/> (the
     /// package's bar under a bar package): in member order each takes the first seat no one in that building claimed in this cadence pass; members left without one
     /// do not relax or sit. Relaxing takes a chair, else a bar node, else a general node (the original operates furniture of the bar, docs/game/ai-tasks.md "Town
-    /// goals", Observed; the node fallbacks are an engine choice); sitting around and staying home a chair only (the original's furniture not claimed by others, Observed; its
-    /// training and throne furniture are left out). A member keeps the seat it had while it still relaxes or sits (engine choice: reassigning every pass in member
-    /// order moved every later sitter to another chair whenever one came or went); the seats kept are reserved for every squad first (<see cref="ReserveSeats"/>).
+    /// goals", Observed; the node fallbacks are an engine choice); staying home a chair only (the original's furniture not claimed by others, Observed; its mask also holds
+    /// training furniture, which Meitou leaves out). Sitting around (275) claims in <see cref="ClaimSitting"/>. A member keeps the seat it had while it still relaxes or stays (engine choice:
+    /// reassigning every pass in member order moved every later sitter to another chair whenever one came or went); the seats kept are reserved for every squad first (<see cref="ReserveSeats"/>).
     /// </summary>
     void ClaimSeats(World world, Blackboard board, Squad squad)
     {
@@ -1241,7 +1251,7 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             {
                 if (!roles[g].InWindow(hour)) continue;
                 relaxes |= bar && roles[g].Task.Type == TaskType.RELAX_IN_TOWN_PACKAGE;
-                sits |= roles[g].Task.Type is TaskType.SIT_AROUND or TaskType.STAY_IN_HOME;
+                sits |= roles[g].Task.Type == TaskType.STAY_IN_HOME;
             }
             if (taken is null && !seatTaken.TryGetValue(home, out taken)) seatTaken[home] = taken = [];
             int had = kept.TryGetValue(s, out var old) ? IndexOf(home, old) : -1;
@@ -1267,16 +1277,75 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
     }
 
     readonly Dictionary<int, HomeSpot> kept = [];
+    readonly Dictionary<int, SeatClaim> keptSits = [];
+
+    /// <summary>The seats of <paramref name="building"/> taken in this cadence pass (indices of <see cref="TownBuilding.SeatAt"/>).</summary>
+    HashSet<int> TakenOf(TownBuilding building) => seatTaken.TryGetValue(building, out var taken) ? taken : seatTaken[building] = [];
+
+    /// <summary>
+    /// The sitting-around (275) counterpart of <see cref="ClaimSeats"/> (the finder <c>FUN_1408caf00</c>, docs/game/ai-tasks.md "Town goals"): a member whose role list has 275 open at this hour
+    /// takes the first piece of furniture of the mask 0x1020080 in its <see cref="Blackboard.Home"/> that no one claimed in this cadence pass: a chair or throne, and a training dummy unless the
+    /// character is on the player's side (the mask 0x1020000 of <c>FUN_140856bc0</c>; an AI-run squad is never the player's, so this only spares a recruit). The first free one in the building's
+    /// seat order is an engine choice (the original takes the first of its zone map). A member keeps its piece while it still sits around, as in <see cref="ClaimSeats"/>.
+    /// </summary>
+    void ClaimSitting(World world, Blackboard board, Squad squad)
+    {
+        keptSits.Clear();
+        foreach (var (slot, claim) in board.SitClaims) keptSits[slot] = claim;
+        board.SitClaims.Clear();
+        if (board.Home is not { } home) return;
+        int hour = world.Hour;
+        for (int k = 0; k < squad.Members.Count; k++)
+        {
+            var id = squad.Members[k];
+            if (!world.Characters.TryResolveNext(id, out int s) || world.Characters.Cold(s) is not { } cold || cold.Ai is null) continue;
+            var roles = board.Roles[(int)RoleOf(squad, id, cold)];
+            bool sits = false;
+            for (int g = 0; g < roles.Count && !sits; g++)
+                sits = roles[g].Task.Type == TaskType.SIT_AROUND && roles[g].InWindow(hour);
+            bool had = keptSits.TryGetValue(s, out var old);
+            if (!sits || cold.Ai.SeatUnreachable)   // one that gave its seat up leaves it to the next member
+            {
+                if (had) TakenOf(old.Building).Remove(old.Index);
+                continue;
+            }
+            bool dummies = !PlayerSide(world, cold);
+            if (had && old.Building == home && Sittable(old.Spot.Kind, dummies))
+            {
+                TakenOf(home).Add(old.Index);
+                board.SitClaims[s] = old;
+                continue;
+            }
+            if (had) TakenOf(old.Building).Remove(old.Index);
+            var taken = TakenOf(home);
+            for (int i = 0; i < home.SeatCount; i++)
+            {
+                if (taken.Contains(i) || !Sittable(home.SeatAt(i).Kind, dummies)) continue;
+                taken.Add(i);
+                board.SitClaims[s] = new SeatClaim(home, i);
+                break;
+            }
+        }
+    }
+
+    /// <summary>Whether sitting around takes a piece of furniture of this kind (bits CHAIR and THRONE of the mask; TRAINING too unless <paramref name="dummies"/> is false).</summary>
+    static bool Sittable(HomeSpotKind kind, bool dummies) => kind is HomeSpotKind.Chair or HomeSpotKind.ThroneSeat || dummies && kind == HomeSpotKind.Training;
+
+    static bool PlayerSide(World world, CharacterCold cold) => cold.IsPlayer || world.Player.Faction >= 0 && cold.Faction == world.Player.Faction;
 
     /// <summary>Marks every seat a squad's member holds from the last pass as taken, before any squad claims (the cadence pass; see <see cref="ClaimSeats"/>).</summary>
     void ReserveSeats(World world)
     {
         foreach (var squad in world.Squads.All)
         {
-            if (squad.Ai is not { Home: { } home } board || board.SeatClaims.Count == 0) continue;
-            if (!seatTaken.TryGetValue(home, out var taken)) seatTaken[home] = taken = [];
-            foreach (var spot in board.SeatClaims.Values)
-                if (IndexOf(home, spot) is >= 0 and var i) taken.Add(i);
+            if (squad.Ai is not { } board) continue;
+            if (board.Home is { } home && board.SeatClaims.Count > 0)
+            {
+                var taken = TakenOf(home);
+                foreach (var spot in board.SeatClaims.Values)
+                    if (IndexOf(home, spot) is >= 0 and var i) taken.Add(i);
+            }
+            foreach (var claim in board.SitClaims.Values) TakenOf(claim.Building).Add(claim.Index);
         }
     }
 

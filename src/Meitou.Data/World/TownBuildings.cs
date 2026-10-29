@@ -20,6 +20,10 @@ public enum HomeSpotKind : byte
     General = 5,
     /// <summary>A seat: interior furniture with a BF_CHAIR functionality (stools, benches, sitting pillows); <see cref="HomeSpot.SitClip"/> is how it is sat on.</summary>
     Chair = 6,
+    /// <summary>A seat: furniture with a BF_THRONE functionality ("throne chair"); sat on like a <see cref="Chair"/>. Not the <see cref="Throne"/> node.</summary>
+    ThroneSeat = 7,
+    /// <summary>Furniture with a BF_TRAINING functionality (a training dummy): stood at, not sat on.</summary>
+    Training = 8,
 }
 
 /// <summary>A spot inside a building in world space; <paramref name="Yaw"/> as the simulation measures it (0 along +Z, turning towards +X).</summary>
@@ -33,8 +37,8 @@ public readonly record struct HomeSpot(HomeSpotKind Kind, Vector3 Position, floa
     public float HungerRate { get; init; } = 1;
     /// <summary>A bed's furniture (its BUILDING string id: its <c>output rate</c> is how fast it heals, docs/game/character-stats.md "Beds"); null otherwise.</summary>
     public string? Record { get; init; }
-    /// <summary>A node a goal may stand at: neither a bed nor a seat.</summary>
-    public bool IsNode => Kind is not (HomeSpotKind.Bed or HomeSpotKind.Chair);
+    /// <summary>A node a goal may stand at: neither a bed, a seat nor a dummy.</summary>
+    public bool IsNode => Kind is not (HomeSpotKind.Bed or HomeSpotKind.Chair or HomeSpotKind.ThroneSeat or HomeSpotKind.Training);
 }
 
 /// <summary>
@@ -51,6 +55,14 @@ public sealed record TownBuilding(string InstanceId, string BuildingId, string N
 {
     public IEnumerable<HomeSpot> Of(HomeSpotKind kind) => Spots.Where(s => s.Kind == kind);
     public int Beds => Spots.Count(s => s.Kind == HomeSpotKind.Bed);
+    /// <summary>
+    /// Furniture of its interior layout with a BF_THRONE or BF_TRAINING functionality, in layout order, and the building itself when it is a free-standing chair, throne or dummy (its own
+    /// origin and yaw): the pieces sitting around (275) can take besides the chairs in <see cref="Spots"/> (<see cref="SeatAt"/>). Kept apart from <see cref="Spots"/>, which are the home's nodes.
+    /// </summary>
+    public IReadOnlyList<HomeSpot> Furniture { get; init; } = [];
+    /// <summary>The seats of the building: <see cref="Spots"/> then <see cref="Furniture"/>, indexed together (what a seat claim names).</summary>
+    public int SeatCount => Spots.Count + Furniture.Count;
+    public HomeSpot SeatAt(int index) => index < Spots.Count ? Spots[index] : Furniture[index - Spots.Count];
     /// <summary>The placement state's <c>owner faction ID</c> (a FACTION string id); null when the state names none (the town's faction owns it).</summary>
     public string? OwnerFactionId { get; init; }
     /// <summary>The cages, lockable containers and containers with an inventory of its interior layout (docs/game/locks.md "Data"), in layout order.</summary>
@@ -153,6 +165,8 @@ public static class TownBuildings
         building.GetBool("is wall gate") || FunctionOf(db, building, cache)?.GetInt("function") == GateFunction;
     /// <summary>BUILDING_FUNCTIONALITY <c>function</c> 17, BF_CHAIR: stools, benches, sitting pillows and spots (docs/game/ai-tasks.md "Town goals").</summary>
     public const int ChairFunction = 17;
+    /// <summary>BF_THRONE ("throne chair", sat on like a chair) and BF_TRAINING (a training dummy): the other furniture sitting around (275) takes (docs/game/ai-tasks.md "Town goals").</summary>
+    public const int ThroneFunction = 24, TrainingFunction = 7;
     /// <summary>BF_TABLE, BF_CORPSE_DISPOSAL, BF_REFINERY: what a free seat faces (<see cref="SeatYaw"/>).</summary>
     public const int TableFunction = 16, CorpseDisposalFunction = 11, RefineryFunction = 4;
     /// <summary>BF_RESOURCE_STORAGE, BF_SHOP, BF_GENERAL_STORAGE: the containers a building shop's stock goes into (<see cref="TownFixture.HoldsShopStock"/>).</summary>
@@ -175,6 +189,7 @@ public static class TownBuildings
         List<TownFixture>? fixtures = null;
         List<TownItemSlot>? itemSlots = null;
         List<Vector3>? tables = null;
+        List<HomeSpot>? furniture = null;
         var result = new Dictionary<string, List<TownBuilding>>(StringComparer.Ordinal);
         foreach (var b in levels.Buildings())
         {
@@ -225,6 +240,7 @@ public static class TownBuildings
                                 HungerRate = function.GetFloat("hunger rate", 1),
                             });
                         }
+                        else if (function is not null && FurnitureOf(db, function, at, YawOf(rotation)) is { } piece) (furniture ??= []).Add(piece);
                         if (function?.GetInt("function") is TableFunction or CorpseDisposalFunction or RefineryFunction) (faced ??= []).Add(at);
                         else if (FunctionOf(db, item.Building, functions)?.GetInt("function") is var itemFn && (itemFn == CageFunction || item.Building.GetBool("has lock") || item.Building.GetBool("has inventory")))
                         {
@@ -250,6 +266,8 @@ public static class TownBuildings
                     tables = faced;
                 }
             }
+            // Standing alone in the town, a chair, throne or dummy is a piece of furniture itself.
+            if (functionality is not null && FurnitureOf(db, functionality, resolved.Position, YawOf(b.Rotation)) is { } alone) (furniture ??= []).Add(alone);
             if (!result.TryGetValue(town.InstanceId, out var list)) result[town.InstanceId] = list = [];
             string? owner = state?.GetString("owner faction ID") is { Length: > 0 } o ? o : null;
             list.Add(new TownBuilding(b.InstanceId, record.StringId, record.Name, resolved.Position, YawOf(b.Rotation), shop, bar, spots)
@@ -270,13 +288,30 @@ public static class TownBuildings
                 HandleSlot = state is not null && state.Ints.ContainsKey("handleI") && state.GetInt("handleTYPE") == (int)FcsRecordType.BUILDING ? state.GetInt("handleI") : -1,
                 HandleSerial = state?.GetInt("handleS") ?? 0,
                 Tables = tables ?? [],
+                Furniture = furniture ?? [],
                 Function = functionality?.GetInt("function") ?? -1,
             });
             fixtures = null;
             itemSlots = null;
             tables = null;
+            furniture = null;
         }
         return result;
+    }
+
+    /// <summary>
+    /// A seat-like piece for sitting around (275, <see cref="TownBuilding.Furniture"/>) from a functionality: BF_CHAIR and BF_THRONE are sat on (its <c>animation</c> and <c>hunger rate</c>), BF_TRAINING
+    /// is stood at; null for any other function.
+    /// </summary>
+    static HomeSpot? FurnitureOf(GameDatabase db, GameRecord function, Vector3 at, float yaw)
+    {
+        var kind = function.GetInt("function") switch { ChairFunction => HomeSpotKind.Chair, ThroneFunction => HomeSpotKind.ThroneSeat, TrainingFunction => HomeSpotKind.Training, _ => (HomeSpotKind?)null };
+        if (kind is not { } k) return null;
+        return new HomeSpot(k, at, yaw)
+        {
+            SitClip = k == HomeSpotKind.Training ? null : function.GetReferences("animation").Select(r => db.Find(r.TargetStringId)?.Name).FirstOrDefault(n => n is not null),
+            HungerRate = function.GetFloat("hunger rate", 1),
+        };
     }
 
     /// <summary>
