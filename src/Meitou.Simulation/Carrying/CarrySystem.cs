@@ -67,9 +67,14 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
     /// </summary>
     public static bool LeftArmUsable(MedicalState medical) => medical.ArmWorks(left: true);
 
-    /// <summary>A character that can be given a pick-up: awake, with a body, not fighting, not carrying or carried, with a usable left arm.</summary>
+    /// <summary>
+    /// A character that can be given a pick-up: awake, with a body, not an animal, not fighting, not carrying or carried, with a usable left arm. An animal never carries: every carry task
+    /// (rescue, leader rescue, kidnap, capture, cage, arrest, foraging) is registered for the human repertoire only and an animal plans with its own, and its context menu has no Pick Up
+    /// (docs/game/carry-loot.md "Who carries").
+    /// </summary>
     public static bool CanCarry(CharacterCold cold) =>
-        cold is { Medical: { Incapacitated: false } m, Race: not null, InCombat: false, IsImprisoned: false } && cold.Carrying.IsNone && cold.CarriedBy.IsNone && LeftArmUsable(m);
+        cold is { Medical: { Incapacitated: false } m, Race: not null, InCombat: false, IsImprisoned: false } && !SquadRegistry.IsAnimal(cold) && cold.Carrying.IsNone && cold.CarriedBy.IsNone
+        && LeftArmUsable(m);
 
     /// <summary>A character that may be lifted: knocked out or dead, of a <c>carriable</c> race (every base race but the Leviathan, <b>Verified</b>), not carried already, not in a cage.</summary>
     public static bool CanBeLifted(CharacterCold cold) => cold is { Medical.Incapacitated: true, Race.Carriable: true, IsImprisoned: false } && cold.CarriedBy.IsNone;
