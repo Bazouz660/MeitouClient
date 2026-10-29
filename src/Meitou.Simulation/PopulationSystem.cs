@@ -98,7 +98,7 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
     /// <summary>The world states the population's spawns and campaigns read: the data's fixed ones when it has any, else the live ones of this world (<see cref="WorldStates"/>).</summary>
     public IWorldStates States => ReferenceEquals(data.States, IWorldStates.None) ? live : data.States;
 
-    /// <summary>The live world states take the unique table and the player's faction (serial; every look, and before the loading screen's builds).</summary>
+    /// <summary>The live world states take the unique table and the player's faction (serial; every tick, again after a look's unique refresh, and before the loading screen's builds).</summary>
     void RefreshStates(World world) => live.Refresh(world.Uniques, world.Player.Faction >= 0 ? world.Player.Faction : data.PlayerFaction);
 
     public PopulationData Data => data;
@@ -170,6 +170,8 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
     {
         MeetFactions(world);
         TopUpNest(world);
+        // The original answers a world state from the live unique table (FUN_1409a7e00), so the copy is taken every tick (cheap while nothing changed), not at the look.
+        RefreshStates(world);
         if (world.Tick % settings.CheckEveryTicks != 0) return;
         world.Uniques.SeedPrisoners(data.Db);
         RefreshUniques(world);

@@ -265,7 +265,7 @@ the player has one and stands in it; requests (victory/loss chains, ally help) c
   data): Dust Bandits "Invasion with demands" shout their four lines 20 s apart; talking to the boss opens the negotiation; paying takes 2000
   and sends them back (phase 2), refusing starts the assault (phase 1, the squad's targets set), stabbing him sends them back.
 - **World states** (`WorldStates`, `PopulationSystem.States`): WORLD_EVENT_STATEs answered live by the original's rule
-  ([world states](game/factions-squads-towns.md#relations-and-world-states)) from the unique table and the relations; the squad factory,
+  ([world states](game/factions-squads-towns.md#relations-and-world-states)) from the unique table and the relations (a copy of the table taken every tick, serial; the original reads it live, `FUN_1409a7e00`, **Verified**; the table's own scan `RefreshUniques` still runs every `CheckEveryTicks`); the squad factory,
   wild sites, towns and campaigns all ask it. A population given its own `IWorldStates` (the pinned tests) uses that instead.
 - **Save**: WAR_SAVESTATE read and written with the original's keys (unknown keys kept; numbered keys past the new counts removed); a
   characterless campaign stand-in is written as a PLATOON with content file `platoon/` so `p<i>` resolves; a loaded campaign platoon travels.
