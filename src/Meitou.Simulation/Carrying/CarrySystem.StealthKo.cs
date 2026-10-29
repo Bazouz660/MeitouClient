@@ -172,8 +172,8 @@ public sealed partial class CarrySystem
         var attackerId = table.IdOf(i);
         var targetId = table.IdOf(t);
         bool spotted = Aggro?.Spotted(t, attackerId) == true;
-        // Fighting and aware of the attacker (fighting it or having spotted it) while the attacker is not unseen: no chance.
-        bool aware = spotted || world.SystemOf<Combat.CombatSystem>()?.StateOf(targetId) is { } fight && fight.TargetSlot == i && fight.TargetGeneration == attackerId.Generation;
+        // Fighting and aware of the attacker (having an entry for it: it saw or heard it, or is fighting it) while the attacker is not unseen: no chance (FUN_1408852f0, FUN_1408593d0 makes an entry on a sight or a hearing).
+        bool aware = spotted || cold.KnockoutHeard || world.SystemOf<Combat.CombatSystem>()?.StateOf(targetId) is { } fight && fight.TargetSlot == i && fight.TargetGeneration == attackerId.Generation;
         bool noticed = target.InCombat && aware && Aggro?.Unseen(table, attackerId) == false;
         float chance = StealthKoChance(cold, target, spotted, cold.KnockoutHeard, noticed);
         float roll = Rng.Float(Rng.Hash(world.Seed, Rng.Key(attackerId), RngPurpose.StealthKo, (ulong)world.Tick)) * 100;

@@ -140,7 +140,7 @@ Hearing does not imply ordinary visual cone/line-of-sight eligibility.
 
 ## Retreat and memory
 
-Sense entries keep position/time/seen/heard/faction/tags; tag map and update rates come from binary,
+Sense entries keep position/time/seen (`+0x38`)/heard (`+0x39`)/faction/tags; a looker's pass `FUN_1408593d0` creates or refreshes an entry only when it saw (`FUN_140857b10`) or heard (`FUN_140857500`) the target, and `FUN_140858f40` forces one with seen set (**Verified**; the entry's life after sight is lost is **Unknown**). Tag map and update rates come from binary,
 not renderer visibility. Runaway/forced-runaway, home-town retreat, retreat-refresh package and
 squad Run-Away order have different target/ending rules. Faction ratios tune breaking/safe end;
 normal squad trigger and exact selection remain partly unknown. Leash/home/running state must
