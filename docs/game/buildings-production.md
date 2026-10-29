@@ -252,9 +252,33 @@ shows the first failing message in this order (**Verified** unless marked):
   interior furniture and nodes) the ghost tilts to the ground and a slope over the limit fails; without it the tilt is
   blended by the player tilt factor and clamped, never failing. Also fails on an object surface more than 5 deg off
   the hit normal, or on ground with normal.y < 0.2 (`FUN_1404d5420`).
-- **Vertical margins** (`FUN_1404d9c00`, `FUN_1404d21e0`): ground height by a ray from 1000 above; nodes marked
-  `above ground` must be at or above it, others at or below; both minimum margins must be >= 0. `vertical position
-  tolerance` widens this for single-kind buildings (**Observed**).
+- **Vertical margins** (**Verified**, `FUN_1404d9c00`, `FUN_1404d21e0`, `FUN_1404d23c0`, `FUN_1404d9530`, `FUN_1404d2080`, `FUN_1404d1680`
+  and the frame update `FUN_1404dba40`; Meitou: `PlacementCheck.Margins`, `Settle`):
+  - **Groups and nodes.** One group per BUILDING_PART with `affects footprint` (`FUN_1407e5f80`); its `above ground` bool picks
+    the side. Its nodes are the four corners (X, Z) of the part's mesh bounds box, times the building's `scale`, at height
+    `footprint vertical` x scale. A node's world place = the ghost's turn x (node + the part's scene-node position) + the ghost's
+    position (the ghost's tilt is in the turn). Wall ghosts (`PreviewBuilding_Wall`, own slots) add intermediate points along
+    long LAND parts and are not measured here.
+  - **Ground** under a node (`FUN_1404d2080`): the terrain height there, never below 100 (`FUN_1409b2a40`). A ray hit counts only
+    when its object type is 0xe (the terrain, **Observed**: `FUN_1404d5420` resets the lift when the cursor hits any other type);
+    anything else falls back to the terrain height, so buildings never count as ground.
+  - **Margins.** Per node: ground - node height for a group not above ground, node height - ground for one that is; a group's
+    value is the minimum over its nodes, and the ghost's `+0x84` ("up": how far it may still rise) is the minimum over the
+    not-above groups, `+0x80` ("down": how far it may sink) over the above groups, both starting at 1e8.
+  - **Tolerance.** `vertical position tolerance` T (BUILDING float) when |T| > 0: with no above-ground group, the first group is
+    measured again with its nodes moved up by T x scale (the building's turn applied, **Observed**: the decompile computes
+    the turned offset but its use is unclear) and node - ground, folded into "down"; with only above-ground groups, moved down
+    by |T| x scale and ground - node, folded into "up".
+  - **Frame nudge** (`FUN_1404d1680`, added to the lift and to the margins in `FUN_1404dba40`, before the validity test): outdoors
+    with down + up < 0 the ghost centres, lift += (up - down) / 2 (unless a building is under the cursor, **Unknown** use, not
+    modelled); else a negative down raises it by -down, a negative up lowers it by |up|. `is interior furniture` / `is node` ghosts
+    (that may also stand outside) are instead pulled to lift 0: step = min(-lift, up - 0.01), then clamped to -down. So the margin
+    failure outdoors is "down + up < 0" ("Ground needs to be more level.", `FUN_1404d1640`), and buildings sink into slopes
+    by themselves. The margins are skipped for interior-only furniture, inside a building (`FUN_14042def0`), and when
+    `PreviewBuilding +0x48` is set (never seen set outside the build-mode object).
+  - **Not modelled:** ghosts on a building's floor (Meitou takes the floor as level, the original measures against the terrain
+    under them, **Unknown**), the indoor lift reset, parts nested under another part (the node position is the whole chain's, the
+    original's the part's own scene node), and a mesh whose bounds file is missing (the part is left out).
 - **Indoors** (`FUN_1404d69c0`, flags read in `FUN_1404debc0`): an `is interior furniture` or `is node` building
   is valid with all node points in one player-owned building; otherwise only if it is `is exterior furniture` or
   `is node` (**Verified** by code). So interior-only furniture must be inside, while interior+exterior items (Campfire,
@@ -273,8 +297,9 @@ shows the first failing message in this order (**Verified** unless marked):
   `Dead` when the largest is below 0.1, in the crop yield's colour. The ghost is valid only while v and the crop yield
   are >= 0.01.
 - **Controls** (bindings `FUN_1403636c0`, applied in `FUN_1404d5420` x frame time): rotate +-80 deg/s, move up/down
-  +-60 units/s (6 with the slow modifier, capped by the margins; offset reset above 1000), tilt factor +-1/s in 0..1,
-  default 0.2.
+  +-60 units/s (6 with the slow modifier; offset reset above 1000), tilt factor +-1/s in 0..1, default 0.2. Each step is capped
+  by the margins (**Verified**, `FUN_1404d5420`): the up key moves by min(step, up margin) while the up margin is above 0 and
+  otherwise the down key tests the same against the down margin; the margins are those of the previous frame, after the nudge.
 - **Commit** (`FUN_1404d5130`, `FUN_1404db5a0`, `FUN_1404d72a0`): a click queues the ghost (position relative to the
   parent building, or height above terrain, and floor) and spawns a new ghost; Confirm assigns towns, then the factory
   `FUN_14057cc70` creates each building with its town, the player faction, rotation, parent building and floor. No

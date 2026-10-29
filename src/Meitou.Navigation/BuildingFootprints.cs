@@ -166,6 +166,12 @@ public sealed class BuildingFootprints
         return hull.Length < 3 ? null : new BuildingFootprint(hull, points.Min(p => p.Y), points.Max(p => p.Y));
     });
 
+    readonly ConcurrentDictionary<string, (Vector3 Min, Vector3 Max)?> partBounds = new(StringComparer.Ordinal);
+
+    /// <summary>The bounds box of a building part's mesh in its own space (the mesh file's bounds chunk, read once); null when the file is not found or has none.</summary>
+    public (Vector3 Min, Vector3 Max)? PartBounds(string meshPath) => partBounds.GetOrAdd(meshPath, path =>
+        Meitou.Data.Physics.CollisionPaths.Resolve(install, path) is { } file && Meitou.Data.Ogre.OgreMeshReader.TryReadBounds(file, out var b) && b.Max.X >= b.Min.X ? (b.Min, b.Max) : null);
+
     /// <summary>Whether a BUILDING is a farm (it names a <c>farm data</c>): the level buildings without collision that a click still selects, by their <see cref="Plot"/>.</summary>
     bool IsFarm(string buildingId) => db.Find(buildingId)?.GetReferences("farm data") is [_, ..];
 

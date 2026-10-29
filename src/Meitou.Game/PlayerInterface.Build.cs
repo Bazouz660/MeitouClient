@@ -38,6 +38,8 @@ sealed partial class PlayerInterface
     BuildingBuildData? buildMember;
     readonly List<QueuedGhost> buildQueue = [];
     float ghostYaw, ghostLift, ghostTilt = DefaultTilt;
+    // How far the ghost may still sink and rise at its last place (PlacementCheck.Margins, after the nudge); the height keys stop at them.
+    PlacementCheck.VerticalMargins ghostMargins = PlacementCheck.VerticalMargins.Unlimited;
     // The ghost now: where the cursor meets the ground or a building's floor (On), its rotation (tilt included), the first failure.
     (Vector3 Position, Quaternion Rotation, PlacementFailure Failure, BuildingBuildData Building, Vector2[]? Hull, GhostFloor? On)? ghost;
     readonly HashSet<Key> buildHeld = [];
@@ -76,6 +78,7 @@ sealed partial class PlayerInterface
         {
             buildQueue.Clear();
             ghostYaw = ghostLift = 0;
+            ghostMargins = PlacementCheck.VerticalMargins.Unlimited;
             ghostTilt = DefaultTilt;
             buildCategory = null;
             buildGroup = 0;
@@ -169,11 +172,15 @@ sealed partial class PlayerInterface
         buildClock = now;
         float Held(Key plus, Key minus) => (buildHeld.Contains(plus) ? 1f : 0f) - (buildHeld.Contains(minus) ? 1f : 0f);
         ghostYaw += Held(EngineKey.Period, EngineKey.Comma) * RotateDegreesPerSecond * MathF.PI / 180 * dt;
-        ghostLift += Held(EngineKey.Equal, EngineKey.Minus) * (SlowModifier ? SlowMove : MoveUnitsPerSecond) * dt;
+        // The height keys (FUN_1404d5420): up goes by at most the up margin, and when it cannot (or is not held) down goes by at most the down margin.
+        float lift = (SlowModifier ? SlowMove : MoveUnitsPerSecond) * dt;
+        if (buildHeld.Contains(EngineKey.Equal) && ghostMargins.Up > 0) ghostLift += MathF.Min(lift, ghostMargins.Up);
+        else if (buildHeld.Contains(EngineKey.Minus) && ghostMargins.Down > 0) ghostLift -= MathF.Min(lift, ghostMargins.Down);
         if (MathF.Abs(ghostLift) > MaxLift) ghostLift = 0;
         ghostTilt = Math.Clamp(ghostTilt + Held(EngineKey.RightBracket, EngineKey.LeftBracket) * TiltPerSecond * dt, 0, 1);
 
         ghost = null;
+        ghostMargins = PlacementCheck.VerticalMargins.Unlimited;
         wallPieces.Clear();
         wallEndSnap = ghostSnap = null;
         if (wallLine is { } line && line.Master != CurrentBuilding()) wallLine = null;
@@ -211,8 +218,17 @@ sealed partial class PlayerInterface
                 ignore = WallIgnore(new WallPiece(building, position, rotation), [snap.Point]);
             }
             var snapshot = session.CurrentSnapshot;
-            var failure = !Unlocked().Contains(building.Id) ? PlacementFailure.NotAvailable : PlacementCheck.Evaluate(new PlacementQuery(building, position, rotation, yaw, on?.Floor ?? 0, parts,
-                buildQueue, snapshot.Characters, snapshot.Buildings, host.Towns(), host.PlayerFactionId(), host.Placement) { Ignore = ignore, On = on });
+            var query = new PlacementQuery(building, position, rotation, yaw, on?.Floor ?? 0, parts,
+                buildQueue, snapshot.Characters, snapshot.Buildings, host.Towns(), host.PlayerFactionId(), host.Placement) { Ignore = ignore, On = on, Lift = ghostLift };
+            // The ghost settles on the ground by itself (the original nudges it every frame, FUN_1404d1680): the height it keeps is what the placement is judged at and what a click queues.
+            if (PlacementCheck.Settle(query) is { } settled)
+            {
+                ghostLift += settled.Step;
+                position.Y += settled.Step;
+                ghostMargins = settled.After;
+                query = query with { Position = position, Lift = ghostLift };
+            }
+            var failure = !Unlocked().Contains(building.Id) ? PlacementFailure.NotAvailable : PlacementCheck.Evaluate(query);
             ghost = (position, rotation, failure, building, footprint?.Place(position, Quaternion.CreateFromAxisAngle(Vector3.UnitY, yaw)), on);
         }
         buildMessage = ghost is { Failure: not PlacementFailure.None } g ? PlacementCheck.Message(g.Failure)

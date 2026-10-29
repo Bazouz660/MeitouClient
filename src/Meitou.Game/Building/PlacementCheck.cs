@@ -44,6 +44,8 @@ public sealed class PlacementServices
     public Func<Vector3, Vector3, float, (Vector3 Position, GhostFloor Floor)?> FloorAlong { get; init; } = (_, _, _) => null;
     /// <summary>What a BUILDING's ghost reads of the world's resources at a position (<see cref="PlacementRules.Readout"/>); null without them.</summary>
     public Func<string, Vector3, PlacementReadout?> Readout { get; init; } = (_, _) => null;
+    /// <summary>The bounds box (min, max) of a building part's mesh in its own space; null when it cannot be read (that part then takes no part in the vertical margins).</summary>
+    public Func<string, (Vector3 Min, Vector3 Max)?> PartBounds { get; init; } = _ => null;
 }
 
 /// <summary>Everything one evaluation reads (the query is pure over it and the services).</summary>
@@ -58,6 +60,8 @@ public sealed record PlacementQuery(BuildingBuildData Building, Vector3 Position
     public Func<string, Vector3, Quaternion, bool>? Ignore { get; init; }
     /// <summary>The building floor the ghost stands on; null on the terrain.</summary>
     public GhostFloor? On { get; init; }
+    /// <summary>The ghost's vertical offset from the ground under the cursor (the original's build-mode height offset); only the margins of interior furniture and nodes read it.</summary>
+    public float Lift { get; init; }
 }
 
 /// <summary>
@@ -139,11 +143,100 @@ public static class PlacementCheck
             return b.MaxSlope > 0 && Vector3.Transform(Vector3.UnitY, Normalised(q.Rotation)).Y < MathF.Cos(b.MaxSlope * MathF.PI / 180) ? PlacementFailure.NotLevel : PlacementFailure.None;
         // A building's floor is taken as level (the original's one indoor ray and its 5 degree surface test are not read).
         if (parent is not null) return PlacementFailure.None;
+        // The vertical margins, after the nudge the original gives the ghost each frame (Settle); a margin left below 0 fails.
+        if (Settle(q) is { After: { Down: < -MarginEpsilon } or { Up: < -MarginEpsilon } }) return PlacementFailure.NotLevel;
         var bounds = q.Services.Footprint(b.Id)?.Bounds ?? (new Vector2(-4), new Vector2(4));
         float slope = SlopeDegrees(q.Services.Ground, at, q.Yaw, bounds, out float normalY);
         // max slope fails a ghost only when it matches the slope (FUN_1404daa20, Verified); any other is only refused by the steepness test.
         if (normalY < SteepestNormalY || b.MatchSlope && b.MaxSlope > 0 && slope > b.MaxSlope) return PlacementFailure.NotLevel;
         return PlacementFailure.None;
+    }
+
+    /// <summary>The value of a margin with nothing limiting it (the original starts both at 1e8).</summary>
+    public const float NoLimit = 1e8f;
+    /// <summary>The terrain height the original never goes below under a node (<c>FUN_1409b2a40</c> / <c>FUN_1404d2080</c>: the sea floor reads as 100).</summary>
+    const float LowestGround = 100;
+    /// <summary>Slack for the margin test, since Settle's own arithmetic is repeated on a recomputed position (engine choice; the original adjusts the margins instead of measuring again).</summary>
+    const float MarginEpsilon = 1e-3f;
+
+    /// <summary>
+    /// How far a ghost can still move, over its footprint parts' nodes: <paramref name="Down"/> is the original's +0x80 (the minimum of node height - ground over the groups marked
+    /// <c>above ground</c>: how far it may sink) and <paramref name="Up"/> its +0x84 (the minimum of ground - node height over the others: how far it may rise).
+    /// </summary>
+    public readonly record struct VerticalMargins(float Down, float Up)
+    {
+        public static VerticalMargins Unlimited => new(NoLimit, NoLimit);
+    }
+
+    /// <summary>
+    /// The vertical margins of a ghost on the terrain (docs/game/buildings-production.md "Placement", Vertical margins; <c>FUN_1404d9c00</c>, <c>FUN_1404d21e0</c>, <c>FUN_1404d23c0</c>).
+    /// A group is a BUILDING_PART with <c>affects footprint</c>: its nodes are the four corners of its mesh's bounds box (X, Z) at <c>footprint vertical</c> (all times the building's
+    /// <c>scale</c>), moved by the part's node position and the ghost's turn and position; the ground under a node is the terrain, never below 100. When no group is above ground, the first
+    /// group is measured again moved up by <c>vertical position tolerance</c> (times scale) the other way round and joins <see cref="VerticalMargins.Down"/>; when every group is, moved down
+    /// and joined to <see cref="VerticalMargins.Up"/>. Null for what the original does not measure: a ghost on a building's floor (Meitou takes a floor as level), a wall (its own pitch
+    /// test), and interior-only furniture and nodes.
+    /// </summary>
+    public static VerticalMargins? Margins(PlacementQuery q)
+    {
+        var b = q.Building;
+        if (q.On is not null || q.WallPiece || b.LinksTogether || b.IsInteriorFurniture && !b.IsExteriorFurniture && !b.IsNode) return null;
+        var rotation = Normalised(q.Rotation);
+        var groups = new List<(bool Above, Vector3 Node, Vector3[] Corners)>();
+        foreach (var part in q.Parts)
+        {
+            var source = part.Source;
+            if (!source.GetBool("affects footprint") || q.Services.PartBounds(part.MeshPath) is not { } box) continue;
+            float y = source.GetFloat("footprint vertical") * b.Scale;
+            Vector3 Corner(float x, float z) => new(x * b.Scale, y, z * b.Scale);
+            groups.Add((source.GetBool("above ground"), part.Transform.Translation,
+                [Corner(box.Min.X, box.Min.Z), Corner(box.Max.X, box.Min.Z), Corner(box.Max.X, box.Max.Z), Corner(box.Min.X, box.Max.Z)]));
+        }
+        // A group's smallest margin: ground - node height (the node must stay under the ground), or node height - ground when measuring an above ground group; shifted up by `shift`.
+        float Measure((bool Above, Vector3 Node, Vector3[] Corners) group, float shift, bool above)
+        {
+            float least = NoLimit;
+            var lift = Vector3.Transform(new Vector3(0, shift * b.Scale, 0), rotation);
+            foreach (var corner in group.Corners)
+            {
+                var world = Vector3.Transform(corner + group.Node, rotation) + q.Position + lift;
+                float ground = MathF.Max(q.Services.Ground(world.X, world.Z), LowestGround);
+                least = MathF.Min(least, above ? world.Y - ground : ground - world.Y);
+            }
+            return least;
+        }
+        float down = NoLimit, up = NoLimit;
+        foreach (var group in groups)
+        {
+            float margin = Measure(group, 0, group.Above);
+            if (group.Above) down = MathF.Min(down, margin); else up = MathF.Min(up, margin);
+        }
+        float tolerance = b.VerticalPositionTolerance;
+        if (groups.Count > 0 && MathF.Abs(tolerance) > 0)
+        {
+            if (!groups.Exists(g => g.Above)) down = MathF.Min(down, Measure(groups[0], tolerance, above: true));
+            if (groups.TrueForAll(g => g.Above)) up = MathF.Min(up, Measure(groups[0], -MathF.Abs(tolerance), above: false));
+        }
+        return new VerticalMargins(down, up);
+    }
+
+    /// <summary>
+    /// The nudge the original gives the ghost's height each frame (<c>FUN_1404d1680</c>, applied in <c>FUN_1404dba40</c>) and the margins after it. Outdoors: when the ghost cannot fit
+    /// (down + up below 0) it centres between the two, else a negative down margin raises it by that much and a negative up margin lowers it. Interior furniture and nodes standing outside
+    /// are pulled back to no lift, keeping 0.01 under the ground and inside the down margin. Null when <see cref="Margins"/> measures nothing.
+    /// </summary>
+    public static (float Step, VerticalMargins After)? Settle(PlacementQuery q)
+    {
+        if (Margins(q) is not { } m) return null;
+        var b = q.Building;
+        float step;
+        if (b.IsInteriorFurniture || b.IsNode)
+        {
+            step = MathF.Min(-q.Lift, m.Up - 0.01f);
+            step = m.Up - step < 0 ? m.Up : m.Down + step < 0 ? -m.Down : step;
+        }
+        else
+            step = m.Down + m.Up < 0 ? (m.Up - m.Down) * 0.5f : m.Down < 0 ? -m.Down : m.Up < 0 ? m.Up : 0;
+        return (step, new VerticalMargins(m.Down + step, m.Up - step));
     }
 
     /// <summary>
