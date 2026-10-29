@@ -429,15 +429,18 @@ public sealed partial class FirstAidSystem
             var d = next[s].Position - next[i].Position;
             if (d.LengthSquared() > range * range) continue;
             float score = SplintWeight * Nearness(world, i, cold, s);
-            if (score > StickyMinScore && taken.Contains((i, s))) return StartSplint(world, i, s, taken, job);   // the running pair is taken at once
+            if (score > StickyMinScore && taken.Contains((i, s))) return StartJob(world, i, s, taken, Splinting(job));   // the running pair is taken at once
             if (OthersOn(taken, i, s) > 0) score *= TakenWeight;
             if (score <= bestScore) continue;
             best = s;
             bestScore = score;
         }
         if (bestScore < SplintWeight && own.NeedsSplint(ownRace, skill)) best = i;
-        return best >= 0 && StartSplint(world, i, best, taken, job);
+        return best >= 0 && StartJob(world, i, best, taken, Splinting(job));
     }
+
+    /// <summary>The Splint Rigging job's treatment (row 250).</summary>
+    static TaskRequest Splinting(int job) => new(CharacterTask.Treat, TaskType.SPLINT_JOB, TaskSource.Job) { Job = job };
 
     /// <summary>The task a job's treatment goes back to: what the medic did before its job.</summary>
     static CharacterTask ResumeOf(World world, int i)
@@ -457,16 +460,4 @@ public sealed partial class FirstAidSystem
         return true;
     }
 
-    /// <summary>The Splint Rigging job's splinting of <paramref name="patient"/>, going back afterwards to what the medic did before its job.</summary>
-    static bool StartSplint(World world, int i, int patient, List<(int Medic, int Patient)> taken, int job)
-    {
-        var next = world.Characters.Next;
-        var cold = world.Characters.Cold(i)!;
-        taken.Add((i, patient));
-        var resume = ResumeOf(world, i);
-        var target = new CharacterId(patient, next[patient].Generation);
-        cold.Running = new RunningTask(CharacterTask.Treat, TaskType.SPLINT_JOB, TaskSource.Job, job, target, null, world.Tick);
-        Begin(world, i, target, resume, splint: true);
-        return true;
-    }
 }

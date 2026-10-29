@@ -39,11 +39,12 @@ public sealed partial class CarrySystem
                 if (duty[role] < 0) duty[role] = population.GoalDuty(world, squad, (AiRole)role, TaskType.LOOT_THE_DEAD) ? 1 : 0;
                 if (duty[role] == 0) continue;
                 taken ??= Looting(table);
+                if (!TaskStart.Eligible(world, cold, TaskType.LOOT_THE_DEAD)) continue;
                 int target = LootTarget(world, table, slot, cold, taken, memory);
                 if (target < 0) continue;
                 taken.Add(target);
                 var task = (CharacterTask)table.Next[slot].Task;
-                Begin(table, slot, table.IdOf(target), CharacterTask.Loot, task is CharacterTask.Wander or CharacterTask.Follow ? task : CharacterTask.Idle);
+                Start(world, slot, CharacterTask.Loot, TaskType.LOOT_THE_DEAD, TaskSource.Npc, table.IdOf(target), task is CharacterTask.Wander or CharacterTask.Follow ? task : CharacterTask.Idle);
             }
         }
     }

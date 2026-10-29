@@ -45,9 +45,9 @@ public sealed partial class CarrySystem
                 }
                 else if (body >= 0)
                 {
-                    taken.Add(body);
                     var task = (CharacterTask)table.Next[slot].Task;
-                    Begin(table, slot, table.IdOf(body), CharacterTask.Loot, task is CharacterTask.Wander or CharacterTask.Follow ? task : CharacterTask.Idle);
+                    if (Start(world, slot, CharacterTask.Loot, TaskType.NOT_BE_UNARMED, TaskSource.Npc, table.IdOf(body), task is CharacterTask.Wander or CharacterTask.Follow ? task : CharacterTask.Idle))
+                        taken.Add(body);
                 }
             }
         }

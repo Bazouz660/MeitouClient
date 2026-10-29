@@ -146,7 +146,7 @@ public sealed partial class ProductionSystem
         if (arrived)
         {
             if (e.Kind == ErrandKind.Corpse) Incinerate(world, i, cold, site!, machine!);
-            else Carry!.BeginPutDown(world, i);
+            else Carry!.BeginPutDown(world, i, TaskSource.Job);
             errands.Remove(id);
             return;
         }
@@ -156,7 +156,7 @@ public sealed partial class ProductionSystem
             if (e.Kind == ErrandKind.Corpse) GiveUp(world, i, e);
             else
             {
-                Carry!.BeginPutDown(world, i);
+                Carry!.BeginPutDown(world, i, TaskSource.Job);
                 errands.Remove(id);
             }
             return;

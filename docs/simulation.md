@@ -93,8 +93,9 @@ the immediate-threat reach inline (Unknown whether they match `FUN_1404378f0`'s 
 Meitou's `CharacterTask` is the act-out, the row is the `TaskType`: a pick-up is 225 for the order (246 kidnap), 148 for the rescue job, 238 foraging, 137 errands; operate 87 (97 training
 dummy), haul 124, turret 146, prospect 150, build 2, door repair 95, dismantle 96, bed 98 / put in bed 99 / job 106, move 29, melee 5 (picked) or 16, a perma-job its own row. Used by
 `CarrySystem.CanCarry` (replaces its animal and imprisoned tests), the production, construction, bed, move and fight starts, and the player's job `Runnable`. Consequences (the original's rows):
-a crawler or one staying low (0x40, posture 1 or 2) can start only rows that register it (move, first aid, loot, talk, attacks, prospect, sleep; not carry, operate, build, repair, dismantle, put in bed); an animal only 0x20 rows (so
-no bed, no carry, no operate, no medic; job 289 is animal-only, so a human with that job never runs it). Not yet routed through it: implicit jobs, locks and cages, loot, put down, trade and
+a crawler or one staying low (0x40, posture 1 or 2) can start only rows that register it (move, first aid, loot, talk, attacks, prospect, sleep; not carry, put down 69, stealth KO 228, Splint
+Rigging 250, operate, build, repair, dismantle, put in bed); an animal only 0x20 rows (so no bed, no carry, no loot 26 / 177 / 42, no first aid, no operate, no medic; job 289 is animal-only, so a human
+with that job never runs it). Loot is 26 for the orders, 177 for NPC scavenging and 42 for an NPC arming itself. Not yet routed through it: implicit jobs, locks and cages, trade and
 talk, the continuing checks (`Able`, `CanWalk`, which still stop work on a cage). The medic finder keeps its own imprisoned refusal because rows 25 / 58 register the imprisoned repertoire
 (whether a caged prisoner treats is **Unknown**). A fight is row 5 when the player picked the target, 13 for a defence, else 16 (13 and 16 register the same repertoires).
 
@@ -106,9 +107,10 @@ talk, the continuing checks (`Able`, `CanWalk`, which still stop work on a cage)
 `TaskStart.End(world, slot, reason)` ends a task from outside its act-out (`TaskEnd.Stopped`, the Stop order and a squad mate lifted awake: then idle). Each `CharacterTask` has one
 `ITaskHandler` (Start, End, Done), registered by its system (`ITaskOwner`) in `World.Tasks`, an open list later code may add to or replace; a task without one is set as is. Owners: movement
 (GoTo, Follow), combat (Attack), first aid (Treat, Rest), carry (PickUp, PutDown, Loot, StealthKo).
-- Routed through it: move, follow and bodyguard (order and job), stop, every fight (`AttackOrder`: picked is an order, `Defensive` a reaction, else a goal), the Medic button, medic and
-  robotics jobs, NPC healing, Rest, pick up and kidnap orders, the lifts of errands, rescue (job, button, NPC leaders), kidnappers, guards and town duties (`BeginPickUp`), foraging. Not yet:
-  the First Aid and Splint orders, the splint job, loot, stealth KO and put down; production, construction, locks, beds, crime, kidnap, dialogue and trade starts.
+- Routed through it: move, follow and bodyguard (order and job), stop, every fight (`AttackOrder`: picked is an order, `Defensive` a reaction, else a goal), First Aid, Splint, the Medic
+  button, medic, robotics and splint jobs, NPC healing, Rest, pick up, kidnap, loot, open inventory, stealth KO and put down orders, the lifts and drops of errands and town duties, rescue
+  (job, button, NPC leaders), kidnappers' and guards' lifts (`BeginPickUp`), foraging, NPC scavenging and arming. Not yet: production, construction, locks, beds, crime, kidnap, dialogue and
+  trade starts.
 - `PermaJobs.FromJob` reads a `TaskSource.Job` provenance while its act-out runs; production's `JobIndex`, `Implicit` and `ResumeTask` still mark production's own starts.
 - Engine: a fight ended in a serial phase clears both combat state arrays (`CombatSystem.Live` tells which one is current: the slow-world swap changes it).
 - **A fight under another task** (Meitou only; **Verified** by reading `CombatSystem.Act`, `PursuitSystem`): a start that overwrites a fighter's task without ending its fight (the sites

@@ -170,19 +170,19 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
                     break;
                 case LootOrder loot:
                     if (!table.TryResolveNext(loot.Target, out int victim) || !CanBeLooted(table.Cold(victim)!)) break;
-                    if (Nearest(table, Who(world, loot.Looters), victim, s => s != victim && table.Cold(s) is { Medical.Incapacitated: false, Inventory: not null } c && c.CarriedBy.IsNone) is int looter)
+                    if (Nearest(table, Who(world, loot.Looters), victim, s => s != victim && table.Cold(s) is { Medical.Incapacitated: false, Inventory: not null } c && c.CarriedBy.IsNone
+                        && TaskStart.Eligible(world, c, TaskType.LOOT_TARGET)) is int looter)
                     {
                         if (world.Player.LootWalker == table.IdOf(looter)) world.Player.OpeningLoot = CharacterId.None;
-                        LeaveFight(world, looter);
-                        Begin(table, looter, loot.Target, CharacterTask.Loot, CharacterTask.Idle);
+                        Start(world, looter, CharacterTask.Loot, TaskType.LOOT_TARGET, TaskSource.Order, loot.Target, CharacterTask.Idle);
                     }
                     break;
                 case OpenLootOrder open:
                     if (!table.TryResolveNext(open.Target, out int body2) || !Openable(table, body2)) break;
-                    if (Nearest(table, Who(world, open.Looters), body2, s => s != body2 && table.Cold(s) is { Medical.Incapacitated: false, Inventory: not null } c && c.CarriedBy.IsNone) is int opener)
+                    if (Nearest(table, Who(world, open.Looters), body2, s => s != body2 && table.Cold(s) is { Medical.Incapacitated: false, Inventory: not null } c && c.CarriedBy.IsNone
+                        && TaskStart.Eligible(world, c, TaskType.LOOT_TARGET)) is int opener)
                     {
-                        LeaveFight(world, opener);
-                        Begin(table, opener, open.Target, CharacterTask.Loot, CharacterTask.Idle);
+                        Start(world, opener, CharacterTask.Loot, TaskType.LOOT_TARGET, TaskSource.Order, open.Target, CharacterTask.Idle);
                         (world.Player.OpenLoot, world.Player.OpeningLoot, world.Player.LootWalker) = (CharacterId.None, open.Target, table.IdOf(opener));
                     }
                     break;
@@ -200,7 +200,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
                     break;
                 case PutDownOrder put:
                     foreach (var id in Who(world, put.Carriers))
-                        if (table.TryResolveNext(id, out int slot)) BeginPutDown(world, slot);
+                        if (table.TryResolveNext(id, out int slot)) BeginPutDown(world, slot, TaskSource.Order);
                     break;
                 case RescueJobCommand job:
                 {
@@ -239,13 +239,15 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         return true;
     }
 
-    /// <summary>Starts the put-down of the body the character in <paramref name="slot"/> carries (the order 'Put Down', and the carrying jobs' drop; serial phases): false when it carries nothing or cannot act, or is putting down already.</summary>
-    public bool BeginPutDown(World world, int slot)
+    /// <summary>
+    /// Starts the put-down (row 69) of the body the character in <paramref name="slot"/> carries (the order 'Put Down', the carrying jobs' and town duties' drop; serial phases): false when it
+    /// carries nothing or cannot act, or is putting down already.
+    /// </summary>
+    public bool BeginPutDown(World world, int slot, TaskSource source = TaskSource.Npc)
     {
         var table = world.Characters;
-        if (table.Cold(slot) is not { Carrying.IsNone: false, Medical.Incapacitated: false } || table.Next[slot].Task == (byte)CharacterTask.PutDown) return false;
-        PutDownStart(table, slot);
-        return true;
+        if (table.Cold(slot) is not { Carrying.IsNone: false, Medical.Incapacitated: false } cold || table.Next[slot].Task == (byte)CharacterTask.PutDown) return false;
+        return Start(world, slot, CharacterTask.PutDown, TaskType.PUT_DOWN_OBJECT, source, cold.Carrying, CharacterTask.Idle);
     }
 
     /// <summary>The put-down's start: the carrier stands and plays the lift clip backwards.</summary>
@@ -287,14 +289,6 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         return true;
     }
 
-    /// <summary>
-    /// A looter ordered mid-fight leaves it (engine choice, as a move order does): once its target drops the battle keeps a fighter in combat on the next enemy, and a player
-    /// character on a task is not pulled back in by itself (<see cref="RetaliationSystem"/> answers only idle ones).
-    /// </summary>
-    static void LeaveFight(World world, int slot)
-    {
-        if (world.Characters.Cold(slot)!.InCombat) world.SystemOf<Combat.CombatSystem>()?.Disengage(world.Characters, world.Characters.IdOf(slot));
-    }
 
     /// <summary>The slot among <paramref name="ids"/> that <paramref name="accept"/> takes and is nearest the target (ties: the first listed).</summary>
     static int? Nearest(CharacterTable table, IReadOnlyList<CharacterId> ids, int target, Func<int, bool> accept)
@@ -343,12 +337,6 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         cold.LootFlags = LootStart.None;
     }
 
-    /// <summary>Starts a loot or a stealth knock-out not yet routed through <see cref="TaskStart"/> (serial phases).</summary>
-    static void Begin(CharacterTable table, int slot, CharacterId target, CharacterTask task, CharacterTask resume)
-    {
-        table.Cold(slot)!.Running = null;
-        Approach(table, slot, target, task, resume);
-    }
 
     /// <summary>The act-out's start of a pick-up, a loot or a stealth knock-out (serial phases): the character stands, then walks to the target.</summary>
     static void Approach(CharacterTable table, int slot, CharacterId target, CharacterTask task, CharacterTask resume)

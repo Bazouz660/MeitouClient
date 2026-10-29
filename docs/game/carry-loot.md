@@ -35,8 +35,8 @@ An animal never carries (**Verified**, decompile): `FUN_14060e840` picks the AI'
 `CharacterAnimal` `FUN_1405e2020` returns 0x20 (the 'animal' registry), `CharacterHuman` `FUN_1405e59b0` 1 ('human'). Every carry row (105/148 rescue, 142 leader rescue, 132 kidnap,
 254, 108 prison, 112/281 cage, 167/168 slaves, 182, 203/204 arrest and bounty, 238 foraging) is registered with flag 0x1 only (`FUN_140319a60`), so an animal cannot plan one
 whatever its race `AI Goals` or package list (a mod's included); the context menu of an animals-only selection offers no Pick Up ([ui-input](ui-input.md)).
-Meitou: `CarrySystem.CanCarry` is false for an animal (the gate of every lift: the rescue and leader rescue passes, kidnap, town duty, capture and slave carry, foraging, errands
-and the player's order), as the animal repertoire itself is not modelled ([ai-tasks](ai-tasks.md), "Providers").
+Meitou: every lift, put-down (69, 0x1) and loot (26, 177, 42: 0x45, no animal) tests its row against the repertoire (`TaskStart`, [simulation](../simulation.md#task-eligibility)); `CarrySystem.CanCarry`
+is that test for every lift (the rescue and leader rescue passes, kidnap, town duty, capture and slave carry, foraging, errands and the player's order).
 
 ### A carried body's animation
 
