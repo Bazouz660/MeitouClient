@@ -80,15 +80,15 @@ public sealed unsafe class ParticleRenderer : IDisposable
         in vec4 vColour;
         out vec4 fragColour;
         uniform sampler2D uTexture;
-        uniform float uCoverageMax;
+        uniform float uCoverageMax, uCoverageGain;
         uniform int uCoverage;                      // 0: colour; 1: the particle's alpha, 2: its brightest channel (the upscalers' reactive mask); 3 / 4: the low-resolution target's premultiplied alpha / additive
         void main()
         {
             // basic.hlsl: texture * colour * vertex colour
             vec4 c = texture(uTexture, vUv) * vColour;
-            // Thin streaks have a small alpha per pixel: any visible particle pixel counts as mostly "new" (30x, saturating; Observed choice).
-            if (uCoverage == 1) c = vec4(clamp(max(c.a, max(c.r, max(c.g, c.b))) * 30.0, 0.0, uCoverageMax));
-            else if (uCoverage == 2) c = vec4(clamp(max(c.r, max(c.g, c.b)) * c.a * 30.0, 0.0, uCoverageMax));
+            // Alpha for alpha-blended sprites (rgb where alpha is 0 shows nothing), brightness times alpha for additive ones, times uCoverageGain (RecordDraws).
+            if (uCoverage == 1) c = vec4(clamp(c.a * uCoverageGain, 0.0, uCoverageMax));
+            else if (uCoverage == 2) c = vec4(clamp(max(c.r, max(c.g, c.b)) * c.a * uCoverageGain, 0.0, uCoverageMax));
             else if (uCoverage == 3) c = vec4(c.rgb * c.a, c.a);   // premultiplied "over": rgb = colour added, a = opacity (1 - transmittance); blend (one, 1 - src alpha)
             else if (uCoverage == 4) c = vec4(c.rgb, 0.0);          // additive: the same blend adds rgb and leaves the opacity
             fragColour = c;
@@ -106,7 +106,7 @@ public sealed unsafe class ParticleRenderer : IDisposable
     readonly DeviceBuffer quad;
     readonly VertexArrayBindings vertexSource;
     readonly GpuBufferBinding[] bindings = new GpuBufferBinding[5];
-    readonly UniformHandle viewProjection, cameraRight, cameraUp, mode, anchor, commonDirection, commonUp, colourScale, coverageMode, coverageLimit;
+    readonly UniformHandle viewProjection, cameraRight, cameraUp, mode, anchor, commonDirection, commonUp, colourScale, coverageMode, coverageLimit, coverageGain;
     readonly SamplerSlot textureSlot;
     readonly SampledImage white;
     readonly Dictionary<string, SampledImage?> textures = new(StringComparer.OrdinalIgnoreCase);
@@ -163,6 +163,9 @@ public sealed unsafe class ParticleRenderer : IDisposable
         public int Divisor;
         /// <summary>The sprites' total area in screens (layers of overdraw, before clipping and the depth test).</summary>
         public float Fill;
+        /// <summary>Rain (a <c>CAMERA_RAIN</c> or <c>CAMERA_ACID_RAIN</c> effect's draw) and fire (a placed effect's additive draw: flames, sparks): full size
+        /// at every setting, each with its own coverage (RecordDraws).</summary>
+        public bool Rain, Fire;
     }
 
     ParticleRenderer(IGpuContext gpu, string texturesDirectory, ParticleLibrary library)
@@ -183,6 +186,7 @@ public sealed unsafe class ParticleRenderer : IDisposable
         colourScale = program.Uniform("uColourScale");
         coverageMode = program.Uniform("uCoverage");
         coverageLimit = program.Uniform("uCoverageMax");
+        coverageGain = program.Uniform("uCoverageGain");
         textureSlot = program.Sampler("uTexture");
         float[] corners = [-0.5f, -0.5f, -0.5f, 0.5f, 0.5f, -0.5f, 0.5f, 0.5f];   // triangle strip
         quad = DeviceBuffer.Create(gpu, sizeof(float) * (ulong)corners.Length, BufferUse.Vertex, "particle quad");
@@ -427,7 +431,7 @@ public sealed unsafe class ParticleRenderer : IDisposable
     /// the scene is nearer than that plane; the others as usual, tested against the scene's depth. Units are drawn far to near.
     /// </summary>
     /// <param name="pixelsPerUnit">Meitou: the render size in pixels of one world unit at distance 1 (0: everything full size). Alpha and additive draws whose sprites are big on screen go to a low-resolution target, the biggest to a quarter-size one (<see cref="QuarterPixels"/>, <see cref="HalfPixels"/>); small ones (rain) stay full size.</param>
-    /// <param name="forcedDivisor">0: by sprite size; 1, 2 or 4: every eligible draw there (for measuring).</param>
+    /// <param name="forcedDivisor">0: by sprite size; 1, 2 or 4: every eligible draw there but rain and fire (for measuring, and the Half and Quarter settings).</param>
     public void Prepare(Matrix4x4 viewProjectionMatrix, Matrix4x4 closeViewProjection, float nearPlane, Matrix4x4 view, Vector3 eye, Vector3 sunDirection, float pixelsPerUnit, float screenPixels, int forcedDivisor = 0)
     {
         long start = Stopwatch.GetTimestamp();
@@ -484,7 +488,7 @@ public sealed unsafe class ParticleRenderer : IDisposable
         var frame = gpu.Frame;
         var forward = -new Vector3(view.M13, view.M23, view.M33);   // the view's -Z axis in the world
         var planes = WorldCamera.FrustumPlanes(viewProjectionMatrix);
-        var units = new List<EffectUnit>();
+        var units = new List<(EffectUnit Unit, bool Rain, bool Placed)>();
         foreach (var g in weatherGroups.Groups.Concat(placerGroups))
             foreach (var u in g.Units)
             {
@@ -494,10 +498,10 @@ public sealed unsafe class ParticleRenderer : IDisposable
                     if (u.DistanceToCamera - u.Radius > DrawRange) continue;
                     if (!InFrustum(planes, u.Position, u.Radius)) continue;
                 }
-                units.Add(u);
+                units.Add((u, g.Effect.Type is EffectType.CameraRain or EffectType.CameraAcidRain, g.Entry is null));
             }
-        units.Sort((a, b) => b.DistanceToCamera.CompareTo(a.DistanceToCamera));
-        foreach (var u in units)
+        units.Sort((a, b) => b.Unit.DistanceToCamera.CompareTo(a.Unit.DistanceToCamera));
+        foreach (var (u, rain, placed) in units)
         {
             var offset = u.Anchor - eye;
             if (u.Simulation is not { } sim || u.CatchingUp) continue;
@@ -525,9 +529,10 @@ public sealed unsafe class ParticleRenderer : IDisposable
                 collectTotal += collected;
                 int divisor = 1;
                 float fill = 0;
-                if (pixelsPerUnit > 0 && (material.Blend == ParticleBlend.Alpha || material.Blend == ParticleBlend.Add))
+                bool fire = placed && material.Blend == ParticleBlend.Add;
+                if (pixelsPerUnit > 0 && !rain && !fire && (material.Blend == ParticleBlend.Alpha || material.Blend == ParticleBlend.Add))
                     (divisor, fill) = DivisorFor(scratch.AsSpan(0, written), forward, nearPlane, pixelsPerUnit, screenPixels, forcedDivisor);
-                draws.Add(new DrawItem { Instances = instances, Count = written, Close = close, Technique = def, Material = material, Texture = texture, Divisor = divisor, Fill = fill });
+                draws.Add(new DrawItem { Instances = instances, Count = written, Close = close, Technique = def, Material = material, Texture = texture, Divisor = divisor, Fill = fill, Rain = rain, Fire = fire });
                 drawnParticles += written;
             }
         }
@@ -564,9 +569,9 @@ public sealed unsafe class ParticleRenderer : IDisposable
 
     /// <summary>
     /// The frame's particles again into the upscalers' reactive mask (docs/renderer-native.md 8.20): the same quads and matrices as the colour draw, adding
-    /// their alpha (or brightness, for additive ones) into <paramref name="mask"/>'s channels. Without it the temporal history keeps about 90% of what was
-    /// behind a fast, thin particle (rain), which then barely shows. Without <paramref name="depthTest"/> a particle hidden behind terrain still makes its
-    /// pixels a little less stable; Metal's reactive path tests the scene depth so those pixels keep their history.
+    /// their alpha (or brightness times alpha, for additive ones) into <paramref name="mask"/>'s channels. Without it the temporal history keeps about 90% of
+    /// what was behind a fast, thin particle (rain), which then barely shows. Both post chains pass <paramref name="depthTest"/> with the scene's depth bound,
+    /// so a particle hidden behind terrain does not make its pixels less stable.
     /// Called by the post chain with the target bound (cleared or loaded as it wants), once per frame after <c>Draw</c>.
     /// </summary>
     public void DrawCoverage(ColorMask mask, bool depthTest = false)
@@ -630,7 +635,13 @@ public sealed unsafe class ParticleRenderer : IDisposable
                         : hasColour ? BlendFor(m.Blend) : BlendState.Off,
                 };
                 program.Set(coverageMode, kind == Kind.Low ? (m.Blend == ParticleBlend.Alpha ? 3 : 4) : coverage == 0 ? 0 : m.Blend == ParticleBlend.Alpha ? 1 : 2);
-                program.Set(coverageLimit, rgb == ColorMask.A ? 2f : 1f);   // the TAA takes half the motion target's alpha, so 2 is "all current frame"
+                // The TAA takes half the motion target's alpha, so 2 is "all current frame". Rain's streaks change fast with a small alpha per pixel: the
+                // history would keep most of what is behind them, so they count 30x, saturating. Fire counts its brightness, at most 0.9 of "all current
+                // frame" (AMD's guidance for FSR's reactive mask), so a distant flame a few pixels high keeps some history and does not flicker. The other
+                // sprites count as they are: 30x on big soft ones (dust, smoke) would fill the mask and leave FSR and TAA no history (docs/render-post.md).
+                float all = rgb == ColorMask.A ? 2f : 1f;
+                program.Set(coverageLimit, d.Fire ? 0.9f * all : all);
+                program.Set(coverageGain, d.Rain ? 30f : 1f);
                 var matrix = close ? closeVp : vp;
                 program.Set(this.viewProjection, in matrix);
                 program.Set(cameraRight, right);

@@ -90,6 +90,12 @@ upsample by depth match; a farthest-only reduction let dust behind thin characte
 their silhouettes, flickering under jitter. Texture anisotropy caps mipmapped samplers, distinct from texture
 resolution/LOD bias. [Particle simulation](formats/particle-universe.md).
 
+Particle coverage (FSR's reactive mask, DLSS's bias hint, TAA's motion alpha): alpha, or brightness times alpha for additive
+sprites, depth-tested. Rain (`CAMERA_RAIN`/`CAMERA_ACID_RAIN`) counts 30x, saturating; fire (placed effects' additive draws)
+as it is, capped at 0.9 (AMD's guidance); the rest as it is. Rain and fire stay full size at every particle setting.
+**Observed** (FSR and TAA at 1080p): 30x on every sprite leaves the scene behind dust grainy under TAA and blurred under FSR;
+without its gain rain's streaks fade; a distant torch a few pixels high flickers at 30x.
+
 ## SMAA
 
 Meitou's non-temporal alternative to FXAA (`--smaa`, or anti-aliasing "SMAA" in settings). It runs on the
