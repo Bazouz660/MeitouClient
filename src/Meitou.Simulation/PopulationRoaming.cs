@@ -150,7 +150,16 @@ public sealed partial class PopulationSystem
     void StandIn(World world, Platoon p, float dt)
     {
         if (p.Pinned || p.Wild || p.Campaign is not null) return;   // a town's own saved squad, or a wild one, stays where it was; a campaign moves its own
-        if (p.Imprisoned) return;   // a platoon left with a member caged stays put (FUN_1407ee790)
+        // It stands still (FUN_1407ee790, Verified): a platoon of the player's faction, one off the zone grid, one inside the trimmed box of a loaded zone (it waits to be made), and a
+        // platoon left with a member caged.
+        if (p.Faction >= 0 && p.Faction == PlayerFactionOf(world) || p.Imprisoned) return;
+        var zone = WorldLayout.ZoneOf(p.Position.X, p.Position.Y);
+        if (!zone.IsInsideGrid) return;
+        if (active.Contains(zone))
+        {
+            var (minX, minZ, maxX, maxZ) = ZoneActivation.TrimmedBox(zone, active.Contains, StandInStopTrim);
+            if (p.Position.X >= minX && p.Position.X <= maxX && p.Position.Y >= minZ && p.Position.Y <= maxZ) return;
+        }
         if (ShippingCamp(p) is >= 0 and var camp)
         {
             // Shipping slaves: on to the camp, then it stays there; the slaves are handed over once it loads (Deliver 192).
@@ -271,6 +280,9 @@ public sealed partial class PopulationSystem
 
     /// <summary>The original's TRAVEL_TARGET speed off screen without a campaign (docs/game/factions-squads-towns.md "Off-screen world").</summary>
     const float TravelTargetSpeed = 25;
+
+    /// <summary>The trim of the box inside which an unloaded platoon in a loaded zone stops (<c>DAT_141718a0c</c> = 178.49998, <b>Verified</b>, <c>FUN_1407ee790</c>); the activation box's is <see cref="ZoneActivation.ActivationTrim"/>.</summary>
+    const float StandInStopTrim = 178.49998f;
 
     /// <summary>The original unloaded mover's top speed (its constructor's 70; no other writer found, Observed).</summary>
     public const float StandInSpeedCap = 70;

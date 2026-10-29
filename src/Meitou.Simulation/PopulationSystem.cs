@@ -314,13 +314,15 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
         for (int x = centre.X - 1; x <= centre.X + 1; x++)
             for (int y = centre.Y - 1; y <= centre.Y + 1; y++)
                 Ask(new ZoneCoordinate(x, y), until);
-        if (players.Count > 0)
-        {
-            long boxUntil = now + (long)Math.Ceiling(ZoneActivation.BoxLingerSeconds / world.TickSeconds);
-            boxZones.Clear();
-            foreach (var p in players) ZoneActivation.AddZonesAround(p, settings.FastZoneHopping ? 1 : 0, boxZones);
-            foreach (var zone in boxZones) Ask(zone, boxUntil);
-        }
+        long boxUntil = now + (long)Math.Ceiling(ZoneActivation.BoxLingerSeconds / world.TickSeconds);
+        int ring = settings.FastZoneHopping ? 1 : 0;
+        boxZones.Clear();
+        foreach (var p in players) ZoneActivation.AddZonesAround(p, ring, boxZones);
+        // An unloaded platoon of the player's faction asks for the box round its place as a player character does (FUN_1407ebf30 -> FUN_140a0f640), so it is made active.
+        if (world.Platoons.Count > 0 && PlayerFactionOf(world) is >= 0 and var player)
+            foreach (var p in world.Platoons.All)
+                if (p.State == PlatoonState.Unloaded && p.Faction == player) ZoneActivation.AddZonesAround(new Vector3(p.Position.X, 0, p.Position.Y), ring, boxZones);
+        foreach (var zone in boxZones) Ask(zone, boxUntil);
         List<ZoneCoordinate>? gone = null;
         foreach (var (zone, t) in loadedUntil) if (t < now) (gone ??= []).Add(zone);
         if (gone is not null) foreach (var zone in gone) loadedUntil.Remove(zone);
