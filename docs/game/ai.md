@@ -134,7 +134,9 @@ A slave's Slave role list runs through the Obedient Slave job (187): [role lists
   `fundamental type` (`+0x34`) is not 8 (the faction's, not the character's class), and whose current town is none or the package's mission town (a hand comparison that returns true on a
   difference, so another town is skipped; there is no distance test). Meitou (`AggroSystem.WarEnemy`, `WarTargets.Town`): a hired squad never takes its hirer's faction (or, 12, its allies) as an enemy, 15 takes the
   hirer's faction for the town's; an Everyone war target follows the rules above and each one the looker sees or hears this look is tagged TEMP ENEMY in its squad's memory (`FUN_140674300` tag 4, the time refreshed each look; same-faction refused;
-  `AggroSystem.TagEffect`, applied serially), which makes it an enemy of every member until the tag fades (6 h, `SquadMemory.Age`); the other hooks write no tags yet.
+  `AggroSystem.TagEffect`, applied serially), which makes it an enemy of every member until the tag fades (6 h, `SquadMemory.Age`). `Contract_HiredAlly`'s hook (`FUN_140289570`, **Verified**: the employer handle, a character or platoon, resolves and its faction equals the sensed
+  character's) tags TEMP ALLY (3) the same way, setting the squad's player TEMP ALLY flag for a player-faction character; Meitou writes it for each such character the looker sees or hears (a look that picks no fights
+  does not run the scan, so tags the hook would write there are missed); the base, `Contract_DefendPlayerBase` and other hooks write no tags yet.
 - **Package_OccupyTown** (30): never starts on its own (only by `Leads to`). Start: the leader's town as mission town, its faction the enemy (+0xb8, memory 4 on sight),
   each member fires TAKEN_OVER_PLAYER_TOWN (73), the platoon made persistent if it was not (undone at the end). Update: the platoon joins the town's occupier set
   (Town +0x118; its count +0x128 is "Hostile Occupiers:" in the town panel, `FUN_140922e60`). End: removed from the set, "{1} squad has been removed from {2}"

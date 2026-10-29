@@ -724,6 +724,10 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         }
         // A contract's employer (Contract_HiredAlly / Contract_DefendPlayerBase assessNeutral, and HiredAlly's assessEnemy for the employer's allies, Verified): TEMP_ALLY, not an enemy.
         if (enemy && s.Employer >= 0 && (c.Faction == s.Employer || s.EmployerAllies && s.Relations.Contains(c.Faction) && s.Relations.IsAlly(s.Employer, c.Faction))) enemy = false;
+        // Contract_HiredAlly's sensing hook (FUN_140289570, Verified) also tags each sensed character of the employer's faction TEMP_ALLY in the squad's memory (same read-only sense test as
+        // the war tag above).
+        if (s.EmployerAllies && s.Employer >= 0 && c.Faction == s.Employer && s.Found is null && s.Squad >= 0 && s.Memory is not null && SensedNow(ref s, slot, other, sneaking, stealth))
+            s.Effects.Emit(s.Self, slot, TagEffect, Dialogue.MemoryTag.TempAlly);
         if (!enemy) return;
         // One it found no path to lately is never picked (isPathImpossible in the attack-on-sight finder's score, docs/game/combat.md "Target score"): else a guard shut in with its
         // enemy (a cage, a locked room) takes it as target again every look and never turns on anyone it can reach.
