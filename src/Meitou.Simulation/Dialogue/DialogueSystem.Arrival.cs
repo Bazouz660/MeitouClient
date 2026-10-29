@@ -1,4 +1,5 @@
 using System.Numerics;
+using Meitou.Data.Gameplay.Dialogue;
 
 namespace Meitou.Simulation.Dialogue;
 
@@ -31,7 +32,17 @@ public sealed partial class DialogueSystem
         foreach (var root in roots)
             foreach (var speaker in candidates)
                 foreach (var partner in candidates)
-                    if (partner != speaker && StartBubbles(world, speaker, partner, root!, 0)) return;
+                    if (partner != speaker && MaySpeak(world, root!, speaker) && StartBubbles(world, speaker, partner, root!, 0)) return;
+    }
+
+    /// <summary>
+    /// Whether <paramref name="speaker"/> may start <paramref name="root"/> (<c>FUN_14067e060</c>, <c>FUN_140684d70</c>, docs/game/dialogue.md "Arrival banter"): a character whose record says
+    /// <c>dumb</c> only when the dialogue's <c>is character</c> names it (an empty list fails), another when the list is empty or names it.
+    /// </summary>
+    bool MaySpeak(World world, DialogueNode root, CharacterId speaker)
+    {
+        if (Cold(world, speaker) is not { } c) return false;
+        return root.IsCharacter.Contains(c.RecordId) || root.IsCharacter.Count == 0 && data.Db.Find(c.RecordId)?.GetBool("dumb") != true;
     }
 
     /// <summary>Whether a character awake and hostile to <paramref name="c"/>'s faction is within its sight range and in view (the original's <c>numEnemies</c> &gt; 0).</summary>

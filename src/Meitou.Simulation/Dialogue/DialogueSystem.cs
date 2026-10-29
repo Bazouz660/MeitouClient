@@ -197,7 +197,13 @@ public sealed partial class DialogueSystem : ITickSystem, IStateHashed, IDialogu
     void StartApproach(World world, TalkOrder order)
     {
         var table = world.Characters;
-        if (!table.TryResolveNext(order.Talker, out int p) || table.Cold(p) is not { IsPlayer: true } || !table.TryResolveNext(order.Target, out int n) || table.Cold(n) is not { IsPlayer: false } nc) return;
+        if (!table.TryResolveNext(order.Talker, out int p) || table.Cold(p) is not { IsPlayer: true } pc || !table.TryResolveNext(order.Target, out int n) || table.Cold(n) is not { IsPlayer: false } nc) return;
+        // The order check (FUN_1405d1940, order 12): a character whose record says dumb refuses to talk to people.
+        if (data.Db.Find(pc.RecordId)?.GetBool("dumb") == true)
+        {
+            world.Post(Loc.Tr("{1} can't talk to people", pc.Name));
+            return;
+        }
         if (!Awake(table, n)) return;
         // A campaign member with a pending interrupt (its negotiation) talks even when its faction is hostile (docs/game/factions-squads-towns.md "Campaigns", announcement).
         if (data.Relations.IsHostile(nc.Faction, world.Player.Faction) && !interrupts.ContainsKey(order.Target))

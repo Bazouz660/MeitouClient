@@ -238,8 +238,9 @@ for each listed `target race` in turn, the first member of the target's squad (s
 (**Verified**, `FUN_140672bf0`).
 
 Interjectors (`FUN_140679bc0`): members of the **owner's own squad**, awake, not the owner, not an animal, not talking, not already an
-interjector, passing the node's check as speaker. A `dumb` character qualifies only when the node's `is character` lists it (fcs.def
-`dumb` "prevents them becoming interjectors or talking to NPCs", **Verified** text). Weight = clamp((d² − 202800) / (900 − 202800), 0,
+interjector, passing the node's check as speaker. A `dumb` character qualifies only when the node's `is character` lists it, an empty list failing (fcs.def
+`dumb` "prevents them becoming interjectors or talking to NPCs", **Verified** text; `FUN_140679bc0`, **Verified**: the other members need no list test of their own, the line check applies a non-empty list to them). The line check itself (`FUN_140678f30`) has no dumb rule, so a dumb
+NPC answers an event's lines like any other; the rule is also in [Arrival banter](#arrival-banter) and in the Talk To order, which a dumb player character refuses ([ui-input](ui-input.md)). Weight = clamp((d² − 202800) / (900 − 202800), 0,
 1): 1 within 30 units, 0 beyond about 450; ×0.1 for a different race (inferred). The weighted pick rule is **Unknown**.
 
 ### Player conversation
@@ -311,7 +312,9 @@ the event was delivered in the speaker's current town (the per-event map the con
 **Verified** (`PlayerInterface::triggerAreaArrivalDialogue` `FUN_1407ffe40`, called when the biome banner hides, [ui-screens](ui-screens.md)): the active squad needs 2 members;
 candidates are members not unconscious, not carried, not in a bed or prison, not animals, not in combat mode, on screen and, for a BIOME_GROUP, not in a town. A member
 sensing an enemy (`numEnemies` > 0) stops it. With 2 or more candidates every candidate x every `arrival dialog` DIALOGUE is scored (`Dialogue::scoreCustomDialog`) and the best
-runs (`runCustomDialog`). Meitou (`DialogueSystem.Arrive`): the first dialogue, speaker and partner in squad order with a line win; "on screen" is not tested.
+runs (`runCustomDialog`). A `dumb` speaker (CHARACTER record flag, `FUN_1405e89c0`; Agnu and Ray in the base data) scores only when the DIALOGUE's `is character`
+lists it, an empty list failing; any other speaker needs the list only when it is non-empty (**Verified**, `FUN_14067e060`, `FUN_140684d70`). Meitou (`DialogueSystem.Arrive`): the first dialogue, speaker
+(with that rule, `MaySpeak`) and partner in squad order with a line win; "on screen" is not tested.
 
 ### Tokens
 
