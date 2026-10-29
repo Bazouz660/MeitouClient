@@ -59,10 +59,11 @@ sealed partial class PlayerInterface(WorldSession session, Func<float, float, fl
         session.World.Commands.Enqueue(command);
     }
 
-    public void Select(IReadOnlyList<CharacterId> ids, bool additive)
+    /// <param name="toggle">A single character with shift: one already selected leaves the selection (<see cref="SelectCommand.Toggle"/>).</param>
+    public void Select(IReadOnlyList<CharacterId> ids, bool additive, bool toggle = false)
     {
         if (ids.Count > 0) SetBuilding(null);   // selecting a character ends the building's selection
-        Say(new SelectCommand(ids, additive) { Tick = session.World.Tick });
+        Say(new SelectCommand(ids, additive, toggle && additive) { Tick = session.World.Tick });
     }
 
     public void Move(Vector3 target, bool queued) =>
@@ -262,7 +263,7 @@ sealed partial class PlayerInterface(WorldSession session, Func<float, float, fl
                 Inspect(CharacterId.None);
                 return;
             }
-            Select(hit is { } id ? new[] { id } : [], shift);
+            Select(hit is { } id ? new[] { id } : [], shift, toggle: true);
             if (other is { } stranger) Inspect(stranger);
             else if (!shift || hit is not null) Inspect(CharacterId.None);
         }
@@ -313,7 +314,7 @@ sealed partial class PlayerInterface(WorldSession session, Func<float, float, fl
     {
         var members = ActiveSquadMembers();
         if (index < 0 || index >= members.Count) return;
-        Select([members[index]], shift);
+        Select([members[index]], shift, toggle: true);
         if (!doubleTap) SkipFlight?.Invoke(members[index]);
         else if (FlyTo?.Invoke(members[index]) != true) CentreOn(members[index]);
     }

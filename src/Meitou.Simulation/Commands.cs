@@ -85,8 +85,12 @@ public sealed class CommandQueue
 /// </summary>
 public sealed record FocusCommand(Vector3 Position) : SimCommand;
 
-/// <summary>Selects the player's own characters. No valid targets retains the selection; otherwise non-additive replaces it and additive (shift) adds to it.</summary>
-public sealed record SelectCommand(IReadOnlyList<CharacterId> Characters, bool Additive = false) : SimCommand;
+/// <summary>
+/// Selects the player's own characters. No valid targets retains the selection; otherwise non-additive replaces it and additive (shift) adds to it.
+/// <paramref name="Toggle"/> (shift on a single character's click, portrait or number key, <c>FUN_1407f9000</c> / <c>FUN_1407f8f60</c>): a character already selected leaves the
+/// selection unless it is the only one; one not selected joins it.
+/// </summary>
+public sealed record SelectCommand(IReadOnlyList<CharacterId> Characters, bool Additive = false, bool Toggle = false) : SimCommand;
 
 /// <summary>Clears order selection and shows another faction's character in the HUD panels. <see cref="CharacterId.None"/> clears inspection only.</summary>
 public sealed record InspectCommand(CharacterId Target) : SimCommand;

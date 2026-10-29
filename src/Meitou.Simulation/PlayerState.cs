@@ -227,6 +227,12 @@ public sealed partial class PlayerSystem(PopulationData? data = null) : ITickSys
                     var selectable = select.Characters.Where(id =>
                         table.TryResolveNext(id, out int slot) && table.Cold(slot)!.IsPlayer).ToArray();
                     if (selectable.Length == 0) break;
+                    // A shift-click on a selected character takes it out, never emptying the selection (it stays when it is the only one).
+                    if (select.Toggle && selectable.Length == 1 && player.Selection.Contains(selectable[0]))
+                    {
+                        if (player.Selection.Count >= 2) player.Selection.Remove(selectable[0]);
+                        break;
+                    }
                     // Selecting meets the owner's faction (FUN_1407f7f20), here the player's.
                     player.Meet(player.Faction);
                     // Picking one of your own shows them: the inspected character of another faction no longer takes the HUD.

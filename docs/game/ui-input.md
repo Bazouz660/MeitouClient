@@ -414,6 +414,11 @@ Selecting one of the player's characters without Shift (click, drag box, number 
 squad selection, the object slot and the focus. With Shift the object slot stays but the focus (the HUD) moves to the character. A click on the
 ground and Esc do not clear it (**Observed** by absence: `FUN_140800250` has no such path, and `FUN_140917120` does not use the focus handle).
 
+Shift toggles (**Verified**): on a single player character a Shift-click in the world (`FUN_140800250` -> `FUN_1407fb410` -> `FUN_1407f9000`), a Shift-click on a squad-bar portrait
+(`FUN_140413cd0`) or Shift with a number key (`FUN_140788100` -> `FUN_1407f90b0` -> `FUN_1407f8f60`) takes it out of the selection when it is in it and the selection holds two or more
+(`FUN_1407f7f20`'s removal branch); alone it stays; one not in it joins. Box select and select_all only add. Whether the Squads window's portrait click toggles is **Unknown**
+(Meitou: it only adds). Meitou: `SelectCommand.Toggle`.
+
 Meitou (`PlayerInterface.BuildingSelect.cs`, engine choices): a left click with no character under the cursor selects the nearest building the ray
 meets before the ground, among the player's sites and the level data's buildings (not `is node` / `is foliage`). Picking is a ray against a vertical
 prism over the convex hull of the record's collision shapes (`BuildingFootprints`) as the first test, then, for a record with collision files, against its collision
