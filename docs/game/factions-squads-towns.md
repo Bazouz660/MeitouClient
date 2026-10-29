@@ -189,10 +189,18 @@ with `FUN_1407c06f0`, **out of zone** when its zone is neither loaded nor reques
 member with `+0x1a9` never is). An out-of-zone member is destroyed (`FUN_140799af0`, reason "wandered out of zone"); when the anchor (`FUN_140792b90`: the leader, else a member that is up
 in a loaded or requested zone) is out of zone, so is every in-zone member not in view within 600 of it (squared 360000, `DAT_141714bd4`; 3D distance; reason "leader wandered out of zone").
 The platoon stays active while any member is left, and the test repeats every frame; with none left it is destroyed as above. Before that, a platoon with 2 or more members whose members include one carried (`+0x3d4`), imprisoned
-(`+0x2f8` = 2) or flagged `+0x320` runs the split pass `FUN_14079c1c0` (what +0x320 means is **Unknown**). Meitou (`PopulationSystem.ThinOutOfZone`, Faithful
+(`+0x2f8` = 2) or flagged `+0x320` runs the split pass `FUN_14079c1c0` (what +0x320 means is **Unknown**; see below). Meitou (`PopulationSystem.ThinOutOfZone`, Faithful
 unload of a non-kept roaming squad, after its grace): the same per-member rule on living members, with the effective leader as anchor, except the in-view exemption (render state) and the split;
 when no living member would stay the squad is despawned whole as before. Pool payment (`FUN_140796b30`,
 by the platoon's cached living count) is **Unknown** for a partly destroyed platoon: Meitou pays only when the squad goes whole.
+
+**Split at unload** (**Verified** `FUN_14079c1c0`, run for any platoon with 2+ members and no pointer at +0xe8): each member is skipped when its chain-owner handle (+0x330, a character or platoon) resolves to an
+active owner (a chained slave whose owner exists); else it is split off when imprisoned (`+0x2f8` = 2) or carried (+0x3d4) by a resolvable character in a clause that is only partly read (**Unknown**). The split makes a new
+squad of the same faction and template record at the member's place through the squad factory `FUN_1407f4420`, moves the member into it, marks it persistent when the old platoon is persistent or the member is unique, and
+copies the old squad's mode fields; when the old platoon is persistent and has just this one member left it is reused instead. The new squad's blackboard gets the AI package `CAPTURED_NPC` ("captured NPC": goals
+self-preservation, not unarmed, flee home, attack, "get out of cage - opportunistic escape"; `unloaded func` 4), or `5344-gamedata.base` ("Slave only squad") when the member's slave state is 1 (`FUN_1405c8aa0`); with no
+blackboard the member is destroyed ("_putTheSpecialCharactersInNewSquads"). So a prisoner stays in the world as a squad of its own when its captors unload. Meitou: **not built** (needs a platoon outside every town pool and a squad AI that
+takes a package by name, neither of which exists; a platoon left with a caged member only stays put as a stand-in, `Platoon.Imprisoned`).
 
 **The player's dead** (**Verified** by decompile; Meitou `SquadManagement.BuryDead`): the death handler (`FUN_1407a6200`, the "{1} is dead." strings) moves a
 character whose faction is the player's (+0x250) out of its platoon (vfunc 0x18) into the faction's `__DEAD_SQUAD__` platoon (vfunc 0x10); NPC platoons keep their
