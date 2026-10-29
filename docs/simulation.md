@@ -1050,8 +1050,8 @@ optional), `EdgeGap` (site, point -> gap to its footprint hull; the host's).
   40, walls 60, twice that once stopped, from the footprint hull). A fetcher walks to its source instead (a storage within its
   `use range`; a ground item within `PlayerSystem.PickUpReach`, twice that once stopped; a source that is gone sends it back
   to building). Work ends when the site is gone,
-  no longer `NeedsWork` (building), the character is down, fighting, carried, carrying or caged, or another order replaced
-  the task.
+  no longer `NeedsWork` (building), the character is down, carried, carrying or caged, or another task replaced it (a fight
+  too: its start ends the work, [task starts](#task-starts)).
 - `SlowWorld`: arrived workers in slot order. *Build*: a stalled site (`sum(min(delivered, required)) <= progress`) turns
   into *DeliverMaterials* if the builder carries a missing item, else into *FetchMaterials* when `Source` finds one, else
   the work ends;
@@ -1346,7 +1346,7 @@ crafting benches, generators and batteries. Facts: [production](game/buildings-p
 ### Prospecting
 
 Facts: [Prospecting](game/ui-screens.md#prospecting), [Task_Prospecting](game/ai-tasks.md#prospecting). `ProductionSystem` (`ProductionSystem.Prospecting.cs`, `Production/Prospecting.cs`) owns it because it holds the `ResourceField`.
-- `ProspectOrder` names one player character (the host picks the selected one nearest the camera pivot). If it is awake, not fighting, carried, carrying, caged or swimming (water state 3) it stops and takes
+- `ProspectOrder` names one player character (the host picks the selected one nearest the camera pivot). If it is awake, not carried, carrying, caged or swimming (water state 3) it stops (a fight ends, [task starts](#task-starts)) and takes
   `CharacterTask.Prospect` with `CharacterCold.Prospecting` = 0 (hashed only while set, not saved). A character already prospecting is left alone; when done it is `Idle`.
 - Each tick (`SlowWorld`, before the early returns) the progress grows by the tick's game seconds. At `ProspectSeconds` = 1 (**Verified**) the task ends (`Idle`) and a `ProspectReport` is published as `World.Prospected`: the
   prospector's name and science (raw stat), the spot (its position), the zone name and the crop coverages, and the five resource values from `ResourceField.Yield` at the spot. Another task (a move, an attack, a stop) or the character going down

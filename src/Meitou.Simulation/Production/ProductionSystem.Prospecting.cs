@@ -42,7 +42,7 @@ public sealed partial class ProductionSystem
 
     /// <summary>
     /// Once a tick (serial): each prospector adds the tick's game seconds; at <see cref="ProspectSeconds"/> the task ends and the results are published (<see cref="World.Prospected"/>). Another
-    /// order (a changed task) or a downed, fighting or carried character ends it without a result.
+    /// order (a changed task) or a downed, carried or caged character ends it without a result.
     /// </summary>
     void ProspectStep(World world)
     {

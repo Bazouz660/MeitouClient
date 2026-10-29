@@ -1,13 +1,19 @@
 using System.Numerics;
+using Meitou.Data;
+using Meitou.Data.Fcs;
 using Meitou.Data.Gameplay;
 using Meitou.Data.Gameplay.Ai;
 using Meitou.Data.Gameplay.Bodies;
+using Meitou.Data.Gameplay.Construction;
+using Meitou.Data.World;
 using Meitou.Simulation;
 using Meitou.Simulation.Bodies;
 using Meitou.Simulation.Carrying;
 using Meitou.Simulation.Combat;
+using Meitou.Simulation.Construction;
 using Meitou.Simulation.FirstAid;
 using Meitou.Simulation.Items;
+using Meitou.Simulation.Production;
 using Meitou.Tests.Combat;
 using static Meitou.Tests.Bodies.BodyFixtures;
 using static Meitou.Tests.Combat.CombatFixtures;
@@ -21,27 +27,65 @@ public class TaskStartTests
     /// <summary>The fixture's Greenlander, carriable like every base race but the Leviathan.</summary>
     static readonly RaceData Person = new() { StringId = "17-c", Name = "Greenlander", StatMultipliers = Human.StatMultipliers, Anatomy = Human.Anatomy, Carriable = true };
 
+    const string Well = "60-t", Shed = "61-t";
+
+    /// <summary>The first aid kits, a well (an operable mine) and a shed (4 Building Materials).</summary>
+    static GameDatabase Database()
+    {
+        var db = FirstAidTests.KitDatabase();
+        static FcsRecord Rec(string id, FcsRecordType type, string name) => new() { StringId = id, Flags = 0x10, Name = name, RecordType = type };
+        var water = Rec("50-t", FcsRecordType.ITEM, "Water");
+        water.Floats["weight kg"] = 1;
+        var wellFn = Rec("80-t", FcsRecordType.BUILDING_FUNCTIONALITY, "80-t");
+        wellFn.Ints["function"] = MachineData.MineFunction;
+        wellFn.Ints["stat used"] = (int)StatsEnumerated.Labouring;
+        wellFn.References["produces"] = [new FcsReference("50-t", 10, 0, 0)];
+        var well = Rec(Well, FcsRecordType.BUILDING, "Test Well");
+        well.References["functionality"] = [new FcsReference("80-t", 0, 0, 0)];
+        var shed = Rec(Shed, FcsRecordType.BUILDING, "Test Shed");
+        shed.Ints["build materials"] = 4;
+        var file = new FcsFile();
+        file.Records.AddRange([water, wellFn, well, shed]);
+        db.Apply(file, "buildings.mod");
+        return db;
+    }
+
     /// <summary>
     /// A player's fighter (attacking a far enemy, so no blow lands) with a medkit and a splint kit, sneaking, and with <paramref name="carrying"/> a downed mate on its shoulder; a hurt mate,
-    /// a downed NPC, an awake NPC and a second enemy; the movement, first aid, body, carry and combat systems in the game's order.
+    /// a downed NPC, an awake NPC and a second enemy; the player's well and an unfinished shed; the movement, first aid, body, carry, construction, production and combat systems in the
+    /// game's order.
     /// </summary>
     sealed class Rig : IDisposable
     {
         public SimWorld World { get; }
         public CombatSystem Combat { get; }
         public CharacterId Fighter, Enemy, OtherEnemy, Mate, Carried, Downed, Awake;
+        public string WellSite = "", ShedSite = "";
         readonly OpenGroundWalkability walk = new(SyntheticTown.Ground);
-        readonly ItemFactory items = new(FirstAidTests.KitDatabase(), BaseGame);
+        readonly ItemFactory items;
 
         public Rig(bool carrying)
         {
+            var db = Database();
+            items = new ItemFactory(db, BaseGame);
             Combat = new CombatSystem(KatanaTechniques(), Constants, BaseGame, BodyOptions.Default, DuelFixture.Lengths, new CombatOptions { SelfApproach = false, TickMedical = false });
             var systems = new List<ITickSystem>
             {
                 new PlayerSystem(), new MovementSystem(new PathService(walk, true)), new FirstAidSystem(BaseGame, BodyOptions.Default, items, new FirstAidSettings { AutoNpcs = false }),
-                new BodySystem(BaseGame, BodyOptions.Default), new CarrySystem(BaseGame, BodyOptions.Default), Combat,
+                new BodySystem(BaseGame, BodyOptions.Default), new CarrySystem(BaseGame, BodyOptions.Default),
+                new ConstructionSystem(db, BaseGame, BodyOptions.Default, items, [], ""), new ProductionSystem(db, BaseGame, BodyOptions.Default, items, null), Combat,
             };
             World = new SimWorld(new WorldSettings { Seed = 7, PublishSnapshots = false }, walk, systems);
+            World.Player.Faction = 1;
+            string Site(string record, float x, float z, bool complete)
+            {
+                var p = new Vector3(x, 300, z);
+                string id = World.Buildings.NewId(WorldLayout.ZoneOf(p.X, p.Z));
+                World.Buildings.Add(new BuildSite { Id = id, Record = record, Position = p, Owner = 1, Materials = [], Complete = complete });
+                return id;
+            }
+            WellSite = Site(Well, 700, 2000, complete: true);
+            ShedSite = Site(Shed, 700, 2300, complete: false);
             Fighter = Add(1000, 2000, player: true, "72-t", "74-t");
             Mate = Add(1040, 2000, player: true);
             Carried = Add(1000, 2000, player: true);
@@ -76,7 +120,8 @@ public class TaskStartTests
     }
 
     /// <summary>The converted order starts given to a fighting character, by name, with the act-out each starts (M3b and M3c add theirs).</summary>
-    public static TheoryData<string> Orders => ["move", "follow", "bodyguard", "stop", "first aid", "splint", "rest", "medic", "pick up", "kidnap", "loot", "open inventory", "stealth ko", "put down", "attack"];
+    public static TheoryData<string> Orders => ["move", "follow", "bodyguard", "stop", "first aid", "splint", "rest", "medic", "pick up", "kidnap", "loot", "open inventory", "stealth ko", "put down",
+        "operate", "prospect", "build", "dismantle", "attack"];
 
     static (SimCommand Order, CharacterTask Task) Order(Rig rig, string name, long tick)
     {
@@ -97,6 +142,10 @@ public class TaskStartTests
             "open inventory" => new OpenLootOrder([f], rig.Downed) { Tick = tick },
             "stealth ko" => new StealthKoOrder([f], rig.Awake) { Tick = tick },
             "put down" => new PutDownOrder([f]) { Tick = tick },
+            "operate" => new OperateOrder([f], rig.WellSite) { Tick = tick },
+            "prospect" => new ProspectOrder(f) { Tick = tick },
+            "build" => new BuildOrder([f], rig.ShedSite) { Tick = tick },
+            "dismantle" => new DismantleOrder([f], rig.WellSite) { Tick = tick },
             "attack" => new AttackOrder([f], rig.OtherEnemy) { Tick = tick, Picked = true },
             _ => throw new ArgumentException(name),
         };
@@ -111,6 +160,10 @@ public class TaskStartTests
             "loot" or "open inventory" => CharacterTask.Loot,
             "stealth ko" => CharacterTask.StealthKo,
             "put down" => CharacterTask.PutDown,
+            "operate" => CharacterTask.Operate,
+            "prospect" => CharacterTask.Prospect,
+            "build" => CharacterTask.Build,
+            "dismantle" => CharacterTask.Dismantle,
             _ => CharacterTask.Attack,
         };
         return (order, task);

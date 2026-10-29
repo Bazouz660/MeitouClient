@@ -451,8 +451,8 @@ Meitou (`CombatSystem.HasSlot` / `MayJoin`, `Fighting.Steer`):
 - **Actions mid-fight.** Any order runs during a fight. First aid 25, splint 249, repair 60 and pick lock 76/201 test no threat in their rows
   or task updates, so they run while their character is attacked (after sheathing), but every landed blow cuts them off with a stagger and
   the order is planned again afterwards (walk, sheathe, act; what the action keeps of its progress is per task, not traced). Meitou: move, follow, First Aid, Splint, Rest, the Medic and
-  Rescue buttons, Pick up, Kidnap, Loot, Stealth KO and Put down end the fight (`TaskStart.Start`, [simulation](../simulation.md#task-starts)) and act (whether Pick up's and Rest's rows test
-  a threat is **Unknown**); Build, Repair, Dismantle and Operate are still refused while fighting. The Loot order (26, `Task_Loot_Order` update) ends when a
+  Rescue buttons, Pick up, Kidnap, Loot, Stealth KO, Put down, Operate, Prospect, Build, Repair and Dismantle end the fight (`TaskStart.Start`,
+  [simulation](../simulation.md#task-starts)) and act (whether the rows of Pick up, Rest, Build 2, Repair 95, Dismantle 96 and Operate 87 test a threat is **Unknown**). The Loot order (26, `Task_Loot_Order` update) ends when a
   threat is within 40 (+0x2b0). Rows refused while a threat is within 40: Shooting, 146 Turret gunner,
   123/290 Bashing gate, 272 Smashing, 164 Following and talking; 248 Attacking Squad needs no threat at all. There is no pickpocket verb on a
   standing character: stealing from a person is Loot on one that is down or asleep ([verbs](ui-input.md#context-menu-verbs)), after a Stealth KO
