@@ -330,7 +330,7 @@ public sealed partial class ArrestSystem(CrimeSystem crimes, GameConstants const
 
     /// <summary>
     /// The point is within the town of the guard's resident squad (engine choice: towns are not round, Rebirth's gates stand about 1500 from its centre and its radius is 184):
-    /// within <see cref="InOwnTown"/>'s extent, else, in a town with gates, no farther from the centre than the gate nearest the point plus <see cref="GateMargin"/>; a town
+    /// within <see cref="ArrestSettings.TownSlack"/> times the squad's home radius, else, in a town with gates, no farther from the centre than the gate nearest the point plus <see cref="GateMargin"/>; a town
     /// without gates ends there.
     /// </summary>
     bool InTownOf(World world, int guard, Vector3 at)
@@ -385,12 +385,17 @@ public sealed partial class ArrestSystem(CrimeSystem crimes, GameConstants const
         return world.Tick < p.Until;
     }
 
-    /// <summary>The guard stands in the town his resident squad belongs to (<see cref="ArrestSettings.TownSlack"/>).</summary>
+    /// <summary>
+    /// The guard stands in the town his resident squad belongs to (dialogue action 29, <c>FUN_140680560</c> case 0x1d, <b>Verified</b>: the status object's current town <c>+0x88</c> is the
+    /// speaker's ownership town <c>+0x30</c>, by pointer; event 45's test in <c>FUN_140859680</c> is the same compare). The town the point stands in is <see cref="Ai.AiSystem.TownAt"/>'s
+    /// (its radius, as the original's lookup <c>FUN_1402688d0</c>); without town data, <b>engine</b> stand-in: <see cref="ArrestSettings.TownSlack"/> times the squad's home radius.
+    /// </summary>
     public bool InOwnTown(World world, int guard)
     {
         var table = world.Characters;
         if (table.Cold(guard) is not { SquadId: >= 0 } c || world.Squads.Find(c.SquadId) is not { TownOwn: true } squad) return false;
         var p = table.Next[guard].Position;
+        if (Towns is { } data) return Ai.AiSystem.TownAt(data, world, p).Site == squad.Town;
         float r = squad.HomeRadius * Settings.TownSlack;
         return Vector2.DistanceSquared(new Vector2(p.X, p.Z), squad.HomeCentre) <= r * r;
     }
