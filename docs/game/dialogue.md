@@ -326,7 +326,7 @@ lists it, an empty list failing; any other speaker needs the list only when it i
 `/NAME/` pairs are expanded until none is left (`FUN_14067a530`). Built in: `COST` (val0 of the line's first DA 8 or 9, else of its
 first DC 2), `MYNAME` (speaker), `YOURNAME` (target, else "you"), `TARGETFACTION` (target's faction, else "you"), `PLAYERFACTION`. Any
 other name: the WORD_SWAPS record of that trimmed name, its lines chosen like children (target = the partner), one text; no match → empty.
-A token at the start or after ". ", "! ", "? " is capitalised. Every DA 8 effect of a line appends one " [c.N]" (N its own val0, `c.{1,num}`; DA 9 none), in effect order, to the text of a said line and of a choice button alike (`FUN_140675320`, called with flag 1 by `FUN_1406839a0` and flag 0 by `FUN_140680130`; the loop is not gated by the flag; the literals " [" and "]" **Verified** from `DAT_141686eec`, `DAT_14168d3f0`), before the tokens are expanded. Meitou: `MoneySuffix` on said lines (windows and bubbles) and choices. The `censorship` setting swaps a
+A token at the start or after ". ", "! ", "? " is capitalised. Every DA 8 effect of a line appends one " [c.N]" (N its own val0, `c.{1,num}`; DA 9 none), in effect order, to the text of a said line and of a choice button alike (`FUN_140675320`, called with flag 1 by `FUN_1406839a0` and flag 0 by `FUN_140680130`; the loop is not gated by the flag; the literals " [" and "]" **Verified** from `DAT_141686eec`, `DAT_14168d3f0`); **Observed**: the text is built before the tokens are expanded (Meitou appends after, the same result). Meitou: `MoneySuffix` on said lines (windows and bubbles) and choices. The `censorship` setting swaps a
 fixed list of swear words. **Verified** by probe: 289 token names in the data, `HIM`, `OUTLANDER`, `FLATSKIN`, `BROTHER`, `YOURNAME`
 the most used.
 
@@ -497,7 +497,7 @@ squad simply takes the speaker in, unless a target flag at +0x1d0 is set):
   "{1,num}/{2,num}" counters show the faction and squad counts against the first and last.
 - **Which squad**: the character leaves its platoon and the player faction's member add (`Faction::vfunc_5` → `FUN_1406b9c60`) puts it
   into the player's active squad (`FUN_1407f5520`, **Verified**: the cached squad `+0x2a8`, else the platoon of the first selected object,
-  else the faction's first platoon `+0x218`, or its second when the first is the squad of the dead, the handle at `+0x2c8` that
+  else the faction's first platoon `+0x218` (**Observed**; Meitou: first by squad index, then id), or its second when the first is the squad of the dead, the handle at `+0x2c8` that
   `FUN_1407f4960` fills with `__DEAD_SQUAD__` (**Observed**: the handle compare is vfunc 8); none when there is only the dead one. The
   talker's own squad is never a fallback. Meitou: `DialogueSystem.ActiveSquad`, the dead squad is never in `SquadManagement.PlayerSquads`), or, when that squad
   already holds `max squad size` members, into a new platoon of the SQUAD_TEMPLATE "blank squad" (`FUN_1407f4420`: made, added to the
