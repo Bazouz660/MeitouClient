@@ -64,9 +64,9 @@ static class HudTips
         else if (displayMode == 1 && animal is null)
         {
             // FUN_140884e00 and FUN_140884680: the value lerp(e, 0.2, 1) x (bonus + skill), the change the bonus less 0.8 (1 - e) x skill. The bonus (FUN_140884580) takes the
-            // weapon's indoors field like Attack's (0 for fists), while the row shows a flat +8 in any building.
+            // weapon's indoors field like Attack's (the fists item's: 8), while the row shows a flat +8 in any building.
             float ma = Eff(StatsEnumerated.MartialArts);
-            int gear = (int)(fighter?.UnarmedBonus ?? 0), bonus = Indoors(gear) - dust, encumbrance = (int)-(0.8f * (1 - e) * ma);
+            int gear = (int)(fighter?.UnarmedBonus ?? 0), bonus = Indoors(gear, fighter?.FistsItem?.Stats.IndoorsMod ?? 8) - dust, encumbrance = (int)-(0.8f * (1 - e) * ma);
             int value = (int)((0.2f + 0.8f * e) * (bonus + ma)), change = bonus + encumbrance;
             // The original labels the encumbrance row of this tooltip "Strength XP:".
             var tip = new List<(string, string)> { (Loc.Tr("Total equipment bonuses:"), Signed(gear)), (Loc.Tr("Indoors bonus:"), inBuilding ? Signed(8) : None),
@@ -79,7 +79,7 @@ static class HudTips
         {
             // FUN_1408844c0 / FUN_140884e80: the equipment bonus (indoors with the weapon's indoors modifier) less the dust penalty, then the effective skill, times the age;
             // the change is the bonus. An animal always shows Attack, and no Defense.
-            int gear = (int)((fighter?.AttackBonus ?? 0) + (weapon?.AttackMod ?? 0)), change = Indoors(gear) - dust, value = (int)(change * age + Eff(StatsEnumerated.MeleeAttack));
+            int gear = (int)((fighter?.AttackBonus ?? 0) + (weapon?.AttackMod ?? 0)), change = Indoors(gear, indoorsMod) - dust, value = (int)(change * age + Eff(StatsEnumerated.MeleeAttack));
             lines.Add(new HudStatLine("Attack:", value, value - change)
             {
                 Tip = [(Loc.Tr("Total equipment bonuses:"), Signed(gear)), (Loc.Tr("Weapon indoors penalty:"), inside ? Signed(indoorsMod) : None),
@@ -99,7 +99,7 @@ static class HudTips
         }
 
         // The equipment bonus indoors: a positive bonus is dropped under an indoors penalty, then the modifier is added.
-        int Indoors(int bonus) => !inside ? bonus : (bonus > 0 && indoorsMod < 0 ? 0 : bonus) + indoorsMod;
+        int Indoors(int bonus, int mod) => !inside ? bonus : (bonus > 0 && mod < 0 ? 0 : bonus) + mod;
 
         var strengthTip = new List<(string, string)>();
         if (cold.Extended is { } x) strengthTip.Add((Loc.Tr("Strength XP rate:"), Loc.Tr("{1,num}%", (int)(x.StrengthXp * 100))));

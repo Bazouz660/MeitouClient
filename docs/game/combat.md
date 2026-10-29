@@ -38,8 +38,11 @@ and injury variants.
 skill (`FUN_140884ee0` → `FUN_1408844c0`; fists `FUN_140884e00` → `FUN_140884580`) takes bonus `+0x20` (fists `+0x2c`), drops it to 0
 when it is positive and the modifier negative, adds the modifier, then subtracts the dust penalty; the block contest's defence
 (`FUN_1408862d0`) adds the modifier to `+0x24`. Inside means the character's location type is not 0xb (outdoors), vfunc `0x1e0` is
-false and the building's `+0xc2` is clear (the last two **Unknown**). Meitou: `CombatSystem.IndoorsMod`, inside = in a building's indoor
-volume (`SightMap.Inside`); fists carry no modifier.
+false and the building's `+0xc2` is clear (the last two **Unknown**). The modifier is refreshed with the weapon (`FUN_140884370`, **Verified**): the bound
+weapon's `indoors mod` (weapon `+0x250`), looked up in the held item, then the `back` and `hip` sections; with none it is 8. A person's fists are the `FISTS` item
+(18 long, `indoors mod` 8 in the base data, as the robots' `FISTS- robo`), so an unarmed fighter has +8 inside. Meitou: `CombatSystem.IndoorsMod`, inside = in a
+building's indoor volume (`SightMap.Inside`); the weapon's mod, the fists item's (`Fighter.Fists`) with none, 8 with no item. Not modelled (**Observed**): the damage
+packet's fist rating (`FUN_1408868b0` calls `FUN_140884e00` with the flag set, so it takes the term as well as the dust penalty) has the dust penalty only (`UnarmedRating`).
 
 **Verified** (loader `FUN_140888ca0`, record reader `FUN_1406684c0`): techniques not `disabled` go to an attack
 list unless `is block` or `is dodge` (then the defence list), in data order. Each keeps a per-category table:

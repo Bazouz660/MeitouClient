@@ -15,9 +15,10 @@ public sealed partial class CombatSystem
 
     /// <summary>
     /// The weapon's <c>indoors mod</c> (CharStats <c>+0x28</c>) while the fighter is in a building's indoor volume (<see cref="SightMap.Inside"/>; the original also asks a vfunc
-    /// <c>0x1e0</c> and the building's <c>+0xc2</c>, <b>Unknown</b>), else 0 (<c>FUN_1408844c0</c>, <c>FUN_1408862d0</c>; docs/game/combat.md "Indoors").
+    /// <c>0x1e0</c> and the building's <c>+0xc2</c>, <b>Unknown</b>), else 0 (<c>FUN_1408844c0</c>, <c>FUN_1408862d0</c>; docs/game/combat.md "Indoors"). With fists it is the fists
+    /// item's (the <c>FISTS</c> record's 8), and 8 when there is no item at all (<c>FUN_140884370</c>).
     /// </summary>
-    static int IndoorsMod(World world, int i, Fighter f) => world.Sight.Inside(i) ? f.Weapon?.Stats.IndoorsMod ?? 0 : 0;
+    static int IndoorsMod(World world, int i, Fighter f) => world.Sight.Inside(i) ? (f.Weapon ?? f.Fists)?.Stats.IndoorsMod ?? 8 : 0;
 
     /// <summary>An attack bonus indoors (<c>FUN_1408844c0</c>): a positive bonus is dropped under a negative modifier, then the modifier is added.</summary>
     static float IndoorsAttackBonus(float bonus, int mod) => (bonus > 0 && mod < 0 ? 0 : bonus) + mod;
