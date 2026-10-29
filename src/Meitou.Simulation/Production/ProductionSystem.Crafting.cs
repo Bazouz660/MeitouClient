@@ -53,11 +53,13 @@ public sealed partial class ProductionSystem
     /// <summary>
     /// Sets the input sections for the first craft (<b>Observed</b>, <c>CraftingBuilding::vfunc_182</c> "setProductionItem"): section k takes ingredient k at its per-item amount;
     /// sections it does not use draw nothing. Done when the first craft changes (queued, cancelled, finished). Items of another kind in a section fall on the ground (engine choice; the
-    /// original hands them back to the bench).
+    /// original hands them back to the bench). Each section's level moves with its item (<b>Verified</b>, <c>FUN_1402bb470</c>): all sections store their level under their old item first, then a
+    /// section taking an item gets the level stored for it (0 when none), so switching to another recipe and back returns the partly drawn ingredient.
     /// </summary>
     void Bind(World world, Machine m, CraftState state, CraftJob job)
     {
         if (state.Bound == job.Option.Key) return;
+        foreach (var held in m.Inputs) Remember(state, held.Item, held.Level);
         for (int k = 0; k < m.Inputs.Length; k++)
         {
             var slot = m.Inputs[k];
@@ -69,6 +71,22 @@ public sealed partial class ProductionSystem
             }
         }
         Apply(m, state, job);
+        for (int k = 0; k < job.Recipe.Inputs.Count && k < m.Inputs.Length; k++)
+            if (state.Partial.Remove(m.Inputs[k].Item, out float level)) m.Inputs[k].Level = level;
+            else m.Inputs[k].Level = 0;
+    }
+
+    /// <summary>Stores a section's level under its item (a level of 0 forgets it).</summary>
+    static void Remember(CraftState state, string item, float level)
+    {
+        if (level > 0) state.Partial[item] = level;
+        else state.Partial.Remove(item);
+    }
+
+    /// <summary>A remembered level read from a save (an item that is not in the game is dropped).</summary>
+    internal void RestorePartial(Machine m, string item, float level)
+    {
+        if (m.Craft is { } state && level > 0 && items.Info(item) is not null) state.Partial[item] = level;
     }
 
     static string ItemOf(Machine m, CraftJob job, int k) => k < job.Recipe.Inputs.Count ? job.Recipe.Inputs[k].Item : m.Inputs[k].Recipe.Item;

@@ -64,7 +64,7 @@ public static class MachineSave
         if (m.Output is { } o) state.Floats["production amount"] = o.Progress;
         for (int k = 0; k < m.Inputs.Length; k++) state.Floats["consumption amount-" + k.ToString(CultureInfo.InvariantCulture)] = m.Inputs[k].Level;
         if (m.Data.IsFurnace) state.Floats["consumption amount-0"] = m.BurnLevel;   // its one input, the burn level
-        if (m.Craft is { } c) WriteCraft(state, c);
+        if (m.Craft is { } c) WriteCraft(state, m, c);
         if (m.Farm is not { } f) return;
         state.Floats["plant growth"] = f.Growth;
         state.Floats["plant death"] = f.Death;
@@ -74,12 +74,15 @@ public static class MachineSave
     }
 
     /// <summary>The crafting keys (<b>Observed</b>, <c>CraftingBuilding::vfunc_17</c>): <c>num crafts</c> (a float), <c>repeat</c>, and per queued craft k <c>current&lt;k&gt;</c> (the item),
-    /// <c>currentExtraData&lt;k&gt;</c> (a weapon's model, else empty), <c>current prog&lt;k&gt;</c> and <c>crit&lt;k&gt;</c>. The original's partly drawn items (<c>craft partial item ...</c>) are not written.</summary>
-    static void WriteCraft(FcsRecord state, CraftState c)
+    /// <c>currentExtraData&lt;k&gt;</c> (a weapon's model, else empty), <c>current prog&lt;k&gt;</c> and <c>crit&lt;k&gt;</c>, then the partly drawn items (<b>Verified</b>, <c>FUN_1402b8440</c>): every remembered level above 0, with the sections' own levels stored first, as
+    /// strings <c>craft partial item sid &lt;k&gt;</c> (the item), floats <c>craft partial item val &lt;k&gt;</c> and the int <c>craft partial item size</c> (how many).</summary>
+    static void WriteCraft(FcsRecord state, Machine m, CraftState c)
     {
         foreach (var key in state.Strings.Keys.Where(k => k.StartsWith("current", StringComparison.Ordinal)).ToList()) state.Strings.Remove(key);
         foreach (var key in state.Floats.Keys.Where(k => k.StartsWith("current prog", StringComparison.Ordinal)).ToList()) state.Floats.Remove(key);
         foreach (var key in state.Ints.Keys.Where(k => k.StartsWith("crit", StringComparison.Ordinal)).ToList()) state.Ints.Remove(key);
+        foreach (var key in state.Strings.Keys.Where(k => k.StartsWith(PartialSid, StringComparison.Ordinal)).ToList()) state.Strings.Remove(key);
+        foreach (var key in state.Floats.Keys.Where(k => k.StartsWith(PartialVal, StringComparison.Ordinal)).ToList()) state.Floats.Remove(key);
         state.Floats["num crafts"] = c.Queue.Count;
         state.Bools["repeat"] = c.Repeat;
         for (int k = 0; k < c.Queue.Count; k++)
@@ -90,7 +93,23 @@ public static class MachineSave
             state.Floats["current prog" + n] = c.Queue[k].Progress;
             state.Ints["crit" + n] = c.Queue[k].Critical;
         }
+        var partial = new Dictionary<string, float>(c.Partial, StringComparer.Ordinal);
+        foreach (var input in m.Inputs)
+            if (input.Level > 0) partial[input.Item] = input.Level;
+            else partial.Remove(input.Item);
+        int written = 0;
+        foreach (var (item, level) in partial)
+        {
+            if (level <= 0) continue;
+            string n = written++.ToString(CultureInfo.InvariantCulture);
+            state.Strings[PartialSid + n] = item;
+            state.Floats[PartialVal + n] = level;
+        }
+        state.Ints["craft partial item size"] = written;
     }
+
+    const string PartialSid = "craft partial item sid ";
+    const string PartialVal = "craft partial item val ";
 
     static List<SaveItem> Items(Machine m)
     {
@@ -148,6 +167,12 @@ public static class MachineSave
     static void ReadCraft(FcsRecord state, Machine m, ProductionSystem production)
     {
         m.Craft!.Repeat = state.Bools.GetValueOrDefault("repeat");
+        // The remembered ingredient levels, read before any bind so the sections keep their saved levels (consumption amount-k).
+        for (int k = 0, size = state.Ints.GetValueOrDefault("craft partial item size"); k < size; k++)
+        {
+            string p = k.ToString(CultureInfo.InvariantCulture);
+            if (state.Strings.TryGetValue(PartialSid + p, out var sid)) production.RestorePartial(m, sid, state.Floats.GetValueOrDefault(PartialVal + p));
+        }
         int count = (int)state.Floats.GetValueOrDefault("num crafts");
         for (int k = 0; k < count; k++)
         {

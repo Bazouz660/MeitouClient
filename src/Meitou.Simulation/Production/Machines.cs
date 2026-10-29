@@ -76,6 +76,11 @@ public sealed class CraftState
     public string? Bound { get; set; }
     /// <summary>Critical rolls made so far, the roll counter.</summary>
     public int Rolls { get; set; }
+    /// <summary>
+    /// The levels of ingredients no section holds now (the original's item-to-level map, <b>Verified</b> <c>FUN_1402bb470</c>): a recipe switch stores each section's level under its item and a section
+    /// taking an item gets its level back; saved as <c>craft partial item ...</c>. Only levels above 0 are kept.
+    /// </summary>
+    public Dictionary<string, float> Partial { get; } = new(StringComparer.Ordinal);
 }
 
 /// <summary>
@@ -226,6 +231,10 @@ public sealed class Machine
             h.Add(c.Queue.Count); h.Add(c.Repeat ? 1 : 0); h.Add(c.Done.Count);
             foreach (var j in c.Queue) { h.Add(Rng.StableHash(j.Option.Key)); h.Add(j.Progress); h.Add(j.Critical); }
             foreach (var d in c.Done) { h.Add(Rng.StableHash(d.Record)); h.Add(d.Quantity); h.Add(d.Quality); }
+            // Remembered levels of items no section holds (the held ones are in Inputs), sorted: a loaded map also lists the held ones.
+            if (c.Partial.Count > 0)
+                foreach (var (item, level) in c.Partial.OrderBy(p => p.Key, StringComparer.Ordinal))
+                    if (!Inputs.Any(i => i.Item == item)) { h.Add(Rng.StableHash(item)); h.Add(level); }
         }
     }
 }

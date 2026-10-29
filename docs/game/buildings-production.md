@@ -571,6 +571,10 @@ Function 10, `CraftingBuilding` (**Observed** unless noted).
   ingredients` or no ingredients, the bench's `consumes` at v1/100. Material cost (item vfunc 102): a weapon's
   `material cost`, else 1. Armour: each section at `total coverage`/100; Fabrics (`584-gamedata.base`, hard-coded,
   **Verified** bytes) at that x `fabrics amount`.
+- **Partial levels** (**Verified**, `FUN_1402bb470`, `FUN_1402b8440`): the bench keeps a map item -> level (+0x520). A recipe switch first stores every
+  section's level under its item, then each section taking an ingredient gets `map[item]` (0 when absent), so a half-used ingredient comes back when
+  the recipe does. A save stores the sections' levels in the map, then writes each entry above 0 (k counts written entries only); a load fills the map
+  (sids not in the game are skipped). The sections' own levels load from `consumption amount-<k>`. Meitou: `CraftState.Partial`, `ProductionSystem.Bind`.
 - **Hours:** ITEM `production time` (default 4); crossbow / robotic limb `craft time hrs` / P (defaults 20, 10); weapon
   (`FUN_1402b76f0`) clamp(q² x 100 x `value`/300 x 2/P, 2, 32), q = level/100; armour (`FUN_140898e90`) coverage/100
   x lerp(q, 1, 5), at least 1, then hat x0.6, legs x0.45, shirt x3, boots x0.5, chain (`material type` 2) x2. Constants
@@ -588,7 +592,8 @@ Function 10, `CraftingBuilding` (**Observed** unless noted).
   ([Research](#research) repetitions). Whether a craft no research lists is available from the start is **Unknown** (Meitou: yes).
 - **Save** (GAMESTATE_BUILDING, `vfunc_17`/`18` `FUN_1402b8440` / `FUN_1402b8ab0`): float `num crafts`, bool `repeat`,
   per queued k strings `current<k>` (item) and `currentExtraData<k>` (weapon model), float `current prog<k>`, int
-  `crit<k>`; partly drawn items as `craft partial item sid <k>` / `val <k>` / `size` (Meitou does not write these).
+  `crit<k>`; partly drawn items as strings `craft partial item sid <k>` (item id), floats `craft partial item val <k>` and int `craft partial item size`
+  (**Verified**, `FUN_1402b8440` / `FUN_1402b8ab0`): see Partial levels.
 - **UI:** overview CraftTab (`CraftingStationsList`, `QueueItemsPanel`, `CraftQueue`, `QueueRepeat` "Repeat Queue",
   `QueueDescriptionPanel1/2`); the building window's `CraftingPanel` (`CraftingName`, `QueueButton` "QUEUE..."); its rows and slot ghosts: [Selected building](ui-screens.md#selected-building).
 - Example: Weapon Smith 2033, functionality 2035 (stat 7, tech level 25, consumes Iron Plates 5/100).
