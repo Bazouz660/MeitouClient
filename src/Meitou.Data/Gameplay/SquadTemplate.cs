@@ -27,6 +27,8 @@ public sealed record SquadTemplate
     /// <summary><c>animals</c> / <c>animals2</c> (ANIMAL_CHARACTER; v2 = age 0 to 100).</summary>
     public IReadOnlyList<RecordLink> Animals { get; init; } = [];
     public IReadOnlyList<RecordLink> Animals2 { get; init; } = [];
+    /// <summary><c>animal age random</c>: the template's own range of the random part of its animals' age (not the animal record's; all 961 base templates carry it).</summary>
+    public float AnimalAgeRandom { get; init; }
     /// <summary><c>slaves</c> and <c>prisoners</c>: whole squads created recursively.</summary>
     public IReadOnlyList<RecordLink> Slaves { get; init; } = [];
     public IReadOnlyList<RecordLink> Prisoners { get; init; } = [];
@@ -109,6 +111,7 @@ public sealed record SquadTemplate
             NumRandomCharsMax = r.GetInt("num random chars max"),
             Animals = Links("animals"),
             Animals2 = Links("animals2"),
+            AnimalAgeRandom = r.GetFloat("animal age random"),
             Slaves = Links("slaves"),
             Prisoners = Links("prisoners"),
             Housemates = Links("housemates"),

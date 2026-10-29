@@ -26,7 +26,7 @@ role4 as recursive squads, prisoners into available home cages. First member can
 **Prisoners** (`FUN_140583a10`, **Observed**): only with a home building; its cages (`BuildingFinder_CagesWithinBuilding`) are counted, then each `prisoners` entry makes a
 platoon of the entry's `faction` (else the owner's) whose members each go into a random remaining cage (`FUN_140330600`, lock set) with `Character+0x190 = 9999999` (meaning
 **Unknown**); with no cage left, one member is removed and placing stops. A housed trader that made prisoner or slave squads still stocks its home containers ([economy](economy.md#building-shops-observed-decompile)).
-Offsets `(3*(i%8),3*floor(i/8)+(i%2))`, animals2 spacing5 (spawn places). Followers' slots by FACTION `squad formation`: [squads travelling together](pathfinding.md#squads-travelling-together); Meitou's: [simulation](../simulation.md#movement-and-paths). Age=max(0,r*animal-age-random-0.1+v2/100).
+Offsets `(3*(i%8),3*floor(i/8)+(i%2))`, animals2 spacing5 (spawn places). Followers' slots by FACTION `squad formation`: [squads travelling together](pathfinding.md#squads-travelling-together); Meitou's: [simulation](../simulation.md#movement-and-paths). Animal age=max(0,r*R-0.1+v2/100) (**Verified** `FUN_140583a10` animals and animals2 loops: r uniform 0..1 per animal, R = the squad TEMPLATE's float `animal age random`, read once, not the animal record's, which has none; 888 of 961 base templates 0.1, the rest 0 to 0.5; a template lacking the key: Meitou 0, the `fcs.def` default **Unknown**).
 Unique members go through one gate: [unique characters](#unique-characters).
 
 Generic weighted refs: v0=0 means100; exclude nonpositive weights and false world states,

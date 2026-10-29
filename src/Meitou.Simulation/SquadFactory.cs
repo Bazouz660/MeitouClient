@@ -126,7 +126,7 @@ public static class SquadFactory
                 for (int k = 0; k < n; k++)
                 {
                     float age = 1;
-                    if (animals) age = Math.Max(0, Rng.Float(Next()) * Math.Max(0, record.GetFloat("animal age random")) - 0.1f + entry.V2 / 100f);
+                    if (animals) age = Math.Max(0, Rng.Float(Next()) * template.AnimalAgeRandom - 0.1f + entry.V2 / 100f);
                     var memberRole = animals && !haveLeader && role == SquadRole.Squad1 ? SquadRole.Leader : role;
                     Add(entry.Id, memberRole, animals, age, spacing);
                 }
