@@ -379,10 +379,17 @@ Meitou (`CombatSystem.HasSlot` / `MayJoin`, `Fighting.Steer`):
 - **Self-defence.** Self preservation's desire (AI slot 17): 1 with a threat within 40, 0.7 with a threat of positive aggression within 181.7
   (squared 33000), else 0. It wants `!isAggressionTowardsMe`, given by 13 "Attacking attackers of" (desire 1; finder `AI::findAttackerOf`:
   the subject's attackers and threats that are enemies or target it, never allies, within 150 of a subject other than the chooser; best by the
-  target score) or 35 Running away (slot 55: 0 for a player character that can still fight: an arm to fight with
-  (`MedicalSystem::hasAnArmToFightWith`), ranged mode, both arms, or a weapon outside the two-arm categories; else 1 when crippled; else 0.001
-  when it can get out (`AI::isLocationAccessible`: outdoors, or its building has a door open or opening, or none: `Building::hasAnOpenDoor` `FUN_1405499a0`,
-  **Verified**) unless it stands inside town walls (its [gate code](pathfinding.md#gate-codes) above 0) whose gate state to code 0 (`FUN_1402eb070`, call **Verified** in slot 55 `1405a34e0`; the states 1 a gate open or broken, 2 closed, 3 locked, a route as bad as its worst gate and the best route kept, **Observed**) is 3, i.e. every way out passes a locked gate, else 0). So an attacked character fights back unless crippled (Meitou: `RetaliationSystem` leaves a crawling NPC out of the answer; it does not start a flight for it); Passive does not touch this path (exe tooltip: "Passive
+  target score) or 35 Running away (slot 55 `FUN_1405a34e0`, **Verified** by decompile: for a character whose faction object is set at `+0x250` (a player
+  faction, `FUN_1407916d0`) 0 when it has an arm to fight with (either arm usable, medical `+0x165` / `+0x166`, `FUN_140644150`), when `FUN_1404366b0` holds
+  (the character's `+0x2f0` object, read as ranged mode, has its flag `+0x36` set and the hand it names resolves to something not down), or when any
+  item in a weapon slot is outside categories 3, 6, 8; then, for every character, 1.0 when Character vslot `0x360` (byte `+0x5b8`, `FUN_1405e1ef0`) is set; else
+  0.001 when it can get out (`AI::isLocationAccessible` `FUN_1405a2710`: a null location hand, i.e. outdoors, or a building with no doors, a door open or
+  one opening, `Building::hasAnOpenDoor` `FUN_1405499a0`) unless it stands inside town walls (its [gate code](pathfinding.md#gate-codes) above 0) whose gate state to code 0 (`FUN_1402eb070`; the states 1 a gate open or broken, 2 closed, 3 locked, a route as bad as its worst gate and the best route kept, **Observed**) is 3, i.e. every way out passes a locked gate; else 0).
+  Byte `+0x5b8` has **no writer** in the decompile (not Task_Runaway's, as once assumed); its readers sit with the leg state: the leg-technique penalty ([above](#attack-technique-choice)),
+  the idle stance (set, or posture 1 or 2, picks the low idle) and "standing up 3", the down finder of `FUN_1408cd2d0`: it reads as a crippled / low-stance flag, **Unknown**.
+  Rows 13 and 35 both carry the crippled-repertoire bit (flags `0x61`), so 35 does not replace 13 for a crippled character on the registry alone; 35 (0.001) is
+  taken only when 13 yields no plan, and needs not crouching or lying (`!26`). So an attacked character fights back (Meitou: `RetaliationSystem`
+  leaves a crawling NPC out of the answer and nothing starts a flight for a lone one: goal 32 is not built, so row 35 is never reached; squads that break flee through `FleeSystem`); Passive does not touch this path (exe tooltip: "Passive
   focuses on non-combat unless attacked first"). Meitou: [order toggles](../simulation.md#order-toggles).
 - **Melee or shooting.** Row 4 Attacking (`AI::scoreMeleeAttack`, slot 53): 1, ×0.1 with Ranged on, ×0.5 when its squad is not intact (`Platoon::isIntact`);
   0 against a caged target; a crippled fighter 0.1 (0.0001 in Block or Hold with no threat within 40; 0 for a non-player non-unique); on Hold
