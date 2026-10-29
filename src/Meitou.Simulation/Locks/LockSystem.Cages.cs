@@ -174,7 +174,7 @@ public sealed partial class LockSystem
                 if (Redirected(next[s], at, reach)) { c.Freeing = CharacterId.None; c.EnteringCage = null; }
                 continue;
             }
-            if (next[s].Task == (byte)CharacterTask.GoTo) MovementSystem.Stop(table, s);
+            if (next[s].Task == (byte)CharacterTask.GoTo) AtWork(world, s);
             if (c.Freeing.IsNone)
             {
                 c.EnteringCage = null;

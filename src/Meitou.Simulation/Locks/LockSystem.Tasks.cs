@@ -66,6 +66,17 @@ public sealed partial class LockSystem : ITaskOwner, ITaskHandler, IOrderOwner
             && !(world.Player.DoorTarget is not null && world.Player.DoorWalker == table.IdOf(slot));
     }
 
+    /// <summary>
+    /// A lock order's worker reached its work (serial): it stands and works where it stands, so its order's provenance now runs <see cref="CharacterTask.Idle"/>. The next start then ends the
+    /// work through this handler (a move order given at the cage is no longer stopped by the work's own walk check), and the order queue sees it run until it is <see cref="ITaskHandler.Done"/>.
+    /// </summary>
+    static void AtWork(World world, int slot)
+    {
+        MovementSystem.Stop(world.Characters, slot);
+        var c = world.Characters.Cold(slot)!;
+        if (c.Running is { Source: TaskSource.Order, Task: CharacterTask.GoTo } run && Array.IndexOf(Rows, run.Row) >= 0) c.Running = run with { Task = CharacterTask.Idle };
+    }
+
     /// <summary>A lock order's act-out and the work's own parameters (<see cref="TaskRequest.Detail"/>).</summary>
     sealed record LockWork(CharacterTask Task, object? Detail);
 

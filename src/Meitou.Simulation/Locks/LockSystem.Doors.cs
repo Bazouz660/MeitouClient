@@ -180,7 +180,7 @@ public sealed partial class LockSystem
             {
                 // Arrived: stand and start. A move order given since the arrival is a new goal, not this walk.
                 if (job.Work > 0) { c.DoorJob = null; continue; }
-                MovementSystem.Stop(table, s);
+                AtWork(world, s);
             }
             if (c.StaggeredUntil > world.Tick) continue;   // a stagger interrupts the work
             job.Work += world.TickSeconds;
@@ -216,7 +216,7 @@ public sealed partial class LockSystem
             if (Redirected(n, at, reach)) player.DoorTarget = null;
             return;
         }
-        if (n.Task == (byte)CharacterTask.GoTo) MovementSystem.Stop(table, s);
+        if (n.Task == (byte)CharacterTask.GoTo) AtWork(world, s);
         player.DoorTarget = null;
         if (door.Motion is DoorMotion.Open or DoorMotion.Opening) { if (door.Motion == DoorMotion.Open) FixtureRegistry.CloseDoor(door); }
         else if (door.Lock is { EffectivelyLocked: true }) world.Post($"{c.Name}: It's locked.");

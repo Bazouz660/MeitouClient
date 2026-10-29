@@ -133,7 +133,7 @@ public sealed partial class LockSystem
                     if (Vector2.Distance(next[s].Goal, Flat(next[w].Position)) > ShackleReach) MovementSystem.GoTo(table, s, Flat(next[w].Position), c.RunSpeed);
                     continue;
                 }
-                if (next[s].Task == (byte)CharacterTask.GoTo) MovementSystem.Stop(table, s);
+                if (next[s].Task == (byte)CharacterTask.GoTo) AtWork(world, s);
             }
             if (c.StaggeredUntil > world.Tick) continue;   // a stagger interrupts the work
             switch (job.Work)

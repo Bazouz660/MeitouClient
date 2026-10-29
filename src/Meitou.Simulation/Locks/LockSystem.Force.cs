@@ -71,7 +71,7 @@ public sealed partial class LockSystem
                 if (Redirected(next[s], at, reach)) c.ForcingLock = null;
                 continue;
             }
-            if (next[s].Task == (byte)CharacterTask.GoTo) MovementSystem.Stop(table, s);
+            if (next[s].Task == (byte)CharacterTask.GoTo) AtWork(world, s);
             if (c.Force == LockForce.Strength)
             {
                 c.ForcingLock = null;
