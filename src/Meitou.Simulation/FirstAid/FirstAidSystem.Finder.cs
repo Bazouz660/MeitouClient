@@ -125,6 +125,14 @@ public sealed partial class FirstAidSystem
     /// <summary>A chained slave of the medic's faction (<c>FUN_14032e2a0</c>: chained, owner faction the medic's).</summary>
     internal static bool OwnedChained(CharacterCold medic, CharacterCold patient) => patient.SlaveState == 1 && patient.Shackles is not null && patient.SlaveOwner == medic.Faction;
 
+    /// <summary>
+    /// A chained slave on the medic squad's slave list (pass 3's candidates, <c>FUN_14099f690</c>: the platoon's ownerships): a slave member of the squad or one that obeys it (<see cref="CharacterCold.SlaveMaster"/>).
+    /// Stand-in: <c>SlaveMaster</c> is runtime only, so a slave with no known master (after a load) counts for every squad of its owner faction.
+    /// </summary>
+    static bool SquadSlave(CharacterCold medic, CharacterCold slave) =>
+        slave.SlaveState == 1 && slave.Shackles is not null
+        && (medic.SquadId >= 0 && (slave.SlaveMaster == medic.SquadId || slave.SquadId == medic.SquadId) || slave.SlaveMaster < 0 && slave.SlaveOwner == medic.Faction);
+
     /// <summary>The patient's need score for a kit type (<see cref="MedicalState.FirstAidNeed"/>); 0 for a body without a medical state.</summary>
     float AidNeed(CharacterCold c, bool robotKit) =>
         c.Medical is { } med && c.Race is { } race
@@ -217,7 +225,7 @@ public sealed partial class FirstAidSystem
     /// <item><b>Strangers</b>, when pass 1 found nobody: sensed neutral, knocked-out, imprisoned or crawling ones that are no enemy; not an animal or a robot race, not of a not-real faction, not fighting.
     /// A free one needs the medic's faction to <c>heal strangers</c>, to be down and to pass <c>FUN_14059a670</c> (same NPC class unless bandits, or allied); a prisoner needs a cage of the medic's
     /// faction and not to be a slave; a chained slave of the medic's faction counts too. Same building and town; a patient another medic works on is skipped.</item>
-    /// <item><b>Owned slaves</b> in sight, <b>carried</b> patients of the medic's faction (outdoors), then <b>prisoners in the cages</b> of the medic's faction in its place at a flat 0.25.</item>
+    /// <item><b>The squad's chained slaves</b> in sight (<see cref="SquadSlave"/>), <b>carried</b> patients of the medic's faction (outdoors), then <b>prisoners in the cages</b> of the medic's faction in its place at a flat 0.25.</item>
     /// </list>
     /// </summary>
     (int Slot, float Score) FindPatient(World world, int i, List<(int Medic, int Patient)> taken, bool robotics)
@@ -334,10 +342,10 @@ public sealed partial class FirstAidSystem
             }
         if (best >= 0) return (best, bestScore);
 
-        // Pass 3: owned slaves in sight.
+        // Pass 3: the squad's own chained slaves in sight.
         foreach (int s in candidates)
         {
-            if (!next[s].Alive || Dist2(s) > range2 || table.Cold(s) is not { } other || Skip(s, other) || !OwnedChained(cold, other)) continue;
+            if (!next[s].Alive || Dist2(s) > range2 || table.Cold(s) is not { } other || Skip(s, other) || !SquadSlave(cold, other)) continue;
             if (other.Race!.IsRobot && !robotics || other.InCombat) continue;
             float need = Need(world, i, s, organic, robotic);
             if (need <= 0) continue;
