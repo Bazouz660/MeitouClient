@@ -298,7 +298,7 @@ Same targets as picking; Task_CutLock / Task_BruteForceLock share the shackle ta
   "Paid c.{1} for bed rental.".
 - **Bed search** (`FUN_1408cfe00`, target finder of 153 Going to bed (**Verified**: its registration in `FUN_140319a60` stores the thunk at row +0x160)
   and desire of 148): a character in a bed keeps it. For a player-faction character: the complete buildings of function mask 0x40 (BF_BED only; skeleton
-  beds are not searched) in its town, else the nearest town within √1.5625e7 ≈ 3953, plus its home building's town (`FUN_1408cbea0`, the same gatherer as the cage finder: [economy 11.7](economy.md#117-arrest)); each free one not in
+  beds are not searched) in its town, else the nearest town within √1.5625e7 ≈ 3953, plus its home building's town (`FUN_1408cbea0`, the same gatherer as the cage finder and the kill/eat finder: [economy 11.7](economy.md#117-arrest)); each free one not in
   the squad's give-up list weighs 0.5 for the character's faction, 0.01 for a faction that counts it as an ally, else is skipped; x3 when its
   construction needs more than 1 material (Building+0x188), x2 with a parent building, x4 inside town walls (vfunc 0x118 `amInsideTownWalls` > 0,
   KenshiLib 1ce4a16; not in Meitou). The heaviest wins (first on a tie, `FUN_1408daa90`). The town's beds are first filtered by the squad's

@@ -169,8 +169,6 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
     /// <summary>The game hour from which the town <paramref name="site"/> wants a kill again (null: not asked yet).</summary>
     public double? KillTimer(int site) => killAt.TryGetValue(site, out double at) ? at : null;
 
-    /// <summary>The cage finder's distance scale (the arrest system's, <see cref="FixtureRegistry.CageSearchScale"/>).</summary>
-    const float CageScale = FixtureRegistry.CageSearchScale;
     const ulong TimerSalt = 0x4B696C6C54696D72;
 
     public void SlowWorld(World world)
@@ -329,11 +327,13 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
         switch (type)
         {
             case TaskType.KILL_A_RANDOM_CAGE_OCCUPANT:
+                site = FateTown(world, slot, board);
                 if (combat is null || cold.Fighter is not { Unarmed: false } || site < 0 || !KillDue(world, site, cold.Faction)) return null;
                 return FateJob(world, slot, cold, board, site, CaptiveJobKind.Kill);
             case TaskType.EAT_A_RANDOM_CAGE_OCCUPANT:
-                return site < 0 ? null : FateJob(world, slot, cold, board, site, CaptiveJobKind.Eat);
+                return FateJob(world, slot, cold, board, FateTown(world, slot, board), CaptiveJobKind.Eat);   // no town test: the finder falls back to the nearest town
             case TaskType.EAT_A_RANDOM_CAGE_OCCUPANT_MEASURED_RATE:
+                site = FateTown(world, slot, board);
                 return site < 0 || !KillDue(world, site, cold.Faction) ? null : FateJob(world, slot, cold, board, site, CaptiveJobKind.Eat);
             case TaskType.EAT_A_RANDOM_DEAD_BODY:
             case TaskType.EAT_A_RANDOM_KO_BODY:
@@ -380,7 +380,7 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
 
     CaptiveJob? FateJob(World world, int slot, CharacterCold cold, Blackboard board, int site, CaptiveJobKind kind)
     {
-        if (FateTarget(world, slot, cold.Faction, site, board.OwnHome?.Key) is not { } cage) return null;
+        if (FateTarget(world, slot, cold, board.OwnHome?.Key) is not { } cage) return null;
         var table = world.Characters;
         var worker = table.IdOf(slot);
         // The finder has the occupant say "marked for death" to the one who picked it (event 10, FUN_1408d0d90).
@@ -416,24 +416,23 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
     }
 
     /// <summary>
-    /// The cage whose occupant a killer or eater takes (<c>FUN_1408d0d90</c> over the cage finder <c>FUN_1408d0770</c> in its occupied mode, <b>Observed</b>): of the occupied cages of
-    /// <paramref name="faction"/> in the town (engine: the original also takes another faction's cage that a town test passes, <b>Unknown</b>), the one with the highest weight
-    /// clamp(1 - d^2 / 4608^2, 1e-5, 1), x100 in the worker's home building; not one whose occupant is a robot (RACE <c>robot</c>), nor one another job works.
+    /// The town the kill and eat goals read: the town the worker stands in (the character status's town, `+0x88`: the kill rate's gate and its timer key, <b>Verified</b> `FUN_14032e9b0`), else its squad's
+    /// town (<b>engine reading</b>, as <see cref="LiberateTarget"/>); -1: none.
     /// </summary>
-    Fixture? FateTarget(World world, int slot, int faction, int site, string? home)
+    int FateTown(World world, int slot, Blackboard board) => TownAt(data, world.Characters.Next[slot].Position) is >= 0 and var here ? here : board.Town;
+
+    /// <summary>
+    /// The cage whose occupant a killer or eater takes (<c>FUN_1408d0d90</c> over the cage finder <c>FUN_1408d0770</c> in its occupied mode, <b>Verified</b>): <see cref="FixtureRegistry.FindCage"/> with
+    /// <c>occupied</c>, over the candidates of the worker's town (<see cref="FixtureRegistry.CageCandidates"/>: its town, else its faction's nearest, plus its home's) with the faction and usable tests of
+    /// the finder (a cage of another faction only when <see cref="FixtureRegistry.CanUse"/> passes) and the weights clamp(1 - d^2 / 4608^2, 1e-5, 1), x100 own faction, x100 in the worker's home. Not
+    /// one whose occupant is dead, a robot (RACE <c>robot</c>), or another job's.
+    /// </summary>
+    Fixture? FateTarget(World world, int slot, CharacterCold cold, string? home)
     {
-        var at = world.Characters.Next[slot].Position;
-        Fixture? best = null;
-        float bestWeight = 0;
-        foreach (var f in CagesOf(world, site))
-        {
-            if (f.Owner != faction || Taken(f.Id) || OccupantSlot(world, f) is not (>= 0 and var s) || world.Characters.Cold(s)!.Race is { IsRobot: true } || Busy(world.Characters.IdOf(s))) continue;
-            float d2 = Vector2.DistanceSquared(new Vector2(at.X, at.Z), new Vector2(f.Position.X, f.Position.Z));
-            float w = Math.Clamp(1 - d2 / (CageScale * CageScale), 1e-5f, 1) * 100;
-            if (home is not null && f.Building == home) w *= 100;
-            if (w > bestWeight) (best, bestWeight) = (f, w);
-        }
-        return best;
+        var table = world.Characters;
+        var candidate = world.Fixtures.CageCandidates(world, cold, table.Next[slot].Position);
+        return world.Fixtures.FindCage(world, cold, table.Next[slot].Position, home,
+            f => !candidate(f) || Taken(f.Id) || OccupantSlot(world, f) is not (>= 0 and var s) || table.Cold(s)!.Race is { IsRobot: true } || Busy(table.IdOf(s)), occupied: true);
     }
 
     /// <summary>All the cages of <paramref name="faction"/> in the town are held by live characters, and there is one (<c>FUN_1405a1ab0</c>, the state CAGES_ARE_ALL_FULL).</summary>
