@@ -26,7 +26,7 @@ namespace Meitou.Simulation.FirstAid;
 /// </list>
 /// Placed after the movement system (a later move order replaces a treatment, since it sets the task) and before the body system.
 /// </summary>
-public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions options, ItemFactory items, FirstAidSettings? settings = null) : ITickSystem
+public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions options, ItemFactory items, FirstAidSettings? settings = null) : ITickSystem, ITaskOwner, ITaskHandler
 {
     /// <summary>The effect kind: one tick of treatment from the source (medic) on the target (patient).</summary>
     public const int EffectTreat = 1;
@@ -62,6 +62,7 @@ public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions 
                             else
                             {
                                 LeaveFight(world, slot);
+                                cold.Running = null;
                                 Begin(world, slot, order.Patient, CharacterTask.Idle);
                             }
                         }
@@ -75,6 +76,7 @@ public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions 
                             else
                             {
                                 LeaveFight(world, slot);
+                                cold.Running = null;
                                 Begin(world, slot, splint.Patient, CharacterTask.Idle, splint: true);
                             }
                         }
@@ -83,11 +85,7 @@ public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions 
                     foreach (var id in Who(world, rest.Characters))
                     {
                         if (!table.TryResolveNext(id, out int slot) || table.Cold(slot) is not { } cold || !CanAct(cold)) continue;
-                        MovementSystem.Stop(table, slot);
-                        table.Next[slot].Task = (byte)CharacterTask.Rest;
-                        cold.TreatTarget = CharacterId.None;
-                        cold.TreatSplint = false;
-                        cold.ResumeTask = CharacterTask.Idle;
+                        TaskStart.Start(world, slot, new TaskRequest(CharacterTask.Rest, TaskType.REST, TaskSource.Order));
                     }
                     break;
                 case MedicJobCommand job:
@@ -97,7 +95,7 @@ public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions 
                     {
                         if (!table.TryResolveNext(id, out int slot) || table.Cold(slot) is not { IsPlayer: true } cold) continue;
                         if (taken is null) Production.PermaJobs.Add(cold, Meitou.Data.Gameplay.Ai.TaskType.JOB_MEDIC, Production.PermaJob.Untargeted(Meitou.Data.Gameplay.Ai.TaskType.JOB_MEDIC));
-                        else HealSomeone(world, slot, taken, robotics: false, ordered: true);
+                        else HealSomeone(world, slot, taken, robotics: false, TaskSource.Order);
                     }
                     break;
                 }
@@ -120,6 +118,39 @@ public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions 
         if (world.Characters.Cold(slot)!.InCombat) world.SystemOf<Combat.CombatSystem>()?.Disengage(world.Characters, world.Characters.IdOf(slot));
     }
 
+    public void RegisterTasks(TaskHandlers tasks)
+    {
+        tasks.Register(CharacterTask.Treat, this);
+        tasks.Register(CharacterTask.Rest, this);
+    }
+
+    /// <summary>A treatment of <see cref="TaskRequest.Target"/> (rows 249 and 250 splint), or the Rest order's sitting down.</summary>
+    void ITaskHandler.Start(World world, int slot, in TaskRequest request)
+    {
+        if (request.Task == CharacterTask.Treat)
+        {
+            Begin(world, slot, request.Target, request.Resume, splint: request.Row is TaskType.SPLINT_ORDER or TaskType.SPLINT_JOB);
+            return;
+        }
+        var table = world.Characters;
+        var cold = table.Cold(slot)!;
+        MovementSystem.Stop(table, slot);
+        table.Next[slot].Task = (byte)CharacterTask.Rest;
+        cold.TreatTarget = CharacterId.None;
+        cold.TreatSplint = false;
+        cold.ResumeTask = CharacterTask.Idle;
+    }
+
+    /// <summary>A treatment another task replaces or the Stop order ends lets go of its patient and kit (the task it would go back to is the new start's to set).</summary>
+    void ITaskHandler.End(World world, int slot, CharacterTask task, TaskEnd reason)
+    {
+        if (task != CharacterTask.Treat) return;
+        var cold = world.Characters.Cold(slot)!;
+        cold.TreatTarget = CharacterId.None;
+        cold.TreatSplint = false;
+        cold.TreatKit = null;
+    }
+
     /// <summary>Starts a treatment (serial phases): the medic stands, then walks to the patient. <paramref name="resume"/> is the task to go back to afterwards (kept if already treating).</summary>
     static void Begin(World world, int slot, CharacterId patient, CharacterTask resume, bool splint = false)
     {
@@ -136,7 +167,6 @@ public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions 
         cold.TreatTarget = patient;
         cold.TreatSplint = splint;
         cold.ResumeTask = keep;
-        cold.JobTask = null;   // an order's treatment; RunJobs marks a job's
     }
 
     /// <summary>Dialogue events 18-22 (EV_HEALING_OTHER_START ... EV_FIRSTAID_KIT_EMPTY).</summary>
@@ -498,7 +528,7 @@ public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions 
                 if (!Settings.AutoNpcs) continue;
                 // Idle: no task, following, wandering or an implicit job.
                 bool idle = next[i].Task is (byte)CharacterTask.Idle or (byte)CharacterTask.Wander or (byte)CharacterTask.Follow || cold.Implicit is not null;
-                if (idle) HealSomeone(world, i, taken, robotics: false);
+                if (idle) HealSomeone(world, i, taken, robotics: false, TaskSource.Npc);
             }
         }
         finally { EndSweep(); }
@@ -515,11 +545,8 @@ public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions 
         {
             var type = cold.Jobs[k].Type;
             if (type is not (TaskType.JOB_MEDIC or TaskType.JOB_REPAIR_ROBOT or TaskType.SPLINT_JOB) || !Production.PermaJobs.FreeFor(cold, task, k)) continue;
-            if (type == TaskType.SPLINT_JOB ? SplintSomeone(world, i, taken) : HealSomeone(world, i, taken, robotics: type == TaskType.JOB_REPAIR_ROBOT))
-            {
-                cold.JobTask = CharacterTask.Treat;   // a job's treatment: Self preservation comes first (RetaliationSystem)
-                return;
-            }
+            // A job's treatment (provenance Job): Self preservation comes first (RetaliationSystem).
+            if (type == TaskType.SPLINT_JOB ? SplintSomeone(world, i, taken, k) : HealSomeone(world, i, taken, robotics: type == TaskType.JOB_REPAIR_ROBOT, TaskSource.Job, k)) return;
         }
     }
 

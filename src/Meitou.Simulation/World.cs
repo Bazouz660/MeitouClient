@@ -102,6 +102,7 @@ public sealed partial class World : IDisposable
         production = this.systems.OfType<Production.ProductionSystem>().FirstOrDefault();
         dialogues = this.systems.OfType<Dialogue.IDialogueSource>().FirstOrDefault();
         ragdolls = this.systems.OfType<Ragdolls.IRagdollSource>().FirstOrDefault();
+        foreach (var owner in this.systems.OfType<ITaskOwner>()) owner.RegisterTasks(Tasks);
         Characters = characters ?? new CharacterTable();
         Grid = new SpatialGrid(settings.GridCellSize);
         pool = new WorkerPool(settings.Threads);
@@ -111,6 +112,9 @@ public sealed partial class World : IDisposable
 
     public WorldSettings Settings { get; private set; }
     public ulong Seed => Settings.Seed;
+
+    /// <summary>The act-out handlers <see cref="TaskStart"/> starts and ends tasks through (filled by the systems that own them, <see cref="ITaskOwner"/>; open to later additions).</summary>
+    public TaskHandlers Tasks { get; } = new();
 
     /// <summary>
     /// Sets the world seed before the first tick: a loaded save's (docs/formats/save.md CAMERA <c>meitou seed</c>), so its seeded layout rolls as before the save, or a new

@@ -392,21 +392,23 @@ public sealed partial class FirstAidSystem
     static string? HomeKey(World world, CharacterCold cold) =>
         world.Squads.Find(cold.SquadId) is { } squad ? (squad.Ai?.OwnHome ?? squad.HomeBuilding)?.Key : null;
 
-    /// <summary>Starts the Medic / Robotics job's (or an NPC's, or the button's) treatment of the best patient the finder gives; false when none.</summary>
-    /// <remarks>With <paramref name="ordered"/> (the Medic button without Shift, an order) a fighting medic looks too, and one that finds a patient leaves its fight (<see cref="LeaveFight"/>).</remarks>
-    bool HealSomeone(World world, int i, List<(int Medic, int Patient)> taken, bool robotics, bool ordered = false)
+    /// <summary>
+    /// Starts the Medic / Robotics job's (<paramref name="job"/>), an NPC's or the button's treatment of the best patient the finder gives; false when none. The button (<see cref="TaskSource.Order"/>, row
+    /// 25) makes a fighting medic look too, and one that finds a patient leaves its fight (<see cref="TaskStart.Start"/>).
+    /// </summary>
+    bool HealSomeone(World world, int i, List<(int Medic, int Patient)> taken, bool robotics, TaskSource source, int job = -1)
     {
+        bool ordered = source == TaskSource.Order;
         var (patient, _) = FindPatient(world, i, taken, robotics, ordered);
         if (patient < 0) return false;
-        LeaveFight(world, i);
-        return StartJob(world, i, patient, taken, splint: false);
+        return StartJob(world, i, patient, taken, new TaskRequest(CharacterTask.Treat, ordered ? TaskType.FIRST_AID_ORDER : robotics ? TaskType.JOB_REPAIR_ROBOT : TaskType.JOB_MEDIC, source) { Job = job });
     }
 
     /// <summary>
     /// The Splint Rigging finder (<c>FUN_14099e240</c>, <b>Verified</b>): X = min(medic skill, the quality of the splint kit it takes: its own inventory or backpack, the fewest charges; none: nothing); sensed allies not of a robot
     /// race, not carried by an enemy, of the medic's own faction only, whose <c>needsSplint</c>(X) holds weigh 0.1 x <see cref="Nearness"/> (x 0.05 when another medic works on it); the medic itself 0.1. A patient the medic already treats (a pair on the sub-target list) is taken at once.
     /// </summary>
-    bool SplintSomeone(World world, int i, List<(int Medic, int Patient)> taken)
+    bool SplintSomeone(World world, int i, List<(int Medic, int Patient)> taken, int job)
     {
         var table = world.Characters;
         var next = table.Next;
@@ -427,24 +429,44 @@ public sealed partial class FirstAidSystem
             var d = next[s].Position - next[i].Position;
             if (d.LengthSquared() > range * range) continue;
             float score = SplintWeight * Nearness(world, i, cold, s);
-            if (score > StickyMinScore && taken.Contains((i, s))) return StartJob(world, i, s, taken, splint: true);   // the running pair is taken at once
+            if (score > StickyMinScore && taken.Contains((i, s))) return StartSplint(world, i, s, taken, job);   // the running pair is taken at once
             if (OthersOn(taken, i, s) > 0) score *= TakenWeight;
             if (score <= bestScore) continue;
             best = s;
             bestScore = score;
         }
         if (bestScore < SplintWeight && own.NeedsSplint(ownRace, skill)) best = i;
-        return best >= 0 && StartJob(world, i, best, taken, splint: true);
+        return best >= 0 && StartSplint(world, i, best, taken, job);
     }
 
-    /// <summary>Starts a job's treatment of <paramref name="patient"/>, going back afterwards to what the medic did before its job.</summary>
-    static bool StartJob(World world, int i, int patient, List<(int Medic, int Patient)> taken, bool splint)
+    /// <summary>The task a job's treatment goes back to: what the medic did before its job.</summary>
+    static CharacterTask ResumeOf(World world, int i)
+    {
+        var cold = world.Characters.Cold(i)!;
+        byte task = world.Characters.Next[i].Task;
+        return cold.Implicit is not null || cold.JobIndex >= 0 ? cold.ResumeTask : task is (byte)CharacterTask.Wander or (byte)CharacterTask.Follow ? (CharacterTask)task : CharacterTask.Idle;
+    }
+
+    /// <summary>Starts a treatment of <paramref name="patient"/> (<paramref name="request"/> without its target), going back afterwards to what the medic did before its job.</summary>
+    static bool StartJob(World world, int i, int patient, List<(int Medic, int Patient)> taken, TaskRequest request)
+    {
+        var next = world.Characters.Next;
+        var resume = ResumeOf(world, i);
+        if (TaskStart.Start(world, i, request with { Target = new CharacterId(patient, next[patient].Generation), Resume = resume }) != StartResult.Started) return false;
+        taken.Add((i, patient));
+        return true;
+    }
+
+    /// <summary>The Splint Rigging job's splinting of <paramref name="patient"/>, going back afterwards to what the medic did before its job.</summary>
+    static bool StartSplint(World world, int i, int patient, List<(int Medic, int Patient)> taken, int job)
     {
         var next = world.Characters.Next;
         var cold = world.Characters.Cold(i)!;
         taken.Add((i, patient));
-        var resume = cold.Implicit is not null || cold.JobIndex >= 0 ? cold.ResumeTask : next[i].Task is (byte)CharacterTask.Wander or (byte)CharacterTask.Follow ? (CharacterTask)next[i].Task : CharacterTask.Idle;
-        Begin(world, i, new CharacterId(patient, next[patient].Generation), resume, splint);
+        var resume = ResumeOf(world, i);
+        var target = new CharacterId(patient, next[patient].Generation);
+        cold.Running = new RunningTask(CharacterTask.Treat, TaskType.SPLINT_JOB, TaskSource.Job, job, target, null, world.Tick);
+        Begin(world, i, target, resume, splint: true);
         return true;
     }
 }

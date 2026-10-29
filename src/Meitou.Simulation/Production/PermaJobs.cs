@@ -90,10 +90,11 @@ public static class PermaJobs
 
     /// <summary>
     /// Whether the character's <paramref name="task"/> came from its jobs (a list job, an implicit job or a job pass: <see cref="CharacterCold.JobIndex"/>, <see cref="CharacterCold.Implicit"/>,
-    /// <see cref="CharacterCold.JobTask"/>), not from an order. The original tries the priority-3 goals (Self preservation, Hold's attack on sight) before the jobs that are not urgent
-    /// (docs/game/ai-tasks.md "Precedence"), so such a task gives way to them.
+    /// a <see cref="TaskSource.Job"/> provenance, <see cref="CharacterCold.Running"/>), not from an order. The original tries the priority-3 goals (Self preservation, Hold's attack on sight)
+    /// before the jobs that are not urgent (docs/game/ai-tasks.md "Precedence"), so such a task gives way to them.
     /// </summary>
-    public static bool FromJob(CharacterCold cold, CharacterTask task) => cold.JobIndex >= 0 || cold.Implicit is not null || cold.JobTask == task;
+    public static bool FromJob(CharacterCold cold, CharacterTask task) =>
+        cold.JobIndex >= 0 || cold.Implicit is not null || cold.Running is { Source: TaskSource.Job } run && run.Runs(task);
 
     /// <summary>The index of the first job of <paramref name="type"/> in the list, -1 when none.</summary>
     public static int IndexOf(CharacterCold cold, TaskType type) => cold.Jobs.FindIndex(j => j.Type == type);

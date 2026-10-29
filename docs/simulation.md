@@ -96,7 +96,25 @@ dummy), haul 124, turret 146, prospect 150, build 2, door repair 95, dismantle 9
 a crawler or one staying low (0x40, posture 1 or 2) can start only rows that register it (move, first aid, loot, talk, attacks, prospect, sleep; not carry, operate, build, repair, dismantle, put in bed); an animal only 0x20 rows (so
 no bed, no carry, no operate, no medic; job 289 is animal-only, so a human with that job never runs it). Not yet routed through it: implicit jobs, locks and cages, loot, put down, trade and
 talk, the continuing checks (`Able`, `CanWalk`, which still stop work on a cage). The medic finder keeps its own imprisoned refusal because rows 25 / 58 register the imprisoned repertoire
-(whether a caged prisoner treats is **Unknown**).
+(whether a caged prisoner treats is **Unknown**). A fight is row 5 when the player picked the target, 13 for a defence, else 16 (13 and 16 register the same repertoires).
+
+### Task starts
+
+`TaskStart.Start(world, slot, TaskRequest)` (serial phases) is the one start path. In order: the row must be `Eligible`; a fight ends (the original's new task drops the fight task,
+[combat](game/combat.md#fight-lifecycle-and-orders)); the task before ends through its handler (`TaskEnd.Replaced`: it lets go of its target, while the movement, the task and
+`ResumeTask` are the new start's); the provenance is recorded in `CharacterCold.Running` (`RunningTask`: act-out, row, `TaskSource`, job index, target, site, tick); the act-out starts.
+`TaskStart.End(world, slot, reason)` ends a task from outside its act-out (`TaskEnd.Stopped`, the Stop order and a squad mate lifted awake: then idle). Each `CharacterTask` has one
+`ITaskHandler` (Start, End, Done), registered by its system (`ITaskOwner`) in `World.Tasks`, an open list later code may add to or replace; a task without one is set as is. Owners: movement
+(GoTo, Follow), combat (Attack), first aid (Treat, Rest), carry (PickUp, PutDown, Loot, StealthKo).
+- Routed through it: move, follow and bodyguard (order and job), stop, every fight (`AttackOrder`: picked is an order, `Defensive` a reaction, else a goal), the Medic button, medic and
+  robotics jobs, NPC healing, Rest, pick up and kidnap orders, the lifts of errands, rescue (job, button, NPC leaders), kidnappers, guards and town duties (`BeginPickUp`), foraging. Not yet:
+  the First Aid and Splint orders, the splint job, loot, stealth KO and put down; production, construction, locks, beds, crime, kidnap, dialogue and trade starts.
+- `PermaJobs.FromJob` reads a `TaskSource.Job` provenance while its act-out runs; production's `JobIndex`, `Implicit` and `ResumeTask` still mark production's own starts.
+- Engine: a fight ended in a serial phase clears both combat state arrays (`CombatSystem.Live` tells which one is current: the slow-world swap changes it).
+- **A fight under another task** (Meitou only; **Verified** by reading `CombatSystem.Act`, `PursuitSystem`): a start that overwrites a fighter's task without ending its fight (the sites
+  not converted yet: beds, locks, cages, items, put down) leaves `InCombat` and the fight target set. `CombatSystem.Act` does not read the task: the character keeps its target and
+  re-picks, blocks and dodges, draws, and swings whenever a technique reaches the target; `PursuitSystem` and `CombatSystem.Move` steer only an `Attack` task, so the new task's walk
+  moves it. The fight ends only when `Act` loses the target, and `EndFight` then leaves the other task alone.
 
 ## Systems and their order
 

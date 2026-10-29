@@ -25,7 +25,7 @@ namespace Meitou.Simulation.Carrying;
 /// Everything runs in the serial phases (<c>Inputs</c>, <c>Schedule</c>, <c>SlowWorld</c>), in slot order, so the result does not depend on threads or partitions. Placed after the body system (its
 /// <c>SlowWorld</c> sees this tick's knock-outs and the corpses already removed) and before combat.
 /// </summary>
-public sealed partial class CarrySystem(GameConstants constants, BodyOptions options, float liftSeconds = 1, CarrySettings? settings = null) : ITickSystem
+public sealed partial class CarrySystem(GameConstants constants, BodyOptions options, float liftSeconds = 1, CarrySettings? settings = null) : ITickSystem, ITaskOwner, ITaskHandler
 {
     /// <summary>The bone of the carrier the body hangs from (the original's <c>Bip01 L UpperArm</c> for the left side, <b>Verified</b>).</summary>
     public const string AttachBone = "Bip01 L UpperArm";
@@ -161,9 +161,9 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
                     // The order's lift (225 Lifting/Snatching Order) may take a body another carries; a kidnap (246) may not.
                     if (!table.TryResolveNext(order.Target, out int body)
                         || !(CanBeLifted(world, table.Cold(body)!) || order.Kidnap && CanBeKidnapped(table, body) || !order.Kidnap && Snatchable(table.Cold(body)!))) break;
-                    if (Nearest(table, Who(world, order.Carriers), body, s => s != body && CanCarry(world, table.Cold(s)!, order.Kidnap ? TaskType.KIDNAP_ORDER : TaskType.LIFT_PERSON_PLAYER_ORDER) && table.Cold(s)!.Carrying != order.Target) is int carrier)
+                    if (Nearest(table, Who(world, order.Carriers), body, s => s != body && CanCarry(world, table.Cold(s)!, order.Kidnap ? TaskType.KIDNAP_ORDER : TaskType.LIFT_PERSON_PLAYER_ORDER) && table.Cold(s)!.Carrying != order.Target) is int carrier
+                        && Start(world, carrier, CharacterTask.PickUp, order.Kidnap ? TaskType.KIDNAP_ORDER : TaskType.LIFT_PERSON_PLAYER_ORDER, TaskSource.Order, order.Target, CharacterTask.Idle))
                     {
-                        Begin(table, carrier, order.Target, CharacterTask.PickUp, CharacterTask.Idle);
                         table.Cold(carrier)!.Kidnapping = order.Kidnap;
                         table.Cold(carrier)!.Snatching = !order.Kidnap;
                     }
@@ -213,7 +213,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
                         {
                             // The one-shot order has no bed to take anyone to: said, not dropped silently (engine choice; the job just waits with desire 0).
                             if (world.Fixtures.FindBed(world, slot, Relations) is null) world.Bark(id, Meitou.Localisation.Loc.Tr("No free bed to take anyone to."));
-                            else RescueSomeone(world, slot, taken);
+                            else RescueSomeone(world, slot, taken, TaskSource.Order);
                         }
                     }
                     break;
@@ -225,15 +225,16 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
     /// <summary>
     /// Starts a pick-up of <paramref name="body"/> by the character in <paramref name="carrier"/> (serial phases; the arrest and kidnap systems' lift), going back to <paramref name="resume"/>
     /// afterwards: false when it cannot carry or the body cannot be lifted. With <paramref name="kidnap"/> a sleeper may be taken too (<see cref="CanBeKidnapped"/>): the lift is then
-    /// a kidnap, which rolls on arrival.
+    /// a kidnap, which rolls on arrival. A job's lift (<paramref name="source"/> <see cref="TaskSource.Job"/>, a carrying errand) names its <paramref name="job"/> and <paramref name="row"/>.
     /// </summary>
-    public bool BeginPickUp(World world, int carrier, CharacterId body, CharacterTask resume = CharacterTask.Idle, bool kidnap = false)
+    public bool BeginPickUp(World world, int carrier, CharacterId body, CharacterTask resume = CharacterTask.Idle, bool kidnap = false, TaskSource source = TaskSource.Npc, int job = -1, TaskType? row = null)
     {
         var table = world.Characters;
-        if (!table.TryResolveNext(body, out int b) || b == carrier || table.Cold(carrier) is not { } c || !CanCarry(world, c, kidnap ? TaskType.KIDNAP_ORDER : TaskType.LIFT_PERSON_PLAYER_ORDER)) return false;
+        var lift = kidnap ? TaskType.KIDNAP_ORDER : TaskType.LIFT_PERSON_PLAYER_ORDER;
+        if (!table.TryResolveNext(body, out int b) || b == carrier || table.Cold(carrier) is not { } c || !CanCarry(world, c, lift)) return false;
         bool asleep = !CanBeLifted(table.Cold(b)!);
         if (asleep && !(kidnap && CanBeKidnapped(table, b))) return false;
-        Begin(table, carrier, body, CharacterTask.PickUp, resume);
+        if (!Start(world, carrier, CharacterTask.PickUp, row ?? lift, source, body, resume, job)) return false;
         c.Kidnapping = asleep;
         return true;
     }
@@ -242,14 +243,21 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
     public bool BeginPutDown(World world, int slot)
     {
         var table = world.Characters;
-        if (table.Cold(slot) is not { Carrying.IsNone: false, Medical.Incapacitated: false } cold || table.Next[slot].Task == (byte)CharacterTask.PutDown) return false;
+        if (table.Cold(slot) is not { Carrying.IsNone: false, Medical.Incapacitated: false } || table.Next[slot].Task == (byte)CharacterTask.PutDown) return false;
+        PutDownStart(table, slot);
+        return true;
+    }
+
+    /// <summary>The put-down's start: the carrier stands and plays the lift clip backwards.</summary>
+    static void PutDownStart(CharacterTable table, int slot)
+    {
+        var cold = table.Cold(slot)!;
         MovementSystem.Stop(table, slot);
         table.Next[slot].Task = (byte)CharacterTask.PutDown;
         table.Next[slot].TaskTime = 0;
         cold.CarryTarget = cold.Carrying;
         cold.LiftTime = 0;
         cold.ResumeTask = CharacterTask.Idle;
-        return true;
     }
 
     /// <summary>
@@ -302,8 +310,48 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         return best;
     }
 
-    /// <summary>Starts a pick-up or a loot (serial phases): the character stands, then walks to the target.</summary>
+    /// <summary>Starts a pick-up, a loot or a stealth knock-out of <paramref name="target"/> as row <paramref name="row"/> through <see cref="TaskStart.Start"/>: false when the row is not the character's.</summary>
+    static bool Start(World world, int slot, CharacterTask task, TaskType row, TaskSource source, CharacterId target, CharacterTask resume, int job = -1) =>
+        TaskStart.Start(world, slot, new TaskRequest(task, row, source) { Target = target, Resume = resume, Job = job }) == StartResult.Started;
+
+    public void RegisterTasks(TaskHandlers tasks)
+    {
+        tasks.Register(CharacterTask.PickUp, this);
+        tasks.Register(CharacterTask.PutDown, this);
+        tasks.Register(CharacterTask.Loot, this);
+        tasks.Register(CharacterTask.StealthKo, this);
+    }
+
+    void ITaskHandler.Start(World world, int slot, in TaskRequest request)
+    {
+        if (request.Task == CharacterTask.PutDown) PutDownStart(world.Characters, slot);
+        else Approach(world.Characters, slot, request.Target, request.Task, request.Resume);
+    }
+
+    /// <summary>
+    /// A pick-up, put-down, loot or knock-out that another task replaces or the Stop order ends lets go of its target (a body already on the shoulder stays there; the task it would go back
+    /// to is the new start's to set).
+    /// </summary>
+    void ITaskHandler.End(World world, int slot, CharacterTask task, TaskEnd reason)
+    {
+        var cold = world.Characters.Cold(slot)!;
+        cold.CarryTarget = CharacterId.None;
+        cold.LiftTime = -1;
+        cold.Kidnapping = false;
+        cold.Snatching = false;
+        cold.Foraging = false;
+        cold.LootFlags = LootStart.None;
+    }
+
+    /// <summary>Starts a loot or a stealth knock-out not yet routed through <see cref="TaskStart"/> (serial phases).</summary>
     static void Begin(CharacterTable table, int slot, CharacterId target, CharacterTask task, CharacterTask resume)
+    {
+        table.Cold(slot)!.Running = null;
+        Approach(table, slot, target, task, resume);
+    }
+
+    /// <summary>The act-out's start of a pick-up, a loot or a stealth knock-out (serial phases): the character stands, then walks to the target.</summary>
+    static void Approach(CharacterTable table, int slot, CharacterId target, CharacterTask task, CharacterTask resume)
     {
         var cold = table.Cold(slot)!;
         ref var n = ref table.Next[slot];
@@ -318,7 +366,6 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         cold.Snatching = false;
         cold.Foraging = false;
         cold.LootFlags = LootStart.None;
-        cold.JobTask = null;   // an order's (or an NPC's); the job passes mark theirs
     }
 
     /// <summary>Ends a pick-up, put-down or loot (serial phases): back to the task before it.</summary>
@@ -481,8 +528,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
             if (body.Medical is { Incapacitated: false } && Friendly(cold, body))
             {
                 // A squad mate lifted awake: it leaves its fight and task and rides until put down.
-                LeaveFight(world, b);
-                table.Next[b].Task = (byte)CharacterTask.Idle;
+                TaskStart.End(world, b, TaskEnd.Stopped);
                 body.CarriedAwake = true;
             }
             Link(table, i, b);
@@ -896,7 +942,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
             int rescue = cold.Jobs.FindIndex(j => j.Type == Meitou.Data.Gameplay.Ai.TaskType.FIND_AND_RESCUE_IF_THERES_BEDS);
             if (!Free(world, i) && !(cold.JobIndex > rescue && cold is { Fleeing: false } && CanCarry(world, cold, TaskType.FIND_AND_RESCUE_IF_THERES_BEDS))) continue;
             if (!MayRescue(world, i, cold)) continue;
-            if (RescueSomeone(world, i, taken)) cold.JobTask = CharacterTask.PickUp;
+            RescueSomeone(world, i, taken, TaskSource.Job, rescue);
         }
         if (Settings.RescueNpcLeaders) RescueLeaders(world, table, taken);
     }
@@ -923,7 +969,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
     /// One look for a body (the rescue job's pass, and the Rescue button without Shift once): with no fight in its squad, the character picks up the nearest knocked-out member of
     /// its faction within its sight that nobody else lifts; true when it started.
     /// </summary>
-    bool RescueSomeone(World world, int i, HashSet<int> taken)
+    bool RescueSomeone(World world, int i, HashSet<int> taken, TaskSource source, int job = -1)
     {
         var table = world.Characters;
         var next = table.Next;
@@ -940,9 +986,9 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
             float d2 = Vector2.DistanceSquared(new Vector2(next[i].Position.X, next[i].Position.Z), new Vector2(next[s].Position.X, next[s].Position.Z));
             if (d2 <= best2 && (best < 0 || d2 < best2)) { best = s; best2 = d2; }
         }
-        if (best < 0) return false;
+        if (best < 0 || !Start(world, i, CharacterTask.PickUp, TaskType.FIND_AND_RESCUE_IF_THERES_BEDS, source, table.IdOf(best),
+            cold.JobIndex >= 0 || cold.Implicit is not null ? cold.ResumeTask : (CharacterTask)next[i].Task, job)) return false;
         taken.Add(best);
-        Begin(table, i, table.IdOf(best), CharacterTask.PickUp, cold.JobIndex >= 0 || cold.Implicit is not null ? cold.ResumeTask : (CharacterTask)next[i].Task);
         return true;
     }
 
@@ -963,9 +1009,8 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
                 float d2 = Vector2.DistanceSquared(new Vector2(next[s].Position.X, next[s].Position.Z), new Vector2(next[l].Position.X, next[l].Position.Z));
                 if (d2 <= range * range && d2 < best2) { best = s; best2 = d2; }
             }
-            if (best < 0) continue;
+            if (best < 0 || !Start(world, best, CharacterTask.PickUp, TaskType.FIND_AND_RESCUE_IF_THERES_BEDS, TaskSource.Npc, squad.Leader, (CharacterTask)next[best].Task)) continue;
             taken.Add(l);
-            Begin(table, best, squad.Leader, CharacterTask.PickUp, (CharacterTask)next[best].Task);
         }
     }
 

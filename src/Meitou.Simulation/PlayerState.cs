@@ -274,7 +274,7 @@ public sealed partial class PlayerSystem(PopulationData? data = null) : ITickSys
                     foreach (var id in stop.Characters.Count > 0 ? stop.Characters : player.Selection.ToArray())
                     {
                         if (!table.TryResolveNext(id, out int slot) || !table.Cold(slot)!.IsPlayer) continue;
-                        MovementSystem.Stop(table, slot);
+                        TaskStart.End(world, slot, TaskEnd.Stopped);
                         table.Cold(slot)!.FollowOrder = CharacterId.None;
                     }
                     break;

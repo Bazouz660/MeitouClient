@@ -20,7 +20,7 @@ namespace Meitou.Simulation.Combat;
 /// Everything random is a function of (seed, character, kind, counter) so the result does not depend on the thread count. Stats, bodies and gear change only here in the commit and in
 /// the owner's own Act (the medical tick); other characters only read the <see cref="CombatSlot"/> copy.
 /// </summary>
-public sealed partial class CombatSystem : ITickSystem, IStateHashed
+public sealed partial class CombatSystem : ITickSystem, IStateHashed, ITaskOwner, ITaskHandler
 {
     /// <summary>The <see cref="Effect.Kind"/> of a blow: <c>Arg</c> is the blow (1 or 2) and <c>Amount</c> the attacker's attack number.</summary>
     public const int BlowEffect = 1;
@@ -181,7 +181,7 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
                     // Whether the victim is in melee combat mode is read before the order engages anyone.
                     bool victimFighting = table.TryResolveNext(order.Target, out int vs) && table.Cold(vs) is { } vc && IsInCombatMode(table, order.Target, vc, melee: true, ranged: false);
                     foreach (var id in order.Attackers)
-                        if (Engage(world, table, id, order.Target, now, order.Picked) && !order.Defensive && Crimes is { } crimes && table.TryResolveNext(order.Target, out int victimSlot))
+                        if (Engage(world, table, id, order, now) && !order.Defensive && Crimes is { } crimes && table.TryResolveNext(order.Target, out int victimSlot))
                             crimes.Assault(world, id.Slot, victimSlot, victimFighting);
                     break;
                 }
@@ -206,16 +206,35 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
         }
     }
 
-    bool Engage(World world, CharacterTable table, CharacterId attacker, CharacterId target, int now, bool picked)
+    /// <summary>
+    /// Starts the fight of <paramref name="attacker"/> on the order's target through <see cref="TaskStart.Start"/>: row 5 (a target the player picked: the order), 13 Attacking attackers of (a
+    /// defence: a reaction) or 16 Attacking enemies (a goal's fight). False when it cannot fight.
+    /// </summary>
+    bool Engage(World world, CharacterTable table, CharacterId attacker, AttackOrder order, int now)
     {
+        var target = order.Target;
         if (!table.TryResolveNext(attacker, out int a) || !table.TryResolveNext(target, out int t) || a == t) return false;
         var cold = table.Cold(a)!;
         var tc = table.Cold(t)!;
         if (cold.Fighter is null || cold.Stats is null || cold.Medical is null || cold.Race is null || tc.Medical is null || cold.Medical.Incapacitated || tc.Medical.Incapacitated) return false;
-        if (!TaskStart.Eligible(world, cold, picked ? TaskType.FOCUSED_MELEE_ATTACK : TaskType.ATTACK_ENEMIES) || !cold.CarriedBy.IsNone) return false;   // a prisoner or a carried mate does not fight (rows 5 and 16 are not registered for the imprisoned; it may still be attacked: engine choice)
+        if (!cold.CarriedBy.IsNone) return false;   // a carried mate does not fight (a prisoner neither: rows 5, 13 and 16 are not registered for the imprisoned; it may still be attacked, engine choice)
         // A fighter turns on no one it found no path to lately unless the player picked it (isPathImpossible in every finder's score, docs/game/combat.md "Target score"): a mate
         // that is called in on a sighting or an attack and cannot reach the enemy (a cage, a locked room) would otherwise stand at the nearest spot for ever.
-        if (!picked && PursuitSystem.PathImpossible(cold, target, now)) return false;
+        if (!order.Picked && PursuitSystem.PathImpossible(cold, target, now)) return false;
+        var (row, source) = order.Picked ? (TaskType.FOCUSED_MELEE_ATTACK, TaskSource.Order) : order.Defensive ? (TaskType.ATTACK_ATTACKERS_OF, TaskSource.Reaction) : (TaskType.ATTACK_ENEMIES, TaskSource.Goal);
+        return TaskStart.Start(world, a, new TaskRequest(CharacterTask.Attack, row, source) { Target = target }) == StartResult.Started;
+    }
+
+    public void RegisterTasks(TaskHandlers tasks) => tasks.Register(CharacterTask.Attack, this);
+
+    /// <summary>The fight's start (<c>initCombatMode</c>): the target set, kept by a player's pick (row 5 or 61), the weapon drawn.</summary>
+    void ITaskHandler.Start(World world, int a, in TaskRequest request)
+    {
+        var table = world.Characters;
+        var cold = table.Cold(a)!;
+        var target = request.Target;
+        int t = target.Slot, now = (int)world.Tick;
+        bool picked = request.Row is TaskType.FOCUSED_MELEE_ATTACK or TaskType.UNPROVOKED_FOCUSED_MELEE_ATTACK;
         ref var s = ref read[a];
         if (s.TargetSlot != t || s.TargetGeneration != target.Generation)
         {
@@ -233,25 +252,48 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
         if (table.Next[a].Task != (byte)CharacterTask.Attack) table.Next[a].TaskTime = 0;
         table.Next[a].Task = (byte)CharacterTask.Attack;
         cold.InCombat = true;
-        cold.DrawnWeapon = s.Ranged ? HandHold.OfCategory((int)WeaponCategory.Bow).Weapon : MeleeDrawn(cold.Fighter);
-        return true;
+        cold.DrawnWeapon = s.Ranged ? HandHold.OfCategory((int)WeaponCategory.Bow).Weapon : MeleeDrawn(cold.Fighter!);
     }
 
+    /// <summary>
+    /// The end of the fight task (<c>Character::endCombatMode</c>), from any serial phase: the target and the swing dropped in both the last tick's and this tick's combat state (the one
+    /// a phase reads differs), then <see cref="EndFight(CharacterTable, int)"/>.
+    /// </summary>
     internal void Disengage(CharacterTable table, CharacterId id)
     {
-        if (!table.TryResolveNext(id, out int slot)) return;
-        ref var s = ref read[slot];
-        s.TargetSlot = -1;
-        s.AttackTech = -1;
-        s.NextBlow = 0;
-        s.Engaged = false;
-        s.Picked = false;
-        EndFight(table, slot, ref s);
+        if (table.TryResolveNext(id, out int slot)) Disengage(table, slot);
+    }
+
+    void Disengage(CharacterTable table, int slot)
+    {
+        if (slot < read.Length)
+        {
+            if (table.Cold(slot)!.InCombat) { read[slot].ListEpoch++; write[slot].ListEpoch++; }
+            Drop(ref read[slot]);
+            Drop(ref write[slot]);
+        }
+        EndFight(table, slot);
+
+        static void Drop(ref CombatSlot s)
+        {
+            s.TargetSlot = -1;
+            s.AttackTech = -1;
+            s.NextBlow = 0;
+            s.Engaged = false;
+            s.Picked = false;
+        }
+    }
+
+    /// <summary>The fight ends with any other task (a new task drops the fight task) and with the Stop order; nothing for a character not fighting.</summary>
+    void ITaskHandler.End(World world, int slot, CharacterTask task, TaskEnd reason)
+    {
+        var live = Live(world);
+        if (world.Characters.Cold(slot)!.InCombat || slot < live.Length && live[slot].TargetSlot >= 0) Disengage(world.Characters, slot);
     }
 
     void LeaveFight(CharacterTable table, CharacterId id)
     {
-        if (table.TryResolveNext(id, out int slot) && (table.Cold(slot)!.InCombat || read[slot].TargetSlot >= 0)) Disengage(table, id);
+        if (table.TryResolveNext(id, out int slot) && (table.Cold(slot)!.InCombat || read[slot].TargetSlot >= 0)) Disengage(table, slot);
     }
 
     /// <summary>
@@ -352,5 +394,18 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
 
     // ------------------------------------------------------------------ end of tick
 
-    public void SlowWorld(World world) => (read, write) = (write, read);
+    public void SlowWorld(World world)
+    {
+        (read, write) = (write, read);
+        swappedTick = world.Tick;
+    }
+
+    /// <summary>The tick whose slow world swapped the state arrays last.</summary>
+    long swappedTick = -1;
+
+    /// <summary>
+    /// The combat state as of now in a serial phase: <c>read</c> in the inputs (and between ticks) and after this tick's swap, <c>write</c> from the schedule until the swap.
+    /// </summary>
+    CombatSlot[] Live(World world) =>
+        world.Characters.Phase is TablePhase.Inputs or TablePhase.Outside || world.Characters.Phase == TablePhase.SlowWorld && swappedTick == world.Tick ? read : write;
 }

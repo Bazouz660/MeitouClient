@@ -22,7 +22,8 @@ public sealed partial class CarrySystem
         for (int i = 0; i < table.HighWater; i++)
         {
             if (!next[i].Alive || table.Cold(i) is not { IsPlayer: true } cold || cold.Jobs.Count == 0) continue;
-            if (!PermaJobs.FreeFor(cold, (CharacterTask)next[i].Task, PermaJobs.IndexOf(cold, TaskType.LOOT_ANIMALS_JOB)) || cold.Fleeing || !CanCarry(world, cold, TaskType.LOOT_ANIMALS_JOB) || cold.Inventory is null) continue;
+            int job = PermaJobs.IndexOf(cold, TaskType.LOOT_ANIMALS_JOB);
+            if (!PermaJobs.FreeFor(cold, (CharacterTask)next[i].Task, job) || cold.Fleeing || !CanCarry(world, cold, TaskType.LOOT_ANIMALS_JOB) || cold.Inventory is null) continue;
             if (cold.SquadId >= 0 && world.Squads.Find(cold.SquadId) is { } squad && CharacterFacts.SquadFighting(table, squad)) continue;
             taken ??= Looting(table);
             float range = AggroSystem.RangeOf(cold, Settings.Sight), best2 = range * range;
@@ -35,11 +36,10 @@ public sealed partial class CarrySystem
                 float d2 = Vector2.DistanceSquared(at, new Vector2(next[s].Position.X, next[s].Position.Z));
                 if (d2 <= best2 && (best < 0 || d2 < best2) && Storable(world, cold, next[i].Position, animal) is not null) { best = s; best2 = d2; }
             }
-            if (best < 0) continue;
+            if (best < 0 || !Start(world, i, CharacterTask.Loot, TaskType.LOOT_ANIMALS_JOB, TaskSource.Job, table.IdOf(best),
+                cold.JobIndex >= 0 || cold.Implicit is not null ? cold.ResumeTask : (CharacterTask)next[i].Task, job)) continue;
             taken.Add(best);
-            Begin(table, i, table.IdOf(best), CharacterTask.Loot, cold.JobIndex >= 0 || cold.Implicit is not null ? cold.ResumeTask : (CharacterTask)next[i].Task);
             cold.Foraging = true;
-            cold.JobTask = CharacterTask.Loot;
         }
     }
 
