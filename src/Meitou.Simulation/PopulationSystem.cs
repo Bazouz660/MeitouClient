@@ -634,7 +634,8 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
             foreach (var id in slaves.Members)
             {
                 if (table.Cold(id.Slot) is not { } c) continue;
-                (c.SlaveState, c.SlaveOwner, c.SlaveMaster) = (1, squad.Faction, squad.Id);
+                // Every member, the leader too, gets member type 4 after the recursive squad is made (FUN_140583a10); the squad's leader pointer stays.
+                (c.SlaveState, c.SlaveOwner, c.SlaveMaster, c.Role) = (1, squad.Faction, squad.Id, (int)SquadRole.Slave);
                 if (cages.Count == 0) continue;
                 int pick = Rng.Int(Rng.Hash(world.Seed, ownerKey, RngPurpose.Spawn, SeedSalts.SlaveCage + (ulong)picks++), cages.Count);
                 world.Fixtures.Imprison(world, id, cages[pick]);
