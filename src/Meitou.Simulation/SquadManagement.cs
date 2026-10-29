@@ -91,13 +91,18 @@ public static class SquadManagement
         return squad;
     }
 
-    /// <summary>Keeps the active squad one of the player's: when it is gone, the first in order with members, else the first.</summary>
+    /// <summary>
+    /// Keeps the active squad one of the player's with members: when it is gone, or has none, the first in order with members (the squad tab refresh, <c>FUN_140416140</c>,
+    /// <b>Verified</b>); when no squad has members the active one stays, or the first when it is gone.
+    /// </summary>
     internal static void KeepActive(World world)
     {
         if (!world.Player.Exists) return;
-        if (world.Squads.Find(world.Player.Squad) is { } s && Mine(world, s)) return;
+        var active = world.Squads.Find(world.Player.Squad) is { } s && Mine(world, s) ? s : null;
+        if (active is { Members.Count: > 0 }) return;
         var squads = PlayerSquads(world);
-        world.Player.Squad = (squads.FirstOrDefault(q => q.Members.Count > 0) ?? squads.FirstOrDefault())?.Id ?? -1;
+        var next = squads.FirstOrDefault(q => q.Members.Count > 0);
+        if (next is not null || active is null) world.Player.Squad = (next ?? squads.FirstOrDefault())?.Id ?? -1;
     }
 
     internal static void Apply(World world, PopulationData? data, SquadCommand command)

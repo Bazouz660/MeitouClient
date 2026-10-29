@@ -459,7 +459,9 @@ to Jobs; the saved `chase mode` flag is that switch (**Verified**, [perma-jobs](
 - Squad tabs: one per player squad with members, captioned with the squad's name unchanged (**Verified**); the first player squad reads `Nameless_0`,
   its platoon's name (the faction's name and its platoon counter; **Observed**). Tab width min(header width / tabs, ButtonWidth × UI scale), in the skin's
   `HeaderPlace`. The bar shows the active squad (`FUN_1407f5520`: a cached platoon at player interface +0x2a8, else the selection's, else the faction's
-  first; **Observed**); a tab makes its squad active. Meitou: selecting a character of another squad makes its squad active (engine reading of the cache).
+  first; **Observed**); a tab makes its squad active. The tab refresh (`FUN_140416140`, **Verified**) rebuilds the row from the squads with members and a valid
+  platoon link only, so an empty squad has no tab even when active; first, when the active squad has no members, the first squad in order with members becomes
+  active (none with members: it stays, no tab is checked). Meitou: `SquadManagement.KeepActive`, each slow tick; selecting a character of another squad makes its squad active (engine reading of the cache).
   Editing squads: [Squads tab](#squads-tab).
 - `FloorPanel` stays as laid out and `FloorText` is "Floor {1,num}" of the viewed floor each frame; `BuildPanel` is always shown (**Verified** /
   **Observed**).
