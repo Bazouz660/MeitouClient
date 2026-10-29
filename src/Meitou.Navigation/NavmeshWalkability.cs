@@ -9,7 +9,7 @@ namespace Meitou.Navigation;
 /// <see cref="NavMeshService"/>) the open-ground stand-in answers, so the simulation never waits. The world is swapped as a whole
 /// (immutable snapshots), so every method is safe from any thread.
 /// </summary>
-public sealed class NavmeshWalkability : IWalkability
+public sealed partial class NavmeshWalkability : IWalkability
 {
     readonly Func<float, float, float> ground;
     readonly IWalkability fallback;

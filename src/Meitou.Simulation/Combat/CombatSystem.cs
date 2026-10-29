@@ -327,11 +327,13 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
             float speed = n.MaxSpeed > 0 ? n.MaxSpeed : Settings.ApproachSpeed;
             if (!cold.CombatRunning) speed = MathF.Min(speed, CombatTuning.FootworkSpeed);
             float step = MathF.Min(speed * dt, gap - stand);
-            float x = prev[i].Position.X + dir.X * step, z = prev[i].Position.Z + dir.Y * step;
+            // Through the nav agent, as root motion: a wall stops the body's circle and it slides along it (docs/game/pathfinding.md "Walls").
+            var moved = world.Walkability.Slide(prev[i].Position, dir * step, CombatTuning.Footprint(cold));
+            float x = prev[i].Position.X + moved.X, z = prev[i].Position.Z + moved.Y;
             if (world.Walkability.IsWalkable(x, z, prev[i].Position.Y))
             {
                 n.Position = new Vector3(x, world.Walkability.GroundHeight(x, z, prev[i].Position.Y), z);
-                n.Velocity = new Vector3(dir.X * step / dt, 0, dir.Y * step / dt);
+                n.Velocity = new Vector3(moved.X / dt, 0, moved.Y / dt);
             }
             else n.Velocity = default;
         }

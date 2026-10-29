@@ -322,7 +322,8 @@ public sealed class AnimationSystem(AnimationLibrary library, AnimationLengths l
 
     /// <summary>
     /// Root motion: moves the character by the ground part of its relocating clips' <c>Bip01</c> track (model X and Z turned by its heading), onto
-    /// the ground, unless that point is not walkable (Kenshi moves its physics controller, so collisions apply; docs/animation.md "Root motion").
+    /// the ground, unless that point is not walkable. The original moves its nav agent, so the walls of the walkable surface stop the body's circle and it slides
+    /// along them (<see cref="IWalkability.Slide"/>; docs/game/pathfinding.md "Walls").
     /// The bodies collide too (engine stand-in for the original's avoidance of the characters round it, <c>FUN_1401476f0</c>): the part of the move that would bring it nearer than
     /// the two footprint radii to a standing character (last tick's positions) is dropped, so an attack that gains ground stops at its target instead of walking into it.
     /// A downed, dead, carried, bedded, caged or sitting body is not in the way (<see cref="CombatSteering.OutOfFlock"/>; docs/game/pathfinding.md "Bodies in the way").
@@ -347,8 +348,10 @@ public sealed class AnimationSystem(AnimationLibrary library, AnimationLengths l
             float closing = Vector2.Dot(b.Step, normal);
             if (closing < 0) b.Step -= normal * closing;
         });
-        float x = c.Position.X + block.Step.X, z = c.Position.Z + block.Step.Y;
+        // The walls stop it as they stop the original's agent, which this move goes through: its circle slides along the first wall it meets (docs/game/pathfinding.md "Walls").
         var walk = world.Walkability;
+        var moved = walk.Slide(c.Position, block.Step, block.Radius);
+        float x = c.Position.X + moved.X, z = c.Position.Z + moved.Y;
         if (!walk.IsWalkable(x, z, c.Position.Y)) return;
         c.Position = new Vector3(x, walk.GroundHeight(x, z, c.Position.Y), z);
     }
