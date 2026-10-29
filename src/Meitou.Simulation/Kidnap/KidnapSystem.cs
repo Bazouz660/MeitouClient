@@ -226,7 +226,10 @@ public sealed class KidnapSystem(PopulationData data, PopulationSystem populatio
         if (!table.TryResolveNext(a.Carrier, out int g) || table.Cold(g) is not { Medical.Incapacitated: false } gc) return End(world, a, KidnapEventKind.GaveUp);
         if (!table.TryResolveNext(a.Victim, out int t) || table.Cold(t) is not { } tc || tc.Medical is { Dead: true })
         {
-            carry.LetGo(world, g);
+            // A victim that died on the way stays on the shoulder of a carrier whose package lists 281: the town duty cages the corpse (TownDutySystem.LookDeadCarriers).
+            bool keeps = gc.Carrying == a.Victim && table.TryResolveNext(a.Victim, out _) && world.Squads.Find(gc.SquadId) is { } squad
+                && population.GoalDuty(world, squad, AiSystem.RoleOf(squad, a.Carrier, gc), TaskType.FIND_CAGE_AND_PUT_DEADGUY_IN);
+            if (!keeps) carry.LetGo(world, g);
             return End(world, a, KidnapEventKind.GaveUp);
         }
         if (tc.IsImprisoned) return End(world, a, KidnapEventKind.GaveUp);

@@ -824,7 +824,7 @@ every 15 ticks, by `PopulationSystem.GoalDuty` (facts: [ai-tasks](game/ai-tasks.
 - **273 Remove Intruder**: a free member standing in its home town, the town its occupation holds or a town of its faction lifts the nearest knocked-out character in that town's
   walls (`amInsideTownWalls` > 0: its [gate code](game/pathfinding.md#gate-codes) is a walled region, so an unwalled town removes none; where the codes are unknown, the built-up area: a
   placed town's radius, a player town's farthest building from its centre), not carried or caged, not of its faction or an ally.
-  A body that dies on the way is caged only with **281** listed (else let go).
+  A body that dies on the way is caged only with **281** listed (else let go). Any free member carrying a dead body (a kidnapper's or arrester's victim that died: they end their errand without letting go when 281 is listed) with 281 in its package takes it to a cage the same way (`LookDeadCarriers`, **Verified** `FUN_1405a1140`: no dead test); with no cage it keeps the body.
   Carrying it: with **112** (a living body) or **281** (any body) listed, the best free cage in that town (the occupied town's cages are usable), where it is locked up with the usual put-in sentence (108 `Task_PutInSomething`
   sets none without a bounty, [economy 11.5](game/economy.md#115-bail-and-sentence); not `Kidnapped`, **Verified** `FUN_140358670`); else with **274** listed, 200 past the
   built-up area on its side (farther out until walkable), put down; else put down. A body put down short of its goal is left alone for 2 game hours.

@@ -155,7 +155,7 @@ kidnap 132 with 0x4008 / 0x811 and `allowBed` 1): walks the owner's sensed list,
 (slot `0x248` is `asAnimal`), and not in the squad's give-up list (`FUN_1402690e0`, a handle-pair list every finder tests; its writer was not traced). Rescue also requires
 the target to share the owner's slot-11 object (probably its faction; **Observed**: tested when `include` has bit 1 and a global flag at `+0x112` (Rescue Allies, [squad AI options](ai-tasks.md#squad-ai-options)) is clear). So raiders also take sleepers out of beds. 132 is a
 planner goal (A: 153 got a victim, B: not carrying, effect 48 carrying); 254 has no finder: its B list 153, 154 chains 132, then 112/281 find a cage (`FUN_1408d0770`) and 108 puts the
-carried one in. What sets `Status+0xe9` ("innocent victim") was not found: it is saved with the slave state (`FUN_140626580` / `FUN_140626830`), cleared by the per-update
+carried one in. 281 applies to **any** carried body, whoever lifted it: its desire `FUN_1405a1140` reads only the carry flag and the carried handle (no dead test) and 281 has no list B (**Verified**, `FUN_1405a1140`, `FUN_140319a60`). Meitou: `TownDutySystem.LookDeadCarriers` cages a dead body carried by a free member whose package lists 281; a kidnapper or arrester whose victim dies keeps it on the shoulder for that. What sets `Status+0xe9` ("innocent victim") was not found: it is saved with the slave state (`FUN_140626580` / `FUN_140626830`), cleared by the per-update
 `FUN_140852a30` (not carried and in its town's bed, or carried by a friend) and read at the lift's release (`FUN_1405ce1e0`) and by `FUN_1406cc470` / `FUN_1407211b0`;
 it is not part of target eligibility.
 

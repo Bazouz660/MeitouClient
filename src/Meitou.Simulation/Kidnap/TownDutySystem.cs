@@ -77,6 +77,8 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
 {
     readonly List<TownDuty> duties = [];
     readonly List<int> downed = [];
+    // The slots carrying someone at the look.
+    readonly List<int> carriers = [];
     readonly HashSet<CharacterId> reserved = [];
     // Bodies put down short of their goal: left alone until this game hour, in the order they were put down.
     readonly List<(CharacterId Body, double Until)> refused = [];
@@ -151,6 +153,7 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
     {
         var table = world.Characters;
         downed.Clear();
+        carriers.Clear();
         reserved.Clear();
         foreach (var d in duties) if (!d.Body.IsNone) reserved.Add(d.Body);
         refused.RemoveAll(r => r.Until <= world.GameHours);
@@ -159,9 +162,10 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
         {
             if (!table.Next[s].Alive || table.Cold(s) is not { } c) continue;
             if (table.Next[s].Task == (byte)CharacterTask.PickUp && !c.CarryTarget.IsNone) reserved.Add(c.CarryTarget);
-            if (!c.Carrying.IsNone) reserved.Add(c.Carrying);
+            if (!c.Carrying.IsNone) { reserved.Add(c.Carrying); carriers.Add(s); }
             if (c is { Medical: { Unconscious: true, Dead: false } } && c.InSomething == HeldState.None && CarrySystem.CanBeLifted(c)) downed.Add(s);
         }
+        LookDeadCarriers(world);
         Span<int> intruders = stackalloc int[5], food = stackalloc int[5], confiscate = stackalloc int[5], loot = stackalloc int[5], shoo = stackalloc int[5], ransack = stackalloc int[5], stash = stackalloc int[5];
         foreach (var squad in world.Squads.All)
         {
@@ -247,6 +251,37 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// 281 FIND_CAGE_AND_PUT_DEADGUY_IN for a body already on the shoulder, whoever lifted it (a victim who died on the way, an arrest's target): the desire <c>FUN_1405a1140</c> reads only the carry flag and
+    /// the carried handle, never whether it is dead, and the goal has no list B (<b>Verified</b>). A free member whose package lists 281 and who carries a dead body takes it to the best free cage
+    /// of its town; with none it keeps the body (the goal has no finder result and does not plan).
+    /// </summary>
+    void LookDeadCarriers(World world)
+    {
+        var table = world.Characters;
+        foreach (int slot in carriers)
+        {
+            var id = table.IdOf(slot);
+            if (!FreeCarrier(table, slot) || Busy(id)) continue;
+            var cold = table.Cold(slot)!;
+            if (!table.TryResolveNext(cold.Carrying, out int b) || table.Cold(b) is not { Medical.Dead: true } body || body.CarriedBy != id || !ListsDeadCage(world, cold, id)) continue;
+            var at = table.Next[slot].Position;
+            var duty = new TownDuty { Member = id, Body = cold.Carrying, Faction = cold.Faction, Town = AiSystem.TownAt(data, world, at), Kind = TownDutyKind.Cage };
+            if (Cage(world, at, duty) is not { } cage) continue;
+            (duty.Target, duty.Goal) = (cage.Id, Flat(cage.Position));
+            cold.Engaged = true;
+            duties.Add(duty);
+            MovementSystem.GoTo(table, slot, duty.Goal, SpeedMode.Free);
+        }
+    }
+
+    /// <summary>A member that already carries someone and may start the cage errand: awake, not fighting, fleeing or held, doing nothing but its routine.</summary>
+    static bool FreeCarrier(CharacterTable table, int slot)
+    {
+        if (!table.Next[slot].Alive || table.Next[slot].Task is not ((byte)CharacterTask.Idle or (byte)CharacterTask.Wander or (byte)CharacterTask.Follow or (byte)CharacterTask.GoTo)) return false;
+        return table.Cold(slot) is { IsPlayer: false, Fleeing: false, Engaged: false, InCombat: false, Medical.Incapacitated: false, CarriedBy.IsNone: true } c && c.Fighter is not { IsAnimal: true };
     }
 
     /// <summary>A member that may start an errand: awake, not fighting, fleeing or held, able to carry, doing nothing but its routine.</summary>
