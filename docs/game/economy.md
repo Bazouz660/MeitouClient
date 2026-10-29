@@ -47,7 +47,9 @@ load /10000, accepting legacy goods-key layout (**Verified**).
 `.rdata`). Current charges start at 1 and are set to the max for an ITEM only. Item function (saved, `FUN_1407609e0`): WEAPON 5, ARMOUR 6, CONTAINER 4 (set after the base
 constructor), ITEM its record value, others 0; 7 reads as 0. An ITEM of function 3 or 15 with max charges above 1 has max and current multiplied by `food quality mult` (0.5; raw
 meat included) and its `trade item` flag cleared (so it always sells at the loot fraction, no "Avg. Price"); function 3 with a single charge becomes 0 (no food), 15 stays.
-Base data: 17 of the 18 food and raw-meat ITEMs lose their `trade item` flag (Human Teeth, 15 with one charge, keeps it).
+Base data: 17 of the 18 food and raw-meat ITEMs lose their `trade item` flag (Human Teeth, 15 with one charge, keeps it). **Starting items** (**Verified**, `CharacterHuman::setupInventorySections` `FUN_14062c4e0`, `FUN_14075d570`): a
+single unit (v0 = 1) of a CHARACTER `inventory` entry with current charges above 1 starts with a random whole number in [1, trunc(max)]; stacks, blueprints, loadout gear and death items stay
+full, and an ANIMAL_CHARACTER's list (`FUN_14062a130`) is not rolled. Meitou: `ItemFactory.Build` with the spawn seed, key and entry index (`Rng` Spawn).
 
 ## Shops and transactions
 

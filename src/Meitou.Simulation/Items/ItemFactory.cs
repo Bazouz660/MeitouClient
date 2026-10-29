@@ -141,9 +141,10 @@ public sealed class ItemFactory(GameDatabase db, GameConstants constants, Func<M
     /// <summary>
     /// The inventory of a new character: what the generator rolled to wear and carry (clothing in its slot's section, a backpack, the crossbow and weapons at hip/back), then a blueprint per CHARACTER <c>blueprints</c> entry, then the CHARACTER
     /// record's <c>inventory</c> list (an ITEM reference whose first value is the quantity; entries with 0 never spawn, <b>Observed</b>), and last its <c>death items</c> the same way,
-    /// marked <see cref="ItemInstance.Death"/> (docs/game/animals.md "Death items").
+    /// marked <see cref="ItemInstance.Death"/> (docs/game/animals.md "Death items"). With a <paramref name="seed"/> (a new character's, keyed by <paramref name="key"/>) a single unit of the
+    /// <c>inventory</c> list that holds more than one charge starts with a random part of them; without one the items start full.
     /// </summary>
-    public Inventory Build(GameRecord? character, Meitou.Data.Characters.Loadout? loadout)
+    public Inventory Build(GameRecord? character, Meitou.Data.Characters.Loadout? loadout, ulong? seed = null, ulong key = 0)
     {
         var (width, height) = MainSize(character);
         var inventory = new Inventory(width, height);
@@ -173,11 +174,19 @@ public sealed class ItemFactory(GameDatabase db, GameConstants constants, Func<M
             foreach (var r in character.GetReferences("blueprints"))
                 if (r.Values.Value0 > 0 && Db.Find(r.TargetStringId) is { Type: FcsRecordType.RESEARCH } research && Blueprint(research) is { } blueprint) inventory.Add(blueprint);
         if (character is not null)
+        {
+            int index = 0;
             foreach (var r in character.GetReferences("inventory"))
             {
+                index++;
                 if (r.Values.Value0 <= 0) continue;
-                if (Create(r.TargetStringId, r.Values.Value0) is { } item) inventory.Add(item);
+                if (Create(r.TargetStringId, r.Values.Value0) is not { } item) continue;
+                // A person's single starting unit that holds more than one charge starts part used (CharacterHuman::setupInventorySections, Verified): a whole number in [1, trunc(max)]. An animal's list is not rolled.
+                if (seed is { } s && character.Type != FcsRecordType.ANIMAL_CHARACTER && r.Values.Value0 == 1 && item.Charges > 1)
+                    item.Charges = 1 + Rng.Int(Rng.Hash(s, key, RngPurpose.Spawn, 0x496E_764C_6F61_6400UL + (ulong)index), Math.Max((int)item.MaxCharges, 1));
+                inventory.Add(item);
             }
+        }
         if (loadout?.Crossbow is { } bow) AddAmmo(inventory, bow.Weapon);
         if (character is not null)
             foreach (var r in character.GetReferences("death items"))
