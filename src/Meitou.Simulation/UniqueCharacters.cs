@@ -95,13 +95,27 @@ public sealed class UniqueCharacters
         Version++;
     }
 
-    /// <summary>Death (<c>FUN_1407a6200</c>): state 0; the player flag is set (never cleared here) when the killer is the player's.</summary>
-    public void Died(string recordId, bool byPlayer)
+    /// <summary>
+    /// Death (<c>FUN_1407a6200</c>): state 0; the player flag is set (never cleared here) when the killer is the player's. The faction of the dead character
+    /// (<paramref name="faction"/>, -1: unknown) is queued, once per unique, for its prosperity drop (<see cref="TakeFallen"/>).
+    /// </summary>
+    public void Died(string recordId, bool byPlayer, int faction = -1)
     {
         Version++;
         var e = Entry(recordId);
+        if (e.State != UniqueState.Dead && faction >= 0) fallen.Add(faction);
         e.State = UniqueState.Dead;
         e.Player |= byPlayer;
+    }
+
+    readonly List<int> fallen = [];
+
+    /// <summary>The factions of the uniques that died since the last call, in order (the population lowers their prosperity, <c>FUN_1407a6200</c>).</summary>
+    internal List<int> TakeFallen()
+    {
+        var list = new List<int>(fallen);
+        fallen.Clear();
+        return list;
     }
 
     /// <summary>Imprisoned or captured (<c>FUN_140330600</c>): state 2 unless dead; the player flag set when the captor is the player's.</summary>

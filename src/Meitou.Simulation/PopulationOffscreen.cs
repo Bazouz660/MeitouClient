@@ -119,7 +119,7 @@ public sealed partial class PopulationSystem
             saved.Gone = true;
             recordId = saved.Source.RecordId;
         }
-        if (recordId is not null && UniqueCharacters.IsUnique(data.Db.Find(recordId))) world.Uniques.Died(recordId, false);
+        if (recordId is not null && UniqueCharacters.IsUnique(data.Db.Find(recordId))) world.Uniques.Died(recordId, false, p.Faction);
     }
 
     /// <summary>

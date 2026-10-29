@@ -401,11 +401,14 @@ public sealed partial class PopulationSystem
 
     /// <summary>
     /// A town's roamer leaves the world for good (<c>FUN_1406bab60</c> -> <c>FUN_140796b30</c>, <b>Verified</b>): one not intact and not regenerating takes its living members out of its
-    /// town's roaming pool, only while the pool is above 0 and with no floor.
+    /// town's roaming pool, only while the pool is above 0 and with no floor. Its faction's prosperity drops by 10 (floor 0) with it, pool or not (<c>FUN_1406bab60</c>; platoon +0xa4
+    /// read as the member count).
     /// </summary>
     void PayRoamerDespawn(World world, Platoon p, Squad squad)
     {
-        if (p.Regenerate || p.Origin < 0 || p.Origin >= townPools.Length || townPools[p.Origin] is not { } pools || Intact(world, p)) return;
+        if (Intact(world, p)) return;
+        if (squad.Members.Count > 0) LowerProsperity(world, p.Faction, DamagedDespawnProsperity);
+        if (p.Regenerate || p.Origin < 0 || p.Origin >= townPools.Length || townPools[p.Origin] is not { } pools) return;
         if (pools.Roaming.Current > 0) pools.Roaming.Current -= squad.Members.Count(m => Living(world, m));
     }
 

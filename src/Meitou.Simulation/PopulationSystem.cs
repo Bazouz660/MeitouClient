@@ -785,19 +785,19 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
         var table = world.Characters;
         foreach (var m in squad.Members)
             if (table.TryResolveNext(m, out int slot) && table.Cold(slot) is { } cold)
-                ReleaseUnique(world, cold.RecordId, m, killed || cold.DiedTick >= 0 || cold.Medical is { Dead: true });
+                ReleaseUnique(world, cold.RecordId, m, killed || cold.DiedTick >= 0 || cold.Medical is { Dead: true }, cold.Faction);
     }
 
     /// <summary>
     /// One member: dead, it dies in the registry; alive, its entry is erased when this character holds it (<paramref name="holder"/>, or none for one not in the world), so a
     /// copy made as another's replacement (a unique naming itself) never frees the first.
     /// </summary>
-    void ReleaseUnique(World world, string recordId, CharacterId holder, bool dead)
+    void ReleaseUnique(World world, string recordId, CharacterId holder, bool dead, int faction = -1)
     {
         if (world.Uniques.Find(recordId) is not { } entry || !UniqueCharacters.IsUnique(data.Db.Find(recordId))) return;
         if (!holder.IsNone && !entry.Handle.IsNone && entry.Handle != holder) return;
         world.Uniques.Left(holder);
-        if (dead) world.Uniques.Died(recordId, false);
+        if (dead) world.Uniques.Died(recordId, false, faction);
         else world.Uniques.Release(recordId);
     }
 
@@ -826,7 +826,7 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
             bool dead = cold.DiedTick >= 0 || cold.Medical is { Dead: true };
             if (dead)
             {
-                if (e.State != UniqueState.Dead) uniques.Died(recordId, false);
+                if (e.State != UniqueState.Dead) uniques.Died(recordId, false, cold.Faction);
             }
             else if (cold.IsImprisoned)
             {

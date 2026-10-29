@@ -153,6 +153,8 @@ public sealed partial class PopulationSystem : IStateHashed
 
     /// <summary>Per second of game time, a faction's prosperity grows while below its cap (<b>Verified</b>, <c>FUN_1402dd680</c>: 0.1).</summary>
     const double ProsperityPerSecond = 0.1;
+    /// <summary>What a unique's death and a damaged platoon's destroy take off its faction's prosperity (<b>Verified</b>, <c>FUN_1407a6200</c>, <c>FUN_1406bab60</c>: 100 and 10).</summary>
+    const double UniqueDeathProsperity = 100, DamagedDespawnProsperity = 10;
     /// <summary>Each faction's prosperity (the FactionUniqueSquadManager's +8, saved as the faction's <c>prosperity</c>), by faction; null before the first need.</summary>
     double[]? prosperity;
     long prosperityTick;
@@ -175,12 +177,23 @@ public sealed partial class PopulationSystem : IStateHashed
     internal double ProsperityOf(World world, int faction) => faction >= 0 && faction < data.Factions.Count ? EnsureProsperity(world)[faction] : 0;
 
     /// <summary>
-    /// At each look every faction below its cap gains 0.1 per second of game time since the last look (<c>FUN_1402dd680</c>; no clamp to the cap in the add). The original's period
-    /// is the faction's accumulated frame time, which nothing else reads (<b>Unknown</b>).
+    /// Lowers a faction's prosperity, floored at 0 (<c>FUN_1407a6200</c>, <c>FUN_1406bab60</c>); the one place the drops are made.
+    /// </summary>
+    void LowerProsperity(World world, int faction, double by)
+    {
+        if (faction < 0 || faction >= data.Factions.Count) return;
+        var values = EnsureProsperity(world);
+        values[faction] = Math.Max(0, values[faction] - by);
+    }
+
+    /// <summary>
+    /// At each look: the uniques that died since the last (<see cref="UniqueCharacters.Died"/>) cost their faction 100, then every faction below its cap gains 0.1 per second of game
+    /// time since the last look (<c>FUN_1402dd680</c>; no clamp to the cap in the add). The original's period is the faction's accumulated frame time, which nothing else reads (<b>Unknown</b>).
     /// </summary>
     void StepProsperity(World world)
     {
         var values = EnsureProsperity(world);
+        foreach (int faction in world.Uniques.TakeFallen()) LowerProsperity(world, faction, UniqueDeathProsperity);
         double seconds = (world.Tick - prosperityTick) * (double)world.TickSeconds;
         prosperityTick = world.Tick;
         for (int f = 0; f < values.Length; f++)
