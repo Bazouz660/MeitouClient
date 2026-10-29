@@ -291,7 +291,8 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             AiBehaviour.Turret => board.TurretClaims.ContainsKey(self.Slot) ? 1 : 0,
             AiBehaviour.TownNode => WanderIn(board.Town, world.Characters.Previous[self.Slot].Position).Count > 0 || OccupiedBuildings(world, board) > 0 ? 1 : 0,
             // Shopping is wanted while its list has something left to buy today (FUN_140999620), and there is a shop to go to.
-            AiBehaviour.Shop => Places(board.Town).Shops.Count > 0 && mind.Shopping.Pending(ShoppingList.DayOf(world.GameHours), world.Hour) ? 1 : 0,
+            AiBehaviour.Shop => mind.Shopping.Pending(ShoppingList.DayOf(world.GameHours), world.Hour)
+                && ShopFor(Places(board.Town), mind, TargetRoll(world, self, behaviour), RandomShopping(world, board.Town)) is not null ? 1 : 0,
             // A worker needs a mine, bench or refinery in its town (the finders return 0 without one).
             AiBehaviour.Work => Places(board.Town).Workplaces.Count > 0 ? 1 : 0,
             // Relaxing needs a free seat of the package's bar, sitting around a free chair of the home (claimed in <see cref="ClaimSeats"/>); the original's finder returns 0 without one (FUN_1408caf00).
@@ -483,7 +484,7 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             case AiBehaviour.TownNode:
             case AiBehaviour.Shop:
             {
-                var b = behaviour == AiBehaviour.TownNode ? PickFrom(WanderIn(town, world.Characters.Previous[self.Slot].Position), roll) : ShopFor(places, mind, roll);
+                var b = behaviour == AiBehaviour.TownNode ? PickFrom(WanderIn(town, world.Characters.Previous[self.Slot].Position), roll) : ShopFor(places, mind, roll, RandomShopping(world, town));
                 if (b is null) return null;
                 // A general node; in a shop without one a guard post, else any other node (engine choice: where the original's Task_Shopping stands is not decoded).
                 foreach (var accept in (ReadOnlySpan<Func<HomeSpot, bool>>)[IsGeneralNode, s => s.Kind == HomeSpotKind.Guard, s => s.IsNode])
@@ -513,18 +514,22 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
         return null;
     }
 
+    // The desire and the target ask on every worker: one scratch list each.
+    [ThreadStatic] static List<TownBuilding>? sellingScratch;
+
     static TownBuilding? PickFrom(IReadOnlyList<TownBuilding> from, ulong roll) => from.Count == 0 ? null : from[Rng.Int(roll, from.Count)];
 
     /// <summary>
     /// The shop goal 118 goes to (<c>FUN_1409997f0</c>, <b>Verified</b>): a random shop of the town selling an item function of the first entry on the character's list that has one,
     /// the entries taken in order and those already bought skipped (<c>FUN_1409fc070</c>); none sells one: a random shop (the original takes a random public building, <c>FUN_1409fc1b0</c>,
-    /// and the town's shops are all Meitou finds; <b>Observed</b>).
+    /// and the town's shops are all Meitou finds; <b>Observed</b>). The random pick is made only when <paramref name="randomAllowed"/> (<see cref="RandomShopping"/>): in a town of the player's
+    /// faction only a shop selling what the list wants is found (the list finder runs before that test, <c>FUN_1409997f0</c>, <b>Verified</b>).
     /// </summary>
-    static TownBuilding? ShopFor(TownPlaces places, AiMind mind, ulong roll)
+    static TownBuilding? ShopFor(TownPlaces places, AiMind mind, ulong roll, bool randomAllowed)
     {
         var shops = places.Shops;
         if (shops.Count == 0) return null;
-        var selling = new List<TownBuilding>();
+        var selling = sellingScratch ??= [];
         for (int k = 0; k < mind.Shopping.Count; k++)
         {
             int function = mind.Shopping.OpenFunction(k);
@@ -534,8 +539,15 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
                 if (places.Stock.TryGetValue(shop, out ulong mask) && ShoppingList.Stocks(mask, function)) selling.Add(shop);
             if (selling.Count > 0) return selling[Rng.Int(roll, selling.Count)];
         }
-        return shops[Rng.Int(roll, shops.Count)];
+        return randomAllowed ? shops[Rng.Int(roll, shops.Count)] : null;
     }
+
+    /// <summary>
+    /// Whether the random pick of goal 118 runs in <paramref name="town"/>: its finder <c>FUN_1409fc1b0</c> is called only when the faction of the shopper's town has no player flag
+    /// (<c>+0x250</c> clear, <c>FUN_1409997f0</c>, <b>Verified</b>), i.e. the town is not the player's faction's.
+    /// </summary>
+    bool RandomShopping(World world, int town) =>
+        !(town >= 0 && town < data.SiteFactions.Count && data.SiteFactions[town] is >= 0 and var owner && owner == (world.Player.Faction >= 0 ? world.Player.Faction : data.PlayerFaction));
 
     bool AtHomeTown(World world, Squad squad, Blackboard board, CharacterId self)
     {
@@ -695,7 +707,7 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             case AiBehaviour.Shop:
             case AiBehaviour.ToTown:
                 // A shop picked is remembered, so the arrival knows what it sells (the same pick as the target's: the roll is this tick's).
-                if (mind.Target is null && behaviour == AiBehaviour.Shop) mind.ShopAt = ShopFor(Places(board.Town), mind, TargetRoll(world, table.IdOf(slot), behaviour));
+                if (mind.Target is null && behaviour == AiBehaviour.Shop) mind.ShopAt = ShopFor(Places(board.Town), mind, TargetRoll(world, table.IdOf(slot), behaviour), RandomShopping(world, board.Town));
                 mind.Target ??= TargetFor(world, table.IdOf(slot), behaviour, board.Town, mind) ?? (behaviour == AiBehaviour.TownNode ? OccupiedSpot(world, board, table.IdOf(slot)) : null);
                 if (mind.Target is not { } goTo) Become(table, slot, CharacterTask.Idle);
                 else if (GoToSpot(world.Walkability, table, slot, mind, Flat(goTo), GiveUp.Target, SpeedMode.Walk, height: behaviour == AiBehaviour.ToTown ? null : goTo.Y))
