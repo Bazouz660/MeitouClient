@@ -151,13 +151,19 @@ public sealed partial class PopulationSystem
             if (p.Origin < 0 || p.Origin >= resident.Length || p.Wild) continue;
             if (p.Pinned)
             {
-                if (p.Stored is not { HomeBuilding: null } && ResidentIntact(world, p)) resident[p.Origin] = true;
+                if (p.Stored is { HomeBuilding: null }) continue;
+                if (RoamingMilitary(p.TemplateId)) roamers[p.Origin] += LivingOf(world, p);
+                else if (ResidentIntact(world, p)) resident[p.Origin] = true;
             }
             else roamers[p.Origin] += LivingOf(world, p);
         }
         for (int s = 0; s < states.Length && s < resident.Length; s++)
             foreach (int id in states[s].Squads)
-                if (world.Squads.Find(id) is { } squad && squad.HomeBuilding is not null && (squad.Ai?.Intact ?? true) && squad.Members.Any(m => Living(world, m))) resident[s] = true;
+            {
+                if (world.Squads.Find(id) is not { HomeBuilding: not null } squad) continue;
+                if (RoamingMilitary(squad.TemplateId)) roamers[s] += squad.PlatoonId < 0 ? squad.Members.Count(m => Living(world, m)) : 0;   // a platoon's own are counted above
+                else if ((squad.Ai?.Intact ?? true) && squad.Members.Any(m => Living(world, m))) resident[s] = true;
+            }
         for (int s = 0; s < resident.Length; s++)
         {
             // A town coming into the world has neither its squads nor its platoons for a moment: not judged then.
@@ -174,6 +180,12 @@ public sealed partial class PopulationSystem
             townLog.Add($"{data.Sites[s].Town.Name} wiped out");
         }
     }
+
+    /// <summary>
+    /// A template with <c>roaming military</c> is made in squad mode 2 even from a town's resident list (<c>FUN_140583a10</c>, <b>Verified</b>): the mode only picks the town pool set the platoon is
+    /// registered in (<c>FUN_1407ec8d0</c>), so it still has its home and stands in the town. Meitou takes it into account at the town wipe: it is no resident there and counts with the roaming living.
+    /// </summary>
+    bool RoamingMilitary(string templateId) => data.Db.Find(templateId)?.GetBool("roaming military") == true;
 
     /// <summary>
     /// Whether a resident platoon keeps its town from being wiped: <c>Platoon::isIntact</c> (<c>FUN_1407ac7b0</c>, <b>Verified</b>), false once declared dead, else its flag, which a loaded squad's
