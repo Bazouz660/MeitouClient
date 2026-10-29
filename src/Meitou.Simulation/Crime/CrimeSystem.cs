@@ -67,9 +67,10 @@ public sealed partial class CrimeSystem(FactionRelations relations, CrimeSetting
     /// <summary>
     /// Sets a pending crime on the culprit (the game's setter <c>FUN_140852c80</c>, <b>Observed</b>): refused for a police-like culprit, a victim of the culprit's own faction and a lawless
     /// victim faction; an Assault does not replace another pending crime (it raises that one's timer to 20); the same code again keeps the booked flag; a new code clears it. The timer
-    /// is at least <see cref="MinTimer"/>. True when the crime is now pending.
+    /// is at least <see cref="MinTimer"/>. True when the crime is now pending. <paramref name="viaWrapper"/>: the original's callers that go through its wrapper <c>FUN_140852e10</c> (police hit,
+    /// caught stealing, fencing, kidnapping seen) also drop the culprit's <see cref="CharacterCold.Freed"/> flag when the crime is set (the other callers do not; <b>Verified</b>).
     /// </summary>
-    public bool SetPending(World world, int culprit, CrimeCode code, int victimFaction, CharacterId victim, float timer)
+    public bool SetPending(World world, int culprit, CrimeCode code, int victimFaction, CharacterId victim, float timer, bool viaWrapper = false)
     {
         var c = world.Characters.Cold(culprit);
         if (c is null || !c.IsPlayer && code is not (CrimeCode.Assault or CrimeCode.Looting) || IsPoliceLike(world, c) || victimFaction == c.Faction || Factions.Lawless(victimFaction)) return false;
@@ -84,9 +85,11 @@ public sealed partial class CrimeSystem(FactionRelations relations, CrimeSetting
             same.VictimFaction = victimFaction;
             same.Victim = victim;
             same.Timer = MathF.Max(same.Timer, timer);
+            if (viaWrapper) c.Freed = false;
             return true;
         }
         c.Pending = new PendingCrime { Code = code, VictimFaction = victimFaction, Victim = victim, Timer = timer };
+        if (viaWrapper) c.Freed = false;
         Note(world, CrimeEventKind.Pending, culprit, code, victimFaction, 0, CharacterId.None);
         return true;
     }
@@ -172,7 +175,7 @@ public sealed partial class CrimeSystem(FactionRelations relations, CrimeSetting
         var c = table.Cold(culprit)!;
         var p = table.Cold(police)!;
         if (!c.IsPlayer) return;
-        SetPending(world, culprit, CrimeCode.Assault, p.Faction, table.IdOf(police), PoliceHitTimer);
+        SetPending(world, culprit, CrimeCode.Assault, p.Faction, table.IdOf(police), PoliceHitTimer, viaWrapper: true);
         if (c.Pending is not null) Book(world, culprit, p.Faction, table.IdOf(police));
     }
 
@@ -295,7 +298,7 @@ public sealed partial class CrimeSystem(FactionRelations relations, CrimeSetting
             }
             else if (world.Sight.Sees(w, culprit, next[w].Position, at, range) <= 0) continue;
             if (body is not null && !Friendly(wf, c.Faction) && Friendly(wf, body.Faction))
-                SetPending(world, culprit, CrimeCode.Kidnapping, body.Faction, c.Carrying, KidnapTimer);
+                SetPending(world, culprit, CrimeCode.Kidnapping, body.Faction, c.Carrying, KidnapTimer, viaWrapper: true);
             if (premises is { } house && Trespasses(world, wc, c, house)) SetPending(world, culprit, CrimeCode.Trespassing, wf, table.IdOf(w), MinTimer);
             if (c.Pending is not { } p) continue;
             if (!Reacts(world, wc, c, p)) continue;

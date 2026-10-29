@@ -447,7 +447,7 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
         var squad = world.Squads.Find(world.Characters.Cold(t)!.SquadId)!;
         if (!item.IsStolenFor(world.Characters.Cold(c)!.Faction) || !Fences(item, squad, shop!.Terms) || !Caught(world, c, t, item, squad, shop.Terms)) return Smuggling(world, c, item, shop!.Terms);
         world.Post("Got caught selling stolen item.");
-        if (Crimes is { } crimes && crimes.SetPending(world, c, Crime.CrimeCode.Fencing, squad.Faction, trader, Crime.CrimeSystem.MinTimer))
+        if (Crimes is { } crimes && crimes.SetPending(world, c, Crime.CrimeCode.Fencing, squad.Faction, trader, Crime.CrimeSystem.MinTimer, viaWrapper: true))
             crimes.Book(world, c, squad.Faction, trader);
         return true;
     }
@@ -555,7 +555,7 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
         if (item.IsStolenFor(cold.Faction) && Fences(item, squad, shop.Terms) && Caught(world, c, t, item, squad, shop.Terms))
         {
             world.Post("Got caught selling stolen item.");
-            if (Crimes is { } crimes && crimes.SetPending(world, c, Crime.CrimeCode.Fencing, squad.Faction, trader, Crime.CrimeSystem.MinTimer))
+            if (Crimes is { } crimes && crimes.SetPending(world, c, Crime.CrimeCode.Fencing, squad.Faction, trader, Crime.CrimeSystem.MinTimer, viaWrapper: true))
                 crimes.Book(world, c, squad.Faction, trader);
             return;
         }

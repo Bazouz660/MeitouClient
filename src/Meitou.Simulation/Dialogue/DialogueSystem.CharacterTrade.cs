@@ -233,6 +233,7 @@ public sealed partial class DialogueSystem
         bool caged = c.IsImprisoned;
         if (caged) world.Fixtures.Release(world, id);
         Locks.FixtureRegistry.ClearSlave(world, c);
+        c.Freed = true;   // status +0xea = 1 (FUN_1406add20, Verified)
         c.Ai = null;
         c.Engaged = false;
         c.Fleeing = false;

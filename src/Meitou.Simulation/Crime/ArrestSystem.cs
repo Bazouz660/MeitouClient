@@ -161,6 +161,7 @@ public sealed partial class ArrestSystem(CrimeSystem crimes, GameConstants const
         {
             Disguise(world, Math.Max(1, Settings.SpotEveryTicks) * world.TickSeconds);
             Spot(world, Math.Max(1, Settings.SpotEveryTicks) * world.TickSeconds);
+            DropFreedOutsideTowns(world);
         }
         for (int k = 0; k < arrests.Count;)
         {
@@ -177,6 +178,18 @@ public sealed partial class ArrestSystem(CrimeSystem crimes, GameConstants const
             if (StepHunt(world, hunts[k])) k++;
             else hunts.RemoveAt(k);
         }
+    }
+
+    /// <summary>
+    /// A freed character stops being freed once it is out of every town: the status update <c>FUN_1405a4f50</c> clears status <c>+0xea</c> on each update while the status object's current town
+    /// (<c>+0x88</c>) is null (<b>Verified</b>). The town is the one the point stands in (<see cref="Ai.AiSystem.TownAt"/>, the same stand-in as the disguise tests); without town data the flag stays.
+    /// </summary>
+    void DropFreedOutsideTowns(World world)
+    {
+        if (Towns is not { } data) return;
+        var table = world.Characters;
+        for (int s = 0; s < table.HighWater; s++)
+            if (table.Next[s].Alive && table.Cold(s) is { Freed: true } c && Ai.AiSystem.TownAt(data, world, table.Next[s].Position).IsNone) c.Freed = false;
     }
 
     bool Busy(CharacterId id)

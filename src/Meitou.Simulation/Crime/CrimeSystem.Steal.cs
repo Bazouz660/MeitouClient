@@ -153,7 +153,7 @@ public sealed partial class CrimeSystem
                 if (watcher.Medical is { } low) low.StandUp();
                 world.Defer(new Dialogue.DialogueEvent(watcherId, thiefId, CaughtEvent) { Tick = world.Tick + 1 });
                 if (c.IsPlayer) world.Post("Got caught stealing.");
-                SetPending(world, thief, CrimeCode.Theft, faction, victim, CaughtTimer);
+                SetPending(world, thief, CrimeCode.Theft, faction, victim, CaughtTimer, viaWrapper: true);
                 if (watcher.SquadId >= 0) world.SystemOf<Dialogue.DialogueSystem>()?.Memory.Remember(world, watcher.SquadId, thiefId, Dialogue.MemoryTag.StoleFromMe);
             }
         }

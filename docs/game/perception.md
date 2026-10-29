@@ -160,9 +160,13 @@ entry has a tag word (entry +0x30 → +0x30): bit 0 SENSE_ALLY, 1 SENSE_NEUTRAL,
   faction the looker's platoon object +0x80 names (**Unknown** role) is an enemy. Otherwise hostile(looker faction → target faction),
   relation <= -30, when `FUN_1408569a0` fails and the looker's +0xea flag is clear (and the target's is clear, or the looker's faction is
   not real or its default relation, relations `+0x60`, is strictly below -30; **Verified** `FUN_14079c950`). +0xea is "freed": set by a release
-  (`Task_ReleasePrisoner`) or a paid bail (`FUN_1406ae170`), cleared by `AI::vfunc_9` → `FUN_1405a4f50` only while the 8 bytes at status +0x110 (the recently-wanted
-  timer, which counts down unclamped and so stays non-zero once set, and +0x114) are zero, and on load (**Observed**). Meitou `CharacterCold.Freed`: set by both, not by
-  a kidnap victim's release, kept until load; `FUN_1408569a0` is left out.
+  (`Task_ReleasePrisoner` `FUN_1403570a0`), a paid bail (`FUN_1406ae170`) and a slave bought free (`FUN_1406add20`; **Verified**). Cleared by the status update
+  `FUN_1405a4f50` (`AI::vfunc_9`) on every update while the status object's current town (`+0x88`) is null, i.e. once the character is out of every town (**Verified**; an earlier
+  reading, "while the 8 bytes at `+0x110` are zero", was wrong: that function never reads `+0x110`), and by a pending crime set through the wrapper `FUN_140852e10` when the setter
+  succeeds (callers: police hit, caught stealing, fencing, kidnapping seen, uniform theft, body put-down; not through the direct setter `FUN_140852c80`, e.g. attack orders and
+  looting; **Verified**). Saved as the short key `tn` (`FUN_140626580`/`FUN_140626830`; the loader zeroes it first). Meitou `CharacterCold.Freed`: set by all three, not by
+  a kidnap victim's release; cleared outside towns (`ArrestSystem`, the point-in-town stand-in) and by `SetPending(viaWrapper)` for the first four callers; saved as `tn`;
+  `FUN_1408569a0` is left out. Whether the original's status `+0x88` is already set when a loaded character first updates (else a loaded flag dies at once) is **Unknown**.
 - So attack on sight is relations only: no fundamental-type BANDIT rule (**Observed**). In the base data the Shek Kingdom, Holy Nation and
   United Cities start at -100 only with Bloodraiders, Cannibals, Rebel Farmers, Grass Pirates, Gorillo Bandits and Yabuta Outlaws (Holy
   Nation also Holy Nation Outlaws); at -10 with Starving and Dust Bandits; at 0 with the other bandit factions (**Verified** by probe of
