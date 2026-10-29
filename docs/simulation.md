@@ -98,7 +98,10 @@ start through `TaskStart.Start`, the lock orders' worker choice and the player's
 a crawler or one staying low (0x40, posture 1 or 2) can start only rows that register it (move, first aid, loot, talk, attacks, prospect, sleep; not carry, put down 69, stealth KO 228, Splint
 Rigging 250, operate, build, repair, dismantle, put in bed, sit 275, ditch 242, set free 110, unlock door 140, put in cage 108, smash 226); an animal only 0x20 rows (so no bed, no carry,
 no loot 26 / 177 / 42, no first aid, no operate, no medic, no lock, cage or door work but smashing 226; it may pick up items, 3; job 289 is animal-only, so a human with that job never runs it).
-Loot is 26 for the orders, 177 for NPC scavenging and 42 for an NPC arming itself. Not yet routed through it: trade and talk. A caging ends the task through
+Loot is 26 for the orders, 177 for NPC scavenging and 42 for an NPC arming itself. The engine's starts test their rows too ("Task starts"): a refused errand walk counts
+as a walk that ended short (the errand gives up after its tries); a refused standing task (`TaskStart.Become`) gives way to 14 Idleness, which every repertoire registers (a crippled
+character does not wander, 24, after a flight, a trade or at a roaming mill). Rows with no TaskData (shoo 158, ransack 216, liberate 276, approach 126, the arrest cage walk 206, the
+takeover lift 205) are open to all. The AI's own starts (`TaskStart.StartOwn`) are not tested: its planner chose the row. Not yet routed through it: the trade and talk orders. A caging ends the task through
 `TaskStart.End(Stopped)` (`FixtureRegistry.Imprison`), so production's and construction's `Able` and the beds' `CanWalk` test no cage: their rows do not register the caged repertoires. The medic finder keeps its own imprisoned refusal because rows 25 / 58 register the imprisoned repertoire
 (whether a caged prisoner treats is **Unknown**). A fight is row 5 when the player picked the target, 13 for a defence, else 16 (13 and 16 register the same repertoires).
 
@@ -124,7 +127,7 @@ delivering, fetching and dismantling are steps of one act-out (`TaskStart.ActOut
   door and force orders, the wardens' rounds, item pick-up and container walks, put in cage; the engine's starts: crime, arrest and dialogue fights (`AttackOrder.Source`: `Npc`, a kidnap
   victim's `Reaction`, an NPC's attack on sight `Npc`), arrest and takeover walks and lifts (203, 205, 206), kidnappers' walks to the cage (112) and lifts (132, 168), captive jobs'
   walks (the row of their task, `CaptiveSystem.RowOf`), town duties' walks, lifts and drops (the goal of their kind, `TownDutySystem.RowOf`), smell hunts (176), dialogue acts (run away
-  280, go home 19, summon 67, follow while talking 164, stalk 165, approach 126, a bought slave's way out 133), a trade's close (wander 24), flight (35, then wander 24), food on the ground
+  280, go home 19, summon 67, follow while talking 164, stalk 165, approach 126, a bought slave's way out 1), a trade's close (wander 24), flight (35, then wander 24), food on the ground
   (259) and limbs (277), NPC arming walks (42), roaming and campaign leaders' walks (53, 215) and mills (24). Engine walks go through `TaskStart.Walk` (`TaskRequest.Goal`: as given, or
   `Point` onto the floor, at `Mode`); engine standing tasks (idle, wander, a follow of the squad's leader) through `TaskStart.Become` (the movement's handler stops the character on it).
   Sources: a package goal's act-out (town duties, captive jobs, kidnap, smell, food, population) `Goal`; an engine rule or dialogue act (arrest, flight, dialogue, trade) `Npc`.
@@ -137,7 +140,7 @@ delivering, fetching and dismantling are steps of one act-out (`TaskStart.ActOut
   stand-down back to the routine (`AggroSystem`), a knock-out (`BodySystem`), a caged character held in place (`FixtureRegistry`).
 - Engine starts end the fight and the task before as any start does (a flight's run stops the fight at once, a dialogue act's walk ends it). An errand's own walks would end a fight
   its character is in, so they wait for it: a town duty steps nothing while its member fights, an approaching, following or stalking talker does not walk (engine choice; the
-  original's priority-3 reactions beat these goals). The converted engine starts do not test the repertoire yet (`TaskRequest.Unchecked`).
+  original's priority-3 reactions beat these goals).
 - Provenance is the only job mark: `PermaJobs.FromJob` is a `TaskSource.Job` provenance that runs the task; `PermaJobs.ListJob` the production pick's list job (its index) or implicit
   job it runs (not a follow row's fight step), which `FreeFor`, the pick, the rescue job's rank test and the circle break read; a list edit moves the running index. The task an act-out
   goes back to is `RunningTask.Resume`: a job's start records the job it took over's resume (`PermaJobs.ResumeOf`), a medic or builder already at it keeps its own (`TaskStart.ResumeOf`);

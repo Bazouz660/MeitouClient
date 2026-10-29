@@ -247,7 +247,7 @@ public sealed partial class DialogueSystem
             float gap = away.Length();
             // Beside the buyer, on the slave's side: out through the open cage door (the path finds it).
             var target = new Vector2(to.X, to.Z) + (gap > 1e-3f ? away / gap * Math.Min(GetOutReach, gap) : Vector2.Zero);
-            TaskStart.Walk(world, slot, target, SpeedMode.Walk, Meitou.Data.Gameplay.Ai.TaskType.GET_OUT_OF_CAGE_LEGIT, TaskSource.Npc, check: false);
+            TaskStart.Walk(world, slot, target, SpeedMode.Walk, Meitou.Data.Gameplay.Ai.TaskType.MOVE_ON_FREE_WILL, TaskSource.Npc);
         }
         if (Locks.LockSystem.WornShackles(c)?.Lock is { } l) l.Locked = false;
         Memory.Remember(world, c.SquadId, player, MemoryTag.FreedMe);   // its (new) squad remembers the buyer as the one who freed it (FUN_1406add20, Observed)

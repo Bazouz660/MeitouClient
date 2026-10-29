@@ -165,7 +165,7 @@ public sealed partial class DialogueSystem
         var away = new Vector2(here.X - from.X, here.Z - from.Z);
         away = away.LengthSquared() > 1e-6f ? Vector2.Normalize(away) : Vector2.UnitX;
         float r = Rng.Float(NextRoll(world, me));
-        TaskStart.Walk(world, s, new Vector2(from.X, from.Z) + away * (RunAwayDistance + RunAwaySpread * r), SpeedMode.Free, TaskType.RUN_AWAY_FORCED, TaskSource.Npc, check: false);
+        TaskStart.Walk(world, s, new Vector2(from.X, from.Z) + away * (RunAwayDistance + RunAwaySpread * r), SpeedMode.Free, TaskType.RUN_AWAY_FORCED, TaskSource.Npc);
     }
 
     /// <summary>
@@ -180,7 +180,7 @@ public sealed partial class DialogueSystem
         Vector2 home = squad.Ai?.Home is { } h ? new(h.Position.X, h.Position.Z)
             : squad.Ai is { Town: >= 0 } board && board.Town < data.Sites.Count ? new(data.Sites[board.Town].Position.X, data.Sites[board.Town].Position.Z)
             : squad.HomeCentre;
-        TaskStart.Walk(world, s, home, SpeedMode.Walk, TaskType.GO_HOMEBUILDING, TaskSource.Npc, check: false);
+        TaskStart.Walk(world, s, home, SpeedMode.Walk, TaskType.GO_HOMEBUILDING, TaskSource.Npc);
     }
 
     /// <summary>DA_SUMMON_MY_SQUAD (52): the speaker's squadmates run to it (task 67, "Running").</summary>
@@ -190,7 +190,7 @@ public sealed partial class DialogueSystem
         if (Position(world, me) is not { } at) return;
         foreach (var m in SquadOf(world, me))
             if (m != me && table.TryResolveNext(m, out int s) && Awake(table, s) && table.Cold(s) is { IsPlayer: false, InCombat: false })
-                TaskStart.Walk(world, s, new Vector2(at.X, at.Z), SpeedMode.Free, TaskType.MOVE_ON_FREE_WILL_FAST, TaskSource.Npc, check: false);
+                TaskStart.Walk(world, s, new Vector2(at.X, at.Z), SpeedMode.Free, TaskType.MOVE_ON_FREE_WILL_FAST, TaskSource.Npc);
     }
 
     /// <summary>
@@ -269,7 +269,7 @@ public sealed partial class DialogueSystem
             bool talking = bubbles.Any(b => b.C.Npc == who) || open?.Npc == who;
             if (!talking || !table.TryResolveNext(who, out int s) || !Awake(table, s) || Position(world, whom) is not { } at) { followers.Remove(who); continue; }
             if (world.Tick % 15 != 0 || Vector3.DistanceSquared(table.Next[s].Position, at) <= 40 * 40 || table.Cold(s)!.InCombat) continue;   // no walk to end a fight it is in
-            TaskStart.Walk(world, s, new Vector2(at.X, at.Z), SpeedMode.Walk, TaskType.FOLLOW_WHILE_TALKING, TaskSource.Npc, check: false);
+            TaskStart.Walk(world, s, new Vector2(at.X, at.Z), SpeedMode.Walk, TaskType.FOLLOW_WHILE_TALKING, TaskSource.Npc);
         }
     }
 
@@ -324,7 +324,7 @@ public sealed partial class DialogueSystem
                 if (Vector2.Distance(victim, centre) <= Vector2.Distance(w, centre))
                 {
                     if (world.Tick % 15 == 0 && Vector2.Distance(new Vector2(sn.Position.X, sn.Position.Z), w) > TalkReach && (sn.Task != (byte)CharacterTask.GoTo || Vector2.Distance(sn.Goal, w) > TalkReach))
-                        TaskStart.Walk(world, s, w, SpeedMode.Walk, TaskType.TOWN_STALKER, TaskSource.Npc, check: false);
+                        TaskStart.Walk(world, s, w, SpeedMode.Walk, TaskType.TOWN_STALKER, TaskSource.Npc);
                     else if (sn.Task != (byte)CharacterTask.GoTo)
                     {
                         var to = table.Next[t].Position - sn.Position;
@@ -341,7 +341,7 @@ public sealed partial class DialogueSystem
                 stalk.Harassed = true;
             }
             if (world.Tick % 15 == 0 && Vector2.Distance(new Vector2(sn.Position.X, sn.Position.Z), victim) > TalkReach)
-                TaskStart.Walk(world, s, victim, SpeedMode.Walk, TaskType.TOWN_STALKER, TaskSource.Npc, check: false);
+                TaskStart.Walk(world, s, victim, SpeedMode.Walk, TaskType.TOWN_STALKER, TaskSource.Npc);
         }
     }
 

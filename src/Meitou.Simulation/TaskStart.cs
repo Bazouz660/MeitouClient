@@ -87,8 +87,6 @@ public readonly record struct TaskRequest(CharacterTask Task, TaskType Row, Task
     public System.Numerics.Vector2? Goal { get; init; }
     /// <summary>The speed mode of a walk (null: the character's run speed).</summary>
     public byte? Mode { get; init; }
-    /// <summary>An engine start whose row's repertoire is not tested.</summary>
-    internal bool Unchecked { get; init; }
 }
 
 /// <summary>
@@ -169,7 +167,7 @@ public static class TaskStart
         var table = world.Characters;
         if (table.Phase == TablePhase.Parallel) throw new InvalidOperationException("tasks start in the serial phases only");
         var cold = table.Cold(slot)!;
-        if (!request.Unchecked && !Eligible(world, cold, request.Row)) return StartResult.NotEligible;
+        if (!Eligible(world, cold, request.Row)) return StartResult.NotEligible;
         var current = (CharacterTask)table.Next[slot].Task;
         var handler = world.Tasks.Of(request.Task, request.Row);
         if (request.Task != CharacterTask.Attack) world.Tasks.Of(CharacterTask.Attack)?.End(world, slot, CharacterTask.Attack, TaskEnd.Replaced);
@@ -192,19 +190,21 @@ public static class TaskStart
     /// Starts an engine walk to <paramref name="goal"/> at <paramref name="mode"/> as row <paramref name="row"/> (<see cref="Start"/> of a <see cref="CharacterTask.GoTo"/> with
     /// <see cref="TaskRequest.Goal"/>).
     /// </summary>
-    public static StartResult Walk(World world, int slot, System.Numerics.Vector2 goal, byte mode, TaskType row, TaskSource source, bool check = true) =>
-        Start(world, slot, new TaskRequest(CharacterTask.GoTo, row, source) { Goal = goal, Mode = mode, Unchecked = !check });
+    public static StartResult Walk(World world, int slot, System.Numerics.Vector2 goal, byte mode, TaskType row, TaskSource source) =>
+        Start(world, slot, new TaskRequest(CharacterTask.GoTo, row, source) { Goal = goal, Mode = mode });
 
-    /// <summary>Starts an engine walk onto the floor at <paramref name="at"/> (<see cref="MovementSystem.GoToFloor"/>), as <see cref="Walk(World, int, System.Numerics.Vector2, byte, TaskType, TaskSource, bool)"/>.</summary>
-    public static StartResult Walk(World world, int slot, System.Numerics.Vector3 at, byte mode, TaskType row, TaskSource source, bool check = true) =>
-        Start(world, slot, new TaskRequest(CharacterTask.GoTo, row, source) { Point = at, Mode = mode, Unchecked = !check });
+    /// <summary>Starts an engine walk onto the floor at <paramref name="at"/> (<see cref="MovementSystem.GoToFloor"/>), as <see cref="Walk(World, int, System.Numerics.Vector2, byte, TaskType, TaskSource)"/>.</summary>
+    public static StartResult Walk(World world, int slot, System.Numerics.Vector3 at, byte mode, TaskType row, TaskSource source) =>
+        Start(world, slot, new TaskRequest(CharacterTask.GoTo, row, source) { Point = at, Mode = mode });
 
     /// <summary>
     /// Starts an engine standing task (<see cref="CharacterTask.Idle"/>, <see cref="CharacterTask.Wander"/>, or a <see cref="CharacterTask.Follow"/> of the squad's leader) as row
-    /// <paramref name="row"/>: the character stops and takes it up (the movement's handler).
+    /// <paramref name="row"/>: the character stops and takes it up (the movement's handler). One the repertoire does not register gives way to 14 Idleness, which every repertoire
+    /// registers (a crippled character does not wander, 24).
     /// </summary>
-    public static StartResult Become(World world, int slot, CharacterTask task, TaskType row, TaskSource source, bool check = true) =>
-        Start(world, slot, new TaskRequest(task, row, source) { Unchecked = !check });
+    public static StartResult Become(World world, int slot, CharacterTask task, TaskType row, TaskSource source) =>
+        Start(world, slot, new TaskRequest(task, row, source)) is var started && started == StartResult.NotEligible && task != CharacterTask.Idle
+            ? Start(world, slot, new TaskRequest(CharacterTask.Idle, TaskType.IDLE, source)) : started;
 
     /// <summary>
     /// A start in a parallel phase, on the caller's own slot (the AI's think): it records the provenance and starts the walk to <see cref="TaskRequest.Goal"/>, or stops the character on

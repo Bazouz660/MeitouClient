@@ -146,7 +146,7 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
             if (Store(world, at, town, owner: c.Faction, animal: animal) is not var (id, spot)) continue;
             c.Engaged = true;
             duties.Add(new TownDuty { Member = table.IdOf(s), Faction = c.Faction, Town = town, Kind = TownDutyKind.Food, Target = id, Goal = spot, PlayerSide = true });
-            TaskStart.Walk(world, s, spot, SpeedMode.Walk, RowOf(TownDutyKind.Food), TaskSource.Goal, check: false);
+            TaskStart.Walk(world, s, spot, SpeedMode.Walk, RowOf(TownDutyKind.Food), TaskSource.Goal);
         }
     }
 
@@ -199,7 +199,7 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
                     if (cold.Fighter is { } armed) cold.DrawnWeapon = Combat.CombatSystem.MeleeDrawn(armed);   // B: hasWeaponEquipped
                     var goal = Flat(raid.Position);
                     duties.Add(new TownDuty { Member = member, Faction = cold.Faction, Town = AiSystem.TownAt(data, world, raid.Position), Kind = TownDutyKind.Ransack, Target = raid.Key, Goal = goal });
-                    TaskStart.Walk(world, slot, goal, SpeedMode.Run, RowOf(TownDutyKind.Ransack), TaskSource.Goal, check: false);
+                    TaskStart.Walk(world, slot, goal, SpeedMode.Run, RowOf(TownDutyKind.Ransack), TaskSource.Goal);
                     continue;
                 }
                 if (intruders[role] == 0 && food[role] == 0 && confiscate[role] == 0 && loot[role] == 0 && shoo[role] == 0 && stash[role] == 0) continue;
@@ -216,7 +216,7 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
                 {
                     cold.Engaged = true;
                     duties.Add(new TownDuty { Member = member, Faction = cold.Faction, Town = town, Kind = TownDutyKind.LootFood, Target = lootId, Goal = lootSpot });
-                    TaskStart.Walk(world, slot, lootSpot, SpeedMode.Walk, RowOf(TownDutyKind.LootFood), TaskSource.Goal, check: false);
+                    TaskStart.Walk(world, slot, lootSpot, SpeedMode.Walk, RowOf(TownDutyKind.LootFood), TaskSource.Goal);
                     continue;
                 }
                 // 184 Ditching loot: stolen goods it carries, in whatever town it is in (the finder reads the current town only).
@@ -224,7 +224,7 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
                 {
                     cold.Engaged = true;
                     duties.Add(new TownDuty { Member = member, Faction = cold.Faction, Town = town, Kind = TownDutyKind.Stash, Target = stashId, Goal = stashSpot });
-                    TaskStart.Walk(world, slot, stashSpot, SpeedMode.Walk, RowOf(TownDutyKind.Stash), TaskSource.Goal, check: false);
+                    TaskStart.Walk(world, slot, stashSpot, SpeedMode.Walk, RowOf(TownDutyKind.Stash), TaskSource.Goal);
                     continue;
                 }
                 if (town.IsNone) continue;
@@ -242,7 +242,7 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
                     cold.Engaged = true;
                     var goal = Flat(cage.Position);
                     duties.Add(new TownDuty { Member = member, Body = prisoner, Faction = cold.Faction, Town = town, Kind = TownDutyKind.Confiscate, Target = cage.Id, Goal = goal });
-                    TaskStart.Walk(world, slot, goal, SpeedMode.Walk, RowOf(TownDutyKind.Confiscate), TaskSource.Goal, check: false);
+                    TaskStart.Walk(world, slot, goal, SpeedMode.Walk, RowOf(TownDutyKind.Confiscate), TaskSource.Goal);
                     continue;
                 }
                 // 243 needs no own town (FUN_1408cb650); a player-side member takes only from its own faction's stores (FUN_1408dac20). 244 starts only with room for the item (state 82,
@@ -251,7 +251,7 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
                 {
                     cold.Engaged = true;
                     duties.Add(new TownDuty { Member = member, Faction = cold.Faction, Town = town, Kind = TownDutyKind.Food, Target = id, Goal = spot });
-                    TaskStart.Walk(world, slot, spot, SpeedMode.Walk, RowOf(TownDutyKind.Food), TaskSource.Goal, check: false);
+                    TaskStart.Walk(world, slot, spot, SpeedMode.Walk, RowOf(TownDutyKind.Food), TaskSource.Goal);
                 }
             }
         }
@@ -277,7 +277,7 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
             (duty.Target, duty.Goal) = (cage.Id, Flat(cage.Position));
             cold.Engaged = true;
             duties.Add(duty);
-            TaskStart.Walk(world, slot, duty.Goal, SpeedMode.Free, RowOf(TownDutyKind.Cage), TaskSource.Goal, check: false);
+            TaskStart.Walk(world, slot, duty.Goal, SpeedMode.Free, RowOf(TownDutyKind.Cage), TaskSource.Goal);
         }
     }
 
@@ -548,13 +548,13 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
         }
         if (walking) return true;
         if (++d.Tries > Settings.Walks) return End(world, d);
-        TaskStart.Walk(world, g, d.Goal, SpeedMode.Walk, RowOf(d.Kind), TaskSource.Goal, check: false);
+        TaskStart.Walk(world, g, d.Goal, SpeedMode.Walk, RowOf(d.Kind), TaskSource.Goal);
         return true;
     }
 
     // ------------------------------------------------------------------ one errand
 
-    /// <summary>The row an errand's walks act out (<see cref="TaskStart.Walk(World, int, Vector2, byte, TaskType, TaskSource, bool)"/>): the goal of the package it stands in for.</summary>
+    /// <summary>The row an errand's walks act out (<see cref="TaskStart.Walk(World, int, Vector2, byte, TaskType, TaskSource)"/>): the goal of the package it stands in for.</summary>
     static TaskType RowOf(TownDutyKind kind) => kind switch
     {
         TownDutyKind.Lift => TaskType.PICKUP_INTRUDERS_TOWN,
@@ -623,7 +623,7 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
             if (d.Kind == TownDutyKind.Cage && d.Target is { } unreachable && world.Fixtures.Find(unreachable) is { } c) world.Fixtures.MarkUnreachable(world, c, d.Faction);
             return PutDown(world, d, g);
         }
-        TaskStart.Walk(world, g, d.Goal, SpeedMode.Free, RowOf(d.Kind), TaskSource.Goal, check: false);
+        TaskStart.Walk(world, g, d.Goal, SpeedMode.Free, RowOf(d.Kind), TaskSource.Goal);
         return true;
     }
 
@@ -643,13 +643,13 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
             && CageDesire(world, g, b) > 0 && Cage(world, gn.Position, d) is { } cage)
         {
             (d.Kind, d.Target, d.Goal, d.Tries) = (TownDutyKind.Cage, cage.Id, Flat(cage.Position), 0);
-            TaskStart.Walk(world, g, d.Goal, SpeedMode.Free, RowOf(d.Kind), TaskSource.Goal, check: false);
+            TaskStart.Walk(world, g, d.Goal, SpeedMode.Free, RowOf(d.Kind), TaskSource.Goal);
             return true;
         }
         if (squad is not null && population.GoalDuty(world, squad, (AiRole)role, TaskType.TAKE_INTRUDER_OUTSIDE_TOWN))
         {
             (d.Kind, d.Goal, d.Tries) = (TownDutyKind.Out, Outside(world, d.Town, gn.Position), 0);
-            TaskStart.Walk(world, g, d.Goal, SpeedMode.Free, RowOf(d.Kind), TaskSource.Goal, check: false);
+            TaskStart.Walk(world, g, d.Goal, SpeedMode.Free, RowOf(d.Kind), TaskSource.Goal);
             return true;
         }
         return PutDown(world, d, g);
@@ -716,7 +716,7 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
         }
         if (walking) return true;
         if (++d.Tries > Settings.Walks) return End(world, d);
-        TaskStart.Walk(world, g, d.Goal, SpeedMode.Walk, RowOf(d.Kind), TaskSource.Goal, check: false);
+        TaskStart.Walk(world, g, d.Goal, SpeedMode.Walk, RowOf(d.Kind), TaskSource.Goal);
         return true;
     }
 
@@ -759,7 +759,7 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
         }
         if (walking) return true;
         if (++d.Tries > Settings.Walks) return End(world, d);
-        TaskStart.Walk(world, g, d.Goal, SpeedMode.Walk, RowOf(d.Kind), TaskSource.Goal, check: false);
+        TaskStart.Walk(world, g, d.Goal, SpeedMode.Walk, RowOf(d.Kind), TaskSource.Goal);
         return true;
     }
 
@@ -820,7 +820,7 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
         ref var gn = ref table.Next[g];
         var to = new Vector2(table.Next[t].Position.X, table.Next[t].Position.Z);
         if (Vector2.Distance(Flat(gn.Position), to) > Dialogue.DialogueSystem.TalkReach && (gn.Task != (byte)CharacterTask.GoTo || Vector2.Distance(gn.Goal, to) > Dialogue.DialogueSystem.TalkReach))
-            TaskStart.Walk(world, g, to, SpeedMode.Walk, RowOf(d.Kind), TaskSource.Goal, check: false);
+            TaskStart.Walk(world, g, to, SpeedMode.Walk, RowOf(d.Kind), TaskSource.Goal);
         d.Next -= world.TickSeconds;
         if (d.Next <= 0)
         {
@@ -864,7 +864,7 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
         if (world.Sight.BuildingOf(g) == d.Target || !walking && Vector2.Distance(Flat(gn.Position), d.Goal) <= Settings.CageSlack) return End(world, d);
         if (walking) return true;
         if (++d.Tries > Settings.Walks) return End(world, d);
-        TaskStart.Walk(world, g, d.Goal, SpeedMode.Run, RowOf(d.Kind), TaskSource.Goal, check: false);
+        TaskStart.Walk(world, g, d.Goal, SpeedMode.Run, RowOf(d.Kind), TaskSource.Goal);
         return true;
     }
 

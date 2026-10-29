@@ -449,7 +449,7 @@ public sealed partial class PopulationSystem
             // At the town the squad mills about in it.
             if (table.TryResolveNext(squad.Leader, out int slot))
             {
-                TaskStart.Become(world, slot, CharacterTask.Wander, Meitou.Data.Gameplay.Ai.TaskType.WANDERER, TaskSource.Goal, check: false);
+                TaskStart.Become(world, slot, CharacterTask.Wander, Meitou.Data.Gameplay.Ai.TaskType.WANDERER, TaskSource.Goal);
                 table.Next[slot].Mode = SpeedMode.Walk;
                 table.Next[slot].TaskTime = 0.5f;
             }
@@ -618,7 +618,7 @@ public sealed partial class PopulationSystem
         if (Goal(p) is not { } goal || !world.Characters.TryResolveNext(squad.Leader, out int slot)) return;
         // A short-range patrol and going home walk; travel runs (as before the packages).
         TaskStart.Walk(world, slot, goal, p.Job is Ai.PlatoonJob.PatrolShortRange or Ai.PlatoonJob.GoHome ? SpeedMode.Walk : SpeedMode.Run, Meitou.Data.Gameplay.Ai.TaskType.TRAVEL_TO_TARGET_TOWN,
-            TaskSource.Goal, check: false);
+            TaskSource.Goal);
     }
 
     // ---- unloaded to loaded ----

@@ -254,6 +254,16 @@ public class TaskStartTests
         { TaskType.RELEASE_PRISONER, H }, { TaskType.USE_CAGE, H | I | Ch | Cr }, { TaskType.OPEN_DOOR, H | Cr }, { TaskType.CLOSE_DOOR, H | Cr }, { TaskType.LOCK_DOOR, H | Cr },
         { TaskType.UNLOCK_DOOR, H | I | Cr }, { TaskType.UNLOCK_DOOR_PLAYER_ORDER, H }, { TaskType.CUT_LOCK, H | I | Ch | Cr }, { TaskType.BRUTE_FORCE_LOCK, H | I | Ch | Cr },
         { TaskType.BASH_DOOR_PLAYER_ORDER, H | A }, { TaskType.PICKUP, H | I | A | Cr }, { TaskType.PUT_IN_CAGE, H },
+        // The engine's starts: arrest, kidnap, captive jobs, town duties, smell, food, dialogue acts, flight, population, the standing tasks.
+        { TaskType.ARREST_TARGET, H }, { TaskType.FIND_CAGE_AND_PUT_IN, H }, { TaskType.FIND_AND_KIDNAP, H }, { TaskType.CARRY_WOUNDED_SLAVES, H }, { TaskType.CAPTURE_NEW_SLAVES, H },
+        { TaskType.KILL_CAGE_OCCUPANT, H }, { TaskType.EAT_TARGET_ALIVE, H | A | Cr }, { TaskType.PROCESS_AND_STRIP_NEW_SLAVE, H }, { TaskType.GET_SLAVE, H }, { TaskType.GIVE_ALL_MY_SLAVES_TO, H },
+        { TaskType.SLAVE_GET_IN_MY_MASTERS_CAGE, H | I | Ch | Cr }, { TaskType.WORK_THE_SLAVES, H }, { TaskType.EAT_CROPS, H | A | Cr }, { TaskType.WORSHIP_TARGET, H | Cr },
+        { TaskType.PLAY_BECAUSE_I_HAVE_A_LIMB_IN_MOUTH, A }, { TaskType.CHASE_ALLY_DOGS_WITH_MOUTH_LIMBS, A }, { TaskType.ANIMAL_FETCH_A_LIMB, A },
+        { TaskType.TAKE_INTRUDER_OUTSIDE_TOWN, H | Cr }, { TaskType.AQUIRE_FOOD_AT_HOMEBASE, H | A | Cr }, { TaskType.LOOT_STOLEN_GOODS, H | I | Cr }, { TaskType.LOOT_FOOD_AND_STUFF, H },
+        { TaskType.PUT_LOOT_IN_STORAGE, H }, { TaskType.HUNTING_BLOODSMELL, H | A | Cr }, { TaskType.EAT_FOOD_ON_GROUND, H | Ch | A | Cr },
+        { TaskType.RUN_AWAY_FORCED, H | A | Cr }, { TaskType.GO_HOMEBUILDING, H | A | Cr }, { TaskType.MOVE_ON_FREE_WILL_FAST, H | A | Cr }, { TaskType.FOLLOW_WHILE_TALKING, H | Cr },
+        { TaskType.TOWN_STALKER, H }, { TaskType.MOVE_ON_FREE_WILL, H | A | Cr }, { TaskType.RUN_AWAY, H | A | Cr }, { TaskType.TRAVEL_TO_TARGET_TOWN, H | A | Cr },
+        { TaskType.TRAVEL_TO_TARGET_PACKAGE, H | A | Cr }, { TaskType.FOLLOW_SQUADLEADER, H | A | Cr }, { TaskType.WANDERER, H | A }, { TaskType.IDLE, H | I | Ch | A | Cr },
     };
 
     /// <summary>
@@ -293,5 +303,27 @@ public class TaskStartTests
         Assert.False(TaskStart.Eligible(world, Make(stump: true), TaskType.BUILD));
         Assert.False(TaskStart.Eligible(world, Make(animal: true), TaskType.LIFT_PERSON_PLAYER_ORDER));
         Assert.True(TaskStart.Eligible(world, Make(animal: true), TaskType.REST));
+    }
+
+    /// <summary>
+    /// An engine standing task the repertoire does not register gives way to 14 Idleness (<see cref="TaskStart.Become"/>): a crippled character sent back to wandering (24, human and animal
+    /// only) idles. Catches the fallback lost, which would leave the character on the task it had (a flight's run, a mill's walk).
+    /// </summary>
+    [Fact]
+    public void An_engine_wander_the_repertoire_does_not_register_gives_way_to_idleness()
+    {
+        using var world = new SimWorld(new WorldSettings { PublishSnapshots = false }, new OpenGroundWalkability(SyntheticTown.Ground), [new MovementSystem(new PathService(new OpenGroundWalkability(SyntheticTown.Ground), true))]);
+        CharacterId Add(bool low)
+        {
+            var cold = new Combatant().MakeCold();
+            cold.Medical!.StayingLow = low;
+            return world.Characters.Spawn(new CharacterHot { Position = new Vector3(1000, 300, 2000), Task = (byte)CharacterTask.GoTo }, cold, 0);
+        }
+        var standing = Add(low: false);
+        var low = Add(low: true);
+        foreach (var id in new[] { standing, low }) TaskStart.Become(world, id.Slot, CharacterTask.Wander, TaskType.WANDERER, TaskSource.Npc);
+        Assert.Equal((byte)CharacterTask.Wander, world.Characters.Next[standing.Slot].Task);
+        Assert.Equal((byte)CharacterTask.Idle, world.Characters.Next[low.Slot].Task);
+        Assert.Equal(TaskType.IDLE, world.Characters.Cold(low.Slot)!.Running!.Row);
     }
 }

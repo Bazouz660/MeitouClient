@@ -73,7 +73,7 @@ public sealed class FleeSystem(FactionRelations relations, CombatSystem combat, 
             if (check && (cold.FleesAlone ? Unthreatened(world, i, cold) : Safe(world, table, i)))
             {
                 cold.Fleeing = cold.FleesAlone = false;
-                TaskStart.Become(world, i, CharacterTask.Wander, Meitou.Data.Gameplay.Ai.TaskType.WANDERER, TaskSource.Npc, check: false);
+                TaskStart.Become(world, i, CharacterTask.Wander, Meitou.Data.Gameplay.Ai.TaskType.WANDERER, TaskSource.Npc);
                 n.TaskTime = 0;
                 continue;
             }
@@ -286,7 +286,7 @@ public sealed class FleeSystem(FactionRelations relations, CombatSystem combat, 
         var id = new CharacterId(s, n.Generation);
         float r = Rng.Float(Rng.Hash(world.Seed, Rng.Key(id), RngPurpose.Flee, ((ulong)world.Tick << 2) | 2));
         var start = from ?? new Vector2(n.Position.X, n.Position.Z);
-        TaskStart.Walk(world, s, start + direction * (distance + RunSpread * r), SpeedMode.Free, Meitou.Data.Gameplay.Ai.TaskType.RUN_AWAY, TaskSource.Npc, check: false);
+        TaskStart.Walk(world, s, start + direction * (distance + RunSpread * r), SpeedMode.Free, Meitou.Data.Gameplay.Ai.TaskType.RUN_AWAY, TaskSource.Npc);
     }
 
     public void Hash(ref StateHasher hasher)

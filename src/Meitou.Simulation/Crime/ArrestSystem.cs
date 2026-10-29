@@ -425,7 +425,7 @@ public sealed partial class ArrestSystem(CrimeSystem crimes, GameConstants const
         {
             arrest.Phase = ArrestPhase.Fine;
             arrest.Fine = FineFor(bounty);
-            TaskStart.Walk(world, g, new Vector2(table.Next[t].Position.X, table.Next[t].Position.Z), SpeedMode.Free, TaskType.ARREST_TARGET, TaskSource.Npc, check: false);
+            TaskStart.Walk(world, g, new Vector2(table.Next[t].Position.X, table.Next[t].Position.Z), SpeedMode.Free, TaskType.ARREST_TARGET, TaskSource.Npc);
             Note(world, ArrestEventKind.Fine, guard, target, gc.Faction, arrest.Fine);
         }
         else BeginFight(world, arrest, g, t);
@@ -507,7 +507,7 @@ public sealed partial class ArrestSystem(CrimeSystem crimes, GameConstants const
                 // Keep walking after the target (a new path when it moved on, the first-aid pattern's cadence).
                 var goal = new Vector2(table.Next[t].Position.X, table.Next[t].Position.Z);
                 if ((world.Tick + g) % 15 == 0 && (gn.Task != (byte)CharacterTask.GoTo || Vector2.DistanceSquared(goal, gn.Goal) > 20 * 20))
-                    TaskStart.Walk(world, g, goal, SpeedMode.Free, TaskType.ARREST_TARGET, TaskSource.Npc, check: false);
+                    TaskStart.Walk(world, g, goal, SpeedMode.Free, TaskType.ARREST_TARGET, TaskSource.Npc);
                 return true;
             }
             case ArrestPhase.Fight:
@@ -572,7 +572,7 @@ public sealed partial class ArrestSystem(CrimeSystem crimes, GameConstants const
                 if (!walking)
                 {
                     if (++a.Tries > Settings.CageWalks) return Drop(world, a, g);
-                    TaskStart.Walk(world, g, new Vector2(cage.Position.X, cage.Position.Z), SpeedMode.Free, TaskType.FIND_CAGE_AND_PUT_IN_IF_BOUNTY, TaskSource.Npc, check: false);
+                    TaskStart.Walk(world, g, new Vector2(cage.Position.X, cage.Position.Z), SpeedMode.Free, TaskType.FIND_CAGE_AND_PUT_IN_IF_BOUNTY, TaskSource.Npc);
                 }
                 return true;
             }
@@ -589,7 +589,7 @@ public sealed partial class ArrestSystem(CrimeSystem crimes, GameConstants const
         var cage = world.Fixtures.FindCage(world, gc, table.Next[g].Position, home, f => Reserved(f, a));
         if (cage is null) return Drop(world, a, g);
         a.Cage = cage.Id;
-        TaskStart.Walk(world, g, new Vector2(cage.Position.X, cage.Position.Z), SpeedMode.Free, TaskType.FIND_CAGE_AND_PUT_IN_IF_BOUNTY, TaskSource.Npc, check: false);
+        TaskStart.Walk(world, g, new Vector2(cage.Position.X, cage.Position.Z), SpeedMode.Free, TaskType.FIND_CAGE_AND_PUT_IN_IF_BOUNTY, TaskSource.Npc);
         return true;
     }
 

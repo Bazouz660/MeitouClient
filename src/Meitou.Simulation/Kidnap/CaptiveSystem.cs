@@ -321,7 +321,7 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
         }
     }
 
-    /// <summary>The row a job's walks act out (<see cref="TaskStart.Walk(World, int, Vector2, byte, TaskType, TaskSource, bool)"/>): the task its goal plans to (<see cref="CaptiveJobKind"/>).</summary>
+    /// <summary>The row a job's walks act out (<see cref="TaskStart.Walk(World, int, Vector2, byte, TaskType, TaskSource)"/>): the task its goal plans to (<see cref="CaptiveJobKind"/>).</summary>
     static TaskType RowOf(CaptiveJobKind kind) => kind switch
     {
         CaptiveJobKind.Kill => TaskType.KILL_CAGE_OCCUPANT,
@@ -741,7 +741,7 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
                     SetWait(givenUp, j.Captive, world.GameHours + Settings.GiveUpHours);
                     return End(world, j, CaptiveEventKind.GaveUp);
                 }
-                TaskStart.Walk(world, w, to, SpeedMode.Walk, RowOf(j.Kind), TaskSource.Goal, check: false);
+                TaskStart.Walk(world, w, to, SpeedMode.Walk, RowOf(j.Kind), TaskSource.Goal);
                 return true;
             }
             TaskStart.Stand(table, w);
@@ -775,7 +775,7 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
             return false;
         }
         if (world.Fixtures.IsShut(cage.Building) && world.Fixtures.DoorOwner(cage.Building) == j.Faction) world.Fixtures.SetDoorsLocked(cage.Building, false);
-        TaskStart.Walk(world, w, new Vector2(cage.Position.X, cage.Position.Z), SpeedMode.Walk, RowOf(j.Kind), TaskSource.Goal, check: false);
+        TaskStart.Walk(world, w, new Vector2(cage.Position.X, cage.Position.Z), SpeedMode.Walk, RowOf(j.Kind), TaskSource.Goal);
         return true;
     }
 
@@ -830,7 +830,7 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
             {
                 if (walking) return true;
                 if (++j.Walks > Settings.Walks) return End(world, j, CaptiveEventKind.GaveUp);
-                TaskStart.Walk(world, w, new Vector2(body.X, body.Z), SpeedMode.Run, RowOf(j.Kind), TaskSource.Goal, check: false);
+                TaskStart.Walk(world, w, new Vector2(body.X, body.Z), SpeedMode.Run, RowOf(j.Kind), TaskSource.Goal);
                 return true;
             }
             TaskStart.Stand(table, w);
@@ -888,7 +888,7 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
             {
                 if (walking) return true;
                 if (++j.Walks > Settings.Walks) return End(world, j, CaptiveEventKind.GaveUp);
-                TaskStart.Walk(world, w, new Vector2(site.Position.X, site.Position.Z), SpeedMode.Run, RowOf(j.Kind), TaskSource.Goal, check: false);
+                TaskStart.Walk(world, w, new Vector2(site.Position.X, site.Position.Z), SpeedMode.Run, RowOf(j.Kind), TaskSource.Goal);
                 return true;
             }
             TaskStart.Stand(table, w);

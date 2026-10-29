@@ -117,7 +117,7 @@ public sealed class SmellSystem(PopulationData data, PopulationSystem? populatio
                 c.Engaged = true;
                 ref var n = ref table.Next[s];
                 if (Vector2.Distance(new Vector2(n.Position.X, n.Position.Z), to) > HuntArrive && (n.Task != (byte)CharacterTask.GoTo || Vector2.Distance(n.Goal, to) > HuntArrive))
-                    TaskStart.Walk(world, s, to, SpeedMode.Run, Meitou.Data.Gameplay.Ai.TaskType.HUNTING_BLOODSMELL, TaskSource.Goal, check: false);
+                    TaskStart.Walk(world, s, to, SpeedMode.Run, Meitou.Data.Gameplay.Ai.TaskType.HUNTING_BLOODSMELL, TaskSource.Goal);
             }
         }
     }

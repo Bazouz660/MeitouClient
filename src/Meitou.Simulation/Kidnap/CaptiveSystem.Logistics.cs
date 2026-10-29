@@ -168,7 +168,7 @@ public sealed partial class CaptiveSystem
         {
             if (n.Task == (byte)CharacterTask.GoTo) return true;
             if (++j.Walks > Settings.Walks + 1 + (int)(Vector2.Distance(new Vector2(n.Position.X, n.Position.Z), centre) / 1000)) return End(world, j, CaptiveEventKind.GaveUp);
-            TaskStart.Walk(world, w, centre, SpeedMode.Walk, RowOf(j.Kind), TaskSource.Goal, check: false);
+            TaskStart.Walk(world, w, centre, SpeedMode.Walk, RowOf(j.Kind), TaskSource.Goal);
             return true;
         }
         TaskStart.Stand(table, w);

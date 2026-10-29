@@ -288,7 +288,7 @@ public sealed class KidnapSystem(PopulationData data, PopulationSystem populatio
                         world.Fixtures.MarkUnreachable(world, cage, a.Faction);
                         return Retry(world, a, g);
                     }
-                    TaskStart.Walk(world, g, new Vector2(cage.Position.X, cage.Position.Z), SpeedMode.Free, TaskType.FIND_CAGE_AND_PUT_IN, TaskSource.Goal, check: false);
+                    TaskStart.Walk(world, g, new Vector2(cage.Position.X, cage.Position.Z), SpeedMode.Free, TaskType.FIND_CAGE_AND_PUT_IN, TaskSource.Goal);
                 }
                 return true;
             }
@@ -343,7 +343,7 @@ public sealed class KidnapSystem(PopulationData data, PopulationSystem populatio
         a.Tries = 0;
         a.Time = 0;
         a.Cage = cage.Id;
-        TaskStart.Walk(world, g, new Vector2(cage.Position.X, cage.Position.Z), SpeedMode.Free, TaskType.FIND_CAGE_AND_PUT_IN, TaskSource.Goal, check: false);
+        TaskStart.Walk(world, g, new Vector2(cage.Position.X, cage.Position.Z), SpeedMode.Free, TaskType.FIND_CAGE_AND_PUT_IN, TaskSource.Goal);
         return true;
     }
 
@@ -375,7 +375,7 @@ public sealed class KidnapSystem(PopulationData data, PopulationSystem populatio
             {
                 // A campaign squad's follower walks on after its leader again.
                 if (world.Squads.Find(gc.SquadId) is { } squad && squad.Leader != a.Carrier)
-                    TaskStart.Become(world, g, CharacterTask.Follow, TaskType.FOLLOW_SQUADLEADER, TaskSource.Goal, check: false);
+                    TaskStart.Become(world, g, CharacterTask.Follow, TaskType.FOLLOW_SQUADLEADER, TaskSource.Goal);
                 else TaskStart.Stand(table, g);
             }
         }
