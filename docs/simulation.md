@@ -1411,7 +1411,8 @@ whose first step is neither the goal nor a step the engine carries out (`AiSyste
   machine; no finder gives one yet, the town workers' buildings are level data, [Blocked output](game/buildings-production.md#blocked-output)); every other state is false.
 
 Combat stances (`AiStance`, the most aggressive combat goal in its hours; none at all attacks on sight): PROTECT_OWN_SQUAD joins only
-fights of its own squad, against a mate's target or a mate's attacker (as the original's finder, [ai-tasks](game/ai-tasks.md#combat-goals));
+fights of its own squad, against a mate's target or a mate's attacker (as the original's finder, [ai-tasks](game/ai-tasks.md#combat-goals)), for a mate that is the looker or that it sees now
+(`AggroSystem.Protects`; squad-shared sightings of mates are not counted, **Observed** stand-in);
 the other PROTECT goals still join any fighting enemy (engine).
 
 Scoring follows the original (`TaskProfiles`: desire, commitment, crowding per goal type); a desire

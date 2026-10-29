@@ -357,8 +357,11 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         SyncSquadFights(world.Characters);
     }
 
-    /// <summary>(squad, slot) for every character fighting a member of that squad or targeted by one: whom PROTECT_OWN_SQUAD joins against (read only during the looks).</summary>
-    readonly HashSet<(int Squad, int Slot)> squadFights = [];
+    /// <summary>
+    /// (squad, slot, mate) for every character fighting a member of that squad or targeted by one, and the squad mate concerned: whom PROTECT_OWN_SQUAD joins against, and for whose
+    /// sake (read only during the looks).
+    /// </summary>
+    readonly HashSet<(int Squad, int Slot, int Mate)> squadFights = [];
 
     void SyncSquadFights(CharacterTable table)
     {
@@ -370,8 +373,8 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
             if (!next[i].Alive || next[i].Task != (byte)CharacterTask.Attack) continue;
             var st = Combat.StateOf(new CharacterId(i, next[i].Generation));
             if (st.TargetSlot is not (>= 0 and var t) || !next[t].Alive || next[t].Generation != st.TargetGeneration) continue;
-            if (table.Cold(i) is { SquadId: >= 0 } a) squadFights.Add((a.SquadId, t));   // a mate's target
-            if (table.Cold(t) is { SquadId: >= 0 } b) squadFights.Add((b.SquadId, i));   // a mate's attacker
+            if (table.Cold(i) is { SquadId: >= 0 } a) squadFights.Add((a.SquadId, t, i));   // a mate's target
+            if (table.Cold(t) is { SquadId: >= 0 } b) squadFights.Add((b.SquadId, i, t));   // a mate's attacker
         }
     }
 
@@ -441,7 +444,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         public Dialogue.SquadMemory? Memory;
         public int Self, Faction, Squad;
         /// <summary>The squad fights (<see cref="squadFights"/>; null without a combat system).</summary>
-        public HashSet<(int Squad, int Slot)>? SquadFights;
+        public HashSet<(int Squad, int Slot, int Mate)>? SquadFights;
         public Vector3 Eye;
         public CharacterCold? Cold;
         public float Range;
@@ -732,7 +735,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         }
         // The AI's stances (docs/simulation.md "AI", Combat goals): the defensive one joins fights only, the territorial one keeps to its home.
         if (s.Stance == Ai.AiStance.Defensive && !c.InCombat) return;
-        if (s.Stance == Ai.AiStance.ProtectSquad && (s.SquadFights is { } fights ? s.Squad < 0 || !fights.Contains((s.Squad, slot)) : !c.InCombat)) return;
+        if (s.Stance == Ai.AiStance.ProtectSquad && (s.SquadFights is { } fights ? s.Squad < 0 || !Protects(ref s, fights, slot) : !c.InCombat)) return;
         // Territorial (144, FUN_14059fd70, Verified): without a home circle it attacks on sight; outside the circle only one in the looker's own building.
         if (s.Stance == Ai.AiStance.Territorial && s.Home.R2 != 0 && !(Vector2.DistanceSquared(new Vector2(other.Position.X, other.Position.Z), s.Home.Centre) < s.Home.R2)
             && (s.World.Sight.BuildingOf(s.Self) is not { } inside || s.World.Sight.BuildingOf(slot) != inside)) return;
@@ -747,6 +750,27 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         s.Best = slot;
         s.BestD2 = d2;
         s.BestScore = score;
+    }
+
+    /// <summary>
+    /// Whether the looker joins the fight of <paramref name="target"/> (143 PROTECT_OWN_SQUAD, <c>FUN_14099d510</c>, <b>Verified</b>): a squad mate it is itself, or senses now (<c>FUN_140855960</c> with
+    /// flag 1: in its sensed map and seen or heard), is fighting it or is fought by it. Engine: the squad-shared sightings of mates and the finder's hand-list third path (<b>Unknown</b>) are
+    /// left out; a mate heard counts only from the looker's last hearing check.
+    /// </summary>
+    static bool Protects(ref Scan s, HashSet<(int Squad, int Slot, int Mate)> fights, int target)
+    {
+        if (s.World.Squads.Find(s.Squad) is not { } squad) return false;
+        var table = s.Table;
+        foreach (var member in squad.Members)
+        {
+            if (!table.IsAlive(member) || !fights.Contains((s.Squad, target, member.Slot))) continue;
+            if (member.Slot == s.Self) return true;
+            ref readonly var mate = ref table.Previous[member.Slot];
+            var mc = table.Cold(member.Slot);
+            bool sneaking = mc is not null && (mc.Orders & CharacterOrders.Sneak) != 0;
+            if (SensedNow(ref s, member.Slot, mate, sneaking, sneaking ? Orders.Stealth(mc!) : -1)) return true;
+        }
+        return false;
     }
 
     /// <summary>The attack-on-sight score of <paramref name="c"/> in <paramref name="slot"/> (goal 16's finder picks by <c>FUN_14059e300</c>); null when dropped.</summary>
