@@ -6,7 +6,10 @@ original thread races. Tables preserve callback/time/control/constants mappings.
 
 ## Frame clocks
 
-**Observed** frame timer uses float previous seconds; raw dt capped0.05, slowing below20fps.
+**Verified** (`FUN_14082ac70`, constants `DAT_141696c74` = 0.05 and `DAT_14167e8d8` = 0.5 from `re/data_values.txt`): the real frame time is
+replaced by 0.05 s when above it, so any frame longer than 0.05 s advances game time by 0.05 x speed and the game slows below 20 fps at every speed;
+the cap comes before the speed multiplier. 0.5 only fills the 20-entry history at start (the history is pushed to but `FUN_14082b6e0` passes the capped
+value itself to `FUN_140788a00`). Meitou keeps its own wider budget instead (**engine choice**, [simulation](../simulation.md#time-model)).
 Twenty-entry zero-initialized history exponentially weights0.5^i. **Verified** callee/history
 layout. **Verified** FUN_140788a00 clocks: real smoothed dt; dt*speed zeroed by paused flag;
 dt*speed floored0.01 only when speed<=0, not universally when a menu sets requested-pause.

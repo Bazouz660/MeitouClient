@@ -8,7 +8,9 @@ namespace Meitou.Engine.Time;
 /// (menus, loading) stops the world without touching the speed, and the world is paused when either holds, as the game's paused
 /// flag is "requested pause OR speed 0".
 /// A frame owes at most <see cref="MaxTicksPerFrame"/> x speed ticks; the rest are dropped, so the game then runs slower than asked
-/// (<see cref="AchievedSpeed"/>), as the original does below 20 fps through its 0.05 s dt cap. The tick count depends only on the
+/// (<see cref="AchievedSpeed"/>). Engine choice: the original caps the real frame time at 0.05 s BEFORE the speed multiplier (it slows
+/// below 20 fps at every speed, Verified, docs/game/game-loop.md "Frame clocks"); this budget is 0.2 s of game time at 1x and slows
+/// only below 5 fps. The tick count depends only on the
 /// summed <c>real time x speed</c>, not on how frames split it (the <see cref="FixedStepClock"/> property), as long as no tick is dropped.
 /// </summary>
 public sealed class SimulationClock
