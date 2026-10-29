@@ -510,6 +510,8 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
                 float bestD = float.MaxValue;
                 for (int s = 0; s < data.Sites.Count; s++)
                 {
+                    // Every town type but a nest marker (the finder's type filter 10, FUN_140927f10: type 8 is taken only by a filter of exactly 8).
+                    if (data.Sites[s].Town.Type == TownType.NestMarker) continue;
                     float d = Vector2.DistanceSquared(at, Flat(data.Sites[s].Position));
                     if (d < bestD) (best, bestD) = (s, d);
                 }
