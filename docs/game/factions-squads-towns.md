@@ -499,7 +499,8 @@ Meitou: [ground items](../simulation.md#items-and-eating).
   0.5 × imprisoned/dead, clamped to [0, 2] for a sector by a town) is compared with `FUN_1408f5ca0`, the sum of P × `homeless spawn
   amount` over the loaded zones of the island; while below, one sector is picked by weight max(0, P × amount + 1 − load), halved by a town,
   (w + 1) × 2 when empty, and one squad is made there (`FUN_1408f8060`) if its count is below P × amount, retrying other sectors when that
-  fails. Sectors a town stands in never enter the pick: `Town::setup` (`FUN_1409353c0`) sets sector byte +0x30 for every sector of the
+  fails: the draw takes each sector out of the tree and loops while `FUN_1408f8060` returns 0 (no template left, no spot `FUN_1408f50d0`, or the spot inside a town, `FUN_140926d50`; 1
+  only after the squad is created; **Verified**), so one 2 s tick ends with a squad or an empty tree. Meitou: the sectors in weighted draw order without replacement, built in turn by one job until one makes a squad. Sectors a town stands in never enter the pick: `Town::setup` (`FUN_1409353c0`) sets sector byte +0x30 for every sector of the
   town's zone list (or of its position), +0x31 when the Town int at +0xd8 is 1 (its type, **Observed**), unless the type (+0xd8) is 4 (Ruins) or 9 (point of interest), so a
   Ruins town does not block its sectors and a nest marker (type 8, which `setup` handles itself) does; the pick, the spot fallbacks `FUN_1408f6350` / `FUN_1408fc1a0` and
   the patrol's town branch (below) read it (**Verified**, decompile; whether `setup` runs for the Null type (10) is **Unknown**). Meitou gives a sector

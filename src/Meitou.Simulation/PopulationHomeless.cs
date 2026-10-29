@@ -338,23 +338,39 @@ public sealed partial class PopulationSystem
             // A sector at its share is drawn and passed over in the original; it never makes one. A town's sector and the one in view never enter the pick.
             weights[k] = here < share && !towns.Contains(site.Zone) && site.Zone != view ? w : 0;
         }
+        // The sectors in draw order: the original draws one by weight, takes it out of the tree and tries the next while it made no squad (a sector with no usable spot), so the
+        // order is a weighted draw without replacement, the first draw as before.
         ulong key = Rng.Mix(SeedSalts.HomelessRefill ^ (ulong)world.Tick);
-        int picked = Pick(weights, Rng.Hash(world.Seed, key, RngPurpose.Spawn, 0));
-        if (picked < 0) return;
-        int index = sectors[picked];
-        var at = wildSites![index];
-        var st = wildStates[index];
-        st.Pending = true;
-        var hold = new WildHold(0, 0, new Dictionary<string, int>(StringComparer.Ordinal));
-        foreach (int id in st.Squads)
-            if (world.Squads.Find(id) is { } squad && squad.Members.Any(m => Living(world, m))) hold.Templates[squad.TemplateId] = hold.Templates.GetValueOrDefault(squad.TemplateId) + 1;
-        long loadId = st.LoadId;
+        var tries = new List<(WildSite Site, long LoadId, WildHold Hold, int Number)>();
+        for (ulong n = 0; Pick(weights, Rng.Hash(world.Seed, key, RngPurpose.Spawn, n)) is >= 0 and var picked; n++)
+        {
+            weights[picked] = 0;
+            var st = wildStates[sectors[picked]];
+            st.Pending = true;
+            var hold = new WildHold(0, 0, new Dictionary<string, int>(StringComparer.Ordinal));
+            foreach (int id in st.Squads)
+                if (world.Squads.Find(id) is { } squad && squad.Members.Any(m => Living(world, m))) hold.Templates[squad.TemplateId] = hold.Templates.GetValueOrDefault(squad.TemplateId) + 1;
+            tries.Add((wildSites![sectors[picked]], st.LoadId, hold, st.Made));
+        }
+        if (tries.Count == 0) return;
         ulong seed = world.Seed;
         var walk = world.Walkability;
         var players = PlayerSpots(world);
-        int number = st.Made;
-        if (work is null) SpawnWild(world, BuildSector(at, loadId, seed, walk, players, hold, number));
-        else work.Add(() => builtWild.Enqueue(BuildSector(at, loadId, seed, walk, players, hold, number)));
+        // One job builds them in order until a squad is made; the sectors it did not reach come back empty so their pending marks clear.
+        List<BuiltWild> Build()
+        {
+            var results = new List<BuiltWild>(tries.Count);
+            bool made = false;
+            foreach (var t in tries)
+            {
+                var b = made ? new BuiltWild(t.Site.Index, t.LoadId, default, [], TopUp: true) : BuildSector(t.Site, t.LoadId, seed, walk, players, t.Hold, t.Number);
+                made |= b.Squads.Count > 0;
+                results.Add(b);
+            }
+            return results;
+        }
+        if (work is null) foreach (var b in Build()) SpawnWild(world, b);
+        else work.Add(() => { foreach (var b in Build()) builtWild.Enqueue(b); });
     }
 
     /// <summary>Whether the town nearest a sector's centre stands in it (<c>FUN_1408f62e0</c>).</summary>
