@@ -22,7 +22,11 @@ the file allows).
 - PhysX call meanings (flags, damping, sleep, forces) come from NxActor/NxScene vtable slots matched
   to the published 2.8 SDK headers.
 - Stepping (`PhysicsActual::vfunc_2` `FUN_1407dd060`, background thread): `simulate(min(dt, 0.04))`
-  (0 while paused), flush, blocking fetch.
+  (0 while paused; `DAT_1416fb690` = 0.04, **Verified** from the exe's data), flush, blocking fetch. **Verified**: dt is the frame's **real** elapsed time, not scaled by the game speed:
+  `FUN_140788a00` stores it as `DAT_142133790` and hands that to the physics kick (`FUN_1403beeb0`), while the speed-scaled value (`DAT_142133794`, `DAT_142133798`) goes to characters and weather.
+  So at 2x and 5x ragdolls fall and settle at the real pace of 1x; the ragdoll's own timers (freeze after 2 to 7 s, the get-up blend) run on the scaled value (`FUN_1405b8180` passes
+  `DAT_142133794` to `FUN_1407d3c00`, the blend `FUN_1407d28e0` adds `DAT_142133798`), so at 5x they run out 5 times sooner in real time. Meitou: `RagdollPhysics.StepOf`, a tick's step is
+  tick seconds / `World.PhysicsSpeed` (the host sets the clock's speed before each tick; 1 headless), clamped to 0.04; the timers stay in game seconds.
 
 ## Collision groups
 

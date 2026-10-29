@@ -190,6 +190,12 @@ public sealed partial class World : IDisposable
     /// outdoors work only at night (docs/game/ui-screens.md "Selected building", slot 164).
     /// </summary>
     public bool Daytime { get; set; }
+    /// <summary>
+    /// How many times faster than real time the host runs ticks (the game speed 1, 2 or 5; 1 without a clock). The ragdoll physics steps in real time, not game time
+    /// (<see cref="Ragdolls.RagdollPhysics.StepOf"/>), so a ragdoll's outcome depends on it, as in the original; headless runs and the goldens stay at 1. An input like <see cref="GameHours"/>:
+    /// not hashed, not saved.
+    /// </summary>
+    public float PhysicsSpeed { get; set; } = 1;
     /// <summary>The integer hour of day, 0 to 23 (the game's sky controller hour that the AI compares windows with).</summary>
     public int Hour => Math.Clamp((int)(((GameHours % 24) + 24) % 24), 0, 23);
     public float TickSeconds => Settings.TickSeconds;

@@ -163,7 +163,7 @@ public sealed class RagdollSystem : ITickSystem, IStateHashed, IRagdollState, IR
         animations ??= world.Systems.OfType<IAnimationSource>().FirstOrDefault();
         var table = world.Characters;
         var env = environment ??= new WalkabilityEnvironment(world.Walkability);
-        float dt = world.TickSeconds;
+        float dt = world.TickSeconds, stepDt = RagdollPhysics.StepOf(dt, world.PhysicsSpeed);   // the timers run in game time, the physics in real time
         long tick = world.Tick;
 
         // Ragdolls of characters that are gone.
@@ -233,8 +233,8 @@ public sealed class RagdollSystem : ITickSystem, IStateHashed, IRagdollState, IR
         if (Moving > 0 && threads is null && world.Settings.Threads > 1) threads = new BepuUtilities.ThreadDispatcher(world.Settings.Threads);
         if (Moving > 0)
         {
-            foreach (var id in order) if (ragdolls[id] is { Frozen: false, Mask: not RagdollPart.None } floating) Buoy(world, floating, dt);
-            physics.Step(dt, threads);
+            foreach (var id in order) if (ragdolls[id] is { Frozen: false, Mask: not RagdollPart.None } floating) Buoy(world, floating, stepDt);
+            physics.Step(stepDt, threads);
         }
         world.Profile.Part("rag step");
 

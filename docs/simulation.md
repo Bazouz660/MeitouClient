@@ -32,6 +32,9 @@ a tick takes 4 ms (`WorldSession.TickMs`, smoothed over about ten ticks) until i
 every frame. Off whatever the setting in stills, the duel, recorded flights and the play benchmark (their ticks stay in step with the frame).
 F12's `tick ahead` row is its wall time; `outside ticks` leaves it out.
 
+The game speed is an input of one system: the ragdoll physics steps in real time (`World.PhysicsSpeed`, set by `WorldSession` before each tick, 1 without a clock; not hashed, not saved;
+[ragdolls](game/ragdolls.md)), so a ragdoll's outcome, and the position of a body that follows it, differs between speeds, as in the original. Runs at one speed, headless runs and the goldens are unaffected.
+
 **Verified** original clock: 1200/11 seconds per game hour ([game-loop.md](game/game-loop.md)).
 `BodySystem.HoursPerTick=11/36000`; the medical tick takes `TickSeconds` ([character-stats](game/character-stats.md#time)). Navmesh unload uses
 real time (30 s); population unload grace uses game time (towns 60 s, roaming 10 s).

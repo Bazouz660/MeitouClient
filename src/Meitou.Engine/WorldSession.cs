@@ -128,6 +128,7 @@ public sealed class WorldSession : IDisposable
         (heldPrevious, heldCurrent, held) = (World.PreviousSnapshot, World.Snapshot, true);
         World.GameHours = Clock.TotalHours;   // the tick's start, as SimulationTick sets it; the game clock moves when the tick falls due
         World.Daytime = Clock.IsDaytime;
+        World.PhysicsSpeed = (float)(Simulation.Speed > 0 ? Simulation.Speed : Simulation.LastNonZeroSpeed);   // the ragdoll physics steps in real time
         runner ??= new TickRunner();
         runner.Start(World);
         running = true;
@@ -214,6 +215,7 @@ public sealed class WorldSession : IDisposable
     {
         World.GameHours = Clock.TotalHours;
         World.Daytime = Clock.IsDaytime;
+        World.PhysicsSpeed = (float)(Simulation.Speed > 0 ? Simulation.Speed : Simulation.LastNonZeroSpeed);   // the ragdoll physics steps in real time
         long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
         World.RunTick(publish);
         Measure(System.Diagnostics.Stopwatch.GetElapsedTime(t0).TotalMilliseconds);

@@ -130,6 +130,15 @@ internal sealed class RagdollPhysics : IDisposable
         Simulation.Deterministic = true;
     }
 
+    /// <summary>The longest step the original's physics takes (<c>FUN_1407dd060</c>: <c>DAT_1416fb690</c> = 0.04 s, <b>Verified</b>).</summary>
+    public const float MaxStep = 0.04f;
+
+    /// <summary>
+    /// The step of one world tick (docs/game/ragdolls.md "Stepping"): the original's physics gets the frame's real elapsed time, not the game-speed-scaled one (<c>FUN_140788a00</c>), so a
+    /// tick of <paramref name="tickSeconds"/> game seconds at <paramref name="speed"/> times real time is a real step of tickSeconds / speed, clamped to <see cref="MaxStep"/>.
+    /// </summary>
+    public static float StepOf(float tickSeconds, float speed) => MathF.Min(tickSeconds / (speed >= 1 ? speed : 1), MaxStep);
+
     /// <summary>Steps the bodies, on <paramref name="threads"/> when given (<see cref="BepuPhysics.Simulation.Deterministic"/> is on, so the result does not depend on them).</summary>
     public void Step(float dt, IThreadDispatcher? threads = null) => Simulation.Timestep(dt, threads);
 
