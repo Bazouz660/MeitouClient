@@ -123,9 +123,12 @@ public sealed partial class DialogueSystem
                     TalkToLeader(world, c, mc, target, tc);
                     break;
                 case DialogueActions.ArrestTarget when tc is not null:
-                    ArrestMemory(world, me, mc, target, tc);
-                    Arrests?.ArrestFromDialogue(world, me, target);
+                {
+                    bool capture = Arrests?.CapturesInTown(world, me, tc) == true;   // one answer for the memory and the task
+                    ArrestMemory(world, me, mc, target, tc, capture);
+                    Arrests?.ArrestFromDialogue(world, me, target, capture);
                     break;
+                }
                 case DialogueActions.TagEscapedSlave when tc is not null:
                     Locks.FixtureRegistry.TagEscaped(world, tc);
                     break;
@@ -243,15 +246,13 @@ public sealed partial class DialogueSystem
     }
 
     /// <summary>
-    /// DA_ARREST_TARGET's memory (<c>FUN_140680560</c>): in the speaker's home town (and the target no animal) the target's squad tags the speaker MY_CAPTOR; elsewhere the speaker's squad
-    /// tags the target TEMP_ENEMY.
+    /// DA_ARREST_TARGET's memory (<c>FUN_140680560</c>): when the speaker captures (<see cref="Crime.ArrestSystem.CapturesInTown"/>: in his own town, the target no animal) the target's
+    /// squad tags the speaker MY_CAPTOR; otherwise the speaker's squad tags the target TEMP_ENEMY.
     /// </summary>
-    void ArrestMemory(World world, CharacterId me, CharacterCold? mc, CharacterId target, CharacterCold tc)
+    void ArrestMemory(World world, CharacterId me, CharacterCold? mc, CharacterId target, CharacterCold tc, bool capture)
     {
         if (mc is null) return;
-        bool inTown = world.Squads.Find(mc.SquadId) is { Town: >= 0 } squad && Position(world, me) is { } here && TownAt(here) == squad.Town
-            && tc.Fighter?.IsAnimal != true && tc.Appearance?.Animal is null;
-        if (inTown) Memory.Remember(world, tc.SquadId, me, MemoryTag.Captor);
+        if (capture) Memory.Remember(world, tc.SquadId, me, MemoryTag.Captor);
         else Memory.Flag(world, mc.SquadId, target, MemoryTag.TempEnemy);
     }
 

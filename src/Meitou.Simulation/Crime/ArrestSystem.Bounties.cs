@@ -232,16 +232,24 @@ public sealed partial class ArrestSystem
 
     /// <summary>
     /// <c>DA_ARREST_TARGET</c> (29, <c>FUN_140680560</c>): in his own town the speaker captures the target and cages it (the original's tasks 240 and 112: an arrest with no fine);
-    /// elsewhere he and his squad attack it (task 4). False: the speaker is busy, or either is gone or down.
+    /// elsewhere he and his squad attack it (task 4). <paramref name="capture"/> is <see cref="CapturesInTown"/>, asked once by the caller, which tags the memory by the same answer.
+    /// False: the speaker is busy, or either is gone or down.
     /// </summary>
-    public bool ArrestFromDialogue(World world, CharacterId guard, CharacterId target)
+    public bool ArrestFromDialogue(World world, CharacterId guard, CharacterId target, bool capture)
     {
         var table = world.Characters;
         if (!table.TryResolveNext(guard, out int g) || table.Cold(g) is not { IsPlayer: false, Medical.Incapacitated: false, Carrying.IsNone: true } || Busy(guard)) return false;
         if (!table.TryResolveNext(target, out int t) || !table.Next[t].Alive || table.Cold(t) is not { IsImprisoned: false, CarriedBy.IsNone: true }) return false;
-        Start(world, g, t, force: true);
+        Start(world, g, t, force: true, capture);
         return true;
     }
+
+    /// <summary>
+    /// DA 29's one predicate (<c>FUN_140680560</c> case 0x1d, Verified): the guard stands in his own town (<see cref="InOwnTown"/>) and the target is no animal (vfunc <c>0x248</c>) - capture
+    /// (tasks 240 and 112, the target's squad remembers him as its captor); else attack (task 4, his squad tags the target a temporary enemy).
+    /// </summary>
+    public bool CapturesInTown(World world, CharacterId guard, CharacterCold target) =>
+        world.Characters.TryResolveNext(guard, out int g) && InOwnTown(world, g) && !SquadRegistry.IsAnimal(target);
 
     /// <summary>
     /// The bounty desk's <c>DA_PAY_BOUNTY</c> (10, <c>FUN_140680560</c>, economy.md 11.4, <b>Observed</b>): the body <paramref name="carrier"/> carries pays its unclaimed entry for the

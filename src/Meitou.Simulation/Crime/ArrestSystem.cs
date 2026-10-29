@@ -384,7 +384,8 @@ public sealed partial class ArrestSystem(CrimeSystem crimes, GameConstants const
 
     // ------------------------------------------------------------------ fine or arrest
 
-    void Start(World world, int g, int t, bool force)
+    /// <summary><paramref name="capture"/> false: the guard attacks instead of arresting, in his own town too (a dialogue's animal target).</summary>
+    void Start(World world, int g, int t, bool force, bool capture = true)
     {
         var table = world.Characters;
         var gc = table.Cold(g)!;
@@ -392,7 +393,7 @@ public sealed partial class ArrestSystem(CrimeSystem crimes, GameConstants const
         var guard = table.IdOf(g);
         var target = table.IdOf(t);
         int bounty = tc.Bounties?.AmountFor(gc.Faction) ?? 0;
-        if (!InOwnTown(world, g))
+        if (!capture || !InOwnTown(world, g))
         {
             Attack(world, g, t);
             Note(world, ArrestEventKind.Attack, guard, target, gc.Faction, bounty);
