@@ -257,13 +257,14 @@ public sealed partial class ProductionSystem
     /// player character, <b>Observed</b>: a downed character in the building the carrier stands in, not carried,
     /// not caged (223: not in a bed either, special state 0). Engine choices: the building is the player's complete building with doors whose footprint holds the carrier (the original's
     /// "home" of 223 is the Ownerships' +0x38, whose value for the player faction is <b>Unknown</b>); an intruder is knocked out, alive, and neither of the carrier's faction nor an ally (the
-    /// sensed list's exclude bits 0x201 are <b>Unknown</b>); the extra test of 273 (a character vfunc 0x118 above 0) is taken as true. The goal is outside the door (223 / 224,
+    /// sensed list's exclude bits 0x201 are <b>Unknown</b>); 273 is a town finder (<see cref="FindTownIntruder"/>). The goal is outside the door (223 / 224,
     /// <c>Task_TakeIntruderOutside</c>) or outside the town (273 / 274, <c>Task_TakeIntruderOutsideTown</c>).
     /// </summary>
     (CharacterId Id, Vector2 Goal)? FindIntruder(World world, int slot, CharacterCold cold, HashSet<CharacterId> lifted, ErrandKind kind)
     {
         var table = world.Characters;
         var at = table.Next[slot].Position;
+        if (kind == ErrandKind.OutOfTown) return FindTownIntruder(world, slot, cold, lifted);
         if (EnclosedAt(world, at) is not { } site) return null;
         CharacterId? best = null;
         float bestD = float.MaxValue;
@@ -279,6 +280,44 @@ public sealed partial class ProductionSystem
             if (d <= ErrandSight && d < bestD) (best, bestD) = (id, d);
         }
         return best is { } found ? (found, OutsideGoal(world, site, at, kind)) : null;
+    }
+
+    /// <summary>
+    /// The finder of job 273 (<c>FUN_14099c250</c>, <b>Observed</b>): the carrier stands in a town of the player's and a downed character, not carried or caged, stands in that same town inside its
+    /// walls (<c>amInsideTownWalls</c>, <see cref="Kidnap.TownDutySystem.AmInsideTownWalls"/>; true without that system); no building is needed, so a body in a courtyard counts.
+    /// </summary>
+    (CharacterId Id, Vector2 Goal)? FindTownIntruder(World world, int slot, CharacterCold cold, HashSet<CharacterId> lifted)
+    {
+        var table = world.Characters;
+        var at = table.Next[slot].Position;
+        if (PlayerTownAt(world, at) is not { } town) return null;
+        var walls = world.SystemOf<Kidnap.TownDutySystem>();
+        CharacterId? best = null;
+        float bestD = float.MaxValue;
+        for (int s = 0; s < table.HighWater; s++)
+        {
+            if (s == slot || !table.Next[s].Alive || table.Cold(s) is not { Medical: { Unconscious: true, Dead: false } } body) continue;
+            var id = table.IdOf(s);
+            if (lifted.Contains(id) || givenUp.Contains(id) || body.IsImprisoned || !body.CarriedBy.IsNone || !CarrySystem.CanBeLifted(body)) continue;
+            if (Carry!.Friendly(cold, body) || PlayerTownAt(world, table.Next[s].Position) != town) continue;
+            if (walls is not null && !walls.AmInsideTownWalls(world, table.Next[s].Position)) continue;
+            float d = Gap(at, table.Next[s].Position);
+            if (d <= ErrandSight && d < bestD) (best, bestD) = (id, d);
+        }
+        return best is { } found ? (found, OutsideTownGoal(world, town, at)) : null;
+    }
+
+    /// <summary>The player's town (of the player's faction) a point lies in: the nearest by centre within its radius, or null.</summary>
+    static PlayerTown? PlayerTownAt(World world, Vector3 at)
+    {
+        PlayerTown? best = null;
+        float bestD = float.MaxValue;
+        foreach (var town in world.Buildings.Towns)
+        {
+            float d = Gap(town.Position, at);
+            if (town.Owner == world.Player.Faction && d <= town.Radius && d < bestD) (best, bestD) = (town, d);
+        }
+        return best;
     }
 
     /// <summary>A point lies in one of the player's complete buildings with doors (<see cref="EnclosedAt"/>): the context menu's Throw out of home.</summary>
@@ -306,28 +345,29 @@ public sealed partial class ProductionSystem
     /// </summary>
     Vector2 OutsideGoal(World world, BuildSite site, Vector3 from, ErrandKind kind)
     {
+        if (kind == ErrandKind.OutOfTown && world.Buildings.FindTown(site.Town) is { } town) return OutsideTownGoal(world, town, from);
         var centre = new Vector2(site.Position.X, site.Position.Z);
         var start = new Vector2(from.X, from.Z);
-        Vector2 origin = centre, dir;
-        float distance;
-        if (kind == ErrandKind.OutOfTown && world.Buildings.FindTown(site.Town) is { } town)
-        {
-            origin = new Vector2(town.Position.X, town.Position.Z);
-            float far = 0;
-            foreach (var other in world.Buildings.All)
-                if (other.Town == town.Number) far = MathF.Max(far, Vector2.Distance(origin, new Vector2(other.Position.X, other.Position.Z)));
-            dir = start - origin;
-            distance = far + OutsideTown;
-        }
-        else
-        {
-            var door = world.Fixtures.DoorPicks.Where(d => d.Building == site.Id).OrderBy(d => Gap(d.Position, from)).FirstOrDefault();
-            var doorAt = door is null ? centre : new Vector2(door.Position.X, door.Position.Z);
-            dir = door is null ? start - centre : doorAt - centre;
-            origin = doorAt;
-            distance = OutsideDoor;
-            if (door is null) distance = (Settings.Footprint?.Invoke(site.Record) ?? 0) + OutsideDoor;
-        }
+        var door = world.Fixtures.DoorPicks.Where(d => d.Building == site.Id).OrderBy(d => Gap(d.Position, from)).FirstOrDefault();
+        var doorAt = door is null ? centre : new Vector2(door.Position.X, door.Position.Z);
+        var dir = door is null ? start - centre : doorAt - centre;
+        float distance = door is null ? (Settings.Footprint?.Invoke(site.Record) ?? 0) + OutsideDoor : OutsideDoor;
+        return Outward(world, doorAt, dir, distance);
+    }
+
+    /// <summary>Past the town's farthest building by <see cref="OutsideTown"/>, on the side of <paramref name="from"/> (the carrier).</summary>
+    Vector2 OutsideTownGoal(World world, PlayerTown town, Vector3 from)
+    {
+        var origin = new Vector2(town.Position.X, town.Position.Z);
+        float far = 0;
+        foreach (var other in world.Buildings.All)
+            if (other.Town == town.Number) far = MathF.Max(far, Vector2.Distance(origin, new Vector2(other.Position.X, other.Position.Z)));
+        return Outward(world, origin, new Vector2(from.X, from.Z) - origin, far + OutsideTown);
+    }
+
+    /// <summary>The point <paramref name="distance"/> from <paramref name="origin"/> along <paramref name="dir"/>, pulled in towards the origin until the ground is walkable.</summary>
+    static Vector2 Outward(World world, Vector2 origin, Vector2 dir, float distance)
+    {
         dir = dir.LengthSquared() > 1e-4f ? Vector2.Normalize(dir) : Vector2.UnitX;
         for (int tries = 0; tries < 4; tries++, distance *= 0.75f)
         {
