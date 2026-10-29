@@ -232,11 +232,11 @@ is row 241 "Looting resources", the effect 148 (`LOOTED_STORABLE_ITEMS`) of goal
 not standing: down, asleep, imprisoned, [ui-input](ui-input.md#context-menu-verbs)) runs `Task_Kidnapping`, a `Task_LiftSomething` whose
 arrival (vfunc 1, `FUN_14034ffa0`) first rolls:
 - The victim's squad tags the kidnapper TEMP ENEMY and the kidnapper gets a pending Kidnapping (code 15) against the victim's faction.
-- **Chance** (`Character::getKidnappingChance`, also the verb's column): 100 for a down victim that is not getting up (+0x278); else
+- **Chance** (`Character::getKidnappingChance` `FUN_140885600`, also the verb's column): 100 for a down victim (`isDown`: dead, out, ragdolled or carried, posture 3+) that is not getting up (+0x278; Meitou `GettingUpUntil`); else
   the stealth KO's formula ([combat](combat.md#stealth-knock-out)) with the victim's effective strength in place of its toughness and no
   sense terms. Roll uniform 0..100; taken when roll <= chance.
 - **Taken**: a victim neither dead nor unconscious is knocked out for lerp(2, 300, kidnapper assassination x 0.01) s (raw stat); assassination
-  XP 100; then the lift.
+  XP 100 is given only in that case (**Verified**, `FUN_14034ffa0`: the same `+0x5b9`/`+0x5bc` test guards both; a hit on a down victim gives none); then the lift.
 - **Failed**: the victim perceives the kidnapper (the kidnapper's status `+0x110` = 250, the recently-wanted marker); its town's alarm is raised at the
   kidnapper (code 15, [town alarms](economy.md#town-alarms)); a sleeper (state 1) gets order 116 Getting out of bed; its squad tags the
   kidnapper TEMP ENEMY and long-term 1 (intruder) and says event 8 to it; assassination XP 300; the task ends; a sleeper wakes (state 0) and
