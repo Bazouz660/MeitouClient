@@ -64,8 +64,8 @@ and stealth x 5). Each looker keeps a meter per target (`SensoryData::SpottingPe
   `FUN_1408586d0` shows, for entries younger than 4 s (`DAT_14168bf24`; the loop drops the first stale entry and stops), only for a player-owned sneaker (**Observed**: its faction object's `+0x250` or `FUN_140856bc0`), and none
   for a looker that is being carried (`+0x3d4`, **Verified** [carry-loot](carry-loot.md)), an `arrow.mesh` entity per looker (`FUN_1405dc7d0`, pooled, render
   queue 0x57): dir = looker - sneaker (3D), tail at sneaker + (0, 12, 0) + dir x min(|dir| - 7, 15) (no skip when negative),
-  turned from -X onto dir, unscaled. The mesh runs from its origin (shaft radius 0.5) to the tip at -X 10, head ±1.2
-  (**Verified**, read with `OgreMeshReader`). Colour red 0xdd0000 detected, yellow 0xffdd00 noticing, green 0x00ff00 when a
+  turned from -X onto dir, then the node is scaled (0.5, 0.35, 0.35) in its own frame (**Verified**: `Node::setScale` with `DAT_14167e8d8` 0.5 and `DAT_141695190` 0.35).
+  The mesh runs from its origin (shaft radius 0.5) to the tip at -X 10, head ±1.2 (**Verified**, read with `OgreMeshReader`), so the drawn arrow is 5 long, shaft radius 0.175, head ±0.42. Colour red 0xdd0000 detected, yellow 0xffdd00 noticing, green 0x00ff00 when a
   looker test (vtable +0x3f0, **Unknown**) passes. Material (`FUN_1409b7830`): `debug_marker` cloned as `debug_#rrggbb`,
   pass 0 `colour` = (rgb, 1); with its last argument set (this call) pass 1 is kept as (rgb, 0.2), else removed. The
   sneaker's state +0xe8 (`stealthUnseen`, **Observed** `FUN_1408586d0`) becomes 0 when it is fighting or a looker's meter is red, 2 when only yellow, else 1 (unseen).
