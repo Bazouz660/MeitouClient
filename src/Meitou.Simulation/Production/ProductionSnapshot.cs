@@ -56,6 +56,16 @@ public sealed record CraftView(IReadOnlyList<(string Key, string Name, float Pro
 /// <summary>Something a bench can craft, with its hours and inputs per item, and whether research and the bench level allow it now.</summary>
 public sealed record CraftOptionView(string Key, string Name, CraftKind Kind, int Level, float Hours, IReadOnlyList<(string Name, float PerItem)> Inputs, bool Unlocked);
 
+/// <summary>
+/// What a bench's current smith would make of one queued craft (<c>FUN_1402bcf60</c>): <paramref name="Quality"/> the armour or crossbow quality (5 to 95; -1 for the other kinds); for a
+/// weapon <paramref name="Model"/> the predicted model's name (null for the other kinds), <paramref name="ModelChanged"/> when it differs from the queued one and
+/// <paramref name="MaterialCost"/> the weapon's <c>material cost</c>; <paramref name="Critical"/> the shown critical chance in percent (-1: no row).
+/// </summary>
+public readonly record struct CraftPrediction(int Quality, string? Model, bool ModelChanged, int MaterialCost, int Critical);
+
+/// <summary>A crafting bench's current smith (<see cref="Machine.Smith"/>): his name, his effective level of the bench's stat, the stat multiplier's penalty in percent (0: none) and the prediction per queued craft.</summary>
+public sealed record CraftSmithView(string Name, int Skill, int Penalty, IReadOnlyList<CraftPrediction> Entries);
+
 /// <summary>A machine's power as the host shows it: a consumer's demand and grant, a generator's output and load, a battery's flow and store (docs/game/buildings-production.md "Power").</summary>
 public enum PowerKind : byte { Consumer, Generator, Battery }
 

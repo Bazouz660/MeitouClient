@@ -135,6 +135,11 @@ public sealed class Machine
     public bool Jammed => HasEmptyInputs || OutputBlocked;
     /// <summary>Characters working it this tick (derived; not saved, not hashed).</summary>
     public int Operators { get; set; }
+    /// <summary>
+    /// The character that last worked a crafting bench: the exe's operator hand (building <c>+0x4d0</c>, written by each operator's tick in <c>FUN_1402b5a40</c> and never cleared), which the
+    /// Craft tab's Current Smith reads. Derived; not saved, not hashed (the original's handle is not saved either).
+    /// </summary>
+    public CharacterId Smith { get; set; } = CharacterId.None;
     /// <summary>Operators last tick: what a consumer's draw is scaled by (the grid runs after the operators, so its result applies one tick later).</summary>
     public int LastOperators { get; set; }
     /// <summary>The power factor its work is scaled by: granted / demand for a consumer (1 with no demand); health is <see cref="Health"/> (docs/game/buildings-production.md "Power").</summary>

@@ -965,6 +965,32 @@ Overview tab 2 (`ResearchTab`), part of `ManagementScreen` (constructor `FUN_140
 - Meitou: `ResearchQueueList` rows are plain text (the original's `TechItemViewData` cells are **Unknown**); a click on a line queues it, on a queue row takes it off; the wheel
   scrolls the blueprint lines a line per notch (no bar drawn); the description lines use the DatapanelGUI row geometry; the DESCRIPTION captions are inset 8 px at 1080 (engine choice).
 
+### Craft tab
+
+Overview tab 3 (`CraftingQueue`, constructor `FUN_1402bf0f0`; Meitou: `PlayerInterface.Crafting.cs`; the rules are in [buildings-production](buildings-production.md#crafting)). `CraftQueue` is an
+ItemBox of the bench's queue (building `+0x498` deque, filled by `FUN_1402b5ca0`, the ITEMS click `FUN_1402b9770` and the save loader); its tooltip callback `FUN_1402be650` sets the hovered index
+and calls `FUN_1402bcf60`, which writes into `QueueDescriptionPanel2` (the ingredients and the item's own tooltip rows come from `FUN_1402b6b40`, Panel 1 and 2). A hovered ITEMS row
+has a different description, `FUN_1402b79b0` ("Estimated Craft Time:", "-Materials Cost:", "-Fabrics Cost:"; **Verified** strings; Meitou's option description is not that, **Unknown**).
+- **Queue entry description** (`FUN_1402bcf60`, **Verified** unless marked): `State:` "In production..." and, by the bench's status (building `+0x468`), a second `State:` row in Bad: 0 "Out of resources",
+  1 "Output full", 3 "Upgrade required" (any other status adds none). An entry whose bench hand (entry `+0x18`, copied from the building in `FUN_1402b5ca0`) is null reads `State:`
+  "Not assigned to a craft bench" in Bad instead and skips the status row; Meitou's entries always have a bench, so it never shows. Status 3 is set by `FUN_1402b5680` for an empty queue, or for a
+  zero work factor (slot 109) when the town has no power surplus; `FUN_1402b51c0` returns it to 2 once `+0x3c0` is above 0 (**Observed**; Meitou's `Machine.Status` is 0 / 1 / 2 only, so 3 never shows).
+- `ETA:` (a bar row filled by the entry's progress, `FUN_1406ff250`; Meitou draws no bar): item hours (vfunc `0x328`) x (1 - progress, entry `+0xc`), divided by entry `+0x30` when above 0, as
+  (int)(x x 10) / 10 hours, "{1,num} hr" / "{1,num} hrs" by the whole part, "<" before it at 0. `+0x30` is set by `FUN_1402beb30` from the tick's work and zeroed at the start of each operator tick
+  (`FUN_1402b5a40`); its unit is **Unknown**, so Meitou divides by nothing (the idle value).
+- Only when the bench has an operator (the hand at building `+0x4d0`, written by every operator's tick and never cleared, so the last one; Meitou: `Machine.Smith`, derived, not saved): `-Current Smith:`
+  name + " (skill: {1,num}{2})" with the effective level of the bench's stat (`FUN_140884ac0`, as the Current Skill line) and, when the stat multiplier with all six terms (`FUN_140884060`:
+  (int)((1 - m) x 100)) is not 0, {2} = Bad " (" + {1,num=fix,p=0} of the negated value + ")" and then the Secondary colour. Without an operator the function ends after `ETA:`.
+- The rest by the item's class (vfunc `0x2e8` Weapon and Crossbow, `0x2e0` Armour, `0x2d8` Crossbow only; Robotic limbs (`RobotLimbItem`), backpacks and plain items answer none: **Verified**, vtables):
+  Armour and Crossbow (`0x2e0` or `0x2d8`): `-Predicted Result:` the grade name (`FUN_1402b5f90`: below 11 Prototype, to 20 Shoddy, 40 Standard, 60 High, 80 Specialist, above Masterwork) of the quality
+  `FUN_14082e6b0` gives the smith's int level with no critical (tier from 20 / 40 / 60 / 80, quality 5 / 20 / 40 / 60 / 80 / 95), coloured by `FUN_140162350` of the quality. A Weapon (only `0x2e8`):
+  `-Material Costs:` the weapon record's `material cost`, then `-Predicted Result:` the model name of `FUN_1402bb020` (the best model of the player-weapons maker at or below the smith's level and the
+  queued weapon's level that the bench lists and research enabled; the default model otherwise), in Main, or Bad when it is not the queued model. Meitou takes the model from
+  `ProductionSystem.WeaponModel` (the craft's own pick, so the prediction is what a craft without a critical makes; the original's default model is **Unknown**, Meitou uses the bench's lowest).
+  `-Critical Success Chance:` for Weapon, Armour and Crossbow: `FUN_1402b5900` of the **first** queued craft (whichever entry is hovered) x 100, truncated and clamped to 0..100, "{1,num}%".
+- Meitou: the rows go to `QueueDescriptionPanel2` and a name and ingredient list to Panel 1; the smith's level comes from `World.EffectiveSkill` (the Current Skill total), while the craft itself still rolls
+  with the stat x its default multiplier (`ProductionSystem.CraftStep`).
+
 ### Squads tab
 
 Overview tab 4 (`SquadsTab`), class `SquadManagementScreen` (RTTI; constructor `FUN_14049b7c0`, box `FUN_1404a15c0`). **Observed** (decompile, 2026-10-19)

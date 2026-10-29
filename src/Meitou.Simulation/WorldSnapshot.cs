@@ -429,6 +429,8 @@ public sealed record WorldSnapshot(long Tick, IReadOnlyList<CharacterSnapshot> C
     public Production.ResearchSnapshot Research { get; init; } = Production.ResearchSnapshot.Empty;
     /// <summary>What each of the player's crafting benches can craft (by site), for the Craft tab.</summary>
     public IReadOnlyDictionary<string, IReadOnlyList<Production.CraftOptionView>> Crafts { get; init; } = new Dictionary<string, IReadOnlyList<Production.CraftOptionView>>();
+    /// <summary>Each crafting bench's current smith (by site), for the Craft tab's queue description; a bench nobody has worked has none.</summary>
+    public IReadOnlyDictionary<string, Production.CraftSmithView> Smiths { get; init; } = new Dictionary<string, Production.CraftSmithView>();
 
     static readonly IReadOnlyDictionary<(string Building, int Door), Locks.DoorView> NoDoors = new Dictionary<(string Building, int Door), Locks.DoorView>();
 

@@ -624,8 +624,10 @@ Function 10, `CraftingBuilding` (**Observed** unless noted).
   its `level` (`FUN_1402bcac0` passes it to the item factory, whose limb and crossbow branches hand it to the Gear constructor;
   **Verified**, decompile); Meitou caps it at `tech level` as for armour. Critical chance (`FUN_1402b5900`): (skill -
   threshold)/50, none below 0; threshold for stats 8 and 38 the floor of the skill's tier (80/60/40/20, else 5), else
-  the item level. A weapon below the crafter's skill with no critical comes out as a lower model
-  (`uses_weapon_crafts_weapon_models`; which model is **Unknown**, Meitou takes the best at or below the skill).
+  the item level. A weapon whose level is above the crafter's skill, with no critical, comes out as a lower model
+  (`FUN_1402bcac0` -> `FUN_1402bb020`, **Verified**: the player-weapons maker's highest model level at or below the smith's level and the queued weapon's level whose model the bench lists
+  in `weapon crafts` and research has enabled; Meitou: `ProductionSystem.WeaponModel`, the bench's lowest model when none qualifies where the original takes a default record, **Unknown**). A critical on a
+  weapon below the smith's level takes a model from `FUN_1402bb2b0` of min(item level, skill) (not read; Meitou keeps the queued model).
 - **Research** `enable item`, `enable armour`, `enable weapon type`, `enable weapon model`, `enable crossbow`,
   `enable backpack`, `enable robotics` unlock crafts, v0 = the repetition that does it; `repeats` and `repeat mult`
   ([Research](#research) repetitions). Whether a craft no research lists is available from the start is **Unknown** (Meitou: yes).
@@ -634,7 +636,7 @@ Function 10, `CraftingBuilding` (**Observed** unless noted).
   `crit<k>`; partly drawn items as strings `craft partial item sid <k>` (item id), floats `craft partial item val <k>` and int `craft partial item size`
   (**Verified**, `FUN_1402b8440` / `FUN_1402b8ab0`): see Partial levels.
 - **UI:** overview CraftTab (`CraftingStationsList`, `QueueItemsPanel`, `CraftQueue`, `QueueRepeat` "Repeat Queue",
-  `QueueDescriptionPanel1/2`); the building window's `CraftingPanel` (`CraftingName`, `QueueButton` "QUEUE..."); its rows and slot ghosts: [Selected building](ui-screens.md#selected-building).
+  `QueueDescriptionPanel1/2`); the building window's `CraftingPanel` (`CraftingName`, `QueueButton` "QUEUE..."); its rows and slot ghosts: [Selected building](ui-screens.md#selected-building); the description of a hovered queue entry (State, ETA, Current Smith, Predicted Result, Material Costs, Critical Success Chance): [Craft tab](ui-screens.md#craft-tab).
 - Example: Weapon Smith 2033, functionality 2035 (stat 7, tech level 25, consumes Iron Plates 5/100).
 
 ## Farming

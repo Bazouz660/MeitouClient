@@ -657,7 +657,11 @@ public sealed partial class ProductionSystem : ITickSystem
             float s = skill < 0 ? 1 : Lerp(0.5f, 1.4f, skill / 100);
             bool worked;
             if (m.Data.IsResearch) worked = ResearchStep(world, m, s, dt, ref contributions);
-            else if (m.Data.IsCrafting) worked = CraftStep(world, m, skill, s, dt);
+            else if (m.Data.IsCrafting)
+            {
+                m.Smith = table.IdOf(i);
+                worked = CraftStep(world, m, skill, s, dt);
+            }
             // A growing crop with water is tended: the operator plays the farm's clip (engine reading of task 87's start conditions, docs/game/buildings-production.md "Farming").
             else if (m.Farm is not null) worked = HarvestStep(world, m, skill, s, dt) || Tended(m);
             else worked = ProduceStep(world, m, s, dt);

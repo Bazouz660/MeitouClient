@@ -211,7 +211,7 @@ public sealed partial class World
             Held = Player.Held is { } held ? Items.HeldItemView.Of(held) : null, HeldSerial = Player.HeldSerial,
             Buildings = Buildings.Published(), BuildingsRevision = Buildings.Revision, GroundItems = GroundItems.Published(), GroundItemsRevision = GroundItems.Revision, UnlockedBuildings = Research.Unlocked, Doors = Fixtures.PublishedDoors(), Containers = Fixtures.ContainerSpots, Beds = Fixtures.BedSpots, Cages = Fixtures.CageSpots(Characters), DoorPicks = Fixtures.DoorPicks, OwnedTownBuildings = Fixtures.OwnedProperties(Player.Faction), InspectedBuilding = beds?.DetailOf(this, Player.InspectedBuilding) ?? Fixtures.DetailOf(Player.InspectedBuilding, Player.Faction), InspectedRichness = production?.RichnessOf(this, Player.InspectedBuilding), InspectedTurret = combat?.TurretPanelOf(this, Player.InspectedBuilding),
             Machines = OpenContainerView() is { } container ?[.. production is null ? [] : Machines.Published(production.Items), container] : production is null ? [] : Machines.Published(production.Items), MachinesVersion = Machines.Version, Research = production?.ResearchView(this) ?? Production.ResearchSnapshot.Empty, Outposts = production?.OutpostView(this) ?? [],
-            Crafts = production?.CraftsView(this) ?? Snapshot.Crafts };
+            Crafts = production?.CraftsView(this) ?? Snapshot.Crafts, Smiths = production?.SmithsView(this) ?? Snapshot.Smiths };
     }
 
     /// <summary>The dialogue's speech bubbles, then the <see cref="Bark"/>s still due whose speaker has no dialogue line on show; expired barks are dropped.</summary>
@@ -372,6 +372,13 @@ public sealed partial class World
     /// added to the level before the multiplier, instead); for strength the 0.66 of a
     /// disabled arm again as the missing arm penalty. The total is the stat with every term.
     /// </summary>
+    internal static (float Level, int Penalty) EffectiveSkill(CharacterCold cold, Bodies.MedicalState med, Bodies.CharacterStats stats, StatsEnumerated stat)
+    {
+        var factors = (cold.Fighter?.Factors ?? Bodies.StatFactors.None) with { Stun = med.DustStatFactor };
+        float multiplier = med.StatMultiplier(stat, Bodies.StatUse.All, factors);
+        return ((stats[stat] + Combat.CombatSystem.GearBonus(cold, stat)) * multiplier, (int)((1 - multiplier) * 100));
+    }
+
     static SkillTerms SkillTermsOf(CharacterCold cold, Bodies.MedicalState med, Bodies.CharacterStats stats, StatsEnumerated stat)
     {
         var factors = (cold.Fighter?.Factors ?? Bodies.StatFactors.None) with { Stun = med.DustStatFactor };
