@@ -474,6 +474,8 @@ public sealed class AiMind
     public ShoppingList Shopping { get; init; } = new();
     /// <summary>The shop it walks to for goal 118 (set when the target is picked, so the arrival knows what the shop stocks); follows from the target, so not hashed.</summary>
     public TownBuilding? ShopAt { get; set; }
+    /// <summary>The world tick of its next unit at the shop (<c>Task_Shopping</c>, goal 119: a second after it arrived, then a second after each sale); 0: the task is not running. Not saved (the task is not).</summary>
+    public long NextBuyTick { get; set; }
     /// <summary>The investigation's look-about count in seconds (<see cref="Crime.CrimeSystem.LookAboutSeconds"/>; the task starts it at 15).</summary>
     public float LookAbout { get; set; } = Crime.CrimeSystem.FirstLookAboutSeconds;
 
@@ -500,6 +502,7 @@ public sealed class AiMind
         if (!FollowTarget.IsNone) hasher.Add(FollowTarget);
         if (!AssaultTarget.IsNone) hasher.Add(AssaultTarget);
         if (LookAbout != Crime.CrimeSystem.FirstLookAboutSeconds) hasher.Add(LookAbout);
+        if (NextBuyTick != 0) hasher.Add(NextBuyTick);
         Shopping.Hash(ref hasher);
     }
 }

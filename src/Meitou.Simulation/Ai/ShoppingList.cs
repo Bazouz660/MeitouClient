@@ -10,7 +10,7 @@ namespace Meitou.Simulation.Ai;
 /// kept when a roll of 0..100 does not exceed v1. A record with no <c>shopping</c> list at all gets three independent chances of one unit each (food 3, drink 8, first aid 1).
 /// Goal 118 is wanted while some entry has fewer done than wanted (<c>FUN_140998fa0</c> / <c>FUN_140999620</c>); every <c>done</c> goes back to 0 once a new game day has begun and it is
 /// past 07:00 (the game clock's day counter against the list's remembered one, <c>FUN_140998e40</c>), and when the buyer is in another town than the one it last bought in
-/// (<c>FUN_140998da0</c>). Not saved: the original builds it again whenever the character's AI is made.
+/// (<c>FUN_140998da0</c>). Not saved: the original builds it again whenever the character's AI is made. The buying itself is <see cref="AiSystem"/>'s serial step.
 /// </summary>
 public sealed class ShoppingList
 {
@@ -97,11 +97,10 @@ public sealed class ShoppingList
     public int OpenFunction(int k) => wanted[k] > done[k] ? function[k] : -1;
 
     /// <summary>
-    /// Buying at a shop of the town <paramref name="site"/> that stocks the item functions in the bit mask <paramref name="stock"/>: every open entry it stocks is bought up. The
-    /// original buys one unit a second, from a random item of that function, and counts the unit as bought even when the buyer cannot pay or has no room (<c>FUN_1409a14b0</c>,
-    /// <b>Verified</b>); here the whole visit is settled at once and no item or money moves (engine choice: NPC trade is not modelled).
+    /// Starts a buying call at a shop of the town <paramref name="site"/> (<c>FUN_1409a14b0</c> opens with <c>FUN_140998da0</c>, <b>Verified</b>): the list starts over when the buyer is
+    /// in another town than the one it last bought in, and when a new game day has begun.
     /// </summary>
-    public void Visit(int site, int today, int hour, ulong stock)
+    public void Begin(int site, int today, int hour)
     {
         NewDay(today, hour);
         if (town != site)
@@ -109,9 +108,24 @@ public sealed class ShoppingList
             town = site;
             Array.Clear(done);
         }
-        for (int k = 0; k < function.Length; k++)
-            if (wanted[k] > done[k] && Stocks(stock, function[k])) done[k] = wanted[k];
     }
+
+    /// <summary>The first entry that still has units to buy today and whose item function is not in <paramref name="skipped"/> (the functions no seller had an item of in this call); -1 when none.</summary>
+    public int NextOpen(ReadOnlySpan<int> skipped)
+    {
+        for (int k = 0; k < function.Length; k++)
+            if (wanted[k] > done[k] && !skipped.Contains(function[k])) return k;
+        return -1;
+    }
+
+    /// <summary>The item function of entry <paramref name="k"/>.</summary>
+    public int FunctionOf(int k) => function[k];
+
+    /// <summary>Whether entry <paramref name="k"/> still has units to buy today.</summary>
+    public bool IsOpen(int k) => wanted[k] > done[k];
+
+    /// <summary>Counts one unit of entry <paramref name="k"/> as bought. The original does so before the sale, so a unit the buyer cannot pay for or has no room for is used up too.</summary>
+    public void Use(int k) => done[k]++;
 
     /// <summary>Whether the function mask has the item function <paramref name="f"/> (functions of 64 or more are never in a mask).</summary>
     public static bool Stocks(ulong mask, int f) => (uint)f < 64 && (mask >> f & 1) != 0;

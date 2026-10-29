@@ -849,14 +849,17 @@ vfunc 5 `FUN_14050caf0`). TaskData fields: +0x108 desire (a member function, nea
     counter (1 at a new game, `FUN_14036cb80`) is **Observed**.
   - **Finder**: the entries in order, skipping those done; the first with a shop of the town stocking that function wins (a random one of them), else the
     random public building. A shop stocks a function when a type 9 object (a container) in it holds an item with that `item function` (`FUN_14054add0`).
-  - **Buying** (`FUN_1409a14b0`, from `Task_Shopping`'s update `FUN_140337d00` on a timer reset to 1.0 after a sale; **Verified**): takes the first open entry
-    whose function some seller in the building has an item of (a function with none is set aside for the call), a random such item, and adds 1 to `done`
-    **before the sale**, so a buyer who cannot pay ("I can't afford that.") or has no room still uses the unit up; the sale (`FUN_14074a630`) moves the price
-    and the item. One unit per call. A call that buys nothing ends the task, as done if it had bought before, else as failed (**Observed**).
-  - Meitou (`ShoppingList`, `AiSystem.ShopFor`): the list, the desire, the daily and town resets and the stock-based pick (stock read from the shop's
-    containers and its resident squads' stock, by item function). Arrival settles the whole visit at once: every open entry the shop stocks is marked
-    bought (engine choice); **no item or money moves** and the stock is not depleted (NPC trade is not modelled). The fallback is a random shop, not a random
-    public building. What gates the random fallback on the town's `+0x250` (`FUN_1409997f0`) is **Unknown**.
+  - **Buying** (`FUN_1409a14b0`, from `Task_Shopping` 119; **Verified**): `Task_Shopping` (start `FUN_14033a4c0`, update `FUN_140337d00`; the planner gives 119 the precondition `isAtLocation`, so
+    it starts on arrival) holds a timer of 1.0 s, counts it down each update and calls the buy step when it is at or below 0; a sale resets it to 1.0. So the first unit is bought a second after
+    arrival, then one a second. The step takes the first open entry whose function some seller in the building has an item of (a function with none is set aside for the call), a random such item, and adds 1 to
+    `done` **before the sale**, so a buyer who cannot pay ("I can't afford that.") or has no room still uses the unit up. A failed sale tries again at once while that entry has units left (a new random item
+    each time, so a broke buyer uses an entry's whole count in one call), then the next open entry not set aside; the call returns 1 after the first sale. A call that returns 0 ends the task: finished
+    (`FUN_1400522c0`) if it had bought before, else impossible (`FUN_14001953d`, **Observed**: the AI re-plans; whether goal 118 is held back afterwards is **Unknown**). The sale `FUN_14074a630` (price,
+    purse, what happens to the item) is in [economy](economy.md#npc-purchases).
+  - Meitou (`ShoppingList`, `AiSystem.ShopFor`, `AiSystem.BuyForShoppers`, `NpcTrade`): the list, the desire, the daily and town resets and the stock-based pick (stock read from the containers of a building shop and of
+    a house's stock containers, by item function; a trader's carried stock is not looked at, as `FUN_14054add0` does not). Arrival starts the timer (`AiMind.NextBuyTick`, hashed, not saved); a serial step in slot
+    order buys one unit per second with the rules above (`AiSystem.BuyOnce`), moving the cats between the squads' purses and taking the unit out of the stock. A call that buys nothing ends the visit (target and shop
+    forgotten, so the next think picks a shop again). The fallback is a random shop, not a random public building. What gates the random fallback on the town's `+0x250` (`FUN_1409997f0`) is **Unknown**.
 - **214 Relaxing** (`FUN_140998d10`): the current package's own target (package vfunc 1); none: 0. Effect `IS_WORKING`, acted out by 87 Operating
   machine, i.e. using furniture there; with no free one the plan fails and another goal wins.
 - **Hang-around-bar package** (`Package_HangAroundBar`, start vfunc 6; **Observed**): its town is the squad's home town, else the nearest friendly one

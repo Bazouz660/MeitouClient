@@ -368,7 +368,8 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             if ((squad.Ai?.OwnHome ?? squad.HomeBuilding) is { } home)
             {
                 Note(home, TemplateOf(squad.TemplateId).Template);
-                if (squad.Shop is { } shop) (stocks.TryGetValue(home, out var held) ? held : stocks[home] = []).Add(shop);
+                // Only a building shop sells to shoppers: its stock is in containers, which is all FUN_14054add0 looks at (a trader's carried stock is not).
+                if (squad.Shop is { Building: not null } shop) (stocks.TryGetValue(home, out var held) ? held : stocks[home] = []).Add(shop);
             }
         foreach (var squad in world.Squads.All)
             for (int pass = 0; pass < 2; pass++)
@@ -395,7 +396,7 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
 
     /// <summary>
     /// The item functions a shop has on sale, as a bit mask (goal 118 looks for a shop selling what it wants, <c>FUN_14054add0</c>): what its stock containers hold and what the stock of
-    /// the squads living in it holds (a building shop's containers are merged into the squad's stock, a trader's own stock is carried).
+    /// the squads living in it holds (a building shop's containers are merged into the squad's stock; a trader's carried stock is not looked at).
     /// </summary>
     ulong StockOf(World world, TownBuilding building, List<Trading.Shop>? held)
     {
@@ -688,10 +689,14 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
                 else if (GoToSpot(world.Walkability, table, slot, mind, Flat(goTo), GiveUp.Target, SpeedMode.Walk, height: behaviour == AiBehaviour.ToTown ? null : goTo.Y))
                 {
                     Become(table, slot, CharacterTask.Idle);
-                    // At the shop (Task_Shopping 119): it buys what its list wants and the shop sells.
-                    if (behaviour == AiBehaviour.Shop && mind.ShopAt is { } shop)
-                        mind.Shopping.Visit(board.Town, ShoppingList.DayOf(world.GameHours), world.Hour, Places(board.Town).Stock.GetValueOrDefault(shop));
+                    // At the shop (Task_Shopping 119 starts): the first unit is bought a second on, then one a second (BuyForShoppers).
+                    if (behaviour == AiBehaviour.Shop && mind.ShopAt is not null && mind.NextBuyTick == 0)
+                    {
+                        mind.NextBuyTick = world.Tick + BuyTicks(world);
+                        Interlocked.Exchange(ref shopping, 1);
+                    }
                 }
+                else if (behaviour == AiBehaviour.Shop) mind.NextBuyTick = 0;   // walking again: the task is not running
                 break;
             case AiBehaviour.Work:
                 if (mind.Target is null)
@@ -1069,6 +1074,7 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
         var table = world.Characters;
         if (Interlocked.Exchange(ref placing, 0) != 0) Place(table);
         if (Interlocked.Exchange(ref bedding, 0) != 0) LieDown(world);
+        if (Interlocked.Exchange(ref shopping, 0) != 0) BuyForShoppers(world);
         combat ??= world.SystemOf<Combat.CombatSystem>();
         if (Interlocked.Exchange(ref assaulting, 0) != 0) SendAssaults(world);
         bool cadence = world.Tick % Math.Max(1, Settings.PackageEveryTicks) == 0;

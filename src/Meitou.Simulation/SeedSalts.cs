@@ -57,6 +57,8 @@ internal static class SeedSalts
     public const ulong AiDesire = 0x5043UL, AiCommit = 0x5044UL, AiTarget = 0x5045UL;
     /// <summary>The package classes' rolls (<see cref="Ai.AiSystem"/>; the tick is mixed in): a trader's stay and its next town, a passing-by assault's wait.</summary>
     public const ulong AiTraderWait = 0x5046UL, AiTraderTown = 0x5047UL, AiAssaultWait = 0x5048UL;
+    /// <summary>The rolls of a shopper's purchase (<see cref="Ai.AiSystem"/>, under <see cref="RngPurpose.Trade"/>; the tick and the attempt are mixed in): which item, and whether the buyer keeps it.</summary>
+    public const ulong AiShop = 0x504AUL;
     /// <summary>A platoon's short-range patrol point off screen (<see cref="Ai.PlatoonJobs"/>).</summary>
     public const ulong PlatoonPatrol = 0x5050UL;
 

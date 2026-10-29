@@ -1418,7 +1418,7 @@ the original computes in a function of its own counts as 1. Town goals ([ai-task
 wandering and patrolling in town walk to a general node of a public town building in the walker's zone
 (public: the residents' template's `public day`, else the level state's `is public day`, else public; drawn
 among those with a general node, engine choice), shopping to a node of a
-public shop that sells what the character's shopping list wants (as the original's finders, [ai-tasks](game/ai-tasks.md#town-goals); no faction test; nothing is bought), relaxing under a bar package, sitting around (275) and staying home (43; the home is the bar under a bar package) sit on a seat claimed per
+public shop that sells what the character's shopping list wants (as the original's finders, [ai-tasks](game/ai-tasks.md#town-goals); no faction test), then buys from its stock one unit a second ([NPC purchases](game/economy.md#npc-purchases)), relaxing under a bar package, sitting around (275) and staying home (43; the home is the bar under a bar package) sit on a seat claimed per
 member on the package cadence, and the wanderer walks to the nearest town. A bar package (both kinds) reserves
 one table per squad as the original (`AiSystem.PickTable`: public bars tried from a random one, first table no
 other bar squad holds; no bar, or the outdoors kind: a free table placed outdoors in the town; none free: the

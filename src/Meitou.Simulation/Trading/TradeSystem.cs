@@ -700,14 +700,14 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
         return Place(root, copy, units);
     }
 
-    static int Place(Inventory into, ItemInstance copy, int units)
+    internal static int Place(Inventory into, ItemInstance copy, int units)
     {
         copy.Section = "main";
         return into.Add(copy) ? units : units - copy.Quantity;
     }
 
     /// <summary>Takes <paramref name="units"/> off an item's stack, removing it when none are left.</summary>
-    static void Take(Inventory from, ItemInstance item, int units)
+    internal static void Take(Inventory from, ItemInstance item, int units)
     {
         if (units >= item.Quantity) from.Remove(item);
         else item.Quantity -= units;

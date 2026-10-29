@@ -89,6 +89,23 @@ character: within `PlayerSystem.GiveRange` 1000 of its window's owner, `StealRan
 - **Spawn money** (CHARACTER `money item prob` / `min` / `max`; `RootObjectFactory::process`, **Verified**): a newly made non-player character gets money items worth U[min, max]
   when a [0, 1) roll is at most prob (so 80-100 always pass); what does not fit is lost. Meitou: one stack of the `Cats` item (`ItemFactory.AddSpawnMoney`).
 
+### NPC purchases
+
+Goal 118/119 shoppers: the sale is `FUN_14074a630`, called by [`FUN_1409a14b0`](ai-tasks.md#town-goals). One unit per sale; the buyer is the shopper's character, the seller the inventory of a container in the shop building (kind 9 objects only, `FUN_14054add0`: a trader's carried stock is not a seller).
+- **Price** (**Verified**): the item's slot 82 `FUN_1407915b0` (stack price) of the single unit, called with the sell flag = "buyer's faction has `+0x250`" (the player's faction), so an NPC pays the buying
+  price. The trader factor `FUN_14079e6d0` takes its culture price and `buy mult` from an open trade window only (`FUN_14070e2d0` / `FUN_140710e10` read the trade-window set `DAT_142132be8` and answer
+  null/1.0 with fewer than 2 entries), so with none open it is 1, and the market factor needs a town from `FUN_14070d170` (**Observed**: none outside a trade, the tooltip prices of ui-screens.md; the context
+  that function reads, `DAT_142133f90` + type descriptor `141f396a0`, is **Unknown**). A window the player has open at that instant would price the NPC's unit by the player's trader (**Observed**, not modelled).
+  The stolen x0.5 of `FUN_14079e6d0` (stolen from the player's faction) applies in any case; not modelled (**Unknown** whether such stock exists).
+- **Money** (**Verified**): the buyer's purse is `Character` slot 55 `FUN_140791660` (player's faction: the player's purse; else the squad's `Ownerships` at platoon `+0x88`, no squad: 0); it must be at least
+  the price ("I can't afford that.", nothing moves). Spending is slot 54 `FUN_1407965f0` -> `Ownerships` slot 0 `FUN_1407cbaa0`. The seller's is the building's (`FUN_14054e560`: the squad registered on the
+  building, else the owner faction's); the price is added there. Meitou: `Squad.Money` of the buyer's squad, of the squad living in the building (none: lost).
+- **The item** (**Verified** flow, **Observed** names): the stack of 2+ is split (a clone of quantity 1, the original -1), a single item is removed from its section. When the seller inventory's owner is not of
+  the player's faction **and** `rand()/32768 > 0.2` (`DAT_1416885d8`), the add-to-buyer call is skipped: the unit is paid for and gone, the buyer gets nothing (80 %). Otherwise `Character` slot 45 `FUN_1405cb400`
+  puts it into the buyer's inventory; it is never equipped or used here; without room: "No room for that item.", the unit goes back to the stock and nothing is paid.
+- Not modelled: the speech text on failure (slot 56 `FUN_1405c9950`), and the gold floater and "Sell_Item" sound that only show with the GUI option `DAT_142133ae0`. Engine choices: unique items are never sold; a house's
+  goods (`FillHome`) are sellers too.
+
 ### Building shops (**Observed**, decompile)
 
 - **Which** (squad factory `FUN_140583a10`): a squad whose template has vendor lists (`FUN_140959420`, **Verified**: its `vendors`, else by its building designation the owner
