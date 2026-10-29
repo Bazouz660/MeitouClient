@@ -72,6 +72,10 @@ public sealed partial class FirstAidSystem
     const float StrangerMinScore = 0.1f;
     /// <summary>The weight of a patient another medic already works on (<c>DAT_141696c74</c>, <b>Verified</b>).</summary>
     const float TakenWeight = 0.05f;
+    /// <summary>The least score at which a patient already on the sub-target list as this medic's own is taken at once (<c>DAT_14168c9f8</c> as a double, <b>Verified</b>).</summary>
+    const float StickyMinScore = 0.001f;
+    /// <summary>The floor of the score returned for such a patient (<c>DAT_1416bc15c</c> 0.95f, <b>Verified</b>).</summary>
+    const float StickyFloor = 0.95f;
     /// <summary>The weight of a caged prisoner of the pass for owned cages (<c>DAT_141696c80</c>, <b>Verified</b>).</summary>
     const float CagedWeight = 0.25f;
     /// <summary>The splint finder's need weight: <c>needsSplint</c> (<c>FUN_140646400</c>) returns 0.1 (<c>DAT_14167fad0</c>) when a part qualifies, -0.1 for a dead patient, else 0 (<b>Verified</b> by disassembly).</summary>
@@ -175,6 +179,9 @@ public sealed partial class FirstAidSystem
         return n;
     }
 
+    /// <summary>The patient is being eaten (<c>isGettingEaten</c>, +0x279 &amp; 7): passes 1, 2 and 4 of the medic finder skip it; pass 3, pass 5 and the splint finder do not.</summary>
+    static bool Eaten(CharacterCold patient) => patient.Medical is { EatenCountdown: > 0 };
+
     /// <summary>The patient's injuries make an NPC medic pass it by (<c>FUN_140644170</c>, <b>Verified</b>): a stump on a leg, or on both arms.</summary>
     static bool Maimed(MedicalState med)
     {
@@ -202,6 +209,7 @@ public sealed partial class FirstAidSystem
     /// <summary>
     /// The Medic / Robotics finder (<c>FUN_14099f690</c>; 58 passes <paramref name="robotics"/> false, 57 true) and the Medic button's one look. Gates: awake and not fighting; an NPC medic
     /// also waits while its squad fights or it carries someone (engine stand-ins for the goal's desire <c>FUN_140998410</c>: 0.01 with enemies about, 0.1 while carrying someone, else 1). Returns the best patient's slot and score, -1 for none.
+    /// A patient whose (medic, patient) pair is already on the sub-target list (<paramref name="taken"/>) is returned at once from pass 1 or 2 with a score of at least 0.95; passes 1, 2 and 4 skip a patient being eaten.
     /// <list type="number">
     /// <item><b>Allies</b> (sensed allies, not dead): not a robot race unless robotics; not carried by an enemy of the medic; not fighting; an NPC medic skips the maimed (<see cref="Maimed"/>). Score =
     /// <see cref="Need"/> x <see cref="Nearness"/>; the same faction always counts, another one at 0.1 and, for a player medic, only with Heal Allies; x 0.05 when another medic works on it.
@@ -265,13 +273,14 @@ public sealed partial class FirstAidSystem
             foreach (int s in candidates)
             {
                 if (!next[s].Alive || (next[s].Position - origin).LengthSquared() > range2 || table.Cold(s) is not { } other || Skip(s, other)) continue;
-                if (!Allied(world, i, s) || EnemyOf(world, i, s) || other.Race!.IsRobot && !robotics || other.InCombat || CarriedByEnemy(other) || Dist2(s) > range2) continue;
+                if (!Allied(world, i, s) || EnemyOf(world, i, s) || other.Race!.IsRobot && !robotics || other.InCombat || Eaten(other) || CarriedByEnemy(other) || Dist2(s) > range2) continue;
                 if (!cold.IsPlayer && Maimed(other.Medical!)) continue;
                 float need = Need(world, i, s, organic, robotic);
                 if (need <= 0) continue;
                 float score = need * Nearness(world, i, cold, s);
                 bool same = other.Faction == cold.Faction;
                 if (!same && !(score >= StrangerMinScore && (!cold.IsPlayer || healAllies))) continue;
+                if (score > StickyMinScore && taken.Contains((i, s))) return (s, MathF.Max(score, StickyFloor));   // the running pair: taken at once, nothing else is looked at
                 if (OthersOn(taken, i, s) > 0) score *= TakenWeight;
                 if (score > bestScore)
                 {
@@ -297,7 +306,7 @@ public sealed partial class FirstAidSystem
             foreach (int s in candidates)
             {
                 if (!next[s].Alive || (next[s].Position - origin).LengthSquared() > range2 || table.Cold(s) is not { } other || Skip(s, other)) continue;
-                if (other.Race!.IsRobot && !robotics || other.Animal is not null || other.InCombat || EnemyOf(world, i, s) || Dist2(s) > range2) continue;
+                if (other.Race!.IsRobot && !robotics || other.Animal is not null || Eaten(other) || other.InCombat || EnemyOf(world, i, s) || Dist2(s) > range2) continue;
                 if (Relations is { } r2 && r2.Contains(other.Faction) && r2.Factions[other.Faction].NotReal) continue;
                 bool down = other.Medical!.Incapacitated || !other.CarriedBy.IsNone;
                 if (Allied(world, i, s) && !down && !other.IsImprisoned) continue;   // sensed as an ally only: pass 1's
@@ -318,6 +327,7 @@ public sealed partial class FirstAidSystem
                 float need = Need(world, i, s, organic, robotic);
                 if (need <= 0) continue;
                 float score = need * Nearness(world, i, cold, s);
+                if (score > StickyMinScore && taken.Contains((i, s))) return (s, MathF.Max(score, StickyFloor));
                 if (OthersOn(taken, i, s) > 0 || score <= bestScore) continue;
                 best = s;
                 bestScore = score;
@@ -338,7 +348,7 @@ public sealed partial class FirstAidSystem
         if (best < 0 && world.Sight.PlaceOf(i) < 0)
             foreach (int s in candidates)
             {
-                if (!next[s].Alive || Dist2(s) > range2 || table.Cold(s) is not { } other || Skip(s, other) || other.CarriedBy.IsNone || other.Animal is not null) continue;
+                if (!next[s].Alive || Dist2(s) > range2 || table.Cold(s) is not { } other || Skip(s, other) || other.CarriedBy.IsNone || other.Animal is not null || Eaten(other)) continue;
                 if (other.Race!.IsRobot && !robotics) continue;
                 if (!table.TryResolveNext(other.CarriedBy, out int c) || table.Cold(c)?.Faction != cold.Faction) continue;
                 float need = Need(world, i, s, organic, robotic);
@@ -383,7 +393,7 @@ public sealed partial class FirstAidSystem
 
     /// <summary>
     /// The Splint Rigging finder (<c>FUN_14099e240</c>, <b>Verified</b>): X = min(medic skill, the quality of the splint kit it takes: its own inventory or backpack, the fewest charges; none: nothing); sensed allies not of a robot
-    /// race, not carried by an enemy, of the medic's own faction only, whose <c>needsSplint</c>(X) holds weigh 0.1 x <see cref="Nearness"/> (x 0.05 when another medic works on it); the medic itself 0.1.
+    /// race, not carried by an enemy, of the medic's own faction only, whose <c>needsSplint</c>(X) holds weigh 0.1 x <see cref="Nearness"/> (x 0.05 when another medic works on it); the medic itself 0.1. A patient the medic already treats (a pair on the sub-target list) is taken at once.
     /// </summary>
     bool SplintSomeone(World world, int i, List<(int Medic, int Patient)> taken)
     {
@@ -405,6 +415,7 @@ public sealed partial class FirstAidSystem
             var d = next[s].Position - next[i].Position;
             if (d.LengthSquared() > range * range) continue;
             float score = SplintWeight * Nearness(world, i, cold, s);
+            if (score > StickyMinScore && taken.Contains((i, s))) return StartJob(world, i, s, taken, splint: true);   // the running pair is taken at once
             if (OthersOn(taken, i, s) > 0) score *= TakenWeight;
             if (score <= bestScore) continue;
             best = s;
