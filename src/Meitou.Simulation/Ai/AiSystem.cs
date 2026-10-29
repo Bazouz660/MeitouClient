@@ -263,7 +263,8 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             // A turret is only wanted by a member its squad gave one (the nearest free one in <see cref="ClaimTurrets"/>).
             AiBehaviour.Turret => board.TurretClaims.ContainsKey(self.Slot) ? 1 : 0,
             AiBehaviour.TownNode => WanderIn(board.Town, world.Characters.Previous[self.Slot].Position).Count > 0 || OccupiedBuildings(world, board) > 0 ? 1 : 0,
-            AiBehaviour.Shop => Places(board.Town).Shops.Count > 0 ? 1 : 0,
+            // Shopping is wanted while its list has something left to buy today (FUN_140999620), and there is a shop to go to.
+            AiBehaviour.Shop => Places(board.Town).Shops.Count > 0 && mind.Shopping.Pending(ShoppingList.DayOf(world.GameHours), world.Hour) ? 1 : 0,
             // A worker needs a mine, bench or refinery in its town (the finders return 0 without one).
             AiBehaviour.Work => Places(board.Town).Workplaces.Count > 0 ? 1 : 0,
             // Relaxing needs a free seat of the package's bar, sitting around a free chair of the home (claimed in <see cref="ClaimSeats"/>); without a home it sits where it is.
@@ -297,9 +298,10 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
 
     /// <summary>A town's public buildings with a general node by zone, its shops, its public bars and its outdoor tables, as <see cref="RefreshPlaces"/> last found them.</summary>
     sealed record TownPlaces(IReadOnlyDictionary<ZoneCoordinate, TownBuilding[]> Wander, IReadOnlyList<TownBuilding> Shops, IReadOnlyList<TownBuilding> Bars,
-        IReadOnlyList<TownBuilding> OutdoorTables, IReadOnlyList<TownBuilding> Workplaces);
+        IReadOnlyList<TownBuilding> OutdoorTables, IReadOnlyList<TownBuilding> Workplaces,
+        IReadOnlyDictionary<TownBuilding, ulong> Stock);
 
-    static readonly TownPlaces NoPlaces = new(new Dictionary<ZoneCoordinate, TownBuilding[]>(), [], [], [], []);
+    static readonly TownPlaces NoPlaces = new(new Dictionary<ZoneCoordinate, TownBuilding[]>(), [], [], [], [], new Dictionary<TownBuilding, ulong>());
     // Rebuilt in the serial step, read by the think on every worker (derived, not hashed).
     readonly Dictionary<int, TownPlaces> places = [];
 
@@ -331,8 +333,13 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             if (t.BuildingDesignation == DesignationBar) bars.Add(b);
             publicFlag.TryAdd(b, t.PublicDay);
         }
+        var stocks = new Dictionary<TownBuilding, List<Trading.Shop>>(ReferenceEqualityComparer.Instance);
         foreach (var squad in world.Squads.All)
-            if ((squad.Ai?.OwnHome ?? squad.HomeBuilding) is { } home) Note(home, TemplateOf(squad.TemplateId).Template);
+            if ((squad.Ai?.OwnHome ?? squad.HomeBuilding) is { } home)
+            {
+                Note(home, TemplateOf(squad.TemplateId).Template);
+                if (squad.Shop is { } shop) (stocks.TryGetValue(home, out var held) ? held : stocks[home] = []).Add(shop);
+            }
         foreach (var squad in world.Squads.All)
             for (int pass = 0; pass < 2; pass++)
             {
@@ -348,9 +355,31 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
                 if (b.ResidentsTemplate.Length > 0) Note(b, TemplateOf(b.ResidentsTemplate).Template);
             bool IsPublic(TownBuilding b) => world.Fixtures.PublicOf(b.Key) ?? (publicFlag.TryGetValue(b, out bool open) ? open : b.LevelState?.GetBool("is public day", true) ?? true);
             var wander = buildings.Where(b => IsPublic(b) && b.Spots.Any(IsGeneralNode)).GroupBy(b => b.Zone).ToDictionary(g => g.Key, g => g.ToArray());
-            places[site] = new(wander, [.. buildings.Where(b => (b.IsShop || shops.Contains(b)) && IsPublic(b))], [.. buildings.Where(b => (b.IsBar || bars.Contains(b)) && IsPublic(b))],
-                [.. buildings.Where(b => b.IsOutdoorTable)], [.. buildings.Where(b => !b.Destroyed && b.Function is >= 0 and var fn && (WorkFunctions >> fn & 1) != 0)]);
+            var shopList = buildings.Where(b => (b.IsShop || shops.Contains(b)) && IsPublic(b)).ToArray();
+            var stock = new Dictionary<TownBuilding, ulong>(ReferenceEqualityComparer.Instance);
+            foreach (var b in shopList) stock[b] = StockOf(world, b, stocks.GetValueOrDefault(b));
+            places[site] = new(wander, shopList, [.. buildings.Where(b => (b.IsBar || bars.Contains(b)) && IsPublic(b))],
+                [.. buildings.Where(b => b.IsOutdoorTable)], [.. buildings.Where(b => !b.Destroyed && b.Function is >= 0 and var fn && (WorkFunctions >> fn & 1) != 0)], stock);
         }
+    }
+
+    /// <summary>
+    /// The item functions a shop has on sale, as a bit mask (goal 118 looks for a shop selling what it wants, <c>FUN_14054add0</c>): what its stock containers hold and what the stock of
+    /// the squads living in it holds (a building shop's containers are merged into the squad's stock, a trader's own stock is carried).
+    /// </summary>
+    ulong StockOf(World world, TownBuilding building, List<Trading.Shop>? held)
+    {
+        ulong mask = 0;
+        void Add(IEnumerable<Items.ItemInstance> items)
+        {
+            foreach (var item in items)
+                if (data.Items.Info(item.Record) is { } info) mask |= ShoppingList.Bit(info.Function);
+        }
+        foreach (var f in building.Fixtures)
+            if (f.HoldsShopStock && world.Fixtures.Find(f.Id)?.Contents is { } box) Add(box.Items);
+        if (held is not null)
+            foreach (var shop in held) Add(shop.Stock.Items);
+        return mask;
     }
 
     /// <summary>BuildingDesignation BD_BAR.</summary>
@@ -394,24 +423,25 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
     /// <summary>BUILDING <c>node type</c> NODE_GENERAL.</summary>
     const int NodeGeneral = 1;
 
+    static ulong TargetRoll(World world, CharacterId self, AiBehaviour behaviour) =>
+        Rng.Hash(world.Seed, Rng.Key(self), RngPurpose.Think, SeedSalts.AiTarget ^ (ulong)world.Tick << 8 ^ (ulong)behaviour);
+
     /// <summary>
     /// Where a town goal goes (docs/game/ai-tasks.md "Town goals"): wandering in town, a random general node of a random public building of the town in the walker's
-    /// zone (Observed; the original draws from all of those and finds nothing in one without such a node, Meitou draws from those with one); shopping, a random shop of the town,
-    /// at a general node in it, else at it (the original first looks for a shop selling what the character wants to buy: shopping lists are not modelled); the
-    /// wanderer, the nearest town. Null when there is none.
+    /// zone (Observed; the original draws from all of those and finds nothing in one without such a node, Meitou draws from those with one); shopping, a random shop of the town that sells what its list wants
+    /// (<see cref="ShopFor"/>), at a general node in it, else at it; the wanderer, the nearest town. Null when there is none.
     /// </summary>
-    Vector3? TargetFor(World world, CharacterId self, AiBehaviour behaviour, int town)
+    Vector3? TargetFor(World world, CharacterId self, AiBehaviour behaviour, int town, AiMind mind)
     {
-        ulong roll = Rng.Hash(world.Seed, Rng.Key(self), RngPurpose.Think, SeedSalts.AiTarget ^ (ulong)world.Tick << 8 ^ (ulong)behaviour);
+        ulong roll = TargetRoll(world, self, behaviour);
         var places = Places(town);
         switch (behaviour)
         {
             case AiBehaviour.TownNode:
             case AiBehaviour.Shop:
             {
-                var from = behaviour == AiBehaviour.TownNode ? WanderIn(town, world.Characters.Previous[self.Slot].Position) : places.Shops;
-                if (from.Count == 0) return null;
-                var b = from[Rng.Int(roll, from.Count)];
+                var b = behaviour == AiBehaviour.TownNode ? PickFrom(WanderIn(town, world.Characters.Previous[self.Slot].Position), roll) : ShopFor(places, mind, roll);
+                if (b is null) return null;
                 // A general node; in a shop without one a guard post, else any other node (engine choice: where the original's Task_Shopping stands is not decoded).
                 foreach (var accept in (ReadOnlySpan<Func<HomeSpot, bool>>)[IsGeneralNode, s => s.Kind == HomeSpotKind.Guard, s => s.IsNode])
                 {
@@ -438,6 +468,30 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             }
         }
         return null;
+    }
+
+    static TownBuilding? PickFrom(IReadOnlyList<TownBuilding> from, ulong roll) => from.Count == 0 ? null : from[Rng.Int(roll, from.Count)];
+
+    /// <summary>
+    /// The shop goal 118 goes to (<c>FUN_1409997f0</c>, <b>Verified</b>): a random shop of the town selling an item function of the first entry on the character's list that has one,
+    /// the entries taken in order and those already bought skipped (<c>FUN_1409fc070</c>); none sells one: a random shop (the original takes a random public building, <c>FUN_1409fc1b0</c>,
+    /// and the town's shops are all Meitou finds; <b>Observed</b>).
+    /// </summary>
+    static TownBuilding? ShopFor(TownPlaces places, AiMind mind, ulong roll)
+    {
+        var shops = places.Shops;
+        if (shops.Count == 0) return null;
+        var selling = new List<TownBuilding>();
+        for (int k = 0; k < mind.Shopping.Count; k++)
+        {
+            int function = mind.Shopping.OpenFunction(k);
+            if (function < 0) continue;
+            selling.Clear();
+            foreach (var shop in shops)
+                if (places.Stock.TryGetValue(shop, out ulong mask) && ShoppingList.Stocks(mask, function)) selling.Add(shop);
+            if (selling.Count > 0) return selling[Rng.Int(roll, selling.Count)];
+        }
+        return shops[Rng.Int(roll, shops.Count)];
     }
 
     bool AtHomeTown(World world, Squad squad, Blackboard board, CharacterId self)
@@ -597,10 +651,17 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             case AiBehaviour.TownNode:
             case AiBehaviour.Shop:
             case AiBehaviour.ToTown:
-                mind.Target ??= TargetFor(world, table.IdOf(slot), behaviour, board.Town) ?? (behaviour == AiBehaviour.TownNode ? OccupiedSpot(world, board, table.IdOf(slot)) : null);
+                // A shop picked is remembered, so the arrival knows what it sells (the same pick as the target's: the roll is this tick's).
+                if (mind.Target is null && behaviour == AiBehaviour.Shop) mind.ShopAt = ShopFor(Places(board.Town), mind, TargetRoll(world, table.IdOf(slot), behaviour));
+                mind.Target ??= TargetFor(world, table.IdOf(slot), behaviour, board.Town, mind) ?? (behaviour == AiBehaviour.TownNode ? OccupiedSpot(world, board, table.IdOf(slot)) : null);
                 if (mind.Target is not { } goTo) Become(table, slot, CharacterTask.Idle);
                 else if (GoToSpot(world.Walkability, table, slot, mind, Flat(goTo), GiveUp.Target, SpeedMode.Walk, height: behaviour == AiBehaviour.ToTown ? null : goTo.Y))
+                {
                     Become(table, slot, CharacterTask.Idle);
+                    // At the shop (Task_Shopping 119): it buys what its list wants and the shop sells.
+                    if (behaviour == AiBehaviour.Shop && mind.ShopAt is { } shop)
+                        mind.Shopping.Visit(board.Town, ShoppingList.DayOf(world.GameHours), world.Hour, Places(board.Town).Stock.GetValueOrDefault(shop));
+                }
                 break;
             case AiBehaviour.Work:
                 if (mind.Target is null)
@@ -1008,6 +1069,7 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
                     cold.Ai = new AiMind
                     {
                         Squad = squad, MemberIndex = k, Post = OccupierPost(world, board, k) ?? new Vector2(p.X, p.Z), RaceGoals = cold.Race is { } race ? data.Ai.RaceGoals(race.StringId) : [], Resume = squad.Resume,
+                        Shopping = ShoppingList.Make(data.Db, cold.RecordId, world.Seed, Rng.Key(table.IdOf(s))),
                     };
                 }
                 if (cold.Ai.Goal is { } g) board.Crowd[g.Task.Type] = board.Crowd.GetValueOrDefault(g.Task.Type) + 1;

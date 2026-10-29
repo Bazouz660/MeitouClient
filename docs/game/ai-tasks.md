@@ -686,7 +686,7 @@ vfunc 5 `FUN_14050caf0`). TaskData fields: +0x108 desire (a member function, nea
   before it is chosen, so a newly chosen goal gets a fresh target from its finder.
 - Desires (`AI` vtable slots): 19 = 1, 39 = 0.1 (Idleness), 40 = 0.25 (Patrolling, Patrolling town), 41 = 0.5 (Stand at node, Shopkeeper, Static guard,
   general node), 48 = 0.01 + 0.4 x rand (Wandering town, Staying home, Sitting around, Static town guard, Shopping 119). 125 rows desire 1; 102 call a
-  function of their own (sleeping, following, retreating, turrets, Shopping 118: 1 until the shopping list is done).
+  function of their own (sleeping, following, retreating, turrets, Shopping 118: 1 until the shopping list is done, see its entry below).
 
 | Type | Commitment (h) | Crowd |
 |---|---|---|
@@ -816,6 +816,26 @@ vfunc 5 `FUN_14050caf0`). TaskData fields: +0x108 desire (a member function, nea
   flag), the list one those that are shops (vfunc 87, `Building::isAShop`: BF_SHOP furniture inside, residents, and public) and stock the item.
   No faction, membership or hostility test (**Observed**, decompile), so a guild's public home with a counter (the Hub's Thieves Guild
   Watchtower, `public day` true) draws the town's shoppers.
+  - **Shopping list** (**Verified**, `FUN_1409a05b0`, made with the AI by `FUN_1409a1010`; not saved): from the CHARACTER record's `shopping` list (73 base
+    records; ITEM, v0 wanted count, v1 percent chance, v2 pass). Entries hold the item's `item function` (0 = Water is valid), not the item. Passes 0, 1, 2 ...
+    each walk the record in order and take the entries whose v2 is the pass; the list ends at the first pass with no entry (base data: v2 is 0 for 216 entries,
+    1 for 14). An entry is kept when a roll of 0..100 inclusive is not above v1. A record with **no** `shopping` entries gets three independent 50 %
+    entries of 1 unit each: function 3 (food), 8 (Cactus Rum), 1 (first aid kit). A record whose rolls all fail gets none and never shops.
+  - **Desire** (`FUN_140999620` / `FUN_140998fa0`): 1 while some entry has done < wanted, else 0. `done` goes back to 0 when the game clock's day counter
+    (`DAT_1421303d0`+8; the hour is +0) differs from the list's and the hour is above 7 (`FUN_140998e40`, called by the desire, the finder and
+    `FUN_1409995f0`), and when the buyer's town differs from the one the list last bought in (`FUN_140998da0`, called by the buy step). `FUN_140998fa0` has a
+    second reset comparing the list's town with the character's `+0x88` itself, not the town it yields: **Unknown** whether it can fire. That `+8` is a day
+    counter (1 at a new game, `FUN_14036cb80`) is **Observed**.
+  - **Finder**: the entries in order, skipping those done; the first with a shop of the town stocking that function wins (a random one of them), else the
+    random public building. A shop stocks a function when a type 9 object (a container) in it holds an item with that `item function` (`FUN_14054add0`).
+  - **Buying** (`FUN_1409a14b0`, from `Task_Shopping`'s update `FUN_140337d00` on a timer reset to 1.0 after a sale; **Verified**): takes the first open entry
+    whose function some seller in the building has an item of (a function with none is set aside for the call), a random such item, and adds 1 to `done`
+    **before the sale**, so a buyer who cannot pay ("I can't afford that.") or has no room still uses the unit up; the sale (`FUN_14074a630`) moves the price
+    and the item. One unit per call. A call that buys nothing ends the task, as done if it had bought before, else as failed (**Observed**).
+  - Meitou (`ShoppingList`, `AiSystem.ShopFor`): the list, the desire, the daily and town resets and the stock-based pick (stock read from the shop's
+    containers and its resident squads' stock, by item function). Arrival settles the whole visit at once: every open entry the shop stocks is marked
+    bought (engine choice); **no item or money moves** and the stock is not depleted (NPC trade is not modelled). The fallback is a random shop, not a random
+    public building. What gates the random fallback on the town's `+0x250` (`FUN_1409997f0`) is **Unknown**.
 - **214 Relaxing** (`FUN_140998d10`): the current package's own target (package vfunc 1); none: 0. Effect `IS_WORKING`, acted out by 87 Operating
   machine, i.e. using furniture there; with no free one the plan fails and another goal wins.
 - **Hang-around-bar package** (`Package_HangAroundBar`, start vfunc 6; **Observed**): its town is the squad's home town, else the nearest friendly one

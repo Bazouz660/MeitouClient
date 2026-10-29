@@ -455,6 +455,10 @@ public sealed class AiMind
     /// <summary>The role list and hour <see cref="Stance"/> was worked out for (a cache; the stance itself is hashed).</summary>
     internal IReadOnlyList<AiGoal>? StanceFrom { get; set; }
     internal int StanceHour { get; set; } = -1;
+    /// <summary>What it wants to buy (goal 118, <see cref="ShoppingList"/>); made with the mind from its record and the world seed, not saved.</summary>
+    public ShoppingList Shopping { get; init; } = new();
+    /// <summary>The shop it walks to for goal 118 (set when the target is picked, so the arrival knows what the shop stocks); follows from the target, so not hashed.</summary>
+    public TownBuilding? ShopAt { get; set; }
     /// <summary>The investigation's look-about count in seconds (<see cref="Crime.CrimeSystem.LookAboutSeconds"/>; the task starts it at 15).</summary>
     public float LookAbout { get; set; } = Crime.CrimeSystem.FirstLookAboutSeconds;
 
@@ -481,5 +485,6 @@ public sealed class AiMind
         if (!FollowTarget.IsNone) hasher.Add(FollowTarget);
         if (!AssaultTarget.IsNone) hasher.Add(AssaultTarget);
         if (LookAbout != Crime.CrimeSystem.FirstLookAboutSeconds) hasher.Add(LookAbout);
+        Shopping.Hash(ref hasher);
     }
 }
