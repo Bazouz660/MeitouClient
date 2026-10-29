@@ -338,7 +338,7 @@ public static class ShopFiller
         return 5;
     }
 
-    /// <summary>A manufacturer from the list (v0, 0 counting as 100), then a model from its <c>weapon models</c> (v1, 0 counting as 100) whose v0 is the level.</summary>
+    /// <summary>A manufacturer from the list (v0, 0 counting as 100), then a model from its <c>weapon models</c> (v1, 0 counting as 100) whose v0 is the level; none or level 0: the fixed fallback model.</summary>
     internal static (GameRecord Maker, string? Model, int Level)? Maker(VendorList list, GameDatabase db, ref RandomStream rng)
     {
         var makers = list.Manufacturers.Select(m => (Record: db.Find(m.Id), Weight: m.V0 == 0 ? 100 : m.V0)).Where(m => m.Record is not null && m.Weight > 0).ToList();
@@ -351,15 +351,25 @@ public static class ShopFiller
             roll -= m.Weight;
         }
         var models = maker.GetReferences("weapon models").Where(r => db.Find(r.TargetStringId) is not null).ToList();
-        if (models.Count == 0) return (maker, null, 0);
+        // No model or a model of level 0: the factory substitutes manufacturer 1057 and model 1058 (FUN_140580750, Verified).
+        if (models.Count == 0 || Model(models, ref rng) is not { Values.Value0: not 0 } picked)
+        {
+            var (fallback, model, level) = CharacterGenerator.FallbackWeaponMaker(db, maker);
+            return (fallback, model?.StringId, level);
+        }
+        return (maker, picked.TargetStringId, picked.Values.Value0);
+    }
+
+    static GameReference Model(List<GameReference> models, ref RandomStream rng)
+    {
         int total = models.Sum(r => r.Values.Value1 == 0 ? 100 : Math.Max(r.Values.Value1, 0));
         int pick = rng.NextInt(Math.Max(total, 1));
         foreach (var r in models)
         {
             int w = r.Values.Value1 == 0 ? 100 : Math.Max(r.Values.Value1, 0);
-            if (pick < w) return (maker, r.TargetStringId, r.Values.Value0);
+            if (pick < w) return r;
             pick -= w;
         }
-        return (maker, models[^1].TargetStringId, models[^1].Values.Value0);
+        return models[^1];
     }
 }

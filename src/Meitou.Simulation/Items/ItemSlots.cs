@@ -166,8 +166,10 @@ public sealed class ItemSlots
             s.DueAt = world.GameHours + Math.Max(group.MinRespawnHours, 1);   // the data cannot make it: try again later
             return;
         }
-        if (entry.Type == FcsRecordType.WEAPON && ShopFiller.Maker(group.Items, data.Db, ref rng) is { } made)
+        if (entry.Type == FcsRecordType.WEAPON)
         {
+            // No usable manufacturer: no item is made and the slot stays empty, tried again on the next update (FUN_1409540d0, Verified).
+            if (ShopFiller.Maker(group.Items, data.Db, ref rng) is not { } made) return;
             item.CompanyId = made.Maker.StringId;
             item.MaterialId = made.Model ?? "";
             item.Level = made.Level;

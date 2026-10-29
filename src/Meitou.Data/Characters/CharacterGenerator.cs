@@ -342,11 +342,21 @@ public static class CharacterGenerator
         if (modelRef is { } m && m.Values.Value0 != 0)
             return new LoadoutWeapon(weapon) { Section = "hip", Manufacturer = maker, Model = db.Find(m.TargetStringId), Level = m.Values.Value0 };
         // No model or level 0: the game falls back to a fixed manufacturer and model.
-        var fallbackMaker = db.Find("1057-gamedata.base") ?? maker;
-        var fallbackModel = db.Find("1058-gamedata.base");
-        int level = fallbackMaker.GetReferences("weapon models").Where(r => r.TargetStringId == fallbackModel?.StringId).Select(r => r.Values.Value0).FirstOrDefault();
-        level += (int)(fallbackModel?.GetFloat("overall level") ?? 0);
+        var (fallbackMaker, fallbackModel, level) = FallbackWeaponMaker(db, maker);
         return new LoadoutWeapon(weapon) { Section = "hip", Manufacturer = fallbackMaker, Model = fallbackModel, Level = level };
+    }
+
+    /// <summary>
+    /// The weapon factory's substitute when the picked manufacturer has no model or its model's level is 0 (<c>FUN_140580750</c>, <b>Verified</b>): manufacturer <c>1057-gamedata.base</c> with model
+    /// <c>1058-gamedata.base</c>, the level that manufacturer's <c>weapon models</c> entry for the model gives plus the manufacturer's <c>overall level</c> (cut to an int; neither base record has it).
+    /// <paramref name="orElse"/> stands in for a missing 1057 (a stripped data set).
+    /// </summary>
+    public static (GameRecord Maker, GameRecord? Model, int Level) FallbackWeaponMaker(GameDatabase db, GameRecord orElse)
+    {
+        var maker = db.Find("1057-gamedata.base") ?? orElse;
+        var model = db.Find("1058-gamedata.base");
+        int level = maker.GetReferences("weapon models").Where(r => r.TargetStringId == model?.StringId).Select(r => r.Values.Value0).FirstOrDefault();
+        return (maker, model, level + (int)maker.GetFloat("overall level"));
     }
 
     /// <summary>ARMOUR / item <c>races</c> (only these may equip it) and <c>races exclude</c>.</summary>
