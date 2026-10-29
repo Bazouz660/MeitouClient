@@ -142,6 +142,21 @@ public sealed class ConstructionSystem : ITickSystem
 
     static IReadOnlyList<CharacterId> Who(World world, IReadOnlyList<CharacterId> ids) => ids.Count > 0 ? ids : world.Player.Selection.ToArray();
 
+    void OrderBuild(World world, IReadOnlyList<CharacterId> who, BuildSite? target)
+    {
+        // Build and Repair are both Task_Build: an unfinished site is built, a damaged one (progress below its target) repaired; a whole building has nothing to do.
+        if (target is not { NeedsWork: true } site || site.Owner != world.Player.Faction) return;
+        var table = world.Characters;
+        foreach (var id in who)
+            if (table.TryResolveNext(id, out int slot) && table.Cold(slot) is { IsPlayer: true } cold && Able(cold) && HasWorkingArm(cold))
+            {
+                if (site.LevelPlacement is not null) Touch(world, site);
+                if (site.Stalled && !Carries(cold, site) && Source(world, slot, cold, site) is null)
+                    world.Bark(id, Loc.Tr("I don't have any building materials."));
+                Begin(world, slot, site, CharacterTask.Build, CharacterTask.Idle);
+            }
+    }
+
     public void Inputs(World world, IReadOnlyList<SimCommand> commands)
     {
         var table = world.Characters;
@@ -159,6 +174,8 @@ public sealed class ConstructionSystem : ITickSystem
                     AttachWalls(world.Buildings, Data, placed);
                     foreach (int number in placed.Select(s => s.Town).Distinct())
                         if (reg.FindTown(number) is { } town) ReassessTown(world, town);
+                    // Confirm ends by sending the selection to build the last building created (FUN_1404d72a0: order 2 through FUN_1407f9e20, Shift ignored).
+                    if (placed.Count > 0) OrderBuild(world, world.Player.Selection.ToArray(), Root(reg, placed[^1]));
                     break;
                 }
                 case BuildOrder order when world.Fixtures.Find(order.Site) is { Kind: Locks.FixtureKind.Door } door:
@@ -168,19 +185,8 @@ public sealed class ConstructionSystem : ITickSystem
                         if (table.TryResolveNext(id, out int slot) && table.Cold(slot) is { IsPlayer: true } cold && Able(cold)) BeginDoor(world, slot, door);
                     break;
                 case BuildOrder order:
-                {
-                    // Build and Repair are both Task_Build: an unfinished site is built, a damaged one (progress below its target) repaired; a whole building has nothing to do.
-                    if (Root(reg, reg.Find(order.Site)) is not { NeedsWork: true } site || site.Owner != world.Player.Faction) break;
-                    foreach (var id in Who(world, order.Characters))
-                        if (table.TryResolveNext(id, out int slot) && table.Cold(slot) is { IsPlayer: true } cold && Able(cold) && HasWorkingArm(cold))
-                        {
-                            if (site.LevelPlacement is not null) Touch(world, site);
-                            if (site.Stalled && !Carries(cold, site) && Source(world, slot, cold, site) is null)
-                                world.Bark(id, Loc.Tr("I don't have any building materials."));
-                            Begin(world, slot, site, CharacterTask.Build, CharacterTask.Idle);
-                        }
+                    OrderBuild(world, Who(world, order.Characters), Root(reg, reg.Find(order.Site)));
                     break;
-                }
                 case DismantleOrder order:
                 {
                     if (Root(reg, reg.Find(order.Site)) is not { LevelPlacement: null } site || site.Owner != world.Player.Faction) break;
