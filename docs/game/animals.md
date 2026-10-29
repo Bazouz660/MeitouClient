@@ -126,8 +126,8 @@ size), the save writes and reads `age`.
 
 ## Pack animals
 
-- A new animal's inventory (`FUN_14062a130`, slot 0x2c0, **Observed**): a 5 x 4 `backpack_attach` section, the main grid `inventory w` x
-  `inventory h` (4 x 8 when either is below 1), then every `backpack` list entry is made and added equipped, whatever its values (Pack Bull's
+- A new animal's inventory (`FUN_14062a130`, slot 0x2c0, **Observed**; the grid size **Verified**, :79-107): a 5 x 4 `backpack_attach` section, the main grid `inventory w` x
+  `inventory h` (each below 1 becomes 4 and 8 on its own: w=6, h=0 gives 6 x 8; neither set 4 x 8), then every `backpack` list entry is made and added equipped, whatever its values (Pack Bull's
   entry is (0, 0, 0)); a saved inventory replaces this. Pack Beast and Pack Bull carry their CONTAINER this way.
 - Nothing else ties the bag to the squad: it is an ordinary inventory (feeding from squad mates reads it, [simulation](../simulation.md#items-and-eating)).
 

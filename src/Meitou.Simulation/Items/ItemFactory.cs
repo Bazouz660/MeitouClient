@@ -131,11 +131,11 @@ public sealed class ItemFactory(GameDatabase db, GameConstants constants, Func<M
 
     /// <summary>
     /// The main grid of a character of <paramref name="record"/>: an ANIMAL_CHARACTER's <c>inventory w</c> x <c>inventory h</c> (Skimmer and Garru 4 x 8, Beak Thing 8 x 8; <b>Verified</b>
-    /// by probe), a person's <see cref="Inventory.MainWidth"/> x <see cref="Inventory.MainHeight"/>.
+    /// by probe), each below 1 on its own becoming 4 and 8 (<c>FUN_14062a130</c>, <b>Verified</b>); a person's <see cref="Inventory.MainWidth"/> x <see cref="Inventory.MainHeight"/>.
     /// </summary>
     public static (int Width, int Height) MainSize(GameRecord? record) =>
-        record is { Type: Meitou.Data.Fcs.FcsRecordType.ANIMAL_CHARACTER } animal && animal.GetInt("inventory w") > 0 && animal.GetInt("inventory h") > 0
-            ? (animal.GetInt("inventory w"), animal.GetInt("inventory h"))
+        record is { Type: Meitou.Data.Fcs.FcsRecordType.ANIMAL_CHARACTER } animal
+            ? (animal.GetInt("inventory w") is var w and >= 1 ? w : 4, animal.GetInt("inventory h") is var h and >= 1 ? h : 8)
             : (Inventory.MainWidth, Inventory.MainHeight);
 
     /// <summary>
