@@ -30,6 +30,8 @@ sealed partial class PlayerInterface
 
     BuildServices? buildHost;
     bool buildMode;
+    // Build mode paused a running game (the original's requested pause, FUN_1404e65e0): leaving it resumes the speed the player had.
+    bool buildPausedGame;
     string? buildCategory;
     int buildGroup;
     // Which member of the group is chosen (null: its default pick).
@@ -81,13 +83,16 @@ sealed partial class PlayerInterface
             CloseInventoryWindows();
             faithfulScreens.Open("build");
             CloseContextMenu();
-            if (session.Simulation.Speed != 0) session.Simulation.TogglePause();   // a player pause: the speed buttons resume it
+            if (session.Simulation.Speed != 0) { session.Simulation.TogglePause(); buildPausedGame = true; }   // a player pause: the speed buttons resume it
         }
         else
         {
             buildQueue.Clear();
             faithfulScreens.Close("build");
             ShowGhosts();
+            // Confirm, Esc and the window's close all clear the request (FUN_1404d1870 -> FUN_140787d40(0)); a game that was paused before stays paused.
+            if (buildPausedGame && session.Simulation.Speed == 0) session.Simulation.TogglePause();
+            buildPausedGame = false;
         }
     }
 

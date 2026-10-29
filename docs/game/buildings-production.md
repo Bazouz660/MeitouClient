@@ -280,6 +280,11 @@ shows the first failing message in this order (**Verified** unless marked):
   terrain is flattened; outdoor buildings with `path mode` and `build threshold` 0 trigger a navmesh rebuild of their
   area (`FUN_1404d2c80` -> `FUN_1403a66c0`, **Observed**). That a new building starts at progress 0 with nothing
   delivered is **Observed** (the factory's complete flag is false).
+- **Pause** (**Verified**): entering build mode sets the world's requested pause without touching the speed
+  (`FUN_1404e65e0` -> `FUN_140787d40(world, 1)`; paused = request or speed 0). Every exit clears it, so the game runs on
+  at the speed the player had: Confirm (`FUN_1404db180`), the Esc handler (`FUN_14082b010` -> `FUN_1404d4320`, when
+  `FUN_1404d1860` says the mode is on) and the end of the commit (`FUN_1404e4120`) all end in `FUN_1404d1870` ->
+  `FUN_140787d40(world, 0)`. Meitou pauses by speed and resumes only a game that build mode paused.
 
 ### Upgrades
 
