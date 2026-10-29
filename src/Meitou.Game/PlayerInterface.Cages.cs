@@ -6,7 +6,7 @@ namespace Meitou.Game;
 
 /// <summary>
 /// Cages under the pointer (docs/game/ui-input.md "Context menu verbs", the cage rows; the cages are published as <see cref="WorldSnapshot.Cages"/>): a quick right click on an empty cage
-/// picks a locked one's lock, puts the carried captive in a free one (108) or gets the character in (107); held, the cage's menu. Engine choice: the picking magnet and the "Cage" title,
+/// picks a locked one's lock, puts the carried captive in a free one (108) or gets the character in (107) (with Shift held; else the cage's menu opens on the press). Engine choice: the picking magnet and the "Cage" title,
 /// as for beds and containers (a cage has no pick mesh here).
 /// </summary>
 sealed partial class PlayerInterface
@@ -67,11 +67,15 @@ sealed partial class PlayerInterface
     /// <summary>Whether Set Free may take a prisoner out (<c>LockSystem.Conscious</c>, order precondition 125): not dead, knocked out or carried.</summary>
     static bool Conscious(CharacterSnapshot c) => c.Body is not ({ Dead: true } or { Unconscious: true }) && c.CarriedBy.IsNone;
 
-    /// <summary>A right press on a cage (true, with a selection): released quickly, the first of the cage's verbs while it is empty; held, its menu.</summary>
+    /// <summary>
+    /// A right press on a cage (true, with a selection): its menu opens at once, whoever owns it and whether it is occupied, unless Shift is held (<c>FUN_140800250</c>, <b>Verified</b>);
+    /// with Shift, released quickly, the first of the cage's verbs while it is empty, held, its menu.
+    /// </summary>
     bool CageClick(Vector2 p)
     {
         if (SelectedIds().Count == 0 || PickCageAt(p)?.Cage is not { } cage) return false;
         var verbs = CageVerbs(cage);
+        if (!pressShift && Menu(Loc.Tr("Cage"), p, verbs) is { } now) { contextMenu = now; return true; }
         Action? quick = cage.Occupant.IsNone && verbs.Count > 0 ? verbs[0].Give : null;
         return ContextPressOn(p, at => Menu(Loc.Tr("Cage"), at, CageVerbs(cage)), quick);
     }

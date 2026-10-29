@@ -5,7 +5,7 @@ namespace Meitou.Game;
 
 /// <summary>
 /// Doors under the pointer (docs/game/ui-input.md "Building hover and click"): a quick right click sends the nearest selected character to open a closed door or close an open one;
-/// another faction's locked door takes Alt to pick its lock. Pointers: <c>door</c>, <c>lock</c> over the player's own locked door, <c>lockpick</c> over another faction's.
+/// another faction's locked door takes Alt to pick its lock (with Shift held, else its menu opens on the press). Pointers: <c>door</c>, <c>lock</c> over the player's own locked door, <c>lockpick</c> over another faction's.
 /// </summary>
 sealed partial class PlayerInterface
 {
@@ -43,12 +43,14 @@ sealed partial class PlayerInterface
     string DoorPointer((DoorPick Door, bool Locked) pick) => !pick.Locked ? "door" : pick.Door.Owner == session.World.Player.Faction ? "lock" : "lockpick";
 
     /// <summary>
-    /// A right press on a door (true, with a selection): released quickly, the door order, where Alt picks another faction's locked lock; held, its context menu (<see cref="DoorVerbs"/>,
-    /// titled "Door": the door's own name is not published, engine choice).
+    /// A right press on a door (true, with a selection): another faction's locked door opens its context menu (<see cref="DoorVerbs"/>) at once unless Shift is held (<c>FUN_140800250</c>,
+    /// <b>Verified</b>); any other door, released quickly, gives the door order, where Alt picks another faction's locked lock, held, the menu (titled "Door": the door's own name is not
+    /// published, engine choice).
     /// </summary>
     bool DoorClick(Vector2 p, bool alt)
     {
         if (SelectedIds().Count == 0 || PickDoor(p) is not { } pick) return false;
+        if (!pressShift && pick.Locked && pick.Door.Owner != session.World.Player.Faction && Menu(Loc.Tr("Door"), p, DoorVerbs(pick)) is { } now) { contextMenu = now; return true; }
         void Quick() => Say(new DoorOrder([], pick.Door.Id, alt) { Tick = session.World.Tick });
         if (!ContextPressOn(p, at => Menu(Loc.Tr("Door"), at, DoorVerbs(pick)), Quick)) Quick();
         return true;

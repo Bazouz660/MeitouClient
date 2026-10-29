@@ -398,7 +398,7 @@ that activation menu-only; once the ruin becomes an unfinished construction site
 - No order while every selected character is unconscious ("Your selected character is unconscious", `FUN_1407f6f50`).
 - Holding the command button 0.2 s on the same target opens the context menu instead (`FUN_1407a6bc0`). It opens on the press, without the
   hold, for a building whose function is 8 (BF_CAGE), or 22 (BF_DOOR) whose (first) door is locked and not the player's faction's, unless
-  `DAT_142133449` (Shift held, [ai-tasks.md](ai-tasks.md)) is set.
+  `DAT_142133449` (Shift held, [ai-tasks.md](ai-tasks.md)) is set (**Verified**, the tail of `FUN_140800250`: the 0.2 s `DAT_1416885d8` timer compare, function `+0x2f0` 8 or 0x16 with `FUN_1402ea220` on the door and the owner faction `+0x250` null, i.e. not a player faction). Meitou: `CageClick` / `DoorClick` open the menu on the press; with Shift the hold timer and the quick order apply.
 
 **Selection** (`FUN_1407f9000`, `FUN_1407f7f20`, **Observed**). A building does not join the squad selection (+0x208): it goes into the one
 object slot +0x248 (saved as `selected_gui_object`, [save](../formats/save.md)) that also holds an inspected character of another faction.
@@ -495,7 +495,7 @@ the sneak flag +0xd4 unless the fight is on (`isInCombatMode`, CombatClass +0x13
 
 Meitou (`PlayerInterface.ContextMenu.cs`; one method per target: characters, `ContainerVerbs`, `DoorVerbs`, `SiteVerbs` in `PlayerInterface.Build.cs`, `CageVerbs` in `PlayerInterface.Cages.cs`):
 the same labels and order (`VerbOrders`; Meitou's own verbs after), the animals-only filter, the chance column (Stealth KO, Kidnap), Shift on Use giving the job (and on the character verbs listed under [Ordering](ai-tasks.md#perma-jobs)).
-Containers and doors open their menu on a held press (a quick click as before). Built: Put Down, Talk To, Attack Target (hostile), Attack
+Containers and doors open their menu on a held press (a quick click as before); cages, and another faction's locked doors, open it on the press (above). Built: Put Down, Talk To, Attack Target (hostile), Attack
 Unprovoked, Stealth KO, Follow (`FollowOrder`, [simulation](../simulation.md)), Loot, Trade (the player's own character, standing or down: the nearest selected walks over and its inventory opens beside the
 selection's, as the loot window; both offered when `CharacterSnapshot.CanOpenInventory`, the simulation's own `CarrySystem.Openable`, holds: a carried or playing-dead body too, beside Put Down for its carrier), Pick Up and Kidnap (the same pick-up order; Pick Up on the player's own character standing too, when it carries no one: `FUN_1407a6bc0`'s own-faction
 branch adds 26, 45, 31 and, with no selected carrier of it, the pick-up verb for a carriable race not carrying (+0x348) nor carried (+0x3d4), with no down test, **Observed**; Kidnap when the target is not an ally or is a trader, with its chance, also on a sleeper (with Stealth KO, and Attack Unprovoked, Bodyguard, Talk To when not hostile; Loot on a sleeper or a caged character opens it as a pickpocket, [carry-loot](carry-loot.md#theft-and-witnesses); [carry-loot](carry-loot.md#kidnapping)),
