@@ -252,7 +252,8 @@ public sealed class CharacterCold
     public long StealthExposureTick { get; set; } = long.MinValue;
     /// <summary>
     /// The factor on the stealth XP of a hearing check (CharStats <c>+0x174</c>, <c>FUN_1408c7330</c>): 1, x0.7 after each check, back to 1 by the sneak XP step (<see cref="BodySystem"/>).
-    /// Set by <see cref="AggroSystem"/>'s serial commit, which also adds the checks' XP to <see cref="HearingXp"/>; <see cref="BodySystem"/> pays that into Stealth.
+    /// Set by <see cref="AggroSystem"/>'s serial commit, which also adds the checks' XP to <see cref="HearingXp"/>; <see cref="BodySystem"/> pays that into Stealth. Hashed once it leaves its
+    /// start, not saved (the original keeps it in the stats object and no loader writes it: <b>Observed</b>).
     /// </summary>
     public float StealthFactor { get; set; } = 1;
     public float HearingXp { get; set; }

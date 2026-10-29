@@ -145,8 +145,8 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         var pair = k >= 0 ? heard![k] : new HeardPair { Target = target, Generation = other.Generation, Checked = -1 };
         if (pair.Checked >= 0 && world.Tick - pair.Checked < CooldownTicks(world)) return pair.Heard;
         pair.Checked = world.Tick;
-        // The XP step of the check (FUN_1408c7330) is reached by a mover that is not in combat mode, or a crawler (the heard-ability gate FUN_1406643d0).
-        bool xpGate = tc is not null && (speed > 0.01f && !combat || tc.Medical is { Crawling: true });
+        // The XP step of the check (FUN_1408c7330) is reached by a mover that is not in combat mode, or one staying low or crippled (posture 1 or 2, the heard-ability gate FUN_1406643d0).
+        bool xpGate = tc is not null && (speed > 0.01f && !combat || tc.Medical is { Prone: true });
         pair.Heard = Roll(world, table, listener, target, stealth, roll, effects, d2, speed, place, sure, world.Tick < pair.AlarmUntil, xpGate);
         if (k >= 0) heard![k] = pair;
         else (heard ??= []).Add(pair);
