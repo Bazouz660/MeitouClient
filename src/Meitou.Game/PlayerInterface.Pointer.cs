@@ -56,19 +56,16 @@ sealed partial class PlayerInterface
     }
 
     /// <summary>Another faction's hostile character on its feet (not downed, dead or carried): the attack pointer and red outline whatever is selected.</summary>
-    bool StandingHostile(CharacterSnapshot c) => !c.IsPlayer && c.Body is not ({ Dead: true } or { Unconscious: true }) && c.CarriedBy.IsNone && Hostile(c);
+    bool StandingHostile(CharacterSnapshot c) => !c.IsPlayer && c.Conscious && c.HostileToPlayer;
 
     static readonly Vector4 WhiteOutline = new(0.95f, 0.93f, 0.85f, 0.85f);
-
-    /// <summary>Whether a faction is hostile to the player's (the world's relations); set by the host. Without it every other faction counts as hostile.</summary>
-    public Func<int, bool>? HostileFaction { get; set; }
 
     /// <summary>
     /// Whether the character's faction is hostile to the player's, or it is fighting one of the player's characters (a neutral squad robbing them): only a hostile one gets
     /// the attack pointer, the red outline and the quick-attack right click.
     /// </summary>
     bool Hostile(CharacterId id) => session.CurrentSnapshot.Characters.FirstOrDefault(c => c.Id == id) is not { } c || Hostile(c);
-    bool Hostile(CharacterSnapshot c) => c.FightsPlayer || HostileFaction?.Invoke(c.Faction) != false;
+    bool Hostile(CharacterSnapshot c) => c.HostileToPlayer;
 
     (long Tick, Vector2 Mouse, bool Ctrl, bool Alt, string Name, CharacterId? Target) Point()
     {

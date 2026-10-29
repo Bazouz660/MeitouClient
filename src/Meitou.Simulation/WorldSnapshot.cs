@@ -292,6 +292,14 @@ public sealed record CharacterSnapshot(CharacterId Id, CharacterAppearance? Appe
     public bool Asleep { get; init; }
     /// <summary>Down as the original counts it (<see cref="CharacterFacts.Down"/>, <c>FUN_1405c9e10</c>): out cold, dead, playing dead or carried. The menu's down verbs read it.</summary>
     public bool Down { get; init; }
+    /// <summary>Conscious as Set Free's precondition 125 reads it (<see cref="CharacterFacts.Conscious"/>): not dead, out cold or carried.</summary>
+    public bool Conscious { get; init; }
+    /// <summary>Awake: not dead or out cold (<see cref="CharacterFacts.Standing"/>), carried or not; the menu's attack and trade targets.</summary>
+    public bool Standing { get; init; }
+    /// <summary>An animal, which plans with the animal repertoire (<see cref="CharacterFacts.Animal"/>): the menu offers it only the verbs animals have.</summary>
+    public bool Animal { get; init; }
+    /// <summary>Hostile to the player: its faction is hostile to the player's, or it fights one of the player's characters (<see cref="CharacterFacts.HostileToPlayer"/>); the attack pointer and the menu's attack verbs.</summary>
+    public bool HostileToPlayer { get; init; }
     /// <summary>An <see cref="Carrying.OpenLootOrder"/> may open its inventory (<see cref="Carrying.CarrySystem.Openable"/>: down, playing dead or carried, the player's own, a sleeper or a prisoner as a pickpocket): the menu's Loot and Trade.</summary>
     public bool CanOpenInventory { get; init; }
     /// <summary>In a cage: whether it is locked and the sentence (null: not imprisoned).</summary>

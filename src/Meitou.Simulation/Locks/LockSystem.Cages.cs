@@ -28,11 +28,7 @@ public sealed partial class LockSystem
         if (best >= 0) StartWork(world, best, CharacterTask.GoTo, TaskType.RELEASE_PRISONER, cage.Id, order.Prisoner, queued: order.Queued);
     }
 
-    /// <summary>
-    /// Set Free's precondition 125 TARGET_IS_CONSCIOUS (<c>FUN_14099a480</c>, <b>Verified</b>; no row provides it): the prisoner is not dead, unconscious or carried. A ragdolled prisoner
-    /// also fails in the original (not modelled apart from the knock-out).
-    /// </summary>
-    static bool Conscious(CharacterCold c) => c.Medical is not { Incapacitated: true } && c.CarriedBy.IsNone;
+    static bool Conscious(CharacterCold c) => CharacterFacts.Conscious(c);   // Set Free's precondition 125
 
     void GetInInput(World world, GetInCageOrder order)
     {
