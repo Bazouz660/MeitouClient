@@ -799,11 +799,12 @@ public sealed partial class FixtureRegistry
         var cage = c.InWhat is { } id ? Find(id) : null;
         if (cage?.Lock is { EffectivelyLocked: true }) return false;
         bool escape = cage is not null && !c.Kidnapped;
-        if (escape) crimes?.SetPending(world, s, CrimeCode.EscapingPrison, cage!.Owner, CharacterId.None, CrimeSystem.MinTimer);
         if (cage is not null && cage.Occupant == prisoner) cage.Occupant = CharacterId.None;
         Clear(c);
         if (!(cage is not null && crimes?.Factions.NotReal(cage.Owner) == true)) c.Escaped = escape;
         if (escape && c.SlaveState == 1) SetSlave(world, c, 2, c.SlaveOwner);   // a slave getting out is an escaped slave (Task_GetOutOfCage)
+        // The crime is set once the hold is cleared: the setter refuses an imprisoned culprit (FUN_1403554b0 sets it after FUN_140330600, FUN_140852c80).
+        if (escape) crimes?.SetPending(world, s, CrimeCode.EscapingPrison, cage!.Owner, CharacterId.None, CrimeSystem.MinTimer);
         return true;
     }
 

@@ -65,15 +65,18 @@ public sealed partial class CrimeSystem(FactionRelations relations, CrimeSetting
     // ------------------------------------------------------------------ deeds
 
     /// <summary>
-    /// Sets a pending crime on the culprit (the game's setter <c>FUN_140852c80</c>, <b>Observed</b>): refused for a police-like culprit, a victim of the culprit's own faction and a lawless
+    /// Sets a pending crime on the culprit (the game's setter <c>FUN_140852c80</c>, <b>Verified</b>): refused for a police-like culprit, an imprisoned one (<c>+0x2f8</c> = 2), a victim of the culprit's own faction,
+    /// for a free culprit (slave state 0) a victim of the faction it is seen as (<see cref="ArrestSystem.SeenFaction"/>: a working uniform's; <c>FUN_140852c20</c>) and a lawless
     /// victim faction; an Assault does not replace another pending crime (it raises that one's timer to 20); the same code again keeps the booked flag; a new code clears it. The timer
     /// is at least <see cref="MinTimer"/>. True when the crime is now pending. <paramref name="viaWrapper"/>: the original's callers that go through its wrapper <c>FUN_140852e10</c> (police hit,
-    /// caught stealing, fencing, kidnapping seen) also drop the culprit's <see cref="CharacterCold.Freed"/> flag when the crime is set (the other callers do not; <b>Verified</b>).
+    /// caught stealing, fencing, kidnapping seen) also drop the culprit's <see cref="CharacterCold.Freed"/> flag when the crime is set (the other callers do not; <b>Verified</b>). The wrapper also writes the recently-wanted marker first,
+    /// which makes the uniform test a no-op for its callers, so it is skipped for them.
     /// </summary>
     public bool SetPending(World world, int culprit, CrimeCode code, int victimFaction, CharacterId victim, float timer, bool viaWrapper = false)
     {
         var c = world.Characters.Cold(culprit);
-        if (c is null || !c.IsPlayer && code is not (CrimeCode.Assault or CrimeCode.Looting) || IsPoliceLike(world, c) || victimFaction == c.Faction || Factions.Lawless(victimFaction)) return false;
+        if (c is null || !c.IsPlayer && code is not (CrimeCode.Assault or CrimeCode.Looting) || IsPoliceLike(world, c) || c.IsImprisoned || victimFaction == c.Faction
+            || !viaWrapper && c.SlaveState == 0 && victimFaction == ArrestSystem.SeenFaction(c) || Factions.Lawless(victimFaction)) return false;
         timer = MathF.Max(timer, MinTimer);
         if (c.Pending is { } p && p.Code != code && code == CrimeCode.Assault)
         {
