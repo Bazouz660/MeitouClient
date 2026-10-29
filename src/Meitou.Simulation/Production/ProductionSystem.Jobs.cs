@@ -396,7 +396,7 @@ public sealed partial class ProductionSystem
         Stores(store, item) && world.Machines.All.Any(s => !s.Data.IsStorage && s.Output?.Recipe.Item == item.Record);
 
     /// <summary>A loose stack (not the character's own kit) the storage takes and has room for.</summary>
-    static bool Stores(Machine store, Items.ItemInstance item) =>
+    internal static bool Stores(Machine store, Items.ItemInstance item) =>
         item.Section is "main" or "backpack_content" && !item.LockedOn && item.Contents is null && store.Data.Accepts(item.Record, item.Type) && Fits(store.Storage!, item);
 
     /// <summary>

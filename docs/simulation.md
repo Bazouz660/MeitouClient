@@ -839,6 +839,10 @@ every 15 ticks, by `PopulationSystem.GoalDuty` (facts: [ai-tasks](game/ai-tasks.
   container of its own faction (engine reading of the own-shop skip), and takes every food item that fits (`Task_EmptyMachine` moves items while there is room).
 - **212 Confiscating goods** (`AI::findPrisonerWithContraband`): in its town, the first occupied cage (list order) whose prisoner's inventory (not its bag) holds an item stolen for it; at the cage it waits 0.8 s and
   confiscates as a police looter does ([NPC looting](#carrying-rescue-and-looting)); engine choice: whatever the runner's class (base data: only law-enforcement packages list 212).
+- **184 Ditching loot** (`FUN_14059b040`, [rules](game/ai-tasks.md#arrest-and-prison-rows)): a member carrying an item stolen for it (state 121: inventory or worn backpack; none for a lawless faction) walks to the nearest
+  storage (function 2 or 13) of its town within 6517 that takes one, and puts in every stolen item that fits. A member with a home town standing in a TOWN-type town reads the home town's storages, any owner;
+  else the current town's, owned by its faction or the town's (a player town's complete storage machine, else a container fixture, locked or not). Engine choice: only the stolen items go in (the original's
+  Filling machine step is **Unknown**), and the stolen mark stays on them. The planner's state 121 (`PlanContext.Holds`) reads the same items.
 - Occupiers' **36 / 37** town goals walk to a random complete building of the player town (`AiSystem.OccupiedSpot`; the original's target is **Unknown**).
 - Engine choices: sight `AggroSystem.OutdoorSight`, arrival 40 (a cage: its `use range` + 15), 4 short walks before giving up; nothing is hashed until one runs.
 - **Observed** (headless, an owner save, Starving Bandits occupying an outpost whose buildings reach 253 from its centre): the knocked-out player character lying 566 out is left alone; moved

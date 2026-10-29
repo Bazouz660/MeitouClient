@@ -26,7 +26,7 @@ public sealed record TownDutySettings
     public double RefuseHours { get; init; } = 2;
 }
 
-public enum TownDutyKind : byte { Lift, Out, Cage, Food, Confiscate, LootFood, Shoo, Ransack }
+public enum TownDutyKind : byte { Lift, Out, Cage, Food, Confiscate, LootFood, Shoo, Ransack, Stash }
 
 /// <summary>One member's errand of the <see cref="TownDutySystem"/>: an intruder it lifts and carries out or to a cage, or a store it fetches food from.</summary>
 public sealed class TownDuty
@@ -162,7 +162,7 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
             if (!c.Carrying.IsNone) reserved.Add(c.Carrying);
             if (c is { Medical: { Unconscious: true, Dead: false } } && c.InSomething == HeldState.None && CarrySystem.CanBeLifted(c)) downed.Add(s);
         }
-        Span<int> intruders = stackalloc int[5], food = stackalloc int[5], confiscate = stackalloc int[5], loot = stackalloc int[5], shoo = stackalloc int[5], ransack = stackalloc int[5];
+        Span<int> intruders = stackalloc int[5], food = stackalloc int[5], confiscate = stackalloc int[5], loot = stackalloc int[5], shoo = stackalloc int[5], ransack = stackalloc int[5], stash = stackalloc int[5];
         foreach (var squad in world.Squads.All)
         {
             if (squad.Ai is null || squad.Members.Count == 0) continue;
@@ -172,6 +172,7 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
             loot.Fill(-1);
             shoo.Fill(-1);
             ransack.Fill(-1);
+            stash.Fill(-1);
             foreach (var member in squad.Members)
             {
                 if (!table.TryResolveNext(member, out int slot) || !Free(world, slot) || Busy(member)) continue;
@@ -184,6 +185,7 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
                 if (shoo[role] < 0) shoo[role] = squad.HomeBuilding is not null && (population.GoalDuty(world, squad, (AiRole)role, TaskType.SHOO_STRANGERS_OUT_OF_MY_BUILDING)
                     || squad.Ai is { HomePublic: false } && population.GoalDuty(world, squad, (AiRole)role, TaskType.SHOO_STRANGERS_OUT_OF_MY_BUILDING_IF_PRIVATE)) ? 1 : 0;
                 if (ransack[role] < 0) ransack[role] = population.GoalDuty(world, squad, (AiRole)role, TaskType.RUN_AROUND_TOWN_LOOKING_FOR_PEOPLE) ? 1 : 0;
+                if (stash[role] < 0) stash[role] = population.GoalDuty(world, squad, (AiRole)role, TaskType.PUT_LOOT_IN_STORAGE) ? 1 : 0;
                 if (ransack[role] == 1 && RansackTarget(world, squad, slot) is { } raid)
                 {
                     cold.Engaged = true;
@@ -193,7 +195,7 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
                     MovementSystem.GoTo(table, slot, goal, SpeedMode.Run);
                     continue;
                 }
-                if (intruders[role] == 0 && food[role] == 0 && confiscate[role] == 0 && loot[role] == 0 && shoo[role] == 0) continue;
+                if (intruders[role] == 0 && food[role] == 0 && confiscate[role] == 0 && loot[role] == 0 && shoo[role] == 0 && stash[role] == 0) continue;
                 if (shoo[role] == 1 && Stranger(world, slot, cold, squad) is { IsNone: false } stranger)
                 {
                     cold.Engaged = true;
@@ -208,6 +210,14 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
                     cold.Engaged = true;
                     duties.Add(new TownDuty { Member = member, Faction = cold.Faction, Town = town, Kind = TownDutyKind.LootFood, Target = lootId, Goal = lootSpot });
                     MovementSystem.GoTo(table, slot, lootSpot, SpeedMode.Walk);
+                    continue;
+                }
+                // 184 Ditching loot: stolen goods it carries, in whatever town it is in (the finder reads the current town only).
+                if (stash[role] == 1 && !town.IsNone && StashStore(world, squad, cold, at, town) is var (stashId, stashSpot))
+                {
+                    cold.Engaged = true;
+                    duties.Add(new TownDuty { Member = member, Faction = cold.Faction, Town = town, Kind = TownDutyKind.Stash, Target = stashId, Goal = stashSpot });
+                    MovementSystem.GoTo(table, slot, stashSpot, SpeedMode.Walk);
                     continue;
                 }
                 if (town.IsNone) continue;
@@ -380,6 +390,114 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
 
     Inventory? StoreInventory(World world, string id) => world.Machines.Find(id)?.Storage ?? world.Fixtures.Find(id)?.Contents;
 
+    /// <summary>
+    /// What state 121 CARRYING_EXCESS_LOOT counts (<c>FUN_14059b7b0</c>): the items of the character's inventory and worn backpack that are stolen for it (<c>FUN_14079e550</c>, docs/game/carry-loot.md
+    /// "Stolen ownership"); none for a lawless holder (the predicate's own exemption).
+    /// </summary>
+    public static IEnumerable<ItemInstance> LootOf(World world, CharacterCold c)
+    {
+        if (c.Inventory is not { } inv || world.SystemOf<Crime.CrimeSystem>()?.Factions.Lawless(c.Faction) == true) yield break;
+        foreach (var item in inv.All())
+            if (item.IsStolenFor(c.Faction)) yield return item;
+    }
+
+    /// <summary>State 121 CARRYING_EXCESS_LOOT (<see cref="LootOf"/>).</summary>
+    public static bool CarriesLoot(World world, CharacterCold c) => LootOf(world, c).Any();
+
+    // The storage facts of a container's record, by record id: function 2 or 13 (BF_RESOURCE_STORAGE, BF_GENERAL_STORAGE), its itemtype limit and its limit inventory list. Derived from the data.
+    readonly Dictionary<string, (bool Storage, Meitou.Data.Fcs.FcsRecordType Type, string[] Limit)> storageRecords = new(StringComparer.Ordinal);
+
+    (bool Storage, Meitou.Data.Fcs.FcsRecordType Type, string[] Limit) StorageOf(Fixture f)
+    {
+        if (storageRecords.TryGetValue(f.RecordId, out var known)) return known;
+        var record = data.Db.Find(f.RecordId);
+        (bool, Meitou.Data.Fcs.FcsRecordType, string[]) made = (false, Meitou.Data.Fcs.FcsRecordType.ITEM, []);
+        if (record is not null && Meitou.Data.World.TownBuildings.FunctionOf(data.Db, record, gateFunctions)?.GetInt("function") is Meitou.Data.World.TownBuildings.ResourceStorageFunction or Meitou.Data.World.TownBuildings.GeneralStorageFunction)
+            made = (true, (Meitou.Data.Fcs.FcsRecordType)record.GetInt("itemtype limit", (int)Meitou.Data.Fcs.FcsRecordType.ITEM), [.. record.GetReferences("limit inventory").Select(r => r.TargetStringId)]);
+        return storageRecords[f.RecordId] = made;
+    }
+
+    /// <summary>
+    /// A container takes a loose stack (<c>StorageBuilding</c> slot 0x4a0, <c>FUN_1402988c0</c>, <b>Observed</b>): the item's type is the container's <c>itemtype limit</c> and, when it has a
+    /// <c>limit inventory</c> list, the item is in it, and there is room (a stack of it with space, or a free cell). Same test as <see cref="Production.ProductionSystem.Stores"/> for a machine.
+    /// </summary>
+    bool Takes(Fixture f, ItemInstance item)
+    {
+        var (storage, type, limit) = StorageOf(f);
+        if (!storage || f.Contents is not { } box || item.Section is not ("main" or "backpack_content") || item.LockedOn || item.Contents is not null) return false;
+        if (item.Type != type || limit.Length > 0 && Array.IndexOf(limit, item.Record) < 0) return false;
+        int room = box.LimitOf(item);
+        foreach (var other in box.Items)
+            if (other.Record == item.Record && other.Quality == item.Quality && other.Mark == item.Mark && other.Section == "main" && other.Quantity < room) return true;
+        return box.FindCell("main", item.Width, item.Height, out _, out _);
+    }
+
+    /// <summary>
+    /// 184 Ditching loot's finder (<c>FUN_14059b040</c>): with stolen goods carried and a current town, the storage buildings (functions 2 and 13) of that town that take one of them, the nearest
+    /// by squared 3D distance within <see cref="Production.ProductionSystem.JobRangeSq"/> (the default ROAM_FAR bound); its id (a player town's machine, else a container's fixture) and where the member
+    /// walks. A member with a home town standing in a TOWN-type town reads the <i>home</i> town's storages (any owner); otherwise the current town's, owned by the member's faction or the town's
+    /// (the nearest-allies finder's building test, <c>FUN_1408ca5d0</c> with <c>FUN_140621230</c>, <b>Observed</b>: a storage has an inventory, so only those two owners pass).
+    /// </summary>
+    (string Id, Vector2 Spot)? StashStore(World world, Squad squad, CharacterCold cold, Vector3 at, CampaignTown town)
+    {
+        var loot = LootOf(world, cold).ToList();
+        if (loot.Count == 0) return null;
+        bool listed = squad.Town >= 0 && town.Site >= 0 && data.Sites[town.Site].Town.Type == Meitou.Data.Gameplay.TownType.Town;
+        var search = listed ? CampaignTown.OfSite(squad.Town) : town;
+        if (search.Site >= 0) world.Fixtures.RegisterSite(world, data, search.Site);
+        int townOwner = search.PlayerTown > 0 ? world.Buildings.FindTown(search.PlayerTown)?.Owner ?? -1 : search.Site < data.SiteFactions.Count ? data.SiteFactions[search.Site] : -1;
+        bool Usable(int owner) => listed || owner == cold.Faction || townOwner < 0 || owner == townOwner;
+        (string, Vector2)? best = null;
+        float bestD = float.MaxValue;
+        if (search.PlayerTown > 0)
+            foreach (var m in world.Machines.All)
+            {
+                if (!m.Data.IsStorage || m.Storage is null || world.Buildings.Find(m.Site) is not { Complete: true } site || site.Town != search.PlayerTown || !Usable(site.Owner)) continue;
+                float d = Vector3.DistanceSquared(at, site.Position);
+                if (d <= Production.ProductionSystem.JobRangeSq && d < bestD && loot.Any(i => Production.ProductionSystem.Stores(m, i))) (best, bestD) = ((m.Site, Flat(site.Position)), d);
+            }
+        foreach (var f in world.Fixtures.All)
+        {
+            if (f.Contents is null || !Usable(f.Owner)) continue;
+            float d = Vector3.DistanceSquared(at, f.Position);
+            if (d <= Production.ProductionSystem.JobRangeSq && d < bestD && AiSystem.TownAt(data, world, f.Position) == search && loot.Any(i => Takes(f, i))) (best, bestD) = ((f.Id, Flat(f.Position)), d);
+        }
+        return best;
+    }
+
+    /// <summary>
+    /// 184 at its storage (the plan's row 93 Filling machine, whose item choice is <b>Unknown</b>; engine choice: what list A <c>!121</c> asks for): every stolen item the storage takes goes in, whole
+    /// stacks while there is room; what does not fit stays carried.
+    /// </summary>
+    bool StepStash(World world, TownDuty d, int g, CharacterCold gc)
+    {
+        var table = world.Characters;
+        ref var gn = ref table.Next[g];
+        var machine = d.Target is { } id ? world.Machines.Find(id) : null;
+        var box = d.Target is { } fid && machine is null ? world.Fixtures.Find(fid) : null;
+        var store = machine?.Storage ?? box?.Contents;
+        if (store is null || gc.Inventory is not { } inv) return End(world, d);
+        bool walking = gn.Task == (byte)CharacterTask.GoTo;
+        float gap = Vector2.Distance(Flat(gn.Position), d.Goal);
+        if (gap <= Settings.Arrive || !walking && gap <= Settings.CageSlack)
+        {
+            MovementSystem.Stop(table, g);
+            foreach (var item in LootOf(world, gc).Where(i => machine is not null ? Production.ProductionSystem.Stores(machine, i) : Takes(box!, i)).ToList())
+            {
+                inv.Remove(item);
+                if (store.Add(item)) continue;
+                if (!inv.Add(item)) world.GroundItems.Drop(item, gn.Position, 0);
+                break;
+            }
+            if (machine is not null) world.Machines.Touch();
+            return End(world, d);
+        }
+        if (walking) return true;
+        if (++d.Tries > Settings.Walks) return End(world, d);
+        MovementSystem.GoTo(table, g, d.Goal, SpeedMode.Walk);
+        return true;
+    }
+
     // ------------------------------------------------------------------ one errand
 
     /// <summary>One tick of an errand; false when it is over.</summary>
@@ -389,6 +507,7 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
         if (!table.TryResolveNext(d.Member, out int g) || table.Cold(g) is not { Medical.Incapacitated: false } gc) return End(world, d);
         ref var gn = ref table.Next[g];
         if (d.Kind is TownDutyKind.Food or TownDutyKind.LootFood) return StepFood(world, d, g, gc);
+        if (d.Kind == TownDutyKind.Stash) return StepStash(world, d, g, gc);
         if (d.Kind == TownDutyKind.Confiscate) return StepConfiscate(world, d, g, gc);
         if (d.Kind == TownDutyKind.Shoo) return StepShoo(world, d, g, gc);
         if (d.Kind == TownDutyKind.Ransack) return StepRansack(world, d, g);

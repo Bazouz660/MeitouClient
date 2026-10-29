@@ -129,6 +129,8 @@ public sealed partial class AiSystem
                 StateType.hasWeaponEquipped_157 => cold.DrawnWeapon != WeaponKinds.None,
                 StateType.hasWeapon => cold.Fighter is { Weapon: not null, Unarmed: false },
                 StateType.IS_CARRYING_SOMETHING => !cold.Carrying.IsNone,
+                // 121 (FUN_14059b7b0): the inventory or worn backpack holds an item stolen for it (goal 184's list A is !121; TownDutySystem acts it out).
+                StateType.CARRYING_EXCESS_LOOT => Kidnap.TownDutySystem.CarriesLoot(world, cold),
                 StateType.isInBed => cold.InSomething == Locks.HeldState.Bed || (CharacterTask)Me.Task == CharacterTask.Rest && mind.Behaviour == AiBehaviour.Sleep,
                 StateType.IS_WORKING or StateType.IS_WORKING_PRETEND or StateType.using_target_turret or StateType.using_any_turret => Settled(target),
                 // AI::iAmInsideTargetBuilding (FUN_14059a4b0) for a target that is not a building: inside its home building (no home: held true).
