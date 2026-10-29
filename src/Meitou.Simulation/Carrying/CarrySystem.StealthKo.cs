@@ -42,9 +42,9 @@ public sealed partial class CarrySystem
         return all;
     }
 
-    /// <summary>A character that may be sent on a stealth knock-out: sneaking, awake, not fighting, carrying or carried.</summary>
+    /// <summary>A character that may be sent on a stealth knock-out: sneaking, awake, not carrying or carried (a fight it is in ends with the order's new task).</summary>
     public static bool CanKnockOut(CharacterCold cold) =>
-        cold is { Medical.Incapacitated: false, Race: not null, Stats: not null, InCombat: false } && (cold.Orders & CharacterOrders.Sneak) != 0 && cold.Carrying.IsNone && cold.CarriedBy.IsNone;
+        cold is { Medical.Incapacitated: false, Race: not null, Stats: not null } && (cold.Orders & CharacterOrders.Sneak) != 0 && cold.Carrying.IsNone && cold.CarriedBy.IsNone;
 
     /// <summary>A character that may be knocked out from behind: awake, with a body, not carried.</summary>
     public static bool CanBeKnockedOut(CharacterCold cold) => cold is { Medical.Incapacitated: false, Race: not null } && cold.CarriedBy.IsNone;

@@ -69,12 +69,12 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
     public static bool LeftArmUsable(MedicalState medical) => medical.ArmWorks(left: true);
 
     /// <summary>
-    /// A character that can be given a pick-up: awake, with a body, not an animal, not fighting, not carrying or carried, with a usable left arm. An animal never carries: every carry task
-    /// (rescue, leader rescue, kidnap, capture, cage, arrest, foraging) is registered for the human repertoire only and an animal plans with its own, and its context menu has no Pick Up
-    /// (docs/game/carry-loot.md "Who carries").
+    /// A character that can be given a pick-up: awake, with a body, not an animal, not fighting (but for an <paramref name="ordered"/> lift: the order's new task ends the fight), not carrying
+    /// or carried, with a usable left arm. An animal never carries: every carry task (rescue, leader rescue, kidnap, capture, cage, arrest, foraging) is registered for the human repertoire only
+    /// and an animal plans with its own, and its context menu has no Pick Up (docs/game/carry-loot.md "Who carries").
     /// </summary>
-    public static bool CanCarry(World world, CharacterCold cold, TaskType row = TaskType.LIFT_PERSON_PLAYER_ORDER) =>
-        cold is { Medical: { Incapacitated: false } m, Race: not null, InCombat: false } && cold.Carrying.IsNone && cold.CarriedBy.IsNone && LeftArmUsable(m) && TaskStart.Eligible(world, cold, row);
+    public static bool CanCarry(World world, CharacterCold cold, TaskType row = TaskType.LIFT_PERSON_PLAYER_ORDER, bool ordered = false) =>
+        cold is { Medical: { Incapacitated: false } m, Race: not null } && (ordered || !cold.InCombat) && cold.Carrying.IsNone && cold.CarriedBy.IsNone && LeftArmUsable(m) && TaskStart.Eligible(world, cold, row);
 
     /// <summary>A character that may be lifted: knocked out or dead, of a <c>carriable</c> race (every base race but the Leviathan, <b>Verified</b>), not carried already, not in a cage.</summary>
     public static bool CanBeLifted(CharacterCold cold) => cold is { Medical.Incapacitated: true, Race.Carriable: true, IsImprisoned: false } && cold.CarriedBy.IsNone;
@@ -161,7 +161,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
                     // The order's lift (225 Lifting/Snatching Order) may take a body another carries; a kidnap (246) may not.
                     if (!table.TryResolveNext(order.Target, out int body)
                         || !(CanBeLifted(world, table.Cold(body)!) || order.Kidnap && CanBeKidnapped(table, body) || !order.Kidnap && Snatchable(table.Cold(body)!))) break;
-                    if (Nearest(table, Who(world, order.Carriers), body, s => s != body && CanCarry(world, table.Cold(s)!, order.Kidnap ? TaskType.KIDNAP_ORDER : TaskType.LIFT_PERSON_PLAYER_ORDER) && table.Cold(s)!.Carrying != order.Target) is int carrier
+                    if (Nearest(table, Who(world, order.Carriers), body, s => s != body && CanCarry(world, table.Cold(s)!, order.Kidnap ? TaskType.KIDNAP_ORDER : TaskType.LIFT_PERSON_PLAYER_ORDER, ordered: true) && table.Cold(s)!.Carrying != order.Target) is int carrier
                         && Start(world, carrier, CharacterTask.PickUp, order.Kidnap ? TaskType.KIDNAP_ORDER : TaskType.LIFT_PERSON_PLAYER_ORDER, TaskSource.Order, order.Target, CharacterTask.Idle))
                     {
                         table.Cold(carrier)!.Kidnapping = order.Kidnap;
@@ -209,7 +209,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
                     {
                         if (!table.TryResolveNext(id, out int slot) || table.Cold(slot) is not { IsPlayer: true } cold) continue;
                         if (taken is null) Production.PermaJobs.Add(cold, Meitou.Data.Gameplay.Ai.TaskType.FIND_AND_RESCUE_IF_THERES_BEDS, Production.PermaJob.Untargeted(Meitou.Data.Gameplay.Ai.TaskType.FIND_AND_RESCUE_IF_THERES_BEDS));
-                        else if (Free(world, slot) && Rescuing(cold))
+                        else if (cold is { Fleeing: false } && CanCarry(world, cold, TaskType.FIND_AND_RESCUE_IF_THERES_BEDS, ordered: true) && Rescuing(cold))
                         {
                             // The one-shot order has no bed to take anyone to: said, not dropped silently (engine choice; the job just waits with desire 0).
                             if (world.Fixtures.FindBed(world, slot, Relations) is null) world.Bark(id, Meitou.Localisation.Loc.Tr("No free bed to take anyone to."));

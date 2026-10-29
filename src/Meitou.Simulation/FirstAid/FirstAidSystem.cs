@@ -55,7 +55,7 @@ public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions 
                 case TreatOrder order:
                     if (!table.TryResolveNext(order.Patient, out int patient) || table.Cold(patient)!.Medical is not { Dead: false }) break;
                     foreach (var id in Who(world, order.Medics))
-                        if (table.TryResolveNext(id, out int slot) && table.Cold(slot) is { Race: not null, Stats: not null } cold && CanAct(cold, ordered: true))
+                        if (table.TryResolveNext(id, out int slot) && table.Cold(slot) is { Race: not null, Stats: not null } cold && CanAct(cold))
                         {
                             if (FindKit(world, slot, cold, ItemInfo.FirstAidKitFunction) is null && FindKit(world, slot, cold, ItemInfo.RobotKitFunction) is null)
                                 world.Bark(id, "I don't have a medkit.");   // refused before the medic moves
@@ -65,7 +65,7 @@ public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions 
                 case SplintOrder splint:
                     if (!table.TryResolveNext(splint.Patient, out int splinted) || table.Cold(splinted)!.Medical is not { Dead: false }) break;
                     foreach (var id in Who(world, splint.Medics))
-                        if (table.TryResolveNext(id, out int slot) && table.Cold(slot) is { Race: not null, Stats: not null } cold && CanAct(cold, ordered: true))
+                        if (table.TryResolveNext(id, out int slot) && table.Cold(slot) is { Race: not null, Stats: not null } cold && CanAct(cold))
                         {
                             if (OwnKit(cold, ItemInfo.SplintKitFunction) is null) world.Bark(id, "I don't have a splint kit.");   // the medic's own kit only (the original's kit search)
                             else TaskStart.Start(world, slot, new TaskRequest(CharacterTask.Treat, TaskType.SPLINT_ORDER, TaskSource.Order) { Target = splint.Patient });
@@ -96,11 +96,10 @@ public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions 
     static IReadOnlyList<CharacterId> Who(World world, IReadOnlyList<CharacterId> ids) => ids.Count > 0 ? ids : world.Player.Selection.ToArray();
 
     /// <summary>
-    /// A character that can be ordered to treat or rest: it has a medical state, is awake, not carried and, but for an <paramref name="ordered"/> first aid or splint, not in a fight.
-    /// Those orders outrank Self preservation and test no threat (First aid 25, Splint 249, docs/game/combat.md "Fight lifecycle and orders"): the medic leaves its fight
-    /// (<see cref="TaskStart.Start"/>) and treats.
+    /// A character that can be ordered to treat or rest: it has a medical state, is awake and not carried. Orders outrank Self preservation and First aid 25 and Splint 249 test no threat
+    /// (docs/game/combat.md "Fight lifecycle and orders"): a fighting character's fight ends with the order's new task (<see cref="TaskStart.Start"/>).
     /// </summary>
-    static bool CanAct(CharacterCold cold, bool ordered = false) => cold.Medical is { Incapacitated: false } && (ordered || !cold.InCombat) && cold.CarriedBy.IsNone;
+    static bool CanAct(CharacterCold cold) => cold.Medical is { Incapacitated: false } && cold.CarriedBy.IsNone;
 
     public void RegisterTasks(TaskHandlers tasks)
     {
