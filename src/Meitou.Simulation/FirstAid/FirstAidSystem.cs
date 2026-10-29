@@ -129,14 +129,10 @@ public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions 
         cold.TreatSplint = false;
     }
 
-    /// <summary>A treatment another task replaces or the Stop order ends lets go of its patient and kit (the task it would go back to is the new start's to set).</summary>
+    /// <summary>A treatment that ends lets go of its patient and kit (the task it goes back to is the new start's, or its provenance's when it ends by itself).</summary>
     void ITaskHandler.End(World world, int slot, CharacterTask task, TaskEnd reason)
     {
-        if (task != CharacterTask.Treat) return;
-        var cold = world.Characters.Cold(slot)!;
-        cold.TreatTarget = CharacterId.None;
-        cold.TreatSplint = false;
-        cold.TreatKit = null;
+        if (task == CharacterTask.Treat) LetGo(world.Characters.Cold(slot)!);
     }
 
     /// <summary>Starts a treatment (serial phases): the medic stands, then walks to the patient (the task it goes back to afterwards is in its provenance, <see cref="CharacterCold.Running"/>).</summary>
@@ -172,17 +168,15 @@ public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions 
             world.Defer(new Dialogue.DialogueEvent(patient, id, patientEvent) { Tick = world.Tick + 1 });
     }
 
-    /// <summary>Ends a treatment (serial phases): back to the task before it, path dropped.</summary>
-    static void End(CharacterTable table, int slot)
+    /// <summary>Ends a treatment by itself (serial phases; <see cref="TaskEnd.Done"/>): back to the task before it, path dropped.</summary>
+    static void End(World world, int slot)
     {
-        var cold = table.Cold(slot)!;
-        ref var n = ref table.Next[slot];
-        if (n.Task == (byte)CharacterTask.Treat)
-        {
-            MovementSystem.Stop(table, slot);
-            n.Task = (byte)(cold.Running is { } run && run.Runs(CharacterTask.Treat) ? run.Resume : CharacterTask.Idle);
-            n.TaskTime = 0;
-        }
+        if (world.Characters.Next[slot].Task == (byte)CharacterTask.Treat) TaskStart.End(world, slot, TaskEnd.Done);
+        else LetGo(world.Characters.Cold(slot)!);
+    }
+
+    static void LetGo(CharacterCold cold)
+    {
         cold.TreatTarget = CharacterId.None;
         cold.TreatSplint = false;
         cold.TreatKit = null;
@@ -209,7 +203,7 @@ public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions 
             if (cold.Medical is not { Incapacitated: false } || cold.InCombat
                 || !table.TryResolveNext(cold.TreatTarget, out int t) || table.Cold(t)!.Medical is not { Dead: false })
             {
-                End(table, i);
+                End(world, i);
                 continue;
             }
             const ushort Path = (ushort)MoveFlags.AnyPath;
@@ -279,7 +273,7 @@ public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions 
         var patientCold = table.Cold(p)!;
         if (medicCold is not { Medical: { Incapacitated: false } medical, Stats: { } stats, Race: { } medicRace } || patientCold is not { Medical: { Dead: false } body, Race: { } race })
         {
-            End(table, m);
+            End(world, m);
             return;
         }
         if (medicCold.TreatSplint)
@@ -301,7 +295,7 @@ public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions 
             if (woundKit is null && !kitless)
             {
                 Say(world, m, medicCold.TreatTarget, KitEmpty);
-                End(table, m);
+                End(world, m);
                 return;
             }
             float woundSkill = SkillOf(race.IsRobot && !kitless);
@@ -318,7 +312,7 @@ public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions 
             {
                 Say(world, m, medicCold.TreatTarget, HealingOtherFinished, BeingHealedFinished);
                 patientCold.StuckBolts = null;
-                End(table, m);
+                End(world, m);
                 return;
             }
             medicCold.UseSkill(StatsEnumerated.Medic, world.Tick);
@@ -332,13 +326,13 @@ public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions 
         {
             Say(world, m, medicCold.TreatTarget, HealingOtherFinished, BeingHealedFinished);
             patientCold.StuckBolts = null;   // the bolts go when first aid has nothing left to do (FUN_14064d800 -> FUN_14052bc10)
-            End(table, m);   // nothing left to bandage
+            End(world, m);   // nothing left to bandage
             return;
         }
         if (KitOf(world, m, medicCold, FunctionOf(robot)) is not { } kit)
         {
             Say(world, m, medicCold.TreatTarget, KitEmpty);   // Task_FirstAidRig's empty kit (FUN_14034ef20)
-            End(table, m);   // no kit of the right kind within reach
+            End(world, m);   // no kit of the right kind within reach
             return;
         }
         float skill = SkillOf(robot);
@@ -346,7 +340,7 @@ public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions 
         float bandaged = body.Treat(dt, skill, quality, robot, ctx, out int touched);
         if (bandaged <= 0)
         {
-            End(table, m);
+            End(world, m);
             return;
         }
         if (medicCold.IsPlayer) Drain(kit, skill, dt, robot, touched);   // once per part bandaged; only the player's medics use up kits here (FUN_140649a00: faction +0x250)
@@ -366,7 +360,7 @@ public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions 
         if (OwnKit(medicCold, ItemInfo.SplintKitFunction) is not { } kit)
         {
             Say(world, m, medicCold.TreatTarget, KitEmpty);   // the rig task's kit search finds none (FUN_14034ef20, event 22)
-            End(table, m);
+            End(world, m);
             return;
         }
         var item = kit.Item;
@@ -376,7 +370,7 @@ public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions 
         float added = body.Splint(dt, skill, quality, new MedicalContext(Constants, bodyOptions, race));
         if (added <= 0)
         {
-            End(table, m);   // nothing left to splint
+            End(world, m);   // nothing left to splint
             return;
         }
         Drain(kit, skill, dt, false, 1);

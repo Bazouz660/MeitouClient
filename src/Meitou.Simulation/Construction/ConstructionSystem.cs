@@ -651,18 +651,15 @@ public sealed class ConstructionSystem : ITickSystem, ITaskOwner, ITaskHandler
         sweep = true;
     }
 
-    /// <summary>Ends the work (serial phases): back to the task before it, path dropped.</summary>
-    static void End(CharacterTable table, int slot)
+    /// <summary>Ends the work by itself (serial phases; <see cref="TaskEnd.Done"/>): back to the task before it, path dropped.</summary>
+    static void End(World world, int slot)
     {
-        var cold = table.Cold(slot)!;
-        ref var n = ref table.Next[slot];
-        if (IsWork(n.Task))
+        if (IsWork(world.Characters.Next[slot].Task))
         {
-            var resume = cold.Running is { } run && run.Runs((CharacterTask)n.Task) ? run.Resume : CharacterTask.Idle;
-            MovementSystem.Stop(table, slot);
-            n.Task = (byte)resume;
-            n.TaskTime = 0;
+            TaskStart.End(world, slot, TaskEnd.Done);
+            return;
         }
+        var cold = world.Characters.Cold(slot)!;
         cold.BuildSite = null;
         cold.BuildBar = 0;
         ClearFetch(cold);
@@ -701,7 +698,7 @@ public sealed class ConstructionSystem : ITickSystem, ITaskOwner, ITaskHandler
         else Begin(world, slot, world.Buildings.Find(request.Site!)!, request.Task);
     }
 
-    /// <summary>Work another task replaces or the Stop order ends lets go of its site and of the material it was fetching (the task it goes back to is the new start's).</summary>
+    /// <summary>Work that ends lets go of its site and of the material it was fetching (the task it goes back to is the new start's, or its provenance's when it ends by itself).</summary>
     void ITaskHandler.End(World world, int slot, CharacterTask task, TaskEnd reason)
     {
         var cold = world.Characters.Cold(slot)!;
@@ -740,7 +737,7 @@ public sealed class ConstructionSystem : ITickSystem, ITaskOwner, ITaskHandler
             var site = Root(reg, reg.Find(id));
             if (site is null || !Able(cold) || (n.Task != (byte)CharacterTask.Dismantle && !site.NeedsWork))
             {
-                End(table, i);
+                End(world, i);
                 continue;
             }
             if (Goal(world, cold, n.Task, site) is not { } goal)
@@ -815,7 +812,7 @@ public sealed class ConstructionSystem : ITickSystem, ITaskOwner, ITaskHandler
             var site = Root(reg, reg.Find(id));
             if (site is null || !Able(cold))
             {
-                End(table, i);
+                End(world, i);
                 continue;
             }
             if (Goal(world, cold, n.Task, site) is not { } goal)
@@ -847,7 +844,7 @@ public sealed class ConstructionSystem : ITickSystem, ITaskOwner, ITaskHandler
         Touch(world, site);
         if (!site.NeedsWork)
         {
-            End(table, slot);
+            End(world, slot);
             return;
         }
         if (site.Stalled)
@@ -859,7 +856,7 @@ public sealed class ConstructionSystem : ITickSystem, ITaskOwner, ITaskHandler
                 cold.BuildBar = 0;
             }
             else if (Source(world, slot, cold, site) is { } source) Fetch(world, slot, cold, source);
-            else End(table, slot);
+            else End(world, slot);
             return;
         }
         float skill = Engineering(cold);
@@ -919,7 +916,7 @@ public sealed class ConstructionSystem : ITickSystem, ITaskOwner, ITaskHandler
         ref var n = ref table.Next[slot];
         if (!Able(cold) || !DoorNeedsWork(door) || n.Task != (byte)CharacterTask.Build)
         {
-            End(table, slot);
+            End(world, slot);
             return false;
         }
         var (at, reach) = Locks.LockSystem.WorkSpot(world, door, new Vector2(n.Position.X, n.Position.Z));
@@ -976,7 +973,7 @@ public sealed class ConstructionSystem : ITickSystem, ITaskOwner, ITaskHandler
         if (door.DoorProgress >= 1)
         {
             door.DoorProgress = 1;
-            End(table, slot);
+            End(world, slot);
         }
     }
 
@@ -1166,7 +1163,7 @@ public sealed class ConstructionSystem : ITickSystem, ITaskOwner, ITaskHandler
             }
         }
         if (taken > 0) BackToSite(ref n, cold);
-        else End(table, slot);
+        else End(world, slot);
     }
 
     void DeliverStep(World world, int slot, CharacterCold cold, BuildSite site, float dt)

@@ -274,9 +274,9 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         if (task == (byte)CharacterTask.PutDown && !cold.Carrying.IsNone && table.TryResolveNext(cold.Carrying, out int body))
         {
             Unlink(world, slot, body, drop: false);
-            End(table, slot);
+            End(world, slot);
         }
-        else if (task == (byte)CharacterTask.PickUp && !cold.Carrying.IsNone && cold.Carrying == cold.CarryTarget) End(table, slot);
+        else if (task == (byte)CharacterTask.PickUp && !cold.Carrying.IsNone && cold.Carrying == cold.CarryTarget) End(world, slot);
     }
 
     /// <summary>Lets go of the carried body where the carrier stands, without the put-down knock-out (serial phases; the arrest system's put-in-cage). False when it carries nothing.</summary>
@@ -322,18 +322,19 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
     }
 
     /// <summary>
-    /// A pick-up, put-down, loot or knock-out that another task replaces or the Stop order ends lets go of its target (a body already on the shoulder stays there; the task it would go back
-    /// to is the new start's to set).
+    /// A pick-up, put-down, loot or knock-out that ends lets go of its target (a body already on the shoulder stays there; the task it goes back to is the new start's, or its provenance's
+    /// when it ends by itself). One that another task replaces or the Stop order ends also drops its kidnap, snatch and foraging marks; one that ends by itself keeps them for its system.
     /// </summary>
     void ITaskHandler.End(World world, int slot, CharacterTask task, TaskEnd reason)
     {
         var cold = world.Characters.Cold(slot)!;
         cold.CarryTarget = CharacterId.None;
         cold.LiftTime = -1;
+        cold.LootFlags = LootStart.None;
+        if (reason == TaskEnd.Done) return;
         cold.Kidnapping = false;
         cold.Snatching = false;
         cold.Foraging = false;
-        cold.LootFlags = LootStart.None;
     }
 
 
@@ -354,18 +355,15 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         cold.LootFlags = LootStart.None;
     }
 
-    /// <summary>Ends a pick-up, put-down or loot (serial phases): back to the task before it.</summary>
-    static void End(CharacterTable table, int slot)
+    /// <summary>Ends a pick-up, put-down, loot or knock-out by itself (serial phases; <see cref="TaskEnd.Done"/>): back to the task before it.</summary>
+    static void End(World world, int slot)
     {
-        var cold = table.Cold(slot)!;
-        ref var n = ref table.Next[slot];
-        if (n.Task is (byte)CharacterTask.PickUp or (byte)CharacterTask.PutDown or (byte)CharacterTask.Loot or (byte)CharacterTask.StealthKo)
+        if (world.Characters.Next[slot].Task is (byte)CharacterTask.PickUp or (byte)CharacterTask.PutDown or (byte)CharacterTask.Loot or (byte)CharacterTask.StealthKo)
         {
-            var resume = cold.Running is { } run && run.Runs((CharacterTask)n.Task) ? run.Resume : CharacterTask.Idle;
-            MovementSystem.Stop(table, slot);
-            n.Task = (byte)resume;
-            n.TaskTime = 0;
+            TaskStart.End(world, slot, TaskEnd.Done);
+            return;
         }
+        var cold = world.Characters.Cold(slot)!;
         cold.CarryTarget = CharacterId.None;
         cold.LiftTime = -1;
         cold.LootFlags = LootStart.None;
@@ -388,7 +386,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
             if (cold.Medical is not { Incapacitated: false } || cold.InCombat || !table.TryResolveNext(cold.CarryTarget, out int t)
                 || (lifting ? cold.LiftTime < 0 && !(CanCarry(world, cold, cold.Kidnapping ? TaskType.KIDNAP_ORDER : TaskType.LIFT_PERSON_PLAYER_ORDER) && (Liftable(world, i, t) || cold.Kidnapping && CanBeKidnapped(table, t))) : !(Opening(world, i) ? Openable(table, t) : CanBeLooted(table.Cold(t)!))))
             {
-                if (!(lifting && cold.LiftTime >= 0)) End(table, i);   // a lift under way is finished or broken off in SlowWorld
+                if (!(lifting && cold.LiftTime >= 0)) End(world, i);   // a lift under way is finished or broken off in SlowWorld
                 continue;
             }
             const ushort Path = (ushort)MoveFlags.AnyPath;
@@ -485,7 +483,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
             cold.Kidnapping = false;
             if (!Kidnap(world, table, i))
             {
-                End(table, i);
+                End(world, i);
                 return;
             }
         }
@@ -497,13 +495,13 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
             if (!table.TryResolveNext(cold.CarryTarget, out int b) || !CanCarry(world, cold, cold.Kidnapping ? TaskType.KIDNAP_ORDER : TaskType.LIFT_PERSON_PLAYER_ORDER) || !Liftable(world, i, b)
                 || Gap(table.Next[i], table.Next[b]) > 2 * ReachOf(world, table.Cold(b)!))   // pushed about while lifting: some slack, not a pick-up from afar
             {
-                End(table, i);
+                End(world, i);
                 return;
             }
             // Out of an unlocked cage: no longer held there (and the crimes of lifting someone out of another faction's cage).
             if (table.Cold(b)!.IsImprisoned && !world.Fixtures.LiftOut(world, cold.CarryTarget, i, Crimes))
             {
-                End(table, i);
+                End(world, i);
                 return;
             }
             // Out of a bed: the attach clears the state (carry-loot.md, Character +0x2f8).
@@ -519,8 +517,8 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
             }
             Link(table, i, b);
         }
-        else if (!attached && before > CarrySettings.AttachAt * LiftSeconds) { End(table, i); return; }   // dropped again mid-lift
-        if (cold.LiftTime >= CarrySettings.DoneAt * LiftSeconds) End(table, i);
+        else if (!attached && before > CarrySettings.AttachAt * LiftSeconds) { End(world, i); return; }   // dropped again mid-lift
+        if (cold.LiftTime >= CarrySettings.DoneAt * LiftSeconds) End(world, i);
     }
 
     void PutDown(World world, int i, float dt)
@@ -529,14 +527,14 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         var cold = table.Cold(i)!;
         if (cold.Carrying.IsNone || !table.TryResolveNext(cold.Carrying, out int b))
         {
-            End(table, i);
+            End(world, i);
             return;
         }
         cold.LiftTime += dt;
         // The clip runs backwards from its end; the body is let go when it is below 0.2 of the way.
         if (LiftSeconds - cold.LiftTime >= CarrySettings.ReleaseBelow * LiftSeconds) return;
         Unlink(world, i, b, drop: false, released: true);
-        End(table, i);
+        End(world, i);
     }
 
     /// <summary>Links a carrier and a body (serial). The body stops whatever it did and takes the carrier's place.</summary>
@@ -638,7 +636,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         bool opening = Opening(world, i);
         if (cold.Inventory is not { } bag || !(opening ? Openable(table, t) : CanBeLooted(victim)))
         {
-            End(table, i);
+            End(world, i);
             return;
         }
         if (cold.Foraging)
@@ -656,7 +654,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         {
             // An open-loot order: the window opens instead of a take-all.
             (player.OpenLoot, player.LootOpener, player.OpeningLoot) = (player.OpeningLoot, player.LootWalker, CharacterId.None);
-            End(table, i);
+            End(world, i);
             return;
         }
         int death = DeathUnits(victim.Inventory!);
@@ -670,7 +668,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
             world.Post(left > 0 ? $"{cold.Name} took {taken} items from {victim.Name}; {left} did not fit" : $"{cold.Name} took {taken} items from {victim.Name}");
             if (seen) world.Post($"{cold.Name} was seen looting {victim.Name}");
         }
-        End(table, i);
+        End(world, i);
     }
 
     /// <summary>

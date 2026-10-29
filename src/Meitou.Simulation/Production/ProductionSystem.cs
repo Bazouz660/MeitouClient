@@ -488,20 +488,18 @@ public sealed partial class ProductionSystem : ITickSystem, ITaskOwner, ITaskHan
         sweep = true;
     }
 
-    static void End(CharacterTable table, int slot)
+    /// <summary>
+    /// Ends the task of a job, an operator's or a haul trip by itself (serial phases; <see cref="TaskEnd.Done"/>): back to the following or wandering a job took the character from (its
+    /// provenance's resume task, kept only for those), idle otherwise. A follow job's follow ends with it: the character follows its squad's leader again.
+    /// </summary>
+    static void End(World world, int slot)
     {
+        var table = world.Characters;
         var cold = table.Cold(slot)!;
-        ref var n = ref table.Next[slot];
-        var job = PermaJobs.ListJob(cold, (CharacterTask)n.Task);
-        bool followJob = job is not null && PermaJobs.Follows(job.Row);
-        if (followJob) (cold.FollowOrder, cold.Running) = (CharacterId.None, null);   // the job's follow ends with it; the character follows its squad's leader again
-        if (followJob || n.Task is (byte)CharacterTask.Operate or (byte)CharacterTask.Haul or (byte)CharacterTask.Sleep)
-        {
-            MovementSystem.Stop(table, slot);
-            // A job's task goes back to the following or wandering it took the character from.
-            n.Task = (byte)(job?.Resume is CharacterTask.Wander or CharacterTask.Follow ? job.Resume : CharacterTask.Idle);
-            n.TaskTime = 0;
-        }
+        var task = (CharacterTask)table.Next[slot].Task;
+        bool followJob = PermaJobs.ListJob(cold, task) is { } job && PermaJobs.Follows(job.Row);
+        if (followJob) cold.FollowOrder = CharacterId.None;
+        if (followJob || task is CharacterTask.Operate or CharacterTask.Haul or CharacterTask.Sleep) TaskStart.End(world, slot, TaskEnd.Done);
         cold.OperateSite = null;
         cold.HaulSite = null;
         cold.HaulFetch = null;
@@ -527,7 +525,7 @@ public sealed partial class ProductionSystem : ITickSystem, ITaskOwner, ITaskHan
             if (n.Task == (byte)CharacterTask.Haul)
             {
                 if (cold.HaulSite is { } to && Site(world, to) is { Complete: true } leg && world.Machines.Find(to) is { } legMachine && Able(cold)) Approach(world, ref n, cold, leg, legMachine, dt);
-                else End(table, i);
+                else End(world, i);
                 continue;
             }
             if (n.Task == (byte)CharacterTask.Sleep) continue;   // the bed of the "Sleep when injured" option, in OperateSite (BedSystem walks it)
@@ -550,7 +548,7 @@ public sealed partial class ProductionSystem : ITickSystem, ITaskOwner, ITaskHan
             var m = world.Machines.Find(id);
             if (site is not { Complete: true } || m is null || !Able(cold))
             {
-                End(table, i);
+                End(world, i);
                 continue;
             }
             // A hauling operator walks to its storage instead.
@@ -645,7 +643,7 @@ public sealed partial class ProductionSystem : ITickSystem, ITaskOwner, ITaskHan
             var cold = table.Cold(i)!;
             if (cold.OperateSite is not { } id || Site(world, id) is not { Complete: true } site || world.Machines.Find(id) is not { } m || !Able(cold))
             {
-                End(table, i);
+                End(world, i);
                 continue;
             }
             cold.Operating = false;
@@ -668,7 +666,7 @@ public sealed partial class ProductionSystem : ITickSystem, ITaskOwner, ITaskHan
             if (m.Data.Function == Meitou.Data.World.ObjectRanges.TurretFunction)
             {
                 // A broken turret makes manning impossible (Task_UseTurret FUN_1403474f0 -> AITaskSytem::taskImpossible): the job ends.
-                if (m.Broken) { End(table, i); continue; }
+                if (m.Broken) { End(world, i); continue; }
                 if (n.Velocity.X == 0 && n.Velocity.Z == 0) n.Yaw = FacingTo(n, site);
                 m.Operators++;
                 cold.Operating = true;

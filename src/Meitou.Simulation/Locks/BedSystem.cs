@@ -139,10 +139,11 @@ public sealed class BedSystem(PopulationData data, BedSettings? settings = null)
 
     /// <summary>
     /// A walk to a bed that another task replaces or the Stop order ends is given up; a sleeper in its bed gets up in the slow world (<see cref="GetUp"/>), as the original's 258 never
-    /// completes and an order replaces it.
+    /// completes and an order replaces it. A trip that ends by itself is dropped by its own step.
     /// </summary>
     void ITaskHandler.End(World world, int slot, CharacterTask task, TaskEnd reason)
     {
+        if (reason == TaskEnd.Done) return;
         var id = world.Characters.IdOf(slot);
         trips.RemoveAll(t => t.Character == id);
     }

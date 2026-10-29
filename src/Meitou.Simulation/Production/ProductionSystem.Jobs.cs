@@ -39,7 +39,7 @@ public sealed partial class ProductionSystem
             {
                 PermaJobs.Add(cold, ordered, PermaJob.OfCharacter(ordered, add.Target));
                 // The order giver then drops what would close a circle back to the ordered character (FUN_1405c8c10), whether or not the job was new.
-                MovementSystem.BreakCircle(table, id);
+                MovementSystem.BreakCircle(world, id);
             }
         }
     }
@@ -47,15 +47,16 @@ public sealed partial class ProductionSystem
     void RemoveJobAt(World world, RemoveJob remove)
     {
         var table = world.Characters;
-        if (table.TryResolveNext(remove.Character, out int slot)) RemoveJob(table, slot, remove.Index);
+        if (table.TryResolveNext(remove.Character, out int slot)) RemoveJob(world, slot, remove.Index);
     }
 
     /// <summary>Takes the job at <paramref name="index"/> out of a character's list (the list's X, and the circle break of <see cref="MovementSystem"/>): the task of the job it is on ends, the running index follows (serial phases only).</summary>
-    internal static void RemoveJob(CharacterTable table, int slot, int index)
+    internal static void RemoveJob(World world, int slot, int index)
     {
+        var table = world.Characters;
         if (table.Cold(slot) is not { } cold || (uint)index >= (uint)cold.Jobs.Count) return;
         var job = PermaJobs.ListJob(cold, (CharacterTask)table.Next[slot].Task) is { Implicit: false } run ? run : null;
-        if (job?.Job == index) End(table, slot);
+        if (job?.Job == index) End(world, slot);
         cold.Jobs.RemoveAt(index);
         if (job?.Job > index) cold.Running = job with { Job = job.Job - 1 };
     }
@@ -110,7 +111,7 @@ public sealed partial class ProductionSystem
                 if (job is not { Implicit: true } || chosen.Type != job.Row || chosen.Site != current) StartImplicit(world, i, chosen.Type, chosen.Site);
                 continue;
             }
-            if (onJob) End(table, i);
+            if (onJob) End(world, i);
         }
     }
 
@@ -222,7 +223,7 @@ public sealed partial class ProductionSystem
     {
         var table = world.Characters;
         var cold = table.Cold(slot)!;
-        var resume = PermaJobs.ResumeOf(cold, (CharacterTask)table.Next[slot].Task);
+        var resume = PermaJobs.ResumeOf(cold, (CharacterTask)table.Next[slot].Task) is var r and (CharacterTask.Wander or CharacterTask.Follow) ? r : CharacterTask.Idle;
         var task = type switch { TaskType.GO_HOME_AND_GO_TO_BED => CharacterTask.Sleep, TaskType.DITCH_ALL_RESOURCES => CharacterTask.Haul, _ => CharacterTask.Operate };
         // A bed fixture: the bed system walks it there and lays it in (task Sleep); the job keeps the bed's id.
         if (task == CharacterTask.Sleep && (world.Fixtures.Find(siteId) is null || Beds is null)) return;
@@ -432,17 +433,17 @@ public sealed partial class ProductionSystem
         var job = cold.Jobs[k];
         // From a list job the character goes back to what it was doing before the list took it.
         var current = (CharacterTask)table.Next[slot].Task;
-        var resume = PermaJobs.ListJob(cold, current) is { Implicit: false } on ? on.Resume : current;
+        var resume = PermaJobs.ListJob(cold, current) is { Implicit: false } on ? on.Resume : current is CharacterTask.Wander or CharacterTask.Follow ? current : CharacterTask.Idle;
         if (job.Type == TaskType.JOB_BUILDER)
         {
-            End(table, slot);
+            End(world, slot);
             Construction!.StartBuilding(world, slot, Construction.EngineerSite(world, slot)!, resume, k);
             return;
         }
         if (PermaJobs.Follows(job.Type))
         {
             if (FollowedBy(world, slot, cold, k) is not { } target) return;
-            End(table, slot);
+            End(world, slot);
             // The Bodyguard job guards (row 45, RetaliationSystem.Guards); the verb always gives the job. The circle was broken when the job was added.
             MovementSystem.Follow(world, new FollowOrder([table.IdOf(slot)], target) { Tick = world.Tick }, TaskSource.Job, k, job.Type, resume);
             return;
@@ -463,7 +464,9 @@ public sealed partial class ProductionSystem
     {
         var table = world.Characters;
         var cold = table.Cold(slot)!;
-        End(table, slot);
+        cold.OperateSite = null;
+        cold.HaulFetch = null;
+        cold.Operating = false;
         ref var n = ref table.Next[slot];
         MovementSystem.Stop(table, slot);
         n.Task = (byte)CharacterTask.Haul;
@@ -488,7 +491,7 @@ public sealed partial class ProductionSystem
             || Site(world, storeId) is not { Complete: true } || world.Machines.Find(storeId) is not { Storage: not null } store
             || Site(world, at) is not { Complete: true } atSite || world.Machines.Find(at) is not { } there || !Able(cold) || cold.Inventory is not { } inv)
         {
-            End(table, slot);
+            End(world, slot);
             return;
         }
         if (!AtSite(n, atSite, there)) return;
@@ -501,7 +504,7 @@ public sealed partial class ProductionSystem
                 world.Machines.Touch();
             }
             if (Delivered(world, inv, store, Ditching(cold)).Any()) cold.HaulSite = storeId;
-            else End(table, slot);
+            else End(world, slot);
             return;
         }
         foreach (var item in Delivered(world, inv, store, Ditching(cold)).ToList())
@@ -512,6 +515,6 @@ public sealed partial class ProductionSystem
             break;
         }
         world.Machines.Touch();
-        End(table, slot);
+        End(world, slot);
     }
 }

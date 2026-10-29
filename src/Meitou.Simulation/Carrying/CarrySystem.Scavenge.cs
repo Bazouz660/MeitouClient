@@ -143,7 +143,7 @@ public sealed partial class CarrySystem
             Looted(world, table, i, t, moved, 0, crime: false);
             // Tagged only when it found nothing to take.
             if (moved == 0 && cold.SquadId >= 0) world.SystemOf<DialogueSystem>()?.Memory.Flag(world, cold.SquadId, table.IdOf(t), MemoryTag.Looted);
-            End(table, i);
+            End(world, i);
             return;
         }
         if (!foodOnly && !notPlayerSide && !animal && cold.LiftTime > NpcWeaponGrabSeconds && (flags & LootStart.WantsWeapon) != 0)
@@ -153,7 +153,7 @@ public sealed partial class CarrySystem
         Butcher(world, i, t, death);
         Looted(world, table, i, t, moved, 0, crime: false);   // the crime was set at the start (CrimeSystem.NpcLooting)
         if (!police && cold.SquadId >= 0) world.SystemOf<DialogueSystem>()?.Memory.Flag(world, cold.SquadId, table.IdOf(t), MemoryTag.Looted);
-        End(table, i);
+        End(world, i);
     }
 
     /// <summary>

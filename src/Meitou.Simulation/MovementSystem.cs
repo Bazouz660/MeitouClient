@@ -308,7 +308,7 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
         cold.FollowHeading = Vector2.Zero;
         table.Next[slot].Task = (byte)CharacterTask.Follow;
         table.Next[slot].TaskTime = 0;
-        if (request.Source == TaskSource.Order) BreakCircle(table, table.IdOf(slot));
+        if (request.Source == TaskSource.Order) BreakCircle(world, table.IdOf(slot));
     }
 
     /// <summary>A walk or a follow holds nothing: the next start sets the movement (the follow's <see cref="CharacterCold.FollowOrder"/> stays for the task it goes back to).</summary>
@@ -320,13 +320,14 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
     /// once at most), whoever it reaches loses its one-shot follow of the ordered character and every Staying close / Bodyguard job on it; the walk goes on through the target of the
     /// one-shot follow and of each such job. The jobs are only looked at while the character has a Staying close 31 job (so an animal's 289 and its Bodyguard are not walked).
     /// </summary>
-    internal static void BreakCircle(CharacterTable table, CharacterId ordered)
+    internal static void BreakCircle(World world, CharacterId ordered)
     {
-        if (table.TryResolveNext(ordered, out int start)) BreakCircle(table, ordered, start, new List<int>(4));
+        if (world.Characters.TryResolveNext(ordered, out int start)) BreakCircle(world, ordered, start, new List<int>(4));
     }
 
-    static void BreakCircle(CharacterTable table, CharacterId ordered, int slot, List<int> seen)
+    static void BreakCircle(World world, CharacterId ordered, int slot, List<int> seen)
     {
+        var table = world.Characters;
         // Engine guard: the original has none on the job walk; a chain is cut at 64 characters like the one-shot walk was.
         if (seen.Count >= 64 || seen.Contains(slot)) return;
         seen.Add(slot);
@@ -341,7 +342,7 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
                 cold.FollowOrder = CharacterId.None;
                 if (table.Next[slot].Task == (byte)CharacterTask.Follow) Stop(table, slot);
             }
-            else if (table.TryResolveNext(order, out int next)) BreakCircle(table, ordered, next, seen);
+            else if (table.TryResolveNext(order, out int next)) BreakCircle(world, ordered, next, seen);
         }
         if (!cold.Jobs.Exists(j => j.Type == Meitou.Data.Gameplay.Ai.TaskType.STAY_CLOSE_TO_TARGET)) return;
         for (int k = 0; k < cold.Jobs.Count; k++)
@@ -350,10 +351,10 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
             if (job.Type is not (Meitou.Data.Gameplay.Ai.TaskType.STAY_CLOSE_TO_TARGET or Meitou.Data.Gameplay.Ai.TaskType.BODYGUARD)) continue;
             if (job.Character == ordered)
             {
-                Production.ProductionSystem.RemoveJob(table, slot, k);
+                Production.ProductionSystem.RemoveJob(world, slot, k);
                 k--;
             }
-            else if (!job.Character.IsNone && table.TryResolveNext(job.Character, out int next)) BreakCircle(table, ordered, next, seen);
+            else if (!job.Character.IsNone && table.TryResolveNext(job.Character, out int next)) BreakCircle(world, ordered, next, seen);
         }
     }
 

@@ -61,7 +61,7 @@ public sealed partial class CarrySystem
         int moved = ForageMove(cold, table.Next[i].Position, victim, world);
         Butcher(world, i, t, death);
         Looted(world, table, i, t, moved, 0, crime: false);
-        End(table, i);
+        End(world, i);
     }
 
     /// <summary>

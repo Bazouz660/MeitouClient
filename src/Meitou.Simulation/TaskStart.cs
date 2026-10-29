@@ -61,6 +61,11 @@ public enum TaskEnd : byte
     Replaced,
     /// <summary>The Stop order: the act-out lets go and the character stands, idle.</summary>
     Stopped,
+    /// <summary>
+    /// The act-out ended by itself (its work is done, or it cannot go on): it lets go, and the character goes back to the task its provenance names (<see cref="RunningTask.Resume"/>;
+    /// engine, until a decision step decides again on this trigger).
+    /// </summary>
+    Done,
 }
 
 /// <summary>
@@ -222,17 +227,27 @@ public static class TaskStart
     }
 
     /// <summary>
-    /// Ends the character's task from outside its act-out (serial phases only): its fight and the task end through their handlers and the provenance is dropped; <see cref="TaskEnd.Stopped"/>
-    /// then stands it, idle (<see cref="MovementSystem.Stop"/>).
+    /// Ends the character's task (serial phases only) and drops its provenance. <see cref="TaskEnd.Stopped"/> (from outside the act-out): the fight and the task end through their handlers
+    /// and the character stands, idle (<see cref="MovementSystem.Stop"/>). <see cref="TaskEnd.Done"/> (the act-out's own end: a treatment, carry, site's work, machine's work, haul trip or
+    /// prospecting): the task's handler lets go, the character stands and takes up the task its provenance goes back to (<see cref="RunningTask.Resume"/>; idle when the provenance does not
+    /// run the task).
     /// </summary>
     public static void End(World world, int slot, TaskEnd reason)
     {
         var table = world.Characters;
         if (table.Phase == TablePhase.Parallel) throw new InvalidOperationException("tasks end in the serial phases only");
+        var cold = table.Cold(slot)!;
         var current = (CharacterTask)table.Next[slot].Task;
-        world.Tasks.Of(CharacterTask.Attack)?.End(world, slot, CharacterTask.Attack, reason);
-        if (current != CharacterTask.Attack) world.Tasks.Of(table.Cold(slot)!, current)?.End(world, slot, current, reason);
-        if (reason == TaskEnd.Stopped) MovementSystem.Stop(table, slot);
-        table.Cold(slot)!.Running = null;
+        var resume = cold.Running is { } run && run.Runs(current) ? run.Resume : CharacterTask.Idle;
+        if (reason != TaskEnd.Done) world.Tasks.Of(CharacterTask.Attack)?.End(world, slot, CharacterTask.Attack, reason);
+        if (current != CharacterTask.Attack) world.Tasks.Of(cold, current)?.End(world, slot, current, reason);
+        if (reason != TaskEnd.Replaced) MovementSystem.Stop(table, slot);
+        if (reason == TaskEnd.Done)
+        {
+            ref var n = ref table.Next[slot];
+            n.Task = (byte)resume;
+            n.TaskTime = 0;
+        }
+        cold.Running = null;
     }
 }

@@ -55,8 +55,8 @@ public sealed partial class ProductionSystem
             if (!n.Alive || table.Cold(i) is not { Prospecting: { } progress } cold) continue;
             if (n.Task != (byte)CharacterTask.Prospect || !Able(cold))
             {
+                if (n.Task == (byte)CharacterTask.Prospect) TaskStart.End(world, i, TaskEnd.Done);
                 cold.Prospecting = null;
-                if (n.Task == (byte)CharacterTask.Prospect) n.Task = (byte)CharacterTask.Idle;
                 continue;
             }
             progress += world.TickSeconds;
@@ -66,8 +66,7 @@ public sealed partial class ProductionSystem
                 found++;
                 continue;
             }
-            cold.Prospecting = null;
-            n.Task = (byte)CharacterTask.Idle;
+            TaskStart.End(world, i, TaskEnd.Done);
             PublishProspect(world, cold, n.Position);
         }
         prospectors = found;

@@ -100,7 +100,7 @@ public sealed partial class CarrySystem
             if (cold.Medical is not { Incapacitated: false } || !table.TryResolveNext(cold.CarryTarget, out int t) || table.Cold(t) is not { } target
                 || !CanBeKnockedOut(target) || Senses(world, table, t, i))
             {
-                End(table, i);
+                End(world, i);
                 continue;
             }
             var goal = Behind(next[t]);
@@ -157,13 +157,13 @@ public sealed partial class CarrySystem
         cold.LiftTime += dt;
         if (cold.Medical is not { Incapacitated: false } || !table.TryResolveNext(cold.CarryTarget, out int t) || table.Cold(t) is not { } target)
         {
-            End(table, i);
+            End(world, i);
             return;
         }
         // A target that senses the attacker cancels the swing too, every tick before the roll: silently, no "Failed!", event or XP (FUN_14034cd80).
         if (Senses(world, table, t, i))
         {
-            End(table, i);
+            End(world, i);
             return;
         }
         Face(ref table.Next[i], table.Next[t]);
@@ -172,12 +172,12 @@ public sealed partial class CarrySystem
             // The swing has no distance end: a target that walked off mid-swing is still rolled (FUN_14034cd80); one that went down is not.
             if (!CanBeKnockedOut(target))
             {
-                End(table, i);
+                End(world, i);
                 return;
             }
             Strike(world, table, i, t);
         }
-        if (cold.LiftTime >= KnockoutDoneAt * length) End(table, i);
+        if (cold.LiftTime >= KnockoutDoneAt * length) End(world, i);
     }
 
     void Strike(World world, CharacterTable table, int i, int t)
