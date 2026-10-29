@@ -79,7 +79,7 @@ app.MapGet("/feedback/{token}/{file}", (string token, string file, Feedback feed
     if (kind is null || feedback.FilePath(token, kind) is not { } path) return Results.NotFound();
     response.Headers.CacheControl = "public, max-age=31536000, immutable";
     if (kind == "log") response.Headers.ContentEncoding = "gzip";
-    return Results.File(path, kind switch { "screenshot" => "image/png", "save" => "application/zip", _ => "text/plain; charset=utf-8" },
+    return Results.File(path, kind switch { "screenshot" or "navmesh" => "image/png", "save" => "application/zip", _ => "text/plain; charset=utf-8" },
         kind == "save" ? $"meitou-feedback-{token[..8]}.zip" : null);
 });
 

@@ -4,12 +4,14 @@ using Meitou.Ui;
 namespace Meitou.Game;
 
 /// <summary>What the player filled in on the feedback form: the attachments are the ticked ones the game can make.</summary>
-sealed record FeedbackForm(string Title, string Body, bool Screenshot, bool Save, bool Log, string? Discord);
+sealed record FeedbackForm(string Title, string Body, bool Screenshot, bool Navmesh, bool Save, bool Log, string? Discord);
 
 /// <summary>The form's ticks and the Discord name, kept in meitou.user.json (<see cref="UserConfig.Feedback"/>) so the next report starts from them.</summary>
 sealed class FeedbackSettings
 {
     public bool Screenshot { get; set; } = true;
+    /// <summary>A second screenshot with the navmesh drawn over the world (off by default: it takes a moment to make).</summary>
+    public bool Navmesh { get; set; }
     public bool Save { get; set; } = true;
     public bool Log { get; set; }
     /// <summary>Send <see cref="DiscordName"/> with the report (default on), so it can be followed up on Discord.</summary>
@@ -26,7 +28,7 @@ sealed class FeedbackSettings
 sealed partial class PlayerInterface
 {
     const string FeedbackScreen = "feedback", FeedbackButton = "MeitouFeedbackButton";
-    const string FeedbackTitleBox = "TitleEditBox", FeedbackBodyBox = "BodyEditBox", FeedbackShotTick = "ScreenshotTickBox", FeedbackSaveTick = "SaveTickBox", FeedbackLogTick = "LogTickBox",
+    const string FeedbackTitleBox = "TitleEditBox", FeedbackBodyBox = "BodyEditBox", FeedbackShotTick = "ScreenshotTickBox", FeedbackNavTick = "NavmeshTickBox", FeedbackSaveTick = "SaveTickBox", FeedbackLogTick = "LogTickBox",
         FeedbackDiscordTick = "DiscordTickBox", FeedbackDiscordBox = "DiscordEditBox";
     /// <summary>The screens a feedback screenshot leaves out: the game menu and what it opens, and the form itself.</summary>
     static readonly HashSet<string> FeedbackShotHides = ["menu", "message", "save", "load", "import", "new-game", "file", FeedbackScreen];
@@ -34,7 +36,7 @@ sealed partial class PlayerInterface
     MyGuiLayout? feedbackButtonLayout;
     /// <summary>Where the last arranged frame put the button (empty: not shown).</summary>
     UiRect feedbackButtonBounds;
-    bool feedbackHasShot, feedbackStatusError;
+    bool feedbackHasShot, feedbackHasNav, feedbackStatusError;
     string? feedbackSaveMissing;
     string feedbackStatus = "";
 
@@ -48,33 +50,40 @@ sealed partial class PlayerInterface
     static MyGuiLayout FeedbackButtonLayout() => MyGuiReader.ParseLayout(
         $"""<MyGUI type="Layout"><Widget type="Button" skin="Kenshi_Button1" position_real="0.9 0 0.1 0.03" layer="Info" name="{FeedbackButton}"/></MyGUI>""");
 
+    /// <summary>
+    /// The form's layout. Positions are written as in the form before the navmesh tick (a 0.62 high window) and scaled to the window's height;
+    /// the rows from the navmesh tick down sit one 0.055 row lower.
+    /// </summary>
     static MyGuiLayout FeedbackLayout()
     {
-        static string Tick(string tick, string y) =>
+        const double OldHeight = 0.62, Height = 0.66, Row = 0.055;
+        static string F(double old) => (old * OldHeight / Height).ToString("0.####", System.Globalization.CultureInfo.InvariantCulture);
+        static string Tick(string tick, double y) =>
             $"""
-            <Widget type="Button" skin="Kenshi_TickBoxSkin" position_real="0.03 {y} 0.05 0.054" name="{tick}"/>
-            <Widget type="TextBox" skin="Kenshi_TextboxStandardText" position_real="0.09 {y} 0.88 0.054" name="lb{tick}"><Property key="TextAlign" value="Left VCenter"/></Widget>
+            <Widget type="Button" skin="Kenshi_TickBoxSkin" position_real="0.03 {F(y)} 0.05 {F(0.054)}" name="{tick}"/>
+            <Widget type="TextBox" skin="Kenshi_TextboxStandardText" position_real="0.09 {F(y)} 0.88 {F(0.054)}" name="lb{tick}"><Property key="TextAlign" value="Left VCenter"/></Widget>
             """;
         return MyGuiReader.ParseLayout($"""
             <MyGUI type="Layout">
-              <Widget type="Window" skin="Kenshi_WindowCX" position_real="0 0 0.36 0.62" layer="Window" name="Root">
+              <Widget type="Window" skin="Kenshi_WindowCX" position_real="0 0 0.36 {Height.ToString(System.Globalization.CultureInfo.InvariantCulture)}" layer="Window" name="Root">
                 <Property key="Caption" value="SEND FEEDBACK"/>
-                <Widget type="TextBox" skin="Kenshi_TextboxStandardText" position_real="0.03 0.02 0.94 0.1" name="lbIntro"><Property key="WordWrap" value="true"/><Property key="TextAlign" value="Left Top"/></Widget>
-                <Widget type="TextBox" skin="Kenshi_TextboxStandardText" position_real="0.03 0.13 0.94 0.045" name="lbTitleBox"><Property key="TextAlign" value="Left VCenter"/></Widget>
-                <Widget type="EditBox" skin="Kenshi_EditBox" position_real="0.03 0.175 0.94 0.065" name="{FeedbackTitleBox}"><Property key="MaxTextLength" value="100"/></Widget>
-                <Widget type="TextBox" skin="Kenshi_TextboxStandardText" position_real="0.03 0.255 0.94 0.045" name="lbBodyBox"><Property key="TextAlign" value="Left VCenter"/></Widget>
-                <Widget type="EditBox" skin="Kenshi_WordWrap" position_real="0.03 0.3 0.94 0.25" name="{FeedbackBodyBox}">
+                <Widget type="TextBox" skin="Kenshi_TextboxStandardText" position_real="0.03 {F(0.02)} 0.94 {F(0.1)}" name="lbIntro"><Property key="WordWrap" value="true"/><Property key="TextAlign" value="Left Top"/></Widget>
+                <Widget type="TextBox" skin="Kenshi_TextboxStandardText" position_real="0.03 {F(0.13)} 0.94 {F(0.045)}" name="lbTitleBox"><Property key="TextAlign" value="Left VCenter"/></Widget>
+                <Widget type="EditBox" skin="Kenshi_EditBox" position_real="0.03 {F(0.175)} 0.94 {F(0.065)}" name="{FeedbackTitleBox}"><Property key="MaxTextLength" value="100"/></Widget>
+                <Widget type="TextBox" skin="Kenshi_TextboxStandardText" position_real="0.03 {F(0.255)} 0.94 {F(0.045)}" name="lbBodyBox"><Property key="TextAlign" value="Left VCenter"/></Widget>
+                <Widget type="EditBox" skin="Kenshi_WordWrap" position_real="0.03 {F(0.3)} 0.94 {F(0.25)}" name="{FeedbackBodyBox}">
                   <Property key="Static" value="false"/><Property key="MaxTextLength" value="5000"/><Property key="MultiLine" value="true"/><Property key="WordWrap" value="true"/><Property key="TextAlign" value="Left Top"/>
                 </Widget>
-                {Tick(FeedbackShotTick, "0.57")}
-                {Tick(FeedbackSaveTick, "0.625")}
-                {Tick(FeedbackLogTick, "0.68")}
-                <Widget type="Button" skin="Kenshi_TickBoxSkin" position_real="0.03 0.735 0.05 0.054" name="{FeedbackDiscordTick}"/>
-                <Widget type="TextBox" skin="Kenshi_TextboxStandardText" position_real="0.09 0.735 0.4 0.054" name="lb{FeedbackDiscordTick}"><Property key="TextAlign" value="Left VCenter"/></Widget>
-                <Widget type="EditBox" skin="Kenshi_EditBox" position_real="0.5 0.73 0.47 0.065" name="{FeedbackDiscordBox}"><Property key="MaxTextLength" value="64"/></Widget>
-                <Widget type="TextBox" skin="Kenshi_TextboxStandardText" position_real="0.03 0.8 0.94 0.085" name="StatusText"><Property key="WordWrap" value="true"/><Property key="TextAlign" value="Left Top"/></Widget>
-                <Widget type="Button" skin="Kenshi_Button1" position_real="0.53 0.895 0.215 0.08" name="SendButton"><Property key="DefaultAction" value="true"/></Widget>
-                <Widget type="Button" skin="Kenshi_Button1" position_real="0.765 0.895 0.215 0.08" name="CancelButton"/>
+                {Tick(FeedbackShotTick, 0.57)}
+                {Tick(FeedbackNavTick, 0.57 + Row)}
+                {Tick(FeedbackSaveTick, 0.57 + 2 * Row)}
+                {Tick(FeedbackLogTick, 0.57 + 3 * Row)}
+                <Widget type="Button" skin="Kenshi_TickBoxSkin" position_real="0.03 {F(0.57 + 4 * Row)} 0.05 {F(0.054)}" name="{FeedbackDiscordTick}"/>
+                <Widget type="TextBox" skin="Kenshi_TextboxStandardText" position_real="0.09 {F(0.57 + 4 * Row)} 0.4 {F(0.054)}" name="lb{FeedbackDiscordTick}"><Property key="TextAlign" value="Left VCenter"/></Widget>
+                <Widget type="EditBox" skin="Kenshi_EditBox" position_real="0.5 {F(0.565 + 4 * Row)} 0.47 {F(0.065)}" name="{FeedbackDiscordBox}"><Property key="MaxTextLength" value="64"/></Widget>
+                <Widget type="TextBox" skin="Kenshi_TextboxStandardText" position_real="0.03 {F(0.8 + Row)} 0.94 {F(0.085)}" name="StatusText"><Property key="WordWrap" value="true"/><Property key="TextAlign" value="Left Top"/></Widget>
+                <Widget type="Button" skin="Kenshi_Button1" position_real="0.53 {F(0.895 + Row)} 0.215 {F(0.08)}" name="SendButton"><Property key="DefaultAction" value="true"/></Widget>
+                <Widget type="Button" skin="Kenshi_Button1" position_real="0.765 {F(0.895 + Row)} 0.215 {F(0.08)}" name="CancelButton"/>
               </Widget>
             </MyGUI>
             """);
@@ -102,10 +111,11 @@ sealed partial class PlayerInterface
         return true;
     }
 
-    /// <summary>Opens the form; <paramref name="screenshot"/>: a picture was taken; <paramref name="saveMissing"/>: why no save can be made, or null.</summary>
-    public void OpenFeedback(bool screenshot, string? saveMissing)
+    /// <summary>Opens the form; <paramref name="screenshot"/>: a picture was taken; <paramref name="navmesh"/>: a navmesh picture can be made; <paramref name="saveMissing"/>: why no save can be made, or null.</summary>
+    public void OpenFeedback(bool screenshot, bool navmesh, string? saveMissing)
     {
         feedbackHasShot = screenshot;
+        feedbackHasNav = navmesh;
         feedbackSaveMissing = saveMissing;
         if (!FeedbackSending) { feedbackStatus = ""; feedbackStatusError = false; }
         faithfulScreens.SetText(FeedbackScreen, FeedbackDiscordBox, FeedbackPrefs.DiscordName);
@@ -114,7 +124,7 @@ sealed partial class PlayerInterface
     }
 
     public FeedbackForm FeedbackValues() => new(faithfulScreens.GetText(FeedbackScreen, FeedbackTitleBox).Trim(), faithfulScreens.GetText(FeedbackScreen, FeedbackBodyBox).Trim(),
-        FeedbackPrefs.Screenshot && feedbackHasShot, FeedbackPrefs.Save && feedbackSaveMissing is null, FeedbackPrefs.Log,
+        FeedbackPrefs.Screenshot && feedbackHasShot, FeedbackPrefs.Navmesh && feedbackHasNav, FeedbackPrefs.Save && feedbackSaveMissing is null, FeedbackPrefs.Log,
         FeedbackPrefs.Discord && FeedbackPrefs.DiscordName.Trim() is { Length: > 0 } discord ? discord : null);
 
     /// <summary>The send's progress or why it failed, under the ticks (a failure also as a notice once the form is closed).</summary>
@@ -144,6 +154,7 @@ sealed partial class PlayerInterface
         b.Text["lbTitleBox"] = "Title";
         b.Text["lbBodyBox"] = "What happened";
         b.Text["lb" + FeedbackShotTick] = feedbackHasShot ? "Attach a screenshot of the game" : "Attach a screenshot (none was taken)";
+        b.Text["lb" + FeedbackNavTick] = feedbackHasNav ? "Attach a screenshot with the navmesh drawn over it" : "Attach a navmesh screenshot (only in a game)";
         b.Text["lb" + FeedbackSaveTick] = feedbackSaveMissing is null ? "Save the game now and attach the save" : $"Attach a save ({feedbackSaveMissing})";
         b.Text["lb" + FeedbackLogTick] = "Attach log.txt (it can show folder names, such as your user name)";
         b.Text["lb" + FeedbackDiscordTick] = "Include my Discord name";
@@ -154,8 +165,10 @@ sealed partial class PlayerInterface
         Enable("CancelButton", FeedbackLogTick, FeedbackDiscordTick);
         if (!FeedbackSending && faithfulScreens.GetText(FeedbackScreen, FeedbackTitleBox).Trim().Length > 0) Enable("SendButton");
         if (feedbackHasShot) Enable(FeedbackShotTick);
+        if (feedbackHasNav) Enable(FeedbackNavTick);
         if (feedbackSaveMissing is null) Enable(FeedbackSaveTick);
         Tick(FeedbackShotTick, FeedbackPrefs.Screenshot && feedbackHasShot);
+        Tick(FeedbackNavTick, FeedbackPrefs.Navmesh && feedbackHasNav);
         Tick(FeedbackSaveTick, FeedbackPrefs.Save && feedbackSaveMissing is null);
         Tick(FeedbackLogTick, FeedbackPrefs.Log);
         Tick(FeedbackDiscordTick, FeedbackPrefs.Discord);
@@ -167,6 +180,7 @@ sealed partial class PlayerInterface
         if (e.Action != "text") Sound("General_Click");
         if (e.Widget == "CancelButton") faithfulScreens.Close(FeedbackScreen);
         else if (e.Widget == FeedbackShotTick) FeedbackPrefs.Screenshot = !FeedbackPrefs.Screenshot;
+        else if (e.Widget == FeedbackNavTick) FeedbackPrefs.Navmesh = !FeedbackPrefs.Navmesh;
         else if (e.Widget == FeedbackSaveTick) FeedbackPrefs.Save = !FeedbackPrefs.Save;
         else if (e.Widget == FeedbackLogTick) FeedbackPrefs.Log = !FeedbackPrefs.Log;
         else if (e.Widget == FeedbackDiscordTick) FeedbackPrefs.Discord = !FeedbackPrefs.Discord;

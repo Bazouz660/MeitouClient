@@ -8,19 +8,19 @@ using Microsoft.AspNetCore.Http.Features;
 namespace Meitou.Reports;
 
 /// <summary>
-/// The game's feedback button: a form (title, text, version, mods) is started, its attachments (screenshot, zipped save, gzipped log) are
+/// The game's feedback button: a form (title, text, version, mods, camera location) is started, its attachments (screenshot, navmesh screenshot, zipped save, gzipped log) are
 /// uploaded one request each, and sending it opens a GitHub issue that links them. The files stay in <see cref="Config.FeedbackDir"/>,
 /// public under an unguessable token; one person starts at most 10 forms a day.
 /// </summary>
 sealed class Feedback(Store store, Config config, GithubAuth github, IHttpClientFactory http, ILogger<Feedback> log)
 {
-    public static readonly string[] Kinds = ["screenshot", "save", "log"];
-    const int TitleMax = 100, BodyMax = 5000, VersionMax = 64, ModsMax = 1000, PerDay = 10;
+    public static readonly string[] Kinds = ["screenshot", "navmesh", "save", "log"];
+    const int TitleMax = 100, BodyMax = 5000, VersionMax = 64, LocationMax = 200, ModsMax = 1000, PerDay = 10;
 
     /// <summary>The largest upload of a kind: Cloudflare in front of the service takes at most 100 MB a request.</summary>
     public static long MaxBytes(string kind) => kind == "save" ? 95_000_000 : 16 << 20;
 
-    public static string FileName(string kind) => kind switch { "screenshot" => "screenshot.png", "save" => "save.zip", _ => "log.txt" };
+    public static string FileName(string kind) => kind switch { "screenshot" => "screenshot.png", "navmesh" => "navmesh.png", "save" => "save.zip", _ => "log.txt" };
 
     /// <summary>Starts a form; returns its token (what the uploads, the send and the file links name), or why it was refused.</summary>
     public async Task<(string? Token, string? Error)> Create(FeedbackBody b, string reporter)
@@ -33,11 +33,12 @@ sealed class Feedback(Store store, Config config, GithubAuth github, IHttpClient
         string platform = b.Platform is { } p && Intake.Platforms.Contains(p) ? p : "other";
         string? discord = Clean(b.Discord, 64, lines: false);
         string[] mods = [.. (b.Mods ?? []).Select(m => Clean(m, 200, lines: false)).OfType<string>().Take(ModsMax)];
-        string[] wants = [.. Kinds.Where(k => k switch { "screenshot" => b.Screenshot == true, "save" => b.Save == true, _ => b.Log == true })];
+        string? location = Clean(b.Location, LocationMax, lines: false);
+        string[] wants = [.. Kinds.Where(k => k switch { "screenshot" => b.Screenshot == true, "navmesh" => b.Navmesh == true, "save" => b.Save == true, _ => b.Log == true })];
         if (await store.FeedbackCountBy(reporter, DateTimeOffset.UtcNow.AddDays(-1)) >= PerDay) return (null, "too many feedback reports today, try again tomorrow");
         foreach (string stale in await store.DeleteFeedbackDrafts(DateTimeOffset.UtcNow.AddDays(-1))) DeleteFiles(stale);
         string token = Convert.ToHexString(RandomNumberGenerator.GetBytes(16)).ToLowerInvariant();
-        await store.AddFeedback(token, reporter, title, body, version, commit, platform, mods, wants, discord);
+        await store.AddFeedback(token, reporter, title, body, version, commit, platform, mods, wants, discord, location);
         return (token, null);
     }
 
@@ -139,10 +140,12 @@ sealed class Feedback(Store store, Config config, GithubAuth github, IHttpClient
             foreach (string mod in row.Mods) s.AppendLine($"1. `{mod.Replace('`', '\'')}`");
             s.AppendLine().AppendLine("</details>").AppendLine();
         }
+        if (row.Location is { } location) s.AppendLine($"Camera: `{location.Replace('`', '\'')}`").AppendLine();
         if (row.ScreenshotSize is not null) s.AppendLine($"![Screenshot]({Link("screenshot")})").AppendLine();
+        if (row.NavmeshSize is not null) s.AppendLine($"![Navmesh]({Link("navmesh")})").AppendLine();
         if (row.SaveSize is { } save) s.AppendLine($"- [Save]({Link("save")}) (zip, {Mb(save)})");
         if (row.LogSize is not null) s.AppendLine($"- [log.txt]({Link("log")})");
-        foreach (string missing in row.Wants.Where(k => k switch { "screenshot" => row.ScreenshotSize is null, "save" => row.SaveSize is null, _ => row.LogSize is null }))
+        foreach (string missing in row.Wants.Where(k => k switch { "screenshot" => row.ScreenshotSize is null, "navmesh" => row.NavmeshSize is null, "save" => row.SaveSize is null, _ => row.LogSize is null }))
             s.AppendLine($"- The {missing} did not upload.");
         s.AppendLine().AppendLine("<sub>Sent with the in-game feedback button.</sub>");
         return s.ToString();
@@ -163,7 +166,7 @@ sealed class Feedback(Store store, Config config, GithubAuth github, IHttpClient
 
 /// <summary>The JSON body of <c>POST /feedback</c>: the form, and which attachments will follow.</summary>
 sealed record FeedbackBody(string? Title, string? Body, string? Version, string? Commit, string? Platform, List<string>? Mods,
-    bool? Screenshot, bool? Save, bool? Log, string? Discord = null);
+    bool? Screenshot, bool? Save, bool? Log, string? Discord = null, string? Location = null, bool? Navmesh = null);
 
 /// <summary><c>POST /feedback</c>: the new form's token.</summary>
 sealed record FeedbackCreated(string Token);

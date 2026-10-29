@@ -14,7 +14,7 @@ sealed record RowSummary(string Row, int Works, int Broken, bool TrustedWorks, s
 /// <summary>One in-game feedback form: what the player wrote, the game's details, the attachments asked for and uploaded, the issue it became.</summary>
 sealed record FeedbackRow(
     long Id, DateTimeOffset At, string Token, string Title, string? Body, string Version, string? Commit, string Platform, string[] Mods,
-    string[] Wants, long? ScreenshotSize, long? SaveSize, long? LogSize, int? Issue, string? IssueUrl, string? Discord);
+    string[] Wants, long? ScreenshotSize, long? SaveSize, long? LogSize, int? Issue, string? IssueUrl, string? Discord, long? NavmeshSize, string? Location);
 
 /// <summary>The reports and feedback tables in PostgreSQL. Reporters are only ever stored as salted hashes.</summary>
 sealed class Store(NpgsqlDataSource db)
@@ -58,6 +58,8 @@ sealed class Store(NpgsqlDataSource db)
             );
             create index if not exists feedback_reporter_at on feedback (reporter, at);
             alter table feedback add column if not exists discord text;
+            alter table feedback add column if not exists navmesh_size bigint;
+            alter table feedback add column if not exists location text;
             """);
         await cmd.ExecuteNonQueryAsync();
     }
@@ -151,11 +153,11 @@ sealed class Store(NpgsqlDataSource db)
     }
 
     public async Task AddFeedback(string token, string reporter, string title, string? body, string version, string? commit, string platform,
-        string[] mods, string[] wants, string? discord)
+        string[] mods, string[] wants, string? discord, string? location)
     {
         await using var cmd = db.CreateCommand("""
-            insert into feedback (token, reporter, title, body, version, commit, platform, mods, wants, discord)
-            values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            insert into feedback (token, reporter, title, body, version, commit, platform, mods, wants, discord, location)
+            values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
             """);
         cmd.Parameters.Add(new() { Value = token });
         cmd.Parameters.Add(new() { Value = reporter });
@@ -167,6 +169,7 @@ sealed class Store(NpgsqlDataSource db)
         cmd.Parameters.Add(new() { Value = mods, NpgsqlDbType = NpgsqlDbType.Array | NpgsqlDbType.Text });
         cmd.Parameters.Add(new() { Value = wants, NpgsqlDbType = NpgsqlDbType.Array | NpgsqlDbType.Text });
         cmd.Parameters.Add(new() { Value = (object?)discord ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
+        cmd.Parameters.Add(new() { Value = (object?)location ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
         await cmd.ExecuteNonQueryAsync();
     }
 
@@ -182,7 +185,7 @@ sealed class Store(NpgsqlDataSource db)
     public async Task<FeedbackRow?> GetFeedback(string token)
     {
         await using var cmd = db.CreateCommand("""
-            select id, at, title, body, version, commit, platform, mods, wants, screenshot_size, save_size, log_size, issue, issue_url, discord
+            select id, at, title, body, version, commit, platform, mods, wants, screenshot_size, save_size, log_size, issue, issue_url, discord, navmesh_size, location
             from feedback where token = $1
             """);
         cmd.Parameters.Add(new() { Value = token });
@@ -191,13 +194,14 @@ sealed class Store(NpgsqlDataSource db)
         long? Size(int i) => r.IsDBNull(i) ? null : r.GetInt64(i);
         return new(r.GetInt64(0), r.GetFieldValue<DateTimeOffset>(1), token, r.GetString(2), r.IsDBNull(3) ? null : r.GetString(3), r.GetString(4),
             r.IsDBNull(5) ? null : r.GetString(5), r.GetString(6), r.GetFieldValue<string[]>(7), r.GetFieldValue<string[]>(8),
-            Size(9), Size(10), Size(11), r.IsDBNull(12) ? null : r.GetInt32(12), r.IsDBNull(13) ? null : r.GetString(13), r.IsDBNull(14) ? null : r.GetString(14));
+            Size(9), Size(10), Size(11), r.IsDBNull(12) ? null : r.GetInt32(12), r.IsDBNull(13) ? null : r.GetString(13), r.IsDBNull(14) ? null : r.GetString(14),
+            Size(15), r.IsDBNull(16) ? null : r.GetString(16));
     }
 
     /// <summary>Records an attachment's size (<paramref name="kind"/> is one of <see cref="Feedback.Kinds"/>).</summary>
     public async Task SetFeedbackUpload(string token, string kind, long size)
     {
-        string column = kind switch { "screenshot" => "screenshot_size", "save" => "save_size", "log" => "log_size", _ => throw new ArgumentException(kind) };
+        string column = kind switch { "screenshot" => "screenshot_size", "navmesh" => "navmesh_size", "save" => "save_size", "log" => "log_size", _ => throw new ArgumentException(kind) };
         await using var cmd = db.CreateCommand($"update feedback set {column} = $2 where token = $1");
         cmd.Parameters.Add(new() { Value = token });
         cmd.Parameters.Add(new() { Value = size });

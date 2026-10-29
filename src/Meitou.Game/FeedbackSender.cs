@@ -8,11 +8,11 @@ using Meitou.Data.Textures;
 namespace Meitou.Game;
 
 /// <summary>
-/// One feedback report as the host hands it over: the form, the game's details, the screenshot being encoded, the save being written (a temporary
+/// One feedback report as the host hands it over: the form, the game's details, the screenshot and the navmesh screenshot being encoded, the camera's location, the save being written (a temporary
 /// folder) and log.txt's path, each null when not sent.
 /// </summary>
 sealed record FeedbackPackage(FeedbackForm Form, string Version, string Commit, string Platform, IReadOnlyList<string> Mods,
-    Task<byte[]>? Screenshot, string? SaveFolder, Task? SaveWritten, string? LogPath);
+    Task<byte[]>? Screenshot, Task<byte[]>? Navmesh, string? Location, string? SaveFolder, Task? SaveWritten, string? LogPath);
 
 /// <summary>A sent report's GitHub issue, or why it was not sent.</summary>
 readonly record struct FeedbackResult(int Number, string? Url, string? Error);
@@ -36,6 +36,7 @@ static class FeedbackSender
         try
         {
             byte[]? png = p.Screenshot is null ? null : await p.Screenshot;
+            byte[]? navPng = p.Navmesh is null ? null : await p.Navmesh;
             string? zip = null;
             if (p.SaveFolder is not null)
             {
@@ -53,7 +54,7 @@ static class FeedbackSender
             {
                 ["title"] = p.Form.Title, ["body"] = p.Form.Body, ["version"] = p.Version, ["commit"] = p.Commit, ["platform"] = p.Platform, ["discord"] = p.Form.Discord,
                 ["mods"] = new JsonArray([.. p.Mods.Select(m => (JsonNode)m)]),
-                ["screenshot"] = png is not null, ["save"] = zip is not null, ["log"] = log is not null,
+                ["screenshot"] = png is not null, ["navmesh"] = navPng is not null, ["location"] = p.Location, ["save"] = zip is not null, ["log"] = log is not null,
             };
             var created = await Answer(await Http.PostAsync($"{ServiceUrl}/feedback", new StringContent(form.ToJsonString(), Encoding.UTF8, "application/json")));
             string token = (string)created["token"]!;
@@ -61,6 +62,11 @@ static class FeedbackSender
             {
                 status("Uploading the screenshot...");
                 await Put(token, "screenshot", new ByteArrayContent(png), "image/png");
+            }
+            if (navPng is not null)
+            {
+                status("Uploading the navmesh screenshot...");
+                await Put(token, "navmesh", new ByteArrayContent(navPng), "image/png");
             }
             if (zip is not null)
             {
