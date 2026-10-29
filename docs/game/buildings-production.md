@@ -718,7 +718,7 @@ to `FUN_140836b70`: contribution k of the frame is x 0.6^k (counter `+0x174`, cl
   item. Otherwise `completeResearch` (as above, message and sound included) and the item is used up. Tech and bench level play no part.
 - **Tooltip** (`FUN_1407ab430`, **Observed** by decompile): the research name and "Research Blueprint" (Title), the item rows, then the first match of: finished
   before, "Research already known" (Title); `level` above the player's bench level (`uses_level` `FUN_140830a30` answers the level, else 0), "Needs research bench level {1,num}"
-  (BadBright); requirements met (`uses_requirements`), "Right-click to learn tech" (Title), else "Cannot learn this yet" (BadBright). Then `Tech Level` (ink) with the `level` (Main),
+  (BadBright); requirements met strictly (`uses_requirements` = `FUN_140832fa0` with the lenient flag clear, **Verified**: the check learning makes, not the research list's), "Right-click to learn tech" (Title), else "Cannot learn this yet" (BadBright). Then `Tech Level` (ink) with the `level` (Main),
   the prices, `Requirements:` with the `requirements` names (cyan `#14ffdc` when finished, else BadBright; the first in one row, the rest ", "-joined in a second), and a row per
   `enable buildings`, `enable weapon type`, `enable weapon model`, `enable armour` and `enable item` reference (`FUN_14079a890`): "New Building:", "New Weapon Class:",
   "New Weapons Grade:", "New Armour Type:", "New Items:", the name in Good. Meitou: `BlueprintRows`, `UnlockRows` (a row per requirement).

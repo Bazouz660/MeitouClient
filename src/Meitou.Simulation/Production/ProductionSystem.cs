@@ -1093,7 +1093,8 @@ public sealed partial class ProductionSystem : ITickSystem
             }).ToArray();
         return publishedResearch = new ResearchSnapshot(state.TechLevel, state.BenchLevel, queue, state.Rate, available) {
             Finished = state.Completed.Count, Known = state.Completed.ToHashSet(StringComparer.Ordinal),
-            RequirementsMet = allResearch.Where(r => Met(world, r.Requirements, lenient: true)).Select(r => r.Id).ToHashSet(StringComparer.Ordinal),
+            // Strict, as the blueprint tooltip asks (FUN_1407ab430 calls FUN_140832fa0 with the lenient flag clear, like learning); the research list is the lenient one.
+            RequirementsMet = allResearch.Where(r => Met(world, r)).Select(r => r.Id).ToHashSet(StringComparer.Ordinal),
         };
     }
 
