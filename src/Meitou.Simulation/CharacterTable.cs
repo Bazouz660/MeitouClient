@@ -385,6 +385,8 @@ public sealed class CharacterCold
     public string? ForcingLock { get; set; }
     /// <summary>How <see cref="ForcingLock"/> is forced.</summary>
     public Locks.LockForce Force { get; set; }
+    /// <summary>The door this character locks or unlocks by order (Lock 77, Unlock 140; <see cref="Locks.LockSystem"/>; null: none). Hashed only while set.</summary>
+    public Locks.DoorLockJob? DoorJob { get; set; }
     /// <summary>Game seconds since the last swing at <see cref="Bashing"/>' door (-1: walking there).</summary>
     public float BashTime { get; set; }
     /// <summary>The shackles this character is working on (<see cref="Locks.LockSystem"/>: picking, cutting; null: none). Hashed only while set.</summary>
@@ -674,6 +676,7 @@ public sealed class CharacterTable
             if (k.PickingLock is { } pick) { hasher.Add(0x5069636B); hasher.Add(Rng.StableHash(pick)); }
             if (k.Bashing is { } bash) { hasher.Add(0x42617368); hasher.Add(Rng.StableHash(bash)); hasher.Add(k.BashTime); if (k.BashOrdered) hasher.Add(0x4F726473); }
             if (k.ForcingLock is { } force) { hasher.Add(0x466F7263); hasher.Add(Rng.StableHash(force)); hasher.Add((int)k.Force); }
+            if (k.DoorJob is { } doorJob) { hasher.Add(0x446F724A); hasher.Add(Rng.StableHash(doorJob.Door)); hasher.Add(doorJob.Lock); hasher.Add(doorJob.Work); }
             if (k.Shackles is { } job) { hasher.Add(0x5368636B); hasher.Add(Rng.Key(job.Wearer)); hasher.Add((int)job.Work); }
             if (k.PickingUpItem is { } taking) { hasher.Add(0x54616B65); hasher.Add(taking); }
             if (k.Mouth is { } mouth) { hasher.Add(0x4D6F7574); hasher.Add(Rng.StableHash(mouth.Record)); hasher.Add(k.MouthSinceTick); }

@@ -55,6 +55,7 @@ public sealed partial class LockSystem
         walker.PickingLock = null;
         walker.Shackles = null;
         walker.ForcingLock = null;
+        walker.DoorJob = null;
         walker.Bashing = null;
         walker.BashOrdered = false;
         if (world.Player.DoorWalker == table.IdOf(best)) world.Player.DoorTarget = null;

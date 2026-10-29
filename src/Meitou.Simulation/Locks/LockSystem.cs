@@ -51,6 +51,7 @@ public sealed partial class LockSystem(GameConstants constants, BodyOptions opti
                         if (c.IsImprisoned && c.InWhat != cage.Id) continue;   // a prisoner reaches only its own cage
                         c.PickingLock = cage.Id;
                         c.Shackles = null;
+                        c.DoorJob = null;
                         if (!c.IsImprisoned) MovementSystem.GoTo(table, s, new Vector2(cage.Position.X, cage.Position.Z), c.RunSpeed);
                         break;   // one picker per order (the nearest is not looked for: the first listed)
                     }
@@ -76,6 +77,9 @@ public sealed partial class LockSystem(GameConstants constants, BodyOptions opti
                 case DoorOrder door:
                     DoorOrderInput(world, door);
                     break;
+                case DoorLockOrder doorLock:
+                    DoorLockInput(world, doorLock);
+                    break;
                 case SetFreeOrder free:
                     SetFreeInput(world, free);
                     break;
@@ -100,6 +104,7 @@ public sealed partial class LockSystem(GameConstants constants, BodyOptions opti
         ShackleWorkers(world);
         Bashers(world);
         ForcedLocks(world);
+        DoorLockJobs(world);
         CageWorkers(world);
         OpportunisticEscapes(world);
         ShackleEscapes(world);

@@ -295,7 +295,7 @@ sealed partial class PlayerInterface
 
     /// <summary>
     /// A door (the original's door branch): unlocked, the player's own gets Lock (77), every one Open (72) or Close (73); locked, the player's Unlock (140), another faction's Pick Lock (76).
-    /// Lock and Unlock act on all the building's doors (Meitou's lock order is per building, engine choice). A locked one also has Use Tools, Use Strength and Smash (285, 286, 226: <see cref="Meitou.Simulation.Locks.ForceLockOrder"/>).
+    /// Lock and Unlock are task orders on this one door (<see cref="Meitou.Simulation.Locks.DoorLockOrder"/>: the nearest selected character walks there and works 3.3 s); the panel's buttons toggle the building. A locked one also has Use Tools, Use Strength and Smash (285, 286, 226: <see cref="Meitou.Simulation.Locks.ForceLockOrder"/>).
     /// </summary>
     List<(string Caption, Action Give)> DoorVerbs((Meitou.Simulation.Locks.DoorPick Door, bool Locked) pick)
     {
@@ -311,14 +311,14 @@ sealed partial class PlayerInterface
         }
         if (pick.Locked)
         {
-            if (own) verbs.Add(("Unlock", () => Say(new Meitou.Simulation.Locks.ToggleDoorLocksOrder(door.Building) { Tick = session.World.Tick })));
+            if (own) verbs.Add(("Unlock", () => Say(new Meitou.Simulation.Locks.DoorLockOrder([], door.Id, false) { Tick = session.World.Tick })));
             else verbs.Add(("Pick Lock", () => Say(new Meitou.Simulation.Locks.DoorOrder([], door.Id, true) { Tick = session.World.Tick })));
             verbs.Add(("Use Tools", () => Say(new Meitou.Simulation.Locks.ForceLockOrder([], door.Id, Meitou.Simulation.Locks.LockForce.Tools) { Tick = session.World.Tick })));
             verbs.Add(("Use Strength", () => Say(new Meitou.Simulation.Locks.ForceLockOrder([], door.Id, Meitou.Simulation.Locks.LockForce.Strength) { Tick = session.World.Tick })));
             verbs.Add(("Smash", () => Say(new Meitou.Simulation.Locks.ForceLockOrder([], door.Id, Meitou.Simulation.Locks.LockForce.Smash) { Tick = session.World.Tick })));
             return verbs;
         }
-        if (own) verbs.Add(("Lock", () => Say(new Meitou.Simulation.Locks.ToggleDoorLocksOrder(door.Building) { Tick = session.World.Tick })));
+        if (own) verbs.Add(("Lock", () => Say(new Meitou.Simulation.Locks.DoorLockOrder([], door.Id, true) { Tick = session.World.Tick })));
         bool open = session.CurrentSnapshot.Doors.GetValueOrDefault((door.Building, door.Door)).Motion is Meitou.Simulation.Locks.DoorMotion.Open or Meitou.Simulation.Locks.DoorMotion.Opening;
         verbs.Add((open ? "Close" : "Open", () => Say(new Meitou.Simulation.Locks.DoorOrder([], door.Id) { Tick = session.World.Tick })));
         return verbs;

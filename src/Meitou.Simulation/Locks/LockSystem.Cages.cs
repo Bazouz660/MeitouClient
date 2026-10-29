@@ -77,6 +77,7 @@ public sealed partial class LockSystem
         c.PickingLock = null;
         c.Shackles = null;
         c.ForcingLock = null;
+        c.DoorJob = null;
         c.Freeing = CharacterId.None;
         c.EnteringCage = null;
     }
