@@ -413,7 +413,7 @@ sealed partial class GameHost
     /// <summary>A save loaded from the menus starts paused with <see cref="UserConfig.PauseOnLoad"/> (a player pause: the speed buttons resume it).</summary>
     void PauseAfterLoad()
     {
-        if (config.PauseOnLoad && session.Simulation.Speed != 0) session.Simulation.TogglePause();
+        if (config.PauseOnLoad) session.Simulation.Pause();
     }
 
     /// <summary>

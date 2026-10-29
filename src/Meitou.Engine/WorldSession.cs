@@ -267,7 +267,7 @@ public sealed class WorldSession : IDisposable
     {
         long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
         var actions = Bindings.Resolve(Input.Consume());
-        if (actions.Pressed(InputAction.Pause)) Simulation.TogglePause();
+        if (actions.Pressed(InputAction.Pause)) Simulation.PauseKey();
         if (actions.Pressed(InputAction.Speed1)) Simulation.SetSpeed(1);
         if (actions.Pressed(InputAction.Speed2)) Simulation.SetSpeed(2);
         if (actions.Pressed(InputAction.Speed3)) Simulation.SetSpeed(5);

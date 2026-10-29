@@ -86,7 +86,7 @@ sealed partial class PlayerInterface
             CloseInventoryWindows();
             faithfulScreens.Open("build");
             CloseContextMenu();
-            if (session.Simulation.Speed != 0) { session.Simulation.TogglePause(); buildPausedGame = true; }   // a player pause: the speed buttons resume it
+            if (session.Simulation.Speed != 0) { session.Simulation.Pause(); buildPausedGame = true; }   // a player pause: the speed buttons and the pause key resume it
         }
         else
         {

@@ -117,8 +117,7 @@ sealed partial class PlayerInterface
 
     void PressButton(int index)
     {
-        if (index == 0) session.Simulation.TogglePause();
-        else session.Simulation.SetSpeed(ButtonSpeeds[index]);
+        session.Simulation.SetSpeed(ButtonSpeeds[index]);   // the pause button (0) never resumes; only the pause key does
     }
 
     /// <summary>The selected characters of the current snapshot, found once per snapshot (the HUD box is asked for on every hit test).</summary>
