@@ -50,6 +50,11 @@ public enum AiBehaviour : byte
     /// about there and clears it, attacking criminals it sees on the way (<see cref="Crime.CrimeSystem"/>'s serial step). Wanted only while an alarm is in reach.
     /// </summary>
     Investigate = 16,
+    /// <summary>
+    /// Attacks the best-scoring standing member of the squad its running contract is aimed at (DEFEAT_SQUAD 101, the contract's mission target; finder <c>FUN_140793eb0</c>,
+    /// docs/game/ai-tasks.md "Combat goals"): the serial step orders the attack, the combat system fights it. Wanted only while such a member is left.
+    /// </summary>
+    Assault = 17,
 }
 
 /// <summary>The engine's table from <see cref="TaskType"/> to <see cref="AiBehaviour"/>, and the TaskData display text (docs/game/ai-tasks.md "TaskData registry", Verified) of the types it acts out.</summary>
@@ -100,6 +105,7 @@ public static class TaskBehaviours
         [TaskType.RUN_AROUND_TOWN_LOOKING_FOR_PEOPLE] = (AiBehaviour.Patrol, "Ransacking town"),
         [TaskType.INVESTIGATE_ALARMS] = (AiBehaviour.Investigate, "Investigating"),
         [TaskType.INVESTIGATE_ALARMS_ALLIES_ONLY] = (AiBehaviour.Investigate, "Investigating"),
+        [TaskType.DEFEAT_SQUAD] = (AiBehaviour.Assault, "Assault"),
     };
 
     /// <summary>

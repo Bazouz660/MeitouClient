@@ -446,6 +446,8 @@ public sealed class AiMind
     public string? BedAt { get; set; }
     /// <summary>Whom its follow goal follows instead of the squad leader: the contract's mission target for a goal aimed at it (none: the leader).</summary>
     public CharacterId FollowTarget { get; set; } = CharacterId.None;
+    /// <summary>Whom the think picked to assault (<see cref="AiBehaviour.Assault"/>); the serial step sends the attack and clears it.</summary>
+    public CharacterId AssaultTarget { get; set; } = CharacterId.None;
     /// <summary>Whether its lists hold any combat goal at all (else the stance stays the old default).</summary>
     public bool HasCombatGoals { get; set; }
     /// <summary>Whether a PROTECT_ALLIES goal (15 or 288) is in its lists and hours: it defends allies of other squads against any attacker (<see cref="RetaliationSystem"/>).</summary>
@@ -477,6 +479,7 @@ public sealed class AiMind
         if (PlaceAt is { } place) hasher.Add(place);
         if (BedAt is { } bed) hasher.Add(Rng.StableHash(bed));
         if (!FollowTarget.IsNone) hasher.Add(FollowTarget);
+        if (!AssaultTarget.IsNone) hasher.Add(AssaultTarget);
         if (LookAbout != Crime.CrimeSystem.FirstLookAboutSeconds) hasher.Add(LookAbout);
     }
 }

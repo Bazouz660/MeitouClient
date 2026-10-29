@@ -1397,7 +1397,8 @@ whose first step is neither the goal nor a step the engine carries out (`AiSyste
   closed is skipped rather than accepted from the node.
 - Only the step being carried out counts as queued, and only while it can run (Meitou's steps do not end on their own).
 - Finders: the spots, beds, seats, turrets and towns the act-outs already pick, at the floor point the walk ends on (`PlanContext.Find`); other finders find nothing,
-  so such goals do not plan. Rows on the way have their `TaskProfiles` desire, else 1.
+  so such goals do not plan. Rows on the way have their `TaskProfiles` desire, else 1. The exception is DEFEAT_SQUAD 101, whose plan is the goal alone: the finder's
+  pick (`AiSystem.AssaultTargetFor`, [ai-tasks](game/ai-tasks.md#combat-goals)) is sent as an `AttackOrder` by the serial step and the combat system fights it.
 - States (`PlanContext.Holds`): location, distance, bed, sitting, home (within 20 of the home), home town, town, weapon drawn, weapon carried
   (`hasWeapon`), carrying and inside the home building (107, `AI::iAmInsideTargetBuilding` for a non-building target) are evaluated; moving, getting up, arms, power, buildings, doors, gates, accessibility, machine slots and readiness are
   held true (movement and the lock-up round deal with doors; the bashers' `DoorPlan` evaluates them); every other state is false.

@@ -758,6 +758,22 @@ vfunc 5 `FUN_14050caf0`). TaskData fields: +0x108 desire (a member function, nea
   only when that list is empty its threats. All passing ones go to `chooseBestAttackTarget` (`FUN_14059e300`, the target score): the best is taken
   (**Verified**). Meitou: `CombatSystem.BestAttackerOf` picks each joiner's attacker (the sense tests and the threats fallback left out). Gate guards (`Gate guard -no turrets`
   and those inheriting it) list 15, `Gate guard stay in town -no turrets` 288 (**Verified**, package dump).
+- 101 DEFEAT_SQUAD ("Assault on target squad", `targeting` 3 = the squad's mission target; row `Assault`: list B `!47`, effect 7; desire AI slot 19 = 1 times the finder's
+  factor; carried by the packages `Assault target squad` and `(agg)`, signal 8, and by dialogue `AI contract`s). Finder `FUN_140793eb0` (**Verified**): the goal's target
+  hand must be a character (type 1 or 0x22); of its squad (+0x1d8, members +0x58/+0x60) it keeps the members that
+  (a) the AI knows, `FUN_140855960(AI+0x28, member, flag)`: the member is the AI's own character, or has an entry in the AI's sensory map (any tag; with the flag set only an
+  entry seen or heard now; the flag is not passed here, so the entry's freshness is **Unknown**), else the branch that compares the member's hand with a hand
+  stored in an object at the character's +0x280, whose meaning is **Unknown**;
+  (b) pass the area test `FUN_140599f30` (**Observed**, [perception](perception.md#the-attack-on-sight-tests): in the home town, within ROAM_FAR's 6517 of the character, or fighting it);
+  (c) are not imprisoned (`+0x2f8` != 2, [carry-loot](carry-loot.md)); (d) are standing, character vfunc `0x368` == 0 (not crawling, not ragdolled, so not knocked out or dead).
+  The kept ones go to `chooseBestAttackTarget` `FUN_14059e300` (the [target score](combat.md), which also drops ragdolls, allies by faction `FUN_1406b2630` unless slaves,
+  the leave-alone cases and members it found no path to): the **best by score**, not the nearest, becomes the target hand. Factor `DAT_14167c308` = 1.0f
+  (**Verified**, `data_values.txt`) with a pick, else 0. A pure 0/1 gate; the plan from there (a provider of `isTargetDown`, such as 4 Attacking) is the planner's.
+  Meitou: `AiBehaviour.Assault`, `AiSystem.AssaultTargetFor`. Goal target = the contract's mission target (`StartContract`, from dialogue's `AI contract`); no mission target,
+  or a goal not aimed at it, gives 0. Known = within the fighters' sense range (`CombatSystem.Senses`) or the mission target itself (engine reading). The plan is the goal
+  alone (engine choice: the walk and the weapon are the combat system's); the serial step sends a non-defensive `AttackOrder` to the picked member, the character alone
+  (as dialogue's attack effects: its mates join through their own stance), and when the fight ends the next think picks the next standing member. Not modelled: the
+  `+0x280` branch, the leave-alone cases, entry age. 248 "Attacking Squad" (same finder shape) is not built.
 - 32 SELF_PRESERVATION: every character's urgent goal (`Character::setupAI`); desire AI slot 17, provider 13 (finder `AI::findAttackerOf`) or 35;
   rows 4 / 262 desires are slots 53 / 54. Details: [combat](combat.md#fight-lifecycle-and-orders).
 - So a squad with PROTECT goals and no ATTACK goal starts no fight with an idle enemy (**Observed**): e.g. the base `Fog prince squad`

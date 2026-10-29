@@ -274,6 +274,8 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             AiBehaviour.Travel => board.RefugeeTarget >= 0 ? 1 : board.Destination.IsNone ||CurrentTown(world, world.Characters.Previous[self.Slot].Position) == board.Destination ? 0 : 1,
             // Only while an alarm of its town is in reach (the row's done state !ALARMS_IN_THE_VICINITY).
             AiBehaviour.Investigate => AlarmOf(world, self.Slot, type, board) is null ? 0 : 1,
+            // The assault's finder factor: 1 while a member of the mission target's squad passes its tests, else 0 (FUN_140793eb0).
+            AiBehaviour.Assault => targeting == TaskTargetType.SquadMission && !AssaultTargetFor(world, self.Slot, board).IsNone ? 1 : 0,
             _ => 1,
         };
     }
@@ -639,6 +641,12 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
                 GoToSpot(world.Walkability, table, slot, mind, spot, GiveUp.Target, SpeedMode.Run);
                 break;
             }
+            case AiBehaviour.Assault:
+                // Stands until the serial step sends the attack on the member picked (the combat system walks it there).
+                Become(table, slot, CharacterTask.Idle);
+                mind.AssaultTarget = AssaultTargetFor(world, slot, board);
+                if (!mind.AssaultTarget.IsNone) Interlocked.Exchange(ref assaulting, 1);
+                break;
             case AiBehaviour.Travel:
                 // To the mission town's centre; the goal is no longer wanted once inside the town (Desire), long before the centre.
                 if (DestinationCentre(world, board) is not { } town) Become(table, slot, CharacterTask.Idle);
@@ -965,6 +973,8 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
         var table = world.Characters;
         if (Interlocked.Exchange(ref placing, 0) != 0) Place(table);
         if (Interlocked.Exchange(ref bedding, 0) != 0) LieDown(world);
+        combat ??= world.SystemOf<Combat.CombatSystem>();
+        if (Interlocked.Exchange(ref assaulting, 0) != 0) SendAssaults(world);
         bool cadence = world.Tick % Math.Max(1, Settings.PackageEveryTicks) == 0;
         // Each town's turrets are claimed once per cadence, by the squads in squad order (derived, not hashed).
         if (cadence) { turretTaken.Clear(); seatTaken.Clear(); ReserveSeats(world); RefreshPlaces(world); }

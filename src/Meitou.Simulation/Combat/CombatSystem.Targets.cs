@@ -147,7 +147,7 @@ public sealed partial class CombatSystem
     /// Whether fighter <paramref name="i"/> senses <paramref name="c"/> (the chooser's sense test, engine reading of the sense entries): one attacking it always; else within its
     /// sight range (<see cref="SenseRange"/>, the race's multiplier and the weather, 500 indoors), and a sneaker only while in view (<see cref="SightMap.Sees"/> with its stealth).
     /// </summary>
-    bool Senses(World world, int i, CharacterCold cold, int c)
+    internal bool Senses(World world, int i, CharacterCold cold, int c)
     {
         var prev = world.Characters.Previous;
         if ((uint)c >= (uint)prev.Length || !prev[c].Alive || world.Characters.Cold(c) is not { } tc) return false;

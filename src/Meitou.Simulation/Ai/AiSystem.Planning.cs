@@ -64,6 +64,14 @@ public sealed partial class AiSystem
         public bool TryPlan(AiGoal goal, float desire)
         {
             var type = goal.Task.Type;
+            // The assault is its own plan (engine choice): its finder's target is not a plan target, the combat system draws weapons and closes in, and its only list B entry (!47,
+            // not carrying) is what Holds already requires of a character the AI runs.
+            if (type == TaskType.DEFEAT_SQUAD)
+            {
+                mind.Plan.Clear();
+                mind.Plan.Add(new PlanStep(type, default));
+                return true;
+            }
             if (TaskDataTable.Of(type) is not { } row)
             {
                 mind.Plan.Clear();
