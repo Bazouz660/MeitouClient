@@ -381,8 +381,13 @@ camps it has explored (**engine choice**).
 
 FACTION `buildings replacements` (BUILDINGS_SWAP, type 103, 40 records): `Faction::setup` builds one swap per record (`FUN_1407fd120`): a set of `to replace` BUILDINGs and
 a weighted choice of `replace with` (weight v0). `RootObjectFactory::createBuilding` asks `Faction::getBuildingReplacement` `FUN_1407f4770` (**Verified**) for buildings whose
-placement flag (`+0xa8`) wants it, with the placement's owner faction: the first set holding the building answers nothing when `replace with` is empty (the building is not made,
-e.g. "no carpets"), its one entry, or a weighted pick; no set: the building itself. Not modelled (the level builds every building as placed).
+flag `+0xa8` wants it: the first set holding the building answers nothing when `replace with` is empty (the building is not made, e.g. "no carpets"), its one entry, or a weighted pick
+(a C `rand()` roll in [0, total weight], the first cumulative key above it; not seeded by anything the game saves); no set: the building itself. The flag is not a placement field:
+`createBuilding` `FUN_14057cc70` reads it from the zone's content object (the zone slot `FUN_140a08ae0`, 0x168 bytes each), where `+0xa8` is `ZoneMapContent::newGameFirstTimeLoaded`
+([save.md](../formats/save.md); **Observed**, the identity rests on that one offset), so swaps happen only while a zone's buildings are made fresh in a new game, never for a zone loaded
+from a save. The faction asked is the passed owner faction, else the owning town's, with a further town-based override for non-player owners whose exact conditions (the
+`createBuilding` parameters `param_8`, `param_14`, the "creates player town" flag) are **Unknown**. Not modelled (the level builds every building as placed; the swap would touch the
+town building list, fixtures, turrets and the drawn world alike, so it needs one shared resolution of the level's buildings first).
 
 ### Loose items in buildings
 
