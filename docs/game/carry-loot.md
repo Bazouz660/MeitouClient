@@ -169,7 +169,9 @@ it is not part of target eligibility.
 `isSubjectInInventory` (3), provided by row 3 `PICKUP` "Collecting item" (`Task_Loot_AI`, B list `isItemLootable`, `isAtLocation`): the plan walks to the target, then loots it.
 
 - **Finder** (`FUN_14099ae10(ai, animalsOnly)`; 177 passes 0). Two passes over the sensed list, each target within 100 units (squared 10000), not carried (`+0x3d4`),
-  reachable (`AI::isDestinationAccessible`, `destinationNotBlockedByFortifications`), not in the squad's give-up list, and not short-term tagged 6 by the looter's squad
+  reachable (both passes, **Verified**: `FUN_140597160` = DESTINATION_NOT_BLOCKED_BY_FORTIFICATIONS, [locks](locks.md): the gate codes match, either is -1, or the route between is open; and
+  `FUN_140597030` = `AI::isDestinationAccessible`: true with no building around the body, when the looter is in it, or for a caged occupant; for a plain building (no parent) the
+  looter may use (`CharacterHuman` slot `0x328` is always true; the animal's is **Unknown**) it needs `Building::hasAnOpenDoor` `FUN_1405499a0`: no doors, or one open, opening or broken; Meitou `CarrySystem.Reachable`), not in the squad's give-up list, and not short-term tagged 6 by the looter's squad
   (`FUN_140678960(c, target, 6)`, [squad memory](dialogue.md#squad-memory)); the first match wins (sensed-list order, **Unknown**). Pass 1: mask 0x10 / 0 (read as the dead). Pass 2: masks 0x4008 / 0x11 (the kidnap finder's,
   read as other factions' downed) and also: the target's faction is not the player's (`FACTION +0x250`) unless the global **Bandits loot the player** (`142133598`) is set, and
   `shouldIScrewThisGuyOver(looter, target)` (`FUN_14059a7b0`), with no friendliness filter before it (**Verified**, `FUN_14099ae10`).

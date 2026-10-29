@@ -67,13 +67,26 @@ public sealed partial class CarrySystem
             if (memory is not null && memory.HasShort(world, cold.SquadId, table.IdOf(s), MemoryTag.Looted)) continue;
             if (body.Medical!.Dead)
             {
-                if (body.Faction != cold.Faction && d2 <= dead2) (dead, dead2) = (s, d2);
+                if (body.Faction != cold.Faction && d2 <= dead2 && Reachable(world, slot, s)) (dead, dead2) = (s, d2);
                 continue;
             }
-            if (d2 > down2 || PlayerSide(world, body) && !world.Player.BanditsLoot || !ScrewsOver(world, slot, cold, s, body, memory)) continue;
+            if (d2 > down2 || PlayerSide(world, body) && !world.Player.BanditsLoot || !Reachable(world, slot, s) || !ScrewsOver(world, slot, cold, s, body, memory)) continue;
             (down, down2) = (s, d2);
         }
         return dead >= 0 ? dead : down;
+    }
+
+    /// <summary>
+    /// The finder's two per-body tests, both passes (<c>FUN_14099ae10</c>, <b>Verified</b>): <c>FUN_140597160</c> (DESTINATION_NOT_BLOCKED_BY_FORTIFICATIONS: the gate codes of the two match, or
+    /// the route between them is open, <see cref="Locks.LockSystem.NotBlocked"/>) and <c>FUN_140597030</c> (<c>AI::isDestinationAccessible</c>: a body in a building the looter is not in
+    /// needs that building to have an open door, <c>Building::hasAnOpenDoor</c>; a human looter's "may use it" test, slot 0x328, is always true). Not modelled: the building-link branch of the first,
+    /// the animal looter's slot 0x328, a body in a part building with a parent.
+    /// </summary>
+    static bool Reachable(World world, int looter, int body)
+    {
+        var next = world.Characters.Next;
+        if (world.SystemOf<Locks.LockSystem>() is { } locks && !locks.NotBlocked(world, next[looter].Position, next[body].Position)) return false;
+        return world.Sight.BuildingOf(body) is not { } building || world.Sight.BuildingOf(looter) == building || world.Fixtures.HasOpenDoor(building);
     }
 
     static bool PlayerSide(World world, CharacterCold c) => c.IsPlayer || world.Player.Faction >= 0 && c.Faction == world.Player.Faction;
