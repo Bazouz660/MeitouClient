@@ -19,7 +19,7 @@ public enum AiBehaviour : byte
     Follow = 4,
     /// <summary>Walks to its bed in the home building (else the home, else its post) and lies down there (<see cref="CharacterTask.Rest"/>).</summary>
     Sleep = 5,
-    /// <summary>Sits down (<see cref="CharacterTask.Rest"/>): at a bar or general node of its home, else inside it; without a home where it is.</summary>
+    /// <summary>Sits down (<see cref="CharacterTask.Rest"/>) at the seat it claimed (<see cref="Blackboard.SeatClaims"/>); wanted only while it has one.</summary>
     Sit = 6,
     /// <summary>While a patrol package runs, the leader walks the patrol's route and the others follow it; otherwise wanders about the town (<see cref="CharacterTask.Wander"/>).</summary>
     Patrol = 7,

@@ -294,9 +294,9 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             AiBehaviour.Shop => Places(board.Town).Shops.Count > 0 && mind.Shopping.Pending(ShoppingList.DayOf(world.GameHours), world.Hour) ? 1 : 0,
             // A worker needs a mine, bench or refinery in its town (the finders return 0 without one).
             AiBehaviour.Work => Places(board.Town).Workplaces.Count > 0 ? 1 : 0,
-            // Relaxing needs a free seat of the package's bar, sitting around a free chair of the home (claimed in <see cref="ClaimSeats"/>); without a home it sits where it is.
+            // Relaxing needs a free seat of the package's bar, sitting around a free chair of the home (claimed in <see cref="ClaimSeats"/>); the original's finder returns 0 without one (FUN_1408caf00).
             AiBehaviour.Relax => board.BarTable >= 0 && board.SeatClaims.ContainsKey(self.Slot) && !mind.SeatUnreachable ? 1 : 0,
-            AiBehaviour.Sit => board.Home is null || board.SeatClaims.ContainsKey(self.Slot) && !mind.SeatUnreachable ? 1 : 0,
+            AiBehaviour.Sit => board.SeatClaims.ContainsKey(self.Slot) && !mind.SeatUnreachable ? 1 : 0,
             AiBehaviour.ToTown => TownAt(world.Characters.Previous[self.Slot].Position) >= 0 ? 0 : 1,
             // To the package's mission town while not in it.
             AiBehaviour.Travel => board.RefugeeTarget >= 0 ? 1 : board.Destination.IsNone ||CurrentTown(world, world.Characters.Previous[self.Slot].Position) == board.Destination ? 0 : 1,
@@ -756,9 +756,8 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
                 break;
             case AiBehaviour.Relax:
             case AiBehaviour.Sit:
-                // At its claimed seat (a chair, else a node); sitting around without a home, where it stands.
-                if (behaviour == AiBehaviour.Sit && board.Home is null) Become(table, slot, CharacterTask.Rest);
-                else if (board.SeatClaims.TryGetValue(slot, out var claimed))
+                // At its claimed seat (a chair, else a node).
+                if (board.SeatClaims.TryGetValue(slot, out var claimed))
                 {
                     bool chair = claimed.Kind == HomeSpotKind.Chair;
                     // Already on its chair (moved onto it below, off the floor point the walk ended at).

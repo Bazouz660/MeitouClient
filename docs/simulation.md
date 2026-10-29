@@ -1437,7 +1437,7 @@ Defensive Gates is inside the wall about 110 along it from the opening; headless
 are made at the origin and keep that post. Seats are the home's
 interior furniture with a CHAIR functionality (`HomeSpotKind.Chair`; never a standing node), free
 in that building this pass; relaxing falls back to a bar node, then a general node, sitting around
-has none and is not wanted without a chair (without a home it sits where it is), staying home without one stands at home (engine choice: the original's
+has none and is not wanted without a chair (the original finds nothing without a town furniture to sit at, so a homeless squad does not sit where it stands), staying home without one stands at home (engine choice: the original's
 43 operates home furniture, chairs among it, [ai-tasks](game/ai-tasks.md#town-goals); a given-up seat is tried again when the goal is renewed). A seated character
 is put on the seat's origin with no offset, facing the seat's way ([ai-tasks](game/ai-tasks.md) "Sitting"), and plays the functionality's clip ("sitting chair", pillows
 "sitting idle"). A town's bars and shops are

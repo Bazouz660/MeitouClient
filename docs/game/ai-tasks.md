@@ -879,8 +879,16 @@ vfunc 5 `FUN_14050caf0`). TaskData fields: +0x108 desire (a member function, nea
 - Building layouts' `is bar` / `is shop` are 0 on every exterior layout of the base game and mods checked (2 interior layouts set `is bar`, 9 `is shop`),
   so they do not mark bars and shops (**Verified** over the merged `interiors.level`).
 - **43 Staying home** (`FUN_1408cbc00`): furniture in the home whose BuildingFunction is in mask 0x2049a (bits MINE, RESEARCH, REFINERY, TRAINING,
-  CRAFTING, CHAIR; reading the mask as bits is **Observed**); **275 Sitting around** (`FUN_1408caf00`): only in the home town, furniture of mask
-  0x1020080 (TRAINING, CHAIR, THRONE) not claimed by others. Both lead to 221 (pretend operating).
+  CRAFTING, CHAIR; reading the mask as bits is **Observed**). Both it and 275 lead to 221 (pretend operating).
+- **275 Sitting around** (`FUN_1408caf00`; the registration's finder thunk `LAB_1400061db` is not in the RE files, so the row link is **Observed**; the rest **Verified** by decompile):
+  - Gate: 0 (not wanted, no target) when the character is in no town location (character vfunc `0x78`). A non-player-faction character (faction `+0x250` clear) needs that town to
+    be its squad's home town (Ownerships `+0x30`) or owned by the squad's faction (`FUN_140621390`); a player-faction one needs a town owned by a player faction, with no home test.
+  - Scan (only with no target yet; one already set keeps factor 1): the town's own furniture (Town vfunc `0x2c8` `FUN_1408d10f0`: the buildings of the town's registered zones
+    whose town it is; not a 3x3 round the character) of mask 0x1020080 (TRAINING, CHAIR, THRONE), 0x1020000 without TRAINING when `FUN_140856bc0` is true (the faction has `+0x250`,
+    or the character is held by such a character). Slot 0 of the finder (`FUN_1408cebe0`) keeps pieces the squad may use (`FUN_140621230`), not on the character's avoid set, with
+    a floor-reachability test; the first whose owner faction is the character's or the squad's and that no one else claimed (`FUN_1402690e0` < 1) is the target; none: 0.
+    The list order is the zone map's (arbitrary); the usability and avoid-set details are **Unknown**.
+  - Meitou: no seat claimed means the goal is not wanted; a squad does not sit where it stands.
 - Chairs (**Verified**, BUILDING_FUNCTIONALITY records of gamedata.base / rebirth.mod / the install's mods, dumped): BuildingFunction 17 BF_CHAIR
   `chair`, `chair-fixed`, `chair-fixed 180` (animation "sitting chair"; Stool, Old Stool, Bench, Sitting Box) and `sit on floor (no chair)`
   ("sitting idle"; Sitting Pillow, Sitting spot (invisible)); 24 BF_THRONE `throne chair` ("sitting chair"); all `max operators` 1.

@@ -252,7 +252,6 @@ public sealed partial class AiSystem
                     return new PlanTarget(type == TaskType.WANDERER ? Targets.Town : Targets.Spot, type == TaskType.WANDERER ? p with { Y = float.NaN } : p);
                 }
                 case TaskType.RELAX_IN_TOWN_PACKAGE or TaskType.SIT_AROUND:
-                    if (type == TaskType.SIT_AROUND && board.Home is null) return new PlanTarget(Targets.Spot, Me.Position);
                     return board.SeatClaims.TryGetValue(slot, out var seat) && !mind.SeatUnreachable ? new PlanTarget(Targets.Seat, seat.Position) : default;
                 case TaskType.AUTO_LABOURING_MINES or TaskType.AUTO_LABOURING_MINES_PRETEND:
                     // The building it works at: the one it walks to now, else the pick it will make (the same roll, AiMind.WorkEpoch).
