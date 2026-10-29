@@ -101,8 +101,33 @@ public sealed class Machine
     public float CropMatch { get; set; } = 1;
     /// <summary>A farm's water draw per second: <c>consumption rate</c> / G x the biome's <c>farm water usage</c>.</summary>
     public float WaterRate { get; set; }
-    /// <summary>Production status: 2 working, 1 output full, 0 idle (<b>Observed</b>, <c>+0x468</c>).</summary>
+    /// <summary>
+    /// Production status (<c>+0x468</c>, docs/game/buildings-production.md "Blocked output"): 2 ready or working (a producer starts there), 1 output full (blocked: the planner's states 63 / 64
+    /// read it), 0 nothing to work with. Not saved (the original saves no such key). Hashed.
+    /// </summary>
     public byte Status { get; set; }
+
+    /// <summary>
+    /// <c>machineHasEmptyInputs</c> (slot 149 <c>FUN_140298b70</c>, <b>Verified</b>): some rated input holds no item and its level is spent (0.001 or less).
+    /// </summary>
+    public bool HasEmptyInputs
+    {
+        get
+        {
+            foreach (var input in Inputs)
+                if (input.Rate > 0 && input.Count == 0 && input.Level <= 0.001f) return true;
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// <c>isMachineOutputFull</c>, the output half of <c>isMachineJammed</c> (slot 175, <c>FUN_140296fb0</c>, <b>Verified</b>): a production machine with an output whose status is 1. Farms,
+    /// benches and storages have variants of their own that Meitou does not evaluate (false).
+    /// </summary>
+    public bool OutputBlocked => Status == 1 && Output is not null && Farm is null && Craft is null && !Data.IsStorage;
+
+    /// <summary><c>isMachineJammed</c> (<c>FUN_1405a2e60</c>, <b>Verified</b>): an empty input, else a blocked output.</summary>
+    public bool Jammed => HasEmptyInputs || OutputBlocked;
     /// <summary>Characters working it this tick (derived; not saved, not hashed).</summary>
     public int Operators { get; set; }
     /// <summary>Operators last tick: what a consumer's draw is scaled by (the grid runs after the operators, so its result applies one tick later).</summary>

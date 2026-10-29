@@ -454,10 +454,10 @@ from the decompile and agree with this table, except that the decompile shows no
 | 58 | `AT_CURRENT_LOCATION_BUILDING_DOOR` |
 | 59 | `DESTINATION_IS_ACCESSIBLE` |
 | 60 | `LOCATION_IS_ACCESSIBLE` |
-| 62 | `machineHasEmptyInputs` |
-| 63 | `isMachineOutputFull` |
-| 64 | `isMachineJammed` |
-| 65 | `isAnyMachineJammed` |
+| 62 | `machineHasEmptyInputs` (`FUN_1405974e0`, **Verified**): a building target has an empty input, [Blocked output](buildings-production.md#blocked-output) |
+| 63 | `isMachineOutputFull` (`FUN_1405a2ba0`, **Verified**): building slot 175, status `+0x468` == 1 for the production family; Meitou: evaluated for a machine target |
+| 64 | `isMachineJammed` (`FUN_1405a2e60`, **Verified**): 62 or 63 of a building target; asked only by rows 91 and 90 (no data starts them); Meitou: evaluated for a machine target |
+| 65 | `isAnyMachineJammed` (`FUN_1405a2f00`, **Verified**): the 64 test over a hand list of the AI (**Unknown** list); not wired in Meitou |
 | 66 | `haveSomeResourcesFrom` |
 | 67 | `haveSomeResourcesFor` |
 | 68 | `HAVE_SOME_LOOT_FROM` |

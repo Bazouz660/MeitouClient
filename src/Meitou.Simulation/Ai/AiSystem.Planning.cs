@@ -9,7 +9,7 @@ public sealed partial class AiSystem
     /// <summary>Kinds of <see cref="PlanTarget"/> the finders give.</summary>
     static class Targets
     {
-        public const byte Spot = 1, Bed = 2, Seat = 3, Turret = 4, Town = 5, Work = 6;
+        public const byte Spot = 1, Bed = 2, Seat = 3, Turret = 4, Town = 5, Work = 6, Machine = 7;
     }
 
     /// <summary>How near a home's position counts as at home (units; engine stand-in for the original's inside-the-building test).</summary>
@@ -121,6 +121,18 @@ public sealed partial class AiSystem
             return float.IsNaN(t.Position.Y) || MathF.Abs(p.Y - t.Position.Y) <= FloorSlack;
         }
 
+        /// <summary>
+        /// The player's machine a <see cref="Targets.Machine"/> target stands at (matched by its position; read-only, the production tick is the only writer). No finder gives such a target yet:
+        /// the goals Meitou plans against machines are NPC town work, whose buildings are level data, and the player's own machine work is the job system's.
+        /// </summary>
+        Meitou.Simulation.Production.Machine? MachineAt(in PlanTarget t)
+        {
+            if (t.Kind != Targets.Machine) return null;
+            foreach (var m in world.Machines.All)
+                if (m.Position.X == t.Position.X && m.Position.Z == t.Position.Z) return m;
+            return null;
+        }
+
         float Distance(in PlanTarget t) => t.IsNone ? 0 : Vector2.Distance(Flat(Me.Position), Flat(t.Position));
 
         bool Settled(in PlanTarget t) => At(t) && (CharacterTask)Me.Task is CharacterTask.Rest or CharacterTask.Idle;
@@ -138,6 +150,11 @@ public sealed partial class AiSystem
                 StateType.isWithin10Meters => Distance(target) <= 10,
                 StateType.isWithin50Meters => Distance(target) <= 50,
                 StateType.isNearTo => Distance(target) <= 10,
+                // 62 (slot 149), 63 (slot 175) and 64 (62 or 63) of a machine target (FUN_1405974e0, FUN_1405a2ba0, FUN_1405a2e60, Verified); false for any other target. 65 (any of the
+                // character's machines jammed) and 105 are not wired.
+                StateType.machineHasEmptyInputs => MachineAt(target)?.HasEmptyInputs == true,
+                StateType.isMachineOutputFull => MachineAt(target)?.OutputBlocked == true,
+                StateType.isMachineJammed => MachineAt(target)?.Jammed == true,
                 // 5: a weapon in hand that is not ranged; 156: a ranged one (FUN_140596a30 / FUN_140596a70, Verified); 157's evaluator is an undecoded stub.
                 StateType.hasWeaponEquipped => cold.DrawnWeapon != WeaponKinds.None && cold.DrawnWeapon != BowHold,
                 StateType.hasWeaponEquipped_156 => cold.DrawnWeapon == BowHold,

@@ -457,8 +457,8 @@ was not traced, **Unknown**).
 Operator animation: the functionality's `animation` reference (**Verified**, probe of vanilla BUILDING_FUNCTIONALITY). No
 farming clip exists: cactus, cotton, potato, rice and veg farms use `stonemine` (the mining swing, with the Hoe); `farming
 wheat` and `farming hemp` have none (what the original plays then is **Unknown**; Meitou falls back to `stonemine`). Whether
-the original plays it while the crop grows is **Unknown**; task 87's start conditions (inputs not empty, output not full) let
-an operator stay at a growing farm with water, and Meitou plays the clip there.
+the original plays it while the crop grows is moot (**Observed**): row 87 needs state 73 `machineHasFreeOperatorSlot`, whose evaluator `FUN_140598de0` is **Verified** false while the machine's
+status `+0x468` is 3 (a growing farm; a bench with an empty queue too), so the planner finds no way to operate a growing farm. Meitou lets an operator tend it with water and plays the clip (engine choice).
 
 | function | examples (production mult) |
 |---|---|
@@ -470,6 +470,26 @@ an operator stay at a growing farm with water, and Meitou plays the clip there.
 | 14 ITEM_FURNACE | Furnace 0.25 |
 | 23 BATTERY | battery 0.00125 |
 | 26 RAIN_COLLECTOR | 48 |
+
+### Blocked output
+
+Status `+0x468` of a `ProductionBuilding` (production, furnace, generator, wind, rain, torture; benches and farms reuse the field with words of their own).
+- **Values** (**Verified**, panel `FUN_140300090`): 2 ready or working, 1 output full, 0 nothing to work with (an empty input), 3 a bench with an empty queue or a growing farm.
+- **Start / save** (**Verified**): the constructor `FUN_1402a3750` sets 2. Not saved (`FUN_1402a1fa0` / `FUN_1402a23a0` write only `production amount`, `resource mult`, `mining resource level`, `consumption amount-<k>`), so a load starts at 2.
+- **Set** (`operate` `FUN_140298700`, **Verified**): when the clamp `vfunc_185` `FUN_14029a510` leaves amount above 0, status 2 and the inputs are drawn; else, with an output, status = 1 if the output section cannot take one more item, else 0.
+- **Cleared** (**Verified**): `ProductionBuilding::vfunc_28` `FUN_14029ad90` each frame, only for a machine with operators (`+0x3a9`): 1 becomes 2 once the output has room (capacity below 1: the section takes one; else held below capacity), 0 becomes 2 once no input is empty (slot 149
+  `FUN_140298b70`: a rated input with a recipe item, none of it in the section, level at most 0.001). An automatic machine only runs `operate`, which recomputes it. `Task_EmptyMachine` (`FUN_14033cd10`) also sets 1 to 2 right after emptying, only when the building's function class (vslot `0x358`) is 4.
+- **What stops** (**Verified**): progress and consumption (amount 0, no item made). Not the operator: `Task_OperateMachine`'s update (`FUN_14035bc90`) tests no status, so the animation and XP go on, and the power demand (`FUN_140299630`) does not read it. What takes the operator away is **Unknown** (the planner's re-run).
+- **Readers**: the panel word ("Output full" 1; "Out of resource" 0 with slot 149 true; "Production queue empty" 3; then No power, No workers, Working); the rain collector's text; planner states 62 / 63 / 64 below; `FUN_14059ab90` (a building finder over status 0 or 1, caller **Unknown**).
+- **Planner states** (evaluators **Verified**, hand type 0 = building): 62 `FUN_1405974e0` = slot 149. 63 `FUN_1405a2ba0` = slot 175 (`+0x578`): production family `FUN_140296fb0` (output object `+0x448` and status 1), `StorageBuilding` false; the farm
+  `FUN_1400deed0` also needs float `+0x51c` below `+0x54c` (meaning **Unknown**), the bench `FUN_1402b5320` a list test (**Unknown**). 64 `FUN_1405a2e60` = 62 for a building hand, else 63. 65 `FUN_1405a2f00` = the 64 test over a hand list at `FUN_1407956a0(AI+0x2f8)+0x58` (**Unknown** list).
+  105 slot 176 = output section empty; 106 slot 174 = an input at capacity. Rows asking 64 / 65: 91 (A !64), 90 (A !65, effect !64), 89 (B !65), all `Task_Blank` with no `AI_TASK` enum in the base data (`gamedata_base.txt`, **Observed**): no data starts that chain.
+- **Operator plan** (**Observed**, TaskData table, providers by list A): row 87 needs !63 and !62. As a job's root it is skipped while they are unmet ([perma-jobs](ai-tasks.md#perma-jobs)). Reached as a provider (Worker 189 / 190 need 123, which 87 achieves), the search expands
+  an unmet !63 into rows 92 Collecting resource (`Task_EmptyMachine`; A: 66, !63, !169) and 113 (A: !63, 105, !66, !89), which achieve it: the worker takes the output into its own inventory (B 82 room; 114 ditching makes it) before operating.
+- **Crafting** (`FUN_1402bcac0`, **Observed**): after a finished item is stored, status 1 when the output has become full (not when it could not be stored).
+
+Meitou: `Machine.Status` (hashed, not saved, a producer starts at 2), `HasEmptyInputs`, `OutputBlocked`, `Jammed`; `ProductionSystem.SlowWorld` clears 1 / 0 for a producer that takes operators, an operator's or automatic machine's step sets them. The panel reads the word chain
+(`ProductionStatus`). Planner: `Holds` evaluates 62 / 63 / 64 for a `Targets.Machine` target, which no finder gives yet; 65, 105, 106, the farm and bench variants and the 87 to 92 plan are not modelled (the job system's `HasWork` / `Room` is the engine reading of the blocked start).
 
 ### Item furnace
 
@@ -847,8 +867,8 @@ CONTAINER (backpacks). Shop counters (function 9) have no type limit in Meitou (
 ### Hauling
 
 - **Tasks** (**Verified** classes, **Observed** meaning): `Task_EmptyMachine` (92 "Collecting resource", 284 "Looting")
-  moves a building's output into the character's inventory while it has room (`FUN_14033cd10`). No GOAP row has "output not
-  full" (!63) as its effect, so a full output blocks operating (87) rather than leading the planner to 92 (**Observed**, table). `Task_FillMachine`
+  moves a building's output into the character's inventory while it has room (`FUN_14033cd10`). Rows 92 and 113 list "output not
+  full" (!63) in list A, which row 87 needs, so a full output leads the planner from 87 to 92 ([Blocked output](#blocked-output), **Observed**, table). `Task_FillMachine`
   (93 "Filling machine", 124 "Hauling to") puts carried items, main grid and backpack, into a machine or a storage
   (`FUN_140344510`). GOAP rows: [ai-tasks](ai-tasks.md); states 62 machineHasEmptyInputs, 63 isMachineOutputFull,
   66 haveSomeResourcesFrom, 67 haveSomeResourcesFor, 82 gotInventoryRoomForResources, 169 isMachineInputInvalid.
@@ -856,8 +876,8 @@ CONTAINER (backpacks). Shop counters (function 9) have no type limit in Meitou (
   materials they are carrying into storage."
 - **Jobs** (**Verified**, [perma-jobs](ai-tasks.md#perma-jobs)): Shift with an order on a machine adds job 87 "Operating machine";
   on a storage 124 "Hauling to" (several targets allowed); an automatic machine (152) adds 152 plus 124 on it. The first job in a
-  character's list that can run wins; operating is skipped while the machine's output is full or its inputs are empty (task 87's start
-  conditions), so a character moves down its list and returns when the machine can work again.
+  character's list that can run wins; operating is skipped while the machine's output is full or its inputs are empty (row 87's !63 and !62 unmet at the job's root,
+  [perma-jobs](ai-tasks.md#perma-jobs)), so a character moves down its list and returns when the machine can work again.
 - **Unknown:** how the original picks the storage (nearest, same town, a range), when an operator leaves a
   machine to haul, where a 124 job takes its items from, and whether 152 / 124 on an automatic machine ever empty its output
   (152's goal is only "no empty inputs", !62).

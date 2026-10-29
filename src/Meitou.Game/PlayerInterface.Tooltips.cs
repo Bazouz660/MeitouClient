@@ -281,6 +281,7 @@ sealed partial class PlayerInterface
         "Broken" => "This machine has broken down as a result of damage. Send one of your engineers to repair it.",
         "Output full" when machine?.Farm is not null => "The output is full. Empty out the items and put them in a storage box or something.",
         "Output full" => "The machine output is full. Empty out the items and put them in a storage box or something.",
+        "Out of resource" => "The machine has run out of raw materials to work with. Find some more and fill it up.",
         "Growing" => "Your crops are growing nicely. You don't have to do anything.",
         "No water" => "Out of water. Growth rate will be significantly reduced and your plants may die.",
         "Ready to harvest" => "Nobody is working at this farm at the present moment, you need to hurry up and harvest them before they die.",
