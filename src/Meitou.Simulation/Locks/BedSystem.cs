@@ -271,17 +271,21 @@ public sealed class BedSystem(PopulationData data, BedSettings? settings = null)
     const int BarDesignation = 3;
 
     /// <summary>
-    /// What a character of <paramref name="faction"/> pays to use a bed (the original's <c>FUN_140330ab0</c>, <b>Observed</b>): 0 for a bed of no faction, of a faction that counts it as an
-    /// ally (its own included) or of a <c>fundamental type</c> 8 (bandit) faction, and for a bed standing on its own; else the bed's house must be public for beds (its resident squad's
+    /// What a character of <paramref name="faction"/> pays to use a bed (the original's <c>FUN_140330ab0</c>, <b>Observed</b>): 0, in this order, for a bed of no faction, of a <c>not real</c> faction, of a faction that
+    /// counts it as an ally (its own included) or of a <c>fundamental type</c> 8 (bandit) faction, for a bed standing on its own, and for a bed in a Nest, Ruins or Point-of-interest town (the
+    /// original takes the town nearest the building; here the placed town of the bed's site, and a bed without a site, which the player built, has no town test: engine choice); else the
+    /// bed's house must be public for beds (its resident squad's
     /// <c>public beds</c>, or a bar: its <c>building designation</c> is BD_BAR), or -1 (not to be used); then the squad's <c>bed usage cost</c>, x4 for a skeleton bed. Before the public-beds
-    /// test the bed must pass <see cref="MayUse"/> (<c>canIUseThisBuilding</c>), else -1. The town-type test of the original is not modelled.
+    /// test the bed must pass <see cref="MayUse"/> (<c>canIUseThisBuilding</c>), else -1.
     /// </summary>
     public int Cost(World world, Fixture bed, int faction)
     {
         int owner = bed.Owner;
         if (owner < 0 || owner == faction || !bed.Indoors) return 0;
+        if (owner < data.Factions.Count && data.Factions[owner].NotReal) return 0;
         if (data.Relations.Contains(owner) && data.Relations.Contains(faction) && data.Relations.IsAlly(owner, faction)) return 0;
         if (owner < data.Factions.Count && data.Factions[owner].FundamentalType == FundamentalType.Bandit) return 0;
+        if (bed.Site >= 0 && bed.Site < data.Sites.Count && data.Sites[bed.Site].Town.Type is TownType.Nest or TownType.Ruins or TownType.PointOfInterest) return 0;
         if (!MayUse(world, bed, faction)) return -1;
         Squad? residents = null;
         foreach (var squad in world.Squads.All)
