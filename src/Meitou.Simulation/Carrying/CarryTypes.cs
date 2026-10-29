@@ -81,6 +81,26 @@ public sealed class CarrySettings
     public const float ReleaseBelow = 0.2f;
 }
 
+/// <summary>
+/// The start flags of an NPC's <see cref="CharacterTask.Loot"/> (<c>Task_Loot_AI</c> +0x80..+0x84, written once by the start <c>FUN_140355ad0</c> and only read by the update
+/// <c>FUN_14034d930</c>, <b>Verified</b>): fixed when the task begins, not re-evaluated while it runs.
+/// </summary>
+[Flags]
+public enum LootStart : byte
+{
+    None = 0,
+    /// <summary>+0x80: the looter has no weapon and the victim has one.</summary>
+    WantsWeapon = 1,
+    /// <summary>+0x81: the victim is not on the player's side (or dead); never set for a police looter.</summary>
+    NotPlayerSide = 2,
+    /// <summary>+0x82: a law-enforcement looter confiscates.</summary>
+    Police = 4,
+    /// <summary>+0x83: the looter is a Bandit or malnourished and takes only food; never set for a police looter.</summary>
+    FoodOnly = 8,
+    /// <summary>+0x84: the victim is an animal.</summary>
+    Animal = 16,
+}
+
 /// <summary>What one loot took: the items moved into the looter's inventory, the ones that did not fit and stay, and whether a member of the victim's faction saw it.</summary>
 public readonly record struct LootEntry(long Tick, CharacterId Looter, CharacterId Victim, int Taken, int Left, bool Witnessed);
 

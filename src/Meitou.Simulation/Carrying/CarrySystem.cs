@@ -312,6 +312,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         cold.Kidnapping = false;
         cold.Snatching = false;
         cold.Foraging = false;
+        cold.LootFlags = LootStart.None;
     }
 
     /// <summary>Ends a pick-up, put-down or loot (serial phases): back to the task before it.</summary>
@@ -328,6 +329,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         cold.CarryTarget = CharacterId.None;
         cold.LiftTime = -1;
         cold.ResumeTask = CharacterTask.Idle;
+        cold.LootFlags = LootStart.None;
     }
 
     // ------------------------------------------------------------------ the walk

@@ -104,22 +104,21 @@ public sealed partial class CarrySystem
     /// An NPC at the body it loots (<c>Task_Loot_AI</c>, <b>Observed</b>): kneels at the medic clip while <see cref="CharacterCold.LiftTime"/> counts (from its arrival). Past
     /// <see cref="NpcWeaponGrabSeconds"/>, a looter without a weapon that takes more than food from a living player-side body takes one weapon of its hip and back and is done; else past
     /// <see cref="NpcLootSeconds"/> (an animal: <see cref="NpcLootAnimalSeconds"/>) it takes (<see cref="NpcTake"/>). Then its squad tags the body <see cref="MemoryTag.Looted"/> and the task ends.
+    /// What it takes follows <see cref="CharacterCold.LootFlags"/>, fixed when the task starts (the update only reads them, <b>Verified</b> <c>FUN_14034d930</c>).
     /// </summary>
     void NpcLoot(World world, CharacterTable table, int i, int t, float dt)
     {
         var cold = table.Cold(i)!;
         var victim = table.Cold(t)!;
-        bool animal = victim.Fighter?.IsAnimal ?? victim.Appearance?.Animal is not null;
-        // A law-enforcement looter confiscates: no food-only or not-player-side take (the start clears both).
-        bool police = Crimes?.IsPoliceLike(world, cold) == true;
-        bool notPlayerSide = !police && (!PlayerSide(world, victim) || victim.Medical!.Dead);
-        bool foodOnly = !police && (cold.NpcClass == FundamentalType.Bandit || cold.Medical is { } own && world.SystemOf<BodySystem>() is { } bodies && bodies.HungerFloor(world, cold, own) < FoodOnlyFloor);
         if (cold.LiftTime < 0)
         {
             cold.LiftTime = 0;
-            Crimes?.NpcLooting(world, i, t, notPlayerSide || foodOnly, !HasWeapon(cold) && HasWeapon(victim));
-            if (animal && PlayerSide(world, victim)) world.Post($"{cold.Name} is butchering {victim.Name} for meat!!");
+            var start = cold.LootFlags = LootStartFlags(world, cold, victim);
+            Crimes?.NpcLooting(world, i, t, (start & (LootStart.NotPlayerSide | LootStart.FoodOnly)) != 0, (start & LootStart.WantsWeapon) != 0);
+            if ((start & LootStart.Animal) != 0 && PlayerSide(world, victim)) world.Post($"{cold.Name} is butchering {victim.Name} for meat!!");
         }
+        var flags = cold.LootFlags;
+        bool animal = (flags & LootStart.Animal) != 0, police = (flags & LootStart.Police) != 0, notPlayerSide = (flags & LootStart.NotPlayerSide) != 0, foodOnly = (flags & LootStart.FoodOnly) != 0;
         cold.LiftTime += dt;
         int death = DeathUnits(victim.Inventory!);
         int moved;
@@ -133,7 +132,7 @@ public sealed partial class CarrySystem
             End(table, i);
             return;
         }
-        if (!foodOnly && !notPlayerSide && !animal && cold.LiftTime > NpcWeaponGrabSeconds && !HasWeapon(cold) && HasWeapon(victim))
+        if (!foodOnly && !notPlayerSide && !animal && cold.LiftTime > NpcWeaponGrabSeconds && (flags & LootStart.WantsWeapon) != 0)
             moved = Take(cold, victim, victim.Inventory!.Items.Where(x => x.Type == FcsRecordType.WEAPON && x.Section is "hip" or "back").Take(1).ToList());
         else if (cold.LiftTime > (animal ? NpcLootAnimalSeconds : NpcLootSeconds)) moved = NpcTake(cold, victim, notPlayerSide && !foodOnly);
         else return;
@@ -141,6 +140,21 @@ public sealed partial class CarrySystem
         Looted(world, table, i, t, moved, 0, crime: false);   // the crime was set at the start (CrimeSystem.NpcLooting)
         if (!police && cold.SquadId >= 0) world.SystemOf<DialogueSystem>()?.Memory.Flag(world, cold.SquadId, table.IdOf(t), MemoryTag.Looted);
         End(table, i);
+    }
+
+    /// <summary>
+    /// The flags the loot task fixes at its start (<c>FUN_140355ad0</c>): the victim an animal; not on the player's side or dead; a Bandit or malnourished looter (food only); a looter without a weapon
+    /// facing a victim with one; a law-enforcement looter confiscates and then has neither of the middle two. The original also clears "not player side" from a value of the looter's senses (<b>Unknown</b>, not modelled).
+    /// </summary>
+    LootStart LootStartFlags(World world, CharacterCold looter, CharacterCold victim)
+    {
+        var flags = LootStart.None;
+        if (victim.Fighter?.IsAnimal ?? victim.Appearance?.Animal is not null) flags |= LootStart.Animal;
+        if (!HasWeapon(looter) && HasWeapon(victim)) flags |= LootStart.WantsWeapon;
+        if (Crimes?.IsPoliceLike(world, looter) == true) return flags | LootStart.Police;
+        if (!PlayerSide(world, victim) || victim.Medical!.Dead) flags |= LootStart.NotPlayerSide;
+        if (looter.NpcClass == FundamentalType.Bandit || looter.Medical is { } own && world.SystemOf<BodySystem>() is { } bodies && bodies.HungerFloor(world, looter, own) < FoodOnlyFloor) flags |= LootStart.FoodOnly;
+        return flags;
     }
 
     /// <summary>Seconds at the body before a law-enforcement looter confiscates (<b>Observed</b>, <c>Task_Loot_AI</c> update: the 0.8 s branch).</summary>
