@@ -44,13 +44,22 @@ public sealed partial class DialogueSystem
 
     /// <summary>
     /// Starts <paramref name="root"/> as a bubble conversation of <paramref name="npc"/> with <paramref name="whom"/> (<c>FUN_140683f90</c>): the best of its lines (speakers resolved as in
-    /// any choice) is said, the chain after it. <paramref name="now"/>: said this tick, else on the next bubble step. Returns whether a line was found.
+    /// any choice) is said, the chain after it. <paramref name="now"/>: said this tick, else on the next bubble step. Returns whether a line was found. <paramref name="force"/>
+    /// (a crowd trigger): the start is not refused for a character busy talking or caged; what it was saying is dropped without the end step (no counter), as the original overwrites
+    /// the state (a character in the open player conversation is still refused: engine choice).
     /// </summary>
-    bool StartBubbles(World world, CharacterId npc, CharacterId whom, DialogueNode root, int ev, bool now = true)
+    bool StartBubbles(World world, CharacterId npc, CharacterId whom, DialogueNode root, int ev, bool now = true, bool force = false)
     {
-        if (!world.Characters.TryResolveNext(npc, out int n) || !Awake(world.Characters, n) || BubbleOf(npc)) return false;
+        if (!world.Characters.TryResolveNext(npc, out int n)) return false;
+        if (force)
+        {
+            if (!CanSpeak(world.Characters, n) || open is { } o && (o.Npc == npc || o.Player == npc)) return false;
+            bubbles.RemoveAll(b => b.C.Npc == npc || b.Speaker == npc);
+            shown.Remove(npc);
+        }
+        else if (!Awake(world.Characters, n) || BubbleOf(npc)) return false;
         var c = new Conversation { Npc = npc, Player = whom, Event = ev, Root = root };
-        if (Pick(world, c, root.Children) is not { } first || Busy(first.Speaker, c)) return false;
+        if (Pick(world, c, root.Children) is not { } first || !force && Busy(first.Speaker, c)) return false;
         bubbles.Add(new Bubble(c, first.Line, world.Tick, first.Speaker));
         if (now) StepBubbles(world);
         return true;
@@ -229,9 +238,10 @@ public sealed partial class DialogueSystem
     {
         for (int k = 0; k < bubbles.Count; k++)
         {
-            var (c, line, due, speaker, chained) = bubbles[k];
+            var current = bubbles[k];
+            var (c, line, due, speaker, chained) = current;
             if (world.Tick < due) continue;
-            if (!world.Characters.TryResolveNext(speaker, out int n) || !Awake(world.Characters, n))
+            if (!world.Characters.TryResolveNext(speaker, out int n) || !CanSpeak(world.Characters, n))
             {
                 bubbles.RemoveAt(k--);
                 continue;
@@ -239,6 +249,8 @@ public sealed partial class DialogueSystem
             MarkUsed(world, c, line);
             string text = Expand(world, c, line, PickText(world, speaker, line), speaker, speaker == c.Player ? c.Npc : c.Player);
             RunEffects(world, c, line, chained ? speaker : c.Npc);   // locks, unlocks, interrupt and the rest land on the state of whoever says a chained line
+            // A crowd trigger's forced starts drop other characters' bubbles from the list: find this one again.
+            if ((k = bubbles.FindIndex(b => ReferenceEquals(b, current))) < 0) continue;
             float seconds = 2 + 0.12f * text.Length;
             if (text.Length > 0)
             {
@@ -256,22 +268,30 @@ public sealed partial class DialogueSystem
     }
 
     /// <summary>
-    /// A line's <c>crowd trigger</c> (<c>FUN_140680560</c>, unless the line is itself of event 74): the awake members of the conversation owner's squad other than itself and the
-    /// speaker, not animals, start that DIALOGUE as event 74 at the target. Engine readings: the owner is left out (it is talking), and each member joins with the trigger's val0
-    /// percent (the data's values are 100 but for two lines).
+    /// A line's <c>crowd trigger</c> (<c>FUN_140680560</c>, unless the line is itself of event 74): every member of the saying character's squad (<paramref name="speaker"/>, the state the
+    /// effects run on) that is not down (<see cref="Down"/>), not an animal and not in a bed starts that DIALOGUE as event 74 at the target, forced (<see cref="StartBubbles"/>): fighting,
+    /// held and caged members too, a conversation they were in overwritten. Engine readings: the owner and the speaker are left out (they are talking), a player character is left to its
+    /// player, and each member joins with the trigger's val0 percent (the data's values are 100 but for two lines).
     /// </summary>
     void CrowdTrigger(World world, Conversation c, DialogueNode line, CharacterId speaker)
     {
         if (c.Event == CrowdTriggered || line.CrowdTrigger is not { } id || dialogue.Node(id) is not { IsRoot: true } root) return;
         var table = world.Characters;
-        foreach (var m in SquadOf(world, c.Npc))
+        foreach (var m in SquadOf(world, speaker))
         {
-            if (m == c.Npc || m == speaker || !table.TryResolveNext(m, out int s) || !Awake(table, s) || table.Cold(s) is not { IsPlayer: false } mc) continue;
-            if (mc.Fighter?.IsAnimal == true || mc.Appearance?.Animal is not null || mc.Engaged) continue;
+            if (m == c.Npc || m == speaker || !table.TryResolveNext(m, out int s) || !table.Next[s].Alive || table.Cold(s) is not { IsPlayer: false } mc) continue;
+            if (mc.Fighter?.IsAnimal == true || mc.Appearance?.Animal is not null || Down(mc) || mc.InSomething == Locks.HeldState.Bed) continue;
             if (line.CrowdChance < 100 && Rng.Float(NextRoll(world, m)) * 100 >= line.CrowdChance) continue;
-            StartBubbles(world, m, c.Player, root, CrowdTriggered, now: false);
+            StartBubbles(world, m, c.Player, root, CrowdTriggered, now: false, force: true);
         }
     }
+
+    /// <summary><c>Character::isDown</c> (vfunc 0x30, <c>FUN_1405c9e10</c>, docs/game/carry-loot.md): dead or out cold, playing dead, ragdolled or carried. A crawler is not down.</summary>
+    static bool Down(CharacterCold c) =>
+        c.Medical is { Incapacitated: true } or { PlayingDead: true } || !c.CarriedBy.IsNone || Ragdolls.RagdollSystem.IsRagdoll(c);
+
+    /// <summary>Whether the character at <paramref name="slot"/> can say a bubble line: alive and conscious. A caged one can (the original's step stops only for a ragdolled owner).</summary>
+    static bool CanSpeak(CharacterTable table, int slot) => table.Next[slot].Alive && table.Cold(slot) is { } c && c.Medical?.Incapacitated != true;
 
     /// <summary>A bubble conversation's end (<c>FUN_140674830</c>): the event's counter and time; only an event-1 conversation leaves the speaker's squad remembering the target.</summary>
     void EndBubbles(World world, Conversation c)
