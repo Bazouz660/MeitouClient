@@ -416,7 +416,9 @@ to Jobs; the saved `chase mode` flag is that switch (**Verified**, [perma-jobs](
   (H + D − S)/Mx, Red (Mx − S)/Mx, White clamp(green + R × 0.01, 0, 1) with the unclamped green (drawn past the green only), number floor(H − S + 0.1).
   The row setter (`FUN_140721a70`, its arguments read from the call's disassembly at `14088c075`..`14088c0e1`, **Verified**) also takes a robot flag and the limb state
   (`MedicalSystem::getLimbState`: 0 original, 1 stump, 2 replaced, 3 crushed): `Robot` is shown at the green's width when the race is robotic or the limb state is 2;
-  `Crushed` is shown at full width when the state is 1 or 3; a stump's White is 0.
+  `Crushed` is shown at full width when the state is 1 or 3; a stump's White is 0. The Blood row passes RACE `is robot` (race `+0x7c`) as its robot flag and limb state 0
+  (**Verified**: disassembly of the call at `14088aada`..`14088abc5`), so a robot race's row (label "Oil") shows `Kenshi_LifeBarRobotSkin` (grey-brown, about RGB 112,107,102 in
+  `Kenshi_UI.png`) over the olive green (`Kenshi_LifeBarSkin`, about 126,121,81).
   Arrows, first match: destroyed (H + D − S ≤ −Mx) `!!!   `; H + D < 0: not vital and not robotic `<<   `, vital and below the KO point `<<!!   `
   (none at or above it), robotic non-vital none; H + D ≥ 0 with Mx − H − D > 20 (not a robotic non-vital part) `<   `; else none. The rig is in none
   of these tests, only in the white layer. Blood:

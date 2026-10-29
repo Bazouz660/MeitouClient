@@ -514,7 +514,10 @@ sealed partial class PlayerInterface
             float capacity = Math.Max(hud?.BloodCapacity ?? 1, 1e-3f), blood = hud?.Blood ?? body.Blood * capacity;
             // A run of '<', one per 0.05 of bleeding (at most 100).
             int bleed = Math.Min(100, (int)MathF.Ceiling(Math.Abs(hud?.Bleeding ?? 0) / 0.05f));
-            rows.Add(new(Loc.Tr("Blood"), blood / capacity, 0, 0, ((int)MathF.Floor(blood + 0.1f)).ToString(CultureInfo.InvariantCulture), new string('<', bleed), false, BloodTip(hud?.BleedRate ?? 1)));
+            // A robot race's row reads "Oil" and shows the Robot layer over its green, as a robotic part does (FUN_14088a8f0 passes RACE is robot; docs/game/ui-screens.md).
+            bool robot = hud is { Robot: true };
+            rows.Add(new(Loc.Tr(robot ? "Oil" : "Blood"), blood / capacity, 0, 0, ((int)MathF.Floor(blood + 0.1f)).ToString(CultureInfo.InvariantCulture), new string('<', bleed), robot,
+                BloodTip(hud?.BleedRate ?? 1)));
             foreach (var part in lead.HealthParts)
             {
                 // The original's row (FUN_14088a8f0): the green and the number are the flesh less the stun, the yellow adds the bandage, the white is the green plus the splint (rig x 0.01),
