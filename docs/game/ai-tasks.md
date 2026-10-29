@@ -737,7 +737,7 @@ vfunc 5 `FUN_14050caf0`). TaskData fields: +0x108 desire (a member function, nea
   entries (mask 4, 0x208) within 1.3 x the home town's radius (`FUN_140926d50`, factor `DAT_14169bb40` = 1.3, read-only; ground-plane squared distance, strict; a
   NEST_MARKER home contains nobody), or outside it in the looker's own building (**Observed**: the enemy's and the looker's building hands match, the looker's not null; the
   looker indoors), skipping a slave whose owner's faction is an ally (a slave of a neutral or enemy owner is a target); with no home town it is
-  `FUN_14059fa70` (the same mask and tests, no circle). Meitou: the squad's town (`Blackboard.Town`) and `TownData.Radius`. 21 ATTACK_ENEMIES_AND_NEUTRALS
+  `FUN_14059fa70` (the same mask and tests, no circle). Meitou: the squad's town (`Blackboard.Town`), else its nest (a NEST town, 1250 x mult, round the nest centre; a save's wild squads have none), and `TownData.Radius`. 21 ATTACK_ENEMIES_AND_NEUTRALS
   (`FUN_14059f720`) takes mask 6 (neutral or enemy, 0x308) and drops a faction the looker's coexists with (one way, neutrals too); `FUN_1408569a0`
   then drops, for an NPC looker not hostile to the target's faction and without TEMP_ENEMY on it, a campaign force's member (and a target whose squad
   record +0xc0 is 0, meaning **Unknown**, not modelled).
@@ -876,7 +876,7 @@ A character's job list (the Orders menu's "Perma-Jobs"; class `OrdersReceiver`, 
 - **Implicit jobs** (**Verified**, `FUN_14050e5b0` after the list, only for a character with a squad (+0x250), the switch on and not sneaking
   (`FUN_1405c9750`)): lowest keys for the squad AI options at `DAT_142134690` (the overview's AI tab), each kept when its task's desire is above 0:
   +0x117 "Ditch items" → 242 "Ditching resources" (only with an empty task queue +0x60; finder `FUN_1405a59a0`: the carried ITEMs (type 4) of `item
-  function` 0 or 15, and food (3) but the first, via `FUN_140749490`, **Verified**; the nearest UseableStuff in range whose accept test (slot 0x4a0) takes one, skipping
+  function` 0 or 15, and food (3) but the first, via `FUN_140749490`, **Verified**; that 242 passes the collect flag **Observed**; the nearest UseableStuff in range whose accept test (slot 0x4a0) takes one, skipping
   ones the squad already uses, **Observed**; Meitou: storages only); then, unless one of three tests holds (`FUN_1402b2b90`
   on the character's +0x450: hold position +0x12b on and not sneaking, **Verified**; byte +0x348, carrying someone; `FUN_1407f4d20`, a set lookup
   read as "selected by the player", **Observed**, not modelled), +0x116 "Sleep when injured" → 257 "Getting out of

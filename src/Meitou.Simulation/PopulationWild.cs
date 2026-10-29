@@ -70,6 +70,11 @@ public sealed partial class PopulationSystem
 
     /// <summary>The wild sites (sectors and nests), made at the first look of a world with biomes; empty before or without.</summary>
     public IReadOnlyList<WildSite> WildSites => wildSites ?? [];
+
+    /// <summary>The nest (its TOWN record) a squad was made for, as the nest spawned it (derived, not saved: a load's nests spawn theirs again); null: not a nest's.</summary>
+    public TownData? NestOf(int squad) => nestSquads.GetValueOrDefault(squad);
+
+    readonly Dictionary<int, TownData> nestSquads = [];
     public SiteStatus WildStatusOf(int site) => wildStates[site].Status;
     /// <summary>The squad ids a wild site has now.</summary>
     public IReadOnlyList<int> WildSquadsOf(int site) => wildStates[site].Squads;
@@ -383,6 +388,7 @@ public sealed partial class PopulationSystem
             if (SpawnKept(world, k.Stored, k.TemplateId, k.Faction, -1, -1, k.Stored.Anchor, k.Centre, k.Radius, k.SpawnSize) is not { } squad) continue;
             squad.Money = k.Money;
             state.Squads.Add(squad.Id);
+            if (wildSites![site].Kind == WildKind.Nest) nestSquads[squad.Id] = wildSites[site].Nest!;
         }
     }
 
@@ -447,6 +453,7 @@ public sealed partial class PopulationSystem
             {
                 squad.HomeCentre = b.Centre;
                 squad.HomeRadius = NestRadius(site.Nest!);
+                nestSquads[squad.Id] = site.Nest!;
             }
             else squad.HomeRadius = settings.HomelessHomeRadius;
             state.Squads.Add(squad.Id);

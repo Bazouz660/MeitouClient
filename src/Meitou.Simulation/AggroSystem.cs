@@ -308,16 +308,23 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
     /// <summary>The towns, for the <see cref="Ai.AiStance.Territorial"/> home circle (null: no circle, it attacks on sight).</summary>
     public PopulationData? Towns { get; set; }
 
+    /// <summary>The nests' squads, for a nest's <see cref="Ai.AiStance.Territorial"/> circle (null: none).</summary>
+    public PopulationSystem? Population { get; set; }
+
     /// <summary>
-    /// The territorial circle (<c>FUN_140926d50</c> from <c>FUN_14059fd70</c>, <b>Verified</b>): the squad's home town's point and (1.3 x its radius)²; -1 for a nest marker or a
-    /// zero-radius town, which contains nobody; 0 without a home town (no circle).
+    /// The territorial circle (<c>FUN_140926d50</c> from <c>FUN_14059fd70</c>, <b>Verified</b>): the squad's home town's point (a nest's: its centre, <see cref="Squad.HomeCentre"/>) and
+    /// (1.3 x its radius)²; -1 for a nest marker or a zero-radius town, which contains nobody; 0 without a home town (no circle).
     /// </summary>
     (Vector2 Centre, float R2) Territory(CharacterCold cold)
     {
-        if (Towns is not { } towns || cold.Ai?.Squad.Ai is not { Town: >= 0 } board || board.Town >= towns.Sites.Count) return (default, 0);
-        var site = towns.Sites[board.Town];
-        float r = TerritoryScale * site.Town.Radius;
-        return (new Vector2(site.Position.X, site.Position.Z), site.Town.Type == TownType.NestMarker || r <= 0 ? -1 : r * r);
+        if (cold.Ai?.Squad is not { } squad) return (default, 0);
+        static float R2(TownData town) => TerritoryScale * town.Radius is var r && town.Type != TownType.NestMarker && r > 0 ? r * r : -1;
+        if (squad.Ai is { Town: >= 0 } board && Towns is { } towns && board.Town < towns.Sites.Count)
+        {
+            var site = towns.Sites[board.Town];
+            return (new Vector2(site.Position.X, site.Position.Z), R2(site.Town));
+        }
+        return Population?.NestOf(squad.Id) is { } nest ? (squad.HomeCentre, R2(nest)) : (default, 0);
     }
 
     const float TerritoryScale = 1.3f;

@@ -103,6 +103,8 @@ public sealed class CharacterAnimation
         h.Add(Rate);
         h.Add(SpeedCount);
         foreach (float s in Speeds) h.Add(s);
+        h.Add(HasDrawYaw);
+        h.Add(DrawYaw);   // the sight cone reads it (SightMap)
         if (Strafing || StrafeTimer != 0 || StrafeSpeed != 0 || StrafeShare != 0) { h.Add(0x53747266); h.Add(Strafing); h.Add(StrafeTimer); h.Add(StrafeSpeed); h.Add(StrafeShare); }   // only once set, so worlds without fights hash as before
     }
 }

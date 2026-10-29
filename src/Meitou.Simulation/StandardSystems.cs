@@ -219,7 +219,7 @@ public static class StandardSystems
         if (Has(StandardParts.Feed)) systems.Add(new FeedSystem(data.Items, o.Feed));
         if (Has(StandardParts.Retaliation)) systems.Add(new RetaliationSystem(combat!) { Towns = data });
         AggroSystem? aggro = null;
-        if (Has(StandardParts.Aggro)) systems.Add(aggro = new AggroSystem(data.Relations, o.Aggro) { Combat = combat, Towns = data });
+        if (Has(StandardParts.Aggro)) systems.Add(aggro = new AggroSystem(data.Relations, o.Aggro) { Combat = combat, Towns = data, Population = population });
         if (carry is not null) carry.Aggro = aggro;
         if (Has(StandardParts.Flee)) systems.Add(new FleeSystem(data.Relations, combat!, o.Aggro?.SightRange ?? AggroSystem.OutdoorSight));
         Meitou.Simulation.Crime.CrimeSystem? crime = null;

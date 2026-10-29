@@ -332,7 +332,7 @@ public sealed class SightMap
         if (!(range > 0)) return 0;
         // A target crawling or staying low is half as visible (FUN_140852f70: ground posture x0.5, before the sneaking factors).
         float posture = (uint)target < (uint)count && low[target] ? 0.5f : 1;
-        float yaw = (uint)looker < (uint)count ? facing[looker] : 0;
+        float yaw = (uint)looker < (uint)count ? facing[looker] : 0;   // a looker made this tick has no facing captured yet: yaw 0 until the next schedule phase
         return stealth >= 0 ? AggroSystem.SneakVisibility(eye, yaw, at, range, stealth, posture) : AggroSystem.Visibility(eye, yaw, at, range, posture);
     }
 }
