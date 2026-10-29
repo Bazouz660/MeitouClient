@@ -219,9 +219,9 @@ public class AiTests(ITestOutputHelper output)
     }
 
     /// <summary>A character's world for the planner: in bed or not, at the node or not; nothing drawn, carried or attacking; the rest held true.</summary>
-    sealed class PlanStub(bool inBed, bool atNode) : IPlanWorld
+    sealed class PlanStub(bool inBed, bool atNode, int category = 1) : IPlanWorld
     {
-        public int Category => 1;
+        public int Category => category;
         public bool Squadless => false;
         public float Desire(TaskDataRow row, in PlanTarget target) => 1;
         public PlanTarget Find(TaskDataRow row, in PlanTarget from) => new(1, new Vector3(10, 0, 10));
@@ -256,6 +256,19 @@ public class AiTests(ITestOutputHelper output)
         var minds = world.Squads.All.Where(s => s.TemplateId == "10-t").SelectMany(s => s.Members).Select(m => world.Characters.Cold(m.Slot)!.Ai!).ToList();
         Assert.NotEmpty(minds);
         Assert.All(minds, m => Assert.Equal(TaskType.GO_HOME_AND_GO_TO_BED, m.Goal!.Task.Type));
+    }
+
+    [Fact]
+    public void A_crippled_character_plans_with_the_crippled_repertoire_which_has_no_stand_up_row()
+    {
+        // FUN_14060e840: the crippled repertoire (0x40) wins over human; its rows 28 / 65 (standing, getting up) are 0x25, so nothing provides standing and a plan needing it fails.
+        Assert.Equal(Repertoire.Crippled, Repertoire.Crippled & TaskDataTable.Of(TaskType.RUN_AWAY)!.Category);
+        var plan = new List<PlanStep>();
+        var run = TaskDataTable.Of(TaskType.RUN_AWAY)!;
+        Assert.True(TaskPlanner.Local.Plan(run, 1, default, new PlanStub(false, false, Repertoire.Crippled), [], plan) > 0);
+        Assert.Equal(TaskType.RUN_AWAY, plan[^1].Type);
+        Assert.DoesNotContain(plan, s => s.Type is TaskType.STAND_UP or TaskType.GET_UP);
+        Assert.All([TaskType.STAND_UP, TaskType.GET_UP], t => Assert.Equal(0, TaskDataTable.Of(t)!.Category & Repertoire.Crippled));
     }
 
     [Fact]
