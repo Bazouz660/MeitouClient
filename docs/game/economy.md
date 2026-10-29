@@ -360,7 +360,8 @@ money, mark the entry claimed (it never pays twice) and show "Received c.{1} rew
   cage's parent chain to its root, not verified as the town) unless the carrier's status type (`FUN_1405c8aa0`: status `+0`, 1 slave, 2 escaped) is 0.
   The amount is the captive's bounty for the cage owner's faction; plays `Bounty_Fulfilled`. The same put-in also sets the sentence (11.5).
 - **Dialogue** `DA_PAY_BOUNTY` (10) (`FUN_140680560` case 10): pays for the body the talking player carries, with the speaker's
-  booking faction; then the speaker takes the body (tasks 213 `LIFT_PERSON_SNATCHING_ALLOWED` and 112 `FIND_CAGE_AND_PUT_IN`).
+  booking faction; then the speaker takes the body (tasks 213 `LIFT_PERSON_SNATCHING_ALLOWED` and 112 `FIND_CAGE_AND_PUT_IN`, memory flag 5 on both),
+  **whether or not a bounty was paid and in any town** (**Verified**, `FUN_140680560` case 10: the tail runs once the carried body resolves; Meitou hands the body over for DA 10 alone too).
   Base data uses it in `EV_PLAYER_TALK_TO_ME` dialogues gated by `DC_CARRYING_BOUNTY_ALIVE` / `_DEAD` (e.g. "shek bounty desk"),
   together with `DA_ARREST_TARGETS_CARRIED_PERSON` (30) and +relations (**Verified** by probe of the merged data). The two effects come in either
   order (shek desk: alive 10, 30, 4; dead 30, 10, 4; **Verified** same probe), so the body is still carried when 10 runs. Meitou: [simulation](../simulation.md#arrest-and-jail).
@@ -468,7 +469,8 @@ decompile's `DialogActionEnum` / `DialogConditionEnum` / `EventTriggerEnum`, com
   ("Capture Target", needs `isTargetDown`) and 112 `FIND_CAGE_AND_PUT_IN` on the target, and the target's squad marks the speaker
   (flag 5). Otherwise the speaker's squad marks the target (flag 4) and the speaker attacks it (task 4 `MELEE_ATTACK`). Either way the
   guard fights until the target is down, then carries it. `DA_ARREST_TARGETS_CARRIED_PERSON` (30, case 0x1e) does the same for the body
-  the target carries (it is dropped and taken over). `DA_ASSIGN_BOUNTY` (32) adds its value as a bounty with the speaker's booking
+  the target carries (it is dropped and taken over), but only when the speaker's ownership town is set and equals the town it stands in (cases 0x1d and 0x1e share the test; **Verified**), else nothing happens;
+  `DA_ENSLAVE_TARGETS_CARRIED_PERSON` (40, case 0x28) takes the same tail with no town test (**Verified**). Meitou: the town test is `ArrestSystem.InOwnTown`. `DA_ASSIGN_BOUNTY` (32) adds its value as a bounty with the speaker's booking
   faction, or books the pending crime when the value is 0.
 - **Arrest goal** (AI_TASK "Arrest bounties", enum 204 `HUNT_BOUNTIES`, in "addon- law enforcement" and the "Gate guard ... -arrests"
   packages; **Verified** by probe): desire 1 when the cage finder finds a free cage, else 0 (AI slot 33 `FUN_140598a90`); target finder

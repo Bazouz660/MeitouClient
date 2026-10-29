@@ -104,8 +104,10 @@ public sealed partial class DialogueSystem
                     break;
                 case DialogueActions.PayBounty:
                     Arrests?.PayBounty(world, me, target);
+                    if (tc is { Carrying.IsNone: false }) takeOver = true;   // the original hands the body over whether or not a bounty was paid, in any town
                     break;
-                case DialogueActions.ArrestTargetsCarriedPerson when tc is { Carrying.IsNone: false }:
+                // Only in the speaker's own town (the squad's town is the one it stands in); DA_ENSLAVE_TARGETS_CARRIED_PERSON has no such test.
+                case DialogueActions.ArrestTargetsCarriedPerson when tc is { Carrying.IsNone: false } && Arrests is { } law && world.Characters.TryResolveNext(me, out int guardSlot) && law.InOwnTown(world, guardSlot):
                     takeOver = true;   // after the line's other effects: the original only gives the speaker the lift task, so DA_PAY_BOUNTY still finds the body
                     break;
                 case DialogueActions.EnslaveTargetsCarriedPerson when tc is { Carrying.IsNone: false }:
