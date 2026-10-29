@@ -31,12 +31,13 @@ sealed class Feedback(Store store, Config config, IHttpClientFactory http, ILogg
         string version = Clean(b.Version, VersionMax, lines: false) ?? "unknown";
         string? commit = Clean(b.Commit, VersionMax, lines: false);
         string platform = b.Platform is { } p && Intake.Platforms.Contains(p) ? p : "other";
+        string? discord = Clean(b.Discord, 64, lines: false);
         string[] mods = [.. (b.Mods ?? []).Select(m => Clean(m, 200, lines: false)).OfType<string>().Take(ModsMax)];
         string[] wants = [.. Kinds.Where(k => k switch { "screenshot" => b.Screenshot == true, "save" => b.Save == true, _ => b.Log == true })];
         if (await store.FeedbackCountBy(reporter, DateTimeOffset.UtcNow.AddDays(-1)) >= PerDay) return (null, "too many feedback reports today, try again tomorrow");
         foreach (string stale in await store.DeleteFeedbackDrafts(DateTimeOffset.UtcNow.AddDays(-1))) DeleteFiles(stale);
         string token = Convert.ToHexString(RandomNumberGenerator.GetBytes(16)).ToLowerInvariant();
-        await store.AddFeedback(token, reporter, title, body, version, commit, platform, mods, wants);
+        await store.AddFeedback(token, reporter, title, body, version, commit, platform, mods, wants, discord);
         return (token, null);
     }
 
@@ -129,6 +130,7 @@ sealed class Feedback(Store store, Config config, IHttpClientFactory http, ILogg
         s.AppendLine("| | |").AppendLine("|---|---|");
         s.AppendLine($"| Meitou version | `{row.Version}`{(row.Commit is { } commit ? $" (`{commit}`)" : "")} |");
         s.AppendLine($"| Platform | {row.Platform} |");
+        if (row.Discord is { } name) s.AppendLine($"| Discord | `{name.Replace('`', '\'').Replace('|', '/')}` |");
         s.AppendLine($"| Data files | {row.Mods.Length} |").AppendLine();
         if (row.Mods.Length > 0)
         {
@@ -160,7 +162,7 @@ sealed class Feedback(Store store, Config config, IHttpClientFactory http, ILogg
 
 /// <summary>The JSON body of <c>POST /feedback</c>: the form, and which attachments will follow.</summary>
 sealed record FeedbackBody(string? Title, string? Body, string? Version, string? Commit, string? Platform, List<string>? Mods,
-    bool? Screenshot, bool? Save, bool? Log);
+    bool? Screenshot, bool? Save, bool? Log, string? Discord = null);
 
 /// <summary><c>POST /feedback</c>: the new form's token.</summary>
 sealed record FeedbackCreated(string Token);

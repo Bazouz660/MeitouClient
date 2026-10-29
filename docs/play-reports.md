@@ -47,14 +47,15 @@ the last `X-Forwarded-For` entry. Port 8080.
 
 The game's FEEDBACK button (top right in both UI modes, title included; `PlayerInterface.Feedback.cs`, `GameHost.Feedback.cs`,
 `FeedbackSender.cs`) opens a modal form: title (required, 100 chars), text (5000), and ticks for a screenshot, a save and log.txt (it
-can show folder names). The screenshot is the frame after the press, drawn without the game menu and what it opens, the form, the settings
+can show folder names), and the player's Discord name (64 chars, ticked by default). The ticks and the name are kept in meitou.user.json
+(`feedback`) and saved on each send. The screenshot is the frame after the press, drawn without the game menu and what it opens, the form, the settings
 panel, debug overlays and pointer; PNG (rows filtered), scaled to at most 2560 × 1440 and then by 0.75 until under 4.5 MB: GitHub's image proxy refuses images over 5 MB (**Verified** on a feedback issue: a 7.7 MB screenshot showed "Content length exceeded"; that 1440p frame is 5.6 MB filtered, 3.3 MB at 1080p). The save is made only when Send is pressed (only
 in a game), into a temporary folder, zipped and deleted after; over 95 MB zipped it is refused before anything is sent. The log is the whole
 log.txt, gzipped. Also sent: `BuildVersion` tag and commit, platform (as the launcher), the load order's data files.
 
 Service side (`Feedback.cs`, table `feedback`): `POST /feedback` (JSON form, which attachments follow) returns a 32-hex token; each
 attachment is `PUT /feedback/{token}/{screenshot|save|log}` with the raw body (save at most 95,000,000 bytes, others 16 MiB: Cloudflare
-takes 100 MB a request); `POST /feedback/{token}/send` opens the issue on `GITHUB_REPO` labelled `feedback` (not `bug`, so the drift check
+takes 100 MB a request); `POST /feedback/{token}/send` opens the issue on `GITHUB_REPO` labelled `feedback` (the Discord name, when sent, in its details table) (not `bug`, so the drift check
 leaves it alone; @ in the player's text gets a zero-width space) and returns `{number, url}`, again on a repeat. Files live in
 `FEEDBACK_DIR/{token}/` and are public at `GET /feedback/{token}/{screenshot.png|save.zip|log.txt}` (the log stored gzipped, served with
 `Content-Encoding: gzip`), kept forever; admin `DELETE /feedback/{token}` removes one. Limits: 10 forms per reporter (same hash as reports)

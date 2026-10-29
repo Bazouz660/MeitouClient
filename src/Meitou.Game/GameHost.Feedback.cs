@@ -26,6 +26,7 @@ sealed partial class GameHost
     void FeedbackCaptured(byte[]? rgba, int width, int height)
     {
         feedbackShotRequested = false;
+        player.FeedbackPrefs = config.Feedback ??= new();   // the same object: what the form changes is saved with the settings
         feedbackPicture = rgba is null ? null : Task.Run(() => FeedbackSender.Png(rgba, width, height));
         player.OpenFeedback(rgba is not null, SavesAvailable(out _) && session.World.Player.Exists ? null : "only in a game");
     }
@@ -51,6 +52,7 @@ sealed partial class GameHost
         feedbackSendRequested = false;
         if (feedbackSend is not null) return;
         var form = player.FeedbackValues();
+        config.Save();   // the ticks and Discord name, kept for the next report
         string? saveFolder = null;
         Task? saveWritten = null;
         if (form.Save)
