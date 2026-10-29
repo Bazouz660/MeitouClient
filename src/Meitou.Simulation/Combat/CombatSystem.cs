@@ -20,7 +20,7 @@ namespace Meitou.Simulation.Combat;
 /// Everything random is a function of (seed, character, kind, counter) so the result does not depend on the thread count. Stats, bodies and gear change only here in the commit and in
 /// the owner's own Act (the medical tick); other characters only read the <see cref="CombatSlot"/> copy.
 /// </summary>
-public sealed partial class CombatSystem : ITickSystem, IStateHashed, ITaskOwner, ITaskHandler
+public sealed partial class CombatSystem : ITickSystem, IStateHashed, ITaskOwner, ITaskHandler, IOrderOwner
 {
     /// <summary>The <see cref="Effect.Kind"/> of a blow: <c>Arg</c> is the blow (1 or 2) and <c>Amount</c> the attacker's attack number.</summary>
     public const int BlowEffect = 1;
@@ -179,10 +179,18 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed, ITaskOwner
                 {
                     // The order itself changes no relation (the original's relation events come from the blows, Deeds); an attack that is not self-defence is an assault.
                     // Whether the victim is in melee combat mode is read before the order engages anyone.
-                    bool victimFighting = table.TryResolveNext(order.Target, out int vs) && table.Cold(vs) is { } vc && IsInCombatMode(table, order.Target, vc, melee: true, ranged: false);
+                    bool victimFighting = VictimFighting(table, order.Target);
                     foreach (var id in order.Attackers)
-                        if (Engage(world, table, id, order, now) && !order.Defensive && Crimes is { } crimes && table.TryResolveNext(order.Target, out int victimSlot))
-                            crimes.Assault(world, id.Slot, victimSlot, victimFighting);
+                    {
+                        // The player's pick (row 5) is an order: it goes into the attacker's queue. Another fight (a reaction's, a goal's) starts at once.
+                        if (order.Picked)
+                        {
+                            if (table.TryResolveNext(id, out int a))
+                                PlayerOrders.Give(world, a, new OrderEntry(TaskType.FOCUSED_MELEE_ATTACK, this) { Target = order.Target, Detail = new PickedAttack(order, victimFighting, world.Tick) }, order.Queued);
+                            continue;
+                        }
+                        if (Engage(world, table, id, order, now)) Assaulted(world, table, id, order, victimFighting);
+                    }
                     break;
                 }
                 case ShootAtOrder shoot:
@@ -223,6 +231,40 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed, ITaskOwner
         if (!order.Picked && PursuitSystem.PathImpossible(cold, target, now)) return false;
         var (row, source) = order.Picked ? (TaskType.FOCUSED_MELEE_ATTACK, TaskSource.Order) : order.Defensive ? (TaskType.ATTACK_ATTACKERS_OF, TaskSource.Reaction) : (TaskType.ATTACK_ENEMIES, TaskSource.Goal);
         return TaskStart.Start(world, a, new TaskRequest(CharacterTask.Attack, row, source) { Target = target }) == StartResult.Started;
+    }
+
+    /// <summary>Whether the victim is in melee combat mode, read before an order engages anyone (an attack on a fighting character is a lesser assault).</summary>
+    bool VictimFighting(CharacterTable table, CharacterId target) =>
+        table.TryResolveNext(target, out int vs) && table.Cold(vs) is { } vc && IsInCombatMode(table, target, vc, melee: true, ranged: false);
+
+    /// <summary>The order itself changes no relation (the original's relation events come from the blows, Deeds); an attack that is not self-defence is an assault.</summary>
+    void Assaulted(World world, CharacterTable table, CharacterId attacker, AttackOrder order, bool victimFighting)
+    {
+        if (!order.Defensive && Crimes is { } crimes && table.TryResolveNext(order.Target, out int victimSlot)) crimes.Assault(world, attacker.Slot, victimSlot, victimFighting);
+    }
+
+    /// <summary>The player's attack order in a queue: the command, and the victim's combat mode when it was given (read again when the order starts on a later tick).</summary>
+    sealed record PickedAttack(AttackOrder Order, bool VictimFighting, long Tick);
+
+    /// <summary>
+    /// The attack order (row 5) needs a target that is there, awake and has a body (else it leaves the queue), and an attacker able to fight: a fighter, awake, not carried (<see cref="Engage"/>).
+    /// </summary>
+    OrderCheck IOrderOwner.CanRun(World world, int slot, OrderEntry order)
+    {
+        var table = world.Characters;
+        if (!table.TryResolveNext(order.Target, out int t) || t == slot || table.Cold(t)!.Medical is not { Incapacitated: false }) return OrderCheck.Gone;
+        var cold = table.Cold(slot)!;
+        return cold is { Fighter: not null, Stats: not null, Race: not null, Medical.Incapacitated: false } && cold.CarriedBy.IsNone ? OrderCheck.Run : OrderCheck.Blocked();
+    }
+
+    void IOrderOwner.Start(World world, int slot, OrderEntry order)
+    {
+        var table = world.Characters;
+        var picked = (PickedAttack)order.Detail!;
+        var id = table.IdOf(slot);
+        bool victimFighting = picked.Tick == world.Tick ? picked.VictimFighting : VictimFighting(table, order.Target);
+        Sync(table);
+        if (Engage(world, table, id, picked.Order, (int)world.Tick)) Assaulted(world, table, id, picked.Order, victimFighting);
     }
 
     public void RegisterTasks(TaskHandlers tasks) => tasks.Register(CharacterTask.Attack, this);

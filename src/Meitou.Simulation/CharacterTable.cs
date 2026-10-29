@@ -102,8 +102,8 @@ public sealed class CharacterCold
     public long PathApplied { get; set; }
     /// <summary>Belongs to the player's faction: can be selected and ordered.</summary>
     public bool IsPlayer { get; set; }
-    /// <summary>Queued move orders (X/Z) after the current one (shift + right click); changed only by the character's own partition or a serial phase.</summary>
-    public List<System.Numerics.Vector2> OrderQueue { get; } = [];
+    /// <summary>The order queue (<see cref="Simulation.OrderQueue"/>, <see cref="PlayerOrders"/>): the order in hand first, then the queued ones (Shift); changed only by the character's own partition or a serial phase.</summary>
+    public OrderQueue OrderQueue { get; } = new();
     /// <summary>
     /// The height a move order was given at (the clicked ground), for the goal <see cref="GoalHeightAt"/>: it picks the floor where floors are stacked.
     /// Other goals use the character's own height. Derived from orders and not hashed.
@@ -649,8 +649,7 @@ public sealed class CharacterTable
             hasher.Add(k.Path.Length);
             hasher.Add(k.PathRequest);
             hasher.Add(k.IsPlayer);
-            hasher.Add(k.OrderQueue.Count);
-            foreach (var q in k.OrderQueue) hasher.Add(q);
+            k.OrderQueue.Hash(ref hasher);
             hasher.Add((int)k.DrawnWeapon);
             BodyHash.Add(ref hasher, k.Stats, k.Medical);
             if (k.Inventory is null) hasher.Add(-1); else k.Inventory.Hash(ref hasher);

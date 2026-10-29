@@ -9,7 +9,7 @@ namespace Meitou.Simulation.Locks;
 /// has no row: <see cref="TaskType.None"/>), set free 110, get in 107, open / close door 72 / 73, lock / unlock door 77 / 140, cut / break lock 285 / 286, smash 226; a round runs
 /// release 110, lock 77 or unlock 78.
 /// </summary>
-public sealed partial class LockSystem : ITaskOwner, ITaskHandler
+public sealed partial class LockSystem : ITaskOwner, ITaskHandler, IOrderOwner
 {
     static readonly TaskType[] Rows =
     [
@@ -40,9 +40,53 @@ public sealed partial class LockSystem : ITaskOwner, ITaskHandler
         _ => TaskType.BASH_DOOR_PLAYER_ORDER,
     };
 
-    /// <summary>Starts a lock order's work through <see cref="TaskStart.Start"/>; false when the row is not the character's.</summary>
-    static bool StartWork(World world, int slot, CharacterTask task, TaskType row, string? site, CharacterId? target = null, object? detail = null) =>
-        TaskStart.Start(world, slot, new TaskRequest(task, row, TaskSource.Order) { Site = site, Target = target ?? CharacterId.None, Detail = detail }) == StartResult.Started;
+    /// <summary>
+    /// Gives the character a lock order's work (<see cref="PlayerOrders.Give"/>), which starts through <see cref="TaskStart.Start"/> as the act-out <paramref name="task"/>; false (and nothing given)
+    /// when it cannot run (the row is not the character's): the order's picker then tries the next character.
+    /// </summary>
+    bool StartWork(World world, int slot, CharacterTask task, TaskType row, string? site, CharacterId? target = null, object? detail = null, bool queued = false)
+    {
+        var order = new OrderEntry(row, this) { Site = site, Target = target ?? CharacterId.None, Detail = new LockWork(task, detail) };
+        if (!PlayerOrders.CanRun(world, slot, order).CanRun) return false;
+        PlayerOrders.Give(world, slot, order, queued);
+        return true;
+    }
+
+    /// <summary>
+    /// Lock work done where the character stands (<see cref="CharacterTask.Idle"/>: a prisoner on its own cage or shackles, a worker at its lock) is done once the character holds no work; a walk
+    /// once it ended.
+    /// </summary>
+    bool ITaskHandler.Done(World world, int slot, CharacterTask task)
+    {
+        var table = world.Characters;
+        if (table.Next[slot].Task != (byte)task) return true;
+        if (task != CharacterTask.Idle) return false;
+        var c = table.Cold(slot)!;
+        return c is { PickingLock: null, Shackles: null, ForcingLock: null, DoorJob: null, Freeing.IsNone: true, EnteringCage: null, BashOrdered: false }
+            && !(world.Player.DoorTarget is not null && world.Player.DoorWalker == table.IdOf(slot));
+    }
+
+    /// <summary>A lock order's act-out and the work's own parameters (<see cref="TaskRequest.Detail"/>).</summary>
+    sealed record LockWork(CharacterTask Task, object? Detail);
+
+    /// <summary>
+    /// A lock order (the pickers choose who gets it from the conditions of the moment): a player character's (else it leaves the queue) that is awake, not carried and free, or caged and
+    /// working on its own cage or shackles where it stands; its fixture or character still there. What else the work needs is tested where it is done (the worker gives up there).
+    /// </summary>
+    OrderCheck IOrderOwner.CanRun(World world, int slot, OrderEntry order)
+    {
+        var table = world.Characters;
+        var c = table.Cold(slot)!;
+        if (!c.IsPlayer || order.Site is { } site && world.Fixtures.Find(site) is null || !order.Target.IsNone && !table.TryResolveNext(order.Target, out _)) return OrderCheck.Gone;
+        bool inPlace = ((LockWork)order.Detail!).Task == CharacterTask.Idle;
+        return c.Medical is not { Incapacitated: true } && c.CarriedBy.IsNone && (inPlace || !c.IsImprisoned) ? OrderCheck.Run : OrderCheck.Blocked();
+    }
+
+    void IOrderOwner.Start(World world, int slot, OrderEntry order)
+    {
+        var work = (LockWork)order.Detail!;
+        TaskStart.Start(world, slot, new TaskRequest(work.Task, order.Row, TaskSource.Order) { Site = order.Site, Target = order.Target, Detail = work.Detail });
+    }
 
     void ITaskHandler.Start(World world, int slot, in TaskRequest request)
     {

@@ -6,7 +6,7 @@ namespace Meitou.Simulation.Items
     /// Open a container (<see cref="Locks.Fixture.Id"/>): the nearest of the characters (the selection when empty) who may walks to it and its window opens. Another faction's locked one:
     /// with <paramref name="Alt"/> its lock is picked (76 PICK_LOCK), else the hint and a walk to it; a shop's without Alt: the steal hint and a walk.
     /// </summary>
-    public sealed record OpenContainerOrder(IReadOnlyList<CharacterId> Characters, string Fixture, bool Alt = false) : SimCommand;
+    public sealed record OpenContainerOrder(IReadOnlyList<CharacterId> Characters, string Fixture, bool Alt = false) : OrderCommand;
 
     /// <summary>Closes the open container's window.</summary>
     public sealed record CloseContainer : SimCommand;
@@ -36,7 +36,7 @@ namespace Meitou.Simulation
         /// </summary>
         public const float TradingRange = 60;
 
-        static void OpenContainerInput(World world, Items.OpenContainerOrder order)
+        void OpenContainerInput(World world, Items.OpenContainerOrder order)
         {
             if (world.Fixtures.Find(order.Fixture) is not { Contents: not null } fixture) return;
             var table = world.Characters;
@@ -55,7 +55,6 @@ namespace Meitou.Simulation
             }
             if (best < 0) return;
             var walker = table.Cold(best)!;
-            var request = new TaskRequest(CharacterTask.GoTo, row, TaskSource.Order) { Site = fixture.Id, Point = fixture.Position };
             if (locked)
             {
                 if (!theirs)
@@ -65,18 +64,31 @@ namespace Meitou.Simulation
                 }
                 // Without Alt: the hint and a walk to it.
                 if (!order.Alt) world.Post("Hold down the ALT key to pick the lock.");
-                TaskStart.Start(world, best, order.Alt ? request : request with { Detail = ContainerWalk });
+                PlayerOrders.Give(world, best, ContainerOrder(row, fixture, walkOnly: !order.Alt), order.Queued);
                 return;
             }
             if (ShopOf(world, fixture) is not null && !order.Alt && theirs)
             {
                 // A shop's stock without Alt: the original's hint and a move; with Alt (the menu's Loot) the walker steals from it (the window shows that container's part of the shop's stock).
                 world.Post("Hold down the ALT key to steal items");
-                TaskStart.Start(world, best, request with { Detail = ContainerWalk });
+                PlayerOrders.Give(world, best, ContainerOrder(row, fixture, walkOnly: true), order.Queued);
                 return;
             }
-            bool walk = bestDistance > ContainerReach || !SameFloor(table.Next[best].Position, fixture.Position);
-            TaskStart.Start(world, best, walk ? request : request with { Task = CharacterTask.Idle });
+            PlayerOrders.Give(world, best, ContainerOrder(row, fixture, walkOnly: false), order.Queued);
+        }
+
+        /// <summary>The order to open (row 3), pick (76) or only walk to (<paramref name="walkOnly"/>) a container.</summary>
+        OrderEntry ContainerOrder(Meitou.Data.Gameplay.Ai.TaskType row, Locks.Fixture fixture, bool walkOnly) =>
+            new(row, this) { Site = fixture.Id, Point = fixture.Position, Detail = walkOnly ? ContainerWalk : null };
+
+        /// <summary>The start of a container order: the walk to it, or, in reach on its floor, the opening where the character stands.</summary>
+        void StartContainer(World world, int slot, OrderEntry order)
+        {
+            var request = new TaskRequest(CharacterTask.GoTo, order.Row, TaskSource.Order) { Site = order.Site, Point = order.Point, Detail = order.Detail };
+            var at = world.Characters.Next[slot].Position;
+            bool walk = order.Row != Meitou.Data.Gameplay.Ai.TaskType.PICKUP || order.Detail == ContainerWalk
+                || Vector2.Distance(Flat(at), Flat(order.Point)) > ContainerReach || !SameFloor(at, order.Point);
+            TaskStart.Start(world, slot, walk ? request : request with { Task = CharacterTask.Idle });
         }
 
         /// <summary>Each tick: the walker in reach opens its container; one given another order, downed or gone gives up. An open window stays until the player closes it; it closes when its opener is down or gone.</summary>

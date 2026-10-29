@@ -767,7 +767,8 @@ update `FUN_140511130`, `Character::setupAI` `FUN_140621b70`; KenshiLib names **
   over at the next choice; the implicit jobs come after the list, Idleness last. Passive leaves
   Self preservation alone; the Jobs switch only gates the job passes. A fight is a task (4 `Task_MeleeAttack`) in a goal's or an order's plan; `CombatClassAI` steers it and
   chooses nothing; the fight ends with the task.
-- **Meitou**: the player's characters run no chooser; each system acts on its own and an order replaces any task. Self preservation is `RetaliationSystem.SelfDefends`:
+- **Meitou**: the player's characters run no chooser; each system acts on its own. Orders go through the order queue ([simulation](../simulation.md#order-queue)): one that
+  can run replaces any task, one that cannot stays queued with its text while jobs and goals go on. Self preservation is `RetaliationSystem.SelfDefends`:
   it answers when the character is idle, a bodyguard following, looting with the attacker within 40, or on a task its jobs started (`PermaJobs.FromJob`: a job's provenance
   `CharacterCold.Running` that runs the task); Hold's attack on sight (`AggroSystem.HoldsGround`) and Getting food (`TownDutySystem.LookPlayerFood`) likewise. Gaps: the immediate
   answer ignores "moving"; a higher list job does not take over a running medic, rescue or foraging job; a bodyguard defends its leader from an attacker at any

@@ -8,10 +8,10 @@ namespace Meitou.Simulation.Locks;
 /// Set Free (110, Task_ReleasePrisoner): the nearest of the characters (the selection when empty) who may walks to <see cref="Prisoner"/>'s cage and lets it out; refused while the cage is
 /// locked. Out of another faction's cage it is a crime like lifting the prisoner out.
 /// </summary>
-public sealed record SetFreeOrder(IReadOnlyList<CharacterId> Characters, CharacterId Prisoner) : SimCommand;
+public sealed record SetFreeOrder(IReadOnlyList<CharacterId> Characters, CharacterId Prisoner) : OrderCommand;
 
 /// <summary>Get in (107, Task_UseCage): the nearest of the characters (the selection when empty) who may walks into the free, unlocked <see cref="Cage"/> and is imprisoned there.</summary>
-public sealed record GetInCageOrder(IReadOnlyList<CharacterId> Characters, string Cage) : SimCommand;
+public sealed record GetInCageOrder(IReadOnlyList<CharacterId> Characters, string Cage) : OrderCommand;
 
 /// <summary>
 /// The cage verbs of a clicked cage (docs/game/ui-input.md "Context menu verbs", cage rows): Set Free and Get in. Put in is <see cref="Crime.PutInCageOrder.Cage"/>, Pick Lock of an empty
@@ -25,7 +25,7 @@ public sealed partial class LockSystem
         if (!table.TryResolveNext(order.Prisoner, out int p) || table.Cold(p) is not { IsImprisoned: true, InWhat: { } where } pc || world.Fixtures.Find(where) is not { } cage) return;
         if (!Conscious(pc)) return;
         int best = NearestWorker(world, order.Characters, cage, TaskType.RELEASE_PRISONER);
-        if (best >= 0) StartWork(world, best, CharacterTask.GoTo, TaskType.RELEASE_PRISONER, cage.Id, order.Prisoner);
+        if (best >= 0) StartWork(world, best, CharacterTask.GoTo, TaskType.RELEASE_PRISONER, cage.Id, order.Prisoner, queued: order.Queued);
     }
 
     /// <summary>
@@ -40,7 +40,7 @@ public sealed partial class LockSystem
         if (world.Fixtures.Find(order.Cage) is not { Kind: FixtureKind.Cage } cage || !FixtureRegistry.IsFree(table, cage)) return;
         int best = NearestWorker(world, order.Characters, cage, TaskType.USE_CAGE);
         if (best < 0 || !table.Cold(best)!.Carrying.IsNone) return;
-        StartWork(world, best, CharacterTask.GoTo, TaskType.USE_CAGE, cage.Id);
+        StartWork(world, best, CharacterTask.GoTo, TaskType.USE_CAGE, cage.Id, queued: order.Queued);
     }
 
     /// <summary>

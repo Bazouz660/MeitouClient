@@ -15,17 +15,13 @@ public abstract record SimCommand
 }
 
 /// <summary>Move order: the characters walk to <see cref="Target"/> (world units; the height is taken from the ground).</summary>
-public sealed record MoveOrder(IReadOnlyList<CharacterId> Characters, Vector3 Target) : SimCommand
-{
-    /// <summary>Add to the characters' order lists (shift in the game) instead of replacing them.</summary>
-    public bool Queued { get; init; }
-}
+public sealed record MoveOrder(IReadOnlyList<CharacterId> Characters, Vector3 Target) : OrderCommand;
 
 /// <summary>
 /// The context menu's Follow (order 31, <c>Task_Follow</c>; docs/game/ui-input.md "Context menu verbs"): the characters (the selection when empty) keep a formation place behind
 /// <see cref="Target"/> until another order replaces it or the target is gone (<see cref="CharacterCold.FollowOrder"/>). <b>Engine</b>: the squad follower's slot rule, not saved.
 /// </summary>
-public sealed record FollowOrder(IReadOnlyList<CharacterId> Characters, CharacterId Target) : SimCommand
+public sealed record FollowOrder(IReadOnlyList<CharacterId> Characters, CharacterId Target) : OrderCommand
 {
     /// <summary>Bodyguard (order 45) rather than Follow (31): the follower fights whoever attacks the target at any distance, a plain follower only an attacker within 40 of it (<see cref="CharacterCold.Guarding"/>, <c>RetaliationSystem.Guards</c>); the Bodyguard job's follow sets it too. <b>Engine</b> reading of the order: the original shares the follow order giver and the task type's data names no more.</summary>
     public bool Guard { get; init; }

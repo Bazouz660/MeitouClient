@@ -25,7 +25,7 @@ namespace Meitou.Simulation.Carrying;
 /// Everything runs in the serial phases (<c>Inputs</c>, <c>Schedule</c>, <c>SlowWorld</c>), in slot order, so the result does not depend on threads or partitions. Placed after the body system (its
 /// <c>SlowWorld</c> sees this tick's knock-outs and the corpses already removed) and before combat.
 /// </summary>
-public sealed partial class CarrySystem(GameConstants constants, BodyOptions options, float liftSeconds = 1, CarrySettings? settings = null) : ITickSystem, ITaskOwner, ITaskHandler
+public sealed partial class CarrySystem(GameConstants constants, BodyOptions options, float liftSeconds = 1, CarrySettings? settings = null) : ITickSystem, ITaskOwner, ITaskHandler, IOrderOwner
 {
     /// <summary>The bone of the carrier the body hangs from (the original's <c>Bip01 L UpperArm</c> for the left side, <b>Verified</b>).</summary>
     public const string AttachBone = "Bip01 L UpperArm";
@@ -158,34 +158,27 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
             switch (command)
             {
                 case PickUpOrder order:
-                    // The order's lift (225 Lifting/Snatching Order) may take a body another carries; a kidnap (246) may not.
-                    if (!table.TryResolveNext(order.Target, out int body)
-                        || !(CanBeLifted(world, table.Cold(body)!) || order.Kidnap && CanBeKidnapped(table, body) || !order.Kidnap && Snatchable(table.Cold(body)!))) break;
-                    if (Nearest(table, Who(world, order.Carriers), body, s => s != body && CanCarry(world, table.Cold(s)!, order.Kidnap ? TaskType.KIDNAP_ORDER : TaskType.LIFT_PERSON_PLAYER_ORDER, ordered: true) && table.Cold(s)!.Carrying != order.Target) is int carrier
-                        && Start(world, carrier, CharacterTask.PickUp, order.Kidnap ? TaskType.KIDNAP_ORDER : TaskType.LIFT_PERSON_PLAYER_ORDER, TaskSource.Order, order.Target, CharacterTask.Idle))
-                    {
-                        table.Cold(carrier)!.Kidnapping = order.Kidnap;
-                        table.Cold(carrier)!.Snatching = !order.Kidnap;
-                    }
+                {
+                    // The order's lift (225 Lifting/Snatching Order) may take a body another carries; a kidnap (246) may not. The nearest of the characters that can lift it gets it.
+                    var lift = new OrderEntry(order.Kidnap ? TaskType.KIDNAP_ORDER : TaskType.LIFT_PERSON_PLAYER_ORDER, this) { Target = order.Target };
+                    if (table.TryResolveNext(order.Target, out int body) && LiftOf(world, lift, body) && Nearest(table, Who(world, order.Carriers), body, s => PlayerOrders.CanRun(world, s, lift).CanRun) is int carrier)
+                        PlayerOrders.Give(world, carrier, lift, order.Queued);
                     break;
+                }
                 case LootOrder loot:
-                    if (!table.TryResolveNext(loot.Target, out int victim) || !CanBeLooted(table.Cold(victim)!)) break;
-                    if (Nearest(table, Who(world, loot.Looters), victim, s => s != victim && table.Cold(s) is { Medical.Incapacitated: false, Inventory: not null } c && c.CarriedBy.IsNone
-                        && TaskStart.Eligible(world, c, TaskType.LOOT_TARGET)) is int looter)
-                    {
-                        if (world.Player.LootWalker == table.IdOf(looter)) world.Player.OpeningLoot = CharacterId.None;
-                        Start(world, looter, CharacterTask.Loot, TaskType.LOOT_TARGET, TaskSource.Order, loot.Target, CharacterTask.Idle);
-                    }
+                {
+                    var entry = new OrderEntry(TaskType.LOOT_TARGET, this) { Target = loot.Target };
+                    if (table.TryResolveNext(loot.Target, out int victim) && CanBeLooted(table.Cold(victim)!) && Nearest(table, Who(world, loot.Looters), victim, s => PlayerOrders.CanRun(world, s, entry).CanRun) is int looter)
+                        PlayerOrders.Give(world, looter, entry, loot.Queued);
                     break;
+                }
                 case OpenLootOrder open:
-                    if (!table.TryResolveNext(open.Target, out int body2) || !Openable(table, body2)) break;
-                    if (Nearest(table, Who(world, open.Looters), body2, s => s != body2 && table.Cold(s) is { Medical.Incapacitated: false, Inventory: not null } c && c.CarriedBy.IsNone
-                        && TaskStart.Eligible(world, c, TaskType.LOOT_TARGET)) is int opener)
-                    {
-                        Start(world, opener, CharacterTask.Loot, TaskType.LOOT_TARGET, TaskSource.Order, open.Target, CharacterTask.Idle);
-                        (world.Player.OpenLoot, world.Player.OpeningLoot, world.Player.LootWalker) = (CharacterId.None, open.Target, table.IdOf(opener));
-                    }
+                {
+                    var entry = new OrderEntry(TaskType.LOOT_TARGET, this) { Target = open.Target, Detail = OpenInventory };
+                    if (table.TryResolveNext(open.Target, out int body2) && Openable(table, body2) && Nearest(table, Who(world, open.Looters), body2, s => PlayerOrders.CanRun(world, s, entry).CanRun) is int opener)
+                        PlayerOrders.Give(world, opener, entry, open.Queued);
                     break;
+                }
                 case TakeLootItem take:
                     TakeLoot(world, take);
                     break;
@@ -200,25 +193,102 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
                     break;
                 case PutDownOrder put:
                     foreach (var id in Who(world, put.Carriers))
-                        if (table.TryResolveNext(id, out int slot)) BeginPutDown(world, slot, TaskSource.Order);
+                        if (table.TryResolveNext(id, out int slot) && table.Cold(slot) is { Carrying.IsNone: false } c)
+                            PlayerOrders.Give(world, slot, new OrderEntry(TaskType.PUT_DOWN_OBJECT, this) { Target = c.Carrying }, put.Queued);
                     break;
                 case RescueJobCommand job:
-                {
-                    var taken = job.Job ? null : Lifting(table);
                     foreach (var id in Who(world, job.Characters))
                     {
                         if (!table.TryResolveNext(id, out int slot) || table.Cold(slot) is not { IsPlayer: true } cold) continue;
-                        if (taken is null) Production.PermaJobs.Add(cold, Meitou.Data.Gameplay.Ai.TaskType.FIND_AND_RESCUE_IF_THERES_BEDS, Production.PermaJob.Untargeted(Meitou.Data.Gameplay.Ai.TaskType.FIND_AND_RESCUE_IF_THERES_BEDS));
-                        else if (cold is { Fleeing: false } && CanCarry(world, cold, TaskType.FIND_AND_RESCUE_IF_THERES_BEDS, ordered: true) && Rescuing(cold))
-                        {
-                            // The one-shot order has no bed to take anyone to: said, not dropped silently (engine choice; the job just waits with desire 0).
-                            if (world.Fixtures.FindBed(world, slot, Relations) is null) world.Bark(id, Meitou.Localisation.Loc.Tr("No free bed to take anyone to."));
-                            else RescueSomeone(world, slot, taken, TaskSource.Order);
-                        }
+                        if (job.Job) Production.PermaJobs.Add(cold, TaskType.FIND_AND_RESCUE_IF_THERES_BEDS, Production.PermaJob.Untargeted(TaskType.FIND_AND_RESCUE_IF_THERES_BEDS));
+                        else PlayerOrders.Give(world, slot, new OrderEntry(TaskType.None, this) { Detail = RescueButton }, job.Queued);   // the button: one look for a body
                     }
                     break;
-                }
             }
+        }
+    }
+
+    /// <summary>The <see cref="OrderEntry.Detail"/> of the Open Inventory order (a loot that opens the window) and of the Rescue button's one-shot order (the job's look, then a lift).</summary>
+    static readonly object OpenInventory = new(), RescueButton = new();
+
+    /// <summary>Whether <paramref name="body"/> can be taken by the lift order (a kidnap's sleeper too; a snatch from another carrier only by the order 225).</summary>
+    static bool LiftOf(World world, OrderEntry lift, int body)
+    {
+        var bc = world.Characters.Cold(body)!;
+        bool kidnap = lift.Row == TaskType.KIDNAP_ORDER;
+        return CanBeLifted(world, bc) || kidnap && CanBeKidnapped(world.Characters, body) || !kidnap && Snatchable(bc);
+    }
+
+    /// <summary>
+    /// The carry orders' checks: the target must still fit the verb (else the order leaves the queue); the character must be able to lift (<see cref="CanCarry"/>, ordered: a fight ends with the
+    /// order's task), loot (awake, an inventory, not carried), knock out (<see cref="CanKnockOut"/>) or put down (awake); the Rescue button needs a rescuer (not fleeing, able to lift, not on
+    /// Hold) and a free bed.
+    /// </summary>
+    OrderCheck IOrderOwner.CanRun(World world, int slot, OrderEntry order)
+    {
+        var table = world.Characters;
+        var cold = table.Cold(slot)!;
+        if (order.Detail == RescueButton)
+        {
+            if (!cold.IsPlayer) return OrderCheck.Gone;
+            if (cold.Fleeing || !CanCarry(world, cold, TaskType.FIND_AND_RESCUE_IF_THERES_BEDS, ordered: true) || !Rescuing(cold)) return OrderCheck.Blocked();
+            // The one-shot order has no bed to take anyone to: said, not dropped silently (engine choice; the job just waits with desire 0).
+            return world.Fixtures.FindBed(world, slot, Relations) is null ? OrderCheck.Blocked(Meitou.Localisation.Loc.Tr("No free bed to take anyone to.")) : OrderCheck.Run;
+        }
+        if (order.Row == TaskType.PUT_DOWN_OBJECT)
+        {
+            if (cold.Carrying.IsNone) return OrderCheck.Gone;
+            return cold.Medical is { Incapacitated: false } ? OrderCheck.Run : OrderCheck.Blocked();
+        }
+        if (!table.TryResolveNext(order.Target, out int target) || target == slot) return OrderCheck.Gone;
+        var tc = table.Cold(target)!;
+        switch (order.Row)
+        {
+            case TaskType.LIFT_PERSON_PLAYER_ORDER or TaskType.KIDNAP_ORDER:
+                if (!LiftOf(world, order, target)) return OrderCheck.Gone;
+                return CanCarry(world, cold, order.Row, ordered: true) && cold.Carrying != order.Target ? OrderCheck.Run : OrderCheck.Blocked();
+            case TaskType.LOOT_TARGET:
+                if (order.Detail == OpenInventory ? !Openable(table, target) : !CanBeLooted(tc)) return OrderCheck.Gone;
+                return cold is { Medical.Incapacitated: false, Inventory: not null } && cold.CarriedBy.IsNone ? OrderCheck.Run : OrderCheck.Blocked();
+            case TaskType.STEALTH_KNOCKOUT:
+                if (!CanBeKnockedOut(tc)) return OrderCheck.Gone;
+                return CanKnockOut(cold) ? OrderCheck.Run : OrderCheck.Blocked();
+        }
+        return OrderCheck.Gone;
+    }
+
+    void IOrderOwner.Start(World world, int slot, OrderEntry order)
+    {
+        var table = world.Characters;
+        var cold = table.Cold(slot)!;
+        if (order.Detail == RescueButton)
+        {
+            RescueSomeone(world, slot, Lifting(table), TaskSource.Order);
+            return;
+        }
+        switch (order.Row)
+        {
+            case TaskType.PUT_DOWN_OBJECT:
+                BeginPutDown(world, slot, TaskSource.Order);
+                break;
+            case TaskType.LIFT_PERSON_PLAYER_ORDER or TaskType.KIDNAP_ORDER:
+                if (Start(world, slot, CharacterTask.PickUp, order.Row, TaskSource.Order, order.Target, CharacterTask.Idle))
+                {
+                    cold.Kidnapping = order.Row == TaskType.KIDNAP_ORDER;
+                    cold.Snatching = !cold.Kidnapping;
+                }
+                break;
+            case TaskType.LOOT_TARGET when order.Detail == OpenInventory:
+                Start(world, slot, CharacterTask.Loot, TaskType.LOOT_TARGET, TaskSource.Order, order.Target, CharacterTask.Idle);
+                (world.Player.OpenLoot, world.Player.OpeningLoot, world.Player.LootWalker) = (CharacterId.None, order.Target, table.IdOf(slot));
+                break;
+            case TaskType.LOOT_TARGET:
+                if (world.Player.LootWalker == table.IdOf(slot)) world.Player.OpeningLoot = CharacterId.None;
+                Start(world, slot, CharacterTask.Loot, TaskType.LOOT_TARGET, TaskSource.Order, order.Target, CharacterTask.Idle);
+                break;
+            case TaskType.STEALTH_KNOCKOUT:
+                Start(world, slot, CharacterTask.StealthKo, TaskType.STEALTH_KNOCKOUT, TaskSource.Order, order.Target, CharacterTask.Idle);
+                break;
         }
     }
 

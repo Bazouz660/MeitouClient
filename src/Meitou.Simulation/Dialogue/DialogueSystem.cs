@@ -6,7 +6,7 @@ using Meitou.Data.Gameplay.Dialogue;
 namespace Meitou.Simulation.Dialogue;
 
 /// <summary>The player's Talk order: <see cref="Talker"/> walks up to <see cref="Target"/> and the conversation opens in reach (the original's task 12, then event 1).</summary>
-public sealed record TalkOrder(CharacterId Talker, CharacterId Target) : SimCommand;
+public sealed record TalkOrder(CharacterId Talker, CharacterId Target) : OrderCommand;
 /// <summary>Clicks choice <see cref="Index"/> of the open conversation.</summary>
 public sealed record DialogueChoice(int Index) : SimCommand;
 /// <summary>Leaves the open conversation (its window closed).</summary>

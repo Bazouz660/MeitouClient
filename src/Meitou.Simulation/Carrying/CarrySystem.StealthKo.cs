@@ -74,10 +74,13 @@ public sealed partial class CarrySystem
         var table = world.Characters;
         if (!table.TryResolveNext(order.Target, out int target) || !CanBeKnockedOut(table.Cold(target)!)) return;
         // The first that can go, in the order given (the selection's order), so the chance the interface showed is the one rolled.
+        var entry = new OrderEntry(Meitou.Data.Gameplay.Ai.TaskType.STEALTH_KNOCKOUT, this) { Target = order.Target };
         foreach (var id in Who(world, order.Attackers))
-            if (table.TryResolveNext(id, out int attacker) && attacker != target && CanKnockOut(table.Cold(attacker)!)
-                && Start(world, attacker, CharacterTask.StealthKo, Meitou.Data.Gameplay.Ai.TaskType.STEALTH_KNOCKOUT, TaskSource.Order, order.Target, CharacterTask.Idle))
+            if (table.TryResolveNext(id, out int attacker) && PlayerOrders.CanRun(world, attacker, entry).CanRun)
+            {
+                PlayerOrders.Give(world, attacker, entry, order.Queued);
                 return;
+            }
     }
 
     /// <summary>The point behind the target the attacker creeps to.</summary>

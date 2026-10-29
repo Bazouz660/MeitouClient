@@ -33,9 +33,9 @@ namespace Meitou.Simulation;
 /// <item>Turning: a walker out of combat faces the way it moves while its velocity follows the agent's acceleration (the original's model, Verified); its drawn
 /// body turns after the facing at a limited rate (<see cref="AnimationSystem.FollowFacing"/>). Fighters and direct followers keep the heading limit <see cref="TurnRate"/>
 /// and the cosine cut (engine choice).</item>
-/// Queued orders (<see cref="CharacterCold.OrderQueue"/>) and the formation (<see cref="Formation"/>) exist.
+/// Queued move orders (row-29 entries of <see cref="CharacterCold.OrderQueue"/>) and the formation (<see cref="Formation"/>) exist.
 /// </summary>
-public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable, ITaskOwner, ITaskHandler
+public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable, ITaskOwner, ITaskHandler, IOrderOwner
 {
     /// <summary>The fights the steering reads (null: no fight steering, as in worlds without combat; the world's combat system unless set).</summary>
     public Combat.CombatSystem? Fights { get; set; }
@@ -152,7 +152,11 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
             }
             if (command is FollowOrder follow)
             {
-                Follow(world, follow);
+                // Row 45 Bodyguard or 31 Staying close to each of the characters (the selection when empty) but the target.
+                if (!table.TryResolveNext(follow.Target, out int led)) continue;
+                foreach (var id in follow.Characters.Count > 0 ? follow.Characters : world.Player.Selection.ToArray())
+                    if (table.TryResolveNext(id, out int s) && s != led)
+                        PlayerOrders.Give(world, s, new OrderEntry(follow.Guard ? TaskType.BODYGUARD : TaskType.STAY_CLOSE_TO_TARGET, this) { Target = follow.Target }, follow.Queued);
                 continue;
             }
             if (command is not MoveOrder order) continue;
@@ -161,7 +165,13 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
             var slots = new List<int>();
             foreach (var id in who)
             {
-                if (!table.TryResolveNext(id, out int found) || !TaskStart.Eligible(world, table.Cold(found)!, TaskType.MOVE_CUS_ORDERED)) continue;   // a prisoner stays in its cage (row 29 is not registered for the imprisoned or chained)
+                if (!table.TryResolveNext(id, out int found)) continue;
+                if (!TaskStart.Eligible(world, table.Cold(found)!, TaskType.MOVE_CUS_ORDERED))
+                {
+                    // A prisoner stays in its cage (row 29 is not registered for the imprisoned or chained): the order waits in its queue.
+                    PlayerOrders.Give(world, found, new OrderEntry(TaskType.MOVE_CUS_ORDERED, this) { Point = order.Target }, order.Queued);
+                    continue;
+                }
                 if (table.Cold(found)!.InSomething == Locks.HeldState.Bed) world.Fixtures.LeaveBed(world, id);   // an order gets a sleeper up
                 slots.Add(found);
             }
@@ -169,17 +179,10 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
             for (int k = 0; k < slots.Count; k++)
             {
                 int slot = slots[k];
-                ref var n = ref table.Next[slot];
-                var cold = table.Cold(slot)!;
                 var target = targets[k];
-                cold.FollowOrder = CharacterId.None;
-                bool busy = n.Task == (byte)CharacterTask.GoTo && (n.Flags & (ushort)MoveFlags.AnyPath) != 0;
-                if (order.Queued && busy)
-                {
-                    cold.OrderQueue.Add(target);   // after the order in hand (shift + right click)
-                    continue;
-                }
-                TaskStart.Start(world, slot, new TaskRequest(CharacterTask.GoTo, TaskType.MOVE_CUS_ORDERED, TaskSource.Order) { Point = new Vector3(target.X, order.Target.Y, target.Y) });
+                table.Cold(slot)!.FollowOrder = CharacterId.None;
+                // Shift + right click: after the order in hand.
+                PlayerOrders.Give(world, slot, new OrderEntry(TaskType.MOVE_CUS_ORDERED, this) { Point = new Vector3(target.X, order.Target.Y, target.Y) }, order.Queued);
             }
         }
         foreach (var squad in world.Squads.All) RefreshFormation(world, squad);
@@ -248,14 +251,13 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
     }
 
     /// <summary>
-    /// Sends a character to a point at a speed mode, dropping its queue (serial phases only). A path it is following is kept until the new one
+    /// Sends a character to a point at a speed mode (serial phases only). A path it is following is kept until the new one
     /// arrives, so a new order given on the move (holding the right button) does not stop it for the ticks the path takes.
     /// </summary>
     public static void GoTo(CharacterTable table, int slot, Vector2 target, byte mode)
     {
         ref var n = ref table.Next[slot];
         var cold = table.Cold(slot)!;
-        cold.OrderQueue.Clear();
         cold.OrderMove = false;
         cold.ArriveWithin = 0;
         cold.BlockedRepaths = 0;
@@ -286,6 +288,25 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
     {
         tasks.Register(CharacterTask.GoTo, this);
         tasks.Register(CharacterTask.Follow, this);
+    }
+
+    /// <summary>A move order (29) needs nothing more; a follow order (31, 45) a target that is there, and an awake, free character (not caged or carried).</summary>
+    OrderCheck IOrderOwner.CanRun(World world, int slot, OrderEntry order)
+    {
+        if (order.IsMove) return OrderCheck.Run;
+        var table = world.Characters;
+        if (!table.TryResolveNext(order.Target, out int led) || led == slot) return OrderCheck.Gone;
+        return table.Cold(slot) is { IsImprisoned: false, Medical.Incapacitated: false, CarriedBy.IsNone: true } ? OrderCheck.Run : OrderCheck.Blocked();
+    }
+
+    /// <summary>A sleeper gets up first; then the move's walk or the follow starts (<see cref="ITaskHandler.Start"/>).</summary>
+    void IOrderOwner.Start(World world, int slot, OrderEntry order)
+    {
+        var table = world.Characters;
+        if (table.Cold(slot)!.InSomething == Locks.HeldState.Bed) world.Fixtures.LeaveBed(world, table.IdOf(slot));
+        TaskStart.Start(world, slot, order.IsMove
+            ? new TaskRequest(CharacterTask.GoTo, TaskType.MOVE_CUS_ORDERED, TaskSource.Order) { Point = order.Point }
+            : new TaskRequest(CharacterTask.Follow, order.Row, TaskSource.Order) { Target = order.Target });
     }
 
     /// <summary>
@@ -358,7 +379,7 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
         }
     }
 
-    /// <summary>Drops a character's orders and path and makes it stand (serial phases only).</summary>
+    /// <summary>Drops a character's path and makes it stand (serial phases only); its order queue is the queue's (<see cref="PlayerOrders"/>).</summary>
     public static void Stop(CharacterTable table, int slot)
     {
         ref var n = ref table.Next[slot];
@@ -366,7 +387,6 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
         n.Task = (byte)CharacterTask.Idle;
         n.PathCursor = 0;
         var cold = table.Cold(slot)!;
-        cold.OrderQueue.Clear();
         cold.PathRequest = 0;
         cold.FollowHeading = Vector2.Zero;
     }
@@ -818,14 +838,8 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
                 bool replaced = ((MoveFlags)n.Flags & (MoveFlags.NeedPath | MoveFlags.Pending)) != 0;
                 if (!replaced && n.Task == (byte)CharacterTask.GoTo)
                 {
-                    if (cold.OrderQueue.Count > 0)
-                    {
-                        // The next queued order (shift + right click): a path to it is asked for next tick.
-                        n.Goal = cold.OrderQueue[0];
-                        cold.OrderQueue.RemoveAt(0);
-                        n.Flags |= (ushort)MoveFlags.NeedPath;
-                    }
-                    else n.Task = (byte)CharacterTask.Idle;
+                    // The move order leaves the queue; a queued move after it (shift + right click) starts: a path to it is asked for next tick.
+                    if (!PlayerOrders.Arrived(cold, ref n)) n.Task = (byte)CharacterTask.Idle;
                 }
                 else if (!replaced && n.Task == (byte)CharacterTask.Attack) n.TaskTime = PursuitSystem.RepathSeconds;   // a fighter at the end of its path to a moving target asks for the next one soon (PursuitSystem)
                 else if (!replaced)

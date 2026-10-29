@@ -5,7 +5,7 @@ using Meitou.Simulation.Items;
 namespace Meitou.Simulation.Trading;
 
 /// <summary>The player opens a trade between one of their characters and a trader: the customer walks up to the trader and the trade window opens in reach.</summary>
-public sealed record OpenTrade(CharacterId Customer, CharacterId Trader) : SimCommand;
+public sealed record OpenTrade(CharacterId Customer, CharacterId Trader) : OrderCommand;
 /// <summary>Closes the open trade.</summary>
 public sealed record CloseTrade : SimCommand;
 /// <summary>

@@ -22,10 +22,7 @@ public sealed partial class ProductionSystem
     /// <summary>The order: the character stops where it stands and starts the task (serial phase). A character already at it keeps its progress.</summary>
     void ProspectBegin(World world, ProspectOrder order)
     {
-        var table = world.Characters;
-        if (!table.TryResolveNext(order.Character, out int slot) || table.Cold(slot) is not { IsPlayer: true } cold || !Able(cold) || cold.WaterState == 3) return;
-        if (table.Next[slot].Task == (byte)CharacterTask.Prospect) return;
-        TaskStart.Start(world, slot, new TaskRequest(CharacterTask.Prospect, TaskType.PROSPECTING, TaskSource.Order));
+        if (world.Characters.TryResolveNext(order.Character, out int slot)) PlayerOrders.Give(world, slot, new OrderEntry(TaskType.PROSPECTING, this), order.Queued);
     }
 
     /// <summary>The prospecting's start: the character stops where it stands.</summary>

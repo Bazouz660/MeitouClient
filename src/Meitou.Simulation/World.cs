@@ -265,6 +265,7 @@ public sealed partial class World : IDisposable
         var due = TakeDue();
         prof?.Lap(TickProfile.Inputs);
         for (int k = 0; k < systems.Count; k++) { systems[k].Inputs(this, due); prof?.Lap(TickProfile.Inputs, k); }
+        PlayerOrders.Step(this);   // the order queues (serial, after the commands)
 
         // 2. Schedule (serial): the grid of the last tick's positions, then the systems.
         table.Phase = TablePhase.Schedule;

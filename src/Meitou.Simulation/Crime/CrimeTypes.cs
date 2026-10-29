@@ -203,7 +203,7 @@ public sealed class PendingCrime
 public sealed record PayBailOrder(CharacterId Prisoner) : SimCommand;
 
 /// <summary>The carriers (the selection when empty) take the bodies they carry to the nearest free cage and put them in; a wanted captive pays its bounty (<see cref="ArrestSystem.Claim"/>).</summary>
-public sealed record PutInCageOrder(IReadOnlyList<CharacterId> Carriers) : SimCommand
+public sealed record PutInCageOrder(IReadOnlyList<CharacterId> Carriers) : OrderCommand
 {
     /// <summary>The cage to take them to (a clicked cage, Put in 108); null: the nearest free one.</summary>
     public string? Cage { get; init; }

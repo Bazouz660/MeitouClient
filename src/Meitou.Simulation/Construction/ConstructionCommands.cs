@@ -9,10 +9,10 @@ public sealed record PlannedBuilding(string Record, Vector3 Position, Quaternion
 public sealed record PlaceBuildings(IReadOnlyList<PlannedBuilding> Plans) : SimCommand;
 
 /// <summary>Player orders 2 Build / 95 Repair: the characters (the selection when empty) deliver what they carry to <see cref="Site"/> and work it.</summary>
-public sealed record BuildOrder(IReadOnlyList<CharacterId> Characters, string Site, bool Repair = false) : SimCommand;
+public sealed record BuildOrder(IReadOnlyList<CharacterId> Characters, string Site, bool Repair = false) : OrderCommand;
 
 /// <summary>Player order 96 Dismantle: the characters work <see cref="Site"/> down to 0, then it is removed with the refund.</summary>
-public sealed record DismantleOrder(IReadOnlyList<CharacterId> Characters, string Site) : SimCommand;
+public sealed record DismantleOrder(IReadOnlyList<CharacterId> Characters, string Site) : OrderCommand;
 
 /// <summary>The selection panel's Dismantle once confirmed (<c>Building::confirmDismantle</c>): the player's site is dismantled at once, its furniture destroyed.</summary>
 public sealed record ConfirmDismantle(string Site) : SimCommand;

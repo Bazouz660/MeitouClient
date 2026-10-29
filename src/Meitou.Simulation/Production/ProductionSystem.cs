@@ -44,7 +44,7 @@ public sealed class ProductionSettings
 /// </list>
 /// Placed after construction and before combat; everything here is serial and reads only the world's state and the command order.
 /// </summary>
-public sealed partial class ProductionSystem : ITickSystem, ITaskOwner, ITaskHandler
+public sealed partial class ProductionSystem : ITickSystem, ITaskOwner, ITaskHandler, IOrderOwner
 {
     /// <summary>The research falloff per earlier contribution in the same tick (<b>Observed</b>, <c>FUN_140836b70</c>).</summary>
     public const float ResearchFalloff = 0.6f;
@@ -258,23 +258,14 @@ public sealed partial class ProductionSystem : ITickSystem, ITaskOwner, ITaskHan
                     if (machine.Data.IsStorage && !machine.Data.Operable)
                     {
                         foreach (var id in Who(world, order.Characters))
-                            if (table.TryResolveNext(id, out int hauler) && table.Cold(hauler) is { IsPlayer: true } hc && Able(hc))
-                                TaskStart.Start(world, hauler, new TaskRequest(CharacterTask.Haul, TaskType.OPERATE_STORAGE, TaskSource.Order) { Site = site.Id });
+                            if (table.TryResolveNext(id, out int hauler)) PlayerOrders.Give(world, hauler, new OrderEntry(TaskType.OPERATE_STORAGE, this) { Site = site.Id }, order.Queued);
                         break;
                     }
                     if (!(machine.Data.Operable || machine.Data.IsTraining)) break;
+                    var row = machine.Data.IsTraining ? TaskType.USE_TRAINING_DUMMY : TaskType.OPERATE_MACHINERY;
                     foreach (var id in Who(world, order.Characters))
-                    {
-                        var row = machine.Data.IsTraining ? TaskType.USE_TRAINING_DUMMY : TaskType.OPERATE_MACHINERY;
-                        if (!table.TryResolveNext(id, out int slot) || table.Cold(slot) is not { IsPlayer: true } cold || !Able(cold) || !TaskStart.Eligible(world, cold, row)) continue;
-                        if (cold.OperateSite == site.Id) continue;
-                        if (OperatorsOf(world, site.Id) >= machine.Data.MaxOperators)
-                        {
-                            world.Post($"{site.Name} is already in use.");
-                            break;
-                        }
-                        TaskStart.Start(world, slot, new TaskRequest(CharacterTask.Operate, row, TaskSource.Order) { Site = site.Id });
-                    }
+                        if (table.TryResolveNext(id, out int slot) && PlayerOrders.Give(world, slot, new OrderEntry(row, this) { Site = site.Id }, order.Queued) is { Posted: true })
+                            break;   // the machine is in use: said once
                     break;
                 }
                 case UseTurretOrder turret: UseTurret(world, turret); break;
@@ -319,13 +310,42 @@ public sealed partial class ProductionSystem : ITickSystem, ITaskOwner, ITaskHan
         foreach (var id in Who(world, order.Characters))
             if (table.TryResolveNext(id, out int slot) && table.Cold(slot) is { IsPlayer: true } cold && Able(cold) && TaskStart.Eligible(world, cold, TaskType.USE_TURRET) && Gap(table.Next[slot].Position, spot) is var gap && gap < bestGap)
                 (best, bestGap) = (slot, gap);
-        if (best < 0 || table.Cold(best)!.OperateSite == site.Id) return;
-        if (OperatorsOf(world, site.Id) >= m.Data.MaxOperators)
+        if (best >= 0) PlayerOrders.Give(world, best, new OrderEntry(TaskType.USE_TURRET, this) { Site = site.Id }, order.Queued);
+    }
+
+    /// <summary>
+    /// The orders of machines (operate 87, training 97, turret gunner 146, a haul trip to a storage 124) and prospecting (150): a player character's (else the order leaves the queue) on a
+    /// complete site that has its machine (or a turret's post); one already working that machine needs nothing more; the character must be able to work (<see cref="Able"/>), the machine have
+    /// a free operator place ("is already in use", posted), and a prospector must not swim.
+    /// </summary>
+    OrderCheck IOrderOwner.CanRun(World world, int slot, OrderEntry order)
+    {
+        var cold = world.Characters.Cold(slot)!;
+        if (!cold.IsPlayer) return OrderCheck.Gone;
+        if (order.Row == TaskType.PROSPECTING) return Able(cold) && cold.WaterState != 3 ? OrderCheck.Run : OrderCheck.Blocked();
+        if (order.Site is not { } id || Site(world, id) is not { Complete: true } site || world.Machines.Find(id) is not { } m
+            || order.Row == TaskType.USE_TURRET && TurretPostOf(site) is null) return OrderCheck.Gone;
+        if (order.Row == TaskType.OPERATE_STORAGE) return Able(cold) ? OrderCheck.Run : OrderCheck.Blocked();
+        if (cold.OperateSite == id) return OrderCheck.Run;
+        if (!Able(cold)) return OrderCheck.Blocked();
+        return OperatorsOf(world, id) >= m.Data.MaxOperators ? OrderCheck.Blocked($"{site.Name} is already in use.", posted: true) : OrderCheck.Run;
+    }
+
+    void IOrderOwner.Start(World world, int slot, OrderEntry order)
+    {
+        var table = world.Characters;
+        switch (order.Row)
         {
-            world.Post($"{site.Name} is already in use.");
-            return;
+            case TaskType.PROSPECTING:
+                if (table.Next[slot].Task != (byte)CharacterTask.Prospect) TaskStart.Start(world, slot, new TaskRequest(CharacterTask.Prospect, TaskType.PROSPECTING, TaskSource.Order));   // one at it keeps its progress
+                break;
+            case TaskType.OPERATE_STORAGE:
+                TaskStart.Start(world, slot, new TaskRequest(CharacterTask.Haul, TaskType.OPERATE_STORAGE, TaskSource.Order) { Site = order.Site });
+                break;
+            default:
+                if (table.Cold(slot)!.OperateSite != order.Site) TaskStart.Start(world, slot, new TaskRequest(CharacterTask.Operate, order.Row, TaskSource.Order) { Site = order.Site });
+                break;
         }
-        TaskStart.Start(world, best, new TaskRequest(CharacterTask.Operate, TaskType.USE_TURRET, TaskSource.Order) { Site = site.Id });
     }
 
     /// <summary>A player turret's post (its functionality's <c>use range</c> and <c>gun turret</c>), null for a building that is no turret.</summary>

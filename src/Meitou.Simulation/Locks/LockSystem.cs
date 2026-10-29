@@ -6,14 +6,14 @@ using Meitou.Simulation.Bodies;
 namespace Meitou.Simulation.Locks;
 
 /// <summary>Pick the lock of <see cref="Prisoner"/>'s cage (the original's Task_PickLock with a character target): the characters (the selection when empty) walk to it, or a caged one picks its own.</summary>
-public sealed record PickLockOrder(IReadOnlyList<CharacterId> Characters, CharacterId Prisoner) : SimCommand
+public sealed record PickLockOrder(IReadOnlyList<CharacterId> Characters, CharacterId Prisoner) : OrderCommand
 {
     /// <summary>The cage to pick instead, by fixture id, when it is empty (then <see cref="Prisoner"/> is None).</summary>
     public string? Cage { get; init; }
 }
 
 /// <summary>The characters (the selection when empty) leave their cage (Task_GetOutOfCage): refused while it is locked; an escape unless it is a kidnap victim.</summary>
-public sealed record GetOutOrder(IReadOnlyList<CharacterId> Characters) : SimCommand;
+public sealed record GetOutOrder(IReadOnlyList<CharacterId> Characters) : OrderCommand;
 
 /// <summary>
 /// The player's lock orders (docs/simulation.md "Arrest and jail"): picking a cage's lock (<see cref="Lockpicking.Step"/> once a tick while in reach, with its pending crime, rolls and
@@ -51,7 +51,7 @@ public sealed partial class LockSystem(GameConstants constants, BodyOptions opti
                         if (!table.TryResolveNext(id, out int s) || table.Cold(s) is not { IsPlayer: true, Medical.Incapacitated: false } c || !c.CarriedBy.IsNone) continue;
                         if (c.IsImprisoned && c.InWhat != cage.Id) continue;   // a prisoner reaches only its own cage
                         // One picker per order (the nearest is not looked for: the first listed whose repertoire has row 76); a prisoner picks where it stands.
-                        if (StartWork(world, s, c.IsImprisoned ? CharacterTask.Idle : CharacterTask.GoTo, TaskType.PICK_LOCK, cage.Id)) break;
+                        if (StartWork(world, s, c.IsImprisoned ? CharacterTask.Idle : CharacterTask.GoTo, TaskType.PICK_LOCK, cage.Id, queued: pick.Queued)) break;
                     }
                     break;
                 }
