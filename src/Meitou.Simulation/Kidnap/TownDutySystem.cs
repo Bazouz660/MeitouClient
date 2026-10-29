@@ -242,8 +242,9 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
                     MovementSystem.GoTo(table, slot, goal, SpeedMode.Walk);
                     continue;
                 }
-                // 243 needs no own town (FUN_1408cb650); a player-side member takes only from its own faction's stores (FUN_1408dac20).
-                if (food[role] == 1 && !HoldsFood(cold) && Store(world, at, town, owner: cold.Faction == world.Player.Faction ? cold.Faction : -1) is var (id, spot))
+                // 243 needs no own town (FUN_1408cb650); a player-side member takes only from its own faction's stores (FUN_1408dac20). 244 starts only with room for the item (state 82,
+                // FUN_14059bd80: the inventory, else the worn bag); state !12 (no sensed ally fighting) is not modelled: its per-ally score FUN_14099a190 is undecoded.
+                if (food[role] == 1 && !HoldsFood(cold) && Store(world, at, town, owner: cold.Faction == world.Player.Faction ? cold.Faction : -1) is var (id, spot) && FoodFits(world, id, cold))
                 {
                     cold.Engaged = true;
                     duties.Add(new TownDuty { Member = member, Faction = cold.Faction, Town = town, Kind = TownDutyKind.Food, Target = id, Goal = spot });
@@ -433,6 +434,10 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
 
     /// <summary>Food the finder looks for: <c>item function</c> 3, for an animal also raw food (15).</summary>
     static bool Edible(ItemInstance item, bool animal) => item.IsFood || animal && item.ItemFunction == FeedSystem.RawFoodFunction;
+
+    /// <summary>Whether the member has room for the item <see cref="StepFood"/> would take from the store (<see cref="Inventory.HasRoomFor"/>).</summary>
+    bool FoodFits(World world, string storeId, CharacterCold cold) =>
+        StoreInventory(world, storeId) is { } store && cold.Inventory is { } inv && store.Items.FirstOrDefault(i => Edible(i, false)) is { } item && inv.HasRoomFor(item);
 
     Inventory? StoreInventory(World world, string id) => world.Machines.Find(id)?.Storage ?? world.Fixtures.Find(id)?.Contents;
 
@@ -684,7 +689,8 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
             if (d.Kind == TownDutyKind.LootFood)
                 foreach (var item in store.Items.Where(i => i.IsFood).ToList()) InventoryCommands.MoveInto(store, item, 0, into, bagFirst: true, out _);   // Task_EmptyMachine: while there is room
             else if (store.Items.FirstOrDefault(i => Edible(i, d.PlayerSide && gc.Medical is { HasStatsObject: false })) is { } item
-                && InventoryCommands.MoveInto(store, item, 1, into, bagFirst: false, out _) == 0 && d.PlayerSide)
+                && InventoryCommands.MoveInto(store, item, 1, into, bagFirst: false, out _) == 0   // the grid, else the worn bag (state 82)
+                && InventoryCommands.MoveInto(store, item, 1, into, bagFirst: true, out _, bagOnly: true) == 0 && d.PlayerSide)
                 foodWaits.Add((d.Member, world.GameHours + Settings.RefuseHours));   // no room for it: not again for a while
             world.Machines.Touch();
             return End(world, d);
