@@ -374,7 +374,7 @@ public sealed partial class PopulationSystem
         else if (world.Tick >= p.UnloadAtTick && !(!Kept(p) && !p.Pinned && p.Campaign is null && ThinOutOfZone(world, p, squad)))
         {
             p.Imprisoned = squad.Members.Any(m => table.TryResolveNext(m, out int ms) && table.Cold(ms)!.IsImprisoned);
-            if (squad.Ai?.Current is { } running) p.Package = running.Id;
+            if (squad.Ai?.Current is { } running) FollowPackage(world, p, running);
             if (p.Package is { } shipping && IsShipping(shipping) && squad.Ai is { MissionTown: >= 0 and var mission }) p.Target = mission;   // the camp it ships to (ShippingCamp)
             // Faithful: a platoon the original does not keep (not a town's own, not in a campaign, not occupying) is despawned as it leaves; a save's wild one by the wild switch.
             if (!Kept(p) && !p.Pinned && p.Campaign is null)
@@ -457,6 +457,22 @@ public sealed partial class PopulationSystem
                 p.OrderCooldown = 4;
             }
         }
+    }
+
+    /// <summary>
+    /// A squad unloading with <paramref name="running"/> as its package: the platoon keeps it and takes its off-screen job (<c>FUN_1407ee790</c> re-reads the job from the blackboard's
+    /// current package each step, <c>FUN_140268840</c>, <b>Verified</b>). A job that goes to fixed places (home, a patrol round it) starts at once: no wait, a new destination.
+    /// </summary>
+    void FollowPackage(World world, Platoon p, Meitou.Data.Gameplay.Ai.AiPackage running)
+    {
+        p.Package = running.Id;
+        var job = Ai.PlatoonJobs.JobOf(running.Unloaded);
+        if (job == p.Job) return;
+        p.Job = job;
+        if (job is not (Ai.PlatoonJob.GoHome or Ai.PlatoonJob.PatrolShortRange) || p.Campaign is not null || p.Pinned || p.Wild) return;
+        p.Point = null;
+        p.WaitLeft = 0;
+        ChooseNext(world, p);
     }
 
     /// <summary>The squared distance (600) within which a member goes with a leader that is out of the zone (<c>DAT_141714bd4</c> = 360000, <b>Verified</b>).</summary>

@@ -570,6 +570,8 @@ public sealed partial class PopulationSystem : IStateHashed
         p.Target = p.Origin;
         p.GoingHome = true;
         p.WaitLeft = 0;
+        // No campaign holds it, so its job is its package's again (FUN_1407ee790).
+        if (p.Package is { } package) p.Job = Ai.PlatoonJobs.JobOf(data.Ai.Package(package)?.Unloaded ?? 0);
         if (p.State == PlatoonState.Loaded && world.Squads.Find(p.SquadId) is { } squad) OrderLeader(world, p, squad);
     }
 
