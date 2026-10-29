@@ -1193,12 +1193,13 @@ public sealed unsafe partial class PostProcess : IDisposable, IWorldPostChain
     void RunCoverage(Target2D target, ColorMask mask, bool clear)
     {
         CloseSegment();
-        var targets = PassTargets.Of(target.Texture, null);
+        // Tested against the scene's depth as the particles' colour is, so a fire behind a wall does not mark the wall.
+        var targets = PassTargets.Of(target.Texture, sceneDepth!.Texture);
         if (clear) targets = targets with { Colour = targets.Colour with { Load = LoadOp.Clear, Clear = default } };
         var cmd = Gpu.BeginNative("particle coverage");
         cmd.BeginRendering(targets.Rendering);
-        Gpu.BeginHostPass((CommandList)cmd, targets, DrawState.For(targets.Formats, Gpu.Device.DepthClamp, mask: mask));
-        Particles!.DrawCoverage(mask);
+        Gpu.BeginHostPass((CommandList)cmd, targets, DrawState.For(targets.Formats, Gpu.Device.DepthClamp, depthTest: true, depthWrite: false, compare: DepthFunction.Lequal, mask: mask));
+        Particles!.DrawCoverage(mask, depthTest: true);
         cmd.EndRendering();
         Gpu.EndHostPass(cmd);
         Gpu.EndNative(cmd);

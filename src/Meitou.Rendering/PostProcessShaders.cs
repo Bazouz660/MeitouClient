@@ -560,8 +560,8 @@ static class PostProcessShaders
         """;
 
     /// <summary>
-    /// The low-resolution particles' coverage for the upscalers' reactive mask: the accumulation's opacity or brightest channel, 30 times, saturating (as
-    /// <see cref="ParticleRenderer"/>'s own coverage fragment does per particle), upsampled by depth as the composite is so it does not mark a near edge reactive.
+    /// The low-resolution particles' coverage for the upscalers' reactive mask: the accumulation's opacity or brightest channel (no gain: rain and fire, which have
+    /// <see cref="ParticleRenderer"/>'s, are always full size), upsampled by depth as the composite is so it does not mark a near edge reactive.
     /// </summary>
     public const string ParticleCoverage = """
         #version 330 core
@@ -573,7 +573,7 @@ static class PostProcessShaders
         void main()
         {
             vec4 a = particlesAt(floor(vUv * uFullSize) + 0.5);
-            fragColour = vec4(clamp(max(a.a, max(a.r, max(a.g, a.b))) * 30.0, 0.0, uLimit));
+            fragColour = vec4(clamp(max(a.a, max(a.r, max(a.g, a.b))), 0.0, uLimit));
         }
         """;
 

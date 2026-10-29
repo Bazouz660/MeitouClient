@@ -251,7 +251,7 @@ sealed class PostComposite : IDisposable
 
     /// <summary>
     /// The low-resolution particles' coverage into <paramref name="target"/>'s <paramref name="mask"/> channels: the
-    /// accumulation's opacity or brightest channel, 30 times, saturating, upsampled by depth so a near edge does not mark
+    /// accumulation's opacity or brightest channel (no gain: rain and fire are always full size), upsampled by depth so a near edge does not mark
     /// itself reactive. The full-size particles write their own coverage; <see cref="PostTaa"/> calls this for the
     /// low-resolution accumulations after that pass.
     /// </summary>
