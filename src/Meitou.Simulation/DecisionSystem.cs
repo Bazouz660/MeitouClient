@@ -158,7 +158,7 @@ public sealed class DecisionSystem
 
     /// <summary>
     /// The <b>engine</b> re-ask (design D4: no periodic replan was found in the original, but Meitou's idleness and job tasks do not end where the original's plans do): a character not fighting
-    /// whose task is a job's, or that no start runs (idle, a standing task), is decided every <see cref="Production.ProductionSystem.JobCheckTicks"/>; so is one on an order whose row needs no
+    /// whose task is a job's or 14 Idleness's, or that no start runs (idle, a standing task), is decided every <see cref="Production.ProductionSystem.JobCheckTicks"/>; so is one on an order whose row needs no
     /// melee threat (146, <see cref="PlayerOrders.NeedsNoThreat"/>), which a threat must take off its turret.
     /// </summary>
     public static bool ReAsked(World world, int slot, CharacterCold cold)

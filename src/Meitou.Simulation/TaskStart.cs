@@ -70,7 +70,7 @@ public enum TaskEnd : byte
 
 /// <summary>
 /// A task start (<see cref="TaskStart.Start"/>): the act-out <see cref="Task"/>, the original's <see cref="Row"/> it runs (the row the repertoire is tested on) and its <see cref="Source"/>, with
-/// the job index, target character, site and point the act-out reads, and the task it goes back to when it ends by itself (<see cref="Resume"/>; engine, until a decision step decides again).
+/// the job index, target character, site and point the act-out reads, and the task it goes back to when it ends by itself (<see cref="Resume"/>; engine: the characters the decision step does not decide).
 /// </summary>
 public readonly record struct TaskRequest(CharacterTask Task, TaskType Row, TaskSource Source)
 {

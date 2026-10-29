@@ -129,7 +129,7 @@ public sealed class KidnapSystem(PopulationData data, PopulationSystem populatio
         var cold = table.Cold(slot)!;
         if (CageFor(world, table.Next[v].Position, cold, null) is null) return false;
         var task = (CharacterTask)table.Next[slot].Task;
-        if (!carry.BeginPickUp(world, slot, victim, task is CharacterTask.Wander or CharacterTask.Follow ? task : CharacterTask.Idle, kidnap: true, source: TaskSource.Goal, row: TaskType.CARRY_WOUNDED_SLAVES)) return false;
+        if (!carry.BeginPickUp(world, slot, victim, TaskStart.Standing(cold, task), kidnap: true, source: TaskSource.Goal, row: TaskType.CARRY_WOUNDED_SLAVES)) return false;
         cold.Engaged = true;
         abductions.Add(new Abduction { Carrier = table.IdOf(slot), Victim = victim, Faction = cold.Faction });
         return true;

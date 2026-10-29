@@ -510,8 +510,8 @@ public sealed partial class ProductionSystem : ITickSystem, ITaskOwner, ITaskHan
     }
 
     /// <summary>
-    /// Ends the task of a job, an operator's or a haul trip by itself (serial phases; <see cref="TaskEnd.Done"/>): back to the following or wandering a job took the character from (its
-    /// provenance's resume task, kept only for those), idle otherwise. A follow job's follow ends with it: the character follows its squad's leader again.
+    /// Ends the task of a job, an operator's or a haul trip by itself (serial phases; <see cref="TaskEnd.Done"/>): the character stands idle and the decision step decides it again. A follow
+    /// job's follow ends with it (its <see cref="CharacterCold.FollowOrder"/> is dropped).
     /// </summary>
     static void End(World world, int slot)
     {
