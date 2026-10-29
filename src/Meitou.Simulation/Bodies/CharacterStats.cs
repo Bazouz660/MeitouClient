@@ -150,12 +150,16 @@ public sealed class CharacterStats
             if (StatsInfo.FieldName((StatsEnumerated)i) is { } name) floats[name] = values[i];
     }
 
-    /// <summary>Reads the saved STATS floats written by <see cref="WriteSave"/> (a missing key keeps the default).</summary>
+    /// <summary>
+    /// Reads the saved STATS floats written by <see cref="WriteSave"/> (a missing key keeps the default), except that a save without <c>lockpicking</c> gets half the
+    /// character's thievery (<c>FUN_14064b6a0</c>, docs/game/character-stats.md).
+    /// </summary>
     public static CharacterStats ReadSave(IReadOnlyDictionary<string, float> floats)
     {
         var stats = new CharacterStats();
         for (int i = 1; i < StatsInfo.Count; i++)
             if (StatsInfo.FieldName((StatsEnumerated)i) is { } name && floats.TryGetValue(name, out float v)) stats.values[i] = v;
+        if (!floats.ContainsKey("lockpicking")) stats.values[(int)StatsEnumerated.Lockpicking] = stats.values[(int)StatsEnumerated.Thieving] * 0.5f;
         return stats;
     }
 }

@@ -278,7 +278,8 @@ counts as health in the fraction, the down (h-s+rig<0) and sever tests, so a spl
 **Verified.** Three independent places agree on the numbering: the editor's `StatsEnumerated` enum (names), the
 per-stat accessor `FUN_140884190` (stat number to `CharStats` byte offset, a switch), and the stats save writer
 `FUN_14064a8f0` (offset to saved field name; read back by the loader `FUN_14064b6a0`, which stores at the same
-offsets). Stats are `float`s inside `CharStats`. The number is what RACE `heal stat`, `stats good<N>`,
+offsets). **Verified** (`FUN_14064b6a0`): a saved character without a `lockpicking` key loads it as `thievery` x 0.5; with the key the stored value is used.
+Stats are `float`s inside `CharStats`. The number is what RACE `heal stat`, `stats good<N>`,
 `stats bad<N>`, BUILDING `stat used` and all XP code pass around.
 
 | # | `StatsEnumerated` | STATS field / save name | `CharStats` offset |
