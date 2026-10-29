@@ -12,7 +12,7 @@ namespace Meitou.Reports;
 /// uploaded one request each, and sending it opens a GitHub issue that links them. The files stay in <see cref="Config.FeedbackDir"/>,
 /// public under an unguessable token; one person starts at most 10 forms a day.
 /// </summary>
-sealed class Feedback(Store store, Config config, IHttpClientFactory http, ILogger<Feedback> log)
+sealed class Feedback(Store store, Config config, GithubAuth github, IHttpClientFactory http, ILogger<Feedback> log)
 {
     public static readonly string[] Kinds = ["screenshot", "save", "log"];
     const int TitleMax = 100, BodyMax = 5000, VersionMax = 64, ModsMax = 1000, PerDay = 10;
@@ -76,7 +76,7 @@ sealed class Feedback(Store store, Config config, IHttpClientFactory http, ILogg
     {
         if (!ValidToken(token) || await store.GetFeedback(token) is not { } row) return (null, "no such form");
         if (row.Issue is { } done) return (new(done, row.IssueUrl!), null);
-        if (config.GithubToken is null) return (null, "feedback is not set up on the server");
+        if (!github.Configured) return (null, "feedback is not set up on the server");
         var issue = new JsonObject { ["title"] = $"Feedback: {row.Title}", ["body"] = IssueBody(row), ["labels"] = new JsonArray("feedback") };
         using var request = new HttpRequestMessage(HttpMethod.Post, $"https://api.github.com/repos/{config.Repo}/issues")
         {
@@ -84,9 +84,10 @@ sealed class Feedback(Store store, Config config, IHttpClientFactory http, ILogg
         };
         request.Headers.UserAgent.ParseAdd("meitou-reports");
         request.Headers.Accept.ParseAdd("application/vnd.github+json");
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", config.GithubToken);
         try
         {
+            if (await github.Token() is not { } auth) return (null, "GitHub did not take the issue, try again later");
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", auth);
             using var response = await http.CreateClient().SendAsync(request);
             string text = await response.Content.ReadAsStringAsync();
             if (!response.IsSuccessStatusCode)

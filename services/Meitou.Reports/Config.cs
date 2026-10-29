@@ -16,6 +16,8 @@ sealed record Config(
     string? DiscordBotToken,
     string[] DiscordTrustedRoles,
     string? GithubToken,
+    string? GithubAppId,
+    string? GithubAppKey,
     string FeedbackDir,
     Uri PublicUrl)
 {
@@ -40,6 +42,9 @@ sealed record Config(
             Get("DISCORD_BOT_TOKEN"),
             List("DISCORD_TRUSTED_ROLES"),
             Get("GITHUB_TOKEN"),
+            Get("GITHUB_APP_ID"),
+            // The PEM may come on one line with its newlines written as \n, for hosts whose variables can't hold several lines.
+            Get("GITHUB_APP_PRIVATE_KEY")?.Replace("\\n", "\n", StringComparison.Ordinal),
             Get("FEEDBACK_DIR") ?? "/data/feedback",
             new Uri(Get("PUBLIC_URL") ?? "https://gear-pastry-chorus.cloudovna.app"));
     }

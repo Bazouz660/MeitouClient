@@ -59,8 +59,10 @@ takes 100 MB a request); `POST /feedback/{token}/send` opens the issue on `GITHU
 leaves it alone; @ in the player's text gets a zero-width space) and returns `{number, url}`, again on a repeat. Files live in
 `FEEDBACK_DIR/{token}/` and are public at `GET /feedback/{token}/{screenshot.png|save.zip|log.txt}` (the log stored gzipped, served with
 `Content-Encoding: gzip`), kept forever; admin `DELETE /feedback/{token}` removes one. Limits: 10 forms per reporter (same hash as reports)
-per day, 30 requests per IP per 10 minutes; forms never sent are deleted after a day. Env: `GITHUB_TOKEN` (fine-grained, Issues
-read/write on the repo; without it sends are refused), `FEEDBACK_DIR` (default `/data/feedback`, a persistent volume: the image creates it
+per day, 30 requests per IP per 10 minutes; forms never sent are deleted after a day. Env: `GITHUB_APP_ID` and
+`GITHUB_APP_PRIVATE_KEY` (PEM; `\n` escapes allowed) of the GitHub App "Sane Cat-Lon" (Issues read/write, installed on the repo), so issues are
+authored by its bot (`GithubAuth.cs`: JWT → installation token, cached for its hour); else `GITHUB_TOKEN` (fine-grained, Issues read/write;
+issues then show its owner); with neither, sends are refused. `FEEDBACK_DIR` (default `/data/feedback`, a persistent volume: the image creates it
 owned by the app user), `PUBLIC_URL` (the links' base, default the Cloudovna address).
 
 ## Ways in

@@ -15,6 +15,7 @@ builder.Services.AddHttpClient();
 builder.Services.AddSingleton(sp => new Roadmap(sp.GetRequiredService<IHttpClientFactory>().CreateClient(), config, sp.GetRequiredService<ILogger<Roadmap>>()));
 builder.Services.AddSingleton<Intake>();
 builder.Services.AddSingleton<Discord>();
+builder.Services.AddSingleton<GithubAuth>();
 builder.Services.AddSingleton<Feedback>();
 builder.Services.AddCors(o => o.AddDefaultPolicy(p => p.WithOrigins(config.Origins).WithMethods("GET", "POST").WithHeaders("Content-Type")));
 builder.Services.AddRateLimiter(o =>
