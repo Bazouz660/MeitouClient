@@ -140,7 +140,7 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
         if (chasing || world.Tick >= steer.LineTick || steer.Target != t)
         {
             bool clear = combat.SteersAt(world, i, t);
-            if (!clear && !chasing && !Orders.Holding(cold)) steer.PathUntil = world.Tick + (long)MathF.Ceiling(PathChaseSeconds / world.TickSeconds);
+            if (!clear && !chasing) steer.PathUntil = Orders.Holding(cold) ? 0 : world.Tick + (long)MathF.Ceiling(PathChaseSeconds / world.TickSeconds);
             steer.LineClear = clear;
             steer.LineTick = world.Tick + (long)MathF.Ceiling(RepathSeconds / world.TickSeconds);
         }

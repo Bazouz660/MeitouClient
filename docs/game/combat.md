@@ -518,7 +518,7 @@ Each frame it builds a velocity from forces, not a path:
 
 Meitou (`CombatSteering`, `Fighting.Steer`, `MovementSystem`): melee fighters in the footwork (not running, not stunned or holding) steer
 this way while in the same place as the target with a walkable straight line to it (`CombatSystem.SteersAt`, every 2 units, rechecked
-every 0.5 s in the footwork, every tick on a path chase, which a blocked line met at a new pick or in the footwork starts for 2 s at least: `SteerState.PathUntil`, not for a Hold order); otherwise they walk paths. Engine readings: one band per Meitou fight state (swing, defence, engaged, waiting); the forced
+every 0.5 s in the footwork, every tick on a path chase, which a blocked line met at a new pick or in the footwork starts for 2 s at least: `SteerState.PathUntil`, not for a Hold order; engine reading: a different place counts as a blocked line there, the original arms the timer on the line query only); otherwise they walk paths. Engine readings: one band per Meitou fight state (swing, defence, engaged, waiting); the forced
 point and leading offsets are not modelled; the separation push is off while steering (the repulsion replaces it); the smoothing runs per
 tick (fewer samples at 0.8^(60 dt) when a tick is longer than a frame) and forgets when steering starts.
 
