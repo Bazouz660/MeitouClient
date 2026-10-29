@@ -45,6 +45,8 @@ routing use [perception](perception.md), [population](factions-squads-towns.md),
 | DIALOGUE_LINE `AI contract` (169 uses; val0 = hours), `change AI` (190 uses), `has package` (751 uses) | `change AI` replaces the squad's packages, `AI contract` runs one aimed at the dialogue target: [dialogue Effects](dialogue.md#effects) | **Observed** |
 | AI_SCHEDULE | Empty in the base game set (0 records in the merged database); fcs.def says its `packages` list switches packages by hour (val0), but no runtime use was found | **Verified** (count) |
 
+AI contract start (**Verified**, `FUN_140272240`, called by `FUN_140272740` and `FUN_140272570`, `FUN_140272c20`): does nothing when the platoon's running contract (+0x210) already has the same package record (+0x68), so a repeated identical contract keeps its end time and target. Otherwise it ends the old contract with `FUN_14026a110` (event 30 on the leader's dialogue state, the old package's end text, notice to the old target; also what a natural end runs), then builds the new one (end = now + hours; under 1 hour is the constant 10 minutes). Meitou: `Blackboard.StartContract`; the event 30 fires only with a `ContractEndTalk` (a small difference).
+
 ### Enums
 
 | Enum | Values | Source, label |

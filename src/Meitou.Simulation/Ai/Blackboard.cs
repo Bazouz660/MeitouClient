@@ -288,10 +288,16 @@ public sealed class Blackboard
     /// <summary>
     /// Starts a contract package that runs for <paramref name="hours"/> game hours from <paramref name="now"/> (docs/game/ai.md "Dialogue and AI": under 1 hour
     /// means 10 minutes, Observed), aimed at <paramref name="target"/> (its goals aimed at the squad's mission, as a bodyguard's, follow it). It takes precedence over the
-    /// slots until it ends; then the slots choose again.
+    /// slots until it ends; then the slots choose again. Starting the contract already running does nothing (end time and target kept); a different one replaces it and the old one ends
+    /// first, its end talk to the old target (<c>FUN_140272240</c>, <c>FUN_14026a110</c>, <b>Verified</b>).
     /// </summary>
     public void StartContract(AiPackage package, double now, double hours, IPackageRules? rules = null, CharacterId? target = null)
     {
+        if (Contract is { } running)
+        {
+            if (running.Id == package.Id) return;
+            ended = (running, MissionTarget);
+        }
         Contract = package;
         ContractEnd = now + (hours < 1 ? 10.0 / 60 : hours);
         MissionTarget = target ?? CharacterId.None;
