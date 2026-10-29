@@ -14,7 +14,7 @@ public sealed partial class ProductionSystem
 {
     /// <summary>
     /// How often (ticks) the decision step asks again for a player character idle or on a job's task, staggered by slot (<see cref="DecisionSystem.ReAsked"/>; engine choice: the original
-    /// re-plans when its task ends or its commitment runs out); the implicit jobs are looked at one tick later.
+    /// re-plans when its task ends or its commitment runs out).
     /// </summary>
     public const int JobCheckTicks = 10;
 
@@ -96,6 +96,7 @@ public sealed partial class ProductionSystem
             decisions.RegisterJob(type, jobs);
         var errands = new ErrandJobs(this);
         foreach (var type in (ReadOnlySpan<TaskType>)[TaskType.FIND_A_DEAD_GUY, TaskType.PICKUP_INTRUDERS, TaskType.PICKUP_INTRUDERS_TOWN]) decisions.RegisterJob(type, errands);
+        decisions.Register(new ImplicitJobs(this));
     }
 
     sealed class ListJobs(ProductionSystem owner) : IJobSource
@@ -141,27 +142,45 @@ public sealed partial class ProductionSystem
     }
 
     /// <summary>
-    /// The implicit jobs (squad AI options, the original's lowest keys after the list): a player character whose last decision found nothing to run (<see cref="CharacterCold.Yielded"/>, so no
-    /// list job can run), idle, following, wandering or on an implicit job, takes one (<see cref="ImplicitPick"/>), looked at in the schedule right after the decision step's re-ask (serial);
-    /// one on an implicit job that no longer holds ends it.
+    /// The implicit jobs (squad AI options) as step 5's source after the list (the original's lowest keys, <c>FUN_14050e5b0</c>): a character idle, on a standing task or on a job's task
+    /// (a list job's that could not run on, or an implicit one) takes the one <see cref="ImplicitPick"/> gives; it runs while that is the one it is on (the same type and site). One on an
+    /// implicit job that no longer holds ends it (<see cref="Passed"/>: the original rebuilds the entry on every pass, so nothing carries over).
     /// </summary>
-    void ImplicitJobs(World world)
+    sealed class ImplicitJobs(ProductionSystem owner) : IDecisionSource
     {
-        var table = world.Characters;
-        for (int i = 0; i < table.HighWater; i++)
+        (long Tick, int Slot, TaskType Type, string Site) picked = (-1, -1, TaskType.None, "");
+
+        public string Name => "Implicit jobs";
+        public DecisionStep Step => DecisionStep.Jobs;
+        /// <summary>After the list (its key 0).</summary>
+        public int Key => 1;
+
+        public DecisionCheck CanRun(World world, int slot)
         {
-            ref var n = ref table.Next[i];
-            if (!n.Alive || table.Cold(i) is not { IsPlayer: true, Yielded: true } cold || (world.Tick + i) % JobCheckTicks != 1 % JobCheckTicks) continue;
-            var task = (CharacterTask)n.Task;
+            var table = world.Characters;
+            var cold = table.Cold(slot)!;
+            var task = (CharacterTask)table.Next[slot].Task;
             var job = PermaJobs.ListJob(cold, task);
-            if (job is { Implicit: false } || job is null && task is not (CharacterTask.Idle or CharacterTask.Wander or CharacterTask.Follow) || !Able(cold)) continue;
-            if (ImplicitPick(world, i, job is not null ? job.Resume : task) is { } chosen)
-            {
-                string? current = chosen.Type == TaskType.DITCH_ALL_RESOURCES ? cold.HaulTo : cold.OperateSite;
-                if (job is null || chosen.Type != job.Row || chosen.Site != current) StartImplicit(world, i, chosen.Type, chosen.Site);
-                continue;
-            }
-            if (job is not null) End(world, i);
+            if (task == CharacterTask.Attack || cold.InCombat) return DecisionCheck.No("fighting");
+            if (job is null && task is not (CharacterTask.Idle or CharacterTask.Wander or CharacterTask.Follow)) return DecisionCheck.No("busy");
+            if (!Able(cold)) return job is { Implicit: true } ? DecisionCheck.Runs : DecisionCheck.No("carrying, carried or down");
+            if (owner.ImplicitPick(world, slot, job is not null ? job.Resume : task) is not { } chosen) return DecisionCheck.No("none holds");
+            string? current = chosen.Type == TaskType.DITCH_ALL_RESOURCES ? cold.HaulTo : cold.OperateSite;
+            if (job is { Implicit: true } && chosen.Type == job.Row && chosen.Site == current) return DecisionCheck.Runs;
+            picked = (world.Tick, slot, chosen.Type, chosen.Site);
+            return DecisionCheck.Run;
+        }
+
+        public void Start(World world, int slot)
+        {
+            if (picked.Tick == world.Tick && picked.Slot == slot) owner.StartImplicit(world, slot, picked.Type, picked.Site);
+        }
+
+        public void Passed(World world, int slot, in DecisionCheck check)
+        {
+            var table = world.Characters;
+            var cold = table.Cold(slot)!;
+            if (Able(cold) && PermaJobs.ListJob(cold, (CharacterTask)table.Next[slot].Task) is { Implicit: true }) End(world, slot);
         }
     }
 

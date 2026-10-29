@@ -218,9 +218,9 @@ only (`ApplyPausedInterfaceCommands`; the bit stays for the next tick).
      (`IJobSource.Stop`: production's operators, haulers and follow jobs; the other act-outs end by themselves). Contributors: production (87, 152, 124, 97, 234 while it is not urgent,
      125 through construction, 31 / 45 / 289 follows; `Runnable`), the carrying errands (138, 223, 273; `ErrandJobs`, while their lift or carry runs), first aid (58, 57, 250; the finders,
      a treatment runs until it ends), carry (148, 238; `FindRescue` with the bed search, `FindForage`), beds (106; a carried non-hostile body and a bed), aggro (16; the enemy the look
-     offered this tick, the row's desire). Finders are asked only up to the first job that runs.
-  6. None yet: with nothing from steps 1-5 the step yields (`CharacterCold.Yielded`, not hashed): the implicit jobs (`ProductionSystem.ImplicitJobs`, after the list, in the schedule one
-     tick after the character's re-ask) and the standing tasks go on (M5c).
+     offered this tick, the row's desire). Finders are asked only up to the first job that runs. Then the implicit jobs (`ProductionSystem.ImplicitJobs`, the squad AI options' lowest
+     keys): over idling, a standing task or a job's task, the pick of `ImplicitPick` starts, runs while it is the one the character is on, and an implicit job that no longer holds ends.
+  6. None yet: with nothing from steps 1-5 the standing tasks go on.
 - **Triggers** (`CharacterCold.Replan`, `DecisionSystem.Request`; hashed while set): a task end (`TaskStart.End`, any reason), an order given or the queue cleared (`PlayerOrders.Give`,
   Stop), a stagger outside a fight (not for a gunner), the melee alert while the fight is off unless the target gets up or is player-side and moving (`RetaliationSystem`, horizontal speed
   above 1), a job list change or the jobs switch, a load (`SavedPopulation`), a sighting for row 16 (Hold's goal or the job; engine: the look stands in for the sensed list's update),
@@ -1404,7 +1404,7 @@ crafting benches, generators and batteries. Facts: [production](game/buildings-p
     (engine reading of the row's goal "no empty inputs", `AutoWork`). 124 on an automatic machine runs the same way, blocked unless it carries an item an input has room for.
   - 125 Engineer (ordered as 2 Build or 95 Repair; Shift + quick right click on an unfinished site): builds `ConstructionSystem.EngineerSite`'s
     pick, whatever the job's target ([buildings](#buildings)); its tasks are *Build*, *DeliverMaterials* and *FetchMaterials*. Blocked with no site.
-  - Implicit jobs (`ImplicitPick`, `ImplicitJobs`): with no list job to run (the decision step yielded, `Yielded`), the switch on, not sneaking and not a slave (Sleep and Sit also not while holding position), the squad AI options (`PlayerState.SquadAi`, the
+  - Implicit jobs (`ImplicitPick`, `ImplicitJobs`, the decision step's step 5 after the list): with no list job to run, the switch on, not sneaking and not a slave (Sleep and Sit also not while holding position), the squad AI options (`PlayerState.SquadAi`, the
     overview's AI tab, on by default) start, in this order: Ditch items (242: carried ITEMs of function 0 or 15, and food but the first, go to the nearest
     storage within `HaulRange` that takes them, as a Haul trip; only with no queued orders; re-tested every pass, so a trip whose storage no longer takes a carried item, or that gained a queued order, drops out or re-picks at once, **Verified** `FUN_14050e5b0`), Sleep when injured (153: a body part below full
     health lies in the bed the bed search finds, a `BedSystem` trip (task Sleep, the bed id in `OperateSite`), until healed; job lists are then looked at

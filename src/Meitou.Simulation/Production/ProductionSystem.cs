@@ -530,9 +530,8 @@ public sealed partial class ProductionSystem : ITickSystem, ITaskOwner, ITaskHan
 
     public void Schedule(World world)
     {
-        // The list jobs are the decision step's (RegisterSources); with no machine the implicit jobs can still send the injured to bed (the "Sleep when injured" option).
+        // The jobs are the decision step's (RegisterSources); with no machine a sleeper of the "Sleep when injured" option still lets go of its bed here once up.
         if (world.Machines.Count == 0 && !sweep && !(Beds is not null && (world.Player.SquadAi & SquadAi.Sleep) != 0 && world.Fixtures.Count > 0)) return;
-        ImplicitJobs(world);
         var table = world.Characters;
         float dt = world.TickSeconds;
         for (int i = 0; i < table.HighWater; i++)

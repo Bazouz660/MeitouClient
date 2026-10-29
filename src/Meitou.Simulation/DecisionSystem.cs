@@ -15,7 +15,7 @@ public enum DecisionStep : byte
     Goals = 4,
     /// <summary>5: every job in list order, then the implicit jobs.</summary>
     Jobs = 5,
-    /// <summary>6: priority-2 and priority-1 goals, the hold-position task.</summary>
+    /// <summary>6: the priority-2 goals, then the priority-1 goals (14 Idleness), then the default task (<c>+0x190</c>).</summary>
     Fallback = 6,
 }
 
@@ -92,8 +92,7 @@ public sealed record DecisionTrace(long Tick, string Winner, IReadOnlyList<strin
 /// when its replan bit is set (<see cref="Request(World, int)"/>: a task ended, an order added or cleared, a stagger outside a fight, the melee alert with the fight off, the jobs changed,
 /// a load), when its front order's task ended, and (<b>engine</b>) every <see cref="Production.ProductionSystem.JobCheckTicks"/> while it is idle or on a job's task. The sources are asked
 /// in the original's order and the first that can run starts (step 4: the best score); a source already running ends the step. Steps 3 and 5 walk the character's job list through the systems'
-/// job contributors (<see cref="RegisterJob"/>). With nothing from steps 1 to 5 the step yields (<see cref="CharacterCold.Yielded"/>): the implicit jobs and the standing tasks go on. NPCs keep
-/// <see cref="Ai.AiSystem"/>.
+/// job contributors (<see cref="RegisterJob"/>); with nothing from steps 1 to 5 the standing task goes on. NPCs keep <see cref="Ai.AiSystem"/>.
 /// Run in the slow world after retaliation, aggro and flight (<see cref="World.RunTick"/>), and for orders only between ticks (<see cref="World.ApplyPausedInterfaceCommands"/>).
 /// </summary>
 public sealed class DecisionSystem
@@ -109,6 +108,9 @@ public sealed class DecisionSystem
         Register(new JobSource(this, urgent: true));
         Register(new JobSource(this, urgent: false));
     }
+
+    /// <summary>The characters the step decides: the player's (<see cref="CharacterCold.IsPlayer"/>); the others are the AI's and the engine's (docs/simulation.md "Decision step").</summary>
+    public static bool Decides(CharacterCold cold) => cold.IsPlayer;
 
     /// <summary>Registers (or replaces) the contributor of the jobs of <paramref name="type"/> (an open list: a job type without one is kept in the list but never run).</summary>
     public void RegisterJob(TaskType type, IJobSource source) => jobs[type] = source ?? throw new ArgumentNullException(nameof(source));
@@ -133,7 +135,7 @@ public sealed class DecisionSystem
     /// <summary>Asks for the character to be decided again (a replan trigger): any phase, its own slot or a serial one. Only the player's characters keep the bit.</summary>
     public static void Request(CharacterCold cold)
     {
-        if (cold.IsPlayer) cold.Replan = true;
+        if (Decides(cold)) cold.Replan = true;
     }
 
     public static void Request(World world, int slot)
@@ -172,7 +174,7 @@ public sealed class DecisionSystem
         var table = world.Characters;
         for (int i = 0; i < table.HighWater; i++)
         {
-            if (!table.Next[i].Alive || table.Cold(i) is not { IsPlayer: true } cold) continue;
+            if (!table.Next[i].Alive || table.Cold(i) is not { } cold || !Decides(cold)) continue;
             bool front = cold.OrderQueue.Front is { } f && (!f.Tried || f.Started && !PlayerOrders.Runs(world, i, f));
             bool due = !paused && (world.Tick + i) % Production.ProductionSystem.JobCheckTicks == 0 && ReAsked(world, i, cold);
             if (!cold.Replan && !front && !due) continue;
@@ -191,26 +193,17 @@ public sealed class DecisionSystem
         var cold = world.Characters.Cold(slot)!;
         lines.Clear();
         PlayerOrders.Prepare(world, slot);
-        string winner = paused ? "(paused: orders only)" : "(yield: implicit jobs and standing tasks)";
-        bool won = false;
+        string winner = paused ? "(paused: orders only)" : "(none)";
         for (int k = 0; k < sources.Count;)
         {
             var step = sources[k].Step;
             int end = k;
             while (end < sources.Count && sources[end].Step == step) end++;
             if (paused && step != DecisionStep.Orders) break;
-            if (step == DecisionStep.Goals ? PickGoal(world, slot, k, end, ref winner) : PickFirst(world, slot, k, end, ref winner))
-            {
-                won = true;
-                break;
-            }
+            if (step == DecisionStep.Goals ? PickGoal(world, slot, k, end, ref winner) : PickFirst(world, slot, k, end, ref winner)) break;
             k = end;
         }
-        if (!paused)
-        {
-            cold.Replan = false;   // what its own start ended asks nothing more
-            cold.Yielded = !won;
-        }
+        if (!paused) cold.Replan = false;   // what its own start ended asks nothing more
         if (Tracing) cold.Decision = new DecisionTrace(world.Tick, winner, lines.ToArray());
         else if (cold.Decision is not null) cold.Decision = null;
     }
@@ -268,8 +261,8 @@ public sealed class DecisionSystem
     /// <summary>
     /// Steps 3 and 5: the character's job list in order (<c>FUN_14050e5b0</c>, docs/game/ai-tasks.md "Perma-jobs"): the jobs switch gates every job but 16, 31, 45, 57, 58 and 250
     /// (<c>FUN_14050c1c0</c>) in both passes; a job whose type has no contributor or whose row the repertoire does not register is skipped; the first job that can run wins (one that runs
-    /// the character's task already ends the step), so a higher job takes over a lower one at the next decision. Step 3 asks only the jobs that are urgent now. The implicit jobs come after
-    /// the list (<see cref="Production.ProductionSystem"/>, on a yield).
+    /// the character's task already ends the step), so a higher job takes over a lower one at the next decision. Step 3 asks only the jobs that are urgent now. The implicit jobs are step 5's
+    /// next source (<see cref="Production.ProductionSystem"/>).
     /// </summary>
     sealed class JobSource(DecisionSystem owner, bool urgent) : IDecisionSource
     {
