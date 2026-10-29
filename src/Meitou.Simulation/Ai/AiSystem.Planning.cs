@@ -45,10 +45,10 @@ public sealed partial class AiSystem
         readonly List<PlanStep> scratch = [];
 
         /// <summary>
-        /// The task repertoire it plans with (<see cref="Repertoire.Confinement"/>: a prisoner's 'chained' (0x10) or 'imprisoned' (4) one; everyone else the 'human' one (1)). The crippled (0x40),
-        /// platoon (2) and animal repertoires of <see cref="Repertoire.Of"/> are not planned with yet: the planner runs NPC goals only.
+        /// The task repertoire it plans with, the original's <c>FUN_14060e840</c> order (<see cref="Repertoire.Of"/>: imprisoned 4, crippled 0x40, chained 0x10, human 1, else animal 0x20). The platoon
+        /// repertoire (2) is not modelled.
         /// </summary>
-        public int Category => world.Characters.Cold(slot) is { } c && Repertoire.Confinement(world, c) is var confined and not 0 ? confined : Repertoire.Human;
+        public int Category => world.Characters.Cold(slot) is { } c ? Repertoire.Of(world, c) : Repertoire.Human;
         /// <summary>Restricted rows are offered: the character's faction is not the player's (the name is the old reading, kept; see <see cref="IPlanWorld.Squadless"/>).</summary>
         public bool Squadless => restrictedOpen;
         bool restrictedOpen;
