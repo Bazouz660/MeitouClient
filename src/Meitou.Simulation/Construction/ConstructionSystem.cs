@@ -183,7 +183,7 @@ public sealed class ConstructionSystem : ITickSystem
                 }
                 case DismantleOrder order:
                 {
-                    if (Root(reg, reg.Find(order.Site)) is not { LevelPlacement: null } site) break;
+                    if (Root(reg, reg.Find(order.Site)) is not { LevelPlacement: null } site || site.Owner != world.Player.Faction) break;
                     if (Blocker(reg, site) is { } text)
                     {
                         world.Post(text);

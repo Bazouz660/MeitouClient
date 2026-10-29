@@ -595,7 +595,7 @@ sealed partial class PlayerInterface
                     ? (Meitou.Simulation.SimCommand)new Meitou.Simulation.Production.AddJob(selection, Meitou.Data.Gameplay.Ai.TaskType.USE_TURRET, site.Id) { Tick = session.World.Tick }
                     : new Meitou.Simulation.Production.UseTurretOrder(selection, site.Id) { Tick = session.World.Tick })));
         }
-        if (site.LevelPlacement is null) verbs.Add(("Dismantle", () => Say(new DismantleOrder(selection, site.Id) { Tick = session.World.Tick })));
+        if (own && site.LevelPlacement is null) verbs.Add(("Dismantle", () => Say(new DismantleOrder(selection, site.Id) { Tick = session.World.Tick })));
         if (site.LevelPlacement is null && !site.Complete && site.Progress <= 0 && site.Materials.All(m => m.Delivered <= 0))
             verbs.Add(("Cancel Construction", () => Say(new CancelSite(site.Id) { Tick = session.World.Tick })));
         // A finished building's doors: the door panel's open/close and lock buttons, for all its doors at once (docs/simulation.md "Cages, beds and locks").
