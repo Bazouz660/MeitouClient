@@ -8,8 +8,11 @@ public sealed record SpeechBubble(CharacterId Speaker, string Text, bool Large);
 
 public sealed partial class DialogueSystem
 {
-    /// <summary>A speech-bubble conversation under way (docs/game/dialogue.md "Ambient conversations"): the line said next, by whom, and when.</summary>
-    sealed record Bubble(Conversation C, DialogueNode Line, long DueTick, CharacterId Speaker);
+    /// <summary>
+    /// A speech-bubble conversation under way (docs/game/dialogue.md "Ambient conversations"): the line said next, by whom, and when. <paramref name="Chained"/>: a line after the first, which the
+    /// original runs on its speaker's own dialogue state (<c>FUN_140684720</c>); the first runs on the owner's (<c>FUN_140683f90</c>).
+    /// </summary>
+    sealed record Bubble(Conversation C, DialogueNode Line, long DueTick, CharacterId Speaker, bool Chained = false);
 
     readonly List<Bubble> bubbles = [];
     // The lines on show: the text and the tick it goes (display only: follows from the bubbles, so not hashed).
@@ -226,7 +229,7 @@ public sealed partial class DialogueSystem
     {
         for (int k = 0; k < bubbles.Count; k++)
         {
-            var (c, line, due, speaker) = bubbles[k];
+            var (c, line, due, speaker, chained) = bubbles[k];
             if (world.Tick < due) continue;
             if (!world.Characters.TryResolveNext(speaker, out int n) || !Awake(world.Characters, n))
             {
@@ -235,7 +238,7 @@ public sealed partial class DialogueSystem
             }
             MarkUsed(world, c, line);
             string text = Expand(world, c, line, PickText(world, speaker, line), speaker, speaker == c.Player ? c.Npc : c.Player);
-            RunEffects(world, c, line, c.Npc);
+            RunEffects(world, c, line, chained ? speaker : c.Npc);   // locks, unlocks, interrupt and the rest land on the state of whoever says a chained line
             float seconds = 2 + 0.12f * text.Length;
             if (text.Length > 0)
             {
@@ -248,7 +251,7 @@ public sealed partial class DialogueSystem
                 EndBubbles(world, c);
                 bubbles.RemoveAt(k--);
             }
-            else bubbles[k] = new Bubble(c, next.Line, world.Tick + (long)MathF.Ceiling(seconds / world.TickSeconds), next.Speaker);
+            else bubbles[k] = new Bubble(c, next.Line, world.Tick + (long)MathF.Ceiling(seconds / world.TickSeconds), next.Speaker, Chained: true);
         }
     }
 

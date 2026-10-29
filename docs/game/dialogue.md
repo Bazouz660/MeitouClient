@@ -284,6 +284,11 @@ speaker resolution (owner, target, interjector), copies its target to that speak
 someone else hands back to the owner's state, so the tree stays rooted at the owner. This is how two NPCs talk: the target says the
 T_TARGET lines. A non-monologue root in bubble mode ends after its first line (root flag `+0x1e1`, `FUN_140685090`). **Verified** (base
 data probe): every root used for events 2, 3, 13, 18 and 66, every campaign announcement and every crowd trigger is a monologue.
+**Effects of a chained line run on its speaker** (**Verified**): the chain calls `FUN_1406839a0(speaker's state, line)` → `FUN_140680560`
+with that state, and the lock/unlock/interrupt writes go to the state passed in (`+0x30` lock map, `+0xc8` interrupt); the first line of
+a bubble runs on the owner's (`FUN_140683f90` → `FUN_1406839a0(owner's state)`). Meitou: `Bubble.Chained`. **Observed**: the first line is
+not given a speaker of its own in `FUN_140683f90`; Meitou says it as its resolved speaker (**Unknown** whether base data has a first line
+that is not the owner's).
 
 **Sight** (`FUN_140859680`, **Observed**, partly read): event 3 fires for a seen character outside the player's faction too (an NPC of
 another squad); 66 and 67 need a player-faction target.
@@ -447,7 +452,7 @@ nearby player character (and stores it as the target). `B` = value > 0.
 
 `FUN_140680560(dialogue, line)`, run when a line is said or a reply clicked, in this order:
 1. `unlocks` (listed unlocked, **and the current dialogue locked**), `unlock but keep me` (listed unlocked), `locks`: the speaker's own
-   lock map.
+   lock map (the state `FUN_140680560` runs on: the owner's, or for a chained bubble line its speaker's, [chain](#ambient-conversations)).
 2. `interrupt` stored as the pending event-1 dialogue.
 3. `change relations`: each listed faction's relation **toward the player faction** += val0 ("Relations with {1} improved by {2}" /
    "decreased by {2}").
