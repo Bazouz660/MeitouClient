@@ -390,6 +390,24 @@ public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions 
     }
 
     /// <summary>
+    /// The planner's <c>haveFirstAidKit</c> (state 23, <c>FUN_140598860</c>, <b>Verified</b>): the character's items, or else its backpack's, hold one of the kit class
+    /// (<paramref name="function"/>); charges are not looked at.
+    /// </summary>
+    internal static bool HoldsKit(CharacterCold cold, int function)
+    {
+        if (cold.Inventory is not { } own) return false;
+        return Holds(own.Items, function) || Holds(own.Backpack?.Contents?.Items, function);
+
+        static bool Holds(IEnumerable<ItemInstance>? items, int function)
+        {
+            if (items is null) return false;
+            foreach (var item in items)
+                if (item.Type == FcsRecordType.ITEM && item.ItemFunction == function) return true;
+            return false;
+        }
+    }
+
+    /// <summary>
     /// The item of the function with charges above zero and the fewest of them, the first of equals (<c>FUN_140746480</c>, <b>Verified</b>: the search starts at 99999, so an item with
     /// 99999 charges or more never qualifies). Null when none.
     /// </summary>

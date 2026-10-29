@@ -161,6 +161,12 @@ public sealed partial class AiSystem
                 StateType.hasWeaponEquipped_157 => cold.DrawnWeapon != WeaponKinds.None,
                 StateType.hasWeapon => cold.Fighter is { Weapon: not null, Unarmed: false },
                 StateType.IS_CARRYING_SOMETHING => !cold.Carrying.IsNone,
+                // 23 (FUN_140598860): the items or the worn backpack hold a first aid kit. 39 (the state-16 evaluator FUN_14059de10 asked of itself, Observed): the immediate-threat flag
+                // (Character +0x2b0). 139 (FUN_140598e90): deep water (water state 3), 0 held in a bed or cage. 103 (FUN_1409980c0): a leg down that could still be fixed.
+                StateType.haveFirstAidKit => FirstAid.FirstAidSystem.HoldsKit(cold, Items.ItemInfo.FirstAidKitFunction),
+                StateType.isAggressionTowardsMe => system.combat?.ImmediateThreat(world, slot) == true,
+                StateType.me_swim => cold.WaterState == 3 && cold.InSomething == Locks.HeldState.None,
+                StateType.myLegsAreMessedUp => cold.Medical is { LegsMessedUp: true },
                 // 121 (FUN_14059b7b0): the inventory or worn backpack holds an item stolen for it (goal 184's list A is !121; TownDutySystem acts it out).
                 StateType.CARRYING_EXCESS_LOOT => Kidnap.TownDutySystem.CarriesLoot(world, cold),
                 StateType.isInBed => cold.InSomething == Locks.HeldState.Bed || (CharacterTask)Me.Task == CharacterTask.Rest && mind.Behaviour == AiBehaviour.Sleep,

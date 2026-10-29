@@ -249,7 +249,7 @@ public sealed partial class CombatSystem : IProjectileSource
     /// distance, not down (staying low or crawling still count), not in a bed or cage, not carried, and not behind a gate that is not open between them
     /// (<c>FUN_140598450</c>, <see cref="Locks.LockSystem.NotBlocked"/>). The original's "getting up" byte (+0x278) is not modelled.
     /// </summary>
-    bool ImmediateThreat(World world, int self)
+    internal bool ImmediateThreat(World world, int self)
     {
         var prev = world.Characters.Previous;
         if (world.Characters.Cold(self) is not { } me) return false;

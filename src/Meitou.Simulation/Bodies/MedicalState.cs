@@ -90,6 +90,22 @@ public sealed partial class MedicalState
     }
 
     /// <summary>
+    /// The planner's <c>myLegsAreMessedUp</c> (state 103, <c>FUN_1409980c0</c>, docs/game/ai-tasks.md "Planner states"): false when a leg is a stump (the limb-state table's legs, <c>FUN_14002a6e9</c>);
+    /// else true when a leg is down by <see cref="HealthPart.LegDown"/> (<c>FUN_140644450</c>) and the KO point is under its maximum health less its stun, i.e. the leg could still be fixed.
+    /// The original names its two leg parts (<c>+0x4d8</c>, <c>+0x4e0</c>); here they are the parts with a leg <c>collapse part</c>. Like <see cref="Crawling"/> it needs the KO point known.
+    /// </summary>
+    public bool LegsMessedUp
+    {
+        get
+        {
+            if (!legKoKnown) return false;
+            foreach (var p in parts) if (p.IsLeg && p.Limb == LimbState.Stump) return false;
+            foreach (var p in parts) if (p.IsLeg && p.LegDown(LegKoPoint) && LegKoPoint < p.MaxHp - p.Stun) return true;
+            return false;
+        }
+    }
+
+    /// <summary>
     /// Posture 0 (<c>PS_NORMAL</c>, docs/game/ragdolls.md "Forced crawl"): conscious, neither staying low nor crawling. Only a standing character loses a leg into a knock-out
     /// (<see cref="Sever"/>, <b>Verified</b>: the original tests the posture before it sets the knock-out). Read before a blow or a tick changes the legs.
     /// </summary>

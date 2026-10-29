@@ -421,7 +421,7 @@ from the decompile and agree with this table, except that the decompile shows no
 | 18 | `isAtHome` |
 | 20 | `noneR` |
 | 22 | `needsFirstAid` |
-| 23 | `haveFirstAidKit` |
+| 23 | `haveFirstAidKit`: the items or the worn backpack hold a kit of class 1 (`FUN_140598860`, **Verified**; charges not tested) |
 | 24 | `isCrouching` |
 | 25 | `isLyingProne` |
 | 26 | `IS_CROUCHING_OR_LYING` |
@@ -434,7 +434,7 @@ from the decompile and agree with this table, except that the decompile shows no
 | 36 | `atDestinationTown` |
 | 37 | `isReadyForAction` |
 | 38 | `hasOneWorkingArm` |
-| 39 | `isAggressionTowardsMe` |
+| 39 | `isAggressionTowardsMe`: the state-16 evaluator `FUN_14059de10` asked of the character itself, i.e. its byte `+0x2b0` (the immediate-threat flag of 158, [combat](combat.md)); the thunk was followed in the exe, an override branch on a global lookup is **Unknown** (**Observed**) |
 | 40 | `isWithin10Meters` |
 | 41 | `isWithin50Meters` |
 | 42 | `targetStandingStill` |
@@ -493,7 +493,7 @@ from the decompile and agree with this table, except that the decompile shows no
 | 100 | `CARRIED_DUDE_NOW_IN_DISPOSAL_MACHINE` |
 | 101 | `isLeaderDown` |
 | 102 | `isSquadmatesFighting` |
-| 103 | `myLegsAreMessedUp` |
+| 103 | `myLegsAreMessedUp`: false when a leg slot is a stump; else true when a leg part is down (`FUN_140644450`) and the KO point is under its max health less stun (`FUN_1409980c0`, **Verified**; the two leg parts, Meitou: parts with a leg collapse part) |
 | 104 | `using target turret` |
 | 105 | `isMachineOutputEmpty` |
 | 106 | `machineHasFullInputs` |
@@ -527,7 +527,7 @@ from the decompile and agree with this table, except that the decompile shows no
 | 135 | `TARGET_IS_EATEN` |
 | 136 | `IS_WORKING_PRETEND` |
 | 137 | `INTRUDER_IS_OUTSIDE` |
-| 139 | `me swim` |
+| 139 | `me swim`: water state 3, deep water, and 0 when held in a bed or cage (`FUN_140598e90` over `FUN_1405c7fd0`, **Verified**) |
 | 140 | `target swimming` |
 | 141 | `strangers in house P` (`FUN_14060e640`, **Verified**): false when the building is public, else as 108; see [stranger states](#stranger-states) |
 | 142 | `isTargetRestrainedOrKO` |
