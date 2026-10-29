@@ -63,9 +63,6 @@ sealed partial class PlayerInterface
     /// <summary>Whether a faction is hostile to the player's (the world's relations); set by the host. Without it every other faction counts as hostile.</summary>
     public Func<int, bool>? HostileFaction { get; set; }
 
-    /// <summary>Whether a faction is allied to the player's (the Kidnap rule's "friendly", docs/game/ui-input.md "Context menu verbs"); set by the host. Without it none is.</summary>
-    public Func<int, bool>? AlliedFaction { get; set; }
-
     /// <summary>
     /// Whether the character's faction is hostile to the player's, or it is fighting one of the player's characters (a neutral squad robbing them): only a hostile one gets
     /// the attack pointer, the red outline and the quick-attack right click.

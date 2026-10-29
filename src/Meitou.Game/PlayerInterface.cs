@@ -215,7 +215,7 @@ sealed partial class PlayerInterface(WorldSession session, Func<float, float, fl
         // Order 12 (Task_PlayerTalkto) walks over and starts the conversation, a trader's included: its trade window is a reply of that conversation (DA_TRADE).
         if (world.CanTalk(id, lead.Id)) return (TalkPointer(c), id, Do(() => Say(new Meitou.Simulation.Dialogue.TalkOrder(lead.Id, id) { Tick = tick })));
         if (c.IsTrader) return ("talk", id, Do(() => Say(new Meitou.Simulation.Trading.OpenTrade(lead.Id, id) { Tick = tick })));   // engine: a shop whose keeper has no line to say
-        return AlliedFaction?.Invoke(c.Faction) == true ? ("green", id, null) : null;
+        return world.RegardsFriendly(id, lead.Id) ? ("green", id, null) : null;   // slot 126: the target regards the lead as friendly
     }
 
     public void MouseMove(Vector2 p)

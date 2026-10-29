@@ -274,14 +274,14 @@ sealed partial class PlayerInterface
     }
 
     /// <summary>
-    /// The pick-up verb (<c>FUN_140796f80</c>, docs/game/ui-input.md "Context menu verbs"): Pick Up (225) for an ally that is not a trader and for a caged character, else Kidnap (246), which
-    /// shows the chance column (<c>Character::getKidnappingChance</c>) and gives the kidnap order (a sleeper too; the roll on arrival, docs/game/carry-loot.md "Kidnapping"). Not read: the
-    /// original's tests of the target's owner object, its +0xf0 list and the AI state 8.
+    /// The pick-up verb (<c>FUN_140796f80</c>, docs/game/ui-input.md "Context menu verbs"): Pick Up (225) for a target that regards the lead as friendly, is not a trader (its squad template's
+    /// flag) and is not in a campaign force, and for a caged character, else Kidnap (246), which shows the chance column (<c>Character::getKidnappingChance</c>) and gives the kidnap order (a
+    /// sleeper too; the roll on arrival, docs/game/carry-loot.md "Kidnapping"). Not read: the original's tests of the target's owner object, its +0xf0 list and the AI state 8.
     /// </summary>
     (string, Action) PickUpVerb(CharacterSnapshot target)
     {
         var id = target.Id;
-        bool friendly = AlliedFaction?.Invoke(target.Faction) == true && !target.IsTrader;
+        bool friendly = Selected().LastOrDefault() is { } lead && session.World.VerbFactsOf(lead.Id, id) is { RegardsLead: true, SquadTrader: false } && !target.WarParty;
         if (friendly || target.Prison is not null) return ("Pick Up", () => Say(new Meitou.Simulation.Carrying.PickUpOrder([], id) { Tick = session.World.Tick }));
         return (WithChance("Kidnap", target.KidnapChance ?? 100), () => Say(new Meitou.Simulation.Carrying.PickUpOrder([], id) { Tick = session.World.Tick, Kidnap = true }));
     }

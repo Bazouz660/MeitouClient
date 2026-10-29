@@ -88,6 +88,7 @@ character: within `PlayerSystem.GiveRange` 1000 of its window's owner, `StealRan
   Trader 3 lines, Thief Boss, Thief, Ninja Guard and the squad's `dialog squad` (TOUGH 1234) none; Skeleton Barman, Smuggler Barman, Stone Camp Trader yes; Shop Guard, Traders Guard, Slaver,
   Samurai no. Of 125 trader templates with vendors in the probe load order, 89 mark a member CHARACTER `is trader`.
 - Meitou (the right-click Trade verb, engine): a member of a shop squad whose record sets `is trader` or whose dialogue reaches a Trade line (`DialogueSet.Trades`, conditions not checked).
+- The context menu's pick-up verb tests "not a trader" with `FUN_1405cff70` itself (`FUN_140796f80`, **Verified**), so any member of a trader squad counts, guards included. Meitou: `World.VerbFactsOf` reads the squad template's `is trader`.
 - Shop squads with no such member (8 in the probe load order: bank, armory UC, holy Armoury, holy General storage, farm shop UC, Crab Man Shop, Shop bar black desert, Cannibal
   hunter hq) cannot be bought from in the original either (**Observed**, owner's play); their stock is only in their home's containers.
 - **Wages** (CHARACTER `wages`, 108 non-zero; `Character::giveBirth` / `Character::dailyUpdate`, **Verified**): a character not of the player's faction with wages >= 1 *sets* its squad's money to them

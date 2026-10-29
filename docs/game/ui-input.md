@@ -217,7 +217,7 @@ nothing selected the player faction's character nearest to it, `FUN_1407f2f70`: 
 | other, standing, lead sneaking: a slave the lead is not an enemy of | `scavenge` | 26 |
 | other, standing, lead sneaking, else | `knockout` | 228 |
 | other, standing, not sneaking (or an animal), with a dialogue (`+0x280`, `FUN_14067aa50`) | `s_talk` / `talk` as above | 12 |
-| other, standing, no dialogue | none (`green` when the lead regards it as friendly, vfunc `0x3f0`: it is set first and stays) | none |
+| other, standing, no dialogue | none (`green` when the target regards the lead (the nearest selected) as friendly, vfunc `0x3f0` called on the target with the lead as argument, `FUN_1407fb410` **Verified**: it is set first and stays) | none |
 
 **Hostile** (`FUN_14079cbe0`, **Verified**): never a character of the player's faction; the squad memory of the target holds the long-term enemy tag (4) on the active squad's leader; or it is targeting a
 player's character (its target handle `+0x650` AI vfunc `0x28`, or the second target handle (status object `+0x28`) while the float `+0xa0` beside it is above 0.1); or among the sensed ones it considers enemies there
@@ -486,7 +486,10 @@ Labels (`FUN_14079b2d0`): 2 Build; 3 Pick Up, or Steal when the item's owner fac
 | Every character | unless dead (+0x5bc), or up and the lead's enemy (slot 125): 60 (robotic repair), 25 (first aid, `FUN_1407c05a0`), 249 (a splintable injury, `FUN_140646400` with 50); locked shackles: 201, 185, 186; carried by someone not of the player's: the list is emptied |
 
 The pick-up verb (`FUN_140796f80`, **Verified** by re-reading the decompile 2026-10-23): for a character of another faction than the lead's, whose faction lacks flag +0x1d0 and whose
-+0x1a0 → +0x88 object is set and whose faction has +0x250 clear: 225 when it is friendly to the lead (slot 126, vfunc +0x3f0) and not a trader (`FUN_1405cff70`) and `FUN_140796240` is false;
++0x1a0 → +0x88 object is set and whose faction has +0x250 clear: 225 when the TARGET regards the lead as friendly (slot 126, vfunc +0x3f0 called on the target, the lead the argument; Meitou `World.RegardsFriendly`, disguise not read) and is not a trader and
+`FUN_140796240` is false. The trader test (`FUN_1405cff70`) reads the `is trader` flag of the target's SQUAD TEMPLATE, so every member of a trader squad counts, guards included
+([economy](economy.md#who-trades)); `FUN_140796240` is the faction war manager's forces-map lookup for the target's platoon, so a campaign force's member never passes this test (Meitou:
+`CharacterSnapshot.WarParty`);
 else, when the count at +0xf0 (`FUN_140854080(+0xf0, 0)`) is below 1 and its AI state (+0x1a0 → +0xdc) is not 8: 246 Kidnap, or 225 while imprisoned (+0x2f8 = 2); every other case 225.
 Kidnap's chance column is `Character::getKidnappingChance` ([carry-loot](carry-loot.md#kidnapping)). `FUN_140793d80` adds 223 when the target's
 home (slot 59) is a building of the player's, or 273 when its +0x1a0 → +0x88 owner is the player's, its slot 35 is above 0 and the lead is not its enemy.
@@ -503,7 +506,7 @@ the same labels and order (`VerbOrders`; Meitou's own verbs after), the animals-
 Containers and doors open their menu on a held press (a quick click as before); cages, and another faction's locked doors, open it on the press (above). Built: Put Down, Talk To, Attack Target (hostile), Attack
 Unprovoked, Stealth KO, Follow (`FollowOrder`, [simulation](../simulation.md)), Loot, Trade (the player's own character, standing or down: the nearest selected walks over and its inventory opens beside the
 selection's, as the loot window; both offered when `CharacterSnapshot.CanOpenInventory`, the simulation's own `CarrySystem.Openable`, holds: a carried or playing-dead body too, beside Put Down for its carrier), Pick Up and Kidnap (the same pick-up order; Pick Up on the player's own character standing too, when it carries no one: `FUN_1407a6bc0`'s own-faction
-branch adds 26, 45, 31 and, with no selected carrier of it, the pick-up verb for a carriable race not carrying (+0x348) nor carried (+0x3d4), with no down test, **Observed**; Kidnap when the target is not an ally or is a trader, with its chance, also on a sleeper (with Stealth KO, and Attack Unprovoked, Bodyguard, Talk To when not hostile; Loot on a sleeper or a caged character opens it as a pickpocket, [carry-loot](carry-loot.md#theft-and-witnesses); [carry-loot](carry-loot.md#kidnapping)),
+branch adds 26, 45, 31 and, with no selected carrier of it, the pick-up verb for a carriable race not carrying (+0x348) nor carried (+0x3d4), with no down test, **Observed**; Kidnap when the target does not regard the lead as friendly, is a trader squad's member or is in a campaign force, with its chance, also on a sleeper (with Stealth KO, and Attack Unprovoked, Bodyguard, Talk To when not hostile; Loot on a sleeper or a caged character opens it as a pickpocket, [carry-loot](carry-loot.md#theft-and-witnesses); [carry-loot](carry-loot.md#kidnapping)),
 [carry-loot](carry-loot.md)), First Aid, Splint Injuries, Unlock Shackles / Use Tools / Use Strength (shackles), Pick Lock / Escape / Pick Up / Set Free on a caged
 character, Inventory / Loot / Pick Lock / Use Tools / Use Strength on containers (Loot uses the Alt path: another faction's shop stock is stolen from at once, [locks](locks.md#containers-meitou)),
 Open / Close / Lock / Unlock (all the building's doors) / Pick Lock / Use Tools / Use Strength / Smash on doors ([locks](locks.md#player-orders-on-locks)), Build, Repair (owned ruined/damaged houses; Shift adds Engineer), Use, Auto-Haul (storage: one haul trip, the Hauling to job with Shift, `FUN_1407fa650`),
