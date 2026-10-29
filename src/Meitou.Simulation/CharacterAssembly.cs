@@ -69,8 +69,9 @@ sealed class CharacterAssembly(PopulationData data)
             return null;
         }
         var armour = inventory.Items.Where(i => i.Type == FcsRecordType.ARMOUR && Items.InventoryCommands.IsEquipmentSection(i.Section) && combat.Armour(i.Record) is not null)
-            // Its stats follow the level (the grade's quality), not `quality`, which is 100 on saved armour; level 0 is full strength (docs/game/ui-screens.md "Armour").
-            .Select(i => ArmourPiece.Create(combat.Armour(i.Record)!, i.Level <= 0 ? 1f : Math.Clamp(i.Level, 0, 100) * 0.01f));
+            // Its stats follow the level (the grade's quality), not `quality`, which is 100 on saved armour; level 0 is full strength without the slot rules (docs/game/combat.md "Armour and medical hit").
+            .Select(i => (Data: combat.Armour(i.Record)!, i.Level))
+            .Select(x => ArmourPiece.Create(x.Data, ArmourPiece.QualityOf(x.Data, x.Level), ArmourPiece.Graded(x.Data, x.Level)));
         // The crossbow: the first CROSSBOW in the weapon sections (back, then hip), its quality the level x 0.01 like a weapon's.
         CrossbowInstance? crossbow = null;
         foreach (var section in new[] { "back", "hip" })

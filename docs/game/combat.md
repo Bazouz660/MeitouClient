@@ -590,7 +590,8 @@ stun is discarded). (4) toughness: r = lerp(clamp(tough x scale x 0.01, 0, 1), `
 global damage multiplier option. (5) `FUN_14064f300`: flesh -= cut + pierce + blunt x `blunt permanent organ damage`; stun += the rest of the blunt + stun; blood -=
 (cut + pierce) x `immediate blood loss` x bleed mult x race `bleed rate`; wear on robots/prosthetics (cut+pierce+blunt) x 0.04 x `robot wear rate`. Armour build
 (`ArmourPiece.Create`): class and material tables (cloth 0/0.1..., chain 0.05..0.65, plate 0.1..0.85; class cut 0.4/0.8/0.9/1, blunt 0.1/0.7/0.9/1) **Verified**
-against `FUN_1408a8f90`'s constants; caps 0.9 cut and 0.8 blunt; shirts (slot 8) cut/blunt x0.8, pierce x0.5. Health, bandage, stun, blood and
+against `FUN_1408a8f90`'s constants; caps 0.9 cut and 0.8 blunt; shirts (slot 8) cut/blunt x0.8, pierce x0.5. Quality = level x 0.01, not clamped; a piece with level 0 or less, or
+with no `part coverage`, has quality 1 and skips the slot rules (shirt factors, the hat's stealth floor) (**Verified**, `FUN_140898e90` disassembly; `ArmourPiece.QualityOf`/`Graded`). Health, bandage, stun, blood and
 KO/coma/death thresholds use [character-stats](character-stats.md). Never tick medicine twice.
 
 ### Block sparks
