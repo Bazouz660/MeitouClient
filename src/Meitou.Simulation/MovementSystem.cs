@@ -304,7 +304,6 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
         }
         Stop(table, slot);
         cold.FollowOrder = request.Target;
-        cold.Guarding = request.Row == TaskType.BODYGUARD;
         cold.FollowPathTime = 0;
         cold.FollowHeading = Vector2.Zero;
         table.Next[slot].Task = (byte)CharacterTask.Follow;

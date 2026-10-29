@@ -65,13 +65,16 @@ public sealed class CharacterCold
     public float? PaceCap { get; set; }
     /// <summary>Whom a <see cref="FollowOrder"/> told it to follow while its task is <see cref="CharacterTask.Follow"/> (None: its squad's leader). Not saved; hashed only while set.</summary>
     public CharacterId FollowOrder { get; set; } = CharacterId.None;
-    /// <summary>Whether the <see cref="FollowOrder"/> is a Bodyguard order (45): the follower also defends its target (<see cref="RetaliationSystem"/>). Not saved; hashed with <see cref="FollowOrder"/>.</summary>
-    public bool Guarding { get; set; }
     /// <summary>
-    /// A follower (Staying close, 31) left its follow to fight whoever threatened its <see cref="FollowOrder"/> target (<see cref="RetaliationSystem"/>): once that fight leaves it idle it follows
-    /// again, as the original's follow order is still queued; any other task first (a new order) drops the mark. Not saved; hashed only while set.
+    /// The <see cref="FollowOrder"/> runs row 45 Bodyguard (order or job; <see cref="Running"/>): the follower also defends its target (<see cref="RetaliationSystem"/>). Hashed with <see cref="FollowOrder"/>.
     /// </summary>
-    public bool FollowResume { get; set; }
+    public bool Guarding => Running is { Row: Meitou.Data.Gameplay.Ai.TaskType.BODYGUARD };
+
+    /// <summary>
+    /// A follower of row 31 or 289 left its follow for a fight that is a step of the row (<see cref="Running"/> kept through it, <see cref="TaskStart.Start"/>): once that fight leaves it idle
+    /// it follows again, as the original's follow order is still queued; any other task first drops the row. Hashed only while set.
+    /// </summary>
+    public bool FollowResume => Running is { Task: CharacterTask.Attack, Row: not Meitou.Data.Gameplay.Ai.TaskType.BODYGUARD } run && Production.PermaJobs.Follows(run.Row);
     /// <summary>The target a manned-turret gunner was told to shoot at (Shoot At, 235; <see cref="Combat.ShootAtOrder"/>); None: the gunner chooses. Not saved; hashed only while set.</summary>
     public CharacterId TurretTarget { get; set; } = CharacterId.None;
     /// <summary>The caged prisoner this character walks to free (Set Free, 110; <see cref="Locks.SetFreeOrder"/>); None: none. Not saved; hashed only while set.</summary>

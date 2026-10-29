@@ -82,7 +82,6 @@ public sealed partial class PopulationSystem
         c.Jobs.Clear();
         c.JobIndex = -1;
         c.Running = null;
-        c.FollowResume = false;
         c.Carrying = CharacterId.None;
         c.CarriedBy = CharacterId.None;
         c.CarryTarget = CharacterId.None;

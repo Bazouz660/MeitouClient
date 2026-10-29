@@ -401,15 +401,14 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem
             var d = next[s].Position - next[slot].Position;
             if (d.X * d.X + d.Z * d.Z > JoinRange * JoinRange) continue;
             if (c.Guarding ? !CanFight(table, s, taken) : !immediate || next[s].Task != (byte)CharacterTask.Follow || !Helps(table, s, taken)) continue;
-            if (!c.Guarding) c.FollowResume = true;
             defenders.Add(new CharacterId(s, next[s].Generation));
             taken.Add(s);
         }
     }
 
     /// <summary>
-    /// Every tick: a follower that left its follow to defend its target (<see cref="CharacterCold.FollowResume"/>) follows again once its fight leaves it idle; any other task (a new
-    /// order) drops the mark, so a stale <see cref="CharacterCold.FollowOrder"/> is never taken up again.
+    /// Every tick: a follower of row 31 or 289 whose fight was a step of its row (<see cref="CharacterCold.FollowResume"/>) follows again once that fight leaves it idle; any other task
+    /// drops the row, so a stale <see cref="CharacterCold.FollowOrder"/> is never taken up again.
     /// </summary>
     static void ResumeFollowers(CharacterTable table)
     {
@@ -419,26 +418,30 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem
             if (!next[s].Alive || table.Cold(s) is not { FollowResume: true } c) continue;
             var task = (CharacterTask)next[s].Task;
             if (task is CharacterTask.Attack or CharacterTask.Follow) continue;
-            c.FollowResume = false;
-            if (task != CharacterTask.Idle || c.InCombat || c.FollowOrder.IsNone || !table.TryResolveNext(c.FollowOrder, out _)) continue;
-            next[s].Task = (byte)CharacterTask.Follow;
-            next[s].TaskTime = 0;
-            c.FollowPathTime = 0;
+            if (task != CharacterTask.Idle || c.InCombat || c.FollowOrder.IsNone || !table.TryResolveNext(c.FollowOrder, out _)) c.Running = null;
+            else Follow(table, s, c);
         }
     }
 
-    /// <summary>A bodyguard whose fight ended (its task fell back to idle) goes back to its target.</summary>
+    /// <summary>A bodyguard (row 45 still running) whose fight ended (its task fell back to idle) goes back to its target.</summary>
     static void ResumeGuards(World world, CharacterTable table)
     {
         var next = table.Next;
         for (int s = 0; s < table.HighWater; s++)
         {
             if (!next[s].Alive || next[s].Task != (byte)CharacterTask.Idle || table.Cold(s) is not { Guarding: true, InCombat: false } c) continue;
-            if (c.FollowOrder.IsNone || !table.TryResolveNext(c.FollowOrder, out _)) { c.Guarding = false; c.FollowOrder = CharacterId.None; continue; }
-            next[s].Task = (byte)CharacterTask.Follow;
-            next[s].TaskTime = 0;
-            c.FollowPathTime = 0;
+            if (c.FollowOrder.IsNone || !table.TryResolveNext(c.FollowOrder, out _)) { c.Running = null; c.FollowOrder = CharacterId.None; continue; }
+            Follow(table, s, c);
         }
+    }
+
+    /// <summary>The follow row takes its follow up again where the fight left it (its walk is asked anew; the row's provenance runs it).</summary>
+    static void Follow(CharacterTable table, int s, CharacterCold c)
+    {
+        c.Running = c.Running! with { Task = CharacterTask.Follow };
+        table.Next[s].Task = (byte)CharacterTask.Follow;
+        table.Next[s].TaskTime = 0;
+        c.FollowPathTime = 0;
     }
 
     /// <summary>

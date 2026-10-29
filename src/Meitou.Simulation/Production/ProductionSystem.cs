@@ -451,7 +451,7 @@ public sealed partial class ProductionSystem : ITickSystem
         ref var n = ref table.Next[slot];
         bool followJob = n.Task == (byte)CharacterTask.Follow && cold.JobIndex >= 0 && cold.JobIndex < cold.Jobs.Count
             && PermaJobs.Follows(cold.Jobs[cold.JobIndex].Type);
-        if (followJob) (cold.FollowOrder, cold.Guarding) = (CharacterId.None, false);   // the job's follow ends with it; the character follows its squad's leader again
+        if (followJob) (cold.FollowOrder, cold.Running) = (CharacterId.None, null);   // the job's follow ends with it; the character follows its squad's leader again
         if (followJob || n.Task is (byte)CharacterTask.Operate or (byte)CharacterTask.Haul or (byte)CharacterTask.Sleep)
         {
             MovementSystem.Stop(table, slot);
