@@ -14,11 +14,13 @@ public sealed partial class PopulationSystem
     /// <summary>
     /// The resident table of a town (docs/game/factions-squads-towns.md "Town residents", Observed): without <c>residents override</c> the faction's
     /// <c>residents</c> first, then the town's; with it the town's only. A template listed again is dropped (the first entry wins); then v0 = 0 entries are dropped.
+    /// A town with no faction has none (<c>FUN_140936e60</c> returns first).
     /// </summary>
     public static List<RecordLink> ResidentEntries(TownData town, FactionData? faction)
     {
         var list = new List<RecordLink>();
-        if (!town.ResidentsOverride && faction is not null) list.AddRange(faction.Residents);
+        if (faction is null) return list;
+        if (!town.ResidentsOverride) list.AddRange(faction.Residents);
         list.AddRange(town.Residents);
         var seen = new HashSet<string>(StringComparer.Ordinal);
         list.RemoveAll(e => !seen.Add(e.Id));
@@ -26,10 +28,11 @@ public sealed partial class PopulationSystem
         return list;
     }
 
-    /// <summary>The town's <c>default resident</c> (first entry), else (without <c>residents override</c>) the faction's; null when neither names one.</summary>
+    /// <summary>The town's <c>default resident</c> (first entry), else (without <c>residents override</c>) the faction's; null when neither names one or the town has no faction.</summary>
     public static RecordLink? DefaultResident(TownData town, FactionData? faction) =>
-        town.DefaultResident.Count > 0 ? town.DefaultResident[0]
-        : !town.ResidentsOverride && faction is { DefaultResident.Count: > 0 } f ? f.DefaultResident[0] : null;
+        faction is null ? null
+        : town.DefaultResident.Count > 0 ? town.DefaultResident[0]
+        : !town.ResidentsOverride && faction.DefaultResident.Count > 0 ? faction.DefaultResident[0] : null;
 
     // ---- building (pure given the seed; safe on another thread) ----
 
@@ -118,12 +121,13 @@ public sealed partial class PopulationSystem
 
     /// <summary>
     /// The bar squad entries of a town (Observed): without <c>residents override</c> the faction's <c>bar squads</c> (for towns of type Town only), then the town's;
-    /// with it the town's only. v0 = 0 entries are dropped.
+    /// with it the town's only. v0 = 0 entries are dropped. A town with no faction has none (its entry count is filled by the same builder, <c>FUN_140936e60</c>).
     /// </summary>
     public static List<RecordLink> BarEntries(TownData town, FactionData? faction)
     {
         var list = new List<RecordLink>();
-        if (!town.ResidentsOverride && town.Type == TownType.Town && faction is not null) list.AddRange(faction.BarSquads);
+        if (faction is null) return list;
+        if (!town.ResidentsOverride && town.Type == TownType.Town) list.AddRange(faction.BarSquads);
         list.AddRange(town.BarSquads);
         list.RemoveAll(e => e.V0 <= 0);
         return list;

@@ -412,7 +412,12 @@ Meitou: [ground items](../simulation.md#items-and-eating).
 - **Table** (`FUN_140935d10`, `FUN_140936e60`): the faction's `residents` then the town's; with `residents override` the
   town's only. A template already listed is skipped (first wins). Per entry: v0 = count, v1 = priority (100 counts as 0,
   outside 0..5 an error box). `default resident`: the town's, else (no override) the faction's. `bar squads`: the
-  faction's (TownType 2 only, no override) then the town's; with override the town's only.
+  faction's (TownType 2 only, no override) then the town's; with override the town's only. **Verified**: a town whose
+  faction object is null (no `faction` reference, or one that matches no FACTION: `FUN_1409fe7a0` sets it only when it
+  resolves, the base constructor leaves it null) builds nothing: `FUN_140936e60` returns before the table, the default
+  resident and the built flag (`residents override` is read only after that). The bar squads come from the same table
+  (`FUN_1409fcd20` calls it first and loops over its entry count), so they are empty too. Base data: 4 of the 22 faction-less TOWN
+  records have residents (housecamp raider variants, Skinhouse overrides); they get none. Meitou: the helpers in `PopulationSystem.Build.cs`.
 - **When**: at zone populate (`FUN_140a0e760`) per non-player town, the zone's buildings sorted by handle serial (random-looking).
 - **Candidates**: buildings of the town ([membership](../formats/zones.md#town-membership)) with an `interior` reference, not player-owned, holding no residents template
   or the default one; walls (`links together`, a vfunc override) never, gates (`is wall gate`) only for entries naming
