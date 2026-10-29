@@ -424,7 +424,8 @@ rock) makes output only while someone operates it.
   Automatic Grain Silo, Hybrid Stone Mine II (building 0); Campfire, Camp Fish Pile, Bread Oven, wind generators, Rain Collector,
   Battery Bank, storages and lights (functionality 0).
 - s = `lerp(stat/100, 0.5, 1.4)` of the effective stat `stat used` (`FUN_1408852a0`; 1 without an operator; the lerp
-  helper `FUN_140015b63` is `a + (b - a) t`).
+  helper `FUN_140015b63` is `a + (b - a) t`). **Verified**: no clamp, so a stat above 100 lifts s past 1.4 (`FUN_14035bc90` passes it
+  unchanged to the work slot 0x4b0). A farm's own efficiency roll keeps its clamp to 0..1.
 - outputRate = BUILDING `output rate` x functionality `production mult` (research benches too), with `output per day` / (2G)
   (production buildings only, `FUN_14029e7b0`), then / the raw `max operators` (+0x3ac) when above 1, for every function
   (**Verified**, `FUN_14029e460`, `FUN_14029e7b0`, `FUN_1402b9aa0`). Each operator adds its share, so a full crew makes

@@ -648,7 +648,8 @@ public sealed partial class ProductionSystem : ITickSystem
             m.Operators++;
             var stat = (StatsEnumerated)m.Data.Stat;
             float skill = m.Data.Stat > 0 ? Effective(cold, stat) : -1;
-            float s = skill < 0 ? 1 : Lerp(0.5f, 1.4f, Math.Clamp(skill, 0, 100) / 100);
+            // No clamp on s: a stat above 100 lifts it past 1.4 (Verified, FUN_1408852a0 hands the lerp straight to the work slot in FUN_14035bc90).
+            float s = skill < 0 ? 1 : Lerp(0.5f, 1.4f, skill / 100);
             bool worked;
             if (m.Data.IsResearch) worked = ResearchStep(world, m, s, dt, ref contributions);
             else if (m.Data.IsCrafting) worked = CraftStep(world, m, skill, s, dt);
