@@ -307,6 +307,8 @@ sealed partial class PlayerInterface
         if (action.StartsWith("speed:", StringComparison.Ordinal)) PressButton(int.Parse(action[6..], CultureInfo.InvariantCulture));
         else if (action is "inventory" or "stats")
         {
+            // toggle_inventory does nothing, opening or closing, without a living lead of the player's (FUN_140724980); the selection holds only player characters.
+            if (action == "inventory" && (InventoryOwner() is not { } owner || owner.Body is { Dead: true })) return;
             if (faithfulScreens.IsOpen(action))
             {
                 faithfulScreens.Close(action);

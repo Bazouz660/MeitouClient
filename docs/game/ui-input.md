@@ -115,7 +115,7 @@ identified; pause 0x12 is only blocked by the second). While the MainBar object 
 
 | Event | Effect (**Observed**) |
 |---|---|
-| 1 | open the inventory window of the selected character (FUN_140724980 -> FUN_1406e6f10; target window inferred from the action name `toggle_inventory`) |
+| 1 | toggle the inventory window of the lead (FUN_140724980 -> FUN_1406e6f10, which closes it when open; also the INV button's click, FUN_14072d3b0). **Verified**: nothing happens, opening or closing, unless the lead hand holds a character that resolves, is not dead (`+0x5bc`) and belongs to the player (its faction's `+0x250` set). Target window inferred from the action name `toggle_inventory` |
 | 2 | open or, when already open, close the per-character window for the selection (FUN_1406e5f10; stats window inferred from `toggle_stats`) |
 | 3 / 4 / 5 / 6 | request Overview tab Map / Faction / Research / Crafting (HUD field +0xd0 = 0/1/2/3) |
 | 7 | toggle the visibility of the window at GUI+0x30 (FUN_1406e1f20): the Tutorials window (**Observed**: the GUI constructor `FUN_1406e4f50` stores the `Kenshi_TutorialsWindow` object of constructor `140977640` there; +0x28 holds the tutorial panel, +0x20 the object of `FUN_140725740`) |
