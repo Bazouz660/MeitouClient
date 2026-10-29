@@ -119,7 +119,7 @@ public sealed partial class FirstAidSystem
     }
 
     /// <summary>A chained slave of the medic's faction (<c>FUN_14032e2a0</c>: chained, owner faction the medic's).</summary>
-    static bool OwnedChained(CharacterCold medic, CharacterCold patient) => patient.SlaveState == 1 && patient.Shackles is not null && patient.SlaveOwner == medic.Faction;
+    internal static bool OwnedChained(CharacterCold medic, CharacterCold patient) => patient.SlaveState == 1 && patient.Shackles is not null && patient.SlaveOwner == medic.Faction;
 
     /// <summary>The patient's need score for a kit type (<see cref="MedicalState.FirstAidNeed"/>); 0 for a body without a medical state.</summary>
     float AidNeed(CharacterCold c, bool robotKit) =>

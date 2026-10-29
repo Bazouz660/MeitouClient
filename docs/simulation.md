@@ -1403,7 +1403,8 @@ whose first step is neither the goal nor a step the engine carries out (`AiSyste
   so such goals do not plan. Rows on the way have their `TaskProfiles` desire, else 1. The exception is DEFEAT_SQUAD 101, whose plan is the goal alone: the finder's
   pick (`AiSystem.AssaultTargetFor`, [ai-tasks](game/ai-tasks.md#combat-goals)) is sent as an `AttackOrder` by the serial step and the combat system fights it.
 - States (`PlanContext.Holds`): location, distance, bed, sitting, home (within 20 of the home), home town, town, weapon drawn, weapon carried
-  (`hasWeapon`), carrying and inside the home building (107, `AI::iAmInsideTargetBuilding` for a non-building target) are evaluated; moving, getting up, arms, power, buildings, doors, gates, accessibility, machine slots and readiness are
+  (`hasWeapon`), carrying, inside the home building (107, `AI::iAmInsideTargetBuilding` for a non-building target) and strangers in a private home (141, so a resident does not
+  go to bed with one inside; [stranger states](game/ai-tasks.md#stranger-states)) are evaluated; moving, getting up, arms, power, buildings, doors, gates, accessibility, machine slots and readiness are
   held true (movement and the lock-up round deal with doors; the bashers' `DoorPlan` evaluates them); every other state is false.
 
 Combat stances (`AiStance`, the most aggressive combat goal in its hours; none at all attacks on sight): PROTECT_OWN_SQUAD joins only

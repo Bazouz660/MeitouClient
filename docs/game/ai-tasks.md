@@ -559,6 +559,23 @@ from the decompile and agree with this table, except that the decompile shows no
 | 168 | `DESTINATION_IS_ACCESSIBLE_ANIMAL` |
 | 169 | `isMachineInputInvalid` |
 
+## Stranger states
+
+**Verified** (decompile: registrations `FUN_140610250`, evaluators `FUN_14060e5e0` / `FUN_14060e640`, finder `FUN_1408ced70`, public test `FUN_140599680`). 108 `strangers in house` is true when the finder returns above 0
+(it returns 1.0 or 0); 141 `strangers in house P` is false first when the target's building is public, else the same finder. Goals 155, 197, 158, 283 and 239 read 108, goal 153 Going to bed needs `!141`
+(the "153" in goal 132's list A is state 153, not this goal).
+- **Public test** (`FUN_140599680`, **Verified**): the target as a building, replaced by the building its vfunc `0x1d8` names when that is not empty (**Observed**: a bed's house), else the blackboard home; none of either counts as public;
+  then Building vfunc `0x290` (slot 82, `FUN_140548750`), which reads the building's flag `+0xc8`, the `public day` flag ([locks](locks.md)), of its parent when it has one. It also returns not public when the building's `+0xd8` is 1 or 0x22 and a byte `+0xe8` of an object it
+  looks up is set (which object and what the byte means: **Unknown**, not modelled).
+- **Finder**: 0 with no home. Else the first of two scans:
+  - the resident's sensed characters tagged SENSE_NEUTRAL (bit 1) and none of bits 3 KO, 4, 7, 9 imprisoned (mask 0x298; [tags](perception.md#sense-tags-who-is-an-enemy); what bits 4 and 7 mean is **Unknown**) that stand in the home building, are up (Character vfunc 6, `isDown` false) and
+    are not a chained slave of the resident's faction (`FUN_14032e2a0`: chained, owner faction the resident's);
+  - only for a resident whose faction is not the player's (faction `+0x250` null): the player's characters in the home that are up, not chained slaves of the resident's faction, `+0x2f8` not 2 (not imprisoned) and either not sneaking (`FUN_1405c9750`: stealth mode and not in combat mode) or
+    sensed (`FUN_140855960`, which for a sneaker passes when the resident has any sense record of it) - whatever their tag, allies too.
+- **Meitou** (`AiSystem.StrangersInHouseP`, wired for 141 only): "sensed" is standing in the home building (a sneaker also needs `SightMap.Sees`, a live test for the record; engine reading), the tag is the faction relation (neutral: not an ally, not an enemy), up is not
+  incapacitated or carried. 108 is not wired (default false): the lock-up round tests strangers itself (`LockSystem.StrangerInside`, any non-squad character in the home), so wiring it would change 155/158/239 as well. **Unknown**: the
+  original's decay of the sense record, so a stranger who just left may keep the state set for a while.
+
 ## Arrest and prison rows
 
 Rules: [economy 11.5, 11.7](economy.md#115-bail-and-sentence). **Observed** (evaluators and TaskData hooks resolved from the exe's thunk bytes):
