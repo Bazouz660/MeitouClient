@@ -117,6 +117,7 @@ one of an outstanding item), 51 `buildingHasBuildingMaterials` (`FUN_1405a39c0`:
 (`FUN_14034a440`) plays `medic` (sounds `Character_Build_Loop_Start/Stop`), pushes build work each update and ends
 when the building is gone, the site stalls (back to the planner) or it completes. Work, delivery, fetching (115 -> 247),
 the Engineer job (125), repair and dismantle: [buildings-production](buildings-production.md#construction-tick).
+Meitou: rows 2 and 95 both need state 38 `hasOneWorkingArm` (**Observed**: the table, no provider row), so a build or repair order and the Engineer job (125, effect 2) skip a character with no working arm (`ConstructionSystem.HasWorkingArm`); Dismantle (row 96) is not checked.
 
 ## Prospecting
 

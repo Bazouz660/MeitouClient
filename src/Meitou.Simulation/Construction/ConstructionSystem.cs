@@ -172,7 +172,7 @@ public sealed class ConstructionSystem : ITickSystem
                     // Build and Repair are both Task_Build: an unfinished site is built, a damaged one (progress below its target) repaired; a whole building has nothing to do.
                     if (Root(reg, reg.Find(order.Site)) is not { NeedsWork: true } site || site.Owner != world.Player.Faction) break;
                     foreach (var id in Who(world, order.Characters))
-                        if (table.TryResolveNext(id, out int slot) && table.Cold(slot) is { IsPlayer: true } cold && Able(cold))
+                        if (table.TryResolveNext(id, out int slot) && table.Cold(slot) is { IsPlayer: true } cold && Able(cold) && HasWorkingArm(cold))
                         {
                             if (site.LevelPlacement is not null) Touch(world, site);
                             if (site.Stalled && !Carries(cold, site) && Source(world, slot, cold, site) is null)
@@ -593,6 +593,9 @@ public sealed class ConstructionSystem : ITickSystem
     /// <summary>A character that can work a site: awake, free to act, not in a fight, not carrying or carried, not in a cage.</summary>
     static bool Able(CharacterCold cold) =>
         cold.Medical is not { Incapacitated: true } && !cold.InCombat && cold.CarriedBy.IsNone && cold.Carrying.IsNone && !cold.IsImprisoned;
+
+    /// <summary>State 38 <c>hasOneWorkingArm</c>, which the Building (2) and Repairing (95) rows need and no row provides (<b>Observed</b>, docs/game/ai-tasks.md "Planner"): an order or the engineer job (125) cannot start without it.</summary>
+    public static bool HasWorkingArm(CharacterCold cold) => cold.Medical is not { } arms || arms.ArmWorks(left: true) || arms.ArmWorks(left: false);
 
     /// <summary>A builder's reach of a site (<see cref="SiteReach.Building"/>, a wall's <see cref="SiteReach.Wall"/>).</summary>
     float ReachOf(BuildSite site) => IsWall(site) ? SiteReach.Wall : SiteReach.Building;

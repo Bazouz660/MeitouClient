@@ -273,8 +273,8 @@ public sealed partial class ProductionSystem
         // The walk to a job needs state 27, false while the character gets up (FUN_1405a3370).
         if (cold.GettingUpUntil > world.Tick) return false;
         var at = world.Characters.Next[slot].Position;
-        // The engineer job ignores its target: its finder picks any site (the original's row 125 finder, docs/game/buildings-production.md "Builders and dismantle"); a pick out of range fails the job.
-        if (job.Type == TaskType.JOB_BUILDER) return Construction?.EngineerSite(world, slot) is { } pick && Vector3.DistanceSquared(at, pick.Position) < JobRangeSq;
+        // The engineer job ignores its target: its finder picks any site (the original's row 125 finder, docs/game/buildings-production.md "Builders and dismantle"); a pick out of range fails the job, and so does a character with no working arm (row 2's state 38).
+        if (job.Type == TaskType.JOB_BUILDER) return ConstructionSystem.HasWorkingArm(cold) && Construction?.EngineerSite(world, slot) is { } pick && Vector3.DistanceSquared(at, pick.Position) < JobRangeSq;
         if (job.Site is { } id && Site(world, id) is { } site && Vector3.DistanceSquared(at, site.Position) >= JobRangeSq) return false;
         return !Blocked(world, cold, job);
     }

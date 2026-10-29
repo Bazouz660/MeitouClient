@@ -986,7 +986,7 @@ Combat; all of it is serial. `ConstructionSettings`: `BuildingSpeed` (the option
 optional), `EdgeGap` (site, point -> gap to its footprint hull; the host's).
 - `Inputs`: `PlaceBuildings` re-checks only the data half (a BUILDING, unlocked, `TownBlock`); a failing plan is dropped
   with `World.Post(Message)`. A total of 0 completes at once, so a free building is complete from the first snapshot.
-  `BuildOrder` (player characters, awake, not carried or caged; Build and Repair alike work a site that `NeedsWork`:
+  `BuildOrder` (player characters, awake, not carried or caged, with a working arm: row 2 needs state 38 `hasOneWorkingArm`, **Observed**, and the engineer job likewise; Build and Repair alike work a site that `NeedsWork`:
   unfinished, or complete with progress below its target, the original's damage) and `DismantleOrder` set the
   `CharacterTask`s `Build` / `Dismantle` and `CharacterCold.BuildSite`
   (the selection when the list is empty). Dismantling is refused with the original's texts while a site stands in the
