@@ -272,7 +272,7 @@ static partial class WorldApp
         Meitou.Audio.AudioSystem? audio = null;
         bool statsVisible = false, fpsVisible = false;
         string fpsText = "";
-        double fpsWindowMs = 0, fpsWindowWaitMs = 0;   // the window's time, and that spent waiting (the frame fence, the swapchain, the present)
+        double fpsWindowMs = 0;
         int fpsWindowFrames = 0;
         var stats = new List<string>();
         var keyItems = DebugOverlay.KeyItems(WorldOptions.Usage);
@@ -494,9 +494,7 @@ static partial class WorldApp
         {
             if (gpu is null) return;
             var size = window.FramebufferSize;
-            long beginAt = Stopwatch.GetTimestamp();
             bool began = display.BeginFrame(size.X, size.Y);
-            fpsWindowWaitMs += Stopwatch.GetElapsedTime(beginAt).TotalMilliseconds;
             if (!began) return; // minimized, or not yet shown at its maximized size
             var context = display.Context;
             // The chain and the overlays draw into the window's backbuffer (made again when the size changes).
@@ -559,8 +557,8 @@ static partial class WorldApp
             fpsWindowFrames++;
             if (fpsWindowMs >= 100)
             {
-                fpsText = $"{fpsWindowFrames * 1000 / fpsWindowMs:0} fps  {Math.Max(0, fpsWindowMs - fpsWindowWaitMs) / fpsWindowFrames:0.0} ms ({fpsWindowMs / fpsWindowFrames:0.0} ms)";
-                fpsWindowMs = fpsWindowWaitMs = 0;
+                fpsText = $"{fpsWindowFrames * 1000 / fpsWindowMs:0} fps  ({fpsWindowMs / fpsWindowFrames:0.0} ms)";
+                fpsWindowMs = 0;
                 fpsWindowFrames = 0;
             }
             frameClock.Restart();
@@ -595,9 +593,7 @@ static partial class WorldApp
             // Over everything: the letterbox, and the timeline editor (F6) or the cinema status line.
             if (overlay is not null) cinema.Draw(overlay, size.X, size.Y, shot);
             StageClock.Phase("overlays");
-            long presentAt = Stopwatch.GetTimestamp();
             display.Present();
-            fpsWindowWaitMs += Stopwatch.GetElapsedTime(presentAt).TotalMilliseconds;
             profiler?.EndFrame();
             SmokeTest.Frame();
             if (takeFile is not null)
