@@ -148,8 +148,11 @@ public sealed class BedSystem(PopulationData data, BedSettings? settings = null)
         trips.RemoveAll(t => t.Character == id);
     }
 
-    /// <summary>A character that may walk to a bed: awake, not carried, not caged, not fleeing.</summary>
-    static bool CanWalk(CharacterCold c) => c is { Medical.Incapacitated: false, IsImprisoned: false, Fleeing: false } && c.CarriedBy.IsNone;
+    /// <summary>
+    /// A character that may walk to a bed: awake, not carried, not fleeing. A cage is no gate: rows 98, 99 and 106 do not register the imprisoned or chained repertoire
+    /// (<see cref="TaskStart.Eligible"/>), and a caging ends the walk (<see cref="FixtureRegistry.Imprison"/>).
+    /// </summary>
+    static bool CanWalk(CharacterCold c) => c is { Medical.Incapacitated: false, Fleeing: false } && c.CarriedBy.IsNone;
 
     /// <summary>The bed search for the character in <paramref name="slot"/> (<see cref="FixtureRegistry.FindBed"/>), leaving out the beds others are on their way to.</summary>
     public Fixture? FindFor(World world, int slot)

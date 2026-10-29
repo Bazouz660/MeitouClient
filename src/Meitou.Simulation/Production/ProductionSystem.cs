@@ -365,11 +365,12 @@ public sealed partial class ProductionSystem : ITickSystem, ITaskOwner, ITaskHan
     readonly Dictionary<string, Vector2> turretSpots = [];
 
     /// <summary>
-    /// A character that can work: awake, not carrying or carried, not caged. A fight is no gate: an order's new task ends it (<see cref="TaskStart.Start"/>; docs/game/combat.md "Fight
-    /// lifecycle and orders"), and a fight that starts ends the work the same way.
+    /// A character that can work: awake, not carrying or carried. A fight is no gate: an order's new task ends it (<see cref="TaskStart.Start"/>; docs/game/combat.md "Fight lifecycle and
+    /// orders"), and a fight that starts ends the work the same way. Nor is a cage: no production row registers the imprisoned or chained repertoire (<see cref="TaskStart.Eligible"/>), and
+    /// a caging ends the task (<see cref="Locks.FixtureRegistry.Imprison"/>).
     /// </summary>
     static bool Able(CharacterCold cold) =>
-        cold.Medical is not { Incapacitated: true } && cold.CarriedBy.IsNone && cold.Carrying.IsNone && !cold.IsImprisoned;
+        cold.Medical is not { Incapacitated: true } && cold.CarriedBy.IsNone && cold.Carrying.IsNone;
 
     static int OperatorsOf(World world, string site)
     {

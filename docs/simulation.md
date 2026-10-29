@@ -98,8 +98,8 @@ start through `TaskStart.Start`, the lock orders' worker choice and the player's
 a crawler or one staying low (0x40, posture 1 or 2) can start only rows that register it (move, first aid, loot, talk, attacks, prospect, sleep; not carry, put down 69, stealth KO 228, Splint
 Rigging 250, operate, build, repair, dismantle, put in bed, sit 275, ditch 242, set free 110, unlock door 140, put in cage 108, smash 226); an animal only 0x20 rows (so no bed, no carry,
 no loot 26 / 177 / 42, no first aid, no operate, no medic, no lock, cage or door work but smashing 226; it may pick up items, 3; job 289 is animal-only, so a human with that job never runs it).
-Loot is 26 for the orders, 177 for NPC scavenging and 42 for an NPC arming itself. Not yet routed through it: trade and talk, the continuing checks (`Able`, `CanWalk`, which still stop work
-on a cage). The medic finder keeps its own imprisoned refusal because rows 25 / 58 register the imprisoned repertoire
+Loot is 26 for the orders, 177 for NPC scavenging and 42 for an NPC arming itself. Not yet routed through it: trade and talk. A caging ends the task through
+`TaskStart.End(Stopped)` (`FixtureRegistry.Imprison`), so production's and construction's `Able` and the beds' `CanWalk` test no cage: their rows do not register the caged repertoires. The medic finder keeps its own imprisoned refusal because rows 25 / 58 register the imprisoned repertoire
 (whether a caged prisoner treats is **Unknown**). A fight is row 5 when the player picked the target, 13 for a defence, else 16 (13 and 16 register the same repertoires).
 
 ### Task starts

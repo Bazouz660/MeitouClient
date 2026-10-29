@@ -672,6 +672,7 @@ public sealed partial class FixtureRegistry
         if (cage.Kind != FixtureKind.Cage || !IsFree(table, cage) || !table.TryResolveNext(prisoner, out int s)) return false;
         var c = table.Cold(s)!;
         if (c.InSomething != HeldState.None || !c.CarriedBy.IsNone || !c.Carrying.IsNone) return false;
+        TaskStart.End(world, s, TaskEnd.Stopped);   // the task and a fight end through their handlers: a caged character works no machine, site or bed
         c.InSomething = HeldState.Imprisoned;
         c.InWhat = cage.Id;
         c.CageClips = cage.Clips;
