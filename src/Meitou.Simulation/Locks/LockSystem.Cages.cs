@@ -94,7 +94,7 @@ public sealed partial class LockSystem
     /// <summary>
     /// 202 Escaping (docs/game/ai-tasks.md "Finders of the jobs"; <c>Task_TakeOffCuffs</c> 219 provides its !134 through 201 / 185 / 186), every <see cref="EscapeEveryTicks"/> ticks: an awake AI
     /// character wearing locked shackles whose role list holds 202 sets to work on them, cutting with a tool, else picking (engine choice: the planner's pick among the three is
-    /// <b>Unknown</b>). Caged, it first needs the cage open (<see cref="OpportunisticEscapes"/>).
+    /// <b>Unknown</b>). Caged, it first needs the cage open (<see cref="OpportunisticEscapes"/>). One that wears shackles no longer locked takes them off (<see cref="TakeOffCuffs"/>).
     /// </summary>
     void ShackleEscapes(World world)
     {
@@ -104,13 +104,34 @@ public sealed partial class LockSystem
         for (int s = 0; s < table.HighWater; s++)
         {
             if (!table.Next[s].Alive || table.Cold(s) is not { IsImprisoned: false, IsPlayer: false, Shackles: null, Medical.Incapacitated: false, CarriedBy.IsNone: true, Ai: { Squad: { Ai: { } board } squad } } c
-                || WornShackles(c) is null || !Lists(board, squad, table.IdOf(s), c, hour, Meitou.Data.Gameplay.Ai.TaskType.TOTAL_ESCAPE, Meitou.Data.Gameplay.Ai.TaskType.TOTAL_ESCAPE)) continue;
+                || !Lists(board, squad, table.IdOf(s), c, hour, Meitou.Data.Gameplay.Ai.TaskType.TOTAL_ESCAPE, Meitou.Data.Gameplay.Ai.TaskType.TOTAL_ESCAPE)) continue;
+            if (WornShackles(c) is null)
+            {
+                TakeOffCuffs(world, c, table.Next[s].Position);
+                continue;
+            }
             c.PickingLock = null;
             c.Shackles = new ShackleJob(table.IdOf(s), Lockpicking.BestTool(c) is null ? ShackleWork.Pick : ShackleWork.Cut);
         }
     }
 
     const int EscapeEveryTicks = 30;
+
+    /// <summary>
+    /// 219 Removing Shackles (<c>Task_TakeOffCuffs</c>, <b>Verified</b>: its update queues <c>Character::setChainedMode(self, false)</c>, <c>FUN_14032e590</c>): the worn locked-armour item, in the
+    /// boots section else the body one, leaves the equipment whatever its lock state. <b>Engine choice</b>: it goes to the character's inventory, else the ground (where the original
+    /// sends it is <b>Unknown</b>); the planner's chained flag (<c>+0x320</c>) is read as wearing such an item.
+    /// </summary>
+    void TakeOffCuffs(World world, CharacterCold c, Vector3 at)
+    {
+        if (c.Inventory is not { } inv) return;
+        var cuffs = inv.Items.FirstOrDefault(i => i.IsLocked && i.Section == "boots") ?? inv.Items.FirstOrDefault(i => i.IsLocked && i.Section == "armour");
+        if (cuffs is null) return;
+        inv.Items.Remove(cuffs);
+        cuffs.Section = "main";
+        if (!inv.Add(cuffs)) world.GroundItems.Drop(cuffs, at, 0);
+        Assembly?.RefreshEquipment(c);
+    }
 
     /// <summary>
     /// 256 Get out of cage (opportunistic; <c>Task_GetOutOfCage</c> with the escape flag, docs/game/ai-tasks.md "Arrest and prison rows"): an AI prisoner, awake, whose role list holds

@@ -113,6 +113,10 @@ Same targets as picking; Task_CutLock / Task_BruteForceLock share the shackle ta
   The bar shows hardness x 10. Same crime rule as picking (2 for own-target / buildings, 7 for another character).
 - **Break** (`Task_BruteForceShackles` slot 2, **Observed**): instant; succeeds when effective strength x stat scale > 3 x hardness,
   else "I'm not strong enough to do that". Sets broken, "*Crunck*".
+- **Taking off** (`Task_TakeOffCuffs` 219, **Verified**): the only way worn shackles come off once unlocked for a character that is not the player's. Its update (slot 2, `FUN_140349d00`) queues a world event (kind 5, the
+  character's own hand, de-duplicated on the GameWorld list `+0x5c8`) that `FUN_1407b65b0` replays as `Character::setChainedMode(character, false)` (`FUN_14032e590`): the chained flag `+0x320` is cleared and the worn locked
+  armour (`LockedArmour`, vfunc `0x2f0`; boots section 9, else section 5, `FUN_1405c8a10`) is removed through the inventory (vfunc `0x30`; whether the item goes to the pack or is destroyed is **Unknown**);
+  a player faction's character is refreshed. 219 needs !114 (not wearing locked shackles) and gives !134 (`isChained`); 202 Escaping plans 201 / 185 / 186 for the first, then 219.
 - **Sounds** (**Verified**, strings and callers). Slot 1 of Task_PickLock (also Task_PickLock_Shackles), Task_CutShackles (also Task_CutLock) and Task_UnlockDoor posts the `Character_Unlock` loop on the character; Task_BruteForceShackles has no slot-1 sound.
   `Character_Unlock_Success` comes from slot 2 when a roll, cut or break succeeds. Slot 3 (the task's end, success included) of Task_PickLock and Task_UnlockDoor posts `Character_Unlock_Fail`, which only stops the loop;
   Task_CutShackles slot 3 only removes the progress bar, so what ends an interrupted cut's loop is **Unknown**. Task_CuffTarget (putting shackles on: "Restraining" bar, `medic` animation) posts no event.
