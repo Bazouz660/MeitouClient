@@ -8,9 +8,50 @@ namespace Meitou.Simulation.Items
 
 namespace Meitou.Simulation
 {
-    /// <summary>Picking up loose items (docs/simulation.md "Ground items"): walk to the item, then into the inventory (<see cref="Items.Inventory.Add"/>), or a message when it has no room.</summary>
-    public sealed partial class PlayerSystem
+    /// <summary>
+    /// Picking up loose items (docs/simulation.md "Ground items"): walk to the item, then into the inventory (<see cref="Items.Inventory.Add"/>), or a message when it has no room. The
+    /// pick-up and the walk to a container start through <see cref="TaskStart.Start"/> as row 3 "Collecting item", which the player system handles.
+    /// </summary>
+    public sealed partial class PlayerSystem : ITaskOwner, ITaskHandler
     {
+        public void RegisterTasks(TaskHandlers tasks) => tasks.Register(Meitou.Data.Gameplay.Ai.TaskType.PICKUP, this);
+
+        /// <summary>A pick-up of the ground item in <see cref="TaskRequest.Detail"/>, or the walk to the container <see cref="TaskRequest.Site"/> (to open it, or only to it: <see cref="ContainerWalk"/>).</summary>
+        void ITaskHandler.Start(World world, int slot, in TaskRequest request)
+        {
+            var table = world.Characters;
+            var walker = table.Cold(slot)!;
+            if (request.Detail is int item)
+            {
+                walker.PickingLock = null;
+                walker.Shackles = null;
+                walker.PickingUpItem = item;
+                if (request.Task == CharacterTask.GoTo) MovementSystem.GoToFloor(world, slot, request.Point, walker.RunSpeed);
+                return;
+            }
+            if (request.Detail == ContainerWalk)
+            {
+                MovementSystem.GoToFloor(world, slot, request.Point, walker.RunSpeed);
+                return;
+            }
+            var player = world.Player;
+            walker.PickingLock = null;
+            walker.Shackles = null;
+            walker.PickingUpItem = null;
+            player.OpenContainer = null;
+            player.OpeningContainer = request.Site;
+            player.ContainerWalker = table.IdOf(slot);
+            if (request.Task == CharacterTask.GoTo) MovementSystem.GoToFloor(world, slot, request.Point, walker.RunSpeed);
+        }
+
+        /// <summary>A pick-up or a walk to a container that another task replaces or the Stop order ends is given up.</summary>
+        void ITaskHandler.End(World world, int slot, CharacterTask task, TaskEnd reason)
+        {
+            var table = world.Characters;
+            table.Cold(slot)!.PickingUpItem = null;
+            if (world.Player.OpeningContainer is not null && world.Player.ContainerWalker == table.IdOf(slot)) world.Player.OpeningContainer = null;
+        }
+
         /// <summary>A walker takes the item within this distance of it (an engine choice).</summary>
         public const float PickUpReach = 15;
 
@@ -24,16 +65,17 @@ namespace Meitou.Simulation
             float bestDistance = float.MaxValue;
             foreach (var id in order.Characters.Count > 0 ? order.Characters : world.Player.Selection.ToArray())
             {
-                if (!table.TryResolveNext(id, out int s) || table.Cold(s) is not { IsPlayer: true, Medical.Incapacitated: false, Inventory: not null, IsImprisoned: false } c || !c.CarriedBy.IsNone) continue;
+                if (!table.TryResolveNext(id, out int s) || table.Cold(s) is not { IsPlayer: true, Medical.Incapacitated: false, Inventory: not null, IsImprisoned: false } c || !c.CarriedBy.IsNone
+                    || !TaskStart.Eligible(world, c, Meitou.Data.Gameplay.Ai.TaskType.PICKUP)) continue;
                 float d = Vector2.Distance(Flat(table.Next[s].Position), Flat(item.Position));
                 if (d < bestDistance) (best, bestDistance) = (s, d);
             }
             if (best < 0) return;
-            var walker = table.Cold(best)!;
-            walker.PickingLock = null;
-            walker.Shackles = null;
-            walker.PickingUpItem = order.Item;
-            if (bestDistance > PickUpReach) MovementSystem.GoToFloor(world, best, item.Position, walker.RunSpeed);
+            // Within reach it takes the item where it stands.
+            TaskStart.Start(world, best, new TaskRequest(bestDistance > PickUpReach ? CharacterTask.GoTo : CharacterTask.Idle, Meitou.Data.Gameplay.Ai.TaskType.PICKUP, TaskSource.Order)
+            {
+                Point = item.Position, Detail = order.Item,
+            });
         }
 
         /// <summary>Each tick: a walker in reach takes its item; one whose item is gone, who was given another goal or stopped, or who is down gives up.</summary>

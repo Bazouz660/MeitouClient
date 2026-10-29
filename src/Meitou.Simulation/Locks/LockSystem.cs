@@ -1,4 +1,5 @@
 using System.Numerics;
+using Meitou.Data.Gameplay.Ai;
 using Meitou.Data.Gameplay;
 using Meitou.Simulation.Bodies;
 
@@ -49,11 +50,8 @@ public sealed partial class LockSystem(GameConstants constants, BodyOptions opti
                     {
                         if (!table.TryResolveNext(id, out int s) || table.Cold(s) is not { IsPlayer: true, Medical.Incapacitated: false } c || !c.CarriedBy.IsNone) continue;
                         if (c.IsImprisoned && c.InWhat != cage.Id) continue;   // a prisoner reaches only its own cage
-                        c.PickingLock = cage.Id;
-                        c.Shackles = null;
-                        c.DoorJob = null;
-                        if (!c.IsImprisoned) MovementSystem.GoTo(table, s, new Vector2(cage.Position.X, cage.Position.Z), c.RunSpeed);
-                        break;   // one picker per order (the nearest is not looked for: the first listed)
+                        // One picker per order (the nearest is not looked for: the first listed whose repertoire has row 76); a prisoner picks where it stands.
+                        if (StartWork(world, s, c.IsImprisoned ? CharacterTask.Idle : CharacterTask.GoTo, TaskType.PICK_LOCK, cage.Id)) break;
                     }
                     break;
                 }

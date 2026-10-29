@@ -74,6 +74,8 @@ public readonly record struct TaskRequest(CharacterTask Task, TaskType Row, Task
     public string? Site { get; init; }
     public System.Numerics.Vector3 Point { get; init; }
     public CharacterTask Resume { get; init; }
+    /// <summary>The act-out's own parameters the fields above do not hold (a shackle job, a ground item, a warden's round); its handler reads them.</summary>
+    public object? Detail { get; init; }
 }
 
 /// <summary>
@@ -106,15 +108,26 @@ public interface ITaskOwner
 
 /// <summary>
 /// The act-out handlers by <see cref="CharacterTask"/> (<see cref="World.Tasks"/>): an open list each owning system fills (<see cref="ITaskOwner"/>) and later code may add to or replace. A task with
-/// no handler is started by setting it.
+/// no handler is started by setting it. A row may have a handler of its own, which takes the row's starts and ends from the task's handler: the lock, door, cage, item and bed rows a
+/// walk acts out (<see cref="CharacterTask.GoTo"/>) are their systems', not the movement's.
 /// </summary>
 public sealed class TaskHandlers
 {
     readonly ITaskHandler?[] handlers = new ITaskHandler?[256];
+    readonly Dictionary<TaskType, ITaskHandler> rows = [];
 
     public void Register(CharacterTask task, ITaskHandler handler) => handlers[(byte)task] = handler ?? throw new ArgumentNullException(nameof(handler));
 
+    /// <summary>Registers the handler of the starts of <paramref name="row"/>, whatever their act-out.</summary>
+    public void Register(TaskType row, ITaskHandler handler) => rows[row] = handler ?? throw new ArgumentNullException(nameof(handler));
+
     public ITaskHandler? Of(CharacterTask task) => handlers[(byte)task];
+
+    /// <summary>The handler of a start of <paramref name="row"/> acting out <paramref name="task"/>: the row's own, else the task's.</summary>
+    public ITaskHandler? Of(CharacterTask task, TaskType row) => rows.TryGetValue(row, out var own) ? own : handlers[(byte)task];
+
+    /// <summary>The handler of the character's task <paramref name="task"/>: the one of its running row when its provenance runs it (<see cref="RunningTask.Runs"/>), else the task's.</summary>
+    public ITaskHandler? Of(CharacterCold cold, CharacterTask task) => cold.Running is { } run && run.Runs(task) ? Of(task, run.Row) : Of(task);
 }
 
 /// <summary>The one task start and end path (docs/simulation.md "Task eligibility", "Task starts").</summary>
@@ -140,12 +153,13 @@ public static class TaskStart
         var cold = table.Cold(slot)!;
         if (!Eligible(world, cold, request.Row)) return StartResult.NotEligible;
         var current = (CharacterTask)table.Next[slot].Task;
+        var handler = world.Tasks.Of(request.Task, request.Row);
         if (request.Task != CharacterTask.Attack) world.Tasks.Of(CharacterTask.Attack)?.End(world, slot, CharacterTask.Attack, TaskEnd.Replaced);
-        if (current != request.Task && current != CharacterTask.Attack) world.Tasks.Of(current)?.End(world, slot, current, TaskEnd.Replaced);
+        if (current != CharacterTask.Attack && world.Tasks.Of(cold, current) is { } before && (current != request.Task || before != handler)) before.End(world, slot, current, TaskEnd.Replaced);
         cold.Running = cold.Running is { } running && Step(running, current, request)
             ? running with { Task = request.Task, Tick = world.Tick }
             : new RunningTask(request.Task, request.Row, request.Source, request.Job, request.Target, request.Site, world.Tick);
-        if (world.Tasks.Of(request.Task) is { } handler) handler.Start(world, slot, request);
+        if (handler is not null) handler.Start(world, slot, request);
         else
         {
             ref var n = ref table.Next[slot];
@@ -168,7 +182,8 @@ public static class TaskStart
 
     /// <summary>The act-outs only <see cref="Start"/> may begin (their systems end them by themselves; other tasks are still set directly by systems not converted yet).</summary>
     static bool StartedOnly(byte task) => task is (byte)CharacterTask.Attack or (byte)CharacterTask.Treat or (byte)CharacterTask.PickUp or (byte)CharacterTask.PutDown
-        or (byte)CharacterTask.Loot or (byte)CharacterTask.StealthKo or (byte)CharacterTask.Build or (byte)CharacterTask.Dismantle or (byte)CharacterTask.Prospect;
+        or (byte)CharacterTask.Loot or (byte)CharacterTask.StealthKo or (byte)CharacterTask.Build or (byte)CharacterTask.Dismantle or (byte)CharacterTask.Prospect
+        or (byte)CharacterTask.Operate or (byte)CharacterTask.Haul;
 
     /// <summary>
     /// Debug builds, at the end of a tick: a character that took up one of the <see cref="StartedOnly"/> act-outs this tick did so through <see cref="Start"/> (its provenance is
@@ -199,7 +214,7 @@ public static class TaskStart
         if (table.Phase == TablePhase.Parallel) throw new InvalidOperationException("tasks end in the serial phases only");
         var current = (CharacterTask)table.Next[slot].Task;
         world.Tasks.Of(CharacterTask.Attack)?.End(world, slot, CharacterTask.Attack, reason);
-        if (current != CharacterTask.Attack) world.Tasks.Of(current)?.End(world, slot, current, reason);
+        if (current != CharacterTask.Attack) world.Tasks.Of(table.Cold(slot)!, current)?.End(world, slot, current, reason);
         if (reason == TaskEnd.Stopped) MovementSystem.Stop(table, slot);
         table.Cold(slot)!.Running = null;
     }

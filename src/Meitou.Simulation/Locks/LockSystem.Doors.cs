@@ -1,4 +1,5 @@
 using System.Numerics;
+using Meitou.Data.Gameplay.Ai;
 
 namespace Meitou.Simulation.Locks;
 
@@ -119,27 +120,18 @@ public sealed partial class LockSystem
         var table = world.Characters;
         int best = -1;
         float bestDistance = float.MaxValue;
+        // Another faction's locked door is picked (76) with Alt, else only walked to; any other is opened (72) or, open, closed (73).
+        bool barred = door.Lock is { EffectivelyLocked: true } && door.Motion == DoorMotion.Closed && door.Owner != world.Player.Faction;
+        var row = barred && order.PickLock ? TaskType.PICK_LOCK : door.Motion is DoorMotion.Open or DoorMotion.Opening ? TaskType.CLOSE_DOOR : TaskType.OPEN_DOOR;
         foreach (var id in Who(world, order.Characters))
         {
-            if (!table.TryResolveNext(id, out int s) || table.Cold(s) is not { IsPlayer: true, Medical.Incapacitated: false, IsImprisoned: false } c || !c.CarriedBy.IsNone) continue;
+            if (!table.TryResolveNext(id, out int s) || table.Cold(s) is not { IsPlayer: true, Medical.Incapacitated: false, IsImprisoned: false } c || !c.CarriedBy.IsNone || !TaskStart.Eligible(world, c, row)) continue;
             float d = Vector2.Distance(Flat(table.Next[s].Position), WorkSpot(world, door, Flat(table.Next[s].Position)).At);
             if (d < bestDistance) (best, bestDistance) = (s, d);
         }
         if (best < 0) return;
-        var walker = table.Cold(best)!;
-        var player = world.Player;
-        var (at, _) = WorkSpot(world, door, Flat(table.Next[best].Position));
-        walker.Shackles = null;
-        walker.PickingLock = null;
-        walker.DoorJob = null;
-        player.DoorTarget = null;
-        if (door.Lock is { EffectivelyLocked: true } && door.Motion == DoorMotion.Closed && door.Owner != world.Player.Faction)
-        {
-            if (order.PickLock) walker.PickingLock = door.Id;
-            else world.Post("Hold down the ALT key to pick the lock.");
-        }
-        else (player.DoorTarget, player.DoorWalker) = (door.Id, table.IdOf(best));
-        MovementSystem.GoToFloor(world, best, new Vector3(at.X, door.Position.Y, at.Y), walker.RunSpeed);
+        if (barred && !order.PickLock) world.Post("Hold down the ALT key to pick the lock.");
+        StartWork(world, best, CharacterTask.GoTo, row, door.Id);
     }
 
     void DoorLockInput(World world, DoorLockOrder order)
@@ -148,21 +140,14 @@ public sealed partial class LockSystem
         var table = world.Characters;
         int best = -1;
         float bestDistance = float.MaxValue;
+        var row = order.Lock ? TaskType.LOCK_DOOR : TaskType.UNLOCK_DOOR_PLAYER_ORDER;
         foreach (var id in Who(world, order.Characters))
         {
-            if (!table.TryResolveNext(id, out int s) || table.Cold(s) is not { IsPlayer: true, Medical.Incapacitated: false, IsImprisoned: false } c || !c.CarriedBy.IsNone) continue;
+            if (!table.TryResolveNext(id, out int s) || table.Cold(s) is not { IsPlayer: true, Medical.Incapacitated: false, IsImprisoned: false } c || !c.CarriedBy.IsNone || !TaskStart.Eligible(world, c, row)) continue;
             float d = Vector2.Distance(Flat(table.Next[s].Position), WorkSpot(world, door, Flat(table.Next[s].Position)).At);
             if (d < bestDistance) (best, bestDistance) = (s, d);
         }
-        if (best < 0) return;
-        var walker = table.Cold(best)!;
-        var (at, _) = WorkSpot(world, door, Flat(table.Next[best].Position));
-        ClearWork(walker);
-        walker.Bashing = null;
-        walker.BashOrdered = false;
-        if (world.Player.DoorWalker == table.IdOf(best)) world.Player.DoorTarget = null;
-        walker.DoorJob = new DoorLockJob(door.Id, order.Lock);
-        MovementSystem.GoToFloor(world, best, new Vector3(at.X, door.Position.Y, at.Y), walker.RunSpeed);
+        if (best >= 0) StartWork(world, best, CharacterTask.GoTo, row, door.Id);
     }
 
     /// <summary>

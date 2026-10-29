@@ -1,4 +1,5 @@
 using System.Numerics;
+using Meitou.Data.Gameplay.Ai;
 
 namespace Meitou.Simulation.Locks;
 
@@ -26,13 +27,12 @@ public sealed partial class LockSystem
         float bestDistance = float.MaxValue;
         foreach (var id in Who(world, order.Characters))
         {
-            if (!table.TryResolveNext(id, out int s) || table.Cold(s) is not { IsPlayer: true, Medical.Incapacitated: false, IsImprisoned: false } c || !c.CarriedBy.IsNone) continue;
+            if (!table.TryResolveNext(id, out int s) || table.Cold(s) is not { IsPlayer: true, Medical.Incapacitated: false, IsImprisoned: false } c || !c.CarriedBy.IsNone || !TaskStart.Eligible(world, c, RowOf(order.Force))) continue;
             float d = Vector2.Distance(Flat(table.Next[s].Position), Flat(fixture.Position));
             if (d < bestDistance) (best, bestDistance) = (s, d);
         }
         if (best < 0) return;
         var walker = table.Cold(best)!;
-        Vector2 at;
         switch (order.Force)
         {
             case LockForce.Tools when Lockpicking.BestTool(walker) is null:
@@ -45,23 +45,10 @@ public sealed partial class LockSystem
                     world.Post($"{walker.Name}: I need a weapon to smash that");
                     return;
                 }
-                if (world.Fixtures.DoorSpotOf(fixture) is not { } spot) return;
-                at = StandSpot(fixture, spot);
-                break;
-            default:
-                at = WorkSpot(world, fixture, Flat(table.Next[best].Position)).At;
+                if (world.Fixtures.DoorSpotOf(fixture) is null) return;
                 break;
         }
-        walker.PickingLock = null;
-        walker.Shackles = null;
-        walker.ForcingLock = null;
-        walker.DoorJob = null;
-        walker.Bashing = null;
-        walker.BashOrdered = false;
-        if (world.Player.DoorWalker == table.IdOf(best)) world.Player.DoorTarget = null;
-        if (order.Force == LockForce.Smash) (walker.Bashing, walker.BashOrdered, walker.BashTime) = (fixture.Id, true, 0);
-        else (walker.ForcingLock, walker.Force) = (fixture.Id, order.Force);
-        MovementSystem.GoToFloor(world, best, new Vector3(at.X, fixture.Position.Y, at.Y), walker.RunSpeed);
+        StartWork(world, best, CharacterTask.GoTo, RowOf(order.Force), fixture.Id, detail: order.Force);
     }
 
     /// <summary>Each tick: a character in reach of the lock it was ordered to force cuts or breaks it; one given another order, downed or gone gives up.</summary>

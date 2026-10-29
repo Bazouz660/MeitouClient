@@ -1,4 +1,5 @@
 using System.Numerics;
+using Meitou.Data.Gameplay.Ai;
 
 namespace Meitou.Simulation.Locks;
 
@@ -39,14 +40,13 @@ public sealed partial class LockSystem
         {
             if (!table.TryResolveNext(id, out int s) || table.Cold(s) is not { IsPlayer: true, Medical.Incapacitated: false } c || !c.CarriedBy.IsNone) continue;
             if (c.IsImprisoned && id != order.Wearer) continue;   // from a cage only its own
+            if (!TaskStart.Eligible(world, c, RowOf(order.Work))) continue;
             if (order.Work == ShackleWork.Cut && Lockpicking.BestTool(c) is null)
             {
                 world.Post($"{c.Name}: I don't have any tools");
                 continue;
             }
-            c.PickingLock = null;
-            c.Shackles = new ShackleJob(order.Wearer, order.Work);
-            if (id != order.Wearer) MovementSystem.GoTo(table, s, Flat(table.Next[w].Position), c.RunSpeed);
+            StartWork(world, s, id != order.Wearer ? CharacterTask.GoTo : CharacterTask.Idle, RowOf(order.Work), null, order.Wearer, order.Work);
             break;
         }
     }
@@ -72,9 +72,7 @@ public sealed partial class LockSystem
         {
             if (id == order.Wearer || !table.TryResolveNext(id, out int s) || table.Cold(s) is not { IsPlayer: true, Medical.Incapacitated: false, IsImprisoned: false } c || !c.CarriedBy.IsNone) continue;
             if (CarriedShackles(c) is null) continue;
-            c.PickingLock = null;
-            c.Shackles = new ShackleJob(order.Wearer, ShackleWork.PutOn);
-            MovementSystem.GoTo(table, s, Flat(table.Next[w].Position), c.RunSpeed);
+            StartWork(world, s, CharacterTask.GoTo, RowOf(ShackleWork.PutOn), null, order.Wearer, ShackleWork.PutOn);
             return;
         }
         world.Post("No one selected carries shackles.");

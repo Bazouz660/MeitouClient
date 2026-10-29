@@ -225,20 +225,14 @@ public sealed partial class ProductionSystem
         var table = world.Characters;
         var cold = table.Cold(slot)!;
         var resume = cold.JobIndex >= 0 || cold.Implicit is not null ? cold.ResumeTask : (CharacterTask)table.Next[slot].Task;
-        if (type == TaskType.GO_HOME_AND_GO_TO_BED)
+        var task = type switch { TaskType.GO_HOME_AND_GO_TO_BED => CharacterTask.Sleep, TaskType.DITCH_ALL_RESOURCES => CharacterTask.Haul, _ => CharacterTask.Operate };
+        // A bed fixture: the bed system walks it there and lays it in (task Sleep); the job keeps the bed's id.
+        if (task == CharacterTask.Sleep && (world.Fixtures.Find(siteId) is null || Beds is null)) return;
+        if (TaskStart.Start(world, slot, new TaskRequest(task, type, TaskSource.Job) { Site = siteId }) != StartResult.Started) return;
+        if (task == CharacterTask.Sleep)
         {
-            // A bed fixture: the bed system walks it there and lays it in (task Sleep); the job keeps the bed's id.
-            if (world.Fixtures.Find(siteId) is not { } bed || Beds is null) return;
-            Beds.StartSleep(world, slot, bed);
             if (table.Next[slot].Task != (byte)CharacterTask.Sleep) return;
             cold.OperateSite = siteId;
-        }
-        else
-        {
-            var site = Site(world, siteId)!;
-            var m = Ensure(world, site)!;
-            if (type == TaskType.DITCH_ALL_RESOURCES) StartHaulTrip(world, slot, site, m, ditch: true);
-            else Begin(world, slot, site, m);
         }
         cold.JobIndex = -1;
         cold.Implicit = type;

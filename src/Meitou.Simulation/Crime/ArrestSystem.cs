@@ -105,7 +105,7 @@ public readonly record struct ArrestEvent(long Tick, ArrestEventKind Kind, Chara
 /// (<see cref="Claim"/>), and bounty hunters that chase a recognised bounty above <see cref="HuntLimit"/> until the target is down.</item>
 /// </list>
 /// </summary>
-public sealed partial class ArrestSystem(CrimeSystem crimes, GameConstants constants, ArrestSettings? settings = null) : ITickSystem, IStateHashed
+public sealed partial class ArrestSystem(CrimeSystem crimes, GameConstants constants, ArrestSettings? settings = null) : ITickSystem, IStateHashed, ITaskOwner, ITaskHandler
 {
     /// <summary>Bounties below this are fined (the "Small bounty" dialogue's <c>0 &lt; b &lt; 1050</c>, <b>Verified</b> by probe).</summary>
     public const int FineLimit = 1050;

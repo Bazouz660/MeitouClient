@@ -201,12 +201,11 @@ public sealed partial class LockSystem : IStateHashed
                 continue;
             }
             if (rounds.Count >= MaxRounds || started >= MaxNewRounds) return;
-            Start(world, releaser, new Round
+            if (Start(world, releaser, new Round
             {
                 Kind = RoundKind.Release, Worker = table.IdOf(releaser), Faction = table.Cold(releaser)!.Faction, Targets = [cage.Id], Prisoner = prisoner,
                 Reach = cage.UseRange + Reach,
-            }, cage);
-            started++;
+            }, cage)) started++;
         }
     }
 
@@ -241,14 +240,12 @@ public sealed partial class LockSystem : IStateHashed
                 float extent = Extent(home);
                 if (inside155 && !AllInside(world, squad, home, extent)) continue;
                 if (StrangerInside(world, squad, home, extent)) continue;
-                StartDoors(world, worker, RoundKind.LockDoors, building, extent);
-                started++;
+                if (StartDoors(world, worker, RoundKind.LockDoors, building, extent)) started++;
             }
             else if (houseLocked.Contains(building))   // 86 Opening up (finder FUN_1408cb360): only a member whose package lists it, in its hours
             {
                 if (opener < 0 || Busy(table.IdOf(opener))) continue;
-                StartDoors(world, opener, RoundKind.UnlockDoors, building, Extent(home));
-                started++;
+                if (StartDoors(world, opener, RoundKind.UnlockDoors, building, Extent(home))) started++;
             }
         }
     }
@@ -267,19 +264,18 @@ public sealed partial class LockSystem : IStateHashed
         }
         if (targets is null) return;
         var first = world.Fixtures.Find(targets[0])!;
-        Start(world, warden, new Round
+        if (Start(world, warden, new Round
         {
             Kind = RoundKind.LockCages, Worker = table.IdOf(warden), Faction = table.Cold(warden)!.Faction, Targets = [.. targets], Reach = first.UseRange + Reach,
-        }, first);
-        started++;
+        }, first)) started++;
     }
 
-    void StartDoors(World world, int worker, RoundKind kind, string building, float extent)
+    bool StartDoors(World world, int worker, RoundKind kind, string building, float extent)
     {
         var doors = new List<string>();
         foreach (var f in world.Fixtures.OfBuilding(building)) if (f.Kind == FixtureKind.Door) doors.Add(f.Id);
         var first = world.Fixtures.Find(doors[0])!;
-        Start(world, worker, new Round
+        return Start(world, worker, new Round
         {
             Kind = kind, Worker = world.Characters.IdOf(worker), Faction = world.Characters.Cold(worker)!.Faction, Targets = [.. doors], Building = building, Reach = extent,
         }, first);
@@ -321,7 +317,18 @@ public sealed partial class LockSystem : IStateHashed
 
     // ------------------------------------------------------------------ a round
 
-    void Start(World world, int worker, Round round, Fixture first)
+    /// <summary>
+    /// Starts a round through <see cref="TaskStart.Start"/> (an NPC's start of row 110 for a release, 77 to lock doors or cages, 78 to unlock doors); false when the worker's repertoire
+    /// does not have the row.
+    /// </summary>
+    static bool Start(World world, int worker, Round round, Fixture first)
+    {
+        var row = round.Kind switch { RoundKind.Release => TaskType.RELEASE_PRISONER, RoundKind.UnlockDoors => TaskType.UNLOCK_DOOR, _ => TaskType.LOCK_DOOR };
+        return TaskStart.Start(world, worker, new TaskRequest(CharacterTask.GoTo, row, TaskSource.Npc) { Site = first.Id, Detail = round }) == StartResult.Started;
+    }
+
+    /// <summary>The round's start (<see cref="Start"/>): the worker is the round's until it ends, gets up and fetches the keys or walks to the first target.</summary>
+    void StartRound(World world, int worker, Round round, Fixture first)
     {
         var table = world.Characters;
         var c = table.Cold(worker)!;

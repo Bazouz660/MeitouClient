@@ -24,6 +24,9 @@ namespace Meitou.Simulation
         /// <summary>A character opens or uses a container within this distance of it (an engine choice).</summary>
         public const float ContainerReach = 20;
 
+        /// <summary>The <see cref="TaskRequest.Detail"/> of a walk to a container that only walks there (the hint to hold Alt was shown).</summary>
+        static readonly object ContainerWalk = new();
+
         /// <summary>How far above or below a container a character may stand to open or use it (engine choice: a storey is about 66).</summary>
         public const float ContainerFloorSlack = 20;
 
@@ -39,44 +42,41 @@ namespace Meitou.Simulation
             var table = world.Characters;
             int best = -1;
             float bestDistance = float.MaxValue;
+            bool theirs = fixture.Owner >= 0 && fixture.Owner != world.Player.Faction;
+            bool locked = fixture.Lock is { EffectivelyLocked: true };
+            // Another faction's locked container is picked (76) with Alt (the original's FUN_1407fc6e0); the rest is row 3, a walk to it.
+            var row = locked && theirs && order.Alt ? Meitou.Data.Gameplay.Ai.TaskType.PICK_LOCK : Meitou.Data.Gameplay.Ai.TaskType.PICKUP;
             foreach (var id in order.Characters.Count > 0 ? order.Characters : world.Player.Selection.ToArray())
             {
-                if (!table.TryResolveNext(id, out int s) || table.Cold(s) is not { IsPlayer: true, Medical.Incapacitated: false, Inventory: not null, IsImprisoned: false } c || !c.CarriedBy.IsNone) continue;
+                if (!table.TryResolveNext(id, out int s) || table.Cold(s) is not { IsPlayer: true, Medical.Incapacitated: false, Inventory: not null, IsImprisoned: false } c || !c.CarriedBy.IsNone
+                    || !TaskStart.Eligible(world, c, row)) continue;
                 float d = Vector2.Distance(Flat(table.Next[s].Position), Flat(fixture.Position));
                 if (d < bestDistance) (best, bestDistance) = (s, d);
             }
             if (best < 0) return;
             var walker = table.Cold(best)!;
-            bool theirs = fixture.Owner >= 0 && fixture.Owner != world.Player.Faction;
-            if (fixture.Lock is { EffectivelyLocked: true })
+            var request = new TaskRequest(CharacterTask.GoTo, row, TaskSource.Order) { Site = fixture.Id, Point = fixture.Position };
+            if (locked)
             {
                 if (!theirs)
                 {
                     world.Post($"{walker.Name}: It's locked.");
                     return;
                 }
-                // Another faction's locked container (the original's FUN_1407fc6e0): Alt picks the lock, else the hint and a walk to it.
-                walker.Shackles = null;
-                walker.PickingLock = order.Alt ? fixture.Id : null;
+                // Without Alt: the hint and a walk to it.
                 if (!order.Alt) world.Post("Hold down the ALT key to pick the lock.");
-                MovementSystem.GoToFloor(world, best, fixture.Position, walker.RunSpeed);
+                TaskStart.Start(world, best, order.Alt ? request : request with { Detail = ContainerWalk });
                 return;
             }
             if (ShopOf(world, fixture) is not null && !order.Alt && theirs)
             {
                 // A shop's stock without Alt: the original's hint and a move; with Alt (the menu's Loot) the walker steals from it (the window shows that container's part of the shop's stock).
                 world.Post("Hold down the ALT key to steal items");
-                MovementSystem.GoToFloor(world, best, fixture.Position, walker.RunSpeed);
+                TaskStart.Start(world, best, request with { Detail = ContainerWalk });
                 return;
             }
-            var player = world.Player;
-            walker.PickingLock = null;
-            walker.Shackles = null;
-            walker.PickingUpItem = null;
-            player.OpenContainer = null;
-            player.OpeningContainer = order.Fixture;
-            player.ContainerWalker = table.IdOf(best);
-            if (bestDistance > ContainerReach || !SameFloor(table.Next[best].Position, fixture.Position)) MovementSystem.GoToFloor(world, best, fixture.Position, walker.RunSpeed);
+            bool walk = bestDistance > ContainerReach || !SameFloor(table.Next[best].Position, fixture.Position);
+            TaskStart.Start(world, best, walk ? request : request with { Task = CharacterTask.Idle });
         }
 
         /// <summary>Each tick: the walker in reach opens its container; one given another order, downed or gone gives up. An open window stays until the player closes it; it closes when its opener is down or gone.</summary>

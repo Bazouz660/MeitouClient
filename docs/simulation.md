@@ -91,12 +91,15 @@ the immediate-threat reach inline (Unknown whether they match `FUN_1404378f0`'s 
 
 `TaskStart.Eligible(world, cold, row)` is the one start-time test of the original's repertoire (`FUN_14060e840`, docs/game/ai-tasks.md "Planner"); a type with no TaskData row is allowed.
 Meitou's `CharacterTask` is the act-out, the row is the `TaskType`: a pick-up is 225 for the order (246 kidnap), 148 for the rescue job, 238 foraging, 137 errands; operate 87 (97 training
-dummy), haul 124, turret 146, prospect 150, build 2, door repair 95, dismantle 96, bed 98 / put in bed 99 / job 106, move 29, melee 5 (picked) or 16, a perma-job its own row. Used by
-`CarrySystem.CanCarry` (replaces its animal and imprisoned tests), the production, construction, bed, move and fight starts, and the player's job `Runnable`. Consequences (the original's rows):
+dummy), haul 124, turret 146, prospect 150, build 2, door repair 95, dismantle 96, bed 98 / put in bed 99 / job 106, move 29, melee 5 (picked) or 16, a perma-job its own row, the implicit
+jobs 242 / 153 / 275, pick lock 76, shackles 201 / 185 / 186 (putting shackles on has no row), set free 110, get in cage 107, open / close door 72 / 73, lock / unlock door 77 / 140, cut / break
+lock 285 / 286, smash 226, item pick-up and container walks 3, put in cage 108, a warden's round 110 / 77 / 78. Used by `CarrySystem.CanCarry` (replaces its animal and imprisoned tests), every
+start through `TaskStart.Start`, the lock orders' worker choice and the player's job `Runnable`. Consequences (the original's rows):
 a crawler or one staying low (0x40, posture 1 or 2) can start only rows that register it (move, first aid, loot, talk, attacks, prospect, sleep; not carry, put down 69, stealth KO 228, Splint
-Rigging 250, operate, build, repair, dismantle, put in bed); an animal only 0x20 rows (so no bed, no carry, no loot 26 / 177 / 42, no first aid, no operate, no medic; job 289 is animal-only, so a human
-with that job never runs it). Loot is 26 for the orders, 177 for NPC scavenging and 42 for an NPC arming itself. Not yet routed through it: implicit jobs, locks and cages, trade and
-talk, the continuing checks (`Able`, `CanWalk`, which still stop work on a cage). The medic finder keeps its own imprisoned refusal because rows 25 / 58 register the imprisoned repertoire
+Rigging 250, operate, build, repair, dismantle, put in bed, sit 275, ditch 242, set free 110, unlock door 140, put in cage 108, smash 226); an animal only 0x20 rows (so no bed, no carry,
+no loot 26 / 177 / 42, no first aid, no operate, no medic, no lock, cage or door work but smashing 226; it may pick up items, 3; job 289 is animal-only, so a human with that job never runs it).
+Loot is 26 for the orders, 177 for NPC scavenging and 42 for an NPC arming itself. Not yet routed through it: trade and talk, the continuing checks (`Able`, `CanWalk`, which still stop work
+on a cage). The medic finder keeps its own imprisoned refusal because rows 25 / 58 register the imprisoned repertoire
 (whether a caged prisoner treats is **Unknown**). A fight is row 5 when the player picked the target, 13 for a defence, else 16 (13 and 16 register the same repertoires).
 
 ### Task starts
@@ -107,17 +110,21 @@ talk, the continuing checks (`Able`, `CanWalk`, which still stop work on a cage)
 `TaskStart.End(world, slot, reason)` ends a task from outside its act-out (`TaskEnd.Stopped`, the Stop order and a squad mate lifted awake: then idle). Each `CharacterTask` has one
 `ITaskHandler` (Start, End, Done), registered by its system (`ITaskOwner`) in `World.Tasks`, an open list later code may add to or replace; a task without one is set as is. Owners: movement
 (GoTo, Follow), combat (Attack), first aid (Treat, Rest), carry (PickUp, PutDown, Loot, StealthKo), production (Operate, Haul, Prospect), construction (Build, Dismantle,
-DeliverMaterials, FetchMaterials). A builder's delivering, fetching and dismantling are steps of one act-out (`TaskStart.ActOut`): `RunningTask.Runs` and the debug check treat them as Build.
+DeliverMaterials, FetchMaterials), beds (Sleep). A row may have its own handler, which takes that row's starts and ends whatever its act-out (the task before is ended through its running row's
+handler): the lock system's rows (lock, shackle, cage, door and round work), the beds' put-in rows 99 / 106, the player system's row 3 (item pick-up, container walks) and the arrest system's
+put in cage 108, all acted out by a walk (`GoTo`) or in place (`Idle`). `TaskRequest.Detail` carries an act-out's own parameters (a shackle job, a ground item, a round). A builder's
+delivering, fetching and dismantling are steps of one act-out (`TaskStart.ActOut`): `RunningTask.Runs` and the debug check treat them as Build.
 - Routed through it: move, follow and bodyguard (order and job), stop, every fight (`AttackOrder`: picked is an order, `Defensive` a reaction, else a goal), First Aid, Splint, the Medic
   button, medic, robotics and splint jobs, NPC healing, Rest, pick up, kidnap, loot, open inventory, stealth KO and put down orders, the lifts and drops of errands and town duties, rescue
   (job, button, NPC leaders), kidnappers' and guards' lifts (`BeginPickUp`), foraging, NPC scavenging and arming, the operate, turret, haul and prospect orders, the production list jobs
-  (87, 97, 124, 152, 234, the engineer 125), the build, repair, door repair and dismantle orders. Not yet: implicit jobs, locks, beds, items, crime, kidnap, dialogue and trade starts.
+  (87, 97, 124, 152, 234, the engineer 125) and implicit jobs (242, 153, 275), the build, repair, door repair and dismantle orders, the bed orders and job 106, the lock, shackle, cage,
+  door and force orders, the wardens' rounds, item pick-up and container walks, put in cage. Not yet: crime, kidnap, dialogue, trade, flee, AI and population starts.
 - `PermaJobs.FromJob` reads a `TaskSource.Job` provenance while its act-out runs; production's `JobIndex`, `Implicit` and `ResumeTask` still mark production's own starts.
 - Engine: a fight ended in a serial phase clears both combat state arrays (`CombatSystem.Live` tells which one is current: the slow-world swap changes it).
-- Debug builds check at each tick's end that a character which took up Attack, Treat, PickUp, PutDown, Loot, StealthKo, Build, Dismantle or Prospect did so through `Start`
-  (`TaskStart.CheckStarts`: its provenance is stamped this tick); the other act-outs are still set directly by systems not converted yet.
-- **A fight under another task** (Meitou only; **Verified** by reading `CombatSystem.Act`, `PursuitSystem`): a start that overwrites a fighter's task without ending its fight (the sites
-  not converted yet: beds, locks, cages, items, put down) leaves `InCombat` and the fight target set. `CombatSystem.Act` does not read the task: the character keeps its target and
+- Debug builds check at each tick's end that a character which took up Attack, Treat, PickUp, PutDown, Loot, StealthKo, Build, Dismantle, Prospect, Operate or Haul did so through
+  `Start` (`TaskStart.CheckStarts`: its provenance is stamped this tick); GoTo, Idle and Sleep are still set directly by systems not converted yet (the AI's beds, walks).
+- **A fight under another task** (Meitou only; **Verified** by reading `CombatSystem.Act`, `PursuitSystem`): a start that overwrites a fighter's task without ending its fight (only
+  starts not converted yet can) leaves `InCombat` and the fight target set. `CombatSystem.Act` does not read the task: the character keeps its target and
   re-picks, blocks and dodges, draws, and swings whenever a technique reaches the target; `PursuitSystem` and `CombatSystem.Move` steer only an `Attack` task, so the new task's walk
   moves it. The fight ends only when `Act` loses the target, and `EndFight` then leaves the other task alone.
 

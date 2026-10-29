@@ -1,4 +1,5 @@
 using System.Numerics;
+using Meitou.Data.Gameplay.Ai;
 using Meitou.Simulation.Locks;
 
 namespace Meitou.Simulation.Crime;
@@ -164,8 +165,27 @@ public sealed partial class ArrestSystem
         var cage = chosen is not null ? world.Fixtures.Find(chosen) is { Kind: FixtureKind.Cage } picked && FixtureRegistry.IsFree(table, picked) && !Reserved(picked, null) && !cagings.Exists(k => k.Cage == picked.Id) ? picked : null
             : FindCageFor(world, s, c, null);
         if (cage is null) { world.Post($"{c.Name}: no free cage nearby"); return; }
-        cagings.Add(new Caging { Carrier = carrier, Captive = c.Carrying, Cage = cage.Id });
-        MovementSystem.GoTo(table, s, new Vector2(cage.Position.X, cage.Position.Z), c.RunSpeed);
+        TaskStart.Start(world, s, new TaskRequest(CharacterTask.GoTo, TaskType.PUT_IN_CAGE, TaskSource.Order) { Site = cage.Id, Target = c.Carrying });
+    }
+
+    public void RegisterTasks(TaskHandlers tasks) => tasks.Register(TaskType.PUT_IN_CAGE, this);
+
+    /// <summary>The put-in-cage order's walk (row 108): the carrier takes its body to the cage <see cref="TaskRequest.Site"/>.</summary>
+    void ITaskHandler.Start(World world, int slot, in TaskRequest request)
+    {
+        var table = world.Characters;
+        var carrier = table.IdOf(slot);
+        var cage = world.Fixtures.Find(request.Site!)!;
+        cagings.RemoveAll(k => k.Carrier == carrier);
+        cagings.Add(new Caging { Carrier = carrier, Captive = request.Target, Cage = cage.Id });
+        MovementSystem.GoTo(table, slot, new Vector2(cage.Position.X, cage.Position.Z), table.Cold(slot)!.RunSpeed);
+    }
+
+    /// <summary>A caging another task replaces or the Stop order ends is given up.</summary>
+    void ITaskHandler.End(World world, int slot, CharacterTask task, TaskEnd reason)
+    {
+        var carrier = world.Characters.IdOf(slot);
+        cagings.RemoveAll(k => k.Carrier == carrier);
     }
 
     /// <summary>The cage finder from the carrier (other cagings' and arrests' cages reserved), within <see cref="ArrestSettings.CageSearchRange"/>; null when none.</summary>

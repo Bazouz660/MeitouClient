@@ -11,8 +11,10 @@ using Meitou.Simulation.Bodies;
 using Meitou.Simulation.Carrying;
 using Meitou.Simulation.Combat;
 using Meitou.Simulation.Construction;
+using Meitou.Simulation.Crime;
 using Meitou.Simulation.FirstAid;
 using Meitou.Simulation.Items;
+using Meitou.Simulation.Locks;
 using Meitou.Simulation.Production;
 using Meitou.Tests.Combat;
 using static Meitou.Tests.Bodies.BodyFixtures;
@@ -27,9 +29,9 @@ public class TaskStartTests
     /// <summary>The fixture's Greenlander, carriable like every base race but the Leviathan.</summary>
     static readonly RaceData Person = new() { StringId = "17-c", Name = "Greenlander", StatMultipliers = Human.StatMultipliers, Anatomy = Human.Anatomy, Carriable = true };
 
-    const string Well = "60-t", Shed = "61-t";
+    const string Well = "60-t", Shed = "61-t", Bed = "62-t", Cage = "63-t";
 
-    /// <summary>The first aid kits, a well (an operable mine) and a shed (4 Building Materials).</summary>
+    /// <summary>The first aid kits, a well (an operable mine), a shed (4 Building Materials), a bed and a cage.</summary>
     static GameDatabase Database()
     {
         var db = FirstAidTests.KitDatabase();
@@ -44,36 +46,50 @@ public class TaskStartTests
         well.References["functionality"] = [new FcsReference("80-t", 0, 0, 0)];
         var shed = Rec(Shed, FcsRecordType.BUILDING, "Test Shed");
         shed.Ints["build materials"] = 4;
+        var bedFn = Rec("90-t", FcsRecordType.BUILDING_FUNCTIONALITY, "90-t");
+        bedFn.Ints["function"] = TownBuildings.BedFunction;
+        var bed = Rec(Bed, FcsRecordType.BUILDING, "Test Bed");
+        bed.References["functionality"] = [new FcsReference("90-t", 0, 0, 0)];
+        var cageFn = Rec("91-t", FcsRecordType.BUILDING_FUNCTIONALITY, "91-t");
+        cageFn.Ints["function"] = TownBuildings.CageFunction;
+        cageFn.Floats["use range"] = 25;
+        var cage = Rec(Cage, FcsRecordType.BUILDING, "Test Cage");
+        cage.References["functionality"] = [new FcsReference("91-t", 0, 0, 0)];
         var file = new FcsFile();
-        file.Records.AddRange([water, wellFn, well, shed]);
+        file.Records.AddRange([water, wellFn, well, shed, bedFn, bed, cageFn, cage]);
         db.Apply(file, "buildings.mod");
         return db;
     }
 
     /// <summary>
     /// A player's fighter (attacking a far enemy, so no blow lands) with a medkit and a splint kit, sneaking, and with <paramref name="carrying"/> a downed mate on its shoulder; a hurt mate,
-    /// a downed NPC, an awake NPC and a second enemy; the player's well and an unfinished shed; the movement, first aid, body, carry, construction, production and combat systems in the
-    /// game's order.
+    /// a downed NPC, an awake NPC, a second enemy and a prisoner; the player's well, an unfinished shed, a bed, an empty cage and the prisoner's locked one, and an item on the ground; the
+    /// movement, first aid, body, carry, bed, construction, production, combat, crime, arrest and lock systems in the game's order.
     /// </summary>
     sealed class Rig : IDisposable
     {
         public SimWorld World { get; }
         public CombatSystem Combat { get; }
-        public CharacterId Fighter, Enemy, OtherEnemy, Mate, Carried, Downed, Awake;
-        public string WellSite = "", ShedSite = "";
+        public CharacterId Fighter, Enemy, OtherEnemy, Mate, Carried, Downed, Awake, Prisoner;
+        public string WellSite = "", ShedSite = "", BedFixture = "", EmptyCage = "", LockedCage = "";
+        public int Item;
         readonly OpenGroundWalkability walk = new(SyntheticTown.Ground);
         readonly ItemFactory items;
 
         public Rig(bool carrying)
         {
             var db = Database();
+            var data = PopulationData.Create(db, []);
             items = new ItemFactory(db, BaseGame);
             Combat = new CombatSystem(KatanaTechniques(), Constants, BaseGame, BodyOptions.Default, DuelFixture.Lengths, new CombatOptions { SelfApproach = false, TickMedical = false });
+            var carry = new CarrySystem(BaseGame, BodyOptions.Default);
+            var crime = new CrimeSystem(data.Relations);
             var systems = new List<ITickSystem>
             {
                 new PlayerSystem(), new MovementSystem(new PathService(walk, true)), new FirstAidSystem(BaseGame, BodyOptions.Default, items, new FirstAidSettings { AutoNpcs = false }),
-                new BodySystem(BaseGame, BodyOptions.Default), new CarrySystem(BaseGame, BodyOptions.Default),
+                new BodySystem(BaseGame, BodyOptions.Default), carry, new BedSystem(data) { Carry = carry },
                 new ConstructionSystem(db, BaseGame, BodyOptions.Default, items, [], ""), new ProductionSystem(db, BaseGame, BodyOptions.Default, items, null), Combat,
+                crime, new ArrestSystem(crime, BaseGame) { Carry = carry }, new LockSystem(BaseGame, BodyOptions.Default) { Crimes = crime },
             };
             World = new SimWorld(new WorldSettings { Seed = 7, PublishSnapshots = false }, walk, systems);
             World.Player.Faction = 1;
@@ -86,6 +102,17 @@ public class TaskStartTests
             }
             WellSite = Site(Well, 700, 2000, complete: true);
             ShedSite = Site(Shed, 700, 2300, complete: false);
+            string Fixture(string record, float x, float z)
+            {
+                var site = World.Buildings.Find(Site(record, x, z, complete: true))!;
+                World.Fixtures.RegisterPlayerBuilding(World, data, site);
+                return World.Fixtures.OfBuilding(site.Id).Single().Id;
+            }
+            BedFixture = Fixture(Bed, 900, 1600);
+            EmptyCage = Fixture(Cage, 1000, 1600);
+            LockedCage = Fixture(Cage, 1100, 1600);
+            World.GroundItems.Drop(items.Create("72-t")!, new Vector3(1000, 300, 1800), 0);
+            Item = World.GroundItems.All[^1].Id;
             Fighter = Add(1000, 2000, player: true, "72-t", "74-t");
             Mate = Add(1040, 2000, player: true);
             Carried = Add(1000, 2000, player: true);
@@ -93,6 +120,9 @@ public class TaskStartTests
             Awake = Add(1080, 2060, player: false);
             Enemy = Add(1500, 2000, player: false);
             OtherEnemy = Add(1500, 2100, player: false);
+            Prisoner = Add(1100, 1600, player: false);
+            World.Fixtures.Imprison(World, Prisoner, World.Fixtures.Find(LockedCage)!);
+            World.Fixtures.Find(LockedCage)!.Lock!.Locked = true;
             Cold(Mate).Medical!.Parts[RLeg].Flesh = Cold(Mate).Medical!.Parts[RLeg].MaxHp * 0.2f;
             Cold(Carried).Medical!.KnockOut(1000);
             Cold(Downed).Medical!.KnockOut(1000);
@@ -121,7 +151,7 @@ public class TaskStartTests
 
     /// <summary>The converted order starts given to a fighting character, by name, with the act-out each starts (M3b and M3c add theirs).</summary>
     public static TheoryData<string> Orders => ["move", "follow", "bodyguard", "stop", "first aid", "splint", "rest", "medic", "pick up", "kidnap", "loot", "open inventory", "stealth ko", "put down",
-        "operate", "prospect", "build", "dismantle", "attack"];
+        "operate", "prospect", "build", "dismantle", "use bed", "put in bed", "pick lock", "set free", "get in cage", "force lock", "pick up item", "put in cage", "attack"];
 
     static (SimCommand Order, CharacterTask Task) Order(Rig rig, string name, long tick)
     {
@@ -146,6 +176,14 @@ public class TaskStartTests
             "prospect" => new ProspectOrder(f) { Tick = tick },
             "build" => new BuildOrder([f], rig.ShedSite) { Tick = tick },
             "dismantle" => new DismantleOrder([f], rig.WellSite) { Tick = tick },
+            "use bed" => new UseBedOrder([f], rig.BedFixture) { Tick = tick },
+            "put in bed" => new PutInBedOrder([f], rig.BedFixture) { Tick = tick },
+            "pick lock" => new PickLockOrder([f], CharacterId.None) { Tick = tick, Cage = rig.EmptyCage },
+            "set free" => new SetFreeOrder([f], rig.Prisoner) { Tick = tick },
+            "get in cage" => new GetInCageOrder([f], rig.EmptyCage) { Tick = tick },
+            "force lock" => new ForceLockOrder([f], rig.LockedCage, LockForce.Strength) { Tick = tick },
+            "pick up item" => new PickUpItemOrder([f], rig.Item) { Tick = tick },
+            "put in cage" => new PutInCageOrder([f]) { Tick = tick, Cage = rig.EmptyCage },
             "attack" => new AttackOrder([f], rig.OtherEnemy) { Tick = tick, Picked = true },
             _ => throw new ArgumentException(name),
         };
@@ -164,6 +202,8 @@ public class TaskStartTests
             "prospect" => CharacterTask.Prospect,
             "build" => CharacterTask.Build,
             "dismantle" => CharacterTask.Dismantle,
+            "use bed" => CharacterTask.Sleep,
+            "put in bed" or "pick lock" or "set free" or "get in cage" or "force lock" or "pick up item" or "put in cage" => CharacterTask.GoTo,
             _ => CharacterTask.Attack,
         };
         return (order, task);
@@ -177,7 +217,7 @@ public class TaskStartTests
     [Theory, MemberData(nameof(Orders))]
     public void An_order_given_mid_fight_ends_the_fight_unless_it_is_one(string name)
     {
-        using var rig = new Rig(carrying: name == "put down");
+        using var rig = new Rig(carrying: name is "put down" or "put in bed" or "put in cage");
         rig.World.RunTicks(3);
         var f = rig.Fighter;
         Assert.True(rig.Cold(f).InCombat && rig.Combat.StateOf(f).TargetSlot == rig.Enemy.Slot, "fighting before the order");
@@ -208,6 +248,12 @@ public class TaskStartTests
         { TaskType.DEAD_GUYS_GO_IN_THE_POT, H }, { TaskType.PICKUP_INTRUDERS, H }, { TaskType.PICKUP_INTRUDERS_TOWN, H }, { TaskType.PUT_DOWN_OBJECT, H }, { TaskType.STEALTH_KNOCKOUT, H },
         { TaskType.OPERATE_MACHINERY, H }, { TaskType.USE_TRAINING_DUMMY, H }, { TaskType.OPERATE_STORAGE, H }, { TaskType.USE_TURRET, H }, { TaskType.PROSPECTING, H | Cr },
         { TaskType.BUILD, H }, { TaskType.REPAIR, H }, { TaskType.DISMANTLE, H }, { TaskType.USE_BED, H | Cr }, { TaskType.PUT_SOMEONE_IN_BED, H }, { TaskType.FIND_BED_AND_PUT_IN, H },
+        { TaskType.OPERATE_AUTOMATIC_MACHINERY, H }, { TaskType.MAN_A_TURRET_PLAYER_JOB, H }, { TaskType.JOB_BUILDER, H },
+        { TaskType.DITCH_ALL_RESOURCES, H }, { TaskType.GO_HOME_AND_GO_TO_BED, H | Cr }, { TaskType.SIT_AROUND, H },
+        { TaskType.PICK_LOCK, H | I | Ch | Cr }, { TaskType.PICK_LOCK_ON_SHACKLES, H | I | Ch | Cr }, { TaskType.CUT_SHACKLES, H | I | Ch | Cr }, { TaskType.BRUTE_FORCE_SHACKLES, H | I | Ch | Cr },
+        { TaskType.RELEASE_PRISONER, H }, { TaskType.USE_CAGE, H | I | Ch | Cr }, { TaskType.OPEN_DOOR, H | Cr }, { TaskType.CLOSE_DOOR, H | Cr }, { TaskType.LOCK_DOOR, H | Cr },
+        { TaskType.UNLOCK_DOOR, H | I | Cr }, { TaskType.UNLOCK_DOOR_PLAYER_ORDER, H }, { TaskType.CUT_LOCK, H | I | Ch | Cr }, { TaskType.BRUTE_FORCE_LOCK, H | I | Ch | Cr },
+        { TaskType.BASH_DOOR_PLAYER_ORDER, H | A }, { TaskType.PICKUP, H | I | A | Cr }, { TaskType.PUT_IN_CAGE, H },
     };
 
     /// <summary>

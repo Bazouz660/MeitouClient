@@ -63,7 +63,7 @@ public sealed class BedSettings
 /// </list>
 /// The player's own beds become bed fixtures when their buildings register (<see cref="FixtureRegistry.RegisterPlayerBuilding"/>, by the lock system).
 /// </summary>
-public sealed class BedSystem(PopulationData data, BedSettings? settings = null) : ITickSystem, IStateHashed
+public sealed class BedSystem(PopulationData data, BedSettings? settings = null) : ITickSystem, IStateHashed, ITaskOwner, ITaskHandler
 {
     public BedSettings Settings { get; } = settings ?? new BedSettings();
     /// <summary>Lets a carrier put its body down (null: no carrying, so no laying in).</summary>
@@ -99,7 +99,7 @@ public sealed class BedSystem(PopulationData data, BedSettings? settings = null)
                     {
                         if (!table.TryResolveNext(id, out int s) || table.Cold(s) is not { } c || !CanWalk(c) || !c.Carrying.IsNone || !TaskStart.Eligible(world, c, TaskType.USE_BED)) continue;
                         if (c.InSomething == HeldState.Bed && c.InWhat == bed.Id) continue;   // lies in it already
-                        StartSleep(world, s, bed, fixedBed: true);
+                        TaskStart.Start(world, s, new TaskRequest(CharacterTask.Sleep, TaskType.USE_BED, TaskSource.Order) { Site = bed.Id });
                     }
                     break;
                 }
@@ -109,11 +109,42 @@ public sealed class BedSystem(PopulationData data, BedSettings? settings = null)
                         if (!table.TryResolveNext(id, out int s) || table.Cold(s) is not { Carrying.IsNone: false } c || !CanWalk(c) || !TaskStart.Eligible(world, c, TaskType.PUT_SOMEONE_IN_BED)) continue;
                         var bed = put.Bed is { } given ? world.Fixtures.Find(given) : world.Fixtures.FindBed(world, s, data.Relations, f => Reserved(f, id));
                         if (bed is not { Kind: FixtureKind.Bed }) { if (c.IsPlayer) world.Post($"{c.Name}: no free bed nearby"); continue; }
-                        StartPutIn(world, s, bed, fixedBed: put.Bed is not null);
+                        TaskStart.Start(world, s, new TaskRequest(CharacterTask.GoTo, TaskType.PUT_SOMEONE_IN_BED, TaskSource.Order) { Site = bed.Id, Detail = put.Bed is not null ? Named : null });
                     }
                     break;
             }
         }
+    }
+
+    /// <summary>The <see cref="TaskRequest.Detail"/> of a put-in order that named its bed (no other is looked for when it is taken).</summary>
+    static readonly object Named = new();
+
+    public void RegisterTasks(TaskHandlers tasks)
+    {
+        tasks.Register(CharacterTask.Sleep, this);
+        tasks.Register(TaskType.PUT_SOMEONE_IN_BED, this);
+        tasks.Register(TaskType.FIND_BED_AND_PUT_IN, this);
+    }
+
+    /// <summary>
+    /// Lying in the bed <see cref="TaskRequest.Site"/> (row 98, the player named it; the implicit 153, one the bed search found), or laying the carried body in it (99, 106: the walk acts it
+    /// out).
+    /// </summary>
+    void ITaskHandler.Start(World world, int slot, in TaskRequest request)
+    {
+        var bed = world.Fixtures.Find(request.Site!)!;
+        if (request.Task == CharacterTask.Sleep) StartSleep(world, slot, bed, fixedBed: request.Row == TaskType.USE_BED);
+        else StartPutIn(world, slot, bed, fixedBed: request.Detail == Named);
+    }
+
+    /// <summary>
+    /// A walk to a bed that another task replaces or the Stop order ends is given up; a sleeper in its bed gets up in the slow world (<see cref="GetUp"/>), as the original's 258 never
+    /// completes and an order replaces it.
+    /// </summary>
+    void ITaskHandler.End(World world, int slot, CharacterTask task, TaskEnd reason)
+    {
+        var id = world.Characters.IdOf(slot);
+        trips.RemoveAll(t => t.Character == id);
     }
 
     /// <summary>A character that may walk to a bed: awake, not carried, not caged, not fleeing.</summary>
@@ -137,7 +168,7 @@ public sealed class BedSystem(PopulationData data, BedSettings? settings = null)
     /// Sends a character to lie in <paramref name="bed"/> (task <see cref="CharacterTask.Sleep"/>): out of another bed first; in reach it gets in at once. <paramref name="fixedBed"/>: the
     /// player named the bed, so no other is looked for. The "Sleep when injured" job starts it too.
     /// </summary>
-    public void StartSleep(World world, int slot, Fixture bed, bool fixedBed = false)
+    void StartSleep(World world, int slot, Fixture bed, bool fixedBed)
     {
         var table = world.Characters;
         var id = table.IdOf(slot);
@@ -153,7 +184,7 @@ public sealed class BedSystem(PopulationData data, BedSettings? settings = null)
     }
 
     /// <summary>Sends a carrier to lay its body in <paramref name="bed"/>.</summary>
-    public void StartPutIn(World world, int slot, Fixture bed, bool fixedBed = false)
+    void StartPutIn(World world, int slot, Fixture bed, bool fixedBed)
     {
         var table = world.Characters;
         var id = table.IdOf(slot);
@@ -361,7 +392,8 @@ public sealed class BedSystem(PopulationData data, BedSettings? settings = null)
             if (!c.Jobs.Exists(j => j.Type == TaskType.FIND_BED_AND_PUT_IN) || trips.Exists(t => t.Character == table.IdOf(i))) continue;
             if (!table.TryResolveNext(c.Carrying, out int b) || table.Cold(b) is not { } bc || bc.Fighter is { IsAnimal: true }) continue;
             if (data.Relations.Contains(bc.Faction) && data.Relations.Contains(c.Faction) && data.Relations.IsHostile(bc.Faction, c.Faction)) continue;
-            if (world.Fixtures.FindBed(world, i, data.Relations, f => Reserved(f, table.IdOf(i))) is { } bed) StartPutIn(world, i, bed);
+            if (world.Fixtures.FindBed(world, i, data.Relations, f => Reserved(f, table.IdOf(i))) is { } bed)
+                TaskStart.Start(world, i, new TaskRequest(CharacterTask.GoTo, TaskType.FIND_BED_AND_PUT_IN, TaskSource.Job) { Job = c.Jobs.FindIndex(j => j.Type == TaskType.FIND_BED_AND_PUT_IN), Site = bed.Id });
         }
     }
 
