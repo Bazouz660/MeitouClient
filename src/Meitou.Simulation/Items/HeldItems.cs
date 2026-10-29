@@ -487,12 +487,20 @@ public sealed partial class PlayerSystem
     {
         var table = world.Characters;
         int s = held.From.Holder == ItemHolder.Character && table.TryResolveNext(held.From.Character, out int o) ? o : table.TryResolveNext(held.Actor, out int a) ? a : -1;
-        if (s < 0) return null;
-        ref var hot = ref table.Next[s];
+        return s < 0 ? null : (AheadOf(world, s), s);
+    }
+
+    /// <summary>The ground ahead of a character where an item it drops lands.</summary>
+    static Vector3 AheadOf(World world, int slot)
+    {
+        ref var hot = ref world.Characters.Next[slot];
         var at = hot.Position + new Vector3(MathF.Sin(hot.Yaw), 0, MathF.Cos(hot.Yaw)) * 3;
         at.Y = world.Walkability.GroundHeight(at.X, at.Z, hot.Position.Y);
-        return (at, s);
+        return at;
     }
+
+    /// <summary>Drops an item the character wore in front of it (<c>FUN_1405ca740</c>, character vtable slot 53: the item is placed ahead of the character and leaves its inventory).</summary>
+    internal static void DropAhead(World world, int slot, ItemInstance item) => Ground(world, item, AheadOf(world, slot), slot);
 
     /// <summary>An item on the ground, turned at random (the original's physics tumbles it) by a roll of the character and the tick.</summary>
     static void Ground(World world, ItemInstance item, Vector3 at, int slot)

@@ -22,6 +22,29 @@ public static class InventoryCommands
         "boots" => race.NoShoes || wearer.Medical is { } m && m.LimbPart(2) is { Limb: not Bodies.LimbState.Original } && m.LimbPart(3) is { Limb: not Bodies.LimbState.Original },
         _ => false,
     };
+    /// <summary>
+    /// <c>validateInventorySections</c> (<c>FUN_1406218f0</c>, character vtable slot 130; <b>Verified</b> body): a section <see cref="SectionClosed"/> for the character empties itself. The
+    /// first worn boots of a character whose race may wear shoes are dropped in front of it (slot 53, <c>FUN_1405ca740</c>); every other item of a closed section is destroyed
+    /// (<c>FUN_140749c20</c> with its delete flag). The original runs it when it builds a human's inventory and when a leg is severed (<c>FUN_14064edc0</c>, parts 2 and 3); Meitou calls it
+    /// for the second (<see cref="PopulationSystem"/>'s limb queue), as a built inventory never has a worn item in a closed section.
+    /// </summary>
+    public static void ValidateSections(World world, int slot, CharacterCold cold)
+    {
+        if (cold.Inventory is not { } inventory) return;
+        foreach (string section in ClosableSections)
+        {
+            if (!SectionClosed(cold, section)) continue;
+            if (section == "boots" && cold.Race is { NoShoes: false } && inventory.Items.Find(i => i.Section == section) is { } boots)
+            {
+                inventory.Items.Remove(boots);
+                PlayerSystem.DropAhead(world, slot, boots);
+            }
+            inventory.Items.RemoveAll(i => i.Section == section);
+        }
+    }
+
+    static readonly string[] ClosableSections = ["shirt", "head", "boots"];
+
     public static bool IsMovableSection(string section) => section is "main" or "backpack_content" || IsEquipmentSection(section);
     /// <summary>A fitted prosthetic's section (<see cref="Meitou.Data.Gameplay.Bodies.LimbReplacement.SlotOf"/>): the limbs window's slots; not traded, not saved with the inventory.</summary>
     public static bool IsLimbSection(string section) => LimbSlotOf(section) >= 0;

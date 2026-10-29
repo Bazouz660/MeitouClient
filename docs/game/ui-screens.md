@@ -1212,8 +1212,12 @@ unless marked; Meitou: `PlayerInterface.Squads.cs`, commands in `SquadManagement
 - Colour tags in code (**Verified**, static initialisers `FUN_14158a...`): #afa68b, #140806, #492620, #59231a, #bf4834, #a8b774, #444444, #777777, #14ffdc. The strings `DAT_141f49248` + 0x28 k (k = 0..8; initialisers `FUN_14158a2a0` + 0x40 k, **Verified** 2026-10-23) are #afa68b, #140806, #492620, #59231a, #bf4834, #a8b774, #a8b774 again, #444444, #777777.
 - **Disabled slots** (red `disabled` state; the section's byte `+0xd0`, `FUN_14014e3d0`): `CharacterHuman::validateInventorySections` (`FUN_1406218f0`, **Observed**) enables every
   section, then disables and empties `shirt` for a race with `no shirts`, `head` with `no hats`, and `boots` with `no shoes` or while both legs' `getLimbState` is set (lost or
-  replaced; worn boots are taken off first). The other `InventorySection::setEnabled` callers are the furnace, crafting benches and animals. Meitou:
-  `InventoryCommands.SectionClosed`, `CharacterSnapshot.ClosedSlots`, drawn disabled and refusing drops and every automatic equip (`TryEquip`, `Transfer`, `MoveInto`: trade, pick-up, loot, scavenge, storage, slave clothing; worn items are not taken off).
+  replaced). **Verified** (decompile): "empties" destroys every item in the section (`FUN_140749c20` with its delete flag, "clearAllItems"); for boots with shoes allowed the first worn item is first
+  taken off through character vtable slot 53 (`FUN_1405ca740`), which places it in the world just ahead of the character (the scalar of the offset is not readable) and removes it from the
+  inventory: worn boots are dropped, not packed. With `no shoes` nothing is taken off, the items are destroyed. Callers (vtable slot 130 `+0x410`, **Observed**: a scan of the `+0x410` virtual calls, whose other hits are other classes' slots): the human inventory build
+  (`FUN_14062c4e0`, slot `0x2c0`, before the clothing is added) and the severing of a leg (`FUN_14064edc0`, parts 2 and 3). The other `InventorySection::setEnabled` callers are the furnace, crafting benches and animals. Meitou:
+  `InventoryCommands.SectionClosed`, `CharacterSnapshot.ClosedSlots`, drawn disabled and refusing drops and every automatic equip (`TryEquip`, `Transfer`, `MoveInto`: trade, pick-up, loot, scavenge, storage, slave clothing);
+  `InventoryCommands.ValidateSections` runs when a leg is severed (the limb queue of `PopulationSystem`): boots dropped 3 ahead of the character (as a dropped held item, engine offset), the rest destroyed.
 - **Unknown**: the trader window's panel lines beyond Money.
 - Item placement failure messages (FUN_14070f7e0; the checks behind them are in [economy.md](economy.md#shops-and-transactions)): Out of trading range; No room for that item; You can't
   afford that; The shopkeeper can't afford that; That's not for sale; Got caught stealing; Smugglers only buy

@@ -136,6 +136,7 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
         while (world.Characters.LimbsChanged.TryDequeue(out var cut))
         {
             if (world.Characters.Cold(cut.Character) is not { } cold) continue;
+            if (cut.Limb is 2 or 3) InventoryCommands.ValidateSections(world, cut.Character, cold);   // a severed leg may close the boots (FUN_14064edc0 -> validateInventorySections)
             assembly.RefreshEquipment(cold);
             DropSeveredLimb(world, cut.Character, cold, cut.Limb);
         }
