@@ -1,4 +1,6 @@
+using System.Globalization;
 using System.Numerics;
+using System.Text;
 using Meitou.Data.Gameplay.Dialogue;
 
 namespace Meitou.Simulation.Dialogue;
@@ -320,7 +322,7 @@ public sealed partial class DialogueSystem : ITickSystem, IStateHashed, IDialogu
         c.Speaker = speaker;
         MarkUsed(world, c, line);
         string text = Expand(world, c, line, PickText(world, speaker, line), speaker, c.Player);
-        if (line.TakesMoney && line.Cost is { } cost) text += $" [c.{cost:N0}]";
+        text += MoneySuffix(line);
         c.Text = text;
         c.Log.Add($"{NameOf(world, speaker)}: {text}");
         world.Said(NameOf(world, speaker), text, false);
@@ -344,7 +346,7 @@ public sealed partial class DialogueSystem : ITickSystem, IStateHashed, IDialogu
                 c.Choices.Add((null, "[...]"));
                 return;
             }
-            c.Choices.Add((child, Expand(world, c, child, PickText(world, c.Player, child), c.Player, c.Npc)));
+            c.Choices.Add((child, Expand(world, c, child, PickText(world, c.Player, child), c.Player, c.Npc) + MoneySuffix(child)));
         }
         if (c.Choices.Count == 0) c.Choices.Add((null, "[Leave]"));
     }
@@ -371,7 +373,7 @@ public sealed partial class DialogueSystem : ITickSystem, IStateHashed, IDialogu
         else
         {
             c.Choices.Clear();
-            c.Choices.Add((p.Line, Expand(world, c, p.Line, PickText(world, c.Player, p.Line), c.Player, c.Npc)));
+            c.Choices.Add((p.Line, Expand(world, c, p.Line, PickText(world, c.Player, p.Line), c.Player, c.Npc) + MoneySuffix(p.Line)));
         }
     }
 
@@ -404,6 +406,18 @@ public sealed partial class DialogueSystem : ITickSystem, IStateHashed, IDialogu
 
     string PickText(World world, CharacterId who, DialogueNode line) =>
         line.Texts.Count switch { 0 => "", 1 => line.Texts[0], var n => line.Texts[Rng.Int(NextRoll(world, who), n)] };
+
+    /// <summary>
+    /// The cost a line's text shows (<c>FUN_140675320</c>, for a said line and a choice button alike): " [c.N]" once for every DA_TAKE_MONEY effect, N its own val0 with thousands
+    /// separators, in effect order. DA_GIVE_MONEY adds nothing.
+    /// </summary>
+    static string MoneySuffix(DialogueNode line)
+    {
+        var sb = new StringBuilder();
+        foreach (var e in line.Effects)
+            if (e.Action == DialogueActions.TakeMoney) sb.Append(" [c.").Append(e.Value.ToString("N0", CultureInfo.InvariantCulture)).Append(']');
+        return sb.ToString();
+    }
 
     string NameOf(World world, CharacterId id) => world.Characters.TryResolveNext(id, out int s) && world.Characters.Cold(s) is { } c ? c.Name : "";
 

@@ -326,7 +326,7 @@ lists it, an empty list failing; any other speaker needs the list only when it i
 `/NAME/` pairs are expanded until none is left (`FUN_14067a530`). Built in: `COST` (val0 of the line's first DA 8 or 9, else of its
 first DC 2), `MYNAME` (speaker), `YOURNAME` (target, else "you"), `TARGETFACTION` (target's faction, else "you"), `PLAYERFACTION`. Any
 other name: the WORD_SWAPS record of that trimmed name, its lines chosen like children (target = the partner), one text; no match → empty.
-A token at the start or after ". ", "! ", "? " is capitalised. A line with DA 8 gets " [c.N]" appended. The `censorship` setting swaps a
+A token at the start or after ". ", "! ", "? " is capitalised. Every DA 8 effect of a line appends one " [c.N]" (N its own val0, `c.{1,num}`; DA 9 none), in effect order, to the text of a said line and of a choice button alike (`FUN_140675320`, called with flag 1 by `FUN_1406839a0` and flag 0 by `FUN_140680130`; the loop is not gated by the flag; the literals " [" and "]" **Verified** from `DAT_141686eec`, `DAT_14168d3f0`), before the tokens are expanded. Meitou: `MoneySuffix` on said lines (windows and bubbles) and choices. The `censorship` setting swaps a
 fixed list of swear words. **Verified** by probe: 289 token names in the data, `HIM`, `OUTLANDER`, `FLATSKIN`, `BROTHER`, `YOURNAME`
 the most used.
 
