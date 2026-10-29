@@ -297,6 +297,8 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
         };
         ui.ArtifactOf = id => popData?.Db.Find(id)?.GetBool("artifact") == true;
         ui.ItemRecordOf = id => popData?.Db.Find(id);
+        var specialFoodRaces = new System.Collections.Concurrent.ConcurrentDictionary<string, string>(StringComparer.Ordinal);
+        ui.SpecialFoodRaces = id => popData is { } d ? specialFoodRaces.GetOrAdd(id, item => Meitou.Data.Gameplay.Bodies.SpecialFood.EatenBy(d.Db, item)) : "";
         ui.CombatOf = () => popData?.Combat;
         ui.MapItemTowns = record =>
         {

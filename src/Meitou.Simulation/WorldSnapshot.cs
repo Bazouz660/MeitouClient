@@ -144,6 +144,8 @@ public sealed record InventoryItemView(int Index, string Record, string Name, st
     public float MaxCharges { get; init; }
     /// <summary>The faction the item counts as stolen from for its holder (<see cref="Items.ItemInstance.IsStolenFor"/>), -1 when it is not stolen.</summary>
     public int StolenFrom { get; init; } = -1;
+    /// <summary>The item's <c>unique</c> flag (<see cref="Items.ItemInstance.Unique"/>): the tooltip's [Unique] row.</summary>
+    public bool Unique { get; init; }
 }
 public sealed record InventoryView(int Width, int Height, int BagWidth, int BagHeight, IReadOnlyList<InventoryItemView> Items)
 {

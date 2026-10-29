@@ -20,6 +20,8 @@ sealed partial class PlayerInterface
 {
     /// <summary>The item records of the game data (for the item tooltip's lines); the host sets it.</summary>
     public Func<string, GameRecord?>? ItemRecordOf { get; set; }
+    /// <summary>The "-Only for:" text of a special food record (<see cref="Meitou.Data.Gameplay.Bodies.SpecialFood.EatenBy"/>); the host sets it.</summary>
+    public Func<string, string>? SpecialFoodRaces { get; set; }
     /// <summary>The combat tables (weapon and armour records); the host sets it.</summary>
     public Func<CombatDatabase?>? CombatOf { get; set; }
 
@@ -461,11 +463,13 @@ sealed partial class PlayerInterface
         public bool Goods { get; init; }
         /// <summary>The smith who crafted the item ("" none); its tooltip ends with the crafted-by block.</summary>
         public string Crafter { get; init; } = "";
+        /// <summary>The item's <c>unique</c> flag: the [Unique] marker row.</summary>
+        public bool Unique { get; init; }
         public static ItemTip NameOnly(string record, string material, string name, int quantity) => new(record, material, name, quantity, 0, 0, "", 0, 0, 0, -1, null, null) { Brief = true };
         public static ItemTip Of(InventoryItemView v, TradeItemView? trade = null, string? mapNote = null) =>
-            new(v.Record, v.Material, v.Name, v.Quantity, v.Weight, v.Quality, v.Company, v.Level, v.Charges, v.MaxCharges, v.StolenFrom, trade, mapNote) { Goods = trade is not null, Crafter = v.Crafter };
+            new(v.Record, v.Material, v.Name, v.Quantity, v.Weight, v.Quality, v.Company, v.Level, v.Charges, v.MaxCharges, v.StolenFrom, trade, mapNote) { Goods = trade is not null, Crafter = v.Crafter, Unique = v.Unique };
         public static ItemTip Of(TradeItemView v) =>
-            new(v.Record, v.Material, v.Name, v.Quantity, v.Weight, v.Quality, v.Company, v.Level, v.Charges, v.MaxCharges, v.StolenFrom, v, null);
+            new(v.Record, v.Material, v.Name, v.Quantity, v.Weight, v.Quality, v.Company, v.Level, v.Charges, v.MaxCharges, v.StolenFrom, v, null) { Unique = v.Unique };
     }
 
     static string Number(float v) => v.ToString("0.#", CultureInfo.InvariantCulture);
@@ -582,17 +586,25 @@ sealed partial class PlayerInterface
         int function = type == Meitou.Data.Fcs.FcsRecordType.ITEM ? record!.GetInt("item function") : 0;
         float unitWeight = t.Quantity > 0 ? t.Weight / t.Quantity : t.Weight;
         TooltipLine Row(string label, string value, TooltipTone valueTone = TooltipTone.Ink) => new("-" + label, value, TooltipTone.Ink, valueTone);
-        if (function == 3)
+        // The kind markers in the original's order (FUN_1407ae130): Ammunition, Research Artifact (the record's artifact flag), Unique (the item's flag; both Special, #14ffdc), Book, Food.
+        if (function == 16) lines.Add(new("[Ammunition]", "", TooltipTone.Main));
+        if (record?.GetBool("artifact") == true) lines.Add(new("[Research Artifact]", "", TooltipTone.Cyan));
+        if (t.Unique) lines.Add(new("[Unique]", "", TooltipTone.Cyan));
+        if (function == 13) lines.Add(new("[Book]", "", TooltipTone.Main));
+        if (function is 3 or 15)
         {
-            // One unit's charges left, truncated, then the record's ingredients by name (", "-joined, empty for raw food); no leading hyphen.
-            lines.Add(new("[Food]", "", TooltipTone.Good));
+            // Special food (15) skips the marker for "Possibly Edible" and the races it is for; both then share Nutrition (one unit's charges left, truncated) and the record's
+            // ingredients by name (", "-joined, empty for raw food); no leading hyphen.
+            if (function == 3) lines.Add(new("[Food]", "", TooltipTone.Good));
+            else
+            {
+                lines.Add(new("Possibly Edible", "", TooltipTone.Good));
+                if (SpecialFoodRaces?.Invoke(t.Record) is { Length: > 0 } eaters) lines.Add(new("-" + Loc.Tr("Only for:"), eaters, TooltipTone.Title, TooltipTone.Title));
+            }
             lines.Add(new("Nutrition", ((int)t.Charges).ToString(CultureInfo.InvariantCulture) + " nu", TooltipTone.Ink, TooltipTone.Ink));
             var ingredients = string.Join(", ", record!.GetReferences("ingredients").Select(r => RecordName?.Invoke(r.TargetStringId)).Where(n => n is { Length: > 0 }));
             lines.Add(new("Ingredients", ingredients, TooltipTone.Ink, TooltipTone.Ink));
         }
-        else if (function == 15) lines.Add(new("Possibly Edible", "", TooltipTone.Good));
-        else if (function == 13) lines.Add(new("[Book]", "", TooltipTone.Main));
-        else if (function == 16) lines.Add(new("[Ammunition]", "", TooltipTone.Main));
         if (t.StolenFrom >= 0)
             lines.Add(FactionName?.Invoke(t.StolenFrom) is { Length: > 0 } owner ? new("Stolen from:", owner, TooltipTone.Bad, TooltipTone.Bad) : new("Stolen", "", TooltipTone.Bad));
         if (function == 16)
