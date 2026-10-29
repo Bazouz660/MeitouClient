@@ -433,7 +433,7 @@ eat task, animation or player command (a right click on food does nothing, [ui-s
   (`+0x128`, the size of the `occupiers` set) while the character senses an enemy (`SensoryData::numEnemies` > 0): 0.2 inside the walls (`amInsideTownWalls` > 0), whatever its
   hunger; else 0 when the town has gates (`Town::hasGates`, `+0x3b0` set; always false for TownBase); else 259's desire (slot 25, above). **Verified**, decompile of `AI::vfunc_24`
   `FUN_14059bbd0` and the Town slots. Whether the resident set is saved is **Unknown**. The finder and the take (244, one item): [ai-tasks](ai-tasks.md#arrest-and-prison-rows).
-  Meitou (`TownDutySystem.LookPlayerFood`): idle player-side characters, a store owned by their faction in their own town or one where the player owns a house (engine reading of
+  Meitou (`TownDutySystem.LookPlayerFood`): idle player-side characters or ones on a task their jobs started (243 is tried before the jobs, [precedence](ai-tasks.md#precedence)), a store owned by their faction in their own town or one where the player owns a house (engine reading of
   the resident set, not tied to having stood in it); the occupied branch as above, gates read as a gate building in the town; its 0.2 starts a run for any idle character
   (the original's competes with the planner's other goals, fighting included, which Meitou's player characters do not have).
 - Meitou: `FeedSystem` (checks every 30 ticks, engine choice), squad options `SquadAi.Feed` / `Share` (CAMERA

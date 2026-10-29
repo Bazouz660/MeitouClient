@@ -109,7 +109,7 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
     /// player owns a house there, <see cref="FixtureRegistry.OwnsPropertyIn"/>). In a town with occupiers while it senses an enemy: inside the walls it wants food whatever its hunger
     /// (desire 0.2), outside them in a town with gates not at all; else the 259 desire (slot 25): stomach empty, hunger at most 2.4, no food it would bite on it, not fighting unless
     /// hunger is below 1.2. It walks to the nearest store of the town owned by its faction with food in it and takes one item, which the eating rule then eats. Engine choices: only an
-    /// idle character (no player order; a Follow is left alone).
+    /// idle character or one on a task its jobs started (no player order; a Follow is left alone).
     /// </summary>
     void LookPlayerFood(World world)
     {
@@ -121,8 +121,11 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
         bool occupations = world.Squads.All.Any(q => q.Ai is { CurrentClass: PackageClass.OccupyTown });
         for (int s = 0; s < table.HighWater; s++)
         {
-            if (!table.Next[s].Alive || table.Next[s].Task != (byte)CharacterTask.Idle) continue;
+            if (!table.Next[s].Alive) continue;
             if (table.Cold(s) is not { Medical: { Dead: false, Incapacitated: false } med, Race: { } race } c || !(c.IsPlayer || c.Faction == faction)) continue;
+            // Idle, or on a task its jobs started: 243 is a priority-3 goal, tried before the jobs (docs/game/ai-tasks.md "Precedence").
+            var task = (CharacterTask)table.Next[s].Task;
+            if (task != CharacterTask.Idle && !Production.PermaJobs.FromJob(c, task)) continue;
             bool animal = !med.HasStatsObject;
             if (animal && !feedAnimals) continue;
             bool hungry = med.Fed <= 0 && med.Hunger <= FeedSystem.FoodOnGroundBelow && !(c.InCombat && med.Hunger >= FeedSystem.FoodOnGroundInFight);

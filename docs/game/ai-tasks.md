@@ -766,8 +766,9 @@ update `FUN_140511130`, `Character::setupAI` `FUN_140621b70`; KenshiLib names **
   chooses nothing; the fight ends with the task.
 - **Meitou**: the player's characters run no chooser; each system acts on its own and an order replaces any task. Self preservation is `RetaliationSystem.SelfDefends`:
   it answers when the character is idle, a bodyguard following, looting with the attacker within 40, or on a task its jobs started (`PermaJobs.FromJob`: `JobIndex`,
-  `Implicit`, `JobTask`); Hold's attack on sight (`AggroSystem.HoldsGround`) likewise. Gaps: getting food is not a goal (`FeedSystem`); the immediate answer ignores "moving"; a higher list job does not take over a running medic,
-  rescue or foraging job; mates join a fight only from idle (the original's way a player character joins a mate is **Unknown**).
+  `Implicit`, `JobTask`); Hold's attack on sight (`AggroSystem.HoldsGround`) and Getting food (`TownDutySystem.LookPlayerFood`) likewise. Gaps: the immediate
+  answer ignores "moving"; a higher list job does not take over a running medic, rescue or foraging job; mates join a fight only from idle (the original's way a
+  player character joins a mate is **Unknown**).
 
 ## Combat goals
 
