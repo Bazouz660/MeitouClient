@@ -130,7 +130,8 @@ A slave's Slave role list runs through the Obedient Slave job (187): [role lists
   town's faction TEMP ALLY; `Contract_UntilOutOfDanger` none; `Package_WarAssault` / `_Cannibal` (`FUN_14028a3f0`, **Verified**): TEMP ENEMY on anyone not an animal (Character vfunc 0x248 null), of a faction whose `not real` flag (`+0x1d0`) is clear and whose
   `fundamental type` (`+0x34`) is not 8 (the faction's, not the character's class), and whose current town is none or the package's mission town (a hand comparison that returns true on a
   difference, so another town is skipped; there is no distance test). Meitou (`AggroSystem.WarEnemy`, `WarTargets.Town`): a hired squad never takes its hirer's faction (or, 12, its allies) as an enemy, 15 takes the
-  hirer's faction for the town's; an Everyone war target follows the rules above; no memory tags are written, and the on-screen gate is not modelled.
+  hirer's faction for the town's; an Everyone war target follows the rules above and each one the looker sees or hears this look is tagged TEMP ENEMY in its squad's memory (`FUN_140674300` tag 4, the time refreshed each look; same-faction refused;
+  `AggroSystem.TagEffect`, applied serially), which makes it an enemy of every member until the tag fades (6 h, `SquadMemory.Age`); the other hooks write no tags yet.
 - **Package_OccupyTown** (30): never starts on its own (only by `Leads to`). Start: the leader's town as mission town, its faction the enemy (+0xb8, memory 4 on sight),
   each member fires TAKEN_OVER_PLAYER_TOWN (73), the platoon made persistent if it was not (undone at the end). Update: the platoon joins the town's occupier set
   (Town +0x118; its count +0x128 is "Hostile Occupiers:" in the town panel, `FUN_140922e60`). End: removed from the set, "{1} squad has been removed from {2}"

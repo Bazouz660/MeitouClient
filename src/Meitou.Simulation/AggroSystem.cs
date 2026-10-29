@@ -46,6 +46,8 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
     public const int ExposureEffect = 2;
     /// <summary>The <see cref="Effect.Kind"/> of a sleeper that nearly woke at a sneaking player-side character's noise: <c>Target</c> is the sneaker (event <see cref="AlmostWokeUpEvent"/>).</summary>
     public const int AlmostWokeEffect = 3;
+    /// <summary>The <see cref="Effect.Kind"/> of a package's sensing hook tagging a character in the looker's squad memory: <c>Target</c> is the character, <c>Amount</c> the short-term tag (<see cref="Dialogue.MemoryTag"/>).</summary>
+    public const int TagEffect = 4;
     /// <summary>The dialogue event a sleeper says when it nearly wakes at a sneaking player (ALMOST_WOKE_UP, docs/game/dialogue.md).</summary>
     public const int AlmostWokeUpEvent = 47;
     const byte NoTask = 0xFF;
@@ -697,6 +699,10 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         bool hostile = AttacksOnSight(s.Relations, s.Faction, seenAs) && s.Cold is not { Freed: true }
             && (!c.Freed || s.Relations.Factions[s.Faction] is { } mine && (mine.NotReal || mine.DefaultRelation < FreedHostility));
         bool warEnemy = s.War.IsSet && WarEnemy(ref s, c, other.Position);
+        // Package_WarAssault's sensing hook writes TEMP_ENEMY into the squad's memory for each sensed character it accepts, the whole squad then holding it (and, each time, its time, so it
+        // fades 6 h after the last sensing: SquadMemory.Age); the hook runs on the sensed list, here the characters seen or heard now (read only, no roll).
+        if (warEnemy && s.War.Everyone && s.Found is null && s.Squad >= 0 && s.Memory is not null && SensedNow(ref s, slot, other, sneaking, stealth))
+            s.Effects.Emit(s.Self, slot, TagEffect, Dialogue.MemoryTag.TempEnemy);
         bool enemy = s.Stance != Ai.AiStance.Passive
             && (hostile || s.Stance == Ai.AiStance.AggressiveNeutrals && IsNeutral(s.Relations, s.Faction, seenAs) || warEnemy);
         // A campaign force's member is sensed as NEUTRAL, not ENEMY (FUN_1408580d0 over FUN_140796240, docs/game/perception.md "Sense tags"): a raid walks up to talk first.
@@ -824,6 +830,12 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         if (e.Kind == AlmostWokeEffect)
         {
             world.Defer(new Dialogue.DialogueEvent(world.Characters.IdOf(e.Source), world.Characters.IdOf(e.Target), AlmostWokeUpEvent) { Tick = world.Tick + 1 });
+            return;
+        }
+        if (e.Kind == TagEffect)
+        {
+            if (Memory is { } memory && world.Characters.Cold(e.Source) is { SquadId: >= 0 } looker && world.Characters.Next[e.Source].Alive && world.Characters.Next[e.Target].Alive)
+                memory.Flag(world, looker.SquadId, world.Characters.IdOf(e.Target), (int)e.Amount);
             return;
         }
         if (e.Kind != SightEffect) return;
