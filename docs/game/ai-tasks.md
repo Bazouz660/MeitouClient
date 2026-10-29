@@ -891,8 +891,12 @@ vfunc 5 `FUN_14050caf0`). TaskData fields: +0x108 desire (a member function, nea
   - Pieces: BF_CHAIR and BF_THRONE are sat on ("Chairs" below), BF_TRAINING (the dummy, function 7) is pretend-operated. 43's finder is the `Indoors` variant of the same class (vtable
     slot 5 `FUN_1408cbad0` lists the home's interior), so 43 takes training furniture and chairs but no throne (mask 0x2049a); 275's is the plain one, whose town scan also reaches furniture
     inside buildings (**Observed**: the bar-table finder, same scan, tests "inside the bar").
-  - Meitou (`AiSystem.ClaimSitting`): no piece claimed means the goal is not wanted; a squad does not sit where it stands. Claims a free chair, throne or (not for the player's side) training
-    dummy of the home building, the first in seat order (`TownBuilding.SeatAt`: the layout's chairs, then `Furniture`); a dummy is stood at, facing its way.
+  - Meitou (`AiSystem.ClaimSitting`, on the package cadence): no piece claimed means the goal is not wanted; a squad does not sit where it stands. The town gate and the owner test above are
+    applied as written, with the town the member stands in (radius test) and the building's owner = its property owner, else the level state's `owner faction ID`, else the town's faction;
+    the player-side branch is coded but unused (an AI-run squad is never the player's). Pieces: a free chair, throne or (not for the player's side) training dummy in any building of that
+    town (`TownBuilding.SeatAt`: the layout's chairs, then `Furniture`: layout thrones and dummies, and free-standing chairs, thrones and dummies), the nearest to the member (engine choice:
+    the original takes the first of an arbitrary order). A dummy is stood at, facing its way. Not modelled: the finder's usability and avoid-set filters (slot 0), a piece's own owner
+    (the building's is used).
 - Chairs (**Verified**, BUILDING_FUNCTIONALITY records of gamedata.base / rebirth.mod / the install's mods, dumped): BuildingFunction 17 BF_CHAIR
   `chair`, `chair-fixed`, `chair-fixed 180` (animation "sitting chair"; Stool, Old Stool, Bench, Sitting Box) and `sit on floor (no chair)`
   ("sitting idle"; Sitting Pillow, Sitting spot (invisible)); 24 BF_THRONE `throne chair` ("sitting chair"); all `max operators` 1.

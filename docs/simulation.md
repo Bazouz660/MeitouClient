@@ -1438,9 +1438,10 @@ are made at the origin and keep that post. Seats are the home's
 interior furniture with a CHAIR functionality (`HomeSpotKind.Chair`; never a standing node), free
 in that building this pass; relaxing falls back to a bar node, then a general node, staying home without one stands at home (engine choice: the original's
 43 operates home furniture, chairs among it, [ai-tasks](game/ai-tasks.md#town-goals); a given-up seat is tried again when the goal is renewed). Sitting around (275)
-claims on its own (`Blackboard.SitClaims`, `AiSystem.ClaimSitting`): a free chair, throne (BF_THRONE, `HomeSpotKind.ThroneSeat`, sat on like a chair) or, for a character not on the
-player's side, training dummy (BF_TRAINING, `HomeSpotKind.Training`, stood at) of the home; the throne and dummy pieces are `TownBuilding.Furniture`. It is not wanted
-without one, so a homeless squad does not sit where it stands. A seated character
+claims on its own (`Blackboard.SitClaims`, `AiSystem.ClaimSitting`): the nearest free chair, throne (BF_THRONE, `HomeSpotKind.ThroneSeat`, sat on like a chair) or, for a character not on the
+player's side, training dummy (BF_TRAINING, `HomeSpotKind.Training`, stood at) in a building of the town it stands in, when that is its squad's home town or owned by the squad's faction and the
+building is owned by the character's faction or the squad's; the throne and dummy pieces, and free-standing chairs, are `TownBuilding.Furniture`. It is not wanted
+without one (nor outside a town), so a homeless squad does not sit where it stands. A seated character
 is put on the seat's origin with no offset, facing the seat's way ([ai-tasks](game/ai-tasks.md) "Sitting"), and plays the functionality's clip ("sitting chair", pillows
 "sitting idle"). A town's bars and shops are
 the buildings whose residents (the squads living there, else the level data's `residents template`)

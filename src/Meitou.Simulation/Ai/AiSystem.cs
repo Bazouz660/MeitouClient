@@ -329,9 +329,9 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
     /// <summary>A town's public buildings with a general node by zone, its shops, its public bars and its outdoor tables, as <see cref="RefreshPlaces"/> last found them.</summary>
     sealed record TownPlaces(IReadOnlyDictionary<ZoneCoordinate, TownBuilding[]> Wander, IReadOnlyList<TownBuilding> Shops, IReadOnlyList<TownBuilding> Bars,
         IReadOnlyList<TownBuilding> OutdoorTables, IReadOnlyList<TownBuilding> Workplaces,
-        IReadOnlyDictionary<TownBuilding, ulong> Stock);
+        IReadOnlyDictionary<TownBuilding, ulong> Stock, IReadOnlyList<SeatClaim> Seats, IReadOnlyDictionary<TownBuilding, int> SeatOwners);
 
-    static readonly TownPlaces NoPlaces = new(new Dictionary<ZoneCoordinate, TownBuilding[]>(), [], [], [], [], new Dictionary<TownBuilding, ulong>());
+    static readonly TownPlaces NoPlaces = new(new Dictionary<ZoneCoordinate, TownBuilding[]>(), [], [], [], [], new Dictionary<TownBuilding, ulong>(), [], new Dictionary<TownBuilding, int>());
     // Rebuilt in the serial step, read by the think on every worker (derived, not hashed).
     readonly Dictionary<int, TownPlaces> places = [];
 
@@ -389,8 +389,20 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             var shopList = buildings.Where(b => (b.IsShop || shops.Contains(b)) && IsPublic(b)).ToArray();
             var stock = new Dictionary<TownBuilding, ulong>(ReferenceEqualityComparer.Instance);
             foreach (var b in shopList) stock[b] = StockOf(world, b, stocks.GetValueOrDefault(b));
+            // The town's furniture to sit around at (chairs, thrones, dummies) and the faction owning each building: its property owner, else its level owner, else the town's.
+            int townFaction = site < data.SiteFactions.Count ? data.SiteFactions[site] : -1;
+            var seats = new List<SeatClaim>();
+            var seatOwners = new Dictionary<TownBuilding, int>(ReferenceEqualityComparer.Instance);
+            foreach (var b in buildings)
+                for (int i = 0; i < b.SeatCount; i++)
+                    if (Sittable(b.SeatAt(i).Kind, dummies: true))
+                    {
+                        seats.Add(new SeatClaim(b, i));
+                        if (!seatOwners.ContainsKey(b))
+                            seatOwners[b] = world.Fixtures.PropertyOwner(b.Key) ?? (b.OwnerFactionId is { } o && data.FactionIndex(o) is var fi and >= 0 ? fi : townFaction);
+                    }
             places[site] = new(wander, shopList, [.. buildings.Where(b => (b.IsBar || bars.Contains(b)) && IsPublic(b))],
-                [.. buildings.Where(b => b.IsOutdoorTable)], [.. buildings.Where(b => !b.Destroyed && b.Function is >= 0 and var fn && (WorkFunctions >> fn & 1) != 0)], stock);
+                [.. buildings.Where(b => b.IsOutdoorTable)], [.. buildings.Where(b => !b.Destroyed && b.Function is >= 0 and var fn && (WorkFunctions >> fn & 1) != 0)], stock, seats, seatOwners);
         }
     }
 
@@ -1284,16 +1296,17 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
 
     /// <summary>
     /// The sitting-around (275) counterpart of <see cref="ClaimSeats"/> (the finder <c>FUN_1408caf00</c>, docs/game/ai-tasks.md "Town goals"): a member whose role list has 275 open at this hour
-    /// takes the first piece of furniture of the mask 0x1020080 in its <see cref="Blackboard.Home"/> that no one claimed in this cadence pass: a chair or throne, and a training dummy unless the
-    /// character is on the player's side (the mask 0x1020000 of <c>FUN_140856bc0</c>; an AI-run squad is never the player's, so this only spares a recruit). The first free one in the building's
-    /// seat order is an engine choice (the original takes the first of its zone map). A member keeps its piece while it still sits around, as in <see cref="ClaimSeats"/>.
+    /// takes a piece of furniture of the mask 0x1020080 that no one claimed in this cadence pass, in the town it stands in (<see cref="TownPlaces.Seats"/>; the home need not be a part of it):
+    /// a chair or throne, and a training dummy unless the character is on the player's side (the mask 0x1020000 of <c>FUN_140856bc0</c>; an AI-run squad is never the player's, so this only
+    /// spares a recruit). The town must be the squad's home town or owned by the squad's faction, a player-side character's a town of the player's faction (<see cref="MaySitIn"/>), and the
+    /// piece's building owned by the character's faction or the squad's (<see cref="TownPlaces.SeatOwners"/>); outside every town it finds nothing. The nearest free piece is an
+    /// engine choice (the original takes the first of its zone map). A member keeps its piece while it still sits around and may sit there, as in <see cref="ClaimSeats"/>.
     /// </summary>
     void ClaimSitting(World world, Blackboard board, Squad squad)
     {
         keptSits.Clear();
         foreach (var (slot, claim) in board.SitClaims) keptSits[slot] = claim;
         board.SitClaims.Clear();
-        if (board.Home is not { } home) return;
         int hour = world.Hour;
         for (int k = 0; k < squad.Members.Count; k++)
         {
@@ -1309,23 +1322,43 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
                 if (had) TakenOf(old.Building).Remove(old.Index);
                 continue;
             }
-            bool dummies = !PlayerSide(world, cold);
-            if (had && old.Building == home && Sittable(old.Spot.Kind, dummies))
+            bool playerSide = PlayerSide(world, cold);
+            var at = world.Characters.Next[s].Position;
+            int site = TownAt(at);
+            var seats = site >= 0 && MaySitIn(world, board, squad, site, playerSide) ? Places(site) : NoPlaces;
+            bool Mine(TownBuilding b) => seats.SeatOwners.TryGetValue(b, out int owner) && owner >= 0 && (owner == cold.Faction || owner == squad.Faction);
+            if (had && Mine(old.Building) && Sittable(old.Spot.Kind, !playerSide))
             {
-                TakenOf(home).Add(old.Index);
+                TakenOf(old.Building).Add(old.Index);
                 board.SitClaims[s] = old;
                 continue;
             }
             if (had) TakenOf(old.Building).Remove(old.Index);
-            var taken = TakenOf(home);
-            for (int i = 0; i < home.SeatCount; i++)
+            int best = -1;
+            float bestD = float.MaxValue;
+            for (int i = 0; i < seats.Seats.Count; i++)
             {
-                if (taken.Contains(i) || !Sittable(home.SeatAt(i).Kind, dummies)) continue;
-                taken.Add(i);
-                board.SitClaims[s] = new SeatClaim(home, i);
-                break;
+                var seat = seats.Seats[i];
+                if (!Sittable(seat.Spot.Kind, !playerSide) || !Mine(seat.Building) || seatTaken.TryGetValue(seat.Building, out var taken) && taken.Contains(seat.Index)) continue;
+                float d = Vector3.DistanceSquared(seat.Spot.Position, at);
+                if (d < bestD) (best, bestD) = (i, d);
             }
+            if (best < 0) continue;
+            var found = seats.Seats[best];
+            TakenOf(found.Building).Add(found.Index);
+            board.SitClaims[s] = found;
         }
+    }
+
+    /// <summary>
+    /// Whether a member standing in town <paramref name="site"/> may sit around there (the town gate of <c>FUN_1408caf00</c>): a non-player character needs the squad's home town or a town owned
+    /// by the squad's faction, a player-side one a town owned by the player's faction (no home test).
+    /// </summary>
+    bool MaySitIn(World world, Blackboard board, Squad squad, int site, bool playerSide)
+    {
+        int owner = site < data.SiteFactions.Count ? data.SiteFactions[site] : -1;
+        if (playerSide) return owner >= 0 && owner == (world.Player.Faction >= 0 ? world.Player.Faction : data.PlayerFaction);
+        return site == board.Town || owner >= 0 && owner == squad.Faction;
     }
 
     /// <summary>Whether sitting around takes a piece of furniture of this kind (bits CHAIR and THRONE of the mask; TRAINING too unless <paramref name="dummies"/> is false).</summary>
