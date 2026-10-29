@@ -452,6 +452,8 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem
             if (s == attacker || s == slot || !next[s].Alive || table.Cold(s) is not { Ai.ProtectsAllies: true, Gunning: null } c
                 || !relations.IsAlly(c.Faction, ally.Faction) || relations.IsAlly(c.Faction, foe.Faction)) continue;
             if (ally.SlaveState is 1 or 2 && !SlaveHelpAllowed(world, c, next[s].Position)) continue;
+            // A slave holding job 187 Obedient Slave scores the desire 0 (FUN_140599b90); SlaveMaster is Meitou's mark of that job.
+            if (c.SlaveState == 1 && c.SlaveMaster >= 0) continue;
             float range = AggroSystem.RangeOf(c, AggroSystem.OutdoorSight), d2 = Vector3.DistanceSquared(next[s].Position, at);
             if (d2 > MathF.Max(range * range, AggroSystem.NoiseFar * AggroSystem.NoiseFar) || !CanFight(table, s, taken)) continue;
             // Seen, or heard: a fight in the protector's own place within the farthest noise is heard for sure (AggroSystem's hearing rule).

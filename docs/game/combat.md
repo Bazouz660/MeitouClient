@@ -353,7 +353,9 @@ Meitou (`CombatSystem.HasSlot` / `MayJoin`, `Fighting.Steer`):
 - **Who has fight goals.** `Character::setupAI` gives every character goals 14 Idleness (priority 1) and 32 Self preservation (priority 3,
   urgent, target itself); non-player characters also 243 (animals 259). Attack on sight is goal 16 ([combat goals](ai-tasks.md#combat-goals)):
   NPCs get it from packages, a player character only while on Hold. Its desire (`AI::scoreAttackEnemies`) is 1, but 0 while sneaking outside a
-  fight (`Character::isStealthMode`), Passive, or not standing (prone state ≠ 0); `scoreProtectAllies` is 0 when sneaking or Passive.
+  fight (`Character::isStealthMode`), Passive, or not standing (prone state ≠ 0); `scoreProtectAllies` (`FUN_140599b90`, **Verified**) is 0 when sneaking or Passive, and for a slave (state 1) whose AI holds
+  a job of type 187 Obedient Slave (`FUN_140597380` scans the job list); otherwise the finder's score, x0.5 while carrying (not modelled: joins are binary).
+  Meitou: `Fighting.ProtectAllies` skips a state-1 slave with a `SlaveMaster` (its mark of job 187); the other joins (squad mates, bodyguards) are not this desire.
 - **Being targeted.** Choosing a fight target (`CombatClass::setAttackTarget`, `setAttackTargetHandle`) calls `AI::underMeleeAttack` on the
   target at once (through `Character::attackingYou`), before any blow; dropping it sends "stop", which only removes the attacker from the
   target's engaged list. A landed blow (not blocked or dodged) on a defender whose fight is off sends it too (`FUN_1404394f0`). The call ends the
