@@ -311,6 +311,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         cold.ResumeTask = resume;
         cold.Kidnapping = false;
         cold.Snatching = false;
+        cold.Foraging = false;
     }
 
     /// <summary>Ends a pick-up, put-down or loot (serial phases): back to the task before it.</summary>
@@ -596,6 +597,11 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         if (cold.Inventory is not { } bag || !(opening ? Openable(table, t) : CanBeLooted(victim)))
         {
             End(table, i);
+            return;
+        }
+        if (cold.Foraging)
+        {
+            ForageTake(world, table, i, t, dt);
             return;
         }
         if (!cold.IsPlayer && !opening)

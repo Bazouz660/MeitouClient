@@ -205,6 +205,19 @@ it is not part of target eligibility.
 - **Bandits loot the player** is the new-game option at block `+0x20`, saved as CAMERA bool `bl` (**Verified**: the reader `FUN_1403eef20` reads key `bl` into `+0x20`, the writer
   `FUN_140912f80` copies `+0x20` to `142133598`; the reader's default is 1, and `bl` is true in the owner's three readable original saves).
 
+### 3.4 Foraging take (row 241)
+
+**Verified** (decompile of `Task_Loot_ResourcesWeHaveStorageFor`, vtable `1416be550`: start `FUN_14034e140`, update `FUN_14034e2a0`, pick `FUN_140998950` over `FUN_14059acd0`). The task
+is row 241 "Looting resources", the effect 148 (`LOOTED_STORABLE_ITEMS`) of goal 238 Foraging animals ([ai-tasks](ai-tasks.md#perma-jobs)). It does not take everything:
+- **Start**: timer 0, plays `squat T`, `medic`; the target handle must be a character (type 1) or a squad (0x5b, what a squad target would loot is **Unknown**; the 238 finder returns characters only), else the task fails.
+- **Update**: plays `medic`; past **3.0 s** (`DAT_14168a254`) it takes once and ends. The pick (`FUN_140998950`): the first item of the target's inventory list, then of its backpack's, for which a
+  storage of the looter's faction exists (`FUN_14059acd0`, the same test as the 238 finder). Then, one unit at a time (`FUN_14074ab30` splits a unit off the first stack of that item
+  kind in the target's **own** inventory list, not its backpack's; a death item leaving butchers the body), each goes to the looter's worn backpack if that inventory takes the kind
+  (checked once, before the loop), else the looter's inventory; it stops when that place has no room for the kind or none is left. No crime, theft mark or money is touched in the update.
+  Nothing storable: nothing moves and the task ends.
+- Meitou (`CarrySystem.ForageTake`, `CharacterCold.Foraging` marks a loot begun by the job): the same, after the walk and 3 s at the body, with the medic clip; stacks of the kind in the body's
+  inventory list (not the body's bag contents, not locked or unmovable sections). Engine stand-ins: the pick does not test free room of the storage; "the place takes the kind" is tried with a unit.
+
 ## Kidnapping
 
 **Observed** (decompile; names KenshiLib 1ce4a16; literals **Verified**). Verb 246 (the pick-up verb on another faction's character that is
