@@ -978,7 +978,7 @@ A character's job list (the Orders menu's "Perma-Jobs"; class `OrdersReceiver`, 
   0 HOLD_GROUND: + 40 instead, with an extra term **Unknown**. Other values: false. Standing order FAR sets ROAM_FAR (EDX = 2 in the disassembly) and clears the centre target.
 - **Implicit jobs** (**Verified**, `FUN_14050e5b0` after the list, only for a character with a squad (+0x250), the switch on and not sneaking
   (`FUN_1405c9750`)): lowest keys for the squad AI options at `DAT_142134690` (the overview's AI tab), each kept when its task's desire is above 0:
-  +0x117 "Ditch items" → 242 "Ditching resources" (only with an empty task queue +0x60; finder `FUN_1405a59a0`: the carried ITEMs (type 4) of `item
+  +0x117 "Ditch items" → 242 "Ditching resources" (only with an empty task queue +0x60; the entry is tested afresh on every pass, nothing carries over, so a running trip drops out as soon as the finder finds nothing or an order is queued; finder `FUN_1405a59a0`: the carried ITEMs (type 4) of `item
   function` 0 or 15, and food (3) but the first, via `FUN_140749490`, **Verified**; that 242 passes the collect flag **Observed**; the nearest UseableStuff in range whose accept test (slot 0x4a0) takes one, skipping
   ones the squad already uses, **Observed**; Meitou: storages only); then, unless one of three tests holds (`FUN_1402b2b90`
   on the character's +0x450: hold position +0x12b on and not sneaking, **Verified**; byte +0x348, carrying someone; `FUN_1407f4d20`, a set lookup
