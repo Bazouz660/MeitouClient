@@ -15,8 +15,6 @@ public sealed record KidnapSettings
     public int LookEveryTicks { get; init; } = 15;
     /// <summary>A kidnapper looks for a victim within its sight (the rescue finder's range; the sensed list's size is <b>Unknown</b>).</summary>
     public float Sight { get; init; } = AggroSystem.OutdoorSight;
-    /// <summary>A carrier walks to a free cage of its faction within this distance (the arrest system's cage search range).</summary>
-    public float CageRange { get; init; } = AggroSystem.OutdoorSight;
     /// <summary>A carrier counts as in a town of its faction within this multiple of the town's radius (it then looks for the town's cages).</summary>
     public float TownSlack { get; init; } = 1.5f;
     /// <summary>A carrier puts the captive in once within the cage's <c>use range</c> plus this; a walk that ended within <see cref="CageSlack"/> puts it in too (a cage inside a building).</summary>
@@ -309,17 +307,13 @@ public sealed class KidnapSystem(PopulationData data, PopulationSystem populatio
     public bool HasCage(World world, Vector3 at, CharacterCold carrier) => CageFor(world, at, carrier, null) is not null;
 
     /// <summary>
-    /// A free cage <paramref name="carrier"/> may use within range of <paramref name="at"/> (<see cref="FixtureRegistry.FindCage"/>: the original's weights, its own faction's x100, any other faction's only
-    /// when <see cref="FixtureRegistry.CanUse"/> passes), not another abduction's; its town's fixtures are registered first when <paramref name="at"/> is in one (a town no one has loaded has its
-    /// cages all the same).
+    /// A free cage <paramref name="carrier"/> may use among the candidates of its town (<see cref="FixtureRegistry.CageCandidates"/>: the town it stands in, else its faction's nearest, plus its home's),
+    /// not another abduction's (<see cref="FixtureRegistry.FindCage"/>: the original's weights, its own faction's x100, any other faction's only when <see cref="FixtureRegistry.CanUse"/> passes).
     /// </summary>
     Fixture? CageFor(World world, Vector3 at, CharacterCold carrier, Abduction? self)
     {
-        int site = TownOf(world, at, carrier.Faction);
-        if (site >= 0) world.Fixtures.RegisterSite(world, data, site);
-        float range2 = Settings.CageRange * Settings.CageRange;
-        var here = new Vector2(at.X, at.Z);
-        return world.Fixtures.FindCage(world, carrier, at, null, f => Vector2.DistanceSquared(here, new Vector2(f.Position.X, f.Position.Z)) > range2 || Reserved(f, self));
+        var candidate = world.Fixtures.CageCandidates(world, carrier, at);
+        return world.Fixtures.FindCage(world, carrier, at, null, f => !candidate(f) || Reserved(f, self));
     }
 
     bool Reserved(Fixture f, Abduction? self)

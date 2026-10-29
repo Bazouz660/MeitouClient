@@ -21,6 +21,61 @@ public sealed partial class FixtureRegistry
     CampaignTown TownOfFixture(World world, Fixture f) =>
         f.Site >= 0 ? CampaignTown.OfSite(f.Site) : usableData is { } data ? AiSystem.TownAt(data, world, f.Position) : CampaignTown.None;
 
+    /// <summary>The cage finder gathers the buildings within the town radius times this of its centre (<c>DAT_1416b1640</c>, <b>Verified</b>).</summary>
+    public const float TownReach = 1.1f;
+
+    /// <summary>
+    /// Which cages the finder of goals 112/281 considers for <paramref name="carrier"/> at <paramref name="at"/> (the gatherer <c>FUN_1408cbea0</c> with <c>FUN_140a00690</c>, <b>Verified</b>): the town it stands in,
+    /// else its faction's nearest town within <see cref="BedSearchRange"/> (squared 1.5625e7; nest markers left out), the cages within <see cref="TownReach"/> x that town's radius of its centre;
+    /// plus those of the town of its squad's home when that differs. With no town at all every cage of the world qualifies. The towns' fixtures are registered (a town no one has loaded has its cages
+    /// all the same). Pass the result to <see cref="FindCage"/> as part of its skip test; serial phases only.
+    /// </summary>
+    public Func<Fixture, bool> CageCandidates(World world, CharacterCold carrier, Vector3 at)
+    {
+        if (usableData is not { } data) return static _ => true;
+        var town = AiSystem.TownAt(data, world, at);
+        if (town.IsNone) town = NearestTownOf(world, data, carrier.Faction, at);
+        if (town.IsNone) return static _ => true;
+        var home = world.Squads.Find(carrier.SquadId) is { Town: >= 0 } squad ? CampaignTown.OfSite(squad.Town) : CampaignTown.None;
+        if (home == town) home = CampaignTown.None;
+        var (centre, reach) = Reach(world, data, town);
+        var (homeCentre, homeReach) = home.IsNone ? default : Reach(world, data, home);
+        if (town.Site >= 0) RegisterSite(world, data, town.Site);
+        if (home.Site >= 0) RegisterSite(world, data, home.Site);
+        return f =>
+        {
+            var p = new Vector2(f.Position.X, f.Position.Z);
+            return Vector2.DistanceSquared(p, centre) <= reach * reach || !home.IsNone && Vector2.DistanceSquared(p, homeCentre) <= homeReach * homeReach;
+        };
+    }
+
+    // A town's centre and TownReach x radius.
+    static (Vector2 Centre, float Reach) Reach(World world, PopulationData data, CampaignTown town)
+    {
+        if (town.Site >= 0) return (new Vector2(data.Sites[town.Site].Position.X, data.Sites[town.Site].Position.Z), data.Sites[town.Site].Town.Radius * TownReach);
+        return world.Buildings.FindTown(town.PlayerTown) is { } t ? (new Vector2(t.Position.X, t.Position.Z), t.Radius * TownReach) : default;
+    }
+
+    // The nearest town of the faction (FUN_140927f10, X/Z) when within BedSearchRange; the placed towns by their faction, the player's by their owner.
+    static CampaignTown NearestTownOf(World world, PopulationData data, int faction, Vector3 at)
+    {
+        var here = new Vector2(at.X, at.Z);
+        var best = CampaignTown.None;
+        float bestD = BedSearchRange * BedSearchRange;
+        foreach (var site in data.Sites)
+        {
+            if (site.Town.Type is TownType.NestMarker or TownType.Null || site.Index >= data.SiteFactions.Count || data.SiteFactions[site.Index] != faction) continue;
+            float d = Vector2.DistanceSquared(here, new Vector2(site.Position.X, site.Position.Z));
+            if (d <= bestD) (best, bestD) = (CampaignTown.OfSite(site.Index), d);
+        }
+        foreach (var town in world.Buildings.Towns)
+        {
+            float d = Vector2.DistanceSquared(here, new Vector2(town.Position.X, town.Position.Z));
+            if (town.Owner == faction && d <= bestD) (best, bestD) = (CampaignTown.OfPlayer(town.Number), d);
+        }
+        return best;
+    }
+
     /// <summary>
     /// <c>Ownerships::canIUseThisBuilding</c> (<c>FUN_140621230</c>, <b>Verified</b>, docs/game/locks.md) for a cage and the carrier whose squad's ownerships it reads: true for a squad with no faction, for a
     /// cage of its faction, and for one in the town its occupation holds; false when the cage owner's faction counts the squad's as an enemy; false for a fixture with an inventory; a cage on its

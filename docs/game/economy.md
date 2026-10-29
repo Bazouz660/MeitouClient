@@ -480,10 +480,10 @@ decompile's `DialogActionEnum` / `DialogConditionEnum` / `EventTriggerEnum`, com
   129 leads the planner to 203 Arresting (list B: target down, unarmed, carried) and then the cage goals.
 - **Caging** (goals 112 / 281 "Find and put in cage", subtask 108 `PUT_IN_CAGE`): desire `FUN_1405a1140` (0 unless carrying;
   0.1 / 0.5 / 1.4 / 2.0 by status, death and bounty tests in `FUN_1405a0f10`); cage finder `FUN_1408d0770(ai, wantFree 1, function 8)`
-  over the candidates `FUN_1408cbea0` gathers (interiors included; [locks](locks.md#beds): the current town, else the faction's nearest, plus the home's town): usable (`FUN_140621230`, `Ownerships::canIUseThisBuilding`, full rule in [locks](locks.md#beds); **Verified** by decompile), not reserved, free; weight
+  over the candidates `FUN_1408cbea0` gathers (interiors included): the town in the character's status (`+0x88`), else its faction's nearest town (`FUN_140927f10`, nest markers left out) when within squared `DAT_14172dd88` = 1.5625e7, the buildings within that town's radius x `DAT_1416b1640` = 1.1 of its position (`FUN_140a00690`, each passing the usable test with no character, only complete ones), plus those of the home building's town when it differs; with no town at all every zone is searched, i.e. every building (**Verified**): usable (`FUN_140621230`, `Ownerships::canIUseThisBuilding`, full rule in [locks](locks.md#beds); **Verified** by decompile), not reserved, free; weight
   `clamp(1 - d^2 / 4608^2, 1e-5, 1)`, x100 if the cage is of the carrier's faction (any other must be usable or is skipped), x100 if in the
   carrier's home (the squad's Ownerships home), x1e-5 for a law-enforcement carrier when the cage stands inside a building that is not public (`isPublic`); the **highest** weight wins (**Verified**, `FUN_1408d0770`).
-  Meitou: `FixtureRegistry.FindCage` with `CanUse` (all callers: arrests, bounty cagings, kidnapping, town duty); a building's public flag is its state's `is public day`, public when absent.
+  Meitou: `FixtureRegistry.FindCage` with `CanUse` (all callers: arrests, bounty cagings, kidnapping, town duty) and, for kidnapping, `CageCandidates` (the gatherer's town rule; the other callers keep their own range or town test); a building's public flag is its state's `is public day`, public when absent.
   No free cage: the finder returns nothing; what the carrier then does is **Unknown**.
 
 ### 11.8 Bounty spotting and bounty hunters
