@@ -72,12 +72,14 @@ public sealed class BuildingFootprints
     readonly GameDatabase db;
     readonly CollisionCache collision;
     readonly Lazy<Dictionary<ZoneCoordinate, List<BuildingPlacement>>> index;
+    readonly WorldLevelData? levels;
     readonly ConcurrentDictionary<string, Task<BuildingFootprint?>> byRecord = new(StringComparer.Ordinal);
 
     public BuildingFootprints(GameInstall install, GameDatabase db, WorldLevelData? levels)
     {
         this.install = install;
         this.db = db;
+        this.levels = levels;
         collision = new CollisionCache(install);
         index = new(() =>
         {
@@ -237,6 +239,28 @@ public sealed class BuildingFootprints
                 yield return b;
             }
         }
+    }
+
+    /// <summary>
+    /// The level data's buildings with <c>links together</c> (town walls, whatever their owner or state) placed within <paramref name="radius"/> of <paramref name="centre"/> (X, Z), with
+    /// their absolute position and turn: the wall pieces a player's wall can snap to. <paramref name="terrainHeight"/> sets a placement that has no height of its own.
+    /// </summary>
+    public IEnumerable<(string Key, string Record, Vector3 Position, Quaternion Rotation)> LinkedAround(Vector2 centre, float radius, Func<double, double, float> terrainHeight)
+    {
+        if (levels is null) yield break;
+        var map = index.Value;
+        var home = WorldLayout.ZoneOf(centre.X, centre.Y);
+        int span = (int)MathF.Ceiling(radius / WorldLayout.ZoneSize);
+        for (int dz = -span; dz <= span; dz++)
+            for (int dx = -span; dx <= span; dx++)
+            {
+                if (!map.TryGetValue(new ZoneCoordinate(home.X + dx, home.Y + dz), out var list)) continue;
+                foreach (var b in list)
+                {
+                    if (b.TargetsZoneRecord || b.Position == Vector3.Zero || Vector2.DistanceSquared(new Vector2(b.Position.X, b.Position.Z), centre) > radius * radius) continue;
+                    if (db.Find(b.BuildingId)?.GetBool("links together") == true && BuildingPlacements.Resolve(b, db, levels, terrainHeight) is { } r) yield return (b.Key, b.BuildingId, r.Position, b.Rotation);
+                }
+            }
     }
 
     /// <summary>The footprints (those already read; the others are being read) of the level data's buildings with a placement within <paramref name="radius"/> of <paramref name="centre"/> (X, Z).</summary>

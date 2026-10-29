@@ -209,7 +209,7 @@ sealed partial class PlayerInterface
             float yaw = ghostYaw;
             Func<string, Vector3, Quaternion, bool>? ignore = null;
             // A wall ghost before its first click snaps to the nearest link point: it starts there, or ends there on a free start (Verified, FUN_140427950).
-            if (building is { LinksTogether: true, LinkType: 0 or 3 } && WallLine.Find(WallLinks(), position) is { } snap)
+            if (building is { LinksTogether: true, LinkType: 0 or 3 } && WallLine.Find(WallLinks(position), position) is { } snap)
             {
                 ghostSnap = snap;
                 rotation = WallLine.LookRotation(snap.Direction);
@@ -244,10 +244,25 @@ sealed partial class PlayerInterface
         return buildIndex?.GetValueOrDefault(id);
     }
 
-    /// <summary>The link points a line can snap to: the queued wall ghosts and the player's wall sites and buildings (the level's town walls are not candidates, an engine gap).</summary>
-    List<WallLink> WallLinks() => WallLine.Links(
-        buildQueue.Select(q => (q.Building, q.Position, q.Rotation))
-            .Concat(session.CurrentSnapshot.Buildings.Select(s => (Data: BuildData(s.Record), s.Position, s.Rotation)).Where(w => w.Data is not null).Select(w => (w.Data!, w.Position, w.Rotation))));
+    /// <summary>How far round the cursor the level's walls are read for a snap: the snap radius times sqrt 2, plus the longest wall (so the joins at the ends in reach are counted).</summary>
+    const float LevelWallReach = 300;
+
+    /// <summary>
+    /// The link points a line can snap to (<b>Verified</b>, <c>FUN_1404289f0</c>): the queued wall ghosts and every building that links together in the loaded zones, any owner. Those are the
+    /// player's sites and the level's town walls near <paramref name="near"/>; a level wall that is a site already is the site's.
+    /// </summary>
+    List<WallLink> WallLinks(Vector3 near)
+    {
+        var sites = session.CurrentSnapshot.Buildings;
+        var known = sites.Select(s => s.Id).ToHashSet(StringComparer.Ordinal);
+        var level = buildHost is { } host
+            ? host.Placement.LinkedAround(new Vector2(near.X, near.Z), LevelWallReach).Where(w => !known.Contains(w.Key)).Select(w => (Data: BuildData(w.Record), w.Position, w.Rotation))
+            : [];
+        return WallLine.Links(
+            buildQueue.Select(q => (q.Building, q.Position, q.Rotation))
+                .Concat(sites.Select(s => (Data: BuildData(s.Record), s.Position, s.Rotation)).Where(w => w.Data is not null).Select(w => (w.Data!, w.Position, w.Rotation)))
+                .Concat(level.Where(w => w.Data is not null).Select(w => (w.Data!, w.Position, w.Rotation))));
+    }
 
     /// <summary>
     /// What never blocks a wall piece (<b>Observed</b>, <c>FUN_140427b00</c>): connectors and wedges, and near a snapped joint the walls with a link point at that joint.
@@ -271,7 +286,7 @@ sealed partial class PlayerInterface
     void LayWall(BuildServices host, (BuildingBuildData Master, Vector3 Start, WallSnap? StartSnap, bool Reversed) line, Vector3 hit)
     {
         var end = new Vector3(hit.X, hit.Y + ghostLift, hit.Z);
-        var endSnap = WallLine.Find(WallLinks(), end, line.Reversed ? 1 : 2);
+        var endSnap = WallLine.Find(WallLinks(end), end, line.Reversed ? 1 : 2);
         if (endSnap is { } es && FlatDistance(es.Point, line.Start) < 1) endSnap = null;
         wallEndSnap = endSnap;
         var pieces = WallLine.Layout(line.Master, BuildData, host.Placement.Ground, line.Start, line.StartSnap, endSnap?.Point ?? end, endSnap, line.Reversed);

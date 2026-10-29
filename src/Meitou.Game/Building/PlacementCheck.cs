@@ -46,6 +46,8 @@ public sealed class PlacementServices
     public Func<string, Vector3, PlacementReadout?> Readout { get; init; } = (_, _) => null;
     /// <summary>The bounds box (min, max) of a building part's mesh in its own space; null when it cannot be read (that part then takes no part in the vertical margins).</summary>
     public Func<string, (Vector3 Min, Vector3 Max)?> PartBounds { get; init; } = _ => null;
+    /// <summary>The level data's buildings that link together (town walls) within a radius of a point (X, Z): key, record, absolute position and turn; empty without level data.</summary>
+    public Func<Vector2, float, IEnumerable<(string Key, string Record, Vector3 Position, Quaternion Rotation)>> LinkedAround { get; init; } = (_, _) => [];
 }
 
 /// <summary>Everything one evaluation reads (the query is pure over it and the services).</summary>

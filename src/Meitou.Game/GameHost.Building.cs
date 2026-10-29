@@ -231,6 +231,7 @@ sealed partial class GameHost
                 CollisionMesh = footprints.Mesh,
                 Plot = footprints.Plot,
                 PartBounds = footprints.PartBounds,
+                LinkedAround = (centre, radius) => footprints.LinkedAround(centre, radius, (x, z) => ActiveGround((float)x, (float)z)),
                 StaticAround = footprints.StaticAround,
                 StaticAlong = (origin, direction, length) => footprints.Along(origin, direction, length).Where(b => Pickable(b.Placement.BuildingId)),
                 // The movement pick's floors up to the viewed one: the build window's floor arrows choose the floor the ghost stands on.

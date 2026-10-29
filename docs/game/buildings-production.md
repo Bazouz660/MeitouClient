@@ -372,7 +372,10 @@ short; a piece runs from its position along its own +Z for `link length` x `scal
   by remaining / count so the run closes on the point (**Observed**).
 - **Orientation** (`FUN_1404278b0`): +Z towards the piece's end (pitching with the slope), +X level (Y x Z).
 - **Snapping** (`FUN_1404289f0`, `FUN_140427950`): candidates are the queued wall ghosts and every loaded building with
-  `links together` (no owner or family filter seen; Building slot 4 filters, **Unknown**). Link points: start =
+  `links together` (**Verified**, `FUN_1409fe710` -> `FUN_1409fe1e0`: every object of type 0 in each zone of the loaded set,
+  no owner or state test, so intact level town walls count; Building slot 4 filters, **Unknown**). Meitou: the queued ghosts,
+  the player's sites and the level's walls within 300 of the cursor (`BuildingFootprints.LinkedAround`; every zone counts as
+  loaded, a level wall that is a site is the site). Link points: start =
   position, end = position + rot x (0, 0, len); direction = the wall's +Z, a connector's end direction turned 48 deg
   about Y. Points within sqrt(10) count as joined. Search in X/Z, radius 90 (25 inside a building): a free point scores
   d^2 - r^2, a joined one d^2, best below r^2, so free points snap within 127 and win. Codes 1 free end, 2 free start, 3
