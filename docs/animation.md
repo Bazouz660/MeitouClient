@@ -216,7 +216,8 @@ left/right leg LIMB_REPLACEMENT (slot 52/53). Left only: (b+4)/(L+4); right only
 Muscle normal blends, head poses and skinning follow their own data/shader rules, not bone scale.
 
 **Engine choice** GroundOffset compensates lowest foot/toe bind-pose height change per appearance;
-it does not re-ground crouches or prove the original controller's mechanism. Physically moving
+it does not re-ground crouches or prove the original controller's mechanism. It is measured with every limb (the sliders only): a lost leg's calf and foot scale to 0, so with
+both legs lost the lowest foot was the knee and the lowering sank a crawler into the ground and a carried body down its carrier's back (**Observed**, sandbox screenshots). Physically moving
 characters/root collision and leg-health/lying/care selection belong in [simulation](simulation.md#animation).
 
 ### Stat-driven body
