@@ -14,7 +14,10 @@ sealed record Config(
     string? DiscordPublicKey,
     string? DiscordAppId,
     string? DiscordBotToken,
-    string[] DiscordTrustedRoles)
+    string[] DiscordTrustedRoles,
+    string? GithubToken,
+    string FeedbackDir,
+    Uri PublicUrl)
 {
     public static Config Load(IConfiguration c)
     {
@@ -35,7 +38,10 @@ sealed record Config(
             Get("DISCORD_PUBLIC_KEY"),
             Get("DISCORD_APP_ID"),
             Get("DISCORD_BOT_TOKEN"),
-            List("DISCORD_TRUSTED_ROLES"));
+            List("DISCORD_TRUSTED_ROLES"),
+            Get("GITHUB_TOKEN"),
+            Get("FEEDBACK_DIR") ?? "/data/feedback",
+            new Uri(Get("PUBLIC_URL") ?? "https://gear-pastry-chorus.cloudovna.app"));
     }
 
     /// <summary>A <c>postgresql://user:pass@host:port/db?sslmode=...</c> URL as an Npgsql connection string.</summary>

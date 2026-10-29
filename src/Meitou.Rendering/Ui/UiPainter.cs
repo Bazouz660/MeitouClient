@@ -374,7 +374,23 @@ public sealed partial class UiPainter : IDisposable
             // An EditBox scrolled by its bar (MyGuiPresentation: TextScroll pixels); the client clips the lines.
             float scrolled = float.TryParse(c.Properties.GetValueOrDefault("TextScroll"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float textScroll) ? textScroll : 0;
             float y = -scrolled + textArea.Y + (align.Contains("Bottom", StringComparison.Ordinal) ? Math.Max(0, textArea.Height - font.LineHeight * scale * lines.Count) : HasWord(align, "Center", "VCenter") ? Math.Max(0, (textArea.Height - font.LineHeight * scale * lines.Count) / 2) : 0);
-            if (focused)
+            if (focused && lines.Count > 1)
+            {
+                // A wrapped box being typed in: the caret on its own line, the text scrolled up to keep that line in view (no selection drawn).
+                int caret = int.TryParse(c.Properties.GetValueOrDefault("CaretIndex"), out int at) ? Math.Clamp(at, 0, text.Length) : 0;
+                var (caretLine, caretColumn) = CaretInLines(text, p => font.WrapText(p, textArea.Width, scale), caret);
+                caretLine = Math.Min(caretLine, lines.Count - 1);
+                caretColumn = Math.Min(caretColumn, lines[caretLine].Length);
+                float lineHeight = font.LineHeight * scale;
+                y -= Math.Max(0, (caretLine + 1) * lineHeight - textArea.Height);
+                if ((System.Diagnostics.Stopwatch.GetTimestamp() / (System.Diagnostics.Stopwatch.Frequency / 2)) % 2 == 0)
+                {
+                    float caretX = textArea.X + font.MeasureText(lines[caretLine][..caretColumn], scale), caretY = y + caretLine * lineHeight;
+                    overlay.Rect(caretX, caretY, caretX + 1, caretY + lineHeight, textColour);
+                }
+                overlay.Flush(width, height, textClip, pass);
+            }
+            else if (focused)
             {
                 int Index(string key) => int.TryParse(c.Properties.GetValueOrDefault(key), out int at) ? Math.Clamp(at, 0, text.Length) : 0;
                 int selection = Index("SelectionStart"), length = Index("SelectionLength"), caret = Index("CaretIndex");
@@ -547,6 +563,38 @@ public sealed partial class UiPainter : IDisposable
             start = end;
             while (run + 1 < runs.Count && runs[run + 1].Start <= at + start) run++;
         }
+    }
+
+    /// <summary>
+    /// Where <paramref name="caret"/> (an index into <paramref name="text"/>) falls in the text wrapped by <paramref name="wrap"/>: the line and
+    /// the characters before it there. Each paragraph wraps on its own and wrapping keeps one space of a run, so its lines are matched back to it.
+    /// </summary>
+    static (int Line, int Column) CaretInLines(string text, Func<string, IReadOnlyList<string>> wrap, int caret)
+    {
+        int line = 0, start = 0;
+        var paragraphs = text.Split('\n');
+        for (int p = 0; p < paragraphs.Length; p++)
+        {
+            string paragraph = paragraphs[p];
+            var wrapped = wrap(paragraph);
+            if (caret > start + paragraph.Length && p < paragraphs.Length - 1) { line += wrapped.Count; start += paragraph.Length + 1; continue; }
+            int local = caret - start, at = 0;
+            for (int l = 0; l < wrapped.Count; l++)
+            {
+                string s = wrapped[l];
+                while (at < paragraph.Length && paragraph[at] == ' ') at++;   // the spaces the line broke at
+                int column = 0;
+                for (int i = 0; i < s.Length; i++)
+                {
+                    if (s[i] == ' ') while (at < paragraph.Length && paragraph[at] == ' ') at++;
+                    else at++;
+                    if (at <= local) column = i + 1;
+                }
+                if (local <= at || l == wrapped.Count - 1) return (line + l, column);
+            }
+            return (line, 0);
+        }
+        return (line, 0);
     }
 
     static bool HasWord(string align, string a, string b)

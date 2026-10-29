@@ -441,6 +441,7 @@ sealed partial class GameHost
             else if (e.Action == "load") loadRequestedFolder = e.Text;
             else if (e.Action == "import") importRequested = (e.Text, player.ImportFlags);
             else if (e.Action == "new-game") newGameRequested = e.Text;
+            else if (e.Action.StartsWith("feedback-", StringComparison.Ordinal)) FeedbackAction(e);
             else if (e.Action == "main-menu") mainMenuRequested = true;
             else if (e.Widget == "OptionsButton" && panel is not null) panel.Visible = true;
             else if (e.Widget == "ExitGameButton") quit = true;
@@ -657,6 +658,9 @@ sealed partial class GameHost
                 }
                 drawTotal += Stopwatch.GetElapsedTime(t0).TotalMilliseconds;
                 bool shot = screenshotRequested, take = takeFile is not null;
+                // The feedback screenshot: the frame without the menus, the settings, the debug overlays and the pointer (GameHost.Feedback.cs).
+                bool feedbackShot = feedbackShotRequested && !take;
+                player.ShotWithoutMenus = feedbackShot;
                 // The game's interface (markers, HUD, panels, debug overlays): hidden by F7, the cinema's clean picture and in recorded frames.
                 bool revealing = loading is { Exiting: true } && sceneLoad is null && !warming && skyArrival is null;
                 // Bake/upload menu surfaces, fonts and pipelines behind the opaque cover, before timing the reveal.
@@ -674,7 +678,7 @@ sealed partial class GameHost
                 if (ui && overlay is not null && IsSandbox) DrawSandbox(overlay, size.X, size.Y);
                 if (ui && overlay is not null && IsBattle) DrawBattleCounter(overlay, size.X, size.Y);
                 // The debug overlays are left out of saved pictures: the statistics at the top left, the key list below them, the profiler.
-                if (ui && overlay is not null && !shot)
+                if (ui && overlay is not null && !shot && !feedbackShot)
                 {
                     // Below the HUD, which holds the top left corner in the game (the viewer's overlays start at the top).
                     float panelsBottom = g.NoPopulation ? 0 : player.HudBottom;
@@ -700,9 +704,9 @@ sealed partial class GameHost
                     profiler?.Draw(overlay, size.X, size.Y);
                     profiler?.DrawVram(overlay, size.X, size.Y);
                 }
-                if (ui) panel?.Draw(size.X, size.Y);
+                if (ui && !feedbackShot) panel?.Draw(size.X, size.Y);
                 // Over everything: the letterbox and the cinema's editor (F6, also with F7); the game hides its status line.
-                if (overlay is not null && !covered) cinema.Draw(overlay, size.X, size.Y, shot || take || (interfaceHidden && !cinema.EditorVisible), showStatus: false);
+                if (overlay is not null && !covered) cinema.Draw(overlay, size.X, size.Y, shot || take || feedbackShot || (interfaceHidden && !cinema.EditorVisible), showStatus: false);
                 // The loading screen over the whole frame while a scene loads or the world warms up.
                 if (covered && loading is not null && loadingOverlay is not null)
                 {
@@ -714,7 +718,7 @@ sealed partial class GameHost
                 // The mouse pointer over everything, as the original's Pointer layer; never in saved pictures. What the right button would do picks it,
                 // the arrow over the settings panel, the cinema's editor and the loading screen. The free camera hides it (the original's `invisible`);
                 // Hardware mouse shows Windows' cursor instead.
-                if (!shot && !take && overlay is not null && pointerMouse is not null)
+                if (!shot && !take && !feedbackShot && overlay is not null && pointerMouse is not null)
                 {
                     var cursorMode = orbitAnchor is not null ? Silk.NET.Input.CursorMode.Disabled
                         : config.HardwareMouse && !freeLook ? Silk.NET.Input.CursorMode.Normal : Silk.NET.Input.CursorMode.Hidden;
@@ -731,6 +735,11 @@ sealed partial class GameHost
                 statsFrames++;
                 if (takeFile is not null) { FramebufferCapture.SavePng(display.Context, backbuffer, takeFile, size.X, size.Y); cinema.FrameDone(); }
                 else if (shot) SaveScreenshot(display.Context, backbuffer, size.X, size.Y);
+                if (feedbackShot)
+                {
+                    player.ShotWithoutMenus = false;
+                    FeedbackCaptured(FramebufferCapture.ReadPicture(display.Context, backbuffer, size.X, size.Y), size.X, size.Y);
+                }
             }
             statsTimer += dt;
             if (statsTimer >= 1)

@@ -98,6 +98,7 @@ sealed partial class PlayerInterface
         { ScrollInventoryPage(e.Screen, float.Parse(e.Action[22..], CultureInfo.InvariantCulture)); return; }
         if (e.Screen == "editor") EditorAction(e);
         else if (e.Screen == "file") FileDialogAction(e);
+        else if (e.Screen == FeedbackScreen) FeedbackFormAction(e);
         else if (HandleFrontendAction(e)) UpdateMenuPause();
         else if (e.Screen == "stats" && e.Action == "select") selectedStat = e.Text;
         else if (e.Screen == "stats" && e.Action.StartsWith("stat:", StringComparison.Ordinal)) selectedStat = e.Action[5..];
@@ -128,6 +129,7 @@ sealed partial class PlayerInterface
         if (pinned) id = "inventory";   // a pinned window binds as the inventory, for its own character
         var lead = pinned || id == "limbs" ? WindowCharacter(screen) : id is "inventory" or "bag" ? InventoryOwner() : Selected().FirstOrDefault();
         foreach (var button in layout.Widgets.Where(w => w.Type == "Button" && !w.Properties.ContainsKey("TemplateEvent"))) b.Disabled.Add(button.Name);
+        if (id == FeedbackScreen) { BindFeedbackScreen(b); return b; }
         if (BindFrontend(id, b)) return b;
         if (id == "editor") { BindEditor(b); return b; }
         if (id == "file") { BindFileDialog(b); return b; }

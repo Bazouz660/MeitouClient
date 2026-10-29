@@ -9,6 +9,11 @@ public static class PngWriter
     public static void Write(string path, int width, int height, ReadOnlySpan<byte> rgba)
     {
         using var file = File.Create(path);
+        Write(file, width, height, rgba);
+    }
+
+    public static void Write(Stream file, int width, int height, ReadOnlySpan<byte> rgba)
+    {
         file.Write([0x89, (byte)'P', (byte)'N', (byte)'G', 0x0D, 0x0A, 0x1A, 0x0A]);
 
         var header = new byte[13];

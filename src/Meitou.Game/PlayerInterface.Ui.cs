@@ -69,6 +69,8 @@ sealed partial class PlayerInterface
         // The title's start, load and import windows leave its buttons live (the original's title windows are not modal): another button replaces them.
         faithfulScreens.PassThrough = id => id is "new-game" or "load" or "import" && faithfulScreens.IsOpen("title");
         faithfulScreens.RegisterPanel(TownScreen, TownPanelLayout(mainPanel));
+        faithfulScreens.Register(FeedbackScreen, FeedbackLayout(), modal: true);
+        feedbackButtonLayout = MyGuiTemplates.Expand(FeedbackButtonLayout(), uiResources);
         faithfulScreens.Follow("bag", "inventory");   // the bag window is married to the inventory, opened and closed by OPEN BAG only
         faithfulScreens.Follow("loot-bag", "loot");
         faithfulScreens.Activated += FaithfulAction;
@@ -237,6 +239,7 @@ sealed partial class PlayerInterface
         if (hud) AddTutorialPanel(controls);
         foreach (var screen in faithfulScreens.Arrange(Width, Height, BindFaithfulScreen, AddFaithfulContent))
         {
+            if (ShotWithoutMenus && FeedbackShotHides.Contains(screen.Id)) continue;
             if (screen.Id == "editor") controls.AddRange(EditorBackdrop());
             controls.AddRange(screen.Controls.Where(c => UiMode == UiMode.Faithful ||
                 !c.Properties.TryGetValue("ImageResource", out var resource) || resource != "Kenshi_TitleScreen"));
@@ -263,6 +266,7 @@ sealed partial class PlayerInterface
         AddSpeech(controls);
         AddBuildReadout(controls);
         AddContextMenu(controls);
+        AddFeedbackButton(controls);
         pointerOverUi = faithfulScreens.Contains(mouse) || MyGuiPresentation.HitTest(controls, mouse.X, mouse.Y) is not null;
         AddHoverLabel(controls);
         return controls;
@@ -272,6 +276,7 @@ sealed partial class PlayerInterface
     {
         if (!UiVisible) return false;
         var controls = ArrangeUi();
+        if (FeedbackButtonDown(controls, p)) return true;
         if (InventoryPointerDown(p)) return true;
         if (MapPointerDown(p)) return true;
         if (SquadPointerDown(p)) return true;

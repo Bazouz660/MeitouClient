@@ -125,6 +125,7 @@ sealed partial class GameHost
     void HandleSaves(double realDt)
     {
         while (saveNotices.TryDequeue(out var notice)) player.Notice(notice.Text, notice.Error);
+        HandleFeedback();
         PrintSavedLog();
         Autosave(realDt);
         if (quickSaveRequested) { quickSaveRequested = false; QuickSaveNow(); }
@@ -171,7 +172,8 @@ sealed partial class GameHost
 
     bool Busy() => saveWrite is { IsCompleted: false } || Covered;
 
-    void QuickSaveNow(string? destination = null)
+    /// <summary>Saves the world; a <paramref name="feedback"/> save (into a temporary folder for the feedback report) leaves the save in use alone, shows no notice and fails its write task.</summary>
+    void QuickSaveNow(string? destination = null, bool feedback = false)
     {
         if (!SavesAvailable(out string reason)) { player.Notice(reason, true); return; }
         session.SettleAhead();   // a tick run ahead counts as run: the saved world and its clock agree
@@ -200,7 +202,7 @@ sealed partial class GameHost
         }
         double captureMs = watch.Elapsed.TotalMilliseconds;
         string folder = destination ?? QuickSave.Folder();
-        saveInUse = folder;
+        if (!feedback) saveInUse = folder;
         saveWrite = Task.Run(() =>
         {
             try
@@ -208,11 +210,12 @@ sealed partial class GameHost
                 var written = Stopwatch.StartNew();
                 game.Write(folder);
                 Console.WriteLine($"save      {folder}: captured in {captureMs:0.0} ms{(ahead ? "" : " (the base made on the spot)")}, written in {written.ElapsedMilliseconds} ms");
-                saveNotices.Enqueue(("Saved", false));
+                if (!feedback) saveNotices.Enqueue(("Saved", false));
             }
             catch (Exception e)
             {
                 Console.Error.WriteLine($"save      write failed: {e}");
+                if (feedback) throw;
                 saveNotices.Enqueue(($"Save failed: {e.Message}", true));
             }
         });

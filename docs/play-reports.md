@@ -18,7 +18,7 @@ and checks only propose.
 
 `services/Meitou.Reports` (ASP.NET minimal API, PostgreSQL), image `ghcr.io/vlcekm/meitou-reports` from `reports-image.yml`, runs on
 Cloudovna. Published Native AOT on the chiseled `runtime-deps` image: Npgsql (slim builder) is the only package; JSON goes through the
-`ReportsJson` source-generated context (add new wire types there), Discord signatures through the service's own `Ed25519.cs`. One table `reports`: row, verdict `works|broken`, build, platform `win|linux|mac|proton|other`, modded, note (300
+`ReportsJson` source-generated context (add new wire types there), Discord signatures through the service's own `Ed25519.cs`. Table `reports` (feedback: see "Feedback"): row, verdict `works|broken`, build, platform `win|linux|mac|proton|other`, modded, note (300
 chars, required for Broken), source `web|discord|launcher`, reporter, trusted, gzipped log (launcher only, last 512 KiB).
 
 - Reporter = HMAC-SHA256(`REPORTS_SALT`, IP or Discord user id), 24 hex: counts distinct people, stores nothing personal.
@@ -42,6 +42,25 @@ distinct counts reset), `REPORTS_ADMIN_TOKEN`, `ROADMAP_URL` (default `roadmap.t
 the site), `TURNSTILE_SECRET` (web reports need a Turnstile token when set), `DISCORD_PUBLIC_KEY`, `DISCORD_APP_ID`,
 `DISCORD_BOT_TOKEN`, `DISCORD_TRUSTED_ROLES` (role ids whose reports are trusted), `GITHUB_REPO`. Client IP: `CF-Connecting-IP`, else
 the last `X-Forwarded-For` entry. Port 8080.
+
+## Feedback
+
+The game's FEEDBACK button (top right in both UI modes, title included; `PlayerInterface.Feedback.cs`, `GameHost.Feedback.cs`,
+`FeedbackSender.cs`) opens a modal form: title (required, 100 chars), text (5000), and ticks for a screenshot, a save and log.txt (it
+can show folder names). The screenshot is the frame after the press, drawn without the game menu and what it opens, the form, the settings
+panel, debug overlays and pointer; PNG, shrunk by a whole factor to at most 2560 × 1440. The save is made only when Send is pressed (only
+in a game), into a temporary folder, zipped and deleted after; over 95 MB zipped it is refused before anything is sent. The log is the whole
+log.txt, gzipped. Also sent: `BuildVersion` tag and commit, platform (as the launcher), the load order's data files.
+
+Service side (`Feedback.cs`, table `feedback`): `POST /feedback` (JSON form, which attachments follow) returns a 32-hex token; each
+attachment is `PUT /feedback/{token}/{screenshot|save|log}` with the raw body (save at most 95,000,000 bytes, others 16 MiB: Cloudflare
+takes 100 MB a request); `POST /feedback/{token}/send` opens the issue on `GITHUB_REPO` labelled `feedback` (not `bug`, so the drift check
+leaves it alone; @ in the player's text gets a zero-width space) and returns `{number, url}`, again on a repeat. Files live in
+`FEEDBACK_DIR/{token}/` and are public at `GET /feedback/{token}/{screenshot.png|save.zip|log.txt}` (the log stored gzipped, served with
+`Content-Encoding: gzip`), kept forever; admin `DELETE /feedback/{token}` removes one. Limits: 10 forms per reporter (same hash as reports)
+per day, 30 requests per IP per 10 minutes; forms never sent are deleted after a day. Env: `GITHUB_TOKEN` (fine-grained, Issues
+read/write on the repo; without it sends are refused), `FEEDBACK_DIR` (default `/data/feedback`, a persistent volume: the image creates it
+owned by the app user), `PUBLIC_URL` (the links' base, default the Cloudovna address).
 
 ## Ways in
 

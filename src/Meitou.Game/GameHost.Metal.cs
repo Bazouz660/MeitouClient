@@ -578,6 +578,7 @@ sealed partial class GameHost
                 if (e.Action == "save") saveRequestedFolder = SaveCatalog.Folder(QuickSave.DefaultRoot, e.Text);
                 else if (e.Action == "load") loadRequestedFolder = e.Text;
                 else if (e.Action == "new-game") newGameRequested = e.Text;
+                else if (e.Action.StartsWith("feedback-", StringComparison.Ordinal)) FeedbackAction(e);
                 else if (e.Action == "main-menu") mainMenuRequested = true;
                 else if (e.Widget == "OptionsButton" && settings is not null) settings.Visible = true;
                 else if (e.Widget == "ExitGameButton" || e.Action == "exit") quit = true;
@@ -1379,6 +1380,9 @@ sealed partial class GameHost
                     fogVolumes.HidePlaced = savedHidePlaced;
                 }
             }
+            // The feedback screenshot: the frame without the menus, the settings, the debug overlays and the pointer (GameHost.Feedback.cs).
+            bool feedbackShot = feedbackShotRequested && hud is not null && !still;
+            if (hud is not null) hud.ShotWithoutMenus = feedbackShot;
             if (overlay is not null)
             {
                 overlay.Target = backbuffer;
@@ -1403,7 +1407,7 @@ sealed partial class GameHost
                 bool wrote = false;
                 // The framebuffer is 2x the window's points on a Retina display: the fixed-pixel debug text would be half size.
                 float textScale = MathF.Max(1, size.X / (float)Math.Max(window.Size.X, 1));
-                if (statsVisible)
+                if (statsVisible && !feedbackShot)
                 {
                     statsLines.Clear();
                     statsLines.Add($"{fpsText}  {dt * 1000:0.00} ms  {size.X}x{size.Y}");
@@ -1414,26 +1418,26 @@ sealed partial class GameHost
                     overlay.Panel(size.X, size.Y, "Metal frame (F11 hides this)", statsLines, (hud is { UiVisible: true } ? hud.HudBottom : 0) + 8, textScale);
                     wrote = true;
                 }
-                if (frameStatsVisible)
+                if (frameStatsVisible && !feedbackShot)
                 {
                     overlay.TextScaled("Meitou - Metal", 16 * textScale, 16 * textScale, DebugOverlay.TextColour, textScale);
                     overlay.TextScaled($"{frames + 1} frames  {fpsText}  {dt * 1000:0.00} ms  {size.X}x{size.Y}", 16 * textScale,
                         (16 + overlay.LineHeight) * textScale, DebugOverlay.TextColour, textScale);
                     wrote = true;
                 }
-                if (debugMenuOpen && hud is not null)
+                if (debugMenuOpen && hud is not null && !feedbackShot)
                 {
                     DrawDebugMenu(overlay, size.X, size.Y, (hud.UiVisible ? hud.HudBottom : 0) + 8, "Ctrl+F10");
                     wrote = true;
                 }
-                if (settings?.Visible == true)
+                if (settings?.Visible == true && !feedbackShot)
                 {
                     settings.Draw(size.X, size.Y, overlayPass);
                     wrote = true;
                 }
                 // The mouse pointer over everything, as Vulkan draws it: the system cursor when Hardware mouse is on, else the
                 // game's own pointer. The free camera hides it, and saved pictures never contain it.
-                if (!still && !screenshotNow && pointerMouse is not null && hud is not null)
+                if (!still && !screenshotNow && !feedbackShot && pointerMouse is not null && hud is not null)
                 {
                     bool pointerWorld = !Covered && !g.NoPopulation && settings?.Visible != true && !TitleVisible;
                     bool freeLook = pointerWorld && session.Camera.IsFree;
@@ -1494,6 +1498,13 @@ sealed partial class GameHost
                 if (trace)
                     Console.WriteLine($"metal     idle trim ({(compact ? "compacting" : "background")}): " +
                         $"heap {before.HeapSizeBytes / 1048576} -> {after.HeapSizeBytes / 1048576} MB, LOH {loh / 1048576} MB");
+            }
+            if (feedbackShot)
+            {
+                hud!.ShotWithoutMenus = false;
+                var picture = ctx.Readback(backbuffer);
+                for (int i = 3; i < picture.Length; i += 4) picture[i] = 255;
+                FeedbackCaptured(picture, backbuffer.Desc.Width, backbuffer.Desc.Height);
             }
             if (screenshotNow)
             {
