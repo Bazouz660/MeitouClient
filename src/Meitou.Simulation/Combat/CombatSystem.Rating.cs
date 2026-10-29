@@ -15,9 +15,9 @@ public sealed partial class CombatSystem
     {
         if (world.Characters.Cold(slot) is not { Stats: not null, Medical: not null, Fighter: { } f } c) return 0;
         float strength = Eff(c, StatsEnumerated.Strength);
-        float attack = Eff(c, f.Unarmed ? StatsEnumerated.MartialArts : StatsEnumerated.MeleeAttack)
-            + IndoorsAttackBonus(f.Unarmed ? f.UnarmedBonus : f.AttackBonus + (f.Weapon?.Stats.AttackMod ?? 0), IndoorsMod(world, slot, f)) - c.Medical.DustAttackPenalty;
-        float defence = f.Unarmed ? UnarmedRating(c, f)
+        float attack = f.Unarmed ? UnarmedRating(world, slot, c, f)
+            : Eff(c, StatsEnumerated.MeleeAttack) + IndoorsAttackBonus(f.AttackBonus + (f.Weapon?.Stats.AttackMod ?? 0), IndoorsMod(world, slot, f)) - c.Medical.DustAttackPenalty;
+        float defence = f.Unarmed ? UnarmedRating(world, slot, c, f)
             : Eff(c, StatsEnumerated.MeleeDefence) + f.DefenceBonus + (f.Weapon?.Stats.DefenceMod ?? 0) + (Guarding(c) ? 20 : 0);
         float rating = (strength + attack + defence) / 3;
         bool armed = c.Inventory?.Items.Any(x => x.Type == FcsRecordType.WEAPON && InventoryCommands.IsEquipmentSection(x.Section)) == true;

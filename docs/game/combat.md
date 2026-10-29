@@ -19,7 +19,9 @@ target), x its `race damage` percent x 0.01 for the target's race, and, last, x 
 the weapon skill itself is not scaled by it). Bleed multiplier (item `bleed mult`) and `armour penetration` ride along unscaled.
 Quality q = item level x 0.01 (`FUN_1400d3090`).
 
-Unarmed (stat-set category 5, the FISTS item for a person): rating R = lerp(e,0.2,1) x (martial arts raw x scale + `unarmed bonus` - dust penalty) (`FUN_140884e00`, e the encumbrance factor);
+Unarmed (stat-set category 5, the FISTS item for a person): rating R = lerp(e,0.2,1) x (martial arts raw + (int)(`unarmed bonus` with the [indoors](#indoors) modifier - dust penalty)) x slot 0x398
+(`FUN_140884e00` with its flag set, e the encumbrance factor; slot 0x398 is 1 for a person, `FUN_1405e5990`). Every combat caller sets the flag (the packet, the attack rating
+`FUN_140884ee0` sets `dl` = 1 before its jump, the defence rating `FUN_140886290` goes through it), so an unarmed fighter's attack, defence and damage rating are this one number (**Verified**, disassembly);
 total = max(1, lerp(R/100,0.25,1) x (`unarmed damage mult` x toughness x scale + str + 10)) with no halving of any term; blunt share lerp(R/100,1,0.4), the rest cut; no pierce.
 The kind/race/general multipliers, bleed and penetration are the FISTS item's. Stumble threshold toughness*m*0.52 plus state eligibility.
 
@@ -41,8 +43,8 @@ when it is positive and the modifier negative, adds the modifier, then subtracts
 false and the building's `+0xc2` is clear (the last two **Unknown**). The modifier is refreshed with the weapon (`FUN_140884370`, **Verified**): the bound
 weapon's `indoors mod` (weapon `+0x250`), looked up in the held item, then the `back` and `hip` sections; with none it is 8. A person's fists are the `FISTS` item
 (18 long, `indoors mod` 8 in the base data, as the robots' `FISTS- robo`), so an unarmed fighter has +8 inside. Meitou: `CombatSystem.IndoorsMod`, inside = in a
-building's indoor volume (`SightMap.Inside`); the weapon's mod, the fists item's (`Fighter.Fists`) with none, 8 with no item. Not modelled (**Observed**): the damage
-packet's fist rating (`FUN_1408868b0` calls `FUN_140884e00` with the flag set, so it takes the term as well as the dust penalty) has the dust penalty only (`UnarmedRating`).
+building's indoor volume (`SightMap.Inside`); the weapon's mod, the fists item's (`Fighter.Fists`) with none, 8 with no item. The fist rating (`CombatSystem.UnarmedRating`) takes it
+in the damage packet, the attack rating and the defence rating alike; a door bash (`LockSystem`) does not (its packet's flag is not traced).
 
 **Verified** (loader `FUN_140888ca0`, record reader `FUN_1406684c0`): techniques not `disabled` go to an attack
 list unless `is block` or `is dodge` (then the defence list), in data order. Each keeps a per-category table:

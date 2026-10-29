@@ -30,14 +30,18 @@ public sealed partial class CombatSystem
     /// </summary>
     static float Eff(CharacterCold c, StatsEnumerated stat) => (c.Stats![stat] + GearBonus(c, stat)) * c.Stats.Scale * c.Medical!.StatMultiplier(stat) * GearFactor(c, stat);
 
-    /// <summary>The HUD's "Damage:" figure of a melee fighter (the Current Skill line's tooltip): the sum of its blow's terms (<c>FUN_1408868b0</c>) against a human, unpowered.</summary>
-    internal float HudDamage(CharacterCold c)
+    /// <summary>
+    /// The HUD's "Damage:" figure of a melee fighter (the Current Skill line's tooltip) and the stats window's "Martial arts damage" (<c>FUN_140892120</c>, <c>FUN_1408b1250</c>): the sum
+    /// of the four terms of its blow (<c>FUN_1408868b0</c> with no target, so no kind or race multiplier; the gear's damage output applies), unpowered: the fists' for an unarmed
+    /// fighter, else the weapon's.
+    /// </summary>
+    internal float HudDamage(World world, int slot, CharacterCold c)
     {
         if (c is not { Fighter: { } f, Stats: not null, Medical: not null }) return 0;
         float str = Eff(c, StatsEnumerated.Strength);
         return (f.Unarmed
-            ? DamageFormulas.UnarmedPacket(Eff(c, f.WeaponSkill), Eff(c, StatsEnumerated.Toughness), str, f.FistsItem, TargetKind.Human, null, f.DamageOutput, combat)
-            : DamageFormulas.Packet(Eff(c, f.WeaponSkill), Eff(c, StatsEnumerated.Dexterity) * f.DexterityMult, str, f.Weapon!, TargetKind.Human, null, f.DamageOutput, combat)).Sum;
+            ? DamageFormulas.UnarmedPacket(UnarmedRating(world, slot, c, f), Eff(c, StatsEnumerated.Toughness), str, f.FistsItem, TargetKind.None, null, f.DamageOutput, combat)
+            : DamageFormulas.Packet(Eff(c, f.WeaponSkill), Eff(c, StatsEnumerated.Dexterity) * f.DexterityMult, str, f.Weapon!, TargetKind.None, null, f.DamageOutput, combat)).Sum;
     }
 
     /// <summary>
@@ -55,9 +59,14 @@ public sealed partial class CombatSystem
     /// <summary>The worn gear's bonus added to the trained level before the multiplier (<c>FUN_140884ac0</c>): the armour's <c>perception bonus</c> for perception, else 0.</summary>
     internal static int GearBonus(CharacterCold c, StatsEnumerated stat) => stat == StatsEnumerated.Perception ? c.Fighter?.PerceptionBonus ?? 0 : 0;
 
-    /// <summary>The rating a fist blow's damage is scaled by (<see cref="DamageFormulas.UnarmedRating"/>): the raw martial arts stat (no injury multiplier), the gear's unarmed bonus, the dust penalty and the load.</summary>
-    internal static float UnarmedRating(CharacterCold c, Fighter fighter) =>
-        DamageFormulas.UnarmedRating(c.Stats![StatsEnumerated.MartialArts] * c.Stats.Scale, fighter.UnarmedBonus, c.Medical!.DustAttackPenalty, fighter.EncumbranceFactor);
+    /// <summary>
+    /// The fist rating (<see cref="DamageFormulas.UnarmedRating"/>, <c>FUN_140884e00</c> with its flag set, as every combat caller passes it): the raw martial arts stat (no injury
+    /// multiplier), the gear's unarmed bonus with the indoors modifier inside (<see cref="IndoorsAttackBonus"/>), the dust penalty and the load. A fist blow's damage, an unarmed
+    /// fighter's attack rating (<c>FUN_140884ee0</c>) and its defence rating (<c>FUN_140886290</c>) are this number.
+    /// </summary>
+    internal static float UnarmedRating(World world, int slot, CharacterCold c, Fighter fighter) =>
+        DamageFormulas.UnarmedRating(c.Stats![StatsEnumerated.MartialArts] * c.Stats.Scale, IndoorsAttackBonus(fighter.UnarmedBonus, IndoorsMod(world, slot, fighter)),
+            c.Medical!.DustAttackPenalty, fighter.EncumbranceFactor);
 
     /// <summary>The worn gear's factor of a stat that <see cref="Eff"/> applies: <c>ranged skill mult</c> for crossbows, <c>asassination mult</c> for assassination, else 1.</summary>
     internal static float GearFactor(CharacterCold c, StatsEnumerated stat) => stat switch
@@ -395,9 +404,9 @@ public sealed partial class CombatSystem
         s.NextBlow = 1;
         s.LastOutcome = BlowOutcome.Missed;
         s.AttackFrom = prev[i].Position;
-        // The bonus with the weapon's indoors modifier inside, less the dust's "Weather penalty" (FUN_140643a30, docs/formats/weather.md "Effects on characters").
-        s.AttackSkill = Eff(cold, fighter.Unarmed ? StatsEnumerated.MartialArts : StatsEnumerated.MeleeAttack)
-            + IndoorsAttackBonus(fighter.Unarmed ? fighter.UnarmedBonus : fighter.AttackBonus + (fighter.Weapon?.Stats.AttackMod ?? 0), IndoorsMod(world, i, fighter))
+        // The bonus with the weapon's indoors modifier inside, less the dust's "Weather penalty" (FUN_140643a30, docs/formats/weather.md "Effects on characters"); unarmed, the fist rating.
+        s.AttackSkill = fighter.Unarmed ? UnarmedRating(world, i, cold, fighter)
+            : Eff(cold, StatsEnumerated.MeleeAttack) + IndoorsAttackBonus(fighter.AttackBonus + (fighter.Weapon?.Stats.AttackMod ?? 0), IndoorsMod(world, i, fighter))
             - cold.Medical!.DustAttackPenalty;
     }
 
@@ -536,7 +545,7 @@ public sealed partial class CombatSystem
             var aim = prev[t].Position + (tc.InCombat ? Vector3.Zero : prev[t].Velocity * CombatTuning.AimLeadSeconds);
             to = aim - prev[i].Position;
             if (!(to.Length() > 8)) return false;
-            float defence = target.Unarmed ? UnarmedRating(tc, target)
+            float defence = target.Unarmed ? UnarmedRating(world, t, tc, target)
                 : Eff(tc, StatsEnumerated.MeleeDefence) + target.DefenceBonus + (target.Weapon?.Stats.DefenceMod ?? 0) + (Guarding(tc) ? 20 : 0);
             float window = MathF.Max(0.6f * (20 - (defence - s.AttackSkill)) / 20, MathF.Max(0.1f, (4 - FightersAt(world, t)) / 3f));
             if (!(SwingProgress(in s, now) < window)) return false;

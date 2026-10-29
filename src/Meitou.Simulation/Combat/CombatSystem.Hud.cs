@@ -6,7 +6,8 @@ namespace Meitou.Simulation.Combat;
 
 /// <summary>
 /// The combat numbers the HUD's stats tooltips show (<c>FUN_140892120</c>, docs/game/ui-screens.md section 4): the attack and block play rates (CharStats <c>+0x188</c> / <c>+0x18c</c>),
-/// the weapon's cut and blunt damage at the fighter's skills (<c>FUN_140883ba0</c>, <c>FUN_140883c60</c>; fists' for an unarmed fighter) and the fists' cut plus blunt (<c>FUN_1408868b0</c>).
+/// the weapon's cut and blunt damage at the fighter's skills (<c>FUN_140883ba0</c>, <c>FUN_140883c60</c>; fists' for an unarmed fighter) and the stats window's "Martial arts damage",
+/// the four terms of the blow in hand (<c>FUN_1408868b0</c>, <see cref="CombatSystem.HudDamage"/>: the weapon's for an armed fighter).
 /// </summary>
 public readonly record struct HudCombat(float AttackRate, float BlockRate, float Cut, float Blunt, float UnarmedDamage, float Resistance)
 {
@@ -17,11 +18,11 @@ public readonly record struct HudCombat(float AttackRate, float BlockRate, float
 public sealed partial class CombatSystem
 {
     /// <summary>The <see cref="HudCombat"/> numbers of a fighter with stats and a body; null without them.</summary>
-    internal HudCombat? HudNumbers(CharacterCold cold)
+    internal HudCombat? HudNumbers(World world, int slot, CharacterCold cold)
     {
         if (cold is not { Fighter: { } fighter, Stats: { } stats, Medical: not null }) return null;
         float str = Eff(cold, StatsEnumerated.Strength), dex = Eff(cold, StatsEnumerated.Dexterity) * fighter.DexterityMult, tough = stats.Toughness * stats.Scale;
-        var fists = DamageFormulas.Unarmed(Eff(cold, StatsEnumerated.MartialArts), tough, str, combat);
+        var fists = DamageFormulas.Unarmed(UnarmedRating(world, slot, cold, fighter), tough, str, combat);
         float cut = fists.Cut, blunt = fists.Blunt;
         if (!fighter.Unarmed)
         {
@@ -29,7 +30,7 @@ public sealed partial class CombatSystem
             cut = DamageFormulas.Cut(skill, dex, fighter.Weapon!.Stats, combat);
             blunt = DamageFormulas.Blunt(skill, str, fighter.Weapon.Stats, combat);
         }
-        return new HudCombat(Rate(cold, true), Rate(cold, false), cut, blunt, fists.Cut + fists.Blunt, HitResolver.ToughnessResistance(tough, combat))
+        return new HudCombat(Rate(cold, true), Rate(cold, false), cut, blunt, HudDamage(world, slot, cold), HitResolver.ToughnessResistance(tough, combat))
             { Stagger = DamageFormulas.StumbleThreshold(tough, combat) };
     }
 

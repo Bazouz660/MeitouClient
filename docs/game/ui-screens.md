@@ -829,7 +829,7 @@ Help text is available from the installed [gettext catalog](../formats/gettext.m
 **Stats Affected numbers** (**Verified** decompile of `FUN_1408b1250`, one branch per stat; constants from the loader `FUN_14086b2b0`, which writes them as floats from
 `0x142133dd0`): the left panel is a DataPanel of label/value rows, `Stats Affected:` and `Ways To Train:` in Main, each row label "-" + the text; most rows have no value.
 Values: Strength (1) `Max carry weight:` `{1,num} kg` = (int)(strength × its multiplier `FUN_140338090` + `encumbrance base`), `Strength XP rate (walking):` (int)(`FUN_1408c60c0`
-× 100) `%`, `Martial arts damage` (int) the fists' four damage terms (`FUN_1408868b0`), `Strength XP rate (combat):` (int)(`FUN_1408c5ec0`(stats, w) × 100) `%`, the Athletics XP
+× 100) `%`, `Martial arts damage` (int) the four damage terms of the blow in hand (`FUN_1408868b0` with no target: no kind or race multiplier, the gear's `damage output mult` applies; the weapon's for an armed character despite the label), `Strength XP rate (combat):` (int)(`FUN_1408c5ec0`(stats, w) × 100) `%`, the Athletics XP
 function (CharStats `+0x190` clamped at 0, x1.5 when w > 0.8 x the run value V) with w the weapon's `getItemWeightSingle` (item slot `0x248`, `+0x120`; the hand's weapon, else the first of
 `hip` / `back`; 0 without), so heavy weapons train at 1.5x (**Verified**, decompile and the KenshiLib slot). Toughness (0x15) `Damage resistance:`
 (int)(`FUN_140644770` × 100) `%`, `Martial arts damage`, `Toughness current XP rate:` `{1,num}` of `FUN_1408c5f40`, `Knockout time:` lerp(t, `knockout mult 1`, `knockout mult 99`)
