@@ -491,8 +491,8 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
     /// <summary>
     /// A captive a slaver processes (<c>FUN_1408cc110</c> for 260, <c>FUN_1408cd630</c> for 183, through <c>BuildingFinder_SlavesToProcess</c>, <b>Observed</b>): a cage of the town whose
     /// owner is not the player's faction and is the worker's or an ally of it (engine reading of the finder's town test), holding a live character no other job works. 260 takes an
-    /// awake occupant that is no slave; 183 one within <see cref="CaptiveSettings.WatchRange"/> of the worker that is not already a slave of the worker's side (the original's
-    /// <c>FUN_1408ca3d0</c> also re-processes a slave that does not look like one, by its clothing: not modelled).
+    /// awake occupant that is no slave; 183 one on the worker's floor and in its building (or both outdoors) within <see cref="CaptiveSettings.WatchRange"/> in 3D, whose owner (if any) is an ally and that is not a slave
+    /// of an owner that still looks one (<c>FUN_1408ca3d0</c>; its flag <c>0x3e0</c> is taken as slave state 1, <b>Unknown</b>).
     /// </summary>
     Fixture? ProcessTarget(World world, int slot, CharacterCold cold, int site, bool watching)
     {
@@ -505,9 +505,12 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
             var c = table.Cold(s)!;
             if (watching)
             {
-                if (Vector2.DistanceSquared(new Vector2(at.X, at.Z), new Vector2(f.Position.X, f.Position.Z)) > Settings.WatchRange * Settings.WatchRange) continue;
-                // A slave of its side that still looks one is left alone; one that does not (its kit taken off or never put on) is processed again (FUN_1408ca3d0).
-                if (c.SlaveState == 1 && (c.SlaveOwner == cold.Faction || Allied(cold.Faction, c.SlaveOwner)) && LooksLikeSlave(c)) continue;
+                // The cage must be on the watcher's floor and in its building (two outdoor parties have the same, null, handle) and within 180 in 3D (FUN_1408cd630).
+                if (world.Sight.FloorAt(f.Building, f.Position) != world.Sight.FloorOf(slot, at) || (world.Sight.HasRoom(f.Building) ? f.Building : null) != world.Sight.BuildingOf(slot)
+                    || Vector3.DistanceSquared(at, f.Position) > Settings.WatchRange * Settings.WatchRange) continue;
+                // An owner who is no ally leaves it alone; a slave of an allied owner that still looks one too, while one that does not (its kit taken off or never put on) or that
+                // escaped (state 2) is processed again; without an owner it always is (FUN_1408ca3d0).
+                if (c.SlaveOwner >= 0 && (!Allied(cold.Faction, c.SlaveOwner) || c.SlaveState == 1 && LooksLikeSlave(c))) continue;
             }
             else if (c.SlaveState != 0 || c.Medical is { Incapacitated: true }) continue;
             return f;

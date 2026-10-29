@@ -292,6 +292,9 @@ public sealed class SightMap
     /// <summary>The floor of <paramref name="building"/> at <paramref name="at"/> (an object's <c>getFloor</c>); 0 for a building the map does not hold.</summary>
     public int FloorAt(string building, Vector3 at) => roomOf.TryGetValue(building, out int r) ? rooms[r].Volume.FloorAt(at) : 0;
 
+    /// <summary>Whether the map holds an indoor volume for <paramref name="building"/> (the key of a fixture's building): its <c>isIndoors</c> handle is then that building, else none.</summary>
+    public bool HasRoom(string building) => roomOf.ContainsKey(building);
+
     /// <summary>The <see cref="TownBuilding.Key"/> of the building the character is <see cref="Inside"/>; null outdoors or on top.</summary>
     public string? BuildingOf(int slot) => Inside(slot) ? rooms[place[slot]].Key : null;
 

@@ -862,7 +862,7 @@ failed walks mark the cage unreachable for the faction; its own faction's shut d
   (limbs severed unless dismemberment is Never; `DeathCause.Eaten` and "{1} has been eaten alive." when nothing is left). Events 52 and 11 every 10 s (engine throttle).
 - A captive's death by either resets the town's timer to now + uniform[1, 15) h; the first ask sets it. Timers and jobs are not saved (engine); hashed once any exists.
   **Observed** (headless probe, real data): a cannibal village kills a caged player character within 16 s of work once its timer is due; a fishman lab eats one in about 160 s.
-- **Process** (260: an awake non-slave occupant anywhere in the town; 183: an occupant within 180 that is no slave of the worker's side): cages of the worker's faction or an ally,
+- **Process** (260: an awake non-slave occupant anywhere in the town; 183: an occupant on the worker's floor and in its building within 180 in 3D, whose owner is an ally or none, and that is no slave of an owner that still looks one): cages of the worker's faction or an ally,
   not the player's. 3 s of `medic`, then the captive's worn weapons and armour (not locked shackles) go to the worker's inventory (else the ground; engine for the original's
   storage), its faction's `slave clothing` is put on where free, event 35 (37 for a former slave), and it becomes the worker's faction's slave unless it has an owner already (a recaptured escaped slave keeps its owner and master squad); its queued orders and perma-jobs are cleared. Kidnapped player characters are
   processed too. **Observed** (probe): a player character caged next to the Slave Farm's Cage Wardens is enslaved about 7 s later.
@@ -904,7 +904,7 @@ failed walks mark the cage unreachable for the faction; its own faction's shut d
   10) walks to a random one (a pick of the character and `AiMind.WorkEpoch`, kept while it works there) to within 30 units, faces it and plays its functionality's clip (`stonemine` by default) as
   `ActionClip`. NPC towns run no machines here, so nothing is produced (their buildings are level data, not `Machine`s, and Meitou has no NPC-town production); the worker does take the building's `hunger rate` (`AiMind.WorkHungerRate`). **Observed** (probe, Rebirth, real data): 35 workers, slaves among them, stand at the mines of the Holy Nation's towns by day. The
   Obedient Slave job (187) is the Slave role list of the owner's squad, which slave members already run; a slave in another squad runs the list of `CharacterCold.SlaveMaster`.
-- **Eaten**: a meal still awake gains toughness XP (`XpService.Continuous`, amount 10). **Process** (183) re-processes a slave of its side that does not look like one (no locked shackles and none of
+- **Eaten**: a meal still awake gains toughness XP (`XpService.Continuous`, amount 10). **Process** (183) re-processes a slave of an allied owner that does not look like one, or an escaped one (state 2) (no locked shackles and none of
   its owner's slave clothing; an owner without slave clothing never does).
 - **Status lines**: a slave or escaped slave selected shows the bounty panel with its status rows ("Slave" / "Escaped slave" and the owner's text, the player-character hints) in its tooltip, ahead of the
   bounty rows (`CharacterSnapshot.Slave`, `PlayerInterface.SlaveRows`; [ui-screens, information panel](game/ui-screens.md#4-hud-mainbargui)). Ex-slave (state 3), "Looks like a slave", "Situation" and "Time remaining" rows are not built.
