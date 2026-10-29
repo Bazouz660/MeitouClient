@@ -11,8 +11,9 @@ public sealed partial class DialogueSystem
     /// <summary>
     /// Chooses a line from <paramref name="list"/> (<c>FUN_14067a0c0</c>, docs/game/dialogue.md "Choosing a line"): the list is sorted by score; the walk stops at the first line whose
     /// score (with the race bonus) is below the best so far; each node's speaker is resolved and the line check run with that speaker as "me" (the NPC for a player-side line); a
-    /// passing root descends into its children; every passing line scoring at least the best so far is a candidate (earlier lower ones stay) and one candidate is picked at random. The checks and the race bonus use the target the walk started with (<paramref name="target"/>): a line check
-    /// that retargets (<see cref="SetTarget"/>) changes who the T_TARGET speakers are for the rest of the walk, not the target the walk tests.
+    /// passing root descends into its children; every passing line scoring at least the best so far is a candidate (earlier lower ones stay) and one candidate is picked at random.
+    /// The checks and the race bonus use the target the walk started with (<paramref name="target"/>): a line check that retargets (<see cref="SetTarget"/>) changes who the
+    /// T_TARGET speakers are for the rest of the walk, not the target the walk tests.
     /// </summary>
     Picked? Pick(World world, Conversation c, IReadOnlyList<DialogueNode> list, int depth = 0, CharacterId? target = null)
     {
