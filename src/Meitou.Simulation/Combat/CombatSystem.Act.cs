@@ -202,9 +202,11 @@ public sealed partial class CombatSystem
 
             // 3. The target.
             // A target down or gone: the fighter chooses again at once (state 4, re-decide), and the fight ends only when nobody is left. While deciding, it chooses again
-            // every PickSeconds, unless the target is the player's pick (a focused order returns its target without scoring).
+            // every PickSeconds, unless the target is the player's pick (a focused order returns its target without scoring). A target caged or carried is dropped the same way,
+            // the player's pick too (CombatClassAI update FUN_14060d6a0: down, dead, ragdolled or carried; imprisoned unless the fighter itself stumbles, which skips this step).
             bool fighting = s.TargetSlot >= 0;
-            if (fighting && !(s.TargetSlot < prev.Length && prev[s.TargetSlot].Alive && prev[s.TargetSlot].Generation == s.TargetGeneration && !read[s.TargetSlot].Down))
+            if (fighting && !(s.TargetSlot < prev.Length && prev[s.TargetSlot].Alive && prev[s.TargetSlot].Generation == s.TargetGeneration && !read[s.TargetSlot].Down
+                && table.Cold(s.TargetSlot) is { IsImprisoned: false, CarriedBy.IsNone: true }))
             {
                 s.AttackTech = -1;
                 s.NextBlow = 0;

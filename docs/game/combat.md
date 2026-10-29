@@ -530,8 +530,11 @@ How an attacker stops when its target runs. **Observed** (static reading of `Tas
 and the give-up test of a path chase. Ending the task means `FUN_1400522c0`: it sets the AI task system's `+0x26c`,
 which its next update (`FUN_14050d920` → `FUN_14050d7d0`) consumes by dropping the current task and clearing its targets.
 
-- **Target down or held**: each tick, a fight target that is down or dead (`FUN_1407d1440`) or imprisoned (`+0x2f8` 2)
-  is dropped and the fight goes to state 4 (re-decide); when it was also the task's target the task ends.
+- **Target down or held** (`FUN_14060d6a0`, **Verified**): each update, a fight target that is carried, dead or ragdolled (`FUN_1407d1440`: carried flag `+0x3d4`, or the
+  body state's `+0x59`/`+0x5a`), or imprisoned (`+0x2f8` 2) while the *fighter's own* fight state is not 8 (stumbling), is dropped, provided the fight state is not 0 (swinging) or
+  the attack clip has reached its end point; the fight goes to state 4 (re-decide, kept at 8); when it was also the task's target and refocus is clear the task ends.
+  A focused (ordered) target is dropped too. Meitou: `CombatSystem.Act`'s target test also drops a caged or carried target (the stumbling fighter skips that step; the swing
+  clause is not modelled, as for a fallen target), and `Consider` leaves a carried one out.
 - **Nothing left** (`Task_MeleeAttack` update): the task ends when the fight task stopped (`FUN_1405c9750`), or when all hold:
   the senses (Character vfunc `0x68`) count no enemies (`numEnemies` +0x94 = 0) and no threat to allies (`totalThreatLevelAllies` +0x8c ≤ 0,
   [threats](#fight-lifecycle-and-orders)), nobody is engaged on the character (engaged list + overflow 0),

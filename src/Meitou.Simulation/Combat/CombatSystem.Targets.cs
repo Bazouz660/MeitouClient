@@ -103,7 +103,7 @@ public sealed partial class CombatSystem
         var table = world.Characters;
         var prev = table.Previous;
         int i = q.Self;
-        if (c == i || (uint)c >= (uint)prev.Length || !prev[c].Alive || read[c].Down || table.Cold(c) is not { Medical.Incapacitated: false, IsImprisoned: false } tc) return;
+        if (c == i || (uint)c >= (uint)prev.Length || !prev[c].Alive || read[c].Down || table.Cold(c) is not { Medical.Incapacitated: false, IsImprisoned: false, CarriedBy.IsNone: true } tc) return;   // a carried one is dropped by Act's target test
         // One it found no path to lately is left out (AITaskSytem::isPathImpossible).
         if (PursuitSystem.PathImpossible(q.Cold, new CharacterId(c, prev[c].Generation), world.Tick)) return;
         // The current target is whoever the order named, of any faction.
