@@ -23,10 +23,30 @@ public sealed partial class DialogueSystem
         bool Num2(double v) => dc.CompareBy == 1 ? v < dc.Value : v >= dc.Value;
         if (dc.Condition == 76) return Bool(s is not null);
         if (dc.Condition == 13) return Num3(counters.GetValueOrDefault((me, c.Event)).Count);
-        if (dc.Condition == 10) return Num3(data.Relations.Rank(mc.Faction));   // the speaker's faction's rank, whatever `who` says
-        if (s is null) return dc.Condition is 6 or 15 or 34 or 51 || !b;
-        int meF = mc.Faction, sF = s.Faction;
         var relations = data.Relations;
+        // A missing target (who != 0) becomes the player's nearest selected character, else the active squad's first, for this and the later conditions and as the conversation's target.
+        if (s is null && dc.Who != 0 && SubjectFallback(world, me) is { } found)
+        {
+            if (!c.DryRun) c.Player = found;
+            other = subjectId = found;
+            s = Cold(world, found);
+        }
+        if (dc.Condition == 12) return Num3(world.Research.TechLevel);   // the research manager's tech level (*(*(game + 0x38) + 8), FUN_140676950), whatever the subject
+        if (s is null)
+        {
+            // No player character at all: the faction-level test (FUN_140671530) against the player's faction; everything else passes. Not DC 11 (the speaker's own platoon, not built).
+            int player = world.Player.Faction;
+            return dc.Condition switch
+            {
+                1 => Num2(player == mc.Faction ? 100 : relations.Contains(mc.Faction) && relations.Contains(player) ? (int)relations.Get(mc.Faction, player) : 0),
+                2 => Num2(world.Player.Money),
+                3 => Num2((int)relations.GlobalTrust(player)),
+                11 => !b,
+                _ => true,
+            };
+        }
+        if (dc.Condition == 10) return Num3(relations.Rank(mc.Faction));   // the speaker's faction's rank, whatever `who` says
+        int meF = mc.Faction, sF = s.Faction;
         switch (dc.Condition)
         {
             case 6 or 15 or 34 or 51: return true;
@@ -39,7 +59,6 @@ public sealed partial class DialogueSystem
             case 1: return Num2(sF == meF ? 100 : relations.Contains(meF) && relations.Contains(sF) ? (int)relations.Get(meF, sF) : 0);
             case 2: return Num2(world.Player.Money);
             case 3: return Num2((int)relations.GlobalTrust(sF));   // S's faction's global trust (FactionRelations +0x18, FUN_140671530)
-            case 12: return Num3(world.Research.TechLevel);   // the research manager's tech level (*(*(game + 0x38) + 8), FUN_140676950)
             case 7 or 8:
             {
                 // Caged by the speaker's faction (7) or another (8); when S is the speaker, by the target's faction instead (FUN_140676950).
@@ -127,6 +146,31 @@ public sealed partial class DialogueSystem
             case 79: return Bool(s.Race?.IsRobot == true || (s.Medical?.Parts.Any(p => p.Limb == Bodies.LimbState.Replaced) ?? false));
             default: return Bool(false);
         }
+    }
+
+    /// <summary>
+    /// The subject a condition about a missing target takes (<c>FUN_140676950</c>): the character the player has selected that is nearest to <paramref name="me"/> (<c>FUN_1407f4ba0</c>: squared
+    /// distance, no cap, the first of equals), else the first member of the player's active squad (<c>FUN_1407f5710</c>, <see cref="ActiveSquad"/>); none when the player has neither.
+    /// </summary>
+    CharacterId? SubjectFallback(World world, CharacterId me)
+    {
+        var table = world.Characters;
+        if (Position(world, me) is { } at)
+        {
+            CharacterId? best = null;
+            float bestD = float.MaxValue;
+            foreach (var id in world.Player.Selection)
+            {
+                if (!table.TryResolveNext(id, out int s) || !table.Next[s].Alive) continue;
+                float d = Vector3.DistanceSquared(table.Next[s].Position, at);
+                if (d < bestD) (best, bestD) = (id, d);
+            }
+            if (best is not null) return best;
+        }
+        if (ActiveSquad(world) is { } squad)
+            foreach (var id in squad.Members)
+                if (table.TryResolveNext(id, out int s) && table.Next[s].Alive) return id;
+        return null;
     }
 
     // Per culture faction: its trade culture (Faction +0x90), built on first use.

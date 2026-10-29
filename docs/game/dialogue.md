@@ -389,8 +389,16 @@ me, 5 captor, 6 friendly, 7 defeated my squad, 8 I beat his squad, 9 killed my f
 
 ## Conditions
 
-`FUN_140676950`. `who` 0 = the speaker, **any other value = the target** (`FUN_140678f30`). With no target a non-me condition takes a
-nearby player character (and stores it as the target). `B` = value > 0.
+`FUN_140676950`. `who` 0 = the speaker, **any other value = the target** (`FUN_140678f30`). `B` = value > 0. DC 13 and DC 76 are answered
+first from what was passed. With no target (`who` ≠ 0) every other DC, 11 and 12 included, first takes **the player's selected object
+nearest the speaker** (`FUN_1407f4ba0`: squared distance, no radius cap, the limit constant reads FLT_MAX; the first of equals; the list is
+the one `FUN_1407f5520` reads "the first selected object" from, **Observed**), else the **first member of the active squad**
+(`FUN_1407f5710`), as the subject for this and every later condition, and **stores it as the dialogue's target** (`+0x160`). Only when
+the player has neither does the faction-level test `FUN_140671530` run, returned as is (no comparison with B): DC 1 = Me's faction's
+relation to the player's faction, DC 2 = the player's money, DC 3 = the player faction's global trust (all Num2), every other DC
+true (DC 10 included; DC 11 and 12 never get here). DC 1, 2, 3 reach the same function even with a subject (DC 1/3 then read the subject's
+faction), and DC 2 and 12 never read it. **Verified** (decompile). Meitou: `Condition` / `SubjectFallback`; the target is stored unless the
+Talk menu's dry run is picking.
 - **Bool** conditions return computed == B (compare-by ignored; value 1 must hold, 0 must not).
 - **Num3**: compare-by 1 `<`, 2 `>`, else `==`. **Num2**: compare-by 1 `<`, else `>=`.
 
