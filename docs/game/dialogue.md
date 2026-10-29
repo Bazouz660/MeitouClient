@@ -250,8 +250,14 @@ interjector, passing the node's check as speaker. A `dumb` character qualifies o
   the race's `pathfind footprint radius` + 21, doubled once stopped, |dy| < 35; also for an NPC walking up to talk (task 102, engine choice).
 
 **Saying a line** (`FUN_1406839a0`): in a player conversation a line with **no children ends the conversation at once** without being
-shown (whether the original shows such closing lines elsewhere is **Unknown**). Otherwise: pick a text and mark the line and all its
-parents used, expand [tokens](#tokens), **run its effects at once**, log the text and put it in the NPC panel, then build the choices.
+shown (whether the original shows such closing lines elsewhere is **Unknown**). Otherwise: pick a text and mark the line and its parent chain
+used, expand [tokens](#tokens), **run its effects at once**, log the text and put it in the NPC panel, then build the choices.
+
+**Last use** (**Verified**, `FUN_140671770`; said line `FUN_140675320`, clicked reply `FUN_140683c00`): the stamp is each node's `repetition limit` clock.
+A line's parent (`+0x230`) is set by the builder (`FUN_14067d260` via `FUN_1406ad9d0`) only when the line's owner is root-like (a DIALOGUE, an interjection
+node or a textless line, see [Choosing a line](#choosing-a-line)), so a line under a text line has none, and a line shared by several roots keeps the last
+one built. Meitou stamps the line and the conversation's root (`MarkUsed`): the same except for a shared line, or a deep line restamping its root, which
+costs no game time while the window pauses the game. No parent link is kept, since the original's depends on load order.
 
 **Choices** (`FUN_140680130`, `FUN_140683c00`): the said line's children are checked in list order (me = NPC, target = the player
 character). If a passing child has speaker T_ME, a single `[...]` button continues to it and the scan stops; otherwise every passing
