@@ -15,9 +15,10 @@ namespace Meitou.Simulation;
 /// <item>Separation: the repulsion along self-other is nonzero only closer than R and proportional to 100 x (1 - d/R), over at most
 /// 26 neighbours (Observed); R is twice the footprint radius 4 of a human (<see cref="SeparationRadius"/>), and the scale from that
 /// proportionality to a speed is an engine choice (<see cref="SeparationStrength"/>).</item>
-/// <item>Body contact (engine choice; whether the original's characters collide is Unknown): two standing bodies (<see cref="BodyShare"/> of their footprints) do not stay
+/// <item>Body contact (engine choice; the original only avoids the standing bodies round a character, no physical collision was found: docs/game/pathfinding.md "Bodies in the way"): two standing bodies (<see cref="BodyShare"/> of their footprints) do not stay
 /// overlapped. Each takes half of the overlap between its stepped position and the other's last position, averaged over the bodies it overlaps, so a walker shoves a stander
-/// aside; an imprisoned or bedded one does not give. Its own velocity into a body it already touches is dropped, so a crowd pressing on does not squash its front. A sitter is never moved, by contact or separation (the original pushes no sitter, Observed), and is not solid to others.</item>
+/// aside; an imprisoned or bedded one does not give. Its own velocity into a body it already touches is dropped, so a crowd pressing on does not squash its front. A sitter is never moved, by contact or separation (the original pushes no sitter, Observed), and is not solid to others. Downed, dead and carried bodies neither push (separation) nor
+/// block (contact, the walk's covered goal, root motion): the original's avoidance list leaves them out (docs/game/pathfinding.md "Bodies in the way").</item>
 /// <item>Paths: a character that wants one is flagged in Think; the Schedule step of the next tick asks the <see cref="PathService"/>;
 /// an answer is applied in a serial step, so a path is never read while it is replaced.</item>
 /// </list>
@@ -832,7 +833,8 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
             world.Grid.Query(p.Position.X, p.Position.Z, SeparationRadius, ref push, static (int other, ref SeparationState s) =>
                 {
                     if (other == s.Self || s.Count >= MaxSeparationContributions) return;
-                    if (s.Table.Cold(other) is { CarriedBy.IsNone: false }) return;   // a carried body is on its carrier's shoulder, not in anyone's way
+                    // A carried body is on its carrier's shoulder and a downed or dead one lies out of the flocking list: neither is in anyone's way (docs/game/pathfinding.md "Bodies in the way").
+                    if (s.Table.Cold(other) is { } them && (!them.CarriedBy.IsNone || them.Medical is { Incapacitated: true })) return;
                     var all = s.Table.Previous;
                     var d = new Vector2(all[s.Self].Position.X - all[other].Position.X, all[s.Self].Position.Z - all[other].Position.Z);
                     float len = d.Length();
@@ -1001,7 +1003,7 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
         var state = new OccupiedState { Table = world.Characters, Self = self, Goal = new Vector2(goal.X, goal.Z) };
         world.Grid.Query(goal.X, goal.Z, 30, ref state, static (int other, ref OccupiedState s) =>
         {
-            if (s.Found || other == s.Self || !s.Table.Previous[other].Alive || s.Table.Cold(other) is not { CarriedBy.IsNone: true } c) return;
+            if (s.Found || other == s.Self || !s.Table.Previous[other].Alive || s.Table.Cold(other) is not { CarriedBy.IsNone: true } c || c.Medical is { Incapacitated: true }) return;
             var at = s.Table.Previous[other].Position;
             float r = Combat.CombatTuning.Footprint(c);
             if (Vector2.DistanceSquared(new Vector2(at.X, at.Z), s.Goal) < r * r) s.Found = true;

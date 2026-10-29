@@ -42,7 +42,9 @@ Pairs disabled in `FUN_1407dbee0` (third argument hidden on a few calls, assumed
 | 28–31 | 0, 1, 3, 4, 14, 23–26, 6 (last pair's group assumed) |
 
 So ragdolls hit each other, items, building floors/stairs/furniture/roofs (9–22, 27), but not doors,
-foliage group 6 or passable parts.
+foliage group 6 or passable parts. A living character is no PhysX actor and a ragdolled, carried or dead
+body is left out of the movement avoidance list, so it blocks no walker
+([pathfinding](pathfinding.md#bodies-in-the-way)).
 
 ## RagdollPart and requests
 

@@ -46,6 +46,33 @@ body covers ends the walk short. A re-issued order within 2 units of the last go
 Combat/follow steering ramps15/s, with turning/backward/arrival caps. Combat-move-speed multiplier
 and water factors 0.75/0.5/0.4 apply separately (`FUN_14065dba0`, by water state 1/2/3; Meitou scales the fight steering by the water factors, `MovementSystem`). No independent slope-speed term was found.
 
+### Bodies in the way
+
+Which character states block or push a living character's movement (path walking, the animation-driven root-motion step, the fight repulsion). Soft avoidance only: the nav agent holds a list of the
+characters round its owner and tests each as a circle (its footprint radius plus the agent's); the same loop ends a walk short when another body covers the goal.
+
+- **Verified** (decompile; chain read function by function): the agent `FUN_1401476f0` (called from the velocity setter `FUN_140147ca0`, and from `FUN_140147fd0` when the agent is in
+  external-velocity mode 3, which `FUN_14065ffa0` sets for the animation-driven move and for the fight steering; ordinary path walking goes through `FUN_140146a60`, not read) walks the vector at its `+0x100` +0x68 / +0x70 (0x28-byte hands);
+  `FUN_1401468a0` stores that owner object from `FUN_140661f90`, which takes it from Character vfunc `0x68` (`FUN_1405c8700`, the object `FUN_1402e9740` reads as the fight's flocking list). The
+  list is filled by `FUN_14085a070` ([combat](combat.md), "Deciding"): every other character except one for which `FUN_1407d1440` holds (**ragdolled** by a WHOLE/CARRY_MODE request, or
+  **carried** `+0x3d4`, [ragdolls](ragdolls.md#ragdollpart-and-requests)), in a **bed or cage** (`+0x2f8` != 0), or **sitting** (status `+0xb8`, `isSitting`), within the two radii + 40 horizontally and 20 up.
+  Each entry is then re-tested by `FUN_1401476f0`: status `+0xb8` clear again, Character `+0x1a9` set (the character is near the camera or an active zone: a level-of-detail flag from `FUN_1405c9f60`) and not carried.
+- **Observed**: a living character is a `PhysicsHullT` box ("hull size X/Y/Z" of the race, `FUN_140661a70` -> `FUN_1404ccb50`, in the physics manager's hull list), not a PhysX actor; a ragdoll's
+  shapes are group 3/4, which skip groups 0 and 1 ([ragdolls](ragdolls.md#collision-groups)). Nothing found makes a body physically stop a walker, and the root-motion step goes through the same agent.
+  Whether the hull is read by anything that blocks movement is **Unknown**.
+
+| State | In the avoidance list (blocks, pushes, covers a goal) | Meitou |
+|---|---|---|
+| Standing, walking, fighting | yes | yes |
+| Crawling / staying low (not ragdolled) | yes (`FUN_1407d1440` is false) | yes |
+| Knocked out or dead (ragdolled) | no | no: root motion, separation, contact, covered goal, fight steering (`MovementSystem`, `AnimationSystem.Relocate`, `CombatSteering.OutOfFlock`) |
+| Carried | no | no |
+| In a bed or cage | no | no for root motion and the fight steering; engine choice: still solid to a walker's contact (a bedded body is never moved) |
+| Sitting (resting on a seat) | no | no for root motion and the fight steering; engine choice: a walker steers past a sitter (separation) but is not blocked |
+| Beyond the LOD range (`+0x1a9` clear) | no | not modelled (depends on the camera) |
+
+Not modelled: a conscious ragdolled character (a stagger that ragdolls a limb or the whole body) is left out in the original; Meitou keeps it solid unless it is incapacitated.
+
 ### Water states
 
 **Verified** (`FUN_1405c7fd0`, `FUN_140886460`, `FUN_140885eb0`; Meitou `Speed.WaterState/InWater/Swim`, `MovementSystem.WaterStateAt`):

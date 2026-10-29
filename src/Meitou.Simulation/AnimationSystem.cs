@@ -323,8 +323,9 @@ public sealed class AnimationSystem(AnimationLibrary library, AnimationLengths l
     /// <summary>
     /// Root motion: moves the character by the ground part of its relocating clips' <c>Bip01</c> track (model X and Z turned by its heading), onto
     /// the ground, unless that point is not walkable (Kenshi moves its physics controller, so collisions apply; docs/animation.md "Root motion").
-    /// The bodies collide too (engine stand-in for the controllers): the part of the move that would bring it nearer than the two footprint radii to a living
-    /// character (last tick's positions) is dropped, so an attack that gains ground stops at its target instead of walking into it.
+    /// The bodies collide too (engine stand-in for the original's avoidance of the characters round it, <c>FUN_1401476f0</c>): the part of the move that would bring it nearer than
+    /// the two footprint radii to a standing character (last tick's positions) is dropped, so an attack that gains ground stops at its target instead of walking into it.
+    /// A downed, dead, carried, bedded, caged or sitting body is not in the way (<see cref="CombatSteering.OutOfFlock"/>; docs/game/pathfinding.md "Bodies in the way").
     /// </summary>
     internal static void Relocate(World world, int self, ref CharacterHot c, Vector2 root)
     {
@@ -335,7 +336,7 @@ public sealed class AnimationSystem(AnimationLibrary library, AnimationLengths l
         world.Grid.Query(block.From.X, block.From.Y, block.Radius + MaxFootprint + step.Length(), ref block, static (int other, ref BodyBlock b) =>
         {
             var all = b.Table.Previous;
-            if (other == b.Self || !all[other].Alive || b.Table.Cold(other) is { CarriedBy.IsNone: false }) return;   // a carried body is on its carrier, not in the way
+            if (other == b.Self || !all[other].Alive || b.Table.Cold(other) is not { } them || CombatSteering.OutOfFlock(all[other], them)) return;
             var away = b.From - new Vector2(all[other].Position.X, all[other].Position.Z);
             float reach = b.Radius + CombatTuning.Footprint(b.Table.Cold(other));
             if ((away + b.Step).LengthSquared() >= reach * reach) return;
