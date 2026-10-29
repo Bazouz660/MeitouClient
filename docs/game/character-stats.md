@@ -271,7 +271,7 @@ counts as health in the fraction, the down (h-s+rig<0) and sever tests, so a spl
 - Kit: the rig task takes a splint kit (function 2) from the medic's own inventory or backpack by the [kit search](#first-aid-update),
   keeps it until empty, removes it then and searches again; with none left it says event 22 (**Verified**, `FUN_14034ef20`, `FUN_14032dff0`).
 - Order 249 refuses without such a kit ("I don't have a splint kit."). The job 250 "Splint Rigging" (finder `FUN_14099e240`, may pick the medic
-  itself): [perma-jobs](ai-tasks.md#perma-jobs); Meitou runs it as a splint treatment (`FirstAidSystem.SplintSomeone`).
+  itself): [perma-jobs](ai-tasks.md#perma-jobs); Meitou runs it as a splint treatment (`FirstAidSystem.FindSplint`, the decision step's job).
 - Meitou: `SplintOrder` (the Treat task with `TreatSplint`), `MedicalState.NeedsSplint` / `Splint`, `FirstAidSystem.OwnKit` (own kit,
   fewest charges); dt in game seconds as for first aid. Left as they are: Meitou's splint skill is `stat x StatMultiplier`, where the rig
   task passes the raw CharStats+0x98 (**Verified**); XP only when rig is added.

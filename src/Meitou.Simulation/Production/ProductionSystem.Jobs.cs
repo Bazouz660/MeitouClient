@@ -6,13 +6,16 @@ using Meitou.Simulation.Construction;
 
 namespace Meitou.Simulation.Production;
 
-// Job lists (Perma-Jobs; docs/simulation.md "Production", the original's rules in docs/game/ai-tasks.md "Perma-jobs"): a player character whose task is idle or came from its list takes the
-// first job of its list that is not blocked, so a higher job takes over as soon as it can run and a blocked one passes to the next. Meitou runs Operating machine (87, the
+// Job lists (Perma-Jobs; docs/simulation.md "Production", the original's rules in docs/game/ai-tasks.md "Perma-jobs"): the decision step takes the first job of a player character's
+// list that can run (ListJobs here is the production pick's contributor), so a higher job takes over as soon as it can run and a blocked one passes to the next. Meitou runs Operating machine (87, the
 // operator below), Operating automatic machine (152: an operator that only hauls for it), Hauling to (124: a machine's output carried to the job's storage, CharacterTask.Haul; on an automatic machine, carried inputs into it), Engineer (125: ConstructionSystem builds the site its finder picks) and Turret guard (234: manning the job's turret as an operator). Blocked
 // uses one test for starting and for going on.
 public sealed partial class ProductionSystem
 {
-    /// <summary>How often (ticks) a character's job list is looked at, staggered by slot (engine choice; the original re-plans when its task ends or its commitment runs out).</summary>
+    /// <summary>
+    /// How often (ticks) the decision step asks again for a player character idle or on a job's task, staggered by slot (<see cref="DecisionSystem.ReAsked"/>; engine choice: the original
+    /// re-plans when its task ends or its commitment runs out); the implicit jobs are looked at one tick later.
+    /// </summary>
     public const int JobCheckTicks = 10;
 
     void AddJobs(World world, AddJob add)
@@ -55,11 +58,11 @@ public sealed partial class ProductionSystem
     {
         var table = world.Characters;
         if (table.Cold(slot) is not { } cold || (uint)index >= (uint)cold.Jobs.Count) return;
-        var job = PermaJobs.ListJob(cold, (CharacterTask)table.Next[slot].Task) is { Implicit: false } run ? run : null;
-        if (job?.Job == index) End(world, slot);
+        if (PermaJobs.ListJob(cold, (CharacterTask)table.Next[slot].Task) is { Implicit: false } on && on.Job == index) End(world, slot);
         cold.Jobs.RemoveAt(index);
         DecisionSystem.Request(cold);
-        if (job?.Job > index) cold.Running = job with { Job = job.Job - 1 };
+        // Any job's provenance keeps pointing at its job; a treatment, lift or loot whose job left the list runs on as a job pass's (no index).
+        if (cold.Running is { Source: TaskSource.Job, Implicit: false, Job: >= 0 } job && job.Job >= index) cold.Running = job with { Job = job.Job == index ? -1 : job.Job - 1 };
     }
 
     void MoveJobTo(World world, MoveJob move)
@@ -71,8 +74,8 @@ public sealed partial class ProductionSystem
         cold.Jobs.RemoveAt(move.From);
         cold.Jobs.Insert(move.To, job);
         DecisionSystem.Request(cold);
-        // The job the character is on keeps pointing at it.
-        if (PermaJobs.ListJob(cold, (CharacterTask)world.Characters.Next[slot].Task) is not { Implicit: false } run) return;
+        // The job's provenance keeps pointing at it.
+        if (cold.Running is not { Source: TaskSource.Job, Implicit: false, Job: >= 0 } run) return;
         int k = run.Job;
         if (k == move.From) k = move.To;
         else if (move.From < k && k <= move.To) k--;
@@ -81,39 +84,84 @@ public sealed partial class ProductionSystem
     }
 
     /// <summary>
-    /// Once a tick (serial): characters due a look at their lists take the first job that can run, unless it is the one they are on; with none, an implicit job of the squad AI
-    /// options (<see cref="ImplicitPick"/>).
+    /// The production pick's list jobs as the decision step's contributor (<see cref="IJobSource"/>, step 5; 234 also step 3): Operating machine 87, Operating automatic machine 152, Hauling
+    /// to 124, Training 97, Turret guard 234, Engineer 125 and the follow jobs 31, 45, 289; and the carrying jobs 138, 223, 273 (<see cref="ErrandJobs"/>). A job runs while
+    /// <see cref="Runnable"/> holds; one that no longer does and that nothing replaces ends (<see cref="End"/>).
     /// </summary>
-    void PickJobs(World world)
+    public void RegisterSources(DecisionSystem decisions)
+    {
+        var jobs = new ListJobs(this);
+        foreach (var type in (ReadOnlySpan<TaskType>)[TaskType.OPERATE_MACHINERY, TaskType.OPERATE_AUTOMATIC_MACHINERY, TaskType.OPERATE_STORAGE, TaskType.USE_TRAINING_DUMMY,
+            TaskType.MAN_A_TURRET_PLAYER_JOB, TaskType.JOB_BUILDER, TaskType.BODYGUARD, TaskType.STAY_CLOSE_TO_TARGET, TaskType.Unnamed289])
+            decisions.RegisterJob(type, jobs);
+        var errands = new ErrandJobs(this);
+        foreach (var type in (ReadOnlySpan<TaskType>)[TaskType.FIND_A_DEAD_GUY, TaskType.PICKUP_INTRUDERS, TaskType.PICKUP_INTRUDERS_TOWN]) decisions.RegisterJob(type, errands);
+    }
+
+    sealed class ListJobs(ProductionSystem owner) : IJobSource
+    {
+        public DecisionCheck CanRun(World world, int slot, int k)
+        {
+            var table = world.Characters;
+            var cold = table.Cold(slot)!;
+            var task = (CharacterTask)table.Next[slot].Task;
+            var type = cold.Jobs[k].Type;
+            bool runs = PermaJobs.ListJob(cold, task) is { Implicit: false } on && on.Job == k;
+            if (PermaJobs.Follows(type) && cold.Running is { Source: TaskSource.Job, Implicit: false } follow && follow.Job == k && PermaJobs.Follows(follow.Row))
+            {
+                // Its fight is a step of the row (31 and 45 need state 16, which 13 gives): it runs; once over, the follow is taken up again.
+                if (task == CharacterTask.Attack && follow.Runs(task)) return DecisionCheck.Runs;
+                if (MovementSystem.FightStepOver(table, slot, cold)) return FollowedBy(world, slot, cold, k) is not null ? DecisionCheck.Run : DecisionCheck.No("its character is gone");
+            }
+            // An operator carrying or carried looks at no job (and keeps the one it is on).
+            if (!Able(cold)) return runs ? DecisionCheck.Runs : DecisionCheck.No("carrying, carried or down");
+            // 234's effect (using the turret) is planned through 146, whose list B has !158: not while a melee attacker is within 40 (docs/game/ai-tasks.md "Precedence").
+            if (type == TaskType.MAN_A_TURRET_PLAYER_JOB && world.SystemOf<Combat.CombatSystem>() is { } combat && CharacterFacts.ImmediateThreat(combat, world, slot))
+                return DecisionCheck.No("a melee threat within 40 (146 needs !158)");
+            if (!owner.Runnable(world, slot, cold, k)) return DecisionCheck.No("blocked");
+            return runs ? DecisionCheck.Runs : DecisionCheck.Run;
+        }
+
+        public void Start(World world, int slot, int k)
+        {
+            var table = world.Characters;
+            var cold = table.Cold(slot)!;
+            if (MovementSystem.FightStepOver(table, slot, cold) && cold.Running is { Source: TaskSource.Job } run && run.Job == k && MovementSystem.FollowAgain(world, slot, cold)) return;
+            owner.StartJob(world, slot, k);
+        }
+
+        /// <summary>
+        /// A Turret guard (234, kind 2) is urgent while enemies are sensed (AI <c>+0xbc</c>, <c>FUN_14050e5b0</c>); stand-in: the attack-on-sight look's sensed-enemy finder
+        /// (<see cref="AggroSystem.SensesEnemy"/>; the sensed list is M7).
+        /// </summary>
+        public bool Urgent(World world, int slot, int k) =>
+            world.Characters.Cold(slot)!.Jobs[k].Type == TaskType.MAN_A_TURRET_PLAYER_JOB && world.SystemOf<AggroSystem>() is { } aggro && aggro.SensesEnemy(world, slot);
+
+        public void Stop(World world, int slot, int k) => End(world, slot);
+    }
+
+    /// <summary>
+    /// The implicit jobs (squad AI options, the original's lowest keys after the list): a player character whose last decision found nothing to run (<see cref="CharacterCold.Yielded"/>, so no
+    /// list job can run), idle, following, wandering or on an implicit job, takes one (<see cref="ImplicitPick"/>), looked at in the schedule right after the decision step's re-ask (serial);
+    /// one on an implicit job that no longer holds ends it.
+    /// </summary>
+    void ImplicitJobs(World world)
     {
         var table = world.Characters;
         for (int i = 0; i < table.HighWater; i++)
         {
             ref var n = ref table.Next[i];
-            if (!n.Alive) continue;
-            var cold = table.Cold(i)!;
+            if (!n.Alive || table.Cold(i) is not { IsPlayer: true, Yielded: true } cold || (world.Tick + i) % JobCheckTicks != 1 % JobCheckTicks) continue;
             var task = (CharacterTask)n.Task;
             var job = PermaJobs.ListJob(cold, task);
-            if (!cold.IsPlayer || (world.Tick + i) % JobCheckTicks != 0) continue;
-            bool onJob = job is not null;
-            // Idle as the medic job counts it: no task, or following or wandering.
-            if (!onJob && task is not (CharacterTask.Idle or CharacterTask.Wander or CharacterTask.Follow)) continue;
-            if (!Able(cold)) continue;
-            int pick = -1;
-            for (int k = 0; k < cold.Jobs.Count && pick < 0; k++)
-                if (Runnable(world, i, cold, k)) pick = k;
-            if (pick >= 0)
-            {
-                if (pick != (job is { Implicit: false } ? job.Job : -1)) StartJob(world, i, pick);
-                continue;
-            }
-            if (ImplicitPick(world, i, onJob ? job!.Resume : task) is { } chosen)
+            if (job is { Implicit: false } || job is null && task is not (CharacterTask.Idle or CharacterTask.Wander or CharacterTask.Follow) || !Able(cold)) continue;
+            if (ImplicitPick(world, i, job is not null ? job.Resume : task) is { } chosen)
             {
                 string? current = chosen.Type == TaskType.DITCH_ALL_RESOURCES ? cold.HaulTo : cold.OperateSite;
-                if (job is not { Implicit: true } || chosen.Type != job.Row || chosen.Site != current) StartImplicit(world, i, chosen.Type, chosen.Site);
+                if (job is null || chosen.Type != job.Row || chosen.Site != current) StartImplicit(world, i, chosen.Type, chosen.Site);
                 continue;
             }
-            if (onJob) End(world, i);
+            if (job is not null) End(world, i);
         }
     }
 
@@ -165,17 +213,6 @@ public sealed partial class ProductionSystem
             if (NearestSite(world, at, SeatRange, (s, m) => IsSeat(m) && Free(world, cold, s, m)) is { } free) return (TaskType.SIT_AROUND, free);
         }
         return null;
-    }
-
-    // Some player character has a Bodyguard or Staying close job, so the lists are looked at even with no machine (derived, looked for every 30 ticks; not saved or hashed).
-    bool followJobs;
-
-    void ScanFollowJobs(World world)
-    {
-        var table = world.Characters;
-        followJobs = false;
-        for (int i = 0; i < table.HighWater && !followJobs; i++)
-            followJobs = table.Next[i].Alive && table.Cold(i) is { IsPlayer: true, Jobs.Count: > 0 } cold && cold.Jobs.Exists(j => PermaJobs.Follows(j.Type));
     }
 
     /// <summary>The training dummy's gain per second of the continuous entry (<b>Verified</b>, <c>UseableStuff</c> vfunc 0x4b0: <c>FUN_1408c64f0</c> with 2.0).</summary>
@@ -433,9 +470,8 @@ public sealed partial class ProductionSystem
         var table = world.Characters;
         var cold = table.Cold(slot)!;
         var job = cold.Jobs[k];
-        // From a list job the character goes back to what it was doing before the list took it.
-        var current = (CharacterTask)table.Next[slot].Task;
-        var resume = PermaJobs.ListJob(cold, current) is { Implicit: false } on ? on.Resume : current is CharacterTask.Wander or CharacterTask.Follow ? current : CharacterTask.Idle;
+        // From a job the character goes back to what it was doing before its jobs took it.
+        var resume = PermaJobs.ResumeOf(cold, (CharacterTask)table.Next[slot].Task);
         if (job.Type == TaskType.JOB_BUILDER)
         {
             End(world, slot);

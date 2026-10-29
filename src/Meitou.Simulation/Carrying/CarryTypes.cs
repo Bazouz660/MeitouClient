@@ -64,7 +64,7 @@ public sealed class CarrySettings
 {
     /// <summary>The carrier lifts or loots from this far (X/Z units); the walk there ends here (the first aid reach).</summary>
     public float Reach { get; init; } = 14;
-    /// <summary>Ticks between the rescuers' looks for a downed character (the retaliation and first aid rhythm).</summary>
+    /// <summary>Ticks between the NPCs' looks for a downed character, a body to loot or a weapon (the retaliation and first aid rhythm); a player character's rescue and foraging jobs are the decision step's.</summary>
     public int AutoEveryTicks { get; init; } = 15;
     /// <summary>NPC squads pick up their knocked-out leader (the original's <c>FIND_AND_RESCUE_LEADER</c>, in 7 AI packages): a stand-in until the AI packages exist.</summary>
     public bool RescueNpcLeaders { get; init; } = true;

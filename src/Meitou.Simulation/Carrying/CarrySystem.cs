@@ -25,7 +25,7 @@ namespace Meitou.Simulation.Carrying;
 /// Everything runs in the serial phases (<c>Inputs</c>, <c>Schedule</c>, <c>SlowWorld</c>), in slot order, so the result does not depend on threads or partitions. Placed after the body system (its
 /// <c>SlowWorld</c> sees this tick's knock-outs and the corpses already removed) and before combat.
 /// </summary>
-public sealed partial class CarrySystem(GameConstants constants, BodyOptions options, float liftSeconds = 1, CarrySettings? settings = null) : ITickSystem, ITaskOwner, ITaskHandler, IOrderOwner
+public sealed partial class CarrySystem(GameConstants constants, BodyOptions options, float liftSeconds = 1, CarrySettings? settings = null) : ITickSystem, ITaskOwner, ITaskHandler, IOrderOwner, IDecisionOwner
 {
     /// <summary>The bone of the carrier the body hangs from (the original's <c>Bip01 L UpperArm</c> for the left side, <b>Verified</b>).</summary>
     public const string AttachBone = "Bip01 L UpperArm";
@@ -506,7 +506,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         if (world.Tick % RestoreEveryTicks == 0) RestoreLinks(world);
         LootWindow(world);
         KeepLinks(world);
-        if (Settings.AutoEveryTicks > 0 && world.Tick % Settings.AutoEveryTicks == 0) { Rescue(world, table); Forage(world, table); Scavenge(world, table); Arm(world, table); }
+        if (Settings.AutoEveryTicks > 0 && world.Tick % Settings.AutoEveryTicks == 0) { Rescue(world, table); Scavenge(world, table); Arm(world, table); }
     }
 
     // How often the saved carries still waiting for their partner are looked at (engine choice; the original checks its deferred link every frame, FUN_140797ec0).
@@ -980,9 +980,9 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
     // ------------------------------------------------------------------ rescue
 
     /// <summary>
-    /// Every <see cref="CarrySettings.AutoEveryTicks"/> ticks (serial, slot order): characters with the rescue job, idle, wandering or following, able to carry and with no fight in their
-    /// squad, pick up the nearest knocked-out (not dead) member of their faction within their sight that no one else is lifting (the original's rescue finder: nearest, same faction, not
-    /// carried, not dead, not targeted by a squad mate). Then NPC squads whose leader is knocked out send their nearest free member to pick it up.
+    /// Every <see cref="CarrySettings.AutoEveryTicks"/> ticks (serial, slot order): NPCs with a rescue job (a loaded list), idle, wandering or following (or on a list job below it), able to carry
+    /// and with no fight in their squad, pick up the nearest knocked-out member of their faction within their sight (<see cref="FindRescue"/>); then NPC squads whose leader is knocked out
+    /// send their nearest free member to pick it up. A player character's rescue job is the decision step's (<see cref="RegisterSources"/>).
     /// </summary>
     void Rescue(World world, CharacterTable table)
     {
@@ -990,8 +990,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         var taken = Lifting(table);
         for (int i = 0; i < table.HighWater; i++)
         {
-            if (!next[i].Alive || table.Cold(i) is not { RescueJob: true } cold) continue;
-            if (cold.IsPlayer && !Orders.Has(cold, CharacterOrders.Jobs)) continue;
+            if (!next[i].Alive || table.Cold(i) is not { IsPlayer: false, RescueJob: true } cold) continue;
             // Free, or on a list job below the rescue job (which ranks above it).
             int rescue = cold.Jobs.FindIndex(j => j.Type == Meitou.Data.Gameplay.Ai.TaskType.FIND_AND_RESCUE_IF_THERES_BEDS);
             if (!Free(world, i) && !(Production.PermaJobs.ListJob(cold, (CharacterTask)next[i].Task) is { Implicit: false } job && job.Job > rescue && cold is { Fleeing: false }
@@ -1000,6 +999,49 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
             RescueSomeone(world, i, taken, TaskSource.Job, rescue);
         }
         if (Settings.RescueNpcLeaders) RescueLeaders(world, table, taken);
+    }
+
+    /// <summary>
+    /// The rescue (148) and foraging (238) jobs as the decision step's contributor (step 5): a character not fleeing and able to carry, with no fight in its squad, whose finder finds a body
+    /// (<see cref="FindRescue"/>, which also needs <see cref="MayRescue"/>; <see cref="FindForage"/>) lifts or loots it. It runs while its lift or loot does.
+    /// </summary>
+    public void RegisterSources(DecisionSystem decisions)
+    {
+        var jobs = new CarryJobs(this);
+        decisions.RegisterJob(TaskType.FIND_AND_RESCUE_IF_THERES_BEDS, jobs);
+        decisions.RegisterJob(TaskType.LOOT_ANIMALS_JOB, jobs);
+    }
+
+    sealed class CarryJobs(CarrySystem owner) : IJobSource
+    {
+        (long Tick, int Slot, int K, int Body) found = (-1, -1, -1, -1);
+
+        public DecisionCheck CanRun(World world, int slot, int k)
+        {
+            var table = world.Characters;
+            var cold = table.Cold(slot)!;
+            var type = cold.Jobs[k].Type;
+            var task = type == TaskType.LOOT_ANIMALS_JOB ? CharacterTask.Loot : CharacterTask.PickUp;
+            if (cold.Running is { Source: TaskSource.Job } run && run.Job == k && run.Task == task && run.Runs((CharacterTask)table.Next[slot].Task)) return DecisionCheck.Runs;
+            if (cold.Fleeing || !CanCarry(world, cold, type)) return DecisionCheck.No("cannot carry");
+            int body;
+            if (type == TaskType.LOOT_ANIMALS_JOB) body = cold.Inventory is null ? -1 : owner.FindForage(world, slot, Looting(table));
+            else body = owner.MayRescue(world, slot, cold) ? owner.FindRescue(world, slot, Lifting(table)) : -1;
+            if (body < 0) return DecisionCheck.No("nobody found");
+            found = (world.Tick, slot, k, body);
+            return DecisionCheck.Run;
+        }
+
+        public void Start(World world, int slot, int k)
+        {
+            if (found.Tick != world.Tick || found.Slot != slot || found.K != k) return;
+            var table = world.Characters;
+            var cold = table.Cold(slot)!;
+            var type = cold.Jobs[k].Type;
+            var resume = Production.PermaJobs.ResumeOf(cold, (CharacterTask)table.Next[slot].Task);
+            bool forage = type == TaskType.LOOT_ANIMALS_JOB;
+            if (CarrySystem.Start(world, slot, forage ? CharacterTask.Loot : CharacterTask.PickUp, type, TaskSource.Job, table.IdOf(found.Body), resume, k) && forage) cold.Foraging = true;
+        }
     }
 
     /// <summary>The bodies being picked up now (by slot).</summary>
@@ -1021,15 +1063,28 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
     static bool Rescuing(CharacterCold cold) => (cold.Orders & CharacterOrders.Hold) == 0 && cold.Carrying.IsNone;
 
     /// <summary>
-    /// One look for a body (the rescue job's pass, and the Rescue button without Shift once): with no fight in its squad, the character picks up the nearest knocked-out member of
-    /// its faction within its sight that nobody else lifts; true when it started.
+    /// One look for a body (an NPC's rescue job, and the Rescue button without Shift once): the character picks up the body <see cref="FindRescue"/> finds; true when it started.
     /// </summary>
     bool RescueSomeone(World world, int i, HashSet<int> taken, TaskSource source, int job = -1)
     {
         var table = world.Characters;
+        int best = FindRescue(world, i, taken);
+        if (best < 0 || !Start(world, i, CharacterTask.PickUp, TaskType.FIND_AND_RESCUE_IF_THERES_BEDS, source, table.IdOf(best),
+            Production.PermaJobs.ResumeOf(table.Cold(i)!, (CharacterTask)table.Next[i].Task), job)) return false;
+        taken.Add(best);
+        return true;
+    }
+
+    /// <summary>
+    /// The rescue finder (a pure read): with no fight in its squad, the nearest knocked-out member of the character's faction (<see cref="Rescues"/>) within its sight that nobody else lifts
+    /// (<paramref name="taken"/>), not an animal, not in a bed or cage; -1 for none.
+    /// </summary>
+    int FindRescue(World world, int i, HashSet<int> taken)
+    {
+        var table = world.Characters;
         var next = table.Next;
         var cold = table.Cold(i)!;
-        if (cold.SquadId >= 0 && world.Squads.Find(cold.SquadId) is { } squad && CharacterFacts.SquadFighting(table, squad)) return false;
+        if (cold.SquadId >= 0 && world.Squads.Find(cold.SquadId) is { } squad && CharacterFacts.SquadFighting(table, squad)) return -1;
         float range = AggroSystem.RangeOf(cold, Settings.Sight), best2 = range * range;
         int best = -1;
         for (int s = 0; s < table.HighWater; s++)
@@ -1041,10 +1096,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
             float d2 = Vector2.DistanceSquared(new Vector2(next[i].Position.X, next[i].Position.Z), new Vector2(next[s].Position.X, next[s].Position.Z));
             if (d2 <= best2 && (best < 0 || d2 < best2)) { best = s; best2 = d2; }
         }
-        if (best < 0 || !Start(world, i, CharacterTask.PickUp, TaskType.FIND_AND_RESCUE_IF_THERES_BEDS, source, table.IdOf(best),
-            Production.PermaJobs.ResumeOf(cold, (CharacterTask)next[i].Task), job)) return false;
-        taken.Add(best);
-        return true;
+        return best;
     }
 
     /// <summary>NPC squads whose leader is knocked out send their nearest free member to pick it up.</summary>

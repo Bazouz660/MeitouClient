@@ -44,7 +44,7 @@ public sealed class ProductionSettings
 /// </list>
 /// Placed after construction and before combat; everything here is serial and reads only the world's state and the command order.
 /// </summary>
-public sealed partial class ProductionSystem : ITickSystem, ITaskOwner, ITaskHandler, IOrderOwner
+public sealed partial class ProductionSystem : ITickSystem, ITaskOwner, ITaskHandler, IOrderOwner, IDecisionOwner
 {
     /// <summary>The research falloff per earlier contribution in the same tick (<b>Observed</b>, <c>FUN_140836b70</c>).</summary>
     public const float ResearchFalloff = 0.6f;
@@ -530,12 +530,9 @@ public sealed partial class ProductionSystem : ITickSystem, ITaskOwner, ITaskHan
 
     public void Schedule(World world)
     {
-        // Job lists also run for the engineer job while a site is unfinished or damaged, and with no machine they can still send the injured to bed
-        // (the "Sleep when injured" option).
-        if (world.Tick % 30 == 0) ScanFollowJobs(world);
-        if (world.Machines.Count == 0 && !sweep && !followJobs && (Construction is null || !world.Buildings.AnyNeedsWork)
-            && !(Beds is not null && (world.Player.SquadAi & SquadAi.Sleep) != 0 && world.Fixtures.Count > 0)) return;
-        PickJobs(world);
+        // The list jobs are the decision step's (RegisterSources); with no machine the implicit jobs can still send the injured to bed (the "Sleep when injured" option).
+        if (world.Machines.Count == 0 && !sweep && !(Beds is not null && (world.Player.SquadAi & SquadAi.Sleep) != 0 && world.Fixtures.Count > 0)) return;
+        ImplicitJobs(world);
         var table = world.Characters;
         float dt = world.TickSeconds;
         for (int i = 0; i < table.HighWater; i++)

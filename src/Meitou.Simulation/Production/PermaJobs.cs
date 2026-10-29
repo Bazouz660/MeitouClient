@@ -72,26 +72,17 @@ public static class PermaJobs
     };
 
     /// <summary>
-    /// The types the production pick carries out from a list (<see cref="ProductionSystem"/>; the engineer job through the construction system). Others run elsewhere: medic 58,
-    /// robotics 57 and splinting 250 in <see cref="FirstAid.FirstAidSystem"/>, rescue 148 and foraging 238 in <see cref="Carrying.CarrySystem"/>, attacking enemies 16 in
-    /// <see cref="AggroSystem"/>; the carrying jobs (corpse disposal 137 / 138, intruders 223 / 273 with 224 / 274) in <c>ProductionSystem.Errands</c>, and Bodyguard 45 and Staying close 31 / 289
-    /// (a follow of the job's character) beside the production pick. The rest are kept, shown and saved but never started.
+    /// The types the production pick carries out from a list (<see cref="ProductionSystem"/>; the engineer job through the construction system). Every job runs through the decision step
+    /// (<see cref="DecisionSystem.RegisterJob"/>), whose contributors are: these and Bodyguard 45 and Staying close 31 / 289 (a follow of the job's character) and the carrying jobs (corpse
+    /// disposal 137 / 138, intruders 223 / 273 with 224 / 274) production, medic 58, robotics 57 and splinting 250 <see cref="FirstAid.FirstAidSystem"/>, rescue 148 and foraging 238
+    /// <see cref="Carrying.CarrySystem"/>, put in bed 106 <see cref="Locks.BedSystem"/>, attacking enemies 16 <see cref="AggroSystem"/>. The rest are kept, shown and saved but never started.
     /// </summary>
     public static bool Runs(TaskType type) => type is TaskType.OPERATE_MACHINERY or TaskType.OPERATE_AUTOMATIC_MACHINERY or TaskType.OPERATE_STORAGE or TaskType.JOB_BUILDER or TaskType.MAN_A_TURRET_PLAYER_JOB or TaskType.USE_TRAINING_DUMMY;
 
     /// <summary>
-    /// Whether the job at <paramref name="k"/> of the list may start for a character on <paramref name="task"/> (the original's keys N+8, N+7, ... in list order, highest first;
-    /// docs/game/ai-tasks.md "Perma-jobs"): it is free (no task of its own, wandering or following), on an implicit job, or on a list job further down; and the jobs switch is on
-    /// or the type ignores it. False for k below 0 (no such job).
-    /// </summary>
-    public static bool FreeFor(CharacterCold cold, CharacterTask task, int k) =>
-        k >= 0 && (task is CharacterTask.Idle or CharacterTask.Wander or CharacterTask.Follow || ListJob(cold, task) is { } run && (run.Implicit || run.Job > k))
-        && ((cold.Orders & CharacterOrders.Jobs) != 0 || IgnoresSwitch(cold.Jobs[k].Type));
-
-    /// <summary>
     /// Whether the character's <paramref name="task"/> came from its jobs (a list job, an implicit job or a job pass: a <see cref="TaskSource.Job"/> provenance, <see cref="CharacterCold.Running"/>,
-    /// that runs it), not from an order. The original tries the priority-3 goals (Self preservation, Hold's attack on sight) before the jobs that are not urgent (docs/game/ai-tasks.md
-    /// "Precedence"), so such a task gives way to them.
+    /// that runs it), not from an order. The original tries the priority-3 goals before the jobs that are not urgent (docs/game/ai-tasks.md "Precedence"), so such a task gives way to them
+    /// (the player-faction characters that are not <see cref="CharacterCold.IsPlayer"/>, whose food pass reads it; the player's characters are the decision step's).
     /// </summary>
     public static bool FromJob(CharacterCold cold, CharacterTask task) => cold.Running is { Source: TaskSource.Job } run && run.Runs(task);
 
@@ -102,8 +93,13 @@ public static class PermaJobs
     public static RunningTask? ListJob(CharacterCold cold, CharacterTask task) =>
         task != CharacterTask.Attack && cold.Running is { Source: TaskSource.Job } run && run.Runs(task) && (run.Implicit || run.Job >= 0 && (Runs(run.Row) || Follows(run.Row))) ? run : null;
 
-    /// <summary>The task a job's start goes back to: the one the production pick's job it is on goes back to (<see cref="ListJob"/>), else <paramref name="task"/>, the one it runs.</summary>
-    public static CharacterTask ResumeOf(CharacterCold cold, CharacterTask task) => ListJob(cold, task)?.Resume ?? task;
+    /// <summary>
+    /// The task a job's start goes back to (engine, until a decision decides again): the one the job it takes over goes back to (a <see cref="TaskSource.Job"/> provenance that runs
+    /// <paramref name="task"/>, list or implicit), else following or wandering when it does that, else idle.
+    /// </summary>
+    public static CharacterTask ResumeOf(CharacterCold cold, CharacterTask task) =>
+        task != CharacterTask.Attack && cold.Running is { Source: TaskSource.Job } run && run.Runs(task) ? run.Resume
+        : task is CharacterTask.Wander or CharacterTask.Follow ? task : CharacterTask.Idle;
 
     /// <summary>The index of the first job of <paramref name="type"/> in the list, -1 when none.</summary>
     public static int IndexOf(CharacterCold cold, TaskType type) => cold.Jobs.FindIndex(j => j.Type == type);

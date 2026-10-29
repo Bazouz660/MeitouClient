@@ -14,7 +14,7 @@ public sealed partial class ProductionSystem
     /// <summary>The carry system that lifts and puts down the bodies of the carrying jobs; null: they never run.</summary>
     public CarrySystem? Carry { get; set; }
 
-    /// <summary>Ticks between the looks of the carrying jobs (engine choice, as the rescue job's).</summary>
+    /// <summary>Ticks between the steps of a carrying job's carry under way (engine choice); its start is the decision step's.</summary>
     public const int ErrandEveryTicks = 15;
     /// <summary>A body carried out is put down within this of its goal, or after <see cref="ErrandWalks"/> walks that ended short (engine choices).</summary>
     public const float ErrandArrive = 40;
@@ -51,41 +51,49 @@ public sealed partial class ProductionSystem
         _ => null,
     };
 
-    /// <summary>
-    /// The carrying jobs of every player character (serial, slot order): one with an errand under way is stepped; a free one (<see cref="PermaJobs.FreeFor"/>, able to carry) with a job whose
-    /// finder finds something lifts it, the first job of its list that does. The corpse job needs its finder 138 and its delivery 137 in the list, an intruder job its companion 224 / 274.
-    /// </summary>
+    /// <summary>The carrying errands under way (serial, slot order, every <see cref="ErrandEveryTicks"/> ticks): each is stepped. Their starts are the decision step's (<see cref="ErrandJobs"/>).</summary>
     void Errands(World world)
     {
-        if (Carry is null || world.Tick % ErrandEveryTicks != 0) return;
+        if (Carry is null || world.Tick % ErrandEveryTicks != 0 || errands.Count == 0) return;
         var table = world.Characters;
         foreach (var gone in errands.Keys.Where(k => !table.IsAlive(k)).ToList()) errands.Remove(gone);
-        HashSet<CharacterId>? lifted = null;
         for (int i = 0; i < table.HighWater; i++)
+            if (table.Next[i].Alive && table.Cold(i) is { IsPlayer: true } cold && errands.TryGetValue(table.IdOf(i), out var errand)) StepErrand(world, i, cold, errand);
+    }
+
+    /// <summary>
+    /// The carrying jobs as the decision step's contributor (step 5): a character carrying nothing, able to carry and not fleeing, with a job whose finder finds something, lifts it (the corpse
+    /// job needs its delivery 137 in the list, an intruder job its companion 224 / 274). It runs while its lift or its carry is under way.
+    /// </summary>
+    sealed class ErrandJobs(ProductionSystem owner) : IJobSource
+    {
+        (long Tick, int Slot, int K, CharacterId Body, Vector2 Goal) found = (-1, -1, -1, CharacterId.None, default);
+
+        public DecisionCheck CanRun(World world, int slot, int k)
         {
-            if (!table.Next[i].Alive || table.Cold(i) is not { IsPlayer: true } cold) continue;
-            var id = table.IdOf(i);
-            if (errands.TryGetValue(id, out var errand))
-            {
-                StepErrand(world, i, cold, errand);
-                continue;
-            }
-            if (cold.Jobs.Count == 0 || !cold.Carrying.IsNone || !CarrySystem.CanCarry(world, cold, TaskType.DEAD_GUYS_GO_IN_THE_POT) || cold.Fleeing) continue;
-            var task = (CharacterTask)table.Next[i].Task;
-            for (int k = 0; k < cold.Jobs.Count; k++)
-            {
-                if (KindOf(cold.Jobs[k].Type) is not { } kind || !PermaJobs.FreeFor(cold, task, k)) continue;
-                var companion = kind switch { ErrandKind.Corpse => TaskType.DEAD_GUYS_GO_IN_THE_POT, ErrandKind.OutOfBuilding => TaskType.TAKE_INTRUDER_OUTSIDE, _ => TaskType.TAKE_INTRUDER_OUTSIDE_TOWN };
-                if (PermaJobs.IndexOf(cold, companion) < 0) continue;
-                lifted ??= Lifted(table);
-                var found = kind == ErrandKind.Corpse ? FindCorpse(world, i, cold, lifted) : FindIntruder(world, i, cold, lifted, kind);
-                if (found is not { } body) continue;
-                var resume = PermaJobs.ResumeOf(cold, task);
-                if (!Carry.BeginPickUp(world, i, body.Id, resume, source: TaskSource.Job, job: k, row: cold.Jobs[k].Type)) continue;
-                lifted.Add(body.Id);
-                errands[id] = new Errand { Kind = kind, Goal = body.Goal, Body = body.Id };
-                break;
-            }
+            var table = world.Characters;
+            var cold = table.Cold(slot)!;
+            if (owner.Carry is null || KindOf(cold.Jobs[k].Type) is not { } kind) return DecisionCheck.No(null);
+            if (owner.errands.TryGetValue(table.IdOf(slot), out var e))
+                return e.Kind == kind && (cold.Carrying == e.Body || table.Next[slot].Task == (byte)CharacterTask.PickUp && cold.CarryTarget == e.Body) ? DecisionCheck.Runs : DecisionCheck.No("another errand");
+            if (!cold.Carrying.IsNone || !CarrySystem.CanCarry(world, cold, TaskType.DEAD_GUYS_GO_IN_THE_POT) || cold.Fleeing) return DecisionCheck.No("cannot carry");
+            var companion = kind switch { ErrandKind.Corpse => TaskType.DEAD_GUYS_GO_IN_THE_POT, ErrandKind.OutOfBuilding => TaskType.TAKE_INTRUDER_OUTSIDE, _ => TaskType.TAKE_INTRUDER_OUTSIDE_TOWN };
+            if (PermaJobs.IndexOf(cold, companion) < 0) return DecisionCheck.No("no companion job");
+            var lifted = Lifted(table);
+            var body = kind == ErrandKind.Corpse ? owner.FindCorpse(world, slot, cold, lifted) : owner.FindIntruder(world, slot, cold, lifted, kind);
+            if (body is not { } b) return DecisionCheck.No("nothing found");
+            found = (world.Tick, slot, k, b.Id, b.Goal);
+            return DecisionCheck.Run;
+        }
+
+        public void Start(World world, int slot, int k)
+        {
+            var table = world.Characters;
+            var cold = table.Cold(slot)!;
+            if (found.Tick != world.Tick || found.Slot != slot || found.K != k || KindOf(cold.Jobs[k].Type) is not { } kind) return;
+            var resume = PermaJobs.ResumeOf(cold, (CharacterTask)table.Next[slot].Task);
+            if (!owner.Carry!.BeginPickUp(world, slot, found.Body, resume, source: TaskSource.Job, job: k, row: cold.Jobs[k].Type)) return;
+            owner.errands[table.IdOf(slot)] = new Errand { Kind = kind, Goal = found.Goal, Body = found.Body };
         }
     }
 

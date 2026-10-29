@@ -230,7 +230,7 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed, ITaskOwner
         // that is called in on a sighting or an attack and cannot reach the enemy (a cage, a locked room) would otherwise stand at the nearest spot for ever.
         if (!order.Picked && PursuitSystem.PathImpossible(cold, target, now)) return false;
         var (row, source) = order.Picked ? (TaskType.FOCUSED_MELEE_ATTACK, TaskSource.Order) : order.Defensive ? (TaskType.ATTACK_ATTACKERS_OF, TaskSource.Reaction) : (TaskType.ATTACK_ENEMIES, TaskSource.Goal);
-        return TaskStart.Start(world, a, new TaskRequest(CharacterTask.Attack, row, order.Source ?? source) { Target = target }) == StartResult.Started;
+        return TaskStart.Start(world, a, new TaskRequest(CharacterTask.Attack, row, order.Source ?? source) { Target = target, Job = order.Job, Resume = order.Resume }) == StartResult.Started;
     }
 
     /// <summary>Whether the victim is in melee combat mode, read before an order engages anyone (an attack on a fighting character is a lesser assault).</summary>
@@ -344,8 +344,16 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed, ITaskOwner
     /// </summary>
     static void EndFight(CharacterTable table, int slot, ref CombatSlot s)
     {
-        if (table.Cold(slot)!.InCombat) s.ListEpoch++;
+        var cold = table.Cold(slot)!;
+        if (cold.InCombat) s.ListEpoch++;
+        // A job's fight (the attacking-enemies job, row 16) ending by itself takes up its provenance's resume: following again, or standing (engine, until the decision step decides again).
+        var resume = table.Next[slot].Task == (byte)CharacterTask.Attack && cold.Running is { Source: TaskSource.Job, Task: CharacterTask.Attack } run
+            && !Production.PermaJobs.Follows(run.Row) ? run.Resume : CharacterTask.Idle;
         EndFight(table, slot);
+        if (resume == CharacterTask.Idle) return;
+        TaskStart.Step(table, slot, resume);
+        table.Next[slot].TaskTime = 0;
+        cold.FollowPathTime = 0;
     }
 
     static void EndFight(CharacterTable table, int slot)
@@ -360,6 +368,7 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed, ITaskOwner
         // (the AI's UNEQUIP_WEAPON step), a player's character once it stops moving on an order (Act). A character without either sheathes now.
         if (!cold.IsPlayer && cold.Ai is null) cold.DrawnWeapon = WeaponKinds.None;
         if (table.Next[slot].Task == (byte)CharacterTask.Attack) TaskStart.Step(table, slot, CharacterTask.Idle);   // the fight's own end: idle, its provenance kept (a follow row's, FollowResume)
+        DecisionSystem.Request(cold);   // the fight task ended: a player character is decided again (a follow row takes up its follow)
     }
 
     // ------------------------------------------------------------------ schedule, move

@@ -284,6 +284,33 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
         }
     }
 
+    /// <summary>
+    /// A follow row (31, 45, 289) whose fight was a step of it (<see cref="TaskStart.Start"/> keeps the row's provenance over a goal's or reaction's fight) is over: the character stands idle
+    /// out of the fight and its provenance still names the row with the fight as its task.
+    /// </summary>
+    internal static bool FightStepOver(CharacterTable table, int slot, CharacterCold cold) =>
+        cold.Running is { Task: CharacterTask.Attack } run && Production.PermaJobs.Follows(run.Row) && table.Next[slot].Task == (byte)CharacterTask.Idle && !cold.InCombat;
+
+    /// <summary>
+    /// The follow row takes its follow up again where its fight left it (serial; the decision step, for an order or a job: the original's plan goes on with the row's follow after 13): its walk
+    /// is asked anew under the row's provenance. False, with the row dropped (no provenance, no <see cref="CharacterCold.FollowOrder"/>), when the followed character is gone.
+    /// </summary>
+    internal static bool FollowAgain(World world, int slot, CharacterCold cold)
+    {
+        var table = world.Characters;
+        if (cold.FollowOrder.IsNone || !table.TryResolveNext(cold.FollowOrder, out _))
+        {
+            cold.Running = null;
+            cold.FollowOrder = CharacterId.None;
+            return false;
+        }
+        cold.Running = cold.Running! with { Task = CharacterTask.Follow };
+        TaskStart.Step(table, slot, CharacterTask.Follow);
+        table.Next[slot].TaskTime = 0;
+        cold.FollowPathTime = 0;
+        return true;
+    }
+
     public void RegisterTasks(TaskHandlers tasks)
     {
         tasks.Register(CharacterTask.GoTo, this);

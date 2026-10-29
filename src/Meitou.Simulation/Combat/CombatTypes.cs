@@ -15,6 +15,10 @@ public sealed record AttackOrder(IReadOnlyList<CharacterId> Attackers, Character
     public bool Picked { get; init; }
     /// <summary>The chooser's source the fight stands in for (<see cref="TaskStart.Start"/>); null: an order when <see cref="Picked"/>, a reaction when <see cref="Defensive"/>, else a goal.</summary>
     public TaskSource? Source { get; init; }
+    /// <summary>The job of the attackers' lists the fight runs (<see cref="TaskRequest.Job"/>; -1: none).</summary>
+    public int Job { get; init; } = -1;
+    /// <summary>The task a job's fight goes back to when it ends by itself (<see cref="TaskRequest.Resume"/>).</summary>
+    public CharacterTask Resume { get; init; }
 }
 
 /// <summary>

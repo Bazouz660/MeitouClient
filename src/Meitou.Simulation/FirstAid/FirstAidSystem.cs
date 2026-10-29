@@ -20,13 +20,13 @@ namespace Meitou.Simulation.FirstAid;
 /// the kit's <c>charges</c> fall by <c>lerp(medkit drain 99, medkit drain 1, (100 - skill) / 100) x dt</c> per wound step or part bandaged (bandaging drains only the player's kits; character-stats.md "First aid update"). The skill is the medic's <c>medic</c> (first aid kit) or <c>robotics</c> (robot kit) times
 /// the stat multiplier of injuries and hunger. <c>dt</c> is <b>game seconds</b> (<b>engine choice</b>, the unit is <b>Unknown</b>).</item>
 /// <item><b>Auto</b> (<c>SlowWorld</c>, every <see cref="FirstAidSettings.AutoEveryTicks"/> ticks, serial in slot order): an idle, wandering or following NPC looks for a patient with the original's
-/// Medic finder (<see cref="FindPatient"/>, FirstAidSystem.Finder.cs), as the player's characters do for their medic, robotics and splint jobs (<see cref="RunJobs"/>).</item>
+/// Medic finder (<see cref="FindPatient"/>, FirstAidSystem.Finder.cs), as the decision step asks for the player characters' medic, robotics and splint jobs (<see cref="RegisterSources"/>).</item>
 /// <item><b>Rest</b> (<see cref="CharacterTask.Rest"/>): <see cref="RestOrder"/>; <see cref="BodySystem"/> reads the task as <see cref="MedicalContext.Resting"/>. Lying in a bed is
 /// <see cref="Locks.BedSystem"/>'s (<see cref="CharacterTask.Sleep"/>); <see cref="BodySystem"/> gives it the bed's healing.</item>
 /// </list>
 /// Placed after the movement system (a later move order replaces a treatment, since it sets the task) and before the body system.
 /// </summary>
-public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions options, ItemFactory items, FirstAidSettings? settings = null) : ITickSystem, ITaskOwner, ITaskHandler, IOrderOwner
+public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions options, ItemFactory items, FirstAidSettings? settings = null) : ITickSystem, ITaskOwner, ITaskHandler, IOrderOwner, IDecisionOwner
 {
     /// <summary>The effect kind: one tick of treatment from the source (medic) on the target (patient).</summary>
     public const int EffectTreat = 1;
@@ -518,12 +518,7 @@ public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions 
             {
                 if (!next[i].Alive) continue;
                 var cold = table.Cold(i)!;
-                if (cold.IsPlayer)
-                {
-                    if (cold.Jobs.Count > 0) RunJobs(world, i, cold, taken);
-                    continue;
-                }
-                if (!Settings.AutoNpcs) continue;
+                if (cold.IsPlayer || !Settings.AutoNpcs) continue;   // a player's medic jobs are the decision step's (MedicJobs)
                 // Idle: no task, following, wandering or an implicit job.
                 bool idle = next[i].Task is (byte)CharacterTask.Idle or (byte)CharacterTask.Wander or (byte)CharacterTask.Follow || Production.PermaJobs.ListJob(cold, (CharacterTask)next[i].Task) is { Implicit: true };
                 if (idle) HealSomeone(world, i, taken, robotics: false, TaskSource.Npc);
@@ -533,18 +528,38 @@ public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions 
     }
 
     /// <summary>
-    /// A player character's first aid jobs, in list order (docs/game/ai-tasks.md "Perma-jobs"): the first of Medic 58, Robotics 57 and Splint Rigging 250 that may start
-    /// (<see cref="Production.PermaJobs.FreeFor"/>; all three run with the jobs switch off) and whose finder finds a patient starts the treatment.
+    /// The first aid jobs as the decision step's contributor (step 5; docs/game/ai-tasks.md "Medic jobs"): Medic 58 and Robotics 57 run while the finder (<see cref="FindPatient"/>) finds a
+    /// patient, Splint Rigging 250 while its finder does (<see cref="FindSplint"/>); all three run with the jobs switch off. A job's treatment runs until it ends by itself.
     /// </summary>
-    void RunJobs(World world, int i, CharacterCold cold, List<(int Medic, int Patient)> taken)
+    public void RegisterSources(DecisionSystem decisions)
     {
-        var task = (CharacterTask)world.Characters.Next[i].Task;
-        for (int k = 0; k < cold.Jobs.Count; k++)
+        var jobs = new MedicJobs(this);
+        foreach (var type in (ReadOnlySpan<TaskType>)[TaskType.JOB_MEDIC, TaskType.JOB_REPAIR_ROBOT, TaskType.SPLINT_JOB]) decisions.RegisterJob(type, jobs);
+    }
+
+    sealed class MedicJobs(FirstAidSystem owner) : IJobSource
+    {
+        (long Tick, int Slot, int K, int Patient) found = (-1, -1, -1, -1);
+
+        public DecisionCheck CanRun(World world, int slot, int k)
         {
+            var table = world.Characters;
+            var cold = table.Cold(slot)!;
             var type = cold.Jobs[k].Type;
-            if (type is not (TaskType.JOB_MEDIC or TaskType.JOB_REPAIR_ROBOT or TaskType.SPLINT_JOB) || !Production.PermaJobs.FreeFor(cold, task, k)) continue;
-            // A job's treatment (provenance Job): Self preservation comes first (RetaliationSystem).
-            if (type == TaskType.SPLINT_JOB ? SplintSomeone(world, i, taken, k) : HealSomeone(world, i, taken, robotics: type == TaskType.JOB_REPAIR_ROBOT, TaskSource.Job, k)) return;
+            if (cold.Running is { Source: TaskSource.Job } run && run.Job == k && run.Runs((CharacterTask)table.Next[slot].Task) && run.Task == CharacterTask.Treat) return DecisionCheck.Runs;
+            var taken = Treated(table);
+            int patient = type == TaskType.SPLINT_JOB ? owner.FindSplint(world, slot, taken) : owner.FindPatient(world, slot, taken, robotics: type == TaskType.JOB_REPAIR_ROBOT).Slot;
+            if (patient < 0) return DecisionCheck.No("no patient");
+            found = (world.Tick, slot, k, patient);
+            return DecisionCheck.Run;
+        }
+
+        public void Start(World world, int slot, int k)
+        {
+            if (found.Tick != world.Tick || found.Slot != slot || found.K != k) return;
+            var type = world.Characters.Cold(slot)!.Jobs[k].Type;
+            var request = type == TaskType.SPLINT_JOB ? Splinting(k) : new TaskRequest(CharacterTask.Treat, type == TaskType.JOB_REPAIR_ROBOT ? TaskType.JOB_REPAIR_ROBOT : TaskType.JOB_MEDIC, TaskSource.Job) { Job = k };
+            StartJob(world, slot, found.Patient, Treated(world.Characters), request);
         }
     }
 

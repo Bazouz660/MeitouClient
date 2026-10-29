@@ -31,7 +31,7 @@ public sealed class FirstAidSettings
     public float StillSpeed { get; init; } = 1;
     /// <summary>A kit in a squad mate's inventory is used when this close (the same reach as sharing food).</summary>
     public float KitReach { get; init; } = 60;
-    /// <summary>Ticks between looks for a patient by characters that treat by themselves (the retaliation system's rhythm).</summary>
+    /// <summary>Ticks between looks for a patient by NPCs that treat by themselves (the retaliation system's rhythm); a player character's medic jobs are the decision step's.</summary>
     public int AutoEveryTicks { get; init; } = 15;
     /// <summary>Characters that treat by themselves look for a patient this far (X/Z units) from them, in their own squad.</summary>
     public float AutoReach { get; init; } = 250;

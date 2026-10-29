@@ -30,7 +30,8 @@ public readonly record struct AggroEntry(long Tick, CharacterId Attacker, Charac
 /// effect at that target.</item>
 /// <item><b>Decide</b> (<c>Apply</c>, serial commit order): the looker, if still free, and its free squad mates within twice their own range R of the target (the original's
 /// squad-shared sightings, <c>GroupSense</c>) get an <see cref="AttackOrder"/> for the next tick through <see cref="World.Defer"/>. The player's characters look and join only with
-/// the attacking-enemies job (<see cref="HuntsEnemies"/>); they have no leash, and after the fight go back to following or stand idle.</item>
+/// the attacking-enemies job (<see cref="HuntsEnemies"/>) or on Hold, and are offered the sighting: the decision step starts their fight (<see cref="HoldAttack"/>, <see cref="AttackJob"/>);
+/// they have no leash, and after a job's fight go back to following or stand idle.</item>
 /// <item><b>Chase give-up and stand down</b> (<c>SlowWorld</c>, serial, every tick): an NPC running after its target (<see cref="CharacterCold.CombatRunning"/>) senses that
 /// target on its look cadence (<c>Act</c>) and gives it up by the original's <c>ChaseMode</c> rule (<see cref="GiveUpGateSeconds"/>, <see cref="GiveUpSenseSeconds"/>,
 /// <see cref="GiveUpReach"/>). When its fight is over (target down, or stopped) it goes back to what it did before (wander or follow; a go-to becomes idle, which the roaming
@@ -313,11 +314,65 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
     readonly List<AggroEntry> log = [];
     readonly HashSet<int> taken = [];
     long takenTick = -1;
-    /// <summary>This tick's targets of the player characters whose look (or a squad mate's) found an enemy for Hold's goal 16 (<see cref="HoldAttack"/>).</summary>
-    readonly Dictionary<int, CharacterId> holdOffers = [];
-    long holdOffersTick = -1;
+    /// <summary>
+    /// This tick's targets of the player characters whose look (or a squad mate's) found an enemy, for row 16 Attacking enemies: Hold's goal (<see cref="HoldAttack"/>) and the job
+    /// (<see cref="AttackJob"/>).
+    /// </summary>
+    readonly Dictionary<int, CharacterId> offers = [];
+    long offersTick = -1;
+    readonly List<int> sensed = [];
 
-    public void RegisterSources(DecisionSystem decisions) => decisions.Register(new HoldAttack(this));
+    public void RegisterSources(DecisionSystem decisions)
+    {
+        decisions.Register(new HoldAttack(this));
+        decisions.RegisterJob(Meitou.Data.Gameplay.Ai.TaskType.ATTACK_ENEMIES, new AttackJob(this));
+    }
+
+    /// <summary>The enemy this tick's look offered the player character for row 16 (<see cref="offers"/>), -1 for none.</summary>
+    int Offered(World world, int slot) =>
+        offersTick == world.Tick && offers.TryGetValue(slot, out var id) && world.Characters.TryResolveNext(id, out int t) && world.Characters.Cold(t) is { Medical.Incapacitated: false } ? t : -1;
+
+    /// <summary>
+    /// Whether the character senses an enemy now (a serial read; the stand-in for the AI's sensed-enemy count <c>+0xbc</c> until the sensed list, M7): the attack-on-sight look's sensed-enemy
+    /// finder (<see cref="SensedEnemies"/>) finds one.
+    /// </summary>
+    public bool SensesEnemy(World world, int slot)
+    {
+        if (world.Characters.Cold(slot) is not { } cold) return false;
+        sensed.Clear();
+        SensedEnemies(world, slot, cold, sensed);
+        return sensed.Count > 0;
+    }
+
+    /// <summary>
+    /// The job 16 Attacking enemies (Shift with an attack; it runs with the jobs switch off, docs/game/ai-tasks.md "Perma-jobs") as the decision step's contributor (step 5): its finder is the
+    /// original's attack on sight (<c>FUN_14059f3a0</c>, "Combat goals"), which this system's look stands in for: the enemy the look (or a squad mate's) offered this tick is attacked
+    /// (row 16, the job's provenance), with the row's desire (0 while Passive, sneaking outside a fight or not standing, <see cref="WantsToAttack"/>). After the fight the character takes up
+    /// following again, or stands (the provenance's resume).
+    /// </summary>
+    sealed class AttackJob(AggroSystem owner) : IJobSource
+    {
+        public DecisionCheck CanRun(World world, int slot, int k)
+        {
+            var table = world.Characters;
+            var cold = table.Cold(slot)!;
+            if (cold.Running is { Source: TaskSource.Job, Row: Meitou.Data.Gameplay.Ai.TaskType.ATTACK_ENEMIES } run && run.Job == k && run.Runs((CharacterTask)table.Next[slot].Task)) return DecisionCheck.Runs;
+            if (!WantsToAttack(cold)) return DecisionCheck.No("desire 0 (Passive, sneaking or not standing)");
+            return owner.Offered(world, slot) >= 0 ? DecisionCheck.Run : DecisionCheck.No("no enemy sighted");
+        }
+
+        public void Start(World world, int slot, int k)
+        {
+            var table = world.Characters;
+            int t = owner.Offered(world, slot);
+            if (t < 0) return;
+            var targetId = table.IdOf(t);
+            var resume = table.Next[slot].Task == (byte)CharacterTask.Follow ? CharacterTask.Follow : CharacterTask.Idle;
+            world.Defer(new AttackOrder([table.IdOf(slot)], targetId) { Tick = world.Tick + 1, Source = TaskSource.Job, Job = k, Resume = resume });
+            owner.Started++;
+            world.Sounds?.Enqueue(new SoundEvent(SoundKind.Alert, table.IdOf(slot), targetId, table.Next[t].Position));   // its alert voice
+        }
+    }
 
     /// <summary>
     /// Goal 16 Attacking enemies as Hold adds it to a player character (priority 3; its weight is <b>Unknown</b>, 1 here; desire 1, 0 as <see cref="HoldsGround"/> says): the enemy this tick's
@@ -338,17 +393,13 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
             if (task == CharacterTask.Attack && cold.Running is { Row: Meitou.Data.Gameplay.Ai.TaskType.ATTACK_ENEMIES, Source: TaskSource.Goal } run && run.Runs(task)) return DecisionCheck.Runs;
             if (!Orders.Holding(cold)) return DecisionCheck.No("not on Hold");
             if (!HoldsGround(cold)) return DecisionCheck.No("desire 0 (Passive, sneaking or not standing)");
-            return Target(world, slot) >= 0 ? DecisionCheck.Run : DecisionCheck.No("no enemy sighted");
+            return owner.Offered(world, slot) >= 0 ? DecisionCheck.Run : DecisionCheck.No("no enemy sighted");
         }
-
-        int Target(World world, int slot) =>
-            owner.holdOffersTick == world.Tick && owner.holdOffers.TryGetValue(slot, out var id) && world.Characters.TryResolveNext(id, out int t)
-            && world.Characters.Cold(t) is { Medical.Incapacitated: false } ? t : -1;
 
         public void Start(World world, int slot)
         {
             var table = world.Characters;
-            int t = Target(world, slot);
+            int t = owner.Offered(world, slot);
             var targetId = table.IdOf(t);
             world.Defer(new AttackOrder([table.IdOf(slot)], targetId) { Tick = world.Tick + 1 });
             owner.Started++;
@@ -567,7 +618,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
             var war = cold.SquadId >= 0 && world.Squads.Find(cold.SquadId) is { War.IsSet: true } assaulting ? assaulting.War : WarTargets.None;
             bool targets = !Busy(cold, task) && !(task == (byte)CharacterTask.Rest && !AiSleeper(cold))
                 && cold is { InCombat: false, Fleeing: false, IsImprisoned: false, SlaveState: not 1, Fighter.CanAttack: true, Medical.Incapacitated: false }
-                && Relations.Contains(cold.Faction) && !(cold.IsPlayer && !HuntsEnemies(cold, task) && !HoldsGround(cold))
+                && Relations.Contains(cold.Faction) && !(cold.IsPlayer && !HuntsEnemies(cold) && !HoldsGround(cold))
                 && stance != Ai.AiStance.Passive && (hasEnemy[cold.Faction] || stance == Ai.AiStance.AggressiveNeutrals || war.IsSet || (Memory?.AnyTempEnemy(cold.SquadId) ?? false));
             // Every awake NPC keeps spot meters on the sneakers it sees, not only those it would fight (the original's per-looker SpottingPeopleMgr): they feed the crime
             // witnesses, the stealth knock-out and the sneaker's arrows. One that picks no fights looks for sneakers only.
@@ -935,20 +986,18 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         taken.Add(i);
         JoinMates(world, table, i, t, fighters);
         var targetId = table.IdOf(t);
-        // A player character that takes this fight only through Hold's goal 16 (a priority-3 goal) is offered it: the decision step weighs it against its orders and its other goals.
-        if (holdOffersTick != world.Tick) { holdOffers.Clear(); holdOffersTick = world.Tick; }
+        // A player character takes this fight through row 16 only, Hold's goal (priority 3) or its job: it is offered it, and the decision step weighs it against its orders, goals and jobs.
+        if (offersTick != world.Tick) { offers.Clear(); offersTick = world.Tick; }
         for (int k = fighters.Count - 1; k >= 0; k--)
         {
             int s = fighters[k].Slot;
-            if (table.Cold(s) is not { IsPlayer: true } pc || HuntsEnemies(pc, next[s].Task)) continue;
-            holdOffers.TryAdd(s, targetId);
+            if (table.Cold(s) is not { IsPlayer: true } pc) continue;
+            offers.TryAdd(s, targetId);
             DecisionSystem.Request(pc);
             fighters.RemoveAt(k);
         }
         if (fighters.Count == 0) return;
-        // The attacking-enemies job's fighters (a job pass, until M5b): the decision step leaves them alone this tick.
-        foreach (var f in fighters) if (table.Cold(f.Slot) is { IsPlayer: true }) world.Decisions.Claim(world, f.Slot);
-        world.Defer(new AttackOrder(fighters, targetId) { Tick = world.Tick + 1, Source = table.Cold(i)!.IsPlayer ? null : TaskSource.Npc });
+        world.Defer(new AttackOrder(fighters, targetId) { Tick = world.Tick + 1, Source = TaskSource.Npc });
         Started++;
         if (world.Sounds is { } sounds) foreach (var fighter in fighters) sounds.Enqueue(new SoundEvent(SoundKind.Alert, fighter, targetId, next[t].Position));   // the fighters' alert voices
         if (Settings.RecordLog) log.Add(new AggroEntry(world.Tick, fighters[0], targetId, table.Cold(i)!.Faction, target.Faction, e.Amount, fighters.Count - 1));
@@ -1019,7 +1068,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         if (Busy(table.Cold(slot), task) || task == (byte)CharacterTask.Rest && !AiSleeper(table.Cold(slot))) return false;
         return table.Cold(slot) is { InCombat: false, Fleeing: false, IsImprisoned: false, Fighter.CanAttack: true, Medical.Incapacitated: false, Gunning: null, Ai: null or { Behaviour: not Ai.AiBehaviour.Turret } } cold
             // a carrier fights like anyone (docs/game/carry-loot.md "A carrier in a fight"); a turret guard keeps to its turret (task 146: only a melee attacker takes it off)
-            && (!cold.IsPlayer || HuntsEnemies(cold, task) || HoldsGround(cold));
+            && (!cold.IsPlayer || HuntsEnemies(cold) || HoldsGround(cold));
     }
 
     /// <summary>
@@ -1027,20 +1076,21 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
     /// fight, Passive or not standing. It is a priority-3 goal: the decision step weighs it after the character's orders and before its jobs (<see cref="HoldAttack"/>, docs/game/ai-tasks.md
     /// "Precedence"). Its targets pass the Hold post test (<see cref="Orders.HoldPost"/>).
     /// </summary>
-    static bool HoldsGround(CharacterCold? cold) =>
-        cold is not null && Orders.Holding(cold) && (cold.Orders & CharacterOrders.Passive) == 0 && ((cold.Orders & CharacterOrders.Sneak) == 0 || cold.InCombat) && cold.Medical is { Prone: false };
+    static bool HoldsGround(CharacterCold? cold) => cold is not null && Orders.Holding(cold) && WantsToAttack(cold);
+
+    /// <summary>Row 16's desire (<c>AI::scoreAttackEnemies</c>) above 0: not Passive, not sneaking outside a fight, standing.</summary>
+    static bool WantsToAttack(CharacterCold cold) =>
+        (cold.Orders & CharacterOrders.Passive) == 0 && ((cold.Orders & CharacterOrders.Sneak) == 0 || cold.InCombat) && cold.Medical is { Prone: false };
 
     /// <summary>Fighting, or treating (a medic looks for no fight), except one of the player's characters treating while it holds ground (<see cref="HoldsGround"/>).</summary>
     static bool Busy(CharacterCold? cold, byte task) =>
         task == (byte)CharacterTask.Attack || task == (byte)CharacterTask.Treat && !(cold is { IsPlayer: true } && HoldsGround(cold));
 
     /// <summary>
-    /// Whether one of the player's characters looks for enemies like an NPC: it has the job 16 "Attacking enemies" (Shift with an attack; it runs with the jobs switch off,
-    /// docs/game/ai-tasks.md "Perma-jobs"), is free for it (<see cref="Production.PermaJobs.FreeFor"/>) and not in non-combat mode. The job's finder is the original's attack on sight
-    /// (<c>FUN_14059f3a0</c>, "Combat goals"), which this system's look stands in for.
+    /// Whether one of the player's characters looks for enemies like an NPC: it has the job 16 "Attacking enemies" and the row's desire (<see cref="WantsToAttack"/>). Whether its
+    /// sighting is attacked is the decision step's (<see cref="AttackJob"/>: its orders, goals and higher jobs first).
     /// </summary>
-    static bool HuntsEnemies(CharacterCold cold, byte task) =>
-        (cold.Orders & CharacterOrders.Passive) == 0 && Production.PermaJobs.FreeFor(cold, (CharacterTask)task, Production.PermaJobs.IndexOf(cold, Meitou.Data.Gameplay.Ai.TaskType.ATTACK_ENEMIES));
+    static bool HuntsEnemies(CharacterCold cold) => WantsToAttack(cold) && Production.PermaJobs.IndexOf(cold, Meitou.Data.Gameplay.Ai.TaskType.ATTACK_ENEMIES) >= 0;
 
     // ------------------------------------------------------------------ chase give-up and stand down
 
@@ -1061,15 +1111,14 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
             ref var n = ref next[i];
             if (!n.Alive) continue;
             var cold = table.Cold(i)!;
-            // The player's characters never give up a chase (the original's gate: the chaser's faction is not the player's); one with the attacking-enemies job goes back
-            // to following after its fight.
-            bool player = cold.IsPlayer;
-            if (player && Production.PermaJobs.IndexOf(cold, Meitou.Data.Gameplay.Ai.TaskType.ATTACK_ENEMIES) < 0) continue;
+            // The player's characters never give up a chase (the original's gate: the chaser's faction is not the player's); after its fight one on the attacking-enemies job takes up its
+            // provenance's resume (CombatSystem's fight end).
+            if (cold.IsPlayer) continue;
             ref var s = ref slots[i];
             if (n.Task == (byte)CharacterTask.Attack)
             {
                 s.Tracked = true;
-                if (!player) Chase(world, table, i, ref s, cold);
+                Chase(world, table, i, ref s, cold);
                 continue;
             }
             s.ChaseStart = -1;
@@ -1082,8 +1131,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
             if (cold.Medical is { Incapacitated: true } || cold.InCombat || n.Task != (byte)CharacterTask.Idle) continue;   // down (it wakes into wandering) or busy with something else
             // The routine is taken up again as the fight's own end (a step: the provenance, a follow row's kept through its fight, stays).
             TaskStart.Stand(table, i);
-            TaskStart.Step(table, i, (CharacterTask)(player ? (s.Task == (byte)CharacterTask.Follow ? s.Task : (byte)CharacterTask.Idle)
-                : s.Task is (byte)CharacterTask.Wander or (byte)CharacterTask.Follow or (byte)CharacterTask.Idle ? s.Task
+            TaskStart.Step(table, i, (CharacterTask)(s.Task is (byte)CharacterTask.Wander or (byte)CharacterTask.Follow or (byte)CharacterTask.Idle ? s.Task
                 : s.Task == (byte)CharacterTask.GoTo ? (byte)CharacterTask.Idle : (byte)CharacterTask.Wander));
             n.TaskTime = 0;
         }

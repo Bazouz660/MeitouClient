@@ -272,6 +272,9 @@ public static class PlayerOrders
             {
                 if (!Runs(world, slot, front))
                 {
+                    // A follow order whose fight was a step of its row (31, 45) takes up its follow again once the fight is over.
+                    var cold = world.Characters.Cold(slot)!;
+                    if (cold.Running is { Source: TaskSource.Order } && MovementSystem.FightStepOver(world.Characters, slot, cold) && MovementSystem.FollowAgain(world, slot, cold)) return;
                     Settle(world, slot);
                     continue;
                 }

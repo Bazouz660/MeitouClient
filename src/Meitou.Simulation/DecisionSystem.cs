@@ -91,8 +91,9 @@ public sealed record DecisionTrace(long Tick, string Winner, IReadOnlyList<strin
 /// The single decision step for the player's characters (docs/simulation.md "Decision step"; the original's chooser <c>FUN_140510ef0</c>). Serial, in slot order. A character is decided
 /// when its replan bit is set (<see cref="Request(World, int)"/>: a task ended, an order added or cleared, a stagger outside a fight, the melee alert with the fight off, the jobs changed,
 /// a load), when its front order's task ended, and (<b>engine</b>) every <see cref="Production.ProductionSystem.JobCheckTicks"/> while it is idle or on a job's task. The sources are asked
-/// in the original's order and the first that can run starts (step 4: the best score); a source already running ends the step. With nothing from steps 1 to 4 the step yields: the job passes
-/// (production, first aid, carry, errands, attack on sight) and the standing tasks go on as before (M5b brings the jobs in as step-5 sources). NPCs keep <see cref="Ai.AiSystem"/>.
+/// in the original's order and the first that can run starts (step 4: the best score); a source already running ends the step. Steps 3 and 5 walk the character's job list through the systems'
+/// job contributors (<see cref="RegisterJob"/>). With nothing from steps 1 to 5 the step yields (<see cref="CharacterCold.Yielded"/>): the implicit jobs and the standing tasks go on. NPCs keep
+/// <see cref="Ai.AiSystem"/>.
 /// Run in the slow world after retaliation, aggro and flight (<see cref="World.RunTick"/>), and for orders only between ticks (<see cref="World.ApplyPausedInterfaceCommands"/>).
 /// </summary>
 public sealed class DecisionSystem
@@ -141,7 +142,7 @@ public sealed class DecisionSystem
     }
 
     /// <summary>
-    /// The engine started a task for the character this tick outside the step (a follow row's fight, a mate's defence, the attack-on-sight job): the step leaves it alone this tick.
+    /// The engine started a task for the character this tick outside the step (a follow row's fight, a bodyguard's own defence within 40): the step leaves it alone this tick.
     /// Serial phases only.
     /// </summary>
     public void Claim(World world, int slot)
@@ -296,7 +297,7 @@ public sealed class DecisionSystem
                 picked = k;
                 return check;
             }
-            return DecisionCheck.No(null);
+            return DecisionCheck.No(urgent ? "no urgent job" : "no job can run");
         }
 
         public void Start(World world, int slot)
