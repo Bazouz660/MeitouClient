@@ -291,8 +291,9 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             AiBehaviour.Turret => board.TurretClaims.ContainsKey(self.Slot) ? 1 : 0,
             AiBehaviour.TownNode => WanderIn(board.Town, world.Characters.Previous[self.Slot].Position).Count > 0 || OccupiedBuildings(world, board) > 0 ? 1 : 0,
             // Shopping is wanted while its list has something left to buy today (FUN_140999620), and there is a shop to go to.
-            AiBehaviour.Shop => mind.Shopping.Pending(ShoppingList.DayOf(world.GameHours), world.Hour)
-                && ShopFor(Places(board.Town), mind, TargetRoll(world, self, behaviour), RandomShopping(world, board.Town)) is not null ? 1 : 0,
+            // The finder's factor follows its pick: 1 for a shop, 0.4 for any other public building, 0 when it finds none (FUN_1409997f0).
+            AiBehaviour.Shop => !mind.Shopping.Pending(ShoppingList.DayOf(world.GameHours), world.Hour) ? 0
+                : ShopFor(Places(board.Town), mind, TargetRoll(world, self, behaviour), RandomShopping(world, board.Town)) is { } picked ? ShopFactor(Places(board.Town), picked) : 0,
             // A worker needs a mine, bench or refinery in its town (the finders return 0 without one).
             AiBehaviour.Work => Places(board.Town).Workplaces.Count > 0 ? 1 : 0,
             // Relaxing needs a free seat of the package's bar, sitting around a free chair of the home (claimed in <see cref="ClaimSeats"/>); the original's finder returns 0 without one (FUN_1408caf00).
@@ -330,9 +331,10 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
     /// <summary>A town's public buildings with a general node by zone, its shops, its public bars and its outdoor tables, as <see cref="RefreshPlaces"/> last found them.</summary>
     sealed record TownPlaces(IReadOnlyDictionary<ZoneCoordinate, TownBuilding[]> Wander, IReadOnlyList<TownBuilding> Shops, IReadOnlyList<TownBuilding> Bars,
         IReadOnlyList<TownBuilding> OutdoorTables, IReadOnlyList<TownBuilding> Workplaces,
-        IReadOnlyDictionary<TownBuilding, ulong> Stock, IReadOnlyList<SeatClaim> Seats, IReadOnlyDictionary<TownBuilding, int> SeatOwners);
+        IReadOnlyDictionary<TownBuilding, ulong> Stock, IReadOnlyList<SeatClaim> Seats, IReadOnlyDictionary<TownBuilding, int> SeatOwners,
+        IReadOnlyList<TownBuilding> Public);
 
-    static readonly TownPlaces NoPlaces = new(new Dictionary<ZoneCoordinate, TownBuilding[]>(), [], [], [], [], new Dictionary<TownBuilding, ulong>(), [], new Dictionary<TownBuilding, int>());
+    static readonly TownPlaces NoPlaces = new(new Dictionary<ZoneCoordinate, TownBuilding[]>(), [], [], [], [], new Dictionary<TownBuilding, ulong>(), [], new Dictionary<TownBuilding, int>(), []);
     // Rebuilt in the serial step, read by the think on every worker (derived, not hashed).
     readonly Dictionary<int, TownPlaces> places = [];
 
@@ -403,7 +405,8 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
                             seatOwners[b] = world.Fixtures.PropertyOwner(b.Key) ?? (b.OwnerFactionId is { } o && data.FactionIndex(o) is var fi and >= 0 ? fi : townFaction);
                     }
             places[site] = new(wander, shopList, [.. buildings.Where(b => (b.IsBar || bars.Contains(b)) && IsPublic(b))],
-                [.. buildings.Where(b => b.IsOutdoorTable)], [.. buildings.Where(b => !b.Destroyed && b.Function is >= 0 and var fn && (WorkFunctions >> fn & 1) != 0)], stock, seats, seatOwners);
+                [.. buildings.Where(b => b.IsOutdoorTable)], [.. buildings.Where(b => !b.Destroyed && b.Function is >= 0 and var fn && (WorkFunctions >> fn & 1) != 0)], stock, seats, seatOwners,
+                [.. buildings.Where(b => b.HasInterior && !b.IsWall && !b.Destroyed && IsPublic(b))]);
         }
     }
 
@@ -486,6 +489,8 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             {
                 var b = behaviour == AiBehaviour.TownNode ? PickFrom(WanderIn(town, world.Characters.Previous[self.Slot].Position), roll) : ShopFor(places, mind, roll, RandomShopping(world, town));
                 if (b is null) return null;
+                // A building without a counter is the target itself, its origin on any floor (FUN_1409997f0); the walk ends within WorkReach of it.
+                if (behaviour == AiBehaviour.Shop && ShopFactor(places, b) < 1) return new Vector3(b.Position.X, float.NaN, b.Position.Z);
                 // A general node; in a shop without one a guard post, else any other node (engine choice: where the original's Task_Shopping stands is not decoded).
                 foreach (var accept in (ReadOnlySpan<Func<HomeSpot, bool>>)[IsGeneralNode, s => s.Kind == HomeSpotKind.Guard, s => s.IsNode])
                 {
@@ -521,16 +526,15 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
 
     /// <summary>
     /// The shop goal 118 goes to (<c>FUN_1409997f0</c>, <b>Verified</b>): a random shop of the town selling an item function of the first entry on the character's list that has one,
-    /// the entries taken in order and those already bought skipped (<c>FUN_1409fc070</c>); none sells one: a random shop (the original takes a random public building, <c>FUN_1409fc1b0</c>,
-    /// and the town's shops are all Meitou finds; <b>Observed</b>). The random pick is made only when <paramref name="randomAllowed"/> (<see cref="RandomShopping"/>): in a town of the player's
-    /// faction only a shop selling what the list wants is found (the list finder runs before that test, <c>FUN_1409997f0</c>, <b>Verified</b>).
+    /// the entries taken in order and those already bought skipped (<c>FUN_1409fc070</c>); none sells one: a random public building of the town (<c>FUN_1409fc1b0</c>, <see cref="TownPlaces.Public"/>;
+    /// not only a shop). The random pick is made only when <paramref name="randomAllowed"/> (<see cref="RandomShopping"/>): in a town of the player's
+    /// faction only a shop selling what the list wants is found (the list finder runs before that test, <c>FUN_1409997f0</c>, <b>Verified</b>). The goal's factor is <see cref="ShopFactor"/>.
     /// </summary>
     static TownBuilding? ShopFor(TownPlaces places, AiMind mind, ulong roll, bool randomAllowed)
     {
         var shops = places.Shops;
-        if (shops.Count == 0) return null;
         var selling = sellingScratch ??= [];
-        for (int k = 0; k < mind.Shopping.Count; k++)
+        for (int k = 0; shops.Count > 0 && k < mind.Shopping.Count; k++)
         {
             int function = mind.Shopping.OpenFunction(k);
             if (function < 0) continue;
@@ -539,7 +543,21 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
                 if (places.Stock.TryGetValue(shop, out ulong mask) && ShoppingList.Stocks(mask, function)) selling.Add(shop);
             if (selling.Count > 0) return selling[Rng.Int(roll, selling.Count)];
         }
-        return randomAllowed ? shops[Rng.Int(roll, shops.Count)] : null;
+        return randomAllowed && places.Public.Count > 0 ? places.Public[Rng.Int(roll, places.Public.Count)] : null;
+    }
+
+    /// <summary>The finder factor of a building the shopper picked (<c>FUN_1409997f0</c>, <b>Verified</b>): 1 for one with BF_SHOP furniture inside, 0.4 for any other public building.</summary>
+    const float ShopNoCounterFactor = 0.4f;
+
+    /// <summary>
+    /// The factor of the pick: 1 for a shop (Meitou's <see cref="TownPlaces.Shops"/>: trading residents or the layout's shop flag, standing for BF_SHOP furniture, <b>Observed</b>), else
+    /// <see cref="ShopNoCounterFactor"/>. It multiplies the goal's desire.
+    /// </summary>
+    static float ShopFactor(TownPlaces places, TownBuilding building)
+    {
+        foreach (var shop in places.Shops)
+            if (ReferenceEquals(shop, building)) return 1;
+        return ShopNoCounterFactor;
     }
 
     /// <summary>
@@ -710,7 +728,8 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
                 if (mind.Target is null && behaviour == AiBehaviour.Shop) mind.ShopAt = ShopFor(Places(board.Town), mind, TargetRoll(world, table.IdOf(slot), behaviour), RandomShopping(world, board.Town));
                 mind.Target ??= TargetFor(world, table.IdOf(slot), behaviour, board.Town, mind) ?? (behaviour == AiBehaviour.TownNode ? OccupiedSpot(world, board, table.IdOf(slot)) : null);
                 if (mind.Target is not { } goTo) Become(table, slot, CharacterTask.Idle);
-                else if (GoToSpot(world.Walkability, table, slot, mind, Flat(goTo), GiveUp.Target, SpeedMode.Walk, height: behaviour == AiBehaviour.ToTown ? null : goTo.Y))
+                else if (GoToSpot(world.Walkability, table, slot, mind, Flat(goTo), GiveUp.Target, SpeedMode.Walk,
+                    float.IsNaN(goTo.Y) ? WorkReach : 0, behaviour == AiBehaviour.ToTown || float.IsNaN(goTo.Y) ? null : goTo.Y))   // a building without a counter: near its origin, on any floor
                 {
                     Become(table, slot, CharacterTask.Idle);
                     // At the shop (Task_Shopping 119 starts): the first unit is bought a second on, then one a second (BuyForShoppers).
