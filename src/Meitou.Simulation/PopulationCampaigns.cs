@@ -149,8 +149,47 @@ public sealed partial class PopulationSystem : IStateHashed
 
     internal WarManager? WarOf(int faction) => wars is not null && faction >= 0 && faction < wars.Length ? wars[faction] : null;
 
+    // ---- prosperity ----
+
+    /// <summary>Per second of game time, a faction's prosperity grows while below its cap (<b>Verified</b>, <c>FUN_1402dd680</c>: 0.1).</summary>
+    const double ProsperityPerSecond = 0.1;
+    /// <summary>Each faction's prosperity (the FactionUniqueSquadManager's +8, saved as the faction's <c>prosperity</c>), by faction; null before the first need.</summary>
+    double[]? prosperity;
+    long prosperityTick;
+
+    /// <summary>
+    /// The factions' prosperity, made on first use: the loaded save's value for a faction it names, else the faction's <c>max prosperity</c> (<b>Verified</b>, <c>FUN_1402ddc90</c> /
+    /// <c>FUN_1402e0ab0</c> start the value at the cap).
+    /// </summary>
+    double[] EnsureProsperity(World world)
+    {
+        if (prosperity is not null) return prosperity;
+        prosperityTick = world.Tick;
+        var values = new double[data.Factions.Count];
+        for (int f = 0; f < values.Length; f++)
+            values[f] = world.Saved?.Prosperity.TryGetValue(data.Factions[f].Id, out float saved) == true ? saved : data.Factions[f].MaxProsperity;
+        return prosperity = values;
+    }
+
+    /// <summary>A faction's prosperity (0 for no faction).</summary>
+    internal double ProsperityOf(World world, int faction) => faction >= 0 && faction < data.Factions.Count ? EnsureProsperity(world)[faction] : 0;
+
+    /// <summary>
+    /// At each look every faction below its cap gains 0.1 per second of game time since the last look (<c>FUN_1402dd680</c>; no clamp to the cap in the add). The original's period
+    /// is the faction's accumulated frame time, which nothing else reads (<b>Unknown</b>).
+    /// </summary>
+    void StepProsperity(World world)
+    {
+        var values = EnsureProsperity(world);
+        double seconds = (world.Tick - prosperityTick) * (double)world.TickSeconds;
+        prosperityTick = world.Tick;
+        for (int f = 0; f < values.Length; f++)
+            if (values[f] < data.Factions[f].MaxProsperity) values[f] += seconds * ProsperityPerSecond;
+    }
+
     void StepCampaigns(World world)
     {
+        StepProsperity(world);
         EnsureWars(world);
         double now = world.GameHours;
         foreach (var m in wars!)
@@ -1276,11 +1315,18 @@ public sealed partial class PopulationSystem : IStateHashed
 
     // ---- state hash ----
 
-    /// <summary>The war managers once any faction has started or queued a campaign, the kept wild squads while there are any and the towns' artifacts while any are left (so worlds without them hash as before).</summary>
+    /// <summary>The war managers once any faction has started or queued a campaign, the kept wild squads while there are any, the towns' artifacts while any are left and the prosperity of the factions below their cap (so worlds without them hash as before).</summary>
     public void Hash(ref StateHasher h)
     {
         HashWars(ref h);
         HashArtifacts(ref h);
+        if (prosperity is not null)
+            for (int f = 0; f < prosperity.Length; f++)
+                if (prosperity[f] < data.Factions[f].MaxProsperity)
+                {
+                    h.Add(f);
+                    h.Add(prosperity[f]);
+                }
         foreach (var (site, kept) in keptWild)
         {
             h.Add(site);

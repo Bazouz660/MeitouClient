@@ -124,7 +124,10 @@ public static class SaveLoader
         foreach (var town in save.Towns)
             if (!town.IsNest && siteOf.TryGetValue(town.Instance, out int site) && !town.Handle.IsNull) context.TownSites.TryAdd((town.Handle.C, town.Handle.CS), site);
         foreach (var f in save.Factions)
+        {
             if (f.War is { } war) context.Wars.TryAdd(f.Id, war);
+            context.Prosperity.TryAdd(f.Id, f.Prosperity);
+        }
         var campaignHomes = WarSave.PlatoonHomes(context.Wars.Values);
         foreach (var platoon in save.Platoons)
         {

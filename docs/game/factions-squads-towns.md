@@ -102,7 +102,7 @@ and `bar squads` (33). Two UNIQUE_SQUAD_TEMPLATEs exist (`General Epson Army`, `
 
 **Special squads** (FACTION `special squads` → UNIQUE_SQUAD_TEMPLATE, v0 = number to keep per `fcs.def`): `FUN_1402ddc90` makes per entry
 {template, v0, timer, live platoon handles}. The update `FUN_1402dd680` (each war-manager run, `FUN_1406b97c0`, with the faction's accumulated
-time) raises prosperity by 0.1·dt toward 1000 and counts timers down; when a timer is 0 and fewer than v0 live, it returns: **nothing spawns
+time) adds 0.1·dt to prosperity while it is below the cap (no clamp in the add) and counts timers down; both start at the faction's `max prosperity` (`FUN_1402ddc90` → `FUN_1402e0ab0`, **Verified**; the constructor's 1000 is only a default; the period of dt is **Unknown**, no reader of prosperity found; Meitou: `PopulationSystem.StepProsperity`, game seconds since the last look; the save's `prosperity` replaces the start; hashed while below the cap). When a timer is 0 and fewer than v0 live, it returns: **nothing spawns
 them** (**Verified**: by code, the only spawn-near-own-town helper `FUN_1402dda60` has no callers; 0 of 3,502 PLATOON records in 9 saves are
 `special`, every `sqtime` is 0). A `UniquePlatoon` (`FUN_14057c6f0`: UNIQUE_SQUAD_TEMPLATE, or a saved PLATOON with `special`) adds a
 mission ticker (every 10 s pick a `missions` DIPLOMATIC_ASSAULTS entry by its `conditions`: `FUN_1409a7930`; not decoded), saves

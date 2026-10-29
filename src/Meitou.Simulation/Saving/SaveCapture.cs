@@ -102,10 +102,11 @@ public static partial class SaveCapture
             camera.Tracking = Hand.Null;
         }
 
-        UpdateFactions(game, data, loaded);
+        var factionsPopulation = world.Systems.OfType<PopulationSystem>().FirstOrDefault();
+        UpdateFactions(game, data, loaded, world, factionsPopulation);
         WriteKnownFactions(game, data, world.Player);
         WriteTownKnowledge(builder, data, world.Player);
-        if (world.Systems.OfType<PopulationSystem>().FirstOrDefault() is { } pools)
+        if (factionsPopulation is { } pools)
         {
             WriteTownPools(game, data, pools);
             WriteTownArtifacts(game, data, world, pools);
@@ -268,7 +269,7 @@ public static partial class SaveCapture
         }
     }
 
-    static void UpdateFactions(SaveGame game, PopulationData data, LoadedSave? loaded)
+    static void UpdateFactions(SaveGame game, PopulationData data, LoadedSave? loaded, World world, PopulationSystem? population)
     {
         var index = new Dictionary<string, int>(StringComparer.Ordinal);
         for (int i = 0; i < data.Factions.Count; i++) index[data.Factions[i].Id] = i;
@@ -279,6 +280,8 @@ public static partial class SaveCapture
                 f.Prosperity = state.Prosperity;
                 f.PlatoonCounter = Math.Max(f.PlatoonCounter, state.PlatoonCounter);
             }
+            // The population's running prosperity (it started at the loaded value or the cap).
+            if (population is not null && index.TryGetValue(f.Id, out int own)) f.Prosperity = (float)population.ProsperityOf(world, own);
             if (loaded is null || !index.TryGetValue(f.Id, out int a) || loaded.RelationBaseline.Length != index.Count * index.Count) continue;
             if (a < loaded.TrustBaseline.Length && data.Relations.GlobalTrust(a) != loaded.TrustBaseline[a]) f.GlobalTrust = data.Relations.GlobalTrust(a);
             if (f.IsPlayer) continue;

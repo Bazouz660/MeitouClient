@@ -107,6 +107,8 @@ public sealed class SavedPopulation
     public Dictionary<string, SavedPlatoon> ByName { get; } = new(StringComparer.Ordinal);
     /// <summary>The save's WAR_SAVESTATEs by FACTION id: the war managers read them at the first look (<see cref="WarSave"/>).</summary>
     public Dictionary<string, FcsRecord> Wars { get; } = new(StringComparer.Ordinal);
+    /// <summary>The save's <c>prosperity</c> of each faction by FACTION id: the population starts the faction's there (<see cref="PopulationSystem"/>), else at its cap.</summary>
+    public Dictionary<string, float> Prosperity { get; } = new(StringComparer.Ordinal);
     /// <summary>Town handles (container and serial) to the placed town they name, for the war states' targets and homes.</summary>
     public Dictionary<(int C, int CS), int> TownSites { get; } = [];
     /// <summary>Platoon handles (container and serial) to the world's platoon made for them, for the war states' <c>p&lt;i&gt;</c> and <c>leader c&lt;i&gt;</c>.</summary>
