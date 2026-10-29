@@ -47,8 +47,14 @@ sealed partial class PlayerInterface
             verbs.Add(("Use Tools", () => Say(new ForceLockOrder([], cage.Id, LockForce.Tools) { Tick = session.World.Tick })));
             verbs.Add(("Use Strength", () => Say(new ForceLockOrder([], cage.Id, LockForce.Strength) { Tick = session.World.Tick })));
         }
-        // Set Free (110): from the player's own cage whether locked or not (the release unlocks it), from another faction's only unlocked (ui-input.md cage rows).
-        if (occupied && (!cage.Locked || cage.Owner == session.World.Player.Faction)) verbs.Add(("Set Free", () => Say(new SetFreeOrder([], cage.Occupant) { Tick = session.World.Tick })));
+        // Set Free (110): from the player's own cage whether locked or not (the release unlocks it), from another faction's only unlocked (ui-input.md cage rows); not for a prisoner who is
+        // dead, out or carried (TARGET_IS_CONSCIOUS, the simulation refuses it with nothing said).
+        if (occupied)
+        {
+            var prisoner = session.CurrentSnapshot.Characters.FirstOrDefault(c => c.Id == cage.Occupant);
+            if ((!cage.Locked || cage.Owner == session.World.Player.Faction) && (prisoner is null || Conscious(prisoner)))
+                verbs.Add(("Set Free", () => Say(new SetFreeOrder([], cage.Occupant) { Tick = session.World.Tick })));
+        }
         else if (!cage.Locked)
         {
             var carriers = Carriers();
@@ -57,6 +63,9 @@ sealed partial class PlayerInterface
         }
         return verbs;
     }
+
+    /// <summary>Whether Set Free may take a prisoner out (<c>LockSystem.Conscious</c>, order precondition 125): not dead, knocked out or carried.</summary>
+    static bool Conscious(CharacterSnapshot c) => c.Body is not ({ Dead: true } or { Unconscious: true }) && c.CarriedBy.IsNone;
 
     /// <summary>A right press on a cage (true, with a selection): released quickly, the first of the cage's verbs while it is empty; held, its menu.</summary>
     bool CageClick(Vector2 p)

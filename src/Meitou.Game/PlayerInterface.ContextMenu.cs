@@ -123,15 +123,15 @@ sealed partial class PlayerInterface
         if (prison.Locked)
         {
             if (!down) verbs.Add(("Pick Lock", () => Say(new Meitou.Simulation.Locks.PickLockOrder(selection, id) { Tick = session.World.Tick })));
-            // The player's own cage frees its prisoner while locked too (the release unlocks it).
-            if (!selection.Contains(id) && target.CarriedBy.IsNone && prison.CageOwner == session.World.Player.Faction)
+            // The player's own cage frees its prisoner while locked too (the release unlocks it); never a dead or knocked-out one (Set Free wants a conscious target, precondition 125).
+            if (!selection.Contains(id) && !down && target.CarriedBy.IsNone && prison.CageOwner == session.World.Player.Faction)
                 verbs.Add(("Set Free", () => Say(new Meitou.Simulation.Locks.SetFreeOrder([], id) { Tick = session.World.Tick })));
         }
         else if (selection.Contains(id)) { if (!down) verbs.Add(("Escape", () => Say(new Meitou.Simulation.Locks.GetOutOrder([id]) { Tick = session.World.Tick }))); }
         else if (target.CarriedBy.IsNone)
         {
             // Its cage the player's: Set Free (110) and the pick-up verb; another faction's: the pick-up verb alone (the cage's own menu has Set Free).
-            if (prison.CageOwner == session.World.Player.Faction) verbs.Add(("Set Free", () => Say(new Meitou.Simulation.Locks.SetFreeOrder([], id) { Tick = session.World.Tick })));
+            if (prison.CageOwner == session.World.Player.Faction && !down) verbs.Add(("Set Free",() => Say(new Meitou.Simulation.Locks.SetFreeOrder([], id) { Tick = session.World.Tick })));
             verbs.Add(PickUpVerb(target));
         }
     }
