@@ -9,9 +9,9 @@ public sealed partial class DialogueSystem
     readonly record struct Picked(DialogueNode Line, DialogueNode? Root, CharacterId Speaker);
 
     /// <summary>
-    /// Chooses a line from <paramref name="list"/> (<c>FUN_14067a0c0</c>, docs/game/dialogue.md "Choosing a line"): the list is sorted by score; the walk stops at the first line scoring
-    /// below the best so far; each node's speaker is resolved and the line check run with that speaker as "me" (the NPC for a player-side line); a passing root descends into its
-    /// children; one candidate at the top score is picked at random. The checks and the race bonus use the target the walk started with (<paramref name="target"/>): a line check
+    /// Chooses a line from <paramref name="list"/> (<c>FUN_14067a0c0</c>, docs/game/dialogue.md "Choosing a line"): the list is sorted by score; the walk stops at the first line whose
+    /// score (with the race bonus) is below the best so far; each node's speaker is resolved and the line check run with that speaker as "me" (the NPC for a player-side line); a
+    /// passing root descends into its children; every passing line scoring at least the best so far is a candidate (earlier lower ones stay) and one candidate is picked at random. The checks and the race bonus use the target the walk started with (<paramref name="target"/>): a line check
     /// that retargets (<see cref="SetTarget"/>) changes who the T_TARGET speakers are for the rest of the walk, not the target the walk tests.
     /// </summary>
     Picked? Pick(World world, Conversation c, IReadOnlyList<DialogueNode> list, int depth = 0, CharacterId? target = null)
@@ -22,7 +22,8 @@ public sealed partial class DialogueSystem
         int best = int.MinValue;
         foreach (var node in list)
         {
-            if (!node.IsRoot && node.Score < best) break;
+            int own = node.Score + RaceBonus(world, node, whom);
+            if (!node.IsRoot && own < best) break;
             if (node.Interjection)
             {
                 int slot = node.Speaker is >= Talker.Interjector1 and <= Talker.Interjector3 ? node.Speaker - Talker.Interjector1 : 0;
@@ -30,13 +31,12 @@ public sealed partial class DialogueSystem
                 if (FindInterjector(world, c, node) is not { } interjector) continue;
                 c.Interjectors[slot] = interjector;
                 if (Pick(world, c, node.Children, depth + 1, whom) is not { } inner) continue;
-                Consider(node.Score + inner.Line.Score, inner with { Root = inner.Root ?? c.Root });
+                Consider(own + LeafScore(inner.Line), inner with { Root = inner.Root ?? c.Root });
                 continue;
             }
             if (!SpeakerOf(world, c, node, out var speaker)) continue;
             var me = IsNpcSide(node.Speaker) ? speaker : c.Npc;
             if (!Check(world, c, node, me, whom)) continue;
-            int score = node.Score + RaceBonus(world, node, whom);
             if (node.IsRoot)
             {
                 var root = c.Root;
@@ -44,17 +44,21 @@ public sealed partial class DialogueSystem
                 var child = Pick(world, c, node.Children, depth + 1, whom);
                 c.Root = root;
                 if (child is not { } p) continue;
-                Consider(score + p.Line.Score, p with { Root = node });
+                Consider(own + LeafScore(p.Line), p with { Root = node });
             }
-            else Consider(score, new Picked(node, c.Root, speaker));
+            else Consider(own, new Picked(node, c.Root, speaker));
         }
         if (candidates.Count == 0) return null;
         return candidates.Count == 1 ? candidates[0] : candidates[Rng.Int(NextRoll(world, c.Npc), candidates.Count)];
 
+        int LeafScore(DialogueNode leaf) => leaf.Score + RaceBonus(world, leaf, whom);
+
+        // Every candidate scoring at least the best so far joins the list and sets the best; the list is never cleared, so lower earlier ones stay in the draw.
         void Consider(int score, Picked p)
         {
-            if (score > best) { best = score; candidates.Clear(); }
-            if (score == best) candidates.Add(p);
+            if (score < best) return;
+            best = score;
+            candidates.Add(p);
         }
     }
 

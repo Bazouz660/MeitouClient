@@ -159,11 +159,16 @@ further tests that return without firing (partly read).
 
 ### Choosing a line
 
-`FUN_14067a0c0`. Candidate lists are sorted by [score](#score), highest first, without duplicates; the walk stops at the first
-entry scoring below the best so far (roots excepted). For each node the [speaker](#speakers) is resolved and the
-[line check](#line-check) runs with that speaker as "me"; a passing root descends into its children (root score + child score), a
-passing leaf is a candidate. **One candidate at the top score is picked uniformly.** An interjection node first finds and stores an
-interjector, then descends.
+`FUN_14067a0c0` (**Verified**). Candidate lists are sorted by [score](#score), highest first, without duplicates. Each node's score here is its
+static score plus 2 when the target's race is in its `target race` (`FUN_140671bb0`); the walk stops at the first entry whose score is below the best so
+far (roots excepted; an interjection node always stops it). For each node the [speaker](#speakers) is resolved and the
+[line check](#line-check) runs with that speaker as "me"; a passing root descends into its children, its total being its score plus the chosen leaf's
+(also with the leaf's race bonus). An interjection node first finds and stores an interjector, then descends the same way. A passing leaf, or a root or
+interjection total at least the best so far, is appended to the candidate list and becomes the best; **the list is never cleared**, so earlier lower
+candidates stay in it and the final pick is **uniform over every appended candidate**. The checks and bonuses use the target the walk started with
+([retargeting](#retargeting)). The root test is virtual (`FUN_1406a6050`): true for a DIALOGUE, for an interjection node and for a line with no text
+(**Observed**; Meitou treats only a DIALOGUE as a root, and says a textless line itself, which 884 of the 22,783 base lines are; whether the original
+descends into such a line's children instead is **Unknown**).
 
 ### Score
 
