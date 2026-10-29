@@ -14,7 +14,7 @@ sealed partial class PlayerInterface
     /// <summary>How much of the way to the leaf a building's own collision may take before the door counts as hidden (the leaf sits in its building's wall).</summary>
     const float DoorPickSlack = 10;
 
-    /// <summary>The unbroken door whose leaf centre projects nearest the pixel within <see cref="DoorPickPixels"/>, if any, and is not hidden behind another wall; locked or not.</summary>
+    /// <summary>The door whose leaf centre projects nearest the pixel within <see cref="DoorPickPixels"/>, if any, and is not hidden behind another wall; locked or not. A broken door counts only when it is the player's (it takes the repair order).</summary>
     (DoorPick Door, bool Locked)? PickDoor(Vector2 pixel) => PickDoorAt(pixel)?.Pick;
 
     /// <summary><see cref="PickDoor"/> with the ray distance to the leaf's centre.</summary>
@@ -33,14 +33,17 @@ sealed partial class PlayerInterface
             float d = Vector2.Distance(at, pixel);
             if (d >= bestDistance) continue;
             float t = Vector3.Distance(ray.Origin, leaf);
-            if (state.Broken || Hidden(ray, t - DoorPickSlack)) continue;
+            if (state.Broken && door.Owner != session.World.Player.Faction || Hidden(ray, t - DoorPickSlack)) continue;
             (best, bestDistance) = (((door, state.Locked), t), d);
         }
         return best;
     }
 
-    /// <summary>The pointer over a door: <c>lock</c> for the player's own locked one, <c>lockpick</c> for another faction's, else <c>door</c>.</summary>
-    string DoorPointer((DoorPick Door, bool Locked) pick) => !pick.Locked ? "door" : pick.Door.Owner == session.World.Player.Faction ? "lock" : "lockpick";
+    /// <summary>Whether the door is broken (its progress ran out, <see cref="Meitou.Simulation.Locks.Fixture.DoorBroken"/>): the player's own takes the repair order (95).</summary>
+    bool DoorBroken(DoorPick door) => session.CurrentSnapshot.Doors.GetValueOrDefault((door.Building, door.Door)).Broken;
+
+    /// <summary>The pointer over a door: <c>spanner</c> for a broken one (<c>FUN_1407fc6e0</c>), <c>lock</c> for the player's own locked one, <c>lockpick</c> for another faction's, else <c>door</c>.</summary>
+    string DoorPointer((DoorPick Door, bool Locked) pick) => DoorBroken(pick.Door) ? "spanner" : !pick.Locked ? "door" : pick.Door.Owner == session.World.Player.Faction ? "lock" : "lockpick";
 
     /// <summary>
     /// A right press on a door (true, with a selection): another faction's locked door opens its context menu (<see cref="DoorVerbs"/>) at once unless Shift is held (<c>FUN_140800250</c>,
@@ -51,7 +54,7 @@ sealed partial class PlayerInterface
     {
         if (SelectedIds().Count == 0 || PickDoor(p) is not { } pick) return false;
         if (!pressShift && pick.Locked && pick.Door.Owner != session.World.Player.Faction && Menu(Loc.Tr("Door"), p, DoorVerbs(pick)) is { } now) { contextMenu = now; return true; }
-        void Quick() => Say(new DoorOrder([], pick.Door.Id, alt) { Tick = session.World.Tick });
+        void Quick() => Say(DoorBroken(pick.Door) ? new Meitou.Simulation.Construction.BuildOrder([], pick.Door.Id) { Tick = session.World.Tick } : new DoorOrder([], pick.Door.Id, alt) { Tick = session.World.Tick });
         if (!ContextPressOn(p, at => Menu(Loc.Tr("Door"), at, DoorVerbs(pick)), Quick)) Quick();
         return true;
     }

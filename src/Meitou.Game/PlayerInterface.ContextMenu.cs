@@ -303,6 +303,12 @@ sealed partial class PlayerInterface
         if (SelectedIds().Count == 0) return verbs;
         var door = pick.Door;
         bool own = door.Owner == session.World.Player.Faction;
+        // A broken door is repaired (95, the building branch of FUN_1407fc6e0); the job of Shift is not built (the Engineer job works sites only).
+        if (DoorBroken(door))
+        {
+            if (own) verbs.Add(("Repair", () => Say(new Meitou.Simulation.Construction.BuildOrder([], door.Id) { Tick = session.World.Tick })));
+            return verbs;
+        }
         if (pick.Locked)
         {
             if (own) verbs.Add(("Unlock", () => Say(new Meitou.Simulation.Locks.ToggleDoorLocksOrder(door.Building) { Tick = session.World.Tick })));
