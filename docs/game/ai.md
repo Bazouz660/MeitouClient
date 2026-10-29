@@ -124,8 +124,11 @@ A slave's Slave role list runs through the Obedient Slave job (187): [role lists
   each one seen later is added and tagged squad memory 4. End: the faction's running count drops, at 0 the last-end hour is set. Finished: not intact (spent); else not
   before 0.25 h, not while a target stands (alive, up, in the town; the town-compare polarity is **Observed**), then (spent) with at least 2 members up. May lead
   (to the occupation): intact, no target standing, at least 2 up. Data (rebirth.mod): 33 bandit/raider templates have it at slot 1-3 with `hostile occupy town` above it.
-- **Sensing hooks** (package slots 10 `assessNeutral` and 11 `assessEnemy`, **Verified**; run on one sensed character per update, and only when the listener or the target is on
-  screen or the target is with the player): base: TEMP ENEMY on a target of the squad faction's current campaign; `Contract_HiredAlly` (12): the employer's faction TEMP ALLY, and a
+- **Sensing hooks** (package slots 10 `assessNeutral` and 11 `assessEnemy`, **Verified**; called from `FUN_140859680`, which `FUN_14085a5f0` feeds one sensed-list entry per Character update
+  (`FUN_1405c7d40`, vfunc 79) through a cursor at `+0x100` that wraps at the list's end, so every entry is visited in turn; the hook runs only when the listener or the target is on
+  screen (`+0x1a9`, the camera frustum test of `FUN_1405c9f60`) or the target is with the player (`FUN_140856bc0`). Meitou: no camera state in the simulation, so the on-screen gate is not
+  modelled, and each look takes every accepted sensed character at once instead of one per update (the cursor only spreads the visits over updates; a look every 15 ticks stands for the walk
+  through the list, **Observed**)): base: TEMP ENEMY on a target of the squad faction's current campaign; `Contract_HiredAlly` (12): the employer's faction TEMP ALLY, and a
   target the employer is allied with is cleared of TEMP ENEMY / criminal / aggressor, tagged TEMP ALLY and not sensed as an enemy; `Contract_DefendPlayerBase` (15): the mission
   town's faction TEMP ALLY; `Contract_UntilOutOfDanger` none; `Package_WarAssault` / `_Cannibal` (`FUN_14028a3f0`, **Verified**): TEMP ENEMY on anyone not an animal (Character vfunc 0x248 null), of a faction whose `not real` flag (`+0x1d0`) is clear and whose
   `fundamental type` (`+0x34`) is not 8 (the faction's, not the character's class), and whose current town is none or the package's mission town (a hand comparison that returns true on a

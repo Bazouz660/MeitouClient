@@ -191,7 +191,8 @@ is not the looker's ally becomes a target only when both tests pass:
   +0xb8), or in its own state > 1 (crawling, playing dead), or with the movement's animation-driven flag +0x37c set (every swing sets it, [combat](combat.md), "A swing has no steering"), must be within 40 of the looker; a target more than 80 from the hold point
   (CharStats +0x130, set when Hold is turned on and to a ground move's destination while on Hold) must be within 60 of the looker. The reach is 140 instead of 80 when the target is in a fight
   (`Character::isInCombatMode` `FUN_140436610`: the fight task runs, against anyone) and the dot product of its movement direction (+0xd0) with the unit vector from it to the looker is above 0 (`FUN_1409b1960`).
-  All distances to the looker are 3D (`Ogre::Vector3::squaredDistance`). **Verified** (body, constants `DAT_141682ad0` 2.0, `DAT_1416d4a28` 1600, `DAT_141685048` 80, `DAT_1416efdd8` 140, `DAT_1416bf8d4` 3600, `DAT_141681b38` 0).
+  All distances to the looker are 3D (`Ogre::Vector3::squaredDistance`). **Verified**: the structure and constants `DAT_141682ad0` 2.0, `DAT_1416d4a28` 1600, `DAT_141685048` 80, `DAT_1416efdd8` 140, `DAT_1416bf8d4` 3600, `DAT_141681b38` 0.
+  **Observed**: the direction of the subtraction (the decompile drops the second operand of `Vector3::operator-`; looker minus target is read).
   Meitou `Orders.HoldPost` / `HoldFar`: speed is the horizontal velocity, +0xd0 is read as the yaw, the swing as `CombatSlot.AttackTech >= 0` and the hold point flat (**Observed** stand-ins).
 - So there is no give-up distance measured from where a fight began: an attack starts inside the AI's area, and a
   chase ends by time and lost senses ([Leaving a fight](combat.md#leaving-a-fight)).
