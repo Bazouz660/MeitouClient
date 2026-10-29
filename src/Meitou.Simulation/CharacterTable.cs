@@ -209,7 +209,7 @@ public sealed class CharacterCold
     /// Derived every tick; not saved, not hashed.
     /// </summary>
     public int FaceSlot { get; set; } = -1;
-    /// <summary>The fight steering of a fighter in its footwork (<see cref="Combat.SteerState"/>; null until its first fight). Not saved; hashed while active.</summary>
+    /// <summary>The fight steering of a fighter in its footwork (<see cref="Combat.SteerState"/>; null until its first fight). Not saved; hashed while active or on a path chase.</summary>
     public Combat.SteerState? Steer { get; set; }
     /// <summary>
     /// The fight steering's speed (the original's steering +0x12c, <c>FUN_1402af1e0</c>): it grows by <see cref="MovementSystem.Acceleration"/> per second up to the top speed while
@@ -643,6 +643,7 @@ public sealed class CharacterTable
             hasher.Add(k.InCombat);
             if (k.CombatRunning || k.TargetFleeingTime != 0) { hasher.Add(0x43527573); hasher.Add(k.CombatRunning); hasher.Add(k.TargetFleeingTime); }   // only while set, so worlds without fights hash as before
             if (k.Steer is { Active: true } steer) steer.Hash(ref hasher);
+            else if (k.Steer is { ChaseTarget: >= 0 } chase) { hasher.Add(0x43686173); hasher.Add(chase.ChaseTarget); hasher.Add(chase.PathUntil); }   // a path chase, only while on one
             if (k.PathFailures is { Count: > 0 } failures) { hasher.Add(0x50464C53); foreach (var (target, until) in failures) { hasher.Add(target.Slot); hasher.Add(target.Generation); hasher.Add(until); } }
             if (k.SteerSpeed != 0) { hasher.Add(0x53746572); hasher.Add(k.SteerSpeed); }
             if (k.AgentSpeed != 0) { hasher.Add(0x41676e74); hasher.Add(k.AgentSpeed); }

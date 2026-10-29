@@ -17,6 +17,12 @@ public sealed class SteerState
     /// <summary>The tick of the next same-place and clear-line check, and its answer.</summary>
     public long LineTick;
     public bool LineClear;
+    /// <summary>
+    /// The target of the path chase the fighter is on (-1: none) and the tick it may end at the earliest: a blocked line met at a new pick or in the footwork keeps it on its path for
+    /// <see cref="PursuitSystem.PathChaseSeconds"/> even when the line clears (<c>FUN_14060c8b0</c>, <c>FUN_14060d6a0</c>). Hashed while chasing.
+    /// </summary>
+    public int ChaseTarget = -1;
+    public long PathUntil;
     /// <summary>The smoothing's last samples, newest first (<see cref="CombatSteering.FilterLength"/>).</summary>
     internal readonly float[] HistX = new float[CombatSteering.FilterLength], HistZ = new float[CombatSteering.FilterLength];
 

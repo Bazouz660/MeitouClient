@@ -13,6 +13,9 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
 {
     public const float RepathDistance = 12, RepathSeconds = 0.5f;
 
+    /// <summary>How long a chase along a path lasts at least after a fighter met a blocked line (<b>Verified</b> literal 2.0, <c>FUN_14060c8b0</c>'s timer +0x14c).</summary>
+    public const float PathChaseSeconds = 2;
+
     /// <summary>Slots per job of the parallel schedule.</summary>
     const int SlotsPerJob = 32;
 
@@ -35,7 +38,11 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
         ref var n = ref next[i];
         var self = table.Cold(i);
         if (self is not null) self.FaceSlot = -1;
-        if (!n.Alive || n.Task != (byte)CharacterTask.Attack || self?.Bashing is not null) return;   // a basher walks to its door (Locks.LockSystem)
+        if (!n.Alive || n.Task != (byte)CharacterTask.Attack || self?.Bashing is not null)   // a basher walks to its door (Locks.LockSystem)
+        {
+            if (self?.Steer is { ChaseTarget: >= 0 } over) over.ChaseTarget = -1;   // a path chase ends with the fight
+            return;
+        }
         var st = combat.StateOf(new CharacterId(i, n.Generation));
         int t = st.TargetSlot;
         if (t < 0 || t >= table.HighWater || !next[t].Alive || next[t].Generation != st.TargetGeneration) return;
@@ -116,7 +123,7 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
 
     /// <summary>
     /// Hands fighter <paramref name="i"/> to the fight steering (<see cref="CombatSteering"/>) when it is in its footwork, melee, not holding and not down, and the line
-    /// to its target is clear (<see cref="CombatSystem.SteersAt"/>, checked every <see cref="RepathSeconds"/>): its paths are dropped and its fight state sets the band
+    /// to its target is clear (<see cref="CombatSystem.SteersAt"/>, checked every <see cref="RepathSeconds"/>, every tick on a path chase, which a blocked line starts for <see cref="PathChaseSeconds"/> at least): its paths are dropped and its fight state sets the band
     /// (<c>combatMovementOffensive</c>'s callers, docs/game/combat.md "Fight steering"). A stumble holds it still (engine choice: the hit reaction carries it). False: it walks paths.
     /// </summary>
     bool Steer(World world, int i, ref CharacterHot n, CharacterCold cold, in CombatSlot st, int t, bool holding)
@@ -127,12 +134,24 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
         // A swing has no steering: the movement is animation driven (the attack start and every swing tick set the movement's lock, FUN_14065e240; CharMovement update
         // FUN_14065ffa0 then moves it by the clip's root motion only), so it stands in its place (MovementSystem turns it, CombatSystem.SwingAim).
         if (cold.CombatRunning || st.Ranged || holding || st.Down || st.AttackTech >= 0) return false;
-        if (world.Tick >= steer.LineTick || steer.Target != t)
+        // A fighter on a path chase tests the line every tick (CombatClassAI update FUN_14060d6a0, in the chase states); one in its footwork only when it decides again, about
+        // every RepathSeconds. A blocked line met at a new pick or in the footwork starts a chase of at least PathChaseSeconds (FUN_14060c8b0, timer +0x14c), a holder's not.
+        bool chasing = steer.ChaseTarget == t;
+        if (chasing || world.Tick >= steer.LineTick || steer.Target != t)
         {
-            steer.LineClear = combat.SteersAt(world, i, t);
+            bool clear = combat.SteersAt(world, i, t);
+            if (!clear && !chasing && !Orders.Holding(cold)) steer.PathUntil = world.Tick + (long)MathF.Ceiling(PathChaseSeconds / world.TickSeconds);
+            steer.LineClear = clear;
             steer.LineTick = world.Tick + (long)MathF.Ceiling(RepathSeconds / world.TickSeconds);
         }
-        if (!steer.LineClear) return false;
+        if (!steer.LineClear)
+        {
+            steer.ChaseTarget = t;
+            return false;
+        }
+        // The line is clear, but the chase runs until its timer is out.
+        if (chasing && world.Tick < steer.PathUntil) return false;
+        steer.ChaseTarget = -1;
         float r = CombatTuning.Footprint(cold);
         float reach = CombatTuning.StandGap(st.Reach, cold.Fighter?.WeaponLength ?? 0, false);
         // The wait after its own swing is state 6 too, whether or not it is engaged (FUN_14060d6a0 forces it while +0x144 is set).
