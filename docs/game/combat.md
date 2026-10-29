@@ -114,7 +114,9 @@ and the arm gate `FUN_1409991d0` read, and `FUN_140649320` clears it for a `coll
 An armed fighter only ever blocks (block rows need `is dodge` 0, so the "Dodge back" rows flagged as blocks
 are not blocks); a fighter on the fists table dodges on its dodge-chance roll (and then finds no block row: every unarmed block row in the base and the common mods is `is dodge` or disabled, **Verified**
 from the COMBAT_TECHNIQUE rows), so **a character whose right arm is out cannot block, only dodge**, and both arms out is the same;
-a left arm out alone keeps the hip weapon and its blocks, but a weapon in the back section is not drawn then ([Arms](#arms)). Meitou: `Fighter.Weapon` (null without the right arm) gives `TechniqueCategory` 5 and `CanBlock` false;
+a left arm out alone keeps the hip weapon and its blocks, but a weapon in the back section is not drawn then ([Arms](#arms)).
+Against a fist blow (the attacker not an animal, its CharStats +0x1f0 5) the block chance is x min(max((the defender's raw martial arts - 0.75) / 0.35, 0.5), 1.1)
+before the roll: 1.1 from level 2, 0.71 at 1 (`FUN_140887970`, **Verified** disassembly; the dodge chance is not scaled). Meitou: `DefenceFormulas.FistBlockFactor`. Meitou: `Fighter.Weapon` (null without the right arm) gives `TechniqueCategory` 5 and `CanBlock` false;
 a stumbling one breaks out only into the `is stumble dodge`
 a stumbling one breaks out only into the `is stumble dodge`
 rows, after a roll of `FUN_140885d80` against the strongest attacker whose swing is at 10-99 % (`FUN_1406085e0`). A blow from behind is met as

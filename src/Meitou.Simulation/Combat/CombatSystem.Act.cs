@@ -776,6 +776,7 @@ public sealed partial class CombatSystem
         {
             float d = DefenceFormulas.Defence(meleeDefence, fighter.Weapon!.Stats.DefenceMod, true, fighter.DefenceBonus + IndoorsMod(world, i, fighter), Guarding(cold));
             block = DefenceFormulas.BlockChance(d, attack.AttackSkill, combat);
+            if (table.Cold(attacker)?.Fighter is { Unarmed: true, IsAnimal: false }) block *= DefenceFormulas.FistBlockFactor(cold.Stats![StatsEnumerated.MartialArts]);
         }
         else
         {
