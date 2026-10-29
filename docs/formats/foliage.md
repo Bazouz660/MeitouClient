@@ -30,6 +30,11 @@ Algorithm verification does not establish screenshot parity for complete generat
   `zero cutoff`, `brightness boost`, `cap`, `blackout*`).
 - **TOWN** `no-foliage range` (default 2000): meshes with `avoid towns` are rejected within it, measured to the
   nearest town that is not a nest marker (type 8). **Verified (decompiled)**.
+  Exception (**Verified**, `FUN_1406d2410` at the town test, `FUN_140927f10` the nearest town): a mesh with a non-empty `building type` list (the resource rocks) is **not**
+  rejected when the nearest town's owner faction is the player's (faction `+0x250`, see factions-squads-towns.md); every other mesh, and rocks near any other town, are rejected on
+  distance alone. The town list is the live one, so it includes towns the player founded or took, and the test runs when the zone is paged. Not modelled: Meitou places a zone
+  from the level's towns only and caches the layout by content, so ownership (and the player's own towns) never changes a layout; a town the player owns in a loaded save keeps
+  its rocks away. Wiring it needs the layout cache key to carry which towns the player owns.
 
 ## Randomness, noise and ground
 
