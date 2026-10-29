@@ -252,7 +252,7 @@ Same targets as picking; Task_CutLock / Task_BruteForceLock share the shackle ta
   `is for position marker` part: it places the building's position marker (where characters use the cage), not the mesh. The mesh and the occupant both sit at the origin.
 - **Locked cage**: the occupant cannot leave; `Get out of cage` (133, 207) needs `!isDoorLocked`; tooltip shows the lock level
   or "The cage you are in is UNLOCKED. Nobody knows this but you" (`FUN_1405d4260`).
-- **Leaving** (`Task_GetOutOfCage`, `FUN_1403554b0`, **Verified**): restores AI flags and pose. The task's constructor flag (1 for 207 and 256, 0 for 133) is copied to the prisoner's
+- **Leaving** (`Task_GetOutOfCage`, `FUN_1403554b0`, **Verified**): restores AI flags and pose. The task's constructor flag (`+0x80`; 1 for 207 and 256, 0 for 133, the task factory `FUN_14032ebd0` and `FUN_140335200`) is copied to the prisoner's
   `+0x1a0 -> +0xe8` (Meitou `Escaped`) only when the cage owner faction is real (`+0x1d0` clear); for a `not real` owner nothing is written. A nonzero flag also turns a slave in
   state 1 into state 2 and sets crime 0xc Escaping Prison against the cage owner (the setter refuses a `not real` or `fundamental type` 8 victim). There is no sentence test: a prisoner
   whose sentence has run out who leaves through 207 or 256 still escapes. 133 (flag 0) is added by `Task_ReleasePrisoner` only for a releaser that books bounties or is the player's. Lifting a prisoner out of another faction's cage

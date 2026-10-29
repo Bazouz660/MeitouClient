@@ -99,8 +99,8 @@ public readonly record struct ArrestEvent(long Tick, ArrestEventKind Kind, Chara
 /// squad. In it, a bounty of 1..1049 is a fine (<see cref="FineFor"/>): he walks up and takes it when the player's money is more than it, clearing his faction's entry; otherwise, and for
 /// a bigger bounty, he arrests: fights until the target is down, lifts it (<see cref="Carrying.CarrySystem"/>), carries it to the best free cage (<see cref="FixtureRegistry.FindCage"/>)
 /// and imprisons it with its sentence. No free cage: he drops the captive (engine choice; the original's is Unknown).</item>
-/// <item><b>Release</b> (11.5, goal 211): a player character whose sentence is served and who is awake is freed by the jail's faction (a police-like NPC of it near the cage, else the
-/// system in its name; engine choice), which erases its and the jail's bounty entries. NPC prisoners stay (their jailers' AI is not built).</item>
+/// <item><b>Release</b> (11.5, goal 211): a player character whose sentence is served and who is awake is freed by the jail's faction (an NPC of it near the cage that holds goal 211, else the
+/// system in its name for a faction that books bounties; engine choice), which erases its and the jail's bounty entries. NPC prisoners stay (their jailers' AI is not built).</item>
 /// <item><b>Bail, claims, hunters</b> (11.4, 11.5, 11.8; ArrestSystem.Bounties.cs): <see cref="PayBailOrder"/>, the player's <see cref="PutInCageOrder"/> with its reward
 /// (<see cref="Claim"/>), and bounty hunters that chase a recognised bounty above <see cref="HuntLimit"/> until the target is down.</item>
 /// </list>
