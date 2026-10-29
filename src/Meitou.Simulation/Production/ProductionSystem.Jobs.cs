@@ -268,6 +268,7 @@ public sealed partial class ProductionSystem
     bool Runnable(World world, int slot, CharacterCold cold, int k)
     {
         var job = cold.Jobs[k];
+        if (!TaskStart.Eligible(world, cold, job.Type)) return false;
         if (PermaJobs.Follows(job.Type)) return ((cold.Orders & CharacterOrders.Jobs) != 0 || job.Type != TaskType.Unnamed289) && FollowedBy(world, slot, cold, k) is not null;
         if (!PermaJobs.Runs(job.Type) || ((cold.Orders & CharacterOrders.Jobs) == 0 && !PermaJobs.IgnoresSwitch(job.Type))) return false;
         // The walk to a job needs state 27, false while the character gets up (FUN_1405a3370).

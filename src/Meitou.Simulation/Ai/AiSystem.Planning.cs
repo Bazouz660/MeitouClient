@@ -45,10 +45,10 @@ public sealed partial class AiSystem
         readonly List<PlanStep> scratch = [];
 
         /// <summary>
-        /// The task repertoire it plans with (<c>FUN_14060e840</c>, <b>Verified</b>; docs/game/ai-tasks.md "Planner"): a prisoner in a cage that restrains movement (pole, peeler) the
-        /// 'chained' one (0x10), in another cage the 'imprisoned' one (4); everyone else the 'human' one (1). The crippled (0x40), platoon (2) and animal repertoires are not modelled.
+        /// The task repertoire it plans with (<see cref="Repertoire.Confinement"/>: a prisoner's 'chained' (0x10) or 'imprisoned' (4) one; everyone else the 'human' one (1)). The crippled (0x40),
+        /// platoon (2) and animal repertoires of <see cref="Repertoire.Of"/> are not planned with yet: the planner runs NPC goals only.
         /// </summary>
-        public int Category => world.Characters.Cold(slot) is { IsImprisoned: true, InWhat: { } cage } ? world.Fixtures.Find(cage) is { Restrains: true } ? 0x10 : 0x4 : 0x1;
+        public int Category => world.Characters.Cold(slot) is { } c && Repertoire.Confinement(world, c) is var confined and not 0 ? confined : Repertoire.Human;
         /// <summary>Restricted rows are offered: the character's faction is not the player's (the name is the old reading, kept; see <see cref="IPlanWorld.Squadless"/>).</summary>
         public bool Squadless => restrictedOpen;
         bool restrictedOpen;

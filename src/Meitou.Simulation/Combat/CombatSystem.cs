@@ -1,3 +1,4 @@
+using Meitou.Data.Gameplay.Ai;
 using System.Numerics;
 using Meitou.Data.Gameplay;
 using Meitou.Data.Gameplay.Bodies;
@@ -211,7 +212,7 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
         var cold = table.Cold(a)!;
         var tc = table.Cold(t)!;
         if (cold.Fighter is null || cold.Stats is null || cold.Medical is null || cold.Race is null || tc.Medical is null || cold.Medical.Incapacitated || tc.Medical.Incapacitated) return false;
-        if (cold.IsImprisoned || !cold.CarriedBy.IsNone) return false;   // a prisoner or a carried mate does not fight (it may still be attacked: engine choice)
+        if (!TaskStart.Eligible(world, cold, picked ? TaskType.FOCUSED_MELEE_ATTACK : TaskType.ATTACK_ENEMIES) || !cold.CarriedBy.IsNone) return false;   // a prisoner or a carried mate does not fight (rows 5 and 16 are not registered for the imprisoned; it may still be attacked: engine choice)
         // A fighter turns on no one it found no path to lately unless the player picked it (isPathImpossible in every finder's score, docs/game/combat.md "Target score"): a mate
         // that is called in on a sighting or an attack and cannot reach the enemy (a cage, a locked room) would otherwise stand at the nearest spot for ever.
         if (!picked && PursuitSystem.PathImpossible(cold, target, now)) return false;

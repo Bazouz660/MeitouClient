@@ -1,3 +1,4 @@
+using Meitou.Data.Gameplay.Ai;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using Meitou.Data.World;
@@ -160,7 +161,7 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
             var slots = new List<int>();
             foreach (var id in who)
             {
-                if (!table.TryResolveNext(id, out int found) || table.Cold(found)!.IsImprisoned) continue;   // a prisoner stays in its cage
+                if (!table.TryResolveNext(id, out int found) || !TaskStart.Eligible(world, table.Cold(found)!, TaskType.MOVE_CUS_ORDERED)) continue;   // a prisoner stays in its cage (row 29 is not registered for the imprisoned or chained)
                 if (table.Cold(found)!.InSomething == Locks.HeldState.Bed) world.Fixtures.LeaveBed(world, id);   // an order gets a sleeper up
                 slots.Add(found);
             }

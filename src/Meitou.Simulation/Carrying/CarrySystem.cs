@@ -1,3 +1,4 @@
+using Meitou.Data.Gameplay.Ai;
 using System.Numerics;
 using Meitou.Data.Gameplay;
 using Meitou.Data.Gameplay.Bodies;
@@ -72,9 +73,8 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
     /// (rescue, leader rescue, kidnap, capture, cage, arrest, foraging) is registered for the human repertoire only and an animal plans with its own, and its context menu has no Pick Up
     /// (docs/game/carry-loot.md "Who carries").
     /// </summary>
-    public static bool CanCarry(CharacterCold cold) =>
-        cold is { Medical: { Incapacitated: false } m, Race: not null, InCombat: false, IsImprisoned: false } && !SquadRegistry.IsAnimal(cold) && cold.Carrying.IsNone && cold.CarriedBy.IsNone
-        && LeftArmUsable(m);
+    public static bool CanCarry(World world, CharacterCold cold, TaskType row = TaskType.LIFT_PERSON_PLAYER_ORDER) =>
+        cold is { Medical: { Incapacitated: false } m, Race: not null, InCombat: false } && cold.Carrying.IsNone && cold.CarriedBy.IsNone && LeftArmUsable(m) && TaskStart.Eligible(world, cold, row);
 
     /// <summary>A character that may be lifted: knocked out or dead, of a <c>carriable</c> race (every base race but the Leviathan, <b>Verified</b>), not carried already, not in a cage.</summary>
     public static bool CanBeLifted(CharacterCold cold) => cold is { Medical.Incapacitated: true, Race.Carriable: true, IsImprisoned: false } && cold.CarriedBy.IsNone;
@@ -161,7 +161,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
                     // The order's lift (225 Lifting/Snatching Order) may take a body another carries; a kidnap (246) may not.
                     if (!table.TryResolveNext(order.Target, out int body)
                         || !(CanBeLifted(world, table.Cold(body)!) || order.Kidnap && CanBeKidnapped(table, body) || !order.Kidnap && Snatchable(table.Cold(body)!))) break;
-                    if (Nearest(table, Who(world, order.Carriers), body, s => s != body && CanCarry(table.Cold(s)!) && table.Cold(s)!.Carrying != order.Target) is int carrier)
+                    if (Nearest(table, Who(world, order.Carriers), body, s => s != body && CanCarry(world, table.Cold(s)!, order.Kidnap ? TaskType.KIDNAP_ORDER : TaskType.LIFT_PERSON_PLAYER_ORDER) && table.Cold(s)!.Carrying != order.Target) is int carrier)
                     {
                         Begin(table, carrier, order.Target, CharacterTask.PickUp, CharacterTask.Idle);
                         table.Cold(carrier)!.Kidnapping = order.Kidnap;
@@ -209,7 +209,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
                     {
                         if (!table.TryResolveNext(id, out int slot) || table.Cold(slot) is not { IsPlayer: true } cold) continue;
                         if (taken is null) Production.PermaJobs.Add(cold, Meitou.Data.Gameplay.Ai.TaskType.FIND_AND_RESCUE_IF_THERES_BEDS, Production.PermaJob.Untargeted(Meitou.Data.Gameplay.Ai.TaskType.FIND_AND_RESCUE_IF_THERES_BEDS));
-                        else if (Free(table, slot) && Rescuing(cold))
+                        else if (Free(world, slot) && Rescuing(cold))
                         {
                             // The one-shot order has no bed to take anyone to: said, not dropped silently (engine choice; the job just waits with desire 0).
                             if (world.Fixtures.FindBed(world, slot, Relations) is null) world.Bark(id, Meitou.Localisation.Loc.Tr("No free bed to take anyone to."));
@@ -230,7 +230,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
     public bool BeginPickUp(World world, int carrier, CharacterId body, CharacterTask resume = CharacterTask.Idle, bool kidnap = false)
     {
         var table = world.Characters;
-        if (!table.TryResolveNext(body, out int b) || b == carrier || table.Cold(carrier) is not { } c || !CanCarry(c)) return false;
+        if (!table.TryResolveNext(body, out int b) || b == carrier || table.Cold(carrier) is not { } c || !CanCarry(world, c, kidnap ? TaskType.KIDNAP_ORDER : TaskType.LIFT_PERSON_PLAYER_ORDER)) return false;
         bool asleep = !CanBeLifted(table.Cold(b)!);
         if (asleep && !(kidnap && CanBeKidnapped(table, b))) return false;
         Begin(table, carrier, body, CharacterTask.PickUp, resume);
@@ -353,7 +353,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
             var cold = table.Cold(i)!;
             bool lifting = n.Task == (byte)CharacterTask.PickUp;
             if (cold.Medical is not { Incapacitated: false } || cold.InCombat || !table.TryResolveNext(cold.CarryTarget, out int t)
-                || (lifting ? cold.LiftTime < 0 && !(CanCarry(cold) && (Liftable(world, i, t) || cold.Kidnapping && CanBeKidnapped(table, t))) : !(Opening(world, i) ? Openable(table, t) : CanBeLooted(table.Cold(t)!))))
+                || (lifting ? cold.LiftTime < 0 && !(CanCarry(world, cold, cold.Kidnapping ? TaskType.KIDNAP_ORDER : TaskType.LIFT_PERSON_PLAYER_ORDER) && (Liftable(world, i, t) || cold.Kidnapping && CanBeKidnapped(table, t))) : !(Opening(world, i) ? Openable(table, t) : CanBeLooted(table.Cold(t)!))))
             {
                 if (!(lifting && cold.LiftTime >= 0)) End(table, i);   // a lift under way is finished or broken off in SlowWorld
                 continue;
@@ -461,7 +461,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         if (!attached && cold.LiftTime > CarrySettings.AttachAt * LiftSeconds)
         {
             // The body is attached once, at 0.4 of the clip, if it can still be lifted and is still near (the reach was tested when the clip started).
-            if (!table.TryResolveNext(cold.CarryTarget, out int b) || !CanCarry(cold) || !Liftable(world, i, b)
+            if (!table.TryResolveNext(cold.CarryTarget, out int b) || !CanCarry(world, cold, cold.Kidnapping ? TaskType.KIDNAP_ORDER : TaskType.LIFT_PERSON_PLAYER_ORDER) || !Liftable(world, i, b)
                 || Gap(table.Next[i], table.Next[b]) > 2 * ReachOf(world, table.Cold(b)!))   // pushed about while lifting: some slack, not a pick-up from afar
             {
                 End(table, i);
@@ -894,7 +894,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
             if (cold.IsPlayer && !Orders.Has(cold, CharacterOrders.Jobs)) continue;
             // Free, or on a list job below the rescue job (which ranks above it).
             int rescue = cold.Jobs.FindIndex(j => j.Type == Meitou.Data.Gameplay.Ai.TaskType.FIND_AND_RESCUE_IF_THERES_BEDS);
-            if (!Free(table, i) && !(cold.JobIndex > rescue && cold is { Fleeing: false } && CanCarry(cold))) continue;
+            if (!Free(world, i) && !(cold.JobIndex > rescue && cold is { Fleeing: false } && CanCarry(world, cold, TaskType.FIND_AND_RESCUE_IF_THERES_BEDS))) continue;
             if (!MayRescue(world, i, cold)) continue;
             if (RescueSomeone(world, i, taken)) cold.JobTask = CharacterTask.PickUp;
         }
@@ -958,7 +958,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
             float best2 = float.MaxValue;
             foreach (var m in squad.Members)
             {
-                if (!table.TryResolveNext(m, out int s) || s == l || !Free(table, s) || table.Cold(s)!.IsPlayer) continue;
+                if (!table.TryResolveNext(m, out int s) || s == l || !Free(world, s) || table.Cold(s)!.IsPlayer) continue;
                 float range = AggroSystem.RangeOf(table.Cold(s)!, Settings.Sight);
                 float d2 = Vector2.DistanceSquared(new Vector2(next[s].Position.X, next[s].Position.Z), new Vector2(next[l].Position.X, next[l].Position.Z));
                 if (d2 <= range * range && d2 < best2) { best = s; best2 = d2; }
@@ -970,8 +970,8 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
     }
 
     /// <summary>A character free to start a rescue: alive, idle, wandering or following, not fleeing, able to carry.</summary>
-    static bool Free(CharacterTable table, int slot) =>
-        table.Next[slot].Alive && table.Next[slot].Task is (byte)CharacterTask.Idle or (byte)CharacterTask.Wander or (byte)CharacterTask.Follow
-        && table.Cold(slot) is { Fleeing: false } cold && CanCarry(cold);
+    static bool Free(World world, int slot) =>
+        world.Characters.Next[slot].Alive && world.Characters.Next[slot].Task is (byte)CharacterTask.Idle or (byte)CharacterTask.Wander or (byte)CharacterTask.Follow
+        && world.Characters.Cold(slot) is { Fleeing: false } cold && CanCarry(world, cold, TaskType.FIND_AND_RESCUE_IF_THERES_BEDS);
 
 }

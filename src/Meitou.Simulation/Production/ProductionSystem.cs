@@ -1,3 +1,4 @@
+using Meitou.Data.Gameplay.Ai;
 using System.Numerics;
 using Meitou.Data;
 using Meitou.Data.Fcs;
@@ -257,13 +258,13 @@ public sealed partial class ProductionSystem : ITickSystem
                     if (machine.Data.IsStorage && !machine.Data.Operable)
                     {
                         foreach (var id in Who(world, order.Characters))
-                            if (table.TryResolveNext(id, out int hauler) && table.Cold(hauler) is { IsPlayer: true } hc && Able(hc)) StartHaulTrip(world, hauler, site, machine);
+                            if (table.TryResolveNext(id, out int hauler) && table.Cold(hauler) is { IsPlayer: true } hc && Able(hc) && TaskStart.Eligible(world, hc, TaskType.OPERATE_STORAGE)) StartHaulTrip(world, hauler, site, machine);
                         break;
                     }
                     if (!(machine.Data.Operable || machine.Data.IsTraining)) break;
                     foreach (var id in Who(world, order.Characters))
                     {
-                        if (!table.TryResolveNext(id, out int slot) || table.Cold(slot) is not { IsPlayer: true } cold || !Able(cold)) continue;
+                        if (!table.TryResolveNext(id, out int slot) || table.Cold(slot) is not { IsPlayer: true } cold || !Able(cold) || !TaskStart.Eligible(world, cold, machine.Data.IsTraining ? TaskType.USE_TRAINING_DUMMY : TaskType.OPERATE_MACHINERY)) continue;
                         if (cold.OperateSite == site.Id) continue;
                         if (OperatorsOf(world, site.Id) >= machine.Data.MaxOperators)
                         {
@@ -314,7 +315,7 @@ public sealed partial class ProductionSystem : ITickSystem
         int best = -1;
         float bestGap = float.MaxValue;
         foreach (var id in Who(world, order.Characters))
-            if (table.TryResolveNext(id, out int slot) && table.Cold(slot) is { IsPlayer: true } cold && Able(cold) && Gap(table.Next[slot].Position, spot) is var gap && gap < bestGap)
+            if (table.TryResolveNext(id, out int slot) && table.Cold(slot) is { IsPlayer: true } cold && Able(cold) && TaskStart.Eligible(world, cold, TaskType.USE_TURRET) && Gap(table.Next[slot].Position, spot) is var gap && gap < bestGap)
                 (best, bestGap) = (slot, gap);
         if (best < 0 || table.Cold(best)!.OperateSite == site.Id) return;
         if (OperatorsOf(world, site.Id) >= m.Data.MaxOperators)

@@ -97,7 +97,7 @@ public sealed class BedSystem(PopulationData data, BedSettings? settings = null)
                     if (world.Fixtures.Find(use.Bed) is not { Kind: FixtureKind.Bed } bed) break;
                     foreach (var id in Who(world, use.Characters))
                     {
-                        if (!table.TryResolveNext(id, out int s) || table.Cold(s) is not { } c || !CanWalk(c) || !c.Carrying.IsNone) continue;
+                        if (!table.TryResolveNext(id, out int s) || table.Cold(s) is not { } c || !CanWalk(c) || !c.Carrying.IsNone || !TaskStart.Eligible(world, c, TaskType.USE_BED)) continue;
                         if (c.InSomething == HeldState.Bed && c.InWhat == bed.Id) continue;   // lies in it already
                         StartSleep(world, s, bed, fixedBed: true);
                     }
@@ -106,7 +106,7 @@ public sealed class BedSystem(PopulationData data, BedSettings? settings = null)
                 case PutInBedOrder put:
                     foreach (var id in Who(world, put.Carriers))
                     {
-                        if (!table.TryResolveNext(id, out int s) || table.Cold(s) is not { Carrying.IsNone: false } c || !CanWalk(c)) continue;
+                        if (!table.TryResolveNext(id, out int s) || table.Cold(s) is not { Carrying.IsNone: false } c || !CanWalk(c) || !TaskStart.Eligible(world, c, TaskType.PUT_SOMEONE_IN_BED)) continue;
                         var bed = put.Bed is { } given ? world.Fixtures.Find(given) : world.Fixtures.FindBed(world, s, data.Relations, f => Reserved(f, id));
                         if (bed is not { Kind: FixtureKind.Bed }) { if (c.IsPlayer) world.Post($"{c.Name}: no free bed nearby"); continue; }
                         StartPutIn(world, s, bed, fixedBed: put.Bed is not null);
@@ -357,7 +357,7 @@ public sealed class BedSystem(PopulationData data, BedSettings? settings = null)
         for (int i = 0; i < table.HighWater; i++)
         {
             if (!table.Next[i].Alive || table.Next[i].Task is not ((byte)CharacterTask.Idle or (byte)CharacterTask.Wander or (byte)CharacterTask.Follow)) continue;
-            if (table.Cold(i) is not { IsPlayer: true, Carrying.IsNone: false } c || !CanWalk(c) || (c.Orders & CharacterOrders.Jobs) == 0) continue;
+            if (table.Cold(i) is not { IsPlayer: true, Carrying.IsNone: false } c || !CanWalk(c) || !TaskStart.Eligible(world, c, TaskType.FIND_BED_AND_PUT_IN) || (c.Orders & CharacterOrders.Jobs) == 0) continue;
             if (!c.Jobs.Exists(j => j.Type == TaskType.FIND_BED_AND_PUT_IN) || trips.Exists(t => t.Character == table.IdOf(i))) continue;
             if (!table.TryResolveNext(c.Carrying, out int b) || table.Cold(b) is not { } bc || bc.Fighter is { IsAnimal: true }) continue;
             if (data.Relations.Contains(bc.Faction) && data.Relations.Contains(c.Faction) && data.Relations.IsHostile(bc.Faction, c.Faction)) continue;

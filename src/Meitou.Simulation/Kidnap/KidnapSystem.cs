@@ -113,7 +113,7 @@ public sealed class KidnapSystem(PopulationData data, PopulationSystem populatio
     {
         var table = world.Characters;
         if (!table.Next[slot].Alive || table.Next[slot].Task is not ((byte)CharacterTask.Idle or (byte)CharacterTask.Wander or (byte)CharacterTask.Follow or (byte)CharacterTask.GoTo)) return false;
-        return table.Cold(slot) is { IsPlayer: false, Fleeing: false, Engaged: false } c && c.Fighter is not { IsAnimal: true } && CarrySystem.CanCarry(c);
+        return table.Cold(slot) is { IsPlayer: false, Fleeing: false, Engaged: false } c && CarrySystem.CanCarry(world, c, TaskType.KIDNAP_ORDER);
     }
 
     /// <summary>

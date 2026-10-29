@@ -1,3 +1,4 @@
+using Meitou.Data.Gameplay.Ai;
 using System.Numerics;
 using Meitou.Data;
 using Meitou.Data.Gameplay;
@@ -148,7 +149,7 @@ public sealed class ConstructionSystem : ITickSystem
         if (target is not { NeedsWork: true } site || site.Owner != world.Player.Faction) return;
         var table = world.Characters;
         foreach (var id in who)
-            if (table.TryResolveNext(id, out int slot) && table.Cold(slot) is { IsPlayer: true } cold && Able(cold) && HasWorkingArm(cold))
+            if (table.TryResolveNext(id, out int slot) && table.Cold(slot) is { IsPlayer: true } cold && Able(cold) && TaskStart.Eligible(world, cold, TaskType.BUILD) && HasWorkingArm(cold))
             {
                 if (site.LevelPlacement is not null) Touch(world, site);
                 if (site.Stalled && !Carries(cold, site) && Source(world, slot, cold, site) is null)
@@ -182,7 +183,7 @@ public sealed class ConstructionSystem : ITickSystem
                     // Order 95 on a broken door (FUN_1407fc6e0): a door is a building of its own, repaired by build work (a damaged but standing one takes it too, engine reading).
                     if (door.Owner != world.Player.Faction || !DoorNeedsWork(door)) break;
                     foreach (var id in Who(world, order.Characters))
-                        if (table.TryResolveNext(id, out int slot) && table.Cold(slot) is { IsPlayer: true } cold && Able(cold)) BeginDoor(world, slot, door);
+                        if (table.TryResolveNext(id, out int slot) && table.Cold(slot) is { IsPlayer: true } cold && Able(cold) && TaskStart.Eligible(world, cold, TaskType.REPAIR)) BeginDoor(world, slot, door);
                     break;
                 case BuildOrder order:
                     OrderBuild(world, Who(world, order.Characters), Root(reg, reg.Find(order.Site)));
@@ -196,7 +197,7 @@ public sealed class ConstructionSystem : ITickSystem
                         break;
                     }
                     foreach (var id in Who(world, order.Characters))
-                        if (table.TryResolveNext(id, out int slot) && table.Cold(slot) is { IsPlayer: true } cold && Able(cold))
+                        if (table.TryResolveNext(id, out int slot) && table.Cold(slot) is { IsPlayer: true } cold && Able(cold) && TaskStart.Eligible(world, cold, TaskType.DISMANTLE))
                             Begin(world, slot, site, CharacterTask.Dismantle, CharacterTask.Idle);
                     break;
                 }

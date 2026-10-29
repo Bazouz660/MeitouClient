@@ -70,7 +70,7 @@ public sealed partial class ProductionSystem
                 StepErrand(world, i, cold, errand);
                 continue;
             }
-            if (cold.Jobs.Count == 0 || !cold.Carrying.IsNone || !CarrySystem.CanCarry(cold) || cold.Fleeing) continue;
+            if (cold.Jobs.Count == 0 || !cold.Carrying.IsNone || !CarrySystem.CanCarry(world, cold, TaskType.DEAD_GUYS_GO_IN_THE_POT) || cold.Fleeing) continue;
             var task = (CharacterTask)table.Next[i].Task;
             for (int k = 0; k < cold.Jobs.Count; k++)
             {

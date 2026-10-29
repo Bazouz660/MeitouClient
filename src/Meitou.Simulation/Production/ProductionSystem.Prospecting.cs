@@ -1,3 +1,4 @@
+using Meitou.Data.Gameplay.Ai;
 using Meitou.Data.Gameplay.Bodies;
 using Meitou.Data.Gameplay.Construction;
 
@@ -22,7 +23,7 @@ public sealed partial class ProductionSystem
     void ProspectBegin(World world, ProspectOrder order)
     {
         var table = world.Characters;
-        if (!table.TryResolveNext(order.Character, out int slot) || table.Cold(slot) is not { IsPlayer: true } cold || !Able(cold) || cold.WaterState == 3) return;
+        if (!table.TryResolveNext(order.Character, out int slot) || table.Cold(slot) is not { IsPlayer: true } cold || !Able(cold) || !TaskStart.Eligible(world, cold, TaskType.PROSPECTING) || cold.WaterState == 3) return;
         ref var n = ref table.Next[slot];
         if (n.Task == (byte)CharacterTask.Prospect) return;
         MovementSystem.Stop(table, slot);
