@@ -70,8 +70,8 @@ public sealed class DialogueNode
     public IReadOnlySet<string> HasPackage { get; internal set; } = Empty;
     public IReadOnlySet<string> TargetCarryingCharacter { get; internal set; } = Empty;
     public IReadOnlySet<string> TargetHasItem { get; internal set; } = Empty;
-    /// <summary><c>target has item type</c>: the referenced items' <c>item function</c> values.</summary>
-    public IReadOnlySet<int> TargetHasItemFunction { get; internal set; } = new HashSet<int>();
+    /// <summary><c>target has item type</c>: the <c>item function</c> of its first reference only (0: no test, also when the reference does not resolve).</summary>
+    public int TargetHasItemFunction { get; internal set; }
     public IReadOnlyList<(string Id, bool Value)> WorldStates { get; internal set; } = [];
     public IReadOnlyList<(string Item, int Count)> GiveItems { get; internal set; } = [];
     public IReadOnlyList<(string Faction, int Amount)> ChangeRelations { get; internal set; } = [];
@@ -329,7 +329,10 @@ public sealed class DialogueDatabase(GameDatabase db)
         node.HasPackage = Set("has package");
         node.TargetCarryingCharacter = Set("target carrying character");
         node.TargetHasItem = Set("target has item");
-        node.TargetHasItemFunction = record.GetReferences("target has item type").Select(r => db.Find(r.TargetStringId)?.GetInt("item function") ?? -1).Where(f => f >= 0).ToHashSet();
+        // Only the first reference is read (FUN_14067b070); it scores +2 once it resolves, whatever its function.
+        var typeRefs = record.GetReferences("target has item type");
+        bool itemTyped = typeRefs.Count > 0 && db.Find(typeRefs[0].TargetStringId) is not null;
+        if (itemTyped) node.TargetHasItemFunction = db.Find(typeRefs[0].TargetStringId)!.GetInt("item function");
         node.WorldStates = [.. record.GetReferences("world state").Select(r => (r.TargetStringId, r.Values.Value0 != 0))];
         node.GiveItems = [.. record.GetReferences("give item").Select(r => (r.TargetStringId, r.Values.Value0))];
         node.ChangeRelations = [.. record.GetReferences("change relations").Select(r => (r.TargetStringId, r.Values.Value0))];
@@ -349,7 +352,7 @@ public sealed class DialogueDatabase(GameDatabase db)
         if (node.Speaker != Talker.Me) score++;
         if (node.Locked) score += 2;
         foreach (var set in new[] { node.InTownOf, node.MyFaction, node.TargetFaction, node.TargetRace }) if (set.Count > 0) score += 2;
-        if (node.TargetHasItemFunction.Count > 0) score += 2;
+        if (itemTyped) score += 2;
         score += 2 * node.TargetHasItem.Count + 2 * node.WorldStates.Count + conditions.Count + 2 * tagConditions;
         if (node.ChancePermanent < 99) score++;
         if (node.TargetIsType > 0) score++;

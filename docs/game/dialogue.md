@@ -168,7 +168,7 @@ interjector, then descends.
 ### Score
 
 Computed at load: +1 speaker not T_ME, + `score bonus`, +2 `locked`, +2 for each non-empty `in town of` / `my faction` /
-`target faction` / `target race` / `target has item type`, +2 each `target has item` and each `world state` entry, +1 each condition
+`target faction` / `target race`, +2 when the first `target has item type` reference resolves (**Verified**, `FUN_14067b070`: only that one is read), +2 each `target has item` and each `world state` entry, +1 each condition
 (+1 more for a tag condition), +1 `chance permanent` below 99, +1 `target is type` above 0, +2 interjection node, +1 speaker 3-6. At
 choice time +2 when the target's race is in `target race` (`FUN_140671bb0`). A root's effective score is its own plus its best
 child's (`FUN_1406ad9d0`).
@@ -186,12 +186,19 @@ child's (`FUN_1406ad9d0`).
 5. `in town of` (the speaker's current town's faction), `my faction`, `target faction`, `has package` (any of the speaker's
    packages), `is character` (the speaker's record), `target carrying character` (for each listed character in turn, the first
    member of the target's squad, the target or one the speaker perceives, that carries it becomes the target, [retargeting](#retargeting);
-   any hit passes), `world state` (all equal their bool), `target has item type` / `target has item` (the target's
-   squad members' inventories and backpacks), `target race` (the target, else a squad member, recorded as interjector), `my race`,
+   any hit passes), `world state` (all equal their bool), `target has item type` / `target has item` (one ordered
+   pass over the target's squad, see below; retargets), `target race` (the target, else a squad member, recorded as interjector), `my race`,
    `my subrace`. Each list is OR within itself. The race tests (`my race`, `target race`, the +2 below, T_TARGET_WITH_RACE, DA 47) match
    a race when the listed RACE is that race or any race of its RACE_GROUP (`FUN_14042ecd0`; the group's `races` set race +0x120, a race in
    two groups keeps the last loaded, `FUN_140430070`); `my subrace` is an exact RACE compare (**Verified**, decompile). The four squad tests count only the target and members the speaker perceives
    (`FUN_140855960`, **Observed** in `FUN_140678f30`); Meitou reads "perceives" as within the speaker's sight range.
+   **Item tests** (**Verified**, `FUN_140678f30`): `target has item type` is one `item function` (0 = no test; the node reads only its first reference) and
+   `target has item` a list; both are one pass over the eligible squad members in squad order. Flags: the list flag starts true when the list is empty, the
+   function flag when no function is set. Per member the function is tested first (`FUN_14004b84e`: the member's own inventory list, any section, flat; the
+   flag stays set), then the list (`FUN_140745f70`: the member's own list, else the worn backpack's own list; a container deeper is not searched). The first member
+   that leaves the list flag set becomes the target ([retargeting](#retargeting)) and ends the pass. The line fails unless both flags are set, so a
+   function-only line is decided by the first eligible member (which becomes the target even when it lacks the function), and with both the function holder
+   must come at or before the first listed-item holder.
 6. `repetition limit`: fails while now − last use is below the cooldown.
 7. `target is type`: no target fails; otherwise the target's NPC class must equal the value. OT_SLAVE (6) instead accepts slave
    state 1/2 (slave, escaped) or class 6, and an accepted OT_SLAVE line returns at once, **skipping steps 8-9** (**Verified**:

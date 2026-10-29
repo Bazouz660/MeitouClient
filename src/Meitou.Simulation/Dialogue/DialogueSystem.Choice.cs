@@ -168,9 +168,22 @@ public sealed partial class DialogueSystem
         }
         var states = population?.States ?? data.States;
         foreach (var (state, value) in node.WorldStates) if (!IWorldStates.Passes(states, data.Db, state, value ? 1 : 0)) return false;
-        if (node.TargetHasItemFunction.Count > 0 && !Known(world, me, other).Any(m => Cold(world, m)?.Inventory?.All()
-            .Any(i => node.TargetHasItemFunction.Contains(data.Db.Find(i.Record)?.GetInt("item function") ?? -1)) == true)) return false;
-        if (node.TargetHasItem.Count > 0 && !Known(world, me, other).Any(m => Cold(world, m)?.Inventory?.All().Any(i => node.TargetHasItem.Contains(i.Record)) == true)) return false;
+        if (node.TargetHasItemFunction != 0 || node.TargetHasItem.Count > 0)
+        {
+            // One ordered pass over the target's squad (FUN_140678f30): per member the function is seen first (sticky), then the listed items; the first member holding a listed
+            // item (any member when the line lists none) becomes the target and ends the pass. The line needs both flags.
+            bool itemOk = node.TargetHasItem.Count == 0, typeOk = node.TargetHasItemFunction == 0;
+            foreach (var m in Known(world, me, other))
+            {
+                var items = Cold(world, m)?.Inventory;
+                if (!typeOk && items is not null && items.Items.Any(i => data.Db.Find(i.Record)?.GetInt("item function") == node.TargetHasItemFunction)) typeOk = true;
+                if (!itemOk && items is not null) itemOk = Listed(items).Any(i => node.TargetHasItem.Contains(i.Record));
+                if (!itemOk) continue;
+                SetTarget(c, me, m);
+                break;
+            }
+            if (!itemOk || !typeOk) return false;
+        }
         if (node.TargetRace.Count > 0 && !Known(world, me, other).Any(m => Cold(world, m)?.Race is { } r && dialogue.RaceMatches(r.StringId, node.TargetRace))) return false;
         if (node.MyRace.Count > 0 && (mc.Race is null || !dialogue.RaceMatches(mc.Race.StringId, node.MyRace))) return false;
         if (node.MySubrace.Count > 0 && (mc.Race is null || !node.MySubrace.Contains(mc.Race.StringId))) return false;
@@ -203,6 +216,10 @@ public sealed partial class DialogueSystem
     {
         if (me == c.Npc && !member.IsNone && member != c.Npc) c.Player = member;
     }
+
+    /// <summary>What a <c>target has item</c> test scans (<c>FUN_140745f70</c>): the inventory's own flat list, then the worn backpack's own list; no container deeper.</summary>
+    static IEnumerable<Meitou.Simulation.Items.ItemInstance> Listed(Meitou.Simulation.Items.Inventory inventory) =>
+        inventory.Backpack?.Contents is { } bag ? inventory.Items.Concat(bag.Items) : inventory.Items;
 
     static CharacterCold? Cold(World world, CharacterId id) => world.Characters.TryResolveNext(id, out int s) ? world.Characters.Cold(s) : null;
 
