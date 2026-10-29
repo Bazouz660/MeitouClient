@@ -68,7 +68,7 @@ public sealed class ItemFactory(GameDatabase db, GameConstants constants, Func<M
             : item.RecordWeight;
     };
 
-    /// <summary>A new instance of an item record (null for an unknown record). Food gets its charges scaled by <c>food quality mult</c>; weapons weigh <c>weapon inventory weight mult</c> of their weight.</summary>
+    /// <summary>A new instance of an item record (null for an unknown record). Food and raw meat get their charges scaled by <c>food quality mult</c> (<see cref="ItemInfo.ScalesCharges"/>); weapons weigh <c>weapon inventory weight mult</c> of their weight.</summary>
     public ItemInstance? Create(string? recordId, int quantity = 1, float quality = 0)
     {
         // A reference to a record the data lacks (a mod's) has no id.
@@ -95,6 +95,7 @@ public sealed class ItemFactory(GameDatabase db, GameConstants constants, Func<M
     ItemInstance Make(ItemInfo info, FcsRecordType type, int quantity, float quality)
     {
         bool weapon = info.Type is FcsRecordType.WEAPON or FcsRecordType.CROSSBOW;
+        float maxCharges = info.ScalesCharges ? info.Charges * Constants.FoodQualityMult : info.Charges;
         return new ItemInstance
         {
             Record = info.Id,
@@ -113,8 +114,8 @@ public sealed class ItemFactory(GameDatabase db, GameConstants constants, Func<M
             Quality = quality,
             Level = info.Type == FcsRecordType.ARMOUR ? (int)quality : 0,   // an armour piece's stats follow its level, which a made piece takes from its grade quality
             ItemFunction = info.Function,
-            Charges = info.IsFood ? info.Charges * Constants.FoodQualityMult : info.Charges,
-            MaxCharges = info.IsFood ? info.Charges * Constants.FoodQualityMult : info.Charges,
+            Charges = info.Type == FcsRecordType.ITEM ? maxCharges : 1,   // only an ITEM starts full
+            MaxCharges = maxCharges,
             Width = info.Width,
             Height = info.Height,
             UnitWeight = weapon ? info.Weight * Constants.WeaponInventoryWeightMult : info.Weight,

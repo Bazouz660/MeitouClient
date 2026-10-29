@@ -45,6 +45,8 @@ progress of research taken off the queue is not saved (as the original).
 **Blueprint items** (**Verified**: 1954 INVENTORY_ITEM_STATEs in the owner's saves): `base data sid` is the look ITEM (`BLUEPRINT_ITEM`,
 `BLUEPRINT_ITEM_ARMOUR`, ...), `company sid` = `material sid` = the RESEARCH id, `item function` 11. Meitou (`SavedKit`) rebuilds them from the research.
 
+**Item function** saved is the constructed value, not the record's: a weapon 5, armour 6, container 4, food of one charge 0 ([item construction](../game/economy.md#units-stacks-and-traders), **Verified** in the constructors, not checked against a save).
+
 **Terrain decals** (TERRAIN_DECALS in `quick.save`, **Verified**: two saves, writer `FUN_1408de5d0`): int `total`; one instance per cell copy of a decal
 ([blood decals](../game/blood-decals.md)), id = the 1-based counter as raw int32 bytes, target `-`, the 24-byte `DecalInfo` in the seven position/rotation
 floats as raw bits: x = local X | local Z << 16 (shorts, 1/1000 of the 288-unit cell), y = half width | half height << 16 (size × texels × 10),

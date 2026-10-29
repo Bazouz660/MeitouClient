@@ -672,7 +672,7 @@ read and at least one consumer found through the data cross-references; base val
 | `fed recovery rate mult` | 3 | [4.0] | x1 | `FUN_14064da70` |
 | `bed hunger rate` | 0.33 | [0.4] | x1 | `FUN_1408837a0` |
 | `encumbrance hunger rate` | 0.7 | [0.7] | x1 | `FUN_1408837a0` |
-| `food quality mult` | 0.5 | [1.0] | x1 (stored as is; it scales a food item's `charges`. It is `food price mult`, not this field, that is multiplied by `global price mult`: [economy.md](economy.md#3-constants-price-block)) | item constructor `FUN_14075faf0` |
+| `food quality mult` | 0.5 | [1.0] | x1 (stored as is; it scales the `charges` of an ITEM of function 3 or 15 above 1 charge, raw meat included, **Verified** `FUN_14075faf0`. It is `food price mult`, not this field, that is multiplied by `global price mult`: [economy.md](economy.md#3-constants-price-block)) | item constructor `FUN_14075faf0` |
 | `exp gain multiplier` | 3 | [3.0] | x0.25 | all XP |
 | `skill diff xp 2x bonus` / `0x penalty` | 10 / 25 | [10 / 20] | x1 | `FUN_1408c5fa0` |
 | `min strength xp mult` | 0.1 | [0.05] | x1 | `FUN_1408838e0` |
@@ -700,7 +700,6 @@ read and at least one consumer found through the data cross-references; base val
 - In one #46 run (20261021-194120) perception and friendly fire read 0.7414 healthy and 0.6896 with the head at
   0.75; both fit one extra factor of about 0.614 on m: light (p0 0.25) or dust (`FUN_1406439f0`). Crossbows
   (light, no dust) would tell them apart.
-- Whether `food quality mult` scales raw food (function 15).
 - Which callers feed `FUN_1408c7250` / `FUN_1408c7310` for which activity (`DAT_142133794` is the scaled frame time, [game-loop.md](game-loop.md#the-three-time-values)), and the 0.1 floor / 6x cap of the skill-difference factor
   (not in `FUN_1408c5fa0`; maybe clamped by its callers). Meaning of XP event 6.
 - The defaults of the new-game option block (zero in the exe image).
