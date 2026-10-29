@@ -497,7 +497,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         cold.LiftTime += dt;
         // The clip runs backwards from its end; the body is let go when it is below 0.2 of the way.
         if (LiftSeconds - cold.LiftTime >= CarrySettings.ReleaseBelow * LiftSeconds) return;
-        Unlink(world, i, b, drop: false);
+        Unlink(world, i, b, drop: false, released: true);
         End(table, i);
     }
 
@@ -518,9 +518,11 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
 
     /// <summary>
     /// Ends a link (serial). <paramref name="drop"/>: the body falls where the carrier stands (the carrier went down, lost its arm or turned to fight); else it is set down beside the
-    /// carrier and, when the carrier does not regard it as friendly, knocked out again (<see cref="MedicalState.PutDownKoSeconds"/>).
+    /// carrier and, when the carrier does not regard it as friendly, knocked out again (<see cref="MedicalState.PutDownKoSeconds"/>). <paramref name="released"/>: the put-down ran its
+    /// course (its update's release, <c>FUN_1403504f0</c>), which also spares a chained slave of the carrier's faction (<c>FUN_14032e2a0</c>); a put-down cut short (its end handler,
+    /// <c>FUN_1403509f0</c>) has no such test.
     /// </summary>
-    void Unlink(World world, int carrier, int body, bool drop)
+    void Unlink(World world, int carrier, int body, bool drop, bool released = false)
     {
         var table = world.Characters;
         var c = table.Cold(carrier)!;
@@ -538,7 +540,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
             var side = new Vector2(MathF.Cos(cn.Yaw), -MathF.Sin(cn.Yaw)) * Settings.PutDownSide;
             float x = cn.Position.X + side.X, z = cn.Position.Z + side.Y;
             if (world.Walkability.IsWalkable(x, z, cn.Position.Y)) bn.Position = new Vector3(x, world.Walkability.GroundHeight(x, z, cn.Position.Y), z);
-            if (!Friendly(c, b)) KnockOutHeld(c, b);
+            if (!Friendly(c, b) && !(released && FirstAid.FirstAidSystem.OwnedChained(c, b))) KnockOutHeld(c, b);
         }
     }
 

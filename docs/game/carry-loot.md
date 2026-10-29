@@ -53,7 +53,9 @@ reads the clip position as a fraction (`FUN_1405b4460`, state `+0x54`): once pas
 The put-down starts (`FUN_14034a230`) by playing the same clip at rate **-1.0** and its update (`FUN_1403504f0`) releases the body when the position falls below **0.2**.
 The put-down's **end handler** (`FUN_1403509f0`) always releases the body (`FUN_1405ce1e0`, ragdoll argument 1), stops both lift clips, and when the carrier does not regard the body as friendly
 applies the put-down KO (`FUN_140644980`, 0.01 x the carrier's assassination clamped 0.1..0.4): so a put-down ended early (a hit outside a fight ends the current task, [combat](combat.md))
-is finished at once, never restarted; a lift cut off before 0.4 plans again from its start. Meitou: `CarrySystem.LiftPlaySpeed` (the record's play speed), `CarrySystem.Interrupted`.
+is finished at once, never restarted; a lift cut off before 0.4 plans again from its start. The update's own release (below 0.2, **Verified** `FUN_1403504f0`) applies that KO only when
+the carrier does not regard the body as friendly **and** `FUN_14032e2a0` is false (the body is a chained slave, handle at `+0x330` set and byte `+0x320`, whose owner faction `+0x1a0 -> +0xe0`
+is the carrier's), so a chained slave of the carrier's faction is set down awake; the end handler has no such test. Meitou: `CarrySystem.LiftPlaySpeed` (the record's play speed), `CarrySystem.Interrupted`.
 
 **Verified** placement (decompile `FUN_1405cda20`, `FUN_1405b5980`, `FUN_1405b1a30`, constants read): node position = carrier node position + carrier rotation x the attach bone's model-space position
 (`FUN_1405b1ec0`) + the bone's world rotation x O; rotation = bone world rotation x 90 degrees about x x 14 degrees about z; O lerps by t = 2 x (Height - 80) x 0.025 from (-1.4, 0, 1) through (-1.9, -1, 2.6)
