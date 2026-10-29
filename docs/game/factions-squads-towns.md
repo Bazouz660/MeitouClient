@@ -277,7 +277,7 @@ Kind rows (the move `FUN_1406b2730`: a fall applies only while relation > floor,
 | 3 | -10 x | -50 | 100 | a downing blow |
 | 4 | -20 x | -100 | 100 | a killing blow (with 2 or 3) |
 | 5 | -20 x | -75 | 100 | a death with a known killer |
-| 8 | +0.15 x x dt | -100 | +5 | first aid to an unconscious member (dt = `DAT_142133794`, scaled frame time) |
+| 8 | +0.15 x x dt | -100 | +5 | first aid to an unconscious or leg-collapsed (crawling) member (dt = `DAT_142133794`, scaled frame time) |
 | 12 | -10 x | -60 | 100 | put in a cage |
 | others | none | | | the bed put-in passes 9 |
 
@@ -296,7 +296,7 @@ included), else 0.025 (outside every town too).
 | bolt lands | `FUN_140439c90` via `FUN_140999d50` | as melee, thresholds 0.1; with no shooter nothing; a bolt whose flag (param 4, read as "aimed") is clear gives no kind 1 and kind 2 |
 | death | `FUN_1407a6200` (sets `+0x5bc`, runs inside the damage, so before the blow's own events) | kind 5 against the killer recorded in the character's handle at `+0x2c0` (**Unknown** setter), and squad tag 9 |
 | caging | `Task_PutInSomething` `FUN_140358670`, after the bounty claim | kind = task `+0x7c`: 12 for the cage task, 9 (no row) for the bed (factory `FUN_14032ebd0`) against the putter's faction |
-| first aid | `FUN_140649a00`, `FUN_14064d800` | kind 8 to the medic's faction when the patient's medical `+0x161` (unconscious) or `+0x160` is set; in `FUN_140649a00` only on an update whose loop filled every wound |
+| first aid | `FUN_140649a00`, `FUN_14064d800` | kind 8 to the medic's faction when the patient's medical `+0x161` (unconscious) or `+0x160` (a leg-collapse part down, `FUN_140649320`; **Verified**) is set; in `FUN_140649a00` only on an update whose loop filled every wound. Meitou: `Unconscious` or `Crawling`, not dead |
 | ally witness | `FUN_140854d10` | a witness that regards the suspect as friendly (vfunc `0x3f0`) and sees it wrong its own faction: slot 4, -20 (skipped when the witness platoon's `+0x210` object has `+0xa8`); for every crime code but 2, 10, 11, 14, 16; repeats on each witness pass |
 | missions | `MissionClass` vfuncs `FUN_14039f580` / `FUN_14039f660` | trust (slot 6) and a direct add (slot 4) of the mission giver's faction about the player. **Dead in 1.0.68** (**Verified**): the only maker `FUN_14039f4b0` is reached only by an uncalled thunk, so the mission list is always empty and these never apply |
 | dialogue | `FUN_140680560` | DA 4 slot 4, DA 5 slot 9, DA 13 slot 8, DA 14 slot 7, always the **speaker's** faction about the target's ([dialogue](dialogue.md#effects)) |
