@@ -777,13 +777,15 @@ update `FUN_140511130`, `Character::setupAI` `FUN_140621b70`; KenshiLib names **
   The providers a plan adds before these rows were not checked for threat states (**Unknown**).
 - **Meitou**: the player's characters are decided by one step in this order ([decision step](../simulation.md#decision-step)): source 1 the order queue
   ([simulation](../simulation.md#order-queue); one that cannot run stays queued with its text and the step goes on; a turret gunner's 146 ends under a melee threat and is taken up again
-  once it is gone, `PlayerOrders.NeedsNoThreat`), step 2 has no source (no player goal Meitou runs commits), step 3 the urgent jobs (234 while an enemy is sensed; stand-in
-  `AggroSystem.SensesEnemy`; 187 not modelled for player characters), step 4 picks among 32 Self preservation, 243 Getting food, 259 Picking up food, Hold's 16 and an engine goal for
-  joining a mate's or an ally's defence, step 5 every job in list order through its system's contributor (the switch and the repertoire first), then the implicit jobs,
-  step 6 14 Idleness (a player character's routine: it stands; the default task is never reached, no manoeuvre mode but ROAM_FAR is modelled). Followers and bodyguards fight by their rows: an attacker of the followed character within 40 (16), a bodyguard also its own
-  within 40 (39), as a step of the row (`RetaliationSystem.Guards`, `SelfDefends`), and follow again when the fight ends (a replan). The step runs on the replan triggers above plus an
-  engine re-ask every `JobCheckTicks` of a character idle or on a job's task (no periodic replan was found), so a higher job takes over a running one (a medic's, a rescue's) within
-  that period, where the original waits for its next replan. Gap: mates join a fight only from idle (the original's way a player character joins a mate is **Unknown**).
+  once it is gone), step 2 has no source (no player goal Meitou runs commits), step 3 the urgent jobs (234 while an enemy is sensed; 187 not modelled for player characters), step 4
+  picks among 32 Self preservation, 243 Getting food, a player animal's priority-3 race goals (277-279), 259 Picking up food, Hold's 16 and an engine goal for joining a mate's or an
+  ally's defence, step 5 every job in list order through its system's contributor (the switch and the repertoire first), then the implicit jobs, step 6 the priority-2 race goal 233 and
+  14 Idleness (a player character's routine: it stands; the default task is never reached, as only ROAM_FAR is modelled). A task that ends leaves its character idle for the step to
+  re-decide (the original re-plans; nothing resumes). Followers and bodyguards fight by their rows: an attacker of the followed character within 40 (16), a bodyguard also its own
+  within 40 (39), as a step of the row, and follow again when the fight ends. The step runs on the replan triggers above plus an engine re-ask every `JobCheckTicks` of a character
+  idle or on a job's task (no periodic replan was found), so a higher job takes over a running one within that period, where the original waits for its next replan. Gap: mates join a
+  fight only from idle (the original's way a player character joins a mate is **Unknown**; the player faction's FACTION `AI Goals` list 15 Protect allies, [animals](animals.md#ai-goals),
+  which may be it).
 
 ## Combat goals
 

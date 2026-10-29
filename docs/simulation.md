@@ -191,59 +191,58 @@ the owner's pure `IOrderOwner.CanRun`: `Run`, `Blocked` with its failure text, o
 
 ### Decision step
 
-`World.Decisions` (`DecisionSystem`) decides for the player's characters (`IsPlayer`) as the original's chooser does ([precedence](game/ai-tasks.md#precedence)); NPCs keep the AI
-([AI](#ai)). Serial, in slot order: in the slow world right after the last of retaliation, aggro and flight (after every system when the world has none), and between ticks for orders
-only (`ApplyPausedInterfaceCommands`; the bit stays for the next tick).
-- **Sources** (`IDecisionSource`: `CanRun` and `Desire` pure reads, `Start`), an open list sorted by step, then `Key` (the original's list order); systems register theirs
+`World.Decisions` (`DecisionSystem`) chooses every task of the characters it decides (`DecisionSystem.Decides`: `IsPlayer`) as the original's chooser does
+([precedence](game/ai-tasks.md#precedence)); NPCs keep the AI ([AI](#ai)). Serial, in slot order: in the slow world right after the last of retaliation, aggro and flight (after every
+system when the world has none), and between ticks for orders only (`ApplyPausedInterfaceCommands`; the bit stays for the next tick).
+- **Sources** (`IDecisionSource`: `CanRun` and `Desire` pure reads, `Start`): an open list sorted by step, then `Key` (the original's list order); systems register theirs
   (`IDecisionOwner`), later code may add more (`DecisionSystem.Register`). The first source that can run starts; one that runs the character's task already ends the step. Step 4 picks
   the best desire x weight (x1.25 for the goal running now; a tie goes to the later-listed).
-  1. Orders: the front of the queue (`PlayerOrders`): runs, starts, or (blocked) shows its text once (`Tried`), stays queued and the step goes on.
-  2. Commitment: no source. None of the player goals Meitou runs (32, 243, 259, 16) has the commit flag ([desire and commitment](game/ai-tasks.md#desire-and-commitment)); what
-     priority a running job's plan holds is **Unknown**, so committing jobs (153, 275) stop nothing.
-  3. Urgent jobs: the job list in order (as step 5) asking only the jobs urgent now: kind-2 234 Turret guard while the character senses an enemy (AI `+0xbc`; stand-in
-     `AggroSystem.SensesEnemy`, the attack-on-sight look's sensed-enemy finder, until the sensed list, M7). It beats Self preservation until a melee attacker comes within 40 (234's
-     effect is planned through 146, `!158`). 187 Obedient Slave is not modelled for player characters; what fills the original's list `+0x70` is **Unknown** (Q1).
-  4. Priority-3 goals: 32 Self preservation (`RetaliationSystem`, weight 1: the attacker this tick that took the character as target and alerted it, within 181.7, not shooting at a gunner,
-     passing a holder's post test; desire 1 within 40, else 0.7; a deferred defence, row 13); 243 Getting food (`TownDutySystem`, weight 0.5, the [eating](game/character-stats.md#eating)
-     desire; a food run); a player animal's priority-3 race goals (`CaptiveSystem.RaceGoals`: 277 limb fetch 1, 278 limb play and 279 chase by their desires, x the race entry's
-     weight); 259 Picking up food (`FeedSystem`, animals, weight 0.5; a walk to food on the ground); 16 attack on sight while on Hold (`AggroSystem`, weight **Unknown**, 1
-     here, listed last as Hold adds it; the enemy this tick's look or a squad mate's found; desire 0 while Passive, sneaking outside a fight or not standing; a deferred fight, row 16).
-     **Engine**: joining a squad mate's defence (`JoinMates`) or, with Help Allies, an ally's (`HelpAllies`), `RetaliationSystem.JoinFight`: how the original's player character joins is
-     **Unknown** (Q2); offered by the retaliation pass, today's rule (idle or a bodyguard following, not Passive, not sneaking outside a fight) as its condition, desire 0.6 (below Self
-     preservation's 0.7, above Getting food's 0.5 at most), weight 1, listed first; a deferred defence, row 13, against `AI::findAttackerOf`'s pick.
-  5. Jobs: the job list in order (`IJobSource` contributors by type, `DecisionSystem.RegisterJob`; the original's keys N+8, N+7, ...): the jobs switch gates every type but 16, 31, 45,
-     57, 58, 250 (`FUN_14050c1c0`, both passes; 289 is gated), a row the repertoire does not register is skipped, the first that can run starts and one that runs the task ends the step.
-     So a higher job takes over a lower one, a running medic, rescue or foraging job included, at the next decision; the running job keeps no priority beyond its place in the list
-     (the jobs' keys ignore the current task's x1.25; commitment, step 2, has no source). With nothing found, a list job the task still runs ends when its contributor says so
-     (`IJobSource.Stop`: production's operators, haulers and follow jobs; the other act-outs end by themselves). Contributors: production (87, 152, 124, 97, 234 while it is not urgent,
-     125 through construction, 31 / 45 / 289 follows; `Runnable`), the carrying errands (138, 223, 273; `ErrandJobs`, while their lift or carry runs), first aid (58, 57, 250; the finders,
-     a treatment runs until it ends), carry (148, 238; `FindRescue` with the bed search, `FindForage`), beds (106; a carried non-hostile body and a bed), aggro (16; the enemy the look
-     offered this tick, the row's desire). Finders are asked only up to the first job that runs. Then the implicit jobs (`ProductionSystem.ImplicitJobs`, the squad AI options' lowest
-     keys): over idling, a standing task or a job's task, the pick of `ImplicitPick` starts, runs while it is the one the character is on, and an implicit job that no longer holds ends.
-  6. The priority-2 goals: a player animal's race goal 233 (eating a downed body, `CaptiveSystem.RaceGoals`). Then 14 Idleness (priority 1, every character's): a player character stands idle, its routine (player characters neither wander nor follow a leader by themselves). It runs over
-     idling, a fight, and any task a plan still runs (an order's, a goal's, an engine act-out's: those end by their own rules); a wander or follow no plan runs is given up for it. So a
-     task that ends (`TaskEnd.Done`) leaves the character idle and the step re-decides (the job, goal or order it lands on, else idleness), where the original re-plans; nothing resumes.
-     The default task (`+0x190`, tried after the priority-1 goals) is never reached: Meitou models no manoeuvre mode but ROAM_FAR, whose default task is idleness
-     ([precedence](game/ai-tasks.md#precedence)).
-- **Triggers** (`CharacterCold.Replan`, `DecisionSystem.Request`; hashed while set): a task end (`TaskStart.End`, any reason), an order given or the queue cleared (`PlayerOrders.Give`,
-  Stop), a stagger outside a fight (not for a gunner), the melee alert while the fight is off unless the target gets up or is player-side and moving (`RetaliationSystem`, horizontal speed
-  above 1), a job list change or the jobs switch, a load (`SavedPopulation`), a sighting for row 16 (Hold's goal or the job; engine: the look stands in for the sensed list's update),
-  a mate's or ally's defence offered, a fight's end (`CombatSystem.EndFight`, the fight task's end: a follow row then follows again, `MovementSystem.FollowAgain`, for an order in
-  `PlayerOrders.Prepare` and for a job as its contributor). Also a front whose task ended, or one not tried yet. **Engine** re-ask (design D4; no periodic replan was found): every
-  `ProductionSystem.JobCheckTicks` 10 (slot-staggered) a character not fighting whose task is a job's or no start's (idle, a standing task), or an order's of a row needing no melee
-  threat (the gunner). The jobs are found on this re-ask and the triggers, not on cadences of their own (were: medic jobs every 15 ticks, rescue, foraging, errands and put in bed every
-  15, production every 10): a new patient, body or machine with work is noticed within 10 ticks.
-- **Claims**: a character the engine started a fight for this tick (a follow row's defence, a bodyguard's own defence within 40) is left alone that tick (`DecisionSystem.Claim`).
+  1. Orders: the front of the queue ([order queue](#order-queue)): runs, starts, or (blocked) shows its text once (`Tried`), stays queued and the step goes on.
+  2. Commitment: no source. No player goal Meitou runs has the commit flag ([desire and commitment](game/ai-tasks.md#desire-and-commitment)); what priority a running job's plan
+     holds is **Unknown**, so committing jobs (153, 275) stop nothing.
+  3. Urgent jobs: the job list as in step 5, asking only the jobs urgent now: kind-2 234 Turret guard while the character senses an enemy (AI `+0xbc`; stand-in
+     `AggroSystem.SensesEnemy` until the sensed list, M7). It beats Self preservation until a melee attacker comes within 40 (234's effect is planned through 146, `!158`). 187 Obedient
+     Slave is not modelled for player characters; what fills the original's list `+0x70` is **Unknown**.
+  4. Priority-3 goals: 32 Self preservation (`RetaliationSystem`, weight 1: the attacker this tick that took the character as target and alerted it, within 181.7, not shooting at a
+     gunner, passing a holder's post test; desire 1 within 40, else 0.7; a deferred defence, row 13); 243 Getting food (`TownDutySystem`, weight 0.5, the
+     [eating](game/character-stats.md#eating) desire; a food run); a player animal's priority-3 race goals (`CaptiveSystem.RaceGoals`: 277 limb fetch 1, 278 limb play and 279 chase by
+     their desires, x the race entry's weight); 259 Picking up food (`FeedSystem`, animals, weight 0.5); 16 attack on sight while on Hold (`AggroSystem`, weight **Unknown**, 1 here,
+     listed last as Hold adds it; the enemy this tick's look or a squad mate's found; desire 0 while Passive, sneaking outside a fight or not standing; a deferred fight, row 16).
+     **Engine**: joining a squad mate's defence or, with Help Allies, an ally's (`RetaliationSystem.JoinFight`; how the original's player character joins is **Unknown**): offered by the
+     retaliation pass to one idle or a bodyguard following, not Passive, not sneaking outside a fight; desire 0.6 (below Self preservation's 0.7, above Getting food's 0.5), weight 1,
+     listed first; a deferred defence, row 13, against `AI::findAttackerOf`'s pick.
+  5. Jobs: the job list in order (`IJobSource` contributors by type, `DecisionSystem.RegisterJob`; the original's keys N+8, N+7, ...): the jobs switch gates every type but 16, 31,
+     45, 57, 58, 250 (`FUN_14050c1c0`, both passes; 289 is gated), a row the repertoire does not register is skipped, the first that can run starts and one that runs the task ends the
+     step. So a higher job takes over a lower running one at the next decision; the running job keeps no priority beyond its place. With nothing found, a list job the task still runs
+     ends when its contributor says so (`IJobSource.Stop`: production's operators, haulers and follow jobs; the other act-outs end by themselves). Contributors: production (87, 152,
+     124, 97, 234 while not urgent, 125 through construction, 31 / 45 / 289 follows; `Runnable`), the carrying errands (138, 223, 273; while their lift or carry runs), first aid (58, 57,
+     250; the finders, a treatment runs until it ends), carry (148, 238), beds (106), aggro (16; the enemy the look offered this tick, the row's desire). Finders are asked only up to the
+     first job that runs. Then the implicit jobs (`ProductionSystem.ImplicitJobs`, the squad AI options' lowest keys): over idling, a standing task or a job's task, the pick of
+     `ImplicitPick` starts and runs while it is the one the character is on; one that no longer holds ends.
+  6. The priority-2 goals (a player animal's race goal 233, eating a downed body, `CaptiveSystem.RaceGoals`), then 14 Idleness (priority 1): a player character stands idle, its routine
+     (player characters neither wander nor follow a leader by themselves). Idleness runs over idling, a fight and any task a plan still runs (an order's, a goal's, an engine act-out's:
+     those end by their own rules), and gives up a wander or follow no plan runs. A task that ends (`TaskEnd.Done`) or a fight's end leaves the character idle and asks a decision, which
+     lands where the original's re-plan would; nothing resumes. The default task (`+0x190`, tried after the priority-1 goals) is never reached: Meitou models no manoeuvre mode but
+     ROAM_FAR, whose default task is idleness.
+- **Triggers** (`CharacterCold.Replan`, `DecisionSystem.Request`; hashed while set): a task end (`TaskStart.End`, any reason), an order given or the queue cleared, a stagger outside a
+  fight (not for a gunner), the melee alert while the fight is off unless the target gets up or is player-side and moving (horizontal speed above 1), a job list change or the jobs switch,
+  a load, a sighting for row 16 (engine: the look stands in for the sensed list's update), a mate's or ally's defence offered, a fight's end (a follow row then follows again,
+  `MovementSystem.FollowAgain`: for an order in `PlayerOrders.Prepare`, for a job as its contributor). Also a front whose task ended, or one not tried yet. **Engine** re-ask (no
+  periodic replan was found): every `ProductionSystem.JobCheckTicks` 10 (slot-staggered) a character not fighting whose task is a job's, 14 Idleness's or no start's, or an order's of a
+  row needing no melee threat (the gunner); jobs and implicit jobs are found on this re-ask and the triggers.
+- **Engine starts outside the step** (a step of a running row, or a reaction to another's act; the step leaves a claimed character alone that tick, `DecisionSystem.Claim`): a follow
+  row's defence of its followed character and a bodyguard's own defence within 40 (`RetaliationSystem.Guards`, `SelfDefends`; claimed); a sleeper woken by a kidnapper's lift fights it
+  (`CarrySystem.Kidnap`) and the target of a failed stealth knock-out defends itself (`CarrySystem.StealthKo`), both unclaimed reactions the original would reach through its alert and
+  Self preservation.
 - **Trace** (`DecisionSystem.Tracing`, off by default): each decision fills `CharacterCold.Decision` (`DecisionTrace`: tick, winner, one line per source asked with its answer: an
-  order's failure text, "no attacker in range", a score), published as `CharacterSnapshot.Decision` while tracing. Not saved or hashed.
-- **Who**: the step decides `IsPlayer` characters (`DecisionSystem.Decides`). Player-faction characters that are not `IsPlayer` exist only in Meitou: the sandbox's and `--crowd`'s
-  bystanders and tests' extras (a load or a new game makes every player-faction character `IsPlayer`, as the original has no player-faction character the player does not command).
-  They hold no jobs and get no orders from the interface, so they stay with the NPC rules (retaliation's own defence, the attack-on-sight look) plus the player faction's goals as
-  idle-only passes: 243 (`TownDutySystem.LookPlayerFood`), 259 (`FeedSystem`, an animal idle or following) and the animals' race goals (`CaptiveSystem.RunPlayerAnimalGoals`, list
-  order). A follow row of theirs (an order a script gives) follows again after its fight step at the NPC stand-down (`AggroSystem`, `MovementSystem.FollowAgain`), as the step does
-  for its characters.
-- Engine choices the step does not cover yet: errands' walks wait out a fight (NPC duties, the dialogue approach); a player character's food run ends instead when a fight replaces it.
-  The step's starts act from the next tick (deferred fights) or at once (walks).
+  order's failure text, "no attacker in range", a score, a job's index), published as `CharacterSnapshot.Decision` while tracing. Not saved or hashed.
+- **Player-faction characters that are not `IsPlayer`** exist only in Meitou: the sandbox's and `--crowd`'s bystanders and tests' extras (a load, a new game or a recruit makes every
+  other player-faction character `IsPlayer`; the original has no player-faction character the player does not command). They hold no jobs and get no orders from the interface, so
+  the step leaves them to the NPC rules (retaliation's own defence, the attack-on-sight look) and the player faction's goals as idle-only passes: 243 (`TownDutySystem.LookPlayerFood`),
+  259 (`FeedSystem`, an animal idle or following) and the animals' race goals (`CaptiveSystem.RunPlayerAnimalGoals`, list order). A follow row of theirs (an order a script gives)
+  follows again after its fight step at the NPC stand-down (`AggroSystem`, `MovementSystem.FollowAgain`).
+- Engine choices: errands' walks wait out a fight (NPC duties, the dialogue approach), while a player character's food run ends when a fight replaces it; the step's starts act from
+  the next tick (deferred fights) or at once (walks).
 
 ## Systems and their order
 
