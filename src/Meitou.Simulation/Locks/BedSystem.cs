@@ -179,11 +179,11 @@ public sealed class BedSystem(PopulationData data, BedSettings? settings = null)
         var c = table.Cold(slot)!;
         trips.RemoveAll(t => t.Character == id);
         if (c.InSomething == HeldState.Bed && c.InWhat != bed.Id) world.Fixtures.LeaveBed(world, id);
-        if (c.InSomething == HeldState.Bed) { table.Next[slot].Task = (byte)CharacterTask.Sleep; return; }
+        if (c.InSomething == HeldState.Bed) { TaskStart.Step(table, slot, CharacterTask.Sleep); return; }
         var trip = new BedTrip { Character = id, Bed = bed.Id, Fixed = fixedBed };
         trips.Add(trip);
         WalkTo(world, slot, bed);
-        table.Next[slot].Task = (byte)CharacterTask.Sleep;
+        TaskStart.Step(table, slot, CharacterTask.Sleep);
         if (!Step(world, trip)) trips.Remove(trip);
     }
 
@@ -207,7 +207,7 @@ public sealed class BedSystem(PopulationData data, BedSettings? settings = null)
         var c = table.Cold(slot)!;
         var at = world.Walkability.FloorNear(bed.Position.X, bed.Position.Z, bed.Position.Y, Settings.FloorSlack) is { } onFloor ? onFloor : bed.Position;
         var flat = new Vector2(at.X, at.Z);
-        MovementSystem.GoTo(table, slot, flat, c.RunSpeed);
+        TaskStart.StepTo(table, slot, flat, c.RunSpeed);
         (c.GoalHeight, c.GoalHeightAt) = (at.Y, flat);
     }
 
@@ -245,12 +245,12 @@ public sealed class BedSystem(PopulationData data, BedSettings? settings = null)
             if (t.Fixed || world.Fixtures.FindBed(world, s, data.Relations, f => Reserved(f, t.Character)) is not { } other)
             {
                 if (c.IsPlayer) world.Post(carrying ? $"{c.Name}: no free bed nearby" : $"{c.Name}: the bed is taken");
-                if (!carrying) MovementSystem.Stop(table, s);
+                if (!carrying) TaskStart.Stand(table, s);
                 return false;
             }
             t.Bed = other.Id;
             WalkTo(world, s, other);
-            if (!carrying) n.Task = (byte)CharacterTask.Sleep;
+            if (!carrying) TaskStart.Step(table, s, CharacterTask.Sleep);
             return true;
         }
         var goal = new Vector2(bed.Position.X, bed.Position.Z);
@@ -261,7 +261,7 @@ public sealed class BedSystem(PopulationData data, BedSettings? settings = null)
         bool floor = MathF.Abs(n.Position.Y - bed.Position.Y) <= Settings.FloorSlack;
         if (floor && (d <= bed.UseRange + Settings.Reach || !walking && d <= Settings.Slack))
         {
-            if (walking) MovementSystem.Stop(table, s);
+            if (walking) TaskStart.Stand(table, s);
             return carrying ? LayIn(world, s, c, t.Body, bed) : LieIn(world, s, c, bed);
         }
         if (!walking)
@@ -270,11 +270,11 @@ public sealed class BedSystem(PopulationData data, BedSettings? settings = null)
             {
                 world.Fixtures.MarkUnreachable(world, bed, c.Faction);
                 if (c.IsPlayer) world.Post($"{c.Name} cannot get to the bed");
-                if (!carrying) MovementSystem.Stop(table, s);
+                if (!carrying) TaskStart.Stand(table, s);
                 return false;
             }
             WalkTo(world, s, bed);
-            if (!carrying) n.Task = (byte)CharacterTask.Sleep;
+            if (!carrying) TaskStart.Step(table, s, CharacterTask.Sleep);
         }
         return true;
     }
@@ -283,7 +283,7 @@ public sealed class BedSystem(PopulationData data, BedSettings? settings = null)
     bool LieIn(World world, int s, CharacterCold c, Fixture bed)
     {
         var table = world.Characters;
-        if (!Pay(world, s, bed, Cost(world, bed, c.Faction)) || !world.Fixtures.EnterBed(world, table.IdOf(s), bed)) MovementSystem.Stop(table, s);
+        if (!Pay(world, s, bed, Cost(world, bed, c.Faction)) || !world.Fixtures.EnterBed(world, table.IdOf(s), bed)) TaskStart.Stand(table, s);
         return false;
     }
 

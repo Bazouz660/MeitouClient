@@ -749,6 +749,7 @@ public sealed partial class FixtureRegistry
     static void Hold(CharacterTable table, int slot, CharacterCold c, Vector3 at, float yaw)
     {
         table.Place(slot, at, yaw);
+        TaskStart.Step(table, slot, CharacterTask.Idle);   // the teleport stands it
         c.Path = [];
         c.OrderQueue.Clear();
     }
@@ -824,10 +825,10 @@ public sealed partial class FixtureRegistry
         c.InSomething = HeldState.Bed;
         c.InWhat = bed.Id;
         bed.Occupant = sleeper;
-        MovementSystem.Stop(table, s);
+        TaskStart.Stand(table, s);
         var (at, yaw) = LieSpot(bed, table.Next[s].Position);
         Hold(table, s, c, at, yaw);
-        table.Next[s].Task = (byte)CharacterTask.Sleep;
+        TaskStart.Step(table, s, CharacterTask.Sleep);
         table.Next[s].Velocity = Vector3.Zero;
         c.OperateClip = bed.Bed.Clip;
         return true;

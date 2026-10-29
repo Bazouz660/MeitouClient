@@ -83,6 +83,14 @@ public readonly record struct TaskRequest(CharacterTask Task, TaskType Row, Task
     public bool Implicit { get; init; }
     /// <summary>The act-out's own parameters the fields above do not hold (a shackle job, a ground item, a warden's round); its handler reads them.</summary>
     public object? Detail { get; init; }
+    /// <summary>An engine walk's goal (X/Z): a <see cref="CharacterTask.GoTo"/> goes there as given (<see cref="MovementSystem.GoTo"/>); without one it goes onto the floor at <see cref="Point"/>.</summary>
+    public System.Numerics.Vector2? Goal { get; init; }
+    /// <summary>The speed mode of a walk (null: the character's run speed).</summary>
+    public byte? Mode { get; init; }
+    /// <summary>An engine start that leaves the fight and the task before it running (as the direct writes it replaced did).</summary>
+    internal bool Overwrite { get; init; }
+    /// <summary>An engine start whose row's repertoire is not tested.</summary>
+    internal bool Unchecked { get; init; }
 }
 
 /// <summary>
@@ -163,11 +171,14 @@ public static class TaskStart
         var table = world.Characters;
         if (table.Phase == TablePhase.Parallel) throw new InvalidOperationException("tasks start in the serial phases only");
         var cold = table.Cold(slot)!;
-        if (!Eligible(world, cold, request.Row)) return StartResult.NotEligible;
+        if (!request.Unchecked && !Eligible(world, cold, request.Row)) return StartResult.NotEligible;
         var current = (CharacterTask)table.Next[slot].Task;
         var handler = world.Tasks.Of(request.Task, request.Row);
-        if (request.Task != CharacterTask.Attack) world.Tasks.Of(CharacterTask.Attack)?.End(world, slot, CharacterTask.Attack, TaskEnd.Replaced);
-        if (current != CharacterTask.Attack && world.Tasks.Of(cold, current) is { } before && (current != request.Task || before != handler)) before.End(world, slot, current, TaskEnd.Replaced);
+        if (!request.Overwrite)
+        {
+            if (request.Task != CharacterTask.Attack) world.Tasks.Of(CharacterTask.Attack)?.End(world, slot, CharacterTask.Attack, TaskEnd.Replaced);
+            if (current != CharacterTask.Attack && world.Tasks.Of(cold, current) is { } before && (current != request.Task || before != handler)) before.End(world, slot, current, TaskEnd.Replaced);
+        }
         cold.Running = cold.Running is { } running && Step(running, current, request)
             ? running with { Task = request.Task, Tick = world.Tick }
             : new RunningTask(request.Task, request.Row, request.Source, request.Job, request.Target, request.Site, world.Tick) { Resume = request.Resume, Implicit = request.Implicit };
@@ -178,7 +189,83 @@ public static class TaskStart
             n.Task = (byte)request.Task;
             n.TaskTime = 0;
         }
+        Stamp(table, slot);
         return StartResult.Started;
+    }
+
+    /// <summary>
+    /// Starts an engine walk to <paramref name="goal"/> at <paramref name="mode"/> as row <paramref name="row"/> (<see cref="Start"/> of a <see cref="CharacterTask.GoTo"/> with
+    /// <see cref="TaskRequest.Goal"/>).
+    /// </summary>
+    public static StartResult Walk(World world, int slot, System.Numerics.Vector2 goal, byte mode, TaskType row, TaskSource source, bool overwrite = false, bool check = true) =>
+        Start(world, slot, new TaskRequest(CharacterTask.GoTo, row, source) { Goal = goal, Mode = mode, Overwrite = overwrite, Unchecked = !check });
+
+    /// <summary>Starts an engine walk onto the floor at <paramref name="at"/> (<see cref="MovementSystem.GoToFloor"/>), as <see cref="Walk(World, int, System.Numerics.Vector2, byte, TaskType, TaskSource, bool, bool)"/>.</summary>
+    public static StartResult Walk(World world, int slot, System.Numerics.Vector3 at, byte mode, TaskType row, TaskSource source, bool overwrite = false, bool check = true) =>
+        Start(world, slot, new TaskRequest(CharacterTask.GoTo, row, source) { Point = at, Mode = mode, Overwrite = overwrite, Unchecked = !check });
+
+    /// <summary>
+    /// Starts an engine standing task (<see cref="CharacterTask.Idle"/>, <see cref="CharacterTask.Wander"/>, or a <see cref="CharacterTask.Follow"/> of the squad's leader) as row
+    /// <paramref name="row"/>: the character stops and takes it up (the movement's handler).
+    /// </summary>
+    public static StartResult Become(World world, int slot, CharacterTask task, TaskType row, TaskSource source, bool overwrite = false, bool check = true) =>
+        Start(world, slot, new TaskRequest(task, row, source) { Overwrite = overwrite, Unchecked = !check });
+
+    /// <summary>
+    /// A start in a parallel phase, on the caller's own slot (the AI's think): it records the provenance and starts the walk to <see cref="TaskRequest.Goal"/>, or stops the character on
+    /// the standing task (its <see cref="CharacterHot.TaskTime"/> restarted); nothing outside the slot is touched, so no fight or task before it is ended (the AI runs no fighting
+    /// character, and its walks and standing tasks hold nothing) and no handler runs. The row's repertoire is not tested: the AI's planner chose the row (<see cref="Ai.AiSystem"/>).
+    /// </summary>
+    public static void StartOwn(World world, int slot, in TaskRequest request)
+    {
+        var table = world.Characters;
+        var cold = table.Cold(slot)!;
+        cold.Running = new RunningTask(request.Task, request.Row, request.Source, request.Job, request.Target, request.Site, world.Tick) { Resume = request.Resume, Implicit = request.Implicit };
+        if (request.Goal is { } goal) MovementSystem.GoTo(table, slot, goal, request.Mode ?? cold.RunSpeed);
+        else
+        {
+            MovementSystem.Stop(table, slot);
+            ref var n = ref table.Next[slot];
+            n.Task = (byte)request.Task;
+            n.TaskTime = 0;
+        }
+        Stamp(table, slot);
+    }
+
+    /// <summary>
+    /// The act-out's own system moves its character on (any phase, its own slot): to another task of the act-out, or back to a standing task once its work is over, keeping the
+    /// provenance (which then no longer runs the task). Only <see cref="CharacterHot.Task"/> is written.
+    /// </summary>
+    public static void Step(CharacterTable table, int slot, CharacterTask task)
+    {
+        table.Next[slot].Task = (byte)task;
+        Stamp(table, slot);
+    }
+
+    /// <summary>
+    /// The character stops and stands idle, keeping its provenance (any phase, its own slot; <see cref="MovementSystem.Stop"/>): a walk the act-out's system ends at its goal or gives up,
+    /// a knock-out. No handler runs: the act-out's own system lets go of what it holds.
+    /// </summary>
+    public static void Stand(CharacterTable table, int slot)
+    {
+        MovementSystem.Stop(table, slot);
+        Stamp(table, slot);
+    }
+
+    /// <summary>The act-out's own system walks its character on (any phase, its own slot; <see cref="MovementSystem.GoTo"/>), keeping the provenance: a walk to the act-out's next spot.</summary>
+    public static void StepTo(CharacterTable table, int slot, System.Numerics.Vector2 goal, byte mode)
+    {
+        MovementSystem.GoTo(table, slot, goal, mode);
+        Stamp(table, slot);
+    }
+
+    /// <summary>Debug builds: the task the start path has just set (<see cref="CheckStarts"/>).</summary>
+    [System.Diagnostics.Conditional("DEBUG")]
+    static void Stamp(CharacterTable table, int slot)
+    {
+        var cold = table.Cold(slot)!;
+        cold.TaskSetTick = table.Ticks;
+        cold.TaskSet = table.Next[slot].Task;
     }
 
     /// <summary>
@@ -202,14 +289,10 @@ public static class TaskStart
     public static CharacterTask ActOut(CharacterTask task) =>
         task is CharacterTask.DeliverMaterials or CharacterTask.FetchMaterials or CharacterTask.Dismantle ? CharacterTask.Build : task;
 
-    /// <summary>The act-outs only <see cref="Start"/> may begin (their systems end them by themselves; other tasks are still set directly by systems not converted yet).</summary>
-    static bool StartedOnly(byte task) => task is (byte)CharacterTask.Attack or (byte)CharacterTask.Treat or (byte)CharacterTask.PickUp or (byte)CharacterTask.PutDown
-        or (byte)CharacterTask.Loot or (byte)CharacterTask.StealthKo or (byte)CharacterTask.Build or (byte)CharacterTask.Dismantle or (byte)CharacterTask.Prospect
-        or (byte)CharacterTask.Operate or (byte)CharacterTask.Haul;
-
     /// <summary>
-    /// Debug builds, at the end of a tick: a character that took up one of the <see cref="StartedOnly"/> act-outs this tick did so through <see cref="Start"/> (its provenance is
-    /// stamped this tick for that act-out); a direct write of <see cref="CharacterHot.Task"/> outside the handlers throws.
+    /// Debug builds, at the end of a tick: a character whose task changed this tick had it set by the start path (<see cref="Start"/>, <see cref="End"/>, <see cref="StartOwn"/>,
+    /// <see cref="Step"/>, <see cref="Stand"/>: the task it stamped is the task now) or moved on to another step of its act-out (<see cref="ActOut"/>); a direct write of
+    /// <see cref="CharacterHot.Task"/> outside them throws. A character spawned or loaded this tick is not checked.
     /// </summary>
     [System.Diagnostics.Conditional("DEBUG")]
     internal static void CheckStarts(World world)
@@ -219,10 +302,11 @@ public static class TaskStart
         var next = table.Next;
         for (int i = 0; i < table.HighWater; i++)
         {
-            if (!next[i].Alive || !prev[i].Alive || prev[i].Generation != next[i].Generation || next[i].Task == prev[i].Task || !StartedOnly(next[i].Task)) continue;
-            if (ActOut((CharacterTask)next[i].Task) == ActOut((CharacterTask)prev[i].Task) && table.Cold(i)!.Running is { } step && step.Runs((CharacterTask)prev[i].Task)) continue;   // a step of the act-out
-            if (table.Cold(i)!.Running is not { } run || run.Tick != world.Tick || !run.Runs((CharacterTask)next[i].Task))
-                throw new InvalidOperationException($"slot {i} took up {(CharacterTask)next[i].Task} at tick {world.Tick} without TaskStart.Start");
+            if (!next[i].Alive || !prev[i].Alive || prev[i].Generation != next[i].Generation || next[i].Task == prev[i].Task) continue;
+            var cold = table.Cold(i)!;
+            if (cold.TaskSetTick == table.Ticks && cold.TaskSet == next[i].Task) continue;
+            if (ActOut((CharacterTask)next[i].Task) == ActOut((CharacterTask)prev[i].Task) && cold.Running is { } step && step.Runs((CharacterTask)prev[i].Task)) continue;   // a step of the act-out
+            throw new InvalidOperationException($"slot {i} went from {(CharacterTask)prev[i].Task} to {(CharacterTask)next[i].Task} at tick {world.Tick} outside the start path");
         }
     }
 
@@ -249,5 +333,6 @@ public static class TaskStart
             n.TaskTime = 0;
         }
         cold.Running = null;
+        Stamp(table, slot);
     }
 }

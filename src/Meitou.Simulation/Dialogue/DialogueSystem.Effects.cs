@@ -281,9 +281,9 @@ public sealed partial class DialogueSystem
     {
         var table = world.Characters;
         if (!table.TryResolveNext(target, out _) || !table.TryResolveNext(me, out int s) || !table.Next[s].Alive) return;
-        MovementSystem.Stop(table, s);
+        TaskStart.Stand(table, s);
         if (table.Cold(s) is { IsPlayer: false, IsImprisoned: false, Medical.Incapacitated: false, Fighter.CanAttack: true })
-            world.Defer(new Combat.AttackOrder([me], target) { Tick = world.Tick + 1 });
+            world.Defer(new Combat.AttackOrder([me], target) { Tick = world.Tick + 1, Source = TaskSource.Npc });
     }
 
     /// <summary>

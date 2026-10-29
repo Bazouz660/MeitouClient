@@ -254,7 +254,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
     static void PutDownStart(CharacterTable table, int slot)
     {
         var cold = table.Cold(slot)!;
-        MovementSystem.Stop(table, slot);
+        TaskStart.Stand(table, slot);
         table.Next[slot].Task = (byte)CharacterTask.PutDown;
         table.Next[slot].TaskTime = 0;
         cold.CarryTarget = cold.Carrying;
@@ -343,7 +343,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
     {
         var cold = table.Cold(slot)!;
         ref var n = ref table.Next[slot];
-        MovementSystem.Stop(table, slot);
+        TaskStart.Stand(table, slot);
         n.Task = (byte)task;
         n.Mode = SpeedMode.Free;
         n.TaskTime = 0;
@@ -544,7 +544,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         var b = table.Cold(body)!;
         c.Carrying = table.IdOf(body);
         b.CarriedBy = table.IdOf(carrier);
-        MovementSystem.Stop(table, body);
+        TaskStart.Stand(table, body);
         ref var n = ref table.Next[body];
         n.Velocity = Vector3.Zero;
         n.Position = table.Next[carrier].Position;

@@ -468,7 +468,7 @@ public sealed partial class ProductionSystem
         cold.HaulFetch = null;
         cold.Operating = false;
         ref var n = ref table.Next[slot];
-        MovementSystem.Stop(table, slot);
+        TaskStart.Stand(table, slot);
         n.Task = (byte)CharacterTask.Haul;
         n.Mode = SpeedMode.Free;
         n.TaskTime = 0;

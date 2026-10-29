@@ -72,7 +72,7 @@ public sealed partial class CarrySystem
             {
                 float assassination = cold.Stats?[StatsEnumerated.Assassination] ?? 0;
                 medical.KnockOut(KidnapKoMin + (KidnapKoMax - KidnapKoMin) * assassination * 0.01f);
-                MovementSystem.Stop(table, b);
+                TaskStart.Stand(table, b);
                 table.Next[b].Velocity = System.Numerics.Vector3.Zero;
                 Train(100);
             }
@@ -89,8 +89,8 @@ public sealed partial class CarrySystem
         if (asleep)
         {
             if (victim.InSomething == Locks.HeldState.Bed) world.Fixtures.LeaveBed(world, victimId);
-            table.Next[b].Task = (byte)CharacterTask.Idle;
-            world.Defer(new Combat.AttackOrder([victimId], kidnapperId) { Tick = world.Tick + 1 });
+            TaskStart.Become(world, b, CharacterTask.Idle, Meitou.Data.Gameplay.Ai.TaskType.IDLE, TaskSource.Reaction, overwrite: true, check: false);
+            world.Defer(new Combat.AttackOrder([victimId], kidnapperId) { Tick = world.Tick + 1, Source = TaskSource.Reaction });
         }
         return false;
     }

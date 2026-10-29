@@ -93,7 +93,7 @@ namespace Meitou.Simulation
                     var at = Flat(fixture.Position);
                     if (Vector2.Distance(Flat(table.Next[s].Position), at) <= ContainerReach && SameFloor(table.Next[s].Position, fixture.Position))
                     {
-                        if (table.Next[s].Task == (byte)CharacterTask.GoTo) MovementSystem.Stop(table, s);
+                        if (table.Next[s].Task == (byte)CharacterTask.GoTo) TaskStart.Stand(table, s);
                         (player.OpenContainer, player.ContainerOpener, player.OpeningContainer) = (wanted, player.ContainerWalker, null);
                     }
                     else if (table.Next[s].Task != (byte)CharacterTask.GoTo || Vector2.Distance(table.Next[s].Goal, at) > ContainerReach) player.OpeningContainer = null;

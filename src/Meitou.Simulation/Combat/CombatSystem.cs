@@ -208,7 +208,7 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed, ITaskOwner
 
     /// <summary>
     /// Starts the fight of <paramref name="attacker"/> on the order's target through <see cref="TaskStart.Start"/>: row 5 (a target the player picked: the order), 13 Attacking attackers of (a
-    /// defence: a reaction) or 16 Attacking enemies (a goal's fight). False when it cannot fight.
+    /// defence: a reaction) or 16 Attacking enemies (a goal's fight; an NPC's engine fight, <see cref="AttackOrder.Source"/>). False when it cannot fight.
     /// </summary>
     bool Engage(World world, CharacterTable table, CharacterId attacker, AttackOrder order, int now)
     {
@@ -222,7 +222,7 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed, ITaskOwner
         // that is called in on a sighting or an attack and cannot reach the enemy (a cage, a locked room) would otherwise stand at the nearest spot for ever.
         if (!order.Picked && PursuitSystem.PathImpossible(cold, target, now)) return false;
         var (row, source) = order.Picked ? (TaskType.FOCUSED_MELEE_ATTACK, TaskSource.Order) : order.Defensive ? (TaskType.ATTACK_ATTACKERS_OF, TaskSource.Reaction) : (TaskType.ATTACK_ENEMIES, TaskSource.Goal);
-        return TaskStart.Start(world, a, new TaskRequest(CharacterTask.Attack, row, source) { Target = target }) == StartResult.Started;
+        return TaskStart.Start(world, a, new TaskRequest(CharacterTask.Attack, row, order.Source ?? source) { Target = target }) == StartResult.Started;
     }
 
     public void RegisterTasks(TaskHandlers tasks) => tasks.Register(CharacterTask.Attack, this);
@@ -317,7 +317,7 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed, ITaskOwner
         // The fight's end sheathes nothing (docs/game/combat.md "Fight lifecycle and orders", weapon away): the planner puts it away before a goal that needs it away
         // (the AI's UNEQUIP_WEAPON step), a player's character once it stops moving on an order (Act). A character without either sheathes now.
         if (!cold.IsPlayer && cold.Ai is null) cold.DrawnWeapon = WeaponKinds.None;
-        if (table.Next[slot].Task == (byte)CharacterTask.Attack) table.Next[slot].Task = (byte)CharacterTask.Idle;
+        if (table.Next[slot].Task == (byte)CharacterTask.Attack) TaskStart.Step(table, slot, CharacterTask.Idle);   // the fight's own end: idle, its provenance kept (a follow row's, FollowResume)
     }
 
     // ------------------------------------------------------------------ schedule, move

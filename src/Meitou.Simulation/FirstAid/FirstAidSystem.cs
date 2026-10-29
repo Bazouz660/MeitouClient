@@ -123,7 +123,7 @@ public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions 
         }
         var table = world.Characters;
         var cold = table.Cold(slot)!;
-        MovementSystem.Stop(table, slot);
+        TaskStart.Stand(table, slot);
         table.Next[slot].Task = (byte)CharacterTask.Rest;
         cold.TreatTarget = CharacterId.None;
         cold.TreatSplint = false;
@@ -143,7 +143,7 @@ public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions 
         if (cold.TreatTarget != patient) Say(world, slot, patient, HealingOtherStart, BeingHealedStart);
         ref var n = ref table.Next[slot];
         if (cold.TreatTarget != patient || cold.TreatSplint != splint || n.Task != (byte)CharacterTask.Treat) cold.TreatKit = null;   // a new treatment looks for its own kit
-        MovementSystem.Stop(table, slot);
+        TaskStart.Stand(table, slot);
         n.Task = (byte)CharacterTask.Treat;
         n.Mode = SpeedMode.Free;
         n.TaskTime = 0;

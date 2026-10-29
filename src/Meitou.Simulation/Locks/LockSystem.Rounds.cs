@@ -334,7 +334,7 @@ public sealed partial class LockSystem : IStateHashed
         var c = table.Cold(worker)!;
         c.Engaged = true;   // the AI leaves it alone until the round ends
         rounds.Add(round);
-        MovementSystem.Stop(table, worker);   // up from its bed or post
+        TaskStart.Stand(table, worker);   // up from its bed or post
         if (round.Kind is not (RoundKind.LockDoors or RoundKind.UnlockDoors) && NeedsKeys(world, round, c, first)) round.Phase = RoundPhase.Keys;
         else Walk(world, worker, round, first);
     }
@@ -347,7 +347,7 @@ public sealed partial class LockSystem : IStateHashed
     {
         round.Phase = RoundPhase.Walk;
         round.Time = 0;
-        if (Distance(world.Characters.Next[worker], f) > round.Reach) MovementSystem.GoTo(world.Characters, worker, new Vector2(f.Position.X, f.Position.Z), SpeedMode.Walk);
+        if (Distance(world.Characters.Next[worker], f) > round.Reach) TaskStart.StepTo(world.Characters, worker, new Vector2(f.Position.X, f.Position.Z), SpeedMode.Walk);
     }
 
     static float Distance(in CharacterHot n, Fixture f) => Vector2.Distance(new Vector2(n.Position.X, n.Position.Z), new Vector2(f.Position.X, f.Position.Z));
@@ -384,7 +384,7 @@ public sealed partial class LockSystem : IStateHashed
                 float d = Distance(n, f);
                 if (d <= r.Reach || !walking && d <= WalkSlack)
                 {
-                    if (walking) MovementSystem.Stop(table, w);
+                    if (walking) TaskStart.Stand(table, w);
                     r.Phase = RoundPhase.Work;
                     r.Time = 0;
                     return true;
@@ -395,7 +395,7 @@ public sealed partial class LockSystem : IStateHashed
                     if (f.Kind == FixtureKind.Cage) world.Fixtures.MarkUnreachable(world, f, r.Faction);
                     return End(world, r, fallback: true);
                 }
-                MovementSystem.GoTo(table, w, new Vector2(f.Position.X, f.Position.Z), SpeedMode.Walk);
+                TaskStart.StepTo(table, w, new Vector2(f.Position.X, f.Position.Z), SpeedMode.Walk);
                 return true;
             }
             case RoundPhase.Work:
@@ -451,7 +451,7 @@ public sealed partial class LockSystem : IStateHashed
         if (table.TryResolveNext(r.Worker, out int w) && table.Cold(w) is { } wc && !InArrest(world, r.Worker))
         {
             wc.Engaged = false;
-            if (table.Next[w].Task == (byte)CharacterTask.GoTo) MovementSystem.Stop(table, w);
+            if (table.Next[w].Task == (byte)CharacterTask.GoTo) TaskStart.Stand(table, w);
         }
         if (fallback && r.Kind == RoundKind.Release && table.TryResolveNext(r.Prisoner, out int p) && table.Cold(p) is { IsImprisoned: true } pc && pc.InWhat == r.Targets[0]
             && world.Fixtures.Find(r.Targets[0]) is { } cage && Crimes?.Factions.Books(cage.Owner) == true)

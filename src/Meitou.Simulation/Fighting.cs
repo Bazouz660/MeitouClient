@@ -439,7 +439,7 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem
     static void Follow(CharacterTable table, int s, CharacterCold c)
     {
         c.Running = c.Running! with { Task = CharacterTask.Follow };
-        table.Next[s].Task = (byte)CharacterTask.Follow;
+        TaskStart.Step(table, s, CharacterTask.Follow);
         table.Next[s].TaskTime = 0;
         c.FollowPathTime = 0;
     }

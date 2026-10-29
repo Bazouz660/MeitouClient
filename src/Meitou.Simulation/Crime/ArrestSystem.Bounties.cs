@@ -208,7 +208,7 @@ public sealed partial class ArrestSystem
         {
             if (FindCageFor(world, s, c, k) is not { } other) { world.Post($"{c.Name}: no free cage nearby"); return false; }
             k.Cage = other.Id;
-            MovementSystem.GoTo(table, s, new Vector2(other.Position.X, other.Position.Z), c.RunSpeed);
+            TaskStart.StepTo(table, s, new Vector2(other.Position.X, other.Position.Z), c.RunSpeed);
             return true;
         }
         var goal = new Vector2(cage.Position.X, cage.Position.Z);
@@ -217,7 +217,7 @@ public sealed partial class ArrestSystem
         if (walking && Vector2.Distance(n.Goal, goal) > 1) return false;   // another order
         if (d <= cage.UseRange + Settings.CageReach || !walking && d <= Settings.CageSlack)
         {
-            if (walking) MovementSystem.Stop(table, s);
+            if (walking) TaskStart.Stand(table, s);
             Carry!.LetGo(world, s);
             if (!world.Fixtures.Imprison(world, k.Captive, cage, constants.PrisonTime)) { world.Post($"{c.Name} could not put the captive in the cage"); return false; }
             Claim(world, s, k.Captive, cage);
@@ -227,7 +227,7 @@ public sealed partial class ArrestSystem
         if (!walking)
         {
             if (n.Task != (byte)CharacterTask.Idle || ++k.Tries > Settings.CageWalks) return false;   // a new order, or the cage cannot be reached
-            MovementSystem.GoTo(table, s, goal, c.RunSpeed);
+            TaskStart.StepTo(table, s, goal, c.RunSpeed);
         }
         return true;
     }
@@ -310,7 +310,7 @@ public sealed partial class ArrestSystem
         var arrest = new Arrest { Guard = guard, Target = target, Faction = gc.Faction, Phase = ArrestPhase.Fight, Enslave = enslave };
         arrests.Add(arrest);
         gc.Engaged = true;
-        if (tc.Medical is { Incapacitated: true } && Carry.BeginPickUp(world, g, target)) arrest.Phase = ArrestPhase.Lift;
+        if (tc.Medical is { Incapacitated: true } && Carry.BeginPickUp(world, g, target, source: TaskSource.Npc, row: TaskType.ARREST_TARGETS_CARRIED_PERSON)) arrest.Phase = ArrestPhase.Lift;
         Note(world, ArrestEventKind.Arrest, guard, target, gc.Faction, tc.Bounties?.AmountFor(gc.Faction) ?? 0);
         return true;
     }

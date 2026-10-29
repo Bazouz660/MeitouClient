@@ -208,7 +208,7 @@ public sealed partial class CarrySystem
                 var ctx = new MedicalContext(Constants, bodyOptions, targetRace) { Toughness = target.Stats?.Toughness ?? 0, Strength = target.Stats?.Strength ?? 50, HasStats = target.Stats is not null };
                 float assassination = (cold.Stats?[StatsEnumerated.Assassination] ?? 0) * (cold.Medical?.StatMultiplier(StatsEnumerated.Assassination) ?? 1);
                 medical.KnockOut(medical.PutDownKoSeconds(ctx, assassination * 0.01f));
-                MovementSystem.Stop(table, t);
+                TaskStart.Stand(table, t);
                 table.Next[t].Velocity = Vector3.Zero;
             }
         }

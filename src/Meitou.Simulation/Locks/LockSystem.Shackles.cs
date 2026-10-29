@@ -130,10 +130,10 @@ public sealed partial class LockSystem
                 {
                     // Walking: a new order (another goal far from the wearer) ends it; a wearer that moved is followed.
                     if (next[s].Task != (byte)CharacterTask.GoTo) { c.Shackles = null; continue; }
-                    if (Vector2.Distance(next[s].Goal, Flat(next[w].Position)) > ShackleReach) MovementSystem.GoTo(table, s, Flat(next[w].Position), c.RunSpeed);
+                    if (Vector2.Distance(next[s].Goal, Flat(next[w].Position)) > ShackleReach) TaskStart.StepTo(table, s, Flat(next[w].Position), c.RunSpeed);
                     continue;
                 }
-                if (next[s].Task == (byte)CharacterTask.GoTo) MovementSystem.Stop(table, s);
+                if (next[s].Task == (byte)CharacterTask.GoTo) TaskStart.Stand(table, s);
             }
             if (c.StaggeredUntil > world.Tick) continue;   // a stagger interrupts the work
             switch (job.Work)

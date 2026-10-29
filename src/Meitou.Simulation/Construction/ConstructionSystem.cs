@@ -637,7 +637,7 @@ public sealed class ConstructionSystem : ITickSystem, ITaskOwner, ITaskHandler
         var table = world.Characters;
         var cold = table.Cold(slot)!;
         ref var n = ref table.Next[slot];
-        MovementSystem.Stop(table, slot);
+        TaskStart.Stand(table, slot);
         n.Task = (byte)task;
         n.Mode = SpeedMode.Free;
         n.TaskTime = 0;
@@ -743,7 +743,7 @@ public sealed class ConstructionSystem : ITickSystem, ITaskOwner, ITaskHandler
             }
             if (Goal(world, cold, n.Task, site) is not { } goal)
             {
-                BackToSite(ref n, cold);
+                BackToSite(table, i, cold);
                 continue;
             }
             const ushort Path = (ushort)MoveFlags.AnyPath;
@@ -818,7 +818,7 @@ public sealed class ConstructionSystem : ITickSystem, ITaskOwner, ITaskHandler
             }
             if (Goal(world, cold, n.Task, site) is not { } goal)
             {
-                BackToSite(ref n, cold);
+                BackToSite(table, i, cold);
                 continue;
             }
             if (!Arrived(n, goal)) continue;
@@ -853,7 +853,7 @@ public sealed class ConstructionSystem : ITickSystem, ITaskOwner, ITaskHandler
             // Everything given is built: hand over what is carried, else fetch a missing material (the planner's 115 -> 247), else the work ends.
             if (Carries(cold, site))
             {
-                table.Next[slot].Task = (byte)CharacterTask.DeliverMaterials;
+                TaskStart.Step(table, slot, CharacterTask.DeliverMaterials);
                 cold.BuildBar = 0;
             }
             else if (Source(world, slot, cold, site) is { } source) Fetch(world, slot, cold, source);
@@ -894,7 +894,7 @@ public sealed class ConstructionSystem : ITickSystem, ITaskOwner, ITaskHandler
         var table = world.Characters;
         var cold = table.Cold(slot)!;
         ref var n = ref table.Next[slot];
-        MovementSystem.Stop(table, slot);
+        TaskStart.Stand(table, slot);
         n.Task = (byte)CharacterTask.Build;
         n.Mode = SpeedMode.Free;
         n.TaskTime = 0;
@@ -1101,9 +1101,9 @@ public sealed class ConstructionSystem : ITickSystem, ITaskOwner, ITaskHandler
     static void Fetch(World world, int slot, CharacterCold cold, MaterialSource source)
     {
         var table = world.Characters;
-        MovementSystem.Stop(table, slot);
+        TaskStart.Stand(table, slot);
         ref var n = ref table.Next[slot];
-        n.Task = (byte)CharacterTask.FetchMaterials;
+        TaskStart.Step(table, slot, CharacterTask.FetchMaterials);
         n.Mode = SpeedMode.Free;
         n.TaskTime = 0;
         cold.BuildBar = 0;
@@ -1113,10 +1113,11 @@ public sealed class ConstructionSystem : ITickSystem, ITaskOwner, ITaskHandler
     }
 
     /// <summary>A fetcher goes back to building its site (it walks there next <c>Schedule</c>).</summary>
-    static void BackToSite(ref CharacterHot n, CharacterCold cold)
+    static void BackToSite(CharacterTable table, int slot, CharacterCold cold)
     {
+        ref var n = ref table.Next[slot];
         ClearFetch(cold);
-        n.Task = (byte)CharacterTask.Build;
+        TaskStart.Step(table, slot, CharacterTask.Build);
         n.Flags = (ushort)(n.Flags & ~(ushort)MoveFlags.AnyPath);
         n.TaskTime = 0;
     }
@@ -1163,7 +1164,7 @@ public sealed class ConstructionSystem : ITickSystem, ITaskOwner, ITaskHandler
                 if (taken > 0) world.Machines.Touch();
             }
         }
-        if (taken > 0) BackToSite(ref n, cold);
+        if (taken > 0) BackToSite(table, slot, cold);
         else End(world, slot);
     }
 
@@ -1184,7 +1185,7 @@ public sealed class ConstructionSystem : ITickSystem, ITaskOwner, ITaskHandler
         }
         if (given > 0) world.Buildings.Touch();
         // On with building; with nothing handed over the planner's next step is the building task's own (fetch or end when stalled).
-        table.Next[slot].Task = (byte)CharacterTask.Build;
+        TaskStart.Step(table, slot, CharacterTask.Build);
     }
 
     /// <summary>

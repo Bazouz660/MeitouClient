@@ -236,7 +236,7 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
         ref var n = ref world.Characters.Next[t];
         world.Characters.Cold(t)!.Engaged = true;   // the AI leaves it alone until the trade closes
         if (n.Task == (byte)CharacterTask.Wander) traderWandered = true;
-        if (n.Task is (byte)CharacterTask.Wander or (byte)CharacterTask.Idle) MovementSystem.Stop(world.Characters, t);
+        if (n.Task is (byte)CharacterTask.Wander or (byte)CharacterTask.Idle) TaskStart.Stand(world.Characters, t);
     }
 
     void Close(World world)
@@ -245,7 +245,7 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
         session = new();
         if (world.Characters.TryResolveNext(trader, out int held)) world.Characters.Cold(held)!.Engaged = false;
         if (traderWandered && world.Characters.TryResolveNext(trader, out int t) && world.Characters.Next[t].Task == (byte)CharacterTask.Idle)
-            world.Characters.Next[t].Task = (byte)CharacterTask.Wander;
+            TaskStart.Become(world, t, CharacterTask.Wander, Meitou.Data.Gameplay.Ai.TaskType.WANDERER, TaskSource.Npc, overwrite: true, check: false);
         customer = trader = CharacterId.None;
         open = traderWandered = false;
         view = null;

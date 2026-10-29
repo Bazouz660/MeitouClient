@@ -163,7 +163,7 @@ public sealed partial class ProductionSystem
         }
         e.Goal = goal;
         e.Walking = true;
-        MovementSystem.GoTo(table, i, goal, cold.RunSpeed);
+        TaskStart.StepTo(table, i, goal, cold.RunSpeed);
     }
 
     /// <summary>The carrier drops the body where it stands and the job leaves it alone from now on (the squad's give-up list).</summary>

@@ -41,7 +41,7 @@ public sealed partial class CarrySystem
                     cold.PickingUpItem = item;
                     var at = world.GroundItems.Find(item)!.Position;
                     if (Vector2.Distance(new Vector2(table.Next[slot].Position.X, table.Next[slot].Position.Z), new Vector2(at.X, at.Z)) > PlayerSystem.PickUpReach)
-                        MovementSystem.GoToFloor(world, slot, at, SpeedMode.Run);
+                        TaskStart.Walk(world, slot, at, SpeedMode.Run, TaskType.NOT_BE_UNARMED, TaskSource.Npc, overwrite: true, check: false);
                 }
                 else if (body >= 0)
                 {

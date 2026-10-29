@@ -641,7 +641,7 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
         switch (mind.Step)
         {
             case TaskType.GET_OUT_OF_BED or TaskType.GET_OUT_OF_BED_IF_ITS_EMERGENCY or TaskType.GET_OUT_OF_BED_ONCE_HEALED:
-                Become(table, slot, CharacterTask.Idle);
+                Become(world, slot, CharacterTask.Idle);
                 return;
             case TaskType.UNEQUIP_WEAPON:
                 table.Cold(slot)!.DrawnWeapon = WeaponKinds.None;
@@ -662,11 +662,11 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
                 break;
             case TaskType.LEAVE_BUILDING when mind.Squad.Ai?.Home is { } leaving && world.Sight.BuildingOf(slot) == leaving.Key:
                 // 200 Task_LeaveBuilding: to 1.1 of the door's span past its outer point (A + (A - B) x 1.1) of the home's first door, until outside.
-                if (LeavePoint(world, leaving) is { } outside && !GoToSpot(world.Walkability, table, slot, mind, outside, GiveUp.Target, SpeedMode.Walk, slack: 10)) return;
+                if (LeavePoint(world, leaving) is { } outside && !GoToSpot(world, slot, mind, outside, GiveUp.Target, SpeedMode.Walk, slack: 10)) return;
                 break;
             case TaskType.GET_NEAR_TO when !mind.Plan[0].Target.IsNone:
                 // 40 Following to within 10 of the plan's target, then the goal's own act-out.
-                if (!GoToSpot(world.Walkability, table, slot, mind, Flat(mind.Plan[0].Target.Position), GiveUp.Target, SpeedMode.Walk, slack: 10)) return;
+                if (!GoToSpot(world, slot, mind, Flat(mind.Plan[0].Target.Position), GiveUp.Target, SpeedMode.Walk, slack: 10)) return;
                 break;
         }
         if (mind.Resume)
@@ -689,7 +689,7 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
                     mind.PlaceAt = at;
                     mind.Version = -1;
                     Interlocked.Exchange(ref placing, 1);
-                    Become(table, slot, CharacterTask.Idle);
+                    Become(world, slot, CharacterTask.Idle);
                     return;
                 }
             }
@@ -700,19 +700,19 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
                 // Round its post; at a borrowed home (the bar of a bar package) round that.
                 mind.WanderCentre = board.Home is { } borrowed && borrowed != board.OwnHome ? Flat(borrowed.Position) : mind.Post;
                 mind.WanderRadius = Settings.MillRadius;
-                Become(table, slot, CharacterTask.Wander);
+                Become(world, slot, CharacterTask.Wander);
                 break;
             case AiBehaviour.Follow:
                 mind.FollowTarget = goal.Task.Target == TaskTargetType.SquadMission ? board.MissionTarget : CharacterId.None;
-                Become(table, slot, CharacterTask.Follow);
+                Become(world, slot, CharacterTask.Follow);
                 break;
             case AiBehaviour.Patrol:
                 if (board.CurrentClass is PackageClass.Patrol or PackageClass.PatrolRunning && board.RouteIndex < board.Route.Length)
                 {
-                    if (!leader) Become(table, slot, CharacterTask.Follow);
-                    else WalkTo(table, slot, board.Route[board.RouteIndex], board.CurrentClass == PackageClass.PatrolRunning ? SpeedMode.Run : SpeedMode.Walk);
+                    if (!leader) Become(world, slot, CharacterTask.Follow);
+                    else WalkTo(world, slot, board.Route[board.RouteIndex], board.CurrentClass == PackageClass.PatrolRunning ? SpeedMode.Run : SpeedMode.Walk);
                 }
-                else Become(table, slot, CharacterTask.Wander);
+                else Become(world, slot, CharacterTask.Wander);
                 break;
             case AiBehaviour.Sleep when table.Cold(slot)!.InSomething == Locks.HeldState.Bed:
                 break;   // lying in its bed
@@ -722,9 +722,9 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
                 // Going to bed without a bed spot at home: an occupier's bed of the town it holds, else the NPC bed search.
                 var spare = behaviour == AiBehaviour.Sleep && type is TaskType.GO_HOME_AND_GO_TO_BED or TaskType.GO_HOME_AND_GO_TO_BED_SECURE ? SpareBed(world, board, mind, slot) : null;
                 var (target, home, floor, facing) = spare is not null ? (Flat(spare.Position), true, spare.Position.Y, (float?)null) : SpotFor(mind, board, behaviour, type);
-                if (GoToSpot(world.Walkability, table, slot, mind, target, home ? GiveUp.Home : GiveUp.Post, type is TaskType.RUN_AWAY_HOMETOWN or TaskType.TRAVEL_TO_TARGET_TOWN_FAST ? SpeedMode.Run : SpeedMode.Walk, height: floor))
+                if (GoToSpot(world, slot, mind, target, home ? GiveUp.Home : GiveUp.Post, type is TaskType.RUN_AWAY_HOMETOWN or TaskType.TRAVEL_TO_TARGET_TOWN_FAST ? SpeedMode.Run : SpeedMode.Walk, height: floor))
                 {
-                    Become(table, slot, behaviour == AiBehaviour.Sleep ? CharacterTask.Rest : CharacterTask.Idle);
+                    Become(world, slot, behaviour == AiBehaviour.Sleep ? CharacterTask.Rest : CharacterTask.Idle);
                     // At its home's bed: the serial step lies it in (Task_UseBed via 98 Sleeping); resting on the floor stays the fallback when no bed is free.
                     if (behaviour == AiBehaviour.Sleep && home && floor is not null && (spare?.Id ?? BedSpotOf(board, mind)) is { } bed)
                     {
@@ -741,11 +741,11 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
                 // A shop picked is remembered, so the arrival knows what it sells (the same pick as the target's: the roll is this tick's).
                 if (mind.Target is null && behaviour == AiBehaviour.Shop) mind.ShopAt = ShopFor(Places(board.Town), mind, TargetRoll(world, table.IdOf(slot), behaviour), RandomShopping(world, board.Town));
                 mind.Target ??= TargetFor(world, table.IdOf(slot), behaviour, board.Town, mind) ?? (behaviour == AiBehaviour.TownNode ? OccupiedSpot(world, board, table.IdOf(slot)) : null);
-                if (mind.Target is not { } goTo) Become(table, slot, CharacterTask.Idle);
-                else if (GoToSpot(world.Walkability, table, slot, mind, Flat(goTo), GiveUp.Target, SpeedMode.Walk,
+                if (mind.Target is not { } goTo) Become(world, slot, CharacterTask.Idle);
+                else if (GoToSpot(world, slot, mind, Flat(goTo), GiveUp.Target, SpeedMode.Walk,
                     float.IsNaN(goTo.Y) ? WorkReach : 0, behaviour == AiBehaviour.ToTown || float.IsNaN(goTo.Y) ? null : goTo.Y))   // a building without a counter: near its origin, on any floor
                 {
-                    Become(table, slot, CharacterTask.Idle);
+                    Become(world, slot, CharacterTask.Idle);
                     // At the shop (Task_Shopping 119 starts): the first unit is bought a second on, then one a second (BuyForShoppers).
                     if (behaviour == AiBehaviour.Shop && mind.ShopAt is not null && mind.NextBuyTick == 0)
                     {
@@ -767,11 +767,11 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
                         mind.WorkHungerRate = WorkHungerRateOf(building);
                     }
                 }
-                if (mind.Target is not { } working) Become(table, slot, CharacterTask.Idle);
-                else if (GoToSpot(world.Walkability, table, slot, mind, Flat(working), GiveUp.Target, SpeedMode.Walk, WorkReach))
+                if (mind.Target is not { } working) Become(world, slot, CharacterTask.Idle);
+                else if (GoToSpot(world, slot, mind, Flat(working), GiveUp.Target, SpeedMode.Walk, WorkReach))
                 {
                     // At the building: facing it, at its work clip.
-                    Become(table, slot, CharacterTask.Idle);
+                    Become(world, slot, CharacterTask.Idle);
                     var face = working - n.Position;
                     if (face.X * face.X + face.Z * face.Z > 1e-4f) n.Yaw = MathF.Atan2(face.X, face.Z);
                     if (table.Cold(slot) is { } workerCold) workerCold.ActionClip = mind.WorkClip;
@@ -780,23 +780,23 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             case AiBehaviour.Investigate:
             {
                 // Task_InvestigateAlarms: within 100 of the alarm it stops and faces it (the serial step counts the look-about down); else it runs to 30 short of it, on its side.
-                if (AlarmOf(world, slot, type, board) is not { } alarm) { Become(table, slot, CharacterTask.Idle); break; }
+                if (AlarmOf(world, slot, type, board) is not { } alarm) { Become(world, slot, CharacterTask.Idle); break; }
                 var gap = n.Position - alarm.Position;
                 if (gap.LengthSquared() <= Crime.CrimeSystem.AlarmLookRange * Crime.CrimeSystem.AlarmLookRange)
                 {
-                    if (mind.Walking) Become(table, slot, CharacterTask.Idle);
+                    if (mind.Walking) Become(world, slot, CharacterTask.Idle);
                     mind.Walking = false;
                     if (gap.X * gap.X + gap.Z * gap.Z > 1e-4f) n.Yaw = MathF.Atan2(-gap.X, -gap.Z);
                     break;
                 }
                 var side = Flat(gap);
                 var spot = Flat(alarm.Position) + (side.LengthSquared() > 1e-4f ? Vector2.Normalize(side) : Vector2.UnitX) * Crime.CrimeSystem.AlarmApproach;
-                GoToSpot(world.Walkability, table, slot, mind, spot, GiveUp.Target, SpeedMode.Run);
+                GoToSpot(world, slot, mind, spot, GiveUp.Target, SpeedMode.Run);
                 break;
             }
             case AiBehaviour.Assault:
                 // Stands until the serial step sends the attack on the member picked (the combat system walks it there).
-                Become(table, slot, CharacterTask.Idle);
+                Become(world, slot, CharacterTask.Idle);
                 mind.AssaultTarget = AssaultTargetFor(world, slot, board);
                 if (!mind.AssaultTarget.IsNone) Interlocked.Exchange(ref assaulting, 1);
                 break;
@@ -807,9 +807,9 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
                 break;
             case AiBehaviour.Travel:
                 // To the mission town's centre; the goal is no longer wanted once inside the town (Desire), long before the centre.
-                if (DestinationCentre(world, board) is not { } town) Become(table, slot, CharacterTask.Idle);
-                else if (GoToSpot(world.Walkability, table, slot, mind, town, GiveUp.Target, type == TaskType.TRAVEL_TO_TARGET_TOWN_FAST ? SpeedMode.Run : SpeedMode.Walk))
-                    Become(table, slot, CharacterTask.Idle);
+                if (DestinationCentre(world, board) is not { } town) Become(world, slot, CharacterTask.Idle);
+                else if (GoToSpot(world, slot, mind, town, GiveUp.Target, type == TaskType.TRAVEL_TO_TARGET_TOWN_FAST ? SpeedMode.Run : SpeedMode.Walk))
+                    Become(world, slot, CharacterTask.Idle);
                 break;
             case AiBehaviour.Relax:
             case AiBehaviour.Sit:
@@ -828,7 +828,7 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
                     // Already on its chair (moved onto it below, off the floor point the walk ended at).
                     bool seated = chair && n.Task == (byte)CharacterTask.Rest && !mind.Walking
                         && Vector2.DistanceSquared(Flat(n.Position), Flat(claimed.Position)) < 1 && MathF.Abs(n.Position.Y - claimed.Position.Y) <= FloorSlack;
-                    if (seated || GoToSpot(world.Walkability, table, slot, mind, Flat(claimed.Position), GiveUp.Seat, SpeedMode.Walk, height: claimed.Position.Y))
+                    if (seated || GoToSpot(world, slot, mind, Flat(claimed.Position), GiveUp.Seat, SpeedMode.Walk, height: claimed.Position.Y))
                     {
                         if (chair)
                         {
@@ -839,7 +839,7 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
                             mind.SitHungerRate = claimed.HungerRate;
                         }
                         else if (claimed.Kind == HomeSpotKind.Training) n.Yaw = claimed.Yaw;
-                        Become(table, slot, claimed.Kind == HomeSpotKind.Training ? CharacterTask.Idle : CharacterTask.Rest);
+                        Become(world, slot, claimed.Kind == HomeSpotKind.Training ? CharacterTask.Idle : CharacterTask.Rest);
                     }
                 }
                 break;
@@ -847,13 +847,13 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
                 if (board.TurretClaims.TryGetValue(slot, out int t) && (uint)t < (uint)board.Turrets.Count && board.Turrets[t].Turret is { } turret)
                 {
                     var spot = TurretSpot(world, turret);
-                    if (GoToSpot(world.Walkability, table, slot, mind, Flat(spot), GiveUp.Post, SpeedMode.Walk, TurretSlack, spot.Y))
+                    if (GoToSpot(world, slot, mind, Flat(spot), GiveUp.Post, SpeedMode.Walk, TurretSlack, spot.Y))
                     {
                         table.Next[slot].Yaw = turret.Yaw;   // at the gun, facing its way
-                        Become(table, slot, CharacterTask.Idle);
+                        Become(world, slot, CharacterTask.Idle);
                     }
                 }
-                else Become(table, slot, CharacterTask.Idle);
+                else Become(world, slot, CharacterTask.Idle);
                 break;
         }
     }
@@ -992,8 +992,10 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
         return null;
     }
 
-    bool GoToSpot(IWalkability walk, CharacterTable table, int slot, AiMind mind, Vector2 target, GiveUp giveUp, byte mode, float slack = 0, float? height = null)
+    bool GoToSpot(World world, int slot, AiMind mind, Vector2 target, GiveUp giveUp, byte mode, float slack = 0, float? height = null)
     {
+        var walk = world.Walkability;
+        var table = world.Characters;
         if (height is { } spotY && walk.FloorNear(target.X, target.Y, spotY, FloorSlack) is { } onFloor) (target, height) = (Flat(onFloor), onFloor.Y);
         ref var n = ref table.Next[slot];
         var here = new Vector2(n.Position.X, n.Position.Z);
@@ -1020,7 +1022,7 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
         }
         if (away)
         {
-            WalkTo(table, slot, target, mode);
+            WalkTo(world, slot, target, mode);
             if (height is { } floor && n.Task == (byte)CharacterTask.GoTo)
             {
                 // A spot on a floor (a node, seat or gun) is walked onto, not to a stride off it.
@@ -1043,7 +1045,7 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
         {
             if (table.Cold(s)?.Ai is not { PlaceAt: { } at } mind) continue;
             mind.PlaceAt = null;
-            MovementSystem.Stop(table, s);
+            TaskStart.Stand(table, s);
             ref var n = ref table.Next[s];
             n.Position = at;
             n.Velocity = Vector3.Zero;
@@ -1097,23 +1099,26 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
     /// <summary>The radius of the ring a resident back from its town's time unloaded is put on round its spot (units; half a human's separation radius).</summary>
     const float ResumeRing = 4;
 
-    /// <summary>Switches to a standing task (wander, follow, idle, rest), dropping a walk in progress; nothing when it is doing it already.</summary>
-    static void Become(CharacterTable table, int slot, CharacterTask task)
+    /// <summary>
+    /// Switches to a standing task (wander, follow, idle, rest), dropping a walk in progress; nothing when it is doing it already. A goal's start on the character's own slot
+    /// (<see cref="TaskStart.StartOwn"/>: the think runs in parallel), as the row of the goal it acts out.
+    /// </summary>
+    static void Become(World world, int slot, CharacterTask task)
     {
-        ref var n = ref table.Next[slot];
-        if (n.Task == (byte)task) return;
-        MovementSystem.Stop(table, slot);
-        n.Task = (byte)task;
-        n.TaskTime = 0;
+        if (world.Characters.Next[slot].Task == (byte)task) return;
+        TaskStart.StartOwn(world, slot, new TaskRequest(task, GoalRow(world, slot), TaskSource.Goal));
     }
 
-    /// <summary>Sends it walking (or running) to a point, unless it is going there already.</summary>
-    static void WalkTo(CharacterTable table, int slot, Vector2 to, byte mode)
+    /// <summary>Sends it walking (or running) to a point, unless it is going there already (<see cref="TaskStart.StartOwn"/>, as <see cref="Become"/>).</summary>
+    static void WalkTo(World world, int slot, Vector2 to, byte mode)
     {
-        ref var n = ref table.Next[slot];
+        ref var n = ref world.Characters.Next[slot];
         if (n.Task == (byte)CharacterTask.GoTo && Vector2.DistanceSquared(n.Goal, to) < 1) { n.Mode = mode; return; }
-        MovementSystem.GoTo(table, slot, to, mode);
+        TaskStart.StartOwn(world, slot, new TaskRequest(CharacterTask.GoTo, GoalRow(world, slot), TaskSource.Goal) { Goal = to, Mode = mode });
     }
+
+    /// <summary>The row of the goal the character acts out (14 Idleness without one).</summary>
+    static TaskType GoalRow(World world, int slot) => world.Characters.Cold(slot)?.Ai?.Goal?.Task.Type ?? TaskType.IDLE;
 
     // ------------------------------------------------------------------ serial steps
 

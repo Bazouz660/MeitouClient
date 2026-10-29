@@ -47,10 +47,10 @@ public sealed partial class CaptiveSystem
         if (Vector2.Distance(new Vector2(n.Position.X, n.Position.Z), to) > WorshipReach)
         {
             wc.ActionClip = null;
-            if (n.Task != (byte)CharacterTask.GoTo || Vector2.Distance(n.Goal, to) > WorshipReach) MovementSystem.GoTo(table, w, to, SpeedMode.Walk);
+            if (n.Task != (byte)CharacterTask.GoTo || Vector2.Distance(n.Goal, to) > WorshipReach) TaskStart.Walk(world, w, to, SpeedMode.Walk, RowOf(j.Kind), TaskSource.Goal, overwrite: true, check: false);
             return true;
         }
-        if (n.Task == (byte)CharacterTask.GoTo) MovementSystem.Stop(table, w);
+        if (n.Task == (byte)CharacterTask.GoTo) TaskStart.Stand(table, w);
         var face = cage.Position - n.Position;
         if (face.X * face.X + face.Z * face.Z > 1e-4f) n.Yaw = MathF.Atan2(face.X, face.Z);
         wc.ActionClip = BowClip;
@@ -81,7 +81,7 @@ public sealed partial class CaptiveSystem
         }
         if (best is null) return;
         cold.PickingUpItem = best.Id;
-        if (MathF.Sqrt(d2best) > PlayerSystem.PickUpReach) MovementSystem.GoToFloor(world, slot, best.Position, SpeedMode.Run);
+        if (MathF.Sqrt(d2best) > PlayerSystem.PickUpReach) TaskStart.Walk(world, slot, best.Position, SpeedMode.Run, TaskType.ANIMAL_FETCH_A_LIMB, TaskSource.Goal, overwrite: true, check: false);
     }
 
     /// <summary>
@@ -127,7 +127,7 @@ public sealed partial class CaptiveSystem
         var dir = new Vector2(Rng.Float(h) * 2 - 1, Rng.Float(h ^ 0x9E3779B97F4A7C15) * 2 - 1);
         dir = dir.LengthSquared() > 1e-6f ? Vector2.Normalize(dir) : Vector2.UnitX;
         float leg = PlayLeg + PlayLegRandom * Rng.Float(h ^ 0x5851F42D4C957F2D);
-        MovementSystem.GoTo(table, w, new Vector2(n.Position.X, n.Position.Z) + dir * leg, SpeedMode.Run);
+        TaskStart.Walk(world, w, new Vector2(n.Position.X, n.Position.Z) + dir * leg, SpeedMode.Run, RowOf(j.Kind), TaskSource.Goal, overwrite: true, check: false);
         return true;
     }
 
@@ -139,7 +139,7 @@ public sealed partial class CaptiveSystem
         ref var n = ref table.Next[w];
         var to = new Vector2(table.Next[t].Position.X, table.Next[t].Position.Z);
         if (Vector2.Distance(new Vector2(n.Position.X, n.Position.Z), to) > 10 && (n.Task != (byte)CharacterTask.GoTo || Vector2.Distance(n.Goal, to) > 20))
-            MovementSystem.GoTo(table, w, to, SpeedMode.Run);
+            TaskStart.Walk(world, w, to, SpeedMode.Run, RowOf(j.Kind), TaskSource.Goal, overwrite: true, check: false);
         return true;
     }
 }

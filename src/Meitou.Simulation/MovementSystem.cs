@@ -286,11 +286,14 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
     {
         tasks.Register(CharacterTask.GoTo, this);
         tasks.Register(CharacterTask.Follow, this);
+        tasks.Register(CharacterTask.Idle, this);
+        tasks.Register(CharacterTask.Wander, this);
     }
 
     /// <summary>
     /// A move order's walk (row 29: <see cref="CharacterCold.OrderMove"/>, the Hold point follows it) to <see cref="TaskRequest.Point"/>'s floor, or a follow of <see cref="TaskRequest.Target"/>
     /// (<see cref="CharacterCold.FollowOrder"/>; row 45 guards it). An order's follow breaks a circle of followers back to the character (<see cref="BreakCircle(CharacterTable, CharacterId)"/>).
+    /// An engine walk goes to <see cref="TaskRequest.Goal"/> as given (<see cref="GoTo"/>); an engine's idle, wander or follow of the squad's leader (no target) stops the character on it.
     /// </summary>
     void ITaskHandler.Start(World world, int slot, in TaskRequest request)
     {
@@ -298,11 +301,22 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
         var cold = table.Cold(slot)!;
         if (request.Task == CharacterTask.GoTo)
         {
-            GoToFloor(world, slot, request.Point, cold.RunSpeed);
+            if (request.Goal is { } goal)
+            {
+                GoTo(table, slot, goal, request.Mode ?? cold.RunSpeed);
+                return;
+            }
+            GoToFloor(world, slot, request.Point, request.Mode ?? cold.RunSpeed);
             cold.OrderMove = request.Row == TaskType.MOVE_CUS_ORDERED;
             return;
         }
         Stop(table, slot);
+        if (request.Task != CharacterTask.Follow || request.Target.IsNone)
+        {
+            // A standing task, or following the squad's leader (an engine start): the character stops and takes it up.
+            table.Next[slot].Task = (byte)request.Task;
+            return;
+        }
         cold.FollowOrder = request.Target;
         cold.FollowPathTime = 0;
         cold.FollowHeading = Vector2.Zero;
@@ -340,7 +354,7 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
             if (order == ordered)
             {
                 cold.FollowOrder = CharacterId.None;
-                if (table.Next[slot].Task == (byte)CharacterTask.Follow) Stop(table, slot);
+                if (table.Next[slot].Task == (byte)CharacterTask.Follow) TaskStart.Stand(table, slot);
             }
             else if (table.TryResolveNext(order, out int next)) BreakCircle(world, ordered, next, seen);
         }
@@ -433,7 +447,7 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
                 n.Flags = (ushort)(n.Flags & ~(ushort)MoveFlags.HasPath);
                 n.PathCursor = 0;
                 n.TaskTime = FailedPathWait;
-                if (n.Task == (byte)CharacterTask.GoTo) { n.Task = (byte)CharacterTask.Idle; cold.OrderQueue.Clear(); }
+                if (n.Task == (byte)CharacterTask.GoTo) { TaskStart.Step(table, slot, CharacterTask.Idle); cold.OrderQueue.Clear(); }
             }
         }
     }
@@ -459,14 +473,14 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
                 if (!cold.FollowOrder.IsNone && !table.IsAlive(cold.FollowOrder))
                 {
                     cold.FollowOrder = CharacterId.None;
-                    n.Task = (byte)CharacterTask.Idle;
+                    TaskStart.Step(table, i, CharacterTask.Idle);
                     continue;
                 }
                 var squad = cold.SquadId >= 0 ? world.Squads.Find(cold.SquadId) : null;
                 var leader = Followed(squad, cold);
                 if (leader.IsNone || leader.Slot == i || !table.IsAlive(leader))
                 {
-                    n.Task = (byte)CharacterTask.Wander;
+                    TaskStart.Step(table, i, CharacterTask.Wander);
                     continue;
                 }
                 if (table.Cold(leader.Slot)?.CarriedBy == table.IdOf(i)) continue;   // it carries its leader: the squad follows it, it does not follow itself
@@ -825,7 +839,7 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
                         cold.OrderQueue.RemoveAt(0);
                         n.Flags |= (ushort)MoveFlags.NeedPath;
                     }
-                    else n.Task = (byte)CharacterTask.Idle;
+                    else TaskStart.Step(table, i, CharacterTask.Idle);
                 }
                 else if (!replaced && n.Task == (byte)CharacterTask.Attack) n.TaskTime = PursuitSystem.RepathSeconds;   // a fighter at the end of its path to a moving target asks for the next one soon (PursuitSystem)
                 else if (!replaced)
@@ -938,7 +952,7 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
                     if (n.Task == (byte)CharacterTask.Follow) cold.FollowPathTime = FollowPathSeconds;
                     n.Flags = (ushort)(n.Flags & ~(ushort)MoveFlags.HasPath);
                     n.TaskTime = FailedPathWait;
-                    if (n.Task == (byte)CharacterTask.GoTo) { n.Task = (byte)CharacterTask.Idle; cold.OrderQueue.Clear(); }
+                    if (n.Task == (byte)CharacterTask.GoTo) { TaskStart.Step(table, i, CharacterTask.Idle); cold.OrderQueue.Clear(); }
                 }
             }
         moved:

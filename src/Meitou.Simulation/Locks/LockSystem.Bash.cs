@@ -74,7 +74,7 @@ public sealed partial class LockSystem
             if (face.LengthSquared() > 1e-4f) next[s].Yaw = MathF.Atan2(face.X, face.Y);
             // Someone in the way: the task is impossible (the plan fails; an NPC looks again at the next check).
             if (InTheWay(world, s, face)) { StopBashing(table, s, c); continue; }
-            if (c.BashOrdered && next[s].Task == (byte)CharacterTask.GoTo) MovementSystem.Stop(table, s);
+            if (c.BashOrdered && next[s].Task == (byte)CharacterTask.GoTo) TaskStart.Stand(table, s);
             // Every update in reach books Burglary against the door's owner, before the blow (Task_BashDoor, locks.md); the pursuit's bashers book none yet.
             if (c.BashOrdered && Crimes is not null && door.Owner >= 0 && door.Owner != c.Faction) Crimes.SetPending(world, s, Crime.CrimeCode.Burglary, door.Owner, CharacterId.None, Crime.CrimeSystem.MinTimer);
             if (c.BashTime < 0) c.BashTime = 0;

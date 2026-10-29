@@ -175,7 +175,7 @@ public sealed class BodySystem(GameConstants constants, BodyOptions? options = n
             if (medical.Incapacitated && cold.InSomething == Locks.HeldState.Bed && n.Task == (byte)CharacterTask.Sleep) n.Flags = (ushort)(n.Flags & ~(ushort)MoveFlags.AnyPath);
             else if (medical.Incapacitated && (n.Task != (byte)CharacterTask.Idle || (n.Flags & (ushort)MoveFlags.AnyPath) != 0))
             {
-                MovementSystem.Stop(table, i);
+                TaskStart.Stand(table, i);
                 n.Velocity = Vector3.Zero;
             }
             if (medical.Dead) continue;
@@ -237,7 +237,7 @@ public sealed class BodySystem(GameConstants constants, BodyOptions? options = n
             {
                 if (e.Kind is MedicalEventKind.Died or MedicalEventKind.KnockedOut)
                 {
-                    if (cold.InSomething != Locks.HeldState.Bed) MovementSystem.Stop(table, i);   // one in a bed stays in it
+                    if (cold.InSomething != Locks.HeldState.Bed) TaskStart.Stand(table, i);   // one in a bed stays in it
                     n.Velocity = Vector3.Zero;
                 }
             }

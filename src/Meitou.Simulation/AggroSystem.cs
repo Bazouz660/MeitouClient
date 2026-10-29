@@ -893,7 +893,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         taken.Add(i);
         JoinMates(world, table, i, t, fighters);
         var targetId = table.IdOf(t);
-        world.Defer(new AttackOrder(fighters, targetId) { Tick = world.Tick + 1 });
+        world.Defer(new AttackOrder(fighters, targetId) { Tick = world.Tick + 1, Source = table.Cold(i)!.IsPlayer ? null : TaskSource.Npc });
         Started++;
         if (world.Sounds is { } sounds) foreach (var fighter in fighters) sounds.Enqueue(new SoundEvent(SoundKind.Alert, fighter, targetId, next[t].Position));   // the fighters' alert voices
         if (Settings.RecordLog) log.Add(new AggroEntry(world.Tick, fighters[0], targetId, table.Cold(i)!.Faction, target.Faction, e.Amount, fighters.Count - 1));
@@ -1026,10 +1026,11 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
             }
             s.Tracked = false;
             if (cold.Medical is { Incapacitated: true } || cold.InCombat || n.Task != (byte)CharacterTask.Idle) continue;   // down (it wakes into wandering) or busy with something else
-            MovementSystem.Stop(table, i);
-            n.Task = player ? (s.Task == (byte)CharacterTask.Follow ? s.Task : (byte)CharacterTask.Idle)
+            // The routine is taken up again as the fight's own end (a step: the provenance, a follow row's kept through its fight, stays).
+            TaskStart.Stand(table, i);
+            TaskStart.Step(table, i, (CharacterTask)(player ? (s.Task == (byte)CharacterTask.Follow ? s.Task : (byte)CharacterTask.Idle)
                 : s.Task is (byte)CharacterTask.Wander or (byte)CharacterTask.Follow or (byte)CharacterTask.Idle ? s.Task
-                : s.Task == (byte)CharacterTask.GoTo ? (byte)CharacterTask.Idle : (byte)CharacterTask.Wander;
+                : s.Task == (byte)CharacterTask.GoTo ? (byte)CharacterTask.Idle : (byte)CharacterTask.Wander));
             n.TaskTime = 0;
         }
     }

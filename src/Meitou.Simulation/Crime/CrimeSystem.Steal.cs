@@ -148,7 +148,7 @@ public sealed partial class CrimeSystem
             else
             {
                 if (watcher.InSomething == Locks.HeldState.Bed) world.Fixtures.LeaveBed(world, watcherId);
-                else if (table.Next[w].Task == (byte)CharacterTask.Rest) table.Next[w].Task = (byte)CharacterTask.Idle;
+                else if (table.Next[w].Task == (byte)CharacterTask.Rest) TaskStart.Become(world, w, CharacterTask.Idle, Meitou.Data.Gameplay.Ai.TaskType.IDLE, TaskSource.Npc, overwrite: true, check: false);
                 // One staying low or playing dead stands (posture 0, docs/game/ragdolls.md "Staying low").
                 if (watcher.Medical is { } low) low.StandUp();
                 world.Defer(new Dialogue.DialogueEvent(watcherId, thiefId, CaughtEvent) { Tick = world.Tick + 1 });

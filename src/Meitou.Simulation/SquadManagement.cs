@@ -365,7 +365,7 @@ public static class SquadManagement
         cold.Jobs.Clear();
         cold.Save = null;   // no longer in the player's platoon file
         table.Next[slot].Mode = SpeedMode.Walk;
-        MovementSystem.Stop(table, slot);
+        TaskStart.Stand(table, slot);
         squad.Members.Add(id);
         squad.Leader = id;
         world.Squads.Add(squad);

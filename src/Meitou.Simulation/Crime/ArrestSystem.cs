@@ -1,5 +1,6 @@
 using System.Numerics;
 using Meitou.Data.Gameplay;
+using Meitou.Data.Gameplay.Ai;
 using Meitou.Simulation.Combat;
 using Meitou.Simulation.Locks;
 
@@ -424,7 +425,7 @@ public sealed partial class ArrestSystem(CrimeSystem crimes, GameConstants const
         {
             arrest.Phase = ArrestPhase.Fine;
             arrest.Fine = FineFor(bounty);
-            MovementSystem.GoTo(table, g, new Vector2(table.Next[t].Position.X, table.Next[t].Position.Z), SpeedMode.Free);
+            TaskStart.Walk(world, g, new Vector2(table.Next[t].Position.X, table.Next[t].Position.Z), SpeedMode.Free, TaskType.ARREST_TARGET, TaskSource.Npc, overwrite: true, check: false);
             Note(world, ArrestEventKind.Fine, guard, target, gc.Faction, arrest.Fine);
         }
         else BeginFight(world, arrest, g, t);
@@ -456,7 +457,7 @@ public sealed partial class ArrestSystem(CrimeSystem crimes, GameConstants const
                 if (Vector3.DistanceSquared(table.Next[s].Position, at) <= r * r) fighters.Add(m);
             }
         }
-        world.Defer(new AttackOrder(fighters, table.IdOf(t)) { Tick = world.Tick + 1 });
+        world.Defer(new AttackOrder(fighters, table.IdOf(t)) { Tick = world.Tick + 1, Source = TaskSource.Npc });
     }
 
     /// <summary>One tick of an arrest; false when it is over.</summary>
@@ -484,7 +485,7 @@ public sealed partial class ArrestSystem(CrimeSystem crimes, GameConstants const
                 }
                 if (gap <= Settings.TalkRange)
                 {
-                    MovementSystem.Stop(table, g);
+                    TaskStart.Stand(table, g);
                     if (world.Player.Money > a.Fine && tc.Bounties is { } ledger && ledger.Of(a.Faction) is { } entry)
                     {
                         world.Player.Money -= a.Fine;
@@ -506,7 +507,7 @@ public sealed partial class ArrestSystem(CrimeSystem crimes, GameConstants const
                 // Keep walking after the target (a new path when it moved on, the first-aid pattern's cadence).
                 var goal = new Vector2(table.Next[t].Position.X, table.Next[t].Position.Z);
                 if ((world.Tick + g) % 15 == 0 && (gn.Task != (byte)CharacterTask.GoTo || Vector2.DistanceSquared(goal, gn.Goal) > 20 * 20))
-                    MovementSystem.GoTo(table, g, goal, SpeedMode.Free);
+                    TaskStart.Walk(world, g, goal, SpeedMode.Free, TaskType.ARREST_TARGET, TaskSource.Npc, overwrite: true, check: false);
                 return true;
             }
             case ArrestPhase.Fight:
@@ -517,7 +518,7 @@ public sealed partial class ArrestSystem(CrimeSystem crimes, GameConstants const
                     if (gc.Carrying == a.Target) { a.Phase = ArrestPhase.Lift; return true; }
                     if (!tc.CarriedBy.IsNone) return End(world, a, ArrestEventKind.GaveUp);
                     if (gc.InCombat) return true;   // still trading blows (the KO tick, a squad mate): wait
-                    if (Carry.BeginPickUp(world, g, a.Target)) { a.Phase = ArrestPhase.Lift; a.Waited = 0; return true; }
+                    if (Carry.BeginPickUp(world, g, a.Target, source: TaskSource.Npc, row: TaskType.ARREST_TARGET)) { a.Phase = ArrestPhase.Lift; a.Waited = 0; return true; }
                     a.Waited += dt;
                     return a.Waited <= 10 || End(world, a, ArrestEventKind.GaveUp);
                 }
@@ -559,7 +560,7 @@ public sealed partial class ArrestSystem(CrimeSystem crimes, GameConstants const
                 bool walking = gn.Task == (byte)CharacterTask.GoTo;
                 if (d <= cage.UseRange + Settings.CageReach || !walking && d <= Settings.CageSlack)
                 {
-                    MovementSystem.Stop(table, g);
+                    TaskStart.Stand(table, g);
                     Carry!.LetGo(world, g);
                     if (!world.Fixtures.Imprison(world, a.Target, cage, constants.PrisonTime)) return ToCage(world, a, g, t);
                     Deeds?.Caged(world, g, t);
@@ -571,7 +572,7 @@ public sealed partial class ArrestSystem(CrimeSystem crimes, GameConstants const
                 if (!walking)
                 {
                     if (++a.Tries > Settings.CageWalks) return Drop(world, a, g);
-                    MovementSystem.GoTo(table, g, new Vector2(cage.Position.X, cage.Position.Z), SpeedMode.Free);
+                    TaskStart.Walk(world, g, new Vector2(cage.Position.X, cage.Position.Z), SpeedMode.Free, TaskType.FIND_CAGE_AND_PUT_IN_IF_BOUNTY, TaskSource.Npc, overwrite: true, check: false);
                 }
                 return true;
             }
@@ -588,7 +589,7 @@ public sealed partial class ArrestSystem(CrimeSystem crimes, GameConstants const
         var cage = world.Fixtures.FindCage(world, gc, table.Next[g].Position, home, f => Reserved(f, a));
         if (cage is null) return Drop(world, a, g);
         a.Cage = cage.Id;
-        MovementSystem.GoTo(table, g, new Vector2(cage.Position.X, cage.Position.Z), SpeedMode.Free);
+        TaskStart.Walk(world, g, new Vector2(cage.Position.X, cage.Position.Z), SpeedMode.Free, TaskType.FIND_CAGE_AND_PUT_IN_IF_BOUNTY, TaskSource.Npc, overwrite: true, check: false);
         return true;
     }
 
@@ -600,7 +601,7 @@ public sealed partial class ArrestSystem(CrimeSystem crimes, GameConstants const
 
     bool Drop(World world, Arrest a, int g)
     {
-        MovementSystem.Stop(world.Characters, g);
+        TaskStart.Stand(world.Characters, g);
         Carry?.LetGo(world, g);
         if (world.Characters.TryResolveNext(a.Target, out int t) && world.Characters.Cold(t) is { IsPlayer: true } tc)
             world.Post($"{world.Characters.Cold(g)!.Name} found no free cage for {tc.Name}");
@@ -614,7 +615,7 @@ public sealed partial class ArrestSystem(CrimeSystem crimes, GameConstants const
         if (table.TryResolveNext(a.Guard, out int g) && table.Cold(g) is { } gc)
         {
             gc.Engaged = false;
-            if (table.Next[g].Task == (byte)CharacterTask.GoTo) MovementSystem.Stop(table, g);
+            if (table.Next[g].Task == (byte)CharacterTask.GoTo) TaskStart.Stand(table, g);
         }
         Note(world, kind, a.Guard, a.Target, a.Faction, 0);
         return false;

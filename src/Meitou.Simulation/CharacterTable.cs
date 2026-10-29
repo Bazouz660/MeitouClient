@@ -464,6 +464,9 @@ public sealed class CharacterCold
     public bool Operating { get; set; }
     /// <summary>The whole-body clip (an ANIMATION record name) a captor holds while it works a captive standing (<see cref="Kidnap.CaptiveSystem"/>: "chop down static", "eat", "medic"); null: none. Derived, not hashed.</summary>
     public string? ActionClip { get; set; }
+    /// <summary>Debug builds: the table tick (<see cref="CharacterTable.Ticks"/>) and the task the start path last set (<see cref="TaskStart.CheckStarts"/>); not hashed.</summary>
+    internal long TaskSetTick = -1;
+    internal byte TaskSet;
 }
 
 /// <summary>
@@ -527,8 +530,12 @@ public sealed class CharacterTable
         set => phase = value;
     }
 
+    /// <summary>The ticks begun (a paused interface step counts): the start path's debug stamp (<see cref="CharacterCold.TaskSetTick"/>).</summary>
+    internal long Ticks { get; private set; }
+
     internal void BeginTick()
     {
+        Ticks++;
         Array.Copy(previous, next, highWater);
         inTick = true;
     }

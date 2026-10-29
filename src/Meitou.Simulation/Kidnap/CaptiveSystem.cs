@@ -321,6 +321,25 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
         }
     }
 
+    /// <summary>The row a job's walks act out (<see cref="TaskStart.Walk(World, int, Vector2, byte, TaskType, TaskSource, bool, bool)"/>): the task its goal plans to (<see cref="CaptiveJobKind"/>).</summary>
+    static TaskType RowOf(CaptiveJobKind kind) => kind switch
+    {
+        CaptiveJobKind.Kill => TaskType.KILL_CAGE_OCCUPANT,
+        CaptiveJobKind.Eat or CaptiveJobKind.EatBody => TaskType.EAT_TARGET_ALIVE,
+        CaptiveJobKind.Process => TaskType.PROCESS_AND_STRIP_NEW_SLAVE,
+        CaptiveJobKind.Gather => TaskType.GET_SLAVE,
+        CaptiveJobKind.Deliver => TaskType.GIVE_ALL_MY_SLAVES_TO,
+        CaptiveJobKind.CageSelf => TaskType.SLAVE_GET_IN_MY_MASTERS_CAGE,
+        CaptiveJobKind.Capture => TaskType.CAPTURE_NEW_SLAVES,
+        CaptiveJobKind.Carry => TaskType.CARRY_WOUNDED_SLAVES,
+        CaptiveJobKind.Shout => TaskType.WORK_THE_SLAVES,
+        CaptiveJobKind.Liberate => TaskType.LIBERATE_ALL_THE_PRISONERS,
+        CaptiveJobKind.EatCrops => TaskType.EAT_CROPS,
+        CaptiveJobKind.Worship => TaskType.WORSHIP_TARGET,
+        CaptiveJobKind.DogPlay => TaskType.PLAY_BECAUSE_I_HAVE_A_LIMB_IN_MOUTH,
+        _ => TaskType.CHASE_ALLY_DOGS_WITH_MOUTH_LIMBS,
+    };
+
     /// <summary>A job for goal <paramref name="type"/> of the member in <paramref name="slot"/>, when the goal is one of the captive goals and it finds a target (null otherwise).</summary>
     CaptiveJob? TryStart(World world, Squad squad, Blackboard board, int slot, CharacterCold cold, TaskType type)
     {
@@ -648,7 +667,7 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
         {
             if (!Walk(world, j, w, cage, out bool arrived)) return End(world, j, CaptiveEventKind.GaveUp);
             if (!arrived) return true;
-            MovementSystem.Stop(table, w);
+            TaskStart.Stand(table, w);
             j.Phase = CaptivePhase.Work;
             j.Time = 0;
             wc.ActionClip = j.Kind switch { CaptiveJobKind.Kill => ChopClip, CaptiveJobKind.Eat => EatClip, _ => ProcessClip };
@@ -666,7 +685,7 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
                 j.Blows++;
                 world.Defer(new Dialogue.DialogueEvent(j.Captive, j.Worker, ScreamingTorture) { Tick = world.Tick + 1 });
                 bool died = combat.Execute(world, w, c, j.Blows);
-                if (cc.Medical.Incapacitated) MovementSystem.Stop(table, c);
+                if (cc.Medical.Incapacitated) TaskStart.Stand(table, c);
                 return died ? Over(world, j, true) : true;
             }
             case CaptiveJobKind.Eat:
@@ -722,10 +741,10 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
                     SetWait(givenUp, j.Captive, world.GameHours + Settings.GiveUpHours);
                     return End(world, j, CaptiveEventKind.GaveUp);
                 }
-                MovementSystem.GoTo(table, w, to, SpeedMode.Walk);
+                TaskStart.Walk(world, w, to, SpeedMode.Walk, RowOf(j.Kind), TaskSource.Goal, overwrite: true, check: false);
                 return true;
             }
-            MovementSystem.Stop(table, w);
+            TaskStart.Stand(table, w);
             j.Phase = CaptivePhase.Work;
             j.Time = 0;
             wc.ActionClip = ProcessClip;
@@ -756,7 +775,7 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
             return false;
         }
         if (world.Fixtures.IsShut(cage.Building) && world.Fixtures.DoorOwner(cage.Building) == j.Faction) world.Fixtures.SetDoorsLocked(cage.Building, false);
-        MovementSystem.GoTo(table, w, new Vector2(cage.Position.X, cage.Position.Z), SpeedMode.Walk);
+        TaskStart.Walk(world, w, new Vector2(cage.Position.X, cage.Position.Z), SpeedMode.Walk, RowOf(j.Kind), TaskSource.Goal, overwrite: true, check: false);
         return true;
     }
 
@@ -811,10 +830,10 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
             {
                 if (walking) return true;
                 if (++j.Walks > Settings.Walks) return End(world, j, CaptiveEventKind.GaveUp);
-                MovementSystem.GoTo(table, w, new Vector2(body.X, body.Z), SpeedMode.Run);
+                TaskStart.Walk(world, w, new Vector2(body.X, body.Z), SpeedMode.Run, RowOf(j.Kind), TaskSource.Goal, overwrite: true, check: false);
                 return true;
             }
-            MovementSystem.Stop(table, w);
+            TaskStart.Stand(table, w);
             j.Phase = CaptivePhase.Work;
             j.Time = 0;
             wc.DrawnWeapon = WeaponKinds.None;   // 220's B list: !hasWeaponEquipped
@@ -869,10 +888,10 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
             {
                 if (walking) return true;
                 if (++j.Walks > Settings.Walks) return End(world, j, CaptiveEventKind.GaveUp);
-                MovementSystem.GoTo(table, w, new Vector2(site.Position.X, site.Position.Z), SpeedMode.Run);
+                TaskStart.Walk(world, w, new Vector2(site.Position.X, site.Position.Z), SpeedMode.Run, RowOf(j.Kind), TaskSource.Goal, overwrite: true, check: false);
                 return true;
             }
-            MovementSystem.Stop(table, w);
+            TaskStart.Stand(table, w);
             j.Phase = CaptivePhase.Work;
             j.Time = 0;
             wc.ActionClip = EatClip;
@@ -908,7 +927,7 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
         bool eaten = medical.BeingEaten(rate, dt, ctx, data.BodyOptions.Dismemberment != Dismemberment.Never, events, vampiric);
         foreach (var e in events)
         {
-            if (e.Kind is MedicalEventKind.Died or MedicalEventKind.KnockedOut) MovementSystem.Stop(table, c);
+            if (e.Kind is MedicalEventKind.Died or MedicalEventKind.KnockedOut) TaskStart.Stand(table, c);
             else if (e.Kind == MedicalEventKind.PartSevered)
             {
                 table.LimbsChanged.Enqueue((c, medical.Parts[e.Part].Template.LimbSlot));
@@ -958,7 +977,7 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
         // Then its orders object is reset: the one-shot orders and the perma-jobs are destroyed (FUN_140507530, FUN_140507280); job 187 is implicit (AiSystem.ObeyedRoles).
         cc.Jobs.Clear();
         cc.OrderQueue.Clear();
-        if (cc.OrderMove && table.Next[c].Task == (byte)CharacterTask.GoTo) MovementSystem.Stop(table, c);
+        if (cc.OrderMove && table.Next[c].Task == (byte)CharacterTask.GoTo) TaskStart.Stand(table, c);
     }
 
     /// <summary>The record types a new slave is stripped of, in the original's order.</summary>
@@ -981,7 +1000,7 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
         {
             wc.Engaged = false;
             wc.ActionClip = null;
-            if (table.Next[w].Task == (byte)CharacterTask.GoTo) MovementSystem.Stop(table, w);
+            if (table.Next[w].Task == (byte)CharacterTask.GoTo) TaskStart.Stand(table, w);
         }
         if (kind is { } k) Note(world, k, j);
         return false;

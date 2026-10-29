@@ -471,7 +471,7 @@ public sealed partial class ProductionSystem : ITickSystem, ITaskOwner, ITaskHan
         var table = world.Characters;
         var cold = table.Cold(slot)!;
         ref var n = ref table.Next[slot];
-        MovementSystem.Stop(table, slot);
+        TaskStart.Stand(table, slot);
         n.Task = (byte)CharacterTask.Operate;
         n.Mode = SpeedMode.Free;
         n.TaskTime = 0;

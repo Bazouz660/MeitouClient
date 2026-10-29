@@ -185,7 +185,7 @@ public sealed partial class DialogueSystem : ITickSystem, IStateHashed, IDialogu
             if (!table.TryResolveNext(talker, out int p) || !table.TryResolveNext(target, out int n) || !Awake(table, p) || !Awake(table, n)) CancelApproach(world);
             else if (InTalkRange(table, p, n))
             {
-                MovementSystem.Stop(table, p);
+                TaskStart.Stand(table, p);
                 var (who, whom) = (talker, target);
                 CancelApproach(world);
                 Start(world, whom, who, DialogueEvents.PlayerTalkToMe);
@@ -250,7 +250,7 @@ public sealed partial class DialogueSystem : ITickSystem, IStateHashed, IDialogu
     {
         var table = world.Characters;
         table.Cold(slot)!.Engaged = true;
-        if (table.Next[slot].Task is (byte)CharacterTask.Wander or (byte)CharacterTask.Idle) MovementSystem.Stop(table, slot);
+        if (table.Next[slot].Task is (byte)CharacterTask.Wander or (byte)CharacterTask.Idle) TaskStart.Stand(table, slot);
     }
 
     static void Release(World world, CharacterId id)

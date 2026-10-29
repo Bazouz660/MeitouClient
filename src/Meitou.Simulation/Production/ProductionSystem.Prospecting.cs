@@ -33,7 +33,7 @@ public sealed partial class ProductionSystem
     {
         var table = world.Characters;
         ref var n = ref table.Next[slot];
-        MovementSystem.Stop(table, slot);
+        TaskStart.Stand(table, slot);
         n.Task = (byte)CharacterTask.Prospect;
         n.TaskTime = 0;
         table.Cold(slot)!.Prospecting = 0;

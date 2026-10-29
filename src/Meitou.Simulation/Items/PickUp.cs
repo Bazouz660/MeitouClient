@@ -98,7 +98,7 @@ namespace Meitou.Simulation
                     continue;
                 }
                 c.PickingUpItem = null;
-                if (next[s].Task == (byte)CharacterTask.GoTo) MovementSystem.Stop(table, s);
+                if (next[s].Task == (byte)CharacterTask.GoTo) TaskStart.Stand(table, s);
                 // An animal takes a limb in its mouth and eats it later (docs/game/character-stats.md "Eating").
                 if (Items.FeedSystem.CanHold(c, item.Item))
                 {
