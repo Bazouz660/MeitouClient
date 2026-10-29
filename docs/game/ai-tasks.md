@@ -735,13 +735,39 @@ vfunc 5 `FUN_14050caf0`). TaskData fields: +0x108 desire (a member function, nea
   every node that acts or has an effect becomes a task (factory) in a new queue, leaf first. A failed plan clears the queue unless the root keeps it.
 - **Pick**: candidates are tried by key, highest first (a taken key is raised by 0.0001 until free, so a tie goes to the later-listed goal; **Verified**, `FUN_14050df10`); the first whose plan has a value above 0 becomes current, a candidate whose plan fails has its
   target cleared and the next is tried.
-- **Source order** (`AITaskSytem::chooseGoal` `FUN_140510ef0`, KenshiLib names, **Observed**): player orders (OrdersReceiver +0x38, `checkOrders`), jobs,
-  urgent perma-jobs, priority-3 goals, other perma-jobs, priority-2 then priority-1 goals, the hold-position task; the first source that plans wins.
-  **Committed mode** (**Verified**, the chooser's second argument, set by `FUN_140511130` while a committing current goal's commitment runs): only
-  sources above the running goal's priority (+0x20c) are tried (none above 2; priority-3 only at 2; priority-3 and -2 at 1); if none plans, the
-  chooser returns and the running goal keeps its plan. Without a current goal the mode is off.
-  Goals sit in per-priority lists (`taskPriority`: 1 fluff, 2 non-urgent, 3 urgent, 4 obedience). Orders are queued at priority 3. Consequences for
-  fights: [combat](combat.md#fight-lifecycle-and-orders).
+- **Source order**: [Precedence](#precedence).
+
+## Precedence
+
+**Verified** (decompile: `AITaskSytem::chooseGoal` `FUN_140510ef0`, order step `checkOrders` `FUN_140510920`, job pass `FUN_14050e5b0`, tier pass `FUN_140510d60`,
+update `FUN_140511130`, `Character::setupAI` `FUN_140621b70`; KenshiLib names **Observed**). How orders, jobs and goals take turns.
+
+- **When**: the chooser runs on a replan request (`AITaskSytem` vfunc 3 `FUN_140506cf0` sets +0x1b0; the update `FUN_140511130` chooses, otherwise `FUN_14050d970`
+  only steps the running plan): a plan finished, an order added, a stagger (`forceOrderInsert`), `underMeleeAttack` with the fight off unless the target gets up or is
+  player-side and moving ([combat](combat.md#fight-lifecycle-and-orders)). No periodic replan was found (**Observed**).
+- **Sources**, in order; the first whose pick has a plan above 0 runs:
+  1. The front of the order queue (+0x40 deque, count +0x60): first popped when done (list A holds) or its desire x finder is 0 or less; then planned with the search flag
+     ([planner](#planner)). A player character's order that fails to plan shows its failure text (vfunc 0x2d8) and stays queued (**Observed**); the chooser goes on.
+  2. Committed mode (the update's argument while a committing current goal's commitment runs; off without a current goal) with the running goal's priority (+0x20c) above 2: stop, the goal keeps its plan.
+  3. The entries of a second list (+0x70, emptied with the queue by `FUN_1405074a0`; what fills it **Unknown**) become candidates; with a job list, the **urgent job pass** adds
+     Obedient Slave 187 (slave state 1, not sneaking) and the kind-2 jobs (turret guard 234) while the AI's sensed-enemy count +0xbc is non-zero, and picks.
+  4. Priority-3 goals: the squad's (blackboard, `FUN_140269240` / `FUN_14026b790`) and the character's own (+0xa0 + 0x18 x priority), one pick.
+  5. Committed with the running priority above 1: stop. Else **every job** in list order, then the implicit jobs ([Perma-jobs](#perma-jobs)).
+  6. Priority-2 goals; committed with the running priority above 0: stop; priority-1 goals; the hold-position task (+0x190); else AI vfunc 0x98.
+- **Goals of a character** (`setupAI`): everyone 14 Idleness (priority 1, weight 0.1) and 32 Self preservation (priority 3, weight 1, target itself). A player-faction character
+  (its faction's +0x250 set, `FUN_1407916d0`) also 243 Getting food (priority 3, weight 0.5) unless it has it; a player-faction animal also its race's `AI Goals` and 259 Picking
+  up food (priority 3, 0.5), and loses 230. A character of another faction gets its race's `AI Goals`; when an object reached through Character +0x658 (+0x78, +0xf8) has +0x210
+  null, the FACTION record's `AI Goals` are added first (meaning **Unknown**). Hold adds 16 at priority 3; AI packages add theirs ([AI](../simulation.md#ai)). Priorities
+  (`taskPriority`): 1 fluff, 2 non-urgent, 3 urgent, 4 obedience; orders are queued at 3.
+- **So, for a player character**: an order beats everything, Self preservation included (an ordered medic keeps treating while hit; each landed blow staggers it and the order
+  is planned again, [combat](combat.md#fight-lifecycle-and-orders)). Self preservation (while an attacker is within 181.7), Getting food and Hold's attack on sight beat every
+  job but the urgent ones (a turret's row refuses a threat within 40 anyway). A job higher in the list takes over at the next choice; the implicit jobs come after the list, Idleness last. Passive leaves
+  Self preservation alone; the Jobs switch only gates the job passes. A fight is a task (4 `Task_MeleeAttack`) in a goal's or an order's plan; `CombatClassAI` steers it and
+  chooses nothing; the fight ends with the task.
+- **Meitou**: the player's characters run no chooser; each system acts on its own and an order replaces any task. Self preservation is `RetaliationSystem.SelfDefends`:
+  it answers when the character is idle, a bodyguard following, looting with the attacker within 40, or on a task its jobs started (`PermaJobs.FromJob`: `JobIndex`,
+  `Implicit`, `JobTask`). Gaps: getting food is not a goal (`FeedSystem`); the immediate answer ignores "moving"; a higher list job does not take over a running medic,
+  rescue or foraging job; mates join a fight only from idle (the original's way a player character joins a mate is **Unknown**).
 
 ## Combat goals
 
@@ -958,8 +984,8 @@ A character's job list (the Orders menu's "Perma-Jobs"; class `OrdersReceiver`, 
   | 98, 175, 261 → 153 (153 has no +4: the bed order stays one-shot) | 1 | 0 |
   | 58, 250, 57, 238, 16, 125, 106, 138, 187 (plain jobs) | 1 | 0 |
 
-- **Choosing** (**Verified**, decision pass `FUN_140510ef0`, job scoring `FUN_14050e5b0`, pick `FUN_140510650`): order list → jobs of kind 2 while
-  the AI flag at +0xbc is set → urgent tier (3) → all jobs → tiers 2, 1 → idle. Within a job pass each job considered gets the key N+8, N+7, ...
+- **Choosing** (**Verified**, decision pass `FUN_140510ef0`, job scoring `FUN_14050e5b0`, pick `FUN_140510650`; [Precedence](#precedence)): order list → jobs of kind 2 while
+  the AI flag at +0xbc is set (and 187) → priority-3 goals → all jobs → tiers 2, 1 → idle. Within a job pass each job considered gets the key N+8, N+7, ...
   (N = list length) in list order, kept when its desire is above 0. The pick takes the highest key above 0. **So the first job that can run wins,
   and a higher job takes over as soon as it can run** at the next re-plan. A job is skipped when: it has no TaskData; the switch is off and its
   type is not 16, 31, 45, 57, 58 or 250 (`FUN_14050c1c0`: these run regardless, so the medic job ignores the switch and rescue does not); the

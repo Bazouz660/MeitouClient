@@ -318,6 +318,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         cold.Snatching = false;
         cold.Foraging = false;
         cold.LootFlags = LootStart.None;
+        cold.JobTask = null;   // an order's (or an NPC's); the job passes mark theirs
     }
 
     /// <summary>Ends a pick-up, put-down or loot (serial phases): back to the task before it.</summary>
@@ -902,7 +903,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
             int rescue = cold.Jobs.FindIndex(j => j.Type == Meitou.Data.Gameplay.Ai.TaskType.FIND_AND_RESCUE_IF_THERES_BEDS);
             if (!Free(table, i) && !(cold.JobIndex > rescue && cold is { Fleeing: false } && CanCarry(cold))) continue;
             if (!MayRescue(world, i, cold)) continue;
-            RescueSomeone(world, i, taken);
+            if (RescueSomeone(world, i, taken)) cold.JobTask = CharacterTask.PickUp;
         }
         if (Settings.RescueNpcLeaders) RescueLeaders(world, table, taken);
     }

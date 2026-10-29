@@ -118,6 +118,7 @@ public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions 
         cold.TreatTarget = patient;
         cold.TreatSplint = splint;
         cold.ResumeTask = keep;
+        cold.JobTask = null;   // an order's treatment; RunJobs marks a job's
     }
 
     /// <summary>Dialogue events 18-22 (EV_HEALING_OTHER_START ... EV_FIRSTAID_KIT_EMPTY).</summary>
@@ -496,7 +497,11 @@ public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions 
         {
             var type = cold.Jobs[k].Type;
             if (type is not (TaskType.JOB_MEDIC or TaskType.JOB_REPAIR_ROBOT or TaskType.SPLINT_JOB) || !Production.PermaJobs.FreeFor(cold, task, k)) continue;
-            if (type == TaskType.SPLINT_JOB ? SplintSomeone(world, i, taken) : HealSomeone(world, i, taken, robotics: type == TaskType.JOB_REPAIR_ROBOT)) return;
+            if (type == TaskType.SPLINT_JOB ? SplintSomeone(world, i, taken) : HealSomeone(world, i, taken, robotics: type == TaskType.JOB_REPAIR_ROBOT))
+            {
+                cold.JobTask = CharacterTask.Treat;   // a job's treatment: Self preservation comes first (RetaliationSystem)
+                return;
+            }
         }
     }
 

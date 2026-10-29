@@ -82,6 +82,7 @@ public sealed partial class ProductionSystem
                 if (found is not { } body) continue;
                 var resume = cold.JobIndex >= 0 || cold.Implicit is not null ? cold.ResumeTask : task;
                 if (!Carry.BeginPickUp(world, i, body.Id, resume)) continue;
+                cold.JobTask = CharacterTask.PickUp;
                 lifted.Add(body.Id);
                 errands[id] = new Errand { Kind = kind, Goal = body.Goal, Body = body.Id };
                 break;

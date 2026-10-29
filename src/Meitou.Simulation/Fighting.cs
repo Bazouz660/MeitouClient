@@ -234,8 +234,9 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
 /// <see cref="CheckEveryTicks"/> ticks, a character that is awake, armed with a
 /// <see cref="Fighter"/>, not fighting already, and that someone is attacking, fights that attacker, and so do its squad mates within <see cref="JoinRange"/> units of it that are
 /// free too, whether or not the attacked one is free itself, against an attacker within <see cref="ProtectReach"/> of it (never against a mate of the same squad; a minded NPC
-/// only by a protect goal, <see cref="ProtectsMates"/>). An NPC always answers; one of the player's characters answers only while it has no order (task <see cref="CharacterTask.Idle"/>: not walking to an order, treating or
-/// resting), so a player who sends a character away is obeyed (<see cref="SelfDefends"/>); Passive keeps it from helping others, not from defending itself.
+/// only by a protect goal, <see cref="ProtectsMates"/>). An NPC always answers; one of the player's characters answers only while it has no order (task <see cref="CharacterTask.Idle"/>,
+/// or a task its jobs started: not walking to an order, treating or resting on one), so a player who sends a character away is obeyed (<see cref="SelfDefends"/>); Passive keeps it
+/// from helping others, not from defending itself.
 /// The orders go into the world's deferred list for the next tick (<see cref="World.Defer"/>) and are marked <see cref="AttackOrder.Defensive"/>. With <see cref="SquadAi.Help"/> the player's
 /// free characters also defend characters of allied factions (<see cref="HelpAllies"/>).
 /// </summary>
@@ -490,8 +491,9 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem
 
     /// <summary>
     /// Whether the attacked character itself answers (Self preservation, docs/game/combat.md "Fight lifecycle and orders"): Passive does not stop it. A player's character has
-    /// it only without an order (its orders outrank the goal), and only against an attacker within <see cref="SelfDefenceReach"/>; a Loot order gives way to one within
-    /// <see cref="ImmediateReach"/>. An NPC always answers (engine choice: its attack-on-sight goal covers the farther attackers).
+    /// it only without an order (its orders outrank the goal; a job's task does not, the goal is tried before the jobs that are not urgent, docs/game/ai-tasks.md "Precedence"),
+    /// and only against an attacker within <see cref="SelfDefenceReach"/>; a Loot order gives way to one within <see cref="ImmediateReach"/>. An NPC always answers (engine choice:
+    /// its attack-on-sight goal covers the farther attackers).
     /// </summary>
     static bool SelfDefends(CharacterTable table, int slot, HashSet<int> taken, Vector3 attacker)
     {
@@ -500,7 +502,8 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem
         var d = attacker - table.Next[slot].Position;
         float d2 = d.X * d.X + d.Z * d.Z;
         if (d2 > SelfDefenceReach * SelfDefenceReach) return false;
-        return task == (byte)CharacterTask.Idle || cold.Guarding && task == (byte)CharacterTask.Follow || task == (byte)CharacterTask.Loot && d2 <= ImmediateReach * ImmediateReach;
+        return task == (byte)CharacterTask.Idle || cold.Guarding && task == (byte)CharacterTask.Follow || Production.PermaJobs.FromJob(cold, (CharacterTask)task)
+            || task == (byte)CharacterTask.Loot && d2 <= ImmediateReach * ImmediateReach;
     }
 
     /// <summary>Whether a character comes to another's defence: a player's character only without an order and not Passive (<c>scoreProtectAllies</c> is 0 when Passive).</summary>

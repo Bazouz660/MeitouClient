@@ -39,6 +39,7 @@ public sealed partial class CarrySystem
             taken.Add(best);
             Begin(table, i, table.IdOf(best), CharacterTask.Loot, cold.JobIndex >= 0 || cold.Implicit is not null ? cold.ResumeTask : (CharacterTask)next[i].Task);
             cold.Foraging = true;
+            cold.JobTask = CharacterTask.Loot;
         }
     }
 

@@ -88,6 +88,13 @@ public static class PermaJobs
         k >= 0 && (task is CharacterTask.Idle or CharacterTask.Wander or CharacterTask.Follow || cold.Implicit is not null || cold.JobIndex > k)
         && ((cold.Orders & CharacterOrders.Jobs) != 0 || IgnoresSwitch(cold.Jobs[k].Type));
 
+    /// <summary>
+    /// Whether the character's <paramref name="task"/> came from its jobs (a list job, an implicit job or a job pass: <see cref="CharacterCold.JobIndex"/>, <see cref="CharacterCold.Implicit"/>,
+    /// <see cref="CharacterCold.JobTask"/>), not from an order. The original tries the priority-3 goals (Self preservation, Hold's attack on sight) before the jobs that are not urgent
+    /// (docs/game/ai-tasks.md "Precedence"), so such a task gives way to them.
+    /// </summary>
+    public static bool FromJob(CharacterCold cold, CharacterTask task) => cold.JobIndex >= 0 || cold.Implicit is not null || cold.JobTask == task;
+
     /// <summary>The index of the first job of <paramref name="type"/> in the list, -1 when none.</summary>
     public static int IndexOf(CharacterCold cold, TaskType type) => cold.Jobs.FindIndex(j => j.Type == type);
 
