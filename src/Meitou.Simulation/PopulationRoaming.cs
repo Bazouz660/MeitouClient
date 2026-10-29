@@ -363,8 +363,7 @@ public sealed partial class PopulationSystem
             world.Platoons.Remove(p.Id);
             return;
         }
-        var lead = table.Previous[squad.Leader.Slot].Position;
-        p.Position = new Vector2(lead.X, lead.Z);
+        p.Position = PlatoonPosition(world, squad, p.Position);
 
         // Away from every active zone for long enough: only the stand-in goes on.
         if (Wanted(p)) p.UnloadAtTick = -1;
@@ -490,25 +489,71 @@ public sealed partial class PopulationSystem
         return at.X < minX || at.Z < minZ || at.X > maxX || at.Z > maxZ;
     }
 
+    /// <summary>A member the squad's place may follow: there, not down (<see cref="Ai.SquadIntact.Down"/>: out, dead or carried) and not in a bed or cage.</summary>
+    static bool Standing(CharacterTable table, CharacterId id) =>
+        !Ai.SquadIntact.Down(table, id) && table.TryResolveNext(id, out int s) && table.Cold(s) is { InSomething: Locks.HeldState.None };
+
+    /// <summary>
+    /// The squad's effective leader (<c>FUN_140792b90</c>, <b>Verified</b>): its leader while standing, else the cached <see cref="Squad.Backup"/> while standing, else the first member (in
+    /// list order) that is not down and stands in an active zone, which is cached as the backup; else the leader itself, down or not. The member scan is skipped while the leader is in
+    /// a bed or cage: the original tests the <i>leader's</i> bed or cage state there, not the member's (<b>Verified</b> by the decompile; possibly a slip of the original).
+    /// </summary>
+    CharacterId EffectiveLeader(World world, Squad squad)
+    {
+        var table = world.Characters;
+        if (Standing(table, squad.Leader)) return squad.Leader;
+        if (Standing(table, squad.Backup)) return squad.Backup;
+        if (table.TryResolveNext(squad.Leader, out int ls) && table.Cold(ls) is { InSomething: not Locks.HeldState.None }) return squad.Leader;
+        foreach (var m in squad.Members)
+        {
+            if (Ai.SquadIntact.Down(table, m) || !table.TryResolveNext(m, out int s)) continue;
+            var at = table.Previous[s].Position;
+            if (!active.Contains(WorldLayout.ZoneOf(at.X, at.Z))) continue;
+            squad.Backup = m;
+            return m;
+        }
+        return squad.Leader;
+    }
+
+    /// <summary>
+    /// A loaded platoon's place (<c>FUN_1404fed50</c>, <b>Verified</b>): its effective leader's while that one is not down, else the mean of the members that are not dead (a knocked-out
+    /// one counts), else where it was.
+    /// </summary>
+    Vector2 PlatoonPosition(World world, Squad squad, Vector2 last)
+    {
+        var table = world.Characters;
+        var lead = EffectiveLeader(world, squad);
+        if (!Ai.SquadIntact.Down(table, lead) && table.TryResolveNext(lead, out int ls))
+        {
+            var at = table.Previous[ls].Position;
+            return new Vector2(at.X, at.Z);
+        }
+        var sum = Vector2.Zero;
+        int n = 0;
+        foreach (var m in squad.Members)
+        {
+            if (!table.TryResolveNext(m, out int s) || table.Cold(s) is not { } cold || cold.DiedTick >= 0 || cold.Medical is { Dead: true }) continue;
+            sum += new Vector2(table.Previous[s].Position.X, table.Previous[s].Position.Z);
+            n++;
+        }
+        return n > 0 ? sum / n : last;
+    }
+
     readonly List<CharacterId> thinStay = [], thinGo = [];
 
     /// <summary>
     /// The unload of a platoon the original does not keep (<c>FUN_14079c600</c>, serial phase): not the whole squad at once but each living member by its own place. One out of the
-    /// zone is destroyed ("wandered out of zone"); while the anchor (the leader) is out of it, so is every member within 600 of it ("leader wandered out of zone"). A member in
-    /// the zone and not near an absent leader stays, and the platoon with it. True when some stay (the others are gone, the squad goes on); false when none would, which leaves the
-    /// whole squad to the caller's despawn (and its pool payment) unchanged. <b>Not built</b>: the exemption of a member in the camera's view (<c>Character+0x1a9</c>, render
-    /// state), the first pass that moves carried and dead members into squads of their own (<c>FUN_14079c1c0</c>), and the anchor's fallback when the leader is down (<c>FUN_140792b90</c>:
-    /// a living member in an active zone; here the first such, else the leader).
+    /// zone is destroyed ("wandered out of zone"); while the anchor (the effective leader, <see cref="EffectiveLeader"/>) is out of it, so is every member within 600 of it ("leader
+    /// wandered out of zone"). A member in the zone and not near an absent leader stays, and the platoon with it. True when some stay (the others are gone, the squad goes on); false
+    /// when none would, which leaves the whole squad to the caller's despawn (and its pool payment) unchanged. <b>Not built</b>: the exemption of a member in the camera's view
+    /// (<c>Character+0x1a9</c>, render state), the split of imprisoned members into squads of their own first (<c>FUN_14079c1c0</c>), and that dead members count as staying in the zone (here a corpse is no part of it).
     /// </summary>
     bool ThinOutOfZone(World world, Platoon p, Squad squad)
     {
         var table = world.Characters;
         thinStay.Clear();
         thinGo.Clear();
-        CharacterId anchor = squad.Leader;
-        if (!Living(world, anchor))
-            foreach (var m in squad.Members)
-                if (Living(world, m) && table.TryResolveNext(m, out int s) && !OutOfZone(table.Next[s].Position)) { anchor = m; break; }
+        var anchor = EffectiveLeader(world, squad);
         bool leaderOut = false;
         var anchorAt = Vector3.Zero;
         if (table.TryResolveNext(anchor, out int anchorSlot))

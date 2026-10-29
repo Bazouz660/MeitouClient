@@ -37,9 +37,11 @@ Do not reuse one zero-weight convention for both.
 ### Squad leader
 
 `ActivePlatoon` (KenshiLib 1ce4a16, **Observed**) keeps `squadleader` (`+0xa0`, set by `setSquadLeader`, which gives it member type 2) and `backupLeader`
-(`+0xa8`). `getSquadLeader` (`140792b90`) returns the leader unless it is unconscious or `inSomething` (`+0x2f8`), else the backup under the same test, else
-the first conscious member of the container list (animals included) in a loaded zone, cached as the backup; the stored leader is never replaced there. Who
-becomes `squadleader` after the leader dies is **Unknown**. A campaign's announcement is task 129 in the leader's AI package, and animals get only
+(`+0xa8`). The effective leader (`getSquadLeader`, `FUN_140792b90`, **Verified**) is the leader while it is not down (`FUN_1405c9e10`: knocked out, dead, ragdolled or carried, or leg
+state 3+) and not `inSomething` (`+0x2f8`, bed or cage), else the backup under the same test, else the first member of the container list (animals included) that is not down and
+stands in a loaded or requested zone, cached as the backup; else the leader itself, usable or not. That member scan tests the *leader's* `+0x2f8`, not the member's (so a leader in a
+bed or cage is kept). The stored leader is never replaced there. Who becomes `squadleader` after the leader dies is **Unknown**. Meitou (`PopulationSystem.EffectiveLeader`, `Squad.Backup`):
+the same rule for a loaded platoon's place and the unload anchor; down = out (unconscious or dead) or carried, a limb hold and playing dead are not modelled. A campaign's announcement is task 129 in the leader's AI package, and animals get only
 `dialog animal`, so an animal never announces. Meitou keeps one leader: a squad without one (death, leaving, a save or stand-in without a leader) takes its
 first member that is not an animal, else its first (`SquadRegistry.Successor`, engine choice). A player squad edited on the squads screen still makes its index 0 the leader.
 
@@ -180,12 +182,12 @@ no path re-running the initial resident placement was found (**Unknown** whether
 **Active platoon out of zone** (**Verified** `FUN_14079c600`, called by the platoon step `FUN_1405003c0` each frame once `FUN_1404febd0`'s timer has run out): a platoon that is
 kept (`FUN_1407ec570`) is unloaded as above (it stays active only while a member has `Character+0x1a9`, "in view"). One that is not kept is not destroyed whole: each member is tested
 with `FUN_1407c06f0`, **out of zone** when its zone is neither loaded nor requested or it lies outside that zone's box trimmed by 170 (`FUN_140a09770`, as the activation box above; a
-member with `+0x1a9` never is). An out-of-zone member is destroyed (`FUN_140799af0`, reason "wandered out of zone"); when the anchor (`FUN_140792b90`: the leader, else a living member
+member with `+0x1a9` never is). An out-of-zone member is destroyed (`FUN_140799af0`, reason "wandered out of zone"); when the anchor (`FUN_140792b90`: the leader, else a member that is up
 in a loaded or requested zone) is out of zone, so is every in-zone member not in view within 600 of it (squared 360000, `DAT_141714bd4`; 3D distance; reason "leader wandered out of zone").
-The platoon stays active while any member is left, and the test repeats every frame; with none left it is destroyed as above. Before that, members that are carried (`+0x3d4`), dead
-(`+0x2f8` = 2) or flagged `+0x320` are split into squads of their own (`FUN_14079c1c0`; **Unknown** what +0x320 and +0x3d4 mean). Meitou (`PopulationSystem.ThinOutOfZone`, Faithful
-unload of a non-kept roaming squad, after its grace): the same per-member rule on living members, except the in-view exemption (render state), the split of carried members and the
-anchor fallback (first living member in an active zone, else the leader); when no living member would stay the squad is despawned whole as before. Pool payment (`FUN_140796b30`,
+The platoon stays active while any member is left, and the test repeats every frame; with none left it is destroyed as above. Before that, a platoon with 2 or more members whose members include one carried (`+0x3d4`), imprisoned
+(`+0x2f8` = 2) or flagged `+0x320` runs the split pass `FUN_14079c1c0` (what +0x320 means is **Unknown**). Meitou (`PopulationSystem.ThinOutOfZone`, Faithful
+unload of a non-kept roaming squad, after its grace): the same per-member rule on living members, with the effective leader as anchor, except the in-view exemption (render state) and the split;
+when no living member would stay the squad is despawned whole as before. Pool payment (`FUN_140796b30`,
 by the platoon's cached living count) is **Unknown** for a partly destroyed platoon: Meitou pays only when the squad goes whole.
 
 **The player's dead** (**Verified** by decompile; Meitou `SquadManagement.BuryDead`): the death handler (`FUN_1407a6200`, the "{1} is dead." strings) moves a

@@ -54,6 +54,11 @@ public sealed class Squad
     public List<CharacterId> Members { get; } = [];
     /// <summary>The member the others follow (the role-2 leader, else the first member); <see cref="CharacterId.None"/> when none is alive.</summary>
     public CharacterId Leader { get; set; } = CharacterId.None;
+    /// <summary>
+    /// The cached backup leader (the original's <c>backupLeader</c> <c>+0xa8</c>, found by <see cref="PopulationSystem"/>'s effective-leader rule when the leader is down or held); the
+    /// platoon's place follows the effective leader. Not saved; hashed while set.
+    /// </summary>
+    public CharacterId Backup { get; set; } = CharacterId.None;
     /// <summary>The squad's purse in cats (save key <c>money</c> of the platoon; a roaming squad carries it over its unloading). The economy stage spends it.</summary>
     public long Money { get; set; }
     /// <summary>The squad's shop, when it is a trader (<see cref="Trading.TradeSystem"/>); null otherwise.</summary>
@@ -144,6 +149,7 @@ public sealed class SquadRegistry
             hasher.Add(s.HomeRadius);
             hasher.Add(s.Position);
             hasher.Add(s.Leader);
+            if (!s.Backup.IsNone) hasher.Add(s.Backup);   // nothing for a squad that never needed one, so the pinned hashes stay
             if (s.Index != 0) hasher.Add(0x51647800 + s.Index);   // nothing for a squad in the first place, so the pinned hashes stay
             if (s.Resume) hasher.Add(0x52657375);
             if (s.Dead) hasher.Add(0x44656164);
