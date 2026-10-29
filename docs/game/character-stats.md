@@ -74,7 +74,11 @@ gear totals (`FUN_140887030`, **Verified**): its `combat skill bonus` starts bot
 class column +0x10) x `athletics mult`, 1 for `slot` 3, 5 and 8; column +0x10 is GEAR_CLOTH and LIGHT 1..1,
 MEDIUM 0.85..1, HEAVY 0.8..0.95. `perception bonus` is an int (ARMOUR +0x254); the effective perception
 `FUN_140884ac0(0x18, 0)` is (trained + CharStats +0x30) x the stat multiplier. Meitou: `Fighter.AthleticsFactor`,
-`Fighter.PerceptionBonus` (added in `CombatSystem.Eff`), `ArmourPiece.AthleticsOf`. The stun row factor `FUN_1406439f0`
+`Fighter.PerceptionBonus` (added in `CombatSystem.Eff`), `ArmourPiece.AthleticsOf`. A piece's combat speed factor (ARMOUR +0x258,
+**Verified**: `FUN_140898e90` stores it next to +0x248 and `FUN_140887030` multiplies it into the product above) is lerp(t, class column) x
+`combat speed mult`, forced to 1 for a hat (`slot` 3, whatever its mult); the class column is **Observed** by elimination (the one column the
+athletics and stealth blocks leave unused): heavy 0.9..1, else 1 (the tooltip's "Combat speed effect"). Meitou: `ArmourPiece.CombatSpeed`,
+the `Fighter` product. The stun row factor `FUN_1406439f0`
 is the dust storm: lerp(1, 0.5, v) while medical +0x148 = 1, v = medical +0x14c = the storm strength x (1 -
 the gear's protection), clamped 0..1 (`FUN_140648ef0`, which also posts "You are in a dust storm, it affects
 your accuracy in combat."). Meitou: `Fighter.Factors` / `Naked` / `StealthMult`, `ArmourPiece.Stealth` (the dust value is `MedicalState.DustStatFactor`,

@@ -834,7 +834,7 @@ is within 40; never with the flag off; NPCs always on). The Shooting rows' desir
 - The roles of hunger and "fed" in recovery (the `+0x60`/`+0x64` pair is the hunger level and stomach buffer, [character-stats.md](character-stats.md#hunger-and-starvation)). KO wake-up and the KO point: [character-stats.md](character-stats.md#blood-and-ko).
 - The steering's force terms (`FUN_1402af1e0`, `FUN_1402e9740`) behind the side-step and the
   min/max gap (the defence pick `140887970` tests no skill, **Observed**). the stat that scales max blood; the part `+0x28` link.
-- The role of the class-table columns 4-6 (athletics, combat speed, stealth is an inference) and of the slot-adjusted factor (armour item field index 0x5d) in `140898e90`.
+- The role of the class-table columns 4-6 (athletics, combat speed, stealth is an inference; the heavy 0.9..1 combat speed column is **Observed** by elimination) and of the slot-adjusted factor (armour item field index 0x5d) in `140898e90`.
 - Turrets: see [Turrets](#turrets) for its own unknowns; the meaning of the weight/price-like armour table fields; the remaining difficulty floats beyond the dialog bindings listed above (their consumers).
 - What `anim hesitate point` (stored as a frame fraction, no reader found) does; what reads the stumble's `+0x128` = 0.85; the owner's slot 0x398 factor in the fist rating (taken as 1); The engine's answers are in [simulation.md](../simulation.md#combat).
 - Whether the decompiled maths matches in-game numbers: nothing has been compared in play.

@@ -6,7 +6,7 @@ namespace Meitou.Simulation.Combat;
 /// One worn piece with its defences computed (docs/game/combat.md "Armour", loader <c>FUN_140898e90</c>, <b>Observed</b>). <see cref="Data"/> keeps the record for the coverage test.
 /// </summary>
 public readonly record struct ArmourPiece(ArmourData Data, float Quality, float CutDefence, float BluntDefence, float PierceDefence, float CutIntoStun, float Stealth = 1,
-    float Athletics = 1)
+    float Athletics = 1, float CombatSpeed = 1)
 {
     /// <summary>The quality fractions of the armour grades 0 to 5 (PROTOTYPE .. MASTER): 5, 20, 40, 60, 80, 95 per cent (docs/characters.md, <b>Verified</b>); any other grade 20.</summary>
     public static float QualityOfGrade(int grade) => grade switch { 0 => 0.05f, 1 => 0.20f, 2 => 0.40f, 3 => 0.60f, 4 => 0.80f, 5 => 0.95f, _ => 0.20f };
@@ -64,6 +64,12 @@ public readonly record struct ArmourPiece(ArmourData Data, float Quality, float 
         : a.AthleticsMult * a.Class switch { ArmourClass.Medium => WeaponStats.Lerp(t, 0.85f, 1f), ArmourClass.Heavy => WeaponStats.Lerp(t, 0.8f, 0.95f), _ => 1f };
 
     /// <summary>
+    /// The piece's combat speed factor (ARMOUR <c>+0x258</c>, <c>FUN_140898e90</c>; the product over the worn pieces is CharStats <c>+0x1c</c>, <c>FUN_140887030</c>): the class table's
+    /// combat speed column (heavy lerp(t, 0.9, 1), else 1; the column is <b>Observed</b> by elimination) x <c>combat speed mult</c>; 1 for a hat (slot 3), whatever its mult.
+    /// </summary>
+    public static float CombatSpeedOf(ArmourData a, float t) => a.Slot == 3 ? 1 : a.CombatSpeedMult * (a.Class == ArmourClass.Heavy ? WeaponStats.Lerp(t, 0.9f, 1f) : 1f);
+
+    /// <summary>
     /// Builds the piece. With t = quality + level bonus x 0.01: cut defence = clamp(lerp(t, low.cut, high.cut) x class cut + lerp(t, 0, cut def bonus), 0, 0.9); blunt defence likewise
     /// (cap 0.8); flat pierce defence = lerp(t, low.pierce, high.pierce) x pierce def mult; cut-into-stun = clamp(field, 0, 1). A shirt (slot 8) that lists coverage has its cut and blunt
     /// defence x0.8 and its flat pierce x0.5.
@@ -82,7 +88,7 @@ public readonly record struct ArmourPiece(ArmourData Data, float Quality, float 
             blunt *= 0.8f;
             pierce *= 0.5f;
         }
-        return new ArmourPiece(a, quality, cut, blunt, pierce, Math.Clamp(a.CutIntoStun, 0, 1), StealthOf(a, t), AthleticsOf(a, t));
+        return new ArmourPiece(a, quality, cut, blunt, pierce, Math.Clamp(a.CutIntoStun, 0, 1), StealthOf(a, t), AthleticsOf(a, t), CombatSpeedOf(a, t));
     }
 }
 

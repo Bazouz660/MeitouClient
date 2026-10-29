@@ -91,7 +91,7 @@ public static class ArmourTooltip
         Multiplier("Dodge skill effect", a.DodgeMult);
         Multiplier("Athletics effect", ArmourPiece.AthleticsOf(a, t), hideNearOne: true);
         // The class table's combat speed column (heavy 0.9 to 1, else 1); a hat is forced to 1.
-        Multiplier("Combat speed effect", a.Slot == 3 ? 1 : a.CombatSpeedMult * (a.Class == ArmourClass.Heavy ? WeaponStats.Lerp(t, 0.9f, 1f) : 1f));
+        Multiplier("Combat speed effect", ArmourPiece.CombatSpeedOf(a, t));
         Multiplier("Attack damage effect", a.DamageOutputMult);
         Multiplier("Assassination skill", a.AssassinationMult);
         Bonus("Melee attack bonus", a.CombatAttackBonus);

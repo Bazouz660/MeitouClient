@@ -90,7 +90,7 @@ public sealed class Fighter
     /// </summary>
     public bool Naked => !IsAnimal && armour.Length == 0 && !backpack;
     readonly bool backpack;
-    /// <summary>Product of the pieces' <c>combat speed mult</c>: scales the speed attack animations play at.</summary>
+    /// <summary>Product of the pieces' combat speed factors (<see cref="ArmourPiece.CombatSpeed"/>) and the backpack's: scales the speed attack animations play at.</summary>
     public float CombatSpeed { get; }
 
     /// <summary>
@@ -125,7 +125,7 @@ public sealed class Fighter
             output *= p.Data.DamageOutputMult;
             dex *= p.Data.DexterityMult;
             dodge *= p.Data.DodgeMult;
-            speed *= p.Data.CombatSpeedMult;
+            speed *= p.CombatSpeed;
             assassin *= p.Data.AssassinationMult;
             ranged *= p.Data.RangedSkillMult;
             sneak *= p.Stealth;
