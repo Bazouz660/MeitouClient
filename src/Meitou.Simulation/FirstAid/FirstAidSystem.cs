@@ -55,20 +55,28 @@ public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions 
                 case TreatOrder order:
                     if (!table.TryResolveNext(order.Patient, out int patient) || table.Cold(patient)!.Medical is not { Dead: false }) break;
                     foreach (var id in Who(world, order.Medics))
-                        if (table.TryResolveNext(id, out int slot) && table.Cold(slot) is { Race: not null, Stats: not null } cold && CanAct(cold))
+                        if (table.TryResolveNext(id, out int slot) && table.Cold(slot) is { Race: not null, Stats: not null } cold && CanAct(cold, ordered: true))
                         {
                             if (FindKit(world, slot, cold, ItemInfo.FirstAidKitFunction) is null && FindKit(world, slot, cold, ItemInfo.RobotKitFunction) is null)
                                 world.Bark(id, "I don't have a medkit.");   // refused before the medic moves
-                            else Begin(world, slot, order.Patient, CharacterTask.Idle);
+                            else
+                            {
+                                LeaveFight(world, slot);
+                                Begin(world, slot, order.Patient, CharacterTask.Idle);
+                            }
                         }
                     break;
                 case SplintOrder splint:
                     if (!table.TryResolveNext(splint.Patient, out int splinted) || table.Cold(splinted)!.Medical is not { Dead: false }) break;
                     foreach (var id in Who(world, splint.Medics))
-                        if (table.TryResolveNext(id, out int slot) && table.Cold(slot) is { Race: not null, Stats: not null } cold && CanAct(cold))
+                        if (table.TryResolveNext(id, out int slot) && table.Cold(slot) is { Race: not null, Stats: not null } cold && CanAct(cold, ordered: true))
                         {
                             if (OwnKit(cold, ItemInfo.SplintKitFunction) is null) world.Bark(id, "I don't have a splint kit.");   // the medic's own kit only (the original's kit search)
-                            else Begin(world, slot, splint.Patient, CharacterTask.Idle, splint: true);
+                            else
+                            {
+                                LeaveFight(world, slot);
+                                Begin(world, slot, splint.Patient, CharacterTask.Idle, splint: true);
+                            }
                         }
                     break;
                 case RestOrder rest:
@@ -89,7 +97,7 @@ public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions 
                     {
                         if (!table.TryResolveNext(id, out int slot) || table.Cold(slot) is not { IsPlayer: true } cold) continue;
                         if (taken is null) Production.PermaJobs.Add(cold, Meitou.Data.Gameplay.Ai.TaskType.JOB_MEDIC, Production.PermaJob.Untargeted(Meitou.Data.Gameplay.Ai.TaskType.JOB_MEDIC));
-                        else HealSomeone(world, slot, taken, robotics: false);
+                        else HealSomeone(world, slot, taken, robotics: false, ordered: true);
                     }
                     break;
                 }
@@ -99,8 +107,18 @@ public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions 
 
     static IReadOnlyList<CharacterId> Who(World world, IReadOnlyList<CharacterId> ids) => ids.Count > 0 ? ids : world.Player.Selection.ToArray();
 
-    /// <summary>A character that can be ordered to treat or rest: it has a medical state, is awake and is not in a fight.</summary>
-    static bool CanAct(CharacterCold cold) => cold.Medical is { Incapacitated: false } && !cold.InCombat && cold.CarriedBy.IsNone;
+    /// <summary>
+    /// A character that can be ordered to treat or rest: it has a medical state, is awake, not carried and, but for an <paramref name="ordered"/> first aid or splint, not in a fight.
+    /// Those orders outrank Self preservation and test no threat (First aid 25, Splint 249, docs/game/combat.md "Fight lifecycle and orders"): the medic leaves its fight
+    /// (<see cref="LeaveFight"/>) and treats.
+    /// </summary>
+    static bool CanAct(CharacterCold cold, bool ordered = false) => cold.Medical is { Incapacitated: false } && (ordered || !cold.InCombat) && cold.CarriedBy.IsNone;
+
+    /// <summary>An ordered treatment ends the medic's fight first, as the order's new task drops the fight task (serial phases).</summary>
+    static void LeaveFight(World world, int slot)
+    {
+        if (world.Characters.Cold(slot)!.InCombat) world.SystemOf<Combat.CombatSystem>()?.Disengage(world.Characters, world.Characters.IdOf(slot));
+    }
 
     /// <summary>Starts a treatment (serial phases): the medic stands, then walks to the patient. <paramref name="resume"/> is the task to go back to afterwards (kept if already treating).</summary>
     static void Begin(World world, int slot, CharacterId patient, CharacterTask resume, bool splint = false)

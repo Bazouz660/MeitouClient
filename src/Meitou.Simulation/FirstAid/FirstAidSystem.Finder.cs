@@ -228,12 +228,12 @@ public sealed partial class FirstAidSystem
     /// <item><b>The squad's chained slaves</b> in sight (<see cref="SquadSlave"/>), <b>carried</b> patients of the medic's faction (outdoors), then <b>prisoners in the cages</b> of the medic's faction in its place at a flat 0.25.</item>
     /// </list>
     /// </summary>
-    (int Slot, float Score) FindPatient(World world, int i, List<(int Medic, int Patient)> taken, bool robotics)
+    (int Slot, float Score) FindPatient(World world, int i, List<(int Medic, int Patient)> taken, bool robotics, bool ordered = false)
     {
         var table = world.Characters;
         var next = table.Next;
         var cold = table.Cold(i)!;
-        if (cold.Medical is not { Incapacitated: false } own || cold.Race is null || cold.Stats is null || cold.InCombat || cold.IsImprisoned) return (-1, 0);
+        if (cold.Medical is not { Incapacitated: false } own || cold.Race is null || cold.Stats is null || cold.InCombat && !ordered || cold.IsImprisoned) return (-1, 0);
         // No fight in the squad: an NPC's stand-in for its goal's desire (FUN_140998410 is 0.01 with enemies about). The finder has no such test and the job list keeps any job
         // whose desire is above 0 (FUN_14050e5b0), so a player's medic job and Medic order treat a downed mate while the squad fights.
         if (!cold.IsPlayer && cold.SquadId >= 0 && world.Squads.Find(cold.SquadId) is { } squad && Fighting(table, squad)) return (-1, 0);
@@ -393,10 +393,13 @@ public sealed partial class FirstAidSystem
         world.Squads.Find(cold.SquadId) is { } squad ? (squad.Ai?.OwnHome ?? squad.HomeBuilding)?.Key : null;
 
     /// <summary>Starts the Medic / Robotics job's (or an NPC's, or the button's) treatment of the best patient the finder gives; false when none.</summary>
-    bool HealSomeone(World world, int i, List<(int Medic, int Patient)> taken, bool robotics)
+    /// <remarks>With <paramref name="ordered"/> (the Medic button without Shift, an order) a fighting medic looks too, and one that finds a patient leaves its fight (<see cref="LeaveFight"/>).</remarks>
+    bool HealSomeone(World world, int i, List<(int Medic, int Patient)> taken, bool robotics, bool ordered = false)
     {
-        var (patient, _) = FindPatient(world, i, taken, robotics);
-        return patient >= 0 && StartJob(world, i, patient, taken, splint: false);
+        var (patient, _) = FindPatient(world, i, taken, robotics, ordered);
+        if (patient < 0) return false;
+        LeaveFight(world, i);
+        return StartJob(world, i, patient, taken, splint: false);
     }
 
     /// <summary>
