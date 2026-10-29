@@ -339,6 +339,17 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
 
     Locks.LockSystem? locks;
 
+    /// <summary>
+    /// <c>amInsideTownWalls</c> &gt; 0 at a point, whatever town it is in (the context menu's Throw out of town): the gate code where known, else the built-up area of the town the point is in
+    /// (<see cref="InsideWalls"/>); outside every town without codes, no. The host asks between ticks.
+    /// </summary>
+    public bool AmInsideTownWalls(World world, Vector3 p)
+    {
+        var town = AiSystem.TownAt(data, world, p);
+        locks ??= world.Systems.OfType<Locks.LockSystem>().FirstOrDefault();
+        return locks?.Regions?.CodeAt(p) is { } code and >= 0 ? code > 0 : !town.IsNone && BuiltUp(world, town, Flat(p));
+    }
+
     /// <summary>The original's <c>SensoryData::numEnemies</c> &gt; 0 (<see cref="BodySystem.Senses"/>).</summary>
     static bool SensesEnemy(World world, int slot, CharacterCold c) =>
         world.SystemOf<Combat.CombatSystem>() is { } combat && BodySystem.Senses(world, combat, slot, c).Enemies > 0;

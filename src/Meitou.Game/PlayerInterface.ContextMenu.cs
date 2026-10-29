@@ -184,21 +184,27 @@ sealed partial class PlayerInterface
     }
 
     /// <summary>
-    /// Throw out of home (223, <c>FUN_140793d80</c>): offered when the character lies in one of the player's buildings (Meitou: <see cref="CharacterSnapshot.InPlayerBuilding"/>); always a job
-    /// (the dispatch makes 223 one with or without Shift), carried out by the intruder errand.
+    /// Throw out of town (273) or home (223), exclusive (<c>FUN_140793d80</c>, docs/game/ui-input.md): in a town of the player's (the town the target stands in) 273 is offered when the target is
+    /// inside the town walls and the lead does not regard it as friendly; elsewhere 223 when the character lies in one of the player's buildings (Meitou: <see cref="CharacterSnapshot.InPlayerBuilding"/>).
+    /// Both are always jobs (the dispatch makes them one with or without Shift), carried out by the intruder errands.
     /// </summary>
     void ThrowOutVerb(List<(string, Action)> verbs, CharacterSnapshot target, IReadOnlyList<CharacterId> selection)
     {
-        if (!target.InPlayerBuilding) return;
         var id = target.Id;
-        verbs.Add(("Throw out of home", () => Say(new Meitou.Simulation.Production.AddOrderJob(selection, Meitou.Data.Gameplay.Ai.TaskType.PICKUP_INTRUDERS, id) { Tick = session.World.Tick })));
+        if (Selected().LastOrDefault() is { } lead && session.World.VerbFactsOf(lead.Id, id) is { Town: Meitou.Simulation.TownOwnership.Player } facts)
+        {
+            if (facts.InsideWalls && !facts.LeadRegards)
+                verbs.Add(("Throw out of town", () => Say(new Meitou.Simulation.Production.AddOrderJob(selection, Meitou.Data.Gameplay.Ai.TaskType.PICKUP_INTRUDERS_TOWN, id) { Tick = session.World.Tick })));
+            return;
+        }
+        if (!target.InPlayerBuilding) return;
+        verbs.Add(("Throw out of home",() => Say(new Meitou.Simulation.Production.AddOrderJob(selection, Meitou.Data.Gameplay.Ai.TaskType.PICKUP_INTRUDERS, id) { Tick = session.World.Tick })));
     }
 
     /// <summary>
     /// Another faction's character (docs/game/ui-input.md "Context menu verbs"). Standing: Talk To (12), Stealth KO (228, with its chance) while a selected character sneaks; against a hostile one Attack
     /// All (16) and Attack Target (5), against anyone else Attack Unprovoked (61), Bodyguard (45) and Follow (31); Meitou adds Trade with a trader (its quick order). With the lead on a turret every
-    /// attack becomes Shoot At (235). Down or asleep: Loot (26, a pickpocket on a sleeper), the pick-up verb (<see cref="PickUpVerb"/>) and Throw out of home (<see cref="ThrowOutVerb"/>).
-    /// Not built: Throw out of town (273).
+    /// attack becomes Shoot At (235). Down or asleep: Loot (26, a pickpocket on a sleeper), the pick-up verb (<see cref="PickUpVerb"/>) and Throw out of home or town (<see cref="ThrowOutVerb"/>).
     /// </summary>
     void OtherCharacterVerbs(List<(string, Action)> verbs, CharacterSnapshot target, IReadOnlyList<CharacterId> selection, bool down)
     {

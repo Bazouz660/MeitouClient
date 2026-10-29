@@ -496,8 +496,9 @@ else, when the bounty is below 1 and its NPC class (+0x1a0 → +0xdc) is not 8 (
 the prison owner's booking faction when caged, else the booking faction (legal system, or itself when it books) of the faction owning the +0x88 town, not the target's own faction. Meitou
 (`World.VerbFactsOf`, `PlayerInterface.KidnapOffered`): the town is the one the target's point is in (`AiSystem.TownAt`, player towns included); the bounty is the larger of the town owner's own entry
 and its booking faction's, as Meitou books under the witness's own faction ([CrimeFactions.BookingOf](economy.md#112-how-a-bounty-is-gained)); outside every town the verb is Pick Up.
-Kidnap's chance column is `Character::getKidnappingChance` ([carry-loot](carry-loot.md#kidnapping)). `FUN_140793d80` adds 223 when the target's
-home (slot 59) is a building of the player's, or 273 when its +0x1a0 → +0x88 owner is the player's, its slot 35 is above 0 and the lead is not its enemy.
+Kidnap's chance column is `Character::getKidnappingChance` ([carry-loot](carry-loot.md#kidnapping)). `FUN_140793d80` (**Verified**) adds one of two exclusive verbs by the +0x88 town:
+not set, or its faction not the player's: 223 when the target's home (slot 59) is a building handle whose faction is the player's; set and the player's: 273 when the target's `amInsideTownWalls`
+(slot 35) is above 0 and the LEAD does not regard the target as friendly (slot 126 called on the lead, so friendliness, not enmity). The "+0x88 is the town it stands in" reading is **Observed**.
 **Dispatch** (`FUN_1407fa650` → `FUN_1407f9e20`, **Observed**): 45, 0x111 and 0xdf go through the job giver `FUN_1407f5a90` (sound `Permanent_Job`), every other order through
 `FUN_1407f9e20`, which per selected character swaps 5 / 16 / 0x3d for 0x107 / 0x106 / 0x10a when `FUN_1407f2840(character)` is true (**Unknown** which characters: Meitou reads it as a
 ranged-weapon wielder, not built), and ends with the sound `Right_Click`. 235 Shoot At is Task_UseTurret's "target" order for the lead on a turret.
@@ -519,10 +520,10 @@ Inventory (storage, furnace), Man Turret (with Shift, Inventory on a storage add
 attack verbs when the lead mans a turret; `ShootAtOrder` makes every selected gunner fire at the target until it is gone ([combat](combat.md#turrets)). **Cages** are published
 (`WorldSnapshot.Cages`) and picked like beds: Pick Lock / Use Tools / Use Strength while locked, Put in (108, the carried captive to that cage) or Get in (107) while free, Set Free (110) while occupied by a conscious, uncarried prisoner (the player's own cage locked or not, another faction's only unlocked; the prisoner's own menu offers it on the same terms; precondition 125 is **Verified** (`FUN_14099a480`); hiding the verb for it is an engine choice, how `FUN_1407a6bc0` treats an unmet 125 is **Unknown**).
 Engine additions: Trade with a trader, Put in Cage, Put on Shackles, Cancel Construction, the door buttons, Mine. Training (97) sets the training job on a dummy. Stand Up (28) on a selected character staying low. **Throw out of home** (223) on another faction's character that is down or asleep in one of the player's
-complete buildings with doors (Meitou's stand-in for the target's building handle, slot `0x1d8`, being the player's) adds the Remove Home Intruder job and its companion 224.
+complete buildings with doors (Meitou's stand-in for the target's building handle, slot `0x1d8`, being the player's) adds the Remove Home Intruder job and its companion 224. **Throw out of town** (273, always the job `PICKUP_INTRUDERS_TOWN`) instead when the town the target stands in (`AiSystem.TownAt`) is the player's, its position is inside
+the walls (`TownDutySystem.AmInsideTownWalls`: gate code, else the built-up area) and the lead (the last selected, as for the turret test) does not regard it as friendly; no 223 there.
 **Corpse Disposal** (136) on the player's corpse machine (function 11): with Shift the Corpse disposal job (137, finder 138), else each selected character carrying a dead body
-takes it to the nearest free incinerator (`DisposeCorpseOrder`; the order's condition 99 read as carrying a dead body, **engine reading**). Not built: Throw out of town (273:
-its test reads Character `+0x1a0` → `+0x88`'s owner and slot `0x118`, both **Unknown**), Repairs (60), Lock / Unlock of a cage (Pick Lock stands in), item menus beyond a ground item's Pick Up / Steal, the occupant's second menu and the unconscious message.
+takes it to the nearest free incinerator (`DisposeCorpseOrder`; the order's condition 99 read as carrying a dead body, **engine reading**). Not built: Repairs (60), Lock / Unlock of a cage (Pick Lock stands in), item menus beyond a ground item's Pick Up / Steal, the occupant's second menu and the unconscious message.
 
 ### Edit boxes and keyboard focus
 

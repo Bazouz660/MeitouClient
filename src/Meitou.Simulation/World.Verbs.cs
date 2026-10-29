@@ -14,15 +14,17 @@ public enum TownOwnership : byte
 }
 
 /// <summary>
-/// What the context menu's pick-up verb (<c>FUN_140796f80</c>) reads about a target, asked between ticks (<see cref="World.VerbFactsOf"/>).
+/// What the context menu's pick-up verb (<c>FUN_140796f80</c>) and throw-out verbs (<c>FUN_140793d80</c>) read about a target, asked between ticks (<see cref="World.VerbFactsOf"/>).
 /// </summary>
 /// <param name="RegardsLead">The target regards the lead as friendly (Character slot 126 on the lead).</param>
+/// <param name="LeadRegards">The lead regards the target as friendly.</param>
+/// <param name="InsideWalls">The target is inside town walls (<c>amInsideTownWalls</c> above 0); asked only in a town.</param>
 /// <param name="SquadTrader">The target's squad template is a trader's (<c>FUN_1405cff70</c>).</param>
 /// <param name="Town">Whose town the target stands in.</param>
 /// <param name="Bounty">The target's bounty (the ledger entry's amount, claimed or not) for the booking faction of its town's owner (and the owner's own entry, where Meitou books).</param>
 /// <param name="Bandit">The target's NPC class is Bandit.</param>
 /// <param name="NotReal">The target's faction is flagged "not real".</param>
-public readonly record struct VerbFacts(bool RegardsLead, bool SquadTrader, TownOwnership Town, int Bounty, bool Bandit, bool NotReal);
+public readonly record struct VerbFacts(bool RegardsLead, bool LeadRegards, bool InsideWalls, bool SquadTrader, TownOwnership Town, int Bounty, bool Bandit, bool NotReal);
 
 public sealed partial class World
 {
@@ -51,6 +53,7 @@ public sealed partial class World
         int bounty = tc.Bounties is { } ledger && owner >= 0 ? Math.Max(ledger.AmountFor(owner), booking >= 0 ? ledger.AmountFor(booking) : 0) : 0;
         bool squadTrader = tc.SquadId >= 0 && Squads.Find(tc.SquadId) is { } squad && data.Db.Find(squad.TemplateId)?.GetBool("is trader") == true;
         bool notReal = (uint)tc.Faction < (uint)data.Factions.Count && data.Factions[tc.Faction].NotReal;
-        return new(dialogue.RegardsFriendly(this, t, l), squadTrader, ownership, bounty, tc.NpcClass == FundamentalType.Bandit, notReal);
+        bool inside = ownership != TownOwnership.None && (SystemOf<Kidnap.TownDutySystem>()?.AmInsideTownWalls(this, Characters.Next[t].Position) ?? false);
+        return new(dialogue.RegardsFriendly(this, t, l), dialogue.RegardsFriendly(this, l, t), inside, squadTrader, ownership, bounty, tc.NpcClass == FundamentalType.Bandit, notReal);
     }
 }
