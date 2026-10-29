@@ -83,8 +83,8 @@ public readonly record struct TaskRequest(CharacterTask Task, TaskType Row, Task
 /// </summary>
 public sealed record RunningTask(CharacterTask Task, TaskType Row, TaskSource Source, int Job, CharacterId Target, string? Site, long Tick)
 {
-    /// <summary>Whether this is the provenance of <paramref name="task"/>, the character's task now.</summary>
-    public bool Runs(CharacterTask task) => Task == task;
+    /// <summary>Whether this is the provenance of <paramref name="task"/>, the character's task now (a step of the same act-out counts, <see cref="TaskStart.ActOut"/>).</summary>
+    public bool Runs(CharacterTask task) => TaskStart.ActOut(Task) == TaskStart.ActOut(task);
 }
 
 /// <summary>The act-out of one <see cref="CharacterTask"/>, registered by its owning system (<see cref="ITaskOwner"/>, <see cref="World.Tasks"/>). Serial phases only.</summary>
@@ -159,9 +159,16 @@ public static class TaskStart
         request.Task == CharacterTask.Attack && request.Source is TaskSource.Goal or TaskSource.Reaction && Production.PermaJobs.Follows(running.Row)
         && running.Runs(current) && current is CharacterTask.Follow or CharacterTask.Attack;
 
+    /// <summary>
+    /// The act-out a task is a step of: a builder's delivering, fetching and dismantling are steps of its work (<see cref="CharacterTask.Build"/>; the construction system switches between
+    /// them by itself); any other task is its own.
+    /// </summary>
+    public static CharacterTask ActOut(CharacterTask task) =>
+        task is CharacterTask.DeliverMaterials or CharacterTask.FetchMaterials or CharacterTask.Dismantle ? CharacterTask.Build : task;
+
     /// <summary>The act-outs only <see cref="Start"/> may begin (their systems end them by themselves; other tasks are still set directly by systems not converted yet).</summary>
     static bool StartedOnly(byte task) => task is (byte)CharacterTask.Attack or (byte)CharacterTask.Treat or (byte)CharacterTask.PickUp or (byte)CharacterTask.PutDown
-        or (byte)CharacterTask.Loot or (byte)CharacterTask.StealthKo;
+        or (byte)CharacterTask.Loot or (byte)CharacterTask.StealthKo or (byte)CharacterTask.Build or (byte)CharacterTask.Dismantle or (byte)CharacterTask.Prospect;
 
     /// <summary>
     /// Debug builds, at the end of a tick: a character that took up one of the <see cref="StartedOnly"/> act-outs this tick did so through <see cref="Start"/> (its provenance is
@@ -176,6 +183,7 @@ public static class TaskStart
         for (int i = 0; i < table.HighWater; i++)
         {
             if (!next[i].Alive || !prev[i].Alive || prev[i].Generation != next[i].Generation || next[i].Task == prev[i].Task || !StartedOnly(next[i].Task)) continue;
+            if (ActOut((CharacterTask)next[i].Task) == ActOut((CharacterTask)prev[i].Task) && table.Cold(i)!.Running is { } step && step.Runs((CharacterTask)prev[i].Task)) continue;   // a step of the act-out
             if (table.Cold(i)!.Running is not { } run || run.Tick != world.Tick || !run.Runs((CharacterTask)next[i].Task))
                 throw new InvalidOperationException($"slot {i} took up {(CharacterTask)next[i].Task} at tick {world.Tick} without TaskStart.Start");
         }

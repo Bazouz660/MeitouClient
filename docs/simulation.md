@@ -106,15 +106,16 @@ talk, the continuing checks (`Able`, `CanWalk`, which still stop work on a cage)
 `ResumeTask` are the new start's); the provenance is recorded in `CharacterCold.Running` (`RunningTask`: act-out, row, `TaskSource`, job index, target, site, tick); the act-out starts.
 `TaskStart.End(world, slot, reason)` ends a task from outside its act-out (`TaskEnd.Stopped`, the Stop order and a squad mate lifted awake: then idle). Each `CharacterTask` has one
 `ITaskHandler` (Start, End, Done), registered by its system (`ITaskOwner`) in `World.Tasks`, an open list later code may add to or replace; a task without one is set as is. Owners: movement
-(GoTo, Follow), combat (Attack), first aid (Treat, Rest), carry (PickUp, PutDown, Loot, StealthKo).
+(GoTo, Follow), combat (Attack), first aid (Treat, Rest), carry (PickUp, PutDown, Loot, StealthKo), production (Operate, Haul, Prospect), construction (Build, Dismantle,
+DeliverMaterials, FetchMaterials). A builder's delivering, fetching and dismantling are steps of one act-out (`TaskStart.ActOut`): `RunningTask.Runs` and the debug check treat them as Build.
 - Routed through it: move, follow and bodyguard (order and job), stop, every fight (`AttackOrder`: picked is an order, `Defensive` a reaction, else a goal), First Aid, Splint, the Medic
   button, medic, robotics and splint jobs, NPC healing, Rest, pick up, kidnap, loot, open inventory, stealth KO and put down orders, the lifts and drops of errands and town duties, rescue
-  (job, button, NPC leaders), kidnappers' and guards' lifts (`BeginPickUp`), foraging, NPC scavenging and arming. Not yet: production, construction, locks, beds, crime, kidnap, dialogue and
-  trade starts.
+  (job, button, NPC leaders), kidnappers' and guards' lifts (`BeginPickUp`), foraging, NPC scavenging and arming, the operate, turret, haul and prospect orders, the production list jobs
+  (87, 97, 124, 152, 234, the engineer 125), the build, repair, door repair and dismantle orders. Not yet: implicit jobs, locks, beds, items, crime, kidnap, dialogue and trade starts.
 - `PermaJobs.FromJob` reads a `TaskSource.Job` provenance while its act-out runs; production's `JobIndex`, `Implicit` and `ResumeTask` still mark production's own starts.
 - Engine: a fight ended in a serial phase clears both combat state arrays (`CombatSystem.Live` tells which one is current: the slow-world swap changes it).
-- Debug builds check at each tick's end that a character which took up Attack, Treat, PickUp, PutDown, Loot or StealthKo did so through `Start` (`TaskStart.CheckStarts`: its provenance
-  is stamped this tick); the other act-outs are still set directly by systems not converted yet.
+- Debug builds check at each tick's end that a character which took up Attack, Treat, PickUp, PutDown, Loot, StealthKo, Build, Dismantle or Prospect did so through `Start`
+  (`TaskStart.CheckStarts`: its provenance is stamped this tick); the other act-outs are still set directly by systems not converted yet.
 - **A fight under another task** (Meitou only; **Verified** by reading `CombatSystem.Act`, `PursuitSystem`): a start that overwrites a fighter's task without ending its fight (the sites
   not converted yet: beds, locks, cages, items, put down) leaves `InCombat` and the fight target set. `CombatSystem.Act` does not read the task: the character keeps its target and
   re-picks, blocks and dodges, draws, and swings whenever a technique reaches the target; `PursuitSystem` and `CombatSystem.Move` steer only an `Attack` task, so the new task's walk

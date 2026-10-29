@@ -44,7 +44,7 @@ public sealed class ProductionSettings
 /// </list>
 /// Placed after construction and before combat; everything here is serial and reads only the world's state and the command order.
 /// </summary>
-public sealed partial class ProductionSystem : ITickSystem
+public sealed partial class ProductionSystem : ITickSystem, ITaskOwner, ITaskHandler
 {
     /// <summary>The research falloff per earlier contribution in the same tick (<b>Observed</b>, <c>FUN_140836b70</c>).</summary>
     public const float ResearchFalloff = 0.6f;
@@ -258,20 +258,22 @@ public sealed partial class ProductionSystem : ITickSystem
                     if (machine.Data.IsStorage && !machine.Data.Operable)
                     {
                         foreach (var id in Who(world, order.Characters))
-                            if (table.TryResolveNext(id, out int hauler) && table.Cold(hauler) is { IsPlayer: true } hc && Able(hc) && TaskStart.Eligible(world, hc, TaskType.OPERATE_STORAGE)) StartHaulTrip(world, hauler, site, machine);
+                            if (table.TryResolveNext(id, out int hauler) && table.Cold(hauler) is { IsPlayer: true } hc && Able(hc))
+                                TaskStart.Start(world, hauler, new TaskRequest(CharacterTask.Haul, TaskType.OPERATE_STORAGE, TaskSource.Order) { Site = site.Id });
                         break;
                     }
                     if (!(machine.Data.Operable || machine.Data.IsTraining)) break;
                     foreach (var id in Who(world, order.Characters))
                     {
-                        if (!table.TryResolveNext(id, out int slot) || table.Cold(slot) is not { IsPlayer: true } cold || !Able(cold) || !TaskStart.Eligible(world, cold, machine.Data.IsTraining ? TaskType.USE_TRAINING_DUMMY : TaskType.OPERATE_MACHINERY)) continue;
+                        var row = machine.Data.IsTraining ? TaskType.USE_TRAINING_DUMMY : TaskType.OPERATE_MACHINERY;
+                        if (!table.TryResolveNext(id, out int slot) || table.Cold(slot) is not { IsPlayer: true } cold || !Able(cold) || !TaskStart.Eligible(world, cold, row)) continue;
                         if (cold.OperateSite == site.Id) continue;
                         if (OperatorsOf(world, site.Id) >= machine.Data.MaxOperators)
                         {
                             world.Post($"{site.Name} is already in use.");
                             break;
                         }
-                        Begin(world, slot, site, machine);
+                        TaskStart.Start(world, slot, new TaskRequest(CharacterTask.Operate, row, TaskSource.Order) { Site = site.Id });
                     }
                     break;
                 }
@@ -323,7 +325,7 @@ public sealed partial class ProductionSystem : ITickSystem
             world.Post($"{site.Name} is already in use.");
             return;
         }
-        Begin(world, best, site, m);
+        TaskStart.Start(world, best, new TaskRequest(CharacterTask.Operate, TaskType.USE_TURRET, TaskSource.Order) { Site = site.Id });
     }
 
     /// <summary>A player turret's post (its functionality's <c>use range</c> and <c>gun turret</c>), null for a building that is no turret.</summary>
@@ -419,6 +421,45 @@ public sealed partial class ProductionSystem : ITickSystem
 
     /// <summary>The clip a turret's gunner holds.</summary>
     public const string TurretClip = "combatstance";
+
+    public void RegisterTasks(TaskHandlers tasks)
+    {
+        tasks.Register(CharacterTask.Operate, this);
+        tasks.Register(CharacterTask.Haul, this);
+        tasks.Register(CharacterTask.Prospect, this);
+    }
+
+    /// <summary>
+    /// Operating <see cref="TaskRequest.Site"/> (rows 87, 97, 146, the jobs 152 and 234, the implicit sitting 275), a haul trip to the storage <see cref="TaskRequest.Site"/> (124, the implicit
+    /// ditching 242), or prospecting where the character stands (150).
+    /// </summary>
+    void ITaskHandler.Start(World world, int slot, in TaskRequest request)
+    {
+        if (request.Task == CharacterTask.Prospect)
+        {
+            ProspectStart(world, slot);
+            return;
+        }
+        var site = Site(world, request.Site!)!;
+        var m = Ensure(world, site)!;
+        if (request.Task == CharacterTask.Haul) StartHaulTrip(world, slot, site, m, ditch: request.Row == TaskType.DITCH_ALL_RESOURCES);
+        else Begin(world, slot, site, m);
+    }
+
+    /// <summary>An operator, hauler or prospector that another task replaces or the Stop order ends lets go of its machine, trip or progress (the task it goes back to is the new start's).</summary>
+    void ITaskHandler.End(World world, int slot, CharacterTask task, TaskEnd reason)
+    {
+        var cold = world.Characters.Cold(slot)!;
+        if (task == CharacterTask.Prospect)
+        {
+            cold.Prospecting = null;
+            return;
+        }
+        cold.OperateSite = null;
+        cold.HaulSite = null;
+        cold.HaulFetch = null;
+        cold.Operating = false;
+    }
 
     void Begin(World world, int slot, BuildSite site, Machine m)
     {

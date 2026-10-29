@@ -460,7 +460,7 @@ public sealed partial class ProductionSystem
             // From operating or hauling the character goes back to what it was doing before the list took it.
             var resume = cold.ResumeTask;
             End(table, slot);
-            Construction!.StartBuilding(world, slot, Construction.EngineerSite(world, slot)!, resume);
+            Construction!.StartBuilding(world, slot, Construction.EngineerSite(world, slot)!, resume, k);
             cold.JobIndex = k;
             return;
         }
@@ -478,11 +478,12 @@ public sealed partial class ProductionSystem
         }
         var site = Site(world, job.Site!)!;
         var m = Ensure(world, site)!;
+        var request = new TaskRequest(CharacterTask.Haul, job.Type, TaskSource.Job) { Job = k, Site = site.Id };
         if (job.Type is TaskType.OPERATE_MACHINERY or TaskType.MAN_A_TURRET_PLAYER_JOB or TaskType.USE_TRAINING_DUMMY or TaskType.OPERATE_AUTOMATIC_MACHINERY || !m.Data.IsStorage)
         {
-            if (cold.OperateSite != site.Id) Begin(world, slot, site, m);
+            if (cold.OperateSite != site.Id) TaskStart.Start(world, slot, request with { Task = CharacterTask.Operate });
         }
-        else StartHaulTrip(world, slot, site, m);
+        else TaskStart.Start(world, slot, request);
         cold.JobIndex = k;
     }
 

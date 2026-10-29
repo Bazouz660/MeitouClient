@@ -23,13 +23,20 @@ public sealed partial class ProductionSystem
     void ProspectBegin(World world, ProspectOrder order)
     {
         var table = world.Characters;
-        if (!table.TryResolveNext(order.Character, out int slot) || table.Cold(slot) is not { IsPlayer: true } cold || !Able(cold) || !TaskStart.Eligible(world, cold, TaskType.PROSPECTING) || cold.WaterState == 3) return;
+        if (!table.TryResolveNext(order.Character, out int slot) || table.Cold(slot) is not { IsPlayer: true } cold || !Able(cold) || cold.WaterState == 3) return;
+        if (table.Next[slot].Task == (byte)CharacterTask.Prospect) return;
+        TaskStart.Start(world, slot, new TaskRequest(CharacterTask.Prospect, TaskType.PROSPECTING, TaskSource.Order));
+    }
+
+    /// <summary>The prospecting's start: the character stops where it stands.</summary>
+    void ProspectStart(World world, int slot)
+    {
+        var table = world.Characters;
         ref var n = ref table.Next[slot];
-        if (n.Task == (byte)CharacterTask.Prospect) return;
         MovementSystem.Stop(table, slot);
         n.Task = (byte)CharacterTask.Prospect;
         n.TaskTime = 0;
-        cold.Prospecting = 0;
+        table.Cold(slot)!.Prospecting = 0;
         prospectors++;
     }
 

@@ -40,7 +40,7 @@ public sealed class ConstructionSettings
 /// </list>
 /// Placed after the carry system and before combat. Everything here is serial and reads only the world's state and the command order.
 /// </summary>
-public sealed class ConstructionSystem : ITickSystem
+public sealed class ConstructionSystem : ITickSystem, ITaskOwner, ITaskHandler
 {
     /// <summary>The delivery bar fills at this much per second (<b>Verified</b>, <c>Task_AddMaterialsToBuilding</c>: 5 s).</summary>
     public const float BarRate = 0.2f;
@@ -154,7 +154,7 @@ public sealed class ConstructionSystem : ITickSystem
                 if (site.LevelPlacement is not null) Touch(world, site);
                 if (site.Stalled && !Carries(cold, site) && Source(world, slot, cold, site) is null)
                     world.Bark(id, Loc.Tr("I don't have any building materials."));
-                Begin(world, slot, site, CharacterTask.Build, CharacterTask.Idle);
+                TaskStart.Start(world, slot, new TaskRequest(CharacterTask.Build, TaskType.BUILD, TaskSource.Order) { Site = site.Id });
             }
     }
 
@@ -183,7 +183,8 @@ public sealed class ConstructionSystem : ITickSystem
                     // Order 95 on a broken door (FUN_1407fc6e0): a door is a building of its own, repaired by build work (a damaged but standing one takes it too, engine reading).
                     if (door.Owner != world.Player.Faction || !DoorNeedsWork(door)) break;
                     foreach (var id in Who(world, order.Characters))
-                        if (table.TryResolveNext(id, out int slot) && table.Cold(slot) is { IsPlayer: true } cold && Able(cold) && TaskStart.Eligible(world, cold, TaskType.REPAIR)) BeginDoor(world, slot, door);
+                        if (table.TryResolveNext(id, out int slot) && table.Cold(slot) is { IsPlayer: true } cold && Able(cold))
+                            TaskStart.Start(world, slot, new TaskRequest(CharacterTask.Build, TaskType.REPAIR, TaskSource.Order) { Site = door.Id });
                     break;
                 case BuildOrder order:
                     OrderBuild(world, Who(world, order.Characters), Root(reg, reg.Find(order.Site)));
@@ -197,8 +198,8 @@ public sealed class ConstructionSystem : ITickSystem
                         break;
                     }
                     foreach (var id in Who(world, order.Characters))
-                        if (table.TryResolveNext(id, out int slot) && table.Cold(slot) is { IsPlayer: true } cold && Able(cold) && TaskStart.Eligible(world, cold, TaskType.DISMANTLE))
-                            Begin(world, slot, site, CharacterTask.Dismantle, CharacterTask.Idle);
+                        if (table.TryResolveNext(id, out int slot) && table.Cold(slot) is { IsPlayer: true } cold && Able(cold))
+                            TaskStart.Start(world, slot, new TaskRequest(CharacterTask.Dismantle, TaskType.DISMANTLE, TaskSource.Order) { Site = site.Id });
                     break;
                 }
                 case ConfirmDismantle confirm:
@@ -673,8 +674,36 @@ public sealed class ConstructionSystem : ITickSystem
         cold.FetchRecord = null;
     }
 
-    /// <summary>The engineer job's start (<see cref="Production.ProductionSystem"/> runs the lists): the character works <paramref name="site"/> and then goes back to <paramref name="resume"/>.</summary>
-    public void StartBuilding(World world, int slot, BuildSite site, CharacterTask resume) => Begin(world, slot, site, CharacterTask.Build, resume);
+    /// <summary>
+    /// The engineer job's start (job <paramref name="job"/> of the list; <see cref="Production.ProductionSystem"/> runs the lists): the character works <paramref name="site"/> and then goes back
+    /// to <paramref name="resume"/>.
+    /// </summary>
+    public void StartBuilding(World world, int slot, BuildSite site, CharacterTask resume, int job) =>
+        TaskStart.Start(world, slot, new TaskRequest(CharacterTask.Build, TaskType.JOB_BUILDER, TaskSource.Job) { Job = job, Site = site.Id, Resume = resume });
+
+    public void RegisterTasks(TaskHandlers tasks)
+    {
+        tasks.Register(CharacterTask.Build, this);
+        tasks.Register(CharacterTask.Dismantle, this);
+        tasks.Register(CharacterTask.DeliverMaterials, this);
+        tasks.Register(CharacterTask.FetchMaterials, this);
+    }
+
+    /// <summary>Work on <see cref="TaskRequest.Site"/>: a door to repair (row 95 on a door fixture), else a site to build or repair (2, 95, the engineer job 125) or take apart (96).</summary>
+    void ITaskHandler.Start(World world, int slot, in TaskRequest request)
+    {
+        if (world.Fixtures.Find(request.Site!) is { Kind: Locks.FixtureKind.Door } door) BeginDoor(world, slot, door);
+        else Begin(world, slot, world.Buildings.Find(request.Site!)!, request.Task, request.Resume);
+    }
+
+    /// <summary>Work another task replaces or the Stop order ends lets go of its site and of the material it was fetching (the task it goes back to is the new start's).</summary>
+    void ITaskHandler.End(World world, int slot, CharacterTask task, TaskEnd reason)
+    {
+        var cold = world.Characters.Cold(slot)!;
+        cold.BuildSite = null;
+        cold.BuildBar = 0;
+        ClearFetch(cold);
+    }
 
     public void Schedule(World world)
     {
