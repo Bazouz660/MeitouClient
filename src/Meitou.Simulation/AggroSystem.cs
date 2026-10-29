@@ -684,6 +684,9 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
                 s.Effects.Emit(s.Self, slot, ExposureEffect, (float)(full && v > 0 ? StealthExposure.Detected : v > 0 ? StealthExposure.Noticed : StealthExposure.Near));
         }
         if (s.SneakOnly) return;
+        // The attack-on-sight finder (FUN_14059f3a0, Verified) skips a target whose posture is not 0 (staying low or crawling) while it stands inside a building. A chained slave of
+        // the looker's own faction takes the slave test instead (dropped while enslaved, a target once escaped); Meitou has no chain flag, so state 1 stands for it.
+        if (c.Medical?.Prone == true && s.Sight.BuildingOf(slot) is not null && !(c.SlaveState == 1 && c.SlaveOwner == s.Faction)) return;
         // Wanted characters are the arrest system's (Crime.ArrestSystem): the police spot, fine or arrest them there. A working disguise stands in for the target's faction
         // (slot 125, docs/game/perception.md "Sense tags"; Crime.ArrestSystem.SeenFaction).
         int seenAs = Crime.ArrestSystem.SeenFaction(c);
