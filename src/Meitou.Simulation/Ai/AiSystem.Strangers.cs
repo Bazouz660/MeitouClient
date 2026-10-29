@@ -8,17 +8,15 @@ namespace Meitou.Simulation.Ai;
 public sealed partial class AiSystem
 {
     /// <summary>
-    /// State 141 <c>strangers in house P</c> (evaluator <c>FUN_14060e640</c>, docs/game/ai-tasks.md "Stranger states"): false when the building the target stands in (the home when the
-    /// target is not a building) is public; else true when <see cref="StrangerInHome"/> finds someone. Goal 153 Going to bed needs it false.
+    /// State 141 <c>strangers in house P</c> (evaluator <c>FUN_14060e640</c>, docs/game/ai-tasks.md "Stranger states"): false when the home is public (the original tests the target's building,
+    /// which for goal 153 is the home bed's house; the planner gives a finder row's list B no target, so a spare bed in another building is not tested); else true when
+    /// <see cref="StrangerInHome"/> finds someone. Goal 153 Going to bed needs it false.
     /// </summary>
-    bool StrangersInHouseP(World world, Blackboard board, AiMind mind, int slot, in PlanTarget target)
+    bool StrangersInHouseP(World world, Blackboard board, int slot)
     {
         if (board.OwnHome is not { } home) return false;   // no home: the finder returns 0 (and with nothing to test the building counts as public)
-        string? building = home.Key;
-        if (target.Kind == Targets.Bed)
-            building = board.Home is not null && !mind.HomeUnreachable && BedSpotOf(board, mind) is not null ? board.Home.Key : SpareBed(world, board, mind, slot)?.Building;
-        // A building without a flag counts as public (engine choice, as the bed search's use test).
-        if (building is null || (world.Fixtures.PublicOf(building) ?? (building == home.Key ? board.HomePublic : true))) return false;
+        // The player's Open to public toggle, else the residents' template (the original writes its `public day` over the home's flag), else public.
+        if (world.Fixtures.PublicOf(home.Key) ?? board.HomePublic) return false;
         return StrangerInHome(world, home, slot);
     }
 
@@ -57,7 +55,9 @@ public sealed partial class AiSystem
             var prev = st.Table.Previous;
             if ((uint)other >= (uint)prev.Length || !prev[other].Alive || st.Table.Cold(other) is not { } c || st.World.Sight.BuildingOf(other) != st.Home) return;
             if (c.Medical is { Incapacitated: true } || !c.CarriedBy.IsNone || c.IsImprisoned || FirstAid.FirstAidSystem.OwnedChained(st.Me, c)) return;
-            bool neutral = st.Relations.Contains(c.Faction) && !st.Relations.IsAlly(st.Faction, c.Faction) && !AggroSystem.IsEnemy(st.Relations, st.Faction, c.Faction);
+            // The sense tag NEUTRAL; the tag mask also leaves out the law enforcement and military classes (bit 7) and the dead (bit 4).
+            bool neutral = c.NpcClass is not (FundamentalType.LawEnforcement or FundamentalType.Military) && st.Relations.Contains(c.Faction)
+                && !st.Relations.IsAlly(st.Faction, c.Faction) && !AggroSystem.IsEnemy(st.Relations, st.Faction, c.Faction);
             if (!neutral && !(st.Player >= 0 && c.IsPlayer)) return;
             // A sneaker (not in a fight) counts only when sensed: the resident's sight test stands in for its sense entry.
             if ((c.Orders & CharacterOrders.Sneak) != 0 && !c.InCombat

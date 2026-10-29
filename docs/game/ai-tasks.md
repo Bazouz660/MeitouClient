@@ -498,7 +498,7 @@ from the decompile and agree with this table, except that the decompile shows no
 | 105 | `isMachineOutputEmpty` |
 | 106 | `machineHasFullInputs` |
 | 107 | `I_AM_INSIDE_TARGET_BUILDING` |
-| 108 | `strangers in house` |
+| 108 | `strangers in house` (`FUN_14060e5e0`, **Verified**): the stranger finder above 0, see [stranger states](#stranger-states); not wired in Meitou |
 | 109 | `isDialogDelivered` |
 | 110 | `isDialogDelivered` |
 | 111 | `AT_LOCATION_BUILDING_DOOR_INSIDE` |
@@ -529,7 +529,7 @@ from the decompile and agree with this table, except that the decompile shows no
 | 137 | `INTRUDER_IS_OUTSIDE` |
 | 139 | `me swim` |
 | 140 | `target swimming` |
-| 141 | `strangers in house P` |
+| 141 | `strangers in house P` (`FUN_14060e640`, **Verified**): false when the building is public, else as 108; see [stranger states](#stranger-states) |
 | 142 | `isTargetRestrainedOrKO` |
 | 143 | `farm has food` |
 | 144 | `am hungry` |
@@ -568,13 +568,13 @@ from the decompile and agree with this table, except that the decompile shows no
   then Building vfunc `0x290` (slot 82, `FUN_140548750`), which reads the building's flag `+0xc8`, the `public day` flag ([locks](locks.md)), of its parent when it has one. It also returns not public when the building's `+0xd8` is 1 or 0x22 and a byte `+0xe8` of an object it
   looks up is set (which object and what the byte means: **Unknown**, not modelled).
 - **Finder**: 0 with no home. Else the first of two scans:
-  - the resident's sensed characters tagged SENSE_NEUTRAL (bit 1) and none of bits 3 KO, 4, 7, 9 imprisoned (mask 0x298; [tags](perception.md#sense-tags-who-is-an-enemy); what bits 4 and 7 mean is **Unknown**) that stand in the home building, are up (Character vfunc 6, `isDown` false) and
-    are not a chained slave of the resident's faction (`FUN_14032e2a0`: chained, owner faction the resident's);
+  - the resident's sensed characters tagged SENSE_NEUTRAL (bit 1) and none of bits 3 KO, 4 dead (`+0x5bc`, `FUN_1406215b0`), 7 NPC class 1 LAW_ENFORCEMENT or 2 MILITARY (status `+0xdc` of `+0x1a0`, Character vfunc 14 `FUN_1405e1ed0`; **Verified**), 9 imprisoned
+    (mask 0x298; [tags](perception.md#sense-tags-who-is-an-enemy)) that stand in the home building, are up (Character vfunc 6, `isDown` false) and are not a chained slave of the resident's faction (`FUN_14032e2a0`: chained, owner faction the resident's);
   - only for a resident whose faction is not the player's (faction `+0x250` null): the player's characters in the home that are up, not chained slaves of the resident's faction, `+0x2f8` not 2 (not imprisoned) and either not sneaking (`FUN_1405c9750`: stealth mode and not in combat mode) or
-    sensed (`FUN_140855960`, which for a sneaker passes when the resident has any sense record of it) - whatever their tag, allies too.
-- **Meitou** (`AiSystem.StrangersInHouseP`, wired for 141 only): "sensed" is standing in the home building (a sneaker also needs `SightMap.Sees`, a live test for the record; engine reading), the tag is the faction relation (neutral: not an ally, not an enemy), up is not
-  incapacitated or carried. 108 is not wired (default false): the lock-up round tests strangers itself (`LockSystem.StrangerInside`, any non-squad character in the home), so wiring it would change 155/158/239 as well. **Unknown**: the
-  original's decay of the sense record, so a stranger who just left may keep the state set for a while.
+    sensed (`FUN_140855960`, which for a sneaker passes when the resident has any sense record of it) - whatever their tag or class, allies too.
+- **Meitou** (`AiSystem.StrangersInHouseP`, wired for 141 only): the public test reads the home (the player's Open to public toggle, else the residents' template `public day`); the planner gives a finder row's list B no target, so the tested building is always the home. "Sensed" is standing in the home
+  building (a sneaker also needs `SightMap.Sees`, a live test for the record; engine reading); the tag is the faction relation (neutral: not an ally, not an enemy); up is not incapacitated or carried. 108 is not wired (default false): the lock-up round tests strangers itself
+  (`LockSystem.StrangerInside`, any non-squad character in the home), so wiring it would change 155/158/239 as well. **Unknown**: the original's decay of the sense record (a stranger who just left may keep the state set), `FUN_140855960`'s fallback when the resident has no record.
 
 ## Arrest and prison rows
 
