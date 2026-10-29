@@ -48,7 +48,7 @@ the last `X-Forwarded-For` entry. Port 8080.
 The game's FEEDBACK button (top right in both UI modes, title included; `PlayerInterface.Feedback.cs`, `GameHost.Feedback.cs`,
 `FeedbackSender.cs`) opens a modal form: title (required, 100 chars), text (5000), and ticks for a screenshot, a save and log.txt (it
 can show folder names). The screenshot is the frame after the press, drawn without the game menu and what it opens, the form, the settings
-panel, debug overlays and pointer; PNG, shrunk by a whole factor to at most 2560 × 1440. The save is made only when Send is pressed (only
+panel, debug overlays and pointer; PNG (rows filtered), scaled to at most 2560 × 1440 and then by 0.75 until under 4.5 MB: GitHub's image proxy refuses images over 5 MB (**Verified** on a feedback issue: a 7.7 MB screenshot showed "Content length exceeded"; that 1440p frame is 5.6 MB filtered, 3.3 MB at 1080p). The save is made only when Send is pressed (only
 in a game), into a temporary folder, zipped and deleted after; over 95 MB zipped it is refused before anything is sent. The log is the whole
 log.txt, gzipped. Also sent: `BuildVersion` tag and commit, platform (as the launcher), the load order's data files.
 

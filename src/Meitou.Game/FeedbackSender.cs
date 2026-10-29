@@ -96,31 +96,47 @@ static class FeedbackSender
         }
     }
 
+    /// <summary>GitHub shows an image in an issue only up to 5 MB (its proxy refuses more): the PNG stays under this.</summary>
+    const int PngMax = 4_500_000;
+
     /// <summary>
-    /// The screenshot as a PNG, shrunk by a whole factor to at most 2560 × 1440 (a 4K picture is 1920 × 1080): the encoder does not filter, so a
-    /// full 4K frame would be tens of MB.
+    /// The screenshot as a PNG of at most 2560 × 1440 and <see cref="PngMax"/> bytes: scaled down to fit that size, then by three quarters again
+    /// while the file is larger (a 1440p frame of the world is about 5.6 MB, at 1920 × 1080 under the limit).
     /// </summary>
     public static byte[] Png(byte[] rgba, int width, int height)
     {
-        int f = Math.Max(1, (int)Math.Ceiling(Math.Max(width / 2560.0, height / 1440.0)));
-        if (f > 1)
+        double scale = Math.Min(1, Math.Min(2560.0 / width, 1440.0 / height));
+        while (true)
         {
-            int w = width / f, h = height / f;
-            var small = new byte[w * h * 4];
-            for (int y = 0; y < h; y++)
-                for (int x = 0; x < w; x++)
-                    for (int c = 0; c < 4; c++)
-                    {
-                        int sum = 0;
-                        for (int dy = 0; dy < f; dy++)
-                            for (int dx = 0; dx < f; dx++) sum += rgba[((y * f + dy) * width + x * f + dx) * 4 + c];
-                        small[(y * w + x) * 4 + c] = (byte)(sum / (f * f));
-                    }
-            (rgba, width, height) = (small, w, h);
+            int w = Math.Max(1, (int)(width * scale)), h = Math.Max(1, (int)(height * scale));
+            var pixels = w == width && h == height ? rgba : Shrink(rgba, width, height, w, h);
+            using var png = new MemoryStream();
+            PngWriter.Write(png, w, h, pixels);
+            if (png.Length <= PngMax || w < 640) return png.ToArray();
+            scale *= 0.75;
         }
-        using var png = new MemoryStream();
-        PngWriter.Write(png, width, height, rgba);
-        return png.ToArray();
+    }
+
+    /// <summary>The picture at <paramref name="w"/> × <paramref name="h"/>, each pixel the average of the source pixels it covers.</summary>
+    static byte[] Shrink(byte[] rgba, int width, int height, int w, int h)
+    {
+        var small = new byte[w * h * 4];
+        Span<int> sum = stackalloc int[4];
+        for (int y = 0; y < h; y++)
+        {
+            int y0 = y * height / h, y1 = Math.Max(y0 + 1, (y + 1) * height / h);
+            for (int x = 0; x < w; x++)
+            {
+                int x0 = x * width / w, x1 = Math.Max(x0 + 1, (x + 1) * width / w);
+                sum.Clear();
+                for (int sy = y0; sy < y1; sy++)
+                    for (int sx = x0; sx < x1; sx++)
+                        for (int c = 0; c < 4; c++) sum[c] += rgba[(sy * width + sx) * 4 + c];
+                int n = (y1 - y0) * (x1 - x0);
+                for (int c = 0; c < 4; c++) small[(y * w + x) * 4 + c] = (byte)(sum[c] / n);
+            }
+        }
+        return small;
     }
 
     /// <summary>win, linux or mac; a Windows build under Wine or Proton (its registry has a Software\Wine key) is proton (as the launcher's reports).</summary>
