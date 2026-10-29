@@ -37,8 +37,9 @@ sealed partial class GameHost
     void HandleNewGame()
     {
         if (newGameRequested is not { } id) return;
+        if (!SavesAvailable(out string why)) { newGameRequested = null; player.Notice(why, true); return; }
+        if (Busy()) return;   // the original's dispatcher leaves the request queued while a save or load runs (FUN_14047c310): it starts when that ends
         newGameRequested = null;
-        if (!SavesAvailable(out string why) || Busy()) { player.Notice(why.Length > 0 ? why : "Save or load still in progress", true); return; }
         if (scene.Database is not { } database || NewGameStart.Find(NewGameStart.LoadAll(database), id) is not { } chosen) return;
         StandardSystemSet? built = null;
         var nextDifficulty = player.NewGameOptions;

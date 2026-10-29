@@ -120,7 +120,10 @@ editor-authored files. Original acceptance of a save synthesized from scratch is
 
 ### Save requests (`FUN_14047c310`)
 
-A queued request (kind at +0xA0 of the request object) is run on the next frame; **Observed**:
+A queued request (kind at +0xA0 of the request object) is run on the next frame; **Verified** (`FUN_14047c310`): a countdown at +0xA8 (decremented
+per call, request untouched) and a save/load thread still running (state +0x1E0 of the progress window object `DAT_14212ec18` above 0; 1 running, 2 done, 0 idle,
+`FUN_1404742b0`) make the call return without consuming the request, which is reset to 0 only after handling. A request made during a save or load therefore
+waits and runs when it ends (Meitou: `HandleNewGame` keeps `newGameRequested` while `Busy()`). **Observed**:
 
 | Kind | Action |
 | --- | --- |
