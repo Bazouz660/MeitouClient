@@ -459,23 +459,21 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem, IDecis
     }
 
     /// <summary>
-    /// The characters following <paramref name="slot"/> by order or job within <see cref="JoinRange"/> of it defend it against <paramref name="attacker"/>, in slot order, never against a
-    /// character of their own faction (rows 45 Bodyguard and 31 Staying close need state 16, no threat within 40 of the followed character, which 13 "Attacking attackers of" provides;
-    /// docs/game/ai-tasks.md "Precedence"). A bodyguard (<see cref="CharacterCold.Guarding"/>) whatever the attacker's distance (<b>engine</b> reading); a plain follower only while it
-    /// follows and the attacker is within <see cref="ImmediateReach"/> of its target, and it follows again after the fight (<see cref="CharacterCold.FollowResume"/>).
+    /// The characters whose follow row (31 Staying close, 45 Bodyguard, 289) runs on <paramref name="slot"/> defend it against <paramref name="attacker"/> within <see cref="ImmediateReach"/> of
+    /// it, in slot order, never against a character of their own faction: the rows need state 16 (no threat within 40 of the followed character, <c>FUN_14059de10</c> on its <c>+0x2b0</c>),
+    /// which 13 "Attacking attackers of" provides (docs/game/ai-tasks.md "Precedence"); the fight is a step of the row, which is followed again after it (<see cref="CharacterCold.FollowResume"/>,
+    /// <see cref="ResumeGuards"/>). A bodyguard's own attacker within 40 (45's <c>!39</c>) is <see cref="SelfDefends"/>.
     /// </summary>
     static void Guards(World world, CharacterTable table, int slot, int attacker, List<CharacterId> defenders, HashSet<int> taken, List<int> guards)
     {
         var next = table.Next;
         var target = new CharacterId(slot, next[slot].Generation);
         var reach = next[attacker].Position - next[slot].Position;
-        bool immediate = reach.X * reach.X + reach.Z * reach.Z <= ImmediateReach * ImmediateReach;
+        if (reach.X * reach.X + reach.Z * reach.Z > ImmediateReach * ImmediateReach) return;
         foreach (int s in guards)
         {
             if (!next[s].Alive || s == attacker || table.Cold(s) is not { } c || c.FollowOrder != target || table.Cold(attacker)?.Faction == c.Faction) continue;
-            var d = next[s].Position - next[slot].Position;
-            if (d.X * d.X + d.Z * d.Z > JoinRange * JoinRange) continue;
-            if (c.Guarding ? !CanFight(table, s, taken) : !immediate || next[s].Task != (byte)CharacterTask.Follow || !Helps(table, s, taken)) continue;
+            if (next[s].Task != (byte)CharacterTask.Follow || c.Running is not { } run || !Production.PermaJobs.Follows(run.Row) || !run.Runs(CharacterTask.Follow) || !Helps(table, s, taken)) continue;
             defenders.Add(new CharacterId(s, next[s].Generation));
             taken.Add(s);
         }
@@ -597,14 +595,15 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem, IDecis
     /// <summary>
     /// Whether the attacked character itself answers here: an NPC always (engine choice: its attack-on-sight goal covers the farther attackers); Passive does not stop it. A player
     /// character's own defence is the decision step's Self preservation (<see cref="SelfFoe"/>, docs/game/ai-tasks.md "Precedence": its orders outrank it, it outranks the jobs), but a
-    /// bodyguard following (row 45 running) answers here as a step of its row, against an attacker within <see cref="SelfDefenceReach"/>.
+    /// bodyguard following (row 45 running) answers here as a step of its row against an attacker within <see cref="ImmediateReach"/> (45 needs <c>!39</c>, its own <c>+0x2b0</c>; farther ones
+    /// are Self preservation's, which a Bodyguard order outranks and a Bodyguard job does not).
     /// </summary>
     static bool SelfDefends(CharacterTable table, int slot, HashSet<int> taken, Vector3 attacker)
     {
         if (!Able(table, slot, taken, out var cold, out byte task)) return false;
         if (!cold.IsPlayer) return true;
         var d = attacker - table.Next[slot].Position;
-        return cold.Guarding && task == (byte)CharacterTask.Follow && d.X * d.X + d.Z * d.Z <= SelfDefenceReach * SelfDefenceReach;
+        return cold.Guarding && task == (byte)CharacterTask.Follow && d.X * d.X + d.Z * d.Z <= ImmediateReach * ImmediateReach;
     }
 
     /// <summary>Whether a character comes to another's defence: a player's character only without an order and not Passive (<c>scoreProtectAllies</c> is 0 when Passive).</summary>

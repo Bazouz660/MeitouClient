@@ -775,9 +775,9 @@ update `FUN_140511130`, `Character::setupAI` `FUN_140621b70`; KenshiLib names **
 - **Meitou**: the player's characters are decided by one step in this order ([decision step](../simulation.md#decision-step)): source 1 the order queue
   ([simulation](../simulation.md#order-queue); one that cannot run stays queued with its text and the step goes on; a turret gunner's 146 ends under a melee threat and is taken up again
   once it is gone, `PlayerOrders.NeedsNoThreat`), step 2 has no source (no player goal Meitou runs commits), step 4 picks among 32 Self preservation, 243 Getting food, 259 Picking up
-  food and Hold's 16, and with nothing there the existing job passes and standing tasks go on (steps 3, 5 and 6 are not sources yet). The step runs on the replan triggers above plus an
+  food and Hold's 16, and with nothing there the existing job passes and standing tasks go on (steps 3, 5 and 6 are not sources yet). Followers and bodyguards fight by their rows: an attacker of the followed character within 40 (16), a bodyguard also its own within 40 (39), as a step of the row (`RetaliationSystem.Guards`, `SelfDefends`). The step runs on the replan triggers above plus an
   engine re-ask every `JobCheckTicks` of a character idle or on a job's task (no periodic replan was found). Gaps: a higher list job does not take over a running medic, rescue or
-  foraging job; a bodyguard defends its leader from an attacker at any distance (engine reading), a follower only from one within 40 as the row (`RetaliationSystem.Guards`); mates
+  foraging job; mates
   join a fight only from idle (the original's way a player character joins a mate is **Unknown**).
 
 ## Combat goals
