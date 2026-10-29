@@ -128,11 +128,11 @@ sealed class Feedback(Store store, Config config, GithubAuth github, IHttpClient
         static string Mb(long bytes) => (bytes / 1_000_000.0).ToString("0.0", CultureInfo.InvariantCulture) + " MB";
         var s = new StringBuilder();
         s.AppendLine(row.Body is { } body ? Unmention(body) : "_No description._").AppendLine();
-        s.AppendLine("| | |").AppendLine("|---|---|");
-        s.AppendLine($"| Meitou version | `{row.Version}`{(row.Commit is { } commit ? $" (`{commit}`)" : "")} |");
-        s.AppendLine($"| Platform | {row.Platform} |");
-        if (row.Discord is { } name) s.AppendLine($"| Discord | `{name.Replace('`', '\'').Replace('|', '/')}` |");
-        s.AppendLine($"| Data files | {row.Mods.Length} |").AppendLine();
+        // One header row and one value row: GitHub has no header-less tables, and an empty header shows as a blank bar.
+        string? discord = row.Discord is { } name ? $"`{name.Replace('`', '\'').Replace('|', '/')}`" : null;
+        s.AppendLine($"| Meitou version | Platform |{(discord is null ? "" : " Discord |")} Data files |");
+        s.AppendLine($"|---|---|{(discord is null ? "" : "---|")}---|");
+        s.AppendLine($"| `{row.Version}`{(row.Commit is { } commit ? $" (`{commit}`)" : "")} | {row.Platform} |{(discord is null ? "" : $" {discord} |")} {row.Mods.Length} |").AppendLine();
         if (row.Mods.Length > 0)
         {
             s.AppendLine("<details><summary>Load order</summary>").AppendLine();
