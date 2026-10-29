@@ -1,4 +1,4 @@
-﻿using System.Numerics;
+using System.Numerics;
 using System.Globalization;
 using System.Text.RegularExpressions;
 using Meitou.Data.Ui;
@@ -545,13 +545,22 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
 
     void SetBinding(InputAction action, Binding binding)
     {
-        if (binding.IsMouse && binding.Button is MouseButton.Left or MouseButton.Right ||
-            !binding.IsMouse && binding.Key is Key.Escape or Key.F6 or Key.LeftAlt or Key.RightAlt or Key.LeftControl or Key.RightControl or Key.LeftShift or Key.RightShift)
+        if (!binding.IsMouse && binding.Key is Key.Escape or Key.F6 or Key.LeftAlt or Key.RightAlt or Key.LeftControl or Key.RightControl or Key.LeftShift or Key.RightShift)
         {
             notice = "That key is reserved. Choose another key, or Esc to cancel.";
             return;
         }
         var conflicts = Enum.GetValues<InputAction>().Where(a => a != action && bindings.Get(a).Contains(binding)).ToArray();
+        // A mouse button taken from another action is swapped: that action gets this one's old button, so the three buttons can be shuffled (the buttons form a cycle otherwise).
+        if (binding.IsMouse && conflicts.Length == 1 && bindings.Get(action).Where(b => b.IsMouse).Cast<Binding?>().FirstOrDefault() is { } previous)
+        {
+            var other = conflicts[0];
+            bindings.Set(other, [.. bindings.Get(other).Where(b => b != binding), previous]);
+            bindings.Set(action, binding);
+            rebinding = null;
+            notice = $"{ActionLabel(action)} bound to {binding}; {ActionLabel(other)} moved to {previous}.";
+            return;
+        }
         if (conflicts.Length > 0)
         {
             notice = $"{binding} is assigned to {ActionLabel(conflicts[0])}. Choose another key, or Esc to cancel.";

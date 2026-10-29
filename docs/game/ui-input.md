@@ -104,6 +104,11 @@ and Put Down (K). `toggle_help` (F1, `InputAction.ToggleHelp`) opens or closes t
 actions is the game's, not the cinema camera's ([viewer](../viewer.md#cinematic-camera)), unless Ctrl is held or the cinema's editor is open;
 `--duel` keeps the whole numpad for the cinema. The orders hotkeys are not given from the free camera (engine choice).
 
+Mouse buttons (Meitou only, **Observed**; `GameHost.PlayerButton`): `Select` (default left) and `Command` (right) are rebindable, as is `Orbit` (middle, Ctrl).
+The interface and world logic keep seeing "left" and "right": a physical button bound to Select arrives as left, to Command as right; any other of left,
+right, middle (e.g. Orbit's) arrives as middle (map pan, no click reaches the world under the HUD). An unbound Select / Command falls back to left / right.
+The settings page itself always takes the physical buttons. Binding a mouse button already used swaps: the other action gets the rebound action's old button.
+
 ### 6. Event dispatch
 
 GameLoop_InputActions (FUN_140788100; step 4 of [game-loop.md](game-loop.md#update-threads-and-budget)) drains the queue each frame. **Observed**: it does nothing while the loading

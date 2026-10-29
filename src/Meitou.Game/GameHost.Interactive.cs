@@ -365,25 +365,27 @@ sealed partial class GameHost
                 if (Covered) { loading?.SkipSplash(); return; }
                 player.UiVisible = PanelLive() && !g.NoPopulation;
                 var at = Pixels(orbitAnchor ?? m.Position);
-                if (PanelLive() && KeyMap.Map(b) is { } settingsButton && panel?.MouseDown(at, settingsButton) == true) { panelDrag = true; return; }
+                var physical = KeyMap.Map(b);
+                bool select = physical is { } pressed && PlayerButton(pressed) == EngineButton.Left;   // the Select button, whichever it is bound to
+                if (PanelLive() && physical is { } settingsButton && panel?.MouseDown(at, settingsButton) == true) { panelDrag = true; return; }
                 if (PanelLive() && panel?.Contains(at) == true) return;
-                if (b == SilkButton.Left && PanelLive() && sandboxPicker?.MouseDown(at) == true) return;
-                if (b == SilkButton.Left && profiler?.Click(at) == true) { profilerClick = true; return; }   // F12's legend opens and closes rows
+                if (select && PanelLive() && sandboxPicker?.MouseDown(at) == true) return;
+                if (select && profiler?.Click(at) == true) { profilerClick = true; return; }   // F12's legend opens and closes rows
                 // The cinema's editor: its clicks never select or move characters.
-                if (b == SilkButton.Left && cinema.MouseDown(at)) return;
+                if (select && cinema.MouseDown(at)) return;
                 if (cinema.Contains(at)) return;
-                if (KeyMap.Map(b) is { } button)
+                if (physical is { } button)
                 {
                     // Ctrl and Alt with the right button: pick up / put down and loot (docs/game/ui-input.md, Meitou's carry bindings).
                     bool Held(SilkKey a, SilkKey b) => silkInput.Keyboards.Any(k => k.IsKeyPressed(a) || k.IsKeyPressed(b));
-                    if (player.MouseDown(button, at, shiftDown, Held(SilkKey.ControlLeft, SilkKey.ControlRight), Held(SilkKey.AltLeft, SilkKey.AltRight))) return;
+                    if (player.MouseDown(PlayerButton(button), at, shiftDown, Held(SilkKey.ControlLeft, SilkKey.ControlRight), Held(SilkKey.AltLeft, SilkKey.AltRight))) return;
                     session.Input.SetMouseButton(button, true);
                 }
             };
             mouse.MouseUp += (m, b) =>
             {
                 bool cinemaDrag = cinema.MouseUp();
-                if (!Covered && !cinemaDrag && !panelDrag && !profilerClick && panel?.Visible != true && KeyMap.Map(b) is { } released) player.MouseUp(released, Pixels(orbitAnchor ?? m.Position), shiftDown);
+                if (!Covered && !cinemaDrag && !panelDrag && !profilerClick && panel?.Visible != true && KeyMap.Map(b) is { } released) player.MouseUp(PlayerButton(released), Pixels(orbitAnchor ?? m.Position), shiftDown);
                 profilerClick = false;
                 panel?.MouseUp();
                 panelDrag = false;
@@ -825,6 +827,20 @@ sealed partial class GameHost
 
     /// <summary>A key or button bound to Orbit (middle button or Ctrl by default) is down.</summary>
     bool OrbitHeld() => session.Bindings.Get(InputAction.Orbit).Any(session.Input.IsHeld);
+
+    /// <summary>
+    /// The button the interface sees for a physical one: the Select button is its left, the Command button its right (each falls back to its own default while unbound, so
+    /// the interface stays reachable). Any other of the three, such as the Orbit button, is its middle (which the map pans with and which stops no click reaching the world
+    /// under the interface); the extra buttons stay as they are.
+    /// </summary>
+    EngineButton PlayerButton(EngineButton physical)
+    {
+        var select = session.Bindings.Get(InputAction.Select);
+        var command = session.Bindings.Get(InputAction.Command);
+        if (select.Count == 0 ? physical == EngineButton.Left : select.Contains(Binding.Of(physical))) return EngineButton.Left;
+        if (command.Count == 0 ? physical == EngineButton.Right : command.Contains(Binding.Of(physical))) return EngineButton.Right;
+        return physical is EngineButton.Left or EngineButton.Right ? EngineButton.Middle : physical;
+    }
 
     /// <summary>While the camera orbits the pointer stays where it was, as in the original: each movement turns the camera and the pointer is put back.</summary>
     void HoldPointer(Silk.NET.Input.IMouse mouse, Vector2 anchor)

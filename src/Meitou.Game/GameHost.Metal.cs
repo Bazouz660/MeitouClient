@@ -944,7 +944,7 @@ sealed partial class GameHost
                 var at = Pixels(mouse.Position);
                 if (settings?.Visible == true) { settings.MouseDown(at, mapped); return; }
                 // PlayerInterface sees every click: it takes the HUD's controls, selects, starts a drag box or gives a move order.
-                if (hud is not null && hud.MouseDown(mapped, at, shiftDown, Ctrl(), Alt())) return;
+                if (hud is not null && hud.MouseDown(PlayerButton(mapped), at, shiftDown, Ctrl(), Alt())) return;
                 session.Input.SetMouseButton(mapped, true);
             };
             mouse.MouseUp += (_, button) =>
@@ -952,7 +952,7 @@ sealed partial class GameHost
                 if (Covered) return;
                 if (settings?.Visible == true) { settings.MouseUp(); return; }
                 if (KeyMap.Map(button) is not { } mapped) return;
-                hud?.MouseUp(mapped, Pixels(mouse.Position), shiftDown);
+                hud?.MouseUp(PlayerButton(mapped), Pixels(mouse.Position), shiftDown);
                 session.Input.SetMouseButton(mapped, false);
             };
             mouse.Scroll += (_, wheel) =>

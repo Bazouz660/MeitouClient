@@ -102,6 +102,8 @@ sealed partial class SettingsMenu
         InputAction.ZoomIn => "Move the view closer.",
         InputAction.ZoomOut => "Move the view farther away.",
         InputAction.Orbit => "Hold and move the mouse to turn the camera.",
+        InputAction.Select => "Select characters and press the interface (the game's left button). Binding it elsewhere moves the other buttons along.",
+        InputAction.Command => "Give orders and open menus (the game's right button).",
         InputAction.ToggleFreeCamera => "Switch between orbit and free camera movement.",
         InputAction.Pause => "Pause or resume the simulation.",
         InputAction.TimeFaster => "Step up to the next simulation speed.",

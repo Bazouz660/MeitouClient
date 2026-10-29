@@ -313,8 +313,9 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
         var context = display.Context;
         var target = camera.Target;
         foreach (var problem in session.Bindings.Apply(config.Bindings)) Console.Error.WriteLine($"config    binding skipped: {problem}");
-        // Right is the command button now; older saved configs bound it to orbit.
-        session.Bindings.Set(InputAction.Orbit, [.. session.Bindings.Get(InputAction.Orbit).Where(b => !(b.IsMouse && b.Button == EngineButton.Right))]);
+        // Right is the command button by default; older saved configs bound it to orbit (kept when Command has moved off it).
+        if (session.Bindings.Get(InputAction.Command).Contains(Binding.Of(EngineButton.Right)))
+            session.Bindings.Set(InputAction.Orbit, [.. session.Bindings.Get(InputAction.Orbit).Where(b => !(b.IsMouse && b.Button == EngineButton.Right))]);
         // Ctrl orbits as the middle button does; older saved configs had the middle button alone.
         if (session.Bindings.Get(InputAction.Orbit).SequenceEqual([Binding.Of(EngineButton.Middle)])) session.Bindings.Set(InputAction.Orbit, EngineButton.Middle, EngineKey.LeftControl, EngineKey.RightControl);
         // F12 is the profiler now (as in the viewer); older saved configs took it for the screenshot.

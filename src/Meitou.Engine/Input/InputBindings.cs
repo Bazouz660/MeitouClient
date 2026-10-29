@@ -11,6 +11,8 @@ public enum InputAction
     ZoomIn, ZoomOut,
     /// <summary>Held, the mouse movement turns the camera.</summary>
     Orbit,
+    /// <summary>The game view's mouse buttons: Select (the game's left button) picks characters and presses the interface; Command (the right button) gives orders and opens menus.</summary>
+    Select, Command,
     /// <summary>The game's <c>toggle_fps_camera</c> (docs/formats/camera.md).</summary>
     ToggleFreeCamera,
     Pause, TimeFaster, TimeSlower,
@@ -144,7 +146,9 @@ public sealed class InputBindings
         Set(InputAction.Prospect);
         Set(InputAction.Rest, Key.L);
         Set(InputAction.PutDown, Key.K);
-        Set(InputAction.Orbit, MouseButton.Middle, Key.LeftControl, Key.RightControl);   // right is the command button (move order)
+        Set(InputAction.Orbit, MouseButton.Middle, Key.LeftControl, Key.RightControl);
+        Set(InputAction.Select, MouseButton.Left);   // the game's buttons, rebindable: orbit with the right button and select with the middle one, say
+        Set(InputAction.Command, MouseButton.Right);
         Set(InputAction.ToggleFreeCamera, Key.Semicolon);
         Set(InputAction.Pause, Key.Space);
         Set(InputAction.TimeFaster);   // the game has no such keys (. and , are its camera tilt); F2..F4 set the speed
