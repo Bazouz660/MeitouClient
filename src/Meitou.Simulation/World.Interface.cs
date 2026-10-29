@@ -28,6 +28,7 @@ public sealed partial class World
             foreach (var system in systems)
                 if (system is IOrderOwner or PlayerSystem or Trading.TradeSystem or Dialogue.DialogueSystem or Combat.CombatSystem)
                     system.Inputs(this, due);
+            Decisions.Run(this, paused: true);   // addOrder replans at once: the order queues' fronts
         }
         finally
         {

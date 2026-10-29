@@ -217,6 +217,7 @@ public static class Orders
                     if (!table.TryResolveNext(id, out int slot) || table.Cold(slot) is not { IsPlayer: true } cold) continue;
                     on ??= (cold.Orders & set.Order) == 0;
                     cold.Orders = on.Value ? cold.Orders | set.Order : cold.Orders & ~set.Order;
+                    if ((set.Order & CharacterOrders.Jobs) != 0) DecisionSystem.Request(cold);   // the jobs switch: decided again
                     // Sneak off stands one staying low (setStandingOrder 4).
                     if ((set.Order & CharacterOrders.Sneak) != 0 && !on.Value && cold.Medical is { } low) low.StayingLow = false;
                     // Turning Hold on holds where the character stands (setStandingOrder 12: hold point = position).

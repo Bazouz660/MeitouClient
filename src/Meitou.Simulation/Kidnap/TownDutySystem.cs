@@ -73,7 +73,7 @@ public sealed class TownDuty
 /// it need not be the squad's own, and a player-side member takes only from its faction's stores.</item>
 /// </list>
 /// </summary>
-public sealed class TownDutySystem(PopulationData data, PopulationSystem population, CarrySystem carry, TownDutySettings? settings = null) : ITickSystem, IStateHashed
+public sealed class TownDutySystem(PopulationData data, PopulationSystem population, CarrySystem carry, TownDutySettings? settings = null) : ITickSystem, IStateHashed, IDecisionOwner
 {
     readonly List<TownDuty> duties = [];
     readonly List<int> downed = [];
@@ -108,8 +108,9 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
     /// the town's owner or its <c>factionsResidentHere</c>, which takes the player's faction when a player character stands in a building of the player's in that town; Meitou: the
     /// player owns a house there, <see cref="FixtureRegistry.OwnsPropertyIn"/>). In a town with occupiers while it senses an enemy: inside the walls it wants food whatever its hunger
     /// (desire 0.2), outside them in a town with gates not at all; else the 259 desire (slot 25): stomach empty, hunger at most 2.4, no food it would bite on it, not fighting unless
-    /// hunger is below 1.2. It walks to the nearest store of the town owned by its faction with food in it and takes one item, which the eating rule then eats. Engine choices: only an
-    /// idle character or one on a task its jobs started (no player order; a Follow is left alone).
+    /// hunger is below 1.2. It walks to the nearest store of the town owned by its faction with food in it and takes one item, which the eating rule then eats. A player character's
+    /// goal is the decision step's (<see cref="GettingFood"/>, priority 3, weight 0.5); this pass runs it for the other characters of the player's faction, idle or on a task their jobs
+    /// started (engine choice).
     /// </summary>
     void LookPlayerFood(World world)
     {
@@ -117,36 +118,89 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
         if (faction < 0) return;
         foodWaits.RemoveAll(w => w.Until <= world.GameHours);
         var table = world.Characters;
-        bool feedAnimals = (world.Player.SquadAi & SquadAi.Feed) != 0;
-        bool occupations = world.Squads.All.Any(q => q.Ai is { CurrentClass: PackageClass.OccupyTown });
         for (int s = 0; s < table.HighWater; s++)
         {
-            if (!table.Next[s].Alive) continue;
-            if (table.Cold(s) is not { Medical: { Dead: false, Incapacitated: false } med, Race: { } race } c || !(c.IsPlayer || c.Faction == faction)) continue;
-            // Idle, or on a task its jobs started: 243 is a priority-3 goal, tried before the jobs (docs/game/ai-tasks.md "Precedence").
+            if (!table.Next[s].Alive || table.Cold(s) is not { IsPlayer: false } c || c.Faction != faction) continue;
             var task = (CharacterTask)table.Next[s].Task;
             if (task != CharacterTask.Idle && !Production.PermaJobs.FromJob(c, task)) continue;
-            bool animal = !med.HasStatsObject;
-            if (animal && !feedAnimals) continue;
-            bool hungry = med.Fed <= 0 && med.Hunger <= FeedSystem.FoodOnGroundBelow && !(c.InCombat && med.Hunger >= FeedSystem.FoodOnGroundInFight);
-            if (!hungry && !occupations) continue;
-            if (c.Engaged || c.Fleeing || c.PickingUpItem is not null || c.OrderQueue.Count > 0 || !c.CarriedBy.IsNone || c.InSomething != HeldState.None || Busy(table.IdOf(s))) continue;
-            if (FeedSystem.CarriesFood(c, race, animal) || foodWaits.Exists(w => w.Member == table.IdOf(s))) continue;
-            var at = table.Next[s].Position;
-            var town = AiSystem.TownAt(data, world, at);
-            if (town == CampaignTown.None) continue;
-            int owner = town.PlayerTown > 0 ? world.Buildings.FindTown(town.PlayerTown)?.Owner ?? -1 : town.Site < data.SiteFactions.Count ? data.SiteFactions[town.Site] : -1;
-            if (owner != c.Faction && owner != faction && !world.Fixtures.OwnsPropertyIn(town.Site, faction)) continue;
-            if (occupations && AiSystem.Occupied(world, town) && SensesEnemy(world, s, c))
-            {
-                if (InsideWalls(world, town, at)) hungry = true;
-                else if (HasGates(world, town)) continue;
-            }
-            if (!hungry) continue;
-            if (Store(world, at, town, owner: c.Faction, animal: animal) is not var (id, spot)) continue;
-            c.Engaged = true;
-            duties.Add(new TownDuty { Member = table.IdOf(s), Faction = c.Faction, Town = town, Kind = TownDutyKind.Food, Target = id, Goal = spot, PlayerSide = true });
-            TaskStart.Walk(world, s, spot, SpeedMode.Walk, RowOf(TownDutyKind.Food), TaskSource.Goal);
+            if (FoodWant(world, s, c, out var store, out _) > 0) StartFood(world, s, c, store);
+        }
+    }
+
+    /// <summary>243's desire for a player-side character, 0 with <paramref name="why"/> when it does not want food now, and the store it would walk to (a pure read).</summary>
+    float FoodWant(World world, int s, CharacterCold c, out (CampaignTown Town, string Id, Vector2 Spot) store, out string? why)
+    {
+        store = default;
+        why = null;
+        var table = world.Characters;
+        int faction = world.Player.Faction;
+        if (faction < 0 || c is not { Medical: { Dead: false, Incapacitated: false } med, Race: { } race } || !(c.IsPlayer || c.Faction == faction)) { why = "not the player's"; return 0; }
+        bool animal = !med.HasStatsObject;
+        if (animal && (world.Player.SquadAi & SquadAi.Feed) == 0) { why = "Feed Animals is off"; return 0; }
+        bool hungry = med.Fed <= 0 && med.Hunger <= FeedSystem.FoodOnGroundBelow && !(c.InCombat && med.Hunger >= FeedSystem.FoodOnGroundInFight);
+        bool occupied = Occupations(world);
+        if (!hungry && !occupied) { why = "not hungry"; return 0; }
+        var id = table.IdOf(s);
+        if (c.Engaged || c.Fleeing || c.PickingUpItem is not null || !c.CarriedBy.IsNone || c.InSomething != HeldState.None || Busy(id)) { why = "busy"; return 0; }
+        if (FeedSystem.CarriesFood(c, race, animal) || foodWaits.Exists(w => w.Member == id && w.Until > world.GameHours)) { why = "has food, or no room for it"; return 0; }
+        var at = table.Next[s].Position;
+        var town = AiSystem.TownAt(data, world, at);
+        if (town == CampaignTown.None) { why = "not in a town"; return 0; }
+        int owner = town.PlayerTown > 0 ? world.Buildings.FindTown(town.PlayerTown)?.Owner ?? -1 : town.Site < data.SiteFactions.Count ? data.SiteFactions[town.Site] : -1;
+        if (owner != c.Faction && owner != faction && !world.Fixtures.OwnsPropertyIn(town.Site, faction)) { why = "a town the player does not live in"; return 0; }
+        float desire = 1;
+        if (occupied && AiSystem.Occupied(world, town) && SensesEnemy(world, s, c))
+        {
+            if (InsideWalls(world, town, at)) (hungry, desire) = (true, 0.2f);
+            else if (HasGates(world, town)) { why = "outside an occupied town's walls"; return 0; }
+        }
+        if (!hungry) { why = "not hungry"; return 0; }
+        if (Store(world, at, town, owner: c.Faction, animal: animal) is not var (storeId, spot)) { why = "no store with food"; return 0; }
+        store = (town, storeId, spot);
+        return desire;
+    }
+
+    /// <summary>Whether any squad occupies a town (the occupied branch of 243's desire), once a tick.</summary>
+    bool Occupations(World world)
+    {
+        if (occupationsTick != world.Tick) (occupations, occupationsTick) = (world.Squads.All.Any(q => q.Ai is { CurrentClass: PackageClass.OccupyTown }), world.Tick);
+        return occupations;
+    }
+
+    bool occupations;
+    long occupationsTick = -1;
+
+    void StartFood(World world, int s, CharacterCold c, (CampaignTown Town, string Id, Vector2 Spot) store)
+    {
+        c.Engaged = true;
+        duties.Add(new TownDuty { Member = world.Characters.IdOf(s), Faction = c.Faction, Town = store.Town, Kind = TownDutyKind.Food, Target = store.Id, Goal = store.Spot, PlayerSide = true });
+        TaskStart.Walk(world, s, store.Spot, SpeedMode.Walk, RowOf(TownDutyKind.Food), TaskSource.Goal);
+    }
+
+    public void RegisterSources(DecisionSystem decisions) => decisions.Register(new GettingFood(this));
+
+    /// <summary>243 Getting food of a player character (priority 3, weight 0.5, <see cref="FoodWant"/>): it runs while its food run does.</summary>
+    sealed class GettingFood(TownDutySystem owner) : IDecisionSource
+    {
+        public string Name => "243 Getting food";
+        public DecisionStep Step => DecisionStep.Goals;
+        public int Key => 243;
+        public float Weight => 0.5f;
+
+        public DecisionCheck CanRun(World world, int slot)
+        {
+            var id = world.Characters.IdOf(slot);
+            if (owner.Busy(id)) return owner.duties.Exists(d => d.Member == id && d.Kind == TownDutyKind.Food) ? DecisionCheck.Runs : DecisionCheck.No("busy");
+            return owner.FoodWant(world, slot, world.Characters.Cold(slot)!, out _, out string? why) > 0 ? DecisionCheck.Run : DecisionCheck.No(why);
+        }
+
+        public float Desire(World world, int slot) =>
+            owner.Busy(world.Characters.IdOf(slot)) ? 1 : owner.FoodWant(world, slot, world.Characters.Cold(slot)!, out _, out _);
+
+        public void Start(World world, int slot)
+        {
+            var cold = world.Characters.Cold(slot)!;
+            if (owner.FoodWant(world, slot, cold, out var store, out _) > 0) owner.StartFood(world, slot, cold, store);
         }
     }
 
@@ -574,7 +628,7 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
         var table = world.Characters;
         if (!table.TryResolveNext(d.Member, out int g) || table.Cold(g) is not { Medical.Incapacitated: false } gc) return End(world, d);
         // A fight (a reaction, or what a shoo's dialogue turned into) beats the errand: its walks would end it (a new task drops the fight task), so it waits for the fight to be over.
-        if (gc.InCombat) return true;
+        if (gc.InCombat) return d.PlayerSide && gc.IsPlayer ? End(world, d) : true;   // a player character's food run is a goal its fight replaced: the decision step chooses again
         ref var gn = ref table.Next[g];
         if (d.Kind is TownDutyKind.Food or TownDutyKind.LootFood) return StepFood(world, d, g, gc);
         if (d.Kind == TownDutyKind.Stash) return StepStash(world, d, g, gc);

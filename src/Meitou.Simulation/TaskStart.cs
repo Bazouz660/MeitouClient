@@ -63,7 +63,7 @@ public enum TaskEnd : byte
     Stopped,
     /// <summary>
     /// The act-out ended by itself (its work is done, or it cannot go on): it lets go, and the character goes back to the task its provenance names (<see cref="RunningTask.Resume"/>;
-    /// engine, until a decision step decides again on this trigger).
+    /// engine; the end also asks the decision step to decide again, <see cref="DecisionSystem.Request(CharacterCold)"/>).
     /// </summary>
     Done,
 }
@@ -331,6 +331,7 @@ public static class TaskStart
             n.TaskTime = 0;
         }
         cold.Running = null;
+        DecisionSystem.Request(cold);   // the plan finished or was stopped: the character is decided again
         Stamp(table, slot);
     }
 }

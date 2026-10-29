@@ -180,6 +180,7 @@ public sealed partial class World
                 Jobs = cold is { Jobs.Count: > 0 } ? cold.Jobs.ToArray() : [],
                 Scale = cold?.Animal is { } animal ? animal.Scale(cold.ShownAge) : 1,   // the size last refreshed (BodySystem.Age)
                 WeatherNotice = cold?.WeatherNotice ?? WeatherNotice.None, WeatherNoticeProtection = cold?.WeatherNoticeProtection ?? 0,
+                Decision = Decisions.Tracing ? cold?.Decision : null,
                 Activity = cold is { Ai.Goal: { } goal } && Ai.AiSystem.Holds(state[i], cold) ? Ai.TaskBehaviours.Text(goal.Task.Type) : null,
                 // The turret the combat system runs with this gunner; else (no combat system) at the gun of the turret its squad gave it: the AI's turret goal, walked to and stood at
                 // (derived from the claims, not hashed).

@@ -256,6 +256,7 @@ internal static class SavedCharacters
             Role = sc.SquadMemberType,
             IsPlayer = player,
             Orders = player ? Orders.PlayerDefaults : CharacterOrders.None,
+            Replan = player,   // a load: every player character is decided again
             FootprintRadius = race?.PathfindFootprintRadius ?? 0,
             Save = new SavedCharacterLink
             {

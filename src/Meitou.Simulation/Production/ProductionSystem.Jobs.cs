@@ -58,6 +58,7 @@ public sealed partial class ProductionSystem
         var job = PermaJobs.ListJob(cold, (CharacterTask)table.Next[slot].Task) is { Implicit: false } run ? run : null;
         if (job?.Job == index) End(world, slot);
         cold.Jobs.RemoveAt(index);
+        DecisionSystem.Request(cold);
         if (job?.Job > index) cold.Running = job with { Job = job.Job - 1 };
     }
 
@@ -69,6 +70,7 @@ public sealed partial class ProductionSystem
         var job = cold.Jobs[move.From];
         cold.Jobs.RemoveAt(move.From);
         cold.Jobs.Insert(move.To, job);
+        DecisionSystem.Request(cold);
         // The job the character is on keeps pointing at it.
         if (PermaJobs.ListJob(cold, (CharacterTask)world.Characters.Next[slot].Task) is not { Implicit: false } run) return;
         int k = run.Job;

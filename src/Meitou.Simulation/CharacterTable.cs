@@ -464,6 +464,12 @@ public sealed class CharacterCold
     public bool Operating { get; set; }
     /// <summary>The whole-body clip (an ANIMATION record name) a captor holds while it works a captive standing (<see cref="Kidnap.CaptiveSystem"/>: "chop down static", "eat", "medic"); null: none. Derived, not hashed.</summary>
     public string? ActionClip { get; set; }
+    /// <summary>
+    /// The replan bit (<see cref="DecisionSystem.Request(CharacterCold)"/>): set by a replan trigger, consumed by the decision step. Player characters only; not saved (a load sets it); hashed while set.
+    /// </summary>
+    public bool Replan { get; set; }
+    /// <summary>The last decision (<see cref="DecisionSystem.Tracing"/> on; null otherwise). Display only: not saved or hashed.</summary>
+    public DecisionTrace? Decision { get; set; }
     /// <summary>Debug builds: the table tick (<see cref="CharacterTable.Ticks"/>) and the task the start path last set (<see cref="TaskStart.CheckStarts"/>); not hashed.</summary>
     internal long TaskSetTick = -1;
     internal byte TaskSet;
@@ -693,6 +699,7 @@ public sealed class CharacterTable
             if (k.Engaged) hasher.Add(0x456E6761);
             if (!k.FollowOrder.IsNone) { hasher.Add(0x466F6C77); hasher.Add(k.FollowOrder); if (k.Guarding) hasher.Add(0x47756172); }
             if (k.FollowResume) hasher.Add(0x46526573);
+            if (k.Replan) hasher.Add(0x52706C6E);
             if (!k.TurretTarget.IsNone) { hasher.Add(0x54725467); hasher.Add(k.TurretTarget); }
             if (!k.Freeing.IsNone) { hasher.Add(0x46726565); hasher.Add(k.Freeing); }
             if (k.EnteringCage is { } entering) { hasher.Add(0x456E7472); hasher.Add(Rng.StableHash(entering)); }   // only while set, so worlds without follow orders hash as before

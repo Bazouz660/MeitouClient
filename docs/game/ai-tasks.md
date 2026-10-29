@@ -772,14 +772,13 @@ update `FUN_140511130`, `Character::setupAI` `FUN_140621b70`; KenshiLib names **
   96 Demolishing, 87 Operating, 97 Training, 124 Hauling, 150 Prospecting, 25 / 249 First aid / Splinting, 26 Looting, 69 Putting down, 98 Sleeping, 76 / 201 Lockpicking, 108, 110,
   107, 5 / 61 attacks and 29 Move order list none of 158, 159, 16, 39; Rest (54) has no TaskData row. 31 needs `!16` and 45 `!16 !39`, which 13 provides, so they fight instead of failing.
   The providers a plan adds before these rows were not checked for threat states (**Unknown**).
-- **Meitou**: the player's characters run no chooser; each system acts on its own. Orders go through the order queue ([simulation](../simulation.md#order-queue)): one that
-  can run replaces any task, one that cannot stays queued with its text while jobs and goals go on; a turret gunner's order 146 ends when a melee threat comes and is taken up
-  again once it is gone (`PlayerOrders.NeedsNoThreat`). Self preservation is `RetaliationSystem.SelfDefends`:
-  it answers when the character is idle, a bodyguard following, looting with the attacker within 40, or on a task its jobs started (`PermaJobs.FromJob`: a job's provenance
-  `CharacterCold.Running` that runs the task); Hold's attack on sight (`AggroSystem.HoldsGround`) and Getting food (`TownDutySystem.LookPlayerFood`) likewise. Gaps: the immediate
-  answer ignores "moving"; a higher list job does not take over a running medic, rescue or foraging job; a bodyguard defends its leader from an attacker at any
-  distance (engine reading), a follower only from one within 40 as the row (`RetaliationSystem.Guards`); mates join a fight only from
-  idle (the original's way a player character joins a mate is **Unknown**).
+- **Meitou**: the player's characters are decided by one step in this order ([decision step](../simulation.md#decision-step)): source 1 the order queue
+  ([simulation](../simulation.md#order-queue); one that cannot run stays queued with its text and the step goes on; a turret gunner's 146 ends under a melee threat and is taken up again
+  once it is gone, `PlayerOrders.NeedsNoThreat`), step 2 has no source (no player goal Meitou runs commits), step 4 picks among 32 Self preservation, 243 Getting food, 259 Picking up
+  food and Hold's 16, and with nothing there the existing job passes and standing tasks go on (steps 3, 5 and 6 are not sources yet). The step runs on the replan triggers above plus an
+  engine re-ask every `JobCheckTicks` of a character idle or on a job's task (no periodic replan was found). Gaps: a higher list job does not take over a running medic, rescue or
+  foraging job; a bodyguard defends its leader from an attacker at any distance (engine reading), a follower only from one within 40 as the row (`RetaliationSystem.Guards`); mates
+  join a fight only from idle (the original's way a player character joins a mate is **Unknown**).
 
 ## Combat goals
 

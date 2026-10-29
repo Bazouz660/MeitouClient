@@ -198,7 +198,8 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
     /// The player's animals keep their race's <c>AI Goals</c> but 230 (<c>Character::setupAI</c>, docs/game/animals.md "AI goals"), run here in list order as the sweep runs an NPC's: the limb
     /// fetch (277, <see cref="Fetch"/>; the limb goes into the mouth and is eaten, <see cref="Items.FeedSystem"/>), the limb play (278) and chase (279) by their player-side desires, and
     /// eating a downed body not of an ally (233). Crop raiding (232) finds nothing for them: its farms are those of a town the eater does not get along with, and only the player's
-    /// farms are machines. Engine choices: only an idle animal (no player order) starts one, and a player order ends it (<see cref="CaptiveJob.PlayerSide"/>).
+    /// farms are machines. Engine choices: only an idle animal starts one, and not while an order of its wins the decision step (a blocked order falls through,
+    /// <see cref="PlayerOrders.Wins"/>); an order that runs ends it (<see cref="CaptiveJob.PlayerSide"/>).
     /// </summary>
     void RunPlayerAnimalGoals(World world)
     {
@@ -207,7 +208,7 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
         for (int s = 0; s < table.HighWater; s++)
         {
             if (!table.Next[s].Alive || table.Next[s].Task != (byte)CharacterTask.Idle || table.Cold(s) is not { Fighter.IsAnimal: true, Race: { } race } c || !PlayerSquad(world, c)) continue;
-            if (c.Engaged || c.InCombat || c.Fleeing || c.OrderQueue.Count > 0 || !c.CarriedBy.IsNone || c.Medical is not { Incapacitated: false } || Busy(table.IdOf(s))) continue;
+            if (c.Engaged || c.InCombat || c.Fleeing || PlayerOrders.Wins(world, s) || !c.CarriedBy.IsNone || c.Medical is not { Incapacitated: false } || Busy(table.IdOf(s))) continue;
             foreach (var goal in data.Ai.RaceGoals(race.StringId))
             {
                 var id = table.IdOf(s);
@@ -254,7 +255,7 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
         ref var n = ref table.Next[w];
         byte go = (byte)CharacterTask.GoTo;
         bool taken = n.Task == go ? j.LastTask != go || n.Goal != j.LastGoal : n.Task != j.LastTask && !(j.LastTask == go && n.Task == (byte)CharacterTask.Idle);
-        if (!taken && (table.Cold(w)?.OrderQueue.Count ?? 0) == 0) return false;
+        if (!taken && !PlayerOrders.Wins(world, w)) return false;
         if (table.Cold(w) is { } wc) { wc.Engaged = false; wc.ActionClip = null; }
         return true;
     }

@@ -169,6 +169,7 @@ public sealed partial class CombatSystem
             {
                 world.SystemOf<Carrying.CarrySystem>()?.Interrupted(world, d);   // a put-down is finished by the hit, a lift past its attach keeps the body
                 Restart(world.Characters, d, dc);
+                DecisionSystem.Request(dc);   // forceOrderInsert replans (the stumble is not modelled as an order)
             }
         }
         bool stumbling = D.StumbleClip >= 0 && now < D.StunUntil;

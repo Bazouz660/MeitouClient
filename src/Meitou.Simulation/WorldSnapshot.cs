@@ -267,6 +267,8 @@ public sealed record CharacterSnapshot(CharacterId Id, CharacterAppearance? Appe
     public CharacterId Carrying { get; init; } = CharacterId.None;
     /// <summary>The goal the AI is acting out, in the game's words (<c>Patrolling town</c>, <c>Shopkeeper</c>); null when the AI does not run the character now.</summary>
     public string? Activity { get; init; }
+    /// <summary>A player character's last decision (<see cref="DecisionSystem.Tracing"/>: which source won and why each one before it could not run); null while tracing is off. Debug only.</summary>
+    public DecisionTrace? Decision { get; init; }
     /// <summary>The weather effect that hurt this player character last tick and the protection it shows (the status notice, docs/formats/weather.md); None otherwise. Display only.</summary>
     public WeatherNotice WeatherNotice { get; init; }
     public float WeatherNoticeProtection { get; init; }

@@ -134,6 +134,7 @@ public static class PermaJobs
         if (rule.Companion != 0)
             cold.Jobs.Add(target with { Type = rule.Companion == TaskType.STAY_CLOSE_TO_TARGET && SquadRegistry.IsAnimal(cold) ? TaskType.Unnamed289 : rule.Companion });
         cold.Orders |= CharacterOrders.Jobs;
+        DecisionSystem.Request(cold);   // the job list changed: decided again
         return true;
     }
 

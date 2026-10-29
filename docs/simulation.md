@@ -113,7 +113,7 @@ the task it goes back to are the new start's); the provenance is recorded in `Ch
 target, site, tick, resume task); the act-out starts.
 `TaskStart.End(world, slot, reason)` ends a task and drops its provenance: `TaskEnd.Stopped` from outside the act-out (the Stop order, a squad mate lifted awake: then idle);
 `TaskEnd.Done` the act-out's own end (a treatment, carry, site's or machine's work, haul trip, prospecting, a job's follow: the handler lets go, then the character takes up
-`RunningTask.Resume`; engine, until the decision step re-decides on this trigger). Walks (bed, item work) end by standing; their provenance then no longer runs the task. A lock order's worker (lock, shackle, cage, door, force work)
+`RunningTask.Resume`, engine; every end also sets the replan bit, [decision step](#decision-step)). Walks (bed, item work) end by standing; their provenance then no longer runs the task. A lock order's worker (lock, shackle, cage, door, force work)
 stands at its work and its provenance runs `Idle` from then (`LockSystem.AtWork`), so the next start ends the work through the lock handler (a move order given at a cage walks away). Each `CharacterTask` has one
 `ITaskHandler` (Start, End, Done), registered by its system (`ITaskOwner`) in `World.Tasks`, an open list later code may add to or replace; a task without one is set as is. Owners: movement
 (GoTo, Follow, Idle, Wander), combat (Attack), first aid (Treat, Rest), carry (PickUp, PutDown, Loot, StealthKo), production (Operate, Haul, Prospect), construction (Build, Dismantle,
@@ -140,7 +140,7 @@ delivering, fetching and dismantling are steps of one act-out (`TaskStart.ActOut
   follow whose target or leader is gone, a builder's steps, a bed reached, a fight's end (`CombatSystem.EndFight`: idle, a follow row's provenance kept for `FollowResume`), the
   stand-down back to the routine (`AggroSystem`), a knock-out (`BodySystem`), a caged character held in place (`FixtureRegistry`).
 - Engine starts end the fight and the task before as any start does (a flight's run stops the fight at once, a dialogue act's walk ends it). An errand's own walks would end a fight
-  its character is in, so they wait for it: a town duty steps nothing while its member fights, an approaching, following or stalking talker does not walk (engine choice; the
+  its character is in, so they wait for it: a town duty steps nothing while its member fights (a player character's food run ends instead), an approaching, following or stalking talker does not walk (engine choice; the
   original's priority-3 reactions beat these goals).
 - Provenance is the only job mark: `PermaJobs.FromJob` is a `TaskSource.Job` provenance that runs the task; `PermaJobs.ListJob` the production pick's list job (its index) or implicit
   job it runs (not a follow row's fight step), which `FreeFor`, the pick, the rescue job's rank test and the circle break read; a list edit moves the running index. The task an act-out
@@ -166,13 +166,17 @@ the owner's pure `IOrderOwner.CanRun`: `Run`, `Blocked` with its failure text, o
 - `PlayerOrders.Runs`: the front started and its task's provenance is an order's that runs the task (a move also needs `OrderMove`) and the handler is not `Done`. Lock work and item or
   container work done in place (`Idle`) report `Done` once the character holds no work.
 - A front whose task ended leaves the queue (a move's arrival in the character's own partition, `PlayerOrders.Arrived`, which also starts a queued move at once as the move-only
-  queue did; `TaskEnd.Done`; else `PlayerOrders.Step` after the inputs) and the next is tried at once. An interrupted move drops the queue (as `GoTo`/`Stop` dropped queued moves),
-  so does `TaskEnd.Stopped`; a start from another source replacing the running front pops it (a follow row's fight step does not).
-- **Engine** stand-in for the replan triggers until the decision step: every `ProductionSystem.JobCheckTicks` a blocked front is tried again, silently, unless the character fights.
+  queue did; `TaskEnd.Done`; else the decision step, `PlayerOrders.Prepare`) and the next is tried at once. An interrupted move drops the queue (as `GoTo`/`Stop` dropped queued moves),
+  so does `TaskEnd.Stopped`; a start from another source replacing the running front pops it (a follow row's fight step does not). A walk that finds no path still clears the whole
+  queue (`MovementSystem`; a gap: the original keeps a failed order queued with its text, but Meitou only learns of the failure after the path search, and re-asking it would ask for
+  the path again every `JobCheckTicks`).
+- After `Give` the decision step ([below](#decision-step)) asks the front again as its source 1: a blocked one falls through to goals and jobs there.
 - `PlayerOrders.Holds` (a pure read): the character holds an order, running, waiting or queued (the original's count `+0x60`; a front whose task ended is not counted). The
-  implicit ditch job 242 runs only without one ([perma-jobs](game/ai-tasks.md#perma-jobs)).
-- A row needing no melee threat (`PlayerOrders.NeedsNoThreat`: `!158` in list B, of the orders only 146 Turret gunner) is blocked while `CombatSystem.ImmediateThreat` holds; on
-  the same beat its running order ends (`TaskEnd.Stopped`) and waits unstarted, so the gunner falls through to self-defence and mans the turret again once the threat is gone (S3).
+  implicit ditch job 242 runs only without one ([perma-jobs](game/ai-tasks.md#perma-jobs)). `PlayerOrders.Wins` (pure): the front runs or can start, so source 1 wins; the
+  player animals' race goals (`CaptiveSystem.RunPlayerAnimalGoals`) start only without one, and one that runs ends them (a blocked order no longer holds them back).
+- A row needing no melee threat (`PlayerOrders.NeedsNoThreat`: `!158` in list B, of the orders only 146 Turret gunner) is blocked while `CombatSystem.ImmediateThreat` holds; at a
+  decision its running order ends (`TaskEnd.Stopped`) and waits unstarted, so the gunner falls through to self-defence and mans the turret again once the threat is gone (S3).
+  A running Loot order (26) ends (`TaskEnd.Done`) at a decision while a threat is within 40 (`Task_Loot_Order`'s update, [combat](game/combat.md#fight-lifecycle-and-orders)).
 - Group orders keep their pickers (the nearest or first character that can run it: pick up, loot, stealth KO, the turret, item pick-up, containers, lock work); only that character
   gets the order, none when nobody can run it. Per-character orders (move, follow, attack, first aid, splint, rest, the Medic and Rescue buttons, put down, operate, haul, prospect,
   build, repair, dismantle, beds, put in cage) queue blocked for whoever cannot run them.
@@ -180,6 +184,37 @@ the owner's pure `IOrderOwner.CanRun`: `Run`, `Blocked` with its failure text, o
 - Every `OrderCommand` also applies while paused (`World.ApplyPausedInterfaceCommands`, through every `IOrderOwner`'s inputs).
 - Not saved (a gap: the original saves the deque as `tjob<i>`, [perma-jobs](game/ai-tasks.md#perma-jobs)); hashed as the move-only queue was while it holds only
   that (nothing, a started order alone, started moves), else under its own mark.
+
+### Decision step
+
+`World.Decisions` (`DecisionSystem`) decides for the player's characters (`IsPlayer`) as the original's chooser does ([precedence](game/ai-tasks.md#precedence)); NPCs keep the AI
+([AI](#ai)). Serial, in slot order: in the slow world right after the last of retaliation, aggro and flight (after every system when the world has none), and between ticks for orders
+only (`ApplyPausedInterfaceCommands`; the bit stays for the next tick).
+- **Sources** (`IDecisionSource`: `CanRun` and `Desire` pure reads, `Start`), an open list sorted by step, then `Key` (the original's list order); systems register theirs
+  (`IDecisionOwner`), later code may add more (`DecisionSystem.Register`). The first source that can run starts; one that runs the character's task already ends the step. Step 4 picks
+  the best desire x weight (x1.25 for the goal running now; a tie goes to the later-listed).
+  1. Orders: the front of the queue (`PlayerOrders`): runs, starts, or (blocked) shows its text once (`Tried`), stays queued and the step goes on.
+  2. Commitment: no source. None of the player goals Meitou runs (32, 243, 259, 16) has the commit flag ([desire and commitment](game/ai-tasks.md#desire-and-commitment)); what
+     priority a running job's plan holds is **Unknown**, so committing jobs (153, 275) stop nothing.
+  3. Urgent jobs: none yet (M5b).
+  4. Priority-3 goals: 32 Self preservation (`RetaliationSystem`, weight 1: the attacker this tick that took the character as target and alerted it, within 181.7, not shooting at a gunner,
+     passing a holder's post test; desire 1 within 40, else 0.7; a deferred defence, row 13); 243 Getting food (`TownDutySystem`, weight 0.5, the [eating](game/character-stats.md#eating)
+     desire; a food run); 259 Picking up food (`FeedSystem`, animals, weight 0.5; a walk to food on the ground); 16 attack on sight while on Hold (`AggroSystem`, weight **Unknown**, 1
+     here, listed last as Hold adds it; the enemy this tick's look or a squad mate's found; desire 0 while Passive, sneaking outside a fight or not standing; a deferred fight, row 16).
+  5. and 6. None yet: with nothing from steps 1-4 the step yields and the job passes (production, first aid, carry, errands, the attacking-enemies job, beds, implicit jobs) and the
+     standing tasks go on as before (M5b, M5c).
+- **Triggers** (`CharacterCold.Replan`, `DecisionSystem.Request`; hashed while set): a task end (`TaskStart.End`, any reason), an order given or the queue cleared (`PlayerOrders.Give`,
+  Stop), a stagger outside a fight (not for a gunner), the melee alert while the fight is off unless the target gets up or is player-side and moving (`RetaliationSystem`, horizontal speed
+  above 1), a job list change or the jobs switch, a load (`SavedPopulation`), a Hold sighting (engine: the look stands in for the sensed list's update). Also a front whose task ended,
+  or one not tried yet. **Engine** re-ask (design D4; no periodic replan was found): every `ProductionSystem.JobCheckTicks` (slot-staggered) a character not fighting whose task is a
+  job's or no start's (idle, a standing task), or an order's of a row needing no melee threat (the gunner).
+- **Claims**: a character the engine started a fight for this tick (a follow row's or a bodyguard's defence, a mate's or an ally's defence, the attacking-enemies job) is left alone
+  that tick (`DecisionSystem.Claim`).
+- **Trace** (`DecisionSystem.Tracing`, off by default): each decision fills `CharacterCold.Decision` (`DecisionTrace`: tick, winner, one line per source asked with its answer: an
+  order's failure text, "no attacker in range", a score), published as `CharacterSnapshot.Decision` while tracing. Not saved or hashed.
+- The player-faction characters that are not `IsPlayer` keep the old passes (243 for one idle or on a job, 259 for an animal idle or following).
+- Engine choices the step does not cover yet: errands' walks wait out a fight (NPC duties, the dialogue approach); a player character's food run ends instead when a fight replaces it.
+  The attacking-enemies job's stand-down after a fight (`AggroSystem.SlowWorld`) is a job's (M5b). The step's starts act from the next tick (deferred fights) or at once (walks).
 
 ## Systems and their order
 
@@ -395,9 +430,9 @@ commands with the original's limits ([Squads tab](game/ui-screens.md#squads-tab)
 ### Order toggles
 
 Passive/Hold/Block/Taunt/Jobs state belongs to the character (medic and rescue are job-list entries, [job lists](#production)) and relevant
-systems; the rules follow [combat](game/combat.md#fight-lifecycle-and-orders). A player's character defends itself only without an order
-(Idle, a bodyguard's Follow, a task its jobs started, or Loot with the attacker within 40; [precedence](game/ai-tasks.md#precedence)) and against an attacker within √33000 ≈ 182; Passive does not stop that but keeps it
-from joining others' defence and from attack on sight. Hold adds attack on sight while Idle or on a task its jobs started (not Passive, sneaking or crawling), and every target of a
+systems; the rules follow [combat](game/combat.md#fight-lifecycle-and-orders). A player's character defends itself (32 Self preservation, a [decision step](#decision-step) goal) only when no order of its runs or can start (a
+bodyguard following also as a step of its row; a Loot order ends under a threat within 40) and against an attacker within √33000 ≈ 182; Passive does not stop that but keeps it
+from joining others' defence and from attack on sight. Hold adds attack on sight (goal 16, another decision-step goal; not Passive, sneaking outside a fight, or prone), and every target of a
 holder (sight, self-defence, re-pick) passes the post test (`Orders.HoldPost`); it walks to a target only within 80 (140 when the target is in a fight and heads for it) of
 its hold point (`CharacterCold.HoldPoint`: where Hold was turned on, then each ground move's destination; not saved: a loaded holder holds where it stands, as setStandingOrder 12 does; **Observed**: the loader replays the jobs switch through it, Verified; Hold assumed alike).
 A toggle (button or hotkey) sets every selected character to the opposite of the first one's state, so a mixed selection ends uniform (engine choice; the original's rule is **Unknown**). Toggles and the run speed arrows also apply while paused ([time model](#time-model)).
@@ -578,16 +613,16 @@ default): the turret step sets the gunner's yaw along the barrel every tick; off
 `ANIMAL_CHARACTER`, animal body/stats/size/fists and creature techniques come from typed data;
 animals use faction hostility and carrying/damage rules where eligible. They age and grow, pack beasts spawn with their
 bag on, DA 48 sells them, and the context menu's Follow keeps any player character beside another
-([animals](game/animals.md#ageing)). Player animals feed themselves: food on the ground (259, `FeedSystem.FetchFood`), food from their outpost's stores
-(243, also for people, `TownDutySystem.LookPlayerFood`, [rules](game/character-stats.md#eating)) and limbs (277); `CaptiveSystem.RunPlayerAnimalGoals` also runs their limb play and chase
-(278, 279) and eating downed non-allies (233) as [captive jobs](#captives) when idle, ended by any player order. Corpses (230) are dropped from the player's animals by the original;
+([animals](game/animals.md#ageing)). Player animals feed themselves: food on the ground (259, `FeedSystem.GroundFood`), food from their outpost's stores
+(243, also for people, `TownDutySystem.FoodWant`, [rules](game/character-stats.md#eating); both decision-step goals for player characters) and limbs (277); `CaptiveSystem.RunPlayerAnimalGoals` also runs their limb play and chase
+(278, 279) and eating downed non-allies (233) as [captive jobs](#captives) when idle and no order wins, ended by an order that runs. Corpses (230) are dropped from the player's animals by the original;
 crops (232) find nothing for them (only the player's farms are machines, and the eater must not get along with the town). Unarmed humans use
 martial-arts category 5. [animals.md](game/animals.md), [characters.md](characters.md).
 
 ### Hostility and relations
 
 `AggroSystem`, `RetaliationSystem`, `FleeSystem`: previous-position sight/hearing, faction
-relations, shared targets, idle-player self-defence ([order toggles](#order-toggles)), chase give-up and return to routine. The look picks
+relations, shared targets, player self-defence as a [decision step](#decision-step) goal ([order toggles](#order-toggles)), chase give-up and return to routine. The look picks
 the best `Combat.TargetScore` (the original's attack-on-sight finder), not the nearest.
 Being taken as a target is answered the same tick when it alerts ([being targeted](game/combat.md#fight-lifecycle-and-orders)), the rest every 15 ticks;
 free squad mates within `JoinRange` (250, engine choice; the original's joiner must sense the mate) join an attacked member's defence each check even while it is

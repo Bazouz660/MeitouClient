@@ -106,8 +106,8 @@ public sealed class OrderQueue : IReadOnlyList<OrderEntry>
 /// <summary>
 /// The order queue's rules (docs/simulation.md "Order queue"; the original's <c>checkOrders</c> <c>FUN_140510920</c> and <c>Character::addOrder</c> <c>FUN_1405c8da0</c>, docs/game/ai-tasks.md
 /// "Precedence"): an order command clears the queue (unless Shift) and queues the order; the front starts through its owner when it can run, else shows its failure text and stays queued
-/// while the character's jobs, goals and reactions go on; a front whose task ended leaves the queue and the next starts. <b>Engine</b> until the decision step: the front is tried again every
-/// <see cref="Production.ProductionSystem.JobCheckTicks"/> (<see cref="Step"/>).
+/// while the character's jobs, goals and reactions go on; a front whose task ended leaves the queue and the next starts. The decision step asks the front as its source 1
+/// (<see cref="DecisionSystem"/>).
 /// </summary>
 public static class PlayerOrders
 {
@@ -117,10 +117,12 @@ public static class PlayerOrders
     /// </summary>
     public static OrderCheck Give(World world, int slot, OrderEntry order, bool queued, bool show = true)
     {
-        var q = world.Characters.Cold(slot)!.OrderQueue;
+        var cold = world.Characters.Cold(slot)!;
+        var q = cold.OrderQueue;
         if (!queued) q.Clear();
         else Settle(world, slot);
         q.Add(order);
+        DecisionSystem.Request(cold);   // addOrder replans at once: the order's own start below, the fall-through at the decision step
         return q.Count == 1 ? TryFront(world, slot, show) : OrderCheck.Run;
     }
 
@@ -179,13 +181,14 @@ public static class PlayerOrders
         else q.PopFront();
     }
 
-    /// <summary>Tries the front: gone ones leave, a blocked one stays (its text shown with <paramref name="show"/>), one that can run starts; one whose start leaves nothing running leaves.</summary>
+    /// <summary>Tries the front: gone ones leave, a blocked one stays (its text shown with <paramref name="show"/> the first time), one that can run starts; one whose start leaves nothing running leaves.</summary>
     static OrderCheck TryFront(World world, int slot, bool show)
     {
         var q = world.Characters.Cold(slot)!.OrderQueue;
         while (q.Front is { } front)
         {
             var check = CanRun(world, slot, front);
+            bool first = !front.Tried;
             front.Tried = true;
             if (check.Verdict == OrderVerdict.Gone)
             {
@@ -194,11 +197,7 @@ public static class PlayerOrders
             }
             if (check.Verdict == OrderVerdict.Blocked)
             {
-                if (show && check.Why is { } why)
-                {
-                    if (check.Posted) world.Post(why);
-                    else world.Bark(world.Characters.IdOf(slot), why);
-                }
+                if (show && first) Show(world, slot, check);
                 return check;
             }
             front.Started = true;
@@ -239,7 +238,7 @@ public static class PlayerOrders
     }
 
     /// <summary>
-    /// <see cref="TaskStart.End"/>'s hook, before the end: the running front order's task is done (<see cref="TaskEnd.Done"/>: it leaves the queue, the next starts at the next <see cref="Step"/>)
+    /// <see cref="TaskStart.End"/>'s hook, before the end: the running front order's task is done (<see cref="TaskEnd.Done"/>: it leaves the queue, the next starts at the decision step)
     /// or stopped from outside (<see cref="TaskEnd.Stopped"/>: the queue is dropped, as a stop always dropped the queued moves).
     /// </summary>
     internal static void Ending(World world, int slot, TaskEnd reason)
@@ -251,35 +250,66 @@ public static class PlayerOrders
         else q.PopFront();
     }
 
-    /// <summary>
-    /// Each tick after the inputs (serial): a front whose task ended leaves the queue and the next starts (the original's "plan finished" replan). <b>Engine</b> stand-ins for the replan triggers
-    /// (until the decision step, M5): a front not tried yet is tried at once; every <see cref="Production.ProductionSystem.JobCheckTicks"/> a waiting one is tried again unless the character fights (a plan in progress; its end
-    /// replans), silently; and on the same beat a running front whose row needs no melee threat (<see cref="NeedsNoThreat"/>) ends when one comes (the original replans on the blow's stagger
-    /// and the plan fails), so the character falls through to Self preservation and takes the order up again once the threat is gone (S3, the turret gunner).
-    /// </summary>
-    internal static void Step(World world)
+    static void Show(World world, int slot, in OrderCheck check)
     {
-        var table = world.Characters;
-        for (int i = 0; i < table.HighWater; i++)
+        if (check.Why is not { } why) return;
+        if (check.Posted) world.Post(why);
+        else world.Bark(world.Characters.IdOf(slot), why);
+    }
+
+    /// <summary>
+    /// The decision step's source 1 before it is asked (<c>checkOrders</c> pops the front when done, or when its desire x finder is 0; serial): a front whose task ended leaves, gone ones
+    /// leave; a running front whose row needs no melee threat (<see cref="NeedsNoThreat"/>) ends when one comes and waits unstarted (its plan fails, so the character falls through: S3,
+    /// the turret gunner); a running Loot order (26) ends under a threat within 40 (the <c>Task_Loot_Order</c> update ends on <c>+0x2b0</c>, docs/game/combat.md "Actions mid-fight") and
+    /// leaves the queue.
+    /// </summary>
+    internal static void Prepare(World world, int slot)
+    {
+        var q = world.Characters.Cold(slot)!.OrderQueue;
+        while (q.Front is { } front)
         {
-            if (!table.Next[i].Alive || table.Cold(i) is not { OrderQueue.Count: > 0 } cold) continue;
-            var front = cold.OrderQueue.Front!;
-            bool due = (world.Tick + i) % Production.ProductionSystem.JobCheckTicks == 0;
             if (front.Started)
             {
-                if (!Runs(world, i, front))
+                if (!Runs(world, slot, front))
                 {
-                    Settle(world, i);
-                    if (cold.OrderQueue.Count > 0) TryFront(world, i, show: true);
+                    Settle(world, slot);
+                    continue;
                 }
-                else if (due && Threatened(world, i, front.Row))
+                if (Threatened(world, slot, front.Row))
                 {
                     front.Started = false;   // waits in the queue: its end below is not the order's
-                    TaskStart.End(world, i, TaskEnd.Stopped);
+                    TaskStart.End(world, slot, TaskEnd.Stopped);
                 }
-                continue;
+                else if (front.Row == TaskType.LOOT_TARGET && world.SystemOf<Combat.CombatSystem>() is { } combat && CharacterFacts.ImmediateThreat(combat, world, slot))
+                {
+                    TaskStart.End(world, slot, TaskEnd.Done);
+                    continue;
+                }
+                return;
             }
-            if (!front.Tried || due && !cold.InCombat) TryFront(world, i, show: !front.Tried);
+            if (CanRun(world, slot, front).Verdict != OrderVerdict.Gone) return;
+            q.PopFront();
         }
+    }
+
+    /// <summary>The decision step's start of source 1: the front starts (<see cref="TryFront"/>).</summary>
+    internal static void StartFront(World world, int slot) => TryFront(world, slot, show: true);
+
+    /// <summary>The decision step went past a front that cannot run: its failure text is shown the first time it is tried, and it stays queued.</summary>
+    internal static void Refused(World world, int slot)
+    {
+        if (world.Characters.Cold(slot)!.OrderQueue.Front is not { Started: false, Tried: false } front) return;
+        front.Tried = true;
+        Show(world, slot, CanRun(world, slot, front));
+    }
+
+    /// <summary>
+    /// Whether the character's order wins the decision step's source 1 now (a pure read): its front runs, or can start. A character whose only order is blocked falls through to its goals
+    /// and jobs (the original's chooser goes on).
+    /// </summary>
+    public static bool Wins(World world, int slot)
+    {
+        if (world.Characters.Cold(slot)!.OrderQueue.Front is not { } front) return false;
+        return front.Started ? Runs(world, slot, front) : CanRun(world, slot, front).CanRun;
     }
 }
