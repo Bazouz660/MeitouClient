@@ -389,7 +389,9 @@ money, mark the entry claimed (it never pays twice) and show "Received c.{1} rew
   the speaker under further tests (`FUN_1405995d0`, `FUN_140599590`, `FUN_14059a920 < 36`). Price `2 * bounty` with a zero faction,
   which through the cage rule of 11.2 is the jail's booking faction; at least 2000 when the prisoner is not of the player's faction.
   Paying (`FUN_1406ae170`) unlocks the cage, erases the jail's entry (`FUN_1408539f0(ledger, 0)`), sets `+0xea = 1` (freed: [perception](perception.md), Meitou `Freed`), the prisoner says
-  `EV_BOUGHT_ME_FROM_SLAVERY` and gets 133 `GET_OUT_OF_CAGE_LEGIT`. Only two base dialogues carry DA 43 (**Verified** by probe, 2026-10-21): "Shek law
+  `EV_BOUGHT_ME_FROM_SLAVERY` (event 51, `FUN_140684990` with the payer, the conversation's player character, as target; **Verified**) and gets 133 `GET_OUT_OF_CAGE_LEGIT`;
+  its squad's memory also takes the payer as FREED_ME (long tag 3, `FUN_140673930`; **Verified**), for every freed prisoner whose character resolved. Meitou: `ArrestSystem.Bail`
+  writes both (task 133 not modelled). Only two base dialogues carry DA 43 (**Verified** by probe, 2026-10-21): "Shek law
   bounty" (shek bounty desk, the reply "I'm here to bail out a friend.") and "Inquisitor heretic bounty" (Holy Nation Inquisitor); no United Cities law
   dialogue offers bail.
 - **Escape**: leaving by 207/256, or being lifted out, gives a pending Escaping Prison (0xc) and the escaped flag ([locks](locks.md#cages-and-beds));

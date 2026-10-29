@@ -147,6 +147,10 @@ public sealed partial class ArrestSystem
         Locks.FixtureRegistry.ClearSlave(world, pc);   // bail frees a slave (FUN_1406ae170)
         pc.Freed = true;
         pc.Recognition = 0;
+        // Its squad remembers the payer as the one who freed it, and it says event 51 at the payer (FUN_1406ae170: FUN_140673930 tag 3, FUN_140684990 event 0x33; Verified).
+        var payerId = table.IdOf(payer);
+        Talk?.Memory.Remember(world, pc.SquadId, payerId, Dialogue.MemoryTag.FreedMe);
+        Talk?.FireEvent(world, prisoner, payerId, Dialogue.DialogueSystem.BoughtMeFromSlavery);
         Note(world, ArrestEventKind.Bailed, table.IdOf(payer), prisoner, cage.Owner, price);
     }
 

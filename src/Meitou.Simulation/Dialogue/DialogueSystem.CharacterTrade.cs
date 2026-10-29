@@ -33,7 +33,7 @@ public sealed record CloseCharacterTrade : SimCommand;
 public sealed partial class DialogueSystem
 {
     /// <summary>EV_BOUGHT_ME_FROM_SLAVERY.</summary>
-    const int BoughtMeFromSlavery = 51;
+    internal const int BoughtMeFromSlavery = 51;
     /// <summary>How near the slaver a member of the customer's squad must be to be offered for sale (DA 41, 300 units, 3D).</summary>
     const float SlaveSaleRange = 300;
     /// <summary>How far from the buyer a bought slave walks out of its cage to (engine choice).</summary>
