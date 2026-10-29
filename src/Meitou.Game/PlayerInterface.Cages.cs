@@ -43,7 +43,7 @@ sealed partial class PlayerInterface
         bool occupied = !cage.Occupant.IsNone;
         if (cage.Locked)
         {
-            verbs.Add(("Pick Lock", () => Say(new PickLockOrder(selection, cage.Occupant) { Cage = occupied ? null : cage.Id, Tick = session.World.Tick })));
+            verbs.Add((PickLockCaption(cage.Position, cage.Level, !occupied), () => Say(new PickLockOrder(selection, cage.Occupant) { Cage = occupied ? null : cage.Id, Tick = session.World.Tick })));
             verbs.Add(("Use Tools", () => Say(new ForceLockOrder([], cage.Id, LockForce.Tools) { Tick = session.World.Tick })));
             verbs.Add(("Use Strength", () => Say(new ForceLockOrder([], cage.Id, LockForce.Strength) { Tick = session.World.Tick })));
         }

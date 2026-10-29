@@ -284,6 +284,8 @@ public sealed record CharacterSnapshot(CharacterId Id, CharacterAppearance? Appe
     public float? StealthKoChance { get; init; }
     /// <summary>The chance in per cent that the selection's lead kidnaps this NPC (<see cref="Carrying.CarrySystem.KidnapChance"/>); null for a player character or with nothing selected.</summary>
     public float? KidnapChance { get; init; }
+    /// <summary>A player character's effective lockpicking (<see cref="Locks.Lockpicking.Skill"/>): the Pick Lock rows' chance column is <see cref="Locks.Lockpicking.Chance"/> of the lock's level and the lead's skill.</summary>
+    public float LockpickSkill { get; init; }
     /// <summary>Asleep (<see cref="Carrying.CarrySystem.Asleep"/>): not standing, so the menu offers the down verbs (Kidnap among them).</summary>
     public bool Asleep { get; init; }
     /// <summary>An <see cref="Carrying.OpenLootOrder"/> may open its inventory (<see cref="Carrying.CarrySystem.Openable"/>: down, playing dead or carried, the player's own, a sleeper or a prisoner as a pickpocket): the menu's Loot and Trade.</summary>

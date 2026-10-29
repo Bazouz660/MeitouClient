@@ -45,6 +45,26 @@ sealed partial class PlayerInterface
     /// <summary>A caption with a chance column: the menu shows <paramref name="chance"/> (0..100) beside the verb as the original's <c>Value</c> box (<c>FUN_1407f65e0</c>).</summary>
     static string WithChance(string caption, float chance) => caption + "\t" + Math.Clamp(chance, 0, 100).ToString("0", CultureInfo.InvariantCulture);
 
+    /// <summary>
+    /// The Pick Lock row with its chance column (verb 76, <c>FUN_1407f65e0</c>, <b>Verified</b>): the lock's pick chance (<see cref="Meitou.Simulation.Locks.Lockpicking.Chance"/> of its <paramref name="level"/>
+    /// and the lockpicking of the selected character nearest <paramref name="at"/>) in per cent; a building's lock (<paramref name="building"/>: not a caged character's) below the minimum pick chance
+    /// shows 0 (<c>DAT_142133f28</c>, taken to be CONSTANTS <c>minimum lockpick chance</c>, <b>Observed</b>: the allowed test <c>FUN_1408ca120</c> compares with it).
+    /// </summary>
+    string PickLockCaption(Vector3 at, int level, bool building)
+    {
+        CharacterSnapshot? lead = null;
+        float nearest = float.MaxValue;
+        foreach (var c in Selected())
+        {
+            float d = Vector3.DistanceSquared(c.Position, at);
+            if (d < nearest) (lead, nearest) = (c, d);
+        }
+        if (lead is null) return "Pick Lock";
+        float chance = Meitou.Simulation.Locks.Lockpicking.Chance(level, lead.LockpickSkill);
+        if (building && chance < (SquadLimits?.Invoke()?.MinimumLockpickChance ?? 0.05f)) chance = 0;
+        return WithChance("Pick Lock", chance * 100);
+    }
+
     static (string Caption, float? Chance) SplitChance(string caption) =>
         caption.IndexOf('\t') is var tab and >= 0 && float.TryParse(caption.AsSpan(tab + 1), NumberStyles.Float, CultureInfo.InvariantCulture, out float c) ? (caption[..tab], c) : (caption, null);
 
@@ -122,7 +142,7 @@ sealed partial class PlayerInterface
         if (target.CanOpenInventory && !(target.IsPlayer && selection.Contains(id))) verbs.Add(InventoryVerb(target));
         if (prison.Locked)
         {
-            if (!down) verbs.Add(("Pick Lock", () => Say(new Meitou.Simulation.Locks.PickLockOrder(selection, id) { Tick = session.World.Tick })));
+            if (!down) verbs.Add((prison.LockLevel < 0 ? "Pick Lock" : PickLockCaption(target.Position, prison.LockLevel, false), () => Say(new Meitou.Simulation.Locks.PickLockOrder(selection, id) { Tick = session.World.Tick })));
             // The player's own cage frees its prisoner while locked too (the release unlocks it); never a dead or knocked-out one (Set Free wants a conscious target, precondition 125).
             if (!selection.Contains(id) && !down && target.CarriedBy.IsNone && prison.CageOwner == session.World.Player.Faction)
                 verbs.Add(("Set Free", () => Say(new Meitou.Simulation.Locks.SetFreeOrder([], id) { Tick = session.World.Tick })));
@@ -279,7 +299,7 @@ sealed partial class PlayerInterface
         if (!container.Locked) verbs.Add((own ? "Inventory" : "Loot", () => OpenContainer(container.Id, true)));
         else
         {
-            if (!own && container.Owner >= 0) verbs.Add(("Pick Lock", () => OpenContainer(container.Id, true)));
+            if (!own && container.Owner >= 0) verbs.Add((PickLockCaption(container.Position, container.Level, true), () => OpenContainer(container.Id, true)));
             verbs.Add(("Use Tools", () => Say(new Meitou.Simulation.Locks.ForceLockOrder([], container.Id, Meitou.Simulation.Locks.LockForce.Tools) { Tick = session.World.Tick })));
             verbs.Add(("Use Strength", () => Say(new Meitou.Simulation.Locks.ForceLockOrder([], container.Id, Meitou.Simulation.Locks.LockForce.Strength) { Tick = session.World.Tick })));
         }
@@ -312,7 +332,7 @@ sealed partial class PlayerInterface
         if (pick.Locked)
         {
             if (own) verbs.Add(("Unlock", () => Say(new Meitou.Simulation.Locks.DoorLockOrder([], door.Id, false) { Tick = session.World.Tick })));
-            else verbs.Add(("Pick Lock", () => Say(new Meitou.Simulation.Locks.DoorOrder([], door.Id, true) { Tick = session.World.Tick })));
+            else verbs.Add((PickLockCaption(door.Position, session.CurrentSnapshot.Doors.GetValueOrDefault((door.Building, door.Door)).Level, true), () => Say(new Meitou.Simulation.Locks.DoorOrder([], door.Id, true) { Tick = session.World.Tick })));
             verbs.Add(("Use Tools", () => Say(new Meitou.Simulation.Locks.ForceLockOrder([], door.Id, Meitou.Simulation.Locks.LockForce.Tools) { Tick = session.World.Tick })));
             verbs.Add(("Use Strength", () => Say(new Meitou.Simulation.Locks.ForceLockOrder([], door.Id, Meitou.Simulation.Locks.LockForce.Strength) { Tick = session.World.Tick })));
             verbs.Add(("Smash", () => Say(new Meitou.Simulation.Locks.ForceLockOrder([], door.Id, Meitou.Simulation.Locks.LockForce.Smash) { Tick = session.World.Tick })));

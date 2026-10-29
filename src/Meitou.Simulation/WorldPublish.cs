@@ -203,6 +203,7 @@ public sealed partial class World
                 Asleep = Carrying.CarrySystem.Asleep(table, i),
                 CanOpenInventory = cold is not null && Carrying.CarrySystem.Openable(table, i),
                 KidnapChance = leadSlot >= 0 && i != leadSlot && cold is { IsPlayer: false } ? Carrying.CarrySystem.KidnapChance(table.Cold(leadSlot)!, cold) : null,
+                LockpickSkill = cold is { IsPlayer: true } ? Locks.Lockpicking.Skill(cold) : 0,
             };
         }
         PreviousSnapshot = Snapshot;

@@ -39,11 +39,11 @@ public readonly record struct BedData(int Function, string? Clip, float Material
 public readonly record struct BedNode(Vector3 At, float Yaw);
 
 /// <summary>A container with an inventory as the host picks it: its fixture id, BUILDING record, position, owner faction (-1: none) and whether its lock is locked.</summary>
-public sealed record ContainerSpot(string Id, string Record, Vector3 Position, int Owner = -1, bool Locked = false);
+public sealed record ContainerSpot(string Id, string Record, Vector3 Position, int Owner = -1, bool Locked = false, int Level = 0);
 
 /// <summary>A door for the host's picking: its fixture id, its key in <see cref="WorldSnapshot.Doors"/>, its owner faction, where its closed leaf is (else its building's origin) and how far it slides fully open (<see cref="DoorSpot.Slide"/>).</summary>
 /// <summary>A cage for picking: its fixture id, CAGE-function BUILDING record, place, owner faction (-1 none), whether its lock holds and who is in it (None: free).</summary>
-public sealed record CageSpot(string Id, string Record, Vector3 Position, int Owner, bool Locked, CharacterId Occupant);
+public sealed record CageSpot(string Id, string Record, Vector3 Position, int Owner, bool Locked, CharacterId Occupant, int Level = 0);
 
 public sealed record DoorPick(string Id, string Building, int Door, int Owner, Vector3 Position, Vector3 Slide = default);
 
@@ -160,9 +160,9 @@ public sealed class Fixture
 
 /// <summary>
 /// A door as the snapshot shows it (<see cref="WorldSnapshot.Doors"/>): its open amount 0..1, motion, whether it is effectively locked and whether it wants to lock; for the sounds,
-/// whether it is broken, where it is (the leaf's centre once known, else its building's origin) and its own BUILDING record (<c>door type</c>).
+/// whether it is broken, where it is (the leaf's centre once known, else its building's origin), its own BUILDING record (<c>door type</c>) and its lock's level (the Pick Lock chance).
 /// </summary>
-public readonly record struct DoorView(float Open, DoorMotion Motion, bool Locked, bool WantsLock, bool Broken = false, Vector3 Position = default, string Record = "");
+public readonly record struct DoorView(float Open, DoorMotion Motion, bool Locked, bool WantsLock, bool Broken = false, Vector3 Position = default, string Record = "", int Level = 0);
 
 /// <summary>
 /// The doors of the building the HUD shows (<see cref="InspectBuildingCommand"/>), in the building's door order: what the panel's door lines say; whether a fixture of it is the player's

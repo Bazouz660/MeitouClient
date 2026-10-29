@@ -49,13 +49,13 @@ public sealed partial class FixtureRegistry
     IReadOnlyList<ContainerSpot>? containerSpots;
 
     /// <summary>Where the containers with an inventory stand, for the host's picking; rebuilt (serial phases) only when a building registers or goes.</summary>
-    public IReadOnlyList<ContainerSpot> ContainerSpots => containerSpots ??= [.. all.Where(f => f.Contents is not null).Select(f => new ContainerSpot(f.Id, f.RecordId, f.Position, f.Owner, f.Lock is { EffectivelyLocked: true }))];
+    public IReadOnlyList<ContainerSpot> ContainerSpots => containerSpots ??= [.. all.Where(f => f.Contents is not null).Select(f => new ContainerSpot(f.Id, f.RecordId, f.Position, f.Owner, f.Lock is { EffectivelyLocked: true }, f.Lock?.Level ?? 0))];
 
     List<Fixture>? cageList;
 
     /// <summary>Every cage, for the host's picking; rebuilt (serial phases) when a building registers or goes, or a cage's lock or occupant changes (<see cref="Touch"/>).</summary>
     public IReadOnlyList<CageSpot> CageSpots(CharacterTable table) =>
-        [.. (cageList ??= [.. all.Where(f => f.Kind == FixtureKind.Cage)]).Select(f => new CageSpot(f.Id, f.RecordId, f.Position, f.Owner, f.Lock is { EffectivelyLocked: true }, IsFree(table, f) ? CharacterId.None : f.Occupant))];
+        [.. (cageList ??= [.. all.Where(f => f.Kind == FixtureKind.Cage)]).Select(f => new CageSpot(f.Id, f.RecordId, f.Position, f.Owner, f.Lock is { EffectivelyLocked: true }, IsFree(table, f) ? CharacterId.None : f.Occupant, f.Lock?.Level ?? 0))];
 
     IReadOnlyList<BedSpot>? bedSpots;
 
@@ -1000,7 +1000,7 @@ public sealed partial class FixtureRegistry
         var doorViews = new Dictionary<(string Building, int Door), DoorView>();
         foreach (var f in all)
             if (f.Kind == FixtureKind.Door && Shown(f))
-                doorViews[(f.Building, f.DoorIndex)] = new DoorView(f.OpenAmount, f.Motion, f.Lock is { EffectivelyLocked: true }, f.WantsLock, f.DoorBroken, DoorSpotOf(f)?.Centre ?? f.Position, f.RecordId);
+                doorViews[(f.Building, f.DoorIndex)] = new DoorView(f.OpenAmount, f.Motion, f.Lock is { EffectivelyLocked: true }, f.WantsLock, f.DoorBroken, DoorSpotOf(f)?.Centre ?? f.Position, f.RecordId, f.Lock?.Level ?? 0);
         publishedDoorsKey = key;
         return publishedDoors = doorViews;
 
