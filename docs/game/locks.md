@@ -95,8 +95,9 @@ Save sample (autosave of the owner's game, 51 zone files): `lock lvl` values spa
   task rows carry the -10 penalty when caged). Task list B also needs `hasOneWorkingArm` and no weapon equipped.
 - **Crime** (**Observed**: `FUN_140852c80`, the pending-crime setter of [economy](economy.md#116-booking-factions-and-police-hits-observed),
   called on every update of the task, before the roll): a building owned by another faction -> code 2 (Burglary) against the
-  owner faction; a cage holding a character, or another character's shackles -> code 7 against the captive's owner faction
-  (character `+0x1a0 -> +0xe0`). economy.md lists code 7 as "Terrorism" (from the game's name table); which label the game shows for freeing is **Unknown**.
+  owner faction; a cage holding a character -> code 7 against the captive's `+0x1a0 -> +0xe0`. Another character's shackles (`Task_PickLock_Shackles` `FUN_140359d90`, `Task_CutShackles` `FUN_140359f80`,
+  `Task_BruteForceShackles` `FUN_140352c50`; **Verified**): code 7 against the same field, the wearer's slave owner faction (status `+0xe0`, 0 for a free wearer, **Unknown** how a pending crime against it is booked), with the
+  wearer's owner handle as the victim; cut and break book code 2 against faction 0 for a target that is no other character. economy.md lists code 7 as "Terrorism" (from the game's name table); which label the game shows for freeing is **Unknown**.
 - **Success side effects**: the picker's own squad's "house locked" flag is cleared when the door is of its own home (**Observed**, `FUN_140359160`: a stranger's pick leaves the owners' flag set); a freed character gets relation event 0xd from
   the picker (0xe on failure) (**Observed**).
 
@@ -113,7 +114,7 @@ Same targets as picking; Task_CutLock / Task_BruteForceLock share the shackle ta
   The bar shows hardness x 10. Same crime rule as picking (2 for own-target / buildings, 7 for another character).
 - **Break** (`Task_BruteForceShackles` slot 2, **Observed**): instant; succeeds when effective strength x stat scale > 3 x hardness,
   else "I'm not strong enough to do that". Sets broken, "*Crunck*".
-- **Taking off** (`Task_TakeOffCuffs` 219, **Verified**): the only way worn shackles come off once unlocked for a character that is not the player's. Its update (slot 2, `FUN_140349d00`) queues a world event (kind 5, the
+- **Taking off** (`Task_TakeOffCuffs` 219, **Verified**): its update (slot 2, `FUN_140349d00`) queues a world event (kind 5, the
   character's own hand, de-duplicated on the GameWorld list `+0x5c8`) that `FUN_1407b65b0` replays as `Character::setChainedMode(character, false)` (`FUN_14032e590`): the chained flag `+0x320` is cleared and the worn locked
   armour (`LockedArmour`, vfunc `0x2f0`; boots section 9, else section 5, `FUN_1405c8a10`) is removed through the inventory (vfunc `0x30`; whether the item goes to the pack or is destroyed is **Unknown**);
   a player faction's character is refreshed. 219 needs !114 (not wearing locked shackles) and gives !134 (`isChained`); 202 Escaping plans 201 / 185 / 186 for the first, then 219.

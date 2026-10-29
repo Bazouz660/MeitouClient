@@ -163,12 +163,16 @@ public sealed class Lockpicking(GameConstants constants, BodyOptions options)
         return true;
     }
 
-    /// <summary>Another character's shackles: code 7 against the wearer's faction (the original reads its slave owner's; <see cref="CrimeSystem.SetPending"/> refuses own-faction victims).</summary>
+    /// <summary>
+    /// Another character's shackles: code 7 against the faction that owns the wearer as a slave (status <c>+0xe0</c>, <c>FUN_140359d90</c>, <c>FUN_140359f80</c>, <c>FUN_140352c50</c>, <b>Verified</b>), booked
+    /// every update before the roll. A wearer without an owner (-1) books nothing: <see cref="CrimeSystem.SetPending"/> refuses a faction that does not exist (the original sets the crime against
+    /// a null faction, whose booking is <b>Unknown</b>), as it refuses the culprit's own faction. The wearer stays the crime's victim character (the original passes the wearer's owner handle).
+    /// </summary>
     static void ShackleCrime(World world, int worker, CharacterId wearer, CrimeSystem? crimes)
     {
         var table = world.Characters;
         if (crimes is null || wearer == table.IdOf(worker) || !table.TryResolveNext(wearer, out int w) || table.Cold(w) is not { } victim) return;
-        crimes.SetPending(world, worker, CrimeCode.Terrorism, victim.Faction, wearer, CrimeSystem.MinTimer);
+        if (victim.SlaveOwner >= 0) crimes.SetPending(world, worker, CrimeCode.Terrorism, victim.SlaveOwner, wearer, CrimeSystem.MinTimer);
     }
 
     /// <summary>
