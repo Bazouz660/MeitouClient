@@ -60,6 +60,28 @@ public interface IDecisionOwner
 }
 
 /// <summary>
+/// The contributor of the jobs of one or more types (<see cref="DecisionSystem.RegisterJob"/>). The decision step's job sources (steps 3 and 5) walk the character's list in order (the original's
+/// keys N+8, N+7, ...) and ask the contributor of each job's type; the jobs switch, the repertoire and the walk's order are theirs, everything else the contributor's.
+/// </summary>
+public interface IJobSource
+{
+    /// <summary>
+    /// Whether job <paramref name="k"/> of the character's list can run now (a pure read: the original's desire x finder above 0); <see cref="DecisionCheck.Runs"/> when the character's task
+    /// is that job's already.
+    /// </summary>
+    DecisionCheck CanRun(World world, int slot, int k);
+    /// <summary>Starts job <paramref name="k"/> (serial phases only), after <see cref="CanRun"/> said it can.</summary>
+    void Start(World world, int slot, int k);
+    /// <summary>Step 3: whether job <paramref name="k"/> is urgent now (the kind-2 jobs while enemies are sensed, <c>FUN_14050e5b0</c>). Default: never.</summary>
+    bool Urgent(World world, int slot, int k) => false;
+    /// <summary>
+    /// The character's task is job <paramref name="k"/>'s, which can no longer run, and no other job of the list can: the task ends (the original's idleness takes over at that choice).
+    /// Default: nothing (the act-out ends by itself).
+    /// </summary>
+    void Stop(World world, int slot, int k) { }
+}
+
+/// <summary>
 /// The last decision of a character, filled only while <see cref="DecisionSystem.Tracing"/> is on: the tick, the source that won (or what the step yielded to) and, per source asked,
 /// its answer. Display only: not saved, not hashed.
 /// </summary>
@@ -76,10 +98,22 @@ public sealed record DecisionTrace(long Tick, string Winner, IReadOnlyList<strin
 public sealed class DecisionSystem
 {
     readonly List<IDecisionSource> sources = [];
+    readonly Dictionary<TaskType, IJobSource> jobs = [];
     long[] claimed = [];
     readonly List<string> lines = [];
 
-    public DecisionSystem() => Register(new OrderSource());
+    public DecisionSystem()
+    {
+        Register(new OrderSource());
+        Register(new JobSource(this, urgent: true));
+        Register(new JobSource(this, urgent: false));
+    }
+
+    /// <summary>Registers (or replaces) the contributor of the jobs of <paramref name="type"/> (an open list: a job type without one is kept in the list but never run).</summary>
+    public void RegisterJob(TaskType type, IJobSource source) => jobs[type] = source ?? throw new ArgumentNullException(nameof(source));
+
+    /// <summary>The contributor of the jobs of <paramref name="type"/>; null when none is registered.</summary>
+    public IJobSource? JobSourceOf(TaskType type) => jobs.GetValueOrDefault(type);
 
     /// <summary>The sources in the order they are asked.</summary>
     public IReadOnlyList<IDecisionSource> Sources => sources;
@@ -156,17 +190,26 @@ public sealed class DecisionSystem
         var cold = world.Characters.Cold(slot)!;
         lines.Clear();
         PlayerOrders.Prepare(world, slot);
-        string winner = paused ? "(paused: orders only)" : "(yield: jobs and standing tasks)";
+        string winner = paused ? "(paused: orders only)" : "(yield: implicit jobs and standing tasks)";
+        bool won = false;
         for (int k = 0; k < sources.Count;)
         {
             var step = sources[k].Step;
             int end = k;
             while (end < sources.Count && sources[end].Step == step) end++;
             if (paused && step != DecisionStep.Orders) break;
-            if (step == DecisionStep.Goals ? PickGoal(world, slot, k, end, ref winner) : PickFirst(world, slot, k, end, ref winner)) break;
+            if (step == DecisionStep.Goals ? PickGoal(world, slot, k, end, ref winner) : PickFirst(world, slot, k, end, ref winner))
+            {
+                won = true;
+                break;
+            }
             k = end;
         }
-        if (!paused) cold.Replan = false;   // what its own start ended asks nothing more
+        if (!paused)
+        {
+            cold.Replan = false;   // what its own start ended asks nothing more
+            cold.Yielded = !won;
+        }
         if (Tracing) cold.Decision = new DecisionTrace(world.Tick, winner, lines.ToArray());
         else if (cold.Decision is not null) cold.Decision = null;
     }
@@ -219,6 +262,59 @@ public sealed class DecisionSystem
     void Note(IDecisionSource source, string what)
     {
         if (Tracing) lines.Add($"{(int)source.Step} {source.Name}: {what}");
+    }
+
+    /// <summary>
+    /// Steps 3 and 5: the character's job list in order (<c>FUN_14050e5b0</c>, docs/game/ai-tasks.md "Perma-jobs"): the jobs switch gates every job but 16, 31, 45, 57, 58 and 250
+    /// (<c>FUN_14050c1c0</c>) in both passes; a job whose type has no contributor or whose row the repertoire does not register is skipped; the first job that can run wins (one that runs
+    /// the character's task already ends the step), so a higher job takes over a lower one at the next decision. Step 3 asks only the jobs that are urgent now. The implicit jobs come after
+    /// the list (<see cref="Production.ProductionSystem"/>, on a yield).
+    /// </summary>
+    sealed class JobSource(DecisionSystem owner, bool urgent) : IDecisionSource
+    {
+        int picked = -1;
+
+        public string Name => urgent ? "Urgent jobs" : "Jobs";
+        public DecisionStep Step => urgent ? DecisionStep.UrgentJobs : DecisionStep.Jobs;
+        public int Key => 0;
+
+        public DecisionCheck CanRun(World world, int slot)
+        {
+            picked = -1;
+            var cold = world.Characters.Cold(slot)!;
+            bool on = (cold.Orders & CharacterOrders.Jobs) != 0;
+            for (int k = 0; k < cold.Jobs.Count; k++)
+            {
+                var type = cold.Jobs[k].Type;
+                if (owner.jobs.GetValueOrDefault(type) is not { } source || urgent && !source.Urgent(world, slot, k)) continue;
+                DecisionCheck check;
+                if (!on && !Production.PermaJobs.IgnoresSwitch(type)) check = DecisionCheck.No("jobs switch off");
+                else if (!TaskStart.Eligible(world, cold, type)) check = DecisionCheck.No("not in its repertoire");
+                else check = source.CanRun(world, slot, k);
+                if (owner.Tracing) owner.lines.Add($"{(int)Step} {Name} [{k}] {(int)type}: {(check.Can ? check.Running ? "runs" : "starts" : check.Why ?? "cannot run")}");
+                if (!check.Can) continue;
+                picked = k;
+                return check;
+            }
+            return DecisionCheck.No(null);
+        }
+
+        public void Start(World world, int slot)
+        {
+            var cold = world.Characters.Cold(slot)!;
+            if ((uint)picked < (uint)cold.Jobs.Count && owner.jobs.GetValueOrDefault(cold.Jobs[picked].Type) is { } source) source.Start(world, slot, picked);
+        }
+
+        /// <summary>Step 5 found nothing: the list job the character's task runs, which could not run on, ends (<see cref="IJobSource.Stop"/>; not a fight, which is its row's step).</summary>
+        public void Passed(World world, int slot, in DecisionCheck check)
+        {
+            if (urgent) return;
+            var table = world.Characters;
+            var cold = table.Cold(slot)!;
+            var task = (CharacterTask)table.Next[slot].Task;
+            if (task == CharacterTask.Attack || cold.InCombat || cold.Running is not { Source: TaskSource.Job, Implicit: false, Job: >= 0 } run || !run.Runs(task) || run.Job >= cold.Jobs.Count) return;
+            owner.jobs.GetValueOrDefault(cold.Jobs[run.Job].Type)?.Stop(world, slot, run.Job);
+        }
     }
 
     /// <summary>Source 1: the front of the order queue (<see cref="PlayerOrders"/>). One that cannot run shows its failure text once and stays queued; the step goes on.</summary>

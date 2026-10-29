@@ -468,6 +468,11 @@ public sealed class CharacterCold
     /// The replan bit (<see cref="DecisionSystem.Request(CharacterCold)"/>): set by a replan trigger, consumed by the decision step. Player characters only; not saved (a load sets it); hashed while set.
     /// </summary>
     public bool Replan { get; set; }
+    /// <summary>
+    /// The last full decision of the step (<see cref="DecisionSystem"/>) found nothing to run in steps 1 to 5, so the implicit jobs and the standing tasks go on. Player characters only;
+    /// not saved (a load asks for a decision).
+    /// </summary>
+    public bool Yielded { get; set; }
     /// <summary>The last decision (<see cref="DecisionSystem.Tracing"/> on; null otherwise). Display only: not saved or hashed.</summary>
     public DecisionTrace? Decision { get; set; }
     /// <summary>Debug builds: the table tick (<see cref="CharacterTable.Ticks"/>) and the task the start path last set (<see cref="TaskStart.CheckStarts"/>); not hashed.</summary>
