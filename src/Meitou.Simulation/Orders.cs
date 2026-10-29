@@ -226,16 +226,22 @@ public static class Orders
             case RunSpeedCommand speed:
                 int? mode = null;
                 int group = -1;
-                foreach (var id in speed.Characters.Count > 0 ? speed.Characters : world.Player.Selection.ToArray())
+                var targets = speed.Characters.Count > 0 ? speed.Characters : world.Player.Selection.ToArray();
+                // The arrows do not step while anyone selected is staying low (posture 1, FUN_1407f3a20): the lead's displayed mode is applied to everyone as it is.
+                int step = speed.Step;
+                foreach (var id in targets)
+                    if (table.TryResolveNext(id, out int s) && table.Cold(s) is { IsPlayer: true, Medical: { StayingLow: true, Crawling: false } stayLow } && stayLow.Prone) step = 0;
+                foreach (var id in targets)
                 {
                     if (!table.TryResolveNext(id, out int slot) || table.Cold(slot) is not { IsPlayer: true } cold) continue;
+                    // The lead's mode is the one shown, even when the lead is the one staying low.
+                    mode ??= ((cold.RunSpeed + step) % SpeedMode.Count + SpeedMode.Count) % SpeedMode.Count;
                     // One staying low (not crippled) stands up instead of changing speed (setStandingOrder 0, 1, 2, 16).
                     if (cold.Medical is { StayingLow: true, Crawling: false } low && low.Prone)
                     {
                         low.StayingLow = false;
                         continue;
                     }
-                    mode ??= ((cold.RunSpeed + speed.Step) % SpeedMode.Count + SpeedMode.Count) % SpeedMode.Count;
                     cold.RunSpeed = (byte)mode.Value;
                     // Group speed gives the characters set together one speed group (PlayerInterface::assignSpeedGroup), keyed by the first one.
                     group = mode == SpeedMode.Group ? group < 0 ? slot : group : -1;

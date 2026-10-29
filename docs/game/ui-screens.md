@@ -477,7 +477,8 @@ to Jobs; the saved `chase mode` flag is that switch (**Verified**, [perma-jobs](
   plays `General_Click` and applies the mode to every selected character; a refresh shows the lead's mode. Right after the panel is
   built the index is 0 (Walk) until the first refresh. **Verified**: `kenshi_images.xml`, the panel's name list in FUN_14072b540 (exe bytes
   `Run`/`Jog`/`Walk`), arrows FUN_140722580 / FUN_140722630, apply FUN_140722500, refresh FUN_140726930. While any selected
-  character's state at +0xe0 is 1 the arrows re-apply without stepping (FUN_1407f3a20); what that state is is **Unknown**.
+  character's posture (+0xe0, vfunc 0x368 = FUN_1405c7e10) is 1, `PS_STAYING_LOW`, the arrows do not step (FUN_1407f3a20, **Verified**): the displayed (lead's) mode is
+  applied to everyone, the low uncrippled ones standing up instead ([ragdolls](ragdolls.md#staying-low)). Meitou: `RunSpeedCommand` in `Orders`.
 
 ### Town panel
 
