@@ -158,6 +158,8 @@ public sealed partial class CaptiveSystem
             {
                 bool capture = type == TaskType.CAPTURE_NEW_SLAVES;
                 if (Kidnap is null || !(capture ? CanCapture(cold) : CarrySystem.CanCarry(cold))) return null;
+                // 168's desire is the rescue one (FUN_140599480): 0 on the raw Hold bit (also while sneaking) or while carrying. 167 has no Hold test.
+                if (!capture && (cold.Orders & CharacterOrders.Hold) != 0) return null;
                 int v = NearestDown(world, slot, cold, capture);
                 // No cage to take it to: not started, so no one is cuffed and left (engine; the carry, goal 112, needs a free cage as the arrest goal does).
                 return v < 0 || !Kidnap.HasCage(world, table.Next[v].Position, cold) ? null : new CaptiveJob
