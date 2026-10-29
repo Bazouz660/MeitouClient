@@ -406,14 +406,14 @@ public sealed partial class CombatSystem
         if (best >= 0 || Relations is null) return best;
         if (gc.IsPlayer)
         {
-            // Shoot first (the squad AI option): with no enemy in its sights a player gunner also takes dangerous neutrals, at 0.6 of an enemy's weight.
+            // Shoot first (the squad AI option): with no enemy in its sights a player gunner also takes dangerous neutrals, scored at range factor 0.6 (no extra weight).
             if ((world.Player.SquadAi & SquadAi.ShootFirst) == 0) return best;
             foreach (int o in found)
             {
                 if (o == g || !prev[o].Alive || table.Cold(o) is not { } oc || !Relations.Contains(oc.Faction)) continue;
                 var faction = Relations.Factions[oc.Faction];
                 if (!SquadAiRules.ShootsFirstAt(world.Player.SquadAi, (int)faction.FundamentalType, faction.DefaultRelation)) continue;
-                float s = Score(o, TurretFormulas.FullRange) * SquadAiRules.ShootFirstWeight;
+                float s = Score(o, TurretFormulas.ShootFirstRange);
                 if (s > bestScore) (best, bestScore) = (o, s);
             }
             return best;

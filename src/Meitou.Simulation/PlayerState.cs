@@ -435,13 +435,10 @@ public static class SquadAiRules
     /// <summary>
     /// Whether a player turret gunner with <see cref="SquadAi.ShootFirst"/> may take a sensed non-enemy of a faction whose fundamental type is <paramref name="fundamentalType"/> and
     /// whose own default relation is <paramref name="defaultRelation"/> (<c>FUN_1404374d0</c>, asked only when no enemy is in its sights): type 0 or 8, or a default below -30.
-    /// Such a target weighs <see cref="ShootFirstWeight"/> where an enemy weighs 1 (CombatSystem.Turrets.cs).
+    /// Such a target is scored at range factor <see cref="TurretFormulas.ShootFirstRange"/> (CombatSystem.Turrets.cs).
     /// </summary>
     public static bool ShootsFirstAt(SquadAi options, int fundamentalType, float defaultRelation) =>
         (options & SquadAi.ShootFirst) != 0 && (fundamentalType is 0 or 8 || defaultRelation < -30);
-
-    /// <summary>A shoot-first target's weight against an enemy's 1 (<c>FUN_1404374d0</c>: 0.6).</summary>
-    public const float ShootFirstWeight = 0.6f;
 }
 
 /// <summary>What the player knows of a town (the GAMESTATE_TOWN bools <c>discovered</c>, <c>explored</c>, <c>recently discovered</c>; docs/game/ui-screens.md "Map").</summary>

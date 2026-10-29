@@ -1097,7 +1097,7 @@ feed, eject on; heal, help off (on in 4), rescue, stay, shootfirst off. Readers 
   floats +0x4bc ≤ 0, +0x4b8 < 2.25, meanings **Unknown**) a character takes food from the backpack of a squad member within 200 units (squared 40000).
 - **Shoot first** (+0x11a): turret target choice `FUN_1404374d0`: enemies (sensed 4, 0x210) weigh `FUN_140435d70`(…, 1), unseen × 0.1, the current
   target × 1.5; with none, a player gunner with the option takes sensed (2, 0x210) characters whose faction's type (+0x34) is 0 or 8 or whose
-  faction default (+0x60) is below -30, with weight 0.6.
+  faction default (+0x60) is below -30; each is scored by `FUN_140435d70` with range factor k 0.6 (`DAT_141696c8c`), unseen x 0.1, current x 1.5, **Verified**, no extra weight.
 
 ## Unknowns
 
