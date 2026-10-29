@@ -288,6 +288,46 @@ public class AggroTests
         Assert.NotEqual(stander.Slot, a.Combat.StateOf(me).TargetSlot);
     }
 
+    /// <summary>Starts a job's standing task (row 87, a job's provenance) for one character at its first slow world.</summary>
+    sealed class JobStarter(Func<CharacterId> who) : ITickSystem
+    {
+        bool done;
+
+        public void SlowWorld(SimWorld world)
+        {
+            if (done || !world.Characters.TryResolveNext(who(), out int slot)) return;
+            done = true;
+            TaskStart.Start(world, slot, new TaskRequest(CharacterTask.Idle, Meitou.Data.Gameplay.Ai.TaskType.OPERATE_MACHINERY, TaskSource.Job) { Job = 0 });
+        }
+    }
+
+    /// <summary>
+    /// Hold's attack on sight is a priority-3 goal, tried before the jobs (docs/game/ai-tasks.md "Precedence"): a holder on a job's task attacks the raider passing its post, as that goal.
+    /// Catches a job's task that keeps a holder from attacking on sight.
+    /// </summary>
+    [Fact]
+    public void A_holder_on_a_jobs_task_attacks_on_sight()
+    {
+        var holder = CharacterId.None;
+        using var a = Make(4, 1, OneSided(), extra: new JobStarter(() => holder));
+        a.Aggro.Combat = a.Combat;
+        var o = new Vector2(2000, 2000);
+        var me = holder = a.World.Characters.Spawn(new CharacterHot { Position = new Vector3(o.X, 150, o.Y), Health = 100, MaxSpeed = 60, WalkSpeed = 15 },
+            new Combatant { Name = "holder" }.MakeCold(), 0);
+        var cold = a.World.Characters.Cold(me.Slot)!;
+        (cold.Faction, cold.IsPlayer, cold.Orders, cold.HoldPoint) = (1, true, CharacterOrders.Hold, o);
+        a.World.RunTicks(2);
+        Assert.True(Meitou.Simulation.Production.PermaJobs.FromJob(cold, CharacterTask.Idle), "on a job's task");
+        var walker = a.SquadOf(0, o, true, (o + new Vector2(-300, 60), 0f)).Members[0];
+        Docile(a, walker);
+        a.World.Commands.Enqueue(new MoveOrder([walker], new Vector3(o.X + 300, 150, o.Y + 60)) { Tick = a.World.Tick });
+        for (int k = 0; k < (int)(10 / a.World.TickSeconds) && !a.Fighting(me); k++) a.World.RunTicks(1);
+        Assert.True(a.Fighting(me), "the holder attacks the walker passing within 80 of its hold point");
+        Assert.Equal(walker.Slot, a.Combat.StateOf(me).TargetSlot);
+        Assert.Equal(Meitou.Data.Gameplay.Ai.TaskType.ATTACK_ENEMIES, cold.Running!.Row);
+        Assert.Equal(TaskSource.Goal, cold.Running.Source);
+    }
+
     /// <summary>
     /// The fighters' re-pick (docs/game/combat.md "Target selection"): a villager whose raider goes down turns at once on the raider attacking its squad mate, and once
     /// that one is down too and nobody is left, its fight ends.

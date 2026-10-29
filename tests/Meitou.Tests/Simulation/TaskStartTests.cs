@@ -14,6 +14,7 @@ using Meitou.Simulation.Construction;
 using Meitou.Simulation.Crime;
 using Meitou.Simulation.FirstAid;
 using Meitou.Simulation.Items;
+using Meitou.Simulation.Kidnap;
 using Meitou.Simulation.Locks;
 using Meitou.Simulation.Production;
 using Meitou.Tests.Combat;
@@ -29,7 +30,7 @@ public class TaskStartTests
     /// <summary>The fixture's Greenlander, carriable like every base race but the Leviathan.</summary>
     static readonly RaceData Person = new() { StringId = "17-c", Name = "Greenlander", StatMultipliers = Human.StatMultipliers, Anatomy = Human.Anatomy, Carriable = true };
 
-    const string Well = "60-t", Shed = "61-t", Bed = "62-t", Cage = "63-t";
+    const string Well = "60-t", Shed = "61-t", Bed = "62-t", Cage = "63-t", Store = "64-t";
 
     /// <summary>The first aid kits, a well (an operable mine), a shed (4 Building Materials), a bed and a cage.</summary>
     static GameDatabase Database()
@@ -55,8 +56,13 @@ public class TaskStartTests
         cageFn.Floats["use range"] = 25;
         var cage = Rec(Cage, FcsRecordType.BUILDING, "Test Cage");
         cage.References["functionality"] = [new FcsReference("91-t", 0, 0, 0)];
+        var storeFn = Rec("92-t", FcsRecordType.BUILDING_FUNCTIONALITY, "92-t");
+        storeFn.Ints["function"] = MachineData.GeneralStorageFunction;
+        var store = Rec(Store, FcsRecordType.BUILDING, "Test Store");
+        store.Bools["has inventory"] = true;
+        store.References["functionality"] = [new FcsReference("92-t", 0, 0, 0)];
         var file = new FcsFile();
-        file.Records.AddRange([water, wellFn, well, shed, bedFn, bed, cageFn, cage]);
+        file.Records.AddRange([water, wellFn, well, shed, bedFn, bed, cageFn, cage, storeFn, store]);
         db.Apply(file, "buildings.mod");
         return db;
     }
@@ -64,19 +70,20 @@ public class TaskStartTests
     /// <summary>
     /// A player's fighter (attacking a far enemy, so no blow lands) with a medkit and a splint kit, sneaking, and with <paramref name="carrying"/> a downed mate on its shoulder; a hurt mate,
     /// a downed NPC, an awake NPC, a second enemy and a prisoner; the player's well, an unfinished shed, a bed, an empty cage and the prisoner's locked one, and an item on the ground; the
-    /// movement, first aid, body, carry, bed, construction, production, combat, crime, arrest and lock systems in the game's order.
+    /// movement, first aid, body, carry, bed, construction, production, combat, crime, arrest and lock systems in the game's order; <paramref name="decide"/> adds feeding and retaliation
+    /// after combat and town duties after carrying, with an outpost and a store round the rig (the decision step's self-defence and food goals).
     /// </summary>
     internal sealed class Rig : IDisposable
     {
         public SimWorld World { get; }
         public CombatSystem Combat { get; }
         public CharacterId Fighter, Enemy, OtherEnemy, Mate, Carried, Downed, Awake, Prisoner;
-        public string WellSite = "", ShedSite = "", BedFixture = "", EmptyCage = "", LockedCage = "";
+        public string WellSite = "", ShedSite = "", BedFixture = "", EmptyCage = "", LockedCage = "", StoreSite = "";
         public int Item;
         readonly OpenGroundWalkability walk = new(SyntheticTown.Ground);
         readonly ItemFactory items;
 
-        public Rig(bool carrying)
+        public Rig(bool carrying, bool decide = false)
         {
             var db = Database();
             var data = PopulationData.Create(db, []);
@@ -91,6 +98,12 @@ public class TaskStartTests
                 new ConstructionSystem(db, BaseGame, BodyOptions.Default, items, [], ""), new ProductionSystem(db, BaseGame, BodyOptions.Default, items, null), Combat,
                 crime, new ArrestSystem(crime, BaseGame) { Carry = carry }, new LockSystem(BaseGame, BodyOptions.Default) { Crimes = crime },
             };
+            // The decision step's goals (docs/simulation.md "Decision step"): food on the ground and self-defence, in the game's order after combat.
+            if (decide)
+            {
+                systems.Insert(systems.IndexOf(carry) + 1, new TownDutySystem(data, new PopulationSystem(data), carry));
+                systems.InsertRange(systems.IndexOf(Combat) + 1, [new FeedSystem(items), new RetaliationSystem(Combat)]);
+            }
             World = new SimWorld(new WorldSettings { Seed = 7, PublishSnapshots = false }, walk, systems);
             World.Player.Faction = 1;
             string Site(string record, float x, float z, bool complete)
@@ -111,6 +124,13 @@ public class TaskStartTests
             BedFixture = Fixture(Bed, 900, 1600);
             EmptyCage = Fixture(Cage, 1000, 1600);
             LockedCage = Fixture(Cage, 1100, 1600);
+            if (decide)
+            {
+                // The player's outpost round the rig with a store (Getting food's, 243).
+                int town = World.Buildings.AddTown(new Vector3(1000, 300, 2000), 1).Number;
+                StoreSite = Site(Store, 1100, 2000, complete: true);
+                World.Buildings.Find(StoreSite)!.Town = town;
+            }
             World.GroundItems.Drop(items.Create("72-t")!, new Vector3(1000, 300, 1800), 0);
             Item = World.GroundItems.All[^1].Id;
             Fighter = Add(1000, 2000, player: true, "72-t", "74-t");
@@ -131,7 +151,7 @@ public class TaskStartTests
             Say(new AttackOrder([Fighter], Enemy) { Tick = 0, Picked = true });
         }
 
-        CharacterId Add(float x, float z, bool player, params string[] kits)
+        internal CharacterId Add(float x, float z, bool player, params string[] kits)
         {
             var cold = new Combatant { Name = "C" + World.Characters.HighWater }.MakeCold();
             cold.Race = Person;
