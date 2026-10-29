@@ -87,8 +87,6 @@ public readonly record struct TaskRequest(CharacterTask Task, TaskType Row, Task
     public System.Numerics.Vector2? Goal { get; init; }
     /// <summary>The speed mode of a walk (null: the character's run speed).</summary>
     public byte? Mode { get; init; }
-    /// <summary>An engine start that leaves the fight and the task before it running (as the direct writes it replaced did).</summary>
-    internal bool Overwrite { get; init; }
     /// <summary>An engine start whose row's repertoire is not tested.</summary>
     internal bool Unchecked { get; init; }
 }
@@ -174,11 +172,8 @@ public static class TaskStart
         if (!request.Unchecked && !Eligible(world, cold, request.Row)) return StartResult.NotEligible;
         var current = (CharacterTask)table.Next[slot].Task;
         var handler = world.Tasks.Of(request.Task, request.Row);
-        if (!request.Overwrite)
-        {
-            if (request.Task != CharacterTask.Attack) world.Tasks.Of(CharacterTask.Attack)?.End(world, slot, CharacterTask.Attack, TaskEnd.Replaced);
-            if (current != CharacterTask.Attack && world.Tasks.Of(cold, current) is { } before && (current != request.Task || before != handler)) before.End(world, slot, current, TaskEnd.Replaced);
-        }
+        if (request.Task != CharacterTask.Attack) world.Tasks.Of(CharacterTask.Attack)?.End(world, slot, CharacterTask.Attack, TaskEnd.Replaced);
+        if (current != CharacterTask.Attack && world.Tasks.Of(cold, current) is { } before && (current != request.Task || before != handler)) before.End(world, slot, current, TaskEnd.Replaced);
         cold.Running = cold.Running is { } running && Step(running, current, request)
             ? running with { Task = request.Task, Tick = world.Tick }
             : new RunningTask(request.Task, request.Row, request.Source, request.Job, request.Target, request.Site, world.Tick) { Resume = request.Resume, Implicit = request.Implicit };
@@ -197,19 +192,19 @@ public static class TaskStart
     /// Starts an engine walk to <paramref name="goal"/> at <paramref name="mode"/> as row <paramref name="row"/> (<see cref="Start"/> of a <see cref="CharacterTask.GoTo"/> with
     /// <see cref="TaskRequest.Goal"/>).
     /// </summary>
-    public static StartResult Walk(World world, int slot, System.Numerics.Vector2 goal, byte mode, TaskType row, TaskSource source, bool overwrite = false, bool check = true) =>
-        Start(world, slot, new TaskRequest(CharacterTask.GoTo, row, source) { Goal = goal, Mode = mode, Overwrite = overwrite, Unchecked = !check });
+    public static StartResult Walk(World world, int slot, System.Numerics.Vector2 goal, byte mode, TaskType row, TaskSource source, bool check = true) =>
+        Start(world, slot, new TaskRequest(CharacterTask.GoTo, row, source) { Goal = goal, Mode = mode, Unchecked = !check });
 
-    /// <summary>Starts an engine walk onto the floor at <paramref name="at"/> (<see cref="MovementSystem.GoToFloor"/>), as <see cref="Walk(World, int, System.Numerics.Vector2, byte, TaskType, TaskSource, bool, bool)"/>.</summary>
-    public static StartResult Walk(World world, int slot, System.Numerics.Vector3 at, byte mode, TaskType row, TaskSource source, bool overwrite = false, bool check = true) =>
-        Start(world, slot, new TaskRequest(CharacterTask.GoTo, row, source) { Point = at, Mode = mode, Overwrite = overwrite, Unchecked = !check });
+    /// <summary>Starts an engine walk onto the floor at <paramref name="at"/> (<see cref="MovementSystem.GoToFloor"/>), as <see cref="Walk(World, int, System.Numerics.Vector2, byte, TaskType, TaskSource, bool)"/>.</summary>
+    public static StartResult Walk(World world, int slot, System.Numerics.Vector3 at, byte mode, TaskType row, TaskSource source, bool check = true) =>
+        Start(world, slot, new TaskRequest(CharacterTask.GoTo, row, source) { Point = at, Mode = mode, Unchecked = !check });
 
     /// <summary>
     /// Starts an engine standing task (<see cref="CharacterTask.Idle"/>, <see cref="CharacterTask.Wander"/>, or a <see cref="CharacterTask.Follow"/> of the squad's leader) as row
     /// <paramref name="row"/>: the character stops and takes it up (the movement's handler).
     /// </summary>
-    public static StartResult Become(World world, int slot, CharacterTask task, TaskType row, TaskSource source, bool overwrite = false, bool check = true) =>
-        Start(world, slot, new TaskRequest(task, row, source) { Overwrite = overwrite, Unchecked = !check });
+    public static StartResult Become(World world, int slot, CharacterTask task, TaskType row, TaskSource source, bool check = true) =>
+        Start(world, slot, new TaskRequest(task, row, source) { Unchecked = !check });
 
     /// <summary>
     /// A start in a parallel phase, on the caller's own slot (the AI's think): it records the provenance and starts the walk to <see cref="TaskRequest.Goal"/>, or stops the character on

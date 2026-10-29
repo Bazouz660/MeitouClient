@@ -1285,7 +1285,7 @@ public sealed partial class PopulationSystem : IStateHashed
         {
             if (n.Task == (byte)CharacterTask.GoTo)
             {
-                TaskStart.Become(world, slot, CharacterTask.Wander, Meitou.Data.Gameplay.Ai.TaskType.WANDERER, TaskSource.Goal, overwrite: true, check: false);
+                TaskStart.Become(world, slot, CharacterTask.Wander, Meitou.Data.Gameplay.Ai.TaskType.WANDERER, TaskSource.Goal, check: false);
                 n.Mode = SpeedMode.Walk;
                 n.TaskTime = 0.5f;
             }
@@ -1323,7 +1323,7 @@ public sealed partial class PopulationSystem : IStateHashed
         bool busy = n.Task == (byte)CharacterTask.GoTo && (n.Flags & (ushort)MoveFlags.AnyPath) != 0 && n.Mode == mode;
         p.OrderCooldown -= dt;
         if (busy || p.OrderCooldown > 0) return;
-        TaskStart.Walk(world, slot, goal, mode, Meitou.Data.Gameplay.Ai.TaskType.TRAVEL_TO_TARGET_PACKAGE, TaskSource.Goal, overwrite: true, check: false);
+        TaskStart.Walk(world, slot, goal, mode, Meitou.Data.Gameplay.Ai.TaskType.TRAVEL_TO_TARGET_PACKAGE, TaskSource.Goal, check: false);
         p.OrderCooldown = 4;
     }
 

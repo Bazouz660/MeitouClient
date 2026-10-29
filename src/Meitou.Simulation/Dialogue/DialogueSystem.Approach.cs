@@ -67,7 +67,8 @@ public sealed partial class DialogueSystem
             var to = new Vector2(table.Next[t].Position.X, table.Next[t].Position.Z);
             ref var nh = ref table.Next[n];
             table.Cold(n)!.Engaged = true;
-            if (nh.Task != (byte)CharacterTask.GoTo || Vector2.Distance(nh.Goal, to) > TalkReach) TaskStart.Walk(world, n, to, SpeedMode.Free, Meitou.Data.Gameplay.Ai.TaskType.TALKTO_NEAREST_PLAYER_CHARACTER, TaskSource.Npc, overwrite: true, check: false);
+            if (table.Cold(n)!.InCombat) continue;   // its walk would end the fight it is in (a new task drops the fight task)
+            if (nh.Task != (byte)CharacterTask.GoTo || Vector2.Distance(nh.Goal, to) > TalkReach) TaskStart.Walk(world, n, to, SpeedMode.Free, Meitou.Data.Gameplay.Ai.TaskType.TALKTO_NEAREST_PLAYER_CHARACTER, TaskSource.Npc, check: false);
         }
     }
 

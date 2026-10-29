@@ -104,7 +104,7 @@ public sealed class FeedSystem(ItemFactory items, FeedSettings? settings = null)
         }
         if (best is null) return;
         cold.PickingUpItem = best.Id;
-        if (MathF.Sqrt(d2best) > PlayerSystem.PickUpReach) TaskStart.Walk(world, slot, best.Position, SpeedMode.Run, Meitou.Data.Gameplay.Ai.TaskType.EAT_FOOD_ON_GROUND, TaskSource.Goal, overwrite: true, check: false);
+        if (MathF.Sqrt(d2best) > PlayerSystem.PickUpReach) TaskStart.Walk(world, slot, best.Position, SpeedMode.Run, Meitou.Data.Gameplay.Ai.TaskType.EAT_FOOD_ON_GROUND, TaskSource.Goal, check: false);
     }
 
     /// <summary>The <c>item function</c> of a limb: the one thing an animal picks up into its mouth (<c>FUN_14034f340</c>, item +0x124 = 0x11, Verified).</summary>

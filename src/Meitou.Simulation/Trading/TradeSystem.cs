@@ -245,7 +245,7 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
         session = new();
         if (world.Characters.TryResolveNext(trader, out int held)) world.Characters.Cold(held)!.Engaged = false;
         if (traderWandered && world.Characters.TryResolveNext(trader, out int t) && world.Characters.Next[t].Task == (byte)CharacterTask.Idle)
-            TaskStart.Become(world, t, CharacterTask.Wander, Meitou.Data.Gameplay.Ai.TaskType.WANDERER, TaskSource.Npc, overwrite: true, check: false);
+            TaskStart.Become(world, t, CharacterTask.Wander, Meitou.Data.Gameplay.Ai.TaskType.WANDERER, TaskSource.Npc, check: false);
         customer = trader = CharacterId.None;
         open = traderWandered = false;
         view = null;

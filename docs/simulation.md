@@ -135,7 +135,9 @@ delivering, fetching and dismantling are steps of one act-out (`TaskStart.ActOut
   `TaskStart.Stand` (stop, idle): any phase, its own slot, provenance kept (it then no longer runs the task). These are the walks' arrivals and give-ups, a failed or blocked path, a
   follow whose target or leader is gone, a builder's steps, a bed reached, a fight's end (`CombatSystem.EndFight`: idle, a follow row's provenance kept for `FollowResume`), the
   stand-down back to the routine (`AggroSystem`), a knock-out (`BodySystem`), a caged character held in place (`FixtureRegistry`).
-- Engine starts converted here still leave the fight and the task before running (`TaskRequest.Overwrite`) and do not test the repertoire (`Unchecked`), as the direct writes did.
+- Engine starts end the fight and the task before as any start does (a flight's run stops the fight at once, a dialogue act's walk ends it). An errand's own walks would end a fight
+  its character is in, so they wait for it: a town duty steps nothing while its member fights, an approaching, following or stalking talker does not walk (engine choice; the
+  original's priority-3 reactions beat these goals). The converted engine starts do not test the repertoire yet (`TaskRequest.Unchecked`).
 - Provenance is the only job mark: `PermaJobs.FromJob` is a `TaskSource.Job` provenance that runs the task; `PermaJobs.ListJob` the production pick's list job (its index) or implicit
   job it runs (not a follow row's fight step), which `FreeFor`, the pick, the rescue job's rank test and the circle break read; a list edit moves the running index. The task an act-out
   goes back to is `RunningTask.Resume`: a job's start records the job it took over's resume (`PermaJobs.ResumeOf`), a medic or builder already at it keeps its own (`TaskStart.ResumeOf`);
@@ -145,8 +147,8 @@ delivering, fetching and dismantling are steps of one act-out (`TaskStart.ActOut
   stamp the task they set (`CharacterCold.TaskSet`, by `CharacterTable.Ticks`); a builder's switch between the steps of its act-out passes too. Exempt: a handler's own `Start` body
   (stamped once it returns), and a character spawned or loaded this tick (`PopulationSystem`, `PopulationStored`, `SavedPopulation` and `FixtureRegistry.Bind` set the first task of a
   new slot, which the check skips).
-- **A fight under another task** (Meitou only; **Verified** by reading `CombatSystem.Act`, `PursuitSystem`): a start that overwrites a fighter's task without ending its fight (only
-  an `Overwrite` start can) leaves `InCombat` and the fight target set. `CombatSystem.Act` does not read the task: the character keeps its target and
+- **A fight under another task** (Meitou only; **Verified** by reading `CombatSystem.Act`, `PursuitSystem`): a start that overwrites a fighter's task without ending its fight (no start
+  does any more) leaves `InCombat` and the fight target set. `CombatSystem.Act` does not read the task: the character keeps its target and
   re-picks, blocks and dodges, draws, and swings whenever a technique reaches the target; `PursuitSystem` and `CombatSystem.Move` steer only an `Attack` task, so the new task's walk
   moves it. The fight ends only when `Act` loses the target, and `EndFight` then leaves the other task alone.
 
