@@ -935,6 +935,8 @@ A character's job list (the Orders menu's "Perma-Jobs"; class `OrdersReceiver`, 
      returns the character itself in the `CharacterAnimal` vtable, `FUN_1405e5950` returns 0 in `CharacterHuman`'s; only this companion is converted, a Follow job 31 stays 31). Type 45 also stores
      the target at +0x18.
   4. The planner is re-run (vfunc +0x18).
+  5. For 45 and 31 the order giver `FUN_1405c8da0` then runs the circle break `FUN_1405c8c10`, which removes the 31 / 45 jobs and the one-shot follow that would close a
+     circle back to the ordered character (**Verified**; [Following](animals.md#following)).
 - **Ordering** (**Observed**, order dispatcher `FUN_1407fa650`): with Shift held (`DAT_142133449`) an order goes to `FUN_1407f5a90`, which adds it
   as a job to each selected character, then posts the Wwise event `Permanent_Job`; without Shift it is a one-shot order. Orders 0x2d, 0x111 and 0xdf
   are always added as jobs; Loot with Shift on a building adds 124 "Hauling to". The Medic and Rescue buttons dispatch 58 and 148 the same way:

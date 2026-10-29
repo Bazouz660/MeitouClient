@@ -152,11 +152,14 @@ package loaders (**Observed**). 243's desire and what Meitou runs of these for t
 
 No goal makes an owned animal follow anyone (above). The player orders it like a person: the context menu offers "Follow" (verb 31,
 STAY_CLOSE_TO_TARGET) on one of the player's own characters who is up, uncaged and not selected (`FUN_1407a6bc0`, beside "Inventory" 26 and
-"Bodyguard" 45, **Observed**). The order giver (`FUN_1405c8da0`) then drops one follow order closing a circle back to the ordered character
-(`FUN_1405c8c10`, for orders 31 and 45). The follower moves as in [squads travelling together](pathfinding.md#squads-travelling-together) (a squad mate takes its formation slot, anyone else is kept 20..40 away).
+"Bodyguard" 45, **Observed**). Giving a 31 or 45 order or job runs the circle break `FUN_1405c8c10` (**Verified**; callers: `FUN_1405c8da0` after it adds the order or job, walking from the
+ordered character, and `FUN_1405d1940` for a plain 31 order, walking from the target; never when a job later starts). It walks the followed chain: a character with a 31 order in its queue whose
+front order targets the ordered character loses the whole queue, else the walk recurses into that front order's target; a character with any 31 job loses every 31 / 45 job targeting the ordered
+character and the walk recurses into the targets of the other 31 / 45 jobs. Jobs 289 (an animal's companion) are never removed, and a character with only 45 / 289 jobs is not looked at. The follower moves as in [squads travelling together](pathfinding.md#squads-travelling-together) (a squad mate takes its formation slot, anyone else is kept 20..40 away).
 
 Meitou: `FollowOrder` (`MovementSystem.Follow`) sets `CharacterCold.FollowOrder` and the follow task (the squad formation slot behind that character); a move or stop
-order clears it; when the followed one is gone the follower stands (engine choice).
+order clears it; when the followed one is gone the follower stands (engine choice). `MovementSystem.BreakCircle` is the walk, run after a one-shot follow and after `AddOrderJob`
+for 31 / 45 (a one-shot follow is `FollowOrder` unless a follow job is running; the walk is cut at 64 characters and never visits one twice, an engine guard).
 
 ## Buying animals
 

@@ -269,7 +269,7 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
     /// <summary>
     /// <see cref="FollowOrder"/>: each awake, free character (not the target) drops what it does and follows the target (<see cref="CharacterCold.FollowOrder"/>); a sleeper gets up first.
     /// </summary>
-    internal static void Follow(World world, FollowOrder order)
+    internal static void Follow(World world, FollowOrder order, bool breakCircle = true)
     {
         var table = world.Characters;
         if (!table.TryResolveNext(order.Target, out int led)) return;
@@ -284,27 +284,50 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
             cold.FollowHeading = Vector2.Zero;
             table.Next[s].Task = (byte)CharacterTask.Follow;
             table.Next[s].TaskTime = 0;
-            BreakCircle(table, id);
+            if (breakCircle) BreakCircle(table, id);
         }
     }
 
     /// <summary>
-    /// The original drops a follow order that would close a circle (<c>FUN_1405c8c10</c>, run by the order giver <c>FUN_1405c8da0</c> for orders 31 and 45, <b>Observed</b>;
-    /// docs/game/animals.md "Following"): walking from whom <paramref name="leader"/> follows, the first character found following <paramref name="leader"/> stops (at most one).
+    /// The original drops what would close a circle back to the character just ordered to follow or guard (<paramref name="ordered"/>; <c>FUN_1405c8c10</c>, run by the order giver
+    /// <c>FUN_1405c8da0</c> after it adds a one-shot order or a job 31 or 45, <b>Verified</b>; docs/game/animals.md "Following"). Walking the chain from the ordered character (a character
+    /// once at most), whoever it reaches loses its one-shot follow of the ordered character and every Staying close / Bodyguard job on it; the walk goes on through the target of the
+    /// one-shot follow and of each such job. The jobs are only looked at while the character has a Staying close 31 job (so an animal's 289 and its Bodyguard are not walked).
     /// </summary>
-    static void BreakCircle(CharacterTable table, CharacterId leader)
+    internal static void BreakCircle(CharacterTable table, CharacterId ordered)
     {
-        var at = table.Cold(leader.Slot)!.FollowOrder;
-        for (int guard = 0; guard < 64 && !at.IsNone && table.TryResolveNext(at, out int slot); guard++)
+        if (table.TryResolveNext(ordered, out int start)) BreakCircle(table, ordered, start, new List<int>(4));
+    }
+
+    static void BreakCircle(CharacterTable table, CharacterId ordered, int slot, List<int> seen)
+    {
+        // Engine guard: the original has none on the job walk; a chain is cut at 64 characters like the one-shot walk was.
+        if (seen.Count >= 64 || seen.Contains(slot)) return;
+        seen.Add(slot);
+        var cold = table.Cold(slot)!;
+        // The one-shot follow (a running follow job's FollowOrder is the job's, handled with the jobs).
+        var order = cold.FollowOrder;
+        bool jobRuns = cold.JobIndex >= 0 && cold.JobIndex < cold.Jobs.Count && Production.PermaJobs.Follows(cold.Jobs[cold.JobIndex].Type);
+        if (!order.IsNone && !jobRuns)
         {
-            var cold = table.Cold(slot)!;
-            if (cold.FollowOrder == leader)
+            if (order == ordered)
             {
                 cold.FollowOrder = CharacterId.None;
                 if (table.Next[slot].Task == (byte)CharacterTask.Follow) Stop(table, slot);
-                return;
             }
-            at = cold.FollowOrder;
+            else if (table.TryResolveNext(order, out int next)) BreakCircle(table, ordered, next, seen);
+        }
+        if (!cold.Jobs.Exists(j => j.Type == Meitou.Data.Gameplay.Ai.TaskType.STAY_CLOSE_TO_TARGET)) return;
+        for (int k = 0; k < cold.Jobs.Count; k++)
+        {
+            var job = cold.Jobs[k];
+            if (job.Type is not (Meitou.Data.Gameplay.Ai.TaskType.STAY_CLOSE_TO_TARGET or Meitou.Data.Gameplay.Ai.TaskType.BODYGUARD)) continue;
+            if (job.Character == ordered)
+            {
+                Production.ProductionSystem.RemoveJob(table, slot, k);
+                k--;
+            }
+            else if (!job.Character.IsNone && table.TryResolveNext(job.Character, out int next)) BreakCircle(table, ordered, next, seen);
         }
     }
 

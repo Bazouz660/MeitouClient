@@ -35,17 +35,28 @@ public sealed partial class ProductionSystem
         {
             if (!table.TryResolveNext(id, out int slot) || table.Cold(slot) is not { IsPlayer: true } cold) continue;
             if (!onCharacter) PermaJobs.Add(cold, ordered, PermaJob.Untargeted(ordered));
-            else if (id != add.Target && table.IsAlive(add.Target)) PermaJobs.Add(cold, ordered, PermaJob.OfCharacter(ordered, add.Target));
+            else if (id != add.Target && table.IsAlive(add.Target))
+            {
+                PermaJobs.Add(cold, ordered, PermaJob.OfCharacter(ordered, add.Target));
+                // The order giver then drops what would close a circle back to the ordered character (FUN_1405c8c10), whether or not the job was new.
+                MovementSystem.BreakCircle(table, id);
+            }
         }
     }
 
     void RemoveJobAt(World world, RemoveJob remove)
     {
         var table = world.Characters;
-        if (!table.TryResolveNext(remove.Character, out int slot) || table.Cold(slot) is not { } cold || (uint)remove.Index >= (uint)cold.Jobs.Count) return;
-        cold.Jobs.RemoveAt(remove.Index);
-        if (cold.JobIndex == remove.Index) End(table, slot);
-        else if (cold.JobIndex > remove.Index) cold.JobIndex--;
+        if (table.TryResolveNext(remove.Character, out int slot)) RemoveJob(table, slot, remove.Index);
+    }
+
+    /// <summary>Takes the job at <paramref name="index"/> out of a character's list (the list's X, and the circle break of <see cref="MovementSystem"/>): the task of the job it is on ends, the running index follows (serial phases only).</summary>
+    internal static void RemoveJob(CharacterTable table, int slot, int index)
+    {
+        if (table.Cold(slot) is not { } cold || (uint)index >= (uint)cold.Jobs.Count) return;
+        cold.Jobs.RemoveAt(index);
+        if (cold.JobIndex == index) End(table, slot);
+        else if (cold.JobIndex > index) cold.JobIndex--;
     }
 
     void MoveJobTo(World world, MoveJob move)
@@ -461,7 +472,7 @@ public sealed partial class ProductionSystem
             var back = cold.ResumeTask;
             End(table, slot);
             cold.ResumeTask = back;
-            MovementSystem.Follow(world, new FollowOrder([table.IdOf(slot)], target) { Tick = world.Tick });
+            MovementSystem.Follow(world, new FollowOrder([table.IdOf(slot)], target) { Tick = world.Tick }, breakCircle: false);   // the circle was broken when the job was added
             cold.JobIndex = k;
             return;
         }
