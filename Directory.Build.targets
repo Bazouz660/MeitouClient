@@ -10,7 +10,7 @@
 
   <ItemGroup Condition="('$(MSBuildProjectName)' == 'Meitou.Game' or '$(MSBuildProjectName)' == 'Meitou.ModelViewer') and ('$(RuntimeIdentifier)' == '' or $(RuntimeIdentifier.StartsWith('win-')))">
     <!-- Wildcards, so only the files present are listed. -->
-    <None Include="$(StreamlineRuntimePath)/sl.*.dll;$(StreamlineRuntimePath)/nvngx_dlss*.dll;$(StreamlineRuntimePath)/NvLowLatencyVk*.dll;$(StreamlineRuntimePath)/amd_fidelityfx_vk*.dll"
+    <None Include="$(StreamlineRuntimePath)/sl.*.dll;$(StreamlineRuntimePath)/nvngx_dlss*.dll;$(StreamlineRuntimePath)/meitou_ngx*.dll;$(StreamlineRuntimePath)/NvLowLatencyVk*.dll;$(StreamlineRuntimePath)/amd_fidelityfx_vk*.dll"
           Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 

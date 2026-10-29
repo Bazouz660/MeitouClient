@@ -103,6 +103,10 @@ NVIDIA's NGX client library, the DLSS SDK's static `libnvsdk_ngx.a`, which `tool
 (SHA-256 checked) and links unchanged into `libmeitou_ngx.so`. It and the DLSS runtime (`libnvidia-ngx-dlss.so.*`), both
 NVIDIA DLSS SDK 310.9.16, are included in the Linux release zip under NVIDIA's licence (`licenses/NVIDIA`); a build from
 source loads them at run time when the user provides them (see [LICENSE-EXCEPTION.md](LICENSE-EXCEPTION.md)).
+On Windows (and under Proton), with frame generation on, DLSS goes through the same client library instead of Streamline: its
+static `nvsdk_ngx_s.lib` (`lib/Windows_x86_64/x64/`, same SDK version) is downloaded by `tools/scripts/build-ngx-shim-win.sh`
+(SHA-256 checked) and linked unchanged into `meitou_ngx.dll`, under the same NVIDIA licence and conditions; the script links it
+against the Microsoft C runtime and Windows SDK libraries fetched by `xwin` (Microsoft's licence), which are not redistributed.
 
 ## NuGet packages
 

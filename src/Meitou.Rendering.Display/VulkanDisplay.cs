@@ -36,7 +36,7 @@ public sealed unsafe class VulkanDisplay : IDisposable
 
     /// <summary>Streamline (DLSS), when <c>dlss</c> asked for it and it loaded; shut down before the device.</summary>
     public Streamline? Streamline { get; }
-    /// <summary>NGX (DLSS on Linux), when <c>dlss</c> asked for it and its client library and the DLSS model loaded; shut down before the device.</summary>
+    /// <summary>NGX (DLSS on Linux, or on Windows with frame generation), when <c>dlss</c> asked for it and its client library and the DLSS model loaded; shut down before the device.</summary>
     public Ngx? Ngx { get; }
 
     /// <summary>Set before creating the display: turns on the device features of the bench's triangle measurements (<see cref="VulkanDeviceOptions.TriangleMeasurements"/>; <c>--bench-tris</c>).</summary>
@@ -57,7 +57,15 @@ public sealed unsafe class VulkanDisplay : IDisposable
             TriangleMeasurements = TriangleMeasurements,
             RayTracing = RayTracing,
         };
-        if (dlss && OperatingSystem.IsWindows())
+        if (dlss && OperatingSystem.IsWindows() && frameGeneration && options is not null)
+        {
+            // Frame generation: the FFX swapchain owns the present, which Streamline's interposer must see, so DLSS goes through NGX directly
+            // (meitou_ngx.dll) and Streamline is not loaded. Without NGX, Streamline stays and frame generation is off (below).
+            Ngx = Ngx.TryInit(out var ngxWhy);
+            if (Ngx is not null) Ngx.Apply(deviceOptions);
+            else Console.WriteLine($"upscaler  {ngxWhy}");
+        }
+        if (dlss && OperatingSystem.IsWindows() && Ngx is null)
         {
             // Streamline goes in before the instance and adds what it needs to the device.
             Streamline = Streamline.TryInit(out var why);
@@ -77,7 +85,7 @@ public sealed unsafe class VulkanDisplay : IDisposable
         {
             string? why = null;
             if (!OperatingSystem.IsWindows()) why = "the FFX library is Windows-only here";
-            else if (Streamline is { DlssSupported: true }) why = "Streamline (DLSS) owns the present";
+            else if (Streamline is { DlssSupported: true }) why = "Streamline (DLSS) owns the present (NGX did not load, see the upscaler line above)";
             else if (!FfxSwapchain.LibraryLoads(out _, out why)) { }
             else wantLayer = true;
             if (!wantLayer) Console.WriteLine($"frame generation  unavailable: {why}");
