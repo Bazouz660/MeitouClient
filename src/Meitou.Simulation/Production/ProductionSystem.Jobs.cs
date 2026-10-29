@@ -271,7 +271,7 @@ public sealed partial class ProductionSystem
         if (PermaJobs.Follows(job.Type)) return ((cold.Orders & CharacterOrders.Jobs) != 0 || job.Type != TaskType.Unnamed289) && FollowedBy(world, slot, cold, k) is not null;
         if (!PermaJobs.Runs(job.Type) || ((cold.Orders & CharacterOrders.Jobs) == 0 && !PermaJobs.IgnoresSwitch(job.Type))) return false;
         // The walk to a job needs state 27, false while the character gets up (FUN_1405a3370).
-        if (cold.GettingUpUntil > world.Tick) return false;
+        if (CharacterFacts.GettingUp(cold, world.Tick)) return false;
         var at = world.Characters.Next[slot].Position;
         // The engineer job ignores its target: its finder picks any site (the original's row 125 finder, docs/game/buildings-production.md "Builders and dismantle"); a pick out of range fails the job, and so does a character with no working arm (row 2's state 38).
         if (job.Type == TaskType.JOB_BUILDER) return ConstructionSystem.HasWorkingArm(cold) && Construction?.EngineerSite(world, slot) is { } pick && Vector3.DistanceSquared(at, pick.Position) < JobRangeSq;
@@ -292,12 +292,6 @@ public sealed partial class ProductionSystem
     /// The character a Bodyguard (45), Staying close (31) or animal Staying close (289) job follows (the row has no finder: it acts on the job's own target, docs/game/ai-tasks.md "Finders of the jobs"): the job's character,
     /// found again from its saved handle after a load, alive and not the follower itself; for 31 and 289 also standing (the rows' state 7, <c>!isTargetDown</c>). Null: the job is blocked.
     /// </summary>
-    /// <summary>
-    /// isTargetDown (state 7, <c>FUN_14099a5a0</c>, <b>Verified</b>): gone, carried, unconscious or dead, in a bed or cage, or crawling or playing dead (posture 2 or more; staying low is up).
-    /// </summary>
-    static bool TargetDown(CharacterCold? c) =>
-        c is null || !c.CarriedBy.IsNone || c.Medical is { Incapacitated: true } or { Crawling: true } or { PlayingDead: true } || c.InSomething != Locks.HeldState.None;
-
     static CharacterId? FollowedBy(World world, int slot, CharacterCold cold, int k)
     {
         var table = world.Characters;
@@ -310,7 +304,7 @@ public sealed partial class ProductionSystem
             if (!target.IsNone) cold.Jobs[k] = job with { Character = target };
         }
         if (target.IsNone || target.Slot == slot || !table.TryResolveNext(target, out int t)) return null;
-        return job.Type != TaskType.BODYGUARD && TargetDown(table.Cold(t)) ? null : target;
+        return job.Type != TaskType.BODYGUARD && CharacterFacts.TargetDown(table.Cold(t)) ? null : target;
     }
 
     /// <summary>

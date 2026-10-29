@@ -23,7 +23,7 @@ public sealed partial class CarrySystem
         {
             if (!next[i].Alive || table.Cold(i) is not { IsPlayer: true } cold || cold.Jobs.Count == 0) continue;
             if (!PermaJobs.FreeFor(cold, (CharacterTask)next[i].Task, PermaJobs.IndexOf(cold, TaskType.LOOT_ANIMALS_JOB)) || cold.Fleeing || !CanCarry(cold) || cold.Inventory is null) continue;
-            if (cold.SquadId >= 0 && world.Squads.Find(cold.SquadId) is { } squad && Fighting(table, squad)) continue;
+            if (cold.SquadId >= 0 && world.Squads.Find(cold.SquadId) is { } squad && CharacterFacts.SquadFighting(table, squad)) continue;
             taken ??= Looting(table);
             float range = AggroSystem.RangeOf(cold, Settings.Sight), best2 = range * range;
             int best = -1;

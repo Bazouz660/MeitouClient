@@ -290,6 +290,8 @@ public sealed record CharacterSnapshot(CharacterId Id, CharacterAppearance? Appe
     public float LockpickSkill { get; init; }
     /// <summary>Asleep (<see cref="Carrying.CarrySystem.Asleep"/>): not standing, so the menu offers the down verbs (Kidnap among them).</summary>
     public bool Asleep { get; init; }
+    /// <summary>Down as the original counts it (<see cref="CharacterFacts.Down"/>, <c>FUN_1405c9e10</c>): out cold, dead, playing dead or carried. The menu's down verbs read it.</summary>
+    public bool Down { get; init; }
     /// <summary>An <see cref="Carrying.OpenLootOrder"/> may open its inventory (<see cref="Carrying.CarrySystem.Openable"/>: down, playing dead or carried, the player's own, a sleeper or a prisoner as a pickpocket): the menu's Loot and Trade.</summary>
     public bool CanOpenInventory { get; init; }
     /// <summary>In a cage: whether it is locked and the sentence (null: not imprisoned).</summary>

@@ -210,7 +210,7 @@ public sealed partial class PlayerSystem(PopulationData? data = null) : ITickSys
                 // Standing up (not staying low) on the order trains toughness when enemies are about.
                 if (!low) world.SystemOf<BodySystem>()?.GotUpByOrder(world, slot, cold);
             }
-            else if (medical.StayingLow && cold.GettingUpUntil > world.Tick) medical.StandUp();
+            else if (medical.StayingLow && CharacterFacts.GettingUp(cold, world.Tick)) medical.StandUp();
         }
     }
 

@@ -102,7 +102,7 @@ from the start.
 - Unknown: `FUN_1405a59a0` (reads record 3979's `death items`); whether the flag changes weight.
 
 Meitou: `ItemFactory.Build` adds them (`ItemInstance.Death`), stacks merge only with the same flag, the feed search skips them,
-moving an item out of its inventory clears it, and a loot take (or an item moved out of the open loot) that removes flagged units from a live down body (`CarrySystem.IsDown`) butchers it.
+moving an item out of its inventory clears it, and a loot take (or an item moved out of the open loot) that removes flagged units from a live down body (`CharacterFacts.Down`) butchers it.
 
 ## Ageing
 

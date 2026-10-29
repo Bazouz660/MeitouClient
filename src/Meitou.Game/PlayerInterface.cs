@@ -170,7 +170,7 @@ sealed partial class PlayerInterface(WorldSession session, Func<float, float, fl
         Action? Do(Action a) => give ? a : null;
         bool carried = !c.CarriedBy.IsNone;
         if (carried && characters.FirstOrDefault(o => o.Id == c.CarriedBy) is not { IsPlayer: true }) return null;
-        bool dead = c.Body is { Dead: true }, down = dead || c.Body is { Unconscious: true } || carried;
+        bool dead = c.Body is { Dead: true }, down = c.Down;
         var loot = Do(() => Say(new Meitou.Simulation.Carrying.OpenLootOrder([], c.Id) { Tick = tick }));
         var id = c.Id;
         if (c.IsPlayer)

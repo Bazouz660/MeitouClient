@@ -126,7 +126,7 @@ public sealed partial class CombatSystem
             Gunner = tc.Gunning is not null,
             Crippled = tc.Medical.Crawling || tc.Fighter is not { CanAttack: true },
             Peaceful = o.TargetSlot < 0 && Relations is { } relations && !AggroSystem.IsEnemy(relations, tc.Faction, q.Cold.Faction),
-            GettingUp = tc.GettingUpUntil > world.Tick,
+            GettingUp = CharacterFacts.GettingUp(tc, world.Tick),
         };
         if (TargetScore.Score(candidate, q.Player, q.Hold, q.Prone, q.Animal) is { } score && score > q.BestScore)
         {
@@ -231,7 +231,7 @@ public sealed partial class CombatSystem
         var prev = world.Characters.Previous;
         if (read[c].TargetSlot == me && read[c].TargetGeneration == prev[me].Generation) return true;
         if (read[me].TargetSlot == c && read[me].TargetGeneration == prev[c].Generation) return true;
-        return Relations is { } relations ? AggroSystem.IsEnemy(relations, oc.Faction, myFaction) : oc.Faction != myFaction;
+        return CharacterFacts.RegardsEnemy(Relations, oc.Faction, myFaction);
     }
 
     /// <summary>The spacing of the points the steering's line test stands on (engine choice: under a footprint, so a wall's gap of a body width is not skipped).</summary>

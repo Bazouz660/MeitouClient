@@ -806,7 +806,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
             Gunner = c.Gunning is not null,
             Crippled = c.Medical!.Crawling || c.Fighter is not { CanAttack: true },
             Peaceful = !c.InCombat && !IsEnemy(s.Relations, c.Faction, s.Faction),
-            GettingUp = c.GettingUpUntil > (long)s.Tick,
+            GettingUp = CharacterFacts.GettingUp(c, (long)s.Tick),
         };
         return Meitou.Simulation.Combat.TargetScore.Score(candidate, s.Player, s.Hold, s.Prone, s.Animal);
     }

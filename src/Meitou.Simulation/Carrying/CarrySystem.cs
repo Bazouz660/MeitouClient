@@ -753,7 +753,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
     {
         if (OpenLootPair(world) is not var (i, t)) return;
         var victim = world.Characters.Cold(t)!;
-        if (death && victim.Medical is { Dead: false } medical && IsDown(victim))
+        if (death && victim.Medical is { Dead: false } medical && CharacterFacts.Down(victim))
         {
             medical.Butcher();
             world.Post($"{victim.Name} has been butchered");
@@ -770,21 +770,14 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
     }
 
     /// <summary>
-    /// <c>Character</c> slot 6 <c>isDown</c> (<c>FUN_1405c9e10</c>, <b>Verified</b>): dead or unconscious, playing dead or KO (posture 3 or more), carried or ragdolled
-    /// (<see cref="Ragdolls.RagdollSystem.IsRagdoll"/>). A crawler (posture 1, 2) is not down.
-    /// </summary>
-    public static bool IsDown(CharacterCold cold) =>
-        cold.Medical is { Incapacitated: true } or { PlayingDead: true } || !cold.CarriedBy.IsNone || Ragdolls.RagdollSystem.IsRagdoll(cold);
-
-    /// <summary>
-    /// A live, down body (<see cref="IsDown"/>: also a carried awake one) that had <paramref name="before"/> units of death items and now has fewer is butchered: it dies, "{name} has been butchered" (<c>FUN_14075e7e0</c>, docs/game/animals.md
+    /// A live, down body (<see cref="CharacterFacts.Down"/>: also a carried awake one) that had <paramref name="before"/> units of death items and now has fewer is butchered: it dies, "{name} has been butchered" (<c>FUN_14075e7e0</c>, docs/game/animals.md
     /// "Death items"; posted when the looter or the body is the player's, engine choice).
     /// </summary>
     void Butcher(World world, int looter, int body, int before)
     {
         var table = world.Characters;
         var victim = table.Cold(body)!;
-        if (victim.Medical is not { Dead: false } medical || !IsDown(victim) || DeathUnits(victim.Inventory!) >= before) return;
+        if (victim.Medical is not { Dead: false } medical || !CharacterFacts.Down(victim) || DeathUnits(victim.Inventory!) >= before) return;
         medical.Butcher();
         if (table.Cold(looter)!.IsPlayer || victim.IsPlayer) world.Post($"{victim.Name} has been butchered");
     }
@@ -935,7 +928,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         var table = world.Characters;
         var next = table.Next;
         var cold = table.Cold(i)!;
-        if (cold.SquadId >= 0 && world.Squads.Find(cold.SquadId) is { } squad && Fighting(table, squad)) return false;
+        if (cold.SquadId >= 0 && world.Squads.Find(cold.SquadId) is { } squad && CharacterFacts.SquadFighting(table, squad)) return false;
         float range = AggroSystem.RangeOf(cold, Settings.Sight), best2 = range * range;
         int best = -1;
         for (int s = 0; s < table.HighWater; s++)
@@ -960,7 +953,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         foreach (var squad in world.Squads.All)
         {
             if (!table.TryResolveNext(squad.Leader, out int l) || taken.Contains(l)) continue;
-            if (table.Cold(l) is not { IsPlayer: false, Medical: { Unconscious: true, Dead: false } } leader || leader.InSomething != Locks.HeldState.None || !CanBeLifted(leader) || Fighting(table, squad)) continue;
+            if (table.Cold(l) is not { IsPlayer: false, Medical: { Unconscious: true, Dead: false } } leader || leader.InSomething != Locks.HeldState.None || !CanBeLifted(leader) || CharacterFacts.SquadFighting(table, squad)) continue;
             int best = -1;
             float best2 = float.MaxValue;
             foreach (var m in squad.Members)
@@ -981,11 +974,4 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         table.Next[slot].Alive && table.Next[slot].Task is (byte)CharacterTask.Idle or (byte)CharacterTask.Wander or (byte)CharacterTask.Follow
         && table.Cold(slot) is { Fleeing: false } cold && CanCarry(cold);
 
-    /// <summary>A fight is on in the squad: a member in combat or with an attack order.</summary>
-    static bool Fighting(CharacterTable table, Squad squad)
-    {
-        foreach (var m in squad.Members)
-            if (table.TryResolveNext(m, out int s) && (table.Cold(s)!.InCombat || table.Next[s].Task == (byte)CharacterTask.Attack)) return true;
-        return false;
-    }
 }

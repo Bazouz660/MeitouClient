@@ -175,7 +175,7 @@ public sealed partial class CombatSystem : IProjectileSource
         var oc = table.Cold(other);
         if (oc is null) return false;
         // The original asks the character's enemy test (Character slot 125); the engine uses the faction relations, and without a table (hand-built worlds) another faction.
-        return Relations is not null ? AggroSystem.IsEnemy(Relations, faction, oc.Faction) : oc.Faction != faction;
+        return CharacterFacts.RegardsEnemy(Relations, faction, oc.Faction);
     }
 
     /// <summary>Can be hit by a bolt: alive, with a body, not down (a lying body does not stop bolts: <b>engine</b>, the original's hit shape is <b>Unknown</b>).</summary>

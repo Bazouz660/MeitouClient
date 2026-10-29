@@ -88,7 +88,7 @@ public sealed partial class FirstAidSystem
     /// <summary>"A regards B as friendly" (Character slot 126, <c>isAlly</c> <c>FUN_1407923d0</c>): the dialogue system's rule (same faction, squad memory tags, faction allies); without it the same faction or allied factions.</summary>
     bool Allied(World world, int a, int b)
     {
-        if (world.SystemOf<Dialogue.DialogueSystem>() is { } dialogue) return dialogue.RegardsFriendly(world, a, b);
+        if (world.SystemOf<Dialogue.DialogueSystem>() is { } dialogue) return CharacterFacts.RegardsFriendly(dialogue, world, a, b);
         var (ac, bc) = (world.Characters.Cold(a)!, world.Characters.Cold(b)!);
         return ac.Faction == bc.Faction || Relations is { } r && r.Contains(ac.Faction) && r.Contains(bc.Faction) && r.IsAlly(ac.Faction, bc.Faction);
     }
@@ -236,7 +236,7 @@ public sealed partial class FirstAidSystem
         if (cold.Medical is not { Incapacitated: false } own || cold.Race is null || cold.Stats is null || cold.InCombat && !ordered || cold.IsImprisoned) return (-1, 0);
         // No fight in the squad: an NPC's stand-in for its goal's desire (FUN_140998410 is 0.01 with enemies about). The finder has no such test and the job list keeps any job
         // whose desire is above 0 (FUN_14050e5b0), so a player's medic job and Medic order treat a downed mate while the squad fights.
-        if (!cold.IsPlayer && cold.SquadId >= 0 && world.Squads.Find(cold.SquadId) is { } squad && Fighting(table, squad)) return (-1, 0);
+        if (!cold.IsPlayer && cold.SquadId >= 0 && world.Squads.Find(cold.SquadId) is { } squad && CharacterFacts.SquadFighting(table, squad)) return (-1, 0);
         // Nor while it carries someone (the goal's 0.1 then): the carrying goal (a kidnap, a rescue) keeps it, so a carrier does not walk off after a patient with the body.
         if (!cold.IsPlayer && !cold.Carrying.IsNone) return (-1, 0);
         bool organic = cold.Inventory is { } inv && Best(inv, ItemInfo.FirstAidKitFunction) is not null, robotic = cold.Inventory is { } inv2 && Best(inv2, ItemInfo.RobotKitFunction) is not null;
@@ -414,7 +414,7 @@ public sealed partial class FirstAidSystem
         if (cold.Medical is not { Incapacitated: false } own || cold.Race is not { } ownRace || cold.Stats is not { } stats || cold.InCombat) return false;
         if (OwnKit(cold, ItemInfo.SplintKitFunction) is not { } kit) return false;   // the medic's own kit, as the order and the splint use
         // No fight test in the original finder (FUN_14099e240) and the job keeps a positive desire (FUN_140998410): a player's splint job runs during a fight, as the Medic job does.
-        if (!cold.IsPlayer && cold.SquadId >= 0 && world.Squads.Find(cold.SquadId) is { } squad && Fighting(table, squad)) return false;
+        if (!cold.IsPlayer && cold.SquadId >= 0 && world.Squads.Find(cold.SquadId) is { } squad && CharacterFacts.SquadFighting(table, squad)) return false;
         float skill = MathF.Min(stats[StatsEnumerated.Medic] * own.StatMultiplier(StatsEnumerated.Medic), Items.Info(kit.Item.Record)?.Quality ?? 0);
         float range = AggroSystem.RangeOf(cold, AggroSystem.OutdoorSight);
         int best = -1;

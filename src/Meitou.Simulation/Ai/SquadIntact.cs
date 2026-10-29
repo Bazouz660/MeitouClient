@@ -30,11 +30,10 @@ static class SquadIntact
     }
 
     /// <summary>
-    /// The leader's down test (<c>FUN_1405c9e10</c>, docs/game/ui-input.md): gone, out (unconscious or dead) or carried. A limb hold and playing dead also count in the
-    /// original and are not modelled; a crawling leader is up.
+    /// The leader's down test (<c>FUN_1405c9e10</c>, docs/game/ui-input.md): gone, or <see cref="CharacterFacts.Down"/> (out cold, dead, carried); a crawling leader is up.
     /// </summary>
     public static bool Down(CharacterTable table, CharacterId id) =>
-        !table.TryResolveNext(id, out int s) || table.Cold(s) is not { } c || c.Medical is { Incapacitated: true } || !c.CarriedBy.IsNone;
+        !table.TryResolveNext(id, out int s) || table.Cold(s) is not { } c || CharacterFacts.Down(c);
 
     /// <summary>
     /// The verdict once no member is <see cref="Held"/>: a squad without a leader or with no able member is not intact; under <see cref="MinForRatio"/> members a

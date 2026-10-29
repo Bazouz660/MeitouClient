@@ -108,7 +108,7 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
     /// </summary>
     internal void UnderAttackGettingUp(World world, int t, CharacterCold tc, ulong counter)
     {
-        if (tc.InCombat || tc.GettingUpUntil <= world.Tick || tc.Medical is not { Incapacitated: false } medical) return;
+        if (tc.InCombat || !CharacterFacts.GettingUp(tc, world.Tick) || tc.Medical is not { Incapacitated: false } medical) return;
         float roll = CombatRolls.Float(world.Seed, Rng.Key(world.Characters.IdOf(t)), CombatRoll.KnockDown, ((ulong)world.Tick << 32) ^ counter);
         if (roll >= KnockDownChance) return;
         medical.KnockOut(KnockDownSeconds);

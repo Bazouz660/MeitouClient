@@ -51,7 +51,7 @@ public sealed partial class AiSystem
                 Gunner = c.Gunning is not null,
                 Crippled = c.Fighter is not { CanAttack: true },
                 Peaceful = !c.InCombat && !AggroSystem.IsEnemy(Relations, c.Faction, me.Faction),
-                GettingUp = c.GettingUpUntil > world.Tick,
+                GettingUp = CharacterFacts.GettingUp(c, world.Tick),
             };
             // The first of equal scores keeps it.
             if (TargetScore.Score(candidate, me.IsPlayer, false, medical.Prone, me.Fighter?.IsAnimal == true) is { } score && score > bestScore) (best, bestScore) = (m, score);

@@ -47,7 +47,7 @@ public sealed partial class CombatSystem
         if (cold.Gunning is { } key) { if (turrets.TryGetValue(key, out var t)) (target, generation) = (t.Target, t.TargetGeneration); }
         else if (StateOf(id) is { TargetSlot: >= 0 } s) (target, generation) = (s.TargetSlot, s.TargetGeneration);
         return target >= 0 && table.TryResolveNext(new CharacterId(target, generation), out int slot) && table.Cold(slot) is { } tc
-            && tc.Medical is not ({ Incapacitated: true } or { PlayingDead: true }) && tc.CarriedBy.IsNone && !Ragdolls.RagdollSystem.IsRagdoll(tc);
+            && !CharacterFacts.Down(tc);
     }
 
     /// <summary>

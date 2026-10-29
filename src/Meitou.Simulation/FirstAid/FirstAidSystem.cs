@@ -523,11 +523,4 @@ public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions 
         }
     }
 
-    /// <summary>A fight is on in the squad: a member in combat or with an attack order.</summary>
-    static bool Fighting(CharacterTable table, Squad squad)
-    {
-        foreach (var m in squad.Members)
-            if (table.TryResolveNext(m, out int s) && (table.Cold(s)!.InCombat || table.Next[s].Task == (byte)CharacterTask.Attack)) return true;
-        return false;
-    }
 }

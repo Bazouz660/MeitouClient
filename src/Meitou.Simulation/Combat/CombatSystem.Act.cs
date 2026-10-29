@@ -206,7 +206,7 @@ public sealed partial class CombatSystem
                 if (cold.InCombat) EndFight(table, i, ref s);
                 continue;
             }
-            if (now < cold.GettingUpUntil)
+            if (CharacterFacts.GettingUp(cold, now))
             {
                 s.AttackTech = -1;
                 s.NextBlow = 0;

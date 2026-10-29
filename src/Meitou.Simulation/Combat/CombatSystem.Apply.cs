@@ -160,7 +160,7 @@ public sealed partial class CombatSystem
         // unless it mans a turret (shooting at a live target).
         if (D.TargetSlot < 0 && !dc.InCombat)
         {
-            if (dc.GettingUpUntil > now)
+            if (CharacterFacts.GettingUp(dc, now))
             {
                 UnderAttackGettingUp(world, d, dc, counter);
                 return;

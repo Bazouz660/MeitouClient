@@ -90,8 +90,7 @@ sealed partial class PlayerInterface
         var selection = SelectedIds();
         if (selection.Count == 0) return verbs;
         var id = target.Id;
-        // Down as the original counts it (vfunc 0x30, FUN_1405c9e10): out cold (playing dead stays out cold), dead or carried.
-        bool down = target.Body is { } b && (b.Dead || b.Unconscious) || !target.CarriedBy.IsNone;
+        bool down = target.Down;   // vfunc 0x30, FUN_1405c9e10, from the snapshot
         var carriers = Selected().Where(c => c.Carrying == id).Select(c => c.Id).ToArray();
         // A carried body: carried by a selected character, its inventory (26, the branch's own verb) and Put Down (and Meitou's cage stand-ins); carried by someone not of the player's, nothing
         // (FUN_1407a6bc0 empties the list). No pick-up verb for a carried body: the non-hostile branches test +0x3d4, and a hostile one's Kidnap (246) cannot snatch.

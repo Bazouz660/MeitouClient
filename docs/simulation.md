@@ -77,6 +77,16 @@ registries. `(slot,generation)` IDs and the free list participate in hashes. Sta
 views are built over `GameRecord` once; missing fields use documented defaults. Population shares
 factories/database/relations and lazy body/combat/item assembly. Research owns original formulas.
 
+### Shared predicates
+
+`CharacterFacts` holds one member per original predicate, named and cited after it; merge by original function, not by English word. **Verified** (by reading each copy
+against the decompile): `Down` (`Character` slot 6, `FUN_1405c9e10`: out cold, dead, playing dead, carried; a whole ragdoll only ever exists for an incapacitated or carried character, so
+the ragdoll test adds nothing) is one definition for the carry, dialogue, squad-intact, combat-mode and snapshot reads; `TargetDown` (state 7, `FUN_14099a5a0`) and the capture
+finders' KO / crawling tags (`CaptiveSystem.Down`) are different originals and stay apart. `GettingUp` is `+0x278`. `RegardsEnemy` is the faction part only (engine). The UI reads
+`CharacterSnapshot.Down`, `CombatMode` and `CanOpenInventory`; it never re-derives them. Left as engine stand-ins, not merged: `CarrySystem.Friendly` and `CrimeSystem.Friendly` (faction-level
+"regards as friendly": the full slot 126 also reads squad memory and DC 52, `DialogueSystem.RegardsFriendly`), `IsEnemy` (looker-free), the fight flags `Fighting.cs` / `CombatSystem.Threats` computing
+the immediate-threat reach inline (Unknown whether they match `FUN_1404378f0`'s gate test).
+
 ## Systems and their order
 
 `StandardSystems.Build` is the single wiring authority. Ordered systems:
