@@ -28,6 +28,21 @@ public sealed record ResearchData
     public float RepeatMult { get; init; } = 1;
     /// <summary>The crafts it unlocks (<c>enable item</c>, <c>enable armour</c>, ...): kind, record and the repetition (v0, 0 = the first) that unlocks it.</summary>
     public IReadOnlyList<(CraftKind Kind, string Id, int Repetition)> EnableCrafts { get; init; } = [];
+    /// <summary>The repetition (v0) and level floor (v1) of every entry of the eight <c>enable</c> lists (<see cref="UnlockFields"/>).</summary>
+    public IReadOnlyList<(int Repetition, int Level)> EnableFloors { get; init; } = [];
+
+    /// <summary>
+    /// The <c>level</c> of repetition <paramref name="times"/> (0 the first; <b>Verified</b>, <c>FUN_1408320a0</c>, <c>FUN_140831e60</c>): with <c>repeats</c> above 0 each repetition keeps the
+    /// <c>enable</c> entries whose v0 is its number and its level is raised to at least their v1; without repeats nothing is filtered and the level stays.
+    /// </summary>
+    public int LevelAt(int times)
+    {
+        int level = Level;
+        if (Repeats > 0)
+            foreach (var (repetition, floor) in EnableFloors)
+                if (repetition == times && floor > level) level = floor;
+        return level;
+    }
 
     /// <summary><c>improve buildings</c>: the BUILDINGs its <see cref="ProductionMult"/>, <see cref="PowerIncrease"/> and <see cref="CapacityIncrease"/> apply to (<b>Observed</b>, <c>FUN_140831a60</c>).</summary>
     public IReadOnlyList<string> ImproveBuildings { get; init; } = [];
@@ -77,13 +92,13 @@ public sealed record ResearchData
     public int TimeAt(int times) => (int)(Time * FactorAt(times));
 
     /// <summary>
-    /// The research hours of repetition <paramref name="times"/> (<b>Observed</b>, <c>FUN_14082ed10</c>): <c>time x research rate x level increase^(level - 1) / option</c>, the
+    /// The research hours of repetition <paramref name="times"/> (<b>Observed</b>, <c>FUN_14082ed10</c>): <c>time x research rate x level increase^(level - 1) / option</c> (the repetition's <see cref="LevelAt"/>), the
     /// power by repeated multiplication (as the exe).
     /// </summary>
     public float Hours(GameConstants constants, float option = 1, int times = 0)
     {
         float hours = TimeAt(times) * constants.ResearchRate / option;
-        for (int i = 1; i < Level; i++) hours *= constants.ResearchLevelIncreaseRate;
+        for (int i = 1, level = LevelAt(times); i < level; i++) hours *= constants.ResearchLevelIncreaseRate;
         return hours;
     }
 
@@ -107,6 +122,7 @@ public sealed record ResearchData
         PowerIncrease = r.GetInt("power increase"),
         CapacityIncrease = r.GetInt("power capacity increase"),
         EnableCrafts = [.. EnableFields.SelectMany(e => r.GetReferences(e.Field).Select(l => (e.Kind, l.TargetStringId, l.Values.Value0)))],
+        EnableFloors = [.. UnlockFields.SelectMany(f => r.GetReferences(f).Select(l => (l.Values.Value0, l.Values.Value1)))],
         Unlocks = [.. UnlockFields.SelectMany(f => r.GetReferences(f).Select(l => (f, l.TargetStringId)))],
     };
 

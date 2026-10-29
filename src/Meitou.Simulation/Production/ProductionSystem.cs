@@ -1003,7 +1003,7 @@ public sealed partial class ProductionSystem : ITickSystem
 
     /// <summary>The research the player may queue now (<b>Observed</b>, <c>FUN_1408333b0</c>): not blueprint-only, not exhausted (every repetition done) or queued, <c>level</c> within the tech level, requirements met.</summary>
     public bool Available(World world, ResearchData r) =>
-        !r.BlueprintOnly && !world.Research.Exhausted(db, r.Id) && !world.Research.IsQueued(r.Id) && r.Level <= world.Research.TechLevel && Met(world, r.Requirements, lenient: true);
+        !r.BlueprintOnly && !world.Research.Exhausted(db, r.Id) && !world.Research.IsQueued(r.Id) && r.LevelAt(world.Research.Times(r.Id)) <= world.Research.TechLevel && Met(world, r.Requirements, lenient: true);
 
     bool Met(World world, ResearchData r) => Met(world, r.Requirements, lenient: false);
 
@@ -1050,9 +1050,10 @@ public sealed partial class ProductionSystem : ITickSystem
     void Queue(World world, string id)
     {
         if (Research(id) is not { } r || !Available(world, r)) return;
-        if (r.Level > world.Research.BenchLevel)
+        int level = r.LevelAt(world.Research.Times(id));
+        if (level > world.Research.BenchLevel)
         {
-            world.Post(world.Research.BenchLevel == 0 ? "Research needs a research bench." : $"{r.Name} needs a level {r.Level} research bench.");
+            world.Post(world.Research.BenchLevel == 0 ? "Research needs a research bench." : $"{r.Name} needs a level {level} research bench.");
             return;
         }
         if (!Affordable(world, r))
@@ -1088,7 +1089,7 @@ public sealed partial class ProductionSystem : ITickSystem
         var state = world.Research;
         var queue = state.Queue.Select(q => (q.Id, Research(q.Id)?.Name ?? q.Id, Research(q.Id) is { } d ? Math.Clamp(q.Seconds / (d.Hours(constants, Settings.ResearchOption, state.Times(q.Id)) * (MachineData.DaySeconds / 24)), 0, 1) : 0)).ToArray();
         var available = allResearch.Where(r => Available(world, r))
-            .Select(r => new ResearchOption(r.Id, r.Name, r.Category, r.Level, r.Hours(constants, Settings.ResearchOption, state.Times(r.Id)), Affordable(world, r), r.Level > state.BenchLevel,
+            .Select(r => new ResearchOption(r.Id, r.Name, r.Category, r.LevelAt(state.Times(r.Id)), r.Hours(constants, Settings.ResearchOption, state.Times(r.Id)), Affordable(world, r), r.LevelAt(state.Times(r.Id)) > state.BenchLevel,
                 state.Partial.TryGetValue(r.Id, out float s) ? Math.Clamp(s / (r.Hours(constants, Settings.ResearchOption, state.Times(r.Id)) * (MachineData.DaySeconds / 24)), 0, 1) : 0)
             {
                 Description = r.Description,

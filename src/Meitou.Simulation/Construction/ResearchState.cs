@@ -86,9 +86,11 @@ public sealed class ResearchState
         foreach (var id in completed.Distinct(StringComparer.Ordinal))
             if (db.Find(id) is { Type: FcsRecordType.RESEARCH } record)
             {
+                // With repeats above 0 repetition j keeps the entries whose v0 is j; without repeats the lists are not filtered (Verified, FUN_1408320a0, FUN_140831e60).
                 int times = Times(id);
-                foreach (var (kind, item, repetition) in ResearchData.From(record).EnableCrafts)
-                    if (repetition < times) crafts.Add((kind, item));
+                var data = ResearchData.From(record);
+                foreach (var (kind, item, repetition) in data.EnableCrafts)
+                    if (data.Repeats <= 0 || repetition >= 0 && repetition < times) crafts.Add((kind, item));
             }
         UnlockedCrafts = crafts;
         // Each finished repetition applies its improvements in finishing order: the multiplier is replaced, the increases add (Observed, FUN_140831a60).

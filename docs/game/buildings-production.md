@@ -708,6 +708,14 @@ to `FUN_140836b70`: contribution k of the frame is x 0.6^k (counter `+0x174`, cl
   times in all. Repetition j has factor f = max(1, `repeat mult`^(j-1)) (1 for j = 0 and 1); each `cost` count c becomes
   max(trunc(c x f), c + j) and `time` trunc(time x f), which the hours above read. Mult 2, c 10: 10, 11, 20, 40, 80. How the
   copies' `requirements` chain (`FUN_1400b61b0`) and how a save names a copy are **Unknown** (Meitou counts finishes per base id).
+- **Enable lists per repetition** (**Verified**, `FUN_140834b70` calls `FUN_1408320a0` for every research with `repeats` > 0, repeats 1 included, on the base as repetition 0
+  and on each copy; `FUN_140831e60` runs it over `enable buildings`, `enable weapon type`, `enable weapon model`, `enable armour`, `enable item`, `enable robotics`,
+  `enable crossbow`, `enable backpack`): an entry's v0 is the repetition that unlocks it and v1 a level floor. Repetition j keeps the entries with v0 = j (others are removed
+  from that record, so v0 at or above `repeats`, or below 0, never applies) and raises its `level` to at least their v1. The record's `level` is what the
+  queue test (bench level), availability (tech level, `FUN_1408333b0`) and the hours (`FUN_14082ed10`) read, so the next repetition can need a higher bench. With `repeats` 0
+  nothing is filtered or raised: every entry applies when the single record completes, whatever v0 (base data: Advanced Medicine's "Advanced First Aid Kit" 1,4,4 and
+  Heavy Generator Theory's "Generator II" 1,4,0). Meitou: `ResearchData.LevelAt`, `ResearchState.Refresh` (crafts). The blueprint tooltip's tech level still reads the
+  record's own `level` (the original's base record carries the repetition 0 floor; only matters for a repeating research with a blueprint).
 - **Complete** (`FUN_140834550`): leaves the queue, joins the finished set, `improve buildings` applied
   (`FUN_140831a60`, the research's own fields for each listed building: `production mult` replaces the building's, so the
   last finished wins; `power increase` and `power capacity increase` add; lookup `FUN_14082ec70`, default 1, 0, 0), lists
