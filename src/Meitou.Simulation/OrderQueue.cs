@@ -158,6 +158,18 @@ public static class PlayerOrders
         return world.Tasks.Of(cold, task) is not { } handler || !handler.Done(world, slot, task);
     }
 
+    /// <summary>
+    /// Whether the character holds an order (the original's queue count <c>+0x60</c> is not 0): one running, waiting to start or queued; a front whose task ended and that the queue has not
+    /// dropped yet does not count. A pure read.
+    /// </summary>
+    public static bool Holds(World world, int slot)
+    {
+        var q = world.Characters.Cold(slot)!.OrderQueue;
+        if (q.Front is not { } front) return false;
+        if (!front.Started || Runs(world, slot, front)) return true;
+        return !front.IsMove && q.Count > 1;   // what Settle keeps
+    }
+
     /// <summary>Drops a front whose task ended: a move's, with the moves queued after it, as an interrupted walk always dropped them; any other order's alone.</summary>
     static void Settle(World world, int slot)
     {
