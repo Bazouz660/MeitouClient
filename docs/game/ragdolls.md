@@ -136,7 +136,8 @@ and keeps those leg ragdoll bits on; the character tick `FUN_1405d00b0` sets pos
   too while `_isLiterallyUnderMeleeAttackRightNowForSure` (`+0x2b0`). So the forced crawl ends a voluntary one.
 - Standing orders: run, jog, walk, group speed (0, 1, 2, 16) on a posture-1 uncrippled character set 0 instead (the speed arrows do not step while anyone selected is in posture 1, **Verified** `FUN_1407f3a20`, [ui-screens](ui-screens.md)); stealth
   off (4) sets 0 and ends sneaking. A theft witness (`ImStealingDoYouNotice`) in posture 1 or 3 gets 0.
-- Effects are those of posture ≠ 0: grounded clips, prone techniques only, stealth ×2, sight ×0.5, target-score terms; run
+- Effects are those of posture ≠ 0: grounded clips, prone techniques only, stealth ×2, sight ×0.5, target-score terms; the crippled task repertoire 0x40, which the
+  posture setter `FUN_1405c7e20` sets for posture 1 and 2 only (**Verified**; [planner](ai-tasks.md#planner)); run
   speed S = 7 (5 with a leg down, [pathfinding](pathfinding.md#speed-and-orders)).
 - Stand Up (order 28, also shown for 65): `Character::addOrder` queues AI task 28 "Standing", built as `Task_UnCrouch`
   ([ai-tasks](ai-tasks.md)): it plays `squat T` backwards and sets posture 0 once the clip is under 0.1. While getting up the

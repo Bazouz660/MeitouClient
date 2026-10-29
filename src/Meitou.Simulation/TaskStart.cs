@@ -17,14 +17,15 @@ public static class Repertoire
         cold is { IsImprisoned: true, InWhat: { } cage } ? world.Fixtures.Find(cage) is { Restrains: true } ? Chained : Imprisoned : 0;
 
     /// <summary>
-    /// The repertoire of a character, the first of: caged (<see cref="Imprisoned"/>), crawling (<see cref="Crippled"/>: <see cref="Bodies.MedicalState.Crawling"/>, Q5, <b>Observed</b>), restrained
-    /// (<see cref="Chained"/>), a human (<see cref="Human"/>), else <see cref="Animal"/>. The platoon repertoire is not modelled.
+    /// The repertoire of a character, the first of: caged (<see cref="Imprisoned"/>), prone (<see cref="Crippled"/>: the posture setter <c>FUN_1405c7e20</c> sets the bit for posture 1 staying low
+    /// and 2 crippled and clears it for the others, <b>Verified</b>; <see cref="Bodies.MedicalState.StayingLow"/>, <see cref="Bodies.MedicalState.Crawling"/>), restrained (<see cref="Chained"/>),
+    /// a human (<see cref="Human"/>), else <see cref="Animal"/>. The platoon repertoire is not modelled.
     /// </summary>
     public static int Of(World world, CharacterCold cold)
     {
         int confined = Confinement(world, cold);
         if (confined == Imprisoned) return Imprisoned;
-        if (cold.Medical is { Crawling: true }) return Crippled;
+        if (cold.Medical is { Crawling: true } or { StayingLow: true }) return Crippled;
         if (confined == Chained) return Chained;
         return SquadRegistry.IsAnimal(cold) ? Animal : Human;
     }

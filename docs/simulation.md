@@ -93,7 +93,7 @@ the immediate-threat reach inline (Unknown whether they match `FUN_1404378f0`'s 
 Meitou's `CharacterTask` is the act-out, the row is the `TaskType`: a pick-up is 225 for the order (246 kidnap), 148 for the rescue job, 238 foraging, 137 errands; operate 87 (97 training
 dummy), haul 124, turret 146, prospect 150, build 2, door repair 95, dismantle 96, bed 98 / put in bed 99 / job 106, move 29, melee 5 (picked) or 16, a perma-job its own row. Used by
 `CarrySystem.CanCarry` (replaces its animal and imprisoned tests), the production, construction, bed, move and fight starts, and the player's job `Runnable`. Consequences (the original's rows):
-a crawler (0x40) can start only rows that register it (move, first aid, loot, talk, attacks, prospect, sleep; not carry, operate, build, repair, dismantle, put in bed); an animal only 0x20 rows (so
+a crawler or one staying low (0x40, posture 1 or 2) can start only rows that register it (move, first aid, loot, talk, attacks, prospect, sleep; not carry, operate, build, repair, dismantle, put in bed); an animal only 0x20 rows (so
 no bed, no carry, no operate, no medic; job 289 is animal-only, so a human with that job never runs it). Not yet routed through it: implicit jobs, locks and cages, loot, put down, trade and
 talk, the continuing checks (`Able`, `CanWalk`, which still stop work on a cage). The medic finder keeps its own imprisoned refusal because rows 25 / 58 register the imprisoned repertoire
 (whether a caged prisoner treats is **Unknown**).
