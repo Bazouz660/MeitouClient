@@ -931,7 +931,8 @@ A character's job list (the Orders menu's "Perma-Jobs"; class `OrdersReceiver`, 
   2. Not permanent, or the resulting row's +4 is 0: appended to the order list.
   3. Else refused when a job of that type exists and the row's +8 is 0, or when one exists with the same target. Otherwise appended, the jobs
      switch turns on (`FUN_140508210`, which also posts a UI event for a player character), and +0x10, when set, is appended as a second job on the
-     same target with no checks (0x1f becomes 0x121 when character vfunc +0x248 returns non-null; that test is **Unknown**). Type 45 also stores
+     same target with no checks (0x1f becomes 0x121 = 289 when the receiving character's vfunc +0x248, `asAnimal`, is non-null: **Verified**, `FUN_1405e1f50`
+     returns the character itself in the `CharacterAnimal` vtable, `FUN_1405e5950` returns 0 in `CharacterHuman`'s; only this companion is converted, a Follow job 31 stays 31). Type 45 also stores
      the target at +0x18.
   4. The planner is re-run (vfunc +0x18).
 - **Ordering** (**Observed**, order dispatcher `FUN_1407fa650`): with Shift held (`DAT_142133449`) an order goes to `FUN_1407f5a90`, which adds it
@@ -948,7 +949,7 @@ A character's job list (the Orders menu's "Perma-Jobs"; class `OrdersReceiver`, 
   | 152 → 152 + 124 | 1 | 1 |
   | 2, 95 → 125; 25 → 58; 249 → 250; 60 → 57; 26 → 238; 4, 5, 61 → 16 | 1 | 0 |
   | 146 → 234 | 2 | 0 (234: 1) |
-  | 45 → 45 + 31 (31, 289 rows: +8 1) | 1 | 1 |
+  | 45 → 45 + 31, or + 289 for an animal receiver (31, 289 rows: +8 1) | 1 | 1 |
   | 148 → 148 + 106; 223 → 223 + 224; 273 → 273 + 274 | 1 | 0 |
   | 136, 137 → 137 + 138 | 1 | 1 |
   | 98, 175, 261 → 153 (153 has no +4: the bed order stays one-shot) | 1 | 0 |

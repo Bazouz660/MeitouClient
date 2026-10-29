@@ -444,7 +444,7 @@ public sealed partial class ProductionSystem : ITickSystem
         var cold = table.Cold(slot)!;
         ref var n = ref table.Next[slot];
         bool followJob = n.Task == (byte)CharacterTask.Follow && cold.JobIndex >= 0 && cold.JobIndex < cold.Jobs.Count
-            && cold.Jobs[cold.JobIndex].Type is Meitou.Data.Gameplay.Ai.TaskType.BODYGUARD or Meitou.Data.Gameplay.Ai.TaskType.STAY_CLOSE_TO_TARGET;
+            && PermaJobs.Follows(cold.Jobs[cold.JobIndex].Type);
         if (followJob) cold.FollowOrder = CharacterId.None;   // the job's follow ends with it; the character follows its squad's leader again
         if (followJob || n.Task is (byte)CharacterTask.Operate or (byte)CharacterTask.Haul or (byte)CharacterTask.Sleep)
         {

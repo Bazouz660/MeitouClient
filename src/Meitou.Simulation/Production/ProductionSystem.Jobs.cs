@@ -159,7 +159,7 @@ public sealed partial class ProductionSystem
         var table = world.Characters;
         followJobs = false;
         for (int i = 0; i < table.HighWater && !followJobs; i++)
-            followJobs = table.Next[i].Alive && table.Cold(i) is { IsPlayer: true, Jobs.Count: > 0 } cold && cold.Jobs.Exists(j => j.Type is TaskType.BODYGUARD or TaskType.STAY_CLOSE_TO_TARGET);
+            followJobs = table.Next[i].Alive && table.Cold(i) is { IsPlayer: true, Jobs.Count: > 0 } cold && cold.Jobs.Exists(j => PermaJobs.Follows(j.Type));
     }
 
     /// <summary>The training dummy's gain per second of the continuous entry (<b>Verified</b>, <c>UseableStuff</c> vfunc 0x4b0: <c>FUN_1408c64f0</c> with 2.0).</summary>
@@ -253,7 +253,7 @@ public sealed partial class ProductionSystem
     bool Runnable(World world, int slot, CharacterCold cold, int k)
     {
         var job = cold.Jobs[k];
-        if (job.Type is TaskType.BODYGUARD or TaskType.STAY_CLOSE_TO_TARGET) return FollowedBy(world, slot, cold, k) is not null;
+        if (PermaJobs.Follows(job.Type)) return ((cold.Orders & CharacterOrders.Jobs) != 0 || job.Type != TaskType.Unnamed289) && FollowedBy(world, slot, cold, k) is not null;
         if (!PermaJobs.Runs(job.Type) || ((cold.Orders & CharacterOrders.Jobs) == 0 && !PermaJobs.IgnoresSwitch(job.Type))) return false;
         // The walk to a job needs state 27, false while the character gets up (FUN_1405a3370).
         if (cold.GettingUpUntil > world.Tick) return false;
@@ -269,13 +269,13 @@ public sealed partial class ProductionSystem
     {
         var job = cold.JobIndex >= 0 && cold.JobIndex < cold.Jobs.Count ? cold.Jobs[cold.JobIndex] : null;
         if (job?.Type == TaskType.JOB_BUILDER) return task is CharacterTask.Build or CharacterTask.DeliverMaterials or CharacterTask.FetchMaterials;
-        if (job?.Type is TaskType.BODYGUARD or TaskType.STAY_CLOSE_TO_TARGET) return task == CharacterTask.Follow && cold.FollowOrder == job.Character;
+        if (job is not null && PermaJobs.Follows(job.Type)) return task == CharacterTask.Follow && cold.FollowOrder == job.Character;
         return task is CharacterTask.Operate or CharacterTask.Haul or CharacterTask.Sleep;
     }
 
     /// <summary>
-    /// The character a Bodyguard (45) or Staying close (31) job follows (the row has no finder: it acts on the job's own target, docs/game/ai-tasks.md "Finders of the jobs"): the job's character,
-    /// found again from its saved handle after a load, alive and not the follower itself; for Staying close also standing (the row's state 7, <c>!isTargetDown</c>). Null: the job is blocked.
+    /// The character a Bodyguard (45), Staying close (31) or animal Staying close (289) job follows (the row has no finder: it acts on the job's own target, docs/game/ai-tasks.md "Finders of the jobs"): the job's character,
+    /// found again from its saved handle after a load, alive and not the follower itself; for 31 and 289 also standing (the rows' state 7, <c>!isTargetDown</c>). Null: the job is blocked.
     /// </summary>
     /// <summary>
     /// isTargetDown (state 7, <c>FUN_14099a5a0</c>, <b>Verified</b>): gone, carried, unconscious or dead, in a bed or cage, or crawling or playing dead (posture 2 or more; staying low is up).
@@ -295,7 +295,7 @@ public sealed partial class ProductionSystem
             if (!target.IsNone) cold.Jobs[k] = job with { Character = target };
         }
         if (target.IsNone || target.Slot == slot || !table.TryResolveNext(target, out int t)) return null;
-        return job.Type == TaskType.STAY_CLOSE_TO_TARGET && TargetDown(table.Cold(t)) ? null : target;
+        return job.Type != TaskType.BODYGUARD && TargetDown(table.Cold(t)) ? null : target;
     }
 
     /// <summary>
@@ -454,7 +454,7 @@ public sealed partial class ProductionSystem
             cold.JobIndex = k;
             return;
         }
-        if (job.Type is TaskType.BODYGUARD or TaskType.STAY_CLOSE_TO_TARGET)
+        if (PermaJobs.Follows(job.Type))
         {
             if (FollowedBy(world, slot, cold, k) is not { } target) return;
             // From operating or hauling the character goes back to what it was doing before the list took it.

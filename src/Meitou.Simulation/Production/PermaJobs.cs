@@ -74,7 +74,7 @@ public static class PermaJobs
     /// <summary>
     /// The types the production pick carries out from a list (<see cref="ProductionSystem"/>; the engineer job through the construction system). Others run elsewhere: medic 58,
     /// robotics 57 and splinting 250 in <see cref="FirstAid.FirstAidSystem"/>, rescue 148 and foraging 238 in <see cref="Carrying.CarrySystem"/>, attacking enemies 16 in
-    /// <see cref="AggroSystem"/>; the carrying jobs (corpse disposal 137 / 138, intruders 223 / 273 with 224 / 274) in <c>ProductionSystem.Errands</c>, and Bodyguard 45 and Staying close 31
+    /// <see cref="AggroSystem"/>; the carrying jobs (corpse disposal 137 / 138, intruders 223 / 273 with 224 / 274) in <c>ProductionSystem.Errands</c>, and Bodyguard 45 and Staying close 31 / 289
     /// (a follow of the job's character) beside the production pick. The rest are kept, shown and saved but never started.
     /// </summary>
     public static bool Runs(TaskType type) => type is TaskType.OPERATE_MACHINERY or TaskType.OPERATE_AUTOMATIC_MACHINERY or TaskType.OPERATE_STORAGE or TaskType.JOB_BUILDER or TaskType.MAN_A_TURRET_PLAYER_JOB or TaskType.USE_TRAINING_DUMMY;
@@ -113,8 +113,9 @@ public static class PermaJobs
         foreach (var job in cold.Jobs)
             if (job.Type == type && (!rule.PerTarget || SameTarget(job, target))) return false;
         cold.Jobs.Add(target with { Type = type });
-        // The companion's own row decides nothing here; 31 becomes 289 under a character condition (vfunc +0x248) that is Unknown, so Meitou keeps 31.
-        if (rule.Companion != 0) cold.Jobs.Add(target with { Type = rule.Companion });
+        // The companion's own row decides nothing here; 31 becomes 289 for an animal receiver (vfunc +0x248, asAnimal: FUN_1405e1f50 returns the animal itself, FUN_1405e5950 of a person 0).
+        if (rule.Companion != 0)
+            cold.Jobs.Add(target with { Type = rule.Companion == TaskType.STAY_CLOSE_TO_TARGET && SquadRegistry.IsAnimal(cold) ? TaskType.Unnamed289 : rule.Companion });
         cold.Orders |= CharacterOrders.Jobs;
         return true;
     }
@@ -122,7 +123,10 @@ public static class PermaJobs
     static bool SameTarget(PermaJob a, PermaJob b) =>
         !a.Character.IsNone || !b.Character.IsNone ? a.Character == b.Character : a.Site is not null || b.Site is not null ? a.Site == b.Site : a.Saved == b.Saved;
 
-    /// <summary>The types that run with the jobs switch off (<b>Verified</b>, <c>FUN_14050c1c0</c>): attacking enemies, staying close, bodyguard, robot repair, medic, splinting.</summary>
+    /// <summary>The jobs that follow their character: Bodyguard 45, Staying close 31 and its animal form 289 (<c>FUN_14032ebd0</c> builds the same <c>Task_Follow</c> for 31 and 289).</summary>
+    public static bool Follows(TaskType type) => type is TaskType.BODYGUARD or TaskType.STAY_CLOSE_TO_TARGET or TaskType.Unnamed289;
+
+    /// <summary>The types that run with the jobs switch off (<b>Verified</b>, <c>FUN_14050c1c0</c>): attacking enemies, staying close, bodyguard, robot repair, medic, splinting. Not 289, the animals' staying close.</summary>
     public static bool IgnoresSwitch(TaskType type) =>
         type is TaskType.ATTACK_ENEMIES or TaskType.STAY_CLOSE_TO_TARGET or TaskType.BODYGUARD or TaskType.JOB_REPAIR_ROBOT or TaskType.JOB_MEDIC or TaskType.SPLINT_JOB;
 
