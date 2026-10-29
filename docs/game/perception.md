@@ -188,9 +188,11 @@ is not the looker's ally becomes a target only when both tests pass:
   HOLD_GROUND / STAY_CLOSE also installs the hold-position task 30 / 31. The radii are the constructor's (`AI::AI`: meiDistance 18, tolerance 5; no other writer found), so HOLD_GROUND reaches 63 and STAY_CLOSE 223.
 - **Post** (`AI::isTargetInRangeForHOLDMode_hostiles` `FUN_140598630`): only for a character on Hold (`CharStats::holdPositionMode`
   `FUN_1402b2b90`: CharStats +0x12b and not sneaking) that is not `FUN_1407f2840` (**Verified**: Ranged toggle on, posture 0, and manning a turret, or both arms working with a ranged weapon in hand or on the back; Meitou `Orders.RangedExempt`): a target slower than 2 (movement
-  +0xb8), or in its own state > 1, must be within 40 of the looker; a target more than 80 from the hold point
-  (CharStats +0x130, set when Hold is turned on and to a ground move's destination while on Hold; 140 when the target is fighting and
-  faces it) must be within 60 of the looker.
+  +0xb8), or in its own state > 1 (crawling, playing dead), or with the movement's animation-driven flag +0x37c set (every swing sets it, [combat](combat.md), "A swing has no steering"), must be within 40 of the looker; a target more than 80 from the hold point
+  (CharStats +0x130, set when Hold is turned on and to a ground move's destination while on Hold) must be within 60 of the looker. The reach is 140 instead of 80 when the target is in a fight
+  (`Character::isInCombatMode` `FUN_140436610`: the fight task runs, against anyone) and the dot product of its movement direction (+0xd0) with the unit vector from it to the looker is above 0 (`FUN_1409b1960`).
+  All distances to the looker are 3D (`Ogre::Vector3::squaredDistance`). **Verified** (body, constants `DAT_141682ad0` 2.0, `DAT_1416d4a28` 1600, `DAT_141685048` 80, `DAT_1416efdd8` 140, `DAT_1416bf8d4` 3600, `DAT_141681b38` 0).
+  Meitou `Orders.HoldPost` / `HoldFar`: speed is the horizontal velocity, +0xd0 is read as the yaw, the swing as `CombatSlot.AttackTech >= 0` and the hold point flat (**Observed** stand-ins).
 - So there is no give-up distance measured from where a fight began: an attack starts inside the AI's area, and a
   chase ends by time and lost senses ([Leaving a fight](combat.md#leaving-a-fight)).
 

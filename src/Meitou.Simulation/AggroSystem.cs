@@ -745,7 +745,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
     {
         ref readonly var other = ref s.Table.Previous[slot];
         var fight = s.Combat?.StateOf(new CharacterId(slot, other.Generation)) ?? Meitou.Simulation.Combat.CombatSlot.Fresh(other.Generation);
-        if (s.HoldPost && !Orders.HoldPost(s.Eye, s.HoldPoint, other.Position, other.Velocity, false, fight.TargetSlot == s.Self)) return null;
+        if (s.HoldPost && !Orders.HoldPost(s.Eye, s.HoldPoint, other.Position, other.Velocity, other.Yaw, c.Medical!.Crawling || fight.AttackTech >= 0, c.InCombat)) return null;
         var candidate = new Meitou.Simulation.Combat.TargetCandidate
         {
             Staggered = fight.StumbleClip >= 0 && (int)s.Tick < fight.StunUntil,

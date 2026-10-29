@@ -74,11 +74,11 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
         bool behind = lead > 0 && tv.X * level.X + tv.Z * level.Z > 0;
         // A crossbowman walks only while closing in (out of range or the line of fire blocked); aiming and reloading it stands.
         bool shooting = st.Ranged && st.RangedState != (byte)RangedStates.Closing;
-        // On Hold it walks only to a target within the post test's reach of the hold point (80, 140 when the target fights it; Orders.HoldPost), else it stands (engine reading).
+        // On Hold it walks only to a target within the post test's reach of the hold point (80, 140 when the target is in a fight and heads for it; Orders.HoldFar), else it stands (engine reading).
         bool holding = false;
         if (Orders.Holding(cold))
         {
-            float far = combat.StateOf(new CharacterId(t, next[t].Generation)).TargetSlot == i ? 140 : 80;
+            float far = Orders.HoldFar(n.Position, next[t].Position, next[t].Yaw, combat.StateOf(new CharacterId(t, next[t].Generation)).TargetSlot >= 0);
             holding = Vector2.DistanceSquared(Orders.HoldPointOf(cold, n.Position), new Vector2(next[t].Position.X, next[t].Position.Z)) > far * far;
         }
         // In its footwork with a clear line to the target, the fight steering moves it (docs/game/combat.md "Fight steering"): its state sets the band, no paths.
@@ -343,7 +343,7 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem
             {
                 int ds = defenders[k].Slot;
                 if (table.Cold(ds) is { } dc && Orders.Holding(dc)
-                    && !Orders.HoldPost(next[ds].Position, Orders.HoldPointOf(dc, next[ds].Position), from, next[a].Velocity, st.Down, t == ds)) defenders.RemoveAt(k);
+                    && !Orders.HoldPost(next[ds].Position, Orders.HoldPointOf(dc, next[ds].Position), from, next[a].Velocity, next[a].Yaw, table.Cold(a)?.Medical?.Crawling == true || st.AttackTech >= 0, true)) defenders.RemoveAt(k);
             }
             if (defenders.Count == 0) continue;
             // Each one joining the attacked character's fight takes the attacker AI::findAttackerOf scores best for it (FUN_14099c3b0, Verified): grouped by that

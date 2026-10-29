@@ -174,15 +174,27 @@ public static class Orders
         noise > 0 && distance < noise ? 0.1f * (1 - stealth) * (1 - distance * distance / (noise * noise)) : 0;
 
     /// <summary>
-    /// The Hold order's post test (<c>AI::isTargetInRangeForHOLDMode_hostiles</c>, docs/game/perception.md "The attack-on-sight tests"): a target standing (slower than 2) or down must
-    /// be within <see cref="HoldReach"/> of the looker; one more than 80 from the hold point (140 when it fights the looker) within 60.
+    /// The Hold order's post test (<c>AI::isTargetInRangeForHOLDMode_hostiles</c>, docs/game/perception.md "The attack-on-sight tests", <b>Verified</b>): a target slower than 2,
+    /// or <paramref name="held"/> (posture above 1, crawling or playing dead, or a swing running: the movement's animation-driven flag), must be within <see cref="HoldReach"/> of
+    /// the looker; one more than <see cref="HoldFar"/> from the hold point within 60. The distances to the looker are 3D; the hold point is flat (the stand-in for CharStats +0x130).
     /// </summary>
-    public static bool HoldPost(Vector3 looker, Vector2 hold, Vector3 target, Vector3 velocity, bool down, bool fightsLooker)
+    public static bool HoldPost(Vector3 looker, Vector2 hold, Vector3 target, Vector3 velocity, float targetYaw, bool held, bool targetFighting)
     {
-        float dx = target.X - looker.X, dz = target.Z - looker.Z, d2 = dx * dx + dz * dz;
-        if ((velocity.X * velocity.X + velocity.Z * velocity.Z < 2 * 2 || down) && d2 > HoldReach * HoldReach) return false;
-        float far = fightsLooker ? 140 : 80;
+        float d2 = Vector3.DistanceSquared(target, looker);
+        if ((velocity.X * velocity.X + velocity.Z * velocity.Z < 2 * 2 || held) && d2 > HoldReach * HoldReach) return false;
+        float far = HoldFar(looker, target, targetYaw, targetFighting);
         return Vector2.DistanceSquared(hold, new Vector2(target.X, target.Z)) <= far * far || d2 <= 60 * 60;
+    }
+
+    /// <summary>
+    /// The distance from the hold point within which a target is taken without the 60 test: 80, or 140 when the target is in a fight (any fight, <c>Character::isInCombatMode</c>
+    /// <c>FUN_140436610</c>) and its heading points towards the looker (dot with the unit vector target to looker above 0). The heading (the movement's +0xd0) is read as the yaw.
+    /// </summary>
+    public static float HoldFar(Vector3 looker, Vector3 target, float targetYaw, bool targetFighting)
+    {
+        if (!targetFighting) return 80;
+        var to = looker - target;
+        return MathF.Sin(targetYaw) * to.X + MathF.Cos(targetYaw) * to.Z > 0 ? 140 : 80;
     }
 
     /// <summary>The point a holding character holds (<see cref="CharacterCold.HoldPoint"/>, else where it stands).</summary>

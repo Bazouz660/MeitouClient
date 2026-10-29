@@ -109,7 +109,7 @@ public sealed partial class CombatSystem
         // The current target is whoever the order named, of any faction.
         if (c != q.Current && (tc.Faction == q.Cold.Faction || q.Cold.SquadId >= 0 && tc.SquadId == q.Cold.SquadId)) return;
         ref readonly var o = ref read[c];
-        if (q.Hold && !Orders.HoldPost(prev[i].Position, q.HoldPoint, prev[c].Position, prev[c].Velocity, false, o.TargetSlot == i)) return;
+        if (q.Hold && !Orders.HoldPost(prev[i].Position, q.HoldPoint, prev[c].Position, prev[c].Velocity, prev[c].Yaw, tc.Medical.Crawling || o.AttackTech >= 0, o.TargetSlot >= 0)) return;
         int attackers = AttackerCount(world, c);
         float dx = prev[c].Position.X - prev[i].Position.X, dz = prev[c].Position.Z - prev[i].Position.Z;
         var candidate = new TargetCandidate
