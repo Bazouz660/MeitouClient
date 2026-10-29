@@ -59,6 +59,10 @@ public sealed partial class ProductionSystem : ITickSystem
     List<ResearchData>? allResearch;
     ResearchSnapshot? publishedResearch;
     long researchVersion = -1, machinesVersion = -1;
+    /// <summary>Where the camera looks (the last <see cref="FocusCommand"/>; null: not told, as in headless runs): research costs are counted round it. Derived from the commands, not saved or hashed.</summary>
+    Vector3? focus;
+    /// <summary>The focus zone <see cref="publishedResearch"/> was built for.</summary>
+    Meitou.Data.World.ZoneCoordinate? researchZone;
     // Some character may still hold a machine that is gone.
     bool sweep;
 
@@ -279,6 +283,7 @@ public sealed partial class ProductionSystem : ITickSystem
                 case MoveJob move: MoveJobTo(world, move); break;
                 case PutInMachine put: Put(world, put); break;
                 case TakeFromMachine take: Take(world, take); break;
+                case FocusCommand look: focus = look.Position; break;
                 case QueueResearch queue: Queue(world, queue.Research); break;
                 case CancelResearch cancel: world.Research.Dequeue(cancel.Research); break;
                 case QueueCraft craft: QueueCraft(world, craft); break;
@@ -1024,11 +1029,22 @@ public sealed partial class ProductionSystem : ITickSystem
         return true;
     }
 
-    /// <summary>The items of the player's research benches (where costs are paid from; engine: every bench, the original takes the benches near the player).</summary>
+    /// <summary>The zone of the camera focus, null while none was told.</summary>
+    Meitou.Data.World.ZoneCoordinate? FocusZone() => focus is { } f ? Meitou.Data.World.WorldLayout.ZoneOf(f.X, f.Z) : null;
+
+    /// <summary>
+    /// The items of the player's research benches where costs are counted and paid (<b>Verified</b>, <c>FUN_14082e750</c>, <c>FUN_14082e810</c>, <c>FUN_14082e900</c>, <c>FUN_1409fc450</c>): only the benches
+    /// (function 3, the player's) in the 3 x 3 zones round the camera focus; without a focus (headless runs) every bench.
+    /// </summary>
     IEnumerable<Inventory> Benches(World world)
     {
+        var near = FocusZone();
         foreach (var m in world.Machines.All)
-            if (m.Data.IsResearch && m.Storage is { } s && Site(world, m.Site) is { Complete: true } site && site.Owner == world.Player.Faction) yield return s;
+        {
+            if (!m.Data.IsResearch || m.Storage is not { } s || Site(world, m.Site) is not { Complete: true } site || site.Owner != world.Player.Faction) continue;
+            if (near is { } z && Meitou.Data.World.WorldLayout.ZoneOf(m.Position.X, m.Position.Z) is var at && (Math.Abs(at.X - z.X) > 1 || Math.Abs(at.Y - z.Y) > 1)) continue;
+            yield return s;
+        }
     }
 
     int CountInBenches(World world, string item)
@@ -1083,7 +1099,9 @@ public sealed partial class ProductionSystem : ITickSystem
     /// <summary>The research state for the host (rebuilt when it or the machines changed).</summary>
     public ResearchSnapshot ResearchView(World world)
     {
-        if (publishedResearch is not null && researchVersion == world.Research.Version && machinesVersion == world.Machines.Version) return publishedResearch;
+        var zone = FocusZone();
+        if (publishedResearch is not null && researchVersion == world.Research.Version && machinesVersion == world.Machines.Version && researchZone == zone) return publishedResearch;
+        researchZone = zone;
         researchVersion = world.Research.Version;
         machinesVersion = world.Machines.Version;
         allResearch ??= ResearchData.LoadAll(db);

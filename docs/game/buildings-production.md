@@ -707,8 +707,11 @@ to `FUN_140836b70`: contribution k of the frame is x 0.6^k (counter `+0x174`, cl
   checks strictly), grouped by `category`.
 - **Queue** (`FUN_1408348a0`): needs `level` <= bench level (`FUN_140830a30` names the missing level) and the cost
   paid (`FUN_1408343c0`): `cost` items (of the repetition, below) summed over the inventories of the
-  player's research benches near the player (`FUN_14082e750`, `FUN_14082e810`), then removed; a paid id is remembered and
-  never charged again. Partial progress is kept when an item leaves the queue.
+  player's research benches (**Verified**: `FUN_14082e750` runs a `BuildingFinderNearestAllies_Function` at the position of the camera focus node
+  (`FUN_1407f2960`, the position the zone load centres on), `FUN_1409fc450` visits the building cells within +-1 of its cell (`floor(x / 4608)`, the zone grid), the finder keeps
+  buildings of function 3 owned by the player (`FUN_1408ca830`, `FUN_1408ca5d0`); the finder's +0x40 = 3 is the function it requires; its +0x18 = 8 is read by neither the cell walk nor the tests, meaning **Unknown**) in those
+  3 x 3 zones, counted by `FUN_14082e810` and removed by `FUN_14082e900`; a paid id is remembered and never charged again. Meitou: `ProductionSystem.Benches`, the zone
+  of the last `FocusCommand` (sent when the camera moved 50 units; derived, not saved; none, as in headless runs: every bench), so a camera in another zone sees no bench. Partial progress is kept when an item leaves the queue.
 - **Repetitions** (**Verified**, loader `FUN_140834b70`, `FUN_1408320a0`; Meitou `ResearchData.CostAt` / `TimeAt`, `ResearchState`): a research
   with `repeats` R > 1 gets copies "name 2" .. "name R" (repetition j = 1 .. R-1) beside the base (j = 0), so it is finished max(1, R)
   times in all. Repetition j has factor f = max(1, `repeat mult`^(j-1)) (1 for j = 0 and 1); each `cost` count c becomes
