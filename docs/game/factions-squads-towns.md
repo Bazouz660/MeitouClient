@@ -470,8 +470,8 @@ Meitou: [ground items](../simulation.md#items-and-eating).
   the budget allows, is marked to be made afresh from its template on its next activation. The same pass runs over the roaming pool (its own budget, shared running total) and a flag at `+0xd9` forces a resident squad's mark past both tests; neither is modelled (flag's source **Unknown**).
 - **Despawn cost** (**Verified**, `FUN_1406bab60`, `FUN_140796b30`): a non-kept platoon that leaves while not intact (the platoon flag, below)
   is taken out of its pool (platoon +0xa8: 1 residents, 2 roaming) and, while that pool is above 0, lowers it by its living members (no floor);
-  a `regenerates` platoon (+0xd9) is charged nothing and only marked to be remade. The platoon's faction's prosperity also drops by 10, floor 0, when its +0xa4 (read as the member count) is above 0, pool or not (`FUN_1406bab60`). Meitou: town roamers (`PayRoamerDespawn`, both costs) and nests
-  (`PayNestDespawn`, still floored at 0 with "lost someone" as not intact; no prosperity drop for nests and homeless squads: not applied, the original's drop covers every non-kept platoon).
+  a `regenerates` platoon (+0xd9) is charged nothing and only marked to be remade. The platoon's faction's prosperity also drops by 10, floor 0, when its +0xa4 is above 0, pool or not (`FUN_1406bab60`, **Verified**; +0xa4 is the count `FUN_14079acf0` compares with 4, read as the member count: **Observed**). Meitou: roamers and a save's wild platoons that despawn Faithful (`PayRoamerDespawn`, both costs) and nests
+  (`PayNestDespawn`, still floored at 0 with "lost someone" as not intact). Not applied: the prosperity drop for nest squads and sector-made homeless squads (the original's covers every non-kept platoon).
 - **Town pools in saves** (**Observed**, saves 1, 2, wade): every town has `pop` = `popd`, `started` true when populated, `popd2` 0 (none of
   304), while `read_roaming_population_n4` (`0x1408f98d0`) would set pool 2 to the faction's `roaming population` (no caller found:
   **Unknown** when it runs). `pop` is near the living members of the town's resident platoons (`is resident`) of the town's own faction:

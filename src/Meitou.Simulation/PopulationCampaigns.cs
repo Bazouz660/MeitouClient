@@ -1291,7 +1291,9 @@ public sealed partial class PopulationSystem : IStateHashed
                 n.TaskTime = 0.5f;
             }
             squad.HomeCentre = goal;
-            squad.HomeRadius = leads && p.Campaign.Phase == 1 ? Math.Max(RadiusOf(world, p.Campaign.Target) * 0.5f, 40) : 60;
+            // The mill at the target is an engine choice, sized as a roaming squad's at a town (PopulationRoaming.cs): the size radius of a placed town, a player town's own.
+            float mill = p.Campaign.Target.Site >= 0 ? data.Sites[p.Campaign.Target.Site].Town.SizeRadius * data.Sites[p.Campaign.Target.Site].Town.TownRadiusMult : RadiusOf(world, p.Campaign.Target);
+            squad.HomeRadius = leads && p.Campaign.Phase == 1 ? Math.Max(mill * 0.5f, 40) : 60;
             return;
         }
         // The column (task 215, Verified): followers jog to their trail points; the leader marching out keeps its loaded speed while every intact platoon is within
