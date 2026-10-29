@@ -530,7 +530,7 @@ public sealed partial class FixtureRegistry
 
     /// <summary>
     /// The cage <paramref name="carrier"/> at <paramref name="at"/> puts a captive in (the original's finder <c>FUN_1408d0770</c>, economy.md 11.7, <b>Verified</b>): every free cage weighs
-    /// clamp(1 - d^2 / 4608^2, 1e-5, 1), x100 when of the carrier's faction (any other must pass <see cref="CanUse"/> or is left out), x100 when in <paramref name="home"/> (a building instance id),
+    /// clamp(1 - d^2 / 4608^2, 1e-5, 1), x100 when of the carrier's faction (any other must pass <see cref="CanUse"/> or is left out, except for a player character: <c>canIUseThisBuilding</c> belongs to the AI's Ownerships, engine reading), x100 when in <paramref name="home"/> (a building instance id),
     /// and x1e-5 for a law enforcer (<see cref="Crime.CrimeSystem.IsPoliceLike"/>) when the cage stands inside a building that is not open to the public (<see cref="IsPublic"/>); the highest
     /// wins, the first registered on a tie. <paramref name="skip"/> leaves out reserved cages, and <see cref="Reachable"/> the ones the carrier cannot get to. Null when none is free.
     /// With <paramref name="occupied"/> it is the chooser's other mode (the kill and eat goals' finder <c>FUN_1408d0d90</c> calls it with 0): the occupied cages, the same weights, no reach test.
@@ -545,7 +545,7 @@ public sealed partial class FixtureRegistry
         {
             if (f.Kind != FixtureKind.Cage || IsFree(world.Characters, f) == occupied || !occupied && !Reachable(world, f, faction) || skip?.Invoke(f) == true) continue;
             bool own = faction >= 0 && f.Owner == faction;
-            if (!own && !CanUse(world, carrier, f)) continue;
+            if (!own && !carrier.IsPlayer && !CanUse(world, carrier, f)) continue;   // an AI ownership test: the player's characters may use any cage
             float d2 = Vector2.DistanceSquared(new Vector2(at.X, at.Z), new Vector2(f.Position.X, f.Position.Z));
             float w = Math.Clamp(1 - d2 / (CageSearchScale * CageSearchScale), 1e-5f, 1);
             if (own) w *= 100;

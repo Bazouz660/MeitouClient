@@ -128,7 +128,7 @@ public class DialogueTests
         v.Say(new TalkOrder(v.Hero, v.Villager) { Tick = 0 });
         v.World.RunTicks(2);
         Assert.Equal("Well met, rich hero.", v.Talk!.Text);
-        Assert.Equal(["Here, c.100.", "Bye."], v.Talk.Choices);
+        Assert.Equal(["Here, c.100. [c.100]", "Bye."], v.Talk.Choices);   // one " [c.N]" per take-money effect (FUN_140675320)
         v.Say(new DialogueChoice(0) { Tick = 0 });
         v.World.RunTicks(1);
         Assert.Null(v.Talk);   // nothing follows the reply
@@ -157,7 +157,7 @@ public class DialogueTests
         v.World.Player.Money = 12000;
         v.Say(new TalkOrder(v.Hero, v.Villager) { Tick = 0 });
         v.World.RunTicks(2);
-        Assert.Equal(("I don't know you.", "I'll join."), (v.Talk!.Text, v.Talk.Choices.Single()));
+        Assert.Equal(("I don't know you.", "I'll join. [c.10,000]"), (v.Talk!.Text, v.Talk.Choices.Single()));
         v.Say(new DialogueChoice(0) { Tick = 0 });
         v.World.RunTicks(1);
         Assert.Equal((1, 2000), (v.Data.Relations.Rank(guild), v.World.Player.Money));

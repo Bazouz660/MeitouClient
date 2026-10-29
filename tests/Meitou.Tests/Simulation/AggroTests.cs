@@ -14,7 +14,7 @@ namespace Meitou.Tests.Simulation;
 public class AggroTests
 {
     // Factions: 0 raiders, 1 villagers (raiders hate them), 2 nomads (raiders hate them but coexist), 3 friends (allied to the raiders),
-    // 4 hermits (the raiders' own list says hostile, the hermits list the raiders as coexisting), 5 the player (Nameless, no table of its own),
+    // 4 hermits (the raiders' own list says hostile, only the hermits list the raiders as coexisting: attacked), 5 the player (Nameless, no table of its own),
     // 6 wildlife (not real), 7 townsfolk (neutral to everyone, the player's victims).
     const int Raiders = 0, Villagers = 1, Nomads = 2, Friends = 3, Hermits = 4, Player = 5, Wildlife = 6, Townsfolk = 7;
 
@@ -135,18 +135,19 @@ public class AggroTests
         var (a, raiders, villagers, nomads, hermits, friends) = Crossroads(3, 1);
         using var _ = a;
         a.World.RunTicks(60);
-        // The raiders started it: every logged fight is a raider attacking a villager, and both raiders took part (the second one joined).
+        // The raiders started it: every logged fight is a raider attacking a villager or a hermit (the hermits list the raiders as coexisting, but attack on sight reads only the
+        // looker's own list, FUN_1406b23c0), and both raiders took part (the second one joined).
         Assert.NotEmpty(a.Aggro.Log);
-        Assert.All(a.Aggro.Log, e => { Assert.Equal(Raiders, e.AttackerFaction); Assert.Equal(Villagers, e.TargetFaction); });
+        Assert.All(a.Aggro.Log, e => { Assert.Equal(Raiders, e.AttackerFaction); Assert.Contains(e.TargetFaction, new[] { Villagers, Hermits }); });
         Assert.All(raiders.Members, m => Assert.True(a.Fighting(m), "both raiders fight"));
-        // The villagers answer (retaliation), and nobody touches the nomads, hermits or friends.
+        // The attacked answer (retaliation), and nobody touches the nomads or friends.
         a.World.RunTicks(60);
-        Assert.Contains(villagers.Members, a.Fighting);
-        foreach (var m in nomads.Members.Concat(hermits.Members).Concat(friends.Members)) Assert.False(a.Fighting(m));
+        Assert.Contains(villagers.Members.Concat(hermits.Members), a.Fighting);
+        foreach (var m in nomads.Members.Concat(friends.Members)) Assert.False(a.Fighting(m));
         foreach (var e in a.Combat.Log)
         {
             int fa = a.World.Characters.Cold(e.Attacker)!.Faction, fd = a.World.Characters.Cold(e.Defender)!.Faction;
-            Assert.True((fa, fd) is (Raiders, Villagers) or (Villagers, Raiders), $"a blow between factions {fa} and {fd}");
+            Assert.True((fa, fd) is (Raiders, Villagers) or (Villagers, Raiders) or (Raiders, Hermits) or (Hermits, Raiders), $"a blow between factions {fa} and {fd}");
         }
     }
 
