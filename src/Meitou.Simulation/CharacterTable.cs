@@ -183,6 +183,12 @@ public sealed class CharacterCold
     /// <summary>The character is in a fight (set by the combat system): the animation stance takes the combat clips.</summary>
     public bool InCombat { get; set; }
     /// <summary>
+    /// The status byte <c>+0x114</c> ("ordered", docs/game/economy.md 11.6): set on an attacker by the assault booking of an ordered attack (<c>FUN_140334070</c>), cleared when its fight ends
+    /// (<see cref="Combat.CombatSystem"/> <c>EndFight</c>, the stand-in for the attack task's end, <c>FUN_1405c91c0</c>); a victim with it set is not assaulted again. The original also sets it at
+    /// ordered task starts and for the cannibal assault package's squad (not modelled). Not saved; hashed while set.
+    /// </summary>
+    public bool Ordered { get; set; }
+    /// <summary>
     /// The crossbow controller's <c>combatMode</c> (<c>+0x2f0 → +0x36</c>, docs/game/ui-screens.md section 4 "Combat mode"): set by each shooting tick (the shooting task's update), cleared
     /// when the shooting ends (the fight's end, or the switch to melee). Only the HUD reads it; not saved, not hashed.
     /// </summary>
@@ -672,6 +678,7 @@ public sealed class CharacterTable
             if (k.Escaped) hasher.Add(0x45736361);
             if (k.Kidnapped) hasher.Add(0x4B64706E);
             if (k.Freed) hasher.Add(0x46726564);
+            if (k.Ordered) hasher.Add(0x4F72646E);
             if (k.SlaveState != 0) { hasher.Add(0x536C7653); hasher.Add(k.SlaveState); hasher.Add(k.SlaveOwner); }
             if (k.PickingLock is { } pick) { hasher.Add(0x5069636B); hasher.Add(Rng.StableHash(pick)); }
             if (k.Bashing is { } bash) { hasher.Add(0x42617368); hasher.Add(Rng.StableHash(bash)); hasher.Add(k.BashTime); if (k.BashOrdered) hasher.Add(0x4F726473); }

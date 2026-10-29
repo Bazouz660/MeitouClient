@@ -69,6 +69,7 @@ public sealed partial class PopulationSystem
         c.ModeOverride = null;
         c.SpeedOverride = 0;
         c.PaceCap = null;
+        c.Ordered = false;
         c.InCombat = false;
         c.Fleeing = false;
         c.Engaged = false;

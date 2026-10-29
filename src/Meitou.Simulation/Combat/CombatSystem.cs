@@ -256,6 +256,7 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
     static void EndFight(CharacterTable table, int slot)
     {
         var cold = table.Cold(slot)!;
+        cold.Ordered = false;
         cold.InCombat = false;
         cold.CombatRunning = false;
         cold.RangedCombatMode = false;

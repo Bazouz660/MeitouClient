@@ -100,15 +100,17 @@ public sealed partial class CrimeSystem(FactionRelations relations, CrimeSetting
     /// <summary>
     /// An attack order on <paramref name="victim"/> (not a defensive one): an Assault (the game's <c>FUN_140334070</c>, <b>Verified</b>, run when an attack task starts) unless the victim is
     /// wanted by the attacker's faction, is a bandit (<c>NPC class</c> 8), has a pending crime of its own, or is in melee combat mode (<paramref name="victimFighting"/>,
-    /// <c>Character::isInCombatMode</c> <c>FUN_140436610</c>). The original also skips a victim whose AI byte +0x114 is set (set on every attacker, clearing not traced: not modelled);
-    /// in its stead Meitou skips a victim whose faction is hostile to the attacker's (engine choice, no counterpart in the original). An NPC attacker counts too, but not an animal (engine
+    /// <c>Character::isInCombatMode</c> <c>FUN_140436610</c>), or has the "ordered" byte <c>+0x114</c> set (<see cref="CharacterCold.Ordered"/>: an earlier ordered attack still running; <b>Verified</b>).
+    /// The attacker gets that byte before the booking, whether or not the crime is then set. Engine choice, no counterpart in the original: a victim whose faction is hostile to the attacker's is not booked for. An NPC attacker counts too, but not an animal (engine
     /// choice), and the victim may be one of the player's characters.
     /// </summary>
     public void Assault(World world, int attacker, int victim, bool victimFighting = false)
     {
         var table = world.Characters;
         if (table.Cold(attacker) is not { } a || a.Fighter?.IsAnimal == true || table.Cold(victim) is not { } v || a.IsPlayer && v.IsPlayer) return;
-        if (IsWantedBy(v, a.Faction) || v.NpcClass == FundamentalType.Bandit || v.Pending is not null || victimFighting || AggroSystem.IsEnemy(Relations, v.Faction, a.Faction)) return;
+        if (IsWantedBy(v, a.Faction) || v.NpcClass == FundamentalType.Bandit || v.Pending is not null || victimFighting || v.Ordered) return;
+        a.Ordered = true;
+        if (AggroSystem.IsEnemy(Relations, v.Faction, a.Faction)) return;
         SetPending(world, attacker, CrimeCode.Assault, v.Faction, table.IdOf(victim), MinTimer);
     }
 
