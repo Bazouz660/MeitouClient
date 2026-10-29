@@ -187,7 +187,7 @@ child's (`FUN_1406ad9d0`).
    packages), `is character` (the speaker's record), `target carrying character` (for each listed character in turn, the first
    member of the target's squad, the target or one the speaker perceives, that carries it becomes the target, [retargeting](#retargeting);
    any hit passes), `world state` (all equal their bool), `target has item type` / `target has item` (one ordered
-   pass over the target's squad, see below; retargets), `target race` (the target, else a squad member, recorded as interjector), `my race`,
+   pass over the target's squad, see below; retargets), `target race` (**Verified**, `FUN_140678f30`: the target alone first, passing with no side effect; else per listed race in turn the first eligible squad member of that race becomes the target, [retargeting](#retargeting), so the last race with a hit decides; any hit passes; the one caller with the flag set, `FUN_14067a530`, a text preview, does not retarget), `my race`,
    `my subrace`. Each list is OR within itself. The race tests (`my race`, `target race`, the +2 below, T_TARGET_WITH_RACE, DA 47) match
    a race when the listed RACE is that race or any race of its RACE_GROUP (`FUN_14042ecd0`; the group's `races` set race +0x120, a race in
    two groups keeps the last loaded, `FUN_140430070`); `my subrace` is an exact RACE compare (**Verified**, decompile). The four squad tests count only the target and members the speaker perceives

@@ -184,7 +184,20 @@ public sealed partial class DialogueSystem
             }
             if (!itemOk || !typeOk) return false;
         }
-        if (node.TargetRace.Count > 0 && !Known(world, me, other).Any(m => Cold(world, m)?.Race is { } r && dialogue.RaceMatches(r.StringId, node.TargetRace))) return false;
+        if (node.TargetRace.Count > 0 && !(tc?.Race is { } targetRace && dialogue.RaceMatches(targetRace.StringId, node.TargetRace)))
+        {
+            // The target itself passes with no side effect; else per listed race in turn the first member of its squad of that race becomes the target (the last race to hit decides).
+            bool hit = false;
+            foreach (string listed in node.TargetRace)
+                foreach (var m in Known(world, me, other))
+                    if (Cold(world, m)?.Race is { } r && dialogue.RaceMatches(r.StringId, listed))
+                    {
+                        SetTarget(c, me, m);
+                        hit = true;
+                        break;
+                    }
+            if (!hit) return false;
+        }
         if (node.MyRace.Count > 0 && (mc.Race is null || !dialogue.RaceMatches(mc.Race.StringId, node.MyRace))) return false;
         if (node.MySubrace.Count > 0 && (mc.Race is null || !node.MySubrace.Contains(mc.Race.StringId))) return false;
         if (node.CooldownHours > 0 && lastUse.TryGetValue(node.StringId, out double last) && world.GameHours - last < node.CooldownHours) return false;
