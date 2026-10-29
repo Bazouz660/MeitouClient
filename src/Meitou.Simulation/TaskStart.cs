@@ -159,6 +159,28 @@ public static class TaskStart
         request.Task == CharacterTask.Attack && request.Source is TaskSource.Goal or TaskSource.Reaction && Production.PermaJobs.Follows(running.Row)
         && running.Runs(current) && current is CharacterTask.Follow or CharacterTask.Attack;
 
+    /// <summary>The act-outs only <see cref="Start"/> may begin (their systems end them by themselves; other tasks are still set directly by systems not converted yet).</summary>
+    static bool StartedOnly(byte task) => task is (byte)CharacterTask.Attack or (byte)CharacterTask.Treat or (byte)CharacterTask.PickUp or (byte)CharacterTask.PutDown
+        or (byte)CharacterTask.Loot or (byte)CharacterTask.StealthKo;
+
+    /// <summary>
+    /// Debug builds, at the end of a tick: a character that took up one of the <see cref="StartedOnly"/> act-outs this tick did so through <see cref="Start"/> (its provenance is
+    /// stamped this tick for that act-out); a direct write of <see cref="CharacterHot.Task"/> outside the handlers throws.
+    /// </summary>
+    [System.Diagnostics.Conditional("DEBUG")]
+    internal static void CheckStarts(World world)
+    {
+        var table = world.Characters;
+        var prev = table.Previous;
+        var next = table.Next;
+        for (int i = 0; i < table.HighWater; i++)
+        {
+            if (!next[i].Alive || !prev[i].Alive || prev[i].Generation != next[i].Generation || next[i].Task == prev[i].Task || !StartedOnly(next[i].Task)) continue;
+            if (table.Cold(i)!.Running is not { } run || run.Tick != world.Tick || !run.Runs((CharacterTask)next[i].Task))
+                throw new InvalidOperationException($"slot {i} took up {(CharacterTask)next[i].Task} at tick {world.Tick} without TaskStart.Start");
+        }
+    }
+
     /// <summary>
     /// Ends the character's task from outside its act-out (serial phases only): its fight and the task end through their handlers and the provenance is dropped; <see cref="TaskEnd.Stopped"/>
     /// then stands it, idle (<see cref="MovementSystem.Stop"/>).

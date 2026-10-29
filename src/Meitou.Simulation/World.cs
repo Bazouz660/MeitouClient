@@ -303,6 +303,7 @@ public sealed partial class World : IDisposable
         table.Phase = TablePhase.SlowWorld;
         // 7. Slow world (serial).
         for (int k = 0; k < systems.Count; k++) { systems[k].SlowWorld(this); prof?.Lap(TickProfile.SlowWorld, k); }
+        TaskStart.CheckStarts(this);
 
         // 8. Publish.
         Squads.Refresh(table);
