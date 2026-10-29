@@ -95,7 +95,8 @@ public sealed unsafe class VulkanPresenter : IDisposable
         int w = src.Desc.Width, h = src.Desc.Height;
         var list = (CommandList)ctx.BeginNative("present");
         var cb = list.Handle;
-        Barrier(cb, dst, ImageLayout.Undefined, ImageLayout.TransferDstOptimal, PipelineStageFlags2.ColorAttachmentOutputBit, AccessFlags2.None,
+        // The source stage is the one the acquire semaphore is waited at (below): the layout change then waits for the image to be released.
+        Barrier(cb, dst, ImageLayout.Undefined, ImageLayout.TransferDstOptimal, PipelineStageFlags2.TransferBit, AccessFlags2.None,
             PipelineStageFlags2.BlitBit, AccessFlags2.TransferWriteBit);
         var blit = new ImageBlit
         {
