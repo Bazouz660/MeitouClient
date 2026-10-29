@@ -125,15 +125,27 @@ public static class PlayerOrders
     }
 
     /// <summary>
-    /// Whether the order can start for the character now (a pure read; the M6 <c>World.CanOrder</c> rests on it): the row is in the character's repertoire (<see cref="TaskStart.Eligible"/>)
-    /// and its owner's check.
+    /// Whether the order can start for the character now (a pure read; the M6 <c>World.CanOrder</c> rests on it): the row is in the character's repertoire (<see cref="TaskStart.Eligible"/>),
+    /// its owner's check, and a row needing no melee threat (<see cref="NeedsNoThreat"/>) has none (<see cref="Threatened"/>).
     /// </summary>
     public static OrderCheck CanRun(World world, int slot, OrderEntry order)
     {
         var cold = world.Characters.Cold(slot)!;
         if (!TaskStart.Eligible(world, cold, order.Row)) return OrderCheck.Blocked();
-        return order.Owner.CanRun(world, slot, order);
+        var own = order.Owner.CanRun(world, slot, order);
+        return own.CanRun && Threatened(world, slot, order.Row) ? OrderCheck.Blocked() : own;
     }
+
+    /// <summary>
+    /// Whether the row's list B has <c>!158</c> <c>iAmBeingMeleeAttacked_immediate</c>, which no row provides, so the plan fails while the character has a melee threat (docs/game/ai-tasks.md
+    /// "Precedence"): of the player's orders only 146 Turret gunner.
+    /// </summary>
+    public static bool NeedsNoThreat(TaskType row) =>
+        TaskDataTable.Of(row) is { } data && Array.Exists(data.Needs, c => c is { State: StateType.iAmBeingMeleeAttacked_immediate, Holds: false });
+
+    /// <summary>Whether the row needs no melee threat and the character has one within 40 (state 158, <see cref="CharacterFacts.ImmediateThreat"/>).</summary>
+    static bool Threatened(World world, int slot, TaskType row) =>
+        NeedsNoThreat(row) && world.SystemOf<Combat.CombatSystem>() is { } combat && CharacterFacts.ImmediateThreat(combat, world, slot);
 
     /// <summary>Whether the front order started and its task still runs: the task's provenance is an order's for it (<see cref="RunningTask.Runs"/>; a move's walk is the order's move) and its handler has more to do.</summary>
     public static bool Runs(World world, int slot, OrderEntry order)
@@ -230,7 +242,8 @@ public static class PlayerOrders
     /// <summary>
     /// Each tick after the inputs (serial): a front whose task ended leaves the queue and the next starts (the original's "plan finished" replan). <b>Engine</b> stand-ins for the replan triggers
     /// (until the decision step, M5): a front not tried yet is tried at once; every <see cref="Production.ProductionSystem.JobCheckTicks"/> a waiting one is tried again unless the character fights (a plan in progress; its end
-    /// replans), silently.
+    /// replans), silently; and on the same beat a running front whose row needs no melee threat (<see cref="NeedsNoThreat"/>) ends when one comes (the original replans on the blow's stagger
+    /// and the plan fails), so the character falls through to Self preservation and takes the order up again once the threat is gone (S3, the turret gunner).
     /// </summary>
     internal static void Step(World world)
     {
@@ -246,6 +259,11 @@ public static class PlayerOrders
                 {
                     Settle(world, i);
                     if (cold.OrderQueue.Count > 0) TryFront(world, i, show: true);
+                }
+                else if (due && Threatened(world, i, front.Row))
+                {
+                    front.Started = false;   // waits in the queue: its end below is not the order's
+                    TaskStart.End(world, i, TaskEnd.Stopped);
                 }
                 continue;
             }

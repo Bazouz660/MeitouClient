@@ -147,6 +147,8 @@ the owner's pure `IOrderOwner.CanRun`: `Run`, `Blocked` with its failure text, o
   queue did; `TaskEnd.Done`; else `PlayerOrders.Step` after the inputs) and the next is tried at once. An interrupted move drops the queue (as `GoTo`/`Stop` dropped queued moves),
   so does `TaskEnd.Stopped`; a start from another source replacing the running front pops it (a follow row's fight step does not).
 - **Engine** stand-in for the replan triggers until the decision step: every `ProductionSystem.JobCheckTicks` a blocked front is tried again, silently, unless the character fights.
+- A row needing no melee threat (`PlayerOrders.NeedsNoThreat`: `!158` in list B, of the orders only 146 Turret gunner) is blocked while `CombatSystem.ImmediateThreat` holds; on
+  the same beat its running order ends (`TaskEnd.Stopped`) and waits unstarted, so the gunner falls through to self-defence and mans the turret again once the threat is gone (S3).
 - Group orders keep their pickers (the nearest or first character that can run it: pick up, loot, stealth KO, the turret, item pick-up, containers, lock work); only that character
   gets the order, none when nobody can run it. Per-character orders (move, follow, attack, first aid, splint, rest, the Medic and Rescue buttons, put down, operate, haul, prospect,
   build, repair, dismantle, beds, put in cage) queue blocked for whoever cannot run them.

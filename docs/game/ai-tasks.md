@@ -767,8 +767,14 @@ update `FUN_140511130`, `Character::setupAI` `FUN_140621b70`; KenshiLib names **
   over at the next choice; the implicit jobs come after the list, Idleness last. Passive leaves
   Self preservation alone; the Jobs switch only gates the job passes. A fight is a task (4 `Task_MeleeAttack`) in a goal's or an order's plan; `CombatClassAI` steers it and
   chooses nothing; the fight ends with the task.
+- **Threat tests of order rows** (**Verified** against the transcribed registry `TaskDataTable`, list B read row by row): of the player's order rows only 146 Turret gunner tests a
+  threat (`!158`, its own +0x2b0; no row provides it, so the plan fails while a melee attacker is within 40 and the order waits in the queue). 225 / 246 lift, 2 Building, 95 Repairing,
+  96 Demolishing, 87 Operating, 97 Training, 124 Hauling, 150 Prospecting, 25 / 249 First aid / Splinting, 26 Looting, 69 Putting down, 98 Sleeping, 76 / 201 Lockpicking, 108, 110,
+  107, 5 / 61 attacks and 29 Move order list none of 158, 159, 16, 39; Rest (54) has no TaskData row. 31 needs `!16` and 45 `!16 !39`, which 13 provides, so they fight instead of failing.
+  The providers a plan adds before these rows were not checked for threat states (**Unknown**).
 - **Meitou**: the player's characters run no chooser; each system acts on its own. Orders go through the order queue ([simulation](../simulation.md#order-queue)): one that
-  can run replaces any task, one that cannot stays queued with its text while jobs and goals go on. Self preservation is `RetaliationSystem.SelfDefends`:
+  can run replaces any task, one that cannot stays queued with its text while jobs and goals go on; a turret gunner's order 146 ends when a melee threat comes and is taken up
+  again once it is gone (`PlayerOrders.NeedsNoThreat`). Self preservation is `RetaliationSystem.SelfDefends`:
   it answers when the character is idle, a bodyguard following, looting with the attacker within 40, or on a task its jobs started (`PermaJobs.FromJob`: a job's provenance
   `CharacterCold.Running` that runs the task); Hold's attack on sight (`AggroSystem.HoldsGround`) and Getting food (`TownDutySystem.LookPlayerFood`) likewise. Gaps: the immediate
   answer ignores "moving"; a higher list job does not take over a running medic, rescue or foraging job; a bodyguard defends its leader from an attacker at any
