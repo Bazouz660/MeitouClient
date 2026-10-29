@@ -476,7 +476,8 @@ public sealed partial class ProductionSystem
             var back = cold.ResumeTask;
             End(table, slot);
             cold.ResumeTask = back;
-            MovementSystem.Follow(world, new FollowOrder([table.IdOf(slot)], target) { Tick = world.Tick }, breakCircle: false);   // the circle was broken when the job was added
+            // The Bodyguard job guards (RetaliationSystem.Guards); the verb always gives the job, so without the flag no player's bodyguard defended its target.
+            MovementSystem.Follow(world, new FollowOrder([table.IdOf(slot)], target) { Guard = job.Type == TaskType.BODYGUARD, Tick = world.Tick }, breakCircle: false);   // the circle was broken when the job was added
             cold.JobIndex = k;
             return;
         }

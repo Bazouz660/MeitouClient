@@ -770,8 +770,9 @@ update `FUN_140511130`, `Character::setupAI` `FUN_140621b70`; KenshiLib names **
 - **Meitou**: the player's characters run no chooser; each system acts on its own and an order replaces any task. Self preservation is `RetaliationSystem.SelfDefends`:
   it answers when the character is idle, a bodyguard following, looting with the attacker within 40, or on a task its jobs started (`PermaJobs.FromJob`: `JobIndex`,
   `Implicit`, `JobTask`); Hold's attack on sight (`AggroSystem.HoldsGround`) and Getting food (`TownDutySystem.LookPlayerFood`) likewise. Gaps: the immediate
-  answer ignores "moving"; a higher list job does not take over a running medic, rescue or foraging job; only a bodyguard defends its leader, not a follower (31);
-  mates join a fight only from idle (the original's way a player character joins a mate is **Unknown**).
+  answer ignores "moving"; a higher list job does not take over a running medic, rescue or foraging job; a bodyguard defends its leader from an attacker at any
+  distance (engine reading), a follower only from one within 40 as the row (`RetaliationSystem.Guards`); mates join a fight only from
+  idle (the original's way a player character joins a mate is **Unknown**).
 
 ## Combat goals
 

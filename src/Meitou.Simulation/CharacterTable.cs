@@ -67,6 +67,11 @@ public sealed class CharacterCold
     public CharacterId FollowOrder { get; set; } = CharacterId.None;
     /// <summary>Whether the <see cref="FollowOrder"/> is a Bodyguard order (45): the follower also defends its target (<see cref="RetaliationSystem"/>). Not saved; hashed with <see cref="FollowOrder"/>.</summary>
     public bool Guarding { get; set; }
+    /// <summary>
+    /// A follower (Staying close, 31) left its follow to fight whoever threatened its <see cref="FollowOrder"/> target (<see cref="RetaliationSystem"/>): once that fight leaves it idle it follows
+    /// again, as the original's follow order is still queued; any other task first (a new order) drops the mark. Not saved; hashed only while set.
+    /// </summary>
+    public bool FollowResume { get; set; }
     /// <summary>The target a manned-turret gunner was told to shoot at (Shoot At, 235; <see cref="Combat.ShootAtOrder"/>); None: the gunner chooses. Not saved; hashed only while set.</summary>
     public CharacterId TurretTarget { get; set; } = CharacterId.None;
     /// <summary>The caged prisoner this character walks to free (Set Free, 110; <see cref="Locks.SetFreeOrder"/>); None: none. Not saved; hashed only while set.</summary>
@@ -684,6 +689,7 @@ public sealed class CharacterTable
             if (k.Ai is { } mind) { hasher.Add(0x41694D64); mind.Hash(ref hasher); }
             if (k.Engaged) hasher.Add(0x456E6761);
             if (!k.FollowOrder.IsNone) { hasher.Add(0x466F6C77); hasher.Add(k.FollowOrder); if (k.Guarding) hasher.Add(0x47756172); }
+            if (k.FollowResume) hasher.Add(0x46526573);
             if (!k.TurretTarget.IsNone) { hasher.Add(0x54725467); hasher.Add(k.TurretTarget); }
             if (!k.Freeing.IsNone) { hasher.Add(0x46726565); hasher.Add(k.Freeing); }
             if (k.EnteringCage is { } entering) { hasher.Add(0x456E7472); hasher.Add(Rng.StableHash(entering)); }   // only while set, so worlds without follow orders hash as before

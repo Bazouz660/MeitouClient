@@ -311,6 +311,7 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem
                 combat.UnderAttackGettingUp(world, t, tc, (ulong)(uint)a);
             }
         }
+        ResumeFollowers(table);
         bool periodic = world.Tick % CheckEveryTicks == 0;
         if (!periodic && !fresh) return;
         ResumeGuards(world, table);
@@ -321,7 +322,7 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem
         for (int s = 0; s < table.HighWater; s++)
         {
             if (!next[s].Alive || table.Cold(s) is not { } c) continue;
-            if (c.Guarding) guards.Add(s);
+            if (!c.FollowOrder.IsNone) guards.Add(s);
             if (c.IsPlayer) players.Add(s);
             if (c.Ai is { ProtectsAllies: true }) protectors.Add(s);
         }
@@ -383,20 +384,46 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem
     }
 
     /// <summary>
-    /// Bodyguard (order 45, <b>engine</b> reading): the free characters following <paramref name="slot"/> as bodyguards (<see cref="CharacterCold.Guarding"/>) within <see cref="JoinRange"/> of it
-    /// defend it against <paramref name="attacker"/>, in slot order; never against a character of their own faction.
+    /// The characters following <paramref name="slot"/> by order or job within <see cref="JoinRange"/> of it defend it against <paramref name="attacker"/>, in slot order, never against a
+    /// character of their own faction (rows 45 Bodyguard and 31 Staying close need state 16, no threat within 40 of the followed character, which 13 "Attacking attackers of" provides;
+    /// docs/game/ai-tasks.md "Precedence"). A bodyguard (<see cref="CharacterCold.Guarding"/>) whatever the attacker's distance (<b>engine</b> reading); a plain follower only while it
+    /// follows and the attacker is within <see cref="ImmediateReach"/> of its target, and it follows again after the fight (<see cref="CharacterCold.FollowResume"/>).
     /// </summary>
     static void Guards(World world, CharacterTable table, int slot, int attacker, List<CharacterId> defenders, HashSet<int> taken, List<int> guards)
     {
         var next = table.Next;
         var target = new CharacterId(slot, next[slot].Generation);
+        var reach = next[attacker].Position - next[slot].Position;
+        bool immediate = reach.X * reach.X + reach.Z * reach.Z <= ImmediateReach * ImmediateReach;
         foreach (int s in guards)
         {
-            if (!next[s].Alive || s == attacker || table.Cold(s) is not { Guarding: true } c || c.FollowOrder != target || table.Cold(attacker)?.Faction == c.Faction) continue;
+            if (!next[s].Alive || s == attacker || table.Cold(s) is not { } c || c.FollowOrder != target || table.Cold(attacker)?.Faction == c.Faction) continue;
             var d = next[s].Position - next[slot].Position;
-            if (d.X * d.X + d.Z * d.Z > JoinRange * JoinRange || !CanFight(table, s, taken)) continue;
+            if (d.X * d.X + d.Z * d.Z > JoinRange * JoinRange) continue;
+            if (c.Guarding ? !CanFight(table, s, taken) : !immediate || next[s].Task != (byte)CharacterTask.Follow || !Helps(table, s, taken)) continue;
+            if (!c.Guarding) c.FollowResume = true;
             defenders.Add(new CharacterId(s, next[s].Generation));
             taken.Add(s);
+        }
+    }
+
+    /// <summary>
+    /// Every tick: a follower that left its follow to defend its target (<see cref="CharacterCold.FollowResume"/>) follows again once its fight leaves it idle; any other task (a new
+    /// order) drops the mark, so a stale <see cref="CharacterCold.FollowOrder"/> is never taken up again.
+    /// </summary>
+    static void ResumeFollowers(CharacterTable table)
+    {
+        var next = table.Next;
+        for (int s = 0; s < table.HighWater; s++)
+        {
+            if (!next[s].Alive || table.Cold(s) is not { FollowResume: true } c) continue;
+            var task = (CharacterTask)next[s].Task;
+            if (task is CharacterTask.Attack or CharacterTask.Follow) continue;
+            c.FollowResume = false;
+            if (task != CharacterTask.Idle || c.InCombat || c.FollowOrder.IsNone || !table.TryResolveNext(c.FollowOrder, out _)) continue;
+            next[s].Task = (byte)CharacterTask.Follow;
+            next[s].TaskTime = 0;
+            c.FollowPathTime = 0;
         }
     }
 
@@ -512,9 +539,12 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem
     /// only without an order.
     /// </remarks>
     static bool CanFight(CharacterTable table, int slot, HashSet<int> taken) =>
-        Able(table, slot, taken, out var cold, out byte task)
-        && (cold.Orders & CharacterOrders.Passive) == 0 && ((cold.Orders & CharacterOrders.Sneak) == 0 || cold.InCombat)
-        && (!cold.IsPlayer || task == (byte)CharacterTask.Idle || cold.Guarding && task == (byte)CharacterTask.Follow);
+        Helps(table, slot, taken) && table.Cold(slot) is var cold && table.Next[slot].Task is var task
+        && (!cold!.IsPlayer || task == (byte)CharacterTask.Idle || cold.Guarding && task == (byte)CharacterTask.Follow);
+
+    /// <summary><see cref="CanFight"/> without the player's task test: able, not Passive, not sneaking outside a fight.</summary>
+    static bool Helps(CharacterTable table, int slot, HashSet<int> taken) =>
+        Able(table, slot, taken, out var cold, out _) && (cold.Orders & CharacterOrders.Passive) == 0 && ((cold.Orders & CharacterOrders.Sneak) == 0 || cold.InCombat);
 
     /// <summary>A mate is protected only against an attacker within this of it (<c>AI::findAttackerOf</c>, docs/game/combat.md "Fight lifecycle and orders").</summary>
     public const float ProtectReach = 150;

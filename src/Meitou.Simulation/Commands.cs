@@ -27,7 +27,7 @@ public sealed record MoveOrder(IReadOnlyList<CharacterId> Characters, Vector3 Ta
 /// </summary>
 public sealed record FollowOrder(IReadOnlyList<CharacterId> Characters, CharacterId Target) : SimCommand
 {
-    /// <summary>Bodyguard (order 45) rather than Follow (31): the follower also fights whoever attacks the target (<see cref="CharacterCold.Guarding"/>). <b>Engine</b> reading of the order: the original shares the follow order giver and the task type's data names no more.</summary>
+    /// <summary>Bodyguard (order 45) rather than Follow (31): the follower fights whoever attacks the target at any distance, a plain follower only an attacker within 40 of it (<see cref="CharacterCold.Guarding"/>, <c>RetaliationSystem.Guards</c>); the Bodyguard job's follow sets it too. <b>Engine</b> reading of the order: the original shares the follow order giver and the task type's data names no more.</summary>
     public bool Guard { get; init; }
 }
 
