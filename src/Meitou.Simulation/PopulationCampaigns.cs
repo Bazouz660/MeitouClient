@@ -1007,8 +1007,8 @@ public sealed partial class PopulationSystem : IStateHashed
 
     bool PlayersStanding(World world, CampaignTown t) => PlayersIn(world, t).Up > 0;
 
-    /// <summary>The door fixtures of a town's buildings (a placed town's by site, a player town's by its buildings).</summary>
-    static IEnumerable<Locks.Fixture> TownDoors(World world, CampaignTown t) => world.Fixtures.All.Where(f => f.Kind == Locks.FixtureKind.Door
+    /// <summary>The first door fixture of each of a town's buildings (a placed town's by site, a player town's by its buildings): the slots 92 and 96 read only the building's first door (<c>Building</c> slot 124).</summary>
+    static IEnumerable<Locks.Fixture> TownDoors(World world, CampaignTown t) => world.Fixtures.All.Where(f => f.Kind == Locks.FixtureKind.Door && f.DoorIndex == 0
         && (t.Site >= 0 ? f.Site == t.Site : t.PlayerTown > 0 && world.Buildings.Find(f.Building) is { } b && b.Town == t.PlayerTown));
 
     /// <summary>Town slot 92 (<c>FUN_1408cc930</c>): no house door of the town is closed (a broken one counts as open); true without any.</summary>

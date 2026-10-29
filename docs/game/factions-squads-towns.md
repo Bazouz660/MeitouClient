@@ -594,8 +594,8 @@ campaign is not hostile, or that is not active (slot 70); a redirected request d
   campaign within 1.8 × radius of a town with hostile occupiers (+0x128) is defeated at once (a trader or ally does not walk into an occupied town).
 - 1 at target: victory when the leader is back in its home town (two null towns compare equal); else by `key`: ASSAULT_TOWN wins after
   4 h, earlier 0.2 h after its first fight once the fight or the standing player characters are gone and the target town has every house door open (Town slot 92 `FUN_1408cc930`:
-  no building with an interior has a closed door) and its walls are not locked up (slot 96 `FUN_140929820`: at least one gate, all closed)
-  (**Verified**, `FUN_1409c70f0`; Meitou reads the town's door fixtures, a broken door as open);
+  no building with an interior has a closed first door, state `+0x380` 0, the building's first door being its slot 124) and its walls are not locked up (slot 96 `FUN_140929820`: at least one gate with a first door, all in state other than 1 (open); a gate whose door fails `FUN_140547930` (door `+0x378` word differs from the building's slot 35 value, meaning **Unknown**) is skipped)
+  (**Verified**, `FUN_1409c70f0`; Meitou reads each building's first door fixture, a broken one as open, and does not filter gates by `FUN_140547930` or buildings by the interior flag `0x80000` of `BuildingFinder_OnesWithInteriors`, whose exact set is **Unknown**);
   while > 2 player characters hold the town, more than half up, nothing else is checked; DEFEND_TOWN after 12 h when no hostile campaign
   against the player runs; TRADER_VISIT after 1 h unless trading (**Observed**). Then any key: defeat when < 20 % of its platoons are
   intact (the platoon flag +0x100, `FUN_1407ac7b0`: the squad-intact rule of [perception](perception.md) `FUN_1407a5be0`, recomputed only
