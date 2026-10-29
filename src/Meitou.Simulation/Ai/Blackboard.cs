@@ -388,6 +388,16 @@ public enum AiStance : byte
     AggressiveNeutrals = 5,
 }
 
+/// <summary>A flight the think asks the <see cref="FleeSystem"/> to start (<see cref="AiMind.FleeRequest"/>).</summary>
+public enum FleeAsk : byte
+{
+    None = 0,
+    /// <summary>Self preservation's provider 35: from the threats attacking it, until none is left (<see cref="CharacterCold.FleesAlone"/>).</summary>
+    Threat = 1,
+    /// <summary>A goal 35 of its lists: from the enemies it senses, until none is in sight and nobody attacks it (the squads' rule).</summary>
+    Enemies = 2,
+}
+
 /// <summary>What the AI decided for one character (<see cref="CharacterCold.Ai"/>): the goal it acts out, where its post and bed are, how readily it fights.</summary>
 public sealed class AiMind
 {
@@ -448,6 +458,11 @@ public sealed class AiMind
     public CharacterId FollowTarget { get; set; } = CharacterId.None;
     /// <summary>Whom the think picked to assault (<see cref="AiBehaviour.Assault"/>); the serial step sends the attack and clears it.</summary>
     public CharacterId AssaultTarget { get; set; } = CharacterId.None;
+    /// <summary>
+    /// What the think asks of the <see cref="FleeSystem"/> this tick: to run the character from its threats (Self preservation's provider 35) or from the enemies it senses (a goal 35 of its
+    /// lists). Set by the think on the mind's own character, taken and cleared by the serial flee step of the same tick, so it is never set between ticks (not hashed).
+    /// </summary>
+    public FleeAsk FleeRequest { get; set; }
     /// <summary>Whether its lists hold any combat goal at all (else the stance stays the old default).</summary>
     public bool HasCombatGoals { get; set; }
     /// <summary>Whether a PROTECT_ALLIES goal (15 or 288) is in its lists and hours: it defends allies of other squads against any attacker (<see cref="RetaliationSystem"/>).</summary>

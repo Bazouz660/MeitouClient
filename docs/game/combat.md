@@ -385,11 +385,14 @@ Meitou (`CombatSystem.HasSlot` / `MayJoin`, `Fighting.Steer`):
   item in a weapon slot is outside categories 3, 6, 8; then, for every character, 1.0 when Character vslot `0x360` (byte `+0x5b8`, `FUN_1405e1ef0`) is set; else
   0.001 when it can get out (`AI::isLocationAccessible` `FUN_1405a2710`: a null location hand, i.e. outdoors, or a building with no doors, a door open or
   one opening, `Building::hasAnOpenDoor` `FUN_1405499a0`) unless it stands inside town walls (its [gate code](pathfinding.md#gate-codes) above 0) whose gate state to code 0 (`FUN_1402eb070`; the states 1 a gate open or broken, 2 closed, 3 locked, a route as bad as its worst gate and the best route kept, **Observed**) is 3, i.e. every way out passes a locked gate; else 0).
-  Byte `+0x5b8` has **no writer** in the decompile (not Task_Runaway's, as once assumed); its readers sit with the leg state: the leg-technique penalty ([above](#attack-technique-choice)),
-  the idle stance (set, or posture 1 or 2, picks the low idle) and "standing up 3", the down finder of `FUN_1408cd2d0`: it reads as a crippled / low-stance flag, **Unknown**.
-  Rows 13 and 35 both carry the crippled-repertoire bit (flags `0x61`), so 35 does not replace 13 for a crippled character on the registry alone; 35 (0.001) is
-  taken only when 13 yields no plan, and needs not crouching or lying (`!26`). So an attacked character fights back (Meitou: `RetaliationSystem`
-  leaves a crawling NPC out of the answer and nothing starts a flight for a lone one: goal 32 is not built, so row 35 is never reached; squads that break flee through `FleeSystem`); Passive does not touch this path (exe tooltip: "Passive
+  <a id="crippled-flag"></a>Byte `+0x5b8` is the **crippled flag** (**Verified**): `Character` embeds its `MedicalSystem` at `+0x458` (KenshiLib 1ce4a16 layout), so `+0x5b8` is medical `+0x160`, which the medical
+  tick `FUN_140649320` clears at its start and sets when a part whose `collapse part` has bit 0x10 or 0x20 tests down (the forced crawl, [ragdolls](ragdolls.md#forced-crawl)); vslot `0x360` is
+  `Character::isCrippled` (KenshiLib). Its neighbours are the same medical bytes: `+0x5b9` (`+0x161`) knocked out, `+0x5bc` (`+0x164`) dead, `+0x5bd` / `+0x5be` (`+0x165` / `+0x166`) the arms. The character tick
+  `FUN_1405d00b0` sets posture 2 exactly while it is set. Readers: the leg-technique penalty ([above](#attack-technique-choice)), the idle stance, state 26 (false for a crippled character, `FUN_140599e90`)
+  and the down finder of `FUN_1408cd2d0`. Meitou: `MedicalState.Crawling`.
+  Rows 13 and 35 both carry the crippled-repertoire bit (flags `0x61`). The planner takes 35 when 13's chain is worth less: 35 is worth 1 to a crippled character and 4 only 0.1 under a threat within 40, so a
+  crippled NPC runs; with no working arm 4 is 0 and 35 (0.001) is all that is left; anyone else fights back, 35 being worth 0.001 (details: [Self preservation](ai-tasks.md#combat-goals)).
+  Meitou: `SelfPreservation`, `RetaliationSystem` leaves such an NPC out of the answer and `FleeSystem` runs it; Passive does not touch this path (exe tooltip: "Passive
   focuses on non-combat unless attacked first"). Meitou: [order toggles](../simulation.md#order-toggles).
 - **Melee or shooting.** Row 4 Attacking (`AI::scoreMeleeAttack`, slot 53): 1, ×0.1 with Ranged on, ×0.5 when its squad is not intact (`Platoon::isIntact`);
   0 against a caged target; a crippled fighter 0.1 (0.0001 in Block or Hold with no threat within 40; 0 for a non-player non-unique); on Hold

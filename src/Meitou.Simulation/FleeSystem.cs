@@ -16,6 +16,9 @@ namespace Meitou.Simulation;
 /// <item><b>Until</b> (the task's end conditions, <c>isNoEnemiesInVicinity</c> and not <c>isAggressionTowardsMe</c>): no enemy standing within its sight range and
 /// nobody attacking it. It then goes back to wandering. A fleeing character neither looks for fights (<see cref="AggroSystem"/>) nor answers attacks
 /// (<see cref="RetaliationSystem"/>). The player's characters never flee by themselves.</item>
+/// <item><b>On the AI's request</b> (<see cref="Ai.AiMind.FleeRequest"/>, the same run): an NPC whose Self preservation goes to Running away (a crippled one, or one with no working arm,
+/// under attack: <see cref="Ai.SelfPreservation"/>) runs from the centre of its threats and stops when none attacks it within reach (<see cref="CharacterCold.FleesAlone"/>); a goal 35 of
+/// its lists starts the squads' run for one character.</item>
 /// </list>
 /// </summary>
 public sealed class FleeSystem(FactionRelations relations, CombatSystem combat, float sightRange = AggroSystem.OutdoorSight) : ITickSystem, IStateHashed
@@ -52,16 +55,24 @@ public sealed class FleeSystem(FactionRelations relations, CombatSystem combat, 
     {
         var table = world.Characters;
         bool check = world.Tick % CheckEveryTicks == 0;
-        if (check) { Attacked(table); StandingFactions(table); }
+        if (check) { Attacked(table); StandingFactions(table); standingAt = world.Tick; }
+        // Flights the AI asked for in this tick's think: Self preservation's provider 35 (from the threats), or a goal 35 (from the enemies it senses).
+        for (int i = 0; i < table.HighWater; i++)
+        {
+            if (!table.Next[i].Alive || table.Cold(i) is not { Ai.FleeRequest: not Ai.FleeAsk.None } asker) continue;
+            var ask = asker.Ai!.FleeRequest;
+            asker.Ai.FleeRequest = Ai.FleeAsk.None;
+            if (!asker.Fleeing && !asker.IsPlayer && asker.Medical is not { Incapacitated: true }) Begin(world, table, i, ask);
+        }
         // Characters already running: the next hop, or the end when it is safe.
         for (int i = 0; i < table.HighWater; i++)
         {
             ref var n = ref table.Next[i];
             if (!n.Alive || table.Cold(i) is not { Fleeing: true } cold) continue;
-            if (cold.Medical is { Incapacitated: true } || cold.IsPlayer) { cold.Fleeing = false; continue; }
-            if (check && Safe(world, table, i))
+            if (cold.Medical is { Incapacitated: true } || cold.IsPlayer) { cold.Fleeing = cold.FleesAlone = false; continue; }
+            if (check && (cold.FleesAlone ? Unthreatened(world, i, cold) : Safe(world, table, i)))
             {
-                cold.Fleeing = false;
+                cold.Fleeing = cold.FleesAlone = false;
                 MovementSystem.Stop(table, i);
                 n.Task = (byte)CharacterTask.Wander;
                 n.TaskTime = 0;
@@ -89,7 +100,8 @@ public sealed class FleeSystem(FactionRelations relations, CombatSystem combat, 
         foreach (var m in squad.Members)
         {
             if (!table.TryResolveNext(m, out int s) || table.Cold(s) is not { } c) continue;
-            if (c.IsPlayer || c.Fleeing) return;
+            // A member running alone (Self preservation) does not stop its squad from breaking; it counts as the others do and is not started again.
+            if (c.IsPlayer || c.Fleeing && !c.FleesAlone) return;
             size++;
             bool down = c.Medical is { Incapacitated: true };
             if (down || c.Fighter is null) continue;
@@ -103,26 +115,74 @@ public sealed class FleeSystem(FactionRelations relations, CombatSystem combat, 
         Broken++;
         foreach (int s in standing)
         {
+            if (table.Cold(s)!.Fleeing) continue;
             var centre = Vector3.Zero;
             int k = 0;
             Enemies(world, table, s, null, (_, p) => { centre += p; k++; });
-            var here = table.Next[s].Position;
-            Vector2 away;
-            if (k == 0) away = RandomDirection(world, s, 0);
-            else
-            {
-                centre /= k;
-                away = new Vector2(here.X - centre.X, here.Z - centre.Z);
-                away = away.LengthSquared() > 1e-6f ? Vector2.Normalize(away) : RandomDirection(world, s, 0);
-            }
-            var from = k == 0 ? new Vector2(here.X, here.Z) : new Vector2(centre.X, centre.Z);
-            ref var n = ref table.Next[s];
-            table.Cold(s)!.Fleeing = true;
-            if (n.Task == (byte)CharacterTask.Attack || table.Cold(s)!.InCombat) world.Defer(new StopCommand([new CharacterId(s, n.Generation)]) { Tick = world.Tick + 1 });
-            Run(world, table, s, away, FirstRun, from);
-            Fled++;
+            table.Cold(s)!.FleesAlone = false;
+            Begin(world, table, s, centre, k);
         }
     }
+
+    /// <summary>
+    /// A flight the AI asked for (<see cref="Ai.AiMind.FleeRequest"/>). From the threats (<see cref="Ai.FleeAsk.Threat"/>, Self preservation's provider 35, <see cref="Ai.SelfPreservation"/>): if
+    /// a threat still attacks it and its body still takes the choice to running; it runs from their centre and stops when none is left. From the enemies it senses
+    /// (<see cref="Ai.FleeAsk.Enemies"/>, a goal 35): as a broken squad's member does.
+    /// </summary>
+    void Begin(World world, CharacterTable table, int s, Ai.FleeAsk ask)
+    {
+        var cold = table.Cold(s)!;
+        if (ask == Ai.FleeAsk.Threat)
+        {
+            float level = combat.ThreatLevel(world, s, out var threats);
+            if (level <= 0 || !Ai.SelfPreservation.Runs(cold, level)) return;
+            cold.FleesAlone = true;
+            Begin(world, table, s, threats, 1);
+            return;
+        }
+        if (standingAt != world.Tick) { StandingFactions(table); standingAt = world.Tick; }
+        var centre = Vector3.Zero;
+        int k = 0;
+        Enemies(world, table, s, null, (_, p) => { centre += p; k++; });
+        cold.FleesAlone = false;
+        Begin(world, table, s, centre, k);
+    }
+
+    /// <summary>
+    /// <c>Task_Runaway</c>'s start (<c>FUN_14034b440</c>): the character stops fighting and runs at full speed to a point <see cref="FirstRun"/> + up to <see cref="RunSpread"/> from
+    /// <paramref name="centre"/> (the mean of <paramref name="count"/> positions), on the far side of it from the character; a random way when there is none.
+    /// </summary>
+    void Begin(World world, CharacterTable table, int s, Vector3 centre, int count)
+    {
+        var here = table.Next[s].Position;
+        Vector2 away;
+        if (count == 0) away = RandomDirection(world, s, 0);
+        else
+        {
+            if (count > 1) centre /= count;
+            away = new Vector2(here.X - centre.X, here.Z - centre.Z);
+            away = away.LengthSquared() > 1e-6f ? Vector2.Normalize(away) : RandomDirection(world, s, 0);
+        }
+        var from = count == 0 ? new Vector2(here.X, here.Z) : new Vector2(centre.X, centre.Z);
+        ref var n = ref table.Next[s];
+        table.Cold(s)!.Fleeing = true;
+        if (n.Task == (byte)CharacterTask.Attack || table.Cold(s)!.InCombat) world.Defer(new StopCommand([new CharacterId(s, n.Generation)]) { Tick = world.Tick + 1 });
+        Run(world, table, s, away, FirstRun, from);
+        Fled++;
+    }
+
+    /// <summary>
+    /// A lone runner is safe when no threat attacks it within reach any more, or its body no longer takes the choice to running (the AI's goal 32 is not wanted then,
+    /// <see cref="Ai.SelfPreservation.Runs"/>): the other goals take it over.
+    /// </summary>
+    bool Unthreatened(World world, int s, CharacterCold cold)
+    {
+        float level = combat.ThreatLevel(world, s, out _);
+        return level <= 0 || !Ai.SelfPreservation.Runs(cold, level);
+    }
+
+    // The tick StandingFactions was last built on (a request may come on any tick, the periodic check on every CheckEveryTicks).
+    long standingAt = -1;
 
     struct Scan
     {

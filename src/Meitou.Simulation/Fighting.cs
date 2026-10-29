@@ -514,7 +514,9 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem
         cold = table.Cold(slot)!;
         if (taken.Contains(slot) || task == (byte)CharacterTask.Attack) return false;
         // a carried mate does not answer; a carrier does (no attack goal of the original's tests carrying, docs/game/carry-loot.md "A carrier in a fight"). A crippled NPC (a leg
-        // down, crawling) does not either: Running away's desire is 1 for it and wins the tie with fighting back (FUN_1405a34e0, Verified); a player character still fights.
-        return cold is { Fighter.CanAttack: true, Fleeing: false, IsImprisoned: false, Medical.Incapacitated: false, CarriedBy.IsNone: true } && (cold.IsPlayer || cold.Medical is not { Crawling: true });
+        // down, crawling) does not either, nor one with an AI and no working arm: Self preservation's planner takes them to Running away (35), which the AI starts through the
+        // FleeSystem (SelfPreservation.Flees, FUN_1405a34e0 against FUN_1405a4260, Verified); a player character still fights.
+        return cold is { Fighter.CanAttack: true, Fleeing: false, IsImprisoned: false, Medical.Incapacitated: false, CarriedBy.IsNone: true }
+            && (cold.IsPlayer || cold.Medical is not { Crawling: true } && !Ai.SelfPreservation.Flees(cold, 1));
     }
 }

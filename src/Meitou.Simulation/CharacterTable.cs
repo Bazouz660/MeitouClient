@@ -232,6 +232,11 @@ public sealed class CharacterCold
     /// <summary>The character is running away (set and cleared by the <see cref="FleeSystem"/>, serial phases only): it neither looks for fights nor answers attacks.</summary>
     public bool Fleeing { get; set; }
     /// <summary>
+    /// The flight is Self preservation's (goal 32 through row 35, <see cref="Ai.SelfPreservation"/>), not a squad's: it ends when no threat attacks the character within reach, not when no
+    /// enemy is in sight. Meaningful while <see cref="Fleeing"/>; set and cleared with it by the <see cref="FleeSystem"/>.
+    /// </summary>
+    public bool FleesAlone { get; set; }
+    /// <summary>
     /// How exposed a sneaking character was at <see cref="StealthExposureTick"/> (set by the <see cref="AggroSystem"/> in its serial commit): what its stealth XP
     /// rate reads (<see cref="Bodies.XpService.Sneaking"/>).
     /// </summary>
@@ -630,7 +635,7 @@ public sealed class CharacterTable
             hasher.Add(k.Name.Length);
             // First aid state adds to the hash only while it is set, so worlds that never use it hash as before.
             if (c.Task == (byte)CharacterTask.Treat) { hasher.Add(k.TreatTarget); hasher.Add((int)k.ResumeTask); if (k.TreatSplint) hasher.Add(0x53706C74); }
-            if (k.Fleeing) hasher.Add(0x466C6565);   // only while set, so worlds without fleeing hash as before
+            if (k.Fleeing) hasher.Add(k.FleesAlone ? 0x466C6566 : 0x466C6565);   // only while set, so worlds without fleeing hash as before
             if (k.StealthExposureTick != long.MinValue) { hasher.Add((int)k.StealthExposure); hasher.Add(k.StealthExposureTick); }   // likewise, once a sneaker was exposed
             // Carrying, looting and the rescue job add to the hash only while set, so worlds without them hash as before.
             if (!k.Carrying.IsNone) { hasher.Add(0x43617272); hasher.Add(k.Carrying); }

@@ -97,9 +97,8 @@ No path from hits, knockback, stagger or explosions: a conscious character is ne
 
 **Observed** (decompile). Posture (slot 109/110, field `+0xe0`, setter `FUN_1405c7e20`; KenshiLib 1ce4a16 `ProneState`):
 0 `PS_NORMAL`, 1 `PS_STAYING_LOW` (voluntary crawl, [below](#staying-low)), 2 `PS_CRIPPLED`, 3 `PS_PLAYING_DEAD`, 4 `PS_KO`.
-The character tick `FUN_1405d00b0` resets 2 to 0; the medical tick `FUN_140649320` (while conscious) sets
-it back to 2 when **any one** part with `collapse part` 0x10/0x20 tests down, and keeps those leg ragdoll
-bits on. So it lasts exactly while a leg is down; it does not knock out (the cut-off that takes a leg does: [character-stats](character-stats.md#cut-off-and-leg-loss)).
+The medical tick `FUN_140649320` (while conscious) sets the crippled flag (medical `+0x160` = Character `+0x5b8`, [combat](combat.md#crippled-flag)) and posture 2 when **any one** part with `collapse part` 0x10/0x20 tests down,
+and keeps those leg ragdoll bits on; the character tick `FUN_1405d00b0` sets posture 2 exactly while the flag is set (else 0, unless the character stays low). So it lasts exactly while a leg is down; it does not knock out (the cut-off that takes a leg does: [character-stats](character-stats.md#cut-off-and-leg-loss)).
 - Leg test `FUN_140644450`: down when a stump or crushed (limb state 1/3), when h − s < −(base × mult ×
   scale) − wear (severed), or when h − s + b (bandage, `+0x48`; not the rig `+0x4c`) is under the KO point
   `FUN_140643ae0` (−10..−85 by toughness), not under 0. Animals (slot `0x248`, `asAnimal`) never collapse.

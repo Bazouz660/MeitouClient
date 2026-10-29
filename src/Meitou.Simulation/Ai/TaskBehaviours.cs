@@ -55,6 +55,16 @@ public enum AiBehaviour : byte
     /// docs/game/ai-tasks.md "Combat goals"): the serial step orders the attack, the combat system fights it. Wanted only while such a member is left.
     /// </summary>
     Assault = 17,
+    /// <summary>
+    /// SELF_PRESERVATION (32, every NPC's urgent goal, <see cref="SelfPreservation"/>): wanted at the threat level (<see cref="Combat.CombatSystem.ThreatLevel"/>), planned only when its
+    /// provider is 35 Running away (a crippled NPC, or one with no working arm); the plan of the fighting provider 13 is <see cref="RetaliationSystem"/>'s. Acted out as <see cref="Flee"/>.
+    /// </summary>
+    SelfPreserve = 18,
+    /// <summary>
+    /// RUN_AWAY (35, <c>Task_Runaway</c>): asks <see cref="FleeSystem"/> to run the character from its enemies (its first run, then hops, until it is safe); a goal of the packages that list it
+    /// ("Leader flees while guards fight", the police stations' slaves), wanted at row 35's desire (<see cref="SelfPreservation.RunDesire"/>) while an enemy is near.
+    /// </summary>
+    Flee = 19,
 }
 
 /// <summary>The engine's table from <see cref="TaskType"/> to <see cref="AiBehaviour"/>, and the TaskData display text (docs/game/ai-tasks.md "TaskData registry", Verified) of the types it acts out.</summary>
@@ -106,6 +116,8 @@ public static class TaskBehaviours
         [TaskType.INVESTIGATE_ALARMS] = (AiBehaviour.Investigate, "Investigating"),
         [TaskType.INVESTIGATE_ALARMS_ALLIES_ONLY] = (AiBehaviour.Investigate, "Investigating"),
         [TaskType.DEFEAT_SQUAD] = (AiBehaviour.Assault, "Assault"),
+        [TaskType.SELF_PRESERVATION] = (AiBehaviour.SelfPreserve, "Self preservation"),
+        [TaskType.RUN_AWAY] = (AiBehaviour.Flee, "Running away"),
     };
 
     /// <summary>

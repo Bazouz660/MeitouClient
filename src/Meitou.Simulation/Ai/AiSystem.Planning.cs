@@ -77,6 +77,16 @@ public sealed partial class AiSystem
                 mind.Plan.Add(new PlanStep(type, default));
                 return true;
             }
+            // Self preservation (the planner's choice between its providers 13 and 35, SelfPreservation.Runs): planned when 35 wins; the fighting chain through 13 is the
+            // retaliation rule's, so it is no plan here and the next goal is tried.
+            if (type == TaskType.SELF_PRESERVATION)
+            {
+                if (world.Characters.Cold(slot) is not { } me || !SelfPreservation.Runs(me, desire)) return false;
+                mind.Plan.Clear();
+                mind.Plan.Add(new PlanStep(TaskType.RUN_AWAY, default));
+                mind.Plan.Add(new PlanStep(type, default));
+                return true;
+            }
             if (TaskDataTable.Of(type) is not { } row)
             {
                 mind.Plan.Clear();
@@ -156,6 +166,8 @@ public sealed partial class AiSystem
                 StateType.hasTwoWorkingArm => cold.Medical is not { } arms2 || arms2.BothArmsWork,
                 // The turret goals' done test (149, 222, 234: list A "6*"): no enemy near, so guards man the turrets only while enemies come (docs/simulation.md "AI", turrets).
                 StateType.isNoEnemiesInVicinity => !EnemyNear(cold),
+                // 39 reads Character +0x2b0 (FUN_14059de10, Verified): a threat within 40 attacks it. (26, crouching or lying, stays false: standing up first is not modelled, SelfPreservation.Runs.)
+                StateType.isAggressionTowardsMe => system.ThreatSource is { } threats && threats.ThreatLevel(world, slot, out _) >= 1,
                 // 141 (FUN_14060e640): the building to sleep in is private and a stranger stands in the home. 108 (no public test) is left to the lock-up round's own test.
                 StateType.strangers_in_house_P => system.StrangersInHouseP(world, board, slot),
                 // Held true: moving, standing up, power and buildings; doors are the movement's and the lock-up round's (docs/simulation.md "Planner").

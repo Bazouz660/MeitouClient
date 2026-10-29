@@ -66,6 +66,12 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
     /// <summary>Every character's default goal (docs/game/ai.md "Default tasks per character", Observed): IDLE at the fluff tier, weight 0.1.</summary>
     public static readonly AiGoal Idle = new(new AiTask("", "IDLE", TaskType.IDLE, TaskPriority.Fluff, TaskTargetType.Specific, TaskEndEvent.Nothing), 0, 100, 0.1f);
 
+    /// <summary>
+    /// Every character's other default goal (<c>Character::setupAI</c>, <b>Verified</b>; docs/game/ai-tasks.md "Self preservation"): SELF_PRESERVATION, urgent, aimed at itself, weight 1, all hours.
+    /// The entries of the role and race lists (30 races list it) are the same goal and are left out of the scoring, so it counts once.
+    /// </summary>
+    public static readonly AiGoal SelfPreservationGoal = new(new AiTask("", "SELF_PRESERVATION", TaskType.SELF_PRESERVATION, TaskPriority.Urgent, TaskTargetType.Self, TaskEndEvent.Nothing), 0, 100, 1f);
+
     /// <summary>Walks to a spot in a row that may end elsewhere before it gives the spot up.</summary>
     public const int MaxFailedWalks = 3;
 
@@ -84,6 +90,8 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
     PopulationData Data => data;
     /// <summary>The towns' alarms the investigators answer (<see cref="AiBehaviour.Investigate"/>); null: none are raised.</summary>
     public Crime.CrimeSystem? Crimes { get; set; }
+    /// <summary>The combat system, for the threats Self preservation reads (<see cref="Combat.CombatSystem.ThreatLevel"/>); null: nothing threatens anyone.</summary>
+    public Combat.CombatSystem? ThreatSource { get; set; }
 
     /// <summary>The alarm an investigator answers: its squad's town's nearest in reach, for goal 210 only its own faction's (<see cref="Crime.CrimeSystem.AlarmFor"/>).</summary>
     internal Crime.TownAlarm? AlarmOf(World world, int slot, TaskType type, Blackboard board) =>
@@ -121,10 +129,26 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
                 (mind.StanceFrom, mind.StanceHour) = (roles, hour);
             }
             ref var n = ref table.Next[i];
-            if (!Holds(n, cold)) continue;
+            if (!Holds(n, cold))
+            {
+                if (cold.InCombat) Disengage(world, i, cold, mind);
+                continue;
+            }
             var goal = Choose(world, i, id, mind, squad, board, roles, hour);
             Act(world, i, mind, goal, board);
         }
+    }
+
+    /// <summary>
+    /// A fighter whose Self preservation goes to running leaves its fight (docs/game/ai-tasks.md "Self preservation"): a leg went down under it, or its arms are gone, while a threat
+    /// attacks it. The AI does not run a fighting character, so this is the one look it takes at it: the flee step stops the fight and the run takes over.
+    /// </summary>
+    void Disengage(World world, int slot, CharacterCold cold, AiMind mind)
+    {
+        if (ThreatSource is not { } source || cold.IsPlayer || cold.Fleeing || cold.Engaged || cold.IsImprisoned || cold.Gunning is not null || !cold.CarriedBy.IsNone || !cold.Carrying.IsNone
+            || cold.Medical is { Incapacitated: true }) return;
+        float level = source.ThreatLevel(world, slot, out _);
+        if (level > 0 && SelfPreservation.Runs(cold, level)) mind.FleeRequest = FleeAsk.Threat;
     }
 
     /// <summary>Whether the AI runs the character now: it has a mind and nothing else holds it (a fight, a flight, an order, a carry, a trade, a knock-out).</summary>
@@ -202,6 +226,8 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             void Consider(AiGoal g)
             {
                 if (g.Task.Priority != tier || !g.InWindow(hour)) return;
+                // The list entries of Self preservation are the engine's own goal, which every character has once.
+                if (g.Task.Type == TaskType.SELF_PRESERVATION && !ReferenceEquals(g, SelfPreservationGoal)) return;
                 var profile = TaskProfiles.Of(g.Task.Type);
                 float desire = Desire(world, TaskBehaviours.Of(g.Task.Type), g.Task.Type, profile, squad, board, mind, id, g.Task.Target);
                 if (desire <= 0) return;
@@ -225,6 +251,7 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             // Index loops: a foreach over the interface would box an enumerator per list and pass.
             for (int k = 0; k < roles.Count; k++) Consider(roles[k]);
             for (int k = 0; k < race.Count; k++) Consider(race[k]);
+            if (tier == TaskPriority.Urgent) Consider(SelfPreservationGoal);
             for (int k = 0; k < candidates.Count; k++)
                 if (plans.TryPlan(candidates[k].Goal, candidates[k].Desire)) return candidates[k].Goal;
         }
@@ -277,6 +304,9 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             AiBehaviour.Investigate => AlarmOf(world, self.Slot, type, board) is null ? 0 : 1,
             // The assault's finder factor: 1 while a member of the mission target's squad passes its tests, else 0 (FUN_140793eb0).
             AiBehaviour.Assault => targeting == TaskTargetType.SquadMission && !AssaultTargetFor(world, self.Slot, board).IsNone ? 1 : 0,
+            // Self preservation: the threat level (AI slot 17); Running away: row 35's own (AI slot 55), a goal of the packages that list it.
+            AiBehaviour.SelfPreserve => ThreatSource is { } source ? source.ThreatLevel(world, self.Slot, out _) : 0,
+            AiBehaviour.Flee => world.Characters.Cold(self.Slot) is { } runner ? SelfPreservation.RunDesire(runner) : 0,
             _ => 1,
         };
     }
@@ -707,6 +737,11 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
                 Become(table, slot, CharacterTask.Idle);
                 mind.AssaultTarget = AssaultTargetFor(world, slot, board);
                 if (!mind.AssaultTarget.IsNone) Interlocked.Exchange(ref assaulting, 1);
+                break;
+            case AiBehaviour.SelfPreserve:
+            case AiBehaviour.Flee:
+                // Task_Runaway: the serial flee step takes the request, stops a fight and starts the first run (FleeSystem), then hops until it is safe.
+                mind.FleeRequest = behaviour == AiBehaviour.SelfPreserve ? FleeAsk.Threat : FleeAsk.Enemies;
                 break;
             case AiBehaviour.Travel:
                 // To the mission town's centre; the goal is no longer wanted once inside the town (Desire), long before the centre.

@@ -791,8 +791,29 @@ vfunc 5 `FUN_14050caf0`). TaskData fields: +0x108 desire (a member function, nea
   alone (engine choice: the walk and the weapon are the combat system's); the serial step sends a non-defensive `AttackOrder` to the picked member, the character alone
   (as dialogue's attack effects: its mates join through their own stance), and when the fight ends the next think picks the next standing member. Not modelled: the
   `+0x280` branch, the leave-alone cases, entry age. 248 "Attacking Squad" (same finder shape) is not built.
-- 32 SELF_PRESERVATION: every character's urgent goal (`Character::setupAI`); desire AI slot 17, provider 13 (finder `AI::findAttackerOf`) or 35;
-  rows 4 / 262 desires are slots 53 / 54. Details: [combat](combat.md#fight-lifecycle-and-orders).
+- 32 SELF_PRESERVATION and 35 RUN_AWAY (**Verified** unless marked: `FUN_140319a60` registrations, stub bytes read from the exe, `Character::setupAI` `FUN_140621b70`). `setupAI` gives **every**
+  character goal 14 (weight 0.1) and goal 32 (weight 1, target itself, tier 3); the race `AI Goals` (30 races list 32) may add it again. Row 32: flags 0x65, list A `!159`, no B, effect `!39`;
+  desire AI slot 17 (`FUN_140599d20`, [combat](combat.md#fight-lifecycle-and-orders): 1 with a threat within 40, 0.7 with an attacking threat within 181.7, else 0); its finder stub jumps to `FUN_1405985e0`,
+  which copies the character's own hand and returns 1.0. The goal row does not act, so the planner goes down to a provider of `!39`: only 13 (desire 1, finder `AI::findAttackerOf`, leads to 4 / 262 / 266) and
+  35 (flags 0x61, A `!39, 6`, B `60, !26`, desire slot 55 `FUN_1405a34e0`: 1.0 for a crippled character, else 0.001; 0 for a player-faction one with an arm). Best-first by g + h
+  makes 13's chain win unless its leaf is worth less than 35 (**Observed**, [planner](#planner)):
+  - **Crippled** (Character vslot `0x360` = `isCrippled`, [the flag](combat.md#crippled-flag)): 35 is worth 1, 4 only 0.1 under a threat within 40 (`FUN_1405a4260`; 0.0001 on Block or Hold, 0 for a non-unique
+    NPC with nothing close). 35's `!26` holds although the character lies down (state 26 `FUN_140599e90` answers false for a crippled character) and the crippled repertoire (0x40, set with posture 1 or 2
+    by `FUN_1405c7e20`) has no stand-up row (28 and 65 are 0x25). So a crippled NPC under threat **crawls away**; it has no attack on sight either (goal 16's desire is 0 unless standing).
+  - **No working arm** (medical `+0x165` and `+0x166` both false): 4's desire is 0 and shooting needs an arm, so 13 is a dead end and 35 runs at 0.001.
+  - Anyone else fights: 4 is worth 1 (0.05 at the least with the ranged and squad factors), 35 0.001.
+  - 35's entries: 60 `LOCATION_IS_ACCESSIBLE` (`FUN_1405a2710`, 0 behind a locked gate in town walls, [combat](combat.md#fight-lifecycle-and-orders)) and `!26` (a character staying low must stand first).
+  State evaluators: 39 `isAggressionTowardsMe` = Character `+0x2b0` (`iAmBeingMeleeAttacked immediate`, `FUN_14059de10`); 159 = the senses' threat count `+0x58` non-zero (`FUN_140436720`); 6 `isNoEnemiesInVicinity` =
+  AI `+0xbc` == 0 (`FUN_140597630`; SensoryData `numEnemies`, KenshiLib 1ce4a16, **Observed**; how it is counted and its radius **Unknown**).
+  `Task_Runaway` (35, 280): start `FUN_14034b440` (first run: from the mean position of the sensed threats with positive aggression, by 2000 + 400 r, mover speed field `+0xbc` set to 999); update `FUN_140336820`
+  (when the mover stops or is within 200 of its destination: a hop of 1000 + 400 r from where it stands, x and z uniform in [-1, 1] normalised). It has no end of its own: the planner drops it when its goal does
+  (under 32, when the threat level falls to 0; as a goal of its own, when its list A `!39, 6` holds, **Observed**). 35 is also a goal of the package `Leader flees while guards fight` (Leader: `Go Home (Run away)`,
+  `Run away!`) and of the Slave lists of four police-station packages (0.001 for an NPC).
+  Meitou: `SelfPreservation` (the two desires, the choice), `CombatSystem.ThreatLevel` (slot 17), goal 32 as `AiSystem.SelfPreservationGoal` (once per NPC mind, the list entries ignored): its plan is `[35, 32]` when
+  `SelfPreservation.Runs` (a crippled NPC, or one with no working arm), else none and `RetaliationSystem` fights back (its `Able` leaves the runners out, so nothing is handled twice). 35 is acted out by
+  `FleeSystem` (the squads' run: first run from the threats' centre, hops, `CharacterCold.Fleeing`): the AI asks (`AiMind.FleeRequest`), a fighter is stopped first. A lone runner stops when no threat attacks it
+  within 181.7 or its body takes the choice back to fighting; a goal-35 runner and a broken squad stop when no enemy is in sight and nobody attacks it. Not modelled: the player faction's branch of slot 55 (the
+  player's characters never run), the locked-gate zero of 60, 4's ranged and squad factors, standing up first for a character staying low, characters without an AI (a crawling one neither fights back nor runs), and goal 16's zero while prone and row 4's with no working arm (`AggroSystem` lets such an NPC attack on sight).
 - So a squad with PROTECT goals and no ATTACK goal starts no fight with an idle enemy (**Observed**): e.g. the base `Fog prince squad`
   (`42029-rebirth.mod`, package `fog prince`); its dialogue package `fogman` answers only events 52 and 53 and has no effects.
 
