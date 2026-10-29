@@ -214,7 +214,12 @@ shows the first failing message in this order (**Verified** unless marked):
 - **Towns** (`FUN_140926d50`, `FUN_140926eb0`): radius = `town radius mult` x base (town 2500, village 937.5, ruins
   875, point of interest 437.5, others 1250). A `creates player town` building is blocked within 2.5 x radius (1 x for
   ruins/POI) or 2000 of the centre; other buildings only within 1 x radius, so they may stand outside any town.
-  Player towns never block.
+  Player towns never block. **Verified** (`FUN_140927f10`, `FUN_140926d50`, `FUN_140926eb0`, `FUN_1404dba40`): the ghost's
+  town is the nearest by centre among all types except type 8 `NEST_MARKER` (skipped, so a nest marker never blocks; the
+  ghost's call arguments are not in the decompile, the other callers pass type 10 = any);
+  type 10 null towns have radius 0 (type 8 too), so they block only a `creates player town` building, within 2000.
+  **Unknown/not modelled:** the original tests only that nearest town (Meitou tests every one), and swaps it for the
+  town containing the ghost (`FUN_140928890`) when inside 0.9 x its radius (0.6 x when the nearest is ruins/POI).
 - **Outposts** (**Verified**, `FUN_1404d6d90` per queued ghost on Confirm, then `FUN_1404db180`): a ghost in or on a
   building takes that building's town; else the nearest town of the player faction within 5000 (X/Z); else the town of
   the nearest player building within 2500 (the decompile adds an X/Z > 10000 test there that looks unreachable,
