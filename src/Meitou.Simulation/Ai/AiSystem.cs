@@ -96,7 +96,7 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
     /// <summary>The alarm an investigator answers: its squad's town's nearest in reach, for goal 210 only its own faction's (<see cref="Crime.CrimeSystem.AlarmFor"/>).</summary>
     internal Crime.TownAlarm? AlarmOf(World world, int slot, TaskType type, Blackboard board) =>
         Crimes is { Alarms.Count: > 0 } crimes && world.Characters.Cold(slot) is { } cold
-            ? crimes.AlarmFor(board.Town, world.Characters.Previous[slot].Position, type == TaskType.INVESTIGATE_ALARMS_ALLIES_ONLY ? cold.Faction : -1) : null;
+            ? crimes.AlarmFor(board.Town, world.Characters.Previous[slot].Position, type == TaskType.INVESTIGATE_ALARMS_ALLIES_ONLY ? cold.Faction : -1, Crime.CrimeSystem.FloorOf(world, slot, world.Characters.Previous[slot].Position)) : null;
 
     readonly Dictionary<string, (IReadOnlyList<SlottedPackage> Packages, SquadTemplate? Template)> templates = [];
     // Squads already looked at (ids are never reused); derived from the squads, so not part of the hash.

@@ -431,14 +431,17 @@ public sealed partial class CrimeSystem(FactionRelations relations, CrimeSetting
             world.Post(Loc.Tr("Alarm raised"));
         }
         var at = table.Next[target].Position;
+        int place = world.Sight.PlaceOf(target), floor = FloorOf(world, target, at);
         foreach (var a in alarms)
             if (a.Town == town && a.Code == code && a.Faction == faction)
             {
                 a.Position = at;
+                a.Place = place;
+                a.Floor = floor;
                 a.Life = AlarmLife;
                 return;
             }
-        alarms.Add(new TownAlarm { Town = town, Code = code, Faction = faction, Position = at });
+        alarms.Add(new TownAlarm { Town = town, Code = code, Faction = faction, Position = at, Place = place, Floor = floor });
     }
 
     readonly List<TownAlarm> alarms = [];
@@ -446,7 +449,7 @@ public sealed partial class CrimeSystem(FactionRelations relations, CrimeSetting
     /// <summary>The towns' raised alarms, oldest first.</summary>
     public IReadOnlyList<TownAlarm> Alarms => alarms;
 
-    /// <summary>How far an investigator answers an alarm (<c>FUN_14092a810</c>'s 375, <b>Verified</b> literal): a trespass at that range, any other crime at half of it.</summary>
+    /// <summary>How far an investigator answers an alarm (<c>FUN_14092a810</c>'s 375, <b>Verified</b> literal): at that range for an alarm raised outdoors, at half of it for one raised in a building, whatever the crime.</summary>
     public const float AlarmReach = 375;
     /// <summary>Within this of the alarm an investigator stops and looks about (100, <b>Verified</b>: the squared 10000), for <see cref="LookAboutSeconds"/> (10; 15 at the task's start).</summary>
     public const float AlarmLookRange = 100, LookAboutSeconds = 10, FirstLookAboutSeconds = 15;
@@ -454,23 +457,28 @@ public sealed partial class CrimeSystem(FactionRelations relations, CrimeSetting
     public const float AlarmApproach = 30;
 
     /// <summary>
-    /// The alarm an investigator of <paramref name="town"/> at <paramref name="at"/> answers (<c>FUN_14092a810</c>, <b>Observed</b>): the nearest within <see cref="AlarmReach"/> for a
-    /// trespass, half of it otherwise; with <paramref name="faction"/> (goal 210, allies only) only its faction's. Engine: the original's further halving for an alarm inside a closed
-    /// building the investigator is not in, and its floor test, are not modelled. Null when none.
+    /// The alarm an investigator of <paramref name="town"/> at <paramref name="at"/> on <paramref name="floor"/> answers (<c>FUN_14092a810</c>, <b>Verified</b>): the nearest within
+    /// <see cref="AlarmReach"/>, half of it when the alarm was raised in a building (<see cref="TownAlarm.Place"/>), whatever the crime; with <paramref name="faction"/> (goal 210, allies
+    /// only) only its faction's. An alarm in a building is skipped when its floor is more than one from the investigator's. Engine: the original's further halving for an alarm inside a
+    /// closed building the investigator is not in, and its skip of any other floor in some buildings (building byte <c>+0xc2</c>, meaning <b>Unknown</b>), are not modelled. Null when none.
     /// </summary>
-    public TownAlarm? AlarmFor(int town, Vector3 at, int faction = -1)
+    public TownAlarm? AlarmFor(int town, Vector3 at, int faction = -1, int floor = 0)
     {
         TownAlarm? best = null;
         float bestD = float.MaxValue;
         foreach (var a in alarms)
         {
             if (a.Town != town || faction >= 0 && a.Faction != faction) continue;
-            float reach = a.Code == CrimeCode.Trespassing ? AlarmReach : AlarmReach * 0.5f;
+            if (a.Place >= 0 && Math.Abs(a.Floor - floor) > 1) continue;
+            float reach = a.Place >= 0 ? AlarmReach * 0.5f : AlarmReach;
             float d = Vector3.DistanceSquared(a.Position, at);
             if (d < reach * reach && d < bestD) (best, bestD) = (a, d);
         }
         return best;
     }
+
+    /// <summary>The floor of the building the character stands in at <paramref name="at"/> (<c>Character</c> vfunc <c>+0x60</c>, an alarm's <c>+0x60</c>); 0 outdoors.</summary>
+    public static int FloorOf(World world, int slot, Vector3 at) => world.Sight.BuildingOf(slot) is { } building ? world.Sight.FloorAt(building, at) : 0;
 
     /// <summary>
     /// The investigators' serial step (<c>Task_InvestigateAlarms</c> update, <b>Observed</b>), for each NPC whose AI acts out goal 209 or 210 (<see cref="Ai.AiBehaviour.Investigate"/>):
@@ -485,7 +493,7 @@ public sealed partial class CrimeSystem(FactionRelations relations, CrimeSetting
         for (int i = 0; i < table.HighWater; i++)
         {
             if (!next[i].Alive || table.Cold(i) is not { Ai: { Behaviour: Ai.AiBehaviour.Investigate, Goal: { } goal, Squad.Ai: { } board } mind } cold || !Ai.AiSystem.Holds(next[i], cold)) continue;
-            var alarm = AlarmFor(board.Town, next[i].Position, goal.Task.Type == Data.Gameplay.Ai.TaskType.INVESTIGATE_ALARMS_ALLIES_ONLY ? cold.Faction : -1);
+            var alarm = AlarmFor(board.Town, next[i].Position, goal.Task.Type == Data.Gameplay.Ai.TaskType.INVESTIGATE_ALARMS_ALLIES_ONLY ? cold.Faction : -1, FloorOf(world, i, next[i].Position));
             if (alarm is null) continue;
             if (Vector3.DistanceSquared(alarm.Position, next[i].Position) <= AlarmLookRange * AlarmLookRange)
             {
@@ -511,7 +519,11 @@ public sealed partial class CrimeSystem(FactionRelations relations, CrimeSetting
     {
         if (alarms.Count == 0) return;
         hasher.Add(alarms.Count);
-        foreach (var a in alarms) { hasher.Add(a.Town); hasher.Add((int)a.Code); hasher.Add(a.Faction); hasher.Add(a.Position); hasher.Add(a.Life); }
+        foreach (var a in alarms)
+        {
+            hasher.Add(a.Town); hasher.Add((int)a.Code); hasher.Add(a.Faction); hasher.Add(a.Position); hasher.Add(a.Life);
+            if (a.Place >= 0) { hasher.Add(a.Place); hasher.Add(a.Floor); }   // only an alarm raised in a building, so the others hash as before
+        }
     }
 
     /// <summary>The crime timer DA 33 sets (the literal 30.0 passed to <c>FUN_140851f40</c>), and how often "Alarm raised" may be posted (real seconds in the original; game seconds here).</summary>

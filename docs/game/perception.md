@@ -19,7 +19,7 @@ relations: [factions](factions-squads-towns.md). Simulation senses/leash remain 
   outdoors). Looker and target must share it unless either is **on top**: slot 60, in a building and `+0xd5` set, from an
   upward physics query (mask `0x8079e00`, in the character update) finding nothing over it, i.e. a roof or roofless part.
   A building whose BUILDING `enforce ceiling` is set (7) has nobody on top above floor 0 (`Character::threadedUpdatePeriodic` `FUN_1405d00b0`, **Verified**).
-  The location compare (vfunc +0x10) is read as "same building". A physics ray (`FUN_1408533a0`, start 18 above the looker,
+  The location compare (hand vfunc +0x10, `FUN_1400cd0b0`) is `!=`: true when the handles differ (**Verified**); town alarms store the culprit's location ([economy](economy.md#town-alarms)). A physics ray (`FUN_1408533a0`, start 18 above the looker,
   blocked by anything more than 2 short of the target) runs in some branches.
 - **Light level** (`+0xd8`, `FUN_140a0af10`, `FUN_140a08da0`, **Verified** literals): set each update to the daylight factor;
   when requested by a sight test (`+0xdc`) and the character is the player's or daylight < 0.75, it is resampled: 1 above

@@ -164,6 +164,10 @@ public sealed class TownAlarm
     public required CrimeCode Code { get; init; }
     public required int Faction { get; init; }
     public System.Numerics.Vector3 Position { get; set; }
+    /// <summary>The indoor volume the culprit was in when the alarm was raised (<see cref="SightMap.PlaceOf"/>; the original's location handle <c>+0x40</c>, type 0xb = none), -1 outdoors. Overwritten by a repeated raise.</summary>
+    public int Place { get; set; } = -1;
+    /// <summary>The culprit's floor when it was raised (the original's <c>+0x60</c>); only read for an alarm with a <see cref="Place"/>. Overwritten by a repeated raise.</summary>
+    public int Floor { get; set; }
     /// <summary>Game seconds it still lives: <see cref="CrimeSystem.AlarmLife"/> at each raise, counted down by the town update; gone below 0.</summary>
     public float Life { get; set; } = CrimeSystem.AlarmLife;
 }
