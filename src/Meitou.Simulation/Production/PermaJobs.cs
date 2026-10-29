@@ -85,16 +85,25 @@ public static class PermaJobs
     /// or the type ignores it. False for k below 0 (no such job).
     /// </summary>
     public static bool FreeFor(CharacterCold cold, CharacterTask task, int k) =>
-        k >= 0 && (task is CharacterTask.Idle or CharacterTask.Wander or CharacterTask.Follow || cold.Implicit is not null || cold.JobIndex > k)
+        k >= 0 && (task is CharacterTask.Idle or CharacterTask.Wander or CharacterTask.Follow || ListJob(cold, task) is { } run && (run.Implicit || run.Job > k))
         && ((cold.Orders & CharacterOrders.Jobs) != 0 || IgnoresSwitch(cold.Jobs[k].Type));
 
     /// <summary>
-    /// Whether the character's <paramref name="task"/> came from its jobs (a list job, an implicit job or a job pass: <see cref="CharacterCold.JobIndex"/>, <see cref="CharacterCold.Implicit"/>,
-    /// a <see cref="TaskSource.Job"/> provenance, <see cref="CharacterCold.Running"/>), not from an order. The original tries the priority-3 goals (Self preservation, Hold's attack on sight)
-    /// before the jobs that are not urgent (docs/game/ai-tasks.md "Precedence"), so such a task gives way to them.
+    /// Whether the character's <paramref name="task"/> came from its jobs (a list job, an implicit job or a job pass: a <see cref="TaskSource.Job"/> provenance, <see cref="CharacterCold.Running"/>,
+    /// that runs it), not from an order. The original tries the priority-3 goals (Self preservation, Hold's attack on sight) before the jobs that are not urgent (docs/game/ai-tasks.md
+    /// "Precedence"), so such a task gives way to them.
     /// </summary>
-    public static bool FromJob(CharacterCold cold, CharacterTask task) =>
-        cold.JobIndex >= 0 || cold.Implicit is not null || cold.Running is { Source: TaskSource.Job } run && run.Runs(task);
+    public static bool FromJob(CharacterCold cold, CharacterTask task) => cold.Running is { Source: TaskSource.Job } run && run.Runs(task);
+
+    /// <summary>
+    /// The provenance of the production pick's job the character's <paramref name="task"/> runs: a list job it carries out (<see cref="Runs"/>, the follow jobs <see cref="Follows"/>; its
+    /// index <see cref="RunningTask.Job"/>) or an implicit job (<see cref="RunningTask.Implicit"/>), not a fight that is a step of a follow row; null for any other task.
+    /// </summary>
+    public static RunningTask? ListJob(CharacterCold cold, CharacterTask task) =>
+        task != CharacterTask.Attack && cold.Running is { Source: TaskSource.Job } run && run.Runs(task) && (run.Implicit || run.Job >= 0 && (Runs(run.Row) || Follows(run.Row))) ? run : null;
+
+    /// <summary>The task a job's start goes back to: the one the production pick's job it is on goes back to (<see cref="ListJob"/>), else <paramref name="task"/>, the one it runs.</summary>
+    public static CharacterTask ResumeOf(CharacterCold cold, CharacterTask task) => ListJob(cold, task)?.Resume ?? task;
 
     /// <summary>The index of the first job of <paramref name="type"/> in the list, -1 when none.</summary>
     public static int IndexOf(CharacterCold cold, TaskType type) => cold.Jobs.FindIndex(j => j.Type == type);

@@ -465,6 +465,10 @@ public class ProductionTests
 
     // ------------------------------------------------------------------ job lists
 
+    /// <summary>The index of the list job the character is on (<see cref="PermaJobs.ListJob"/>), -1 when none.</summary>
+    static int JobOf(SimWorld world, CharacterId id) =>
+        PermaJobs.ListJob(world.Characters.Cold(id.Slot)!, (CharacterTask)world.Characters.Next[id.Slot].Task) is { Implicit: false } job ? job.Job : -1;
+
     [Fact]
     public void A_job_list_runs_the_first_job_that_can_run_and_goes_back_to_a_higher_one()
     {
@@ -476,25 +480,25 @@ public class ProductionTests
         var cold = rig.World.Characters.Cold(w.Slot)!;
         void Look() => rig.World.RunTicks(2 * ProductionSystem.JobCheckTicks);
         Look();
-        Assert.Equal((rig.Sites[0], 0), (cold.OperateSite, cold.JobIndex));
+        Assert.Equal((rig.Sites[0], 0), (cold.OperateSite, JobOf(rig.World, w)));
         // A full output with no storage blocks A: on to B; emptied, A takes over again.
         rig.Machine(0).Output!.Count = 10;
         Look();
-        Assert.Equal((rig.Sites[1], 1), (cold.OperateSite, cold.JobIndex));
+        Assert.Equal((rig.Sites[1], 1), (cold.OperateSite, JobOf(rig.World, w)));
         rig.Machine(0).Output!.Count = 0;
         Look();
-        Assert.Equal((rig.Sites[0], 0), (cold.OperateSite, cold.JobIndex));
+        Assert.Equal((rig.Sites[0], 0), (cold.OperateSite, JobOf(rig.World, w)));
         // An order takes it off its job; idle again, the list takes over.
         rig.World.Commands.Enqueue(new MoveOrder([w], At + new Vector3(0, 0, 150)) { Tick = rig.World.Tick });
         rig.World.RunTicks(2);
-        Assert.Equal(-1, cold.JobIndex);
+        Assert.Equal(-1, JobOf(rig.World, w));
         for (int t = 0; t < 3000 && rig.World.Characters.Next[w.Slot].Task != (byte)CharacterTask.Idle; t++) rig.World.RunTick();
         Look();
-        Assert.Equal((rig.Sites[0], 0), (cold.OperateSite, cold.JobIndex));
+        Assert.Equal((rig.Sites[0], 0), (cold.OperateSite, JobOf(rig.World, w)));
         // Removing the job it is on: the next one runs.
         rig.World.Commands.Enqueue(new RemoveJob(w, 0) { Tick = rig.World.Tick });
         Look();
-        Assert.Equal((rig.Sites[1], 0, 1), (cold.OperateSite, cold.JobIndex, cold.Jobs.Count));
+        Assert.Equal((rig.Sites[1], 0, 1), (cold.OperateSite, JobOf(rig.World, w), cold.Jobs.Count));
     }
 
     /// <summary>A character takes a machine job just inside the original's job range (about 6517, docs/game/ai-tasks.md "Perma-jobs") and skips one just outside it.</summary>
@@ -507,7 +511,7 @@ public class ProductionTests
         rig.World.Commands.Enqueue(new AddJob([far], Meitou.Data.Gameplay.Ai.TaskType.OPERATE_MACHINERY, rig.Sites[0]) { Tick = rig.World.Tick });
         rig.World.Commands.Enqueue(new AddJob([near], Meitou.Data.Gameplay.Ai.TaskType.OPERATE_MACHINERY, rig.Sites[1]) { Tick = rig.World.Tick });
         rig.World.RunTicks(2 * ProductionSystem.JobCheckTicks);
-        Assert.Equal((-1, 0), (rig.World.Characters.Cold(far.Slot)!.JobIndex, rig.World.Characters.Cold(near.Slot)!.JobIndex));
+        Assert.Equal((-1, 0), (JobOf(rig.World, far), JobOf(rig.World, near)));
     }
 
     /// <summary>

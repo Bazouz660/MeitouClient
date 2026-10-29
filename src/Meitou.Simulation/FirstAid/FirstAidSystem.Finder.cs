@@ -446,15 +446,15 @@ public sealed partial class FirstAidSystem
     static CharacterTask ResumeOf(World world, int i)
     {
         var cold = world.Characters.Cold(i)!;
-        byte task = world.Characters.Next[i].Task;
-        return cold.Implicit is not null || cold.JobIndex >= 0 ? cold.ResumeTask : task is (byte)CharacterTask.Wander or (byte)CharacterTask.Follow ? (CharacterTask)task : CharacterTask.Idle;
+        var task = (CharacterTask)world.Characters.Next[i].Task;
+        return Production.PermaJobs.ListJob(cold, task) is { } job ? job.Resume : task is CharacterTask.Wander or CharacterTask.Follow ? task : CharacterTask.Idle;
     }
 
     /// <summary>Starts a treatment of <paramref name="patient"/> (<paramref name="request"/> without its target), going back afterwards to what the medic did before its job.</summary>
     static bool StartJob(World world, int i, int patient, List<(int Medic, int Patient)> taken, TaskRequest request)
     {
         var next = world.Characters.Next;
-        var resume = ResumeOf(world, i);
+        var resume = TaskStart.ResumeOf(world, i, CharacterTask.Treat, ResumeOf(world, i));
         if (TaskStart.Start(world, i, request with { Target = new CharacterId(patient, next[patient].Generation), Resume = resume }) != StartResult.Started) return false;
         taken.Add((i, patient));
         return true;

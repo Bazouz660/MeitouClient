@@ -59,7 +59,10 @@ public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions 
                         {
                             if (FindKit(world, slot, cold, ItemInfo.FirstAidKitFunction) is null && FindKit(world, slot, cold, ItemInfo.RobotKitFunction) is null)
                                 world.Bark(id, "I don't have a medkit.");   // refused before the medic moves
-                            else TaskStart.Start(world, slot, new TaskRequest(CharacterTask.Treat, TaskType.FIRST_AID_ORDER, TaskSource.Order) { Target = order.Patient });
+                            else TaskStart.Start(world, slot, new TaskRequest(CharacterTask.Treat, TaskType.FIRST_AID_ORDER, TaskSource.Order)
+                            {
+                                Target = order.Patient, Resume = TaskStart.ResumeOf(world, slot, CharacterTask.Treat, CharacterTask.Idle),
+                            });
                         }
                     break;
                 case SplintOrder splint:
@@ -68,7 +71,10 @@ public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions 
                         if (table.TryResolveNext(id, out int slot) && table.Cold(slot) is { Race: not null, Stats: not null } cold && CanAct(cold))
                         {
                             if (OwnKit(cold, ItemInfo.SplintKitFunction) is null) world.Bark(id, "I don't have a splint kit.");   // the medic's own kit only (the original's kit search)
-                            else TaskStart.Start(world, slot, new TaskRequest(CharacterTask.Treat, TaskType.SPLINT_ORDER, TaskSource.Order) { Target = splint.Patient });
+                            else TaskStart.Start(world, slot, new TaskRequest(CharacterTask.Treat, TaskType.SPLINT_ORDER, TaskSource.Order)
+                            {
+                                Target = splint.Patient, Resume = TaskStart.ResumeOf(world, slot, CharacterTask.Treat, CharacterTask.Idle),
+                            });
                         }
                     break;
                 case RestOrder rest:
@@ -112,7 +118,7 @@ public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions 
     {
         if (request.Task == CharacterTask.Treat)
         {
-            Begin(world, slot, request.Target, request.Resume, splint: request.Row is TaskType.SPLINT_ORDER or TaskType.SPLINT_JOB);
+            Begin(world, slot, request.Target, splint: request.Row is TaskType.SPLINT_ORDER or TaskType.SPLINT_JOB);
             return;
         }
         var table = world.Characters;
@@ -121,7 +127,6 @@ public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions 
         table.Next[slot].Task = (byte)CharacterTask.Rest;
         cold.TreatTarget = CharacterId.None;
         cold.TreatSplint = false;
-        cold.ResumeTask = CharacterTask.Idle;
     }
 
     /// <summary>A treatment another task replaces or the Stop order ends lets go of its patient and kit (the task it would go back to is the new start's to set).</summary>
@@ -134,22 +139,20 @@ public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions 
         cold.TreatKit = null;
     }
 
-    /// <summary>Starts a treatment (serial phases): the medic stands, then walks to the patient. <paramref name="resume"/> is the task to go back to afterwards (kept if already treating).</summary>
-    static void Begin(World world, int slot, CharacterId patient, CharacterTask resume, bool splint = false)
+    /// <summary>Starts a treatment (serial phases): the medic stands, then walks to the patient (the task it goes back to afterwards is in its provenance, <see cref="CharacterCold.Running"/>).</summary>
+    static void Begin(World world, int slot, CharacterId patient, bool splint = false)
     {
         var table = world.Characters;
         var cold = table.Cold(slot)!;
         if (cold.TreatTarget != patient) Say(world, slot, patient, HealingOtherStart, BeingHealedStart);
         ref var n = ref table.Next[slot];
         if (cold.TreatTarget != patient || cold.TreatSplint != splint || n.Task != (byte)CharacterTask.Treat) cold.TreatKit = null;   // a new treatment looks for its own kit
-        var keep = n.Task == (byte)CharacterTask.Treat ? cold.ResumeTask : resume;
         MovementSystem.Stop(table, slot);
         n.Task = (byte)CharacterTask.Treat;
         n.Mode = SpeedMode.Free;
         n.TaskTime = 0;
         cold.TreatTarget = patient;
         cold.TreatSplint = splint;
-        cold.ResumeTask = keep;
     }
 
     /// <summary>Dialogue events 18-22 (EV_HEALING_OTHER_START ... EV_FIRSTAID_KIT_EMPTY).</summary>
@@ -177,13 +180,12 @@ public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions 
         if (n.Task == (byte)CharacterTask.Treat)
         {
             MovementSystem.Stop(table, slot);
-            n.Task = (byte)cold.ResumeTask;
+            n.Task = (byte)(cold.Running is { } run && run.Runs(CharacterTask.Treat) ? run.Resume : CharacterTask.Idle);
             n.TaskTime = 0;
         }
         cold.TreatTarget = CharacterId.None;
         cold.TreatSplint = false;
         cold.TreatKit = null;
-        cold.ResumeTask = CharacterTask.Idle;
     }
 
     static float Gap(in CharacterHot a, in CharacterHot b)
@@ -510,7 +512,7 @@ public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions 
                 }
                 if (!Settings.AutoNpcs) continue;
                 // Idle: no task, following, wandering or an implicit job.
-                bool idle = next[i].Task is (byte)CharacterTask.Idle or (byte)CharacterTask.Wander or (byte)CharacterTask.Follow || cold.Implicit is not null;
+                bool idle = next[i].Task is (byte)CharacterTask.Idle or (byte)CharacterTask.Wander or (byte)CharacterTask.Follow || Production.PermaJobs.ListJob(cold, (CharacterTask)next[i].Task) is { Implicit: true };
                 if (idle) HealSomeone(world, i, taken, robotics: false, TaskSource.Npc);
             }
         }

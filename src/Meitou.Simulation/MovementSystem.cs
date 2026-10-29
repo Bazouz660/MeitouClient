@@ -270,7 +270,7 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
     /// <see cref="FollowOrder"/>: each awake, free character (not the target) drops what it does and follows the target (<see cref="CharacterCold.FollowOrder"/>); a sleeper gets up first.
     /// The order is row 45 Bodyguard or 31 Staying close; a job's follow (<paramref name="source"/> <see cref="TaskSource.Job"/>) runs the job's <paramref name="row"/>.
     /// </summary>
-    internal static void Follow(World world, FollowOrder order, TaskSource source = TaskSource.Order, int job = -1, TaskType? row = null)
+    internal static void Follow(World world, FollowOrder order, TaskSource source = TaskSource.Order, int job = -1, TaskType? row = null, CharacterTask resume = CharacterTask.Idle)
     {
         var table = world.Characters;
         if (!table.TryResolveNext(order.Target, out int led)) return;
@@ -278,7 +278,7 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
         {
             if (!table.TryResolveNext(id, out int s) || s == led || table.Cold(s) is not { IsImprisoned: false, Medical.Incapacitated: false, CarriedBy.IsNone: true } cold) continue;
             if (cold.InSomething == Locks.HeldState.Bed) world.Fixtures.LeaveBed(world, id);
-            TaskStart.Start(world, s, new TaskRequest(CharacterTask.Follow, row ?? (order.Guard ? TaskType.BODYGUARD : TaskType.STAY_CLOSE_TO_TARGET), source) { Job = job, Target = order.Target });
+            TaskStart.Start(world, s, new TaskRequest(CharacterTask.Follow, row ?? (order.Guard ? TaskType.BODYGUARD : TaskType.STAY_CLOSE_TO_TARGET), source) { Job = job, Target = order.Target, Resume = resume });
         }
     }
 
@@ -333,7 +333,7 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
         var cold = table.Cold(slot)!;
         // The one-shot follow (a running follow job's FollowOrder is the job's, handled with the jobs).
         var order = cold.FollowOrder;
-        bool jobRuns = cold.JobIndex >= 0 && cold.JobIndex < cold.Jobs.Count && Production.PermaJobs.Follows(cold.Jobs[cold.JobIndex].Type);
+        bool jobRuns = Production.PermaJobs.ListJob(cold, (CharacterTask)table.Next[slot].Task) is { } running && Production.PermaJobs.Follows(running.Row);
         if (!order.IsNone && !jobRuns)
         {
             if (order == ordered)
@@ -1072,7 +1072,7 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
     }
 
     static bool Seated(in CharacterHot h, CharacterCold c) => ((MoveFlags)h.Flags & MoveFlags.HasPath) == 0
-        && (h.Task == (byte)CharacterTask.Rest || h.Task == (byte)CharacterTask.Operate && c.Implicit == Meitou.Data.Gameplay.Ai.TaskType.SIT_AROUND);
+        && (h.Task == (byte)CharacterTask.Rest || h.Task == (byte)CharacterTask.Operate && c.Running is { Implicit: true, Row: Meitou.Data.Gameplay.Ai.TaskType.SIT_AROUND } run && run.Runs(CharacterTask.Operate));
 
     /// <summary>
     /// The heading turned from <paramref name="yaw"/> towards <paramref name="wanted"/> by at most <see cref="TurnRate"/> x <paramref name="dt"/>,

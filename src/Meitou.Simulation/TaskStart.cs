@@ -74,17 +74,24 @@ public readonly record struct TaskRequest(CharacterTask Task, TaskType Row, Task
     public string? Site { get; init; }
     public System.Numerics.Vector3 Point { get; init; }
     public CharacterTask Resume { get; init; }
+    /// <summary>An implicit job (a squad AI option, <see cref="SquadAi"/>: 242, 153, 275) rather than a job of the list (<see cref="TaskSource.Job"/> with <see cref="Job"/> -1).</summary>
+    public bool Implicit { get; init; }
     /// <summary>The act-out's own parameters the fields above do not hold (a shackle job, a ground item, a warden's round); its handler reads them.</summary>
     public object? Detail { get; init; }
 }
 
 /// <summary>
 /// The provenance of a character's task (<see cref="CharacterCold.Running"/>), recorded by <see cref="TaskStart.Start"/>: the act-out it started (<see cref="Task"/>), the row, the source, the job
-/// index, the target or site, and the tick. It speaks for the task only while <see cref="Task"/> is the character's task (<see cref="Runs"/>); a follow row's (31, 45, 289) is kept through
+/// index (or <see cref="Implicit"/>), the target or site, the tick and the task it goes back to when it ends by itself (<see cref="Resume"/>). It speaks for the task only while <see cref="Task"/> is the character's task (<see cref="Runs"/>); a follow row's (31, 45, 289) is kept through
 /// the fight that is a step of it (<see cref="TaskStart.Start"/>). Not saved (tasks are not); hashed only as the markers it replaced were.
 /// </summary>
 public sealed record RunningTask(CharacterTask Task, TaskType Row, TaskSource Source, int Job, CharacterId Target, string? Site, long Tick)
 {
+    /// <summary>The task the act-out goes back to when it ends by itself (engine, until a decision step decides again; production's own end takes only wandering or following).</summary>
+    public CharacterTask Resume { get; init; }
+    /// <summary>Started by an implicit job of the squad AI options (<see cref="TaskRequest.Implicit"/>).</summary>
+    public bool Implicit { get; init; }
+
     /// <summary>Whether this is the provenance of <paramref name="task"/>, the character's task now (a step of the same act-out counts, <see cref="TaskStart.ActOut"/>).</summary>
     public bool Runs(CharacterTask task) => TaskStart.ActOut(Task) == TaskStart.ActOut(task);
 }
@@ -158,7 +165,7 @@ public static class TaskStart
         if (current != CharacterTask.Attack && world.Tasks.Of(cold, current) is { } before && (current != request.Task || before != handler)) before.End(world, slot, current, TaskEnd.Replaced);
         cold.Running = cold.Running is { } running && Step(running, current, request)
             ? running with { Task = request.Task, Tick = world.Tick }
-            : new RunningTask(request.Task, request.Row, request.Source, request.Job, request.Target, request.Site, world.Tick);
+            : new RunningTask(request.Task, request.Row, request.Source, request.Job, request.Target, request.Site, world.Tick) { Resume = request.Resume, Implicit = request.Implicit };
         if (handler is not null) handler.Start(world, slot, request);
         else
         {
@@ -167,6 +174,16 @@ public static class TaskStart
             n.TaskTime = 0;
         }
         return StartResult.Started;
+    }
+
+    /// <summary>
+    /// The task a start of <paramref name="task"/> goes back to: when the character runs that act-out already (a medic changing patients, a builder changing sites) the running one's,
+    /// else <paramref name="resume"/>.
+    /// </summary>
+    public static CharacterTask ResumeOf(World world, int slot, CharacterTask task, CharacterTask resume)
+    {
+        var current = (CharacterTask)world.Characters.Next[slot].Task;
+        return ActOut(current) == ActOut(task) && world.Characters.Cold(slot)!.Running is { } run && run.Runs(current) ? run.Resume : resume;
     }
 
     static bool Step(RunningTask running, CharacterTask current, in TaskRequest request) =>

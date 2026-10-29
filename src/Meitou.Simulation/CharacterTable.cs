@@ -278,8 +278,6 @@ public sealed class CharacterCold
     /// Runtime only (not saved, not hashed): derived, as the next treatment tick finds the same kit again by the fewest-charges rule.
     /// </summary>
     public (Meitou.Simulation.Items.ItemInstance Item, Meitou.Simulation.Items.Inventory Owner)? TreatKit { get; set; }
-    /// <summary>The task a self-started treatment goes back to when it ends (<see cref="CharacterTask.Wander"/>, <see cref="CharacterTask.Follow"/> or Idle).</summary>
-    public CharacterTask ResumeTask { get; set; }
     /// <summary>The medic job (58 <c>JOB_MEDIC</c>) is in <see cref="Jobs"/>: an idle character with a kit treats hurt squad mates by itself. NPCs with a kit do so without it (an engine rule until the AI).</summary>
     public bool MedicJob => Jobs.Exists(j => j.Type == Meitou.Data.Gameplay.Ai.TaskType.JOB_MEDIC);
     /// <summary>The character this one carries on its left shoulder (none: not carrying); the original's <c>isCarrying</c> with the partner handle. Set and cleared by <see cref="Carrying.CarrySystem"/> in serial phases only, together with <see cref="CarriedBy"/> of the other.</summary>
@@ -447,13 +445,9 @@ public sealed class CharacterCold
     public string? HaulFetch { get; set; }
     /// <summary>The job list (Perma-Jobs, <see cref="Production.PermaJobs"/>), first = highest priority. Serial phases only. Hashed only while not empty.</summary>
     public List<Production.PermaJob> Jobs { get; } = [];
-    /// <summary>The <see cref="Jobs"/> entry the current task was started from (-1: none, the task was ordered). Hashed with <see cref="Jobs"/>.</summary>
-    public int JobIndex { get; set; } = -1;
-    /// <summary>The implicit job (a squad AI option, <see cref="SquadAi"/>) the current task was started from: 242 ditching, 153 going to bed, 275 sitting; null: none. Hashed only while set.</summary>
-    public Meitou.Data.Gameplay.Ai.TaskType? Implicit { get; set; }
     /// <summary>
-    /// The provenance of the task (<see cref="TaskStart.Start"/>; null: none recorded). Production's <see cref="JobIndex"/>, <see cref="Implicit"/> and <see cref="ResumeTask"/> still mark
-    /// its own starts. Serial phases only; not saved. Hashed as the job passes' old mark: only a job's Treat, PickUp or Loot while it runs.
+    /// The provenance of the task (<see cref="TaskStart.Start"/>; null: none recorded): which job of <see cref="Jobs"/> or implicit job it runs (<see cref="Production.PermaJobs.ListJob"/>) and
+    /// the task it goes back to. Serial phases only; not saved. Hashed while the task is a job's, with the resume task of a treatment, a carry, a site's work or a job list.
     /// </summary>
     public RunningTask? Running { get; set; }
     /// <summary>The storage a <see cref="CharacterTask.Haul"/> trip ends at (a "Hauling to" job's, or the one an implicit ditch picked). Hashed with <see cref="HaulSite"/>.</summary>
@@ -672,7 +666,8 @@ public sealed class CharacterTable
             if (k.Animation is { } anim) anim.Hash(ref hasher); else hasher.Add(-1);
             hasher.Add(k.Name.Length);
             // First aid state adds to the hash only while it is set, so worlds that never use it hash as before.
-            if (c.Task == (byte)CharacterTask.Treat) { hasher.Add(k.TreatTarget); hasher.Add((int)k.ResumeTask); if (k.TreatSplint) hasher.Add(0x53706C74); }
+            var resume = k.Running is { } run && run.Runs((CharacterTask)c.Task) ? run.Resume : CharacterTask.Idle;
+            if (c.Task == (byte)CharacterTask.Treat) { hasher.Add(k.TreatTarget); hasher.Add((int)resume); if (k.TreatSplint) hasher.Add(0x53706C74); }
             if (k.Fleeing) hasher.Add(k.FleesAlone ? 0x466C6566 : 0x466C6565);   // only while set, so worlds without fleeing hash as before
             if (k.StealthExposureTick != long.MinValue) { hasher.Add((int)k.StealthExposure); hasher.Add(k.StealthExposureTick); }   // likewise, once a sneaker was exposed
             if (k.StealthFactor != 1 || k.HearingXp != 0) { hasher.Add(0x48724558); hasher.Add(k.StealthFactor); hasher.Add(k.HearingXp); }   // likewise, once a listener's hearing check gave it stealth XP
@@ -680,7 +675,7 @@ public sealed class CharacterTable
             if (!k.Carrying.IsNone) { hasher.Add(0x43617272); hasher.Add(k.Carrying); }
             if (!k.CarriedBy.IsNone) { hasher.Add(0x42726E65); hasher.Add(k.CarriedBy); }
             if (k.CarriedAwake) hasher.Add(0x4177616B);
-            if (c.Task is (byte)CharacterTask.PickUp or (byte)CharacterTask.PutDown or (byte)CharacterTask.Loot or (byte)CharacterTask.StealthKo) { hasher.Add(k.CarryTarget); hasher.Add(k.LiftTime); hasher.Add((int)k.ResumeTask); if (c.Task == (byte)CharacterTask.StealthKo) hasher.Add(k.KnockoutHeard); if (k.Kidnapping) hasher.Add(0x4B69646E); if (k.Snatching) hasher.Add(0x536E6174); if (k.Foraging) hasher.Add(0x466F7267); if (k.LootFlags != 0) hasher.Add(0x4C6F6F74 ^ (int)k.LootFlags); }
+            if (c.Task is (byte)CharacterTask.PickUp or (byte)CharacterTask.PutDown or (byte)CharacterTask.Loot or (byte)CharacterTask.StealthKo) { hasher.Add(k.CarryTarget); hasher.Add(k.LiftTime); hasher.Add((int)resume); if (c.Task == (byte)CharacterTask.StealthKo) hasher.Add(k.KnockoutHeard); if (k.Kidnapping) hasher.Add(0x4B69646E); if (k.Snatching) hasher.Add(0x536E6174); if (k.Foraging) hasher.Add(0x466F7267); if (k.LootFlags != 0) hasher.Add(0x4C6F6F74 ^ (int)k.LootFlags); }
             // Orders add to the hash only while set, so worlds without them hash as before.
             if (k.Orders != CharacterOrders.None) { hasher.Add(0x4F726473); hasher.Add((int)k.Orders); }
             if (k.RunSpeed != SpeedMode.Free) { hasher.Add(0x52756E53); hasher.Add((int)k.RunSpeed); }
@@ -722,20 +717,21 @@ public sealed class CharacterTable
             // A builder's site, bar and the task it goes back to add to the hash only while it works one, so worlds without sites hash as before.
             if (k.BuildSite is { } site)
             {
-                hasher.Add(0x4275696C); hasher.Add(Rng.StableHash(site)); hasher.Add(k.BuildBar); hasher.Add((int)k.ResumeTask);
+                hasher.Add(0x4275696C); hasher.Add(Rng.StableHash(site)); hasher.Add(k.BuildBar); hasher.Add((int)resume);
                 if (k.FetchRecord is { } fetch) { hasher.Add(0x46657463); hasher.Add(Rng.StableHash(fetch)); hasher.Add(Rng.StableHash(k.FetchSite ?? "")); hasher.Add(k.FetchItem ?? 0); }
             }
             if (k.OperateSite is { } machine) { hasher.Add(0x4F706572); hasher.Add(Rng.StableHash(machine)); }
             if (k.Prospecting is { } prospected) { hasher.Add(0x50726F73); hasher.Add(prospected); }
             if (k.HaulSite is { } haul) { hasher.Add(0x4861756C); hasher.Add(Rng.StableHash(haul)); hasher.Add(Rng.StableHash(k.HaulFetch ?? "")); }
             if (k.HaulTo is { } haulTo) hasher.Add(Rng.StableHash(haulTo));
-            if (k.Implicit is { } implicitJob) { hasher.Add(0x496D706C); hasher.Add((int)implicitJob); hasher.Add((int)k.ResumeTask); }
-            if (k.Running is { Source: TaskSource.Job, Task: CharacterTask.Treat or CharacterTask.PickUp or CharacterTask.Loot } run && run.Runs((CharacterTask)c.Task)) hasher.Add(0x4A6F6254);   // the job passes' mark, only while it runs
+            var listJob = Production.PermaJobs.ListJob(k, (CharacterTask)c.Task);
+            if (listJob is { Implicit: true }) { hasher.Add(0x496D706C); hasher.Add((int)listJob.Row); hasher.Add((int)listJob.Resume); }
+            if (k.Running is { Source: TaskSource.Job, Task: CharacterTask.Treat or CharacterTask.PickUp or CharacterTask.Loot } pass && pass.Runs((CharacterTask)c.Task)) hasher.Add(0x4A6F6254);   // the job passes' mark, only while it runs
             if (k.Jobs.Count > 0)
             {
                 hasher.Add(0x4A6F6273);
-                hasher.Add(k.JobIndex);
-                hasher.Add((int)k.ResumeTask);
+                hasher.Add(listJob?.Job ?? -1);
+                hasher.Add((int)resume);
                 foreach (var perma in k.Jobs) { hasher.Add((int)perma.Type); hasher.Add(Rng.StableHash(perma.Site ?? "")); if (!perma.Character.IsNone) hasher.Add(perma.Character); }
             }
         }

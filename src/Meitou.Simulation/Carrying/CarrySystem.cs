@@ -259,7 +259,6 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         table.Next[slot].TaskTime = 0;
         cold.CarryTarget = cold.Carrying;
         cold.LiftTime = 0;
-        cold.ResumeTask = CharacterTask.Idle;
     }
 
     /// <summary>
@@ -319,7 +318,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
     void ITaskHandler.Start(World world, int slot, in TaskRequest request)
     {
         if (request.Task == CharacterTask.PutDown) PutDownStart(world.Characters, slot);
-        else Approach(world.Characters, slot, request.Target, request.Task, request.Resume);
+        else Approach(world.Characters, slot, request.Target, request.Task);
     }
 
     /// <summary>
@@ -339,7 +338,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
 
 
     /// <summary>The act-out's start of a pick-up, a loot or a stealth knock-out (serial phases): the character stands, then walks to the target.</summary>
-    static void Approach(CharacterTable table, int slot, CharacterId target, CharacterTask task, CharacterTask resume)
+    static void Approach(CharacterTable table, int slot, CharacterId target, CharacterTask task)
     {
         var cold = table.Cold(slot)!;
         ref var n = ref table.Next[slot];
@@ -349,7 +348,6 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         n.TaskTime = 0;
         cold.CarryTarget = target;
         cold.LiftTime = -1;
-        cold.ResumeTask = resume;
         cold.Kidnapping = false;
         cold.Snatching = false;
         cold.Foraging = false;
@@ -363,13 +361,13 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         ref var n = ref table.Next[slot];
         if (n.Task is (byte)CharacterTask.PickUp or (byte)CharacterTask.PutDown or (byte)CharacterTask.Loot or (byte)CharacterTask.StealthKo)
         {
+            var resume = cold.Running is { } run && run.Runs((CharacterTask)n.Task) ? run.Resume : CharacterTask.Idle;
             MovementSystem.Stop(table, slot);
-            n.Task = (byte)cold.ResumeTask;
+            n.Task = (byte)resume;
             n.TaskTime = 0;
         }
         cold.CarryTarget = CharacterId.None;
         cold.LiftTime = -1;
-        cold.ResumeTask = CharacterTask.Idle;
         cold.LootFlags = LootStart.None;
     }
 
@@ -928,7 +926,8 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
             if (cold.IsPlayer && !Orders.Has(cold, CharacterOrders.Jobs)) continue;
             // Free, or on a list job below the rescue job (which ranks above it).
             int rescue = cold.Jobs.FindIndex(j => j.Type == Meitou.Data.Gameplay.Ai.TaskType.FIND_AND_RESCUE_IF_THERES_BEDS);
-            if (!Free(world, i) && !(cold.JobIndex > rescue && cold is { Fleeing: false } && CanCarry(world, cold, TaskType.FIND_AND_RESCUE_IF_THERES_BEDS))) continue;
+            if (!Free(world, i) && !(Production.PermaJobs.ListJob(cold, (CharacterTask)next[i].Task) is { Implicit: false } job && job.Job > rescue && cold is { Fleeing: false }
+                && CanCarry(world, cold, TaskType.FIND_AND_RESCUE_IF_THERES_BEDS))) continue;
             if (!MayRescue(world, i, cold)) continue;
             RescueSomeone(world, i, taken, TaskSource.Job, rescue);
         }
@@ -975,7 +974,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
             if (d2 <= best2 && (best < 0 || d2 < best2)) { best = s; best2 = d2; }
         }
         if (best < 0 || !Start(world, i, CharacterTask.PickUp, TaskType.FIND_AND_RESCUE_IF_THERES_BEDS, source, table.IdOf(best),
-            cold.JobIndex >= 0 || cold.Implicit is not null ? cold.ResumeTask : (CharacterTask)next[i].Task, job)) return false;
+            Production.PermaJobs.ResumeOf(cold, (CharacterTask)next[i].Task), job)) return false;
         taken.Add(best);
         return true;
     }

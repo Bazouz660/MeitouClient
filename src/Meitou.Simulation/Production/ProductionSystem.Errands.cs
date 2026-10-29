@@ -80,7 +80,7 @@ public sealed partial class ProductionSystem
                 lifted ??= Lifted(table);
                 var found = kind == ErrandKind.Corpse ? FindCorpse(world, i, cold, lifted) : FindIntruder(world, i, cold, lifted, kind);
                 if (found is not { } body) continue;
-                var resume = cold.JobIndex >= 0 || cold.Implicit is not null ? cold.ResumeTask : task;
+                var resume = PermaJobs.ResumeOf(cold, task);
                 if (!Carry.BeginPickUp(world, i, body.Id, resume, source: TaskSource.Job, job: k, row: cold.Jobs[k].Type)) continue;
                 lifted.Add(body.Id);
                 errands[id] = new Errand { Kind = kind, Goal = body.Goal, Body = body.Id };

@@ -154,7 +154,7 @@ public sealed class ConstructionSystem : ITickSystem, ITaskOwner, ITaskHandler
                 if (site.LevelPlacement is not null) Touch(world, site);
                 if (site.Stalled && !Carries(cold, site) && Source(world, slot, cold, site) is null)
                     world.Bark(id, Loc.Tr("I don't have any building materials."));
-                TaskStart.Start(world, slot, new TaskRequest(CharacterTask.Build, TaskType.BUILD, TaskSource.Order) { Site = site.Id });
+                Start(world, slot, new TaskRequest(CharacterTask.Build, TaskType.BUILD, TaskSource.Order) { Site = site.Id });
             }
     }
 
@@ -184,7 +184,7 @@ public sealed class ConstructionSystem : ITickSystem, ITaskOwner, ITaskHandler
                     if (door.Owner != world.Player.Faction || !DoorNeedsWork(door)) break;
                     foreach (var id in Who(world, order.Characters))
                         if (table.TryResolveNext(id, out int slot) && table.Cold(slot) is { IsPlayer: true } cold && Able(cold))
-                            TaskStart.Start(world, slot, new TaskRequest(CharacterTask.Build, TaskType.REPAIR, TaskSource.Order) { Site = door.Id });
+                            Start(world, slot, new TaskRequest(CharacterTask.Build, TaskType.REPAIR, TaskSource.Order) { Site = door.Id });
                     break;
                 case BuildOrder order:
                     OrderBuild(world, Who(world, order.Characters), Root(reg, reg.Find(order.Site)));
@@ -199,7 +199,7 @@ public sealed class ConstructionSystem : ITickSystem, ITaskOwner, ITaskHandler
                     }
                     foreach (var id in Who(world, order.Characters))
                         if (table.TryResolveNext(id, out int slot) && table.Cold(slot) is { IsPlayer: true } cold && Able(cold))
-                            TaskStart.Start(world, slot, new TaskRequest(CharacterTask.Dismantle, TaskType.DISMANTLE, TaskSource.Order) { Site = site.Id });
+                            Start(world, slot, new TaskRequest(CharacterTask.Dismantle, TaskType.DISMANTLE, TaskSource.Order) { Site = site.Id });
                     break;
                 }
                 case ConfirmDismantle confirm:
@@ -630,13 +630,12 @@ public sealed class ConstructionSystem : ITickSystem, ITaskOwner, ITaskHandler
             ? (store.Position, store, machine.Data.UseRange) : null;
     }
 
-    /// <summary>Gives the character a site to work (serial phases): it stands, then walks there unless it is there already. <paramref name="resume"/> is the task to go back to (kept if already working).</summary>
-    void Begin(World world, int slot, BuildSite site, CharacterTask task, CharacterTask resume)
+    /// <summary>Gives the character a site to work (serial phases): it stands, then walks there unless it is there already.</summary>
+    void Begin(World world, int slot, BuildSite site, CharacterTask task)
     {
         var table = world.Characters;
         var cold = table.Cold(slot)!;
         ref var n = ref table.Next[slot];
-        var keep = IsWork(n.Task) ? cold.ResumeTask : resume;
         MovementSystem.Stop(table, slot);
         n.Task = (byte)task;
         n.Mode = SpeedMode.Free;
@@ -644,7 +643,6 @@ public sealed class ConstructionSystem : ITickSystem, ITaskOwner, ITaskHandler
         cold.BuildSite = site.Id;
         cold.BuildBar = 0;
         ClearFetch(cold);
-        cold.ResumeTask = keep;
         if (!Arrived(n, (site.Position, site, ReachOf(site))))
         {
             n.Goal = new Vector2(site.Position.X, site.Position.Z);
@@ -660,14 +658,14 @@ public sealed class ConstructionSystem : ITickSystem, ITaskOwner, ITaskHandler
         ref var n = ref table.Next[slot];
         if (IsWork(n.Task))
         {
+            var resume = cold.Running is { } run && run.Runs((CharacterTask)n.Task) ? run.Resume : CharacterTask.Idle;
             MovementSystem.Stop(table, slot);
-            n.Task = (byte)cold.ResumeTask;
+            n.Task = (byte)resume;
             n.TaskTime = 0;
         }
         cold.BuildSite = null;
         cold.BuildBar = 0;
         ClearFetch(cold);
-        cold.ResumeTask = CharacterTask.Idle;
     }
 
     static void ClearFetch(CharacterCold cold)
@@ -682,7 +680,11 @@ public sealed class ConstructionSystem : ITickSystem, ITaskOwner, ITaskHandler
     /// to <paramref name="resume"/>.
     /// </summary>
     public void StartBuilding(World world, int slot, BuildSite site, CharacterTask resume, int job) =>
-        TaskStart.Start(world, slot, new TaskRequest(CharacterTask.Build, TaskType.JOB_BUILDER, TaskSource.Job) { Job = job, Site = site.Id, Resume = resume });
+        Start(world, slot, new TaskRequest(CharacterTask.Build, TaskType.JOB_BUILDER, TaskSource.Job) { Job = job, Site = site.Id, Resume = resume });
+
+    /// <summary>Starts work through <see cref="TaskStart.Start"/>; a worker already at work keeps the task it goes back to.</summary>
+    static void Start(World world, int slot, TaskRequest request) =>
+        TaskStart.Start(world, slot, request with { Resume = TaskStart.ResumeOf(world, slot, request.Task, request.Resume) });
 
     public void RegisterTasks(TaskHandlers tasks)
     {
@@ -696,7 +698,7 @@ public sealed class ConstructionSystem : ITickSystem, ITaskOwner, ITaskHandler
     void ITaskHandler.Start(World world, int slot, in TaskRequest request)
     {
         if (world.Fixtures.Find(request.Site!) is { Kind: Locks.FixtureKind.Door } door) BeginDoor(world, slot, door);
-        else Begin(world, slot, world.Buildings.Find(request.Site!)!, request.Task, request.Resume);
+        else Begin(world, slot, world.Buildings.Find(request.Site!)!, request.Task);
     }
 
     /// <summary>Work another task replaces or the Stop order ends lets go of its site and of the material it was fetching (the task it goes back to is the new start's).</summary>
@@ -894,7 +896,6 @@ public sealed class ConstructionSystem : ITickSystem, ITaskOwner, ITaskHandler
         var table = world.Characters;
         var cold = table.Cold(slot)!;
         ref var n = ref table.Next[slot];
-        var keep = IsWork(n.Task) ? cold.ResumeTask : CharacterTask.Idle;
         MovementSystem.Stop(table, slot);
         n.Task = (byte)CharacterTask.Build;
         n.Mode = SpeedMode.Free;
@@ -902,7 +903,6 @@ public sealed class ConstructionSystem : ITickSystem, ITaskOwner, ITaskHandler
         cold.BuildSite = door.Id;
         cold.BuildBar = 0;
         ClearFetch(cold);
-        cold.ResumeTask = keep;
         var (at, reach) = Locks.LockSystem.WorkSpot(world, door, new Vector2(n.Position.X, n.Position.Z));
         if (Vector2.Distance(new Vector2(n.Position.X, n.Position.Z), at) > reach)
         {

@@ -106,7 +106,8 @@ on a cage). The medic finder keeps its own imprisoned refusal because rows 25 / 
 
 `TaskStart.Start(world, slot, TaskRequest)` (serial phases) is the one start path. In order: the row must be `Eligible`; a fight ends (the original's new task drops the fight task,
 [combat](game/combat.md#fight-lifecycle-and-orders)); the task before ends through its handler (`TaskEnd.Replaced`: it lets go of its target, while the movement, the task and
-`ResumeTask` are the new start's); the provenance is recorded in `CharacterCold.Running` (`RunningTask`: act-out, row, `TaskSource`, job index, target, site, tick); the act-out starts.
+the task it goes back to are the new start's); the provenance is recorded in `CharacterCold.Running` (`RunningTask`: act-out, row, `TaskSource`, job index or implicit flag,
+target, site, tick, resume task); the act-out starts.
 `TaskStart.End(world, slot, reason)` ends a task from outside its act-out (`TaskEnd.Stopped`, the Stop order and a squad mate lifted awake: then idle). Each `CharacterTask` has one
 `ITaskHandler` (Start, End, Done), registered by its system (`ITaskOwner`) in `World.Tasks`, an open list later code may add to or replace; a task without one is set as is. Owners: movement
 (GoTo, Follow), combat (Attack), first aid (Treat, Rest), carry (PickUp, PutDown, Loot, StealthKo), production (Operate, Haul, Prospect), construction (Build, Dismantle,
@@ -119,7 +120,9 @@ delivering, fetching and dismantling are steps of one act-out (`TaskStart.ActOut
   (job, button, NPC leaders), kidnappers' and guards' lifts (`BeginPickUp`), foraging, NPC scavenging and arming, the operate, turret, haul and prospect orders, the production list jobs
   (87, 97, 124, 152, 234, the engineer 125) and implicit jobs (242, 153, 275), the build, repair, door repair and dismantle orders, the bed orders and job 106, the lock, shackle, cage,
   door and force orders, the wardens' rounds, item pick-up and container walks, put in cage. Not yet: crime, kidnap, dialogue, trade, flee, AI and population starts.
-- `PermaJobs.FromJob` reads a `TaskSource.Job` provenance while its act-out runs; production's `JobIndex`, `Implicit` and `ResumeTask` still mark production's own starts.
+- Provenance is the only job mark: `PermaJobs.FromJob` is a `TaskSource.Job` provenance that runs the task; `PermaJobs.ListJob` the production pick's list job (its index) or implicit
+  job it runs (not a follow row's fight step), which `FreeFor`, the pick, the rescue job's rank test and the circle break read; a list edit moves the running index. The task an act-out
+  goes back to is `RunningTask.Resume`: a job's start records the job it took over's resume (`PermaJobs.ResumeOf`), a medic or builder already at it keeps its own (`TaskStart.ResumeOf`).
 - Engine: a fight ended in a serial phase clears both combat state arrays (`CombatSystem.Live` tells which one is current: the slow-world swap changes it).
 - Debug builds check at each tick's end that a character which took up Attack, Treat, PickUp, PutDown, Loot, StealthKo, Build, Dismantle, Prospect, Operate or Haul did so through
   `Start` (`TaskStart.CheckStarts`: its provenance is stamped this tick); GoTo, Idle and Sleep are still set directly by systems not converted yet (the AI's beds, walks).

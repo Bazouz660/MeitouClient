@@ -54,9 +54,10 @@ public sealed partial class ProductionSystem
     internal static void RemoveJob(CharacterTable table, int slot, int index)
     {
         if (table.Cold(slot) is not { } cold || (uint)index >= (uint)cold.Jobs.Count) return;
+        var job = PermaJobs.ListJob(cold, (CharacterTask)table.Next[slot].Task) is { Implicit: false } run ? run : null;
+        if (job?.Job == index) End(table, slot);
         cold.Jobs.RemoveAt(index);
-        if (cold.JobIndex == index) End(table, slot);
-        else if (cold.JobIndex > index) cold.JobIndex--;
+        if (job?.Job > index) cold.Running = job with { Job = job.Job - 1 };
     }
 
     void MoveJobTo(World world, MoveJob move)
@@ -68,10 +69,12 @@ public sealed partial class ProductionSystem
         cold.Jobs.RemoveAt(move.From);
         cold.Jobs.Insert(move.To, job);
         // The job the character is on keeps pointing at it.
-        int k = cold.JobIndex;
-        if (k == move.From) cold.JobIndex = move.To;
-        else if (move.From < k && k <= move.To) cold.JobIndex--;
-        else if (move.To <= k && k < move.From) cold.JobIndex++;
+        if (PermaJobs.ListJob(cold, (CharacterTask)world.Characters.Next[slot].Task) is not { Implicit: false } run) return;
+        int k = run.Job;
+        if (k == move.From) k = move.To;
+        else if (move.From < k && k <= move.To) k--;
+        else if (move.To <= k && k < move.From) k++;
+        if (k != run.Job) cold.Running = run with { Job = k };
     }
 
     /// <summary>
@@ -87,15 +90,9 @@ public sealed partial class ProductionSystem
             if (!n.Alive) continue;
             var cold = table.Cold(i)!;
             var task = (CharacterTask)n.Task;
-            // An order replaced the job's task.
-            if ((cold.JobIndex >= 0 || cold.Implicit is not null) && !JobTask(cold, task))
-            {
-                cold.JobIndex = -1;
-                cold.Implicit = null;
-                cold.HaulTo = null;
-            }
+            var job = PermaJobs.ListJob(cold, task);
             if (!cold.IsPlayer || (world.Tick + i) % JobCheckTicks != 0) continue;
-            bool onJob = cold.JobIndex >= 0 || cold.Implicit is not null;
+            bool onJob = job is not null;
             // Idle as the medic job counts it: no task, or following or wandering.
             if (!onJob && task is not (CharacterTask.Idle or CharacterTask.Wander or CharacterTask.Follow)) continue;
             if (!Able(cold)) continue;
@@ -104,13 +101,13 @@ public sealed partial class ProductionSystem
                 if (Runnable(world, i, cold, k)) pick = k;
             if (pick >= 0)
             {
-                if (pick != cold.JobIndex) StartJob(world, i, pick);
+                if (pick != (job is { Implicit: false } ? job.Job : -1)) StartJob(world, i, pick);
                 continue;
             }
-            if (ImplicitPick(world, i, onJob ? cold.ResumeTask : task) is { } chosen)
+            if (ImplicitPick(world, i, onJob ? job!.Resume : task) is { } chosen)
             {
                 string? current = chosen.Type == TaskType.DITCH_ALL_RESOURCES ? cold.HaulTo : cold.OperateSite;
-                if (chosen.Type != cold.Implicit || chosen.Site != current) StartImplicit(world, i, chosen.Type, chosen.Site);
+                if (job is not { Implicit: true } || chosen.Type != job.Row || chosen.Site != current) StartImplicit(world, i, chosen.Type, chosen.Site);
                 continue;
             }
             if (onJob) End(table, i);
@@ -135,12 +132,13 @@ public sealed partial class ProductionSystem
         // None while sneaking (FUN_1405c9750; a fighting character is not Able anyway).
         if ((cold.Orders & CharacterOrders.Jobs) == 0 || (cold.Orders & CharacterOrders.Sneak) != 0 || cold.SlaveState != 0 || options == SquadAi.None) return null;
         var at = table.Next[slot].Position;
+        var on = PermaJobs.ListJob(cold, (CharacterTask)table.Next[slot].Task) is { Implicit: true } running ? running.Row : TaskType.None;
         if (idle == CharacterTask.Follow && cold.SquadId >= 0 && world.Squads.Find(cold.SquadId)?.Leader is { IsNone: false } leader && leader.Slot != slot && table.IsAlive(leader))
             at = table.Next[leader.Slot].Position;
         if ((options & SquadAi.Ditch) != 0)
         {
             // The 242 entry is rebuilt every pass (FUN_14050e5b0): the trip goes on only while no order is queued and its storage still takes something carried.
-            if (cold.Implicit == TaskType.DITCH_ALL_RESOURCES && cold.HaulTo is { } keep && cold.OrderQueue.Count == 0 && cold.Inventory is { } held
+            if (on == TaskType.DITCH_ALL_RESOURCES && cold.HaulTo is { } keep && cold.OrderQueue.Count == 0 && cold.Inventory is { } held
                 && Site(world, keep) is { Complete: true } keptSite && keptSite.Owner == world.Player.Faction
                 && Ensure(world, keptSite) is { } keptStore && keptStore.Data.IsStorage && keptStore.Storage is not null && Ditchable(held).Any(item => Stores(keptStore, item)))
                 return (TaskType.DITCH_ALL_RESOURCES, keep);
@@ -152,14 +150,14 @@ public sealed partial class ProductionSystem
         if (Orders.Holding(cold)) return null;
         if ((options & SquadAi.Sleep) != 0 && Injured(cold) && Beds is not null)
         {
-            if (cold.Implicit == TaskType.GO_HOME_AND_GO_TO_BED && cold.OperateSite is { } bed && world.Fixtures.Find(bed) is { } kept
+            if (on == TaskType.GO_HOME_AND_GO_TO_BED && cold.OperateSite is { } bed && world.Fixtures.Find(bed) is { } kept
                 && Gap(kept.Position, at) <= Locks.FixtureRegistry.BedSearchRange)
                 return (TaskType.GO_HOME_AND_GO_TO_BED, bed);
             if (Beds.FindFor(world, slot) is { } free) return (TaskType.GO_HOME_AND_GO_TO_BED, free.Id);
         }
         if ((options & SquadAi.Sit) != 0)
         {
-            if (cold.Implicit == TaskType.SIT_AROUND && cold.OperateSite is { } seat && Site(world, seat) is { } kept && Gap(kept.Position, at) <= SeatRange)
+            if (on == TaskType.SIT_AROUND && cold.OperateSite is { } seat && Site(world, seat) is { } kept && Gap(kept.Position, at) <= SeatRange)
                 return (TaskType.SIT_AROUND, seat);
             if (NearestSite(world, at, SeatRange, (s, m) => IsSeat(m) && Free(world, cold, s, m)) is { } free) return (TaskType.SIT_AROUND, free);
         }
@@ -224,19 +222,12 @@ public sealed partial class ProductionSystem
     {
         var table = world.Characters;
         var cold = table.Cold(slot)!;
-        var resume = cold.JobIndex >= 0 || cold.Implicit is not null ? cold.ResumeTask : (CharacterTask)table.Next[slot].Task;
+        var resume = PermaJobs.ResumeOf(cold, (CharacterTask)table.Next[slot].Task);
         var task = type switch { TaskType.GO_HOME_AND_GO_TO_BED => CharacterTask.Sleep, TaskType.DITCH_ALL_RESOURCES => CharacterTask.Haul, _ => CharacterTask.Operate };
         // A bed fixture: the bed system walks it there and lays it in (task Sleep); the job keeps the bed's id.
         if (task == CharacterTask.Sleep && (world.Fixtures.Find(siteId) is null || Beds is null)) return;
-        if (TaskStart.Start(world, slot, new TaskRequest(task, type, TaskSource.Job) { Site = siteId }) != StartResult.Started) return;
-        if (task == CharacterTask.Sleep)
-        {
-            if (table.Next[slot].Task != (byte)CharacterTask.Sleep) return;
-            cold.OperateSite = siteId;
-        }
-        cold.JobIndex = -1;
-        cold.Implicit = type;
-        cold.ResumeTask = resume;
+        if (TaskStart.Start(world, slot, new TaskRequest(task, type, TaskSource.Job) { Site = siteId, Implicit = true, Resume = resume }) != StartResult.Started) return;
+        if (task == CharacterTask.Sleep && table.Next[slot].Task == (byte)CharacterTask.Sleep) cold.OperateSite = siteId;
     }
 
     /// <summary>A sitter or sleeper at its chair or bed: on the seat's origin facing its way, as the original's <c>Task_OperateMachine</c> (docs/game/ai-tasks.md "Town goals").</summary>
@@ -272,15 +263,6 @@ public sealed partial class ProductionSystem
         if (job.Type == TaskType.JOB_BUILDER) return ConstructionSystem.HasWorkingArm(cold) && Construction?.EngineerSite(world, slot) is { } pick && Vector3.DistanceSquared(at, pick.Position) < JobRangeSq;
         if (job.Site is { } id && Site(world, id) is { } site && Vector3.DistanceSquared(at, site.Position) >= JobRangeSq) return false;
         return !Blocked(world, cold, job);
-    }
-
-    /// <summary>The task the job a character is on runs: building, delivering or fetching for the engineer job, following the job's character for Bodyguard and Staying close, else operating or hauling.</summary>
-    static bool JobTask(CharacterCold cold, CharacterTask task)
-    {
-        var job = cold.JobIndex >= 0 && cold.JobIndex < cold.Jobs.Count ? cold.Jobs[cold.JobIndex] : null;
-        if (job?.Type == TaskType.JOB_BUILDER) return task is CharacterTask.Build or CharacterTask.DeliverMaterials or CharacterTask.FetchMaterials;
-        if (job is not null && PermaJobs.Follows(job.Type)) return task == CharacterTask.Follow && cold.FollowOrder == job.Character;
-        return task is CharacterTask.Operate or CharacterTask.Haul or CharacterTask.Sleep;
     }
 
     /// <summary>
@@ -448,37 +430,32 @@ public sealed partial class ProductionSystem
         var table = world.Characters;
         var cold = table.Cold(slot)!;
         var job = cold.Jobs[k];
-        if (cold.JobIndex < 0) cold.ResumeTask = (CharacterTask)table.Next[slot].Task;
+        // From a list job the character goes back to what it was doing before the list took it.
+        var current = (CharacterTask)table.Next[slot].Task;
+        var resume = PermaJobs.ListJob(cold, current) is { Implicit: false } on ? on.Resume : current;
         if (job.Type == TaskType.JOB_BUILDER)
         {
-            // From operating or hauling the character goes back to what it was doing before the list took it.
-            var resume = cold.ResumeTask;
             End(table, slot);
             Construction!.StartBuilding(world, slot, Construction.EngineerSite(world, slot)!, resume, k);
-            cold.JobIndex = k;
             return;
         }
         if (PermaJobs.Follows(job.Type))
         {
             if (FollowedBy(world, slot, cold, k) is not { } target) return;
-            // From operating or hauling the character goes back to what it was doing before the list took it.
-            var back = cold.ResumeTask;
             End(table, slot);
-            cold.ResumeTask = back;
             // The Bodyguard job guards (row 45, RetaliationSystem.Guards); the verb always gives the job. The circle was broken when the job was added.
-            MovementSystem.Follow(world, new FollowOrder([table.IdOf(slot)], target) { Tick = world.Tick }, TaskSource.Job, k, job.Type);
-            cold.JobIndex = k;
+            MovementSystem.Follow(world, new FollowOrder([table.IdOf(slot)], target) { Tick = world.Tick }, TaskSource.Job, k, job.Type, resume);
             return;
         }
         var site = Site(world, job.Site!)!;
         var m = Ensure(world, site)!;
-        var request = new TaskRequest(CharacterTask.Haul, job.Type, TaskSource.Job) { Job = k, Site = site.Id };
+        var request = new TaskRequest(CharacterTask.Haul, job.Type, TaskSource.Job) { Job = k, Site = site.Id, Resume = resume };
         if (job.Type is TaskType.OPERATE_MACHINERY or TaskType.MAN_A_TURRET_PLAYER_JOB or TaskType.USE_TRAINING_DUMMY or TaskType.OPERATE_AUTOMATIC_MACHINERY || !m.Data.IsStorage)
         {
             if (cold.OperateSite != site.Id) TaskStart.Start(world, slot, request with { Task = CharacterTask.Operate });
+            else if (cold.Running is { } running && running.Runs(CharacterTask.Operate)) cold.Running = running with { Source = TaskSource.Job, Row = job.Type, Job = k, Implicit = false, Resume = resume };
         }
         else TaskStart.Start(world, slot, request);
-        cold.JobIndex = k;
     }
 
     /// <summary>A <see cref="CharacterTask.Haul"/> trip to a storage: what the character already carries for it goes there first; else it fetches a machine's output.</summary>
@@ -497,6 +474,9 @@ public sealed partial class ProductionSystem
         cold.HaulTo = storage.Id;
         sweep = true;
     }
+
+    /// <summary>The haul trip is the implicit ditching's (242).</summary>
+    static bool Ditching(CharacterCold cold) => cold.Running is { Implicit: true, Row: TaskType.DITCH_ALL_RESOURCES } run && run.Runs(CharacterTask.Haul);
 
     /// <summary>A hauler at the end of a leg (serial): at the source it takes the output, then makes for the storage; at the storage it puts in what the storage takes and the job's trip ends.</summary>
     void HaulStep(World world, int slot)
@@ -520,11 +500,11 @@ public sealed partial class ProductionSystem
                 output.Count -= moved;
                 world.Machines.Touch();
             }
-            if (Delivered(world, inv, store, cold.Implicit == TaskType.DITCH_ALL_RESOURCES).Any()) cold.HaulSite = storeId;
+            if (Delivered(world, inv, store, Ditching(cold)).Any()) cold.HaulSite = storeId;
             else End(table, slot);
             return;
         }
-        foreach (var item in Delivered(world, inv, store, cold.Implicit == TaskType.DITCH_ALL_RESOURCES).ToList())
+        foreach (var item in Delivered(world, inv, store, Ditching(cold)).ToList())
         {
             inv.Remove(item);
             if (store.Storage!.Add(item)) continue;

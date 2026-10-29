@@ -462,6 +462,7 @@ public sealed partial class ProductionSystem : ITickSystem, ITaskOwner, ITaskHan
         cold.HaulSite = null;
         cold.HaulFetch = null;
         cold.Operating = false;
+        cold.HaulTo = null;
     }
 
     void Begin(World world, int slot, BuildSite site, Machine m)
@@ -481,8 +482,6 @@ public sealed partial class ProductionSystem : ITickSystem, ITaskOwner, ITaskHan
         cold.HaulSite = null;
         cold.HaulFetch = null;
         cold.Operating = false;
-        cold.JobIndex = -1;
-        cold.Implicit = null;
         cold.HaulTo = null;
         var goal = GoalOf(world, site, m);
         if (!AtSite(n, site, m)) WalkToSite(ref n, cold, site, goal);
@@ -493,22 +492,20 @@ public sealed partial class ProductionSystem : ITickSystem, ITaskOwner, ITaskHan
     {
         var cold = table.Cold(slot)!;
         ref var n = ref table.Next[slot];
-        bool followJob = n.Task == (byte)CharacterTask.Follow && cold.JobIndex >= 0 && cold.JobIndex < cold.Jobs.Count
-            && PermaJobs.Follows(cold.Jobs[cold.JobIndex].Type);
+        var job = PermaJobs.ListJob(cold, (CharacterTask)n.Task);
+        bool followJob = job is not null && PermaJobs.Follows(job.Row);
         if (followJob) (cold.FollowOrder, cold.Running) = (CharacterId.None, null);   // the job's follow ends with it; the character follows its squad's leader again
         if (followJob || n.Task is (byte)CharacterTask.Operate or (byte)CharacterTask.Haul or (byte)CharacterTask.Sleep)
         {
             MovementSystem.Stop(table, slot);
             // A job's task goes back to the following or wandering it took the character from.
-            n.Task = (byte)((cold.JobIndex >= 0 || cold.Implicit is not null) && cold.ResumeTask is CharacterTask.Wander or CharacterTask.Follow ? cold.ResumeTask : CharacterTask.Idle);
+            n.Task = (byte)(job?.Resume is CharacterTask.Wander or CharacterTask.Follow ? job.Resume : CharacterTask.Idle);
             n.TaskTime = 0;
         }
         cold.OperateSite = null;
         cold.HaulSite = null;
         cold.HaulFetch = null;
         cold.Operating = false;
-        cold.JobIndex = -1;
-        cold.Implicit = null;
         cold.HaulTo = null;
     }
 

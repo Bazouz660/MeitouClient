@@ -37,7 +37,7 @@ public sealed partial class CarrySystem
                 if (d2 <= best2 && (best < 0 || d2 < best2) && Storable(world, cold, next[i].Position, animal) is not null) { best = s; best2 = d2; }
             }
             if (best < 0 || !Start(world, i, CharacterTask.Loot, TaskType.LOOT_ANIMALS_JOB, TaskSource.Job, table.IdOf(best),
-                cold.JobIndex >= 0 || cold.Implicit is not null ? cold.ResumeTask : (CharacterTask)next[i].Task, job)) continue;
+                Production.PermaJobs.ResumeOf(cold, (CharacterTask)next[i].Task), job)) continue;
             taken.Add(best);
             cold.Foraging = true;
         }
