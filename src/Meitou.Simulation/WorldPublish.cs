@@ -201,6 +201,7 @@ public sealed partial class World
                 StealthKoChance = koSlot >= 0 && i != koSlot && cold is { IsPlayer: false } && Carrying.CarrySystem.CanBeKnockedOut(cold)
                     ? Carrying.CarrySystem.StealthKoChance(table.Cold(koSlot)!, cold, aggro?.Spotted(i, table.IdOf(koSlot)) == true) : null,
                 Asleep = Carrying.CarrySystem.Asleep(table, i),
+                CanOpenInventory = cold is not null && Carrying.CarrySystem.Openable(table, i),
                 KidnapChance = leadSlot >= 0 && i != leadSlot && cold is { IsPlayer: false } ? Carrying.CarrySystem.KidnapChance(table.Cold(leadSlot)!, cold) : null,
             };
         }

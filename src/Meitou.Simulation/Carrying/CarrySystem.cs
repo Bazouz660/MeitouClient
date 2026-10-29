@@ -121,7 +121,8 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
     public static bool CanBePickpocketed(CharacterTable table, int slot) =>
         table.Cold(slot) is { IsPlayer: false, Inventory: not null, Medical.Incapacitated: false } c && c.CarriedBy.IsNone && (c.IsImprisoned || Asleep(table, slot));
 
-    static bool Openable(CharacterTable table, int slot) => CanBeOpened(table.Cold(slot)!) || CanBePickpocketed(table, slot);
+    /// <summary>Whether an <see cref="OpenLootOrder"/> may open the inventory of slot <paramref name="slot"/>: lootable (down, playing dead, carried), the player's own, or a pickpocket target; the menu's test (<see cref="CharacterSnapshot.CanOpenInventory"/>).</summary>
+    public static bool Openable(CharacterTable table, int slot) => CanBeOpened(table.Cold(slot)!) || CanBePickpocketed(table, slot);
 
     /// <summary>Whether slot <paramref name="i"/>'s loot task is the walk of an <see cref="OpenLootOrder"/> (it opens the window instead of taking all).</summary>
     static bool Opening(World world, int i) =>
@@ -635,7 +636,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
 
     /// <summary>
     /// The open loot window (<see cref="PlayerState.OpenLoot"/>, engine choices): a walk to open one is dropped when the walker gets another task; an open one closes when the body can no longer
-    /// be looted (it came round, or is gone) or is lifted, or the looter is down, carried, gone or farther than 1.5 x <see cref="CarrySettings.Reach"/>.
+    /// be opened (it came round, or is gone; a carried body stays lootable) or the looter is down, carried, gone or farther than 1.5 x <see cref="CarrySettings.Reach"/>.
     /// </summary>
     void LootWindow(World world)
     {
@@ -652,7 +653,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
     {
         var player = world.Player;
         var table = world.Characters;
-        return table.TryResolveNext(player.OpenLoot, out int t) && table.Cold(t) is { } body && Openable(table, t) && body.CarriedBy.IsNone
+        return table.TryResolveNext(player.OpenLoot, out int t) && table.Cold(t) is { } body && Openable(table, t)
             && table.TryResolveNext(player.LootOpener, out int o) && table.Cold(o) is { Medical.Incapacitated: false, Inventory: not null } looter && looter.CarriedBy.IsNone
             && Gap(table.Next[o], table.Next[t]) <= ReachOf(world, body) * 1.5f ? (o, t) : null;
     }

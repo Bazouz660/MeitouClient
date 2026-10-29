@@ -70,11 +70,14 @@ sealed partial class PlayerInterface
         var selection = SelectedIds();
         if (selection.Count == 0) return verbs;
         var id = target.Id;
-        bool down = target.Body is { } b && (b.Dead || b.Unconscious);
+        // Down as the original counts it (vfunc 0x30, FUN_1405c9e10): out cold (playing dead stays out cold), dead or carried.
+        bool down = target.Body is { } b && (b.Dead || b.Unconscious) || !target.CarriedBy.IsNone;
         var carriers = Selected().Where(c => c.Carrying == id).Select(c => c.Id).ToArray();
-        // A carried body: carried by a selected character, only Put Down (and Meitou's cage stand-in); carried by someone not of the player's, nothing.
+        // A carried body: carried by a selected character, its inventory (26, the branch's own verb) and Put Down (and Meitou's cage stand-ins); carried by someone not of the player's, nothing
+        // (FUN_1407a6bc0 empties the list). No pick-up verb for a carried body: the non-hostile branches test +0x3d4, and a hostile one's Kidnap (246) cannot snatch.
         if (carriers.Length > 0)
         {
+            if (target.CanOpenInventory) verbs.Add(InventoryVerb(target));
             verbs.Add(("Put Down", () => Say(new Meitou.Simulation.Carrying.PutDownOrder(carriers) { Tick = session.World.Tick })));
             // Meitou stand-in for the original's cage use (docs/simulation.md "Arrest and jail"): carry the body to the nearest free cage.
             verbs.Add(("Put in Cage", () => Say(new Meitou.Simulation.Crime.PutInCageOrder(carriers) { Tick = session.World.Tick })));
@@ -116,8 +119,7 @@ sealed partial class PlayerInterface
         var id = target.Id;
         if (!down && session.World.CanTalk(id, selection[0])) verbs.Add(("Talk To", () => Say(new Meitou.Simulation.Dialogue.TalkOrder(selection[0], id) { Tick = session.World.Tick })));
         // 26 unless it is the player's and selected: Trade for the player's own, else Loot (a pickpocket while it is awake).
-        if (target.CarriedBy.IsNone && !(target.IsPlayer && selection.Contains(id)))
-            verbs.Add((target.IsPlayer ? "Trade" : "Loot", () => Say(new Meitou.Simulation.Carrying.OpenLootOrder([], id) { Tick = session.World.Tick })));
+        if (target.CanOpenInventory && !(target.IsPlayer && selection.Contains(id))) verbs.Add(InventoryVerb(target));
         if (prison.Locked)
         {
             if (!down) verbs.Add(("Pick Lock", () => Say(new Meitou.Simulation.Locks.PickLockOrder(selection, id) { Tick = session.World.Tick })));
@@ -150,9 +152,15 @@ sealed partial class PlayerInterface
         // Bodyguard (45): follows and defends the target; with Shift it is the Bodyguard job (PlayerInterface.SquadAi.cs).
         verbs.Add(("Bodyguard", () => Say(new FollowOrder(selection, id) { Guard = true, Tick = session.World.Tick })));
         verbs.Add(("Follow", () => Say(new FollowOrder(selection, id) { Tick = session.World.Tick })));
-        if (!target.CarriedBy.IsNone) return;
-        if (down || target.Carrying.IsNone) verbs.Add(("Pick Up", () => Say(new Meitou.Simulation.Carrying.PickUpOrder([], id) { Tick = session.World.Tick })));
-        verbs.Add(("Trade", () => Say(new Meitou.Simulation.Carrying.OpenLootOrder([], id) { Tick = session.World.Tick })));
+        if (target.CarriedBy.IsNone && (down || target.Carrying.IsNone)) verbs.Add(("Pick Up", () => Say(new Meitou.Simulation.Carrying.PickUpOrder([], id) { Tick = session.World.Tick })));
+        if (target.CanOpenInventory) verbs.Add(InventoryVerb(target));
+    }
+
+    /// <summary>Loot (26), or Trade for the player's own character: opens the target's inventory beside the selection's. Offered when <see cref="CharacterSnapshot.CanOpenInventory"/> says the simulation will.</summary>
+    (string, Action) InventoryVerb(CharacterSnapshot target)
+    {
+        var id = target.Id;
+        return (target.IsPlayer ? "Trade" : "Loot", () => Say(new Meitou.Simulation.Carrying.OpenLootOrder([], id) { Tick = session.World.Tick }));
     }
 
     /// <summary>
@@ -177,8 +185,8 @@ sealed partial class PlayerInterface
         var id = target.Id;
         if (down)
         {
-            if (!target.CarriedBy.IsNone) return;
-            verbs.Add(("Loot", () => Say(new Meitou.Simulation.Carrying.OpenLootOrder([], id) { Tick = session.World.Tick })));
+            if (target.CanOpenInventory) verbs.Add(InventoryVerb(target));
+            if (!target.CarriedBy.IsNone) return;   // no pick-up verb or Throw out of home for a carried body
             verbs.Add(PickUpVerb(target));
             ThrowOutVerb(verbs, target, selection);
             return;
@@ -186,8 +194,7 @@ sealed partial class PlayerInterface
         if (target.Asleep)
         {
             // Not standing (the original's state 1): Loot (a pickpocket), the pick-up verb and Stealth KO; not hostile, also Attack Unprovoked, Bodyguard and Talk To.
-            if (!target.CarriedBy.IsNone) return;
-            verbs.Add(("Loot", () => Say(new Meitou.Simulation.Carrying.OpenLootOrder([], id) { Tick = session.World.Tick })));
+            if (target.CanOpenInventory) verbs.Add(InventoryVerb(target));
             verbs.Add(PickUpVerb(target));
             ThrowOutVerb(verbs, target, selection);
             if (target.StealthKoChance is { } koChance)
