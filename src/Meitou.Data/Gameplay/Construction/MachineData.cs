@@ -76,6 +76,12 @@ public sealed record MachineData
     /// order is 152 "Operating automatic machine" (Auto-Haul) instead of 87.
     /// </summary>
     public bool IsAutomatic { get; init; }
+    /// <summary>
+    /// Works with nobody at it (the exe's "has operators" flag +0x3a9 clear): the raw <c>max operators</c> is 0, or the BUILDING's and the functionality's are both below 0
+    /// (<b>Verified</b>, <c>FUN_1402a3750</c>, <c>FUN_14029e460</c>; <c>ProductionBuilding::vfunc_28</c> <c>FUN_14029ad90</c>). The menu order follows <see cref="IsAutomatic"/> alone.
+    /// No base-game pair is negative on both (<b>Verified</b>, probe), so only mods.
+    /// </summary>
+    public bool Unattended { get; init; }
     /// <summary>A wind generator: function 5 without <c>consumes</c> (<b>Observed</b>, the factory <c>FUN_14057cc70</c>).</summary>
     public bool IsWind { get; init; }
     /// <summary>
@@ -213,6 +219,7 @@ public sealed record MachineData
             PowerCapacity = building.GetInt("power capacity"),
             PowerOperators = Math.Max(0, rawOperators),
             IsAutomatic = rawOperators == 0,
+            Unattended = rawOperators == 0 || function is not null && building.GetInt("max operators", -1) < 0 && function.GetInt("max operators", -1) < 0,
             IsWind = wind,
             WindRotor = wind ? WindRotorOf(db, building, 0) : null,
             OutputRate = building.GetFloat("output rate", 1),

@@ -572,14 +572,14 @@ public sealed partial class ProductionSystem : ITickSystem
         // A machine that takes operators clears its blocked status by itself (Verified, ProductionBuilding::vfunc_28 FUN_14029ad90, when +0x3a9 is set): output full (1) goes back to 2 once the
         // output has room, nothing to work with (0) once no input is empty. An operator's step below sets it again the same tick if it is still blocked.
         foreach (var m in world.Machines.All)
-            if (m.Data.IsProducer && !m.Data.IsAutomatic && m.Output is { } held && Site(world, m.Site) is { Complete: true } && Live(world, m))
+            if (m.Data.IsProducer && !m.Data.Unattended && m.Output is { } held && Site(world, m.Site) is { Complete: true } && Live(world, m))
             {
                 if (m.Status == 1 && !held.Full) m.Status = 2;
                 if (m.Status == 0 && !m.HasEmptyInputs) m.Status = 2;
             }
-        // An automatic machine works with nobody at it, at skill factor 1 (Verified, ProductionBuilding::vfunc_28 calls slot 150 with no operator when +0x3a9 is clear).
+        // An unattended machine (max operators 0, or both records negative) works with nobody at it, at skill factor 1 (Verified, ProductionBuilding::vfunc_28 calls slot 150 with no operator when +0x3a9 is clear).
         foreach (var m in world.Machines.All)
-            if (m.Data.IsAutomatic && m.Data.IsProducer && Site(world, m.Site) is { Complete: true } && Live(world, m)) ProduceStep(world, m, 1, dt);
+            if (m.Data.Unattended && m.Data.IsProducer && Site(world, m.Site) is { Complete: true } && Live(world, m)) ProduceStep(world, m, 1, dt);
             else if (m.Data.IsFurnace && m.Storage is { } grid)
             {
                 if (m.Burning && Site(world, m.Site) is { Complete: true } && Live(world, m)) FurnaceStep(world, m, dt);

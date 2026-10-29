@@ -416,9 +416,10 @@ rock) makes output only while someone operates it.
   for a foliage building (a rock) of no player owner it then makes the player's faction its owner. The output stays in the machine, so taking it is looting
   another faction's inventory (26). Meitou: not built, NPC town buildings are not `Machine`s ([simulation](../simulation.md#production)).
 - **Automatic machines** (**Verified**, decompile): +0x3ac (`numOperatorsMax`, KenshiLib 1ce4a16) is the BUILDING's `max operators`
-  unless below 0, then the functionality's (`FUN_1402a3750`); +0x3a9 "has operators" = that value is neither 0 nor from two negatives.
-  With +0x3a9 clear, `ProductionBuilding::vfunc_28` (each frame) calls slot 150 itself with no operator and s = 1, so the machine
-  works unattended (`ResearchBuilding::vfunc_28` does the same). +0x3ac = 0 gives the menu order 152 Auto-Haul instead of 87
+  unless below 0, then the functionality's (`FUN_1402a3750`, `FUN_14029e460`); +0x3a9 "has operators" = that value is neither 0 nor from two negatives.
+  With +0x3a9 clear (raw 0, or both records negative), `ProductionBuilding::vfunc_28` (`FUN_14029ad90`, each frame) calls slot 150 itself with no operator and s = 1, so the machine
+  works unattended (`ResearchBuilding::vfunc_28` does the same). Meitou: `MachineData.Unattended` (no base-game pair is negative on both, **Verified** over the
+  base records, so mods only). Only raw +0x3ac = 0 (not the both-negative case) gives the menu order 152 Auto-Haul instead of 87
   ([ui-input](ui-input.md#context-menu-verbs)). Base game (**Verified** data): Iron Refinery III / IV, Cotton and Hemp Auto-Loom,
   Automatic Grain Silo, Hybrid Stone Mine II (building 0); Campfire, Camp Fish Pile, Bread Oven, wind generators, Rain Collector,
   Battery Bank, storages and lights (functionality 0).
