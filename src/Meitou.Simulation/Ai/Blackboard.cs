@@ -93,6 +93,9 @@ public readonly record struct SeatClaim(TownBuilding Building, int Index)
     public HomeSpot Spot => Building.SeatAt(Index);
 }
 
+/// <summary>A member's entry in the crowding count: who acts out which goal type, aimed at whom (<see cref="AiSystem.CrowdTarget"/>).</summary>
+public readonly record struct CrowdEntry(CharacterId Who, TaskType Type, CharacterId Target);
+
 /// <summary>
 /// A squad's AI state (docs/game/ai.md "Blackboard update"): its packages by slot, the package running and the role lists it loaded, a contract package that
 /// overrides the slots, and what the running package needs: a home building, a patrol route. Changed only in <see cref="AiSystem"/>'s serial step; the members' think reads it.
@@ -124,6 +127,20 @@ public sealed class Blackboard
     public IReadOnlyList<AiGoal>[] Roles { get; private set; } = NoRoles;
     /// <summary>How many members act out each goal type (the crowding count of the original's <c>TaskInfo</c>), as counted on the last package cadence.</summary>
     public Dictionary<TaskType, int> Crowd { get; } = [];
+    /// <summary>Each member's current goal as the original's <c>TaskInfo</c> entry holds it (character, goal type, goal target), as counted on the last package cadence.</summary>
+    public List<CrowdEntry> CrowdEntries { get; } = [];
+
+    /// <summary>
+    /// The crowding count of a goal for <paramref name="asker"/> (<c>FUN_140268f30</c>, docs/game/ai-tasks.md "Scoring"): the other members whose entry has the goal's type and
+    /// is not the goal's target character, and, for a row that needs a target, whose entry target is the same.
+    /// </summary>
+    public int CrowdOf(TaskType type, bool needsTarget, CharacterId target, CharacterId asker)
+    {
+        int n = 0;
+        foreach (var e in CrowdEntries)
+            if (e.Who != asker && e.Type == type && e.Who != target && (!needsTarget || e.Target == target)) n++;
+        return n;
+    }
     /// <summary>All packages in slot order (highest first), as listed.</summary>
     public IEnumerable<SlottedPackage> Packages => slots.Reverse().SelectMany(s => s.Value.Select(p => new SlottedPackage(s.Key, p)));
 

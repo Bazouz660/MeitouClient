@@ -231,7 +231,7 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
                 var profile = TaskProfiles.Of(g.Task.Type);
                 float desire = Desire(world, TaskBehaviours.Of(g.Task.Type), g.Task.Type, profile, squad, board, mind, id, g.Task.Target);
                 if (desire <= 0) return;
-                int crowd = board.Crowd.GetValueOrDefault(g.Task.Type) - (mind.Goal?.Task.Type == g.Task.Type ? 1 : 0);
+                int crowd = profile.Crowd == 1 ? 0 : board.CrowdOf(g.Task.Type, TaskDataTable.Of(g.Task.Type)?.Is(TaskDataFlags.NeedsTarget) ?? false, CrowdTarget(g.Task.Target, squad, board, id), id);
                 float score = desire * g.Weight * (crowd > 0 ? MathF.Pow(profile.Crowd, crowd) : 1);
                 if (mind.Goal is { } current && current.Task.Type == g.Task.Type && current.Task.Target == g.Task.Target)
                 {
@@ -264,6 +264,18 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
 
     [ThreadStatic] static List<(AiGoal Goal, float Score, float Desire)>? candidates;
     static List<(AiGoal Goal, float Score, float Desire)> Candidates => candidates ??= [];
+
+    /// <summary>
+    /// The character a goal is aimed at, as its <c>TaskInfo</c> entry holds it (<c>FUN_140269e90</c> copies the goal's target hand): the member itself for SELF, the leader for LEADER,
+    /// the contract's mission target for SQUAD_MISSION; none for the rest (SPECIFIC and HOME_GATE are the same for every member of the squad here).
+    /// </summary>
+    internal static CharacterId CrowdTarget(TaskTargetType targeting, Squad squad, Blackboard board, CharacterId who) => targeting switch
+    {
+        TaskTargetType.Self => who,
+        TaskTargetType.Leader => squad.Leader,
+        TaskTargetType.SquadMission => board.MissionTarget,
+        _ => CharacterId.None,
+    };
 
     /// <summary>
     /// How much the character wants a goal: its type's desire (<see cref="TaskProfiles"/>; a type with a desire function of its own, 1), times what the goal's target
@@ -1153,6 +1165,7 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
                 world.Defer(new Dialogue.DialogueEvent(squad.Leader, employer, Dialogue.DialogueSystem.ContractJobEnded, talk) { Tick = world.Tick + 1 });
             AdvanceRoute(world, squad, board);
             board.Crowd.Clear();
+            board.CrowdEntries.Clear();
             for (int k = 0; k < squad.Members.Count; k++)
             {
                 if (!table.TryResolveNext(squad.Members[k], out int s)) continue;
@@ -1166,7 +1179,11 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
                         Shopping = ShoppingList.Make(data.Db, cold.RecordId, world.Seed, Rng.Key(table.IdOf(s))),
                     };
                 }
-                if (cold.Ai.Goal is { } g) board.Crowd[g.Task.Type] = board.Crowd.GetValueOrDefault(g.Task.Type) + 1;
+                if (cold.Ai.Goal is { } g)
+                {
+                    board.Crowd[g.Task.Type] = board.Crowd.GetValueOrDefault(g.Task.Type) + 1;
+                    board.CrowdEntries.Add(new CrowdEntry(squad.Members[k], g.Task.Type, CrowdTarget(g.Task.Target, squad, board, squad.Members[k])));
+                }
             }
             squad.Resume = false;
             ClaimTurrets(world, board, squad);

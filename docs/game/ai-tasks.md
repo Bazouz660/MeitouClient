@@ -680,7 +680,7 @@ vfunc 5 `FUN_14050caf0`). TaskData fields: +0x108 desire (a member function, nea
 +0x18 / +0x1c commitment minimum / random range in game hours; +0x20 commits; +0x34 crowd factor (default 1); +0x3c is read by the senses
 (`FUN_1408529c0`, meaning **Unknown**).
 
-- Score = desire x goal weight x crowd^n (n squad mates on the same type and target); x1.25 for the current task. For a committing current task the
+- Score = desire x goal weight x crowd^n (n: **Verified** `FUN_140268f30`, over the blackboard's per-character entries (type, target hand, set from the goal when it starts, `FUN_14050caf0` -> `FUN_140269e90`): other characters whose entry has the goal's type, who are not the goal's target hand themselves, and, when the goal's TaskData row has *Needs target*, whose entry target equals the goal's target. Only types with a crowd factor other than 1 matter. Meitou: `Blackboard.CrowdOf`, targets per `AiSystem.CrowdTarget` (SELF = the member, LEADER, SQUAD_MISSION; SPECIFIC and HOME_GATE count as equal; 106/112/137/281 are not acted out). `FUN_140269010` / `FUN_1402690e0` are variants of the same count with other hand tests, **Unknown** callers); x1.25 for the current task. For a committing current task the
   score is at least 0.4 until the commitment ends and at most 0.05 after it, so the character moves on.
 - Commitment: when a committing task becomes current, end = now + min + rand x range. A candidate that is not the current task has its target cleared
   before it is chosen, so a newly chosen goal gets a fresh target from its finder.
