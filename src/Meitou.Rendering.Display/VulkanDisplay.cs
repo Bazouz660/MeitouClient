@@ -79,12 +79,12 @@ public sealed unsafe class VulkanDisplay : IDisposable
             if (Ngx is null) Console.WriteLine($"upscaler  {why}");
             else Ngx.Apply(deviceOptions);
         }
-        // Frame generation (FSR 3): the swapchain goes through AMD's layer, which needs more graphics queues (FfxSwapchain). Windows and Proton only.
+        // Frame generation (FSR 3): the swapchain goes through AMD's layer, which needs more graphics queues (FfxSwapchain). Windows, Proton and Linux.
         bool wantLayer = false;
         if (frameGeneration && options is not null)
         {
             string? why = null;
-            if (!OperatingSystem.IsWindows()) why = "the FFX library is Windows-only here";
+            if (OperatingSystem.IsMacOS()) why = "the FFX library is not available for Metal";
             else if (Streamline is { DlssSupported: true }) why = "Streamline (DLSS) owns the present (NGX did not load, see the upscaler line above)";
             else if (!FfxSwapchain.LibraryLoads(out _, out why)) { }
             else wantLayer = true;

@@ -38,8 +38,9 @@ THE SOFTWARE.
 
 `src/Meitou.Rendering/Upscalers/FsrUpscaler.cs` declares the FidelityFX API's type constants, flags and
 structures following the SDK's public headers (`ffx_api.h`, `ffx_api_types.h`, `ffx_upscale.h`, SDK v1.1.4). The
-FidelityFX library itself (`amd_fidelityfx_vk.dll`) is not part of this repository; it is loaded at run time when the
-user provides it.
+FidelityFX library itself (`amd_fidelityfx_vk.dll`, or `libamd_fidelityfx_vk.so`, our own Linux build of the same SDK
+version; AMD's licence text travels with it as `LICENSE-FidelityFX.txt`) is not part of this repository; it is loaded at
+run time when the user provides it.
 
 ```
 Copyright (C) 2024 Advanced Micro Devices, Inc.

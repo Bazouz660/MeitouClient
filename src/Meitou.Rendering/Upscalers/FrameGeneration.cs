@@ -128,7 +128,7 @@ public sealed unsafe class FrameGeneration : IDisposable
     }
 
     [UnmanagedCallersOnly]
-    static void OnMessage(uint type, char* message) => Console.WriteLine($"frame generation  {(type == 0 ? "error" : "warning")}: {new string(message)}");
+    static void OnMessage(uint type, char* message) => Console.WriteLine($"frame generation  {(type == 0 ? "error" : "warning")}: {FsrUpscaler.WideString(message)}");
 
     bool EnsureContext(int displayW, int displayH)
     {
@@ -140,7 +140,7 @@ public sealed unsafe class FrameGeneration : IDisposable
             Header = new Header { Type = BackendVkType },
             Device = device.Device.Handle,
             PhysicalDevice = device.PhysicalDevice.Handle,
-            DeviceProcAddr = NativeLibrary.GetExport(NativeLibrary.Load(OperatingSystem.IsMacOS() ? "libvulkan.1.dylib" : "vulkan-1.dll"), "vkGetDeviceProcAddr"),
+            DeviceProcAddr = NativeLibrary.GetExport(NativeLibrary.Load(FsrUpscaler.VulkanLoaderName), "vkGetDeviceProcAddr"),
         };
         *createDesc = new CreateDesc
         {

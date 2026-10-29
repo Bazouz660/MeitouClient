@@ -237,12 +237,12 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
                         SkinRacesChanged?.Invoke();
                     }, OnOff: true)));
         if (page == 0) result.Insert(2, new("Frame limit", "Used while vertical sync is off; 0 is unlimited.", Slider: frameLimit));
-        if (page == 0 && OperatingSystem.IsWindows())
-            result.Insert(3, new("Frame generation (FSR 3)", "Presents through AMD's FSR 3 frame-interpolation layer (needs amd_fidelityfx_vk.dll; not with DLSS). For now it only presents the rendered frames, no frame is generated. "
+        if (page == 0 && !OperatingSystem.IsMacOS())
+            result.Insert(3, new("Frame generation (FSR 3)", "Presents through AMD's FSR 3 frame-interpolation layer (needs the FidelityFX library; not with DLSS). For now it only presents the rendered frames, no frame is generated. "
                 + "Takes effect after a restart. Now: " + (FrameGenerationStatus?.Invoke() ?? "off"),
                 Toggle: new("Frame generation (FSR 3)", () => config.FrameGeneration, v => config.FrameGeneration = v, OnOff: true)));
         if (page == 0)
-            result.Insert(page == 0 && OperatingSystem.IsWindows() ? 4 : 3, new("World tick alongside drawing", "Faithful runs the world, then draws it, as the game does. Meitou runs the next world tick while the frame is drawn "
+            result.Insert(page == 0 && !OperatingSystem.IsMacOS() ? 4 : 3, new("World tick alongside drawing", "Faithful runs the world, then draws it, as the game does. Meitou runs the next world tick while the frame is drawn "
                 + "whenever the world is busy (big fights, crowds), Always on every frame: much higher frame rates with many characters. "
                 + "Running alongside can add up to 33 ms of input delay (one world tick).",
                 Choice: new(() => ["Faithful (in series)", "Meitou (when busy)", "Always on"], () => (int)config.TickAhead, i => config.TickAhead = (TickAheadMode)i)));
