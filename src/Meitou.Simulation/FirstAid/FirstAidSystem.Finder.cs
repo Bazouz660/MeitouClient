@@ -402,7 +402,8 @@ public sealed partial class FirstAidSystem
         var cold = table.Cold(i)!;
         if (cold.Medical is not { Incapacitated: false } own || cold.Race is not { } ownRace || cold.Stats is not { } stats || cold.InCombat) return false;
         if (OwnKit(cold, ItemInfo.SplintKitFunction) is not { } kit) return false;   // the medic's own kit, as the order and the splint use
-        if (cold.SquadId >= 0 && world.Squads.Find(cold.SquadId) is { } squad && Fighting(table, squad)) return false;
+        // No fight test in the original finder (FUN_14099e240) and the job keeps a positive desire (FUN_140998410): a player's splint job runs during a fight, as the Medic job does.
+        if (!cold.IsPlayer && cold.SquadId >= 0 && world.Squads.Find(cold.SquadId) is { } squad && Fighting(table, squad)) return false;
         float skill = MathF.Min(stats[StatsEnumerated.Medic] * own.StatMultiplier(StatsEnumerated.Medic), Items.Info(kit.Item.Record)?.Quality ?? 0);
         float range = AggroSystem.RangeOf(cold, AggroSystem.OutdoorSight);
         int best = -1;
