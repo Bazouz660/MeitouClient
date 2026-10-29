@@ -192,6 +192,7 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
     static void RefreshFormation(World world, Squad squad)
     {
         var table = world.Characters;
+        squad.ForceSpeed = world.ForcedSpeeds is { } forced && forced.TryGetValue(squad.TemplateId, out byte force) ? force : Squad.NoForceSpeed;
         var head = FormationHead(table, squad);
         int type = squad.Faction >= 0 && world.FactionFormations is { } formations && squad.Faction < formations.Count ? formations[squad.Faction] : (int)SquadFormation.Random;
         ulong key = Rng.Mix((ulong)type ^ Rng.Key(head) << 2);
@@ -741,6 +742,8 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
                     byte mode = cold.ModeOverride ?? n.Mode;
                     // A carrier in walk mode is raised to run mode (the original's speed selector, Observed; docs/game/carry-loot.md "Speed and weight").
                     if (mode == SpeedMode.Walk && !cold.Carrying.IsNone) mode = SpeedMode.Run;
+                    // Its squad template's force speed 0..2 replaces the AI's mode (FUN_140332390 never lowers an explicit task mode, so only a raise is applied; docs/game/pathfinding.md "Force speed").
+                    if (!cold.IsPlayer && cold.Ai?.Squad is { ForceSpeed: < Squad.NoForceSpeed } forcing && mode < forcing.ForceSpeed) mode = forcing.ForceSpeed;
                     float top = water > 0 && cold.Race is { } race ? Speed.InWater(water, n.MaxSpeed, race, cold.SwimSpeed) : n.MaxSpeed;
                     desired = cold.SpeedOverride > 0 ? cold.SpeedOverride
                         : n.Task == (byte)CharacterTask.Follow ? MathF.Min(top, cold.FollowSpeed)   // a follower's own desired speed, not its mode's cap

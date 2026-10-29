@@ -80,6 +80,12 @@ public sealed class Squad
     /// changes. Derived state: not saved or hashed.
     /// </summary>
     public Dictionary<CharacterId, Vector2> FormationSlots { get; set; } = [];
+    /// <summary>
+    /// Its template's <c>force speed</c> when 0 (walk), 1 (jog) or 2 (run), else 4 (none): the movement raises its NPC members' speed mode to it.
+    /// Derived from <see cref="World.ForcedSpeeds"/> by the movement's serial step: not saved or hashed.
+    /// </summary>
+    public byte ForceSpeed { get; set; } = NoForceSpeed;
+    public const byte NoForceSpeed = 4;
     public ulong FormationKey { get; set; }
 }
 

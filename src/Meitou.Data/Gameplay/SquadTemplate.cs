@@ -45,7 +45,11 @@ public sealed record SquadTemplate
     public IReadOnlyList<RecordLink> AiPackages { get; init; } = [];
     public float BloodSmellMult { get; init; }
     public bool PatrolApproachesTowns { get; init; }
-    public int ForceSpeed { get; init; }
+    /// <summary><c>force speed</c> as the platoon keeps it: 0 walk, 1 jog, 2 run replace the members' speed mode (docs/game/pathfinding.md "Force speed"); 4 none (a stored 3 grouped becomes 4, the key absent is taken as 4).</summary>
+    public int ForceSpeed { get; init; } = 4;
+
+    /// <summary>The platoon's <c>force speed</c> of a template record (<c>FUN_1407ee2d0</c>).</summary>
+    public static int ForceSpeedOf(GameRecord r) => RecordReading.Int(r, "force speed", 4) is var speed && speed == 3 ? 4 : speed;
     /// <summary><c>building</c>: the home building a resident squad uses (first entry); <c>building designation</c> is the editor's BuildingDesignation.</summary>
     public RecordLink? Building { get; init; }
     public int BuildingDesignation { get; init; }
@@ -122,7 +126,7 @@ public sealed record SquadTemplate
             AiPackages = Links("AI packages"),
             BloodSmellMult = r.GetFloat("blood smell mult"),
             PatrolApproachesTowns = r.GetBool("patrol approaches towns"),
-            ForceSpeed = r.GetInt("force speed"),
+            ForceSpeed = ForceSpeedOf(r),
             Building = building.Count > 0 ? RecordLink.From(building[0]) : null,
             Buildings = Links("building"),
             BuildingDislike = Links("building dislike"),

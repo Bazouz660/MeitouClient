@@ -112,6 +112,8 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
     {
         EnsureArtifacts(world);
         world.FactionFormations ??= [.. data.Factions.Select(f => f.SquadFormation)];
+        world.ForcedSpeeds ??= data.Db.OfType(FcsRecordType.SQUAD_TEMPLATE).Concat(data.Db.OfType(FcsRecordType.UNIQUE_SQUAD_TEMPLATE))
+            .Where(r => SquadTemplate.ForceSpeedOf(r) is >= 0 and < Squad.NoForceSpeed).ToDictionary(r => r.StringId, r => (byte)SquadTemplate.ForceSpeedOf(r));
         foreach (var c in commands)
         {
             if (c is FocusCommand f) focus = f.Position;
