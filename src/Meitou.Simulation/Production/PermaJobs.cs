@@ -80,13 +80,6 @@ public static class PermaJobs
     public static bool Runs(TaskType type) => type is TaskType.OPERATE_MACHINERY or TaskType.OPERATE_AUTOMATIC_MACHINERY or TaskType.OPERATE_STORAGE or TaskType.JOB_BUILDER or TaskType.MAN_A_TURRET_PLAYER_JOB or TaskType.USE_TRAINING_DUMMY;
 
     /// <summary>
-    /// Whether the character's <paramref name="task"/> came from its jobs (a list job, an implicit job or a job pass: a <see cref="TaskSource.Job"/> provenance, <see cref="CharacterCold.Running"/>,
-    /// that runs it), not from an order. The original tries the priority-3 goals before the jobs that are not urgent (docs/game/ai-tasks.md "Precedence"), so such a task gives way to them
-    /// (the player-faction characters that are not <see cref="CharacterCold.IsPlayer"/>, whose food pass reads it; the player's characters are the decision step's).
-    /// </summary>
-    public static bool FromJob(CharacterCold cold, CharacterTask task) => cold.Running is { Source: TaskSource.Job } run && run.Runs(task);
-
-    /// <summary>
     /// The provenance of the production pick's job the character's <paramref name="task"/> runs: a list job it carries out (<see cref="Runs"/>, the follow jobs <see cref="Follows"/>; its
     /// index <see cref="RunningTask.Job"/>) or an implicit job (<see cref="RunningTask.Implicit"/>), not a fight that is a step of a follow row; null for any other task.
     /// </summary>

@@ -1110,7 +1110,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
             if (!n.Alive) continue;
             var cold = table.Cold(i)!;
             // The player's characters never give up a chase (the original's gate: the chaser's faction is not the player's); after a fight they are decided again (the decision step).
-            if (cold.IsPlayer) continue;
+            if (DecisionSystem.Decides(cold)) continue;
             ref var s = ref slots[i];
             if (n.Task == (byte)CharacterTask.Attack)
             {
@@ -1126,7 +1126,9 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
             }
             s.Tracked = false;
             if (cold.Medical is { Incapacitated: true } || cold.InCombat || n.Task != (byte)CharacterTask.Idle) continue;   // down (it wakes into wandering) or busy with something else
-            // The routine is taken up again as the fight's own end (a step: the provenance, a follow row's kept through its fight, stays).
+            // A follow row whose fight was a step of it follows again under the row (as the decision step does for the characters it decides); else the routine is taken up again as
+            // the fight's own end (a step: the provenance stays).
+            if (MovementSystem.FightStepOver(table, i, cold) && MovementSystem.FollowAgain(world, i, cold)) continue;
             TaskStart.Stand(table, i);
             TaskStart.Step(table, i, (CharacterTask)(s.Task is (byte)CharacterTask.Wander or (byte)CharacterTask.Follow or (byte)CharacterTask.Idle ? s.Task
                 : s.Task == (byte)CharacterTask.GoTo ? (byte)CharacterTask.Idle : (byte)CharacterTask.Wander));

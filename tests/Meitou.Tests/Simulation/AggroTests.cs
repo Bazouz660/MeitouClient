@@ -317,7 +317,7 @@ public class AggroTests
         var cold = a.World.Characters.Cold(me.Slot)!;
         (cold.Faction, cold.IsPlayer, cold.Orders, cold.HoldPoint) = (1, true, CharacterOrders.Hold, o);
         a.World.RunTicks(2);
-        Assert.True(Meitou.Simulation.Production.PermaJobs.FromJob(cold, CharacterTask.Idle), "on a job's task");
+        Assert.True(cold.Running is { Source: TaskSource.Job } job && job.Runs(CharacterTask.Idle), "on a job's task");
         var walker = a.SquadOf(0, o, true, (o + new Vector2(-300, 60), 0f)).Members[0];
         Docile(a, walker);
         a.World.Commands.Enqueue(new MoveOrder([walker], new Vector3(o.X + 300, 150, o.Y + 60)) { Tick = a.World.Tick });

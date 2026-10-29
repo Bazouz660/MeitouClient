@@ -143,8 +143,7 @@ delivering, fetching and dismantling are steps of one act-out (`TaskStart.ActOut
 - Engine starts end the fight and the task before as any start does (a flight's run stops the fight at once, a dialogue act's walk ends it). An errand's own walks would end a fight
   its character is in, so they wait for it: a town duty steps nothing while its member fights (a player character's food run ends instead), an approaching, following or stalking talker does not walk (engine choice; the
   original's priority-3 reactions beat these goals).
-- Provenance is the only job mark: `PermaJobs.FromJob` is a `TaskSource.Job` provenance that runs the task (the non-`IsPlayer` player-faction characters' food pass reads it);
-  `PermaJobs.ListJob` the production pick's list job (its index) or implicit job it runs (not a follow row's fight step), which the implicit pass, an NPC's rescue rank test and the circle
+- Provenance is the only job mark: `PermaJobs.ListJob` is the production pick's list job (its index) or implicit job it runs (not a follow row's fight step), which the implicit jobs, an NPC's rescue rank test and the circle
   break read; a list edit moves any job provenance's index (one whose job left the list keeps running with index -1). The task an act-out goes back to is `RunningTask.Resume`, for the
   characters the decision step does not decide: following or wandering when it did that, else idle (`TaskStart.Standing`); a medic or builder
   already at it keeps its own (`TaskStart.ResumeOf`).
@@ -237,10 +236,14 @@ only (`ApplyPausedInterfaceCommands`; the bit stays for the next tick).
 - **Claims**: a character the engine started a fight for this tick (a follow row's defence, a bodyguard's own defence within 40) is left alone that tick (`DecisionSystem.Claim`).
 - **Trace** (`DecisionSystem.Tracing`, off by default): each decision fills `CharacterCold.Decision` (`DecisionTrace`: tick, winner, one line per source asked with its answer: an
   order's failure text, "no attacker in range", a score), published as `CharacterSnapshot.Decision` while tracing. Not saved or hashed.
-- The player-faction characters that are not `IsPlayer` keep the old passes (243 for one idle or on a job, 259 for an animal idle or following).
+- **Who**: the step decides `IsPlayer` characters (`DecisionSystem.Decides`). Player-faction characters that are not `IsPlayer` exist only in Meitou: the sandbox's and `--crowd`'s
+  bystanders and tests' extras (a load or a new game makes every player-faction character `IsPlayer`, as the original has no player-faction character the player does not command).
+  They hold no jobs and get no orders from the interface, so they stay with the NPC rules (retaliation's own defence, the attack-on-sight look) plus the player faction's goals as
+  idle-only passes: 243 (`TownDutySystem.LookPlayerFood`), 259 (`FeedSystem`, an animal idle or following) and the animals' race goals (`CaptiveSystem.RunPlayerAnimalGoals`, list
+  order). A follow row of theirs (an order a script gives) follows again after its fight step at the NPC stand-down (`AggroSystem`, `MovementSystem.FollowAgain`), as the step does
+  for its characters.
 - Engine choices the step does not cover yet: errands' walks wait out a fight (NPC duties, the dialogue approach); a player character's food run ends instead when a fight replaces it.
-  The step's starts act from the next tick (deferred fights) or at once (walks). Follow rows (31, 45, 289) are given by player orders and jobs only, so only `IsPlayer` characters follow
-  again after a fight step.
+  The step's starts act from the next tick (deferred fights) or at once (walks).
 
 ## Systems and their order
 

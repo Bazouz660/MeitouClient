@@ -109,8 +109,8 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
     /// player owns a house there, <see cref="FixtureRegistry.OwnsPropertyIn"/>). In a town with occupiers while it senses an enemy: inside the walls it wants food whatever its hunger
     /// (desire 0.2), outside them in a town with gates not at all; else the 259 desire (slot 25): stomach empty, hunger at most 2.4, no food it would bite on it, not fighting unless
     /// hunger is below 1.2. It walks to the nearest store of the town owned by its faction with food in it and takes one item, which the eating rule then eats. A player character's
-    /// goal is the decision step's (<see cref="GettingFood"/>, priority 3, weight 0.5); this pass runs it for the other characters of the player's faction, idle or on a task their jobs
-    /// started (engine choice).
+    /// goal is the decision step's (<see cref="GettingFood"/>, priority 3, weight 0.5); this pass runs it for the other characters of the player's faction while idle (they hold no
+    /// jobs; engine choice).
     /// </summary>
     void LookPlayerFood(World world)
     {
@@ -122,7 +122,7 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
         {
             if (!table.Next[s].Alive || table.Cold(s) is not { IsPlayer: false } c || c.Faction != faction) continue;
             var task = (CharacterTask)table.Next[s].Task;
-            if (task != CharacterTask.Idle && !Production.PermaJobs.FromJob(c, task)) continue;
+            if (task != CharacterTask.Idle) continue;
             if (FoodWant(world, s, c, out var store, out _) > 0) StartFood(world, s, c, store);
         }
     }
