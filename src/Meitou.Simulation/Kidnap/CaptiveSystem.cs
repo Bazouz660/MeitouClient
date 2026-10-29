@@ -363,7 +363,8 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
                     : null;
             case TaskType.NEW_SLAVE_PROCESSING:
             case TaskType.SLAVE_WATCHING:
-                if (site < 0 || cold.Carrying is { IsNone: false }) return null;
+                // The slot-61 desire of 183 / 260 (and 167) for a goal without a target: 1 while not carrying and in posture 0, else 0.
+                if (site < 0 || cold.Carrying is { IsNone: false } || cold.Medical is { Standing: false }) return null;
                 return ProcessTarget(world, slot, cold, site, watching: type == TaskType.SLAVE_WATCHING) is { } found
                     ? new CaptiveJob { Kind = CaptiveJobKind.Process, Worker = world.Characters.IdOf(slot), Captive = found.Occupant, Cage = found.Id, Faction = cold.Faction, Site = site }
                     : null;

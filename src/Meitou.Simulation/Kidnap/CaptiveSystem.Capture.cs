@@ -124,6 +124,14 @@ public sealed partial class CaptiveSystem
         return c.Faction != me.Faction && !Allied(me.Faction, c.Faction);
     }
 
+    /// <summary>
+    /// Whether a character may start 167: awake, free, with one working arm (either: the planner's 38 <c>hasOneWorkingArm</c> for 166 Restraining and 181 Stripping weapons, <b>Verified</b>, ai-tasks.md;
+    /// only the later lift, <see cref="CarrySystem.CanCarry"/>, needs the left arm) and in posture 0, which the slot-61 desire of a goal without a target reads.
+    /// </summary>
+    static bool CanCapture(CharacterCold cold) =>
+        cold is { Medical: { Incapacitated: false, Standing: true } m, Race: not null, InCombat: false, IsImprisoned: false } && cold.Carrying.IsNone && cold.CarriedBy.IsNone
+        && (m.ArmWorks(left: true) || m.ArmWorks(left: false));
+
     /// <summary>A job for goals 167 / 168 / 188, null when the member finds no target (or cannot carry one).</summary>
     CaptiveJob? TryStartSlaveWork(World world, Squad squad, int slot, CharacterCold cold, TaskType type)
     {
@@ -148,8 +156,8 @@ public sealed partial class CaptiveSystem
             }
             case TaskType.CAPTURE_NEW_SLAVES or TaskType.CARRY_WOUNDED_SLAVES:
             {
-                if (Kidnap is null || !CarrySystem.CanCarry(cold)) return null;
                 bool capture = type == TaskType.CAPTURE_NEW_SLAVES;
+                if (Kidnap is null || !(capture ? CanCapture(cold) : CarrySystem.CanCarry(cold))) return null;
                 int v = NearestDown(world, slot, cold, capture);
                 // No cage to take it to: not started, so no one is cuffed and left (engine; the carry, goal 112, needs a free cage as the arrest goal does).
                 return v < 0 || !Kidnap.HasCage(world, table.Next[v].Position, cold) ? null : new CaptiveJob
