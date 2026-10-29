@@ -109,6 +109,7 @@ public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions 
         var cold = table.Cold(slot)!;
         if (cold.TreatTarget != patient) Say(world, slot, patient, HealingOtherStart, BeingHealedStart);
         ref var n = ref table.Next[slot];
+        if (cold.TreatTarget != patient || cold.TreatSplint != splint || n.Task != (byte)CharacterTask.Treat) cold.TreatKit = null;   // a new treatment looks for its own kit
         var keep = n.Task == (byte)CharacterTask.Treat ? cold.ResumeTask : resume;
         MovementSystem.Stop(table, slot);
         n.Task = (byte)CharacterTask.Treat;
@@ -149,6 +150,7 @@ public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions 
         }
         cold.TreatTarget = CharacterId.None;
         cold.TreatSplint = false;
+        cold.TreatKit = null;
         cold.ResumeTask = CharacterTask.Idle;
     }
 
@@ -261,7 +263,7 @@ public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions 
         // Open wounds are closed first, newest first, with a kit matching the patient's race (none: quality 5); nothing is bandaged meanwhile (FUN_14064d800). This drain is not gated.
         if (body.Wounds.Count > 0)
         {
-            var woundKit = kitless ? null : FindKit(world, m, medicCold, FunctionOf(race.IsRobot));
+            var woundKit = kitless ? null : KitOf(world, m, medicCold, FunctionOf(race.IsRobot));
             if (woundKit is null && !kitless)
             {
                 Say(world, m, medicCold.TreatTarget, KitEmpty);
@@ -299,7 +301,7 @@ public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions 
             End(table, m);   // nothing left to bandage
             return;
         }
-        if (FindKit(world, m, medicCold, FunctionOf(robot)) is not { } kit)
+        if (KitOf(world, m, medicCold, FunctionOf(robot)) is not { } kit)
         {
             Say(world, m, medicCold.TreatTarget, KitEmpty);   // Task_FirstAidRig's empty kit (FUN_14034ef20)
             End(table, m);   // no kit of the right kind within reach
@@ -442,6 +444,16 @@ public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions 
             if (OwnKit(table.Cold(s)!, function) is { } found) return found;
         }
         return null;
+    }
+
+    /// <summary>
+    /// The kit a running treatment uses (<c>FUN_14033c7e0</c>, <b>Verified</b>): the one it took last time, until it is used up (no charges left) or no longer of the wanted function; only then
+    /// <see cref="FindKit"/> searches again (the original also drops a kit no longer held; a kit lost another way is found again at once). Null: none.
+    /// </summary>
+    (ItemInstance Item, Inventory Owner)? KitOf(World world, int slot, CharacterCold cold, int function)
+    {
+        if (cold.TreatKit is { } kept && kept.Item.ItemFunction == function && kept.Item.Charges > 0 && kept.Owner.All().Contains(kept.Item)) return kept;
+        return cold.TreatKit = FindKit(world, slot, cold, function);
     }
 
     // ------------------------------------------------------------------ treating by themselves

@@ -78,6 +78,7 @@ public sealed partial class PopulationSystem
         c.StealthExposureTick = long.MinValue;
         c.TreatTarget = CharacterId.None;
         c.TreatSplint = false;
+        c.TreatKit = null;
         c.Jobs.Clear();
         c.JobIndex = -1;
         c.Carrying = CharacterId.None;

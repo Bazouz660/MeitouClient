@@ -256,6 +256,11 @@ public sealed class CharacterCold
     public CharacterId TreatTarget { get; set; } = CharacterId.None;
     /// <summary>The treatment splints instead of bandaging (the original's <c>SPLINT_ORDER</c>, task "Splinting").</summary>
     public bool TreatSplint { get; set; }
+    /// <summary>
+    /// The kit a first aid treatment is using (the first aid task's stored kit, +0x80, <c>FUN_14033c7e0</c>): kept while it is of the wanted function with charges left and still held, else searched again.
+    /// Runtime only (not saved, not hashed): derived, as the next treatment tick finds the same kit again by the fewest-charges rule.
+    /// </summary>
+    public (Meitou.Simulation.Items.ItemInstance Item, Meitou.Simulation.Items.Inventory Owner)? TreatKit { get; set; }
     /// <summary>The task a self-started treatment goes back to when it ends (<see cref="CharacterTask.Wander"/>, <see cref="CharacterTask.Follow"/> or Idle).</summary>
     public CharacterTask ResumeTask { get; set; }
     /// <summary>The medic job (58 <c>JOB_MEDIC</c>) is in <see cref="Jobs"/>: an idle character with a kit treats hurt squad mates by itself. NPCs with a kit do so without it (an engine rule until the AI).</summary>
