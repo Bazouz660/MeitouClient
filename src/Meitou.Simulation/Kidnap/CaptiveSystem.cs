@@ -456,7 +456,7 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
     Fixture? FateTarget(World world, int slot, CharacterCold cold, string? home)
     {
         var table = world.Characters;
-        var candidate = world.Fixtures.CageCandidates(world, cold, table.Next[slot].Position);
+        var candidate = world.Fixtures.CageCandidates(world, data, cold, table.Next[slot].Position);
         return world.Fixtures.FindCage(world, cold, table.Next[slot].Position, home,
             f => !candidate(f) || Taken(f.Id) || OccupantSlot(world, f) is not (>= 0 and var s) || table.Cold(s)!.Race is { IsRobot: true } || Busy(table.IdOf(s)), occupied: true);
     }

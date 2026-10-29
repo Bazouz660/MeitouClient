@@ -312,7 +312,7 @@ public sealed class KidnapSystem(PopulationData data, PopulationSystem populatio
     /// </summary>
     Fixture? CageFor(World world, Vector3 at, CharacterCold carrier, Abduction? self)
     {
-        var candidate = world.Fixtures.CageCandidates(world, carrier, at);
+        var candidate = world.Fixtures.CageCandidates(world, data, carrier, at);
         return world.Fixtures.FindCage(world, carrier, at, null, f => !candidate(f) || Reserved(f, self));
     }
 

@@ -30,9 +30,9 @@ public sealed partial class FixtureRegistry
     /// plus those of the town of its squad's home when that differs. With no town at all every cage of the world qualifies. The towns' fixtures are registered (a town no one has loaded has its cages
     /// all the same). Pass the result to <see cref="FindCage"/> as part of its skip test; serial phases only.
     /// </summary>
-    public Func<Fixture, bool> CageCandidates(World world, CharacterCold carrier, Vector3 at)
+    public Func<Fixture, bool> CageCandidates(World world, PopulationData data, CharacterCold carrier, Vector3 at)
     {
-        if (usableData is not { } data) return static _ => true;
+        usableData ??= data;
         var town = AiSystem.TownAt(data, world, at);
         if (town.IsNone) town = NearestTownOf(world, data, carrier.Faction, at);
         if (town.IsNone) return static _ => true;
