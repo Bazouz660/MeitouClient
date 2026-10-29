@@ -57,7 +57,7 @@ public sealed record TradeItemView(int Index, string Record, string Name, string
     public long SellValue { get; init; }
     /// <summary>The stack's weight in kg.</summary>
     public float Weight { get; init; }
-    /// <summary>A stolen good of the customer's that was stolen from the shop's own faction: the chance a sale goes through unnoticed (<see cref="TradeSystem"/>'s fence odds, the hover box's number); null otherwise.</summary>
+    /// <summary>A stolen good of the customer's that the shop would roll on (<c>FUN_140792830</c>, whoever it was stolen from): the chance (0 to 1) a sale goes through unnoticed, <see cref="TradeSystem"/>'s fence odds, the hover box's number; null otherwise.</summary>
     public float? FenceChance { get; init; }
     /// <summary>
     /// A stolen good of the customer's that a shop which is no fence would buy only with a risk: the chance (0 to 1, below 1) a sale goes through unnoticed, whoever it was stolen from
@@ -734,14 +734,16 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
                 else value = Price(m, item, 1, false, shop.Terms, holder);
             }
             bool stolen = item.IsStolenFor(holder);
+            // The roll's own odds feed the hover box, the sale prompt and the roll alike; only where the shop would roll on the item at all.
+            float? odds = sell && stolen && Fences(item, squad, shop.Terms) ? FenceOdds(world, thievery, item, c, t, squad, shop.Terms) : null;
             return new(index, item.Record, item.Name, item.Section, item.X, item.Y, item.Width, item.Height, item.Quantity,
                 item.Quality, Price(m, item, item.Quantity, sell, shop.Terms, holder), Price(m, item, 1, sell, shop.Terms, holder), stolen)
             {
                 Buyback = buyback, Container = item.Contents is not null,
                 Material = item.MaterialId, Colour = item.ColourId, Charge = item.ChargeFraction, Value = value, SellValue = sellValue, Weight = item.Weight, PriceFactor = m.TraderFactor(item, shop.Terms, holder),
                 MarketFactor = m.MarketFactor(shop.Terms.Site, item.Record), Company = item.CompanyId, Level = item.Level, Charges = item.Charges, MaxCharges = item.MaxCharges, StolenFrom = stolen ? item.StolenFrom : -1,
-                FenceChance = sell && stolen && item.StolenFrom == squad.Faction && Fences(item, squad, shop.Terms) ? Math.Clamp(FenceOdds(world, thievery, item, c, t, squad, shop.Terms), 0, 1) : null,
-                FenceOdds = sell && stolen && Fences(item, squad, shop.Terms) && FenceOdds(world, thievery, item, c, t, squad, shop.Terms) is < 1 and var odds ? Math.Max(odds, 0) : null,
+                FenceChance = odds is { } shown ? Math.Clamp(shown, 0, 1) : null,
+                FenceOdds = odds is < 1 ? Math.Max(odds.Value, 0) : null,
                 Illegal = sell && (uint)shop.Terms.Site < (uint)data.SiteFactions.Count && m.FactionCulture(data.SiteFactions[shop.Terms.Site]) is { } culture && culture.Illegal.Contains(item.Record),
             };
         }
