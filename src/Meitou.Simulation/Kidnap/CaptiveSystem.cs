@@ -6,6 +6,7 @@ using Meitou.Data.Gameplay.Bodies;
 using Meitou.Simulation.Ai;
 using Meitou.Simulation.Bodies;
 using Meitou.Simulation.Combat;
+using Meitou.Simulation.Items;
 using Meitou.Simulation.Locks;
 
 namespace Meitou.Simulation.Kidnap;
@@ -136,8 +137,8 @@ public readonly record struct CaptiveEvent(long Tick, CaptiveEventKind Kind, Cap
 /// <list type="bullet">
 /// <item><b>Kill</b> (135 "Kill random prisoner"; 282 "Dinner time" eats instead): wanted when the town's kill timer has run out or all the faction's cages there are full
 /// (<b>Observed</b>, AI slot 20 <c>FUN_14032e9b0</c>; the timer is set to now + uniform[1, 15) game hours when the town is first asked about and whenever a captive dies of a
-/// kill or a meal, <c>FUN_14034a810</c>). The target is the best occupied cage of the worker's faction (the cage finder's weights, <c>FUN_1408d0770</c>), its occupant alive and not a robot;
-/// the occupant says event 10 MARKED_FOR_DEATH to the worker. Needs a weapon (B list hasWeaponEquipped). At the cage it plays <c>chop down static</c> and strikes once per clip at
+/// kill or a meal, <c>FUN_14034a810</c>). The target is the best occupied cage (the cage finder's weights and usable test, <c>FUN_1408d0770</c>, <see cref="FateTarget"/>), its occupant alive and not a robot;
+/// the occupant says event 10 MARKED_FOR_DEATH to the worker. Its plan draws a weapon first (B list hasWeaponEquipped, <see cref="DrawWeapon"/>); with none to draw the goal does not plan. At the cage it plays <c>chop down static</c> and strikes once per clip at
 /// 0.55 of it (<see cref="CombatSystem.Execute"/>), the occupant crying event 11 SCREAMING_TORTURE each time, until it dies.</item>
 /// <item><b>Eat</b> (139 "Eat random prisoner", wanted always; 282 at the kill rate): the same target; the eater sheathes its weapon (B list !hasWeaponEquipped), plays <c>eat</c>,
 /// says event 52 EATING_SOMETHING_SOUNDS while the captive says 11, and the captive is eaten (<see cref="MedicalState.BeingEaten"/>) until it dies.</item>
@@ -328,7 +329,8 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
         {
             case TaskType.KILL_A_RANDOM_CAGE_OCCUPANT:
                 site = FateTown(world, slot, board);
-                if (combat is null || cold.Fighter is not { Unarmed: false } || site < 0 || !KillDue(world, site, cold.Faction)) return null;
+                // The desire reads the town and creates its timer before any other test; the weapon is the plan's equip step (FateJob), not a condition of the goal.
+                if (site < 0 || !KillDue(world, site, cold.Faction) || combat is null) return null;
                 return FateJob(world, slot, cold, board, site, CaptiveJobKind.Kill);
             case TaskType.EAT_A_RANDOM_CAGE_OCCUPANT:
                 return FateJob(world, slot, cold, board, FateTown(world, slot, board), CaptiveJobKind.Eat);   // no town test: the finder falls back to the nearest town
@@ -380,13 +382,37 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
 
     CaptiveJob? FateJob(World world, int slot, CharacterCold cold, Blackboard board, int site, CaptiveJobKind kind)
     {
-        if (FateTarget(world, slot, cold, board.OwnHome?.Key) is not { } cage) return null;
+        if (FateTarget(world, slot, cold, board.OwnHome?.Key) is not { } cage || kind == CaptiveJobKind.Kill && !DrawWeapon(cold)) return null;
         var table = world.Characters;
         var worker = table.IdOf(slot);
         // The finder has the occupant say "marked for death" to the one who picked it (event 10, FUN_1408d0d90).
         world.Defer(new Dialogue.DialogueEvent(cage.Occupant, worker, MarkedForDeath) { Tick = world.Tick + 1 });
         if (kind == CaptiveJobKind.Eat) cold.DrawnWeapon = WeaponKinds.None;   // 220's B list: !hasWeaponEquipped
         return new CaptiveJob { Kind = kind, Worker = worker, Captive = cage.Occupant, Cage = cage.Id, Faction = cold.Faction, Site = site };
+    }
+
+    /// <summary>
+    /// The plan's equip step before 134 Kill prisoner (B list hasWeaponEquipped; 6 <c>Task_EquipBestWeapon</c> <c>FUN_140346c30</c>, <b>Verified</b>: the weapon on its back, then on its hip, else for a non-player any WEAPON
+    /// item of its inventory): a captor with a weapon in a weapon slot draws it; one carrying a melee weapon elsewhere puts it in a free slot first (<b>engine reading</b>: with no free slot the original's
+    /// equip is not read). False with no weapon to draw: the goal then does not plan (finding one is goals 8 and 42).
+    /// </summary>
+    bool DrawWeapon(CharacterCold cold)
+    {
+        if (cold.Fighter is null || cold.Inventory is not { } inv) return false;
+        if (cold.Fighter.Unarmed && inv.All().FirstOrDefault(i => i.Type == FcsRecordType.WEAPON && !InventoryCommands.IsEquipmentSection(i.Section)) is { } packed)
+        {
+            var owner = inv.Items.Contains(packed) ? inv : inv.Backpack?.Contents;
+            int at = owner?.Items.IndexOf(packed) ?? -1;
+            if (at >= 0)
+            {
+                owner!.Items.RemoveAt(at);
+                if (InventoryCommands.TryEquip(inv, packed, cold)) assembly.RefreshEquipment(cold);
+                else owner.Items.Insert(at, packed);   // no free weapon slot: left where it was
+            }
+        }
+        if (cold.Fighter is not { Unarmed: false } armed) return false;
+        cold.DrawnWeapon = CombatSystem.MeleeDrawn(armed);
+        return true;
     }
 
     /// <summary>The ANIMATION records the jobs hold (<c>Task_KillPrisoner</c>, <c>Task_EatPrisoner</c>, <c>Task_ProcessNewSlave</c>, <b>Observed</b>).</summary>
