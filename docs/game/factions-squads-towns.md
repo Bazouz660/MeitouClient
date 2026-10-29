@@ -640,8 +640,8 @@ campaign is not hostile, or that is not active (slot 70); a redirected request d
     faction ([ai, prisoner packages](ai.md#prisoner-and-slaver-packages)); what the captors then do: [ai-tasks](ai-tasks.md#prisoner-fate-and-slave-rows). Meitou:
     [kidnapping](../simulation.md#kidnapping), [captives](../simulation.md#captives).
   - Enemies: the base package, in a hostile campaign's phase 1, tags each seen target-faction character with squad memory 4 (TEMP_ENEMY,
-    as DA 21); WarAssault tags every seen character except those of another town, with an engine flag (slot 0x248), or of factions with
-    +0x1d0 or +0x34 == 8 set (meanings **Unknown**).
+    as DA 21); WarAssault tags every seen character except animals (Character vfunc 0x248), those of another town (the town hands differ; none passes) and those of factions with
+    `not real` (+0x1d0) set or `fundamental type` (+0x34) 8, Bandit (**Verified**, `FUN_14028a3f0`; [sensing hooks](ai.md#package-classes)). Meitou `AggroSystem.WarEnemy`.
   - Cannibal (`FUN_14028fdf0`, the package's update, **Verified**): per platoon running the package, not per campaign. It counts its own squad's members with `+0x348` set (carrying) and
     keeps its own start stamp (package `+0xb0`): set at the first carrier, zeroed again when nobody carries or the platoon has no squad. With a carrier, the campaign record of that platoon
     goes to phase 2 (time stamped, `+0xc0` = 2) at 3 carriers or when the stamp's age in clock hours x 60 is above 15 (strictly; hours **Observed**). Meitou `PopulationCampaigns.CannibalsLoaded`.

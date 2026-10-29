@@ -451,6 +451,8 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         public Ai.AiStance Stance;
         /// <summary>A campaign squad's assault targets (<see cref="Squad.War"/>; none for others).</summary>
         public WarTargets War;
+        /// <summary>The towns, for the assault's town test (<see cref="AggroSystem.Towns"/>; null: nobody is in a town).</summary>
+        public PopulationData? Towns;
         /// <summary>The faction a hired squad works for (<c>Contract_HiredAlly</c> 12, its employer's) or defends (<c>Contract_DefendPlayerBase</c> 15, the hirer's); -1: none. Its members are never enemies, nor, hired, its allies.</summary>
         public int Employer;
         public bool EmployerAllies;
@@ -535,7 +537,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
             BestScore = float.NegativeInfinity, Combat = Combat, Player = cold.IsPlayer, Hold = Orders.Holding(cold) && cold.Fighter?.Crossbow is null,
             HoldPost = Orders.Holding(cold) && !Orders.RangedExempt(cold), Prone = cold.Medical?.Prone == true, Animal = cold.Fighter?.IsAnimal == true, HoldPoint = Orders.HoldPointOf(cold, prev[i].Position),
             Seed = world.Seed, Key = Rng.Key(new CharacterId(i, prev[i].Generation)), Tick = (ulong)world.Tick,
-            Stance = stance, War = war,
+            Stance = stance, War = war, Towns = Towns,
             Employer = EmployerOf(world, cold, out bool allies), EmployerAllies = allies,
             Home = stance == Ai.AiStance.Territorial ? Territory(cold) : default,
             Spots = slots[i].Spots, Heard = slots[i].Heard, Sightings = effects is null ? null! : sightings ??= [], Effects = effects!,
@@ -694,12 +696,13 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         // or below -30 by default.
         bool hostile = AttacksOnSight(s.Relations, s.Faction, seenAs) && s.Cold is not { Freed: true }
             && (!c.Freed || s.Relations.Factions[s.Faction] is { } mine && (mine.NotReal || mine.DefaultRelation < FreedHostility));
+        bool warEnemy = s.War.IsSet && WarEnemy(ref s, c, other.Position);
         bool enemy = s.Stance != Ai.AiStance.Passive
-            && (hostile || s.Stance == Ai.AiStance.AggressiveNeutrals && IsNeutral(s.Relations, s.Faction, seenAs) || WarEnemy(s.War, s.Faction, c, other.Position));
+            && (hostile || s.Stance == Ai.AiStance.AggressiveNeutrals && IsNeutral(s.Relations, s.Faction, seenAs) || warEnemy);
         // A campaign force's member is sensed as NEUTRAL, not ENEMY (FUN_1408580d0 over FUN_140796240, docs/game/perception.md "Sense tags"): a raid walks up to talk first.
         // A looker that attacks neutrals too still drops it unless it is hostile to its faction (FUN_1408569a0, Verified); its own campaign's targets stay, and a TEMP_ENEMY
         // tag (below) makes it an enemy again.
-        if (enemy && (s.Stance != Ai.AiStance.AggressiveNeutrals || !IsEnemy(s.Relations, s.Faction, seenAs)) && !WarEnemy(s.War, s.Faction, c, other.Position) && c.SquadId >= 0
+        if (enemy && (s.Stance != Ai.AiStance.AggressiveNeutrals || !IsEnemy(s.Relations, s.Faction, seenAs)) && !warEnemy && c.SquadId >= 0
             && s.World.Squads.Find(c.SquadId) is { PlatoonId: >= 0 } force && s.World.Platoons.Find(force.PlatoonId)?.Campaign is not null) enemy = false;
         // The squads' temporary tags (FUN_14079c950, other faction only): the looker's squad holds TEMP_ENEMY on the target, or, for a player-faction looker, the target's squad on it,
         // makes an enemy; the looker's squad holding TEMP_ALLY on the target unmakes one.
@@ -773,11 +776,20 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
     static bool AiSleeper(CharacterCold? cold) => cold?.Ai is { Behaviour: Ai.AiBehaviour.Sleep or Ai.AiBehaviour.Sit };
 
     /// <summary>
-    /// A campaign assault's extra enemy (<see cref="WarTargets"/>): of the target faction, or with <c>Everyone</c> anyone not of its own faction in the target town except animals and
-    /// bandits (<c>Package_WarAssault</c> assessNeutral <c>FUN_14028a3f0</c>, <b>Verified</b>; it also skips fake factions, and takes people outside every town too).
+    /// A campaign assault's extra enemy (<see cref="WarTargets"/>): of the target faction, or with <c>Everyone</c> the characters <c>Package_WarAssault</c>'s sensing hook takes
+    /// (<c>FUN_14028a3f0</c>, <b>Verified</b>): not of the looker's faction, no animal, of a faction that is real and not a bandit one (the faction's <c>fundamental type</c> 8, not the
+    /// character's class), and in no town or in the assault's target town (no distance test).
     /// </summary>
-    static bool WarEnemy(WarTargets war, int mine, CharacterCold c, Vector3 at) =>
-        war.IsSet && c.Faction != mine && (c.Faction == war.Faction || war.Everyone && c.Fighter?.IsAnimal != true && c.NpcClass != FundamentalType.Bandit && Vector2.DistanceSquared(new Vector2(at.X, at.Z), war.Centre) <= war.Radius * war.Radius);
+    static bool WarEnemy(ref Scan s, CharacterCold c, Vector3 at)
+    {
+        var war = s.War;
+        if (!war.IsSet || c.Faction == s.Faction) return false;
+        if (c.Faction == war.Faction) return true;
+        if (!war.Everyone || c.Fighter?.IsAnimal == true || !s.Relations.Contains(c.Faction) || s.Relations.Factions[c.Faction] is { NotReal: true } or { FundamentalType: FundamentalType.Bandit }) return false;
+        if (s.Towns is not { } towns) return true;
+        var town = Ai.AiSystem.TownAt(towns, s.World, at);
+        return town.IsNone || town == war.Town;
+    }
 
     /// <summary>
     /// Whether a looker of faction <paramref name="mine"/> takes a sensed character of <paramref name="theirs"/> for an attack-on-sight target by the relations: hostile mine to

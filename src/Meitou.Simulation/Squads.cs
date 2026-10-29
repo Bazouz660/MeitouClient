@@ -80,12 +80,12 @@ public sealed class Squad
 
 /// <summary>
 /// A campaign squad's extra enemies while it assaults (docs/game/factions-squads-towns.md "Campaigns", the packages): <paramref name="Faction"/>'s characters (the base package
-/// in a hostile campaign's phase 1), or with <paramref name="Everyone"/> every character not of its own faction within the target town's circle (Package_WarAssault; engine
-/// reading of its "not of another town" exception).
+/// in a hostile campaign's phase 1), or with <paramref name="Everyone"/> every character the Package_WarAssault sensing hook takes (<c>FUN_14028a3f0</c>, see
+/// <c>AggroSystem.WarEnemy</c>): not of its own faction, and in no town or in <paramref name="Town"/>, the campaign's target (the package's mission town).
 /// </summary>
-public readonly record struct WarTargets(int Faction, bool Everyone, Vector2 Centre, float Radius)
+public readonly record struct WarTargets(int Faction, bool Everyone, CampaignTown Town)
 {
-    public static readonly WarTargets None = new(-1, false, default, 0);
+    public static readonly WarTargets None = new(-1, false, CampaignTown.None);
     public bool IsSet => Everyone || Faction >= 0;
 }
 
@@ -154,7 +154,7 @@ public sealed class SquadRegistry
             }
             s.Shop?.Hash(ref hasher);   // nothing for squads that do not trade, so the pinned hashes of worlds without shops stay
             s.Ai?.Hash(ref hasher);     // nor for squads without AI packages
-            if (s.War.IsSet) { hasher.Add(s.War.Faction); hasher.Add(s.War.Everyone); hasher.Add(s.War.Centre); hasher.Add(s.War.Radius); }   // nor for squads not assaulting
+            if (s.War.IsSet) { hasher.Add(s.War.Faction); hasher.Add(s.War.Everyone); hasher.Add(s.War.Town.Site); hasher.Add(s.War.Town.PlayerTown); }   // nor for squads not assaulting
         }
     }
 }

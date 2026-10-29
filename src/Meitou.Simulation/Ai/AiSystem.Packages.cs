@@ -109,7 +109,7 @@ public sealed partial class AiSystem
                 break;
             case PackageClass.PassingAssault:
             case PackageClass.OccupyTown:
-                var war = board.AssaultEnemy >= 0 ? new WarTargets(board.AssaultEnemy, false, default, 0) : WarTargets.None;
+                var war = board.AssaultEnemy >= 0 ? new WarTargets(board.AssaultEnemy, false, CampaignTown.None) : WarTargets.None;
                 if (squad.War != war) squad.War = war;
                 if (DestinationCentre(world, board) is { } centre)
                 {

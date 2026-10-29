@@ -1089,15 +1089,15 @@ public sealed partial class PopulationSystem : IStateHashed
     }
 
     /// <summary>
-    /// Whom a loaded campaign platoon fights besides its faction's enemies (docs/game/factions-squads-towns.md "Campaigns", enemies): in phase 1, everyone in the target town when
-    /// its <c>pt2</c> package is a Package_WarAssault (signal 20 or 32), else the target faction when the campaign is hostile; nobody in the other phases.
+    /// Whom a loaded campaign platoon fights besides its faction's enemies (docs/game/factions-squads-towns.md "Campaigns", enemies): in phase 1, everyone in the target town or in none
+    /// (<c>AggroSystem.WarEnemy</c>) when its <c>pt2</c> package is a Package_WarAssault (signal 20 or 32), else the target faction when the campaign is hostile; nobody in the other phases.
     /// </summary>
     WarTargets AssaultTargets(World world, CampaignInstance inst, bool leads)
     {
         if (inst.Phase != 1 || CampaignOf(inst.CampaignId) is not { } c) return WarTargets.None;
         if (c.PackageOf(1, leads) is { } id && data.Ai.Package(id) is { Signal: 20 or 32 })
-            return new WarTargets(-1, true, CentreOf(world, inst.Target), RadiusOf(world, inst.Target));
-        return c.IsHostile && inst.Enemy >= 0 ? new WarTargets(inst.Enemy, false, default, 0) : WarTargets.None;
+            return new WarTargets(-1, true, inst.Target);
+        return c.IsHostile && inst.Enemy >= 0 ? new WarTargets(inst.Enemy, false, CampaignTown.None) : WarTargets.None;
     }
 
     /// <summary>The dialogue's announcement and pending-talk queries (<see cref="Dialogue.DialogueSystem.Announce"/>, <see cref="Dialogue.DialogueSystem.HasInterrupt"/>), set by the host; null: none.</summary>
