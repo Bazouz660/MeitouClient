@@ -64,7 +64,7 @@ public sealed class TownDuty
 /// <item><b>273 Remove Intruder</b> (finder <c>FUN_14099c250</c>, <b>Verified</b> by decompile): only while the member stands in a town that is its home town, the town its occupation holds,
 /// or a town of its faction (<c>Ownerships::isMyTown</c>, KenshiLib names); the intruder is knocked out, in that town, not carried or caged, and (an engine reading of the sensed-list classes)
 /// not of the member's faction or an ally. The original's last test, <c>amInsideTownWalls</c>, is read as the town's built-up area (<see cref="BuiltUp"/>). The member lifts it, then</item>
-/// <item><b>112 Find and put in cage</b>, while the package lists it: the best free cage in the town (the original's finder; an occupier may use the occupied town's, its use test passing
+/// <item><b>112 Find and put in cage</b> (a living body) or <b>281</b> (any body), while the package lists it: the best free cage in the town (the original's finder; an occupier may use the occupied town's, its use test passing
 /// for that town, <c>FUN_140621230</c>), where the intruder is locked up with the put-in's usual sentence (from a bounty with the cage owner's faction,
 /// docs/game/economy.md 11.5; none: served, so the jailer frees it); else</item>
 /// <item><b>274 Throwing out</b> (<c>Task_TakeIntruderOutsideTown</c>): carried past the town's built-up area (<see cref="TownDutySettings.OutsideTown"/>) on the member's side and put down.</item>
@@ -524,7 +524,8 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
             if (gc.Carrying != d.Body) return End(world, d);   // fought off or pushed away: the body lies there for the next look
             var squad = world.Squads.Find(gc.SquadId);
             int role = squad is null ? 0 : (int)AiSystem.RoleOf(squad, d.Member, gc);
-            if (squad is not null && (bodyMedical.Dead ? ListsDeadCage(world, gc, d.Member) : population.GoalDuty(world, squad, (AiRole)role, TaskType.FIND_CAGE_AND_PUT_IN)) && Cage(world, gn.Position, d) is { } cage)
+            // 112 needs !99 isCarriedDudeDead (a living body only); 281 has no such list, so it cages the living and the dead.
+            if (squad is not null && (ListsDeadCage(world, gc, d.Member) || !bodyMedical.Dead && population.GoalDuty(world, squad, (AiRole)role, TaskType.FIND_CAGE_AND_PUT_IN)) && Cage(world, gn.Position, d) is { } cage)
             {
                 (d.Kind, d.Target, d.Goal, d.Tries) = (TownDutyKind.Cage, cage.Id, Flat(cage.Position), 0);
                 MovementSystem.GoTo(table, g, d.Goal, SpeedMode.Free);
