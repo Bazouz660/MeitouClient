@@ -42,7 +42,8 @@ public sealed partial class LockSystem
         {
             if (!next[s].Alive || table.Cold(s) is not { Bashing: { } doorId } c) continue;
             var door = world.Fixtures.Find(doorId);
-            if (door is null || door.DoorBroken || door.Lock is not { EffectivelyLocked: true } || c.Medical is { Incapacitated: true } || (!c.BashOrdered && next[s].Task != (byte)CharacterTask.Attack) || world.Fixtures.DoorSpotOf(door) is not { } spot)
+            // The task itself ends on a broken door or one open or opening and reads no lock (FUN_140348c10); the NPC's plan is dropped once its door is no longer locked.
+            if (door is null || door.DoorBroken || (c.BashOrdered ? door.Motion is DoorMotion.Open or DoorMotion.Opening : door.Lock is not { EffectivelyLocked: true }) || c.Medical is { Incapacitated: true } || (!c.BashOrdered && next[s].Task != (byte)CharacterTask.Attack) || world.Fixtures.DoorSpotOf(door) is not { } spot)
             {
                 StopBashing(table, s, c);
                 continue;
@@ -74,12 +75,12 @@ public sealed partial class LockSystem
             // Someone in the way: the task is impossible (the plan fails; an NPC looks again at the next check).
             if (InTheWay(world, s, face)) { StopBashing(table, s, c); continue; }
             if (c.BashOrdered && next[s].Task == (byte)CharacterTask.GoTo) MovementSystem.Stop(table, s);
+            // Every update in reach books Burglary against the door's owner, before the blow (Task_BashDoor, locks.md); the pursuit's bashers book none yet.
+            if (c.BashOrdered && Crimes is not null && door.Owner >= 0 && door.Owner != c.Faction) Crimes.SetPending(world, s, Crime.CrimeCode.Burglary, door.Owner, CharacterId.None, Crime.CrimeSystem.MinTimer);
             if (c.BashTime < 0) c.BashTime = 0;
             c.BashTime += world.TickSeconds;
             if (c.BashTime < BashSwingSeconds) continue;
             c.BashTime = 0;
-            // Each update of the task books Burglary against the door's owner (Task_BashDoor, locks.md); the pursuit's bashers book none yet.
-            if (c.BashOrdered && Crimes is not null && door.Owner >= 0 && door.Owner != c.Faction) Crimes.SetPending(world, s, Crime.CrimeCode.Burglary, door.Owner, CharacterId.None, Crime.CrimeSystem.MinTimer);
             // A break's only sound is the door's Break (Task_BashDoor posts no unlock sound), played by the host's door sounds.
             if (Hit(door, c))
             {
