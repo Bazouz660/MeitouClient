@@ -493,7 +493,7 @@ to Jobs; the saved `chase mode` flag is that switch (**Verified**, [perma-jobs](
 - **Widgets** (constructor `FUN_140724e10`): `OutpostNameEditBox`, `OpenToPublicCheckBox`, the `Research` / `Power` / `Battery` `ProgressBar`s (range 100) with their
   `...Caption` boxes; the labels get `Open to public:`, `Research:`, `Power:`, `Battery charge:` through the translator.
 - **Shown** (HUD update `FUN_140728d50`): while the town list `DAT_142134100` has a town (and a global `DAT_142133ae0`, **Unknown**), the shown town stays while the
-  GameWorld +0x580 position (taken to be the camera pivot, **Unknown**) is within its radius (`vfunc 0x2a0`, X/Z); else the nearest town (`FUN_140927e40`, X/Z) of the player's
+  GameWorld +0x580 position (the camera focus object, same address as `DAT_142134690` of [corpses](character-stats.md#corpses); a `PlayerInterface`, **Verified** by address and constructor) is within its radius (`vfunc 0x2a0`, X/Z); else the nearest town (`FUN_140927e40`, X/Z) of the player's
   faction or with byte +0x3d0 set (**Unknown**), kept only if the position is within its radius. No town: hidden.
 - **Town change** (`FUN_140722de0`): the name box gets the town's name, the tick its +0x380; both are enabled only for a town whose faction is the player's (+0x250).
 - **Each frame** (`FUN_140727380`): Research = the research manager's current research (+0x58) name and its progress x 100, else `None` and 0. Power = the town's +0x474 /

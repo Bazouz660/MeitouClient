@@ -325,6 +325,8 @@ public sealed partial class PopulationSystem
         }
         if (sectors.Count == 0 || load >= target) return;
         var towns = TownZones();
+        // The sector under the camera focus is never drawn (DAT_142135230, set every frame from the GameWorld +0x580 object's place); the focus as RefreshZones takes it.
+        ZoneCoordinate? view = (focus ?? (this.players.Count > 0 ? this.players[0] : null)) is { } eye ? WorldLayout.ZoneOf(eye.X, eye.Z) : null;
         var weights = new float[sectors.Count];
         for (int k = 0; k < sectors.Count; k++)
         {
@@ -333,8 +335,8 @@ public sealed partial class PopulationSystem
             int here = standing.GetValueOrDefault(site.Zone);
             float w = MathF.Max(0, share + 1 - here);
             if (here == 0) w = (w + 1) * 2;
-            // A sector at its share is drawn and passed over in the original; it never makes one. A town's sector never enters the pick.
-            weights[k] = here < share && !towns.Contains(site.Zone) ? w : 0;
+            // A sector at its share is drawn and passed over in the original; it never makes one. A town's sector and the one in view never enter the pick.
+            weights[k] = here < share && !towns.Contains(site.Zone) && site.Zone != view ? w : 0;
         }
         ulong key = Rng.Mix(SeedSalts.HomelessRefill ^ (ulong)world.Tick);
         int picked = Pick(weights, Rng.Hash(world.Seed, key, RngPurpose.Spawn, 0));

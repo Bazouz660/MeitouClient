@@ -504,7 +504,10 @@ Meitou: [ground items](../simulation.md#items-and-eating).
   Ruins town does not block its sectors and a nest marker (type 8, which `setup` handles itself) does; the pick, the spot fallbacks `FUN_1408f6350` / `FUN_1408fc1a0` and
   the patrol's town branch (below) read it (**Verified**, decompile; whether `setup` runs for the Null type (10) is **Unknown**). Meitou gives a sector
   in such a town's zone list (else its position's zone) weight 0, re-read each refill so town overrides apply (the patrol's town draw does not read the flag: it
-  lists a sector's towns but nest markers, points of interest and Null, Ruins included). So a loaded sector is refilled as its squads die or walk out (**Verified** by code). The squad is given a home town: the
+  lists a sector's towns but nest markers, points of interest and Null, Ruins included). The sector in view is never drawn either: the draw loop redraws a sector equal to
+  `DAT_142135230`, which `FUN_1408f6940` (every frame, from the zone update `FUN_140a12c70`) sets to the sector at the GameWorld +0x580 object's position (`FUN_140785f90` → `FUN_1407f2960`: its scene node;
+  **Verified**). +0x580 is `DAT_142134690`, the camera focus object of [corpses](character-stats.md#corpses) (same address, **Verified**; its constructor `FUN_1407f6b30` is `PlayerInterface`).
+  Meitou: weight 0 for the zone of the focus the zone loader uses (`FocusCommand`, else the first player character); a sector's load-time fill is not subject to it (engine choice). So a loaded sector is refilled as its squads die or walk out (**Verified** by code). The squad is given a home town: the
   sector's own town when its faction is the squad's, else the faction's nearest town, or its nearest nest when that is 9216 nearer, none
   beyond 50000 (`createRandomUnloadedSquad` → `Ownerships::setHomeTown`, KenshiLib 1ce4a16 names; **Verified** by code). It tethers the
   patrol (below). Saved homeless platoons have no `basetown`/`hometown` ([save.md](../formats/save.md)); whether the home is saved
