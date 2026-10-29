@@ -137,7 +137,7 @@ public sealed partial class DialogueSystem
         var tc = Cold(world, other);
         if (node.PersonalityRequired != 0 || node.PersonalityForbidden != 0)
         {
-            uint bit = 1u << Personality.Of(world, data.Db, me, mc);
+            uint bit = 1u << PersonalityOf(world, me, mc);
             if (node.PersonalityRequired != 0 && (node.PersonalityRequired & bit) == 0) return false;
             if ((node.PersonalityForbidden & bit) != 0) return false;
         }
@@ -257,6 +257,9 @@ public sealed partial class DialogueSystem
         return SquadOf(world, target).Where(m => m == target || m == me
             || table.TryResolveNext(m, out int s) && Vector3.DistanceSquared(table.Next[s].Position, at) <= r * r);
     }
+
+    /// <summary>The character's personality tag (<see cref="Personality"/>): rolled from its own record, else its faction's.</summary>
+    int PersonalityOf(World world, CharacterId id, CharacterCold cold) => Personality.Of(world, data.Db, id, cold, FactionId(cold.Faction));
 
     string FactionId(int faction) => data.Relations.Contains(faction) ? data.Factions[faction].Id : "";
 

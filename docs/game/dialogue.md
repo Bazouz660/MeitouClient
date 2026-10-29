@@ -111,6 +111,14 @@ order (no EV_NONE, the two blank names, EV_ESCAPING_SLAVE_SPOTTED, EV_MAX), so t
   7 OT_SLAVER, 8 OT_BANDIT, 9 OT_ADVENTURER, 10 OT_END.
 - **PersonalityTags** (DC 26 `tag`): 0 PT_NONE, 1 HONORABLE, 2 TRAITOROUS, 3 `PT___`, 4 `PT__`, 5 SMART, 6 DUMB, 7 `PT____`,
   8 `PT_____`, 9 BRAVE, 10 FEARFUL, 11 WARM_KIND, 12 COLD_CRUEL, 13 NORMAL, 14 MANIACAL, 15 PT_END.
+  **Personality roll** (**Verified**, `FUN_14062b210` at character setup, `FUN_140624b70`; weights read from the exe, `DAT_141685340` 5.0, `DAT_14168a254` 3.0,
+  `DAT_1416885d8` 0.2, `DAT_14167c308` 1.0; saved per character, so only new rolls follow it): the PERSONALITY record is the first `personality` reference of the
+  CHARACTER if it resolves, else the first of its FACTION (12 base FACTION records list one), else the `blank personality` record (all tags 0). Each key family
+  `tags always<i>`, `common<i>`, `rare<i>`, `never<i>` runs from i = 0 to the first missing key (values of 0 are skipped but do not stop it). Any `always` tag: one is
+  picked uniformly (a repeated tag counts each time) and nothing else is read. Else a weighted map: `common` tags weigh 3, `rare` 0.2, a tag already in the map
+  is skipped (the first listing wins), `never` tags strike none of these; then each default tag 1 HONORABLE, 2 TRAITOROUS, 5 SMART, 6 DUMB, 9 BRAVE, 10 FEARFUL
+  weighs 1 unless listed or in the `never` set (`never` applies only here); the pick is a float in [0, total) against the running sums (`FUN_14063cea0`). PT_NONE only
+  when the map ends empty (the record struck all six and listed nothing), never for a blank record. Meitou: `Personality.Roll` with its own random draw.
 - **CharacterPerceptionTags_LongTerm** (DC 23 `tag`): 0 LT_NONE, 1 MY_INTRUDER, 2 MY_LIFESAVER, 3 FREED_ME, 4 STOLE_FROM_ME,
   5 MY_CAPTOR, 6 FRIENDLY_AQUAINTANCE, 7 DEFEATED_MY_SQUAD_ONCE, 8 SQUAD_LOST_TO_ME_ONCE, 9 KILLED_MY_FRIEND, 10 I_SCREWED_THIS_GUY,
   11 LT_MAX.

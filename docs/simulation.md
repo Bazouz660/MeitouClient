@@ -1351,7 +1351,7 @@ to the next tick. A hostile target is attacked instead.
 - **Squad memory** (`SquadMemory`, `DialogueSystem.Memory`; [facts](game/dialogue.md#squad-memory)): per squad and character a time and long / short tags, the player faction
   sharing one long-term entry; DC 18, 20, 23 and 52-55 and the aggro scan (TEMP ENEMY / ALLY) read it, the effects and event-1 ends write it; it stays with a squad's platoon while the squad is out of the world and is saved on the platoon (`MemorySave`) ([engine choices](game/dialogue.md#meitou-design)).
 - **Speech bubbles**: `WorldSnapshot.Speech` lists the lines on show (`SpeechBubble`: speaker, text, large font); `PlayerInterface.AddSpeech` draws them over the head. Sources and engine choices: [dialogue](game/dialogue.md#meitou-design).
-- **Personality**: the save's `personality` when above 0, else an engine roll from the record's PERSONALITY tags (`Personality`).
+- **Personality**: the save's `personality` when above 0, else rolled as the original does from the character's (else its faction's) PERSONALITY record, with Meitou's own random draw (`Personality`, [facts](game/dialogue.md#enums)).
 - **Engine choices**: a childless NPC line shows `[Leave]`; a reply leading to another reply offers it alone; number keys pick choices.
 - **State**: last use per line, permanent chance rolls, event counters, squad memory, interrupts and the open conversation are hashed, not
   saved (as the original, except the squad memory, which it saves on the platoon; the faction global trust and war flags it saves under `meitou` keys, [save](formats/save.md#faction-trust-war-flags-bed-rent-and-turrets)). Locks are on `CharacterCold.DialogueLocks`, hashed while set, saved as `lok*` (`DialogueSave`).

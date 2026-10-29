@@ -124,7 +124,7 @@ public sealed partial class DialogueSystem
     {
         bool r = mc.NpcClass == FundamentalType.Bandit || sc.NpcClass == FundamentalType.Bandit;
         if (mc.NpcClass == sc.NpcClass) r = false;
-        int p = Personality.Of(world, data.Db, me, mc);
+        int p = PersonalityOf(world, me, mc);
         if (p == Personality.Traitorous) r = true;
         if (RegardsFriendly(world, me, mc, s, sc)) r = false;
         if (p == Personality.Honorable) r = false;
@@ -142,10 +142,10 @@ public sealed partial class DialogueSystem
     bool Helps(World world, CharacterId me, CharacterCold mc, CharacterId s, CharacterCold sc)
     {
         bool r = mc.NpcClass == sc.NpcClass;
-        int p = Personality.Of(world, data.Db, me, mc);
+        int p = PersonalityOf(world, me, mc);
         if (p == Personality.Traitorous || mc.NpcClass == FundamentalType.Bandit) r = false;
         if (RegardsFriendly(world, me, mc, s, sc)) r = true;
-        if (p == Personality.Honorable && Personality.Of(world, data.Db, s, sc) == Personality.Honorable) r = true;
+        if (p == Personality.Honorable && PersonalityOf(world, s, sc) == Personality.Honorable) r = true;
         if (Loves(world, mc, s)) r = true;
         if (Hates(world, mc, s)) r = false;
         return r;
