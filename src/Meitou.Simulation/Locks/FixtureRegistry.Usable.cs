@@ -14,6 +14,15 @@ public sealed partial class FixtureRegistry
     // A town building's Open to public flag at registration (the saved state, else the level's <c>is public day</c>, public when absent: the AI's reading, AiSystem places); derived.
     readonly Dictionary<string, bool> levelPublic = new(StringComparer.Ordinal);
 
+    // Placed buildings flagged `is inside building` (a piece of another building, saved state first, else the level's); derived.
+    readonly HashSet<string> nested = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Whether a fixture stands inside another building, the original's parent hand (vfunc <c>0x1d8</c>) being set (<b>Observed</b>): an item of a building's interior layout, or a placed building flagged
+    /// <c>is inside building</c> (the parent's own key is not kept, so its flags are the fixture building's).
+    /// </summary>
+    public bool IsInside(Fixture f) => f.Id != f.Building || nested.Contains(f.Building);
+
     /// <summary>Whether a building is open to the public (the original's <c>Building::isPublic</c> <c>+0xc8</c>, <b>Observed</b>): as the player set it, else as its state reads, else public.</summary>
     public bool IsPublic(string building) => PublicOf(building) ?? (levelPublic.TryGetValue(building, out bool open) ? open : true);
 
@@ -26,7 +35,7 @@ public sealed partial class FixtureRegistry
 
     /// <summary>
     /// Which cages the finder of goals 112/281 considers for <paramref name="carrier"/> at <paramref name="at"/> (the gatherer <c>FUN_1408cbea0</c> with <c>FUN_140a00690</c>, <b>Verified</b>): the town it stands in,
-    /// else its faction's nearest town within <see cref="BedSearchRange"/> (squared 1.5625e7; nest markers left out), the cages within <see cref="TownReach"/> x that town's radius of its centre;
+    /// else its faction's nearest town within <see cref="BedSearchRange"/> (squared 1.5625e7; nest markers, town type 8, left out), the cages within <see cref="TownReach"/> x that town's radius of its centre;
     /// plus those of the town of its squad's home when that differs. With no town at all every cage of the world qualifies. The towns' fixtures are registered (a town no one has loaded has its cages
     /// all the same). Pass the result to <see cref="FindCage"/> as part of its skip test; serial phases only.
     /// </summary>
@@ -64,7 +73,7 @@ public sealed partial class FixtureRegistry
         float bestD = BedSearchRange * BedSearchRange;
         foreach (var site in data.Sites)
         {
-            if (site.Town.Type is TownType.NestMarker or TownType.Null || site.Index >= data.SiteFactions.Count || data.SiteFactions[site.Index] != faction) continue;
+            if (site.Town.Type == TownType.NestMarker || site.Index >= data.SiteFactions.Count || data.SiteFactions[site.Index] != faction) continue;
             float d = Vector2.DistanceSquared(here, new Vector2(site.Position.X, site.Position.Z));
             if (d <= bestD) (best, bestD) = (CampaignTown.OfSite(site.Index), d);
         }
@@ -94,7 +103,7 @@ public sealed partial class FixtureRegistry
         var relations = data.Relations;
         bool known = owner >= 0 && relations.Contains(owner) && relations.Contains(faction);
         if (known && relations.IsHostile(owner, faction) || f.Contents is not null) return false;
-        if (f.Id == f.Building)
+        if (!IsInside(f))
         {
             if (squad is { Town: >= 0 } && f.Site == squad.Town) return true;
         }

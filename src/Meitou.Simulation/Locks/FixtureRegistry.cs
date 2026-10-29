@@ -158,6 +158,7 @@ public sealed partial class FixtureRegistry
         bedSpots = null; cageList = null;
         usableData ??= data;
         levelPublic[b.Key] = Saved?.GetValueOrDefault(b.Key) is { } savedState ? savedState.Bools.GetValueOrDefault("is public day", true) : b.LevelState?.GetBool("is public day", true) ?? true;
+        if (Saved?.GetValueOrDefault(b.Key) is { } nestedState ? nestedState.Bools.GetValueOrDefault("is inside building") : b.LevelState?.GetBool("is inside building") ?? false) nested.Add(b.Key);
         if (Saved?.GetValueOrDefault(b.Key) is { } state)
         {
             Restore(StateKeys.Of(state), b.Key, list, level: false);
@@ -549,7 +550,7 @@ public sealed partial class FixtureRegistry
             float w = Math.Clamp(1 - d2 / (CageSearchScale * CageSearchScale), 1e-5f, 1);
             if (own) w *= 100;
             if (home is not null && f.Building == home) w *= 100;
-            if (f.Id != f.Building && !IsPublic(f.Building))
+            if (IsInside(f) && !IsPublic(f.Building))
             {
                 if (!policeKnown) (police, policeKnown) = (world.SystemOf<CrimeSystem>()?.IsPoliceLike(world, carrier) == true, true);
                 if (police) w *= NotPublicPolice;
