@@ -292,11 +292,11 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
         tasks.Register(CharacterTask.Wander, this);
     }
 
-    /// <summary>A move order (29) needs nothing more; a follow order (31, 45) a target that is there, and an awake, free character (not caged or carried).</summary>
+    /// <summary>A move order (29) needs an awake character (one out cold keeps it queued until it wakes); a follow order (31, 45) a target that is there, and an awake, free character (not caged or carried).</summary>
     OrderCheck IOrderOwner.CanRun(World world, int slot, OrderEntry order)
     {
-        if (order.IsMove) return OrderCheck.Run;
         var table = world.Characters;
+        if (order.IsMove) return table.Cold(slot)!.Medical?.Incapacitated == true ? OrderCheck.Blocked() : OrderCheck.Run;
         if (!table.TryResolveNext(order.Target, out int led) || led == slot) return OrderCheck.Gone;
         return table.Cold(slot) is { IsImprisoned: false, Medical.Incapacitated: false, CarriedBy.IsNone: true } ? OrderCheck.Run : OrderCheck.Blocked();
     }
