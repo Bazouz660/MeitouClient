@@ -113,7 +113,7 @@ the task it goes back to are the new start's); the provenance is recorded in `Ch
 target, site, tick, resume task); the act-out starts.
 `TaskStart.End(world, slot, reason)` ends a task and drops its provenance: `TaskEnd.Stopped` from outside the act-out (the Stop order, a squad mate lifted awake: then idle);
 `TaskEnd.Done` the act-out's own end (a treatment, carry, site's or machine's work, haul trip, prospecting, a job's follow: the handler lets go, then the character takes up
-`RunningTask.Resume`, engine; every end also sets the replan bit, [decision step](#decision-step)). Walks (bed, item work) end by standing; their provenance then no longer runs the task. A lock order's worker (lock, shackle, cage, door, force work)
+`RunningTask.Resume`, engine; one the [decision step](#decision-step) decides stands idle; every end also sets the replan bit). Walks (bed, item work) end by standing; their provenance then no longer runs the task. A lock order's worker (lock, shackle, cage, door, force work)
 stands at its work and its provenance runs `Idle` from then (`LockSystem.AtWork`), so the next start ends the work through the lock handler (a move order given at a cage walks away). Each `CharacterTask` has one
 `ITaskHandler` (Start, End, Done), registered by its system (`ITaskOwner`) in `World.Tasks`, an open list later code may add to or replace; a task without one is set as is. Owners: movement
 (GoTo, Follow, Idle, Wander), combat (Attack), first aid (Treat, Rest), carry (PickUp, PutDown, Loot, StealthKo), production (Operate, Haul, Prospect), construction (Build, Dismantle,
@@ -137,16 +137,16 @@ delivering, fetching and dismantling are steps of one act-out (`TaskStart.ActOut
   is not tested (the AI's planner chose the row). Same timing as before at any thread count.
 - An act-out's own system moves its character on with `TaskStart.Step` (another task of the act-out, or back to a standing task), `TaskStart.StepTo` (its next walk) and
   `TaskStart.Stand` (stop, idle): any phase, its own slot, provenance kept (it then no longer runs the task). These are the walks' arrivals and give-ups, a failed or blocked path, a
-  follow whose target or leader is gone, a builder's steps, a bed reached, a fight's end (`CombatSystem.EndFight`: idle, a follow row's provenance kept for `FollowResume`; a job's
-  fight, row 16, takes up its provenance's resume, following or idle), an NPC's stand-down back to its routine (`AggroSystem`), a knock-out (`BodySystem`), a caged character held
+  follow whose target or leader is gone, a builder's steps, a bed reached, a fight's end (`CombatSystem.EndFight`: idle, a follow row's provenance kept for `FollowResume`), an NPC's
+  stand-down back to its routine (`AggroSystem`), a knock-out (`BodySystem`), a caged character held
   in place (`FixtureRegistry`).
 - Engine starts end the fight and the task before as any start does (a flight's run stops the fight at once, a dialogue act's walk ends it). An errand's own walks would end a fight
   its character is in, so they wait for it: a town duty steps nothing while its member fights (a player character's food run ends instead), an approaching, following or stalking talker does not walk (engine choice; the
   original's priority-3 reactions beat these goals).
 - Provenance is the only job mark: `PermaJobs.FromJob` is a `TaskSource.Job` provenance that runs the task (the non-`IsPlayer` player-faction characters' food pass reads it);
   `PermaJobs.ListJob` the production pick's list job (its index) or implicit job it runs (not a follow row's fight step), which the implicit pass, an NPC's rescue rank test and the circle
-  break read; a list edit moves any job provenance's index (one whose job left the list keeps running with index -1). The task an act-out goes back to is `RunningTask.Resume`: a job's
-  start records the resume of the job it takes over (a `TaskSource.Job` provenance that runs the task), else following or wandering, else idle (`PermaJobs.ResumeOf`); a medic or builder
+  break read; a list edit moves any job provenance's index (one whose job left the list keeps running with index -1). The task an act-out goes back to is `RunningTask.Resume`, for the
+  characters the decision step does not decide: following or wandering when it did that, else idle (`TaskStart.Standing`); a medic or builder
   already at it keeps its own (`TaskStart.ResumeOf`).
 - Engine: a fight ended in a serial phase clears both combat state arrays (`CombatSystem.Live` tells which one is current: the slow-world swap changes it).
 - Debug builds check at each tick's end that every task change went through the start path (`TaskStart.CheckStarts`): `Start`, `End`, `StartOwn`, `Step`, `StepTo` and `Stand`
@@ -220,7 +220,11 @@ only (`ApplyPausedInterfaceCommands`; the bit stays for the next tick).
      a treatment runs until it ends), carry (148, 238; `FindRescue` with the bed search, `FindForage`), beds (106; a carried non-hostile body and a bed), aggro (16; the enemy the look
      offered this tick, the row's desire). Finders are asked only up to the first job that runs. Then the implicit jobs (`ProductionSystem.ImplicitJobs`, the squad AI options' lowest
      keys): over idling, a standing task or a job's task, the pick of `ImplicitPick` starts, runs while it is the one the character is on, and an implicit job that no longer holds ends.
-  6. None yet: with nothing from steps 1-5 the standing tasks go on.
+  6. 14 Idleness (priority 1, every character's): a player character stands idle, its routine (player characters neither wander nor follow a leader by themselves). It runs over
+     idling, a fight, and any task a plan still runs (an order's, a goal's, an engine act-out's: those end by their own rules); a wander or follow no plan runs is given up for it. So a
+     task that ends (`TaskEnd.Done`) leaves the character idle and the step re-decides (the job, goal or order it lands on, else idleness), where the original re-plans; nothing resumes.
+     The default task (`+0x190`, tried after the priority-1 goals) is never reached: Meitou models no manoeuvre mode but ROAM_FAR, whose default task is idleness
+     ([precedence](game/ai-tasks.md#precedence)).
 - **Triggers** (`CharacterCold.Replan`, `DecisionSystem.Request`; hashed while set): a task end (`TaskStart.End`, any reason), an order given or the queue cleared (`PlayerOrders.Give`,
   Stop), a stagger outside a fight (not for a gunner), the melee alert while the fight is off unless the target gets up or is player-side and moving (`RetaliationSystem`, horizontal speed
   above 1), a job list change or the jobs switch, a load (`SavedPopulation`), a sighting for row 16 (Hold's goal or the job; engine: the look stands in for the sensed list's update),
@@ -1376,7 +1380,7 @@ crafting benches, generators and batteries. Facts: [production](game/buildings-p
   `Runnable` holds: a job whose site (or the engineer finder's pick) is `JobRangeSq` 4.246733e7 (≈ 6517, 3D) or more from the character is skipped
   ([range](game/ai-tasks.md#perma-jobs); players are treated as ROAM_FAR and the home-town exception is left out), as is every job but Bodyguard / Staying close while the
   character gets up (`GettingUpUntil`), and Operating machine, Turret guard and Training without a working arm; a carrier or a carried character looks at none and keeps the one it is on;
-  an order replaces the job's task, and the list resumes once the order is done. A job that ends returns the character to the following or wandering it took it from. The other jobs'
+  an order replaces the job's task, and the list resumes once the order is done. A job that ends leaves the character idle, decided again at once. The other jobs'
   contributors are further below:
   - 97 Training (Shift + right click on a training dummy, function 7, or the "Training" verb): the Operate task at the dummy; `Train` raises the building's `stat used` by the capped continuous
     XP entry (`XpService.Capped`, rate 2, cap = `output rate`; [facts](game/ai-tasks.md#perma-jobs)). Blocked while the dummy has no free place or the character has no working arm.
@@ -1424,7 +1428,7 @@ crafting benches, generators and batteries. Facts: [production](game/buildings-p
     - 238 Foraging animals (`CarrySystem.FindForage`): the nearest downed, uncarried animal within sight holding items, not of its own faction
       (engine choice), is looted (take-all and butchering).
     - 16 Attacking enemies: `AggroSystem` looks for the character as for an NPC (`HuntsEnemies`: the job and row 16's desire, not Passive, not sneaking outside a fight, standing) and
-      offers the sighting to the step (`AttackJob`); never gives up a chase; after the fight it goes back to following or stands idle (the provenance's resume).
+      offers the sighting to the step (`AttackJob`); never gives up a chase; after the fight it stands idle and is decided again.
   - Engine choices: the re-ask period; the injury test, the ranges, a bed's clip (`sleeponfloor`) and a seat's facing (its own, not the table it faces).
   - Saves: GAMESTATE_AI `pjob<i>` / `pjobT<i>` / `jobs` as the original, plus `meitou pjob<i>` (the site id) for a building the handle cannot
     name; the older `meitou jobs enabled` is read, not written; `chase mode` is written and read as the switch. The squad AI options are the

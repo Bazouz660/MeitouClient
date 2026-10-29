@@ -92,7 +92,7 @@ public sealed record DecisionTrace(long Tick, string Winner, IReadOnlyList<strin
 /// when its replan bit is set (<see cref="Request(World, int)"/>: a task ended, an order added or cleared, a stagger outside a fight, the melee alert with the fight off, the jobs changed,
 /// a load), when its front order's task ended, and (<b>engine</b>) every <see cref="Production.ProductionSystem.JobCheckTicks"/> while it is idle or on a job's task. The sources are asked
 /// in the original's order and the first that can run starts (step 4: the best score); a source already running ends the step. Steps 3 and 5 walk the character's job list through the systems'
-/// job contributors (<see cref="RegisterJob"/>); with nothing from steps 1 to 5 the standing task goes on. NPCs keep <see cref="Ai.AiSystem"/>.
+/// job contributors (<see cref="RegisterJob"/>); step 6 ends in 14 Idleness, which always answers. NPCs keep <see cref="Ai.AiSystem"/>.
 /// Run in the slow world after retaliation, aggro and flight (<see cref="World.RunTick"/>), and for orders only between ticks (<see cref="World.ApplyPausedInterfaceCommands"/>).
 /// </summary>
 public sealed class DecisionSystem
@@ -107,6 +107,7 @@ public sealed class DecisionSystem
         Register(new OrderSource());
         Register(new JobSource(this, urgent: true));
         Register(new JobSource(this, urgent: false));
+        Register(new Idleness());
     }
 
     /// <summary>The characters the step decides: the player's (<see cref="CharacterCold.IsPlayer"/>); the others are the AI's and the engine's (docs/simulation.md "Decision step").</summary>
@@ -165,7 +166,7 @@ public sealed class DecisionSystem
         var task = (CharacterTask)world.Characters.Next[slot].Task;
         if (task == CharacterTask.Attack || cold.InCombat) return false;
         if (cold.Running is not { } run || !run.Runs(task)) return true;
-        return run.Source == TaskSource.Job || run.Source == TaskSource.Order && cold.OrderQueue.Front is { Started: true } front && PlayerOrders.NeedsNoThreat(front.Row);
+        return run.Source == TaskSource.Job || run.Row == TaskType.IDLE || run.Source == TaskSource.Order && cold.OrderQueue.Front is { Started: true } front && PlayerOrders.NeedsNoThreat(front.Row);
     }
 
     /// <summary>Decides every player character that is due, in slot order (serial). <paramref name="paused"/>: between ticks, orders only; the bit stays for the next tick's full step.</summary>
@@ -329,5 +330,29 @@ public sealed class DecisionSystem
         public void Start(World world, int slot) => PlayerOrders.StartFront(world, slot);
 
         public void Passed(World world, int slot, in DecisionCheck check) => PlayerOrders.Refused(world, slot);
+    }
+
+    /// <summary>
+    /// Step 6's priority-1 goal 14 Idleness (<c>Character::setupAI</c> gives it to everyone, weight 0.1): a player character stands idle, which is its routine (player characters neither wander
+    /// nor follow a leader by themselves). It runs over idling, a fight (its goal's or row's), and any task a plan still runs (an order's, a goal's, the engine's: those end by their own rules;
+    /// a stale job's ended at step 5); a wander or follow no plan runs is given up for it. The default task (<c>+0x190</c>, tried after the priority-1 goals) is never reached: it is
+    /// 14 Idleness too unless the manoeuvre mode is STAY_CLOSE or HOLD_GROUND, which Meitou does not model (docs/game/ai-tasks.md "Precedence").
+    /// </summary>
+    sealed class Idleness : IDecisionSource
+    {
+        public string Name => "14 Idleness";
+        public DecisionStep Step => DecisionStep.Fallback;
+        /// <summary>The priority-1 goals come after the priority-2 ones (keys 1000 + type).</summary>
+        public int Key => 2000 + (int)TaskType.IDLE;
+
+        public DecisionCheck CanRun(World world, int slot)
+        {
+            var cold = world.Characters.Cold(slot)!;
+            var task = (CharacterTask)world.Characters.Next[slot].Task;
+            bool planned = cold.Running is { } run && run.Runs(task);
+            return task is CharacterTask.Wander or CharacterTask.Follow && !planned && !cold.InCombat ? DecisionCheck.Run : DecisionCheck.Runs;
+        }
+
+        public void Start(World world, int slot) => TaskStart.Become(world, slot, CharacterTask.Idle, TaskType.IDLE, TaskSource.Goal);
     }
 }

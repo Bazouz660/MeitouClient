@@ -17,8 +17,6 @@ public sealed record AttackOrder(IReadOnlyList<CharacterId> Attackers, Character
     public TaskSource? Source { get; init; }
     /// <summary>The job of the attackers' lists the fight runs (<see cref="TaskRequest.Job"/>; -1: none).</summary>
     public int Job { get; init; } = -1;
-    /// <summary>The task a job's fight goes back to when it ends by itself (<see cref="TaskRequest.Resume"/>).</summary>
-    public CharacterTask Resume { get; init; }
 }
 
 /// <summary>

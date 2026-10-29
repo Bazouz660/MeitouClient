@@ -753,7 +753,10 @@ update `FUN_140511130`, `Character::setupAI` `FUN_140621b70`; KenshiLib names **
      Obedient Slave 187 (slave state 1, not sneaking) and the kind-2 jobs (turret guard 234) while the AI's sensed-enemy count +0xbc is non-zero, and picks.
   4. Priority-3 goals: the squad's (blackboard, `FUN_140269240` / `FUN_14026b790`) and the character's own (+0xa0 + 0x18 x priority), one pick.
   5. Committed with the running priority above 1: stop. Else **every job** in list order, then the implicit jobs ([Perma-jobs](#perma-jobs)).
-  6. Priority-2 goals; committed with the running priority above 0: stop; priority-1 goals; the hold-position task (+0x190); else AI vfunc 0x98.
+  6. Priority-2 goals; committed with the running priority above 0: stop; priority-1 goals; the default task (+0x190, at key 1.0); else AI vfunc 0x98. The default task (**Verified**:
+     setter `OrdersReceiver` vfunc 4 `FUN_14050c030`, a fresh 14 Idleness with no target when given none) is reset by every order (`FUN_1405d20d0`, the move order `FUN_1405d22b0`) and by
+     standing orders 8 / 9, by the AI's manoeuvre mode (+0x2bc): `FUN_140599970` (a point: the order's) and `FUN_1405966a0` (a target) make it 30 Holding position for HOLD_GROUND (0),
+     31 Staying close for STAY_CLOSE (1), and idleness for ROAM_FAR (2, the default). The Hold toggle (standing order 12) does not touch it.
 - **Goals of a character** (`setupAI`): everyone 14 Idleness (priority 1, weight 0.1) and 32 Self preservation (priority 3, weight 1, target itself). A player-faction character
   (its faction's +0x250 set, `FUN_1407916d0`) also 243 Getting food (priority 3, weight 0.5) unless it has it; a player-faction animal also its race's `AI Goals` and 259 Picking
   up food (priority 3, 0.5), and loses 230. A character of another faction gets its race's `AI Goals`; when an object reached through Character +0x658 (+0x78, +0xf8) has +0x210
@@ -776,8 +779,8 @@ update `FUN_140511130`, `Character::setupAI` `FUN_140621b70`; KenshiLib names **
   ([simulation](../simulation.md#order-queue); one that cannot run stays queued with its text and the step goes on; a turret gunner's 146 ends under a melee threat and is taken up again
   once it is gone, `PlayerOrders.NeedsNoThreat`), step 2 has no source (no player goal Meitou runs commits), step 3 the urgent jobs (234 while an enemy is sensed; stand-in
   `AggroSystem.SensesEnemy`; 187 not modelled for player characters), step 4 picks among 32 Self preservation, 243 Getting food, 259 Picking up food, Hold's 16 and an engine goal for
-  joining a mate's or an ally's defence, step 5 every job in list order through its system's contributor (the switch and the repertoire first), and with nothing there the implicit jobs
-  and standing tasks go on (step 6 has no source yet). Followers and bodyguards fight by their rows: an attacker of the followed character within 40 (16), a bodyguard also its own
+  joining a mate's or an ally's defence, step 5 every job in list order through its system's contributor (the switch and the repertoire first), then the implicit jobs,
+  step 6 14 Idleness (a player character's routine: it stands; the default task is never reached, no manoeuvre mode but ROAM_FAR is modelled). Followers and bodyguards fight by their rows: an attacker of the followed character within 40 (16), a bodyguard also its own
   within 40 (39), as a step of the row (`RetaliationSystem.Guards`, `SelfDefends`), and follow again when the fight ends (a replan). The step runs on the replan triggers above plus an
   engine re-ask every `JobCheckTicks` of a character idle or on a job's task (no periodic replan was found), so a higher job takes over a running one (a medic's, a rescue's) within
   that period, where the original waits for its next replan. Gap: mates join a fight only from idle (the original's way a player character joins a mate is **Unknown**).

@@ -230,7 +230,7 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed, ITaskOwner
         // that is called in on a sighting or an attack and cannot reach the enemy (a cage, a locked room) would otherwise stand at the nearest spot for ever.
         if (!order.Picked && PursuitSystem.PathImpossible(cold, target, now)) return false;
         var (row, source) = order.Picked ? (TaskType.FOCUSED_MELEE_ATTACK, TaskSource.Order) : order.Defensive ? (TaskType.ATTACK_ATTACKERS_OF, TaskSource.Reaction) : (TaskType.ATTACK_ENEMIES, TaskSource.Goal);
-        return TaskStart.Start(world, a, new TaskRequest(CharacterTask.Attack, row, order.Source ?? source) { Target = target, Job = order.Job, Resume = order.Resume }) == StartResult.Started;
+        return TaskStart.Start(world, a, new TaskRequest(CharacterTask.Attack, row, order.Source ?? source) { Target = target, Job = order.Job }) == StartResult.Started;
     }
 
     /// <summary>Whether the victim is in melee combat mode, read before an order engages anyone (an attack on a fighting character is a lesser assault).</summary>
@@ -346,14 +346,7 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed, ITaskOwner
     {
         var cold = table.Cold(slot)!;
         if (cold.InCombat) s.ListEpoch++;
-        // A job's fight (the attacking-enemies job, row 16) ending by itself takes up its provenance's resume: following again, or standing (engine, until the decision step decides again).
-        var resume = table.Next[slot].Task == (byte)CharacterTask.Attack && cold.Running is { Source: TaskSource.Job, Task: CharacterTask.Attack } run
-            && !Production.PermaJobs.Follows(run.Row) ? run.Resume : CharacterTask.Idle;
         EndFight(table, slot);
-        if (resume == CharacterTask.Idle) return;
-        TaskStart.Step(table, slot, resume);
-        table.Next[slot].TaskTime = 0;
-        cold.FollowPathTime = 0;
     }
 
     static void EndFight(CharacterTable table, int slot)

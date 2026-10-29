@@ -272,7 +272,7 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
     /// <see cref="FollowOrder"/>: each awake, free character (not the target) drops what it does and follows the target (<see cref="CharacterCold.FollowOrder"/>); a sleeper gets up first.
     /// The order is row 45 Bodyguard or 31 Staying close; a job's follow (<paramref name="source"/> <see cref="TaskSource.Job"/>) runs the job's <paramref name="row"/>.
     /// </summary>
-    internal static void Follow(World world, FollowOrder order, TaskSource source = TaskSource.Order, int job = -1, TaskType? row = null, CharacterTask resume = CharacterTask.Idle)
+    internal static void Follow(World world, FollowOrder order, TaskSource source = TaskSource.Order, int job = -1, TaskType? row = null)
     {
         var table = world.Characters;
         if (!table.TryResolveNext(order.Target, out int led)) return;
@@ -280,7 +280,7 @@ public sealed class MovementSystem(PathService paths) : ITickSystem, IDisposable
         {
             if (!table.TryResolveNext(id, out int s) || s == led || table.Cold(s) is not { IsImprisoned: false, Medical.Incapacitated: false, CarriedBy.IsNone: true } cold) continue;
             if (cold.InSomething == Locks.HeldState.Bed) world.Fixtures.LeaveBed(world, id);
-            TaskStart.Start(world, s, new TaskRequest(CharacterTask.Follow, row ?? (order.Guard ? TaskType.BODYGUARD : TaskType.STAY_CLOSE_TO_TARGET), source) { Job = job, Target = order.Target, Resume = resume });
+            TaskStart.Start(world, s, new TaskRequest(CharacterTask.Follow, row ?? (order.Guard ? TaskType.BODYGUARD : TaskType.STAY_CLOSE_TO_TARGET), source) { Job = job, Target = order.Target });
         }
     }
 

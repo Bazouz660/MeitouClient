@@ -443,14 +443,11 @@ public sealed partial class FirstAidSystem
     /// <summary>The Splint Rigging job's treatment (row 250).</summary>
     static TaskRequest Splinting(int job) => new(CharacterTask.Treat, TaskType.SPLINT_JOB, TaskSource.Job) { Job = job };
 
-    /// <summary>The task a job's treatment goes back to: what the medic did before its jobs (<see cref="Production.PermaJobs.ResumeOf"/>).</summary>
-    static CharacterTask ResumeOf(World world, int i) => Production.PermaJobs.ResumeOf(world.Characters.Cold(i)!, (CharacterTask)world.Characters.Next[i].Task);
-
-    /// <summary>Starts a treatment of <paramref name="patient"/> (<paramref name="request"/> without its target), going back afterwards to what the medic did before its job.</summary>
+    /// <summary>Starts a treatment of <paramref name="patient"/> (<paramref name="request"/> without its target); an NPC medic goes back afterwards to its standing task (<see cref="TaskStart.Standing"/>).</summary>
     static bool StartJob(World world, int i, int patient, List<(int Medic, int Patient)> taken, TaskRequest request)
     {
         var next = world.Characters.Next;
-        var resume = TaskStart.ResumeOf(world, i, CharacterTask.Treat, ResumeOf(world, i));
+        var resume = TaskStart.ResumeOf(world, i, CharacterTask.Treat, TaskStart.Standing(world.Characters.Cold(i)!, (CharacterTask)next[i].Task));
         if (TaskStart.Start(world, i, request with { Target = new CharacterId(patient, next[patient].Generation), Resume = resume }) != StartResult.Started) return false;
         taken.Add((i, patient));
         return true;

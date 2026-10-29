@@ -91,8 +91,7 @@ public sealed partial class ProductionSystem
             var table = world.Characters;
             var cold = table.Cold(slot)!;
             if (found.Tick != world.Tick || found.Slot != slot || found.K != k || KindOf(cold.Jobs[k].Type) is not { } kind) return;
-            var resume = PermaJobs.ResumeOf(cold, (CharacterTask)table.Next[slot].Task);
-            if (!owner.Carry!.BeginPickUp(world, slot, found.Body, resume, source: TaskSource.Job, job: k, row: cold.Jobs[k].Type)) return;
+            if (!owner.Carry!.BeginPickUp(world, slot, found.Body, source: TaskSource.Job, job: k, row: cold.Jobs[k].Type)) return;
             owner.errands[table.IdOf(slot)] = new Errand { Kind = kind, Goal = found.Goal, Body = found.Body };
         }
     }

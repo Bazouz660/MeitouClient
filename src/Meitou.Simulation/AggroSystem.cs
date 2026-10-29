@@ -347,8 +347,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
     /// <summary>
     /// The job 16 Attacking enemies (Shift with an attack; it runs with the jobs switch off, docs/game/ai-tasks.md "Perma-jobs") as the decision step's contributor (step 5): its finder is the
     /// original's attack on sight (<c>FUN_14059f3a0</c>, "Combat goals"), which this system's look stands in for: the enemy the look (or a squad mate's) offered this tick is attacked
-    /// (row 16, the job's provenance), with the row's desire (0 while Passive, sneaking outside a fight or not standing, <see cref="WantsToAttack"/>). After the fight the character takes up
-    /// following again, or stands (the provenance's resume).
+    /// (row 16, the job's provenance), with the row's desire (0 while Passive, sneaking outside a fight or not standing, <see cref="WantsToAttack"/>). The fight's end asks a decision.
     /// </summary>
     sealed class AttackJob(AggroSystem owner) : IJobSource
     {
@@ -367,8 +366,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
             int t = owner.Offered(world, slot);
             if (t < 0) return;
             var targetId = table.IdOf(t);
-            var resume = table.Next[slot].Task == (byte)CharacterTask.Follow ? CharacterTask.Follow : CharacterTask.Idle;
-            world.Defer(new AttackOrder([table.IdOf(slot)], targetId) { Tick = world.Tick + 1, Source = TaskSource.Job, Job = k, Resume = resume });
+            world.Defer(new AttackOrder([table.IdOf(slot)], targetId) { Tick = world.Tick + 1, Source = TaskSource.Job, Job = k });
             owner.Started++;
             world.Sounds?.Enqueue(new SoundEvent(SoundKind.Alert, table.IdOf(slot), targetId, table.Next[t].Position));   // its alert voice
         }
@@ -1111,8 +1109,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
             ref var n = ref next[i];
             if (!n.Alive) continue;
             var cold = table.Cold(i)!;
-            // The player's characters never give up a chase (the original's gate: the chaser's faction is not the player's); after its fight one on the attacking-enemies job takes up its
-            // provenance's resume (CombatSystem's fight end).
+            // The player's characters never give up a chase (the original's gate: the chaser's faction is not the player's); after a fight they are decided again (the decision step).
             if (cold.IsPlayer) continue;
             ref var s = ref slots[i];
             if (n.Task == (byte)CharacterTask.Attack)

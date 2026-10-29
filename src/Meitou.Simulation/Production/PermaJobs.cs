@@ -93,14 +93,6 @@ public static class PermaJobs
     public static RunningTask? ListJob(CharacterCold cold, CharacterTask task) =>
         task != CharacterTask.Attack && cold.Running is { Source: TaskSource.Job } run && run.Runs(task) && (run.Implicit || run.Job >= 0 && (Runs(run.Row) || Follows(run.Row))) ? run : null;
 
-    /// <summary>
-    /// The task a job's start goes back to (engine, until a decision decides again): the one the job it takes over goes back to (a <see cref="TaskSource.Job"/> provenance that runs
-    /// <paramref name="task"/>, list or implicit), else following or wandering when it does that, else idle.
-    /// </summary>
-    public static CharacterTask ResumeOf(CharacterCold cold, CharacterTask task) =>
-        task != CharacterTask.Attack && cold.Running is { Source: TaskSource.Job } run && run.Runs(task) ? run.Resume
-        : task is CharacterTask.Wander or CharacterTask.Follow ? task : CharacterTask.Idle;
-
     /// <summary>The index of the first job of <paramref name="type"/> in the list, -1 when none.</summary>
     public static int IndexOf(CharacterCold cold, TaskType type) => cold.Jobs.FindIndex(j => j.Type == type);
 

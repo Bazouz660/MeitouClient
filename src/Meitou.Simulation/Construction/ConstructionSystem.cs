@@ -704,11 +704,10 @@ public sealed class ConstructionSystem : ITickSystem, ITaskOwner, ITaskHandler, 
     }
 
     /// <summary>
-    /// The engineer job's start (job <paramref name="job"/> of the list; <see cref="Production.ProductionSystem"/> runs the lists): the character works <paramref name="site"/> and then goes back
-    /// to <paramref name="resume"/>.
+    /// The engineer job's start (job <paramref name="job"/> of the list; <see cref="Production.ProductionSystem"/> runs the lists): the character works <paramref name="site"/>.
     /// </summary>
-    public void StartBuilding(World world, int slot, BuildSite site, CharacterTask resume, int job) =>
-        Start(world, slot, new TaskRequest(CharacterTask.Build, TaskType.JOB_BUILDER, TaskSource.Job) { Job = job, Site = site.Id, Resume = resume });
+    public void StartBuilding(World world, int slot, BuildSite site, int job) =>
+        Start(world, slot, new TaskRequest(CharacterTask.Build, TaskType.JOB_BUILDER, TaskSource.Job) { Job = job, Site = site.Id });
 
     /// <summary>Starts work through <see cref="TaskStart.Start"/>; a worker already at work keeps the task it goes back to.</summary>
     static void Start(World world, int slot, TaskRequest request) =>

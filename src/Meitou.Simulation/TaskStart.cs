@@ -62,7 +62,7 @@ public enum TaskEnd : byte
     /// <summary>The Stop order: the act-out lets go and the character stands, idle.</summary>
     Stopped,
     /// <summary>
-    /// The act-out ended by itself (its work is done, or it cannot go on): it lets go, and the character goes back to the task its provenance names (<see cref="RunningTask.Resume"/>;
+    /// The act-out ended by itself (its work is done, or it cannot go on): it lets go, and the character goes back to the task its provenance names (<see cref="RunningTask.Resume"/>; one the decision step decides stands idle;
     /// engine; the end also asks the decision step to decide again, <see cref="DecisionSystem.Request(CharacterCold)"/>).
     /// </summary>
     Done,
@@ -96,7 +96,7 @@ public readonly record struct TaskRequest(CharacterTask Task, TaskType Row, Task
 /// </summary>
 public sealed record RunningTask(CharacterTask Task, TaskType Row, TaskSource Source, int Job, CharacterId Target, string? Site, long Tick)
 {
-    /// <summary>The task the act-out goes back to when it ends by itself (engine, until a decision step decides again; production's own end takes only wandering or following).</summary>
+    /// <summary>The task the act-out goes back to when it ends by itself (engine): the AI's and the engine's characters only; one the decision step decides stands idle and is decided again.</summary>
     public CharacterTask Resume { get; init; }
     /// <summary>Started by an implicit job of the squad AI options (<see cref="TaskRequest.Implicit"/>).</summary>
     public bool Implicit { get; init; }
@@ -275,6 +275,13 @@ public static class TaskStart
         return ActOut(current) == ActOut(task) && world.Characters.Cold(slot)!.Running is { } run && run.Runs(current) ? run.Resume : resume;
     }
 
+    /// <summary>
+    /// The standing task an engine start of a character on <paramref name="task"/> goes back to (<see cref="RunningTask.Resume"/>): wandering or following when it does that, else idle; idle for
+    /// a character the decision step decides (its routine is the step's, step 6).
+    /// </summary>
+    public static CharacterTask Standing(CharacterCold cold, CharacterTask task) =>
+        !DecisionSystem.Decides(cold) && task is CharacterTask.Wander or CharacterTask.Follow ? task : CharacterTask.Idle;
+
     static bool Step(RunningTask running, CharacterTask current, in TaskRequest request) =>
         request.Task == CharacterTask.Attack && request.Source is TaskSource.Goal or TaskSource.Reaction && Production.PermaJobs.Follows(running.Row)
         && running.Runs(current) && current is CharacterTask.Follow or CharacterTask.Attack;
@@ -311,7 +318,7 @@ public static class TaskStart
     /// Ends the character's task (serial phases only) and drops its provenance. <see cref="TaskEnd.Stopped"/> (from outside the act-out): the fight and the task end through their handlers
     /// and the character stands, idle (<see cref="MovementSystem.Stop"/>). <see cref="TaskEnd.Done"/> (the act-out's own end: a treatment, carry, site's work, machine's work, haul trip or
     /// prospecting): the task's handler lets go, the character stands and takes up the task its provenance goes back to (<see cref="RunningTask.Resume"/>; idle when the provenance does not
-    /// run the task).
+    /// run the task). A character the decision step decides stands idle: the step's next decision (the end asks for one) puts it on its routine (step 6), as the original re-plans.
     /// </summary>
     public static void End(World world, int slot, TaskEnd reason)
     {
@@ -320,7 +327,7 @@ public static class TaskStart
         var cold = table.Cold(slot)!;
         PlayerOrders.Ending(world, slot, reason);
         var current = (CharacterTask)table.Next[slot].Task;
-        var resume = cold.Running is { } run && run.Runs(current) ? run.Resume : CharacterTask.Idle;
+        var resume = !DecisionSystem.Decides(cold) && cold.Running is { } run && run.Runs(current) ? run.Resume : CharacterTask.Idle;
         if (reason != TaskEnd.Done) world.Tasks.Of(CharacterTask.Attack)?.End(world, slot, CharacterTask.Attack, reason);
         if (current != CharacterTask.Attack) world.Tasks.Of(cold, current)?.End(world, slot, current, reason);
         if (reason != TaskEnd.Replaced) MovementSystem.Stop(table, slot);

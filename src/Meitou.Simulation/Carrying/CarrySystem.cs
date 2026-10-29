@@ -1038,9 +1038,8 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
             var table = world.Characters;
             var cold = table.Cold(slot)!;
             var type = cold.Jobs[k].Type;
-            var resume = Production.PermaJobs.ResumeOf(cold, (CharacterTask)table.Next[slot].Task);
             bool forage = type == TaskType.LOOT_ANIMALS_JOB;
-            if (CarrySystem.Start(world, slot, forage ? CharacterTask.Loot : CharacterTask.PickUp, type, TaskSource.Job, table.IdOf(found.Body), resume, k) && forage) cold.Foraging = true;
+            if (CarrySystem.Start(world, slot, forage ? CharacterTask.Loot : CharacterTask.PickUp, type, TaskSource.Job, table.IdOf(found.Body), CharacterTask.Idle, k) && forage) cold.Foraging = true;
         }
     }
 
@@ -1070,7 +1069,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         var table = world.Characters;
         int best = FindRescue(world, i, taken);
         if (best < 0 || !Start(world, i, CharacterTask.PickUp, TaskType.FIND_AND_RESCUE_IF_THERES_BEDS, source, table.IdOf(best),
-            Production.PermaJobs.ResumeOf(table.Cold(i)!, (CharacterTask)table.Next[i].Task), job)) return false;
+            TaskStart.Standing(table.Cold(i)!, (CharacterTask)table.Next[i].Task), job)) return false;
         taken.Add(best);
         return true;
     }
