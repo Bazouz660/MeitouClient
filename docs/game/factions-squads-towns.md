@@ -590,7 +590,8 @@ state change. Drafted and new platoons stay kept while the campaign is not ended
 **Requests** (`FUN_1409c9410`): victory/loss trigger rolls, retries, ally help and DIALOGUE_LINE `trigger campaign` (to the speaker's
 faction; target: talking to the player's side, the player-faction town nearest the speaker (XZ, nests excluded, `FUN_140927bb0`),
 and nothing is queued when the player owns none, so a homeless player gets no dialogue campaign, e.g. no crab tournament; another party:
-its platoon's town; no other party: speaker +0x1a0 → +0x88, **Unknown**; **Observed**, `FUN_140680560`) queue a campaign with a due time, target, home and
+its platoon's ownerships' town (`FUN_1407956a0` +0x30, none included: it wins); a line with no or an unresolvable target: the speaker's current town, speaker +0x1a0 → +0x88 (**Verified** that it is the default, set first and replaced only when the target resolves as a character or squad;
+that +0x88 is the current town **Observed**, as `FUN_14028a3f0` reads it); Meitou `TriggerFromDialogue`) queue a campaign with a due time, target, home and
 target faction. A weighted list [v0, v1, v2] fires one entry when uniform[0,100) < Σ v2 (v2 = percent), due after uniform[v0, v1) hours
 (**Verified** for dialogue by disassembly, **Observed** for the rest). `faction override` hands the request to that faction; a duplicate
 (same campaign and target) pending or active is dropped. Due requests check only world states and the leader (no chance, range, cooldown

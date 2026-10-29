@@ -622,7 +622,8 @@ public sealed partial class PopulationSystem : IStateHashed
     /// <summary>
     /// A DIALOGUE_LINE's <c>trigger campaign</c> list (<c>FUN_140680560</c>, docs/game/dialogue.md "Effects"), said by <paramref name="speaker"/> to <paramref name="target"/>: nothing
     /// when the speaker's squad is in a campaign; the target town is the player-faction town nearest the speaker when the target is of the player's faction (none: nothing, so a
-    /// homeless player gets no dialogue campaign), else the town of the target's platoon. One weighted draw queues an entry for the speaker's faction, due after uniform[V0, V1) hours.
+    /// homeless player gets no dialogue campaign), else the town of the target's platoon (none: nothing), and the speaker's own current town when the line has no resolvable
+    /// target (<c>FUN_140680560</c>, <b>Verified</b>). One weighted draw queues an entry for the speaker's faction, due after uniform[V0, V1) hours.
     /// Returns whether one was queued.
     /// </summary>
     public bool TriggerFromDialogue(World world, CharacterId speaker, CharacterId target, IReadOnlyList<CampaignLink> list)
@@ -633,8 +634,9 @@ public sealed partial class PopulationSystem : IStateHashed
         EnsureWars(world);
         if (WarOf(sc.Faction) is not { } m) return false;
         var at = new Vector2(table.Next[s].Position.X, table.Next[s].Position.Z);
-        var town = CampaignTown.None;
         var tc = table.TryResolveNext(target, out int t) ? table.Cold(t) : null;
+        // Without a (resolvable) target the town is the speaker's current one; a resolved target replaces it, also with none (a platoon without an origin).
+        var town = tc is null ? TownAt(world, at) : CampaignTown.None;
         if (tc is not null && (tc.IsPlayer || tc.Faction == world.Player.Faction))
         {
             float best = float.MaxValue;
