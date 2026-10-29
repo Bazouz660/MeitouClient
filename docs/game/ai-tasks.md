@@ -761,14 +761,17 @@ update `FUN_140511130`, `Character::setupAI` `FUN_140621b70`; KenshiLib names **
   (`taskPriority`): 1 fluff, 2 non-urgent, 3 urgent, 4 obedience; orders are queued at 3.
 - **So, for a player character**: an order beats everything, Self preservation included (an ordered medic keeps treating while hit; each landed blow staggers it and the order
   is planned again, [combat](combat.md#fight-lifecycle-and-orders)). Self preservation (while an attacker is within 181.7), Getting food and Hold's attack on sight beat every
-  job but the urgent ones (a turret's row refuses a threat within 40 anyway). A job higher in the list takes over at the next choice; the implicit jobs come after the list, Idleness last. Passive leaves
+  job but the urgent ones (a turret's row refuses a threat within 40 anyway). An order or job can still fight by its own rows: 31 Staying close needs `!16` and 45
+  Bodyguard `!16, !39` (16 / 39: the followed character's / its own +0x2b0, a threat within 40, `FUN_14059de10`), whose provider is 13 Attacking attackers of, so a
+  follower fights whoever threatens its leader and a bodyguard also its own attacker (**Observed**, from the row lists and the planner). A job higher in the list takes
+  over at the next choice; the implicit jobs come after the list, Idleness last. Passive leaves
   Self preservation alone; the Jobs switch only gates the job passes. A fight is a task (4 `Task_MeleeAttack`) in a goal's or an order's plan; `CombatClassAI` steers it and
   chooses nothing; the fight ends with the task.
 - **Meitou**: the player's characters run no chooser; each system acts on its own and an order replaces any task. Self preservation is `RetaliationSystem.SelfDefends`:
   it answers when the character is idle, a bodyguard following, looting with the attacker within 40, or on a task its jobs started (`PermaJobs.FromJob`: `JobIndex`,
   `Implicit`, `JobTask`); Hold's attack on sight (`AggroSystem.HoldsGround`) and Getting food (`TownDutySystem.LookPlayerFood`) likewise. Gaps: the immediate
-  answer ignores "moving"; a higher list job does not take over a running medic, rescue or foraging job; mates join a fight only from idle (the original's way a
-  player character joins a mate is **Unknown**).
+  answer ignores "moving"; a higher list job does not take over a running medic, rescue or foraging job; only a bodyguard defends its leader, not a follower (31);
+  mates join a fight only from idle (the original's way a player character joins a mate is **Unknown**).
 
 ## Combat goals
 
