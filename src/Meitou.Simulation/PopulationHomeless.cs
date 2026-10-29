@@ -289,16 +289,21 @@ public sealed partial class PopulationSystem
     }
 
     /// <summary>
-    /// The area tick's homeless branch (<c>FUN_1408f9240</c>): when the loaded sectors' squads (a sector with its own town counts at most 2) are below the sum of their
-    /// shares, one sector is drawn by weight max(0, share + 1 − standing), (w + 1) × 2 when nobody stands in it, and 0 when a town stands in it (<see cref="TownZones"/>);
-    /// one below its share makes one squad (built on the population thread), else the next draw.
+    /// The area tick's homeless branch (<c>FUN_1408f9240</c>): when the loaded sectors' load (an intact squad 1, another 0.5, a persistent one nothing; a sector with a town
+    /// counts at most 2) is below the sum of their shares, one sector is drawn by weight max(0, share + 1 − load), halved by its own town, (w + 1) × 2 when nobody stands in it, and 0
+    /// when a town stands in it (<see cref="TownZones"/>) or the camera looks at it; one whose intact squads are below its share makes one squad (built on the population thread), else the next draw.
     /// </summary>
     void RefillSectors(World world)
     {
         var groups = data.Biomes!.Groups;
         var table = world.Characters;
-        var standing = new Dictionary<ZoneCoordinate, int>();
+        // Each zone's load (intact squads 1, the others 0.5) and its intact count (the original's sets B and C, FUN_1408f6d20), by where the squads stand.
+        var standing = new Dictionary<ZoneCoordinate, float>();
+        var intactIn = new Dictionary<ZoneCoordinate, int>();
         var sectors = new List<int>();
+        var ownTown = new List<bool>();
+        var towns = TownZones();
+        HashSet<int>? persistent = null;
         float target = 0, load = 0;
         foreach (int i in wildLoaded)
         {
@@ -307,24 +312,29 @@ public sealed partial class PopulationSystem
             var state = wildStates[i];
             if (state.Status != SiteStatus.Loaded || state.Pending) return;   // one at a time, as the original's tick
             sectors.Add(i);
+            ownTown.Add(OwnTown(site));
             target += settings.PopulationMultiplier * groups[site.Group].HomelessSpawnAmount;
-            int held = 0;
+            float held = 0;
             foreach (int id in state.Squads)
             {
-                if (world.Squads.Find(id) is not { } squad) continue;
-                CharacterId? first = null;
-                foreach (var m in squad.Members)
-                    if (Living(world, m)) { first = m; break; }
-                if (first is not { } who || !table.TryResolveNext(who, out int slot)) continue;
-                held++;
-                var p = table.Previous[slot].Position;
-                var zone = WorldLayout.ZoneOf(p.X, p.Z);
-                standing[zone] = standing.GetValueOrDefault(zone) + 1;
+                // A persistent squad (a save's, an occupier) is filed in the uncounted set A.
+                if (world.Squads.Find(id) is not { } squad || (persistent ??= PersistentSquads(world)).Contains(id) || Occupying(squad)) continue;
+                bool intact = SquadIntact(world, squad);
+                held += intact ? 1 : 0.5f;
+                var zone = site.Zone;
+                foreach (var m in squad.Members.OrderBy(m => !Living(world, m)))
+                    if (table.TryResolveNext(m, out int slot))
+                    {
+                        zone = WorldLayout.ZoneOf(table.Previous[slot].Position.X, table.Previous[slot].Position.Z);
+                        break;
+                    }
+                standing[zone] = standing.GetValueOrDefault(zone) + (intact ? 1 : 0.5f);
+                if (intact) intactIn[zone] = intactIn.GetValueOrDefault(zone) + 1;
             }
-            load += OwnTown(site) ? Math.Min(held, 2) : held;
+            // Clamped to [0, 2] where a town is: its own, or the sector flag (FUN_1408f62e0, +0x30).
+            load += ownTown[^1] || towns.Contains(site.Zone) ? Math.Min(held, 2) : held;
         }
         if (sectors.Count == 0 || load >= target) return;
-        var towns = TownZones();
         // The sector under the camera focus is never drawn (DAT_142135230, set every frame from the GameWorld +0x580 object's place); the focus as RefreshZones takes it.
         ZoneCoordinate? view = (focus ?? (this.players.Count > 0 ? this.players[0] : null)) is { } eye ? WorldLayout.ZoneOf(eye.X, eye.Z) : null;
         var weights = new float[sectors.Count];
@@ -332,11 +342,12 @@ public sealed partial class PopulationSystem
         {
             var site = wildSites![sectors[k]];
             float share = settings.PopulationMultiplier * groups[site.Group].HomelessSpawnAmount;
-            int here = standing.GetValueOrDefault(site.Zone);
+            float here = standing.GetValueOrDefault(site.Zone);
             float w = MathF.Max(0, share + 1 - here);
+            if (ownTown[k]) w *= 0.5f;
             if (here == 0) w = (w + 1) * 2;
-            // A sector at its share is drawn and passed over in the original; it never makes one. A town's sector and the one in view never enter the pick.
-            weights[k] = here < share && !towns.Contains(site.Zone) && site.Zone != view ? w : 0;
+            // A sector whose intact squads are at its share is drawn and passed over in the original; it never makes one. A town's sector and the one in view never enter the pick.
+            weights[k] = intactIn.GetValueOrDefault(site.Zone) < share && !towns.Contains(site.Zone) && site.Zone != view ? w : 0;
         }
         // The sectors in draw order: the original draws one by weight, takes it out of the tree and tries the next while it made no squad (a sector with no usable spot), so the
         // order is a weighted draw without replacement, the first draw as before.
@@ -373,7 +384,17 @@ public sealed partial class PopulationSystem
         else work.Add(() => { foreach (var b in Build()) builtWild.Enqueue(b); });
     }
 
+    /// <summary>The loaded squads of a save's persistent platoons (the original's persistent flag +0x115, <c>FUN_1407ec570</c>): filed in a sector's uncounted set, not its load.</summary>
+    static HashSet<int> PersistentSquads(World world)
+    {
+        HashSet<int> ids = [];
+        foreach (var p in world.Platoons.All)
+            if (p.SquadId >= 0 && p.Saved?.Source.Record.Bools.GetValueOrDefault("persistent") == true) ids.Add(p.SquadId);
+        return ids;
+    }
+
     /// <summary>Whether the town nearest a sector's centre stands in it (<c>FUN_1408f62e0</c>).</summary>
+
     bool OwnTown(WildSite site)
     {
         var (minX, minZ, maxX, maxZ) = WeatherAreas.CellRect(site.Zone.X, site.Zone.Y);

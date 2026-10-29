@@ -142,8 +142,12 @@ World-state replacement towns and faction ownership affect both population and b
   first load after the loading screen (**Observed**, census through Meitou's `WorldStates`).
 
 **Sector and nest counts** (**Verified** by code): a platoon is filed in the area sector of its position (`FUN_1408f6c80`, from the platoon constructor and
-`Platoon::vfunc_28`): persistent platoons and nest squads into a set that is not counted, the rest into the counted set (+0x60, size +0x70), moved to a third set
-(+0x88, size +0x98) while imprisoned or dead but still loaded; a sector's load is +0x70 + 0.5 x +0x98 against its group's cap. A nest's or town's pool is the set
+`Platoon::vfunc_28`): persistent platoons (`+0x115`, or in a live campaign: `FUN_1407ec570`) and squads of a nest object (`FUN_1408f68a0`: its `vfunc 0x270` non-null) into a set (+0x38) that is not
+counted, the rest into the counted set (+0x60, size +0x70). The sector tick (`FUN_1408f6d20`, once per sector per tick) moves one platoon of the counted set to a third set (+0x88, size +0x98) when
+the platoon's intact flag is 0 (`FUN_1407ac7b0` → `FUN_1407a5be0`: the squad-intact rule of [perception](perception.md), which a squad with no able member fails, so a wiped or hurt one counts), and drops from the third
+set one whose squad object is gone (+0x1d8 null, unloaded); nothing moves back. A sector's load is +0x70 + 0.5 x +0x98 against its group's cap (**Verified**); the homeless draw's "below its share" test reads +0x70 alone.
+A wiped platoon is destroyed only at its next unload (`declareDead`), so it keeps counting until then (**Observed**). Meitou (`PopulationHomeless.RefillSectors`): the same by the current intact test (no one-per-tick
+drip; a squad intact again counts 1), for a sector's squads but a save's persistent ones and occupiers. A nest's or town's pool is the set
 of platoons whose `hometown` is it, by `sqt` (1 residents, 2 roaming), counted in living characters ([save keys](../formats/save.md#npc-platoons-meitou-mapping)).
 
 Loot/building inventories, artifacts, shop stock, prisoners/slaves and placed debris derive
@@ -495,10 +499,10 @@ Meitou: [ground items](../simulation.md#items-and-eating).
   **Observed**) and never spawns again. New nests come only from the area tick, up to `num nests` per biome group; whether a dead nest
   frees its count is **Unknown**. A group with `nests at fixed markers only` picks among its NEST_MARKER towns, leaving out every marker whose
   nearest town (by XZ, markers skipped) is within 2500 (3D) (**Verified**, `FUN_1408f6350`, 6,250,000 squared).
-- **Homeless squads** (area tick `FUN_1408f9240`, every 2 s, per island): the island's load (sum over its loaded sectors of counted +
-  0.5 × imprisoned/dead, clamped to [0, 2] for a sector by a town) is compared with `FUN_1408f5ca0`, the sum of P × `homeless spawn
-  amount` over the loaded zones of the island; while below, one sector is picked by weight max(0, P × amount + 1 − load), halved by a town,
-  (w + 1) × 2 when empty, and one squad is made there (`FUN_1408f8060`) if its count is below P × amount, retrying other sectors when that
+- **Homeless squads** (area tick `FUN_1408f9240`, every 2 s, per island): the island's load (sum over its loaded sectors of intact +
+  0.5 × not-intact squads, [counts](#off-screen-world) above; clamped to [0, 2] for a sector with its own town or the town flag `FUN_1408f62e0` / +0x30) is compared with `FUN_1408f5ca0`, the sum of P × `homeless spawn
+  amount` over the loaded zones of the island; while below, one sector is picked by weight max(0, P × amount + 1 − load), halved when its own town stands in it (`FUN_1408f62e0`; only a
+  sector the flag leaves free, e.g. Ruins), (w + 1) × 2 when its load is 0 (**Verified**, `FUN_1408f9240`), and one squad is made there (`FUN_1408f8060`) if its intact count is below P × amount, retrying other sectors when that
   fails: the draw takes each sector out of the tree and loops while `FUN_1408f8060` returns 0 (no template left, no spot `FUN_1408f50d0`, or the spot inside a town, `FUN_140926d50`; 1
   only after the squad is created; **Verified**), so one 2 s tick ends with a squad or an empty tree. Meitou: the sectors in weighted draw order without replacement, built in turn by one job until one makes a squad. Sectors a town stands in never enter the pick: `Town::setup` (`FUN_1409353c0`) sets sector byte +0x30 for every sector of the
   town's zone list (or of its position), +0x31 when the Town int at +0xd8 is 1 (its type, **Observed**), unless the type (+0xd8) is 4 (Ruins) or 9 (point of interest), so a
