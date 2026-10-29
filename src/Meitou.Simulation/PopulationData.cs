@@ -239,6 +239,9 @@ public sealed class PopulationData
     }
 
     /// <summary>FACTION <c>road preference</c> of a position in <see cref="Factions"/>; 0 (never the roads) for none.</summary>
+    /// <summary>The faction is "lawless": <c>not real</c> or of <c>fundamental type</c> BANDIT (<c>+0x1d0</c> / <c>+0x34</c> = 8); false for no valid faction.</summary>
+    public bool IsLawless(int faction) => faction >= 0 && faction < Factions.Count && (Factions[faction].NotReal || Factions[faction].FundamentalType == FundamentalType.Bandit);
+
     public float RoadPreferenceOf(int faction) => faction >= 0 && faction < Factions.Count ? Factions[faction].RoadPreference : 0;
 
     /// <summary>The position of a faction id in <see cref="Factions"/> (the first when an id repeats), or -1. The index is built once.</summary>

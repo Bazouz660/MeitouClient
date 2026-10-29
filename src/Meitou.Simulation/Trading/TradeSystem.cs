@@ -445,7 +445,7 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
     {
         if (!Resolve(world, out int c, out int t, out var shop)) return false;
         var squad = world.Squads.Find(world.Characters.Cold(t)!.SquadId)!;
-        if (!item.IsStolenFor(world.Characters.Cold(c)!.Faction) || !Fences(item, squad, shop!.Terms) || !Caught(world, c, t, item, squad, shop.Terms)) return Smuggling(world, c, item, shop!.Terms);
+        if (!item.IsStolenFor(world.Characters.Cold(c)!.Faction, data) || !Fences(item, squad, shop!.Terms) || !Caught(world, c, t, item, squad, shop.Terms)) return Smuggling(world, c, item, shop!.Terms);
         world.Post("Got caught selling stolen item.");
         if (Crimes is { } crimes && crimes.SetPending(world, c, Crime.CrimeCode.Fencing, squad.Faction, trader, Crime.CrimeSystem.MinTimer, viaWrapper: true))
             crimes.Book(world, c, squad.Faction, trader);
@@ -552,7 +552,7 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
             world.Post("The shopkeeper can't afford that.");
             return;
         }
-        if (item.IsStolenFor(cold.Faction) && Fences(item, squad, shop.Terms) && Caught(world, c, t, item, squad, shop.Terms))
+        if (item.IsStolenFor(cold.Faction, data) && Fences(item, squad, shop.Terms) && Caught(world, c, t, item, squad, shop.Terms))
         {
             world.Post("Got caught selling stolen item.");
             if (Crimes is { } crimes && crimes.SetPending(world, c, Crime.CrimeCode.Fencing, squad.Faction, trader, Crime.CrimeSystem.MinTimer, viaWrapper: true))
@@ -733,7 +733,7 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
                 if (sell) sellValue = Price(m, item, 1, true, shop.Terms, holder);
                 else value = Price(m, item, 1, false, shop.Terms, holder);
             }
-            bool stolen = item.IsStolenFor(holder);
+            bool stolen = item.IsStolenFor(holder, data);
             // The roll's own odds feed the hover box, the sale prompt and the roll alike; only where the shop would roll on the item at all.
             float? odds = sell && stolen && Fences(item, squad, shop.Terms) ? FenceOdds(world, thievery, item, c, t, squad, shop.Terms) : null;
             return new(index, item.Record, item.Name, item.Section, item.X, item.Y, item.Width, item.Height, item.Quantity,

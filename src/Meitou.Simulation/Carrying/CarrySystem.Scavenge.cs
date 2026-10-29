@@ -184,7 +184,7 @@ public sealed partial class CarrySystem
         var into = looter.Inventory!;
         int moved = 0;
         bool worn = false, wear = false;
-        foreach (var item in from.Items.Where(x => x.IsStolenFor(victim.Faction)).ToList())
+        foreach (var item in from.Items.Where(x => x.IsStolenFor(victim.Faction, Data)).ToList())
         {
             if (item.LockedOn || !InventoryCommands.IsMovableSection(item.Section)) continue;
             bool gear = InventoryCommands.IsEquipmentSection(item.Section);

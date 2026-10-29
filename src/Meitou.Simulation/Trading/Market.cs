@@ -114,7 +114,7 @@ public sealed class Market
     {
         if (trader == Trader.None) return 1;
         float t = trader.BuyMult;
-        if (item.IsStolenFor(holderFaction) && item.StolenFrom == data.PlayerFaction) t *= 0.5f;
+        if (item.IsStolenFor(holderFaction, data) && item.StolenFrom == data.PlayerFaction) t *= 0.5f;
         return t * CulturePrice(item.Record, trader);
     }
 
@@ -162,7 +162,7 @@ public sealed class Market
         if (item.Type == FcsRecordType.ITEM && info?.BaseName == MoneyItemName) return info.Value;
         int u = BaseValue(item);
         if (trader.Site >= 0) u = (int)(u * MarketFactor(trader.Site, item.Record));
-        if (sell && !(info is { TradeItem: true } && !item.IsStolenFor(holderFaction))) u = (int)(u * k.LootPriceMult);
+        if (sell && !(info is { TradeItem: true } && !item.IsStolenFor(holderFaction, data))) u = (int)(u * k.LootPriceMult);
         if (item.Quantity == 1 && item.MaxCharges > 0) u = (int)(u * item.Charges / item.MaxCharges);
         return (int)(t * u);
     }

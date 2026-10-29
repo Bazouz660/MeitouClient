@@ -557,7 +557,7 @@ Meitou's reading: [simulation, slave trading](../simulation.md#arrest-and-jail).
   owning faction vs. the holder's, expiry) is not decoded. The `0.5`
   stolen factor in `T` is therefore only roughly defined (the fence chance's own halvings are in [Fencing, stealing and smuggling](#fencing-stealing-and-smuggling)). *Partly resolved 2026-10-13* ([carry-loot.md 4.4](carry-loot.md#stolen-ownership)):
   `+0x140` is the owner the item was taken from, `+0x160` its current holder (a backpack's owner for a backpack); stolen = the from-owner is set,
-  differs from the holder and is of another faction, unless the holder's faction is lawless; the type list is the lootable item kinds. Expiry and
+  differs from the holder and is of another faction, unless the holder's faction is lawless (**Verified**, `FUN_14079e550`: the holder's faction (an item in a CONTAINER, type 0x2e, takes the container owner's) has `fundamental type` 8 or `not real` set; Meitou `ItemInstance.IsStolenFor` takes `PopulationData.IsLawless`, false for no valid faction, as the original skips the test with no holder faction); the type list is the lootable item kinds. Expiry and
   the halving condition remain open.
 - **Uniform and crafter** (`Armour::vfunc_81` `FUN_1408a9c20`, `Weapon::vfunc_81` `FUN_1408a52f0`, **Verified**): `+0x1e8` is the faction a uniform piece belongs to (the item state's
   `uniform` key, a FACTION id resolved through the faction manager; an unresolved id leaves it null), `+0x208` the length of the `crafter` string at `+0x1f8` (the item writer `FUN_140761c00` writes

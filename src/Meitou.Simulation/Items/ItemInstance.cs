@@ -136,8 +136,11 @@ public sealed class ItemInstance
         IsFood = IsFood, ContentsFactor = ContentsFactor, Mark = Mark, Death = Death, Unique = Unique, Buyback = Buyback?.Take(quantity),
     };
 
-    /// <summary>Whether the item is stolen while held by a character of <paramref name="holderFaction"/> (carry-loot.md 4.4: the from-owner is set and of another faction).</summary>
-    public bool IsStolenFor(int holderFaction) => StolenFrom >= 0 && StolenFrom != holderFaction;
+    /// <summary>
+    /// Whether the item is stolen while held by a character of <paramref name="holderFaction"/> (<c>FUN_14079e550</c>, <b>Verified</b>: the from-owner is set and of another faction, and the holder's faction is not
+    /// lawless: <c>not real</c> or BANDIT). <paramref name="data"/> null: no lawless test.
+    /// </summary>
+    public bool IsStolenFor(int holderFaction, PopulationData? data) => StolenFrom >= 0 && StolenFrom != holderFaction && data?.IsLawless(holderFaction) != true;
 
     /// <summary>The weight this item and what is in it add to the load.</summary>
     public float Weight => UnitWeight * Quantity + (Contents?.ContentWeight() ?? 0) * ContentsFactor;

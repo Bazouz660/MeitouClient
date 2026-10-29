@@ -433,7 +433,7 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
     {
         if (c.Inventory is not { } inv || world.SystemOf<Crime.CrimeSystem>()?.Factions.Lawless(c.Faction) == true) yield break;
         foreach (var item in inv.All())
-            if (item.IsStolenFor(c.Faction)) yield return item;
+            if (item.IsStolenFor(c.Faction, null)) yield return item;
     }
 
     /// <summary>State 121 CARRYING_EXCESS_LOOT (<see cref="LootOf"/>).</summary>
@@ -695,7 +695,7 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
         foreach (var f in world.Fixtures.All)
         {
             if (f.Kind != FixtureKind.Cage || FixtureRegistry.IsFree(table, f) || !table.TryResolveNext(f.Occupant, out int s) || duties.Any(o => o.Body == f.Occupant)) continue;
-            if (table.Cold(s) is not { Inventory: { } inv } c || !inv.Items.Any(i => i.IsStolenFor(c.Faction)) || AiSystem.TownAt(data, world, f.Position) != town) continue;
+            if (table.Cold(s) is not { Inventory: { } inv } c || !inv.Items.Any(i => i.IsStolenFor(c.Faction, data)) || AiSystem.TownAt(data, world, f.Position) != town) continue;
             return (f, f.Occupant);
         }
         return (null, CharacterId.None);
