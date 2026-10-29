@@ -72,6 +72,9 @@ public static class InventoryCommands
 
     public static bool Move(Inventory root, InventoryItemToken token, string section, int x, int y, CharacterCold? wearer = null) => Transfer(root, token, root, section, x, y, limbs: true, wearer);
 
+    /// <summary>A right click's unit count for <paramref name="item"/>: money is never split (<c>FUN_140713d20</c> skips the one-unit split for item function 14), so 0, the whole stack, whatever Shift says.</summary>
+    public static int ClickCount(ItemInstance item, int count) => item.ItemFunction == PlayerSystem.MoneyFunction ? 0 : count;
+
     /// <summary>
     /// Moves at most <paramref name="count"/> units (0: all) of <paramref name="item"/>, held directly by <paramref name="owner"/>, into <paramref name="into"/> where they first fit
     /// (<see cref="Inventory.Add"/>: stacks of it, then free cells); what does not fit stays where it was. Returns the units moved. A right click into a storage or container moves one unit this

@@ -1127,7 +1127,7 @@ public sealed partial class ProductionSystem : ITickSystem
         if (owner is null) return;
         if (put.X < 0)
         {
-            if (InventoryCommands.MoveUnits(owner, item, put.Count, storage) > 0) world.Machines.Touch();
+            if (InventoryCommands.MoveUnits(owner, item, InventoryCommands.ClickCount(item, put.Count), storage) > 0) world.Machines.Touch();
             return;
         }
         if (put.Y < 0 || put.X > storage.Width - item.Width || put.Y > storage.Height - item.Height || !storage.IsFree("main", put.X, put.Y, item.Width, item.Height)) return;
@@ -1152,7 +1152,7 @@ public sealed partial class ProductionSystem : ITickSystem
             && crimes.Steal(world, thief, container, Crime.CrimeCode.Theft)) return;
         var mark = item.Mark;
         if (container.Owner >= 0 && container.Owner != cold.Faction) item.StolenFrom = container.Owner;
-        int moved = InventoryCommands.MoveInto(storage, item, take.Count, cold.Inventory!, take.BagFirst, out bool worn, cold);
+        int moved = InventoryCommands.MoveInto(storage, item, InventoryCommands.ClickCount(item, take.Count), cold.Inventory!, take.BagFirst, out bool worn, cold);
         if (storage.Items.Contains(item)) item.Mark = mark;   // what stayed keeps its mark
         if (worn) Assembly?.RefreshEquipment(cold);
         if (moved > 0) world.Machines.Touch();
@@ -1210,7 +1210,7 @@ public sealed partial class ProductionSystem : ITickSystem
             }
             if (put.X < 0)
             {
-                if (InventoryCommands.MoveUnits(owner, item, put.Count, storage) > 0) world.Machines.Touch();
+                if (InventoryCommands.MoveUnits(owner, item, InventoryCommands.ClickCount(item, put.Count), storage) > 0) world.Machines.Touch();
                 return;
             }
             if (put.Y < 0 || put.X > storage.Width - item.Width || put.Y > storage.Height - item.Height || !storage.IsFree("main", put.X, put.Y, item.Width, item.Height)) return;
@@ -1236,7 +1236,7 @@ public sealed partial class ProductionSystem : ITickSystem
         {
             if (m.Storage is not { } storage || m.Closed || take.Index < 0 || take.Index >= storage.Items.Count) return;
             // What does not fit stays in the storage.
-            if (InventoryCommands.MoveInto(storage, storage.Items[take.Index], take.Count, root, take.BagFirst, out bool worn, cold) > 0) world.Machines.Touch();
+            if (InventoryCommands.MoveInto(storage, storage.Items[take.Index], InventoryCommands.ClickCount(storage.Items[take.Index], take.Count), root, take.BagFirst, out bool worn, cold) > 0) world.Machines.Touch();
             if (worn) Assembly?.RefreshEquipment(cold);
             return;
         }

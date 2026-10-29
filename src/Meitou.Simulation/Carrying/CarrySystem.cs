@@ -687,7 +687,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         // Money taken by the player's own becomes cats, as when it is dropped into their window (PlayerSystem.Place, FUN_140714a20).
         if (item.ItemFunction == PlayerSystem.MoneyFunction && cold.Faction == world.Player.Faction && Data is not null)
         {
-            int units = take.Count > 0 ? Math.Min(take.Count, item.Quantity) : item.Quantity;
+            int units = item.Quantity;   // money is never split (InventoryCommands.ClickCount)
             PlayerSystem.Cash(world, Data, item, units);
             if (units >= item.Quantity) owner.Remove(item); else item.Quantity -= units;
             item.Mark = mark;
@@ -695,7 +695,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
             Seen(world, i, t, owner.Items.Contains(item) ? 1 : 0);
             return;
         }
-        int moved = InventoryCommands.MoveInto(owner, item, take.Count, cold.Inventory!, take.BagFirst, out bool wear, cold);
+        int moved = InventoryCommands.MoveInto(owner, item, InventoryCommands.ClickCount(item, take.Count), cold.Inventory!, take.BagFirst, out bool wear, cold);
         if (owner.Items.Contains(item)) item.Mark = mark;   // what stays keeps its mark
         if (moved == 0)
         {
@@ -778,7 +778,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         if (item.Record != token.Record || item.Section != token.Section || item.X != token.X || item.Y != token.Y || item.Quantity != token.Quantity || item.LockedOn ||
             !InventoryCommands.IsMovableSection(item.Section)) return;
         var owner = looter.Inventory.Items.Contains(item) ? looter.Inventory : looter.Inventory.Backpack?.Contents;
-        if (owner is null || InventoryCommands.MoveInto(owner, item, put.Count, body.Inventory!, put.BagFirst, out bool wear, body) == 0) return;
+        if (owner is null || InventoryCommands.MoveInto(owner, item, InventoryCommands.ClickCount(item, put.Count), body.Inventory!, put.BagFirst, out bool wear, body) == 0) return;
         if (worn) Assembly?.RefreshEquipment(looter);
         if (wear) Assembly?.RefreshEquipment(body);
     }
