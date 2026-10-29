@@ -106,6 +106,10 @@ against French 1440-line screenshots. Every caption the code sets is the catalog
 - **Title buttons**: "Continue", "New game", "Load game", "Import game", "Options", "Credits", "Exit". Each first closes the start, load and import
   windows and the credits (`FUN_140914a90`); Load and Import close their own window when it is open, New game leaves its window as it is. Continue
   loads the save named by `continue=` (`FUN_140914c40`) and shows only when that save's `quick.save` exists ([save.md](../formats/save.md#where-saves-live)); Meitou loads the newest save by time (same save unless files were touched outside the game). Version text: the literal "Kenshi 1.0.68 - x64 (Newland)" (Meitou: "Meitou - Faithful UI").
+- **Escape on the title** (**Verified**, key handler `FUN_14082b010`, key code 1, when no message box or edit box takes it): `FUN_140914a90` closes the start, load and import windows
+  and the save-progress window; only when it closed none of them is the quit flag set (the same flag the Exit button sets, no confirmation). Hiding the credits panel
+  (done last in that function) is not counted, so Escape with only the credits showing hides them and quits. Meitou: `PlayerInterface.UiKey`, with the title the only open screen; with a window
+  open the generic Escape closes it.
 - **Deleting a save** (`LoadSaveWindow::keyPressed` `FUN_14047fd00`, **Verified**): Delete or Backspace with a save selected; the save in use gets "Delete Save" / "This save
   file is currently in use and cannot be deleted" (OK); any other a Yes/No "Are you sure you want to delete this save game?" whose yes runs `deleteSelectedSave`. No button. Meitou: "in use" is the save the running game was loaded from or last written to (quicksaves and autosaves included).
 - **Credits** (`FUN_140914230`, `FUN_140913880`): `data/credits.txt` read once, empty lines dropped, a "-" line a blank one, untranslated, in

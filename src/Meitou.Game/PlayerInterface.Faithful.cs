@@ -26,7 +26,14 @@ sealed partial class PlayerInterface
         if (key == Meitou.Engine.Input.Key.Escape)
         {
             if (advancedOpen && faithfulScreens.OpenScreens.LastOrDefault() == "new-game") { advancedOpen = false; return true; }
-            if (faithfulScreens.IsOpen("title") && faithfulScreens.OpenScreens.Count == 1) { showCredits = false; return true; }
+            // The bare title: Esc hides the credits and quits at once, no confirmation (FUN_14082b010 sets the quit flag unless FUN_140914a90 closed a title
+            // window; hiding the credits does not count as closing one). With a title window open the generic Esc below closes it.
+            if (faithfulScreens.IsOpen("title") && faithfulScreens.OpenScreens.Count == 1)
+            {
+                showCredits = false;
+                ScreenAction?.Invoke(new("menu", "ExitGameButton", "exit"));
+                return true;
+            }
             // The editor stays under the game menu (the original's Esc in the editor; it has no cancel: CONFIRM closes it).
             if (EditorOpen && faithfulScreens.OpenScreens[^1] == "editor") { faithfulScreens.Open("menu"); UpdateMenuPause(); return true; }
             // Esc presses the last button of the top message box (Return the first, docs/game/ui-input.md section 5).
