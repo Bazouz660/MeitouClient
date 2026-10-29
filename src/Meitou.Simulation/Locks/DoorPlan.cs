@@ -32,7 +32,7 @@ sealed class DoorPlan : IPlanWorld
     readonly List<PlanStep> plan = [];
 
     public int Category => 0x1;
-    public bool Squadless => false;
+    public bool Squadless => true;
 
     /// <summary>
     /// Plans row 4 for attacker <paramref name="s"/> at <paramref name="t"/>, shut in <paramref name="shutIn"/> behind its main door; true when the plan bashes it.

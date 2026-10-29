@@ -10,8 +10,7 @@ namespace Meitou.Simulation.Locks;
 /// The planner's view of an NPC attacker whose target is behind a gate that is not open (docs/game/locks.md "Gates"): row 4 Attacking needs
 /// DESTINATION_NOT_BLOCKED_BY_FORTIFICATIONS (90), whose provider 122 Open gate finds the gate and needs it unlocked (!54), which 123 / 290 Bashing gate give at the gate
 /// (AT_LOCATION_FORTIFICATION_GATE 91, walked to by 121). Only the gate's states are evaluated; the rest of row 4's list B is held. Serial phase only.
-/// Engine reading: 122 is a restricted row, which the original's planner offers only to a search with a flag whose setter is <b>Unknown</b> or to a squadless character;
-/// raiders in squads bash gates in play (the user's report), so this search is the flagged one.
+/// 122 is a restricted row, which the original's planner offers to every plan of a character whose faction is not the player's (<c>FUN_14051bae0</c>, <b>Verified</b>); the attackers here are NPCs.
 /// </summary>
 sealed class GatePlan : IPlanWorld
 {

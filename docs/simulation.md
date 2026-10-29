@@ -638,7 +638,7 @@ unload, hashed only once non-empty. Facts: [locks](game/locks.md), [economy 11.5
   attacker (as for doors) whose target's code differs from its own, behind a route that is not open (`RouteState`: the widest path over the gates, each gate's
   state from its door fixtures: broken/open 1, closed 2, locked 3, none registered (a town not spawned) 1; codes no gate joins count as 3, engine choices), plans row 4 with `GatePlan`: 90 from the
   codes, 122's finder the first gate on the route (nearest of the equally good), 123/290/81 at it (91: within 45 of the leaf, x2 standing; crowdLimit8: under
-  8 bashers on it), the flagged search (restricted rows allowed). A plan that bashes sets `Bashing` to the gate's main door, and the door basher takes over,
+  8 bashers on it), restricted rows open (the attacker is an NPC). A plan that bashes sets `Bashing` to the gate's main door, and the door basher takes over,
   standing on the attacker's side of the leaf. Gate state 2 needs no plan (Meitou walks through closed unlocked doors). Checked before the house doors.
   Coverage: `GateRegionTests` (labelling), `DoorTests.A_bandit_outside_a_locked_gate_plans_to_bash_it_and_none_once_it_is_broken` (the plan).
 - **Beds** (`Locks/BedSystem`, serial; facts in [locks](game/locks.md#beds)): bed fixtures are the town interiors' beds and, registered with the player's
@@ -1395,8 +1395,7 @@ act-out does the walk and the goal's own action; steps of their own are getting 
 going home (19, the GoHome walk), entering its home building (156, the same walk), leaving it (200, to A + (A − B) × 1.1 of the home's first door,
 the outer point taken as the side away from the building's origin, until outside) and getting near a target (40, a walk to within 10). A plan
 whose first step is neither the goal nor a step the engine carries out (`AiSystem.Carried`) fails. Engine choices:
-- Everyone plans with category 0x1; no character is squadless, so restricted rows (lockpicking, cutting, opening gates) never
-  enter a plan. A row without a finder wants its effect for its own target. At most 64 nodes per search.
+- Everyone plans with category 0x1. Restricted rows (lockpicking, cutting, opening gates) are open to every character whose faction is not the player's, as in the original ([planner](game/ai-tasks.md#planner); the orders-step flag is not planned here). With the held states below, none is ever needed on the way (their states 90, !54, !114 hold), so this changes no plan today; `IPlanWorld.Squadless` keeps its old name for it. A row without a finder wants its effect for its own target. At most 64 nodes per search.
 - A node is made once per row and target (the original allows four copies), so the ancestor-repeat test never fires; a child already
   closed is skipped rather than accepted from the node.
 - Only the step being carried out counts as queued, and only while it can run (Meitou's steps do not end on their own).

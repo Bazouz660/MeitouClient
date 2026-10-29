@@ -49,11 +49,16 @@ public sealed partial class AiSystem
         /// 'chained' one (0x10), in another cage the 'imprisoned' one (4); everyone else the 'human' one (1). The crippled (0x40), platoon (2) and animal repertoires are not modelled.
         /// </summary>
         public int Category => world.Characters.Cold(slot) is { IsImprisoned: true, InWhat: { } cage } ? world.Fixtures.Find(cage) is { Restrains: true } ? 0x10 : 0x4 : 0x1;
-        public bool Squadless => false;
+        /// <summary>Restricted rows are offered: the character's faction is not the player's (the name is the old reading, kept; see <see cref="IPlanWorld.Squadless"/>).</summary>
+        public bool Squadless => restrictedOpen;
+        bool restrictedOpen;
 
         public PlanContext Bind(AiSystem s, World w, int at, AiMind m, Blackboard b)
         {
             (system, world, slot, mind, board) = (s, w, at, m, b);
+            // Restricted rows are open to every plan that is not the player faction's (FUN_14051bae0, Verified; the flagged search is the orders step, not planned here).
+            int player = w.Player.Faction >= 0 ? w.Player.Faction : s.Data.PlayerFaction;
+            restrictedOpen = w.Characters.Cold(at) is { } c && !c.IsPlayer && !(player >= 0 && c.Faction == player);
             return this;
         }
 

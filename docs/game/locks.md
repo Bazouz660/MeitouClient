@@ -143,8 +143,7 @@ Same targets as picking; Task_CutLock / Task_BruteForceLock share the shackle ta
     building whose own code links to the walker's code with state 1. Providers of 90: 122 Open gate (needs !54 unlocked) and 270 Assaulting
     town; 123/290 give !54 and 56 at a gate (91, walked to by 121). So raiders breaking a locked gate is the planner's chain on gate codes
     (the chain itself is an inference from the table, as for 81; the user reports it in play). Codes and states: [gate codes](pathfinding.md#gate-codes).
-    122 and 270 are restricted rows, offered only to a flagged search (setter **Unknown**) or a squadless character; that squad raiders bash gates in play
-    implies the attack search is flagged. Meitou: [simulation](../simulation.md#cages-beds-and-locks) ("Bashing gates").
+    122 and 270 are restricted rows, offered to every NPC plan (**Verified**, `FUN_14051bae0`: the acting character's faction is not the player's, [planner](ai-tasks.md#planner)), so raiders plan the gate chain. Meitou: [simulation](../simulation.md#cages-beds-and-locks) ("Bashing gates").
 
 ## Doors
 
