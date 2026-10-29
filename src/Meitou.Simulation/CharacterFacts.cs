@@ -24,6 +24,25 @@ public static class CharacterFacts
     public static bool TargetDown(CharacterCold? c) =>
         c is null || !c.CarriedBy.IsNone || c.Medical is { Incapacitated: true } or { Crawling: true } or { PlayingDead: true } || c.InSomething != Locks.HeldState.None;
 
+    /// <summary>
+    /// Set Free's precondition 125 TARGET_IS_CONSCIOUS (<c>FUN_14099a480</c>, <b>Verified</b>; no row provides it): not dead, unconscious or carried. A ragdolled prisoner also fails in the original
+    /// (not modelled apart from the knock-out).
+    /// </summary>
+    public static bool Conscious(CharacterCold c) => c.Medical is not { Incapacitated: true } && c.CarriedBy.IsNone;
+
+    /// <summary>Awake: not dead or unconscious (a body that can be fought or traded with, whether carried or not).</summary>
+    public static bool Standing(CharacterCold c) => c.Medical is not { Incapacitated: true };
+
+    /// <summary>Plans with the animal repertoire (<see cref="Repertoire.Animal"/>, <see cref="SquadRegistry.IsAnimal"/>).</summary>
+    public static bool Animal(CharacterCold c) => SquadRegistry.IsAnimal(c);
+
+    /// <summary>
+    /// The faction is hostile to the player's (<c>Relations.IsHostile</c>; another faction counts as hostile when the world has no relation table or the faction is unknown), or the character
+    /// <paramref name="fightsPlayer"/>: a neutral squad robbing the player's characters is an enemy. Engine reading of the original's enemy test (docs/game/ui-input.md "Context menu verbs").
+    /// </summary>
+    public static bool HostileToPlayer(FactionRelations? relations, int player, int faction, bool fightsPlayer) =>
+        fightsPlayer || relations is null || player < 0 || !relations.Contains(faction) || relations.IsHostile(player, faction);
+
     /// <summary>The "getting up" byte (<c>Character</c> <c>+0x278</c>): set while the character rises from a knock-down (<see cref="CharacterCold.GettingUpUntil"/>).</summary>
     public static bool GettingUp(CharacterCold cold, long tick) => cold.GettingUpUntil > tick;
 

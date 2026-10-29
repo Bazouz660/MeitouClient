@@ -23,6 +23,12 @@ public sealed partial class LockSystem : ITaskOwner, ITaskHandler, IOrderOwner
         foreach (var row in Rows) tasks.Register(row, this);
     }
 
+    /// <summary>Whether the row is a lock order's (<see cref="World.CanOrder(TaskType, CharacterId, CharacterId, string?, System.Numerics.Vector3)"/>).</summary>
+    internal static bool OwnsRow(TaskType row) => row != TaskType.None && Array.IndexOf(Rows, row) >= 0;
+
+    /// <summary>The detail a lock order carries when a walk to its work starts it (<see cref="World.CanOrder(TaskType, CharacterId, CharacterId, string?, System.Numerics.Vector3)"/>).</summary>
+    internal object WorkDetail() => new LockWork(CharacterTask.GoTo, null);
+
     /// <summary>The row of a shackle job.</summary>
     static TaskType RowOf(ShackleWork work) => work switch
     {

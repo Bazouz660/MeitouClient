@@ -260,7 +260,6 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
         ui.PowerOutput = record => popData?.Db.Find(record)?.GetInt("power output");
         ui.SquadLimits = () => popData?.Bodies.Constants;
         ui.Rocks = () => popData?.ResourceNodes;
-        ui.HostileFaction = faction => popData is not { } d || session.World.Player.Faction is not (>= 0 and var mine) || !d.Relations.Contains(faction) || d.Relations.IsHostile(mine, faction);
         ui.MapTowns = () => popData?.Sites ?? [];
         ui.MapFactionOf = id =>
         {
