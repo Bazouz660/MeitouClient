@@ -73,6 +73,11 @@ public sealed class Platoon
     /// <summary>The platoon's intact flag (+0x100, <c>FUN_1407ac7b0</c>): the squad-intact rule, refreshed while loaded and kept as it was at unload. Not saved.</summary>
     public bool IntactFlag { get; set; } = true;
     /// <summary>
+    /// The platoon was declared dead (+0x1f0, <c>Platoon::declareDead</c> <c>FUN_140797090</c>, <b>Verified</b>; saved as <c>dead</c>): every member is a dead character. It is out of its
+    /// town's pools and never intact, and no longer kept: a loaded one is destroyed when it unloads (a campaign's stays with its campaign). Hashed while set.
+    /// </summary>
+    public bool Dead { get; set; }
+    /// <summary>
     /// The platoon's <c>imprisoned</c> (+0x1f1, <b>Verified</b>, <c>FUN_1407ef4b0</c>): set at each unload to whether a member is held in a cage or restraint, else the save's value;
     /// while set its stand-in neither travels nor takes a job (<c>FUN_1407ee790</c>).
     /// </summary>
@@ -169,6 +174,7 @@ public sealed class PlatoonRegistry
                 h.Add(stored.Anchor);
                 h.Add(stored.Pinned);
             }
+            if (p.Dead) h.Add(0x44656164);   // only once declared dead, so worlds without one hash as before
             if (p.OrphanSeconds > 0) h.Add(p.OrphanSeconds);   // only while counting, so worlds without it hash as before
             if (p.Campaign is { } campaign)
             {

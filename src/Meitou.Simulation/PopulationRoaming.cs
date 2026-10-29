@@ -107,9 +107,9 @@ public sealed partial class PopulationSystem
     /// <summary>
     /// Whether a platoon out of the world keeps its characters: by the Meitou switches (<see cref="KeepWild"/> for a save's wild one, else <see cref="KeepRoamers"/>), and always
     /// while it occupies a town, as the original makes an occupier persistent (docs/game/ai.md "Package classes"), or when a save's platoon is <c>persistent</c> (the original
-    /// never removes one, docs/game/factions-squads-towns.md "Object model": e.g. a dismissed character's squad).
+    /// never removes one, docs/game/factions-squads-towns.md "Object model": e.g. a dismissed character's squad); never one declared <see cref="Platoon.Dead"/>.
     /// </summary>
-    bool Kept(Platoon p) => (p.Wild ? KeepWild : KeepRoamers) || Ai.AiSystem.Occupies(data.Ai, p.Package) || p.Saved?.Source.Record.Bools.GetValueOrDefault("persistent") == true;
+    bool Kept(Platoon p) => !p.Dead && ((p.Wild ? KeepWild : KeepRoamers) || Ai.AiSystem.Occupies(data.Ai, p.Package) || p.Saved?.Source.Record.Bools.GetValueOrDefault("persistent") == true);
 
     readonly List<Platoon> movers = [];
     /// <summary>Stand-ins one worker job steps (engine choice: a job costs more than a few stand-ins).</summary>
@@ -364,6 +364,7 @@ public sealed partial class PopulationSystem
             return;
         }
         p.Position = PlatoonPosition(world, squad, p.Position);
+        if (!p.Dead && p.Faction != PlayerFactionOf(world) && AllDead(world, squad)) DeclareDead(p);
 
         // Away from every active zone for long enough: only the stand-in goes on.
         if (Wanted(p)) p.UnloadAtTick = -1;
@@ -376,7 +377,7 @@ public sealed partial class PopulationSystem
             if (squad.Ai?.Current is { } running) FollowPackage(world, p, running);
             if (p.Package is { } shipping && IsShipping(shipping) && squad.Ai is { MissionTown: >= 0 and var mission }) p.Target = mission;   // the camp it ships to (ShippingCamp)
             // Faithful: a platoon the original does not keep (not a town's own, not in a campaign, not occupying) is despawned as it leaves; a save's wild one by the wild switch.
-            if (!Kept(p) && !p.Pinned && p.Campaign is null)
+            if ((p.Dead || !Kept(p) && !p.Pinned) && p.Campaign is null)
             {
                 PayRoamerDespawn(world, p, squad);
                 Despawn(world, p);
@@ -408,7 +409,7 @@ public sealed partial class PopulationSystem
             StepCampaignLoaded(world, p, squad, dt);
             return;
         }
-        if (p.Pinned || p.Wild) return;   // a town's own or a wild one: its AI runs it, it has no trips
+        if (p.Pinned || p.Wild || p.Dead) return;   // a town's own or a wild one: its AI runs it, it has no trips (nor has a dead one)
         // A leader in a fight or a loot is left to it: an order now would replace that task (the trip goes on when it is over).
         if (table.Next[squad.Leader.Slot].Task is (byte)CharacterTask.Attack or (byte)CharacterTask.Loot) return;
 
@@ -537,6 +538,26 @@ public sealed partial class PopulationSystem
             n++;
         }
         return n > 0 ? sum / n : last;
+    }
+
+    /// <summary>Whether no member is a character that is not dead (<c>FUN_1404fed50</c> counts every member but a dead character; a knocked-out one counts).</summary>
+    static bool AllDead(World world, Squad squad)
+    {
+        var table = world.Characters;
+        foreach (var m in squad.Members)
+            if (table.TryResolveNext(m, out int s) && table.Cold(s) is { } cold && cold.DiedTick < 0 && cold.Medical is not { Dead: true }) return false;
+        return true;
+    }
+
+    /// <summary>
+    /// <c>Platoon::declareDead</c> (<c>FUN_140797090</c>, <b>Verified</b>), once: a squad of a template with <c>regenerates</c> whose town lives is only marked to be made afresh at its next
+    /// activation (and may declare again); any other platoon is <see cref="Platoon.Dead"/>: out of its town's pools at once (<see cref="FillPools"/> no longer counts it), not kept, destroyed
+    /// when it unloads. Its dead lie where they fell.
+    /// </summary>
+    void DeclareDead(Platoon p)
+    {
+        if (Regenerates(p)) p.Regenerate = true;
+        else p.Dead = true;
     }
 
     readonly List<CharacterId> thinStay = [], thinGo = [];
@@ -709,7 +730,7 @@ public sealed partial class PopulationSystem
             if (factionIndex < 0) continue;
             int cap = (int)MathF.Floor(settings.RoamingShare * data.Factions[factionIndex].RoamingPopulation * settings.PopulationMultiplier);
             int members = 0;
-            foreach (var p in world.Platoons.All) if (p.Origin == site.Index && !p.Pinned && p.Campaign is null) members += p.Size;   // a town's own saved squads are not its roaming ones, nor campaign squads
+            foreach (var p in world.Platoons.All) if (p.Origin == site.Index && !p.Pinned && p.Campaign is null && !p.Dead) members += p.Size;   // a town's own saved squads are not its roaming ones, nor campaign squads; a dead one is out of the pool
             if (members >= cap) continue;
 
             var weights = new List<(RecordLink Entry, float Weight)>();
@@ -718,7 +739,7 @@ public sealed partial class PopulationSystem
             {
                 if (entry.V0 <= 0 || !SquadFactory.IsTemplate(data.Db.Find(entry.Id))) continue;
                 int existing = 0;
-                foreach (var p in world.Platoons.All) if (p.Origin == site.Index && !p.Pinned && p.Campaign is null && p.TemplateId == entry.Id) existing++;
+                foreach (var p in world.Platoons.All) if (p.Origin == site.Index && !p.Pinned && p.Campaign is null && !p.Dead && p.TemplateId == entry.Id) existing++;
                 float w = MathF.Max(0, entry.V0 - existing);
                 if (w <= 0) continue;
                 weights.Add((entry, w));

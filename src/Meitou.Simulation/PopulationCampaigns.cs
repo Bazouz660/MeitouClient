@@ -985,6 +985,7 @@ public sealed partial class PopulationSystem : IStateHashed
     /// </summary>
     bool Intact(World world, Platoon p)
     {
+        if (p.Dead) return false;   // declared dead (+0x1f0): never intact
         if (p.State == PlatoonState.Loaded && world.Squads.Find(p.SquadId) is { } squad) p.IntactFlag = SquadIntact(world, squad);
         return p.IntactFlag;
     }

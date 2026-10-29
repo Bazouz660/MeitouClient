@@ -175,8 +175,12 @@ position is ready, outside the zone's box the timer is set to 2 s, inside it cou
 (`FUN_140a09770`) is the zone's bounds widened by 10, each side facing one of the four neighbours that exists and is neither loaded nor requested
 moved in by 170 (about 178.5 for the stand-in stop test). Its characters are rebuilt from the kept records (Meitou: not at game load, which
 activates at once behind the loading screen); at game load each PLATOON is made active or
-unloaded by its zone (`FUN_1407f85f0`). `declareDead` (`FUN_140797090`) clears `persistent` (destroyed at its next unload, its PLATOON record deleted by
-`FUN_1407ec5e0`). No distance, age or emptiness rule removes a persistent platoon. A wiped-out town refills only through its pools, with non-persistent squads;
+unloaded by its zone (`FUN_1407f85f0`). `declareDead` (`FUN_140797090`, **Verified**) runs once from the platoon's position function (`FUN_1404fed50`, every step of a platoon of a non-player
+faction) when no member is a character that is not dead: with the template's `regenerates` (+0xd9) and a town that is not `ded` it only marks the platoon to be remade at its next activation
+(and may run again); else it logs "Platoon::declareDead: <name>" to death.log, takes the platoon out of its town's pool set (lowering the pool by its living count, 0 here), sets the saved
+`dead` flag (+0x1f0) and clears `persistent` (destroyed at its next unload, its PLATOON record deleted by `FUN_1407ec5e0`; a campaign's platoon stays with its campaign, `FUN_1407ec570`).
+Meitou: `Platoon.Dead` (saved as `dead`, read at load), set in `StepLoaded`; the platoon leaves the pool counts at once, is not kept and is despawned when it unloads (its dead lie where they fell).
+No distance, age or emptiness rule removes a persistent platoon. A wiped-out town refills only through its pools, with non-persistent squads;
 no path re-running the initial resident placement was found (**Unknown** whether one exists).
 
 **Active platoon out of zone** (**Verified** `FUN_14079c600`, called by the platoon step `FUN_1405003c0` each frame once `FUN_1404febd0`'s timer has run out): a platoon that is
@@ -470,8 +474,8 @@ Meitou: [ground items](../simulation.md#items-and-eating).
   (zone byte +0xb1, **Verified** `FUN_1408f6760`); the wipe gates have no faction test, so Meitou keeping player-faction towns is an
   engine choice (the town list's caller was not read).
 - **`regenerates`** (SQUAD_TEMPLATE, 18 true; `Platoon::declareDead`, **Verified**): when the last member dies and the home town is not `ded`, the platoon is not declared
-  dead but set to CM_REFRESH (remade on next activation). Meitou: a town squad that unloads with no one alive, or an empty pinned platoon at the town's load, is marked to
-  regenerate (whatever the budget).
+  dead but set to CM_REFRESH (remade on next activation). Meitou: a loaded pinned platoon whose members are all dead (`DeclareDead`), a town squad that unloads with no one alive, or an
+  empty pinned platoon at the town's load, is marked to regenerate (whatever the budget).
 - **Nests** (`NestPopulationManager::vfunc_4`): pool 2 starts at 0.7 × `nest resident population` and grows as above. While the nest's
   zone is loaded it spawns one squad per visit, and it is visited once every N frames, N = every nest in the list, loaded or not (`TownList::vfunc_4`'s nest cursor, **Verified**) (weight `max(0, v0 − existing) × faction wealth`; an entry passes when its size fits the free budget `floor(pop2)` − living, or
   the pool is empty and more than 4 are free, so a squad bigger than the budget can open a nest: `FUN_1408f7e80`, **Verified** by code) unless a
