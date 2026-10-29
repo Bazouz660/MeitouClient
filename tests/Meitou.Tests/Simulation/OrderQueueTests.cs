@@ -1,5 +1,6 @@
 using System.Numerics;
 using Meitou.Data.Fcs;
+using Meitou.Data.Gameplay;
 using Meitou.Data.Gameplay.Bodies;
 using Meitou.Data.World;
 using Meitou.Data.Gameplay.Ai;
@@ -119,15 +120,18 @@ public class OrderQueueTests
 
     static TaskType[] Rows(SimWorld world, CharacterId id) => [.. world.Characters.Cold(id.Slot)!.OrderQueue.Select(e => e.Row)];
 
-    /// <summary>A player's turret (function 12) with a gunner of the player's next to it and an enemy fighter 120 away; movement, pursuit, body, production, combat and retaliation.</summary>
-    sealed class TurretRig : IDisposable
+    /// <summary>
+    /// A player's turret (function 12) with a gunner of the player's next to it and an enemy fighter 120 away; movement, pursuit, body, production, combat and retaliation; with
+    /// <paramref name="aggro"/> also the attack-on-sight look, the two factions hostile (the urgent turret job's sensed enemies).
+    /// </summary>
+    internal sealed class TurretRig : IDisposable
     {
         public SimWorld World { get; }
         public CharacterId Gunner, Enemy;
         public string Turret;
         readonly OpenGroundWalkability walk = new(SyntheticTown.Ground);
 
-        public TurretRig()
+        public TurretRig(bool aggro = false)
         {
             var db = FirstAidTests.KitDatabase();
             var fn = new FcsRecord { StringId = "92-t", Flags = 0x10, Name = "92-t", RecordType = FcsRecordType.BUILDING_FUNCTIONALITY };
@@ -143,13 +147,22 @@ public class OrderQueueTests
             World = new SimWorld(new WorldSettings { Seed = 7, PublishSnapshots = false }, walk,
             [
                 new PlayerSystem(), new PursuitSystem(combat), new MovementSystem(new PathService(walk, true)), new BodySystem(BaseGame, BodyOptions.Default),
-                new ProductionSystem(db, BaseGame, BodyOptions.Default, items, null), combat, new RetaliationSystem(combat),
+                new ProductionSystem(db, BaseGame, BodyOptions.Default, items, null), combat, new RetaliationSystem(combat), .. aggro ? [new AggroSystem(Hostile())] : Array.Empty<ITickSystem>(),
             ]);
             World.Player.Faction = 1;
             Turret = World.Buildings.NewId(WorldLayout.ZoneOf(1000, 2000));
             World.Buildings.Add(new BuildSite { Id = Turret, Record = "64-t", Position = new Vector3(1000, 300, 2000), Owner = 1, Materials = [], Complete = true });
             Gunner = Add(1000, 2030, player: true);
             Enemy = Add(1000, 2150, player: false);
+        }
+
+        /// <summary>Factions 0 (none), 1 (the player's) and 2, the last two hostile to each other.</summary>
+        static FactionRelations Hostile()
+        {
+            static Meitou.Data.Gameplay.FactionData F(string id, params (string, int)[] rel) => new() { Id = id, Name = id, Relations = rel.ToDictionary(r => r.Item1, r => r.Item2) };
+            var table = FactionRelations.Build([F("none"), F("player", ("raiders", -80)), F("raiders", ("player", -80))]);
+            table.PlayerFaction = 1;
+            return table;
         }
 
         CharacterId Add(float x, float z, bool player)
