@@ -235,6 +235,9 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
                 + "and the part hit. Healing of your own characters floats up in green.", Choice: new(() => ["Off", "Simple info", "Full info"],
                 () => (int)config.Floaters, i => player.Floaters = config.Floaters = (FloaterMode)i)));
         if (page == 2)
+            result.Add(new("Feedback button", "The FEEDBACK button at the top right during play. Off, it still shows on the title screen and in the Esc menu.",
+                Toggle: new("Feedback button", () => config.FeedbackButton, v => player.FeedbackButtonInPlay = config.FeedbackButton = v, OnOff: true)));
+        if (page == 2)
             result.Add(new("Hardware mouse", "Use the Windows cursor instead of the game's drawn pointer (no hover pointers).",
                 Toggle: new("Hardware mouse", () => config.HardwareMouse, v => config.HardwareMouse = v)));
         if (page == 3)
@@ -616,6 +619,7 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
         player.SetUiMode(UiMode.Meitou);
         player.SpeedUnit = config.SpeedUnit = SpeedUnit.Mph;
         player.Floaters = config.Floaters = FloaterMode.Simple;
+        player.FeedbackButtonInPlay = config.FeedbackButton = true;
         config.TickAhead = TickAheadMode.Dynamic;
         bindings.ResetToDefaults();
         resetPending = false;

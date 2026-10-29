@@ -334,6 +334,7 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
         player.LoadUi(g.UiMode ?? config.UiMode, assets.Find);
         player.SpeedUnit = config.SpeedUnit;
         player.Floaters = config.Floaters;
+        player.FeedbackButtonInPlay = config.FeedbackButton;
         player.FixLoadButton = config.FixLoadButton;
         // The region (BIOME_GROUP) under a point, for the biome banner.
         player.RegionAt = (x, z) => gpu.Weather?.World.RegionAt(x, z).Def is { } def ? (def.StringId, def.Name) : null;

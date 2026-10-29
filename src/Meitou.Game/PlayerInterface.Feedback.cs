@@ -46,6 +46,8 @@ sealed partial class PlayerInterface
     public bool FeedbackSending { get; set; }
     /// <summary>The form's ticks and Discord name: the host hands in the saved ones and saves them on a send.</summary>
     public FeedbackSettings FeedbackPrefs { get; set; } = new();
+    /// <summary>The button during play (<see cref="UserConfig.FeedbackButton"/>); off, it still shows on the title and with the game menu open.</summary>
+    public bool FeedbackButtonInPlay { get; set; } = true;
 
     static MyGuiLayout FeedbackButtonLayout() => MyGuiReader.ParseLayout(
         $"""<MyGUI type="Layout"><Widget type="Button" skin="Kenshi_Button1" position_real="0.9 0 0.1 0.03" layer="Info" name="{FeedbackButton}"/></MyGUI>""");
@@ -89,11 +91,13 @@ sealed partial class PlayerInterface
             """);
     }
 
-    /// <summary>The button at the top right, over everything; left out of the feedback screenshot and while the form is open.</summary>
+    /// <summary>The button at the top right, over everything; left out of the feedback screenshot and while the form is open, and during play when
+    /// <see cref="FeedbackButtonInPlay"/> is off unless the title or the game menu is open.</summary>
     void AddFeedbackButton(List<UiControl> controls)
     {
         feedbackButtonBounds = default;
         if (feedbackButtonLayout is null || ShotWithoutMenus || faithfulScreens.IsOpen(FeedbackScreen)) return;
+        if (!FeedbackButtonInPlay && !TitleOpen && !faithfulScreens.IsOpen("menu")) return;
         float scale = Height / 1080f, w = 150 * scale, h = 36 * scale;
         var b = new UiBindings();
         b.Positions[FeedbackButton] = feedbackButtonBounds = new(Width - w - 8 * scale, 8 * scale, w, h);
