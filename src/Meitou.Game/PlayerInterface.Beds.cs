@@ -6,7 +6,7 @@ namespace Meitou.Game;
 
 /// <summary>
 /// Beds (docs/game/ui-input.md "Building hover and click", docs/game/locks.md "Beds"): with characters selected the pointer over a bed is <c>use</c>; a quick right click gives the original's
-/// order 258 "Sleep" (<see cref="UseBedOrder"/>: the nearest selected walks there and lies in it until another order). Held, the menu offers the original's one bed verb: "Put in Bed"
+/// order 258 "Sleep" (<see cref="UseBedOrder"/>: every selected character walks there, the first to arrive lies in it until another order). Held, the menu offers the original's one bed verb: "Put in Bed"
 /// (<see cref="PutInBedOrder"/>) while a selected character carries someone, else "Sleep", followed by a player bed's site verbs. A quick click while a selected character carries
 /// someone lays the body in instead (<b>engine choice</b>: the original's quick click gives 258 regardless, whose plan needs the sleeper not to carry, and how it meets that is
 /// <b>Unknown</b>).
