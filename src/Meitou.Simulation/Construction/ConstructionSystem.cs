@@ -161,6 +161,12 @@ public sealed class ConstructionSystem : ITickSystem
                         if (reg.FindTown(number) is { } town) ReassessTown(world, town);
                     break;
                 }
+                case BuildOrder order when world.Fixtures.Find(order.Site) is { Kind: Locks.FixtureKind.Door } door:
+                    // Order 95 on a broken door (FUN_1407fc6e0): a door is a building of its own, repaired by build work (a damaged but standing one takes it too, engine reading).
+                    if (door.Owner != world.Player.Faction || !DoorNeedsWork(door)) break;
+                    foreach (var id in Who(world, order.Characters))
+                        if (table.TryResolveNext(id, out int slot) && table.Cold(slot) is { IsPlayer: true } cold && Able(cold)) BeginDoor(world, slot, door);
+                    break;
                 case BuildOrder order:
                 {
                     // Build and Repair are both Task_Build: an unfinished site is built, a damaged one (progress below its target) repaired; a whole building has nothing to do.
@@ -667,6 +673,7 @@ public sealed class ConstructionSystem : ITickSystem
         var table = world.Characters;
         var next = table.Next;
         float dt = world.TickSeconds;
+        bool doorWork = false;
         for (int i = 0; i < table.HighWater; i++)
         {
             ref var n = ref next[i];
@@ -679,6 +686,11 @@ public sealed class ConstructionSystem : ITickSystem
                 cold.BuildSite = null;
                 cold.BuildBar = 0;
                 ClearFetch(cold);
+                continue;
+            }
+            if (world.Fixtures.Find(id) is { Kind: Locks.FixtureKind.Door } door)
+            {
+                doorWork |= ScheduleDoor(world, i, cold, door, dt);
                 continue;
             }
             var site = Root(reg, reg.Find(id));
@@ -714,7 +726,7 @@ public sealed class ConstructionSystem : ITickSystem
             n.Flags |= (ushort)MoveFlags.NeedPath;
             n.TaskTime = PursuitSystem.RepathSeconds;
         }
-        if (reg.Count == 0) sweep = false;
+        if (reg.Count == 0 && !doorWork) sweep = false;
     }
 
     // ------------------------------------------------------------------ the work
@@ -722,7 +734,8 @@ public sealed class ConstructionSystem : ITickSystem
     public void SlowWorld(World world)
     {
         var reg = world.Buildings;
-        if (reg.Count == 0) return;
+        if (reg.Count == 0 && !sweep) return;
+        doorBuilders.Clear();
         foreach (var s in reg.All)
         {
             s.BuilderCounter = 0;
@@ -750,6 +763,11 @@ public sealed class ConstructionSystem : ITickSystem
             if (!n.Alive || !IsWork(n.Task)) continue;
             var cold = table.Cold(i)!;
             if (cold.BuildSite is not { } id) continue;
+            if (world.Fixtures.Find(id) is { Kind: Locks.FixtureKind.Door } door)
+            {
+                DoorStep(world, i, cold, door, dt);
+                continue;
+            }
             var site = Root(reg, reg.Find(id));
             if (site is null || !Able(cold))
             {
@@ -815,6 +833,109 @@ public sealed class ConstructionSystem : ITickSystem
         if (site.Complete) site.Progress = MathF.Min(site.Progress, site.Target);
         if (site.Progress >= site.Target && !site.Complete) Finish(world, site);
         else SyncChildren(world, site);
+    }
+
+    // ------------------------------------------------------------------ doors
+
+    /// <summary>A door's build work counts three times (Building slot 70 with the door byte <c>+0x1a0</c> set, <c>FUN_1405595a0</c>, <b>Verified</b>).</summary>
+    public const float DoorWorkFactor = 3;
+
+    // Builders that have worked each door this tick (the 0.75 falloff counter of the door's own Building; per tick as for sites).
+    readonly Dictionary<string, int> doorBuilders = new(StringComparer.Ordinal);
+
+    /// <summary>A door that is broken or below its whole progress (<see cref="Locks.Fixture.DoorProgress"/>, 1 when whole): order 95 and the build work apply.</summary>
+    static bool DoorNeedsWork(Locks.Fixture door) => door.DoorBroken || door.DoorProgress < 1;
+
+    /// <summary>Gives the character a door to repair (serial phases): it stands, then walks there unless it is there already (<see cref="Begin"/>'s pattern, the door's work spot).</summary>
+    void BeginDoor(World world, int slot, Locks.Fixture door)
+    {
+        var table = world.Characters;
+        var cold = table.Cold(slot)!;
+        ref var n = ref table.Next[slot];
+        var keep = IsWork(n.Task) ? cold.ResumeTask : CharacterTask.Idle;
+        MovementSystem.Stop(table, slot);
+        n.Task = (byte)CharacterTask.Build;
+        n.Mode = SpeedMode.Free;
+        n.TaskTime = 0;
+        cold.BuildSite = door.Id;
+        cold.BuildBar = 0;
+        ClearFetch(cold);
+        cold.ResumeTask = keep;
+        var (at, reach) = Locks.LockSystem.WorkSpot(world, door, new Vector2(n.Position.X, n.Position.Z));
+        if (Vector2.Distance(new Vector2(n.Position.X, n.Position.Z), at) > reach)
+        {
+            n.Goal = at;
+            n.Flags |= (ushort)MoveFlags.NeedPath;
+        }
+        sweep = true;
+    }
+
+    /// <summary>One <see cref="Schedule"/> step of a door repairer: ends when the door is whole or the worker cannot work, else walks it to the door. True while it works.</summary>
+    bool ScheduleDoor(World world, int slot, CharacterCold cold, Locks.Fixture door, float dt)
+    {
+        var table = world.Characters;
+        ref var n = ref table.Next[slot];
+        if (!Able(cold) || !DoorNeedsWork(door) || n.Task != (byte)CharacterTask.Build)
+        {
+            End(table, slot);
+            return false;
+        }
+        var (at, reach) = Locks.LockSystem.WorkSpot(world, door, new Vector2(n.Position.X, n.Position.Z));
+        const ushort Path = (ushort)MoveFlags.AnyPath;
+        if (Vector2.Distance(new Vector2(n.Position.X, n.Position.Z), at) <= reach)
+        {
+            if ((n.Flags & Path) != 0)
+            {
+                n.Flags = (ushort)(n.Flags & ~Path);
+                n.PathCursor = 0;
+                cold.PathRequest = 0;
+            }
+            n.TaskTime = 0;
+            return true;
+        }
+        if ((n.Flags & Path) != 0) return true;
+        n.TaskTime -= dt;
+        if (n.TaskTime > 0) return true;
+        n.Goal = at;
+        n.Mode = SpeedMode.Free;
+        n.Flags |= (ushort)MoveFlags.NeedPath;
+        n.TaskTime = PursuitSystem.RepathSeconds;
+        return true;
+    }
+
+    /// <summary>
+    /// A door repairer at its door pushes build work as <see cref="BuildStep"/> does, three times over, on the door's own progress (Building slot 70, <b>Verified</b>): above 0 the door is no
+    /// longer broken (slot 98), and the task ends once progress / target reaches 1 (<c>FUN_14034a440</c>). A complete building never stalls, so no materials. The door's progress is kept as a fraction of its record's target (its materials), where the original keeps material units.
+    /// </summary>
+    void DoorStep(World world, int slot, CharacterCold cold, Locks.Fixture door, float dt)
+    {
+        var table = world.Characters;
+        ref var n = ref table.Next[slot];
+        if (!Able(cold) || !DoorNeedsWork(door) || n.Task != (byte)CharacterTask.Build) return;   // Schedule ends it
+        var (at, reach) = Locks.LockSystem.WorkSpot(world, door, new Vector2(n.Position.X, n.Position.Z));
+        if (Vector2.Distance(new Vector2(n.Position.X, n.Position.Z), at) > reach || cold.StaggeredUntil > world.Tick) return;
+        if (world.Fixtures.DoorSpotOf(door) is { } spot && n.Velocity.X == 0 && n.Velocity.Z == 0) n.Yaw = MathF.Atan2(spot.Centre.X - n.Position.X, spot.Centre.Z - n.Position.Z);
+        float skill = Engineering(cold);
+        float amount = Lerp(0.3f, 2f, Math.Clamp(skill, 0, 100) / 100) * dt;
+        doorBuilders.TryGetValue(door.Id, out int k);
+        if (k > CounterRestart) k = 0;
+        doorBuilders[door.Id] = k + 1;
+        float scaled = amount * Settings.BuildingSpeed * constants.BuildSpeed * Falloff[Math.Min(k, CounterCap)] * DoorWorkFactor;
+        var data = Data(door.RecordId);
+        // A rate of 0 or below, or no target, makes it whole at once (slot 70).
+        door.DoorProgress = data is { Rate: > 0, Target: > 0 } ? door.DoorProgress + data.Rate * scaled / data.Target : 1;
+        cold.UseSkill(StatsEnumerated.Engineering, world.Tick);
+        if (cold.Stats is { } stats && cold.Race is { } race) xp.Engineering(stats, race, dt);
+        if (door.DoorProgress > 0 && door.DoorBroken)
+        {
+            door.DoorBroken = false;
+            world.Fixtures.Touch(door);
+        }
+        if (door.DoorProgress >= 1)
+        {
+            door.DoorProgress = 1;
+            End(table, slot);
+        }
     }
 
     void Finish(World world, BuildSite site)

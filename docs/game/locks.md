@@ -120,8 +120,8 @@ Same targets as picking; Task_CutLock / Task_BruteForceLock share the shackle ta
   one); humans play `stonemine`, the blow lands at clip progress 0.6. Each update books Burglary (2) against the owner. A blow
   (door vfunc 62, `FUN_14029d690`): the attacker's damage packet, x0.25 for an animal (vfunc 0x248), then
   `f = clamp(2 x blunt + 0.5 x cut, 20, 60)`; 0.015 x f comes off the door's own construction progress (`getBuildState`, slot 69, returns
-  the door's Building +0x160; `constructionProgress` +4; 1 when whole), so a whole door takes 2 to 4 blows; the lock's hardness is not touched
-  (Meitou: `Fixture.DoorProgress`, `LockSystem.Damage`; not among the door save keys, so not saved; a template's BROKEN door starts at 0, engine reading). At <= 0 the door is broken, its lock
+  the door's Building +0x160; `constructionProgress` +4 = the Building's progress `+0x164` in material units, see Repair); the lock's hardness is not touched
+  (Meitou: `Fixture.DoorProgress`, `LockSystem.Damage`, a fraction of 1 that a blow takes 0.015 f off as if the door's target were 1, so a whole door takes 2 to 4 blows: an engine reading, see Repair; not among the door save keys, so not saved; a template's BROKEN door starts at 0, engine reading). At <= 0 the door is broken, its lock
   unlocked and the door opened, sound `Break`. The task ends once the door is broken, open or opening; no timer (**Verified**, `FUN_140348c10`: the door's vfunc `0x3e0`
   `FUN_1402adcc0` returns the door itself, so the "lock owner" tests are the door's own broken flag `+0x3ec` and state `+0x380` 1 or 2; the lock object's locked and broken flags are never read,
   so a closed unlocked door, or one whose lock was cut, is struck on). The Burglary booking comes on every update that passes the in-the-way test, before the blow test.
@@ -148,6 +148,10 @@ Same targets as picking; Task_CutLock / Task_BruteForceLock share the shackle ta
     (the chain itself is an inference from the table, as for 81; the user reports it in play). Codes and states: [gate codes](pathfinding.md#gate-codes).
     122 and 270 are restricted rows, offered to every NPC plan (**Verified**, `FUN_14051bae0`: the acting character's faction is not the player's, [planner](ai-tasks.md#planner)), so raiders plan the gate chain. Meitou: [simulation](../simulation.md#cages-beds-and-locks) ("Bashing gates").
     123 / 290 also list `!158` (`iAmBeingMeleeAttacked immediate`, Character `+0x2b0`, **Verified**: thunk `140042866` returns that byte; [threats](combat.md#fight-lifecycle-and-orders)), so a basher with a melee threat in reach does not plan the gate bash: `GatePlan` reads `CombatSystem.ImmediateThreat`.
+- **Repair** (order 95, `Task_Build`; **Verified**: `FUN_1407fc6e0`, `FUN_1405595a0`, `FUN_14034a440`, `FUN_14029fb40`): a door is a Building of its own whose progress a builder raises. Slot 70 pushes the same work as for a site (`lerp(0.3, 2, engineering/100) x dt` x options, falloff), x3 for a door (`+0x1a0`, `DAT_14168a254`); `FUN_14029fb40` leaves the complete flag set on every door,
+  so `FUN_14054a3f0` never stalls it and repair needs no materials. Progress above 0 calls slot 98 (`FUN_1402adca0`: only sets `+0x3ec`) with 0: the door is no longer broken (the lock is not touched; it stays open and unlocked from the bash). The task ends once progress / target (`FUN_140547200`, at most 1) reaches 1; the door never "completes" (no message). A right click on a complete, broken, own building (only doors report broken, slot 97) gives order 95 (Shift: job 125 Engineer, [table](ai-tasks.md)). **Unknown**: a placed door's starting progress (`FUN_1405595a0` with the maximum float sets it to the target, taken as the load); the blow above then takes 0.3 to 0.9 off a target of 5 to 50 (door records' `build materials`; Door House 8), i.e. many blows, unlike Meitou's 2 to 4 (**Observed** from the data, not changed).
+  Meitou: `ConstructionSystem` (`BuildOrder` on a door fixture id, own doors; `DoorStep`): the character walks to the door's work spot, adds `Rate x work / Target` of the door's record to `DoorProgress` (a fraction), clears `DoorBroken` above 0 and stops at 1; one falloff counter per door per tick.
+
 ## Doors
 
 - Door object fields (**Verified**: save writer `DoorStuff` slot 148 / reader 149): `state` (+0x380: 0 closed, 1 open,
