@@ -272,7 +272,7 @@ public sealed partial class World
         long lapse = Tick - (long)MathF.Ceiling(AggroSystem.WatcherSeconds / TickSeconds);
         var views = new List<WatcherView>(list.Count);
         foreach (var w in list)
-            if (w.Tick >= lapse && Characters.TryResolveNext(w.Looker, out int slot)) views.Add(new WatcherView(Characters.Previous[slot].Position, w.Level));
+            if (w.Tick >= lapse && Characters.TryResolveNext(w.Looker, out int slot) && Characters.Cold(slot) is { CarriedBy.IsNone: true }) views.Add(new WatcherView(Characters.Previous[slot].Position, w.Level));
         return [.. views];
     }
 

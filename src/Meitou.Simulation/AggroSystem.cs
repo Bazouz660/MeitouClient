@@ -223,6 +223,20 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         int k = FindHeard(heard, target.Slot, target.Generation);
         if (k >= 0) heard![k] = heard[k] with { AlarmUntil = until };
         else (heard ??= []).Add(new HeardPair { Target = target.Slot, Generation = target.Generation, Checked = -1, AlarmUntil = until });
+        Notice(world, listener, target);
+    }
+
+    /// <summary>
+    /// The forced sense (<c>FUN_140858f40</c>, docs/game/perception.md "Spotting a sneaker"): <paramref name="looker"/> has been told of <paramref name="target"/> (a massive alarm, a
+    /// blow or bolt that landed on it, a dialogue attack) and goes on its watcher list as seen, whether or not it sees it. Only a player-side target keeps the list (the arrows and the
+    /// sneak XP read it). Serial phases only.
+    /// </summary>
+    public void Notice(World world, CharacterId looker, CharacterId target)
+    {
+        var table = world.Characters;
+        if (!table.TryResolveNext(target, out int t) || !table.TryResolveNext(looker, out int l) || table.Cold(t) is not { } sneaker || table.Cold(l) is not { } watcher) return;
+        if (watcher.Faction == sneaker.Faction || !sneaker.IsPlayer && !(world.Player.Faction >= 0 && sneaker.Faction == world.Player.Faction)) return;
+        Watch(world, sneaker, looker, StealthExposure.Detected);
     }
 
     /// <summary>

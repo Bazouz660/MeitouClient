@@ -53,10 +53,12 @@ public sealed partial class DialogueSystem
                     break;
                 case DialogueActions.AttackChaseForever or DialogueActions.AttackStayNearHome:
                     if (mc is not null && tc is not null) FlagFrom(world, mc, me, target, tc, MemoryTag.TempEnemy);
+                    Aggro?.Notice(world, me, target);
                     Attack(world, me, target);
                     break;
                 case DialogueActions.AttackIfNoCoexist when mc is not null && tc is not null && !data.Relations.Coexists(mc.Faction, tc.Faction):
                     FlagFrom(world, mc, me, target, tc, MemoryTag.TempEnemy);
+                    Aggro?.Notice(world, me, target);
                     Attack(world, me, target);
                     break;
                 case DialogueActions.TakeMoney when tc is not null:

@@ -55,8 +55,14 @@ and stealth x 5). Each looker keeps a meter per target (`SensoryData::SpottingPe
   (+0x2f8 count > 0) or in state 1, and then the meter does not fill and the target is not seen.
 - Seen (result 1) when the meter was above 1 before this check; else result 2 (noticing). No line of sight: result 0.
 - Not in view: the meter empties by dt / 260 (`FUN_140853aa0`) and is dropped at 0.
-- The target keeps a watcher list (+0x1f0, `FUN_140855f30`): level and time per looker; level 0 removes it.
-  `FUN_1408586d0` shows, for entries younger than 4 s, an `arrow.mesh` entity per looker (`FUN_1405dc7d0`, pooled, render
+- The target keeps a watcher list (+0x1f0, `FUN_140855f30`): level and time per looker; level 0 removes it. Its only two writers are the spot
+  meter above (level 2 noticing, 1 seen, 0 removes) and the **forced sense** `FUN_140858f40(looker, target)` (level 1, meter 1.0 = `DAT_14167c308`);
+  hearing (`canHear`) writes none, so a heard sneaker gets no arrow (**Verified**: the callers of `FUN_140855f30` are exactly these two functions).
+  The forced sense is called by the perceive-and-tag `FUN_1405cb0a0` (DA_MASSIVE_ALARM, AI tasks), the dialogue actions 6 / 55 / 57 and events 0x21 / 0x37
+  (`FUN_140680560`), the landed blow `FUN_140999f00` and bolt `FUN_140999d50` (the victim senses the attacker; the blow's early returns on its `param_4`
+  flag are not decoded), the drop of a carried body `FUN_1405ce1e0`, and the tasks `FUN_14034cd80` / `FUN_14034ffa0` / `FUN_1403552d0` (**Verified**, callee lists).
+  `FUN_1408586d0` shows, for entries younger than 4 s (`DAT_14168bf24`; the loop drops the first stale entry and stops), only for a player-owned sneaker (**Observed**: its faction object's `+0x250` or `FUN_140856bc0`), and none
+  for a looker that is being carried (`+0x3d4`, **Verified** [carry-loot](carry-loot.md)), an `arrow.mesh` entity per looker (`FUN_1405dc7d0`, pooled, render
   queue 0x57): dir = looker - sneaker (3D), tail at sneaker + (0, 12, 0) + dir x min(|dir| - 7, 15) (no skip when negative),
   turned from -X onto dir, unscaled. The mesh runs from its origin (shaft radius 0.5) to the tip at -X 10, head ±1.2
   (**Verified**, read with `OgreMeshReader`). Colour red 0xdd0000 detected, yellow 0xffdd00 noticing, green 0x00ff00 when a
@@ -77,6 +83,10 @@ dt = the scan interval; a meter decays also when the target is out of range (the
 witnesses and the stealth knock-out read the same meters. A sneaking player
 character gets the arrows (`MarkerRenderer`, both passes like the movement marker, lit by the sun; no green) and the original's stealth icon left of its name in the tag
 colours: seen if any watcher detects, almost seen if any notices, else hidden, and the light-level icon from its `SightMap` light.
+The list (`CharacterCold.Watchers`, 4 s, a carried looker left out) is fed by the spot meter (`AggroSystem.Visit`, sight only, as in the original) and by the forced
+sense `AggroSystem.Notice` (level seen, for a player-side target of another faction): a massive alarm, dialogue attacks 6 / 55 / 57, and a melee blow or bolt that lands on a
+conscious victim (engine choice: not when it goes down). Not wired: the forced sense of the AI tasks, the body drop and dialogue events 0x21 / 0x37, and a hit's `param_4`
+gate. Whether the arrows read well in game (the mesh is 10 units long) was not checked with a run (**Unknown**).
 Every player character within the 1.2e8 range gets the `Kenshi_CharacterNamePanel` over its head (name in `Kenshi_StandardFont_Large` with shadow, selected: white in [brackets], else #b3b3b3 (**Observed**); the icon only while sneaking); NPCs get none
 (**Observed** in the original, not verified against `FUN_1406e8100`).
 
