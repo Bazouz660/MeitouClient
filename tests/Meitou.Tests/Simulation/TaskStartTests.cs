@@ -1,5 +1,6 @@
 using System.Numerics;
 using Meitou.Data.Gameplay;
+using Meitou.Data.Gameplay.Ai;
 using Meitou.Data.Gameplay.Bodies;
 using Meitou.Simulation;
 using Meitou.Simulation.Bodies;
@@ -139,5 +140,59 @@ public class TaskStartTests
         }
         Assert.False(rig.Cold(f).InCombat, "the fight flag is off");
         Assert.True(rig.Combat.StateOf(f).TargetSlot < 0, "no fight target");
+    }
+
+    const int H = Repertoire.Human, I = Repertoire.Imprisoned, Ch = Repertoire.Chained, A = Repertoire.Animal, Cr = Repertoire.Crippled;
+
+    /// <summary>The row of each start (docs/simulation.md "Task eligibility") and the repertoires the original registers it for (docs/game/ai-tasks.md "TaskData registry").</summary>
+    public static TheoryData<TaskType, int> StartRows => new()
+    {
+        { TaskType.MOVE_CUS_ORDERED, H | A | Cr }, { TaskType.STAY_CLOSE_TO_TARGET, H | A | Cr }, { TaskType.BODYGUARD, H | A | Cr }, { TaskType.Unnamed289, A },
+        { TaskType.FOCUSED_MELEE_ATTACK, H | A | Cr }, { TaskType.ATTACK_ATTACKERS_OF, H | A | Cr }, { TaskType.ATTACK_ENEMIES, H | A | Cr },
+        { TaskType.FIRST_AID_ORDER, H | I | Cr }, { TaskType.SPLINT_ORDER, H | I | Cr }, { TaskType.SPLINT_JOB, H | I }, { TaskType.JOB_MEDIC, H | I | Cr }, { TaskType.JOB_REPAIR_ROBOT, H | I | Cr },
+        { TaskType.LOOT_TARGET, H | I | Cr }, { TaskType.LOOT_THE_DEAD, H | I | Cr }, { TaskType.NOT_BE_UNARMED, H | I | Cr },
+        { TaskType.LIFT_PERSON_PLAYER_ORDER, H }, { TaskType.KIDNAP_ORDER, H }, { TaskType.FIND_AND_RESCUE_IF_THERES_BEDS, H }, { TaskType.LOOT_ANIMALS_JOB, H },
+        { TaskType.DEAD_GUYS_GO_IN_THE_POT, H }, { TaskType.PICKUP_INTRUDERS, H }, { TaskType.PICKUP_INTRUDERS_TOWN, H }, { TaskType.PUT_DOWN_OBJECT, H }, { TaskType.STEALTH_KNOCKOUT, H },
+        { TaskType.OPERATE_MACHINERY, H }, { TaskType.USE_TRAINING_DUMMY, H }, { TaskType.OPERATE_STORAGE, H }, { TaskType.USE_TURRET, H }, { TaskType.PROSPECTING, H | Cr },
+        { TaskType.BUILD, H }, { TaskType.REPAIR, H }, { TaskType.DISMANTLE, H }, { TaskType.USE_BED, H | Cr }, { TaskType.PUT_SOMEONE_IN_BED, H }, { TaskType.FIND_BED_AND_PUT_IN, H },
+    };
+
+    /// <summary>
+    /// Each start's row admits exactly the repertoires the original registers it for (<c>FUN_14060e840</c>, <c>Category &amp; repertoire</c>): catches a start moved to a row of another
+    /// registration or a row's flags changed in the table. The platoon repertoire (2) is not modelled.
+    /// </summary>
+    [Theory, MemberData(nameof(StartRows))]
+    public void Each_start_row_admits_the_repertoires_the_original_registers_it_for(TaskType row, int admitted)
+    {
+        var data = TaskDataTable.Of(row);
+        Assert.NotNull(data);
+        foreach (int repertoire in new[] { H, I, Ch, A, Cr })
+            Assert.True(((data.Category & repertoire) != 0) == ((admitted & repertoire) != 0), $"{row} and repertoire 0x{repertoire:X}");
+    }
+
+    /// <summary>
+    /// <see cref="Repertoire.Of"/> outside a cage: human 1, an animal 0x20, a crawler or one staying low 0x40 (the posture setter <c>FUN_1405c7e20</c>), before the animal test; a type with no
+    /// row (Rest, 54) is open to all. Caged and chained characters are covered by the cage tests' starts.
+    /// </summary>
+    [Fact]
+    public void The_repertoire_is_crippled_for_a_crawler_or_one_staying_low_else_human_or_animal()
+    {
+        using var world = new SimWorld(new WorldSettings { PublishSnapshots = false }, new OpenGroundWalkability(SyntheticTown.Ground));
+        CharacterCold Make(bool animal = false, bool low = false, bool stump = false)
+        {
+            var cold = new Combatant().MakeCold();
+            if (animal) cold.Fighter = new Fighter(null) { IsAnimal = true };
+            cold.Medical!.StayingLow = low;
+            if (stump) { cold.Medical.Parts[RLeg].Limb = LimbState.Stump; cold.Medical.Tick(1e-4f, Context()); }
+            return cold;
+        }
+        Assert.Equal(H, Repertoire.Of(world, Make()));
+        Assert.Equal(A, Repertoire.Of(world, Make(animal: true)));
+        Assert.Equal(Cr, Repertoire.Of(world, Make(stump: true)));
+        Assert.Equal(Cr, Repertoire.Of(world, Make(low: true)));
+        Assert.Equal(Cr, Repertoire.Of(world, Make(animal: true, low: true)));
+        Assert.False(TaskStart.Eligible(world, Make(stump: true), TaskType.BUILD));
+        Assert.False(TaskStart.Eligible(world, Make(animal: true), TaskType.LIFT_PERSON_PLAYER_ORDER));
+        Assert.True(TaskStart.Eligible(world, Make(animal: true), TaskType.REST));
     }
 }
