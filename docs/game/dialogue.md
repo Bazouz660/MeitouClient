@@ -127,7 +127,7 @@ order (no EV_NONE, the two blank names, EV_ESCAPING_SLAVE_SPOTTED, EV_MAX), so t
 
 ## Runtime
 
-Each character has one `Dialogue` state (Character+0x280): owner, target, current event, root and current line, interjectors 1-3,
+Each character has one `Dialogue` state (Character+0x280): owner (+0x150), target handle (+0x158), current event, root and current line, interjectors 1-3,
 bubble and timers, choice list, per-event cooldowns and last target, per-event repetition counter, lock map, permanent-chance map,
 package set.
 
@@ -184,8 +184,9 @@ child's (`FUN_1406ad9d0`).
 3. `unique` (no current field sets it).
 4. `chance temporary` below 99: a fresh 0-100 roll every check.
 5. `in town of` (the speaker's current town's faction), `my faction`, `target faction`, `has package` (any of the speaker's
-   packages), `is character` (the speaker's record), `target carrying character` (someone in the target's squad carries a listed
-   character; recorded as interjector), `world state` (all equal their bool), `target has item type` / `target has item` (the target's
+   packages), `is character` (the speaker's record), `target carrying character` (for each listed character in turn, the first
+   member of the target's squad, the target or one the speaker perceives, that carries it becomes the target, [retargeting](#retargeting);
+   any hit passes), `world state` (all equal their bool), `target has item type` / `target has item` (the target's
    squad members' inventories and backpacks), `target race` (the target, else a squad member, recorded as interjector), `my race`,
    `my subrace`. Each list is OR within itself. The race tests (`my race`, `target race`, the +2 below, T_TARGET_WITH_RACE, DA 47) match
    a race when the listed RACE is that race or any race of its RACE_GROUP (`FUN_14042ecd0`; the group's `races` set race +0x120, a race in
@@ -197,6 +198,16 @@ child's (`FUN_1406ad9d0`).
    `FUN_140678f30`, slave state from `FUN_1405c8aa0`).
 8. `chance permanent` below 99: a roll made once per character and line, then cached.
 9. The DC list in order ([Conditions](#conditions)).
+
+#### Retargeting
+
+`FUN_140671930` (**Verified**): a matching squad member that is not the checked state's owner and not its target already is copied into the state's target
+handle (`+0x158`) the moment its test matches, even if a later test of the line fails, and while probing candidate lines. It does not write the interjector slots
+(`+0x1c8`, `+0x1e8`, `+0x208`; only interjection nodes do, `FUN_14067a0c0`). T_TARGET speakers, tokens, effects and later checks use the new target, but the
+checking call keeps the target it was given (`FUN_140678f30` param 3) and `FUN_14067a0c0` passes the walk's own to every check and race bonus, so a retarget
+shows from the next speaker resolution, walk or click (`FUN_140683c00` re-reads the handle). Callers: the `target carrying character`, `target has item (type)` and
+`target race` tests above, and two conditions in `FUN_140676950` (IS_FEMALE's branch and HAS_ILLEGAL_ITEM's). Meitou: `SetTarget` writes `Conversation.Player` when the
+check's `me` is the conversation's NPC (an interjector candidate's own state is not the conversation's); `Pick` tests the target it started with.
 
 ### Speakers
 
@@ -394,7 +405,7 @@ nearby player character (and stores it as the target). `B` = value > 0.
 | 65 IS_SAME_RACE_AS_ME | S's RACE_GROUP = Me's (race +0x120; two races in no group compare equal, **Verified** `FUN_140676950`) | Bool |
 | 66 CAN_AFFORD_BOUNTY | S is a player character and the player's money ≥ its bounty | Bool |
 | 68 IS_INDOORS | S's building handle is set (slot 59 `FUN_1405ce020`: its carrier's, its bed's or cage's building, else the one it stands in) | Bool |
-| 69 HAS_ILLEGAL_ITEM | members of S's squad that are S or that Me perceives (`FUN_140855960`) carry an item of the set at `+0x100` of Me's town's faction (else Me's faction) (`FUN_140745f70`, any quantity); each carrier found (its first such item) posts "{1} has been discovered smuggling {2}" and is recorded as interjector (Meitou: not recorded); the result is the 0/1 found. **Observed** (KenshiLib 1ce4a16: Faction +0x90 `tradeCulture`, its `illegalItems` set at +0x68, the tree head 8 further): the set is the faction culture's `illegal goods`; base data: Holy Nation lists Hashish and the forbidden books its gate guards' lines name (DIALOGUE 52700, event 1; Shek gate guard 9553, event 1; Empire gate guard 9521, event 3) | Num2 on 0/1 |
+| 69 HAS_ILLEGAL_ITEM | members of S's squad that are S or that Me perceives (`FUN_140855960`) carry an item of the set at `+0x100` of Me's town's faction (else Me's faction) (`FUN_140745f70`, any quantity); each carrier found (its first such item) posts "{1} has been discovered smuggling {2}" and becomes the dialogue's target (`FUN_140671930`, [retargeting](#retargeting); Meitou: not yet); the result is the 0/1 found. **Observed** (KenshiLib 1ce4a16: Faction +0x90 `tradeCulture`, its `illegalItems` set at +0x68, the tree head 8 further): the set is the faction culture's `illegal goods`; base data: Holy Nation lists Hashish and the forbidden books its gate guards' lines name (DIALOGUE 52700, event 1; Shek gate guard 9553, event 1; Empire gate guard 9521, event 3) | Num2 on 0/1 |
 | 70 USING_MY_TRAINING_EQUIPMENT | S's `+0x158` (a faction handle) is Me's faction; who sets it is **Unknown**, not built | Bool |
 | 73 TOWN_LEVEL_CURRENT_LOCATION / 74 PLAYERS_BEST_TOWN_LEVEL | Me's current building (Character slot 15 `+0x78`) has a town (Building slot 77) whose faction is the player's: its `+0x388` ([plevel](factions-squads-towns.md)); otherwise false whatever the value (73) / the highest `+0x388` over the player faction's towns (`FUN_140928cc0`), −1 with none (74) | Num3 |
 | 75 IN_A_PLAYER_TOWN | S in a player-owned town | Bool |

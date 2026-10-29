@@ -11,11 +11,13 @@ public sealed partial class DialogueSystem
     /// <summary>
     /// Chooses a line from <paramref name="list"/> (<c>FUN_14067a0c0</c>, docs/game/dialogue.md "Choosing a line"): the list is sorted by score; the walk stops at the first line scoring
     /// below the best so far; each node's speaker is resolved and the line check run with that speaker as "me" (the NPC for a player-side line); a passing root descends into its
-    /// children; one candidate at the top score is picked at random.
+    /// children; one candidate at the top score is picked at random. The checks and the race bonus use the target the walk started with (<paramref name="target"/>): a line check
+    /// that retargets (<see cref="SetTarget"/>) changes who the T_TARGET speakers are for the rest of the walk, not the target the walk tests.
     /// </summary>
-    Picked? Pick(World world, Conversation c, IReadOnlyList<DialogueNode> list, int depth = 0)
+    Picked? Pick(World world, Conversation c, IReadOnlyList<DialogueNode> list, int depth = 0, CharacterId? target = null)
     {
         if (depth > 8) return null;
+        var whom = target ?? c.Player;
         var candidates = new List<Picked>();
         int best = int.MinValue;
         foreach (var node in list)
@@ -27,19 +29,19 @@ public sealed partial class DialogueSystem
                 c.Interjectors[slot] = CharacterId.None;
                 if (FindInterjector(world, c, node) is not { } interjector) continue;
                 c.Interjectors[slot] = interjector;
-                if (Pick(world, c, node.Children, depth + 1) is not { } inner) continue;
+                if (Pick(world, c, node.Children, depth + 1, whom) is not { } inner) continue;
                 Consider(node.Score + inner.Line.Score, inner with { Root = inner.Root ?? c.Root });
                 continue;
             }
             if (!SpeakerOf(world, c, node, out var speaker)) continue;
             var me = IsNpcSide(node.Speaker) ? speaker : c.Npc;
-            if (!Check(world, c, node, me, c.Player)) continue;
-            int score = node.Score + RaceBonus(world, node, c.Player);
+            if (!Check(world, c, node, me, whom)) continue;
+            int score = node.Score + RaceBonus(world, node, whom);
             if (node.IsRoot)
             {
                 var root = c.Root;
                 c.Root = node;
-                var child = Pick(world, c, node.Children, depth + 1);
+                var child = Pick(world, c, node.Children, depth + 1, whom);
                 c.Root = root;
                 if (child is not { } p) continue;
                 Consider(score + p.Line.Score, p with { Root = node });
@@ -150,8 +152,20 @@ public sealed partial class DialogueSystem
         if (node.TargetFaction.Count > 0 && (tc is null || !node.TargetFaction.Contains(FactionId(tc.Faction)))) return false;
         if (node.HasPackage.Count > 0 && !node.HasPackage.Overlaps(SetOf(world, ms).Packages)) return false;
         if (node.IsCharacter.Count > 0 && !node.IsCharacter.Contains(mc.RecordId)) return false;
-        if (node.TargetCarryingCharacter.Count > 0 && !Known(world, me, other).Any(m => Cold(world, m) is { Carrying.IsNone: false } carrier
-            && Cold(world, carrier.Carrying) is { } body && node.TargetCarryingCharacter.Contains(body.RecordId))) return false;
+        if (node.TargetCarryingCharacter.Count > 0)
+        {
+            // Each listed character in turn: the first member of the target's squad (perceived) carrying it becomes the target; any hit passes.
+            bool carried = false;
+            foreach (string listed in node.TargetCarryingCharacter)
+                foreach (var m in Known(world, me, other))
+                    if (Cold(world, m) is { Carrying.IsNone: false } carrier && Cold(world, carrier.Carrying) is { } body && body.RecordId == listed)
+                    {
+                        SetTarget(c, me, m);
+                        carried = true;
+                        break;
+                    }
+            if (!carried) return false;
+        }
         var states = population?.States ?? data.States;
         foreach (var (state, value) in node.WorldStates) if (!IWorldStates.Passes(states, data.Db, state, value ? 1 : 0)) return false;
         if (node.TargetHasItemFunction.Count > 0 && !Known(world, me, other).Any(m => Cold(world, m)?.Inventory?.All()
@@ -178,6 +192,16 @@ public sealed partial class DialogueSystem
         foreach (var condition in node.Conditions)
             if (!Condition(world, c, condition, me, mc, other)) return false;
         return true;
+    }
+
+    /// <summary>
+    /// A line check found <paramref name="member"/> of the target's squad (<c>FUN_140671930</c>): it becomes the conversation's target unless it is the NPC itself or already the target.
+    /// The state written is <paramref name="me"/>'s, so only a check of the conversation's NPC retargets (an interjector candidate's own state is not the conversation's). Happens when
+    /// the test matches, even if a later test of the line fails.
+    /// </summary>
+    static void SetTarget(Conversation c, CharacterId me, CharacterId member)
+    {
+        if (me == c.Npc && !member.IsNone && member != c.Npc) c.Player = member;
     }
 
     static CharacterCold? Cold(World world, CharacterId id) => world.Characters.TryResolveNext(id, out int s) ? world.Characters.Cold(s) : null;
