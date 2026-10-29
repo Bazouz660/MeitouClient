@@ -840,7 +840,7 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
     /// The processing of a new slave once the kneel is over (<c>Task_ProcessNewSlave</c>, <b>Verified</b>): every item of the whole inventory of record type WEAPON, then ARMOUR, ITEM and
     /// CONTAINER goes to the worker (its inventory, else the ground; engine choice for the original's storage), except locked ones and ARMOUR whose <c>stigma</c> is 6 (slave garments); a
     /// backpack goes with its content. Only when the captive's legs slot is empty is it dressed: each of its faction's <c>slave clothing</c> it does not wear already. Event 35, or 37 for
-    /// one that was a slave before, from the worker to it; it becomes the worker's faction's slave.
+    /// one that was a slave before, from the worker to it; it becomes the worker's faction's slave unless it has an owner already (it keeps that one), and its one-shot orders and perma-jobs are cleared.
     /// </summary>
     void Process(World world, int w, CharacterCold wc, int c, CharacterCold cc)
     {
@@ -866,7 +866,15 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
         }
         assembly.RefreshEquipment(wc);
         world.Defer(new Dialogue.DialogueEvent(table.IdOf(w), table.IdOf(c), before ? RecapturedSlave : IntroducingNewSlave) { Tick = world.Tick + 1 });
-        FixtureRegistry.Enslave(world, cc, wc.Faction, wc.SquadId);
+        // The owner is set only when it had none that resolves (FUN_14032e430 behind FUN_14035aa20): a recaptured slave keeps its owner and its master squad. Meitou's owner is a faction,
+        // and the master squad (runtime only) stands for the handle when it is known.
+        bool owned = cc.SlaveOwner >= 0 && (cc.SlaveMaster < 0 || world.Squads.Find(cc.SlaveMaster) is not null);
+        if (owned) FixtureRegistry.Enslave(world, cc, cc.SlaveOwner);
+        else FixtureRegistry.Enslave(world, cc, wc.Faction, wc.SquadId);
+        // Then its orders object is reset: the one-shot orders and the perma-jobs are destroyed (FUN_140507530, FUN_140507280); job 187 is implicit (AiSystem.ObeyedRoles).
+        cc.Jobs.Clear();
+        cc.OrderQueue.Clear();
+        if (cc.OrderMove && table.Next[c].Task == (byte)CharacterTask.GoTo) MovementSystem.Stop(table, c);
     }
 
     /// <summary>The record types a new slave is stripped of, in the original's order.</summary>
