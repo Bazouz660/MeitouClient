@@ -204,7 +204,12 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
                     {
                         if (!table.TryResolveNext(id, out int slot) || table.Cold(slot) is not { IsPlayer: true } cold) continue;
                         if (taken is null) Production.PermaJobs.Add(cold, Meitou.Data.Gameplay.Ai.TaskType.FIND_AND_RESCUE_IF_THERES_BEDS, Production.PermaJob.Untargeted(Meitou.Data.Gameplay.Ai.TaskType.FIND_AND_RESCUE_IF_THERES_BEDS));
-                        else if (Free(table, slot) && MayRescue(world, slot, cold)) RescueSomeone(world, slot, taken);
+                        else if (Free(table, slot) && Rescuing(cold))
+                        {
+                            // The one-shot order has no bed to take anyone to: said, not dropped silently (engine choice; the job just waits with desire 0).
+                            if (world.Fixtures.FindBed(world, slot, Relations) is null) world.Bark(id, Meitou.Localisation.Loc.Tr("No free bed to take anyone to."));
+                            else RescueSomeone(world, slot, taken);
+                        }
                     }
                     break;
                 }
@@ -893,8 +898,10 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
     /// The desire of 148 Find and rescue if there's beds (<c>FUN_1405994c0</c>, <b>Verified</b>): 0 with the Hold order (the raw flag) or while carrying, else the bed search's factor (a
     /// bed must be found for the rescuer: <see cref="Locks.FixtureRegistry.FindBed"/>, which keeps the bed it lies in). Also gates the one-shot Rescue order (engine reading).
     /// </summary>
-    bool MayRescue(World world, int slot, CharacterCold cold) =>
-        (cold.Orders & CharacterOrders.Hold) == 0 && cold.Carrying.IsNone && world.Fixtures.FindBed(world, slot, Relations) is not null;
+    bool MayRescue(World world, int slot, CharacterCold cold) => Rescuing(cold) && world.Fixtures.FindBed(world, slot, Relations) is not null;
+
+    /// <summary>The bed-free part of <see cref="MayRescue"/>: not on Hold and not carrying.</summary>
+    static bool Rescuing(CharacterCold cold) => (cold.Orders & CharacterOrders.Hold) == 0 && cold.Carrying.IsNone;
 
     /// <summary>
     /// One look for a body (the rescue job's pass, and the Rescue button without Shift once): with no fight in its squad, the character picks up the nearest knocked-out member of
