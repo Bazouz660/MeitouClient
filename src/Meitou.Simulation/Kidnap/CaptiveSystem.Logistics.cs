@@ -60,6 +60,9 @@ public sealed partial class CaptiveSystem
                 if (type == TaskType.GATHER_SLAVES_FROM_CAGES_IF_ITS_AN_EXPORT_TOWN)
                 {
                     if (data.Sites[site].Town.Type is not (TownType.Town or TownType.Outpost)) return null;
+                    // The desire (AI slot 64): a town of the player's faction or of an anti-slavery one is gathered from by its allies only (FUN_140597b80).
+                    int owner = site < data.SiteFactions.Count ? data.SiteFactions[site] : -1;
+                    if (owner >= 0 && (owner == world.Player.Faction || owner < data.Factions.Count && data.Factions[owner].AntiSlavery) && !Allied(cold.Faction, owner)) return null;
                 }
                 else if (SlavesOf(world, squad).Count(s => !table.Cold(s)!.IsImprisoned && table.Cold(s)!.Medical is not { Incapacitated: true }) > 3) return null;
                 return GatherTarget(world, slot, cold, site, type) is { } cage

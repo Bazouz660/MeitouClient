@@ -315,7 +315,7 @@ Same targets as picking; Task_CutLock / Task_BruteForceLock share the shackle ta
   (status +0xdc) not 4, those of the nearest "designated" building (`BuildingFinderNearestAllies_Designated`, kind 2; its per-building test `FUN_1408dac20` reads the building's designation record (vfunc 0x160), its faction, a shop test, a give-up test and an occupancy count `FUN_1403344c0`
   and is only partly read; the meaning of the designation kinds is **Unknown**); (3) with the squad type not 1, 2, 5 or 6, those of the nearest designated building of kind 3;
   (4) else the buildings of function mask 0x40 (`BuildingFinderNearestAllies_Function`, the 3 x 3 grid cells of zones round the character, whole list kept in the finder's order). The first bed in
-  the list that is not in the squad's give-up list (`FUN_1402690e0` count below 1) and that `UseableStuff` vfunc 0x4f0 (a place free) accepts is the target, passed over only when the squad's home is
+  the list that no squad mate has as its sub-target (`FUN_1402690e0` count below 1, `howManyGuysWorkingOnThisSubTarget`) and that `UseableStuff` vfunc 0x4f0 (a place free) accepts is the target, passed over only when the squad's home is
   not the building the character is in (+0x128 hand compare, **Unknown**) and the bed's field behind vfunc 0x228 +0x28 is above 1 (**Unknown**, read as a price). The order inside a list is
   that of a set of pointers (steps 1 to 3), so it is not reproducible. Meitou: `FixtureRegistry.FindBedNpc` takes the first free bed of the squad's home building, else the nearest free bed of its
   town (engine choices for steps 2 to 4 and the order). The search is the target finder of 153 / 239 Go home go to bed: its factor is 0 when it finds no bed
