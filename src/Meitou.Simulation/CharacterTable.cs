@@ -250,6 +250,12 @@ public sealed class CharacterCold
     /// </summary>
     public StealthExposure StealthExposure { get; set; }
     public long StealthExposureTick { get; set; } = long.MinValue;
+    /// <summary>
+    /// The factor on the stealth XP of a hearing check (CharStats <c>+0x174</c>, <c>FUN_1408c7330</c>): 1, x0.7 after each check, back to 1 by the sneak XP step (<see cref="BodySystem"/>).
+    /// Set by <see cref="AggroSystem"/>'s serial commit, which also adds the checks' XP to <see cref="HearingXp"/>; <see cref="BodySystem"/> pays that into Stealth.
+    /// </summary>
+    public float StealthFactor { get; set; } = 1;
+    public float HearingXp { get; set; }
     /// <summary>The hostile NPCs noticing or detecting this sneaker lately (<see cref="AggroSystem"/>, serial commit; display only: not hashed, not saved).</summary>
     public List<StealthWatcher>? Watchers { get; set; }
     /// <summary>Weapon and worn armour (track F, docs/simulation.md "Combat").</summary>
@@ -655,6 +661,7 @@ public sealed class CharacterTable
             if (c.Task == (byte)CharacterTask.Treat) { hasher.Add(k.TreatTarget); hasher.Add((int)k.ResumeTask); if (k.TreatSplint) hasher.Add(0x53706C74); }
             if (k.Fleeing) hasher.Add(k.FleesAlone ? 0x466C6566 : 0x466C6565);   // only while set, so worlds without fleeing hash as before
             if (k.StealthExposureTick != long.MinValue) { hasher.Add((int)k.StealthExposure); hasher.Add(k.StealthExposureTick); }   // likewise, once a sneaker was exposed
+            if (k.StealthFactor != 1 || k.HearingXp != 0) { hasher.Add(0x48724558); hasher.Add(k.StealthFactor); hasher.Add(k.HearingXp); }   // likewise, once a listener's hearing check gave it stealth XP
             // Carrying, looting and the rescue job add to the hash only while set, so worlds without them hash as before.
             if (!k.Carrying.IsNone) { hasher.Add(0x43617272); hasher.Add(k.Carrying); }
             if (!k.CarriedBy.IsNone) { hasher.Add(0x42726E65); hasher.Add(k.CarriedBy); }

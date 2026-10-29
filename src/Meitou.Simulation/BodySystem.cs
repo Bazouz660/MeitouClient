@@ -216,11 +216,18 @@ public sealed class BodySystem(GameConstants constants, BodyOptions? options = n
             // Movement XP only for the player's faction and not while fight steering or swinging (FUN_140660dc0, Verified; Meitou: not on the Attack task).
             if ((cold.IsPlayer || world.Player.Faction >= 0 && cold.Faction == world.Player.Faction) && n.Task != (byte)CharacterTask.Attack)
                 TrainOnTheMove(stats, race, medical, in n, cold.WaterState == 3, carrying, encumbrance, world.TickSeconds);
+            // The stealth XP the listeners' hearing checks gave since the last tick (FUN_1408c7330, summed by AggroSystem.Apply; docs/game/character-stats.md "Stealth (heard check)").
+            if (cold.HearingXp != 0)
+            {
+                xp.HearingCheck(stats, race, cold.HearingXp);
+                cold.HearingXp = 0;
+            }
             // Sneak XP (FUN_1408586d0 / FUN_1408c65a0, Verified): the player's faction only, not in a bed or cage or carried, while moving, and only with someone about; a watcher
             // of the last 4 s gives the noticed rate. The original also pays x0.1 to a sneaker standing still that a hostile targets (not modelled: none then).
             if ((cold.Orders & CharacterOrders.Sneak) != 0 && !medical.Incapacitated && (cold.IsPlayer || world.Player.Faction >= 0 && cold.Faction == world.Player.Faction)
                 && cold.InSomething == Locks.HeldState.None && cold.CarriedBy.IsNone && n.Velocity.X * n.Velocity.X + n.Velocity.Z * n.Velocity.Z > SneakMoving * SneakMoving)
             {
+                cold.StealthFactor = 1;   // the sneak XP step resets the hearing checks' exposure factor (FUN_1408c65a0)
                 var exposure = PaidExposureOf(world, cold);
                 if (exposure != StealthExposure.Unobserved || SomeoneAbout(world, i)) xp.Sneaking(stats, race, exposure, world.TickSeconds);
             }

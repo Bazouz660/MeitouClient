@@ -163,13 +163,25 @@ public sealed class XpService(GameConstants constants, BodyOptions options)
     /// <summary>
     /// Stealth while sneaking (<c>FUN_1408c65a0</c>, from the sneaker's sense update): the continuous entry with amount 0.2 when no hostile NPC is about, 0.9 when one has it
     /// within sight range unseen, 1.5 when a looker's spot meter on it is filling or full (Verified literals; the "about" and "seen" gates are <b>Observed</b> readings of
-    /// the original's flags). The per-hearing-check gain of <c>FUN_1408c7330</c> is not modelled.
+    /// the original's flags). The per-hearing-check gain of <c>FUN_1408c7330</c> is <see cref="HearingCheck"/>.
     /// </summary>
     public float Sneaking(CharacterStats stats, RaceData race, StealthExposure exposure, float dtSeconds) =>
         Continuous(stats, race, StatsEnumerated.Stealth, dtSeconds, SneakRate(exposure));
 
     /// <summary>The amount <see cref="Sneaking"/> feeds the continuous entry (<c>CharStats +0x170</c>, which the Stealth line's tooltip shows as "XP rate:").</summary>
     public static float SneakRate(StealthExposure exposure) => exposure switch { StealthExposure.Unobserved => 0.2f, StealthExposure.Near => 0.9f, _ => 1.5f };
+
+    /// <summary>The factor after each hearing check (<c>FUN_1408c7330</c>: <c>DAT_1416ae650</c> = 0.7, <b>Verified</b>).</summary>
+    public const float HearingFactorDecay = 0.7f;
+
+    /// <summary>
+    /// The amount of one hearing check's stealth XP before the exposure factor (<c>FUN_1408c7330</c>, <b>Verified</b>): 2 when the listener regards the heard character as an enemy, 2 more when
+    /// <paramref name="home"/> (<see cref="AggroSystem"/> reads the rule), x20 (<c>DAT_141683188</c>) when it was heard.
+    /// </summary>
+    public static float HearingAmount(bool enemy, bool home, bool heard) => ((enemy ? 2 : 0) + (home ? 2 : 0)) * (heard ? 20 : 1);
+
+    /// <summary>Stealth from the hearing checks: the generic entry with dt 1 (<c>DAT_14167c308</c>) and the summed amounts.</summary>
+    public float HearingCheck(CharacterStats stats, RaceData race, float amount) => Continuous(stats, race, StatsEnumerated.Stealth, 1, amount);
 
     /// <summary>Lockpicking (<c>FUN_1408c62e0</c>): 1.2 x race[37] on success, 0.24 x on failure, straight into the core curve.</summary>
     public float Lockpicking(CharacterStats stats, RaceData race, bool success) =>
