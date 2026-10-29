@@ -221,8 +221,7 @@ public sealed class BodySystem(GameConstants constants, BodyOptions? options = n
             if ((cold.Orders & CharacterOrders.Sneak) != 0 && !medical.Incapacitated && (cold.IsPlayer || world.Player.Faction >= 0 && cold.Faction == world.Player.Faction)
                 && cold.InSomething == Locks.HeldState.None && cold.CarriedBy.IsNone && n.Velocity.X * n.Velocity.X + n.Velocity.Z * n.Velocity.Z > SneakMoving * SneakMoving)
             {
-                var exposure = ExposureOf(world, cold);
-                if (exposure < StealthExposure.Noticed && Watched(world, cold)) exposure = StealthExposure.Noticed;
+                var exposure = PaidExposureOf(world, cold);
                 if (exposure != StealthExposure.Unobserved || SomeoneAbout(world, i)) xp.Sneaking(stats, race, exposure, world.TickSeconds);
             }
             if (cold.IsPlayer || table.IdOf(i) == world.Player.Inspected) cold.Extended = ExtendedOf(cold, stats, race, medical, n.MaxSpeed, encumbrance, ctx.Resting, carrying, ctx.UseHungerRate);
@@ -324,6 +323,16 @@ public sealed class BodySystem(GameConstants constants, BodyOptions? options = n
     /// <summary>A sneaker's exposure for its stealth XP: an exposure older than a second (a looker's scan interval with room to spare) has lapsed.</summary>
     internal static StealthExposure ExposureOf(World world, CharacterCold cold) =>
         cold.StealthExposureTick >= world.Tick - (long)MathF.Ceiling(1 / world.TickSeconds) ? cold.StealthExposure : StealthExposure.Unobserved;
+
+    /// <summary>
+    /// The exposure a sneaker's stealth XP is paid at: <see cref="ExposureOf"/>, raised to noticed by a watcher of the last 4 s. The Stealth tooltip's "XP rate:" shows its rate
+    /// (the original prints the rate its XP call stored, <c>FUN_14088f9a0</c>, <c>FUN_1408c65a0</c>), so both read this.
+    /// </summary>
+    internal static StealthExposure PaidExposureOf(World world, CharacterCold cold)
+    {
+        var exposure = ExposureOf(world, cold);
+        return exposure < StealthExposure.Noticed && Watched(world, cold) ? StealthExposure.Noticed : exposure;
+    }
 
     /// <summary>The speed above which a sneaker counts as moving for its XP (engine stand-in for the movement's moving flag).</summary>
     const float SneakMoving = 0.1f;

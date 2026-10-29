@@ -341,7 +341,7 @@ public sealed partial class World
             float s = Orders.Stealth(cold);
             int total = (int)(s * 100), trained = (int)stats[StatsEnumerated.Stealth];
             float t = MathF.Max(0, (s - 0.1f) / 0.8f), top = hot.MaxSpeed;
-            return new(StatsEnumerated.Stealth, "Stealth:", total) { Base = trained, Stealth = new(trained, 12 + (top - 12) * t, Bodies.XpService.SneakRate(BodySystem.ExposureOf(this, cold)),
+            return new(StatsEnumerated.Stealth, "Stealth:", total) { Base = trained, Stealth = new(trained, 12 + (top - 12) * t, Bodies.XpService.SneakRate(BodySystem.PaidExposureOf(this, cold)),
                 !cold.Carrying.IsNone, med.Prone, (int)((1 - encumbrance) * 100), (int)((med.StealthBodyFactor(stats[StatsEnumerated.Toughness] * stats.Scale) - 1) * 100),
                 (int)(((cold.Fighter?.StealthMult ?? 1) - 1) * 100), (int)((med.LegItemFactor(StatsEnumerated.Stealth) - 1) * 100), total) };
         }
