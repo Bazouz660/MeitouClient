@@ -713,8 +713,8 @@ Arrests, the recognition meter and the marker are hashed only while set. What a 
   arrest's guard walking to such a cage has them opened at once. Rounds and locked homes are hashed only while any exist.
 - **Lock orders** (`LockSystem`, context-menu verbs on a caged character): `PickLockOrder` (the prisoner its own cage, a mate
   walks to it; `Lockpicking.Step` each tick in reach, messages "Pick success!"/"Pick failed"), `GetOutOrder` (refused while
-  locked; an unserved sentence books a pending Escaping Prison and sets `Escaped`, as does any cage of a lawless owner).
-  `Imprison`/`Release` clear `Escaped`.
+  locked; any other than a kidnap victim books a pending Escaping Prison (refused for a lawless owner) whatever the sentence, and sets `Escaped` unless the cage owner is not real).
+  `Imprison` clears `Escaped`; `Release` does too, unless the cage owner is not real or the releaser is an NPC of a faction that books no bounties.
 - **HUD**: `CharacterSnapshot.Prison`; the State line shows the status panel's prison text.
 - **Bail** (DA 43, [economy 11.5](game/economy.md#115-bail-and-sentence); only the Shek bounty desk and the Inquisitor offer it): the conversation
   closes and the window reopens as the bail list (engine stand-in for the trading window): "Pay Bounty", one choice "Name (c.N)" per prisoner of

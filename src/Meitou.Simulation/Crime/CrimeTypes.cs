@@ -277,6 +277,8 @@ public sealed class CrimeFactions
     public bool Books(int f) => Relations.Contains(f) && books[f];
     /// <summary>A "lawless" faction (<c>not real</c>, or of <c>fundamental type</c> BANDIT): crimes against it are no crimes.</summary>
     public bool Lawless(int f) => !Relations.Contains(f) || lawless[f];
+    /// <summary>The faction is <c>not real</c> (the game's faction byte <c>+0x1d0</c>): the cage leave routine writes no escaped flag for its cages (<c>FUN_1403554b0</c>).</summary>
+    public bool NotReal(int f) => Relations.Contains(f) && Relations.Factions[f].NotReal;
     public bool Bandit(int f) => Relations.Contains(f) && bandit[f];
     public string NameOf(int f) => Relations.Contains(f) ? Relations.Factions[f].Name : "?";
 }

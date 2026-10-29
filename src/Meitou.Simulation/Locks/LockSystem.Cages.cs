@@ -114,7 +114,7 @@ public sealed partial class LockSystem
 
     /// <summary>
     /// 256 Get out of cage (opportunistic; <c>Task_GetOutOfCage</c> with the escape flag, docs/game/ai-tasks.md "Arrest and prison rows"): an AI prisoner, awake, whose role list holds
-    /// the goal in its hours, walks out as soon as its cage is not effectively locked (<see cref="FixtureRegistry.GetOut"/> refuses a locked one; an unserved sentence makes it an escape).
+    /// the goal in its hours, walks out as soon as its cage is not effectively locked (<see cref="FixtureRegistry.GetOut"/> refuses a locked one; it is an escape unless it is a kidnap victim, whatever the sentence).
     /// </summary>
     void OpportunisticEscapes(World world)
     {

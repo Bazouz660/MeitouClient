@@ -775,7 +775,10 @@ public sealed partial class FixtureRegistry
             if (ledger.Count == 0) c.Bounties = null;
         }
         Clear(c);
-        c.Escaped = false;
+        // Task_ReleasePrisoner adds the leave task 133 (flag 0, which clears the escaped flag for a real cage owner, FUN_1403554b0) only for a releaser whose faction books bounties or is
+        // the player's (FUN_1403570a0); another NPC's release leaves the flag as it was. Releases that are no task of the jailer's (bail, trade, recruit, liberators) clear it as before.
+        bool leaves = releaserFaction < 0 || releaserFaction == world.Player.Faction || crimes is null || crimes.Factions.Books(releaserFaction);
+        if (leaves && !(cage is not null && crimes?.Factions.NotReal(cage.Owner) == true)) c.Escaped = false;
         // The release leaves slavery as it is (FUN_1403570a0 never sets the slave state; bail and buy-free clear it themselves, Verified); a releaser that is not the player's
         // takes a slave over (FUN_14032e430: the owner changes, the state stays).
         if (releaserFaction >= 0 && releaserFaction != world.Player.Faction && c.SlaveState >= 1) c.SlaveOwner = releaserFaction;
@@ -784,8 +787,10 @@ public sealed partial class FixtureRegistry
     }
 
     /// <summary>
-    /// The prisoner leaves its cage by itself (Task_GetOutOfCage, locks.md "Cages and beds"): refused while the cage is effectively locked; an escape (a pending Escaping Prison
-    /// against the cage owner, and the escaped flag <see cref="CharacterCold.Escaped"/>) unless the sentence is served; the flag is forced for a cage of a lawless owner. True when it got out.
+    /// The prisoner leaves its cage by itself (Task_GetOutOfCage <c>FUN_1403554b0</c>, locks.md "Cages and beds", <b>Verified</b>): refused while the cage is effectively locked. The task
+    /// flag is 1 for the player's Get out (207) and the opportunistic walk (256), so it is an escape whatever the sentence (a pending Escaping Prison against the cage owner, which the
+    /// crime setter refuses for a lawless owner, and a slave in state 1 becomes an escaped slave); the escaped flag <see cref="CharacterCold.Escaped"/> is written only for a cage owner
+    /// that is real, a not-real owner leaves it as it was. A kidnap victim getting out is no escape (engine choice). True when it got out.
     /// </summary>
     public bool GetOut(World world, CharacterId prisoner, CrimeSystem? crimes = null)
     {
@@ -793,12 +798,11 @@ public sealed partial class FixtureRegistry
         if (!table.TryResolveNext(prisoner, out int s) || table.Cold(s) is not { IsImprisoned: true } c) return false;
         var cage = c.InWhat is { } id ? Find(id) : null;
         if (cage?.Lock is { EffectivelyLocked: true }) return false;
-        bool escape = cage is not null && !c.Kidnapped && !SentenceServed(c, world.GameHours);   // a kidnap victim getting out is no escape
+        bool escape = cage is not null && !c.Kidnapped;
         if (escape) crimes?.SetPending(world, s, CrimeCode.EscapingPrison, cage!.Owner, CharacterId.None, CrimeSystem.MinTimer);
-        bool escaped = escape || !c.Kidnapped && cage is not null && crimes is not null && crimes.Factions.Lawless(cage.Owner);
         if (cage is not null && cage.Occupant == prisoner) cage.Occupant = CharacterId.None;
         Clear(c);
-        c.Escaped = escaped;
+        if (!(cage is not null && crimes?.Factions.NotReal(cage.Owner) == true)) c.Escaped = escape;
         if (escape && c.SlaveState == 1) SetSlave(world, c, 2, c.SlaveOwner);   // a slave getting out is an escaped slave (Task_GetOutOfCage)
         return true;
     }

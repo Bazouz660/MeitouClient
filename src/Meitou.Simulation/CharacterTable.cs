@@ -351,7 +351,7 @@ public sealed class CharacterCold
     public int DisguiseFaction { get; set; } = -1;
     /// <summary>Seconds left on the disguise tooltip's three marks (same faction, slave owner, someone knows me; 14 s from the last looker that applied one). Runtime only, not hashed.</summary>
     public float[]? DisguiseMarks { get; set; }
-    /// <summary>The escaped-prisoner flag (status <c>+0xe8</c>, docs/game/locks.md "Cages and beds"): left a cage before the sentence was served. Hashed only while set.</summary>
+    /// <summary>The escaped-prisoner flag (status <c>+0xe8</c>, docs/game/locks.md "Cages and beds"): left a cage by itself (the leave task's flag, written for a real cage owner only). Hashed only while set.</summary>
     public bool Escaped { get; set; }
     /// <summary>Held in a cage by a kidnapper (<see cref="Kidnap.KidnapSystem"/>), not sentenced: no sentence is ever served, no bail is offered, getting out is no crime. Saved as <c>meitou kidnapped</c>. Hashed only while set.</summary>
     public bool Kidnapped { get; set; }

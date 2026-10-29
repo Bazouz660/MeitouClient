@@ -11,7 +11,7 @@ public sealed record PickLockOrder(IReadOnlyList<CharacterId> Characters, Charac
     public string? Cage { get; init; }
 }
 
-/// <summary>The characters (the selection when empty) leave their cage (Task_GetOutOfCage): refused while it is locked; an escape unless the sentence is served.</summary>
+/// <summary>The characters (the selection when empty) leave their cage (Task_GetOutOfCage): refused while it is locked; an escape unless it is a kidnap victim.</summary>
 public sealed record GetOutOrder(IReadOnlyList<CharacterId> Characters) : SimCommand;
 
 /// <summary>
