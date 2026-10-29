@@ -376,7 +376,7 @@ public sealed partial class PopulationSystem
             return;
         }
         p.Position = PlatoonPosition(world, squad, p.Position);
-        if (!p.Dead && p.Faction != PlayerFactionOf(world) && AllDead(world, squad)) DeclareDead(p);
+        if (!p.Dead && (p.Faction < 0 || p.Faction != PlayerFactionOf(world)) && AllDead(world, squad)) DeclareDead(p);
 
         // Away from every active zone for long enough: only the stand-in goes on.
         if (Wanted(p)) p.UnloadAtTick = -1;
