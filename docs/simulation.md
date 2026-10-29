@@ -1248,7 +1248,7 @@ crafting benches, generators and batteries. Facts: [production](game/buildings-p
       ([medic jobs](game/ai-tasks.md#medic-jobs)) over characters within sight (stand-in for the sensed list): score = need (untreated HP for
       the kits it has) × relation factor × nearness (1 - d²/1843²); the medic itself scores its need. 58 skips robot races. Splinting takes
       only its own faction, at skill min(medic, kit quality), and needs a splint kit in the medic's own inventory or backpack (as the original, [kit search](game/character-stats.md#first-aid-update)); its weight is 0.1 ([splints](game/character-stats.md#splints)). Engine: no same-building floor, no give-up list.
-    - 148 rescue: the carry pass (its own faction; with Rescue Allies also allied factions, `CarrySystem.Rescues`).
+    - 148 rescue: the carry pass (a player character its own faction, with Rescue Allies also allied factions; an NPC rescuer allied factions always; never animals, bed or cage occupants; `CarrySystem.Rescues`).
     - 238 Foraging animals (`CarrySystem.Forage`): the nearest downed, uncarried animal within sight holding items, not of its own faction
       (engine choice), is looted (take-all and butchering).
     - 16 Attacking enemies: `AggroSystem` looks for the character as for an NPC (`HuntsEnemies`, not in non-combat mode); never gives up a chase; after the

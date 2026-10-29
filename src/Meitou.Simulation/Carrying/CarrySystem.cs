@@ -924,7 +924,9 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         for (int s = 0; s < table.HighWater; s++)
         {
             if (s == i || !next[s].Alive || taken.Contains(s)) continue;
-            if (table.Cold(s) is not { Medical: { Unconscious: true, Dead: false } } other || other.InSomething != Locks.HeldState.None || !Rescues(world, cold, other) || !CanBeLifted(other)) continue;
+            if (table.Cold(s) is not { Medical: { Unconscious: true, Dead: false } } other || other.InSomething != Locks.HeldState.None
+                || other.Fighter is { IsAnimal: true } || other.Appearance?.Animal is not null   // never an animal (the finder's slot 0x248 test)
+                || !Rescues(world, cold, other) || !CanBeLifted(other)) continue;
             float d2 = Vector2.DistanceSquared(new Vector2(next[i].Position.X, next[i].Position.Z), new Vector2(next[s].Position.X, next[s].Position.Z));
             if (d2 <= best2 && (best < 0 || d2 < best2)) { best = s; best2 = d2; }
         }
