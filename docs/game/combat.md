@@ -647,9 +647,12 @@ Meitou ([simulation](../simulation.md#ranged)): `CombatSystem.Turrets.cs`, `Turr
 Order 228 "Stealth KO" (verb list `FUN_14079b2d0`), `Task_StealthKO` (vtable slots `FUN_140345eb0` start,
 `FUN_14034cd80` update). **Verified** literals, flow **Observed**:
 
-- The attacker walks to the target's position minus a vector of the target (+0xd0 of its body object, **Unknown**);
-  within 14 of it the swing starts and it turns to face the target. The task ends at once when the target senses the
-  attacker (`FUN_140855830`).
+- The attacker walks to the target's position minus the target's heading, a unit vector (+0xd0 of its movement object `+0x640`,
+  written normalised by `FUN_140665250`; **Verified**), so to a point 1 behind it; the goal is re-issued every update, also while it walks.
+  Within 14 of it the swing starts and the attacker turns to face the target. The task ends at once, silently, only when the target
+  senses the attacker (`FUN_140855830` = its sense entry's +0x38 flag); a fighting target does not end it, and the swing has no
+  distance end (the roll is made however far the target has walked; **Verified**, no distance test in `FUN_14034cd80`). A
+  sleeping or caged target (+0x2f8 ≠ 0 with a bed/cage handle at +0x300) is walked to at the use point the bed/cage gives (**Observed**, not modelled).
 - Swing: clip `knockout` at x1.2 (record `knockout`, anim `stealthKO` in rebirth.mod); at 0.5 of it the roll, at 0.85
   the end.
 - Chance (`FUN_1408852f0`): X = attacker assassination x injury mult minus the target's max of assassination, 0.5 x
@@ -657,14 +660,18 @@ Order 228 "Stealth KO" (verb list `FUN_14079b2d0`), `Task_StealthKO` (vtable slo
   100 x (X + K) / 2K, K = 30 for X >= 0 else 15 (disassembly: the hidden third argument is +K). Unclamped. 0 when the
   target's sense entry of the attacker has its +0x38 flag (it sees the attacker); x0.5 when it only hears the attacker (+0x39 heard, **Verified**). Also 0 when the target is fighting, has an entry for the attacker and the attacker is not unseen (Character +0xe8 ≠ 1).
 - Roll uniform 0..100; lands when chance > roll. Hit: floating "*Thunk*", target KO time `FUN_140644980` with
-  assassination x 0.01 (the put-down KO formula, [carry-loot](carry-loot.md)). Miss: "Failed!", the target turns on
-  the attacker. Assassination XP via the generic entry, dt 1: 100 x f on a hit, 300 x f on a miss; f = 0.5 for a
+  assassination x 0.01 (the put-down KO formula, [carry-loot](carry-loot.md)). Both set the pending Assault crime (code 5, `FUN_140852c80`, against
+  the target's faction, no other condition) and float the text in a ScreenLabel over the attacker ([floaters](ui-screens.md#8-damage-floaters), font index 1, shown
+  whatever the floaters option says): "*Thunk*" colour (0.4, 0.8, 0.4, 0.9), "Failed!" (0.7, 0.4, 0.4, 0.7); **Verified**.
+  Miss, in order (**Verified**): the target says event 56 ASSASSINATION_FAILED at the attacker (`FUN_140685660` over `FUN_140684990`); it notices the attacker
+  (`FUN_140858f40` with the alarm flag: sense entry +0x38 set, its hearing of the attacker alarmed 5 s); each squad tags the other TEMP ENEMY (`FUN_1406744a0`, 4);
+  the target goes for the attacker (`FUN_1405c9290` → `FUN_140999f00`, `Character::attackTarget`) and perceives and tags it again (`FUN_1405cb0a0`). Assassination XP via the generic entry, dt 1: 100 x f on a hit, 300 x f on a miss; f = 0.5 for a
   sleeping target (+0x2f8 == 1), 0.07 in prison (+0x2f8 == 2), else 1; " (No XP)": a miss on a target that is fighting and aware of the attacker gives no XP.
 
-Meitou: the point is 8 behind the target's facing; "senses" = the target's spot meter on the attacker is full or it
-is fighting; heard = the target's sneaking hearing roll on the attacker's last step before the swing (`CharacterCold.KnockoutHeard`, engine reading of the pass cadence);
-the fight zero: the target fighting, fighting the attacker or having spotted it, and some looker's meter on the attacker filling (`AggroSystem.Unseen`); the 0.07 and No XP rules as above (aware: fighting the attacker or having spotted it); a swing is reported as an Assault (the
-original's crime call is not traced). The verb shows the chance; a quick right click on an NPC while sneaking gives it.
+Meitou: the point is 1 behind the target's facing; "senses" = the target's spot meter on the attacker is full (a fighting target no longer ends the walk); heard = the target's sneaking hearing roll on the attacker's last step before the swing (`CharacterCold.KnockoutHeard`, engine reading of the pass cadence);
+the fight zero: the target fighting, fighting the attacker or having spotted it, and some looker's meter on the attacker filling (`AggroSystem.Unseen`); the 0.07 and No XP rules as above (aware: fighting the attacker or having spotted it); the Assault is `CrimeSystem.SetPending` at the roll. A miss defers
+`DialogueEvent` 56, `AggroSystem.Alarm` (the hearing alarm only: the spot meter is not forced), the two TEMP ENEMY tags and a defensive `AttackOrder` (no assault booked for it).
+The result floats as `FloaterKind.StealthHit` / `StealthMiss` (queued only while the floaters option is on, unlike the original) and, for a player attacker, is also a notice with the chance. The verb shows the chance; a quick right click on an NPC while sneaking gives it.
 Order 229 "Stealth Kill" shares the task but nothing issues it (no row, no use of 229; **Observed**).
 
 ## Validation

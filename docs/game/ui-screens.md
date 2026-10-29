@@ -1327,7 +1327,7 @@ Full info "separate numbers for each damage type". Built at the end of `MedicalS
   1 `_Medium`, 2 `_Large`; `FUN_14157ff60`); a hit passes 1 when the option is Simple info, else 0. Its size is the text's plus 20 x the UI scale; its
   top left goes to the screen point of the anchor. The anchor rises in world space at the speed table's entry by the 5th argument (0, 4, 8 units/s;
   a hit passes 1: 4/s); past 8 units of rise the alpha is 1 - (rise - 8) x 0.25, and at 12 the label goes: 3 s in all. No healing floater exists
-  among the callers of `FUN_14073faf0` (**Observed**).
+  among the callers of `FUN_14073faf0` (**Observed**). The stealth KO's "*Thunk*" / "Failed!" is another caller ([combat](combat.md#stealth-knock-out)).
 
 Meitou (`PlayerInterface.AddFloaters`): text, font, motion and fade as above; colour: red when a player's character is hit, green when one lands the
 blow, else grey (reading of the relation tests). No healing floater, as in the original.

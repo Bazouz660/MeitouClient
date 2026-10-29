@@ -8,7 +8,7 @@ namespace Meitou.Simulation.Carrying;
 /// The stealth knock-out (<see cref="CharacterTask.StealthKo"/>, the original's <c>Task_StealthKO</c>; docs/game/combat.md "Stealth knock-out"): a sneaking character creeps to a point
 /// behind its target, swings the <c>knockout</c> clip at x1.2 and at half of it rolls 0-100 against <see cref="StealthKoChance"/>. A hit knocks the target out for
 /// <see cref="MedicalState.PutDownKoSeconds"/> with the attacker's assassination / 100; a miss turns the target on the attacker. Either trains assassination (a miss three times as much).
-/// The walk breaks off when the target has spotted the attacker (its <see cref="AggroSystem"/> spot meter is full) or is fighting.
+/// The walk breaks off when the target has spotted the attacker (its <see cref="AggroSystem"/> spot meter is full). A miss also has the target say event 56, alarm its hearing and go for the attacker.
 /// </summary>
 public sealed partial class CarrySystem
 {
@@ -19,8 +19,10 @@ public sealed partial class CarrySystem
     public const float KnockoutStrikeAt = 0.5f, KnockoutDoneAt = 0.85f;
     /// <summary>The swing starts within this distance of the point behind the target (14, <b>Verified</b> literal).</summary>
     public const float KnockoutStartRange = 14;
-    /// <summary>How far behind the target that point is (<b>engine choice</b>: the original subtracts a vector of the target's, +0xd0 of its body object, <b>Unknown</b>).</summary>
-    public const float KnockoutBehind = 8;
+    /// <summary>How far behind the target that point is: the original subtracts the target's heading from its position, a unit vector (+0xd0 of its movement object, written normalised by <c>FUN_140665250</c>, <b>Verified</b>).</summary>
+    public const float KnockoutBehind = 1;
+    /// <summary>The dialogue event the victim of a missed stealth knock-out says at the attacker (EV_ASSASSINATION_FAILED, 56 = the 0x38 <c>FUN_140685660</c> is called with, <b>Verified</b>).</summary>
+    const int AssassinationFailed = 56;
 
     /// <summary>The length of the <c>knockout</c> clip in seconds (1 when the clip lengths are not known); the swing lasts this / <see cref="KnockoutPlaySpeed"/>.</summary>
     public float KnockoutSeconds { get; set; } = 1;
@@ -96,8 +98,9 @@ public sealed partial class CarrySystem
             if (!n.Alive || n.Task != (byte)CharacterTask.StealthKo) continue;
             var cold = table.Cold(i)!;
             if (cold.LiftTime >= 0) continue;   // swinging: SlowWorld has it
+            // A fighting target does not cancel the walk (only its sensing the attacker does, FUN_14034cd80); the roll's fight zero is in Strike.
             if (cold.Medical is not { Incapacitated: false } || cold.InCombat || !table.TryResolveNext(cold.CarryTarget, out int t) || table.Cold(t) is not { } target
-                || !CanBeKnockedOut(target) || target.InCombat || Aggro?.Spotted(t, table.IdOf(i)) == true)
+                || !CanBeKnockedOut(target) || Aggro?.Spotted(t, table.IdOf(i)) == true)
             {
                 End(table, i);
                 continue;
@@ -151,9 +154,10 @@ public sealed partial class CarrySystem
         Face(ref table.Next[i], table.Next[t]);
         if (before < KnockoutStrikeAt * length && cold.LiftTime >= KnockoutStrikeAt * length)
         {
-            if (!CanBeKnockedOut(target) || Gap(table.Next[i], table.Next[t]) > KnockoutStartRange + KnockoutBehind)
+            // The swing has no distance end: a target that walked off mid-swing is still rolled (FUN_14034cd80); one that went down is not.
+            if (!CanBeKnockedOut(target))
             {
-                End(table, i);   // it went down or walked off mid-swing
+                End(table, i);
                 return;
             }
             Strike(world, table, i, t);
@@ -195,16 +199,21 @@ public sealed partial class CarrySystem
         }
         else
         {
-            // A miss: each side's squad tags the other TEMP_ENEMY and the victim goes for the attacker (Task_StealthKO, then Character::attackTarget).
+            // A miss (Task_StealthKO, FUN_14034cd80, Verified): the victim says event 56 ASSASSINATION_FAILED at the attacker, notices it (its hearing of it is alarmed for 5 s), each
+            // side's squad tags the other TEMP_ENEMY, and the victim goes for the attacker (Character::attackTarget; no assault is booked for that, so the order is a defensive one).
+            world.Defer(new Dialogue.DialogueEvent(targetId, attackerId, AssassinationFailed) { Tick = world.Tick + 1 });
+            Aggro?.Alarm(world, targetId, attackerId);
             if (world.SystemOf<Dialogue.DialogueSystem>() is { } talk)
             {
                 talk.TagEnemy(world, t, i);
                 talk.TagEnemy(world, i, t);
             }
-            world.Defer(new Combat.AttackOrder([targetId], attackerId) { Tick = world.Tick + 1 });
+            world.Defer(new Combat.AttackOrder([targetId], attackerId) { Tick = world.Tick + 1, Defensive = true });
         }
-        // Hit or miss, the swing is an assault on the victim's faction if someone sees it (engine choice: the original's crime call for this task is not traced).
-        Crimes?.Assault(world, i, t);
+        // The swing books an Assault on the target's faction at the roll, hit or miss (the pending-crime setter FUN_140852c80 with code 5, called unconditionally, Verified).
+        Crimes?.SetPending(world, i, Crime.CrimeCode.Assault, target.Faction, targetId, Crime.CrimeSystem.MinTimer);
+        // The floater over the attacker, shown to anyone (Verified): "*Thunk*" or "Failed!" + " (No XP)".
+        world.Floaters?.Enqueue(Floater.Strike(attackerId, table.Next[i].Position, success ? Loc.Tr("*Thunk*") : Loc.Tr("Failed!") + (noXp ? Loc.Tr(" (No XP)") : ""), success));
         knockouts.Add(new StealthKoEntry(world.Tick, attackerId, targetId, chance, success, noXp));
     }
 }

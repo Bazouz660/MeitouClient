@@ -11,6 +11,10 @@ public enum FloaterKind : byte
     Text,
     /// <summary>A machine's label (<see cref="Floater.Part"/>) at a fixed point, grey: its functionality's <c>string</c> when a body is fed into it (<c>FUN_1403567a0</c>).</summary>
     Label,
+    /// <summary>A stealth knock-out's "*Thunk*" (<see cref="Floater.Part"/>) over the attacker, green (<c>Task_StealthKO</c> <c>FUN_14034cd80</c>).</summary>
+    StealthHit,
+    /// <summary>A stealth knock-out's "Failed!" (<see cref="Floater.Part"/>) over the attacker, red-grey (<c>FUN_14034cd80</c>).</summary>
+    StealthMiss,
 }
 
 /// <summary>
@@ -27,6 +31,9 @@ public readonly record struct Floater(FloaterKind Kind, CharacterId Target, Vect
 
     public static Floater Text(CharacterId target, Vector3 position, string text) =>
         new(FloaterKind.Text, target, position, false, false, text, default, default);
+
+    public static Floater Strike(CharacterId attacker, Vector3 position, string text, bool hit) =>
+        new(hit ? FloaterKind.StealthHit : FloaterKind.StealthMiss, attacker, position, false, false, text, default, default);
 
     public static Floater Label(Vector3 position, string text) => new(FloaterKind.Label, CharacterId.None, position, false, false, text, default, default);
 }
