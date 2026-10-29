@@ -103,8 +103,9 @@ public sealed unsafe partial class TerrainDecalRenderer
             float dist = length(rel);
             float radius = vCentre.w;
             if (dist > radius) discard;
-            // The terrain carries its own blood (the cells' decals): a pixel still at the depth the terrain alone wrote is left out.
-            if (abs(linearDepth(texelFetch(textures2D[pc.terrainDepth], t, 0).r) - z0) < 0.02 + 0.0005 * z0) discard;
+            // The terrain carries its own blood (the cells' decals): a pixel the static objects did not draw over (its depth the same bits after them as after the
+            // terrain alone) is left out. An exact test: a floor or rock a few centimetres above the ground is an object's pixel, which a depth tolerance took for terrain.
+            if (texelFetch(textures2D[pc.terrainDepth], t, 0).r == texelFetch(textures2D[pc.staticDepth], t, 0).r) discard;
             // Foliage, debris and anything else drawn after the static objects is nearer than the static depth: no blood on what sways.
             if (abs(linearDepth(texelFetch(textures2D[pc.staticDepth], t, 0).r) - z0) > 0.02 + 0.0005 * z0) discard;
             float zl, zr, zu, zb;
