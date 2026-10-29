@@ -318,10 +318,10 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
         int ring = settings.FastZoneHopping ? 1 : 0;
         boxZones.Clear();
         foreach (var p in players) ZoneActivation.AddZonesAround(p, ring, boxZones);
-        // An unloaded platoon of the player's faction asks for the box round its place as a player character does (FUN_1407ebf30 -> FUN_140a0f640), so it is made active.
+        // A platoon of the player's faction asks for the box round its place as a player character does, unloaded (FUN_1407ebf30) or loaded (FUN_1404ffad0, both call FUN_140a0f640), so it is made and stays active.
         if (world.Platoons.Count > 0 && PlayerFactionOf(world) is >= 0 and var player)
             foreach (var p in world.Platoons.All)
-                if (p.State == PlatoonState.Unloaded && p.Faction == player) ZoneActivation.AddZonesAround(new Vector3(p.Position.X, 0, p.Position.Y), ring, boxZones);
+                if (p.Faction == player) ZoneActivation.AddZonesAround(new Vector3(p.Position.X, 0, p.Position.Y), ring, boxZones);
         foreach (var zone in boxZones) Ask(zone, boxUntil);
         List<ZoneCoordinate>? gone = null;
         foreach (var (zone, t) in loadedUntil) if (t < now) (gone ??= []).Add(zone);

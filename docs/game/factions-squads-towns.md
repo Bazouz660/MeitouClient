@@ -199,8 +199,8 @@ active owner (a chained slave whose owner exists); else it is split off when imp
 squad of the same faction and template record at the member's place through the squad factory `FUN_1407f4420`, moves the member into it, marks it persistent when the old platoon is persistent or the member is unique, and
 copies the old squad's mode fields; when the old platoon is persistent and has just this one member left it is reused instead. The new squad's blackboard gets the AI package `CAPTURED_NPC` ("captured NPC": goals
 self-preservation, not unarmed, flee home, attack, "get out of cage - opportunistic escape"; `unloaded func` 4), or `5344-gamedata.base` ("Slave only squad") when the member's slave state is 1 (`FUN_1405c8aa0`); with no
-blackboard the member is destroyed ("_putTheSpecialCharactersInNewSquads"). So a prisoner stays in the world as a squad of its own when its captors unload. Meitou: **not built** (needs a platoon outside every town pool and a squad AI that
-takes a package by name, neither of which exists; a platoon left with a caged member only stays put as a stand-in, `Platoon.Imprisoned`).
+blackboard the member is destroyed ("_putTheSpecialCharactersInNewSquads"). So a prisoner stays in the world as a squad of its own when its captors unload. Meitou: **not built** (the package could be given by name as dialogue's `change AI` does, but the new squad needs a platoon outside every town pool: a Meitou
+platoon always has an origin town it counts against and, when roaming, runs trips; a platoon left with a caged member only stays put as a stand-in, `Platoon.Imprisoned`).
 
 **The player's dead** (**Verified** by decompile; Meitou `SquadManagement.BuryDead`): the death handler (`FUN_1407a6200`, the "{1} is dead." strings) moves a
 character whose faction is the player's (+0x250) out of its platoon (vfunc 0x18) into the faction's `__DEAD_SQUAD__` platoon (vfunc 0x10); NPC platoons keep their
