@@ -14,7 +14,9 @@ public static class SlaveSave
     public static void Read(FcsRecord? state, CharacterCold cold, PopulationData data)
     {
         if (state is null) return;
-        cold.SlaveState = (byte)Math.Clamp(state.Ints.GetValueOrDefault(StateKey), 0, 2);
+        // The original keeps any int; Meitou models 0 to 2 only, so an ex-slave (3) or anything out of range loads as free.
+        int saved = state.Ints.GetValueOrDefault(StateKey);
+        cold.SlaveState = saved is 1 or 2 ? (byte)saved : (byte)0;
         cold.SlaveOwner = cold.SlaveState != 0 && state.Strings.GetValueOrDefault(OwnerKey) is { Length: > 0 } owner ? data.FactionIndex(owner) : -1;
     }
 

@@ -439,7 +439,7 @@ squad-intact flag) are written by `FUN_140372ef0` and read by `FUN_1407ed0f0` (*
 Meanings: [locks](../game/locks.md#save-keys), [economy 11.5](../game/economy.md#115-bail-and-sentence) (`sentence` = start in game hours, `psts` = length).
 Dialogue locks (**Observed**, `Character::serialise` writer `FUN_140679900`, reader `FUN_14067f780`): character pairs `lok0`, `lok1`, ..., string = DIALOGUE
 string id, bool of the same key = locked ([dialogue](../game/dialogue.md#memory-and-saves)); Meitou reads and writes them (`Saving/DialogueSave`), and reads `personality` when above 0.
-Slave state (**Observed**, `FUN_140626580` writes, `FUN_140626830` reads, in the character's state record with `personality`): `slavestate` int (status `+0`: 0 free, 1 slave, 2 escaped),
+Slave state (**Observed**, `FUN_140626580` writes, `FUN_140626830` reads, in the character's state record with `personality`): `slavestate` int (status `+0`: 0 free, 1 slave, 2 escaped, 3 ex-slave; the reader stores any int unchecked, **Verified** `FUN_140626830`; Meitou models 0 to 2 and loads 3 or anything else as free),
 `escap` bool (`+0xe8`, the escaped-prisoner flag), `disguiseblown` float (`+0x110`, the [disguise](../game/perception.md#disguise) cooldown and recently-wanted marker; Meitou `CrimeSave`) and two short-keyed bools (`kidn` `+0xe9`; `tn` `+0xea`, the freed flag, names from `DAT_1416fa808` / `DAT_1416fa804`, **Verified**); the owner is the `slaver` handle. Meitou (`Saving/SlaveSave`)
 reads and writes `slavestate`, and the owner as `meitou slave owner` (FACTION string id). `CrimeSave` reads and writes `tn` (`CharacterCold.Freed`, written always).
 
