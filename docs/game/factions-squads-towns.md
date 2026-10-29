@@ -177,6 +177,17 @@ unloaded by its zone (`FUN_1407f85f0`). `declareDead` (`FUN_140797090`) clears `
 `FUN_1407ec5e0`). No distance, age or emptiness rule removes a persistent platoon. A wiped-out town refills only through its pools, with non-persistent squads;
 no path re-running the initial resident placement was found (**Unknown** whether one exists).
 
+**Active platoon out of zone** (**Verified** `FUN_14079c600`, called by the platoon step `FUN_1405003c0` each frame once `FUN_1404febd0`'s timer has run out): a platoon that is
+kept (`FUN_1407ec570`) is unloaded as above (it stays active only while a member has `Character+0x1a9`, "in view"). One that is not kept is not destroyed whole: each member is tested
+with `FUN_1407c06f0`, **out of zone** when its zone is neither loaded nor requested or it lies outside that zone's box trimmed by 170 (`FUN_140a09770`, as the activation box above; a
+member with `+0x1a9` never is). An out-of-zone member is destroyed (`FUN_140799af0`, reason "wandered out of zone"); when the anchor (`FUN_140792b90`: the leader, else a living member
+in a loaded or requested zone) is out of zone, so is every in-zone member not in view within 600 of it (squared 360000, `DAT_141714bd4`; 3D distance; reason "leader wandered out of zone").
+The platoon stays active while any member is left, and the test repeats every frame; with none left it is destroyed as above. Before that, members that are carried (`+0x3d4`), dead
+(`+0x2f8` = 2) or flagged `+0x320` are split into squads of their own (`FUN_14079c1c0`; **Unknown** what +0x320 and +0x3d4 mean). Meitou (`PopulationSystem.ThinOutOfZone`, Faithful
+unload of a non-kept roaming squad, after its grace): the same per-member rule on living members, except the in-view exemption (render state), the split of carried members and the
+anchor fallback (first living member in an active zone, else the leader); when no living member would stay the squad is despawned whole as before. Pool payment (`FUN_140796b30`,
+by the platoon's cached living count) is **Unknown** for a partly destroyed platoon: Meitou pays only when the squad goes whole.
+
 **The player's dead** (**Verified** by decompile; Meitou `SquadManagement.BuryDead`): the death handler (`FUN_1407a6200`, the "{1} is dead." strings) moves a
 character whose faction is the player's (+0x250) out of its platoon (vfunc 0x18) into the faction's `__DEAD_SQUAD__` platoon (vfunc 0x10); NPC platoons keep their
 dead. `FUN_1407f4960` makes that platoon the first time through the squad factory `FUN_1407f4420` with no template, sets its record name to `__DEAD_SQUAD__` and keeps its

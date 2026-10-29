@@ -370,7 +370,8 @@ public sealed partial class PopulationSystem
         if (Wanted(p)) p.UnloadAtTick = -1;
         // A town's own squad keeps the town's grace (it leaves with its town), a roaming one the roaming grace.
         else if (p.UnloadAtTick < 0) p.UnloadAtTick = world.Tick + (long)Math.Ceiling((p.Pinned ? settings.UnloadGraceSeconds : settings.RoamUnloadGraceSeconds) / world.TickSeconds);
-        else if (world.Tick >= p.UnloadAtTick)
+        // Faithful: a platoon the original does not keep is not unloaded whole: each member out of the zone is destroyed, and the platoon stays while any is left.
+        else if (world.Tick >= p.UnloadAtTick && !(!Kept(p) && !p.Pinned && p.Campaign is null && ThinOutOfZone(world, p, squad)))
         {
             p.Imprisoned = squad.Members.Any(m => table.TryResolveNext(m, out int ms) && table.Cold(ms)!.IsImprisoned);
             if (squad.Ai?.Current is { } running) p.Package = running.Id;
@@ -456,6 +457,66 @@ public sealed partial class PopulationSystem
                 p.OrderCooldown = 4;
             }
         }
+    }
+
+    /// <summary>The squared distance (600) within which a member goes with a leader that is out of the zone (<c>DAT_141714bd4</c> = 360000, <b>Verified</b>).</summary>
+    const float LeaderOutOfZoneRadiusSq = 600 * 600;
+
+    /// <summary>
+    /// Whether a point is out of the loaded zones (<c>FUN_1407c06f0</c>, <b>Verified</b>): its zone is not active, or it lies outside that zone's box trimmed by
+    /// <see cref="ZoneActivation.ActivationTrim"/> (the box of <see cref="Dwelt"/>).
+    /// </summary>
+    bool OutOfZone(Vector3 at)
+    {
+        var zone = WorldLayout.ZoneOf(at.X, at.Z);
+        if (!active.Contains(zone)) return true;
+        var (minX, minZ, maxX, maxZ) = ZoneActivation.TrimmedBox(zone, active.Contains, ZoneActivation.ActivationTrim);
+        return at.X < minX || at.Z < minZ || at.X > maxX || at.Z > maxZ;
+    }
+
+    readonly List<CharacterId> thinStay = [], thinGo = [];
+
+    /// <summary>
+    /// The unload of a platoon the original does not keep (<c>FUN_14079c600</c>, serial phase): not the whole squad at once but each living member by its own place. One out of the
+    /// zone is destroyed ("wandered out of zone"); while the anchor (the leader) is out of it, so is every member within 600 of it ("leader wandered out of zone"). A member in
+    /// the zone and not near an absent leader stays, and the platoon with it. True when some stay (the others are gone, the squad goes on); false when none would, which leaves the
+    /// whole squad to the caller's despawn (and its pool payment) unchanged. <b>Not built</b>: the exemption of a member in the camera's view (<c>Character+0x1a9</c>, render
+    /// state), the first pass that moves carried and dead members into squads of their own (<c>FUN_14079c1c0</c>), and the anchor's fallback when the leader is down (<c>FUN_140792b90</c>:
+    /// a living member in an active zone; here the first such, else the leader).
+    /// </summary>
+    bool ThinOutOfZone(World world, Platoon p, Squad squad)
+    {
+        var table = world.Characters;
+        thinStay.Clear();
+        thinGo.Clear();
+        CharacterId anchor = squad.Leader;
+        if (!Living(world, anchor))
+            foreach (var m in squad.Members)
+                if (Living(world, m) && table.TryResolveNext(m, out int s) && !OutOfZone(table.Next[s].Position)) { anchor = m; break; }
+        bool leaderOut = false;
+        var anchorAt = Vector3.Zero;
+        if (table.TryResolveNext(anchor, out int anchorSlot))
+        {
+            anchorAt = table.Next[anchorSlot].Position;
+            leaderOut = OutOfZone(anchorAt);
+        }
+        foreach (var m in squad.Members)
+        {
+            if (!Living(world, m) || !table.TryResolveNext(m, out int slot)) continue;   // a corpse is no part of the platoon's staying
+            var at = table.Next[slot].Position;
+            if (OutOfZone(at) || leaderOut && Vector3.DistanceSquared(at, anchorAt) < LeaderOutOfZoneRadiusSq) thinGo.Add(m);
+            else thinStay.Add(m);
+        }
+        if (thinStay.Count == 0) return false;
+        foreach (var m in thinGo)
+        {
+            if (table.Cold(m.Slot) is { } cold) ReleaseUnique(world, cold.RecordId, m, false);
+            RemoveMember(world, m);
+        }
+        squad.Members.RemoveAll(m => thinGo.Contains(m));
+        if (thinGo.Contains(squad.Leader)) squad.Leader = SquadRegistry.Successor(thinStay, table);
+        if (table.TryResolveNext(squad.Leader, out int lead)) p.Position = new Vector2(table.Next[lead].Position.X, table.Next[lead].Position.Z);
+        return true;
     }
 
     void OrderLeader(World world, Platoon p, Squad squad)
