@@ -363,8 +363,8 @@ public sealed partial class PopulationSystem
     }
 
     /// <summary>
-    /// The zones a town stands in (<c>Town::setup</c>'s sector flag +0x30): each town's zone list, else its position's zone. Nest markers and points of interest are left out,
-    /// as in the patrol's town draw (which town types run <c>setup</c> is Unknown).
+    /// The zones a town stands in (<c>Town::setup</c>'s sector flag +0x30, <b>Verified</b> <c>FUN_1409353c0</c>): each town's zone list, else its position's zone, for every town
+    /// type but Ruins and points of interest (a nest marker sets it); whether <c>setup</c> runs for the Null type is Unknown, so those are left out.
     /// Built afresh on each refill pass, so it follows town overrides (<see cref="TownSite.Replacement"/>).
     /// </summary>
     HashSet<ZoneCoordinate> TownZones()
@@ -372,7 +372,7 @@ public sealed partial class PopulationSystem
         HashSet<ZoneCoordinate> zones = [];
         foreach (var s in data.Sites)
         {
-            if (s.Town.Type is TownType.NestMarker or TownType.PointOfInterest or TownType.Null) continue;
+            if (s.Town.Type is TownType.Ruins or TownType.PointOfInterest or TownType.Null) continue;
             if (s.Coverage.Count > 0) zones.UnionWith(s.Coverage);
             else zones.Add(WorldLayout.ZoneOf(s.Position.X, s.Position.Z));
         }
