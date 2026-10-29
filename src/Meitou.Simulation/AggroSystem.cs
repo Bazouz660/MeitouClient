@@ -523,7 +523,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
             if (table.Cold(i) is not { } cold) continue;
             var stance = cold.Ai?.Stance ?? Ai.AiStance.Aggressive;
             var war = cold.SquadId >= 0 && world.Squads.Find(cold.SquadId) is { War.IsSet: true } assaulting ? assaulting.War : WarTargets.None;
-            bool targets = task is not ((byte)CharacterTask.Attack or (byte)CharacterTask.Treat) && !(task == (byte)CharacterTask.Rest && !AiSleeper(cold))
+            bool targets = !Busy(cold, task) && !(task == (byte)CharacterTask.Rest && !AiSleeper(cold))
                 && cold is { InCombat: false, Fleeing: false, IsImprisoned: false, SlaveState: not 1, Fighter.CanAttack: true, Medical.Incapacitated: false }
                 && Relations.Contains(cold.Faction) && !(cold.IsPlayer && !HuntsEnemies(cold, task) && !HoldsGround(cold, task))
                 && stance != Ai.AiStance.Passive && (hasEnemy[cold.Faction] || stance == Ai.AiStance.AggressiveNeutrals || war.IsSet || (Memory?.AnyTempEnemy(cold.SquadId) ?? false));
@@ -961,7 +961,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
     {
         if (taken.Contains(slot) || !table.Next[slot].Alive) return false;
         byte task = table.Next[slot].Task;
-        if (task is (byte)CharacterTask.Attack or (byte)CharacterTask.Treat || task == (byte)CharacterTask.Rest && !AiSleeper(table.Cold(slot))) return false;
+        if (Busy(table.Cold(slot), task) || task == (byte)CharacterTask.Rest && !AiSleeper(table.Cold(slot))) return false;
         return table.Cold(slot) is { InCombat: false, Fleeing: false, IsImprisoned: false, Fighter.CanAttack: true, Medical.Incapacitated: false, Gunning: null, Ai: null or { Behaviour: not Ai.AiBehaviour.Turret } } cold
             // a carrier fights like anyone (docs/game/carry-loot.md "A carrier in a fight"); a turret guard keeps to its turret (task 146: only a melee attacker takes it off)
             && (!cold.IsPlayer || HuntsEnemies(cold, task) || HoldsGround(cold, task));
@@ -969,10 +969,16 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
 
     /// <summary>
     /// Whether one of the player's characters attacks on sight through the Hold order: Hold adds goal 16 (standing order 12), whose desire is 0 while sneaking, Passive or
-    /// not standing; it is a priority-3 goal, so only without an order (docs/game/combat.md "Fight lifecycle and orders"). Its targets pass the Hold post test (<see cref="Orders.HoldPost"/>).
+    /// not standing; it is a priority-3 goal, so only without an order, and before the character's jobs (a task they started gives way, docs/game/ai-tasks.md "Precedence").
+    /// Its targets pass the Hold post test (<see cref="Orders.HoldPost"/>).
     /// </summary>
-    static bool HoldsGround(CharacterCold cold, byte task) =>
-        task == (byte)CharacterTask.Idle && Orders.Holding(cold) && (cold.Orders & CharacterOrders.Passive) == 0 && cold.Medical is { Prone: false };
+    static bool HoldsGround(CharacterCold? cold, byte task) =>
+        cold is not null && (task == (byte)CharacterTask.Idle || Production.PermaJobs.FromJob(cold, (CharacterTask)task)) && Orders.Holding(cold)
+        && (cold.Orders & CharacterOrders.Passive) == 0 && cold.Medical is { Prone: false };
+
+    /// <summary>Fighting, or treating (a medic looks for no fight), except one of the player's characters treating on its job while it holds ground (<see cref="HoldsGround"/>).</summary>
+    static bool Busy(CharacterCold? cold, byte task) =>
+        task == (byte)CharacterTask.Attack || task == (byte)CharacterTask.Treat && !(cold is { IsPlayer: true } && HoldsGround(cold, task));
 
     /// <summary>
     /// Whether one of the player's characters looks for enemies like an NPC: it has the job 16 "Attacking enemies" (Shift with an attack; it runs with the jobs switch off,
