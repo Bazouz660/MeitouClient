@@ -42,7 +42,7 @@ Can-see first checks state/squad-shared sightings (within2R, no cone/light), the
 building compatibility, NPC test/stealth accumulation and conditional physics ray. Ray starts
 18 above looker, obstruction>2 short of target blocks. Unknown flags/range cap/special tests are
 not universal vision rules. Shared senses keep targets about two completed squad update rounds.
-Faction hostility/disguise/personal tags choose enemy; coexistence not read in this predicate.
+Faction hostility/disguise/personal tags choose enemy; coexistence not read in this predicate (the attack-on-sight finder drops a coexisting faction afterwards, looker's list only: [tests](#the-attack-on-sight-tests)).
 
 ## Spotting a sneaker
 

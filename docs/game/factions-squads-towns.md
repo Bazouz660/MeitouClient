@@ -229,7 +229,7 @@ On the faction's FactionRelations object itself: +0x10 int rank, +0x18 float **g
 | hostile(A -> B) | B != A and relation(A -> B) <= -30 (default value when no entry) | `FUN_1406b25d0`, `FUN_1406b26d0` (identical bodies); called by `FUN_14092c5e0` (town choice) and `FUN_1409a7e00` (world state) |
 | "default-hostile faction" | the faction's own table default (+0x60) is **strictly below** -30 (**Observed**) | inline in `FUN_1404374d0` (target choice, together with fundamental type 0 or 8) and in `FUN_14092c5e0` (combined with `ally()`); this is not the pair relation |
 | ally(A -> B) | B == A, or allied flag, or relation >= 50 | `FUN_1406b2630` |
-| coexists(A -> B) | B == A or coexistence flag | `FUN_1406b23c0` |
+| coexists(A -> B) | B == A or coexistence flag; reads only A's own table, so it is directional (**Verified**, body). Read by the attack-on-sight finder `FUN_14059f3a0` (looker -> target) and ATTACK_ENEMIES_AND_NEUTRALS `FUN_14059f720`; Meitou `AggroSystem.AttacksOnSight` / `IsNeutral`. Systems with no looker use the symmetric `AggroSystem.IsEnemy` (engine choice) | `FUN_1406b23c0` |
 | value as a fraction | relation x 0.01 (and its negative) | `FUN_1406b2460`, `FUN_1406b24c0` |
 
 ### 3.4 Changing relations (**Observed**; the event table cross-checked with the dialogue action numbers)

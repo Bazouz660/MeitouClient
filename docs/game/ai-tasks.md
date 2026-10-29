@@ -748,7 +748,7 @@ vfunc 5 `FUN_14050caf0`). TaskData fields: +0x108 desire (a member function, nea
 
 - 16 ATTACK_ENEMIES: effect state 6 `isNoEnemiesInVicinity` (registered without an evaluator). Finder `FUN_14059f3a0` walks the
   looker's sensed characters tagged SENSE_ENEMY and not KO, ally or 0x300 (mask 4, 0x308; [sense tags](perception.md#sense-tags-who-is-an-enemy))
-  that are seen or heard (entry +0x38 / +0x39), drops those whose faction the looker's coexists with (`FUN_1406b23c0`) and keeps those passing `FUN_140598630` and `FUN_140599f30` (the post
+  that are seen or heard (entry +0x38 / +0x39), drops those whose faction the looker's own table coexists with (`FUN_1406b23c0`, **Verified**: one way, the looker's list only; Meitou `AggroSystem.AttacksOnSight`) and keeps those passing `FUN_140598630` and `FUN_140599f30` (the post
   and area tests, [perception](perception.md#the-attack-on-sight-tests)); `FUN_14059e300` picks the target. Factor 1 with a target, else 0. This is the attack on sight.
 - 144 TERRITORIAL_AGGRESSION_BUT_DONT_LEAVE_HOME ("Home territory aggression", finder `FUN_14059fd70`, **Verified** stub): SENSE_ENEMY
   entries (mask 4, 0x208) within 1.3 x the home town's radius (`FUN_140926d50`, factor `DAT_14169bb40` = 1.3, read-only; ground-plane squared distance, strict; a

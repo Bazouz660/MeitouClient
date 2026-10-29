@@ -26,7 +26,7 @@ public readonly record struct AggroEntry(long Tick, CharacterId Attacker, Charac
 /// <item><b>Look</b> (<c>Act</c>, parallel, own slot, reading the last tick's positions through the <see cref="SpatialGrid"/>): an awake NPC with a fighter, not fighting,
 /// not fleeing, not treating or resting, whose turn it is (one in <see cref="AggroSettings.ScanEveryTicks"/>, by slot) finds the nearest living, awake character with a body
 /// that it sees (<see cref="SightMap.Sees"/>: places, light and its range R = <see cref="AggroSettings.SightRange"/> x its race's <c>vision range mult</c> times the view-cone factor
-/// of <see cref="Visibility"/>) whose faction its own is hostile to (relation -30 or lower) and that neither faction coexists with; ties go to the lower slot. It emits one
+/// of <see cref="Visibility"/>) whose faction its own is hostile to (relation -30 or lower) and that its own faction does not list in <c>coexistence</c> (<see cref="AttacksOnSight"/>); ties go to the lower slot. It emits one
 /// effect at that target.</item>
 /// <item><b>Decide</b> (<c>Apply</c>, serial commit order): the looker, if still free, and its free squad mates within twice their own range R of the target (the original's
 /// squad-shared sightings, <c>GroupSense</c>) get an <see cref="AttackOrder"/> for the next tick through <see cref="World.Defer"/>. The player's characters look and join only with
@@ -407,7 +407,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         {
             hasEnemy[f] = false;
             foreach (int g in presentList)
-                if (IsEnemy(Relations, f, g)) { hasEnemy[f] = true; break; }
+                if (AttacksOnSight(Relations, f, g)) { hasEnemy[f] = true; break; }
         }
     }
 
@@ -689,7 +689,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         int seenAs = Crime.ArrestSystem.SeenFaction(c);
         // A freed prisoner (Freed, FUN_14079c950's last test, Observed) attacks no one for the relations alone, and is attacked so only by a looker of a faction that is not real
         // or below -30 by default.
-        bool hostile = IsEnemy(s.Relations, s.Faction, seenAs) && s.Cold is not { Freed: true }
+        bool hostile = AttacksOnSight(s.Relations, s.Faction, seenAs) && s.Cold is not { Freed: true }
             && (!c.Freed || s.Relations.Factions[s.Faction] is { } mine && (mine.NotReal || mine.DefaultRelation < FreedHostility));
         bool enemy = s.Stance != Ai.AiStance.Passive
             && (hostile || s.Stance == Ai.AiStance.AggressiveNeutrals && IsNeutral(s.Relations, s.Faction, seenAs) || WarEnemy(s.War, s.Faction, c, other.Position));
@@ -760,11 +760,6 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
     }
 
     /// <summary>
-    /// Whether a character of faction <paramref name="mine"/> picks a fight with one of <paramref name="theirs"/>: hostile one way (mine to theirs, -30 or lower),
-    /// and neither lists the other in <c>coexistence</c> (engine choice: the flag's effect in the original is <b>Unknown</b>, so either side's is enough).
-    /// Same faction and allies are never enemies (an ally is at 50 or above, so not hostile).
-    /// </summary>
-    /// <summary>
     /// Neither an ally (nor the same faction) nor hostile, and not a faction the looker's coexists with (one way, FUN_14059f720 over FUN_1406b23c0, Verified): whom
     /// ATTACK_ENEMIES_AND_NEUTRALS adds to the enemies.
     /// </summary>
@@ -781,6 +776,19 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
     static bool WarEnemy(WarTargets war, int mine, CharacterCold c, Vector3 at) =>
         war.IsSet && c.Faction != mine && (c.Faction == war.Faction || war.Everyone && c.Fighter?.IsAnimal != true && c.NpcClass != FundamentalType.Bandit && Vector2.DistanceSquared(new Vector2(at.X, at.Z), war.Centre) <= war.Radius * war.Radius);
 
+    /// <summary>
+    /// Whether a looker of faction <paramref name="mine"/> takes a sensed character of <paramref name="theirs"/> for an attack-on-sight target by the relations: hostile mine to
+    /// theirs (-30 or lower) and <paramref name="mine"/>'s own <c>coexistence</c> does not list <paramref name="theirs"/> (<c>FUN_14059f3a0</c> over <c>FUN_1406b23c0</c>, which
+    /// reads only the looker's table, <b>Verified</b>; the sense tag does not read coexistence, docs/game/perception.md). Same faction and allies are never hostile.
+    /// </summary>
+    public static bool AttacksOnSight(FactionRelations relations, int mine, int theirs) =>
+        relations.Contains(theirs) && relations.IsHostile(mine, theirs) && !relations.Coexists(mine, theirs);
+
+    /// <summary>
+    /// Whether the factions are enemies in either direction's coexistence sense: hostile mine to theirs and neither lists the other in <c>coexistence</c>. Engine choice for the
+    /// systems that have no looker (trade, crime, flight, fights far away, targets of a fight already on): the original's attack on sight reads the looker's side only
+    /// (<see cref="AttacksOnSight"/>).
+    /// </summary>
     public static bool IsEnemy(FactionRelations relations, int mine, int theirs) =>
         relations.Contains(theirs) && relations.IsHostile(mine, theirs) && !relations.Coexists(mine, theirs) && !relations.Coexists(theirs, mine);
 
