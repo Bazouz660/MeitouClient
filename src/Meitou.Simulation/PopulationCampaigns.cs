@@ -56,8 +56,11 @@ public sealed class CampaignInstance
     public double ArrivedAt { get; set; } = -1;
     /// <summary>The redirect timer (the original's +0xf0, started the first time the target is found gone or inactive; -1: not started). Not saved or hashed.</summary>
     public double RedirectStart { get; set; } = -1;
-    /// <summary>The game hour a member of a cannibal assault (Package_WarAssault_Cannibal) was first seen carrying someone (-1: none yet); starts its retreat. Not saved.</summary>
-    public double CarryStart { get; set; } = -1;
+    /// <summary>
+    /// Per platoon of a cannibal assault (Package_WarAssault_Cannibal, each platoon's own package instance): the game hour one of its members was first seen carrying someone; absent: nobody
+    /// carries. Saved as <c>meitou carry start p&lt;i&gt;</c> (the original keeps the stamp in the package and saves none).
+    /// </summary>
+    public Dictionary<int, double> CarryStarts { get; } = [];
 }
 
 /// <summary>A queued campaign (<c>req*</c> of the save): due at a game hour against a target.</summary>
@@ -837,22 +840,34 @@ public sealed partial class PopulationSystem : IStateHashed
         return false;
     }
 
-    /// <summary>Whether the loaded members of a cannibal assault carry enough to retreat: three carriers, or <see cref="CannibalCarryHours"/> after the first one (<see cref="CampaignInstance.CarryStart"/>).</summary>
+    /// <summary>
+    /// Whether a loaded platoon of a cannibal assault carries enough to retreat (<c>FUN_14028fdf0</c>, <b>Verified</b>): each platoon counts its own carriers and keeps its own stamp of the
+    /// first one, cleared while nobody (or no loaded squad) carries; any platoon with three carriers, or more than <see cref="CannibalCarryHours"/> since its first, ends the campaign's assault.
+    /// </summary>
     bool CannibalsLoaded(World world, CampaignInstance inst, double now)
     {
-        int carriers = 0;
+        bool retreat = false;
         var table = world.Characters;
         foreach (int id in inst.Platoons)
         {
-            if (world.Platoons.Find(id) is not { State: PlatoonState.Loaded } p || world.Squads.Find(p.SquadId) is not { } squad) continue;
-            foreach (var member in squad.Members)
-                if (table.TryResolveNext(member, out int slot) && !table.Cold(slot)!.Carrying.IsNone) carriers++;
+            int carriers = 0;
+            if (world.Platoons.Find(id) is { State: PlatoonState.Loaded } p && world.Squads.Find(p.SquadId) is { } squad)
+                foreach (var member in squad.Members)
+                    if (table.TryResolveNext(member, out int slot) && !table.Cold(slot)!.Carrying.IsNone) carriers++;
+            if (carriers == 0)
+            {
+                inst.CarryStarts.Remove(id);
+                continue;
+            }
+            if (!inst.CarryStarts.TryGetValue(id, out double start)) inst.CarryStarts[id] = start = now;
+            if (carriers >= 3 || now - start > CannibalCarryHours) retreat = true;
         }
-        if (carriers > 0 && inst.CarryStart < 0) inst.CarryStart = now;
-        return carriers >= 3 || inst.CarryStart >= 0 && now - inst.CarryStart >= CannibalCarryHours;
+        if (inst.CarryStarts.Count > 0)
+            foreach (int id in inst.CarryStarts.Keys.Where(k => !inst.Platoons.Contains(k)).ToList()) inst.CarryStarts.Remove(id);
+        return retreat;
     }
 
-    /// <summary>Game hours after the first cannibal carrier that end the assault (15 game minutes, <b>Observed</b>).</summary>
+    /// <summary>Game hours after a platoon's first cannibal carrier that end the assault (more than 15 game minutes: the timer in hours x 60 above 15, <b>Verified</b>).</summary>
     public const double CannibalCarryHours = 0.25;
 
     /// <summary>
@@ -1282,6 +1297,9 @@ public sealed partial class PopulationSystem : IStateHashed
                 foreach (var t in a.Trail) h.Add(t);
                 h.Add(a.Platoons.Count);
                 foreach (int id in a.Platoons) h.Add(id);
+                if (a.CarryStarts.Count > 0)   // only while a cannibal platoon's members carry, so other worlds hash as before
+                    foreach (int id in a.Platoons)
+                        if (a.CarryStarts.TryGetValue(id, out double carry)) { h.Add(id); h.Add(carry); }
             }
             h.Add(m.Requests.Count);
             foreach (var r in m.Requests)

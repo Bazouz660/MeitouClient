@@ -641,7 +641,9 @@ campaign is not hostile, or that is not active (slot 70); a redirected request d
   - Enemies: the base package, in a hostile campaign's phase 1, tags each seen target-faction character with squad memory 4 (TEMP_ENEMY,
     as DA 21); WarAssault tags every seen character except those of another town, with an engine flag (slot 0x248), or of factions with
     +0x1d0 or +0x34 == 8 set (meanings **Unknown**).
-  - Cannibal: from the first member carrying someone (+0x348, **Observed**) a timer runs; phase 2 at 3 carriers or after 15 game minutes.
+  - Cannibal (`FUN_14028fdf0`, the package's update, **Verified**): per platoon running the package, not per campaign. It counts its own squad's members with `+0x348` set (carrying) and
+    keeps its own start stamp (package `+0xb0`): set at the first carrier, zeroed again when nobody carries or the platoon has no squad. With a carrier, the campaign record of that platoon
+    goes to phase 2 (time stamped, `+0xc0` = 2) at 3 carriers or when the stamp's age in clock hours x 60 is above 15 (strictly; hours **Observed**). Meitou `PopulationCampaigns.CannibalsLoaded`.
   - Dialogue (`FUN_140680560`, **Verified**): DA 37 sets phase 1 (2 without a pt2 leader package), DA 38 phase 2, DA 39 phase 3, which no
     phase handles (only a leader wipe ends it; the data never uses DA 39).
 - Moving: unloaded, the leader travels to the target (TRAVEL_TARGET), the others to the leader (TRAVEL_TARGET_FAST), speeds as the
