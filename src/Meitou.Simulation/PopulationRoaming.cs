@@ -386,6 +386,7 @@ public sealed partial class PopulationSystem
         else if (world.Tick >= p.UnloadAtTick && !(!Kept(p) && !p.Pinned && p.Campaign is null && ThinOutOfZone(world, p, squad)))
         {
             p.Imprisoned = squad.Members.Any(m => table.TryResolveNext(m, out int ms) && table.Cold(ms)!.IsImprisoned);
+            if (p.Campaign is null && squad.Ai is { } board) p.IntactFlag = board.Intact;   // kept as it was at unload (+0x100)
             if (squad.Ai?.Current is { } running) FollowPackage(world, p, running);
             if (p.Package is { } shipping && IsShipping(shipping) && squad.Ai is { MissionTown: >= 0 and var mission }) p.Target = mission;   // the camp it ships to (ShippingCamp)
             // Faithful: a platoon the original does not keep (not a town's own, not in a campaign, not occupying) is despawned as it leaves; a save's wild one by the wild switch.

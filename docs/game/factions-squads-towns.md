@@ -470,9 +470,12 @@ Meitou: [ground items](../simulation.md#items-and-eating).
   save 2 Squin 36 = 36, the Hub 12 vs 10, Stack 93 vs 95 (Squin without a Tech Hunters resident shop of 4).
 - **Town wipe** (**Verified**, `TownPopulationManager::vfunc_4` `FUN_1408f7a80`): once started, roaming `pop` <= 3, <= 25 roaming living and no intact resident platoon
   (more than 200 unresolvable handles in the set, or any at all, also keep it) sets `ded`, saved, never cleared. `setDead` is empty for towns (only nests remove themselves), so
-  nothing is shown; a dead town skips the remake pass at activation and its `regenerates` squads die. Meitou (`CheckTownWipes`, each roam check): resident = any town squad
-  or pinned platoon with a home; a town still loading is not judged. The check runs only while the zone at the town's position is loaded
-  (zone byte +0xb1, **Verified** `FUN_1408f6760`); the wipe gates have no faction test, so Meitou keeping player-faction towns is an
+  nothing is shown; a dead town skips the remake pass at activation and its `regenerates` squads die. The loop over the resident set (**Verified**): a platoon that resolves and is intact
+  (`isIntact` `FUN_1407ac7b0`: false once `dead`, else the flag +0x100, which a loaded platoon recomputes with the squad-intact rule `FUN_1407a5be0`: a member held in a cage or carried by a
+  non-ally keeps it intact, and a platoon of the player's faction is always intact, `FUN_14079acf0`) keeps the town at once; one that resolves and is not intact is skipped; a handle that does not resolve to a
+  platoon counts, and with any counted (or over 200) the town is kept. The flag is saved as `intact`. Meitou (`CheckTownWipes`, each roam check): resident = any town squad or pinned platoon with a home that is
+  intact (a loaded squad's AI flag, an unloaded platoon's flag; for the unloaded Meitou also wants someone alive, as its off-screen fights kill members the flag never saw); a town still loading is not judged.
+  The check runs only while the zone at the town's position is loaded (zone byte +0xb1, **Verified** `FUN_1408f6760`). The wipe gates have no faction test; Meitou keeping a town of the player's faction is an
   engine choice (the town list's caller was not read).
 - **`regenerates`** (SQUAD_TEMPLATE, 18 true; `Platoon::declareDead`, **Verified**): when the last member dies and the home town is not `ded`, the platoon is not declared
   dead but set to CM_REFRESH (remade on next activation). Meitou: a loaded pinned platoon whose members are all dead (`DeclareDead`), a town squad that unloads with no one alive, or an
@@ -618,7 +621,7 @@ campaign is not hostile, or that is not active (slot 70); a redirected request d
   while > 2 player characters hold the town, more than half up, nothing else is checked; DEFEND_TOWN after 12 h when no hostile campaign
   against the player runs; TRADER_VISIT after 1 h unless trading (**Observed**). Then any key: defeat when < 20 % of its platoons are
   intact (the platoon flag +0x100, `FUN_1407ac7b0`: the squad-intact rule of [perception](perception.md) `FUN_1407a5be0`, recomputed only
-  while loaded and kept from unload; its initial value and the overriding +0x1f0 are **Unknown**, Meitou starts it true).
+  while loaded and kept from unload; false once `dead` +0x1f0; both saved, `intact` and `dead`, **Verified** `FUN_1407ed0f0`; a platoon with no save starts true in Meitou).
 - 2 ended: removed after 3 h (platoons unmapped).
 - Unloaded no fight starts, so an unloaded assault always wins at 4 h: a message and its follow-up, nothing happens to the town (the
   earlier "an empty outpost falls" reading was this).

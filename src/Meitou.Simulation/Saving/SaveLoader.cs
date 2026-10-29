@@ -340,6 +340,7 @@ public static class SaveLoader
             Saved = sp,
             Imprisoned = platoon.Record.Bools.GetValueOrDefault("imprisoned"),
             Dead = platoon.Record.Bools.GetValueOrDefault("dead"),
+            IntactFlag = platoon.Record.Bools.GetValueOrDefault("intact", true),
         };
         world.Platoons.Add(p);
         if (!platoon.Handle.IsNull) context.PlatoonIds.TryAdd((platoon.Handle.C, platoon.Handle.CS), p.Id);
@@ -422,6 +423,7 @@ public static class SaveLoader
             Saved = sp,
             Imprisoned = platoon.Record.Bools.GetValueOrDefault("imprisoned"),
             Dead = platoon.Record.Bools.GetValueOrDefault("dead"),
+            IntactFlag = platoon.Record.Bools.GetValueOrDefault("intact", true),
         };
         world.Platoons.Add(p);
         sp.PlatoonId = p.Id;

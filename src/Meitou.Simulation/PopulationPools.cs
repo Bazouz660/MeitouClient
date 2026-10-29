@@ -137,7 +137,8 @@ public sealed partial class PopulationSystem
 
     /// <summary>
     /// Town wipe-out (<c>TownPopulationManager::vfunc_4</c> <c>FUN_1408f7a80</c>, docs/game/factions-squads-towns.md "Town wipe"): a started town in a loaded zone that is not yet <c>ded</c>, whose roaming
-    /// pool is at most 3 and whose roaming platoons have at most 25 living, and none of whose resident squads (any with a home; engine reading of the resident pool) has anyone alive, is <c>ded</c> for good: it
+    /// pool is at most 3 and whose roaming platoons have at most 25 living, and none of whose resident squads (any with a home; engine reading of the resident pool) is intact
+    /// (<see cref="ResidentIntact"/>: the platoon's flag, which a squad with a member held keeps true), is <c>ded</c> for good: it
     /// remakes no depleted squads (<see cref="CheckRegeneration"/>) and its <c>regenerates</c> squads die. Nothing is posted (the town's <c>setDead</c> is empty).
     /// </summary>
     void CheckTownWipes(World world)
@@ -150,13 +151,13 @@ public sealed partial class PopulationSystem
             if (p.Origin < 0 || p.Origin >= resident.Length || p.Wild) continue;
             if (p.Pinned)
             {
-                if (p.Stored is not { HomeBuilding: null } && LivingOf(world, p) > 0) resident[p.Origin] = true;
+                if (p.Stored is not { HomeBuilding: null } && ResidentIntact(world, p)) resident[p.Origin] = true;
             }
             else roamers[p.Origin] += LivingOf(world, p);
         }
         for (int s = 0; s < states.Length && s < resident.Length; s++)
             foreach (int id in states[s].Squads)
-                if (world.Squads.Find(id) is { } squad && squad.HomeBuilding is not null && squad.Members.Any(m => Living(world, m))) resident[s] = true;
+                if (world.Squads.Find(id) is { } squad && squad.HomeBuilding is not null && (squad.Ai?.Intact ?? true) && squad.Members.Any(m => Living(world, m))) resident[s] = true;
         for (int s = 0; s < resident.Length; s++)
         {
             // A town coming into the world has neither its squads nor its platoons for a moment: not judged then.
@@ -172,6 +173,19 @@ public sealed partial class PopulationSystem
             if (townLog.Count >= 256) townLog.RemoveAt(0);
             townLog.Add($"{data.Sites[s].Town.Name} wiped out");
         }
+    }
+
+    /// <summary>
+    /// Whether a resident platoon keeps its town from being wiped: <c>Platoon::isIntact</c> (<c>FUN_1407ac7b0</c>, <b>Verified</b>), false once declared dead, else its flag, which a loaded squad's
+    /// AI keeps current (<see cref="Ai.Blackboard.Intact"/>, the rule of <c>FUN_1407a5be0</c>) and an unloaded platoon holds as it was at unload (or in the save). Meitou also needs someone
+    /// alive in a platoon not in the world: its off-screen fights can kill members the flag never saw.
+    /// </summary>
+    bool ResidentIntact(World world, Platoon p)
+    {
+        if (p.Dead) return false;
+        if (p.State == PlatoonState.Loaded && world.Squads.Find(p.SquadId) is { } squad)
+            return p.IntactFlag = squad.Ai?.Intact ?? SquadIntact(world, squad);
+        return p.IntactFlag && LivingOf(world, p) > 0;
     }
 
     /// <summary>SQUAD_TEMPLATE <c>regenerates</c> (<c>Platoon::declareDead</c>, <b>Verified</b>): a squad of it whose last member dies is not declared dead while its town is not <c>ded</c>; it is made afresh on its next activation.</summary>

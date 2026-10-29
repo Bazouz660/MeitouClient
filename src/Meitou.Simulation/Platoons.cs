@@ -70,7 +70,7 @@ public sealed class Platoon
     /// screen and led to <see cref="CampaignGoal"/> while loaded, out of the roaming pools.
     /// </summary>
     public CampaignInstance? Campaign { get; set; }
-    /// <summary>The platoon's intact flag (+0x100, <c>FUN_1407ac7b0</c>): the squad-intact rule, refreshed while loaded and kept as it was at unload. Not saved.</summary>
+    /// <summary>The platoon's intact flag (+0x100, <c>FUN_1407ac7b0</c>): the squad-intact rule, refreshed while loaded and kept as it was at unload; saved as <c>intact</c> (<b>Verified</b>, <c>FUN_1407ed0f0</c>). Hashed while false.</summary>
     public bool IntactFlag { get; set; } = true;
     /// <summary>
     /// The platoon was declared dead (+0x1f0, <c>Platoon::declareDead</c> <c>FUN_140797090</c>, <b>Verified</b>; saved as <c>dead</c>): every member is a dead character. It is out of its
@@ -174,6 +174,7 @@ public sealed class PlatoonRegistry
                 h.Add(stored.Anchor);
                 h.Add(stored.Pinned);
             }
+            if (!p.IntactFlag) h.Add(0x496E7463);   // likewise while not intact
             if (p.Dead) h.Add(0x44656164);   // only once declared dead, so worlds without one hash as before
             if (p.OrphanSeconds > 0) h.Add(p.OrphanSeconds);   // only while counting, so worlds without it hash as before
             if (p.Campaign is { } campaign)

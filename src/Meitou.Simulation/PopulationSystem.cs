@@ -495,7 +495,7 @@ public sealed partial class PopulationSystem : ITickSystem, IDisposable
             {
                 Id = world.Platoons.NextId(), Origin = site, TemplateId = squad.TemplateId, Faction = squad.Faction, Key = 0, Size = Math.Max(squad.SpawnSize, stored.Members.Count),
                 Position = at, Money = squad.Money, Package = stored.Package, Stored = stored,
-                Regenerate = refresh,
+                Regenerate = refresh, IntactFlag = squad.Ai?.Intact ?? true,
             });
         }
         Reset(state);
