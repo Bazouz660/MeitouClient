@@ -701,10 +701,10 @@ Arrests, the recognition meter and the marker are hashed only while set. What a 
   stopping with the target up re-orders it within 800, else he gives up; no free cage: he drops the captive (engine).
 - **Release**: player and NPC prisoners alike are freed by the release rounds below.
 - **Rounds** (`LockSystem.Rounds.cs`, serial; a sweep every 30 ticks starts at most 4, at most 8 run; the worker is
-  `Engaged`; each lock takes the owner's 3.3 s): **release** (211): an awake prisoner whose sentence is served, in a cage of
-  a faction that books bounties, is freed by an NPC of that faction (one with goal 211 in its role list and hours first,
-  else police-like, nearest within 1500) who walks there, unlocks and `Release`s in its faction's name; engine: none such,
-  3 failed walks or 120 s, and the system frees it; cages of non-booking factions free nobody. **Lock-up** (155, 197): while
+  `Engaged`; each lock takes the owner's 3.3 s): **release** (211): an awake prisoner whose sentence is served is freed by an NPC of the
+  cage's faction with goal 211 in its role list and hours (the finder has no booking test and only that goal frees, **Verified** `FUN_1408cf3c0`; police-like NPCs without it never do),
+  nearest within 1500, who walks there, unlocks and `Release`s in its faction's name; engine: in a cage of a faction that books bounties, none such,
+  3 failed walks or 120 s, and the system frees it; the cages of non-booking factions wait for a 211 holder. **Lock-up** (155, 197): while
   a member has the goal in its hours a free member with it locks every door of the home (155 only with every member
   inside, engine: within the home's farthest node + 10; neither with a stranger inside); when no member's goal is in its
   hours, a free member with 86 Opening up in its hours unlocks what a round locked (squads without 86 stay locked, as the original). The house flag is set at each door the round locks (worker's faction's lock, no door of the home open or opening) and cleared by the unlock round (engine: the round unlocks rather than opens; a loaded night's locked homes come back flagged, `meitou house locked`). **Wardens**

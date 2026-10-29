@@ -44,10 +44,10 @@ public sealed class Round
 /// <see cref="RoundEveryTicks"/> ticks starts at most <see cref="MaxNewRounds"/> rounds with at most <see cref="MaxRounds"/> running, each worked by one NPC the AI leaves alone
 /// meanwhile (<see cref="CharacterCold.Engaged"/>). The work at a lock is the owner's lock/unlock time, 0.3 per second (<b>Verified</b>).
 /// <list type="bullet">
-/// <item><b>Release</b> (211 "police free prisoners", economy.md 11.5): an awake prisoner whose sentence is served, in a cage of a faction that books bounties, is freed by an NPC of the
-/// cage's faction (one whose role list holds goal 211 in its hours first, else a police-like one, the nearest within <see cref="ReleaserRange"/>): it walks there, unlocks the cage and
-/// lets the prisoner out (<see cref="FixtureRegistry.Release"/> in its faction's name). <b>Engine choice</b>: with no such NPC, or after <see cref="ReleaseTimeout"/>, the system frees
-/// it in the jail faction's name. Cages of factions that book no bounties (slavers, bandits, the player's) free nobody.</item>
+/// <item><b>Release</b> (211 "police free prisoners", economy.md 11.5): an awake prisoner whose sentence is served is freed by an NPC of the cage's faction whose role list holds goal 211 in
+/// its hours (the finder <c>FUN_1408cf3c0</c> has no booking test and only that goal frees, <b>Verified</b>), the nearest within <see cref="ReleaserRange"/>: it walks there, unlocks the cage
+/// and lets the prisoner out (<see cref="FixtureRegistry.Release"/> in its faction's name). <b>Engine choice</b>: in a cage of a faction that books bounties, with no such NPC, or after
+/// <see cref="ReleaseTimeout"/>, the system frees it in the jail faction's name; cages of factions that book none (slavers, bandits, the player's) are freed by a 211 holder or nobody.</item>
 /// <item><b>Lock-up</b> (155, 197): while a member's role list holds the goal in its hours, a free member that has it locks every door of the squad's home, door by door; 155 only
 /// once every member is inside (engine: within the home's extent) and, for both, no stranger is (<c>!strangers in house</c>). When no member's goal is in its hours any more,
 /// a free member unlocks what a round locked (<b>engine choice</b>: the morning unlock is not traced; the squad's "house locked" flag is kept here, not saved).</item>
@@ -182,23 +182,22 @@ public sealed partial class LockSystem : IStateHashed
         for (int s = 0; s < table.HighWater; s++)
         {
             if (!next[s].Alive || table.Cold(s) is not { IsImprisoned: true, InWhat: { } where } c || c.Medical is { Incapacitated: true }) continue;
-            if (!FixtureRegistry.SentenceServed(c, world.GameHours) || world.Fixtures.Find(where) is not { } cage || !Crimes.Factions.Books(cage.Owner)) continue;
+            if (!FixtureRegistry.SentenceServed(c, world.GameHours) || world.Fixtures.Find(where) is not { } cage) continue;
             var prisoner = table.IdOf(s);
             if (Busy(prisoner)) continue;
-            int releaser = -1, bestRank = int.MaxValue;
+            int releaser = -1;
             float bestD2 = ReleaserRange * ReleaserRange;
             for (int w = 0; w < table.HighWater; w++)
             {
-                if (w == s || !next[w].Alive || table.Cold(w) is not { IsPlayer: false } wc || wc.Faction != cage.Owner) continue;
-                int rank = HasGoal(world, w, wc, TaskType.POLICE_FREE_PRISONERS_WHEN_DONE, hour) ? 0 : Crimes.IsPoliceLike(world, wc) ? 1 : -1;
-                if (rank < 0 || rank > bestRank || !Free(world, w)) continue;
+                if (w == s || !next[w].Alive || table.Cold(w) is not { IsPlayer: false } wc || wc.Faction != cage.Owner || !HasGoal(world, w, wc, TaskType.POLICE_FREE_PRISONERS_WHEN_DONE, hour) || !Free(world, w)) continue;
                 float d2 = Vector3.DistanceSquared(next[w].Position, cage.Position);
-                if (rank == bestRank && d2 >= bestD2 || d2 > ReleaserRange * ReleaserRange) continue;
-                (releaser, bestRank, bestD2) = (w, rank, d2);
+                if (d2 >= bestD2 && releaser >= 0 || d2 > ReleaserRange * ReleaserRange) continue;
+                (releaser, bestD2) = (w, d2);
             }
             if (releaser < 0)
             {
-                world.Fixtures.Release(world, prisoner, cage.Owner, Crimes);   // nobody to do it: the jail's faction frees it (engine)
+                // Nobody to do it: a booking jail's faction frees it (engine); the rest of the cages wait for a 211 holder.
+                if (Crimes.Factions.Books(cage.Owner)) world.Fixtures.Release(world, prisoner, cage.Owner, Crimes);
                 continue;
             }
             if (rounds.Count >= MaxRounds || started >= MaxNewRounds) return;
@@ -448,7 +447,7 @@ public sealed partial class LockSystem : IStateHashed
             if (table.Next[w].Task == (byte)CharacterTask.GoTo) MovementSystem.Stop(table, w);
         }
         if (fallback && r.Kind == RoundKind.Release && table.TryResolveNext(r.Prisoner, out int p) && table.Cold(p) is { IsImprisoned: true } pc && pc.InWhat == r.Targets[0]
-            && world.Fixtures.Find(r.Targets[0]) is { } cage)
+            && world.Fixtures.Find(r.Targets[0]) is { } cage && Crimes?.Factions.Books(cage.Owner) == true)
             world.Fixtures.Release(world, r.Prisoner, cage.Owner, Crimes);
         if (done && r.Building is { } b)
         {
