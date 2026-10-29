@@ -266,7 +266,7 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
             var id = table.IdOf(slot);
             if (!FreeCarrier(table, slot) || Busy(id)) continue;
             var cold = table.Cold(slot)!;
-            if (!table.TryResolveNext(cold.Carrying, out int b) || table.Cold(b) is not { Medical.Dead: true } body || body.CarriedBy != id || !ListsDeadCage(world, cold, id)) continue;
+            if (!table.TryResolveNext(cold.Carrying, out int b) || table.Cold(b) is not { Medical.Dead: true } body || body.CarriedBy != id || !ListsDeadCage(world, cold, id) || CageDesire(world, slot, b) <= 0) continue;
             var at = table.Next[slot].Position;
             var duty = new TownDuty { Member = id, Body = cold.Carrying, Faction = cold.Faction, Town = AiSystem.TownAt(data, world, at), Kind = TownDutyKind.Cage };
             if (Cage(world, at, duty) is not { } cage) continue;
@@ -557,28 +557,15 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
         {
             if (gn.Task == (byte)CharacterTask.PickUp) return true;
             if (gc.Carrying != d.Body) return End(world, d);   // fought off or pushed away: the body lies there for the next look
-            var squad = world.Squads.Find(gc.SquadId);
-            int role = squad is null ? 0 : (int)AiSystem.RoleOf(squad, d.Member, gc);
-            // 112 needs !99 isCarriedDudeDead (a living body only); 281 has no such list, so it cages the living and the dead.
-            if (squad is not null && (ListsDeadCage(world, gc, d.Member) || !bodyMedical.Dead && population.GoalDuty(world, squad, (AiRole)role, TaskType.FIND_CAGE_AND_PUT_IN)) && Cage(world, gn.Position, d) is { } cage)
-            {
-                (d.Kind, d.Target, d.Goal, d.Tries) = (TownDutyKind.Cage, cage.Id, Flat(cage.Position), 0);
-                MovementSystem.GoTo(table, g, d.Goal, SpeedMode.Free);
-                return true;
-            }
-            if (squad is not null && population.GoalDuty(world, squad, (AiRole)role, TaskType.TAKE_INTRUDER_OUTSIDE_TOWN))
-            {
-                (d.Kind, d.Goal, d.Tries) = (TownDutyKind.Out, Outside(world, d.Town, gn.Position), 0);
-                MovementSystem.GoTo(table, g, d.Goal, SpeedMode.Free);
-                return true;
-            }
-            return PutDown(world, d, g);
+            return Dispose(world, d, g, b);
         }
         if (gc.Carrying != d.Body) return End(world, d);
         bool walking = gn.Task == (byte)CharacterTask.GoTo;
         float gap = Vector2.Distance(Flat(gn.Position), d.Goal);
         if (d.Kind == TownDutyKind.Cage)
         {
+            // The carried-body desire is read every update of the plan: at 0 the cage goal drops out and the body is thrown out or put down.
+            if ((world.Tick + g) % Math.Max(1, Settings.LookEveryTicks) == 0 && CageDesire(world, g, b) <= 0) return Dispose(world, d, g, b, cageable: false);
             var cage = d.Target is { } id ? world.Fixtures.Find(id) : null;
             if (cage is null || !FixtureRegistry.IsFree(table, cage)) return PutDown(world, d, g);
             if (gap <= cage.UseRange + Settings.CageReach || !walking && gap <= Settings.CageSlack)
@@ -603,6 +590,56 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
         }
         MovementSystem.GoTo(table, g, d.Goal, SpeedMode.Free);
         return true;
+    }
+
+    /// <summary>
+    /// What a member does with the body it has lifted: cages it (112 for a living body, 281 for any, while the carried-body desire <see cref="CageDesire"/> is above 0 and a cage is free), else
+    /// throws it out (274), else puts it down. Meitou tries the cage first whatever the desires of 112/281 and 274 are (the desire of 274 is <b>Unknown</b>).
+    /// </summary>
+    bool Dispose(World world, TownDuty d, int g, int b, bool cageable = true)
+    {
+        var table = world.Characters;
+        var gc = table.Cold(g)!;
+        ref var gn = ref table.Next[g];
+        var squad = world.Squads.Find(gc.SquadId);
+        int role = squad is null ? 0 : (int)AiSystem.RoleOf(squad, d.Member, gc);
+        // 112 needs !99 isCarriedDudeDead (a living body only); 281 has no such list, so it cages the living and the dead.
+        if (cageable && squad is not null && (ListsDeadCage(world, gc, d.Member) || table.Cold(b)!.Medical is { Dead: false } && population.GoalDuty(world, squad, (AiRole)role, TaskType.FIND_CAGE_AND_PUT_IN))
+            && CageDesire(world, g, b) > 0 && Cage(world, gn.Position, d) is { } cage)
+        {
+            (d.Kind, d.Target, d.Goal, d.Tries) = (TownDutyKind.Cage, cage.Id, Flat(cage.Position), 0);
+            MovementSystem.GoTo(table, g, d.Goal, SpeedMode.Free);
+            return true;
+        }
+        if (squad is not null && population.GoalDuty(world, squad, (AiRole)role, TaskType.TAKE_INTRUDER_OUTSIDE_TOWN))
+        {
+            (d.Kind, d.Goal, d.Tries) = (TownDutyKind.Out, Outside(world, d.Town, gn.Position), 0);
+            MovementSystem.GoTo(table, g, d.Goal, SpeedMode.Free);
+            return true;
+        }
+        return PutDown(world, d, g);
+    }
+
+    /// <summary>The desire for a carried body outside any town (<c>DAT_14167fad0</c>, <b>Verified</b>).</summary>
+    public const float OutsideTownDesire = 0.1f;
+    /// <summary>The desire of a law enforcer for a carried slave it holds no bounty on (<c>DAT_14169bb48</c>), of a dead body (<c>DAT_14167e8d8</c>) and of a living one (<c>DAT_141682ad0</c>).</summary>
+    public const float PoliceSlaveDesire = 1.4f, DeadDesire = 0.5f, AliveDesire = 2;
+
+    /// <summary>
+    /// The desire of goals 112 and 281 for the body the carrier in slot <paramref name="carrier"/> holds (<c>AI::scorePutCarriedDudeInCage</c> <c>FUN_1405a1140</c> with <c>FUN_1405a0f10</c>,
+    /// <b>Verified</b>), tests in the original's order: the carrier stands in no town 0.1; an animal 0; a law enforcer (<see cref="Crime.CrimeSystem.IsPoliceLike"/>) carrying a slave or escapee it has
+    /// no bounty on 1.4; a body the carrier regards as friendly (<see cref="CarrySystem.Friendly"/>) 0; a dead one 0.5; else 2. The original also returns 0 while the squad's mission target
+    /// (a hand on its AI data, <b>Observed</b>) is set and is not the town the carrier stands in: not modelled, the Meitou package fields do not map to it one for one.
+    /// </summary>
+    public float CageDesire(World world, int carrier, int body)
+    {
+        var table = world.Characters;
+        if (table.Cold(carrier) is not { } c || table.Cold(body) is not { } b) return 0;
+        if (AiSystem.TownAt(data, world, table.Next[carrier].Position).IsNone) return OutsideTownDesire;
+        if (b.Fighter is { IsAnimal: true }) return 0;
+        if (b.SlaveState != 0 && (b.Bounties?.AmountFor(c.Faction) ?? 0) < 1 && world.SystemOf<Crime.CrimeSystem>()?.IsPoliceLike(world, c) == true) return PoliceSlaveDesire;
+        if (carry.Friendly(c, b)) return 0;
+        return b.Medical is { Dead: true } ? DeadDesire : AliveDesire;
     }
 
     /// <summary>Whether the carrier's package lists 281 FIND_CAGE_AND_PUT_DEADGUY_IN for its role (any carried body, dead included).</summary>
