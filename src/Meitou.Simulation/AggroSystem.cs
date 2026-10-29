@@ -614,7 +614,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
             if (table.Cold(i) is not { } cold) continue;
             var stance = cold.Ai?.Stance ?? Ai.AiStance.Aggressive;
             var war = cold.SquadId >= 0 && world.Squads.Find(cold.SquadId) is { War.IsSet: true } assaulting ? assaulting.War : WarTargets.None;
-            bool targets = !Busy(cold, task) && !(task == (byte)CharacterTask.Rest && !AiSleeper(cold))
+            bool targets = !Busy(cold, task)
                 && cold is { InCombat: false, Fleeing: false, IsImprisoned: false, SlaveState: not 1, Fighter.CanAttack: true, Medical.Incapacitated: false }
                 && Relations.Contains(cold.Faction) && !(cold.IsPlayer && !HuntsEnemies(cold) && !HoldsGround(cold))
                 && stance != Ai.AiStance.Passive && (hasEnemy[cold.Faction] || stance == Ai.AiStance.AggressiveNeutrals || war.IsSet || (Memory?.AnyTempEnemy(cold.SquadId) ?? false));
@@ -1063,7 +1063,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
     {
         if (taken.Contains(slot) || !table.Next[slot].Alive) return false;
         byte task = table.Next[slot].Task;
-        if (Busy(table.Cold(slot), task) || task == (byte)CharacterTask.Rest && !AiSleeper(table.Cold(slot))) return false;
+        if (Busy(table.Cold(slot), task)) return false;
         return table.Cold(slot) is { InCombat: false, Fleeing: false, IsImprisoned: false, Fighter.CanAttack: true, Medical.Incapacitated: false, Gunning: null, Ai: null or { Behaviour: not Ai.AiBehaviour.Turret } } cold
             // a carrier fights like anyone (docs/game/carry-loot.md "A carrier in a fight"); a turret guard keeps to its turret (task 146: only a melee attacker takes it off)
             && (!cold.IsPlayer || HuntsEnemies(cold) || HoldsGround(cold));
@@ -1080,9 +1080,12 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
     static bool WantsToAttack(CharacterCold cold) =>
         (cold.Orders & CharacterOrders.Passive) == 0 && ((cold.Orders & CharacterOrders.Sneak) == 0 || cold.InCombat) && cold.Medical is { Prone: false };
 
-    /// <summary>Fighting, or treating (a medic looks for no fight), except one of the player's characters treating while it holds ground (<see cref="HoldsGround"/>).</summary>
+    /// <summary>
+    /// Fighting; for a character the decision step does not decide also treating (a medic looks for no fight) or resting (not an AI's sleeper). A player character's look is offered to the step
+    /// whatever its task (its orders, goals and jobs decide, docs/game/ai-tasks.md "Precedence").
+    /// </summary>
     static bool Busy(CharacterCold? cold, byte task) =>
-        task == (byte)CharacterTask.Attack || task == (byte)CharacterTask.Treat && !(cold is { IsPlayer: true } && HoldsGround(cold));
+        task == (byte)CharacterTask.Attack || cold is null || !DecisionSystem.Decides(cold) && (task == (byte)CharacterTask.Treat || task == (byte)CharacterTask.Rest && !AiSleeper(cold));
 
     /// <summary>
     /// Whether one of the player's characters looks for enemies like an NPC: it has the job 16 "Attacking enemies" and the row's desire (<see cref="WantsToAttack"/>). Whether its
