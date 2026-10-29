@@ -58,6 +58,11 @@ public struct CombatSlot
     /// <summary>One of the (at most five) fighters its target lets close in (the target's CombatClass +0x1f8 list, docs/game/combat.md "Attack slots and circling"); the rest circle.</summary>
     public bool Engaged;
     /// <summary>
+    /// The engaged list's generation: raised when the character's own fight ends, which empties the list (<c>FUN_1406659b0</c> mode 2). <see cref="JoinedEpoch"/> is the target's
+    /// <see cref="ListEpoch"/> when this fighter joined its list; it is out of it (<see cref="CombatSystem.Listed"/>) once the target's has moved on.
+    /// </summary>
+    public int ListEpoch, JoinedEpoch;
+    /// <summary>
     /// In state 5 (<c>CircleStateAI</c>): engaged, its last ask failed while nothing was coming at it; its asks then need 1.2 x the body room
     /// (<see cref="CombatSystem.BodyRoom"/>, docs/game/combat.md "Attack slots and circling").
     /// </summary>
@@ -140,6 +145,7 @@ public struct CombatSlot
         h.Add(Reach);
         h.Add(LastTech);
         h.Add(Engaged);
+        if (ListEpoch != 0 || JoinedEpoch != 0) { h.Add(ListEpoch); h.Add(JoinedEpoch); }   // only once a list was emptied, so worlds without it hash as before
         if (CircleState) h.Add(0x43697263);   // only when set, so worlds without crowded fights hash as before
         if (Picked) h.Add(true);   // only when set, so worlds without player picks hash as before
         h.Add(PickTick);

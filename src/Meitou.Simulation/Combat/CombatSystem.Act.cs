@@ -173,7 +173,7 @@ public sealed partial class CombatSystem
                 s.TargetSlot = -1;
                 s.Engaged = false;
                 s.Picked = false;
-                if (cold.InCombat) EndFight(table, i);
+                if (cold.InCombat) EndFight(table, i, ref s);
                 continue;
             }
             if (now < cold.GettingUpUntil)
@@ -206,6 +206,8 @@ public sealed partial class CombatSystem
             // every PickSeconds, unless the target is the player's pick (a focused order returns its target without scoring). A target caged or carried is dropped the same way,
             // the player's pick too (CombatClassAI update FUN_14060d6a0: down, dead, ragdolled or carried; imprisoned unless the fighter itself stumbles, which skips this step).
             bool fighting = s.TargetSlot >= 0;
+            // The target's fight ended since it let this one close in: its engaged list was emptied (FUN_1406659b0 mode 2), the fighter keeps its target and asks again below.
+            if (s.Engaged && fighting && (uint)s.TargetSlot < (uint)prev.Length && !Listed(in s, in read[s.TargetSlot])) s.Engaged = false;
             if (fighting && !(s.TargetSlot < prev.Length && prev[s.TargetSlot].Alive && prev[s.TargetSlot].Generation == s.TargetGeneration && !read[s.TargetSlot].Down
                 && table.Cold(s.TargetSlot) is { IsImprisoned: false, CarriedBy.IsNone: true }))
             {
@@ -219,7 +221,7 @@ public sealed partial class CombatSystem
                     fighting = false;
                     s.TargetSlot = -1;
                     s.Picked = false;
-                    EndFight(table, i);
+                    EndFight(table, i, ref s);
                 }
             }
             // A player's pick is kept, unless no path leads to it (the focused target is dropped while its path is impossible).
@@ -233,7 +235,7 @@ public sealed partial class CombatSystem
                     // Nobody qualifies, not even the current target (a holder's that left its area, a player's beyond 400): the chooser has no target and the fight ends.
                     fighting = false;
                     s.TargetSlot = -1;
-                    EndFight(table, i);
+                    EndFight(table, i, ref s);
                 }
             }
 
@@ -320,7 +322,11 @@ public sealed partial class CombatSystem
             if (s.ReactTech < 0 && s.AttackTech < 0)
             {
                 // Deciding, it first asks to be one of the fighters its target lets close in (FUN_140666e20); a fighter left out circles (PursuitSystem) and asks again each tick.
-                if (fighting && !s.Engaged) s.Engaged = MayJoin(world, i, s.TargetSlot, now);
+                if (fighting && !s.Engaged)
+                {
+                    s.Engaged = MayJoin(world, i, s.TargetSlot, now);
+                    if (s.Engaged) s.JoinedEpoch = read[s.TargetSlot].ListEpoch;
+                }
                 bool yielded = fighting && read[s.TargetSlot].YieldTo == i && now < read[s.TargetSlot].YieldUntil;
                 bool paused = now < s.PauseUntil;
                 if (!aborted && fighting && !paused && (now >= s.ReadyTick || incoming >= 0 || yielded))
@@ -577,7 +583,7 @@ public sealed partial class CombatSystem
                 if (++holders + ahead >= slots) return false;
                 continue;
             }
-            if (other > i || now < o.StunUntil || now < o.PauseUntil && o.AttackTech < 0 && o.ReactTech < 0 || !o.Engaged && !MayJoin(world, other, t, now)) continue;
+            if (other > i || now < o.StunUntil || now < o.PauseUntil && o.AttackTech < 0 && o.ReactTech < 0 || !Listed(in o, in read[t]) && !MayJoin(world, other, t, now)) continue;
             // It decides this tick when its swing or reaction ends now (Act's steps 4 and 5): a block's end and a swing's end start a pause (cut short by a blow at it).
             int ready = o.ReadyTick;
             if (o.AttackTech >= 0)
@@ -610,6 +616,9 @@ public sealed partial class CombatSystem
     /// <summary>The most fighters a target lets close in at once (<c>FUN_140666e20</c> adds an asker while it has at most four).</summary>
     public const int MaxEngaged = 5;
 
+    /// <summary>Whether fighter <paramref name="o"/> is in the engaged list of <paramref name="target"/>, its target: it joined and the target's fight has not ended since (<see cref="CombatSlot.ListEpoch"/>).</summary>
+    internal static bool Listed(in CombatSlot o, in CombatSlot target) => o.Engaged && o.JoinedEpoch == target.ListEpoch;
+
     /// <summary>
     /// Whether <paramref name="i"/> may join the fighters its target lets close in (<see cref="MaxEngaged"/>, <c>FUN_140666e20</c>): it joins while fewer are in. The ones that are
     /// not in yet ask whenever they decide; those with a lower slot ask first (engine choice for the original's update order), counted only when they may decide this tick
@@ -625,7 +634,7 @@ public sealed partial class CombatSystem
             if (other == i || !range.Holds((x, z))) continue;
             ref readonly var o = ref read[other];
             if (o.TargetGeneration != generation || o.Down || o.Ranged) continue;
-            if (!o.Engaged && (other > i || !MayDecide(in o, now))) continue;
+            if (!Listed(in o, in read[t]) && (other > i || !MayDecide(in o, now))) continue;
             if (++count >= MaxEngaged) return false;
         }
         return count < MaxEngaged;

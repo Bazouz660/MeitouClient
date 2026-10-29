@@ -245,12 +245,22 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed
         s.NextBlow = 0;
         s.Engaged = false;
         s.Picked = false;
-        EndFight(table, slot);
+        EndFight(table, slot, ref s);
     }
 
     void LeaveFight(CharacterTable table, CharacterId id)
     {
         if (table.TryResolveNext(id, out int slot) && (table.Cold(slot)!.InCombat || read[slot].TargetSlot >= 0)) Disengage(table, id);
+    }
+
+    /// <summary>
+    /// The end of the fight task of <paramref name="slot"/> also zeroes its engaged list (<c>FUN_1406659b0</c> mode 2): everyone who let close in on it is out of it, by a new
+    /// <see cref="CombatSlot.ListEpoch"/> the fighters read (<see cref="CombatSlot.JoinedEpoch"/>); they keep their target and ask again.
+    /// </summary>
+    static void EndFight(CharacterTable table, int slot, ref CombatSlot s)
+    {
+        if (table.Cold(slot)!.InCombat) s.ListEpoch++;
+        EndFight(table, slot);
     }
 
     static void EndFight(CharacterTable table, int slot)
