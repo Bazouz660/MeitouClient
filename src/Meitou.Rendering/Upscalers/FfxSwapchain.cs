@@ -206,11 +206,16 @@ public sealed unsafe class FfxSwapchain : IDisposable
     public Result Acquire(Device d, SwapchainKHR swapchain, ulong timeout, Semaphore semaphore, Fence fence, uint* index) => acquire(d, swapchain, timeout, semaphore, fence, index);
     public Result Present(Queue queue, PresentInfoKHR* info) => present(queue, info);
 
+    /// <summary>Raised at the start of <see cref="Dispose"/>, while the swapchain still exists: a frame-generation context on it is destroyed then, first, as the FFX API requires.</summary>
+    internal event Action? Disposing;
+
     /// <summary>Destroys the context, which destroys the swapchain it made. Not before the device is idle.</summary>
     public void Dispose()
     {
         if (disposed) return;
         disposed = true;
+        Disposing?.Invoke();
+        Disposing = null;
         if (context != 0)
         {
             nint c = context;

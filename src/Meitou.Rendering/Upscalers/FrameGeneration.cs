@@ -83,7 +83,7 @@ public sealed unsafe class FrameGeneration : IDisposable
     (int, int, uint) contextSize;
     GpuTexture? depthFlipped, motionFlipped, uiFlipped;
     ulong frameId;
-    bool resetNext = true, idAssigned, failed, uiRegistered, loggedActive, loggedUnprepared;
+    bool resetNext = true, idAssigned, failed, layerGone, uiRegistered, loggedActive, loggedUnprepared;
     int displayWidth, displayHeight;
 
     /// <summary>Frame generation is wanted for this frame (<see cref="BeginFrame"/>).</summary>
@@ -108,6 +108,15 @@ public sealed unsafe class FrameGeneration : IDisposable
         createDesc = (CreateDesc*)NativeMemory.AllocZeroed((nuint)sizeof(CreateDesc));
         backendDesc = (BackendVkDesc*)NativeMemory.AllocZeroed((nuint)sizeof(BackendVkDesc));
         contextSlot = (nint*)NativeMemory.AllocZeroed((nuint)sizeof(nint));
+        layer.Disposing += OnLayerDisposing;
+    }
+
+    /// <summary>The layer goes away first (a failed swapchain remake falls back to the plain swapchain): the context goes before it, and none is made again.
+    /// Not configured off first: after a failed remake the swapchain it was configured with may already be destroyed, and no present comes in between.</summary>
+    void OnLayerDisposing()
+    {
+        layerGone = true;
+        DestroyContext(configureOff: false);
     }
 
     /// <summary>The frame-generation context for <paramref name="layer"/>'s swapchain, or null with the reason (library not loading).</summary>
@@ -161,11 +170,11 @@ public sealed unsafe class FrameGeneration : IDisposable
         return true;
     }
 
-    void DestroyContext()
+    void DestroyContext(bool configureOff = true)
     {
         if (*contextSlot == 0) return;
         // The layer may still call back into it from a present in flight: configure it off, wait for the device, then destroy.
-        ConfigureFrame(false, frameId);
+        if (configureOff) ConfigureFrame(false, frameId);
         device.WaitIdle();
         nint c = *contextSlot;
         destroyContext(&c, null);
@@ -178,7 +187,7 @@ public sealed unsafe class FrameGeneration : IDisposable
         (displayWidth, displayHeight) = (displayW, displayH);
         Prepared = Enabled = false;
         idAssigned = false;
-        Wanted = wanted && !failed && EnsureContext(displayW, displayH);
+        Wanted = wanted && !failed && !layerGone && EnsureContext(displayW, displayH);
         if (wanted && !Wanted) failed = true;   // the context could not be made: off for the rest of the run
     }
 
@@ -305,7 +314,7 @@ public sealed unsafe class FrameGeneration : IDisposable
         }
         else resetNext = true;   // the next frame after frames without it starts afresh
         if (!ConfigureFrame(Enabled, id)) { Console.WriteLine("frame generation  configure failed; off for the rest of the run"); failed = Enabled = false; }
-        if (registered is not null || uiRegistered)
+        if ((registered is not null || uiRegistered) && !layerGone)
         {
             if (!layer.RegisterUi(Enabled ? registered : null)) { Console.WriteLine("frame generation  registering the interface picture failed; off for the rest of the run"); failed = true; Enabled = false; }
             uiRegistered = Enabled;
@@ -315,7 +324,8 @@ public sealed unsafe class FrameGeneration : IDisposable
 
     public void Dispose()
     {
-        DestroyContext();
+        layer.Disposing -= OnLayerDisposing;
+        DestroyContext(configureOff: !layerGone);
         depthFlipped?.Dispose();
         motionFlipped?.Dispose();
         uiFlipped?.Dispose();
