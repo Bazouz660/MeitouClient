@@ -12,6 +12,9 @@ public sealed class GameDatabase
 
     public IReadOnlyDictionary<string, GameRecord> Records => records;
 
+    /// <summary>Changes whenever a file, a translation or a post-pass adds, removes or changes records: what an index built over them checks.</summary>
+    public int Version { get; private set; }
+
     /// <summary>Files applied so far, in order.</summary>
     public List<string> Files { get; } = [];
 
@@ -78,6 +81,7 @@ public sealed class GameDatabase
     /// </summary>
     public void ApplyTranslation(FcsFile file, string fileName)
     {
+        Version++;
         Translations.Add(fileName);
         foreach (var source in file.Records)
         {
@@ -93,6 +97,7 @@ public sealed class GameDatabase
     // placeholders when no data file touched them, so a record with only a name and a description never reaches a list (Meitou choice, docs/formats/localisation.md).
     void DropTranslationOnlyRecords()
     {
+        Version++;
         foreach (var id in translationOnly) records.Remove(id);
         translationOnly.Clear();
     }
@@ -103,6 +108,7 @@ public sealed class GameDatabase
     /// </summary>
     public void AddWallMasters()
     {
+        Version++;
         foreach (var master in records.Values)
         {
             if (master.Type != FcsRecordType.BUILDING || master.GetInt("link type") == 3) continue;
@@ -120,6 +126,7 @@ public sealed class GameDatabase
     /// </summary>
     public void AddGearBlueprints()
     {
+        Version++;
         var template = Find("RESEARCH_TEMPLATE") is { Type: FcsRecordType.RESEARCH } t ? t : null;
         var prices = Gameplay.Economy.PriceConstants.FromDatabase(this);
         foreach (var item in records.Values.Where(r => r.Type is FcsRecordType.ARMOUR or FcsRecordType.CONTAINER or FcsRecordType.CROSSBOW).ToList())
@@ -154,6 +161,7 @@ public sealed class GameDatabase
     /// <summary>Applies one file on top of everything loaded so far.</summary>
     public void Apply(FcsFile file, string fileName)
     {
+        Version++;
         Files.Add(fileName);
         foreach (var record in file.Records)
             Apply(record, fileName);
