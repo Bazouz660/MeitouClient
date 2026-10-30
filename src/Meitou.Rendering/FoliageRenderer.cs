@@ -768,6 +768,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
     /// <summary>Grass pages generating at once, over all zones.</summary>
     const int MaxGrassJobs = 12;
     readonly List<(float Distance, ZoneState State, int Key)> grassWanted = [];
+    readonly (float Distance, ZoneState State, int Key)[] grassPicks = new (float, ZoneState, int)[MaxGrassJobs];
     int zonesWaiting, grassWaiting, grassNear;
 
     void UpdateGrass(Vector3 eye)
@@ -810,6 +811,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
                     else if (page.Job is { IsCompleted: true } job)
                     {
                         state.GrassRunning--;
+                        inFlight--;   // its slot is free for this frame's picks
                         page.Job = null;
                         var result = job.Result;
                         TryQueuePage(state, key, page, result.Blades, result.Prefixes);
@@ -818,18 +820,26 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
                 }
         }
         // Missing pages nearest first, a bounded number at a time. Pages hold the blades of the highest density setting,
-        // so changing the setting never regenerates them (Draw shows a prefix).
-        grassWanted.Sort((a, b) => a.Distance.CompareTo(b.Distance));
+        // so changing the setting never regenerates them (Draw shows a prefix). Only the nearest free jobs' worth is picked: sorting every
+        // missing page (tens of thousands at a long grass range) took milliseconds a frame.
         grassWaiting = grassWanted.Count;
-        foreach (var (_, state, key) in grassWanted)
+        int free = guard is { Streaming: false } ? 0 : Math.Max(0, MaxGrassJobs - inFlight), picked = 0;
+        foreach (var wanted in grassWanted)
         {
-            if (inFlight >= MaxGrassJobs || guard is { Streaming: false }) break;
+            if (picked == free && (free == 0 || wanted.Distance >= grassPicks[picked - 1].Distance)) continue;
+            int at = picked < free ? picked++ : picked - 1;
+            for (; at > 0 && grassPicks[at - 1].Distance > wanted.Distance; at--) grassPicks[at] = grassPicks[at - 1];
+            grassPicks[at] = wanted;
+        }
+        for (int i = 0; i < picked; i++)
+        {
+            var (_, state, key) = grassPicks[i];
+            grassPicks[i] = default;
             float x0 = state.X0 + key % PagesPerZone * PageSize, z0 = state.Z0 + key / PagesPerZone * PageSize;
             var page = state.Pages[key] = new GrassPage();
             var patches = state.Patches;
             var ground = state.Ground!;
             state.GrassRunning++;
-            inFlight++;
             grassWaiting--;
             page.Job = BackgroundWork.Run(() =>
             {
