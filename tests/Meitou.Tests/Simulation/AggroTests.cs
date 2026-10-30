@@ -494,6 +494,37 @@ public class AggroTests
         Assert.True(a.Fighting(bandit) && a.Fighting(drifter), "the strangers fight on");
     }
 
+    /// <summary>
+    /// A shopkeeper defends a squad mate as 143 does (docs/game/ai-tasks.md "Combat goals": a mate holding a target, achieved by 13 against that mate's foe within 150 of it): its guard runs
+    /// at a bandit 400 away, and the shopkeeper, who sees it go, joins only once guard and bandit are within 150 of each other, against that bandit. Catches a protector taking a mate's
+    /// target anywhere.
+    /// </summary>
+    [Fact]
+    public void A_shopkeeper_defends_its_mate_against_a_foe_within_150_of_it()
+    {
+        using var a = Make(9, 1, TownRelations());
+        a.Aggro.Combat = a.Combat;
+        var o = new Vector2(2000, 2000);
+        var shop = a.SquadOf(Town, o, true, (o, 0f), (o + new Vector2(10, 0), 0f));
+        CharacterId keeper = shop.Members[0], guard = shop.Members[1];
+        Mind(a, shop, keeper, Meitou.Simulation.Ai.AiStance.ProtectSquad, protectsSquad: true);
+        Mind(a, shop, guard, Meitou.Simulation.Ai.AiStance.ProtectSquad, protectsSquad: true);
+        var bandit = a.SquadOf(Bandits, o, true, (o + new Vector2(5, 400), MathF.PI)).Members[0];
+        a.World.Commands.Enqueue(new AttackOrder([guard], bandit) { Tick = a.World.Tick });
+        var table = a.World.Characters;
+        float Gap() => Vector2.Distance(new Vector2(table.Previous[guard.Slot].Position.X, table.Previous[guard.Slot].Position.Z),
+            new Vector2(table.Previous[bandit.Slot].Position.X, table.Previous[bandit.Slot].Position.Z));
+        float gapBefore = Gap();
+        for (int k = 0; k < (int)(15 / a.World.TickSeconds) && !a.Fighting(keeper); k++)
+        {
+            gapBefore = Gap();
+            a.World.RunTicks(1);
+        }
+        Assert.True(a.Fighting(keeper), "the shopkeeper comes to its guard's fight");
+        Assert.Equal(bandit.Slot, a.Combat.StateOf(keeper).TargetSlot);
+        Assert.True(gapBefore <= RetaliationSystem.ProtectReach + 10, $"it joined with the bandit {gapBefore:0} from the guard");
+    }
+
     /// <summary>The crossroads with a player character among the raiders who then assaults a villager; pinned in <see cref="GoldenHashTests"/>.</summary>
     internal static List<ulong> Hashes(int threads)
     {

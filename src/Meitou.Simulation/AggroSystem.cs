@@ -440,7 +440,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
     /// <summary>The fights this system started so far.</summary>
     public long Started { get; private set; }
 
-    /// <summary>The fights, for <see cref="Ai.AiStance.ProtectSquad"/> (null: that stance joins any fighting enemy, as <see cref="Ai.AiStance.Defensive"/>).</summary>
+    /// <summary>The fights: the target score and the chase give-up (null: none; the look's goal finders then read the world's combat system).</summary>
     public CombatSystem? Combat { get; set; }
 
     /// <summary>The towns, for the <see cref="Ai.AiStance.Territorial"/> home circle (null: no circle, it attacks on sight).</summary>
@@ -473,32 +473,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
     /// </summary>
     public Dialogue.SquadMemory? Memory { get; set; }
 
-    public void Schedule(World world)
-    {
-        Sync(world.Characters);
-        SyncSquadFights(world.Characters);
-    }
-
-    /// <summary>
-    /// (squad, slot, mate) for every character fighting a member of that squad or targeted by one, and the squad mate concerned: whom PROTECT_OWN_SQUAD joins against, and for whose
-    /// sake (read only during the looks).
-    /// </summary>
-    readonly HashSet<(int Squad, int Slot, int Mate)> squadFights = [];
-
-    void SyncSquadFights(CharacterTable table)
-    {
-        squadFights.Clear();
-        if (Combat is null) return;
-        var next = table.Next;
-        for (int i = 0; i < table.HighWater; i++)
-        {
-            if (!next[i].Alive || next[i].Task != (byte)CharacterTask.Attack) continue;
-            var st = Combat.StateOf(new CharacterId(i, next[i].Generation));
-            if (st.TargetSlot is not (>= 0 and var t) || !next[t].Alive || next[t].Generation != st.TargetGeneration) continue;
-            if (table.Cold(i) is { SquadId: >= 0 } a) squadFights.Add((a.SquadId, t, i));   // a mate's target
-            if (table.Cold(t) is { SquadId: >= 0 } b) squadFights.Add((b.SquadId, i, t));   // a mate's attacker
-        }
-    }
+    public void Schedule(World world) => Sync(world.Characters);
 
     void Sync(CharacterTable table)
     {
@@ -565,8 +540,6 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         public World World;
         public Dialogue.SquadMemory? Memory;
         public int Self, Faction, Squad;
-        /// <summary>The squad fights (<see cref="squadFights"/>; null without a combat system).</summary>
-        public HashSet<(int Squad, int Slot, int Mate)>? SquadFights;
         public Vector3 Eye;
         public CharacterCold? Cold;
         public float Range;
@@ -679,7 +652,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         var prev = world.Characters.Previous;
         return new Scan
         {
-            Table = world.Characters, Relations = Relations, World = world, Memory = Memory, Self = i, Faction = cold.Faction, Squad = cold.SquadId, SquadFights = Combat is null ? null : squadFights,
+            Table = world.Characters, Relations = Relations, World = world, Memory = Memory, Self = i, Faction = cold.Faction, Squad = cold.SquadId,
             Eye = prev[i].Position, Cold = cold, Range = world.Sight.MaxRange(i, outdoor), Outdoor = outdoor, Sight = world.Sight, Best = -1, BestD2 = float.MaxValue,
             BestScore = float.NegativeInfinity, Combat = Combat, Fights = Combat ?? world.SystemOf<Combat.CombatSystem>(), Player = cold.IsPlayer, Hold = Orders.Holding(cold) && cold.Fighter?.Crossbow is null,
             HoldPost = Orders.Holding(cold) && !Orders.RangedExempt(cold), Prone = cold.Medical?.Prone == true, Animal = cold.Fighter?.IsAnimal == true, HoldPoint = Orders.HoldPointOf(cold, prev[i].Position),
@@ -1103,7 +1076,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
     {
         if (s.Stance == Ai.AiStance.Territorial && InTerritory(ref s, slot, at)) return true;
         if (s.Cold?.Ai is not { } mind) return false;
-        return mind.ProtectsSquad && s.SquadFights is { } fights && s.Squad >= 0 && Protects(ref s, fights, slot)
+        return mind.ProtectsSquad && s.Squad >= 0 && Protects(ref s, slot)
             || mind.DefendsAllies && DefendsAlly(ref s, slot)
             || mind.EnforcesLaw && StopsTroubleMaker(ref s, slot, at);
     }
@@ -1168,18 +1141,26 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
     }
 
     /// <summary>
-    /// Whether the looker joins the fight of <paramref name="target"/> (143 PROTECT_OWN_SQUAD, <c>FUN_14099d510</c>, <b>Verified</b>): a squad mate it is itself, or senses now (<c>FUN_140855960</c> with
-    /// flag 1: in its sensed map and seen or heard), is fighting it or is fought by it. Engine: the squad-shared sightings of mates and the finder's hand-list third path (<b>Unknown</b>) are
-    /// left out.
+    /// 143 PROTECT_OWN_SQUAD (<c>FUN_14099d510</c>, <b>Verified</b>), achieved by 13 <c>AI::findAttackerOf</c> (<c>FUN_14099c3b0</c>, <b>Verified</b>): a squad mate that is the looker or that
+    /// it senses now (<c>FUN_140855960</c> with flag 1: in its sensed map, seen or heard) and that holds a fight target (<c>FUN_14099a190</c>; not down), and the enemy in
+    /// <paramref name="target"/> is that mate's attacker or its own target, within <see cref="RetaliationSystem.ProtectReach"/> of it (13's limit for a protector other than the one it
+    /// protects). Reads the last tick's fights. Engine: the squad-shared sightings of mates, the finder's hand-list fallback (<b>Unknown</b>) and 13's indoor test (the same building
+    /// instead of the 150) are left out.
     /// </summary>
-    static bool Protects(ref Scan s, HashSet<(int Squad, int Slot, int Mate)> fights, int target)
+    static bool Protects(ref Scan s, int target)
     {
-        if (s.World.Squads.Find(s.Squad) is not { } squad) return false;
+        if (s.Fights is not { } combat || s.World.Squads.Find(s.Squad) is not { } squad) return false;
         var table = s.Table;
+        var prev = table.Previous;
+        int tg = prev[target].Generation;
+        var (own, ownGen) = combat.TargetOf(target, tg);
         foreach (var member in squad.Members)
         {
-            if (!table.IsAlive(member) || !fights.Contains((s.Squad, target, member.Slot))) continue;
-            if (member.Slot == s.Self || s.Block.Knows(member, now: true)) return true;
+            int m = member.Slot;
+            if (m == target || !table.IsAlive(member) || m != s.Self && !s.Block.Knows(member, now: true)) continue;
+            var (mt, mg) = combat.TargetOf(m, member.Generation);
+            if (mt < 0 || table.Cold(m) is not { Medical.Incapacitated: false }) continue;
+            if ((own == m && ownGen == member.Generation || mt == target && mg == tg) && Within(prev, target, m, RetaliationSystem.ProtectReach)) return true;
         }
         return false;
     }
