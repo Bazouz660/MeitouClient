@@ -211,6 +211,10 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
     /// <summary>The <see cref="OrderEntry.Detail"/> of the Open Inventory order (a loot that opens the window) and of the Rescue button's one-shot order (the job's look, then a lift).</summary>
     static readonly object OpenInventory = new(), RescueButton = new();
 
+    // Saved: the Open Inventory loot is kind 1; the Rescue button's look (row None) is not saved.
+    int IOrderOwner.SaveKind(OrderEntry order) => order.Detail is null ? 0 : order.Detail == OpenInventory ? 1 : -1;
+    object? IOrderOwner.LoadDetail(World world, CharacterId self, TaskType row, int kind, CharacterId target) => kind == 1 ? OpenInventory : null;
+
     /// <summary>Whether <paramref name="body"/> can be taken by the lift order (a kidnap's sleeper too; a snatch from another carrier only by the order 225).</summary>
     static bool LiftOf(World world, OrderEntry lift, int body)
     {

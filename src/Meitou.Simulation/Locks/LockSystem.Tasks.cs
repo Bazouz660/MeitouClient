@@ -86,6 +86,22 @@ public sealed partial class LockSystem : ITaskOwner, ITaskHandler, IOrderOwner
     /// <summary>A lock order's act-out and the work's own parameters (<see cref="TaskRequest.Detail"/>).</summary>
     sealed record LockWork(CharacterTask Task, object? Detail);
 
+    // Saved: 1 a walk to the work, 2 in place (kind 0, the original's, is a walk). The work's parameter is the row's own: a shackle job and a forced lock are told by their rows (RowOf).
+    int IOrderOwner.SaveKind(OrderEntry order) =>
+        order.Detail is LockWork { Task: CharacterTask.GoTo or CharacterTask.Idle, Detail: null or ShackleWork or LockForce } work ? work.Task == CharacterTask.Idle ? 2 : 1 : -1;
+
+    object? IOrderOwner.LoadDetail(World world, CharacterId self, TaskType row, int kind, CharacterId target) =>
+        new LockWork(kind == 2 ? CharacterTask.Idle : CharacterTask.GoTo, row switch
+        {
+            TaskType.PICK_LOCK_ON_SHACKLES => ShackleWork.Pick,
+            TaskType.CUT_SHACKLES => ShackleWork.Cut,
+            TaskType.BRUTE_FORCE_SHACKLES => ShackleWork.Break,
+            TaskType.CUT_LOCK => LockForce.Tools,
+            TaskType.BRUTE_FORCE_LOCK => LockForce.Strength,
+            TaskType.BASH_DOOR_PLAYER_ORDER => LockForce.Smash,
+            _ => null,
+        });
+
     /// <summary>
     /// A lock order (the pickers choose who gets it from the conditions of the moment): a player character's (else it leaves the queue) that is awake, not carried and free, or caged and
     /// working on its own cage or shackles where it stands; its fixture or character still there. What else the work needs is tested where it is done (the worker gives up there).

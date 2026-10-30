@@ -28,7 +28,7 @@ public sealed partial class World
     }
 
     /// <summary>The system whose <see cref="IOrderOwner"/> checks and starts the order row (the one each owner gives its orders with), or null when none does.</summary>
-    IOrderOwner? OrderOwnerOf(TaskType row) => row switch
+    internal IOrderOwner? OrderOwnerOf(TaskType row) => row switch
     {
         TaskType.MOVE_CUS_ORDERED or TaskType.STAY_CLOSE_TO_TARGET or TaskType.BODYGUARD => SystemOf<MovementSystem>(),
         TaskType.LIFT_PERSON_PLAYER_ORDER or TaskType.KIDNAP_ORDER or TaskType.LOOT_TARGET or TaskType.STEALTH_KNOCKOUT or TaskType.PUT_DOWN_OBJECT => SystemOf<Carrying.CarrySystem>(),

@@ -141,6 +141,10 @@ public sealed class BedSystem(PopulationData data, BedSettings? settings = null)
     /// <summary>The <see cref="TaskRequest.Detail"/> of a put-in order that named its bed (no other is looked for when it is taken).</summary>
     static readonly object Named = new();
 
+    // Saved: a put-in order that named its bed is kind 1.
+    int IOrderOwner.SaveKind(OrderEntry order) => order.Detail is null ? 0 : order.Detail == Named ? 1 : -1;
+    object? IOrderOwner.LoadDetail(World world, CharacterId self, TaskType row, int kind, CharacterId target) => kind == 1 ? Named : null;
+
     public void RegisterTasks(TaskHandlers tasks)
     {
         tasks.Register(CharacterTask.Sleep, this);

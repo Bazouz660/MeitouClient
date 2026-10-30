@@ -749,7 +749,8 @@ update `FUN_140511130`, `Character::setupAI` `FUN_140621b70`; KenshiLib names **
   1. The front of the order queue (+0x40 deque, count +0x60): first popped when done (list A holds) or its desire x finder is 0 or less; then planned with the search flag
      ([planner](#planner)). A player character's order that fails to plan shows its failure text (vfunc 0x2d8) and stays queued (**Observed**); the chooser goes on.
   2. Committed mode (the update's argument while a committing current goal's commitment runs; off without a current goal) with the running goal's priority (+0x20c) above 2: stop, the goal keeps its plan.
-  3. The entries of a second list (+0x70, emptied with the queue by `FUN_1405074a0`; what fills it **Unknown**) become candidates; with a job list, the **urgent job pass** adds
+  3. The entries of a second list (+0x70, emptied with the queue by `FUN_1405074a0`; **Verified** that `Character::addOrder` `FUN_1405c8da0` and the loader of the saved queue
+     `FUN_1405092d0` fill it through `FUN_1405086d0`, while the deque +0x40 is filled by the order dispatchers through `FUN_140508380`; how a candidate leaves it is **Unknown**) become candidates; with a job list, the **urgent job pass** adds
      Obedient Slave 187 (slave state 1, not sneaking) and the kind-2 jobs (turret guard 234) while the AI's sensed-enemy count +0xbc is non-zero, and picks.
   4. Priority-3 goals: the squad's (blackboard, `FUN_140269240` / `FUN_14026b790`) and the character's own (+0xa0 + 0x18 x priority), one pick.
   5. Committed with the running priority above 1: stop. Else **every job** in list order, then the implicit jobs ([Perma-jobs](#perma-jobs)).
@@ -1049,7 +1050,7 @@ A character's job list (the Orders menu's "Perma-Jobs"; class `OrdersReceiver`, 
 - **Save** (**Verified**, `OrdersReceiver` vfunc 1 / 2; 4122 GAMESTATE_AI records of the owner's saves, 199 jobs, types 187 and 57 only): record
   `ai` (GAMESTATE_AI); bool `jobs` = the switch; per job i from 0, int `pjob<i>` (type) and handle `pjobT<i>`. The loader re-adds each job
   through the add function (so companions and the switch are re-run) until `pjob<i>` is missing, then reads `jobs`. `AITaskSytem` vfunc 1 / 2
-  also saves the task queue (+0x40 deque): `tjob<i>` type, vec3 `tjobP<i>`, handle `tjobT<i>`. The GAMESTATE_CHARACTER bool `chase mode` is the
+  also saves the order queue (+0x40 deque, [format](../formats/save.md#order-queue)). The GAMESTATE_CHARACTER bool `chase mode` is the
   same switch (**Verified**: the writer `FUN_1406280a0` stores the byte +0x35 of the orders receiver at character +0x650 → +0x20; the loader
   `FUN_140626f50` passes it back as toggle 15); the orders panel's `OrdersChaseButton` (captioned JOBS) is this switch.
 - **Finders of the jobs** (**Verified** registrations in `FUN_140319a60`, finder thunks resolved; readings **Observed**; "sensed" = the

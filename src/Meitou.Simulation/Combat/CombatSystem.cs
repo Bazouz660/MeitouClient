@@ -251,6 +251,11 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed, ITaskOwner
     /// <summary>The player's attack order in a queue: the command, and the victim's combat mode when it was given (read again when the order starts on a later tick).</summary>
     sealed record PickedAttack(AttackOrder Order, bool VictimFighting, long Tick);
 
+    // Saved: the pick is rebuilt from its attacker and target; the victim's combat mode is read when the order starts (a tick that is never the world's).
+    int IOrderOwner.SaveKind(OrderEntry order) => order.Detail is PickedAttack ? 0 : -1;
+    object? IOrderOwner.LoadDetail(World world, CharacterId self, TaskType row, int kind, CharacterId target) =>
+        new PickedAttack(new AttackOrder([self], target) { Picked = true, Tick = world.Tick }, false, -1);
+
     /// <summary>
     /// The attack order (row 5) needs a target that is there, awake and has a body (else it leaves the queue), and an attacker able to fight: a fighter, awake, not carried (<see cref="Engage"/>).
     /// </summary>

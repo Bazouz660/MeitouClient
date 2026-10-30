@@ -42,11 +42,20 @@ public interface IOrderOwner
 {
     OrderCheck CanRun(World world, int slot, OrderEntry order);
     void Start(World world, int slot, OrderEntry order);
+
+    /// <summary>
+    /// The code of the order's <see cref="OrderEntry.Detail"/> in a save (<see cref="Saving.OrderSave"/>; 0: no detail), or -1 when the order cannot be saved (a detail that names a runtime object).
+    /// An owner whose orders carry a detail overrides it together with <see cref="LoadDetail"/>.
+    /// </summary>
+    int SaveKind(OrderEntry order) => order.Detail is null ? 0 : -1;
+
+    /// <summary>The detail a saved order of the code <paramref name="kind"/> gets back (the inverse of <see cref="SaveKind"/>); <paramref name="self"/> is the character holding the order.</summary>
+    object? LoadDetail(World world, CharacterId self, TaskType row, int kind, CharacterId target) => null;
 }
 
 /// <summary>
 /// One order of a character's queue (the original's <c>+0x40</c> deque entry): its row, owner, target, site, point and the owner's <see cref="Detail"/>. <see cref="Started"/> once its start
-/// ran; it then stands for the character's task while that task's provenance is an order's (<see cref="PlayerOrders.Runs"/>). Runtime only.
+/// ran; it then stands for the character's task while that task's provenance is an order's (<see cref="PlayerOrders.Runs"/>). Only the order itself is saved, never <see cref="Started"/> (<see cref="Saving.OrderSave"/>).
 /// </summary>
 public sealed class OrderEntry(TaskType row, IOrderOwner owner)
 {
@@ -65,7 +74,7 @@ public sealed class OrderEntry(TaskType row, IOrderOwner owner)
 
 /// <summary>
 /// A character's order queue (<see cref="CharacterCold.OrderQueue"/>, the original's <c>+0x40</c> deque, count <c>+0x60</c>): the front is the order in hand, the rest wait (Shift). Changed by the
-/// character's own partition (a move's arrival) or a serial phase. Not saved (docs/simulation.md "Order queue").
+/// character's own partition (a move's arrival) or a serial phase. Saved by <see cref="Saving.OrderSave"/> (docs/simulation.md "Order queue").
 /// </summary>
 public sealed class OrderQueue : IReadOnlyList<OrderEntry>
 {
