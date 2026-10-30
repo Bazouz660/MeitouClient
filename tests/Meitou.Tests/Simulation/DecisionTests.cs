@@ -1,6 +1,9 @@
 using System.Numerics;
+using Meitou.Data.Gameplay.Bodies;
 using Meitou.Data.Gameplay.Ai;
 using Meitou.Simulation;
+using Meitou.Simulation.Carrying;
+using Meitou.Simulation.Locks;
 using Meitou.Simulation.FirstAid;
 using Meitou.Simulation.Items;
 using Meitou.Simulation.Production;
@@ -308,5 +311,75 @@ public class DecisionTests
         }, 900, "the gunner fighting back");
         Assert.True(held, "the gunner kept its turret on the urgent job while the attacker was beyond 40");
         Assert.Equal(enemy.Slot, rig.World.SystemOf<Meitou.Simulation.Combat.CombatSystem>()!.StateOf(gunner).TargetSlot);
+    }
+
+    /// <summary>A player character the step decides, beside the rig's bed or in the open, with the stats a failed roll needs (<c>strong</c>: strength 100 against a kidnapper's 0; else toughness).</summary>
+    static CharacterId Victim(TaskStartTests.Rig rig, float x, float z)
+    {
+        var victim = rig.Add(x, z, player: true);
+        rig.Cold(victim).Stats![StatsEnumerated.Strength] = 100;
+        rig.Cold(victim).Stats![StatsEnumerated.Toughness] = 100;
+        return victim;
+    }
+
+    /// <summary>
+    /// A sleeper woken by a failed kidnap (docs/game/carry-loot.md "Kidnapping": order 116 clears its queue, the kidnapper is forced into its senses and it replans) fights the kidnapper as a goal
+    /// of the step, not as a push of the engine. Catches a player sleeper that stays idle or is pushed into the fight outside the step.
+    /// </summary>
+    [Fact]
+    public void A_sleeper_woken_by_a_failed_kidnap_defends_itself_through_the_step()
+    {
+        using var rig = Quiet();
+        var sleeper = Victim(rig, 900, 1650);
+        rig.Say(new UseBedOrder([sleeper], rig.BedFixture) { Tick = rig.World.Tick });
+        rig.World.RunTicks(2);
+        RunUntil(rig, () => rig.Cold(sleeper).InSomething == HeldState.Bed, 600, "asleep in the bed");
+        var kidnapper = rig.Add(930, 1650, player: false);
+        rig.Cold(kidnapper).Stats![StatsEnumerated.Assassination] = 0;
+        rig.World.Decisions.Tracing = true;
+        rig.Say(new PickUpOrder([kidnapper], sleeper) { Tick = rig.World.Tick, Kidnap = true });
+        RunUntil(rig, () => rig.Task(sleeper) == CharacterTask.Attack, 900, "the sleeper fighting back");
+        Assert.Equal(CharacterTask.Attack, rig.Task(sleeper));
+        Assert.Equal(kidnapper.Slot, rig.Combat.StateOf(sleeper).TargetSlot);
+        Assert.Empty(rig.Cold(sleeper).OrderQueue);
+        Assert.StartsWith("32 Self preservation", rig.Cold(sleeper).Decision!.Winner);
+    }
+
+    /// <summary>
+    /// The target of a failed stealth knock-out (<c>Character::attackTarget</c>: a replan, then the chooser) fights its attacker through the step, and a standing order beats that as it beats
+    /// Self preservation. Catches a player target that is pushed into a fight over its order, or one that never answers.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void The_target_of_a_failed_stealth_ko_defends_itself_unless_an_order_runs(bool resting)
+    {
+        using var rig = Quiet();
+        var target = Victim(rig, 1300, 2300);
+        var attacker = rig.Add(1330, 2300, player: false);
+        rig.Cold(attacker).Orders |= CharacterOrders.Sneak;
+        rig.Cold(attacker).Stats![StatsEnumerated.Assassination] = 0;
+        if (resting) rig.Say(new RestOrder([target]) { Tick = rig.World.Tick });
+        rig.World.RunTick();
+        rig.World.Decisions.Tracing = true;
+        rig.Say(new StealthKoOrder([attacker], target) { Tick = rig.World.Tick });
+        var carry = rig.World.SystemOf<CarrySystem>()!;
+        bool missed = false;
+        for (int t = 0; t < 600 && !(missed && (rig.Task(target) == CharacterTask.Attack || resting && t > 0 && rig.Cold(target).Decision is { Winner: "Orders" })); t++)
+        {
+            rig.World.RunTick();
+            missed |= carry.Knockouts.Any(k => !k.Success);
+        }
+        Assert.True(missed, "the knock-out missed");
+        rig.World.RunTicks(20);
+        if (resting)
+        {
+            Assert.Equal(CharacterTask.Rest, rig.Task(target));
+            Assert.False(rig.Cold(target).InCombat);
+            return;
+        }
+        Assert.Equal(CharacterTask.Attack, rig.Task(target));
+        Assert.Equal(attacker.Slot, rig.Combat.StateOf(target).TargetSlot);
+        Assert.StartsWith("32 Self preservation", rig.Cold(target).Decision!.Winner);
     }
 }

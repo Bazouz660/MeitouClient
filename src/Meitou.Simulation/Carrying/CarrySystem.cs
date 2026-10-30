@@ -1010,6 +1010,7 @@ public sealed partial class CarrySystem(GameConstants constants, BodyOptions opt
         var jobs = new CarryJobs(this);
         decisions.RegisterJob(TaskType.FIND_AND_RESCUE_IF_THERES_BEDS, jobs);
         decisions.RegisterJob(TaskType.LOOT_ANIMALS_JOB, jobs);
+        decisions.Register(new EngagedDefence(this));
     }
 
     sealed class CarryJobs(CarrySystem owner) : IJobSource

@@ -248,11 +248,16 @@ arrival (vfunc 1, `FUN_14034ffa0`) first rolls:
   XP 100 is given only in that case (**Verified**, `FUN_14034ffa0`: the same `+0x5b9`/`+0x5bc` test guards both; a hit on a down victim gives none); then the lift.
 - **Failed**: the victim perceives the kidnapper (the kidnapper's status `+0x110` = 250, the recently-wanted marker); its town's alarm is raised at the
   kidnapper (code 15, [town alarms](economy.md#town-alarms)); a sleeper (state 1) gets order 116 Getting out of bed; its squad tags the
-  kidnapper TEMP ENEMY and long-term 1 (intruder) and says event 8 to it; assassination XP 300; the task ends; a sleeper wakes (state 0) and
-  goes for the kidnapper (`Character::attackTarget`).
+  kidnapper TEMP ENEMY and long-term 1 (intruder) and says event 8 to it; assassination XP 300; the task ends; a sleeper wakes (state 0).
+- **What the victim does** (**Verified**, `FUN_14034ffa0`): every victim gets the forced sense of the kidnapper (`FUN_140858f40`, seen). A sleeper gets order 116 through `FUN_1405d20d0` with
+  its clear flag set (`FUN_1405074a0` empties the order queue and the second list, a replan follows), then `FUN_1405cb0a0` (the kidnapper into its engaged list, forced sense, TEMP ENEMY,
+  a replan request): no `Character::attackTarget` and no task push. The fight is the chooser's (**Observed**): no order can win, the queue is gone; whether the kidnapper then counts as a
+  threat for Self preservation (it reads the attacker's intended target) is **Unknown**; an awake victim gets the forced sense and tags only.
 
 Meitou (`CarrySystem.Kidnap.cs`, `PickUpOrder.Kidnap`): as above; asleep is lying in a bed or resting with the sleep behaviour; the
-perception mark is not modelled; `+0x110` is `CharacterCold.RecentlyWanted`.
+perception mark is not modelled; `+0x110` is `CharacterCold.RecentlyWanted`. A woken NPC sleeper gets a deferred defensive attack; a player character's queue is cleared, the kidnapper is
+forced into its senses and the decision step answers with `CarrySystem.EngagedDefence` (an engine stand-in for the threats list, [decision step](../simulation.md#decision-step)); an awake player
+victim is only forced-sensed.
 
 ## Unknowns
 

@@ -86,11 +86,19 @@ public sealed partial class CarrySystem
         if (table.Cold(i) is { } kidnapper) kidnapper.RecentlyWanted = Crime.CrimeSystem.RecentlyWantedSeconds;
         if (talk is not null && victim.SquadId >= 0) talk.Memory.Remember(world, victim.SquadId, kidnapperId, Dialogue.MemoryTag.Intruder);
         world.Defer(new Dialogue.DialogueEvent(victimId, kidnapperId, 8) { Tick = world.Tick + 1 });
+        // A player character is told of the kidnapper (the forced sense every victim gets, FUN_140858f40) and the step decides what it does (CarrySystem.Engage).
+        bool decides = DecisionSystem.Decides(victim);
+        if (decides && !asleep) Aggro?.Force(world, b, i);
         if (asleep)
         {
             if (victim.InSomething == Locks.HeldState.Bed) world.Fixtures.LeaveBed(world, victimId);
             TaskStart.Become(world, b, CharacterTask.Idle, Meitou.Data.Gameplay.Ai.TaskType.IDLE, TaskSource.Reaction);
-            world.Defer(new Combat.AttackOrder([victimId], kidnapperId) { Tick = world.Tick + 1, Source = TaskSource.Reaction });
+            if (decides)
+            {
+                victim.OrderQueue.Clear();   // order 116 Getting out of bed replaces the whole queue (FUN_1405d20d0, clear flag 1)
+                Engage(world, b, i);
+            }
+            else world.Defer(new Combat.AttackOrder([victimId], kidnapperId) { Tick = world.Tick + 1, Source = TaskSource.Reaction });
         }
         return false;
     }

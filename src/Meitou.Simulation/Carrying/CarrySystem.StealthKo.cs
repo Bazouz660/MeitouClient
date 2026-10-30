@@ -226,7 +226,8 @@ public sealed partial class CarrySystem
                 talk.TagEnemy(world, t, i);
                 talk.TagEnemy(world, i, t);
             }
-            world.Defer(new Combat.AttackOrder([targetId], attackerId) { Tick = world.Tick + 1, Defensive = true });
+            if (DecisionSystem.Decides(target)) Engage(world, t, i);   // a player character: attackTarget's replan, the step decides (CarrySystem.Engage)
+            else world.Defer(new Combat.AttackOrder([targetId], attackerId) { Tick = world.Tick + 1, Defensive = true });
         }
         // The swing books an Assault on the target's faction at the roll, hit or miss (the pending-crime setter FUN_140852c80 with code 5, called unconditionally, Verified).
         Crimes?.SetPending(world, i, Crime.CrimeCode.Assault, target.Faction, targetId, Crime.CrimeSystem.MinTimer);
