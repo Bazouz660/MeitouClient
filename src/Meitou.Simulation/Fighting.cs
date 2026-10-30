@@ -442,6 +442,7 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem, IDecis
             if (c.Ai is { ProtectsAllies: true }) protectors.Add(s);
         }
         var taken = new HashSet<int>();
+        var aggro = protectors.Count > 0 ? world.SystemOf<AggroSystem>() : null;
         for (int a = 0; a < table.HighWater; a++)
         {
             if (!next[a].Alive || next[a].Task != (byte)CharacterTask.Attack) continue;
@@ -473,7 +474,7 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem, IDecis
                 JoinMates(world, table, t, defenders, taken, fights ? CanProtectFighter : CanProtect);
                 for (int k = before; k < defenders.Count; k++) joiners.Add(defenders[k].Slot);
                 // Protect allies: NPCs of any squad that see an allied defender fighting come to it (a town's guards to a resident a neutral animal attacks).
-                if (fights) ProtectAllies(world, table, t, a, defenders, taken);
+                if (fights) ProtectAllies(world, table, t, a, defenders, taken, aggro);
             }
             // Bodyguards of the attacked character come too (Bodyguard, order 45).
             Guards(world, table, t, a, defenders, taken, guards);
@@ -580,17 +581,17 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem, IDecis
     }
 
     /// <summary>
-    /// PROTECT_ALLIES (15, 288; finder <c>FUN_14099ca10</c>, achieved by 13 "Attacking attackers of", docs/game/ai-tasks.md "Combat goals"): an NPC with the goal that sees a
-    /// fighting character of its own or an allied faction (relation 50 or more) attacks that character's attacker when the attacker is not its ally, whatever their relation, so
-    /// neutrals count too. Engine reductions: the defender is sensed when seen (sight test) or within <see cref="AggroSystem.NoiseFar"/> in the protector's place (a fight
-    /// is heard for sure), a gunner stays at its turret, and 288's town limit is not modelled.
+    /// PROTECT_ALLIES (15, 288; finder <c>FUN_14099ca10</c>, achieved by 13 "Attacking attackers of", docs/game/ai-tasks.md "Combat goals"): an NPC with the goal that senses now (its senses
+    /// hold the defender, seen or heard at its last look; <paramref name="aggro"/>'s <see cref="AggroSystem.SensesOf"/>) a fighting character of its own or an allied faction (relation 50 or
+    /// more) attacks that character's attacker when the attacker is not its ally, whatever their relation, so neutrals count too. Engine reductions: a gunner stays at its turret, and 288's
+    /// town limit is not modelled.
     /// </summary>
-    void ProtectAllies(World world, CharacterTable table, int slot, int attacker, List<CharacterId> defenders, HashSet<int> taken)
+    void ProtectAllies(World world, CharacterTable table, int slot, int attacker, List<CharacterId> defenders, HashSet<int> taken, AggroSystem? aggro)
     {
         if (protectors.Count == 0 || combat.Relations is not { } relations || table.Cold(slot) is not { } ally || table.Cold(attacker) is not { } foe
             || !relations.Contains(ally.Faction) || !relations.Contains(foe.Faction)) return;
         var next = table.Next;
-        var at = next[slot].Position;
+        var allyId = new CharacterId(slot, next[slot].Generation);
         foreach (int s in protectors)
         {
             if (s == attacker || s == slot || !next[s].Alive || table.Cold(s) is not { Ai.ProtectsAllies: true, Gunning: null } c
@@ -598,11 +599,7 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem, IDecis
             if (ally.SlaveState is 1 or 2 && !SlaveHelpAllowed(world, c, next[s].Position)) continue;
             // A slave holding job 187 Obedient Slave scores the desire 0 (FUN_140599b90); SlaveMaster is Meitou's mark of that job.
             if (c.SlaveState == 1 && c.SlaveMaster >= 0) continue;
-            float range = AggroSystem.RangeOf(c, AggroSystem.OutdoorSight), d2 = Vector3.DistanceSquared(next[s].Position, at);
-            if (d2 > MathF.Max(range * range, AggroSystem.NoiseFar * AggroSystem.NoiseFar) || !CanFight(table, s, taken)) continue;
-            // Seen, or heard: a fight in the protector's own place within the farthest noise is heard for sure (AggroSystem's hearing rule).
-            bool heard = d2 <= AggroSystem.NoiseFar * AggroSystem.NoiseFar && world.Sight.PlaceOf(s) == world.Sight.PlaceOf(slot);
-            if (!heard && !(d2 <= range * range && world.Sight.Sees(s, slot, next[s].Position, at, range) > 0)) continue;
+            if (aggro?.SensesOf(s) is not { } senses || !senses.Knows(allyId, now: true) || !CanFight(table, s, taken)) continue;
             defenders.Add(new CharacterId(s, next[s].Generation));
             taken.Add(s);
         }
