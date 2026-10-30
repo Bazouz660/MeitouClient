@@ -656,10 +656,12 @@ sealed partial class GameHost
                 profiler?.BeginFrame();
                 // A scene load draws only the loading screen; the warm-up draws whole frames under it (the first frames of a new place build what it needs).
                 bool covered = Covered, sceneLoading = sceneLoad is not null;
-                // Under the cover the streams take bigger shares of a frame (smooth frames do not matter there).
-                if (gpu.Characters is { } coveredCharacters) coveredCharacters.Covered = covered;
-                if (gpu.Foliage is { } coveredFoliage) coveredFoliage.Covered = covered;
-                if (gpu.Objects is { } coveredObjects) coveredObjects.Covered = covered;
+                // Under the cover the streams take bigger shares of a frame (smooth frames do not matter there), until the warm-up's content is ready: its run of
+                // smooth frames is then measured at the play budgets.
+                bool streamsCovered = covered && !(warming && readySeconds > 0);
+                if (gpu.Characters is { } coveredCharacters) coveredCharacters.Covered = streamsCovered;
+                if (gpu.Foliage is { } coveredFoliage) coveredFoliage.Covered = streamsCovered;
+                if (gpu.Objects is { } coveredObjects) coveredObjects.Covered = streamsCovered;
                 // The loading screen follows the interface's mode as it is now (the settings can switch it at any time); only the Faithful mode counts loads.
                 bool faithfulUi = player.UiMode == Meitou.Data.Ui.UiMode.Faithful;
                 loadBar.Update(faithfulUi ? PendingLoads() : 0);

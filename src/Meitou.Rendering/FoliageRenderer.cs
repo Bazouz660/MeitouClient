@@ -104,9 +104,10 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
     /// <summary>Zone layouts in flight: whole ones and far-only ones, each limited to <see cref="workers"/> at a time.</summary>
     int runningWhole, runningFar;
     /// <summary>
-    /// The view is under the loading screen (the host sets it each frame): its frames need not be smooth, so layouts run on every streaming thread
-    /// (<see cref="BackgroundWork.Threads"/>, not <see cref="workers"/>) and uploads take up to <see cref="CoveredBudgetMs"/> a frame. A town's thousands of
-    /// zones out to the Meitou range, three at a time, held its loading screen up seconds with the workers idle.
+    /// The view is under the loading screen (the host sets it each frame): its frames need not be smooth, so enough layouts are in flight to keep every streaming
+    /// thread busy between two frames (four per <see cref="BackgroundWork.Threads"/>, not <see cref="workers"/>: one from the cache takes a few milliseconds, and finished
+    /// ones are taken once a frame) and uploads take up to <see cref="CoveredBudgetMs"/> a frame. A town's thousands of zones out to the Meitou range, three at a
+    /// time, held its loading screen up seconds with the workers idle.
     /// </summary>
     public bool Covered { get; set; }
     const double CoveredBudgetMs = 16;
@@ -434,7 +435,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
         var watch = Stopwatch.StartNew();
         // Uploads get 2 ms a frame (texture decodes are never waited for) except while settling for a screenshot.
         double budget = settling ? 1e9 : Covered ? CoveredBudgetMs : 2.0;
-        int layouts = Covered ? Math.Max(workers, BackgroundWork.Threads) : workers;
+        int layouts = Covered ? Math.Max(workers, 4 * BackgroundWork.Threads) : workers;
         // Two tiers (docs/render-foliage.md): within the near reach (the MEDIUM layers and the grass) a zone is laid out whole; beyond it, out
         // to the far reach, only its FAR layers, which skips the grass coverage, nine tenths of a zone's layout. A far zone is laid out whole once
         // it comes within the near reach (its far instances are the same either way, FoliageLayout.Place).

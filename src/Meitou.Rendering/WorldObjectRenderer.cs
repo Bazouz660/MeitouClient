@@ -366,7 +366,7 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
     /// <summary>Render-thread time per frame spent on uploads and resolving.</summary>
     public double BudgetMs { get; set; } = 2;
     /// <summary>The view is under the loading screen (the host sets it each frame): its frames need not be smooth, so uploads and resolving take up to
-    /// <see cref="CoveredBudgetMs"/> a frame instead of <see cref="BudgetMs"/>.</summary>
+    /// <see cref="CoveredBudgetMs"/> a frame instead of <see cref="BudgetMs"/>, and zones and instances are taken eight times as fast.</summary>
     public bool Covered { get; set; }
     const double CoveredBudgetMs = 16;
 
@@ -433,11 +433,13 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
                 Console.WriteLine($"warning   landmarks: {collected.Exception?.GetBaseException().Message}");
             }
         }
-        streamer.Update(eye, streamRange, unlimited ? 64 : 1);
+        // Under the loading screen (Covered) eight times the zones and resolves a frame.
+        int scale = Covered ? 8 : 1;
+        streamer.Update(eye, streamRange, unlimited ? 64 : scale, Covered);
         ResolveTowns(eye);
-        unresolvedInRange = streamer.Scan(eye, RealRange, DistantReach, NoDistant, Resolve, unlimited ? int.MaxValue : 40);
-        unresolvedInRange += streamer.ScanLandmarks(eye, LandmarkReach, Resolve, unlimited ? int.MaxValue : 10);
-        unresolvedInRange += streamer.ScanLoose(streamer.Loose, eye, RealRange, Resolve, unlimited ? int.MaxValue : 10);
+        unresolvedInRange = streamer.Scan(eye, RealRange, DistantReach, NoDistant, Resolve, unlimited ? int.MaxValue : 40 * scale);
+        unresolvedInRange += streamer.ScanLandmarks(eye, LandmarkReach, Resolve, unlimited ? int.MaxValue : 10 * scale);
+        unresolvedInRange += streamer.ScanLoose(streamer.Loose, eye, RealRange, Resolve, unlimited ? int.MaxValue : 10 * scale);
         meshes.Pump();
         MarkInRange(eye, force: unlimited);
         meshes.Trim();

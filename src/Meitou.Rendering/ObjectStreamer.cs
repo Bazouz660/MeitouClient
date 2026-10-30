@@ -308,8 +308,9 @@ sealed class ObjectStreamer(WorldObjects objects, ObjectMeshCache meshes) : IDis
         return (float)Math.Sqrt(dx * dx + dz * dz);
     }
 
-    /// <summary>Starts laying out the zones within <paramref name="range"/> (nearest first), takes finished ones in, drops far ones.</summary>
-    public void Update(Vector3 eye, float range, int maxNew)
+    /// <summary>Starts laying out the zones within <paramref name="range"/> (nearest first), takes finished ones in, drops far ones. <paramref name="covered"/>: under the
+    /// loading screen, layouts run on every streaming thread and taken zones are filled for up to 16 ms a frame (frames need not be smooth there).</summary>
+    public void Update(Vector3 eye, float range, int maxNew, bool covered = false)
     {
         TakeRuntime();
         int taken = 0;
@@ -329,7 +330,7 @@ sealed class ObjectStreamer(WorldObjects objects, ObjectMeshCache meshes) : IDis
         }
         foreach (var (coordinate, _) in wanted.OrderBy(w => w.Distance))
         {
-            if (jobs.Count >= MaxJobs || Paused || WaitForLandmarks) break;
+            if (jobs.Count >= (covered ? Math.Max(MaxJobs, BackgroundWork.Threads) : MaxJobs) || Paused || WaitForLandmarks) break;
             var landmarkClass = Landmarks;
             var extra = staged;
             jobs[coordinate] = BackgroundWork.Run(() =>
@@ -343,7 +344,7 @@ sealed class ObjectStreamer(WorldObjects objects, ObjectMeshCache meshes) : IDis
         Wanted = wanted.Count(w => !jobs.ContainsKey(w.Coordinate));
         foreach (var zone in zones.Values.ToArray())
             if (NearZone(zone.X0, zone.Z0, eye) > range + WorldLayout.ZoneSize) Drop(zone.Coordinate);
-        FillZones(maxNew > 8 ? double.MaxValue : 1.0);
+        FillZones(maxNew > 8 ? double.MaxValue : covered ? 16 : 1.0);
     }
 
     /// <summary>A zone laid out by a worker whose instances are being made, a few at a time (<see cref="FillZones"/>).</summary>
