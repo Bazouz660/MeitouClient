@@ -275,7 +275,7 @@ more than 200 below the terrain is lifted to it and frozen (`FUN_1407d4470`). Gl
   and plays no standing-up clip (`AnimationSystem`); the Hold point is moved where it wakes while Hold is on.
 - Meitou hold (`CombatSystem.Act`, measured headless): a posture-0 waker is held `GetUpClipSeconds` (clip length x 0.86 / play speed; `standing up 3` is 8.67 s at speed 1, so 7.45 s)
   plus `GetUpBlend` only when it wakes out of a whole-body ragdoll (the same test that starts the clip at -0.75 s in `AnimationSystem`), so the hold ends on the tick the played clip passes 0.86.
-  The earlier constant added the blend with no ragdoll, 23 ticks past the clip. One carried or waking in a bed plays no clip (engine choice) and is not held. **Unknown**: whether the original
+  The earlier constant added the blend with no ragdoll, 23 ticks past the clip. The posture flag `+0x78` is no animation event: `FUN_14033ca10` sets it from the posture (> 0) at the start, so a posture-0 waker is released only by the clip. **Observed** in `--sandbox` (a real ragdoll KO of the hero, the full load order, whose `standing up 3` plays at about 4x): the earlier constant held 246 ticks while the clip ended at 65, a 181-tick gap; now the hold is 78 ticks and a move order at wake+150 takes effect within 5 ticks. One carried or waking in a bed plays no clip (engine choice) and is not held. **Unknown**: whether the original
   runs Task_GetUp for a waker in a bed or carried (the start returns at once when a state at `+0x2f8` is set, meaning not decoded).
 
 ## Saves
