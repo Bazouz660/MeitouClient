@@ -422,6 +422,11 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
         }
     }
 
+    static readonly HashSet<TaskType> JobRows = [.. Enum.GetValues<CaptiveJobKind>().Select(RowOf)];
+
+    /// <summary>Whether a walk's row is a job's (<see cref="RowOf"/>): a fight may interrupt it, the job is given up (<see cref="Ai.AiSystem"/>'s pre-emption).</summary>
+    internal static bool IsJobRow(TaskType row) => JobRows.Contains(row);
+
     /// <summary>The row a job's walks act out (<see cref="TaskStart.Walk(World, int, Vector2, byte, TaskType, TaskSource)"/>): the task its goal plans to (<see cref="CaptiveJobKind"/>).</summary>
     static TaskType RowOf(CaptiveJobKind kind) => kind switch
     {

@@ -139,7 +139,7 @@ public sealed partial class AiSystem
         bool Settled(in PlanTarget t) => At(t) && (CharacterTask)Me.Task is CharacterTask.Rest or CharacterTask.Idle;
 
         /// <summary>
-        /// A state's value for a target. States of rooms, doors, machines and fights the AI does not run into (it runs only out of a fight, carrying nothing)
+        /// A state's value for a target. States of rooms, doors, machines and fights the AI does not run into (it acts out goals only out of a fight, carrying nothing)
         /// have a fixed stand-in value; an unlisted state is false.
         /// </summary>
         public bool Holds(TaskCondition condition, in PlanTarget target)

@@ -210,7 +210,7 @@ public static class TaskStart
 
     /// <summary>
     /// A start in a parallel phase, on the caller's own slot (the AI's think): it records the provenance and starts the walk to <see cref="TaskRequest.Goal"/>, or stops the character on
-    /// the standing task (its <see cref="CharacterHot.TaskTime"/> restarted); nothing outside the slot is touched, so no fight or task before it is ended (the AI runs no fighting
+    /// the standing task (its <see cref="CharacterHot.TaskTime"/> restarted); nothing outside the slot is touched, so no fight or task before it is ended (the AI acts out nothing for a fighting
     /// character, and its walks and standing tasks hold nothing) and no handler runs. The row's repertoire is not tested: the AI's planner chose the row (<see cref="Ai.AiSystem"/>).
     /// </summary>
     public static void StartOwn(World world, int slot, in TaskRequest request)

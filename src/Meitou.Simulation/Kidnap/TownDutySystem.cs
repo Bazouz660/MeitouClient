@@ -608,6 +608,15 @@ public sealed class TownDutySystem(PopulationData data, PopulationSystem populat
 
     // ------------------------------------------------------------------ one errand
 
+    // The cage walk's row is also the kidnapper's (KidnapSystem), whose walk is started again over a fight: left out.
+    static readonly HashSet<TaskType> ErrandRows = [.. Enum.GetValues<TownDutyKind>().Where(k => k != TownDutyKind.Cage).Select(RowOf)];
+
+    /// <summary>
+    /// Whether a walk's row is an errand's (<see cref="RowOf"/>, not the cage walk's, which the kidnapper's shares): a fight may interrupt it, the errand waits for the fight's end and walks on
+    /// (<see cref="Ai.AiSystem"/>'s pre-emption).
+    /// </summary>
+    internal static bool IsErrandRow(TaskType row) => ErrandRows.Contains(row);
+
     /// <summary>The row an errand's walks act out (<see cref="TaskStart.Walk(World, int, Vector2, byte, TaskType, TaskSource)"/>): the goal of the package it stands in for.</summary>
     static TaskType RowOf(TownDutyKind kind) => kind switch
     {

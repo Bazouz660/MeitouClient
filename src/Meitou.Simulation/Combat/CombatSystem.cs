@@ -374,6 +374,7 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed, ITaskOwner
         if (!cold.IsPlayer && cold.Ai is null) cold.DrawnWeapon = WeaponKinds.None;
         if (table.Next[slot].Task == (byte)CharacterTask.Attack) TaskStart.Step(table, slot, CharacterTask.Idle);   // the fight's own end: idle, its provenance kept (a follow row's, FollowResume)
         DecisionSystem.Request(cold);   // the fight task ended: a player character is decided again (a follow row takes up its follow)
+        if (cold.Ai is { } mind) mind.Replan = true;   // and an NPC's AI chooses again at the next tick (the original's "plan finished" trigger)
     }
 
     // ------------------------------------------------------------------ schedule, move

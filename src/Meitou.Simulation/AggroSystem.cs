@@ -594,6 +594,8 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         public bool TownKnown;
         /// <summary>Which finder takes a candidate below attack on sight: the stance's (every goal of the mind, the look) or one goal's alone (<see cref="FindFoe"/>).</summary>
         public FoeFinder Finder;
+        /// <summary>An enemy-tagged character the look gathered as a new entry (-1: none), the replan trigger of a fighter the AI runs.</summary>
+        public int NewEnemy;
     }
 
     /// <summary>The attack goals' finders <see cref="FindFoe"/> runs for the AI's chooser (docs/game/ai-tasks.md "Combat goals").</summary>
@@ -661,6 +663,9 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
                 Pick(ref scan);
                 if (scan.Best >= 0) effects.Emit(i, scan.Best, SightEffect, MathF.Sqrt(scan.BestD2));
             }
+            // A fighter the AI runs that senses a new enemy thinks again, and its squad mates with it (the sighting is shared): a replan trigger (engine stand-in).
+            else if (scan.NewEnemy >= 0 && cold.InCombat && Ai.AiSystem.Holds(next[i], cold))
+                effects.Emit(i, scan.NewEnemy, SightEffect, Vector3.Distance(prev[i].Position, prev[scan.NewEnemy].Position));
             if (scan.Meters && (scan.Spots is not null || scan.Sightings!.Count > 0)) slots[i].Spots = AdvanceSpots(scan.Spots, scan.Sightings!, every * world.TickSeconds, table);
         }
     }
@@ -671,7 +676,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         return new Scan
         {
             Table = world.Characters, Relations = Relations, World = world, Memory = Memory, Self = i, Faction = cold.Faction, Squad = cold.SquadId,
-            Eye = prev[i].Position, Cold = cold, Range = world.Sight.MaxRange(i, outdoor), Outdoor = outdoor, Sight = world.Sight, Best = -1, BestD2 = float.MaxValue,
+            Eye = prev[i].Position, Cold = cold, Range = world.Sight.MaxRange(i, outdoor), Outdoor = outdoor, Sight = world.Sight, Best = -1, BestD2 = float.MaxValue, NewEnemy = -1,
             BestScore = float.NegativeInfinity, Combat = Combat, Fights = Combat ?? world.SystemOf<Combat.CombatSystem>(), Player = cold.IsPlayer, Hold = Orders.Holding(cold) && cold.Fighter?.Crossbow is null,
             HoldPost = Orders.Holding(cold) && !Orders.RangedExempt(cold), Prone = cold.Medical?.Prone == true, Animal = cold.Fighter?.IsAnimal == true, HoldPoint = Orders.HoldPointOf(cold, prev[i].Position),
             Seed = world.Seed, Key = Rng.Key(new CharacterId(i, prev[i].Generation)), Tick = (ulong)world.Tick,
@@ -827,6 +832,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         Refresh(ref s, ref e, slot, c, seen, heard);
         Count(ref s, e, c);
         Insert(s.Block, at, e, (long)s.Tick);
+        if (s.NewEnemy < 0 && (e.Tags & (SenseTag.Enemy | SenseTag.Ko)) == SenseTag.Enemy) s.NewEnemy = slot;
     }
 
     /// <summary>Puts a new entry at <paramref name="at"/>; with the block full the entry sensed longest ago (before <paramref name="tick"/>) makes room, else the new one is not kept.</summary>
@@ -1385,7 +1391,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         // next tick (AiMind.Replan), where its attack goals' finders (FindFoe) and the rest of its goals are weighed.
         if (table.Cold(i)?.Ai is { } minded)
         {
-            if (!table.Cold(i)!.InCombat) minded.Replan = true;
+            minded.Replan = true;
             JoinMates(world, table, i, t, target, null);
             return;
         }

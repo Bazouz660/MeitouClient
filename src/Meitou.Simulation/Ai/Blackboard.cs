@@ -501,8 +501,16 @@ public sealed class AiMind
     public TaskType FightGoal { get; set; }
     public CharacterId FightTarget { get; set; } = CharacterId.None;
     /// <summary>
-    /// It thinks at the next tick whatever its cadence (a replan request, engine stand-in for the original's triggers): set in serial steps by a sighting of its own or of a squad mate
-    /// (<see cref="AggroSystem"/>), an alert near it (<see cref="RetaliationSystem"/>) or a mate's fight start; cleared by that think.
+    /// The tick the last fight the serial step started for it begins (<see cref="CharacterCold.Running"/>'s <c>Tick</c> of that fight; 0: none yet): while it runs, the fight is the AI's own,
+    /// a plan step of its combat goal, and the character thinks in it (<see cref="AiSystem.Holds"/>).
+    /// </summary>
+    public long FightFrom { get; set; }
+    /// <summary>The think of a fighter chose a goal that is no fight: the serial step of the same tick ends the fight, and it thinks again at the next tick. Never set between ticks (not hashed).</summary>
+    public bool LeaveFight { get; set; }
+    /// <summary>
+    /// It thinks at the next tick whatever its cadence (a replan request, engine stand-in for the original's triggers): set by a sighting of its own or of a squad mate, a new enemy sensed
+    /// while it fights (<see cref="AggroSystem"/>), an alert near it (<see cref="RetaliationSystem"/>), a mate's fight start and the end of its own fight (<see cref="Combat.CombatSystem"/>);
+    /// cleared by that think.
     /// </summary>
     public bool Replan { get; set; }
     /// <summary>Whether its lists hold any combat goal at all (else the stance is <see cref="AiStance.Passive"/>: no fight on sight).</summary>
@@ -550,6 +558,7 @@ public sealed class AiMind
         if (BedAt is { } bed) hasher.Add(Rng.StableHash(bed));
         if (!FollowTarget.IsNone) hasher.Add(FollowTarget);
         if (!AssaultTarget.IsNone) hasher.Add(AssaultTarget);
+        if (FightFrom != 0) hasher.Add(FightFrom);
         if (Replan) hasher.Add(0x5265706C);
         if (LookAbout != Crime.CrimeSystem.FirstLookAboutSeconds) hasher.Add(LookAbout);
         if (NextBuyTick != 0) hasher.Add(NextBuyTick);

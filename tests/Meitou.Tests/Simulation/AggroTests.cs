@@ -101,8 +101,11 @@ public class AggroTests
         public void Hash(ref StateHasher hasher) { }
     }
 
-    /// <summary>The arena; <paramref name="ai"/> adds the AI (first, as the standard order has it), which runs the squads given goal lists (<see cref="Lists"/>).</summary>
-    static Arena Make(ulong seed, int threads, FactionRelations? relations = null, AggroSettings? settings = null, ITickSystem? extra = null, bool ai = false)
+    /// <summary>
+    /// The arena; <paramref name="ai"/> adds the AI (first, as the standard order has it), which runs the squads given goal lists (<see cref="Lists"/>); <paramref name="flee"/> adds the flee step
+    /// after the looks and gives the AI the threats (Self preservation).
+    /// </summary>
+    static Arena Make(ulong seed, int threads, FactionRelations? relations = null, AggroSettings? settings = null, ITickSystem? extra = null, bool ai = false, bool flee = false)
     {
         relations ??= Relations();
         var combat = new CombatSystem(KatanaTechniques(), Constants, BaseGame, BodyOptions.Default, DuelFixture.Lengths, new CombatOptions { SelfApproach = false, TickMedical = false, RecordLog = true })
@@ -112,9 +115,10 @@ public class AggroTests
         };
         var aggro = new AggroSystem(relations, settings ?? new AggroSettings { RecordLog = true });
         var walk = new OpenGroundWalkability((_, _) => 150);
-        ITickSystem[] mind = ai ? [new AiSystem(new PopulationData { Db = new GameDatabase(), Sites = [], Factions = [], Relations = relations })] : [];
+        ITickSystem[] mind = ai ? [new AiSystem(new PopulationData { Db = new GameDatabase(), Sites = [], Factions = [], Relations = relations }) { ThreatSource = flee ? combat : null }] : [];
+        ITickSystem[] run = flee ? [new FleeSystem(relations, combat)] : [];
         var world = new SimWorld(new WorldSettings { Seed = seed, Threads = threads, PublishSnapshots = false, MinPartitionSize = 1 }, walk,
-            [.. mind, new PursuitSystem(combat), new MovementSystem(new PathService(walk, true)), new BodySystem(BaseGame), combat, new RetaliationSystem(combat), aggro, .. extra is null ? Array.Empty<ITickSystem>() : [extra]]);
+            [.. mind, new PursuitSystem(combat), new MovementSystem(new PathService(walk, true)), new BodySystem(BaseGame), combat, new RetaliationSystem(combat), aggro, .. run, .. extra is null ? Array.Empty<ITickSystem>() : [extra]]);
         return new Arena(world, combat, aggro, relations);
     }
 
@@ -642,7 +646,114 @@ public class AggroTests
     }
 
     /// <summary>
+    /// A fight is a plan step of its combat goal (docs/game/ai-tasks.md "Combat goals"): a member that attacks a bandit on sight (16) keeps the one fight across its thinks while it runs at it
+    /// (one start, the fight's start tick unchanged), and once its lists make following its leader outscore the attack (16 at 0.2, x1.25 as the current goal, against the follow's 0.5), the
+    /// chooser takes it out of the fight to follow. Catches a fight started again at every think, and a fighter that never thinks.
+    /// </summary>
+    [Fact]
+    public void A_fight_goal_runs_on_across_thinks_and_a_higher_goal_takes_the_fighter_out_of_it()
+    {
+        using var a = Make(17, 1, TownRelations(), ai: true);
+        a.Aggro.Combat = a.Combat;
+        var o = new Vector2(2000, 2000);
+        var squad = a.SquadOf(Town, o, true, (o, 0f), (o + new Vector2(10, 0), 0f));
+        CharacterId member = squad.Members[1];
+        var follow = Goal(TaskType.FOLLOW_SQUADLEADER, 0.5f, target: TaskTargetType.Leader);
+        Lists(squad, [], [follow, Goal(TaskType.ATTACK_ENEMIES)]);
+        Think(a);
+        // A bandit that cannot strike back (no fighter), far enough that the run at it outlasts several thinks.
+        var bandit = a.SquadOf(Bandits, o, true, (o + new Vector2(5, 400), MathF.PI)).Members[0];
+        var table = a.World.Characters;
+        table.Cold(bandit.Slot)!.Fighter = null;
+        for (int k = 0; k < (int)(4 / a.World.TickSeconds) && !a.Fighting(member); k++) a.World.RunTicks(1);
+        Assert.True(a.Fighting(member), "it attacks the bandit on sight");
+        long from = table.Cold(member.Slot)!.Running!.Tick;
+        for (int k = 0; k < 4 * 15; k++)
+        {
+            a.World.RunTicks(1);
+            Assert.True(a.Fighting(member), $"its fight ended at tick {a.World.Tick}");
+            Assert.Equal(from, table.Cold(member.Slot)!.Running!.Tick);
+        }
+        Assert.Single(a.Aggro.Log, e => e.Attacker == member);
+        Lists(squad, [], [follow, Goal(TaskType.ATTACK_ENEMIES, 0.2f)]);
+        a.World.RunTicks(2 * 15);
+        Assert.False(a.Fighting(member), "the follow outscores the attack");
+        Assert.Equal(TaskType.FOLLOW_SQUADLEADER, table.Cold(member.Slot)!.Ai!.Goal!.Task.Type);
+    }
+
+    /// <summary>
+    /// Self preservation is a goal of the same chooser (docs/game/ai-tasks.md "Combat goals", 32 and 35): a member fighting a bandit by its attack goal, whom the bandit fights back, has a leg go
+    /// down; the chooser takes 32, whose plan is 35 for a crippled character, and the flee step runs it from its threat. Catches the run left to a special case outside the chooser.
+    /// </summary>
+    [Fact]
+    public void A_crippled_fighter_runs_away_by_self_preservation_in_the_chooser()
+    {
+        using var a = Make(18, 1, TownRelations(), ai: true, flee: true);
+        a.Aggro.Combat = a.Combat;
+        var o = new Vector2(2000, 2000);
+        var squad = a.SquadOf(Town, o, true, (o, 0f), (o + new Vector2(10, 0), 0f));
+        CharacterId member = squad.Members[1];
+        Lists(squad, [], [Goal(TaskType.ATTACK_ENEMIES)]);
+        Think(a);
+        var bandit = a.SquadOf(Bandits, o, true, (o + new Vector2(5, 100), MathF.PI)).Members[0];
+        var table = a.World.Characters;
+        for (int k = 0; k < (int)(6 / a.World.TickSeconds) && !(a.Fighting(member) && a.Combat.StateOf(bandit).TargetSlot == member.Slot); k++) a.World.RunTicks(1);
+        Assert.True(a.Fighting(member) && a.Combat.StateOf(bandit).TargetSlot == member.Slot, "the member attacks and the bandit fights back");
+        a.World.RunTicks(15);   // a look that lists the bandit among its threats
+        var cold = table.Cold(member.Slot)!;
+        cold.Medical!.Parts[RLeg].Flesh = -80;
+        for (int k = 0; k < 2 * 15 && !cold.Fleeing; k++) a.World.RunTicks(1);
+        Assert.True(cold.Medical.Crawling, "a leg is down");
+        Assert.True(cold.Fleeing && cold.FleesAlone, "it crawls away from its threat");
+        Assert.Equal(TaskType.SELF_PRESERVATION, cold.Ai!.Goal!.Task.Type);
+    }
+
+    /// <summary>
+    /// A combat goal pre-empts an engine duty that a fight may interrupt (docs/game/ai-tasks.md "Precedence": the duties are goals and jobs below a priority-3 goal): a member carrying a downed
+    /// intruder out of town (a town errand's walk) attacks a bandit on sight with the body on its shoulder; on a kidnapper's cage walk, which its system walks again over a fight, it does not.
+    /// Catches a carrier the AI never lets fight, and a fight started over a duty that cannot be interrupted.
+    /// </summary>
+    [Theory, InlineData(true), InlineData(false)]
+    public void A_carrier_on_a_town_errand_attacks_on_sight_with_the_body_on_its_shoulder(bool errand)
+    {
+        CharacterId carrier = CharacterId.None, body = CharacterId.None;
+        var o = new Vector2(2000, 2000);
+        var row = errand ? TaskType.TAKE_INTRUDER_OUTSIDE_TOWN : TaskType.FIND_CAGE_AND_PUT_IN;
+        using var a = Make(19, 1, TownRelations(), ai: true, extra: new DutyWalker(() => (carrier, body), o + new Vector2(10, 800), row));
+        a.Aggro.Combat = a.Combat;
+        var squad = a.SquadOf(Town, o, true, (o, 0f), (o + new Vector2(10, 0), 0f));
+        Lists(squad, [], [Goal(TaskType.ATTACK_ENEMIES)]);
+        Think(a);
+        var table = a.World.Characters;
+        body = a.SquadOf(Drifters, o, true, (o + new Vector2(10, 0), 0f)).Members[0];
+        table.Cold(body.Slot)!.Medical!.KnockOut(1000);
+        carrier = squad.Members[1];
+        a.World.RunTick();
+        var bandit = a.SquadOf(Bandits, o, true, (o + new Vector2(5, 300), MathF.PI)).Members[0];
+        a.World.RunTicks((int)(4 / a.World.TickSeconds));
+        Assert.Equal(errand, a.Fighting(carrier));
+        Assert.Equal(body, table.Cold(carrier.Slot)!.Carrying);
+        if (errand) Assert.Equal(bandit.Slot, a.Combat.StateOf(carrier).TargetSlot);
+    }
+
+    /// <summary>At its first slow world with a carrier named, puts the body on its shoulder and starts an engine duty's walk (row <paramref name="row"/>, a goal's provenance) to <paramref name="to"/>.</summary>
+    sealed class DutyWalker(Func<(CharacterId Carrier, CharacterId Body)> who, Vector2 to, TaskType row) : ITickSystem
+    {
+        bool done;
+
+        public void SlowWorld(SimWorld world)
+        {
+            var (carrier, body) = who();
+            if (done || !world.Characters.TryResolveNext(carrier, out int slot)) return;
+            done = true;
+            (world.Characters.Cold(slot)!.Carrying, world.Characters.Cold(body.Slot)!.CarriedBy) = (body, carrier);
+            TaskStart.Walk(world, slot, to, SpeedMode.Walk, row, TaskSource.Goal);
+        }
+    }
+
+    /// <summary>
     /// NPC combat goals in a running fight: a town squad that attacks on sight (16) and protects its own (143), a gate guard squad that protects allies (15) beside it, and a bandit squad
+
     /// without an AI that only answers; pinned in <see cref="GoldenHashTests"/> (with the 1, 4 and 16 thread agreement).
     /// </summary>
     internal static List<ulong> GoalFightHashes(int threads)
