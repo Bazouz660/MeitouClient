@@ -188,6 +188,7 @@ public sealed partial class CombatSystem
         {
             D.StumbleClip = clip.Clip;
             D.StumbleStart = now;
+            D.BreakOutTick = now + Math.Max(1, (int)MathF.Round(CombatTuning.BreakOutSeconds / world.TickSeconds));
             D.StunUntil = now + Math.Max(1, (int)MathF.Ceiling(clip.Seconds / world.TickSeconds));
             D.PauseUntil = 0;   // the stumble state (8) ends the pause (FUN_14060cf60 clears +0x144)
             dc.StaggeredUntil = D.StunUntil;

@@ -265,12 +265,17 @@ public sealed partial class CombatSystem
                 s.AttackTech = -1;
                 s.NextBlow = 0;
                 int every = Math.Max(1, (int)MathF.Round(CombatTuning.BreakOutSeconds / dt));
-                bool chance = s.StumbleClip >= 0 && now > s.StumbleStart && (now - s.StumbleStart) % every == 0;
+                bool chance = s.StumbleClip >= 0 && now > s.StumbleStart && now >= s.BreakOutTick;
                 if (s.ReactTech >= 0 && now >= s.ReactStart + s.ReactTicks) s.ReactTech = -1;
-                if (chance && s.ReactTech < 0 && (s.TargetSlot >= 0 || cold.InCombat) && BreaksOut(world, i, cold, key, now))
+                if (chance && s.ReactTech < 0 && (s.TargetSlot >= 0 || cold.InCombat))
                 {
-                    React(world, i, ref s, cold, key, now, dt, stumbling: true);
-                    if (s.ReactTech >= 0) { s.StunUntil = now; s.StumbleClip = -1; }
+                    // Due, the timer stays out until a swing is in the window, then rolls on that tick; a failed roll starts it again (FUN_1406085e0).
+                    if (BreaksOut(world, i, cold, key, now, out bool rolled))
+                    {
+                        React(world, i, ref s, cold, key, now, dt, stumbling: true);
+                        if (s.ReactTech >= 0) { s.StunUntil = now; s.StumbleClip = -1; }
+                    }
+                    else if (rolled) s.BreakOutTick = now + every;
                 }
                 if (now < s.StunUntil) continue;
             }
@@ -530,8 +535,9 @@ public sealed partial class CombatSystem
     /// The stumble break-out roll (<b>Verified</b>, <c>FUN_1406085e0</c> / <c>FUN_140885d80</c>): of the fighters swinging at it with the swing between 10 and 99 per cent, the one with the
     /// highest attack skill; a draw under the defender's unarmed dodge chance against that skill (0 to 95) breaks out. False with no such swing.
     /// </summary>
-    bool BreaksOut(World world, int i, CharacterCold cold, ulong key, int now)
+    bool BreaksOut(World world, int i, CharacterCold cold, ulong key, int now, out bool rolled)
     {
+        rolled = false;
         var prev = world.Characters.Previous;
         var range = world.Grid.Range(prev[i].Position.X, prev[i].Position.Z, CombatTuning.ReactionScanRadius);
         int generation = prev[i].Generation;
@@ -545,6 +551,7 @@ public sealed partial class CombatSystem
             if (progress >= CombatTuning.BreakOutFrom && progress < CombatTuning.BreakOutTo) best = MathF.Max(best, a.AttackSkill);
         }
         if (float.IsNegativeInfinity(best)) return false;
+        rolled = true;
         var fighter = cold.Fighter!;
         float effective = DefenceFormulas.EffectiveDefence(Eff(cold, StatsEnumerated.MartialArts), fighter.EncumbranceFactor, Speed.LegFactor(cold.Medical!), fighter.DefenceBonus, Guarding(cold));
         float chance = DefenceFormulas.BlockChance(effective, best, combat, 0, 95);

@@ -50,6 +50,8 @@ public struct CombatSlot
     public bool HitHeavy, HitBehind;
     /// <summary>The hit reaction the last interrupting hit started (an animation library index, -1: none) and its tick; it holds the character helpless until <see cref="StunUntil"/>.</summary>
     public int StumbleClip, StumbleStart;
+    /// <summary>The first tick a stumbling character may roll to break out (the original's +0x124 timer: 1.2 s from the stumble's start, again 1.2 s after a failed roll; <see cref="CombatSystem"/> rolls on the first tick a swing is in the window once it is due).</summary>
+    public int BreakOutTick;
     /// <summary>How the last blow of the character's own attack ended (<see cref="BlowOutcome"/>), which sets the pause after the attack.</summary>
     public BlowOutcome LastOutcome;
     /// <summary>The fighter it lost the initiative roll to (slot, -1: none) and until when: that one may swing at it at once, even in its pause.</summary>
@@ -144,6 +146,7 @@ public struct CombatSlot
         h.Add(HitBehind);
         h.Add(StumbleClip);
         h.Add(StumbleStart);
+        h.Add(BreakOutTick);
         h.Add((int)LastOutcome);
         h.Add(YieldTo);
         h.Add(YieldUntil);
