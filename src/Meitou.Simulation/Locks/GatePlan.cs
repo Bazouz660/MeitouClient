@@ -71,7 +71,7 @@ sealed class GatePlan : IPlanWorld
             StateType.isAlly => combat?.Relations is { } r && r.Contains(cold.Faction) && r.Contains(owner) && r.Get(cold.Faction, owner) >= FactionRelations.AllyThreshold,
             StateType.hasWeaponEquipped => cold.Fighter is { } f && (f.IsAnimal || !f.Unarmed),
             // 123 / 290 carry !158: a melee threat within reach of the basher refuses the plan (Character +0x2b0, docs/game/combat.md "Threats").
-            StateType.iAmBeingMeleeAttacked_immediate => combat?.ImmediateThreat(world, me) ?? false,
+            StateType.iAmBeingMeleeAttacked_immediate => combat is not null && CharacterFacts.ImmediateThreat(combat, world, me),
             StateType.crowdLimit8 => LockSystem.BashersAt(world, door.Id) < CrowdLimit,
             StateType.isMovementAllowed or StateType.LOCATION_IS_ACCESSIBLE or StateType.DESTINATION_IS_ACCESSIBLE or StateType.isReadyForAction
                 or StateType.isWithin50Meters => true,

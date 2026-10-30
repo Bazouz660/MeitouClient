@@ -88,7 +88,7 @@ public sealed partial class FirstAidSystem
     /// <summary>"A regards B as friendly" (Character slot 126, <c>isAlly</c> <c>FUN_1407923d0</c>): the dialogue system's rule (same faction, squad memory tags, faction allies); without it the same faction or allied factions.</summary>
     bool Allied(World world, int a, int b)
     {
-        if (world.SystemOf<Dialogue.DialogueSystem>() is { } dialogue) return dialogue.RegardsFriendly(world, a, b);
+        if (world.SystemOf<Dialogue.DialogueSystem>() is { } dialogue) return CharacterFacts.RegardsFriendly(dialogue, world, a, b);
         var (ac, bc) = (world.Characters.Cold(a)!, world.Characters.Cold(b)!);
         return ac.Faction == bc.Faction || Relations is { } r && r.Contains(ac.Faction) && r.Contains(bc.Faction) && r.IsAlly(ac.Faction, bc.Faction);
     }
@@ -228,15 +228,15 @@ public sealed partial class FirstAidSystem
     /// <item><b>The squad's chained slaves</b> in sight (<see cref="SquadSlave"/>), <b>carried</b> patients of the medic's faction (outdoors), then <b>prisoners in the cages</b> of the medic's faction in its place at a flat 0.25.</item>
     /// </list>
     /// </summary>
-    (int Slot, float Score) FindPatient(World world, int i, List<(int Medic, int Patient)> taken, bool robotics)
+    (int Slot, float Score) FindPatient(World world, int i, List<(int Medic, int Patient)> taken, bool robotics, bool ordered = false)
     {
         var table = world.Characters;
         var next = table.Next;
         var cold = table.Cold(i)!;
-        if (cold.Medical is not { Incapacitated: false } own || cold.Race is null || cold.Stats is null || cold.InCombat || cold.IsImprisoned) return (-1, 0);
+        if (cold.Medical is not { Incapacitated: false } own || cold.Race is null || cold.Stats is null || cold.InCombat && !ordered || cold.IsImprisoned || !TaskStart.Eligible(world, cold, ordered ? TaskType.FIRST_AID_ORDER : TaskType.JOB_MEDIC)) return (-1, 0);
         // No fight in the squad: an NPC's stand-in for its goal's desire (FUN_140998410 is 0.01 with enemies about). The finder has no such test and the job list keeps any job
         // whose desire is above 0 (FUN_14050e5b0), so a player's medic job and Medic order treat a downed mate while the squad fights.
-        if (!cold.IsPlayer && cold.SquadId >= 0 && world.Squads.Find(cold.SquadId) is { } squad && Fighting(table, squad)) return (-1, 0);
+        if (!cold.IsPlayer && cold.SquadId >= 0 && world.Squads.Find(cold.SquadId) is { } squad && CharacterFacts.SquadFighting(table, squad)) return (-1, 0);
         // Nor while it carries someone (the goal's 0.1 then): the carrying goal (a kidnap, a rescue) keeps it, so a carrier does not walk off after a patient with the body.
         if (!cold.IsPlayer && !cold.Carrying.IsNone) return (-1, 0);
         bool organic = cold.Inventory is { } inv && Best(inv, ItemInfo.FirstAidKitFunction) is not null, robotic = cold.Inventory is { } inv2 && Best(inv2, ItemInfo.RobotKitFunction) is not null;
@@ -392,26 +392,32 @@ public sealed partial class FirstAidSystem
     static string? HomeKey(World world, CharacterCold cold) =>
         world.Squads.Find(cold.SquadId) is { } squad ? (squad.Ai?.OwnHome ?? squad.HomeBuilding)?.Key : null;
 
-    /// <summary>Starts the Medic / Robotics job's (or an NPC's, or the button's) treatment of the best patient the finder gives; false when none.</summary>
-    bool HealSomeone(World world, int i, List<(int Medic, int Patient)> taken, bool robotics)
+    /// <summary>
+    /// Starts the Medic / Robotics job's (<paramref name="job"/>), an NPC's or the button's treatment of the best patient the finder gives; false when none. The button (<see cref="TaskSource.Order"/>, row
+    /// 25) makes a fighting medic look too, and one that finds a patient leaves its fight (<see cref="TaskStart.Start"/>).
+    /// </summary>
+    bool HealSomeone(World world, int i, List<(int Medic, int Patient)> taken, bool robotics, TaskSource source, int job = -1)
     {
-        var (patient, _) = FindPatient(world, i, taken, robotics);
-        return patient >= 0 && StartJob(world, i, patient, taken, splint: false);
+        bool ordered = source == TaskSource.Order;
+        var (patient, _) = FindPatient(world, i, taken, robotics, ordered);
+        if (patient < 0) return false;
+        return StartJob(world, i, patient, taken, new TaskRequest(CharacterTask.Treat, ordered ? TaskType.FIRST_AID_ORDER : robotics ? TaskType.JOB_REPAIR_ROBOT : TaskType.JOB_MEDIC, source) { Job = job });
     }
 
     /// <summary>
-    /// The Splint Rigging finder (<c>FUN_14099e240</c>, <b>Verified</b>): X = min(medic skill, the quality of the splint kit it takes: its own inventory or backpack, the fewest charges; none: nothing); sensed allies not of a robot
+    /// The Splint Rigging finder (<c>FUN_14099e240</c>, <b>Verified</b>; a pure read): X = min(medic skill, the quality of the splint kit it takes: its own inventory or backpack, the fewest charges; none: nothing); sensed allies not of a robot
     /// race, not carried by an enemy, of the medic's own faction only, whose <c>needsSplint</c>(X) holds weigh 0.1 x <see cref="Nearness"/> (x 0.05 when another medic works on it); the medic itself 0.1. A patient the medic already treats (a pair on the sub-target list) is taken at once.
+    /// Returns the patient's slot, -1 for none.
     /// </summary>
-    bool SplintSomeone(World world, int i, List<(int Medic, int Patient)> taken)
+    int FindSplint(World world, int i, List<(int Medic, int Patient)> taken)
     {
         var table = world.Characters;
         var next = table.Next;
         var cold = table.Cold(i)!;
-        if (cold.Medical is not { Incapacitated: false } own || cold.Race is not { } ownRace || cold.Stats is not { } stats || cold.InCombat) return false;
-        if (OwnKit(cold, ItemInfo.SplintKitFunction) is not { } kit) return false;   // the medic's own kit, as the order and the splint use
+        if (cold.Medical is not { Incapacitated: false } own || cold.Race is not { } ownRace || cold.Stats is not { } stats || cold.InCombat) return -1;
+        if (OwnKit(cold, ItemInfo.SplintKitFunction) is not { } kit) return -1;   // the medic's own kit, as the order and the splint use
         // No fight test in the original finder (FUN_14099e240) and the job keeps a positive desire (FUN_140998410): a player's splint job runs during a fight, as the Medic job does.
-        if (!cold.IsPlayer && cold.SquadId >= 0 && world.Squads.Find(cold.SquadId) is { } squad && Fighting(table, squad)) return false;
+        if (!cold.IsPlayer && cold.SquadId >= 0 && world.Squads.Find(cold.SquadId) is { } squad && CharacterFacts.SquadFighting(table, squad)) return -1;
         float skill = MathF.Min(stats[StatsEnumerated.Medic] * own.StatMultiplier(StatsEnumerated.Medic), Items.Info(kit.Item.Record)?.Quality ?? 0);
         float range = AggroSystem.RangeOf(cold, AggroSystem.OutdoorSight);
         int best = -1;
@@ -424,24 +430,27 @@ public sealed partial class FirstAidSystem
             var d = next[s].Position - next[i].Position;
             if (d.LengthSquared() > range * range) continue;
             float score = SplintWeight * Nearness(world, i, cold, s);
-            if (score > StickyMinScore && taken.Contains((i, s))) return StartJob(world, i, s, taken, splint: true);   // the running pair is taken at once
+            if (score > StickyMinScore && taken.Contains((i, s))) return s;   // the running pair is taken at once
             if (OthersOn(taken, i, s) > 0) score *= TakenWeight;
             if (score <= bestScore) continue;
             best = s;
             bestScore = score;
         }
         if (bestScore < SplintWeight && own.NeedsSplint(ownRace, skill)) best = i;
-        return best >= 0 && StartJob(world, i, best, taken, splint: true);
+        return best;
     }
 
-    /// <summary>Starts a job's treatment of <paramref name="patient"/>, going back afterwards to what the medic did before its job.</summary>
-    static bool StartJob(World world, int i, int patient, List<(int Medic, int Patient)> taken, bool splint)
+    /// <summary>The Splint Rigging job's treatment (row 250).</summary>
+    static TaskRequest Splinting(int job) => new(CharacterTask.Treat, TaskType.SPLINT_JOB, TaskSource.Job) { Job = job };
+
+    /// <summary>Starts a treatment of <paramref name="patient"/> (<paramref name="request"/> without its target); an NPC medic goes back afterwards to its standing task (<see cref="TaskStart.Standing"/>).</summary>
+    static bool StartJob(World world, int i, int patient, List<(int Medic, int Patient)> taken, TaskRequest request)
     {
         var next = world.Characters.Next;
-        var cold = world.Characters.Cold(i)!;
+        var resume = TaskStart.ResumeOf(world, i, CharacterTask.Treat, TaskStart.Standing(world.Characters.Cold(i)!, (CharacterTask)next[i].Task));
+        if (TaskStart.Start(world, i, request with { Target = new CharacterId(patient, next[patient].Generation), Resume = resume }) != StartResult.Started) return false;
         taken.Add((i, patient));
-        var resume = cold.Implicit is not null || cold.JobIndex >= 0 ? cold.ResumeTask : next[i].Task is (byte)CharacterTask.Wander or (byte)CharacterTask.Follow ? (CharacterTask)next[i].Task : CharacterTask.Idle;
-        Begin(world, i, new CharacterId(patient, next[patient].Generation), resume, splint);
         return true;
     }
+
 }

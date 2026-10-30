@@ -306,6 +306,12 @@ shows the first failing message in this order (**Verified** unless marked):
   terrain is flattened; outdoor buildings with `path mode` and `build threshold` 0 trigger a navmesh rebuild of their
   area (`FUN_1404d2c80` -> `FUN_1403a66c0`, **Observed**). That a new building starts at progress 0 with nothing
   delivered is **Observed** (the factory's complete flag is false).
+- **Builders sent on Confirm** (**Verified**, `FUN_1404d72a0`'s tail: `FUN_1407f9e20(player, 0, 2, last building)`; 2 = Build, `FUN_14079b2d0`): after the
+  loop, when a non-node building (`is node` clear, created by `FUN_14057cc70`) was made, every selected character gets the plain Build
+  order on the LAST such building queued (one order per Confirm, not per ghost; the shift argument is 0, so Shift never makes it a job, and the
+  queue is replaced as by a right click, `FUN_1405d20d0`). Any such building, furniture (camp bed) or full building alike; no "free character" or
+  distance test. Meitou: `ConstructionSystem.OrderBuild` at the end of `PlaceBuildings`, on the last placed site's root (unlocked or town-blocked
+  plans create nothing and are skipped); the bark and material fetch are those of a right-click order.
 - **Pause** (**Verified**): entering build mode sets the world's requested pause without touching the speed
   (`FUN_1404e65e0` -> `FUN_140787d40(world, 1)`; paused = request or speed 0). Every exit clears it, so the game runs on
   at the speed the player had: Confirm (`FUN_1404db180`), the Esc handler (`FUN_14082b010` -> `FUN_1404d4320`, when

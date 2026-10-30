@@ -277,6 +277,16 @@ real parts whose owning BUILDING has `is sign` receive a yellow tint, including 
 during a transition. Release restores their materials. Loading, menus, hidden UI, free camera and cinema suppress it.
 Rendering details: [objects](../render-objects.md#building-sign-highlight).
 
+### Squad bar portraits
+
+**Verified** (`FUN_140415e00` hooks the ItemBox of each squad tab to `MainBarGUI`; disassembly of `FUN_140413d80`, the eventNotifyItem handler, and `FUN_140413d30`, eventSelectItemAccept):
+- Left press (notify 0, button 0): closes the context menu (`FUN_1407a6bc0`), selects the member (`FUN_1407f90b0` -> `FUN_1407f8f60`, Shift toggles, [above](#quick-right-click-on-a-character)), no camera move.
+- Double click (accept, `FUN_140413d30`): the same with the focus flag set, which runs `FUN_1407f5400` (focus the camera on the character).
+- **Right** press (button 1): closes the context menu and remembers the pressed index; right release over the same portrait calls `FUN_140413cd0` with the focus flag set: the same
+  select-and-focus as the double click, at once, whatever the hold time. **There is no portrait context menu in the original**, and no right-click menu on any other path of the bar.
+- So the report in GitHub issue #137 (the base game lacks it) is wrong: vanilla focuses on a right click. Meitou (`PlayerInterface.MouseDown` / `MouseUp`): a right release on the pressed portrait selects it
+  (Shift toggles) and centres / flies the camera as the double click; the earlier held-right-click portrait menu (not in the original) is gone.
+
 ### Ground item labels
 
 **Observed** (owner's original-game report): holding Alt shows a small name label over each loose item.
@@ -285,6 +295,13 @@ pointer `pick`; `ItemNameText` (`Kenshi_TextboxStandardText`, Kenshi_StandardFon
 `...Selected` #66ff66, `...SelectedStealing` #ff6666.
 **Observed** (`ItemManager::ItemLabel`, `FUN_1401649e0` / `FUN_140162950`): the root's width is fitted to the text; a quantity above 1 is appended
 (exact text **Unknown**); the label widget takes a mouse click. Range and anchor **Unknown**.
+**Verified** (`FUN_1401649e0` registers three handlers on the label root; `FUN_1401638f0` is the one at Widget +0x130 = eventMouseButtonReleased, see the context menu section):
+focus gained / lost only recolour (`FUN_140162a20` / `FUN_140162a90`); a **left** release (button id 0; no other button is tested, the label has no press or right-click handler) on a
+label whose item is of a pickable kind (hand type 2, 3, 4, 0x2e, 0x56, 0x66, 0x6b or 0x6f) gives the pick-up order 3 through `FUN_1407fb3a0` -> `FUN_1407fae70`, the same call as the world
+right click on the item (`FUN_1407fc440`). A stolen item (label flag +0xc0) without Alt held (`DAT_142133462`) shows "Hold down the ALT key to steal items" and gives no order (the world
+right click gives that hint and a move, order 29/0x1d). **Unknown**: what a right click over a label does (the label takes the mouse focus, so the world handler probably does not run); whether
+a left click on the item itself in the world does anything (its press is the select edge, `FUN_140800250`, not traced for items). Meitou: a left release over a label, pressed on it, picks the item up
+for the selection (`PlayerInterface.LabelPickUp`); the label exists only while Highlight is held, so the steal hint cannot arise; the right click on a label stays as on the item (an extra, its source **Unknown**).
 **Observed** (decompile: ctor `FUN_1401649e0`, hover `FUN_140162950`, colour `FUN_1401628e0` / `FUN_1401625c0`, colour load `FUN_140162e60`) colours, plate = root tint, text = `ItemNameText`:
 
 | state | plate | text |
@@ -305,7 +322,7 @@ exists. The pick-up verb (`FUN_14079b2d0` case 3) tests `ownedby` alone: Steal w
 **Observed** (saves "Beep Fan Club 1", METARU, survey of their `1-itemlist`): 332 / 62 items have only `insideBuilding` (town interiors), 99 / 0 a CHARACTER `ownedby`,
 of which 84 name a character the save no longer holds (one of them inside a building); no other `ownedby` type.
 Meitou (`PlayerInterface.GroundItems.cs`): with the Highlight gating above, every item within 500 units of the camera's focus not hidden by a
-building, name only, coloured as above; a label picks like its item (pointer `pick_item`, right click picks it up, held a menu with Steal or Pick Up). Overlapping
+building, name only, coloured as above; a label picks like its item (pointer `pick_item`, right click picks it up, held a menu with Steal or Pick Up). A click on a label is the item's alone: Meitou's Alt / Ctrl loot and lift of a downed body (an extra; in the original Alt is only Highlight) does not take it, so an item lying beside a corpse can be picked up with Alt held (**Observed**: the label is a widget that takes the click, `FUN_140162950`; whether the original prefers the item over a body behind a label is **Unknown**, nothing was traced). Overlapping
 labels are stacked above the nearer one. No quantity. The owner (`GroundItem.OwnedBy`, `Saving/GroundItemSave`) is read once at load: the `ownedby` character's
 platoon faction, else the `insideBuilding` building's `owner faction ID` (also for the verb, engine choice), none for a `not real` faction; items dropped or
 placed in play have none. Picking up another faction's item marks it stolen from that faction (`StolenFrom`); standing inside a building it also sets a pending Theft against the building's faction ([economy](economy.md#fencing-stealing-and-smuggling)).
@@ -500,7 +517,7 @@ Labels (`FUN_14079b2d0`): 2 Build; 3 Pick Up, or Steal when the item's owner fac
 | Player's character | not selected (not slot 34, not in bed): 26, 45, 31, then 69 when a selected character carries it, else the pick-up verb; selected: 69 when a selected character carries someone, 28 when its leg state (slot 109) is 1; slot 34 or in bed, not selected: 69 / the pick-up verb, 26, 31 |
 | Other faction's, not hostile (`FUN_14079cbe0`) | standing (not down, state 0, leg state ≠ 3), the lead not on a turret (+0x260 handle empty): 228 (lead `FUN_1405c9750`, its slot 73 null), 12, 61, 45, 31, and 225 when it is friendly to the lead (slot 126) and its AI state is not 5; on a turret 235. Otherwise: 26, the pick-up verb and 223 / 273 (`FUN_140793d80`), 228, and when not down 61, 45, 12. Then 69 when a selected character carries it |
 | Hostile | standing: 12 (talk tests), not on a turret 228, 16, 5; on a turret 235. Otherwise 228, 26, the pick-up verb with 223 / 273, 5 when up in state 0. Then 69 as above |
-| Every character | unless dead (+0x5bc), or up and the lead's enemy (slot 125): 60 (robotic repair), 25 (first aid, `FUN_1407c05a0`), 249 (a splintable injury, `FUN_140646400` with 50); locked shackles: 201, 185, 186; carried by someone not of the player's: the list is emptied |
+| Every character | unless dead (+0x5bc), or up and the lead's enemy (slot 125): 60 "Repairs" (robot kit) and 25 "First Aid" (organic kit), two independent tests of `FUN_1407c05a0` with the kit kind 1 and 0 (calls in `FUN_1407a6bc0` **Verified**; the kind picks the robot / organic score, **Verified**: `FUN_1407c05a0` passes it on in its second register to `FUN_140643ca0(medical, kind)`, which returns `+0xa8` (robot) for 1 and `+0xac` (organic) for 0, [first aid need](character-stats.md); the need score `FUN_140643ca0` of the target's medical state above `DAT_141682ad8`, which Meitou reads as `AidNeedFloor`; so a robot with an organic hurt part gets both verbs, a skeleton only Repairs; Meitou: `BodyStatus.NeedsRepairs` / `NeedsOrganicAid`, one `TreatOrder` serves both kits), 249 (a splintable injury, `FUN_140646400` with 50); locked shackles: 201, 185, 186; carried by someone not of the player's: the list is emptied |
 
 The pick-up verb (`FUN_140796f80`, **Verified** by re-reading the decompile 2026-10-23): outside the gate below it is always 225. The gate: a character of another faction than the lead's, whose faction lacks
 flag +0x1d0 (`not real`) and whose +0x1a0 → +0x88 object (**Observed**: the town it stands in; its writer is not in the decompile, `FUN_140852240` / `FUN_140852a30` compare it with the character's town
@@ -540,7 +557,7 @@ Engine additions: Trade with a trader, Put in Cage, Put on Shackles, Cancel Cons
 complete buildings with doors (Meitou's stand-in for the target's building handle, slot `0x1d8`, being the player's) adds the Remove Home Intruder job and its companion 224. **Throw out of town** (273, always the job `PICKUP_INTRUDERS_TOWN`) instead when the town the target stands in (`AiSystem.TownAt`) is the player's, its position is inside
 the walls (`TownDutySystem.AmInsideTownWalls`: gate code, else the built-up area) and the lead (the last selected, as for the turret test) does not regard it as friendly; no 223 there.
 **Corpse Disposal** (136) on the player's corpse machine (function 11): with Shift the Corpse disposal job (137, finder 138), else each selected character carrying a dead body
-takes it to the nearest free incinerator (`DisposeCorpseOrder`; the order's condition 99 read as carrying a dead body, **engine reading**). Not built: Repairs (60), Lock / Unlock of a cage (Pick Lock stands in), item menus beyond a ground item's Pick Up / Steal, the occupant's second menu and the unconscious message.
+takes it to the nearest free incinerator (`DisposeCorpseOrder`; the order's condition 99 read as carrying a dead body, **engine reading**). Not built: Lock / Unlock of a cage (Pick Lock stands in), item menus beyond a ground item's Pick Up / Steal, the occupant's second menu and the unconscious message.
 
 ### Edit boxes and keyboard focus
 

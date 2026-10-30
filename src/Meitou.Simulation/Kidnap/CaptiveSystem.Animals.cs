@@ -47,10 +47,10 @@ public sealed partial class CaptiveSystem
         if (Vector2.Distance(new Vector2(n.Position.X, n.Position.Z), to) > WorshipReach)
         {
             wc.ActionClip = null;
-            if (n.Task != (byte)CharacterTask.GoTo || Vector2.Distance(n.Goal, to) > WorshipReach) MovementSystem.GoTo(table, w, to, SpeedMode.Walk);
+            if (n.Task != (byte)CharacterTask.GoTo || Vector2.Distance(n.Goal, to) > WorshipReach) TaskStart.Walk(world, w, to, SpeedMode.Walk, RowOf(j.Kind), TaskSource.Goal);
             return true;
         }
-        if (n.Task == (byte)CharacterTask.GoTo) MovementSystem.Stop(table, w);
+        if (n.Task == (byte)CharacterTask.GoTo) TaskStart.Stand(table, w);
         var face = cage.Position - n.Position;
         if (face.X * face.X + face.Z * face.Z > 1e-4f) n.Yaw = MathF.Atan2(face.X, face.Z);
         wc.ActionClip = BowClip;
@@ -68,8 +68,21 @@ public sealed partial class CaptiveSystem
     /// </summary>
     static void Fetch(World world, int slot, CharacterCold cold)
     {
-        if (cold.Mouth is not null || cold.PickingUpItem is not null || cold.Medical is not { } med) return;
-        if (cold.Age > 0.9f && (med.Fed > 0 || med.Hunger > 2.75f)) return;
+        if (LimbFor(world, slot, cold) is { } best) Fetch(world, slot, cold, best);
+    }
+
+    static void Fetch(World world, int slot, CharacterCold cold, Items.GroundItem limb)
+    {
+        cold.PickingUpItem = limb.Id;
+        if (Vector3.Distance(world.Characters.Next[slot].Position, limb.Position) > PlayerSystem.PickUpReach)
+            TaskStart.Walk(world, slot, limb.Position, SpeedMode.Run, TaskType.ANIMAL_FETCH_A_LIMB, TaskSource.Goal);
+    }
+
+    /// <summary>277's finder (a pure read): the limb <see cref="Fetch"/> goes for, null when none or the animal does not want one.</summary>
+    static Items.GroundItem? LimbFor(World world, int slot, CharacterCold cold)
+    {
+        if (cold.Mouth is not null || cold.PickingUpItem is not null || cold.Medical is not { } med) return null;
+        if (cold.Age > 0.9f && (med.Fed > 0 || med.Hunger > 2.75f)) return null;
         var at = world.Characters.Next[slot].Position;
         Items.GroundItem? best = null;
         float d2best = FetchRange * FetchRange;
@@ -79,20 +92,22 @@ public sealed partial class CaptiveSystem
             float d2 = Vector3.DistanceSquared(at, g.Position);
             if (d2 < d2best) (best, d2best) = (g, d2);
         }
-        if (best is null) return;
-        cold.PickingUpItem = best.Id;
-        if (MathF.Sqrt(d2best) > PlayerSystem.PickUpReach) MovementSystem.GoToFloor(world, slot, best.Position, SpeedMode.Run);
+        return best;
     }
 
     /// <summary>
     /// 278's desire (<c>AI::scoreDogPlaying</c> <c>FUN_140599720</c>, <b>Verified</b> by decompile): an animal with something in its mouth, 1.1, or 0.3 for one of the player's squads over age
     /// 0.4; 0 for the player's adults (over 0.95). Any desire above 0 plays (it beats IDLE's 0.1).
     /// </summary>
-    static bool Plays(World world, CharacterCold c) =>
-        c.Mouth is not null && !(PlayerSquad(world, c) && c.Age > 0.95f);
+    static float PlayDesire(World world, CharacterCold c) =>
+        c.Mouth is null || PlayerSquad(world, c) && c.Age > 0.95f ? 0 : PlayerSquad(world, c) && c.Age > 0.4f ? 0.3f : 1.1f;
 
-    /// <summary>279's desire (<c>AI::scoreDogPlayingChase</c>): any NPC animal; of the player's squads only one not adult (0.95).</summary>
-    static bool Chases(World world, CharacterCold c) => !PlayerSquad(world, c) || c.Age <= 0.95f;
+    static bool Plays(World world, CharacterCold c) => PlayDesire(world, c) > 0;
+
+    /// <summary>279's desire (<c>AI::scoreDogPlayingChase</c>): 1.2 for an NPC animal; of the player's squads 0 for an adult (over 0.95), 0.3 over 0.2, 0.6 younger.</summary>
+    static float ChaseDesire(World world, CharacterCold c) => !PlayerSquad(world, c) ? 1.2f : c.Age > 0.95f ? 0 : c.Age > 0.2f ? 0.3f : 0.6f;
+
+    static bool Chases(World world, CharacterCold c) => ChaseDesire(world, c) > 0;
 
     static bool PlayerSquad(World world, CharacterCold c) => c.IsPlayer || world.Player.Faction >= 0 && c.Faction == world.Player.Faction;
 
@@ -127,7 +142,7 @@ public sealed partial class CaptiveSystem
         var dir = new Vector2(Rng.Float(h) * 2 - 1, Rng.Float(h ^ 0x9E3779B97F4A7C15) * 2 - 1);
         dir = dir.LengthSquared() > 1e-6f ? Vector2.Normalize(dir) : Vector2.UnitX;
         float leg = PlayLeg + PlayLegRandom * Rng.Float(h ^ 0x5851F42D4C957F2D);
-        MovementSystem.GoTo(table, w, new Vector2(n.Position.X, n.Position.Z) + dir * leg, SpeedMode.Run);
+        TaskStart.Walk(world, w, new Vector2(n.Position.X, n.Position.Z) + dir * leg, SpeedMode.Run, RowOf(j.Kind), TaskSource.Goal);
         return true;
     }
 
@@ -139,7 +154,7 @@ public sealed partial class CaptiveSystem
         ref var n = ref table.Next[w];
         var to = new Vector2(table.Next[t].Position.X, table.Next[t].Position.Z);
         if (Vector2.Distance(new Vector2(n.Position.X, n.Position.Z), to) > 10 && (n.Task != (byte)CharacterTask.GoTo || Vector2.Distance(n.Goal, to) > 20))
-            MovementSystem.GoTo(table, w, to, SpeedMode.Run);
+            TaskStart.Walk(world, w, to, SpeedMode.Run, RowOf(j.Kind), TaskSource.Goal);
         return true;
     }
 }

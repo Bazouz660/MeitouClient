@@ -110,6 +110,8 @@ public sealed partial class World
             bool selected = cold is { IsPlayer: true } && Player.Selection.Contains(id), inspected = !selected && id == Player.Inspected, detailed = selected || inspected;
             bool sneaking = cold is { IsPlayer: true } && (cold.Orders & CharacterOrders.Sneak) != 0;
             var watchers = sneaking ? WatchersOf(cold!) : [];
+            bool fightsPlayer = cold is { IsPlayer: false, InCombat: true } && combat?.StateOf(id) is { TargetSlot: >= 0 and var fought } fight
+                && fought < state.Length && state[fought].Alive && state[fought].Generation == fight.TargetGeneration && table.Cold(fought) is { IsPlayer: true };
             return new CharacterSnapshot(id, cold?.Appearance, DrawnPosition(cold, state[i].Position), state[i].Yaw, cold?.Animation is { } anim && animations is not null ? animations.Publish(anim) : AnimationLayers.For(state[i].Animation, state[i].AnimationTime))
             {
                 DrawYaw = cold?.Animation is { HasDrawYaw: true } drawn ? drawn.DrawYaw : float.NaN,
@@ -167,9 +169,9 @@ public sealed partial class World
                 CageOpen = cold is { InSomething: Locks.HeldState.Imprisoned, InWhat: { } heldIn } && Fixtures.Find(heldIn) is { Kind: Locks.FixtureKind.Cage, Lock: { EffectivelyLocked: false } },
                 StayingLow = cold?.Medical is { StayingLow: true, Prone: true, Crawling: false },
                 InCombat = cold?.InCombat ?? false,
-                CombatMode = cold is not null && combat?.IsInCombatMode(table, id, cold, true, true) == true,
-                FightsPlayer = cold is { IsPlayer: false, InCombat: true } && combat?.StateOf(id) is { TargetSlot: >= 0 and var fought } fight
-                    && fought < state.Length && state[fought].Alive && state[fought].Generation == fight.TargetGeneration && table.Cold(fought) is { IsPlayer: true },
+                CombatMode = cold is not null && combat is not null && CharacterFacts.InCombatMode(combat, table, id, cold, true, true),
+                FightsPlayer = fightsPlayer,
+                HostileToPlayer = cold is not null && CharacterFacts.HostileToPlayer(population?.Relations, Player.Faction, cold.Faction, fightsPlayer),
                 Shackled = cold?.Inventory is { } worn && worn.Items.Any(item => item.IsLocked && item.Section != "main"),
                 PortraitSerial = cold?.PortraitSerial ?? 0,
                 ShacklesLocked = Locks.LockSystem.WornShackles(cold) is not null,
@@ -180,7 +182,8 @@ public sealed partial class World
                 Jobs = cold is { Jobs.Count: > 0 } ? cold.Jobs.ToArray() : [],
                 Scale = cold?.Animal is { } animal ? animal.Scale(cold.ShownAge) : 1,   // the size last refreshed (BodySystem.Age)
                 WeatherNotice = cold?.WeatherNotice ?? WeatherNotice.None, WeatherNoticeProtection = cold?.WeatherNoticeProtection ?? 0,
-                Activity = cold is { Ai.Goal: { } goal } && Ai.AiSystem.Holds(state[i], cold) ? Ai.TaskBehaviours.Text(goal.Task.Type) : null,
+                Decision = Decisions.Tracing ? cold?.Decision : null,
+                Activity = cold is null ? null : Ai.AiSystem.ActivityText(state[i], cold),
                 // The turret the combat system runs with this gunner; else (no combat system) at the gun of the turret its squad gave it: the AI's turret goal, walked to and stood at
                 // (derived from the claims, not hashed).
                 Turret = combat?.TurretOf(cold?.Gunning) is { } gunned ? new MannedTurret(cold!.Gunning!, gunned.BuildingId, gunned.Position, gunned.Yaw, gunned.GunId) { Simulated = true, Aim = gunned.Aim, Angles = gunned.Angles }
@@ -201,6 +204,10 @@ public sealed partial class World
                 StealthKoChance = koSlot >= 0 && i != koSlot && cold is { IsPlayer: false } && Carrying.CarrySystem.CanBeKnockedOut(cold)
                     ? Carrying.CarrySystem.StealthKoChance(table.Cold(koSlot)!, cold, aggro?.Spotted(i, table.IdOf(koSlot)) == true) : null,
                 Asleep = Carrying.CarrySystem.Asleep(table, i),
+                Down = cold is not null && CharacterFacts.Down(cold),
+                Conscious = cold is not null && CharacterFacts.Conscious(cold),
+                Standing = cold is not null && CharacterFacts.Standing(cold),
+                Animal = cold is not null && CharacterFacts.Animal(cold),
                 CanOpenInventory = cold is not null && Carrying.CarrySystem.Openable(table, i),
                 KidnapChance = leadSlot >= 0 && i != leadSlot && cold is { IsPlayer: false } ? Carrying.CarrySystem.KidnapChance(table.Cold(leadSlot)!, cold, Tick) : null,
                 LockpickSkill = cold is { IsPlayer: true } ? Locks.Lockpicking.Skill(cold) : 0,
@@ -288,10 +295,10 @@ public sealed partial class World
         // Movement +0x24 currentlyMoving: the current speed (+0xb8, the Athletics line's too) above 0.1 (CharMovement::update).
         bool moving = hot.Velocity.X * hot.Velocity.X + hot.Velocity.Z * hot.Velocity.Z > 0.1f * 0.1f;
         int mode = combat?.StatsDisplayMode(id, cold, moving) ?? (cold.Fighter is { Unarmed: false } ? 0 : 1);
-        var hc = combat?.HudNumbers(cold);
+        var hc = combat?.HudNumbers(this, id.Slot, cold);
         var lines = HudTips.Lines(cold, med, stats, hc, constants, inBuilding, inside, mode);
         var extended = cold.Extended is { } x0 && systems.OfType<BodySystem>().FirstOrDefault() is { } bodies
-            ? bodies.WithCombatMode(x0, cold, combat?.IsInCombatMode(Characters, id, cold, true, true) == true) : cold.Extended;
+            ? bodies.WithCombatMode(x0, cold, combat is not null && CharacterFacts.InCombatMode(combat, Characters, id, cold, true, true)) : cold.Extended;
         return new HudView(med.Blood, Bodies.MedicalState.BloodCapacity(race, stats.Strength, med.HasStatsObject, med.ScaleK, med.ScaleZ), med.Bleeding,
             cold.Fighter?.EncumbranceFactor ?? 1, lines.AsReadOnly(), extended) { BleedRate = race.BleedRate, Fed = med.Fed, Robot = race.IsRobot,
             ExtendedTips = extended is { } x ? HudTips.Extended(cold, med, race, stats, x, constants) : null, Skill = SkillLine(id, cold, med, race, stats, hot, combat, mode),
@@ -335,7 +342,7 @@ public sealed partial class World
                 3 => ("Heavy:", StatsEnumerated.HeavyWeapons), 0 => ("Katana:", StatsEnumerated.Katanas), 4 => ("Hacker:", StatsEnumerated.Hackers), 1 => ("Sabre:", StatsEnumerated.Sabres),
                 5 => ("Martial Arts:", StatsEnumerated.MartialArts), 8 => ("Polearm:", StatsEnumerated.Polearms), _ => ((string?)null, StatsEnumerated.None),
             };
-            if (label is not null) return new(skill, label, (int)stats[skill]) { Damage = combat.HudDamage(cold) };
+            if (label is not null) return new(skill, label, (int)stats[skill]) { Damage = combat.HudDamage(this, id.Slot, cold) };
         }
         if ((cold.Orders & CharacterOrders.Sneak) != 0)
         {
@@ -396,11 +403,12 @@ public sealed partial class World
         // The quick right click's tests (FUN_1407fb410): the organic need score above 0.01 is first aid (order 25), else the robot one is robot repair (60).
         float capacity = MathF.Max(Bodies.MedicalState.BloodCapacity(race, cold.Stats?.Strength ?? 50, med.HasStatsObject, med.ScaleK, med.ScaleZ), 1);
         bool organic = med.FirstAidNeed(race, false, capacity, extraBloodLoss) > Bodies.MedicalState.AidNeedFloor;
-        bool robot = !organic && med.FirstAidNeed(race, true, capacity, extraBloodLoss) > Bodies.MedicalState.AidNeedFloor;
+        bool robotNeed = med.FirstAidNeed(race, true, capacity, extraBloodLoss) > Bodies.MedicalState.AidNeedFloor;
+        bool robot = !organic && robotNeed;
         return new(med.Blood / capacity, WorstPart(med), med.Hunger, med.Unconscious, med.Dead, organic || robot,
             task == (byte)CharacterTask.Treat ? CareKind.Treating : task == (byte)CharacterTask.Rest ? CareKind.Resting : CareKind.None, cold.MedicJob, cold.RescueJob,
             med.NeedsSplint(race, 50), med.KoTimer, med.PlayingDead, med is { StayingLow: true, Prone: true, Crawling: false }, robot)
-            { BeingEaten = med.EatenCountdown > 0, Coma = med.Coma, Crawling = med.Crawling, RightArmDisabled = !med.ArmWorks(left: false) };
+            { NeedsOrganicAid = organic, NeedsRepairs = robotNeed, BeingEaten = med.EatenCountdown > 0, Coma = med.Coma, Crawling = med.Crawling, RightArmDisabled = !med.ArmWorks(left: false) };
     }
 
     /// <summary>The lowest part fraction (1 for a body without parts), the way <c>Enumerable.Min</c> reads floats: a NaN wins.</summary>

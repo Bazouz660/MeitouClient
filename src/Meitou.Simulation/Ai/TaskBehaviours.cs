@@ -56,8 +56,8 @@ public enum AiBehaviour : byte
     /// </summary>
     Assault = 17,
     /// <summary>
-    /// SELF_PRESERVATION (32, every NPC's urgent goal, <see cref="SelfPreservation"/>): wanted at the threat level (<see cref="Combat.CombatSystem.ThreatLevel"/>), planned only when its
-    /// provider is 35 Running away (a crippled NPC, or one with no working arm); the plan of the fighting provider 13 is <see cref="RetaliationSystem"/>'s. Acted out as <see cref="Flee"/>.
+    /// SELF_PRESERVATION (32, every NPC's urgent goal, <see cref="SelfPreservation"/>): wanted at the threat level (<see cref="Combat.CombatSystem.ThreatLevel"/>), planned as [35, 32] when its
+    /// provider is 35 Running away (a crippled NPC, or one with no working arm; acted out as <see cref="Flee"/>), else [13, 32] on its own attacker (acted out as a <see cref="Fight"/>).
     /// </summary>
     SelfPreserve = 18,
     /// <summary>
@@ -65,6 +65,12 @@ public enum AiBehaviour : byte
     /// ("Leader flees while guards fight", the police stations' slaves), wanted at row 35's desire (<see cref="SelfPreservation.RunDesire"/>) while an enemy is near.
     /// </summary>
     Flee = 19,
+    /// <summary>
+    /// The combat goals that start a fight by their own finder (docs/game/ai-tasks.md "Combat goals"): 16 and 21 attack on sight, 144 in its home territory, 34 a trouble maker in its town,
+    /// 143 the attacker of a squad mate in a fight, 15 and 288 the attacker of a sensed ally in a fight. Wanted at the goal's desire times its finder's factor (1 with a target, else 0;
+    /// <see cref="AiSystem"/>, AiSystem.Fights.cs); the think asks for the fight (<see cref="AiMind.FightTarget"/>) and the serial step starts it, which the combat system fights.
+    /// </summary>
+    Fight = 20,
 }
 
 /// <summary>The engine's table from <see cref="TaskType"/> to <see cref="AiBehaviour"/>, and the TaskData display text (docs/game/ai-tasks.md "TaskData registry", Verified) of the types it acts out.</summary>
@@ -118,29 +124,18 @@ public static class TaskBehaviours
         [TaskType.DEFEAT_SQUAD] = (AiBehaviour.Assault, "Assault"),
         [TaskType.SELF_PRESERVATION] = (AiBehaviour.SelfPreserve, "Self preservation"),
         [TaskType.RUN_AWAY] = (AiBehaviour.Flee, "Running away"),
-    };
-
-    /// <summary>
-    /// The combat goals and the stance each gives (<b>engine reading</b>: how the original turns a sighting into an attack is <b>Unknown</b>, docs/game/perception.md;
-    /// these goals are the urgent ones its packages list for it). SELF_PRESERVATION (in the <c>AI Goals</c> of 30 races) is not one: fighting back when attacked is the retaliation rule's.
-    /// </summary>
-    static readonly Dictionary<TaskType, AiStance> Stances = new()
-    {
-        [TaskType.ATTACK_ENEMIES] = AiStance.Aggressive,
-        [TaskType.ATTACK_ENEMIES_AND_NEUTRALS] = AiStance.AggressiveNeutrals,
-        [TaskType.TERRITORIAL_AGGRESSION_BUT_DONT_LEAVE_HOME] = AiStance.Territorial,
-        [TaskType.PROTECT_ALLIES] = AiStance.Defensive,
-        [TaskType.PROTECT_OWN_SQUAD] = AiStance.ProtectSquad,
-        [TaskType.PROTECT_ALLIES_STAY_IN_TOWN] = AiStance.Defensive,
-        [TaskType.ATTACK_TROUBLE_MAKERS] = AiStance.Defensive,
-        [TaskType.ATTACK_ENEMIES_OF_MY_SLAVEMASTER] = AiStance.Defensive,
-        [TaskType.BODYGUARD] = AiStance.Defensive,
+        [TaskType.ATTACK_ENEMIES] = (AiBehaviour.Fight, "Attacking enemies"),
+        [TaskType.ATTACK_ENEMIES_AND_NEUTRALS] = (AiBehaviour.Fight, "Attacking others"),
+        [TaskType.TERRITORIAL_AGGRESSION_BUT_DONT_LEAVE_HOME] = (AiBehaviour.Fight, "Home territory aggression"),
+        [TaskType.ATTACK_TROUBLE_MAKERS] = (AiBehaviour.Fight, "Attacking trouble makers"),
+        [TaskType.PROTECT_OWN_SQUAD] = (AiBehaviour.Fight, "Protect close allies"),
+        [TaskType.PROTECT_ALLIES] = (AiBehaviour.Fight, "Protect allies"),
+        [TaskType.PROTECT_ALLIES_STAY_IN_TOWN] = (AiBehaviour.Fight, "Protect allies"),
     };
 
     // Flat tables by type number for the think's hot loop (a dictionary lookup per goal was a third of the think).
     internal const int TypeCount = 291;
     static readonly AiBehaviour[] Behaviours = BuildBehaviours();
-    static readonly sbyte[] StanceTable = BuildStances();
 
     static AiBehaviour[] BuildBehaviours()
     {
@@ -148,20 +143,6 @@ public static class TaskBehaviours
         foreach (var (type, e) in Table) a[(int)type] = e.Behaviour;
         return a;
     }
-
-    static sbyte[] BuildStances()
-    {
-        var a = new sbyte[TypeCount];
-        Array.Fill(a, (sbyte)-1);
-        foreach (var (type, s) in Stances) a[(int)type] = (sbyte)s;
-        return a;
-    }
-
-    /// <summary>The stance a combat goal gives; null for a goal that is not one.</summary>
-    public static AiStance? StanceOf(TaskType type) => (uint)type < TypeCount && StanceTable[(int)type] >= 0 ? (AiStance)StanceTable[(int)type] : null;
-
-    /// <summary>The goal types that are combat goals.</summary>
-    public static IEnumerable<TaskType> CombatGoals => Stances.Keys;
 
     public static AiBehaviour Of(TaskType type) => (uint)type < TypeCount ? Behaviours[(int)type] : AiBehaviour.None;
 

@@ -672,6 +672,7 @@ public sealed partial class FixtureRegistry
         if (cage.Kind != FixtureKind.Cage || !IsFree(table, cage) || !table.TryResolveNext(prisoner, out int s)) return false;
         var c = table.Cold(s)!;
         if (c.InSomething != HeldState.None || !c.CarriedBy.IsNone || !c.Carrying.IsNone) return false;
+        TaskStart.End(world, s, TaskEnd.Stopped);   // the task and a fight end through their handlers: a caged character works no machine, site or bed
         c.InSomething = HeldState.Imprisoned;
         c.InWhat = cage.Id;
         c.CageClips = cage.Clips;
@@ -748,6 +749,7 @@ public sealed partial class FixtureRegistry
     static void Hold(CharacterTable table, int slot, CharacterCold c, Vector3 at, float yaw)
     {
         table.Place(slot, at, yaw);
+        TaskStart.Step(table, slot, CharacterTask.Idle);   // the teleport stands it
         c.Path = [];
         c.OrderQueue.Clear();
     }
@@ -823,10 +825,10 @@ public sealed partial class FixtureRegistry
         c.InSomething = HeldState.Bed;
         c.InWhat = bed.Id;
         bed.Occupant = sleeper;
-        MovementSystem.Stop(table, s);
+        TaskStart.Stand(table, s);
         var (at, yaw) = LieSpot(bed, table.Next[s].Position);
         Hold(table, s, c, at, yaw);
-        table.Next[s].Task = (byte)CharacterTask.Sleep;
+        TaskStart.Step(table, s, CharacterTask.Sleep);
         table.Next[s].Velocity = Vector3.Zero;
         c.OperateClip = bed.Bed.Clip;
         return true;
@@ -848,8 +850,11 @@ public sealed partial class FixtureRegistry
     /// <paramref name="master"/>: the squad it obeys (<see cref="CharacterCold.SlaveMaster"/>), -1 to keep the one it has.
     public static void Enslave(World world, CharacterCold c, int owner, int master = -1)
     {
-        SetSlave(world, c, 1, owner);
+        bool handed = master >= 0 && c.SlaveState == 1 && c.SlaveMaster != master;
         if (master >= 0) c.SlaveMaster = master;
+        SetSlave(world, c, 1, owner);
+        // Handed to another master (engine choice: the original resets and re-adds job 187 where it chains or processes, FUN_14032e590, FUN_14035aa20): its job names the new one.
+        if (handed) Kidnap.ObedientSlave.Reset(world, c);
     }
 
     /// <summary>Clears a character's slave state and owner (state 0) without DA 53's "Free!" (a slave bought free, <c>FUN_1406add20</c>).</summary>
@@ -878,11 +883,14 @@ public sealed partial class FixtureRegistry
     /// </summary>
     static void SetSlave(World world, CharacterCold c, byte state, int owner)
     {
+        byte before = c.SlaveState;
         if (c.SlaveState == 0 && state == 1 && (c.IsPlayer || world.Player.Faction >= 0 && c.Faction == world.Player.Faction)) world.Post(Loc.Tr("{1} has been enslaved", c.Name));
         if (state == 2) c.RecentlyWanted = Crime.CrimeSystem.RecentlyWantedSeconds;
         c.SlaveState = state;
         c.SlaveOwner = state == 0 ? -1 : owner;
         if (state == 0) c.SlaveMaster = -1;
+        // The state setter then fixes the orders object of one that changed (FUN_14032e0d0): a slave gets job 187 Obedient Slave, one that stops being a slave loses it.
+        if (before != state) Kidnap.ObedientSlave.StateChanged(world, c, state);
     }
 
     static void Clear(CharacterCold c)

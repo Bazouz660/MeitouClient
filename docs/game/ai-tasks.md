@@ -414,7 +414,7 @@ from the decompile and agree with this table, except that the decompile shows no
 | 5 | `hasWeaponEquipped`: a weapon in hand that is not ranged (`FUN_140596a30`, **Verified**) |
 | 6 | `isNoEnemiesInVicinity` |
 | 7 | `isTargetDown` |
-| 12 | `isAlliesFighting`: `FUN_14099a350` (**Verified**) true when any sensed ally (sense filter 1, 8) scores above 0 in `FUN_14099a190`, which needs an awake ally whose AI target is a character; the rest of that score (counters of the target against 2) is **Unknown**. Row 244 needs it false; not modelled |
+| 12 | `isAlliesFighting`: `FUN_14099a350` (**Verified**) true when any sensed ally (sense filter 1, 8) scores above 0 in the fight threat `FUN_14099a190` ([combat goals](#combat-goals)). Row 244 needs it false; not modelled |
 | 13 | `isTargetEnemy` |
 | 15 | `isItemLootable` |
 | 16 | `isAggressionTowards` |
@@ -648,13 +648,41 @@ Meitou: [simulation, captives](../simulation.md#captives).
   (slot 2 `FUN_1409fb020`: index `FUN_1409b3b40(0, n - 1)`); the town test is the one in the table above. Acting out is 87 (real: needs the machine's inputs and output room, power, a free operator slot) or
   221 (pretend); both `Task_OperateMachine` ([sitting and the held tool](ai-tasks.md#town-goals), [production](buildings-production.md#production)). Meitou's NPC towns have no running machines, so both are
   the same standing at the building at its functionality's clip (`stonemine` by default): **engine choice**, the building's `use range` is not read (30 units).
-- **Obedient Slave** (187, flags 0x75, no lists; **Observed**, `FUN_14050e5b0`): a job whose type is 0xbb is not scored like the others. For a character in slave state 1 that is not
-  sneaking (`Character::isStealthMode` `FUN_1405c9750`) and whose owner handle (`+0x328` of the slave's AI owner object) names a character (type 1) or a squad (0x5b), the job loads the owner platoon's
-  Slave role list (role 4, tiers mask 0xe: `FUN_14026b790`) into the slave's own goal list (`+0x178`) and scores that with the normal scorer `FUN_14050df10`. So a slave runs its owner's
-  `Slave AI Goals`. Meitou: a member of its owner's squad in the Slave role does ([ai](ai.md#goal-loading)); a slave in another squad takes the Slave list of the squad it obeys
-  (`CharacterCold.SlaveMaster`: the owner squad of the squad factory's slaves, the slaver who bought or processed it, the arresting guard's squad, the receiver of a delivery;
-  runtime only, so a loaded slave obeys nobody until enslaved again). A faction owner with no squad, and player-faction slaves (the player drives them), are not modelled.
-  The status tooltip tells the player: "Your character will have a permanent job assigned called [Obedient slave]. While this is active he will automatically work for his master."
+- **Obedient Slave** (187, flags 0x75, TaskData kind +4 = 1 and +8 = 0 like a plain job, no lists, no desire or finder of its own, task class `Task_Blank`). Meitou:
+  [simulation, captives](../simulation.md#captives). A **perma-job** (it sits in the character's job list, `+0x88`), not a goal, whoever the character is.
+  - **Added and removed** (**Verified**, `FUN_1405a4940` slave state setter -> `FUN_14032e0d0`): when the slave state *changes* (the setter does nothing for the same state), a change **to 1**
+    destroys the one-shot orders and the perma-jobs (`FUN_140507530`, `FUN_140507280`) and adds job 187 toward the character's owner handle (character `+0x328`, `FUN_1405086d0` with the
+    permanent flag, which turns the jobs switch on); a change **to 0 or 2** removes the first job of type 187 and stops, or, when the list holds none, destroys the orders and perma-jobs.
+    So freeing, an escape (state 2) or bail ends the obedience at once. `Character::setChainedMode` (`FUN_14032e590`, which sets state 1 first, writes the owner handle from its target and the owner's
+    faction, resets the orders object, adds the job and then puts the shackles on, **Verified**) and processing (182, `FUN_14035aa20`) do the same reset themselves, whatever the old state. The job is
+    saved with the list (`pjob<i>` 187, `pjobT<i>` the owner handle).
+  - **Scored** (**Verified**, `FUN_14050e5b0`, both job passes, the urgent one at step 3 and the full one at step 5; the jobs switch gates it like any job, the list of ignoring types does not hold 187):
+    for a character in slave state 1 (`FUN_1405c8aa0`) that is **not sneaking** (`Character::isStealthMode` `FUN_1405c9750`) and whose owner handle (`+0x328`) names a character (type 1) or a squad (0x5b)
+    that resolves to a platoon, the entry is not a candidate itself: the owner platoon's **Slave role list** (role 4, priorities 1 to 3: mask 0xe, `FUN_14026b790`) is loaded into the slave's own goal
+    list (`+0x178`) and scored with the normal scorer `FUN_14050df10` (desire x finder x weight x crowd, hour window; a goal that plans runs) into the same candidate map. Their keys are the
+    goals' scores (typically 0 to 2), below the first jobs' keys (N + 8, N + 7, ...). **So at step 3 the owner's Slave goals beat the character's own priority-3 goals (Self preservation, Getting food, 15 Protect allies)
+    and every job but the kind-2 ones**; a slave whose list plans something never reaches them. With the gate failing (not state 1, or sneaking) the entry is scored as a plain job, whose
+    desire is a default function (`LAB_1400215ee`, **Unknown**) on a blank task: nothing is read as running. If the list plans nothing, the step goes on as for any character.
+  - **What the Slave lists hold** (**Verified**, the resolved Slave lists of the AI_PACKAGE records of the merged base game, Dialogue and rebirth through `AiDatabase`, 64 entries before inheritance): 171 Following master (in 35 packages,
+    priority 2), 172 Getting in my cage (23, priority 2), 41 Attack enemies of my slavemaster and 143 Protect own squad (5 and 4, priority 3), 35 Running away (the police and prison packages),
+    14 Idleness (the cage wardens at weights 0.05 to 0.11), and the slave camps' workers: package "slave worker day guard" 171 at 0.1, 189 Worker 5-22 at weight 2, 190 Worker (pretend) 5-22 at 1.5, 172 at
+    night (22-5) at 0.5, 14 at 0.05; "Shop" and "Shop catun" 190. Read so (**Observed**): a slave owned by a squad running that package works the town's mines by day and goes to its cage at night.
+  - **The plan** (**Verified** for the targets): 171 is `Task_FollowLeader` (the same class as 141), which follows the slave **owner** if the character has one, else its squad leader
+    ([pathfinding](pathfinding.md#following)); it copies the leader's sneaking every update, so **a slave following a master who is not sneaking cannot sneak**, and escapes by sneaking only while it stands or works.
+    189 / 190 are the worker rows ([above](#slave-work-shout-and-capture)): the finder asks the **blackboard's current town** (`+0x88`) of the slave's own platoon, which the AI's rule writes from the
+    platoon's leader (`FUN_1402688d0`, [AI](ai.md#package-classes)); a character whose side differs from the town's works only in slave state 1. 172 is the slave's own walk into a free cage of its
+    owner's faction (finder `FUN_1408caaf0`). Whether the player platoon's blackboard town is kept up by that rule like an NPC platoon's is **Unknown** (read so).
+  - **Other readers of "has job 187"** (`FUN_140597380`): 15 Protect allies' desire `FUN_140599b90` is **0** for a slave in state 1 holding it (**Verified**, sneaking or not); the sense relation
+    tests `FUN_1408569a0` (for a slave with the job whose owner resolves, true when the owner's vfunc `0x3f0` holds on the other character, read as "counts its owner's enemies") and `FUN_140852700` (job held and no orders: a looker's filter in the sense tests
+    `FUN_140852750` / `FUN_140855a80`) are **Observed**, meaning **Unknown**; `chooseBestAttackTarget` (`FUN_14059e300`) reads it on a candidate: a state-1 slave owned by the chooser's faction (`FUN_14032e2a0`) that holds it takes another branch of the score (**Observed**, effect **Unknown**).
+  - The status tooltip tells the player: "Your character will have a permanent job assigned called [Obedient slave]. While this is active he will automatically work for his master."
+  - **Meitou**: the AI's slaves (a slave member of its owner's squad in the Slave role; one in another squad takes the Slave list of the squad it obeys, `CharacterCold.SlaveMaster`: the owner squad of
+    the squad factory's slaves, the slaver who bought or processed it, the arresting guard's squad, the receiver of a delivery) run it through the AI ([ai](ai.md#goal-loading)). A **player character** gets the job in
+    its list (`ObedientSlave`, step 3 of the decision step): the gate as above; the best goal of the master squad's Slave list in its hour by desire x weight (x1.25 the one running, a tie to the
+    later-listed) among **171** (the owner, else the master squad's leader), **189 / 190** (a random mine, research bench, refinery or crafting bench of the town the slave's squad leader stands in,
+    walked to and stood at at its work clip, the AI's engine choice; no machine runs and the hunger rate is not taken) and **14**. Not acted out for a player character (**gap**): 172 (night cage), 41, 143 and 35
+    (the slave does not fight or flee, as the original's step 3 already comes before its own Self preservation). A faction owner with no squad has no master: the job is held but nothing runs. The job names the master squad's leader (the original's handle names a character or a squad). `SlaveMaster` is
+    runtime only: after a load the owner is found again from the job's saved handle when it names a character.
 - **Shout** (188, `Task_TalktoPlayer`, slots 1 and 2 `FUN_14034c5a0` / `FUN_14034c7c0`): the event is the row's (TaskData `+0x130`: **Verified** 0x26 for 188, 0x27 for 194 and 218, 9 for 158 and 283).
   Start fires it at the target (`FUN_140684990`); each update walks to the target (vfunc `0x3b0`), repeats event 9, gives up after 25 minutes with event 60, and ends when the dialogue is free.
   The slavers' event-38 lines ("shout at slave worker": chance temporary 10, six lines) are in "slaver guard MAIN" and "Holy Nation Paladin". Meitou paces it: a worker shouts at most every 60 to 180 game seconds.
@@ -721,7 +749,7 @@ vfunc 5 `FUN_14050caf0`). TaskData fields: +0x108 desire (a member function, nea
   263, 266, 228, 235, 44, 253, 5, 61, 97, 258. *Restricted* (+0x41): 122, 270, 140, 76, 202, 185, 285. *Keeps the queue* (+0x23): 87, 221. +0x22
   (28, 65, 147): **Unknown**.
 - **Providers**: six registries, one per category flag bit (1, 2, 4, 0x10, 0x20, 0x40), each map a state and its polarity to the rows of that category,
-  not +0x40, whose list A holds it, in ascending task type (filled from the registry's map keyed by type, `FUN_14060fe30`, **Observed**). Which registry a character plans with is its AI's repertoire (`FUN_14060e840`, **Verified**: the mode flags +0x200 pick +0x2a8, checked in the order 4 'imprisoned', 0x40 'crippled', 0x10 'chained', 1 'human', 2 'platoon', else 'animal'); cage entry (`FUN_140330600`) sets 0x10 when the cage's functionality `restrains movement`, else 4; `FUN_14060e8c0` clears the bits again (rows only flagged 0x20 are dog play and animal attacks). Meitou: `PlanContext.Category` (imprisoned, chained, else human; prisoners do not run the AI yet).
+  not +0x40, whose list A holds it, in ascending task type (filled from the registry's map keyed by type, `FUN_14060fe30`, **Observed**). Which registry a character plans with is its AI's repertoire (`FUN_14060e840`, **Verified**: the mode flags +0x200 pick +0x2a8, checked in the order 4 'imprisoned', 0x40 'crippled', 0x10 'chained', 1 'human', 2 'platoon', else 'animal'); cage entry (`FUN_140330600`) sets 0x10 when the cage's functionality `restrains movement`, else 4; `FUN_14060e8c0` clears the bits again (rows only flagged 0x20 are dog play and animal attacks). The posture setter `FUN_1405c7e20` (**Verified**) sets 0x40 for posture 1 (staying low) and 2 (crippled) and clears it for 0, 3 and 4. Meitou: `Repertoire.Of` (imprisoned 4, 0x40 from `MedicalState.StayingLow` or `Crawling`, chained 0x10, human 1, else animal 0x20; platoon unused, when 2 is set is **Unknown**); the planner (`PlanContext.Category`) plans with the same `Repertoire.Of`, so a crippled or staying-low NPC plans with 0x40 (no stand-up row) and an animal NPC with 0x20. Starts ask `TaskStart.Eligible(world, cold, row)` = `TaskDataTable.Of(row).Category & repertoire != 0`.
 - **Can run** (memoised per row, target and effect target): the first B entry that does not hold is reported unmet, false; else true without an effect;
   with one, the effect target (from the finder when asked), false without one; true when the effect holds, else the effect is reported unmet.
 - **Search**: a node is (row, target hand, position), with value g = h = the row's desire when made; a node whose desire is not above 0 is a dead end
@@ -735,13 +763,79 @@ vfunc 5 `FUN_14050caf0`). TaskData fields: +0x108 desire (a member function, nea
   every node that acts or has an effect becomes a task (factory) in a new queue, leaf first. A failed plan clears the queue unless the root keeps it.
 - **Pick**: candidates are tried by key, highest first (a taken key is raised by 0.0001 until free, so a tie goes to the later-listed goal; **Verified**, `FUN_14050df10`); the first whose plan has a value above 0 becomes current, a candidate whose plan fails has its
   target cleared and the next is tried.
-- **Source order** (`AITaskSytem::chooseGoal` `FUN_140510ef0`, KenshiLib names, **Observed**): player orders (OrdersReceiver +0x38, `checkOrders`), jobs,
-  urgent perma-jobs, priority-3 goals, other perma-jobs, priority-2 then priority-1 goals, the hold-position task; the first source that plans wins.
-  **Committed mode** (**Verified**, the chooser's second argument, set by `FUN_140511130` while a committing current goal's commitment runs): only
-  sources above the running goal's priority (+0x20c) are tried (none above 2; priority-3 only at 2; priority-3 and -2 at 1); if none plans, the
-  chooser returns and the running goal keeps its plan. Without a current goal the mode is off.
-  Goals sit in per-priority lists (`taskPriority`: 1 fluff, 2 non-urgent, 3 urgent, 4 obedience). Orders are queued at priority 3. Consequences for
-  fights: [combat](combat.md#fight-lifecycle-and-orders).
+- **Source order**: [Precedence](#precedence).
+
+## Precedence
+
+**Verified** (decompile: `AITaskSytem::chooseGoal` `FUN_140510ef0`, order step `checkOrders` `FUN_140510920`, job pass `FUN_14050e5b0`, tier pass `FUN_140510d60`,
+update `FUN_140511130`, `Character::setupAI` `FUN_140621b70`; KenshiLib names **Observed**). How orders, jobs and goals take turns.
+
+- **When**: the chooser runs on a replan request (`AITaskSytem` vfunc 3 `FUN_140506cf0` sets +0x1b0; the update `FUN_140511130` chooses, otherwise `FUN_14050d970`
+  only steps the running plan): a plan finished, an order added, a stagger (`forceOrderInsert`), `underMeleeAttack` with the fight off unless the target gets up or is
+  player-side and moving ([combat](combat.md#fight-lifecycle-and-orders)). No periodic replan was found (**Observed**). Between replans the plan step (`FUN_14050d970`, **Observed**) ends the current goal's plan
+  (`FUN_14050d7d0`, so the chooser runs again) when the goal's list A holds (`FUN_140513f50`), when its hours are over, or when the goal's row can no longer run (`FUN_14060f940`); a further test on
+  the queued task is not decoded (**Unknown**). It does not weigh the goal's desire again, so a goal's fight runs until it ends by itself (nothing left, target down, give-up) or its goal is done.
+- **Sources**, in order; the first whose pick has a plan above 0 runs:
+  1. The front of the order queue (+0x40 deque, count +0x60): first popped when done (list A holds) or its desire x finder is 0 or less; then planned with the search flag
+     ([planner](#planner)). A player character's order that fails to plan shows its failure text (vfunc 0x2d8) and stays queued (**Observed**); the chooser goes on.
+  2. Committed mode (the update's argument while a committing current goal's commitment runs; off without a current goal) with the running goal's priority (+0x20c) above 2: stop, the goal keeps its plan.
+  3. The entries of a second list (+0x70, the one-shot order list, emptied with the queue by `FUN_1405074a0`) become candidates, scored by `FUN_14050df10`. **What fills it** (**Verified**, the writers of the add
+     function `FUN_1405086d0`): the entries that are not perma-jobs, i.e. added without the permanent flag or whose TaskData row has kind +4 = 0, from the order giver `FUN_1405c8da0` (Character-side order
+     calls, which first clear the queue and this list unless the order is queued) and the save loaders `FUN_140508e10` / `FUN_1405092d0`; job 187 is a perma-job and never in it. The deque +0x40 is filled by the order dispatchers through `FUN_140508380`; how a candidate leaves the +0x70 list is **Unknown**. With a job list, the **urgent job pass** adds the
+     candidates of Obedient Slave 187 (slave state 1, not sneaking: the owner platoon's Slave goals, [Obedient Slave](#slave-work-shout-and-capture)) and the kind-2 jobs (turret guard 234) while the AI's sensed-enemy count +0xbc is non-zero, and picks.
+  4. Priority-3 goals: the squad's (blackboard, `FUN_140269240` / `FUN_14026b790`) and the character's own (+0xa0 + 0x18 x priority), one pick.
+  5. Committed with the running priority above 1: stop. Else **every job** in list order, then the implicit jobs ([Perma-jobs](#perma-jobs)).
+  6. Priority-2 goals; committed with the running priority above 0: stop; priority-1 goals; the default task (+0x190, at key 1.0); else AI vfunc 0x98. The default task (**Verified**:
+     setter `OrdersReceiver` vfunc 4 `FUN_14050c030`, a fresh 14 Idleness with no target when given none) is reset by every order (`FUN_1405d20d0`, the move order `FUN_1405d22b0`) and by
+     standing orders 8 / 9, by the AI's manoeuvre mode (+0x2bc): `FUN_140599970` (a point: the order's) and `FUN_1405966a0` (a target) make it 30 Holding position for HOLD_GROUND (0),
+     31 Staying close for STAY_CLOSE (1), and idleness for ROAM_FAR (2, the default). The Hold toggle (standing order 12) does not touch it.
+- **Goals of a character** (`setupAI`): everyone 14 Idleness (priority 1, weight 0.1) and 32 Self preservation (priority 3, weight 1, target itself). A player-faction character
+  (its faction's +0x250 set, `FUN_1407916d0`) also 243 Getting food (priority 3, weight 0.5) unless it has it; a player-faction animal also its race's `AI Goals` and 259 Picking
+  up food (priority 3, 0.5), and loses 230. A character of another faction gets its race's `AI Goals`. Before that branch, any character whose platoon AI object (`FUN_140791ba0`: Character +0x658,
+  +0x78, +0xf8) has +0x210 null gets its FACTION record's `AI Goals` (**Verified**, code; +0x210 read as the AI contract slot, null for an ordinary squad, **Observed**). The player faction
+  (`204 Nameless`, the only base FACTION with the list) lists 15 Protect allies (AI_TASK 957, classification 3: priority 3, weight 1), so a player character holds goal 15. Hold adds 16 at priority 3; AI packages add theirs ([AI](../simulation.md#ai)). Priorities
+  (`taskPriority`): 1 fluff, 2 non-urgent, 3 urgent, 4 obedience; orders are queued at 3.
+- **So, for a player character**: an order beats everything, Self preservation included (an ordered medic keeps treating while hit; each landed blow staggers it and the order
+  is planned again, [combat](combat.md#fight-lifecycle-and-orders)). Self preservation (while an attacker is within 181.7), Getting food and Hold's attack on sight beat every
+  job but the urgent ones (a turret's row refuses a threat within 40 anyway). An order or job can still fight by its own rows: 31 Staying close needs `!16` and 45
+  Bodyguard `!16, !39` (16 / 39: the followed character's / its own +0x2b0, a threat within 40, `FUN_14059de10`), whose provider is 13 Attacking attackers of, so a
+  follower fights whoever threatens its leader and a bodyguard also its own attacker (**Observed**, from the row lists and the planner). A job higher in the list takes
+  over at the next choice; the implicit jobs come after the list, Idleness last. Passive leaves
+  Self preservation alone; the Jobs switch only gates the job passes. A fight is a task (4 `Task_MeleeAttack`) in a goal's or an order's plan; `CombatClassAI` steers it and
+  chooses nothing; the fight ends with the task.
+- **Threat tests of order rows** (**Verified** against the transcribed registry `TaskDataTable`, list B read row by row): of the player's order rows only 146 Turret gunner tests a
+  threat (`!158`, its own +0x2b0; no row provides it, so the plan fails while a melee attacker is within 40 and the order waits in the queue). 225 / 246 lift, 2 Building, 95 Repairing,
+  96 Demolishing, 87 Operating, 97 Training, 124 Hauling, 150 Prospecting, 25 / 249 First aid / Splinting, 26 Looting, 69 Putting down, 98 Sleeping, 76 / 201 Lockpicking, 108, 110,
+  107, 5 / 61 attacks and 29 Move order list none of 158, 159, 16, 39; Rest (54) has no TaskData row. 31 needs `!16` and 45 `!16 !39`, which 13 provides, so they fight instead of failing.
+  The providers a plan adds before these rows were not checked for threat states (**Unknown**).
+- **Meitou**: the player's characters are decided by one step in this order ([decision step](../simulation.md#decision-step)): source 1 the order queue
+  ([simulation](../simulation.md#order-queue); one that cannot run stays queued with its text and the step goes on; a turret gunner's 146 ends under a melee threat and is taken up again
+  once it is gone), step 2 has no source (no player goal Meitou runs commits), step 3 the urgent jobs (234 while an enemy is sensed; 187 Obedient Slave of an enslaved player character: its master squad's Slave goals 171, 189 / 190, 14, [Obedient Slave](#slave-work-shout-and-capture)), step 4
+  picks among 32 Self preservation, 243 Getting food, a player animal's priority-3 race goals (277-279), 259 Picking up food, Hold's 16 and 15 Protect allies (joining a mate's or
+  an ally's fight), step 5 every job in list order through its system's contributor (the switch and the repertoire first), then the implicit jobs, step 6 the priority-2 race goal 233 and
+  14 Idleness (a player character's routine: it stands; the default task is never reached, as only ROAM_FAR is modelled). A task that ends leaves its character idle for the step to
+  re-decide (the original re-plans; nothing resumes). Followers and bodyguards fight by their rows: an attacker of the followed character within 40 (16), a bodyguard also its own
+  within 40 (39), as a step of the row, and follow again when the fight ends. The step runs on the replan triggers above plus an engine re-ask every `JobCheckTicks` of a character
+  idle or on a job's task (no periodic replan was found), so a higher job takes over a running one within that period, where the original waits for its next replan. Goal 15 is
+  `RetaliationSystem.JoinFight` at step 4 (below).
+- **15 Protect allies for a player character** (**Verified**: desire `FUN_140599b90`, finder `FUN_14099ca10`, falloff `FUN_1409b2380`, constants from the exe): desire 0 when Passive or
+  sneaking outside a fight; else the finder's best sensed ally (seen or heard, tagged ally) by its fight threat (`FUN_14099a190`, [combat goals](#combat-goals)) x clamp((1000 - d^2) / 990, 0.1, 1)
+  (d the distance to that ally; the argument of `FUN_1409b2380` is the squared distance, **Verified**: 1 within 3.2 units, 0.1 from 30; no other distance limit), an ally of another
+  faction only with Help Allies and then squared; x0.5 while carrying (`DAT_14167e8d8`). Its plan is 13 Attacking attackers of (attackers within 150 of the ally). Being above 0, it beats every job (step 5)
+  whenever 13 finds an attacker, and loses to 32 Self preservation (1 or 0.7) when the character is attacked itself.
+  **Meitou** (`RetaliationSystem.JoinFight`, `BestAlly`, `Plan`): the aggro system's senses stand in for the sensed map (entries tagged ALLY, not KO or imprisoned, seen or heard at the last look), the fight
+  threat is `CombatSystem.FightThreat` (so an attacked ally that fights nobody counts), Passive gives the desire 0 in a fight too, the slave gate is asked once for the first slave met (the finder latches it), the best ally is the first in slot order on a tie,
+  the result is capped at 1.2, the plan is `CombatSystem.BestAttackerOf` for the ally, and a character on Hold also needs `Orders.HoldPost`. It cannot start while the character fights on another plan or
+  cannot fight; while its own fight runs with no ally left its desire stays 0.7 (engine, the fight task ends by itself). The step reaches it at the engine re-ask of an idle or job-task character
+  (within `JobCheckTicks` of a mate starting to fight) or at any replan; an order or a goal's task keeps it out. **Observed** (offscreen sandbox): a player character in a squad of its own 45 to 55 units away joins
+  an ally's fight when nothing else wants it (run with the threat taken as 1). The second zero of `FUN_140599b90` is Passive (the byte `+0x12c` of the character's `+0x450` object, standing order 13; **Observed** that it is the same object as Hold's `+0x12b`). The old engine join (squad mates within 250 at a fixed 0.6) is gone.
+- **The medic jobs' own threat tests** (**Verified** against `TaskDataTable`, lists read row by row): 58 Medic and 250 Splint Rigging have no list B; their treatment rows 25 First aid and
+  249 Splinting need `38 23 !140 42 46 !157` / `38 151 !140 42 46 !157` (an arm, a kit, the target not swimming, standing still, at the target, weapon away): no threat state. Only 57
+  Robotics needs `!39` (its own melee threat within 40), which 13 provides, so a robotics job under a threat within 40 plans a fight, as 45 does. The desire `FUN_140998410` drops to
+  0.01 / 0.05 near enemies but stays above 0. So a medic job yields mid-fight only to step 4: Self preservation against its own attacker, 15 for a fighting ally.
+- **A blow aimed at another** (a technique's extra hits in its zone) puts the hitter on no threats list: Self preservation's desire (`FUN_140599d20`) reads the senses' threats
+  (AI +0x80 / +0x88 = SensoryData +0x58 / +0x60: characters whose intended target is the looker, positive aggression, within 181.7) and the +0x2b0 flag built from them; the hit's
+  `underMeleeAttack` (`FUN_140999f00`) only replans (**Observed**). Such a medic fights only through 15.
 
 ## Combat goals
 
@@ -765,21 +859,52 @@ vfunc 5 `FUN_14050caf0`). TaskData fields: +0x108 desire (a member function, nea
 - 143 PROTECT_OWN_SQUAD ("Protect close allies"): effect `!isAggressionTowards` (state 16, evaluator `FUN_14059de10`: the target
   resolves to a character whose AI-side object is set and byte +0x2b0 is set, meaning **Unknown**). Finder `FUN_14099d510` scores
   each squad mate (the platoon's active members, the looker included) that passes `FUN_140855960(sense, mate, 1)` (**Verified**: the looker itself; else a mate in its own sensed map that is seen or
-  heard now; a mate missing from the map falls to a hand comparison, **Unknown**; a far mate never counts) by `FUN_14099a190`, nonzero only while that mate's AI holds a character target (+0x200 = 1,
-  hand +0x208); else it falls back to a hand list at +0x2f8. Achieved by 13 "Attacking attackers of" (list A `!16, !39, !12*`).
+  heard now; a mate missing from the map falls to a hand comparison, **Unknown**; a far mate never counts) by its fight threat `FUN_14099a190` (below), the best capped at 1.2
+  (`DAT_1416852f0`); with none above 0 it falls back to a hand list at +0x2f8 at 0.1 x the threat. The desire is that value (slot 19 = 1 x the finder): a weak pull for one attacker, a strong
+  one for a gang. Achieved by 13 "Attacking attackers of" (list A `!16, !39, !12*`).
+- The fight threat `FUN_14099a190` (**Verified**, disassembly; constants read from the exe), on the character's `CombatClassAI`: 0 when it is down (vfunc 0x30); 0.01 when exactly one attacker is
+  on its engaged list (askers, at most 5) and that attacker's own list plus its refused-askers counter is above 1 (someone else fights it); else 0.25 n - 0.2 for n listed attackers (0 for none:
+  1 gives 0.05, 2 0.30, 5 1.05), raised to 0.1 x its senses' threat sum towards it (AI +0xb0); then 0.01 when it is in a fight task and the value is 0 or less. So an ally counts while it is
+  attacked, threatened or fighting, not merely while it "holds a target". Readers: 143's and 15's finders, row state 12 `isAlliesFighting` and `FUN_14099a3e0` (a platoon member above 0).
+  Meitou (`CombatSystem.FightThreat`): n is every standing fighter whose target it is (not the engaged list), "someone else fights it" is that attacker's own count above 1, and the threat sum
+  adds 1 per threat (the original adds the threats' aggression).
 - 15 / 288 PROTECT_ALLIES ("Protect allies", "protect allies - dont leave town"; finder `FUN_14099ca10` at +0x160 for both, **Verified** registration):
-  the same shape as 143 over the sensed entries tagged SENSE_ALLY (mask 1, 0x208; same faction or relation >= 50) that are seen or heard, scored by
-  `FUN_14099a190` (nonzero while that ally's AI holds a target). A slave or escaped slave (status int 1 or 2) is defended only when the looker passes `FUN_140997e80`
+  the same shape as 143 over the sensed entries tagged SENSE_ALLY (mask 1, 0x208; same faction or relation >= 50) that are seen or heard, scored by the fight threat
+  `FUN_14099a190` (no distance factor for an NPC looker; a player-faction one: [Precedence](#precedence)), capped at 1.2. 288 is registered exactly as 15 (**Verified**: the two registration blocks
+  differ only in the task id; the same finder, desire and flags; no code compares 288): "dont leave town" is only the mod record's name. The same-town variant `FUN_14099cf80` is never registered
+  (**Verified**, no reference in the exe). Desire `FUN_140599b90` (**Verified**): 0 while sneaking and not in combat mode, while Passive (in a fight too) and for an enslaved character holding job
+  187; else the finder's value, x0.5 while carrying. A slave or escaped slave (status int 1 or 2) is defended only when the looker passes `FUN_140997e80`
   (**Verified**, latched once a pass): its faction is a bandit one (fundamental type 8), or it is in no town, or that town's owner books no bounties (Meitou:
   `RetaliationSystem.SlaveHelpAllowed`). An ally of another faction counts for an NPC looker; only a player-faction looker
-  needs the global +0x111 and squares the weight ([HelpAllies](../simulation.md#hostility-and-relations)). Achieved by 13 "Attacking attackers of"
+  needs the global +0x111 and squares the weight ([Help Allies](#squad-ai-options)). Achieved by 13 "Attacking attackers of"
   (`FUN_14099c3b0`, **Observed**): the protected one's attackers that it or the looker senses, within 150 of it (outdoors), are taken when either regards
   the other an enemy (slot 125) or the attacker's AI +0x2a4 equals the goal target's id (meaning **Unknown**, read as "it is attacking the protected one"),
   and never one the looker regards an ally (slot 126). On that reading relations do not matter (a neutral attacking an ally is fought), which agrees with
   the owner's report that the original's guards fight skimmers. Candidates (`FUN_1405cb150`): the subject's attackers plus its own target while it fights;
   only when that list is empty its threats. All passing ones go to `chooseBestAttackTarget` (`FUN_14059e300`, the target score): the best is taken
-  (**Verified**). Meitou: `CombatSystem.BestAttackerOf` picks each joiner's attacker (the sense tests and the threats fallback left out). Gate guards (`Gate guard -no turrets`
+  (**Verified**). Meitou: `CombatSystem.BestAttackerOf` picks each joiner's attacker (the sense tests and the threats fallback left out); a player character's own 15 is in [Precedence](#precedence).
+  Once in the fight, the joiner re-targets by the fight's own lists and then any sensed enemy (the aggro mode that would stop that is 0 for every character, **Verified**: no code writes it), so
+  no leash holds it near the one it protected. Gate guards (`Gate guard -no turrets`
   and those inheriting it) list 15, `Gate guard stay in town -no turrets` 288 (**Verified**, package dump).
+- 34 ATTACK_TROUBLE_MAKERS ("Law enforcer"; row 34 "Attacking trouble makers", flags 0x21, list A `!29`, effect 7; **Verified** registration in `FUN_140319a60`: desire thunk
+  `0x1400215ee` = AI slot 19, 1; finder at +0x160 thunk `0x140052fe0` → `FUN_14099baa0`). Finder (**Verified** structure, field meanings **Observed**): factor 0 while the looker's
+  current town (`getCurrentTownLocation`, vfunc 0x78) is null. Else two passes over sensed entries, neither testing seen or heard (**Verified** iterator masks: pass 1 SENSE_ENEMY, pass 2
+  SENSE_NEUTRAL, both excluding SENSE_KO), each candidate in the looker's current town and passing the area test `FUN_140599f30`: (1) one whose status object (Character `+0x1a0`, vfunc 0x70) has `+0xac` above 0 or that the looker's squad memory
+  tags AGGRESSOR (short tag 2, `FUN_140678960` → `FUN_140678830`); (2) one whose NPC class (status `+0xdc`) is not 1 law enforcement, 3 trader or 5 diplomat (class 2 military
+  only when its squad's home town (`FUN_1407956a0` +0x30, **Observed**) is not the looker's town and its faction is not in that town's resident factions (`+0xf0`; whether the owner is in it is **Unknown**)), passing `FUN_14099b820`: not class 7; `+0xac` above 0, AGGRESSOR, or `+0xa0` above 0 with class 8 or an animal; and attacking
+  (`FUN_1405ca6f0` → `FUN_1405c92d0`: its status `+0x68` target hand is that character and it is in combat mode) a victim V that the looker regards as an ally (vfunc 0x3f0) or an
+  innocent (no bounty with the looker's faction, not class 7 or 8, V `+0x148` below 1, and the attacker's faction is a bandit one (`+0x34` 8) or has `+0x1d0` set, or V does not regard
+  the looker an enemy, is no animal and not class 6 or 8). The best by `chooseBestAttackTarget` `FUN_14059e300`; factor 1. **Verified** (base data, the four official files): the
+  `Shop` and `Shop-24hr` packages list 34 for the Squad and Squad2 roles (0-24 h, weight 1), next to 143, so every vanilla shop guard has it and the shopkeeper (Leader) has 143 only.
+  Meitou (`AggroSystem.FindTroubleMaker`): both passes over the looker's sense entries (not KO, seen or heard or not) in its current town (`AiSystem.TownAt`); "intends aggression" is the TaskData
+  intended aggression (+0x24, below) of the candidate's current goal (in a fight its fight row, else its AI goal, else its running row; `TaskAggression.OfGoal`) and +0xa0 that of its running
+  row; the class-2 resident-factions test stands on the town's owner faction (**Unknown**); the victim test of pass 2 takes the looker's own or allied faction only (the innocent branch
+  is left out); the area test is not modelled.
+- TaskData +0x24, the intended aggression (**Verified**, registrations in `FUN_140319a60`; the AI's state broadcast `FUN_14050ed60` copies the current goal's to status +0xac, `getIntendedAggression`,
+  and the running task's to +0xa0): 1 for 4 / 227 Attacking, 262 / 263 / 266 Shooting, 228 Taking out, 61 Attacking target unprovoked, 101 Assault, 248 Attacking Squad, 16, 21, 144, 41 Fighting for
+  master, 146 / 235 Turret gunner, 131 / 244 food grabbing; 0.5 for 13 Attacking attackers of; 0 for 34, 15, 143, 288, 32 and most rows; negative for the lockpicking, medic, repair, robotics and
+  engineer rows, 7 Sheathing and 35 Running away (-0.5; the others are not transcribed). The AGGRESSOR tag (short-term tag 2) is written only by the dialogue effects DA 7 GO_HOME and DA 34
+  RUN_AWAY on their target and lasts 7 h (**Verified**, `FUN_140680560`), so a plain fight never sets it.
 - 101 DEFEAT_SQUAD ("Assault on target squad", `targeting` 3 = the squad's mission target; row `Assault`: list B `!47`, effect 7; desire AI slot 19 = 1 times the finder's
   factor; carried by the packages `Assault target squad` and `(agg)`, signal 8, and by dialogue `AI contract`s). Finder `FUN_140793eb0` (**Verified**): the goal's target
   hand must be a character (type 1 or 0x22); of its squad (+0x1d8, members +0x58/+0x60) it keeps the members that
@@ -792,7 +917,7 @@ vfunc 5 `FUN_14050caf0`). TaskData fields: +0x108 desire (a member function, nea
   the leave-alone cases and members it found no path to): the **best by score**, not the nearest, becomes the target hand. Factor `DAT_14167c308` = 1.0f
   (**Verified**, `data_values.txt`) with a pick, else 0. A pure 0/1 gate; the plan from there (a provider of `isTargetDown`, such as 4 Attacking) is the planner's.
   Meitou: `AiBehaviour.Assault`, `AiSystem.AssaultTargetFor`. Goal target = the contract's mission target (`StartContract`, from dialogue's `AI contract`); no mission target,
-  or a goal not aimed at it, gives 0. Known = within the fighters' sense range (`CombatSystem.Senses`) or the mission target itself (engine reading). The plan is the goal
+  or a goal not aimed at it, gives 0. Known = an entry of the looker's senses (`CharacterFacts.Knows`) or the mission target itself. The plan is the goal
   alone (engine choice: the walk and the weapon are the combat system's); the serial step sends a non-defensive `AttackOrder` to the picked member, the character alone
   (as dialogue's attack effects: its mates join through their own stance), and when the fight ends the next think picks the next standing member. Not modelled: the
   `+0x280` branch, the leave-alone cases, entry age. 248 "Attacking Squad" (same finder shape) is not built.
@@ -809,18 +934,61 @@ vfunc 5 `FUN_14050caf0`). TaskData fields: +0x108 desire (a member function, nea
   - Anyone else fights: 4 is worth 1 (0.05 at the least with the ranged and squad factors), 35 0.001.
   - 35's entries: 60 `LOCATION_IS_ACCESSIBLE` (`FUN_1405a2710`, 0 behind a locked gate in town walls, [combat](combat.md#fight-lifecycle-and-orders)) and `!26` (a character staying low must stand first).
   State evaluators: 39 `isAggressionTowardsMe` = Character `+0x2b0` (`iAmBeingMeleeAttacked immediate`, `FUN_14059de10`); 159 = the senses' threat count `+0x58` non-zero (`FUN_140436720`); 6 `isNoEnemiesInVicinity` =
-  AI `+0xbc` == 0 (`FUN_140597630`; SensoryData `numEnemies`, KenshiLib 1ce4a16, **Observed**; how it is counted and its radius **Unknown**).
+  AI `+0xbc` == 0 (`FUN_140597630`; SensoryData `numEnemies`, **Verified**: [senses](perception.md#senses)).
   `Task_Runaway` (35, 280): start `FUN_14034b440` (first run: from the mean position of the sensed threats with positive aggression, by 2000 + 400 r, mover speed field `+0xbc` set to 999); update `FUN_140336820`
   (when the mover stops or is within 200 of its destination: a hop of 1000 + 400 r from where it stands, x and z uniform in [-1, 1] normalised). It has no end of its own: the planner drops it when its goal does
   (under 32, when the threat level falls to 0; as a goal of its own, when its list A `!39, 6` holds, **Observed**). 35 is also a goal of the package `Leader flees while guards fight` (Leader: `Go Home (Run away)`,
   `Run away!`) and of the Slave lists of four police-station packages (0.001 for an NPC).
-  Meitou: `SelfPreservation` (the two desires, the choice), `CombatSystem.ThreatLevel` (slot 17), goal 32 as `AiSystem.SelfPreservationGoal` (once per NPC mind, the list entries ignored): its plan is `[35, 32]` when
-  `SelfPreservation.Runs` (a crippled NPC, or one with no working arm), else none and `RetaliationSystem` fights back (its `Able` leaves the runners out, so nothing is handled twice). 35 is acted out by
+  Meitou: `SelfPreservation` (the two desires, the choice), `CombatSystem.ThreatLevel` (slot 17), goal 32 as `AiSystem.SelfPreservationGoal` (once per NPC mind, the list entries ignored), a priority-3
+  goal of the chooser like the combat goals: its plan is `[35, 32]` when `SelfPreservation.Runs` (a crippled NPC, or one with no working arm), else `[13, 32]` when row 13 finds an attacker of its own
+  (`AiSystem.SelfDefencePick`: `CombatSystem.BestAttackerOf` with the NPC as subject and looker, its attackers and its own target at any distance; a turret gunner takes no shooter, engine), else none
+  and the next goal is tried. The fight starts as a goal fight (`SendFights`, a defence, not in the aggro log) and is the AI's own: kept while 32 is chosen (a threat on its list beyond 181.7 keeps it at
+  0.7, standing for list A `!159`, engine), left for a higher goal. 35 is acted out by
   `FleeSystem` (the squads' run: first run from the threats' centre, hops, `CharacterCold.Fleeing`): the AI asks (`AiMind.FleeRequest`), a fighter is stopped first. A lone runner stops when no threat attacks it
-  within 181.7 or its body takes the choice back to fighting; a goal-35 runner and a broken squad stop when no enemy is in sight and nobody attacks it. Not modelled: the player faction's branch of slot 55 (the
-  player's characters never run), the locked-gate zero of 60, 4's ranged and squad factors, standing up first for a character staying low, characters without an AI (a crawling one neither fights back nor runs), and goal 16's zero while prone and row 4's with no working arm (`AggroSystem` lets such an NPC attack on sight).
+  within 181.7 or its body takes the choice back to fighting; a goal-35 runner (and a broken squad's, with the optional `FleeSystem.SquadBreak`, which the original has no equivalent of: [perception](perception.md#retreat-and-memory)) stops when no enemy is in sight and nobody attacks it. Not modelled: the player faction's branch of slot 55 (the
+  player's characters never run), the locked-gate zero of 60, 4's ranged and squad factors, standing up first for a character staying low. An NPC without a mind (no squad: scripted and test worlds) gets
+  an engine answer instead (`RetaliationSystem.SelfDefends`, **engine choice**): it fights its attacker at any distance at the alert and every 15 ticks; a crawling one neither fights back nor runs.
+  - **Timing**: the original replans an attacked character whose fight is off (`underMeleeAttack` `FUN_140999f00`, the shot handler `FUN_140999d50`) and chooses at its next AI update
+    (`FUN_1405112b0`, **Verified**: its sense pass `FUN_14085a8d0` runs first, so the threats list is current, then the task system's update `FUN_140511130`), 8 characters a frame in turn
+    ([game loop](game-loop.md#the-character-update-budget)). Meitou: the alert (tick T) puts the attacker on the threats list at once (`AggroSystem.Force`) and asks the NPC to think; it thinks
+    at T+1 and its fight starts at T+2. A landed blow or bolt with its fight off asks again the same way (`CombatSystem.HitReplan`), so a hit never waits for the next 15-tick
+    think.
+  - **Shot from afar**: 32's desire is 0 for a threat beyond 181.7 (**Verified**, `FUN_140599d20`), and the shot handler (`FUN_140999d50`, **Verified**: forced sense with the alarm flag,
+    sneaking off, TEMP_ENEMY on the shooter, the shooter on the victim's engaged list `FUN_140666e20`, a replan while its fight is off) starts no fight of its own: no "being shot at" state or row
+    was found (**Observed**: row 39 is the melee `+0x2b0`, 158 / 159 the same flag and the threats count). So only another goal answers a far shooter: 143 (the finder counts the looker itself,
+    whose fight threat is 0.05 with the shooter on its engaged list, and row 13 takes its own attacker at any distance; **Observed**), 16 / 21 / 144 through the TEMP_ENEMY tag when it is sensed,
+    or 32 once the shooter is within 181.7. An NPC with none of them stands under fire (**Observed**, decompile reading). Meitou: the same (a shooter's target counts it as an attacker for 143).
 - So a squad with PROTECT goals and no ATTACK goal starts no fight with an idle enemy (**Observed**): e.g. the base `Fog prince squad`
   (`42029-rebirth.mod`, package `fog prince`); its dialogue package `fogman` answers only events 52 and 53 and has no effects.
+- **Meitou, NPCs** (`AiSystem.Fights.cs`, [AI](../simulation.md#ai)): 16, 21, 144, 34, 143, 15 and 288 are priority-3 goals of `AiSystem.Choose`, scored like every goal (desire x finder
+  factor x weight x crowding, x1.25 for the current one; in their hours). Desires: 16 1 (0 Passive, sneaking outside a fight, prone), 21 / 34 / 143 1, 144 0.5, 15 / 288 as above; the factor is 1
+  with a pick for the attack goals (`AggroSystem.FindFoe`: the looker's sensed entries and its squad mates' within 2 R, the shared sightings) and the capped fight threat for the protect
+  goals, whose pick is row 13's attacker (none: the goal fails). Engine gates: a character that cannot fight, crawls, runs away under Self preservation or mans a turret wants none. One whose
+  lists hold no combat goal starts no fight and joins none: it only fights back when attacked (32 in the same chooser). Nothing else starts an NPC's fight on sight or pulls a mate in.
+  - **Squads the AI does not run** (`AiSystem.EngineMinds`, `AiMind.Engine`; engine choice for the routine): `setupAI` gives every character goals (14, 32, its race's, its faction's; [Precedence](#precedence))
+    and its squad's packages add theirs, so every NPC of such a squad gets a mind: a roaming platoon's active half (its trip is the population's stand-in), a campaign's loaded squad and a squad
+    whose template lists no AI packages. Its combat goals are those of its package for its role (a campaign squad's phase package, as `PopulationSystem.GoalDuty` reads it; a roaming one's
+    the package its stand-in follows; none without packages) and of its race; it weighs only them and Self preservation (fight or run), on its routine (standing, wandering, following, the roaming
+    leader's walk) and in its own fight, and acts nothing else out; a fight's end gives the routine back (the stand-down). So a template without packages starts no fight (no base race lists an
+    attack goal; Cannibal lists 143) and a caravan with 143 / 15 only defends. Not modelled for them: 35 and the packages' other goals (the trip goes on as before). A mind dropped by trade,
+    recruitment, capture or storage is made again at the next package cadence (30 ticks); meanwhile, and for an NPC with no squad (scripted worlds only), there is no mind.
+  - **In the fight** (`AiSystem.InFight`): the fight a goal started is the AI's own (`AiMind.FightFrom`), and its fighter thinks in it as anyone does. The current combat goal is kept while it is not
+    done (the plan step above): an attack goal while its senses count an enemy (`numEnemies`, 16's effect; the same taken for 21, 144 and 34) or its finder picks one, a protect goal while
+    its finder values someone above 0 (143 counts its own fight, the 0.01 floor), row 13 not asked again; another combat goal chosen keeps the fight too (the fight re-targets by itself).
+    No fight goal commits, so a goal of a higher score takes the fighter out: the serial step ends the fight (`AiSystem.LeaveFights`) and the next tick acts the goal out. Engine choice: a
+    fighter also thinks on the 15-tick cadence, where the original only replans on triggers and lets the plan step end the goal.
+  - **Pre-emption** (`AiSystem.Preempts`): the engine duties stand for goals and jobs of the same chooser below a priority-3 goal, so the combat goals and 32 are weighed for an NPC on one whose
+    system lets a fight interrupt it: treating (`FirstAidSystem` lets the patient go), a town errand's walk (`TownDutySystem` waits for the fight and walks on; one carrying an intruder out
+    fights with the body on its shoulder, x0.5 for 15 / 288), a captive job's walk carrying nothing (`CaptiveSystem` gives the job up). The other duties (their systems do not survive a fight
+    or are law work of their own: arrests, kidnaps, the cage walks, rescues, lifts, looting, dialogue walks, trades) and a fight the AI did not start (a dialogue's, an assault's, a duty's) get
+    32 alone: their characters start no combat goal's fight until they are back on an AI task, but defend themselves (a fight's start ends the duty's task; in a fight only 32's run changes
+    anything). Nothing for one fleeing, imprisoned, carried or down, nor for a gunner or a carrier in a fight.
+  - **Same-tick starts** (`AiSystem.SendFights`): the original's choosers run one after another and a fight's start puts the fighter on its target's engaged list at once, which the next
+    chooser's target score counts (`FUN_14059e300`: minus manliness per attacker; **Observed**). Meitou's thinks read the last tick, so the serial step picks again, in slot order, for a starter
+    after the first of the tick, with the fights already started counted as attackers: mates of one sighting spread over the foes.
+  - **Triggers** (`AiMind.Replan`, engine stand-ins, the same whatever the goals): a new enemy entry in the senses of an NPC that is free or in its own fight (it and its mates within 2 R), an
+    alert (the attacked NPC with its fight off and not getting up, as the original's replan; both squads' mates), a mate's fight start, and the end of the NPC's own fight (the plan finished),
+    next to the 15-tick cadence (so an NPC with 15 / 288 that senses an ally's fight weighs it at its next think).
 
 ## Town goals
 
@@ -958,11 +1126,12 @@ A character's job list (the Orders menu's "Perma-Jobs"; class `OrdersReceiver`, 
   | 98, 175, 261 → 153 (153 has no +4: the bed order stays one-shot) | 1 | 0 |
   | 58, 250, 57, 238, 16, 125, 106, 138, 187 (plain jobs) | 1 | 0 |
 
-- **Choosing** (**Verified**, decision pass `FUN_140510ef0`, job scoring `FUN_14050e5b0`, pick `FUN_140510650`): order list → jobs of kind 2 while
-  the AI flag at +0xbc is set → urgent tier (3) → all jobs → tiers 2, 1 → idle. Within a job pass each job considered gets the key N+8, N+7, ...
+- **Choosing** (**Verified**, decision pass `FUN_140510ef0`, job scoring `FUN_14050e5b0`, pick `FUN_140510650`; [Precedence](#precedence)): order list → jobs of kind 2 while
+  the AI flag at +0xbc is set (and 187) → priority-3 goals → all jobs → tiers 2, 1 → idle. Within a job pass each job considered gets the key N+8, N+7, ...
   (N = list length) in list order, kept when its desire is above 0. The pick takes the highest key above 0. **So the first job that can run wins,
-  and a higher job takes over as soon as it can run** at the next re-plan. A job is skipped when: it has no TaskData; the switch is off and its
-  type is not 16, 31, 45, 57, 58 or 250 (`FUN_14050c1c0`: these run regardless, so the medic job ignores the switch and rescue does not); the
+  and a higher job takes over as soon as it can run** at the next re-plan; the key does not depend on the current task, so the running job keeps no priority beyond its place
+  (**Verified**, `FUN_14050e5b0`). A job is skipped when: it has no TaskData; the switch is off and its
+  type is not 16, 31, 45, 57, 58 or 250 (`FUN_14050c1c0`, tested in both the urgent and the full pass, **Verified**: these run regardless, so the medic job ignores the switch and rescue does not); the
   planner finds an unmet list-B state and the row has no effect (row +0x14 clear; `FUN_14060f940`); its list A holds (done; `FUN_14060f570`,
   `FUN_14050c8e0`); or desire × target finder is 0. Type 187 (Obedient Slave) has a slave-state branch of its own.
 - **Range** (**Verified** by decompile of `FUN_1405a3370`, `FUN_140599f30`, `FUN_140597790`, `AI::AI` `FUN_1406236d0`; names KenshiLib 1ce4a16,
@@ -991,15 +1160,15 @@ A character's job list (the Orders menu's "Perma-Jobs"; class `OrdersReceiver`, 
 - **Save** (**Verified**, `OrdersReceiver` vfunc 1 / 2; 4122 GAMESTATE_AI records of the owner's saves, 199 jobs, types 187 and 57 only): record
   `ai` (GAMESTATE_AI); bool `jobs` = the switch; per job i from 0, int `pjob<i>` (type) and handle `pjobT<i>`. The loader re-adds each job
   through the add function (so companions and the switch are re-run) until `pjob<i>` is missing, then reads `jobs`. `AITaskSytem` vfunc 1 / 2
-  also saves the task queue (+0x40 deque): `tjob<i>` type, vec3 `tjobP<i>`, handle `tjobT<i>`. The GAMESTATE_CHARACTER bool `chase mode` is the
+  also saves the order queue (+0x40 deque, [format](../formats/save.md#order-queue)). The GAMESTATE_CHARACTER bool `chase mode` is the
   same switch (**Verified**: the writer `FUN_1406280a0` stores the byte +0x35 of the orders receiver at character +0x650 → +0x20; the loader
   `FUN_140626f50` passes it back as toggle 15); the orders panel's `OrdersChaseButton` (captioned JOBS) is this switch.
 - **Finders of the jobs** (**Verified** registrations in `FUN_140319a60`, finder thunks resolved; readings **Observed**; "sensed" = the
   character's sensed list `FUN_140853960(include, exclude)`, whose bits are **Unknown**):
   - 58 Medic / 57 Robotics: `FUN_14099f690` with a flag (58: 0, 57: 1; [Medic jobs](#medic-jobs)). Desire `FUN_140998410` (both, and 250).
   - 250 Splint Rigging: `FUN_14099e240` ([Medic jobs](#medic-jobs)).
-  - 16 Attacking enemies: `FUN_14059f3a0` ([Combat goals](#combat-goals)); it searches only while the AI's +0xbc (read as the count of sensed
-    enemies) is nonzero, which is also the condition of the kind-2 job pass above.
+  - 16 Attacking enemies: `FUN_14059f3a0` ([Combat goals](#combat-goals)); it searches only while the AI's +0xbc (`numEnemies`,
+    [senses](perception.md#senses)) is nonzero, which is also the condition of the kind-2 job pass above.
   - 238 Foraging animals: `FUN_1408ce3a0`: the first sensed (0x18, 1) character that is down (`FUN_1407d1440`: carried, or ragdoll flags), an animal
     (vfunc 0x248), not carried, passes a character vfunc 0x3e8 test or has faction flag +0x1d0 (**Unknown**), is in no give-up list, and holds an
     item that has a store (`FUN_140998950`, inventory then backpack, over `FUN_14059acd0`, **Verified** decompile): a complete building with a production interface of
@@ -1044,7 +1213,7 @@ A character's job list (the Orders menu's "Perma-Jobs"; class `OrdersReceiver`, 
 `isTargetMarkedForDeath` (`FUN_14032eb40`), `AITaskSytem.pathFailures` (+0x218, the "give-up list"), `Character::isAlly` / `isEnemy` (vfuncs `0x3f0` / `0x3e8`), `amInsideTownWalls` (`0x118`), `isIndoors` (`0x1d8`, a building
 hand), `isGettingEaten` (+0x279), `CharStats._holdPositionMode` (+0x12b).
 - **Kits**: any item of function 1 (organic) or 12 (robot) in the medic's inventory or its backpack (**Verified**: `FUN_14099f690` tests the inventory, then a second lookup of the backpack's inventory; `FUN_14004b84e` compares each item's function only, with no charge or quantity test). Squad mates' kits do not count for the job. The task then takes a kit from the medic's own main grid, then its worn backpack, the fewest charges above zero (the rig task's search, **Verified**; the first aid tasks share its vtable slot, **Observed**: [kit search](character-stats.md#first-aid-update)). The splint finder wants function 2 and takes X = min(the medic's `medic` stat, the kit's quality).
-- **Desire** (`FUN_140998410`): 0.01 while the AI's `+0xb0` is above 0, else 0.05 while `+0xbc` is above 0 (both read as enemy counts, **Observed**), else 0.1 while the medic carries someone, else 1. Always above 0, and `FUN_14050e5b0` keeps a job whose desire is above 0 (**Verified**). The finder has no squad-fight test (**Verified**, `FUN_14099f690`): a free player medic treats a downed mate while its squad fights (**Observed**, offscreen sandbox run). Meitou: an NPC medic waits while its squad fights or it carries someone (engine stand-ins for the low desire; a kidnapper otherwise walked off after a patient with its captive).
+- **Desire** (`FUN_140998410`): 0.01 while the AI's `+0xb0` is above 0, else 0.05 while `+0xbc` is above 0 (the senses' threat towards the medic and `numEnemies`, **Verified**, [senses](perception.md#senses)), else 0.1 while the medic carries someone, else 1. Always above 0, and `FUN_14050e5b0` keeps a job whose desire is above 0 (**Verified**). The finder has no squad-fight test (**Verified**, `FUN_14099f690`): the finder alone does not keep a player medic from a downed mate while its squad fights (**Observed**, offscreen sandbox run); the step does, through 15 Protect allies at step 4 ([precedence](#precedence)). Meitou: an NPC medic waits while its squad fights or it carries someone (engine stand-ins for the low desire; a kidnapper otherwise walked off after a patient with its captive).
 - **Need** (`FUN_140998200`) of a patient for this medic: 0 while the patient's CombatClass `+0x130` is set (fighting). The kit test is on unless the medic is not of the player's faction and the patient is imprisoned or a chained
   slave of the medic's faction (`FUN_14032e2a0`, which then counts without kits); the organic need score ([first aid need](character-stats.md#first-aid-need-score)) counts with an organic kit, the robot one with a robot kit.
   Another faction's patient: x 0.8 when `isAlly` (relation 50 or more, the allied flag, squad memory), else x relation / 100, at least 0.05 (`DAT_141696c74`). The further floor of 0.01 for a player medic with a current
@@ -1066,14 +1235,14 @@ hand), `isGettingEaten` (+0x279), `CharStats._holdPositionMode` (+0x12b).
   sensed carried (bit 15) patients, not a robot or animal, not eaten, seen or heard, whose carrier is of the medic's faction: need x nearness (flag = hold mode). **Pass 5**, after 3 and 4, when the medic stands in its squad's home building: the
   occupants of its cages (function 8 buildings of that place): need x 0.25 flat (`DAT_141696c80`), taken when above the best so far. So NPC guards patch up their prisoners, without a kit.
 - **Splint finder** (`FUN_14099e240`): no splint kit: nothing. Sensed allies, not robot races, not path-failed, not carried by an enemy, of the **medic's own faction only**; weight = `needsSplint`(X) (`FUN_140646400`, **Verified** by disassembly:
-  0.1 when a part meets the [needsSplint test](character-stats.md#splints); -0.1 for a dead patient, else 0) x nearness (flag = hold mode) with the same sticky pair and x 0.05 rules; the medic itself at 0.1. No squad-fight test in the finder (**Verified**, `FUN_14099e240`), and the job's desire is `FUN_140998410` like the Medic and Robotics jobs (**Verified**: the registration `FUN_140319a60` gives 58, 250 and 57 the same desire thunk `LAB_1400442d8`, no other task uses it; that the thunk is `FUN_140998410` is **Observed**, the function is not in the decompile), always above 0, so a free player splint job runs while its squad fights. Meitou: the squad-fight wait applies to NPCs only (`SplintSomeone`; only the player's job calls it); the finder's `InCombat` gate on the medic itself stays (**Unknown** in the original).
+  0.1 when a part meets the [needsSplint test](character-stats.md#splints); -0.1 for a dead patient, else 0) x nearness (flag = hold mode) with the same sticky pair and x 0.05 rules; the medic itself at 0.1. No squad-fight test in the finder (**Verified**, `FUN_14099e240`), and the job's desire is `FUN_140998410` like the Medic and Robotics jobs (**Verified**: the registration `FUN_140319a60` gives 58, 250 and 57 the same desire thunk `LAB_1400442d8`, no other task uses it; that the thunk is `FUN_140998410` is **Observed**, the function is not in the decompile), always above 0, so a free player splint job runs while its squad fights. Meitou: the squad-fight wait applies to NPCs only (`FindSplint`; only the player's job calls it); the finder's `InCombat` gate on the medic itself stays (**Unknown** in the original).
 - **NPCs run it as a goal**: the `Medic` AI_TASK (enum 58) is in the goal lists of most AI packages (Squad, Squad2 and Leader roles; e.g.
   `Guard building, residents`, `Guard town`, `Shop`, `Wandering from town to town`, the slaver packages; **Verified** by a data survey of the
   full load order, 2026-10-24). Its row in `FUN_140319a60` (like 57 and 250) has crowd factor `+0x34` 0.8 (**Observed**). Score = desire x weight x 0.8^n x the finder's score
   (0 for no patient). Meitou does not score it: an NPC heals from the `FirstAidSystem.SlowWorld` sweep when idle (any NPC, whether or not its package lists 58), with the desire's
   fight and carrying cases as hard gates in `FindPatient` (a scored 0.1 would lose to the kidnap/rescue carry, which is not a scored goal here). Scoring it needs the finder's result
   from a serial step (`FindPatient` shares scratch lists, the think is parallel) kept as sim state.
-- Meitou (`FirstAidSystem.FindPatient` / `SplintSomeone`, one finder for the player's jobs, the Medic button and idle NPCs): all five passes. Original data used: the path-failure list is `CharacterCold.PathFailures` (written by pursuits; the finder skips such patients; a treating medic does not note its own failed paths yet: calling `PursuitSystem.NotePathFailure` from `Schedule` made the medic drop its patient in a `--load` run, a stale `PathFailed` flag is the suspect, **Unknown**); `isAlly` is `DialogueSystem.RegardsFriendly`, `isEnemy` its squad memory tags (`EnemyMemory`) then the relation, `FUN_14059a670` is `DialogueSystem.Helps` (personality included); the cage marked for death is a Kill or Eat job of the medic's squad on that cage (`CaptiveSystem.Jobs`). Stand-ins left: "sensed" is the medic's sight range, "seen or heard" always holds, "the same town and building" is `SightMap.PlaceOf`, "the squad home" is the squad's home building (its own, else its town's; a cage in it passes pass 2, and pass 5 runs only inside it, over its cages; a squad without one, the player's, keeps a faction test in pass 2 and has no pass 5), the slave test needs `Shackles`, pass 3's slave list is the squad's slave members and the slaves obeying it (`CharacterCold.SlaveMaster`, runtime only: a slave with no known master, after a load, counts for every squad of its owner faction), the disguise faction of `isAlly` is not read, the sub-target list is the set of (medic, patient) pairs of running treatments, the goal's desire stand-in "no fight in the squad" applies to NPC medics only (player medics are not held back by fights, see Desire above). The sticky pair (a running pair is taken at once with a score of at least 0.95, passes 1 and 2 and the splint finder; `FUN_140269190`, `DAT_1416bc15c`) and the not-being-eaten test (`MedicalState.EatenCountdown`; passes 1, 2 and 4 only, not pass 3, pass 5 or the splint finder) are modelled (**Verified** by decompile of `FUN_14099f690`, `FUN_14099e240`). Not yet modelled: the second relation factor in pass 1 for a patient that is not an ally (`FUN_1406b2460`, **Unknown**).
+- Meitou (`FirstAidSystem.FindPatient` / `FindSplint`, one finder for the player's jobs, the Medic button and idle NPCs): all five passes. Original data used: the path-failure list is `CharacterCold.PathFailures` (written by pursuits; the finder skips such patients; a treating medic does not note its own failed paths yet: calling `PursuitSystem.NotePathFailure` from `Schedule` made the medic drop its patient in a `--load` run, a stale `PathFailed` flag is the suspect, **Unknown**); `isAlly` is `DialogueSystem.RegardsFriendly`, `isEnemy` its squad memory tags (`EnemyMemory`) then the relation, `FUN_14059a670` is `DialogueSystem.Helps` (personality included); the cage marked for death is a Kill or Eat job of the medic's squad on that cage (`CaptiveSystem.Jobs`). Stand-ins left: "sensed" is the medic's sight range, "seen or heard" always holds, "the same town and building" is `SightMap.PlaceOf`, "the squad home" is the squad's home building (its own, else its town's; a cage in it passes pass 2, and pass 5 runs only inside it, over its cages; a squad without one, the player's, keeps a faction test in pass 2 and has no pass 5), the slave test needs `Shackles`, pass 3's slave list is the squad's slave members and the slaves obeying it (`CharacterCold.SlaveMaster`, runtime only: a slave with no known master, after a load, counts for every squad of its owner faction), the disguise faction of `isAlly` is not read, the sub-target list is the set of (medic, patient) pairs of running treatments, the goal's desire stand-in "no fight in the squad" applies to NPC medics only (player medics are not held back by fights, see Desire above). The sticky pair (a running pair is taken at once with a score of at least 0.95, passes 1 and 2 and the splint finder; `FUN_140269190`, `DAT_1416bc15c`) and the not-being-eaten test (`MedicalState.EatenCountdown`; passes 1, 2 and 4 only, not pass 3, pass 5 or the splint finder) are modelled (**Verified** by decompile of `FUN_14099f690`, `FUN_14099e240`). Not yet modelled: the second relation factor in pass 1 for a patient that is not an ally (`FUN_1406b2460`, **Unknown**).
 
 ## Squad AI options
 
@@ -1086,7 +1255,7 @@ player squad for a new layout ([squads travelling together](pathfinding.md#squad
 `ditch`. Meitou: `SquadFormationCommand` sets `World.FactionFormations` (the movement rebuilds the slots when the type changes). New-game values (**Observed**, 511 of the owner's saves): ditch, sleep, sit, share,
 feed, eject on; heal, help off (on in 4), rescue, stay, shootfirst off. Readers (**Verified** by decompile):
 - **Heal Allies** (+0x110): the medic finder's other-faction test, pass 1 only ([Medic jobs](#medic-jobs)); "Characters with the medic job will also heal characters of allied factions".
-- **Help Allies** (+0x111): the protect-allies finders `FUN_14099ca10` (goals 15, 288) and `FUN_14099cf80` (sensed (1, 0x208), seen or heard): for a
+- **Help Allies** (+0x111): the protect-allies finder `FUN_14099ca10` (goals 15, 288; its same-town twin `FUN_14099cf80` is never registered) (sensed (1, 0x208), seen or heard): for a
   player-faction looker each fighting candidate's threat (`FUN_14099a190`) is × `FUN_1409b2380`(d², 10, 1000, 0.1); one of another faction is
   skipped with the option off and squared with it on. Result capped at 1.2.
 - **Rescue Allies** (+0x112): the character finder `FUN_1408cd2d0` ([carry-loot](carry-loot.md#32-goals-and-their-target-finders)) requires the

@@ -29,6 +29,15 @@ put-down and bed/cage placement are different state transitions. Bed/cage occupa
 must maintain both character and object links. Rescue target finders differ for squad/player/
 NPC/leader and available safe beds; do not turn every pickup into kidnapping.
 
+### Who carries
+
+An animal never carries (**Verified**, decompile): `FUN_14060e840` picks the AI's task registry from its mode flags, whose start value is Character vslot `0x3f8`:
+`CharacterAnimal` `FUN_1405e2020` returns 0x20 (the 'animal' registry), `CharacterHuman` `FUN_1405e59b0` 1 ('human'). Every carry row (105/148 rescue, 142 leader rescue, 132 kidnap,
+254, 108 prison, 112/281 cage, 167/168 slaves, 182, 203/204 arrest and bounty, 238 foraging) is registered with flag 0x1 only (`FUN_140319a60`), so an animal cannot plan one
+whatever its race `AI Goals` or package list (a mod's included); the context menu of an animals-only selection offers no Pick Up ([ui-input](ui-input.md)).
+Meitou: every lift, put-down (69, 0x1) and loot (26, 177, 42: 0x45, no animal) tests its row against the repertoire (`TaskStart`, [simulation](../simulation.md#task-eligibility)); `CarrySystem.CanCarry`
+is that test for every lift (the rescue and leader rescue passes, kidnap, town duty, capture and slave carry, foraging, errands and the player's order).
+
 ### A carried body's animation
 
 **Verified** (`FUN_1405ced90`, `FUN_140520500`, `FUN_14051fc60`, `FUN_1405203b0`; writers of the animation category `+0xf0` found: 0, 4 swimming, 5 grounded, never 3): the body's side of the attach is made for every carried
@@ -239,11 +248,16 @@ arrival (vfunc 1, `FUN_14034ffa0`) first rolls:
   XP 100 is given only in that case (**Verified**, `FUN_14034ffa0`: the same `+0x5b9`/`+0x5bc` test guards both; a hit on a down victim gives none); then the lift.
 - **Failed**: the victim perceives the kidnapper (the kidnapper's status `+0x110` = 250, the recently-wanted marker); its town's alarm is raised at the
   kidnapper (code 15, [town alarms](economy.md#town-alarms)); a sleeper (state 1) gets order 116 Getting out of bed; its squad tags the
-  kidnapper TEMP ENEMY and long-term 1 (intruder) and says event 8 to it; assassination XP 300; the task ends; a sleeper wakes (state 0) and
-  goes for the kidnapper (`Character::attackTarget`).
+  kidnapper TEMP ENEMY and long-term 1 (intruder) and says event 8 to it; assassination XP 300; the task ends; a sleeper wakes (state 0).
+- **What the victim does** (**Verified**, `FUN_14034ffa0`): every victim gets the forced sense of the kidnapper (`FUN_140858f40`, seen). A sleeper gets order 116 through `FUN_1405d20d0` with
+  its clear flag set (`FUN_1405074a0` empties the order queue and the second list, a replan follows), then `FUN_1405cb0a0` (the kidnapper into its engaged list, forced sense, TEMP ENEMY,
+  a replan request): no `Character::attackTarget` and no task push. The fight is the chooser's (**Observed**): no order can win, the queue is gone; whether the kidnapper then counts as a
+  threat for Self preservation (it reads the attacker's intended target) is **Unknown**; an awake victim gets the forced sense and tags only.
 
 Meitou (`CarrySystem.Kidnap.cs`, `PickUpOrder.Kidnap`): as above; asleep is lying in a bed or resting with the sleep behaviour; the
-perception mark is not modelled; `+0x110` is `CharacterCold.RecentlyWanted`.
+perception mark is not modelled; `+0x110` is `CharacterCold.RecentlyWanted`. A woken NPC sleeper gets a deferred defensive attack; a player character's queue is cleared, the kidnapper is
+forced into its senses and the decision step answers with `CarrySystem.EngagedDefence` (an engine stand-in for the threats list, [decision step](../simulation.md#decision-step)); an awake player
+victim is only forced-sensed.
 
 ## Unknowns
 

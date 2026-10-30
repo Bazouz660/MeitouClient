@@ -20,13 +20,13 @@ namespace Meitou.Simulation.FirstAid;
 /// the kit's <c>charges</c> fall by <c>lerp(medkit drain 99, medkit drain 1, (100 - skill) / 100) x dt</c> per wound step or part bandaged (bandaging drains only the player's kits; character-stats.md "First aid update"). The skill is the medic's <c>medic</c> (first aid kit) or <c>robotics</c> (robot kit) times
 /// the stat multiplier of injuries and hunger. <c>dt</c> is <b>game seconds</b> (<b>engine choice</b>, the unit is <b>Unknown</b>).</item>
 /// <item><b>Auto</b> (<c>SlowWorld</c>, every <see cref="FirstAidSettings.AutoEveryTicks"/> ticks, serial in slot order): an idle, wandering or following NPC looks for a patient with the original's
-/// Medic finder (<see cref="FindPatient"/>, FirstAidSystem.Finder.cs), as the player's characters do for their medic, robotics and splint jobs (<see cref="RunJobs"/>).</item>
+/// Medic finder (<see cref="FindPatient"/>, FirstAidSystem.Finder.cs), as the decision step asks for the player characters' medic, robotics and splint jobs (<see cref="RegisterSources"/>).</item>
 /// <item><b>Rest</b> (<see cref="CharacterTask.Rest"/>): <see cref="RestOrder"/>; <see cref="BodySystem"/> reads the task as <see cref="MedicalContext.Resting"/>. Lying in a bed is
 /// <see cref="Locks.BedSystem"/>'s (<see cref="CharacterTask.Sleep"/>); <see cref="BodySystem"/> gives it the bed's healing.</item>
 /// </list>
 /// Placed after the movement system (a later move order replaces a treatment, since it sets the task) and before the body system.
 /// </summary>
-public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions options, ItemFactory items, FirstAidSettings? settings = null) : ITickSystem
+public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions options, ItemFactory items, FirstAidSettings? settings = null) : ITickSystem, ITaskOwner, ITaskHandler, IOrderOwner, IDecisionOwner
 {
     /// <summary>The effect kind: one tick of treatment from the source (medic) on the target (patient).</summary>
     public const int EffectTreat = 1;
@@ -55,69 +55,119 @@ public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions 
                 case TreatOrder order:
                     if (!table.TryResolveNext(order.Patient, out int patient) || table.Cold(patient)!.Medical is not { Dead: false }) break;
                     foreach (var id in Who(world, order.Medics))
-                        if (table.TryResolveNext(id, out int slot) && table.Cold(slot) is { Race: not null, Stats: not null } cold && CanAct(cold))
-                        {
-                            if (FindKit(world, slot, cold, ItemInfo.FirstAidKitFunction) is null && FindKit(world, slot, cold, ItemInfo.RobotKitFunction) is null)
-                                world.Bark(id, "I don't have a medkit.");   // refused before the medic moves
-                            else Begin(world, slot, order.Patient, CharacterTask.Idle);
-                        }
+                        if (table.TryResolveNext(id, out int slot)) PlayerOrders.Give(world, slot, new OrderEntry(TaskType.FIRST_AID_ORDER, this) { Target = order.Patient }, order.Queued);
                     break;
                 case SplintOrder splint:
                     if (!table.TryResolveNext(splint.Patient, out int splinted) || table.Cold(splinted)!.Medical is not { Dead: false }) break;
                     foreach (var id in Who(world, splint.Medics))
-                        if (table.TryResolveNext(id, out int slot) && table.Cold(slot) is { Race: not null, Stats: not null } cold && CanAct(cold))
-                        {
-                            if (OwnKit(cold, ItemInfo.SplintKitFunction) is null) world.Bark(id, "I don't have a splint kit.");   // the medic's own kit only (the original's kit search)
-                            else Begin(world, slot, splint.Patient, CharacterTask.Idle, splint: true);
-                        }
+                        if (table.TryResolveNext(id, out int slot)) PlayerOrders.Give(world, slot, new OrderEntry(TaskType.SPLINT_ORDER, this) { Target = splint.Patient }, splint.Queued);
                     break;
                 case RestOrder rest:
                     foreach (var id in Who(world, rest.Characters))
-                    {
-                        if (!table.TryResolveNext(id, out int slot) || table.Cold(slot) is not { } cold || !CanAct(cold)) continue;
-                        MovementSystem.Stop(table, slot);
-                        table.Next[slot].Task = (byte)CharacterTask.Rest;
-                        cold.TreatTarget = CharacterId.None;
-                        cold.TreatSplint = false;
-                        cold.ResumeTask = CharacterTask.Idle;
-                    }
+                        if (table.TryResolveNext(id, out int slot)) PlayerOrders.Give(world, slot, new OrderEntry(TaskType.REST, this), rest.Queued);
                     break;
                 case MedicJobCommand job:
-                {
-                    var taken = job.Job ? null : Treated(table);
                     foreach (var id in Who(world, job.Characters))
                     {
                         if (!table.TryResolveNext(id, out int slot) || table.Cold(slot) is not { IsPlayer: true } cold) continue;
-                        if (taken is null) Production.PermaJobs.Add(cold, Meitou.Data.Gameplay.Ai.TaskType.JOB_MEDIC, Production.PermaJob.Untargeted(Meitou.Data.Gameplay.Ai.TaskType.JOB_MEDIC));
-                        else HealSomeone(world, slot, taken, robotics: false);
+                        if (job.Job) Production.PermaJobs.Add(cold, TaskType.JOB_MEDIC, Production.PermaJob.Untargeted(TaskType.JOB_MEDIC));
+                        else PlayerOrders.Give(world, slot, new OrderEntry(TaskType.None, this) { Detail = MedicButton }, job.Queued);   // the button: one look for a patient
                     }
                     break;
-                }
             }
         }
     }
 
+    /// <summary>The <see cref="OrderEntry.Detail"/> of the Medic button's one-shot order (the job's finder looked at once, then a First aid 25).</summary>
+    static readonly object MedicButton = new();
+
+    /// <summary>
+    /// First aid 25 and Splint 249 need the patient alive (else the order leaves the queue) and an able medic with a kit (a medkit or a robot kit anyone of its squad near it carries; its own splint kit),
+    /// Rest an able character; the Medic button an able player character. The failure texts are the orders' refusals.
+    /// </summary>
+    OrderCheck IOrderOwner.CanRun(World world, int slot, OrderEntry order)
+    {
+        var table = world.Characters;
+        var cold = table.Cold(slot)!;
+        if (order.Detail == MedicButton) return cold.IsPlayer ? OrderCheck.Run : OrderCheck.Gone;
+        if (order.Row == TaskType.REST) return CanAct(cold) ? OrderCheck.Run : OrderCheck.Blocked();
+        if (!table.TryResolveNext(order.Target, out int patient) || table.Cold(patient)!.Medical is not { Dead: false }) return OrderCheck.Gone;
+        if (cold is not { Race: not null, Stats: not null } || !CanAct(cold)) return OrderCheck.Blocked();
+        if (order.Row == TaskType.SPLINT_ORDER)
+            return OwnKit(cold, ItemInfo.SplintKitFunction) is null ? OrderCheck.Blocked("I don't have a splint kit.") : OrderCheck.Run;   // the medic's own kit only (the original's kit search)
+        return FindKit(world, slot, cold, ItemInfo.FirstAidKitFunction) is null && FindKit(world, slot, cold, ItemInfo.RobotKitFunction) is null
+            ? OrderCheck.Blocked("I don't have a medkit.")   // refused before the medic moves
+            : OrderCheck.Run;
+    }
+
+    void IOrderOwner.Start(World world, int slot, OrderEntry order)
+    {
+        if (order.Detail == MedicButton)
+        {
+            HealSomeone(world, slot, Treated(world.Characters), robotics: false, TaskSource.Order);
+            return;
+        }
+        if (order.Row == TaskType.REST)
+        {
+            TaskStart.Start(world, slot, new TaskRequest(CharacterTask.Rest, TaskType.REST, TaskSource.Order));
+            return;
+        }
+        TaskStart.Start(world, slot, new TaskRequest(CharacterTask.Treat, order.Row, TaskSource.Order)
+        {
+            Target = order.Target, Resume = TaskStart.ResumeOf(world, slot, CharacterTask.Treat, CharacterTask.Idle),
+        });
+    }
+
     static IReadOnlyList<CharacterId> Who(World world, IReadOnlyList<CharacterId> ids) => ids.Count > 0 ? ids : world.Player.Selection.ToArray();
 
-    /// <summary>A character that can be ordered to treat or rest: it has a medical state, is awake and is not in a fight.</summary>
-    static bool CanAct(CharacterCold cold) => cold.Medical is { Incapacitated: false } && !cold.InCombat && cold.CarriedBy.IsNone;
+    /// <summary>
+    /// A character that can be ordered to treat or rest: it has a medical state, is awake and not carried. Orders outrank Self preservation and First aid 25 and Splint 249 test no threat
+    /// (docs/game/combat.md "Fight lifecycle and orders"): a fighting character's fight ends with the order's new task (<see cref="TaskStart.Start"/>).
+    /// </summary>
+    static bool CanAct(CharacterCold cold) => cold.Medical is { Incapacitated: false } && cold.CarriedBy.IsNone;
 
-    /// <summary>Starts a treatment (serial phases): the medic stands, then walks to the patient. <paramref name="resume"/> is the task to go back to afterwards (kept if already treating).</summary>
-    static void Begin(World world, int slot, CharacterId patient, CharacterTask resume, bool splint = false)
+    public void RegisterTasks(TaskHandlers tasks)
+    {
+        tasks.Register(CharacterTask.Treat, this);
+        tasks.Register(CharacterTask.Rest, this);
+    }
+
+    /// <summary>A treatment of <see cref="TaskRequest.Target"/> (rows 249 and 250 splint), or the Rest order's sitting down.</summary>
+    void ITaskHandler.Start(World world, int slot, in TaskRequest request)
+    {
+        if (request.Task == CharacterTask.Treat)
+        {
+            Begin(world, slot, request.Target, splint: request.Row is TaskType.SPLINT_ORDER or TaskType.SPLINT_JOB);
+            return;
+        }
+        var table = world.Characters;
+        var cold = table.Cold(slot)!;
+        TaskStart.Stand(table, slot);
+        table.Next[slot].Task = (byte)CharacterTask.Rest;
+        cold.TreatTarget = CharacterId.None;
+        cold.TreatSplint = false;
+    }
+
+    /// <summary>A treatment that ends lets go of its patient and kit (the task it goes back to is the new start's, or its provenance's when it ends by itself).</summary>
+    void ITaskHandler.End(World world, int slot, CharacterTask task, TaskEnd reason)
+    {
+        if (task == CharacterTask.Treat) LetGo(world.Characters.Cold(slot)!);
+    }
+
+    /// <summary>Starts a treatment (serial phases): the medic stands, then walks to the patient (the task it goes back to afterwards is in its provenance, <see cref="CharacterCold.Running"/>).</summary>
+    static void Begin(World world, int slot, CharacterId patient, bool splint = false)
     {
         var table = world.Characters;
         var cold = table.Cold(slot)!;
         if (cold.TreatTarget != patient) Say(world, slot, patient, HealingOtherStart, BeingHealedStart);
         ref var n = ref table.Next[slot];
         if (cold.TreatTarget != patient || cold.TreatSplint != splint || n.Task != (byte)CharacterTask.Treat) cold.TreatKit = null;   // a new treatment looks for its own kit
-        var keep = n.Task == (byte)CharacterTask.Treat ? cold.ResumeTask : resume;
-        MovementSystem.Stop(table, slot);
+        TaskStart.Stand(table, slot);
         n.Task = (byte)CharacterTask.Treat;
         n.Mode = SpeedMode.Free;
         n.TaskTime = 0;
         cold.TreatTarget = patient;
         cold.TreatSplint = splint;
-        cold.ResumeTask = keep;
     }
 
     /// <summary>Dialogue events 18-22 (EV_HEALING_OTHER_START ... EV_FIRSTAID_KIT_EMPTY).</summary>
@@ -137,21 +187,18 @@ public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions 
             world.Defer(new Dialogue.DialogueEvent(patient, id, patientEvent) { Tick = world.Tick + 1 });
     }
 
-    /// <summary>Ends a treatment (serial phases): back to the task before it, path dropped.</summary>
-    static void End(CharacterTable table, int slot)
+    /// <summary>Ends a treatment by itself (serial phases; <see cref="TaskEnd.Done"/>): back to the task before it, path dropped.</summary>
+    static void End(World world, int slot)
     {
-        var cold = table.Cold(slot)!;
-        ref var n = ref table.Next[slot];
-        if (n.Task == (byte)CharacterTask.Treat)
-        {
-            MovementSystem.Stop(table, slot);
-            n.Task = (byte)cold.ResumeTask;
-            n.TaskTime = 0;
-        }
+        if (world.Characters.Next[slot].Task == (byte)CharacterTask.Treat) TaskStart.End(world, slot, TaskEnd.Done);
+        else LetGo(world.Characters.Cold(slot)!);
+    }
+
+    static void LetGo(CharacterCold cold)
+    {
         cold.TreatTarget = CharacterId.None;
         cold.TreatSplint = false;
         cold.TreatKit = null;
-        cold.ResumeTask = CharacterTask.Idle;
     }
 
     static float Gap(in CharacterHot a, in CharacterHot b)
@@ -175,7 +222,7 @@ public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions 
             if (cold.Medical is not { Incapacitated: false } || cold.InCombat
                 || !table.TryResolveNext(cold.TreatTarget, out int t) || table.Cold(t)!.Medical is not { Dead: false })
             {
-                End(table, i);
+                End(world, i);
                 continue;
             }
             const ushort Path = (ushort)MoveFlags.AnyPath;
@@ -245,7 +292,7 @@ public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions 
         var patientCold = table.Cold(p)!;
         if (medicCold is not { Medical: { Incapacitated: false } medical, Stats: { } stats, Race: { } medicRace } || patientCold is not { Medical: { Dead: false } body, Race: { } race })
         {
-            End(table, m);
+            End(world, m);
             return;
         }
         if (medicCold.TreatSplint)
@@ -267,7 +314,7 @@ public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions 
             if (woundKit is null && !kitless)
             {
                 Say(world, m, medicCold.TreatTarget, KitEmpty);
-                End(table, m);
+                End(world, m);
                 return;
             }
             float woundSkill = SkillOf(race.IsRobot && !kitless);
@@ -284,7 +331,7 @@ public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions 
             {
                 Say(world, m, medicCold.TreatTarget, HealingOtherFinished, BeingHealedFinished);
                 patientCold.StuckBolts = null;
-                End(table, m);
+                End(world, m);
                 return;
             }
             medicCold.UseSkill(StatsEnumerated.Medic, world.Tick);
@@ -298,13 +345,13 @@ public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions 
         {
             Say(world, m, medicCold.TreatTarget, HealingOtherFinished, BeingHealedFinished);
             patientCold.StuckBolts = null;   // the bolts go when first aid has nothing left to do (FUN_14064d800 -> FUN_14052bc10)
-            End(table, m);   // nothing left to bandage
+            End(world, m);   // nothing left to bandage
             return;
         }
         if (KitOf(world, m, medicCold, FunctionOf(robot)) is not { } kit)
         {
             Say(world, m, medicCold.TreatTarget, KitEmpty);   // Task_FirstAidRig's empty kit (FUN_14034ef20)
-            End(table, m);   // no kit of the right kind within reach
+            End(world, m);   // no kit of the right kind within reach
             return;
         }
         float skill = SkillOf(robot);
@@ -312,7 +359,7 @@ public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions 
         float bandaged = body.Treat(dt, skill, quality, robot, ctx, out int touched);
         if (bandaged <= 0)
         {
-            End(table, m);
+            End(world, m);
             return;
         }
         if (medicCold.IsPlayer) Drain(kit, skill, dt, robot, touched);   // once per part bandaged; only the player's medics use up kits here (FUN_140649a00: faction +0x250)
@@ -332,7 +379,7 @@ public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions 
         if (OwnKit(medicCold, ItemInfo.SplintKitFunction) is not { } kit)
         {
             Say(world, m, medicCold.TreatTarget, KitEmpty);   // the rig task's kit search finds none (FUN_14034ef20, event 22)
-            End(table, m);
+            End(world, m);
             return;
         }
         var item = kit.Item;
@@ -342,7 +389,7 @@ public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions 
         float added = body.Splint(dt, skill, quality, new MedicalContext(Constants, bodyOptions, race));
         if (added <= 0)
         {
-            End(table, m);   // nothing left to splint
+            End(world, m);   // nothing left to splint
             return;
         }
         Drain(kit, skill, dt, false, 1);
@@ -471,40 +518,49 @@ public sealed partial class FirstAidSystem(GameConstants constants, BodyOptions 
             {
                 if (!next[i].Alive) continue;
                 var cold = table.Cold(i)!;
-                if (cold.IsPlayer)
-                {
-                    if (cold.Jobs.Count > 0) RunJobs(world, i, cold, taken);
-                    continue;
-                }
-                if (!Settings.AutoNpcs) continue;
+                if (cold.IsPlayer || !Settings.AutoNpcs) continue;   // a player's medic jobs are the decision step's (MedicJobs)
                 // Idle: no task, following, wandering or an implicit job.
-                bool idle = next[i].Task is (byte)CharacterTask.Idle or (byte)CharacterTask.Wander or (byte)CharacterTask.Follow || cold.Implicit is not null;
-                if (idle) HealSomeone(world, i, taken, robotics: false);
+                bool idle = next[i].Task is (byte)CharacterTask.Idle or (byte)CharacterTask.Wander or (byte)CharacterTask.Follow || Production.PermaJobs.ListJob(cold, (CharacterTask)next[i].Task) is { Implicit: true };
+                if (idle) HealSomeone(world, i, taken, robotics: false, TaskSource.Npc);
             }
         }
         finally { EndSweep(); }
     }
 
     /// <summary>
-    /// A player character's first aid jobs, in list order (docs/game/ai-tasks.md "Perma-jobs"): the first of Medic 58, Robotics 57 and Splint Rigging 250 that may start
-    /// (<see cref="Production.PermaJobs.FreeFor"/>; all three run with the jobs switch off) and whose finder finds a patient starts the treatment.
+    /// The first aid jobs as the decision step's contributor (step 5; docs/game/ai-tasks.md "Medic jobs"): Medic 58 and Robotics 57 run while the finder (<see cref="FindPatient"/>) finds a
+    /// patient, Splint Rigging 250 while its finder does (<see cref="FindSplint"/>); all three run with the jobs switch off. A job's treatment runs until it ends by itself.
     /// </summary>
-    void RunJobs(World world, int i, CharacterCold cold, List<(int Medic, int Patient)> taken)
+    public void RegisterSources(DecisionSystem decisions)
     {
-        var task = (CharacterTask)world.Characters.Next[i].Task;
-        for (int k = 0; k < cold.Jobs.Count; k++)
+        var jobs = new MedicJobs(this);
+        foreach (var type in (ReadOnlySpan<TaskType>)[TaskType.JOB_MEDIC, TaskType.JOB_REPAIR_ROBOT, TaskType.SPLINT_JOB]) decisions.RegisterJob(type, jobs);
+    }
+
+    sealed class MedicJobs(FirstAidSystem owner) : IJobSource
+    {
+        (long Tick, int Slot, int K, int Patient) found = (-1, -1, -1, -1);
+
+        public DecisionCheck CanRun(World world, int slot, int k)
         {
+            var table = world.Characters;
+            var cold = table.Cold(slot)!;
             var type = cold.Jobs[k].Type;
-            if (type is not (TaskType.JOB_MEDIC or TaskType.JOB_REPAIR_ROBOT or TaskType.SPLINT_JOB) || !Production.PermaJobs.FreeFor(cold, task, k)) continue;
-            if (type == TaskType.SPLINT_JOB ? SplintSomeone(world, i, taken) : HealSomeone(world, i, taken, robotics: type == TaskType.JOB_REPAIR_ROBOT)) return;
+            if (cold.Running is { Source: TaskSource.Job } run && run.Job == k && run.Runs((CharacterTask)table.Next[slot].Task) && run.Task == CharacterTask.Treat) return DecisionCheck.Runs;
+            var taken = Treated(table);
+            int patient = type == TaskType.SPLINT_JOB ? owner.FindSplint(world, slot, taken) : owner.FindPatient(world, slot, taken, robotics: type == TaskType.JOB_REPAIR_ROBOT).Slot;
+            if (patient < 0) return DecisionCheck.No("no patient");
+            found = (world.Tick, slot, k, patient);
+            return DecisionCheck.Run;
+        }
+
+        public void Start(World world, int slot, int k)
+        {
+            if (found.Tick != world.Tick || found.Slot != slot || found.K != k) return;
+            var type = world.Characters.Cold(slot)!.Jobs[k].Type;
+            var request = type == TaskType.SPLINT_JOB ? Splinting(k) : new TaskRequest(CharacterTask.Treat, type == TaskType.JOB_REPAIR_ROBOT ? TaskType.JOB_REPAIR_ROBOT : TaskType.JOB_MEDIC, TaskSource.Job) { Job = k };
+            StartJob(world, slot, found.Patient, Treated(world.Characters), request);
         }
     }
 
-    /// <summary>A fight is on in the squad: a member in combat or with an attack order.</summary>
-    static bool Fighting(CharacterTable table, Squad squad)
-    {
-        foreach (var m in squad.Members)
-            if (table.TryResolveNext(m, out int s) && (table.Cold(s)!.InCombat || table.Next[s].Task == (byte)CharacterTask.Attack)) return true;
-        return false;
-    }
 }

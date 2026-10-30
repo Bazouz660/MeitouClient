@@ -7,7 +7,7 @@ below do not claim original-game parity. Retain Verified/Observed/Unknown scopes
 ## Time model
 
 Control: 30 Hz real time, input/UI/camera continue while paused. The interface's own commands (selection, order toggles, run speed, job lists,
-crafting/research queues, squads, inventory, shops, building settings, movement/combat/first-aid/door/cage orders) apply between ticks while paused
+crafting/research queues, squads, inventory, shops, building settings, the Stop order and every order, [order queue](#order-queue)) apply between ticks while paused
 (`World.ApplyPausedInterfaceCommands`); orders only set tasks, nobody moves or fights until the next tick. Simulation: 1/30 s game time;
 accumulate `realDt*speed`, speeds 0/1/2/5. Budget `6*speed` ticks per frame; excess is dropped and
 `AchievedSpeed` reports slowdown. Engine choice: the original instead caps the real frame time at 0.05 s before the speed
@@ -47,6 +47,10 @@ rendering is camera-relative.
 Tick order: Inputs → Schedule → Think → Move → Act → ordered Apply → SlowWorld → Publish.
 Inputs/Schedule/Apply/SlowWorld are serial; each implemented parallel phase has a system barrier. Publish makes the character snapshots on the
 workers in 256-slot chunks (each reads only the tick's state), listed in slot order.
+A system's `BeforeAct` runs right before its own `Act`, with a barrier between. Combat's body step runs there: the medical tick (`TickMedical`), the arms, getting up,
+and the fight's end on going down. Every fighter's body step therefore finishes before any fighter decides. Otherwise a decision that reads its target's knock-out
+or fight would depend on which partition ran first. A decision reads another fighter's fight as that fighter's body step left it, because a decision's own fight end
+clears the live flag.
 `CharacterHot.Previous` is read-only; a partition writes only its own `Next` slots. Spawn/remove
 only in serial phases after consumers finish; generation IDs prevent stale slot references.
 Combat has separate double buffers swapped at the end of its SlowWorld, not at global publish. Its checks round a target (who swings at
@@ -76,6 +80,180 @@ libraries. Characters use hot double buffers plus cold objects; squads/platoons 
 registries. `(slot,generation)` IDs and the free list participate in hashes. Static typed data
 views are built over `GameRecord` once; missing fields use documented defaults. Population shares
 factories/database/relations and lazy body/combat/item assembly. Research owns original formulas.
+
+### Shared predicates
+
+`CharacterFacts` holds one member per original predicate, named and cited after it; merge by original function, not by English word. **Verified** (by reading each copy
+against the decompile): `Down` (`Character` slot 6, `FUN_1405c9e10`: out cold, dead, playing dead, carried; a whole ragdoll only ever exists for an incapacitated or carried character, so
+the ragdoll test adds nothing) is one definition for the carry, dialogue, squad-intact, combat-mode and snapshot reads; `TargetDown` (state 7, `FUN_14099a5a0`) and the capture
+finders' KO / crawling tags (`CaptiveSystem.Down`) are different originals and stay apart. `GettingUp` is `+0x278`. `RegardsEnemy` is the faction part only (engine). The UI reads
+`CharacterSnapshot.Down`, `CombatMode`, `CanOpenInventory`, `Conscious` (Set Free's precondition 125, `FUN_14099a480`, **Verified**; also `LockSystem`'s), `Standing` (not dead or out cold), `Animal` (`SquadRegistry.IsAnimal`, the animal repertoire) and `HostileToPlayer` (the player faction's `Relations.IsHostile`, or fighting a player character; engine reading), computed once in `CharacterFacts` and published; it never re-derives them, so a replica client without systems gets them from the snapshot. The menu's own offer rules (`FUN_140796f80`, `FUN_1407a6bc0`, [ui-input](game/ui-input.md)) stay in the UI. Left as engine stand-ins, not merged: `CarrySystem.Friendly` and `CrimeSystem.Friendly` (faction-level
+"regards as friendly": the full slot 126 also reads squad memory and DC 52, `DialogueSystem.RegardsFriendly`), `IsEnemy` (looker-free), the fight flags `Fighting.cs` / `CombatSystem.Threats` computing
+the immediate-threat reach inline (Unknown whether they match `FUN_1404378f0`'s gate test).
+
+### Task eligibility
+
+`TaskStart.Eligible(world, cold, row)` is the one start-time test of the original's repertoire (`FUN_14060e840`, docs/game/ai-tasks.md "Planner"); a type with no TaskData row is allowed.
+Meitou's `CharacterTask` is the act-out, the row is the `TaskType`: a pick-up is 225 for the order (246 kidnap), 148 for the rescue job, 238 foraging, 137 errands; operate 87 (97 training
+dummy), haul 124, turret 146, prospect 150, build 2, door repair 95, dismantle 96, bed 98 / put in bed 99 / job 106, move 29, melee 5 (picked) or 16, a perma-job its own row, the implicit
+jobs 242 / 153 / 275, pick lock 76, shackles 201 / 185 / 186 (putting shackles on has no row), set free 110, get in cage 107, open / close door 72 / 73, lock / unlock door 77 / 140, cut / break
+lock 285 / 286, smash 226, item pick-up and container walks 3, put in cage 108, a warden's round 110 / 77 / 78. Used by `CarrySystem.CanCarry` (replaces its animal and imprisoned tests), every
+start through `TaskStart.Start`, the lock orders' worker choice and the player's job `Runnable`. Consequences (the original's rows):
+a crawler or one staying low (0x40, posture 1 or 2) can start only rows that register it (move, first aid, loot, talk, attacks, prospect, sleep; not carry, put down 69, stealth KO 228, Splint
+Rigging 250, operate, build, repair, dismantle, put in bed, sit 275, ditch 242, set free 110, unlock door 140, put in cage 108, smash 226); an animal only 0x20 rows (so no bed, no carry,
+no loot 26 / 177 / 42, no first aid, no operate, no medic, no lock, cage or door work but smashing 226; it may pick up items, 3; job 289 is animal-only, so a human with that job never runs it).
+Loot is 26 for the orders, 177 for NPC scavenging and 42 for an NPC arming itself. The engine's starts test their rows too ("Task starts"): a refused errand walk counts
+as a walk that ended short (the errand gives up after its tries); a refused standing task (`TaskStart.Become`) gives way to 14 Idleness, which every repertoire registers (a crippled
+character does not wander, 24, after a flight, a trade or at a roaming mill). Rows with no TaskData (shoo 158, ransack 216, liberate 276, approach 126, the arrest cage walk 206, the
+takeover lift 205) are open to all. The AI's own starts (`TaskStart.StartOwn`) are not tested: its planner chose the row. Not yet routed through it: the trade and talk orders. A caging ends the task through
+`TaskStart.End(Stopped)` (`FixtureRegistry.Imprison`), so production's and construction's `Able` and the beds' `CanWalk` test no cage: their rows do not register the caged repertoires. The medic finder keeps its own imprisoned refusal because rows 25 / 58 register the imprisoned repertoire
+(whether a caged prisoner treats is **Unknown**). A fight is row 5 when the player picked the target, 13 for a defence, else 16 (13 and 16 register the same repertoires).
+
+### Task starts
+
+`TaskStart.Start(world, slot, TaskRequest)` (serial phases) is the one start path. In order: the row must be `Eligible`; a fight ends (the original's new task drops the fight task,
+[combat](game/combat.md#fight-lifecycle-and-orders)); the task before ends through its handler (`TaskEnd.Replaced`: it lets go of its target, while the movement, the task and
+the task it goes back to are the new start's); the provenance is recorded in `CharacterCold.Running` (`RunningTask`: act-out, row, `TaskSource`, job index or implicit flag,
+target, site, tick, resume task); the act-out starts.
+`TaskStart.End(world, slot, reason)` ends a task and drops its provenance: `TaskEnd.Stopped` from outside the act-out (the Stop order, a squad mate lifted awake, a leg giving out: `BodySystem.Collapse` also clears the order queue, [ragdolls](game/ragdolls.md#forced-crawl); then idle);
+`TaskEnd.Done` the act-out's own end (a treatment, carry, site's or machine's work, haul trip, prospecting, a job's follow: the handler lets go, then the character takes up
+`RunningTask.Resume`, engine; one the [decision step](#decision-step) decides stands idle; every end also sets the replan bit). Walks (bed, item work) end by standing; their provenance then no longer runs the task. A lock order's worker (lock, shackle, cage, door, force work)
+stands at its work and its provenance runs `Idle` from then (`LockSystem.AtWork`), so the next start ends the work through the lock handler (a move order given at a cage walks away). Each `CharacterTask` has one
+`ITaskHandler` (Start, End, Done), registered by its system (`ITaskOwner`) in `World.Tasks`, an open list later code may add to or replace; a task without one is set as is. Owners: movement
+(GoTo, Follow, Idle, Wander), combat (Attack), first aid (Treat, Rest), carry (PickUp, PutDown, Loot, StealthKo), production (Operate, Haul, Prospect), construction (Build, Dismantle,
+DeliverMaterials, FetchMaterials), beds (Sleep). A row may have its own handler, which takes that row's starts and ends whatever its act-out (the task before is ended through its running row's
+handler): the lock system's rows (lock, shackle, cage, door and round work), the beds' put-in rows 99 / 106, the player system's row 3 (item pick-up, container walks) and the arrest system's
+put in cage 108, all acted out by a walk (`GoTo`) or in place (`Idle`). `TaskRequest.Detail` carries an act-out's own parameters (a shackle job, a ground item, a round). A builder's
+delivering, fetching and dismantling are steps of one act-out (`TaskStart.ActOut`): `RunningTask.Runs` and the debug check treat them as Build.
+- Routed through it: move, follow and bodyguard (order and job), stop, every fight (`AttackOrder`: picked is an order, `Defensive` a reaction, else a goal), First Aid, Splint, the Medic
+  button, medic, robotics and splint jobs, NPC healing, Rest, pick up, kidnap, loot, open inventory, stealth KO and put down orders, the lifts and drops of errands and town duties, rescue
+  (job, button, NPC leaders), kidnappers' and guards' lifts (`BeginPickUp`), foraging, NPC scavenging and arming, the operate, turret, haul and prospect orders, the production list jobs
+  (87, 97, 124, 152, 234, the engineer 125) and implicit jobs (242, 153, 275), the build, repair, door repair and dismantle orders, the bed orders and job 106, the lock, shackle, cage,
+  door and force orders, the wardens' rounds, item pick-up and container walks, put in cage; the engine's starts: crime, arrest and dialogue fights (`AttackOrder.Source`: `Npc`, a kidnap
+  victim's `Reaction`, an NPC's attack on sight `Npc`), arrest and takeover walks and lifts (203, 205, 206), kidnappers' walks to the cage (112) and lifts (132, 168), captive jobs'
+  walks (the row of their task, `CaptiveSystem.RowOf`), town duties' walks, lifts and drops (the goal of their kind, `TownDutySystem.RowOf`), smell hunts (176), dialogue acts (run away
+  280, go home 19, summon 67, follow while talking 164, stalk 165, approach 126, a bought slave's way out 1), a trade's close (wander 24), flight (35, then wander 24), food on the ground
+  (259) and limbs (277), NPC arming walks (42), roaming and campaign leaders' walks (53, 215) and mills (24). Engine walks go through `TaskStart.Walk` (`TaskRequest.Goal`: as given, or
+  `Point` onto the floor, at `Mode`); engine standing tasks (idle, wander, a follow of the squad's leader) through `TaskStart.Become` (the movement's handler stops the character on it).
+  Sources: a package goal's act-out (town duties, captive jobs, kidnap, smell, food, population) `Goal`; an engine rule or dialogue act (arrest, flight, dialogue, trade) `Npc`.
+- Not serial: the AI's think (parallel, its own slot) starts its goals' walks and standing tasks with `TaskStart.StartOwn`: the provenance (row: the goal's, source `Goal`) and the
+  walk or stand are written on the slot only; no fight or task before it is ended and no handler runs (the AI acts out nothing for a fighting character, and its tasks hold nothing). Its repertoire
+  is not tested (the AI's planner chose the row). Same timing as before at any thread count.
+- An act-out's own system moves its character on with `TaskStart.Step` (another task of the act-out, or back to a standing task), `TaskStart.StepTo` (its next walk) and
+  `TaskStart.Stand` (stop, idle): any phase, its own slot, provenance kept (it then no longer runs the task). These are the walks' arrivals and give-ups, a failed or blocked path, a
+  follow whose target or leader is gone, a builder's steps, a bed reached, a fight's end (`CombatSystem.EndFight`: idle, a follow row's provenance kept for `FollowResume`), an NPC's
+  stand-down back to its routine (`AggroSystem`), a knock-out (`BodySystem`), a caged character held
+  in place (`FixtureRegistry`).
+- Engine starts end the fight and the task before as any start does (a flight's run stops the fight at once, a dialogue act's walk ends it). An errand's own walks would end a fight
+  its character is in, so they wait for it: a town duty steps nothing while its member fights (a player character's food run ends instead), an approaching, following or stalking talker does not walk (engine choice; the
+  original's priority-3 reactions beat these goals).
+- Provenance is the only job mark: `PermaJobs.ListJob` is the production pick's list job (its index) or implicit job it runs (not a follow row's fight step), which the implicit jobs, an NPC's rescue rank test and the circle
+  break read; a list edit moves any job provenance's index (one whose job left the list keeps running with index -1). The task an act-out goes back to is `RunningTask.Resume`, for the
+  characters the decision step does not decide: following or wandering when it did that, else idle (`TaskStart.Standing`); a medic or builder
+  already at it keeps its own (`TaskStart.ResumeOf`).
+- Engine: a fight ended in a serial phase clears both combat state arrays (`CombatSystem.Live` tells which one is current: the slow-world swap changes it).
+- Debug builds check at each tick's end that every task change went through the start path (`TaskStart.CheckStarts`): `Start`, `End`, `StartOwn`, `Step`, `StepTo` and `Stand`
+  stamp the task they set (`CharacterCold.TaskSet`, by `CharacterTable.Ticks`); a builder's switch between the steps of its act-out passes too. Exempt: a handler's own `Start` body
+  (stamped once it returns), and a character spawned or loaded this tick (`PopulationSystem`, `PopulationStored`, `SavedPopulation` and `FixtureRegistry.Bind` set the first task of a
+  new slot, which the check skips).
+- **A fight under another task** (Meitou only; **Verified** by reading `CombatSystem.Act`, `PursuitSystem`): a start that overwrites a fighter's task without ending its fight (no start
+  does any more) leaves `InCombat` and the fight target set. `CombatSystem.Act` does not read the task: the character keeps its target and
+  re-picks, blocks and dodges, draws, and swings whenever a technique reaches the target; `PursuitSystem` and `CombatSystem.Move` steer only an `Attack` task, so the new task's walk
+  moves it. The fight ends only when `Act` loses its task target or finds nothing left ([combat](game/combat.md#leaving-a-fight)), and `EndFight` then leaves the other task alone.
+
+### Order queue
+
+Each character's `CharacterCold.OrderQueue` (`OrderQueue`, the original's `+0x40` deque; [precedence](game/ai-tasks.md#precedence)) holds its orders as `OrderEntry` (row,
+owning `IOrderOwner`, target, site, point, owner detail): the front is the order in hand. Every order command (`OrderCommand`) goes through `PlayerOrders.Give`: without `Queued`
+(Shift) the queue is cleared first, as `addOrder`; the order is queued; at the front it starts through its owner when `PlayerOrders.CanRun` says so (the row's repertoire, then
+the owner's pure `IOrderOwner.CanRun`: `Run`, `Blocked` with its failure text, or `Gone` when its target or site no longer fits the verb).
+- A blocked front shows its text (a bark, or a posted message) and stays queued; the character's task is left alone, so its jobs, goals and reactions go on (S5). `Gone` pops it.
+  A move (29) or follow given to a character out cold is blocked and waits until it wakes (engine choice: the chooser does not run while the character is down; whether the original
+  keeps such an order is **Unknown**).
+- `PlayerOrders.Runs`: the front started and its task's provenance is an order's that runs the task (a move also needs `OrderMove`) and the handler is not `Done`. Lock work and item or
+  container work done in place (`Idle`) report `Done` once the character holds no work.
+- A front whose task ended leaves the queue (a move's arrival in the character's own partition, `PlayerOrders.Arrived`, which also starts a queued move at once as the move-only
+  queue did; `TaskEnd.Done`; else the decision step, `PlayerOrders.Prepare`) and the next is tried at once. An interrupted move drops the queue (as `GoTo`/`Stop` dropped queued moves),
+  so does `TaskEnd.Stopped`; a start from another source replacing the running front pops it (a follow row's fight step does not). A walk that finds no path still clears the whole
+  queue (`MovementSystem`; a gap: the original keeps a failed order queued with its text, but Meitou only learns of the failure after the path search, and re-asking it would ask for
+  the path again every `JobCheckTicks`).
+- After `Give` the decision step ([below](#decision-step)) asks the front again as its source 1: a blocked one falls through to goals and jobs there.
+- `PlayerOrders.Holds` (a pure read): the character holds an order, running, waiting or queued (the original's count `+0x60`; a front whose task ended is not counted). The
+  implicit ditch job 242 runs only without one ([perma-jobs](game/ai-tasks.md#perma-jobs)). `PlayerOrders.Wins` (pure): the front runs or can start, so source 1 wins; the
+  player animals' race-goal jobs (`CaptiveJob.PlayerSide`) end once one runs or can start (a blocked order does not end them).
+- A row needing no melee threat (`PlayerOrders.NeedsNoThreat`: `!158` in list B, of the orders only 146 Turret gunner) is blocked while `CombatSystem.ImmediateThreat` holds; at a
+  decision its running order ends (`TaskEnd.Stopped`) and waits unstarted, so the gunner falls through to self-defence and mans the turret again once the threat is gone (S3).
+  A running Loot order (26) ends (`TaskEnd.Done`) at a decision while a threat is within 40 (`Task_Loot_Order`'s update, [combat](game/combat.md#fight-lifecycle-and-orders)).
+- Group orders keep their pickers (the nearest or first character that can run it: pick up, loot, stealth KO, the turret, item pick-up, containers, lock work); only that character
+  gets the order, none when nobody can run it. Per-character orders (move, follow, attack, first aid, splint, rest, the Medic and Rescue buttons, put down, operate, haul, prospect,
+  build, repair, dismantle, beds, put in cage) queue blocked for whoever cannot run them.
+- Not queued (they act at once): Shoot At (sets the turret's target), Get Out, Dispose Corpse (an errand), Talk and trade (their approach is a deferred `MoveOrder`), Stop (clears the queue).
+- `World.CanOrder(row, actor, target, site, point)` / `CanOrder(OrderEntry, actor)` -> `(Can, Why)` is `PlayerOrders.CanRun` as a pure read between ticks (a `Gone` verdict is `false` with no text); the queue's start and bark use the same read. It is not a menu filter (decision D5): the original's menu offers its verbs (operate, build, dismantle, prospect, ...) without testing the character and lets the order fail with its text, so Meitou's does too; no verb is greyed. The multiplayer branch's `CommandGate` can call it on the host.
+- Every `OrderCommand` also applies while paused (`World.ApplyPausedInterfaceCommands`, through every `IOrderOwner`'s inputs).
+- Saved for player characters (`Saving/OrderSave`, in the character's GAMESTATE_AI record next to the perma-jobs; format and evidence: [save](formats/save.md#order-queue)): the queue front first,
+  started or not, as the original saves its deque as `tjob<i>`. A load reads the orders into `CharacterCold.SavedOrders` and starts nothing; `DecisionSystem.Run` makes them the queue (nothing
+  started) the first time it meets the character, once every character and fixture they name is there, and the replan bit every load sets runs the front through source 1 like a new order.
+  Left out (the queue pops a `Gone` order the same way): a row no system owns, a target character or site that is not in the world, a handle that names nothing, ground-item pick-ups (a runtime
+  item id) and the Medic / Rescue buttons' one-shot looks. An owner with a detail (`IOrderOwner.SaveKind` / `LoadDetail`) codes it in Meitou's own key. **Engine choice**: the original's loader
+  re-adds each order as a one-shot order of its second list, not into the deque ([precedence](game/ai-tasks.md#precedence)); how that list is consumed is **Unknown**, so the queue is
+  restored as it was saved. Hashed as the move-only queue was while it holds only that (nothing, a started order alone, started moves), else under its own mark.
+
+### Decision step
+
+`World.Decisions` (`DecisionSystem`) chooses every task of the characters it decides (`DecisionSystem.Decides`: `IsPlayer`) as the original's chooser does
+([precedence](game/ai-tasks.md#precedence)); NPCs keep the AI ([AI](#ai)). Serial, in slot order: in the slow world right after the last of retaliation, aggro and flight (after every
+system when the world has none), and between ticks for orders only (`ApplyPausedInterfaceCommands`; the bit stays for the next tick).
+- **Sources** (`IDecisionSource`: `CanRun` and `Desire` pure reads, `Start`): an open list sorted by step, then `Key` (the original's list order); systems register theirs
+  (`IDecisionOwner`), later code may add more (`DecisionSystem.Register`). The first source that can run starts; one that runs the character's task already ends the step. Step 4 picks
+  the best desire x weight (x1.25 for the goal running now; a tie goes to the later-listed).
+  1. Orders: the front of the queue ([order queue](#order-queue)): runs, starts, or (blocked) shows its text once (`Tried`), stays queued and the step goes on.
+  2. Commitment: no source. No player goal Meitou runs has the commit flag ([desire and commitment](game/ai-tasks.md#desire-and-commitment)); what priority a running job's plan
+     holds is **Unknown**, so committing jobs (153, 275) stop nothing.
+  3. Urgent jobs: the job list as in step 5, asking only the jobs urgent now: kind-2 234 Turret guard while the character senses an enemy (AI `+0xbc`,
+     `SenseBlock.Enemies`). It beats Self preservation until a melee attacker comes within 40 (234's effect is planned through 146, `!158`). 187 Obedient
+     Slave of an enslaved player character (slave state 1, not sneaking) is urgent at all times: the master squad's Slave goals decide it ([captives](#captives)). The original's list `+0x70` (the entries its order giver adds, [precedence](game/ai-tasks.md#precedence)) is not modelled apart from the order queue.
+  4. Priority-3 goals: 32 Self preservation (`RetaliationSystem`, weight 1: the attacker this tick that took the character as target and alerted it, within 181.7, not shooting at a
+     gunner, passing a holder's post test; desire 1 within 40, else 0.7; a deferred defence, row 13); 243 Getting food (`TownDutySystem`, weight 0.5, the
+     [eating](game/character-stats.md#eating) desire; a food run); a player animal's priority-3 race goals (`CaptiveSystem.RaceGoals`: 277 limb fetch 1, 278 limb play and 279 chase by
+     their desires, x the race entry's weight); 259 Picking up food (`FeedSystem`, animals, weight 0.5); 16 attack on sight while on Hold (`AggroSystem`, weight **Unknown**, 1 here,
+     listed last as Hold adds it; the enemy this tick's look or a squad mate's found; desire 0 while Passive, sneaking outside a fight or not standing; a deferred fight, row 16).
+     The player faction's 15 Protect allies (`RetaliationSystem.JoinFight`, key 15, weight 1, listed before Self preservation; finder, desire and plan in
+     [precedence](game/ai-tasks.md#precedence)): the aggro looks' allies valued by their fight threat (`CombatSystem.FightThreat`), weighted by distance, a deferred defence, row 13, against `CombatSystem.BestAttackerOf`'s pick for the ally.
+     The retaliation pass offers nothing to it; the step reaches it at the engine re-ask (idle or a job's task, every `JobCheckTicks`) or any replan, so a medic or worker on its job joins, one on an order does not.
+     A player character woken by a failed kidnap (`CarrySystem.Kidnap`) or targeted by a failed stealth knock-out (`CarrySystem.StealthKo`) is told of the attacker (forced sense) and
+     replans (`CarrySystem.Engage`); `CarrySystem.EngagedDefence` (key 32, desire 1 within 40 else 0.7, a deferred defence, row 13) answers for 5 s unless an order runs first (**Engine**
+     stand-in for the threats list, [carry-loot](game/carry-loot.md#kidnapping), [combat](game/combat.md#stealth-knock-out)). A sleeper's kidnap also clears its queue (order 116). NPC victims
+     keep their deferred defensive attack (the AI is stage 9).
+  5. Jobs: the job list in order (`IJobSource` contributors by type, `DecisionSystem.RegisterJob`; the original's keys N+8, N+7, ...): the jobs switch gates every type but 16, 31,
+     45, 57, 58, 250 (`FUN_14050c1c0`, both passes; 289 is gated), a row the repertoire does not register is skipped, the first that can run starts and one that runs the task ends the
+     step. So a higher job takes over a lower running one at the next decision; the running job keeps no priority beyond its place. With nothing found, a list job the task still runs
+     ends when its contributor says so (`IJobSource.Stop`: production's operators, haulers and follow jobs; the other act-outs end by themselves). Contributors: production (87, 152,
+     124, 97, 234 while not urgent, 125 through construction, 31 / 45 / 289 follows; `Runnable`), the carrying errands (138, 223, 273; while their lift or carry runs), first aid (58, 57,
+     250; the finders, a treatment runs until it ends), carry (148, 238), beds (106), aggro (16; the enemy the look offered this tick, the row's desire). Finders are asked only up to the
+     first job that runs. Then the implicit jobs (`ProductionSystem.ImplicitJobs`, the squad AI options' lowest keys): over idling, a standing task or a job's task, the pick of
+     `ImplicitPick` starts and runs while it is the one the character is on; one that no longer holds ends.
+  6. The priority-2 goals (a player animal's race goal 233, eating a downed body, `CaptiveSystem.RaceGoals`), then 14 Idleness (priority 1): a player character stands idle, its routine
+     (player characters neither wander nor follow a leader by themselves). Idleness runs over idling, a fight and any task a plan still runs (an order's, a goal's, an engine act-out's:
+     those end by their own rules), and gives up a wander or follow no plan runs. A task that ends (`TaskEnd.Done`) or a fight's end leaves the character idle and asks a decision, which
+     lands where the original's re-plan would; nothing resumes. The default task (`+0x190`, tried after the priority-1 goals) is never reached: Meitou models no manoeuvre mode but
+     ROAM_FAR, whose default task is idleness.
+- **Triggers** (`CharacterCold.Replan`, `DecisionSystem.Request`; hashed while set): a task end (`TaskStart.End`, any reason), an order given or the queue cleared, a stagger outside a
+  fight (not for a gunner), the melee alert while the fight is off unless the target gets up or is player-side and moving (horizontal speed above 1), a job list change or the jobs switch,
+  a load, a sighting for row 16 (engine: the look stands in for the sensed list's update), a mate's or ally's defence offered, a failed kidnap's or knock-out's victim told of its attacker, a fight's end (a follow row then follows again,
+  `MovementSystem.FollowAgain`: for an order in `PlayerOrders.Prepare`, for a job as its contributor). Also a front whose task ended, or one not tried yet. **Engine** re-ask (no
+  periodic replan was found): every `ProductionSystem.JobCheckTicks` 10 (slot-staggered) a character not fighting whose task is a job's, 14 Idleness's or no start's, or an order's of a
+  row needing no melee threat (the gunner); jobs and implicit jobs are found on this re-ask and the triggers.
+- **Engine starts outside the step** (a step of a running row, or a reaction to another's act; the step leaves a claimed character alone that tick, `DecisionSystem.Claim`): a follow
+  row's defence of its followed character and a bodyguard's own defence within 40 (`RetaliationSystem.Guards`, `SelfDefends`; claimed).
+- **Trace** (`DecisionSystem.Tracing`, off by default): each decision fills `CharacterCold.Decision` (`DecisionTrace`: tick, winner, one line per source asked with its answer: an
+  order's failure text, "no attacker in range", a score, a job's index), published as `CharacterSnapshot.Decision` while tracing. Not saved or hashed.
+- **Player-faction characters that are not `IsPlayer`** exist only in Meitou: the sandbox's and `--crowd`'s bystanders and tests' extras (a load, a new game or a recruit makes every
+  other player-faction character `IsPlayer`; the original has no player-faction character the player does not command). They hold no jobs and get no orders from the interface, so
+  the step leaves them to the NPC rules (retaliation's own defence, the attack-on-sight look) and the player faction's goals as idle-only passes: 243 (`TownDutySystem.LookPlayerFood`),
+  259 (`FeedSystem`, an animal idle or following) and the animals' race goals (`CaptiveSystem.RunPlayerAnimalGoals`, list order). A follow row of theirs (an order a script gives)
+  follows again after its fight step at the NPC stand-down (`AggroSystem`, `MovementSystem.FollowAgain`).
+- Engine choices: errands' walks wait out a fight (NPC duties, the dialogue approach), while a player character's food run ends when a fight replaces it; the step's starts act from
+  the next tick (deferred fights) or at once (walks).
 
 ## Systems and their order
 
@@ -291,9 +469,9 @@ commands with the original's limits ([Squads tab](game/ui-screens.md#squads-tab)
 ### Order toggles
 
 Passive/Hold/Block/Taunt/Jobs state belongs to the character (medic and rescue are job-list entries, [job lists](#production)) and relevant
-systems; the rules follow [combat](game/combat.md#fight-lifecycle-and-orders). A player's character defends itself only without an order
-(Idle, a bodyguard's Follow, or Loot with the attacker within 40) and against an attacker within √33000 ≈ 182; Passive does not stop that but keeps it
-from joining others' defence and from attack on sight. Hold adds attack on sight while Idle (not Passive, sneaking or crawling), and every target of a
+systems; the rules follow [combat](game/combat.md#fight-lifecycle-and-orders). A player's character defends itself (32 Self preservation, a [decision step](#decision-step) goal) only when no order of its runs or can start (a
+bodyguard following also as a step of its row; a Loot order ends under a threat within 40) and against an attacker within √33000 ≈ 182; Passive does not stop that but keeps it
+from joining others' defence and from attack on sight. Hold adds attack on sight (goal 16, another decision-step goal; not Passive, sneaking outside a fight, or prone), and every target of a
 holder (sight, self-defence, re-pick) passes the post test (`Orders.HoldPost`); it walks to a target only within 80 (140 when the target is in a fight and heads for it) of
 its hold point (`CharacterCold.HoldPoint`: where Hold was turned on, then each ground move's destination; not saved: a loaded holder holds where it stands, as setStandingOrder 12 does; **Observed**: the loader replays the jobs switch through it, Verified; Hold assumed alike).
 A toggle (button or hotkey) sets every selected character to the opposite of the first one's state, so a mixed selection ends uniform (engine choice; the original's rule is **Unknown**). Toggles and the run speed arrows also apply while paused ([time model](#time-model)).
@@ -435,12 +613,13 @@ the attack technique, attack slots, the 5-fighter engaged list and circling foll
 CONSTANTS value and the default; Meitou 3); the block break-out ignores the 10% lower bound; only a heavy bolt staggers.
 Close in, fighters move by the original's force-based fight steering (combat.md "Fight steering"), not paths; from afar or without a clear line they walk paths to their technique reach (`CombatTuning.StandGap`). A landed or
 blocked blow takes a defender fighting the attacker off the attacker's engaged list (`FUN_14060a2f0`), so it asks again.
-Target choice (`CombatSystem.ChooseTarget`, combat.md "Target selection"): a fighter whose target goes down chooses again at once and ends its fight
-only when no candidate is left; while deciding it chooses again every 1 s (0.3 s on Hold), except for a player's pick, and ends the fight when even
-its current target fails (a holder's that left the post test, a player's beyond 400). Candidates are its current target (any faction), its attackers and, unless Passive, the attackers of squad mates within `JoinRange` (+10 for one whose mate does not fight it back and that has
-under 2 attackers: engine reading of the protectee); not of its faction or squad. The current target must be sensed: within sight range (a sneaker: in view) now, or within the sense entry's lifetime
-since (30 / 60 / 120 units of 2 s, combat.md "Leaving a fight"; `CombatSlot.SensedTick`); an NPC's chase may give it up sooner (`AggroSystem`, 24 s unsensed). "Intended aggression ≤ 0" is a fight-off candidate not counting the chooser's faction an enemy (engine
-reading); getting up is `CharacterCold.GettingUpUntil`, from waking for `CombatSystem.GetUpSeconds` (the get-up blend and `standing up 3` to `GetUpEnd`),
+Target choice (`CombatSystem.ChooseTarget`, combat.md "Target selection"): a fighter whose task target goes down ends its fight at once; one whose other target goes down
+chooses again at once; while deciding it chooses again every 1 s (0.3 s on Hold), except for a player's pick. With no candidate, or when even its current target fails (a holder's
+that left the post test, a player's beyond 400), it fights on without a target until nothing is left (combat.md "Leaving a fight"). Candidates are its attackers, its threats and, for a bodyguard (row 45), its protectee's attackers, each known to it or the protectee (a sense entry) (+10 for one the protectee does
+not fight back that has under 2 attackers); a crippled one is left out of these lists, and their best must score above -100; not of its faction or squad (the current target excepted).
+A squad mate's attackers are no candidates. With none, the enemies its senses saw or heard at their last look (`CharacterFacts.Senses`, perception.md "Senses"), the current target
+among them with its stubbornness; an NPC's chase may give it up sooner (`AggroSystem`, 24 s unsensed). "Intended aggression ≤ 0" is a fight-off candidate not counting the chooser's faction an enemy (engine
+reading); getting up is `CharacterCold.GettingUpUntil`, from waking for the ragdoll blend (only after a whole-body ragdoll) plus `CombatSystem.GetUpClipSeconds` (`standing up 3` to `GetUpEnd` at its play speed; none when carried or in a bed),
 during which it neither walks, works nor fights (Task_GetUp; it counts as staggered for the work systems).
 Only a fighter blocks or dodges. A landed blow on a shackled defender knocks it out 25% of the time (`PutDownKoSeconds` with 0.002: 3 s). A hit on a
 character outside a fight that is getting up does nothing more; on any other (not a gunner) it restarts the task (timer, lift or knock-out swing, and a
@@ -461,7 +640,7 @@ Turrets (`CombatSystem.Turrets.cs`, facts: [combat.md](game/combat.md#turrets)):
 order: target choice, reload, aim point while loaded, turning the parts (`TurretRig`), and the fire decision (in range from the gunner, aimed within 1°, steady 0.4 s, line
 along the barrel clear); harpoons are the gunner's bolts (hits, XP, crimes). A gunner is a player character operating its turret (`CharacterTask.Operate`, below) or an NPC
 standing at the turret its squad claimed (AI turret goals); one per turret (lowest slot). `CharacterCold.Gunning` names it (derived); the aggro system starts no fight with a
-turret guard and retaliation skips a gunner shot at. Turret state (angles, aim, loaded harpoons, reload, target) is hashed once a turret was manned; only the loaded harpoons are saved
+turret guard, and a gunner's self-defence takes no shooter (`AiSystem.SelfDefencePick`, the engine answer alike). Turret state (angles, aim, loaded harpoons, reload, target) is hashed once a turret was manned; only the loaded harpoons are saved
 (`current shots`, as the exe; [save](formats/save.md#faction-trust-war-flags-bed-rent-and-turrets)), read when the turret is first manned after loading. Engine choices: NPC turrets have efficiency 1 (no NPC power grid); a player turret's efficiency is its machine's power grant
 (0 unpowered) and has no mount bonus; the reload belongs to the gunner (a new gunner restarts it); every candidate within 1.5 × range counts as sensed and seen; "fights the
 gunner" is the × 1.5 (`FUN_1405ca6f0`); a down target is "slot 0x368"; the turret's facing is its yaw; no Shoot first pass (no such option); the muzzle is the last turning
@@ -474,25 +653,28 @@ default): the turret step sets the gunner's yaw along the barrel every tick; off
 `ANIMAL_CHARACTER`, animal body/stats/size/fists and creature techniques come from typed data;
 animals use faction hostility and carrying/damage rules where eligible. They age and grow, pack beasts spawn with their
 bag on, DA 48 sells them, and the context menu's Follow keeps any player character beside another
-([animals](game/animals.md#ageing)). Player animals feed themselves: food on the ground (259, `FeedSystem.FetchFood`), food from their outpost's stores
-(243, also for people, `TownDutySystem.LookPlayerFood`, [rules](game/character-stats.md#eating)) and limbs (277); `CaptiveSystem.RunPlayerAnimalGoals` also runs their limb play and chase
-(278, 279) and eating downed non-allies (233) as [captive jobs](#captives) when idle, ended by any player order. Corpses (230) are dropped from the player's animals by the original;
+([animals](game/animals.md#ageing)). Player animals feed themselves: food on the ground (259, `FeedSystem.GroundFood`), food from their outpost's stores
+(243, also for people, `TownDutySystem.FoodWant`, [rules](game/character-stats.md#eating); both decision-step goals for player characters) and their race goals: limbs (277), limb play and chase
+(278, 279) and eating downed non-allies (233) as [captive jobs](#captives) (`CaptiveSystem.RaceGoals`: decision-step goals, priority 3 at step 4, 233 priority 2 at step 6, by the original's desires x the entry's weight), ended by an order that runs. Corpses (230) are dropped from the player's animals by the original;
 crops (232) find nothing for them (only the player's farms are machines, and the eater must not get along with the town). Unarmed humans use
 martial-arts category 5. [animals.md](game/animals.md), [characters.md](characters.md).
 
 ### Hostility and relations
 
 `AggroSystem`, `RetaliationSystem`, `FleeSystem`: previous-position sight/hearing, faction
-relations, shared targets, idle-player self-defence ([order toggles](#order-toggles)), chase give-up and return to routine. The look picks
-the best `Combat.TargetScore` (the original's attack-on-sight finder), not the nearest.
-Being taken as a target is answered the same tick when it alerts ([being targeted](game/combat.md#fight-lifecycle-and-orders)), the rest every 15 ticks;
-free squad mates within `JoinRange` (250, engine choice; the original's joiner must sense the mate) join an attacked member's defence each check even while it is
-already fighting or down (engine rule), against an attacker within 150 of it (`AI::findAttackerOf`); an NPC with an AI joins this way only with a protect goal
-(143 PROTECT_OWN_SQUAD, PROTECT_ALLIES and the like) and only for a mate that fights, else through its stance or not at all (`RetaliationSystem.ProtectsMates`).
-An NPC with PROTECT_ALLIES (15, 288) in its lists and hours (`AiMind.ProtectsAllies`, apart from the stance, which keeps the highest goal) also joins any squad's defender of its own or an
-allied faction that fights, when it senses it (sight test within R, or within 600 in its own place, where a fight is heard for sure), against an attacker within 150 of it that is not its ally, whatever the relation
-(`RetaliationSystem.ProtectAllies`, [combat goals](game/ai-tasks.md#combat-goals)); a gunner stays at its turret, 288's town limit is not modelled. So gate guards fight
-the Skimmers (relation 0 to every faction, `ATTACK_ENEMIES_AND_NEUTRALS`) that attack townsfolk.
+relations, shared targets, player self-defence as a [decision step](#decision-step) goal ([order toggles](#order-toggles)), chase give-up and return to routine. The look keeps every
+living character's senses (`SenseBlock`, read through `CharacterFacts.Senses`; [perception](game/perception.md#senses)): entries, the `numEnemies` / neutral / ally counts, the threats
+list and the threat sums. The fights read them: target choice (`CombatSystem.ChooseTarget`), Self preservation's threat level and the immediate threat (`CombatSystem.ThreatLevel`,
+`ImmediateThreat`), the urgent turret job (step 3), the chase give-up, playing dead, the arrival lines and IS_OUTNUMBERED. Then, for a player character that may attack on sight (Hold's 16, the 16 job), the
+look picks the best `Combat.TargetScore` among the entries it saw or heard (the original's attack-on-sight finder), not the nearest, and offers it to it and to its free mates whose own look takes
+it (`AggroSystem.Takes`). An NPC with a mind that senses a new enemy only asks itself, and its squad mates within twice their own R of it
+([squad-shared sightings](game/perception.md)), to think at the next tick: the combat goals decide in the chooser ([AI](#ai)). An NPC without a mind starts no fight on sight. Without the Aggro part
+the look keeps the senses only.
+Being taken as a target alerts the same tick ([being targeted](game/combat.md#fight-lifecycle-and-orders)): the attacker is a threat of its target at once (`AggroSystem.Force`) and an NPC with a
+mind thinks at the next tick, where its 32 Self preservation fights back (row 13) or runs ([AI](#ai)); one without a mind gets the engine's answer, that tick and every 15 ticks after. Others join
+only by their own goals: an NPC by 143, 15 or 288 in the chooser, whose squad mates (and the attacker's) the alert asks to think
+(`RetaliationSystem.AskProtectors`); a player character by its goal 15 ([decision step](#decision-step)); followers and bodyguards by their rows. So gate guards fight the Skimmers
+(relation 0 to every faction, `ATTACK_ENEMIES_AND_NEUTRALS`) that attack townsfolk.
 Orders defer to the next tick. Relations are live state and deed/witness effects have distinct
 paths; preserve current ordering.
 Relation events (`FactionDeeds`, built with the aggro part; [factions 3.5](game/factions-squads-towns.md#35-what-fires-relation-changes-observed-decompile)):
@@ -655,7 +837,7 @@ unload, hashed only once non-empty. Facts: [locks](game/locks.md), [economy 11.5
   and laid in. In reach (`use range` + 15, on the bed's floor within 20, or a walk ended within 60) it pays the rent (`Cost`/`Pay`, player only; the 24 h memo
   is engine state, not saved) and enters; 3 short walks give the bed up (`MarkUnreachable`). In a bed the task is `CharacterTask.Sleep` (held still, the
   bed's clip, `Sleeping` on the HUD); any other task gets it up (`GetUp`; a knock-out or death in bed keeps it there). The player's bed search `FindBed`
-  follows the original's weights over beds within `BedSearchRange` 3953 (engine, for the town). Job 106 (in the list with the rescue job): an idle carrier of
+  follows the original's weights over beds within `BedSearchRange` 3953 (engine, for the town). Job 106 (in the list with the rescue job; the decision step's, `BedSystem.PutInJob`): a carrier of
   a non-hostile body lays it in the searched bed. Lifting a sleeper takes it out. Engine difference: no power test. The rescue job (148) and the one-shot Rescue start a lift only while the bed search finds the rescuer a bed (`CarrySystem.MayRescue`).
   Saves: `HeldSave` (a player-built bed also writes the original's `in what` = its building's handle; read back through `Bind`); a loaded sleeper's task is Sleep.
 - **AI sleepers** (going to bed, 153/239, which plan into 98 Sleeping, `Task_UseBed`): arrived at their home's bed spot, the serial step (`AiSystem.LieDown`) lies
@@ -782,7 +964,7 @@ Arrests, the recognition meter and the marker are hashed only while set. What a 
   does nothing otherwise; a slave bought free out of a squad of others leads a new "Wandering Squad" (`SquadManagement.DismissTemplate`, as a dismissed character) of its faction, or a new player squad for
   one of the player's; event 51 fires after it is out of its cage; the window closes when the slaver or the customer is no longer awake. It is neither saved nor hashed.
 - Not built: task 133 as such (Meitou walks a bought caged
-  slave out of its open cage to within 15 units of the buyer; the original task's destination is **Unknown**); DA 48 (animals). A sold character obeys the slaver's squad (187) and is chained: `Character::setChainedMode` (`FUN_14032e590`,
+  slave out of its open cage to within 15 units of the buyer; the original task's destination is **Unknown**); DA 48 (animals). A sold character obeys the slaver's squad (187, [below](#captives)) and is chained: `Character::setChainedMode` (`FUN_14032e590`,
 **Verified** by decompile) puts the ARMOUR `SHACKLES` (boots) on one wearing no locked shackles, `SHACKLES-BODY` when its boots section is disabled (Meitou: the race's `no shoes`),
 what it wore there going into its inventory (engine choice; `DialogueSystem.Chain`). Its other callers (a dialogue action, `FUN_1405dbd80`, `FUN_1405dc310`, `FUN_140583a10`) are not traced.
 
@@ -909,8 +1091,15 @@ failed walks mark the cage unreachable for the faction; its own faction's shut d
   seconds (engine pacing).
 - **Work** (189, 190; `AiBehaviour.Work` in the AI, not a job: it competes by score like any goal): a worker of a town with a mine, research bench, refinery or crafting bench (BuildingFunction 1, 3, 4,
   10) walks to a random one (a pick of the character and `AiMind.WorkEpoch`, kept while it works there) to within 30 units, faces it and plays its functionality's clip (`stonemine` by default) as
-  `ActionClip`. NPC towns run no machines here, so nothing is produced (their buildings are level data, not `Machine`s, and Meitou has no NPC-town production); the worker does take the building's `hunger rate` (`AiMind.WorkHungerRate`). **Observed** (probe, Rebirth, real data): 35 workers, slaves among them, stand at the mines of the Holy Nation's towns by day. The
-  Obedient Slave job (187) is the Slave role list of the owner's squad, which slave members already run; a slave in another squad runs the list of `CharacterCold.SlaveMaster`.
+  `ActionClip`. NPC towns run no machines here, so nothing is produced (their buildings are level data, not `Machine`s, and Meitou has no NPC-town production); the worker does take the building's `hunger rate` (`AiMind.WorkHungerRate`). **Observed** (probe, Rebirth, real data): 35 workers, slaves among them, stand at the mines of the Holy Nation's towns by day.
+- **Obedient Slave** (187, [facts](game/ai-tasks.md#slave-work-shout-and-capture)): for the AI's slaves the Slave role list of the owner's squad, which slave members already run; a slave in another squad runs the list of `CharacterCold.SlaveMaster`.
+  **A player character** has the job in its list (`Kidnap/ObedientSlave.cs`, `CaptiveSystem`): `FixtureRegistry.SetSlave` (every route to slave state 1: sale, arrest, processing, a cage, a delivery) destroys its jobs and order
+  queue and adds the job toward the master squad's leader (`CharacterCold.SlaveMaster`; handing a slave to another master resets it, engine choice), and removes it when the state leaves 1 (freed, escaped, bail).
+  While it is a slave and not sneaking, the job is urgent (step 3, `IJobSource.Urgent`): the best goal of the master squad's Slave list in its hour by desire x weight (x1.25 the one running) starts through `TaskStart` --
+  **171** follows the owner (`MovementSystem.Follow`, row 171; the follower sets its sneaking from the leader's every update, **Verified**, so a following slave cannot sneak away), **189 / 190** walk to a random workplace of the town
+  the slave's squad leader stands in (`AiSystem.WorkAt`, the AI's pick) and stand at it at the work clip (a handler of rows 189 / 190 clears the clip when another task takes the slave), **14** stands. An order beats it (step 1)
+  and it beats Self preservation and the other goals. **Gaps**: 172 (the night cage), 41, 143 and 35 are not acted out for a player character; the work produces nothing and takes no hunger rate; the Jobs switch off
+  stops it (as any job); `SlaveMaster` is runtime only, so after a load the owner comes back from the job's saved handle (a character) or the slave obeys nobody; the sense/enemy relations of a slave with the job are not modelled.
 - **Eaten**: a meal still awake gains toughness XP (`XpService.Continuous`, amount 10). **Process** (183) re-processes a slave of an allied owner that does not look like one, or an escaped one (state 2) (no locked shackles and none of
   its owner's slave clothing; an owner without slave clothing never does).
 - **Status lines**: a slave or escaped slave selected shows the bounty panel with its status rows ("Slave" / "Escaped slave" and the owner's text, the player-character hints) in its tooltip, ahead of the
@@ -971,7 +1160,7 @@ Buying a ruin leaves it destroyed; an explicit Repair order from an able selecte
 applying the [ruin transition](game/buildings-production.md#construction-tick) once and restoring doors and indoor sight.
 Build, DeliverMaterials and FetchMaterials use the same work and resource rules as new construction. Shift also adds
 Engineer (125), which resumes available work after supplies arrive; a direct order stops when no source exists.
-Jobs retain their queue priority and switch. Transient orders are not saved; persistent jobs and the house's progress,
+Jobs retain their queue priority and switch. Queued orders ([order queue](formats/save.md#order-queue)), persistent jobs and the house's progress,
 delivered materials and ownership are ([save](formats/save.md#zone-files)). Normal damage to a complete house needs no materials.
 Town houses cannot be dismantled, cancelled or upgraded through this seam. The original town and instance remain unchanged.
 Building inside one names the level instance as parent (as any owned town building; build mode's floor is the level one), refused while it is being repaired.
@@ -1006,8 +1195,8 @@ optional), `EdgeGap` (site, point -> gap to its footprint hull; the host's).
   40, walls 60, twice that once stopped, from the footprint hull). A fetcher walks to its source instead (a storage within its
   `use range`; a ground item within `PlayerSystem.PickUpReach`, twice that once stopped; a source that is gone sends it back
   to building). Work ends when the site is gone,
-  no longer `NeedsWork` (building), the character is down, fighting, carried, carrying or caged, or another order replaced
-  the task.
+  no longer `NeedsWork` (building), the character is down, carried, carrying or caged, or another task replaced it (a fight
+  too: its start ends the work, [task starts](#task-starts)).
 - `SlowWorld`: arrived workers in slot order. *Build*: a stalled site (`sum(min(delivered, required)) <= progress`) turns
   into *DeliverMaterials* if the builder carries a missing item, else into *FetchMaterials* when `Source` finds one, else
   the work ends;
@@ -1211,25 +1400,29 @@ crafting benches, generators and batteries. Facts: [production](game/buildings-p
   operating one (job 152, or the quick order) does not work it: it only hauls as above, every round whatever `AutoHaul` says.
 - **Job lists** (`PermaJobs.cs`, `ProductionSystem.Jobs.cs`, `Saving/PermaJobSave`; facts in [perma-jobs](game/ai-tasks.md#perma-jobs)).
   `CharacterCold.Jobs` is the ordered list; `AddJob` (Shift + right click on a finished machine or storage) adds through the original's rules
-  (remap, duplicate refusal, companion, switch on); `RemoveJob` is the list's X. Every `JobCheckTicks` 10 (staggered by slot) a player character
-  that is idle (no task, following or wandering, as for the medic job) or on a job takes the first job that is not blocked, so a higher job takes over as soon as it can run and a blocked one passes
-  to the next; a job whose site (or the engineer finder's pick) is `JobRangeSq` 4.246733e7 (≈ 6517, 3D) or more from the character is skipped
+  (remap, duplicate refusal, companion, switch on); `RemoveJob` is the list's X. Every job runs through the [decision step](#decision-step) (step 5, 234 also step 3): the first job of the
+  list that can run starts, so a higher job takes over as soon as it can run and a blocked one passes to the next. The production pick's jobs below (`ProductionSystem.ListJobs`) run while
+  `Runnable` holds: a job whose site (or the engineer finder's pick) is `JobRangeSq` 4.246733e7 (≈ 6517, 3D) or more from the character is skipped
   ([range](game/ai-tasks.md#perma-jobs); players are treated as ROAM_FAR and the home-town exception is left out), as is every job but Bodyguard / Staying close while the
-  character gets up (`GettingUpUntil`), and Operating machine, Turret guard and Training without a working arm; an order replaces the job's task, and the list resumes once the character is idle. A job that ends returns the
-  character to the following or wandering it took it from. The lists also run with no machine while a site `NeedsWork` or a job follows a character. The production pick runs the
-  jobs below; first aid, carry and aggro passes run others (further below):
+  character gets up (`GettingUpUntil`), and Operating machine, Turret guard and Training without a working arm; a carrier or a carried character looks at none and keeps the one it is on;
+  an order replaces the job's task, and the list resumes once the order is done. A job that ends leaves the character idle, decided again at once. The other jobs'
+  contributors are further below:
   - 97 Training (Shift + right click on a training dummy, function 7, or the "Training" verb): the Operate task at the dummy; `Train` raises the building's `stat used` by the capped continuous
     XP entry (`XpService.Capped`, rate 2, cap = `output rate`; [facts](game/ai-tasks.md#perma-jobs)). Blocked while the dummy has no free place or the character has no working arm.
   - 45 Bodyguard / 31 Staying close (`PermaJob.Character`; the "Follow" and "Bodyguard" verbs with Shift, `AddOrderJob` with the target): the character follows the job's character with a follow order
-    (`MovementSystem.Follow`); blocked when it is gone, for 31 also while it is down; saved with the target's handle and found again from it after a load. Bodyguard's defending is the AI's own (engine
-    choice: no extra rule). The jobs run with the switch off (`IgnoresSwitch`). Bodyguard given to an animal adds 289 (animal Staying close) instead of 31 (`PermaJobs.Add`): the same
+    (`MovementSystem.Follow`); blocked when it is gone, for 31 also while it is down; saved with the target's handle and found again from it after a load. Defending the followed
+    character (`RetaliationSystem.Guards`; rows 45 / 31 need state 16, [precedence](game/ai-tasks.md#precedence)): a bodyguard (45, the verb always gives the job; `Guarding` is a running
+    row 45, `CharacterCold.Running`) or a follower (31, 289; job or one-shot order) joins while its row runs (it follows) against an attacker within 40 of the target, and a bodyguard
+    also against its own attacker within 40 (45's `!39`; farther ones are Self preservation's, which an order outranks). A defence or goal fight started while a follow row runs is a step of the row (`TaskStart.Start` keeps the provenance), so both follow
+    again once that fight leaves them idle (`FollowResume`; the fight's end asks the decision step, `MovementSystem.FollowAgain`); any other start in between replaces the row. The jobs run with the switch off (`IgnoresSwitch`). Bodyguard given to an animal adds 289 (animal Staying close) instead of 31 (`PermaJobs.Add`): the same
     follow with the same down test, but it is not exempt, so it runs only with the jobs switch on (the row's destination-accessible-animal state 168 is not modelled, **Unknown**).
     Adding a follow job or a one-shot follow removes what would close a circle (`MovementSystem.BreakCircle`: the other side's follow and its 31 / 45 jobs on the chain, [facts](game/animals.md#following)); a job starting does not.
-  - 137 / 138 corpse disposal and 223 / 273 intruders (`ProductionSystem.Errands.cs`, every `ErrandEveryTicks` 15): a free character with 138 and 137 lifts the nearest dead body (a caged one first)
+  - 137 / 138 corpse disposal and 223 / 273 intruders (`ProductionSystem.Errands.cs`, `ErrandJobs`; a carry under way is stepped every `ErrandEveryTicks` 15): a character carrying nothing with 138 and 137 lifts the nearest dead body (a caged one first)
     when a free corpse-disposal machine (function 11) exists and walks it there; in the machine's reach it lets go and the body is removed (items with it). With 223 and 224 (or 273 and 274) it lifts
     a knocked-out, alive character of another faction in the player's building (with doors) it stands in and puts it down just outside the door (273: past the town's farthest building). Engine
     choices: the building test (a footprint round the origin), the friendly exclusion, the reach, 4 walks that end short before the body is given up, and 223's "home" (the building the carrier is in).
-  - 234 Turret guard (Shift + quick right click on a turret: 146 becomes 234): mans the turret as an operator; blocked while someone else mans it.
+  - 234 Turret guard (Shift + quick right click on a turret: 146 becomes 234): mans the turret as an operator; blocked while someone else mans it, and while a melee attacker is within
+    40 (146's `!158`). Urgent (step 3, before Self preservation) while the character senses an enemy.
   - 87 Operating machine: blocked while others hold every operator place or the machine has no work (no power; no queued research or craft; a
     farm growing with no water it holds or can get, or ripe with no plant left or no room; an empty input the operator cannot fill from its pack, a storage or a machine's output;
     a full output no storage takes). A farmer at a growing farm with water tends it: it plays the farm's clip (engine reading of task 87, [farming](game/buildings-production.md#farming)).
@@ -1240,7 +1433,7 @@ crafting benches, generators and batteries. Facts: [production](game/buildings-p
     (engine reading of the row's goal "no empty inputs", `AutoWork`). 124 on an automatic machine runs the same way, blocked unless it carries an item an input has room for.
   - 125 Engineer (ordered as 2 Build or 95 Repair; Shift + quick right click on an unfinished site): builds `ConstructionSystem.EngineerSite`'s
     pick, whatever the job's target ([buildings](#buildings)); its tasks are *Build*, *DeliverMaterials* and *FetchMaterials*. Blocked with no site.
-  - Implicit jobs (`ImplicitPick`): with no list job to run, the switch on, not sneaking and not a slave (Sleep and Sit also not while holding position), the squad AI options (`PlayerState.SquadAi`, the
+  - Implicit jobs (`ImplicitPick`, `ImplicitJobs`, the decision step's step 5 after the list): with no list job to run, the switch on, not sneaking and not a slave (Sleep and Sit also not while holding position), the squad AI options (`PlayerState.SquadAi`, the
     overview's AI tab, on by default) start, in this order: Ditch items (242: carried ITEMs of function 0 or 15, and food but the first, go to the nearest
     storage within `HaulRange` that takes them, as a Haul trip; only with no queued orders; re-tested every pass, so a trip whose storage no longer takes a carried item, or that gained a queued order, drops out or re-picks at once, **Verified** `FUN_14050e5b0`), Sleep when injured (153: a body part below full
     health lies in the bed the bed search finds, a `BedSystem` trip (task Sleep, the bed id in `OperateSite`), until healed; job lists are then looked at
@@ -1251,26 +1444,23 @@ crafting benches, generators and batteries. Facts: [production](game/buildings-p
   - The list is reordered by dragging a row (`MoveJob`).
   - Jobs on characters: the Medic and Rescue buttons (H, J) start one look for a patient or body, with Shift they add 58 / 148 (+ 106); Shift with
     the First Aid, Splint Injuries, attack or Loot verb (context menu or quick order) adds the job the order becomes (`AddOrderJob`: 58, or 57 on a
-    robot, 250, 16, 238). Each runs for a character free for it (`PermaJobs.FreeFor`: idle, wandering, following, on an implicit job or on a list
-    job below it; switch on unless the type ignores it), the first in list order that finds a target:
-    - 58 Medic / 57 Robotics (`FirstAidSystem.HealSomeone`) and 250 Splint Rigging (`SplintSomeone`): the original's finders
+    robot, 250, 16, 238). Each is the decision step's (switch on unless the type ignores it), the first in list order that finds a target:
+    - 58 Medic / 57 Robotics (`FirstAidSystem.FindPatient`) and 250 Splint Rigging (`FindSplint`): the original's finders
       ([medic jobs](game/ai-tasks.md#medic-jobs)) over characters within sight (stand-in for the sensed list): score = need (untreated HP for
       the kits it has) × relation factor × nearness (1 - d²/1843²); the medic itself scores its need. 58 skips robot races. Splinting takes
       only its own faction, at skill min(medic, kit quality), and needs a splint kit in the medic's own inventory or backpack (as the original, [kit search](game/character-stats.md#first-aid-update)); its weight is 0.1 ([splints](game/character-stats.md#splints)). Engine: no same-building floor, no give-up list.
-    - 148 rescue: the carry pass (a player character its own faction, with Rescue Allies also allied factions; an NPC rescuer allied factions always; never animals, bed or cage occupants; `CarrySystem.Rescues`).
-    - 238 Foraging animals (`CarrySystem.Forage`): the nearest downed, uncarried animal within sight holding items, not of its own faction
+    - 148 rescue (`CarrySystem.FindRescue`; a player character its own faction, with Rescue Allies also allied factions; an NPC rescuer allied factions always; never animals, bed or cage occupants; `CarrySystem.Rescues`). An NPC with a loaded rescue job keeps the carry pass.
+    - 238 Foraging animals (`CarrySystem.FindForage`): the nearest downed, uncarried animal within sight holding items, not of its own faction
       (engine choice), is looted (take-all and butchering).
-    - 16 Attacking enemies: `AggroSystem` looks for the character as for an NPC (`HuntsEnemies`, not in non-combat mode); never gives up a chase; after the
-      fight it goes back to following or stands idle.
-  - Engine choices: the check period; kind-2 (turret)
-    jobs do not run before urgent tasks; the injury test, the ranges, a bed's clip (`sleeponfloor`) and a seat's facing (its own, not the table it faces).
+    - 16 Attacking enemies: `AggroSystem` looks for the character as for an NPC (`HuntsEnemies`: the job and row 16's desire, not Passive, not sneaking outside a fight, standing) and
+      offers the sighting to the step (`AttackJob`); never gives up a chase; after the fight it stands idle and is decided again.
+  - Engine choices: the re-ask period; the injury test, the ranges, a bed's clip (`sleeponfloor`) and a seat's facing (its own, not the table it faces).
   - Saves: GAMESTATE_AI `pjob<i>` / `pjobT<i>` / `jobs` as the original, plus `meitou pjob<i>` (the site id) for a building the handle cannot
     name; the older `meitou jobs enabled` is read, not written; `chase mode` is written and read as the switch. The squad AI options are the
     CAMERA bools ([squad AI options](game/ai-tasks.md#squad-ai-options)). A job's trip is not saved.
 - **Squad AI options** (`PlayerState.SquadAi`, the overview's AI tab, defaults as the owner's saves): Ditch, Sleep, Sit above; Heal Allies
-  (the medic jobs take allied factions' patients scoring ≥ 0.1), Help Allies (`RetaliationSystem.HelpAllies`: free idle player characters
-  within `JoinRange` 250 of an attacked character of an allied faction defend it, unless the attacker is the player's; engine: no distance
-  weight), Rescue Allies (above), Share Food (`FeedSystem`: a player character with no food takes it from a squad mate's backpack within 200,
+  (the medic jobs take allied factions' patients scoring ≥ 0.1), Help Allies (`RetaliationSystem.JoinFight`: the fighters of allied factions count in
+  goal 15's finder, their weight squared, [precedence](game/ai-tasks.md#precedence)), Rescue Allies (above), Share Food (`FeedSystem`: a player character with no food takes it from a squad mate's backpack within 200,
   only with the option), Feed Animals (off: the player's animals do not eat), Shoot first (`SquadAiRules.ShootsFirstAt`: with no enemy in its
   sights a player turret gunner also takes dangerous neutrals at weight 0.6).
 - **Saves** (`Saving/MachineSave`, `ResearchSave`). Each building's production and farm keys go into its
@@ -1299,7 +1489,7 @@ crafting benches, generators and batteries. Facts: [production](game/buildings-p
 ### Prospecting
 
 Facts: [Prospecting](game/ui-screens.md#prospecting), [Task_Prospecting](game/ai-tasks.md#prospecting). `ProductionSystem` (`ProductionSystem.Prospecting.cs`, `Production/Prospecting.cs`) owns it because it holds the `ResourceField`.
-- `ProspectOrder` names one player character (the host picks the selected one nearest the camera pivot). If it is awake, not fighting, carried, carrying, caged or swimming (water state 3) it stops and takes
+- `ProspectOrder` names one player character (the host picks the selected one nearest the camera pivot). If it is awake, not carried, carrying, caged or swimming (water state 3) it stops (a fight ends, [task starts](#task-starts)) and takes
   `CharacterTask.Prospect` with `CharacterCold.Prospecting` = 0 (hashed only while set, not saved). A character already prospecting is left alone; when done it is `Idle`.
 - Each tick (`SlowWorld`, before the early returns) the progress grows by the tick's game seconds. At `ProspectSeconds` = 1 (**Verified**) the task ends (`Idle`) and a `ProspectReport` is published as `World.Prospected`: the
   prospector's name and science (raw stat), the spot (its position), the zone name and the crop coverages, and the five resource values from `ResourceField.Yield` at the spot. Another task (a move, an attack, a stop) or the character going down
@@ -1404,14 +1594,14 @@ act-out does the walk and the goal's own action; steps of their own are getting 
 going home (19, the GoHome walk), entering its home building (156, the same walk), leaving it (200, to A + (A − B) × 1.1 of the home's first door,
 the outer point taken as the side away from the building's origin, until outside) and getting near a target (40, a walk to within 10). A plan
 whose first step is neither the goal nor a step the engine carries out (`AiSystem.Carried`) fails. Engine choices:
-- Everyone plans with category 0x1. Restricted rows (lockpicking, cutting, opening gates) are open to every character whose faction is not the player's, as in the original ([planner](game/ai-tasks.md#planner); the orders-step flag is not planned here). With the held states below, none is ever needed on the way (their states 90, !54, !114 hold), so this changes no plan today; `IPlanWorld.Squadless` keeps its old name for it. A row without a finder wants its effect for its own target. At most 64 nodes per search.
+- Each character plans with its `Repertoire.Of` category (4, 0x40 crippled or staying low, 0x10, 1, 0x20 animal; so a crippled NPC has no stand-up row and crawls away under threat). Restricted rows (lockpicking, cutting, opening gates) are open to every character whose faction is not the player's, as in the original ([planner](game/ai-tasks.md#planner); the orders-step flag is not planned here). With the held states below, none is ever needed on the way (their states 90, !54, !114 hold), so this changes no plan today; `IPlanWorld.Squadless` keeps its old name for it. A row without a finder wants its effect for its own target. At most 64 nodes per search.
 - A node is made once per row and target (the original allows four copies), so the ancestor-repeat test never fires; a child already
   closed is skipped rather than accepted from the node.
 - Only the step being carried out counts as queued, and only while it can run (Meitou's steps do not end on their own).
 - Finders: the spots, beds, seats, turrets and towns the act-outs already pick, at the floor point the walk ends on (`PlanContext.Find`); other finders find nothing,
   so such goals do not plan. Rows on the way have their `TaskProfiles` desire, else 1. The exception is DEFEAT_SQUAD 101, whose plan is the goal alone: the finder's
   pick (`AiSystem.AssaultTargetFor`, [ai-tasks](game/ai-tasks.md#combat-goals)) is sent as an `AttackOrder` by the serial step and the combat system fights it.
-  SELF_PRESERVATION 32 is the other exception: its plan is `[35, 32]` when `SelfPreservation.Runs` (a crippled NPC, or one with no working arm, under a threat), else none and `RetaliationSystem` fights back;
+  SELF_PRESERVATION 32 is the other exception: its plan is `[35, 32]` when `SelfPreservation.Runs` (a crippled NPC, or one with no working arm, under a threat), else `[13, 32]` on its own attacker (row 13 on itself, `AiSystem.SelfDefencePick`, started as the combat goals' fights below), else none;
   35 is acted out by `FleeSystem` on the AI's request ([ai-tasks](game/ai-tasks.md#combat-goals)). State 26 stays false.
 - States (`PlanContext.Holds`): location, distance, bed, sitting, home (within 20 of the home), home town, town, weapon drawn, weapon carried
   (`hasWeapon`), carrying, a first aid kit carried (23), the immediate threat (39, `CombatSystem.ImmediateThreat`), deep water (139), a leg down that could be fixed (103, `MedicalState.LegsMessedUp`), inside the home building (107, `AI::iAmInsideTargetBuilding` for a non-building target) and strangers in a private home (141, so a resident does not
@@ -1419,10 +1609,23 @@ whose first step is neither the goal nor a step the engine carries out (`AiSyste
   held true (movement and the lock-up round deal with doors; the bashers' `DoorPlan` evaluates them); machine empty inputs, output full and jammed (62 to 64) are evaluated for a `Targets.Machine` target (a player's
   machine; no finder gives one yet, the town workers' buildings are level data, [Blocked output](game/buildings-production.md#blocked-output)); every other state is false.
 
-Combat stances (`AiStance`, the most aggressive combat goal in its hours; none at all attacks on sight): PROTECT_OWN_SQUAD joins only
-fights of its own squad, against a mate's target or a mate's attacker (as the original's finder, [ai-tasks](game/ai-tasks.md#combat-goals)), for a mate that is the looker or that it sees now
-(`AggroSystem.Protects`; squad-shared sightings of mates are not counted, **Observed** stand-in);
-the other PROTECT goals still join any fighting enemy (engine).
+Combat goals (`AiBehaviour.Fight`, `AiSystem.Fights.cs`; [combat goals](game/ai-tasks.md#combat-goals)): 16, 21, 144 and 34 attack whom their finder picks (`AggroSystem.FindFoe`:
+the looker's entries seen or heard at its last look, and its squad mates' within twice its range R, the shared sightings; 34 `FindTroubleMaker`), 143, 15 and 288 the attacker row 13 finds
+(`CombatSystem.BestAttackerOf`, within 150) of the mate or ally with the highest fight threat (`CombatSystem.FightThreat`), and 32 Self preservation, when it does not run, its own attacker
+(row 13 on itself, `AiSystem.SelfDefencePick`). They are chosen like every goal; the think writes only its own
+mind's request (`AiMind.FightGoal`, `FightTarget`) and stands, and `SendFights` (serial, slot order) defers the fight for the next tick (`AttackOrder`, the goal's provenance; a defence for
+the protect goals and 32), logs it with the aggro system's fights (not 32's) and asks the starter's squad mates to think; a later starter of the same pass picks again with the fights started so far counted
+as attackers (the original's choosers run one after another). That fight is the AI's own (`AiMind.FightFrom`): `Holds` keeps its fighter, which thinks in it but acts nothing out
+(`InFight`): a combat goal or 32's fight keeps the fight, Self preservation's run or a goal 35 asks the flee step, any other goal makes `LeaveFights` (serial) end the fight, and the next tick acts it out.
+An engine duty a fight may interrupt (treating, a town errand's walk, a captive job's walk) is weighed by `Choose` with only the combat goals and 32; any other duty, and a fight the AI did not
+start (a dialogue's, an assault's, a duty's), with 32 alone (`Preempts`; in a fight only its run changes anything); the fight's start ends the duty's task through its handler. Replan triggers
+(`AiMind.Replan`, engine stand-ins): a sighting of the look (the looker and its mates within 2 R), a new enemy sensed by a fighter in its own fight, an alert (the attacked NPC with its fight
+off, the squad mates of the attacker and the attacked), a mate's fight start and the end of its own fight (`CombatSystem.EndFight`); else
+the 15-tick cadence. A new enemy is acted on one tick after the look that sensed it (look at T, think at T+1, fight from T+2); so is an attack (alert at T, the attacker a threat at once). Any
+other character the AI does not hold (fleeing, carried) starts no fight. The members of a squad the AI does not run (a roaming platoon's active half, a campaign's loaded squad, a template without packages)
+get an engine-run mind (`AiMind.Engine`, `AiSystem.EngineMinds`): the combat goals of their package for their role and of their race, and Self preservation, weighed on their routine and
+in their own fights; nothing else is acted out ([combat goals](game/ai-tasks.md#combat-goals)). An NPC without a mind (no squad, or between a dropped mind and the next package cadence) only
+fights back, by the engine's answer (`RetaliationSystem`, at any distance; engine choice).
 
 Scoring follows the original (`TaskProfiles`: desire, commitment, crowding per goal type); a desire
 the original computes in a function of its own counts as 1. Town goals ([ai-tasks.md](game/ai-tasks.md#town-goals)):
@@ -1559,7 +1762,7 @@ each side's rank length instead, one value for both), 6 units apart
 (times the race's `pathfind footprint radius` / 4 when larger, the front rank at least that far from the middle), on a plateau (default, -74028, 13428), the duel's mesa, the sandbox floor or a map spot, with no towns
 and no Aggro. The host orders every standing fighter without a combat target at the nearest standing enemy, once per world tick, so
 same-faction matchups fight too. Once a second a fighter left out of a target with more than 5 after it (circling) turns on the nearest standing
-enemy with room, as the original's target score counts a candidate's engaged fighters against it ([combat](game/combat.md#attack-slots-and-circling)). `--battle-no-fear` leaves out the flee system, so no squad breaks and runs. The battle ends the first tick a side has nobody standing. Backspace rebuilds the world the same way.
+enemy with room, as the original's target score counts a candidate's engaged fighters against it ([combat](game/combat.md#attack-slots-and-circling)). `--battle-no-fear` leaves out the flee system; squads do not run for being broken anyway (`FleeSystem.SquadBreak` is off). The battle ends the first tick a side has nobody standing. Backspace rebuilds the world the same way.
 A counter at the top middle (with the interface, stills too) gives each side's fighters standing (not incapacitated) and alive (not dead) of how many it started with.
 
 ## The game host

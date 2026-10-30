@@ -256,6 +256,7 @@ internal static class SavedCharacters
             Role = sc.SquadMemberType,
             IsPlayer = player,
             Orders = player ? Orders.PlayerDefaults : CharacterOrders.None,
+            Replan = player,   // a load: every player character is decided again
             FootprintRadius = race?.PathfindFootprintRadius ?? 0,
             Save = new SavedCharacterLink
             {
@@ -281,6 +282,7 @@ internal static class SavedCharacters
         HeldSave.Read(sc.GameState, cold, context.Handles, context.InstanceOf);
         if (cold.InSomething == Locks.HeldState.Bed) hot.Task = (byte)CharacterTask.Sleep;   // it lies there until an order (Locks.BedSystem)
         if (cold.IsPlayer && sc.Ai is { } ai) PermaJobSave.Read(ai, sc.GameState, cold, world.Buildings, context.Handles, context.InstanceOf, context.InstanceIds);
+        if (cold.IsPlayer && sc.Ai is { } queueAi) OrderSave.Read(queueAi, cold, context.Handles, context.InstanceOf);
         // The portrait camera's number: the saved one, else the handle's serial (CharacterAnimal::vfunc_18).
         cold.PortraitSerial = sc.GameState is { } portrait && portrait.Ints.TryGetValue("portrait_serial", out int serial) ? (uint)serial : (uint)sc.Handle.S;
         cold.Save.InSomething = cold.InSomething;

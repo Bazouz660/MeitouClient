@@ -5,7 +5,7 @@ using Meitou.Simulation.Items;
 namespace Meitou.Simulation.Trading;
 
 /// <summary>The player opens a trade between one of their characters and a trader: the customer walks up to the trader and the trade window opens in reach.</summary>
-public sealed record OpenTrade(CharacterId Customer, CharacterId Trader) : SimCommand;
+public sealed record OpenTrade(CharacterId Customer, CharacterId Trader) : OrderCommand;
 /// <summary>Closes the open trade.</summary>
 public sealed record CloseTrade : SimCommand;
 /// <summary>
@@ -236,7 +236,7 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
         ref var n = ref world.Characters.Next[t];
         world.Characters.Cold(t)!.Engaged = true;   // the AI leaves it alone until the trade closes
         if (n.Task == (byte)CharacterTask.Wander) traderWandered = true;
-        if (n.Task is (byte)CharacterTask.Wander or (byte)CharacterTask.Idle) MovementSystem.Stop(world.Characters, t);
+        if (n.Task is (byte)CharacterTask.Wander or (byte)CharacterTask.Idle) TaskStart.Stand(world.Characters, t);
     }
 
     void Close(World world)
@@ -245,7 +245,7 @@ public sealed class TradeSystem : ITickSystem, ITradeSource
         session = new();
         if (world.Characters.TryResolveNext(trader, out int held)) world.Characters.Cold(held)!.Engaged = false;
         if (traderWandered && world.Characters.TryResolveNext(trader, out int t) && world.Characters.Next[t].Task == (byte)CharacterTask.Idle)
-            world.Characters.Next[t].Task = (byte)CharacterTask.Wander;
+            TaskStart.Become(world, t, CharacterTask.Wander, Meitou.Data.Gameplay.Ai.TaskType.WANDERER, TaskSource.Npc);
         customer = trader = CharacterId.None;
         open = traderWandered = false;
         view = null;

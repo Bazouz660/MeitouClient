@@ -89,7 +89,7 @@ public sealed partial class CombatSystem
         float dex = Eff(ac, StatsEnumerated.Dexterity) * fighter.DexterityMult;
         float str = Eff(ac, StatsEnumerated.Strength);
         var packet = fighter.Unarmed
-            ? DamageFormulas.UnarmedPacket(UnarmedRating(ac, fighter), Eff(ac, StatsEnumerated.Toughness), str, fighter.FistsItem, kind, dc.Race.StringId, fighter.DamageOutput, combat)
+            ? DamageFormulas.UnarmedPacket(UnarmedRating(world, a, ac, fighter), Eff(ac, StatsEnumerated.Toughness), str, fighter.FistsItem, kind, dc.Race.StringId, fighter.DamageOutput, combat)
             : DamageFormulas.Packet(skill, dex, str, fighter.Weapon!, kind, dc.Race.StringId, fighter.DamageOutput, combat);
         packet = Powered(packet, tech, blow);
 
@@ -142,7 +142,11 @@ public sealed partial class CombatSystem
         if (dc.Medical.Incapacitated) Sound(world, SoundKind.Down, d, a, prev[d].Position, fatal: death);
         // The police-hit rule first (the game's hit outcome runs before the damage), then the victim's faction's relation events (docs/game/factions-squads-towns.md 3.5).
         Crimes?.Hit(world, a, d);
-        if (!dc.Medical.Incapacitated) world.SystemOf<AggroSystem>()?.Notice(world, table.IdOf(d), table.IdOf(a));   // the victim senses its attacker (FUN_140999f00)
+        if (!dc.Medical.Incapacitated)
+        {
+            world.SystemOf<AggroSystem>()?.Notice(world, table.IdOf(d), table.IdOf(a));   // the victim senses its attacker (FUN_140999f00)
+            HitReplan(dc, world.Tick);
+        }
         Deeds?.Blow(world, a, d, dc.Medical.Incapacitated, death);
         // A unique killed: dead in the registry, with the player flag when the killer is the player's (the body pass would mark it dead without).
         if (death && world.Uniques.RecordOf(world.Characters.IdOf(d)) is { } unique) world.Uniques.Died(unique, ac.IsPlayer, dc.Faction);
@@ -160,7 +164,7 @@ public sealed partial class CombatSystem
         // unless it mans a turret (shooting at a live target).
         if (D.TargetSlot < 0 && !dc.InCombat)
         {
-            if (dc.GettingUpUntil > now)
+            if (CharacterFacts.GettingUp(dc, now))
             {
                 UnderAttackGettingUp(world, d, dc, counter);
                 return;
@@ -169,6 +173,7 @@ public sealed partial class CombatSystem
             {
                 world.SystemOf<Carrying.CarrySystem>()?.Interrupted(world, d);   // a put-down is finished by the hit, a lift past its attach keeps the body
                 Restart(world.Characters, d, dc);
+                DecisionSystem.Request(dc);   // forceOrderInsert replans (the stumble is not modelled as an order)
             }
         }
         bool stumbling = D.StumbleClip >= 0 && now < D.StunUntil;
@@ -183,6 +188,7 @@ public sealed partial class CombatSystem
         {
             D.StumbleClip = clip.Clip;
             D.StumbleStart = now;
+            D.BreakOutTick = now + Math.Max(1, (int)MathF.Round(CombatTuning.BreakOutSeconds / world.TickSeconds));
             D.StunUntil = now + Math.Max(1, (int)MathF.Ceiling(clip.Seconds / world.TickSeconds));
             D.PauseUntil = 0;   // the stumble state (8) ends the pause (FUN_14060cf60 clears +0x144)
             dc.StaggeredUntil = D.StunUntil;

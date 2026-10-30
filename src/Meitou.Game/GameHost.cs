@@ -260,7 +260,6 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
         ui.PowerOutput = record => popData?.Db.Find(record)?.GetInt("power output");
         ui.SquadLimits = () => popData?.Bodies.Constants;
         ui.Rocks = () => popData?.ResourceNodes;
-        ui.HostileFaction = faction => popData is not { } d || session.World.Player.Faction is not (>= 0 and var mine) || !d.Relations.Contains(faction) || d.Relations.IsHostile(mine, faction);
         ui.MapTowns = () => popData?.Sites ?? [];
         ui.MapFactionOf = id =>
         {
@@ -299,6 +298,7 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
         var specialFoodRaces = new System.Collections.Concurrent.ConcurrentDictionary<string, string>(StringComparer.Ordinal);
         ui.SpecialFoodRaces = id => popData is { } d ? specialFoodRaces.GetOrAdd(id, item => Meitou.Data.Gameplay.Bodies.SpecialFood.EatenBy(d.Db, item)) : "";
         ui.CombatOf = () => popData?.Combat;
+        ui.RangedDamageMultiplier = () => popData?.BodyOptions.GlobalDamageMultiplier ?? 1;
         ui.MapItemTowns = record =>
         {
             if (popData is not { } d || d.Db.Find(record) is not { Type: Meitou.Data.Fcs.FcsRecordType.MAP_ITEM } map) return null;

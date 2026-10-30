@@ -64,7 +64,7 @@ sample save holds a player-built building, so a real file was not compared). A f
 `pause`, `construction progress`, `<i>construction mats` and ownership. Bool `meitou town construction` keeps it distinct
 from a new player-built instance, including after completion; the loader registers its construction state when the town activates.
 No extra instance or outpost is created. **Verified** by `HouseRepairTests` against The Hub's original ruined Storm House
-and a save/read round trip. Persistent job targets use its zone-qualified identity; transient work orders are not saved.
+and a save/read round trip. Persistent job targets use its zone-qualified identity; queued work orders are saved as the [order queue](#order-queue).
 
 Save runtime state, derive definitions/race/gear/material/terrain from merged base/mod data,
 regenerate unsaved foliage/weather particles. Reused declared type IDs do not imply declared
@@ -457,6 +457,24 @@ Job lists (`Saving/PermaJobSave`): the original's GAMESTATE_AI (`ai`) keys `jobs
 Meitou's string `meitou pjob<i>` (the job's building id, which wins on load over the handle). The squad AI options are CAMERA bools (**Verified**, writer
 `FUN_1403eb710`; the key of each option and new-game values in [squad AI options](../game/ai-tasks.md#squad-ai-options)); Meitou reads and writes nine
 (not `stay`, `eject`), an absent one keeps its default.
+
+### Order queue
+
+A player character's order queue (the deque at `AITaskSytem` +0x40, [order queue](../simulation.md#order-queue)) is in its GAMESTATE_AI record `ai`, after the job list. Meitou: `Saving/OrderSave`.
+- **Keys** (**Verified**, `AITaskSytem` vfuncs 1 / 2: writer `FUN_1405090b0`, loader `FUN_1405092d0`): per order i from 0, front first, int `tjob<i>` (the entry's TaskData task type), vec3 `tjobP<i>`
+  (the entry's point) and the handle `tjobT<i>` (five ints `TYPE`, `C`, `CS`, `I`, `S`, the entry's target, as `pjobT<i>`; the null handle, `TYPE` 11, when it has none). Nothing else of an
+  entry is saved: not whether it started, not its failure text. The writer and the loader act only for a character whose faction has the player-faction field (+0x250) set.
+- **Observed** (60 of the owner's 511 saves, 191 characters, all original writes): queues of 1 order (186) or 2 (5), so the running front is saved; rows 29 move (163; null handle, point set),
+  258 `USE_BED_ORDER` (11; a BUILDING handle, point set), 16 `ATTACK_ENEMIES` (11) and 5 (5) with a CHARACTER handle and a zero point (a queue of two is 5 then 16 on one target), 60 / 201 / 26 / 65 / 87
+  once each. Meitou's Sleep order is the row 98 it starts, so it is written and read as 258. Why 5 is followed by 16 is **Unknown**.
+- **Load** (**Verified**): the loader reads `tjob<i>` until one is missing and adds each through the add function `FUN_1405086d0` as a one-shot order (it lands in the second list +0x70,
+  [precedence](../game/ai-tasks.md#precedence), not in the deque; a row with a job form is replaced by it), then the planner is re-run. Meitou instead restores the queue as saved: a load reads the
+  orders into `CharacterCold.SavedOrders`; the decision step makes them the queue (nothing started) once every character and building exists, and the front starts through source 1.
+  An order is dropped when no system owns its row (so 16, 60 and the other rows Meitou has no order for), its target character or building is not in the world, or its handle names nothing the
+  save holds. A building handle is the building's instance (a build site, or a fixture whose id is the building's own, a bed too); a CHARACTER handle finds the character by its saved handle.
+- **Meitou keys**: string `meitou tjob<i>` (the order's site id: a build site, fixture or rock, which wins on load over a building handle, as `meitou pjob<i>`), int `meitou tjobK<i>` (the owner's
+  detail code, `IOrderOwner.SaveKind`: a loot that opens the window, a bed named by a put-in order, a walk only to a container, a lock order done in place), each written only when set. Ground-item
+  pick-ups (a runtime item id) and the Medic / Rescue buttons' looks are not saved. **Unknown**: how the original consumes the second list after a load.
 
 Meitou-only crime keys (`Saving/CrimeSave`, `LockSystem`, `FixtureRegistry`; the original's keys for these facts are **Unknown**), each written only while set and removed otherwise:
 - GAMESTATE_CHARACTER float `age`: the character's age (1 for people, an animal's growth, [animals](../game/animals.md#ageing)); **Verified** in vanilla saves.

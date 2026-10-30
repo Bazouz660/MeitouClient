@@ -402,23 +402,6 @@ public sealed class Blackboard
     }
 }
 
-/// <summary>How readily an AI character starts a fight with someone it sees (docs/simulation.md "AI", Combat goals): from the combat goals of its lists in their hours.</summary>
-public enum AiStance : byte
-{
-    /// <summary>Starts no fight (it still fights back when attacked).</summary>
-    Passive = 0,
-    /// <summary>Attacks enemies fighting its own squad: a mate's target or a mate's attacker (PROTECT_OWN_SQUAD, docs/game/ai-tasks.md "Combat goals").</summary>
-    ProtectSquad = 1,
-    /// <summary>Attacks enemies that are fighting (PROTECT_ALLIES and the like).</summary>
-    Defensive = 2,
-    /// <summary>Attacks enemies within its home (TERRITORIAL_AGGRESSION_BUT_DONT_LEAVE_HOME).</summary>
-    Territorial = 3,
-    /// <summary>Attacks enemies on sight (ATTACK_ENEMIES; also the default for a character whose lists hold no combat goal, the old rule).</summary>
-    Aggressive = 4,
-    /// <summary>Attacks enemies and neutrals on sight (ATTACK_ENEMIES_AND_NEUTRALS).</summary>
-    AggressiveNeutrals = 5,
-}
-
 /// <summary>A flight the think asks the <see cref="FleeSystem"/> to start (<see cref="AiMind.FleeRequest"/>).</summary>
 public enum FleeAsk : byte
 {
@@ -429,7 +412,7 @@ public enum FleeAsk : byte
     Enemies = 2,
 }
 
-/// <summary>What the AI decided for one character (<see cref="CharacterCold.Ai"/>): the goal it acts out, where its post and bed are, how readily it fights.</summary>
+/// <summary>What the AI decided for one character (<see cref="CharacterCold.Ai"/>): the goal it acts out, where its post and bed are, the fight it asks for.</summary>
 public sealed class AiMind
 {
     /// <summary>The squad it thinks for (fixed for the mind's life: a character does not change squads), held so the think needs no lookup. Not hashed (the squad is).</summary>
@@ -443,7 +426,6 @@ public sealed class AiMind
     /// <summary>The plan's first step (None without a plan).</summary>
     public TaskType Step => Plan.Count > 0 ? Plan[0].Type : TaskType.None;
     public AiBehaviour Behaviour { get; set; }
-    public AiStance Stance { get; set; } = AiStance.Aggressive;
     /// <summary>The <see cref="Blackboard.Version"/> the goal was chosen under.</summary>
     public int Version { get; set; } = -1;
     /// <summary>Its own spot: where it stood when the AI took it over (the stand-in where the home has no node or bed for it).</summary>
@@ -455,6 +437,14 @@ public sealed class AiMind
     /// <summary>The centre and radius <see cref="MovementSystem"/>'s wander uses instead of the squad's home (radius 0: the squad's).</summary>
     public Vector2 WanderCentre { get; set; }
     public float WanderRadius { get; set; }
+    /// <summary>
+    /// Its routine is the engine's, not the AI's: it is a member of a squad the AI does not run (a roaming platoon's active half, whose trip is the population's, or a squad whose template
+    /// lists no AI packages). The AI weighs only its combat goals (<see cref="EngineGoals"/> and its race's) and Self preservation, on that routine and in its fights, and acts nothing else
+    /// out (docs/simulation.md "AI").
+    /// </summary>
+    public bool Engine { get; init; }
+    /// <summary>The combat goals of its platoon's package for its role (none without a package), set by the AI's serial step on the package cadence. Follow from the package, so not hashed.</summary>
+    public IReadOnlyList<AiGoal> EngineGoals { get; set; } = [];
     /// <summary>Its race's <c>AI Goals</c>, looked up once when the mind is made (the lookup takes a lock; the think runs on every worker). Follows from the race, so not hashed.</summary>
     public IReadOnlyList<AiGoal> RaceGoals { get; init; } = [];
     /// <summary>It was sent walking to a spot and has not arrived.</summary>
@@ -494,13 +484,25 @@ public sealed class AiMind
     /// lists). Set by the think on the mind's own character, taken and cleared by the serial flee step of the same tick, so it is never set between ticks (not hashed).
     /// </summary>
     public FleeAsk FleeRequest { get; set; }
-    /// <summary>Whether its lists hold any combat goal at all (else the stance stays the old default).</summary>
-    public bool HasCombatGoals { get; set; }
-    /// <summary>Whether a PROTECT_ALLIES goal (15 or 288) is in its lists and hours: it defends allies of other squads against any attacker (<see cref="RetaliationSystem"/>).</summary>
-    public bool ProtectsAllies { get; set; }
-    /// <summary>The role list and hour <see cref="Stance"/> was worked out for (a cache; the stance itself is hashed).</summary>
-    internal IReadOnlyList<AiGoal>? StanceFrom { get; set; }
-    internal int StanceHour { get; set; } = -1;
+    /// <summary>
+    /// The fight the think chose for it (a combat goal's, <see cref="AiBehaviour.Fight"/>): the goal and the character the goal's finder (and, for the protect goals, row 13) picked. Set by
+    /// the think on the mind's own character, taken and cleared by <see cref="AiSystem"/>'s serial step of the same tick, which starts the fight; never set between ticks (not hashed).
+    /// </summary>
+    public TaskType FightGoal { get; set; }
+    public CharacterId FightTarget { get; set; } = CharacterId.None;
+    /// <summary>
+    /// The tick the last fight the serial step started for it begins (<see cref="CharacterCold.Running"/>'s <c>Tick</c> of that fight; 0: none yet): while it runs, the fight is the AI's own,
+    /// a plan step of its combat goal, and the character thinks in it (<see cref="AiSystem.Holds"/>).
+    /// </summary>
+    public long FightFrom { get; set; }
+    /// <summary>The think of a fighter chose a goal that is no fight: the serial step of the same tick ends the fight, and it thinks again at the next tick. Never set between ticks (not hashed).</summary>
+    public bool LeaveFight { get; set; }
+    /// <summary>
+    /// It thinks at the next tick whatever its cadence (a replan request, engine stand-in for the original's triggers): set by a sighting of its own or of a squad mate, a new enemy sensed
+    /// while it fights (<see cref="AggroSystem"/>), an alert near it (<see cref="RetaliationSystem"/>), a mate's fight start and the end of its own fight (<see cref="Combat.CombatSystem"/>);
+    /// cleared by that think.
+    /// </summary>
+    public bool Replan { get; set; }
     /// <summary>What it wants to buy (goal 118, <see cref="ShoppingList"/>); made with the mind from its record and the world seed, not saved.</summary>
     public ShoppingList Shopping { get; init; } = new();
     /// <summary>The shop it walks to for goal 118 (set when the target is picked, so the arrival knows what the shop stocks); follows from the target, so not hashed.</summary>
@@ -512,10 +514,10 @@ public sealed class AiMind
 
     internal void Hash(ref StateHasher hasher)
     {
+        if (Engine) hasher.Add(0x456E6769);
         hasher.Add((int)(Goal?.Task.Type ?? TaskType.None));
         hasher.Add((int)Step);
         hasher.Add((int)Behaviour);
-        hasher.Add((int)Stance);
         hasher.Add(Version);
         hasher.Add(Post);
         hasher.Add(WanderCentre);
@@ -532,6 +534,8 @@ public sealed class AiMind
         if (BedAt is { } bed) hasher.Add(Rng.StableHash(bed));
         if (!FollowTarget.IsNone) hasher.Add(FollowTarget);
         if (!AssaultTarget.IsNone) hasher.Add(AssaultTarget);
+        if (FightFrom != 0) hasher.Add(FightFrom);
+        if (Replan) hasher.Add(0x5265706C);
         if (LookAbout != Crime.CrimeSystem.FirstLookAboutSeconds) hasher.Add(LookAbout);
         if (NextBuyTick != 0) hasher.Add(NextBuyTick);
         Shopping.Hash(ref hasher);

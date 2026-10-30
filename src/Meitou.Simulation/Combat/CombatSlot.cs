@@ -11,6 +11,11 @@ public struct CombatSlot
     public int Generation;
     /// <summary>The target of the fight (slot and generation), -1 for none.</summary>
     public int TargetSlot, TargetGeneration;
+    /// <summary>
+    /// Whom the fight is about (slot and generation, -1: none): the fight task's own target (<c>Task_MeleeAttack</c>'s, the order's or the goal's), set at the fight's start and kept while the
+    /// fighter turns on others. Losing it as the target ends the fight at once; a fight without a target lasts until nothing is left (docs/game/combat.md "Leaving a fight").
+    /// </summary>
+    public int TaskSlot, TaskGeneration;
     /// <summary>The attack technique (index into the system's list), -1 when not attacking.</summary>
     public int AttackTech;
     /// <summary>The tick the attack started, its length in ticks, and the tick after which a new action may start.</summary>
@@ -34,6 +39,8 @@ public struct CombatSlot
     public int PauseUntil;
     /// <summary>Knocked out or dead (a copy of <c>MedicalState.Incapacitated</c> that other characters can read).</summary>
     public bool Down;
+    /// <summary>Crawling from a leg down (posture 2) the last tick: its end is a get-up (docs/game/ragdolls.md "Getting up"). Derived, not hashed.</summary>
+    public bool Crawl;
     /// <summary>Counters: blows thrown, hits landed, blows blocked or dodged by the target, hits taken, blocks, dodges made.</summary>
     public int Thrown, Landed, Parried, Evaded, Taken, Blocks, Dodges;
     /// <summary>The last hit taken, for the hit reaction clip: its tick (-1: none yet), the body part (index into the medical state's parts), whether it was heavy (above the stumble threshold) and came from behind.</summary>
@@ -43,6 +50,8 @@ public struct CombatSlot
     public bool HitHeavy, HitBehind;
     /// <summary>The hit reaction the last interrupting hit started (an animation library index, -1: none) and its tick; it holds the character helpless until <see cref="StunUntil"/>.</summary>
     public int StumbleClip, StumbleStart;
+    /// <summary>The first tick a stumbling character may roll to break out (the original's +0x124 timer: 1.2 s from the stumble's start, again 1.2 s after a failed roll; <see cref="CombatSystem"/> rolls on the first tick a swing is in the window once it is due).</summary>
+    public int BreakOutTick;
     /// <summary>How the last blow of the character's own attack ended (<see cref="BlowOutcome"/>), which sets the pause after the attack.</summary>
     public BlowOutcome LastOutcome;
     /// <summary>The fighter it lost the initiative roll to (slot, -1: none) and until when: that one may swing at it at once, even in its pause.</summary>
@@ -71,8 +80,6 @@ public struct CombatSlot
     public bool Picked;
     /// <summary>The tick of its next target choice (<see cref="CombatSystem.PickSeconds"/>); 0: at once.</summary>
     public int PickTick;
-    /// <summary>The tick a player's fighter last sensed its target (<see cref="CombatSystem.PickSeconds"/>'s sense test keeps it <see cref="AggroSystem.GiveUpSenseSeconds"/> after).</summary>
-    public int SensedTick;
     /// <summary>
     /// The Block order's timer while engaged (the tick it runs out, 0: not running) and the tick it last ran out: swings at the character started before that hold no attack
     /// slot any more (<c>CircleStateAI</c> FUN_1402b3180 → FUN_1406658c0, docs/game/combat.md "Attack slots and circling").
@@ -94,7 +101,7 @@ public struct CombatSlot
 
     public static CombatSlot Fresh(int generation) => new()
     {
-        Generation = generation, TargetSlot = -1, TargetGeneration = 0, AttackTech = -1, ReactTech = -1, ReactedSlot = -1, ReactedSeq = -1, HitTick = -1, HitPart = -1, HitFrom = -1, StumbleClip = -1, YieldTo = -1, LastTech = -1,
+        Generation = generation, TargetSlot = -1, TargetGeneration = 0, TaskSlot = -1, AttackTech = -1, ReactTech = -1, ReactedSlot = -1, ReactedSeq = -1, HitTick = -1, HitPart = -1, HitFrom = -1, StumbleClip = -1, YieldTo = -1, LastTech = -1,
     };
 
     public readonly bool Fighting => TargetSlot >= 0;
@@ -104,6 +111,7 @@ public struct CombatSlot
         h.Add(Generation);
         h.Add(TargetSlot);
         h.Add(TargetGeneration);
+        if (TaskSlot >= 0) { h.Add(TaskSlot); h.Add(TaskGeneration); }   // only during a fight, so worlds without fights hash as before
         h.Add(AttackTech);
         h.Add(AttackStart);
         h.Add(AttackTicks);
@@ -138,6 +146,7 @@ public struct CombatSlot
         h.Add(HitBehind);
         h.Add(StumbleClip);
         h.Add(StumbleStart);
+        h.Add(BreakOutTick);
         h.Add((int)LastOutcome);
         h.Add(YieldTo);
         h.Add(YieldUntil);
@@ -149,7 +158,6 @@ public struct CombatSlot
         if (CircleState) h.Add(0x43697263);   // only when set, so worlds without crowded fights hash as before
         if (Picked) h.Add(true);   // only when set, so worlds without player picks hash as before
         h.Add(PickTick);
-        h.Add(SensedTick);
         h.Add(BlockTimerTick);
         h.Add(SlotsCleared);
         // The ranged controller goes in only once it has been used, so worlds without crossbows hash as they did before it existed.

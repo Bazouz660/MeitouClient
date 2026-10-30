@@ -21,6 +21,11 @@ public interface ITickSystem
     void Think(World world, Partition partition) { }
     /// <summary>Step 4, parallel: path following, steering, separation, integration on the ground.</summary>
     void Move(World world, Partition partition) { }
+    /// <summary>
+    /// Step 5, parallel, right before this system's <see cref="Act"/> with a barrier between: the slots' own state that the system's <see cref="Act"/> reads of other slots (combat's
+    /// body step), so each slot's Act sees every slot's update of this tick whatever the partitions and thread count. Writes only its own slots; no effects.
+    /// </summary>
+    void BeforeAct(World world, Partition partition) { }
     /// <summary>Step 5, parallel: combat timers, needs, production; effects on others go to <paramref name="effects"/>.</summary>
     void Act(World world, Partition partition, EffectBuffer effects) { }
     /// <summary>Step 6, serial: applies one effect this system emitted; effects arrive sorted by (target, source, system, sequence).</summary>
@@ -102,6 +107,9 @@ public sealed partial class World : IDisposable
         production = this.systems.OfType<Production.ProductionSystem>().FirstOrDefault();
         dialogues = this.systems.OfType<Dialogue.IDialogueSource>().FirstOrDefault();
         ragdolls = this.systems.OfType<Ragdolls.IRagdollSource>().FirstOrDefault();
+        foreach (var owner in this.systems.OfType<ITaskOwner>()) owner.RegisterTasks(Tasks);
+        foreach (var owner in this.systems.OfType<IDecisionOwner>()) owner.RegisterSources(Decisions);
+        for (int k = 0; k < this.systems.Count; k++) if (DecidesAfter(this.systems[k])) decideAfter = k;
         Characters = characters ?? new CharacterTable();
         Grid = new SpatialGrid(settings.GridCellSize);
         pool = new WorkerPool(settings.Threads);
@@ -111,6 +119,18 @@ public sealed partial class World : IDisposable
 
     public WorldSettings Settings { get; private set; }
     public ulong Seed => Settings.Seed;
+
+    /// <summary>The act-out handlers <see cref="TaskStart"/> starts and ends tasks through (filled by the systems that own them, <see cref="ITaskOwner"/>; open to later additions).</summary>
+    public TaskHandlers Tasks { get; } = new();
+
+    /// <summary>
+    /// The decision step for the player's characters (docs/simulation.md "Decision step"): run in the slow world right after the last of retaliation, aggro and flight (after every system
+    /// when the world has none of them), and for orders between ticks. Its sources are registered by the systems that own them (<see cref="IDecisionOwner"/>; open to later additions).
+    /// </summary>
+    public DecisionSystem Decisions { get; } = new();
+    int decideAfter = -1;
+
+    static bool DecidesAfter(ITickSystem system) => system is RetaliationSystem or AggroSystem or FleeSystem;
 
     /// <summary>
     /// Sets the world seed before the first tick: a loaded save's (docs/formats/save.md CAMERA <c>meitou seed</c>), so its seeded layout rolls as before the save, or a new
@@ -214,6 +234,8 @@ public sealed partial class World : IDisposable
         trades ??= system as Trading.ITradeSource;
         dialogues ??= system as Dialogue.IDialogueSource;
         ragdolls ??= system as Ragdolls.IRagdollSource;
+        if (system is IDecisionOwner owner) owner.RegisterSources(Decisions);
+        if (DecidesAfter(system)) decideAfter = systems.Count - 1;
     }
 
     /// <summary>The character holds a line it wants to say to the player (<see cref="Dialogue.IDialogueSource.HasInterrupt"/>).</summary>
@@ -281,6 +303,7 @@ public sealed partial class World : IDisposable
         prof?.Lap(TickProfile.Act);
         foreach (var p in phases)
         {
+            if (p.BeforeAct is { } before) RunParallel(before, prof, TickProfile.Act, p.Index);
             if (p.Act is not { } act) continue;
             foreach (var b in buffers) b.BeginSystem(p.Index);   // Effect.System is the system's real index, so the commit order does not depend on which systems act
             RunParallel(act, prof, TickProfile.Act, p.Index);
@@ -298,7 +321,14 @@ public sealed partial class World : IDisposable
         prof?.Lap(TickProfile.Commit);
         table.Phase = TablePhase.SlowWorld;
         // 7. Slow world (serial).
-        for (int k = 0; k < systems.Count; k++) { systems[k].SlowWorld(this); prof?.Lap(TickProfile.SlowWorld, k); }
+        for (int k = 0; k < systems.Count; k++)
+        {
+            systems[k].SlowWorld(this);
+            prof?.Lap(TickProfile.SlowWorld, k);
+            if (k == decideAfter) Decisions.Run(this, paused: false);
+        }
+        if (decideAfter < 0) Decisions.Run(this, paused: false);
+        TaskStart.CheckStarts(this);
 
         // 8. Publish.
         Squads.Refresh(table);

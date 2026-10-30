@@ -1,3 +1,4 @@
+using Meitou.Data.Gameplay.Ai;
 using System.Numerics;
 using Meitou.Data;
 using Meitou.Data.Fcs;
@@ -43,7 +44,7 @@ public sealed class ProductionSettings
 /// </list>
 /// Placed after construction and before combat; everything here is serial and reads only the world's state and the command order.
 /// </summary>
-public sealed partial class ProductionSystem : ITickSystem
+public sealed partial class ProductionSystem : ITickSystem, ITaskOwner, ITaskHandler, IOrderOwner, IDecisionOwner
 {
     /// <summary>The research falloff per earlier contribution in the same tick (<b>Observed</b>, <c>FUN_140836b70</c>).</summary>
     public const float ResearchFalloff = 0.6f;
@@ -257,21 +258,14 @@ public sealed partial class ProductionSystem : ITickSystem
                     if (machine.Data.IsStorage && !machine.Data.Operable)
                     {
                         foreach (var id in Who(world, order.Characters))
-                            if (table.TryResolveNext(id, out int hauler) && table.Cold(hauler) is { IsPlayer: true } hc && Able(hc)) StartHaulTrip(world, hauler, site, machine);
+                            if (table.TryResolveNext(id, out int hauler)) PlayerOrders.Give(world, hauler, new OrderEntry(TaskType.OPERATE_STORAGE, this) { Site = site.Id }, order.Queued);
                         break;
                     }
                     if (!(machine.Data.Operable || machine.Data.IsTraining)) break;
+                    var row = machine.Data.IsTraining ? TaskType.USE_TRAINING_DUMMY : TaskType.OPERATE_MACHINERY;
                     foreach (var id in Who(world, order.Characters))
-                    {
-                        if (!table.TryResolveNext(id, out int slot) || table.Cold(slot) is not { IsPlayer: true } cold || !Able(cold)) continue;
-                        if (cold.OperateSite == site.Id) continue;
-                        if (OperatorsOf(world, site.Id) >= machine.Data.MaxOperators)
-                        {
-                            world.Post($"{site.Name} is already in use.");
-                            break;
-                        }
-                        Begin(world, slot, site, machine);
-                    }
+                        if (table.TryResolveNext(id, out int slot) && PlayerOrders.Give(world, slot, new OrderEntry(row, this) { Site = site.Id }, order.Queued) is { Posted: true })
+                            break;   // the machine is in use: said once
                     break;
                 }
                 case UseTurretOrder turret: UseTurret(world, turret); break;
@@ -314,15 +308,44 @@ public sealed partial class ProductionSystem : ITickSystem
         int best = -1;
         float bestGap = float.MaxValue;
         foreach (var id in Who(world, order.Characters))
-            if (table.TryResolveNext(id, out int slot) && table.Cold(slot) is { IsPlayer: true } cold && Able(cold) && Gap(table.Next[slot].Position, spot) is var gap && gap < bestGap)
+            if (table.TryResolveNext(id, out int slot) && table.Cold(slot) is { IsPlayer: true } cold && Able(cold) && TaskStart.Eligible(world, cold, TaskType.USE_TURRET) && Gap(table.Next[slot].Position, spot) is var gap && gap < bestGap)
                 (best, bestGap) = (slot, gap);
-        if (best < 0 || table.Cold(best)!.OperateSite == site.Id) return;
-        if (OperatorsOf(world, site.Id) >= m.Data.MaxOperators)
+        if (best >= 0) PlayerOrders.Give(world, best, new OrderEntry(TaskType.USE_TURRET, this) { Site = site.Id }, order.Queued);
+    }
+
+    /// <summary>
+    /// The orders of machines (operate 87, training 97, turret gunner 146, a haul trip to a storage 124) and prospecting (150): a player character's (else the order leaves the queue) on a
+    /// complete site that has its machine (or a turret's post); one already working that machine needs nothing more; the character must be able to work (<see cref="Able"/>), the machine have
+    /// a free operator place ("is already in use", posted), and a prospector must not swim.
+    /// </summary>
+    OrderCheck IOrderOwner.CanRun(World world, int slot, OrderEntry order)
+    {
+        var cold = world.Characters.Cold(slot)!;
+        if (!cold.IsPlayer) return OrderCheck.Gone;
+        if (order.Row == TaskType.PROSPECTING) return Able(cold) && cold.WaterState != 3 ? OrderCheck.Run : OrderCheck.Blocked();
+        if (order.Site is not { } id || Site(world, id) is not { Complete: true } site || world.Machines.Find(id) is not { } m
+            || order.Row == TaskType.USE_TURRET && TurretPostOf(site) is null) return OrderCheck.Gone;
+        if (order.Row == TaskType.OPERATE_STORAGE) return Able(cold) ? OrderCheck.Run : OrderCheck.Blocked();
+        if (cold.OperateSite == id) return OrderCheck.Run;
+        if (!Able(cold)) return OrderCheck.Blocked();
+        return OperatorsOf(world, id) >= m.Data.MaxOperators ? OrderCheck.Blocked($"{site.Name} is already in use.", posted: true) : OrderCheck.Run;
+    }
+
+    void IOrderOwner.Start(World world, int slot, OrderEntry order)
+    {
+        var table = world.Characters;
+        switch (order.Row)
         {
-            world.Post($"{site.Name} is already in use.");
-            return;
+            case TaskType.PROSPECTING:
+                if (table.Next[slot].Task != (byte)CharacterTask.Prospect) TaskStart.Start(world, slot, new TaskRequest(CharacterTask.Prospect, TaskType.PROSPECTING, TaskSource.Order));   // one at it keeps its progress
+                break;
+            case TaskType.OPERATE_STORAGE:
+                TaskStart.Start(world, slot, new TaskRequest(CharacterTask.Haul, TaskType.OPERATE_STORAGE, TaskSource.Order) { Site = order.Site });
+                break;
+            default:
+                if (table.Cold(slot)!.OperateSite != order.Site) TaskStart.Start(world, slot, new TaskRequest(CharacterTask.Operate, order.Row, TaskSource.Order) { Site = order.Site });
+                break;
         }
-        Begin(world, best, site, m);
     }
 
     /// <summary>A player turret's post (its functionality's <c>use range</c> and <c>gun turret</c>), null for a building that is no turret.</summary>
@@ -361,9 +384,13 @@ public sealed partial class ProductionSystem : ITickSystem
     // The gunner spots of the player's turrets, as their walks found them (derived from the site and the ground; not saved, not hashed).
     readonly Dictionary<string, Vector2> turretSpots = [];
 
-    /// <summary>A character that can work: awake, not fighting, not carrying or carried, not caged.</summary>
+    /// <summary>
+    /// A character that can work: awake, not carrying or carried. A fight is no gate: an order's new task ends it (<see cref="TaskStart.Start"/>; docs/game/combat.md "Fight lifecycle and
+    /// orders"), and a fight that starts ends the work the same way. Nor is a cage: no production row registers the imprisoned or chained repertoire (<see cref="TaskStart.Eligible"/>), and
+    /// a caging ends the task (<see cref="Locks.FixtureRegistry.Imprison"/>).
+    /// </summary>
     static bool Able(CharacterCold cold) =>
-        cold.Medical is not { Incapacitated: true } && !cold.InCombat && cold.CarriedBy.IsNone && cold.Carrying.IsNone && !cold.IsImprisoned;
+        cold.Medical is not { Incapacitated: true } && cold.CarriedBy.IsNone && cold.Carrying.IsNone;
 
     static int OperatorsOf(World world, string site)
     {
@@ -419,12 +446,52 @@ public sealed partial class ProductionSystem : ITickSystem
     /// <summary>The clip a turret's gunner holds.</summary>
     public const string TurretClip = "combatstance";
 
+    public void RegisterTasks(TaskHandlers tasks)
+    {
+        tasks.Register(CharacterTask.Operate, this);
+        tasks.Register(CharacterTask.Haul, this);
+        tasks.Register(CharacterTask.Prospect, this);
+    }
+
+    /// <summary>
+    /// Operating <see cref="TaskRequest.Site"/> (rows 87, 97, 146, the jobs 152 and 234, the implicit sitting 275), a haul trip to the storage <see cref="TaskRequest.Site"/> (124, the implicit
+    /// ditching 242), or prospecting where the character stands (150).
+    /// </summary>
+    void ITaskHandler.Start(World world, int slot, in TaskRequest request)
+    {
+        if (request.Task == CharacterTask.Prospect)
+        {
+            ProspectStart(world, slot);
+            return;
+        }
+        var site = Site(world, request.Site!)!;
+        var m = Ensure(world, site)!;
+        if (request.Task == CharacterTask.Haul) StartHaulTrip(world, slot, site, m, ditch: request.Row == TaskType.DITCH_ALL_RESOURCES);
+        else Begin(world, slot, site, m);
+    }
+
+    /// <summary>An operator, hauler or prospector that another task replaces or the Stop order ends lets go of its machine, trip or progress (the task it goes back to is the new start's).</summary>
+    void ITaskHandler.End(World world, int slot, CharacterTask task, TaskEnd reason)
+    {
+        var cold = world.Characters.Cold(slot)!;
+        if (task == CharacterTask.Prospect)
+        {
+            cold.Prospecting = null;
+            return;
+        }
+        cold.OperateSite = null;
+        cold.HaulSite = null;
+        cold.HaulFetch = null;
+        cold.Operating = false;
+        cold.HaulTo = null;
+    }
+
     void Begin(World world, int slot, BuildSite site, Machine m)
     {
         var table = world.Characters;
         var cold = table.Cold(slot)!;
         ref var n = ref table.Next[slot];
-        MovementSystem.Stop(table, slot);
+        TaskStart.Stand(table, slot);
         n.Task = (byte)CharacterTask.Operate;
         n.Mode = SpeedMode.Free;
         n.TaskTime = 0;
@@ -436,45 +503,35 @@ public sealed partial class ProductionSystem : ITickSystem
         cold.HaulSite = null;
         cold.HaulFetch = null;
         cold.Operating = false;
-        cold.JobIndex = -1;
-        cold.Implicit = null;
         cold.HaulTo = null;
         var goal = GoalOf(world, site, m);
         if (!AtSite(n, site, m)) WalkToSite(ref n, cold, site, goal);
         sweep = true;
     }
 
-    static void End(CharacterTable table, int slot)
+    /// <summary>
+    /// Ends the task of a job, an operator's or a haul trip by itself (serial phases; <see cref="TaskEnd.Done"/>): the character stands idle and the decision step decides it again. A follow
+    /// job's follow ends with it (its <see cref="CharacterCold.FollowOrder"/> is dropped).
+    /// </summary>
+    static void End(World world, int slot)
     {
+        var table = world.Characters;
         var cold = table.Cold(slot)!;
-        ref var n = ref table.Next[slot];
-        bool followJob = n.Task == (byte)CharacterTask.Follow && cold.JobIndex >= 0 && cold.JobIndex < cold.Jobs.Count
-            && PermaJobs.Follows(cold.Jobs[cold.JobIndex].Type);
-        if (followJob) cold.FollowOrder = CharacterId.None;   // the job's follow ends with it; the character follows its squad's leader again
-        if (followJob || n.Task is (byte)CharacterTask.Operate or (byte)CharacterTask.Haul or (byte)CharacterTask.Sleep)
-        {
-            MovementSystem.Stop(table, slot);
-            // A job's task goes back to the following or wandering it took the character from.
-            n.Task = (byte)((cold.JobIndex >= 0 || cold.Implicit is not null) && cold.ResumeTask is CharacterTask.Wander or CharacterTask.Follow ? cold.ResumeTask : CharacterTask.Idle);
-            n.TaskTime = 0;
-        }
+        var task = (CharacterTask)table.Next[slot].Task;
+        bool followJob = PermaJobs.ListJob(cold, task) is { } job && PermaJobs.Follows(job.Row);
+        if (followJob) cold.FollowOrder = CharacterId.None;
+        if (followJob || task is CharacterTask.Operate or CharacterTask.Haul or CharacterTask.Sleep) TaskStart.End(world, slot, TaskEnd.Done);
         cold.OperateSite = null;
         cold.HaulSite = null;
         cold.HaulFetch = null;
         cold.Operating = false;
-        cold.JobIndex = -1;
-        cold.Implicit = null;
         cold.HaulTo = null;
     }
 
     public void Schedule(World world)
     {
-        // Job lists also run for the engineer job while a site is unfinished or damaged, and with no machine they can still send the injured to bed
-        // (the "Sleep when injured" option).
-        if (world.Tick % 30 == 0) ScanFollowJobs(world);
-        if (world.Machines.Count == 0 && !sweep && !followJobs && (Construction is null || !world.Buildings.AnyNeedsWork)
-            && !(Beds is not null && (world.Player.SquadAi & SquadAi.Sleep) != 0 && world.Fixtures.Count > 0)) return;
-        PickJobs(world);
+        // The jobs are the decision step's (RegisterSources); with no machine a sleeper of the "Sleep when injured" option still lets go of its bed here once up.
+        if (world.Machines.Count == 0 && !sweep && !(Beds is not null && (world.Player.SquadAi & SquadAi.Sleep) != 0 && world.Fixtures.Count > 0)) return;
         var table = world.Characters;
         float dt = world.TickSeconds;
         for (int i = 0; i < table.HighWater; i++)
@@ -485,7 +542,7 @@ public sealed partial class ProductionSystem : ITickSystem
             if (n.Task == (byte)CharacterTask.Haul)
             {
                 if (cold.HaulSite is { } to && Site(world, to) is { Complete: true } leg && world.Machines.Find(to) is { } legMachine && Able(cold)) Approach(world, ref n, cold, leg, legMachine, dt);
-                else End(table, i);
+                else End(world, i);
                 continue;
             }
             if (n.Task == (byte)CharacterTask.Sleep) continue;   // the bed of the "Sleep when injured" option, in OperateSite (BedSystem walks it)
@@ -508,7 +565,7 @@ public sealed partial class ProductionSystem : ITickSystem
             var m = world.Machines.Find(id);
             if (site is not { Complete: true } || m is null || !Able(cold))
             {
-                End(table, i);
+                End(world, i);
                 continue;
             }
             // A hauling operator walks to its storage instead.
@@ -603,7 +660,7 @@ public sealed partial class ProductionSystem : ITickSystem
             var cold = table.Cold(i)!;
             if (cold.OperateSite is not { } id || Site(world, id) is not { Complete: true } site || world.Machines.Find(id) is not { } m || !Able(cold))
             {
-                End(table, i);
+                End(world, i);
                 continue;
             }
             cold.Operating = false;
@@ -626,7 +683,7 @@ public sealed partial class ProductionSystem : ITickSystem
             if (m.Data.Function == Meitou.Data.World.ObjectRanges.TurretFunction)
             {
                 // A broken turret makes manning impossible (Task_UseTurret FUN_1403474f0 -> AITaskSytem::taskImpossible): the job ends.
-                if (m.Broken) { End(table, i); continue; }
+                if (m.Broken) { End(world, i); continue; }
                 if (n.Velocity.X == 0 && n.Velocity.Z == 0) n.Yaw = FacingTo(n, site);
                 m.Operators++;
                 cold.Operating = true;

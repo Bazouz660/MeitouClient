@@ -9,37 +9,28 @@ namespace Meitou.Simulation.Carrying;
 public sealed partial class CarrySystem
 {
     /// <summary>
-    /// The foraging job (238 "Foraging animals", finder <c>FUN_1408ce3a0</c>), every <see cref="CarrySettings.AutoEveryTicks"/> ticks (serial, slot order): a player character with the
-    /// job, free for it (<see cref="PermaJobs.FreeFor"/>, which also wants the jobs switch on), able to carry and with no fight in its squad, loots (<see cref="CharacterTask.Loot"/>: the
-    /// walk, then <see cref="ForageTake"/>) the nearest downed animal within its sight that is not carried, not looted by another and holds an item one of the forager's
-    /// faction's complete storages accepts (<see cref="Storable"/>). The finder's faction test (a character vfunc, or the animal's faction flag +0x1d0) is <b>Unknown</b>; Meitou
-    /// leaves the forager's own faction's animals alone (engine choice).
+    /// The foraging job's finder (238 "Foraging animals", <c>FUN_1408ce3a0</c>; a pure read; the decision step's <see cref="CarryJobs"/>): with no fight in the forager's squad, the nearest
+    /// downed animal within its sight that is not carried, not looted by another (<paramref name="taken"/>) and holds an item one of the forager's faction's complete storages accepts
+    /// (<see cref="Storable"/>); -1 for none. The finder's faction test (a character vfunc, or the animal's faction flag +0x1d0) is <b>Unknown</b>; Meitou leaves the forager's own faction's
+    /// animals alone (engine choice). The forager loots it (<see cref="CharacterTask.Loot"/>: the walk, then <see cref="ForageTake"/>).
     /// </summary>
-    void Forage(World world, CharacterTable table)
+    int FindForage(World world, int i, HashSet<int> taken)
     {
+        var table = world.Characters;
         var next = table.Next;
-        HashSet<int>? taken = null;
-        for (int i = 0; i < table.HighWater; i++)
+        var cold = table.Cold(i)!;
+        if (cold.SquadId >= 0 && world.Squads.Find(cold.SquadId) is { } squad && CharacterFacts.SquadFighting(table, squad)) return -1;
+        float range = AggroSystem.RangeOf(cold, Settings.Sight), best2 = range * range;
+        int best = -1;
+        var at = new Vector2(next[i].Position.X, next[i].Position.Z);
+        for (int s = 0; s < table.HighWater; s++)
         {
-            if (!next[i].Alive || table.Cold(i) is not { IsPlayer: true } cold || cold.Jobs.Count == 0) continue;
-            if (!PermaJobs.FreeFor(cold, (CharacterTask)next[i].Task, PermaJobs.IndexOf(cold, TaskType.LOOT_ANIMALS_JOB)) || cold.Fleeing || !CanCarry(cold) || cold.Inventory is null) continue;
-            if (cold.SquadId >= 0 && world.Squads.Find(cold.SquadId) is { } squad && Fighting(table, squad)) continue;
-            taken ??= Looting(table);
-            float range = AggroSystem.RangeOf(cold, Settings.Sight), best2 = range * range;
-            int best = -1;
-            var at = new Vector2(next[i].Position.X, next[i].Position.Z);
-            for (int s = 0; s < table.HighWater; s++)
-            {
-                if (s == i || !next[s].Alive || taken.Contains(s) || table.Cold(s) is not { } animal || animal.Faction == cold.Faction) continue;
-                if (!(animal.Fighter?.IsAnimal ?? animal.Appearance?.Animal is not null) || !CanBeLooted(animal) || !animal.CarriedBy.IsNone || !animal.Inventory!.All().Any()) continue;
-                float d2 = Vector2.DistanceSquared(at, new Vector2(next[s].Position.X, next[s].Position.Z));
-                if (d2 <= best2 && (best < 0 || d2 < best2) && Storable(world, cold, next[i].Position, animal) is not null) { best = s; best2 = d2; }
-            }
-            if (best < 0) continue;
-            taken.Add(best);
-            Begin(table, i, table.IdOf(best), CharacterTask.Loot, cold.JobIndex >= 0 || cold.Implicit is not null ? cold.ResumeTask : (CharacterTask)next[i].Task);
-            cold.Foraging = true;
+            if (s == i || !next[s].Alive || taken.Contains(s) || table.Cold(s) is not { } animal || animal.Faction == cold.Faction) continue;
+            if (!(animal.Fighter?.IsAnimal ?? animal.Appearance?.Animal is not null) || !CanBeLooted(animal) || !animal.CarriedBy.IsNone || !animal.Inventory!.All().Any()) continue;
+            float d2 = Vector2.DistanceSquared(at, new Vector2(next[s].Position.X, next[s].Position.Z));
+            if (d2 <= best2 && (best < 0 || d2 < best2) && Storable(world, cold, next[i].Position, animal) is not null) { best = s; best2 = d2; }
         }
+        return best;
     }
 
     /// <summary>Seconds the forager works at the body before it takes (<b>Verified</b>, <c>Task_Loot_ResourcesWeHaveStorageFor</c> update <c>FUN_14034e2a0</c>: the timer must pass <c>DAT_14168a254</c> = 3).</summary>
@@ -60,7 +51,7 @@ public sealed partial class CarrySystem
         int moved = ForageMove(cold, table.Next[i].Position, victim, world);
         Butcher(world, i, t, death);
         Looted(world, table, i, t, moved, 0, crime: false);
-        End(table, i);
+        End(world, i);
     }
 
     /// <summary>

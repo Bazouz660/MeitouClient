@@ -157,7 +157,7 @@ public sealed partial class CaptiveSystem
             case TaskType.CAPTURE_NEW_SLAVES or TaskType.CARRY_WOUNDED_SLAVES:
             {
                 bool capture = type == TaskType.CAPTURE_NEW_SLAVES;
-                if (Kidnap is null || !(capture ? CanCapture(cold) : CarrySystem.CanCarry(cold))) return null;
+                if (Kidnap is null || !(capture ? CanCapture(cold) : CarrySystem.CanCarry(world, cold, type))) return null;
                 // 168's desire is the rescue one (FUN_140599480): 0 on the raw Hold bit (also while sneaking) or while carrying. 167 has no Hold test.
                 if (!capture && (cold.Orders & CharacterOrders.Hold) != 0) return null;
                 int v = NearestDown(world, slot, cold, capture);
@@ -192,7 +192,7 @@ public sealed partial class CaptiveSystem
             }
             var here = new Vector2(table.Next[w].Position.X, table.Next[w].Position.Z);
             if (Vector2.Distance(here, to) <= Settings.ShoutReach || j.Age > Settings.ShoutSeconds) return End(world, j, CaptiveEventKind.Shouted);
-            if (table.Next[w].Task != (byte)CharacterTask.GoTo || Vector2.Distance(table.Next[w].Goal, to) > 5) MovementSystem.GoTo(table, w, to, SpeedMode.Walk);
+            if (table.Next[w].Task != (byte)CharacterTask.GoTo || Vector2.Distance(table.Next[w].Goal, to) > 5) TaskStart.Walk(world, w, to, SpeedMode.Walk, RowOf(j.Kind), TaskSource.Goal);
             return true;
         }
         // It got up: a caged one is beaten down first (196 Beat prisoner, Task_KillPrisoner: B list 78 imprisoned, 5 weapon drawn; effect 7 target down) by an armed worker;
@@ -211,10 +211,10 @@ public sealed partial class CaptiveSystem
                     SetWait(givenUp, j.Captive, world.GameHours + Settings.GiveUpHours);
                     return End(world, j, CaptiveEventKind.GaveUp);
                 }
-                MovementSystem.GoTo(table, w, to, SpeedMode.Walk);
+                TaskStart.Walk(world, w, to, SpeedMode.Walk, RowOf(j.Kind), TaskSource.Goal);
                 return true;
             }
-            MovementSystem.Stop(table, w);
+            TaskStart.Stand(table, w);
             if (j.Kind == CaptiveJobKind.Carry) return Hand(world, j, w);
             j.Phase = CaptivePhase.Work;
             j.Time = 0;

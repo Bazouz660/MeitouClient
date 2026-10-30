@@ -90,8 +90,7 @@ sealed partial class PlayerInterface
         var selection = SelectedIds();
         if (selection.Count == 0) return verbs;
         var id = target.Id;
-        // Down as the original counts it (vfunc 0x30, FUN_1405c9e10): out cold (playing dead stays out cold), dead or carried.
-        bool down = target.Body is { } b && (b.Dead || b.Unconscious) || !target.CarriedBy.IsNone;
+        bool down = target.Down;   // vfunc 0x30, FUN_1405c9e10, from the snapshot
         var carriers = Selected().Where(c => c.Carrying == id).Select(c => c.Id).ToArray();
         // A carried body: carried by a selected character, its inventory (26, the branch's own verb) and Put Down (and Meitou's cage stand-ins); carried by someone not of the player's, nothing
         // (FUN_1407a6bc0 empties the list). No pick-up verb for a carried body: the non-hostile branches test +0x3d4, and a hostile one's Kidnap (246) cannot snatch.
@@ -112,7 +111,9 @@ sealed partial class PlayerInterface
         // The medic verbs, unless it is dead or a hostile one standing (the original: the lead's enemy test, vtable +0x3e8).
         if (target.Body is { Dead: false } && (down || target.IsPlayer || !Hostile(target)))
         {
-            if (target.Body is { NeedsAid: true }) verbs.Add(("First Aid", () => Say(new Meitou.Simulation.FirstAid.TreatOrder(selection, id) { Tick = session.World.Tick })));
+            // Repairs (60, the robot kit's need) and First Aid (25, the organic need) are separate tests (FUN_1407a6bc0 calls FUN_1407c05a0 with kind 1 then 0); one order serves both kits.
+            if (target.Body is { NeedsRepairs: true }) verbs.Add(("Repairs", () => Say(new Meitou.Simulation.FirstAid.TreatOrder(selection, id) { Tick = session.World.Tick })));
+            if (target.Body is { NeedsOrganicAid: true }) verbs.Add(("First Aid", () => Say(new Meitou.Simulation.FirstAid.TreatOrder(selection, id) { Tick = session.World.Tick })));
             if (target.Body is { NeedsSplint: true }) verbs.Add(("Splint Injuries", () => Say(new Meitou.Simulation.FirstAid.SplintOrder(selection, id) { Tick = session.World.Tick })));
         }
         // Locked shackles (the original's verbs 201, 185, 186): pick the lock, saw them off with a tool, or break them by strength; the wearer's own or a mate's (another faction's: a crime).

@@ -154,6 +154,7 @@ public static partial class SaveCapture
         public readonly Dictionary<CharacterId, Hand> Handles = [];
         public readonly List<(FcsRecord Record, SquadMemoryData? Data)> Targets = [];
         public readonly List<(FcsRecord State, CharacterId Partner)> Carries = [];
+        public readonly List<(FcsRecord Record, string Prefix, CharacterId Target)> OrderTargets = [];
         public readonly List<(SaveItem Item, CharacterId Owner)> Owners = [];
     }
 
@@ -172,6 +173,8 @@ public static partial class SaveCapture
             MemorySave.Write(record, data, id => pass.Handles.TryGetValue(id, out var hand) ? hand : null);
         // The carry links (FUN_1406280a0 writes the partner's handle under `carrying`, the null one when it is not saved).
         foreach (var (state, partner) in pass.Carries) (pass.Handles.TryGetValue(partner, out var hand) ? hand : Hand.Null).Write(state, "carrying");
+        // The queued orders name their target character the same way (`tjobT<i>`); one not saved leaves the null handle.
+        foreach (var (record, prefix, who) in pass.OrderTargets) (pass.Handles.TryGetValue(who, out var hand2) ? hand2 : Hand.Null).Write(record, prefix);
         // Stolen items name the robbed character (`ownedby`); one not saved leaves the null handle the item was written with.
         SavedKit.OwnerNotes = null;
         foreach (var (item, owner) in pass.Owners)
@@ -451,6 +454,12 @@ public static partial class SaveCapture
             DialogueSave.Write(g, cold);
             if (orders) Orders.Write(g, cold);
             if (orders && sc.Ai is { } ai) PermaJobSave.Write(ai, cold, world.Buildings, buildings, who => world.Characters.TryResolveNext(who, out int target) && world.Characters.Cold(target)?.Save is { } link2 ? link2.Source.Handle : Hand.Null);
+            if (orders && sc.Ai is { } queueAi)
+                OrderSave.Write(queueAi, cold, world, buildings, (record, prefix, who) =>
+                {
+                    if (memoryPass is { } pass) pass.OrderTargets.Add((record, prefix, who));   // the handle is written once every character has one
+                    else if (world.Characters.TryResolveNext(who, out int slot) && world.Characters.Cold(slot)?.Save is { } held) held.Source.Handle.Write(record, prefix);
+                });
             HeldSave.Write(g, cold, link, world.Fixtures, buildings);
             // Carrying or carried: the bool says which, the partner's handle is written once every character has one.
             g.Bools["carrying"] = !cold.Carrying.IsNone;

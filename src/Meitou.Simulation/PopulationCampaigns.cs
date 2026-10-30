@@ -1285,8 +1285,7 @@ public sealed partial class PopulationSystem : IStateHashed
         {
             if (n.Task == (byte)CharacterTask.GoTo)
             {
-                MovementSystem.Stop(table, slot);
-                n.Task = (byte)CharacterTask.Wander;
+                TaskStart.Become(world, slot, CharacterTask.Wander, Meitou.Data.Gameplay.Ai.TaskType.WANDERER, TaskSource.Goal);
                 n.Mode = SpeedMode.Walk;
                 n.TaskTime = 0.5f;
             }
@@ -1315,7 +1314,7 @@ public sealed partial class PopulationSystem : IStateHashed
             {
                 if (Vector2.Distance(p.Position, goal) <= WaitNearTarget)
                 {
-                    if (n.Task == (byte)CharacterTask.GoTo) MovementSystem.Stop(table, slot);
+                    if (n.Task == (byte)CharacterTask.GoTo) TaskStart.Stand(table, slot);
                     return;
                 }
                 mode = SpeedMode.Walk;
@@ -1324,7 +1323,7 @@ public sealed partial class PopulationSystem : IStateHashed
         bool busy = n.Task == (byte)CharacterTask.GoTo && (n.Flags & (ushort)MoveFlags.AnyPath) != 0 && n.Mode == mode;
         p.OrderCooldown -= dt;
         if (busy || p.OrderCooldown > 0) return;
-        MovementSystem.GoTo(table, slot, goal, mode);
+        TaskStart.Walk(world, slot, goal, mode, Meitou.Data.Gameplay.Ai.TaskType.TRAVEL_TO_TARGET_PACKAGE, TaskSource.Goal);
         p.OrderCooldown = 4;
     }
 

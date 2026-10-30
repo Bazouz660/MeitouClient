@@ -8,13 +8,13 @@ namespace Meitou.Simulation.Locks;
 /// The original's order 258 <c>USE_BED_ORDER</c> (verb "Sleep"; a quick right click on a bed, docs/game/ui-input.md "Building hover and click"): one of the characters (the selection when
 /// the list is empty), the nearest that is awake and free, walks to <see cref="Bed"/> (a bed fixture id) and lies in it until another order.
 /// </summary>
-public sealed record UseBedOrder(IReadOnlyList<CharacterId> Characters, string Bed) : SimCommand;
+public sealed record UseBedOrder(IReadOnlyList<CharacterId> Characters, string Bed) : OrderCommand;
 
 /// <summary>
 /// The original's order 99 <c>PUT_SOMEONE_IN_BED</c> (verb "Put in Bed"): each of the carriers (the selected ones carrying someone when the list is empty) carries its body to
 /// <see cref="Bed"/>, or with none to the bed the bed search finds for it, and lays it in.
 /// </summary>
-public sealed record PutInBedOrder(IReadOnlyList<CharacterId> Carriers, string? Bed = null) : SimCommand;
+public sealed record PutInBedOrder(IReadOnlyList<CharacterId> Carriers, string? Bed = null) : OrderCommand;
 
 /// <summary>A walk to a bed (<see cref="BedSystem"/>): <see cref="Character"/> to lie in <see cref="Bed"/> itself, or to lay <see cref="Body"/> it carries in it.</summary>
 public sealed class BedTrip
@@ -45,8 +45,6 @@ public sealed class BedSettings
     public float FloorSlack { get; init; } = 20;
     /// <summary>Walks that end short before the bed is given up (and marked unreachable for the walker's faction).</summary>
     public int Walks { get; init; } = 3;
-    /// <summary>Ticks between the looks of the "Find and put in bed" job (106) for a carried friend to lay in a bed.</summary>
-    public int JobEveryTicks { get; init; } = 15;
     /// <summary>A rented bed paid for this many game hours ago is free again for the payer's faction (<b>Observed</b>, <c>FUN_1403576c0</c>: 24).</summary>
     public double RentHours { get; init; } = 24;
 }
@@ -63,7 +61,7 @@ public sealed class BedSettings
 /// </list>
 /// The player's own beds become bed fixtures when their buildings register (<see cref="FixtureRegistry.RegisterPlayerBuilding"/>, by the lock system).
 /// </summary>
-public sealed class BedSystem(PopulationData data, BedSettings? settings = null) : ITickSystem, IStateHashed
+public sealed class BedSystem(PopulationData data, BedSettings? settings = null) : ITickSystem, IStateHashed, ITaskOwner, ITaskHandler, IOrderOwner, IDecisionOwner
 {
     public BedSettings Settings { get; } = settings ?? new BedSettings();
     /// <summary>Lets a carrier put its body down (null: no carrying, so no laying in).</summary>
@@ -92,32 +90,95 @@ public sealed class BedSystem(PopulationData data, BedSettings? settings = null)
             switch (command)
             {
                 case UseBedOrder use:
-                {
                     // Order 258 goes to every selected character (FUN_1407f9e20 has no gate for it, Verified); the bed takes one, the later arrivals are refused there.
                     if (world.Fixtures.Find(use.Bed) is not { Kind: FixtureKind.Bed } bed) break;
                     foreach (var id in Who(world, use.Characters))
-                    {
-                        if (!table.TryResolveNext(id, out int s) || table.Cold(s) is not { } c || !CanWalk(c) || !c.Carrying.IsNone) continue;
-                        if (c.InSomething == HeldState.Bed && c.InWhat == bed.Id) continue;   // lies in it already
-                        StartSleep(world, s, bed, fixedBed: true);
-                    }
+                        if (table.TryResolveNext(id, out int s)) PlayerOrders.Give(world, s, new OrderEntry(TaskType.USE_BED, this) { Site = bed.Id }, use.Queued);
                     break;
-                }
                 case PutInBedOrder put:
                     foreach (var id in Who(world, put.Carriers))
-                    {
-                        if (!table.TryResolveNext(id, out int s) || table.Cold(s) is not { Carrying.IsNone: false } c || !CanWalk(c)) continue;
-                        var bed = put.Bed is { } given ? world.Fixtures.Find(given) : world.Fixtures.FindBed(world, s, data.Relations, f => Reserved(f, id));
-                        if (bed is not { Kind: FixtureKind.Bed }) { if (c.IsPlayer) world.Post($"{c.Name}: no free bed nearby"); continue; }
-                        StartPutIn(world, s, bed, fixedBed: put.Bed is not null);
-                    }
+                        if (table.TryResolveNext(id, out int s) && table.Cold(s) is { Carrying.IsNone: false })
+                            PlayerOrders.Give(world, s, new OrderEntry(TaskType.PUT_SOMEONE_IN_BED, this) { Site = put.Bed, Detail = put.Bed is not null ? Named : null }, put.Queued);
                     break;
             }
         }
     }
 
-    /// <summary>A character that may walk to a bed: awake, not carried, not caged, not fleeing.</summary>
-    static bool CanWalk(CharacterCold c) => c is { Medical.Incapacitated: false, IsImprisoned: false, Fleeing: false } && c.CarriedBy.IsNone;
+    /// <summary>The bed a put-in order takes its body to: the one it named, else the nearest free one nobody else is on the way to.</summary>
+    Fixture? BedFor(World world, int slot, OrderEntry order) =>
+        order.Site is { } given ? world.Fixtures.Find(given) : world.Fixtures.FindBed(world, slot, data.Relations, f => Reserved(f, world.Characters.IdOf(slot)));
+
+    /// <summary>
+    /// Sleeping 98 needs the bed and a character that can walk and carries no one (one lying in it already needs nothing more); putting someone in bed a carrier that can walk and a bed
+    /// ("no free bed nearby", posted for the player's character).
+    /// </summary>
+    OrderCheck IOrderOwner.CanRun(World world, int slot, OrderEntry order)
+    {
+        var c = world.Characters.Cold(slot)!;
+        if (order.Row == TaskType.USE_BED)
+        {
+            if (world.Fixtures.Find(order.Site!) is not { Kind: FixtureKind.Bed }) return OrderCheck.Gone;
+            if (c.InSomething == HeldState.Bed && c.InWhat == order.Site) return OrderCheck.Run;   // lies in it already
+            return CanWalk(c) && c.Carrying.IsNone ? OrderCheck.Run : OrderCheck.Blocked();
+        }
+        if (c.Carrying.IsNone) return OrderCheck.Gone;
+        if (!CanWalk(c)) return OrderCheck.Blocked();
+        return BedFor(world, slot, order) is { Kind: FixtureKind.Bed } ? OrderCheck.Run : OrderCheck.Blocked(c.IsPlayer ? $"{c.Name}: no free bed nearby" : null, posted: true);
+    }
+
+    void IOrderOwner.Start(World world, int slot, OrderEntry order)
+    {
+        var c = world.Characters.Cold(slot)!;
+        if (order.Row == TaskType.USE_BED)
+        {
+            if (c.InSomething != HeldState.Bed || c.InWhat != order.Site) TaskStart.Start(world, slot, new TaskRequest(CharacterTask.Sleep, TaskType.USE_BED, TaskSource.Order) { Site = order.Site });
+            return;
+        }
+        var bed = BedFor(world, slot, order)!;
+        TaskStart.Start(world, slot, new TaskRequest(CharacterTask.GoTo, TaskType.PUT_SOMEONE_IN_BED, TaskSource.Order) { Site = bed.Id, Detail = order.Detail });
+    }
+
+    /// <summary>The <see cref="TaskRequest.Detail"/> of a put-in order that named its bed (no other is looked for when it is taken).</summary>
+    static readonly object Named = new();
+
+    // Saved: a put-in order that named its bed is kind 1.
+    int IOrderOwner.SaveKind(OrderEntry order) => order.Detail is null ? 0 : order.Detail == Named ? 1 : -1;
+    object? IOrderOwner.LoadDetail(World world, CharacterId self, TaskType row, int kind, CharacterId target) => kind == 1 ? Named : null;
+
+    public void RegisterTasks(TaskHandlers tasks)
+    {
+        tasks.Register(CharacterTask.Sleep, this);
+        tasks.Register(TaskType.PUT_SOMEONE_IN_BED, this);
+        tasks.Register(TaskType.FIND_BED_AND_PUT_IN, this);
+    }
+
+    /// <summary>
+    /// Lying in the bed <see cref="TaskRequest.Site"/> (row 98, the player named it; the implicit 153, one the bed search found), or laying the carried body in it (99, 106: the walk acts it
+    /// out).
+    /// </summary>
+    void ITaskHandler.Start(World world, int slot, in TaskRequest request)
+    {
+        var bed = world.Fixtures.Find(request.Site!)!;
+        if (request.Task == CharacterTask.Sleep) StartSleep(world, slot, bed, fixedBed: request.Row == TaskType.USE_BED);
+        else StartPutIn(world, slot, bed, fixedBed: request.Detail == Named);
+    }
+
+    /// <summary>
+    /// A walk to a bed that another task replaces or the Stop order ends is given up; a sleeper in its bed gets up in the slow world (<see cref="GetUp"/>), as the original's 258 never
+    /// completes and an order replaces it. A trip that ends by itself is dropped by its own step.
+    /// </summary>
+    void ITaskHandler.End(World world, int slot, CharacterTask task, TaskEnd reason)
+    {
+        if (reason == TaskEnd.Done) return;
+        var id = world.Characters.IdOf(slot);
+        trips.RemoveAll(t => t.Character == id);
+    }
+
+    /// <summary>
+    /// A character that may walk to a bed: awake, not carried, not fleeing. A cage is no gate: rows 98, 99 and 106 do not register the imprisoned or chained repertoire
+    /// (<see cref="TaskStart.Eligible"/>), and a caging ends the walk (<see cref="FixtureRegistry.Imprison"/>).
+    /// </summary>
+    static bool CanWalk(CharacterCold c) => c is { Medical.Incapacitated: false, Fleeing: false } && c.CarriedBy.IsNone;
 
     /// <summary>The bed search for the character in <paramref name="slot"/> (<see cref="FixtureRegistry.FindBed"/>), leaving out the beds others are on their way to.</summary>
     public Fixture? FindFor(World world, int slot)
@@ -137,23 +198,23 @@ public sealed class BedSystem(PopulationData data, BedSettings? settings = null)
     /// Sends a character to lie in <paramref name="bed"/> (task <see cref="CharacterTask.Sleep"/>): out of another bed first; in reach it gets in at once. <paramref name="fixedBed"/>: the
     /// player named the bed, so no other is looked for. The "Sleep when injured" job starts it too.
     /// </summary>
-    public void StartSleep(World world, int slot, Fixture bed, bool fixedBed = false)
+    void StartSleep(World world, int slot, Fixture bed, bool fixedBed)
     {
         var table = world.Characters;
         var id = table.IdOf(slot);
         var c = table.Cold(slot)!;
         trips.RemoveAll(t => t.Character == id);
         if (c.InSomething == HeldState.Bed && c.InWhat != bed.Id) world.Fixtures.LeaveBed(world, id);
-        if (c.InSomething == HeldState.Bed) { table.Next[slot].Task = (byte)CharacterTask.Sleep; return; }
+        if (c.InSomething == HeldState.Bed) { TaskStart.Step(table, slot, CharacterTask.Sleep); return; }
         var trip = new BedTrip { Character = id, Bed = bed.Id, Fixed = fixedBed };
         trips.Add(trip);
         WalkTo(world, slot, bed);
-        table.Next[slot].Task = (byte)CharacterTask.Sleep;
+        TaskStart.Step(table, slot, CharacterTask.Sleep);
         if (!Step(world, trip)) trips.Remove(trip);
     }
 
     /// <summary>Sends a carrier to lay its body in <paramref name="bed"/>.</summary>
-    public void StartPutIn(World world, int slot, Fixture bed, bool fixedBed = false)
+    void StartPutIn(World world, int slot, Fixture bed, bool fixedBed)
     {
         var table = world.Characters;
         var id = table.IdOf(slot);
@@ -172,7 +233,7 @@ public sealed class BedSystem(PopulationData data, BedSettings? settings = null)
         var c = table.Cold(slot)!;
         var at = world.Walkability.FloorNear(bed.Position.X, bed.Position.Z, bed.Position.Y, Settings.FloorSlack) is { } onFloor ? onFloor : bed.Position;
         var flat = new Vector2(at.X, at.Z);
-        MovementSystem.GoTo(table, slot, flat, c.RunSpeed);
+        TaskStart.StepTo(table, slot, flat, c.RunSpeed);
         (c.GoalHeight, c.GoalHeightAt) = (at.Y, flat);
     }
 
@@ -184,7 +245,6 @@ public sealed class BedSystem(PopulationData data, BedSettings? settings = null)
             if (Step(world, trips[k])) k++;
             else trips.RemoveAt(k);
         }
-        if (Carry is not null && world.Tick % Math.Max(1, Settings.JobEveryTicks) == 0) PutInJobs(world);
     }
 
     /// <summary>A character lying in a bed whose task is no longer <see cref="CharacterTask.Sleep"/> (an order replaced it) gets up.</summary>
@@ -210,12 +270,12 @@ public sealed class BedSystem(PopulationData data, BedSettings? settings = null)
             if (t.Fixed || world.Fixtures.FindBed(world, s, data.Relations, f => Reserved(f, t.Character)) is not { } other)
             {
                 if (c.IsPlayer) world.Post(carrying ? $"{c.Name}: no free bed nearby" : $"{c.Name}: the bed is taken");
-                if (!carrying) MovementSystem.Stop(table, s);
+                if (!carrying) TaskStart.Stand(table, s);
                 return false;
             }
             t.Bed = other.Id;
             WalkTo(world, s, other);
-            if (!carrying) n.Task = (byte)CharacterTask.Sleep;
+            if (!carrying) TaskStart.Step(table, s, CharacterTask.Sleep);
             return true;
         }
         var goal = new Vector2(bed.Position.X, bed.Position.Z);
@@ -226,7 +286,7 @@ public sealed class BedSystem(PopulationData data, BedSettings? settings = null)
         bool floor = MathF.Abs(n.Position.Y - bed.Position.Y) <= Settings.FloorSlack;
         if (floor && (d <= bed.UseRange + Settings.Reach || !walking && d <= Settings.Slack))
         {
-            if (walking) MovementSystem.Stop(table, s);
+            if (walking) TaskStart.Stand(table, s);
             return carrying ? LayIn(world, s, c, t.Body, bed) : LieIn(world, s, c, bed);
         }
         if (!walking)
@@ -235,11 +295,11 @@ public sealed class BedSystem(PopulationData data, BedSettings? settings = null)
             {
                 world.Fixtures.MarkUnreachable(world, bed, c.Faction);
                 if (c.IsPlayer) world.Post($"{c.Name} cannot get to the bed");
-                if (!carrying) MovementSystem.Stop(table, s);
+                if (!carrying) TaskStart.Stand(table, s);
                 return false;
             }
             WalkTo(world, s, bed);
-            if (!carrying) n.Task = (byte)CharacterTask.Sleep;
+            if (!carrying) TaskStart.Step(table, s, CharacterTask.Sleep);
         }
         return true;
     }
@@ -248,7 +308,7 @@ public sealed class BedSystem(PopulationData data, BedSettings? settings = null)
     bool LieIn(World world, int s, CharacterCold c, Fixture bed)
     {
         var table = world.Characters;
-        if (!Pay(world, s, bed, Cost(world, bed, c.Faction)) || !world.Fixtures.EnterBed(world, table.IdOf(s), bed)) MovementSystem.Stop(table, s);
+        if (!Pay(world, s, bed, Cost(world, bed, c.Faction)) || !world.Fixtures.EnterBed(world, table.IdOf(s), bed)) TaskStart.Stand(table, s);
         return false;
     }
 
@@ -348,21 +408,36 @@ public sealed class BedSystem(PopulationData data, BedSettings? settings = null)
     }
 
     /// <summary>
-    /// The job 106 "Find and put in bed" (<c>FUN_1405a0d50</c>, docs/game/carry-loot.md 3.2): a player character with it in its list and the jobs switch on, idle, carrying a body whose
-    /// faction is not hostile to its own and that is no animal, lays it in the bed the bed search finds (<b>engine choice</b>: the original's 106 has no target finder of its own).
+    /// The job 106 "Find and put in bed" (<c>FUN_1405a0d50</c>, docs/game/carry-loot.md 3.2) as the decision step's contributor (step 5): a player character carrying a body whose faction is not
+    /// hostile to its own and that is no animal lays it in the bed the bed search finds (<b>engine choice</b>: the original's 106 has no target finder of its own). It runs while its walk does.
     /// </summary>
-    void PutInJobs(World world)
+    public void RegisterSources(DecisionSystem decisions) => decisions.RegisterJob(TaskType.FIND_BED_AND_PUT_IN, new PutInJob(this));
+
+    sealed class PutInJob(BedSystem owner) : IJobSource
+    {
+        public DecisionCheck CanRun(World world, int slot, int k)
+        {
+            var table = world.Characters;
+            var c = table.Cold(slot)!;
+            if (c.Running is { Source: TaskSource.Job, Row: TaskType.FIND_BED_AND_PUT_IN } run && run.Job == k && run.Runs((CharacterTask)table.Next[slot].Task)) return DecisionCheck.Runs;
+            return owner.BedFor(world, slot) is null ? DecisionCheck.No("no body to put in a bed, or no bed") : DecisionCheck.Run;
+        }
+
+        public void Start(World world, int slot, int k)
+        {
+            if (owner.BedFor(world, slot) is { } bed)
+                TaskStart.Start(world, slot, new TaskRequest(CharacterTask.GoTo, TaskType.FIND_BED_AND_PUT_IN, TaskSource.Job) { Job = k, Site = bed.Id });
+        }
+    }
+
+    /// <summary>The bed the put-in job takes the character's body to (a pure read): it carries a body that is no animal and not of a faction hostile to its own, and the bed search finds one.</summary>
+    Fixture? BedFor(World world, int slot)
     {
         var table = world.Characters;
-        for (int i = 0; i < table.HighWater; i++)
-        {
-            if (!table.Next[i].Alive || table.Next[i].Task is not ((byte)CharacterTask.Idle or (byte)CharacterTask.Wander or (byte)CharacterTask.Follow)) continue;
-            if (table.Cold(i) is not { IsPlayer: true, Carrying.IsNone: false } c || !CanWalk(c) || (c.Orders & CharacterOrders.Jobs) == 0) continue;
-            if (!c.Jobs.Exists(j => j.Type == TaskType.FIND_BED_AND_PUT_IN) || trips.Exists(t => t.Character == table.IdOf(i))) continue;
-            if (!table.TryResolveNext(c.Carrying, out int b) || table.Cold(b) is not { } bc || bc.Fighter is { IsAnimal: true }) continue;
-            if (data.Relations.Contains(bc.Faction) && data.Relations.Contains(c.Faction) && data.Relations.IsHostile(bc.Faction, c.Faction)) continue;
-            if (world.Fixtures.FindBed(world, i, data.Relations, f => Reserved(f, table.IdOf(i))) is { } bed) StartPutIn(world, i, bed);
-        }
+        if (Carry is null || table.Cold(slot) is not { Carrying.IsNone: false } c || !CanWalk(c) || trips.Exists(t => t.Character == table.IdOf(slot))) return null;
+        if (!table.TryResolveNext(c.Carrying, out int b) || table.Cold(b) is not { } bc || bc.Fighter is { IsAnimal: true }) return null;
+        if (data.Relations.Contains(bc.Faction) && data.Relations.Contains(c.Faction) && data.Relations.IsHostile(bc.Faction, c.Faction)) return null;
+        return world.Fixtures.FindBed(world, slot, data.Relations, f => Reserved(f, table.IdOf(slot)));
     }
 
     public void Hash(ref StateHasher hasher)

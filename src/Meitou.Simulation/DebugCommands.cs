@@ -75,7 +75,7 @@ static class DebugCheats
                 {
                     if (!table.TryResolveNext(id, out int slot)) continue;
                     float x = teleport.Target.X + 10 * k++, z = teleport.Target.Z;
-                    MovementSystem.Stop(table, slot);
+                    TaskStart.Stand(table, slot);
                     table.Next[slot].Position = new Vector3(x, world.Walkability.GroundHeight(x, z, teleport.Target.Y), z);
                     table.Next[slot].Velocity = Vector3.Zero;
                 }
@@ -99,7 +99,7 @@ static class DebugCheats
                     medical.ApplyHit(part, new HitDamage(damage.Cut, 0, 0), ctx, events);
                     foreach (var e in events)
                     {
-                        if (e.Kind is MedicalEventKind.Died or MedicalEventKind.KnockedOut) { MovementSystem.Stop(table, slot); table.Next[slot].Velocity = Vector3.Zero; }
+                        if (e.Kind is MedicalEventKind.Died or MedicalEventKind.KnockedOut) { TaskStart.Stand(table, slot); table.Next[slot].Velocity = Vector3.Zero; }
                         else if (e.Kind == MedicalEventKind.PartSevered) table.LimbsChanged.Enqueue((slot, medical.Parts[e.Part].Template.LimbSlot));
                     }
                 }

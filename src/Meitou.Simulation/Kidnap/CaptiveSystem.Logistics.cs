@@ -127,7 +127,7 @@ public sealed partial class CaptiveSystem
                     return End(world, j, CaptiveEventKind.GaveUp);
                 if (!Walk(world, j, w, cage, out bool arrived)) return End(world, j, CaptiveEventKind.GaveUp);
                 if (!arrived) return true;
-                MovementSystem.Stop(table, w);
+                TaskStart.Stand(table, w);
                 if (world.Squads.Find(wc.SquadId) is not { } squad) return End(world, j, CaptiveEventKind.GaveUp);
                 if (cage.Lock is { } l) l.Locked = false;
                 world.Fixtures.LiftOut(world, j.Captive, w);
@@ -143,7 +143,7 @@ public sealed partial class CaptiveSystem
                 if (cage is null || !FixtureRegistry.IsFree(table, cage) || wc.InSomething != HeldState.None) return End(world, j, CaptiveEventKind.GaveUp);
                 if (!Walk(world, j, w, cage, out bool arrived)) return End(world, j, CaptiveEventKind.GaveUp);
                 if (!arrived) return true;
-                MovementSystem.Stop(table, w);
+                TaskStart.Stand(table, w);
                 wc.Engaged = false;
                 bool caged = world.Fixtures.Imprison(world, j.Worker, cage);
                 if (caged) Note(world, CaptiveEventKind.Caged, j);
@@ -168,10 +168,10 @@ public sealed partial class CaptiveSystem
         {
             if (n.Task == (byte)CharacterTask.GoTo) return true;
             if (++j.Walks > Settings.Walks + 1 + (int)(Vector2.Distance(new Vector2(n.Position.X, n.Position.Z), centre) / 1000)) return End(world, j, CaptiveEventKind.GaveUp);
-            MovementSystem.GoTo(table, w, centre, SpeedMode.Walk);
+            TaskStart.Walk(world, w, centre, SpeedMode.Walk, RowOf(j.Kind), TaskSource.Goal);
             return true;
         }
-        MovementSystem.Stop(table, w);
+        TaskStart.Stand(table, w);
         // 218 only in a prison or a slave camp; 194 anywhere (AI slot 66 FUN_140597c70, 65).
         int hour = world.Hour;
         var roles = board.Roles[(int)AiSystem.RoleOf(squad, j.Worker, wc)];

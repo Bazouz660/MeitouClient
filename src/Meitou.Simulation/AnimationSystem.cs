@@ -42,6 +42,8 @@ public sealed class CharacterAnimation
     /// <summary>The tick of the last hit a reaction was chosen for (-1: none), and whether the character was down (knocked out or dead) the last tick.</summary>
     public int SeenHit = -1;
     public bool WasDown;
+    /// <summary>Whether the character was crawling from a leg down (posture 2) the last tick: its end starts the get-up (docs/game/ragdolls.md "Getting up").</summary>
+    public bool WasCrawling;
     /// <summary>The body's playback factor F = 2 - H (H the skeleton's movement scale; docs/animation.md "Movement"); 0 until the first tick sets it.</summary>
     public float Rate;
     /// <summary>The last <see cref="SpeedWindow"/> speeds, oldest overwritten first (<see cref="SmoothSpeed"/>).</summary>
@@ -100,6 +102,7 @@ public sealed class CharacterAnimation
         h.Add(ActionIsStumble);
         h.Add(SeenHit);
         h.Add(WasDown);
+        h.Add(WasCrawling);
         h.Add(Rate);
         h.Add(SpeedCount);
         foreach (float s in Speeds) h.Add(s);
@@ -180,7 +183,7 @@ public sealed class AnimationSystem(AnimationLibrary library, AnimationLengths l
         if (combat is null) return false;
         combat.StumbleChooser = (cold, part, big, side, roll) => ChooseStumble(library, lengths, cold, part, big, side, roll);
         int getUp = library.IndexOf("standing up 3");
-        combat.GetUpSeconds = getUp >= 0 ? Meitou.Simulation.Ragdolls.RagdollSystem.GetUpBlend + lengths.Of(library.Definitions[getUp].Clip) * GetUpEnd : 0;
+        combat.GetUpClipSeconds = getUp >= 0 ? lengths.Of(library.Definitions[getUp].Clip) * GetUpEnd / (library.Definitions[getUp].PlaySpeed > 0 ? library.Definitions[getUp].PlaySpeed : 1) : 0;
         return true;
     }
 
@@ -322,7 +325,8 @@ public sealed class AnimationSystem(AnimationLibrary library, AnimationLengths l
 
     /// <summary>
     /// Root motion: moves the character by the ground part of its relocating clips' <c>Bip01</c> track (model X and Z turned by its heading), onto
-    /// the ground, unless that point is not walkable (Kenshi moves its physics controller, so collisions apply; docs/animation.md "Root motion").
+    /// the ground, unless that point is not walkable. The original moves its nav agent, so the walls of the walkable surface stop the body's circle and it slides
+    /// along them (<see cref="IWalkability.Slide"/>; docs/game/pathfinding.md "Walls").
     /// The bodies collide too (engine stand-in for the original's avoidance of the characters round it, <c>FUN_1401476f0</c>): the part of the move that would bring it nearer than
     /// the two footprint radii to a standing character (last tick's positions) is dropped, so an attack that gains ground stops at its target instead of walking into it.
     /// A downed, dead, carried, bedded, caged or sitting body is not in the way (<see cref="CombatSteering.OutOfFlock"/>; docs/game/pathfinding.md "Bodies in the way").
@@ -347,8 +351,10 @@ public sealed class AnimationSystem(AnimationLibrary library, AnimationLengths l
             float closing = Vector2.Dot(b.Step, normal);
             if (closing < 0) b.Step -= normal * closing;
         });
-        float x = c.Position.X + block.Step.X, z = c.Position.Z + block.Step.Y;
+        // The walls stop it as they stop the original's agent, which this move goes through: its circle slides along the first wall it meets (docs/game/pathfinding.md "Walls").
         var walk = world.Walkability;
+        var moved = walk.Slide(c.Position, block.Step, block.Radius);
+        float x = c.Position.X + moved.X, z = c.Position.Z + moved.Y;
         if (!walk.IsWalkable(x, z, c.Position.Y)) return;
         c.Position = new Vector3(x, walk.GroundHeight(x, z, c.Position.Y), z);
     }
@@ -398,7 +404,10 @@ public sealed class AnimationSystem(AnimationLibrary library, AnimationLengths l
             // Out of a ragdoll the clip waits at its first key while the bones blend into it (docs/game/ragdolls.md "Getting up").
             if (ragdoll.WasWhole) a.ActionTime = -Meitou.Simulation.Ragdolls.RagdollSystem.GetUpBlend;
         }
+        // The leg back up: posture 2 ends in 0 and the posture setter queues the get-up task 65 (FUN_1405c7e20), which plays `standing up 3`.
+        else if (a.WasCrawling && !down && !carried && !inBed && cold.Medical is { Crawling: false, Prone: false }) StartAction(a, getUp, false);
         a.WasDown = down;
+        a.WasCrawling = cold.Medical is { Crawling: true };
         // The hit reaction the combat system picked (it holds the character helpless for the clip's length; see ChooseStumble).
         if (!down && !carried && fight.StumbleClip >= 0 && fight.StumbleStart > a.SeenHit)
         {

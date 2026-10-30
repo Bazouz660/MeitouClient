@@ -175,7 +175,7 @@ public sealed partial class CombatSystem : IProjectileSource
         var oc = table.Cold(other);
         if (oc is null) return false;
         // The original asks the character's enemy test (Character slot 125); the engine uses the faction relations, and without a table (hand-built worlds) another faction.
-        return Relations is not null ? AggroSystem.IsEnemy(Relations, faction, oc.Faction) : oc.Faction != faction;
+        return CharacterFacts.RegardsEnemy(Relations, faction, oc.Faction);
     }
 
     /// <summary>Can be hit by a bolt: alive, with a body, not down (a lying body does not stop bolts: <b>engine</b>, the original's hit shape is <b>Unknown</b>).</summary>
@@ -233,40 +233,30 @@ public sealed partial class CombatSystem : IProjectileSource
     static float Gap(ReadOnlySpan<CharacterHot> prev, CharacterTable table, int a, int b) =>
         Vector2.Distance(new(prev[a].Position.X, prev[a].Position.Z), new(prev[b].Position.X, prev[b].Position.Z)) - CombatTuning.Footprint(table.Cold(a)) - CombatTuning.Footprint(table.Cold(b));
 
-    struct ThreatScan
-    {
-        public CombatSlot[] Read;
-        public CharacterTable Table;
-        public int Self, SelfGeneration, Faction;
-        public World World;
-        public Locks.LockSystem? Locks;
-        public bool Found;
-    }
-
     /// <summary>
-    /// A threat within <see cref="RetaliationSystem.ImmediateReach"/> (the planner's <c>iAmBeingMeleeAttacked immediate</c>, Character +0x2b0, recomputed by
-    /// <c>FUN_1404378f0</c>, <b>Verified</b>; docs/game/combat.md "Fight lifecycle and orders"): a fighter of another faction whose target the character is, by centre
-    /// distance, not down (staying low or crawling still count), not in a bed or cage, not carried, and not behind a gate that is not open between them
-    /// (<c>FUN_140598450</c>, <see cref="Locks.LockSystem.NotBlocked"/>). The original's "getting up" byte (+0x278) is not modelled.
+    /// A threat within <see cref="RetaliationSystem.ImmediateReach"/> (the planner's <c>iAmBeingMeleeAttacked immediate</c>, Character +0x2b0, recomputed by <c>FUN_1404378f0</c> over the
+    /// threats list, <b>Verified</b>; docs/game/combat.md "Fight lifecycle and orders"): one of the senses' threats (<see cref="SenseBlock.Threats"/>) by centre distance, not down (staying
+    /// low or crawling still count), not in a bed or cage, not carried, and not behind a gate that is not open between them (<c>FUN_140598450</c>, <see cref="Locks.LockSystem.NotBlocked"/>).
+    /// The original's "getting up" byte (+0x278) is not modelled.
     /// </summary>
     internal bool ImmediateThreat(World world, int self)
     {
-        var prev = world.Characters.Previous;
-        if (world.Characters.Cold(self) is not { } me) return false;
-        var scan = new ThreatScan { Read = read, Table = world.Characters, Self = self, SelfGeneration = prev[self].Generation, Faction = me.Faction, World = world, Locks = Locks };
-        world.Grid.Query(prev[self].Position.X, prev[self].Position.Z, RetaliationSystem.ImmediateReach, ref scan, static (int other, ref ThreatScan st) =>
+        var table = world.Characters;
+        var prev = table.Previous;
+        if (CharacterFacts.Senses(world, self) is not { } senses) return false;
+        var here = prev[self].Position;
+        foreach (var id in senses.Threats)
         {
-            if (st.Found || other == st.Self) return;
-            ref readonly var o = ref st.Read[other];
-            if (o.TargetSlot != st.Self || o.TargetGeneration != st.SelfGeneration || o.Down) return;
-            if (st.Table.Cold(other) is not { } c || c.Faction == st.Faction || c.InSomething != global::Meitou.Simulation.Locks.HeldState.None || !c.CarriedBy.IsNone) return;
-            var at = st.Table.Previous[other].Position;
-            var d = at - st.Table.Previous[st.Self].Position;
-            if (d.X * d.X + d.Z * d.Z > RetaliationSystem.ImmediateReach * RetaliationSystem.ImmediateReach) return;
-            if (st.Locks is { } locks && !locks.NotBlocked(st.World, st.Table.Previous[st.Self].Position, at)) return;
-            st.Found = true;
-        });
-        return scan.Found;
+            int a = id.Slot;
+            if ((uint)a >= (uint)prev.Length || !prev[a].Alive || prev[a].Generation != id.Generation || read[a].Down) continue;
+            if (table.Cold(a) is not { } c || c.InSomething != global::Meitou.Simulation.Locks.HeldState.None || !c.CarriedBy.IsNone) continue;
+            var at = prev[a].Position;
+            var d = at - here;
+            if (d.X * d.X + d.Z * d.Z > RetaliationSystem.ImmediateReach * RetaliationSystem.ImmediateReach) continue;
+            if (Locks is { } locks && !locks.NotBlocked(world, here, at)) continue;
+            return true;
+        }
+        return false;
     }
 
     internal static WeaponKinds MeleeDrawn(Fighter f) => f.Weapon is { } w && !f.Unarmed ? HandHold.OfCategory(w.Data.AnimationCategory).Weapon : WeaponKinds.None;
@@ -693,7 +683,11 @@ public sealed partial class CombatSystem : IProjectileSource
         bool shooterAlive = p.Shooter < prev.Length && prev[p.Shooter].Alive && prev[p.Shooter].Generation == p.ShooterGeneration;
         if (shooterAlive && intended) write[p.Shooter].Landed++;
         if (shooterAlive) Crimes?.Hit(world, p.Shooter, v);
-        if (shooterAlive && !dc.Medical.Incapacitated) world.SystemOf<AggroSystem>()?.Notice(world, world.Characters.IdOf(v), world.Characters.IdOf(p.Shooter));   // the victim senses the shooter (FUN_140999d50)
+        if (shooterAlive && !dc.Medical.Incapacitated)
+        {
+            world.SystemOf<AggroSystem>()?.Notice(world, world.Characters.IdOf(v), world.Characters.IdOf(p.Shooter));   // the victim senses the shooter (FUN_140999d50)
+            HitReplan(dc, world.Tick);
+        }
         // The bolt hit's relation events (FUN_140439c90: none without a shooter; a bolt that was not meant for the victim is a minor knock-out and no hit).
         if (shooterAlive) Deeds?.Blow(world, p.Shooter, v, dc.Medical.Incapacitated, death, bolt: true, aimed: intended);
         if (death && world.Uniques.RecordOf(world.Characters.IdOf(v)) is { } unique) world.Uniques.Died(unique, p.ShooterIsPlayer, dc.Faction);

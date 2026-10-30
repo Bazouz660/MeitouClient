@@ -72,21 +72,19 @@ public static class PermaJobs
     };
 
     /// <summary>
-    /// The types the production pick carries out from a list (<see cref="ProductionSystem"/>; the engineer job through the construction system). Others run elsewhere: medic 58,
-    /// robotics 57 and splinting 250 in <see cref="FirstAid.FirstAidSystem"/>, rescue 148 and foraging 238 in <see cref="Carrying.CarrySystem"/>, attacking enemies 16 in
-    /// <see cref="AggroSystem"/>; the carrying jobs (corpse disposal 137 / 138, intruders 223 / 273 with 224 / 274) in <c>ProductionSystem.Errands</c>, and Bodyguard 45 and Staying close 31 / 289
-    /// (a follow of the job's character) beside the production pick. The rest are kept, shown and saved but never started.
+    /// The types the production pick carries out from a list (<see cref="ProductionSystem"/>; the engineer job through the construction system). Every job runs through the decision step
+    /// (<see cref="DecisionSystem.RegisterJob"/>), whose contributors are: these and Bodyguard 45 and Staying close 31 / 289 (a follow of the job's character) and the carrying jobs (corpse
+    /// disposal 137 / 138, intruders 223 / 273 with 224 / 274) production, medic 58, robotics 57 and splinting 250 <see cref="FirstAid.FirstAidSystem"/>, rescue 148 and foraging 238
+    /// <see cref="Carrying.CarrySystem"/>, put in bed 106 <see cref="Locks.BedSystem"/>, attacking enemies 16 <see cref="AggroSystem"/>, Obedient Slave 187 <see cref="Kidnap.CaptiveSystem"/>. The rest are kept, shown and saved but never started.
     /// </summary>
     public static bool Runs(TaskType type) => type is TaskType.OPERATE_MACHINERY or TaskType.OPERATE_AUTOMATIC_MACHINERY or TaskType.OPERATE_STORAGE or TaskType.JOB_BUILDER or TaskType.MAN_A_TURRET_PLAYER_JOB or TaskType.USE_TRAINING_DUMMY;
 
     /// <summary>
-    /// Whether the job at <paramref name="k"/> of the list may start for a character on <paramref name="task"/> (the original's keys N+8, N+7, ... in list order, highest first;
-    /// docs/game/ai-tasks.md "Perma-jobs"): it is free (no task of its own, wandering or following), on an implicit job, or on a list job further down; and the jobs switch is on
-    /// or the type ignores it. False for k below 0 (no such job).
+    /// The provenance of the production pick's job the character's <paramref name="task"/> runs: a list job it carries out (<see cref="Runs"/>, the follow jobs <see cref="Follows"/>; its
+    /// index <see cref="RunningTask.Job"/>) or an implicit job (<see cref="RunningTask.Implicit"/>), not a fight that is a step of a follow row; null for any other task.
     /// </summary>
-    public static bool FreeFor(CharacterCold cold, CharacterTask task, int k) =>
-        k >= 0 && (task is CharacterTask.Idle or CharacterTask.Wander or CharacterTask.Follow || cold.Implicit is not null || cold.JobIndex > k)
-        && ((cold.Orders & CharacterOrders.Jobs) != 0 || IgnoresSwitch(cold.Jobs[k].Type));
+    public static RunningTask? ListJob(CharacterCold cold, CharacterTask task) =>
+        task != CharacterTask.Attack && cold.Running is { Source: TaskSource.Job } run && run.Runs(task) && (run.Implicit || run.Job >= 0 && (Runs(run.Row) || Follows(run.Row))) ? run : null;
 
     /// <summary>The index of the first job of <paramref name="type"/> in the list, -1 when none.</summary>
     public static int IndexOf(CharacterCold cold, TaskType type) => cold.Jobs.FindIndex(j => j.Type == type);
@@ -117,6 +115,7 @@ public static class PermaJobs
         if (rule.Companion != 0)
             cold.Jobs.Add(target with { Type = rule.Companion == TaskType.STAY_CLOSE_TO_TARGET && SquadRegistry.IsAnimal(cold) ? TaskType.Unnamed289 : rule.Companion });
         cold.Orders |= CharacterOrders.Jobs;
+        DecisionSystem.Request(cold);   // the job list changed: decided again
         return true;
     }
 

@@ -28,12 +28,19 @@ sealed partial class PlayerInterface
     /// </summary>
     int? PickGroundItem(Vector2 pixel) => PickGroundItemAt(pixel)?.Id;
 
+    /// <summary>The ground item whose name label (shown while the Highlight key is held) is under the pixel, else null.</summary>
+    int? LabelAt(Vector2 pixel)
+    {
+        if (HighlightFocus is null) return null;
+        foreach (var (id, rect) in itemLabels)
+            if (rect.Contains(pixel.X, pixel.Y)) return id;
+        return null;
+    }
+
     /// <summary><see cref="PickGroundItem"/> with the ray distance (0 for a label: it is drawn over everything).</summary>
     (int Id, float T)? PickGroundItemAt(Vector2 pixel)
     {
-        if (HighlightFocus is not null)
-            foreach (var (id, rect) in itemLabels)
-                if (rect.Contains(pixel.X, pixel.Y)) return (id, 0);
+        if (LabelAt(pixel) is { } labelled) return (labelled, 0);
         if (Ray(pixel) is not { } ray || GroundItemShape is not { } shapeOf) return null;
         (int, float)? best = null;
         float bestT = float.MaxValue;
@@ -75,6 +82,19 @@ sealed partial class PlayerInterface
         if (session.CurrentSnapshot.GroundItems.FirstOrDefault(g => g.Id == item) is not { Name: { } name } g
             || !ContextPressOn(p, at => Menu(name, at, [(Stealing(g) ? "Steal" : "Pick Up", Quick)]), Quick)) Quick();
         return true;
+    }
+
+    /// <summary>The ground item whose label took the left press, until the release.</summary>
+    int? labelPress;
+
+    /// <summary>
+    /// A left click released on an item's name label (<c>FUN_1401638f0</c>, the label's eventMouseButtonReleased handler, button Left only): the pick-up order for the selection, as the right
+    /// click on the item. The original shows the "Hold down the ALT key to steal items" hint instead of stealing when Alt is not held; the label exists only while Highlight is held, so that cannot arise here.
+    /// </summary>
+    void LabelPickUp(int item)
+    {
+        if (SelectedIds().Count == 0) return;
+        Say(new Meitou.Simulation.Items.PickUpItemOrder([], item) { Tick = session.World.Tick });
     }
 
     /// <summary>

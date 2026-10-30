@@ -39,11 +39,12 @@ public sealed partial class CarrySystem
                 if (duty[role] < 0) duty[role] = population.GoalDuty(world, squad, (AiRole)role, TaskType.LOOT_THE_DEAD) ? 1 : 0;
                 if (duty[role] == 0) continue;
                 taken ??= Looting(table);
+                if (!TaskStart.Eligible(world, cold, TaskType.LOOT_THE_DEAD)) continue;
                 int target = LootTarget(world, table, slot, cold, taken, memory);
                 if (target < 0) continue;
                 taken.Add(target);
                 var task = (CharacterTask)table.Next[slot].Task;
-                Begin(table, slot, table.IdOf(target), CharacterTask.Loot, task is CharacterTask.Wander or CharacterTask.Follow ? task : CharacterTask.Idle);
+                Start(world, slot, CharacterTask.Loot, TaskType.LOOT_THE_DEAD, TaskSource.Npc, table.IdOf(target), TaskStart.Standing(cold, task));
             }
         }
     }
@@ -142,7 +143,7 @@ public sealed partial class CarrySystem
             Looted(world, table, i, t, moved, 0, crime: false);
             // Tagged only when it found nothing to take.
             if (moved == 0 && cold.SquadId >= 0) world.SystemOf<DialogueSystem>()?.Memory.Flag(world, cold.SquadId, table.IdOf(t), MemoryTag.Looted);
-            End(table, i);
+            End(world, i);
             return;
         }
         if (!foodOnly && !notPlayerSide && !animal && cold.LiftTime > NpcWeaponGrabSeconds && (flags & LootStart.WantsWeapon) != 0)
@@ -152,7 +153,7 @@ public sealed partial class CarrySystem
         Butcher(world, i, t, death);
         Looted(world, table, i, t, moved, 0, crime: false);   // the crime was set at the start (CrimeSystem.NpcLooting)
         if (!police && cold.SquadId >= 0) world.SystemOf<DialogueSystem>()?.Memory.Flag(world, cold.SquadId, table.IdOf(t), MemoryTag.Looted);
-        End(table, i);
+        End(world, i);
     }
 
     /// <summary>

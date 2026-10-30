@@ -52,7 +52,7 @@ sealed partial class PlayerInterface
         if (occupied)
         {
             var prisoner = session.CurrentSnapshot.Characters.FirstOrDefault(c => c.Id == cage.Occupant);
-            if ((!cage.Locked || cage.Owner == session.World.Player.Faction) && (prisoner is null || Conscious(prisoner)))
+            if ((!cage.Locked || cage.Owner == session.World.Player.Faction) && (prisoner is null || prisoner.Conscious))
                 verbs.Add(("Set Free", () => Say(new SetFreeOrder([], cage.Occupant) { Tick = session.World.Tick })));
         }
         else if (!cage.Locked)
@@ -63,9 +63,6 @@ sealed partial class PlayerInterface
         }
         return verbs;
     }
-
-    /// <summary>Whether Set Free may take a prisoner out (<c>LockSystem.Conscious</c>, order precondition 125): not dead, knocked out or carried.</summary>
-    static bool Conscious(CharacterSnapshot c) => c.Body is not ({ Dead: true } or { Unconscious: true }) && c.CarriedBy.IsNone;
 
     /// <summary>
     /// A right press on a cage (true, with a selection): its menu opens at once, whoever owns it and whether it is occupied, unless Shift is held (<c>FUN_140800250</c>, <b>Verified</b>);

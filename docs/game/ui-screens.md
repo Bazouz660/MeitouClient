@@ -306,7 +306,7 @@ to Jobs; the saved `chase mode` flag is that switch (**Verified**, [perma-jobs](
     while reloading; no tooltip. Meitou: the text without the fill, from a manned turret's gun (No Power!: a power consumer whose machine has no power) else the crossbow
     (`CombatSystem.RangedLineOf`); defensive `Defensive`, "In defensive combat mode the character will not even try to attack, focusing entirely on defense for a +20 skill bonus."; else
     `Normal`. The weather notice also shows here ([weather](../formats/weather.md), **Observed**). Meitou: all of them;
-    `Goal:` the AI goal package's name, else Aimless (Meitou: when the AI is not running the character, its movement task's name, e.g. Moving, Attacking, else Aimless); `Encumbrance:` (int)((1 - f) × 100) "%" with f the encumbrance factor in 0..1, Bad from 50 %.
+    `Goal:` the AI goal package's name, else Aimless (Meitou: a fleeing NPC, whatever started the run, shows "Running away", 35's name; else when the AI is not running the character, its movement task's name, e.g. Moving, Attacking, else Aimless); `Encumbrance:` (int)((1 - f) × 100) "%" with f the encumbrance factor in 0..1, Bad from 50 %.
     Then, alive, the "Current Skill" line (**Verified**: decompile of the HUD update `1405d4260` panel 3, 2026-10-26; vanilla screenshot "Labouring 1" while operating a machine):
     `Character +0x198 currentSkillUsing` (KenshiLib 1ce4a16), which the task updates set each tick (constants such as 4, 5, 6, 9, 0xb, or the machine's stat; the shooting
     task `Task_RangedAttack` `FUN_14033bfb0` 35 Crossbows, turret manning `Task_UseTurret` `FUN_1403474f0` 11 Turrets unless the turret is broken, **Verified** decompile) and the HUD
@@ -379,7 +379,7 @@ to Jobs; the saved `chase mode` flag is that switch (**Verified**, [perma-jobs](
       `Encumbrance penalty:` signed (int)−(0.8 (1 − e) × skill); `Strength XP:` (int)((1 − e) × 100)`%` (the label is the exe's); `Damage:` (int) the fists' damage (`FUN_1408868b0`).
       Value (int)(lerp(e, 0.2, 1) × (bonus + skill)), change bonus + the encumbrance term, bonus = `+0x2c` (+ the weapon indoors field `+0x28` indoors) − dust (`FUN_140884580`).
     - Attack: `Total equipment bonuses:` signed `+0x20`; `Weapon indoors penalty:` signed `+0x28` (the weapon's `indoors mod`) indoors else `-`; `Weather penalty:`; `Base hit chance:` the value `%`.
-      Value (int)(bonus + skill), change the bonus (`FUN_1408844c0`, `FUN_140884e80`). Indoors (`+0x28` added to the bonus, a positive bonus first dropped under a negative modifier) is location type not 0xb, vfunc `0x1e0` false and the building's `+0xc2` clear (the last two **Unknown**; Meitou: in a building's indoor volume, `SightMap.Inside`). An animal (`Character::isAnimal` vfunc `0x248`) shows `Age:` first, its age word ([animals](animals.md#ageing)) with a
+      Value (int)(bonus + skill), change the bonus (`FUN_1408844c0`, `FUN_140884e80`). The skill is the CharStats float at `+0x120` (**Observed** to be the effective level `FUN_140884ac0(stat, 0)`, whose writer was not traced), i.e. the stored stat already times the full stat multiplier `FUN_1406457e0` (injuries, hunger, weather, light, gear: the six flags of `FUN_140884ac0`), and the tooltip lists none of those: only the equipment bonus, the weapon's indoors modifier and the dust term. So a stored 92 can read 58 with `(-6)` beside it (the value formula is **Verified** in `FUN_140884e80`; that the original shows the same gap follows from it; Meitou matches). The weather also acts twice, in the multiplier and as the explicit `-(int)(dust × 10)`. Indoors (`+0x28` added to the bonus, a positive bonus first dropped under a negative modifier) is location type not 0xb, vfunc `0x1e0` false and the building's `+0xc2` clear (the last two **Unknown**; Meitou: in a building's indoor volume, `SightMap.Inside`). An animal (`Character::isAnimal` vfunc `0x248`) shows `Age:` first, its age word ([animals](animals.md#ageing)) with a
       `Stat Multiplier:` `{age:0.00}x` row (slot 0x398), then Attack in place of Martial Arts, with the fighting values × the age, and no Defense. Defense: `Total equipment bonuses:` signed `+0x24`; `Defensive combat mode:` Good `+20` in defensive mode; `Weapon indoors penalty:` (in any building);
       the row "Your defense skill is your chance of blocking enemy attacks."; value bonus (+ `+0x28` indoors) + skill + 20 in defensive mode, change bonus (+20).
     - Strength: `Strength XP rate:` `{n}%`; `Max carry weight:` (int)(effective strength + `encumbrance base`) with a `%` (the exe's format); `Blunt weapon damage:` (int)
@@ -416,7 +416,9 @@ to Jobs; the saved `chase mode` flag is that switch (**Verified**, [perma-jobs](
   (H + D − S)/Mx, Red (Mx − S)/Mx, White clamp(green + R × 0.01, 0, 1) with the unclamped green (drawn past the green only), number floor(H − S + 0.1).
   The row setter (`FUN_140721a70`, its arguments read from the call's disassembly at `14088c075`..`14088c0e1`, **Verified**) also takes a robot flag and the limb state
   (`MedicalSystem::getLimbState`: 0 original, 1 stump, 2 replaced, 3 crushed): `Robot` is shown at the green's width when the race is robotic or the limb state is 2;
-  `Crushed` is shown at full width when the state is 1 or 3; a stump's White is 0.
+  `Crushed` is shown at full width when the state is 1 or 3; a stump's White is 0. The Blood row passes RACE `is robot` (race `+0x7c`) as its robot flag and limb state 0
+  (**Verified**: disassembly of the call at `14088aada`..`14088abc5`), so a robot race's row (label "Oil") shows `Kenshi_LifeBarRobotSkin` (grey-brown, about RGB 112,107,102 in
+  `Kenshi_UI.png`) over the olive green (`Kenshi_LifeBarSkin`, about 126,121,81).
   Arrows, first match: destroyed (H + D − S ≤ −Mx) `!!!   `; H + D < 0: not vital and not robotic `<<   `, vital and below the KO point `<<!!   `
   (none at or above it), robotic non-vital none; H + D ≥ 0 with Mx − H − D > 20 (not a robotic non-vital part) `<   `; else none. The rig is in none
   of these tests, only in the white layer. Blood:
@@ -827,7 +829,7 @@ Help text is available from the installed [gettext catalog](../formats/gettext.m
 **Stats Affected numbers** (**Verified** decompile of `FUN_1408b1250`, one branch per stat; constants from the loader `FUN_14086b2b0`, which writes them as floats from
 `0x142133dd0`): the left panel is a DataPanel of label/value rows, `Stats Affected:` and `Ways To Train:` in Main, each row label "-" + the text; most rows have no value.
 Values: Strength (1) `Max carry weight:` `{1,num} kg` = (int)(strength × its multiplier `FUN_140338090` + `encumbrance base`), `Strength XP rate (walking):` (int)(`FUN_1408c60c0`
-× 100) `%`, `Martial arts damage` (int) the fists' four damage terms (`FUN_1408868b0`), `Strength XP rate (combat):` (int)(`FUN_1408c5ec0`(stats, w) × 100) `%`, the Athletics XP
+× 100) `%`, `Martial arts damage` (int) the four damage terms of the blow in hand (`FUN_1408868b0` with no target: no kind or race multiplier, the gear's `damage output mult` applies; the weapon's for an armed character despite the label), `Strength XP rate (combat):` (int)(`FUN_1408c5ec0`(stats, w) × 100) `%`, the Athletics XP
 function (CharStats `+0x190` clamped at 0, x1.5 when w > 0.8 x the run value V) with w the weapon's `getItemWeightSingle` (item slot `0x248`, `+0x120`; the hand's weapon, else the first of
 `hip` / `back`; 0 without), so heavy weapons train at 1.5x (**Verified**, decompile and the KenshiLib slot). Toughness (0x15) `Damage resistance:`
 (int)(`FUN_140644770` × 100) `%`, `Martial arts damage`, `Toughness current XP rate:` `{1,num}` of `FUN_1408c5f40`, `Knockout time:` lerp(t, `knockout mult 1`, `knockout mult 99`)
@@ -1201,6 +1203,13 @@ unless marked; Meitou: `PlayerInterface.Squads.cs`, commands in `SquadManagement
     - **Unknown**: the labels and rules of the dexterity, defence, perception and ranged bonus rows; grade cut-offs for other qualities; the light, medium and cloth
       tables were read from the exe but not compared in game; the grade line at level 100. Meitou: armour crafted here gets no crafter name; combat
       (`CharacterAssembly.MakeFighter`) and trade prices (`Market`) still read armour's `quality`, not its `level`. Weapons, food and tools have no stat lines yet.
+  - **Crossbow** (`FUN_1407b0750`, the Crossbow item's first tooltip function; **Verified** rows, labels and number formats in the decompile; units read from the exe's constants: `s`, `m`, `m/s`, `x`):
+    grade (shared code), `Buyback`, `Stolen`, then `Crossbow class` (Main) and rows with a hyphen label (Ink) and a Main value: `Damage:` `min-max` (ints, the gun's pierce ends after the
+    quality lerp, `bow damage 1/99` and the global damage multiplier), `Accuracy deviation:` `{p=2} degrees`, `Reload time:` `min-maxs` (2 decimals), `Range:` range × 0.1 as `Nm`
+    (0 decimals), `Velocity:` shot speed × 0.23 as `Nm/s`, `Blood loss:` `{p=2}x` (the item's bleed multiplier), `Required skill:` the `accuracy perfect skill` int; a 15-dash rule (Grey);
+    `Ammunition type:` the ammo item's name, `???` with none; `Damage vs robots / humans / animals` and `Damage vs <race>` (signed percent rows as the weapon's, `FUN_14079f650`);
+    a 16-dash rule; `Weight` whole kg truncated; then the shared prices (`FUN_14079e7a0`). Meitou builds all of it from the gun at the item's level × 0.01
+    (**Observed**: the original reads the item's own gun; its quality input is not traced, Meitou's simulation uses the level too); `race damage` rows have no crossbow field in Meitou.
 - **Fencing prompt** (**Observed**, `FUN_140712920`), shown for a stolen item over the trader: stolen from the trader's own faction, `Fencing chance:` and `N%` (`FUN_140793490`) in Bad;
   else (another faction, or an owner that does not resolve), when the trader's squad does not fence it (it buys stolen goods and the owner is not of that squad, [economy](economy.md#fencing-stealing-and-smuggling)),
   `Stolen goods?` / `No problem!` in Good; otherwise `Fencing chance:` too (the branch falls through, **Verified** in the decompile). Meitou (`TradeSystem.Publish`, `TradeItemView.FenceChance`): `Fencing chance:` for every stolen

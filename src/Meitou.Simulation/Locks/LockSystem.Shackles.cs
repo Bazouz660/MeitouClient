@@ -1,4 +1,5 @@
 using System.Numerics;
+using Meitou.Data.Gameplay.Ai;
 
 namespace Meitou.Simulation.Locks;
 
@@ -12,10 +13,10 @@ public sealed record ShackleJob(CharacterId Wearer, ShackleWork Work);
 /// Put shackles on <see cref="Wearer"/> (down or caged, wearing none): the first of the characters (the selection when empty) carrying unworn shackles walks to it and puts them on, locked.
 /// <b>Engine</b> stand-in for the original's drag onto the target's armour slot in its inventory window, which Meitou does not have.
 /// </summary>
-public sealed record PutShacklesOrder(IReadOnlyList<CharacterId> Characters, CharacterId Wearer) : SimCommand;
+public sealed record PutShacklesOrder(IReadOnlyList<CharacterId> Characters, CharacterId Wearer) : OrderCommand;
 
 /// <summary>Work on <see cref="Wearer"/>'s locked shackles: the first of the characters (the selection when empty) who may, walking to the wearer unless it is its own.</summary>
-public sealed record ShackleOrder(IReadOnlyList<CharacterId> Characters, CharacterId Wearer, ShackleWork Work) : SimCommand;
+public sealed record ShackleOrder(IReadOnlyList<CharacterId> Characters, CharacterId Wearer, ShackleWork Work) : OrderCommand;
 
 /// <summary>
 /// Shackles (docs/game/locks.md "Lockpicking", "Cutting and breaking"; docs/simulation.md "Shackles"): worn ARMOUR with <c>is locked</c> holds a lock that keeps it on. Picking it rolls
@@ -39,14 +40,13 @@ public sealed partial class LockSystem
         {
             if (!table.TryResolveNext(id, out int s) || table.Cold(s) is not { IsPlayer: true, Medical.Incapacitated: false } c || !c.CarriedBy.IsNone) continue;
             if (c.IsImprisoned && id != order.Wearer) continue;   // from a cage only its own
+            if (!TaskStart.Eligible(world, c, RowOf(order.Work))) continue;
             if (order.Work == ShackleWork.Cut && Lockpicking.BestTool(c) is null)
             {
                 world.Post($"{c.Name}: I don't have any tools");
                 continue;
             }
-            c.PickingLock = null;
-            c.Shackles = new ShackleJob(order.Wearer, order.Work);
-            if (id != order.Wearer) MovementSystem.GoTo(table, s, Flat(table.Next[w].Position), c.RunSpeed);
+            StartWork(world, s, id != order.Wearer ? CharacterTask.GoTo : CharacterTask.Idle, RowOf(order.Work), null, order.Wearer, order.Work, order.Queued);
             break;
         }
     }
@@ -72,9 +72,7 @@ public sealed partial class LockSystem
         {
             if (id == order.Wearer || !table.TryResolveNext(id, out int s) || table.Cold(s) is not { IsPlayer: true, Medical.Incapacitated: false, IsImprisoned: false } c || !c.CarriedBy.IsNone) continue;
             if (CarriedShackles(c) is null) continue;
-            c.PickingLock = null;
-            c.Shackles = new ShackleJob(order.Wearer, ShackleWork.PutOn);
-            MovementSystem.GoTo(table, s, Flat(table.Next[w].Position), c.RunSpeed);
+            StartWork(world, s, CharacterTask.GoTo, RowOf(ShackleWork.PutOn), null, order.Wearer, ShackleWork.PutOn, order.Queued);
             return;
         }
         world.Post("No one selected carries shackles.");
@@ -132,10 +130,10 @@ public sealed partial class LockSystem
                 {
                     // Walking: a new order (another goal far from the wearer) ends it; a wearer that moved is followed.
                     if (next[s].Task != (byte)CharacterTask.GoTo) { c.Shackles = null; continue; }
-                    if (Vector2.Distance(next[s].Goal, Flat(next[w].Position)) > ShackleReach) MovementSystem.GoTo(table, s, Flat(next[w].Position), c.RunSpeed);
+                    if (Vector2.Distance(next[s].Goal, Flat(next[w].Position)) > ShackleReach) TaskStart.StepTo(table, s, Flat(next[w].Position), c.RunSpeed);
                     continue;
                 }
-                if (next[s].Task == (byte)CharacterTask.GoTo) MovementSystem.Stop(table, s);
+                if (next[s].Task == (byte)CharacterTask.GoTo) AtWork(world, s);
             }
             if (c.StaggeredUntil > world.Tick) continue;   // a stagger interrupts the work
             switch (job.Work)

@@ -6,7 +6,7 @@ using Meitou.Data.Gameplay.Dialogue;
 namespace Meitou.Simulation.Dialogue;
 
 /// <summary>The player's Talk order: <see cref="Talker"/> walks up to <see cref="Target"/> and the conversation opens in reach (the original's task 12, then event 1).</summary>
-public sealed record TalkOrder(CharacterId Talker, CharacterId Target) : SimCommand;
+public sealed record TalkOrder(CharacterId Talker, CharacterId Target) : OrderCommand;
 /// <summary>Clicks choice <see cref="Index"/> of the open conversation.</summary>
 public sealed record DialogueChoice(int Index) : SimCommand;
 /// <summary>Leaves the open conversation (its window closed).</summary>
@@ -89,7 +89,9 @@ public sealed partial class DialogueSystem : ITickSystem, IStateHashed, IDialogu
 
     // The approach of a Talk order, and the open conversation.
     CharacterId talker = CharacterId.None, target = CharacterId.None;
-    long approachUntil;
+    long approachUntil, nextAim;
+    // Where the approach last sent the talker (the NPC's place then).
+    Vector2 aimedAt;
     Conversation? open;
     ConversationView? view;
     DialogueRequest? request;
@@ -185,13 +187,31 @@ public sealed partial class DialogueSystem : ITickSystem, IStateHashed, IDialogu
             if (!table.TryResolveNext(talker, out int p) || !table.TryResolveNext(target, out int n) || !Awake(table, p) || !Awake(table, n)) CancelApproach(world);
             else if (InTalkRange(table, p, n))
             {
-                MovementSystem.Stop(table, p);
+                TaskStart.Stand(table, p);
                 var (who, whom) = (talker, target);
                 CancelApproach(world);
                 Start(world, whom, who, DialogueEvents.PlayerTalkToMe);
             }
             else if (world.Tick >= approachUntil) CancelApproach(world);
-            else Hold(world, n);
+            else
+            {
+                Hold(world, n);
+                // The walk follows the NPC: its order goal is renewed when the NPC has moved on or the walk has ended short of it (Task_Move toward a character re-aims, Observed).
+                // A talker doing anything else (another order, a fight) has left the approach.
+                if (world.Tick >= nextAim)
+                {
+                    nextAim = world.Tick + (long)MathF.Ceiling(RepathSeconds / world.TickSeconds);
+                    ref readonly var tp = ref table.Next[p];
+                    var at = table.Next[n].Position;
+                    bool walking = tp.Task == (byte)CharacterTask.GoTo && Vector2.Distance(tp.Goal, aimedAt) <= RepathDistance, stopped = tp.Task == (byte)CharacterTask.Idle;
+                    if (!walking && !stopped) CancelApproach(world);
+                    else if (stopped || Vector2.Distance(aimedAt, new Vector2(at.X, at.Z)) > RepathDistance)
+                    {
+                        aimedAt = new Vector2(at.X, at.Z);
+                        world.Defer(new MoveOrder([talker], at) { Tick = world.Tick + 1 });
+                    }
+                }
+            }
         }
         RefreshView(world);
     }
@@ -217,6 +237,8 @@ public sealed partial class DialogueSystem : ITickSystem, IStateHashed, IDialogu
         target = order.Target;
         approachUntil = world.Tick + (long)(Settings.ApproachSeconds / world.TickSeconds);
         Hold(world, n);
+        nextAim = world.Tick + (long)MathF.Ceiling(RepathSeconds / world.TickSeconds);
+        aimedAt = new Vector2(table.Next[n].Position.X, table.Next[n].Position.Z);
         if (!InTalkRange(table, p, n))
             world.Defer(new MoveOrder([talker], table.Next[n].Position) { Tick = world.Tick + 1 });
     }
@@ -229,6 +251,8 @@ public sealed partial class DialogueSystem : ITickSystem, IStateHashed, IDialogu
 
     /// <summary>The talk distance beyond the target's radius while walking (7 x 3, <c>AI::isWithinChoppingRange</c> for a character, docs/game/dialogue.md "Player conversation").</summary>
     public const float TalkReach = 21;
+    /// <summary>How far the target may move from the walk's goal, and how often that is looked at (the pursuit's constants).</summary>
+    const float RepathDistance = 12, RepathSeconds = 0.5f;
     /// <summary>The largest height difference to talk across (the original's on the same floor; engine choice, the sim has no floors here).</summary>
     public const float TalkHeight = 35;
 
@@ -250,7 +274,7 @@ public sealed partial class DialogueSystem : ITickSystem, IStateHashed, IDialogu
     {
         var table = world.Characters;
         table.Cold(slot)!.Engaged = true;
-        if (table.Next[slot].Task is (byte)CharacterTask.Wander or (byte)CharacterTask.Idle) MovementSystem.Stop(table, slot);
+        if (table.Next[slot].Task is (byte)CharacterTask.Wander or (byte)CharacterTask.Idle) TaskStart.Stand(table, slot);
     }
 
     static void Release(World world, CharacterId id)

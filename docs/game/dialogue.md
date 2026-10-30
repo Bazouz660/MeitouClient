@@ -155,7 +155,7 @@ Sources (call sites): 1 the player's Talk order (task 12, after reaching the NPC
 aid (start: the medic 18 at the patient, the patient 19 back unless down; finish: 20 / 21 likewise; none when treating oneself);
 22 empty kit (`Task_FirstAidRig`, the medic at the patient); 23-25 getting up (`Task_GetUp`, no target: 24, or 23 when the character's two
 enemy counters (+0x94, +0x98) sum below 1; a variant `FUN_1408c6780` fires 25 on further counters, **Unknown** which); 26 harassment; 30 contract end (target = employer); 32/33 AI looting; 37 recapture; 47 almost
-woke; 49 entering a town (no target); 50 squad broken; 51 slave bought; 52 eating a prisoner; 53 worship; 60 giving up a chase ([attack](combat.md#leaving-a-fight))
+woke; 49 entering a town (no target); 50 squad broken (`FUN_1407a5be0`, on the platoon's intact to not-intact change, each member vs its attack target: [perception](perception.md#retreat-and-memory)); 51 slave bought; 52 eating a prisoner; 53 worship; 60 giving up a chase ([attack](combat.md#leaving-a-fight))
 (move, follow, attack, talk tasks); 61-63 acid; 66 also from DA 56; 68 illegal player building; 73 town taken over; others from
 lock and prison code: 13 from `Task_PickLock`, `Task_CutShackles` and `Task_BruteForceShackles` (the freed character at the
 worker, when they differ); 31 `Contract_HiredAlly::vfunc_8` (betrayal); 36 the witness function and perception; 44 `FUN_140856f00`;
@@ -257,6 +257,7 @@ NPC answers an event's lines like any other; the rule is also in [Arrival banter
   radius +0x364 x a scale) + 7 x 3 (7 x 2 when the target is a ragdoll), that reach **doubled when the talker is not moving**, and
   |dy| < 10 (< 35 on the same floor); else within 7 x 1.6 = 11.2 on the same floor or |dy| < 35. Meitou (`DialogueSystem.InTalkRange`):
   the race's `pathfind footprint radius` + 21, doubled once stopped, |dy| < 35; also for an NPC walking up to talk (task 102, engine choice).
+- **Walking to a moving NPC** (**Observed**: the player-reported vanilla behaviour of issue #136, the chase of a moving pick-up target; the task-12 walk's own re-aim code is not read): the talker follows the NPC's current position until in range. Meitou (`DialogueSystem.SlowWorld`): every 0.5 s the Move order is renewed when the NPC is over 12 from the walk's goal or the walk has ended short of it; the NPC is kept still only when idle or wandering (`Hold`), so a walking NPC is chased; a talker found on any other task (another order, a fight) drops the approach (engine choice). The give-up after `ApproachSeconds` (60 s) is an engine choice.
 
 **Saying a line** (`FUN_1406839a0`): in a player conversation a line with **no children ends the conversation at once** without being
 shown (whether the original shows such closing lines elsewhere is **Unknown**). Otherwise: pick a text and mark the line and its parent chain

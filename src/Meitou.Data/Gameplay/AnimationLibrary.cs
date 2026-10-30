@@ -548,6 +548,18 @@ public sealed class AnimationLibrary
             var d = self.all[i];
             if (d.Idle && !d.IsAction && d.MoveSpeed == 0 && d.Fits(s)) list.Add((i, Math.Max(d.IdleChance, 0)));
         }
+        // The original's idle draw (FUN_14051ec80) never comes back empty: with no record fitting it takes the first of its list. The records' -999 leg minimum is read as -101, so a leg
+        // past that (a severed one) fits none; the leg ranges are dropped then and the first in data order plays (docs/animation.md "Choosing candidates").
+        if (list.Count == 0)
+        {
+            int first = -1;
+            foreach (int i in self.grounded)
+            {
+                var d = self.all[i];
+                if (d.Idle && !d.IsAction && d.MoveSpeed == 0 && d.FitsExceptLegs(s) && (first < 0 || self.DataOrder(i) < self.DataOrder(first))) first = i;
+            }
+            if (first >= 0) list.Add((first, Math.Max(self.all[first].IdleChance, 0)));
+        }
         return [.. list];
     }, this);
 

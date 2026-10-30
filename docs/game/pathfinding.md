@@ -81,6 +81,20 @@ characters round its owner and tests each as a circle (its footprint radius plus
 
 Not modelled: a conscious ragdolled character (a stagger that ragdolls a limb or the whole body) is left out in the original; Meitou keeps it solid unless it is incapacitated.
 
+### Walls
+
+Every move of the nav agent, the animation-driven one (root motion, mode 3) included, is a circle swept against the walls round it.
+
+- **Verified** (decompile): after the velocity is chosen, `FUN_140147fd0` moves the agent by velocity x dt through `FUN_1401445d0`, which sweeps a circle against a list of
+  wall segments (0x20 bytes each, gathered by `FUN_1403a4fd0` within the agent radius `+0x70` + 6 Havok units, re-gathered when the target leaves 0.8 of that range) and returns
+  the first contact's fraction and normal. Only segments the move closes on count (dot below -1e-5), and only those within 1 Havok unit (10) of the agent's height. The agent moves to
+  the contact, the rest of the step is turned along the wall and swept again; with nothing gained it logs "stuck at". A step longer than 3 Havok units (30) is cut into several sweeps (their count: Observed).
+- **Observed**: the segments are the navmesh's boundary edges (the swept radius is passed in a register the decompile drops; taken as the agent radius).
+- Meitou: `IWalkability.Slide` (`NavmeshWalkability.Slide`) for root motion (`AnimationSystem.Relocate`) and the combat approach step (`CombatSystem`): the walls are the edges that lead
+  nowhere (no neighbour or tile link, not the zone border, not into a closed door), within `SnapRange` (16) of the walker's height (engine choice: the mesh's own error on stairs);
+  the radius is RACE `pathfind footprint radius`. Before, only the end point was tested, and with the 2-unit edge tolerance a step could cross a thin wall (Observed: on the Hub's
+  navmesh about 3% of 1-unit random moves crossed a wall edge, none with the sweep).
+
 ### Water states
 
 **Verified** (`FUN_1405c7fd0`, `FUN_140886460`, `FUN_140885eb0`; Meitou `Speed.WaterState/InWater/Swim`, `MovementSystem.WaterStateAt`):

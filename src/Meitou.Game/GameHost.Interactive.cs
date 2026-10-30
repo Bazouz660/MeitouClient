@@ -944,6 +944,6 @@ sealed partial class GameHost
         string Who(Meitou.Simulation.CharacterId id, int faction) =>
             $"{(table.IsAlive(id) ? table.Cold(id.Slot)!.Name : "?")} ({(popData is { } d && faction >= 0 && faction < d.Factions.Count ? d.Factions[faction].Name : "no faction")})";
         foreach (var e in aggro.TakeLog())
-            Console.WriteLine($"aggro     tick {e.Tick}: {Who(e.Attacker, e.AttackerFaction)} attacks {Who(e.Target, e.TargetFaction)} at {e.Distance:0}{(e.Joined > 0 ? $", {e.Joined} squad mate(s) join" : "")}");
+            Console.WriteLine($"aggro     tick {e.Tick}: {Who(e.Attacker, e.AttackerFaction)} attacks {Who(e.Target, e.TargetFaction)} at {e.Distance:0}");
     }
 }

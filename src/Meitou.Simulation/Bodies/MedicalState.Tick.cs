@@ -282,6 +282,9 @@ public sealed partial class MedicalState
                 events?.Add(new MedicalEvent(MedicalEventKind.WokeUp));
             }
         }
+        bool legsDown = LegsDown;
+        if (legsDown && legsWereDown == 0) CollapseOnset = true;
+        legsWereDown = legsDown ? 1 : 0;
     }
 
     /// <summary>

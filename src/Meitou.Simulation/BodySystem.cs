@@ -123,27 +123,10 @@ public sealed class BodySystem(GameConstants constants, BodyOptions? options = n
 
     /// <summary>
     /// The sense counts playing dead and the ordered get-up read (<c>SensoryData</c> <c>numEnemies</c>, <c>numNeutrals</c>, <c>numConsciousAllies</c>, tallied by <c>FUN_1408593d0</c> and
-    /// <c>FUN_1408580d0</c>, <b>Observed</b>): enemies and neutrals awake, alive and not carried; allies standing (posture 0), awake and alive. Meitou senses by distance within the vision
-    /// range (<see cref="AggroSystem.RangeOf"/>; 500 inside a building); an enemy is the combat system's (<see cref="Combat.CombatSystem.IsEnemyOf"/>), an ally of the same or an allied
-    /// faction, anyone else neutral.
+    /// <c>FUN_1408580d0</c>, <b>Verified</b>): the character's senses as of its last look (<see cref="CharacterFacts.Senses"/>); none before it.
     /// </summary>
-    internal static (int Enemies, int Neutrals, int Allies) Senses(World world, Combat.CombatSystem combat, int me, CharacterCold cold)
-    {
-        var table = world.Characters;
-        var at = table.Previous[me].Position;
-        float r = world.Sight.Inside(me) ? InsideSight : AggroSystem.RangeOf(cold, AggroSystem.OutdoorSight);
-        int enemies = 0, neutrals = 0, allies = 0;
-        for (int j = 0; j < table.HighWater; j++)
-        {
-            if (j == me || !table.Previous[j].Alive || table.Cold(j) is not { Medical: { Incapacitated: false } om } o) continue;
-            if (Vector3.DistanceSquared(table.Previous[j].Position, at) > r * r) continue;
-            if (o.Faction == cold.Faction || combat.Relations?.IsAlly(cold.Faction, o.Faction) == true) { if (!om.Prone) allies++; }
-            else if (!o.CarriedBy.IsNone) continue;
-            else if (combat.IsEnemyOf(world, j, o, me, cold.Faction)) enemies++;
-            else neutrals++;
-        }
-        return (enemies, neutrals, allies);
-    }
+    internal static (int Enemies, int Neutrals, int Allies) Senses(World world, Combat.CombatSystem combat, int me, CharacterCold cold) =>
+        CharacterFacts.Senses(world, me) is { } b ? (b.Enemies, b.Neutrals, b.Allies) : (0, 0, 0);
 
     /// <summary>
     /// Getting up on the player's order (<c>Task_GetUp</c> start <c>FUN_14033ca10</c> with <c>playerWantsMeToGetUp</c>, then <c>FUN_1408c6780</c>, <b>Observed</b>; the Toughness tooltip's
@@ -175,7 +158,7 @@ public sealed class BodySystem(GameConstants constants, BodyOptions? options = n
             if (medical.Incapacitated && cold.InSomething == Locks.HeldState.Bed && n.Task == (byte)CharacterTask.Sleep) n.Flags = (ushort)(n.Flags & ~(ushort)MoveFlags.AnyPath);
             else if (medical.Incapacitated && (n.Task != (byte)CharacterTask.Idle || (n.Flags & (ushort)MoveFlags.AnyPath) != 0))
             {
-                MovementSystem.Stop(table, i);
+                TaskStart.Stand(table, i);
                 n.Velocity = Vector3.Zero;
             }
             if (medical.Dead) continue;
@@ -237,7 +220,7 @@ public sealed class BodySystem(GameConstants constants, BodyOptions? options = n
             {
                 if (e.Kind is MedicalEventKind.Died or MedicalEventKind.KnockedOut)
                 {
-                    if (cold.InSomething != Locks.HeldState.Bed) MovementSystem.Stop(table, i);   // one in a bed stays in it
+                    if (cold.InSomething != Locks.HeldState.Bed) TaskStart.Stand(table, i);   // one in a bed stays in it
                     n.Velocity = Vector3.Zero;
                 }
             }
@@ -429,6 +412,7 @@ public sealed class BodySystem(GameConstants constants, BodyOptions? options = n
         var table = world.Characters;
         for (int i = 0; i < table.HighWater; i++)
         {
+            if (table.Next[i].Alive && table.Cold(i) is { Medical.CollapseOnset: true } collapsed) Collapse(world, i, collapsed);
             if (table.Next[i].Alive && table.Cold(i) is { Burst: { } blow } burst) Burst(world, i, burst, blow);
             else if (table.Next[i].Alive && table.Cold(i) is { DiedTick: >= 0 } cold)
             {
@@ -447,6 +431,23 @@ public sealed class BodySystem(GameConstants constants, BodyOptions? options = n
                 table.Remove(corpse);
             }
         }
+    }
+
+    /// <summary>
+    /// The first tick a leg is down (<see cref="MedicalState.CollapseOnset"/>): <c>FUN_1405c8330</c> stops the character and clears its orders and tasks (<b>Observed</b>, docs/game/ragdolls.md
+    /// "Forced crawl"), so the running task and fight end (<see cref="TaskStart.End"/>, which asks for a new decision; an NPC's AI picks again from idle), and the queued orders go. Not for one
+    /// carried or in a bed or cage (the original tests both), nor while its current task is Stumbling (147), Getting up (65) or Standing (28; Meitou has no such task: Stand Up is at once),
+    /// which the original's current-task test spares. Runs in the serial slow world, the tick the medical tick set it (the update itself is parallel).
+    /// </summary>
+    static void Collapse(World world, int slot, CharacterCold cold)
+    {
+        cold.Medical!.CollapseOnset = false;
+        var table = world.Characters;
+        long now = world.Tick;
+        bool stumbling = cold.StaggeredUntil > now;
+        if (cold.InSomething != Locks.HeldState.None || !cold.CarriedBy.IsNone || stumbling || CharacterFacts.GettingUp(cold, now)) return;
+        cold.OrderQueue.Clear();
+        TaskStart.End(world, slot, TaskEnd.Stopped);
     }
 
     /// <summary>Game hours after death before flies come (<c>FUN_1405ccd90</c>, <b>Verified</b> literal).</summary>

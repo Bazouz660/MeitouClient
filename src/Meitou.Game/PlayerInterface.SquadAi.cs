@@ -100,6 +100,7 @@ sealed partial class PlayerInterface
         ["Attack Target"] = Meitou.Data.Gameplay.Ai.TaskType.MELEE_ATTACK,
         ["Attack Unprovoked"] = Meitou.Data.Gameplay.Ai.TaskType.UNPROVOKED_FOCUSED_MELEE_ATTACK,
         ["First Aid"] = Meitou.Data.Gameplay.Ai.TaskType.FIRST_AID_ORDER,
+        ["Repairs"] = Meitou.Data.Gameplay.Ai.TaskType.FIRST_AID_ROBOT,
         ["Splint Injuries"] = Meitou.Data.Gameplay.Ai.TaskType.SPLINT_ORDER,
         ["Loot"] = Meitou.Data.Gameplay.Ai.TaskType.LOOT_TARGET,
         ["Follow"] = Meitou.Data.Gameplay.Ai.TaskType.STAY_CLOSE_TO_TARGET,

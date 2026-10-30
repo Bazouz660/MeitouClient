@@ -80,7 +80,7 @@ public sealed partial class PopulationSystem
         c.TreatSplint = false;
         c.TreatKit = null;
         c.Jobs.Clear();
-        c.JobIndex = -1;
+        c.Running = null;
         c.Carrying = CharacterId.None;
         c.CarriedBy = CharacterId.None;
         c.CarryTarget = CharacterId.None;

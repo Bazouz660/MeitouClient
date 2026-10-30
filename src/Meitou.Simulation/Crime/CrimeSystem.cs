@@ -318,7 +318,7 @@ public sealed partial class CrimeSystem(FactionRelations relations, CrimeSetting
                 && !(world.SystemOf<Combat.CombatSystem>()?.StateOf(witness) is { } fight && fight.TargetSlot == culprit && fight.TargetGeneration == culpritId.Generation))
             {
                 world.SystemOf<Dialogue.DialogueSystem>()?.TagEnemy(world, w, culprit);
-                world.Defer(new Combat.AttackOrder([witness], culpritId) { Tick = world.Tick + 1 });
+                world.Defer(new Combat.AttackOrder([witness], culpritId) { Tick = world.Tick + 1, Source = TaskSource.Npc });
             }
             bool first = !p.Witnessed;
             if (first)
@@ -407,7 +407,7 @@ public sealed partial class CrimeSystem(FactionRelations relations, CrimeSetting
         var table = world.Characters;
         if (table.Cold(speaker) is not { } s || table.Cold(target) is not { } t) return;
         var targetId = table.IdOf(target);
-        world.Defer(new Combat.AttackOrder([table.IdOf(speaker)], targetId) { Tick = world.Tick + 1 });
+        world.Defer(new Combat.AttackOrder([table.IdOf(speaker)], targetId) { Tick = world.Tick + 1, Source = TaskSource.Npc });
         var squad = s.SquadId >= 0 ? world.Squads.Find(s.SquadId) : null;
         int town = squad?.Town ?? -1;
         if (t.Pending is { } p) p.Timer = AlarmTimer;
@@ -511,7 +511,7 @@ public sealed partial class CrimeSystem(FactionRelations relations, CrimeSetting
                 if (c == i || !next[c].Alive || table.Cold(c) is not { Pending: { } p, Medical.Incapacitated: false } cc || Friendly(cold.Faction, cc.Faction) || !Friendly(cold.Faction, p.VictimFaction)) continue;
                 if (Vector3.DistanceSquared(next[c].Position, next[i].Position) > range * range || world.Sight.Sees(i, c, next[i].Position, next[c].Position, range) <= 0) continue;
                 world.SystemOf<Dialogue.DialogueSystem>()?.TagEnemy(world, i, c);
-                world.Defer(new Combat.AttackOrder([table.IdOf(i)], table.IdOf(c)) { Tick = world.Tick + 1 });
+                world.Defer(new Combat.AttackOrder([table.IdOf(i)], table.IdOf(c)) { Tick = world.Tick + 1, Source = TaskSource.Npc });
                 break;
             }
         }

@@ -34,7 +34,7 @@ public sealed partial class World
     /// </summary>
     public bool RegardsFriendly(CharacterId who, CharacterId of) =>
         Characters.Phase == TablePhase.Outside && Characters.TryResolveNext(who, out int a) && Characters.TryResolveNext(of, out int b)
-        && SystemOf<Dialogue.DialogueSystem>() is { } dialogue && dialogue.RegardsFriendly(this, a, b);
+        && SystemOf<Dialogue.DialogueSystem>() is { } dialogue && CharacterFacts.RegardsFriendly(dialogue, this, a, b);
 
     /// <summary>
     /// The facts the pick-up verb reads (<see cref="VerbFacts"/>), the host asking between ticks; null when the world has no population data or a character is gone.
@@ -54,6 +54,6 @@ public sealed partial class World
         bool squadTrader = tc.SquadId >= 0 && Squads.Find(tc.SquadId) is { } squad && data.Db.Find(squad.TemplateId)?.GetBool("is trader") == true;
         bool notReal = (uint)tc.Faction < (uint)data.Factions.Count && data.Factions[tc.Faction].NotReal;
         bool inside = ownership != TownOwnership.None && (SystemOf<Kidnap.TownDutySystem>()?.AmInsideTownWalls(this, Characters.Next[t].Position) ?? false);
-        return new(dialogue.RegardsFriendly(this, t, l), dialogue.RegardsFriendly(this, l, t), inside, squadTrader, ownership, bounty, tc.NpcClass == FundamentalType.Bandit, notReal);
+        return new(CharacterFacts.RegardsFriendly(dialogue, this, t, l), CharacterFacts.RegardsFriendly(dialogue, this, l, t), inside, squadTrader, ownership, bounty, tc.NpcClass == FundamentalType.Bandit, notReal);
     }
 }

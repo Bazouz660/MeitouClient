@@ -22,6 +22,9 @@ public enum CareKind { None, Treating, Resting }
 public readonly record struct BodyStatus(float Blood, float WorstPart, float Hunger, bool Unconscious, bool Dead, bool NeedsAid = false, CareKind Care = CareKind.None, bool MedicJob = false, bool RescueJob = false,
     bool NeedsSplint = false, float KoTimer = 0, bool PlayingDead = false, bool StayingLow = false, bool NeedsRobotAid = false)
 {
+    /// <summary>The context menu's two independent tests (<c>FUN_1407c05a0</c> with the kit kind 0 and 1, docs/game/ui-input.md "Context menu verbs"): the organic need above the floor (First Aid, 25) and the robot one (Repairs, 60); <see cref="NeedsAid"/> is either, <see cref="NeedsRobotAid"/> the robot one only when the organic is not.</summary>
+    public bool NeedsOrganicAid { get; init; }
+    public bool NeedsRepairs { get; init; }
     /// <summary>The health word's other states (docs/game/ui-screens.md "Health word choice"): being eaten (<see cref="Bodies.MedicalState.EatenCountdown"/>), the recovery coma, the forced crawl (posture 2) and a right arm that does not work.</summary>
     public bool BeingEaten { get; init; }
     public bool Coma { get; init; }
@@ -267,6 +270,8 @@ public sealed record CharacterSnapshot(CharacterId Id, CharacterAppearance? Appe
     public CharacterId Carrying { get; init; } = CharacterId.None;
     /// <summary>The goal the AI is acting out, in the game's words (<c>Patrolling town</c>, <c>Shopkeeper</c>); null when the AI does not run the character now.</summary>
     public string? Activity { get; init; }
+    /// <summary>A player character's last decision (<see cref="DecisionSystem.Tracing"/>: which source won and why each one before it could not run); null while tracing is off. Debug only.</summary>
+    public DecisionTrace? Decision { get; init; }
     /// <summary>The weather effect that hurt this player character last tick and the protection it shows (the status notice, docs/formats/weather.md); None otherwise. Display only.</summary>
     public WeatherNotice WeatherNotice { get; init; }
     public float WeatherNoticeProtection { get; init; }
@@ -290,6 +295,16 @@ public sealed record CharacterSnapshot(CharacterId Id, CharacterAppearance? Appe
     public float LockpickSkill { get; init; }
     /// <summary>Asleep (<see cref="Carrying.CarrySystem.Asleep"/>): not standing, so the menu offers the down verbs (Kidnap among them).</summary>
     public bool Asleep { get; init; }
+    /// <summary>Down as the original counts it (<see cref="CharacterFacts.Down"/>, <c>FUN_1405c9e10</c>): out cold, dead, playing dead or carried. The menu's down verbs read it.</summary>
+    public bool Down { get; init; }
+    /// <summary>Conscious as Set Free's precondition 125 reads it (<see cref="CharacterFacts.Conscious"/>): not dead, out cold or carried.</summary>
+    public bool Conscious { get; init; }
+    /// <summary>Awake: not dead or out cold (<see cref="CharacterFacts.Standing"/>), carried or not; the menu's attack and trade targets.</summary>
+    public bool Standing { get; init; }
+    /// <summary>An animal, which plans with the animal repertoire (<see cref="CharacterFacts.Animal"/>): the menu offers it only the verbs animals have.</summary>
+    public bool Animal { get; init; }
+    /// <summary>Hostile to the player: its faction is hostile to the player's, or it fights one of the player's characters (<see cref="CharacterFacts.HostileToPlayer"/>); the attack pointer and the menu's attack verbs.</summary>
+    public bool HostileToPlayer { get; init; }
     /// <summary>An <see cref="Carrying.OpenLootOrder"/> may open its inventory (<see cref="Carrying.CarrySystem.Openable"/>: down, playing dead or carried, the player's own, a sleeper or a prisoner as a pickpocket): the menu's Loot and Trade.</summary>
     public bool CanOpenInventory { get; init; }
     /// <summary>In a cage: whether it is locked and the sentence (null: not imprisoned).</summary>

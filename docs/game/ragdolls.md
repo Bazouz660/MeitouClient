@@ -89,7 +89,8 @@ the disassembly where the decompile hides them):
 | Death while down | on WHOLE, or CARRY_MODE if carried | `CharacterAnimal::vfunc_64` |
 | Knockout, bleed-out (blood ≤ 0 / −25) | on WHOLE | damage `FUN_14064f300` |
 | Medical tick while unconscious (`+0x161`) | on WHOLE, or CARRY_MODE if carried | `FUN_140649320` |
-| Limb below its collapse level | on with the part's `collapse part` bits, humans only, not for a robotic limb on that side | `FUN_140649870` |
+| Limb below its collapse level | on with the part's `collapse part` bits, humans only, not for a robotic limb on that side; asked when a non-vital part's h − s + rig falls under 0 (blow `FUN_14064f300`, tick `FUN_140649f50`, `FUN_140666780`) | `FUN_140649870` |
+| Leg bits with no leg crippled | off, each medical tick (so a leg between 0 and the KO point is ragdolled for one tick only: Meitou holds the bits only while a leg is down) | `FUN_140649320` |
 | Limb recovered | off for arm/leg bits no longer collapsed | `FUN_140649320` |
 | Picked up | on CARRY_MODE (replaces a queued WHOLE) | `FUN_1405ce9c0(1)` |
 | Put down / dropped | off CARRY_MODE; the medical tick then re-requests WHOLE | `FUN_1405ce9c0(0)` |
@@ -104,7 +105,14 @@ No path from hits, knockback, stagger or explosions: a conscious character is ne
 **Observed** (decompile). Posture (slot 109/110, field `+0xe0`, setter `FUN_1405c7e20`; KenshiLib 1ce4a16 `ProneState`):
 0 `PS_NORMAL`, 1 `PS_STAYING_LOW` (voluntary crawl, [below](#staying-low)), 2 `PS_CRIPPLED`, 3 `PS_PLAYING_DEAD`, 4 `PS_KO`.
 The medical tick `FUN_140649320` (while conscious) sets the crippled flag (medical `+0x160` = Character `+0x5b8`, [combat](combat.md#crippled-flag)) and posture 2 when **any one** part with `collapse part` 0x10/0x20 tests down,
-and keeps those leg ragdoll bits on; the character tick `FUN_1405d00b0` sets posture 2 exactly while the flag is set (else 0, unless the character stays low). So it lasts exactly while a leg is down; it does not knock out (the cut-off that takes a leg does: [character-stats](character-stats.md#cut-off-and-leg-loss)).
+and keeps those leg ragdoll bits on; the character tick `FUN_1405d00b0` sets posture 2 exactly while the flag is set (else 0, unless the character stays low). So it lasts exactly while a leg is down.
+- **Verified** (decompile of `FUN_140649320`, `FUN_140649870`, `FUN_1405c7e20`, `FUN_1405d00b0`): a leg collapse of a conscious human is **no knock-out, no stun, no timer and no fall clip**. The tick requests WHOLE only for the unconscious flag `+0x161`
+  (a vital part down, blood, the KO timer), and the leg bits `0x10`/`0x20` are never part of that; the posture setter writes only the posture, the repertoire bit and (0 to 2) a float 3.0 at Character `+0x4f8` whose reader was not found (**Unknown**).
+  The body does not fall: a partial ragdoll simulates only the masked bodies, the rest follow the animation ([bodies](#bodies-kinematic-or-simulated)), and posture 2 picks the crawl clips the same tick.
+- The only knock-out beside a crippling is the sever: `FUN_14064edc0` knocks a leg out only when the posture is 0, for a few seconds to minutes ([cut-off and leg loss](character-stats.md#cut-off-and-leg-loss)), then it wakes into the crawl. A character that collapses and is out cold at once is a vital part or blood knock-out in the same blow.
+- **Observed**: the first tick that sets the flag (not in furniture, not carried) also calls `FUN_1405c8330`. It acts on the AI (`Character +0x648`: its vfunc `0x60`) and the orders receiver (`+0x650 +0x20`, the same object that holds the order queue `+0x40`, [ai-tasks](ai-tasks.md)): it sets the receiver's stop flag `+0x26c`, deletes its queued tasks (`FUN_14050d1b0` on `+0x300`) and its active ones (`FUN_140507530`). So the running task, queued orders and fight go; whether the AI's goal list is also dropped is **Unknown**, and no replan is requested there (the chooser finds the task gone). Skipped when the AI's current task has the flag at task data `+0x22`: 28 Standing, 65 Get up, 147 Stumbling.
+  Meitou: `MedicalState.CollapseOnset` (set by `Tick` when a leg is down where the last update had none; the first tick after a load only learns it), taken by `BodySystem.SlowWorld` the same tick (the medical update is parallel): `OrderQueue.Clear()` and `TaskStart.End(Stopped)` (ends the task and fight, stops, asks the decision step; an NPC's AI picks again from idle). Spared: carried, in a bed or cage, stumbling or getting up (`StaggeredUntil`; Meitou has no task 28).
+- **Observed**: going from posture ≠ 0 to 0 with the crippled flag clear (a leg back up, a stun worn off) makes `FUN_1405c7e20` queue the get-up task 65 (`standing up 3`, [Getting up](#getting-up)) unless one is queued.
 - Leg test `FUN_140644450`: down when a stump or crushed (limb state 1/3), when h − s < −(base × mult ×
   scale) − wear (severed), or when h − s + b (bandage, `+0x48`; not the rig `+0x4c`) is under the KO point
   `FUN_140643ae0` (−10..−85 by toughness), not under 0. Animals (slot `0x248`, `asAnimal`) never collapse.
@@ -136,7 +144,8 @@ and keeps those leg ragdoll bits on; the character tick `FUN_1405d00b0` sets pos
   too while `_isLiterallyUnderMeleeAttackRightNowForSure` (`+0x2b0`). So the forced crawl ends a voluntary one.
 - Standing orders: run, jog, walk, group speed (0, 1, 2, 16) on a posture-1 uncrippled character set 0 instead (the speed arrows do not step while anyone selected is in posture 1, **Verified** `FUN_1407f3a20`, [ui-screens](ui-screens.md)); stealth
   off (4) sets 0 and ends sneaking. A theft witness (`ImStealingDoYouNotice`) in posture 1 or 3 gets 0.
-- Effects are those of posture ≠ 0: grounded clips, prone techniques only, stealth ×2, sight ×0.5, target-score terms; run
+- Effects are those of posture ≠ 0: grounded clips, prone techniques only, stealth ×2, sight ×0.5, target-score terms; the crippled task repertoire 0x40, which the
+  posture setter `FUN_1405c7e20` sets for posture 1 and 2 only (**Verified**; [planner](ai-tasks.md#planner)); run
   speed S = 7 (5 with a leg down, [pathfinding](pathfinding.md#speed-and-orders)).
 - Stand Up (order 28, also shown for 65): `Character::addOrder` queues AI task 28 "Standing", built as `Task_UnCrouch`
   ([ai-tasks](ai-tasks.md)): it plays `squat T` backwards and sets posture 0 once the clip is under 0.1. While getting up the
@@ -165,7 +174,7 @@ player order gets it up (1 when sneaking), as does a thief's watcher noticing.
   event 0x18. Without the order the get-up only says 0x17 / 0x18.
 - Meitou: `MedicalState.PlayingDead` (not saved): a knockout that ends while `MedicalContext.PlayDead` is set keeps the
   character `Unconscious` (so everyone treats it as down) with no timer. The get-up line (`DialogueSystem.SeeGettingUp`) is 23 / 25 / 24 by these counts. `BodySystem.Schedule` sets it serially from the last
-  tick by `BodySystem.Senses` (enemies `CombatSystem.IsEnemyOf`, by distance within the vision range, 500 inside); a player
+  tick by the character's senses' counts (`BodySystem.Senses`, [senses](perception.md#senses)); a player
   order standing it up grants the toughness (`BodySystem.GotUpByOrder`); animals never play dead. Rechecked every 15 ticks
   (engine choice). `MedicalState.StandUp` ends it. Health header: `HudText.HealthWord`.
 
@@ -259,9 +268,15 @@ more than 200 below the terrain is lifted to it and frozen (`FUN_1407d4470`). Gl
   flag (`+0x61`, `FUN_1407d1400`) is clear, and either the task's posture flag (`+0x78`, set at the start from posture > 0) is set or the clip
   passed 0.86. So a waker staying low or crawling (tasks 52) is let go when the 0.75 s blend ends, at once without one; posture 0 (65) stands
   through the clip. Its end clears `+0x278` (getting up) and sets the posture (vfunc 0x370).
+- Also run when a crawler's leg comes back up (posture 2 to 0, `FUN_1405c7e20`; **Observed**): no ragdoll, so no blend, and the character stands through `standing up 3` (clip past 0.86). Meitou: `CombatSystem.Act` holds it
+  (`GetUpClipSeconds`) and `AnimationSystem` plays the clip (`CharacterAnimation.WasCrawling`); posture 1 to 0 (Stand Up) is unchanged. Checked offscreen in `--sandbox`: leg 80 below the KO point crawls the next tick, a heal 2 s later plays `standing up 3`.
 - The start (when it found a clip) copies the character's position into the Hold point (CharStats `+0x130`, **Verified** `FUN_14033ca10`).
 - Meitou (`CombatSystem.Act`): a waker staying low or crawling is held `RagdollSystem.GetUpBlend` after a whole-body ragdoll, else not at all,
   and plays no standing-up clip (`AnimationSystem`); the Hold point is moved where it wakes while Hold is on.
+- Meitou hold (`CombatSystem.Act`, measured headless): a posture-0 waker is held `GetUpClipSeconds` (clip length x 0.86 / play speed; `standing up 3` is 8.67 s at speed 1, so 7.45 s)
+  plus `GetUpBlend` only when it wakes out of a whole-body ragdoll (the same test that starts the clip at -0.75 s in `AnimationSystem`), so the hold ends on the tick the played clip passes 0.86.
+  The earlier constant added the blend with no ragdoll, 23 ticks past the clip. The posture flag `+0x78` is no animation event: `FUN_14033ca10` sets it from the posture (> 0) at the start, so a posture-0 waker is released only by the clip. **Observed** in `--sandbox` (a real ragdoll KO of the hero, the full load order, whose `standing up 3` plays at about 4x): the earlier constant held 246 ticks while the clip ended at 65, a 181-tick gap; now the hold is 78 ticks and a move order at wake+150 takes effect within 5 ticks. One carried or waking in a bed plays no clip (engine choice) and is not held. **Unknown**: whether the original
+  runs Task_GetUp for a waker in a bed or carried (the start returns at once when a state at `+0x2f8` is set, meaning not decoded).
 
 ## Saves
 

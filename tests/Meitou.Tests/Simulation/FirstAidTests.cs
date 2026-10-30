@@ -68,7 +68,7 @@ public class FirstAidTests
 
     const float KitQuality = 40, KitCharges = 400, SplintQuality = 20;
 
-    static GameDatabase KitDatabase()
+    internal static GameDatabase KitDatabase()
     {
         FcsRecord Kit(string id, string name, int function, float quality, float charges)
         {

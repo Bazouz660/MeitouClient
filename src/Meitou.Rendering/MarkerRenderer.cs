@@ -238,7 +238,7 @@ public sealed unsafe class MarkerRenderer : IDisposable
                 Draw(cmd, ring, pivot - eye, Matrix4x4.CreateScale(RotationScale), Visible);
             if (arrow.Count > 0)
                 foreach (var a in arrows)
-                    Draw(cmd, arrow, a.At - eye, PointAlong(a.Direction), new Vector4(a.Colour, hidden ? ArrowHiddenAlpha : 1));
+                    Draw(cmd, arrow, a.At - eye, ArrowScale * PointAlong(a.Direction), new Vector4(a.Colour, hidden ? ArrowHiddenAlpha : 1));
         }
         cmd.EndRendering();
         cmd.Order();
@@ -267,6 +267,12 @@ public sealed unsafe class MarkerRenderer : IDisposable
         program.Flush(cmd);
         cmd.Draw((uint)mesh.Count, 1, (uint)mesh.First, 0);
     }
+
+    /// <summary>
+    /// The sneak arrow's node scale in its own frame, before the turn: half as long (its X) and 0.35 as thick, about 5 units long with a head of ±0.42
+    /// (<c>FUN_1405dc7d0</c> <c>setScale(0.5, 0.35, 0.35)</c>; docs/game/perception.md).
+    /// </summary>
+    static readonly Matrix4x4 ArrowScale = Matrix4x4.CreateScale(0.5f, 0.35f, 0.35f);
 
     /// <summary>The turn taking the arrow mesh's −X (its tip) onto <paramref name="direction"/> (Ogre's <c>getRotationTo</c>; opposite: half a turn about Y).</summary>
     static Matrix4x4 PointAlong(Vector3 direction)

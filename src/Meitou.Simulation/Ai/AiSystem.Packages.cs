@@ -259,7 +259,7 @@ public sealed partial class AiSystem
             if (!table.TryResolveNext(m, out int s) || table.Cold(s)?.Ai is not { } mind) continue;
             mind.Post = PostRound(centre, mind.MemberIndex);
             // A stroll picked round the old post is dropped, so the next one is round the new.
-            if (table.Next[s].Task == (byte)CharacterTask.Wander) Become(table, s, CharacterTask.Idle);
+            if (table.Next[s].Task == (byte)CharacterTask.Wander) Become(world, s, CharacterTask.Idle);
             if (say is { } e) world.Defer(new Dialogue.DialogueEvent(m, CharacterId.None, e) { Tick = world.Tick + 1 });
         }
     }

@@ -8,8 +8,8 @@ namespace Meitou.Simulation;
 /// NPC squads running away from a lost fight (docs/simulation.md "Fleeing"; the original's facts in docs/game/perception.md "Fleeing"). All work is serial
 /// (<c>SlowWorld</c>), in slot and squad-id order, so it is the same at any thread count.
 /// <list type="bullet">
-/// <item><b>When</b> (the original's squad-intact test, <see cref="Ai.SquadIntact"/>; docs/game/perception.md "Fleeing"): every <see cref="CheckEveryTicks"/> ticks an NPC squad in a
-/// fight breaks when it is not intact. The FACTION run-away ratios are loaded by the original but never read, and no enemy is counted.</item>
+/// <item><b>When</b> (only with <see cref="SquadBreak"/>, off by default: the original runs no squad for being broken; the squad-intact test is <see cref="Ai.SquadIntact"/>,
+/// docs/game/perception.md "Squad not intact"): every <see cref="CheckEveryTicks"/> ticks an NPC squad in a fight breaks when it is not intact. The FACTION run-away ratios are loaded by the original but never read, and no enemy is counted.</item>
 /// <item><b>How</b> (the original's <c>Task_Runaway</c>, Observed): each member still standing stops fighting and runs at full speed to a point
 /// <see cref="FirstRun"/> + up to <see cref="RunSpread"/> units from the centre of the enemies it can see, on the far side of it; when it gets there (or within
 /// <see cref="Arrived"/> of it, or its path fails) it runs <see cref="Hop"/> + up to <see cref="RunSpread"/> units in a random direction.</item>
@@ -33,6 +33,11 @@ public sealed class FleeSystem(FactionRelations relations, CombatSystem combat, 
     public FactionRelations Relations { get; } = relations;
     /// <summary>The sight range R before the race multiplier, for the enemies counted and the safety test (the <see cref="AggroSettings.SightRange"/> of the game).</summary>
     public float SightRange { get; } = sightRange;
+    /// <summary>
+    /// Whether a squad in a fight that is not intact runs (Meitou's addition, off: the original's squads do not, docs/game/perception.md "Squad not intact": only a package with the
+    /// retreat signal acts on it, and no squad template lists one). The AI's own requests (a lone flight, a goal 35) run either way.
+    /// </summary>
+    public bool SquadBreak { get; init; }
     /// <summary>The squads that broke so far.</summary>
     public long Broken { get; private set; }
     /// <summary>Characters that started running so far.</summary>
@@ -73,8 +78,7 @@ public sealed class FleeSystem(FactionRelations relations, CombatSystem combat, 
             if (check && (cold.FleesAlone ? Unthreatened(world, i, cold) : Safe(world, table, i)))
             {
                 cold.Fleeing = cold.FleesAlone = false;
-                MovementSystem.Stop(table, i);
-                n.Task = (byte)CharacterTask.Wander;
+                TaskStart.Become(world, i, CharacterTask.Wander, Meitou.Data.Gameplay.Ai.TaskType.WANDERER, TaskSource.Npc);
                 n.TaskTime = 0;
                 continue;
             }
@@ -83,7 +87,7 @@ public sealed class FleeSystem(FactionRelations relations, CombatSystem combat, 
             if (n.Task == (byte)CharacterTask.Attack) world.Defer(new StopCommand([new CharacterId(i, n.Generation)]) { Tick = world.Tick + 1 });
             Run(world, table, i, RandomDirection(world, i, 1), Hop);
         }
-        if (!check) return;
+        if (!check || !SquadBreak) return;
         // Squads in a fight that break.
         squads.Clear();
         squads.AddRange(world.Squads.All);
@@ -111,7 +115,7 @@ public sealed class FleeSystem(FactionRelations relations, CombatSystem combat, 
         // The squad-intact test (Ai.SquadIntact, FUN_14079acf0, docs/game/perception.md "Fleeing"): a member caged or carried off by a non-ally keeps it intact; else it
         // needs a leader and someone able; under 4 members it holds while the leader is up, from 4 while those able to fight are a share of the squad. No enemy is counted.
         if (!fighting || standing.Count == 0 || Ai.SquadIntact.Held(table, squad, Relations)) return;
-        if (Ai.SquadIntact.Decide(standing.Count, size, !squad.Leader.IsNone, Ai.SquadIntact.Down(table, squad.Leader), persistentHome: false)) return;
+        if (Ai.SquadIntact.Decide(standing.Count, size, !squad.Leader.IsNone, Ai.SquadIntact.Down(table, squad.Leader), Ai.SquadIntact.PersistentHome(squad))) return;
         Broken++;
         foreach (int s in standing)
         {
@@ -287,7 +291,7 @@ public sealed class FleeSystem(FactionRelations relations, CombatSystem combat, 
         var id = new CharacterId(s, n.Generation);
         float r = Rng.Float(Rng.Hash(world.Seed, Rng.Key(id), RngPurpose.Flee, ((ulong)world.Tick << 2) | 2));
         var start = from ?? new Vector2(n.Position.X, n.Position.Z);
-        MovementSystem.GoTo(table, s, start + direction * (distance + RunSpread * r), SpeedMode.Free);
+        TaskStart.Walk(world, s, start + direction * (distance + RunSpread * r), SpeedMode.Free, Meitou.Data.Gameplay.Ai.TaskType.RUN_AWAY, TaskSource.Npc);
     }
 
     public void Hash(ref StateHasher hasher)

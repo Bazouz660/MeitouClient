@@ -280,15 +280,11 @@ public sealed partial class DialogueSystem
         foreach (var m in SquadOf(world, speaker))
         {
             if (m == c.Npc || m == speaker || !table.TryResolveNext(m, out int s) || !table.Next[s].Alive || table.Cold(s) is not { IsPlayer: false } mc) continue;
-            if (mc.Fighter?.IsAnimal == true || mc.Appearance?.Animal is not null || Down(mc) || mc.InSomething == Locks.HeldState.Bed) continue;
+            if (mc.Fighter?.IsAnimal == true || mc.Appearance?.Animal is not null || CharacterFacts.Down(mc) || mc.InSomething == Locks.HeldState.Bed) continue;
             if (line.CrowdChance < 100 && Rng.Float(NextRoll(world, m)) * 100 >= line.CrowdChance) continue;
             StartBubbles(world, m, c.Player, root, CrowdTriggered, now: false, force: true);
         }
     }
-
-    /// <summary><c>Character::isDown</c> (vfunc 0x30, <c>FUN_1405c9e10</c>, docs/game/carry-loot.md): dead or out cold, playing dead, ragdolled or carried. A crawler is not down.</summary>
-    static bool Down(CharacterCold c) =>
-        c.Medical is { Incapacitated: true } or { PlayingDead: true } || !c.CarriedBy.IsNone || Ragdolls.RagdollSystem.IsRagdoll(c);
 
     /// <summary>Whether the character at <paramref name="slot"/> can say a bubble line: alive and conscious. A caged one can (the original's step stops only for a ragdolled owner).</summary>
     static bool CanSpeak(CharacterTable table, int slot) => table.Next[slot].Alive && table.Cold(slot) is { } c && c.Medical?.Incapacitated != true;

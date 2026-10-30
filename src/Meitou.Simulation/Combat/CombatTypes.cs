@@ -7,19 +7,23 @@ using Meitou.Simulation.Bodies;
 namespace Meitou.Simulation.Combat;
 
 /// <summary>Orders the characters to fight <see cref="Target"/> (the AI's "attack" task, a player's attack command): they draw their weapon, close in and attack until one of them is down.</summary>
-public sealed record AttackOrder(IReadOnlyList<CharacterId> Attackers, CharacterId Target) : SimCommand
+public sealed record AttackOrder(IReadOnlyList<CharacterId> Attackers, CharacterId Target) : OrderCommand
 {
     /// <summary>A fight the attackers did not pick: an answer to being attacked (<see cref="RetaliationSystem"/>). The player's defence does not count as an assault on the other faction.</summary>
     public bool Defensive { get; init; }
     /// <summary>The player picked this target (a right click, Attack Target, Attack Unprovoked): the attackers keep it rather than turning on one that lost the initiative roll to them.</summary>
     public bool Picked { get; init; }
+    /// <summary>The chooser's source the fight stands in for (<see cref="TaskStart.Start"/>); null: an order when <see cref="Picked"/>, a reaction when <see cref="Defensive"/>, else a goal.</summary>
+    public TaskSource? Source { get; init; }
+    /// <summary>The job of the attackers' lists the fight runs (<see cref="TaskRequest.Job"/>; -1: none).</summary>
+    public int Job { get; init; } = -1;
 }
 
 /// <summary>
 /// Shoot At (order 235, offered to a character on a turret): the gunners (the selection when empty) that man a turret fire at <see cref="Target"/> instead of choosing; the turret keeps
 /// the target until it is gone and waits while it is out of range or blocked (<see cref="CharacterCold.TurretTarget"/>).
 /// </summary>
-public sealed record ShootAtOrder(IReadOnlyList<CharacterId> Gunners, CharacterId Target) : SimCommand;
+public sealed record ShootAtOrder(IReadOnlyList<CharacterId> Gunners, CharacterId Target) : OrderCommand;
 
 /// <summary>What a resolved blow did, for the log (a combat log, damage numbers, tests).</summary>
 public readonly record struct CombatLogEntry(long Tick, int Attacker, int Defender, int Blow, BlowOutcome Outcome, int Part, float Cut, float Blunt, float Pierce, float Stun, bool Knockout, bool Death)

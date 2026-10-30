@@ -41,13 +41,13 @@ public sealed partial class CarrySystem
                     cold.PickingUpItem = item;
                     var at = world.GroundItems.Find(item)!.Position;
                     if (Vector2.Distance(new Vector2(table.Next[slot].Position.X, table.Next[slot].Position.Z), new Vector2(at.X, at.Z)) > PlayerSystem.PickUpReach)
-                        MovementSystem.GoToFloor(world, slot, at, SpeedMode.Run);
+                        TaskStart.Walk(world, slot, at, SpeedMode.Run, TaskType.NOT_BE_UNARMED, TaskSource.Npc);
                 }
                 else if (body >= 0)
                 {
-                    taken.Add(body);
                     var task = (CharacterTask)table.Next[slot].Task;
-                    Begin(table, slot, table.IdOf(body), CharacterTask.Loot, task is CharacterTask.Wander or CharacterTask.Follow ? task : CharacterTask.Idle);
+                    if (Start(world, slot, CharacterTask.Loot, TaskType.NOT_BE_UNARMED, TaskSource.Npc, table.IdOf(body), task is CharacterTask.Wander or CharacterTask.Follow ? task : CharacterTask.Idle))
+                        taken.Add(body);
                 }
             }
         }

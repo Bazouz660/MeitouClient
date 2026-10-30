@@ -42,9 +42,9 @@ public sealed partial class CarrySystem
         return all;
     }
 
-    /// <summary>A character that may be sent on a stealth knock-out: sneaking, awake, not fighting, carrying or carried.</summary>
+    /// <summary>A character that may be sent on a stealth knock-out: sneaking, awake, not carrying or carried (a fight it is in ends with the order's new task).</summary>
     public static bool CanKnockOut(CharacterCold cold) =>
-        cold is { Medical.Incapacitated: false, Race: not null, Stats: not null, InCombat: false } && (cold.Orders & CharacterOrders.Sneak) != 0 && cold.Carrying.IsNone && cold.CarriedBy.IsNone;
+        cold is { Medical.Incapacitated: false, Race: not null, Stats: not null } && (cold.Orders & CharacterOrders.Sneak) != 0 && cold.Carrying.IsNone && cold.CarriedBy.IsNone;
 
     /// <summary>A character that may be knocked out from behind: awake, with a body, not carried.</summary>
     public static bool CanBeKnockedOut(CharacterCold cold) => cold is { Medical.Incapacitated: false, Race: not null } && cold.CarriedBy.IsNone;
@@ -74,10 +74,11 @@ public sealed partial class CarrySystem
         var table = world.Characters;
         if (!table.TryResolveNext(order.Target, out int target) || !CanBeKnockedOut(table.Cold(target)!)) return;
         // The first that can go, in the order given (the selection's order), so the chance the interface showed is the one rolled.
+        var entry = new OrderEntry(Meitou.Data.Gameplay.Ai.TaskType.STEALTH_KNOCKOUT, this) { Target = order.Target };
         foreach (var id in Who(world, order.Attackers))
-            if (table.TryResolveNext(id, out int attacker) && attacker != target && CanKnockOut(table.Cold(attacker)!))
+            if (table.TryResolveNext(id, out int attacker) && PlayerOrders.CanRun(world, attacker, entry).CanRun)
             {
-                Begin(table, attacker, order.Target, CharacterTask.StealthKo, CharacterTask.Idle);
+                PlayerOrders.Give(world, attacker, entry, order.Queued);
                 return;
             }
     }
@@ -102,7 +103,7 @@ public sealed partial class CarrySystem
             if (cold.Medical is not { Incapacitated: false } || !table.TryResolveNext(cold.CarryTarget, out int t) || table.Cold(t) is not { } target
                 || !CanBeKnockedOut(target) || Senses(world, table, t, i))
             {
-                End(table, i);
+                End(world, i);
                 continue;
             }
             var goal = Behind(next[t]);
@@ -159,13 +160,13 @@ public sealed partial class CarrySystem
         cold.LiftTime += dt;
         if (cold.Medical is not { Incapacitated: false } || !table.TryResolveNext(cold.CarryTarget, out int t) || table.Cold(t) is not { } target)
         {
-            End(table, i);
+            End(world, i);
             return;
         }
         // A target that senses the attacker cancels the swing too, every tick before the roll: silently, no "Failed!", event or XP (FUN_14034cd80).
         if (Senses(world, table, t, i))
         {
-            End(table, i);
+            End(world, i);
             return;
         }
         Face(ref table.Next[i], table.Next[t]);
@@ -174,12 +175,12 @@ public sealed partial class CarrySystem
             // The swing has no distance end: a target that walked off mid-swing is still rolled (FUN_14034cd80); one that went down is not.
             if (!CanBeKnockedOut(target))
             {
-                End(table, i);
+                End(world, i);
                 return;
             }
             Strike(world, table, i, t);
         }
-        if (cold.LiftTime >= KnockoutDoneAt * length) End(table, i);
+        if (cold.LiftTime >= KnockoutDoneAt * length) End(world, i);
     }
 
     void Strike(World world, CharacterTable table, int i, int t)
@@ -210,7 +211,7 @@ public sealed partial class CarrySystem
                 var ctx = new MedicalContext(Constants, bodyOptions, targetRace) { Toughness = target.Stats?.Toughness ?? 0, Strength = target.Stats?.Strength ?? 50, HasStats = target.Stats is not null };
                 float assassination = (cold.Stats?[StatsEnumerated.Assassination] ?? 0) * (cold.Medical?.StatMultiplier(StatsEnumerated.Assassination) ?? 1);
                 medical.KnockOut(medical.PutDownKoSeconds(ctx, assassination * 0.01f));
-                MovementSystem.Stop(table, t);
+                TaskStart.Stand(table, t);
                 table.Next[t].Velocity = Vector3.Zero;
             }
         }
@@ -225,7 +226,8 @@ public sealed partial class CarrySystem
                 talk.TagEnemy(world, t, i);
                 talk.TagEnemy(world, i, t);
             }
-            world.Defer(new Combat.AttackOrder([targetId], attackerId) { Tick = world.Tick + 1, Defensive = true });
+            if (DecisionSystem.Decides(target)) Engage(world, t, i);   // a player character: attackTarget's replan, the step decides (CarrySystem.Engage)
+            else world.Defer(new Combat.AttackOrder([targetId], attackerId) { Tick = world.Tick + 1, Defensive = true });
         }
         // The swing books an Assault on the target's faction at the roll, hit or miss (the pending-crime setter FUN_140852c80 with code 5, called unconditionally, Verified).
         Crimes?.SetPending(world, i, Crime.CrimeCode.Assault, target.Faction, targetId, Crime.CrimeSystem.MinTimer);

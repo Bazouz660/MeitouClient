@@ -45,10 +45,10 @@ public sealed partial class AiSystem
         readonly List<PlanStep> scratch = [];
 
         /// <summary>
-        /// The task repertoire it plans with (<c>FUN_14060e840</c>, <b>Verified</b>; docs/game/ai-tasks.md "Planner"): a prisoner in a cage that restrains movement (pole, peeler) the
-        /// 'chained' one (0x10), in another cage the 'imprisoned' one (4); everyone else the 'human' one (1). The crippled (0x40), platoon (2) and animal repertoires are not modelled.
+        /// The task repertoire it plans with, the original's <c>FUN_14060e840</c> order (<see cref="Repertoire.Of"/>: imprisoned 4, crippled 0x40, chained 0x10, human 1, else animal 0x20). The platoon
+        /// repertoire (2) is not modelled.
         /// </summary>
-        public int Category => world.Characters.Cold(slot) is { IsImprisoned: true, InWhat: { } cage } ? world.Fixtures.Find(cage) is { Restrains: true } ? 0x10 : 0x4 : 0x1;
+        public int Category => world.Characters.Cold(slot) is { } c ? Repertoire.Of(world, c) : Repertoire.Human;
         /// <summary>Restricted rows are offered: the character's faction is not the player's (the name is the old reading, kept; see <see cref="IPlanWorld.Squadless"/>).</summary>
         public bool Squadless => restrictedOpen;
         bool restrictedOpen;
@@ -71,19 +71,22 @@ public sealed partial class AiSystem
             var type = goal.Task.Type;
             // The assault is its own plan (engine choice): its finder's target is not a plan target, the combat system draws weapons and closes in, and its only list B entry (!47,
             // not carrying) is what Holds already requires of a character the AI runs.
-            if (type == TaskType.DEFEAT_SQUAD)
+            // So are the combat goals (engine choice): the desire already holds the finder's pick (and for the protect goals row 13's attacker), and the fight is the combat system's.
+            if (type == TaskType.DEFEAT_SQUAD || TaskBehaviours.Of(type) == AiBehaviour.Fight)
             {
                 mind.Plan.Clear();
                 mind.Plan.Add(new PlanStep(type, default));
                 return true;
             }
-            // Self preservation (the planner's choice between its providers 13 and 35, SelfPreservation.Runs): planned when 35 wins; the fighting chain through 13 is the
-            // retaliation rule's, so it is no plan here and the next goal is tried.
+            // Self preservation (the planner's choice between its providers 13 and 35, SelfPreservation.Runs): [35, 32] when 35 wins, else [13, 32] when row 13's finder takes an
+            // attacker of its own (AI::findAttackerOf on itself, AiSystem.SelfDefencePick; the fight is the combat system's, as the combat goals'); with neither the next goal is tried.
             if (type == TaskType.SELF_PRESERVATION)
             {
-                if (world.Characters.Cold(slot) is not { } me || !SelfPreservation.Runs(me, desire)) return false;
+                if (world.Characters.Cold(slot) is not { } me) return false;
+                bool runs = SelfPreservation.Runs(me, desire);
+                if (!runs && system.SelfDefencePick(world, slot).IsNone) return false;
                 mind.Plan.Clear();
-                mind.Plan.Add(new PlanStep(TaskType.RUN_AWAY, default));
+                mind.Plan.Add(new PlanStep(runs ? TaskType.RUN_AWAY : TaskType.ATTACK_ATTACKERS_OF, default));
                 mind.Plan.Add(new PlanStep(type, default));
                 return true;
             }
@@ -138,7 +141,7 @@ public sealed partial class AiSystem
         bool Settled(in PlanTarget t) => At(t) && (CharacterTask)Me.Task is CharacterTask.Rest or CharacterTask.Idle;
 
         /// <summary>
-        /// A state's value for a target. States of rooms, doors, machines and fights the AI does not run into (it runs only out of a fight, carrying nothing)
+        /// A state's value for a target. States of rooms, doors, machines and fights the AI does not run into (it acts out goals only out of a fight, carrying nothing)
         /// have a fixed stand-in value; an unlisted state is false.
         /// </summary>
         public bool Holds(TaskCondition condition, in PlanTarget target)
@@ -164,7 +167,7 @@ public sealed partial class AiSystem
                 // 23 (FUN_140598860): the items or the worn backpack hold a first aid kit. 39 (the state-16 evaluator FUN_14059de10 asked of itself, Observed): the immediate-threat flag
                 // (Character +0x2b0). 139 (FUN_140598e90): deep water (water state 3), 0 held in a bed or cage. 103 (FUN_1409980c0): a leg down that could still be fixed.
                 StateType.haveFirstAidKit => FirstAid.FirstAidSystem.HoldsKit(cold, Items.ItemInfo.FirstAidKitFunction),
-                StateType.isAggressionTowardsMe => system.combat?.ImmediateThreat(world, slot) == true,
+                StateType.isAggressionTowardsMe => system.combat is { } combat && CharacterFacts.ImmediateThreat(combat, world, slot),
                 StateType.me_swim => cold.WaterState == 3 && cold.InSomething == Locks.HeldState.None,
                 StateType.myLegsAreMessedUp => cold.Medical is { LegsMessedUp: true },
                 // 121 (FUN_14059b7b0): the inventory or worn backpack holds an item stolen for it (goal 184's list A is !121; TownDutySystem acts it out).

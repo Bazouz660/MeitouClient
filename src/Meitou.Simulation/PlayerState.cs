@@ -210,7 +210,7 @@ public sealed partial class PlayerSystem(PopulationData? data = null) : ITickSys
                 // Standing up (not staying low) on the order trains toughness when enemies are about.
                 if (!low) world.SystemOf<BodySystem>()?.GotUpByOrder(world, slot, cold);
             }
-            else if (medical.StayingLow && cold.GettingUpUntil > world.Tick) medical.StandUp();
+            else if (medical.StayingLow && CharacterFacts.GettingUp(cold, world.Tick)) medical.StandUp();
         }
     }
 
@@ -274,7 +274,8 @@ public sealed partial class PlayerSystem(PopulationData? data = null) : ITickSys
                     foreach (var id in stop.Characters.Count > 0 ? stop.Characters : player.Selection.ToArray())
                     {
                         if (!table.TryResolveNext(id, out int slot) || !table.Cold(slot)!.IsPlayer) continue;
-                        MovementSystem.Stop(table, slot);
+                        table.Cold(slot)!.OrderQueue.Clear();   // drops the queued orders too
+                        TaskStart.End(world, slot, TaskEnd.Stopped);
                         table.Cold(slot)!.FollowOrder = CharacterId.None;
                     }
                     break;
@@ -362,7 +363,7 @@ public enum SquadAi : ushort
     Sit = 4,
     /// <summary>Heal Allies (+0x110): the medic and robotics jobs also treat characters of allied factions (<see cref="FirstAid.FirstAidSystem"/>).</summary>
     Heal = 8,
-    /// <summary>Help Allies (+0x111): idle characters join the defence of characters of allied factions (<see cref="RetaliationSystem"/>).</summary>
+    /// <summary>Help Allies (+0x111): the player's characters count allied factions' fighters in the protect-allies finder (squared; <see cref="RetaliationSystem"/> goal 15).</summary>
     Help = 16,
     /// <summary>Rescue Allies (+0x112): the rescue job also picks up downed characters of allied factions (<see cref="Carrying.CarrySystem"/>).</summary>
     Rescue = 32,

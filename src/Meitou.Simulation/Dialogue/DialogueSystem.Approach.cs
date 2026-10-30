@@ -43,7 +43,7 @@ public sealed partial class DialogueSystem
             bool done = !table.TryResolveNext(a.Npc, out n) || !Awake(table, n) || !table.TryResolveNext(a.Target, out t) || !Awake(table, t);
             if (!done && open is null && InTalkRange(table, n, t))
             {
-                MovementSystem.Stop(table, n);
+                TaskStart.Stand(table, n);
                 approaches.RemoveAt(k--);
                 Start(world, a.Npc, a.Target, DialogueEvents.PlayerTalkToMe, quiet: true);
                 if (open?.Npc != a.Npc) Release(world, a.Npc);
@@ -53,7 +53,7 @@ public sealed partial class DialogueSystem
             {
                 // The NPC drops its plan and the approach, and event 60 fires.
                 if (table.Cold(n)?.Ai is { } mind) { mind.Plan.Clear(); mind.Goal = null; mind.Version = -1; }
-                MovementSystem.Stop(table, n);
+                TaskStart.Stand(table, n);
                 world.Defer(new DialogueEvent(a.Npc, a.Target, GiveUpChase) { Tick = world.Tick + 1 });
                 done = true;
             }
@@ -67,7 +67,8 @@ public sealed partial class DialogueSystem
             var to = new Vector2(table.Next[t].Position.X, table.Next[t].Position.Z);
             ref var nh = ref table.Next[n];
             table.Cold(n)!.Engaged = true;
-            if (nh.Task != (byte)CharacterTask.GoTo || Vector2.Distance(nh.Goal, to) > TalkReach) MovementSystem.GoTo(table, n, to, SpeedMode.Free);
+            if (table.Cold(n)!.InCombat) continue;   // its walk would end the fight it is in (a new task drops the fight task)
+            if (nh.Task != (byte)CharacterTask.GoTo || Vector2.Distance(nh.Goal, to) > TalkReach) TaskStart.Walk(world, n, to, SpeedMode.Free, Meitou.Data.Gameplay.Ai.TaskType.TALKTO_NEAREST_PLAYER_CHARACTER, TaskSource.Npc);
         }
     }
 
