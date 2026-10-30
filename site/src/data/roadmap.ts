@@ -13,7 +13,7 @@ export interface Category { id: string; name: string; blurb: string; rows: Row[]
 export interface Bug { id: string; seen: string; original: string; state: string; platform?: string; }
 export interface Fix { id: string; text: string; }
 
-export const asOf = { date: "2026-10-29", master: "86fe66fc" };
+export const asOf = { date: "2026-10-30", master: "08340c72" };
 
 export const statuses: Record<Status, { label: string; desc: string }> = {
   "works": {
@@ -62,7 +62,7 @@ export const categories: Category[] = [
   ] },
   { id: "movement", name: "Movement and control", blurb: "Selection, pathfinding, right-click orders, stairs and roofs.", rows: [
     { id: "switch-between-bases-and-squads", system: "Switch between bases and squads", status: "works", note: "Selecting a character in another base moves the camera there (Tab, double-tap 1).", bugs: [] },
-    { id: "pathfinding-and-getting-stuck", system: "Pathfinding and getting stuck", status: "works", note: "Works mostly, and works for everyone on the latest build so far. Long routes no longer re-plan over and over (#50); the maintainer says NPCs still get stuck at times (#27). The northern stairs on the hub that one player could not walk down are fixed on master (#59). Newer upstream fixes for walkers stranded off the navmesh are checked in scratch simulations only, not yet in play.", bugs: [] },
+    { id: "pathfinding-and-getting-stuck", system: "Pathfinding and getting stuck", status: "works", note: "Works mostly, and works for everyone on the latest build so far. Long routes no longer re-plan over and over (#50); the maintainer says NPCs still get stuck at times (#27). The northern stairs on the hub that one player could not walk down are fixed on master (#59). Newer upstream fixes for walkers stranded off the navmesh are checked in scratch simulations only, not yet in play.", bugs: ["#130"] },
     { id: "right-click-verbs-and-target-picking", system: "Right-click verbs and target picking", status: "wip", note: "Original labels and order; Throw out of home, Throw out of town (downed intruders inside the player's town walls) and Corpse Disposal are on master; Kidnap shows only for unwanted non-bandit targets in another faction's town, otherwise Pick Up; locking a cage and cutting locks other than shackles are not built. Pick up on squad members is fixed on master (#74). Play reports: right-clicking a squad member's portrait on the HUD gives no verbs; a character who enters a cage and picks its lock cannot walk out.", bugs: [] },
     { id: "clicks-on-roofs-and-upper-decks", system: "Clicks on roofs and upper decks", status: "works", note: "A click on a roof walk takes the character there by the stairs.", bugs: [] },
   ] },
@@ -85,7 +85,7 @@ export const categories: Category[] = [
     { id: "hiring-mercenaries-ai-contracts", system: "Hiring mercenaries (AI contracts)", status: "untested", note: "Contracts start and end through dialogue.", bugs: [] },
   ] },
   { id: "buildings", name: "Buildings", blurb: "Entering, building, research, production, storage and power.", rows: [
-    { id: "entering-buildings", system: "Entering buildings", status: "works", note: "Buildings from collision mods and Workshop mods get their floors and collision. Some buildings still could not be entered; cause open. Hive buildings in the west that one player could not enter are fixed on master (#59). Doorless interiors such as hive huts, which one player could not enter or leave, are fixed on master (#71). Island Lab could not be entered (#117, open).", bugs: ["#117"] },
+    { id: "entering-buildings", system: "Entering buildings", status: "works", note: "Buildings from collision mods and Workshop mods get their floors and collision. Some buildings still could not be entered; cause open. Hive buildings in the west that one player could not enter are fixed on master (#59). Doorless interiors such as hive huts, which one player could not enter or leave, are fixed on master (#71). Island Lab could not be entered (#117, open).", bugs: ["#117","#129"] },
     { id: "build-menu-placement-construction", system: "Build menu, placement, construction", status: "works", note: "Placement ghost, queue, builders fetching materials, dismantle refunds; tested in play. Deselecting a building picked in the build menu is not implemented yet. Play report: engineers sometimes still deliver materials to and build a building whose construction is paused. On master: the max slope check fails only buildings that have one.", bugs: [] },
     { id: "research", system: "Research", status: "works", note: "Tested in play: research works (benches and the tech tree).", bugs: [] },
     { id: "prospecting", system: "Prospecting", status: "untested", note: "Prospecting a spot for resources before building. Play report: the prospecting window shows no map.", bugs: [] },
@@ -105,7 +105,7 @@ export const categories: Category[] = [
     { id: "holy-nation-inspections-and-smuggling", system: "Holy Nation inspections and smuggling", status: "untested", note: "Gate guard inspections find the faction's illegal goods (Holy Nation: hashish and forbidden books) and post who was caught smuggling. Selling illegal goods to a trader is not checked yet.", bugs: [] },
     { id: "squads-away-from-the-camera", system: "Squads away from the camera", status: "works", note: "Tested in play: squads away from the camera work. Unloaded squads travel, fight and heal off screen. Open: NPC squads load and unload in a box of 340 round the player's characters, where the original keeps a squad while its zone (3 x 3 zones round the camera) is loaded. Corpses are saved and removed by the original's zone rule; a report of bodies vanishing beside the player is not reproduced.", bugs: [] },
     { id: "world-map-overview-and-town-discovery", system: "World map, overview and town discovery", status: "works", note: "Tested in play: the world map works. Faction overview, map items and discovering towns not seen one by one yet.", bugs: [] },
-    { id: "kidnapping-cannibals-slavers", system: "Kidnapping, cannibals, slavers", status: "untested", note: "Carried to cages, made slaves, eaten. On master: slaves shipped to slave camps off screen, liberators free prisoners, escapees work off shackles, fogmen worship at cages.", bugs: [] },
+    { id: "kidnapping-cannibals-slavers", system: "Kidnapping, cannibals, slavers", status: "untested", note: "Carried to cages, made slaves, eaten. On master: slaves shipped to slave camps off screen, liberators free prisoners, escapees work off shackles, fogmen worship at cages.", bugs: ["#132"] },
     { id: "roaming-squads-roads-patrols", system: "Roaming squads, roads, patrols", status: "works", note: "Tested in play: roaming squads work. Road preference and sector patrols follow the decoded rules.", bugs: [] },
     { id: "dialogue-and-speech-bubbles", system: "Dialogue and speech bubbles", status: "wip", note: "Conditions that need state Meitou does not track yet do not pass. Said dialogue lines and replies are logged in the Dialog tab on master (#76). On master: condition 57 (within town walls) and conditions 21 and 22 (weaker or stronger than me, by combat rating) follow the original, and race tests match the race group.", bugs: [] },
     { id: "chasing-and-running-away", system: "Chasing and running away", status: "untested", note: "Chasers give up as the original does; players reported pursuing squads vanishing during long chases, often in the fog islands, fixed on master (#57). Play report: outlaws and starving bandits chase far longer than in the original.", bugs: [] },
@@ -134,7 +134,7 @@ export const categories: Category[] = [
     { id: "runs-on-the-platform", system: "Runs on the platform", status: "works", note: "Windows build (also played under Proton on Linux); native Linux on X11 and Wayland; macOS on Apple silicon, seen by an outside tester on an M1 Pro.", bugs: ["#127","#118"], platforms: {"win":"works","linux":"works","mac":"works"} },
     { id: "macos-on-intel", system: "macOS on Intel", status: "untested", note: "An installer is published; no test report.", bugs: [], platforms: {"win":"na","linux":"na","mac":"untested"} },
     { id: "borderless-full-screen", system: "Borderless full screen", status: "bug", note: "Works on Windows and on Linux with KDE (the old panel overlap was fixed). On macOS borderless shows no window (windowed works). On Linux, Alt+Enter leaving full screen and X11 opening on the primary monitor are fixed on master (#96). Play report (Windows): while the game has focus, windows on a second monitor run at a low frame rate.", bugs: ["#17"], platforms: {"win":"works","linux":"works","mac":"bug"} },
-    { id: "dlss-and-fsr-upscaling", system: "DLSS and FSR upscaling", status: "wip", note: "Both on Windows (DLSS is the default); DLSS on native Linux through NVIDIA's NGX library is on master (#99), not seen yet; FSR only on macOS, from a self-built library and slower than TAA.", bugs: [], platforms: {"win":"works","linux":"untested","mac":"wip"} },
+    { id: "dlss-and-fsr-upscaling", system: "DLSS and FSR upscaling", status: "wip", note: "Both on Windows (DLSS is the default); DLSS on native Linux through NVIDIA's NGX library is on master (#99), not seen yet; FSR only on macOS, from a self-built library and slower than TAA. On master: dust no longer floods the upscalers' reactive mask, rain and fire stay full size (not seen in play yet).", bugs: [], platforms: {"win":"works","linux":"untested","mac":"wip"} },
     { id: "ray-traced-indirect-light", system: "Ray-traced indirect light", status: "wip", note: "Optional; MoltenVK has no ray queries, so macOS draws without it and grass falls back to the CPU. Not looked at on native Linux.", bugs: [], platforms: {"win":"works","linux":"untested","mac":"missing"} },
     { id: "finding-the-kenshi-install", system: "Finding the Kenshi install", status: "wip", note: "Steam installs on Windows and Linux; the Windows registry lookup and installs by Lutris, Bottles or Heroic are untested; macOS lookup untested.", bugs: [], platforms: {"win":"works","linux":"works","mac":"untested"} },
     { id: "scripted-test-runs-repeat-exactly", system: "Scripted test runs repeat exactly", status: "wip", note: "Pinned results pass on Windows and Linux; 10 of 15 differ on Apple silicon (floating point).", bugs: [], platforms: {"win":"works","linux":"works","mac":"wip"} },
@@ -144,6 +144,9 @@ export const categories: Category[] = [
 ];
 
 export const bugs: Bug[] = [
+  { id: "#132", seen: "Fogmen camps do not spawn prisoner poles.", original: "Not checked.", state: "Open issue" },
+  { id: "#129", seen: "Can't enter UC faction HQ building.", original: "Not checked.", state: "Open issue" },
+  { id: "#130", seen: "Stuck on staircase.", original: "Not checked.", state: "Open issue" },
   { id: "#127", seen: "Smart App Control blocks DotRecast.Recast.dll on Windows 11.", original: "Not checked.", state: "Open issue" },
   { id: "#126", seen: "Height calculation differs from the original game if certain partmaps are used (e.g. high heels).", original: "Not checked.", state: "Open issue" },
   { id: "#120", seen: "Overly aggressive shopkeepers everywhere.", original: "Not checked.", state: "Open issue" },
@@ -172,6 +175,7 @@ export const fixedSeen: Fix[] = [
 
 // Fixed on master, not yet seen in play.
 export const fixedUnseen: Fix[] = [
+  { id: "", text: "Dust no longer floods the upscalers' reactive mask; rain and fire stay full size" },
   { id: "#113", text: "Sound plays; the no-sound report is closed as completed" },
   { id: "#94", text: "The Delete key deletes the selected save in the load window" },
   { id: "#93", text: "Part maps and editor limits work for races from mods" },
