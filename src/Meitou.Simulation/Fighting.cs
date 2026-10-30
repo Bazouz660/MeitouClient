@@ -50,7 +50,8 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
         var d = next[t].Position - n.Position;
         var cold = table.Cold(i)!;
         var tc = table.Cold(t);
-        NotePathFailure(world, i, cold, new CharacterId(t, next[t].Generation));
+        float endReach = st.Reach > 0 ? st.Reach : CombatTuning.StandGap(st.Reach, cold.Fighter?.WeaponLength ?? 0, false);   // the longest gap a swing starts at (3D, CombatTuning.Gap); a path ending within it still brings it to a swing
+        NotePathFailure(world, i, cold, new CharacterId(t, next[t].Generation), endReach);
         float gap = MathF.Sqrt(d.X * d.X + d.Z * d.Z) - CombatTuning.Footprint(cold) - CombatTuning.Footprint(tc);
         // It runs at the target out of the combat stance from RunGap, back to its footwork under FootworkGap, and after a target that keeps moving away at any gap.
         var tv = next[t].Velocity;
@@ -91,7 +92,7 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
         // In its footwork with a clear line to the target, the fight steering moves it (docs/game/combat.md "Fight steering"): its state sets the band, no paths.
         if (Steer(world, i, ref n, cold, st, t, holding)) return;
         float stand = CombatTuning.StandGap(st.Reach, cold.Fighter?.WeaponLength ?? 0, cold.CombatRunning);
-        if (st.Down || st.AttackTech >= 0 || st.ReactTech >= 0 || world.Tick < st.StunUntil || shooting || !st.Ranged && !behind && aimGap <= stand || holding)
+        if (st.Down || st.AttackTech >= 0 || st.ReactTech >= 0 || world.Tick < st.StunUntil || shooting || !st.Ranged && !behind && aimGap <= stand && CombatTuning.Gap(n.Position, aim, cold, tc) <= endReach || holding)
         {
             // In reach, mid-swing or staggered (the hit reaction carries it), or holding position: stand and fight.
             if ((n.Flags & Path) != 0)
@@ -104,10 +105,10 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
         }
         // A path that ends short of the target is no path to it (the walkability answers an unreachable goal with the way to the reachable point nearest it, an engine choice): the way the
         // original's chase reports it, the target goes into the path failures and the fighter stands to be given another (FUN_14060d6a0 -> FUN_140796ed0, docs/game/combat.md "Target score").
-        if (!behind && (n.Flags & Path) != 0 && cold.Path.Length > 0 && EndsShort(cold.Path[^1], n.Goal, next[t].Position.Y))
+        if (!behind && (n.Flags & (ushort)(MoveFlags.NeedPath | MoveFlags.Pending)) == 0 && (n.Flags & (ushort)MoveFlags.HasPath) != 0 && cold.Path.Length > 0 && cold.PursuitGoal.X == n.Goal.X && cold.PursuitGoal.Z == n.Goal.Y && EndsShort(cold.Path[^1], cold.PursuitGoal, cold, tc, endReach))
         {
             cold.PathFailed = true;
-            NotePathFailure(world, i, cold, new CharacterId(t, next[t].Generation));
+            NotePathFailure(world, i, cold, new CharacterId(t, next[t].Generation), endReach);
             n.Flags = (ushort)(n.Flags & ~Path);
             n.PathCursor = 0;
             cold.PathRequest = 0;
@@ -128,6 +129,8 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
         bool stale = (n.Flags & (ushort)MoveFlags.HasPath) == 0 || Vector2.DistanceSquared(goal, n.Goal) > RepathDistance * RepathDistance;
         if (!stale) return;
         n.Goal = goal;
+        (cold.GoalHeight, cold.GoalHeightAt) = (next[t].Position.Y, goal);   // the floor the target stands on (a target upstairs is walked to up the stairs, not to the ground below it)
+        cold.PursuitGoal = new Vector3(goal.X, next[t].Position.Y, goal.Y);
         n.Mode = SpeedMode.Free;
         n.Flags |= (ushort)MoveFlags.NeedPath;
         n.TaskTime = RepathSeconds;
@@ -187,11 +190,12 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
         return true;
     }
 
-    /// <summary>How far (units) a path's end may be from the target for the path to count as reaching it (engine choice: the answer for an unreachable goal ends at the reachable point nearest it).</summary>
-    public const float PathEndSlack = 15;
-
-    internal static bool EndsShort(Vector3 end, Vector2 goal, float targetY) =>
-        Vector2.DistanceSquared(new(end.X, end.Z), goal) > PathEndSlack * PathEndSlack || MathF.Abs(end.Y - targetY) > Combat.CombatSystem.SameFloorHeight;
+    /// <summary>
+    /// Whether a path ending at <paramref name="end"/> leaves the fighter farther from <paramref name="goal"/> than a swing reaches (<paramref name="reach"/>, the 3D gap of <see cref="CombatTuning.Gap"/>, as
+    /// the attack start measures it): the walkability answers an unreachable goal with the way to the reachable point nearest it, so such a path is no path to the target (engine reading).
+    /// </summary>
+    internal static bool EndsShort(Vector3 end, Vector3 goal, CharacterCold me, CharacterCold? target, float reach) =>
+        CombatTuning.Gap(end, goal, me, target) > reach;
 
     /// <summary>How long a target the fighter found no path to is left out of its target choice (<b>Verified</b> literal 20, <c>AITaskSytem::notifyPathImpossible</c>; read as seconds).</summary>
     public const float PathFailureSeconds = 20;
@@ -200,7 +204,7 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
     /// Lapses the path failures and, after a path request that found no way, adds <paramref name="target"/> (<see cref="CharacterCold.PathFailures"/>). A lapsed one is armed for another
     /// <see cref="PathFailureSeconds"/> while there is still no path to its target, else dropped (<c>AITaskSytem::update4Frame</c>, <b>Observed</b>; at most one dropped per call).
     /// </summary>
-    internal static void NotePathFailure(World world, int i, CharacterCold cold, CharacterId target)
+    internal static void NotePathFailure(World world, int i, CharacterCold cold, CharacterId target, float endReach)
     {
         var failures = cold.PathFailures;
         long armed = world.Tick + (long)MathF.Ceiling(PathFailureSeconds / world.TickSeconds);
@@ -210,7 +214,7 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
             {
                 if (cold.PathFailed && failures[k].Target == target) { failures.RemoveAt(k); continue; }
                 if (failures[k].Until > world.Tick || dropped) continue;
-                if (!PathExists(world, i, cold, failures[k].Target)) failures[k] = (failures[k].Target, armed);
+                if (!PathExists(world, i, cold, failures[k].Target, endReach)) failures[k] = (failures[k].Target, armed);
                 else { failures.RemoveAt(k); dropped = true; }
             }
         if (!cold.PathFailed) return;
@@ -222,7 +226,7 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
     /// Whether fighter <paramref name="i"/> has a path to <paramref name="target"/> (<c>Character::pathExists</c>): a gone target counts as one (the entry is dropped). Engine reading:
     /// asked of the walkability on the spot, with the fighter's footprint and water costs, as its own path requests are.
     /// </summary>
-    static bool PathExists(World world, int i, CharacterCold cold, CharacterId target)
+    static bool PathExists(World world, int i, CharacterCold cold, CharacterId target, float endReach)
     {
         var table = world.Characters;
         int t = target.Slot;
@@ -233,7 +237,7 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
         var path = world.Walkability is IAgentWalkability agent
             ? agent.FindPath(next[i].Position, prev[t].Position, cold.FootprintRadius, water, cold.RoadPreference)
             : world.Walkability.FindPath(next[i].Position, prev[t].Position);
-        return path.Points.Count > 0 && !EndsShort(path.Points[^1], new Vector2(prev[t].Position.X, prev[t].Position.Z), prev[t].Position.Y);
+        return path.Points.Count > 0 && !EndsShort(path.Points[^1], prev[t].Position, cold, table.Cold(t), endReach);
     }
 
     /// <summary>Whether <paramref name="cold"/> found no path to <paramref name="target"/> within the last <see cref="PathFailureSeconds"/>.</summary>
