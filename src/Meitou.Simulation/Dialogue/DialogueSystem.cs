@@ -89,7 +89,7 @@ public sealed partial class DialogueSystem : ITickSystem, IStateHashed, IDialogu
 
     // The approach of a Talk order, and the open conversation.
     CharacterId talker = CharacterId.None, target = CharacterId.None;
-    long approachUntil;
+    long approachUntil, nextAim;
     Conversation? open;
     ConversationView? view;
     DialogueRequest? request;
@@ -191,7 +191,19 @@ public sealed partial class DialogueSystem : ITickSystem, IStateHashed, IDialogu
                 Start(world, whom, who, DialogueEvents.PlayerTalkToMe);
             }
             else if (world.Tick >= approachUntil) CancelApproach(world);
-            else Hold(world, n);
+            else
+            {
+                Hold(world, n);
+                // The walk follows the NPC: its order goal is renewed when the NPC has moved on or the walk has ended short of it (Task_Move toward a character re-aims, Observed).
+                if (world.Tick >= nextAim)
+                {
+                    nextAim = world.Tick + (long)MathF.Ceiling(RepathSeconds / world.TickSeconds);
+                    ref readonly var tp = ref table.Next[p];
+                    var at = table.Next[n].Position;
+                    if (tp.Task != (byte)CharacterTask.GoTo || Vector2.Distance(tp.Goal, new Vector2(at.X, at.Z)) > RepathDistance)
+                        world.Defer(new MoveOrder([talker], at) { Tick = world.Tick + 1 });
+                }
+            }
         }
         RefreshView(world);
     }
@@ -217,6 +229,7 @@ public sealed partial class DialogueSystem : ITickSystem, IStateHashed, IDialogu
         target = order.Target;
         approachUntil = world.Tick + (long)(Settings.ApproachSeconds / world.TickSeconds);
         Hold(world, n);
+        nextAim = world.Tick + (long)MathF.Ceiling(RepathSeconds / world.TickSeconds);
         if (!InTalkRange(table, p, n))
             world.Defer(new MoveOrder([talker], table.Next[n].Position) { Tick = world.Tick + 1 });
     }
@@ -229,6 +242,8 @@ public sealed partial class DialogueSystem : ITickSystem, IStateHashed, IDialogu
 
     /// <summary>The talk distance beyond the target's radius while walking (7 x 3, <c>AI::isWithinChoppingRange</c> for a character, docs/game/dialogue.md "Player conversation").</summary>
     public const float TalkReach = 21;
+    /// <summary>How far the target may move from the walk's goal, and how often that is looked at (the pursuit's constants).</summary>
+    const float RepathDistance = 12, RepathSeconds = 0.5f;
     /// <summary>The largest height difference to talk across (the original's on the same floor; engine choice, the sim has no floors here).</summary>
     public const float TalkHeight = 35;
 
