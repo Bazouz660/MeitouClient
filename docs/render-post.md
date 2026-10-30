@@ -38,7 +38,7 @@ Linux runs DLSS through NGX (`Upscalers/Ngx.cs`): NVIDIA's NGX client library (t
 built into `libmeitou_ngx.so` by `tools/scripts/build-ngx-shim.sh`) over the driver's `libnvidia-ngx.so.1`, with the DLSS
 model `libnvidia-ngx-dlss.so.<version>`; each file is looked for in `MEITOU_DLSS_PATH`, then beside the executable, and
 NGX gets the same two folders to find the model. The client library is linked on Ubuntu 22.04 for releases, so it
-loads on glibc 2.35 and newer; on an older glibc the game logs the loader's error and runs without DLSS. FSR stays Windows-only. `MEITOU_NGX_LOG=1` prints NGX's whole log (its verbose level).
+loads on glibc 2.35 and newer; on an older glibc the game logs the loader's error and runs without DLSS. FSR on Linux needs our build of the FidelityFX library ("Frame generation"). `MEITOU_NGX_LOG=1` prints NGX's whole log (its verbose level).
 NGX is loaded only when the model and the client library are in one of those folders and `MEITOU_DLSS` is not `0`, and
 handed only a device on NVIDIA's own driver (not NVK); without DLSS (other GPU, no NVIDIA driver, no libffi) it is shut
 down at once and the game runs on. Builds copy both to the output folder, never into a publish; the Linux release zip
@@ -55,6 +55,41 @@ scaled by −render size; inputs need sampled use, the output storage use, all l
 **Observed** (Linux, DLSS 310.9.16, RTX 4080 SUPER): preset 0 (`MEITOU_DLSS_PRESET` unset) gives the guide's defaults,
 K for Quality, M for Performance, L for Ultra Performance: each headless screenshot is byte-identical to the one with
 that preset set and differs from K's (repeat runs are identical).
+
+## Frame generation
+
+The `FrameGeneration` setting (off by default, read at start-up) presents through AMD's FSR 3 frame-interpolation swapchain
+(`Upscalers/FfxSwapchain.cs`) and interpolates one frame between each two rendered ones (`Upscalers/FrameGeneration.cs`), on top
+of TAA, FSR or DLSS. Library: `amd_fidelityfx_vk.dll` (AMD's prebuilt, Windows/Proton) or `libamd_fidelityfx_vk.so` (Linux:
+`tools/scripts/build-ffx-linux.sh`, AMD's SDK 1.1.4 source plus `tools/patches/fidelityfx-sdk-1.1.4-linux.patch`; AMD's
+swapchain code needs Vulkan headers 1.3.237+, so the script uses Khronos' 1.3.296). Struct layouts and type ids follow the SDK
+1.1.4 headers (`ffx_api.h`, `ffx_api_vk.h`, `ffx_framegeneration.h`).
+
+- **Interface:** overlays draw into their own transparent RGBA8 layer (`UiLayer`, premultiplied alpha). Without frame generation it is
+  composited onto the world into a top-down final picture that the present copies as is. With it the present shows the world alone
+  (flipped) and the layer is registered with AMD's swapchain every frame (it forgets it at each present), flipped top-down, so it is laid
+  over generated frames too. Cost of the separate layer: about 0.1 ms GPU (**Observed**, Iris Xe, play bench, frame generation off).
+- **Inputs:** depth (`upscaleDepth`, now also made with TAA) and motion are bottom-up, so they are blitted flipped; motion scale
+  (-render width, +render height), jitter y negated, view-space-to-metres 0.1 as for the upscalers.
+- **Frame id:** steps by 1 per rendered frame; any other step restarts the interpolation (`ffx_framegeneration.h`), so it skips one
+  after a cut, after frames without frame generation and on a new context. Off under the loading screen and for screenshots.
+- **Generation rect:** left zero, which the SDK's provider turns into the whole display (**Verified**, SDK 1.1.4
+  `ffx_provider_framegeneration.cpp`).
+- **Layouts:** at the end of the present the replacement back buffer is left in shader-read layout, which AMD's UI composition
+  samples (**Observed**: validation VUID-vkCmdDraw-None-09600 otherwise).
+- **Teardown:** the frame-generation context is destroyed before the swapchain context, also when a failed swapchain remake falls
+  back to the plain swapchain.
+- **Queues:** AMD's swapchain takes four queues (game, present, image acquire, async compute); we take them all from the graphics
+  family and need at least 3. **Observed** (Iris Xe, Windows, 2026-10-30): the family has 1 queue, so frame generation stays off
+  with a log line. Typical AMD and Intel drivers also expose one graphics queue (**Unknown** here: untested); AMD's samples take
+  present and async compute from other families.
+- **DLSS:** Streamline must see every present, which AMD's swapchain owns, so on Windows with frame generation on DLSS goes through
+  NGX (`meitou_ngx.dll`, the SDK's static `nvsdk_ngx_s.lib` linked into a DLL by `package-release.ps1` or
+  `tools/scripts/build-ngx-shim-win.sh`) and Streamline is not loaded; without the FidelityFX library Streamline stays.
+- **AMD SDK bugs** the validation layer reports, fixed in the Linux patch only (AMD's Windows DLL keeps them): line width 0 in the
+  swapchain's pipelines, a descriptor pool size list that drops `STORAGE_BUFFER` (**Observed**, PR #133).
+- **Performance** (**Observed**, single runs, RTX 3070, PR #133): about 1.4 ms more per rendered frame (Proton, TAA),
+  presented fps 1.5-1.75x that without it; for about 8 s after it starts the present is slow (31-60 fps).
 
 ## SSAO, fog and layers
 
