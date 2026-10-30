@@ -84,6 +84,19 @@ sealed partial class PlayerInterface
         return true;
     }
 
+    /// <summary>The ground item whose label took the left press, until the release.</summary>
+    int? labelPress;
+
+    /// <summary>
+    /// A left click released on an item's name label (<c>FUN_1401638f0</c>, the label's eventMouseButtonReleased handler, button Left only): the pick-up order for the selection, as the right
+    /// click on the item. The original shows the "Hold down the ALT key to steal items" hint instead of stealing when Alt is not held; the label exists only while Highlight is held, so that cannot arise here.
+    /// </summary>
+    void LabelPickUp(int item)
+    {
+        if (SelectedIds().Count == 0) return;
+        Say(new Meitou.Simulation.Items.PickUpItemOrder([], item) { Tick = session.World.Tick });
+    }
+
     /// <summary>
     /// The name label over each ground item within <see cref="HighlightRadius"/> of the focus while the Highlight key is held: the original's <c>Kenshi_ItemDropLabel</c>
     /// (<b>Verified</b>), a <c>Kenshi_GenericTextBoxFlatSmallSkin</c> 0.0259 of the screen high and fitted to the name, centred in Kenshi_StandardFont_Medium; plate and text

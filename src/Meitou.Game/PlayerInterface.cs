@@ -86,6 +86,8 @@ sealed partial class PlayerInterface(WorldSession session, Func<float, float, fl
             if (contextMenu is not null) return true;   // an open menu takes no press: its rows act on the release, a press beside it does nothing (FUN_1407a7f10)
             if (UiMouseDown(p)) return true;
             if (OverHud(p)) return true;
+            // A ground item's name label (shown while Highlight is held) takes the left press; its release over it is the item's pick-up (FUN_1401638f0).
+            if (LabelAt(p) is { } label) { labelPress = label; return true; }
             if (BuildClick()) return true;
             dragFrom = p;
             dragging = false;
@@ -94,9 +96,9 @@ sealed partial class PlayerInterface(WorldSession session, Func<float, float, fl
         if (button == MouseButton.Right && InventoryRightClick(p, shift)) return true;
         if (button == MouseButton.Right && CloseContextMenu()) return true;
         if (button == MouseButton.Right && MapRightDown(p)) return true;
-        // Held on a squad bar portrait: that member's context menu, as on the character in the world (no quick order from the portrait).
-        if (button == MouseButton.Right && SquadBarMemberAt(p) is { } member && session.CurrentSnapshot.Characters.FirstOrDefault(c => c.Id == member) is { } shown
-            && ContextPressOn(p, at => Menu(shown.Name, at, Verbs(shown)), null)) return true;
+        // A right press on a squad bar portrait is remembered; its release over the same portrait selects the member and focuses the camera on it, as the double click
+        // (FUN_140413d80, docs/game/ui-input.md "Squad bar portraits"). The original has no portrait menu.
+        if (button == MouseButton.Right && SquadBarMemberAt(p) is { } member) { memberPress = member; return true; }
         if (button == MouseButton.Middle && UiVisible && MapPointerDown(p)) return true;
         if (button == MouseButton.Right && !OverHud(p))
         {
@@ -234,8 +236,24 @@ sealed partial class PlayerInterface(WorldSession session, Func<float, float, fl
         mouse = p;
         EditorPointerUp(button);
         if (ContextMenuRelease(button, p)) return;
+        if (button == MouseButton.Left && labelPress is { } labelled)
+        {
+            labelPress = null;
+            if (LabelAt(p) == labelled) LabelPickUp(labelled);
+            return;
+        }
         if (button == MouseButton.Left) { InventoryPointerUp(p); JobDragEnd(p); SquadPointerUp(p, shift); faithfulScreens.PointerUp(); mapDrag = null; }
         if (button == MouseButton.Middle) mapDrag = null;
+        if (button == MouseButton.Right && memberPress is { } pressed)
+        {
+            memberPress = null;
+            if (SquadBarMemberAt(p) == pressed)
+            {
+                Select([pressed], shift, toggle: true);
+                if (FlyTo?.Invoke(pressed) != true) CentreOn(pressed);
+            }
+            return;
+        }
         if (button == MouseButton.Right && MapRightUp(p)) return;
         if (button == MouseButton.Right) { ContextRelease(); SiteRelease(); RockRelease(); BedRelease(); }
         if (button == MouseButton.Right && steering)
@@ -301,6 +319,7 @@ sealed partial class PlayerInterface(WorldSession session, Func<float, float, fl
 
     /// <summary>The character the strategy camera follows (a double tap of its number key, F, or a double click on its squad button); panning the camera lets go.</summary>
     public CharacterId? Follow { get; set; }
+    CharacterId? memberPress;
     /// <summary>The host's camera flight to a double-clicked squad member (Advanced settings "Character flights"); false: centre on it at once.</summary>
     public Func<CharacterId, bool>? FlyTo { get; set; }
     /// <summary>A third press (a single one while the flight to that member is under way): the host ends the flight on it at once.</summary>

@@ -277,6 +277,16 @@ real parts whose owning BUILDING has `is sign` receive a yellow tint, including 
 during a transition. Release restores their materials. Loading, menus, hidden UI, free camera and cinema suppress it.
 Rendering details: [objects](../render-objects.md#building-sign-highlight).
 
+### Squad bar portraits
+
+**Verified** (`FUN_140415e00` hooks the ItemBox of each squad tab to `MainBarGUI`; disassembly of `FUN_140413d80`, the eventNotifyItem handler, and `FUN_140413d30`, eventSelectItemAccept):
+- Left press (notify 0, button 0): closes the context menu (`FUN_1407a6bc0`), selects the member (`FUN_1407f90b0` -> `FUN_1407f8f60`, Shift toggles, [above](#quick-right-click-on-a-character)), no camera move.
+- Double click (accept, `FUN_140413d30`): the same with the focus flag set, which runs `FUN_1407f5400` (focus the camera on the character).
+- **Right** press (button 1): closes the context menu and remembers the pressed index; right release over the same portrait calls `FUN_140413cd0` with the focus flag set: the same
+  select-and-focus as the double click, at once, whatever the hold time. **There is no portrait context menu in the original**, and no right-click menu on any other path of the bar.
+- So the report in GitHub issue #137 (the base game lacks it) is wrong: vanilla focuses on a right click. Meitou (`PlayerInterface.MouseDown` / `MouseUp`): a right release on the pressed portrait selects it
+  (Shift toggles) and centres / flies the camera as the double click; the earlier held-right-click portrait menu (not in the original) is gone.
+
 ### Ground item labels
 
 **Observed** (owner's original-game report): holding Alt shows a small name label over each loose item.
@@ -285,6 +295,13 @@ pointer `pick`; `ItemNameText` (`Kenshi_TextboxStandardText`, Kenshi_StandardFon
 `...Selected` #66ff66, `...SelectedStealing` #ff6666.
 **Observed** (`ItemManager::ItemLabel`, `FUN_1401649e0` / `FUN_140162950`): the root's width is fitted to the text; a quantity above 1 is appended
 (exact text **Unknown**); the label widget takes a mouse click. Range and anchor **Unknown**.
+**Verified** (`FUN_1401649e0` registers three handlers on the label root; `FUN_1401638f0` is the one at Widget +0x130 = eventMouseButtonReleased, see the context menu section):
+focus gained / lost only recolour (`FUN_140162a20` / `FUN_140162a90`); a **left** release (button id 0; no other button is tested, the label has no press or right-click handler) on a
+label whose item is of a pickable kind (hand type 2, 3, 4, 0x2e, 0x56, 0x66, 0x6b or 0x6f) gives the pick-up order 3 through `FUN_1407fb3a0` -> `FUN_1407fae70`, the same call as the world
+right click on the item (`FUN_1407fc440`). A stolen item (label flag +0xc0) without Alt held (`DAT_142133462`) shows "Hold down the ALT key to steal items" and gives no order (the world
+right click gives that hint and a move, order 29/0x1d). **Unknown**: what a right click over a label does (the label takes the mouse focus, so the world handler probably does not run); whether
+a left click on the item itself in the world does anything (its press is the select edge, `FUN_140800250`, not traced for items). Meitou: a left release over a label, pressed on it, picks the item up
+for the selection (`PlayerInterface.LabelPickUp`); the label exists only while Highlight is held, so the steal hint cannot arise; the right click on a label stays as on the item (an extra, its source **Unknown**).
 **Observed** (decompile: ctor `FUN_1401649e0`, hover `FUN_140162950`, colour `FUN_1401628e0` / `FUN_1401625c0`, colour load `FUN_140162e60`) colours, plate = root tint, text = `ItemNameText`:
 
 | state | plate | text |
