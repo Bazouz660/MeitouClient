@@ -468,6 +468,8 @@ public sealed class CharacterCold
     /// The replan bit (<see cref="DecisionSystem.Request(CharacterCold)"/>): set by a replan trigger, consumed by the decision step. Player characters only; not saved (a load sets it); hashed while set.
     /// </summary>
     public bool Replan { get; set; }
+    /// <summary>The queued orders a load read (<see cref="Saving.OrderSave"/>), until the decision step makes them the <see cref="OrderQueue"/> once the world they name is there; null: none. Not hashed.</summary>
+    public IReadOnlyList<Saving.SavedOrder>? SavedOrders { get; set; }
     /// <summary>The last decision (<see cref="DecisionSystem.Tracing"/> on; null otherwise). Display only: not saved or hashed.</summary>
     public DecisionTrace? Decision { get; set; }
     /// <summary>Debug builds: the table tick (<see cref="CharacterTable.Ticks"/>) and the task the start path last set (<see cref="TaskStart.CheckStarts"/>); not hashed.</summary>

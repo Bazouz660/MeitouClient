@@ -27,6 +27,10 @@ namespace Meitou.Simulation
         /// <summary>The <see cref="TaskRequest.Detail"/> of a walk to a container that only walks there (the hint to hold Alt was shown).</summary>
         static readonly object ContainerWalk = new();
 
+        // Saved: a walk to a container (kind 1 only walks there; 0 opens it); a pick-up of a ground item names a runtime id and is not saved.
+        int IOrderOwner.SaveKind(OrderEntry order) => order.Detail is null ? 0 : order.Detail == ContainerWalk ? 1 : -1;
+        object? IOrderOwner.LoadDetail(World world, CharacterId self, Meitou.Data.Gameplay.Ai.TaskType row, int kind, CharacterId target) => kind == 1 ? ContainerWalk : null;
+
         /// <summary>How far above or below a container a character may stand to open or use it (engine choice: a storey is about 66).</summary>
         public const float ContainerFloorSlack = 20;
 

@@ -190,8 +190,13 @@ the owner's pure `IOrderOwner.CanRun`: `Run`, `Blocked` with its failure text, o
 - Not queued (they act at once): Shoot At (sets the turret's target), Get Out, Dispose Corpse (an errand), Talk and trade (their approach is a deferred `MoveOrder`), Stop (clears the queue).
 - `World.CanOrder(row, actor, target, site, point)` / `CanOrder(OrderEntry, actor)` -> `(Can, Why)` is `PlayerOrders.CanRun` as a pure read between ticks (a `Gone` verdict is `false` with no text); the queue's start and bark use the same read. It is not a menu filter (decision D5): the original's menu offers its verbs (operate, build, dismantle, prospect, ...) without testing the character and lets the order fail with its text, so Meitou's does too; no verb is greyed. The multiplayer branch's `CommandGate` can call it on the host.
 - Every `OrderCommand` also applies while paused (`World.ApplyPausedInterfaceCommands`, through every `IOrderOwner`'s inputs).
-- Not saved (a gap: the original saves the deque as `tjob<i>`, [perma-jobs](game/ai-tasks.md#perma-jobs)); hashed as the move-only queue was while it holds only
-  that (nothing, a started order alone, started moves), else under its own mark.
+- Saved for player characters (`Saving/OrderSave`, in the character's GAMESTATE_AI record next to the perma-jobs; format and evidence: [save](formats/save.md#order-queue)): the queue front first,
+  started or not, as the original saves its deque as `tjob<i>`. A load reads the orders into `CharacterCold.SavedOrders` and starts nothing; `DecisionSystem.Run` makes them the queue (nothing
+  started) the first time it meets the character, once every character and fixture they name is there, and the replan bit every load sets runs the front through source 1 like a new order.
+  Left out (the queue pops a `Gone` order the same way): a row no system owns, a target character or site that is not in the world, a handle that names nothing, ground-item pick-ups (a runtime
+  item id) and the Medic / Rescue buttons' one-shot looks. An owner with a detail (`IOrderOwner.SaveKind` / `LoadDetail`) codes it in Meitou's own key. **Engine choice**: the original's loader
+  re-adds each order as a one-shot order of its second list, not into the deque ([precedence](game/ai-tasks.md#precedence)); how that list is consumed is **Unknown**, so the queue is
+  restored as it was saved. Hashed as the move-only queue was while it holds only that (nothing, a started order alone, started moves), else under its own mark.
 
 ### Decision step
 
@@ -1147,7 +1152,7 @@ Buying a ruin leaves it destroyed; an explicit Repair order from an able selecte
 applying the [ruin transition](game/buildings-production.md#construction-tick) once and restoring doors and indoor sight.
 Build, DeliverMaterials and FetchMaterials use the same work and resource rules as new construction. Shift also adds
 Engineer (125), which resumes available work after supplies arrive; a direct order stops when no source exists.
-Jobs retain their queue priority and switch. Transient orders are not saved; persistent jobs and the house's progress,
+Jobs retain their queue priority and switch. Queued orders ([order queue](formats/save.md#order-queue)), persistent jobs and the house's progress,
 delivered materials and ownership are ([save](formats/save.md#zone-files)). Normal damage to a complete house needs no materials.
 Town houses cannot be dismantled, cancelled or upgraded through this seam. The original town and instance remain unchanged.
 Building inside one names the level instance as parent (as any owned town building; build mode's floor is the level one), refused while it is being repaired.

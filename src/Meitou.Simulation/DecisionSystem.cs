@@ -185,6 +185,7 @@ public sealed class DecisionSystem
         for (int i = 0; i < table.HighWater; i++)
         {
             if (!table.Next[i].Alive || table.Cold(i) is not { } cold || !Decides(cold)) continue;
+            if (cold.SavedOrders is not null) Saving.OrderSave.Restore(world, i, cold);
             bool front = cold.OrderQueue.Front is { } f && (!f.Tried || f.Started && !PlayerOrders.Runs(world, i, f));
             bool due = !paused && (world.Tick + i) % Production.ProductionSystem.JobCheckTicks == 0 && ReAsked(world, i, cold);
             if (!cold.Replan && !front && !due) continue;
