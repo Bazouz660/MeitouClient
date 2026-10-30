@@ -50,8 +50,8 @@ public sealed record ChangeAi(int SquadId, string PackageId) : SimCommand;
 /// The AI (docs/simulation.md "AI"; the original's in docs/game/ai.md). Squads whose template lists <c>AI packages</c> get a <see cref="Blackboard"/> that picks
 /// the package by slot and package class; each member thinks on its own cadence: it scores the goals of its role list, its race's <c>AI Goals</c> and the
 /// default idle goal by tier (urgent, then non-urgent, then fluff; the first tier with a positive score wins), weight, hour window, crowding and continuity,
-/// acts out the winner through <see cref="TaskBehaviours"/> (in its home building's nodes and beds where it has one), and takes its combat stance from its
-/// combat goals (<see cref="AggroSystem"/> reads it). The AI runs only characters that nothing else holds: not the player's, not fighting, fleeing, down,
+/// acts out the winner through <see cref="TaskBehaviours"/> (in its home building's nodes and beds where it has one); its combat goals are goals of the same choice (AiSystem.Fights.cs),
+/// and the stance they give only tells <see cref="AggroSystem"/>'s look when to ask it to think. The AI runs only characters that nothing else holds: not the player's, not fighting, fleeing, down,
 /// carrying, carried, treating, looting or trading. Roaming platoons keep their travel stand-in (<see cref="PopulationSystem"/>; their off-screen mode follows
 /// their package, <see cref="PlatoonJobs"/>).
 /// <list type="bullet">

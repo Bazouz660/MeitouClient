@@ -414,7 +414,7 @@ from the decompile and agree with this table, except that the decompile shows no
 | 5 | `hasWeaponEquipped`: a weapon in hand that is not ranged (`FUN_140596a30`, **Verified**) |
 | 6 | `isNoEnemiesInVicinity` |
 | 7 | `isTargetDown` |
-| 12 | `isAlliesFighting`: `FUN_14099a350` (**Verified**) true when any sensed ally (sense filter 1, 8) scores above 0 in `FUN_14099a190`, which needs an awake ally whose AI target is a character; the rest of that score (counters of the target against 2) is **Unknown**. Row 244 needs it false; not modelled |
+| 12 | `isAlliesFighting`: `FUN_14099a350` (**Verified**) true when any sensed ally (sense filter 1, 8) scores above 0 in the fight threat `FUN_14099a190` ([combat goals](#combat-goals)). Row 244 needs it false; not modelled |
 | 13 | `isTargetEnemy` |
 | 15 | `isItemLootable` |
 | 16 | `isAggressionTowards` |
@@ -817,16 +817,16 @@ update `FUN_140511130`, `Character::setupAI` `FUN_140621b70`; KenshiLib names **
   idle or on a job's task (no periodic replan was found), so a higher job takes over a running one within that period, where the original waits for its next replan. Goal 15 is
   `RetaliationSystem.JoinFight` at step 4 (below).
 - **15 Protect allies for a player character** (**Verified**: desire `FUN_140599b90`, finder `FUN_14099ca10`, falloff `FUN_1409b2380`, constants from the exe): desire 0 when Passive or
-  sneaking outside a fight; else the finder's best sensed ally (seen or heard, tagged ally) whose AI holds a target (`FUN_14099a190`, value **Unknown**) x clamp((1000 - d^2) / 990, 0.1, 1)
+  sneaking outside a fight; else the finder's best sensed ally (seen or heard, tagged ally) by its fight threat (`FUN_14099a190`, [combat goals](#combat-goals)) x clamp((1000 - d^2) / 990, 0.1, 1)
   (d the distance to that ally; the argument of `FUN_1409b2380` is the squared distance, **Verified**: 1 within 3.2 units, 0.1 from 30; no other distance limit), an ally of another
   faction only with Help Allies and then squared; x0.5 while carrying (`DAT_14167e8d8`). Its plan is 13 Attacking attackers of (attackers within 150 of the ally). Being above 0, it beats every job (step 5)
   whenever 13 finds an attacker, and loses to 32 Self preservation (1 or 0.7) when the character is attacked itself.
-  **Meitou** (`RetaliationSystem.JoinFight`, `BestAlly`, `Plan`): the aggro system's senses stand in for the sensed map (entries tagged ALLY, not KO or imprisoned, seen or heard at the last look), "holds a
-  target" is the combat target, `FUN_14099a190`'s value is taken as 1 (**Unknown**), the slave gate is asked once for the first slave met (the finder latches it), the best ally is the first in slot order on a tie,
+  **Meitou** (`RetaliationSystem.JoinFight`, `BestAlly`, `Plan`): the aggro system's senses stand in for the sensed map (entries tagged ALLY, not KO or imprisoned, seen or heard at the last look), the fight
+  threat is `CombatSystem.FightThreat` (so an attacked ally that fights nobody counts), Passive gives the desire 0 in a fight too, the slave gate is asked once for the first slave met (the finder latches it), the best ally is the first in slot order on a tie,
   the result is capped at 1.2, the plan is `CombatSystem.BestAttackerOf` for the ally, and a character on Hold also needs `Orders.HoldPost`. It cannot start while the character fights on another plan or
   cannot fight; while its own fight runs with no ally left its desire stays 0.7 (engine, the fight task ends by itself). The step reaches it at the engine re-ask of an idle or job-task character
   (within `JobCheckTicks` of a mate starting to fight) or at any replan; an order or a goal's task keeps it out. **Observed** (offscreen sandbox): a player character in a squad of its own 45 to 55 units away joins
-  an ally's fight at 0.1 when nothing else wants it. Not modelled: the second zero of `FUN_140599b90`, the byte `+0x12c` of the character's `+0x450` object (meaning **Unknown**); the old engine join (squad mates within 250 at a fixed 0.6) is gone.
+  an ally's fight when nothing else wants it (run with the threat taken as 1). The second zero of `FUN_140599b90` is Passive (the byte `+0x12c` of the character's `+0x450` object, standing order 13; **Observed** that it is the same object as Hold's `+0x12b`). The old engine join (squad mates within 250 at a fixed 0.6) is gone.
 - **The medic jobs' own threat tests** (**Verified** against `TaskDataTable`, lists read row by row): 58 Medic and 250 Splint Rigging have no list B; their treatment rows 25 First aid and
   249 Splinting need `38 23 !140 42 46 !157` / `38 151 !140 42 46 !157` (an arm, a kit, the target not swimming, standing still, at the target, weapon away): no threat state. Only 57
   Robotics needs `!39` (its own melee threat within 40), which 13 provides, so a robotics job under a threat within 40 plans a fight, as 45 does. The desire `FUN_140998410` drops to
@@ -857,11 +857,21 @@ update `FUN_140511130`, `Character::setupAI` `FUN_140621b70`; KenshiLib names **
 - 143 PROTECT_OWN_SQUAD ("Protect close allies"): effect `!isAggressionTowards` (state 16, evaluator `FUN_14059de10`: the target
   resolves to a character whose AI-side object is set and byte +0x2b0 is set, meaning **Unknown**). Finder `FUN_14099d510` scores
   each squad mate (the platoon's active members, the looker included) that passes `FUN_140855960(sense, mate, 1)` (**Verified**: the looker itself; else a mate in its own sensed map that is seen or
-  heard now; a mate missing from the map falls to a hand comparison, **Unknown**; a far mate never counts) by `FUN_14099a190`, nonzero only while that mate's AI holds a character target (+0x200 = 1,
-  hand +0x208); else it falls back to a hand list at +0x2f8. Achieved by 13 "Attacking attackers of" (list A `!16, !39, !12*`).
+  heard now; a mate missing from the map falls to a hand comparison, **Unknown**; a far mate never counts) by its fight threat `FUN_14099a190` (below), the best capped at 1.2
+  (`DAT_1416852f0`); with none above 0 it falls back to a hand list at +0x2f8 at 0.1 x the threat. The desire is that value (slot 19 = 1 x the finder): a weak pull for one attacker, a strong
+  one for a gang. Achieved by 13 "Attacking attackers of" (list A `!16, !39, !12*`).
+- The fight threat `FUN_14099a190` (**Verified**, disassembly; constants read from the exe), on the character's `CombatClassAI`: 0 when it is down (vfunc 0x30); 0.01 when exactly one attacker is
+  on its engaged list (askers, at most 5) and that attacker's own list plus its refused-askers counter is above 1 (someone else fights it); else 0.25 n - 0.2 for n listed attackers (0 for none:
+  1 gives 0.05, 2 0.30, 5 1.05), raised to 0.1 x its senses' threat sum towards it (AI +0xb0); then 0.01 when it is in a fight task and the value is 0 or less. So an ally counts while it is
+  attacked, threatened or fighting, not merely while it "holds a target". Readers: 143's and 15's finders, row state 12 `isAlliesFighting` and `FUN_14099a3e0` (a platoon member above 0).
+  Meitou (`CombatSystem.FightThreat`): n is every standing fighter whose target it is (not the engaged list), "someone else fights it" is that attacker's own count above 1, and the threat sum
+  adds 1 per threat (the original adds the threats' aggression).
 - 15 / 288 PROTECT_ALLIES ("Protect allies", "protect allies - dont leave town"; finder `FUN_14099ca10` at +0x160 for both, **Verified** registration):
-  the same shape as 143 over the sensed entries tagged SENSE_ALLY (mask 1, 0x208; same faction or relation >= 50) that are seen or heard, scored by
-  `FUN_14099a190` (nonzero while that ally's AI holds a target). A slave or escaped slave (status int 1 or 2) is defended only when the looker passes `FUN_140997e80`
+  the same shape as 143 over the sensed entries tagged SENSE_ALLY (mask 1, 0x208; same faction or relation >= 50) that are seen or heard, scored by the fight threat
+  `FUN_14099a190` (no distance factor for an NPC looker; a player-faction one: [Precedence](#precedence)), capped at 1.2. 288 is registered exactly as 15 (**Verified**: the two registration blocks
+  differ only in the task id; the same finder, desire and flags; no code compares 288): "dont leave town" is only the mod record's name. The same-town variant `FUN_14099cf80` is never registered
+  (**Verified**, no reference in the exe). Desire `FUN_140599b90` (**Verified**): 0 while sneaking and not in combat mode, while Passive (in a fight too) and for an enslaved character holding job
+  187; else the finder's value, x0.5 while carrying. A slave or escaped slave (status int 1 or 2) is defended only when the looker passes `FUN_140997e80`
   (**Verified**, latched once a pass): its faction is a bandit one (fundamental type 8), or it is in no town, or that town's owner books no bounties (Meitou:
   `RetaliationSystem.SlaveHelpAllowed`). An ally of another faction counts for an NPC looker; only a player-faction looker
   needs the global +0x111 and squares the weight ([Help Allies](#squad-ai-options)). Achieved by 13 "Attacking attackers of"
@@ -870,20 +880,29 @@ update `FUN_140511130`, `Character::setupAI` `FUN_140621b70`; KenshiLib names **
   and never one the looker regards an ally (slot 126). On that reading relations do not matter (a neutral attacking an ally is fought), which agrees with
   the owner's report that the original's guards fight skimmers. Candidates (`FUN_1405cb150`): the subject's attackers plus its own target while it fights;
   only when that list is empty its threats. All passing ones go to `chooseBestAttackTarget` (`FUN_14059e300`, the target score): the best is taken
-  (**Verified**). Meitou: `CombatSystem.BestAttackerOf` picks each joiner's attacker (the sense tests and the threats fallback left out); a player character's own 15 is in [Precedence](#precedence). Gate guards (`Gate guard -no turrets`
+  (**Verified**). Meitou: `CombatSystem.BestAttackerOf` picks each joiner's attacker (the sense tests and the threats fallback left out); a player character's own 15 is in [Precedence](#precedence).
+  Once in the fight, the joiner re-targets by the fight's own lists and then any sensed enemy (the aggro mode that would stop that is 0 for every character, **Verified**: no code writes it), so
+  no leash holds it near the one it protected. Gate guards (`Gate guard -no turrets`
   and those inheriting it) list 15, `Gate guard stay in town -no turrets` 288 (**Verified**, package dump).
 - 34 ATTACK_TROUBLE_MAKERS ("Law enforcer"; row 34 "Attacking trouble makers", flags 0x21, list A `!29`, effect 7; **Verified** registration in `FUN_140319a60`: desire thunk
   `0x1400215ee` = AI slot 19, 1; finder at +0x160 thunk `0x140052fe0` → `FUN_14099baa0`). Finder (**Verified** structure, field meanings **Observed**): factor 0 while the looker's
-  current town (`getCurrentTownLocation`, vfunc 0x78) is null. Else two passes over sensed entries (the iterator's tag masks are not in the decompile, **Unknown**), each candidate in the
-  looker's current town and passing the area test `FUN_140599f30`: (1) one whose status object (Character `+0x1a0`, vfunc 0x70) has `+0xac` above 0 or that the looker's squad memory
-  tags AGGRESSOR (short tag 2, `FUN_140678960` → `FUN_140678830`); (2) one whose NPC class (status `+0xdc`) is not 1 law enforcement, 3 trader or 5 diplomat (class 2 military only
-  against a town list at `+0xf0`, **Unknown**), passing `FUN_14099b820`: not class 7; `+0xac` above 0, AGGRESSOR, or `+0xa0` above 0 with class 8 or an animal; and attacking
+  current town (`getCurrentTownLocation`, vfunc 0x78) is null. Else two passes over sensed entries, neither testing seen or heard (**Verified** iterator masks: pass 1 SENSE_ENEMY, pass 2
+  SENSE_NEUTRAL, both excluding SENSE_KO), each candidate in the looker's current town and passing the area test `FUN_140599f30`: (1) one whose status object (Character `+0x1a0`, vfunc 0x70) has `+0xac` above 0 or that the looker's squad memory
+  tags AGGRESSOR (short tag 2, `FUN_140678960` → `FUN_140678830`); (2) one whose NPC class (status `+0xdc`) is not 1 law enforcement, 3 trader or 5 diplomat (class 2 military
+  only when its squad's home town (`FUN_1407956a0` +0x30, **Observed**) is not the looker's town and its faction is not in that town's resident factions (`+0xf0`; whether the owner is in it is **Unknown**)), passing `FUN_14099b820`: not class 7; `+0xac` above 0, AGGRESSOR, or `+0xa0` above 0 with class 8 or an animal; and attacking
   (`FUN_1405ca6f0` → `FUN_1405c92d0`: its status `+0x68` target hand is that character and it is in combat mode) a victim V that the looker regards as an ally (vfunc 0x3f0) or an
   innocent (no bounty with the looker's faction, not class 7 or 8, V `+0x148` below 1, and the attacker's faction is a bandit one (`+0x34` 8) or has `+0x1d0` set, or V does not regard
   the looker an enemy, is no animal and not class 6 or 8). The best by `chooseBestAttackTarget` `FUN_14059e300`; factor 1. **Verified** (base data, the four official files): the
   `Shop` and `Shop-24hr` packages list 34 for the Squad and Squad2 roles (0-24 h, weight 1), next to 143, so every vanilla shop guard has it and the shopkeeper (Leader) has 143 only.
-  Meitou (`AggroSystem.StopsTroubleMaker`): the looker in a town (`AiSystem.TownAt`), the candidate in the same town and fighting one of the looker's faction or an allied one; the
-  `+0xac` / `+0xa0` / AGGRESSOR gates and the innocent branch are left out (**Unknown** fields).
+  Meitou (`AggroSystem.FindTroubleMaker`): both passes over the looker's sense entries (not KO, seen or heard or not) in its current town (`AiSystem.TownAt`); "intends aggression" is the TaskData
+  intended aggression (+0x24, below) of the candidate's current goal (in a fight its fight row, else its AI goal, else its running row; `TaskAggression.OfGoal`) and +0xa0 that of its running
+  row; the class-2 resident-factions test stands on the town's owner faction (**Unknown**); the victim test of pass 2 takes the looker's own or allied faction only (the innocent branch
+  is left out); the area test is not modelled.
+- TaskData +0x24, the intended aggression (**Verified**, registrations in `FUN_140319a60`; the AI's state broadcast `FUN_14050ed60` copies the current goal's to status +0xac, `getIntendedAggression`,
+  and the running task's to +0xa0): 1 for 4 / 227 Attacking, 262 / 263 / 266 Shooting, 228 Taking out, 61 Attacking target unprovoked, 101 Assault, 248 Attacking Squad, 16, 21, 144, 41 Fighting for
+  master, 146 / 235 Turret gunner, 131 / 244 food grabbing; 0.5 for 13 Attacking attackers of; 0 for 34, 15, 143, 288, 32 and most rows; negative for the lockpicking, medic, repair, robotics and
+  engineer rows, 7 Sheathing and 35 Running away (-0.5; the others are not transcribed). The AGGRESSOR tag (short-term tag 2) is written only by the dialogue effects DA 7 GO_HOME and DA 34
+  RUN_AWAY on their target and lasts 7 h (**Verified**, `FUN_140680560`), so a plain fight never sets it.
 - 101 DEFEAT_SQUAD ("Assault on target squad", `targeting` 3 = the squad's mission target; row `Assault`: list B `!47`, effect 7; desire AI slot 19 = 1 times the finder's
   factor; carried by the packages `Assault target squad` and `(agg)`, signal 8, and by dialogue `AI contract`s). Finder `FUN_140793eb0` (**Verified**): the goal's target
   hand must be a character (type 1 or 0x22); of its squad (+0x1d8, members +0x58/+0x60) it keeps the members that
@@ -925,6 +944,11 @@ update `FUN_140511130`, `Character::setupAI` `FUN_140621b70`; KenshiLib names **
   player's characters never run), the locked-gate zero of 60, 4's ranged and squad factors, standing up first for a character staying low, characters without an AI (a crawling one neither fights back nor runs), and goal 16's zero while prone and row 4's with no working arm (`AggroSystem` lets such an NPC attack on sight).
 - So a squad with PROTECT goals and no ATTACK goal starts no fight with an idle enemy (**Observed**): e.g. the base `Fog prince squad`
   (`42029-rebirth.mod`, package `fog prince`); its dialogue package `fogman` answers only events 52 and 53 and has no effects.
+- **Meitou, NPCs** (`AiSystem.Fights.cs`, [AI](../simulation.md#ai)): 16, 21, 144, 34, 143, 15 and 288 are priority-3 goals of `AiSystem.Choose`, scored like every goal (desire x finder
+  factor x weight x crowding, x1.25 for the current one; in their hours). Desires: 16 1 (0 Passive, sneaking outside a fight, prone), 21 / 34 / 143 1, 144 0.5, 15 / 288 as above; the factor is 1
+  with a pick for the attack goals (`AggroSystem.FindFoe`: the looker's sensed entries and its squad mates' within 2 R, the shared sightings) and the capped fight threat for the protect
+  goals, whose pick is row 13's attacker (none: the goal fails). Engine gates: a character that cannot fight, crawls, runs away under Self preservation or mans a turret wants none. An NPC
+  without an AI keeps the old rule (attack on sight by relations, the retaliation's squad join); one whose lists hold no combat goal starts no fight.
 
 ## Town goals
 
@@ -1191,7 +1215,7 @@ player squad for a new layout ([squads travelling together](pathfinding.md#squad
 `ditch`. Meitou: `SquadFormationCommand` sets `World.FactionFormations` (the movement rebuilds the slots when the type changes). New-game values (**Observed**, 511 of the owner's saves): ditch, sleep, sit, share,
 feed, eject on; heal, help off (on in 4), rescue, stay, shootfirst off. Readers (**Verified** by decompile):
 - **Heal Allies** (+0x110): the medic finder's other-faction test, pass 1 only ([Medic jobs](#medic-jobs)); "Characters with the medic job will also heal characters of allied factions".
-- **Help Allies** (+0x111): the protect-allies finders `FUN_14099ca10` (goals 15, 288) and `FUN_14099cf80` (sensed (1, 0x208), seen or heard): for a
+- **Help Allies** (+0x111): the protect-allies finder `FUN_14099ca10` (goals 15, 288; its same-town twin `FUN_14099cf80` is never registered) (sensed (1, 0x208), seen or heard): for a
   player-faction looker each fighting candidate's threat (`FUN_14099a190`) is × `FUN_1409b2380`(d², 10, 1000, 0.1); one of another faction is
   skipped with the option off and squared with it on. Result capped at 1.2.
 - **Rescue Allies** (+0x112): the character finder `FUN_1408cd2d0` ([carry-loot](carry-loot.md#32-goals-and-their-target-finders)) requires the

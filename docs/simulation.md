@@ -218,7 +218,7 @@ system when the world has none), and between ticks for orders only (`ApplyPaused
      their desires, x the race entry's weight); 259 Picking up food (`FeedSystem`, animals, weight 0.5); 16 attack on sight while on Hold (`AggroSystem`, weight **Unknown**, 1 here,
      listed last as Hold adds it; the enemy this tick's look or a squad mate's found; desire 0 while Passive, sneaking outside a fight or not standing; a deferred fight, row 16).
      The player faction's 15 Protect allies (`RetaliationSystem.JoinFight`, key 15, weight 1, listed before Self preservation; finder, desire and plan in
-     [precedence](game/ai-tasks.md#precedence)): the aggro looks' allies that hold a fight target, weighted by distance, a deferred defence, row 13, against `CombatSystem.BestAttackerOf`'s pick for the ally.
+     [precedence](game/ai-tasks.md#precedence)): the aggro looks' allies valued by their fight threat (`CombatSystem.FightThreat`), weighted by distance, a deferred defence, row 13, against `CombatSystem.BestAttackerOf`'s pick for the ally.
      The retaliation pass offers nothing to it; the step reaches it at the engine re-ask (idle or a job's task, every `JobCheckTicks`) or any replan, so a medic or worker on its job joins, one on an order does not.
      A player character woken by a failed kidnap (`CarrySystem.Kidnap`) or targeted by a failed stealth knock-out (`CarrySystem.StealthKo`) is told of the attacker (forced sense) and
      replans (`CarrySystem.Engage`); `CarrySystem.EngagedDefence` (key 32, desire 1 within 40 else 0.7, a deferred defence, row 13) answers for 5 s unless an order runs first (**Engine**
@@ -666,17 +666,15 @@ relations, shared targets, player self-defence as a [decision step](#decision-st
 living character's senses (`SenseBlock`, read through `CharacterFacts.Senses`; [perception](game/perception.md#senses)): entries, the `numEnemies` / neutral / ally counts, the threats
 list and the threat sums. The fights read them: target choice (`CombatSystem.ChooseTarget`), Self preservation's threat level and the immediate threat (`CombatSystem.ThreatLevel`,
 `ImmediateThreat`), the urgent turret job (step 3), the chase give-up, playing dead, the arrival lines and IS_OUTNUMBERED. Then, for a character that may attack on sight, the look picks
-the best `Combat.TargetScore` among the entries it saw or heard (the original's attack-on-sight finder), not the nearest. Its squad mates within twice their own R of the target share the
-sighting ([squad-shared sightings](game/perception.md)), not the attack: each joins only when its own finder takes the target (`AggroSystem.Takes`: its stance and goals, the relations, a
-holder's post test), so a 143-only or Passive mate stays. Without the Aggro part the look keeps the senses only.
-Being taken as a target is answered the same tick when it alerts ([being targeted](game/combat.md#fight-lifecycle-and-orders)), the rest every 15 ticks;
-free squad mates within `JoinRange` (250, engine choice; the original's joiner must sense the mate) join an attacked member's defence each check even while it is
-already fighting or down (engine rule), against an attacker within 150 of it (`AI::findAttackerOf`); an NPC with an AI joins this way only with a protect goal
-(143 PROTECT_OWN_SQUAD, PROTECT_ALLIES and the like) and only for a mate that fights, else through its stance or not at all (`RetaliationSystem.ProtectsMates`).
-An NPC with PROTECT_ALLIES (15, 288) in its lists and hours (`AiMind.ProtectsAllies`, apart from the stance, which keeps the highest goal) also joins any squad's defender of its own or an
-allied faction that fights, when it senses it now (its senses hold it, seen or heard at its last look), against an attacker within 150 of it that is not its ally, whatever the relation
-(`RetaliationSystem.ProtectAllies`, [combat goals](game/ai-tasks.md#combat-goals)); a gunner stays at its turret, 288's town limit is not modelled. So gate guards fight
-the Skimmers (relation 0 to every faction, `ATTACK_ENEMIES_AND_NEUTRALS`) that attack townsfolk.
+the best `Combat.TargetScore` among the entries it saw or heard (the original's attack-on-sight finder), not the nearest. For an NPC the AI runs that only asks it, and its squad mates within
+twice their own R of the target ([squad-shared sightings](game/perception.md)), to think at the next tick: the combat goals decide in the chooser ([AI](#ai)). An NPC without an AI (engine
+choice: squads `AiSystem` does not run, minds dropped by trade, recruitment or capture) keeps the old rule: it attacks by the relations and its free mates without an AI join when their own
+finder takes the target (`AggroSystem.Takes`). The player's characters are offered the sighting (Hold's 16, the 16 job). Without the Aggro part the look keeps the senses only.
+Being taken as a target is answered the same tick when it alerts ([being targeted](game/combat.md#fight-lifecycle-and-orders)), the rest every 15 ticks: the attacked NPC fights back;
+free squad mates without an AI within `JoinRange` (250, engine choice; the original's joiner must sense the mate) join an attacked member's defence each check even while it is
+already fighting or down (engine rule), against an attacker within 150 of it (`AI::findAttackerOf`, `RetaliationSystem.ProtectsMates`). An NPC the AI runs joins only by 143, 15 or 288 in
+the chooser, which the alert asks to think (`RetaliationSystem.AskProtectors`); a player character by its goal 15 ([decision step](#decision-step)). So gate guards fight the Skimmers
+(relation 0 to every faction, `ATTACK_ENEMIES_AND_NEUTRALS`) that attack townsfolk.
 Orders defer to the next tick. Relations are live state and deed/witness effects have distinct
 paths; preserve current ordering.
 Relation events (`FactionDeeds`, built with the aggro part; [factions 3.5](game/factions-squads-towns.md#35-what-fires-relation-changes-observed-decompile)):
@@ -1611,13 +1609,14 @@ whose first step is neither the goal nor a step the engine carries out (`AiSyste
   held true (movement and the lock-up round deal with doors; the bashers' `DoorPlan` evaluates them); machine empty inputs, output full and jammed (62 to 64) are evaluated for a `Targets.Machine` target (a player's
   machine; no finder gives one yet, the town workers' buildings are level data, [Blocked output](game/buildings-production.md#blocked-output)); every other state is false.
 
-Combat stances (`AiStance`, the most aggressive combat goal in its hours; none at all attacks on sight) and the goals below attack on sight (`AiMind.ProtectsSquad`, `DefendsAllies`,
-`EnforcesLaw`): attack on sight (16, 21) takes any enemy the look senses; below it the look takes an enemy only when one of the goals in its hours finds it (`AggroSystem.Wants`, the
-original's chooser tries every goal): 144 within the home circle; 143 PROTECT_OWN_SQUAD against the attacker or the target of a mate that is the looker or that it senses now and that
-holds a fight target, within 150 of that mate (the original's finder with row 13, [ai-tasks](game/ai-tasks.md#combat-goals); `AggroSystem.Protects`; squad-shared sightings of mates and
-13's indoor test are not counted, **Observed** stand-in); 15 / 288 (41 and 45 by an engine reading) against the attacker or the target of an ally it senses now that fights, within 150 of that ally (`DefendsAlly`); 34 Law enforcer
-in a town against one of the same town attacking an ally (`StopsTroubleMaker`; its partly **Unknown** gates left out). Retaliation's squad defence takes an NPC with 143 or an ally
-defender (`RetaliationSystem.ProtectsMates`). The look needs the enemy hostile to the looker, so a neutral attacking an ally is fought only through retaliation (`ProtectAllies`, 15 / 288).
+Combat goals (`AiBehaviour.Fight`, `AiSystem.Fights.cs`; [combat goals](game/ai-tasks.md#combat-goals)): 16, 21, 144 and 34 attack whom their finder picks (`AggroSystem.FindFoe`:
+the looker's entries seen or heard at its last look, and its squad mates' within twice its range R, the shared sightings; 34 `FindTroubleMaker`), 143, 15 and 288 the attacker row 13 finds
+(`CombatSystem.BestAttackerOf`, within 150) of the mate or ally with the highest fight threat (`CombatSystem.FightThreat`). They are chosen like every goal; the think writes only its own
+mind's request (`AiMind.FightGoal`, `FightTarget`) and stands, and `SendFights` (serial, slot order) defers the fight for the next tick (`AttackOrder`, the goal's provenance; a defence for
+the protect goals), logs it with the aggro system's fights and asks the starter's squad mates to think. Replan triggers (`AiMind.Replan`, engine stand-ins): a sighting of the look (the
+looker and its mates within 2 R), an alert (the squad mates of the attacker and the attacked, and the NPCs with 15 / 288 that sense the attacked one now), a mate's fight start; else the
+15-tick cadence. A sighting is acted on one tick later than the old engine start (look at T, think at T+1, fight from T+2). `AiStance` (the highest combat goal in its hours, Passive with
+none) only tells the look when to ask. A character the AI does not hold (fighting, fleeing, carrying, treating, on an engine task) starts no goal fight; one without an AI keeps the old rule.
 
 Scoring follows the original (`TaskProfiles`: desire, commitment, crowding per goal type); a desire
 the original computes in a function of its own counts as 1. Town goals ([ai-tasks.md](game/ai-tasks.md#town-goals)):

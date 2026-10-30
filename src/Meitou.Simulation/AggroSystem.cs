@@ -33,8 +33,9 @@ public readonly record struct AggroEntry(long Tick, CharacterId Attacker, Charac
 /// that it sees (<see cref="SightMap.Sees"/>: places, light and its range R = <see cref="AggroSettings.SightRange"/> x its race's <c>vision range mult</c> times the view-cone factor
 /// of <see cref="Visibility"/>) whose faction its own is hostile to (relation -30 or lower) and that its own faction does not list in <c>coexistence</c> (<see cref="AttacksOnSight"/>); ties go to the lower slot. It emits one
 /// effect at that target.</item>
-/// <item><b>Decide</b> (<c>Apply</c>, serial commit order): the looker, if still free, and those of its free squad mates within twice their own range R of the target (the original's
-/// squad-shared sightings, <c>GroupSense</c>) whose own goals take the target get an <see cref="AttackOrder"/> for the next tick through <see cref="World.Defer"/>. The player's characters look and join only with
+/// <item><b>Decide</b> (<c>Apply</c>, serial commit order): an NPC the AI runs, and its squad mates within twice their own range R of the target (the original's squad-shared sightings,
+/// <c>GroupSense</c>), are asked to think at the next tick (<see cref="Ai.AiMind.Replan"/>): their combat goals decide in the chooser (<see cref="FindFoe"/>). A looker without an AI (the old
+/// rule, engine), if still free, and its free mates without an AI whose own finder takes the target get an <see cref="AttackOrder"/> for the next tick through <see cref="World.Defer"/>. The player's characters look and join only with
 /// the attacking-enemies job (<see cref="HuntsEnemies"/>) or on Hold, and are offered the sighting: the decision step starts their fight (<see cref="HoldAttack"/>, <see cref="AttackJob"/>);
 /// they have no leash, and after a job's fight go back to following or stand idle.</item>
 /// <item><b>Chase give-up and stand down</b> (<c>SlowWorld</c>, serial, every tick): an NPC running after its target (<see cref="CharacterCold.CombatRunning"/>) senses that
