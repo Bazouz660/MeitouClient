@@ -184,12 +184,13 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
         : AiRole.Squad;
 
     /// <summary>
-    /// The stance from the combat goals of its role list and race in their hours (the most aggressive wins); a character whose lists hold no combat goal at all keeps
-    /// <see cref="AiStance.Aggressive"/>, the rule every NPC had before the AI (how the original turns a sighting into an attack is <b>Unknown</b>).
+    /// The stance from the combat goals of its role list and race in their hours (the most aggressive wins), and which of the goals that join fights by their own finders are there
+    /// (<see cref="AiMind.ProtectsSquad"/>, <see cref="AiMind.DefendsAllies"/>, <see cref="AiMind.EnforcesLaw"/>, <see cref="AiMind.ProtectsAllies"/>); a character whose lists hold no combat
+    /// goal at all keeps <see cref="AiStance.Aggressive"/>, the rule every NPC had before the AI (engine: the original's character then has no attack goal).
     /// </summary>
     internal static AiStance StanceOf(AiMind mind, IReadOnlyList<AiGoal> roles, int hour)
     {
-        bool any = false, allies = false;
+        bool any = false, allies = false, squad = false, defends = false, law = false;
         var stance = AiStance.Passive;
         void Take(AiGoal g)
         {
@@ -197,12 +198,16 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             any = true;
             if (!g.InWindow(hour)) return;
             if (s > stance) stance = s;
-            allies |= g.Task.Type is TaskType.PROTECT_ALLIES or TaskType.PROTECT_ALLIES_STAY_IN_TOWN;
+            var type = g.Task.Type;
+            allies |= type is TaskType.PROTECT_ALLIES or TaskType.PROTECT_ALLIES_STAY_IN_TOWN;
+            squad |= type == TaskType.PROTECT_OWN_SQUAD;
+            law |= type == TaskType.ATTACK_TROUBLE_MAKERS;
+            defends |= s == AiStance.Defensive && type != TaskType.ATTACK_TROUBLE_MAKERS;
         }
         for (int k = 0; k < roles.Count; k++) Take(roles[k]);
         for (int k = 0; k < mind.RaceGoals.Count; k++) Take(mind.RaceGoals[k]);
         mind.HasCombatGoals = any;
-        mind.ProtectsAllies = allies;
+        (mind.ProtectsAllies, mind.ProtectsSquad, mind.DefendsAllies, mind.EnforcesLaw) = (allies, squad, defends, law);
         return any ? stance : AiStance.Aggressive;
     }
 

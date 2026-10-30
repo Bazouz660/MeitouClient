@@ -867,6 +867,18 @@ update `FUN_140511130`, `Character::setupAI` `FUN_140621b70`; KenshiLib names **
   only when that list is empty its threats. All passing ones go to `chooseBestAttackTarget` (`FUN_14059e300`, the target score): the best is taken
   (**Verified**). Meitou: `CombatSystem.BestAttackerOf` picks each joiner's attacker (the sense tests and the threats fallback left out). Gate guards (`Gate guard -no turrets`
   and those inheriting it) list 15, `Gate guard stay in town -no turrets` 288 (**Verified**, package dump).
+- 34 ATTACK_TROUBLE_MAKERS ("Law enforcer"; row 34 "Attacking trouble makers", flags 0x21, list A `!29`, effect 7; **Verified** registration in `FUN_140319a60`: desire thunk
+  `0x1400215ee` = AI slot 19, 1; finder at +0x160 thunk `0x140052fe0` → `FUN_14099baa0`). Finder (**Verified** structure, field meanings **Observed**): factor 0 while the looker's
+  current town (`getCurrentTownLocation`, vfunc 0x78) is null. Else two passes over sensed entries (the iterator's tag masks are not in the decompile, **Unknown**), each candidate in the
+  looker's current town and passing the area test `FUN_140599f30`: (1) one whose status object (Character `+0x1a0`, vfunc 0x70) has `+0xac` above 0 or that the looker's squad memory
+  tags AGGRESSOR (short tag 2, `FUN_140678960` → `FUN_140678830`); (2) one whose NPC class (status `+0xdc`) is not 1 law enforcement, 3 trader or 5 diplomat (class 2 military only
+  against a town list at `+0xf0`, **Unknown**), passing `FUN_14099b820`: not class 7; `+0xac` above 0, AGGRESSOR, or `+0xa0` above 0 with class 8 or an animal; and attacking
+  (`FUN_1405ca6f0` → `FUN_1405c92d0`: its status `+0x68` target hand is that character and it is in combat mode) a victim V that the looker regards as an ally (vfunc 0x3f0) or an
+  innocent (no bounty with the looker's faction, not class 7 or 8, V `+0x148` below 1, and the attacker's faction is a bandit one (`+0x34` 8) or has `+0x1d0` set, or V does not regard
+  the looker an enemy, is no animal and not class 6 or 8). The best by `chooseBestAttackTarget` `FUN_14059e300`; factor 1. **Verified** (base data, the four official files): the
+  `Shop` and `Shop-24hr` packages list 34 for the Squad and Squad2 roles (0-24 h, weight 1), next to 143, so every vanilla shop guard has it and the shopkeeper (Leader) has 143 only.
+  Meitou (`AggroSystem.StopsTroubleMaker`): the looker in a town (`AiSystem.TownAt`), the candidate in the same town and fighting one of the looker's faction or an allied one; the
+  `+0xac` / `+0xa0` / AGGRESSOR gates and the innocent branch are left out (**Unknown** fields).
 - 101 DEFEAT_SQUAD ("Assault on target squad", `targeting` 3 = the squad's mission target; row `Assault`: list B `!47`, effect 7; desire AI slot 19 = 1 times the finder's
   factor; carried by the packages `Assault target squad` and `(agg)`, signal 8, and by dialogue `AI contract`s). Finder `FUN_140793eb0` (**Verified**): the goal's target
   hand must be a character (type 1 or 0x22); of its squad (+0x1d8, members +0x58/+0x60) it keeps the members that

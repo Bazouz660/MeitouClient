@@ -371,6 +371,10 @@ Meitou (`CombatSystem.HasSlot` / `MayJoin`, `Fighting.Steer`):
   fight (`Character::isStealthMode`), Passive, or not standing (prone state ≠ 0); `scoreProtectAllies` (`FUN_140599b90`, **Verified**) is 0 when sneaking or Passive, and for a slave (state 1) whose AI holds
   a job of type 187 Obedient Slave (`FUN_140597380` scans the job list); otherwise the finder's score, x0.5 while carrying (not modelled: joins are binary).
   Meitou: `Fighting.ProtectAllies` skips a state-1 slave with a `SlaveMaster` (its mark of job 187); the other joins (squad mates, bodyguards) are not this desire.
+- **Joining a fight** (**Observed**: fights are plan rows of priority-3 goals, `chooseGoal` `FUN_140510ef0`). No rule outside the goals adds an NPC to a fight: it joins only by a combat
+  goal of its lists in their hours, each with its own finder ([combat goals](ai-tasks.md#combat-goals)): 16 / 21 / 144 attack on sight, 143 for a squad mate holding a target, 15 / 288 for a
+  sensed ally holding one (both through row 13, within 150 of the one protected), 34 against one attacking an ally in the looker's town. A squad shares sightings
+  ([perception](perception.md), `FUN_140857b10`), not attacks. So a vanilla shopkeeper (143 only) follows its guards (143 and 34) into a fight only once one of them holds a target, against that guard's foe within 150 of it.
 - **Being targeted.** Choosing a fight target (`CombatClass::setAttackTarget`, `setAttackTargetHandle`) calls `AI::underMeleeAttack` on the
   target at once (through `Character::attackingYou`), before any blow; dropping it sends "stop", which only removes the attacker from the
   target's engaged list. A landed blow (not blocked or dodged) on a defender whose fight is off sends it too (`FUN_1404394f0`). The call ends the

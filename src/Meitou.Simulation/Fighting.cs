@@ -249,9 +249,12 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem, IDecis
     /// Whether a helper may come to the defence of a slave or escaped slave (<c>FUN_140997e80</c> in the protect-allies finder, <b>Verified</b>): its faction is a bandit one, or it
     /// stands in no town, or that town's owner books no bounties (a lawful town's people leave slaves to their fate).
     /// </summary>
-    bool SlaveHelpAllowed(World world, CharacterCold helper, Vector3 at)
+    bool SlaveHelpAllowed(World world, CharacterCold helper, Vector3 at) => SlaveHelpAllowed(world, Towns, combat.Relations, helper, at);
+
+    /// <inheritdoc cref="SlaveHelpAllowed(World, CharacterCold, Vector3)"/>
+    internal static bool SlaveHelpAllowed(World world, PopulationData? towns, Meitou.Data.Gameplay.FactionRelations? factions, CharacterCold helper, Vector3 at)
     {
-        if (Towns is not { } data || combat.Relations is not { } relations) return true;
+        if (towns is not { } data || factions is not { } relations) return true;
         if (relations.Contains(helper.Faction) && relations.Factions[helper.Faction].FundamentalType == Meitou.Data.Gameplay.FundamentalType.Bandit) return true;
         var town = Ai.AiSystem.TownAt(data, world, at);
         if (town.Site < 0) return true;
@@ -441,6 +444,7 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem, IDecis
             if (c.Ai is { ProtectsAllies: true }) protectors.Add(s);
         }
         var taken = new HashSet<int>();
+        var aggro = protectors.Count > 0 ? world.SystemOf<AggroSystem>() : null;
         for (int a = 0; a < table.HighWater; a++)
         {
             if (!next[a].Alive || next[a].Task != (byte)CharacterTask.Attack) continue;
@@ -472,7 +476,7 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem, IDecis
                 JoinMates(world, table, t, defenders, taken, fights ? CanProtectFighter : CanProtect);
                 for (int k = before; k < defenders.Count; k++) joiners.Add(defenders[k].Slot);
                 // Protect allies: NPCs of any squad that see an allied defender fighting come to it (a town's guards to a resident a neutral animal attacks).
-                if (fights) ProtectAllies(world, table, t, a, defenders, taken);
+                if (fights) ProtectAllies(world, table, t, a, defenders, taken, aggro);
             }
             // Bodyguards of the attacked character come too (Bodyguard, order 45).
             Guards(world, table, t, a, defenders, taken, guards);
@@ -579,17 +583,17 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem, IDecis
     }
 
     /// <summary>
-    /// PROTECT_ALLIES (15, 288; finder <c>FUN_14099ca10</c>, achieved by 13 "Attacking attackers of", docs/game/ai-tasks.md "Combat goals"): an NPC with the goal that sees a
-    /// fighting character of its own or an allied faction (relation 50 or more) attacks that character's attacker when the attacker is not its ally, whatever their relation, so
-    /// neutrals count too. Engine reductions: the defender is sensed when seen (sight test) or within <see cref="AggroSystem.NoiseFar"/> in the protector's place (a fight
-    /// is heard for sure), a gunner stays at its turret, and 288's town limit is not modelled.
+    /// PROTECT_ALLIES (15, 288; finder <c>FUN_14099ca10</c>, achieved by 13 "Attacking attackers of", docs/game/ai-tasks.md "Combat goals"): an NPC with the goal that senses now (its senses
+    /// hold the defender, seen or heard at its last look; <paramref name="aggro"/>'s <see cref="AggroSystem.SensesOf"/>) a fighting character of its own or an allied faction (relation 50 or
+    /// more) attacks that character's attacker when the attacker is not its ally, whatever their relation, so neutrals count too. Engine reductions: a gunner stays at its turret, and 288's
+    /// town limit is not modelled.
     /// </summary>
-    void ProtectAllies(World world, CharacterTable table, int slot, int attacker, List<CharacterId> defenders, HashSet<int> taken)
+    void ProtectAllies(World world, CharacterTable table, int slot, int attacker, List<CharacterId> defenders, HashSet<int> taken, AggroSystem? aggro)
     {
         if (protectors.Count == 0 || combat.Relations is not { } relations || table.Cold(slot) is not { } ally || table.Cold(attacker) is not { } foe
             || !relations.Contains(ally.Faction) || !relations.Contains(foe.Faction)) return;
         var next = table.Next;
-        var at = next[slot].Position;
+        var allyId = new CharacterId(slot, next[slot].Generation);
         foreach (int s in protectors)
         {
             if (s == attacker || s == slot || !next[s].Alive || table.Cold(s) is not { Ai.ProtectsAllies: true, Gunning: null } c
@@ -597,11 +601,7 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem, IDecis
             if (ally.SlaveState is 1 or 2 && !SlaveHelpAllowed(world, c, next[s].Position)) continue;
             // A slave holding job 187 Obedient Slave scores the desire 0 (FUN_140599b90); SlaveMaster is Meitou's mark of that job.
             if (c.SlaveState == 1 && c.SlaveMaster >= 0) continue;
-            float range = AggroSystem.RangeOf(c, AggroSystem.OutdoorSight), d2 = Vector3.DistanceSquared(next[s].Position, at);
-            if (d2 > MathF.Max(range * range, AggroSystem.NoiseFar * AggroSystem.NoiseFar) || !CanFight(table, s, taken)) continue;
-            // Seen, or heard: a fight in the protector's own place within the farthest noise is heard for sure (AggroSystem's hearing rule).
-            bool heard = d2 <= AggroSystem.NoiseFar * AggroSystem.NoiseFar && world.Sight.PlaceOf(s) == world.Sight.PlaceOf(slot);
-            if (!heard && !(d2 <= range * range && world.Sight.Sees(s, slot, next[s].Position, at, range) > 0)) continue;
+            if (aggro?.SensesOf(s) is not { } senses || !senses.Knows(allyId, now: true) || !CanFight(table, s, taken)) continue;
             defenders.Add(new CharacterId(s, next[s].Generation));
             taken.Add(s);
         }
@@ -656,7 +656,7 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem, IDecis
     static bool CanProtect(CharacterTable table, int slot, HashSet<int> taken) => CanFight(table, slot, taken) && ProtectsMates(table.Cold(slot)!, false);
 
     static bool ProtectsMates(CharacterCold cold, bool fights) =>
-        cold.IsPlayer || cold.Ai is not { } mind || fights && mind.Stance is Ai.AiStance.ProtectSquad or Ai.AiStance.Defensive;
+        cold.IsPlayer || cold.Ai is not { } mind || fights && (mind.ProtectsSquad || mind.DefendsAllies);
 
     static bool Able(CharacterTable table, int slot, HashSet<int> taken, out CharacterCold cold, out byte task)
     {

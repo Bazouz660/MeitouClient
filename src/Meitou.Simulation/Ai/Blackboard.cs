@@ -409,7 +409,7 @@ public enum AiStance : byte
     Passive = 0,
     /// <summary>Attacks enemies fighting its own squad: a mate's target or a mate's attacker (PROTECT_OWN_SQUAD, docs/game/ai-tasks.md "Combat goals").</summary>
     ProtectSquad = 1,
-    /// <summary>Attacks enemies that are fighting (PROTECT_ALLIES and the like).</summary>
+    /// <summary>Attacks the attackers of an ally it senses (PROTECT_ALLIES and the like) or, as a law enforcer, of an ally in its town (<see cref="AiMind.DefendsAllies"/>, <see cref="AiMind.EnforcesLaw"/>).</summary>
     Defensive = 2,
     /// <summary>Attacks enemies within its home (TERRITORIAL_AGGRESSION_BUT_DONT_LEAVE_HOME).</summary>
     Territorial = 3,
@@ -498,6 +498,13 @@ public sealed class AiMind
     public bool HasCombatGoals { get; set; }
     /// <summary>Whether a PROTECT_ALLIES goal (15 or 288) is in its lists and hours: it defends allies of other squads against any attacker (<see cref="RetaliationSystem"/>).</summary>
     public bool ProtectsAllies { get; set; }
+    /// <summary>
+    /// The combat goals in its lists and hours that join fights by their own finders (docs/game/ai-tasks.md "Combat goals"; the <see cref="Stance"/> keeps only the highest): 143 PROTECT_OWN_SQUAD,
+    /// a goal that defends allies (15, 288; 41 and 45 by an engine reading) and 34 ATTACK_TROUBLE_MAKERS. Follow from the lists and the hour as the stance does, so not hashed.
+    /// </summary>
+    public bool ProtectsSquad { get; set; }
+    public bool DefendsAllies { get; set; }
+    public bool EnforcesLaw { get; set; }
     /// <summary>The role list and hour <see cref="Stance"/> was worked out for (a cache; the stance itself is hashed).</summary>
     internal IReadOnlyList<AiGoal>? StanceFrom { get; set; }
     internal int StanceHour { get; set; } = -1;

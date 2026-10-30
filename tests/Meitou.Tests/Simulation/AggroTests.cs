@@ -427,6 +427,104 @@ public class AggroTests
         Assert.True(checkedTicks * a.World.TickSeconds > 3 * CombatSystem.PickSeconds, $"only {checkedTicks} ticks checked");
     }
 
+    // The shop scenarios (docs/game/ai-tasks.md "Combat goals"): 0 the town (the shop's; it hates the bandits), 1 bandits (they hate nobody, so they start no fight), 2 drifters.
+    const int Town = 0, Bandits = 1, Drifters = 2;
+
+    static FactionRelations TownRelations() => FactionRelations.Build([
+        new FactionData { Id = "town", Name = "town", Relations = new Dictionary<string, int> { ["bandits"] = -80 } },
+        new FactionData { Id = "bandits", Name = "bandits", Relations = new Dictionary<string, int>() },
+        new FactionData { Id = "drifters", Name = "drifters", Relations = new Dictionary<string, int>() },
+    ]);
+
+    /// <summary>Gives a member the stance and goals its AI lists would give (no AI system here, so nothing changes them).</summary>
+    static void Mind(Arena a, Squad squad, CharacterId id, Meitou.Simulation.Ai.AiStance stance, bool protectsSquad = false, bool defendsAllies = false, bool enforcesLaw = false) =>
+        a.World.Characters.Cold(id.Slot)!.Ai = new Meitou.Simulation.Ai.AiMind
+        {
+            Squad = squad, Stance = stance, ProtectsSquad = protectsSquad, DefendsAllies = defendsAllies, ProtectsAllies = defendsAllies, EnforcesLaw = enforcesLaw,
+        };
+
+    /// <summary>
+    /// A squad shares a sighting, not the attack (docs/simulation.md "Hostility and relations"): a guard that attacks on sight (16) goes for a bandit, and its Passive mate (combat goals,
+    /// none in its hours), which sees the bandit too, never joins. Catches the squad's free mates being dragged into a member's fight whatever their own goals.
+    /// </summary>
+    [Fact]
+    public void A_passive_npc_never_joins_its_mates_attack()
+    {
+        using var a = Make(5, 1, TownRelations());
+        a.Aggro.Combat = a.Combat;
+        var o = new Vector2(2000, 2000);
+        var shop = a.SquadOf(Town, o, true, (o, 0f), (o + new Vector2(10, 0), 0f));
+        CharacterId guard = shop.Members[0], passive = shop.Members[1];
+        Mind(a, shop, guard, Meitou.Simulation.Ai.AiStance.Aggressive);
+        Mind(a, shop, passive, Meitou.Simulation.Ai.AiStance.Passive);
+        var bandit = a.SquadOf(Bandits, o, true, (o + new Vector2(5, 100), MathF.PI)).Members[0];
+        for (int k = 0; k < (int)(4 / a.World.TickSeconds); k++)
+        {
+            a.World.RunTicks(1);
+            Assert.False(a.Fighting(passive), $"the Passive mate joined at tick {a.World.Tick}");
+        }
+        Assert.True(a.Fighting(guard), "the guard attacks the bandit on sight");
+        Assert.Equal(bandit.Slot, a.Combat.StateOf(guard).TargetSlot);
+    }
+
+    /// <summary>
+    /// A shop keeps out of a fight between strangers (docs/game/ai-tasks.md "Combat goals"): a bandit, whom the town hates, fights a drifter 100 away in view of a vanilla shop's squad, the
+    /// shopkeeper (143), a shop guard (143 and 34 Law enforcer, in no town here) and a gate guard (15); nobody joins, since the drifter is nobody's ally and no mate fights. Catches the
+    /// defending goals attacking any enemy that fights anyone.
+    /// </summary>
+    [Fact]
+    public void A_shop_keeps_out_of_a_fight_between_strangers_100_away()
+    {
+        using var a = Make(8, 1, TownRelations());
+        a.Aggro.Combat = a.Combat;
+        var o = new Vector2(2000, 2000);
+        var shop = a.SquadOf(Town, o, true, (o, 0f), (o + new Vector2(8, 0), 0f), (o + new Vector2(-8, 0), 0f));
+        Mind(a, shop, shop.Members[0], Meitou.Simulation.Ai.AiStance.ProtectSquad, protectsSquad: true);
+        Mind(a, shop, shop.Members[1], Meitou.Simulation.Ai.AiStance.Defensive, protectsSquad: true, enforcesLaw: true);
+        Mind(a, shop, shop.Members[2], Meitou.Simulation.Ai.AiStance.Defensive, defendsAllies: true);
+        var bandit = a.SquadOf(Bandits, o, true, (o + new Vector2(0, 100), MathF.PI)).Members[0];
+        var drifter = a.SquadOf(Drifters, o, true, (o + new Vector2(0, 110), MathF.PI)).Members[0];
+        a.World.Commands.Enqueue(new AttackOrder([bandit], drifter) { Tick = a.World.Tick });
+        a.World.Commands.Enqueue(new AttackOrder([drifter], bandit) { Tick = a.World.Tick });
+        for (int k = 0; k < (int)(4 / a.World.TickSeconds); k++)
+        {
+            a.World.RunTicks(1);
+            foreach (var m in shop.Members) Assert.False(a.Fighting(m), $"shop member {m.Slot} joined at tick {a.World.Tick}");
+        }
+        Assert.True(a.Fighting(bandit) && a.Fighting(drifter), "the strangers fight on");
+    }
+
+    /// <summary>
+    /// A shopkeeper defends a squad mate as 143 does (docs/game/ai-tasks.md "Combat goals": a mate holding a target, achieved by 13 against that mate's foe within 150 of it): its guard runs
+    /// at a bandit 400 away, and the shopkeeper, who sees it go, joins only once guard and bandit are within 150 of each other, against that bandit. Catches a protector taking a mate's
+    /// target anywhere.
+    /// </summary>
+    [Fact]
+    public void A_shopkeeper_defends_its_mate_against_a_foe_within_150_of_it()
+    {
+        using var a = Make(9, 1, TownRelations());
+        a.Aggro.Combat = a.Combat;
+        var o = new Vector2(2000, 2000);
+        var shop = a.SquadOf(Town, o, true, (o, 0f), (o + new Vector2(10, 0), 0f));
+        CharacterId keeper = shop.Members[0], guard = shop.Members[1];
+        Mind(a, shop, keeper, Meitou.Simulation.Ai.AiStance.ProtectSquad, protectsSquad: true);
+        Mind(a, shop, guard, Meitou.Simulation.Ai.AiStance.ProtectSquad, protectsSquad: true);
+        var bandit = a.SquadOf(Bandits, o, true, (o + new Vector2(5, 400), MathF.PI)).Members[0];
+        a.World.Commands.Enqueue(new AttackOrder([guard], bandit) { Tick = a.World.Tick });
+        var table = a.World.Characters;
+        float Gap() => Vector2.Distance(new Vector2(table.Previous[guard.Slot].Position.X, table.Previous[guard.Slot].Position.Z),
+            new Vector2(table.Previous[bandit.Slot].Position.X, table.Previous[bandit.Slot].Position.Z));
+        float gapBefore = Gap();
+        for (int k = 0; k < (int)(15 / a.World.TickSeconds) && !a.Fighting(keeper); k++)
+        {
+            gapBefore = Gap();
+            a.World.RunTicks(1);
+        }
+        Assert.True(a.Fighting(keeper), "the shopkeeper comes to its guard's fight");
+        Assert.Equal(bandit.Slot, a.Combat.StateOf(keeper).TargetSlot);
+        Assert.True(gapBefore <= RetaliationSystem.ProtectReach + 10, $"it joined with the bandit {gapBefore:0} from the guard");
+    }
+
     /// <summary>The crossroads with a player character among the raiders who then assaults a villager; pinned in <see cref="GoldenHashTests"/>.</summary>
     internal static List<ulong> Hashes(int threads)
     {
