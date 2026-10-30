@@ -47,6 +47,10 @@ rendering is camera-relative.
 Tick order: Inputs → Schedule → Think → Move → Act → ordered Apply → SlowWorld → Publish.
 Inputs/Schedule/Apply/SlowWorld are serial; each implemented parallel phase has a system barrier. Publish makes the character snapshots on the
 workers in 256-slot chunks (each reads only the tick's state), listed in slot order.
+A system's `BeforeAct` runs right before its own `Act`, with a barrier between. Combat's body step runs there: the medical tick (`TickMedical`), the arms, getting up,
+and the fight's end on going down. Every fighter's body step therefore finishes before any fighter decides. Otherwise a decision that reads its target's knock-out
+or fight would depend on which partition ran first. A decision reads another fighter's fight as that fighter's body step left it, because a decision's own fight end
+clears the live flag.
 `CharacterHot.Previous` is read-only; a partition writes only its own `Next` slots. Spawn/remove
 only in serial phases after consumers finish; generation IDs prevent stale slot references.
 Combat has separate double buffers swapped at the end of its SlowWorld, not at global publish. Its checks round a target (who swings at
@@ -155,7 +159,7 @@ delivering, fetching and dismantling are steps of one act-out (`TaskStart.ActOut
 - **A fight under another task** (Meitou only; **Verified** by reading `CombatSystem.Act`, `PursuitSystem`): a start that overwrites a fighter's task without ending its fight (no start
   does any more) leaves `InCombat` and the fight target set. `CombatSystem.Act` does not read the task: the character keeps its target and
   re-picks, blocks and dodges, draws, and swings whenever a technique reaches the target; `PursuitSystem` and `CombatSystem.Move` steer only an `Attack` task, so the new task's walk
-  moves it. The fight ends only when `Act` loses the target, and `EndFight` then leaves the other task alone.
+  moves it. The fight ends only when `Act` loses its task target or finds nothing left ([combat](game/combat.md#leaving-a-fight)), and `EndFight` then leaves the other task alone.
 
 ### Order queue
 
@@ -200,8 +204,8 @@ system when the world has none), and between ticks for orders only (`ApplyPaused
   1. Orders: the front of the queue ([order queue](#order-queue)): runs, starts, or (blocked) shows its text once (`Tried`), stays queued and the step goes on.
   2. Commitment: no source. No player goal Meitou runs has the commit flag ([desire and commitment](game/ai-tasks.md#desire-and-commitment)); what priority a running job's plan
      holds is **Unknown**, so committing jobs (153, 275) stop nothing.
-  3. Urgent jobs: the job list as in step 5, asking only the jobs urgent now: kind-2 234 Turret guard while the character senses an enemy (AI `+0xbc`; stand-in
-     `AggroSystem.SensesEnemy` until the sensed list, M7). It beats Self preservation until a melee attacker comes within 40 (234's effect is planned through 146, `!158`). 187 Obedient
+  3. Urgent jobs: the job list as in step 5, asking only the jobs urgent now: kind-2 234 Turret guard while the character senses an enemy (AI `+0xbc`,
+     `SenseBlock.Enemies`). It beats Self preservation until a melee attacker comes within 40 (234's effect is planned through 146, `!158`). 187 Obedient
      Slave is not modelled for player characters; what fills the original's list `+0x70` is **Unknown**.
   4. Priority-3 goals: 32 Self preservation (`RetaliationSystem`, weight 1: the attacker this tick that took the character as target and alerted it, within 181.7, not shooting at a
      gunner, passing a holder's post test; desire 1 within 40, else 0.7; a deferred defence, row 13); 243 Getting food (`TownDutySystem`, weight 0.5, the
@@ -603,11 +607,12 @@ the attack technique, attack slots, the 5-fighter engaged list and circling foll
 CONSTANTS value and the default; Meitou 3); the block break-out ignores the 10% lower bound; only a heavy bolt staggers.
 Close in, fighters move by the original's force-based fight steering (combat.md "Fight steering"), not paths; from afar or without a clear line they walk paths to their technique reach (`CombatTuning.StandGap`). A landed or
 blocked blow takes a defender fighting the attacker off the attacker's engaged list (`FUN_14060a2f0`), so it asks again.
-Target choice (`CombatSystem.ChooseTarget`, combat.md "Target selection"): a fighter whose target goes down chooses again at once and ends its fight
-only when no candidate is left; while deciding it chooses again every 1 s (0.3 s on Hold), except for a player's pick, and ends the fight when even
-its current target fails (a holder's that left the post test, a player's beyond 400). Candidates are its current target (any faction), its attackers and, for a bodyguard (row 45), its protectee's attackers sensed by either (+10 for one the protectee does not fight
-back that has under 2 attackers); a crippled one is left out of these lists, and their best must score above -100; not of its faction or squad. A squad mate's attackers are no candidates. The current target must be sensed: within sight range (a sneaker: in view) now, or within the sense entry's lifetime
-since (30 / 60 / 120 units of 2 s, combat.md "Leaving a fight"; `CombatSlot.SensedTick`); an NPC's chase may give it up sooner (`AggroSystem`, 24 s unsensed). "Intended aggression ≤ 0" is a fight-off candidate not counting the chooser's faction an enemy (engine
+Target choice (`CombatSystem.ChooseTarget`, combat.md "Target selection"): a fighter whose task target goes down ends its fight at once; one whose other target goes down
+chooses again at once; while deciding it chooses again every 1 s (0.3 s on Hold), except for a player's pick. With no candidate, or when even its current target fails (a holder's
+that left the post test, a player's beyond 400), it fights on without a target until nothing is left (combat.md "Leaving a fight"). Candidates are its attackers, its threats and, for a bodyguard (row 45), its protectee's attackers, each known to it or the protectee (a sense entry) (+10 for one the protectee does
+not fight back that has under 2 attackers); a crippled one is left out of these lists, and their best must score above -100; not of its faction or squad (the current target excepted).
+A squad mate's attackers are no candidates. With none, the enemies its senses saw or heard at their last look (`CharacterFacts.Senses`, perception.md "Senses"), the current target
+among them with its stubbornness; an NPC's chase may give it up sooner (`AggroSystem`, 24 s unsensed). "Intended aggression ≤ 0" is a fight-off candidate not counting the chooser's faction an enemy (engine
 reading); getting up is `CharacterCold.GettingUpUntil`, from waking for `CombatSystem.GetUpSeconds` (the get-up blend and `standing up 3` to `GetUpEnd`),
 during which it neither walks, works nor fights (Task_GetUp; it counts as staggered for the work systems).
 Only a fighter blocks or dodges. A landed blow on a shackled defender knocks it out 25% of the time (`PutDownKoSeconds` with 0.002: 3 s). A hit on a
@@ -651,8 +656,11 @@ martial-arts category 5. [animals.md](game/animals.md), [characters.md](characte
 ### Hostility and relations
 
 `AggroSystem`, `RetaliationSystem`, `FleeSystem`: previous-position sight/hearing, faction
-relations, shared targets, player self-defence as a [decision step](#decision-step) goal ([order toggles](#order-toggles)), chase give-up and return to routine. The look picks
-the best `Combat.TargetScore` (the original's attack-on-sight finder), not the nearest.
+relations, shared targets, player self-defence as a [decision step](#decision-step) goal ([order toggles](#order-toggles)), chase give-up and return to routine. The look keeps every
+living character's senses (`SenseBlock`, read through `CharacterFacts.Senses`; [perception](game/perception.md#senses)): entries, the `numEnemies` / neutral / ally counts, the threats
+list and the threat sums. The fights read them: target choice (`CombatSystem.ChooseTarget`), Self preservation's threat level and the immediate threat (`CombatSystem.ThreatLevel`,
+`ImmediateThreat`), the urgent turret job (step 3), the chase give-up, playing dead, the arrival lines and IS_OUTNUMBERED. Then, for a character that may attack on sight, the look picks
+the best `Combat.TargetScore` among the entries it saw or heard (the original's attack-on-sight finder), not the nearest. Without the Aggro part the look keeps the senses only.
 Being taken as a target is answered the same tick when it alerts ([being targeted](game/combat.md#fight-lifecycle-and-orders)), the rest every 15 ticks;
 free squad mates within `JoinRange` (250, engine choice; the original's joiner must sense the mate) join an attacked member's defence each check even while it is
 already fighting or down (engine rule), against an attacker within 150 of it (`AI::findAttackerOf`); an NPC with an AI joins this way only with a protect goal

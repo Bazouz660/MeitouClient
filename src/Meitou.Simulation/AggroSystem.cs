@@ -15,6 +15,11 @@ public sealed record AggroSettings
     public float SightRange { get; init; } = AggroSystem.OutdoorSight;
     /// <summary>Keep a <see cref="AggroSystem.Log"/> of every fight started (the host prints it; tests read it).</summary>
     public bool RecordLog { get; init; }
+    /// <summary>
+    /// Characters attack on sight, and NPCs give chases up and go back to their routine after a fight (false: the look keeps only the senses, for worlds that script their fights:
+    /// the sandbox, the duel, the battle).
+    /// </summary>
+    public bool AttackOnSight { get; init; } = true;
 }
 
 /// <summary>A fight the <see cref="AggroSystem"/> started: who saw whom, the factions, the distance and how many squad mates joined.</summary>
@@ -150,7 +155,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         bool xpGate = tc is not null && (speed > 0.01f && !combat || tc.Medical is { Prone: true });
         pair.Heard = Roll(world, table, listener, target, stealth, roll, effects, d2, speed, place, sure, world.Tick < pair.AlarmUntil, xpGate);
         if (k >= 0) heard![k] = pair;
-        else (heard ??= []).Add(pair);
+        else AddHeard(ref heard, pair);
         return pair.Heard;
     }
 
@@ -218,11 +223,33 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         return heard.Count > 0 ? heard : null;
     }
 
+    /// <summary>The pair of <paramref name="target"/> (its generation) in the listener's list, kept in target slot order; -1 when none.</summary>
     static int FindHeard(List<HeardPair>? heard, int target, int generation)
     {
         if (heard is null) return -1;
-        for (int k = 0; k < heard.Count; k++) if (heard[k].Target == target && heard[k].Generation == generation) return k;
-        return -1;
+        int k = HeardBound(heard, target);
+        return k < heard.Count && heard[k].Target == target && heard[k].Generation == generation ? k : -1;
+    }
+
+    static int HeardBound(List<HeardPair> heard, int target)
+    {
+        int lo = 0, hi = heard.Count;
+        while (lo < hi)
+        {
+            int mid = (lo + hi) >> 1;
+            if (heard[mid].Target < target) lo = mid + 1;
+            else hi = mid;
+        }
+        return lo;
+    }
+
+    /// <summary>Puts a new pair in slot order, over a stale one of the same slot.</summary>
+    static void AddHeard(ref List<HeardPair>? heard, in HeardPair pair)
+    {
+        heard ??= [];
+        int k = HeardBound(heard, pair.Target);
+        if (k < heard.Count && heard[k].Target == pair.Target) heard[k] = pair;
+        else heard.Insert(k, pair);
     }
 
     /// <summary>
@@ -237,7 +264,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         long until = world.Tick + (long)MathF.Round(AlarmSeconds / world.TickSeconds);
         int k = FindHeard(heard, target.Slot, target.Generation);
         if (k >= 0) heard![k] = heard[k] with { AlarmUntil = until };
-        else (heard ??= []).Add(new HeardPair { Target = target.Slot, Generation = target.Generation, Checked = -1, AlarmUntil = until });
+        else AddHeard(ref heard, new HeardPair { Target = target.Slot, Generation = target.Generation, Checked = -1, AlarmUntil = until });
         Notice(world, listener, target);
     }
 
@@ -250,6 +277,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
     {
         var table = world.Characters;
         if (!table.TryResolveNext(target, out int t) || !table.TryResolveNext(looker, out int l) || table.Cold(t) is not { } sneaker || table.Cold(l) is not { } watcher) return;
+        Force(world, l, t);
         if (watcher.Faction == sneaker.Faction || !sneaker.IsPlayer && !(world.Player.Faction >= 0 && sneaker.Faction == world.Player.Faction)) return;
         Watch(world, sneaker, looker, StealthExposure.Detected);
     }
@@ -284,13 +312,13 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         public int Generation;
         public bool Tracked;
         public byte Task;
-        /// <summary>The tick the running chase began (-1: none), the tick and place its target was last seen or heard, and whether the last look sensed it.</summary>
-        public long ChaseStart, SensedTick;
-        public Vector2 SensedAt;
-        public bool Sensed;
+        /// <summary>The tick the running chase began (-1: none).</summary>
+        public long ChaseStart;
+        /// <summary>The character's senses (null until its first look or forced sense); written by its own partition only, or by <see cref="Force"/> in a serial phase.</summary>
+        public SenseBlock? Senses;
         /// <summary>The looker's spot meters on sneaking characters, in target slot order (null: none); written by its own partition only.</summary>
         public List<Spot>? Spots;
-        /// <summary>The listener's hearing cooldowns and alarms, in the order first met (null: none); written by its own partition only, or by <see cref="Alarm"/> in a serial phase.</summary>
+        /// <summary>The listener's hearing cooldowns and alarms, in target slot order (null: none); written by its own partition only, or by <see cref="Alarm"/> in a serial phase.</summary>
         public List<HeardPair>? Heard;
     }
 
@@ -320,7 +348,6 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
     /// </summary>
     readonly Dictionary<int, CharacterId> offers = [];
     long offersTick = -1;
-    readonly List<int> sensed = [];
 
     public void RegisterSources(DecisionSystem decisions)
     {
@@ -332,17 +359,9 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
     int Offered(World world, int slot) =>
         offersTick == world.Tick && offers.TryGetValue(slot, out var id) && world.Characters.TryResolveNext(id, out int t) && world.Characters.Cold(t) is { Medical.Incapacitated: false } ? t : -1;
 
-    /// <summary>
-    /// Whether the character senses an enemy now (a serial read; the stand-in for the AI's sensed-enemy count <c>+0xbc</c> until the sensed list, M7): the attack-on-sight look's sensed-enemy
-    /// finder (<see cref="SensedEnemies"/>) finds one.
-    /// </summary>
-    public bool SensesEnemy(World world, int slot)
-    {
-        if (world.Characters.Cold(slot) is not { } cold) return false;
-        sensed.Clear();
-        SensedEnemies(world, slot, cold, sensed);
-        return sensed.Count > 0;
-    }
+    /// <summary>The senses of the character in <paramref name="slot"/> as of its last look (null: none yet). Read after this system's <c>Act</c>, or by a system whose <c>Act</c> runs before it.</summary>
+    public SenseBlock? SensesOf(int slot) =>
+        (uint)slot < (uint)slots.Length && slots[slot].Senses is { } b && slots[slot].Generation >= 0 ? b : null;
 
     /// <summary>
     /// The job 16 Attacking enemies (Shift with an attack; it runs with the jobs switch off, docs/game/ai-tasks.md "Perma-jobs") as the decision step's contributor (step 5): its finder is the
@@ -572,27 +591,48 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         public float BestScore;
         /// <summary>The combat state the score reads (null: hand-built worlds without one, every candidate counts as unfought).</summary>
         public Combat.CombatSystem? Combat;
+        /// <summary>The fights the senses read (threats, who fights whom): <see cref="Combat"/>, else the world's combat system.</summary>
+        public Combat.CombatSystem? Fights;
         /// <summary>The looker: one of the player's, on Hold (and its hold point), crawling, an animal.</summary>
         public bool Player, Hold, HoldPost, Prone, Animal;
         public Vector2 HoldPoint;
-        /// <summary>The looker's spot meters (read only during the query) and the sneakers it sees this scan.</summary>
+        /// <summary>The looker's spot meters (read only during the look) and the sneakers it sees this look.</summary>
         public List<Spot>? Spots;
-        /// <summary>The looker's hearing memory (<see cref="Slot.Heard"/>), written during the query and stored back after it.</summary>
+        /// <summary>The looker's hearing memory (<see cref="Slot.Heard"/>), written during the look and stored back after it.</summary>
         public List<HeardPair>? Heard;
-        public List<Sighting> Sightings;
-        /// <summary>Set for the fallback finder (<see cref="SensedEnemies"/>): the accepted enemies go here, and nothing is scored, metered, rolled or emitted.</summary>
-        public List<int>? Found;
-        public EffectBuffer Effects;
-        /// <summary>A looker that picks no fights: the scan only fills its spot meters on sneakers.</summary>
-        public bool SneakOnly;
-        /// <summary>Characters gathered this scan, and those taken past the cap (<see cref="GatherCap"/>, <see cref="GatherExtra"/>).</summary>
-        public int Gathered, Extra;
+        public List<Sighting>? Sightings;
+        /// <summary>The look's effects (null for a forced sense: no roll, meter or hook).</summary>
+        public EffectBuffer? Effects;
+        /// <summary>The looker keeps spot meters this look (it may pick fights, or it is an NPC watching for sneakers): sneakers in view fill them and are exposed.</summary>
+        public bool Meters;
+        /// <summary>The looker's senses, written by this look.</summary>
+        public SenseBlock Block;
+        /// <summary>The looker's own fight target (-1: none).</summary>
+        public int FightTarget;
+        /// <summary>New characters gathered this look (<see cref="GatherCap"/>, <see cref="GatherExtra"/>).</summary>
+        public int Gathered;
+        /// <summary>This look also gathers beyond <see cref="GatherNear"/> (<see cref="FarLooks"/>), and the gather is in that far pass.</summary>
+        public bool Far, FarPass;
+        /// <summary>This look works the entries' tags out in full (every <see cref="FarLooks"/>-th look and a forced sense; the fights and the KO and imprisoned bits are read at every look).</summary>
+        public bool FullTags;
     }
 
-    /// <summary>The sensed-list gather (<c>FUN_14085a8d0</c>, <b>Verified</b> literals): up to 40 characters within range; past that, up to 20 more within 250.</summary>
+    /// <summary>
+    /// The gather's cap (engine choice; the original's <c>FUN_14085a8d0</c> has none, <b>Verified</b>): up to <see cref="GatherCap"/> + <see cref="GatherExtra"/> new characters within
+    /// <see cref="GatherNear"/>, then, while fewer than <see cref="GatherCap"/> were taken, more within the look's reach.
+    /// </summary>
     public const int GatherCap = 40, GatherExtra = 20;
     public const float GatherNear = 250;
+    /// <summary>
+    /// A looker that neither may pick a fight nor fights gathers beyond <see cref="GatherNear"/> only every this many looks, and works its entries' tags out in full as often (engine
+    /// choice, for the cost of the look in crowds: its entries are sensed at every look, only new far characters and relation changes wait).
+    /// </summary>
+    public const int FarLooks = 4;
 
+    /// <summary>
+    /// The look of every living character on its turn (one in <see cref="AggroSettings.ScanEveryTicks"/>, by slot): its senses (<see cref="Look"/>), then, for one that may pick a fight, the
+    /// attack on sight (<see cref="Pick"/>), emitted as a <see cref="SightEffect"/>. Writes only the looker's own slot.
+    /// </summary>
     public void Act(World world, Partition part, EffectBuffer effects)
     {
         var table = world.Characters;
@@ -605,33 +645,29 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         {
             if (!prev[i].Alive || i >= slots.Length) continue;
             if (slots[i].Heard is { } heard) slots[i].Heard = PruneHeard(heard, world);
+            if (table.Cold(i) is not { Medical: not null } cold) continue;
             byte task = next[i].Task;
-            if (task == (byte)CharacterTask.Attack && slots[i].ChaseStart >= 0)
-            {
-                SenseQuarry(world, table, i, ref slots[i], effects);
-                continue;
-            }
-            if (table.Cold(i) is not { } cold) continue;
             var stance = cold.Ai?.Stance ?? Ai.AiStance.Aggressive;
             var war = cold.SquadId >= 0 && world.Squads.Find(cold.SquadId) is { War.IsSet: true } assaulting ? assaulting.War : WarTargets.None;
-            bool targets = !Busy(cold, task)
+            bool targets = Settings.AttackOnSight && !Busy(cold, task)
                 && cold is { InCombat: false, Fleeing: false, IsImprisoned: false, SlaveState: not 1, Fighter.CanAttack: true, Medical.Incapacitated: false }
                 && Relations.Contains(cold.Faction) && !(cold.IsPlayer && !HuntsEnemies(cold) && !HoldsGround(cold))
                 && stance != Ai.AiStance.Passive && (hasEnemy[cold.Faction] || stance == Ai.AiStance.AggressiveNeutrals || war.IsSet || (Memory?.AnyTempEnemy(cold.SquadId) ?? false));
+            var scan = NewScan(world, i, cold, stance, war, MathF.Max(0, RangeOf(cold, Settings.SightRange)), effects);
             // Every awake NPC keeps spot meters on the sneakers it sees, not only those it would fight (the original's per-looker SpottingPeopleMgr): they feed the crime
-            // witnesses, the stealth knock-out and the sneaker's arrows. One that picks no fights looks for sneakers only.
-            if (!targets && (sneakers.Count == 0 || !Watches(cold, task))) continue;
-            float outdoor = RangeOf(cold, Settings.SightRange);
-            if (!(outdoor > 0)) continue;
-            float range = world.Sight.MaxRange(i, outdoor);
-            if (!targets && !SneakerWithin(prev[i].Position, range)) continue;
-            var scan = NewScan(world, i, cold, stance, war, outdoor, effects);
-            scan.SneakOnly = !targets;
-            scan.Sightings.Clear();
-            world.Grid.Query(scan.Eye.X, scan.Eye.Z, MathF.Max(scan.Range, NoiseFar), ref scan, Visit);
+            // witnesses, the stealth knock-out and the sneaker's arrows.
+            scan.Meters = sneakers.Count > 0 && (targets || Watches(cold, task) && SneakerWithin(prev[i].Position, scan.Range));
+            scan.Sightings!.Clear();
+            scan.FullTags = (world.Tick / every + i) % FarLooks == 0;
+            scan.Far = targets || cold.InCombat || scan.FullTags;
+            Look(ref scan);
             slots[i].Heard = scan.Heard;
-            if (scan.Best >= 0) effects.Emit(i, scan.Best, SightEffect, MathF.Sqrt(scan.BestD2));
-            if (scan.Spots is not null || scan.Sightings.Count > 0) slots[i].Spots = AdvanceSpots(scan.Spots, scan.Sightings, every * world.TickSeconds, table);
+            if (targets)
+            {
+                Pick(ref scan);
+                if (scan.Best >= 0) effects.Emit(i, scan.Best, SightEffect, MathF.Sqrt(scan.BestD2));
+            }
+            if (scan.Meters && (scan.Spots is not null || scan.Sightings!.Count > 0)) slots[i].Spots = AdvanceSpots(scan.Spots, scan.Sightings!, every * world.TickSeconds, table);
         }
     }
 
@@ -642,69 +678,80 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         {
             Table = world.Characters, Relations = Relations, World = world, Memory = Memory, Self = i, Faction = cold.Faction, Squad = cold.SquadId, SquadFights = Combat is null ? null : squadFights,
             Eye = prev[i].Position, Cold = cold, Range = world.Sight.MaxRange(i, outdoor), Outdoor = outdoor, Sight = world.Sight, Best = -1, BestD2 = float.MaxValue,
-            BestScore = float.NegativeInfinity, Combat = Combat, Player = cold.IsPlayer, Hold = Orders.Holding(cold) && cold.Fighter?.Crossbow is null,
+            BestScore = float.NegativeInfinity, Combat = Combat, Fights = Combat ?? world.SystemOf<Combat.CombatSystem>(), Player = cold.IsPlayer, Hold = Orders.Holding(cold) && cold.Fighter?.Crossbow is null,
             HoldPost = Orders.Holding(cold) && !Orders.RangedExempt(cold), Prone = cold.Medical?.Prone == true, Animal = cold.Fighter?.IsAnimal == true, HoldPoint = Orders.HoldPointOf(cold, prev[i].Position),
             Seed = world.Seed, Key = Rng.Key(new CharacterId(i, prev[i].Generation)), Tick = (ulong)world.Tick,
             Stance = stance, War = war, Towns = Towns,
             Employer = EmployerOf(world, cold, out bool allies), EmployerAllies = allies,
             Home = stance == Ai.AiStance.Territorial ? Territory(cold) : default,
-            Spots = slots[i].Spots, Heard = slots[i].Heard, Sightings = effects is null ? null! : sightings ??= [], Effects = effects!,
+            Spots = slots[i].Spots, Heard = slots[i].Heard, Sightings = effects is null ? null : sightings ??= [], Effects = effects,
+            Block = slots[i].Senses ??= new SenseBlock(),
+            FightTarget = cold.InCombat && (Combat ?? world.SystemOf<Combat.CombatSystem>()) is { } combat ? combat.StateOf(new CharacterId(i, prev[i].Generation)).TargetSlot : -1,
         };
     }
 
     /// <summary>
-    /// The sensed-enemy finder a fighter's target choice falls back on when its lists give nobody (<c>FUN_14059fa70</c> from <c>chooseAttackTarget</c> <c>FUN_140666ee0</c>,
-    /// docs/game/combat.md "Target selection"): appends to <paramref name="into"/>, in the grid's order, whom fighter <paramref name="i"/>'s attack-on-sight look takes for an
-    /// enemy (the stances aside: they are its goals' tests, not the finder's) and senses now: in view (a sneaker once its spot meter is full) or heard within the hearing
-    /// cooldown. Read only (no meter, exposure or roll), and it reads the fights from the combat state, not the cold rows: any thread during Act.
+    /// The sense pass (<c>SensoryData</c> update <c>FUN_14085a070</c>, <b>Verified</b>; docs/game/perception.md "Senses"): the counts and the threats start again; every entry is sensed again
+    /// (<see cref="SenseOne"/>) and refreshed (<see cref="Refresh"/>) or decayed (<see cref="Decay"/>), and counted (<see cref="Count"/>); then the characters gathered within the look's reach
+    /// that have no entry are sensed and kept when sensed (<see cref="Visit"/>).
     /// </summary>
-    internal void SensedEnemies(World world, int i, CharacterCold cold, List<int> into)
+    static void Look(ref Scan s)
     {
-        if (i >= slots.Length || cold is not { Fighter: not null, Medical: not null } || !Relations.Contains(cold.Faction)) return;
-        var stance = cold.Ai?.Stance ?? Ai.AiStance.Aggressive;
-        var war = cold.SquadId >= 0 && world.Squads.Find(cold.SquadId) is { War.IsSet: true } assaulting ? assaulting.War : WarTargets.None;
-        if (stance == Ai.AiStance.Passive || !hasEnemy[cold.Faction] && stance != Ai.AiStance.AggressiveNeutrals && !war.IsSet && !(Memory?.AnyTempEnemy(cold.SquadId) ?? false)) return;
-        float outdoor = RangeOf(cold, Settings.SightRange);
-        if (!(outdoor > 0)) return;
-        var scan = NewScan(world, i, cold, stance, war, outdoor, null);
-        scan.Found = into;
-        world.Grid.Query(scan.Eye.X, scan.Eye.Z, MathF.Max(scan.Range, NoiseFar), ref scan, Visit);
-    }
-
-    /// <summary>Whether the fallback finder's looker senses <paramref name="slot"/> now: in view (a sneaker once its spot meter is full), or heard at its last check within the cooldown.</summary>
-    static bool SensedNow(ref Scan s, int slot, in CharacterHot other, bool sneaking, float stealth)
-    {
-        if (sneaking ? SpotOf(s.Spots, slot, other.Generation) > 1 && s.Sight.Sees(s.Self, slot, s.Eye, other.Position, s.Outdoor, stealth) > 0
-            : s.Sight.Sees(s.Self, slot, s.Eye, other.Position, s.Outdoor) > 0) return true;
-        int k = FindHeard(s.Heard, slot, other.Generation);
-        return k >= 0 && s.Heard![k] is { Heard: true, Checked: >= 0 } h && s.World.Tick - h.Checked < CooldownTicks(s.World);
+        var b = s.Block;
+        b.threats.Clear();
+        b.Enemies = b.Neutrals = b.Allies = b.AlliesDown = 0;
+        b.ThreatToMe = b.ThreatToAllies = 0;
+        var table = s.Table;
+        var prev = table.Previous;
+        var list = b.entries;
+        int w = 0;
+        for (int k = 0; k < list.Count; k++)
+        {
+            var e = list[k];
+            int t = e.Target;
+            if ((uint)t >= (uint)table.HighWater || !prev[t].Alive || prev[t].Generation != e.Generation || table.Cold(t) is not { } c) continue;
+            bool keep = true;
+            if (SenseOne(ref s, t, c, out bool seen, out bool heard)) Refresh(ref s, ref e, t, c, seen, heard);
+            else keep = Decay(ref s, ref e, t, c);
+            Count(ref s, e, c);
+            if (keep) list[w++] = e;
+        }
+        list.RemoveRange(w, list.Count - w);
+        s.Gathered = 0;
+        s.FarPass = false;
+        s.World.Grid.Query(s.Eye.X, s.Eye.Z, GatherNear, ref s, Visit);
+        if (!s.Far || s.Gathered >= GatherCap) return;
+        s.FarPass = true;
+        s.World.Grid.Query(s.Eye.X, s.Eye.Z, MathF.Max(s.Range, NoiseFar), ref s, Visit);
     }
 
     /// <summary>
-    /// A chaser's look at its own fight target (the original's sense entry that <c>ChaseMode</c> reads, docs/game/combat.md "Leaving a fight"): seen by the sight test, a sneaking
-    /// target with its stealth but without the spot meter (engine choice), else heard by the noise roll. Own senses only: whether squad-shared sightings count is not decoded.
-    /// Writes only the chaser's own slot.
+    /// The forced sense (<c>FUN_140858f40</c>, docs/game/perception.md "Spotting a sneaker"): <paramref name="looker"/> is told of <paramref name="target"/> (<c>AI::underMeleeAttack</c>, a
+    /// massive alarm): a new entry is made as seen (tags, threats and counts as at a look), an existing one is marked seen. Serial phases only.
     /// </summary>
-    void SenseQuarry(World world, CharacterTable table, int i, ref Slot s, EffectBuffer effects)
+    public void Force(World world, int looker, int target)
     {
-        if (Combat is null) return;
+        var table = world.Characters;
         var prev = table.Previous;
-        var st = Combat.StateOf(new CharacterId(i, prev[i].Generation));
-        int t = st.TargetSlot;
-        if (t < 0 || t >= table.HighWater || !prev[t].Alive || prev[t].Generation != st.TargetGeneration || table.Cold(i) is not { } cold) return;
-        ref readonly var other = ref prev[t];
-        var tc = table.Cold(t);
-        float stealth = tc is not null && (tc.Orders & CharacterOrders.Sneak) != 0 ? Orders.Stealth(tc) : -1;
-        float outdoor = RangeOf(cold, Settings.SightRange);
-        bool sensed = outdoor > 0 && world.Sight.Sees(i, t, prev[i].Position, other.Position, outdoor, stealth) > 0;
-        if (!sensed)
-            sensed = Hears(world, table, i, t, stealth, Rng.Hash(world.Seed, Rng.Key(new CharacterId(i, prev[i].Generation)), RngPurpose.ChaseSense, ((ulong)world.Tick << 20) ^ (ulong)(uint)t), effects, ref s.Heard);
-        s.Sensed = sensed;
-        if (!sensed) return;
-        s.SensedTick = world.Tick;
-        s.SensedAt = new Vector2(other.Position.X, other.Position.Z);
+        if (looker == target || (uint)looker >= (uint)slots.Length || (uint)target >= (uint)table.HighWater || slots[looker].Generation < 0 || !prev[looker].Alive || !prev[target].Alive
+            || table.Cold(looker) is not { Medical: not null } cold || table.Cold(target) is not { } tc) return;
+        var b = slots[looker].Senses ??= new SenseBlock();
+        int gen = prev[target].Generation, k = b.IndexOf(target, gen);
+        if (k >= 0)
+        {
+            var e = b.entries[k];
+            e.Seen = true;
+            b.entries[k] = e;
+            return;
+        }
+        var war = cold.SquadId >= 0 && world.Squads.Find(cold.SquadId) is { War.IsSet: true } assaulting ? assaulting.War : WarTargets.None;
+        var scan = NewScan(world, looker, cold, cold.Ai?.Stance ?? Ai.AiStance.Aggressive, war, MathF.Max(0, RangeOf(cold, Settings.SightRange)), null);
+        scan.FullTags = true;
+        var entry = new SenseEntry { Target = target, Generation = gen };
+        Refresh(ref scan, ref entry, target, tc, true, false);
+        Count(ref scan, entry, tc);
+        Insert(b, b.LowerBound(target), entry, world.Tick);
     }
-
     /// <summary>
     /// Moves a looker's spot meters on by one scan of <paramref name="dt"/> seconds: a seen sneaker's meter fills by dt / its spot time (a new one starts at 0), the others
     /// empty by dt / <see cref="Orders.SpotForgetSeconds"/>; empty meters and gone targets are dropped. Returns the list in target slot order (null when empty).
@@ -766,34 +813,240 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         return h.Faction;
     }
 
+    /// <summary>
+    /// The gather (<c>FUN_14085a8d0</c>): a character within the look's reach that has no entry yet (those with one were sensed or decayed before) is sensed, and kept as a new entry when
+    /// seen or heard; the near pass and the far pass of <see cref="Look"/> take up to the engine cap (<see cref="GatherCap"/>; the original has none).
+    /// </summary>
     static void Visit(int slot, ref Scan s)
     {
         if (slot == s.Self) return;
         ref readonly var other = ref s.Table.Previous[slot];
         float d2 = Vector3.DistanceSquared(other.Position, s.Eye);
-        if (d2 > s.Range * s.Range && d2 > NoiseFar * NoiseFar) return;
-        if (s.Gathered < GatherCap) s.Gathered++;
-        else if (s.Extra < GatherExtra && d2 <= GatherNear * GatherNear) s.Extra++;
-        else return;
+        if (s.FarPass ? d2 <= GatherNear * GatherNear || s.Gathered >= GatherCap || d2 > s.Range * s.Range && d2 > NoiseFar * NoiseFar
+            : d2 > GatherNear * GatherNear || s.Gathered >= GatherCap + GatherExtra) return;
+        var list = s.Block.entries;
+        int at = s.Block.LowerBound(slot);
+        if (at < list.Count && list[at].Target == slot) return;
+        s.Gathered++;
+        if (s.Table.Cold(slot) is not { } c || !SenseOne(ref s, slot, c, out bool seen, out bool heard)) return;
+        var e = new SenseEntry { Target = slot, Generation = other.Generation };
+        Refresh(ref s, ref e, slot, c, seen, heard);
+        Count(ref s, e, c);
+        Insert(s.Block, at, e, (long)s.Tick);
+    }
+
+    /// <summary>Puts a new entry at <paramref name="at"/>; with the block full the entry sensed longest ago (before <paramref name="tick"/>) makes room, else the new one is not kept.</summary>
+    static void Insert(SenseBlock b, int at, in SenseEntry e, long tick)
+    {
+        var list = b.entries;
+        if (list.Count >= SenseBlock.Cap)
+        {
+            int oldest = -1;
+            for (int k = 0; k < list.Count; k++)
+                if (list[k].Tick < tick && (oldest < 0 || list[k].Tick < list[oldest].Tick)) oldest = k;
+            if (oldest < 0) return;
+            list.RemoveAt(oldest);
+            if (oldest < at) at--;
+        }
+        list.Insert(at, e);
+    }
+
+    /// <summary>
+    /// Whether the looker senses <paramref name="slot"/> now (<c>FUN_1408593d0</c>: seen by <c>FUN_140857b10</c>, else heard by <c>FUN_140857500</c>). A sneaking target of another side fills
+    /// the spot meters of a looker that keeps them (<see cref="Scan.Meters"/>, exposing the sneaker), and counts as seen in view only once its meter was full before this look, or when it
+    /// is the looker's own fight target (engine choice: a chaser does not lose its quarry to the meter).
+    /// </summary>
+    static bool SenseOne(ref Scan s, int slot, CharacterCold c, out bool seen, out bool heard)
+    {
+        ref readonly var other = ref s.Table.Previous[slot];
+        bool sneaking = (c.Orders & CharacterOrders.Sneak) != 0;
+        float stealth = sneaking ? Orders.Stealth(c) : -1;
+        heard = false;
+        if (sneaking && c.Faction != s.Faction && !(s.Player && c.IsPlayer))
+        {
+            float v = s.Sight.Sees(s.Self, slot, s.Eye, other.Position, s.Outdoor, stealth);
+            bool full = SpotOf(s.Spots, slot, other.Generation) > 1;
+            if (s.Meters)
+            {
+                if (v > 0 && !Sighted(s.Sightings!, slot)) s.Sightings!.Add(new Sighting(slot, other.Generation, Orders.SpotSeconds(v, stealth)));
+                if (Vector3.DistanceSquared(other.Position, s.Eye) <= s.Range * s.Range)
+                    s.Effects!.Emit(s.Self, slot, ExposureEffect, (float)(full && v > 0 ? StealthExposure.Detected : v > 0 ? StealthExposure.Noticed : StealthExposure.Near));
+            }
+            seen = v > 0 && (full || slot == s.FightTarget);
+        }
+        else seen = s.Sight.Sees(s.Self, slot, s.Eye, other.Position, s.Outdoor, stealth) > 0;
+        if (!seen && s.Effects is { } fx)
+            heard = Hears(s.World, s.Table, s.Self, slot, stealth, Rng.Hash(s.Seed, s.Key, RngPurpose.Sense, (s.Tick << 20) ^ (ulong)(uint)slot), fx, ref s.Heard);
+        return seen || heard;
+    }
+
+    static bool Sighted(List<Sighting> list, int slot)
+    {
+        foreach (var x in list) if (x.Target == slot) return true;
+        return false;
+    }
+
+    /// <summary>
+    /// An entry sensed now (<c>FUN_1408580d0</c>): its place and time, seen and heard, its tags (<see cref="TagOf"/>); the threats (<c>addToThreatsAndFlockingList</c> <c>FUN_140854370</c>:
+    /// a standing character of another faction whose fight targets the looker joins the threats list and adds 1 to <see cref="SenseBlock.ThreatToMe"/>, one fighting another of the
+    /// looker's faction adds 1 to <see cref="SenseBlock.ThreatToAllies"/>; the original adds its aggression, Meitou has none); an ally counts as standing or not; and the sensing hooks
+    /// of the looker's squad package (war assault TEMP_ENEMY, hired ally TEMP_ALLY) tag it in the squad's memory.
+    /// </summary>
+    static void Refresh(ref Scan s, ref SenseEntry e, int slot, CharacterCold c, bool seen, bool heard)
+    {
+        var prev = s.Table.Previous;
+        ref readonly var other = ref prev[slot];
+        e.Seen = seen;
+        e.Heard = heard;
+        e.Tick = (long)s.Tick;
+        e.Place = other.Position;
+        e.Tags = TagOf(ref s, ref e, slot, c, other.Position);
+        var b = s.Block;
+        if (c.Faction != s.Faction && c.InCombat && c.Medical is { Incapacitated: false } && s.Fights is { } combat)
+        {
+            var (ft, fg) = combat.TargetOf(slot, other.Generation);
+            if (ft == s.Self && fg == prev[s.Self].Generation)
+            {
+                b.threats.Add(new CharacterId(slot, other.Generation));
+                b.ThreatToMe += 1;
+            }
+            else if (ft >= 0 && ft < s.Table.HighWater && prev[ft].Generation == fg && s.Table.Cold(ft) is { } fc && fc.Faction == s.Faction) b.ThreatToAllies += 1;
+        }
+        if ((e.Tags & SenseTag.Ally) != 0)
+        {
+            if (c.Medical is { Incapacitated: false, Prone: false, Dead: false }) b.Allies++;
+            else b.AlliesDown++;
+        }
+        if (s.Effects is { } fx && s.Squad >= 0 && s.Memory is not null)
+        {
+            if (s.War.IsSet && s.War.Everyone && WarEnemy(ref s, c, other.Position)) fx.Emit(s.Self, slot, TagEffect, Dialogue.MemoryTag.TempEnemy);
+            if (s.EmployerAllies && s.Employer >= 0 && c.Faction == s.Employer) fx.Emit(s.Self, slot, TagEffect, Dialogue.MemoryTag.TempAlly);
+        }
+    }
+
+    /// <summary>
+    /// The tags of a sensed character (<c>FUN_1408580d0</c>, docs/game/perception.md "Sense tags"): KO when down or dead (<see cref="CharacterFacts.Down"/>), imprisoned, and ENEMY when the
+    /// looker regards it an enemy (<see cref="Regards"/>; a campaign force's member NEUTRAL instead), else ALLY for its own or an allied faction, else NEUTRAL.
+    /// </summary>
+    static SenseTag TagOf(ref Scan s, ref SenseEntry e, int slot, CharacterCold c, Vector3 at)
+    {
+        var tags = SenseTag.None;
+        if (CharacterFacts.Down(c) || c.Medical is { Dead: true }) tags |= SenseTag.Ko;
+        if (c.IsImprisoned) tags |= SenseTag.Imprisoned;
+        if (Fighting(ref s, slot)) return tags | SenseTag.Enemy;
+        // The rest (relations, disguise, squad memory, contracts, campaigns) is worked out again on the looker's full looks only (engine choice, for the look's cost; FullTags).
+        if (s.FullTags || e.Base == SenseTag.None)
+            e.Base = Regards(ref s, slot, c, at, out bool force) ? force ? SenseTag.Neutral : SenseTag.Enemy
+                : c.Faction == s.Faction || s.Relations.Contains(c.Faction) && s.Relations.IsAlly(s.Faction, c.Faction) ? SenseTag.Ally : SenseTag.Neutral;
+        return tags | e.Base;
+    }
+
+    /// <summary>The character in <paramref name="slot"/> fights the looker or is fought by it (last tick's fights).</summary>
+    static bool Fighting(ref Scan s, int slot)
+    {
+        if (s.Fights is not { } combat) return false;
+        var prev = s.Table.Previous;
+        int gen = prev[slot].Generation, selfGen = prev[s.Self].Generation;
+        return combat.TargetOf(slot, gen) == (s.Self, selfGen) || combat.TargetOf(s.Self, selfGen) == (slot, gen);
+    }
+
+    /// <summary>
+    /// Slot 125, "the looker regards it an enemy" (<c>FUN_14079c950</c>, docs/game/perception.md "Sense tags"; engine reading): one fighting the looker or fought by it, of any faction
+    /// (the TEMP_ENEMY <c>AI::underMeleeAttack</c> writes, read for any squad; Meitou's scripted fights may pit one faction against itself); else never its own faction; a slave only when the looker is hostile to its owner's faction and is not the owner's; else hostility from
+    /// the looker's faction to the one it is seen as (a disguise) without coexistence, with the freed rule; the squad memory's TEMP_ENEMY makes, TEMP_ALLY unmakes one; a contract's
+    /// employer never is; a campaign assault's extra target always is. <paramref name="force"/>: an enemy that is a campaign force's member, sensed NEUTRAL (<c>FUN_140796240</c>).
+    /// </summary>
+    static bool Regards(ref Scan s, int slot, CharacterCold c, Vector3 at, out bool force)
+    {
+        force = false;
+        var prev = s.Table.Previous;
+        int gen = prev[slot].Generation, selfGen = prev[s.Self].Generation;
+        if (c.Faction == s.Faction) return false;
+        if (s.War.IsSet && WarEnemy(ref s, c, at)) return true;
+        bool enemy;
+        if (c.SlaveState == 1) enemy = c.SlaveOwner != s.Faction && s.Relations.Contains(c.SlaveOwner) && s.Relations.IsHostile(s.Faction, c.SlaveOwner);
+        else
+        {
+            int seenAs = Crime.ArrestSystem.SeenFaction(c);
+            enemy = s.Relations.Contains(seenAs) && s.Relations.IsHostile(s.Faction, seenAs) && s.Cold is not { Freed: true }
+                && (!c.Freed || s.Relations.Factions[s.Faction] is { } own && (own.NotReal || own.DefaultRelation < FreedHostility));
+        }
+        bool tagged = false;
+        if (s.Memory is { } memory)
+        {
+            var target = new CharacterId(slot, gen);
+            if (memory.AnyTempEnemy(s.Squad) && memory.HasShort(s.World, s.Squad, target, Dialogue.MemoryTag.TempEnemy)
+                || s.World.Player.Faction == s.Faction && memory.AnyTempEnemy(c.SquadId) && memory.HasShort(s.World, c.SquadId, new CharacterId(s.Self, selfGen), Dialogue.MemoryTag.TempEnemy)) enemy = tagged = true;
+            else if (enemy && s.Squad >= 0 && memory.HasShort(s.World, s.Squad, target, Dialogue.MemoryTag.TempAlly)) enemy = false;
+        }
+        if (enemy && s.Employer >= 0 && (c.Faction == s.Employer || s.EmployerAllies && s.Relations.Contains(c.Faction) && s.Relations.IsAlly(s.Employer, c.Faction))) enemy = false;
+        if (enemy && !tagged && c.SquadId >= 0 && s.World.Squads.Find(c.SquadId) is { PlatoonId: >= 0 } squad && s.World.Platoons.Find(squad.PlatoonId)?.Campaign is not null) force = true;
+        return enemy;
+    }
+
+    /// <summary>The counts of the pass (<c>FUN_1408593d0</c>): an entry tagged ENEMY whose character is not down, dead or carried adds to <c>numEnemies</c>, one tagged NEUTRAL to <c>numNeutrals</c>.</summary>
+    static void Count(ref Scan s, in SenseEntry e, CharacterCold c)
+    {
+        if (CharacterFacts.Down(c) || c.Medical is { Dead: true }) return;
+        if ((e.Tags & SenseTag.Enemy) != 0) s.Block.Enemies++;
+        else if ((e.Tags & SenseTag.Neutral) != 0) s.Block.Neutrals++;
+    }
+
+    /// <summary>The sense-age unit in seconds (<c>FUN_140852150</c>: game hours x 3600 / 33 x 0.5; <see cref="GiveUpSenseSeconds"/> = 12 of them).</summary>
+    public const float SenseUnitSeconds = GiveUpSenseSeconds / 12;
+    /// <summary>How long an unsensed entry lasts, in sense units (<c>SensoryData::decay</c> <c>FUN_140859010</c>, <b>Verified</b> literals): 30, 60 for some targets, 120 for a player character in the home.</summary>
+    public const int SenseLifeUnits = 30, SenseLifeLongUnits = 60, SenseLifeHomeUnits = 120;
+    /// <summary>How long an unsensed entry follows its character's real place, in sense units (<c>FUN_140859010</c>, <b>Verified</b> literals): 8 inside a building, 25 out of one.</summary>
+    public const int FollowInsideUnits = 8, FollowOutsideUnits = 25;
+    /// <summary>The long-term squad memory tags that keep an entry 60 units: intruder, stole from me, captor, killed my friend (mask 0x232).</summary>
+    const uint LongSenseTags = 0x232;
+
+    /// <summary>
+    /// An entry not sensed this look (<c>SensoryData::decay</c> <c>FUN_140859010</c>, <b>Verified</b>): seen and heard cleared, its place follows the character's for
+    /// <see cref="FollowInsideUnits"/> / <see cref="FollowOutsideUnits"/> sense units, and it is dropped (false) past <see cref="SenseLife"/>.
+    /// </summary>
+    static bool Decay(ref Scan s, ref SenseEntry e, int slot, CharacterCold c)
+    {
+        e.Seen = e.Heard = false;
+        float age = ((long)s.Tick - e.Tick) * s.World.TickSeconds / SenseUnitSeconds;
+        if (age < (s.Sight.BuildingOf(slot) is null ? FollowOutsideUnits : FollowInsideUnits)) e.Place = s.Table.Previous[slot].Position;
+        return age <= SenseLife(s.World, s.Relations, s.Memory, s.Cold!, slot, c);
+    }
+
+    /// <summary>
+    /// The lifetime of a looker's entry of <paramref name="tc"/> in sense units (<c>FUN_140859010</c>, <b>Verified</b>): 120 when the looker's faction is real and <paramref name="tc"/> is a player
+    /// character inside the looker's home building; 60 when it is fighting, the looker's squad remembers it as an intruder, thief, captor or friend killer, or it is the looker's faction's
+    /// slave; else 30.
+    /// </summary>
+    static int SenseLife(World world, FactionRelations relations, Dialogue.SquadMemory? memory, CharacterCold cold, int t, CharacterCold tc)
+    {
+        var squad = cold.SquadId >= 0 ? world.Squads.Find(cold.SquadId) : null;
+        bool real = !relations.Contains(cold.Faction) || !relations.Factions[cold.Faction].NotReal;
+        if (real && world.Player.Faction >= 0 && tc.Faction == world.Player.Faction && squad?.HomeBuilding is { } home && world.Sight.BuildingOf(t) == home.Key) return SenseLifeHomeUnits;
+        if (tc.InCombat || tc.SlaveState == 1 && tc.SlaveOwner == cold.Faction) return SenseLifeLongUnits;
+        if (squad is not null && memory?.Find(world, squad.Id, world.Characters.IdOf(t)) is { } m && (m.Long & LongSenseTags) != 0) return SenseLifeLongUnits;
+        return SenseLifeUnits;
+    }
+
+    /// <summary>
+    /// The attack on sight (goal 16's finder <c>FUN_14059f3a0</c> and the stances' finders, docs/game/ai-tasks.md "Combat goals"): of the entries seen or heard at this look, the best by the
+    /// target score (<see cref="Candidate"/>), ties to the lower slot.
+    /// </summary>
+    static void Pick(ref Scan s)
+    {
+        var list = s.Block.entries;
+        for (int k = 0; k < list.Count; k++)
+            if (list[k].Now && s.Table.Cold(list[k].Target) is { } c) Candidate(ref s, list[k].Target, c);
+    }
+
+    static void Candidate(ref Scan s, int slot, CharacterCold c)
+    {
+        ref readonly var other = ref s.Table.Previous[slot];
         // A caged prisoner is nobody's target, an owned slave nobody's but its owner's enemies' (engine choice: the original's sensed-list filter is not decoded; town cages
         // hold enemies of their guards, and slaves of a hostile faction, such as Heng's Outlaws, stand among them). The territorial stance (144, FUN_14059fd70, Verified)
         // skips a slave only when the looker's faction is allied with its owner.
-        if (s.Table.Cold(slot) is not { Medical.Incapacitated: false, IsImprisoned: false } c) return;
+        if (c is not { Medical.Incapacitated: false, IsImprisoned: false }) return;
         if (c.SlaveState == 1 && (s.Stance == Ai.AiStance.Territorial ? s.Relations.Contains(c.SlaveOwner) && s.Relations.IsAlly(s.Faction, c.SlaveOwner) : !IsEnemy(s.Relations, s.Faction, c.SlaveOwner))) return;
-        bool sneaking = (c.Orders & CharacterOrders.Sneak) != 0;
-        // A sneaking target is harder to see and to hear (the Sneak order; docs/game/perception.md "Sight", "Spotting a sneaker" and "Hearing"): in view it fills the
-        // looker's spot meter, whether or not the looker would fight it, and counts as seen only once the meter was full before this scan. Not a looker's own side.
-        float stealth = sneaking ? Orders.Stealth(c) : -1, v = 0;
-        bool full = false;
-        if (sneaking && s.Found is null && c.Faction != s.Faction && !(s.Player && c.IsPlayer))
-        {
-            v = s.Sight.Sees(s.Self, slot, s.Eye, other.Position, s.Outdoor, stealth);
-            full = SpotOf(s.Spots, slot, other.Generation) > 1;
-            if (v > 0) s.Sightings.Add(new Sighting(slot, other.Generation, Orders.SpotSeconds(v, stealth)));
-            if (d2 <= s.Range * s.Range)
-                s.Effects.Emit(s.Self, slot, ExposureEffect, (float)(full && v > 0 ? StealthExposure.Detected : v > 0 ? StealthExposure.Noticed : StealthExposure.Near));
-        }
-        if (s.SneakOnly) return;
         // The attack-on-sight finder (FUN_14059f3a0, Verified) skips a target whose posture is not 0 (staying low or crawling) while it stands inside a building. A chained slave of
         // the looker's own faction takes the slave test instead (dropped while enslaved, a target once escaped); Meitou has no chain flag, so state 1 stands for it.
         if (c.Medical?.Prone == true && s.Sight.BuildingOf(slot) is not null && !(c.SlaveState == 1 && c.SlaveOwner == s.Faction)) return;
@@ -805,10 +1058,6 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         bool hostile = AttacksOnSight(s.Relations, s.Faction, seenAs) && s.Cold is not { Freed: true }
             && (!c.Freed || s.Relations.Factions[s.Faction] is { } mine && (mine.NotReal || mine.DefaultRelation < FreedHostility));
         bool warEnemy = s.War.IsSet && WarEnemy(ref s, c, other.Position);
-        // Package_WarAssault's sensing hook writes TEMP_ENEMY into the squad's memory for each sensed character it accepts, the whole squad then holding it (and, each time, its time, so it
-        // fades 6 h after the last sensing: SquadMemory.Age); the hook runs on the sensed list, here the characters seen or heard now (read only, no roll).
-        if (warEnemy && s.War.Everyone && s.Found is null && s.Squad >= 0 && s.Memory is not null && SensedNow(ref s, slot, other, sneaking, stealth))
-            s.Effects.Emit(s.Self, slot, TagEffect, Dialogue.MemoryTag.TempEnemy);
         bool enemy = s.Stance != Ai.AiStance.Passive
             && (hostile || s.Stance == Ai.AiStance.AggressiveNeutrals && IsNeutral(s.Relations, s.Faction, seenAs) || warEnemy);
         // A campaign force's member is sensed as NEUTRAL, not ENEMY (FUN_1408580d0 over FUN_140796240, docs/game/perception.md "Sense tags"): a raid walks up to talk first.
@@ -827,33 +1076,20 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         }
         // A contract's employer (Contract_HiredAlly / Contract_DefendPlayerBase assessNeutral, and HiredAlly's assessEnemy for the employer's allies, Verified): TEMP_ALLY, not an enemy.
         if (enemy && s.Employer >= 0 && (c.Faction == s.Employer || s.EmployerAllies && s.Relations.Contains(c.Faction) && s.Relations.IsAlly(s.Employer, c.Faction))) enemy = false;
-        // Contract_HiredAlly's sensing hook (FUN_140289570, Verified) also tags each sensed character of the employer's faction TEMP_ALLY in the squad's memory (same read-only sense test as
-        // the war tag above).
-        if (s.EmployerAllies && s.Employer >= 0 && c.Faction == s.Employer && s.Found is null && s.Squad >= 0 && s.Memory is not null && SensedNow(ref s, slot, other, sneaking, stealth))
-            s.Effects.Emit(s.Self, slot, TagEffect, Dialogue.MemoryTag.TempAlly);
         if (!enemy) return;
         // One it found no path to lately is never picked (isPathImpossible in the attack-on-sight finder's score, docs/game/combat.md "Target score"): else a guard shut in with its
         // enemy (a cage, a locked room) takes it as target again every look and never turns on anyone it can reach.
         if (s.Cold is { } looker && PursuitSystem.PathImpossible(looker, new CharacterId(slot, other.Generation), (long)s.Tick)) return;
-        if (s.Found is { } found)
-        {
-            if (SensedNow(ref s, slot, other, sneaking, sneaking ? Orders.Stealth(c) : -1)) found.Add(slot);
-            return;
-        }
         // The AI's stances (docs/simulation.md "AI", Combat goals): the defensive one joins fights only, the territorial one keeps to its home.
         if (s.Stance == Ai.AiStance.Defensive && !c.InCombat) return;
         if (s.Stance == Ai.AiStance.ProtectSquad && (s.SquadFights is { } fights ? s.Squad < 0 || !Protects(ref s, fights, slot) : !c.InCombat)) return;
         // Territorial (144, FUN_14059fd70, Verified): without a home circle it attacks on sight; outside the circle only one in the looker's own building.
         if (s.Stance == Ai.AiStance.Territorial && s.Home.R2 != 0 && !(Vector2.DistanceSquared(new Vector2(other.Position.X, other.Position.Z), s.Home.Centre) < s.Home.R2)
             && (s.World.Sight.BuildingOf(s.Self) is not { } inside || s.World.Sight.BuildingOf(slot) != inside)) return;
-        // The target score (Combat.TargetScore; Taunt and Passive weigh in there), after the Hold post test for a holding looker. Strictly better only: the grid visits a cell's
-        // slots in ascending order, so a tie keeps the lower slot within a cell; across cells the order is the grid's fixed one.
+        // The target score (Combat.TargetScore; Taunt and Passive weigh in there), after the Hold post test for a holding looker. Strictly better only, so a tie keeps the lower slot.
+        float d2 = Vector3.DistanceSquared(other.Position, s.Eye);
         float score = Score(ref s, slot, c, d2) ?? float.NegativeInfinity;
         if (!(score > s.BestScore)) return;
-        bool seen;
-        if (sneaking) seen = full && v > 0;
-        else seen = s.Sight.Sees(s.Self, slot, s.Eye, other.Position, s.Outdoor) > 0;
-        if (!seen && !Hears(s.World, s.Table, s.Self, slot, stealth, Rng.Hash(s.Seed, s.Key, RngPurpose.Sense, (s.Tick << 20) ^ (ulong)(uint)slot), s.Effects, ref s.Heard)) return;
         s.Best = slot;
         s.BestD2 = d2;
         s.BestScore = score;
@@ -862,7 +1098,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
     /// <summary>
     /// Whether the looker joins the fight of <paramref name="target"/> (143 PROTECT_OWN_SQUAD, <c>FUN_14099d510</c>, <b>Verified</b>): a squad mate it is itself, or senses now (<c>FUN_140855960</c> with
     /// flag 1: in its sensed map and seen or heard), is fighting it or is fought by it. Engine: the squad-shared sightings of mates and the finder's hand-list third path (<b>Unknown</b>) are
-    /// left out; a mate heard counts only from the looker's last hearing check.
+    /// left out.
     /// </summary>
     static bool Protects(ref Scan s, HashSet<(int Squad, int Slot, int Mate)> fights, int target)
     {
@@ -871,11 +1107,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         foreach (var member in squad.Members)
         {
             if (!table.IsAlive(member) || !fights.Contains((s.Squad, target, member.Slot))) continue;
-            if (member.Slot == s.Self) return true;
-            ref readonly var mate = ref table.Previous[member.Slot];
-            var mc = table.Cold(member.Slot);
-            bool sneaking = mc is not null && (mc.Orders & CharacterOrders.Sneak) != 0;
-            if (SensedNow(ref s, member.Slot, mate, sneaking, sneaking ? Orders.Stealth(mc!) : -1)) return true;
+            if (member.Slot == s.Self || s.Block.Knows(member, now: true)) return true;
         }
         return false;
     }
@@ -1106,6 +1338,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
     {
         var table = world.Characters;
         Sync(table);   // characters spawned this tick
+        if (!Settings.AttackOnSight) return;
         var next = table.Next;
         for (int i = 0; i < table.HighWater; i++)
         {
@@ -1140,10 +1373,10 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
     }
 
     /// <summary>
-    /// The original's chase give-up (<c>ChaseMode</c>, docs/game/combat.md "Leaving a fight"): after <see cref="GiveUpGateSeconds"/> of a chase, a target the chaser's last look
-    /// did not sense is given up when it was last sensed more than <see cref="GiveUpSenseSeconds"/> ago or the chaser stands within <see cref="GiveUpReach"/> of where it was.
-    /// The chaser stops and says so to the target (event 60 GIVE_UP_CHASE). Engine choice: the original tests this only in its path chase (fight state 11), Meitou in every
-    /// running chase (<see cref="CharacterCold.CombatRunning"/>), since how the original lets go on open ground is Unknown; a target still sensed is chased on either way.
+    /// The original's chase give-up (<c>ChaseMode</c>, docs/game/combat.md "Leaving a fight"), read from the chaser's sense entry of its target: after <see cref="GiveUpGateSeconds"/> of a
+    /// chase, a target with no entry is given up, and one its last look did not sense when the entry is older than <see cref="GiveUpSenseSeconds"/> or the chaser stands within
+    /// <see cref="GiveUpReach"/> of the entry's place. The chaser stops and says so to the target (event 60 GIVE_UP_CHASE). Engine choice: the original tests this only in its path chase
+    /// (fight state 11), Meitou in every running chase (<see cref="CharacterCold.CombatRunning"/>), since how the original lets go on open ground is Unknown.
     /// </summary>
     void Chase(World world, CharacterTable table, int i, ref Slot s, CharacterCold cold)
     {
@@ -1154,20 +1387,15 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
             s.ChaseStart = -1;
             return;
         }
-        var target = new Vector2(next[t].Position.X, next[t].Position.Z);
-        if (s.ChaseStart < 0)
-        {
-            // A chase begins with its target in view: the record starts as sensed now, so the first look's gap gives nothing up.
-            s.ChaseStart = s.SensedTick = world.Tick;
-            s.SensedAt = target;
-            s.Sensed = true;
-            return;
-        }
-        if (s.Sensed || (world.Tick - s.ChaseStart) * world.TickSeconds < GiveUpGateSeconds) return;
+        if (s.ChaseStart < 0) s.ChaseStart = world.Tick;
+        if ((world.Tick - s.ChaseStart) * world.TickSeconds < GiveUpGateSeconds) return;
+        SenseEntry entry = default;
+        bool known = s.Senses is { } senses && senses.TryGet(new CharacterId(t, next[t].Generation), out entry);
+        if (known && entry.Now) return;
         var here = new Vector2(next[i].Position.X, next[i].Position.Z);
         // Engine choice: a runner within GiveUpReach of the chaser itself has not got away, though a look missed it (a chaser running past it has it at its back); a sneaker has.
-        if (Vector2.DistanceSquared(here, target) < GiveUpReach * GiveUpReach && (table.Cold(t)!.Orders & CharacterOrders.Sneak) == 0) return;
-        if ((world.Tick - s.SensedTick) * world.TickSeconds <= GiveUpSenseSeconds && Vector2.DistanceSquared(here, s.SensedAt) >= GiveUpReach * GiveUpReach) return;
+        if (Vector2.DistanceSquared(here, new Vector2(next[t].Position.X, next[t].Position.Z)) < GiveUpReach * GiveUpReach && (table.Cold(t)!.Orders & CharacterOrders.Sneak) == 0) return;
+        if (known && (world.Tick - entry.Tick) * world.TickSeconds <= GiveUpSenseSeconds && Vector2.DistanceSquared(here, new Vector2(entry.Place.X, entry.Place.Z)) >= GiveUpReach * GiveUpReach) return;
         s.ChaseStart = -1;
         world.Defer(new StopCommand([table.IdOf(i)]) { Tick = world.Tick + 1 });
         world.Defer(new Dialogue.DialogueEvent(table.IdOf(i), table.IdOf(t), 60) { Tick = world.Tick + 1 });
@@ -1197,14 +1425,8 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
             hasher.Add(s.Generation);
             hasher.Add(s.Tracked);
             hasher.Add(s.Task);
-            if (s.ChaseStart >= 0)   // only while a chase runs
-            {
-                hasher.Add(s.ChaseStart);
-                hasher.Add(s.SensedTick);
-                hasher.Add(s.SensedAt.X);
-                hasher.Add(s.SensedAt.Y);
-                hasher.Add(s.Sensed);
-            }
+            if (s.ChaseStart >= 0) hasher.Add(s.ChaseStart);   // only while a chase runs
+            s.Senses?.Hash(ref hasher);
             if (s.Spots is { } spots)   // only while a looker has meters, so worlds without sneakers hash as before
                 foreach (var p in spots)
                 {

@@ -195,10 +195,17 @@ public class AggroTests
         a.World.Commands.Enqueue(new MoveOrder([runner], new Vector3(o.X, 150, o.Y + 20000)) { Tick = a.World.Tick });
         a.World.RunTicks(60);
         Assert.True(a.World.Characters.Cold(raider.Slot)!.CombatRunning, "the raider runs after it");
-        // Escaping: the runner is put far ahead, beyond any sight or noise range, and stands there (so it makes no noise either).
-        if (escapes) a.World.Characters.Place(runner.Slot, new Vector3(o.X, 150, o.Y + 9000), 0);
+        // Escaping: the runner is put far ahead, beyond any sight or noise range, and is ordered onto the raider: as its attacker it stays a candidate of the raider's target choice
+        // (docs/game/combat.md "Target selection"; one that only ran would be dropped at the next choice), so only the give-up lets it go.
+        if (escapes)
+        {
+            a.World.Characters.Place(runner.Slot, new Vector3(o.X, 150, o.Y + 9000), 0);
+            a.World.Commands.Enqueue(new AttackOrder([runner], raider) { Tick = a.World.Tick, Picked = true });
+        }
         long from = a.World.Tick;
-        a.World.RunTicks((int)(60 / a.World.TickSeconds));
+        // Up to the first give-up (the runner, still attacking, is taken on again later), and the two ticks its stop takes.
+        for (int k = 0; k < (int)(60 / a.World.TickSeconds) && !log.Events.Any(e => e.Event == 60); k++) a.World.RunTick();
+        a.World.RunTicks(2);
         var gaveUp = log.Events.Where(e => e.Event == 60).ToList();
         if (escapes)
         {
@@ -329,8 +336,8 @@ public class AggroTests
     }
 
     /// <summary>
-    /// The fighters' re-pick (docs/game/combat.md "Target selection"): a villager whose raider goes down turns at once on the raider attacking its squad mate, and once
-    /// that one is down too and nobody is left, its fight ends.
+    /// A villager whose raider goes down ends that fight with its task target (docs/game/combat.md "Leaving a fight") and at once joins its squad mate's defence against the other raider;
+    /// once that one is down too and nobody is left, its fight ends.
     /// </summary>
     [Fact]
     public void A_fighter_whose_target_drops_turns_on_a_mates_attacker_and_stops_when_none_is_left()
@@ -356,6 +363,35 @@ public class AggroTests
         a.World.RunTicks(5);
         Assert.False(a.Fighting(fighter), "nobody left: the fight ends");
         Assert.True(a.Combat.StateOf(fighter).TargetSlot < 0);
+    }
+
+    /// <summary>
+    /// A sense entry's decay (<c>SensoryData::decay</c> FUN_140859010, docs/game/perception.md "Senses"): an entry its looker no longer senses is dropped 30 sense units (60 s) after the look
+    /// that last sensed it, 60 units (120 s) while its character is in combat mode.
+    /// </summary>
+    [Theory, InlineData(false, 60f), InlineData(true, 120f)]
+    public void An_entry_no_longer_sensed_is_dropped_after_its_life(bool fighting, float life)
+    {
+        var aggro = new AggroSystem(Relations(), new AggroSettings { AttackOnSight = false });
+        using var world = new SimWorld(new WorldSettings { Seed = 3, Threads = 1, PublishSnapshots = false }, new OpenGroundWalkability((_, _) => 150), [aggro]);
+        CharacterId Spawn(float z)
+        {
+            var cold = new Combatant().MakeCold();
+            cold.Faction = Villagers;
+            return world.Characters.Spawn(new CharacterHot { Position = new Vector3(2000, 150, z), Health = 100, MaxSpeed = 60, WalkSpeed = 15 }, cold, 0);
+        }
+        CharacterId looker = Spawn(2000), target = Spawn(2200);   // 200 straight ahead of the looker (yaw 0 faces +Z)
+        world.RunTicks(30);
+        var senses = aggro.SensesOf(looker.Slot)!;
+        Assert.True(senses.Knows(target, now: true), "seen");
+        // Out of sight and hearing; in combat mode for the long life (no combat system here, so nothing ends it).
+        world.Characters.Cold(target.Slot)!.InCombat = fighting;
+        world.Characters.Place(target.Slot, new Vector3(2000, 150, 9000), 0);
+        world.RunTicks((int)((life - 5) / world.TickSeconds));
+        Assert.True(senses.Knows(target), "kept while its life lasts");
+        Assert.False(senses.Knows(target, now: true));
+        world.RunTicks((int)(10 / world.TickSeconds));
+        Assert.False(senses.Knows(target), "dropped once its life is over");
     }
 
     /// <summary>

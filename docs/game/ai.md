@@ -189,7 +189,7 @@ A slave's Slave role list runs through the Obedient Slave job (187): [role lists
 - Which of the six category registries (flag bits 1, 2, 4, 0x10, 0x20, 0x40; [planner](ai-tasks.md#planner)) a character plans with; the meaning of the `*` marker on some
   condition entries (the entry's second flag byte) and of the TaskData flag +0x14.
 - The extra x1.25 under an owner-object condition in scoring; the rule that drops a candidate whose B list holds with no effect.
-- The "AI flag +0xbc" that lets kind-2 (turret) perma-jobs run before urgent tasks; +0x70 of `OrdersReceiver` is the one-shot order list ([perma-jobs](ai-tasks.md#perma-jobs)).
+- (Answered: AI +0xbc is the senses' `numEnemies`, [perception](perception.md#senses).) +0x70 of `OrdersReceiver` is the one-shot order list ([perma-jobs](ai-tasks.md#perma-jobs)).
 - Why `clears existing jobs` has no string reference in the exe (editor-only field, or read some other way).
 - Which AI packages use which `unloaded func` value, beyond the shipping ones (signals 11 and 28: all four have 5 TRAVEL_TARGET, **Verified**
   by a base-data dump of the AI_PACKAGE records). The unloaded update itself, the keep test `FUN_1407ec570`

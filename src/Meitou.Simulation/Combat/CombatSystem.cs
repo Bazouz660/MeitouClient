@@ -122,6 +122,10 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed, ITaskOwner
     /// <summary>The resolved blows so far (when <see cref="CombatOptions.RecordLog"/> is on).</summary>
     public IReadOnlyList<CombatLogEntry> Log => log;
 
+    /// <summary>Whom the character in <paramref name="slot"/> (of <paramref name="generation"/>) fights as of the last tick (slot -1: nobody); a cheap read of <see cref="StateOf"/>, any thread after Schedule.</summary>
+    public (int Slot, int Generation) TargetOf(int slot, int generation) =>
+        (uint)slot < (uint)read.Length && read[slot].Generation == generation ? (read[slot].TargetSlot, read[slot].TargetGeneration) : (-1, 0);
+
     /// <summary>The combat state of a character as of the last finished tick (default when it has none).</summary>
     public CombatSlot StateOf(CharacterId id) => id.Slot >= 0 && id.Slot < read.Length && read[id.Slot].Generation == id.Generation ? read[id.Slot] : CombatSlot.Fresh(id.Generation);
 
@@ -147,6 +151,7 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed, ITaskOwner
             Array.Resize(ref write, size);
             for (int i = old; i < size; i++) { read[i] = CombatSlot.Fresh(-1); write[i] = CombatSlot.Fresh(-1); }
         }
+        if (inFight.Length < read.Length) inFight = new bool[read.Length];
         var next = table.Next;
         for (int i = 0; i < n; i++)
         {
@@ -285,9 +290,9 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed, ITaskOwner
         }
         s.TargetSlot = t;
         s.TargetGeneration = target.Generation;
+        (s.TaskSlot, s.TaskGeneration) = (t, target.Generation);
         s.Picked = picked;
         s.PickTick = now + PickTicks(world, cold);
-        s.SensedTick = now;
         s.ReadyTick = now;   // no wait before the first swing (startupState enters the attack at once)
         // The fight's first path is asked for at once: the wait an idle or wandering character was in (3 to 10 s) is not the pursuit's repath timer (PursuitSystem), and left in
         // it the fighter stood there until it ran out.
@@ -319,6 +324,7 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed, ITaskOwner
         static void Drop(ref CombatSlot s)
         {
             s.TargetSlot = -1;
+            s.TaskSlot = -1;
             s.AttackTech = -1;
             s.NextBlow = 0;
             s.Engaged = false;
@@ -346,6 +352,7 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed, ITaskOwner
     {
         var cold = table.Cold(slot)!;
         if (cold.InCombat) s.ListEpoch++;
+        s.TaskSlot = -1;
         EndFight(table, slot);
     }
 

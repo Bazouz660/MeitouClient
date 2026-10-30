@@ -68,6 +68,15 @@ public static class CharacterFacts
         return false;
     }
 
+    /// <summary>
+    /// The character's senses (<c>SensoryData</c>, Character vfunc 0x68; docs/game/perception.md "Senses"), as of its last look (<see cref="AggroSystem"/>); null before its first look or in a
+    /// world without the look.
+    /// </summary>
+    public static SenseBlock? Senses(World world, int slot) => world.SystemOf<AggroSystem>()?.SensesOf(slot);
+
+    /// <summary><c>FUN_140855960</c> with its flag clear (docs/game/ai-tasks.md "Combat goals"): <paramref name="looker"/> knows <paramref name="who"/>: itself, or an entry of its senses (a world without senses knows everyone).</summary>
+    public static bool Knows(World world, int looker, CharacterId who) => who.Slot == looker || Senses(world, looker) is not { } b || b.Knows(who) || world.SystemOf<AggroSystem>() is null;
+
     /// <summary>The planner's <c>iAmBeingMeleeAttacked immediate</c> (<c>+0x2b0</c>, <c>FUN_1404378f0</c>, <see cref="CombatSystem.ImmediateThreat"/>).</summary>
     internal static bool ImmediateThreat(CombatSystem combat, World world, int self) => combat.ImmediateThreat(world, self);
 }

@@ -409,7 +409,8 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem, IDecis
             {
                 if (!combat.Alerts(world, a, t)) continue;
                 alerted[a] = justAlerted[a] = fresh = true;
-                // The alert ends the target's sneaking and its squad tags the attacker TEMP_ENEMY (AI::underMeleeAttack).
+                // The alert ends the target's sneaking, puts the attacker in its senses (seen) and its squad tags the attacker TEMP_ENEMY (AI::underMeleeAttack).
+                world.SystemOf<AggroSystem>()?.Force(world, t, a);
                 world.SystemOf<Dialogue.DialogueSystem>()?.TagEnemy(world, t, a);
                 if (table.Cold(t) is { } tc)
                 {

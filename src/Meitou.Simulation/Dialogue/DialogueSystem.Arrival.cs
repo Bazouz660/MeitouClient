@@ -45,18 +45,6 @@ public sealed partial class DialogueSystem
         return root.IsCharacter.Contains(c.RecordId) || root.IsCharacter.Count == 0 && data.Db.Find(c.RecordId)?.GetBool("dumb") != true;
     }
 
-    /// <summary>Whether a character awake and hostile to <paramref name="c"/>'s faction is within its sight range and in view (the original's <c>numEnemies</c> &gt; 0).</summary>
-    bool SensesEnemy(World world, int slot, CharacterCold c)
-    {
-        var table = world.Characters;
-        float range = AggroSystem.RangeOf(c, AggroSystem.OutdoorSight);
-        var at = table.Next[slot].Position;
-        for (int o = 0; o < table.HighWater; o++)
-        {
-            if (o == slot || !Awake(table, o) || table.Cold(o) is not { } oc || !data.Relations.Contains(oc.Faction) || !AggroSystem.IsEnemy(data.Relations, c.Faction, oc.Faction)) continue;
-            var there = table.Next[o].Position;
-            if (Vector3.DistanceSquared(at, there) <= range * range && world.Sight.Sees(slot, o, at, there, range) > 0) return true;
-        }
-        return false;
-    }
+    /// <summary>The original's <c>numEnemies</c> &gt; 0: the character's senses count an enemy (<see cref="CharacterFacts.Senses"/>).</summary>
+    static bool SensesEnemy(World world, int slot, CharacterCold c) => CharacterFacts.Senses(world, slot) is { Enemies: > 0 };
 }

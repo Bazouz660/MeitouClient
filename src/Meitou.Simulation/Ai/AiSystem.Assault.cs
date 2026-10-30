@@ -31,9 +31,9 @@ public sealed partial class AiSystem
             if (m.Slot == slot || !table.IsAlive(m) || table.Cold(m.Slot) is not { IsImprisoned: false, Medical: { Incapacitated: false, Prone: false } } c) continue;
             var fight = combat?.StateOf(m) ?? CombatSlot.Fresh(m.Generation);
             var at = prev[m.Slot].Position;
-            // Known: sensed (engine reading, as the fighters' own sense test; the entry's tag and age are not modelled) or the contract's own target (the branch of the test
-            // that reads a stored hand is Unknown, docs/game/ai-tasks.md).
-            if (m != mission && combat?.Senses(world, slot, me, m.Slot) != true) continue;
+            // Known: an entry of its senses, any tag or age (FUN_140855960 without its flag), or the contract's own target (the branch of the test that reads a stored hand is
+            // Unknown, docs/game/ai-tasks.md).
+            if (m != mission && !CharacterFacts.Knows(world, slot, m)) continue;
             // Area: its home town, or ROAM_FAR's reach, or fighting it.
             if (!(board.Town >= 0 && TownAt(at) == board.Town) && System.Numerics.Vector3.DistanceSquared(here, at) >= Production.ProductionSystem.JobRangeSq
                 && !(fight.TargetSlot == slot && fight.TargetGeneration == prev[slot].Generation)) continue;

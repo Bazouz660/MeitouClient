@@ -21,6 +21,11 @@ public interface ITickSystem
     void Think(World world, Partition partition) { }
     /// <summary>Step 4, parallel: path following, steering, separation, integration on the ground.</summary>
     void Move(World world, Partition partition) { }
+    /// <summary>
+    /// Step 5, parallel, right before this system's <see cref="Act"/> with a barrier between: the slots' own state that the system's <see cref="Act"/> reads of other slots (combat's
+    /// body step), so each slot's Act sees every slot's update of this tick whatever the partitions and thread count. Writes only its own slots; no effects.
+    /// </summary>
+    void BeforeAct(World world, Partition partition) { }
     /// <summary>Step 5, parallel: combat timers, needs, production; effects on others go to <paramref name="effects"/>.</summary>
     void Act(World world, Partition partition, EffectBuffer effects) { }
     /// <summary>Step 6, serial: applies one effect this system emitted; effects arrive sorted by (target, source, system, sequence).</summary>
@@ -298,6 +303,7 @@ public sealed partial class World : IDisposable
         prof?.Lap(TickProfile.Act);
         foreach (var p in phases)
         {
+            if (p.BeforeAct is { } before) RunParallel(before, prof, TickProfile.Act, p.Index);
             if (p.Act is not { } act) continue;
             foreach (var b in buffers) b.BeginSystem(p.Index);   // Effect.System is the system's real index, so the commit order does not depend on which systems act
             RunParallel(act, prof, TickProfile.Act, p.Index);
