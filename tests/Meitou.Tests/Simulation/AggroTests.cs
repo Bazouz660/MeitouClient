@@ -60,9 +60,23 @@ public class AggroTests
             SquadOf(faction, home, false, [.. at.Select(p => (p, face is { } f ? MathF.Atan2(f.X - p.X, f.Y - p.Y) : 0f))]);
 
         /// <summary>A squad with each member's position and yaw; <paramref name="idle"/> makes them stand (no wandering, so they make no noise).</summary>
-        public Squad SquadOf(int faction, Vector2 home, bool idle, params (Vector2 At, float Yaw)[] members)
+        public Squad SquadOf(int faction, Vector2 home, bool idle, params (Vector2 At, float Yaw)[] members) => SquadOf(faction, home, idle, -1, members);
+
+        /// <summary>
+        /// The active half of a roaming platoon that runs <paramref name="package"/> (the population's stand-in; the AI does not run its squad), its members standing and facing along +Z.
+        /// </summary>
+        public Squad Roamers(int faction, string package, Vector2 home, params Vector2[] at)
         {
-            var squad = new Squad { Id = World.Squads.NextId(), TemplateId = "t", Faction = faction, HomeCentre = home, HomeRadius = 30 };
+            var platoon = new Platoon { Id = World.Platoons.NextId(), Origin = 0, TemplateId = "t", Key = 1, Faction = faction, Package = package, State = PlatoonState.Loaded };
+            World.Platoons.Add(platoon);
+            var squad = SquadOf(faction, home, true, platoon.Id, [.. at.Select(p => (p, 0f))]);
+            platoon.SquadId = squad.Id;
+            return squad;
+        }
+
+        Squad SquadOf(int faction, Vector2 home, bool idle, int platoon, (Vector2 At, float Yaw)[] members)
+        {
+            var squad = new Squad { Id = World.Squads.NextId(), TemplateId = "t", Faction = faction, HomeCentre = home, HomeRadius = 30, PlatoonId = platoon };
             World.Squads.Add(squad);
             foreach (var (p, yaw) in members)
             {
@@ -105,7 +119,8 @@ public class AggroTests
     /// The arena; <paramref name="ai"/> adds the AI (first, as the standard order has it), which runs the squads given goal lists (<see cref="Lists"/>); <paramref name="flee"/> adds the flee step
     /// after the looks and gives the AI the threats (Self preservation).
     /// </summary>
-    static Arena Make(ulong seed, int threads, FactionRelations? relations = null, AggroSettings? settings = null, ITickSystem? extra = null, bool ai = false, bool flee = false)
+    static Arena Make(ulong seed, int threads, FactionRelations? relations = null, AggroSettings? settings = null, ITickSystem? extra = null, bool ai = false, bool flee = false,
+        GameDatabase? db = null)
     {
         relations ??= Relations();
         var combat = new CombatSystem(KatanaTechniques(), Constants, BaseGame, BodyOptions.Default, DuelFixture.Lengths, new CombatOptions { SelfApproach = false, TickMedical = false, RecordLog = true })
@@ -115,7 +130,7 @@ public class AggroTests
         };
         var aggro = new AggroSystem(relations, settings ?? new AggroSettings { RecordLog = true });
         var walk = new OpenGroundWalkability((_, _) => 150);
-        ITickSystem[] mind = ai ? [new AiSystem(new PopulationData { Db = new GameDatabase(), Sites = [], Factions = [], Relations = relations }) { ThreatSource = flee ? combat : null }] : [];
+        ITickSystem[] mind = ai ? [new AiSystem(new PopulationData { Db = db ?? new GameDatabase(), Sites = [], Factions = [], Relations = relations }) { ThreatSource = flee ? combat : null }] : [];
         ITickSystem[] run = flee ? [new FleeSystem(relations, combat)] : [];
         var world = new SimWorld(new WorldSettings { Seed = seed, Threads = threads, PublishSnapshots = false, MinPartitionSize = 1 }, walk,
             [.. mind, new PursuitSystem(combat), new MovementSystem(new PathService(walk, true)), new BodySystem(BaseGame), combat, new RetaliationSystem(combat), aggro, .. run, .. extra is null ? Array.Empty<ITickSystem>() : [extra]]);
@@ -123,14 +138,15 @@ public class AggroTests
     }
 
     /// <summary>
-    /// Raiders between villagers (hostile), nomads (coexisting), hermits (coexisting from their side) and friends (allied), each a squad 150 units off.
-    /// Returns the squads in that order.
+    /// Raiders that attack on sight (goal 16) between villagers (hostile), nomads (coexisting), hermits (coexisting from their side) and friends (allied), each a squad 150 units off, whose
+    /// minds hold no combat goal (no AI packages). Returns the squads in that order.
     /// </summary>
     static (Arena Arena, Squad Raiders, Squad Villagers, Squad Nomads, Squad Hermits, Squad Friends) Crossroads(ulong seed, int threads)
     {
-        var a = Make(seed, threads);
+        var a = Make(seed, threads, ai: true);
         var o = new Vector2(2000, 2000);
         var raiders = a.Squad(Raiders, o, o, o + new Vector2(0, 12));
+        Lists(raiders, [Goal(TaskType.ATTACK_ENEMIES)], [Goal(TaskType.ATTACK_ENEMIES)]);
         var villagers = a.Squad(Villagers, o + new Vector2(150, 0), o + new Vector2(150, 0), o + new Vector2(160, 10));
         var nomads = a.Squad(Nomads, o + new Vector2(-150, 0), o + new Vector2(-150, 0), o + new Vector2(-160, 10));
         var hermits = a.Squad(Hermits, o + new Vector2(0, 150), o + new Vector2(0, 150));
@@ -145,7 +161,7 @@ public class AggroTests
         using var _ = a;
         a.World.RunTicks(60);
         // The raiders started it: every logged fight is a raider attacking a villager or a hermit (the hermits list the raiders as coexisting, but attack on sight reads only the
-        // looker's own list, FUN_1406b23c0), and both raiders took part (the second one joined).
+        // looker's own list, FUN_1406b23c0), and both raiders took part (each by its own 16).
         Assert.NotEmpty(a.Aggro.Log);
         Assert.All(a.Aggro.Log, e => { Assert.Equal(Raiders, e.AttackerFaction); Assert.Contains(e.TargetFaction, new[] { Villagers, Hermits }); });
         Assert.All(raiders.Members, m => Assert.True(a.Fighting(m), "both raiders fight"));
@@ -163,10 +179,11 @@ public class AggroTests
     [Fact]
     public void A_war_on_the_player_turns_a_faction_hostile_with_the_games_messages_and_its_people_then_attack()
     {
-        using var a = Make(7, 1);
+        using var a = Make(7, 1, ai: true);
         var o = new Vector2(2000, 2000);
         var town = a.Squad(Townsfolk, o, o, o + new Vector2(30, 0));
         var watch = a.Squad(Townsfolk, o + new Vector2(200, 0), o + new Vector2(200, 0));
+        Lists(watch, [Goal(TaskType.ATTACK_ENEMIES)]);
         var me = a.PlayerCharacter(o + new Vector2(60, 60));
         a.World.RunTicks(20);
         Assert.Empty(a.Aggro.Log);   // neutral: 10
@@ -179,7 +196,7 @@ public class AggroTests
         PlayerRelations.DeclareWar(a.World, a.Relations, Townsfolk, Player);
         Assert.Equal(-35, a.Relations.Get(Townsfolk, Player));
         Assert.Equal(["War breaks out between townsfolk and Nameless", "townsfolk are now hostile towards you"], a.World.TakeMessages());
-        // Now another squad of theirs, which nobody attacked (the victims' mates join them anyway), picks the fight with the player by itself.
+        // Now another squad of theirs, which nobody attacked, picks the fight with the player by itself (its 16).
         a.World.RunTicks(30);
         Assert.Contains(a.Aggro.Log, e => e.Attacker == watch.Members[0] && e.Target == me);
     }
@@ -345,8 +362,8 @@ public class AggroTests
     }
 
     /// <summary>
-    /// A villager whose raider goes down ends that fight with its task target (docs/game/combat.md "Leaving a fight") and at once joins its squad mate's defence against the other raider;
-    /// once that one is down too and nobody is left, its fight ends.
+    /// A villager whose raider goes down ends that fight with its task target (docs/game/combat.md "Leaving a fight") and at once joins its squad mate's defence against the other raider by its
+    /// goal 143 (the fight's end asks it to think); once that one is down too and nobody is left, its fight ends.
     /// </summary>
     [Fact]
     public void A_fighter_whose_target_drops_turns_on_a_mates_attacker_and_stops_when_none_is_left()
@@ -355,9 +372,10 @@ public class AggroTests
             new FactionData { Id = "raiders", Name = "raiders", Relations = new Dictionary<string, int>() },
             new FactionData { Id = "villagers", Name = "villagers", Relations = new Dictionary<string, int>() },
         ]);
-        using var a = Make(6, 1, table);
+        using var a = Make(6, 1, table, ai: true);
         var o = new Vector2(2000, 2000);
         var villagers = a.SquadOf(1, o, true, (o, 0f), (o + new Vector2(40, 0), 0f));
+        Lists(villagers, [Goal(TaskType.PROTECT_OWN_SQUAD)], [Goal(TaskType.PROTECT_OWN_SQUAD)]);
         var raiders = a.SquadOf(0, o, true, (o + new Vector2(0, 20), MathF.PI), (o + new Vector2(40, 20), MathF.PI));
         CharacterId fighter = villagers.Members[0], mate = villagers.Members[1], first = raiders.Members[0], second = raiders.Members[1];
         a.World.Commands.Enqueue(new AttackOrder([fighter], first) { Tick = a.World.Tick });
@@ -772,6 +790,79 @@ public class AggroTests
         Assert.Equal(2, log.Count);
         Assert.Equal(log[0].Tick, log[1].Tick);
         Assert.NotEqual(a.Combat.StateOf(squad.Members[0]).TargetSlot, a.Combat.StateOf(squad.Members[1]).TargetSlot);
+    }
+
+    /// <summary>Two AI packages, "210-t" with 16 Attacking enemies and "211-t" with 143 Protect close allies, for every role, all hours, weight 1.</summary>
+    static GameDatabase RoamingPackages()
+    {
+        Meitou.Data.Fcs.FcsRecord Task(string id, TaskType type)
+        {
+            var r = SyntheticTown.Rec(id, Meitou.Data.Fcs.FcsRecordType.AI_TASK, type.ToString());
+            (r.Ints["enum"], r.Ints["classification"], r.Ints["targeting"], r.Ints["ending"]) = ((int)type, (int)TaskPriority.Urgent, 0, 0);
+            return r;
+        }
+        Meitou.Data.Fcs.FcsRecord Package(string id, string task)
+        {
+            var r = SyntheticTown.Rec(id, Meitou.Data.Fcs.FcsRecordType.AI_PACKAGE, id);
+            r.References["Leader AI Goals"] = [SyntheticTown.Ref(task, 0, 100, 0)];
+            r.References["Squad AI Goals"] = [SyntheticTown.Ref(task, 0, 100, 0)];
+            return r;
+        }
+        var file = new Meitou.Data.Fcs.FcsFile();
+        file.Records.AddRange([Task("200-t", TaskType.ATTACK_ENEMIES), Task("201-t", TaskType.PROTECT_OWN_SQUAD), Package("210-t", "200-t"), Package("211-t", "201-t")]);
+        var db = new GameDatabase();
+        db.Apply(file, "test.mod");
+        return db;
+    }
+
+    /// <summary>
+    /// A squad the AI does not run takes its combat goals from its package all the same (docs/simulation.md "AI": every character has goals, <c>setupAI</c>): of two roaming squads of the
+    /// town that see a bandit, the one whose package lists 16 attacks it, the one whose package lists only 143 does not, and a member whose mind was dropped (as trade or recruitment do)
+    /// gets one again. Catches the old stance-blind rule (attack on sight by the relations alone) for squads without a mind of the AI's.
+    /// </summary>
+    [Fact]
+    public void A_roaming_squad_attacks_on_sight_only_by_its_packages_attack_goal()
+    {
+        using var a = Make(21, 1, TownRelations(), ai: true, db: RoamingPackages());
+        a.Aggro.Combat = a.Combat;
+        var o = new Vector2(2000, 2000);
+        var hunters = a.Roamers(Town, "210-t", o, o + new Vector2(-40, 0), o + new Vector2(-30, 0));
+        var traders = a.Roamers(Town, "211-t", o, o + new Vector2(30, 0), o + new Vector2(40, 0));
+        Think(a);
+        var table = a.World.Characters;
+        Assert.All(hunters.Members.Concat(traders.Members), m => Assert.True(table.Cold(m.Slot)!.Ai is { Engine: true }, "an engine-run mind"));
+        table.Cold(hunters.Members[1].Slot)!.Ai = null;
+        var bandit = a.SquadOf(Bandits, o, true, (o + new Vector2(0, 150), MathF.PI)).Members[0];
+        for (int k = 0; k < (int)(4 / a.World.TickSeconds) && !hunters.Members.All(a.Fighting); k++)
+        {
+            a.World.RunTicks(1);
+            Assert.All(traders.Members, m => Assert.False(a.Fighting(m), $"a 143-only roamer attacked at tick {a.World.Tick}"));
+        }
+        Assert.All(hunters.Members, m => Assert.Equal(bandit.Slot, a.Combat.StateOf(m).TargetSlot));
+        Assert.True(table.Cold(hunters.Members[1].Slot)!.Ai is { Engine: true }, "the dropped mind is made again");
+    }
+
+    /// <summary>
+    /// A squad whose template lists no AI packages has only the goals every character has (<c>setupAI</c>: 14, 32 and its race's, none of which attacks here): it starts no fight with an enemy in
+    /// sight, the attacked member fights back (32), and its mate, with no 143, keeps out. Catches the old rule for squads without packages (attack on sight and the squad's join by relations).
+    /// </summary>
+    [Fact]
+    public void A_squad_without_packages_starts_no_fight_and_only_the_attacked_member_answers()
+    {
+        using var a = Make(22, 1, TownRelations(), ai: true);
+        a.Aggro.Combat = a.Combat;
+        var o = new Vector2(2000, 2000);
+        var folk = a.SquadOf(Town, o, true, (o, 0f), (o + new Vector2(10, 0), 0f));
+        Think(a);
+        var bandit = a.SquadOf(Bandits, o, true, (o + new Vector2(5, 60), MathF.PI)).Members[0];
+        a.World.RunTicks((int)(2 / a.World.TickSeconds));
+        Assert.True(a.World.Characters.Cold(folk.Members[0].Slot)!.Ai is { Engine: true, EngineGoals.Count: 0 });
+        Assert.All(folk.Members, m => Assert.False(a.Fighting(m), "no attack on sight"));
+        a.World.Commands.Enqueue(new AttackOrder([bandit], folk.Members[0]) { Tick = a.World.Tick });
+        a.World.RunTicks((int)(3 / a.World.TickSeconds));
+        Assert.True(a.Fighting(folk.Members[0]), "the attacked member fights back");
+        Assert.Equal(bandit.Slot, a.Combat.StateOf(folk.Members[0]).TargetSlot);
+        Assert.False(a.Fighting(folk.Members[1]), "the mate keeps out");
     }
 
     /// <summary>

@@ -26,18 +26,16 @@ public sealed record AggroSettings
 public readonly record struct AggroEntry(long Tick, CharacterId Attacker, CharacterId Target, int AttackerFaction, int TargetFaction, float Distance, int Joined);
 
 /// <summary>
-/// Hostility by faction relations (an <b>engine stand-in</b> for the stage 9 AI's senses and target choice, docs/simulation.md "Combat"):
+/// The senses and the attack-on-sight finders (an <b>engine stand-in</b> for the original's <c>SensoryData</c> and the attack goals' finders, docs/game/perception.md "Senses"):
 /// <list type="bullet">
-/// <item><b>Look</b> (<c>Act</c>, parallel, own slot, reading the last tick's positions through the <see cref="SpatialGrid"/>): an awake NPC with a fighter, not fighting,
-/// not fleeing, not treating or resting, whose turn it is (one in <see cref="AggroSettings.ScanEveryTicks"/>, by slot) finds the nearest living, awake character with a body
-/// that it sees (<see cref="SightMap.Sees"/>: places, light and its range R = <see cref="AggroSettings.SightRange"/> x its race's <c>vision range mult</c> times the view-cone factor
-/// of <see cref="Visibility"/>) whose faction its own is hostile to (relation -30 or lower) and that its own faction does not list in <c>coexistence</c> (<see cref="AttacksOnSight"/>); ties go to the lower slot. It emits one
-/// effect at that target.</item>
-/// <item><b>Decide</b> (<c>Apply</c>, serial commit order): an NPC the AI runs, and its squad mates within twice their own range R of the target (the original's squad-shared sightings,
-/// <c>GroupSense</c>), are asked to think at the next tick (<see cref="Ai.AiMind.Replan"/>): their combat goals decide in the chooser (<see cref="FindFoe"/>). A looker without an AI (the old
-/// rule, engine), if still free, and its free mates without an AI whose own finder takes the target get an <see cref="AttackOrder"/> for the next tick through <see cref="World.Defer"/>. The player's characters look and join only with
-/// the attacking-enemies job (<see cref="HuntsEnemies"/>) or on Hold, and are offered the sighting: the decision step starts their fight (<see cref="HoldAttack"/>, <see cref="AttackJob"/>);
-/// they have no leash, and after a job's fight go back to following or stand idle.</item>
+/// <item><b>Look</b> (<c>Act</c>, parallel, own slot, reading the last tick's positions through the <see cref="SpatialGrid"/>): every living character on its turn (one in
+/// <see cref="AggroSettings.ScanEveryTicks"/>, by slot) senses who it sees (<see cref="SightMap.Sees"/>: places, light and its range R = <see cref="AggroSettings.SightRange"/> x its race's
+/// <c>vision range mult</c> times the view-cone factor of <see cref="Visibility"/>) or hears, and keeps the entries, tags, counts and threats. An NPC with a mind that senses a new enemy emits
+/// one effect at it (a replan trigger); a player character with the attacking-enemies job or on Hold picks the best enemy by the target score (<see cref="Pick"/>).</item>
+/// <item><b>Decide</b> (<c>Apply</c>, serial commit order): an NPC with a mind, and its squad mates within twice their own range R of the target (the original's squad-shared sightings,
+/// <c>GroupSense</c>), are asked to think at the next tick (<see cref="Ai.AiMind.Replan"/>): their combat goals decide in the chooser (<see cref="FindFoe"/>). An NPC without a mind starts no
+/// fight on sight. The player's characters look only with the attacking-enemies job (<see cref="HuntsEnemies"/>) or on Hold, and are offered the sighting: the decision step starts their fight
+/// (<see cref="HoldAttack"/>, <see cref="AttackJob"/>); they have no leash, and after a job's fight go back to following or stand idle.</item>
 /// <item><b>Chase give-up and stand down</b> (<c>SlowWorld</c>, serial, every tick): an NPC running after its target (<see cref="CharacterCold.CombatRunning"/>) senses that
 /// target on its look cadence (<c>Act</c>) and gives it up by the original's <c>ChaseMode</c> rule (<see cref="GiveUpGateSeconds"/>, <see cref="GiveUpSenseSeconds"/>,
 /// <see cref="GiveUpReach"/>). When its fight is over (target down, or stopped) it goes back to what it did before (wander or follow; a go-to becomes idle, which the roaming
@@ -643,13 +641,12 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
             bool looks = Settings.AttackOnSight && !Busy(cold, task)
                 && cold is { InCombat: false, Fleeing: false, IsImprisoned: false, SlaveState: not 1, Fighter.CanAttack: true, Medical.Incapacitated: false }
                 && Relations.Contains(cold.Faction) && (hasEnemy[cold.Faction] || war.IsSet || (Memory?.AnyTempEnemy(cold.SquadId) ?? false));
-            // The player's characters attack on sight with the job or Hold's goal (offered to the decision step); an NPC with a mind decides by its own goals in the chooser, one
-            // without keeps the old rule.
-            bool targets = looks && (cold.IsPlayer ? HuntsEnemies(cold) || HoldsGround(cold) : cold.Ai is null);
+            // The player's characters attack on sight with the job or Hold's goal (offered to the decision step); an NPC decides by its own goals in the chooser.
+            bool targets = looks && cold.IsPlayer && (HuntsEnemies(cold) || HoldsGround(cold));
             var scan = NewScan(world, i, cold, war, MathF.Max(0, RangeOf(cold, Settings.SightRange)), effects);
             // Every awake NPC keeps spot meters on the sneakers it sees, not only those it would fight (the original's per-looker SpottingPeopleMgr): they feed the crime
             // witnesses, the stealth knock-out and the sneaker's arrows.
-            bool picks = targets || looks && !cold.IsPlayer;
+            bool picks = targets || looks && cold.Ai is not null;
             scan.Meters = sneakers.Count > 0 && (picks || Watches(cold, task) && SneakerWithin(prev[i].Position, scan.Range));
             scan.Sightings!.Clear();
             scan.FullTags = (world.Tick / every + i) % FarLooks == 0;
@@ -1294,26 +1291,19 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
             JoinMates(world, table, i, t, target, null);
             return;
         }
-        if (!Free(table, i, taken)) return;
+        // A player character takes this fight through row 16 only, Hold's goal (priority 3) or its job: it and its free mates whose own look would take the target are offered it, and the
+        // decision step weighs it against their orders, goals and jobs.
+        if (table.Cold(i) is not { IsPlayer: true } || !Free(table, i, taken)) return;
         var fighters = new List<CharacterId> { table.IdOf(i) };
         taken.Add(i);
         JoinMates(world, table, i, t, target, fighters);
         var targetId = table.IdOf(t);
-        // A player character takes this fight through row 16 only, Hold's goal (priority 3) or its job: it is offered it, and the decision step weighs it against its orders, goals and jobs.
         if (offersTick != world.Tick) { offers.Clear(); offersTick = world.Tick; }
-        for (int k = fighters.Count - 1; k >= 0; k--)
+        foreach (var f in fighters)
         {
-            int s = fighters[k].Slot;
-            if (table.Cold(s) is not { IsPlayer: true } pc) continue;
-            offers.TryAdd(s, targetId);
-            DecisionSystem.Request(pc);
-            fighters.RemoveAt(k);
+            offers.TryAdd(f.Slot, targetId);
+            DecisionSystem.Request(table.Cold(f.Slot)!);
         }
-        if (fighters.Count == 0) return;
-        world.Defer(new AttackOrder(fighters, targetId) { Tick = world.Tick + 1, Source = TaskSource.Npc });
-        Started++;
-        if (world.Sounds is { } sounds) foreach (var fighter in fighters) sounds.Enqueue(new SoundEvent(SoundKind.Alert, fighter, targetId, next[t].Position));   // the fighters' alert voices
-        if (Settings.RecordLog) log.Add(new AggroEntry(world.Tick, fighters[0], targetId, table.Cold(i)!.Faction, target.Faction, e.Amount, fighters.Count - 1));
     }
 
     /// <summary>
@@ -1358,8 +1348,8 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
     /// <summary>
     /// The looker's squad mates share its sighting, not its attack: the original shares a squad's sightings (<c>GroupSense</c>: a member counts a character a mate saw or heard as seen
     /// within 2 R, with no view cone or light test, <c>FUN_140857b10</c>, Observed), and each member attacks only by its own goals. A mate within twice its own range R of the target that
-    /// the AI runs is asked to think at the next tick (its attack goals read the mates' sightings, <see cref="FindFoe"/>); one without an AI (the old rule, engine) that is free joins
-    /// <paramref name="fighters"/> when its own attack-on-sight finder takes the target (<see cref="Takes"/>), in the squad's member order. Null <paramref name="fighters"/>: only the asking.
+    /// has a mind is asked to think at the next tick (its attack goals read the mates' sightings, <see cref="FindFoe"/>); a player character that is free is offered the target with the
+    /// looker (<paramref name="fighters"/>) when its own attack on sight takes it (<see cref="Takes"/>), in the squad's member order. Null <paramref name="fighters"/>: only the asking.
     /// </summary>
     void JoinMates(World world, CharacterTable table, int slot, int target, CharacterCold targetCold, List<CharacterId>? fighters)
     {
@@ -1377,7 +1367,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
                 if (!cold.InCombat) mate.Replan = true;
                 continue;
             }
-            if (fighters is null || !Free(table, s, taken) || !Takes(world, s, cold, target, targetCold)) continue;
+            if (fighters is null || !cold.IsPlayer || !Free(table, s, taken) || !Takes(world, s, cold, target, targetCold)) continue;
             fighters.Add(m);
             taken.Add(s);
         }

@@ -437,6 +437,14 @@ public sealed class AiMind
     /// <summary>The centre and radius <see cref="MovementSystem"/>'s wander uses instead of the squad's home (radius 0: the squad's).</summary>
     public Vector2 WanderCentre { get; set; }
     public float WanderRadius { get; set; }
+    /// <summary>
+    /// Its routine is the engine's, not the AI's: it is a member of a squad the AI does not run (a roaming platoon's active half, whose trip is the population's, or a squad whose template
+    /// lists no AI packages). The AI weighs only its combat goals (<see cref="EngineGoals"/> and its race's) and Self preservation, on that routine and in its fights, and acts nothing else
+    /// out (docs/simulation.md "AI").
+    /// </summary>
+    public bool Engine { get; init; }
+    /// <summary>The combat goals of its platoon's package for its role (none without a package), set by the AI's serial step on the package cadence. Follow from the package, so not hashed.</summary>
+    public IReadOnlyList<AiGoal> EngineGoals { get; set; } = [];
     /// <summary>Its race's <c>AI Goals</c>, looked up once when the mind is made (the lookup takes a lock; the think runs on every worker). Follows from the race, so not hashed.</summary>
     public IReadOnlyList<AiGoal> RaceGoals { get; init; } = [];
     /// <summary>It was sent walking to a spot and has not arrived.</summary>
@@ -506,6 +514,7 @@ public sealed class AiMind
 
     internal void Hash(ref StateHasher hasher)
     {
+        if (Engine) hasher.Add(0x456E6769);
         hasher.Add((int)(Goal?.Task.Type ?? TaskType.None));
         hasher.Add((int)Step);
         hasher.Add((int)Behaviour);

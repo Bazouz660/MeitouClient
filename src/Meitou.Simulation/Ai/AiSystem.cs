@@ -53,7 +53,8 @@ public sealed record ChangeAi(int SquadId, string PackageId) : SimCommand;
 /// acts out the winner through <see cref="TaskBehaviours"/> (in its home building's nodes and beds where it has one); its combat goals are goals of the same choice (AiSystem.Fights.cs),
 /// which <see cref="AggroSystem"/>'s look asks it to weigh again when it senses a new enemy. The AI runs only characters that nothing else holds: not the player's, not in a fight it did not
 /// start, fleeing, down, carrying, carried, treating, looting or trading; in its own fight it chooses but acts out nothing (<see cref="InFight"/>), and an engine duty or fight is taken over
-/// only by the goals that pre-empt it (<see cref="Preempts"/>). Roaming platoons keep their travel stand-in (<see cref="PopulationSystem"/>; their off-screen mode follows
+/// only by the goals that pre-empt it (<see cref="Preempts"/>). The members of a squad it does not run get a mind that weighs only their combat goals (<see cref="AiMind.Engine"/>,
+/// <see cref="EngineMinds"/>). Roaming platoons keep their travel stand-in (<see cref="PopulationSystem"/>; their off-screen mode follows
 /// their package, <see cref="PlatoonJobs"/>).
 /// <list type="bullet">
 /// <item><c>Think</c> (parallel): the choice and the act-out write only the character's own state (its task, goal, path flags and <see cref="AiMind"/>);
@@ -64,6 +65,9 @@ public sealed record ChangeAi(int SquadId, string PackageId) : SimCommand;
 /// </summary>
 public sealed partial class AiSystem(PopulationData data, AiSettings? settings = null) : ITickSystem, IStateHashed
 {
+    /// <summary>The blackboard an <see cref="AiMind.Engine"/> mind chooses under: no package, nothing claimed (its combat goals read none of it).</summary>
+    static readonly Blackboard EngineBoard = new([]);
+
     /// <summary>Every character's default goal (docs/game/ai.md "Default tasks per character", Observed): IDLE at the fluff tier, weight 0.1.</summary>
     public static readonly AiGoal Idle = new(new AiTask("", "IDLE", TaskType.IDLE, TaskPriority.Fluff, TaskTargetType.Specific, TaskEndEvent.Nothing), 0, 100, 0.1f);
 
@@ -118,15 +122,26 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
         int hour = world.Hour;
         for (int i = part.Start; i < part.End; i++)
         {
-            if (!prev[i].Alive || table.Cold(i) is not { Ai: { Squad: { Ai: { } board } squad } mind } cold) continue;
+            if (!prev[i].Alive || table.Cold(i) is not { Ai: { Squad: var squad } mind } cold || (mind.Engine ? EngineBoard : squad.Ai) is not { } board) continue;
             // Cheapest test first: most characters are not due this tick.
             if ((world.Tick + i) % every != 0 && mind.Version == board.Version && !mind.Replan) continue;
             mind.Replan = false;
             var id = table.IdOf(i);
-            var roles = ObeyedRoles(world, squad, cold) ?? board.Roles[(int)RoleOf(squad, id, cold)];
+            var roles = mind.Engine ? mind.EngineGoals : ObeyedRoles(world, squad, cold) ?? board.Roles[(int)RoleOf(squad, id, cold)];
             ref var n = ref table.Next[i];
             if (Holds(n, cold))
             {
+                if (mind.Engine)
+                {
+                    // Its own fight, with nothing but its combat goals and Self preservation to weigh: none wanted ends the fight, and the engine's routine takes it back.
+                    if (Choose(world, i, id, mind, squad, board, roles, hour, Restrict.Combat) is { } kept) InFight(mind, kept, board);
+                    else
+                    {
+                        mind.LeaveFight = true;
+                        Interlocked.Exchange(ref leaving, 1);
+                    }
+                    continue;
+                }
                 var goal = Choose(world, i, id, mind, squad, board, roles, hour)!;
                 if (cold.InCombat) InFight(mind, goal, board);
                 else Act(world, i, mind, goal, board);
@@ -135,7 +150,7 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             // A character on an engine duty or in an engine fight: only the goals that pre-empt it (Preempts) are weighed.
             if (Preempts(n, cold) is not Restrict.None and var only && Choose(world, i, id, mind, squad, board, roles, hour, only) is { } urgent)
             {
-                if (only == Restrict.Flight) mind.FleeRequest = FleeAsk.Threat;
+                if (ReferenceEquals(urgent, SelfPreservationGoal)) mind.FleeRequest = FleeAsk.Threat;
                 else
                 {
                     mind.FightTarget = FightPick(world, i, urgent.Task.Type, mind).Target;
@@ -177,6 +192,8 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
         Fights,
         /// <summary>Self preservation, only when it runs (35): the flee step stops the engine fight.</summary>
         Flight,
+        /// <summary>The combat goals and Self preservation (its run): what an <see cref="AiMind.Engine"/> mind weighs on its routine and in its own fight.</summary>
+        Combat,
     }
 
     /// <summary>
@@ -184,17 +201,30 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
     /// priority-3 goal, docs/game/ai-tasks.md "Precedence"): in a fight it did not start (a self-defence, a duty's fight), Self preservation's run, as <see cref="SelfPreservation.Runs"/> decides
     /// it (a leg down or no working arm under a threat); on an engine duty whose system lets a fight interrupt it, the combat goals. The duties: treating (<see cref="FirstAid.FirstAidSystem"/>
     /// lets go of the patient at the fight's start), a town errand's walk but the cage walk (<see cref="Kidnap.TownDutySystem"/> waits for the fight to end and walks on; one carrying an intruder
-    /// out fights with the body on its shoulder, as the original's carrier does), a captive job's walk carrying nothing (<see cref="Kidnap.CaptiveSystem"/> gives the job up). Not the arrest,
-    /// kidnap, rescue, loot and lift tasks, the cage walks (the kidnapper's walks again over a fight), dialogue walks, trades or flights.
+    /// out fights with the body on its shoulder, as the original's carrier does), a captive job's walk carrying nothing (<see cref="Kidnap.CaptiveSystem"/> gives the job up); on the routine of
+    /// an <see cref="AiMind.Engine"/> mind (<see cref="EngineRoutine"/>), the combat goals and Self preservation's run. Not the arrest, kidnap, rescue, loot and lift tasks, the cage walks (the kidnapper's walks again over a fight), dialogue
+    /// walks, trades or flights.
     /// </summary>
     internal static Restrict Preempts(in CharacterHot n, CharacterCold cold)
     {
-        if (cold.Ai is null || cold.IsPlayer || cold.Fleeing || cold.Engaged || cold.IsImprisoned || !cold.CarriedBy.IsNone || cold.Medical is { Incapacitated: true }) return Restrict.None;
+        if (cold.Ai is not { } mind || cold.IsPlayer || cold.Fleeing || cold.Engaged || cold.IsImprisoned || !cold.CarriedBy.IsNone || cold.Medical is { Incapacitated: true }) return Restrict.None;
         if (cold.InCombat) return cold.Gunning is null && cold.Carrying.IsNone ? Restrict.Flight : Restrict.None;
+        if (mind.Engine && EngineRoutine(n, cold)) return Restrict.Combat;
         if (n.Task == (byte)CharacterTask.Treat) return Restrict.Fights;
         return n.Task == (byte)CharacterTask.GoTo && cold.Running is { Source: TaskSource.Goal, Task: CharacterTask.GoTo } run
             && (Kidnap.TownDutySystem.IsErrandRow(run.Row) || cold.Carrying.IsNone && Kidnap.CaptiveSystem.IsJobRow(run.Row)) ? Restrict.Fights : Restrict.None;
     }
+
+    /// <summary>
+    /// The engine's routine of an <see cref="AiMind.Engine"/> mind, which a fight its combat goals start interrupts: standing, wandering, following its leader, or the roaming leader's walk on its
+    /// trip (row 53 of the population's travel stand-in, <see cref="PopulationSystem"/>; the trip goes on after the fight).
+    /// </summary>
+    static bool EngineRoutine(in CharacterHot n, CharacterCold cold) => (CharacterTask)n.Task switch
+    {
+        CharacterTask.Idle or CharacterTask.Wander or CharacterTask.Follow => true,
+        CharacterTask.GoTo => cold.Running is { Source: TaskSource.Goal, Row: TaskType.TRAVEL_TO_TARGET_TOWN, Task: CharacterTask.GoTo },
+        _ => false,
+    };
 
     /// <summary>
     /// Whether the character's fight is the AI's own: the one the serial step started for its combat goal (<see cref="AiMind.FightFrom"/>), still running. A fight the combat system or another
@@ -210,6 +240,7 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
     {
         if (cold.Ai is not { } mind || cold.IsPlayer || cold.Fleeing || cold.Engaged || cold.IsImprisoned || !cold.CarriedBy.IsNone || !cold.Carrying.IsNone || cold.Medical is { Incapacitated: true }) return false;
         if (cold.InCombat) return n.Task == (byte)CharacterTask.Attack && OwnsFight(cold, mind);
+        if (mind.Engine) return false;
         return (CharacterTask)n.Task switch
         {
             CharacterTask.Idle or CharacterTask.Wander or CharacterTask.Follow => true,
@@ -261,7 +292,13 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
                 if (g.Task.Priority != tier || !g.InWindow(hour)) return;
                 // The list entries of Self preservation are the engine's own goal, which every character has once.
                 if (g.Task.Type == TaskType.SELF_PRESERVATION && !ReferenceEquals(g, SelfPreservationGoal)) return;
-                if (only == Restrict.Fights ? TaskBehaviours.Of(g.Task.Type) != AiBehaviour.Fight : only == Restrict.Flight && !ReferenceEquals(g, SelfPreservationGoal)) return;
+                if (only switch
+                    {
+                        Restrict.Fights => TaskBehaviours.Of(g.Task.Type) != AiBehaviour.Fight,
+                        Restrict.Flight => !ReferenceEquals(g, SelfPreservationGoal),
+                        Restrict.Combat => TaskBehaviours.Of(g.Task.Type) != AiBehaviour.Fight && !ReferenceEquals(g, SelfPreservationGoal),
+                        _ => false,
+                    }) return;
                 var profile = TaskProfiles.Of(g.Task.Type);
                 float desire = Desire(world, TaskBehaviours.Of(g.Task.Type), g.Task.Type, profile, squad, board, mind, id, g.Task.Target);
                 if (desire <= 0) return;
@@ -1201,7 +1238,12 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
         {
             if (squad.Ai is null)
             {
-                if (!looked.Add(squad.Id) || !Runs(world, squad)) continue;
+                bool first = looked.Add(squad.Id);
+                if (!first || !Runs(world, squad))
+                {
+                    if (first || cadence) EngineMinds(world, squad);
+                    continue;
+                }
                 Attach(world, squad);
                 if (squad.Ai!.Town >= 0 && !places.ContainsKey(squad.Ai.Town)) RefreshPlaces(world);
             }
@@ -1222,7 +1264,7 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             {
                 if (!table.TryResolveNext(squad.Members[k], out int s)) continue;
                 var cold = table.Cold(s)!;
-                if (cold.Ai is null)
+                if (cold.Ai is null or { Engine: true })
                 {
                     var p = table.Next[s].Position;
                     cold.Ai = new AiMind
@@ -1555,6 +1597,69 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
         }
         squad.LeftPackage = null;
     }
+
+    /// <summary>
+    /// Minds for the members of a squad the AI does not run (<see cref="Runs"/>; not the player's): every character has goals in the original (<c>setupAI</c> <c>FUN_140621b70</c>: 14, 32, its
+    /// race's and its faction's <c>AI Goals</c>; its squad's packages add theirs, docs/game/ai-tasks.md "Precedence"), so each gets an <see cref="AiMind.Engine"/> mind whose combat goals are its
+    /// platoon's package's for its role (a campaign squad's phase package, a roaming one's the package the population's stand-in follows, else the template's first choice; none for a
+    /// template without packages) and its race's. Its routine stays the engine's. Serial, on the package cadence and when the squad appears; a mind made for another squad is made again.
+    /// </summary>
+    void EngineMinds(World world, Squad squad)
+    {
+        if (IsPlayers(world, squad)) return;
+        var table = world.Characters;
+        AiPackage? package;
+        if (squad.PlatoonId >= 0 && world.Platoons.Find(squad.PlatoonId) is { } platoon)
+        {
+            // A campaign's squad runs its phase's package (as PopulationSystem.GoalDuty reads it); a roaming one the package its stand-in follows.
+            string? id = platoon.Campaign is { } inst
+                ? inst.Phase <= 2 ? world.SystemOf<PopulationSystem>()?.CampaignOf(inst.CampaignId)?.PackageOf(inst.Phase, inst.Leader == platoon.Id) : null
+                : platoon.Package;
+            package = id is null ? platoon.Campaign is null ? FirstPackage(squad.TemplateId) : null : data.Ai.Package(id);
+        }
+        else package = FirstPackage(squad.TemplateId);
+        for (int k = 0; k < squad.Members.Count; k++)
+        {
+            if (!table.TryResolveNext(squad.Members[k], out int s) || table.Cold(s) is not { IsPlayer: false } cold || cold.Ai is { Engine: false }) continue;
+            if (cold.Ai is null || !ReferenceEquals(cold.Ai.Squad, squad))
+            {
+                var p = table.Next[s].Position;
+                cold.Ai = new AiMind
+                {
+                    Squad = squad, MemberIndex = k, Post = new Vector2(p.X, p.Z), Engine = true, Version = EngineBoard.Version,
+                    RaceGoals = cold.Race is { } race ? data.Ai.RaceGoals(race.StringId) : [],
+                };
+            }
+            cold.Ai.EngineGoals = package is null ? [] : CombatGoalsOf(package, RoleOf(squad, squad.Members[k], cold));
+        }
+    }
+
+    /// <summary>The package a template's squad starts with (<see cref="Blackboard.Update"/> over its slots, as the population's stand-in takes it, <see cref="PlatoonJobs.For"/>); null without one.</summary>
+    AiPackage? FirstPackage(string templateId)
+    {
+        if (firstPackages.TryGetValue(templateId, out var known)) return known;
+        var packages = TemplateOf(templateId).Packages;
+        AiPackage? first = null;
+        if (packages.Count > 0)
+        {
+            var board = new Blackboard(packages);
+            board.Update();
+            first = board.Current;
+        }
+        return firstPackages[templateId] = first;
+    }
+
+    /// <summary>The combat goals (<see cref="AiBehaviour.Fight"/>) of a package's role list, kept per package and role (serial only).</summary>
+    IReadOnlyList<AiGoal> CombatGoalsOf(AiPackage package, AiRole role)
+    {
+        if (combatGoals.TryGetValue((package, role), out var known)) return known;
+        var list = package.Roles[(int)role].Where(g => TaskBehaviours.Of(g.Task.Type) == AiBehaviour.Fight).ToArray();
+        return combatGoals[(package, role)] = list;
+    }
+
+    // Derived from the data, not hashed.
+    readonly Dictionary<string, AiPackage?> firstPackages = [];
+    readonly Dictionary<(AiPackage, AiRole), IReadOnlyList<AiGoal>> combatGoals = [];
 
     /// <summary>
     /// The AI runs a squad that is not the player's, not a roaming platoon's active half (a town's own saved squad, pinned, is run like the town's, a save's wild one like the wild

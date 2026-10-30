@@ -370,8 +370,8 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed, ITaskOwner
         cold.RangedCombatMode = false;
         cold.TargetFleeingTime = 0;
         // The fight's end sheathes nothing (docs/game/combat.md "Fight lifecycle and orders", weapon away): the planner puts it away before a goal that needs it away
-        // (the AI's UNEQUIP_WEAPON step), a player's character once it stops moving on an order (Act). A character without either sheathes now.
-        if (!cold.IsPlayer && cold.Ai is null) cold.DrawnWeapon = WeaponKinds.None;
+        // (the AI's UNEQUIP_WEAPON step), a player's character once it stops moving on an order (Act). A character without either (no mind, or one whose routine is the engine's) sheathes now.
+        if (!cold.IsPlayer && cold.Ai is null or { Engine: true }) cold.DrawnWeapon = WeaponKinds.None;
         if (table.Next[slot].Task == (byte)CharacterTask.Attack) TaskStart.Step(table, slot, CharacterTask.Idle);   // the fight's own end: idle, its provenance kept (a follow row's, FollowResume)
         DecisionSystem.Request(cold);   // the fight task ended: a player character is decided again (a follow row takes up its follow)
         if (cold.Ai is { } mind) mind.Replan = true;   // and an NPC's AI chooses again at the next tick (the original's "plan finished" trigger)
