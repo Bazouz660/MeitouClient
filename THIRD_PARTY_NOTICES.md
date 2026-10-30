@@ -42,7 +42,8 @@ FidelityFX library itself (`amd_fidelityfx_vk.dll`, or `libamd_fidelityfx_vk.so`
 loaded at run time when the user provides it. The Linux `libamd_fidelityfx_vk.so` is an unofficial build of SDK 1.1.4
 modified for Linux (built from AMD's MIT-licensed source at tag v1.1.4 with `tools/patches/fidelityfx-sdk-1.1.4-linux.patch` by
 `tools/scripts/build-ffx-linux.sh`), not provided by AMD; the licence text
-travels with it as `LICENSE-FidelityFX.txt`.
+travels with it as `LICENSE-FidelityFX.txt`. The Linux release zip includes that build, the Windows zip AMD's signed prebuilt DLL;
+both carry AMD's licence in `licenses/AMD`.
 
 ```
 Copyright (C) 2024 Advanced Micro Devices, Inc.
@@ -109,7 +110,9 @@ source loads them at run time when the user provides them (see [LICENSE-EXCEPTIO
 On Windows (and under Proton), with frame generation on, DLSS goes through the same client library instead of Streamline: its
 static `nvsdk_ngx_s.lib` (`lib/Windows_x86_64/x64/`, same SDK version) is downloaded by `tools/scripts/build-ngx-shim-win.sh`
 (SHA-256 checked) and linked unchanged into `meitou_ngx.dll`, under the same NVIDIA licence and conditions; the script links it
-against the Microsoft C runtime and Windows SDK libraries fetched by `xwin` (Microsoft's licence), which are not redistributed.
+against the Microsoft C runtime and Windows SDK libraries fetched by `xwin` (Microsoft's licence; the static C runtime ends up inside the DLL, the
+libraries themselves are not redistributed). The Windows release zip includes `meitou_ngx.dll`, linked the same way with Visual Studio's linker
+by `tools/scripts/package-release.ps1`.
 
 ## NuGet packages
 
