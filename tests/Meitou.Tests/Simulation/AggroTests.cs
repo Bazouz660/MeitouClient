@@ -727,6 +727,141 @@ public class AggroTests
     }
 
     /// <summary>
+    /// An NPC defends itself by 32 Self preservation in the chooser (docs/game/ai-tasks.md "Combat goals": desire 1 within 40, plan 13 on its own attacker): a member with no combat goal that
+    /// already senses a bandit is attacked by it; the alert puts the bandit on its threats list at once, so its next think takes 32 and the serial step starts the fight two ticks after the alert,
+    /// a fight the AI holds across its thinks. Catches the old engine answer outside the chooser, and a threats list stale until the next look (32 at 0, the fight never started or dropped).
+    /// </summary>
+    [Fact]
+    public void An_attacked_npc_fights_back_by_self_preservation_in_the_chooser()
+    {
+        using var a = Make(23, 1, TownRelations(), ai: true);
+        a.Aggro.Combat = a.Combat;
+        var o = new Vector2(2000, 2000);
+        var squad = a.SquadOf(Town, o, true, (o, 0f), (o + new Vector2(10, 0), 0f));
+        CharacterId member = squad.Members[1];
+        Lists(squad, [], [Goal(TaskType.FOLLOW_SQUADLEADER, 0.5f, target: TaskTargetType.Leader)]);
+        Think(a);
+        var bandit = a.SquadOf(Bandits, o, true, (o + new Vector2(5, 30), MathF.PI)).Members[0];
+        a.World.RunTicks(2 * 15 + 5);   // its looks have sensed the bandit (an entry before the attack); its next look is 10 ticks off
+        var table = a.World.Characters;
+        Assert.True(a.Aggro.SensesOf(member.Slot)!.IndexOf(bandit.Slot, bandit.Generation) >= 0, "the bandit is sensed before the attack");
+        Assert.False(a.Fighting(member));
+        a.World.Commands.Enqueue(new AttackOrder([bandit], member) { Tick = a.World.Tick });
+        a.World.RunTicks(3);   // the order and the alert, the think, the fight's start
+        var cold = table.Cold(member.Slot)!;
+        Assert.True(a.Fighting(member), "it fights back two ticks after the alert");
+        Assert.Equal(bandit.Slot, a.Combat.StateOf(member).TargetSlot);
+        Assert.Equal(TaskType.SELF_PRESERVATION, cold.Ai!.Goal!.Task.Type);
+        Assert.Equal(TaskType.ATTACK_ATTACKERS_OF, cold.Ai.Step);
+        long from = cold.Running!.Tick;
+        Assert.Equal(from, cold.Ai.FightFrom);
+        for (int k = 0; k < 3 * 15 && !table.Cold(bandit.Slot)!.Medical!.Incapacitated; k++)
+        {
+            a.World.RunTicks(1);
+            Assert.True(a.Fighting(member), $"its fight ended at tick {a.World.Tick}");
+            Assert.Equal(from, cold.Running!.Tick);
+        }
+    }
+
+    /// <summary>
+    /// Self preservation competes with the other priority-3 goals by its desire (<c>FUN_140599d20</c>: 0.7 with an attacker within 181.7, 1 within 40): a member following its leader at weight
+    /// 0.75 (x1.25 as the current goal) keeps following while the bandit that attacks it runs in from 120, and fights it once the bandit is within 40. Catches a self-defence at any distance
+    /// whatever the other goals, and one that never outranks a goal above 0.7.
+    /// </summary>
+    [Fact]
+    public void A_higher_goal_yields_to_self_preservation_only_once_the_attacker_is_within_40()
+    {
+        using var a = Make(24, 1, TownRelations(), ai: true);
+        a.Aggro.Combat = a.Combat;
+        var o = new Vector2(2000, 2000);
+        var squad = a.SquadOf(Town, o, true, (o, 0f), (o + new Vector2(10, 0), 0f));
+        CharacterId member = squad.Members[1];
+        Lists(squad, [], [Goal(TaskType.FOLLOW_SQUADLEADER, 0.75f, target: TaskTargetType.Leader)]);
+        Think(a);
+        var bandit = a.SquadOf(Bandits, o, true, (o + new Vector2(10, 120), MathF.PI)).Members[0];
+        a.World.RunTicks(15);
+        var table = a.World.Characters;
+        a.World.Commands.Enqueue(new AttackOrder([bandit], member) { Tick = a.World.Tick });
+        float Gap() => Vector2.Distance(new(table.Previous[member.Slot].Position.X, table.Previous[member.Slot].Position.Z), new(table.Previous[bandit.Slot].Position.X, table.Previous[bandit.Slot].Position.Z));
+        long near = -1;
+        for (int k = 0; k < (int)(8 / a.World.TickSeconds) && !a.Fighting(member); k++)
+        {
+            a.World.RunTicks(1);
+            if (near < 0 && Gap() <= RetaliationSystem.ImmediateReach) near = a.World.Tick;
+            if (Gap() > RetaliationSystem.ImmediateReach + 5) Assert.False(a.Fighting(member), $"it fought back from {Gap():0} at tick {a.World.Tick}");
+        }
+        Assert.True(near >= 0, "the bandit came within 40");
+        Assert.True(a.Fighting(member), "it fights back within 40");
+        Assert.InRange(a.World.Tick - near, 0, 15 + 3);
+        Assert.Equal(TaskType.SELF_PRESERVATION, table.Cold(member.Slot)!.Ai!.Goal!.Task.Type);
+    }
+
+    /// <summary>
+    /// A crossbowman shooting from 400, beyond Self preservation's 181.7 (desire 0, <c>FUN_140599d20</c>), is not fought back by an NPC whose lists hold no combat goal: nothing in its chooser
+    /// covers it (the original's too, docs/game/combat.md "Self-defence"). With 143 Protect close allies the NPC counts itself (its own fight threat, <c>FUN_14099d510</c>) and row 13 takes its own
+    /// attacker at any distance, so it goes for the shooter. Catches the old engine answer at any distance, and a 143 that never covers its own holder.
+    /// </summary>
+    [Theory, InlineData(false), InlineData(true)]
+    public void A_shooter_beyond_self_preservations_reach_is_fought_back_only_through_another_goal(bool protects)
+    {
+        using var a = Make(25, 1, TownRelations(), ai: true);
+        a.Aggro.Combat = a.Combat;
+        var o = new Vector2(2000, 2000);
+        var squad = a.SquadOf(Town, o, true, (o, 0f), (o + new Vector2(10, 0), 0f));
+        CharacterId member = squad.Members[1];
+        Lists(squad, [], protects ? [Goal(TaskType.PROTECT_OWN_SQUAD)] : []);
+        Think(a);
+        var table = a.World.Characters;
+        var shooter = table.Spawn(new CharacterHot { Position = new Vector3(o.X + 10, 150, o.Y + 400), Health = 100, Yaw = MathF.PI }, RangedTests.Shooter(100, 100, 30, Bandits), 0);
+        a.World.Commands.Enqueue(new AttackOrder([shooter], member) { Tick = a.World.Tick });
+        bool shot = false;
+        for (int k = 0; k < (int)(6 / a.World.TickSeconds) && !a.Fighting(member); k++)
+        {
+            a.World.RunTicks(1);
+            shot |= a.Combat.ProjectilesFired > 0;
+        }
+        Assert.True(a.Combat.StateOf(shooter).Ranged, "it shoots");
+        Assert.Equal(protects, a.Fighting(member));
+        if (protects) Assert.Equal(shooter.Slot, a.Combat.StateOf(member).TargetSlot);
+        else
+        {
+            Assert.True(shot, "it was shot at");
+            Assert.NotEqual(TaskType.SELF_PRESERVATION, table.Cold(member.Slot)!.Ai!.Goal?.Task.Type);
+        }
+    }
+
+    /// <summary>The self-defence scenarios (melee attacks on AI-run members, a shooter on another) hash the same at 1, 4 and 16 threads.</summary>
+    [Fact]
+    public void Self_defence_in_the_chooser_hashes_the_same_at_1_4_and_16_threads()
+    {
+        static List<ulong> Run(int threads)
+        {
+            using var a = Make(26, threads, TownRelations(), ai: true);
+            a.Aggro.Combat = a.Combat;
+            var o = new Vector2(2000, 2000);
+            var squad = a.SquadOf(Town, o, true, (o, 0f), (o + new Vector2(10, 0), 0f), (o + new Vector2(-10, 0), 0f));
+            Lists(squad, [], [Goal(TaskType.FOLLOW_SQUADLEADER, 0.5f, target: TaskTargetType.Leader)]);
+            Think(a);
+            var bandits = a.SquadOf(Bandits, o, true, (o + new Vector2(10, 60), MathF.PI), (o + new Vector2(-10, 90), MathF.PI));
+            var shooter = a.World.Characters.Spawn(new CharacterHot { Position = new Vector3(o.X, 150, o.Y + 150), Health = 100, Yaw = MathF.PI }, RangedTests.Shooter(100, 100, 30, Bandits), 0);
+            a.World.Commands.Enqueue(new AttackOrder([bandits.Members[0]], squad.Members[1]) { Tick = a.World.Tick });
+            a.World.Commands.Enqueue(new AttackOrder([bandits.Members[1]], squad.Members[0]) { Tick = a.World.Tick });
+            a.World.Commands.Enqueue(new AttackOrder([shooter], squad.Members[2]) { Tick = a.World.Tick });
+            var hashes = new List<ulong>();
+            foreach (int ticks in new[] { 10, 50, 180 })
+            {
+                a.World.RunTicks(ticks);
+                hashes.Add(a.World.StateHash());
+            }
+            Assert.All(squad.Members, m => Assert.True(a.Fighting(m) || a.World.Characters.Cold(m.Slot)!.Medical!.Incapacitated, "each member defends itself"));
+            return hashes;
+        }
+        var one = Run(1);
+        Assert.Equal(one, Run(4));
+        Assert.Equal(one, Run(16));
+    }
+
+    /// <summary>
     /// A combat goal pre-empts an engine duty that a fight may interrupt (docs/game/ai-tasks.md "Precedence": the duties are goals and jobs below a priority-3 goal): a member carrying a downed
     /// intruder out of town (a town errand's walk) attacks a bandit on sight with the body on its shoulder; on a kidnapper's cage walk, which its system walks again over a fight, it does not.
     /// Catches a carrier the AI never lets fight, and a fight started over a duty that cannot be interrupted.
