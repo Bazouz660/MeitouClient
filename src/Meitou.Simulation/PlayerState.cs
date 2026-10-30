@@ -363,7 +363,7 @@ public enum SquadAi : ushort
     Sit = 4,
     /// <summary>Heal Allies (+0x110): the medic and robotics jobs also treat characters of allied factions (<see cref="FirstAid.FirstAidSystem"/>).</summary>
     Heal = 8,
-    /// <summary>Help Allies (+0x111): idle characters join the defence of characters of allied factions (<see cref="RetaliationSystem"/>).</summary>
+    /// <summary>Help Allies (+0x111): the player's characters count allied factions' fighters in the protect-allies finder (squared; <see cref="RetaliationSystem"/> goal 15).</summary>
     Help = 16,
     /// <summary>Rescue Allies (+0x112): the rescue job also picks up downed characters of allied factions (<see cref="Carrying.CarrySystem"/>).</summary>
     Rescue = 32,
