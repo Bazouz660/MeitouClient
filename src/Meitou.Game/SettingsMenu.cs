@@ -238,7 +238,7 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
                     }, OnOff: true)));
         if (page == 0) result.Insert(2, new("Frame limit", "Used while vertical sync is off; 0 is unlimited.", Slider: frameLimit));
         if (page == 0 && !OperatingSystem.IsMacOS())
-            result.Insert(3, new("Frame generation (FSR 3)", "Presents through AMD's FSR 3 frame-interpolation layer (needs the FidelityFX library; not with DLSS). For now it only presents the rendered frames, no frame is generated. "
+            result.Insert(3, new("Frame generation (FSR 3)", "Shows a generated frame between each two rendered ones through AMD's FSR 3 frame-interpolation layer: nearly twice the frames shown, with a little more input delay. Works with TAA, FSR and DLSS; needs the FidelityFX library. "
                 + "Takes effect after a restart. Now: " + (FrameGenerationStatus?.Invoke() ?? "off"),
                 Toggle: new("Frame generation (FSR 3)", () => config.FrameGeneration, v => config.FrameGeneration = v, OnOff: true)));
         if (page == 0)

@@ -37,7 +37,7 @@ public sealed unsafe class VulkanPresenter : IDisposable
     bool vsync, stale = true;
 
     /// <summary>AMD's frame-interpolation swapchain, when the Frame generation setting is on and it works: the swapchain is created, acquired from and presented through it
-    /// (no frame is generated yet). Null for the plain swapchain; set to null again, with a log line, when it fails.</summary>
+    /// (frames are generated on top of it by <see cref="Upscalers.FrameGeneration"/>). Null for the plain swapchain; set to null again, with a log line, when it fails.</summary>
     public FfxSwapchain? FrameGeneration { get; set; }
 
     /// <summary>What the frame is drawn into (RGBA8, the window's framebuffer size; made again when the size changes): valid after <see cref="BeginFrame"/>.</summary>

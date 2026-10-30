@@ -8,12 +8,12 @@ namespace Meitou.Rendering.Upscalers;
 /// <summary>
 /// The swapchain of AMD's FSR 3 frame-interpolation layer (<c>ffxProvider_FrameGenerationSwapChain_VK</c> of <c>amd_fidelityfx_vk.dll</c>, FidelityFX SDK
 /// 1.1.x, MIT; <c>ffx_api_vk.h</c> and <c>ffx_provider_framegenerationswapchain_vk.cpp</c> give the struct layouts and the call order), standing in for the plain
-/// <c>vkCreateSwapchainKHR</c> / acquire / present of <see cref="Gpu.VulkanPresenter"/>. This step only hands the swapchain over: no frame-generation context
-/// exists, so the layer presents every rendered frame as it is. The first <see cref="Create"/> makes the FFX context (it makes the swapchain); later ones
+/// <c>vkCreateSwapchainKHR</c> / acquire / present of <see cref="Gpu.VulkanPresenter"/>. Frames are generated on top of it by <see cref="FrameGeneration"/>; without
+/// that context the layer presents every rendered frame as it is. The first <see cref="Create"/> makes the FFX context (it makes the swapchain); later ones
 /// (a resize, a vsync change) destroy the old swapchain and create the next through the context's own replacements, as the header says.
 /// Four queues are handed over (game, async compute, present, image acquire), the first of the device's graphics queue, the rest its
 /// <see cref="VulkanDevice.ExtraQueues"/>; their <c>submitFunc</c>s lock (the game queue on the device's <see cref="VulkanDevice.QueueLock"/>, the others
-/// on locks of their own, since only the layer submits on them). Windows and Proton only: the library is the Windows one.
+/// on locks of their own, since only the layer submits on them). Windows, Proton and Linux (<c>libamd_fidelityfx_vk.so</c>, tools/scripts/build-ffx-linux.sh).
 /// </summary>
 public sealed unsafe class FfxSwapchain : IDisposable
 {
