@@ -42,6 +42,8 @@ public sealed class CharacterAnimation
     /// <summary>The tick of the last hit a reaction was chosen for (-1: none), and whether the character was down (knocked out or dead) the last tick.</summary>
     public int SeenHit = -1;
     public bool WasDown;
+    /// <summary>Whether the character was crawling from a leg down (posture 2) the last tick: its end starts the get-up (docs/game/ragdolls.md "Getting up").</summary>
+    public bool WasCrawling;
     /// <summary>The body's playback factor F = 2 - H (H the skeleton's movement scale; docs/animation.md "Movement"); 0 until the first tick sets it.</summary>
     public float Rate;
     /// <summary>The last <see cref="SpeedWindow"/> speeds, oldest overwritten first (<see cref="SmoothSpeed"/>).</summary>
@@ -100,6 +102,7 @@ public sealed class CharacterAnimation
         h.Add(ActionIsStumble);
         h.Add(SeenHit);
         h.Add(WasDown);
+        h.Add(WasCrawling);
         h.Add(Rate);
         h.Add(SpeedCount);
         foreach (float s in Speeds) h.Add(s);
@@ -401,7 +404,10 @@ public sealed class AnimationSystem(AnimationLibrary library, AnimationLengths l
             // Out of a ragdoll the clip waits at its first key while the bones blend into it (docs/game/ragdolls.md "Getting up").
             if (ragdoll.WasWhole) a.ActionTime = -Meitou.Simulation.Ragdolls.RagdollSystem.GetUpBlend;
         }
+        // The leg back up: posture 2 ends in 0 and the posture setter queues the get-up task 65 (FUN_1405c7e20), which plays `standing up 3`.
+        else if (a.WasCrawling && !down && !carried && !inBed && cold.Medical is { Crawling: false, Prone: false }) StartAction(a, getUp, false);
         a.WasDown = down;
+        a.WasCrawling = cold.Medical is { Crawling: true };
         // The hit reaction the combat system picked (it holds the character helpless for the clip's length; see ChooseStumble).
         if (!down && !carried && fight.StumbleClip >= 0 && fight.StumbleStart > a.SeenHit)
         {
