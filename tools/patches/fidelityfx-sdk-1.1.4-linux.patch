@@ -882,8 +882,34 @@ index 5c47b25..9a8b70d 100644
          }
      }
  
+diff --git a/sdk/src/backends/vk/FrameInterpolationSwapchain/FrameInterpolationSwapchainVK_DebugPacing.cpp b/sdk/src/backends/vk/FrameInterpolationSwapchain/FrameInterpolationSwapchainVK_DebugPacing.cpp
+index 48af082..24f2275 100644
+--- a/sdk/src/backends/vk/FrameInterpolationSwapchain/FrameInterpolationSwapchainVK_DebugPacing.cpp
++++ b/sdk/src/backends/vk/FrameInterpolationSwapchain/FrameInterpolationSwapchainVK_DebugPacing.cpp
+@@ -214,7 +214,7 @@ VkResult CreateDebugPacingPipeline(VkDevice device, VkFormat fmt, const VkAlloca
+         rasterizationStateCreateInfo.depthBiasConstantFactor                = 0.0f;
+         rasterizationStateCreateInfo.depthBiasClamp                         = 0.0f;
+         rasterizationStateCreateInfo.depthBiasSlopeFactor                   = 0.0f;
+-        rasterizationStateCreateInfo.lineWidth                              = 0.0f;
++        rasterizationStateCreateInfo.lineWidth                              = 1.0f;
+ 
+         VkPipelineDepthStencilStateCreateInfo depthStencilStateCreateInfo = {};
+         depthStencilStateCreateInfo.sType                                 = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+diff --git a/sdk/src/backends/vk/FrameInterpolationSwapchain/FrameInterpolationSwapchainVK_UiComposition.cpp b/sdk/src/backends/vk/FrameInterpolationSwapchain/FrameInterpolationSwapchainVK_UiComposition.cpp
+index eb88430..0345667 100644
+--- a/sdk/src/backends/vk/FrameInterpolationSwapchain/FrameInterpolationSwapchainVK_UiComposition.cpp
++++ b/sdk/src/backends/vk/FrameInterpolationSwapchain/FrameInterpolationSwapchainVK_UiComposition.cpp
+@@ -242,7 +242,7 @@ VkResult CreateUiCompositionPipeline(VkDevice device, VkFormat fmt, const VkAllo
+         rasterizationStateCreateInfo.depthBiasConstantFactor                = 0.0f;
+         rasterizationStateCreateInfo.depthBiasClamp                         = 0.0f;
+         rasterizationStateCreateInfo.depthBiasSlopeFactor                   = 0.0f;
+-        rasterizationStateCreateInfo.lineWidth                              = 0.0f;
++        rasterizationStateCreateInfo.lineWidth                              = 1.0f;
+ 
+         VkPipelineDepthStencilStateCreateInfo depthStencilStateCreateInfo = {};
+         depthStencilStateCreateInfo.sType                                 = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
 diff --git a/sdk/src/backends/vk/ffx_vk.cpp b/sdk/src/backends/vk/ffx_vk.cpp
-index d914479..0422a93 100644
+index d914479..ddabe87 100644
 --- a/sdk/src/backends/vk/ffx_vk.cpp
 +++ b/sdk/src/backends/vk/ffx_vk.cpp
 @@ -272,6 +272,10 @@ typedef struct BackendContext_VK {
@@ -943,6 +969,23 @@ index d914479..0422a93 100644
  
          // Map gpu job array
          backendContext->pGpuJobs = (FfxGpuJobDescription*)pMem;
+@@ -1521,7 +1525,6 @@ FfxErrorCode CreateBackendContextVK(FfxInterface* backendInterface, FfxEffect ef
+             { VK_DESCRIPTOR_TYPE_SAMPLER, backendContext->maxEffectContexts * FFX_MAX_RESOURCE_COUNT * FFX_MAX_PASS_COUNT * FFX_MAX_QUEUED_FRAMES * MAX_PIPELINE_USAGE_PER_FRAME },
+             { VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, backendContext->maxEffectContexts * FFX_MAX_RESOURCE_COUNT * FFX_MAX_PASS_COUNT * FFX_MAX_QUEUED_FRAMES * MAX_PIPELINE_USAGE_PER_FRAME },
+             { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, backendContext->maxEffectContexts * FFX_MAX_RESOURCE_COUNT * FFX_MAX_PASS_COUNT * FFX_MAX_QUEUED_FRAMES * MAX_PIPELINE_USAGE_PER_FRAME },
+-            { VK_DESCRIPTOR_TYPE_SAMPLER, backendContext->maxEffectContexts * FFX_MAX_RESOURCE_COUNT * FFX_MAX_PASS_COUNT * FFX_MAX_QUEUED_FRAMES * MAX_PIPELINE_USAGE_PER_FRAME },
+             { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, backendContext->maxEffectContexts * FFX_MAX_RESOURCE_COUNT * FFX_MAX_PASS_COUNT * FFX_MAX_QUEUED_FRAMES * MAX_PIPELINE_USAGE_PER_FRAME },
+             { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, backendContext->maxEffectContexts * FFX_MAX_RESOURCE_COUNT * FFX_MAX_PASS_COUNT * FFX_MAX_QUEUED_FRAMES * MAX_PIPELINE_USAGE_PER_FRAME },
+         };
+@@ -1529,7 +1532,7 @@ FfxErrorCode CreateBackendContextVK(FfxInterface* backendInterface, FfxEffect ef
+         descriptorPoolCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+         descriptorPoolCreateInfo.pNext = nullptr;
+         descriptorPoolCreateInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+-        descriptorPoolCreateInfo.poolSizeCount = 5;
++        descriptorPoolCreateInfo.poolSizeCount = (uint32_t)FFX_ARRAY_ELEMENTS(poolSizes);
+         descriptorPoolCreateInfo.pPoolSizes = poolSizes;
+         descriptorPoolCreateInfo.maxSets = backendContext->maxEffectContexts * FFX_MAX_PASS_COUNT * MAX_PIPELINE_USAGE_PER_FRAME * FFX_MAX_QUEUED_FRAMES;
+ 
 diff --git a/sdk/src/shared/ffx_message.cpp b/sdk/src/shared/ffx_message.cpp
 index 7dd5127..5aa08b2 100644
 --- a/sdk/src/shared/ffx_message.cpp
